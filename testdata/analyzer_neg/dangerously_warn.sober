@@ -1,7 +1,7 @@
 package main
 
-// 安全な既定の緩和の常時の警告（受理は変えない — language.md「安全な既定の緩和」）: std の struct の `dangerously` で始まる欄に字面の false 以外を
-// 与える構築は毎回鳴る（変数経由も）。鳴らない形: 字面の false・欄を省く（ゼロ値 = 安全な側）・std の外の struct の同名の欄
+// 安全な既定の緩和の常時の警告（受理は変えない — language.md「安全な既定の緩和」）: stdのstructの `dangerously` で始まるフィールドに字面のfalse以外を
+// 与える構築は毎回鳴る（変数経由も）。鳴らない形: 字面のfalse・フィールドを省く（ゼロ値 = 安全な側）・stdの外のstructの同名のフィールド
 
 import "std/http/client"
 import "std/http/server"

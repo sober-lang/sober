@@ -1,6 +1,6 @@
 package main
 
-// 写しの mut 束縛越し: 型が他の package の struct なら束縛が局所でも書けない
+// コピーのmut束縛越し: 型が他のpackageのstructなら束縛が局所でも書けない
 import "std/utf8"
 
 func main() {

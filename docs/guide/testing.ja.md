@@ -2,11 +2,11 @@
 
 [English](testing.md) | 日本語
 
-小さな package `kv` を題材に、テストを 6 段で足していきます。7・8 節では、`kv` を使う package のテストで依存を double に差し替えます。各段は「書く → 走らせる → 出力を見る」の順です。ここに載せた出力はすべて実物で、リポジトリの検査（`scripts/gates.sh` の guidetest）が毎回同じコマンドを走らせて照合しています。
+小さなpackage `kv` を題材に、テストを6段階で足していきます。7・8節では、`kv` を使うpackageのテストで依存をdoubleに差し替えます。各段階は「書く → 走らせる → 出力を見る」の順です。ここに載せた出力はすべて実物で、リポジトリの検査（`scripts/gates.sh` のguidetest）が毎回同じコマンドを走らせて照合しています。
 
-前提: [最初のプログラム](first-program.ja.md#テストを書く)（`*_test.sober` と `sober test`）と [言語ツアー](tour.ja.md) の 1〜5 節。
+前提: [最初のプログラム](first-program.ja.md#テストを書く)（`*_test.sober` と `sober test`）と [言語ツアー](tour.ja.md) の1〜5節。
 
-使う技法は 5 つで、下から順に積み上がります（右の列が Sober での入口です）。
+使う技法は5つで、下から順に積み上がります（右の列がSoberでの入口です）。
 
 ```
 ファジング              sober fuzz
@@ -18,7 +18,7 @@
 
 ## 0. 題材 — `kv`
 
-`key=value;key=value` の 1 行を読み書きする package です。キーや値の中の `;`・`=`・`\` は `\` でエスケープします。
+`key=value;key=value` の1行を読み書きするpackageです。キーや値の中の `;`・`=`・`\` は `\` でエスケープします。
 
 ```sober
 // examples/guide/kv/kv.sober
@@ -107,13 +107,13 @@ func count(l string) int {
 }
 ```
 
-題材の途中の状態は `examples/guide/` に置いてあります。自分の package に写経しながら進めるときは、各節の終わりの状態と見比べてください。`examples/guide/` は `sober.mod`（`module "example.com/guide"`）を持つ 1 つのモジュールで、このガイドのコマンドはそこを起点に走らせます（`cd examples/guide`）。package の import パスと修飾子はモジュールの根からの全段です（`import "kvstore"` → `kvstore.Load`・`import "kvstore/mem"` → `kvstore.mem.Empty`）。
+題材の途中の状態は `examples/guide/` に置いてあります。自分のpackageに写経しながら進めるときは、各節の終わりの状態と見比べてください。`examples/guide/` は `sober.mod`（`module "example.com/guide"`）を持つ1つのモジュールで、このガイドのコマンドはそこを起点に走らせます（`cd examples/guide`）。packageのimportパスと修飾子はモジュールの根からの全要素です（`import "kvstore"` → `kvstore.Load`・`import "kvstore/mem"` → `kvstore.mem.Empty`）。
 
 | ディレクトリ | 状態 |
 | --- | --- |
-| `kvbug` | 直す前（バグが 3 つある。1・2・4 節で 1 つずつ見つかる） |
-| `kv2` | 2 節の終わり（テスト 3 本） |
-| `kv3` | 3 節の終わり（テスト 4 本） |
+| `kvbug` | 直す前（バグが3つある。1・2・4節で1つずつ見つかる） |
+| `kv2` | 2節の終わり（テスト3本） |
+| `kv3` | 3節の終わり（テスト4本） |
 | `kv` | 最後（全部） |
 
 テストのファイルの先頭は次のとおりです。
@@ -159,7 +159,7 @@ ok   kv2.TestParse
 1 passed, 0 failed
 ```
 
-直す前の `kvbug` で同じテストを走らせると、落ちた `assert` の部分式の値が出ます。`Parse` が 2 つ読むはずの行から 1 つも読めていません（ループの条件の `<` が `<=` になっていて、末尾の `;` の後ろをもう 1 片として読もうとして失敗します）。
+直す前の `kvbug` で同じテストを走らせると、落ちた `assert` の部分式の値が出ます。`Parse` が2つ読むはずの行から1つも読めていません（ループの条件の `<` が `<=` になっていて、末尾の `;` の後ろをもう1片として読もうとして失敗します）。
 
 ```sh
 $ sober test kvbug --run TestParse
@@ -175,13 +175,13 @@ FAIL kvbug.TestParse (exit 101)
 0 passed, 1 failed
 ```
 
-`assert` は `&&` で繋ぐより 1 つの条件ずつ書くと、どこで落ちたかが値つきで読めます。
+`assert` は `&&` で繋ぐより1つの条件ずつ書くと、どこで落ちたかが値つきで読めます。
 
-`panic:` の行の位置は落ちた `assert` を書いた行です。同じ `assert` をテーブルの行ごとに回すときは、第 2 引数にラベルを渡すと見出しに出ます（`assert(e, "case ${name}")` → `assert failed (case …): e`）。ラベルは落ちたときだけ評価されます。
+`panic:` の行の位置は落ちた `assert` を書いた行です。同じ `assert` をテーブルの行ごとに回すときは、第2引数にラベルを渡すと見出しに出ます（`assert(e, "case ${name}")` → `assert failed (case …): e`）。ラベルは落ちたときだけ評価されます。
 
 ## 2. プロパティベーステスト — std/quick
 
-手で書いた例は、書いた人が思いついた入力しか試しません。std/quick では「どんな入力でも成り立つこと」（プロパティ）を書き、入力はジェネレータに作らせます。`kv` のプロパティは往復です。どんな組の列でも、`Format` してから `Parse` すると元に戻るはずです。
+手で書いた例は、書いた人が思いついた入力しか試しません。std/quickでは「どんな入力でも成り立つこと」（プロパティ）を書き、入力はジェネレータに作らせます。`kv` のプロパティは往復です。どんな組の列でも、`Format` してから `Parse` すると元に戻るはずです。
 
 ```sober
 // examples/guide/kv/kv_test.sober（抜粋）
@@ -230,11 +230,11 @@ FAIL kvbug.TestRoundTrip (exit 101)
 0 passed, 1 failed
 ```
 
-100 回の試行の 49 回目でプロパティが偽になり、反例をシュリンク（縮小）した結果が出ています。値が `";"` の Pair が 1 つです。直す前の `Format` は `;` をエスケープしないので `"=;"` と書き出し、`Parse` が値を `;` のところで切ってしまいます。シュリンクはジェネレータが引いた選択の列を短く・小さくして探すので、型ごとのシュリンクの方法を書く必要はありません。
+100回の試行の49回目でプロパティが偽になり、反例をシュリンク（縮小）した結果が出ています。値が `";"` のPairが1つです。直す前の `Format` は `;` をエスケープしないので `"=;"` と書き出し、`Parse` が値を `;` のところで切ってしまいます。シュリンクはジェネレータが引いた選択の列を短く・小さくして探すので、型ごとのシュリンクの方法を書く必要はありません。
 
-何度走らせても、同じ試行で同じ反例が出ます。テストの名前とシード（`seed 392200337`）が同じなら、ジェネレータが作る入力の列も同じだからです。落ちたテストは直した後にそのまま走らせ直せば確かめられます。
+何度走らせても、同じ試行で同じ反例が出ます。テストの名前とシード（`seed 392200337`）が同じなら、ジェネレータが作る入力の列も同じだからです。落ちたテストは直した後にそのまま走らせ直せば確認できます。
 
-`escape` で `;` と `=` もエスケープするように直し、1 節のループの条件も `<` に直すと、2 節の終わりの状態（`kv2`）になります（3 つ目のバグはまだ残っていて、4 節で見つけます）。
+`escape` で `;` と `=` もエスケープするように直し、1節のループの条件も `<` に直すと、2節の終わりの状態（`kv2`）になります（3つ目のバグはまだ残っていて、4節で見つけます）。
 
 ```sh
 $ sober test kv2
@@ -251,9 +251,9 @@ ok   kv2.TestRoundTrip
 
 ## 3. カバレッジとミューテーションテスト — `--cover` と `--mutate`
 
-テストが全部通っても、テストが十分とは限りません。2 つの物差しで測ります。
+テストが全部通っても、テストが十分とは限りません。2つの基準で測ります。
 
-まず `--cover` で、どの分岐をどのテストも通っていないかを見ます（出力では分岐の片側ずつを arm と呼びます）。
+まず `--cover` で、どの分岐をどのテストも通っていないかを見ます（出力では分岐の片側ずつをarmと呼びます）。
 
 ```sh
 $ sober test kv2 --cover
@@ -277,9 +277,9 @@ cover: kv2 69.2% of 26 arms (fn 4/6)
 3 passed, 0 failed
 ```
 
-`kv.sober:26:9` の `then` は、`Parse` が `=` の無い片を見つけて `BadPiece` を返す分岐です。どのテストもエラーの経路を通っていません。`CountAll` と `count` は 5 節で使うのでまだ呼ばれていません。`catch` の腕のうち `string(...) catch ""` の 2 つは、正しい UTF-8 しか作らないので通りません（全部を 100% にする必要はありません）。
+`kv.sober:26:9` の `then` は、`Parse` が `=` の無い片を見つけて `BadPiece` を返す分岐です。どのテストもエラーの経路を通っていません。`CountAll` と `count` は5節で使うのでまだ呼ばれていません。`catch` の分岐のうち `string(...) catch ""` の2つは、正しいUTF-8しか作らないので通りません（全部を100%にする必要はありません）。
 
-次に `--mutate` で、テストが通っている所を本当に見ているかを測ります。コードを少しずつ壊した版（ミュータント）を全部 1 本の実行ファイルに入れ、ミュータントごとにそのミュータントに届いたテストを走らせます。どれかのテストが落ちれば kill、全部通れば生存です。
+次に `--mutate` で、テストが通っている所を本当に見ているかを測ります。コードを少しずつ壊した版（ミュータント）を全部1本の実行ファイルに入れ、ミュータントごとにそのミュータントに届いたテストを走らせます。どれかのテストが落ちればkill、全部通れば生存です。
 
 ```sh
 $ sober test kv2 --mutate
@@ -297,7 +297,7 @@ mutate: kv2 94.4% killed (34 of 36 reached) · 0 unreached · 2 timeout
 3 passed, 0 failed
 ```
 
-割合は「kill した数 / テストが届いた数」です。生き残ったミュータントが「通っているのに見ていない」所です。ここでは 2 体とも `BadPiece` を返す条件（`26:9` の条件を偽に固定・`26:14` の `>=` を `>` に）で、壊しても誰も気づきません。カバレッジで通っていなかった分岐と同じ穴です。
+割合は「killした数 / テストが届いた数」です。生き残ったミュータントが「通っているのに見ていない」所です。ここでは2体とも `BadPiece` を返す条件（`26:9` の条件を偽に固定・`26:14` の `>=` を `>` に）で、壊しても誰も気づきません。カバレッジで通っていなかった分岐と同じ穴です。
 
 穴を埋めるテストを足します。
 
@@ -336,13 +336,13 @@ mutate: kv3 100.0% killed (36 of 36 reached) · 0 unreached · 2 timeout
 4 passed, 0 failed
 ```
 
-2 体とも kill に変わりました。`timeout` は、ミュータントでループが終わらなくなり期限で止めた数です（kill に数えます）。
+2体ともkillに変わりました。`timeout` は、ミュータントでループが終わらなくなり期限で止めた数です（killに数えます）。
 
-生き残ったミュータントの中には、どう書いても殺せないもの（元と同じ振る舞いになる等価ミュータント）もあります。そのときは `<package>/testdata/mutate.ignore` に `--mutate-out=<file>` の行の先頭 2 欄（位置とミュータント）を貼ると、走らせずに数から外せます。
+生き残ったミュータントの中には、どう書いても殺せないもの（元と同じ振る舞いになる等価ミュータント）もあります。そのときは `<package>/testdata/mutate.ignore` に `--mutate-out=<file>` の行の先頭の2つのフィールド（位置とミュータント）を貼ると、走らせずに数から外せます。
 
 ## 4. ファジングで穴を埋める — `sober fuzz`
 
-`Format` が作った行だけでなく、どんな行でも `Parse` が panic しないこと、をプロパティにします。
+`Format` が作った行だけでなく、どんな行でも `Parse` がpanicしないこと、をプロパティにします。
 
 ```sober
 // examples/guide/kv/kv_test.sober（抜粋）
@@ -358,7 +358,7 @@ func TestAnyLine() {
 }
 ```
 
-`sober test` はこのプロパティを 100 回試します。直す前の `kvbug` でも 100 回では見つかりません。`sober fuzz` は同じプロパティを期限まで回し続け、カバレッジを手がかりに新しい分岐を開く入力を育てます。
+`sober test` はこのプロパティを100回試します。直す前の `kvbug` でも100回では見つかりません。`sober fuzz` は同じプロパティを期限まで回し続け、カバレッジを手がかりに新しい分岐を開く入力を育てます。
 
 ```sh
 $ sober fuzz kvbug --run TestAnyLine --time 5s
@@ -374,7 +374,7 @@ quick: wrote kvbug/testdata/fuzz/TestAnyLine/0-6285beb84c4f3dee
 panic: quick.Crashed{exit: 101} at std/quick/fuzz.sober:232:10
 ```
 
-`"\\"`（`\` 1 文字の行）で `field` が範囲の外を読んでいました。`Format` が作る行は最後が 1 つだけの `\` にならないので、往復のプロパティでは届かない入力です。見つけた反例はシュリンクして `testdata/fuzz/TestAnyLine/` に書かれます。以後は普通の `sober test` が試行の前にこのファイルを再生するので、同じバグが戻ってくれば毎回落ちます。
+`"\\"`（`\` 1文字の行）で `field` が範囲の外を読んでいました。`Format` が作る行は最後が1つだけの `\` にならないので、往復のプロパティでは届かない入力です。見つけた反例はシュリンクして `testdata/fuzz/TestAnyLine/` に書かれます。以後は普通の `sober test` が試行の前にこのファイルを再生するので、同じバグが戻ってくれば毎回落ちます。
 
 ```sh
 $ sober test kvbug --run TestAnyLine
@@ -412,7 +412,7 @@ mutate: kv 100.0% killed (40 of 40 reached) · 0 unreached · 3 timeout
 
 ## 5. 並行のテスト — `--sched`
 
-`CountAll` は行を task で並べて数えます。並べた結果が 1 行ずつ数えた結果と同じ、をプロパティにします。
+`CountAll` は行をtaskで並べて数えます。並べた結果が1行ずつ数えた結果と同じ、をプロパティにします。
 
 ```sober
 // examples/guide/kv/kv_test.sober（抜粋）
@@ -432,7 +432,7 @@ func TestCountAll() {
 }
 ```
 
-`sober fuzz --sched` は試行ごとに task のスケジュール（どの順に走らせるか）もシードで振ります。順番に依る失敗が見つかれば、そのシードで何度でも同じ交互配置を再現できます。
+`sober fuzz --sched` は試行ごとにtaskのスケジュール（どの順に走らせるか）もシードで振ります。順番に依る失敗が見つかれば、そのシードで何度でも同じ交互配置を再現できます。
 
 ```sh
 $ sober fuzz kv --run TestCountAll --sched --time 2s
@@ -444,13 +444,13 @@ $ sober fuzz kv --run TestCountAll --sched --time 2s
 quick: fuzz: <n> trials, no failure (check 0, seed 45306338)
 ```
 
-試行の数は期限に依るので、ここでは `<n>` と書いています。Sober の task は可変の状態を共有しないので、この `CountAll` に順番に依る失敗はありません。チャネルや共有の表を使うコードで効く道具です。task を使うテストも、`SOBER_SCHED_SEED` を固定すれば `sober test` の結果はワーカー数に依らず同じです。
+試行の数は期限に依るので、ここでは `<n>` と書いています。Soberのtaskは可変の状態を共有しないので、この `CountAll` に順番に依る失敗はありません。チャネルや共有の表を使うコードで効く道具です。taskを使うテストも、`SOBER_SCHED_SEED` を固定すれば `sober test` の結果はワーカー数に依らず同じです。
 
 ## 6. 保存するたびに — `sober watch`
 
-`sober watch <entry>`（entry は `kv` を使うプログラムの main package）は、ファイルを保存するたびに check をやり直し、裏で build とテストを走らせて結果を覚えます。通った package の `sober test` は建てずに走らせずに覚えた結果を返します（数 ms）。自分で `sober test` を打つ頃には、テストがもう終わっています。
+`sober watch <entry>`（entryは `kv` を使うプログラムのmain package）は、ファイルを保存するたびにcheckをやり直し、裏でbuildとテストを走らせて結果を覚えます。通ったpackageの `sober test` はビルドせずに走らせずに覚えた結果を返します（数ms）。自分で `sober test` を打つ頃には、テストがもう終わっています。
 
-watch は立てたら忘れてかまいません。普段どおり `sober check` / `build` / `test` を打てば、温めた結果に当たって速く返ります。watch の出力を見るのは、不具合を疑ったときだけで足ります。
+watchは立てたら忘れてかまいません。普段どおり `sober check` / `build` / `test` を打てば、温めた結果に当たって速く返ります。watchの出力を見るのは、不具合を疑ったときだけで足ります。
 
 ```sh
 sober watch app
@@ -458,9 +458,9 @@ sober watch app
 
 （この出力は時刻に依るので、ここでは載せません。）
 
-## 7. 本物の代わりに double を読む — `@doubles`
+## 7. 本物の代わりにdoubleを読む — `@doubles`
 
-`kv` を使って設定を読み書きする package `settings` を考えます。設定はファイルに 1 行ずつ置き、ファイルの読み書きは package `kvstore` が受け持ちます。
+`kv` を使って設定を読み書きするpackage `settings` を考えます。設定はファイルに1行ずつ置き、ファイルの読み書きはpackage `kvstore` が受け持ちます。
 
 ```sober
 // examples/guide/kvstore/kvstore.sober
@@ -548,9 +548,9 @@ func Set(d kvstore.Dir, name string, key string, value string) error? {
 }
 ```
 
-`settings` は `kvstore` を直に import して呼んでいます。interface もコンストラクタへの注入もありません。それでも `settings` のテストはディスクに触らずに書けます。テストのビルドの中でだけ、`kvstore` を代役（double）に丸ごと差し替えるからです。
+`settings` は `kvstore` を直にimportして呼んでいます。interfaceもコンストラクタへの注入もありません。それでも `settings` のテストはディスクに触らずに書けます。テストのビルドの中でだけ、`kvstore` を代役（double）に丸ごと差し替えるからです。
 
-double は差し替える相手の下のディレクトリに置き、ファイル名は `_double.sober` で終えます。package 節の前の `@replaces` で相手を名乗り、package 名は相手と同じにします。
+doubleは差し替える相手の下のディレクトリに置き、ファイル名は `_double.sober` で終えます。package節の前の `@replaces` で相手を名乗り、package名は相手と同じにします。
 
 ```sober
 // examples/guide/kvstore/mem/mem_double.sober
@@ -610,9 +610,9 @@ func Store(d Dir, name string, line string) error? {
 }
 ```
 
-ファイルの代わりに、std/testing/cell の置き場 `Files` に書いた行を貯めます。置き場はテストのプロセスに 1 つで、テストごとに空から始まります。`Empty` と `Failing` は double にだけある名前で、テストが状態の初期値と書きの誤りの注入を選ぶ口です。
+ファイルの代わりに、std/testing/cellの格納場所 `Files` に書いた行を貯めます。格納場所はテストのプロセスに1つで、テストごとに空から始まります。`Empty` と `Failing` はdoubleにだけある名前で、テストが状態の初期値と書きの誤りの注入を選ぶAPIです。
 
-テストの package は、`_test.sober` の package 節の前の `@doubles` で使う double を名指します。
+テストのpackageは、`_test.sober` のpackage節の前の `@doubles` で使うdoubleを明示します。
 
 ```sober
 // examples/guide/settings/settings_test.sober
@@ -657,7 +657,7 @@ ok   settings.TestDenied
 3 passed, 0 failed
 ```
 
-そのテストのビルドでは、`kvstore` を import するファイルが全部 double を読みます（`settings.sober` も）。本番の build と check は `_double.sober` を読みません。どのテストがどの double で走るかは `--wiring` で一覧できます（建てるだけで走らせません）。
+そのテストのビルドでは、`kvstore` をimportするファイルが全部doubleを読みます（`settings.sober` も）。本番のbuildとcheckは `_double.sober` を読みません。どのテストがどのdoubleで走るかは `--wiring` で一覧できます（ビルドするだけで走らせません）。
 
 ```sh
 $ sober test settings --wiring
@@ -669,39 +669,39 @@ $ sober test settings --wiring
 settings: kvstore <= kvstore/mem
 ```
 
-double は本物と食い違えません。double と本物の両方にある名前は、関数の署名・型の欄の型・`@errors` が照合され、double の効果（analyzer が導く）は本物の `@effects` の内側でなければなりません。本物に無い効果（panic・本物が io を持たないのに io）を持つ double は拒否されます。本物にあって double に無い名前は書かなくてかまいません。テストが使う分だけ書けば足ります。
+doubleは本物と食い違えません。doubleと本物の両方にある名前は、関数の署名・型のフィールドの型・`@errors` が照合され、doubleのエフェクト（analyzerが導く）は本物の `@effects` の内側でなければなりません。本物に無いエフェクト（panic・本物がioを持たないのにio）を持つdoubleは拒否されます。本物にあってdoubleに無い名前は書かなくてかまいません。テストが使う分だけ書けば足ります。
 
 ## 8. その儀式は要らない
 
 他の言語で `settings` をディスクなしでテストするには、たいてい次の手順を踏みます。
 
-1. `kvstore` の操作を interface（`Store`）に切り出す
-2. 本番の実装と、テスト用の実装（モック）を 1 つずつ書く
-3. `settings` の関数かコンストラクタに `Store` の引数を足し、呼ぶ側全部で本番の実装を渡す（DI コンテナを使うこともある）
-4. 層を分ける規約（「ドメインはインフラに依存しない」）を守るため、依存の向きを interface で逆にする
+1. `kvstore` の操作をinterface（`Store`）に切り出す
+2. 本番の実装と、テスト用の実装（モック）を1つずつ書く
+3. `settings` の関数かコンストラクタに `Store` の引数を足し、呼ぶ側全部で本番の実装を渡す（DIコンテナを使うこともある）
+4. 層を分ける規約（「ドメインはインフラに依存しない」）を守るため、依存の向きをinterfaceで逆にする
 
-Sober ではどれも要りません。差し替えはテストのビルドの中の import の解決先の付け替えで済み（7 節）、本番のコードは本物を直に呼ぶ形のままです。差し替えのための interface も引数も層も持ち込みません。
+Soberではどれも要りません。差し替えはテストのビルドの中のimportの解決先の付け替えで済み（7節）、本番のコードは本物を直に呼ぶ形のままです。差し替えのためのinterfaceも引数も層も持ち込みません。
 
-モックが本物と乖離する心配は、契約の照合（署名・型・効果）が塞ぎます。依存の向きは import のグラフに全部出ていて、閉じた世界の中で静的に見えます。
+モックが本物と乖離する心配は、契約の照合（署名・型・エフェクト）が塞ぎます。依存の向きはimportのグラフに全部出ていて、閉じた世界の中で静的に見えます。
 
 やらないことの一覧:
 
-- 実装が 1 つしかない interface を、テストのために作らない（振る舞いを差し替える必要が本番にあるときは [抽象化](abstraction.ja.md) の関数値と struct で）
+- 実装が1つしかないinterfaceを、テストのために作らない（振る舞いを差し替える必要が本番にあるときは [抽象化](abstraction.ja.md) の関数値とstructで）
 - テストのために関数の引数を増やさない
-- モックのライブラリや DI コンテナを使わない
+- モックのライブラリやDIコンテナを使わない
 - 差し替えのためだけに層を分けない
 
-いまは std の package（時計・ネットワーク・ファイル）を直に差し替える口はありません。std を相手にした差し替えは、自分の package で包んでその package を差し替えます（この節の `kvstore` の形）。
+いまはstdのpackage（時計・ネットワーク・ファイル）を直に差し替える仕組みはありません。stdを相手にした差し替えは、自分のpackageで包んでそのpackageを差し替えます（この節の `kvstore` の形）。
 
 ## まとめ
 
 1. 単発の例を `assert` で書く
-2. プロパティを std/quick で書く（反例は最小形で出て、シード 1 つで再現できる）
+2. プロパティをstd/quickで書く（反例は最小形で出て、シード1つで再現できる）
 3. `--cover` で通っていない分岐を、`--mutate` で通っているのに見ていない所を見つける
 4. `sober fuzz` でファジングし、見つけた反例は `testdata/fuzz` に残って回帰テストになる
-5. task を使うコードは `--sched` でスケジュールも振る
-6. 依存は `@doubles` でテストのビルドの中だけ double に差し替える（interface も注入も要らない）
+5. taskを使うコードは `--sched` でスケジュールも振る
+6. 依存は `@doubles` でテストのビルドの中だけdoubleに差し替える（interfaceも注入も要らない）
 
-どの段でも、同じコードと同じシードなら結果は毎回同じでした（2 節の反例・3 節の割合・4 節の fuzz が見つけた試行）。だから失敗はシード 1 つで再現でき、通った結果は覚えておいて再生でき（6 節）、ミュータントごとの判定も 1 回走らせれば決まります。
+どの段階でも、同じコードと同じシードなら結果は毎回同じでした（2節の反例・3節の割合・4節のfuzzが見つけた試行）。だから失敗はシード1つで再現でき、通った結果は覚えておいて再生でき（6節）、ミュータントごとの判定も1回走らせれば決まります。
 
-正確な定義は [言語仕様 13 章](../spec/13-testing.ja.md)、決定の経緯は [決定の記録](../language.md) の 35・39・40・41 節にあります。
+正確な定義は [言語仕様13章](../spec/13-testing.ja.md)、決定の経緯は [決定の記録](../language.md) の35・39・40・41節にあります。

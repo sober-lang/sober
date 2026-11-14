@@ -1,14 +1,14 @@
 package lower
 
-// 規則順: build の最後で関数とグローバルの鎖を規則の鍵の順に繋ぎ直す（記録の番地は動かさない — 番号は
-// 番地の昇順の位置のまま〔step 1 の recIds〕）。並びが発見順（作業列の順）に依らなくなるので、直の道と分割の道が同じ並びを見る。
-// 鍵（語の列の辞書式 — 語は符号つきで比べる。名前は 1 バイト 1 語）:
+// 規則順: buildの最後で関数とグローバルのチェーンを規則の鍵の順に繋ぎ直す（記録の番地は動かさない — 番号は
+// 番地の昇順の位置のまま〔step 1のrecIds〕）。並びが発見順（作業列の順）に依らなくなるので、直のパスと分割のパスが同じ並びを見る。
+// 鍵（ワードの列の辞書式 — ワードは符号つきで比べる。名前は1バイト1ワード）:
 // - buildPre までに作った記録（入口より前 — 発見順に依らない）: [0, 番地]
 // - 名前つきの関数: [1, 関数表の添字, 0]・インスタンス: [1, ジェネリック関数の表の添字, 1, 名前（型引数の綴り）, 0]
 // - ラムダ / 子の関数（st.sk の SK_LAM / SK_KID）: 持ち主の鍵 ‖ [2, 種類, 持ち主の中の序数]
 // - FnInfo の無い記録（rt の関数 — need* が下ろしの途中で作る）: [3, 名前]
-// - グローバル: buildPre まで [0, 番地]・文字列の rodata（str.N）[2, 中身の語…, 語数]・他 [1, 名前]
-// 鍵が等しい 2 つは鎖の入力の順に依って並ぶ（発見順が漏れる）— SOBER_RULEORD_STATS=1 の証人 `#ruleord … dupf= dupg=` と CHAINREV ≡ 既定の網で名指しする
+// - グローバル: buildPreまで [0, 番地]・文字列のrodata（str.N）[2, 中身のワード…, ワード数]・他 [1, 名前]
+// 鍵が等しい2つはチェーンの入力の順に依って並ぶ（発見順が漏れる）— SOBER_RULEORD_STATS=1の証人 `#ruleord … dupf= dupg=` とCHAINREV ≡ 既定の検査で特定する
 // 棄てた案: インスタンス = 最小の持ち主 + 序数（持ち主の記録が無い）・rt = NEED の番号順（記録の数と順の表が要る）・str = 最小の持ち主 + 序数（重複除去を跨ぐ）
 
 import "desugar"
@@ -19,11 +19,11 @@ import "std/table"
 type RoCx struct {
     ix XSkIdx
     byName map[string]int  // 関数の名前（"pkg_path.Name"）→ 関数表の添字（名前つきの関数と、インスタンスの名前の '[' より前）
-    preF int               // buildPre の終わりの関数の鎖の尾（これ以下の記録は [0, 番地]）
+    preF int               // buildPreの終わりの関数のチェーンの尾（これ以下の記録は [0, 番地]）
     preG int
 }
 
-// 関数とグローバルの鎖を規則の鍵の順に繋ぎ直す
+// 関数とグローバルのチェーンを規則の鍵の順に繋ぎ直す
 func ruleOrder(st mut St, preF int, preG int) {
     mut byName := mut map[string]int{}
     for i <- iter.Range(0, nfn(mut st)) {
@@ -67,8 +67,8 @@ func ruleOrder(st mut St, preF int, preG int) {
         }
         st.gtail = gs[gord[len(gord) - 1]]
     }
-    // 名前の通し番号（lambda#N・kid#N・str.N）と panic / spawn の点の番号を規則順で付け直す（step 2b — 名前は番号の集合はそのまま・鎖の順に
-    // 小さい番号から）。開発の口 SOBER_RULEORD_NORENUM=1 = 並びだけ（step 2a の形 — 写像同値の照合器の旧の側）
+    // 名前の通し番号（lambda#N・kid#N・str.N）とpanic / spawnの点の番号を規則順で付け直す（step 2b — 名前は番号の集合はそのまま・チェーンの順に
+    // 小さい番号から）。開発のオプションSOBER_RULEORD_NORENUM=1 = 並びだけ（step 2aの形 — 写像同値の照合器の旧の側）
     mut pw := 0
     if lsEnvInt("SOBER_RULEORD_NORENUM") <= 0 {
         roRenum(mut st, true, "lambda#")
@@ -83,10 +83,10 @@ func ruleOrder(st mut St, preF int, preG int) {
     }
 }
 
-// panic の点（札 CT_PSITE — 0 起点）と spawn の点（札 CT_SITE — 1 起点・下 2 ビットは印）の番号を、持ち主（st.sk の SK_PSITE /
-// SK_SITE — 下ろしていた関数）の鎖の順 × 持ち主の中の作った順で振り直す（発見順に依らない）。定数の命令は作った点で控えた表（st.ptIns /
-// st.stIns — lsEv・分割の道は lsReplay の 2 周目）から引く（全命令を歩かない）。番号で引く表も同じ置換で並べ替える: 点の表 st.psites・
-// ラベルの表 st.plabs・st.sk の SK_PSITE / SK_SITE（k 番目の記録 = 点 k の持ち主）。返り値 = 鎖に無い持ち主の点の数（証人 — 後ろに作った順で）
+// panicの点（札CT_PSITE — 0起点）とspawnの点（札CT_SITE — 1起点・下2ビットはマーク）の番号を、持ち主（st.skのSK_PSITE /
+// SK_SITE — 下ろしていた関数）のチェーンの順 × 持ち主の中の作った順で振り直す（発見順に依らない）。定数の命令は作った点で控えた表（st.ptIns /
+// st.stIns — lsEv・分割のパスはlsReplayの2周目）から引く（全命令を歩かない）。番号で引く表も同じ置換で並べ替える: 点の表st.psites・
+// ラベルの表st.plabs・st.skのSK_PSITE / SK_SITE（k番目の記録 = 点kの持ち主）。返り値 = チェーンに無い持ち主の点の数（証人 — 後ろに作った順で）
 func roPoints(st mut St) int {
     np := table.Len(mut st.psites) / 3
     ns := st.nsite
@@ -110,7 +110,7 @@ func roPoints(st mut St) int {
     if len(ownP) != np || len(ownS) != ns || table.Len(mut st.ptIns) != np || table.Len(mut st.stIns) != ns + 1 {
         panic(InvariantBroken{})
     }
-    // 持ち主の鎖の位置（鎖に無い持ち主は後ろ）
+    // 持ち主のチェーンの位置（チェーンに無い持ち主は後ろ）
     mut rank := mut map[int]int{}
     mut nf := 0
     mut f := st.fhead
@@ -176,7 +176,7 @@ func roPoints(st mut St) int {
             table.Set(mut st.psites, 3 * pp[o] + j, old[3 * o + j])
         }
     }
-    // ラベルの表は点の番号の降順の鎖に積み直す（作った順に頭へ積む形と同じ向き — 番号の昇順に積む）
+    // ラベルの表は点の番号の降順のチェーンに積み直す（作った順に頭へ積む形と同じ向き — 番号の昇順に積む）
     mut lab := mut []int{}
     xFill(mut lab, np, -1)
     mut x := st.plabs
@@ -210,7 +210,7 @@ func roPoints(st mut St) int {
     return miss
 }
 
-// 関数（fn）かグローバルの鎖のうち名前が pre ‖ 10 進の記録の番号を、鎖の順に小さい番号から振り直す（番号の集合は変えない —
+// 関数（fn）かグローバルのチェーンのうち名前がpre ‖ 10進の記録の番号を、チェーンの順に小さい番号から振り直す（番号の集合は変えない —
 // 後から作る記録の通し番号〔st.nlambda・st.nkid・st.nstr〕と重ならない）
 func roRenum(st mut St, fn bool, pre string) {
     pb := bytes(pre)
@@ -226,7 +226,7 @@ func roRenum(st mut St, fn bool, pre string) {
         }
         r = if fn { int(irFnNext(mut st, FnRef(r))) } else { xGlobNext(mut st, r) }
     }
-    // 番号の昇順（1 語の鍵で roSort）
+    // 番号の昇順（1ワードの鍵でroSort）
     mut ks := mut [][]int{}
     for k <- iter.Range(0, len(ns)) {
         ks = append(ks, []int{ns[k]})
@@ -301,7 +301,7 @@ func roFnKey(st mut St, c RoCx, r int) []int {
             return freeze(o)
         }
     }
-    // 名前つき / インスタンス / FnInfo の無い記録は名前で分ける（分割の道の結合はインスタンスに FnInfo を作らない — FnInfo に依らない）
+    // 名前つき / インスタンス / FnInfoの無い記録は名前で分ける（分割のパスの結合はインスタンスにFnInfoを作らない — FnInfoに依らない）
     mut nm := mut []byte{}
     nr := irFnName(mut st, FnRef(r))
     n := dat(mut st, nr)

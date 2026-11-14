@@ -1,6 +1,6 @@
 package main
 
-// 負例（load が拒否 — syntax.md 決定 13）: 型パターンの欄の束縛が subject のローカル束縛を隠す。以前は check が受理し build が拒否していた
+// 負例（loadが拒否 — syntax.md決定13）: 型パターンのフィールドの束縛がsubjectのローカル束縛を隠す。以前はcheckが受理しbuildが拒否していた
 
 type U union {
     A{s int}

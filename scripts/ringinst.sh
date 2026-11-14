@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
-# ringinst（ring の道の要求 1 件の命令の網）: reqinst は callgrind の下で走るので W1・epoll の道しか測れない（ring の受け・待ち・送りの値札が漏れる）。
-# こちらは bench/httparena/main.sober を今の木の stage2 で建て、W2（ring の道 — W1 は ring を作らない）で perf stat の instructions:u を
-# 起動から終了まで数え、keep-alive の 1 接続に要求を 1 本ずつ送る束 K1 / K2 の 2 本の差 ÷ (K2 − K1) =「命令/要求」を
-# bench/ratchet.txt の `ring/<題材> ireq <上限>` と照合する。要求 1 本ずつなので受け・待ち・送りの ring の道が要求ごとに 1 回ずつ乗る。
-# 同じ ELF の揺れ ±0.01 命令/要求（起動と終了は差で消える・暇なワーカーは ring の待ちで眠る）→ 余白は実測の最大 + 2。
-#   scripts/ringinst.sh         照合。越えたら赤 — 正当な増えなら実測 + 2 で引き直し、報告とコミットに明記して事後追認。0.5% 以上下がったら締め直しの note
-#   毎回、変異 61（ring の道の受けだけに ≈ 24 命令）で建てた ELF が pipeline の線で赤になることも確かめる（網の自己検査）
-# perf（PERF → PATH → /nix/store）・io_uring・CPU 3 つのどれかが無い箱では SKIP（緑）。
+# ringinst（io_uringのパスのリクエスト1件の命令の検査）: reqinstはcallgrindの下で走るのでW1・epollのパスしか測れない（ringの受け・待ち・送りのコストが漏れる）。
+# こちらはbench/httparena/main.soberを今の木のstage2でビルドし、W2（io_uringのパス — W1はringを作らない）で perf stat のinstructions:uを
+# 起動から終了まで数え、keep-aliveの1接続にリクエストを1本ずつ送るバッチK1 / K2の2本の差 ÷ (K2 − K1) =「命令/リクエスト」を
+# bench/ratchet.txtの `ring/<題材> ireq <上限>` と照合する。リクエスト1本ずつなので受け・待ち・送りのio_uringのパスがリクエストごとに1回ずつ乗る。
+# 同じELFの揺れ ±0.01命令/リクエスト（起動と終了は差で消える・暇なワーカーはringの待ちでスリープする）→ 余白は実測の最大 + 2。
+#   scripts/ringinst.sh         照合。越えたら赤 — 正当な増えなら実測 + 2で再設定し、報告とコミットに明記して事後承認。0.5%以上下がったら仕上げ直しのnote
+#   毎回、ミュータント61（io_uringのパスの受けだけに ≈ 24命令）でビルドしたELFがpipelineのしきい値で赤になることも確認する（自己検査）
+# perf（PERF → PATH → /nix/store）・io_uring・CPU 3つのどれかが無い実行環境ではSKIP（緑）。
 set -uo pipefail
 export SOBER_HASH_SEED=0
 cd "$(dirname "$0")/.."
 R=$PWD
+# STAGE2の明示が無ければstage2を今のcompiler/ とstd/ に合わせる（stage2はstdを焼き込む — 古いstage2でビルドすると古いstdのサーバができる）
+[ -n "${STAGE2:-}" ] || scripts/stage2.sh --quiet || exit 1
 S2=${STAGE2:-out/stage2/sober2}
 case "$S2" in /*) ;; *) S2=$R/$S2 ;; esac
 PERF=${PERF:-$(command -v perf || ls -d /nix/store/*-perf-linux-*/bin/perf 2> /dev/null | sort -V | tail -n 1)}
@@ -30,7 +32,7 @@ trap 'kill $(jobs -p) 2> /dev/null; rm -rf "$W"' EXIT
 K1=1000
 K2=21000
 
-# total <srv> <題材> <束の数> → 起動から終了までの instructions:u
+# total <srv> <題材> <バッチの数> → 起動から終了までのinstructions:u
 total() {
     local srv=$1 subj=$2 K=$3 o=$W/run pp port i
     SOBER_WORKERS=2 SOBER_MDWE=0 SOBER_IO_TRACE=1 TLS_CERT=/nonexistent TLS_KEY=/nonexistent \
@@ -54,7 +56,7 @@ total() {
     awk -F, '/instructions/ { print $1; exit }' "$o.perf"
 }
 
-# ireq <srv> <題材> → 命令/要求（小数 1 桁）
+# ireq <srv> <題材> → 命令/リクエスト（小数1桁）
 ireq() {
     local a b
     a=$(total "$1" "$2" $K1) || return $?
@@ -81,7 +83,7 @@ for subj in "${subjs[@]}"; do
         echo "ok: ring/$subj ireq = $v ≤ $lim"
     fi
 done
-# 網の自己検査: 変異 61 の ELF が最初の題材の線で赤になる
+# 自己検査: ミュータント61のELFが最初の題材のしきい値で赤になる
 "$S2" build bench/httparena/main.sober --rt-mutant=61 -o "$W/srv61" > "$W/build61.log" 2>&1 || { echo "ringinst: FAIL build（変異 61）: $(tail -c 400 "$W/build61.log")"; exit 1; }
 subj=${subjs[0]}
 lim=$(awk -v k="ring/$subj" '$1 == k && $2 == "ireq" { print $3; exit }' bench/ratchet.txt)

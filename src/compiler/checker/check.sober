@@ -5,15 +5,15 @@ import "std/table"
 // typecheck（Checker.lean）の実行形 = 汎用の駆動部（手書き — このファイル）+ 1 フレームの遷移 tcStep（抽出物 — tc_gen.sober。
 // 元 = lean/FeatherweightSober/TcStep.lean・定理 typecheck_eq_evalRule で typecheck と結ぶ）。
 // 駆動部は TcStep.lean の evalRule の燃料なし版を明示スタックで回す（式の入れ子の深さで再帰の実効上限を踏まないため）:
-// フレームの段 ph で tcStep を呼び、Act.sub なら子のフレームを積む・Act.ret なら降ろして親の r_{ph+1} に置き、親の段を 1 進める。
-// 段 3 で Act.sub が来たら none（evalRule と同じ）。
+// フレームのフェーズphでtcStepを呼び、Act.subなら子のフレームを積む・Act.retなら降ろして親のr_{ph+1} に置き、親のフェーズを1進める。
+// フェーズ3でAct.subが来たらnone（evalRuleと同じ）。
 //
 // 引数は Lean と同じ (Δ, f, b, d, Γ, Λ, e)。Ξ / Ψ はソース項の検査では常に [] なので持たない（chanV / loc は境界の語彙に無い）。
 
-// 作業の枠: [式, 段, b, d, Γ, Λ, r1, r2, r3]（r = 評価し終えた子の結果。まだのもの・none は -1）
+// 作業の枠: [式, フェーズ, b, d, Γ, Λ, r1, r2, r3]（r = 評価し終えた子の結果。まだのもの・noneは -1）
 const CF = 9
 
-// ── 読み口（TcStep.lean の ctxGet / ctxCons / lctxTy … の手書きの shim — 表現に依存する）──
+// ── 読み出し用のインターフェース（TcStep.leanのctxGet / ctxCons / lctxTy … の手書きのshim — 表現に依存する）──
 // 文脈 Γ = cons [ty, next]、ラベル文脈 Λ = cons [ty, k, next]（末尾 -1）・関数表 Δ = st.defs
 
 // Γ のセル [ty, next]
@@ -163,7 +163,7 @@ func tcRun(st mut S, e0 int, b0 int, d0 int, g0 int, l0 int) int {
     return -1
 }
 
-// フレーム fr を (e, 段 0, b, d, Γ, Λ, r1〜r3 = none) で初期化する
+// フレームfrを (e, フェーズ0, b, d, Γ, Λ, r1〜r3 = none) で初期化する
 func tcPush(st mut S, fr int, e int, b int, d int, g int, l int) {
     table.Set(mut st.h, fr, e)
     table.Set(mut st.h, fr + 1, 0)

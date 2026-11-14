@@ -1,6 +1,6 @@
 package main
 
-// task.Local のゼロ値は何も指さない（同一性の族 — NewLocal だけが作る）
+// task.Localのゼロ値は何も指さない（同一性の種類 — NewLocalだけが作る）
 
 import "std/task"
 import "std/pool"

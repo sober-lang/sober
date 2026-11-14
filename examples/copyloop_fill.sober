@@ -2,7 +2,7 @@ package main
 
 // 定数の詰めの一括化（lower/copyloop.sober の (C) と for の (Z)）: `while i < n { xs = append(xs, 0); i += 1 }` と
 // `for _ <- iter.Range(lo, hi) { xs = append(xs, c) }`（c = 整数の字面・`-字面`・`字面 - 字面`・true / false）を一括の伸長 + 詰めに。
-// 空の区間・逆向きの区間は 1 つも積まない。mut 仮引数への詰め・先端でない列（全コピーの道）・byte / int / bool の要素
+// 空の区間・逆向きの区間は1つも積まない。mut仮引数への詰め・先端でない列（全コピーのパス）・byte / int / boolの要素
 
 import "std/iter"
 
@@ -28,7 +28,7 @@ func main() {
     zeroFill(mut a, 5)
     zeroFill(mut a, 0)
     println("a ${len(a)} ${a[0]} ${a[5]} ${sum(a)}")
-    // 2 本を交互に伸ばす（先端でない列 — 全コピーの道）
+    // 2本を交互に伸ばす（先端でない列 — 全コピーのパス）
     mut p := mut []int{1}
     mut q := mut []int{2}
     for k <- iter.Range(0, 3) {

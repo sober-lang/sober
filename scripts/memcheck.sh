@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# memcheck（メモリの上界の網）: `sober build --mem-report` の main.main の上界（H = region の論理バイト・S = スタック）と、
-# rt の変異 39（`--rt-mutant=39`）の実測を照合する。実測 = region を捨てる点の手前と exit で Σ_深度 (bump − スロットの先頭) の最大を標本・
-# main の前に main を呼ぶ rsp の下を模様で塗り、main が返った直後に最も低く書き換わった語を数える — stderr の `memhw <最大> <入口の Σ> <スタック>`。
-# 比べるのは 最大 − 入口の Σ ≤ H と スタック ≤ S（上界が top なら見ない・スタック = -1 は数えていない道〔panic〕・塗りの上端より浅い使用は
+# memcheck（メモリの上界の検査）: `sober build --mem-report` のmain.mainの上界（H = regionの論理バイト・S = スタック）と、
+# rtのミュータント39（`--rt-mutant=39`）の実測を照合する。実測 = regionを捨てる点の手前とexitで Σ_深度 (bump − スロットの先頭) の最大を標本・
+# mainの前にmainを呼ぶrspの下を模様で塗り、mainが返った直後に最も低く書き換わったワードを数える — stderrの `memhw <最大> <入口の Σ> <スタック>`。
+# 比べるのは 最大 − 入口の Σ ≤ H と スタック ≤ S（上界がtopなら見ない・スタック = -1は数えていないパス〔panic〕・塗りの上端より浅い使用は
 # MEMCHECK_SFLOOR と読めるのでそれ以下は判定しない）。
-# 題材と上界は黄金（testdata/memcheck/expect.txt — `<題材> H=<バイト|top> S=<バイト|top>`）: examples のうち H が数字で出るものの全部
-# + testdata/memcheck/ の手組み（写し・反復の region — 上界が top でもよい: 変異が偽の数字を出したときに実測が越える網）。
-# 上界の数字が動けば赤（rt / std の変更が上界の退行として見える）。数字の出る例が増えた・減ったときは --regen（減るのは解析か rt / std の退行 — 理由を確かめてから）。
-#   scripts/memcheck.sh            照合（黄金 + 実測 ≤ 上界 + 緩さの分布）
-#   scripts/memcheck.sh --regen    黄金を作り直す
-#   scripts/memcheck.sh --mut      網の確かめ: 解析の変異 8 本（SOBER_MEMREP_MUT=1..8 — memrep.sober の mrMut）でそれぞれ少なくとも 1 題材が赤になること
+# 題材と上界はゴールデン（testdata/memcheck/expect.txt — `<題材> H=<バイト|top> S=<バイト|top>`）: examplesのうちHが数字で出るものの全部
+# + testdata/memcheck/ の手組み（コピー・反復のregion — 上界がtopでもよい: ミュータントが偽の数字を出したときに実測が越える検査）。
+# 上界の数字が動けば赤（rt / stdの変更が上界の退行として見える）。数字の出る例が増えた・減ったときは --regen（減るのは解析かrt / stdの退行 — 理由を確認してから）。
+#   scripts/memcheck.sh            照合（ゴールデン + 実測 ≤ 上界 + 緩さの分布）
+#   scripts/memcheck.sh --regen    ゴールデンを作り直す
+#   scripts/memcheck.sh --mut      検査の確認: 解析のミュータント8本（SOBER_MEMREP_MUT=1..8 — memrep.soberのmrMut）でそれぞれ少なくとも1題材が赤になること
 set -uo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$PWD
@@ -29,7 +29,7 @@ bounds() {
         $1 == "stack" && $2 == "main.main" { s = substr($3, 3) }
         END { print (h == "" ? "-" : h), (s == "" ? "-" : s) }'
 }
-# 実測: `<最大 − 入口の Σ> <スタック>`（memhw の行が無ければ `NA NA`）。$1 = 題材 $2 = 置き場
+# 実測: `<最大 − 入口の Σ> <スタック>`（memhwの行が無ければ `NA NA`）。$1 = 題材 $2 = 配置先
 measure() {
     local d=$2 inp=/dev/null
     mkdir -p "$d"
@@ -60,7 +60,7 @@ fi
 
 [ -s "$GOLD" ] || { echo "memcheck: FAIL missing $GOLD (scripts/memcheck.sh --regen)"; exit 1; }
 awk '{ print $1 }' "$GOLD" > "$W/list"
-# 実測は解析の変異と独立（同じ ELF）— 1 回だけ取る
+# 実測は解析のミュータントと独立（同じELF）— 1回だけ取る
 xargs -P "$J" -I{} bash -c 'echo "{} $(measure {} "$W/m/{}")"' < "$W/list" | sort > "$W/meas"
 
 if [ "${1:-}" = --mut ]; then

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # doclead（gates）: 宣言の doc コメントが宣言自身の名前で始まらないこと（src/compiler・src/std・examples）。宣言と doc の見つけ方は
-# `sober outline` と同じ（doc = 宣言の直前の `//` の行の最初の段落）。判定は scripts/doclead.ts。負例 1 本（名前で始まる doc が名指しされる）
+# `sober outline` と同じ（doc = 宣言の直前の `//` の行の最初の段落）。判定はscripts/doclead.ts。負例1本（名前で始まるdocが特定される）
 set -uo pipefail
 cd "$(dirname "$0")/.."
 scripts/stage2.sh --quiet || exit 1

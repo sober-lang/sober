@@ -1,8 +1,8 @@
 package main
 
 // jsonapi（Web コア bench ①）: 注文の API の中身を HTTP 抜きで回す。1 行 1 リクエストの JSON（NDJSON — bench/jsonapi/gen）を読み、
-// 行ごとに parse → 検証（必須欄・型・値域・通貨）→ 小計・割引・税 → レスポンスの JSON の直列化。
-// 出力 = 件数の内訳・通貨ごとの total の合計・note のバイト数の合計・全レスポンスの FNV-1a 64（Go / Rust の双子とバイト一致）
+// 行ごとにparse → 検証（必須フィールド・型・値域・通貨）→ 小計・割引・税 → レスポンスのJSONの直列化。
+// 出力 = 件数の内訳・通貨ごとのtotalの合計・noteのバイト数の合計・全レスポンスのFNV-1a 64（Go / Rustの比較用の実装とバイト一致）
 
 import "std/io"
 import "std/iter"

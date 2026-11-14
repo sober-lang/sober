@@ -4,7 +4,7 @@
 
 `import "std/tls"`
 
-TLS 1.3 のサーバ（RFC 9846 — X25519・AES-128-GCM / ChaCha20-Poly1305・RSA-PSS の証明書・resumption / 0-RTT なし）。tls.Serve(addr, cfg, k) が net.Serve を包み、handshake が済んだ接続だけを k に渡す（handshake 中の接続を利用者に触らせない）。tls.Conn は net.Conn と同じ顔の同一性の型（写せない・外へ出せない・give: で渡せない）で、tls.Recv / tls.Send が net.Recv / net.Send と同じ形。net.Conn と顔が違う唯一の点: tls.Recv を break で途中で抜けると、その接続の読みは終わる（次の tls.Recv は Closed — 切片に残った record を持ち越さない）。誤りは粗い 3 ラベル（HandshakeFailed〔alert の種は欄〕・BadRecord・Closed）。信頼の起点の値 Roots（ParseRoots が作る — 私的 PKI の CA を足すとき std/http/client の Policy の extraRoots: に渡す）もここに住む
+TLS 1.3 のサーバ（RFC 9846 — X25519・AES-128-GCM / ChaCha20-Poly1305・RSA-PSS の証明書・resumption / 0-RTT なし）。tls.Serve(addr, cfg, k) が net.Serve を包み、handshake が済んだ接続だけを k に渡す（handshake 中の接続を利用者に触らせない）。tls.Connはnet.Connと同じ顔の同一性の型（コピーできない・外へ出せない・give: で渡せない）で、tls.Recv / tls.Sendがnet.Recv / net.Sendと同じ形。net.Conn と顔が違う唯一の点: tls.Recv を break で途中で抜けると、その接続の読みは終わる（次の tls.Recv は Closed — 切片に残った record を持ち越さない）。誤りは粗い3ラベル（HandshakeFailed〔alertの種はフィールド〕・BadRecord・Closed）。信頼の起点の値 Roots（ParseRoots が作る — 私的 PKI の CA を足すとき std/http/client の Policy の extraRoots: に渡す）もここに住む
 
 ## HandshakeFailed
 
@@ -42,7 +42,7 @@ type Config struct {
 }
 ```
 
-サーバの設定（Load / Parse が作る — 証明書の鎖・葉の鍵・受ける ALPN）
+サーバの設定（Load / Parseが作る — 証明書のチェーン・葉の鍵・受けるALPN）
 
 ## Roots
 
@@ -61,7 +61,7 @@ type Roots struct {
 type BadRoots error
 ```
 
-ParseRoots の PEM が読めない（CERTIFICATE の塊が無い・塊の DER が証明書の形でない）
+ParseRootsのPEMが読めない（CERTIFICATEのチャンクが無い・チャンクのDERが証明書の形でない）
 
 ## Conn
 
@@ -92,7 +92,7 @@ handshake の済んだ接続 1 本の処理（名前つきの関数型 — 値�
 func Parse(certPem string, keyPem string) (Config, error?)
 ```
 
-PEM の証明書の鎖（CERTIFICATE が 1 つ以上 — 葉が先頭）と PKCS#8 の RSA の鍵の Config（ALPN の既定 = http/1.1 — 変えるなら Alpn）
+PEMの証明書のチェーン（CERTIFICATEが1つ以上 — 葉が先頭）とPKCS#8のRSAの鍵のConfig（ALPNの既定 = http/1.1 — 変えるならAlpn）
 
 失敗のラベル: `crypto.pem.Bad`・`crypto.rsa.BadKey`
 
@@ -104,7 +104,7 @@ PEM の証明書の鎖（CERTIFICATE が 1 つ以上 — 葉が先頭）と PKCS
 func ParseRoots(pem string) (Roots, error?)
 ```
 
-PEM の文字列 pem の CERTIFICATE の塊を全部読んだ信頼の起点（私的 PKI の CA — 外部ファイルを読む口は作らない。読めない塊が 1 つでもあれば BadRoots）
+PEMの文字列pemのCERTIFICATEのチャンクを全部読んだ信頼の起点（私的PKIのCA — 外部ファイルを読むインターフェースは作らない。読めないチャンクが1つでもあればBadRoots）
 
 失敗のラベル: [`BadRoots`](#badroots)
 
@@ -147,7 +147,7 @@ addr で待ち受け、接続ごとに handshake を済ませてから k を走�
 type Overflow panic
 ```
 
-方向の語の列が席に入らない（std の内部の約束違反 — panic ラベル）
+方向のワードの列が席に入らない（stdの内部の約束違反 — panicラベル）
 
 ## Recv
 
@@ -181,7 +181,7 @@ b を application の record にして c へ送る（空の b は送らない �
 func Put(c Conn, b []byte) error?
 ```
 
-b を application の record にして c の送りの束に積む（送らない — Flush か、tls.Recv の k が戻ったときか、束に入らない次の Put か、Serve の出口が送る。空の b は積まない）。束に入らない（積んだ分と合わせて record 1 つ分を越える）・鍵を進める前後は、積んだ分を送ってから b の record をその場で送る（順序は保つ）
+bをapplicationのrecordにしてcの送りのバッチに積む（送らない — Flushか、tls.Recvのkが戻ったときか、バッチに入らない次のPutか、Serveの出口が送る。空のbは積まない）。バッチに入らない（積んだ分と合わせてrecord 1つ分を越える）・鍵を進める前後は、積んだ分を送ってからbのrecordをその場で送る（順序は保つ）
 
 失敗のラベル: [`Closed`](#closed)
 
@@ -193,6 +193,6 @@ b を application の record にして c の送りの束に積む（送らない
 func Flush(c Conn) error?
 ```
 
-c の送りの束に積んだ record を送る（無ければ何もしない）
+cの送りのバッチに積んだrecordを送る（無ければ何もしない）
 
 失敗のラベル: [`Closed`](#closed)

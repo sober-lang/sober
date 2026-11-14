@@ -1,4 +1,4 @@
-// examples/crypto_aesgcm.sober の Go の双子（std/crypto/aesgcm の差分オラクル — report-796）。crypto/aes + cipher.NewGCM で同じ入力の値を出し、
+// examples/crypto_aesgcm.soberの比較用のGoの実装（std/crypto/aesgcmの差分オラクル — report-796）。crypto/aes + cipher.NewGCMで同じ入力の値を出し、
 // NIST の GCM の仕様の例 1〜4（AES-128）の期待値をここに固定して照合する（食い違いは標準エラーに出して exit 1）。再生成:
 //   (cd scripts/oracles && go run crypto_aesgcm.go) > examples/crypto_aesgcm.out
 package main

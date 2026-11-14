@@ -1,4 +1,4 @@
-// spectral-norm の Go の双子（Benchmarks Game の仕様 — 素直な形・逐次: A(i, j) = 1 / ((i+j)(i+j+1)/2 + i + 1)、AᵀA の冪乗法 10 回、√(vBv / vv) を %.9f）
+// spectral-normの比較用のGoの実装（Benchmarks Gameの仕様 — 素直な形・逐次: A(i, j) = 1 / ((i+j)(i+j+1)/2 + i + 1)、AᵀAの冪乗法10回、√(vBv / vv) を %.9f）
 package main
 
 import (

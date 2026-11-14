@@ -1,4 +1,4 @@
-// examples/bytes_packed.sober の Go の双子（[]byte の詰め表現の差分オラクル — docs/oracles.md）。再生成:
+// examples/bytes_packed.soberの比較用のGoの実装（[]byteの詰め表現の差分オラクル — docs/oracles.md）。再生成:
 //   go run scripts/oracles/bytes_packed.go > examples/bytes_packed.out
 // Sober の append は「先端一致なら伸長・他は全コピー」で cap を持たない（language.md 21 節）。同じセル列を指す 2 本のヘッダの 2 本目の append は
 // 全コピーになる — Go では cap の余りを共有して同じセルに書くので、2 本目は明示の全長スライス（s[:len:len]）で全コピーを強制して Sober の意味に合わせる

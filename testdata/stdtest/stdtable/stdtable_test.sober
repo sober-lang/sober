@@ -48,7 +48,7 @@ func TestPushAll() {
     }
 }
 
-// Freeze は中身を写さずに凍らせ、元の表を空に戻す: At ≡ 凍らせる前の Get・凍らせた後の Push は凍った表に届かない
+// Freezeは中身をコピーせずに凍らせ、元の表を空に戻す: At ≡ 凍らせる前のGet・凍らせた後のPushは凍った表に届かない
 func TestFreeze() {
     sizes := []int{0, 1, 8191, 8192, 8193, 20000}
     for s <- iter.Range(0, len(sizes)) {

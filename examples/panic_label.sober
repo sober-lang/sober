@@ -1,7 +1,7 @@
 package main
 
 // panic ラベル（language.md 27 節「panic ラベル」）: 理由を `type L panic{…}` で宣言して `panic(L{…})`。
-// 欄の値は書いた順に評価してから死ぬ（trace の印字が先に出る）。死亡時の標準エラーの 1 行は欄を宣言順に・string は引用 + エスケープ
+// フィールドの値は書いた順に評価してから死ぬ（traceの印字が先に出る）。死亡時の標準エラーの1行はフィールドを宣言順に・stringは引用 + エスケープ
 
 type BadNode panic {
     node int

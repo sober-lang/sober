@@ -1,9 +1,9 @@
 package jsonw
 
-// json.Encode の速い道の部品（loader の合成テンプレート — compiler/loader/jsonshape.sober — だけが呼ぶ）。符号器は 2 段:
-// 型ごとの写しが書く量の上界を数え（文字列は長さ + 2 — 中身は走査しない）、Grow で 1 本確保し、位置 p から書いて次の位置を返す。
-// 定数の綴り（鍵・区切り・true / false）はテンプレートが 8 バイトの語に焼いて Word で書く（語の後ろの余りは次の書きが上書きする — 上界は末尾に 8 バイトの余白を持つ）。
-// エスケープの要る文字列・JSON に書けない float に当たると −1 を返し、根の口は builder の道（std/json の Put…）でやり直す（出力は同じ）
+// json.Encodeの高速パスの部品（loaderの合成テンプレート — compiler/loader/jsonshape.sober — だけが呼ぶ）。符号器は2つのフェーズ:
+// 型ごとの変換が書く量の上界を数え（文字列は長さ + 2 — 中身は走査しない）、Growで1本確保し、位置pから書いて次の位置を返す。
+// 定数の綴り（鍵・区切り・true / false）はテンプレートが8バイトのワードに焼いてWordで書く（ワードの後ろの余りは次の書きが上書きする — 上界は末尾に8バイトの余白を持つ）。
+// エスケープの要る文字列・JSONに書けないfloatに当たると −1を返し、根のAPIはbuilderのパス（std/jsonのPut…）でやり直す（出力は同じ）
 
 import "std/convert"
 import "std/iter"
@@ -14,7 +14,7 @@ type Overflow panic {
     n int
 }
 
-// 語の書きの組み込み（検査なし — 境界は Word の 1 か所で見る）
+// ワードの書きの組み込み（検査なし — 境界はWordの1か所で見る）
 @intrinsic("bstore64")
 func sysStore64(b []byte, i int, v int) int
 
@@ -59,7 +59,7 @@ func Word3(b mut []byte, p int, v0 int, v1 int, v2 int) {
     _ = sysStore64(b, p + 16, v2)
 }
 
-// n の 10 進の上界（Int が書くバイト数以上 — 10^8 未満の非負は語 1 本の 8・他は 20）
+// nの10進の上界（Intが書くバイト数以上 — 10^8未満の非負はワード1本の8・他は20）
 @effects()
 func IntSize(n int) int {
     return if n >= 0 && n < 100000000 { 8 } else { 20 }
@@ -73,7 +73,7 @@ func overflow(p int, n int) {
 @effects(panic)
 func Int(b mut []byte, p int, n int) int {
     if n >= 0 && n < 100000000 {
-        // 下の桁から 2 桁ずつ 1 語に詰める（最上位の桁が最下位のバイト — std/json の PutInt と同じ詰め）
+        // 下の桁から2桁ずつ1ワードに詰める（最上位の桁が最下位のバイト — std/jsonのPutIntと同じ詰め）
         mut x := n
         mut acc := 0
         mut d := 0
@@ -122,7 +122,7 @@ func Str(b mut []byte, p int, s string) int {
     return g + n + 1
 }
 
-// p から f の最短の往復表現を書いて次の位置（上界 24）。NaN・±Inf は何も書かずに −1（根の口が builder の道でやり直し、そちらが json.NotFinite を投げる）
+// pからfの最短の往復表現を書いて次の位置（上界24）。NaN・±Infは何も書かずに −1（根のAPIがbuilderのパスでやり直し、そちらがjson.NotFiniteを投げる）
 @effects(panic)
 func Float(b mut []byte, p int, f float) int {
     if f != f || f - f != 0.0 {
@@ -145,7 +145,7 @@ func raw(b mut []byte, p int, xs []byte) int {
     return p + n
 }
 
-// 書いた b[0:p] の string（中身は JSON の綴り — 文字列の欄は string の値の写しなので UTF-8 の検査は要らない）
+// 書いたb[0:p] のstring（中身はJSONの綴り — 文字列のフィールドはstringの値のコピーなのでUTF-8の検査は要らない）
 func Finish(b []byte, p int) string {
     return bytesToString(b[0:p])
 }

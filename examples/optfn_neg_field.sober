@@ -1,6 +1,6 @@
 package main
 
-// 省略可の匿名関数型は func 宣言の仮引数だけ（language.md 25 節 Z の範囲）— struct の欄は名前付き関数型の option（`F?`）で書く（diag.FnOpt kind 2）
+// 省略可の匿名関数型はfunc宣言の仮引数だけ（language.md 25 節Zの範囲）— structのフィールドは名前付き関数型のoption（`F?`）で書く（diag.FnOpt kind 2）
 
 type Hooks struct {
     flush (func() error?)?

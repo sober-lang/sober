@@ -1,6 +1,6 @@
 package main
 
-// datadce の題材: LoadZone を使う — 焼き込みのゾーンの表が ELF に入る（網が目印を数えられることの正例）
+// datadceの題材: LoadZoneを使う — 焼き込みのゾーンの表がELFに入る（検査が目印を数えられることの正例）
 
 import "std/time"
 

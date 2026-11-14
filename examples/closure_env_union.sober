@@ -1,6 +1,6 @@
 package main
 
-// 値の位置の閉包の env は named fn type ごとの閉じた union（language.md 25 節 — 工程 4 B1）: 形が 3 種類（空 = int・string・(int, string)）の閉包が同じ named fn type の欄で Def を越える
+// 値の位置のクロージャのenvは named fn type ごとの閉じたunion（language.md 25 節 — 工程4 B1）: 形が3種類（空 = int・string・(int, string)）のクロージャが同じ named fn type のフィールドでDefを越える
 
 type Gen func(n int) int
 

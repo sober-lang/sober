@@ -1,6 +1,6 @@
 package main
 
-// 閉包の本体の `{ }` は region を開かない（while 本体・if の腕と同じ — 脱糖器の lambdaCall の scoped）。本体で確保した値を外の可変 slice へ
+// クロージャの本体の `{ }` はregionを開かない（while本体・ifの分岐と同じ — 脱糖器のlambdaCallのscoped）。本体で確保した値を外の可変sliceへ
 // 書き戻しても宙吊りにならない。lower が本体を式位置の `{ }` として region で囲んでいた穴の回帰例（c04ffd4 で修正 — 修正前は 38980 などの誤った値）
 
 import "std/iter"

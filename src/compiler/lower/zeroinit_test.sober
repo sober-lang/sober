@@ -1,21 +1,21 @@
 package lower
 
-// 入口の零初期化の語の判定（zeroinit.sober xZeroNeed）の単体テスト（`cd compiler && ../bin/sober test lower`）: 利用者のプログラムの IR では
-// 0 を観測できる読みが出ない（毒の口の観測でも区別できない）ので、判定の誤り（要零を外す方向）は IR を手で組んで直に見る。
-// スロットは 1 本・2 語（位置 2 = 語 0・位置 1 = 語 1）
+// 入口の零初期化のワードの判定（zeroinit.sober xZeroNeed）の単体テスト（`cd compiler && ../bin/sober test lower`）: 利用者のプログラムのIRでは
+// 0を観測できる読みが出ない（毒のオプションの観測でも区別できない）ので、判定の誤り（要零を外す方向）はIRを手で組んで直に見る。
+// スロットは1本・2ワード（位置2 = ワード0・位置1 = ワード1）
 
 import "desugar"
 import "std/iter"
 
 // 形 kind の関数を組んで xZeroNeed の [位置 1, 位置 2] を返す
-// 0: 同じブロックで store の前の load（語 0 が要零）と store の後の load（語 1 は要らない）
+// 0: 同じブロックでstoreの前のload（ワード0が要零）とstoreの後のload（ワード1は要らない）
 // 1: 前のブロックで書いて後のブロックで読む（要らない）
-// 2: 菱形の片方の腕だけで書いて合流で読む（要零）
-// 3: 語 0 を書いてから番地を call へ渡す（語 0 は要らない・語 1 は要零 — 逃げた先が読みうる）
-// 4: 定数の gep で語 1 を書いて番地 + 1 で読む（要らない）
+// 2: 菱形の片方の分岐だけで書いて合流で読む（要零）
+// 3: ワード0を書いてから番地をcallへ渡す（ワード0は要らない・ワード1は要零 — 逃げた先が読みうる）
+// 4: 定数のgepでワード1を書いて番地 + 1で読む（要らない）
 // 5: sret の受け皿として call へ渡してから読む（要らない — 呼ばれた関数が全語を書く・F_SRET_BIT の約束）
-// 6: 5 と同じ形で、呼ぶ関数に sret の印が無い（両方要零 — 逃げた先が読みうる）
-// 7: sret の印のある関数へ、受け皿でない引数（引数 1）として渡す（両方要零）
+// 6: 5と同じ形で、呼ぶ関数にsretのマークが無い（両方要零 — 逃げた先が読みうる）
+// 7: sretのマークのある関数へ、受け皿でない引数（引数1）として渡す（両方要零）
 func zT(kind int) []int {
     mut st := St{}
     initScalars(mut st)
@@ -95,7 +95,7 @@ func TestZeroNeed() {
     assert(h[0] == 1 && h[1] == 1)
 }
 
-// store の列の計画が区間 [rbp - 8 × ztop, rbp - 8 × (ztop - cnt)) を 1 語ずつ隙間も重なりもなく覆うか
+// storeの列の計画が区間 [rbp - 8 × ztop, rbp - 8 × (ztop - cnt)) を1ワードずつ隙間も重なりもなく覆うか
 func zPlanOk(ztop int, cnt int) bool {
     pl := xZeroPlan(ztop, cnt)
     mut d := -8 * ztop
@@ -108,7 +108,7 @@ func zPlanOk(ztop int, cnt int) bool {
     return d == -8 * (ztop - cnt)
 }
 
-// store の列（x86.sober xZeroPlan）: 区間の頭・語数・区間が rbp - 8 で終わらない形（変異 m3 = 1 語足りない列を殺す）
+// storeの列（x86.sober xZeroPlan）: 区間の頭・語数・区間がrbp - 8で終わらない形（ミュータントm3 = 1語足りない列を殺す）
 func TestZeroPlan() {
     for ztop <- iter.Range(1, 20) {
         for cnt <- iter.Range(1, ztop + 1) {

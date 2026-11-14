@@ -1,4 +1,4 @@
-// fasta の Rust の双子（Go の双子 bench/fasta/go の逐語訳 — float の乱数・累積確率の線形探索・1 バイトずつ BufWriter へ・境界検査はそのまま）
+// fastaの比較用のRustの実装（比較用のGoの実装bench/fasta/goの逐語訳 — floatの乱数・累積確率の線形探索・1バイトずつBufWriterへ・境界検査はそのまま）
 use std::env;
 use std::io::{self, BufWriter, Write};
 

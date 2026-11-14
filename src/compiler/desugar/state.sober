@@ -1,17 +1,17 @@
 package desugar
 
-// 脱糖器（src/stage1/desugar.zig の写し — AST → コア AST（Lean の Json.lean スキーマ）→ JSON）の状態と土台。
+// 脱糖器（src/stage1/desugar.zigのコピー — AST → コアAST（LeanのJson.leanスキーマ）→ JSON）の状態と土台。
 //
-// 表現: 状態は S 1 つ。スカラーは S の欄、記録は全部 1 本の int ヒープ st.h（std/table の Table — 添字で読み書きし、成長でコピーしない）に積む
+// 表現: 状態はS 1つ。スカラーはSのフィールド、記録は全部1本のintヒープst.h（std/tableのTable — 添字で読み書きし、成長でコピーしない）に積む
 // （Zig 版のポインタの木・ArrayList・HashMap の代わり）。記録は「ヒープの添字」で指し、無しは -1。
-// - 表層 AST: loader の木を写さずに参照で指す（astref.sober — 木の節・合成の節・木の列 / 文字列の基底つき参照）。読みは nodeOf(mut st, n).a 等で、
-//   欄は参照に付け替わって返る（括弧 EParen は透過 — Zig の AST は括弧を持たない。`$utf8` の書き換え先 EUtf8Ref は名前 `$utf8` の EIdent に見える）。
+// - 表層AST: loaderの木をコピーせずに参照で指す（astref.sober — 木の節・合成の節・木の列 / 文字列の基底つき参照）。読みはnodeOf(mut st, n).a等で、
+//   フィールドは参照に付け替わって返る（括弧EParenは透過 — ZigのASTは括弧を持たない。`$utf8` の書き換え先EUtf8Refは名前 `$utf8` のEIdentに見える）。
 //   補間・for 式の書き換え（Zig の interp.zig / forexpand.zig）などが作る節は合成の表 st.syn に足す
 // - 列 = [n, 要素…]、文字列 = [n, バイト…]
 // - コア式は st.cores（CoreExpr の表 — 参照 = CBASE + 添字 — core.sober）。型は st.types（Ty の表 — intern、参照 = TBASE + 添字 — ty.sober）
 // 再帰する関数は `st mut S` を持ち回る（Def として呼ぶ mut 引数の関数 — callM）。その関数に渡す imm の値は int だけにする
 // （frame の中で作った slice を渡すと検査が拒否する — language.md 31 節の anchor 1 slot。string リテラルは
-// strlit の段で渡せる）
+// strlitの段階で渡せる）
 
 import "ast"
 import "diag"
@@ -21,7 +21,7 @@ import "std/table"
 
 // 拒否は diag のラベル（CoreFragment / UnknownName / Malformed / TypeMismatch — Zig 版の error 名）。位置は節で運び、raise の時点で posOf で Pos に落とす
 
-// 状態のスカラーは src/stage1/desugar.zig の Desugarer の欄と同じ名前・意味（bool は 0 / 1）。表（pkgs / files / fns / cons / errv）と
+// 状態のスカラーはsrc/stage1/desugar.zigのDesugarerのフィールドと同じ名前・意味（boolは0 / 1）。表（pkgs / files / fns / cons / errv）と
 // 作業スタック（lstk / sstk / jstk）はヒープの添字
 type S struct {
     h table.Table[int]
@@ -32,11 +32,11 @@ type S struct {
     only int
     onlySet bool
     sigOnly bool
-    e2sBad ListRef   // 上げない印（条件 5）
+    e2sBad ListRef   // 上げないフラグ（条件5）
     // 区間（脱糖 + 検査を区間ごとに子 task で: core_out.sober の DefRng）: rangeSet なら関数表の添字 [rlo, rhi) の Def だけ本体つき・
     // 他の Def は署名だけ（部分検査の視点の外と同じ形）。根の式は rangeRoot のときだけ
     rangeSet bool
-    // 名前付き関数型の写し（namedval.sober — NamedValueArgs）: nvSet なら名前付きの実引数を含む関数（nvMark の印）だけに表層型を付ける
+    // 名前付き関数型のコピー（namedval.sober — NamedValueArgs）: nvSetなら名前付きの実引数を含む関数（nvMarkのマーク）だけに表層型を付ける
     nvSet bool
     nvMark ListRef
     rlo int
@@ -54,15 +54,15 @@ type S struct {
     rejDef int       // 脱糖中の Def（拒否を帰す先: 関数 i・根の本体 nfn・どれでもない〔前段・後回しの署名〕−1 — run が立てる）
     planOnly bool    // 区間の計画だけ（PlanDefs — 前段の型付けを飛ばす）
     refs RefGraph    // 区間の子: 親の計画が作った参照の辺（rangeReach）
-    planBad []int    // 区間の子: 親の計画が決めた E2-S の上げない印（e2sScanCalls の結果 — 子は走査しない。空 = 自分で走査）
-    stopAt int       // 計測の口（core_out.sober の WithCoreOpt の stopAt）
+    planBad []int    // 区間の子: 親の計画が決めたE2-Sの上げないフラグ（e2sScanCallsの結果 — 子は走査しない。空 = 自分で走査）
+    stopAt int       // 計測のオプション（core_out.soberのWithCoreOptのstopAt）
     trustStd bool    // std の Def を署名だけにする（L0 の受理印 — core_out.sober の WithCoreOpt の trust）
     hbuckets int     // 型の intern・表層型の表のハッシュの頭の数（init.sober の bucketsFor — 0 = 既定の TBUCKETS）
     trees []ast.Tree            // loader の木（imm のまま — 参照は astref.sober）
     syn table.Table[ast.Node]   // 合成の節（参照 = SBASE + 添字）
     synFile table.Table[int]    // その節のファイル（元の節・位置の出所と同じ — 拒否の位置 posOf。無ければ -1）
     utf8 int                    // 名前 `$utf8` の文字列（EUtf8Ref の見せ方 — treeNode）
-    descs []int                 // 節の種類 → 欄の付け替えの種類（desc の表 — treeNode が引く）
+    descs []int                 // 節の種類 → フィールドの付け替えの種類（descの表 — treeNodeが引く）
     binds table.Table[Binding]
     labels table.Table[Label]
     closures table.Table[Closure]
@@ -111,9 +111,9 @@ type S struct {
     dictConst int
     dictLifts int
     liftHint int
-    // 次の liftLambdaCap が借りの閉包の持ち上げか（(α-L0) — 同一性の型の捕捉を許す。1 回で消費）
+    // 次のliftLambdaCapが借りのクロージャの持ち上げか（(α-L0) — 同一性の型の捕捉を許す。1回で消費）
     liftBrw int
-    // 借りの実引数のラムダを持ち上げる呼び出しの anchor + 1（0 = callv の呼び出し — 関数型の mut の席。callClosure が置き liftLambdaCap が読んで消す）
+    // 借りの実引数のラムダを持ち上げる呼び出しの anchor + 1（0 = callv の呼び出し — 関数型の mut 仮引数。callClosure が置き liftLambdaCap が読んで消す）
     liftAnchor int
     // 前走り（closure.sober の shapesFor）か・記録した形が関数値の型を含むか（含めば形が形の U に依るので前走りを固定点まで回す）
     preRun bool
@@ -124,16 +124,16 @@ type S struct {
     // task の床（task.Spawn の子の本体の中では子自前の region の番号・外では 0）: 呼び手空間の上界に置く値（Def 呼び出しの実引数の string リテラル）を
     // 子の世界で書ける最も外の region へ（子は共有の接頭〔親の region〕に確保できない — コアの spawn の本体は b = 子の region で型付く）
     taskFloor int
-    // 囲む task.Run の region + 1（0 = 無し）: 型式 `task.Handle[T]`（handle の slice の要素）をその region の own task へ写す
+    // 囲むtask.Runのregion + 1（0 = 無し）: 型式 `task.Handle[T]`（handleのsliceの要素）をそのregionの own task へ変換する
     parScope1 int
     // 外の mut 場所へ格納する値の行き先の region + 1（0 = 無し — 宛先構築レーン M4）。値の式の最上段の mut のリテラルだけが消費する
-    // （mksliceAt / mkmapAt で行き先に作る — mut は copyTo で写せない）。expr の入口で必ず落とす（部分式へ漏らさない）
+    // （mksliceAt / mkmapAtで行き先に作る — mutはcopyToでコピーできない）。exprの入口で必ず落とす（部分式へ漏らさない）
     mutDest int
-    // struct リテラルの行き先の region + 1（0 = 無し — F-bb）: expr が消費した mutDest を struct リテラル（composite）が欄の値へ引き継ぐための受け渡し。
-    // composite が読んで fvDest に移し、fieldValuesIn の入口で必ず落とす（入れ子の欄の値へは mutDest として 1 欄ずつ渡し直す）
+    // structリテラルの行き先のregion + 1（0 = 無し — F-bb）: exprが消費したmutDestをstructリテラル（composite）がフィールドの値へ引き継ぐための受け渡し。
+    // compositeが読んでfvDestに移し、fieldValuesInの入口で必ず落とす（入れ子のフィールドの値へはmutDestとして1フィールドずつ渡し直す）
     compDest int
     fvDest int
-    // mut を含む値を外の region から普通の関数へ渡す呼び出しを展開している関数の積み（再帰の守り — M4 mutValInline）
+    // mutを含む値を外のregionから普通の関数へ渡す呼び出しを展開している関数のスタック（再帰の守り — M4 mutValInline）
     mvInl table.Table[int]
     mvInlN int
     lstk int
@@ -146,31 +146,31 @@ type S struct {
     stmtIf int
     loopFloor int
     tailWant TyRef
-    // T? を期待する位置（coerceExpr）の nil 判定の if 式の節（-1 = 無し）: ifnilExpr が腕を coerceArm で期待型へ寄せる（some に包む）
+    // T? を期待する位置（coerceExpr）のnil判定のif式の節（-1 = 無し）: ifnilExprが分岐をcoerceArmで期待型へ寄せる（someに包む）
     coerceIfnil NodeRef
-    // 今絞っている mut の名前（narrowkill.sober — 絞った腕を読む間だけ積む。代入の文の後ろで外の束縛へ戻す）
+    // 今絞っているmutの名前（narrowkill.sober — 絞った分岐を読む間だけ積む。代入の文の後ろで外の束縛へ戻す）
     nrwNames []StrRef
     swWant TyRef
-    swStmt int         // 今の switch が文位置か（腕の値を捨てる — switchExpr。0 / 1）
+    swStmt int         // 今のswitchが文位置か（分岐の値を捨てる — switchExpr。0 / 1）
     swHint TyRef       // 呼び手が知っている switch の結果型（return の値 — coerceExpr が積み、switchExpr が 1 度だけ読む）
-    swUnreach TyRef    // 今の switch の到達しない腕の型（swHint → swWant → unit — caseArm）
+    swUnreach TyRef    // 今のswitchの到達しない分岐の型（swHint → swWant → unit — caseArm）
     hasErrSw int
     errLevel int
     errTy TyRef
     // 型パターンの束縛（`case e V{…}:`）の行き先: let で束縛した subject のレベル・型宣言・核の型・表層型
     swSubj int
     swSubjDecl int
-    // 型パターンの欄の型を引く型引数の束縛（ジェネリック union の subject の宣言の — -1 = 無し）
+    // 型パターンのフィールドの型を引く型引数の束縛（ジェネリックunionのsubjectの宣言の — -1 = 無し）
     swEnv int
     swSubjTy TyRef
-    // 型パターンの switch の union の宣言（subjFieldTy — 欄の束縛の型を subject の型から引く）
+    // 型パターンのswitchのunionの宣言（subjFieldTy — フィールドの束縛の型をsubjectの型から引く）
     swDecl NodeRef
     // convTarget が見た名前付き関数型の宣言（LastFnConv — lower の変換の判定）
     lastFnConv NodeRef
     swSubjSty int
     psteps table.Table[PatStep]  // 入れ子の型パターンを前順に平たくした手（switch.sober の nestedArm）
     pslots table.Table[int]      // 手の値の枠 → レベル（生成中に決まる）
-    // 表層型検査器（typer.sober — C1 B1）: 型の表・局所の束縛・節 → 型の表（鎖つきハッシュ）と、検査中の関数の文脈
+    // 表層型検査器（typer.sober — C1 B1）: 型の表・局所の束縛・節 → 型の表（チェーンつきハッシュ）と、検査中の関数の文脈
     ty TyStore   // 表層型検査器の店（記録・型の列・表・memo — tystore.sober）
     // 借りの位置の構造の鍵（closure.sober の brwKey — 関数型の核の型 → 最初の型式の節。lower の型解決が書く — 店の外）
     bkSig table.Table[int]
@@ -191,7 +191,7 @@ type S struct {
     dkCur int                 // 今の Def（関数 + 1・0 = Def の外）
     dkAud table.Table[int]    // [Def, 読んだ項目]… の対（項目の符号 = dkRead）
     expRep int                // 開発用（check --expansion-report — expansion.sober）: 展開の寄与を数える（0 / 1）
-    expStk table.Table[int]   // 計測の区間の積み（[入口のコア式の数, 外側の区間の子の和] の対）と深さ
+    expStk table.Table[int]   // 計測の区間のスタック（[入口のコア式の数, 外側の区間の子の和] の対）と深さ
     expSp int
     expChild int              // 今の区間の中で閉じた子の区間の寄与（含む）の和
     expCnt table.Table[int]   // 関数 × {展開, Def の本体} ごとの回数・寄与（含む）・寄与（自分だけ）
@@ -202,50 +202,50 @@ type S struct {
     yNrw []int
     ypk int
     ytps ListRef
-    // 型パラメータ型の補間の穴（インスタンスごとに種類を決める）: 検査中の関数・印の列
-    // （関数ごと 0 / 1 — 本体に型パラメータ型の穴がある）・インスタンスの型環境 → 表層型の型引数の対応（鎖 [tenv, 型引数の列, next]）・
-    // ジェネリック Def のインスタンスの表（鎖 [関数, 型引数の列, Def の添字, next]）
+    // 型パラメータ型の補間の穴（インスタンスごとに種類を決める）: 検査中の関数・マークの列
+    // （関数ごと0 / 1 — 本体に型パラメータ型の穴がある）・インスタンスの型環境 → 表層型の型引数の対応（チェーン [tenv, 型引数の列, next]）・
+    // ジェネリックDefのインスタンスの表（チェーン [関数, 型引数の列, Defの添字, next]）
     yfi int
     ylam int     // 型付け中のラムダの入れ子の深さ（中の return は関数の return でない — 暗黙の freeze の点にしない）
-    nLocLam int  // 束ねた局所の束縛のラムダの数（0 なら局所のラムダの引きを素通り — 無いプログラムに値札を払わせない）
+    nLocLam int  // まとめた局所の束縛のラムダの数（0なら局所のラムダの引きを素通り — 無いプログラムにコストを払わせない）
     nimpl int    // 暗黙の freeze の点の数（0 なら IsImplicit は表を引かない）
-    yexplOn bool   // 開発の口 FreezeSites: 外すと同じ点で暗黙の freeze になる明示の freeze の呼び出しを集める
+    yexplOn bool   // 開発のオプションFreezeSites: 外すと同じ点で暗黙のfreezeになる明示のfreezeの呼び出しを集める
     yexpl table.Table[int]
-    // 他の package の struct の欄の書き / mut の中身を持つ欄の読みの記録の鎖（ヒープの記録 [種類〔0 書き・1 読み・-1 消した〕, 節, 欄の名前, 型, 次] — 頭と尾は
-    // 番地 + 1・0 = 無し。fieldwrite.sober。Table の欄にしない — S が 7 語ずつ太り、S / St を持つフレームの零初期化と写しで自己 build +0.25 G だった）
+    // 他のpackageのstructのフィールドの書き / mutの中身を持つフィールドの読みの記録のチェーン（ヒープの記録 [種類〔0書き・1読み・-1消した〕, 節, フィールドの名前, 型, 次] — 頭と尾は
+    // 番地 + 1・0 = 無し。fieldwrite.sober。Tableのフィールドにしない — Sが7ワードずつ太り、S / Stを持つフレームの零初期化とコピーで自己build +0.25 Gだった）
     yfaHead int
     yfaTail int
-    ypts table.Table[int]   // 暗黙の freeze の点の節の列（開発の口 ImplicitPoints — 積んだ順）
+    ypts table.Table[int]   // 暗黙のfreezeの点の節の列（開発のオプションImplicitPoints — 積んだ順）
     implAt NodeRef  // 脱糖中の暗黙の freeze の点（expr が CFreeze で包んだ節 — 中身の脱糖では包まない）
     instEnvs int
     insts int
     jstk int
     jlab int
-    // 再帰展開の検査に使う展開中の関数の鎖（inlining と同じ形）。ラムダの本体を展開する間は、閉包が定義時に持った鎖へ差し替える
+    // 再帰展開の検査に使う展開中の関数のチェーン（inliningと同じ形）。ラムダの本体を展開する間は、クロージャが定義時に持ったチェーンへ差し替える
     // （本体は字句的に callee の外 — `iter.Slice` の中のラムダが `iter.Slice` を呼ぶのは再帰でない。lower の CL_INL と同じ方式）
     inlrec int
     stys table.Table[STy]        // 表層型の表（surface.sober — STBASE + 添字）
     smemo table.Table[SMemo]     // 表層型のメモ（surface.sober — 型名の解決と intern）
     smemoBucket table.Table[int]
-    fnBucket table.Table[int]    // 関数の索引（resolve.sober の findFn — (package, 名前) のハッシュ → 関数の添字の鎖。最初の findFn で組む）
+    fnBucket table.Table[int]    // 関数の索引（resolve.soberのfindFn — (package, 名前) のハッシュ → 関数の添字のチェーン。最初のfindFnで組む）
     fnNext table.Table[int]
     conBucket table.Table[int]   // const の索引（resolve.sober の lookupConst — 形は fnBucket と同じ）
     conNext table.Table[int]
-    tyBucketI table.Table[int]   // 型宣言の索引（resolve.sober の typeIn）: 宣言の節・package・鎖
+    tyBucketI table.Table[int]   // 型宣言の索引（resolve.soberのtypeIn）: 宣言の節・package・チェーン
     tyIdxNode table.Table[int]
     tyIdxPkg table.Table[int]
     tyIdxNext table.Table[int]
     fnNamed table.Table[int]     // 名前付き関数型の展開の結果 → 型宣言（対 [te, td]…— surface.sober の noteNamedFn）
     curRes ListRef                   // 今の関数の結果の型式の列（表層型の照合用 — -1 = 無し）
     curResPkg int
-    // 値の位置（closure.sober）: loader の判定の口（loader.FnValDecl — check と build が同じ判定を読む）と、
-    // 値の位置のラムダの捕捉の表（loader.Program の cap_* の写し — ラムダは [ファイル, 節] で引き、名前は capNames[capLo, capHi)）
+    // 値の位置（closure.sober）: loaderの判定のインターフェース（loader.FnValDecl — checkとbuildが同じ判定を読む）と、
+    // 値の位置のラムダの捕捉の表（loader.Programのcap_* のコピー — ラムダは [ファイル, 節] で引き、名前はcapNames[capLo, capHi)）
     fvcx loader.Cx
-    // 再帰の組（rec.sober）: loader.RecGroups の写し（[n, file0, node0, …]・成分は宣言順）と、展開中の組の枠の積み（枠 = [種類, n, 組の位置, 型引数の束縛]）
+    // 再帰の組（rec.sober）: loader.RecGroupsのコピー（[n, file0, node0, …]・成分は宣言順）と、展開中の組の枠のスタック（枠 = [種類, n, 組の位置, 型引数の束縛]）
     recGroups []int
     recFr table.Table[int]
     recN int
-    // 値の位置の匿名の関数型の欄の型式の節（loader.FnValAnonFields。欄の型の読みを閉包の型にする印）
+    // 値の位置の匿名の関数型のフィールドの型式の節（loader.FnValAnonFields。フィールドの型の読みをクロージャの型にするフラグ）
     anonFT []int
     capFile []int
     capNode []int
@@ -254,17 +254,17 @@ type S struct {
     capNames []string
     // 展開待ちの捕捉（loader.Program の cap_pend — 詰めた列。読みは closure.sober の capPkAt / capFlowAt / PendN / PendRow）
     capPend []int
-    // 省略可の匿名関数型の仮引数を持つ関数の写し（loader.Program の z_decl — [宣言の節の参照, ファイル, 節の区間 lo, hi) の 4 語ずつ。ZVariant / zBlock）
+    // 省略可の匿名関数型の仮引数を持つ関数のコピー（loader.Programのz_decl — [宣言の節の参照, ファイル, 節の区間lo, hi) の4ワードずつ。ZVariant / zBlock）
     zdecl []int
-    // env の形（closure.sober）: shRecDecl / shRecTy = この脱糖で持ち上げた閉包の形の記録（named fn type の宣言 →
+    // envの形（closure.sober）: shRecDecl / shRecTy = この脱糖で持ち上げたクロージャの形の記録（named fn type の宣言 →
     // env の型・重複なし — 前走りが shapesFor で読む）、shDecl / shTy = 前走りが集めた形（入口が loadShapes で積む — U_F はこれの閉じた union）
     shRecDecl table.Table[int]
     shRecTy table.Table[int]
     shDecl table.Table[int]
     shTy table.Table[int]
     shBuf table.Table[int]
-    // 届く閉包の印（closure.sober の capLive）: capLiveN = 0 まだ・1 全部届く扱い（main が無い）・2 capReach（関数の印の列）で引く・
-    // 3 capReachS（親の PlanDefs が作って区間の子へ渡した印）で引く
+    // 届くクロージャのフラグ（closure.soberのcapLive）: capLiveN = 0まだ・1全部届く扱い（mainが無い）・2 capReach（関数のフラグの列）で引く・
+    // 3 capReachS（親のPlanDefsが作って区間の子へ渡したフラグ）で引く
     capLiveN int
     capReach int
     capReachS []int
@@ -290,8 +290,8 @@ func hlen(st mut S) int {
     return table.Len(mut st.h)
 }
 
-// HeapGet / HeapSet / HeapPush / HeapLen / HeapPushAll / HeapFreeze は lower がヒープ（欄 h）を読み書きする口
-// （他の package は欄を書けず、mut の中身を持つ欄は読めない — language.md 20 節。lower の hget 系はこれを経由する）
+// HeapGet / HeapSet / HeapPush / HeapLen / HeapPushAll / HeapFreezeはlowerがヒープ（フィールドh）を読み書きするAPI
+// （他のpackageはフィールドを書けず、mutの中身を持つフィールドは読めない — language.md 20 節。lowerのhget系はこれを経由する）
 func HeapGet(st mut S, i int) int {
     return table.Get(mut st.h, i)
 }
@@ -304,7 +304,7 @@ func HeapPush(st mut S, v int) {
     table.Push(mut st.h, v)
 }
 
-// 記録 1 つ（[i, i + n)）を dst の [0, n) へ一括で写す（歩きの読みを記録単位に — 1 語ずつの HeapGet の床を割る）
+// 記録1つ（[i, i + n)）をdstの [0, n) へ一括でコピーする（歩きの読みを記録単位に — 1ワードずつのHeapGetの床を割る）
 func HeapRead(st mut S, i int, n int, dst mut []int) {
     table.Read(mut st.h, i, n, mut dst)
 }
@@ -321,7 +321,7 @@ func HeapFreeze(st mut S) table.Frozen[int] {
     return table.Freeze(mut st.h)
 }
 
-// 生の 1 語（文字列のバイト・値の列の要素・列の個数）— 木の列・文字列（LBASE）なら木の data、他はヒープ
+// 生の1ワード（文字列のバイト・値の列の要素・列の個数）— 木の列・文字列（LBASE）なら木のdata、他はヒープ
 func dat(st mut S, x int) int {
     if x >= LBASE {
         if x >= LBASE + LK {
@@ -492,7 +492,7 @@ func strSpanEq(st mut S, a StrRef, alo int, s StrRef, slo int, n int) bool {
     return true
 }
 
-// StrEq / StrIs / StrEqPart は lower が使う（同じ速い道を共有する）
+// StrEq / StrIs / StrEqPartはlowerが使う（同じ高速パスを共有する）
 func StrEq(st mut S, a StrRef, b StrRef) bool {
     return strEq(mut st, a, b)
 }
@@ -598,7 +598,7 @@ func posOf(st mut S, n NodeRef) diag.Pos {
     return diag.Pos{file: fileOf(mut st, n), tok: TokAt(mut st, int(n))}
 }
 
-// 位置を 1 語に詰める（0 = 無し — 出所の列から検査器の落ちた節の位置への受け渡し）
+// 位置を1ワードに詰める（0 = 無し — 出所の列から検査器の落ちた節の位置への受け渡し）
 func PackPos(p diag.Pos) int {
     return if p.file < 0 || p.tok < 0 { 0 } else { (p.file + 1) * 4294967296 + p.tok }
 }
@@ -623,7 +623,7 @@ func nomFail(st mut S, at NodeRef) error? {
     return nil
 }
 
-// ── 読み口（節 = NodeRef・列 = ListRef — language.md 32 節の named scalar。木の列は要素を参照へ付け替える）──
+// ── 読み出しのAPI（節 = NodeRef・列 = ListRef — language.md 32 節のnamed scalar。木の列は要素を参照へ付け替える）──
 
 func nodeOf(st mut S, n NodeRef) ast.Node {
     if isTreeNode(int(n)) {
@@ -678,7 +678,7 @@ func lput(st mut S, l ListRef, i int, v int) {
     hset(mut st, int(l) + 1 + i, v)
 }
 
-// slen / sat は文字列 s の長さ・i 番目のバイト（dat の型付きの読み口）
+// slen / satは文字列sの長さ・i番目のバイト（datの型付きの読み出しAPI）
 func slen(st mut S, s StrRef) int {
     return dat(mut st, int(s))
 }
@@ -701,7 +701,7 @@ func hgetS(st mut S, i int) StrRef {
     return StrRef(hget(mut st, i))
 }
 
-// sA〜sE は節の欄を文字列として読む（desc の桁 2）
+// sA〜sEは節のフィールドを文字列として読む（descの桁2）
 func sA(x ast.Node) StrRef {
     return StrRef(x.a)
 }
@@ -722,7 +722,7 @@ func sE(x ast.Node) StrRef {
     return StrRef(x.e)
 }
 
-// hgetN / hgetL はヒープの記録の 1 語を節・列として読む（記録の欄の意味は記録ごと — hgetTy と同じ形）
+// hgetN / hgetLはヒープの記録の1ワードを節・列として読む（記録のフィールドの意味は記録ごと — hgetTyと同じ形）
 func hgetN(st mut S, i int) NodeRef {
     return NodeRef(hget(mut st, i))
 }
@@ -731,7 +731,7 @@ func hgetL(st mut S, i int) ListRef {
     return ListRef(hget(mut st, i))
 }
 
-// nA〜nE / lA〜lE は節の欄を子の節・列として読む（欄の意味は種類ごと — desc の表）
+// nA〜nE / lA〜lEは節のフィールドを子の節・列として読む（フィールドの意味は種類ごと — descの表）
 func nA(x ast.Node) NodeRef {
     return NodeRef(x.a)
 }
@@ -772,7 +772,7 @@ func lE(x ast.Node) ListRef {
     return ListRef(x.e)
 }
 
-// NodeOf / KindN / LenL / LatI は nodeOf / kindN / lenL / latI（lower が読む公開の口）
+// NodeOf / KindN / LenL / LatIはnodeOf / kindN / lenL / latI（lowerが読む公開のAPI）
 func NodeOf(st mut S, n NodeRef) ast.Node {
     return nodeOf(mut st, n)
 }
@@ -793,13 +793,13 @@ func LatI(st mut S, l ListRef, i int) int {
 }
 
 
-// dat（lower が読む公開の口）
+// dat（lowerが読む公開のAPI）
 func Dat(st mut S, x int) int {
     return dat(mut st, x)
 }
 
 
-// ── 表: package（6 語 [path, name, flo, fhi, imports（列 [2n, (ref, pkg)…] — 長さの語は語数）, 0]）──
+// ── 表: package（6ワード [path, name, flo, fhi, imports（列 [2n, (ref, pkg)…] — 長さのワードはワード数）, 0]）──
 
 const PKSZ = 6
 
@@ -837,7 +837,7 @@ func ImportOf(st mut S, pk int, s StrRef, lo int, hi int) int {
         return -1
     }
     im := hget(mut st, st.pkgs + pk * PKSZ + 4)
-    // 列の長さの語は語数（2n — 組の数ではない。語数のまま回すと列の外の語を名前として比べてしまう）
+    // 列の長さのワードはワード数（2n — 組の数ではない。ワード数のまま回すと列の外のワードを名前として比べてしまう）
     n := hget(mut st, im) / 2
     mut i := 0
     while i < n {
@@ -900,7 +900,7 @@ func FuncErrors(st mut S, fd ast.Node) (ListRef, int) {
     return ListRef(LBASE + LSTRS * LK + refFile(ext) * FW + raw), tok
 }
 
-// 関数宣言 fd に `@exhaustive` の印があるか（付加の列の 9 番目 — parser.funcDecl。language.md 13 節「表の網羅」）
+// 関数宣言fdに `@exhaustive` のフラグがあるか（付加の列の9番目 — parser.funcDecl。language.md 13 節「表の網羅」）
 func FuncExhaustive(st mut S, fd ast.Node) bool {
     ext := fd.f
     return ext >= LBASE && lenL(mut st, ListRef(ext)) >= 9 && latI(mut st, ListRef(ext), 8) != 0
@@ -922,7 +922,7 @@ func FuncSecret(st mut S, fd ast.Node) (ListRef, int) {
 }
 
 // 関数宣言 fd の `@effects(…)` の項の列（文字列の列 — 無ければ -1）と `@` の字句（付加の列の 12・13 番目 — parser.funcExt。
-// language.md 12 節の関数の効果）
+// language.md 12 節の関数のエフェクト）
 func FuncEffects(st mut S, fd ast.Node) (ListRef, int) {
     ext := fd.f
     if ext < LBASE || lenL(mut st, ListRef(ext)) < 14 {
@@ -937,7 +937,7 @@ func FuncEffects(st mut S, fd ast.Node) (ListRef, int) {
 }
 
 // 関数宣言 fd の `@const(…)` の仮引数の名前の列（文字列の列 — 無ければ -1）と `@` の字句（付加の列の 14・15 番目 — parser.funcExt。
-// language.md 12 節「const の席」）
+// language.md 12 節「const仮引数」）
 func FuncConst(st mut S, fd ast.Node) (ListRef, int) {
     ext := fd.f
     if ext < LBASE || lenL(mut st, ListRef(ext)) < 16 {
@@ -951,7 +951,7 @@ func FuncConst(st mut S, fd ast.Node) (ListRef, int) {
     return ListRef(LBASE + LSTRS * LK + refFile(ext) * FW + raw), tok
 }
 
-// 関数宣言 fd に `@bless` の印があるか（付加の列の 12 番目）
+// 関数宣言fdに `@bless` のフラグがあるか（付加の列の12番目）
 func FuncBless(st mut S, fd ast.Node) bool {
     return (funcMarks(mut st, fd) & 1) != 0
 }
@@ -966,7 +966,7 @@ func FuncCredential(st mut S, fd ast.Node) bool {
     return (funcMarks(mut st, fd) & 4) != 0
 }
 
-// 付加の列の 12 番目（印のビット: 0 = `@bless`・1 = `@bless(origin)`・2 = `@credential` — 無ければ 0）
+// 付加の列の12番目（フラグのビット: 0 = `@bless`・1 = `@bless(origin)`・2 = `@credential` — 無ければ0）
 func funcMarks(st mut S, fd ast.Node) int {
     ext := fd.f
     return if ext >= LBASE && lenL(mut st, ListRef(ext)) >= 12 { latI(mut st, ListRef(ext), 11) } else { 0 }
@@ -986,7 +986,7 @@ type FnInfo struct {
 }
 
 // FnAt は関数表の i 行目（lower も読む — 非ジェネリックの包み）
-// ZVariant は関数 i が省略可の匿名関数型の仮引数を持つ関数の写し（loader/optfn.sober）か
+// ZVariantは関数iが省略可の匿名関数型の仮引数を持つ関数のコピー（loader/optfn.sober）か
 func ZVariant(st mut S, i int) bool {
     if len(st.zdecl) == 0 {
         return false
@@ -1000,8 +1000,8 @@ func ZVariant(st mut S, i int) bool {
     return false
 }
 
-// ファイル f の節 n を写した組の関数（写しの節の区間に入っていなければ -1）。写しは元の宣言と同じ字句の区間を持つので、
-// 字句で関数を引く表（本体の区間 — reach / namedval / e2s）は写しを載せず、先にここで引く
+// ファイルfの節nをコピーした組の関数（コピーの節の区間に入っていなければ -1）。コピーは元の宣言と同じ字句の区間を持つので、
+// 字句で関数を引く表（本体の区間 — reach / namedval / e2s）はコピーを載せず、先にここで引く
 func zBlock(st mut S, f int, n int) int {
     if len(st.zdecl) == 0 {
         return -1
@@ -1047,7 +1047,7 @@ func fnDef(st mut S, i int) int {
     return FnAt(mut st, i).def
 }
 
-// 関数宣言の欄（KFuncDecl: a = 名前, b = type_params, c = params, d = results, e = body）
+// 関数宣言のフィールド（KFuncDecl: a = 名前, b = type_params, c = params, d = results, e = body）
 func fnName(st mut S, i int) StrRef {
     return sA(nodeOf(mut st, fnNode(mut st, i)))
 }
@@ -1068,7 +1068,7 @@ func fnBody(st mut S, i int) NodeRef {
     return nE(nodeOf(mut st, fnNode(mut st, i)))
 }
 
-// ── 表: const（5 語 [node, pkg, value, has, dict]）──
+// ── 表: const（5ワード [node, pkg, value, has, dict]）──
 
 const CNSZ = 5
 
@@ -1126,7 +1126,7 @@ func ErrPkg(st mut S, i int) int {
 
 // ── 初期化: loader の Program をヒープへ ──
 
-// 6 欄の付け替えの種類（8 進 1 桁ずつ）: 0 = 値、1 = 節、2 = 文字列、3 = 節の列、4 = 文字列の列、5 = 値の列
+// 6フィールドの付け替えの種類（8進1桁ずつ）: 0 = 値、1 = 節、2 = 文字列、3 = 節の列、4 = 文字列の列、5 = 値の列
 func d6(a int, b int, c int, d int, e int, f int) int {
     return a + b * 8 + c * 64 + d * 512 + e * 4096 + f * 32768
 }

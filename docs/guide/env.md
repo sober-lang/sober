@@ -24,6 +24,10 @@ Declare the variables your own program reads in a [std/env](../std/env.ja.md) ta
 | `SOBER_HASH_SEED` | the hash seed of maps (decimal — for reproduction) |
 | `SOBER_IO` | choose the io path (1 / 2 read synchronously without io_uring — for comparison) |
 | `SOBER_NET` | 1 fixes the network to the epoll path (for comparison) |
+| `SOBER_NET_FUSE` | 0 turns off sending a keep-alive HTTP (plaintext) response without waiting for its completion before moving on to receive the next request (for isolating problems; on by default) |
+| `SOBER_TASK_WIN` | 0 turns off starting a connection task's shallow regions from the last pages of the task's area (for isolating problems; on by default) |
+| `SOBER_MDWE` | 0 turns off the protection that gives up executable memory at startup (`PR_SET_MDWE`, Linux 6.6 and later). Use it when running under dynamic instrumentation such as valgrind (on by default) |
+| `SOBER_MDWE_REPORT` | Non-zero prints the state of the protection above to standard error when main exits normally (for testing) |
 | `SOBER_IO_TRACE` | 1 prints each worker's io_uring check to standard error |
 | `SOBER_FLIGHT` | the path of the flight record (rt events are recorded only when set) |
 | `SOBER_FLIGHT_EV` | the size of the flight record ring (log2, 8–24, default 16) |

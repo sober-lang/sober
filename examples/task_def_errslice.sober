@@ -1,8 +1,8 @@
 package main
 
-// Def の本体の par（Map・Scope + Spawn + Join）と、slice を欄に持つ error ラベル（Missing の string）が
-// 同じプログラムにある形。Scope の「子が死んだ」側の腕で組む ChildDied の注釈が宣言の形（region 0）のままで、Def の本体（点が region 0 でない）
-// だと腕の型が食い違う（main の本体では通る・build は受理）
+// Defの本体のpar（Map・Scope + Spawn + Join）と、sliceをフィールドに持つerrorラベル（Missingのstring）が
+// 同じプログラムにある形。Scopeの「子が死んだ」側の分岐で組むChildDiedの注釈が宣言の形（region 0）のままで、Defの本体（点がregion 0でない）
+// だと分岐の型が食い違う（mainの本体では通る・buildは受理）
 
 import "std/task"
 

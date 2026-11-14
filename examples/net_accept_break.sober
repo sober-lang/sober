@@ -1,9 +1,9 @@
 package main
 
-// net 段 4b-2（accept の列と listener の閉じ — language.md 28 節の net）: scope の子 5 本が Dial して（listen の前なら少し待って再試行）相手が
-// 閉じるまで受ける。本体は listen して 1 本だけ受けて "hi" を送り、少し眠ってから Accept の for を break で抜け、Listen の本体を抜けて listener を
-// 閉じる（子の決着は scope が待つ）。net の ring のワーカーでは眠っている間に multishot ACCEPT が残りの接続を listener の列へ受けるので、
-// listener の閉じがその列の fd を閉じる（閉じ損ねると子の Recv は期限まで待って expired を出す）。epoll の道では受けていない接続はカーネルが
+// net段階4b-2（acceptの列とlistenerの閉じ — language.md 28 節のnet）: scopeの子5本がDialして（listenの前なら少し待って再試行）相手が
+// 閉じるまで受ける。本体はlistenして1本だけ受けて "hi" を送り、少しスリープしてからAcceptのforをbreakで抜け、Listenの本体を抜けてlistenerを
+// 閉じる（子の決着はscopeが待つ）。netのringのワーカーではスリープしている間に multishot ACCEPT が残りの接続をlistenerの列へ受けるので、
+// listenerの閉じがその列のfdを閉じる（閉じ損ねると子のRecvは期限まで待ってexpiredを出す）。epollのパスでは受けていない接続はカーネルが
 // listen の backlog ごと切る。どちらでも出力は served 1 の 1 行
 
 import "std/io"

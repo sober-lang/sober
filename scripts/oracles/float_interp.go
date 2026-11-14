@@ -1,4 +1,4 @@
-// float_interp.go — examples/float_interp.sober の Go の双子（go run scripts/oracles/float_interp.go > examples/float_interp.out）。
+// float_interp.go — examples/float_interp.soberの比較用のGoの実装（go run scripts/oracles/float_interp.go > examples/float_interp.out）。
 // 綴りは strconv.FormatFloat(f, 'g', -1, 64)・0.1 + 0.2 は変数を経て実行時の加算にする（Go の定数の正確な算術を避ける）
 package main
 

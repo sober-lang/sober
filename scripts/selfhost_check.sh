@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
 # selfhost の型検査器の差分オラクル: Sober 版（compiler/checker + compiler/tools/checkdump）の判定 JSON を、Lean 製 sober-check
-# （lean/FeatherweightSober/Checker.lean の typecheck — 黄金オラクル）の stdout とバイト比較する。
+# （lean/FeatherweightSober/Checker.leanのtypecheck — ゴールデンオラクル）のstdoutとバイト比較する。
 #
-#   scripts/selfhost_check.sh              全面: (i) 生成ベクタ (ii) 実コーパス (iii) 変異体 (iv) 負例のソース (v) 部分検査の封筒。fail = 0 がゲート
+#   scripts/selfhost_check.sh              全面: (i) 生成ベクタ (ii) 実コーパス (iii) ミュータント (iv) 負例のソース (v) 部分検査の封筒。fail = 0がゲート
 #   scripts/selfhost_check.sh --more N     加えて sober-gen の別シード（1..N、各 1000 本）も突き合わせる（gates --all = GATES_ALL=1 では常設で N = 2）
-#   scripts/selfhost_check.sh --fast       (iii) の変異体を第 3 黄金の 4 本に 1 本だけに間引く（約 1/4 — 常備ゲートの短縮用）
+#   scripts/selfhost_check.sh --fast       (iii) のミュータントを第3ゴールデンの4本に1本だけに間引く（約1/4 — 常備ゲートの短縮用）
 #   scripts/selfhost_check.sh FILE.json... 指定のコア AST JSON だけ
 #
-# (i)   testdata/corevec.jsonl（seed 42・1000 本 — 型指向 + 近傍変異 + chaos）の各 "e" + testdata/corevec_byte/*.json・corevec_float/*.json・corevec_copyto/*.json・corevec_par/*.json・corevec_narrow/*.json（手書き — Gen が作らない op / 作りにくい reject）
-# (ii)  第 3 黄金 testdata/corejson/*.json（71 本）+ compiler/tools/*（Sober 製コンパイラ自身のコア AST。cwd = compiler/）。
-#       7 本全部（desugardump・checkdump・sobercheck はコア AST が 9.6〜10.6MB — 旧 64MB スロットでは 1 バイト 1 語の入力が溢れたので
+# (i)   testdata/corevec.jsonl（seed 42・1000本 — 型指向 + 近傍のミューテーション + chaos）の各 "e" + testdata/corevec_byte/*.json・corevec_float/*.json・corevec_copyto/*.json・corevec_par/*.json・corevec_narrow/*.json（手書き — Genが作らないop / 作りにくいreject）
+# (ii)  第3ゴールデンtestdata/corejson/*.json（71本）+ compiler/tools/*（Sober製コンパイラ自身のコアAST。cwd = compiler/）。
+#       7本全部（desugardump・checkdump・sobercheckはコアASTが9.6〜10.6MB — 旧64MBスロットでは1バイト1ワードの入力が溢れたので
 #    外していた。region 予約の拡大 = で解除）。
 #       この 3 本は直結の e2e（scripts/selfhost_e2e.sh — JSON を経ない）が検査する
-# (iii) (ii) の第 3 黄金の各本に scripts/checkmut.ts の置換を 1 か所ずつ当てた変異体（多くは Lean が拒否する）
+# (iii) (ii) の第3ゴールデンの各本にscripts/checkmut.tsの置換を1か所ずつ当てたミュータント（多くはLeanが拒否する）
 # (iv)  testdata/checkneg/*.sober（脱糖は通って Lean が拒否する型エラーの例）の --core-json
-# (v)   部分検査の封筒（"parts":true）— 下の (v) の注
+# (v)   部分検査の封筒（"parts":true）— 下の (v) の注記
 #
-# 比べるのは stdout のバイト列。parse error だけは文言を比べない（Lean の Json.parse / fromJson の文言は写していない —
+# 比べるのはstdoutのバイト列。parse errorだけは文言を比べない（LeanのJson.parse / fromJsonの文言はコピーしていない —
 # 仮決め R11-2）。前提: zig build 済み・lean で lake build 済み（$SOBER / $STAGE1 / $SOBER_CHECK / $SOBER_GEN で差し替え可）
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -113,20 +113,20 @@ EOF
 }
 vectors testdata/corevec.jsonl corevec
 section "(i) corevec"
-# (i'') 手書きのコア JSON（Gen が作らない op の点検 — byte の段: 型 byte・tobyte / toint。Examples.lean の exByte 系と同形。neg_* は Lean が拒否）
+# (i'') 手書きのコアJSON（Genが作らないopの点検 — byteの段階: 型byte・tobyte / toint。Examples.leanのexByte系と同形。neg_* はLeanが拒否）
 prefetch testdata/corevec_byte/*.json
 for f in testdata/corevec_byte/*.json; do par_run one "$f" "$f"; done
 section "(i'') corevec_byte"
-# (i''') 手書きのコア JSON（float の段: 型 f64・flit / fadd… / feq… / fneg…。Examples.lean の exF 系と同形。neg_* は Lean が拒否）
+# (i''') 手書きのコアJSON（floatの段階: 型f64・flit / fadd… / feq… / fneg…。Examples.leanのexF系と同形。neg_* はLeanが拒否）
 prefetch testdata/corevec_float/*.json
 for f in testdata/corevec_float/*.json; do par_run one "$f" "$f"; done
 section "(i''') corevec_float"
-# (i'''') 手書きのコア JSON（境界コピー式の段: copyto — 宛先構築レーン M3。Examples.lean の exLoopScope 系と同形。neg_* は Lean が拒否）
+# (i'''') 手書きのコアJSON（境界コピー式の段階: copyto — 宛先構築レーンM3。Examples.leanのexLoopScope系と同形。neg_* はLeanが拒否）
 prefetch testdata/corevec_copyto/*.json
 for f in testdata/corevec_copyto/*.json; do par_run one "$f" "$f"; done
 section "(i'''') corevec_copyto"
-# (i''''') 手書きのコア JSON（段 6 P2a: scope / spawn / join / try / newch・send / recv の端点。Gen の型指向の腕 task と同形 + 規則ごとに
-# 1 か所だけ破る neg_*〔try の注釈・spawn の引数の givable・端点の向き・newch の cap / region・domain の入りの注釈 / 出の型 / 家の region / 渡せる範囲〕— Gen の近傍変異が作りにくい reject の網）
+# (i''''') 手書きのコアJSON（段階6 P2a: scope / spawn / join / try / newch・send / recvの端点。Genの型指向の分岐taskと同形 + 規則ごとに
+# 1か所だけ破るneg_*〔tryの注釈・spawnの引数のgivable・端点の向き・newchのcap / region・domainの入りの注釈 / 出の型 / 家のregion / 渡せる範囲〕— Genの近傍のミューテーションが作りにくいrejectの検査）
 prefetch testdata/corevec_par/*.json
 for f in testdata/corevec_par/*.json; do par_run one "$f" "$f"; done
 section "(i''''') corevec_par"
@@ -164,7 +164,7 @@ for t in $TOOLS; do
 done
 section "(ii) corpus"
 
-# (iii) 変異体
+# (iii) ミュータント
 mkdir -p "$tmp/mut"
 if [ "$fast" = 1 ]; then
     mapfile -t mins < <(ls testdata/corejson/*.json | awk 'NR % 4 == 1')
@@ -195,7 +195,7 @@ mkdir -p "$tmp/parts"
 # 横取りだけして Lean は起動しない（判定はあとでバッチに流す — Zig の中継した stdout は見ないので仮の判定を返す）
 printf '#!/usr/bin/env bash\nf=$(mktemp -p %s XXXXXX.json)\ncat > "$f"\necho "{\\"pending\\":true}"\n' "$tmp/parts" > "$tmp/tee-check"
 chmod +x "$tmp/tee-check"
-# 凍結の入力（stage1 が読む — 書き換えた例は testdata/frozen_src の写し。std 命名規則のリネーム・S6 の文字リテラル化の後も同じ入力で続ける）
+# 凍結の入力（stage1が読む — 書き換えた例はtestdata/frozen_srcのコピー。std命名規則のリネーム・S6の文字リテラル化の後も同じ入力で続ける）
 ptargets="testdata/pkgdemo/app testdata/errpkg/app testdata/iface/app testdata/frozen_src/testdata/minic/app testdata/frozen_src/testdata/minic_rd/app testdata/frozen_src/testdata/pool/nested.sober testdata/frozen_src/examples/errparse.sober testdata/frozen_src/examples/strings_std.sober"
 partsgen() { # $1 = 対象。各 package の封筒を $tmp/parts へ横取りする
     local t=$1 D p

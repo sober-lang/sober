@@ -1,5 +1,5 @@
-// std/internal/x509 の証明書の読み（white-box — x509_test.sober）の Go の双子: testdata/x509/go/*.pem（Go の crypto/x509 の verify_test.go に埋め込まれた証明書）と
-// testdata/x509/pkits/certs.txt（NIST PKITS の証明書 — 1 行 = `ファイル名 DER の base64`）を crypto/x509 で読み、1 証明書 1 行で欄を出す。再生成:
+// std/internal/x509の証明書の読み（white-box — x509_test.sober）の比較用のGoの実装: testdata/x509/go/*.pem（Goのcrypto/x509のverify_test.goに埋め込まれた証明書）と
+// testdata/x509/pkits/certs.txt（NIST PKITSの証明書 — 1行 = `ファイル名 DER の base64`）をcrypto/x509で読み、1証明書1行でフィールドを出す。再生成:
 //   go run scripts/oracles/crypto_x509.go > testdata/x509/fields.txt
 // 行 = `名前 v= sig= pub= nb= na= ca= pl= ku= eku= dns= ip= ski= aki= tbs= spki= iss= sub=`（ハッシュは SHA-256 の先頭 8 バイトの 16 進・列は , 区切りで整列・無いものは -）
 package main

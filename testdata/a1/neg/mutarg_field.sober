@@ -1,6 +1,6 @@
 package main
 
-// a1dump の断片の外の負例: 再帰の値の欄を mut 実引数に渡す（`mut k.next`）— A1 の値は表と根で、欄を mut の場所として渡す形が無い。a1dump は exit 2 で名指す（scripts/a1oracle.sh の負例の列）
+// a1dumpの断片の外の負例: 再帰の値のフィールドをmut実引数に渡す（`mut k.next`）— A1の値は表と根で、フィールドをmutの場所として渡す形が無い。a1dumpはexit 2で拒否する（scripts/a1oracle.shの負例の列）
 
 type K struct {
     v int

@@ -1,12 +1,12 @@
 package lower
 
-// SROA: 多語のスロット（slice / string / map のヘッダ・小さい struct・T? — lower の -O0 形の集約の置き場）を、
-// 語ごとの 1 語スロットに割る IR → IR のパス。割った後の 1 語スロットは既存の mem2reg（m2r.sober — 写し・不変）が SSA 値へ持ち上げる。
+// SROA: 多語のスロット（slice / string / mapのヘッダ・小さいstruct・T? — lowerの -O0 形の集約の配置先）を、
+// ワードごとの1ワードスロットに割るIR → IRのパス。割った後の1ワードスロットは既存のmem2reg（m2r.sober — コピー・不変）がSSA値へ持ち上げる。
 // 対象: スロットのアドレス（slotaddr の結果）の使い道が「定数オフセットの load の番地」「定数オフセットの store の番地」だけのスロット
 // （格納される値・他の命令の引数・辺の引数・ret・gep・ptoi・call の引数になったら逃げている — 対象外。load8 / store8 も逃げ）。
-// 書き換え: スロット s（w 語）の各 `%a = slotaddr s` を「語 0 のスロットの slotaddr」に変え、直後に語 1..w-1 の slotaddr を差し込み、
-// `load %a[k]` / `store %a[k], v` を語 k のアドレスのオフセット 0 へ付け替える。元のスロットは slotaddr が無くなり、mem2reg の出口で落ちる。
-// 意味は変えない: 逃げないスロットのメモリは語ごとに独立に読み書きされるだけ（スロットは入口でゼロ初期化 — 割った語も同じ）
+// 書き換え: スロットs（wワード）の各 `%a = slotaddr s` を「ワード0のスロットのslotaddr」に変え、直後にワード1..w-1のslotaddrを差し込み、
+// `load %a[k]` / `store %a[k], v` をワードkのアドレスのオフセット0へ付け替える。元のスロットはslotaddrが無くなり、mem2regの出口で落ちる。
+// 意味は変えない: 逃げないスロットのメモリはワードごとに独立に読み書きされるだけ（スロットは入口でゼロ初期化 — 割ったワードも同じ）
 
 import "desugar"
 import "std/iter"
@@ -23,7 +23,7 @@ func sroaModule(st mut St, cg bool) {
 }
 
 func sroaFunc(st mut St, f FnRef, cg bool) {
-    // スロットの語数（番号の順 = 鎖の順）
+    // スロットの語数（番号の順 = チェーンの順）
     mut swords := mut []int{}
     mut s := irFnSHead(mut st, f)
     while s >= 0 {
@@ -71,7 +71,7 @@ func sroaFunc(st mut St, f FnRef, cg bool) {
         }
         b = irBlkNext(mut st, b)
     }
-    // gbase[g] = 定数 gep.word の結果 g の元の slotaddr の値・goff[g] = 語のずれ（slotOf[g] も元のスロット — 逃げの判定は slotaddr の値と同じ規則で、ずれを足して見る）
+    // gbase[g] = 定数gep.wordの結果gの元のslotaddrの値・goff[g] = ワードのずれ（slotOf[g] も元のスロット — 逃げの判定はslotaddrの値と同じ規則で、ずれを足して見る）
     mut gbase := mut []int{}
     mut goff := mut []int{}
     for q <- iter.Range(0, len(geps)) {
@@ -123,7 +123,7 @@ func sroaFunc(st mut St, f FnRef, cg bool) {
         }
         b = irBlkNext(mut st, b)
     }
-    // 割るスロットごとに語の 1 語スロットを鎖の末尾へ（first[k] = 語 0 の新しい番号）
+    // 割るスロットごとにワードの1ワードスロットをチェーンの末尾へ（first[k] = ワード0の新しい番号）
     mut first := mut []int{}
     xFill(mut first, ns, -1)
     mut nsplit := 0
@@ -140,7 +140,7 @@ func sroaFunc(st mut St, f FnRef, cg bool) {
         return
     }
     fs := freeze(first)
-    // 語ごとのアドレス: 語 0 = 元の slotaddr（語 0 のスロットを指すように付け替える）・語 j（≥ 1）= wbase[%a] + j（差し込んだ slotaddr の値は連番）
+    // ワードごとのアドレス: ワード0 = 元のslotaddr（ワード0のスロットを指すように付け替える）・ワードj（≥ 1）= wbase[%a] + j（差し込んだslotaddrの値は連番）
     st.fn = f
     mut wbase := mut []int{}
     xFill(mut wbase, nv, -1)
@@ -184,14 +184,14 @@ func sroaFunc(st mut St, f FnRef, cg bool) {
                         irSetInsB(mut st, ins, 0)
                     }
                 } else if hasG && gb[p] >= 0 && fs[so[p]] >= 0 {
-                    // 定数 gep.word 越しの load / store は語 goff + k の 1 語スロットへ（語 0 = 元の slotaddr の値）
+                    // 定数gep.word越しのload / storeはワードgoff + kの1ワードスロットへ（ワード0 = 元のslotaddrの値）
                     r := gb[p]
                     w := gofs[p] + irInsB(mut st, ins)
                     irSetInsA(mut st, ins, if w == 0 { r } else { wb[r] + w })
                     irSetInsB(mut st, ins, 0)
                 }
             } else if op == OpGepW && hasG && gb[irInsRes(mut st, ins)] >= 0 && fs[so[irInsRes(mut st, ins)]] >= 0 {
-                // 使い道を全部付け替えた gep は死なせる（残すと mem2reg が語 0 の slotaddr の逃げに数え、入口の store が 1 本残る）
+                // 使い道を全部付け替えたgepは死なせる（残すとmem2regがワード0のslotaddrの逃げに数え、入口のstoreが1本残る）
                 irSetInsOp(mut st, ins, OpDead)
                 irSetInsRes(mut st, ins, -1)
             }
@@ -201,7 +201,7 @@ func sroaFunc(st mut St, f FnRef, cg bool) {
     }
 }
 
-// 関数 f に 1 語のスロットを鎖の末尾へ足す（記録 = [次, 語数, 番号, 空き鎖の次, 直近の slotaddr の値] — newSlot と同じ形）
+// 関数fに1ワードのスロットをチェーンの末尾へ足す（記録 = [次, 語数, 番号, 空きチェーンの次, 直近のslotaddrの値] — newSlotと同じ形）
 func sroaNewSlot(st mut St, f FnRef) {
     n := irFnNSlot(mut st, f)
     s := rec4(mut st, -1, 1, n, -1)

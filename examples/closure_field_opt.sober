@@ -1,6 +1,6 @@
 package main
 
-// 値の位置の閉包の option の欄（`Fn?` — ゼロ値は nil。部分リテラルで欄を省ける）
+// 値の位置のクロージャのoptionのフィールド（`Fn?` — ゼロ値はnil。部分リテラルでフィールドを省ける）
 
 type Emit func(n int) int
 

@@ -1,6 +1,6 @@
 package main
 
-// map の欄を通る再帰: 名前つきの子のディレクトリ木を挿入順に歩く
+// mapのフィールドを通る再帰: 名前つきの子のディレクトリ木を挿入順に歩く
 
 type Dir struct {
     name string

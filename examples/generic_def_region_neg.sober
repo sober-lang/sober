@@ -1,6 +1,6 @@
 package main
 
-// 負例（check も build も名指しで拒否 — diag.TypeMismatch kind 5）: Def として呼ぶジェネリック（mut も関数型の仮引数も無い）の
+// 負例（checkもbuildも専用の診断で拒否 — diag.TypeMismatch kind 5）: Defとして呼ぶジェネリック（mutも関数型の仮引数も無い）の
 // 型引数は region を持てない（language.md 31 節 R1）— string の型引数を渡すなら関数型の仮引数で展開される形に
 
 type Bx[T] struct {

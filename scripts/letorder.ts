@@ -1,9 +1,9 @@
-// letorder: 2 本のコア JSON（corejson の黄金）の差が「名前つきリテラルを書いた順の let に束縛した形」だけかを照合する
-// （黄金の例外 — composite の値の評価順を書いた順にした修正。language.md 27 節、2026-09-30 の裁定 (a)）。
+// letorder: 2本のコアJSON（corejsonのゴールデン）の差が「名前つきリテラルを書いた順のletに束縛した形」だけかを照合する
+// （ゴールデンの例外 — compositeの値の評価順を書いた順にした修正。language.md 27 節、2026-09-30の決定 (a)）。
 //
 //   node scripts/letorder.ts OLD NEW    exit 0 = 一致、1 = 不一致（理由を stderr に 1 行）
 //
-// 照合: NEW の中の「k 個（k ≥ 2）の let の鎖で、一番内側が組（pair の鎖 — inl / inr で包まれてもよい）の葉がちょうど var 0 … var k-1 の並べ替え」を、
+// 照合: NEWの中の「k個（k ≥ 2）のletのチェーンで、一番内側が組（pairのチェーン — inl / inrで包まれてもよい）の葉がちょうどvar 0 … var k-1の並べ替え」を、
 // 葉の var に let の値を戻して（j 番目の値は j 個の let の内側で作られたので、自由な添字を j 下げる）畳み、OLD とバイト一致することを見る。
 // 畳むのは OLD と違う箇所だけではなく該当する形すべて（元から該当する形は無い — 旧の脱糖器は名前つきリテラルに let を作らない）
 import { readFileSync } from "node:fs";
@@ -11,7 +11,7 @@ import { readFileSync } from "node:fs";
 type J = any;
 const [oldPath, newPath] = process.argv.slice(2);
 
-// binder を持つ欄（Lean の Expr.subst と同じ: let の body・ifnil の some・case の l / r・parch の e1 / e2）
+// binderを持つフィールド（LeanのExpr.substと同じ: letのbody・ifnilのsome・caseのl / r・parchのe1 / e2）
 const binders: Record<string, string[]> = { let: ["body"], ifnil: ["some"], case: ["l", "r"], parch: ["e1", "e2"] };
 
 // shift は e の自由な添字（cutoff 以上）を d だけずらす（負なら下げる — 下げた先が cutoff 未満になれば畳めない形）
@@ -29,7 +29,7 @@ function shift(e: J, d: number, cutoff: number): J {
   return out;
 }
 
-// leaves は組（pair の鎖）の葉の var の添字（組でない・var でない葉があれば null）。inl / inr の包みは剥がす
+// leavesは組（pairのチェーン）の葉のvarの添字（組でない・varでない葉があればnull）。inl / inrの包みは剥がす
 function leaves(e: J, acc: number[]): boolean {
   if (e?.k === "inl" || e?.k === "inr") return leaves(e.e, acc);
   if (e?.k === "pair") return leaves(e.a, acc) && leaves(e.b, acc);
@@ -52,7 +52,7 @@ function fold(e: J): J {
     while (cur?.k === "let") { vs.push(cur.e); cur = cur.body; }
     const k = vs.length;
     const ls: number[] = [];
-    // 書いた順が欄の順と同じ（葉が var k-1 … var 0 の順）なら脱糖器は let を作らないので、並べ替えのある形だけを畳む
+    // 書いた順がフィールドの順と同じ（葉がvar k-1 … var 0の順）なら脱糖器はletを作らないので、並べ替えのある形だけを畳む
     if (k >= 2 && leaves(cur, ls) && ls.length === k && [...ls].sort((a, b) => a - b).every((x, i) => x === i) && !ls.every((x, i) => x === k - 1 - i)) {
       // var i は j = k-1-i 番目の let の値。その値は j 個の let の内側 — 自由な添字を j 下げると let の外（組の位置）の添字になる
       const vals: J[] = [];

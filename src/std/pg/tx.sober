@@ -2,7 +2,7 @@ package pg
 
 // トランザクション。k が普通に終われば COMMIT（入れ子なら RELEASE SAVEPOINT）。k を ? / return で抜けたら Tx の defer で ROLLBACK
 // （入れ子なら ROLLBACK TO SAVEPOINT + RELEASE）。k の中の panic は task の死 — サーバは接続の切断でトランザクションを巻き戻す。
-// 入れ子は一様に SAVEPOINT（深さは接続の置き場の語 lTxDepth）。分離の水準と読みだけの指定は一番外の Tx だけが効き、入れ子は外を受け継ぐ
+// 入れ子は一様にSAVEPOINT（深さは接続の格納場所のワードlTxDepth）。分離の水準と読みだけの指定は一番外のTxだけが効き、入れ子は外を受け継ぐ
 // （SAVEPOINT は水準を変えられない）。自動の再試行はしない（直列化の失敗 40001 は Server で返る）
 
 import "std/io"

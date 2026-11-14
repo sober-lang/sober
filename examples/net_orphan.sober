@@ -1,7 +1,7 @@
 package main
 
-// 親の task が死ぬと、その開いている scope の下で io を待つ子孫は待ちを切られて io.Expired を受け、普通の道で巻き戻る（language.md 28 節
-// 「キャンセルは協調的」— rt は待ちを起こすだけ）。期限の無い scope でも永眠しない（lower/orphan.sober が直す）。
+// 親のtaskが死ぬと、その開いているscopeの下でioを待つ子孫は待ちを切られてio.Expiredを受け、普通のパスで巻き戻る（language.md 28 節
+// 「キャンセルは協調的」— rtは待ちをウェイクアップするだけ）。期限の無いscopeでも永眠しない（lower/orphan.soberが直す）。
 // 待ちの種類ごと: 受け（Recv）・accept・孫（死んだ親の scope の下の、生きている子の scope の下）・切られた後の再試行（次の待ちの入口で即 Expired）・
 // 送りの詰まり（読まない相手への Send）・親の死の時には走っていた子（次の待ちの入口で捕まる）。外の scope は親の死を受ける（died）
 
@@ -93,7 +93,7 @@ func waitAccept() error? {
     return nil
 }
 
-// 孫: 子は自分の scope を開いて孫に Recv を待たせ、孫を待つ（子の scope に印は無い — 印は死んだ親の scope にだけ立つ）
+// 孫: 子は自分のscopeを開いて孫にRecvを待たせ、孫を待つ（子のscopeにマークは無い — マークは死んだ親のscopeにだけ立つ）
 func grand(addr string) {
     _, e := task.Run((s task.Scope) => {
         h := task.Spawn(s, () => {
@@ -140,7 +140,7 @@ func flood(addr string) error? {
     return nil
 }
 
-// 親の死の時には眠っていた（待ちの登録簿に居ない）子: 起きてからの最初の待ちの入口が祖先を辿って捕まえる
+// 親の死の時にはスリープしていた（待ちの登録簿に居ない）子: 起きてからの最初の待ちの入口が祖先を辿って捕まえる
 func late(addr string) {
     os.Sleep(200)
     println("late recv: ${label(waitRecv(addr))}")

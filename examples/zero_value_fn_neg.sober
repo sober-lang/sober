@@ -1,6 +1,6 @@
 package main
 
-// 負例（check も build も名指しで拒否 — diag.TypeMismatch kind 7）: 関数値と union にはゼロ値が無い — 部分リテラルでも欄は省けない
+// 負例（checkもbuildも専用の診断で拒否 — diag.TypeMismatch kind 7）: 関数値とunionにはゼロ値が無い — 部分リテラルでもフィールドは省けない
 
 type R struct {
     n int

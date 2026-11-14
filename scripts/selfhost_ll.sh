@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # selfhost の .ll 出力の差分オラクル: Sober 版（compiler/lower の rtlower + llvm、compiler/tools/lldump）の LLVM テキストを、
-# その場の Zig 版 `$STAGE1 build --emit=ll` とスロットの宣言・番号を除いてバイト比較し（S-1 — gatelib の slot_eq）（stage1 直呼び — 第 5 黄金 testdata/lltext/ は Sober 生成なので相手にしない。
-# Q1 裁定 2026-09-28）、Sober 版の .ll を
+# その場のZig版 `$STAGE1 build --emit=ll` とスロットの宣言・番号を除いてバイト比較し（S-1 — gatelibのslot_eq）（stage1直呼び — 第5ゴールデンtestdata/lltext/ はSober生成なので相手にしない。
+# Q1決定2026-09-28）、Sober版の .llを
 # `zig cc -O0` で ELF にして実行して期待出力 .out / .exit と照合する（実行の裏取り — obs.sh の llvm 列と同じ下ろし方）。
 #
 #   scripts/selfhost_ll.sh            全対象: 凍結 entries のうち Zig が受理するもの全部（fail = 0 がゲート — 到達リストは持たない）+ compiler/tools/*（cwd = compiler/、
@@ -63,7 +63,7 @@ one() {
 }
 
 # tool_one TOOL: compiler/tools/<TOOL> の .ll がその場の Zig 版と一致。lldump は暫定固定点も。
-# 入力は起点の木の compiler/（boot_src — 凍結の入力。Sober 版の道具は今の compiler/ から建てたもの）
+# 入力は起点の木のcompiler/（boot_src — 凍結の入力。Sober版の道具は今のcompiler/ からビルドしたもの）
 BSRC=$(boot_src)
 tool_one() {
     local w=${PAR_W:-$tmp} t=$1

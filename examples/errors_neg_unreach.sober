@@ -1,6 +1,6 @@
 package main
 
-// 負例（check が拒否 — analyzer）: subject が持ちえないラベル（TooLong — parse は返さない）の腕は到達しない（language.md 13 節）
+// 負例（checkが拒否 — analyzer）: subjectが持ちえないラベル（TooLong — parseは返さない）の分岐は到達しない（language.md 13 節）
 
 type Empty error
 

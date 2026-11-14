@@ -1,4 +1,4 @@
-// reverse-complement の Go の双子（Benchmarks Game の仕様 — 素直な形: 全体を読み、記録〔'>' の見出し行 + 配列の行〕ごとに
+// reverse-complementの比較用のGoの実装（Benchmarks Gameの仕様 — 素直な形: 全体を読み、記録〔'>' の見出し行 + 配列の行〕ごとに
 // 見出しはそのまま・配列は改行を除いて逆順の相補にして 1 行 60 文字で書く）。入力はファイル（fasta の出力 — bench.sh が作る）
 package main
 

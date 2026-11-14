@@ -1,6 +1,6 @@
 package main
 
-// named fn type を Def の結果に置く（language.md 25 節 — 工程 4 B1 の同梱）: 返したラムダは値の位置（捕捉は作成点の写し）
+// named fn type をDefの結果に置く（language.md 25 節 — 工程4 B1の同梱）: 返したラムダは値の位置（捕捉は作成点のコピー）
 
 type Gen func(n int) int
 

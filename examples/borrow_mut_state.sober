@@ -1,6 +1,6 @@
 package main
 
-// 借りの仮引数の mut の席の第一顧客の縮図（std/http の serveBuf の形）: 送りの状態 z（圧縮器の状態の代役 — 溜めの slice + 数）は呼び手が持ち、
+// 借りの仮引数が持つmut仮引数の第一顧客の縮図（std/httpのserveBufの形）: 送りの状態z（圧縮器の状態の代役 — バッファのslice + 数）は呼び手が持ち、
 // stream が emit に mut で渡し回す。送り先 send は展開待ちの捕捉（(α-L0) の borrow_pend の形）・入れ子の展開ラムダの中から呼ぶ。期待の出力 505
 
 type Z struct {

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# strix（文字列の rodata の索引の網 — 段 6 R0 の小便・report-1244 1.4）: lower の strGlobal は綴り → rodata のグローバルを開番地の索引
+# strix（文字列のrodataの索引の検査 — 段階6 R0の小タスク・report-1244 1.4）: lowerのstrGlobalは綴り → rodataのグローバルを開番地の索引
 # （compiler/lower/cont.sober — 枠 = [記録 + 1, ハッシュ]・埋まり 1/4 で倍へ）で引く。索引は引きの速さだけで、str.N の番号と並び（= ELF）を
-# 変えないこと: 既定の ELF ≡ 開発の口 SOBER_STRIX=1（ハッシュを全部 0 に潰す — 全部が衝突して探りの列を最後まで歩く道）≡ SOBER_STRIX=2
-# （2 枠から始めて伸長の境を全部踏む）。証人 = 口のある build の `#strix` の行（伸長ごとに 1 行 — 2 の道は自己 build で 10 回以上）。
+# 変えないこと: 既定のELF ≡ 開発のオプションSOBER_STRIX=1（ハッシュを全部0に潰す — 全部が衝突して探りの列を最後まで歩くパス）≡ SOBER_STRIX=2
+# （2枠から始めて伸長の境を全部踏む）。証人 = オプションのあるbuildの `#strix` の行（伸長ごとに1行 — 2のパスは自己buildで10回以上）。
 # 母集団: 自己 build（compiler/ + std/ の木 — 文字列 ≈2 千・建たなければ赤）+ examples（4 本に 1 本 — 並びの添字 mod 4 = 0）
-# 変異で確かめた（report-1245）: 伸長が鎖を入れ直さない形 → 123 本が名指し・伸長しない形（満杯で探りが終わらない）→ 自己 build が timeout で赤
+# ミューテーションで検証した（report-1245）: 伸長がチェーンを入れ直さない形 → 123本が特定・伸長しない形（満杯で探りが終わらない）→ 自己buildがtimeoutで赤
 #   scripts/strix.sh
 set -uo pipefail
 cd "$(dirname "$0")/.."

@@ -1,7 +1,7 @@
 package main
 
 // std/json の値の木 Value（language.md 16 節 — 再帰の union）: 組んで json.Encode[json.Value] で書く・Doc の節から json.Tree で開いて歩く。
-// 構造体の欄にも置ける（Encode は裸の欄も・Decode は json.Value? の欄 — union はゼロ値を持たない）。数は字句のまま
+// 構造体のフィールドにも置ける（Encodeは裸のフィールドも・Decodeはjson.Value? のフィールド — unionはゼロ値を持たない）。数は字句のまま
 
 import "std/json"
 import "std/iter"

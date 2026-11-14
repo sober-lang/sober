@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 # uniqfreeze（F-al の修理便① — language.md 17 節 U1〜U3）: analyzer の freeze の規則と、Lean の実行できる述語 uniqFreeze
 # （lean/FeatherweightSober/UniqFreeze.lean — `sober-check --uniq-batch`）の照合。
-#   ① testdata/analyzer_neg/freeze_*.sober と ifreeze_*.sober（暗黙の freeze の形 — 便② 段 2 から脱糖器が CFreeze を差す）・field_give_{table,arena}（外からの構築で信頼の口へ
-#     別名を渡す形 — 述語は信頼の口の呼び出しを呼び手の側で取り出し形に要約して拒否）（analyzer が拒否する負例）→
-#     述語も全部拒否すること（述語の検出力）
+#   ① testdata/analyzer_neg/freeze_*.soberとifreeze_*.sober（暗黙のfreezeの形 — タスク② 段階2から脱糖器がCFreezeを差す）・field_give_{table,arena}（外からの構築で信頼のインターフェースへ
+#     別名を渡す形 — 述語は信頼のインターフェースの呼び出しを呼び手の側で取り出し形に要約して拒否）（analyzerが拒否する負例）→
+#     述語も全部拒否すること（述語のテストの強さ）
 #   ② scripts/uniqfreeze.list の代表（analyzer が受理する正例）→ 述語も全部受理すること（照合の向き analyzer ⊆ uniqFreeze）
 #   GATES_ALL=1（gates --all）なら ② を examples / bench の全部（analyzer が受理するもの — 約 280 本・2 分半）に広げる
 #   scripts/uniqfreeze.sh
 set -uo pipefail
 cd "$(dirname "$0")/.."
+source scripts/gatelib.sh
 ROOT=$(pwd)
 SOBER=${SOBER:-./bin/sober}
 SOBER_CHECK=${SOBER_CHECK:-$ROOT/lean/.lake/build/bin/sober-check}
@@ -26,15 +27,18 @@ if [ "${GATES_ALL:-0}" = 1 ]; then
 else
     grep -v '^#' scripts/uniqfreeze.list | grep . > "$W/pos.list"
 fi
-: > "$W/pos.ndjson"; : > "$W/pos.names"
+: > "$W/pos.ndjson"; : > "$W/pos.names"; : > "$W/omitted"
 while read -r s; do
-    # analyzer が受理するものだけ（拒否は analyzer_neg の側の網）
+    # analyzerが受理するものだけ（拒否はanalyzer_negの側の検査）
     "$SOBER" check "$s" > /dev/null 2>&1 || { [ "${GATES_ALL:-0}" = 1 ] && continue; echo "FAIL $s: analyzer / check rejects a representative"; fail=1; continue; }
-    "$SOBER" check "$s" --core-json > "$W/one" 2> /dev/null || continue
-    [[ $(head -c 8 "$W/one") == '{"defs"'* ]] || continue
+    # check が通った代表のコア JSON が取れない・形が違う代表は名前を残す（scripts/omit/uniqfreeze.list と照合 — 件数の減少に失敗が隠れない）
+    "$SOBER" check "$s" --core-json > "$W/one" 2> /dev/null || { echo "$s" >> "$W/omitted"; continue; }
+    [[ $(head -c 8 "$W/one") == '{"defs"'* ]] || { echo "$s" >> "$W/omitted"; continue; }
     tr -d '\n' < "$W/one" >> "$W/pos.ndjson"; echo >> "$W/pos.ndjson"; echo "$s" >> "$W/pos.names"
 done < "$W/pos.list"
 cat "$W/neg.ndjson" "$W/pos.ndjson" | "$SOBER_CHECK" --uniq-batch > "$W/out" || { echo "FAIL: sober-check --uniq-batch"; exit 1; }
+# --all（GATES_ALL=1 — examples と bench の全部を走査）は対象が広く一覧と照合しない。既定の代表の一覧（scripts/uniqfreeze.list）だけ照合する
+[ "${GATES_ALL:-0}" = 1 ] || omit_judge uniqfreeze scripts/omit/uniqfreeze.list "$W/pos.list" "$W/omitted" || fail=1
 nn=$(wc -l < "$W/neg.names"); np=$(wc -l < "$W/pos.names")
 head -n "$nn" "$W/out" | paste "$W/neg.names" - | while IFS=$'\t' read -r s v; do
     case "$v" in *'"uniq":false'*) ;; *) echo "FAIL $s: the predicate accepts a negative ($v)";; esac

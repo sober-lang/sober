@@ -1,6 +1,6 @@
 package loader
 
-// 再帰の型宣言（language.md 1 節）: 型宣言どうしの参照（struct の欄・union の variant の欄・error ラベルの欄・named scalar の下地・関数型の
+// 再帰の型宣言（language.md 1 節）: 型宣言どうしの参照（structのフィールド・unionのvariantのフィールド・errorラベルのフィールド・named scalarの下地・関数型の
 // 仮引数と結果 — `[]T`・`map[K]V`・`T?`・`[N]T`・型引数の中も）のグラフの強連結成分（SCC）を再帰の組にする。組の成分の順 = 宣言順
 // （package のファイルの順 → ファイルの中の型宣言の順 — 脱糖器はこの順で同時の μ の成分を並べる。同じ組が別の順で出ると別の型になる）。
 // 受理 = 閉路が slice / map の要素・opt の中身の位置（D）か関数型の仮引数・結果（S）を通る組。拒否（diag.RecursiveType）= I（どれも通らない閉路 —
@@ -119,7 +119,7 @@ func recPkgOf(cx Cx, lo int, hi int) recPkg {
     return recPkg{names: nm, owner: ow, dfile: df, dnode: dn, eto: freeze(eto), eref: freeze(eref), elo: freeze(elo), fnNode: freeze(fnNode), fnPar: freeze(fnPar), fnDecl: freeze(fnDecl)}
 }
 
-// 宣言 d から辺で届く宣言の印（d 自身は閉路があるときだけ）
+// 宣言dから辺で届く宣言のマーク（d自身は閉路があるときだけ）
 func reachFrom(g recPkg, d int) []bool {
     n := len(g.dfile)
     mut seen := mut []bool{}
@@ -185,7 +185,7 @@ func recReject(cx Cx, g recPkg, comp []int, c int) (int, int) {
         }
     }
     // I: ガードの無い辺だけで閉路（沈みの除去 — ガードの無い辺の行き先が全部外れた宣言を外していき、残れば閉路）。
-    // 関数型の中の辺もガード（関数値の大きさは閉包の組のまま — 循環は呼ぶときの約束の中だけ）
+    // 関数型の中の辺もガード（関数値の大きさはクロージャの組のまま — 循環は呼ぶときの約束の中だけ）
     mut gone := mut []bool{}
     for d <- iter.Range(0, n) {
         gone = append(gone, comp[d] != c)
@@ -288,7 +288,7 @@ func recGroupsIn(cx Cx, lo int, hi int) []int {
     return freeze(out)
 }
 
-// 組 c の閉路の上の匿名の関数型の節（[ファイル, 節] の 2 語ずつ — 成分の宣言順・宣言の中は節の番号の昇順）:
+// 組cの閉路の上の匿名の関数型の節（[ファイル, 節] の2ワードずつ — 成分の宣言順・宣言の中は節の番号の昇順）:
 // 組の成分への参照を囲む匿名の関数型（入れ子なら外側も全部）。S の組の成分として named fn type の後に並ぶ
 func recAnonFns(g recPkg, comp []int, c int) []int {
     mut out := mut []int{}
@@ -343,7 +343,7 @@ func recFnParent(g recPkg, d int, f int) int {
     return -1
 }
 
-// 型宣言の本体 b の中の修飾なしの型の名前と位置の印（明示の待ち行列 — 型式の深さに依らない）
+// 型宣言の本体bの中の修飾なしの型の名前と位置のマーク（明示の待ち行列 — 型式の深さに依らない）
 func typeRefs(t ast.Tree, b int) []tyRef {
     mut out := mut []tyRef{}
     mut st := mut []int{}
@@ -352,7 +352,7 @@ func typeRefs(t ast.Tree, b int) []tyRef {
     mut sa := mut []bool{}
     mut sp := mut []int{}
     body := t.nodes[b]
-    // 根: 欄の列（struct・error ラベル・union の各 variant）の型・named scalar の下地・関数型の仮引数と結果
+    // 根: フィールドの列（struct・errorラベル・unionの各variant）の型・named scalarの下地・関数型の仮引数と結果
     mut lists := mut []int{}
     mut fieldList := mut []bool{}
     if body.kind == ast.BStruct || body.kind == ast.BError {
@@ -396,7 +396,7 @@ func typeRefs(t ast.Tree, b int) []tyRef {
         qi += 1
         // 子の囲む匿名の関数型（この節が関数型なら自分）
         mut cp := p
-        // 子の型式の列（型引数・関数型の仮引数と結果）と子の印
+        // 子の型式の列（型引数・関数型の仮引数と結果）と子のマーク
         mut sub := -1
         mut sub2 := -1
         mut cg := g
@@ -409,7 +409,7 @@ func typeRefs(t ast.Tree, b int) []tyRef {
             sub = x.b
             ca = true
         } else if x.kind == ast.TOpt {
-            // opt の中身はガード（値の I 族 — 組の成分を中身に持つ opt は実装が 1 セルの箱で表す）
+            // optの中身はガード（値のI種類 — 組の成分を中身に持つoptは実装が1セルの箱で表す）
             st = append(st, x.a)
             sg = append(sg, true)
             sf = append(sf, f)

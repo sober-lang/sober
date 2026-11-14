@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# layer4.sh <srvbin> <raw> [conns] [secs] [pipeline] [env…] — layer.sh の perf の事象版（偵察 675〜678 の写し・report-680）: EV（既定 = cycles / instructions /
-# cache-misses / dTLB-load-misses — すべて :u）を要求あたりで出し、gcannon の p99 も添える。EV_ALL=1 なら EV の全事象を名前つきで
-# （例 EV=cycles:u,ls_dmnd_fills_from_sys.dram_io_all:u,dTLB-load-misses:u EV_ALL=1 — DRAM からのフィル / 要求 = 公平な一巡の冷えの物差し・report-684）。W12（サーバ CPU 0-11・負荷 12-23）
-. "$(dirname "$0")/env.sh"   # S（計器）・GC・R・W（作業） — env.sh の注
+# layer4.sh <srvbin> <raw> [conns] [secs] [pipeline] [env…] — layer.shのperfの事象版（偵察675〜678のコピー・report-680）: EV（既定 = cycles / instructions /
+# cache-misses / dTLB-load-misses — すべて :u）をリクエストあたりで出し、gcannonのp99も添える。EV_ALL=1ならEVの全事象を名前つきで
+# （例EV=cycles:u,ls_dmnd_fills_from_sys.dram_io_all:u,dTLB-load-misses:u EV_ALL=1 — DRAMからのフィル / リクエスト = 公平な一巡の冷えの基準・report-684）。W12（サーバCPU 0-11・負荷12-23）
+. "$(dirname "$0")/env.sh"   # S（計測ツール）・GC・R・W（作業） — env.shの注記
 P=$(ls -d /nix/store/*perf-linux*/bin/perf | head -n1)
 EV=${EV:-cycles:u,instructions:u,cache-misses:u,dTLB-load-misses:u}
 b=$1; raw=$2; c=${3:-4096}; d=${4:-4}; p=${5:-1}; shift $(( $# < 5 ? $# : 5 ))   # 引数が N 未満でも位置引数を残さない（shift N の失敗で "$@" にサーバのパスが残り env の後ろで起動を壊す — report-689）
@@ -16,7 +16,7 @@ kill -TERM $SV; wait $PP 2>/dev/null
 resp=$(echo "$out" | sed -n 's/.* requests in .*, \([0-9]*\) responses.*/\1/p')
 p99=$(echo "$out" | awk '$1 == "Latency" { print $5; exit }')
 if [ -n "${EV_ALL:-}" ]; then
-  # EV の全事象を要求あたりでそのまま（フィル元の事象等 — ls_*_fills_from_sys.* の頭は落とす・report-684 / 686 の l4fill の取り込み）
+  # EVの全事象をリクエストあたりでそのまま（フィル元の事象等 — ls_*_fills_from_sys.* の頭は落とす・report-684 / 686のl4fillの取り込み）
   awk -F, -v r=$resp -v p99="$p99" '$1 ~ /^[0-9.]+$/ { n = $3; sub(/^ls_dmnd_fills_from_sys\./, "dmnd.", n); sub(/^ls_any_fills_from_sys\./, "any.", n); printf "%s=%.2f ", n, $1 / r } END { printf "resp=%d p99=%s\n", r, p99 }' $W/l4.perf
   exit 0
 fi

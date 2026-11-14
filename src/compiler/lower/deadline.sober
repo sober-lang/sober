@@ -1,17 +1,17 @@
 package lower
 
 // デッドライン（language.md 28 節「デッドライン」・11 節「キャンセル」）: `task.Run(body, deadline: 500 * task.MS)` の scope の中
-// （子孫の task も）では、期限が過ぎた後の io の口が io.Timeout を返す。走っている仕事は切らない（待ちの上限であって実行時間の上限ではない）。
-// 実効の期限 = task の語 TC_DL（CLOCK_MONOTONIC の絶対時刻 ns・0 = 期限なし）: scope の開きで min(今の値, 今 + 宣言) を入れて出口で戻す・
-// spawn の子は生まれるときに親の値を写す（子の寿命は scope の中なので、根までの期限を歩く代わりに min を写しで運ぶ — 同じ値）。
-// io の口の頭（std/io の sysDeadline）が rt.dl_expired で今の時刻と比べる。deadline: を書かないプログラムは組まない（判定は定数 0 — IR 不変）
+// （子孫のtaskも）では、期限が過ぎた後のioのAPIがio.Timeoutを返す。走っている仕事は切らない（待ちの上限であって実行時間の上限ではない）。
+// 実効の期限 = taskのワードTC_DL（CLOCK_MONOTONICの絶対時刻ns・0 = 期限なし）: scopeの開きでmin(今の値, 今 + 宣言) を入れて出口で戻す・
+// spawnの子は生まれるときに親の値をコピーする（子の寿命はscopeの中なので、根までの期限を歩く代わりにminをコピーで運ぶ — 同じ値）。
+// ioのAPIの頭（std/ioのsysDeadline）がrt.dl_expiredで今の時刻と比べる。deadline: を書かないプログラムは組まない（判定は定数0 — IR不変）
 
 import "desugar"
 
-// 期限の語（開いた fd の鎖 TC_FDS・ストリームの鎖 TC_CHS の次 — 記録の先頭の頁・task.sober の TC_SAVE の手前）
+// 期限のワード（開いたfdのチェーンTC_FDS・ストリームのチェーンTC_CHSの次 — 記録の先頭のページ・task.soberのTC_SAVEの手前）
 const TC_DL = TC_WORDS + 2
 
-// rt.dl_expired を宣言する（lower の入口で毎回呼ぶ — std/task に届き、deadline: を書いた Scope があるプログラムだけ — ParCheckTyped の印・lower の入口から）
+// rt.dl_expiredを宣言する（lowerの入口で毎回呼ぶ — std/taskに届き、deadline: を書いたScopeがあるプログラムだけ — ParCheckTypedのフラグ・lowerの入口から）
 func needDeadline(st mut St) {
     lsNeed(mut st, NEED_DEADLINE, 0)
     // 判定はこの def の中で 1 回（呼び手の build は展開されるので、そこに書くと desugar.DeadlineUse の表の読みが展開の数だけ複製される）
@@ -31,7 +31,7 @@ func dlFn(x int) FnRef {
 }
 
 // CLOCK_MONOTONIC の今の時刻（ns — clock_gettime(1, &ts)）。deadline: を書くプログラムは vDSO の __vdso_clock_gettime（起動で引いた番地 —
-// meta の W_VDSO・見つからなければ 0 で生の syscall へ）を呼ぶ（期限の検査は io の口ごと — 期限つきの echo で clock_gettime 2 / 往復の syscall だった）
+// metaのW_VDSO・見つからなければ0で生のsyscallへ）を呼ぶ（期限の検査はioのAPIごと — 期限つきのechoでclock_gettime 2 / 往復のsyscallだった）
 func clockNs(st mut St) int {
     ts := newSlotAddr(mut st, 2)
     if dlFn(st.rtD3) != 0 {
@@ -53,7 +53,7 @@ func clockNs(st mut St) int {
     return bin(mut st, BAdd, bin(mut st, BMul, load(mut st, ts, 0), iconst(mut st, 1000000000)), load(mut st, ts, 1))
 }
 
-// rt.vdso と rt.vdso_get を（初出なら）宣言する（clockAt・sleep の ring の道の初回の引き）
+// rt.vdsoとrt.vdso_getを（初出なら）宣言する（clockAt・sleepのringのパスの初回の引き）
 func needVdso(st mut St) {
     lsNeed(mut st, NEED_VDSO, 0)
     if st.vdsoG == -1 {
@@ -63,7 +63,7 @@ func needVdso(st mut St) {
 }
 
 // rt.vdso_get(): 初期 rsp〔meta の W_ARGV〕から vdsoWalk で引いた __vdso_clock_gettime の番地 + 1（見つからなければ 1）を rt.vdso に置いて返す。
-// 初回だけ呼ぶ冷たい道 — 呼び手の熱い道に歩きのレジスタの退避を載せない
+// 初回だけ呼ぶコールドパス — 呼び手のホットパスに歩きのレジスタの退避を載せない
 func buildVdsoRt(st mut St) {
     if st.rtVdso == -1 {
         return
@@ -75,7 +75,7 @@ func buildVdsoRt(st mut St) {
 }
 
 // clock の組み込み（std/time の時計）: clk（IR の値 — 0 = CLOCK_REALTIME・1 = CLOCK_MONOTONIC）の今の時刻（ns）。vDSO の番地は deadline: を書く
-// プログラムなら起動で引いた meta の W_VDSO・他は rt.vdso（初回の呼び出しで引く — 起動の値札を足さない）。見つからなければ生の clock_gettime
+// プログラムなら起動で引いたmetaのW_VDSO・他はrt.vdso（初回の呼び出しで引く — 起動のコストを足さない）。見つからなければ生のclock_gettime
 func clockAt(st mut St, clk int) int {
     zero := iconst(mut st, 0)
     mut fp := 0
@@ -105,15 +105,15 @@ func vdLd(st mut St, a int, off int) int {
     return load(mut st, itop(mut st, bin(mut st, BAdd, a, off)), 0)
 }
 
-// 起動（taskInitMain — ワーカーの meta の写しより前）で auxv の AT_SYSINFO_EHDR（33）から vDSO の ELF を歩き、__vdso_clock_gettime の番地を
+// 起動（taskInitMain — ワーカーのmetaのコピーより前）でauxvのAT_SYSINFO_EHDR（33）からvDSOのELFを歩き、__vdso_clock_gettimeの番地を
 // meta の W_VDSO へ（見つからない・DT_HASH が無い等は 0 = 生の syscall）。歩き方: 最初の PT_LOAD で偏り（基底 + p_offset − p_vaddr）・PT_DYNAMIC の
-// DT_HASH（記号の数 = nchain）/ DT_SYMTAB / DT_STRTAB・記号を線形に名前（20 バイト + NUL を 3 語で）照合（定義済み = st_shndx ≠ 0）
+// DT_HASH（記号の数 = nchain）/ DT_SYMTAB / DT_STRTAB・記号を線形に名前（20バイト + NULを3ワードで）照合（定義済み = st_shndx ≠ 0）
 func vdsoInit(st mut St, sp int) {
     meta := globaladdr(mut st, st.meta)
     store(mut st, meta, W_VDSO, vdsoWalk(mut st, sp))
 }
 
-// vdsoInit の歩き（sp = _start の初期 rsp）: __vdso_clock_gettime の番地（見つからなければ 0）を返す（sleep の ring の道の遅延の引き — sleepClock も使う）
+// vdsoInitの歩き（sp = _startの初期rsp）: __vdso_clock_gettimeの番地（見つからなければ0）を返す（sleepのringのパスの遅延の引き — sleepClockも使う）
 func vdsoWalk(st mut St, sp int) int {
     zero := iconst(mut st, 0)
     done := newBlock(mut st)
@@ -185,7 +185,7 @@ func vdsoWalk(st mut St, sp int) int {
     setCur(mut st, de)
     tbOk := newBlock(mut st)
     condbr(mut st, bin(mut st, BAnd, bin(mut st, BAnd, cmp(mut st, CNe, hs, zero), cmp(mut st, CNe, sy, zero)), cmp(mut st, CNe, sr, zero)), tbOk, -1, done, list1(mut st, zero))
-    // 記号: 名前の 3 語（"__vdso_c" "lock_get" "time\0" — 3 語目は下 5 バイト）
+    // 記号: 名前の3ワード（"__vdso_c" "lock_get" "time\0" — 3ワード目は下5バイト）
     setCur(mut st, tbOk)
     nsym := bin(mut st, BAnd, vdLd(mut st, bin(mut st, BAdd, bias, hs), iconst(mut st, 4)), m32)
     ls := newBlock(mut st)

@@ -1,9 +1,9 @@
 package main
 
 // 関数型の結果の error?（language.md 25 節）: `func(int) error?` / `func(int) (int, error?)` の仮引数に、失敗を値として返すラムダか
-// 名前付き関数を渡せる。呼び先の `f(x)?` は閉包の失敗をそのまま上へ流し、`return f(x)` は値として返す。ラムダの本体の値は期待型で寄せる
-// （ラベル・nil・if の腕）。ラムダの本体の `?` / return は従来どおり定義した関数へ（非局所 — 8 節）。
-// η 展開（同じ節）: 関数型の仮引数に名前付き関数をそのまま渡すと、loader が同じ数の仮引数のラムダに写す（`app(3, dbl)` = `app(3, (a) => dbl(a))`）
+// 名前付き関数を渡せる。呼び先の `f(x)?` はクロージャの失敗をそのまま上へ流し、`return f(x)` は値として返す。ラムダの本体の値は期待型で寄せる
+// （ラベル・nil・ifの分岐）。ラムダの本体の `?` / returnは従来どおり定義した関数へ（非局所 — 8 節）。
+// η 展開（同じ節）: 関数型の仮引数に名前付き関数をそのまま渡すと、loaderが同じ数の仮引数のラムダに変換する（`app(3, dbl)` = `app(3, (a) => dbl(a))`）
 
 import "std/task"
 
@@ -31,7 +31,7 @@ func small(v int) error? {
     return nil
 }
 
-// xs を順に f に通し、最初の失敗で止まる（閉包の `?`）
+// xsを順にfに通し、最初の失敗で止まる（クロージャの `?`）
 func each(xs []int, f func(int) error?) error? {
     for x <- xs {
         f(x)?
@@ -39,12 +39,12 @@ func each(xs []int, f func(int) error?) error? {
     return nil
 }
 
-// f(x) をそのまま返す（閉包の結果を値として）
+// f(x) をそのまま返す（クロージャの結果を値として）
 func first(x int, f func(int) error?) error? {
     return f(x)
 }
 
-// f の成功値を足す（多値の結果の閉包への `?`）
+// fの成功値を足す（多値の結果のクロージャへの `?`）
 func sumE(xs []int, f func(int) (int, error?)) (int, error?) {
     mut s := 0
     for x <- xs {
@@ -85,9 +85,9 @@ func main() {
     // 名前付き関数（η 展開）
     println(show(each([]int{1, 2, 3}, small)))
     println(show(each([]int{1, 20, 30}, small)))
-    // ラムダの本体の値: if の腕のラベル / nil
+    // ラムダの本体の値: ifの分岐のラベル / nil
     println(show(each([]int{4, 6, 7}, (v) => if v % 2 == 1 { Odd{n: v} } else { nil })))
-    // ブロックの本体（末尾の値を寄せる — 末尾が if 式で腕に nil を書く形は関数の本体と同じく未対応: `return` の無い末尾は型の分かる式）
+    // ブロックの本体（末尾の値を寄せる — 末尾がif式で分岐にnilを書く形は関数の本体と同じく未対応: `return` の無い末尾は型の分かる式）
     println(show(first(5, (v) => {
         w := v * 3
         small(w)
@@ -97,7 +97,7 @@ func main() {
     println("${sumE([]int{2, 4, 6}, half) catch -1} ${sumE([]int{2, 3}, half) catch -1} ${sumE([]int{8}, (v) => half(v)) catch -1}")
     s, e := sumE([]int{10, 12, 5}, half)
     println("${s} ${show(e)}")
-    // η 展開の他の位置: 位置引数・パイプ段・std の展開される口（task.Map — 名前付き関数の本体が子 task の本体へ）
+    // η 展開の他の位置: 位置引数・パイプステージ・stdの展開されるインターフェース（task.Map — 名前付き関数の本体が子taskの本体へ）
     println("${app(3, dbl)} ${4 |> app(dbl)}")
     r, me := task.Map([]int{1, 2, 3}, sq)
     println("${join(r)} ${me == nil}")

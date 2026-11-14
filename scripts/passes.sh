@@ -19,7 +19,7 @@ one() {
     [ -d "$e" ] && out=$e.out
     [ -f "$out" ] || { echo "@@ skip"; return; }
     "$STAGE2" build "$e" --emit=ir --passes -o "$w/p.ir" 2> "$w/err" || { echo "FAIL: $e: lower rejects with --passes: $(head -c 200 "$w/err")"; echo "@@ fail"; return; }
-    # stage1 の IR の語彙を越える entry（float の段 — gatelib の beyond_stage1）は照合しない（件数は skip に出る）
+    # stage1のIRの語彙を越えるentry（floatの段階 — gatelibのbeyond_stage1）は照合しない（件数はskipに出る）
     if beyond_stage1 "$w/p.ir"; then echo "@@ skip"; return; fi
     "$STAGE1" build "$w/p.ir" -o "$w/exe" 2> "$w/err" || { echo "FAIL: $e: the passed IR is rejected: $(head -n 1 "$w/err")"; echo "@@ fail"; return; }
     timeout 10 "$w/exe" > "$w/run.out" 2> /dev/null < "$(stdin_of "${out%.out}")" || ec=$?

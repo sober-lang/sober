@@ -1,8 +1,8 @@
 package loader
 
-// 多値の型 `(T, error?)`（ast.TTuple — P3b 残穴1）の置き場の検査: 文法は型引数の位置にだけ受ける（parser の typeArg）が、
+// 多値の型 `(T, error?)`（ast.TTuple — P3b残穴1）の配置先の検査: 文法は型引数の位置にだけ受ける（parserのtypeArg）が、
 // 書けるのは std/task の Task の型引数の `(T, error?)`（error を返す task の handle — `mut hs := mut []task.Handle[(T, error?)]{}`）だけ。
-// 一般の匿名タプル型は入れない（syntax.md 決定 4 の線のまま）— 他の総称の型引数・形の違う組は名指しで拒否（diag.Par kind 18）
+// 一般の匿名タプル型は入れない（syntax.md決定4の方針のまま）— 他の総称の型引数・形の違う組は専用の診断で拒否（diag.Par kind 18）
 
 import "ast"
 import "diag"
@@ -10,7 +10,7 @@ import "std/iter"
 
 const PAR_TUPLE = 18
 
-// 置き場の外の多値の型の最初の位置（無ければ None）
+// 配置先の外の多値の型の最初の位置（無ければNone）
 func tupleTypeAt(cx Cx) diag.Pos {
     pp := pkgOf(cx, "std/task")
     for f <- iter.Range(0, len(cx.trees)) {
@@ -22,7 +22,7 @@ func tupleTypeAt(cx Cx) diag.Pos {
     return diag.None()
 }
 
-// ファイル f の置き場の外の多値の型の最初の字句（無ければ -1。pp = std/task の package 番号 — finpar.sober の子も同じ関数を呼ぶ）
+// ファイルfの配置先の外の多値の型の最初の字句（無ければ -1。pp = std/taskのpackage番号 — finpar.soberの子も同じ関数を呼ぶ）
 func tupleTypeIn(cx Cx, pp int, f int) int {
     t := cx.trees[f]
     mut ok := mut []bool{}

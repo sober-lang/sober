@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# dnsinterop（std/net の名前の解決の送受の網）: 偽の DNS サーバ（scripts/oracles/dnsserver — UDP と TCP・
-# 決めた名前に決めた応答）を起こし、std/net の TestResolveFake を SOBER_DNS_FAKE で走らせる。Go の道具が要るので gates に入れない（名前の解決とクライアントの便の締めに手で回す）
-# 通ったら conf: の行を testdata/conformance/interop/dns.txt へ記録する（scripts/confrecord.sh — 準拠文書の最終確認の欄）
+# dnsinterop（std/netの名前の解決の送受の検査）: 偽のDNSサーバ（scripts/oracles/dnsserver — UDPとTCP・
+# 決めた名前に決めたレスポンス）を起こし、std/netのTestResolveFakeをSOBER_DNS_FAKEで走らせる。Goの道具が要るのでgatesに入れない（名前の解決とクライアントのタスクの仕上げに手で回す）
+# 通ったらconf: の行をtestdata/conformance/interop/dns.txtへ記録する（scripts/confrecord.sh — 準拠文書の最終確認のフィールド）
 #   scripts/dnsinterop.sh
 set -uo pipefail
 cd "$(dirname "$0")/.."

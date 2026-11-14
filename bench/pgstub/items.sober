@@ -1,6 +1,6 @@
 package main
 
-// 固定の表の応答器: async-db の文（itemsSql）だけを受け、表（table.sober — 既定の引数で本物が返す 50 行）に
+// 固定の表の応答器: async-dbの文（itemsSql）だけを受け、表（table.sober — 既定の引数で本物が返す50行）に
 // price の絞り（$1〜$2）と limit（$3）を当てて返す。既定より広い min / max では本物より少なく返す（表の外の行を持たない）
 
 import "std/convert"
@@ -160,7 +160,7 @@ func boolCell(v bool, f int) []byte {
     return if f == 0 { bytes(if v { "t" } else { "f" }) } else { []byte{byte(if v { 1 } else { 0 })} }
 }
 
-// jsonb の binary は版 1 の印 + 字句
+// jsonbのbinaryは版1のフラグ + 字句
 func jsonbCell(s string, f int) []byte {
     if f == 0 {
         return bytes(s)

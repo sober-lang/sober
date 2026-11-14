@@ -1,6 +1,6 @@
 package client
 
-// 要求の URL の読み（http / https の絶対 URL だけ）と redirect の Location の解決
+// リクエストのURLの読み（http / httpsの絶対URLだけ）とredirectのLocationの解決
 
 import "std/iter"
 import "std/strings"

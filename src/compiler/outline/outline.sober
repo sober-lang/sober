@@ -123,7 +123,7 @@ func pushDecls(out mut []Decl, at mut []int, src []byte, t ast.Tree, ts []lexer.
     }
 }
 
-// 宣言 x の字句の範囲の節の欄（種類ごとに置き場が違う — ast の KTypeDecl / KFuncDecl / KConst / KIntrinsic）
+// 宣言xの字句の範囲の節のフィールド（種類ごとに配置先が違う — astのKTypeDecl / KFuncDecl / KConst / KIntrinsic）
 func span(t ast.Tree, x ast.Node, kind int) (int, int) {
     if kind == 0 {
         return x.d, x.e
@@ -152,7 +152,7 @@ func isPublic(s string) bool {
 }
 
 // 印字器の綴り（複数行のことがある）を 1 行に畳む。行頭の注釈の行は後ろへ回す。
-// 行の継ぎは `{` `(` `,` の後と `}` `)` の前が空白・他（struct の欄・union の variant の並び）は "; "
+// 行の継ぎは `{` `(` `,` の後と `}` `)` の前が空白・他（structのフィールド・unionのvariantの並び）は "; "
 func fold(b []byte) string {
     lines := strings.Split(string(b) catch "?", "\n")
     mut head := ""
@@ -280,7 +280,7 @@ func firstSentence(s string) string {
 // ── ファイルの集め ──
 
 // path の一覧の対象のファイル。path が .sober / .sobi ならそれだけ・他はディレクトリとして、その .sober を名前の順に
-// depth 段下まで（1 = そのディレクトリだけ — 浅い段が先）。`.` で始まる名前は飛ばす・noTest なら *_test.sober を飛ばす
+// depthレベル下まで（1 = そのディレクトリだけ — 浅いレベルが先）。`.` で始まる名前は飛ばす・noTestなら *_test.soberを飛ばす
 @errors(io.NotFound, io.Denied, io.Other, io.Timeout, io.Expired, strings.BadUtf8)
 @effects(io, nondet)
 func Files(path string, depth int, noTest bool) ([]string, error?) {

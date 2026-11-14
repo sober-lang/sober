@@ -1,7 +1,7 @@
 package main
 
 // float の const 式（language.md 37 節・25 節）: float のリテラル・float の const の参照と + - * /・単項の - は組み立ての const —
-// 参照する点で式ごと組み立て、実行時と同じ IEEE の丸め（0.1 + 0.2 は 0.30000000000000004）。期待値は Go の双子 scripts/oracles/const_float.go
+// 参照する点で式ごと組み立て、実行時と同じIEEEの丸め（0.1 + 0.2は0.30000000000000004）。期待値は比較用のGoの実装scripts/oracles/const_float.go
 
 import "std/iter"
 

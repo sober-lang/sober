@@ -1,6 +1,6 @@
 package main
 
-// 値の位置の slice / map の要素（language.md 25 節）: []F・map[K]F の要素は閉包の値（捕捉つきのラムダ・名前付き関数）
+// 値の位置のslice / mapの要素（language.md 25 節）: []F・map[K]Fの要素はクロージャの値（捕捉つきのラムダ・名前付き関数）
 
 type Op func(a int, b int) int
 

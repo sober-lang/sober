@@ -28,7 +28,7 @@ func main() {
     println(sum(ys))
     println(int(bs[0]) + int(bs[999]))
     println(int(cs[995]) + int(cs[1]))
-    // 共有: 同じ値の 2 つの写しをそれぞれ伸ばしても互いに見えない
+    // 共有: 同じ値の2つのコピーをそれぞれ伸ばしても互いに見えない
     mut p := mut []int{}
     mut q := mut []int{}
     for i <- iter.Range(0, 10) {

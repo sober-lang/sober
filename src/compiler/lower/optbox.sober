@@ -1,13 +1,13 @@
 package lower
 
-// 再帰の組の中の `T?` の欄の箱（language.md 1 節 — opt の中身を通る閉路）: 欄の置き場は slice のヘッダの形（番地・長さ 0/1・深度 —
-// 要素 = 中身・imm）で、型表では印つきの TSlice。写し・境界コピー・ゼロ値・containsSlice は slice の道をそのまま通る。
-// 表層の型は `T?` のまま — 欄の読みで直の opt に開き、欄の書きで箱に詰める。箱は共有しても観測できない（欄の代入は新しい箱を作る）
+// 再帰の組の中の `T?` のフィールドの箱（language.md 1 節 — optの中身を通る閉路）: フィールドの格納場所はsliceのヘッダの形（番地・長さ0/1・深度 —
+// 要素 = 中身・imm）で、型表ではフラグつきのTSlice。コピー・境界コピー・ゼロ値・containsSliceはsliceのパスをそのまま通る。
+// 表層の型は `T?` のまま — フィールドの読みで直のoptに開き、フィールドの書きで箱に詰める。箱は共有しても観測できない（フィールドの代入は新しい箱を作る）
 
 import "desugar"
 import "ast"
 
-// TSlice の c 欄の印（1 = string）
+// TSliceのcフィールドのフラグ（1 = string）
 const BoxMark = 2
 
 func mkBox(st mut St, payload int) int {
@@ -18,13 +18,13 @@ func isBox(st mut St, t int) bool {
     return isTag(mut st, t, TSlice) && desugar.HeapGet(mut st.d, t + 3) == BoxMark
 }
 
-// 欄の型 t の表層の型（箱は中身の opt・他はそのまま）
+// フィールドの型tの表層の型（箱は中身のopt・他はそのまま）
 func surfTy(st mut St, t int) int {
     return if isBox(mut st, t) { optOf(mut st, desugar.HeapGet(mut st.d, t + 1)) } else { t }
 }
 
-// 欄の型式 te が箱になるなら中身の型式（ならなければ -1）: `T?` で、T が owner と同じ再帰の組の struct / union で、T から値の位置
-// （欄・opt の中身）だけを辿って owner に戻る — 値の大きさが閉路を作る欄だけ（slice / map / 関数型を通る閉路は直の opt で有限）
+// フィールドの型式teが箱になるなら中身の型式（ならなければ -1）: `T?` で、Tがownerと同じ再帰の組のstruct / unionで、Tから値の位置
+// （フィールド・optの中身）だけを辿ってownerに戻る — 値の大きさが閉路を作るフィールドだけ（slice / map / 関数型を通る閉路は直のoptで有限）
 func boxPayloadTE(st mut St, pk int, owner int, te desugar.NodeRef) desugar.NodeRef {
     if owner < 0 || kindN(mut st, te) != ast.TOpt {
         return -1
@@ -50,7 +50,7 @@ func boxPayloadTE(st mut St, pk int, owner int, te desugar.NodeRef) desugar.Node
     return if valueReaches(mut st, pk, int(td), owner) { inner } else { -1 }
 }
 
-// 宣言 from から値の位置（欄・opt の中身・union の variant の欄）だけを辿って宣言 to に届くか（同じ再帰の組の中だけを歩く）
+// 宣言fromから値の位置（フィールド・optの中身・unionのvariantのフィールド）だけを辿って宣言toに届くか（同じ再帰の組の中だけを歩く）
 func valueReaches(st mut St, pk int, from int, to int) bool {
     mut seen := []int{from}
     mut i := 0
@@ -74,7 +74,7 @@ func valueReaches(st mut St, pk int, from int, to int) bool {
     return false
 }
 
-// 欄の列 dfs の値の位置が名指す to と同じ組の宣言のうち、seen に無いものを足した列
+// フィールドの列dfsの値の位置が参照するtoと同じ組の宣言のうち、seenに無いものを足した列
 func valueNext(st mut St, pk int, dfs desugar.ListRef, to int, seen []int) []int {
     mut out := seen
     mut j := 0
@@ -144,7 +144,7 @@ func boxUpAt(st mut St, bt int, o int, d int) int {
     return h
 }
 
-// mark より後に積んだ mut 実引数の箱の写しを片付ける: ok なら一時の opt を書き戻しの深度の箱に詰めて欄へ書く（呼び出しが到達しないなら捨てるだけ）
+// markより後に積んだmut実引数の箱のコピーを片付ける: okなら一時のoptを書き戻しの深度の箱に詰めてフィールドへ書く（呼び出しが到達しないなら捨てるだけ）
 func boxWriteBack(st mut St, mark int, ok bool) {
     if ok && cur(mut st) != -1 {
         mut i := mark

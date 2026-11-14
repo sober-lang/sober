@@ -1,8 +1,8 @@
 package main
 
-// json.Encode の速い道（上界 → 1 本確保 → 位置で書く・loader/jsonshape.sober の $jsonSize / $jsonWrite）と builder の道
-// （EncodeWith に空の辞書 — 同じ綴りを欄ごとの部品で書く）の照合: 無作為の値でバイト一致。エスケープの要る文字列・JSON に書けない float は
-// 速い道が −1 を返して builder の道でやり直す形（float の NaN / ±Inf は両方 panic なので外す）。不一致なら最初の 1 件を印字して 1
+// json.Encodeの高速パス（上界 → 1本確保 → 位置で書く・loader/jsonshape.soberの $jsonSize / $jsonWrite）とbuilderのパス
+// （EncodeWithに空の辞書 — 同じ綴りをフィールドごとの部品で書く）の照合: 無作為の値でバイト一致。エスケープの要る文字列・JSONに書けないfloatは
+// 高速パスが −1を返してbuilderのパスでやり直す形（floatのNaN / ±Infは両方panicなので外す）。不一致なら最初の1件を印字して1
 
 import "std/iter"
 import "std/json"
@@ -42,7 +42,7 @@ type Rec struct {
 }
 
 
-// エスケープの要らない断片（速い道）と要る断片（やり直しの道）— 要る断片は 1/300 で混ぜる（1 件の値の中の文字列が全部きれいな試行が多数派になるように）
+// エスケープの要らない断片（高速パス）と要る断片（やり直しのパス）— 要る断片は1/300で混ぜる（1件の値の中の文字列が全部きれいな試行が多数派になるように）
 func clean() []string {
     return []string{"", "a", "héllo", "日本語", "😀", "abcdefghijklmnopqrstuvwxyz0123456789", "/", "<&>", " "}
 }
@@ -158,7 +158,7 @@ func main() int {
         }
         a == b
     }, trials: 3000)
-    // 速い道を通った試行（エスケープの無い出力）が十分にあること
+    // 高速パスを通った試行（エスケープの無い出力）が十分にあること
     if fast < 1000 {
         println("jsonfast: too few fast-path trials (${fast})")
         return 1

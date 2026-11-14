@@ -1,7 +1,7 @@
 package main
 
-// 負例（check が名指して拒否 — diag.UntypedNil）: 腕のどれからも型が読めない nil は型が決まらない（`x := if c { nil } else { nil }`）。
-// 兄弟の腕に型があれば T?（examples/nil_sibling）・無ければ T? が要る位置（型のある仮引数・欄・結果）で使う
+// 負例（checkが専用の診断で拒否 — diag.UntypedNil）: 分岐のどれからも型が読めないnilは型が決まらない（`x := if c { nil } else { nil }`）。
+// 兄弟の分岐に型があればT?（examples/nil_sibling）・無ければT? が要る位置（型のある仮引数・フィールド・結果）で使う
 
 func main() {
     x := if true { nil } else { nil }

@@ -1,6 +1,6 @@
 package main
 
-// 負例（check も build も名指しで拒否 — diag.TypeMismatch kind 4）: 関数値の option（`F?` の欄・map の読み）は絞ってから呼ぶ
+// 負例（checkもbuildも専用の診断で拒否 — diag.TypeMismatch kind 4）: 関数値のoption（`F?` のフィールド・mapの読み）は絞ってから呼ぶ
 
 type F func(a int, b int) int
 

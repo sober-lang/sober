@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# モジュールの宣言（sober.mod — language.md 20 節）の網: testdata/mod/<題材>/ を起点（cwd）にして main.sober を check し、受理なら build して走らせ、
-# 出力（標準出力 + 標準エラー・終了コードの行つき）を黄金 testdata/mod/<題材>.expect と照合する（ワーカー 1 と 8）。題材 = 正例（project — dep・自分の木の
+# モジュールの宣言（sober.mod — language.md 20 節）の検査: testdata/mod/<題材>/ を起点（cwd）にしてmain.soberをcheckし、受理ならbuildして走らせ、
+# 出力（標準出力 + 標準エラー・終了コードの行つき）をゴールデンtestdata/mod/<題材>.expectと照合する（ワーカー1と8）。題材 = 正例（project — dep・自分の木の
 # package・std の根の alias・renamed — dep の名前の付け替え）と負例（neg_* — sober.mod の文法・名前の規則・ローカルでない出所・版・dep の sober.mod の欠け・
 # 木での名前の衝突・alias の宛先・dep の dep・import の衝突）。あわせて dep の package のテスト（project から `sober test kv/store`）と、
 # sober.mod を書き換えたら check の答えの再生が外れること（読んだファイルの照合に sober.mod が入る）を見る
 #   scripts/modcheck.sh            照合
-#   scripts/modcheck.sh --regen    黄金を作り直す（差分を見てからコミット）
+#   scripts/modcheck.sh --regen    ゴールデンを作り直す（差分を見てからコミット）
 set -uo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$PWD
@@ -44,7 +44,7 @@ done
 # dep の package のテスト（起点 = project — kv/store は dep の木の package）
 ( cd "$G/project" && SOBER_WORKERS=1 "$S2" test kv/store ) > "$W/t" 2>&1 || bad "sober test kv/store in $G/project: $(tail -1 "$W/t")"
 grep -q "^ok   kv/store.TestFind" "$W/t" || bad "sober test kv/store did not report TestFind: $(head -3 "$W/t")"
-# check の答えの再生: sober.mod を書き換えたら外れる（写しの木で — 置き場は一時のディレクトリ）
+# checkの答えの再生: sober.modを書き換えたら外れる（コピーの木で — 配置先は一時のディレクトリ）
 cp -r "$G" "$W/copy"
 ( cd "$W/copy/project" && SOBER_CACHE="$W/cache" "$S2" check main.sober ) > "$W/r1" 2>&1 || bad "replay: the first check rejects: $(tail -1 "$W/r1")"
 printf 'alias json2 "std/json"\n' >> "$W/copy/project/sober.mod"

@@ -1,6 +1,6 @@
 package loader
 
-// `assert(e)` / `assert(e, label)`（power assert。`_test.sober` だけの語彙）を脱糖の固定テンプレートで写す:
+// `assert(e)` / `assert(e, label)`（power assert。`_test.sober` だけの語彙）を脱糖の固定テンプレートで変換する:
 //
 //     assert(f(x) == m + 1, l)
 //  →  { $aK0 := f(x); $aK1 := m + 1; if !($aK0 == $aK1) { $testing.Report("f(x) == m + 1", l, []string{"f(x) = ${$aK0}", "m + 1 = ${$aK1}"}); panic($testing.AssertFailed{}) } }
@@ -8,7 +8,7 @@ package loader
 // 割る深さ: 最上位が比較（== != < <= > >=）なら両辺・呼び出しなら各実引数（と呼び出しの値）・`!x` なら x・それ以外は式全体を 1 つ。
 // `&&` / `||` は短絡を保つため割らない（全体を 1 つ）。部分式は書いた順に 1 回だけ評価する。値の印字は補間（int / bool / string — T6）。
 // リテラル・名前・`mut x` の部分式は束縛しない（名前の値は式の中の名前の行として出す）。印字できない型の値は行ごと空文字
-// 失敗は std/testing.Report（標準エラーへ印字）の後に assert の位置の panic（exit 101）。ラベルは失敗の道だけで評価する。式の綴りは printer.Expr。
+// 失敗はstd/testing.Report（標準エラーへ印字）の後にassertの位置のpanic（exit 101）。ラベルは失敗のパスだけで評価する。式の綴りはprinter.Expr。
 // parser が `assert(…)` を持つファイルに std/testing と std/strings の暗黙 import（$testing・$strings）を足す。`_test.sober` の外の assert は拒否
 
 import "std/builder"
@@ -19,7 +19,7 @@ import "lexer"
 import "printer"
 import "diag"
 
-// 全ファイルの assert を写す（`_test.sober` の外の assert は拒否）
+// 全ファイルのassertを変換する（`_test.sober` の外のassertは拒否）
 @errors(diag.AssertOutsideTest)
 func assertsAll(ts []ast.Tree, paths []string) ([]ast.Tree, error?) {
     mut out := mut []ast.Tree{}
@@ -38,7 +38,7 @@ func assertsAll(ts []ast.Tree, paths []string) ([]ast.Tree, error?) {
     return freeze(out), nil
 }
 
-// 節 x が `assert(e)` か `$qassert(g, e)`（quickx.sober の写し — 偽で g が真のときだけ落ち、e の真偽を値にする）か
+// 節xが `assert(e)` か `$qassert(g, e)`（quickx.soberの変換 — 偽でgが真のときだけ落ち、eの真偽を値にする）か
 func isAssertLike(t ast.Tree, x ast.Node) bool {
     return isAssert(t, x) || isQAssert(t, x)
 }
@@ -65,7 +65,7 @@ func isCmp(op int) bool {
     return op == lexer.EqualEqual || op == lexer.BangEqual || op == lexer.Less || op == lexer.LessEqual || op == lexer.Greater || op == lexer.GreaterEqual
 }
 
-// 木 t の assert を写した木（節は末尾に足し、assert の呼び出しの節をその場でブロックに差し替える）
+// 木tのassertを変換した木（節は末尾に足し、assertの呼び出しの節をその場でブロックに差し替える）
 func asserts(t ast.Tree) ast.Tree {
     n0 := len(t.nodes)
     mut found := false
@@ -233,7 +233,7 @@ func asserts(t ast.Tree) ast.Tree {
     for i <- iter.Range(0, len(added)) {
         ns = append(ns, added[i])
     }
-    // 写した条件（`!(v != nil && v == "2")`・$qassert の束縛）にも flow typing の写し（flowx.sober — assert より前の段）を掛ける
+    // 変換した条件（`!(v != nil && v == "2")`・$qassertの束縛）にも flow typing の変換（flowx.sober — assertより前のフェーズ）を掛ける
     return flowFix(ast.Tree{freeze(ns), builder.Build(mut db), t.file})
 }
 
@@ -290,7 +290,7 @@ func identsOf(t ast.Tree, e int) []int {
     return freeze(out)
 }
 
-// 積み stack の深さ sp に x を置いて新しい深さを返す
+// スタックstackの深さspにxを置いて新しい深さを返す
 func spPush(stack mut []int, sp int, x int) int {
     if sp < len(stack) {
         stack[sp] = x

@@ -1,7 +1,7 @@
 package main
 
-// 回帰例（language.md 32 節 — 型なしのリテラルは if 式の兄弟の腕の named に割り当てられる）: 期待型の無い if 式
-// （`:=` の束縛・名前付きでない位置）で片方の腕が型なしの定数、もう片方が named scalar。lower（build）が腕の型の不一致で拒否していた（check は受理）
+// 回帰例（language.md 32 節 — 型なしのリテラルはif式の兄弟の分岐のnamedに割り当てられる）: 期待型の無いif式
+// （`:=` の束縛・名前付きでない位置）で片方の分岐が型なしの定数、もう片方がnamed scalar。lower（build）が分岐の型の不一致で拒否していた（checkは受理）
 
 type Ref int
 

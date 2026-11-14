@@ -1,17 +1,17 @@
 package loader
 
 // parse のファイル単位のキャッシュ: parseFile の結果の木（字句 + 構文 + catchExprs）は
-// ソースのバイト列だけの純関数なので、鍵 = ソースの中身のハッシュ 2 本（パス・std の印・ファイルの番号は入れない — 木に出ない）で
-// 置き場（lower/bcache.sober の切り口 BC_P）から引く。世代のディレクトリ = コンパイラの鍵なので、parser の変更は世代ごと外れる。
-// 読みの表は lower が置き場の読み（bcLoad）から組んで渡す（PCache — 検査和の合う項目だけ）・書きは呼び手の PcSink（mut 引数）に積んで
-// app が lower へ渡し、build の終わりの書きの束（bcFlush）に乗る（Program には載せない — Program の欄を 1 つ足すだけで自己 build の
-// 切の道が +0.03 G: Program の写しが熱い道にある）。拒否の木（parse の失敗）は積まない — 当たりは「前回その中身で parse が通った」
+// ソースのバイト列だけの純関数なので、鍵 = ソースの中身のハッシュ2本（パス・stdのフラグ・ファイルの番号は入れない — 木に出ない）で
+// 格納場所（lower/bcache.soberの切り口BC_P）から引く。世代のディレクトリ = コンパイラの鍵なので、parserの変更は世代ごと外れる。
+// 読みの表はlowerが格納場所の読み（bcLoad）から組んで渡す（PCache — 検査和の合う項目だけ）・書きは呼び手のPcSink（mut引数）に積んで
+// appがlowerへ渡し、buildの終わりの書き込みのバッチ（bcFlush）に乗る（Programには載せない — Programのフィールドを1つ足すだけで自己buildの
+// 切のパスが +0.03 G: Programのコピーがホットパスにある）。拒否の木（parseの失敗）は積まない — 当たりは「前回その中身でparseが通った」
 //
-// 値 = [版, file, 節の数, data の数] ‖ 節ごとに 8 欄（kind はそのまま・他の 7 欄は前の節の同じ欄との差）‖ data（前の語との差）— zigzag の varint。
+// 値 = [版, file, 節の数, dataの数] ‖ 節ごとに8フィールド（kindはそのまま・他の7フィールドは前の節の同じフィールドとの差）‖ data（前のワードとの差）— zigzagのvarint。
 // 自己 build（201 ファイル）で ≈ 10 MB / 世代
 //
-// 検証モード（SOBER_CACHE_VERIFY=1 / 2）: 当たりでも parse し、作った値を置き場の値とバイトで比べる（lower の bcAdd — 違えば stale = 鍵の穴）。
-// 値が同じなら、置き場の値を読み戻した木が parse した木と節・data・根まで同じか（読み戻しの照合 — 符号の欠け・読みの誤りを名指し）
+// 検証モード（SOBER_CACHE_VERIFY=1 / 2）: 当たりでもparseし、作った値を格納場所の値とバイトで比べる（lowerのbcAdd — 違えばstale = 鍵の穴）。
+// 値が同じなら、格納場所の値を読み戻した木がparseした木と節・data・根まで同じか（読み戻しの照合 — 符号の欠け・読みの誤りを特定）
 
 import "ast"
 import "std/binary"
@@ -40,8 +40,8 @@ type PCache struct {
     fs [][]byte
 }
 
-// 1 ファイルの読みの結果: st = 0（置き場なし）/ 1（当たり）/ 2（外れ — v を書く）/ 3（検証モード — v を書いて置き場と比べる）/
-// 4（検証モードの読み戻しの照合の食い違い）。path は stale の名指し用
+// 1ファイルの読みの結果: st = 0（格納場所なし）/ 1（当たり）/ 2（外れ — vを書く）/ 3（検証モード — vを書いて格納場所と比べる）/
+// 4（検証モードの読み戻しの照合の食い違い）。pathはstaleの特定用
 type PcPut struct {
     st int
     k1 int
@@ -50,7 +50,7 @@ type PcPut struct {
     path string
 }
 
-// 読みの結果の積み先（load が mut 引数で受ける — 置き場を使わない読みでも空のまま渡す）
+// 読みの結果の積み先（loadがmut引数で受ける — 格納場所を使わない読みでも空のまま渡す）
 type PcSink struct {
     t table.Table[PcPut]
 }
@@ -68,7 +68,7 @@ func PcOff() PCache {
     return PCache{on: false, vfy: false, pt: []int{}, k2: []int{}, ef: []int{}, eo: []int{}, el: []int{}, fs: [][]byte{}}
 }
 
-// 項目ごとの鍵 h1 の列 ks から開番地の表（大きさは 2 の冪で項目の数の 2 倍以上・空きの欄 = 0。鍵はハッシュなので混ぜない）
+// 項目ごとの鍵h1の列ksから開番地の表（大きさは2の冪で項目の数の2倍以上・空きのフィールド = 0。鍵はハッシュなので混ぜない）
 func PcTable(ks []int) []int {
     mut cap := 16
     while cap < 2 * len(ks) {
@@ -138,8 +138,8 @@ func pcKey(src []byte) PcKey {
     return PcKey{a ^ (a >> 31), b}
 }
 
-// 語の列 ws の zigzag の varint の並び（置き場の値の符号化の口 — lower の bcVarints・desugar の tyValEnc も
-// これを通す）: 上限の大きさ（1 語 10 バイト）を 0 で一括に詰め（copyloop の定数の詰め）、添字で書き、実長だけ一括で写して返す（上限の
+// ワードの列wsのzigzagのvarintの並び（格納場所の値の符号化のインターフェース — lowerのbcVarints・desugarのtyValEncも
+// これを通す）: 上限の大きさ（1ワード10バイト）を0で一括に詰め（copyloopの定数の詰め）、添字で書き、実長だけ一括でコピーして返す（上限の
 // 作業域を呼び手へ残さない）。1 バイトずつの append / table.Push は 1 バイトあたりの命令が多く、それを避ける形
 func Varints(ws []int) []byte {
     mut b := mut []byte{}
@@ -166,8 +166,8 @@ func Varints(ws []int) []byte {
     return freeze(out)
 }
 
-// b の [at, end) の zigzag の varint の並びを語の列へ一括で戻す（Varints の逆 — 読みの口）: (語の列, 読めた)。
-// 上限（1 バイト = 1 語）を 0 で詰めて添字で書き、実長の窓を返す（呼び手はすぐ読み捨てる — 写さない）
+// bの [at, end) のzigzagのvarintの並びをワードの列へ一括で戻す（Varintsの逆 — 読みのインターフェース）: (ワードの列, 読めた)。
+// 上限（1バイト = 1ワード）を0で詰めて添字で書き、実長の窓を返す（呼び手はすぐ読み捨てる — コピーしない）
 func Unvarints(b []byte, at int, end int) ([]int, bool) {
     if at < 0 || end > len(b) || at > end {
         return []int{}, false
@@ -199,7 +199,7 @@ func Unvarints(b []byte, at int, end int) ([]int, bool) {
     return freeze(ws)[0:k], ok
 }
 
-// 木 t の値（語の列を添字で組んでから Varints）
+// 木tの値（ワードの列を添字で組んでからVarints）
 func pcEnc(t ast.Tree) []byte {
     nn := len(t.nodes)
     mut ws := mut []int{}
@@ -233,7 +233,7 @@ func pcEnc(t ast.Tree) []byte {
     return Varints(freeze(ws))
 }
 
-// 項目 e の値の木（読めなければ ok = false — 呼び手は parse へ落ちる）。値を一括で語の列に戻して（Unvarints）添字で読む
+// 項目eの値の木（読めなければok = false — 呼び手はparseへ落ちる）。値を一括でワードの列に戻して（Unvarints）添字で読む
 func pcDec(pc PCache, e int) (ast.Tree, bool) {
     bad := ast.Tree{[]ast.Node{}, []int{}, 0 - 1}
     ws, ok := Unvarints(pc.fs[pc.ef[e]], pc.eo[e], pc.eo[e] + pc.el[e])
@@ -305,7 +305,7 @@ func pcNone() PcPut {
     return PcPut{st: 0, k1: 0, k2: 0, v: []byte{}, path: ""}
 }
 
-// PcFind / PcSame / PcWords は読みの表の口（check の関数単位キャッシュも同じ形の表を使う）: 項目 e の値を語の列へ（読めなければ空・false）
+// PcFind / PcSame / PcWordsは読みの表のインターフェース（checkの関数単位キャッシュも同じ形の表を使う）: 項目eの値をワードの列へ（読めなければ空・false）
 func PcFind(pc PCache, k1 int, k2 int) int {
     return pcFind(pc, k1, k2)
 }
@@ -318,7 +318,7 @@ func PcWords(pc PCache, e int) ([]int, bool) {
     return Unvarints(pc.fs[pc.ef[e]], pc.eo[e], pc.eo[e] + pc.el[e])
 }
 
-// PcOn / PcVfy は表の印の読み口
+// PcOn / PcVfyは表のフラグの読みのインターフェース
 func PcOn(pc PCache) bool {
     return pc.on
 }

@@ -90,7 +90,7 @@ func dfMeet(a int, b int) int {
     return DF_UNK
 }
 
-// rep の変化の印（rep の最後の語 — dfBlock が立てる）を読んで下ろす
+// repの変化のフラグ（repの最後のワード — dfBlockが立てる）を読んで下ろす
 func dfRepChanged(rep mut []int) bool {
     n := len(rep) - 1
     if rep[n] == 1 {
@@ -100,7 +100,7 @@ func dfRepChanged(rep mut []int) bool {
     return false
 }
 
-// v を同じ深度の代表へ寄せる（rep の鎖を辿る — 反復の途中の表が輪になっても止まるよう歩数を値の数で打ち切る）
+// vを同じ深度の代表へ寄せる（repのチェーンを辿る — 反復の途中の表がループになっても止まるよう歩数を値の数で打ち切る）
 func dfRep(rep mut []int, v int) int {
     mut x := v
     mut n := len(rep)
@@ -112,7 +112,7 @@ func dfRep(rep mut []int, v int) int {
 }
 
 // ブロック blk を入口の値 x から流し、出口の値を返す（apply なら冗長な setdepth を消し、分かっている region.depth を付け替える）。
-// rep は同じ深度の別名の表（値の数 + 1 語 — 最後の語は変化の印）
+// repは同じ深度の別名の表（値の数 + 1ワード — 最後のワードは変化のフラグ）
 func dfBlock(st mut St, rep mut []int, blk BlkRef, x0 int, apply bool) int {
     mut x := x0
     mut ins := irBlkIHead(mut st, blk)

@@ -1,6 +1,6 @@
 package main
 
-// nil の腕と error のラベルの腕の合流は error?（束縛を挟んでも・else if の鎖でも）
+// nilの分岐とerrorのラベルの分岐の合流はerror?（束縛を挟んでも・else ifのチェーンでも）
 
 type L error {}
 

@@ -1,6 +1,6 @@
 package deflate
 
-// 型の別名の第一顧客の縮図（std の 8-4 の形 — std/internal/deflate の位置）: 作業域の型と核。欄はこの package でだけ書ける
+// 型の別名の第一顧客の縮図（stdの8-4の形 — std/internal/deflateの位置）: 作業域の型と核。フィールドはこのpackageでだけ書ける
 
 import "std/pool"
 

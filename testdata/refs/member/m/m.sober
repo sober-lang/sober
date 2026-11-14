@@ -1,7 +1,7 @@
 package m
 
-// refs の欄・仮引数の負例（report-885）: 同綴りの欄 code を 3 つの型（Req・Resp・panic ラベル Oops）に置く — 対象は 1 つの持ち主の欄だけ。
-// Wire / Inner は json.Encode に届く型（欄名 = JSON のキー — 改名は wire の互換を変える）・Req / Resp は届かない
+// refsのフィールド・仮引数の負例（report-885）: 同綴りのフィールドcodeを3つの型（Req・Resp・panicラベルOops）に置く — 対象は1つの持ち主のフィールドだけ。
+// Wire / Innerはjson.Encodeに届く型（フィールド名 = JSONのキー — 改名はwireの互換を変える）・Req / Respは届かない
 
 import "std/json"
 

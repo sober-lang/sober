@@ -1,6 +1,6 @@
 package x509
 
-// 証明書の鍵での署名の検証の口（TLS の CertificateVerify / ServerKeyExchange の下 — 公開の値だけを扱うので定数時間にしない）。
+// 証明書の鍵での署名の検証のAPI（TLSのCertificateVerify / ServerKeyExchangeの下 — 公開の値だけを扱うので定数時間にしない）。
 // hbits = ハッシュの長さ（256 / 384 / 512 — SHA-256 / SHA-384 / SHA-512）
 
 import "std/crypto/sha256"

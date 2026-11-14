@@ -3,7 +3,7 @@ package main
 // ログインのセッション: パスワードのハッシュ（crypto/password）と世代つきのトークン（std/session）を __Host- の cookie に載せる。
 // ユーザーの行はハッシュの隣に世代を持ち、パスワードを変えると世代が進んで、それまでに発行したトークンは全部切れる（他の端末の古い cookie も）。
 // 状態（ユーザーの表）を持つので受けは直列（ServeConn に渡すラムダは借り — mut の表を通せる）。並行に受けるなら状態は外の保存先に置く。
-// 後半の客は 2 台の端末（laptop / phone）の代役で、cookie は値として各端末が持つ（応答から http.client.CookieValue で取り出し、次の要求の cookies: に載せる）
+// 後半の客は 2 台の端末（laptop / phone）の代役で、cookie は値として各端末が持つ（レスポンスから http.client.CookieValue で取り出し、次のリクエストの cookies: に載せる）
 
 import "std/crypto/password"
 import "std/http"
@@ -37,7 +37,7 @@ func field(r http.server.Request, key string) string? {
     return nil
 }
 
-// 世代 user.gen のトークンを cookie に載せた応答
+// 世代 user.gen のトークンを cookie に載せたレスポンス
 func issue(name string, user User, k session.Key, msg string) http.server.Response {
     t := session.Mint(k, name, user.gen, time.Now(), ttlSec)
     c := http.server.SetCookie{name: cookieName, value: session.Seal(t), maxAge: ttlSec}
@@ -104,7 +104,7 @@ func logIn(users mut map[string]User, k session.Key, r http.server.Request) http
     return issue(name, user, k, "welcome ${name}")
 }
 
-// 古いパスワードを確かめて新しいハッシュに替え、世代を進める（他の端末のトークンは全部 Stale になる）。この端末には新しい世代のトークンを渡し直す
+// 古いパスワードを検証して新しいハッシュに替え、世代を進める（他の端末のトークンは全部Staleになる）。この端末には新しい世代のトークンを渡し直す
 func changePassword(users mut map[string]User, k session.Key, r http.server.Request) http.server.Response {
     name, why := whoami(mut users, k, r)
     if name == "" {
@@ -172,7 +172,7 @@ func serve(l net.Listener, n int) error? {
 
 // --- ここから客（端末の代役） ---
 
-// 要求 1 本の結果（応答の行と、Set-Cookie で渡された cookie の値 — 無ければ nil）
+// リクエスト 1 本の結果（レスポンスの行と、Set-Cookie で渡された cookie の値 — 無ければ nil）
 type Reply struct {
     line string
     cookie string?
@@ -198,7 +198,7 @@ func pairs(kv []string) []url.Pair {
     return freeze(ps)
 }
 
-// 2 台の端末でログインし、laptop でパスワードを変えると phone の古いトークンが切れる流れ（要求は 12 本）
+// 2 台の端末でログインし、laptop でパスワードを変えると phone の古いトークンが切れる流れ（リクエストは 12 本）
 func tour(base string) []string {
     mut out := mut []string{}
     none := []url.Pair{}

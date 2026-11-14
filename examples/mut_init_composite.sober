@@ -1,6 +1,6 @@
 package main
 
-// struct リテラルで初期化した mut 局所のセルは束縛点の座標へ緩める。仮引数の slice を欄に持つ mut 局所を、
+// structリテラルで初期化したmut局所のセルは束縛点の座標へ緩める。仮引数のsliceをフィールドに持つmut局所を、
 // callM の Def に上がる関数（mut 仮引数 1 つ・他は region を持たない — E2-S）へ mut で渡す形
 
 type W struct {

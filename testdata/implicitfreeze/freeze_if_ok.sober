@@ -1,6 +1,6 @@
 package main
 
-// if 式・append の結果の freeze（値の末尾の道ごとに凍る — F-ap）の正例: 凍らせた後は腕の束縛へ書かない（uniqfreeze の代表 — analyzer と Lean の述語がともに受理）
+// if式・appendの結果のfreeze（値の末尾のパスごとに凍る — F-ap）の正例: 凍らせた後は分岐の束縛へ書かない（uniqfreezeの代表 — analyzerとLeanの述語がともに受理）
 
 func main() int {
     mut m := mut []int{1, 2}

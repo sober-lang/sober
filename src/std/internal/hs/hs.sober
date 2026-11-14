@@ -1,14 +1,14 @@
 package hs
 
 // hs: TLS 1.3 のサーバ側の handshake の状態機械と key schedule（RFC 9846 4 節 / 7 節 — 8446bis）。
-// **std/tls の内側** — 利用者は import しない（公開の口は std/tls の Serve / Conn — 隠し方は 0.6.0 の API 総再審）。
+// **std/tlsの内側** — 利用者はimportしない（公開のAPIはstd/tlsのServe / Conn — 隠し方は0.6.0のAPI総再審）。
 //
 // - 状態 = Phase（1 状態 1 variant — Start〔最初の ClientHello 待ち〕/ WaitCH2〔HelloRetryRequest を送った後〕/ WaitFin〔サーバの flight を送り終え
 //   クライアントの Finished 待ち〕/ Connected / Closed）。Feed は record の枠 1 つを受けて、送るバイト列・受けた application の平文・閉じたかを返す
-//   （転送路の受けの口は 1 本の internal.record.Frames のループ — handshake の直後に同じ切片に乗ってきた application data も同じループで受ける）
+//   （転送路の受けのインターフェースは1本のinternal.record.Framesのループ — handshakeの直後に同じ切片に乗ってきた application data も同じループで受ける）
 // - v1 の範囲: TLS 1.3 だけ・サーバだけ・X25519 だけ・TLS_AES_128_GCM_SHA256 / TLS_CHACHA20_POLY1305_SHA256・
 //   署名は rsa_pss_rsae_sha256（証明書は RSA-2048）・PSK / 0-RTT / クライアント証明書なし。ALPN の不一致は no_application_protocol（RFC 7301）
-// - 乱数の源は Params.seed（空 = crypto.Rand・空でなければ SHA-256(seed ‖ 用途) — 網の決定的な黄金のため）
+// - 乱数の源はParams.seed（空 = crypto.Rand・空でなければSHA-256(seed ‖ 用途) — 検査の決定的なゴールデンのため）
 // - 誤りは internal.record.Alert{desc}（相手へ送る alert の番号 — 呼び手は AlertRecord を送って閉じる）。相手の alert は Out.peer に
 
 import "std/crypto"
@@ -59,7 +59,7 @@ func hrrRandom() []byte {
     return crypto.sha256.Sum256(bytes("HelloRetryRequest"))
 }
 
-// サーバの設定（std/tls の Config がここへ写す）
+// サーバの設定（std/tlsのConfigがここへコピーする）
 type Params struct {
     chain [][]byte          // 証明書の列（DER — 葉が先頭）
     key crypto.rsa.PrivateKey      // 葉の鍵（RSA-2048）
@@ -68,7 +68,7 @@ type Params struct {
     seed []byte             // 乱数の源（空 = crypto.Rand）
 }
 
-// Params（std/tls の Config から — 網からも）
+// Params（std/tlsのConfigから — 検査からも）
 func NewParams(chain [][]byte, key crypto.rsa.PrivateKey, alpn []string, suites []int, seed []byte) Params {
     return Params{chain: chain, key: key, alpn: alpn, suites: suites, seed: seed}
 }
@@ -125,8 +125,8 @@ func New() Hs {
         expFin: []byte{}, alpn: "", hbuf: []byte{}, ccs: false, hrr: false, ch1: []int{}, keyed: false, upd: false}
 }
 
-// handshake の済んだ接続の受けの方向 rd だけを持つ Connected の Hs（std/tls の Recv が置き場の rd から作る — Connected の受けの表を
-// Feed の 1 か所に置くため。送りの方向は持たない — 送りは std/tls の置き場が持つ）
+// handshakeの済んだ接続の受けの方向rdだけを持つConnectedのHs（std/tlsのRecvが格納場所のrdから作る — Connectedの受けの表を
+// Feedの1か所に置くため。送りの方向は持たない — 送りはstd/tlsの格納場所が持つ）
 func Resume(rd internal.record.Dir) Hs {
     mut h := New()
     h.rd = rd
@@ -153,8 +153,8 @@ func IsConnected(h Hs) bool {
     }
 }
 
-// 抽象の状態の名前（"start/c0/h0" の形 — 段・互換の CCS を受けたか・HelloRetryRequest を送ったか。Closed は "closed"）。
-// 網 std/tls の TestFsm（hs_fsm_test.sober）が Lean の遷移表（lean/FeatherweightSober/Tls.lean）と突き合わせる口
+// 抽象の状態の名前（"start/c0/h0" の形 — フェーズ・互換のCCSを受けたか・HelloRetryRequestを送ったか。Closedは "closed"）。
+// 検査std/tlsのTestFsm（hs_fsm_test.sober）がLeanの遷移表（lean/FeatherweightSober/Tls.lean）と突き合わせるインターフェース
 func Probe(h Hs) string {
     n := switch h.ph {
         case Start{}: "start"
@@ -179,13 +179,13 @@ func Suite(h Hs) int {
     return h.suite
 }
 
-// 受けと送りの方向（handshake が済んだ後に std/tls の Conn の置き場へ写す）
+// 受けと送りの方向（handshakeが済んだ後にstd/tlsのConnの格納場所へコピーする）
 func Dirs(h Hs) (internal.record.Dir, internal.record.Dir) {
     return h.rd, h.wr
 }
 
-// 4 つの traffic secret（client hs ‖ server hs ‖ client ap ‖ server ap の 16 進 — 網が Go の KeyLogWriter と照合する口）。
-// key log は鍵を故意に開示する口: ここで祝福してから 16 進にする（hex.Format の表引きの時間は開示した値にだけ掛かる）
+// 4つのtraffic secret（client hs ‖ server hs ‖ client ap ‖ server ap の16進 — 検査がGoのKeyLogWriterと照合するインターフェース）。
+// key log は鍵を故意に開示するインターフェース: ここで祝福してから16進にする（hex.Formatの表引きの時間は開示した値にだけ掛かる）
 func Secrets(h Hs) string {
     return "${hex.Format(internal.bless.Bytes(h.cHs))} ${hex.Format(internal.bless.Bytes(h.sHs))} ${hex.Format(internal.bless.Bytes(h.cAp))} ${hex.Format(internal.bless.Bytes(h.sAp))}"
 }
@@ -202,7 +202,7 @@ func Feed(h mut Hs, p Params, f internal.record.Frame) (Out, error?) {
     return o, e
 }
 
-// Connected の受けの入口（mut の仮引数を持たない — std/tls の Recv の展開点ごとに handshake の道ごと inline させないため。
+// Connectedの受けの入口（mutの仮引数を持たない — std/tlsのRecvの展開点ごとにhandshakeのパスごとinlineさせないため。
 // 表は Feed の暗号化した record の枝〔feedSealed〕そのもの — Connected / Closed の h に対して Feed と同じ結果。誤りで Closed に落ちるのも同じ）
 @errors(internal.record.Alert)
 func Step(h Hs, f internal.record.Frame) (Hs, Out, error?) {
@@ -611,7 +611,7 @@ func serverHello(random []byte, sessid []byte, suite int, pub []byte) []byte {
     return helloBody(random, sessid, suite, freeze(x))
 }
 
-// ServerHello / HelloRetryRequest（legacy_version 0x0303・random・session_id の写し・suite・圧縮 0・拡張）
+// ServerHello / HelloRetryRequest（legacy_version 0x0303・random・session_idのコピー・suite・圧縮0・拡張）
 func helloBody(random []byte, sessid []byte, suite int, exts []byte) []byte {
     mut b := mut []byte{}
     put16(mut b, 0x0303)
@@ -709,7 +709,7 @@ func zeros(n int) []byte {
     return freeze(z)
 }
 
-// 用途 label の n バイトの乱数（seed が空なら crypto.Rand・空でなければ SHA-256(seed ‖ label) の先頭 — 網の決定的な黄金）
+// 用途labelのnバイトの乱数（seedが空ならcrypto.Rand・空でなければSHA-256(seed ‖ label) の先頭 — 検査の決定的なゴールデン）
 func rnd(p Params, label string, n int) []byte {
     if len(p.seed) == 0 {
         return crypto.Rand(n)

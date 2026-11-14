@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# datadce（焼き込みのデータの閉世界の DCE の網 — ユーザー要求 2026-11-05）: std に焼き込んだ外の世界の表（信頼ストア src/std/internal/x509/roots.sober・
+# datadce（焼き込みのデータの閉世界のDCEの検査 — ユーザー要求2026-11-05）: stdに焼き込んだ外の世界の表（信頼ストアsrc/std/internal/x509/roots.sober・
 # 地域の規則 src/std/time/zones.sober）が、参照しないプログラムの ELF に入らないこと・参照するプログラムには入ることを、
 # 生成物から取った目印の文字列で数える。題材: testdata/datadce/now.sober（std/time を import して Now だけ — 表は無し）・zone.sober（LoadZone — ゾーンだけ）・
 # examples/hello.sober・examples/tls_serve.sober（TLS のサーバ — どの表も無し）・examples/http_client_session.sober（HTTP クライアント — ルートだけ）

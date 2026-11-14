@@ -1,12 +1,12 @@
 package record
 
 // TLS 1.3 の record 層（RFC 9846 5 節 — 8446bis）。std/tls の内側で、利用者は import しない
-// （公開の API は std/tls の Serve / Conn。std の網が例から叩けるように公開名で置いている）。
+// （公開のAPIはstd/tlsのServe / Conn。stdのテストが例から叩けるように公開名で置いている）。
 //
 // - 送り: Seal は平文を 2^14 バイトずつの record に割り、1 record ごとに [頭 5 | 暗号文（平文 ‖ 内容の型 ‖ 0 埋め）| tag 16] を書く
 //   （AEAD は std/crypto の record 層向けの API SealTo — 頭 = 追加データ・nonce = iv ⊕ seq）
 // - 受け: Frames は転送路の受信コールバック recv から record の枠を切り出す呼び出し形の生成元（`for r <- internal.record.Frames(recv)? { … }`）。record が受けの
-//   切片に丸ごと入っていれば切片のまま（写さない）・切片をまたぐときだけ持ち越しの列に溜めて繋ぐ。Open は枠 1 つを Dir の鍵で検証・復号して
+//   切片に丸ごと入っていれば切片のまま（コピーしない）・切片をまたぐときだけ持ち越しの列にバッファして繋ぐ。Openは枠1つをDirの鍵で検証・復号して
 //   内容の型と中身を返す（剥がしは末尾 256 バイトを固定回数で舐める — 定数時間の対象・ctcheck）
 // - 鍵: Dir は 1 方向の traffic の鍵（traffic secret → HKDF-Expand-Label で key / iv）と seq。Update は KeyUpdate（secret を "traffic upd" で進め
 //   seq を 0 に）。AES-GCM の鍵の使用上限（RFC 9846 5.5 — 2^24.5 record）の手前で NeedUpdate が真になる（送りの KeyUpdate は handshake の層が送る）
@@ -62,7 +62,7 @@ type Dir struct {
     seq int
 }
 
-// 受けた record の枠 1 つ = b[off, off + n)（頭 5 バイト込み）。b は受けの切片か、切片をまたいだ record を繋いだ写し（反復の間だけ生きる）
+// 受けたrecordの枠1つ = b[off, off + n)（頭5バイト込み）。bは受けの切片か、切片をまたいだrecordを繋いだコピー（反復の間だけ生きる）
 type Frame struct {
     b []byte
     off int
@@ -172,8 +172,8 @@ func SealInto(d Dir, ctype int, pt []byte, dst mut []byte, at int) int {
     return crypto.chacha20poly1305.SealInto(d.cc, nonce, hd, pt, hd, tail, mut dst, at)
 }
 
-// pt[at, at + m) を 1 record に（内側 = 中身 ‖ ctype ‖ 0 × pad・頭 = 23 / 0x0303 / 内側 + tag の長さ）。中身は写さず切り出しで渡し、
-// ctype と詰め物は SealTo の tail で後ろに繋ぐ（写しは SealTo の宛先への 1 回だけ）
+// pt[at, at + m) を1 recordに（内側 = 中身 ‖ ctype ‖ 0 × pad・頭 = 23 / 0x0303 / 内側 + tagの長さ）。中身はコピーせず切り出しで渡し、
+// ctypeと詰め物はSealToのtailで後ろに繋ぐ（コピーはSealToの宛先への1回だけ）
 func sealOne(d mut Dir, ctype int, pt []byte, at int, m int, pad int) []byte {
     mut tl := mut []byte{}
     tl = append(tl, byte(ctype))
@@ -213,7 +213,7 @@ func nonceOf(iv []byte, seq int) []byte {
         byte(int(iv[8]) ^ ((seq >> 24) & 0xff)), byte(int(iv[9]) ^ ((seq >> 16) & 0xff)), byte(int(iv[10]) ^ ((seq >> 8) & 0xff)), byte(int(iv[11]) ^ ((seq >> 0) & 0xff))}
 }
 
-// 暗号化していない record（handshake の最初の flight・互換の CCS）の内容の型と中身（枠 r の頭の後ろ — 写さない部分列）
+// 暗号化していないrecord（handshakeの最初のflight・互換のCCS）の内容の型と中身（枠rの頭の後ろ — コピーしない部分列）
 @effects()
 func Plain(r Frame) (int, []byte) {
     return int(r.b[r.off]), r.b[r.off + HeadSize:r.off + r.n]
@@ -265,7 +265,7 @@ func openBody(d Dir, nonce []byte, ad []byte, r Frame) (bool, []byte) {
 
 // 内側の平文 p の内容の型と中身の長さ（末尾から 0 でない最初のバイト — RFC 9846 5.4。無ければ (0, -1)）。末尾 256 バイトは固定回数で
 // 舐め（stripTail — 0 埋めの長さを時間に出さない）、そこが全部 0 のときだけ前の全部を同じく固定回数で舐める（256 を超える 0 埋めは
-// 「長い」ことだけが時間に出る — 前の探索は早く抜けない。通常の record は末尾で決まるので値札なし）
+// 「長い」ことだけが時間に出る — 前の探索は早く抜けない。通常のrecordは末尾で決まるのでオーバーヘッドなし）
 func strip(p []byte) (int, int) {
     m := len(p)
     lo := if m > 256 { m - 256 } else { 0 }
@@ -281,7 +281,7 @@ func strip(p []byte) (int, int) {
 }
 
 // p[lo, m) で最後の 0 でないバイトの位置と値（無ければ (-1, 0)）。回数は m - lo（公開の長さ）だけで決まり、選択は mask（定数時間 — ctcheck）:
-// 頭の半端（8 未満）は 1 バイトずつ・残りは 8 バイトの語ずつ最後の 0 でない語と位置を選び、最後にその語の 8 バイトから選ぶ（語が無ければ 0 で何も選ばれない）
+// 頭の半端（8未満）は1バイトずつ・残りは8バイトのワードずつ最後の0でないワードと位置を選び、最後にそのワードの8バイトから選ぶ（ワードが無ければ0で何も選ばれない）
 @bless
 func stripTail(p []byte, lo int, m int) (int, int) {
     mut at := 0 - 1
@@ -312,8 +312,8 @@ func stripTail(p []byte, lo int, m int) (int, int) {
 }
 
 // 転送路の受信コールバック recv から record の枠を順に k へ渡す（呼び出し形の生成元 — `for r <- internal.record.Frames(recv)? { … }`）。
-// 枠の本体の長さが MaxCipher を超えれば record_overflow（溜めない）。record が受けの切片に丸ごと入っていれば切片のまま渡し、切片をまたぐ
-// record は持ち越しの列（最初にまたいだときに頭 + MaxCipher バイトを 1 回確保）に溜めて、揃ったら繋いだ写しを渡す。recv が閉じたときに
+// 枠の本体の長さがMaxCipherを超えればrecord_overflow（バッファしない）。recordが受けの切片に丸ごと入っていれば切片のまま渡し、切片をまたぐ
+// recordは持ち越しの列（最初にまたいだときに頭 + MaxCipherバイトを1回確保）にバッファして、揃ったら繋いだコピーを渡す。recvが閉じたときに
 // 半端な record が残っていれば decode_error。recv の失敗は Transport に包み替える
 @errors(Alert, Transport)
 @effects()
@@ -326,7 +326,7 @@ func Frames(recv func(k func([]byte)) error?, k func(Frame)) error? {
         n := len(chunk)
         // 持ち越しがあれば、まず 1 record を揃える
         if pn > 0 {
-            // 頭（5 バイト）を揃えてから本体を揃える — どちらも添字の写しの形（copyloop (B) — 一括の写しに下りる）
+            // 頭（5バイト）を揃えてから本体を揃える — どちらも添字のコピーの形（copyloop (B) — 一括のコピーに下りる）
             if pn < HeadSize {
                 m := if HeadSize - pn < n - at { HeadSize - pn } else { n - at }
                 carry(mut pend, pn, chunk, at, m)
@@ -383,7 +383,7 @@ func Frames(recv func(k func([]byte)) error?, k func(Frame)) error? {
     return nil
 }
 
-// chunk[at, at + m) を pend[pn, pn + m) へ（添字の写しの形 — copyloop (B)）
+// chunk[at, at + m) をpend[pn, pn + m) へ（添字のコピーの形 — copyloop (B)）
 func carry(pend mut []byte, pn int, chunk []byte, at int, m int) {
     mut j := 0
     while j < m {
@@ -392,7 +392,7 @@ func carry(pend mut []byte, pn int, chunk []byte, at int, m int) {
     }
 }
 
-// pend の先頭 n バイトの写し（切片をまたいだ record — 反復の region に）
+// pendの先頭nバイトのコピー（切片をまたいだrecord — 反復のregionに）
 func joined(pend mut []byte, n int) []byte {
     mut out := mut []byte{}
     mut i := 0
@@ -403,7 +403,7 @@ func joined(pend mut []byte, n int) []byte {
     return freeze(out)
 }
 
-// ── std/tls の口（Conn の置き場 — 接続の状態は値の外の int の列に住む）──
+// ── std/tlsのAPI（Connの格納場所 — 接続の状態は値の外のintの列に住む）──
 
 // b[off, off + n) を枠に（std/tls の handshake の組み立て — 呼び手が頭の長さを検査した後）
 @effects()
@@ -411,7 +411,7 @@ func At(b []byte, off int, n int) Frame {
     return Frame{b: b, off: off, n: n}
 }
 
-// d の語の列（[suite, seq, 秘密の長さ, 秘密 …, iv の長さ, iv …, 鍵の素材の長さ, 鍵の素材 …] — バイト列は 8 バイト / 語。
+// dのワードの列（[suite, seq, 秘密の長さ, 秘密 …, ivの長さ, iv …, 鍵の素材の長さ, 鍵の素材 …] — バイト列は8バイト / ワード。
 // 鍵の素材 = AES-GCM の展開済みの ctx か ChaCha20-Poly1305 の鍵 — 開くたびに展開し直さない）
 @effects(panic)
 func Pack(d Dir) []int {
@@ -438,13 +438,13 @@ func Unpack(w []int, at int) Dir {
     return Dir{suite: suite, secret: secret, aes: crypto.aesgcm.Key{ctx: []byte{}}, cc: crypto.chacha20poly1305.Key{key: km}, iv: iv, seq: seq}
 }
 
-// d の seq を seq に差し替えた Dir（鍵の素材は d と共有 — std/tls が展開済みの送りの方向に置き場の seq の語を当てる）
+// dのseqをseqに差し替えたDir（鍵の素材はdと共有 — std/tlsが展開済みの送りの方向に格納場所のseqのワードを当てる）
 @effects()
 func WithSeq(d Dir, seq int) Dir {
     return Dir{suite: d.suite, secret: d.secret, aes: d.aes, cc: d.cc, iv: d.iv, seq: seq}
 }
 
-// d の seq（std/tls がストレージの seq の語だけを書き戻す）
+// dのseq（std/tlsがストレージのseqのワードだけを書き戻す）
 @effects()
 func Seq(d Dir) int {
     return d.seq
@@ -454,7 +454,7 @@ func packBytes(w mut []int, b []byte) {
     n := len(b)
     w = append(w, n)
     mut i := 0
-    // 丸ごとの 8 バイトは語の読み 1 回（little-endian — 端のバイトの組み立てと同じ並び）
+    // 丸ごとの8バイトはワードの読み1回（little-endian — 端のバイトの組み立てと同じ並び）
     while i + 8 <= n {
         w = append(w, binary.Load64(b, i))
         i += 8
@@ -470,7 +470,7 @@ func packBytes(w mut []int, b []byte) {
     }
 }
 
-// packBytes の逆。語ごとに直列化のループ（copyloop の形 D — 丸ごとの語は 8 バイトの store 1 回に下りる）
+// packBytesの逆。ワードごとに直列化のループ（copyloopの形D — 丸ごとのワードは8バイトのstore 1回に下りる）
 func unpackBytes(w []int, at int) ([]byte, int) {
     n := w[at]
     mut b := mut []byte{}

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# jcleancheck（JSON のエスケープの要らない区間の核 rt.jclean の網 — SIMD の核 段 2・report-1165）: testdata/jclean を最適化のバックエンド（--passes —
-# x86 の手書きの本体 xJCleanBody）と最適化なし（--no-opt — rt.jclean の IR の本体 = 参照の意味）で建てて走らせ、失敗が 0 で 2 つの出力が一致すること。
-# 続けて変異の自己検査: 開発用 --rt-mutant=25（'\' の判定を省く）・26（n ≥ 16 の端数の重ねた読みを省く）・27（8〜15 バイトの後ろの語の位置を p + k に）で
-# 建てた本体を網が捕まえること
+# jcleancheck（JSONのエスケープの要らない区間の核rt.jcleanの検査 — SIMD の核 フェーズ2・report-1165）: testdata/jcleanを最適化のバックエンド（--passes —
+# x86の手書きの本体xJCleanBody）と最適化なし（--no-opt — rt.jcleanのIRの本体 = 参照の意味）でビルドして走らせ、失敗が0で2つの出力が一致すること。
+# 続けてミューテーションの自己検査: 開発用 --rt-mutant=25（'\' の判定を省く）・26（n ≥ 16の端数の重ねた読みを省く）・27（8〜15バイトの後ろのワードの位置をp + kに）で
+# ビルドした本体を検査が捕まえること
 #   scripts/jcleancheck.sh
 set -uo pipefail
 cd "$(dirname "$0")/.."

@@ -1,8 +1,8 @@
 package main
 
-// UTF-8 の検査器の速い道の出口の端数（最後の 16 バイトの重ね読み）の網: ASCII の列（長さ 0〜70）の全部の位置に、多バイト文字（2 / 3 / 4 バイト）・
+// UTF-8の検査器の高速パスの出口の端数（最後の16バイトの重ね読み）の検査: ASCIIの列（長さ0〜70）の全部の位置に、多バイト文字（2 / 3 / 4バイト）・
 // 途中で切れた列・孤立した継続バイト・不正なバイトを置き、strings.IndexInvalid の答えをスカラーの参照と突き合わせる。頭に非 ASCII を置いた
-// 変種は検査の環から ASCII の塊 4 つで速い道へ戻る入口（fastJ）も跨ぐ。食い違いの数（0）と答えの和を印字
+// 変種は検査の環からASCIIのチャンク4つで高速パスへ戻る入口（fastJ）も跨ぐ。食い違いの数（0）と答えの和を印字
 
 import "std/iter"
 import "std/strings"
@@ -83,7 +83,7 @@ func run(head []byte, unit []byte) {
 
 func main() {
     units := [][]byte{bytes("é"), bytes("あ"), bytes("😀"), []byte{255}, []byte{128}, []byte{227, 129}, []byte{195}, []byte{240, 159, 152}, bytes("éあ")}
-    // 頭なし（入口から速い道）と、頭に非 ASCII（検査の環から ASCII の塊 4 つで速い道へ戻る）
+    // 頭なし（入口から高速パス）と、頭に非ASCII（検査の環からASCIIのチャンク4つで高速パスへ戻る）
     heads := [][]byte{bytes(""), bytes("éaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")}
     for h <- iter.Range(0, len(heads)) {
         for k <- iter.Range(0, len(units)) {

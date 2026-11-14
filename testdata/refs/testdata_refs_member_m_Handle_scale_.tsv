@@ -1,8 +1,8 @@
-OTHER	outside-fn	testdata/refs/member/a/main.sober	533	538	9:12	func other(scale int) int {
-OTHER	outside-fn	testdata/refs/member/a/main.sober	561	566	10:12	return scale + 1
-TARGET	named-arg	testdata/refs/member/a/main.sober	687	692	15:43	r := testdata.refs.member.m.Handle(q, scale: 3)
-OTHER	named-arg-other	testdata/refs/member/a/main.sober	830	835	17:19	println(other(scale: 4))
-OTHER	named-arg-in-interp	testdata/refs/member/a/main.sober	748	753	16:52	println("${r.code} ${q.code} ${r.body} ${other(scale: 1)} ${testdata.refs.member.m.Handle(q, scale: 2).code}")
-TARGET	named-arg-in-interp	testdata/refs/member/a/main.sober	794	799	16:98	println("${r.code} ${q.code} ${r.body} ${other(scale: 1)} ${testdata.refs.member.m.Handle(q, scale: 2).code}")
-TARGET	param-decl	testdata/refs/member/m/m.sober	605	610	31:22	func Handle(req Req, scale int) Resp {
-TARGET	ref	testdata/refs/member/m/m.sober	654	659	32:32	r := Resp{code: req.code * scale, body: req.path}
+OTHER	outside-fn	testdata/refs/member/a/main.sober	539	544	9:12	func other(scale int) int {
+OTHER	outside-fn	testdata/refs/member/a/main.sober	567	572	10:12	return scale + 1
+TARGET	named-arg	testdata/refs/member/a/main.sober	693	698	15:43	r := testdata.refs.member.m.Handle(q, scale: 3)
+OTHER	named-arg-other	testdata/refs/member/a/main.sober	836	841	17:19	println(other(scale: 4))
+OTHER	named-arg-in-interp	testdata/refs/member/a/main.sober	754	759	16:52	println("${r.code} ${q.code} ${r.body} ${other(scale: 1)} ${testdata.refs.member.m.Handle(q, scale: 2).code}")
+TARGET	named-arg-in-interp	testdata/refs/member/a/main.sober	800	805	16:98	println("${r.code} ${q.code} ${r.body} ${other(scale: 1)} ${testdata.refs.member.m.Handle(q, scale: 2).code}")
+TARGET	param-decl	testdata/refs/member/m/m.sober	637	642	31:22	func Handle(req Req, scale int) Resp {
+TARGET	ref	testdata/refs/member/m/m.sober	686	691	32:32	r := Resp{code: req.code * scale, body: req.path}

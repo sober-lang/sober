@@ -1,7 +1,7 @@
 package loader
 
-// std/testing/cell（language.md 41 節「状態を貯める fake」）の loader の段: ① import はテストの構成のファイル（`_test.sober`・`_double.sober`）と std だけ
-// ② 把手 `cell.Cell[T]{…}` のリテラルはトップレベルの const の右辺だけ ③ その右辺に欄 `key:` を足す（値 = package のパスと const の名前の
+// std/testing/cell（language.md 41 節「状態を貯めるfake」）のloaderのフェーズ: ① importはテストの構成のファイル（`_test.sober`・`_double.sober`）とstdだけ
+// ② 把手 `cell.Cell[T]{…}` のリテラルはトップレベルのconstの右辺だけ ③ その右辺にフィールド `key:` を足す（値 = packageのパスとconstの名前の
 // ハッシュ — 宣言ごとに 1 つ・読み込みの順に依らないので package ごとのキャッシュの鍵と食い違わない）。利用者は key を書かない
 
 import "std/builder"
@@ -12,7 +12,7 @@ import "diag"
 
 const CELL_PATH = "std/testing/cell"
 
-// 全ファイルの把手を写す（置き場の package を import しないファイルはそのまま）
+// 全ファイルの把手を変換する（格納場所のpackageをimportしないファイルはそのまま）
 @errors(diag.Cell)
 func cellsAll(ts []ast.Tree, fpkg []string, fpath []string, fstd []bool) ([]ast.Tree, error?) {
     mut out := mut []ast.Tree{}
@@ -33,7 +33,7 @@ func cellsAll(ts []ast.Tree, fpkg []string, fpath []string, fstd []bool) ([]ast.
     return freeze(out), nil
 }
 
-// ファイルの置き場の package の参照名と import の字句（import が無ければ ""）
+// ファイルの格納場所のpackageの参照名とimportの字句（importが無ければ ""）
 func cellRef(t ast.Tree) (string, int) {
     imps := t.nodes[t.file].b
     for k <- iter.Range(0, ast.ListLen(t, imps)) {
@@ -57,7 +57,7 @@ func cellTree(t ast.Tree, f int, ref string, pkg string) (ast.Tree, error?) {
         rhs = append(rhs, c.b)
         names = append(names, Name(t, c.a))
     }
-    // 写す節: [リテラルの節, const の名前の添字]
+    // 変換する節: [リテラルの節, constの名前の添字]
     mut hits := mut []int{}
     for j <- iter.Range(0, len(t.nodes)) {
         x := t.nodes[j]

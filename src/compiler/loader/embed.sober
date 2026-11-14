@@ -1,6 +1,6 @@
 package loader
 
-// `@embed("glob")`（language.md 20 節 — go:embed の意味論。src/stage1/embed.zig と src/stage1/loader.zig の embedConst の写し）。
+// `@embed("glob")`（language.md 20 節 — go:embedの意味論。src/stage1/embed.zigとsrc/stage1/loader.zigのembedConstのコピー）。
 // パターンはルート（= cwd）相対の `/` 区切り。`**` はセグメントまるごとで 0 個以上のディレクトリ、`*` は `/` を含まない任意の列、
 // `?` は 1 バイト。最後のセグメントは通常ファイルにだけ、途中はディレクトリにだけ当たる（symlink は当たらない）。
 // 受け皿 `map[string]string{}` を「パス → 内容」の map リテラル（パスのバイト辞書順）に置き換えた木を作り直す
@@ -84,8 +84,8 @@ func join(dir string, name string) string {
     return dir + "/" + name
 }
 
-// dir、空なら "."（ReadDir に渡す名前）。if 式の腕に「リテラル」と「仮引数」を並べると腕の region が合わない（F-35 — 腕の合流は
-// 直さない側）ので、腕ごとに return する
+// dir、空なら "."（ReadDirに渡す名前）。if式の分岐に「リテラル」と「仮引数」を並べると分岐のregionが合わない（F-35 — 分岐の合流は
+// 直さない側）ので、分岐ごとにreturnする
 func orDot(dir string) string {
     if dir == "" {
         return "."
@@ -182,7 +182,7 @@ func isStringName(t ast.Tree, ty int) bool {
 
 // parse した生の木 t の @embed が読む入力の列（const ごとに パターン・一致したパスと中身 — 長さの前置きで連結）。
 // キャッシュの鍵の材料（load の時点で読むファイルとパターンの一致の集合は package のソースの外の入力）。
-// 不正なパターン・読めないファイルは印だけ積む（load がどうせ拒否する — 鍵は違うだけでよい）
+// 不正なパターン・読めないファイルはフラグだけ積む（loadがどうせ拒否する — 鍵は違うだけでよい）
 func EmbedInputs(t ast.Tree) []byte {
     mut out := mut []byte{}
     if t.file < 0 {

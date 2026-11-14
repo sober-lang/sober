@@ -1,8 +1,8 @@
 package main
 
-// 部分リテラル（language.md 15 節）: 名前つきで一部の欄だけ書き、
-// 省いた欄はゼロ値（`T{}` と同じ — int 0・string ""・mut の slice は空・入れ子の struct はその欄ごと）。書いた値は書いた順に評価する。
-// 封の型（utf8.View）を欄に持つ封の無い struct も部分リテラルで書ける — 封の型の欄はゼロ値（空の検査済み列 — 無害）
+// 部分リテラル（language.md 15 節）: 名前つきで一部のフィールドだけ書き、
+// 省いたフィールドはゼロ値（`T{}` と同じ — int 0・string ""・mutのsliceは空・入れ子のstructはそのフィールドごと）。書いた値は書いた順に評価する。
+// 封の型（utf8.View）をフィールドに持つ封の無いstructも部分リテラルで書ける — 封の型のフィールドはゼロ値（空の検査済み列 — 無害）
 
 import "std/utf8"
 
@@ -37,12 +37,12 @@ func tick(s string) int {
 func main() {
     s := St{name: "x"}
     println(s.name, s.n, len(s.xs), s.q.c, s.q.d)
-    // mut の束縛・入れ子の部分リテラル・欄の順と違う順（値は書いた順に評価）
+    // mutの束縛・入れ子の部分リテラル・フィールドの順と違う順（値は書いた順に評価）
     mut m := St{q: Q{d: true}, n: tick("ab")}
     m.xs = append(m.xs, 7)
     m.n += tick("c")
     println(m.n, len(m.xs), m.q.d, m.name == "")
-    // imm の欄（[]string）を省く
+    // immのフィールド（[]string）を省く
     i := Img{h: 2, w: 3}
     println(i.w * i.h, len(i.tags))
     l := Line{no: 4}

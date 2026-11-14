@@ -4,7 +4,7 @@ package main
 // 1 行 1 リクエスト（`METHOD /path?query` — bench/routing/gen）を照合する。照合の規則 = 登録順の最初の一致（メソッド・区間の数・静的な区間の等値）。
 // どれにも当たらなければ、メソッドを無視して当たるものがあれば 405・無ければ 404。パラメータとクエリは map[string]string に詰め、
 // 「ハンドラ」が名前で引く。出力 = ルートごとの件数・404 / 405・数のパラメータの合計・文字列のパラメータのバイト数・page の合計・FNV-1a 64
-// （Go / Rust の双子とバイト一致）
+// （比較用のGo / Rustの実装とバイト一致）
 
 import "std/convert"
 import "std/io"
@@ -33,7 +33,7 @@ func table() []string {
     }
 }
 
-// split は b の [s, e) を区切り c で割る（s == e は 0 個 — 道 `/` の区間の列は空）
+// splitはbの [s, e) を区切りcで割る（s == eは0個 — パス `/` の区間の列は空）
 func split(v utf8.View, b []byte, s int, e int, c byte) []string {
     mut out := mut []string{}
     if s >= e {
@@ -84,7 +84,7 @@ func rest(segs []string, k int) []string {
     return out
 }
 
-// stripHead は先頭の印（: か *）を外した名前
+// stripHeadは先頭のマーク（: か *）を外した名前
 func stripHead(p string) string {
     return strings.TrimPrefix(strings.TrimPrefix(p, ":"), "*")
 }

@@ -37,7 +37,7 @@ func sumSquares(n int) int {
 
 func main() {
     println(sumSquares(5))
-    // string の結果（子の region から scope の region へ写る）・生んだ順に並ぶ
+    // stringの結果（子のregionからscopeのregionへコピーされる）・生んだ順に並ぶ
     r, e := task.Run((s task.Scope) => {
         mut hs := mut []task.Handle[string]{}
         mut i := 3

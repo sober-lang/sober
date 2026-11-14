@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# checkpos（便 1 — 検査器の拒否の位置）: `sober check` が検査器の型の拒否（判定 JSON の ok:false）のときに stderr に出す位置の行
-# （`sober: type error at <where>` — 落ちた節の出所。app/cmd_check.sober の rejLines）の網。題材 =
-#   ① testdata/checkverdict の黄金のうち検査器の拒否（ok:false）の entry 全部
-#   ② 変異: 受理する例題（.out 持ち）の 4 本に 1 本の本体の整数のリテラルを 1 か所 bool にしたもの（scripts/checkpos.ts）— 検査器で落ちたものだけ
-# 赤: 検査器の拒否なのに位置の行が無い・位置が `(no source position)`・経路（一括 W1 / W8・1 本の道〔SOBER_DESUGAR_PAR=0〕・--split）で行が違う。
-# 観測（赤にしない）: ② で位置の行が変異した行を指す割合・build も拒否する題材で build の `lower error` の位置と一致する割合。
+# checkpos（タスク1 — 検査器の拒否の位置）: `sober check` が検査器の型の拒否（判定JSONのok:false）のときにstderrに出す位置の行
+# （`sober: type error at <where>` — 落ちた節の出所。app/cmd_check.soberのrejLines）の検査。題材 =
+#   ① testdata/checkverdictのゴールデンのうち検査器の拒否（ok:false）のentry全部
+#   ② ミューテーション: 受理する例題（.out持ち）の4本に1本の本体の整数のリテラルを1か所boolにしたもの（scripts/checkpos.ts）— 検査器で落ちたものだけ
+# 赤: 検査器の拒否なのに位置の行が無い・位置が `(no source position)`・経路（一括W1 / W8・1本のパス〔SOBER_DESUGAR_PAR=0〕・--split）で行が違う。
+# 観測（赤にしない）: ② で位置の行がミューテーションされた行を指す割合・buildも拒否する題材でbuildの `lower error` の位置と一致する割合。
 #   scripts/checkpos.sh
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -23,7 +23,7 @@ line() {
         *) echo - ;;
     esac
 }
-one() { # $1 = entry（ファイルかディレクトリ）・$2 = 変異した行（無ければ空）
+one() { # $1 = entry（ファイルかディレクトリ）・$2 = ミューテーションされた行（無ければ空）
     local e=$1 ml=${2:-} a b c d
     a=$(SOBER_WORKERS=1 line "$STAGE2" check "$e")
     [ "$a" = - ] && return 0
@@ -48,7 +48,7 @@ one() { # $1 = entry（ファイルかディレクトリ）・$2 = 変異した�
         [ "$a" = "sober: type error at $bl" ] && bsame=$((bsame + 1))
     fi
 }
-# ① 黄金の検査器の拒否（黄金の名前 = entry の / を _ に — 先頭から / に戻して実在する形を引く）
+# ① ゴールデンの検査器の拒否（ゴールデンの名前 = entryの / を _ に — 先頭から / に戻して実在する形を引く）
 for g in testdata/checkverdict/*.txt; do
     grep -q '"ok":false' "$g" || continue
     k=$(basename "$g" .txt) e=""
@@ -59,7 +59,7 @@ for g in testdata/checkverdict/*.txt; do
     [ -n "$e" ] || { echo "FAIL $g: cannot map the golden to an entry"; fail=1; continue; }
     one "$e"
 done
-# ② 変異
+# ② ミューテーション
 mkdir -p "$W/mut"
 ls examples/*.out | sed 's/\.out$/.sober/' | awk 'NR % 4 == 1' | while read -r s; do [ -f "$s" ] && echo "$s"; done > "$W/src.list"
 node scripts/checkpos.ts "$W/mut" $(cat "$W/src.list") > "$W/mut.list"

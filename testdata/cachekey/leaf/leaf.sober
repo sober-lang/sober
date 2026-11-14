@@ -1,6 +1,6 @@
 package leaf
 
-// キャッシュの鍵のゲート（scripts/cachekey.sh — 3'' 第 2 段 C1）の題材: 葉の package。本体だけの編集・署名の編集・@embed のファイルの編集で、
+// キャッシュの鍵のゲート（scripts/cachekey.sh — 3'' 第2フェーズC1）の題材: 葉のpackage。本体だけの編集・署名の編集・@embedのファイルの編集で、
 // どの package の鍵が変わるかを見る
 
 @embed("testdata/cachekey/leaf/data/*.txt")

@@ -1,6 +1,6 @@
 package pgwire
 
-// SCRAM の網: 独立の node:crypto で作ったベクタ（testdata/pg/scram.txt — scripts/pgscramvec.ts: RFC 7677 3 節・平文 n,,・束縛なし y,,・
+// SCRAMのテスト: 独立のnode:cryptoで作ったベクタ（testdata/pg/scram.txt — scripts/pgscramvec.ts: RFC 7677 3 節・平文n,,・束縛なしy,,・
 // PLUS × 証明書の署名のハッシュ 4 種〔sha1 / sha256 → 束縛は SHA-256・sha384 / sha512 はそれ — RFC 5929 4.1〕）とバイト一致・
 // 方式の選び方の表・壊れた server-first / server-final
 

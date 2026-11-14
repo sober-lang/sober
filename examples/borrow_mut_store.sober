@@ -1,8 +1,8 @@
 package main
 
-// 借りの仮引数の mut の席の格納点の写し: 借りの本体が深い region の imm（stream の反復の region の chunk・本体の中で作った文字列）を
-// mut の席の欄へ格納する — lower は mut 仮引数の格納点の floor = 呼び手が書いた anchor（26 節の M5 と同じ）。写しが無いと
-// stream の次の反復の確保が置き場を上書きして z.keep が壊れる
+// 借りの仮引数が持つmut仮引数の格納点のコピー: 借りの本体が深いregionのimm（streamの反復のregionのchunk・本体の中で作った文字列）を
+// mut仮引数のフィールドへ格納する — lowerはmut仮引数の格納点のfloor = 呼び手が書いたanchor（26 節のM5と同じ）。コピーが無いと
+// streamの次の反復の確保が格納場所を上書きしてz.keepが壊れる
 
 type Z struct {
     last []byte
@@ -22,7 +22,7 @@ func chunks(z mut Z, emit func(z mut Z, b []byte) error?) error? {
             j += 1
         }
         emit(mut z, freeze(buf))?
-        // 次の反復の region の確保で前の buf の置き場を上書きさせる
+        // 次の反復のregionの確保で前のbufの格納場所を上書きさせる
         mut junk := mut []byte{}
         mut q := 0
         while q < 200 {

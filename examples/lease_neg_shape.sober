@@ -1,6 +1,6 @@
 package main
 
-// 置き場の T はスカラーと pool.Scratch の欄だけの struct（diag.Par kind 26 — slice の欄は窓の中で置き場を伸ばしうる）
+// 配置先のTはスカラーとpool.Scratchのフィールドだけのstruct（diag.Par kind 26 — sliceのフィールドはウィンドウの中で配置先を伸ばしうる）
 
 import "std/task"
 import "std/pool"

@@ -1,10 +1,10 @@
-// confsync: 準拠文書（docs/conformance/*.md）の印の中 ≡ テストの実物からの生成。
-//   源 = ① `sober test -v` の出力の conf の行（テストが通った後の言明 — 再生の当たりなら一瞬）② examples の Wycheproof の黄金（.out）
-//        ③ 手で回す相互接続の網の記録（testdata/conformance/interop/*.txt — scripts/confrecord.sh が書く）④ 主張の表（testdata/conformance/claims.tsv）
+// confsync: 準拠文書（docs/conformance/*.md）のマークの中 ≡ テストの実物からの生成。
+//   源 = ① `sober test -v` の出力のconfの行（テストが通った後の言明 — 再生の当たりなら一瞬）② examplesのWycheproofのゴールデン（.out）
+//        ③ 手で回す相互接続の検査の記録（testdata/conformance/interop/*.txt — scripts/confrecord.shが書く）④ 主張の表（testdata/conformance/claims.tsv）
 //   conf の行の形: `conf: <鍵> <数>`・`conf-item: <鍵> <値…>`・`conf-why: <鍵> <理由（ja）>`・`conf-kind: <鍵> intentional|planned`
-//   規律: テストの出す鍵は全部どこかの塊が使う（使われない言明は赤）・主張の証拠は全部今の出力に在る（無い証拠は赤）・理由の英訳は
+//   規律: テストの出す鍵は全部どこかのチャンクが使う（使われない言明は赤）・主張の証拠は全部今の出力に在る（無い証拠は赤）・理由の英訳は
 //   testdata/conformance/en.tsv（ja → en — 無い訳・使われない訳は赤）
-//   印: `<!-- confsync:begin NAME -->` 〜 `<!-- confsync:end NAME -->` の間を生成し直す（言語はファイル名の .ja.md で決まる）
+//   マーク: `<!-- confsync:begin NAME -->` 〜 `<!-- confsync:end NAME -->` の間を生成し直す（言語はファイル名の .ja.mdで決まる）
 //   node --experimental-strip-types scripts/confsync.ts [--check]
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -116,7 +116,7 @@ function tr(ja: string, lang: Lang): string {
   return e;
 }
 
-// ── 読み出し（使った印を付ける）
+// ── 読み出し（使ったマークを付ける）
 function num(k: string): number {
   used.add(k);
   const v = nums.get(k);
@@ -152,7 +152,7 @@ const fmt = (n: number) => n.toLocaleString("en-US");
 type Lang = "ja" | "en";
 const L = (lang: Lang, ja: string, e: string) => (lang === "ja" ? ja : e);
 
-// ── 主張の表（claims.tsv: 塊 \t 状態 \t 時期 \t ja \t en \t 証拠…）
+// ── 主張の表（claims.tsv: チャンク \t状態 \t時期 \t ja \t en \t証拠…）
 type Claim = { block: string; status: string; when: string; ja: string; en: string; ev: string[] };
 const claims: Claim[] = [];
 for (const [i, l] of fs.readFileSync(path.join(ROOT, "testdata/conformance/claims.tsv"), "utf8").split("\n").entries()) {
@@ -231,7 +231,7 @@ function claimTable(block: string, statuses: string[], lang: Lang): string[] {
   return o;
 }
 
-// ── 生成の塊
+// ── 生成のチャンク
 const ALERTS: Record<string, string> = {
   "10": "unexpected_message", "20": "bad_record_mac", "22": "record_overflow", "40": "handshake_failure", "47": "illegal_parameter",
   "50": "decode_error", "51": "decrypt_error", "70": "protocol_version", "120": "no_application_protocol",
@@ -293,11 +293,11 @@ const BLOCKS: Record<string, (lang: Lang) => string[]> = {
     return o;
   },
   "x509-evidence": (lang) => [
-    L(lang, "| 網 | 出所 | 数 |", "| Suite | Source | Count |"), "|---|---|---:|",
+    L(lang, "| テスト群 | 出所 | 数 |", "| Suite | Source | Count |"), "|---|---|---:|",
     L(lang, `| PKITS の経路 | NIST PKITS | 範囲内 ${num("pkits/in-scope")} / 全 ${num("pkits/paths")}（範囲外の内訳は下） |`, `| PKITS paths | NIST PKITS | ${num("pkits/in-scope")} in scope / ${num("pkits/paths")} total (out of scope: below) |`),
     L(lang, `| x509-limbo | C2SP x509-limbo | 一致 ${num("limbo/agree")} / ${num("limbo/cases")}（既知の差は下） |`, `| x509-limbo | C2SP x509-limbo | ${num("limbo/agree")} agree / ${num("limbo/cases")} (known deviations: below) |`),
-    L(lang, `| 証明書の欄の読み | Go crypto/x509（Go の題材 + PKITS の証明書） | ${num("go-x509/fields")}（Go が拒否する ${num("go-x509/go-rejects")} 本は下） |`, `| Certificate field parsing | Go crypto/x509 (Go's fixtures + PKITS certificates) | ${num("go-x509/fields")} (the ${num("go-x509/go-rejects")} Go rejects: below) |`),
-    L(lang, `| 鎖の検証の題材 | Go verify_test.go | ${num("go-x509/verify")} |`, `| Chain verification cases | Go verify_test.go | ${num("go-x509/verify")} |`),
+    L(lang, `| 証明書のフィールドの構文解析 | Go crypto/x509（Go の題材 + PKITS の証明書） | ${num("go-x509/fields")}（Go が拒否する ${num("go-x509/go-rejects")} 本は下） |`, `| Certificate field parsing | Go crypto/x509 (Go's fixtures + PKITS certificates) | ${num("go-x509/fields")} (the ${num("go-x509/go-rejects")} Go rejects: below) |`),
+    L(lang, `| チェーンの検証の題材 | Go verify_test.go | ${num("go-x509/verify")} |`, `| Chain verification cases | Go verify_test.go | ${num("go-x509/verify")} |`),
     L(lang, `| 信頼ストア | Mozilla NSS certdata.txt | 起点 ${num("nss/anchors")}（distrust-after つき ${num("nss/distrust-after")}） |`, `| Trust store | Mozilla NSS certdata.txt | ${num("nss/anchors")} anchors (${num("nss/distrust-after")} with distrust-after) |`),
   ],
   "x509-limbo-known": (lang) => {
@@ -349,7 +349,7 @@ const BLOCKS: Record<string, (lang: Lang) => string[]> = {
   },
   "interop-dns": (lang) => {
     const m = interopMeta.get("dns");
-    return [L(lang, `最終確認: ${m?.date}（木 ${m?.commit} — scripts/dnsinterop.sh・偽の DNS サーバ ${num("interop/dns")} 題材: CNAME の鎖・TC → TCP・txid の偽装・search・NXDOMAIN・期限切れ）`,
+    return [L(lang, `最終確認: ${m?.date}（木 ${m?.commit} — scripts/dnsinterop.sh・偽の DNS サーバ ${num("interop/dns")} 題材: CNAME のチェーン・TC → TCP・txid の偽装・search・NXDOMAIN・期限切れ）`,
       `Last run: ${m?.date} (tree ${m?.commit} — scripts/dnsinterop.sh; fake DNS server, ${num("interop/dns")} cases: CNAME chain, TC → TCP, spoofed txid, search, NXDOMAIN, timeout)`)];
   },
   summary: (lang) => {
@@ -372,6 +372,18 @@ function gen(name: string, lang: Lang): string[] | null {
   if (cm) return claimTable(cm[1], cm[2].split(","), lang);
   const f = BLOCKS[name];
   return f ? f(lang) : null;
+}
+
+// 日本語と半角英数字の境界の半角スペースを消す（文書の表記の規則 — 境界は差し込んだ値で決まるので生成の後に掛ける）。
+// インラインコード・URL・リンクの宛先・HTML タグの中は触らない。英語の行は日本語の文字を含まないので変わらない
+const JP = "[\\u3000-\\u303F\\u3040-\\u30FF\\u3400-\\u4DBF\\u4E00-\\u9FFF\\uF900-\\uFAFF\\uFF00-\\uFFEF]";
+const JP_A = new RegExp(`(${JP}) (?=[A-Za-z0-9])`, "g");
+const JP_B = new RegExp(`([A-Za-z0-9]|%) (?=${JP})`, "g");
+const PROT = /(`+)(?:(?!\1)[^])*?\1|https?:\/\/[^\s)）」』\]]+|\]\([^)\n]*\)|<[A-Za-z\/!][^>\n]*>/g;
+function despaceJa(s: string): string {
+  let out = "", last = 0;
+  for (const m of s.matchAll(PROT)) { out += s.slice(last, m.index).replace(JP_A, "$1").replace(JP_B, "$1") + m[0]; last = m.index! + m[0].length; }
+  return out + s.slice(last).replace(JP_A, "$1").replace(JP_B, "$1");
 }
 
 // ── 文書の書き換え
@@ -398,7 +410,7 @@ for (const file of fs.readdirSync(DIR).filter((f) => f.endsWith(".md")).sort()) 
     const g = gen(b[1], lang);
     if (!g) fail(`${file}: 知らない塊 ${b[1]}`);
     seenBlocks.add(b[1]);
-    o.push(ls[i], ...(g ?? ls.slice(i + 1, end)), ls[end]);
+    o.push(ls[i], ...(g ? g.map(despaceJa) : ls.slice(i + 1, end)), ls[end]);
     i = end;
   }
   const s = o.join("\n");

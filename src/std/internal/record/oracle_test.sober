@@ -1,9 +1,9 @@
 package record
 
 // record 層の差分オラクル（white-box）: ① AES-128-GCM: traffic secret から鍵を作り、内容の型・長さ・0 埋めの違う record の列（2^14 を超える平文は割る・
-// 途中で KeyUpdate）を書いてバイト列の SHA-256 を Go の双子（scripts/oracles/tls_record.go — crypto/hkdf + crypto/aes の GCM で RFC 9846 5 節 / 7.1 を
+// 途中でKeyUpdate）を書いてバイト列のSHA-256をGoの比較用の実装（scripts/oracles/tls_record.go — crypto/hkdf + crypto/aesのGCMでRFC 9846 5 節 / 7.1を
 // 組んだもの）と照合 ② 同じ列を偽の転送路（切片の大きさ 1 / 7 / 100 / 4096 / 65536 / 3 と 40 の交互）で受けて Frames → Open で戻す（record の境界と
-// 切片の境界は独立）③ ChaCha20-Poly1305 で同じ往復（Go の std に ChaCha20-Poly1305 が無いので値は自己の黄金）④ 拒否: 改竄 = bad_record_mac・
+// 切片の境界は独立）③ ChaCha20-Poly1305で同じ往復（GoのstdにChaCha20-Poly1305が無いので値は自己のゴールデン）④ 拒否: 改竄 = bad_record_mac・
 // 本体の長さ超過 = record_overflow・内側が全部 0 = unexpected_message・外側の型違い・半端で閉じた = decode_error・転送路の失敗 = Transport
 
 import "std/crypto"
@@ -60,7 +60,7 @@ func stream(suite int, secret []byte) []byte {
     return freeze(out)
 }
 
-// s を size バイトずつの切片で k へ渡す偽の受けの口（size 0 = 3 と 40 の交互 — record の頭が切片をまたぎ、続く切片で頭の残りと本体が揃う形。
+// sをsizeバイトずつの切片でkへ渡す偽の受けのインターフェース（size 0 = 3と40の交互 — recordの頭が切片をまたぎ、続く切片で頭の残りと本体が揃う形。
 // cutAt ≥ 0 ならそのバイト数を渡した後で Cut）
 func feed(s []byte, size int, cutAt int, k func([]byte)) error? {
     mut at := 0
@@ -155,7 +155,7 @@ func roundtrip(name string, suite int, secret []byte) []string {
     return freeze(out)
 }
 
-// 書いた record 列の値と拒否の形を Go の双子（scripts/oracles/tls_record.go の出力 = testdata/crypto/tls_record.txt）と照合する。
+// 書いたrecord列の値と拒否の形をGoの比較用の実装（scripts/oracles/tls_record.goの出力 = testdata/crypto/tls_record.txt）と照合する。
 // 塊の無い機械（SOBER_NOAES=1）では AES の行を飛ばす
 func TestOracle() {
     mut lines := mut []string{}
@@ -175,13 +175,13 @@ func TestOracle() {
     lines = append(lines, strings.Join([]string{"cut", errName(openAll(ChaCha, secret, s, 8, 8))}, " "))
     big := []byte{23, 3, 3, byte(0x41), byte(0x01)}
     lines = append(lines, strings.Join([]string{"overflow", errName(openAll(ChaCha, secret, big, 65536, -1)), errName(openAll(ChaCha, secret, big, 2, -1))}, " "))
-    // 頭が切片をまたいで揃った直後の切片に本体のバイトが続く形（揃えの段の境目 — 頭の 5 バイトで止めて上限を見る）
+    // 頭が切片をまたいで揃った直後の切片に本体のバイトが続く形（揃えの段階の境目 — 頭の5バイトで止めて上限を見る）
     lines = append(lines, strings.Join([]string{"overflow-split", errName(openAll(ChaCha, secret, []byte{23, 3, 3, byte(0x41), byte(0x01), 0, 0, 0}, 2, -1)), errName(openAll(ChaCha, secret, []byte{23, 3, 3, byte(0x41), byte(0x01), 0, 0, 0}, 3, -1))}, " "))
     lines = append(lines, strings.Join([]string{"outer", errName(openAll(ChaCha, secret, []byte{22, 3, 3, 0, 17, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 65536, -1))}, " "))
     // 内側が全部 0（内容の型が無い）: 内容の型 0 + 0 埋め 9 で封じた record
     lines = append(lines, strings.Join([]string{"zeros", errName(openAll(ChaCha, secret, zeroInner(secret), 65536, -1))}, " "))
-    // ExpandLabel（RFC 9846 7.1 の形 — Go の双子と照合）
-    // 導いた鍵は秘密 — 印字せず期待値（Go の双子の値）と crypto.Equal で照合
+    // ExpandLabel（RFC 9846 7.1の形 — Goの比較用の実装と照合）
+    // 導いた鍵は秘密 — 印字せず期待値（Goの比較用の実装の値）とcrypto.Equalで照合
     l1 := "523ab68875d8759d10c748f3a4ce451f"
     l2 := "529b4d87467126403a0da83846964bfd717150d7aebb8e3ca6f4930e86bc69e5"
     w1, _ := hex.Parse(l1)

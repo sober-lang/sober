@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tzstore（std/time の地域の規則の焼き込み — ユーザー裁定 2026-11-05 ⑤-11: 信頼ストアと同じ更新フロー）: IANA の tz の正式リリース（data.iana.org の tzdata<版>.tar.gz）を
+# tzstore（std/timeの地域の規則の焼き込み — ユーザー決定2026-11-05 ⑤-11: 信頼ストアと同じ更新フロー）: IANAのtzの正式リリース（data.iana.orgのtzdata<版>.tar.gz）を
 # zic -b slim で TZif に組み、src/std/time/zones.sober（生成物・出所の銘つき）に焼き込む。組んだ TZif の束は testdata/tz/tzif.tar.gz（決定的な tar）・銘は
 # testdata/tz/SOURCE（`版 取得日 tzdata<版>.tar.gz の SHA-256 zic の版`）・別名の表は testdata/tz/links.txt に置き、照合はネットにも zic にも依らない。照合の表 testdata/tz/samples.txt は同じソースの
 # zic -b fat -r 1900〜2100（全部の遷移の展開）から作る（std/time のテストが slim の遷移 + 末尾の規則の評価と突き合わせる）。

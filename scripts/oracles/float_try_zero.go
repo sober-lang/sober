@@ -1,4 +1,4 @@
-// examples/float_try_zero の Go の双子（`?` の脱出のゼロ値 = Go の return M{}, err）
+// examples/float_try_zeroの比較用のGoの実装（`?` の脱出のゼロ値 = Goのreturn M{}, err）
 package main
 
 import (

@@ -1,6 +1,6 @@
 package main
 
-// 添字を挟む書き（欄が指す buffer — std/table の chunks と同じ形）
+// 添字を挟む書き（フィールドが指すbuffer — std/tableのchunksと同じ形）
 import "testdata/fieldpkg/box"
 
 func main() {

@@ -1,8 +1,8 @@
 package main
 
 // Web クライアントのガイド 4 節: ログインの状態は cookie の値として自分で持つ。外の API の代役は POST /login で
-// セッションの cookie を置き（Set-Cookie は型の欄 cookies だけで書く）、GET /me はその cookie を読む。客は応答から CookieValue で取り出し、
-// 次の要求の cookies: に載せる — 載せたものだけが届く
+// セッションの cookie を置き（Set-Cookie は型のフィールド cookies だけで書く）、GET /me はその cookie を読む。客はレスポンスから CookieValue で取り出し、
+// 次のリクエストの cookies: に載せる — 載せたものだけが届く
 
 import "std/http/client"
 import "std/http/server"

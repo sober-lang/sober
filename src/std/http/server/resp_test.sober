@@ -1,6 +1,6 @@
 package server
 
-// 応答の頭（respHead）の旧新照合の網: 書き換え前の respHead を Ref の名前で写した基準と、応答の格子
+// レスポンスの頭（respHead）の旧新照合の検査一式: 書き換え前のrespHeadをRefの名前でコピーした基準と、レスポンスの格子
 // （status 200 / 他・Content-Type の有無・validators・cache・headers・enc 0〜3・stream・keep / v10・本文の長さの桁の境目）で頭のバイト列が一致することを照合する
 
 import "std/http"
@@ -33,7 +33,7 @@ func respHeadRef(r Response, keep bool, v10 bool, enc int) []byte {
             }
         }
     }
-    // 既定の private は定数のまま（応答ごとに文字列を組まない）
+    // 既定のprivateは定数のまま（レスポンスごとに文字列を組まない）
     cv := cacheLine(r.cache)
     for x <- bytes(cv) {
         h = append(h, x)
@@ -99,7 +99,7 @@ func respHeadRef(r Response, keep bool, v10 bool, enc int) []byte {
     for x <- bytes("Content-Length: ") {
         h = append(h, x)
     }
-    // 長さの 10 進（上の桁から — 写しの列を作らない）。stream の応答は length
+    // 長さの10進（上の桁から — コピーの列を作らない）。streamのレスポンスはlength
     mut n := len(r.body)
     if ln != nil && r.stream != nil {
         n = ln
@@ -139,7 +139,7 @@ func filler(n int) []byte {
     return freeze(b)
 }
 
-// 格子の k 番目の形の応答（本文 n バイト）— 列に積まずに 1 つずつ作る（`mut []Response` に積んで回す形は check が def error になる）
+// 格子のk番目の形のレスポンス（本文nバイト）— 列に積まずに1つずつ作る（`mut []Response` に積んで回す形はcheckが def error になる）
 func shapeOf(k int, n int) Response {
     return switch k {
     case 0: Response{status: http.OK, contentType: "text/plain", body: filler(n)}

@@ -1,6 +1,6 @@
 package main
 
-// struct の mut map 欄への格納（`s.m[k] = v` — mut 仮引数越し・入れ子の欄・反復で作った鍵も）: 名前の map と同じ格納
+// structの mut map フィールドへの格納（`s.m[k] = v` — mut仮引数越し・入れ子のフィールド・反復で作った鍵も）: 名前のmapと同じ格納
 
 type S struct {
     n int

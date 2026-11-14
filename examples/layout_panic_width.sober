@@ -1,6 +1,6 @@
 package main
 
-// @layout の書き込みの幅あふれは panic（language.md 36 節 Y5 ① — exit 101。標準エラーに欄と値と幅）。リテラル直書きでない値は実行時の検査
+// @layoutの書き込みの幅あふれはpanic（language.md 36 節Y5 ① — exit 101。標準エラーにフィールドと値と幅）。リテラル直書きでない値は実行時の検査
 
 import "std/builder"
 import "std/layout"

@@ -1,8 +1,8 @@
 package main
 
-// map の更新の引きの融合（mapfuse）の網: `c := m[k]; m[k] = <c の式>` の引きは 1 回（scripts/mapfuse.sh が
-// IR の map_find の呼び出しの数を関数ごとに照合する）。string の鍵（格納点の写しの対象 — 写しは引きの後に置かないと融合が外れる）・
-// int の鍵・slice を含む値（値の格納点の写し）の 3 形（+ 値の式が確保を呼ぶ形は融合しない — 2 回）
+// mapの更新の引きの融合（mapfuse）のテスト: `c := m[k]; m[k] = <c の式>` の引きは1回（scripts/mapfuse.shが
+// IRのmap_findの呼び出しの数を関数ごとに照合する）。stringの鍵（格納点のコピーの対象 — コピーは引きの後に置かないと融合が外れる）・
+// intの鍵・sliceを含む値（値の格納点のコピー）の3形（+ 値の式が確保を呼ぶ形は融合しない — 2回）
 
 func updStr(m mut map[string]int, ks []string) {
     for k <- ks {
@@ -18,7 +18,7 @@ func updInt(m mut map[int]int, ks []int) {
     }
 }
 
-// 値が string（値の格納点の写しの道）。今は 2 回（鍵のスロットの書き直しの同値の判定が SSA の値の一致だけ — 別のブロックで
+// 値がstring（値の格納点のコピーのパス）。今は2回（鍵のスロットの書き直しの同値の判定がSSAの値の一致だけ — 別のブロックで
 // 読み直した同じスロットの load を同じと見られない。広げるのは PINS — scripts/mapfuse.sh の期待値は 2）
 func updVal(m mut map[string]string, ks []string) {
     for k <- ks {

@@ -2,7 +2,7 @@
 //   使い方: node --experimental-strip-types --no-warnings scripts/pgscramvec.ts cert-sha1.pem cert-sha256.pem cert-sha384.pem cert-sha512.pem > testdata/pg/scram.txt
 //   （証明書は名前を cert-<署名のハッシュ>.pem に — sha256 は testdata/crypto/httparena-server.crt・他は openssl req -x509 -sha1 / -sha384〔P-384〕/ -sha512 の自己署名。DER は出力に hex で入る）
 //   形: 空行で区切った場面ごとに `鍵 値` の行。値は印字可能な ASCII（SCRAM のメッセージ）か hex（cbind・DER のハッシュ）
-//   場面 = RFC 7677 3 節の例（照合のため — 期待の proof / ServerSignature も RFC の値と一致することをここで確かめる）+
+//   場面 = RFC 7677 3 節の例（照合のため — 期待のproof / ServerSignatureもRFCの値と一致することをここで確認する）+
 //          与えた証明書ごとの PLUS（署名のハッシュに応じた束縛のハッシュ — RFC 5929 4.1）+ 平文の `y,,`（束縛できるがサーバが出さなかった）
 import { createHash, createHmac, pbkdf2Sync, X509Certificate } from "node:crypto";
 import { readFileSync } from "node:fs";

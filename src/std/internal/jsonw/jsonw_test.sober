@@ -1,6 +1,6 @@
 package jsonw
 
-// 部品の網: Int の詰めの境（1 桁・2 桁の偶奇・10^8 の前後・負・最小値）・Str のエスケープの −1・Word の余りを次の書きが上書きする形・上界ちょうど
+// 部品のテスト: Intの詰めの境（1桁・2桁の偶奇・10^8の前後・負・最小値）・Strのエスケープの −1・Wordの余りを次の書きが上書きする形・上界ちょうど
 
 import "std/convert"
 import "std/iter"
@@ -24,7 +24,7 @@ func TestInt() {
 }
 
 func TestWordTail() {
-    // 語の余りの 0 は次の書きで上書きされる
+    // ワードの余りの0は次の書きで上書きされる
     mut b := mut []byte{}
     Grow(mut b, 24)
     Word(mut b, 0, 0x3a226469227b)

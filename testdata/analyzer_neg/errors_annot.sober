@@ -1,7 +1,7 @@
 package main
 
 // analyzer の負例（scripts/analyzer_neg.sh — 期待の指摘は errors_annot.err）: `@errors` の項の解決（error 網羅 analyzer A3）。
-// 正の列挙だけ（否定形なし — 裁定 E5 = M-a）・ラベル名は `L` か `pkg.L`・存在するラベルだけ
+// 正の列挙だけ（否定形なし — 決定E5 = M-a）・ラベル名は `L` か `pkg.L`・存在するラベルだけ
 
 import "std/io"
 

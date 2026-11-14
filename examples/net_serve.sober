@@ -1,6 +1,6 @@
 package main
 
-// net 段 4a-3（N1 / N3 / N4 — language.md 28 節の net）: net.Serve が accept のループを持ち、接続 1 本 = task 1 本で handler を走らせる。
+// net段階4a-3（N1 / N3 / N4 — language.md 28 節のnet）: net.Serveがacceptのループを持ち、接続1本 = task 1本でhandlerを走らせる。
 // handler の死（"die" を受けたら panic）は Serve が吸収し（死んだ接続も閉じる — task の登録簿）、他の接続の echo は続く。何も送らない接続の
 // handler の Recv は Serve を包む scope の期限で切れる（その接続は閉じられる）。Serve が返るのは期限で accept の待ちが切れたとき（io.Expired）— 走っている接続の
 // 決着を待ってから。W1（協調形）でも W8 でも同じ出力。終わりに Serve のプールの台帳（入場・失敗・死の数）

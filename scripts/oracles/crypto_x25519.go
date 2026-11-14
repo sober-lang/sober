@@ -1,4 +1,4 @@
-// examples/crypto_x25519.sober の Go の双子（std/crypto/x25519 の差分オラクル — report-794）。crypto/ecdh の X25519 で同じ値を出し、
+// examples/crypto_x25519.soberの比較用のGoの実装（std/crypto/x25519の差分オラクル — report-794）。crypto/ecdhのX25519で同じ値を出し、
 // RFC 7748 5.2（反復 1 / 1000 回 — Sober の例は 100 回の値を出す）/ 6.1 の期待値をここに固定して照合する（食い違いは標準エラーに出して exit 1）。再生成:
 //   go run scripts/oracles/crypto_x25519.go > examples/crypto_x25519.out
 package main

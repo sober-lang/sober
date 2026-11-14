@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# partinl（部分インライン — compiler/lower/irinl.sober の IL_HOTINS の道）の形の網: 写すかどうかは観測に出ない最適化なので、出力の照合
+# partinl（部分インライン — compiler/lower/irinl.soberのIL_HOTINSのパス）の形の検査: コピーするかどうかは観測に出ない最適化なので、出力の照合
 # （obs / optdiff）では外れても鳴らない（mapfuse.sh と同じ理由）。最適化のバックエンドの経路の IR（--stop-after=inline --dump-ir）で関数ごとの
 # 呼び出しの数を照合する:
-#   ① ループの中の std/utf8.Str は写す（examples/str_partial_inline の main・bench/1brc の main・bench/knucleotide の frequencies — 0 本）
-#   ② ループの外の呼び出し点は写さない（examples/str_partial_inline の cut — 1 本）
-#   ③ error を返す return 文の印を持たない大きい関数は写さない（bench/fasta の randomChunk の rt.slice_grow8 — exit だけの遅い道。写すと fasta +6.6%）
+#   ① ループの中のstd/utf8.Strはコピーする（examples/str_partial_inlineのmain・bench/1brcのmain・bench/knucleotideのfrequencies — 0本）
+#   ② ループの外の呼び出し点はコピーしない（examples/str_partial_inlineのcut — 1本）
+#   ③ errorを返すreturn文のフラグを持たない大きい関数はコピーしない（bench/fastaのrandomChunkのrt.slice_grow8 — exitだけの低速パス。コピーするとfasta +6.6%）
 #   scripts/partinl.sh
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -14,8 +14,8 @@ trap 'rm -rf "$W"' EXIT
 fail=0
 n=0
 # want = ファイル:関数:呼ばれる関数:比較:数（eq = ちょうど・ge = 以上）。関数が '/' を含めば完全修飾（std の関数）・'*' はファイル全体
-#   ④ 戻らない利用者の種（730 — report-728 A）: deflate.insert（std/internal/deflate — 8-4a で flate から移した核） は lazy / greedy の中へ写す（0 本）
-#   ⑤ rt.* は種にしない（730 の負例の網）: rt.deadlock を呼ぶ rt.task_wait（眠りの器）が写らず呼び出しのまま残る（ファイル全体で ≥ 1 本）
+#   ④ 戻らない利用者の案（730 — report-728 A）: deflate.insert（std/internal/deflate — 8-4aでflateから移した核） はlazy / greedyの中へコピーする（0本）
+#   ⑤ rt.* は案にしない（730の負例の検査）: rt.deadlockを呼ぶrt.task_wait（スリープの器）がコピーされず呼び出しのまま残る（ファイル全体で ≥ 1本）
 for want in examples/str_partial_inline.sober:main:std/utf8.Str:eq:0 examples/str_partial_inline.sober:cut:std/utf8.Str:eq:1 \
     bench/1brc/main.sober:main:std/utf8.Str:eq:0 bench/knucleotide/main.sober:frequencies:std/utf8.Str:eq:0 bench/fasta/main.sober:randomChunk:rt.slice_grow8:ge:1 \
     bench/httparena/main.sober:std/internal/deflate.lazy:std/internal/deflate.insert:eq:0 \

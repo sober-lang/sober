@@ -5,7 +5,7 @@
 // 別名の表 = `別名 正の名前` の行・scripts/tzstore.sh が置く）は行を作らず別名の表に出す。行 = `名前 種類 遷移 規則` — 種類 = `オフセット秒:夏時間 0/1:略称` の , 区切り・
 // 遷移 = 最初は `UNIX 秒:種類` で 2 つ目からは `前との差:種類`（数は 36 進・負は先頭に -）の , 区切り（無ければ -）・規則 = 末尾の規則（無ければ -）。
 // samples: 照合の表（fat = zic -b fat -r 1900〜2100 で全部の遷移を展開した束を正とする）— ゾーンごとに、決めた時刻と 2020〜2100 の遷移の前後の
-// `名前 UNIX 秒 オフセット秒 夏時間 略称`（slim の遷移 + 規則の評価が fat の展開と一致することを std/time のテストが確かめる）
+// `名前 UNIX 秒 オフセット秒 夏時間 略称`（slimの遷移 + 規則の評価がfatの展開と一致することをstd/timeのテストが検証する）
 import * as fs from "node:fs";
 import * as path from "node:path";
 
@@ -65,7 +65,7 @@ const have = new Set(files);
 for (const f of files) {
   const target = linkOf.get(f);
   if (target !== undefined) {
-    // 鎖の別名（別名 → 別名 → 正）は正まで辿る
+    // 別名のチェーン（別名 → 別名 → 正）は正まで辿る
     let t = target;
     for (let i = 0; i < 8 && linkOf.has(t); i++) t = linkOf.get(t)!;
     if (have.has(t)) links.push(`${f} ${t}`);

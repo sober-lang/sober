@@ -6,7 +6,7 @@ package lower
 import "desugar"
 import "std/iter"
 
-// 仮引数 3 本のブロックへの辺の実引数 [10, 20, 30] を、生きた仮引数の印 mask（ビット k = k 本目）で ccKeepArgs に掛けた列
+// 仮引数3本のブロックへの辺の実引数 [10, 20, 30] を、生きた仮引数のフラグmask（ビットk = k本目）でccKeepArgsに掛けた列
 func ckT(mask int) []int {
     mut st := St{}
     initScalars(mut st)

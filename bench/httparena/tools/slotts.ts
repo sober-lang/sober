@@ -1,7 +1,7 @@
-// slotts.ts <srv.err> [smaps.txt] — rt のスロットの数え口（--rt-mutant=4 の @rt.mn の延長 16 語 — src/compiler/lower/mn.sober の MK0 の注）の時系列（report-1016）。
-// 列: t（最初の写しからの秒）・live（生きている子）・owned（子が持つスロット = pop + take − give）・local（ワーカーの手元のプール）・sres（共有の予備）・
-// mapped（写したスロット = 16 × refill − drop）・refill / drop / pop / give（前の行からの増分）・carry（give 1 回の min(used, W_MADV) の平均 KB）・
-// inhKB（pop 1 回で受け継いだ常駐 = 先頭 1 MiB の mincore の頁 × 4 KB の平均）・smaps の帯の Rss（MB）と写像の数・Rss / mapped（KB / スロット）
+// slotts.ts <srv.err> [smaps.txt] — rtのスロットのカウンタ（--rt-mutant=4の @rt.mnの延長16ワード — src/compiler/lower/mn.soberのMK0の注記）の時系列（report-1016）。
+// 列: t（最初のコピーからの秒）・live（生きている子）・owned（子が持つスロット = pop + take − give）・local（ワーカーの手元のプール）・sres（共有の予備）・
+// mapped（コピーしたスロット = 16 × refill − drop）・refill / drop / pop / give（前の行からの増分）・carry（give 1回のmin(used, W_MADV) の平均KB）・
+// inhKB（pop 1回で受け継いだ常駐 = 先頭1 MiBのmincoreのページ × 4 KBの平均）・smapsの帯のRss（MB）と写像の数・Rss / mapped（KB / スロット）
 import { readFileSync, existsSync } from "node:fs";
 const [errF, smF] = process.argv.slice(2);
 const NW = 20; const buf = readFileSync(errF); const MAG = Buffer.from("SOBERSLT");

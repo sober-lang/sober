@@ -1,7 +1,7 @@
 package main
 
-// std/quick の fuzz のスケジュールの軸の網（scripts/quickfuzz.sh）: 2 つの task が同じファイルへ書き足す順は既定のスケジュール（ワーカー 1 では
-// 子を先に）では a が全部先で性質が成り立ち、乱択のスケジュール（SOBER_SCHED_SEED — quick:sched）で b が先に走ると偽になる
+// std/quickのfuzzのスケジュールの軸の検査（scripts/quickfuzz.sh）: 2つのtaskが同じファイルへ書き足す順は既定のスケジュール（ワーカー1では
+// 子を先に）ではaが全部先でプロパティが成り立ち、乱択のスケジュール（SOBER_SCHED_SEED — quick:sched）でbが先に走ると偽になる
 
 import "std/io"
 import "std/os"

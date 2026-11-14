@@ -1,13 +1,13 @@
 package lower
 
-// hdr の資格の印の網: 印の無い ptr 仮引数は、別の仮引数のデータへの store が自分のヘッダを書きうる（rt の補助は
-// slice のデータの中のヘッダを指しうる）ので、ヘッダの読みをまとめてはいけない。利用者のプログラムには印の無い ptr 仮引数で hdr に掛かるもの
-// （sret はヘッダの語を必ず書く）が無く、印を見ない変異は例・題材の全部でバイト一致になる — IR を手で組んで直に見る（`cd compiler && ../bin/sober test lower`）
+// hdrの資格のフラグの検査: フラグの無いptr仮引数は、別の仮引数のデータへのstoreが自分のヘッダを書きうる（rtの補助は
+// sliceのデータの中のヘッダを指しうる）ので、ヘッダの読みをまとめてはいけない。利用者のプログラムにはフラグの無いptr仮引数でhdrに掛かるもの
+// （sretはヘッダのワードを必ず書く）が無く、フラグを見ないミュータントは例・題材の全部でバイト一致になる — IRを手で組んで直に見る（`cd compiler && ../bin/sober test lower`）
 
 import "desugar"
 import "std/iter"
 
-// `a = load P[1]; store itop(load Q[0])[0] ← a; c = load P[1]; store itop(load Q[0])[1] ← c` の関数に印 mask で hdr を掛け、
+// `a = load P[1]; store itop(load Q[0])[0] ← a; c = load P[1]; store itop(load Q[0])[1] ← c` の関数にフラグmaskでhdrを掛け、
 // 残った `load P[1]` の数を返す（2 = まとめなかった・1 = まとめた）
 func hdrT(mask int) int {
     mut st := St{}
@@ -45,7 +45,7 @@ func hdrT(mask int) int {
 func TestHdrMutMark() {
     // P と Q の両方が mut 仮引数なら Q の要素への store は P のヘッダに届かない — まとめる
     assert(hdrT(3) == 1)
-    // どちらかに印が無ければまとめない（印を見ない変異はここで落ちる）
+    // どちらかにフラグが無ければまとめない（フラグを見ないミュータントはここで落ちる）
     for m <- iter.Range(0, 3) {
         assert(hdrT(m) == 2)
     }

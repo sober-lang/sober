@@ -2,8 +2,8 @@ package http
 
 // HTTP の語彙のうちサーバ（std/http/server）とクライアント（std/http/client）が共に使うもの: ヘッダの 1 本・書けないヘッダの panic ラベル・状態の番号
 
-// 応答の状態の番号（RFC 9110 15 節）。std/http/server が理由句を知る番号は下の型つきの const（http.OK …）— 状態行の表はこの const の全部を
-// 名指す（@exhaustive — language.md 13 節の補「表の網羅」）。const に無い番号も `http.StatusCode(418)` や整数のリテラル（`status: 418`）で書ける（理由句は空）
+// レスポンスの状態の番号（RFC 9110 15 節）。std/http/serverが理由句を知る番号は下の型つきのconst（http.OK …）— 状態行の表はこのconstの全部を
+// 列挙する（@exhaustive — language.md 13 節の補「表の網羅」）。constに無い番号も `http.StatusCode(418)` や整数のリテラル（`status: 418`）で書ける（理由句は空）
 type StatusCode int
 
 // 200 OK
@@ -18,7 +18,7 @@ const MovedPermanently = StatusCode(301)
 const Found = StatusCode(302)
 // 304 Not Modified（条件付き GET の一致 — 本文なし）
 const NotModified = StatusCode(304)
-// 400 Bad Request（要求の頭が読めない）
+// 400 Bad Request（リクエストの頭が読めない）
 const BadRequest = StatusCode(400)
 // 401 Unauthorized
 const Unauthorized = StatusCode(401)
@@ -32,7 +32,7 @@ const MethodNotAllowed = StatusCode(405)
 const PreconditionFailed = StatusCode(412)
 // 413 Content Too Large（本文が上限を超える）
 const ContentTooLarge = StatusCode(413)
-// 431 Request Header Fields Too Large（要求の頭が上限を超える）
+// 431 Request Header Fields Too Large（リクエストの頭が上限を超える）
 const RequestHeaderFieldsTooLarge = StatusCode(431)
 // 500 Internal Server Error（handler の失敗）
 const InternalServerError = StatusCode(500)

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# stackcheck: 接続の task の積みの最深の網。task の塊の並びは [ガード | 積み | 頁: 積みの頂上 TCB_TOP_ROOM + TCB | …] で、keep-alive の
-# 1 要求の最深の積みが「TCB_TOP_ROOM + 下の 1 頁」を越えると接続ごとに積みの頁が 1 枚増える（常駐 +4 KB/接続 — 命令の網にも
-# RSS の傾きの 1 点にも鳴りにくい崖）。bench/httparena/main.sober の写し（main だけを期限つきで run に差し替え — 道は本物）に
-# keep-alive の baseline の 3 形を流し、終わりの #par tasks の stack_hw（task の積みの最深 — rt.pstat_end の走査）が予算 − 64 B 以下かを見る。
-# --mutants: 変異 47（新しい塊の積みの頂上を 1 KiB 下げる = 道が 1 KiB 深くなったのと同じ）で落ちることを確かめる
+# stackcheck: 接続のtaskのスタックの最深の検査。taskのチャンクの並びは [ガード | スタック | ページ: スタックの頂上TCB_TOP_ROOM + TCB | …] で、keep-aliveの
+# 1リクエストの最深のスタックが「TCB_TOP_ROOM + 下の1ページ」を越えると接続ごとにスタックのページが1枚増える（常駐 +4 KB/接続 — 命令の検査にも
+# RSSの傾きの1点にも鳴りにくい崖）。bench/httparena/main.soberのコピー（mainだけを期限つきでrunに差し替え — パスは本物）に
+# keep-aliveのbaselineの3形を流し、終わりの #par tasksのstack_hw（taskのスタックの最深 — rt.pstat_endの走査）が予算 − 64 B以下かを見る。
+# --mutants: ミューテーション47（新しいチャンクのスタックの頂上を1 KiB下げる = パスが1 KiB深くなったのと同じ）で落ちることを検証する
 #   scripts/stackcheck.sh [--mutants]
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -36,7 +36,7 @@ measure() {
 }
 "$S2" build "$W/arena.sober" -o "$W/srv" > "$W/b.log" 2>&1 || { echo "stackcheck: FAIL build ($(head -c 200 "$W/b.log"))"; exit 1; }
 hw=$(measure "$W/srv")
-# 接続の task が区画の形（本体の枠は頁 0 の余白・下はワーカーの区画）で走ったか: 入らなかった数 area_far が 0（framestat の @room の予測と実際の照合）
+# 接続のtaskがエリアの形（本体の枠はページ0の余白・下はワーカーのエリア）で走ったか: 入らなかった数area_farが0（framestatの @roomの予測と実際の照合）
 af=$(grep -o 'area_far=[0-9]*' "$W/err" | cut -d= -f2)
 fail=0
 if [ "$af" != 0 ]; then echo "stackcheck: FAIL — area_far=${af:-none}: connection tasks whose body frame did not fit page 0 (framestat @room predicts it fits)"; fail=1; fi
@@ -49,7 +49,7 @@ if [ $MUT = 1 ]; then
     "$S2" build "$W/arena.sober" --rt-mutant=47 -o "$W/srv47" > "$W/b.log" 2>&1 || { echo "stackcheck: FAIL build m47"; exit 1; }
     h47=$(measure "$W/srv47")
     if [ -n "$h47" ] && [ "$h47" -gt "$lim" ]; then echo "stackcheck: m47 caught (stack_hw $h47 > $lim)"; else echo "stackcheck: FAIL — mutant 47 was not caught (stack_hw ${h47:-none})"; fail=1; fi
-    # 変異 60（全関数の枠 +512 B）: 本体が頁 0 の余白に入らず area_far > 0
+    # ミューテーション60（全関数の枠 +512 B）: 本体がページ0の余白に入らずarea_far > 0
     "$S2" build "$W/arena.sober" --rt-mutant=60 -o "$W/srv60" > "$W/b.log" 2>&1 || { echo "stackcheck: FAIL build m60"; exit 1; }
     measure "$W/srv60" > /dev/null
     a60=$(grep -o 'area_far=[0-9]*' "$W/err" | cut -d= -f2)

@@ -1,8 +1,8 @@
 package main
 
 // spawn の固定費のマイクロベンチ（「task 生成 ≈ region push ≈ ゼロ」の成立の見張り。scripts/spawnbench.sh）:
-//   loop  = Scope + Spawn + Join の往復を n 回（子は 1 つずつ — 塊の取得と返却・切替 2 回）
-//   wide  = 1 scope に n 個の spawn（handle の slice に積んで Gather — 枠と塊が scope の終わりまで生きる）
+//   loop  = Scope + Spawn + Joinの往復をn回（子は1つずつ — チャンクの取得と返却・切替2回）
+//   wide  = 1 scopeにn個のspawn（handleのsliceに積んでGather — 枠とチャンクがscopeの終わりまで生きる）
 // 実引数 = モード（loop / wide）と n
 
 import "std/iter"

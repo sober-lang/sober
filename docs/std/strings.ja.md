@@ -202,7 +202,7 @@ s のバイト列を a の region へコピーした string を返す（コピ�
 func Join(ps []string, sep string) string
 ```
 
-ps を sep で繋いだ string（Go の strings.Join と同じ）。片の長さの和を 1 回だけ写す — 素直な `s = s + sep + p` の繰り返しは写しが積もる（先端一致の concat の in-place 成長はまだ無い）。積みは 1 本の列の先端なので写しが起きない
+psをsepで繋いだstring（Goのstrings.Joinと同じ）。片の長さの和を1回だけコピーする — 素直な `s = s + sep + p` の繰り返しはコピーが積もる（先端一致のconcatのin-place成長はまだ無い）。積みは1本の列の先端なのでコピーが起きない
 
 ## BadUtf8
 

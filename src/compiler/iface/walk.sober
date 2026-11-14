@@ -1,6 +1,6 @@
 package iface
 
-// 部分木の識別子の走査（.sobi のリンク可視の閉包 — iface.sober）。節の欄の種類の表は desugar/init.sober の desc の写し
+// 部分木の識別子の走査（.sobiのリンク可視の閉包 — iface.sober）。節のフィールドの種類の表はdesugar/init.soberのdescのコピー
 // （0 = 素の値・1 = 節・2 = 文字列・3 = 節の列・4 = 文字列の列・5 = 付加の列）
 
 import "ast"
@@ -44,7 +44,7 @@ func desc(k int) int {
     }
 }
 
-// 根の節（-1 は無視）の部分木の識別子の文字列（欄の選択 `x.f` の f・文字列リテラル・補間の文字列の断片は数えない）
+// 根の節（-1は無視）の部分木の識別子の文字列（フィールドの選択 `x.f` のf・文字列リテラル・補間の文字列の断片は数えない）
 func identsUnder(t ast.Tree, roots []int) []string {
     mut out := mut []string{}
     mut stack := mut []int{}
@@ -59,7 +59,7 @@ func identsUnder(t ast.Tree, roots []int) []string {
         n := stack[w]
         w += 1
         x := t.nodes[n]
-        // 生の木（loader の畳みの前）の選択子の連鎖 `http.server.X` は連鎖の綴りごと載せる（多段の修飾子の参照 — language.md 20 節）
+        // 生の木（loader の畳みの前）の選択子の連鎖 `http.server.X` は連鎖の綴りごと載せる（複数セグメントの修飾子の参照 — language.md 20 節）
         if x.kind == ast.ESelector {
             ct := chainOf(t, n)
             if ct != "" {

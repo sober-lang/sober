@@ -1,5 +1,5 @@
-// 1BRC の並列版の Go の双子（段 6 P4-6 — Sober の bench/1brcpar と同じ分け方: 行の切れ目で 64 区間・区間ごとに goroutine と自分の map・
-// 生んだ順に合わせる）。公式が最初に教える形 = goroutine + sync.WaitGroup + 区間ごとの結果の欄（チューンしない）。並列度は GOMAXPROCS
+// 1BRCの並列版の比較用のGoの実装（フェーズ6 P4-6 — Soberのbench/1brcparと同じ分け方: 行の切れ目で64区間・区間ごとにgoroutineと自分のmap・
+// 生んだ順に合わせる）。公式が最初に教える形 = goroutine + sync.WaitGroup + 区間ごとの結果のフィールド（チューンしない）。並列度はGOMAXPROCS
 package main
 
 import (

@@ -17,7 +17,7 @@ Pass a URL to `http.client.Request` and it returns the response. The client hold
 package main
 
 // Web クライアントのガイド 1 節（docs/guide/web-client）: http.client.Request の一発。外の API の代わりに、同じプロセスの中で std/http/server の
-// 小さな API を立てて繋ぐ（本物の API なら url を差し替えるだけ — https も同じ書き方で、証明書の鎖は常に検証される）
+// 小さなAPIを立てて繋ぐ（本物のAPIならurlを差し替えるだけ — httpsも同じ書き方で、証明書のチェーンは常に検証される）
 
 import "std/http/client"
 import "std/http/server"
@@ -89,7 +89,7 @@ When `Request` fails, the error carries a label. Matching on it with `switch` sp
 package main
 
 // Web クライアントのガイド 2 節: 失敗はラベルで分ける。誰も待っていない port は Closed・形の誤った URL は BadUrl・
-// 受けるだけで応答しない相手は期限（Policy の timeout）で Timeout
+// 受けるだけでレスポンスを返さない相手は期限（Policy の timeout）で Timeout
 
 import "std/http/client"
 import "std/net"
@@ -171,8 +171,8 @@ The client does not store cookies. Read the value from a response's `Set-Cookie`
 package main
 
 // Web クライアントのガイド 4 節: ログインの状態は cookie の値として自分で持つ。外の API の代役は POST /login で
-// セッションの cookie を置き（Set-Cookie は型の欄 cookies だけで書く）、GET /me はその cookie を読む。客は応答から CookieValue で取り出し、
-// 次の要求の cookies: に載せる — 載せたものだけが届く
+// セッションの cookie を置き（Set-Cookie は型のフィールド cookies だけで書く）、GET /me はその cookie を読む。客はレスポンスから CookieValue で取り出し、
+// 次のリクエストの cookies: に載せる — 載せたものだけが届く
 
 import "std/http/client"
 import "std/http/server"
@@ -249,7 +249,7 @@ Use `http.client.Stream` for large bodies and for bodies that arrive over time (
 // examples/web_client_stream.sober
 package main
 
-// Web クライアントのガイド 5 節: http.client.Stream で本文を切片のまま受ける（応答を丸ごと積まない）。最初の要素は頭と空の切片で、
+// Web クライアントのガイド 5 節: http.client.Stream で本文を切片のまま受ける（レスポンスを丸ごと積まない）。最初の要素は頭と空の切片で、
 // 以降は届いた切片。外の API の代役は長さ不定（chunked）の本文を 3 回に分けて送る
 
 import "std/http/client"
@@ -325,9 +325,9 @@ If the body as a whole goes over the policy's `maxBody`, it stops with `BodyTooL
 // examples/http_client_session.sober
 package main
 
-// HTTP クライアントの束（std/http/client の Open / Send）: 1 本の接続の上で要求を 3 往復。loopback で、親の task が接続を 1 本だけ受けて
+// HTTP クライアントのセッション（std/http/client の Open / Send）: 1 本の接続の上でリクエストを 3 往復。loopback で、親の task が接続を 1 本だけ受けて
 // std/http/server のサーバの役をし（ServeConn — keep-alive）、子の task が Open の範囲の中で Send を 3 回呼ぶ。Session は Open の k の仮引数としてだけ生まれ、
-// k が返ると接続が閉じる（同一性の型 — 写し・欄・捕獲・持ち出しは負例 client_neg_*）
+// k が返ると接続が閉じる（同一性の型 — コピー・フィールド・捕捉・持ち出しは負例 client_neg_*）
 
 import "std/http/client"
 import "std/http/server"
@@ -395,8 +395,8 @@ Deadlines and elapsed times are both an `int` of nanoseconds, so the value you p
 // examples/web_client_time.sober
 package main
 
-// Web クライアントのガイド 7 節: 時刻と期限。経過は単調時計（time.Mono / time.Since）で測り、応答の日付の頭は
-// time.ParseHTTP で壁時計の Time に読む（Retry-After）。Policy の timeout と time.Since はどちらも ns の int で、同じ物差しで比べられる
+// Web クライアントのガイド 7 節: 時刻と期限。経過は単調時計（time.Mono / time.Since）で測り、レスポンスの日付の頭は
+// time.ParseHTTP で壁時計の Time に読む（Retry-After）。Policy の timeout と time.Since はどちらも ns の int で、同じ基準で比べられる
 
 import "std/http"
 import "std/http/client"

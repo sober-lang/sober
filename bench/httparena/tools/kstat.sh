@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# kstat.sh [conns] [secs] [env…] — rt の数え口（--rt-mutant=4 — report-699 / 701）を limited-conn の形（-r 10）で 1 回取って集計する。
+# kstat.sh [conns] [secs] [env…] — rtのカウンタ（--rt-mutant=4 — report-699 / 701）をlimited-connの形（-r 10）で1回取って集計する。
 # KA=1 で keep-alive の形（-r を外す — baseline 4096 の形: 接続の起動の配置が生涯固定される側 — report-706 / 709）。PER=1 でワーカーごとの行も出す。
-# サーバは dlsrv.sober（Serve を期限 8 秒の scope で包んだ形 — 数え口は正常終了の出力の頭にしか出ないので期限で終わらせる）を
-# `--rt-mutant=4` で建てたもの（通常の build の IR は不変 — 変異 4 のときだけ数え口が出る）。負荷は secs 秒（既定 6 — 期限 8 秒より前に終わる）。
-# 数え口（ワーカーごと `#w <k> <16 語> <追加の 5 語 — WK_KX>` — 語の意味は src/compiler/lower/mn.sober の WK_K0 の注）を要求 / 接続あたりに割って 1 行に。
-# 版どうしの比較は STAGE2=<sober2> で建てる側を差し替えて交互に（計器の分だけ遅い — req/s は比で読む）。SRV=<実行ファイル> で建てずにそれを使う。
-# 列: resp・rps・conns（spawn）| run/req・steal/conn・hold（溜め → 提出 µs）・sqe/flush | startlat（spawn → 走り出し µs）|
-#     rsleep/req・ring / futex の眠り（秒 / ワーカー）| cqe/enter・enter/req・sqe/req・recv/req | acc/conn（ring の ACCEPT の完了 / 接続 — accept4 直の acceptor では 0）|
-#     受けの分布 = 接続の task を spawn したワーカー（ワーカー 0 の割合・spawn したワーカーの数・最大の割合 — acceptor の置き場の散り方）|
-#     持ち分 = task を走り始めさせたワーカー（語 12 — 盗んだ分も含む。max / min と max/min 比 — 配置の均等さ・report-709）
-. "$(dirname "$0")/env.sh"   # GC・R・W — env.sh の注
+# サーバはdlsrv.sober（Serveを期限8秒のscopeで包んだ形 — カウンタは正常終了の出力の頭にしか出ないので期限で終わらせる）を
+# `--rt-mutant=4` でビルドしたもの（通常のbuildのIRは不変 — ミューテーション4のときだけカウンタが出る）。負荷はsecs秒（既定6 — 期限8秒より前に終わる）。
+# カウンタ（ワーカーごと `#w <k> <16 ワード> <追加の 5 ワード — WK_KX>` — ワードの意味はsrc/compiler/lower/mn.soberのWK_K0の注記）をリクエスト / 接続あたりに割って1行に。
+# 版どうしの比較はSTAGE2=<sober2> でビルドする側を差し替えて交互に（計測ツールの分だけ遅い — req/sは比で読む）。SRV=<実行ファイル> でビルドせずにそれを使う。
+# 列: resp・rps・conns（spawn）| run/req・steal/conn・hold（バッファ → 提出 µs）・sqe/flush | startlat（spawn → 走り出し µs）|
+#     rsleep/req・ring / futexのスリープ（秒 / ワーカー）| cqe/enter・enter/req・sqe/req・recv/req | acc/conn（ringのACCEPTの完了 / 接続 — accept4直のacceptorでは0）|
+#     受けの分布 = 接続のtaskをspawnしたワーカー（ワーカー0の割合・spawnしたワーカーの数・最大の割合 — acceptorの配置先の散り方）|
+#     持ち分 = taskを走り始めさせたワーカー（ワード12 — 盗んだ分も含む。max / minとmax/min比 — 配置の均等さ・report-709）
+. "$(dirname "$0")/env.sh"   # GC・R・W — env.shの注記
 c=${1:-4096}; d=${2:-6}; shift 2 2>/dev/null
 S2=${STAGE2:-$(dirname "$0")/../../../out/stage2/sober2}
 srv=${SRV:-$W/ksrv}

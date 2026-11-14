@@ -1,6 +1,6 @@
 package main
 
-// 最適化の網（SROA / GVN の観測の固定）: 同じ式・逆順の非可換な式・同じ番地の load と store の挟み込み・
+// 最適化の検査（SROA / GVNの観測の固定）: 同じ式・逆順の非可換な式・同じ番地のloadとstoreの挟み込み・
 // 集約（slice のヘッダ・struct）のコピーとその後の書き換え・ゼロ除算の panic の点を、最適化あり / なしで同じ観測にする（scripts/optdiff.sh --mut の代表）
 
 import "std/iter"

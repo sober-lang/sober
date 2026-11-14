@@ -1,5 +1,5 @@
-// k-nucleotide の Rust の双子（Go の双子 bench/knucleotide/go の逐語訳 — ">THREE" の配列を大文字で取り出し、長さ k の部分列ごとの出現数を
-// HashMap〔既定のハッシュ〕で数える。鍵は配列の切片を借りる〔Go の m[string(seq[i:i+k])]++ の鏡 — 1brc の双子と同じ取り方〕）
+// k-nucleotideの比較用のRustの実装（比較用のGoの実装bench/knucleotide/goの逐語訳 — ">THREE" の配列を大文字で取り出し、長さkの部分列ごとの出現数を
+// HashMap〔既定のハッシュ〕で数える。鍵は配列の切片を借りる〔Goのm[string(seq[i:i+k])]++ の鏡 — 1brcの比較用の実装と同じ取り方〕）
 use std::collections::HashMap;
 use std::env;
 use std::fs;

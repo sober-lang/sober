@@ -1,6 +1,6 @@
 package model
 
-// json.Decode[T] の T が別 package の struct（欄の型も別 package の名前を含む — 合成ファイルは参照名 $jt<i> で import する）
+// json.Decode[T] のTが別packageのstruct（フィールドの型も別packageの名前を含む — 合成ファイルは参照名 $jt<i> でimportする）
 
 import "testdata/jsonpkg/geo"
 

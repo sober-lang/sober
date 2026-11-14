@@ -1,8 +1,8 @@
-# env.sh — wave.sh / layer.sh / layer4.sh の共通の置き場（source して使う — report-680・681 で .pair/tools/http から移設）。計器は環境変数で渡す:
-#   HTTP_TOOLS  計器の置き場（gcannon = $HTTP_TOOLS/gc/gcannon/gcannon・要求の raw = $HTTP_TOOLS/req — 無ければ $HTTP_TOOLS/arena-dl/req）
-#   GCANNON / ARENA_REQ  個別に上書き（既定 = HTTP_TOOLS から。HTTP_TOOLS も無ければ PATH の gcannon）。gcannon の建て方は
+# env.sh — wave.sh / layer.sh / layer4.shの共通の配置先（sourceして使う — report-680・681で .pair/tools/httpから移設）。計測ツールは環境変数で渡す:
+#   HTTP_TOOLS  計測ツールの配置先（gcannon = $HTTP_TOOLS/gc/gcannon/gcannon・リクエストのraw = $HTTP_TOOLS/req — 無ければ $HTTP_TOOLS/arena-dl/req）
+#   GCANNON / ARENA_REQ  個別に上書き（既定 = HTTP_TOOLSから。HTTP_TOOLSも無ければPATHのgcannon）。gcannonのビルド方法は
 #               .github/workflows/httparena.yml の「Build gcannon」・raw は HttpArena の requests/*.raw（local.sh と同じ取得元）
-#   HTTP_WORK   作業ファイル（サーバの出力・perf の数・wave の各回）の置き場（既定 = 使い捨ての mktemp -d）
+#   HTTP_WORK   作業ファイル（サーバの出力・perfの数・waveの各回）の配置先（既定 = 使い捨てのmktemp -d）
 S=${HTTP_TOOLS:-}
 GC=${GCANNON:-$( [ -n "$S" ] && echo "$S/gc/gcannon/gcannon" || command -v gcannon)}
 R=${ARENA_REQ:-$( [ -d "$S/req" ] && echo "$S/req" || echo "$S/arena-dl/req")}

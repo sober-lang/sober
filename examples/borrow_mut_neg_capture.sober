@@ -1,7 +1,7 @@
 package main
 
-// 負例: ラムダは mut の束縛を捕捉できない — 値の呼び出しの実引数のラムダ（借りの閉包）も同じ（旧 (α-L1) は 2026-11-04 に撤去 — language.md 25 節）。
-// 状態は呼び手が持って mut の席で渡す（borrow_mut_count の形）
+// 負例: ラムダはmutの束縛を捕捉できない — 値の呼び出しの実引数のラムダ（借りのクロージャ）も同じ（旧 (α-L1) は2026-11-04に撤去 — language.md 25 節）。
+// 状態は呼び手が持って mut 仮引数で渡す（borrow_mut_count の形）
 
 type Stream func(emit func(b []byte) error?) error?
 

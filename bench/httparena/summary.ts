@@ -10,7 +10,7 @@ for (const p of profs) {
     const s = med(g("sober", 3)), o = med(g("go", 3));
     md += `| ${p} | ${Math.round(s).toLocaleString("en")} | ${Math.round(o).toLocaleString("en")} | ${(s / o).toFixed(2)} | ${med(g("sober", 6)).toFixed(2)} | ${med(g("go", 6)).toFixed(2)} | ${l("sober")} | ${l("go")} | ${l("sober", 8)} | ${l("go", 8)} | ${g("sober", 5).reduce((a, b) => a + b, 0)}/${g("go", 5).reduce((a, b) => a + b, 0)} |\n`;
 }
-// sober-alt（local.sh の 3 本目 — 別の版か別の env の Sober）があれば、同じ周の輪で取った sober との比の表を足す
+// sober-alt（local.shの3本目 — 別の版か別のenvのSober）があれば、同じ周のループで取ったsoberとの比の表を足す
 if (rows.some((r) => r[0] === "sober-alt")) {
     md += "\n## sober-alt vs sober (same job, same box)\n\n| profile | Sober req/s | alt req/s | alt/Sober req/s | Sober CPU µs/req | alt CPU µs/req | alt/Sober CPU | alt/Go req/s | alt p99 |\n|---|---:|---:|---:|---:|---:|---:|---:|---:|\n";
     for (const p of profs) {

@@ -1,6 +1,6 @@
 package main
 
-// 負例（check も build も拒否）: mut の仮引数を持たない関数は、mut の中身（mut の slice / map — struct の欄の中も）を持つ値を返せない（language.md 26 節）。
+// 負例（checkもbuildも拒否）: mutの仮引数を持たない関数は、mutの中身（mutのslice / map — structのフィールドの中も）を持つ値を返せない（language.md 26 節）。
 // 作るのは呼び手のゼロ値リテラル（`mut e := Eng{}`）
 
 import "std/table"

@@ -1,6 +1,6 @@
 package main
 
-// 1 欄の struct の composite に入れてから元の束縛に書く（暗黙の freeze・U2 — F-an の形）
+// 1フィールドのstructのcompositeに入れてから元の束縛に書く（暗黙のfreeze・U2 — F-anの形）
 
 type B struct {
     xs []int

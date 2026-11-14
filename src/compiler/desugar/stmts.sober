@@ -1,7 +1,7 @@
 package desugar
 
-// 文列 → letE の鎖、脱出（label / jump）と defer の出口展開、代入（src/stage1/desugar.zig の stmts / seq / exitStmt / withDefers /
-// assignExpr 一族の写し）。Zig 版は文列を再帰で降りるが、ここでは反復で let の値を積み、末尾から被せる（再帰の実効上限を踏まない —
+// 文列 → letEのチェーン、脱出（label / jump）とdeferの出口展開、代入（src/stage1/desugar.zigのstmts / seq / exitStmt / withDefers /
+// assignExpr系統のコピー）。Zig版は文列を再帰で降りるが、ここでは反復でletの値を積み、末尾から被せる（再帰の実効上限を踏まない —
 // 文の数だけ深くならない）。let の値の脱糖は文の順で行うので、持ち上げたラムダの順・ラベルの番号は Zig 版と同じ
 
 import "diag"
@@ -167,7 +167,7 @@ func yieldCall(st mut S, v int, at NodeRef) NodeRef {
 
 // 文の列 l を脱糖する。ra = 末尾の `return e` を値として受ける（関数本体の最上段）、dis = 値を捨てて unit で終える、
 // want = 末尾の値の期待型（-1 = 不明）
-// stmts は文の列 l の脱糖（出所の追跡のときは文ごとに今の出所を立て、出口で入口の出所へ戻す — 列の後で組む let の鎖は最後の文の出所）
+// stmtsは文の列lの脱糖（出所の追跡のときは文ごとに今の出所を立て、出口で入口の出所へ戻す — 列の後で組むletのチェーンは最後の文の出所）
 func stmts(st mut S, l ListRef, eb0 int, ef int, depth0 int, ra bool, dis bool, want TyRef) (CoreRef, error?) {
     if !st.track {
         return stmtsIn(mut st, l, eb0, ef, depth0, ra, dis, want)
@@ -211,7 +211,7 @@ func stmtsIn(st mut S, l ListRef, eb0 int, ef0 int, depth0 int, ra bool, dis boo
             mutable := nodeOf(mut st, s).b != 0
             nn := lenL(mut st, names)
             if isLocalLam(mut st, s) {
-                // 局所の束縛のラムダ（借りの局所 — language.md 25 節）: 値にせず閉包の束縛に置き、使用ごとに呼び出し点へ展開する
+                // 局所の束縛のラムダ（借りの局所 — language.md 25 節）: 値にせずクロージャの束縛に置き、使用ごとに呼び出し点へ展開する
                 // （展開される関数の匿名の関数型の仮引数と同じ扱い。名前の解決は束縛の点の環境 — 形の検査は loader/fnval.sober の llBind）
                 ef = localLamF(mut st, s, eb, ef)
                 i += 1
@@ -286,14 +286,14 @@ func stmtsIn(st mut S, l ListRef, eb0 int, ef0 int, depth0 int, ra bool, dis boo
                 d := declOfExpr(mut st, ve, env0, ef)
                 split := mutable && structFields(mut st, d) != -1 && !isOptValue(mut st, ve, env0, ef)
                 if split {
-                    // mut struct の束縛は欄ごとのセルに割る（F-17 案 2α）: `let t = v in CELLS(t)`
+                    // mut struct の束縛はフィールドごとのセルに割る（F-17案2α）: `let t = v in CELLS(t)`
                     v = cLet(mut st, mutInitAnn(mut st, ve, v, env0, ef), cellsOf(mut st, cVar(mut st, 0), d))
                 } else if mutable {
                     ann := mutInitAnn(mut st, ve, v, env0, ef)
                     v = cAlloc(mut st, 1, ann)
                 }
                 lets = append(lets, v)
-                // 行き先に作った slice / map のリテラルのセルは行き先の region の座標（キー・要素の写しの基準 — 最内で読むと深い値が写らない）
+                // 行き先に作ったslice / mapのリテラルのセルは行き先のregionの座標（キー・要素のコピーの基準 — 最内で読むと深い値がコピーされない）
                 rsaved := st.rdepth
                 if destR >= 0 {
                     st.rdepth = destR + 1
@@ -368,7 +368,7 @@ func stmtsIn(st mut S, l ListRef, eb0 int, ef0 int, depth0 int, ra bool, dis boo
                 gen := forStmt(mut st, e, eb, ef)?
                 brk := newLabel(mut st, LBrk, st.tUnit)
                 bi := pushLabel(mut st, brk)
-                // 失敗しうる生成元は `g(a, k)?`（forGen が `?` の節で包む）— 継続 k は `?` の内側の呼び出しの末尾の実引数（名前付き引数を並べ直した呼び出しは loader の印の席）
+                // 失敗しうる生成元は `g(a, k)?`（forGenが `?` の節で包む）— 継続kは `?` の内側の呼び出しの末尾の実引数（名前付き引数を並べ直した呼び出しはloaderのフラグのスロット）
                 gcall := if kindN(mut st, gen) == ast.ETry { nA(nodeOf(mut st, gen)) } else { gen }
                 ga := lB(nodeOf(mut st, gcall))
                 ks := GenSlotIn(mut st, e)
@@ -389,7 +389,7 @@ func stmtsIn(st mut S, l ListRef, eb0 int, ef0 int, depth0 int, ra bool, dis boo
                 term = finish(mut st, v, depth)?
                 break
             } else {
-                // 文位置の if / switch は腕の値を捨てる（脱出で終わる腕と unit の腕を合流させる — 型の要らない形）
+                // 文位置のif / switchは分岐の値を捨てる（脱出で終わる分岐とunitの分岐を合流させる — 型の要らない形）
                 st.stmtIf = b2i(kindN(mut st, e) == ast.EIf || kindN(mut st, e) == ast.ESwitch)
                 sv = expr(mut st, e, eb, ef, depth)?
             }
@@ -572,8 +572,8 @@ func exitWant(st mut S, last bool, dis bool, want TyRef, at NodeRef) (TyRef, err
     return want, nil
 }
 
-// 束縛の region: 外の mut コンテナを指す場所（`mut c := b.chunks[k]` — 名前・欄・添字の連鎖）で初期化した mut 束縛は、
-// 中身の region（根の束縛の region）で持つ（M4 — 反復の region の中の別名の格納の行き先・写し先を外のコンテナにする。セルは最内のまま）
+// 束縛のregion: 外のmutコンテナを指す場所（`mut c := b.chunks[k]` — 名前・フィールド・添字の連鎖）で初期化したmut束縛は、
+// 中身のregion（根の束縛のregion）で持つ（M4 — 反復のregionの中の別名の格納の行き先・コピー先を外のコンテナにする。セルは最内のまま）
 func aliasRegion(st mut S, mutable bool, ve NodeRef, ty TyRef, eb int) int {
     inner := st.rdepth - 1
     if !mutable || ty == -1 || tyMutFreeD(mut st, ty) {
@@ -594,7 +594,7 @@ func aliasRegion(st mut S, mutable bool, ve NodeRef, ty TyRef, eb int) int {
 }
 
 // `mut x := <mut のリテラル>`（文 s）の x が同じ関数の後ろで外の mut 束縛へ出ていくなら、その行き先の region（無ければ -1）
-// （宛先構築レーン M4 — mut は copyTo で写せないので、宣言の時点で行き先に作る）。拾う形は 2 つ:
+// （宛先構築レーンM4 — mutはcopyToでコピーできないので、宣言の時点で行き先に作る）。拾う形は2つ:
 // ①`y = x`（局所で組んだ mut を外の y へ移す）②展開しない mut 関数（再帰する・callM に上げた関数）へ外の mut 束縛 y と一緒に `mut x` で渡す
 // （callM の 1 slot — mut の実引数は全部同じ anchor の region。この形だけ x は反復を越えて外の region に積もる — language.md のループのスコープの但し書き）。
 // 名前の遮蔽は見ない（保守側 — 余分に外へ作っても寿命が延びるだけ）。候補が複数なら最も外（region が最小）
@@ -700,7 +700,7 @@ func assignExpr(st mut S, s NodeRef, eb int, ef int, depth int) (CoreRef, error?
     if nt != lenL(mut st, vals) {
         return 0, diag.CoreFragment{at: posOf(mut st, at)}
     }
-    // 明示の黙殺 `_ = expr`（language.md 11 節 / 決定 — 値を捨てた事実を字面に残す）: 値を評価して捨てる（`let _ = v in triv` — 文位置の if の腕の
+    // 明示の黙殺 `_ = expr`（language.md 11 節 / 決定 — 値を捨てた事実を字面に残す）: 値を評価して捨てる（`let _ = v in triv` — 文位置のifの分岐の
     // discard と同じ固定テンプレート。lower の target も `_` を捨てる場所として受ける）
     if nt == 1 && op == lexer.Equal && kindN(mut st, latN(mut st, targets, 0)) == ast.EIdent && strIs(mut st, sA(nodeOf(mut st, latN(mut st, targets, 0))), "_") {
         // 多値の呼び出しは 1 つの `_` では捨てられない（lower の target と同じく拒否 — 値の数が合わない）
@@ -710,7 +710,7 @@ func assignExpr(st mut S, s NodeRef, eb int, ef int, depth int) (CoreRef, error?
         v := expr(mut st, latN(mut st, vals, 0), eb, ef, depth)?
         return cLet(mut st, v, cTriv(mut st)), nil
     }
-    // 絞った mut の名前への代入（narrowkill.sober）: 右辺は絞ったまま読み、的は外の T? のセル（文の後ろで名前もセルへ戻る）
+    // 絞ったmutの名前への代入（narrowkill.sober）: 右辺は絞ったまま読み、ターゲットは外のT? のセル（文の後ろで名前もセルへ戻る）
     mut ebT := eb
     for j <- iter.Range(0, nt) {
         tx := latN(mut st, targets, j)
@@ -742,12 +742,12 @@ func assignExpr(st mut S, s NodeRef, eb int, ef int, depth int) (CoreRef, error?
         base0 := nA(nodeOf(mut st, ix))
         // map: `m[k] = v` は mut 束縛への再代入 `m = setm(m, k, v)`
         bt := computeTy(mut st, base0, eb, ef)
-        // imm の map / slice への書き込みは名指して拒否（`mut m := map[K]V{}` — 右辺の mut の書き忘れ。以前は check が位置なしの def error）
+        // immのmap / sliceへの書き込みは専用の診断で拒否（`mut m := map[K]V{}` — 右辺のmutの書き忘れ。以前はcheckが位置なしの def error だった）
         if (isTag(mut st, bt, TMp) || isTag(mut st, bt, TSl)) && tMutBit(mut st, bt) == 0 {
             return 0, diag.ImmWrite{at: posOf(mut st, at)}
         }
         if isTag(mut st, bt, TMp) {
-            // map の場所は名前か、根が名前の欄の道（`s.m[k] = v` — 組み直した map を assignTarget が欄の道へ書き戻す）
+            // mapの場所は名前か、根が名前のフィールドのパス（`s.m[k] = v` — 組み直したmapをassignTargetがフィールドのパスへ書き戻す）
             mut root := base0
             while kindN(mut st, root) == ast.ESelector {
                 root = nA(nodeOf(mut st, root))
@@ -759,7 +759,7 @@ func assignExpr(st mut S, s NodeRef, eb int, ef int, depth int) (CoreRef, error?
             // キー・値の型は mut 束縛のセル型 = 束縛点の点座標（V3-5 — appendValueAnn と同じ不変条件。F-26）
             kt := atBinding(mut st, root, tKey(mut st, bt), eb)
             vt := atBinding(mut st, root, tVal(mut st, bt), eb)
-            // キー・値が束縛の region より深い（ループ本体・式ブロックで作った）なら写す（M4 — キーは mapKey の ann の前の素の値を写す）
+            // キー・値が束縛のregionより深い（ループ本体・式ブロックで作った）ならコピーする（M4 — キーはmapKeyのannの前の素の値をコピーする）
             mb := lookup(mut st, eb, sA(nodeOf(mut st, root)))
             kr := if mb >= 0 { bnd(mut st, mb).region } else { -1 }
             kraw := expr(mut st, nB(nodeOf(mut st, ix)), eb, ef, depth)?
@@ -775,9 +775,9 @@ func assignExpr(st mut S, s NodeRef, eb int, ef int, depth int) (CoreRef, error?
         idx := expr(mut st, nB(nodeOf(mut st, ix)), eb, ef, depth)?
         // []byte の要素への代入は値を byte の文脈に置く（`b[i] = 46` — language.md 33 節）
         v0 := if isTag(mut st, bt, TSl) && isTag(mut st, tElem(mut st, bt), TByte) { coerceExpr(mut st, latN(mut st, vals, 0), tElem(mut st, bt), eb, ef, depth, at)? } else { expr(mut st, latN(mut st, vals, 0), eb, ef, depth)? }
-        // 要素が束縛の region より深い値なら写す（M4 — 名前の mut 束縛の slice だけ）
+        // 要素が束縛のregionより深い値ならコピーする（M4 — 名前のmut束縛のsliceだけ）
         mut v := v0
-        // 根の名前（欄・添字の連鎖を辿る — `p.slots[i] = v`）の mut 束縛の region へ
+        // 根の名前（フィールド・添字の連鎖を辿る — `p.slots[i] = v`）のmut束縛のregionへ
         mut rt := base0
         while kindN(mut st, rt) == ast.ESelector || kindN(mut st, rt) == ast.EIndex {
             rt = nA(nodeOf(mut st, rt))
@@ -825,13 +825,13 @@ func assignExpr(st mut S, s NodeRef, eb int, ef int, depth int) (CoreRef, error?
                 st.mutDest = bnd(mut st, rb).region + 1
             }
         }
-        // 裸の nil は束縛の点座標の型で作る（`x = nil` — 宣言の型のままだとセルの型〔点座標〕と一致しない。catch nil の写しもこれを踏む）
+        // 裸のnilは束縛の点座標の型で作る（`x = nil` — 宣言の型のままだとセルの型〔点座標〕と一致しない。catch nilのコピーもこれを踏む）
         wv := if w != -1 && kindN(mut st, latN(mut st, vals, 0)) == ast.ENil && kindN(mut st, root) == ast.EIdent { atBinding(mut st, root, w, ebT) } else { w }
         v0 := if wv != -1 { coerceExpr(mut st, latN(mut st, vals, 0), wv, eb, ef, depth, at)? } else { expr(mut st, latN(mut st, vals, 0), eb, ef, depth)? }
         st.mutDest = 0
         v := fieldValueAnn(mut st, target, latN(mut st, vals, 0), v0, eb, ef)
         if kindN(mut st, target) == ast.EIdent {
-            // 名前への代入も欄への代入と同じ読み（束縛点の点座標へ緩める — formal.md F-36）
+            // 名前への代入もフィールドへの代入と同じ読み（束縛点の点座標へ緩める — formal.md F-36）
             return assignTarget(mut st, target, v, ebT, depth, at)
         }
         // フィールドパス: 値を先に束縛してから代入（再構築が値を var 0 で参照する）
@@ -894,7 +894,7 @@ func compoundCore(st mut S, lref CoreRef, op int, value NodeRef, eb int, ef int,
 // `assign lref (op cur v)`（some = 外の T? のセルへ中身の値を包んで書く — 絞った名前の複合代入）
 func compoundFrom(st mut S, lref CoreRef, cur CoreRef, some bool, op int, value NodeRef, eb int, ef int, depth int, at NodeRef) (CoreRef, error?) {
     mut v := expr(mut st, value, eb, ef, depth)?
-    // float（language.md 37 節）: 値が float なら算術 4 種だけ（場所の型との一致はコアの型付けが見る）
+    // float（language.md 37 節）: 値がfloatなら算術4種類だけ（場所の型との一致はコアの型付けが見る）
     if isTag(mut st, computeTy(mut st, value, eb, ef), TFloat) {
         fk := if op == lexer.PlusEqual { FAdd } else if op == lexer.MinusEqual { FSub } else if op == lexer.StarEqual { FMul } else if op == lexer.SlashEqual { FDiv } else { 0 }
         if fk == 0 {

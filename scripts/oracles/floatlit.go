@@ -1,4 +1,4 @@
-// floatlit.go — 浮動小数リテラルの差分オラクル（float の段 — language.md 37 節）: 境界 38 本 + 乱択 N 本のリテラルを書いた Sober ファイル lits.sober と、
+// floatlit.go — 浮動小数リテラルの差分オラクル（floatの段階 — language.md 37 節）: 境界38本 + 乱択N本のリテラルを書いたSoberファイルlits.soberと、
 // Go の strconv.ParseFloat のビット列（i64 で読んだ値）want.txt を作る。照合は AST JSON の "bits" と比べる:
 //   go run scripts/oracles/floatlit.go 20000 && out/stage2/sober2 parse --ast-json lits.sober | grep -o '"bits": *-\?[0-9]*' | sed 's/.*: *//' | diff - want.txt
 // （溢れ〔Go が Inf〕は Sober が構文で拒否するので出さない — 拒否は lexer_test / 例の負例が見る）

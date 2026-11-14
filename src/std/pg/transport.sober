@@ -1,8 +1,8 @@
 package pg
 
-// 接続の状態の置き場（lease の int の列 — 値の外）: TLS の鍵と番号・record と平文の持ち越し・statement キャッシュ・旗。
-// 値に置くと Conn の写しが鍵と番号を複製する（nonce の再利用 — std/http/client の link.sober と同じ理由）。
-// 1 回の往復の中の受けは呼び出しの局所（rx）に積み、往復の終わりに余りを置き場へ返す
+// 接続の状態の格納場所（leaseのintの列 — 値の外）: TLSの鍵と番号・recordと平文の持ち越し・statementキャッシュ・旗。
+// 値に置くとConnのコピーが鍵と番号を複製する（nonceの再利用 — std/http/clientのlink.soberと同じ理由）。
+// 1回の往復の中の受けは呼び出しの局所（rx）に積み、往復の終わりに余りを格納場所へ返す
 
 import "std/internal/hsc"
 import "std/internal/pgwire"
@@ -14,9 +14,9 @@ import "std/iter"
 import "std/task"
 import "std/time"
 
-// 置き場の形: [旗, 平文の持ち越しの長さ, record の持ち越しの長さ, 次の文の番号, キャッシュの数, キャッシュの語の使用量, 往復の期限〔単調時計の ns — 0 = 無し〕,
+// 格納場所の形: [旗, 平文の持ち越しの長さ, recordの持ち越しの長さ, 次の文の番号, キャッシュの数, キャッシュのワードの使用量, 往復の期限〔単調時計のns — 0 = 無し〕,
 // Tx の入れ子の深さ, 最後の ReadyForQuery の状態〔'I' / 'T' / 'E'〕,
-// 接続の状態 × ConnW, record の持ち越し × recW, 平文の持ち越し × appW, キャッシュの表 × cacheN × eW, キャッシュの語 × cacheWords]
+// 接続の状態 × ConnW, recordの持ち越し × recW, 平文の持ち越し × appW, キャッシュの表 × cacheN × eW, キャッシュのワード × cacheWords]
 const lFlags = 0
 const lAppLen = 1
 const lRecLen = 2
@@ -41,7 +41,7 @@ const lWords = lTab + cacheN * eW
 const linkW = lWords + cacheWords
 
 // 旗のビット
-const bDead = 1   // 接続はもう使えない（相手が閉じた・期限切れ・壊れた応答）
+const bDead = 1   // 接続はもう使えない（相手が閉じた・期限切れ・壊れたレスポンス）
 const bTls = 2    // TLS の上
 const bBusy = 4   // 往復の途中（Query の k の中から同じ Conn を使う入れ子の検出）
 
@@ -83,14 +83,14 @@ type rx struct {
     at int
 }
 
-// 置き場の平文の持ち越しを局所へ
+// 格納場所の平文の持ち越しを局所へ
 func rxOpen(blk []int) rx {
     n := getW(blk, lAppLen)
     setW(blk, lAppLen, 0)
     return rx{app: getBytes(blk, lApp, n), at: 0}
 }
 
-// 局所の読み残しを置き場へ（入らなければ接続を捨てる）
+// 局所の読み残しを格納場所へ（入らなければ接続を捨てる）
 func rxClose(blk []int, r rx) {
     rest := tailOf(r.app, r.at)
     if len(rest) > appCap {
@@ -114,7 +114,7 @@ func sendMsg(conn int, blk []int, b []byte) error? {
     return internal.sock.Send(conn, rec)
 }
 
-// 次のメッセージ（tag と本文）。max = 本文の上限（超えれば Protocol 相当の印 — tag 0 と false）・相手が閉じたら io.Closed
+// 次のメッセージ（tagと本文）。max = 本文の上限（超えればProtocol相当のマーク — tag 0とfalse）・相手が閉じたらio.Closed
 @errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other, internal.record.Alert, internal.hsc.CertFailed, internal.pgwire.Protocol)
 @effects(block, io, panic, nondet)
 func nextMsg(conn int, blk []int, cp internal.hsc.CParams, r mut rx, max int) (byte, []byte, error?) {
@@ -308,7 +308,7 @@ func sliceOf(b []byte, lo int, hi int) []byte {
     return freeze(o)
 }
 
-// 置き場の語 off からの n バイト（8 バイト / 語）
+// 格納場所のワードoffからのnバイト（8バイト / ワード）
 func getBytes(blk []int, off int, n int) []byte {
     mut o := mut []byte{}
     mut i := 0
@@ -346,7 +346,7 @@ func view(blk []int, off int, n int) []int {
     return freeze(leaseView(blk, off, n))
 }
 
-// leaseOp / leaseView は rt の口（std/tls・std/http/client と同じ鍵 — op 4 = 生の読み・5 = 生の書き）
+// leaseOp / leaseViewはrtのAPI（std/tls・std/http/clientと同じ鍵 — op 4 = 生の読み・5 = 生の書き）
 @intrinsic("lease_op")
 func leaseOp(op int, blk []int, off int, v int) int
 

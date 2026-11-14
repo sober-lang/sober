@@ -1,2 +1,2 @@
-testdata/analyzer_neg/const_neg_annot.sober:5:1: error: @const(n): a const seat must name a parameter of type string that is not mut (Analyzer)
-testdata/analyzer_neg/const_neg_annot.sober:10:1: error: @const(zz): a const seat must name a parameter of type string that is not mut (Analyzer)
+testdata/analyzer_neg/const_neg_annot.sober:5:1: error: @const(n): a const parameter must name a parameter of type string that is not mut (Analyzer)
+testdata/analyzer_neg/const_neg_annot.sober:10:1: error: @const(zz): a const parameter must name a parameter of type string that is not mut (Analyzer)

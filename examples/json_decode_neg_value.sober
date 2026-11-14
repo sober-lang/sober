@@ -1,7 +1,7 @@
 package main
 
-// 負例（load が拒否 — diag.JsonShape 4）: Decode の T の欄に裸の json.Value（union はゼロ値を持たないので、`?` の早期 return で返す struct が
-// 作れない — 欄を json.Value? にするか json.Tree で読む。Encode だけなら裸の欄も書ける）
+// 負例（loadが拒否 — diag.JsonShape 4）: DecodeのTのフィールドに裸のjson.Value（unionはゼロ値を持たないので、`?` の早期returnで返すstructが
+// 作れない — フィールドをjson.Value? にするかjson.Treeで読む。Encodeだけなら裸のフィールドも書ける）
 
 import "std/json"
 

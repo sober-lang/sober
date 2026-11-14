@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# rootstore（std/internal/x509 の信頼ストアの焼き込み — ユーザー裁定 2026-11-05 の更新フロー）: Mozilla NSS の certdata.txt のサーバ認証の信頼の起点と
+# rootstore（std/internal/x509の信頼ストアの焼き込み — ユーザー決定2026-11-05の更新フロー）: Mozilla NSS のcertdata.txtのサーバ認証の信頼の起点と
 # distrust-after を src/std/internal/x509/roots.sober（生成物・出所の銘つき）に焼き込む。取り込んだ certdata.txt は testdata/x509/nss/certdata.txt.gz・銘は
 # testdata/x509/nss/SOURCE（`タグ 取得日 SHA-256`）に置き、ビルドも照合もネットに出ない。
 #   scripts/rootstore.sh                 照合（gate rootsync）: 置いた certdata.txt と銘から作り直した roots.sober ≡ リポジトリのもの

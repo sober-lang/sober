@@ -1,7 +1,7 @@
 package loader
 
 // テストのビルド（`sober test`）: package の `_test.sober` の `TestXxx()`（引数・戻りなし）を列挙し、
-// 名前で振り分ける main を合成して load する（リンク時閉世界の配当 — reflection は要らない）。合成の main は実在しないパス TestMainPath() に置く
+// 名前で振り分けるmainを合成してloadする（リンク時閉世界の利点 — reflectionは要らない）。合成のmainは実在しないパスTestMainPath() に置く
 // （readSrc が Manifest の test_main から読む）。合成の main は引数なしで走らせると名前の一覧を 1 行 1 つ印字し、引数 1 つ（名前）でそのテストだけを
 // 走らせる — 1 テスト 1 サブプロセスの回しは呼び手（今は bin/sober）。失敗 = panic（子の終了コードが 0 でない）
 
@@ -10,7 +10,7 @@ import "std/strings"
 import "ast"
 import "diag"
 
-// 合成の main の置き場（実在しないパスの予約 — `$` は識別子にもパスにも書けない）
+// 合成のmainの配置先（実在しないパスの予約 — `$` は識別子にもパスにも書けない）
 func TestMainPath() string {
     return "$test/main.sober"
 }
@@ -21,13 +21,13 @@ func LoadTestFs(pkg string, sm map[string]string) (Program, error?) {
     return loadTest(pkg, sm, false, []string{}, 0)
 }
 
-// LoadTestFs のカバレッジの計器つき（pats = 写す package のパターン — coverPkgIs。名前を知る 1 回目の読みは写さない）
+// LoadTestFsのカバレッジの計装つき（pats = 変換するpackageのパターン — coverPkgIs。名前を知る1回目の読みは変換しない）
 @errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.Mod, diag.ImportPath, diag.NoStd, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.LeadingZero, diag.LitRange, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.TestSignature, diag.Par, diag.Double, diag.Cell)
 func LoadTestFsCover(pkg string, sm map[string]string, pats []string) (Program, error?) {
     return loadTest(pkg, sm, true, pats, 0)
 }
 
-// LoadTestFs の mutation testing の写しつき（mutx.sober — 対象 = package pkg の非テストのファイル。one = 1 体だけの build の変異の番号・-1 = schemata）
+// LoadTestFsの mutation testing の変換つき（mutx.sober — 対象 = package pkg の非テストのファイル。one = 1体だけのbuildのミュータントの番号・-1 = schemata）
 @errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.Mod, diag.ImportPath, diag.NoStd, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.LeadingZero, diag.LitRange, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.TestSignature, diag.Par, diag.Double, diag.Cell)
 func LoadTestFsMutate(pkg string, sm map[string]string, one int) (Program, error?) {
     return loadTest(pkg, sm, false, []string{pkg}, if one >= 0 { one + 2 } else { 1 })

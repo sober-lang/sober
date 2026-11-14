@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# kstatrate.sh <srv> <形>… — rt の数え口（--rt-mutant=4 の dlsrv — kstat.sh と同じ `#w` の 16 語）をレート固定の負荷で取る。
-# レート固定の種目（latency-10k / latency-1m）は rps でなく CPU / 要求が点で、束ねの浅さ（1 要求ごとの眠り → 起こし → enter）が
-# そのまま固定費になる（report-recon-3 — 10K で enter/req 1.67）。その 1 周の内訳を GHA の箱で取る口（report-map-1 便 1）。
+# kstatrate.sh <srv> <形>… — rtのカウンタ（--rt-mutant=4のdlsrv — kstat.shと同じ `#w` の16ワード）をレート固定の負荷で取る。
+# レート固定の種目（latency-10k / latency-1m）はrpsでなくCPU / リクエストが点で、バッチ処理の浅さ（1リクエストごとのスリープ → ウェイクアップ → enter）が
+# そのまま固定費になる（report-recon-3 — 10Kでenter/req 1.67）。その1周の内訳をGHAのマシンで取る口（report-map-1タスク1）。
 # 形: latency-10k（zrk -R $ZRK_RATE_10K 既定 10000）/ latency-1m（-R $ZRK_RATE_1M 既定 1000000）— どちらも接続 1024・/baseline11?a=1&b=2・
 #     $SECS 秒（既定 6 — dlsrv の期限 8 秒より前に終わる。温めなし: 期限の内に収めるため）
-# 出力（形ごとに 1 行 + PER=1 でワーカーごと）: zrk の rate_ratio・応答 | CPU µs/req（user / sys — 負荷の窓のサーバの utime / stime）|
-#   run/req・rsleep/req・ring / futex の眠り（秒 / ワーカー）| cqe/enter・enter/req・sqe/req・recv/req・sqe/flush
+# 出力（形ごとに1行 + PER=1でワーカーごと）: zrkのrate_ratio・レスポンス | CPU µs/req（user / sys — 負荷のウィンドウのサーバのutime / stime）|
+#   run/req・rsleep/req・ring / futexのスリープ（秒 / ワーカー）| cqe/enter・enter/req・sqe/req・recv/req・sqe/flush
 # 環境: ZRK（無ければ PATH の zrk）・SERVER_CPUS / LOAD_CPUS（既定 = cpus.sh — local.sh と同じ割り）
 set -uo pipefail
 cd "$(dirname "$0")/.."

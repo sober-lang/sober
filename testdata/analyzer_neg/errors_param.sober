@@ -2,7 +2,7 @@ package main
 
 // analyzer の負例（scripts/analyzer_neg.sh — 期待は errors_param.err）: 仮引数の名前の @errors（language.md 13 節 — 展開される関数の匿名の関数型の仮引数）。
 // 宣言に仮引数の名前が無い漏れ・公開関数の余分な仮引数の名前（包み替えて戻らない）・公開関数の宣言なし（提示に仮引数の名前）・
-// 呼び手の switch が呼び出し点の実引数のラベルを覆わない・実引数が error を返さない呼び出し点の到達しない腕・
+// 呼び手のswitchが呼び出し点の実引数のラベルを覆わない・実引数がerrorを返さない呼び出し点の到達しない分岐・
 // 包み替えた cause は呼び出し点ごとに違うので網羅できない（cause の集合は TOP）
 
 type Bad error

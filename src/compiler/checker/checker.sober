@@ -4,7 +4,7 @@ import "std/table"
 import "obuf"
 
 // 入口: コア AST JSON のバイト列 → 判定 JSON のバイト列（sober-check の stdout と同じ — Json.lean の checkInput + IO.println）。
-// parse error の文言だけは写さない（Lean の Json.parse / fromJson の文言 — 差分オラクルは "parse error" までで比べる。仮決め R11-2）
+// parse error の文言だけはコピーしない（LeanのJson.parse / fromJsonの文言 — 差分オラクルは "parse error" までで比べる。仮決めR11-2）
 
 // Def の記録 [param, ret, body, tparams, mask] を 1 つ組む（g = defs の要素の汎用の記録）。
 // parts = 部分検査の封筒（body の無い Def は署名だけ — 本体 triv・mask 0）。組めなければ -1

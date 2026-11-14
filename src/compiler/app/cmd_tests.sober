@@ -18,8 +18,8 @@ import "lower"
 // テストのビルド（loader.LoadTestFs — 合成の main）を Sober の正規バックエンド（lower.ElfPasses — B-4）で <work>/t に書き、実行の bit を付けて
 // （os.WriteMode）、TestXxx を 1 つずつ別プロセス（std/os.RunTo）で走らせて終了コードを集計する。子の出力は捕まえて、テストごとに
 // 結果の行の前へ書き出す（-v は受けるが今は常に見せる形と同じ）。--run は名前の接頭辞で絞る。終了コード = 失敗があれば 1。
-// 全部通った package の印字は置き場に覚え、次の同じ問い合わせは建てずに走らせずに同じ印字を返す（結果の再生 — --fresh で走らせ直す）。
-// --cover（--cover-out / --cover-pkg も同じ）: テストのビルドにカバレッジの計器を掛け、子ごとの印を OR で合わせて package ごとに表の下へ報告する
+// 全部通ったpackageの印字は格納場所に覚え、次の同じ問い合わせはビルドせずに走らせずに同じ印字を返す（結果の再生 — --fresh で走らせ直す）。
+// --cover（--cover-out / --cover-pkg も同じ）: テストのビルドにカバレッジの計装を掛け、子ごとのフラグをORで合わせてpackageごとに表の下へ報告する
 func cmdTest(cl cli.Parsed) int {
     pkgs := cli.PosList(cl, Pkgs)
     if cli.Bool(cl, TWiring) {
@@ -32,8 +32,8 @@ func cmdTest(cl cli.Parsed) int {
     coo := cli.StrOpt(cl, TCoverOut)
     cpo := cli.StrOpt(cl, TCoverPkg)
     cv := CovOpt{on: cli.Bool(cl, TCover) || coo != nil || cpo != nil, out: if coo == nil { "" } else { coo }, pats: if cpo == nil { []string{} } else { coverPats(cpo) }, mutate: false}
-    // --work が無ければ置き場を自分で作る（cacheDir()/sober-test/<pid> — 置き場が無ければ /tmp/sober-test/<pid>。同時に走る別のプロセスと
-    // テストの実行ファイルを取り合わない。std に削除の口が無いので後片付けはしない — 中身は最後のテストの実行ファイル 1 本）
+    // --work が無ければ格納場所を自分で作る（cacheDir()/sober-test/<pid> — 格納場所が無ければ /tmp/sober-test/<pid>。同時に走る別のプロセスと
+    // テストの実行ファイルを取り合わない。stdに削除のインターフェースが無いので後片付けはしない — 中身は最後のテストの実行ファイル1本）
     work := if wo == nil { testWork() } else { wo }
     if work == "" {
         return fail("sober: test: cannot make a work directory (pass --work <dir>)")
@@ -104,11 +104,11 @@ type CovOpt struct {
     on bool
     out string
     pats []string
-    // `sober test --mutate`（mutate.sober — 計器とは同時に立たない）
+    // `sober test --mutate`（mutate.sober — 計装とは同時に立たない）
     mutate bool
 }
 
-// `sober test --mutate`（mutate.sober — 結果の再生は鍵に --mutate を入れて同じ道。SOBER_MUTATE_ONE の照合の道は通さない）。
+// `sober test --mutate`（mutate.sober — 結果の再生は鍵に --mutate を入れて同じパス。SOBER_MUTATE_ONEの照合のパスは通さない）。
 // --mutate-out は全部の package の行を 1 本のファイルへ
 func testMutate(pkgs []string, work string, prefix string, fresh bool, outPath string) int {
     one := mutateOne()
@@ -138,7 +138,7 @@ func testMutate(pkgs []string, work string, prefix string, fresh bool, outPath s
     return if failn == 0 { 0 } else { 1 }
 }
 
-// 環境変数 SOBER_MUTATE_ONE（照合の網 — 変異 n だけの build。無ければ -1）
+// 環境変数SOBER_MUTATE_ONE（照合の検査 — ミュータントnだけのbuild。無ければ -1）
 func mutateOne() int {
     return envNat("SOBER_MUTATE_ONE")
 }
@@ -163,7 +163,7 @@ func envNat(name string) int {
     return n
 }
 
-// `sober test` の既定の作業場所（--work が無いとき）。pid は /proc/self/stat の最初の欄
+// `sober test` の既定の作業場所（--workが無いとき）。pidは /proc/self/statの最初のフィールド
 func testWork() string {
     st := io.ReadFile("/proc/self/stat") catch return ""
     mut n := 0
@@ -185,14 +185,14 @@ type TestTally struct {
     files []string // テストのビルドが読んだ利用者のファイル（建たなければ空）
     envs []string  // テストのコードが読む環境変数の名前（リテラル — 静的に集めた）
     envOk bool     // 読む環境変数を全部リテラルで集められたか（偽なら結果を覚えない）
-    cover CovData  // --cover の点と踏んだか（計器なしなら空）
+    cover CovData  // --cover の点と踏んだか（計装なしなら空）
 }
 
-// package pkg のテストを建てて走らせる（建たなければ FAIL 1 件として数える）。テストのビルドは build と同じ後段の関数キャッシュの道
+// package pkg のテストをビルドして走らせる（ビルドできなければFAIL 1件として数える）。テストのビルドはbuildと同じ後段の関数キャッシュのパス
 // （SOBER_BUILD_CACHE=0 で切れる）。子の標準出力 / 標準エラーは <work>/o・<work>/e に捕まえ、テストごとに標準出力 → 標準エラーの順で
 // 書き出してから結果の行を印字する（1 本のテストの中の 2 本の流れの前後は保たない）
 // log には書き出した順に（fd, バイト列）を積む（結果の再生の値）
-// cv.on なら計器つきで建て（置き場は使わない）、子ごとの印（<work>/cov）を OR で合わせ、結果の行の後に報告を書く
+// cv.onなら計装つきでビルド（格納場所は使わない）、子ごとのフラグ（<work>/cov）をORで合わせ、結果の行の後に報告を書く
 func testPkg(pkg string, std map[string]string, work string, prefix string, log mut []byte, cv CovOpt) TestTally {
     bd := if cv.on { "" } else { buildCacheDir() }
     bv := lower.BcOpen(bd)
@@ -233,7 +233,7 @@ func testPkg(pkg string, std map[string]string, work string, prefix string, log 
             if cv.on {
                 coverOr(mut hit, covf, p.cover_key, nc)
             }
-            // std/quick の性質の中で死んだ（Check の印が残った）なら、そのテストを駆動役で走らせ直して縮めた反例の報告に置き換える
+            // std/quickのプロパティの中で死んだ（Checkのフラグが残った）なら、そのテストを駆動役で走らせ直してシュリンクした反例の報告に置き換える
             m := io.ReadFile(mark) catch []byte{}
             shrunk := eerr == nil && ec != 0 && len(m) > 0 && rerunQuick(bin, names[k], corpus, m, work)
             if eerr == nil {
@@ -258,7 +258,7 @@ func testPkg(pkg string, std map[string]string, work string, prefix string, log 
     return TestTally{pass: pass, fail: failn, files: fs, envs: ev.names, envOk: ev.ok, cover: cd}
 }
 
-// テストのビルドを読む（cv.on なら計器つき — 既定の対象 = package pkg）
+// テストのビルドを読む（cv.onなら計装つき — 既定の対象 = package pkg）
 func loadTestPkg(pkg string, std map[string]string, bv lower.BcView, cv CovOpt) (loader.Program, []loader.PcPut, error?) {
     if cv.on {
         return loadTestCover(pkg, std, if len(cv.pats) == 0 { []string{pkg} } else { cv.pats })
@@ -266,7 +266,7 @@ func loadTestPkg(pkg string, std map[string]string, bv lower.BcView, cv CovOpt) 
     return loadNamed(pkg, true, std, if bv.on { lower.BcParseView(bv) } else { loader.PcOff() })
 }
 
-// テストの実行ファイルを 1 本走らせる（出力は <work>/o・e。covf が空でなければ前の子の印を消してから、子の印の書き出し先を引数 `cover:out=<covf>` で渡す —
+// テストの実行ファイルを1本走らせる（出力は <work>/o・e。covfが空でなければ前の子のフラグを消してから、子のフラグの書き出し先を引数 `cover:out=<covf>` で渡す —
 // 合成の main の $cover.StartTest が読む）
 func runTest(bin string, args []string, covf string, work string) (int, error?) {
     if covf == "" {
@@ -280,8 +280,8 @@ func runTest(bin string, args []string, covf string, work string) (int, error?) 
     return os.RunTo(bin, freeze(append(a, "cover:out=${covf}")), work + "/o", work + "/e")
 }
 
-// テスト name の Check（番号 = 印 m の中身）を試行の数だけ駆動役で回し直す（期限なし・コーパスの列を先に再生・コーパスには書かない）。
-// 出力は <work>/qo・qe。駆動役が失敗を縮めて報告した（終了コードが 0 でない）なら真
+// テストnameのCheck（番号 = フラグmの中身）を試行の数だけ駆動役で回し直す（期限なし・コーパスの列を先に再生・コーパスには書かない）。
+// 出力は <work>/qo・qe。駆動役が失敗をシュリンクして報告した（終了コードが0でない）なら真
 func rerunQuick(bin string, name string, corpus string, m []byte, work string) bool {
     idx := strings.TrimSpace(string(m) catch "")
     ec, err := os.RunTo(bin, []string{name, "quick:fuzz=0", "quick:check=${idx}", corpus, "quick:tmp=${work}/quick"}, work + "/qo", work + "/qe")
@@ -292,10 +292,10 @@ func failTally() TestTally {
     return TestTally{pass: 0, fail: 1, files: []string{}, envs: []string{}, envOk: false, cover: noCover()}
 }
 
-// テストのビルドの ELF（置き場 bd があれば後段の関数キャッシュの道）
+// テストのビルドのELF（格納場所bdがあれば後段の関数キャッシュのパス）
 func testExe(p loader.Program, bd string, bv lower.BcView, pcs []loader.PcPut) ([]byte, error?) {
-    // SOBER_TEST_RT_MUTANT = n: rt の変異 n を入れたテストのビルド（std の網が壊れた rt を捕まえるかの自己検査 — 関数キャッシュは通さない。
-    // 環境変数は結果の再生の鍵に入るので、変異の結果が素の結果として再生されることはない）
+    // SOBER_TEST_RT_MUTANT = n: rtのミュータントnを入れたテストのビルド（stdの検査一式が壊れたrtを捕まえるかの自己検査 — 関数キャッシュは通さない。
+    // 環境変数は結果の再生の鍵に入るので、ミュータントの結果が素の結果として再生されることはない）
     m := envNat("SOBER_TEST_RT_MUTANT")
     if m > 0 {
         return lower.RtMutantLay(p, m, 0, false, lower.VfyLast)
@@ -324,14 +324,14 @@ func say(log mut []byte, fd int, b []byte) {
 
 // ── テストの結果の再生（docs/incremental.md）──
 //
-// 全部通った package の印字（書き出した順の標準出力 / 標準エラーの列）を置き場に覚え、次の同じ問い合わせは建てずに走らせずに返す。
-// 鍵 = package の綴り ‖ --run の接頭辞 ‖ --cover の指定 ‖ PWD ‖ 環境の SOBER_* の全部（rt が読む種・ワーカー数等 — 置き場の口と SOBER_COVER は除く）。置き場は build の世代の
+// 全部通ったpackageの印字（書き出した順の標準出力 / 標準エラーの列）を格納場所に覚え、次の同じ問い合わせはビルドせずに走らせずに返す。
+// 鍵 = packageの綴り ‖ --run の接頭辞 ‖ --cover の指定 ‖ PWD ‖ 環境のSOBER_* の全部（rtが読むシード・ワーカー数等 — 格納場所のオプションとSOBER_COVERは除く）。格納場所はbuildの世代の
 // ディレクトリ（コンパイラが変われば別）。値には印字と一緒に、テストのビルドが読んだ利用者のファイルの中身・そのディレクトリの .sober の名前の列・
 // package の testdata/ の丸ごと（名前と中身 — 再帰）・テストのコードが読む環境変数（os.Getenv のリテラル・env / cli の表の name — 静的に集める）の値を
 // 持ち、引くときに全部を照合する。--cover なら値に点の表と踏んだか（報告は印字に入っている — --cover-out の材料）も持つ。
 // 失敗のある package と、リテラルでない環境変数の読みを持つ package は覚えない
 
-// package 1 つ分を、置き場に覚えた印字があれば返し、無ければ建てて走らせて（全部通ったら）覚える。all へ印字の列（再生した列か走らせた列）を足す
+// package 1つ分を、格納場所に覚えた印字があれば返し、無ければビルドして走らせて（全部通ったら）覚える。allへ印字の列（再生した列か走らせた列）を足す
 func testReplayed(pkg string, std map[string]string, work string, prefix string, fresh bool, cv CovOpt, all mut []byte) TestTally {
     dir := buildCacheDir()
     mut log := mut []byte{}
@@ -369,7 +369,7 @@ func testReplayed(pkg string, std map[string]string, work string, prefix string,
     return r
 }
 
-// package 1 つ分を建てて走らせる（--mutate なら mutation testing）
+// package 1つ分をビルドして走らせる（--mutateならmutation testing）
 func testRun(pkg string, std map[string]string, work string, prefix string, log mut []byte, cv CovOpt) TestTally {
     if cv.mutate {
         return mutatePkg(pkg, std, work, prefix, mut log, -1)
@@ -392,7 +392,7 @@ func testReplayKey(pkg string, prefix string, cv CovOpt) string {
     return hex.Format(hash.Sha256(freeze(b)))
 }
 
-// 環境の SOBER_* の「NAME=値」の列（名前の順 — 置き場・計測・watch の口〔replayEnvSkip〕は除く。/proc/self/environ が読めなければ空）
+// 環境のSOBER_* の「NAME=値」の列（名前の順 — 格納場所・計測・watchのオプション〔replayEnvSkip〕は除く。/proc/self/environが読めなければ空）
 func soberEnv() []string {
     b := io.ReadFile("/proc/self/environ") catch return []string{}
     mut out := mut []string{}
@@ -605,7 +605,7 @@ func testReplayPut(dir string, key string, pkg string, r TestTally, log []byte) 
     cachePut(dir, key, freeze(v))
 }
 
-// 環境変数 name の値の印（無ければ "-"・あれば "=" + 値 — 空の値と無いのを分ける）
+// 環境変数nameの値のマーク（無ければ "-"・あれば "=" + 値 — 空の値と無いのを分ける）
 func envVal(name string) string {
     v := os.Getenv(name) catch return "!"
     return if v == nil { "-" } else { "=" + v }
@@ -685,7 +685,7 @@ func testReplayGet(dir string, key string) TestHit {
     return TestHit{ok: true, pass: atoiOf(xs[q]), log: xs[q + 1], cover: cd, files: freeze(paths)}
 }
 
-// 再生の値へ点の表と踏んだか（点の数 + 1 点 6 欄 — パス・行・列・種類・関数の名前・0 / 1）
+// 再生の値へ点の表と踏んだか（点の数 + 1点6フィールド — パス・行・列・種類・関数の名前・0 / 1）
 func covPut(v mut []byte, d CovData) {
     lenPut(mut v, bytes("${len(d.pts)}"))
     for i <- iter.Range(0, len(d.pts)) {

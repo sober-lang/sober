@@ -1,9 +1,9 @@
 # regionbound だけが外す entry — 1 行 1 entry、# はコメント（noopt-excluded.list と違い、optdiff の展開の形は外さない）。
-# ここに残る entry は「コアの block 数 ≡ IR の region 境界数」の照合の網の空白（帰属は FLEDGER の該当の行 — 直したら行を消す）。
+# ここに残るentryは「コアのblock数 ≡ IRのregion境界数」の照合の検査の空白（付く先はFLEDGERの該当の行 — 直したら行を消す）。
 #
 # std/pg の往復（pg.Exec / pg.Query を 1 回呼ぶだけ）でコアの block 数が IR の region 境界数より大きく割れる（最小形 =
 # .pair/fx/pg/rb/d.sober: コア 140 対 IR 36・pg.Open だけなら一致・std/http/client の例は一致）。std/pg の R3（018e29d7c）の版でも
-# 118 対 35 で食い違う既存の差（pg を使う例が無く網の空白だった）— 脱糖器と lower のどちらが境界を数え違えているかは未帰属（FLEDGER）
+# 118対35で食い違う既存の差（pgを使う例が無く検査の空白だった）— 脱糖器とlowerのどちらが境界を数え違えているかは未帰属（FLEDGER）
 examples/pg_shop.sober
 examples/pg_transfer.sober
 examples/pg_pool.sober

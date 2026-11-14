@@ -1,6 +1,6 @@
 package main
 
-// 欄のパターンの改名の束縛（`case A{e: inner}` — 欄 e を inner で束縛する）: 入れ子の型パターンの中でも同じ
+// フィールドのパターンの改名の束縛（`case A{e: inner}` — フィールドeをinnerで束縛する）: 入れ子の型パターンの中でも同じ
 
 type In union {
     P { a int; b string }

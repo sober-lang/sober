@@ -19,11 +19,11 @@ data を DEFLATE（RFC 1951 — 頭も検査和もない生の圧縮列）に符
 z := compress.flate.Encode(bytes(s), 6)
 ```
 
-同じ入力・同じ level なら常に同じバイト列（決定的 — 大きさの黄金で照合できる）。作業域は呼ぶたびに入力の長さに合わせて取る — 何度も符号化する task は EncodeWith でワーカー局所の作業域を借りる（下の Work）。
+同じ入力・同じlevelなら常に同じバイト列（決定的 — 大きさのゴールデンで照合できる）。作業域は呼ぶたびに入力の長さに合わせて取る — 何度も符号化する task は EncodeWith でワーカー局所の作業域を借りる（下の Work）。
 
-形（zlib の deflate.c と同じ設計 — ハッシュは Go と同じ 4 バイト・lv6 の設定表と 4〜6 の挿入の省略だけ違う — 下）: 4 バイトのハッシュ鎖（窓 32 KiB）で一致を探し、level ごとの設定表（鎖の長さ・lazy の閾値・十分な長さ）で探す深さを決める — 1〜3 は貪欲（一致を見つけたら取る）・4〜9 は lazy（次の位置にもっと長い一致があれば 1 文字送る）。記号を 16383 個まで溜めてブロックに切り、ブロックごとに動的 Huffman・固定 Huffman・stored の最小で書く（動的 Huffman の木は miniz と同じ作り方 — lengths）。対は Decode
+形（zlibのdeflate.cと同じ設計 — ハッシュはGoと同じ4バイト・lv6の設定表と4〜6の挿入の省略だけ違う — 下）: 4バイトのハッシュチェーン（ウィンドウ32 KiB）で一致を探し、levelごとの設定表（チェーンの長さ・lazyの閾値・十分な長さ）で探す深さを決める — 1〜3 は貪欲（一致を見つけたら取る）・4〜9 は lazy（次の位置にもっと長い一致があれば 1 文字送る）。記号を 16383 個までバッファリングしてブロックに切り、ブロックごとに動的Huffman・固定Huffman・storedの最小で書く（動的Huffmanの木はminizと同じ作り方 — lengths）。対はDecode
 
-4〜6 は長い一致（長さ > 8・lv6 は > 6・距離 ≥ 長さ）の中の位置を鎖に足さない（末尾の 2 位置だけ）。lv6（既定）の設定表は zlib の値でなく速さと率の交換で調律した値（浅い鎖・短い lazy）— zlib 比 +数 % 以内の率で大幅に速い（json の本文で +2〜3%・短い一致が主の入力で +10% 前後）。率を優先するなら 7 以上（zlib と同じ探し方）
+4〜6は長い一致（長さ > 8・lv6は > 6・距離 ≥ 長さ）の中の位置をチェーンに足さない（末尾の2位置だけ）。lv6（既定）の設定表はzlibの値でなく速さと率の交換で調律した値（浅いチェーン・短いlazy）— zlib比 +数 %以内の率で大幅に速い（jsonの本文で +2〜3%・短い一致が主の入力で +10%前後）。率を優先するなら 7 以上（zlib と同じ探し方）
 
 ## Work
 
@@ -31,11 +31,11 @@ z := compress.flate.Encode(bytes(s), 6)
 type Work = internal.deflate.Work
 ```
 
-符号器の作業域（ハッシュ鎖と記号の溜め — 8 KiB の本文で ≈ 70 KB・最大 ≈ 200 KB）。ワーカー局所の lease に置ける形（スカラーとpool.Scratch の欄だけ — region-domain-pool.md 4d 節）で、NewWork が最大の容量に整える:
+符号器の作業域（ハッシュチェーンと記号のバッファ — 8 KiBの本文で ≈ 70 KB・最大 ≈ 200 KB）。ワーカー局所のleaseに置ける形（スカラーとpool.Scratchのフィールドだけ — region-domain-pool.md 4d節）で、NewWorkが最大の容量に整える:
 
 ```sober
 gzw := task.NewLocal((w mut compress.flate.Work) => compress.flate.NewWork(mut w))            // ワーカーごとに 1 つ（≈ 200 KB × ワーカー数）
-z := task.Lease(gzw, (w mut compress.flate.Work) => compress.flate.EncodeWith(mut w, b, 6))  // 窓のたびにまっさら — 結果は Encode と同じバイト列
+z := task.Lease(gzw, (w mut compress.flate.Work) => compress.flate.EncodeWith(mut w, b, 6))  // ウィンドウのたびにまっさら — 結果はEncodeと同じバイト列
 ```
 
 整えていない Work{} は EncodeWith が入力の長さに合わせて取る（Encode の形）。容量が足りない Work（NewWork 以外で整えた）は新しい作業域に倒す（結果は同じ）
@@ -47,7 +47,7 @@ z := task.Lease(gzw, (w mut compress.flate.Work) => compress.flate.EncodeWith(mu
 func NewWork(w mut Work)
 ```
 
-w を最大の入力（窓 32 KiB の鎖・2^15 のハッシュの表・ブロック 1 つの記号）の容量に整える（task.NewLocal の整え方）
+wを最大の入力（ウィンドウ32 KiBのチェーン・2^15のハッシュの表・ブロック1つの記号）の容量に整える（task.NewLocalの整え方）
 
 ## EncodeWith
 
@@ -127,7 +127,7 @@ Decode の出力が maxSize バイトを越える（展開爆弾の封 — 越�
 func Decode(data []byte, maxSize int?) ([]byte, error?)
 ```
 
-DEFLATE（RFC 1951 — 頭も検査和もない生の圧縮列。Encode の対）の data を復号したバイト列。data は最後のブロック（BFINAL）でちょうど終わる（最後のバイトの使わないビットは見ない・その後にバイトが余れば Bad）。maxSize を渡すと、出力がそれを越える時点で TooLarge（省略 = 上限なし — 信頼できない入力〔要求の本文・外から来たファイル〕には必ず渡す: DEFLATE は 1 バイトで最大 258 バイトに伸びるので、入力の大きさの上限は出力の上限にならない）:
+DEFLATE（RFC 1951 — 頭も検査和もない生の圧縮列。Encode の対）の data を復号したバイト列。data は最後のブロック（BFINAL）でちょうど終わる（最後のバイトの使わないビットは見ない・その後にバイトが余れば Bad）。maxSize を渡すと、出力がそれを越える時点で TooLarge（省略 = 上限なし — 信頼できない入力〔リクエストの本文・外から来たファイル〕には必ず渡す: DEFLATEは1バイトで最大258バイトに伸びるので、入力の大きさの上限は出力の上限にならない）:
 
 ```sober
 b := compress.flate.Decode(z, maxSize: 1 << 20)?

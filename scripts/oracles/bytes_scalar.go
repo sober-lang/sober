@@ -1,4 +1,4 @@
-// examples/bytes_scalar.sober の Go の双子（byte スカラーの差分オラクル — docs/oracles.md）。
+// examples/bytes_scalar.soberの比較用のGoの実装（byteスカラーの差分オラクル — docs/oracles.md）。
 // Go の byte（= uint8）で同じ計算をし、その出力が examples/bytes_scalar.out。再生成:
 //   go run scripts/oracles/bytes_scalar.go > examples/bytes_scalar.out
 // Sober の byte は算術を持たないので、Sober 側の int(b) の計算は Go でも int へ戻して書く（byte のまま足すと wrap の意味論が混ざる）。

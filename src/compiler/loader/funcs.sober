@@ -280,7 +280,7 @@ func scanFuncs(cx Cx) Funcs {
         need = append(need, hm[i] && !hf[i] && !ni[i] && !nb[i])
     }
     cyc := onCycle(cx, files, nodes, lo, hi, cs, ix, freeze(need), false)
-    // 匿名の関数型の仮引数を持つ関数（呼び出しの点に展開される）どうしの閉路: 展開が終わらない — 名指しで拒否（FnCap kind 17）
+    // 匿名の関数型の仮引数を持つ関数（呼び出しの点に展開される）どうしの閉路: 展開が終わらない — 専用の診断で拒否する（FnCap kind 17）
     cycA := onCycle(cx, files, nodes, lo, hi, cs, ix, hfa, true)
     mut badRec := -1
     for i <- iter.Range(0, len(files)) {
@@ -306,14 +306,14 @@ func fnName(cx Cx, files []int, nodes []int, i int) string {
     return Name(t, t.nodes[nodes[i]].a)
 }
 
-// 関数 i の名前が name か（コピーしない — onCycle の鎖の比較）
+// 関数iの名前がnameか（コピーしない — onCycleのチェーンの比較）
 func fnIs(cx Cx, files []int, nodes []int, i int, name string) bool {
     t := cx.trees[files[i]]
     return StrIs(t, t.nodes[nodes[i]].a, name)
 }
 
-// (package, 名前) → 関数の索引（開番地でなく鎖 — head[バケツ] と next[関数]、hc[呼び出し名] = 名前のハッシュ）。
-// 閉路の判定（旧 reachesSelf・今は onCycle）が呼び出し名を関数へ引くたびに全関数と名前を比べていた（関数 × 到達集合 × 呼び出し名 × 全関数 — 自己適用で約 4 s）のを、鎖の数本の比較にする
+// (package, 名前) → 関数の索引（開番地でなくチェーン — head[バケツ] とnext[関数]、hc[呼び出し名] = 名前のハッシュ）。
+// 閉路の判定（旧reachesSelf・今はonCycle）が呼び出し名を関数へ引くたびに全関数と名前を比べていた（関数 × 到達集合 × 呼び出し名 × 全関数 — 自己適用で約4 s）のを、チェーンの数本の比較にする
 type FnIndex struct {
     head []int
     next []int
@@ -361,7 +361,7 @@ func indexFns(cx Cx, files []int, nodes []int, cs []string) FnIndex {
 
 // 関数ごとに、同じ package の裸の名前の呼び出しを辿って自分へ戻れるか（呼び出しグラフの閉路の上にあるか — 自分を直に呼ぶ辺を含む）。
 // need の関数から届く範囲だけを Tarjan の強連結成分で 1 回たどる（関数ごとの到達集合の反復は関数 × 到達集合 — 自己適用で 0.1 G 級）。
-// 辺 g → h = g の呼び出し名 c と同じ名前の、g と同じ package の関数 h（同名が複数なら全部 — 索引の鎖を最後まで見る）。
+// 辺g → h = gの呼び出し名cと同じ名前の、gと同じpackageの関数h（同名が複数なら全部 — 索引のチェーンを最後まで見る）。
 // only = 辺の行き先も need の関数だけ（need の関数どうしの閉路）
 func onCycle(cx Cx, files []int, nodes []int, lo []int, hi []int, cs []string, ix FnIndex, need []bool, only bool) []bool {
     n := len(files)
@@ -375,7 +375,7 @@ func onCycle(cx Cx, files []int, nodes []int, lo []int, hi []int, cs []string, i
         onst = append(onst, false)
         cyc = append(cyc, false)
     }
-    // Tarjan の積み（成分の候補）と、DFS の枠の積み（3 語ずつ: 関数・次の呼び出し名・鎖の次の候補 + 2 — 候補 -2 は呼び出し名の鎖をまだ引いていない・-1 は鎖の終わり。push が負を積まないので 2 を足して持つ）
+    // Tarjanのスタック（成分の候補）と、DFSの枠のスタック（3ワードずつ: 関数・次の呼び出し名・チェーンの次の候補 + 2 — 候補 -2は呼び出し名のチェーンをまだ引いていない・-1はチェーンの終わり。pushが負を積まないので2を足して持つ）
     mut tst := mut []int{}
     mut ts := 0
     mut fr := mut []int{}
@@ -432,7 +432,7 @@ func onCycle(cx Cx, files []int, nodes []int, lo []int, hi []int, cs []string, i
                         low[g] = num[w]
                     }
                 } else {
-                    // g の辺が尽きた: 親の low を更新し、g が成分の根なら積みから成分を下ろす（2 つ以上なら全部が閉路の上）
+                    // gの辺が尽きた: 親のlowを更新し、gが成分の根ならスタックから成分を下ろす（2つ以上なら全部が閉路の上）
                     sp = top
                     if top > 0 {
                         p := fr[top - 3]
@@ -461,7 +461,7 @@ func onCycle(cx Cx, files []int, nodes []int, lo []int, hi []int, cs []string, i
     return freeze(cyc)
 }
 
-// std/task の仮引数の型 ty が handle の slice（`[]Task[T]`）か — 札・handle は関数の境界を越えないので、それを取る std/task の口
+// std/taskの仮引数の型tyがhandleのslice（`[]Task[T]`）か — 札・handleは関数の境界を越えないので、それを取るstd/taskのAPI
 // （Gather）は呼び出し点で展開する（関数型の引数と同じ扱い）
 func parHandles(t ast.Tree, ty ast.Node) bool {
     if ty.kind != ast.TSlice {

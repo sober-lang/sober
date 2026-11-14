@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# mapfuse（map の更新の引きの融合 — compiler/lower/mapfuse.sober・M16 ②）の網: `c := m[k]; m[k] = <c の式>` の引きが 1 回であることを、
+# mapfuse（mapの更新の引きの融合 — compiler/lower/mapfuse.sober・M16 ②）の検査: `c := m[k]; m[k] = <c の式>` の引きが1回であることを、
 # examples/map_update.sober を最適化のバックエンドの経路の IR（--stop-after=inline --dump-ir — cfgclean / mapfuse の後）に下ろして関数ごとの
 # rt.map_find の呼び出しの数で照合する。融合は観測に出ない最適化なので、出力の照合（obs / optdiff）では外れても鳴らない — 2026-10-04 の宛先構築
-# レーン M5（格納点の写しを引きの前に置いた）で黙って外れ、knucleotide の命令が 41.7 → 57.5 G に戻っていた退行への答え
+# レーンM5（格納点のコピーを引きの前に置いた）で黙って外れ、knucleotideの命令が41.7 → 57.5 Gに戻っていた退行への答え
 #   scripts/mapfuse.sh
 set -uo pipefail
 cd "$(dirname "$0")/.."

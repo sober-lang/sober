@@ -17,7 +17,7 @@ type Job struct {
     line, toks, nodes, words int
 }
 
-// 行の区切り: 各行の [開始, 終わり) を 2 語ずつ並べる（改行は含めない）
+// 行の区切り: 各行の [開始, 終わり) を2ワードずつ並べる（改行は含めない）
 func lines(b []byte) []int {
     mut out := mut []int{}
     mut start := 0

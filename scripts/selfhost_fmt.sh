@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # selfhost の自己不動点オラクル: Sober 製 printer（compiler/printer + compiler/tools/fmtdump）が
-# 「parse → print → 再 parse」で AST を保つことを、コーパス全本で確かめる。
+# 「parse → print → 再parse」でASTを保つことを、コーパス全本で検証する。
 #
-#   scripts/selfhost_fmt.sh            コーパス全本（C4 黄金の対象 = examples / testdata / std の parse できるもの + compiler/ 自身
+#   scripts/selfhost_fmt.sh            コーパス全本（C4ゴールデンの対象 = examples / testdata / stdのparseできるもの + compiler/ 自身
 #                                      + testdata/selfhost_fmt/*.fmt — 既存コーパスが踏まない形の parse 専用の追加）
 #   scripts/selfhost_fmt.sh FILE...    指定のソースだけ
 #
@@ -10,7 +10,7 @@
 #   (1) 不動点（Sober）: parsedump(src) と parsedump(print(src)) の AST JSON が、位置のフィールドを除いて一致
 #   (2) 冪等: print(print(src)) = print(src)（バイト一致）
 #   (3) 相互（Zig）: `sober parse --ast-json` でも src と print(src) の AST が位置を除いて一致（両 parser が印字を同じに読む）
-# 位置の正規化は比較の側だけでやる（黄金と emitter は触らない）: tok / span / sig_end の行を落とし、行末の ',' を剥がす。
+# 位置の正規化は比較の側だけでやる（ゴールデンとemitterは触らない）: tok / span / sig_endの行を落とし、行末の ',' を剥がす。
 # 補間の穴の tok（文字列リテラルで代表）・span・sig_end は印字で位置が変わるので構造だけを比べる。
 # 前提: zig build 済み（$STAGE1 で差し替え可）。
 set -euo pipefail
@@ -63,7 +63,7 @@ fmtone() {
         diff "$w/p1.sober" "$w/p2.sober" | head -n 10
         echo "@@ fail"; return
     fi
-    # sober parse は拡張子を見る（.sobi は interface）ので、.fmt は .sober の名前で写して読ませる
+    # sober parse は拡張子を見る（.sobiはinterface）ので、.fmtは .soberの名前でコピーして読ませる
     cp "$f" "$w/src.sober"
     "$STAGE1" parse --ast-json "$w/src.sober" > "$w/za.json" 2> "$w/err" || { echo "FAIL: $f: sober parse (src): $(head -n 1 "$w/err")"; echo "@@ fail"; return; }
     if ! "$STAGE1" parse --ast-json "$w/p1.sober" > "$w/zb.json" 2> "$w/err"; then

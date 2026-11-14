@@ -1,7 +1,7 @@
 package main
 
-// 欄の規則の正例（language.md 20 節）: 他の package の struct の imm の欄は読める・struct ごと mut で渡せば相手の package の関数が書く・
-// 外からの構築（composite — 欄を全部書く）は今までどおり。同じ package の struct の欄は書ける
+// フィールドの規則の正例（language.md 20 節）: 他のpackageのstructのimmのフィールドは読める・structごとmutで渡せば相手のpackageの関数が書く・
+// 外からの構築（composite — フィールドを全部書く）は今までどおり。同じpackageのstructのフィールドは書ける
 import "testdata/fieldpkg/box"
 
 type Local struct {

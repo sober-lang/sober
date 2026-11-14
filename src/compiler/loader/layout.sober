@@ -2,18 +2,18 @@ package loader
 
 // @layout（language.md 36 節）の loader の層 — 脱糖の固定テンプレート:
 //
-//     @layout                                  // 欄の型を Sober の型に写す（u16le → int・[4]u8 → []byte・[2]u32le → []int）
+//     @layout                                  // フィールドの型をSoberの型に変換する（u16le → int・[4]u8 → []byte・[2]u32le → []int）
 //     type H struct { kind u16le; id [4]u8 }
 //
 //     h := layout.Decode[H](b, 0)              // → $layoutDecode_<f>_<k>(b, 0)
 //     layout.Encode[H](mut out, h)             // → $layoutEncode_<f>_<k>(mut out, h)
 //     n := layout.Size[H]                      // → 6（整数の定数）
 //
-// 写しの関数（Decode / DecodeAt / Encode）は呼び出すファイル f ごとの合成ファイル `$layout/<f のパス>`（同じ package — 他 package の非公開の名前を呼ばない）に
+// 変換の関数（Decode / DecodeAt / Encode）は呼び出すファイルfごとの合成ファイル `$layout/<f のパス>`（同じpackage — 他packageの非公開の名前を呼ばない）に
 // 普通の Sober のソースとして書き、parser に通して package の末尾に足す（生成されるコードは書いたコード — printer で読める）。合成の名前は `$` で始まり
-// 利用者のソースには書けない（lexer.LexSynth）。以降の層（脱糖器・検査器・lower）は写した後の木だけを読む — コア / Lean は無変更。
+// 利用者のソースには書けない（lexer.LexSynth）。以降の層（脱糖器・検査器・lower）は変換した後の木だけを読む — コア / Leanは無変更。
 // 撤去条件: region を持つ型引数の実体 Def が実装されたら、std の総称関数 + コンパイラが出す `layout[T]` 静的辞書（shape[T] と同じ機構）に移す
-// — 今の総称関数は T が `[]byte` の欄を持つとその条件に当たる（assert の Show[T] で確認済み）
+// — 今の総称関数はTが `[]byte` のフィールドを持つとその条件に当たる（assertのShow[T] で確認済み）
 
 import "std/builder"
 import "std/iter"
@@ -23,7 +23,7 @@ import "diag"
 import "lexer"
 import "parser"
 
-// @layout の struct の欄: n = 幅のバイト数・signed・be（ビッグエンディアン）・count = 固定長配列の長さ（0 = 配列でない）・off = struct の先頭からの位置
+// @layoutのstructのフィールド: n = 幅のバイト数・signed・be（ビッグエンディアン）・count = 固定長配列の長さ（0 = 配列でない）・off = structの先頭からの位置
 type LField struct {
     name string
     wname string
@@ -43,7 +43,7 @@ type LDecl struct {
     size int
 }
 
-// 写した後のファイルの列（合成ファイルを package の末尾に足したもの — package ごとに連続のまま）
+// 変換した後のファイルの列（合成ファイルをpackageの末尾に足したもの — packageごとに連続のまま）
 type LOut struct {
     trees []ast.Tree
     pkg []string
@@ -74,7 +74,7 @@ func widthOf(nm string) (int, bool, bool) {
     return n, b[0] == 'i', be
 }
 
-// @layout の形の検査・欄の型の写し・`layout.X[T]` の呼び出しの差し替え・写しの関数の合成ファイルの追加
+// @layoutの形の検査・フィールドの型の変換・`layout.X[T]` の呼び出しの差し替え・変換の関数の合成ファイルの追加
 @errors(diag.Layout, diag.GrammarMismatch)
 func layoutAll(ts []ast.Tree, fpkg []string, fpath []string, fstd []bool) (LOut, error?) {
     // 1. 形の検査と @layout の struct の表
@@ -160,7 +160,7 @@ func layoutAll(ts []ast.Tree, fpkg []string, fpath []string, fstd []bool) (LOut,
     return out, nil
 }
 
-// @layout の struct td の欄の表（欄の型が幅の語か幅の語の固定長配列でなければ、その字句を 2 つ目に返す — 無ければ -1）
+// @layoutの struct td のフィールドの表（フィールドの型が幅の語か幅の語の固定長配列でなければ、その字句を2つ目に返す — 無ければ -1）
 func layoutDecl(t ast.Tree, td ast.Node, pkg string, file int) (LDecl, int) {
     body := t.nodes[td.c]
     mut fs := mut []LField{}
@@ -191,7 +191,7 @@ func layoutDecl(t ast.Tree, td ast.Node, pkg string, file int) (LDecl, int) {
     return LDecl{pkg: pkg, name: Name(t, td.a), file: file, fields: freeze(fs), size: off}, -1
 }
 
-// @layout でない型宣言 td の欄（struct / union の variant / error）に `[N]T` があればその字句（無ければ -1）
+// @layoutでない型宣言tdのフィールド（struct / unionのvariant / error）に `[N]T` があればその字句（無ければ -1）
 func arrayField(t ast.Tree, td ast.Node) int {
     body := t.nodes[td.c]
     if body.kind == ast.BStruct || body.kind == ast.BError {
@@ -208,7 +208,7 @@ func arrayField(t ast.Tree, td ast.Node) int {
     return -1
 }
 
-// 欄の列 l の中の最初の `[N]T` の字句（無ければ -1）
+// フィールドの列lの中の最初の `[N]T` の字句（無ければ -1）
 func arrayIn(t ast.Tree, l int) int {
     for k <- iter.Range(0, t.data[l]) {
         ty := t.nodes[t.nodes[t.data[l + 1 + k]].b]
@@ -257,7 +257,7 @@ func isLayoutRef(t ast.Tree, x ast.Node) bool {
     return x.kind == ast.EIdent && importPath(t, Name(t, x.a)) == "std/layout"
 }
 
-// 名前 op が std/layout の写しの口か
+// 名前opがstd/layoutの変換のAPIか
 func isLayoutOp(op string) bool {
     return op == "Decode" || op == "DecodeAt" || op == "Encode" || op == "Size"
 }
@@ -287,14 +287,14 @@ func resolveName(t ast.Tree, pkg string, ds []LDecl, nm string) int {
     return if path == "" { -1 } else { findDecl(ds, path, name) }
 }
 
-// ファイル t（f 番目・package pkg）を写す: @layout の欄の型・`layout.X[T]` の差し替え・幅の語の拒否・定数の範囲。
-// 結果は（写した木, 合成ソース — 写しの関数が要らなければ ""）
+// ファイルt（f番目・package pkg）を変換する: @layoutのフィールドの型・`layout.X[T]` の差し替え・幅の語の拒否・定数の範囲。
+// 結果は（変換した木, 合成ソース — 変換の関数が要らなければ ""）
 @errors(diag.Layout)
 func layoutFile(t ast.Tree, f int, pkg string, ds []LDecl) (ast.Tree, string, error?) {
     n0 := len(t.nodes)
     // std/layout を import するか（しなければ isLayoutRef は常に偽 — 節ごとに名前の string と import の引きを作らない）
     lay := importsPath(t, "std/layout")
-    // 速い道: std/layout も @layout の struct も無いファイルは書き換えない — 幅の語と composite の欄の範囲の検査だけ（節の表の写しを作らない）
+    // 速いパス: std/layoutも @layoutのstructも無いファイルは書き換えない — 幅の語とcompositeのフィールドの範囲の検査だけ（節の表のコピーを作らない）
     tl0 := t.nodes[t.file].c
     mut decl := false
     for j <- iter.Range(0, t.data[tl0]) {
@@ -317,13 +317,13 @@ func layoutFile(t ast.Tree, f int, pkg string, ds []LDecl) (ast.Tree, string, er
     for j <- iter.Range(0, len(t.data)) {
         builder.Push(mut db, t.data[j])
     }
-    // done[i] = 節 i は書き換え済み（幅の語の型名・std/layout の口）
+    // done[i] = 節iは書き換え済み（幅の語の型名・std/layoutのAPI）
     mut done := mut []bool{}
     for i <- iter.Range(0, n0) {
         done = append(done, false)
     }
     mut changed := false
-    // @layout の struct の欄の型を写す
+    // @layoutのstructのフィールドの型を変換する
     tl := t.nodes[t.file].c
     for j <- iter.Range(0, t.data[tl]) {
         td := t.nodes[t.data[tl + 1 + j]]
@@ -350,7 +350,7 @@ func layoutFile(t ast.Tree, f int, pkg string, ds []LDecl) (ast.Tree, string, er
             }
         }
     }
-    // `layout.Decode[T](…)` 等の呼び出しを写しの関数へ・`layout.Size[T]` を定数へ
+    // `layout.Decode[T](…)` 等の呼び出しを変換の関数へ・`layout.Size[T]` を定数へ
     mut used := mut []int{}
     for i <- iter.Range(0, n0) {
         x := t.nodes[i]
@@ -404,11 +404,11 @@ func layoutFile(t ast.Tree, f int, pkg string, ds []LDecl) (ast.Tree, string, er
     }
     for i <- iter.Range(0, n0) {
         x := t.nodes[i]
-        // 型引数なし・呼ばない形の std/layout の口（`layout.Decode` だけ・`layout.Decode[T]` を値に）
+        // 型引数なし・呼ばない形のstd/layoutのAPI（`layout.Decode` だけ・`layout.Decode[T]` を値に）
         if x.kind == ast.ESelector && !done[i] && isLayoutRef(t, t.nodes[x.a]) && isLayoutOp(Name(t, x.b)) {
             return t, "", diag.Layout{at: diag.Pos{file: f, tok: x.tok}, kind: 7}
         }
-        // 書き換えていない幅の語・composite の欄の範囲
+        // 書き換えていない幅の語・compositeのフィールドの範囲
         if !(x.kind == ast.TName && done[i]) {
             k, tok := layoutWordAt(t, pkg, ds, x)
             if k > 0 {
@@ -424,8 +424,8 @@ func layoutFile(t ast.Tree, f int, pkg string, ds []LDecl) (ast.Tree, string, er
     return ast.Tree{nodes: freeze(ns), data: builder.Build(mut db), file: t.file}, src, nil
 }
 
-// 節 x の拒否の kind と字句（無ければ kind 0）: @layout の欄の外の幅の語（4 — 名前は 2 か 5 バイト）・@layout の struct の composite リテラルの
-// 欄に直に書いた整数リテラルの範囲（8 — const 名・式は実行時の検査）
+// 節xの拒否のkindと字句（無ければkind 0）: @layoutのフィールドの外の幅の語（4 — 名前は2か5バイト）・@layoutのstructのcompositeリテラルの
+// フィールドに直に書いた整数リテラルの範囲（8 — const名・式は実行時の検査）
 func layoutWordAt(t ast.Tree, pkg string, ds []LDecl, x ast.Node) (int, int) {
     if x.kind == ast.TName && (t.data[x.a] == 2 || t.data[x.a] == 5) {
         n, sg, be := widthOf(Name(t, x.a))
@@ -445,7 +445,7 @@ func layoutWordAt(t ast.Tree, pkg string, ds []LDecl, x ast.Node) (int, int) {
     return 0, 0
 }
 
-// @layout の struct d の composite リテラル x の欄に直に書いた整数リテラル（負号込み）が幅に収まらなければその字句（無ければ -1）
+// @layoutの struct d のcompositeリテラルxのフィールドに直に書いた整数リテラル（負号込み）が幅に収まらなければその字句（無ければ -1）
 func literalRange(t ast.Tree, x ast.Node, d LDecl) int {
     for k <- iter.Range(0, ast.ListLen(t, x.b)) {
         el := t.nodes[ast.ListAt(t, x.b, k)]
@@ -489,7 +489,7 @@ func hiOf(fd LField) int {
     return if fd.signed { (1 << (fd.n * 8 - 1)) - 1 } else { (1 << (fd.n * 8)) - 1 }
 }
 
-// ファイル t（f 番目・package pkg）が使う @layout の struct us の写しの関数のソース
+// ファイルt（f番目・package pkg）が使う @layoutの struct us の変換の関数のソース
 func synthSource(t ast.Tree, f int, pkg string, ds []LDecl, us []int) string {
     mut s := "package ${Name(t, t.nodes[t.file].a)}\n\nimport $lb \"std/builder\"\nimport $ll \"std/layout\"\n"
     // 他 package の struct は参照名 $lt<j> で import する（同じパスは 1 回）
@@ -539,7 +539,7 @@ func signExt(fd LField, u string) string {
     return "if ${u} >= ${half} { ${u} - ${half * 2} } else { ${u} }"
 }
 
-// 写しの読み（Decode / DecodeAt）の関数のソース
+// 変換の読み（Decode / DecodeAt）の関数のソース
 func decodeFn(d LDecl, tn string, key string) string {
     mut s := "\n// ${tn} の写し（@layout — loader/layout.sober の固定テンプレート）: 足りなければ nil\n"
     s = s + "func $layoutDecode_${key}($b []byte, $off int) ${tn}? {\n"
@@ -572,7 +572,7 @@ func decodeFn(d LDecl, tn string, key string) string {
     return s
 }
 
-// 写しの書き（Encode）の関数のソース: 幅あふれ・長さ違いは panic（std/layout の FailWidth / FailLength）
+// 変換の書き（Encode）の関数のソース: 幅あふれ・長さ違いはpanic（std/layoutのFailWidth / FailLength）
 func encodeFn(d LDecl, tn string, key string) string {
     mut s := "\nfunc $layoutEncode_${key}($out mut $lb.Builder[byte], $v ${tn}) {\n"
     for j <- iter.Range(0, len(d.fields)) {

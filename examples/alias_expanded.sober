@@ -1,6 +1,6 @@
 package main
 
-// 型の別名の網の双子（examples/alias.sober の別名を手で実体の名前に展開した形 — corejson が alias と一致する）
+// 型の別名の、2つの書き方の対による検査（examples/alias.soberの別名を手で実体の名前に展開した形 — corejsonがaliasと一致する）
 
 type Point struct {
     x int

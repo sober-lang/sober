@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# カバレッジの計器（`sober build --cover` — loader/coverx.sober・lower/cover.sober・std/internal/cover）の網:
-#   - 題材 examples/cover_basic.sober を --cover で建てて走らせ、出力が計器なしの黄金（.out）と同じ
-#   - 点の表（<出力>.pts）と踏んだ印（SOBER_COVER のバイト列）を 1 行 1 点 `<位置> <種類>\t<0|1>` に並べたものが黄金 testdata/cover/cover_basic.txt と一致
-#   - 書き出しの見出しの鍵 = 点の表の鍵・ワーカー 1 と 8 で同じ印（task を使わない題材）
-#   - `sober test --cover`（題材 testdata/cover/shapes — テストごとに別の腕・呼ばれない関数・101 / 102 で死ぬテスト）: 標準出力（結果の行 + 報告）が
+# カバレッジの計装（`sober build --cover` — loader/coverx.sober・lower/cover.sober・std/internal/cover）の検査:
+#   - 題材examples/cover_basic.soberを --cover でビルドして走らせ、出力が計装なしのゴールデン（.out）と同じ
+#   - 点の表（<出力>.pts）と踏んだフラグ（SOBER_COVERのバイト列）を1行1点 `<位置> <種類>\t<0|1>` に並べたものがゴールデンtestdata/cover/cover_basic.txtと一致
+#   - 書き出しの見出しの鍵 = 点の表の鍵・ワーカー1と8で同じフラグ（taskを使わない題材）
+#   - `sober test --cover`（題材testdata/cover/shapes — テストごとに別の分岐・呼ばれない関数・101 / 102で死ぬテスト）: 標準出力（結果の行 + 報告）が
 #     testdata/cover/shapes.expect・--cover-out のテキストが shapes.txt・--cover-pkg で下の package まで広げた LCOV が shapes.lcov と一致。ワーカー 1 と 8 で同じ
 #   scripts/cover.sh            照合
-#   scripts/cover.sh --regen    黄金を作り直す（差分を見てからコミット）
+#   scripts/cover.sh --regen    ゴールデンを作り直す（差分を見てからコミット）
 set -uo pipefail
 cd "$(dirname "$0")/.."
 SOBER=${SOBER:-./bin/sober}
@@ -19,7 +19,7 @@ fail=0
 bad() { echo "FAIL: $*"; fail=$((fail + 1)); }
 "$SOBER" build examples/cover_basic.sober --cover -o "$W/cb" > "$W/build.log" 2>&1 || { echo "FAIL: build"; cat "$W/build.log"; exit 1; }
 n=$(($(wc -l < "$W/cb.pts") - 1))
-# 点の表と印を並べる（印 = 見出しの行の後ろの n バイト）
+# 点の表とフラグを並べる（フラグ = 見出しの行の後ろのnバイト）
 render() { tail -n +2 "$W/cb.pts" | paste - <(tail -c "$n" "$1" | od -An -tu1 -v -w1 | tr -d ' '); }
 for w in 1 8; do
     SOBER_WORKERS=$w SOBER_COVER="$W/w$w.cov" "$W/cb" > "$W/out$w" 2>&1 < /dev/null || bad "W$w: exit $?"
@@ -28,7 +28,7 @@ for w in 1 8; do
     render "$W/w$w.cov" > "$W/r$w"
 done
 cmp -s "$W/r1" "$W/r8" || bad "W1 and W8 marks differ"
-# sober test --cover（結果の再生を通さない — 走らせた子の印を見る）
+# sober test --cover（結果の再生を通さない — 走らせた子のフラグを見る）
 T=testdata/cover/shapes
 for w in 1 8; do
     SOBER_CHECK_REPLAY=0 SOBER_WORKERS=$w "$SOBER" test "$T" --cover-out="$W/t$w.txt" > "$W/tout$w" 2> /dev/null

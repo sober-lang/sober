@@ -127,7 +127,7 @@ A channel has one sender, so there is no such order as "whose value arrived firs
 package main
 
 // 3 本の生産者がそれぞれのチャネル（容量 2）で送り、親が順に受ける（fan-in を正準順で — select なし）。
-// 切替点が多い形（spawn ごとの子 / 親の順・走れる task の選び方）— schedvec が全スケジュールで同じ観測を確かめる
+// 切替点が多い形（spawnごとの子 / 親の順・走れるtaskの選び方）— schedvecが全スケジュールで同じ観測を確認する
 
 import "std/task"
 
@@ -578,7 +578,7 @@ A body does not wait, does no io, and calls no other domain (it has no effects �
 // examples/domain_neg_nested.sober
 package main
 
-// domain の本体から別の domain は呼べない（入りは nondet — 本体は効果なし）: 持ったまま待つ形が書けないので、domain が原因のデッドロックは無い
+// domainの本体から別のdomainは呼べない（入りはnondet — 本体はエフェクトなし）: 持ったまま待つ形が書けないので、domainが原因のデッドロックは無い
 
 import "std/task"
 

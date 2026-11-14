@@ -1,7 +1,7 @@
 package main
 
-// 負例（check が名指しで拒否 — diag.TypeMismatch kind 3）: string は回し方が一意でないので for の生成元に直に置けない
-// （language.md 7 節 — 見方を名指す `for c <- bytes(s)`）
+// 負例（checkが専用の診断で拒否 — diag.TypeMismatch kind 3）: stringは回し方が一意でないのでforの生成元に直に置けない
+// （language.md 7 節 — 見方を明示する `for c <- bytes(s)`）
 
 func main() {
     s := "abc"

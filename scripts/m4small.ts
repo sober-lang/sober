@@ -1,6 +1,6 @@
-// 小さいプログラム側の M4 の裁定材料（3'' 第 2 段 C3）: examples の 1 ファイルの entry（一括の check が受理するもの）ごとに
-//   whole = 一括の check・cold = 小分け（空の置き場）・editWarm = 小分け（同じ entry で温めた置き場 + main を編集 — 依存は当たり・main は外れ）
-// を測り、package 数・利用者のソースの行数と並べて TSV で出す。最後に fuzz 相当（全 entry の main を少しずつ変えて、1 つの置き場で順に流す — 最初の数本で
+// 小さいプログラム側のM4の決定材料（3'' 第2段階C3）: examplesの1ファイルのentry（一括のcheckが受理するもの）ごとに
+//   whole = 一括のcheck・cold = 小分け（空の格納場所）・editWarm = 小分け（同じentryで温めた格納場所 + mainを編集 — 依存は当たり・mainは外れ）
+// を測り、package数・利用者のソースの行数と並べてTSVで出す。最後にfuzz相当（全entryのmainを少しずつ変えて、1つの格納場所で順に流す — 最初の数本で
 // std が温まる）の合計を一括と比べる。
 // 使い方: node --experimental-strip-types scripts/m4small.ts > out.tsv（cwd = リポジトリルート・stage2 を直に叩く）
 import { execFileSync, spawnSync } from "node:child_process";
@@ -46,7 +46,7 @@ for (const e of entries) {
   fuzzList.push(f);
 }
 console.log(rows.join("\n"));
-// fuzz 相当: main を少し変えた全 entry を 1 つの置き場で順に
+// fuzz相当: mainを少し変えた全entryを1つの格納場所で順に
 const fc = join(W, "fuzz-cache");
 let tw = 0, ts = 0;
 for (const f of fuzzList) {

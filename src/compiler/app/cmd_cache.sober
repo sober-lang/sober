@@ -9,7 +9,7 @@ import "std/json"
 import "std/strings"
 import "lower"
 
-// cmdCache は `sober cache info`（build の後段の関数キャッシュの置き場の一覧）・`sober cache gc`（線を越えた古い世代・古い一時ファイル・隠した世代の残りを消す）
+// cmdCacheは `sober cache info`（buildの後段の関数キャッシュの格納場所の一覧）・`sober cache gc`（しきい値を越えた古い世代・古い一時ファイル・隠した世代の残りを消す）
 func cmdCacheInfo(cl cli.Parsed) int {
     return cmdCache(false)
 }

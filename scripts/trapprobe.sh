@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# task の罠の単体の網（段 6 P3a-2a — compiler/lower/trap.sober・docs/ir.md「罠」）: `sober build --trap-probe` は入口が main の代わりに
+# taskの罠の単体の検査（段階6 P3a-2a — compiler/lower/trap.sober・docs/ir.md「罠」）: `sober build --trap-probe` は入口がmainの代わりに
 # trap.probe を呼ぶ（子 = 戻る・index の死〔101〕・region の死〔102〕・ゼロ除算・罠の入れ子・深い再帰の中の死・罠を跨ぐ値・最後に罠の外の死）。
-#   1. 3 つの経路（--passes〔SOBER_VERIFY=each — 段ごとの IR の検証器〕・既定〔パスなし〕・--no-opt）で建てて実行し、stdout / 終了コード / stderr を
+#   1. 3つの経路（--passes〔SOBER_VERIFY=each — ステージごとのIRの検証器〕・既定〔パスなし〕・--no-opt）でビルドして実行し、stdout / 終了コード / stderrを
 #      期待値 testdata/trapprobe/expected.{out,exit,stderr} と照合（3 経路が同じ観測 — optdiff の流儀）
-#   2. lower 直後の IR テキストを黄金 testdata/trapprobe/probe.ir と照合（trap / unwind の印字の形 — irtext の流儀）
+#   2. lower直後のIRテキストをゴールデンtestdata/trapprobe/probe.irと照合（trap / unwindの印字の形 — irtextの流儀）
 #   3. その IR テキストが stage1 の語彙の外（gatelib の beyond_stage1）と判定されること（罠のモジュールは stage1 の照合から外れる）
-#   scripts/trapprobe.sh --regen    期待値と黄金を作り直す（意図した変更の後だけ — 差分を見てからコミット）
+#   scripts/trapprobe.sh --regen    期待値とゴールデンを作り直す（意図した変更の後だけ — 差分を見てからコミット）
 set -uo pipefail
 cd "$(dirname "$0")/.."
 source scripts/gatelib.sh

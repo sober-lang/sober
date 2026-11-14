@@ -1,6 +1,6 @@
 package main
 
-// 負例: 値の位置の閉包（名前付き関数型の欄 — http.Route の handler と同じ位置）が io.Root を捕捉する。Root は同一性の型で、捕捉できるのは
+// 負例: 値の位置のクロージャ（名前付き関数型のフィールド — http.Routeのhandlerと同じ位置）がio.Rootを捕捉する。Rootは同一性の型で、捕捉できるのは
 // task.Run の本体と借りの位置のラムダだけ（diag.FileUse・language.md 28 節「根の下の開き」— http.Static が root を path で受ける理由）
 
 import "std/io"

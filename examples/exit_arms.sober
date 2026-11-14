@@ -1,7 +1,7 @@
 package main
 
-// V4-4d: 値位置の if / switch の腕に脱出（return / break / continue）を書ける。
-// 脱出で終わる腕は「到達しない」で、腕の合流では相手の型に従う（codegen の never・desugar の jump 注釈）
+// V4-4d: 値位置のif / switchの分岐に脱出（return / break / continue）を書ける。
+// 脱出で終わる分岐は「到達しない」で、分岐の合流では相手の型に従う（codegenのnever・desugarのjump注釈）
 
 func f(c int) int {
     x := if c > 5 { return 100 } else { c * 2 }

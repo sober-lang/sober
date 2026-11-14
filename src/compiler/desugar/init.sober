@@ -1,6 +1,6 @@
 package desugar
 
-// 初期化: loader の Program の木を参照で持ち（写さない — astref.sober）、package・関数・const・error の表を積む。
+// 初期化: loaderのProgramの木を参照で持ち（コピーしない — astref.sober）、package・関数・const・errorの表を積む。
 // 名前付き関数型の展開（Zig の loader.expandFuncTypes — 関数の引数・結果と型宣言のフィールドの型を関数型に置き換える）もここで行う
 
 import "ast"
@@ -8,7 +8,7 @@ import "loader"
 import "std/iter"
 import "std/table"
 
-// 節の種類 k の 6 欄の付け替え（d6 の符号）
+// 節の種類kの6フィールドの付け替え（d6の符号）
 func desc(k int) int {
     return switch k {
     case ast.EIdent | ast.EStrlit | ast.EMutArg | ast.TName: d6(2, 0, 0, 0, 0, 0)
@@ -49,10 +49,10 @@ func desc(k int) int {
 func initState(st mut S, p loader.Program) {
     // 0 番地は使わない（無し = -1 と取り違えないための詰め物）
     put(mut st, 0)
-    // 表層 AST（astref.sober）: loader の木を imm のまま持ち、写さない（節 = ABASE + ファイル × FW + 添字）
+    // 表層AST（astref.sober）: loaderの木をimmのまま持ち、コピーしない（節 = ABASE + ファイル × FW + 添字）
     checkTrees(p.trees)
     st.trees = p.trees
-    // 値の位置の判定の口と捕捉の表（closure.sober）
+    // 値の位置の判定のインターフェースと捕捉の表（closure.sober）
     st.fvcx = loader.ProgCx(p)
     st.recGroups = loader.RecGroups(st.fvcx)
     st.capFile = p.cap_file
@@ -77,7 +77,7 @@ func initState(st mut S, p loader.Program) {
     }
     st.zdecl = freeze(zd)
     // ハッシュ表の頭の数（型の intern・表層型の表）は木の大きさから決める（固定サイズで毎回 0 埋めする無駄を避ける）。
-    // 鎖の頭の数は引き当ての速さだけを変え、記録の順・出力は変えない
+    // チェーンの頭の数は引き当ての速さだけを変え、記録の順・出力は変えない
     st.hbuckets = bucketsFor(p.trees)
     st.descs = descTable()
     st.utf8 = int(strLit(mut st, "$utf8"))
@@ -218,7 +218,7 @@ func initState(st mut S, p loader.Program) {
         }
         f += 1
     }
-    // 脱出・defer のスタック（固定の置き場）
+    // 脱出・deferのスタック（固定の格納場所）
     st.lstk = listN(mut st, 4096)
     st.sstk = listN(mut st, 4096)
     st.curRtys = -1
@@ -292,7 +292,7 @@ func valFTE(st mut S, pk int, te NodeRef) bool {
     if te == -1 {
         return false
     }
-    // slice / map の要素も値の位置（`[]F`・`map[K]F` — 要素は閉包の組）
+    // slice / mapの要素も値の位置（`[]F`・`map[K]F` — 要素はクロージャの組）
     k := kindN(mut st, te)
     if k == ast.TSlice || k == ast.TMap {
         return valFTE1(mut st, pk, if k == ast.TSlice { nA(nodeOf(mut st, te)) } else { nB(nodeOf(mut st, te)) })
@@ -309,7 +309,7 @@ func valFTE1(st mut S, pk int, te NodeRef) bool {
     return fnValDeclNode(mut st, LookupTypeDecl(mut st, pk, sA(nodeOf(mut st, n))))
 }
 
-// 欄の列 fs の型式を展開する（変わらなければ fs、変われば作り直した KField の列）。val = struct の欄（値化可能な
+// フィールドの列fsの型式を展開する（変わらなければfs、変われば作り直したKFieldの列）。val = structのフィールド（値化可能な
 // named fn type とその option は値の位置なので展開しない）
 func expandFieldList(st mut S, pk int, fs ListRef, val bool) ListRef {
     n := lenL(mut st, fs)
@@ -329,7 +329,7 @@ func expandFieldList(st mut S, pk int, fs ListRef, val bool) ListRef {
     return if changed { out } else { fs }
 }
 
-// 型宣言の本体 body の欄を展開する（変わらなければ body、変われば作り直した本体）
+// 型宣言の本体bodyのフィールドを展開する（変わらなければbody、変われば作り直した本体）
 func expandBody(st mut S, pk int, body NodeRef) NodeRef {
     bk := kindN(mut st, body)
     if bk == ast.BStruct || bk == ast.BError {
@@ -367,7 +367,7 @@ func expandBody(st mut S, pk int, body NodeRef) NodeRef {
     return body
 }
 
-// ファイル f の型宣言の欄を展開する（変わった型宣言があれば types の列と KFile を作り直し、ファイルの根を差し替える）
+// ファイルfの型宣言のフィールドを展開する（変わった型宣言があればtypesの列とKFileを作り直し、ファイルの根を差し替える）
 func expandFileTypes(st mut S, f int) {
     pk := FilePkg(mut st, f)
     root := FileRoot(mut st, f)
@@ -400,8 +400,8 @@ func LookupTypeDecl(st mut S, pk int, name StrRef) NodeRef {
     return NodeRef(ResolveType(mut st, pk, name).idx)
 }
 
-// 値の位置に残した named fn type の型式 te（package pk）を関数型の節へ 1 段だけ展開する（lower が関数値の型を読む口 — 工程 5）。
-// 仮引数・結果の中の named fn type は値の位置にしか出ない（loader の値化可能の判定）ので展開しない — 自分を名指す宣言（State）で止まる
+// 値の位置に残した named fn type の型式te（package pk）を関数型の節へ1レベルだけ展開する（lowerが関数値の型を読むインターフェース — 工程5）。
+// 仮引数・結果の中の named fn type は値の位置にしか出ない（loaderの値化可能の判定）ので展開しない — 自分を名前で参照する宣言（State）で止まる
 func NamedFnTE(st mut S, pk int, te NodeRef) NodeRef {
     td := LookupTypeDecl(mut st, pk, sA(nodeOf(mut st, te)))
     if td == -1 || kindN(mut st, nC(nodeOf(mut st, td))) != ast.BFunc {
@@ -415,7 +415,7 @@ func NamedFnTE(st mut S, pk int, te NodeRef) NodeRef {
 // 名前付き関数型の展開（expandTE / expandList）の燃料 = 入れ子の深さの上限
 const EXPANDFUEL = 16
 
-// newList はヒープの列 l と同じ長さの列を作り、要素を f で写す — 写しの本体は呼び手（expandTE / substTE）が埋める
+// newListはヒープの列lと同じ長さの列を作り、要素をfで変換する — 変換の本体は呼び手（expandTE / substTE）が埋める
 // expandTE は Zig の loader.expandTE（名前付き関数型を関数型に置き換える。変わらない型はそのまま返す）
 func expandTE(st mut S, pk int, te NodeRef, fuel int) NodeRef {
     if fuel == 0 || te == -1 {

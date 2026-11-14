@@ -3,7 +3,7 @@ package analyzer
 // 値の流れのエンジンの核（language.md 12 節「2 つのエンジン」の値の流れ）: 格子の値 LSet と、名前空間ごとの解き手 Eng
 // （スロット・読み手・作業の列・局所の名前の表）。今の名前空間は error のラベル（az.er — errors.sober が転送関数）と秘密の値（secret.sober）の 2 つ。
 // 転送関数（式ごとに集合を作る規則・源・包み替え・`?`・スロットの母集団・関数値の呼び出し・消費者の記録）は名前空間の側に置く。
-// LSet = ラベルの 2 語の集合: ラベル 0〜63 = lo のビット・64〜125 = hi のビット 0〜61・hi のビット 62 = TOP（不明）・63 = 擬ラベル FLOW
+// LSet = ラベルの2ワードの集合: ラベル0〜63 = loのビット・64〜125 = hiのビット0〜61・hiのビット62 = TOP（不明）・63 = 擬ラベルFLOW
 
 import "desugar"
 import "std/iter"
@@ -16,9 +16,9 @@ type LSet struct {
 
 // 1 つの名前空間の解き手（スロット s の集合 = sets の [2s, 2s+1]・局所 [名前, lo, hi]… の envN 個が有効）
 type Eng struct {
-    sets table.Table[int]    // スロットの集合（2 語ずつ）
-    rhead table.Table[int]   // スロットの読み手の鎖の頭（-1 = 無し）
-    rnode table.Table[int]   // 読み手の鎖の項 [関数, 次]
+    sets table.Table[int]    // スロットの集合（2ワードずつ）
+    rhead table.Table[int]   // スロットの読み手のチェーンの頭（-1 = 無し）
+    rnode table.Table[int]   // 読み手のチェーンの項 [関数, 次]
     work table.Table[int]    // 作業の列
     inq table.Table[int]     // 関数が作業の列にいるか
     env table.Table[int]     // 今の関数の局所 [名前, lo, hi]…
@@ -31,8 +31,8 @@ type Eng struct {
     llDepth int
 }
 
-const NBITS = 126                 // これ以上のタグのラベルは TOP に倒す（2 語の集合）
-const PBITS = 62                  // 仮引数の集合（Flow・Cand — 1 語のビット j = 仮引数 j）の上限
+const NBITS = 126                 // これ以上のタグのラベルはTOPに倒す（2ワードの集合）
+const PBITS = 62                  // 仮引数の集合（Flow・Cand — 1ワードのビットj = 仮引数j）の上限
 const TOPH = 4611686018427387904  // hi の 1 << 62
 
 // ── 集合 ──
@@ -136,7 +136,7 @@ func addSlot(az mut Az, s int, m LSet) {
     if s == -1 || lsEmpty(m) {
         return
     }
-    // FLOW を持てるのは今の関数の戻りだけ（他の置き場では呼び出し点ごとの集合を言えない — TOP）
+    // FLOWを持てるのは今の関数の戻りだけ（他の格納場所では呼び出し点ごとの集合を言えない — TOP）
     n := if lsIsFlow(m) && s != az.cur { lsOr(lsNoFlow(m), lsTop()) } else { m }
     o := slotGet(mut az, s)
     if lsSub(n, o) {

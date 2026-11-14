@@ -113,6 +113,8 @@ Rejected:
 sober: load error at examples/security_race_neg.sober:9:70: a spawned task cannot capture a mut binding (the child sees only imm values — pass a copy: v := x before the Spawn)
 ```
 
+When many tasks need to update one state, use a domain. A domain holds one state and runs the calls on that state one at a time, serially. Only the one task running the body touches the state. So even with shared state, data races cannot be written. A domain has no lock value, so a lock cannot be forgotten or left held. Deadlocks caused by lock ordering cannot be written either ([the concurrency guide, section 5](concurrency.md#5-domains--from-many-tasks-into-one-state)).
+
 How to write parallel code is in [Tour section 7](tour.md#7-parallelism--structured-concurrency-channels).
 
 More: [language spec 10 Concurrency](../spec/10-concurrency.ja.md) (Japanese)
@@ -595,7 +597,7 @@ A language can remove only some kinds of accidents. The following stay the write
 - Authorization and business logic: who may do what, whether this request is allowed for this user, whether the rules about amounts or stock are right. The language does not remove these. Reading a credential and branching on it is the ordinary shape of a correct program, and whether that branch is right is not something the language can know.
 - Not running the analyzer: the rules in sections 3, 7, 8 and 10 are applied only by `sober check`. If you only build, they do not apply.
 - Validating what input means: beyond the type and UTF-8 checks — value ranges, formats, business validity — the writer checks.
-- SQL injection: there is no database client in std yet. Today's Sober has no specific answer to this accident.
+- SQL injection: it cannot be written as long as you use `std/pg`. The SQL text must be a string literal or a const, and values are always passed as arguments ([the PostgreSQL guide, section 2](postgres.md)). Building SQL and sending it through any path other than std/pg is outside this protection.
 - Mishandling secrets: `@secret` looks only at timing flows in the source (branches, indexes, division). It does not stop writing a secret to a log or a response (printing is outside the check), reusing keys or nonces, or misusing randomness. For user code, it does not go as far as checking that the generated machine code has no branches.
 - What remains of caching: a CDN configured to ignore `private`, missing Vary, tokens in the query or the body, and responses that vary by the client's IP are outside section 8's check.
 - Requests that choke on computation: a deadline (`deadline:`) is a limit on waiting, not on running time. Computation that is running is not stopped. Where you accept heavy computation, put a limit on the size of the input yourself. There is also no graceful shutdown that drains in-flight connections yet (stopping cuts them).

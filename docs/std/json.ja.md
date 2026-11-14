@@ -4,15 +4,15 @@
 
 `import "std/json"`
 
-JSON（RFC 8259）の読みと決定的な印字（[language.md 16 節](../language.md)）。文書は平らな表 Doc（ノードの番号で子を指す — compiler/ の ast.Tree と同じ形）に置き、触るのは 1 段だけ開くビューの union View（json.At）— 各段の switch に網羅が要る（雑に読む手段が構成的に無い — [language.md 16 節](../language.md)）。値の木（再帰の union Value）は書きの側: 組んで Encode[json.Value] で書く・Doc の節から Tree で開く。
+JSON（RFC 8259）の読みと決定的な印字（[language.md 16 節](../language.md)）。文書は平らな表 Doc（ノードの番号で子を指す — compiler/ の ast.Tree と同じ形）に置き、触るのは1段階だけ開くビューのunion View（json.At）— 各段階のswitchに網羅が要る（雑に読む手段が構成的に無い — [language.md 16 節](../language.md)）。値の木（再帰の union Value）は書きの側: 組んで Encode[json.Value] で書く・Doc の節から Tree で開く。
 
 ```sober
 d := json.Parse(b)?                       // 全量・入れ子の深さは MaxDepth まで
 switch json.At(d, json.Root(d)) {
-case json.ViewObject{names, vals}: …          // 子はノードの番号 — json.At(d, vals[i]) で 1 段ずつ開く
+case json.ViewObject{names, vals}: …          // 子はノードの番号 — json.At(d, vals[i]) で1段階ずつ開く
 …
 }
-s := json.Format(d, json.Root(d))        // 決定的（空白なし・欄はソースの順・数は字句のまま）
+s := json.Format(d, json.Root(d))        // 決定的（空白なし・フィールドはソースの順・数は字句のまま）
 ```
 
 数（Num）は字句のまま持つ（解釈はデコードの点まで遅らせる — 64 ビットを超える整数・精度・金額を float に黙って丸めない）。重複したキーは拒否（防御の既定 — パーサ間で解釈が割れる攻撃面。Go は後勝ち）。不正な UTF-8 は文書のどこでも拒否（Go は U+FFFD に置き換え）
@@ -23,7 +23,7 @@ s := json.Format(d, json.Root(d))        // 決定的（空白なし・欄はソ
 func Decode[T](d Doc, n int) (T, error?)
 ```
 
-ノード n を struct T に読む。欄の名前 = JSON のキー。T の欄に書ける型は int・float・bool・string・struct・`[]U`・`U?`（U は前のどれか か json.Value — 裸の json.Value の欄は拒否: union はゼロ値を持たない）。T = json.Value は Tree と同じ（値の木）。欠けた欄は Missing（`U?` の欄だけ欠けと null を nil で受ける）・種類の合わないノードは WrongType・int の欄の範囲外は IntOutOfRange。余った欄は無視する
+ノードnを struct T に読む。フィールドの名前 = JSONのキー。Tのフィールドに書ける型はint・float・bool・string・struct・`[]U`・`U?`（U は前のどれか か json.Value — 裸のjson.Valueのフィールドは拒否: unionはゼロ値を持たない）。T = json.ValueはTreeと同じ（値の木）。欠けたフィールドはMissing（`U?` のフィールドだけ欠けとnullをnilで受ける）・種類の合わないノードはWrongType・intのフィールドの範囲外はIntOutOfRange。余ったフィールドは無視する
 
 例:
 
@@ -31,8 +31,8 @@ func Decode[T](d Doc, n int) (T, error?)
 // examples/json_decode.sober
 package main
 
-// shape[T] の最小形（language.md 16 節 2）: json.Decode[T](d, n) が struct T（欄 = int・float・bool・string・入れ子の struct・[]T・T?）へ写す。
-// 欠けた欄は json.Missing・T? の欄だけ欠けと null が nil・余った欄は無視・型の合わない節は json.WrongType・int に収まらない数は json.IntOutOfRange
+// shape[T] の最小形（language.md 16 節2）: json.Decode[T](d, n) がstruct T（フィールド = int・float・bool・string・入れ子のstruct・[]T・T?）へ変換する。
+// 欠けたフィールドはjson.Missing・T? のフィールドだけ欠けとnullがnil・余ったフィールドは無視・型の合わない節はjson.WrongType・intに収まらない数はjson.IntOutOfRange
 
 import "std/convert"
 import "std/io"
@@ -66,7 +66,7 @@ func show(s Shape) {
     showOrigin(s.origin)
 }
 
-// T? の欄は仮引数で受けて絞る（欄から束縛した struct の T? の絞り込みは check が拒否する）
+// T? のフィールドは仮引数で受けて絞る（フィールドから束縛したstructのT? の絞り込みはcheckが拒否する）
 func showOrigin(o Point?) {
     if o != nil {
         println("  origin: (${o.x}, ${o.y})")
@@ -106,7 +106,7 @@ func main() {
 func DecodeWith[T](d Doc, n int, rename map[string]string) (T, error?)
 ```
 
-Decode の欄名の対応つき版（rename = 欄名 → JSON のキー・入れ子の struct の欄にも同じ辞書が掛かる・対応の無い欄は欄名のまま）
+Decodeのフィールド名の対応つき版（rename = フィールド名 → JSONのキー・入れ子のstructのフィールドにも同じ辞書が掛かる・対応の無いフィールドはフィールド名のまま）
 
 ## Missing
 
@@ -117,7 +117,7 @@ type Missing error {
 }
 ```
 
-T? でない欄 field が無い（pos = オブジェクトの位置）
+T? でないフィールドfieldが無い（pos = オブジェクトの位置）
 
 ## WrongType
 
@@ -128,7 +128,7 @@ type WrongType error {
 }
 ```
 
-ノードの種類が欄の型に合わない（want = 期待した JSON の種類: object・array・string・number・int・bool）
+ノードの種類がフィールドの型に合わない（want = 期待したJSONの種類: object・array・string・number・int・bool）
 
 ## IntOutOfRange
 
@@ -138,7 +138,7 @@ type IntOutOfRange error {
 }
 ```
 
-int の欄の数が int に収まらない（小数・指数を含む数は WrongType{want: "int"}）
+intのフィールドの数がintに収まらない（小数・指数を含む数はWrongType{want: "int"}）
 
 ## NeedObject
 
@@ -160,7 +160,7 @@ func NeedObject(d Doc, n int) (int, error?)
 func Need(d Doc, n int, key string) (int, error?)
 ```
 
-オブジェクト n の欄 key の値のノード（無ければ Missing）
+オブジェクトnのフィールドkeyの値のノード（無ければMissing）
 
 失敗のラベル: [`Missing`](#missing)
 
@@ -172,7 +172,7 @@ func Need(d Doc, n int, key string) (int, error?)
 func NeedAt(d Doc, n int, key string, hint int) (int, error?)
 ```
 
-Need に手掛かりの位置 hint を足したもの（GetAt と同じ — 写しの関数は欄の宣言の位置を渡す）
+Needに手掛かりの位置hintを足したもの（GetAtと同じ — 変換の関数はフィールドの宣言の位置を渡す）
 
 失敗のラベル: [`Missing`](#missing)
 
@@ -251,7 +251,7 @@ func ParseFloat(d Doc, n int) (float, error?)
 func Encode[T](v T) string
 ```
 
-v の JSON（空白なし・欄は宣言の順・`U?` の nil は null）。T の範囲は Decode と同じ + 裸の json.Value の欄・T = json.Value（値の木 — 印字は Format と同じ規則）。float の NaN / ±Inf は panic(NotFinite)
+vのJSON（空白なし・フィールドは宣言の順・`U?` のnilはnull）。Tの範囲はDecodeと同じ + 裸のjson.Valueのフィールド・T = json.Value（値の木 — 印字はFormatと同じ規則）。float の NaN / ±Inf は panic(NotFinite)
 
 例:
 
@@ -259,8 +259,8 @@ v の JSON（空白なし・欄は宣言の順・`U?` の nil は null）。T �
 // examples/json_encode.sober
 package main
 
-// shape[T] の逆向き（language.md 16 節 2）: json.Encode[T](v) が struct を JSON に書く（空白なし・欄は宣言の順・U? の nil は null）。
-// EncodeWith / DecodeWith は欄名 → JSON のキーの対応の辞書つき（同じ辞書で両方向）。Encode → Parse → Decode の往復で元に戻る
+// shape[T] の逆向き（language.md 16 節2）: json.Encode[T](v) がstructをJSONに書く（空白なし・フィールドは宣言の順・U? のnilはnull）。
+// EncodeWith / DecodeWithはフィールド名 → JSONのキーの対応の辞書つき（同じ辞書で両方向）。Encode → Parse → Decodeの往復で元に戻る
 
 import "std/json"
 
@@ -307,7 +307,7 @@ func main() {
 func EncodeWith[T](v T, rename map[string]string) string
 ```
 
-Encode の欄名の対応つき版（rename は DecodeWith と同じ辞書 — 同じ辞書で両方向に使える）
+Encodeのフィールド名の対応つき版（renameはDecodeWithと同じ辞書 — 同じ辞書で両方向に使える）
 
 ## NotFinite
 
@@ -326,7 +326,7 @@ JSON に書けない float（NaN・±Inf）を Encode に渡した
 func KeyOf(rename map[string]string, field string) string
 ```
 
-欄 field の JSON のキー（rename の対応が無ければ欄名のまま。rename は省略可能な引数〔map[K]V?〕にしない — map の T? は実引数に map を渡すと build が拒否・絞って使うと check が拒否する言語の穴がある。対応なしは空の map）
+フィールドfieldのJSONのキー（renameの対応が無ければフィールド名のまま。renameは省略可能な引数〔map[K]V?〕にしない — mapのT? は実引数に map を渡すと build が拒否・絞って使うと check が拒否する言語の穴がある。対応なしは空の map）
 
 ## Put
 
@@ -344,7 +344,7 @@ s のバイト列をそのまま積む（Put… / Done で JSON を手で組み�
 func PutKey(o mut builder.Builder[byte], key string, first bool)
 ```
 
-欄の頭（2 つ目以降は ','・キーの文字列・':'）
+フィールドの頭（2つ目以降は ','・キーの文字列・':'）
 
 ## PutString
 
@@ -362,7 +362,7 @@ s を JSON の文字列（引用符つき — `"` `\` と制御文字だけを�
 func PutInt(o mut builder.Builder[byte], n int)
 ```
 
-n の 10 進を builder へ直に積む（FormatInt の string を経ない）。割るのは定数だけ（10・10^8・10^16 — 乗算に下りる）: 8 桁ずつの塊を下の桁から 1 語に詰めて（1 バイト / 桁）上の桁から積む（棄てた形: 桁の数の 10 の冪 p で n / p — 割る数が変数で桁ごとに idiv）
+nの10進をbuilderへ直に積む（FormatIntのstringを経ない）。割るのは定数だけ（10・10^8・10^16 — 乗算に下りる）: 8桁ずつのチャンクを下の桁から1ワードに詰めて（1バイト / 桁）上の桁から積む（棄てた形: 桁の数の10の冪pでn / p — 割る数が変数で桁ごとにidiv）
 
 ## PutBool
 
@@ -380,7 +380,7 @@ b を true / false の綴りで積む
 func PutFloat(o mut builder.Builder[byte], f float, field string)
 ```
 
-f の最短の往復表現（NaN・±Inf は panic — field = 欄名）
+fの最短の往復表現（NaN・±Infはpanic — field = フィールド名）
 
 ## Done
 
@@ -398,7 +398,7 @@ func Done(o mut builder.Builder[byte]) string
 func PutValue(o mut builder.Builder[byte], x Value)
 ```
 
-値の木 v を o に書く（json.Encode[json.Value] の写しと、欄の型が json.Value の struct の写しが呼ぶ部品）。印字の規則は Format と同じ（空白なし・欄は並びの順・数は字句のまま）。再帰の深さ = 木の深さ（Tree で開いた木なら MaxDepth まで）
+値の木vをoに書く（json.Encode[json.Value] の変換と、フィールドの型がjson.Valueのstructの変換が呼ぶ部品）。印字の規則はFormatと同じ（空白なし・フィールドは並びの順・数は字句のまま）。再帰の深さ = 木の深さ（Treeで開いた木ならMaxDepthまで）
 
 ## MaxDepth
 
@@ -466,7 +466,7 @@ type Doc struct {
 }
 ```
 
-読んだ文書: ノードの表（番号 = 添字。子は親より先に並ぶ — 根は最後）。書き換えない値なので task の子へそのまま渡せる（例: examples/json\_put.sober）。作れるのは Parse だけ（証人 — 外から作った表を At に渡させない）:非公開の型の封の欄 seal があるので、外からは composite に書けない（部分リテラルは拒否・sealed の値は外で書けない）。型は公開のまま（引数の型に json.Doc と書ける — shape[T] の写しの関数も）。欄の読みは塞いでいない（裸の int で At なしには解釈できない — 規律の面だけ）。再訪条件: 可視性の細分（構築のみ私有・欄の私有）が入ったら封を外してそれに置き換える
+読んだ文書: ノードの表（番号 = 添字。子は親より先に並ぶ — 根は最後）。書き換えない値なので task の子へそのまま渡せる（例: examples/json\_put.sober）。作れるのは Parse だけ（証人 — 外から作った表を At に渡させない）:非公開の型の封のフィールドsealがあるので、外からはcompositeに書けない（部分リテラルは拒否・sealedの値は外で書けない）。型は公開のまま（引数の型にjson.Docと書ける — shape[T] の変換の関数も）。フィールドの読みは塞いでいない（裸のintでAtなしには解釈できない — 規律の面だけ）。再訪条件: 可視性の細分（構築のみ私有・フィールドの私有）が入ったら封を外してそれに置き換える
 
 ## Value
 
@@ -541,7 +541,7 @@ func Tree(d Doc, n int) Value
 func Get(d Doc, n int, key string) int?
 ```
 
-オブジェクトのノード n の欄 key の値のノード（n がオブジェクトでない・欄が無ければ nil）
+オブジェクトのノードnのフィールドkeyの値のノード（nがオブジェクトでない・フィールドが無ければnil）
 
 ## GetAt
 
@@ -550,7 +550,7 @@ func Get(d Doc, n int, key string) int?
 func GetAt(d Doc, n int, key string, hint int) int?
 ```
 
-Get に手掛かりの位置 hint を足したもの: hint 番目の欄のキーを先に見て、外れたら線形に探す（shape[T] の写しの関数は欄の宣言の位置を渡す — 宣言と同じ順の JSON なら 1 回の比較で当たる）キーの比較は手で展開してある（Doc の欄を局所に取ってから回す — 旧 keyIs は Doc を値で渡す呼び出しを欄ごとに払っていた）。見る順 = 手掛かり（t = -1）→ 0 から線形
+Getに手掛かりの位置hintを足したもの: hint番目のフィールドのキーを先に見て、外れたら線形に探す（shape[T] の変換の関数はフィールドの宣言の位置を渡す — 宣言と同じ順の JSON なら 1 回の比較で当たる）キーの比較は手で展開してある（Docのフィールドを局所に取ってから回す — 旧keyIsはDocを値で渡す呼び出しをフィールドごとに払っていた）。見る順 = 手掛かり（t = -1）→ 0から線形
 
 ## Parse
 
@@ -571,4 +571,4 @@ b 全体を 1 つの JSON の値として読む（前後の空白は可・後ろ
 func Format(d Doc, n int) string
 ```
 
-ノード n の決定的な JSON（空白なし・欄はソースの順・数は字句のまま・文字列は '"' '\\' と制御文字だけをエスケープ）
+ノードnの決定的なJSON（空白なし・フィールドはソースの順・数は字句のまま・文字列は '"' '\\' と制御文字だけをエスケープ）

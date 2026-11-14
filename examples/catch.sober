@@ -2,7 +2,7 @@ package main
 
 // catch 式（language.md 13 節・syntax.md）: 可謬の呼び出しの後置 `f() catch D`。エラーなら D・でなければ値。
 // D は単項式・`return …`・`panic(L{…})` の閉集合（二項演算子より強い — `f() catch -1 + 1` は `(f() catch -1) + 1`）。
-// loader の固定テンプレート（compiler/loader/catchx.sober）が多値の束縛と if に写す — コア・Lean は無変更
+// loaderの固定テンプレート（compiler/loader/catchx.sober）が多値の束縛とifに変換する — コア・Leanは無変更
 
 type Bad error {
     code int
@@ -46,7 +46,7 @@ func name(n int) string {
     return label(n) catch "none"
 }
 
-// Never 腕（catch return）
+// Never分岐（catch return）
 func early(s string) int {
     n := parse(s) catch return -1
     return n * 10
@@ -80,7 +80,7 @@ func list(n int) ([]Entry, error?) {
     return []Entry{Entry{name: "a", size: 1}, Entry{name: "bb", size: 2}}, nil
 }
 
-// catch return の後の値の要素の欄読み（`es[i].name` — 写しの if の then が return でも、else の値から要素の宣言を読む）
+// catch return の後の値の要素のフィールド読み（`es[i].name` — コピーのifのthenがreturnでも、elseの値から要素の宣言を読む）
 func total(n int) int {
     es := list(n) catch return -1
     mut acc := 0
@@ -93,7 +93,7 @@ func total(n int) int {
     return acc
 }
 
-// Never 腕（catch panic(Unreachable{})）
+// Never分岐（catch panic(Unreachable{})）
 func must(s string) int {
     return parse(s) catch panic(Unreachable{})
 }

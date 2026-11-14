@@ -1,6 +1,6 @@
 package main
 
-// 負例: nil の腕しか無い switch（nil 以外の値の行き先が無い — loader の拒否 — D1）
+// 負例: nilの分岐しか無いswitch（nil以外の値の行き先が無い — loaderの拒否 — D1）
 func pick(k int) int? {
     return if k > 0 { k } else { nil }
 }

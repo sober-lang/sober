@@ -1,6 +1,6 @@
 package tls
 
-// std/internal/hs の拒否の網（hs は std の内側）: ClientHello を組み立てて
+// std/internal/hsの拒否の検査（hsはstdの内側）: ClientHelloを組み立てて
 // （偽の転送路で）Feed に通し、サーバが返す alert の番号を照合する。TLS 1.2 だけの ClientHello = protocol_version（70）・X25519 も PSS も共通の suite も
 // 無い = handshake_failure（40）・圧縮・重複の拡張・短い / ゼロの key_share・HRR の後も X25519 が無い = illegal_parameter（47）・ALPN の不一致 =
 // no_application_protocol（120）・読めない = decode_error（50）・最初に application_data / CCS 2 枚 = unexpected_message（10）・改竄した record =

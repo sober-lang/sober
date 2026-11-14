@@ -1,6 +1,6 @@
 package main
 
-// 写しのループの一括化の負例（範囲が通らない — 元のループに落ちて、同じ点で panic: src[j] の添字が範囲外 — exit 101）
+// コピーのループの一括化の負例（範囲が通らない — 元のループに落ちて、同じ点でpanic: src[j] の添字が範囲外 — exit 101）
 
 func appendCopy(src []int, n int) []int {
     mut dst := mut []int{}

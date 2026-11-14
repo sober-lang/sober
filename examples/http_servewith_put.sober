@@ -1,7 +1,7 @@
 package main
 
-// http.server.ServeWith の put:（省略可の匿名関数型 — language.md 25 節 Z）: 送りを 2 段にする — 受けた切片 1 つ分の応答を put で積み（送らない）、積んだ分は recv が
-// 次の受けを待つ前に送る約束（tls.Recv は切片 1 つを配り終えるたびに tls.Flush する）。send はその場で送る口で、stream の応答（前の応答と頭・
+// http.server.ServeWithのput:（省略可の匿名関数型 — language.md 25 節Z）: 送りを2段階にする — 受けた切片1つ分のレスポンスをputで積み（送らない）、積んだ分はrecvが
+// 次の受けを待つ前に送る約束（tls.Recvは切片1つを配り終えるたびにtls.Flushする）。sendはその場で送るインターフェースで、streamのレスポンス（前のレスポンスと頭・
 // emit ごと）だけが使う。ここでは偽の転送路で、積み・送り・flush の順を印字する
 // （TLS の接続なら `(k) => tls.Recv(c, k)`・`(b) => tls.Send(c, b)`・`put: (b) => tls.Put(c, b)`）
 

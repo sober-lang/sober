@@ -1,6 +1,6 @@
 package main
 
-// opt の中身を通る自己参照（cons の鎖）: 再帰で組んで和
+// optの中身を通る自己参照（consの連結リスト）: 再帰で組んで和
 
 type L struct {
     v int

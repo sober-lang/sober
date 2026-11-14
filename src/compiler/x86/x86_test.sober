@@ -1,7 +1,7 @@
 package x86
 
 // x86 エンコーダの単体テスト（`cd compiler && ../bin/sober test x86`）。全レジスタの網羅は GNU as の照合（scripts/x86enc.sh）が見る —
-// ここは as を立てずに読める少数の黄金（16 進は GNU as の出力）と、後埋め（PatchRel32 / PatchImm32）
+// ここはasを立てずに読める少数のゴールデン（16進は GNU as の出力）と、後埋め（PatchRel32 / PatchImm32）
 
 import "std/iter"
 import "std/table"

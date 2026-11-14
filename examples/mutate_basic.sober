@@ -1,8 +1,8 @@
 package main
 
-// mutation testing の schemata（`sober build --mutate` — `sober test --mutate` がテストのビルドに掛ける写し）の題材: ミュータントの種類を全部
+// mutation testing のschemata（`sober build --mutate` — `sober test --mutate` がテストのビルドに掛けるコピー）の題材: ミュータントの種類を全部
 // （比較の境界と否定・算術とビット・`&&` ↔ `||`・`!` の除去・条件の固定・文の削除）と、ミューテーションの点を含む被演算子（束縛される）を持つ。
-// ミュータントを選ばない実行（基線）は写しの無い build と同じ出力。網 = scripts/mutate.sh
+// ミュータントを選ばない実行（基線）はコピーの無いbuildと同じ出力。テスト = scripts/mutate.sh
 
 func clamp(x int, lo int, hi int) int {
     if x < lo {

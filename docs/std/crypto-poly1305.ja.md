@@ -25,4 +25,4 @@ key（32 バイト — 1 回だけ使う鍵。同じ鍵で 2 つのメッセー�
 func SumAead(key []byte, ad []byte, msg []byte, off int, n int) []byte
 ```
 
-AEAD の MAC の入力（ad ‖ 0 埋め ‖ msg[off, off + n) ‖ 0 埋め ‖ len(ad) ‖ n — 長さは各 64 bit の小さい端・RFC 8439 2.8）の tag。入力を繋いだ写しを作らない（record 層向けの API — msg は受けの切片のまま）
+AEAD の MAC の入力（ad ‖ 0 埋め ‖ msg[off, off + n) ‖ 0 埋め ‖ len(ad) ‖ n — 長さは各 64 bit の小さい端・RFC 8439 2.8）の tag。入力を繋いだコピーを作らない（record層向けのAPI — msgは受けの切片のまま）

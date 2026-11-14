@@ -1,11 +1,11 @@
 package lower
 
-// 絞りの消滅の lower 側（desugar/narrowkill.sober と同じ規則 — 述語 desugar.KillOf を共有）: 絞った腕は mut の T? の名前を中身の写し（LVal）で
-// 宣言し直す。その名前に書く文の頭 / 後ろで、名前を外の T? のセルの記録の別名として宣言し直す。代入の的は外のセル
+// 絞りの消滅のlower側（desugar/narrowkill.soberと同じ規則 — 述語desugar.KillOfを共有）: 絞った分岐はmutのT? の名前を中身のコピー（LVal）で
+// 宣言し直す。その名前に書く文の頭 / 後ろで、名前を外のT? のセルの記録の別名として宣言し直す。代入のターゲットは外のセル
 
 import "desugar"
 
-// 絞った腕の入口: 名前 name の外の記録 outer が mut のセルなら、腕の中で宣言した中身の記録 inner との対を積む（積んだら真）
+// 絞った分岐の入口: 名前nameの外の記録outerがmutのセルなら、分岐の中で宣言した中身の記録innerとの対を積む（積んだら真）
 func nrwPush(st mut St, name desugar.StrRef, inner int, outer int) bool {
     if outer < 0 || desugar.HeapGet(mut st.d, outer + 2) != LCell {
         return false

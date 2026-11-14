@@ -82,7 +82,7 @@ func Lex(b []byte) []Token {
     return builder.Build(mut tb)
 }
 
-// loader が合成するソース（@layout の写し — loader/layout.sober）の字句: Lex に加えて、`$` の直後に続く名前を 1 つの名前にする。
+// loaderが合成するソース（@layoutのコピー — loader/layout.sober）の字句: Lexに加えて、`$` の直後に続く名前を1つの名前にする。
 // `$` の名前は利用者のソースには書けない（Lex では `$` が Invalid）ので、合成の名前は利用者の名前とぶつからない
 func LexSynth(b []byte) []Token {
     ts := Lex(b)

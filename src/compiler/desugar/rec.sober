@@ -1,10 +1,10 @@
 package desugar
 
-// 再帰の型宣言の脱糖（language.md 1 節・formal.md の再帰型の段）: 表層の名前の型 → コアの同時の μ。
+// 再帰の型宣言の脱糖（language.md 1 節・formal.mdの再帰型の段階）: 表層の名前の型 → コアの同時の μ。
 // 組 = loader.RecGroups（型宣言の参照グラフの SCC・成分は宣言順）。組の宣言 d を引くと、展開中の組の枠に (組, 型引数の束縛) が
 // あれば再帰の変数（de Bruijn — 内側の枠の幅を足す）、無ければ枠を積んで組の全成分の本体を局所座標（region 0）で展開し
 // `muRs 0 n i bs` を返す（座標は呼び手の文脈 — pointTy / retTy / upRegion が slice と同じく r を差し替える）。
-// 値は構築の点で fold・分解の点（欄の読み・switch）で unfold（iso — 暗黙に開かない）
+// 値は構築の点でfold・分解の点（フィールドの読み・switch）でunfold（iso — 暗黙に開かない）
 
 import "ast"
 import "std/iter"
@@ -125,15 +125,15 @@ func recSCount(st mut S, g int) int {
     return nf + st.recGroups[g + 1 + 2 * st.recGroups[g]]
 }
 
-// 再帰の組の named fn type の宣言 decl の閉包の核の型
+// 再帰の組の named fn type の宣言declのクロージャの核の型
 func recFnCore(st mut S, pk int, decl NodeRef, at NodeRef, fuel int) (TyRef, error?) {
     g, j := recGroupOf(mut st, decl)
     _, i := recSIndex(mut st, g, j)
     return recSCore(mut st, pk, g, i, at, fuel)
 }
 
-// 組の位置 g の S の成分 i の閉包の核の型（`fn (prod U P) R` の同時の μ — 展開中なら再帰の変数）。
-// 匿名の関数型の成分の env の鍵は束縛の中で引く（brwKey — 値の位置の欄か借りの位置か）
+// 組の位置gのSの成分iのクロージャの核の型（`fn (prod U P) R` の同時の μ — 展開中なら再帰の変数）。
+// 匿名の関数型の成分のenvの鍵は束縛の中で引く（brwKey — 値の位置のフィールドか借りの位置か）
 func recSCore(st mut S, pk int, g int, i int, at NodeRef, fuel int) (TyRef, error?) {
     n := recSCount(mut st, g)
     v := recLookup(mut st, RECS, g, -1, i)
@@ -218,7 +218,7 @@ func recTy(st mut S, pk int, decl NodeRef, env int, at NodeRef, fuel int) (TyRef
         m := recMember(mut st, g, j)
         st.tenv = recEnvFor(mut st, m, env)
         body := nC(nodeOf(mut st, m))
-        // named fn type の成分は D の変数として指されない（関数型への参照は S の μ — recSCore）ので本体は unit の置き場
+        // named fn type の成分はDの変数として指されない（関数型への参照はSの μ — recSCore）ので本体はunitの格納場所
         bt := if declKind(mut st, m) == ast.BStruct {
             fieldsTy(mut st, pk, lA(nodeOf(mut st, body)), at, fuel - 1)?
         } else if declKind(mut st, m) == ast.BFunc {
@@ -240,7 +240,7 @@ func recTy(st mut S, pk int, decl NodeRef, env int, at NodeRef, fuel int) (TyRef
 // 型宣言の参照 dr の値の型（構築・分解の注釈 — 座標は最内 region。dest > 0 なら region dest - 1）
 func recDrTy(st mut S, dr int, dest int, at NodeRef) (TyRef, error?) {
     t := recTy(mut st, hget(mut st, dr + 1), hgetN(mut st, dr), hget(mut st, dr + 2), at, TYFUEL)?
-    // imm の組は最内（欄の値は ann で上界へ上がる — 行き先へは境界コピーが運ぶ）・mut を含む組だけ行き先の座標（mut は上げられない）
+    // immの組は最内（フィールドの値はannで上界へ上がる — 行き先へは境界コピーが運ぶ）・mutを含む組だけ行き先の座標（mutは上げられない）
     imm := tyMutFreeD(mut st, muRsBody(mut st, t))
     return tMuRsAt(mut st, t, if dest > 0 && !imm { dest - 1 } else { st.rdepth - 1 }), nil
 }
@@ -258,7 +258,7 @@ func tyHasMu(st mut S, t TyRef) bool {
     }
 }
 
-// fold（中身は 1 段の展開の型そのもの — Lean の foldRs は等しさを要求するので ann で展開の型へ緩める）
+// fold（中身は1レベルの展開の型そのもの — LeanのfoldRsは等しさを要求するのでannで展開の型へ緩める）
 func recFold(st mut S, t TyRef, v CoreRef) CoreRef {
     return cFold(mut st, t, cAnn(mut st, v, tyUnfold(mut st, t)))
 }

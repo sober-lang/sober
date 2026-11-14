@@ -1,9 +1,9 @@
 package lower
 
-// std/testing/cell の呼び出し点（language.md 41 節「状態を貯める fake」）: 置き場はプロセスに 1 つの表 @rt.cells とロック 1 本。
+// std/testing/cellの呼び出し点（language.md 41 節「状態を貯めるfake」）: 格納場所はプロセスに1つの表 @rt.cellsとロック1本。
 // 表の項 = [把手の鍵, アリーナ（プールのスロット）の基底, 使った量, 値の箱の番地]。Set は値をアリーナへ写し（チャネルの送りと同じ梱包 —
-// 写した部分の印は MAX_DEPTH なので読み手が必ず自分の region へ写し直す）、前のアリーナをプールへ返す。Get は呼び手の最内の region へ写す。
-// Update はロックを持ったまま読み → ラムダの本体 → 書き。置き場を使うプログラムは task の rt を持つ（desugar.ParRtUse — プールと写しの印のため）
+// コピーした部分のフラグはMAX_DEPTHなので読み手が必ず自分のregionへコピーし直す）、前のアリーナをプールへ返す。Getは呼び手の最内のregionへコピーする。
+// Updateはロックを持ったまま読み → ラムダの本体 → 書き。格納場所を使うプログラムはtaskのrtを持つ（desugar.ParRtUse — プールとコピーのフラグのため）
 
 import "desugar"
 import "diag"
@@ -15,7 +15,7 @@ const CELL_N = 1
 const CELL_TAB = 2
 const CELL_EW = 4
 
-// 表の大域（installRt — 置き場の package を読んだ task のプログラムだけ）
+// 表の大域（installRt — 格納場所のpackageを読んだtaskのプログラムだけ）
 func needCellRt(st mut St) {
     st.cellG = addGlobalInit(mut st, int(strLit(mut st, "rt.cells")), CELL_TAB + CELL_EW * CELL_CAP, -1)
 }
@@ -80,7 +80,7 @@ func cellCall(st mut St, key int, args desugar.ListRef, at desugar.NodeRef) (int
     return list0(mut st), nil
 }
 
-// ロックを取る（xchg で 0 → 1 を取れるまで回る — 持ち手は待ちに入らない: Update の本体は効果なし）
+// ロックを取る（xchgで0 → 1を取れるまで回る — 持ち手は待ちに入らない: Updateの本体はエフェクトなし）
 func cellLock(st mut St, tb int) {
     loop := newBlock(mut st)
     got := newBlock(mut st)
@@ -150,7 +150,7 @@ func cellRead(st mut St, e int, t int, hinit int) int {
     setCur(mut st, bHave)
     storeVal(mut st, res, 0, t, copyVal(mut st, t, loadVal(mut st, itop(mut st, vp), 0, t)))
     if containsSlice(mut st, t) {
-        // 置き場は何度も読まれる — 元（アリーナ）のセルを書き換えない写し
+        // 格納場所は何度も読まれる — 元（アリーナ）のセルを書き換えないコピー
         st.relocFresh = true
         relocateTo(mut st, res, 0, t, regionDepth(mut st))
         st.relocFresh = false
@@ -164,7 +164,7 @@ func cellRead(st mut St, e int, t int, hinit int) int {
 }
 
 // 箱 vbox の値を項 e のアリーナへ写して置く（ロックの中で — 前のアリーナはプールへ返す）。深度 0 のスロットと bump を新しいアリーナへ
-// 付け替えて深度 0 より深い部分を写し（印 = MAX_DEPTH）、戻す。深度 0 の部分は main の region でプロセスの終わりまで生きるので写さない
+// 付け替えて深度0より深い部分をコピー（フラグ = MAX_DEPTH）、戻す。深度0の部分はmainのregionでプロセスの終わりまで生きるのでコピーしない
 func cellStore(st mut St, e int, t int, vbox int) {
     old := load(mut st, e, 1)
     bFree := newBlock(mut st)
@@ -193,7 +193,7 @@ func cellStore(st mut St, e int, t int, vbox int) {
     storeVal(mut st, vp, 0, t, loadVal(mut st, vbox, 0, t))
     if containsSlice(mut st, t) {
         store(mut st, wk, WK_RLAB, iconst(mut st, MAX_DEPTH))
-        // 書き手の値はこの後も読まれ、アリーナは次の Set で返る — 元のセルを書き換えない写し
+        // 書き手の値はこの後も読まれ、アリーナは次のSetで返る — 元のセルを書き換えないコピー
         st.relocFresh = true
         relocateTo(mut st, vp, 0, t, z)
         st.relocFresh = false
@@ -207,7 +207,7 @@ func cellStore(st mut St, e int, t int, vbox int) {
     store(mut st, meta, W_SLOT_SIZE, oldZ)
 }
 
-// 表の全部の項を空にする（std/quick の試行の頭 — 縮めと再生が種と番号で決まるように）。アリーナはプールへ返す
+// 表の全部の項を空にする（std/quickの試行の頭 — シュリンクと再生がシードと番号で決まるように）。アリーナはプールへ返す
 func cellReset(st mut St) {
     if st.cellG == 0 {
         return
@@ -238,8 +238,8 @@ func cellReset(st mut St) {
     cellUnlock(mut st, tb)
 }
 
-// 置き場に置ける値の型か: 閉包の捕捉と同じ素のデータ（closCapOk の idok = false）に、再帰型（調べている途中の struct / union へ戻る辺は
-// 置ける — 写しは再帰型を写せる）を足したもの。seen = 調べている途中の型の記録の列
+// 格納場所に置ける値の型か: クロージャの捕捉と同じ素のデータ（closCapOkのidok = false）に、再帰型（調べている途中のstruct / unionへ戻る辺は
+// 置ける — コピーは再帰型をコピーできる）を足したもの。seen = 調べている途中の型の記録の列
 func cellValOk(st mut St, t int, fuel int, seen desugar.ListRef) bool {
     if fuel == 0 {
         return false

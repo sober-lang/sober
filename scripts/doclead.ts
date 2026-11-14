@@ -1,4 +1,4 @@
-// doclead の判定: `sober outline --format=json` の出力（ファイルの列）を読み、doc コメントが宣言自身の名前で始まる宣言を名指しする。
+// docleadの判定: `sober outline --format=json` の出力（ファイルの列）を読み、docコメントが宣言自身の名前で始まる宣言を特定する。
 // 名前は冗長なので doc は中身から書く（「// buildRoundtrip は …」でなく「// …」）。違反の数を終了コードに（0 = 緑）
 //   node --experimental-strip-types scripts/doclead.ts <outline.json>…
 import { readFileSync } from "node:fs";

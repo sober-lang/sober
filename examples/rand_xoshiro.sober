@@ -1,6 +1,6 @@
 package main
 
-// std/rand（xoshiro128** — シード明示の決定的な擬似乱数）の検証例。Go の双子 scripts/oracles/rand_xoshiro.go（uint32 の wrap で書いた参照実装の写し）
+// std/rand（xoshiro128** — シード明示の決定的な擬似乱数）の検証例。比較用のGoの実装scripts/oracles/rand_xoshiro.go（uint32のwrapで書いた参照実装のコピー）
 // が .out を作る — std/rand の 32 bit の算術（int の上で桁に割る）が uint32 と一致することを見る
 
 import "std/iter"

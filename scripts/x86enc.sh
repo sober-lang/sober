@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # x86 エンコーダ（compiler/x86）の GNU as オラクル（正規バックエンドの Sober 化 B-1b）。
 # compiler/tools/x86encdump が全レジスタ × disp / imm の境界値の組み合わせを「hex<TAB>Intel 構文」で吐く → asm の列を as + objcopy で
-# 一度に機械語にし、hex の連結とバイト一致を照合する。ずれたら先頭から 1 命令ずつ as に通して最初の食い違いを名指す。
+# 一度に機械語にし、hexの連結とバイト一致を照合する。ずれたら先頭から1命令ずつasに通して最初の食い違いを特定する。
 # 依存: as / objcopy（x86_64.oracle.test.zig と同じ — zig build test の前提として既に PATH にある）
 set -uo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)

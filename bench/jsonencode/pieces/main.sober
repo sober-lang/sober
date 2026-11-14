@@ -1,6 +1,6 @@
 package main
 
-// シリアライザの双子 (b) 素直な形: 各節が自分の JSON の文字列を作って返し、親が子の片を繋ぐ（返るバイトが段ごとに写る — 写しの量 ∝ 深さ）。
+// シリアライザの対 (b) 素直な形: 各節が自分のJSONの文字列を作って返し、親が子の片を繋ぐ（返るバイトがレベルごとにコピーされる — コピーの量 ∝ 深さ）。
 // (a) = ../builder（mut builder を引き回す形）。出力は (a) と同じバイト列（長さと FNV で照合）
 import "std/builder"
 import "std/convert"
@@ -137,8 +137,8 @@ func sN5(n N5) string {
     return "{\"id\":${n.id},\"name\":\"${n.name}\",\"score\":${convert.FormatFloat(n.score)}}"
 }
 
-// join は片を ',' で繋ぐ（std に strings.Join が無いので同じ形を書く — 片の長さの和を 1 回だけ写す。
-// `s = s + "," + p` の素直な繋ぎは先端一致の concat の in-place 成長が無いので 2 乗の写し — 深さ 2〔片 550 個〕で region 4 GB を溢れた）
+// joinは片を ',' で繋ぐ（stdにstrings.Joinが無いので同じ形を書く — 片の長さの和を1回だけコピーする。
+// `s = s + "," + p` の素直な繋ぎは先端一致のconcatのin-place成長が無いので2乗のコピー — 深さ2〔片550個〕でregion 4 GBを溢れた）
 func join(ps []string) string {
     mut o := builder.Builder[byte]{}
     for i <- iter.Range(0, len(ps)) {

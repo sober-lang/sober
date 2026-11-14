@@ -12,7 +12,7 @@ func main() {
         println("stdout error")
     }
     println("line 3 (println)")
-    // 標準エラーは照合しない（ハーネスは stdout だけを見る）— 書けることだけ確かめる
+    // 標準エラーは照合しない（ハーネスはstdoutだけを見る）— 書けることだけ確認する
     e2 := io.WriteStderr(bytes("to stderr\n"))
     if e2 != nil {
         println("stderr error")

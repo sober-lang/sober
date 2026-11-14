@@ -1,39 +1,39 @@
 package loader
 
-// flow typing の連鎖と早期脱出（language.md 427 行の flow typing の改訂）を脱糖の固定テンプレートで if の入れ子に写す。
-// 以降の層（desugar・lower・typer・analyzer）は写した後の木（単独の `x != nil` / `x == nil` を条件に持つ if）だけを読む — コア・Lean は無変更。
+// flow typing の連鎖と早期脱出（language.md 427行の flow typing の改訂）を脱糖の固定テンプレートでifの入れ子に変換する。
+// 以降の層（desugar・lower・typer・analyzer）は変換した後の木（単独の `x != nil` / `x == nil` を条件に持つif）だけを読む — コア・Leanは無変更。
 //
 // ① `&&` の連鎖の中の `x != nil`（右辺と本体で x は T）— else の無い if:
 //        if A && x != nil && B { T }   →   if A { if x != nil { if B { T } } }
 // ② `||` の連鎖の中の `x == nil` で、then が脱出（return / break / continue）1 文だけ（否定側 = else で x は T）:
 //        if A || x == nil || B { T } else { E }
 //     →  if A { T } else { if x == nil { T } else { if B { T } else { E } } }
-//     （then は脱出なので複製しても x を絞った形で値として読まれない — 脱出で終わらない then は写さない）
+//     （thenは脱出なので複製してもxを絞った形で値として読まれない — 脱出で終わらないthenは変換しない）
 // ③ 早期脱出: 文の列の中の else の無い `if C { …; return }`（C は `x == nil` か ② の連鎖）の後ろの文を else に入れる:
 //        if x == nil { return … }  rest…   →   if x == nil { return … } else { rest… }
-//     （rest の中で x は T。defer・束縛の見える範囲は列の終わりと同じ — else の腕は region 境界ではない）
+//     （restの中でxはT。defer・束縛の見える範囲は列の終わりと同じ — elseの分岐はregion境界ではない）
 // ④ 値の位置の `&&` / `||`（else つき if の条件を含む — ①〜③ の if の条件は除く）の中の `x != nil` / `x == nil`（右の項で x は T）:
 //        A && x != nil && B   →   if A { if x != nil { B } else { false } } else { false }
 //        A || x == nil || B   →   if A { true } else { if x == nil { true } else { B } }
-//     （複製するのは定数の腕だけ）
+//     （複製するのは定数の分岐だけ）
 // ⑤ else つき if の本体（`&&` は then・`||` は else — ② の形を除く）: 条件は ④ の形・本体は連鎖の nil 判定の名前ごとの単独の判定で包む:
 //        if A && x != nil && B { T } else { E }   →   if <④ の形> { if x != nil { T } else { $unreach() } } else { E }
 //        if A || x == nil || B { T } else { E }   →   if <④ の形> { T } else { if x != nil { E } else { $unreach() } }
-//     （T・E は 1 回ずつ — else の腕の複製は lower の展開で膨らむ〔自己 build の RSS 479 → 2248 MB を実測〕。条件の値が真〔|| は偽〕なら
-//      判定は必ず成り立つ — 判定より後ろの項が x に書くなら包まない〔下の ⑥ の注〕。`$unreach` は利用者が書けない名前で、
-//      後段は到達しない点〔panic の効果に数えない〕として読む）
+//     （T・Eは1回ずつ — elseの分岐の複製はlowerの展開で膨らむ〔自己buildのRSS 479 → 2248 MBを実測〕。条件の値が真〔|| は偽〕なら
+//      判定は必ず成り立つ — 判定より後ろの項がxに書くなら包まない〔下の ⑥ の注記〕。`$unreach` は利用者が書けない名前で、
+//      後段は到達しない点〔panicのエフェクトに数えない〕として読む）
 // ⑥ while の条件の `&&` の連鎖の中の `x != nil`（本体で x は T — 周の頭で毎回絞り直す）:
 //        while C { B }   →   while true { if C { B } else { break } }
 //     （if は ⑤ / 単独の判定の形で絞る。本体の中の x への代入で絞りが外れ、次の周の頭でまた絞る — desugar/narrowkill.sober）
 // ⑤ の再判定は、判定より後ろの項が x に書く（`f(mut x)`・式の中の代入）なら作らない（本体の x は T? のまま — 書いた後に再判定すると nil で $unreach に落ちる）
-// 写しは固定点まで回す（写した後の入れ子にまた連鎖が残る）。名前の判定は字面だけ（x の型は見ない — 型が T? でなくても写しは意味を変えない）
+// 変換は固定点まで回す（変換した後の入れ子にまた連鎖が残る）。名前の判定は字面だけ（xの型は見ない — 型がT? でなくても変換は意味を変えない）
 
 import "std/builder"
 import "std/iter"
 import "ast"
 import "lexer"
 
-// 全ファイルの木の flow typing の連鎖と早期脱出を写す
+// 全ファイルの木の flow typing の連鎖と早期脱出を変換する
 func flowAll(ts []ast.Tree) []ast.Tree {
     mut out := mut []ast.Tree{}
     for i <- iter.Range(0, len(ts)) {
@@ -42,7 +42,7 @@ func flowAll(ts []ast.Tree) []ast.Tree {
     return freeze(out)
 }
 
-// 木 t を固定点まで写す
+// 木tを固定点まで変換する
 func flowFix(t0 ast.Tree) ast.Tree {
     mut t := t0
     mut round := 0
@@ -79,7 +79,7 @@ func nilTestName(t ast.Tree, n0 int) int {
     return if t.nodes[l].kind == ast.EIdent { t.nodes[l].a } else { t.nodes[unparen(t, x.c)].a }
 }
 
-// 式 n が名前 nm を読むか（辿らない種類の節は読むとみなす — 写しは意味を変えないので過剰側は安全）
+// 式nが名前nmを読むか（辿らない種類の節は読むとみなす — 変換は意味を変えないので過剰側は安全）
 func mentions(t ast.Tree, n int, nm int) bool {
     x := t.nodes[n]
     k := x.kind
@@ -112,7 +112,7 @@ func mentions(t ast.Tree, n int, nm int) bool {
     return true
 }
 
-// 連鎖の節 n とその内側の同じ演算子の節を kept に（左結合の内側の節を ④ が写すと ①〜③ の連鎖が崩れる）
+// 連鎖の節nとその内側の同じ演算子の節をkeptに（左結合の内側の節を ④ が変換すると ①〜③ の連鎖が崩れる）
 func keepChain(t ast.Tree, kept mut []bool, n int) {
     kept[n] = true
     x := t.nodes[n]
@@ -122,7 +122,7 @@ func keepChain(t ast.Tree, kept mut []bool, n int) {
     }
 }
 
-// keepChain の片側 c（同じ演算子 op の節なら印を付けて潜る）
+// keepChainの片側c（同じ演算子opの節ならマークを付けて潜る）
 func keepSide(t ast.Tree, kept mut []bool, c int, op int) {
     u := unparen(t, c)
     if t.nodes[u].kind == ast.EBinary && t.nodes[u].a == op {
@@ -181,7 +181,7 @@ func diverges(t ast.Tree, blk int) bool {
     return s == ast.SRet || s == ast.SBreak || s == ast.SContinue
 }
 
-// 写しの作業場（足す節・データ）
+// 変換の作業場（足す節・データ）
 type Fx struct {
     n0 int
     nb builder.Builder[ast.Node]
@@ -210,7 +210,7 @@ func fxBlock(x mut Fx, e int, tok int) int {
     return fxNode(mut x, ast.Node{ast.KBlock, tok, ast.PutList(mut x.db, []int{s}), 0, 0, 0, 0, 0})
 }
 
-// 式 e を唯一の文に持つ EBlock（else の腕）
+// 式eを唯一の文に持つEBlock（elseの分岐）
 func fxBlockE(x mut Fx, e int, tok int) int {
     s := fxNode(mut x, ast.Node{ast.SExpr, tok, e, 0, 0, 0, 0, 0})
     return fxNode(mut x, ast.Node{ast.EBlock, tok, ast.PutList(mut x.db, []int{s}), 0, 0, 0, 0, 0})
@@ -221,7 +221,7 @@ func fxConst(x mut Fx, kw string, tok int) int {
     return fxNode(mut x, ast.Node{ast.EIdent, tok, ast.PutLit(mut x.db, kw), 0, 0, 0, 0, 0})
 }
 
-// 名前 kw だけの else の腕
+// 名前kwだけのelseの分岐
 func fxConstE(x mut Fx, kw string, tok int) int {
     return fxBlockE(mut x, fxConst(mut x, kw, tok), tok)
 }
@@ -245,7 +245,7 @@ func fxValueChain(x mut Fx, cs []int, p int, op int, tok int) ast.Node {
     return if and { ast.Node{ast.EIf, tok, head, fxBlock(mut x, m, tok), fxConstE(mut x, kw, tok), 0, 0, 0} } else { ast.Node{ast.EIf, tok, head, fxBlock(mut x, fxConst(mut x, kw, tok), tok), fxBlockE(mut x, m, tok), 0, 0, 0} }
 }
 
-// 到達しない点 `$unreach()` だけの else の腕
+// 到達しない点 `$unreach()` だけのelseの分岐
 func fxUnreachE(x mut Fx, tok int) int {
     callee := fxNode(mut x, ast.Node{ast.EIdent, tok, ast.PutLit(mut x.db, "$unreach"), 0, 0, 0, 0, 0})
     call := fxNode(mut x, ast.Node{ast.ECall, tok, callee, ast.PutList(mut x.db, []int{}), 0, 0, 0, 0})
@@ -287,7 +287,7 @@ func fxNarrowBody(t ast.Tree, x mut Fx, cs []int, want int, blk int, tok int) in
     return out
 }
 
-// 節 n の中に名前 nm への書き（名前・道の根への代入・mut 実引数）があるか（ラムダの中は数えない — desugar/narrowkill.sober の writesN と同じ線）
+// 節nの中に名前nmへの書き（名前・パスの根への代入・mut実引数）があるか（ラムダの中は数えない — desugar/narrowkill.soberのwritesNと同じ基準）
 func writesT(t ast.Tree, n int, nm int) bool {
     if n < 0 {
         return false
@@ -324,7 +324,7 @@ func writesT(t ast.Tree, n int, nm int) bool {
         return writesT(t, x.a, nm) || writesT(t, x.b, nm)
     }
     if k == ast.KNamedArg || k == ast.KCase || k == ast.KElem {
-        // a は名前 / パターンの列 / 欄の名前
+        // aは名前 / パターンの列 / フィールドの名前
         return writesT(t, x.b, nm)
     }
     if k == ast.EUnary {
@@ -372,7 +372,7 @@ func writesLT(t ast.Tree, l int, nm int) bool {
     return false
 }
 
-// 道（`x.f`・`x[i]`）の根が名前 nm か
+// パス（`x.f`・`x[i]`）の根が名前nmか
 func rootT(t ast.Tree, n0 int, nm int) bool {
     mut n := n0
     while t.nodes[n].kind == ast.ESelector || t.nodes[n].kind == ast.EIndex || t.nodes[n].kind == ast.EParen {
@@ -381,7 +381,7 @@ func rootT(t ast.Tree, n0 int, nm int) bool {
     return t.nodes[n].kind == ast.EIdent && strEqPool(t, t.nodes[n].a, nm)
 }
 
-// mut 実引数の道（"x" / "x.f"）の根が nm か
+// mut実引数のパス（"x" / "x.f"）の根がnmか
 func mutRootT(t ast.Tree, path int, nm int) bool {
     n := t.data[nm]
     p := t.data[path]
@@ -427,7 +427,7 @@ func nilIn(t ast.Tree, n int, op int, want int, multi bool) bool {
     return false
 }
 
-// 節 nd を flowRound が写すか（下の ①〜③ の条件と同じ — 写す節が 1 つも無い周は節の表とデータの写しを作らずに返す）
+// 節ndをflowRoundが変換するか（下の ①〜③ の条件と同じ — 変換する節が1つも無い周は節の表とデータのコピーを作らずに返す）
 func flowAt(t ast.Tree, nd ast.Node) bool {
     if nd.kind == ast.EIf {
         return fiveAt(t, nd) != 0 || nd.c < 0 && nilIn(t, nd.a, lexer.AmpersandAmpersand, 1, true) ||
@@ -460,7 +460,7 @@ func flowAt(t ast.Tree, nd ast.Node) bool {
     return false
 }
 
-// 木を 1 周写す（写したら changed）
+// 木を1周変換する（変換したらchanged）
 func flowRound(t ast.Tree) (ast.Tree, bool) {
     n0 := len(t.nodes)
     mut any := false
@@ -479,7 +479,7 @@ func flowRound(t ast.Tree) (ast.Tree, bool) {
         builder.Push(mut x.db, t.data[j])
     }
     mut changed := false
-    // ①〜③ に任せる if の条件（④ で写さない）
+    // ①〜③ に任せるifの条件（④ で変換しない）
     mut kept := mut []bool{}
     for i <- iter.Range(0, n0) {
         kept = append(kept, false)
@@ -546,7 +546,7 @@ func flowRound(t ast.Tree) (ast.Tree, bool) {
                     p = q
                 }
             }
-            // else のある if は写さない（else の腕〔else-if の連鎖ごと〕の複製が lower の展開で膨らむ — 自己 build の RSS 479 → 2248 MB の実測）
+            // elseのあるifは変換しない（elseの分岐〔else-ifの連鎖ごと〕の複製がlowerの展開で膨らむ — 自己buildのRSS 479 → 2248 MBの実測）
             if p >= 0 && len(ands) > 1 && nd.c < 0 {
                 els := nd.c
                 // 中: x != nil の then = 残りの連鎖の if（無ければ元の then）

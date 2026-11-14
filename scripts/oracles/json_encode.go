@@ -1,4 +1,4 @@
-// examples/json_encode の Go の双子（encoding/json.Marshal — 欄の順・null・エスケープ・float の綴りが同じこと。rename は欄のタグで）
+// examples/json_encodeの比較用のGoの実装（encoding/json.Marshal — フィールドの順・null・エスケープ・floatの綴りが同じこと。renameはフィールドのタグで）
 package main
 
 import (

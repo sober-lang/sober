@@ -1,31 +1,31 @@
 package lower
 
-// SLP の束ね: ブロックの中の直線で、同じ根の隣り合う語 k, k + 1 への float の値の store の対（種）から、
-// 2 本の値の木を同時に下って packed f64（OpPMem / OpPArith — ir.sober）の 1 本に束ねる。B2 の最後（vec の隣・cmpDup の手前）・最適化の
-// バックエンドの経路だけ・`--no-vec` で外れる（網 = 束ねた ≟ 束ねない）。
+// SLPのまとめ: ブロックの中の直線で、同じ根の隣り合うワードk, k + 1へのfloatの値のstoreの対（シード）から、
+// 2本の値の木を同時に下ってpacked f64（OpPMem / OpPArith — ir.sober）の1本にまとめる。B2の最後（vecの隣・cmpDupの手前）・最適化の
+// バックエンドの経路だけ・`--no-vec` で外れる（検査 = まとめた ≟ まとめない）。
 //   対の下り方: 同じ float の演算（add〜div・sqrt）→ packed の演算・同じ根の k, k + 1 の load → 16 B の load・同じ値（同じ値の番号か、間に
-//   書き込みの無い同じ番地の load）→ splat・それ以外 → pack（スカラーの 2 本を詰める）。木の形をそのまま写すので結合則は変わらない
+//   書き込みの無い同じ番地のload）→ splat・それ以外 → pack（スカラーの2本を詰める）。木の形をそのままコピーするので結合則は変わらない
 //   （(dx × b[p+6]) × mag は pmul(pmul(dxy, splat b[p+6]), splat mag)）— レーンごとに addsd 等と同じ丸めで、出力はバイト一致のまま。
-//   費用の模型: 束ねた演算・load・store を +1（2 本 → 1 本）、splat を −1・pack を −2 と数え、種ごとの和が正のときだけ採る。
-//   束ねた演算のレーンの値（dx, dy）のスカラーの使い手（dsq）が全部このブロックの中で束ねた点より後ろなら lo / hi で取り出す（スカラーの鎖が死ぬ）。
-// 置き場: 束ねた演算はレーンの遅い側の位置・16 B の load はどちらかのレーンの位置（間に相手の語へ書く store が無い側 — 前を優先）・16 B の store は
-//   遅い側の store の位置。最後に、新しい並びでメモリの読み書きの元の順が入れ替わった組（片方が書き込み・同じ根の別の語でない）が無いことを
-//   確かめ、あればそのブロックは書き換えない（根の違う番地は重なりうるとみなす）。
-// STLF の規律: 16 B で書いた対は、次に読む側も同じ対の 16 B の load に束ねる（同じ鍵）。
-// v128 の約束（検証器 vfyV128）: 呼び出し系の op のあるブロックは対象外・束ねた値はブロックの中で閉じる。task を使うプログラムには掛けない
+//   費用の模型: まとめた演算・load・storeを +1（2本 → 1本）、splatを −1・packを −2と数え、シードごとの和が正のときだけ採る。
+//   まとめた演算のレーンの値（dx, dy）のスカラーの使い手（dsq）が全部このブロックの中でまとめた点より後ろならlo / hiで取り出す（スカラーのチェーンが死ぬ）。
+// 配置先: まとめた演算はレーンの遅い側の位置・16 Bのloadはどちらかのレーンの位置（間に相手のワードへ書くstoreが無い側 — 前を優先）・16 Bのstoreは
+//   遅い側のstoreの位置。最後に、新しい並びでメモリの読み書きの元の順が入れ替わった組（片方が書き込み・同じ根の別のワードでない）が無いことを
+//   確認し、あればそのブロックは書き換えない（根の違う番地は重なりうるとみなす）。
+// STLFの規律: 16 Bで書いた対は、次に読む側も同じ対の16 Bのloadにまとめる（同じ鍵）。
+// v128の約束（検証器vfyV128）: 呼び出し系のopのあるブロックは対象外・まとめた値はブロックの中で閉じる。taskを使うプログラムには掛けない
 // （B2 の後のキャンセルの検査点〔cutInsert — call〕が全展開の直線の途中に入り、v128 の区間を跨ぎうる）。
-// 表は stride の平らな列（値 VS・位置 PS・節 NS 語）で、先に確保する（append の点を増やすと判定の仕事が大きさに比例して増える）
+// 表はstrideの平らな列（値VS・位置PS・節NSワード）で、先に確保する（appendの点を増やすと判定の仕事が大きさに比例して増える）
 
 import "desugar"
 import "std/iter"
 
 const SK_OP = 1   // packed の演算（op = BFAdd〜BFDiv・BFSqrt）
-const SK_LD = 2   // 16 B の load（op = 根・wd = 語）
+const SK_LD = 2   // 16 Bのload（op = 根・wd = ワード）
 const SK_SPL = 3  // splat（x）
 const SK_PK = 4   // pack（x, y）
-const SK_ST = 5   // 16 B の store（op = 根・wd = 語・c1 = 子）
+const SK_ST = 5   // 16 Bのstore（op = 根・wd = ワード・c1 = 子）
 
-// 値の表（VS 語）: 定数か（1 — 2 = float の演算の値）・定数の値・このブロックの位置（-1 = 外）・関数全体の使用の数・ブロックの使用の数（消す store を
+// 値の表（VSワード）: 定数か（1 — 2 = floatの演算の値）・定数の値・このブロックの位置（-1 = 外）・関数全体の使用の数・ブロックの使用の数（消すstoreを
 // 除く）・その最小の位置・取り出しの置き換え（-1 = 無し・-2 - 2k - l = 節 k のレーン l の予約・≥ 0 = 値）・対の表の頭
 const VS = 8
 const V_ISC = 0
@@ -36,9 +36,9 @@ const V_INB = 4
 const V_MNU = 5
 const V_REP = 6
 const V_MH = 7
-// 位置の表（PS 語）: 命令・メモリの種類（0 = 触れない・1 = load・2 = store・3 = 障壁）・根（-1 = 不明）・語・消す store か
+// 位置の表（PSワード）: 命令・メモリの種類（0 = 触れない・1 = load・2 = store・3 = 障壁）・根（-1 = 不明）・ワード・消すstoreか
 const PS = 5
-// 節（NS 語）: 種類・置き場（この位置の命令の手前）・x・y・子 1・子 2・op・語・同じ x の鎖の次・値
+// 節（NSワード）: 種類・配置先（この位置の命令の手前）・x・y・子1・子2・op・ワード・同じxのチェーンの次・値
 const NS = 10
 
 type SlpW struct {
@@ -48,7 +48,7 @@ type SlpW struct {
     d mut []int
     gi []int     // 値 → 定数の添字の gep.word の命令（-1 = 無し）
     nn int       // 節の数
-    cap int      // 節の上限（超えたら種を捨てる）
+    cap int      // 節の上限（超えたらシードを捨てる）
     last int     // slpRun の結果の節
 }
 
@@ -115,7 +115,7 @@ func slpFunc(st mut St, f FnRef) {
     }
 }
 
-// ブロック b を束ねる（書き換えたら真）
+// ブロックbをまとめる（書き換えたら真）
 func slpBlock(st mut St, w mut SlpW, f FnRef, b BlkRef) bool {
     mut n := 0
     mut i := irBlkIHead(mut st, b)
@@ -143,7 +143,7 @@ func slpBlock(st mut St, w mut SlpW, f FnRef, b BlkRef) bool {
         }
         w.p[q * PS] = int(i)
         if op == OpLoad || op == OpStore {
-            // (根, 語): 定数の添字の gep.word を根まで辿る
+            // (根, ワード): 定数の添字のgep.wordを根まで辿る
             mut rt := irInsA(mut st, i)
             mut wd := irInsB(mut st, i)
             while w.gi[rt] >= 0 && w.v[irInsB(mut st, InsRef(w.gi[rt])) * VS + V_ISC] == 1 {
@@ -160,7 +160,7 @@ func slpBlock(st mut St, w mut SlpW, f FnRef, b BlkRef) bool {
         q += 1
         i = irInsNext(mut st, i)
     }
-    // 種: lane 0 = 語 k の store・lane 1 = 前後で最も近い語 k + 1 の store（どちらも float の演算の値）
+    // シード: lane 0 = ワードkのstore・lane 1 = 前後で最も近いワードk + 1のstore（どちらもfloatの演算の値）
     mut seeds := 0
     for a <- iter.Range(0, n) {
         if slpStoreF(mut st, mut w, a, -1) {
@@ -176,7 +176,7 @@ func slpBlock(st mut St, w mut SlpW, f FnRef, b BlkRef) bool {
             }
             lo := if c < a { c } else { a }
             hi := if c < a { a } else { c }
-            // 間に同じ根の 2 語への store・根の違う読み書き・障壁・早い側の語の load が無い（16 B の store を遅い側へ寄せる）
+            // 間に同じ根の2ワードへのstore・根の違う読み書き・障壁・早い側のワードのloadが無い（16 Bのstoreを遅い側へ寄せる）
             mut ok := c >= 0
             for e <- iter.Range(lo + 1, if ok { hi } else { lo + 1 }) {
                 k := w.p[e * PS + 1]
@@ -203,7 +203,7 @@ func slpBlock(st mut St, w mut SlpW, f FnRef, b BlkRef) bool {
     if okb {
         slpEmit(mut st, mut w, f, b, n)
     }
-    // 後始末（値の表のうちこのブロックで書いた欄）
+    // 後始末（値の表のうちこのブロックで書いたフィールド）
     for k <- iter.Range(0, w.nn) {
         x := w.d[k * NS + 2]
         y := w.d[k * NS + 3]
@@ -231,7 +231,7 @@ func slpBlock(st mut St, w mut SlpW, f FnRef, b BlkRef) bool {
     return okb
 }
 
-// 位置 e が消していない store で、値がこのブロックの float の演算か（a >= 0 なら a の相手 — 同じ根・語 + 1）
+// 位置eが消していないstoreで、値がこのブロックのfloatの演算か（a >= 0ならaの相手 — 同じ根・ワード + 1）
 func slpStoreF(st mut St, w mut SlpW, e int, a int) bool {
     if w.p[e * PS + 1] != 2 || w.p[e * PS + 4] != 0 || (a >= 0 && (w.p[e * PS + 2] != w.p[a * PS + 2] || w.p[e * PS + 3] != w.p[a * PS + 3] + 1)) {
         return false
@@ -240,7 +240,7 @@ func slpStoreF(st mut St, w mut SlpW, e int, a int) bool {
     return dv >= 0 && w.v[irInsC(mut st, InsRef(w.p[e * PS])) * VS + V_ISC] == 2
 }
 
-// 節を足す（x の鎖に繋ぐ — store は鎖に入れない）
+// 節を足す（xのチェーンに繋ぐ — storeはチェーンに入れない）
 func slpNode(w mut SlpW, k int, at int, x int, y int, c1 int, c2 int, op int, wd int) int {
     id := w.nn
     o := id * NS
@@ -262,7 +262,7 @@ func slpNode(w mut SlpW, k int, at int, x int, y int, c1 int, c2 int, op int, wd
     return id
 }
 
-// n0 より後ろの節を捨てる（鎖の頭を戻す — 作った逆順に）
+// n0より後ろの節を捨てる（チェーンの頭を戻す — 作った逆順に）
 func slpRollback(w mut SlpW, n0 int) {
     while w.nn > n0 {
         w.nn = w.nn - 1
@@ -276,7 +276,7 @@ func slpRollback(w mut SlpW, n0 int) {
 // 対 (x0, y0) を作業列で後順に節にする（結果の節 = w.last）。返り値 = 作った節の費用の和 + 1（16 B の store の分）。節の上限を超えたら負
 func slpRun(st mut St, w mut SlpW, x0 int, y0 int, at0 int) int {
     mut gain := 1
-    // 作業列（4 語の枠 [x, y, 置き場, 状態]）と結果の列（先に確保 — 深さは節の数で抑えられる）
+    // 作業列（4ワードの枠 [x, y, 配置先, 状態]）と結果の列（先に確保 — 深さは節の数で抑えられる）
     mut fr := mut []int{}
     xFill(mut fr, 4 * w.cap + 16, 0)
     mut rs := mut []int{}
@@ -306,7 +306,7 @@ func slpRun(st mut St, w mut SlpW, x0 int, y0 int, at0 int) int {
             sm := slpSame(mut w, x, y, dx, dy)
             kx := if sm >= 0 { sm } else { x }
             ky := if sm >= 0 { sm } else { y }
-            // 同じ対の節（置き場が at 以前）
+            // 同じ対の節（配置先がat以前）
             mut m := w.v[kx * VS + V_MH]
             while m >= 0 && !(w.d[m * NS + 3] == ky && w.d[m * NS + 1] <= at) {
                 m = w.d[m * NS + 8]
@@ -379,7 +379,7 @@ func slpSame(w mut SlpW, x int, y int, dx int, dy int) int {
     return if dx < dy { x } else { y }
 }
 
-// x, y が同じ根の語 k, k + 1 の load なら 16 B の load の節（前の位置 — 間に遅い側の語への書き込みが無ければ — か遅い位置）・違えば -1
+// x, yが同じ根のワードk, k + 1のloadなら16 Bのloadの節（前の位置 — 間に遅い側のワードへの書き込みが無ければ — か遅い位置）・違えば -1
 func slpLoad(st mut St, w mut SlpW, x int, y int, dx int, dy int) int {
     if w.p[dx * PS + 1] != 1 || w.p[dy * PS + 1] != 1 || w.p[dx * PS + 2] < 0 || w.p[dx * PS + 2] != w.p[dy * PS + 2] || w.p[dy * PS + 3] != w.p[dx * PS + 3] + 1 ||
         irInsC(mut st, InsRef(w.p[dx * PS])) == 1 || irInsC(mut st, InsRef(w.p[dy * PS])) == 1 {
@@ -403,11 +403,11 @@ func slpLoad(st mut St, w mut SlpW, x int, y int, dx int, dy int) int {
 }
 
 // 新しい並び（slpOrder）で、メモリの読み書きの元の順が入れ替わった組に重なりうる書き込みが無いか（16 B の load / store は
-// 2 語の読み書き — 元の位置はレーンの命令の位置）
+// 2ワードの読み書き — 元の位置はレーンの命令の位置）
 func slpOrderOk(w mut SlpW, n int) bool {
     mut ord := mut []int{}
     slpOrder(mut w, n, mut ord)
-    // 読み書きの列 [元の位置, 根, 語, 書き込みか]
+    // 読み書きの列 [元の位置, 根, ワード, 書き込みか]
     mut ac := mut []int{}
     xFill(mut ac, 4 * (n + 2 * w.nn), 0)
     mut m := 0
@@ -416,7 +416,7 @@ func slpOrderOk(w mut SlpW, n int) bool {
         k := e - n
         kd := if e < n { 0 } else { w.d[k * NS] }
         for l <- iter.Range(0, if e < n { (if w.p[e * PS + 1] != 0 && w.p[e * PS + 4] == 0 { 1 } else { 0 }) } else if kd == SK_LD || kd == SK_ST { 2 } else { 0 }) {
-            // 命令はその位置・16 B の load はレーンの load の位置・store は置き場以前で最も近い同じ根・語の消す store
+            // 命令はその位置・16 Bのloadはレーンのloadの位置・storeは配置先以前で最も近い同じ根・ワードの消すstore
             mut o := if e < n { e } else if kd == SK_LD { w.v[w.d[k * NS + 2 + l] * VS + V_DIX] } else { w.d[k * NS + 1] }
             while kd == SK_ST && o > 0 && !(w.p[o * PS + 4] == 1 && w.p[o * PS + 2] == w.d[k * NS + 6] && w.p[o * PS + 3] == w.d[k * NS + 7] + l) {
                 o -= 1
@@ -438,7 +438,7 @@ func slpOrderOk(w mut SlpW, n int) bool {
     return true
 }
 
-// 新しい並び（e < n = 位置 e の命令・n + k = 節 k）を out へ: 位置ごとに置き場がその位置の節（作った順）→ 命令
+// 新しい並び（e < n = 位置eの命令・n + k = 節k）をoutへ: 位置ごとに配置先がその位置の節（作った順）→ 命令
 func slpOrder(w mut SlpW, n int, out mut []int) {
     mut cnt := mut []int{}
     xFill(mut cnt, n + 1, 0)
@@ -523,7 +523,7 @@ func slpEmit(st mut St, w mut SlpW, f FnRef, b BlkRef, n int) {
             w.d[k * NS + 9] = r
             c1 := if w.d[k * NS + 4] >= 0 { w.d[w.d[k * NS + 4] * NS + 9] } else { -1 }
             c2 := if w.d[k * NS + 5] >= 0 { w.d[w.d[k * NS + 5] * NS + 9] } else { c1 }
-            // 種類ごとの欄: store / load = (根, 語, 値 / 根)・演算 = (op, 子 1, 子 2)・splat / pack = (種類, x, y)
+            // 種類ごとのフィールド: store / load = (根, ワード, 値 / 根)・演算 = (op, 子1, 子2)・splat / pack = (種類, x, y)
             linkInst(mut st, b, if kd == SK_ST || kd == SK_LD { mkInst(mut st, r, OpPMem, op, w.d[k * NS + 7], if kd == SK_ST { c1 } else { op }) } else if kd == SK_OP { mkInst(mut st, r, OpPArith, op, c1, c2) } else { mkInst(mut st, r, OpPArith, if kd == SK_SPL { PK_SPLAT } else { PK_PACK }, slpRep(mut w, w.d[k * NS + 2]), slpRep(mut w, w.d[k * NS + 3])) })
             for l <- iter.Range(0, if kd == SK_OP { 2 } else { 0 }) {
                 v := w.d[k * NS + 2 + l]

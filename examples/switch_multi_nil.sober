@@ -1,7 +1,7 @@
 package main
 
 // `(T, error?)` の 2 位置の switch（13 節 — `case v, nil:` / `case _, e:` / `case _, Label{…}:`）。loader の固定テンプレート（compiler/loader/mvcase.sober）で
-// `$v, $e := S; if $e != nil { … } else { … }` に写す。switch が文の値そのものなら束縛はその文の直前に置く
+// `$v, $e := S; if $e != nil { … } else { … }` に変換する。switchが文の値そのものなら束縛はその文の直前に置く
 
 import "std/iter"
 
@@ -28,7 +28,7 @@ func half(n int) (int, error?) {
     return n / 2, nil
 }
 
-// エラーを無名で畳む（値位置 + エラーの腕の return）
+// エラーを無名で畳む（値位置 + エラーの分岐のreturn）
 func use(n int) (int, error?) {
     value := switch call(n) {
     case v, nil: v
@@ -37,7 +37,7 @@ func use(n int) (int, error?) {
     return value + 1, nil
 }
 
-// 値の腕 + ラベルの腕（return の先頭の値）
+// 値の分岐 + ラベルの分岐（returnの先頭の値）
 func fallback(n int) int {
     return switch call(n) {
     case v, nil: v

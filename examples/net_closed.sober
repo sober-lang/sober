@@ -1,6 +1,6 @@
 package main
 
-// net 段 4a-2（N9 — 相手がもういない = io.Closed 1 本）: 誰も listen していない port への Dial（ECONNREFUSED — 非ブロックの connect は
+// net段階4a-2（N9 — 相手がもういない = io.Closed 1本）: 誰もlistenしていないportへのDial（ECONNREFUSED — 非ブロックのconnectは
 // 書けるようになってから SO_ERROR で読む）・読まずに閉じた相手からの RST（ECONNRESET）・その後の送信（EPIPE — MSG_NOSIGNAL でプロセスは落ちない）
 
 import "std/io"

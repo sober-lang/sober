@@ -1,6 +1,6 @@
 package main
 
-// 負例: tls.Conn は写せない（同一性の型 — net.Conn と同じ規則。diag.FileUse — desugar/filecheck・language.md 28 節の tls）
+// 負例: tls.Connはコピーできない（同一性の型 — net.Connと同じ規則。diag.FileUse — desugar/filecheck・language.md 28 節のtls）
 
 import "std/tls"
 

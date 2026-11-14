@@ -1,6 +1,6 @@
 package main
 
-// clone は slice / map だけを受ける（string は受けない — 書ける写しは bytes(s) を写す）
+// cloneはslice / mapだけを受ける（stringは受けない — 書けるコピーはbytes(s) をコピーする）
 func main() {
     x := clone("abc")
     println(len(bytes(x)))

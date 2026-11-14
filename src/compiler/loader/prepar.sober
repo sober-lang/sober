@@ -59,7 +59,7 @@ func preParse(m Manifest, fsm bool, sm map[string]string, pending []string, seen
     return PRound{true, freeze(fss), ts}
 }
 
-// 子の本体（1 ファイルの parse — 失敗は印だけ。拒否は逐次の巡回が parse し直して返す）
+// 子の本体（1ファイルのparse — 失敗はフラグだけ。拒否は逐次の巡回がparseし直して返す）
 func preOne(m Manifest, fsm bool, sm map[string]string, jb PJob, pc PCache) PTree {
     t, pp, e := parseFile(m, fsm, sm, jb.path, jb.std, jb.fi, pc)
     return PTree{t, pp, e == nil}

@@ -3,8 +3,8 @@ package desugar
 // 関数単位の check キャッシュの鍵 K-D: 検査する Def d の鍵 =
 // 版 ‖ コンパイラの鍵 ‖ trust ‖ d から届く項目の集合の和。項目 = 関数の署名・関数の本体・const・型宣言。辺 = 項目の字句の範囲の中の名前の参照
 // （ResolveTop / ResolveSel — 呼び出し・関数値・const・型名・合成リテラル・variant のパターン）。参照先が関数なら署名へ、さらに展開される関数か
-// ジェネリックなら本体へも（展開の閉包 ∪ インスタンス化する呼び先の本体 — d の脱糖が読む本体）。const は初期化式ごと（辞書 const のラムダを含む）。
-// 項目の中身 = 印字器の綴り（位置・コメントを持たない）‖ ファイルの import の表 ‖ 関数なら印（展開・mut の Def・closed・Def か・逃げ・上げない印）。
+// ジェネリックなら本体へも（展開のクロージャ ∪ インスタンス化する呼び先の本体 — dの脱糖が読む本体）。constは初期化式ごと（辞書constのラムダを含む）。
+// 項目の中身 = 印字器の綴り（位置・コメントを持たない）‖ ファイルのimportの表 ‖ 関数ならフラグ（展開・mutのDef・closed・Defか・逃げ・上げないフラグ）。
 // 名前の解決は束縛の隠しを見ない（多めに辺を張る — 鍵が多めに動くだけ）。型付けの前（PlanDefs と同じ前段）に組む
 
 import "ast"
@@ -34,7 +34,7 @@ type DkH struct {
     b int
 }
 
-// h に語 w を混ぜる
+// hにワードwを混ぜる
 func dkW(h DkH, w int) DkH {
     return DkH{dkMix(h.a, w), dkMix2(h.b, w)}
 }
@@ -170,8 +170,8 @@ func dkBucket(fl []int, nfile int) RefGraph {
     return csrN(freeze(src), freeze(dst), nfile)
 }
 
-// 名前の解決の memo（開番地 — 1 つの列に槽ごと DKM_W 語: 鍵のハッシュ〔0 = 空き〕・種類 + 8 × package・綴りの文字列・選択子の基底の名前の
-// 文字列〔無ければ -1〕・項目〔-1 = 無し〕。最後の語 = 積んだ数）。満ちたら積まずに解決するだけ
+// 名前の解決のmemo（開番地 — 1つの列に槽ごとDKM_Wワード: 鍵のハッシュ〔0 = 空き〕・種類 + 8 × package・綴りの文字列・選択子の基底の名前の
+// 文字列〔無ければ -1〕・項目〔-1 = 無し〕。最後のワード = 積んだ数）。満ちたら積まずに解決するだけ
 const DKM_CAP = 131072
 const DKM_W = 5
 
@@ -269,7 +269,7 @@ func dkImports(st mut S, f int) DkH {
     return h
 }
 
-// 項目の表と辺を組む（前段の後 — fnExpands と上げの印が決まっている）
+// 項目の表と辺を組む（前段の後 — fnExpandsと上げのフラグが決まっている）
 func dkGraph(st mut S) DkGraph {
     nfn := st.nfn
     // 型宣言の節（ファイル順・宣言順 = 昇順）と字句の範囲
@@ -365,7 +365,7 @@ func dkGraph(st mut S) DkGraph {
         }
         for n <- iter.Range(0, len(t.nodes)) {
             k := t.nodes[n].kind
-            // error の型（error? を含む — 仮引数・結果・欄・注釈）を書く項目は error の表を読む（全ラベルの閉じた union と payload の型 — errTy）
+            // errorの型（error? を含む — 仮引数・結果・フィールド・注釈）を書く項目はerrorの表を読む（全ラベルの閉じたunionとpayloadの型 — errTy）
             if k == ast.TName && dkIs(mut st, sA(nodeOf(mut st, dkTreeRef(f, n))), "error") {
                 z := zBlock(mut st, f, n)
                 o := if z >= 0 { nfn + z } else { rangeOfSorted(rr, t.nodes[n].tok) }
@@ -506,7 +506,7 @@ func dkKey(g DkGraph, nfn int, i int, base DkH, mark mut []int, stk mut []int) (
     return DkH{dkMix(base.a, s1), dkMix2(base.b, s2)}, nr, nb
 }
 
-// 開発の口（`sober check <entry> --emit=defkeys` / `--def-graph`）: 検査する Def ごとに `K 関数 鍵1 鍵2 届いた項目 本体の項目 名前`。
+// 開発のオプション（`sober check <entry> --emit=defkeys` / `--def-graph`）: 検査する Def ごとに `K 関数 鍵1 鍵2 届いた項目 本体の項目 名前`。
 // graph なら項目 `N 項目 種類 名前`・辺 `G 項目 項目` も（外部の集計ツールが読む形式）。self = コンパイラの鍵
 @errors(diag.CoreFragment, diag.TypeMismatch)
 func DefKeys(p loader.Program, excl []int, trust bool, self []byte, graph bool) ([]byte, error?) {
@@ -586,7 +586,7 @@ func dkName(st mut S, out mut []byte, pk int, s StrRef) {
 // `A Def 項目` の行で標準エラーへ（項目の符号 = 署名 fi・本体 nfn + fi・const 2nfn + c・型宣言 = −節・error の variant = −1）。
 // 照合（読んだ項目 ∈ 鍵の届く集合）は `--def-graph` と突き合わせる外の道具で行う
 
-// 今の Def が項目 code を読んだ印（Def の外・監査の切なら何もしない — 直前と同じ対は積まない）
+// 今のDefが項目codeを読んだフラグ（Defの外・監査の切なら何もしない — 直前と同じ対は積まない）
 func dkRead(st mut S, code int) {
     if st.dkCur == 0 {
         return

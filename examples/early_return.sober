@@ -1,6 +1,6 @@
 package main
 
-// V4-3: 途中 return / if 腕の return / ループ内の return / break / continue と defer の出口展開。
+// V4-3: 途中return / if分岐のreturn / ループ内のreturn / break / continueとdeferの出口展開。
 // 評価順は「値確定 → defer → 脱出」（codegen の runDefers と desugar の出口展開が同じ順を踏む）
 
 func trace(n int) int {
@@ -14,7 +14,7 @@ func order() int {
     return trace(100)
 }
 
-// 途中 return（後続の文は走らない）と if 腕の return
+// 途中return（後続の文は走らない）とif分岐のreturn
 func sign(x int) int {
     if x < 0 {
         return -1

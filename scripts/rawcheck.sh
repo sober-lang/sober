@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# rawcheck（stages の passes の段 — 設計整合パスの守り。2026-10-20 決定 (C2)・report-893 / 898）:
-# 同じ stage2 が「掛けた」（--emit=elf --passes）と「掛けない」（raw — --emit=ll のパスなし → zig cc -O0）の 2 通りに建てた check の経路の道具が、
-# 同じ入力に同じ出力を出すことを確かめる。道具 = tools/sobercheck（lexer → parser → loader → desugar → checker の判定 JSON）と
+# rawcheck（stagesのpassesのステージ — 設計整合パスの守り。2026-10-20決定 (C2)・report-893 / 898）:
+# 同じstage2が「掛けた」（--emit=elf --passes）と「掛けない」（raw — --emit=ll のパスなし → zig cc -O0）の2通りにビルドしたcheckの経路の道具が、
+# 同じ入力に同じ出力を出すことを確認する。道具 = tools/sobercheck（lexer → parser → loader → desugar → checkerの判定JSON）と
 # tools/desugardump（loader → desugar のコア AST の JSON — 旧来の照合〔stage3 / stage3raw の `check --core-json`〕と同じ形の出力）。
 # 入力 = compiler/app 自身（sobercheck — コンパイラのソース全部を通す）+ examples/*.sober の全部（2 道具とも）。
-# 2026-10-19 までの形（compiler/app 全体を raw で建てた stage3raw）は raw の .ll が 6.1 GB に育って clang の 4 GiB 上限を越えた（report-893）。
-#   scripts/rawcheck.sh <stage2> <ビルドの木（compiler/* + std/ の写し）> <作業 dir>   標準出力の最後の行が `rawcheck: ok …` か `rawcheck: FAIL …`
+# 2026-10-19までの形（compiler/app全体をrawでビルドしたstage3raw）はrawの .llが6.1 GBに育ってclangの4 GiB上限を越えた（report-893）。
+#   scripts/rawcheck.sh <stage2> <ビルドの木（compiler/* + std/ のコピー）> <作業dir>   標準出力の最後の行が `rawcheck: ok …` か `rawcheck: FAIL …`
 # 注意: raw の道具は SOBER_WORKERS=1 で走らせる — raw × M:N（W ≥ 2）は import を持つ入力で RegionExceeded{slot_capacity} で即死する別件の穴がある
 # （掛けた版は W に依らず正常 — report-898。出力は W に依らない約束なので照合の中身は変わらない）。raw は機械スタックも太いので ulimit -s unlimited
 set -uo pipefail
@@ -22,12 +22,12 @@ for t in sobercheck desugardump; do
     chmod +x "$W/$t.opt"
 done
 ulimit -s unlimited
-# ① コンパイラ自身（compiler/app — Manifest は stages の manifest の段と同じ形）
+# ① コンパイラ自身（compiler/app — Manifestはstagesのmanifestのステージと同じ形）
 (cd "$B" && { echo app; echo .; { find . -name '*.sober' -type f -not -path './std/*' | sed 's|^\./||'; find std -name '*.sober' -type f; } | LC_ALL=C sort; }) > "$W/app.m"
 (cd "$B" && SOBER_WORKERS=1 "$W/sobercheck.opt" < "$W/app.m" > "$W/app.opt" 2> /dev/null)
 (cd "$B" && SOBER_WORKERS=1 "$W/sobercheck.raw" < "$W/app.m" > "$W/app.raw" 2> /dev/null)
 [ -s "$W/app.opt" ] && cmp -s "$W/app.opt" "$W/app.raw" || fail "compiler/app: sobercheck の掛けた / 掛けないの判定が違う（$(head -c 100 "$W/app.opt") / $(head -c 100 "$W/app.raw")）"
-# ② examples/*.sober（std と examples を並べた根 — manifest の段と同じ組み方）
+# ② examples/*.sober（stdとexamplesを並べた根 — manifestのステージと同じ組み方）
 mkdir -p "$W/mroot" && ln -sfn "$ROOT/src/std" "$W/mroot/std" && ln -sfn "$ROOT/examples" "$W/mroot/examples"
 (cd "$W/mroot" && find -L std -name '*.sober' -type f | LC_ALL=C sort) > "$W/stdlist"
 one() { # one <entry>: 2 道具 × 掛けた / 掛けないの出力（と終了コード）を比べ、違えば DIFF 行

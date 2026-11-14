@@ -1,6 +1,6 @@
 package binary
 
-// AppendWord の網: 速い道（先端で 8 バイトを 1 本で書く — 粒の余り・粒をはみ出す道）と遅い道（先端でない列 — 1 バイトずつ）の両方が
+// AppendWordの検査: 高速パス（先端で8バイトを1本で書く — 粒の余り・粒をはみ出すパス）と低速パス（先端でない列 — 1バイトずつ）の両方が
 // k 回の 1 バイトの append と同じ列を作る
 
 import "std/iter"
@@ -35,7 +35,7 @@ func TestAppendWordMixed() {
         AppendWord(mut a, x, k)
         ref(mut r, x, k)
         if (i % 97) == 5 {
-            // 別の列で先端を奪う（次の AppendWord は遅い道か写しの後の先端）
+            // 別の列で先端を奪う（次のAppendWordは低速パスかコピーの後の先端）
             mut o := mut []byte{}
             o = append(o, byte(i & 0xff))
             AppendWord(mut o, x, 8)

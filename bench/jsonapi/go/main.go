@@ -1,4 +1,4 @@
-// jsonapi の Go の双子（素直形）: bufio.Scanner で行 → encoding/json の Unmarshal を struct へ（必須欄の有無はポインタの欄の nil で見る）→
+// jsonapiの比較用のGoの実装（素直形）: bufio.Scannerで行 → encoding/jsonのUnmarshalをstructへ（必須フィールドの有無はポインタのフィールドのnilで見る）→
 // 検証 → 小計・割引・税 → json.Marshal でレスポンス。出力は Sober 版とバイト一致
 package main
 

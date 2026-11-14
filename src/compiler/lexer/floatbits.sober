@@ -1,8 +1,8 @@
 package lexer
 
-// 10 進の浮動小数リテラル → IEEE 754 binary64 のビット列（language.md 37 節）。公開の口 convert.ParseFloat（正確な値を 1 回だけ
+// 10進の浮動小数リテラル → IEEE 754 binary64のビット列（language.md 37 節）。公開のAPI convert.ParseFloat（正確な値を1回だけ
 // 最近接・偶数へ丸める — 実行時の解析と同じ算法なので、リテラルと実行時の解析は同じビット）+ math.Bits。算法の本体は std/internal/floatfmt で、
-// compiler/ は std の外なので internal を直に import できない（20 節の検問）— 公開の口を通す
+// compiler/ はstdの外なのでinternalを直にimportできない（20 節の検問）— 公開のAPIを通す
 
 import "std/convert"
 import "std/math"

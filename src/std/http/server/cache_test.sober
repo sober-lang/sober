@@ -1,13 +1,13 @@
 package server
 
-// 認証の源の口と保存の方針の網（white-box — 非公開の request / frameAt / checkField 経由の頭）: Cookie の切り出し（RFC 6265 5.4 の `; ` 区切り・
+// 認証の源のインターフェースと保存の方針の検査一式（white-box — 非公開のrequest / frameAt / checkField経由の頭）: Cookieの切り出し（RFC 6265 5.4の `; ` 区切り・
 // 前後の空白・`"` の囲み・名前の大文字小文字・`=` の無い組・2 本の Cookie 行）・Header が認証のヘッダを読まない・Authorization・Dispatch がルートの
-// cache を cache の無い応答にだけ写す
+// cacheをcacheの無いレスポンスにだけコピーする
 
 import "std/http"
 import "std/strings"
 
-// 頭 h（要求行から空行まで）の要求
+// 頭h（リクエスト行から空行まで）のリクエスト
 func rq(h string) Request {
     b := bytes(h)
     mut hs := mut []int{}
@@ -76,7 +76,7 @@ func TestRouteCache() {
     assert(cacheValue(Dispatch(rs, rq("GET /a HTTP/1.1\r\n\r\n")).cache) == "max-age=60")
     assert(cacheValue(Dispatch(rs, rq("GET /b HTTP/1.1\r\n\r\n")).cache) == "no-store")
     assert(cacheValue(Dispatch(rs, rq("GET /c HTTP/1.1\r\n\r\n")).cache) == "private")
-    // 404 には行の方針を写さない
+    // 404には行の方針をコピーしない
     assert(cacheValue(Dispatch(rs, rq("GET /d HTTP/1.1\r\n\r\n")).cache) == "private")
     // Mount はルートの cache を保つ
     m := Mount("/p", rs, []Middleware{})
@@ -84,7 +84,7 @@ func TestRouteCache() {
 }
 
 func TestUnstated() {
-    // ルートの行の Unstated は Cache-Control の行を書かない（一般の道・圧縮の道とも）・既定と他の行は不変
+    // ルートの行のUnstatedはCache-Controlの行を書かない（一般のパス・圧縮のパスとも）・既定と他の行は不変
     rs := []Route{
         Route{method: "GET", path: "/u", handler: (r) => Text("u"), middleware: []Middleware{}, cache: Unstated{}},
         Route{method: "GET", path: "/d", handler: (r) => Text("d"), middleware: []Middleware{}},

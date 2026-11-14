@@ -1,4 +1,4 @@
-// math_round.go — examples/math_round.sober の Go の双子（go run scripts/oracles/math_round.go > examples/math_round.out）。
+// math_round.go — examples/math_round.soberの比較用のGoの実装（go run scripts/oracles/math_round.go > examples/math_round.out）。
 // Go の math.Trunc / Floor / Ceil / Min / Max。印字は strconv 'g' -1（Sober の println と同じ綴り）・NaN は「NaN か」だけ（キー 1）
 package main
 

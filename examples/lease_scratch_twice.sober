@@ -1,6 +1,6 @@
 package main
 
-// Scratch の容量は 1 回だけ — 窓の中で作り直すと panic(pool.ScratchSized{})（置き場が宙吊りにならない）
+// Scratchの容量は1回だけ — ウィンドウの中で作り直すとpanic(pool.ScratchSized{})（配置先が宙吊りにならない）
 
 import "std/task"
 import "std/pool"

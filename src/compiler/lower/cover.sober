@@ -1,14 +1,14 @@
 package lower
 
-// カバレッジの計器（std/internal/cover の intrinsic — loader/coverx.sober の写しが足した数え口）: 点 k の印 = 大域 cover.hit の k 番目の
-// バイトに 1（cont.sober の ioBuiltin）。プロセスの終わりに、$cover.Start が置いた fd があればバイト列を 1 回 write する — 終わりの道の全部:
+// カバレッジの計装（std/internal/coverのintrinsic — loader/coverx.soberのコピーが足したカウンタ）: 点kのフラグ = 大域cover.hitのk番目の
+// バイトに1（cont.soberのioBuiltin）。プロセスの終わりに、$cover.Startが置いたfdがあればバイト列を1回writeする — 終わりのパスの全部:
 // main の後（rt.depth_report）・rt.panic（101 — task.Join の死の枝も）・rt.panic_mem（102）・rt.segv（StackExceeded）・rt.deadlock。
-// 停止のシグナル（143 / 130 — 書き出しは async-signal-safe でない）と起動の予約の失敗（main の前）は書かない。数え口を使わないプログラムの IR は不変（大域も書き出しも作らない）
+// 停止のシグナル（143 / 130 — 書き出しはasync-signal-safeでない）と起動の予約の失敗（mainの前）は書かない。カウンタを使わないプログラムのIRは不変（大域も書き出しも作らない）
 
 import "desugar"
 import "loader"
 
-// 宣言（数え口の intrinsic から）
+// 宣言（カウンタのintrinsicから）
 func needCover(st mut St) {
     lsNeed(mut st, NEED_COVER, 0)
     if st.covG == -1 {
@@ -17,7 +17,7 @@ func needCover(st mut St) {
     }
 }
 
-// 選ばれた変異の番号の大域（宣言 — 読み口と置き口の intrinsic から。0 = 基線）
+// 選ばれたミュータントの番号の大域（宣言 — 読みのAPIと置きのAPIのintrinsicから。0 = 基線）
 func needCoverMid(st mut St) {
     lsNeed(mut st, NEED_COVERMID, 0)
     if st.covMidG == -1 {

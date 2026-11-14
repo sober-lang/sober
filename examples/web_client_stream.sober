@@ -1,6 +1,6 @@
 package main
 
-// Web クライアントのガイド 5 節: http.client.Stream で本文を切片のまま受ける（応答を丸ごと積まない）。最初の要素は頭と空の切片で、
+// Web クライアントのガイド 5 節: http.client.Stream で本文を切片のまま受ける（レスポンスを丸ごと積まない）。最初の要素は頭と空の切片で、
 // 以降は届いた切片。外の API の代役は長さ不定（chunked）の本文を 3 回に分けて送る
 
 import "std/http/client"

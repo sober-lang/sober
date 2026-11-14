@@ -1,6 +1,6 @@
 package server
 
-// SSE の組み立ての網（FormatEvent の表 — data の改行〔LF・CRLF・CR・末尾・連続・空〕の割り・欄の並び・空の event / id・retry）と
+// SSEの組み立ての検査一式（FormatEventの表 — dataの改行〔LF・CRLF・CR・末尾・連続・空〕の割り・フィールドの並び・空のevent / id・retry）と
 // 差し込みの封（eventBad — event / id の CR・LF・NUL。panic(BadEvent) そのものは examples/http_sse_bad）・text/event-stream を compression: の対象から外す
 
 func TestFormatEvent() {

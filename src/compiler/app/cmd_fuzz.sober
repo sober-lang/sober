@@ -13,10 +13,10 @@ import "lower"
 import "loader"
 
 // `sober fuzz <package> --run <TestXxx> [--time <dur>] [--hang <dur>] [--check <n>] [--sched]`: テストのビルドを <work>/t に書き、TestXxx を駆動役
-// （argv の `quick:fuzz=<ms>`）で走らせる。見つけた失敗は縮めて報告し、列を <package>/testdata/fuzz/<TestXxx>/ へ書く（次の sober test が先に再生する）。
+// （argvの `quick:fuzz=<ms>`）で走らせる。見つけた失敗はシュリンクして報告し、列を <package>/testdata/fuzz/<TestXxx>/ へ書く（次の sober test が先に再生する）。
 // 終了コード = 失敗を見つけた 1・期限まで見つからない 0・建たない / 名前が無い 2。子の出力はそのまま（期限が長いので捕まえない）。
-// 既定でカバレッジの誘導つき（テストした package に計器を掛けて建て、新しい点を開いた試行の列を種の置き場 — キャッシュの fuzz/<鍵> — に貯めて変異の元にする。
-// 置き場の関数キャッシュは使わない）。--no-guide は計器なしで乱数の試行だけ
+// 既定でカバレッジの誘導つき（テストしたpackageに計装を掛けてビルドし、新しい点を開いた試行の列をシードの格納場所 — キャッシュのfuzz/<鍵> — に貯めてミューテーションの元にする。
+// 格納場所の関数キャッシュは使わない）。--no-guideは計装なしで乱数の試行だけ
 func cmdFuzz(cl cli.Parsed) int {
     pkg := cli.Pos(cl, FzPkg)
     name := cli.Str(cl, FzRun)
@@ -79,7 +79,7 @@ func cmdFuzz(cl cli.Parsed) int {
     return if ec == 0 { 0 } else { 1 }
 }
 
-// fuzz のテストのビルドを読む（guide なら計器つき — 対象 = package pkg）
+// fuzzのテストのビルドを読む（guideなら計装つき — 対象 = package pkg）
 func loadFuzz(pkg string, std map[string]string, bv lower.BcView, guide bool) (loader.Program, []loader.PcPut, error?) {
     if guide {
         return loadTestCover(pkg, std, []string{pkg})
@@ -87,7 +87,7 @@ func loadFuzz(pkg string, std map[string]string, bv lower.BcView, guide bool) (l
     return loadNamed(pkg, true, std, if bv.on { lower.BcParseView(bv) } else { loader.PcOff() })
 }
 
-// カバレッジの誘導の種の置き場（キャッシュの fuzz/<PWD ‖ package ‖ テスト名のハッシュ> — 置き場が無ければ <work>/pool。作れなければ ""）
+// カバレッジの誘導のシードの格納場所（キャッシュのfuzz/<PWD ‖ package ‖ テスト名のハッシュ> — 格納場所が無ければ <work>/pool。作れなければ ""）
 func fuzzPool(pkg string, name string, work string) string {
     pwd := os.Getenv("PWD") catch nil
     cd := cacheDir()

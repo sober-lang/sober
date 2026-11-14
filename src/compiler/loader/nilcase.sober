@@ -1,17 +1,17 @@
 package loader
 
-// `T?` の単値 subject の switch の `case nil:` の腕（language.md 13 / 22 節）— 脱糖の固定テンプレートで if に写す:
+// `T?` の単値subjectのswitchの `case nil:` の分岐（language.md 13 / 22 節）— 脱糖の固定テンプレートでifに変換する:
 //
-//     switch S { …前の腕…  case nil: A  …後の腕…  default: D }
-//  →  { $nilK := S; if $nilK != nil { switch $nilK { …前の腕… …後の腕… default: D } } else { A } }
+//     switch S { …前の分岐…  case nil: A  …  case _, Q: B  …  default: D }
+//  →  { $nilK := S; if $nilK != nil { switch $nilK { …前の分岐… …後の分岐… default: D } } else { A } }
 //
-// S が名前なら束縛を置かずにその名前を使う（if の flow typing で then の中は T）。腕の並びは保つ（nil の腕だけ抜く）。
-// desugar・lower・typer・analyzer は写した後の木（`if x != nil { switch x { … } }` の形）だけを読む — コア・Lean は無変更。網羅は内側の switch の
-// 既存の検査（nil の腕 + 全ラベル / 全 variant なら default は要らない）。
-// 残りの腕が default だけなら then は default の本体。
-// 写せない形は loader の拒否（diag.NilCase — 位置 = nil の腕・理由ごとの文言。D1）: nil の腕が 2 つ以上・`nil | …` の選択・nil の腕より前に名前のパターン
-// （`_`・束縛・const — nil にも当たりうるので、源の順の意味と写した後の意味がずれる）・nil の腕しか無い形。subject が 2 つ以上の switch の nil は
-// 多値の subject の形（`case v, nil:` — 13 節）なので触らない。subject が 1 つでも多値を返す呼び出し（パターン 2 つ以上の腕がある）も同じ
+// Sが名前なら束縛を置かずにその名前を使う（ifの flow typing でthenの中はT）。分岐の並びは保つ（nilの分岐だけ抜く）。
+// desugar・lower・typer・analyzerは変換した後の木（`if x != nil { switch x { … } }` の形）だけを読む — コア・Leanは無変更。網羅は内側のswitchの
+// 既存の検査（nilの分岐 + 全ラベル / 全variantならdefaultは要らない）。
+// 残りの分岐がdefaultだけならthenはdefaultの本体。
+// 変換できない形はloaderの拒否（diag.NilCase — 位置 = nilの分岐・理由ごとの文言。D1）: nilの分岐が2つ以上・`nil | …` の選択・nilの分岐より前に名前のパターン
+// （`_`・束縛・const — nilにも当たりうるので、源の順の意味と変換した後の意味がずれる）・nilの分岐しか無い形。subjectが2つ以上のswitchのnilは
+// 多値のsubjectの形（`case v, nil:` — 13 節）なので触らない。subjectが1つでも多値を返す呼び出し（パターン2つ以上の分岐がある）も同じ
 
 import "std/builder"
 import "std/iter"
@@ -19,7 +19,7 @@ import "ast"
 import "lexer"
 import "diag"
 
-// 全ファイルの木の `case nil:` を写す（写せない形は拒否）
+// 全ファイルの木の `case nil:` を変換する（変換できない形は拒否）
 @errors(diag.NilCase)
 func nilCasesAll(ts []ast.Tree) ([]ast.Tree, error?) {
     mut out := mut []ast.Tree{}
@@ -40,13 +40,13 @@ func nilCasesAll(ts []ast.Tree) ([]ast.Tree, error?) {
                 }
             }
         }
-        // 単値の `case nil:`（このファイル）→ 2 位置の `case P, nil:`（mvcase.sober）の順に写す
+        // 単値の `case nil:`（このファイル）→ 2位置の `case P, nil:`（mvcase.sober）の順に変換する
         out = append(out, mvCases(nilCases(t)))
     }
     return freeze(out), nil
 }
 
-// switch 節 x がパターン 2 つ以上の腕を持つか（多値の subject — `case v, nil:`（13 節）。nil は単値の nil の腕ではない）
+// switch節xがパターン2つ以上の分岐を持つか（多値のsubject — `case v, nil:`（13 節）。nilは単値のnilの分岐ではない）
 func multiPat(t ast.Tree, x ast.Node) bool {
     for i <- iter.Range(0, ast.ListLen(t, x.b)) {
         if ast.ListLen(t, t.nodes[ast.ListAt(t, x.b, i)].a) > 1 {
@@ -56,8 +56,8 @@ func multiPat(t ast.Tree, x ast.Node) bool {
     return false
 }
 
-// 単値 subject の switch 節 x の nil の腕が写せない理由（0 = 写せるか nil の腕が無い・1 = 2 つ以上・2 = `nil | …` / 他のパターンと並ぶ・
-// 3 = 前に名前のパターン・4 = nil の腕しか無い）と位置（nil の腕の字句）。パターン 2 つ以上の腕がある switch（多値の subject）は見ない
+// 単値subjectのswitch節xのnilの分岐が変換できない理由（0 = 変換できるかnilの分岐が無い・1 = 2つ以上・2 = `nil | …` / 他のパターンと並ぶ・
+// 3 = 前に名前のパターン・4 = nilの分岐しか無い）と位置（nilの分岐の字句）。パターン2つ以上の分岐があるswitch（多値のsubject）は見ない
 func nilCaseBad(t ast.Tree, x ast.Node) (int, int) {
     if ast.ListLen(t, x.a) != 1 || multiPat(t, x) {
         return 0, 0
@@ -96,7 +96,7 @@ func nilCaseBad(t ast.Tree, x ast.Node) (int, int) {
     return 0, 0
 }
 
-// switch の節 x の nil の腕の添字（写せなければ -1）
+// switchの節xのnilの分岐の添字（変換できなければ -1）
 func nilCaseAt(t ast.Tree, x ast.Node) int {
     if ast.ListLen(t, x.a) != 1 || multiPat(t, x) {
         return -1
@@ -122,14 +122,14 @@ func nilCaseAt(t ast.Tree, x ast.Node) int {
             }
         }
     }
-    // nil の腕のほかに腕も default も無い形は写さない（nil 以外の値の行き先が無い — 網羅の拒否に落とす）
+    // nilの分岐のほかに分岐もdefaultも無い形は変換しない（nil以外の値の行き先が無い — 網羅の拒否に落とす）
     if at >= 0 && ast.ListLen(t, x.b) == 1 && x.c < 0 {
         return -1
     }
     return at
 }
 
-// 木 t の `case nil:` を写した木（節は末尾に足し、switch の節をその場で差し替える — 既存の添字は動かない）
+// 木tの `case nil:` を変換した木（節は末尾に足し、switchの節をその場で差し替える — 既存の添字は動かない）
 func nilCases(t ast.Tree) ast.Tree {
     n0 := len(t.nodes)
     mut found := false
@@ -172,13 +172,13 @@ func nilCases(t ast.Tree) ast.Tree {
             builder.Push(mut nb, ast.Node{ast.EIdent, tok, nm, 0, 0, 0, 0, 0})
             builder.Push(mut nb, ast.Node{ast.ESwitch, tok, ast.PutList(mut db, []int{base}), ast.PutList(mut db, freeze(rest)), x.c, 0, 0, 0})
             builder.Push(mut nb, ast.Node{ast.SExpr, tok, base + 1, 0, 0, 0, 0, 0})
-            // 残りの腕が default だけなら then は default の本体（腕の無い switch は書けない）
+            // 残りの分岐がdefaultだけならthenはdefaultの本体（分岐の無いswitchは書けない）
             then := if len(rest) == 0 { t.nodes[x.c].a } else { ast.PutList(mut db, []int{base + 2}) }
             builder.Push(mut nb, ast.Node{ast.KBlock, tok, then, 0, 0, 0, 0, 0})
             builder.Push(mut nb, ast.Node{ast.EIdent, tok, nm, 0, 0, 0, 0, 0})
             builder.Push(mut nb, ast.Node{ast.ENil, nc.tok, 0, 0, 0, 0, 0, 0})
             builder.Push(mut nb, ast.Node{ast.EBinary, tok, lexer.BangEqual, base + 4, base + 5, 0, 0, 0})
-            // base + 7 = else（EBlock — nil の腕の本体の文の列）
+            // base + 7 = else（EBlock — nilの分岐の本体の文の列）
             builder.Push(mut nb, ast.Node{ast.EBlock, nc.tok, t.nodes[nc.b].a, 0, 0, 0, 0, 0})
             ifn := ast.Node{ast.EIf, tok, base + 6, base + 3, base + 7, 0, 0, 0}
             if t.nodes[s0].kind == ast.EIdent {

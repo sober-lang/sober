@@ -79,7 +79,7 @@ func ParsePKCS8(der []byte) (PrivateKey, error?) { // 対の FormatPKCS8 は実�
     return PrivateKey{pub: pub, mp: newMont(p), mq: newMont(q), dp: bnTrim(bnFromBytes(ints[6], hl), np), dq: bnTrim(bnFromBytes(ints[7], hl), nq), qinv: bnTrim(bnFromBytes(ints[8], hl), np), pbits: bnBits(p), qbits: bnBits(q)}, nil
 }
 
-// 大きい端のバイト列の n と e の公開鍵（検証の網の API）
+// 大きい端のバイト列のnとeの公開鍵（検証に使うAPI）
 @errors(BadKey)
 @effects(!io, !block, !nondet)
 func NewPublic(nb []byte, eb []byte) (PublicKey, error?) {

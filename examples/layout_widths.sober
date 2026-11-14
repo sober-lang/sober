@@ -1,6 +1,6 @@
 package main
 
-// @layout の幅の語の網羅（language.md 36 節 Y1・Y2・Y7）: LE / BE・符号つきは符号拡張・u64le は int の全域（上位ビットはそのまま負の int）・
+// @layoutの幅の語の網羅（language.md 36 節Y1・Y2・Y7）: LE / BE・符号つきは符号拡張・u64leはintの全域（上位ビットはそのまま負のint）・
 // [N]u8 は []byte・[N]幅は []int。書いたバイト列を 1 バイトずつ印字して読み戻す
 
 import "std/builder"

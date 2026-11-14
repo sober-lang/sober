@@ -1,15 +1,15 @@
 package lower
 
-// 割り当ての結果のダンプ（開発用の口 — 公開 CLI に出さない）: SOBER_XDBG=<名前>[,<名前>…] で、名前に一致する（関数名そのものか、
-// 末尾が「.<名前>」か「<名前>」）関数ごとに、吐く順のブロック（位置・ループの深さ・冷たいか）・命令と値の置き場・部分区間の表
-// （区間・重み・置き場・二段目の固定）・spill した部分区間の理由（組のレジスタごとに重なる先客）を stdout へ `xdbg ` の行で出す。
-// 環境変数は lower の頭で 1 回だけ読み（St.xdbgPat — 群の子へは xParCfg で写り、build のキャッシュの鍵にも入る）、立っていない build は関数ごとの仕事を足さない。
+// 割り当ての結果のダンプ（開発用のインターフェース — 公開CLIに出さない）: SOBER_XDBG=<名前>[,<名前>…] で、名前に一致する（関数名そのものか、
+// 末尾が「.<名前>」か「<名前>」）関数ごとに、吐く順のブロック（位置・ループの深さ・冷たいか）・命令と値の配置先・部分区間の表
+// （区間・重み・配置先・二段目の固定）・spillした部分区間の理由（組のレジスタごとに重なる先客）をstdoutへ `xdbg ` の行で出す。
+// 環境変数はlowerの頭で1回だけ読み（St.xdbgPat — 群の子へはxParCfgでコピーされ、buildのキャッシュの鍵にも入る）、立っていないbuildは関数ごとの仕事を足さない。
 // 並列の群の子でも出るので、行が混ざらないよう SOBER_WORKERS=1 で。build の結果の再生・関数のキャッシュに当たると関数を吐かない（同じ値で 2 回目の build は当たる）ので SOBER_CHECK_REPLAY=0 SOBER_BUILD_CACHE=0 で
 
 import "desugar"
 import "std/iter"
 
-// x86 の群の cfg（base — 末尾の語が値の長さ）の後ろへ SOBER_XDBG の値のバイト列を足す
+// x86の群のcfg（base — 末尾のワードが値の長さ）の後ろへSOBER_XDBGの値のバイト列を足す
 func xdbgCfg(base []int, pat []int) []int {
     mut cfg := mut []int{}
     for k <- iter.Range(0, len(base)) {
@@ -21,7 +21,7 @@ func xdbgCfg(base []int, pat []int) []int {
     return freeze(cfg)
 }
 
-// cfg の n 語の値のバイト列（cfg の base の長さの後ろ — xdbgCfg の逆）
+// cfgのnワードの値のバイト列（cfgのbaseの長さの後ろ — xdbgCfgの逆）
 func xdbgPatOf(cfg []int, n int) []int {
     mut pat := mut []int{}
     for k <- iter.Range(0, n) {
@@ -30,7 +30,7 @@ func xdbgPatOf(cfg []int, n int) []int {
     return freeze(pat)
 }
 
-// 関数 f が SOBER_XDBG の名前に一致するか（値は lower の頭で St.xdbgPat へ — 群の子へは xParCfg で写る）
+// 関数fがSOBER_XDBGの名前に一致するか（値はlowerの頭でSt.xdbgPatへ — 群の子へはxParCfgでコピーされる）
 func xdbgMatch(st mut St, f FnRef) bool {
     pat := st.xdbgPat
     s := xfName(mut st, f)
@@ -121,7 +121,7 @@ func xdbgReg(out mut []byte, r int) {
     xdbgStr(mut out, if r >= 0 && r < 16 { names[r] } else { "r?" })
 }
 
-// 部分区間 c の置き場
+// 部分区間cの配置先
 func xdbgLoc(e mut xF, out mut []byte, c int) {
     v := e.pv[c]
     if v < e.nv && e.remat[v] != 0 {
@@ -144,7 +144,7 @@ func xdbgLoc(e mut xF, out mut []byte, c int) {
     }
 }
 
-// 値 v の位置 p での置き場（部分区間で）: `v12:rbx`
+// 値vの位置pでの配置先（部分区間で）: `v12:rbx`
 func xdbgVal(e mut xF, out mut []byte, v int, p int) {
     out = append(out, 'v')
     xdbgInt(mut out, v)

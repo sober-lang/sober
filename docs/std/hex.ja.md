@@ -13,7 +13,7 @@
 func Format(b []byte) string
 ```
 
-b の小文字の 16 進表記（1 バイト 2 桁 — Go の hex.EncodeToString・sha256sum の出力と同じ綴り）。逆向きは Parse（[language.md 34 節](../language.md)の Format ⇄ Parse の族）。表引きなので秘密の値（鍵）には使わない（定数時間でない — std/crypto の規律の外）
+b の小文字の 16 進表記（1 バイト 2 桁 — Go の hex.EncodeToString・sha256sum の出力と同じ綴り）。逆向きはParse（[language.md 34 節](../language.md)のFormat ⇄ Parseの系統）。表引きなので秘密の値（鍵）には使わない（定数時間でない — std/cryptoの規律の外）
 
 ```sober
 hex.Format(hash.Sha256(bytes("abc")))   // "ba7816bf…"

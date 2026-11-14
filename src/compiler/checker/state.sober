@@ -3,13 +3,13 @@ package checker
 import "std/iter"
 import "std/table"
 
-// 型検査器（lean/FeatherweightSober/Checker.lean の typecheck / checkDefs と Json.lean の境界の写し —
+// 型検査器（lean/FeatherweightSober/Checker.leanのtypecheck / checkDefsとJson.leanの境界の変換 —
 // コア AST JSON → 判定 JSON。sober-check と同じバイト列を吐く）の状態と土台。
 //
 // 表現: 脱糖器と同じく状態は S 1 つ、記録は全部 1 本の int ヒープ st.h（std/table の Table — 添字で読み書きし、成長でコピーしない）に積む。
 // 記録はヒープの添字で指し、無し（Lean の none）は -1。
 // - 型 = 別の表 st.types の記録 {tag, a, b, c}（ty.sober — 参照 = TYBASE + 添字）
-// - 式 = 5 語 [kind, nc, a, b, c]（kind = 語の番号 — json.sober、nc = newchan を含むか）
+// - 式 = 5ワード [kind, nc, a, b, c]（kind = 語の番号 — json.sober、nc = newchanを含むか）
 // - 文脈 Γ = cons [ty, next]、ラベル文脈 Λ = cons [ty, k, next]（末尾 -1）
 // 再帰する関数は `st mut S` を持ち回る Def（callM）で、渡す imm の値は int だけ（frame で作った slice を
 // 渡せないため。string リテラルは渡せる）
@@ -33,7 +33,7 @@ type S struct {
     cstk int      // 型検査の作業スタック
     defs int      // 関数表（列 [n, 記録…]、記録 = [param, ret, body, tparams, mask]）
     f int         // 型検査の床 f（main 本体 = 0、Def 本体 = 1）
-    maxDepth int  // convExpr が写した入れ子の深さの最大
+    maxDepth int  // convExprが変換した入れ子の深さの最大
     xcap int      // convExpr の枠・値の作業域の段数（core.sober — コアの大きさで決める）
     lcap int      // convExpr のラベルの作業域の段数
     aE int        // 遷移の結果 Act（check.sober の actSub / actRet — tcStep が置き tcRun が読む）: 子の式・文脈・結果
@@ -42,9 +42,9 @@ type S struct {
     aG int
     aL int
     aR int
-    // 拒否の位置（出所の列）: org = Core.Orig（空 = 追跡なし）・onode = 写した節の番地 → 出所の組 [番地, PackPos]（番地の昇順 — 追跡の
+    // 拒否の位置（出所の列）: org = Core.Orig（空 = 追跡なし）・onode = 変換した節の番地 → 出所の組 [番地, PackPos]（番地の昇順 — 追跡の
     // ときだけ）・failE = 最初に落ちた節の番地（0 = 無し — tcRun が子の結果を待たずに最初の -1 で控える。規則はどれも子の -1 で落ちる〔tc_gen の
-    // 方程式の全数 — 子の失敗を許す腕は無い〕ので、最初の -1 の節が落ちた鎖の根になる）
+    // 方程式の全数 — 子の失敗を許す分岐は無い〕ので、最初の -1の節が落ちたチェーンの根になる）
     org []int
     onode table.Table[int]
     failE int
@@ -76,7 +76,7 @@ func rec5(st mut S, a int, b int, c int, d int, e int) int {
     return at
 }
 
-// n 語の 0 埋めの領域を取る
+// nワードの0埋めの領域を取る
 func block(st mut S, n int) int {
     at := table.Len(mut st.h)
     for _ <- iter.Range(0, n) {
@@ -85,5 +85,5 @@ func block(st mut S, n int) int {
     return at
 }
 
-// ── 出力（1 バイト 1 語）──
+// ── 出力（1バイト1ワード）──
 

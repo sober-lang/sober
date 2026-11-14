@@ -2,19 +2,19 @@
 # perf.sh — Sober サーバの CPU の内訳（cpu-clock の flat サンプリング・カーネルのシンボル込み）。
 # baseline の負荷を掛けながらサーバの pid をサンプリングし、perf report（flat — Sober の ELF は
 # unwind 情報を持たないので call graph は取らない）を出す。目的 = sys 側（loopback の TCP・io_uring）の
-# 内訳の帰属（report-673 — CPU / 要求の 3/4 がカーネルで、user の命令を削っても動かない）。
+# 内訳の要因分析（report-673 — CPU / リクエストの3/4がカーネルで、userの命令を削っても動かない）。
 # PMU の無い VM（GH Actions / WSL2）向けに -e cpu-clock。カーネルのシンボルには
 # kernel.perf_event_paranoid=-1 と kernel.kptr_restrict=0 が要る（workflow が sysctl で設定）。
 #
-#   bench/httparena/perf.sh [-d 秒] [-c 接続] [--profile baseline|pipelined|limited-conn|latency-10k|latency-1m|async|json-tls] [-b 建て済みのサーバ] [-o レポートの出力先]
+#   bench/httparena/perf.sh [-d 秒] [-c 接続] [--profile baseline|pipelined|limited-conn|latency-10k|latency-1m|async|json-tls] [-b ビルド済みのサーバ] [-o レポートの出力先]
 # json-tls = local.sh と同じ形（wrk・-c 4096・本家 requests/json-tls-rotate.lua の 7 組の巡回を TLS の port へ・証明書は本家の対・
-# dataset = $ARENA_DATA〔無ければ GitHub から〕）。wrk は $WRK か PATH。-b = 別の版で建てたサーバを測る（版どうしの帰属 — 無ければ main.sober を建てる）
+# dataset = $ARENA_DATA〔無ければGitHubから〕）。wrkは $WRKかPATH。-b = 別の版でビルドしたサーバを測る（版どうしの要因分析 — 無ければmain.soberをビルドする）
 # async = local.sh と同じ形（GET /delay/10・接続は -c でなく $ASYNC_CONNS 既定 32000 — 保留のタイマーを運ぶ接続の数が種目の形。
 # TIME_WAIT を大量に残すので、並べるなら最後に）。nofile は呼び手が上げておく（workflow は prlimit）
-# limited-conn = local.sh と同じ形（-r 10 — 10 要求ごとに張り直す churn）。
+# limited-conn = local.shと同じ形（-r 10 — 10リクエストごとに張り直すchurn）。
 # latency-10k / latency-1m = zrk のレート固定（local.sh と同じ — 接続 1024・/baseline11?a=1&b=2・レート $ZRK_RATE_10K 既定 10000 /
-# $ZRK_RATE_1M 既定 1000000・測る前に $ZRK_WARM 秒〔既定 5〕流して捨てる）。レート固定の種目は rps でなく CPU / 要求が点なので、
-# 見出しの「cpu/req」の行（負荷の全窓のサーバの utime + stime ÷ 応答 — perf の採り分を含む）と内訳を対で読む
+# $ZRK_RATE_1M既定1000000・測る前に $ZRK_WARM秒〔既定5〕流して捨てる）。レート固定の種目はrpsでなくCPU / リクエストが点なので、
+# 見出しの「cpu/req」の行（負荷の全ウィンドウのサーバのutime + stime ÷ レスポンス — perfの採り分を含む）と内訳を対で読む
 # 前提: perf・gcannon（PATH か $GCANNON）・zrk（latency-* — $ZRK か PATH、無ければ local.sh と同じ pin を取る）・go は不要（Sober 側だけ）。
 # CPU の割りは cpus.sh と同じ。
 set -uo pipefail
@@ -137,13 +137,13 @@ else
 fi
 GCP=$!
 sleep 1
-# -g: カーネル側の呼び出し鎖はカーネル自身の unwinder（ORC）で辿れる。user 側（Sober の ELF —
-# fp も unwind 情報も無い）は壊れるが、目的はカーネルの帰属（spin_unlock_irqrestore の呼び手等）
+# -g: カーネル側の呼び出しチェーンはカーネル自身のunwinder（ORC）で辿れる。user側（SoberのELF —
+# fpもunwind情報も無い）は壊れるが、目的はカーネルの内訳（spin_unlock_irqrestoreの呼び手等）
 perf record -q -e cpu-clock -F 997 -g -p "$SP" -o "$W/perf.data" -- sleep "$dur" || { echo "perf.sh: perf record failed" >&2; kill $GCP 2>/dev/null; exit 1; }
 wait "$GCP" 2> /dev/null
 c1=$(ticks)
 
-# 応答の数（gcannon = "N responses"・zrk = JSON の status_codes の和）— 見出しの cpu/req（負荷の全窓・user / sys に割る）の分母
+# レスポンスの数（gcannon = "N responses"・zrk = JSONのstatus_codesの和）— 見出しのcpu/req（負荷の全ウィンドウ・user / sysに割る）の分母
 if [ -n "$rate" ]; then
     resp=$(node -e '
         const raw = require("fs").readFileSync(process.argv[1], "utf8"); const s = raw.indexOf("{"), e = raw.lastIndexOf("}");
@@ -175,7 +175,7 @@ read -r nresp rr lmean lp99 lp999 <<< "${resp:-0}"
     perf report --stdio -i "$W/perf.data" --sort dso,symbol --percent-limit 0.05 -g none --no-children 2> /dev/null | grep -v '^#\s*$' | head -400
     echo
     echo "## kernel callers (per top kernel symbol — callee order: the leaf first, then its kernel callers upward; caller order put the broken user frames on top — report-682)"
-    # flat の上位のカーネルの symbol を 3 つ取り、それぞれの呼び手の鎖を低い閾値で出す
+    # flatの上位のカーネルのsymbolを3つ取り、それぞれの呼び手のチェーンを低い閾値で出す
     # （--sort symbol の一括 caller graph は呼び手が分散すると閾値で全部切れる — run 38652999799）
     perf report --stdio -i "$W/perf.data" --sort dso,symbol -g none --no-children 2> /dev/null \
         | awk '$2 ~ /kernel/ && $3 == "[k]" { print $4 }' | head -3 | while read -r sym; do

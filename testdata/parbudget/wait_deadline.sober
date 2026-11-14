@@ -1,8 +1,8 @@
 package main
 
-// parbudget の wait × deadline の網（段 3 の ④ — language.md 28 節「デッドライン」）: wait.sober と同じ形の scope に deadline: 0 を足す。期限が来ても
-// 待ち続け、入場できたら走らせる（期限は待ちを切らない）— 網は ① 全部の子が完走して出力が W 1 / 2 / 8 で一致 ② 待ちが起きた ③ 縮退が 0
-// ④ 子の io の口は全部 Expired（期限は子へ継がれる）
+// parbudgetのwait × deadlineの検査（段階3の④ — language.md 28 節「デッドライン」）: wait.soberと同じ形のscopeにdeadline: 0を足す。期限が来ても
+// 待ち続け、入場できたら走らせる（期限は待ちを切らない）— 検査は ① 全部の子が完走して出力がW 1 / 2 / 8で一致 ② 待ちが起きた ③ 縮退が0
+// ④ 子のioのインターフェースは全部Expired（期限は子へ継がれる）
 
 import "std/io"
 import "std/iter"
@@ -20,7 +20,7 @@ func work(k int) int {
     for i <- iter.Range(0, n) {
         s += b[i]
     }
-    // 期限の後の io の口（Expired なら 1 — 子は scope の期限を継ぐ）
+    // 期限の後のioのインターフェース（Expiredなら1 — 子はscopeの期限を継ぐ）
     _, e := io.ReadFile("testdata/io/hello.txt")
     t := switch e {
     case nil: 0

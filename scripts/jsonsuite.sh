@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# std/json の網（JSONTestSuite — testdata/jsontestsuite/test_parsing・nst/JSONTestSuite 1ef36fa・MIT）:
+# std/jsonの検査（JSONTestSuite — testdata/jsontestsuite/test_parsing・nst/JSONTestSuite 1ef36fa・MIT）:
 #   ① 全 318 ケースの受理 / 拒否が testdata/jsontestsuite/expect.txt と一致（i_ = 実装裁量の Sober の判定もここに固定 — docs/language.md 16 節の表）
 #   ② 不変条件: n_ は全部拒否・y_ は全部受理（例外 = 重複キーの 2 件 — 防御の既定で拒否。16 節）
 #   ③ 受理したものは印字の不動点（Parse → Format → Parse → Format が同じ・値の木を通した Parse → Tree → Encode[json.Value] → Parse も同じ — 検査は check/main.sober の中）
 #   ④ shape[T] の T が別 package の struct（testdata/jsonpkg — 合成ファイルの参照名の import）: 実行の出力が app.out と一致
-#   ⑤ json.Encode の速い道（上界 → 1 本確保 → 位置で書く）≡ builder の道（EncodeWith に空の辞書）: testdata/jsonfast の無作為の値 3,000 件でバイト一致
+#   ⑤ json.Encodeの高速パス（上界 → 1本確保 → 位置で書く）≡ builderのパス（EncodeWithに空の辞書）: testdata/jsonfastの無作為の値3,000件でバイト一致
 #   --regen: expect.txt を書き直す（緑の木からだけ）・--go: Go encoding/json の判定と並べて表示（scripts/oracles/jsonsuite.go）
 set -uo pipefail
 cd "$(dirname "$0")/.."

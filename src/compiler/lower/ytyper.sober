@@ -30,7 +30,7 @@ func yCompare(st mut St, e desugar.NodeRef, t int) {
             table.Set(mut st.yabsk, k, table.Get(mut st.yabsk, k) + 1)
         }
         if table.Len(mut st.ylog) < YLOGMAX * 4 * 2 {
-            // 表に無い式も位置を残す（種類は負の数で区別 — 表層型の種類の欄に -節の種類）
+            // 表に無い式も位置を残す（種類は負の数で区別 — 表層型の種類のフィールドに -節の種類）
             table.Push(mut st.ylog, desugar.FileOf(mut st.d, e))
             table.Push(mut st.ylog, tokN(mut st, e))
             table.Push(mut st.ylog, 0 - k)
@@ -104,7 +104,7 @@ func yMatch(st mut St, y int, t int) int {
             return -1
         }
         if isClosT(mut st, t) {
-            // 値の位置の named fn type の閉包の struct（closure.sober）— 宣言 K で照合
+            // 値の位置の named fn type のクロージャのstruct（closure.sober）— 宣言Kで照合
             return b2i(desugar.HeapGet(mut st.d, desugar.HeapGet(mut st.d, desugar.HeapGet(mut st.d, t + 1) + CL_K) + 1) == x.a)
         }
         if !isTag(mut st, t, TStruct) && !isTag(mut st, t, TUnion) {
@@ -176,7 +176,7 @@ func yReport(st mut St, out mut []int) {
     }
 }
 
-// 表層型 y（desugar/typer.sober の表）の lower の型（写せなければ -1 — 多値・名前付き関数型・不明の成分）。
+// 表層型y（desugar/typer.soberの表）のlowerの型（変換できなければ -1 — 多値・名前付き関数型・不明の成分）。
 // 型パラメータは今の型環境から名前で引く
 func yLower(st mut St, y int, at desugar.NodeRef) (int, error?) {
     if y < 0 {
@@ -274,7 +274,7 @@ func yLowerList(st mut St, l desugar.ListRef, at desugar.NodeRef) (desugar.ListR
     return out, nil
 }
 
-// 表層の関数型 x（YFn）の mut 仮引数の席のビット（名前なしは c に負で・名前付きは宣言の署名から）
+// 表層の関数型x（YFn）のmut仮引数の位置のビット（名前なしはcに負で・名前付きは宣言の署名から）
 func yFnMut(st mut St, x desugar.YT) int {
     if x.c <= 0 {
         return 0 - x.c

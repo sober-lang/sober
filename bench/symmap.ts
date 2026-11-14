@@ -1,5 +1,5 @@
-// symmap.ts: Sober の ELF の関数単位の帰属 — `sober build <src> --emit=syms -o syms.txt` の表と `perf script -F ip` の番地の列から、
-// 関数ごとのサンプルの割合（上位 12）を出す。関数単位なので AMD の skid の影響は小さい（区間の帰属は誤る）
+// symmap.ts: SoberのELFの関数単位の内訳 — `sober build <src> --emit=syms -o syms.txt` の表と `perf script -F ip` の番地の列から、
+// 関数ごとのサンプルの割合（上位12）を出す。関数単位なのでAMDのskidの影響は小さい（区間の内訳は誤る）
 //   node --experimental-strip-types bench/symmap.ts <syms.txt> <ips.txt>
 import { readFileSync } from "node:fs";
 const [symf, ipf] = process.argv.slice(2);

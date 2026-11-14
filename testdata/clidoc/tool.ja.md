@@ -1,4 +1,4 @@
-<!-- `sober doc --cli` が std/cli の表から生成 — 手で直さない。英語版 tool.md が正で、この頁は訳表 tool.ja.json の訳（usage の塊は実行ファイルの英語のまま） -->
+<!-- `sober doc --cli` が std/cli の表から生成 — 手で直さない。英語版 tool.md が正で、このページは訳表 tool.ja.json の訳（usage の塊は実行ファイルの英語のまま） -->
 
 # tool
 
@@ -39,7 +39,7 @@ environment:
   TOOL_HOME  the home directory | the default
 ```
 
-効果: `io, panic, nondet`
+エフェクト: `io, panic, nondet`
 
 ## tool count
 
@@ -54,7 +54,7 @@ arguments:
   <src>  the source file
 ```
 
-効果: `panic`
+エフェクト: `panic`
 
 ## tool remote add
 
@@ -66,7 +66,7 @@ usage: tool remote add
 add a remote
 ```
 
-効果: `(lambda)`
+エフェクト: `(lambda)`
 
 ## tool plan
 

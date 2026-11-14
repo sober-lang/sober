@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # `sober test` の骨格の照合:
 #   ① testdata/sobertest/calc のテストの出力（1 テスト 1 サブプロセス・列挙の規則・失敗の集計）が testdata/sobertest/calc.expect と一致し、終了コード 1
-#   ③ 署名の合わない Test… は位置つきで拒否（T3）・④ check --test（T12）・⑤ --run（T8）・⑥ power assert（T5）・⑦ std/quick の写し・⑧ quick の掛け戻しとコーパス・⑨ sober fuzz
+#   ③ 署名の合わないTest… は位置つきで拒否（T3）・④ check --test（T12）・⑤ --run（T8）・⑥ power assert（T5）・⑦ std/quickのコピー・⑧ quickの掛け戻しとコーパス・⑨ sober fuzz
 #   ② 通常のビルド（testdata/sobertest/app — calc を import）は calc_test.sober を読まない（loader の JSON の関数の一覧に TestAdd / must が無く half がある）・実行の出力 42
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -23,18 +23,18 @@ grep -q '"half"' "$W/lj" || { echo "FAIL: the normal build did not read calc.sob
 "$SOBER" test testdata/sobertest/asserts > "$W/as" 2>&1 && { echo "FAIL: asserts passed"; fail=1; }
 diff "$W/as" testdata/sobertest/asserts.expect > "$W/asd" || { echo "FAIL: asserts output"; head -10 "$W/asd"; fail=1; }
 "$SOBER" check testdata/sobertest/asserts --test > /dev/null || { echo "FAIL: check --test asserts"; fail=1; }
-# ⑦ std/quick の写し（loader の quickx）: 縮めた反例の再生でだけ性質の値の式を power assert の形で印字・テストの名前の種・Assume の捨てた数の行
+# ⑦ std/quickのコピー（loaderのquickx）: シュリンクした反例の再生でだけプロパティの値の式を power assert の形で印字・テストの名前のシード・Assumeの捨てた数の行
 "$SOBER" test testdata/sobertest/props > "$W/qp" 2>&1 && { echo "FAIL: props passed"; fail=1; }
 diff "$W/qp" testdata/sobertest/props.expect > "$W/qpd" || { echo "FAIL: props output"; head -10 "$W/qpd"; fail=1; }
 "$SOBER" check testdata/sobertest/props --test > /dev/null || { echo "FAIL: check --test props"; fail=1; }
-# 性質のラムダの中の assert は位置つきで拒否（check も build も）
-# ⑧ std/quick の掛け戻し: 性質の中の panic は駆動役で縮め直した報告に置き換わる・testdata/fuzz のコーパスの列は試行の前に再生される（書き足さない）
+# プロパティのラムダの中のassertは位置つきで拒否（checkもbuildも）
+# ⑧ std/quickの掛け戻し: プロパティの中のpanicは駆動役でシュリンクし直した報告に置き換わる・testdata/fuzzのコーパスの列は試行の前に再生される（書き足さない）
 # （std/quick の中の位置は std/quick を編集するたびに動くので消して照合）
 "$SOBER" test testdata/sobertest/propsfuzz > "$W/qf0" 2>&1 && { echo "FAIL: propsfuzz passed"; fail=1; }
 sed 's#at std/quick/[a-z_]*\.sober:[0-9]*:[0-9]*#at std/quick#' "$W/qf0" > "$W/qf"
 diff "$W/qf" testdata/sobertest/propsfuzz.expect > "$W/qfd" || { echo "FAIL: propsfuzz output"; head -10 "$W/qfd"; fail=1; }
 [ "$(ls testdata/sobertest/propsfuzz/testdata/fuzz/TestCorpus)" = 0-hand ] || { echo "FAIL: sober test wrote to the corpus"; fail=1; }
-# ⑨ sober fuzz: 見つけた panic を縮めてコーパスへ書き（exit 1）、次の sober test がその列を先に再生する・見つからなければ exit 0・名前が無ければ exit 2
+# ⑨ sober fuzz: 見つけたpanicをシュリンクしてコーパスへ書き（exit 1）、次の sober test がその列を先に再生する・見つからなければexit 0・名前が無ければexit 2
 mkdir -p "$W/fz/propsfuzz" && cp testdata/sobertest/propsfuzz/*.sober "$W/fz/propsfuzz/"
 ( cd "$W/fz" && "$SA" fuzz propsfuzz --run TestPanic --time 5s > out 2>&1; echo $? > ec )
 [ "$(cat "$W/fz/ec")" = 1 ] || { echo "FAIL: fuzz TestPanic exit $(cat "$W/fz/ec") (want 1)"; fail=1; }

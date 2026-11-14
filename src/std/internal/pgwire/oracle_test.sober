@@ -2,7 +2,7 @@ package pgwire
 
 // 実の PostgreSQL との往復（SOBER_PG_ORACLE が無ければ何もしない — scripts/pgoracle.sh が PostgreSQL 17 / 18 を立てて渡す）:
 // SSLRequest → TLS（std/internal/hsc — PG 17 以前は HelloRetryRequest で secp256r1）→ SCRAM-SHA-256-PLUS → AuthenticationOk → ReadyForQuery・
-// 平文の SCRAM-SHA-256・password 違いは ErrorResponse 28P01・TLS で PLUS を出さないサーバは無いので緩和の道は合成の網（scram_test）だけ
+// 平文のSCRAM-SHA-256・password違いはErrorResponse 28P01・TLSでPLUSを出さないサーバは無いので緩和の道は合成のテスト（scram_test）だけ
 //   SOBER_PG_ORACLE = 設定の行のファイル: `server <名前> <host:port>` の行（複数）・`ca <CA の PEM のパス>`・`user <名前>`・`password <値>`
 
 import "std/crypto"

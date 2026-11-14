@@ -7,13 +7,13 @@
 #                                 ③tyvec: Lean の評価（sober-gen --tyvec）≡ 生成物の計算（tyvecdump）を全行バイト比較
 #   scripts/extract.sh --regen    生成物を作り直す（Lean の定義・抽出器・設定を意図して変えたとき — diff を見てからコミット）
 #
-# 生成物は compiler/checker の package に入って建つ（抽出器 E2 — 手書きの写しは退役。移行期の --hand〔旧 ≡ 新〕は E2 で役目を終えて撤去）。
-# 前提: lean/ で lake が使える（sober-extract / sober-gen はここで建てる）・bin/sober
+# 生成物はcompiler/checkerのpackageに入ってビルドが通る（抽出器E2 — 手書きのコピーは退役。移行期の --hand〔旧 ≡ 新〕はE2で役目を終えて撤去）。
+# 前提: lean/ でlakeが使える（単発ではここでsober-extract / sober-genをビルドする — gatesの下は共有のビルドのフェーズがビルドする）・bin/sober
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$PWD
 GEN_OUT=src/compiler/checker/ty_gen.sober
-TC_OUT=src/compiler/checker/tc_gen.sober   # typecheck の 1 フレームの遷移（段 6 P2b — lean/FeatherweightSober/TcStep.lean）
+TC_OUT=src/compiler/checker/tc_gen.sober   # typecheckの1フレームの遷移（段階6 P2b — lean/FeatherweightSober/TcStep.lean）
 SEED=${TYVEC_SEED:-42}
 COUNT=${TYVEC_COUNT:-400000}   # 50 関数 × 8000
 
@@ -21,7 +21,11 @@ mode=${1:---check}
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
-(cd lean && lake build sober-extract sober-gen > "$tmp/lake.log" 2>&1) || { cat "$tmp/lake.log"; echo "FAIL: lake build sober-extract sober-gen"; exit 1; }
+# sober-extract・sober-gen: gatesの下（GATES_LEANTOOLS=1）は共有のビルドのフェーズがビルドした — ここでビルドすると、並走するtlsfsmの実行と競合してETXTBSYになる。
+# 単発の実行ではビルドする（Leanのソースが変わった後に古い道具で照合しない）
+if [ "${GATES_LEANTOOLS:-}" != 1 ]; then
+    (cd lean && lake build sober-extract sober-gen > "$tmp/lake.log" 2>&1) || { cat "$tmp/lake.log"; echo "FAIL: lake build sober-extract sober-gen"; exit 1; }
+fi
 extract() { (cd lean && lake env .lake/build/bin/sober-extract "$@"); }
 
 if [ "$mode" = --regen ]; then
@@ -32,7 +36,7 @@ if [ "$mode" = --regen ]; then
     exit 0
 fi
 
-# 型の表現（ty.sober — 型の記録・tg / tA / mk …・型の印字の手前まで）+ 生成物を tyvecdump に連結して建て、tyvec を照合する
+# 型の表現（ty.sober — 型の記録・tg / tA / mk …・型の印字の手前まで）+ 生成物をtyvecdumpに連結してビルドし、tyvecを照合する
 tyvec() {
     awk '/^\/\/ ── 型の印字/{exit} {print}' src/compiler/checker/ty.sober > "$tmp/rep.sober"
     mkdir -p "$tmp/tv"

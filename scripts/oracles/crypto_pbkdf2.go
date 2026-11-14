@@ -1,4 +1,4 @@
-// std/crypto/password の PBKDF2-HMAC-SHA256 の核（white-box — pbkdf2_test.sober）の Go の双子: crypto/pbkdf2 で長さ・反復の格子の値を出し、
+// std/crypto/passwordのPBKDF2-HMAC-SHA256の核（white-box — pbkdf2_test.sober）の比較用のGoの実装: crypto/pbkdf2で長さ・反復の格子の値を出し、
 // RFC 7914 11 節の 2 例をここに固定して照合する（食い違いは標準エラーに出して exit 1）。再生成:
 //   go run scripts/oracles/crypto_pbkdf2.go > testdata/crypto/pbkdf2_sha256.txt
 // 行の形 = `pw の長さ 塩の長さ 反復 出力の長さ 値（16 進）`。pw = pat(長さ, 1)・塩 = pat(長さ, 2)（pbkdf2_test.sober の pat と同じ）

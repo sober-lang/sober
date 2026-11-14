@@ -38,7 +38,7 @@ type FloatOutOfRange error {
 @errors(BadFloat, FloatOutOfRange)
 @effects()
 func ParseFloat(s string) (float, error?) {
-    // Clinger の速い道: 仮数 ≤ 2^53・|10 の指数| ≤ 22 なら仮数も 10 の累乗も binary64 で正確 → 乗除 1 回の丸め 1 回で正しく丸まる（外れは多倍長へ）
+    // Clingerの高速パス: 仮数 ≤ 2^53・|10の指数| ≤ 22なら仮数も10の累乗もbinary64で正確 → 乗除1回の丸め1回で正しく丸まる（外れは多倍長へ）
     ok, f := fastFloat(bytes(s))
     if ok {
         return f, nil
@@ -58,7 +58,7 @@ func ParseFloat(s string) (float, error?) {
     return sysFFromBits(bits), nil
 }
 
-// Clinger の速い道（受けるのは `[+-]? 数字+ ('.' 数字+)? ([eE] [+-]? 数字+)?` で仮数 ≤ 2^53・|指数| ≤ 22 の形だけ — 他は (false, _) で多倍長へ）
+// Clingerの高速パス（受けるのは `[+-]? 数字+ ('.' 数字+)? ([eE] [+-]? 数字+)?` で仮数 ≤ 2^53・|指数| ≤ 22の形だけ — 他は (false, _) で多倍長へ）
 func fastFloat(b []byte) (bool, float) {
     mut i := 0
     neg := len(b) > 0 && b[0] == '-'
@@ -150,17 +150,29 @@ func ParseInt(s string) (int, error?) {
     }
     // 負の側で積む（最小値 -2^63 が表せる）。/ は 0 へ切り捨て = 負の数の切り上げなので、v < (最小 + d) / 10 なら v * 10 - d が溢れる
     mut v := 0
-    while i < len(b) {
-        c := b[i]
-        if c < '0' || c > '9' {
-            return 0, BadInt{}
+    if len(b) - i <= 18 {
+        // 18 桁以下は溢れない（10^18 − 1 < 2^63）— 桁ごとの溢れの検査を省く
+        while i < len(b) {
+            c := b[i]
+            if c < '0' || c > '9' {
+                return 0, BadInt{}
+            }
+            v = v * 10 - (int(c) - 48)
+            i += 1
         }
-        d := int(c) - 48
-        if v < (-9223372036854775807 - 1 + d) / 10 {
-            return 0, IntOutOfRange{}
+    } else {
+        while i < len(b) {
+            c := b[i]
+            if c < '0' || c > '9' {
+                return 0, BadInt{}
+            }
+            d := int(c) - 48
+            if v < (-9223372036854775807 - 1 + d) / 10 {
+                return 0, IntOutOfRange{}
+            }
+            v = v * 10 - d
+            i += 1
         }
-        v = v * 10 - d
-        i += 1
     }
     if neg {
         return v, nil
@@ -178,30 +190,68 @@ func FormatInt(n int) string {
     return if n == -9223372036854775807 - 1 {
         "-9223372036854775808"
     } else if n < 0 {
-        "-" + formatUint(-n)
+        formatUint(-n, true)
     } else {
-        formatUint(n)
+        formatUint(n, false)
     }
 }
 
-// 0 以上の n の 10 進表記
-func formatUint(n int) string {
-    mut rev := mut []byte{}
+// 0以上のnの10進表記（negなら頭に '-'）。負でない10^8未満は2桁ずつ1ワードに詰めて8バイトの列へ1回で書き、他は21バイトの列へ
+// 下の桁から書く（どちらも列の確保は 1 回。'-' も同じ列に置く — 負の数で連結の確保をしない）
+func formatUint(n int, neg bool) string {
+    if n < 100000000 && !neg {
+        acc, d := decWord(n)
+        mut b := mut []byte{0, 0, 0, 0, 0, 0, 0, 0}
+        _ = sysStore64(b, 0, acc)
+        f := freeze(b)
+        // & 15 は d ≤ 8 の範囲で値を変えない。メモリの上限の解析が結果の長さの上限を読めるようにするため（定数との & から上限を読む）
+        return bytesToString(f[0:d & 15])
+    }
+    mut b := mut []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+    mut i := 21
     mut m := n
-    rev = append(rev, byte(48 + m % 10))
-    m = m / 10
     while m > 0 {
-        rev = append(rev, byte(48 + m % 10))
+        i -= 1
+        b[i] = byte(48 + m % 10)
         m = m / 10
     }
-    mut out := mut []byte{}
-    mut i := len(rev) - 1
-    while i >= 0 {
-        out = append(out, rev[i])
+    if neg {
         i -= 1
+        b[i] = '-'
     }
-    return bytesToString(freeze(out))
+    f := freeze(b)
+    // & 31 は 0 ≤ i ≤ 20 の範囲で値を変えない。メモリの上限の解析が結果の長さの上限を読めるようにするため
+    return bytesToString(f[i & 31:21])
 }
+
+// 0 ≤ n < 10^8の10進の数字を詰めたワード（最上位の桁が最下位のバイト）と桁数。下の桁から2桁ずつ詰める
+// （std/internal/jsonw の Int と同じ詰め — x < 10^8 < 2^32 なので x / 100 = (x × ⌈2^37 / 100⌉) >> 37・r < 100 の r / 10 = (r × 103) >> 10）
+func decWord(n int) (int, int) {
+    mut x := n
+    mut acc := 0
+    mut d := 0
+    while x >= 100 {
+        q := (x * 1374389535) >> 37
+        r := x - q * 100
+        t := (r * 103) >> 10
+        acc = (acc << 16) | ((48 + r - t * 10) << 8) | (48 + t)
+        x = q
+        d += 2
+    }
+    if x >= 10 {
+        t := (x * 103) >> 10
+        acc = (acc << 16) | ((48 + x - t * 10) << 8) | (48 + t)
+        d += 2
+    } else {
+        acc = (acc << 8) | (48 + x)
+        d += 1
+    }
+    return acc, d
+}
+
+// ワードの書きの組み込み（検査なし — 呼び手が8バイトの列にだけ書く）
+@intrinsic("bstore64")
+func sysStore64(b []byte, i int, v int) int
 
 // ParseBool の構文の違い（受ける綴りの外 — Go の strconv.ErrSyntax と同じ）
 type BadBool error {

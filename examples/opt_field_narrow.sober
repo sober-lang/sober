@@ -1,7 +1,7 @@
 package main
 
-// struct の欄から束縛した `U?`（U は struct）を絞って欄を読む
-// （declOfExpr の欄読みが `U?` の欄の中身の宣言を返す — 仮引数の `U?` の束縛と同じ）
+// structのフィールドから束縛した `U?`（Uはstruct）を絞ってフィールドを読む
+// （declOfExprのフィールドの読み出しが `U?` のフィールドの中身の宣言を返す — 仮引数の `U?` の束縛と同じ）
 
 type P struct {
     x int

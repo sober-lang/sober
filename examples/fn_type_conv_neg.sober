@@ -1,6 +1,6 @@
 package main
 
-// 負例（check も build も名指しで拒否 — diag.TypeMismatch kind 9）: 名前付き関数型は nominal（spec F-12）— 形の同じ別の名前付き関数型の値は変換できない
+// 負例（checkもbuildも専用の診断で拒否 — diag.TypeMismatch kind 9）: 名前付き関数型はnominal（spec F-12）— 形の同じ別の名前付き関数型の値は変換できない
 
 type W func(v int) int
 

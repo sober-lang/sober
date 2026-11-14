@@ -1,6 +1,6 @@
 package main
 
-// 呼び先が mut の仮引数の中身を別の mut の仮引数の欄へ持ち出す（U3）— 凍結は map のリテラルの値（暗黙の freeze）
+// 呼び先がmutの仮引数の中身を別のmutの仮引数のフィールドへ持ち出す（U3）— 凍結はmapのリテラルの値（暗黙のfreeze）
 
 type S struct {
     xs mut []int

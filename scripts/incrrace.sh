@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
-# 後段の関数キャッシュの 2 プロセスの網（段 3 R3-c — report-1194 6 節 4・report-1202）: 1 つの置き場を 2 つの build が同時に使っても、どの
-# build の ELF もキャッシュなしと一致し、置き場の全部のパックの索引と値の検査和が通ること（SOBER_CACHE_FSCK=1 — lower/bcache.sober の bcFsck）。
+# 後段の関数キャッシュの2プロセスの検査（段階3 R3-c — report-1194 6 節4・report-1202）: 1つの格納場所を2つのbuildが同時に使っても、どの
+# buildのELFもキャッシュなしと一致し、格納場所の全部のパックの索引と値の検査和が通ること（SOBER_CACHE_FSCK=1 — lower/bcache.soberのbcFsck）。
 #   r1 = 同じ世代へ同時に 2 本（冷 — 同じ鍵を同時に書く）
-#   r2 = 書きと読み（温めた置き場の写しに、編集した木の build〔外れを書く〕と元の木の build〔読む〕を 0〜4 秒ずらして同時に — 5 回）
-#   r4 = 書きの途中の kill -9（冷の build を 3 / 6 / 9 秒で殺す）+ 書きかけの一時ファイルと途中で切れたパックを置いた置き場で温の build — 読みが
+#   r2 = 書きと読み（温めた格納場所のコピーに、編集した木のbuild〔外れを書く〕と元の木のbuild〔読む〕を0〜4秒ずらして同時に — 5回）
+#   r4 = 書きの途中のkill -9（冷のbuildを3 / 6 / 9秒で殺す）+ 書きかけの一時ファイルと途中で切れたパックを置いた格納場所で温のbuild — 読みが
 #        壊れない（切れたパックは飛ばす — fsck が bad-packs=1 と数える）
-#        + 掃除が古い一時ファイルを拾う（年齢 10 分未満は残し、古くした後の build の後は tmp=0 — 段 3 R4-b）
-#   r5 = 別のパス（長い別パスの写し + 絶対パスの entry）から同じ置き場へ同時に 2 本
-#   r3 = 併合中の読み（段 3 R4-b）: パックを 33 本にした世代で、併合する build と読む build 2 本を 0〜2 秒ずらして同時に × 3 — どれも ELF ≡ off・
+#        + 掃除が古い一時ファイルを拾う（年齢10分未満は残し、古くした後のbuildの後はtmp=0 — 段階3 R4-b）
+#   r5 = 別のパス（長い別パスのコピー + 絶対パスのentry）から同じ格納場所へ同時に2本
+#   r3 = 併合中の読み（段階3 R4-b）: パックを33本にした世代で、併合するbuildと読むbuild 2本を0〜2秒ずらして同時に × 3 — どれもELF ≡ off・
 #        併合の後の fsck が緑でパックが 1 本に減る・併合の後の温が全部当たり
-#   r6 = 掃除（段 3 R4-b — 世代の鍵は SOBER_SELF_KEY で偽の世代を作る）: 世代の数の線（SOBER_CACHE_GENS=2 で 3 世代 → 最古が消え今の世代は残る）・
-#        大きさの線（SOBER_CACHE_MAX=1 MiB を越える古い世代が消える）・世代の中のゴミの線（SOBER_CACHE_FLOOR=1 MiB を越えた今の世代を捨て、次は冷）・
+#   r6 = 掃除（段階3 R4-b — 世代の鍵はSOBER_SELF_KEYで偽の世代を作る）: 世代の数の上限値（SOBER_CACHE_GENS=2で3世代 → 最古が消え今の世代は残る）・
+#        大きさの上限値（SOBER_CACHE_MAX=1 MiBを越える古い世代が消える）・世代の中のゴミの上限値（SOBER_CACHE_FLOOR=1 MiBを越えた今の世代を捨て、次は冷）・
 #        隠した世代の残りを消す・`sober cache gc` の明示・build × gc の同時（gc が読みかけの世代を消しても build の ELF ≡ off — × 4）
-# 小さい題材（r3 / r6）は examples/http_hello.sober（std/http を引く — 置き場の値が数 MB）
-# wall は裁定に使わない（ELF の一致と検査の数だけ見る）。使い方: scripts/incrrace.sh — 約 4 分
+# 小さい題材（r3 / r6）はexamples/http_hello.sober（std/httpを引く — 格納場所の値が数MB）
+# wallは判断に使わない（ELFの一致と検査の数だけ見る）。使い方: scripts/incrrace.sh — 約4分
 set -uo pipefail
-# 答えの再生は切る（この網は関数単位キャッシュの当否を見る）
+# 答えの再生は切る（この検査は関数単位キャッシュの当否を見る）
 export SOBER_CHECK_REPLAY=0
 cd "$(dirname "$0")/.."
 ROOT=$PWD
@@ -23,9 +23,9 @@ scripts/stage2.sh --quiet || exit 1
 C=${INCR_COMPILER:-$ROOT/out/stage2/sober2}
 W=$(mktemp -d)
 trap 'kill $(jobs -p) 2> /dev/null; rm -rf "$W"' EXIT
-# gates の SOBER_VERIFY=each（段ごとの IR の検証器）はキャッシュの道に入らない — 網はキャッシュの道そのものを見るので外す
+# gatesのSOBER_VERIFY=each（ステージごとのIRの検証器）はキャッシュのパスに入らない — 検査はキャッシュのパスそのものを見るので外す
 unset SOBER_SELF_KEY SOBER_CACHE_VERIFY SOBER_BUILD_CACHE SOBER_VERIFY
-# 基準（off）の build は切の道（キャッシュは既定 on — 置き場の build は SOBER_BUILD_CACHE=1 を明示する）
+# 基準（off）のbuildは切のパス（キャッシュは既定on — 格納場所のbuildはSOBER_BUILD_CACHE=1を明示する）
 export SOBER_BUILD_CACHE=0
 export SOBER_HASH_SEED=0
 ulimit -s unlimited
@@ -42,7 +42,7 @@ cmp -s "$A/lower/lower.sober" "$E/lower/lower.sober" && { echo "incrrace: FAIL t
 bad=0
 ( cd "$A" && SOBER_WORKERS=8 "$C" build app --emit=elf --passes -o "$W/offA.elf" > /dev/null 2>&1 ) || { echo "incrrace: FAIL off build"; exit 1; }
 ( cd "$E" && SOBER_WORKERS=8 "$C" build app --emit=elf --passes -o "$W/offE.elf" > /dev/null 2>&1 ) || { echo "incrrace: FAIL off build (edited)"; exit 1; }
-# b <置き場> <木> <entry> <W> <出力> — 温 / 冷の build（終了コードを返す）
+# b <格納場所> <木> <entry> <W> <出力> — 温 / 冷のbuild（終了コードを返す）
 b() {
     ( cd "$2" && SOBER_CACHE=$1 SOBER_BUILD_CACHE=1 SOBER_WORKERS=$4 "$C" build "$3" --emit=elf --passes -o "$5" > /dev/null 2> "$5.err" )
 }
@@ -50,7 +50,7 @@ b() {
 same() {
     if [ "$4" != 0 ] || ! cmp -s "$2" "$3"; then echo "incrrace: FAIL $1 (exit $4): $(grep -m1 . "$3.err" 2> /dev/null)"; bad=1; fi
 }
-# fsck <名前> <置き場> <期待する bad-packs>
+# fsck <名前> <格納場所> <期待するbad-packs>
 fsck() {
     ( cd "$A" && SOBER_CACHE=$2 SOBER_BUILD_CACHE=1 SOBER_CACHE_FSCK=1 SOBER_WORKERS=8 "$C" build app --emit=elf --passes -o "$W/fsck.elf" > /dev/null 2> "$W/fsck.err" )
     local l
@@ -71,7 +71,7 @@ wait $p1; e1=$?; wait $p2; e2=$?
 same r1-a "$W/offA.elf" "$W/r1a.elf" $e1
 same r1-b "$W/offA.elf" "$W/r1b.elf" $e2
 fsck r1 "$W/c1" 0
-# r2: 書きと読み（温めた置き場の写しごとに 0〜4 秒ずらす）
+# r2: 書きと読み（温めた格納場所のコピーごとに0〜4秒ずらす）
 b "$W/c2base" "$A" app 8 "$W/r2w.elf" || { echo "incrrace: FAIL r2 warm-up"; exit 1; }
 for d in 0 1 2 3 4; do
     rm -rf "$W/c2"; cp -r "$W/c2base" "$W/c2"
@@ -105,24 +105,24 @@ b "$W/c4" "$A" app 8 "$W/r4s.elf"; same r4-sweep "$W/offA.elf" "$W/r4s.elf" $?
 [ -e "$g/1-deadbeef.pack.tmp" ] && { echo "incrrace: FAIL r4 the stale tmp was not swept"; bad=1; }
 fsck r4-swept "$W/c4" 1
 grep -q 'tmp=0$' "$W/fsck.err" || { echo "incrrace: FAIL r4-swept tmp != 0"; bad=1; }
-# r5: 別のパスから同じ置き場へ同時に 2 本（冷）
+# r5: 別のパスから同じ格納場所へ同時に2本（冷）
 b "$W/c5" "$A" app 8 "$W/r5a.elf" & p1=$!
 b "$W/c5" "$B" "$B/app" 8 "$W/r5b.elf" & p2=$!
 wait $p1; e1=$?; wait $p2; e2=$?
 same r5-rel "$W/offA.elf" "$W/r5a.elf" $e1
 same r5-alt-abs "$W/offA.elf" "$W/r5b.elf" $e2
 fsck r5 "$W/c5" 0
-# ── 小さい題材の網（r3 / r6）──
+# ── 小さい題材の検査（r3 / r6）──
 H=$ROOT/examples/http_hello.sober
 "$C" build "$H" --emit=elf --passes -o "$W/offH.elf" > /dev/null 2>&1 || { echo "incrrace: FAIL off build (small)"; exit 1; }
-# h <置き場> <世代の鍵> <出力> [環境…] — 小さい題材の build（終了コードを返す）
+# h <格納場所> <世代の鍵> <出力> [環境…] — 小さい題材のbuild（終了コードを返す）
 h() {
     local c=$1 k=$2 o=$3
     shift 3
     env SOBER_CACHE="$c" SOBER_BUILD_CACHE=1 SOBER_SELF_KEY="$k" SOBER_CACHE_STAT=1 "$@" "$C" build "$H" --emit=elf --passes -o "$o" > /dev/null 2> "$o.err"
 }
 K0=0000000000000000k
-# hfsck <名前> <置き場> <鍵> — 小さい題材で fsck（bad 0）の行を返す
+# hfsck <名前> <格納場所> <鍵> — 小さい題材でfsck（bad 0）の行を返す
 hfsck() {
     h "$2" "$3" "$W/hf.elf" SOBER_CACHE_FSCK=1
     local l
@@ -164,13 +164,13 @@ h "$C6" 3333333333333333k "$W/r6.elf" SOBER_CACHE_GENS=2; same r6-g3 "$W/offH.el
 [ -d "$R6/1111111111111111" ] && { echo "incrrace: FAIL r6 the oldest generation survived the gens line"; bad=1; }
 [ -d "$R6/2222222222222222" ] && [ -d "$R6/3333333333333333" ] || { echo "incrrace: FAIL r6 a young generation was dropped"; bad=1; }
 [ -e "$R6/.1111111111111111.dead-1-ab" ] && { echo "incrrace: FAIL r6 a hidden generation was left"; bad=1; }
-# 大きさの線: 古い世代（2222）を 1 MiB 超に膨らませて SOBER_CACHE_MAX=1 で今の世代（3333）を build → 2222 が消える
+# 大きさの上限値: 古い世代（2222）を1 MiB超に膨らませてSOBER_CACHE_MAX=1で今の世代（3333）をbuild → 2222が消える
 p6=$(ls "$R6/2222222222222222"/*.pack | head -1); sz=$(stat -c %s "$p6")
 n=0; while [ "$(du -sb "$R6/2222222222222222" | awk '{ print $1 }')" -le 1100000 ]; do n=$((n + 1)); cp "$p6" "$R6/2222222222222222/$n-c0py-$sz.pack"; done
 h "$C6" 3333333333333333k "$W/r6.elf" SOBER_CACHE_MAX=1; same r6-max "$W/offH.elf" "$W/r6.elf" $?
 [ -d "$R6/2222222222222222" ] && { echo "incrrace: FAIL r6 the size line did not drop the old generation"; bad=1; }
 [ -d "$R6/3333333333333333" ] || { echo "incrrace: FAIL r6 the size line dropped the current generation"; bad=1; }
-# 世代の中のゴミの線: 今の世代（3333）を max(満杯 × 4, 1 MiB) 超に膨らませて SOBER_CACHE_FLOOR=1 → 世代ごと捨てる・次の build は冷（put > 0）で ELF ≡ off
+# 世代の中のゴミの上限値: 今の世代（3333）をmax(満杯 × 4, 1 MiB) 超に膨らませてSOBER_CACHE_FLOOR=1 → 世代ごと捨てる・次のbuildは冷（put > 0）でELF ≡ off
 p6=$(ls "$R6/3333333333333333"/*.pack | head -1); sz=$(stat -c %s "$p6")
 full=$(od -An -t d8 -N 8 "$R6/3333333333333333/.full" | tr -d ' ')
 lim=$(( 4 * full > 1048576 ? 4 * full : 1048576 ))

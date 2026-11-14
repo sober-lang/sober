@@ -1,6 +1,6 @@
 package exact
 
-// float の網（PBT — quick.Float で引いた値）: 実行時の演算・sqrt・int との変換・解析・最短の印字が IEEE 754 の定義どおりかを検算で見る。
+// floatの検査（PBT — quick.Floatで引いた値）: 実行時の演算・sqrt・intとの変換・解析・最短の印字がIEEE 754の定義どおりかを検算で見る。
 // 定義の側（このパッケージの Check*）は実装（SSE2・floatfmt）と算法を共有しない。コンパイル時の畳みは TestFold（リテラルどうしの演算 — 畳んだ値を同じ検算に通す）
 
 import "std/convert"

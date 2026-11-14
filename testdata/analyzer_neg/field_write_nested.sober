@@ -1,6 +1,6 @@
 package main
 
-// 入れ子の struct の欄（欄 inner の中の書き = inner への書き）
+// 入れ子のstructのフィールド（フィールドinnerの中の書き = innerへの書き）
 import "testdata/fieldpkg/box"
 
 func main() {

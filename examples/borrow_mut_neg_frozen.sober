@@ -1,6 +1,6 @@
 package main
 
-// 負例: 値の呼び出しの mut の席へ渡すのは mut 実引数（language.md 17 節 U2・25 節「関数型の mut 仮引数」）— freeze の後に渡すと、
+// 負例: 値の呼び出しの mut 仮引数へ渡すのは mut 実引数（language.md 17 節 U2・25 節「関数型の mut 仮引数」）— freeze の後に渡すと、
 // 受け手が読むだけでも拒否（func 宣言へ `mut z` を渡すのと同じ）
 
 type Z struct {

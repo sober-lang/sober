@@ -2,7 +2,7 @@ package main
 
 import "std/http/server"
 
-// 共有のルートのハンドラが補助関数の 2 段奥で Authorization を読む（効果のビットの閉包）
+// 共有のルートのハンドラが補助関数の2段奥でAuthorizationを読む（エフェクトのビットのクロージャ）
 func token(r http.server.Request) bool {
     return http.server.Authorization(r) != nil
 }

@@ -1,10 +1,10 @@
 package main
 
-// 保存の方針と認証の源（language.md 12 節・28 節）: 応答の Cache-Control の既定は private（共有キャッシュに載せない）・
-// 応答 1 件の方針は Private / NoStore・共有キャッシュも保存してよい方針（Fresh）はルートの行で書く（Dispatch が cache の無い応答に写す — 応答の方針が勝つ）。
-// 認証のヘッダ（Authorization・Cookie）は名指しの口 http.server.Authorization / http.server.Cookie でだけ読める（http.server.Header は nil）。
-// 保存の方針と検証子の名前（Cache-Control・ETag ほか）を任意ヘッダに書くと panic(BadHeader) — 最後の要求がそれで死ぬ（終了 101）。
-// ネットの代わりに recv が決まった要求の列を 1 切片で渡し、send が応答を印字する（examples/http_router の形 — 行末の CR は外して印字）
+// 保存の方針と認証の源（language.md 12 節・28 節）: レスポンスのCache-Controlの既定はprivate（共有キャッシュに載せない）・
+// レスポンス1件の方針はPrivate / NoStore・共有キャッシュも保存してよい方針（Fresh）はルートの行で書く（Dispatchがcacheの無いレスポンスに反映する — レスポンスの方針が勝つ）。
+// 認証のヘッダ（Authorization・Cookie）は専用の API http.server.Authorization / http.server.Cookieでだけ読める（http.server.Headerはnil）。
+// 保存の方針と検証子の名前（Cache-Control・ETagほか）を任意ヘッダに書くとpanic(BadHeader) — 最後のリクエストがそれで死ぬ（終了101）。
+// ネットの代わりにrecvが決まったリクエストの列を1切片で渡し、sendがレスポンスを印字する（examples/http_routerの形 — 行末のCRは外して印字）
 
 import "std/http"
 import "std/http/server"
@@ -13,17 +13,17 @@ func or(s string?) string {
     return if s != nil { s } else { "-" }
 }
 
-// 認証に届く応答（共有の宣言はしない — 既定の private のまま）
+// 認証に届くレスポンス（共有の宣言はしない — 既定のprivateのまま）
 func me(r http.server.Request) http.server.Response {
     return http.server.Text("sid=${or(http.server.Cookie(r, "sid"))} auth=${or(http.server.Authorization(r))} header=${or(http.server.Header(r, "cookie"))}\n")
 }
 
-// 個人の応答をブラウザに 30 秒持たせる
+// 個人のレスポンスをブラウザに30秒持たせる
 func feed(r http.server.Request) http.server.Response {
     return http.server.Response{status: 200, contentType: "text/plain", body: bytes("feed\n"), cache: http.server.Private{maxAge: 30}}
 }
 
-// 秘密の応答はどこにも保存させない
+// 秘密のレスポンスはどこにも保存させない
 func token(r http.server.Request) http.server.Response {
     return http.server.Response{status: 200, contentType: "text/plain", body: bytes("t\n"), cache: http.server.NoStore{}}
 }
@@ -49,7 +49,7 @@ func show(b []byte) error? {
     return nil
 }
 
-// 切片を 2 つ渡す（予約名の panic の前に 1 つ目の切片の応答が出る）
+// 切片を2つ渡す（予約名のpanicの前に1つ目の切片のレスポンスが出る）
 func give(a string, b string, k func([]byte)) error? {
     k(bytes(a))
     k(bytes(b))

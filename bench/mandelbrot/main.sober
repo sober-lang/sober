@@ -1,7 +1,7 @@
 package main
 
 // mandelbrot（benchmarks game — docs/bench.md）: n × n の点を 50 回まで反復し、|z|² ≤ 4 を 1 ビットで詰めた PBM（P4）を標準出力へ。
-// 素直な形・逐次（Go の双子 bench/mandelbrot/go と同じアルゴリズム・同じ演算の順）
+// 素直な形・逐次（比較用のGoの実装bench/mandelbrot/goと同じアルゴリズム・同じ演算の順）
 
 import "std/convert"
 import "std/io"

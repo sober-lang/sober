@@ -2,18 +2,18 @@ package pgwire
 
 // PostgreSQL の wire protocol 3.0 の符号化と復号（純粋 — 入出力を持たない）。
 // 送る側は 1 メッセージ = 1 関数で、結果のバイト列をそのまま繋いで送る。受ける側は FrameLen で 1 本ずつ切り出して Decode で読む。
-// 受けたバイト列は信用しない: 長さの欄・数の欄・NUL 終端・DataRow の列の長さは全部 body の中に収まるかを確かめ、外れたら Protocol
+// 受けたバイト列は信用しない: 長さのフィールド・数のフィールド・NUL終端・DataRowの列の長さは全部bodyの中に収まるかを確認し、外れたらProtocol
 
-// サーバの送ってきたバイト列が wire protocol の形でない（長さの欄・数の欄が body に収まらない・NUL 終端が無い・知らない認証の副種別の形）
+// サーバの送ってきたバイト列が wire protocol の形でない（長さのフィールド・数のフィールドがbodyに収まらない・NUL終端が無い・知らない認証の副種別の形）
 type Protocol error
 
-// プロトコルの版 3.0（StartupMessage の先頭の語）
+// プロトコルの版3.0（StartupMessageの先頭のワード）
 const protoV30 = 196608
 
-// SSLRequest の要求の番号
+// SSLRequestのリクエストの番号
 const sslCode = 80877103
 
-// ErrorResponse / NoticeResponse の欄 1 つ（code = 欄の種別の 1 バイト — 'S' 重大度・'C' SQLSTATE・'M' 本文・'D' 詳細・'n' 制約名 ほか）
+// ErrorResponse / NoticeResponseのフィールド1つ（code = フィールドの種別の1バイト — 'S' 重大度・'C' SQLSTATE・'M' 本文・'D' 詳細・'n' 制約名 ほか）
 type Field struct {
     code byte
     value string
@@ -44,7 +44,7 @@ type Msg union {
     AuthSasl { mechs []string }
     AuthSaslContinue { data []byte }
     AuthSaslFinal { data []byte }
-    // SASL 以外の認証の要求（3 = 平文のパスワード・5 = MD5 ほか — std/pg は受けない）
+    // SASL以外の認証のリクエスト（3 = 平文のパスワード・5 = MD5ほか — std/pgは受けない）
     AuthOther { code int }
     ParamStatus { name string; value string }
     BackendKey { pid int; key []byte }
@@ -52,7 +52,7 @@ type Msg union {
     Ready { status byte }
     RowDesc { cols []Col }
     ParamDesc { oids []int }
-    // 列の値は body のまま（Decode が列の長さの並びを確かめ済み — RowCol で切り出す）
+    // 列の値はbodyのまま（Decodeが列の長さの並びを確認済み — RowColで切り出す）
     DataRow { body []byte }
     CommandComplete { tag string }
     EmptyQuery {}
@@ -83,7 +83,7 @@ func put16(b mut []byte, v int) {
     b = append(b, byte(v & 255))
 }
 
-// s と終端の NUL（s が NUL を含むかは呼び手が確かめる — CstrOk）
+// sと終端のNUL（sがNULを含むかは呼び手が確認する — CstrOk）
 func putCstr(b mut []byte, s string) {
     for x <- bytes(s) {
         b = append(b, x)
@@ -97,7 +97,7 @@ func putAll(b mut []byte, s []byte) {
     }
 }
 
-// s が NUL を含まない（C 文字列の欄に載せてよい）
+// sがNULを含まない（C文字列のフィールドに載せてよい）
 func CstrOk(s string) bool {
     for x <- bytes(s) {
         if x == 0 {
@@ -107,7 +107,7 @@ func CstrOk(s string) bool {
     return true
 }
 
-// tag と長さの欄を付けた型つきのメッセージ
+// tagと長さのフィールドを付けた型つきのメッセージ
 func frame(tag byte, body []byte) []byte {
     mut b := mut []byte{tag}
     put32(mut b, len(body) + 4)
@@ -122,7 +122,7 @@ func cat(a []byte, b []byte) []byte {
     return freeze(o)
 }
 
-// StartupMessage（版 3.0・user と database の 2 つの欄）
+// StartupMessage（版3.0・userとdatabaseの2つのフィールド）
 func EncStartup(user string, db string) []byte {
     mut body := mut []byte{}
     put32(mut body, protoV30)
@@ -250,7 +250,7 @@ func EncSaslResponse(data []byte) []byte {
 
 // ---- 受けるメッセージ
 
-// b[at:] に揃ったメッセージの長さ（tag の 1 バイト込み）。揃っていなければ 0・長さの欄が 4 未満か max を超えれば -1
+// b[at:] に揃ったメッセージの長さ（tagの1バイト込み）。揃っていなければ0・長さのフィールドが4未満かmaxを超えれば -1
 func FrameLen(b []byte, at int, max int) int {
     if len(b) - at < 5 {
         return 0
@@ -427,7 +427,7 @@ func decodeIn(tag byte, b []byte, r mut rd) Msg {
     }
 }
 
-// 'R'（Authentication* — 副種別の語の後ろが種別ごとの形）
+// 'R'（Authentication* — 副種別のワードの後ろが種別ごとの形）
 func decodeAuth(b []byte, r mut rd) Msg {
     code := r32(b, mut r)
     return if code == 0 {
@@ -514,7 +514,7 @@ func CellLen(b []byte, at int) int {
     return if u >= 2147483648 { u - 4294967296 } else { u }
 }
 
-// 欄の列（欄の種別 0 で終わる）
+// フィールドの列（フィールドの種別0で終わる）
 func decodeFields(b []byte, r mut rd) []Field {
     mut fs := mut []Field{}
     mut more := true
@@ -529,7 +529,7 @@ func decodeFields(b []byte, r mut rd) []Field {
     return freeze(fs)
 }
 
-// fs の欄 code の値（無ければ ""）
+// fsのフィールドcodeの値（無ければ ""）
 func FieldOf(fs []Field, code byte) string {
     for f <- fs {
         if f.code == code {
@@ -539,7 +539,7 @@ func FieldOf(fs []Field, code byte) string {
     return ""
 }
 
-// DataRow の body（Decode が形を確かめ済み）の列 i の値（NULL なら nil）
+// DataRowのbody（Decodeが形を確認済み）の列iの値（NULLならnil）
 func RowCol(b []byte, i int) ([]byte)? {
     mut r := reader()
     n := r16(b, mut r)

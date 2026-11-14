@@ -2,7 +2,7 @@ package desugar
 
 // 絞りの消滅（language.md 15 節 — 代入で絞りが外れる）: 絞った領域で mut の x に書く文（`x = e`・`f(mut x)`・`x.f = e`）の後ろでは、
 // 名前 x は外の `T?` のセルに戻る。ループ・式の位置での書き（条件・値の中の `f(mut x)` 等）はその文の頭から外れる —
-// 字面の順で切ると 2 周目の頭・同じ式の後ろの項が古いペイロードの写しを読む。
+// 字面の順で切ると2周目の頭・同じ式の後ろの項が古いペイロードのコピーを読む。
 // 判定は字面だけ（同じ名前の束縛し直しは無い — シャドーイングは拒否済み）。check（脱糖器）と build（lower）が同じ述語を引く
 
 import "ast"
@@ -23,7 +23,7 @@ func KillOf(st mut S, s NodeRef, nm StrRef) int {
         if writesListN(mut st, lC(x), nm) {
             return KillBefore
         }
-        // 的: 名前そのものは右辺を絞ったまま読んでから書く（後ろから外れる）・欄 / 添字の道の根は文の頭から
+        // ターゲット: 名前そのものは右辺を絞ったまま読んでから書く（後ろから外れる）・フィールド / 添字のパスの根は文の頭から
         ts := lA(x)
         mut out := KillNone
         mut i := 0
@@ -65,7 +65,7 @@ func KillOf(st mut S, s NodeRef, nm StrRef) int {
     return KillNone
 }
 
-// 文位置の if: 条件の書きは頭から・腕の書きは後ろから（腕の中は腕の文の列が同じ規則で切る）
+// 文位置のif: 条件の書きは頭から・分岐の書きは後ろから（分岐の中は分岐の文の列が同じ規則で切る）
 func ifKill(st mut S, e NodeRef, nm StrRef) int {
     y := nodeOf(mut st, e)
     if writesN(mut st, nA(y), nm) {
@@ -75,7 +75,7 @@ func ifKill(st mut S, e NodeRef, nm StrRef) int {
     els := nC(y)
     if els != -1 {
         if kindN(mut st, els) == ast.EIf {
-            // else if の条件は前の腕で書いた後には評価されない（前の条件が偽のときだけ）
+            // else if の条件は前の分岐で書いた後には評価されない（前の条件が偽のときだけ）
             ek := ifKill(mut st, els, nm)
             arms = arms || ek != KillNone
         } else {
@@ -85,7 +85,7 @@ func ifKill(st mut S, e NodeRef, nm StrRef) int {
     return if arms { KillAfter } else { KillNone }
 }
 
-// switch の腕（default を含む）のどれかが nm に書くか
+// switchの分岐（defaultを含む）のどれかがnmに書くか
 func casesWrite(st mut S, e NodeRef, nm StrRef) bool {
     y := nodeOf(mut st, e)
     cs := lB(y)
@@ -99,7 +99,7 @@ func casesWrite(st mut S, e NodeRef, nm StrRef) bool {
     return nC(y) != -1 && writesN(mut st, nC(y), nm)
 }
 
-// 道（`x.f.g`・`x[i]`）の根が名前 nm か
+// パス（`x.f.g`・`x[i]`）の根が名前nmか
 func rootIs(st mut S, t0 NodeRef, nm StrRef) bool {
     mut t := t0
     while kindN(mut st, t) == ast.ESelector || kindN(mut st, t) == ast.EIndex || kindN(mut st, t) == ast.EParen {
@@ -108,7 +108,7 @@ func rootIs(st mut S, t0 NodeRef, nm StrRef) bool {
     return kindN(mut st, t) == ast.EIdent && strEq(mut st, sA(nodeOf(mut st, t)), nm)
 }
 
-// mut 実引数の道（"x" / "x.f.g"）の根が nm か
+// mut実引数のパス（"x" / "x.f.g"）の根がnmか
 func mutRootIs(st mut S, path StrRef, nm StrRef) bool {
     n := dat(mut st, int(nm))
     p := dat(mut st, int(path))
@@ -144,13 +144,13 @@ func writesL(st mut S, l ListRef, nm StrRef) bool {
     return writesListN(mut st, l, nm)
 }
 
-// if 式 e（nil 判定の if）の腕のどれかが nm に書くか — 書かない絞りは消滅を追わない（文ごとの判定を省く）
+// if式e（nil判定のif）の分岐のどれかがnmに書くか — 書かない絞りは消滅を追わない（文ごとの判定を省く）
 func IfWrites(st mut S, e NodeRef, nm StrRef) bool {
     x := nodeOf(mut st, e)
     return writesL(mut st, lA(nodeOf(mut st, nB(x))), nm) || writesN(mut st, nC(x), nm)
 }
 
-// 文の列 l が nm に書くか（lower の絞った腕の入口）
+// 文の列lがnmに書くか（lowerの絞った分岐の入口）
 func ListWrites(st mut S, l ListRef, nm StrRef) bool {
     return writesL(mut st, l, nm)
 }
@@ -160,7 +160,7 @@ func NodeWrites(st mut S, n NodeRef, nm StrRef) bool {
     return writesN(mut st, n, nm)
 }
 
-// 節 n（文・式・腕）の中に nm への書き（名前・道の根への代入・mut 実引数）があるか。ラムダの中は数えない（ラムダは mut の束縛を捕捉しない —
+// 節n（文・式・分岐）の中にnmへの書き（名前・パスの根への代入・mut実引数）があるか。ラムダの中は数えない（ラムダはmutの束縛を捕捉しない —
 // 外の x はラムダの本体から書けない）
 func writesN(st mut S, n NodeRef, nm StrRef) bool {
     if int(n) < 0 {
@@ -213,7 +213,7 @@ func writesN(st mut S, n NodeRef, nm StrRef) bool {
         return writesN(mut st, nA(x), nm) || writesN(mut st, nB(x), nm)
     }
     if k == ast.KNamedArg || k == ast.KCase || k == ast.KElem {
-        // a は名前 / パターンの列 / 欄の名前
+        // aは名前 / パターンの列 / フィールドの名前
         return writesN(mut st, nB(x), nm)
     }
     if k == ast.EPipe {
@@ -253,7 +253,7 @@ func writesN(st mut S, n NodeRef, nm StrRef) bool {
     return false
 }
 
-// 束縛の鎖 eb の上で、絞った束縛 b（nrw > 0）の名前を外の mut のセルの束縛へ戻した鎖
+// 束縛のチェーンebの上で、絞った束縛b（nrw > 0）の名前を外のmutのセルの束縛へ戻したチェーン
 func killEnv(st mut S, eb int, b int) int {
     x := bnd(mut st, b)
     o := lookup(mut st, x.parent, x.name)
@@ -267,7 +267,7 @@ func killEnv(st mut S, eb int, b int) int {
     return at
 }
 
-// 文 s の頭（before = true）/ 後ろで、今絞っている名前（st.nrwNames）のうち s が外す分を外の束縛へ戻した鎖
+// 文sの頭（before = true）/ 後ろで、今絞っている名前（st.nrwNames）のうちsが外す分を外の束縛へ戻したチェーン
 func killStmt(st mut S, s NodeRef, eb0 int, before bool) int {
     mut eb := eb0
     mut i := 0

@@ -4,19 +4,19 @@ package lower
 // 表面は変えない。std/task を使わないプログラムは不変（ring を作らない）。
 // std/task を使うプログラムの read_file / read_fd の読みと write_file の書きは rt.uio を通る — ワーカーに ring があれば SQE を積んで
 // （user_data = TCB）task を待ちに入れ、提出は rt.mn_next の入口でまとめて（rt.uring_poll）・完了も同じ入口で CQ を読んで取り込む（syscall なし）。
-// 走れる task が無く ring に task の io があるワーカーは futex でなく ring で眠る（眠りの語 = 2）— 他のワーカーの起こしは eventfd への書き
-// （眠る前に eventfd の読みを ring に出しておく。IORING_OP_MSG_RING は 5.18 から — WSL2 の 5.15 に無い）。ring の無いワーカー（W1・probe の失敗・
+// 走れるtaskが無くringにtaskのioがあるワーカーはfutexでなくringでスリープする（スリープのワードは2）— 他のワーカーのウェイクアップはeventfdへの書き
+// （スリープする前にeventfdの読みをringに出しておく。IORING_OP_MSG_RINGは5.18から — WSL2の5.15に無い）。ringの無いワーカー（W1・probeの失敗・
 // SOBER_IO=1/2）と、積んだ io が UR_FLYMAX 本あるときは同期 syscall（CQ があふれない上界 — 7 本 + eventfd の 1 本 ≤ CQ 16）
 // - rt.uring_init()（ワーカー 0 は mn_start の頭・1〜N-1 は worker_main の頭）: io_uring_setup(8) → 成功なら SQ / CQ の環と SQE の列を mmap して
 //   ワーカーの表の WK_RING に記録（[fd, 環, SQE の列, io_uring_params 120 B]）。失敗（ENOSYS・EPERM〔seccomp〕・ENOMEM・FEAT_SINGLE_MMAP なし・
 //   mmap の失敗）は WK_RING = 0 のまま — 今の経路（同期 syscall）。ワーカー 0 の結果を MN_IOBE に（1 = uring・2 = 今の経路）
-// - 開発の口: SOBER_IO=1 は probe しない（今の経路に固定）・SOBER_IO=2 は setup が -ENOSYS を返した形の模造（seccomp で塞がれた環境の再現）。
+// - 開発用のオプション: SOBER_IO=1はprobeしない（今の経路に固定）・SOBER_IO=2はsetupが -ENOSYS を返した形の模造（seccompで塞がれた環境の再現）。
 //   SOBER_IO_TRACE=1 はワーカーごとに NOP を 1 往復して標準エラーへ `#io worker <k> backend=uring enter=<n> nop=<res> ud=<user_data>`
 //   （今の経路なら `#io worker <k> backend=sync probe=<-errno>`）
 import "desugar"
 import "std/iter"
 
-// 32 ビットの欄は 8 バイトの読みの下位 32 ビット（x86 は非整列の読みを許す）・書きは 4 バイトに割る（隣の欄はカーネルが書く）
+// 32ビットのフィールドは8バイトの読みの下位32ビット（x86は非整列の読みを許す）・書きは4バイトに割る（隣のフィールドはカーネルが書く）
 
 const MN_IOMODE = 10  // SOBER_IO（0 = 自動・1 = 今の経路に固定・2 = 塞がれた形の模造）
 const MN_IOTR = 11    // SOBER_IO_TRACE
@@ -28,40 +28,40 @@ const WK_IOSUB = 14   // SQ に積んでまだ提出していない数（eventfd
 const UR_PARAMS = 24  // 記録の中の io_uring_params の位置（バイト）
 const UR_ENTRIES = 8
 const UR_FLYMAX = UR_ENTRIES - 1   // ring に出す task の io の上限（越えたら同期 syscall）
-const UR_EFD = 20     // 記録の語: 起こしの eventfd（記録の語 3〜17 は io_uring_params）
+const UR_EFD = 20     // 記録のワード: ウェイクアップのeventfd（記録のワード3〜17はio_uring_params）
 const UR_ARMED = 21   // 1 = eventfd の読みを ring に出してある
 const UR_ONE = 22     // eventfd へ書く 8 バイトの 1
 const UR_EBUF = 23    // eventfd の読みの受け皿
 const UD_WAKE = 1     // eventfd の読みの user_data（task の io は TCB の番地）
 // net の ring（language.md 28 節の net N11〜N13）: net を使う std/task のプログラムのワーカーは、カーネルが
 // DEFER_TASKRUN + SINGLE_ISSUER + CQSIZE の setup を受けたら（≥ 6.1 — multishot RECV / ACCEPT・PBUF_RING を含む）大きい ring を作り、epoll を作らない:
-// fd の待ち（rt.fdwait）は POLL_ADD（user_data = TCB | UDT_POLL）・期限で切れた待ちは ASYNC_CANCEL・眠りは enter（期限つきの待ち手の最小の期限は EXT_ARG の timeout）。
-// 完了は enter(GETEVENTS) でしか CQ に載らないので、走れる task が尽きたときに 1 回の enter で提出・取り込み・眠りをまとめる（D2）。
-// 開発の口 SOBER_NET=1 は epoll の道に固定（出力一致の網）
-// 記録の語（24〜27 は chunk.sober のアリーナ — 重ねない）
-const UR_NET = 48     // 記録の語: 1 = net の ring（上の形）
-const UR_DLQ = 49     // 期限つきの待ち手の鎖の頭（TC_AWNEXT — net の ring の道。epoll の道は EP_DLQ）
-const UR_TS = 50      // enter の timeout（__kernel_timespec 2 語）
-const UR_GEA = 52     // io_uring_getevents_arg（3 語 — sigmask 0・大きさ 0・ts の番地）
-// 鎖の最早の期限の下界（積むとき min・期限の走査が残りの最小に引き直す・外しは触らない — 下界のまま）。今がこれより前なら走査は鎖を歩かない
+// fdの待ち（rt.fdwait）はPOLL_ADD（user_data = TCB | UDT_POLL）・期限で切れた待ちはASYNC_CANCEL・スリープはenter（期限つきの待ち手の最小の期限はEXT_ARGのtimeout）。
+// 完了はenter(GETEVENTS) でしかCQに載らないので、走れるtaskが尽きたときに1回のenterで提出・取り込み・スリープをまとめる（D2）。
+// 開発用のオプションSOBER_NET=1はepollのパスに固定（出力一致の検査）
+// 記録のワード（24〜27はchunk.soberのアリーナ — 重ねない）
+const UR_NET = 48     // 記録のワード: 1 = netのring（上の形）
+const UR_DLQ = 49     // 期限つきの待ち手のチェーンの頭（TC_AWNEXT — netのringのパス。epollのパスはEP_DLQ）
+const UR_TS = 50      // enterのtimeout（__kernel_timespec 2ワード）
+const UR_GEA = 52     // io_uring_getevents_arg（3ワード — sigmask 0・大きさ0・tsの番地）
+// チェーンの最早の期限の下界（積むときmin・期限の走査が残りの最小に引き直す・外しは触らない — 下界のまま）。今がこれより前なら走査はチェーンを歩かない
 const UR_DLMIN = 55
 const UR_NSQ = 256
 // 登録済みの ring fd（REGISTER_RING_FDS — 5.18）: enter はファイル表の引きと参照の原子操作を省いて添字で入る。登録はスレッドごと（ring を作ったワーカーが自分で）
 const UR_EFDX = 71    // enter に渡す fd（登録できたら添字・できなければ素の fd）
-const UR_EFL = 72     // enter の flags に足す語（IORING_ENTER_REGISTERED_RING = 16・登録できなければ 0）
-const UR_RFR = 73     // io_uring_rsrc_update（2 語 — offset = −1 で自動・data = fd）
+const UR_EFL = 72     // enterのflagsに足すワード（IORING_ENTER_REGISTERED_RING = 16・登録できなければ0）
+const UR_RFR = 73     // io_uring_rsrc_update（2ワード — offset = −1で自動・data = fd）
 // 頭の取り込み（D2 の例外）: net の ring は走れる task が尽きたときだけ enter するが、未提出が UR_POKE 本に届いたら
-// mn_next の頭で眠らずに提出と取り込み（GETEVENTS・min_complete 0）+ 時計の表の満了。1 回の enter で取り込む束が作業集合の深さで、束が深いと
-// 4096 接続で cycles / 要求が 256 接続の 2.5 倍の崖がある — 小刻みにすると L2 に収まる。取り込んだ task は走れる積みの前（LIFO — 熱いうちに）。
-// 棄てた案: 取り込んだ束を古い束の後ろへ（FIFO — 利得が消える）・受けの起こしだけ後ろへ（1024 の尾は戻るが async の HWM +50 MB）・閾値を未完了の数に比例（同値）
+// mn_nextの頭でスリープせずに提出と取り込み（GETEVENTS・min_complete 0）+ 時計の表の満了。1回のenterで取り込むバッチが作業集合の深さで、バッチが深いと
+// 4096接続でcycles / リクエストが256接続の2.5倍の崖がある — 小刻みにするとL2に収まる。取り込んだtaskは走れるスタックの前（LIFO — 熱いうちに）。
+// 棄てた案: 取り込んだバッチを古いバッチの後ろへ（FIFO — 利得が消える）・受けのウェイクアップだけ後ろへ（1024の尾は戻るがasyncのHWM +50 MB）・閾値を未完了の数に比例（同値）
 const UR_POKE = 8
 const UR_NCQ = 4096
 const UR_NETF = 12296 // IORING_SETUP_CQSIZE | SINGLE_ISSUER | DEFER_TASKRUN
 const UD_CANCEL = 3   // ASYNC_CANCEL の user_data（完了は捨てる）
 const UD_CLOSE = 4    // CLOSE の user_data（完了は捨てる・積んだ io の数を戻す — netring.sober の閉じ）
-const UDT_POLL = 2    // POLL_ADD の user_data の印（TCB | 2）
+const UDT_POLL = 2    // POLL_ADDのuser_dataのマーク（TCB | 2）
 const IO_PENDING = -9223372036854775807
-const PEND_DOM = -9223372036854775804 // IO_PENDING + 3: domain の Await の待ち（手渡し = 1・満了 = -110 — 起こし手と期限の走査が CAS で競う・domain.sober）
+const PEND_DOM = -9223372036854775804 // IO_PENDING + 3: domainのAwaitの待ち（手渡し = 1・満了 = -110 — ウェイクアップする側と期限の走査がCASで競う・domain.sober）
 
 func needUringRt(st mut St) {
     lsNeed(mut st, NEED_URING, 0)
@@ -188,7 +188,7 @@ func buildUringInit(st mut St) {
         setCur(mut st, bNet)
         store(mut st, itop(mut st, rec), UR_NET, one)
         // spawn の前に main が epoll で待った（ワーカー 0 — Serve の最初の accept 等）記録は畳む: ここ〔mn_start〕では待ち手はいない（走っているのは main だけ）。
-        // 残すと起こし手（mnClaim）が epoll の側の eventfd へ書き、ring で眠るワーカーを起こし損ねる
+        // 残すとウェイクアップする側（mnClaim）がepollの側のeventfdへ書き、ringでスリープするワーカーをウェイクアップし損ねる
         ep0 := load(mut st, wk, WK_EP)
         bNe0 := branchIf(mut st, cmp(mut st, CNe, ep0, zero))
         urSys(mut st, 3, []int{load(mut st, itop(mut st, ep0), EP_FD)})
@@ -218,7 +218,7 @@ func buildUringInit(st mut St) {
     cqsz := bin(mut st, BAdd, urLd32(mut st, cqo, 20), bin(mut st, BShl, urLd32(mut st, pa, 4), iconst(mut st, 4)))
     ring := urMmap(mut st, imax(mut st, sqsz, cqsz), fd, 0, bFb)
     sqes := urMmap(mut st, bin(mut st, BShl, nsq, iconst(mut st, 6)), fd, 268435456, bFb)
-    // 起こしの eventfd（EFD_CLOEXEC — 読みは ring に出すので塞ぐ形のまま。O_NONBLOCK だと ring の読みが -EAGAIN で返る）
+    // ウェイクアップのeventfd（EFD_CLOEXEC — 読みはringに出すので塞ぐ形のまま。O_NONBLOCKだとringの読みが -EAGAIN で返る）
     efd := urSys(mut st, 290, []int{zero, iconst(mut st, 524288)})
     urBail(mut st, cmp(mut st, CLt, efd, zero), bFb, efd, fd)
     rp := itop(mut st, rec)
@@ -257,7 +257,7 @@ func buildUringInit(st mut St) {
     bNop := newBlock(mut st)
     condbr(mut st, cmp(mut st, CNe, load(mut st, mn, MN_IOTR), zero), bNop, -1, bEnd, -1)
     setCur(mut st, bNop)
-    // NOP を 1 往復（計器）: SQE を積んで tail を進め、io_uring_enter(fd, 1, 1, GETEVENTS) で完了を待ち、CQE を読んで head を進める
+    // NOPを1往復（計装）: SQEを積んでtailを進め、io_uring_enter(fd, 1, 1, GETEVENTS) で完了を待ち、CQEを読んでheadを進める
     tailA := bin(mut st, BAdd, ring, urLd32(mut st, sqo, 4))
     t := urLd32(mut st, tailA, 0)
     idx := bin(mut st, BAnd, t, urLd32(mut st, bin(mut st, BAdd, ring, urLd32(mut st, sqo, 8)), 0))
@@ -300,9 +300,9 @@ func buildUringInit(st mut St) {
 }
 
 // 記録 rec の ring の SQ の末尾に SQE を 1 つ積む（w0 = opcode | fd << 32・off = ファイルの位置の値か -1〔定数 -1 = 今の位置〕・提出は rt.uring_poll）。
-// 積む前に SQ の空きを作る（urRoom — 全部の積みがここを通るので「未提出の SQE が SQ の大きさを越えない」は呼び手に依らない。眠りの前の
+// 積む前にSQの空きを作る（urRoom — 全部の積みがここを通るので「未提出のSQEがSQの大きさを越えない」は呼び手に依らない。スリープの前の
 // eventfd の読みだけが空きを見ずに積むと、期限の走査の取り消しで未提出がちょうど SQ の大きさに届いた直後に 1 本越え、一番古い未提出の SQE〔SEND〕を
-// 上書きして失う — その完了を待つ task は誰にも起こされず、期限の scope の中の Serve が終わらない）
+// 上書きして失う — その完了を待つtaskは誰にもウェイクアップされず、期限のscopeの中のServeが終わらない）
 func urSqe(st mut St, rec int, w0 int, addr int, n int, ud int, off int) {
     urSqeW5(mut st, rec, w0, addr, n, ud, off, -1)
 }
@@ -331,7 +331,7 @@ func urSqeW5(st mut St, rec int, w0 int, addr int, n int, ud int, off int, w5 in
     wk := globaladdr(mut st, st.wkG)
     store(mut st, wk, WK_IOSUB, urAdd(mut st, load(mut st, wk, WK_IOSUB), 1))
     if st.rtMut == 4 {
-        // 数え口: 積んだ SQE・溜めの最初の SQE の時刻（WK_KHOLD — 0 = 溜め無し）
+        // カウンタ: 積んだSQE・バッファの最初のSQEの時刻（WK_KHOLD — 0 = バッファ無し）
         kInc(mut st, 10)
         bH := branchIf(mut st, cmp(mut st, CEq, load(mut st, wk, WK_KHOLD), iconst(mut st, 0)))
         store(mut st, wk, WK_KHOLD, clockNs(mut st))
@@ -354,7 +354,7 @@ func urRoom(st mut St, rec int) {
 }
 
 // rt.uio(op, fd, addr, n) → 結果（バイト数 / 負の errno）: op = 22（READ）/ 23（WRITE）。ワーカーに ring があり積んだ io が UR_FLYMAX 本未満なら
-// SQE を積んで今の task を待ちに入れ（rt.task_wait — 完了は rt.uring_poll が TC_IORES に書いて走れる積みへ）、無ければ同期の read(2) / write(2)（op − 22）。
+// SQEを積んで今のtaskを待ちに入れ（rt.task_wait — 完了はrt.uring_pollがTC_IORESに書いて走れるスタックへ）、無ければ同期のread(2) / write(2)（op − 22）。
 // 1 回の長さは 2^30 で切る（短い書き・読みは呼び手が続きをする — 同期と同じ）
 func buildUio(st mut St) {
     begin(mut st, st.rtUio)
@@ -394,16 +394,34 @@ func buildUio(st mut St) {
     ret(mut st, load(mut st, mp, TC_IORES))
 }
 
-// uring_poll の net の ring の関門（cur は rec ≠ 0 の側）: 記録が net の ring で wait でなければ返る（D2）・net の ring の眠りなら
-// 期限の過ぎた待ち手を鎖から外して ASYNC_CANCEL を積み（待ち手は取り消しの完了〔-125 → -110〕で起きる）、残りの最小の期限を UR_TS / UR_GEA に置いて 1 を返す
-// （期限つきの待ち手がいなければ 0 — enter は期限なしで眠る）
+// uring_pollのnetのringの関門（curはrec ≠ 0の側）: 記録がnetのringでwaitでなければ返る（D2）・netのringのスリープなら
+// 期限の過ぎた待ち手をチェーンから外してASYNC_CANCELを積み（待ち手は取り消しの完了〔-125 → -110〕で起きる）、残りの最小の期限をUR_TS / UR_GEAに置いて1を返す
+// （期限つきの待ち手がいなければ0 — enterは期限なしでスリープする）
 func urNetGate(st mut St, rec int, wait int) int {
     rp := itop(mut st, rec)
     zero := iconst(mut st, 0)
     unet := cmp(mut st, CNe, load(mut st, rp, UR_NET), zero)
-    bRet := branchIf(mut st, bin(mut st, BAnd, bin(mut st, BAnd, unet, cmp(mut st, CEq, wait, zero)), cmp(mut st, CLt, load(mut st, globaladdr(mut st, st.wkG), WK_IOSUB), iconst(mut st, UR_POKE))))
+    // 頭の取り込みの数え = taskが積んだ未提出 + 時刻つきの送信バッファリングの数（UR_TPK）。満了の処理が積んだSEND（UR_TFP）は数えない:
+    // 数えると、積んだ8本 → 取り込みのenter → 次の満了の処理がまた8本、の連鎖になってtaskが走れない。時刻つきの送信バッファリングはSQEを
+    // 積まないが、満了のSENDを時計の表から出すのは取り込みの後のrt.tmr_fireなので、リクエストごとにSENDを積む送信バッファリングと同じ間隔で取り込む。
+    // 満了で積んだSENDは、taskが8本ぶん積んだ後の取り込みか、走れるtaskが尽きたスリープのenterで提出される（IOFLYに数えてあるので
+    // ワーカーはfutexでスリープしない）
+    // ミュータント89（検査一式 — scripts/delaylat.sh）: 満了で積んだSENDも数える（連鎖の形）
+    pk := if chF(mut st, NETF_RECV) != -1 { bin(mut st, BAdd, bin(mut st, BSub, load(mut st, globaladdr(mut st, st.wkG), WK_IOSUB), if st.rtMut == 89 { zero } else { load(mut st, rp, UR_TFP) }), load(mut st, rp, UR_TPK)) } else { load(mut st, globaladdr(mut st, st.wkG), WK_IOSUB) }
+    bRet := branchIf(mut st, bin(mut st, BAnd, bin(mut st, BAnd, unet, cmp(mut st, CEq, wait, zero)), cmp(mut st, CLt, pk, iconst(mut st, UR_POKE))))
     ret(mut st, -1)
     setCur(mut st, bRet)
+    if chF(mut st, NETF_RECV) != -1 && st.pstatG != -1 {
+        // 計測（SOBER_PAR_STATS）: 満了で積んだSENDを除くとUR_POKEに届かない頭の取り込み = 連鎖の形のenterを数える（scripts/tschain.sh）
+        bPs := branchIf(mut st, pstatOn(mut st))
+        own := bin(mut st, BAdd, bin(mut st, BSub, load(mut st, globaladdr(mut st, st.wkG), WK_IOSUB), load(mut st, rp, UR_TFP)), load(mut st, rp, UR_TPK))
+        bCh := branchIf(mut st, bin(mut st, BAnd, bin(mut st, BAnd, unet, cmp(mut st, CEq, wait, zero)), cmp(mut st, CLt, own, iconst(mut st, UR_POKE))))
+        atomicXadd(mut st, globaladdr(mut st, st.pstatG), PS_TSCHAIN, iconst(mut st, 1))
+        br(mut st, bCh, -1)
+        setCur(mut st, bCh)
+        br(mut st, bPs, -1)
+        setCur(mut st, bPs)
+    }
     bD := newBlock(mut st)
     ext := param(mut st, bD, TyI64)
     if dlFn(st.rtD3) == 0 {
@@ -441,7 +459,7 @@ func urNetGate(st mut St, rec int, wait int) int {
     condbr(mut st, cmp(mut st, CGe, now, dlv), sx, -1, sk, -1)
     setCur(mut st, sx)
     awCut(mut st, pa, t)
-    // rt が直に起こす待ち（受け — netring.sober の PEND_RT）は起こすだけ・POLL_ADD と送りは取り消す（完了で -110 として起きる）・
+    // rtが直にウェイクアップする待ち（受け — netring.soberのPEND_RT）はウェイクアップするだけ・POLL_ADDと送りは取り消す（完了で -110としてウェイクアップする）・
     // domain の Await の待ち手（TC_DQDL ≠ 0 — domain.sober）は手渡しと CAS で競う（手渡しが勝っていれば何もしない）
     if st.domUse {
         bDw := newBlock(mut st)
@@ -481,8 +499,8 @@ func urNetGate(st mut St, rec int, wait int) int {
     return urTmrGate(mut st, rec, wait, ext)
 }
 
-// 関門の時計の表の段（sleep を組むプログラムだけ — report-ct1）: net の ring の眠りなら満了した sleep を起こし（rt.tmr_fire）、次の満了が
-// 期限の走査の timeout（ext = 1 のとき UR_TS）より早ければ enter の timeout をそれに。起こした待ち手がいれば enter は眠らない（buildUpoll の mc）
+// 関門の時計の表のフェーズ（sleepを組むプログラムだけ — report-ct1）: netのringのスリープなら満了したsleepをウェイクアップし（rt.tmr_fire）、次の満了が
+// 期限の走査のtimeout（ext = 1のときUR_TS）より早ければenterのtimeoutをそれに。ウェイクアップした待ち手がいればenterはスリープしない（buildUpollのmc）
 func urTmrGate(st mut St, rec int, wait int, ext int) int {
     if st.rtTmrFire == -1 {
         return ext
@@ -511,7 +529,7 @@ func urTmrGate(st mut St, rec int, wait int, ext int) int {
     return e2
 }
 
-// 送り置きの保険の timeout（cur は buildUpoll の関門の後）: 眠りで積んだ送り置きがあれば enter の timeout を FUSE_BACKSTOP_NS 以下に（EXT_ARG を立てた ext を返す）
+// 送信バッファリングの保険のtimeout（curはbuildUpollの関門の後）: スリープで積んだ送信バッファリングがあればenterのtimeoutをFUSE_BACKSTOP_NS以下に（EXT_ARGを立てたextを返す）
 func fuseGate(st mut St, rec int, wait int, fq int, ext int) int {
     rp := itop(mut st, rec)
     zero := iconst(mut st, 0)
@@ -535,9 +553,9 @@ func fuseGate(st mut St, rec int, wait int, fq int, ext int) int {
     return e2
 }
 
-// rt.uring_poll(wait): 積んだ SQE を提出し（wait なら先に eventfd の読みを出し、完了が 1 つ来るまで眠る — ring の眠り）、
-// CQ に来た完了を全部取り込む: task の io は TC_IORES に結果を書いて自分の走れる積みへ（走り始めた task はワーカーに固定 — 提出したワーカーの CQ に来る）・
-// eventfd の読みは「出してある」の印を消すだけ。提出が中断された分（-EINTR 等で返った数が足りない）は SQ に残り次の呼び出しで出る
+// rt.uring_poll(wait): 積んだSQEを提出し（waitなら先にeventfdの読みを出し、完了が1つ来るまでスリープする — ringのスリープ）、
+// CQに来た完了を全部取り込む: taskのioはTC_IORESに結果を書いて自分の走れるスタックへ（走り始めたtaskはワーカーに固定 — 提出したワーカーのCQに来る）・
+// eventfdの読みは「出してある」のフラグを消すだけ。提出が中断された分（-EINTR等で返った数が足りない）はSQに残り次の呼び出しで出る
 func buildUpoll(st mut St) {
     begin(mut st, st.rtUpoll)
     orphPoll(mut st)
@@ -546,7 +564,7 @@ func buildUpoll(st mut St) {
     zero := iconst(mut st, 0)
     rec := load(mut st, wk, WK_RING)
     rp := itop(mut st, rec)
-    // net の待ち（netpoll.sober）を組むプログラム: ring は無いことがある・眠りは epoll の側（ring の fd も epoll に入っている — ring では眠らない）
+    // netの待ち（netpoll.sober）を組むプログラム: ringは無いことがある・スリープはepollの側（ringのfdもepollに入っている — ringではスリープしない）
     net := netOn(mut st)
     ep := if net { load(mut st, wk, WK_EP) } else { 0 }
     bEp := if net { newBlock(mut st) } else { BlkRef(-1) }
@@ -556,10 +574,10 @@ func buildUpoll(st mut St) {
         setCur(mut st, bRg)
     }
     wait := if net { bin(mut st, BAnd, 0, cmp(mut st, CEq, ep, zero)) } else { 0 }
-    // net の ring（UR_NET）: 眠り（wait）のときだけ enter する（D2 — 走れる task が尽きたら提出・取り込み・眠りを 1 回に。完了は enter でしか載らない）。
-    // 期限の過ぎた待ち手は鎖から外して ASYNC_CANCEL を積み、残りの最小の期限を enter の timeout（EXT_ARG）に
+    // netのring（UR_NET）: スリープ（wait）のときだけenterする（D2 — 走れるtaskが尽きたら提出・取り込み・スリープを1回に。完了はenterでしか載らない）。
+    // 期限の過ぎた待ち手はチェーンから外してASYNC_CANCELを積み、残りの最小の期限をenterのtimeout（EXT_ARG）に
     ext0 := if net { urNetGate(mut st, rec, wait) } else { zero }
-    // 送り置き（netring.sober）: 眠りの enter は積んだ送り置きの SEND の完了（提出の中で必ず載る）の数 + 1 を待つ。数え違い（提出されなかった SQE）の保険に timeout を FUSE_BACKSTOP_NS 以下へ
+    // 送信バッファリング（netring.sober）: スリープのenterは積んだ送信バッファリングのSENDの完了（提出の中で必ず載る）の数 + 1を待つ。数え違い（提出されなかったSQE）の保険にtimeoutをFUSE_BACKSTOP_NS以下へ
     fuse := net && chF(mut st, NETF_RECV) != -1
     fq := if fuse { load(mut st, wk, WK_FUSEQ) } else { zero }
     ext := if fuse { fuseGate(mut st, rec, wait, fq, ext0) } else { ext0 }
@@ -581,11 +599,11 @@ func buildUpoll(st mut St) {
     fl := if net { bin(mut st, BOr, bin(mut st, BOr, wait, cmp(mut st, CGe, n, iconst(mut st, UR_POKE))), bin(mut st, BShl, bin(mut st, BMul, ext, wait), iconst(mut st, 3))) } else { wait }
     ga := if net { bin(mut st, BMul, bin(mut st, BMul, ext, wait), urAdd(mut st, rec, UR_GEA * 8)) } else { zero }
     gs := if net { bin(mut st, BMul, bin(mut st, BMul, ext, wait), iconst(mut st, 24)) } else { zero }
-    // 期限の走査が待ち手を起こしたら眠らない（覗くだけ — 起こした task を走らせる）
+    // 期限の走査が待ち手をウェイクアップしたらスリープしない（覗くだけ — ウェイクアップしたtaskを走らせる）
     mc0 := if net { bin(mut st, BMul, wait, cmp(mut st, CEq, load(mut st, tk, TK_READY), zero)) } else { wait }
     mc := if fuse { bin(mut st, BMul, mc0, urAdd(mut st, fq, 1)) } else { mc0 }
     if st.rtMut == 4 {
-        // 数え口: 溜めがあった提出の回数と、溜めの最初の SQE からの時間
+        // カウンタ: バッファがあった提出の回数と、バッファの最初のSQEからの時間
         h1 := load(mut st, wk, WK_KHOLD)
         bH1 := branchIf(mut st, cmp(mut st, CNe, h1, iconst(mut st, 0)))
         kAdd(mut st, 15, bin(mut st, BSub, clockNs(mut st), h1))
@@ -607,8 +625,8 @@ func buildUpoll(st mut St) {
     if net {
         frRecP(mut st, FK_ENTER, n, mc, r)
     }
-    // 今を読み直す（眠った enter〔mc ≠ 0〕だけ — 読み直さないと、この後で取り込む task の時刻が眠る前の値になり、飽和下の待ちの上限の maxWait が
-    // 眠りの長さを拾ってしまう。眠らない頭の取り込みは周の頭の値のまま）
+    // 今を読み直す（スリープしたenter〔mc ≠ 0〕だけ — 読み直さないと、この後で取り込むtaskの時刻がスリープする前の値になり、飽和下の待ちの上限のmaxWaitが
+    // スリープの長さを拾ってしまう。スリープしない頭の取り込みは周の頭の値のまま）
     bNw := branchIf(mut st, cmp(mut st, CNe, mc, zero))
     store(mut st, wk, WK_NOW, tscOp(mut st))
     br(mut st, bNw, -1)
@@ -622,6 +640,10 @@ func buildUpoll(st mut St) {
     store(mut st, wk, WK_IOSUB, bin(mut st, BSub, n, r))
     br(mut st, bReap, -1)
     setCur(mut st, bReap)
+    if net && chF(mut st, NETF_RECV) != -1 {
+        store(mut st, rp, UR_TPK, zero)
+        store(mut st, rp, UR_TFP, zero)
+    }
     ring := load(mut st, rp, 1)
     cqo := urAdd(mut st, rec, UR_PARAMS + 80)
     headA := bin(mut st, BAdd, ring, urLd32(mut st, cqo, 0))
@@ -649,7 +671,7 @@ func buildUpoll(st mut St) {
     br(mut st, hn, -1)
     setCur(mut st, bT)
     if net {
-        // net の ring の完了: 取り消しの完了は捨てる・POLL_ADD（TCB | UDT_POLL）は待ち手を起こす（readiness = 0・取り消された = -110〔期限〕・他は負の errno）
+        // netのringの完了: 取り消しの完了は捨てる・POLL_ADD（TCB | UDT_POLL）は待ち手をウェイクアップする（readiness = 0・取り消された = -110〔期限〕・他は負のerrno）
         bNc := newBlock(mut st)
         bPl := newBlock(mut st)
         bNp := newBlock(mut st)
@@ -660,7 +682,7 @@ func buildUpoll(st mut St) {
             store(mut st, wk, WK_IOFLY, urAdd(mut st, load(mut st, wk, WK_IOFLY), -1))
             br(mut st, hn, -1)
             setCur(mut st, bNcl)
-            // 送り（TCB | TAG_SEND — 結果はバイト数・取り消し -125 → -110）・送り置き（fd | TAG_WSEND）・受け（fd | TAG_RECV）・accept（fd | TAG_ACC）— netring.sober
+            // 送り（TCB | TAG_SEND — 結果はバイト数・取り消し -125 → -110）・送信バッファリング（fd | TAG_WSEND）・受け（fd | TAG_RECV）・accept（fd | TAG_ACC）— netring.sober
             hi := bin(mut st, BSar, ud, iconst(mut st, 56))
             bWs := newBlock(mut st)
             bNws := newBlock(mut st)
@@ -728,7 +750,7 @@ func buildUpoll(st mut St) {
     br(mut st, hl, list1(mut st, bin(mut st, BAnd, urAdd(mut st, h, 1), iconst(mut st, 4294967295))))
     setCur(mut st, hd)
     if st.rtMut == 4 {
-        // 数え口: CQE を 1 つ以上取り込んだ回の、前の取り込みからの間隔（取り込んだ完了の待ちの上界）
+        // カウンタ: CQEを1つ以上取り込んだ回の、前の取り込みからの間隔（取り込んだ完了の待ちの上界）
         kn := clockNs(mut st)
         h0 := urLd32(mut st, headA, 0)
         bG := branchIf(mut st, bin(mut st, BAnd, cmp(mut st, CNe, h, h0), cmp(mut st, CNe, load(mut st, wk, WK_KXT), zero)))
@@ -741,8 +763,8 @@ func buildUpoll(st mut St) {
     }
     urSt32(mut st, headA, h)
     if net && st.rtTmrFire != -1 {
-        // enter の後にもう一度 時計の表の満了を起こす（timeout で起きた enter の後に、眠らない enter をもう 1 回挟まない）。
-        // 頭の取り込みでも起こす（眠りの enter でだけ起こすと、忙しいワーカーで眠りの明けた要求が後回しになり系の中の要求が溜まる — HWM が大きく膨らむ）
+        // enter の後にもう一度 時計の表の満了を起こす（timeoutで起きたenterの後に、スリープしないenterをもう1回挟まない）。
+        // 頭の取り込みでも起こす（スリープのenterでだけ起こすと、忙しいワーカーでスリープが明けたリクエストが後回しになり系の中のリクエストが溜まる — HWMが大きく膨らむ）
         bTf := branchIf(mut st, cmp(mut st, CNe, load(mut st, rp, UR_NET), zero))
         _ = call(mut st, st.rtTmrFire, list0(mut st))
         br(mut st, bTf, -1)
@@ -751,12 +773,12 @@ func buildUpoll(st mut St) {
     if net {
         br(mut st, bEp, -1)
         setCur(mut st, bEp)
-        // 走れる task が無く、眠るか net の待ち手がいれば epoll。ただし眠りの段でない頭の取り込み（wait = 0）は、自分の deque・受け箱・共有の積みが
+        // 走れるtaskが無く、スリープするかnetの待ち手がいればepoll。ただしスリープのフェーズでない頭の取り込み（wait = 0）は、自分のdeque・受け箱・共有のスタックが
         // 空のときだけ（毎周の頭で readiness を取り込むと TK_READY が絶えず、mn_next が deque に進まない: 4096 接続で受け入れた
-        // 接続の子 task の 5〜7 割が始まらないまま、接続の開始から一度も応答しなかった。ring の道も頭の取り込み〔UR_POKE〕で同じ形が出る —
-        // そちらは飽和下の待ちの上限〔積みの底からの細流しと受け箱の先取り — rt.mn_next・language.md 28 節〕で塞ぐ）。
-        // 棄てた案: 頭では一切取り込まない（c1 — ring と同形。公平になるが、走れる task が尽きるたびに盗みの走査 → 眠りの段を通り、256 接続で
-        // cycles / 要求 7.9K → 9.5K・req/s −15%）
+        // 接続の子taskの5〜7割が始まらないまま、接続の開始から一度もレスポンスしなかった。ringのパスも頭の取り込み〔UR_POKE〕で同じ形が出る —
+        // そちらは飽和下の待ちの上限〔スタックの底からの細流しと受け箱の先取り — rt.mn_next・language.md 28 節〕で塞ぐ）。
+        // 棄てた案: 頭では一切取り込まない（c1 — ringと同形。公平になるが、走れるtaskが尽きるたびに盗みの走査 → スリープのフェーズを通り、256接続で
+        // cycles / リクエスト7.9K → 9.5K・req/s −15%）
         mnq := globaladdr(mut st, st.mnG)
         noNew := bin(mut st, BAnd, bin(mut st, BAnd, cmp(mut st, CLe, load(mut st, wk, WK_DT), load(mut st, wk, WK_DH)), cmp(mut st, CEq, load(mut st, wk, WK_INBOX), zero)), cmp(mut st, CEq, load(mut st, mnq, MN_PHEAD), zero))
         go := bin(mut st, BAnd, bin(mut st, BAnd, cmp(mut st, CNe, ep, zero), cmp(mut st, CEq, load(mut st, tk, TK_READY), zero)), bin(mut st, BOr, 0, bin(mut st, BAnd, noNew, cmp(mut st, CNe, load(mut st, wk, WK_NETW), zero))))

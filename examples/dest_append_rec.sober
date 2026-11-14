@@ -1,9 +1,9 @@
 package main
 
-// 宛先構築の返る列への追記（loader/dest.sober の印 3）: ループの中の `ks = append(ks, mk(…))` で ks が return に直に流れ着くとき、
-// 子の部分木は関数の宛先に直に作られ、戻りの写しの床も宛先になる — 部分木が深さの数だけ写るのが 1 回に減る（深さ n の鎖で写しが
+// 宛先構築の返る列への追記（loader/dest.soberのフラグ3）: ループの中の `ks = append(ks, mk(…))` でksがreturnに直に流れ着くとき、
+// 子の部分木は関数の宛先に直に作られ、戻りのコピーの床も宛先になる — 部分木が深さの数だけコピーされるのが1回に減る（深さnのチェーンでコピーが
 // O(n²) → O(n)）。scripts/iterregion.sh が深さを 10 倍にして RSS の伸びを見る。early は早い return で別の値を返す関数 —
-// 印を立てない（追記した値が宛先のゴミになる）ので、同じ値を今の形で作る
+// フラグを立てない（追記した値が宛先のゴミになる）ので、同じ値を今の形で作る
 
 import "std/convert"
 import "std/iter"
@@ -15,7 +15,7 @@ type N struct {
     kids []N
 }
 
-// 深さ d の鎖（子 1 本）— 子は ks へ追記して返す
+// 深さdのチェーン（子1本）— 子はksへ追記して返す
 func mk(id int, d int) N {
     mut ks := mut []N{}
     if d > 0 {

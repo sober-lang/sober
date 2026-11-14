@@ -4,14 +4,14 @@
 #   ② 本番の読み（testdata/doubles/app）は _double.sober を 1 つも読まず、本物の store で動く
 #   ③ check --test と `sober check <double>`（相手との契約だけ）が受理する
 #   ④ 拒否の一式（testdata/doubles/neg/k* — 位置と文面が neg.expect と一致）
-#   ⑤ double の導出の効果が本物の @effects を越えると check --test と check <double> が拒否する（neg/leak — analyzer の照合に本物の宣言を写す）
+#   ⑤ doubleの導出のエフェクトが本物の @effectsを越えるとcheck --test とcheck <double> が拒否する（neg/leak — analyzerの照合に本物の宣言をコピーする）
 #   ⑥ 本物の宣言の変更でテストの結果の再生が外れる（契約の検査が読んだ本物のファイルが照合に入る）
 #   ⑦ 状態を貯める fake（std/testing/cell — 41 節）: logger の spy で greet のテストが走り（出力 ≡ greet.expect）・check --test と check <double> が受理・
-#      置き場の読み書き / 並行の Update / quick の試行ごとの空（testdata/cells — 出力 ≡ cells.expect・check --test が受理）・
-#      拒否（neg/c0* は ④ の表・Update のラムダの効果 = analyzer・置けない型・Set / Update の値の型の食い違い = check と build の両方）
-#   ⑧ 配線の印字（test --wiring）・--cover-pkg が double のファイルに計器を打たない・double の中の panic の位置が double の実パスで出る（crashed）
-#   ⑨ キャッシュ: 同じ置き場で本物の build（app）と double つきのテスト（handler）を交互に建て、検証モード（SOBER_CACHE_VERIFY=1 / 2）で stale が出ない
-#      （差し替えに固有の鍵の成分は無い — 中身で別の項目になることの確かめ。再生の鍵の変異の網 = scripts/doublesmut.sh）
+#      配置先の読み書き / 並行のUpdate / quickの試行ごとの空（testdata/cells — 出力 ≡ cells.expect・check --test が受理）・
+#      拒否（neg/c0* は ④ の表・Updateのラムダのエフェクト = analyzer・置けない型・Set / Updateの値の型の食い違い = checkとbuildの両方）
+#   ⑧ 配線の印字（test --wiring）・--cover-pkg がdoubleのファイルに計装を打たない・doubleの中のpanicの位置がdoubleの実パスで出る（crashed）
+#   ⑨ キャッシュ: 同じ配置先で本物のbuild（app）とdoubleつきのテスト（handler）を交互にビルドし、検証モード（SOBER_CACHE_VERIFY=1 / 2）でstaleが出ない
+#      （差し替えに固有の鍵の成分は無い — 中身で別の項目になることの確認。再生の鍵のミューテーションの検査 = scripts/doublesmut.sh）
 set -uo pipefail
 cd "$(dirname "$0")/.."
 SOBER=${SOBER:-./bin/sober}
@@ -42,7 +42,7 @@ diff "$W/g" testdata/doubles/greet.expect > /dev/null || { echo "FAIL: greet out
 "$SOBER" test testdata/cells > "$W/c" 2>&1 || { echo "FAIL: sober test cells"; cat "$W/c"; fail=1; }
 diff "$W/c" testdata/cells.expect > /dev/null || { echo "FAIL: cells output"; diff "$W/c" testdata/cells.expect | head -5; fail=1; }
 "$SOBER" check testdata/cells --test > /dev/null || { echo "FAIL: check --test cells"; fail=1; }
-# 脱糖の拒否 diag.Cell の文面は check キャッシュの道（外れ → 当たり）でも切った道と同じ（diag.Words — 化けると CoreFragment の token 0）
+# 脱糖の拒否diag.Cellの文面はcheckキャッシュのパス（外れ → 当たり）でも切ったパスと同じ（diag.Words — 化けるとCoreFragmentのtoken 0）
 for m in 0 1 1; do SOBER_CHECK_CACHE=$m "$SOBER" check testdata/cellneg --test 2>&1 | tail -1; done > "$W/cn"
 [ "$(sort -u "$W/cn" | wc -l)" = 1 ] && grep -q '(Cell): a cell holds plain data' "$W/cn" || { echo "FAIL: cellneg verdict differs on the check cache path"; cat "$W/cn"; fail=1; }
 cfx='testdata/doubles/neg/cfx/t/t_test.sober:8:36: error: the function given to cell.Update may have the effect io via the call of '"'"'println'"'"': it runs holding the cell'"'"'s lock, so it has no effects (Analyzer)'

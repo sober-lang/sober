@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# idiomgap（イディオムギャップ零化レーンの計器 — docs/bench.md「イディオムギャップ」）: 同じ題材を
+# idiomgap（イディオムギャップ零化レーンの計測ツール — docs/bench.md「イディオムギャップ」）: 同じ題材を
 #   (a) 回避術の形（mut out 引数など — 速いが書き味を曲げた形）
 #   (b) 素直な形（作って返す等 — 書きたい形）
-# の 2 本で書いた双子を建て、命令数と cycles（perf stat — 交互に N 回・中央値）と出力の一致を見て、ギャップ = (b) / (a) − 1 を出す。
+# の2本で書いた2つの書き方の対をビルドし、命令数とcycles（perf stat — 交互にN回・中央値）と出力の一致を見て、ギャップ = (b) / (a) − 1を出す。
 # 機構（宛先構築〔RVO〕・チャネル限定透過 …）を入れるたびに 0 へ近づくのを追う。命令数を正に（cycles・wall は時間帯で揺れる）。
 #   scripts/idiomgap.sh [--quick] [-n 回数]
-# perf は環境変数 PERF（既定 `perf`）。双子の表は下の PAIRS（名前 (a) の entry (b) の entry 引数）
+# perfは環境変数PERF（既定 `perf`）。2つの書き方の対の表は下のPAIRS（名前 (a) のentry (b) のentry引数）
 set -uo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$PWD

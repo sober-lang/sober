@@ -1,8 +1,8 @@
 package rsa
 
 // dudect の題材（white-box: 非公開の sel を直に呼ぶ。scripts/dudect.sh が DUDECT_PKGS に std/crypto/rsa を足して回す）。
-// 窓の表引き（expMont の秘密の窓の値 idx）を、クラス 0 = idx が 0〜7・クラス 1 = idx が 8〜15 の性質の差で検定する（両クラスとも毎回違う値 —
-// 固定の入力を繰り返す形は Zen 3 / 4 で偽の漏れを出す）。TestRsaSignPSS（std/internal/dudect）は平文を変える形で、指数の窓は動かない。
+// ウィンドウの表引き（expMontの秘密のウィンドウの値idx）を、クラス0 = idxが0〜7・クラス1 = idxが8〜15のプロパティの差で検定する（両クラスとも毎回違う値 —
+// 固定の入力を繰り返す形はZen 3 / 4で偽の漏れを出す）。TestRsaSignPSS（std/internal/dudect）は平文を変える形で、指数のウィンドウは動かない。
 // 環境変数 SOBER_DUDECT が無ければ何もしない（unittest では測らずに通る）
 
 import "std/internal/dudect"
@@ -33,7 +33,7 @@ func TestSelIdx() {
     })
 }
 
-// 2 乗の塊（montSqr — 窓の 2 乗は秘密の値に掛かる）を、クラス 0 = 上半分の語が 0 の小さい値・クラス 1 = 全部の語が乱数の値で検定する（両クラスとも毎回違う値）
+// 2乗のチャンク（montSqr — ウィンドウの2乗は秘密の値に掛かる）を、クラス0 = 上半分のワードが0の小さい値・クラス1 = 全部のワードが乱数の値で検定する（両クラスとも毎回違う値）
 func TestMontSqrVal() {
     n := internal.dudect.Count()
     if n == 0 {

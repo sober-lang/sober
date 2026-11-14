@@ -1,6 +1,6 @@
 package pg
 
-// 値の表現（引数と結果の両方）と、PostgreSQL の binary 形式との写し。結果の列は Bind で列ごとに形式を選ぶ（第一陣の型 = binary・他 = text）。
+// 値の表現（引数と結果の両方）と、PostgreSQLのbinary形式との変換。結果の列はBindで列ごとに形式を選ぶ（第一陣の型 = binary・他 = text）。
 // 引数はサーバが Describe で返した型に合わせて符号化し、合わない組み合わせは BadArg（Int → int2 / int4 の範囲外も）
 
 import "std/internal/pgwire"
@@ -79,7 +79,7 @@ func sbe(b []byte, at int, n int) int {
     return if n < 8 && (v >> (n * 8 - 1)) != 0 { v - (1 << (n * 8)) } else { v }
 }
 
-// int2 / int4 / int8 の列の値（長さ 2 / 4 / 8 — 確かめ済み）を符号つきに（列の読みごとに通るので輪を回さずに）
+// int2 / int4 / int8の列の値（長さ2 / 4 / 8 — 検証済み）を符号つきに（列の読みごとに通るのでループを回さずに）
 func intOf(b []byte) int {
     n := len(b)
     if n == 8 {
@@ -225,7 +225,7 @@ func wellFormed(oid int, fmt int, b []byte) bool {
     if oid == oidBytea {
         return true
     }
-    // json / jsonb の字句は UTF-8 を受けで確かめる（ColJsonText は確かめ直さない — text の列と同じ形）。JSON の構文はサーバの型が持つ約束で、ここでは見ない
+    // json / jsonbの字句はUTF-8を受けで検証する（ColJsonTextは検証し直さない — textの列と同じ形）。JSONの構文はサーバの型が持つ約束で、ここでは見ない
     if oid == oidJson {
         return strings.Valid(b)
     }
@@ -333,7 +333,7 @@ func putBe(o mut []byte, v int, n int) {
     }
 }
 
-// 引数のバイト列は写しで持つ（Value の元の region に縛らない）
+// 引数のバイト列はコピーで持つ（Valueの元のregionに縛らない）
 func binArg(o []byte) internal.pgwire.Arg {
     return internal.pgwire.Arg{null: false, bin: true, b: catB([]byte{}, o)}
 }

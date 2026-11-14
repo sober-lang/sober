@@ -379,7 +379,7 @@ func main() {
             at = x86.Here(mut c)
             x86.PshufbXX(mut c, a, b)
             line(mut c, at, "pshufb xmm${a}, xmm${b}")
-            // SHA-256 の塊: sha256rnds2（暗黙の xmm0）/ msg1 / msg2・palignr の imm
+            // SHA-256のチャンク: sha256rnds2（暗黙のxmm0）/ msg1 / msg2・palignrのimm
             at = x86.Here(mut c)
             x86.Sha256rnds2XX(mut c, a, b)
             line(mut c, at, "sha256rnds2 xmm${a}, xmm${b}")
@@ -507,7 +507,7 @@ func main() {
                 at = x86.Here(mut c)
                 x86.MovupdMemX(mut c, b, d, a)
                 line(mut c, at, "movupd xmmword ptr ${mem(b, d)}, xmm${a}")
-                // rt.copy8 の短い写し（d-3）: movq / movd の [base + disp] と [base + index + disp]
+                // rt.copy8の短いコピー（d-3）: movq / movdの [base + disp] と [base + index + disp]
                 at = x86.Here(mut c)
                 x86.MovqXMem(mut c, a, b, d)
                 line(mut c, at, "movq xmm${a}, qword ptr ${mem(b, d)}")

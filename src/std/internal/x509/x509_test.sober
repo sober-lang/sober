@@ -1,7 +1,7 @@
 package x509
 
-// 証明書の読みの網（white-box）: Go の crypto/x509 の双子（scripts/oracles/crypto_x509.go → testdata/x509/fields.txt）と、
-// Go の verify_test.go の証明書 36 本（testdata/x509/go）・NIST PKITS の証明書 405 本（testdata/x509/pkits/certs.txt）で欄を 1 行に揃えて照合する。
+// 証明書の読みのテスト（white-box）: Goのcrypto/x509の比較用の実装（scripts/oracles/crypto_x509.go → testdata/x509/fields.txt）と、
+// Goのverify_test.goの証明書36本（testdata/x509/go）・NIST PKITSの証明書405本（testdata/x509/pkits/certs.txt）でフィールドを1行に揃えて照合する。
 // Go が読めない 7 本（DSA の鍵の継承・負のシリアル・CRL の配布点の形）は照合から外して数だけ印字する
 
 import "std/base64"
@@ -108,7 +108,7 @@ func ipText(b []byte) string {
     return hex.Format(b)
 }
 
-// Go の双子と同じ形の 1 行
+// Goの比較用の実装と同じ形の1行
 func line(name string, c Cert) string {
     ca := if c.bcValid { if c.isCA { "true" } else { "false" } } else { "-" }
     pl := if c.bcValid && c.pathLen >= 0 { "${c.pathLen}" } else { "-" }
@@ -236,7 +236,7 @@ func TestOidText() {
     assert(oidText(hexBytes("2a86")) == "?")
 }
 
-// CA/B の leaf 規則（焼き込みの起点の鎖だけ）: 形の良い leaf から 1 つずつ崩す
+// CA/Bのleaf規則（焼き込みの起点のチェーンだけ）: 形の良いleafから1つずつ崩す
 func TestCabLeaf() {
     mut g := noCert()
     g.version = 3
@@ -264,6 +264,6 @@ func TestCabLeaf() {
     mut v1 := g
     v1.version = 1
     assert(CabLeaf(v1) != nil)
-    // 焼き込みの起点には印・RootsFromPEM の起点には無い
+    // 焼き込みの起点にはフラグ・RootsFromPEMの起点には無い
     assert(Roots()[0].baked)
 }

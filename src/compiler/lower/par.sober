@@ -1,15 +1,15 @@
 package lower
 
-// std/task の即時形（段 6 P3a-2b・language.md 11 節・docs/ir.md「罠」）: build の経路の task.Run / Spawn / Join / Try。
-// - Scope = region を 1 段開き（ブロック式と同じ — 出口で深度を戻す）、札の記録（SR_* — 死んだ子の数・scope の深度・全部の子の枠の鎖 …）をその region に置いて
+// std/taskの即時形（段階6 P3a-2b・language.md 11 節・docs/ir.md「罠」）: buildの経路のtask.Run / Spawn / Join / Try。
+// - Scope = regionを1レベル開き（ブロック式と同じ — 出口で深度を戻す）、札の記録（SR_* — 死んだ子の数・scopeの深度・全部の子の枠のチェーン …）をそのregionに置いて
 //   本体のラムダを展開する（ラムダは inline — 本体は親の文脈を見てよい）。結果は (値, nil) か、死んだ子がいれば (ゼロ値, ChildDied{cause})
-// - Spawn = 子の本体を持ち上げた関数 kid#N（閉包変換 — 捕獲は今の可視範囲の imm の局所）を罠を張って**その場で**呼ぶ（即時形 — 子は spawn の時点で決着する）。
-//   handle の枠 [状態（1 = 完了・2 = 死）, 死因, 結果…, 捕獲…] は scope の region に置き、子の実引数 = 枠の結果の置き場（子は sret で結果を書く）。
+// - Spawn = 子の本体を持ち上げた関数kid#N（クロージャ変換 — 捕獲は今の可視範囲のimmの局所）を罠を張って**その場で**呼ぶ（即時形 — 子はspawnの時点で決着する）。
+//   handleの枠 [状態（1 = 完了・2 = 死）, 死因, 結果…, 捕獲…] はscopeのregionに置き、子の実引数 = 枠の結果の配置先（子はsretで結果を書く）。
 //   子の死（panic / 102 / ゼロ除算）は罠で巻き戻り、深度と宛先 / anchor のレジスタを罠の前の値へ戻す
 // - Join = 完了なら結果・死なら呼び手も死ぬ（PK_TASKDIED — この子の死は私の死）・Try = Outcome（Ok{v} / Died{cause}）
-// 捕獲の集合は desugar.LamFree（ParCheck の捕獲の名指しと同じ走査）を今の可視範囲の局所で絞る — check の経路（desugar/task.sober — コアの自由変数）と
-// 実装が 2 つになるので、網は obs（examples/par_* を実行して check の受理と照合）
-// 死因の語 = 点 << 8 | 終了コード（rt.panic の点の番号 / rt.panic_mem の種類・ゼロ除算は -1）
+// 捕獲の集合はdesugar.LamFree（ParCheckの捕獲の特定と同じ走査）を今の可視範囲の局所で絞る — checkの経路（desugar/task.sober — コアの自由変数）と
+// 実装が2つになるので、検査はobs（examples/par_* を実行してcheckの受理と照合）
+// 死因のワード = 点 << 8 | 終了コード（rt.panicの点の番号 / rt.panic_memの種類・ゼロ除算は -1）
 
 import "ast"
 import "desugar"
@@ -17,50 +17,50 @@ import "diag"
 import "std/iter"
 import "std/table"
 
-// 札の記録（scope の region の語）
+// 札の記録（scopeのregionのワード）
 const SR_DEAD = 0
 const SR_DEPTH = 1
-const SR_ALL = 2     // 全部の子の枠の鎖（新しい順 — FR_ANEXT で繋ぐ。出口で死があれば歩いて生んだ順で最初の死の死因を取る）
-const SR_LIVE = 3    // まだ終わっていない子の数 × 2 + 出口で待っている印（P3b — 子は待てる・P4-4 — waitLive）
+const SR_ALL = 2     // 全部の子の枠のチェーン（新しい順 — FR_ANEXTで繋ぐ。出口で死があれば歩いて生んだ順で最初の死の死因を取る）
+const SR_LIVE = 3    // まだ終わっていない子の数 × 2 + 出口で待っているフラグ（P3b — 子は待てる・P4-4 — waitLive）
 const SR_WAITER = 4  // 出口で子を待っている task（0 = 無し）
 const SR_FHEAD = 5   // error を返す子の枠の列（生んだ順 — 出口で未回収の失敗を探す。P3b-4 1b'）
 const SR_FTAIL = 6
-const SR_KEEP = 7    // 預かりの欄の鎖（段 6 P4-4 (B1) — 0 = 無し）
-const SR_UP = 8      // 同じ task の外側の開いている scope の記録（task の TC_SCOPE の鎖 — 段 6 P4-5: 死ぬ / 切られる task は開いている scope の子を待ってから終わる）
-const SR_CUT = 9     // 打ち切りの印（段 6 P4-5 — 0 = 無し・c > 0 = 生んだ順の番号が c - 1 以上の子を切ってよい。立てるのは xchg / cas・検査は素の load）
+const SR_KEEP = 7    // 預かりのフィールドのチェーン（段階6 P4-4 (B1) — 0 = 無し）
+const SR_UP = 8      // 同じtaskの外側の開いているscopeの記録（taskのTC_SCOPEのチェーン — 段階6 P4-5: 死ぬ / 切られるtaskは開いているscopeの子を待ってから終わる）
+const SR_CUT = 9     // 打ち切りのマーク（段階6 P4-5 — 0 = 無し・c > 0 = 生んだ順の番号がc - 1以上の子を切ってよい。立てるのはxchg / cas・検査は素のload）
 const SR_NKID = 10   // 生んだ子の数（子の番号 = 生んだ順 — TC_IDX）
-const SR_OTCB = 11   // scope を開いた task の塊（検査点の遅い道が祖先の打ち切りの印を辿る — 開いた task は子を待ってから終わるので生きている）
-const SR_LED = 12    // 天井の節の台帳の語（budget: の scope だけ — 段 6 P5-3 admit.sober の LED_* と同じ形・task の数の欄は天井なし）
+const SR_OTCB = 11   // scopeを開いたtaskのチャンク（検査点の低速パスが祖先の打ち切りのマークを辿る — 開いたtaskは子を待ってから終わるので生きている）
+const SR_LED = 12    // 天井の節の台帳のワード（budget: のscopeだけ — 段階6 P5-3 admit.soberのLED_* と同じ形・taskの数のフィールドは天井なし）
 const SR_PNODE = 13  // 外の節（budget: の scope だけ）
-// handle を捨てた子（`_ = task.Spawn(…)`・`_, e := task.SpawnIn(…)`）のうち死んだものの (生んだ順の番号の最小, その死因) の 2 語と鍵。
-// 捨てた子の枠は scope の region でなく小さな塊（rt.frame_new）に置き、子の終わりで返す — 死んでも枠は残さず、出口の死因の選び方に要る 2 語だけを
+// handleを捨てた子（`_ = task.Spawn(…)`・`_, e := task.SpawnIn(…)`）のうち死んだものの (生んだ順の番号の最小, その死因) の2ワードと鍵。
+// 捨てた子の枠はscopeのregionでなく小さなチャンク（rt.frame_new）に置き、子の終わりで返す — 死んでも枠は残さず、出口の死因の選び方に要る2ワードだけを
 // 鍵の中で一緒に書く（枠を指すものを残さないので ABA が無い・死の数に依らない大きさ）。鍵は死んだ捨てた子だけが取る
 const SR_DMIN = 14
 const SR_DCAUSE = 15
 const SR_DLOCK = 16
 const SRSZ = 17
-// handle の枠（scope の region の語）: [状態（0 = 走っている・1 = 完了・2 = 死・3 = 切られた〔段 6 P4-5 — 死因の語 = 子の関数の番地 | 預かりの欄の位置 << 32〕）, 死因, scope の記録, 結果…, 捕獲…]。子の実引数 = 枠 + FR_RES
+// handleの枠（scopeのregionのワード）: [状態（0 = 走っている・1 = 完了・2 = 死・3 = 切られた〔段階6 P4-5 — 死因のワード = 子の関数の番地 | 預かりのフィールドの位置 << 32〕）, 死因, scopeの記録, 結果…, 捕獲…]。子の実引数 = 枠 + FR_RES
 const FR_STATE = 0
 const FR_CAUSE = 1
 const FR_SREC = 2
 const FR_JOINER = 3  // この子の終わりを待っている task（Join / Try — 0 = 無し）
-const FR_COL = 4     // 回収済みの印（Join / Try が結果を受けた — P3b-4 1b'）・2 = handle を捨てた子（枠は子の寿命）
+const FR_COL = 4     // 回収済みのマーク（Join / Tryが結果を受けた — P3b-4 1b'）・2 = handleを捨てた子（枠は子の寿命）
 const FR_NEXT = 5    // scope の error を返す子の列の次（0 = 終わり）
-const FR_EOFF = 6    // error を返す子の err の語の位置（FR_RES からの語数 — 0 = error を返さない子）
-const FR_ANEXT = 7   // scope の全部の子の鎖の次（SR_ALL — 新しい順）
-const FR_IDX = 8     // 生んだ順の番号（出口が死んだ子のうち番号の最小の死因を取る — SR_ALL の鎖と捨てた子の死の最小 SR_DMIN をまたいで比べる）
+const FR_EOFF = 6    // errorを返す子のerrのワードの位置（FR_RESからのワード数 — 0 = errorを返さない子）
+const FR_ANEXT = 7   // scopeの全部の子のチェーンの次（SR_ALL — 新しい順）
+const FR_IDX = 8     // 生んだ順の番号（出口が死んだ子のうち番号の最小の死因を取る — SR_ALLのチェーンと捨てた子の死の最小SR_DMINをまたいで比べる）
 const FR_RES = 9
-// 預かりのスロット（段 6 P4-4 (B1)）: 結果に region を持つ子は結果を自分の深度（入口 + 1）のスロットに置いたまま終わり、そのスロットを枠の後ろの
-// 預かりの欄 [スロット, 使った量, 次] に書いて scope の記録の SR_KEEP の鎖へ積む（CAS — 子は並行に終わる）。Join / Try / 出口が持ち主として
-// scope の region へ写し、出口が鎖を歩いて返す（region の書き手は常に 1 つ — 子は scope の region に書かない）。欄は結果が region を持つ子の枠だけ
+// 預かりのスロット（段階6 P4-4 (B1)）: 結果にregionを持つ子は結果を自分の深度（入口 + 1）のスロットに置いたまま終わり、そのスロットを枠の後ろの
+// 預かりのフィールド [スロット, 使った量, 次] に書いてscopeの記録のSR_KEEPのチェーンへ積む（CAS — 子は並行に終わる）。Join / Try / 出口が持ち主として
+// scopeのregionへコピーし、出口がチェーンを歩いて返す（regionの書き手は常に1つ — 子はscopeのregionに書かない）。フィールドは結果がregionを持つ子の枠だけ
 const KP_SLOT = 0
 const KP_USED = 1
 const KP_NEXT = 2
 const KP_WORDS = 3
-// チャネルの記録（NewChannel の region の語 — P3b）: [容量, 先頭, 個数, 送り端の持ち主, 受け端の持ち主, 待っている送り手, 待っている受け手, 1 要素の語数,
-// 記録の深度, 作った task, 要素…]（記録の深度・作った task は P3b-4b — region を持つペイロードを送りで記録の region へ写す）
+// チャネルの記録（NewChannelのregionのワード — P3b）: [容量, 先頭, 個数, 送り端の持ち主, 受け端の持ち主, 待っている送り手, 待っている受け手, 1要素のワード数,
+// 記録の深度, 作ったtask, 要素…]（記録の深度・作ったtaskはP3b-4b — regionを持つペイロードを送りで記録のregionへコピーする）
 const CH_CAP = 0
-const CH_HEAD = 1   // 受けた数（受け手だけが書く — Lamport の SPSC・段 6 P4-4）
+const CH_HEAD = 1   // 受けた数（受け手だけが書く — LamportのSPSC・段階6 P4-4）
 const CH_TAIL = 2   // 送った数（送り手だけが書く）。個数 = TAIL - HEAD・枠の番号 = 数 mod 容量
 const CH_OTX = 3
 const CH_ORX = 4
@@ -69,7 +69,7 @@ const CH_WRECV = 6
 const CH_ITEM = 7
 const CH_RDEPTH = 8
 const CH_MAKER = 9
-const CH_CLOSED = 10 // 閉じた印（P3b-4 ③ — 0 / 1）
+const CH_CLOSED = 10 // 閉じたフラグ（P3b-4 ③ — 0 / 1）
 const CH_BUF = 11
 
 // std/task の鍵 key（desugar.PAR_*）の呼び出し（関数表の fi・callee = 型引数の表を引く節）
@@ -113,7 +113,7 @@ func parCall(st mut St, key int, fi int, args desugar.ListRef, at desugar.NodeRe
     eT := if ey >= 0 { yLower(mut st, ey, at)? } else { -1 }
     // 子がまだ終わっていなければ待つ（Join / Try — P3b）
     waitWhileZero(mut st, frame, FR_STATE, FR_JOINER)
-    // 切られた子（状態 3 — 段 6 P4-5）: 値を求められたので切らない形で走らせ直して待つ（純な子だけが切られる — 走らせ直しは観測に出ない）
+    // 切られた子（状態3 — 段階6 P4-5）: 値を求められたので切らない形で走らせ直して待つ（純な子だけが切られる — 走らせ直しは観測に出ない）
     bRr := newBlock(mut st)
     bRd := newBlock(mut st)
     condbr(mut st, cmp(mut st, CEq, load(mut st, frame, FR_STATE), iconst(mut st, 3)), bRr, -1, bRd, -1)
@@ -175,7 +175,7 @@ func parCall(st mut St, key int, fi int, args desugar.ListRef, at desugar.NodeRe
         condbr(mut st, cmp(mut st, CNe, load(mut st, frame, eoff), iconst(mut st, 0)), bFail, -1, bOk2, -1)
         setCur(mut st, bFail)
         store(mut st, p, 0, iconst(mut st, desugar.HeapGet(mut st.d, vFailed + 1)))
-        // err の `error?` の中身（tag の後ろ）を Failed の欄 e（error）へ
+        // errの `error?` の中身（tagの後ろ）をFailedのフィールドe（error）へ
         ef := latI(mut st, hgetL(mut st, vFailed + 2), 0)
         storeVal(mut st, p, 1 + desugar.HeapGet(mut st.d, ef + 2), desugar.HeapGet(mut st.d, ef + 1), loadVal(mut st, frame, eoff + 1, desugar.HeapGet(mut st.d, ef + 1)))
         br(mut st, bEnd, -1)
@@ -190,13 +190,13 @@ func parCall(st mut St, key int, fi int, args desugar.ListRef, at desugar.NodeRe
     br(mut st, bEnd, -1)
     setCur(mut st, bEnd)
     if containsSlice(mut st, ot) {
-        // (B1): Ok の値・Failed の e は子の預かりのスロットを指す — scope の region へ写す（持ち主 = 今の task が書く）
+        // (B1): Okの値・Failedのeは子の預かりのスロットを指す — scopeのregionへコピーする（持ち主 = 今のtaskが書く）
         relocateTo(mut st, p, 0, ot, load(mut st, itop(mut st, load(mut st, frame, FR_SREC)), SR_DEPTH))
     }
     return parOne(mut st, ot, p), nil
 }
 
-// 枠の結果の語 off の型 t の値の写し（region を持てば子の預かりのスロットから scope の region へ写す — (B1)・段 6 P4-4）
+// 枠の結果のワードoffの型tの値のコピー（regionを持てば子の預かりのスロットからscopeのregionへコピーする — (B1)・段階6 P4-4）
 func joinCopy(st mut St, frame int, off int, t int) int {
     v := copyVal(mut st, t, loadVal(mut st, frame, off, t))
     if containsSlice(mut st, t) {
@@ -242,9 +242,9 @@ func taskArg(st mut St, ht int, at desugar.NodeRef) (int, error?) {
     return latI(mut st, hgetL(mut st, desugar.HeapGet(mut st.d, ht + 1) + SI_TARGS), 0), nil
 }
 
-// p[off] が 0 の間待つ（段 6 P4-4 — M:N の待ちの型: 待ち手の語 p[slot] へ今の task を xchg で置き、条件を見直してから眠る。
-// 見直しで条件が立っていれば待ち手の語を xchg で外す — 外せなかった（0 が返った = 起こし手が先に取った）なら起こしが来るので task_wait で吸う。
-// 起こし手は条件を書いてから xchg(待ち手, 0)。xchg は全順序の柵なので「置いてから見る」と「書いてから取る」のどちらかが相手を見る — 起こし損ねが無い）
+// p[off] が0の間待つ（段階6 P4-4 — M:Nの待ちの型: 待ち手のワードp[slot] へ今のtaskをxchgで置き、条件を見直してからスリープする。
+// 見直しで条件が立っていれば待ち手のワードをxchgで外す — 外せなかった（0が返った = ウェイクアップする側が先に取った）ならウェイクアップが来るのでtask_waitで吸う。
+// ウェイクアップする側は条件を書いてからxchg(待ち手, 0)。xchgは全順序の柵なので「置いてから見る」と「書いてから取る」のどちらかが相手を見る — ウェイクアップし損ねが無い）
 func waitWhileZero(st mut St, p int, off int, slot int) {
     loop := newBlock(mut st)
     body := newBlock(mut st)
@@ -256,10 +256,10 @@ func waitWhileZero(st mut St, p int, off int, slot int) {
     setCur(mut st, loop)
     condbr(mut st, cmp(mut st, CEq, load(mut st, p, off), iconst(mut st, 0)), body, -1, done, -1)
     setCur(mut st, body)
-    // 遅延注入の口（待ちの点 — schedfuzz: 見て から 置く までの窓を広げる）
+    // 遅延注入のインターフェース（待ちの点 — schedfuzz: 見て から 置く までのウィンドウを広げる）
     mnDelayPoint(mut st)
     if st.rtMut == 2 {
-        // 変異 2: 待ち手を素の store で置き、見直さずに眠る（見てから置くまでに子が終わると起こし損ねる — デッドロックの死で鳴る）
+        // ミュータント2: 待ち手を素のstoreで置き、見直さずにスリープする（見てから置くまでに子が終わるとウェイクアップし損ねる — デッドロックの死で鳴る）
         store(mut st, p, slot, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
         call(mut st, st.rtTaskWait, list0(mut st))
         br(mut st, loop, -1)
@@ -286,9 +286,9 @@ func waitWhileZero(st mut St, p int, off int, slot int) {
     setCur(mut st, done)
 }
 
-// scope の出口の待ち（生きている子が 0 になるまで — 段 6 P4-4）: SR_LIVE = 生きている子の数 × 2 + 待っている印（1）。待ち手を SR_WAITER に
-// 書いてから印を CAS で立て（数が変わっていれば見直し）、立ったら眠る。最後の子は xadd(-2) の結果が「数 0 + 印」のときだけ起こす（それ以外は
-// 減らした後に記録へ触れない — 記録は出口の後に捨てられうる）。起こしは眠り 1 回にちょうど 1 回
+// scopeの出口の待ち（生きている子が0になるまで — 段階6 P4-4）: SR_LIVE = 生きている子の数 × 2 + 待っているフラグ（1）。待ち手をSR_WAITERに
+// 書いてからフラグをCASで立て（数が変わっていれば見直し）、立ったらスリープする。最後の子はxadd(-2) の結果が「数0 + フラグ」のときだけウェイクアップする（それ以外は
+// 減らした後に記録へ触れない — 記録は出口の後に捨てられうる）。ウェイクアップはスリープ1回にちょうど1回
 func waitLive(st mut St, rec int) {
     loop := newBlock(mut st)
     body := newBlock(mut st)
@@ -333,7 +333,7 @@ func parInfo(st mut St, pk int, name string, targ int, at desugar.NodeRef) (int,
 
 // `task.Run((s task.Scope) => 本体)`
 func parScope(st mut St, fi int, pk int, args desugar.ListRef, at desugar.NodeRef) (int, error?) {
-    // 実引数 = [本体のラムダ, budget, wait, deadline, backlog]（段 6 P5-3 / 段 3 の ③ ④ — 省略は loader が nil で埋める。wait: は true / false の字面 — ParCheck kind 22・
+    // 実引数 = [本体のラムダ, budget, wait, deadline, backlog]（段階6 P5-3 / 段階3の ③ ④ — 省略はloaderがnilで埋める。wait: はtrue / falseの字面 — ParCheck kind 22・
     // deadline: は budget: と同じ形の整数式 — kind 23・backlog: も同じ形 — kind 29）
     if lenL(mut st, args) != 5 {
         return 0, diag.Mismatch{at: posOf(mut st, at)}
@@ -366,12 +366,12 @@ func parScope(st mut St, fi int, pk int, args desugar.ListRef, at desugar.NodeRe
     regionEnter(mut st)
     sd := regionDepth(mut st)
     rPush(mut st, sd)
-    // NewChannel の記録の置き場（parNewChan）: 字面に囲む最も外の scope の region（端点を受けうる子は全部その出口までに終わる）
+    // NewChannelの記録の配置先（parNewChan）: 字面に囲む最も外のscopeのregion（端点を受けうる子は全部その出口までに終わる）
     cd0 := st.chanDepth
     if cd0 < 0 {
         st.chanDepth = sd
     }
-    // 変異 1（段 6 P4-4 の自己検査 — RtMutant）: 到着順で最初の失敗の枠を記録の後ろの 1 語に
+    // ミュータント1（段階6 P4-4の自己検査 — RtMutant）: 到着順で最初の失敗の枠を記録の後ろの1ワードに
     rec := regionAlloc(mut st, sd, iconst(mut st, SRSZ + (if st.rtMut == 1 { 1 } else { 0 })))
     if st.rtMut == 1 {
         store(mut st, rec, SRSZ, iconst(mut st, 0))
@@ -390,16 +390,16 @@ func parScope(st mut St, fi int, pk int, args desugar.ListRef, at desugar.NodeRe
     store(mut st, rec, SR_DLOCK, zero)
     store(mut st, rec, SR_CUT, zero)
     store(mut st, rec, SR_NKID, zero)
-    // 今の task の開いている scope の鎖へ（段 6 P4-5 — 死ぬ / 切られる task は task_start でこの鎖の子を待ってから終わる）
+    // 今のtaskの開いているscopeのチェーンへ（段階6 P4-5 — 死ぬ / 切られるtaskはtask_startでこのチェーンの子を待ってから終わる）
     tkS := itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
     store(mut st, rec, SR_UP, load(mut st, tkS, TC_SCOPE))
     store(mut st, rec, SR_OTCB, ptoi(mut st, tkS))
     store(mut st, tkS, TC_SCOPE, ptoi(mut st, rec))
-    // 天井の節（段 6 P5-3 admit.sober — budget: の scope だけ。各段が上限・予約ではない）
+    // 天井の節（段階6 P5-3 admit.sober — budget: のscopeだけ。各段が上限・予約ではない）
     if budgeted {
         ledNodeOpen(mut st, rec, bud)
     }
-    // wait: の方針（段 3 の ③ — 書いた scope の中だけ・出口で戻す。書かない scope は外の方針を継ぐ）
+    // wait: の方針（段階3の ③ — 書いたscopeの中だけ・出口で戻す。書かないscopeは外の方針を継ぐ）
     w0 := if wv >= 0 { load(mut st, tkS, TC_WAIT) } else { zero }
     if wv >= 0 {
         store(mut st, tkS, TC_WAIT, iconst(mut st, wv))
@@ -409,18 +409,18 @@ func parScope(st mut St, fi int, pk int, args desugar.ListRef, at desugar.NodeRe
     if bounded {
         store(mut st, tkS, TC_BACKLOG, imin(mut st, imax(mut st, blv, iconst(mut st, 1)), iconst(mut st, DQ_CAP - 1)))
     }
-    // 期限（段 3 の ④ deadline.sober — 開いた時点から・入れ子は早い方。出口で戻す）
+    // 期限（段階3の ④ deadline.sober — 開いた時点から・入れ子は早い方。出口で戻す）
     dl0 := if timed { dlOpen(mut st, tkS, dlv) } else { zero }
     sv := newAgg(mut st, sT)
     store(mut st, sv, 0, ptoi(mut st, rec))
     tokName := sA(nodeOf(mut st, latN(mut st, lA(nodeOf(mut st, lam)), 0)))
     declareNew(mut st, tokName, LVal, sT, sv, at)?
-    // 字面の scope の札の積み（spawn が外の札へ内の budget: の scope の中から生むかを見る — parRootOnly）
+    // 字面のscopeの札のスタック（spawnが外の札へ内のbudget: のscopeの中から生むかを見る — parRootOnly）
     toks0 := st.parToks
     st.parToks = rec4(mut st, st.parToks, int(tokName), if budgeted { 1 } else { 0 }, 0)
     body := nB(nodeOf(mut st, lam))
     // 本体の `?` = scope の失敗（language.md 11 節「本体の `?`」）: 本体に結果 [error?] だけの戻りの文脈を立てる — `?` は err をその口へ書き、
-    // 本体の defer を走らせ深度を scope の region へ戻して qEnd へ（inlineExit — インライン展開の return と同じ）。出口の待ち・優先は値の道と共有
+    // 本体のdeferを走らせ深度をscopeのregionへ戻してqEndへ（inlineExit — インライン展開のreturnと同じ）。出口の待ち・優先は値のパスと共有
     // 本体に `?` が無ければ立てない（IR は従来のまま）
     hasQ := desugar.HasTry(mut st.d, body)
     mut qT := -1
@@ -474,7 +474,7 @@ func parScope(st mut St, fi int, pk int, args desugar.ListRef, at desugar.NodeRe
     }
     t := x.t
     if qUsed {
-        // 値の道と `?` の道（ゼロ値・印 1）を合流させる
+        // 値のパスと `?` のパス（ゼロ値・マーク1）を合流させる
         ends := endsNew(mut st, 2)
         if cur(mut st) != -1 {
             endsAdd(mut st, ends, cur(mut st), t, x.v)
@@ -509,18 +509,18 @@ func parScope(st mut St, fi int, pk int, args desugar.ListRef, at desugar.NodeRe
     sig := sigIn(mut st, decl, pk, bindsOf(mut st, lB(nodeOf(mut st, decl)), desugar.ListRef(list1(mut st, t))))?
     eT := latI(mut st, desugar.ListRef(sig.rs), 1)
     v := copyVal(mut st, t, x.v)
-    // 本体の値の境界コピー（ブロックの出口の R5 と同じ — region を持つ値は scope の region から親の最内へ写す。写さないと出口の後に
+    // 本体の値の境界コピー（ブロックの出口のR5と同じ — regionを持つ値はscopeのregionから親の最内へコピーする。コピーしないと出口の後に
     // 同じ深度で開き直した region が上書きする）
     if containsSlice(mut st, t) {
         relocateTo(mut st, v, 0, t, saved)
     }
     if qUsed {
-        // `?` の err（scope の region にある — inlineExit が写した）を親の最内へ（nil なら何もしない）
+        // `?` のerr（scopeのregionにある — inlineExitがコピーした）を親の最内へ（nilなら何もしない）
         relocateTo(mut st, qSlot, 0, qT, saved)
     }
     dead := load(mut st, rec, SR_DEAD)
     // 死因 = 死んだ子のうち生んだ順で最初の子の死因（到着順を捨てる。死があるときだけ、handle を捨てた子の死の最小〔SR_DMIN / SR_DCAUSE〕から
-    // 始めて全部の子の鎖を歩き、生んだ順の番号 FR_IDX が最小の死を取る）
+    // 始めて全部の子のチェーンを歩き、生んだ順の番号FR_IDXが最小の死を取る）
     causeS := newSlotAddr(mut st, 1)
     store(mut st, causeS, 0, zero)
     bestS := newSlotAddr(mut st, 1)
@@ -542,7 +542,7 @@ func parScope(st mut St, fi int, pk int, args desugar.ListRef, at desugar.NodeRe
     }
     cursor := newSlotAddr(mut st, 1)
     if st.rtMut == 1 {
-        // 変異 1: 到着順で最初の失敗の枠から探す（正準順 = 生んだ順を壊す — schedfuzz が割れを捕まえること）
+        // ミュータント1: 到着順で最初の失敗の枠から探す（正準順 = 生んだ順を壊す — schedfuzzが割れを捕まえること）
         f1 := load(mut st, rec, SRSZ)
         store(mut st, cursor, 0, bin(mut st, BAdd, f1, bin(mut st, BMul, cmp(mut st, CEq, f1, zero), load(mut st, rec, SR_FHEAD))))
     } else {
@@ -574,7 +574,7 @@ func parScope(st mut St, fi int, pk int, args desugar.ListRef, at desugar.NodeRe
     setCur(mut st, bOut)
     failed := load(mut st, fe, 0)
     if st.scopeKeep {
-        // (B1): 子の預かりのスロットを返す（全部の子の鎖 — 写しは全部済んだ: Join / Try は値を scope の region へ写し、本体の値と未回収の err は上で親へ写した）
+        // (B1): 子の預かりのスロットを返す（全部の子のチェーン — コピーは全部済んだ: Join / Tryは値をscopeのregionへコピーし、本体の値と未回収のerrは上で親へコピーした）
         keepRelease(mut st, rec)
     }
     // 子が全部終わった — 手元のプールの温かい分の超過を返す（rt.slot_trim）
@@ -595,7 +595,7 @@ func parScope(st mut St, fi int, pk int, args desugar.ListRef, at desugar.NodeRe
     condbr(mut st, cmp(mut st, CNe, failed, zero), bFail, -1, bOk, -1)
     setCur(mut st, bOk)
     if qUsed {
-        // 本体の `?` の失敗（未回収の失敗・死より後 — 本体の結果の腕）: (ゼロ値 — 合流で入れた, err)
+        // 本体の `?` の失敗（未回収の失敗・死より後 — 本体の結果の分岐）: (ゼロ値 — 合流で入れた, err)
         bQ := newBlock(mut st)
         bV := newBlock(mut st)
         condbr(mut st, cmp(mut st, CNe, load(mut st, qFlag, 0), zero), bQ, -1, bV, -1)
@@ -646,7 +646,7 @@ func parScope(st mut St, fi int, pk int, args desugar.ListRef, at desugar.NodeRe
     return r, nil
 }
 
-// scope の記録 rec の預かりの鎖（SR_KEEP — (B1)）を全部返す（scope の出口と、開いたまま終わる task の後始末 — 段 6 P4-5）
+// scopeの記録recの預かりのチェーン（SR_KEEP — (B1)）を全部返す（scopeの出口と、開いたまま終わるtaskの後始末 — 段階6 P4-5）
 func keepRelease(st mut St, rec int) {
     zero := iconst(mut st, 0)
     kl := newBlock(mut st)
@@ -662,7 +662,7 @@ func keepRelease(st mut St, rec int) {
     kf := itop(mut st, kp)
     br(mut st, kg, -1)
     setCur(mut st, kg)
-    // 預かり（rt.kid_keep）を手放す: 長さ 0 = 小さな塊 → 今のワーカーの塊の鎖へ・それ以外は munmap
+    // 預かり（rt.kid_keep）を手放す: 長さ0 = 小さなチャンク → 今のワーカーのチャンクのチェーンへ・それ以外はmunmap
     kln := load(mut st, kf, KP_USED)
     ksl := load(mut st, kf, KP_SLOT)
     kS := newBlock(mut st)
@@ -681,7 +681,7 @@ func keepRelease(st mut St, rec int) {
     setCur(mut st, kd)
 }
 
-// 枠の鎖（head から FR_ANEXT で）を歩き、死んだ枠のうち生んだ順の番号が best より小さければ死因と番号を取る
+// 枠のチェーン（headからFR_ANEXTで）を歩き、死んだ枠のうち生んだ順の番号がbestより小さければ死因と番号を取る
 func deadWalk(st mut St, head int, causeS int, bestS int) {
     zero := iconst(mut st, 0)
     loop := newBlock(mut st)
@@ -703,9 +703,9 @@ func deadWalk(st mut St, head int, causeS int, bestS int) {
     setCur(mut st, out)
 }
 
-// task tcb の開いている scope（TC_SCOPE の鎖 — 内から外へ）の子を待って預かりを返す（段 6 P4-5）: 罠で巻き戻った task（死んだ・
+// task tcb の開いているscope（TC_SCOPEのチェーン — 内から外へ）の子を待って預かりを返す（段階6 P4-5）: 罠で巻き戻ったtask（死んだ・
 // 切られた）は出口を通らないので、自分のスロットの上の記録・孫の枠を孫が使い終わるまで手放さない（P4-4 の穴 — M:N で孫が返したスロットへ書いた）。
-// 印を立てるので切ってよい孫は検査点で止まる（死んだ task の孫の値は誰も見ない）。正常に戻った task の鎖は空（1 回の load と分岐だけ）
+// フラグを立てるので切ってよい孫は検査点で止まる（死んだtaskの孫の値は誰も見ない）。正常に戻ったtaskのチェーンは空（1回のloadと分岐だけ）
 func drainScopes(st mut St, tcb int) {
     zero := iconst(mut st, 0)
     dl := newBlock(mut st)
@@ -727,8 +727,8 @@ func drainScopes(st mut St, tcb int) {
     store(mut st, tcb, TC_SCOPE, zero)
 }
 
-// `task.SpawnIn(s, pool, () => 本体, budget: b)`（段 6 P5-4 — admit.sober の rt.task_new_in）: プールの天井に入れれば Spawn と同じ形で子を生んで
-// (some handle, nil)・入れなければ (nil, Shed{})（縮退しない）。入場は枠を作る前（shed の子の枠を scope の鎖に残さない）
+// `task.SpawnIn(s, pool, () => 本体, budget: b)`（段階6 P5-4 — admit.soberのrt.task_new_in）: プールの天井に入れればSpawnと同じ形で子を生んで
+// (some handle, nil)・入れなければ (nil, Shed{})（縮退しない）。入場は枠を作る前（shedの子の枠をscopeのチェーンに残さない）
 func parSpawnIn(st mut St, pk int, args desugar.ListRef, at desugar.NodeRef) (int, error?) {
     if lenL(mut st, args) != 4 {
         return 0, diag.Mismatch{at: posOf(mut st, at)}
@@ -751,14 +751,14 @@ func parSpawnIn(st mut St, pk int, args desugar.ListRef, at desugar.NodeRef) (in
     if hv == -1 {
         return -1, nil
     }
-    // 入場できた道（parSpawn の最後 — 今のブロックは入場の道の終わり）: (some handle, nil)
+    // 入場できたパス（parSpawnの最後 — 今のブロックは入場のパスの終わり）: (some handle, nil)
     hT := desugar.HeapGet(mut st.d, hv + 1)
     hx := coerce(mut st, hT, desugar.HeapGet(mut st.d, hv + 2), hoT, at)?
     storeVal(mut st, hs, 0, hoT, hx.v)
     store(mut st, es, 0, iconst(mut st, 0))
     bEnd := newBlock(mut st)
     br(mut st, bEnd, -1)
-    // shed の道（parSpawn が作った — st.parInShed）: (nil, Shed{})
+    // shedのパス（parSpawnが作った — st.parInShed）: (nil, Shed{})
     setCur(mut st, st.parInShed)
     store(mut st, hs, 0, iconst(mut st, 0))
     ce := node(mut st, ast.EComposite, at, int(strLit(mut st, "Shed")), list0(mut st), list0(mut st), 0)
@@ -782,15 +782,15 @@ func parSpawnIn(st mut St, pk int, args desugar.ListRef, at desugar.NodeRef) (in
     return r, nil
 }
 
-// `task.Spawn(s, () => 本体)`: 枠を作って捕獲を写し、子の関数を罠を張って呼ぶ（st.parIn >= 0 なら task.SpawnIn の形 — 実引数 = [札, プール, ラムダ, budget]）
+// `task.Spawn(s, () => 本体)`: 枠を作って捕獲をコピーし、子の関数を罠を張って呼ぶ（st.parIn >= 0ならtask.SpawnInの形 — 実引数 = [札, プール, ラムダ, budget]）
 func parSpawn(st mut St, pk int, tt SpawnTy, args desugar.ListRef, at desugar.NodeRef, give bool) (int, error?) {
     t := tt.t
-    // handle を `_` に捨てる束縛の右辺か（bindStmt / assignStmt の印 — 読んだら戻す: 実引数の中の入れ子の spawn は別の節）
+    // handleを `_` に捨てる束縛の右辺か（bindStmt / assignStmtのマーク — 読んだら戻す: 実引数の中の入れ子のspawnは別の節）
     discarded := st.parDiscard == int(at)
     st.parDiscard = -1
-    // 枠の結果の語 = T（error を返す task は T の後ろに err）
+    // 枠の結果のワード = T（errorを返すtaskはTの後ろにerr）
     rw := tWords(mut st, t) + (if tt.e >= 0 { tWords(mut st, tt.e) } else { 0 })
-    // 実引数 = [札, (give の端点 / SpawnIn のプール,) ラムダ, budget]（budget: の省略は loader が nil で埋める — 段 6 P5-3）
+    // 実引数 = [札, (giveの端点 / SpawnInのプール,) ラムダ, budget]（budget: の省略はloaderがnilで埋める — 段階6 P5-3）
     inn := st.parIn >= 0
     // 読んだら戻す — 下の pool / budget の式の評価（展開の中のラムダ）にある入れ子の task.Spawn が SpawnIn の形と取り違えないように
     st.parIn = -1
@@ -807,7 +807,7 @@ func parSpawn(st mut St, pk int, tt SpawnTy, args desugar.ListRef, at desugar.No
         return -1, nil
     }
     rec := itop(mut st, load(mut st, sx.v, 0))
-    // SpawnIn（段 6 P5-4）: 枠を作る前にプールの天井へ入場（rt.task_new_in — 入れなければ 0 = shed の道 st.parInShed へ）
+    // SpawnIn（段階6 P5-4）: 枠を作る前にプールの天井へ入場（rt.task_new_in — 入れなければ0 = shedのパスst.parInShedへ）
     mut tcbIn := -1
     mut siteIn := -1
     if inn {
@@ -856,8 +856,8 @@ func parSpawn(st mut St, pk int, tt SpawnTy, args desugar.ListRef, at desugar.No
         words += tWords(mut st, ex.t)
         m = 1
     }
-    // 閉包の捕獲（std/task の展開される口の中 — task.Map の `() => f(x)`。P3b-5）: 閉包のラムダを子の本体へ展開する（β 簡約で持ち上げ）。
-    // 閉包の自由変数（定義の可視範囲の imm の局所）を枠に写し、子の入口で閉包を組み直す — 記録 = [名前, 閉包, 名前の列, 型の列, 値の列, 束縛の型]
+    // クロージャの捕獲（std/taskの展開されるAPIの中 — task.Mapの `() => f(x)`。P3b-5）: クロージャのラムダを子の本体へ展開する（β 簡約で持ち上げ）。
+    // クロージャの自由変数（定義の可視範囲のimmの局所）を枠にコピーし、子の入口でクロージャを組み直す — 記録 = [名前, クロージャ, 名前の列, 型の列, 値の列, 束縛の型]
     cs := listN(mut st, nn * 6)
     mut ncl := 0
     for i <- iter.Range(0, nn) {
@@ -881,7 +881,7 @@ func parSpawn(st mut St, pk int, tt SpawnTy, args desugar.ListRef, at desugar.No
                 continue
             }
             if desugar.HeapGet(mut st.d, l + 2) != LVal {
-                // mut の束縛（セル）は子へ渡せない — ParCheck が名指し済み（kind 4 — ここへは来ない）
+                // mutの束縛（セル）は子へ渡せない — ParCheckが専用の診断で拒否済み（kind 4 — ここへは来ない）
                 return 0, diag.Par{at: posOf(mut st, lam), kind: 4}
             }
             lput(mut st, cn, m, int(name))
@@ -893,15 +893,15 @@ func parSpawn(st mut St, pk int, tt SpawnTy, args desugar.ListRef, at desugar.No
     }
     desugar.HeapSet(mut st.d, int(cn), m)
     desugar.HeapSet(mut st.d, int(ct), m)
-    // 結果が region を持つ子は枠の後ろに預かりの欄（rt.kid_keep が書く — TC_KOFF が位置）
+    // 結果がregionを持つ子は枠の後ろに預かりのフィールド（rt.kid_keepが書く — TC_KOFFが位置）
     koff := words
     if containsSlice(mut st, t) || (tt.e >= 0 && containsSlice(mut st, tt.e)) {
         words += KP_WORDS
     }
     keepKid := containsSlice(mut st, t) || (tt.e >= 0 && containsSlice(mut st, tt.e))
-    // handle を捨てた子の枠は子の寿命（language.md 11 節）: 誰も Join / Try / Gather できないので、枠を scope の region でなく小さな塊
-    // （rt.frame_new — ワーカーの塊の鎖・KEEP_SMALL バイト）に置き、子の終わりで返す（死んだら番号と死因の 2 語だけを SR_DMIN / SR_DCAUSE へ — 出口の死因の選び方）。
-    // 返せる形だけ: error を返さない（未回収の失敗の集約は枠の err を出口が読む）・結果が region を持たない（預かりの鎖）・give: でない・枠が塊に収まる。
+    // handleを捨てた子の枠は子の寿命（language.md 11 節）: 誰もJoin / Try / Gatherできないので、枠をscopeのregionでなく小さなチャンク
+    // （rt.frame_new — ワーカーのチャンクのチェーン・KEEP_SMALLバイト）に置き、子の終わりで返す（死んだら番号と死因の2ワードだけをSR_DMIN / SR_DCAUSEへ — 出口の死因の選び方）。
+    // 返せる形だけ: errorを返さない（未回収の失敗の集約は枠のerrを出口が読む）・結果がregionを持たない（預かりのチェーン）・give: でない・枠がチャンクに収まる。
     // 外れる形は今どおり scope の region に置く
     disc := discarded && !give && tt.e < 0 && !keepKid && words * 8 <= KEEP_SMALL
     mut frame := 0
@@ -944,7 +944,7 @@ func parSpawn(st mut St, pk int, tt SpawnTy, args desugar.ListRef, at desugar.No
     if keepKid {
         st.scopeKeep = true
     }
-    // 全部の子の鎖の先頭へ（出口の死因の選び方 — 生んだ順で最初の死）。handle を捨てた子は積まない（死んだら子が SR_DMIN / SR_DCAUSE へ書く）
+    // 全部の子のチェーンの先頭へ（出口の死因の選び方 — 生んだ順で最初の死）。handleを捨てた子は積まない（死んだら子がSR_DMIN / SR_DCAUSEへ書く）
     if !disc {
         store(mut st, frame, FR_ANEXT, load(mut st, rec, SR_ALL))
         store(mut st, rec, SR_ALL, ptoi(mut st, frame))
@@ -966,7 +966,7 @@ func parSpawn(st mut St, pk int, tt SpawnTy, args desugar.ListRef, at desugar.No
         store(mut st, rec, SR_FTAIL, ptoi(mut st, frame))
     }
     // 入場（admit.sober）: 台帳に見積もりを積めれば task として生む・積めなければ縮退（その場で今の task の上で呼ぶ — P3a の即時形）。
-    // give: の子は縮退しない（常に入場 — 超過は記帳）。生んだ順の番号は両方の道で数える
+    // give: の子は縮退しない（常に入場 — 超過は記帳）。生んだ順の番号は両方のパスで数える
     mut site := siteIn
     if !inn {
         st.nsite += 1
@@ -976,7 +976,7 @@ func parSpawn(st mut St, pk int, tt SpawnTy, args desugar.ListRef, at desugar.No
     kidx := load(mut st, rec, SR_NKID)
     store(mut st, rec, SR_NKID, bin(mut st, BAdd, kidx, iconst(mut st, 1)))
     store(mut st, frame, FR_IDX, kidx)
-    // 子の task（task.sober）: 塊を取る（入場を兼ねる — 入場できなければ 0）。SpawnIn は入場済みの塊
+    // 子のtask（task.sober）: チャンクを取る（入場を兼ねる — 入場できなければ0）。SpawnInは入場済みのチャンク
     mut tcb := tcbIn
     if !inn {
         bud := budgetArg(mut st, latN(mut st, args, na - 1))?
@@ -994,7 +994,7 @@ func parSpawn(st mut St, pk int, tt SpawnTy, args desugar.ListRef, at desugar.No
         bTask := newBlock(mut st)
         bInl := newBlock(mut st)
         if kindN(mut st, latN(mut st, args, na - 1)) != ast.ENil {
-            // 宣言のある子: rt.task_new の 1 = 上界が wait の scope の天井を超える（待っても入れない — 段 3 の ③）→ この点で名指しの panic
+            // 宣言のある子: rt.task_newの1 = 上界がwaitのscopeの天井を超える（待っても入れない — 段階3の ③）→ この点で専用の診断のpanic
             bSlow := newBlock(mut st)
             bPan := newBlock(mut st)
             condbr(mut st, cmp(mut st, CUge, ptoi(mut st, tcb), iconst(mut st, 2)), bTask, -1, bSlow, -1)
@@ -1010,7 +1010,7 @@ func parSpawn(st mut St, pk int, tt SpawnTy, args desugar.ListRef, at desugar.No
         br(mut st, bJoin, -1)
         setCur(mut st, bTask)
     }
-    // 生きている子の数（× 2 — 下の位は出口の待ちの印・子は別のワーカーで並行に減らす — 段 6 P4-4）
+    // 生きている子の数（× 2 — 下の位は出口の待ちのフラグ・子は別のワーカーで並行に減らす — 段階6 P4-4）
     atomicXadd(mut st, rec, SR_LIVE, iconst(mut st, 2))
     // 子を先に走らせる（rt.task_go — 子が終わると rt.task_start が状態・死因・scope の死の数を書いてここへ戻す。
     // 深度・宛先 / anchor のレジスタ・罠の記録は切替が退避 / 復元する）
@@ -1030,14 +1030,14 @@ func parSpawn(st mut St, pk int, tt SpawnTy, args desugar.ListRef, at desugar.No
     if keepKid {
         store(mut st, tcb, TC_KOFF, iconst(mut st, koff))
     }
-    // 純な子か（段 6 P4-5 — cancel.sober: io もチャネルも持たない — build の最後に定数を決める）・生んだ順の番号（scope の子を生むのは本体を走らせる task だけ）
+    // 純な子か（段階6 P4-5 — cancel.sober: ioもチャネルも持たない — buildの最後に定数を決める）・生んだ順の番号（scopeの子を生むのは本体を走らせるtaskだけ）
     store(mut st, tcb, TC_CUTOK, cutFlag(mut st, kid))
     store(mut st, tcb, TC_IDX, kidx)
     if give {
         // 端点の持ち主を子へ（親に残った別名は失効 — 使うと panic）
         store(mut st, ch, chEnd, ptoi(mut st, tcb))
     }
-    // spawn の切替点（rt.task_go — 既定 = 子を先に: 親を走れる積みに載せて子へ。SOBER_SCHED で親を先にも選べる）
+    // spawnの切替点（rt.task_go — 既定 = 子を先に: 親を走れるスタックに載せて子へ。SOBER_SCHEDで親を先にも選べる）
     store(mut st, tcb, TC_STARTED, iconst(mut st, 0))
     call(mut st, st.rtTaskGo, list2(mut st, me, tcb))
     br(mut st, bJoin, -1)
@@ -1081,16 +1081,16 @@ func budgetArg(st mut St, x desugar.NodeRef) (int, error?) {
 
 // ── 凍った map の封（language.md の map の節）──
 // map の索引は読み（rt.map_find）が遅延で作る・追いつく — 確保はヘッダの深度 d（作った task の region）。子の task が親の map を引いてそれが
-// 起きると、子の meta の深度 d へ確保して番地 0（または子の region）に書き、親のセル列に属する索引の語を子が書き換える。同じ task の中でも、
-// 値渡しの写しに作った索引は呼び手へ戻らず、呼ぶたびに作り直して積もる。
-// 不変: 凍った map のヘッダはいつも索引が確定している（封 — 確定した索引の引きは速い道だけで、確保も書きもしない）。封の点 = freeze（明示・暗黙）・
+// 起きると、子のmetaの深度dへ確保して番地0（または子のregion）に書き、親のセル列に属する索引のワードを子が書き換える。同じtaskの中でも、
+// 値渡しのコピーに作った索引は呼び手へ戻らず、呼ぶたびに作り直して積もる。
+// 不変: 凍ったmapのヘッダはいつも索引が確定している（封 — 確定した索引の引きは高速パスだけで、確保も書きもしない）。封の点 = freeze（明示・暗黙）・
 // imm の map のリテラル・relocateTo が imm の map を動かした点。task の境界（Spawn の枠・チャネルの送り）の封は保険（不変が守られていれば何も書かない）。
-// 棄てた案: 子の遅い道を走査に落とす（写しか rt に区別が無い・長い map で O(n)）・子の今の深度に作る（ヘッダの写しより短い region に索引が入りうる）・
+// 棄てた案: 子の低速パスを走査に落とす（コピーかrtに区別が無い・長いmapでO(n)）・子の今の深度に作る（ヘッダのコピーより短いregionに索引が入りうる）・
 // map の仮引数を参照で渡す（呼び出し規約の変更）
 
 const SEAL_FUEL = 3
 
-// 型 t の値が map を（入れ子含め）持つか。slice / map の入れ子は fuel 段まで（再帰型の止め — 越えた先は封じない）
+// 型tの値がmapを（入れ子含め）持つか。slice / mapの入れ子はfuelレベルまで（再帰型の止め — 越えた先は封じない）
 func hasMap(st mut St, t int, fuel int) bool {
     if fuel < 0 {
         return false
@@ -1126,13 +1126,13 @@ func hasMap(st mut St, t int, fuel int) bool {
     return false
 }
 
-// map のヘッダ h（型 t）の索引を確定させる（零の鍵で 1 回引く — 引きの遅い道が索引を作り・追いつかせる。長さ MAP_IDX_MIN 未満は
-// 走査の道で何も書かない。確定した索引の引きは速い道だけ）
+// mapのヘッダh（型t）の索引を確定させる（零の鍵で1回引く — 引きの低速パスが索引を作り・追いつかせる。長さMAP_IDX_MIN未満は
+// 走査のパスで何も書かない。確定した索引の引きは高速パスだけ）
 func sealHdr(st mut St, h int, t int) {
     kw := tWords(mut st, desugar.HeapGet(mut st.d, t + 1))
-    // 鍵のスロットは封の専用（番地が本物の呼び出しへ逃げる — 空き鎖で引きの鍵のスロットと共用すると、そのスロットが逃げたままになり引きのループの
-    // 鍵が SROA で昇格しない。knucleotide で命令 +61% — newSlotAddrOwn の注と同じ形）。関数ごとに 1 本（点ごとに
-    // 取るとフレームが封の点の数だけ伸びる — loader.finish が framestat の線を越えた）
+    // 鍵のスロットは封の専用（番地が本物の呼び出しへ逃げる — 空きチェーンで引きの鍵のスロットと共用すると、そのスロットが逃げたままになり引きのループの
+    // 鍵がSROAで昇格しない。knucleotideで命令 +61% — newSlotAddrOwnのコメントと同じ形）。関数ごとに1本（点ごとに
+    // 取るとフレームが封の点の数だけ伸びる — loader.finishがframestatの上限値を越えた）
     kp := if kw > SEAL_KW { newSlotAddrOwn(mut st, kw) } else { sealSlotAddr(mut st) }
     for w <- iter.Range(0, kw) {
         store(mut st, kp, w, iconst(mut st, 0))
@@ -1142,7 +1142,7 @@ func sealHdr(st mut St, h int, t int) {
 
 const SEAL_KW = 4
 
-// 今の関数の封の鍵のスロット（SEAL_KW 語・空き鎖を通らない）の番地
+// 今の関数の封の鍵のスロット（SEAL_KWワード・空きチェーンを通らない）の番地
 func sealSlotAddr(st mut St) int {
     if st.sealFn != int(st.fn) {
         st.sealFn = int(st.fn)
@@ -1152,8 +1152,8 @@ func sealSlotAddr(st mut St) int {
     return slotaddr(mut st, st.sealSlot)
 }
 
-// 型 t の値（p + off 語）の中の map の索引を確定させる（零の鍵で 1 回引く — 引きの遅い道が索引を作り・追いつかせる。長さ
-// MAP_IDX_MIN 未満は走査の道で何も書かない）。形は relocateTo と同じ — struct は静的オフセット、opt / union は生きている腕、slice の要素と
+// 型tの値（p + offワード）の中のmapの索引を確定させる（零の鍵で1回引く — 引きの低速パスが索引を作り・追いつかせる。長さ
+// MAP_IDX_MIN未満は走査のパスで何も書かない）。形はrelocateToと同じ — structは静的オフセット、opt / unionは生きている分岐、sliceの要素と
 // map の生きたセルの値は全部
 func sealMaps(st mut St, p int, off int, t int, fuel int) {
     if !hasMap(mut st, t, fuel) {
@@ -1285,9 +1285,9 @@ func isKid(st mut St, fi int) bool {
     return false
 }
 
-// 子の関数の入口: 捕獲（仮引数の節 ps・型 params）を枠の結果の語の後ろから読んで束縛する（実引数 0 = 枠の結果の置き場）。
-// 閉包の捕獲（P3b-5）は自由変数を外の可視範囲に束ねてから閉包を組み直し（凍結した鎖はそこまで — 子の捕獲に隠されない）、
-// 内の可視範囲に閉包の名前と普通の捕獲を束ねる
+// 子の関数の入口: 捕獲（仮引数の節ps・型params）を枠の結果のワードの後ろから読んで束縛する（実引数0 = 枠の結果の配置先）。
+// クロージャの捕獲（P3b-5）は自由変数を外の可視範囲に束ねてからクロージャを組み直し（凍結したチェーンはそこまで — 子の捕獲に隠されない）、
+// 内の可視範囲にクロージャの名前と普通の捕獲を束ねる
 func kidParams(st mut St, ps desugar.ListRef, params desugar.ListRef) {
     rl := desugar.ListRef(infoAt(mut st, st.info).results)
     mut off := 0
@@ -1326,7 +1326,7 @@ func kidParams(st mut St, ps desugar.ListRef, params desugar.ListRef) {
     }
 }
 
-// 枠の語 off から型 t の捕獲を読んで名前 name に束ねる
+// 枠のワードoffから型tの捕獲を読んで名前nameに束ねる
 func kidBind(st mut St, name desugar.StrRef, t int, off int) {
     if isScalar(mut st, t) {
         declare(mut st, name, LVal, t, load(mut st, 0, off))
@@ -1339,7 +1339,7 @@ func kidBind(st mut St, name desugar.StrRef, t int, off int) {
     }
 }
 
-// 子の関数 fi の閉包の捕獲の記録（無ければ -1）
+// 子の関数fiのクロージャの捕獲の記録（無ければ -1）
 func kidClosures(st mut St, fi int) int {
     mut k := st.kids
     while k >= 0 {
@@ -1351,7 +1351,7 @@ func kidClosures(st mut St, fi int) int {
     return -1
 }
 
-// 閉包 c の自由変数（定義の可視範囲の局所 — 子へ写す）の [名前の列, 型の列, 値の列]。imm の値だけ（mut のセル・入れ子の閉包は拒否）
+// クロージャcの自由変数（定義の可視範囲の局所 — 子へコピーする）の [名前の列, 型の列, 値の列]。immの値だけ（mutのセル・入れ子のクロージャは拒否）
 func closureFree(st mut St, c int, lam desugar.NodeRef) (int, error?) {
     cr := cloAt(mut st, c)
     names := desugar.LamFree(mut st.d, cr.lambda)
@@ -1383,7 +1383,7 @@ func closureFree(st mut St, c int, lam desugar.NodeRef) (int, error?) {
     return rec4(mut st, int(fn), int(ft), fv, 0), nil
 }
 
-// 節 e の表層型（表層型検査器の表）の lower の型（写せなければ型の不一致）
+// 節eの表層型（表層型検査器の表）のlowerの型（コピーできなければ型の不一致）
 func yType(st mut St, e desugar.NodeRef) (int, error?) {
     t := yLower(mut st, desugar.YTypeOf(mut st.d, e), e)?
     if t < 0 {
@@ -1392,9 +1392,9 @@ func yType(st mut St, e desugar.NodeRef) (int, error?) {
     return t, nil
 }
 
-// ── チャネル（段 6 P3b — language.md 11 節「チャネル」・コアの newch / send / recv）──
-// 記録は字面に囲む最も外の scope の region（端点を受けうる子が全部終わるまで生きる — parNewChan。囲む scope が無ければ NewChannel の最内の region）。端点の値 = 記録の番地（1 語）。持ち主は記録に
-// task ごと（送り端・受け端 — 作った task が両方を持ち、give: で子へ移る）。満杯の Send・空の Recv は待つ（起こすのは相手の Recv / Send）
+// ── チャネル（段階6 P3b — language.md 11 節「チャネル」・コアのnewch / send / recv）──
+// 記録は字面に囲む最も外のscopeのregion（端点を受けうる子が全部終わるまで生きる — parNewChan。囲むscopeが無ければNewChannelの最内のregion）。端点の値 = 記録の番地（1ワード）。持ち主は記録に
+// taskごと（送り端・受け端 — 作ったtaskが両方を持ち、give: で子へ移る）。満杯のSend・空のRecvは待つ（ウェイクアップさせるのは相手のRecv / Send）
 
 // 端点の型 t が送り端（Tx[T] のインスタンス）か
 func parIsTx(st mut St, pk int, t int, at desugar.NodeRef) (bool, error?) {
@@ -1405,7 +1405,7 @@ func parIsTx(st mut St, pk int, t int, at desugar.NodeRef) (bool, error?) {
     return strIs(mut st, sA(nodeOf(mut st, decl)), "Sender"), nil
 }
 
-// 端点の持ち主（記録 ch の欄 end）が今の task でなければ死ぬ（give: で子へ移した後の親の別名 — 定義された panic）
+// 端点の持ち主（記録chのフィールドend）が今のtaskでなければ死ぬ（give: で子へ移した後の親の別名 — 定義されたpanic）
 func parOwnerCheck(st mut St, ch int, end int, at desugar.NodeRef) {
     bad := newBlock(mut st)
     ok := newBlock(mut st)
@@ -1428,7 +1428,7 @@ func parNewChan(st mut St, pk int, args desugar.ListRef, at desugar.NodeRef, cal
     txT := desugar.HeapGet(mut st.d, parInfo(mut st, pk, "Sender", t, at)? + SI_TY)
     rxT := desugar.HeapGet(mut st.d, parInfo(mut st, pk, "Receiver", t, at)? + SI_TY)
     tw := if tWords(mut st, t) < 1 { 1 } else { tWords(mut st, t) }
-    // region を持つペイロードは枠ごとの小アリーナ [スロットの基底, 使った量] を記録の後ろに（段 6 P4-4 (B4) — 0 = まだ無い）
+    // regionを持つペイロードは枠ごとの小アリーナ [スロットの基底, 使った量] を記録の後ろに（段階6 P4-4 (B4) — 0 = まだ無い）
     aw := if containsSlice(mut st, t) { 2 * capN } else { 0 }
     // 記録の region = 端点を受けうる子が全部終わるまで生きる region: 字面に囲む最も外の scope の region（scope の本体の中のループ・ブロックの region に
     // 置くと、反復の終わりで記録が死に、次の反復の NewChannel が子の持つ記録を上書きする）。囲む scope が無ければ最内の region
@@ -1464,7 +1464,7 @@ func parNewChan(st mut St, pk int, args desugar.ListRef, at desugar.NodeRef, cal
     return r, nil
 }
 
-// `task.Close(tx)`: 持ち主でなければ・閉じた後なら死ぬ。閉じた印を立て、待っている受け手を起こす（空なら nil を受ける）
+// `task.Close(tx)`: 持ち主でなければ・閉じた後なら死ぬ。閉じたフラグを立て、待っている受け手をウェイクアップする（空ならnilを受ける）
 func parClose(st mut St, args desugar.ListRef, at desugar.NodeRef) (int, error?) {
     cutMarkChan(mut st)
     if lenL(mut st, args) != 1 {
@@ -1525,7 +1525,7 @@ func parSendRecv(st mut St, pk int, key int, args desugar.ListRef, at desugar.No
         x2 := coerce(mut st, x.t, x.v, t, at)?
         vv = copyVal(mut st, t, x2.v)
     }
-    // 待つ: Send は満杯の間・Recv は空で開いている間（waitWhileZero と同じ待ちの型 — 待ち手の語へ xchg・見直し・外せなければ起こしを吸う。段 6 P4-4）
+    // 待つ: Sendは満杯の間・Recvは空で開いている間（waitWhileZeroと同じ待ちの型 — 待ち手のワードへxchg・見直し・外せなければウェイクアップを吸う。段階6 P4-4）
     wmy := if send { CH_WSEND } else { CH_WRECV }
     loop := newBlock(mut st)
     body := newBlock(mut st)
@@ -1549,7 +1549,7 @@ func parSendRecv(st mut St, pk int, key int, args desugar.ListRef, at desugar.No
     call(mut st, st.rtTaskWait, list0(mut st))
     br(mut st, loop, -1)
     setCur(mut st, done)
-    // 受け: 空のまま抜けた（= 閉じて空）なら nil（全語 0）— 閉じた印を見た後に送った数を読み直す（送り手は最後の送りを閉じる前に書いた）
+    // 受け: 空のまま抜けた（= 閉じて空）ならnil（全ワード0）— 閉じたフラグを見た後に送った数を読み直す（送り手は最後の送りを閉じる前に書いた）
     mut p := 0
     mut ot := 0
     mut bEnd := BlkRef(-1)
@@ -1562,7 +1562,7 @@ func parSendRecv(st mut St, pk int, key int, args desugar.ListRef, at desugar.No
         condbr(mut st, cmp(mut st, CEq, load(mut st, chp, CH_TAIL), load(mut st, chp, CH_HEAD)), bNil, -1, bVal, -1)
         setCur(mut st, bNil)
         if containsSlice(mut st, t) {
-            // 閉じて空 = もう送られない — 枠の小アリーナを返す（段 6 P4-4 (B4)）
+            // 閉じて空 = もう送られない — 枠の小アリーナを返す（段階6 P4-4 (B4)）
             call(mut st, st.rtChanFree, list2(mut st, chanArena(mut st, chp, t, iconst(mut st, 0)), load(mut st, chp, CH_CAP)))
         }
         for i <- iter.Range(0, if tWords(mut st, ot) < 1 { 1 } else { tWords(mut st, ot) }) {
@@ -1591,7 +1591,7 @@ func parSendRecv(st mut St, pk int, key int, args desugar.ListRef, at desugar.No
         }
         store(mut st, chp, CH_HEAD, bin(mut st, BAdd, n, iconst(mut st, 1)))
     }
-    // 相手が待っていれば起こす（xchg で取る — 待ちの型の起こし手）
+    // 相手が待っていればウェイクアップする（xchgで取る — 待ちの型のウェイクアップする側）
     w := atomicXchg(mut st, chp, if send { CH_WRECV } else { CH_WSEND }, iconst(mut st, 0))
     bW := newBlock(mut st)
     bW2 := newBlock(mut st)
@@ -1623,21 +1623,21 @@ func chanBlocked(st mut St, chp int, send bool, yes BlkRef, no BlkRef) {
     condbr(mut st, cmp(mut st, CNe, load(mut st, chp, CH_CLOSED), iconst(mut st, 0)), no, -1, yes, -1)
 }
 
-// 記録 chp の枠 idx の小アリーナの欄 [基底, 使った量] の番地（要素の語数 tw は型から — 段 6 P4-4 (B4)）
+// 記録chpの枠idxの小アリーナのフィールド [基底, 使った量] の番地（要素の語数twは型から — 段階6 P4-4 (B4)）
 func chanArena(st mut St, chp int, t int, idx int) int {
     tw := if tWords(mut st, t) < 1 { 1 } else { tWords(mut st, t) }
     base := bin(mut st, BAdd, iconst(mut st, CH_BUF), bin(mut st, BMul, load(mut st, chp, CH_CAP), iconst(mut st, tw)))
     return gepWord(mut st, chp, bin(mut st, BAdd, base, bin(mut st, BMul, idx, iconst(mut st, 2))))
 }
 
-// region を持つペイロード（枠 slot に置いた値）を枠 idx の小アリーナへ写す（段 6 P4-4 (B4) — 書き手 = 送り端の持ち主だけ）:
-// 深度 rd（記録の深度）のスロットと bump をアリーナへ付け替えて rd より深い部分を写し（印 = MAX_DEPTH — 受け手が必ず自分の region へ写す）、戻す。
-// アリーナの前の中身は受け手が写し終えている（枠が空いた = 受けた数が進んだ後にだけ送り手はこの枠を書く）
+// regionを持つペイロード（枠slotに置いた値）を枠idxの小アリーナへコピーする（段階6 P4-4 (B4) — 書き手 = 送り端の持ち主だけ）:
+// 深度rd（記録の深度）のスロットとbumpをアリーナへ付け替えてrdより深い部分をコピーし（マーク = MAX_DEPTH — 受け手が必ず自分のregionへコピーする）、戻す。
+// アリーナの前の中身は受け手がコピーし終えている（枠が空いた = 受けた数が進んだ後にだけ送り手はこの枠を書く）
 func chanSendCopy(st mut St, chp int, slot int, t int, idx int) {
     meta := globaladdr(mut st, st.meta)
     sg := globaladdr(mut st, st.slotsG)
     wk := globaladdr(mut st, st.wkG)
-    // 封は写す前に送り手の region で（アリーナへ動いた map は印 MAX_DEPTH で受け手が自分の region へ写し直す — 索引は外れて受け手が作る。
+    // 封はコピーする前に送り手のregionで（アリーナへ動いたmapはマークMAX_DEPTHで受け手が自分のregionへコピーし直す — 索引は外れて受け手が作る。
     // 動かない map〔外の深度のセル列〕は受け手と共有なので、ここで確定させた索引を渡す）
     sealMaps(mut st, slot, 0, t, SEAL_FUEL)
     ar := chanArena(mut st, chp, t, idx)
@@ -1659,13 +1659,13 @@ func chanSendCopy(st mut St, chp int, slot int, t int, idx int) {
     bp := gepWord(mut st, meta, rd)
     oldS := load(mut st, sp, 0)
     oldB := load(mut st, bp, W_BUMP)
-    // アリーナはプールのスロット（既定の大きさ）— 写す間は上限を既定に（送り手の main〔4 GiB〕・宣言の大きい子の大きさで隣のスロットへ溢れない）
+    // アリーナはプールのスロット（既定の大きさ）— コピーする間は上限を既定に（送り手のmain〔4 GiB〕・宣言の大きい子の大きさで隣のスロットへ溢れない）
     oldZ := load(mut st, meta, W_SLOT_SIZE)
     store(mut st, meta, W_SLOT_SIZE, load(mut st, meta, W_SLOT_DEF))
     store(mut st, sp, 0, a)
     store(mut st, bp, W_BUMP, a)
     store(mut st, wk, WK_RLAB, iconst(mut st, MAX_DEPTH))
-    // 送り手の値はこの後も読まれ、アリーナは受け手が写した後に使い回す — 元のセルを書き換えない写し
+    // 送り手の値はこの後も読まれ、アリーナは受け手がコピーした後に使い回す — 元のセルを書き換えないコピー
     st.relocFresh = true
     relocateTo(mut st, slot, 0, t, rd)
     st.relocFresh = false
@@ -1676,7 +1676,7 @@ func chanSendCopy(st mut St, chp int, slot int, t int, idx int) {
     store(mut st, meta, W_SLOT_SIZE, oldZ)
 }
 
-// 受けた値 v（枠 idx のアリーナを指す部分は印 MAX_DEPTH）を受け手の最内の region へ写す（Lean の recv の型 = 受け手の最内）
+// 受けた値v（枠idxのアリーナを指す部分はマークMAX_DEPTH）を受け手の最内のregionへコピーする（Leanのrecvの型 = 受け手の最内）
 func chanRecvCopy(st mut St, chp int, v int, t int, idx int) int {
     slot := newAgg(mut st, t)
     storeVal(mut st, slot, 0, t, v)

@@ -117,7 +117,7 @@ func loopPre(st mut St, w mut m2rW, h int) int {
     return outside
 }
 
-// 頭 h のループの本体（後ろの辺の前任から h まで逆に辿る）に印 mark を付ける
+// 頭hのループの本体（後ろの辺の前任からhまで逆に辿る）にフラグmarkを付ける
 func loopMark(w mut m2rW, inl mut []int, mark int, h int) {
     inl[h] = mark
     mut stack := mut []int{}

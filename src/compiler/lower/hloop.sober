@@ -1,9 +1,9 @@
 package lower
 
 // ヘッダのループ昇格: GVN と hdr の後の SSA に掛ける。関数の ptr の仮引数 P（mut slice の仮引数は
-// 呼び手のセルの番地）について、ループの中の P のメモリの読み書きが全部 `load P[k]` / `store P[k], v`（k は定数の語）で、ほかの読み書きと
-// 呼び出しが P のセルと重ならないと言えるなら、語ごとに 1 語のスロットへ付け替えて前置きで読み込み・ループの出口の辺で書き戻し、その場で
-// mem2reg が SSA にする（mut slice の仮引数へループで append する形 — jsonapi の zeroFill はヘッダ 3 語を毎周 load / store していた）。
+// 呼び手のセルの番地）について、ループの中のPのメモリの読み書きが全部 `load P[k]` / `store P[k], v`（kは定数のワード）で、ほかの読み書きと
+// 呼び出しがPのセルと重ならないと言えるなら、ワードごとに1ワードのスロットへ付け替えて前置きで読み込み・ループの出口の辺で書き戻し、その場で
+// mem2regがSSAにする（mut sliceの仮引数へループでappendする形 — jsonapiのzeroFillはヘッダ3ワードを毎周load / storeしていた）。
 // 重ならないと言える番地（別名の事実 — 番地の根の出どころで言う。mut の単一書き手の前提には依らない）:
 //   ① 確保した番地: region.alloc の結果・確保する rt（rt.region_alloc / rt.region_alloc8 / rt.slice_grow / rt.slice_grow8）の結果とその gep
 //      （確保したばかりのセルは関数の入口で既にあった P の指す先に属さない）
@@ -83,8 +83,8 @@ func hlIsParam(st mut St, f FnRef, v int) bool {
     return v >= 0 && v < np && desugar.HeapGet(mut st.d, pt + 1 + v) == TyPtr
 }
 
-// 仮引数 v が mut の印のある ptr 仮引数（mut slice の仮引数 — 呼び手のヘッダのセル）か。印の無い ptr 仮引数（rt の補助・sret）は
-// 別の slice のデータの中を指しうるので昇格しない（hdr.sober の資格の印と同じ門）
+// 仮引数vがmutのフラグのあるptr仮引数（mut sliceの仮引数 — 呼び手のヘッダのセル）か。フラグの無いptr仮引数（rtの補助・sret）は
+// 別のsliceのデータの中を指しうるので昇格しない（hdr.soberの資格のフラグと同じ門）
 func hlMut(st mut St, f FnRef, v int) bool {
     return v < 62 && (irFnMutP(mut st, f) >> v) & 1 == 1
 }
@@ -136,9 +136,9 @@ func hlRound(st mut St, f FnRef) bool {
     return false
 }
 
-// ループ（印 pw.mark・前置き pre）の中の読み書きを調べ、昇格できる仮引数があれば書き換えて true
+// ループ（フラグpw.mark・前置きpre）の中の読み書きを調べ、昇格できる仮引数があれば書き換えてtrue
 func hlLoop(st mut St, f FnRef, w mut m2rW, pw mut PrW, pre int) bool {
-    // 直に読み書きされる仮引数 P（最初に見つかった 1 つ — ほかの仮引数の直の読み書きがあれば諦める）と、その命令・語
+    // 直に読み書きされる仮引数P（最初に見つかった1つ — ほかの仮引数の直の読み書きがあれば諦める）と、その命令・ワード
     mut p0 := -1
     mut pIns := mut []int{}
     mut pK := mut []int{}
@@ -270,9 +270,9 @@ func hlSafe(st mut St, f FnRef, w mut m2rW, pw mut PrW, v0 int, p int) bool {
     return true
 }
 
-// P の語ごとにスロットを作り、前置きで読み込み・ループの中の P[k] の読み書きをスロットへ・出口の辺で書き戻す（書きのある語だけ）
+// Pのワードごとにスロットを作り、前置きで読み込み・ループの中のP[k] の読み書きをスロットへ・出口の辺で書き戻す（書きのあるワードだけ）
 func hlRewrite(st mut St, f FnRef, w mut m2rW, pw mut PrW, pre int, p int, pIns []int, pK []int, pSt []int) {
-    // 語の一覧（出現の順）と書きの有無
+    // ワードの一覧（出現の順）と書きの有無
     mut ks := mut []int{}
     mut kw := mut []int{}
     for a <- iter.Range(0, len(pK)) {

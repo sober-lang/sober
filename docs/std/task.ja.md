@@ -4,7 +4,7 @@
 
 `import "std/task"`
 
-structured concurrency の表層（[language.md 11 節](../language.md)「表層」）と、多くの task から 1 つの状態への直列の更新 domain（NewDomain / Update / Read / Await — [language.md 11 節](../language.md)「domain」）。task.Run が scope を開き、その中で task.Spawn した子の task を Join / Try で待つ。task の結果は写せる imm のデータ（string・slice・map も Join / Try が scope の region へ写す）。error を返す task（g が `(T, error?)` を返す）の Join は 2 値・Try は Outcome の Failed・Join も Try もしなかった失敗は scope の err へ集約
+structured concurrency の表層（[language.md 11 節](../language.md)「表層」）と、多くの task から 1 つの状態への直列の更新 domain（NewDomain / Update / Read / Await — [language.md 11 節](../language.md)「domain」）。task.Run が scope を開き、その中で task.Spawn した子の task を Join / Try で待つ。taskの結果はコピーできるimmのデータ（string・slice・mapもJoin / Tryがscopeのregionへコピーする）。errorを返すtask（g が `(T, error?)` を返す）の Join は 2 値・Try は Outcome の Failed・Join も Try もしなかった失敗は scope の err へ集約
 
 ## Scope
 
@@ -96,7 +96,7 @@ const MS = 1000000
 type NotLowered panic
 ```
 
-呼び出し点の写しが外れた柵（到達しない）
+呼び出し点の変換が外れた柵（到達しない）
 
 ## Run
 
@@ -117,7 +117,7 @@ region を 1 段開き、本体 f をハンドルで走らせる。子が全部�
 func Spawn[T](s Scope, g func() T, budget int?) Handle[T]
 ```
 
-子の task を生む（g の捕獲は imm のデータだけ・結果は scope の region へ写る）。budget = この子を逐次で走らせたときの使用量の上界（バイト・省略可。書けば入場の見積もりの代わりに使う — 省略なら spawn の点ごとに観測した使用量の高水位〔観測の無い間は 1 MiB〕が見積もり。呼び出しを含まない整数式）。budget の無い子の region 1 つの上限は 512 MiB（超えると RegionExceeded の死 — 大きい作業域の子は budget を書く・書けばそれ以上の 2 の冪）
+子のtaskを生む（gの捕獲はimmのデータだけ・結果はscopeのregionへコピーされる）。budget = この子を逐次で走らせたときの使用量の上界（バイト・省略可。書けば入場の見積もりの代わりに使う — 省略ならspawnの点ごとに観測した使用量の高水位〔観測の無い間は1 MiB〕が見積もり。呼び出しを含まない整数式）。budget の無い子の region 1 つの上限は 512 MiB（超えると RegionExceeded の死 — 大きい作業域の子は budget を書く・書けばそれ以上の 2 の冪）
 
 ## Join
 
@@ -191,7 +191,7 @@ func Recv[T](rx Receiver[T]) T?
 func RecvAll[T](rx Receiver[T], k func(T))
 ```
 
-`for l <- task.Recv(rx) { … }` の写し先（loader が呼び先を付け替える — 閉じて空になるまで受けて k へ渡す）
+`for l <- task.Recv(rx) { … }` の変換先（loaderが呼び先を付け替える — 閉じて空になるまで受けてkへ渡す）
 
 対の `SendAll` は実需まで足さない（[language.md 34 節](../language.md) の規則 2）。
 
@@ -211,7 +211,7 @@ func Close[T](tx Sender[T])
 func SpawnGive[T, E](s Scope, give E, g func(E) T, budget int?) Handle[T]
 ```
 
-`Spawn(s, give: ep, (ep) => …)` の写し先（loader が呼び先を付け替える — 端点 ep をちょうど 1 つの子へ移す。親に残った別名は失効）
+`Spawn(s, give: ep, (ep) => …)` の変換先（loaderが呼び先を付け替える — 端点epをちょうど1つの子へ移す。親に残った別名は失効）
 
 ## Gather
 
@@ -242,7 +242,7 @@ type Pool struct {
 }
 ```
 
-名前つきプール（テナント・エンドポイント — [language.md 11 節](../language.md)「天井の木」）のハンドル: task.SpawnIn の第 2 実引数。1 語は rt の台帳のノード（imm のデータ — 子へ捕獲できる）。shed の単位 = プールのノード（枯れたノードの配下の SpawnIn だけが失敗する）
+名前つきプール（テナント・エンドポイント — [language.md 11 節](../language.md)「上限の木」）のハンドル: task.SpawnIn の第 2 実引数。1ワードはrtの台帳のノード（immのデータ — 子へ捕獲できる）。shedの単位 = プールのノード（枯れたノードの配下のSpawnInだけが失敗する）
 
 ## Shed
 
@@ -296,7 +296,7 @@ type PoolView struct {
 
 台帳のプールのノードの 1 行（id = 作った順の番号・parent = 親の id〔-1 = 無し〕・used / tasks = 計上中のバイト / task の数）
 
-欄:
+フィールド:
 
 - `fail` — MarkFailed で記帳した失敗の数（net.Serve — handler が error を返した接続）
 - `died` — このプールで入場した task の死の数（net.Serve — handler が死んだ接続）
@@ -312,12 +312,12 @@ type DomainView struct {
 }
 ```
 
-domain の合計の行（Ledger().domains — [language.md 11 節](../language.md)「domain」の観測の口）: 全 domain をまとめた 1 行
+domainの合計の行（Ledger().domains — [language.md 11 節](../language.md)「domain」の観測のインターフェース）: 全domainをまとめた1行
 
-欄:
+フィールド:
 
 - `waiting` — 今 Await で待っている呼び出しの数
-- `maxWait` — 待った Await の到着から入るまでの最大（ns — 読むと 0 に戻る窓の値・maxWait と同じ流儀）
+- `maxWait` — 待ったAwaitの到着から入るまでの最大（ns — 読むと0に戻るウィンドウの値・maxWaitと同じ流儀）
 - `expired` — 待ちの上限が来て io.Expired で返った回数の累計
 - `poisoned` — 本体が死んで毒になった domain の数の累計
 
@@ -353,21 +353,21 @@ type LedgerView struct {
 
 台帳の read-only のビュー（[language.md 11 節](../language.md)「メトリクス」）: 根 = プロセスの天井と計上中の量・縮退 / 天井を超えた入場 /宣言超過 / shed の数・ワーカー数、と名前つきプールのノード（作った順）
 
-欄:
+フィールド:
 
 - `waits` — wait の scope で入場を待った回数（[language.md 11 節](../language.md)「wait」）
-- `maxWait` — 走れるようになってから走るまでの待ちの最大（ns・全ワーカー — 読むと 0 に戻る。[language.md 28 節](../language.md) ring の道「飽和下の待ちの上限」）
-- `aged` — 待ちの上限が効いて積みの底から取った回数の累計（飽和の印 — 底を期限で救った数）
-- `late` — 自分の D を越えてから走った task の数の累計（aged の救いに加え、積みが浅いときの越えも数える — aged ⊆ late）
-- `maxLate` — 越えた量（待ち − D）の最大（ns・全ワーカー — 読むと 0 に戻る窓の値・maxWait と同じ流儀）
+- `maxWait` — 走れるようになってから走るまでの待ちの最大（ns・全ワーカー — 読むと0に戻る。[language.md 28 節](../language.md)io\_uringのパス「飽和下の待ちの上限」）
+- `aged` — 待ちの上限が効いてスタックの底から取った回数の累計（飽和のフラグ — 底を期限で救った数）
+- `late` — 自分のDを越えてから走ったtaskの数の累計（agedの救いに加え、スタックが浅いときの越えも数える — aged ⊆ late）
+- `maxLate` — 越えた量（待ち − D）の最大（ns・全ワーカー — 読むと0に戻るウィンドウの値・maxWaitと同じ流儀）
 - `backlog` — 今の未着手の子の数（全ワーカーの列の和 — ワーカーあたり 255 まで。[language.md 11 節](../language.md)「未着手の子の上限」）
-- `backlogYield` — 列があふれて子をその場で先に走らせた（生んだ task が譲った）回数の累計（背圧が効いた印）
+- `backlogYield` — 列があふれて子をその場で先に走らせた（生んだtaskが譲った）回数の累計（背圧が効いたフラグ）
 - `pin` — ワーカーの CPU の固定の形（0 = なし・1 = L3 キャッシュを共有する CPU の群・2 = CPU 1 つ・3 = L3 の群が読めず CPU 1 つへ縮退したワーカーがある）
 - `pinGroups` — 固定した群の数（ワーカーは起動の後に自分を固定する — 全部が数えられるのはワーカーが立ち上がった後）
-- `parkShallow` — 接続の task が浅く寝た回数の累計（本体より下の積みを捨て、ワーカーの区画を持たずに寝た — [language.md 11 節](../language.md)「メトリクス」）
-- `parkDeep` — 接続の task がワーカーの区画を持って寝た回数の累計（区画の交換 — 本体より下の枠が生きている待ち）
-- `parkDeepWin` — 浅く寝られる点だったが区画の窓に中身があって深く寝た回数の累計（parkDeep の内数 — 受けの region に途中の要求を持って待つ等）
-- `parkSwap` — 浅く寝る前に持ち札の区画とワーカーの区画を入れ替えた回数の累計（parkShallow の内数 — 深い待ちの後の受け）
+- `parkShallow` — 接続のtaskがシャロースリープした回数の累計（本体より下のスタックを捨て、ワーカーのエリアを持たずにスリープした — [language.md 11 節](../language.md)「メトリクス」）
+- `parkDeep` — 接続のtaskがワーカーのエリアを持ってディープスリープした回数の累計（エリアの交換 — 本体より下の枠が生きている待ち）
+- `parkDeepWin` — シャロースリープできる点だったがエリアのウィンドウに中身があってディープスリープした回数の累計（parkDeepの内数 — 受けのregionに途中のリクエストを持って待つ等）
+- `parkSwap` — シャロースリープする前に所有エリアとワーカーのエリアを入れ替えた回数の累計（parkShallowの内数 — ディープスリープの後の受け）
 - `domains` — domain の合計の行
 
 ## Ledger
@@ -377,7 +377,7 @@ type LedgerView struct {
 func Ledger() LedgerView
 ```
 
-台帳の今の値（io の効果 — 読んだ値は時刻に依る: 時計と同じ扱い）
+台帳の今の値（ioのエフェクト — 読んだ値は時刻に依る: 時計と同じ扱い）
 
 ## SpawnIn
 
@@ -399,7 +399,7 @@ type Local struct {
 }
 ```
 
-ワーカーローカルストレージのハンドル（region-domain-pool.md 4d 節 — task.NewLocal が作る）: ワーカーごとに T を 1 つ持ち、task.Lease の窓に貸す。中身は NewLocal を呼んだ region に住む imm の列（region の規則がそのまま効く — 外へ出すと列ごと写る〔別のストレージ — 観測は同じ・遅いだけ〕）。子 task へは imm のデータとして捕獲で渡る。ゼロ値は何も指さない偽物（同一性の族 — NewLocal だけが作る）。型引数を持たない: ストレージの T は mut の列（pool.Scratch）を持つ struct で、型引数に置けない（[language.md 25 節](../language.md) — 型引数は写せる型）。T の同一性は loader が型の名前から焼いた指紋で Lease ごとに照合する（違えば panic(LocalType{}) — 呼び手の契約違反）
+ワーカーローカルストレージのハンドル（region-domain-pool.md 4d節 — task.NewLocalが作る）: ワーカーごとにTを1つ持ち、task.Leaseのウィンドウに貸す。中身はNewLocalを呼んだregionに住むimmの列（regionの規則がそのまま効く — 外へ出すと列ごとコピーされる〔別のストレージ — 観測は同じ・遅いだけ〕）。子taskへはimmのデータとして捕獲で渡る。ゼロ値は何も指さない偽物（同一性の種類 — NewLocalだけが作る）。型引数を持たない: ストレージのTはmutの列（pool.Scratch）を持つstructで、型引数に置けない（[language.md 25 節](../language.md) — 型引数はコピーできる型）。T の同一性は loader が型の名前から焼いた指紋で Lease ごとに照合する（違えば panic(LocalType{}) — 呼び手の契約違反）
 
 ## LocalType
 
@@ -407,7 +407,7 @@ type Local struct {
 type LocalType panic
 ```
 
-NewLocal と違う T の窓で Lease した（ストレージの T の指紋が合わない）
+NewLocalと違うTのウィンドウでLeaseした（ストレージのTの指紋が合わない）
 
 ## NewLocal
 
@@ -416,7 +416,7 @@ NewLocal と違う T の窓で Lease した（ストレージの T の指紋が�
 func NewLocal(prep func()) Local
 ```
 
-T のストレージをワーカーの数だけ作る: `gzw := task.NewLocal((w mut flate.Work) => { pool.NewScratch(mut w.head, 1 << 15) … })`。窓のラムダは T の Scratch の欄を定数の容量で整える文だけ（loader の検査）。T はスカラーと pool.Scratch の欄だけの struct。呼び出し点は loader が写す（lease.sober — 本体は写しが外れたときの柵）
+T のストレージをワーカーの数だけ作る: `gzw := task.NewLocal((w mut flate.Work) => { pool.NewScratch(mut w.head, 1 << 15) … })`。ウィンドウのラムダはTのScratchのフィールドを定数の容量で整える文だけ（loaderの検査）。Tはスカラーとpool.Scratchのフィールドだけのstruct。呼び出し点はloaderが変換する（lease.sober — 本体は変換が外れたときの柵）
 
 ## Lease
 
@@ -425,7 +425,7 @@ T のストレージをワーカーの数だけ作る: `gzw := task.NewLocal((w 
 func Lease[U](lp Local, body func() U) U
 ```
 
-lp の今のワーカーのストレージを窓 body に貸す: `z := task.Lease(gzw, (w mut flate.Work) => flate.EncodeWith(mut w, b, 6))`。意味は「窓のたびに新しい値」— `{ mut w := T{}; 整え(mut w); body(mut w) }` と観測上同じ（スカラーは 0・Scratch は全部 0・容量は NewLocal の整えのまま）。ストレージが使用中（窓の中で譲った task が持っている）なら新しい割り当てに倒れる（遅いだけ）。呼び出し点は loader が写す
+lpの今のワーカーのストレージをウィンドウbodyに貸す: `z := task.Lease(gzw, (w mut flate.Work) => flate.EncodeWith(mut w, b, 6))`。意味は「ウィンドウのたびに新しい値」— `{ mut w := T{}; 整え(mut w); body(mut w) }` と観測上同じ（スカラーは0・Scratchは全部0・容量はNewLocalの整えのまま）。ストレージが使用中（ウィンドウの中で譲ったtaskが持っている）なら新しい割り当てに倒れる（遅いだけ）。呼び出し点はloaderが変換する
 
 ## LocalNew
 
@@ -434,7 +434,7 @@ lp の今のワーカーのストレージを窓 body に貸す: `z := task.Leas
 func LocalNew(fp int, caps []int) Local
 ```
 
-task.NewLocal / task.Lease の写し先（loader が組む — 利用者の直の呼び出しは loader が拒否）: T の指紋 fp と Scratch の欄の容量の列 caps からストレージを作る（ワーカーの数だけの区画を今の region に先取り — 全部 0）
+task.NewLocal / task.Leaseの変換先（loaderが組む — 利用者の直の呼び出しはloaderが拒否）: Tの指紋fpとScratchのフィールドの容量の列capsからストレージを作る（ワーカーの数だけのエリアを今のregionに先取り — 全部0）
 
 ## LeaseTake
 
@@ -443,7 +443,7 @@ task.NewLocal / task.Lease の写し先（loader が組む — 利用者の直�
 func LeaseTake(lp Local, fp int) int
 ```
 
-task.NewLocal / task.Lease の写し先（loader が組む — 利用者の直の呼び出しは loader が拒否）: T の指紋 fp を照合し、今のワーカーの区画の位置を返す（使用中なら −1 = 倒れ）
+task.NewLocal / task.Leaseの変換先（loaderが組む — 利用者の直の呼び出しはloaderが拒否）: Tの指紋fpを照合し、今のワーカーのエリアの位置を返す（使用中なら −1 = 倒れ）
 
 ## LeaseGive
 
@@ -452,7 +452,7 @@ task.NewLocal / task.Lease の写し先（loader が組む — 利用者の直�
 func LeaseGive(lp Local, at int)
 ```
 
-task.NewLocal / task.Lease の写し先（loader が組む — 利用者の直の呼び出しは loader が拒否）: LeaseTake で取った区画 at を返す（−1 なら何もしない）
+task.NewLocal / task.Leaseの変換先（loaderが組む — 利用者の直の呼び出しはloaderが拒否）: LeaseTakeで取ったエリアatを返す（−1なら何もしない）
 
 ## LeaseBlock
 
@@ -461,7 +461,7 @@ task.NewLocal / task.Lease の写し先（loader が組む — 利用者の直�
 func LeaseBlock(lp Local) []int
 ```
 
-task.NewLocal / task.Lease の写し先（loader が組む — 利用者の直の呼び出しは loader が拒否）: ストレージの列（pool.LeaseAttach へ渡す）
+task.NewLocal / task.Leaseの変換先（loaderが組む — 利用者の直の呼び出しはloaderが拒否）: ストレージの列（pool.LeaseAttachへ渡す）
 
 ## Domain
 
@@ -480,7 +480,7 @@ domain — 直列化された共有状態（[language.md 11 節](../language.md)
 func NewDomain[S](s Scope, init S, wait int?) Domain[S]
 ```
 
-札 s の scope に状態の初期値 init を持つ domain を作る。wait = Await の待ちの上限（ナノ秒の相対時間・省略で既定値）。呼び出し点は desugar がコアの dnew へ写す（本体は写しが外れたときの柵）
+札 s の scope に状態の初期値 init を持つ domain を作る。wait = Await の待ちの上限（ナノ秒の相対時間・省略で既定値）。呼び出し点はdesugarがコアのdnewへ変換する（本体は変換が外れたときの柵）
 
 ## Update
 
@@ -489,7 +489,7 @@ func NewDomain[S](s Scope, init S, wait int?) Domain[S]
 func Update[S, R](d Domain[S], f func(st mut S) R) R
 ```
 
-f を d の状態に当て、f の値を写して返す。f は待たない・io なし・nondet なし・明示の panic なし・捕獲は imm のデータだけ
+fをdの状態に当て、fの値をコピーして返す。fは待たない・ioなし・nondetなし・明示のpanicなし・捕獲はimmのデータだけ
 
 ## Read
 
@@ -498,7 +498,7 @@ f を d の状態に当て、f の値を写して返す。f は待たない・io
 func Read[S, R](d Domain[S], g func(st S) R) R
 ```
 
-g の値を写して返す（状態は変えない）。g の約束は Update の f と同じ
+gの値をコピーして返す（状態は変えない）。gの約束はUpdateのfと同じ
 
 ## Await
 

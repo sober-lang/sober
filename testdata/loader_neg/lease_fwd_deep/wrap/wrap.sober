@@ -1,6 +1,6 @@
 package wrap
 
-// 負例（region-domain-pool.md 4d）: 整えの転送の鎖は深さ 4 まで（P5 → P4 → … → testdata.loader_neg.lease_fwd_deep.lib.Prepare は 5 段）
+// 負例（region-domain-pool.md 4d）: 整えの転送のチェーンは深さ4まで（P5 → P4 → … → testdata.loader_neg.lease_fwd_deep.lib.Prepareは5レベル）
 
 import "testdata/loader_neg/lease_fwd_deep/lib"
 

@@ -44,7 +44,7 @@ func TestExpBcrypt() {
     internal.dudect.Measure("exp_bcrypt", n, 12, dsec, (x) => len(bcryptHash(x, salt, 4)) == 23)
 }
 
-// 照合の口（PBKDF2 の保存の文字列 — 値の作り直しと定数時間の比較）
+// 照合のAPI（PBKDF2の保存の文字列 — 値の作り直しと定数時間の比較）
 func TestPasswordVerify() {
     n := internal.dudect.CountDiv(4)
     if n == 0 {

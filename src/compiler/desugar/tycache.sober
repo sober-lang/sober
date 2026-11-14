@@ -1,13 +1,13 @@
 package desugar
 
-// 区画の置き場の読み戻し: TypeAll の package の番で鍵 K1（tycanon.sober）が
-// 置き場の項目に当たったら、型付けを走らせずに区画の値を店へ写し直す。引き直し:
+// 区画の格納場所の読み戻し: TypeAllのpackageの番で鍵K1（tycanon.sober）が
+// 格納場所の項目に当たったら、型付けを走らせずに区画の値を店へコピーし直す。引き直し:
 // - 記録 = （参照表の番号, 持ち主の区画の中の序数）→ 持ち主の PRTYS の lo + 序数（依存は後順で先に済み — 当たりでも外れでも区画は店にある。
 //   指せるのは宣言の相の記録だけ — 扉の監査 body = 0）・前置きは添字のまま
 // - 型宣言・関数 = （参照表の番号, 名前）→ 今の表で引く（名前の表 — tyNames）
 // - 自分の節 = （ファイルの package の中の序数, 添字）→ 木の参照・合成の節 = 持ち主の区画の中の序数 → PRSYN の lo + 序数（Init は毎回走る）
 // - 列は店に積み直す（ylN）・文字列は綴りからヒープへ（strOf）
-// 関数・const の欄は package の区間（fo / ford）の同じ位置へ — 鍵がソースの要約と順の撹拌の口を含むので並びは書いたときと同じ（名前で確かめる）
+// 関数・constのフィールドはpackageの区間（fo / ford）の同じ位置へ — 鍵がソースの要約と順の撹拌のオプションを含むので並びは書いたときと同じ（名前で確認する）
 
 import "ast"
 import "loader"
@@ -15,8 +15,8 @@ import "std/io"
 import "std/iter"
 import "std/table"
 
-// 置き場の切り口 γ の項目（lower が BcView から組む — 鍵 [k1, k2] と値のバイト列）と検証の段（0 = 当たりは読み戻す・
-// 1 = 当たりでも型付けして値を書きの側へ出す〔lower の bcAdd が置き場の値とバイトで比べる〕・2 = 読み戻した区画を直列化し直して値と照らす）
+// 格納場所の切り口 γ の項目（lowerがBcViewから組む — 鍵 [k1, k2] と値のバイト列）と検証のレベル（0 = 当たりは読み戻す・
+// 1 = 当たりでも型付けして値を書きの側へ出す〔lowerのbcAddが格納場所の値とバイトで比べる〕・2 = 読み戻した区画を直列化し直して値と照らす）
 type TyCache struct {
     on bool
     vfy int
@@ -26,7 +26,7 @@ type TyCache struct {
     vs [][]byte
 }
 
-// TypeAllC の書きの側（外れの package の値 — lower が検査の後に TyValSeal で検査の語を足して bcAdd へ。pk = 値の package）と当否の数・
+// TypeAllCの書きの側（外れのpackageの値 — lowerが検査の後にTyValSealで検査のワードを足してbcAddへ。pk = 値のpackage）と当否の数・
 // 読み戻しの照合の食い違い（vfy = 2 — package の論理パス）
 type TyPut struct {
     pk []int
@@ -38,22 +38,22 @@ type TyPut struct {
     bad [][]byte
 }
 
-// 検査の語（値の末尾の 1 語 — γc）: 値は検査（ParCheckTyped の std/task の歩き・freeze の U1〜U3）が通った build だけが
-// 置き場へ書く（書きの束は build の終わりに流す — 拒否の build は書かない）ので、当たりの package は検査を飛ばし、区画の外へ出る旗だけ足す
-// （nimpl は区画の値・DeadlineUse はこの語）。検査の歩きが読むのは自分の木・自分の区画の記録・閉包の宣言の相だけ（扉 — tyChkDoor）。
+// 検査のワード（値の末尾の1ワード — γc）: 値は検査（ParCheckTypedのstd/taskの歩き・freezeのU1〜U3）が通ったbuildだけが
+// 格納場所へ書く（書きのバッチはbuildの終わりに流す — 拒否のbuildは書かない）ので、当たりのpackageは検査を飛ばし、区画の外へ出る旗だけ足す
+// （nimplは区画の値・DeadlineUseはこのワード）。検査の歩きが読むのは自分の木・自分の区画の記録・クロージャの宣言の相だけ（扉 — tyChkDoor）。
 // fileCheck は借りの規則（fcBrwPos / fcBrwVal）が依存の本体と全体の捕獲表を読むので飛ばさない（毎回走る側 — 自己 build で 5 ms）
 const GC_SKIP = 1   // KSGC: 当たり（検査を飛ばす）
-const GC_DL = 2     // KSGC / 検査の語: deadline: を書いた Scope がある（ParCheckTyped の印 — DeadlineUse）
-const GC_AUD = 4    // KSGC: 当たりだが検査を走らせ直す（SOBER_CACHE_VERIFY=2 の監査 — 判定と印が値と食い違えば名指しして落ちる）
-const GC_DLV = 8    // KSGC: 監査の package の値の DeadlineUse の印（走らせ直した歩きの GC_DL と照らす）
-const GC_OK = 1     // 検査の語: 検査が通った build で書いた（いつも立つ — 語の有無の印）
+const GC_DL = 2     // KSGC / 検査のワード: deadline: を書いたScopeがある（ParCheckTypedのフラグ — DeadlineUse）
+const GC_AUD = 4    // KSGC: 当たりだが検査を走らせ直す（SOBER_CACHE_VERIFY=2の監査 — 判定とフラグが値と食い違えば専用の診断で拒否する）
+const GC_DLV = 8    // KSGC: 監査のpackageの値のDeadlineUseのフラグ（走らせ直した歩きのGC_DLと照らす）
+const GC_OK = 1     // 検査のワード: 検査が通ったbuildで書いた（いつも立つ — ワードの有無のフラグ）
 
 // package pk の検査を飛ばすか（γ の当たり — ParCheckTyped と analyzer の freeze が引く）
 func CheckSkip(st mut S, pk int) bool {
     return st.ty.kst != 0 && ksAt(mut st, KSGC, pk) & (GC_SKIP | GC_AUD) == GC_SKIP
 }
 
-// TypeAllC の当たりの package pk の印（chk = 値の検査の語・aud = 監査）
+// TypeAllCの当たりの package pk のフラグ（chk = 値の検査のワード・aud = 監査）
 func gcHit(st mut S, pk int, chk int, aud bool) {
     if aud {
         ksSet(mut st, KSGC, pk, GC_SKIP | GC_AUD | (if chk & GC_DL != 0 { GC_DLV } else { 0 }))
@@ -62,7 +62,7 @@ func gcHit(st mut S, pk int, chk int, aud bool) {
     }
 }
 
-// ParCheckTyped の歩きの後: 監査の package の DeadlineUse の印が値と同じか（違えば名指しして落ちる）・証人
+// ParCheckTypedの歩きの後: 監査のpackageのDeadlineUseのフラグが値と同じか（違えば専用の診断で拒否する）・証人
 // `#gcaudit parcheck audited=<数> skipped=<数> ckdoor=<fileCheck の外読みの数>`（監査の package の判定は歩きそのもの — 拒否なら build が落ちる）
 func gcAudit(st mut S) {
     if st.ty.kst == 0 {
@@ -96,7 +96,7 @@ func gcDoor(st mut S) {
     }
 }
 
-// ParCheckTyped の歩きが package pk に deadline: を書いた Scope を見た（値の検査の語へ）
+// ParCheckTypedの歩きが package pk にdeadline: を書いたScopeを見た（値の検査のワードへ）
 func gcDlMark(st mut S, pk int) {
     if st.ty.kst != 0 && pk >= 0 && pk < st.npkg {
         ksSet(mut st, KSGC, pk, ksAt(mut st, KSGC, pk) | GC_DL)
@@ -116,7 +116,7 @@ func gcAnyHit(st mut S) bool {
     return false
 }
 
-// 当たりの package のどれかが deadline: を書いた Scope を持つか（飛ばした歩きの印を足す）
+// 当たりのpackageのどれかがdeadline: を書いたScopeを持つか（飛ばした歩きのフラグを足す）
 func gcDlAny(st mut S) bool {
     if st.ty.kst == 0 {
         return false
@@ -129,7 +129,7 @@ func gcDlAny(st mut S) bool {
     return false
 }
 
-// package pk の値 v の末尾に検査の語を足す（検査の後 — lower の bcGammaPut）
+// package pk の値vの末尾に検査のワードを足す（検査の後 — lowerのbcGammaPut）
 func TyValSeal(st mut S, pk int, v []byte) []byte {
     mut out := mut []byte{}
     for x <- v {
@@ -155,7 +155,7 @@ func tyFind(c TyCache, h1 int, h2 int) int {
     return -1
 }
 
-// 値のバイト列を語へ（tyValEnc の逆）— 末尾の検査の語（TyValSeal）は外して 2 つ目の値に
+// 値のバイト列をワードへ（tyValEncの逆）— 末尾の検査のワード（TyValSeal）は外して2つ目の値に
 func tyValDec(b []byte) ([]int, int) {
     ws, _ := loader.Unvarints(b, 0, len(b))
     if len(ws) == 0 {
@@ -248,7 +248,7 @@ func tyDeclNames(st mut S) int {
 
 // ── 読み戻し ──
 
-// 値の読み手（語の列・位置・参照表〔番号 → 今の package〕・名前の表）
+// 値の読み手（ワードの列・位置・参照表〔番号 → 今のpackage〕・名前の表）
 type TyRd struct {
     w []int
     at int
@@ -380,7 +380,7 @@ func tcPathB(st mut S, pk int) []byte {
     return freeze(b)
 }
 
-// 値が今の build の表で引けない（鍵が当たったのに — 鍵の穴か値の形の誤り）: 名指しして落ちる
+// 値が今のbuildの表で引けない（鍵が当たったのに — 鍵の穴か値の形の誤り）: 専用の診断で拒否する
 func tyBad(st mut S, what string) {
     _ = io.WriteStderr(bytes("cache: bad gamma entry (${what})\n"))
     panic(InvariantBroken{})
@@ -404,7 +404,7 @@ func trRecord(st mut S, r mut TyRd) {
     case YFn:
         a := trList(mut st, mut r)
         b := trList(mut st, mut r)
-        // 名前なし: 0 の印 + mut 仮引数の席のビット（c = 0 - ビット — tycanon の YFn と同じ形）
+        // 名前なし: 0のフラグ + mut仮引数のスロットのビット（c = 0 - ビット — tycanonのYFnと同じ形）
         c := if r.w[r.at] == 0 {
             _ = trGet(mut r)
             0 - trGet(mut r)
@@ -424,7 +424,7 @@ func trRecord(st mut S, r mut TyRd) {
     }
 }
 
-// package k の区画を値 w から店へ写す（TypeAll の番の代わり — 区画の境・宣言の要約・区画の外へ出る状態も立てる）
+// package k の区画を値wから店へコピーする（TypeAllの番の代わり — 区画の境・宣言の要約・区画の外へ出る状態も立てる）
 func tyRead(st mut S, k int, w []int, tf int, td int) {
     n := len(w)
     ns := w[n - 1]
@@ -518,7 +518,7 @@ func tyRead(st mut S, k int, w []int, tf int, td int) {
         table.Push(mut st.ty.ylamK, trDecl(mut st, mut r))
         table.Push(mut st.ty.ylamY, trRec(mut st, mut r))
     }
-    // 辺の鎖（値は新しい順 — 古い方から積み直す）
+    // 辺のチェーン（値は新しい順 — 古い方から積み直す）
     mut es := mut []int{}
     for i <- iter.Range(0, nedge) {
         a := trFn(mut st, mut r)
@@ -556,7 +556,7 @@ func tyRead(st mut S, k int, w []int, tf int, td int) {
     ksSet(mut st, KSKD, k * 2 + 1, d2)
 }
 
-// 読み戻した区画を直列化し直して値の区画の直列化（先頭 ns 語）と照らす（vfy = 2 — 食い違えば false）
+// 読み戻した区画を直列化し直して値の区画の直列化（先頭nsワード）と照らす（vfy = 2 — 食い違えばfalse）
 func tyAudit2(st mut S, k int, w []int) bool {
     ns := w[len(w) - 1]
     tcRegion(mut st, k, false)

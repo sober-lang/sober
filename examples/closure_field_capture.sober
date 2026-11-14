@@ -1,7 +1,7 @@
 package main
 
-// 値の位置の閉包（language.md 25 節）: 値化可能な named fn type の欄に置いたラムダは、外の imm の束縛を
-// 作成点の写しとして捕捉する（コアでは持ち上げた Def + 環境の組 — desugar/closure.sober）。build は lower の閉包の struct〔code + env〕— lower/closure.sober
+// 値の位置のクロージャ（language.md 25 節）: 値化可能な named fn type のフィールドに置いたラムダは、外のimmの束縛を
+// 作成点のコピーとして捕捉する（コアでは持ち上げたDef + 環境の組 — desugar/closure.sober）。buildはlowerのクロージャのstruct〔code + env〕— lower/closure.sober
 
 type Score func(x int, y int) int
 

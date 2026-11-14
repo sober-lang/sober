@@ -1,6 +1,6 @@
 package main
 
-// 負例（check が名指して拒否 — diag.PrintArg）: println は int・byte・bool・string を印字する。`T?`（map の読み・T? を返す呼び出し）は
+// 負例（checkが専用の診断で拒否 — diag.PrintArg）: printlnはint・byte・bool・stringを印字する。`T?`（mapの読み・T? を返す呼び出し）は
 // 絞ってから渡す（`if v != nil { println(v) }`）
 
 func main() {

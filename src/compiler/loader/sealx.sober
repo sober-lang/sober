@@ -1,18 +1,18 @@
 package loader
 
-// 封の型の外での欄つきリテラル（language.md 15 節「部分リテラル」）: 欄の型に、宣言した package の非公開の型（小文字で始まる
-// 型宣言 — utf8.View・json.Doc・par の札の `seal`）を持つ struct は「封の型」— その package の検査の口だけが作る証人。部分リテラル（省いた欄はゼロ値）を
-// 解禁したので、外で `utf8.View{b: …}` と書くと封の欄をゼロ値にした偽の証人が組めてしまう。外では欄つきのリテラルを全部拒否する（ゼロ値 `T{}` は
-// 無害なので今どおり — 封の欄を持つ型を欄に持つ封の無い struct の部分リテラルも、封の型の値がゼロ値になるだけなので受理）。check と build が同じ層
+// 封の型の外でのフィールドつきリテラル（language.md 15 節「部分リテラル」）: フィールドの型に、宣言したpackageの非公開の型（小文字で始まる
+// 型宣言 — utf8.View・json.Doc・parの札の `seal`）を持つstructは「封の型」— そのpackageの検査の入口だけが作る証人。部分リテラル（省いたフィールドはゼロ値）を
+// 解禁したので、外で `utf8.View{b: …}` と書くと封のフィールドをゼロ値にした偽の証人が組めてしまう。外ではフィールドつきのリテラルを全部拒否する（ゼロ値 `T{}` は
+// 無害なので今どおり — 封のフィールドを持つ型をフィールドに持つ封の無いstructの部分リテラルも、封の型の値がゼロ値になるだけなので受理）。checkとbuildが同じ層
 
 import "std/builder"
 import "std/iter"
 import "std/strings"
 import "ast"
 
-// 封の型の表（[package, ファイル, 型宣言の節] の 3 語ずつ — 無ければ空）
+// 封の型の表（[package, ファイル, 型宣言の節] の3ワードずつ — 無ければ空）
 func sealedTab(cx Cx) []int {
-    // 非公開の型の表（[package, ファイル, 型宣言の節] の 3 語ずつ — 1 回だけ作る。封の判定は欄ごとにこの短い表を引く）
+    // 非公開の型の表（[package, ファイル, 型宣言の節] の3ワードずつ — 1回だけ作る。封の判定はフィールドごとにこの短い表を引く）
     mut pb := builder.Builder[int]{}
     for f <- iter.Range(0, len(cx.trees)) {
         t := cx.trees[f]
@@ -31,7 +31,7 @@ func sealedTab(cx Cx) []int {
     if len(pt) == 0 {
         return []int{}
     }
-    // 封の型の表: 同じ形の 3 語ずつ
+    // 封の型の表: 同じ形の3ワードずつ
     mut sb := builder.Builder[int]{}
     for f <- iter.Range(0, len(cx.trees)) {
         t := cx.trees[f]
@@ -48,7 +48,7 @@ func sealedTab(cx Cx) []int {
     return builder.Build(mut sb)
 }
 
-// ファイル f の composite x が外での封の型（表 st）の欄つきリテラルか（noderules.sober の走査から）
+// ファイルfの composite x が外での封の型（表st）のフィールドつきリテラルか（noderules.soberの走査から）
 func sealedLit(cx Cx, st []int, f int, x ast.Node) bool {
     t := cx.trees[f]
     if ast.ListLen(t, x.b) == 0 {
@@ -62,7 +62,7 @@ func sealedLit(cx Cx, st []int, f int, x ast.Node) bool {
     return pk >= 0 && pk != cx.file_pkg[f] && sealedIn(cx, st, pk, base)
 }
 
-// ファイル f の型宣言 tdi が封の型か（struct で、欄の型が同じ package の非公開の型宣言の名前）
+// ファイルfの型宣言tdiが封の型か（structで、フィールドの型が同じpackageの非公開の型宣言の名前）
 func sealedDecl(cx Cx, pt []int, f int, tdi int) bool {
     t := cx.trees[f]
     body := t.nodes[t.nodes[tdi].c]

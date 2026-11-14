@@ -7,7 +7,7 @@
 # 期待値 examples/<name>.out と examples/<name>.exit（無ければ 0）に照合する。name 省略時は .out を持つ全例。
 # name が / を含むとディレクトリ entry（複数 package の例 — testdata/minic/app 等）で、期待値は <dir>.out / <dir>.exit。
 # 省略時は testdata/*/app.out を持つ entry も回す。
-# 観測は「バイナリ一致」でなく stdout + 終了コード（ABI を揃えない裁定の帰結 — docs/design-dev.md バックエンド戦略）。
+# 観測は「バイナリ一致」でなくstdout + 終了コード（ABIを揃えない決定の帰結 — docs/design-dev.mdバックエンド戦略）。
 # panic の exit 101 / 102 も観測値 — UB 遮断の規約（明示チェックを吐く）はここでしか見えない。
 #
 # バックエンドは build_<NAME> 関数で足す（引数: ソース・出力パス）:

@@ -1,8 +1,8 @@
 package server
 
-// Set-Cookie の書きの網（white-box — 非公開の cookieLine / cookieOk / respHead）: 省いた欄の既定（Secure・HttpOnly・SameSite=Lax・Path=/・Domain なし）・
-// 各欄・緩める欄・書けない形（名前・値・属性の文字・負の Max-Age・SameSite=None と __Host- / __Secure- の Secure 抜き・__Host- の Path と Domain）・
-// 応答の頭に cookie の行が並ぶ順・圧縮する応答でも書くこと・書いた名前と値を Cookie の読みで戻す往復
+// Set-Cookieの書きの検査一式（white-box — 非公開のcookieLine / cookieOk / respHead）: 省いたフィールドの既定（Secure・HttpOnly・SameSite=Lax・Path=/・Domainなし）・
+// 各フィールド・緩めるフィールド・書けない形（名前・値・属性の文字・負のMax-Age・SameSite=Noneと __Host- / __Secure- のSecure抜き・__Host- のPathとDomain）・
+// レスポンスの頭にcookieの行が並ぶ順・圧縮するレスポンスでも書くこと・書いた名前と値をCookieの読みで戻す往復
 
 import "std/compress/gzip"
 import "std/http"
@@ -56,7 +56,7 @@ func TestSetCookieHead() {
     r := Response{status: http.OK, contentType: "text/plain", body: bytes("hi"), cookies: []SetCookie{SetCookie{name: "a", value: "1"}, SetCookie{name: "b", value: "2", maxAge: 0}}}
     h := string(respHead(r, true, false, 0)) catch ""
     assert(strings.Contains(h, "\r\nSet-Cookie: a=1; Path=/; Secure; HttpOnly; SameSite=Lax\r\nSet-Cookie: b=2; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Lax\r\n"))
-    // 生の Set-Cookie は任意ヘッダに書けない（型の欄だけ）
+    // 生のSet-Cookieは任意ヘッダに書けない（型のフィールドだけ）
     assert(!fieldOk(http.Field{name: "Set-Cookie", value: "a=1"}))
     assert(!fieldOk(http.Field{name: "set-cookie", value: "a=1"}))
     assert(fieldOk(http.Field{name: "X-Request-Id", value: "7"}))
@@ -70,8 +70,8 @@ func TestSetCookieRoundTrip() {
     }
 }
 
-// 圧縮する応答（本文 ≥ gzMin・圧縮向きの Content-Type・要求が gzip を受ける — 本文の応答と長さ不定の stream）でも Set-Cookie を書く
-// （圧縮の有無で応答の頭は変わらない）
+// 圧縮するレスポンス（本文 ≥ gzMin・圧縮向きのContent-Type・リクエストがgzipを受ける — 本文のレスポンスと長さ不定のstream）でもSet-Cookieを書く
+// （圧縮の有無でレスポンスの頭は変わらない）
 const GzSent = testing.cell.Cell[string]{}
 
 func gzCookieRoute(r Request) Response {
@@ -111,7 +111,7 @@ func TestSetCookieCompressed() {
         testing.cell.Set(GzSent, "")
         mut hist := compress.gzip.History{}
         req := bytes("GET ${p} HTTP/1.1\r\nHost: x\r\nAccept-Encoding: gzip\r\n\r\n")
-        _, _, out, e := serveBuf((b) => gzRecord(b), req, gzCookieRoute, 8192, 8192, 6, true, nil, mut hist)
+        _, _, out, _, e := serveBuf((b) => gzRecord(b), req, gzCookieRoute, 8192, 8192, 6, true, nil, mut hist, false)
         assert(e == nil)
         h := testing.cell.Get(GzSent) + headOf(out)
         assert(strings.Contains(h, "Content-Encoding: gzip\r\n"), h)

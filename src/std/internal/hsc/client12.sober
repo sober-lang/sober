@@ -1,8 +1,8 @@
 package hsc
 
-// TLS 1.2 のクライアントの道（RFC 5246 — dangerouslyAllowTls12 の明示でだけ申し出る。既定は 1.3 だけ）。範囲 = ECDHE（X25519）× ECDSA / RSA の証明書 ×
+// TLS 1.2のクライアントのパス（RFC 5246 — dangerouslyAllowTls12の明示でだけ申し出る。既定は1.3だけ）。範囲 = ECDHE（X25519）× ECDSA / RSAの証明書 ×
 // AES-128-GCM / ChaCha20-Poly1305 の 4 suite・extended master secret（RFC 7627）必須・renegotiation_info（RFC 5746）必須で再交渉は断る・
-// 1.3 を申し出たのに 1.2 を選んだサーバの降格の印（RFC 8446 4.1.3 — ServerHello の random の末尾 8 バイト）は中止。CertificateRequest には空の Certificate で答える
+// 1.3を申し出たのに1.2を選んだサーバの降格のマーク（RFC 8446 4.1.3 — ServerHelloのrandomの末尾8バイト）は中止。CertificateRequestには空のCertificateで答える
 
 import "std/crypto"
 import "std/crypto/aesgcm"
@@ -39,7 +39,7 @@ func isEcdsa12(s int) bool {
     return s == s12EcdsaGcm || s == s12EcdsaChaCha
 }
 
-// 1.2 の ServerHello（降格の印・suite・EMS と renegotiation_info の必須）
+// 1.2のServerHello（降格のマーク・suite・EMSとrenegotiation_infoの必須）
 @errors(internal.record.Alert)
 func onServerHello12(h mut Ch, p CParams, m []byte, random []byte, suite int) (Out, error?) {
     // DOWNGRD\x01 / DOWNGRD\x00 — 1.3 を申し出たクライアントは中止する
@@ -207,7 +207,7 @@ func on12(h mut Ch, p CParams, m []byte) (Out, error?) {
     return none(), alert(aUnexpected)
 }
 
-// 1.2 の Certificate（certificate_list の各 cert は 3 バイトの長さ — 拡張は無い）→ 鎖の検証
+// 1.2のCertificate（certificate_listの各certは3バイトの長さ — 拡張は無い）→ チェーンの検証
 @errors(internal.record.Alert, CertFailed)
 func cert12(m []byte, p CParams) (internal.x509.Cert, error?) {
     mut c := cur(4, len(m))
@@ -388,7 +388,7 @@ func open12(h mut Ch, f internal.record.Frame) ([]byte, error?) {
             return []byte{}, alert(internal.record.AlertBadMac)
         }
         h.rseq += 1
-        // record 層の出口（1.3 の internal.record.Open と同じ線 — 中身の種類と長さが決まった record の平文は公開。http 以降がこれで分岐する）
+        // record層の出口（1.3のinternal.record.Openと同じ基準 — 中身の種類と長さが決まったrecordの平文は公開。http以降がこれで分岐する）
         return internal.bless.Bytes(pt), nil
     }
     pt2, e2 := crypto.chacha20poly1305.Open(h.rkey, nn, ad, sealed)

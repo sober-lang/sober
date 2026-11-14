@@ -43,7 +43,7 @@ func total(it iter.Iter[int]) int {
     return n
 }
 
-// 生成器の中の文形 for から外側へ yield する（入れ子の走査）
+// ジェネレータの中の文形forから外側へyieldする（入れ子の走査）
 func grid(xs []int, ys []int) int {
     return iter.Sum(for x <- xs {
         for y <- ys {

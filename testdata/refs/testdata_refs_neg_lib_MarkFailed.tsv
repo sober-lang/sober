@@ -1,18 +1,18 @@
-OTHER	field-sel	testdata/refs/neg/a/main.sober	380	390	10:8	pp.MarkFailed(pool)
-OTHER	field-pat	testdata/refs/neg/a/main.sober	505	515	15:36	case testdata.refs.neg.lib.Bar{MarkFailed}: MarkFailed
-OTHER	ref	testdata/refs/neg/a/main.sober	518	528	15:49	case testdata.refs.neg.lib.Bar{MarkFailed}: MarkFailed
-OTHER	bare-in:dir:testdata/refs/neg/a	testdata/refs/neg/a/main.sober	627	637	21:36	r := testdata.refs.neg.lib.Rec{MarkFailed: 3}
-OTHER	bare-in:dir:testdata/refs/neg/a	testdata/refs/neg/a/main.sober	646	656	22:5	MarkFailed := r.MarkFailed + testdata.refs.neg.lib.MarkFailed(r)
-OTHER	field-sel	testdata/refs/neg/a/main.sober	662	672	22:21	MarkFailed := r.MarkFailed + testdata.refs.neg.lib.MarkFailed(r)
-TARGET	ref	testdata/refs/neg/a/main.sober	697	707	22:56	MarkFailed := r.MarkFailed + testdata.refs.neg.lib.MarkFailed(r)
-OTHER	bare-in:dir:testdata/refs/neg/a	testdata/refs/neg/a/main.sober	746	756	23:36	s := testdata.refs.neg.lib.Bar{MarkFailed: MarkFailed}
-OTHER	ref	testdata/refs/neg/a/main.sober	758	768	23:48	s := testdata.refs.neg.lib.Bar{MarkFailed: MarkFailed}
-OTHER	field-sel	testdata/refs/neg/a/main.sober	798	808	24:29	println("MarkFailed ${r.MarkFailed} ${MarkFailed} ${testdata.refs.neg.lib.Width(s)} ${width(s)}")
-OTHER	bare-in:dir:testdata/refs/neg/a	testdata/refs/neg/a/main.sober	812	822	24:43	println("MarkFailed ${r.MarkFailed} ${MarkFailed} ${testdata.refs.neg.lib.Width(s)} ${width(s)}")
+OTHER	field-sel	testdata/refs/neg/a/main.sober	398	408	10:8	pp.MarkFailed(pool)
+OTHER	field-pat	testdata/refs/neg/a/main.sober	523	533	15:36	case testdata.refs.neg.lib.Bar{MarkFailed}: MarkFailed
+OTHER	ref	testdata/refs/neg/a/main.sober	536	546	15:49	case testdata.refs.neg.lib.Bar{MarkFailed}: MarkFailed
+OTHER	bare-in:dir:testdata/refs/neg/a	testdata/refs/neg/a/main.sober	645	655	21:36	r := testdata.refs.neg.lib.Rec{MarkFailed: 3}
+OTHER	bare-in:dir:testdata/refs/neg/a	testdata/refs/neg/a/main.sober	664	674	22:5	MarkFailed := r.MarkFailed + testdata.refs.neg.lib.MarkFailed(r)
+OTHER	field-sel	testdata/refs/neg/a/main.sober	680	690	22:21	MarkFailed := r.MarkFailed + testdata.refs.neg.lib.MarkFailed(r)
+TARGET	ref	testdata/refs/neg/a/main.sober	715	725	22:56	MarkFailed := r.MarkFailed + testdata.refs.neg.lib.MarkFailed(r)
+OTHER	bare-in:dir:testdata/refs/neg/a	testdata/refs/neg/a/main.sober	764	774	23:36	s := testdata.refs.neg.lib.Bar{MarkFailed: MarkFailed}
+OTHER	ref	testdata/refs/neg/a/main.sober	776	786	23:48	s := testdata.refs.neg.lib.Bar{MarkFailed: MarkFailed}
+OTHER	field-sel	testdata/refs/neg/a/main.sober	816	826	24:29	println("MarkFailed ${r.MarkFailed} ${MarkFailed} ${testdata.refs.neg.lib.Width(s)} ${width(s)}")
+OTHER	bare-in:dir:testdata/refs/neg/a	testdata/refs/neg/a/main.sober	830	840	24:43	println("MarkFailed ${r.MarkFailed} ${MarkFailed} ${testdata.refs.neg.lib.Width(s)} ${width(s)}")
 TARGET	ref	testdata/refs/neg/b/main.sober	242	252	8:18	println(task.MarkFailed(task.Mk(2)))
-OTHER	field-decl	testdata/refs/neg/lib/lib.sober	210	220	6:5	MarkFailed int
-OTHER	field-decl	testdata/refs/neg/lib/lib.sober	267	277	11:11	Bar { MarkFailed int }
-TARGET	decl-func	testdata/refs/neg/lib/lib.sober	303	313	15:6	func MarkFailed(r Rec) int {
-OTHER	field-sel	testdata/refs/neg/lib/lib.sober	340	350	16:14	return r.MarkFailed + r.n
-OTHER	field-key	testdata/refs/neg/lib/lib.sober	396	406	20:16	return Rec{MarkFailed: n, n: 1}
-TARGET	ref	testdata/refs/neg/lib/lib.sober	548	558	31:12	return MarkFailed(r) * 2
+OTHER	field-decl	testdata/refs/neg/lib/lib.sober	226	236	6:5	MarkFailed int
+OTHER	field-decl	testdata/refs/neg/lib/lib.sober	283	293	11:11	Bar { MarkFailed int }
+TARGET	decl-func	testdata/refs/neg/lib/lib.sober	319	329	15:6	func MarkFailed(r Rec) int {
+OTHER	field-sel	testdata/refs/neg/lib/lib.sober	356	366	16:14	return r.MarkFailed + r.n
+OTHER	field-key	testdata/refs/neg/lib/lib.sober	412	422	20:16	return Rec{MarkFailed: n, n: 1}
+TARGET	ref	testdata/refs/neg/lib/lib.sober	564	574	31:12	return MarkFailed(r) * 2

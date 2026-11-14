@@ -1,8 +1,8 @@
 package lower
 
-// packed f64 の語彙（ir.sober の OpPMem / OpPArith）の検証器の網: v128 の約束（packed の op だけが使う・ブロックの中で閉じる・
-// 呼び出しを跨がない）と欄の型を、IR を手で組んで vfyFunc に掛けて見る（`cd src/compiler && ../../bin/sober test lower`）。
-// x86 まで通す網は開発の口（出力の一致）。生成器（SLP）が入れば出力一致の網に
+// packed f64 の語彙（ir.soberのOpPMem / OpPArith）の検証器の検査: v128の約束（packedのopだけが使う・ブロックの中で閉じる・
+// 呼び出しを跨がない）とフィールドの型を、IRを手で組んでvfyFuncに掛けて見る（`cd src/compiler && ../../bin/sober test lower`）。
+// x86まで通す検査は開発のオプション（出力の一致）。ジェネレータ（SLP）が入れば出力一致の検査に
 
 import "desugar"
 
@@ -59,7 +59,7 @@ func pvT(kind int) string {
 func TestPackedVerify() {
     assert(pvT(0) == "")
     assert(pvT(7) == "")
-    // 呼び出しを跨ぐ v128（変異「区間の呼び出しの検査を外す」はここで落ちる）
+    // 呼び出しを跨ぐv128（ミュータント「区間の呼び出しの検査を外す」はここで落ちる）
     assert(pvT(1) == "b0: v128 %2 lives across a call")
     // ブロックを跨ぐ v128
     assert(pvT(2) == "b1: v128 %2 is used outside its block")

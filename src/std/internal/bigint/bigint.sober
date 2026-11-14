@@ -20,7 +20,7 @@ func SetInt(a mut []int, v0 int) {
     }
 }
 
-// a = b の写し
+// a = bのコピー
 func Set(a mut []int, b mut []int) {
     a = mut []int{}
     for k <- iter.Range(0, len(b)) {

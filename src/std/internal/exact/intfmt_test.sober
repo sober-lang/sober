@@ -1,0 +1,126 @@
+package exact
+
+// intの10進の書式と解析の検査（std/convert — convertの中ではテストの実行器がconvertを使うのでビルドできない）: FormatIntを下の桁から1桁ずつ積む素直な基準と突き合わせる（桁の境・10^8の前後・最大値・最小値・負・乱数）。
+// ParseInt で読み戻して同じ値になることも見る
+
+import "std/convert"
+
+// 基準: 下の桁から 1 桁ずつ逆順の列に積み、正順に並べ直す
+func intFormatRef(n int) string {
+    if n == -9223372036854775807 - 1 {
+        return "-9223372036854775808"
+    }
+    neg := n < 0
+    mut m := if neg { 0 - n } else { n }
+    mut rev := mut []byte{}
+    rev = append(rev, byte(48 + m % 10))
+    m = m / 10
+    while m > 0 {
+        rev = append(rev, byte(48 + m % 10))
+        m = m / 10
+    }
+    mut out := mut []byte{}
+    if neg {
+        out = append(out, '-')
+    }
+    mut i := len(rev) - 1
+    while i >= 0 {
+        out = append(out, rev[i])
+        i -= 1
+    }
+    return string(freeze(out)) catch ""
+}
+
+func intAgrees(n int) bool {
+    s := convert.FormatInt(n)
+    if s != intFormatRef(n) {
+        println("convert.FormatInt(" + intFormatRef(n) + ") = " + s)
+        return false
+    }
+    v, e := convert.ParseInt(s)
+    return e == nil && v == n
+}
+
+func TestFormatIntBoundaries() {
+    mut ok := true
+    mut i := 0
+    while i <= 10000 {
+        ok = intAgrees(i) && ok
+        ok = intAgrees(0 - i) && ok
+        i += 1
+    }
+    // 10の冪の前後（10^8はワード1本のパスと20バイトのパスの境）
+    mut p := 10
+    mut k := 1
+    while k < 19 {
+        k += 1
+        ok = intAgrees(p - 1) && intAgrees(p) && intAgrees(p + 1) && ok
+        ok = intAgrees(0 - p + 1) && intAgrees(0 - p) && intAgrees(0 - p - 1) && ok
+        p = p * 10
+    }
+    ok = intAgrees(9223372036854775807) && intAgrees(-9223372036854775807) && intAgrees(-9223372036854775807 - 1) && ok
+    assert(ok)
+}
+
+func TestFormatIntRandom() {
+    // 線形合同の乱数（桁数が散るよう、上位のビットを右へずらす量も乱数で選ぶ）
+    mut x := 88172645463325252
+    mut ok := true
+    mut k := 0
+    while k < 200000 {
+        k += 1
+        x = x * 6364136223846793005 + 1442695040888963407
+        n := x >> ((x >> 58) & 63)
+        ok = intAgrees(n) && ok
+    }
+    assert(ok)
+}
+
+// ParseIntの誤りと溢れの境（18桁以下の速いパスと19桁以上の検査つきのパスの両側）
+func TestParseIntEdges() {
+    ok := (s string, want int) => {
+        v, e := convert.ParseInt(s)
+        assert(e == nil && v == want, s)
+    }
+    bad := (s string) => {
+        _, e := convert.ParseInt(s)
+        assert(intErrKind(e) == 1, s)
+    }
+    out := (s string) => {
+        _, e := convert.ParseInt(s)
+        assert(intErrKind(e) == 2, s)
+    }
+    ok("0", 0)
+    ok("+7", 7)
+    ok("-0", 0)
+    ok("000000000000000042", 42)
+    ok("999999999999999999", 999999999999999999)
+    ok("-999999999999999999", -999999999999999999)
+    ok("9223372036854775807", 9223372036854775807)
+    ok("-9223372036854775808", -9223372036854775807 - 1)
+    ok("0000000000000000000000001", 1)
+    out("9223372036854775808")
+    out("-9223372036854775809")
+    out("99999999999999999999")
+    bad("")
+    bad("-")
+    bad("+")
+    bad("12a")
+    bad("1 ")
+    bad("a")
+    bad("99999999999999999x")
+    // 19 桁を越えると、後ろの字を読む前に溢れを返す
+    out("9999999999999999999x9")
+}
+
+// ParseInt の誤りの種類（0 = なし・1 = BadInt・2 = IntOutOfRange）
+func intErrKind(e error?) int {
+    return if e == nil {
+        0
+    } else {
+        switch e {
+        case convert.BadInt{}: 1
+        case convert.IntOutOfRange{}: 2
+        }
+    }
+}

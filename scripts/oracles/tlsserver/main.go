@@ -1,7 +1,7 @@
-// std/internal/hsc のクライアントの相互接続の相手（scripts/tlsinterop.sh が起こす）: 試験用の CA（ECDSA P-256）と、その CA が署名した葉
+// std/internal/hscのクライアントの相互接続の相手（scripts/tlsinterop.shが起動する）: 試験用のCA（ECDSA P-256）と、そのCAが署名した葉
 // （ECDSA P-256・ECDSA P-384・RSA-2048 — SAN = localhost / 127.0.0.1）を毎回作り、葉ごとに TLS 1.3（X25519 だけ）のサーバを 127.0.0.1 の空きの port で開く。
 // 加えて TLS 1.2 だけのサーバ（名前に -12 — ECDSA / RSA × AES-128-GCM / ChaCha20・クライアント証明書を求める req）も開く。
-// 要求の頭（空行まで）を読んで `HTTP/1.1 200 OK` と本文 `ok-<葉の名前>` を返して閉じる。<dir>/ca.pem と <dir>/ports（`名前 port` の行）を書いてから <dir>/ready を作る
+// リクエストの頭（空行まで）を読んで `HTTP/1.1 200 OK` と本文 `ok-<葉の名前>` を返して閉じる。<dir>/ca.pemと <dir>/ports（`名前 port` の行）を書いてから <dir>/readyを作る
 //   go run ./scripts/oracles/tlsserver <dir>
 package main
 

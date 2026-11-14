@@ -12,7 +12,7 @@ type El struct {
     ce int
 }
 
-// 読めない要素の印（ok = false のときの値）
+// 読めない要素のマーク（ok = falseのときの値）
 func noEl() El {
     return El{tag: -1, at: 0, cs: 0, ce: 0}
 }

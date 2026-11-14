@@ -2,7 +2,7 @@ package pgwire
 
 // SCRAM-SHA-256 / SCRAM-SHA-256-PLUS（RFC 5802・RFC 7677・束縛は tls-server-end-point — RFC 5929 4.1）のクライアントの側（純粋 — 送るメッセージを返すだけ）。
 // 方式の選び方: TLS の接続で PLUS をサーバが出せば PLUS・出さなければ失敗（allowNoBinding のときだけ束縛なしの SCRAM-SHA-256 を gs2 `y,,` で —
-// 「クライアントは束縛できるがサーバが出さなかった」の印で、中間者が PLUS を消した場合はサーバの側で検出できる）・平文の接続は SCRAM-SHA-256（gs2 `n,,`）。
+// 「クライアントは束縛できるがサーバが出さなかった」のフラグで、中間者がPLUSを消した場合はサーバの側で検出できる）・平文の接続はSCRAM-SHA-256（gs2 `n,,`）。
 // SCRAM 以外（平文のパスワード・MD5）は受けない。password は SASLprep を掛けずにそのまま使う（ASCII なら同じ・NFKC で変わる文字を含む password は
 // サーバの保存の形と合わないことがある）
 
@@ -33,7 +33,7 @@ const mechPlain = "SCRAM-SHA-256"
 // iterations の上限（サーバが巨大な値で PBKDF2 を回させる — クライアントの CPU を使い潰す — のを断る。PostgreSQL の既定は 4096）
 const maxIterations = 1048576
 
-// 1 回の SCRAM の交換の状態（段 0 = server-first 待ち・1 = server-final 待ち・2 = 済み）
+// 1回のSCRAMの交換の状態（段階0 = server-first待ち・1 = server-final待ち・2 = 済み）
 type Scram struct {
     stage int
     mech string

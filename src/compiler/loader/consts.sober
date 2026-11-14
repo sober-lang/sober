@@ -1,6 +1,6 @@
 package loader
 
-// トップレベル const の確定（language.md 14 / 25 節 — src/stage1/loader.zig の resolveConst / foldConst / checkDict の写し）:
+// トップレベルconstの確定（language.md 14 / 25 節 — src/stage1/loader.zigのresolveConst / foldConst / checkDictのコピー）:
 // 組み立ての const（struct / slice / string / float のリテラル・true / false・それらの const の別名 — 参照する点で組み立てる。表の dict）は
 // 要素を検査し（value 無し）、他は int の const として畳む。
 // 畳み込みは純関数の再帰（覚えておく表を持たず、参照のたびに畳み直す）。燃料は Zig 版と同じく const の参照 1 段で 1 減り、尽きれば循環として拒否
@@ -263,7 +263,7 @@ func qualified(cx Cx, f int, x ast.Node) int {
     return dep
 }
 
-// 組み立ての const の struct リテラル e の要素（欄の値）を検査する。拒否した部分式の節と理由（通れば -1）
+// 組み立てのconstのstructリテラルeの要素（フィールドの値）を検査する。拒否した部分式の節と理由（通れば -1）
 func checkDict(cx Cx, fs Funcs, f int, e int, fuel int) (int, int) {
     t := cx.trees[f]
     els := t.nodes[e].b
@@ -278,9 +278,9 @@ func checkDict(cx Cx, fs Funcs, f int, e int, fuel int) (int, int) {
     return 0 - 1, 0
 }
 
-// 組み立ての const の部分式 e の検査（field = 欄の値の位置）。拒否した部分式の節と理由 CE_*（通れば -1）。
+// 組み立てのconstの部分式eの検査（field = フィールドの値の位置）。拒否した部分式の節と理由CE_*（通れば -1）。
 // 許すのは: 組み立てのリテラル（struct・imm の slice・string・float・負の float・true / false）・int の const 式・閉じたラムダ・
-// 名前付き関数の参照（単相・非 inline）・他の const の参照・欄の値の位置の nil
+// 名前付き関数の参照（単相・非inline）・他のconstの参照・フィールドの値の位置のnil
 func dictElem(cx Cx, fs Funcs, f int, e0 int, fuel int, field bool) (int, int) {
     t := cx.trees[f]
     e := unparen(t, e0)
@@ -357,7 +357,7 @@ func dictElem(cx Cx, fs Funcs, f int, e0 int, fuel int, field bool) (int, int) {
     return e, 0
 }
 
-// 畳めなかった const（ファイル f の宣言 c）の拒否した部分式の節と理由（拒否の診断の位置 — 失敗の道だけが呼ぶ）
+// 畳めなかったconst（ファイルfの宣言c）の拒否した部分式の節と理由（拒否の診断の位置 — 失敗のパスだけが呼ぶ）
 func constBad(cx Cx, fs Funcs, f int, c int) (int, int) {
     t := cx.trees[f]
     e := unparen(t, t.nodes[c].b)
@@ -482,7 +482,7 @@ func foldExpr(cx Cx, fs Funcs, f int, e0 int, fuel int) (int, bool) {
             return l | r, true
         case lexer.Caret:
             return l ^ r, true
-        // シフト（Go 準拠 — 量 ≥ 64 は << = 0・>> = 0 / -1）。負の量は const の段で拒否
+        // シフト（Go準拠 — 量 ≥ 64は << = 0・>> = 0 / -1）。負の量はconstのフェーズで拒否
         case lexer.Shl | lexer.Shr:
             if r < 0 {
                 return 0, false

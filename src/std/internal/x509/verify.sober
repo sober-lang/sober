@@ -1,7 +1,7 @@
 package x509
 
-// 鎖の検証（RFC 5280 6 章の WebPKI の範囲 — std の内側: TLS のクライアントの下）。leaf から、送られた中間とルートの中を名前（DER のバイトの一致）と
-// AKI / SKI で辿って鎖を組み（深さ 8 まで・同じ証明書は 1 本の鎖に 1 度）、各段で署名・有効期間・CA の印・keyUsage・pathLen・EKU・知らない critical の拡張・
+// チェーンの検証（RFC 5280 6章のWebPKIの範囲 — stdの内側: TLSのクライアントの下）。leafから、送られた中間とルートの中を名前（DERのバイトの一致）と
+// AKI / SKIで辿ってチェーンを組み（深さ8まで・同じ証明書は1本のチェーンに1度）、各段階で署名・有効期間・CAのフラグ・keyUsage・pathLen・EKU・知らないcriticalの拡張・
 // nameConstraints（dNSName / iPAddress — 他の形の部分木を持つ CA は Unsupported）を確かめる。名前の照合は SAN だけ（CN は見ない）。
 // 時刻は呼び手が渡す（決定的・失効は見ない — CRL / OCSP は取りに行かない）。証明書ポリシーは処理しない（知っている拡張として critical でも通す）。
 // 署名は ECDSA P-256 / P-384 × SHA-256 / 384 / 512 と RSA PKCS#1 v1.5（2048 bit 以上）× SHA-256 / 384 / 512。SHA-1・RSA-PSS・DSA は Unsupported
@@ -16,9 +16,9 @@ import "std/strings"
 
 // 証明書が読めない
 type Malformed error
-// 鎖のどれかが有効期間を過ぎた
+// チェーンのどれかが有効期間を過ぎた
 type Expired error
-// 鎖のどれかの有効期間がまだ始まっていない
+// チェーンのどれかの有効期間がまだ始まっていない
 type NotYetValid error
 // ルートまで辿れない
 type UnknownAuthority error
@@ -28,7 +28,7 @@ type NameMismatch error
 type BadSignature error
 // 扱わないアルゴリズム・鍵の大きさ・critical の拡張・nameConstraints の形
 type Unsupported error
-// CA の印・keyUsage・pathLen・EKU・nameConstraints に反する
+// CAのフラグ・keyUsage・pathLen・EKU・nameConstraintsに反する
 type ConstraintViolated error
 
 const eOk = 0
@@ -44,7 +44,7 @@ const eMalformed = 8
 // 深さの上限（leaf の上の証明書の数）
 const maxDepth = 8
 
-// leaf（DER）を中間 inters（DER — 読めないものは飛ばす）とルート roots で検証し、leaf からルートまでの鎖を返す。host が空でなければ leaf の SAN と照合する
+// leaf（DER）を中間inters（DER — 読めないものは飛ばす）とルートrootsで検証し、leafからルートまでのチェーンを返す。hostが空でなければleafのSANと照合する
 @errors(Malformed, Expired, NotYetValid, UnknownAuthority, NameMismatch, BadSignature, Unsupported, ConstraintViolated)
 @effects()
 func Verify(leaf []byte, inters [][]byte, roots []Cert, host string, now int) ([]Cert, error?) {
@@ -92,10 +92,10 @@ func label(code int) error {
     }
 }
 
-// 署名の検査の回数の上限（1 回の Verify — 候補の多い中間の束で鎖の探索が指数的に伸びる形〔x509-limbo の pathological〕を止める。Go と同じ 100）
+// 署名の検査の回数の上限（1回のVerify — 候補の多い中間の束でチェーンの探索が指数的に伸びる形〔x509-limboのpathological〕を止める。Goと同じ100）
 const maxSigChecks = 100
 
-// path（leaf から今の段まで）の最後の証明書の親を探す。left = 残りの署名の検査の回数。見つかればルートまでの鎖・無ければ最も具体的な失敗（候補が無ければ eUnknown）と使った回数
+// path（leafから今の段階まで）の最後の証明書の親を探す。left = 残りの署名の検査の回数。見つかればルートまでのチェーン・無ければ最も具体的な失敗（候補が無ければeUnknown）と使った回数
 func walk(is []Cert, roots []Cert, path []Cert, now int, left int) ([]Cert, int, int) {
     child := path[len(path) - 1]
     mut best := eUnknown
@@ -163,7 +163,7 @@ func inPath(path []Cert, c Cert) bool {
     return false
 }
 
-// path の最後の証明書を p が発行した段の検査（anchor = ルート — CA の印・keyUsage・pathLen・EKU は問わない〔信頼の起点〕）
+// pathの最後の証明書をpが発行した段階の検査（anchor = ルート — CAのフラグ・keyUsage・pathLen・EKUは問わない〔信頼の起点〕）
 func linkOk(p Cert, path []Cert, anchor bool, now int) int {
     child := path[len(path) - 1]
     s := sigOk(p, child)
@@ -215,7 +215,7 @@ func linkOk(p Cert, path []Cert, anchor bool, now int) int {
     return eOk
 }
 
-// nameConstraints の照合の回数の上限（1 段 — 名前の数 × 制約の数）
+// nameConstraintsの照合の回数の上限（1段階 — 名前の数 × 制約の数）
 const maxNcChecks = 65536
 
 // path の中の CA の数（leaf と自己発行〔subject = issuer〕を数えない — RFC 5280 4.2.1.9）
@@ -274,7 +274,7 @@ func timeOk(c Cert, now int) int {
     return eOk
 }
 
-// leaf が CA/B Forum の Baseline Requirements の subscriber 証明書の形か（焼き込みの WebPKI の起点で止まる鎖だけに掛ける — 私的 PKI の追加の起点には掛けない）:
+// leafがCA/B Forumの Baseline Requirements のsubscriber証明書の形か（焼き込みのWebPKIの起点で止まるチェーンだけに掛ける — 私的PKIの追加の起点には掛けない）:
 // v3・CA でない・EKU があって serverAuth を含み anyExtendedKeyUsage を含まない・SAN に名前か番地が 1 つ以上・有効期間 398 日以下。外れれば ConstraintViolated
 @errors(ConstraintViolated)
 @effects()
@@ -658,7 +658,7 @@ func atoiOr0(s string) int {
     return v
 }
 
-// PEM の文字列 text の CERTIFICATE の塊を全部読んだ追加の信頼の起点（私的 PKI — 利用者が値で渡す。外部ファイルを読む口は作らない）。読めない塊があれば Malformed
+// PEMの文字列textのCERTIFICATEのチャンクを全部読んだ追加の信頼の起点（私的PKI — 利用者が値で渡す。外部ファイルを読む入口は作らない）。読めないチャンクがあればMalformed
 @errors(Malformed)
 @effects()
 func RootsFromPEM(text string) ([]Cert, error?) {

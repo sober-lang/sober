@@ -3,12 +3,12 @@ package lower
 // 定数引数の特化: 呼び出し点の引数が定数（const・globaladdr とその ptoi / itop）なら、小さい callee を
 // 「その仮引数を定数に置き換えた複製」に差し替える。複製は普通の関数なので、optimizeSsa の関数ごとのパス（opt の畳み・gvn・unroll・bce・licm）を
 // 掛け直せば畳める（`HasPrefix(p, ":")` → hasPrefixAt のループが 1 周に・比較が定数に）。畳んで小さくなった複製は rtlower の後の irinl の
-// TINY の規則がそのまま写す。写しでなく複製なので region の op を持つ callee でも意味は元の関数と同じ（同じ関数を 1 つの引数を固定して呼ぶだけ）。
-// 置き場 = optimizeSsa の後（定数は gvn の store の転送で初めて呼び出しの引数に届く）・最適化のバックエンドの経路だけ（`--no-spec` で外す）。
-// 規則: callee は自分でない・入口でない・rt. と UTF-8 の境界の口（validPrefix / Check / boundary — 名前で引く後段の印）でない・task / 罠の op を
+// TINYの規則がそのままコピーする。コピーでなく複製なのでregionのopを持つcalleeでも意味は元の関数と同じ（同じ関数を1つの引数を固定して呼ぶだけ）。
+// 配置先 = optimizeSsaの後（定数はgvnのstoreの転送で初めて呼び出しの引数に届く）・最適化のバックエンドの経路だけ（`--no-spec` で外す）。
+// 規則: calleeは自分でない・入口でない・rt. とUTF-8の境界のインターフェース（validPrefix / Check / boundary — 名前で引く後段のマーク）でない・task / 罠のopを
 // 持たない・命令 SP_MAX 以下。定数の仮引数は比較・算術・gep・itop・load・呼び出しの引数のどれかで使われる。(callee, 定数の組) ごとに複製 1 つ
 // （表で引く）。複製を畳んだ後の大きさが元より小さくなければ捨てる（呼び出しは元のまま）。複製の中の呼び出しにも同じ規則（深さ SP_DEPTH まで）。
-// 複製は呼び手の関数の直前に置く — irinl は関数の鎖の順に写すので、深い複製が先に呼び手の複製へ写され、写した本体ごと呼び手へ写る
+// 複製は呼び手の関数の直前に置く — irinlは関数のチェーンの順にコピーするので、深い複製が先に呼び手の複製へコピーされ、コピーした本体ごと呼び手へコピーされる
 
 import "desugar"
 import "std/iter"
@@ -16,9 +16,9 @@ import "std/table"
 
 const SP_MAX = 32
 const SP_DEPTH = 3
-// 畳んだ複製を spec の中で呼び手へ写す大きさの上限（熱い命令 — panic の点〔exit で終わるブロック〕を数えない）
+// 畳んだ複製をspecの中で呼び手へコピーする大きさの上限（熱い命令 — panicの点〔exitで終わるブロック〕を数えない）
 const SP_INL = 12
-// 内側の複製を写した後の複製を残す・呼び手へ写す大きさの上限（熱い命令）
+// 内側の複製をコピーした後の複製を残す・呼び手へコピーする大きさの上限（熱い命令）
 const SP_KEEP = 24
 // 同じ callee の複製の数の上限（違う定数の組）
 const SP_PER = 4
@@ -39,16 +39,16 @@ func specModule(st mut St) int {
         }
         f = irFnNext(mut st, f)
     }
-    // 資格の表（元の関数 — 番地の昇順〔spFind が二分探索で引く。鎖の順とは限らないので fnIds で並べる — 鎖の順で集めると規則順の鎖で
-    // 引きが外れ、全呼び出し点が資格を歩き直して引き金の印なしで複製を試すことになる〕。複製は呼ぶたびに数える）
+    // 資格の表（元の関数 — 番地の昇順〔spFindが二分探索で引く。チェーンの順とは限らないのでfnIdsで並べる — チェーンの順で集めると規則順のチェーンで
+    // 引きが外れ、全呼び出し点が資格を歩き直して引き金のマークなしで複製を試すことになる〕。複製は呼ぶたびに数える）
     fl := fnIds(mut st)
     mut fi0 := mut []int{}
     for k <- iter.Range(0, len(fl)) {
         fi0 = append(fi0, spInfo(mut st, FnRef(fl[k])))
     }
     finfo := freeze(fi0)
-    // 引き金の印（比較に効く仮引数 — 直に・算術 1 段を経て・比較に効く callee の仮引数へ渡る〔小さい関数の間の不動点 3 周〕）。複製は
-    // 定数の引数がこの印に当たるときだけ作る（使い道の印 finfo だけで作ると、定数を受けても畳めない関数の複製を作って捨てる費用が判定の仕事 +1.4 G）
+    // 引き金のマーク（比較に効く仮引数 — 直に・算術1レベルを経て・比較に効くcalleeの仮引数へ渡る〔小さい関数の間の不動点3周〕）。複製は
+    // 定数の引数がこのマークに当たるときだけ作る（使い道のマークfinfoだけで作ると、定数を受けても畳めない関数の複製を作って捨てる費用が判定の仕事 +1.4 G）
     mut fs0 := mut []int{}
     for k <- iter.Range(0, len(fl)) {
         fs0 = append(fs0, if finfo[k] > 0 { spSens(mut st, FnRef(fl[k])) } else { 0 })
@@ -144,16 +144,16 @@ func specModule(st mut St) int {
             b = irBlkNext(mut st, b)
         }
     }
-    // 畳んで小さくなった複製（熱い命令 SP_INL 以下・写せる形）は呼び手へ写す: 後に作った（深い）複製から — 2 段の連鎖（HasPrefix → hasPrefixAt）の
-    // 内側を先に外側の複製へ写し、写した後の外側を呼び手へ写す（rtlower の後の irinl は写しの中の呼び出しを写さない — 1 段）
+    // 畳んで小さくなった複製（熱い命令SP_INL以下・コピーできる形）は呼び手へコピーする: 後に作った（深い）複製から — 2レベルの連鎖（HasPrefix → hasPrefixAt）の
+    // 内側を先に外側の複製へコピーし、コピーした後の外側を呼び手へコピーする（rtlowerの後のirinlはコピーの中の呼び出しをコピーしない — 1レベル）
     cl := freeze(clones)
     mut ci := len(cl) - 1
     while ci >= 0 {
         spInline(mut st, FnRef(cl[ci]), cl)
         ci -= 1
     }
-    // 残すのは写せる大きさまで畳めた複製だけ（中継ぎの複製も、内側を写した後で小さくなっていれば残る）。残さない複製の呼び出しは元の callee へ
-    // 戻し、関数の鎖から外す（定数を受けても畳めない関数〔strLit・iconst …〕の複製で自己 build の IR が +30%・判定の仕事 +14 G だった）
+    // 残すのはコピーできる大きさまで畳めた複製だけ（中継ぎの複製も、内側をコピーした後で小さくなっていれば残る）。残さない複製の呼び出しは元のcalleeへ
+    // 戻し、関数のチェーンから外す（定数を受けても畳めない関数〔strLit・iconst …〕の複製で自己buildのIRが +30%・判定の仕事 +14 Gだった）
     mut keep0 := mut []int{}
     for k <- iter.Range(0, len(cl)) {
         c := FnRef(cl[k])
@@ -167,7 +167,7 @@ func specModule(st mut St) int {
         nx := irFnNext(mut st, f3)
         x := spFind(cl, int(f3))
         if x >= 0 && keep[x] == 0 {
-            // 鎖から外す
+            // チェーンから外す
             if int(prev) == -1 {
                 st.fhead = nx
             } else {
@@ -181,8 +181,8 @@ func specModule(st mut St) int {
         }
         f3 = nx
     }
-    // 呼び出しを書き換えた関数だけを戻し・写しの対象に（全関数の IR を歩かない）
-    // 残した複製も（内側の複製の写しを受けている — 写しの中に残さない複製の呼び出しがありうる）
+    // 呼び出しを書き換えた関数だけを戻し・コピーの対象に（全関数のIRを歩かない）
+    // 残した複製も（内側の複製のコピーを受けている — コピーの中に残さない複製の呼び出しがありうる）
     cs := freeze(callers)
     for k <- iter.Range(0, len(cs)) {
         if spFind(cl, cs[k]) < 0 {
@@ -194,7 +194,7 @@ func specModule(st mut St) int {
             spRedirect(mut st, FnRef(cl[k]), cl, keep, og)
         }
     }
-    // 残した複製を元の関数の呼び出し点へ写す
+    // 残した複製を元の関数の呼び出し点へコピーする
     for k <- iter.Range(0, len(cs)) {
         if spFind(cl, cs[k]) < 0 {
             spInline(mut st, FnRef(cs[k]), cl)
@@ -222,7 +222,7 @@ func spRedirect(st mut St, f FnRef, cl []int, keep []int, og []int) {
     }
 }
 
-// f の中の複製（clones）の呼び出しのうち、複製が SP_INL 以下で写せる形（irinl の ilShape = 1）なら写す
+// fの中の複製（clones）の呼び出しのうち、複製がSP_INL以下でコピーできる形（irinlのilShape = 1）ならコピーする
 func spInline(st mut St, f FnRef, clones []int) {
     st.fn = f
     mut blks := mut []int{}
@@ -274,7 +274,7 @@ func spDefs(st mut St, f FnRef) []int {
     return freeze(d)
 }
 
-// g の特化の資格: -1 = 対象外（形・大きさ）・他 = 定数が効く仮引数の印（ビット k = 仮引数 k が比較・算術・gep・itop / ptoi・load・
+// gの特化の資格: -1 = 対象外（形・大きさ）・他 = 定数が効く仮引数のマーク（ビットk = 仮引数kが比較・算術・gep・itop / ptoi・load・
 // 呼び出しの引数のどれかで使われる — k < 62）。1 回の走査で、命令が SP_MAX を超えたら打ち切る（大きい callee を呼び出し点ごとに歩かない）
 func spInfo(st mut St, g FnRef) int {
     if irFnBHead(mut st, g) == -1 || xIsEntry(mut st, g) {
@@ -320,7 +320,7 @@ func spInfo(st mut St, g FnRef) int {
     return mask
 }
 
-// 鍵 key と同じ callee・同じ定数の位置の組の複製が一度捨てられたか（表の記録の複製の欄が -1 — 定数の値が違っても畳み方は同じ
+// 鍵keyと同じcallee・同じ定数の位置の組の複製が一度捨てられたか（表の記録の複製のフィールドが -1 — 定数の値が違っても畳み方は同じ
 // 見込み・試す費用を払わない。位置の組が違えば別 — hasPrefixAt の at だけの定数と p まで定数とは畳め方が違う）
 func spHopeless(tab []int, key []int) bool {
     mut t := 0
@@ -342,7 +342,7 @@ func spHopeless(tab []int, key []int) bool {
     return false
 }
 
-// 鍵の定数の仮引数のどれかが引き金の印 sens に当たるか
+// 鍵の定数の仮引数のどれかが引き金のマークsensに当たるか
 func spTrig(key []int, sens int) bool {
     for j <- iter.Range(0, key[1]) {
         k := key[2 + 3 * j]
@@ -353,7 +353,7 @@ func spTrig(key []int, sens int) bool {
     return false
 }
 
-// g の仮引数のうち比較に効くものの印（比較の被演算子・比較の被演算子を作る算術の被演算子）
+// gの仮引数のうち比較に効くもののマーク（比較の被演算子・比較の被演算子を作る算術の被演算子）
 func spSens(st mut St, g FnRef) int {
     np := lenL(mut st, desugar.ListRef(irFnPtys(mut st, g)))
     mut mk := mut []int{}
@@ -388,7 +388,7 @@ func spSens(st mut St, g FnRef) int {
     return m
 }
 
-// g の仮引数のうち、比較に効く callee の仮引数（fs — fl と同じ並びの印）へそのまま渡るものの印
+// gの仮引数のうち、比較に効くcalleeの仮引数（fs — flと同じ並びのマーク）へそのまま渡るもののマーク
 func spRelayMask(st mut St, g FnRef, fl []int, fs []int) int {
     np := lenL(mut st, desugar.ListRef(irFnPtys(mut st, g)))
     mut m := 0
@@ -414,7 +414,7 @@ func spRelayMask(st mut St, g FnRef, fl []int, fs []int) int {
     return m
 }
 
-// 値 v が仮引数（v < np・62 未満）ならその印
+// 値vが仮引数（v < np・62未満）ならそのマーク
 func spBit(v int, np int) int {
     return if v >= 0 && v < np && v < 62 { 1 << v } else { 0 }
 }
@@ -459,7 +459,7 @@ func spConst(st mut St, defs []int, v int) (int, int) {
     return -1, 0
 }
 
-// 呼び出し ins（callee g・資格の印 mask）の特化の鍵 [g, n, (位置, 種類, 値) × n]（定数の効く仮引数が無ければ長さ 2）
+// 呼び出しins（callee g・資格のマークmask）の特化の鍵 [g, n, (位置, 種類, 値) × n]（定数の効く仮引数が無ければ長さ2）
 func spKey(st mut St, defs []int, g FnRef, ins InsRef, mask int) []int {
     mut key := mut []int{}
     key = append(key, int(g))
@@ -480,10 +480,10 @@ func spKey(st mut St, defs []int, g FnRef, ins InsRef, mask int) []int {
     return freeze(key)
 }
 
-// g の複製を作り、key の仮引数を定数に置き換えて畳む。畳んだ後が元より小さくなければ捨てて -1。複製は関数の鎖の末尾に積む
+// gの複製を作り、keyの仮引数を定数に置き換えて畳む。畳んだ後が元より小さくなければ捨てて -1。複製は関数のチェーンの末尾に積む
 func spClone(st mut St, g FnRef, cf FnRef, key []int) FnRef {
     size0 := ilSize(mut st, g)
-    // 本体の写し: 詰めて（元の本体は転送の印で潰れる）元へも複製へも積み直す
+    // 本体のコピー: 詰めて（元の本体は転送のマークで潰れる）元へも複製へも積み直す
     pk := mvPack(mut st, g, false)
     mvUnpack(mut st, g, pk)
     c := FnRef(recN(mut st, FSZ))
@@ -514,7 +514,7 @@ func spClone(st mut St, g FnRef, cf FnRef, key []int) FnRef {
             vs = append(vs, r)
         } else {
             ga := newValueIn(mut st, c)
-            // 鎖の頭へ逆順に足す（globaladdr → ptoi の順に並ぶ）
+            // チェーンの頭へ逆順に足す（globaladdr → ptoiの順に並ぶ）
             spLinkHead(mut st, entry, mkInst(mut st, r, OpPtoi, ga, 0, 0))
             spLinkHead(mut st, entry, mkInst(mut st, ga, OpGlobal, cv, 0, 0))
             vs = append(vs, r)
@@ -537,12 +537,12 @@ func spClone(st mut St, g FnRef, cf FnRef, key []int) FnRef {
         bceFunc(mut st, c)
     }
     optFunc(mut st, c)
-    // 残す = 写せる大きさ（熱い命令 SP_INL 以下）まで畳めたもの。HasPrefix のように畳める中身が callee の側にある中継ぎの複製も、それ自身が小さければ
-    // 残る（内側の複製を写した後の大きさは SP_KEEP で見る）
+    // 残す = コピーできる大きさ（熱い命令SP_INL以下）まで畳めたもの。HasPrefixのように畳める中身がcalleeの側にある中継ぎの複製も、それ自身が小さければ
+    // 残る（内側の複製をコピーした後の大きさはSP_KEEPで見る）
     if spHot(mut st, c) > SP_INL {
         return -1
     }
-    // 鎖の末尾へ（関数の記録は番地の昇順 — x86 の xIndex が二分探索で引く）
+    // チェーンの末尾へ（関数の記録は番地の昇順 — x86のxIndexが二分探索で引く）
     irSetFnNext(mut st, c, -1)
     irSetFnNext(mut st, st.ftail, c)
     st.ftail = c
@@ -608,7 +608,7 @@ func spStrGlobal(st mut St, g int) bool {
     return desugar.HeapGet(mut st.d, g + G_INIT) >= 0 && slen(mut st, nm) > 4 && sat(mut st, nm, 0) == 115 && sat(mut st, nm, 1) == 116 && sat(mut st, nm, 2) == 114 && sat(mut st, nm, 3) == 46
 }
 
-// 命令 r をブロック b の命令の鎖の頭へつなぐ
+// 命令rをブロックbの命令のチェーンの頭へつなぐ
 func spLinkHead(st mut St, b BlkRef, r InsRef) {
     h := irBlkIHead(mut st, b)
     irSetInsNext(mut st, r, h)

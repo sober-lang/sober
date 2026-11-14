@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# confrecord（準拠文書の手で回す網の記録）: 相互接続の網（scripts/{tls,http,dns}interop.sh — Go の道具が要るので gates の外）が通ったときに、
+# confrecord（準拠文書の手で回す検査の記録）: 相互接続の検査（scripts/{tls,http,dns}interop.sh — Goの道具が要るのでgatesの外）が通ったときに、
 # テストの出力の conf: の行を testdata/conformance/interop/<名前>.txt へ木のコミットと日付つきで書く。準拠文書はこの記録を「最終確認」として載せ、
 # gate confsync は記録の形だけを照合する（鮮度は文書にそのまま出す）
 #   scripts/confrecord.sh <名前> <テストの出力>

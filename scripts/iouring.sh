@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# iouring（IO 便 段 0 — src/compiler/lower/uring.sober）: M:N の rt のワーカーごとの io_uring の probe と ring。
+# iouring（IOタスクのフェーズ0 — src/compiler/lower/uring.sober）: M:Nのrtのワーカーごとのio_uringのprobeとring。
 # examples/collatz_par（std/task を使う）を SOBER_IO ∈ {0〔自動〕, 1〔今の経路に固定〕, 2〔setup が -ENOSYS を返した形の模造 — seccomp で塞がれた環境の再現〕}
 # × ワーカー {1, 2, 8} で走らせ、
-#   ① 観測（stdout・終了コード）がワーカー 1・SOBER_IO 無しの黄金と同じ（ring の有無で振る舞いが変わらない）
+#   ① 観測（stdout・終了コード）がワーカー1・SOBER_IO無しのゴールデンと同じ（ringの有無で振る舞いが変わらない）
 #   ② SOBER_IO_TRACE=1 の `#io worker <k> backend=…` の行がワーカーごとに 1 行（ワーカー 1 は M:N を起こさないので 0 行）:
 #      SOBER_IO=1 → `sync probe=0`・SOBER_IO=2 → `sync probe=-38`・自動 → `uring enter=1 nop=0 ud=77`（NOP の往復）。
 #      自動で setup が通らない環境（古いカーネル・seccomp）では全ワーカーが `sync probe=<負>` — その旨を表示して ② の自動の照合だけ飛ばす
@@ -57,9 +57,9 @@ for io in "" 1 2; do
         fi
     done
 done
-# 段 1（report-579）: examples/io_par（task の中の ReadFile / WriteFile — ring があれば rt.uio が SQE を積んで待つ）を
-# SOBER_IO ∈ {自動, 1, 2} × W ∈ {1, 2, 8} で走らせ、観測が黄金（examples/io_par.out・終了コード 0）と同じ。続けて shard を 1 つ消した木で
-# 負の errno の道（NotFound のラベル — 終了コード 1）を同じ 9 通りで。cwd は作業域（testdata/io_par の写しと out/ — obs の gate が同じ例を
+# フェーズ1（report-579）: examples/io_par（taskの中のReadFile / WriteFile — ringがあればrt.uioがSQEを積んで待つ）を
+# SOBER_IO ∈ {自動, 1, 2} × W ∈ {1, 2, 8} で走らせ、観測がゴールデン（examples/io_par.out・終了コード0）と同じ。続けてshardを1つ消した木で
+# 負のerrnoのパス（NotFoundのラベル — 終了コード1）を同じ9通りで。cwdは作業域（testdata/io_parのコピーとout/ — obsのgateが同じ例を
 # リポのルートで走らせても書き込み先がぶつからない）
 "$S2" build examples/io_par.sober --emit=elf --passes -o "$W/iop" > "$W/build2.log" 2>&1 || { echo "iouring: FAIL build io_par ($(head -c 200 "$W/build2.log"))"; exit 1; }
 for v in ok miss; do
@@ -82,7 +82,7 @@ for v in ok miss; do
         done
     done
 done
-# read_fd の ring の道（report-580・report-590 で ReadStdin の形へ）: examples/io_par_stdin（標準入力を task の中で io.ReadStdin が IO_BUF ずつ読む）を同じ 9 通りで
+# read_fdのringのパス（report-580・report-590でReadStdinの形へ）: examples/io_par_stdin（標準入力をtaskの中でio.ReadStdinがIO_BUFずつ読む）を同じ9通りで
 "$S2" build examples/io_par_stdin.sober --emit=elf --passes -o "$W/ips" > "$W/build3.log" 2>&1 || { echo "iouring: FAIL build io_par_stdin ($(head -c 200 "$W/build3.log"))"; exit 1; }
 { cat examples/io_par_stdin.out; echo "exit=0"; } > "$W/ips.want"
 for io in "" 1 2; do
@@ -96,17 +96,17 @@ for io in "" 1 2; do
         fi
     done
 done
-# 段 2 (c)（report-608）: io.Chunks / io.Lines の task の読み（ring があればワーカーのアリーナのスロットへ READ_FIXED・先読み 1 本）と、読みの途中で死ぬ
+# フェーズ2 (c)（report-608）: io.Chunks / io.Linesのtaskの読み（ringがあればワーカーのアリーナのスロットへREAD_FIXED・先読み1本）と、読みの途中で死ぬ
 # task の後始末（rt.chunk_drain — 先読み中の読みの完了を待ってスロットを返す）・io.ChunksAt の区間の読み（SQE の off — 位置を動かさない）を同じ 9 通りで。cwd はリポのルート（testdata を読むだけ）
-# net 段 4a-2（report-649）・4a-3（report-650 — Serve・reject）: 非ブロックの socket と epoll の待ち（ring の有無 × 協調形 / M:N で同じ出力）— 1 本の task の echo・別の task 同士の往復・
+# netフェーズ4a-2（report-649）・4a-3（report-650 — Serve・reject）: 非ブロックのsocketとepollの待ち（ringの有無 × 協調形 / M:Nで同じ出力）— 1本のtaskのecho・別のtask同士の往復・
 # 期限が待ちを切る両端・相手がもういない（Closed）の 3 経路
-# net 段 4c（report-670）: std/http の例（http_arena — 切片をまたぐ要求・パイプライン・誤りの応答の後の読み捨て）も同じ格子
-# net 段 4b-0（report-664）: net の例と期限つきの Sleep（timerfd の待ち）は SOBER_NET ∈ {自動〔net の ring — カーネルが受ければ〕, 1〔epoll の道に固定〕} も掛ける
+# netフェーズ4c（report-670）: std/httpの例（http_arena — 切片をまたぐリクエスト・パイプライン・誤りのレスポンスの後の読み捨て）も同じ格子
+# netフェーズ4b-0（report-664）: netの例と期限つきのSleep（timerfdの待ち）はSOBER_NET ∈ {自動〔netのring — カーネルが受ければ〕, 1〔epollのパスに固定〕} も掛ける
 for ex in io_chunks_par io_chunks_par_die io_chunks_at_par net_echo net_multi net_deadline net_deadline_spawn net_deadline_order net_orphan net_orphan_dl net_closed net_serve net_reject net_region net_region_mix net_accept_break http_arena task_sleep_deadline task_sleep_many; do
     "$S2" build examples/$ex.sober --emit=elf --passes -o "$W/$ex" > "$W/build4.log" 2>&1 || { echo "iouring: FAIL build $ex ($(head -c 200 "$W/build4.log"))"; exit 1; }
     { cat examples/$ex.out; echo "exit=0"; } > "$W/$ex.want"
     case $ex in net_*|http_*|par_sleep_*) nets="0 1" ;; *) nets="0" ;; esac
-    # net_region_mix（report-1077）: 子の既定のスロットを 4 MiB に縮めて（SOBER_TASK_REGION_MB=4）region: 1 MiB の区画の組を 4 深度にする形も — 組の境目をまたぐ
+    # net_region_mix（report-1077）: 子の既定のスロットを4 MiBに縮めて（SOBER_TASK_REGION_MB=4）region: 1 MiBのエリアの組を4深度にする形も — 組の境目をまたぐ
     case $ex in net_region_mix) trs="0 4" ;; *) trs="0" ;; esac
     for tr in $trs; do
     for nt in $nets; do
@@ -136,8 +136,8 @@ if [ "$auto" = uring ]; then
         fi
     done
 fi
-# 期限の鎖の網の自己検査: 変異 50（双方向の鎖の外しが次の節の前を直し忘れる）は epoll の道の net_serve（W1）が止まる・
-# 変異 51（積みが最早の期限の下界を下げ忘れる — 走査が鎖を歩かず短い期限が長い期限まで待つ）は net の ring の net_deadline_order（W2）が止まる
+# 期限のチェーンの検査（自己検査）: ミューテーション50（双方向のチェーンの外しが次の節の前を直し忘れる）はepollのパスのnet_serve（W1）が止まる・
+# ミューテーション51（スタックが最早の期限の下界を下げ忘れる — 走査がチェーンを歩かず短い期限が長い期限まで待つ）はnetのringのnet_deadline_order（W2）が止まる
 for mc in "50 net_serve 1" "51 net_deadline_order 2"; do
     set -- $mc
     "$S2" build examples/$2.sober --emit=elf --passes --rt-mutant=$1 -o "$W/m$1" > "$W/buildm.log" 2>&1 || { echo "iouring: FAIL build $2 m$1"; exit 1; }

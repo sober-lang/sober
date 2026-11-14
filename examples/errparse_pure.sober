@@ -1,7 +1,7 @@
 package main
 
 // V4-4e の突き合わせの対（Lean 側: Examples.lean の v46）。errparse.sober から出力を抜いた形。
-// 各入力の結果を 1 語に符号化して畳み込み、main の末尾の値 r を codegen は println で、Lean は脱糖したコアを機械で走らせて照合する
+// 各入力の結果を1ワードに符号化して畳み込み、mainの末尾の値rをcodegenはprintlnで、Leanは脱糖したコアを機械で走らせて照合する
 
 type UnexpectedChar error {
     pos int

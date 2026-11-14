@@ -1,6 +1,6 @@
 package desugar
 
-// 式の型の静的計算（src/stage1/desugar.zig の computeTy / declOfExpr / elemDeclOfExpr 一族の写し）。
+// 式の型の静的計算（src/stage1/desugar.zigのcomputeTy / declOfExpr / elemDeclOfExpr系統のコピー）。
 // 分からなければ -1（Zig 版の null。中の失敗は握りつぶす — catch null）
 
 import "diag"
@@ -210,14 +210,14 @@ func computeTy0(st mut S, e NodeRef, eb int, ef int) TyRef {
             dictLeave(mut st, r)
             return t
         }
-        // 外の package の辞書でない const（`http.OK`）は、同じ package の名前の const（EIdent の腕）と同じ読み
+        // 外のpackageの辞書でないconst（`http.OK`）は、同じpackageの名前のconst（EIdentの分岐）と同じ読み
         if qualConst(mut st, e, eb) {
             return st.tInt
         }
         return selectorTy(mut st, e, eb, ef)
     case ast.EBlock:
-        // ブロックの中の束縛を通して末尾を読み（ブロックの深度で）、出口の写し先 = 親の最内へ締める（脱糖の EBlock の CBlockR と同じ座標 —
-        // 末尾がブロックの中で束縛した名前でも読める。窓の本体が `{ r := f(mut w, …); r }` の形でも読めるようにするため）
+        // ブロックの中の束縛を通して末尾を読み（ブロックの深度で）、出口のコピー先 = 親の最内へ締める（脱糖のEBlockのCBlockRと同じ座標 —
+        // 末尾がブロックの中で束縛した名前でも読める。本体が `{ r := f(mut w, …); r }` の形でも読めるようにするため）
         st.rdepth = st.rdepth + 1
         bt := blockTailTy(mut st, lA(nodeOf(mut st, e)), eb, ef)
         st.rdepth = st.rdepth - 1
@@ -248,7 +248,7 @@ func selectorTy(st mut S, e NodeRef, eb int, ef int) TyRef {
         return -1
     }
     t := tyIn(mut st, hget(mut st, base + 1), hget(mut st, base + 2), nB(nodeOf(mut st, latN(mut st, fs, i))), e) catch return -1
-    // 土台の値の型が読めるなら、その欄の成分（値が実際に置かれた座標で読む `{ S{…}.s }` の欄読み版）。宣言と region だけ違う同じ形のときだけ
+    // 土台の値の型が読めるなら、そのフィールドの成分（値が実際に置かれた座標で読む `{ S{…}.s }` のフィールド読み版）。宣言とregionだけ違う同じ形のときだけ
     bt := computeTy(mut st, nA(nodeOf(mut st, e)), eb, ef)
     if bt != -1 {
         ct := chainAt(mut st, bt, i, lenL(mut st, fs))
@@ -259,7 +259,7 @@ func selectorTy(st mut S, e NodeRef, eb int, ef int) TyRef {
     return t
 }
 
-// n 成分の積の鎖（tyChain の形 — 右結合）の i 番目の成分（形が合わなければ -1）
+// n成分の積のチェーン（tyChainの形 — 右結合）のi番目の成分（形が合わなければ -1）
 func chainAt(st mut S, t TyRef, i int, n int) TyRef {
     if n == 1 {
         return if i == 0 { t } else { TyRef(-1) }
@@ -270,8 +270,8 @@ func chainAt(st mut S, t TyRef, i int, n int) TyRef {
     return if i == 0 { tLeft(mut st, t) } else { chainAt(mut st, tRight(mut st, t), i - 1, n - 1) }
 }
 
-// struct リテラル e の型（型引数なし）: 欄ごとに宣言の型を、値の式の型が region だけ違う同じ形で読めるならその型に置き換える
-// （宣言の座標でなく、値が実際に置かれた座標で読む。値の型が読めない欄は宣言の型のまま。書かれない欄のゼロ値はここで作られるので点座標）
+// structリテラルeの型（型引数なし）: フィールドごとに宣言の型を、値の式の型がregionだけ違う同じ形で読めるならその型に置き換える
+// （宣言の座標でなく、値が実際に置かれた座標で読む。値の型が読めないフィールドは宣言の型のまま。書かれないフィールドのゼロ値はここで作られるので点座標）
 func litStructTy(st mut S, e NodeRef, pk int, fs ListRef, eb int, ef int) TyRef {
     n := lenL(mut st, fs)
     if n == 0 {
@@ -314,7 +314,7 @@ func litStructTy(st mut S, e NodeRef, pk int, fs ListRef, eb int, ef int) TyRef 
     return tyChain(mut st, ts)
 }
 
-// fof（長さ ne の欄の添字の列 — -1 なら空）に k があるか
+// fof（長さneのフィールドの添字の列 — -1なら空）にkがあるか
 func listHasI(st mut S, fof ListRef, ne int, k int) bool {
     if fof == -1 {
         return false
@@ -450,7 +450,7 @@ func callTy(st mut S, e NodeRef, eb int, ef int) TyRef {
         if ft != -1 {
             return tRight(mut st, ft)
         }
-        // 展開の関数型の仮引数（閉包の名前）の呼び出し: 結果は展開点の最内に作られる（読めないと、ループの中から外の mut 束縛への
+        // 展開の関数型の仮引数（クロージャの名前）の呼び出し: 結果は展開点の最内に作られる（読めないと、ループの中から外のmut束縛への
         // 代入に境界コピー〔storeCopy〕が付かず check が type error。展開される関数の結果を最内で読む plainResult と同じ読み）
         crt := cloResTy(mut st, callee0, eb, ef)
         if crt != -1 {
@@ -468,7 +468,7 @@ func callTy(st mut S, e NodeRef, eb int, ef int) TyRef {
     }
     fi := findFn(mut st, callee, eb)
     if fi < 0 {
-        // 名前付き関数型への変換 `W(e)` の型は W の閉包の型（関数でなかったときだけ見る — 名前は関数と型で衝突しない）
+        // 名前付き関数型への変換 `W(e)` の型はWのクロージャの型（関数でなかったときだけ見る — 名前は関数と型で衝突しない）
         fcd := if skip == 0 && na == 1 { fnConvDr(mut st, callee0, eb) } else { -1 }
         return if fcd >= 0 { fnConvTy(mut st, fcd, e) } else { TyRef(-1) }
     }
@@ -489,7 +489,7 @@ func callTy(st mut S, e NodeRef, eb int, ef int) TyRef {
         if ckey != CELL_GET {
             return st.tUnit
         }
-        // 値は把手の const を呼び出しの点で組んだもの（最内の座標）— cellCall の Set / Update の want と同じく最内へ写した型
+        // 値は把手のconstを呼び出しの点で組んだもの（最内の座標）— cellCallのSet / Updateのwantと同じく最内へコピーした型
         ht := computeTy(mut st, latN(mut st, args, 0), eb, ef)
         return if ht != -1 && tg(mut st, ht) == TPr { tyRelocAll(mut st, tRight(mut st, ht), st.rdepth - 1) } else { TyRef(-1) }
     }
@@ -516,7 +516,7 @@ func callTy(st mut S, e NodeRef, eb int, ef int) TyRef {
 
 // 素の Def 呼び出し（展開されない・callM でない）の結果型を呼び手座標（最内 region）で読む（Lean の ret.relocR d）。
 // 展開される関数・mut_def（mut 仮引数を持つ関数）の結果は展開点の最内に作られる — imm の region を最内へ（署名の座標のまま読むと、
-// ブロックの末尾・束縛の値の型が外の region を指し、ブロックの出口の写し〔CBlockR〕が付かずに check が type error。build は正しく写していた）
+// ブロックの末尾・束縛の値の型が外のregionを指し、ブロックの出口のコピー〔CBlockR〕が付かずにcheckがtype error。buildは正しくコピーしていた）
 func plainResult(st mut S, fi int, t TyRef) TyRef {
     if inlineFn(mut st, fi) {
         return tyRelocAll(mut st, t, st.rdepth - 1)
@@ -558,12 +558,12 @@ func declOfExpr(st mut S, e NodeRef, eb int, ef int) int {
         }
         fi := findFn(mut st, callee, eb)
         if fi < 0 {
-            // 変換 `W(e)` の値の宣言は W（値化可能な named fn type — 閉包の値の束縛として呼べる）
+            // 変換 `W(e)` の値の宣言はW（値化可能な named fn type — クロージャの値の束縛として呼べる）
             fcd := if skip == 0 && explicit == -1 && lenL(mut st, lB(nodeOf(mut st, e))) == 1 { fnConvDr(mut st, callee, eb) } else { -1 }
             if fcd >= 0 {
                 return fcd
             }
-            // 閉包の値の呼び出し（`f(x)`・`xs[i](x)`・`g(x)(y)`）: named fn type の宣言の結果から
+            // クロージャの値の呼び出し（`f(x)`・`xs[i](x)`・`g(x)(y)`）: named fn type の宣言の結果から
             cd := closureCalleeDr(mut st, nA(nodeOf(mut st, e)), eb, ef)
             if cd >= 0 {
                 crs := lB(nodeOf(mut st, nC(nodeOf(mut st, hgetN(mut st, cd)))))
@@ -571,7 +571,7 @@ func declOfExpr(st mut S, e NodeRef, eb int, ef int) int {
             }
         }
         if fi < 0 {
-            // 展開される関数型の仮引数（閉包の束縛）の呼び出し: 仮引数の型式の結果から
+            // 展開される関数型の仮引数（クロージャの束縛）の呼び出し: 仮引数の型式の結果から
             if kindN(mut st, callee) == ast.EIdent && lookup(mut st, eb, sA(nodeOf(mut st, callee))) < 0 {
                 fr := lookupFRec(mut st, ef, sA(nodeOf(mut st, callee)))
                 if fr >= 0 && hget(mut st, fr + 4) != -1 && kindN(mut st, hgetN(mut st, fr + 4)) == ast.TFunc {
@@ -589,7 +589,7 @@ func declOfExpr(st mut S, e NodeRef, eb int, ef int) int {
             if localCloName(mut st, callee, eb, ef) {
                 return localCallDecl(mut st, callee, lB(nodeOf(mut st, e)), skip, eb, ef, e, false)
             }
-            // 匿名の関数型の欄の呼び出し（`r.f(x)`）: 欄の型式の結果から
+            // 匿名の関数型のフィールドの呼び出し（`r.f(x)`）: フィールドの型式の結果から
             if kindN(mut st, callee) == ast.ESelector {
                 return selFnResDecl(mut st, callee, 1 + skip, eb, ef, false)
             }
@@ -638,11 +638,11 @@ func declOfExpr(st mut S, e NodeRef, eb int, ef int) int {
             return -1
         }
         ft0 := nB(nodeOf(mut st, latN(mut st, fs, i)))
-        // `U?` の欄は中身の宣言（仮引数の `U?` の束縛と同じ — 絞った後の欄読みが引ける）
+        // `U?` のフィールドは中身の宣言（仮引数の `U?` の束縛と同じ — 絞った後のフィールド読みが引ける）
         ft := if kindN(mut st, ft0) == ast.TOpt { nA(nodeOf(mut st, ft0)) } else { ft0 }
         fk := kindN(mut st, ft)
         if fk == ast.TName || fk == ast.TGeneric {
-            // 型引数の名前（総称 struct の欄 `one T`）は宣言の参照の束縛から
+            // 型引数の名前（総称structのフィールド `one T`）は宣言の参照の束縛から
             saved := st.tenv
             st.tenv = hget(mut st, base + 2)
             d := declOfTypeExpr(mut st, hget(mut st, base + 1), ft)
@@ -656,7 +656,7 @@ func declOfExpr(st mut S, e NodeRef, eb int, ef int) int {
         tl := tailExpr(mut st, e)
         return if tl == -1 { -1 } else { declOfExpr(mut st, tl, eb, ef) }
     case ast.EIf:
-        // then の腕の末尾 → 分からなければ else（then が return 等で終わる形 — catch return の写し `if $e != nil { return … } else { $v }`）
+        // thenの分岐の末尾 → 分からなければelse（thenがreturn等で終わる形 — catch return の変換 `if $e != nil { return … } else { $v }`）
         tl := tailExpr(mut st, nB(nodeOf(mut st, e)))
         d := if tl == -1 { -1 } else { declOfExpr(mut st, tl, eb, ef) }
         if d != -1 {
@@ -665,7 +665,7 @@ func declOfExpr(st mut S, e NodeRef, eb int, ef int) int {
         el := elseTail(mut st, e)
         return if el == -1 { -1 } else { declOfExpr(mut st, el, eb, ef) }
     case ast.ESwitch:
-        // 腕の末尾の式から（case → default の順に分かる方 — switchTy と同じ読み）
+        // 分岐の末尾の式から（case → defaultの順に分かる方 — switchTyと同じ読み）
         mut i := 0
         while i < swArms(mut st, e) {
             tl := swArmTail(mut st, e, i)
@@ -680,12 +680,12 @@ func declOfExpr(st mut S, e NodeRef, eb int, ef int) int {
     return -1
 }
 
-// switch の腕の数（case の数 + default の 1 — default が無ければその枠は空）
+// switchの分岐の数（caseの数 + defaultの1 — defaultが無ければその枠は空）
 func swArms(st mut S, sw NodeRef) int {
     return lenL(mut st, lB(nodeOf(mut st, sw))) + 1
 }
 
-// switch の i 番目の腕の文の列（i < case の数なら case、i == case の数なら default）。default が無い枠は ok = false
+// switchのi番目の分岐の文の列（i < caseの数ならcase、i == caseの数ならdefault）。defaultが無い枠はok = false
 func swArmBody(st mut S, sw NodeRef, i int) (ListRef, bool) {
     cs := lB(nodeOf(mut st, sw))
     if i < lenL(mut st, cs) {
@@ -698,7 +698,7 @@ func swArmBody(st mut S, sw NodeRef, i int) (ListRef, bool) {
     return lA(nodeOf(mut st, dflt)), true
 }
 
-// switch の i 番目の腕の末尾の式（式文でなければ・腕が無ければ -1）
+// switchのi番目の分岐の末尾の式（式文でなければ・分岐が無ければ -1）
 func swArmTail(st mut S, sw NodeRef, i int) NodeRef {
     l, ok := swArmBody(mut st, sw, i)
     if !ok {
@@ -732,7 +732,7 @@ func elemDeclOfExpr(st mut S, e NodeRef, eb int, ef int) int {
         return d
     }
     k := kindN(mut st, e)
-    // ブロック・if・switch は値の末尾の式から（declOfExpr と同じ読み — catch の写し `if $e != nil { return … } else { $v }` の要素の宣言）
+    // ブロック・if・switchは値の末尾の式から（declOfExprと同じ読み — catchの変換 `if $e != nil { return … } else { $v }` の要素の宣言）
     if k == ast.EBlock {
         tl := tailExpr(mut st, e)
         return if tl == -1 { -1 } else { elemDeclOfExpr(mut st, tl, eb, ef) }
@@ -805,7 +805,7 @@ func elemDeclOfExpr(st mut S, e NodeRef, eb int, ef int) int {
         }
         fi := findFn(mut st, callee, eb)
         if fi < 0 {
-            // 閉包の値の呼び出し（`f(x)`・`xs[i](x)`・`g(x)(y)`）: named fn type の宣言の結果から
+            // クロージャの値の呼び出し（`f(x)`・`xs[i](x)`・`g(x)(y)`）: named fn type の宣言の結果から
             cd := closureCalleeDr(mut st, nA(nodeOf(mut st, e)), eb, ef)
             if cd >= 0 {
                 crs := lB(nodeOf(mut st, nC(nodeOf(mut st, hgetN(mut st, cd)))))
@@ -813,7 +813,7 @@ func elemDeclOfExpr(st mut S, e NodeRef, eb int, ef int) int {
             }
         }
         if fi < 0 {
-            // 展開される関数型の仮引数（閉包の束縛）の呼び出し: 仮引数の型式の結果から
+            // 展開される関数型の仮引数（クロージャの束縛）の呼び出し: 仮引数の型式の結果から
             if kindN(mut st, callee) == ast.EIdent && lookup(mut st, eb, sA(nodeOf(mut st, callee))) < 0 {
                 fr := lookupFRec(mut st, ef, sA(nodeOf(mut st, callee)))
                 if fr >= 0 && hget(mut st, fr + 4) != -1 && kindN(mut st, hgetN(mut st, fr + 4)) == ast.TFunc {
@@ -831,7 +831,7 @@ func elemDeclOfExpr(st mut S, e NodeRef, eb int, ef int) int {
             if localCloName(mut st, callee, eb, ef) {
                 return localCallDecl(mut st, callee, args, skip, eb, ef, e, true)
             }
-            // 匿名の関数型の欄の呼び出し（`r.f(x)`）: 欄の型式の結果から
+            // 匿名の関数型のフィールドの呼び出し（`r.f(x)`）: フィールドの型式の結果から
             if kindN(mut st, callee) == ast.ESelector {
                 return selFnResDecl(mut st, callee, 1 + skip, eb, ef, true)
             }
@@ -913,7 +913,7 @@ func callResultTop(st mut S, rt TyRef) TyRef {
 
 // パターンで束縛したフィールドの型
 func patFieldTy(st mut S, pk int, te NodeRef, at NodeRef) TyRef {
-    // ジェネリック union の欄の型は subject の型引数の束縛で
+    // ジェネリックunionのフィールドの型はsubjectの型引数の束縛で
     saved := st.tenv
     if st.swEnv >= 0 {
         st.tenv = st.swEnv
@@ -967,8 +967,8 @@ func fnValueTy(st mut S, callee NodeRef, eb int, ef int) TyRef {
     return -1
 }
 
-// 閉包の名前を callee に持つ呼び出しの結果の型（展開点の座標 — lambdaCall の ann と同じ。閉包でなければ -1）。
-// computeTy が -1 を返す道（coerceExpr の T? の期待・後置 `?`）だけが引く — 他の位置の閉包の呼び出しの型付けは従来のまま
+// クロージャの名前をcalleeに持つ呼び出しの結果の型（展開点の座標 — lambdaCallのannと同じ。クロージャでなければ -1）。
+// computeTyが -1を返すパス（coerceExprのT? の期待・後置 `?`）だけが引く — 他の位置のクロージャの呼び出しの型付けは従来のまま
 func cloResTy(st mut S, callee NodeRef, eb int, ef int) TyRef {
     if kindN(mut st, callee) != ast.EIdent || lookup(mut st, eb, sA(nodeOf(mut st, callee))) >= 0 {
         return -1
@@ -990,13 +990,13 @@ func isLocalLam(st mut S, s NodeRef) bool {
     return lenL(mut st, lA(nodeOf(mut st, s))) == 1 && lenL(mut st, vals) == 1 && kindN(mut st, latN(mut st, vals, 0)) == ast.ELambda
 }
 
-// 局所の束縛のラムダの文 s を閉包の束縛 ef に積む（脱糖の stmtsIn と同じ — 型は持たない）
+// 局所の束縛のラムダの文sをクロージャの束縛efに積む（脱糖のstmtsInと同じ — 型は持たない）
 func localLamF(st mut S, s NodeRef, eb int, ef int) int {
     st.nLocLam += 1
     return bindF(mut st, ef, int(latS(mut st, lA(nodeOf(mut st, s)), 0)), closure(mut st, latN(mut st, lC(nodeOf(mut st, s)), 0), eb, ef, -1), SFREE)
 }
 
-// callee が局所の束縛のラムダ（型を持たない閉包の束縛 — stmtsIn）の名前か
+// calleeが局所の束縛のラムダ（型を持たないクロージャの束縛 — stmtsIn）の名前か
 func localCloName(st mut S, callee NodeRef, eb int, ef int) bool {
     if st.nLocLam == 0 || kindN(mut st, callee) != ast.EIdent || lookup(mut st, eb, sA(nodeOf(mut st, callee))) >= 0 {
         return false
@@ -1006,7 +1006,7 @@ func localCloName(st mut S, callee NodeRef, eb int, ef int) bool {
 }
 
 // 局所の束縛のラムダの呼び出しの型: 仮引数を書いた型（書かなければ実引数の型）で束縛の点の環境に束ねて本体の型を読む。
-// 本体の末尾が多値の呼び出しなら成分の積の鎖（`f(s)?` の読み — tryExpr）。分からなければ -1
+// 本体の末尾が多値の呼び出しなら成分の積のチェーン（`f(s)?` の読み — tryExpr）。分からなければ -1
 func localCallTy(st mut S, callee NodeRef, args ListRef, eb int, ef int, at NodeRef) TyRef {
     cr := clo(mut st, lookupF(mut st, ef, sA(nodeOf(mut st, callee))))
     lam := cr.lambda
@@ -1033,7 +1033,7 @@ func localCallTy(st mut S, callee NodeRef, args ListRef, eb int, ef int, at Node
     return lambdaBodyTy(mut st, lam, lb, cr.envF)
 }
 
-// 局所の束縛のラムダ cr の仮引数を、書いた型（書かなければ実引数の型）で束縛の点の環境に束ねた鎖（数が合わない・型が分からなければ -2）
+// 局所の束縛のラムダcrの仮引数を、書いた型（書かなければ実引数の型）で束縛の点の環境に束ねたチェーン（数が合わない・型が分からなければ -2）
 func localLamEnv(st mut S, cr Closure, args ListRef, eb int, ef int, at NodeRef) int {
     lps := lA(nodeOf(mut st, cr.lambda))
     if lenL(mut st, lps) != lenL(mut st, args) {
@@ -1407,7 +1407,7 @@ func callEnv(st mut S, fi int, cn NodeRef, explicit NodeRef, args ListRef, eb in
     return penv, nil
 }
 
-// e が閉包（関数型の引数に束縛されたラムダ）の名前か
+// eがクロージャ（関数型の引数に束縛されたラムダ）の名前か
 func isClosureName(st mut S, e NodeRef, eb int, ef int) bool {
     if kindN(mut st, e) != ast.EIdent {
         return false
@@ -1436,7 +1436,7 @@ func forIterTy(st mut S, fe NodeRef, eb int, ef int) TyRef {
         return -1
     }
     t := computeTy(mut st, src, eb, ef)
-    // map の生成元はキーを回す（keysm の段）
+    // mapの生成元はキーを回す（keysmのフェーズ）
     isMap := isTag(mut st, t, TMp)
     if !isTag(mut st, t, TSl) && !isMap {
         // 他の生成元（呼び出し形・Iter の値）: yield の型を表層型検査器の表から（region を持たない型だけ — 座標は付けない）
@@ -1461,7 +1461,7 @@ func bindsOf(st mut S, s NodeRef, eb0 int, ef int) int {
     names := lA(nodeOf(mut st, s))
     vals := lC(nodeOf(mut st, s))
     if isLocalLam(mut st, s) {
-        // 局所の束縛のラムダは値の束縛にならない（閉包の束縛 — 呼び手が ef に積む: localLamF）
+        // 局所の束縛のラムダは値の束縛にならない（クロージャの束縛 — 呼び手がefに積む: localLamF）
         return eb0
     }
     if lenL(mut st, names) > 1 && lenL(mut st, vals) == 1 {
@@ -1496,8 +1496,8 @@ func bindsOf(st mut S, s NodeRef, eb0 int, ef int) int {
     mut eb := eb0
     for i <- iter.Range(0, lenL(mut st, names)) {
         v := latN(mut st, vals, i)
-        // mut の束縛のセルは mutInitAnn が緩めた型（束縛点の点座標 — 名前・欄読み・添字・struct リテラルの初期値）で読む: 式位置の `{ mut r := x; r }` の
-        // 末尾は塊の region の点座標なので出口の写し（blockR）が要る（catch の実引数の写しが当たった — r848）
+        // mutの束縛のセルはmutInitAnnが緩めた型（束縛点の点座標 — 名前・フィールド読み・添字・structリテラルの初期値）で読む: 式位置の `{ mut r := x; r }` の
+        // 末尾はチャンクのregionの点座標なので出口のコピー（blockR）が要る（catchの実引数のコピーが当たった — r848）
         t0 := computeTy(mut st, v, eb, ef)
         vk := kindN(mut st, v)
         pt := if nodeOf(mut st, s).b != 0 && t0 != -1 && (vk == ast.EIdent || vk == ast.ESelector || vk == ast.EIndex || vk == ast.EComposite) { pointTy(mut st, t0) } else { t0 }
@@ -1608,7 +1608,7 @@ func inlineFn(st mut S, fi int) bool {
     return false
 }
 
-// 文の列 l の末尾の文の頭での束縛の鎖（前の文と末尾の文が外した絞りを外の束縛へ戻す — narrowkill.sober）
+// 文の列lの末尾の文の頭での束縛のチェーン（前の文と末尾の文が外した絞りを外の束縛へ戻す — narrowkill.sober）
 func killedBefore(st mut S, l ListRef, eb0 int) int {
     if len(st.nrwNames) == 0 {
         return eb0
@@ -1627,7 +1627,7 @@ func killedBefore(st mut S, l ListRef, eb0 int) int {
     return eb
 }
 
-// 腕の末尾の値の型（式文なら computeTy、値を持たない文・空の腕は unit、脱出の文は不明）
+// 分岐の末尾の値の型（式文ならcomputeTy、値を持たない文・空の分岐はunit、脱出の文は不明）
 func armTy(st mut S, l ListRef, eb int, ef int) TyRef {
     n := lenL(mut st, l)
     if n == 0 {
@@ -1639,7 +1639,7 @@ func armTy(st mut S, l ListRef, eb int, ef int) TyRef {
         tl := nA(nodeOf(mut st, s))
         t := computeTy(mut st, tl, killedBefore(mut st, l, eb), ef)
         if t == -1 && kindN(mut st, tl) == ast.EIdent {
-            // 末尾が同じ腕の中で束縛した名前（`{ v := x; v }` — `case v, nil:` の写し mvcase.sober が作る形）なら、その束縛の値の型
+            // 末尾が同じ分岐の中で束縛した名前（`{ v := x; v }` — `case v, nil:` の変換mvcase.soberが作る形）なら、その束縛の値の型
             return boundTy(mut st, l, n - 1, sA(nodeOf(mut st, tl)), eb, ef)
         }
         return t
@@ -1667,25 +1667,25 @@ func boundTy(st mut S, l ListRef, n int, name StrRef, eb int, ef int) TyRef {
     return -1
 }
 
-// switch の値の型（腕の末尾から。上の case → default の順に分かる方）。全腕の型が読めて region の合流（constSwitch）が
-// 掛かるなら、合流した型（ifTy と同じ）。腕のどれかが nil で終わるなら T?（ifTy と同じ — spec T-16）
+// switchの値の型（分岐の末尾から。上のcase → defaultの順に分かる方）。全分岐の型が読めてregionの合流（constSwitch）が
+// 掛かるなら、合流した型（ifTyと同じ）。分岐のどれかがnilで終わるならT?（ifTyと同じ — spec T-16）
 func switchTy(st mut S, sw NodeRef, eb int, ef int) TyRef {
     mut t := switchTyArms(mut st, sw, eb, ef)
     if !nilCase(mut st, sw) {
         return t
     }
-    // 兄弟の腕の型（型パターンの欄だけを値にする腕 `case Sq{s}: s` も欄を束ねて読む）
+    // 兄弟の分岐の型（型パターンのフィールドだけを値にする分岐 `case Sq{s}: s` もフィールドを束ねて読む）
     cs := lB(nodeOf(mut st, sw))
     mut i := 0
     while t == -1 && i < lenL(mut st, cs) {
         t = caseTyN(mut st, latN(mut st, cs, i), eb, ef, true)
         i += 1
     }
-    // 値は最内に組まれる（ラベルの cause の鎖・リテラル）— if の合流（upJoin2）と同じく最内の座標へ上げる（nil の腕の注釈もこの型）
+    // 値は最内に組まれる（ラベルのcauseのチェーン・リテラル）— ifの合流（upJoin2）と同じく最内の座標へ上げる（nilの分岐の注釈もこの型）
     return if t != -1 { upRegion(mut st, optUp(mut st, t), st.rdepth - 1) } else { t }
 }
 
-// switch の腕（default を含む）のどれかが nil で終わるか
+// switchの分岐（defaultを含む）のどれかがnilで終わるか
 func nilCase(st mut S, sw NodeRef) bool {
     cs := lB(nodeOf(mut st, sw))
     for i <- iter.Range(0, lenL(mut st, cs)) {
@@ -1713,7 +1713,7 @@ func switchTyArms(st mut S, sw NodeRef, eb int, ef int) TyRef {
         i += 1
     }
     dt := if dflt != -1 { armTy(mut st, lA(nodeOf(mut st, dflt)), eb, ef) } else { TyRef(-1) }
-    // 腕の型が T と T? に分かれるなら T?（spec T-16）
+    // 分岐の型がTとT? に分かれるならT?（spec T-16）
     mut m := optMix(mut st, t0, dt)
     i = 0
     while m == -1 && i < lenL(mut st, cs) {
@@ -1730,7 +1730,7 @@ func switchTyArms(st mut S, sw NodeRef, eb int, ef int) TyRef {
     return if up != -1 { up } else { t0 }
 }
 
-// 腕の型 a と b の片方が T? で他方がその中身 T なら T?（spec T-16 — T と T? の腕の合流。でなければ -1）
+// 分岐の型aとbの片方がT? で他方がその中身TならT?（spec T-16 — TとT? の分岐の合流。でなければ -1）
 func optMix(st mut S, a TyRef, b TyRef) TyRef {
     if a == -1 || b == -1 {
         return -1
@@ -1744,7 +1744,7 @@ func optMix(st mut S, a TyRef, b TyRef) TyRef {
     return -1
 }
 
-// if 式 e の腕の型が T と T? に分かれるか（nil 判定の if は絞った腕を中身の型で読む — ifnilTy と同じ束縛）
+// if式eの分岐の型がTとT? に分かれるか（nil判定のifは絞った分岐を中身の型で読む — ifnilTyと同じ束縛）
 func optMixIf(st mut S, e NodeRef, eb int, ef int) bool {
     els := nC(nodeOf(mut st, e))
     if els == -1 {
@@ -1787,13 +1787,13 @@ func switchTy0(st mut S, sw NodeRef, eb int, ef int) TyRef {
     return if dflt != -1 { armTy(mut st, lA(nodeOf(mut st, dflt)), eb, ef) } else { TyRef(-1) }
 }
 
-// switch の節 c の腕の値の型。欄の束縛なしで読めなければ、型パターン `V{f, …}` の名前だけの欄を armGen と同じ型で束ねて読み直す
-// （`d := switch e { case L{desc}: desc }` で結果型が読めないと、到達しない腕〔閉じた世界の他のラベル〕が unit に落ちて Def が型の不一致になる）
+// switchの節cの分岐の値の型。フィールドの束縛なしで読めなければ、型パターン `V{f, …}` の名前だけのフィールドをarmGenと同じ型で束ねて読み直す
+// （`d := switch e { case L{desc}: desc }` で結果型が読めないと、到達しない分岐〔閉じた世界の他のラベル〕がunitに落ちてDefが型の不一致になる）
 func caseTy(st mut S, c NodeRef, eb int, ef int) TyRef {
     return caseTyN(mut st, c, eb, ef, false)
 }
 
-// caseTy の欄の束ね直しを union の variant にも掛けるか（all — nil の腕から T? を組む switchTy が兄弟の腕の型を読むとき）
+// caseTyのフィールドの束ね直しをunionのvariantにも掛けるか（all — nilの分岐からT? を組むswitchTyが兄弟の分岐の型を読むとき）
 func caseTyN(st mut S, c NodeRef, eb int, ef int, all bool) TyRef {
     l := lA(nodeOf(mut st, nB(nodeOf(mut st, c))))
     t := armTy(mut st, l, eb, ef)
@@ -1804,7 +1804,7 @@ func caseTyN(st mut S, c NodeRef, eb int, ef int, all bool) TyRef {
     tp := latN(mut st, ps, 0)
     vr := findVariant(mut st, st.curPkg, sB(nodeOf(mut st, tp)))
     fps := lC(nodeOf(mut st, tp))
-    // 到達しない腕が出るのは error の switch だけ（union は網羅を行列で確かめ済み — 推定の束縛を足すのも error のラベルに限る）
+    // 到達しない分岐が出るのはerrorのswitchだけ（unionは網羅を行列で検証済み — 推定の束縛を足すのもerrorのラベルに限る）
     if vr.decl == -1 || (vr.decl != NodeRef(ERRS) && !all) || lenL(mut st, fps) == 0 {
         return t
     }
@@ -1822,9 +1822,9 @@ func caseTyN(st mut S, c NodeRef, eb int, ef int, all bool) TyRef {
     return armTy(mut st, l, e2, ef)
 }
 
-// if 式の値の型（then → else の順に分かる方）。両腕の型が読めて region の合流（ifExpr）が掛かるなら、合流した型
+// if式の値の型（then → elseの順に分かる方）。両分岐の型が読めてregionの合流（ifExpr）が掛かるなら、合流した型
 // （値が実際に置かれる座標 — `{ if c { p } else { p } }` のブロックの出口の付け替えがこれを見る）。
-// 腕（else if の鎖を含む）のどれかが nil で終わり、他の腕から型 T が読めるなら T の T?（T が既に T? ならそのまま — spec T-16）
+// 分岐（else ifのチェーンを含む）のどれかがnilで終わり、他の分岐から型Tが読めるならTのT?（Tが既にT? ならそのまま — spec T-16）
 func ifTy(st mut S, e NodeRef, eb int, ef int) TyRef {
     t := ifTyArms(mut st, e, eb, ef)
     if t == -1 || nC(nodeOf(mut st, e)) == -1 || !nilArm(mut st, e) {
@@ -1833,7 +1833,7 @@ func ifTy(st mut S, e NodeRef, eb int, ef int) TyRef {
     return optUp(mut st, t)
 }
 
-// if 式 e の腕（else if の鎖を含む）のどれかが nil で終わるか
+// if式eの分岐（else ifのチェーンを含む）のどれかがnilで終わるか
 func nilArm(st mut S, e NodeRef) bool {
     if nilTail(mut st, lA(nodeOf(mut st, nB(nodeOf(mut st, e))))) {
         return true
@@ -1872,8 +1872,8 @@ func ifTyArms(st mut S, e NodeRef, eb int, ef int) TyRef {
         return t0
     }
     tt := armTy(mut st, lA(nodeOf(mut st, nB(nodeOf(mut st, e)))), eb, ef)
-    // else の腕の型は ifTy0 が読んでいればそれを使う（同じ入力の読み直し — else if の鎖で腕ごとに 2 回読むと鎖の長さの指数になる。
-    // loader.IntrinsicCode の 19 段の鎖 1 つで自己 check の脱糖の 3 割を占めたことがある）
+    // elseの分岐の型はifTy0が読んでいればそれを使う（同じ入力の読み直し — else if のチェーンで分岐ごとに2回読むとチェーンの長さの指数になる。
+    // loader.IntrinsicCodeの19レベルのチェーン1つで自己checkの脱糖の3割を占めたことがある）
     ot := if o0 != -2 { o0 } else if kindN(mut st, els) == ast.EBlock { armTy(mut st, lA(nodeOf(mut st, els)), eb, ef) } else { computeTy(mut st, els, eb, ef) }
     m := optMix(mut st, tt, ot)
     if m != -1 {
@@ -1883,8 +1883,8 @@ func ifTyArms(st mut S, e NodeRef, eb int, ef int) TyRef {
     return if up != -1 { up } else { t0 }
 }
 
-// nil 判定の if 式（`if x != nil { A } else { B }` — ifnilExpr の形）の値の型: 絞った腕は x を中身の型に束縛し直して読む（脱糖の ifnilExpr の
-// eb2 と同じ束縛）。腕の読みと合流は ifTy0 / ifTy と同じ（then が型なしの定数なら else の byte・合流は upJoin2）。絞った腕を外の束縛（T?）で読むと
+// nil判定のif式（`if x != nil { A } else { B }` — ifnilExprの形）の値の型: 絞った分岐はxを中身の型に束縛し直して読む（脱糖のifnilExprの
+// eb2と同じ束縛）。分岐の読みと合流はifTy0 / ifTyと同じ（thenが型なしの定数ならelseのbyte・合流はupJoin2）。絞った分岐を外の束縛（T?）で読むと
 // `q := if p != nil { p } else { "" }` の q が T? になり、q を捕捉するラムダの本体の中で型が食い違う（check だけ拒否 — build は受理していた）
 func ifnilTy(st mut S, e NodeRef, name StrRef, some bool, eb int, ef int) TyRef {
     els := nC(nodeOf(mut st, e))
@@ -1924,7 +1924,7 @@ func ifnilTy(st mut S, e NodeRef, name StrRef, some bool, eb int, ef int) TyRef 
     return if up != -1 { up } else { tt }
 }
 
-// if 式 e の腕の型の読み（then → 型なしの定数なら else の byte・then が読めなければ else）と、読んだなら else の腕の型（読まなければ -2）
+// if式eの分岐の型の読み（then → 型なしの定数ならelseのbyte・thenが読めなければelse）と、読んだならelseの分岐の型（読まなければ -2）
 func ifTy0(st mut S, e NodeRef, eb int, ef int) (TyRef, TyRef) {
     els := nC(nodeOf(mut st, e))
     if els == -1 {
@@ -1933,7 +1933,7 @@ func ifTy0(st mut S, e NodeRef, eb int, ef int) (TyRef, TyRef) {
     then := lA(nodeOf(mut st, nB(nodeOf(mut st, e))))
     t := armTy(mut st, then, eb, ef)
     if t != -1 {
-        // then の腕が型なしの定数なら else の腕の byte に割り当てる（language.md 33 節 — if 式の兄弟の腕。32 節の named scalar と同じ語彙）
+        // thenの分岐が型なしの定数ならelseの分岐のbyteに割り当てる（language.md 33 節 — if式の兄弟の分岐。32 節の named scalar と同じ語彙）
         se := singleExpr(mut st, then)
         if se == -1 || !isUntypedConst(mut st, se, eb, st.curPkg) {
             return t, -2
@@ -1954,7 +1954,7 @@ func singleExpr(st mut S, l ListRef) NodeRef {
     return if kindN(mut st, s) == ast.SExpr { nA(nodeOf(mut st, s)) } else { -1 }
 }
 
-// return の値の式の型（if 式は両腕が単一式で型が一致すればその型）
+// returnの値の式の型（if式は両分岐が単一式で型が一致すればその型）
 func retExprTy(st mut S, e NodeRef, eb int, ef int) TyRef {
     if kindN(mut st, e) == ast.EIf {
         els := nC(nodeOf(mut st, e))
@@ -1984,7 +1984,7 @@ func retExprTy(st mut S, e NodeRef, eb int, ef int) TyRef {
         return if tyEql(mut st, t1, t2) { t1 } else { TyRef(-1) }
     }
     if kindN(mut st, e) == ast.ESwitch && nC(nodeOf(mut st, e)) != -1 {
-        // `return switch …`: 全腕が単一式で型が一致すればその型（if の鎖と同じ読み）
+        // `return switch …`: 全分岐が単一式で型が一致すればその型（ifのチェーンと同じ読み）
         mut t := TyRef(-1)
         mut i := 0
         while i < swArms(mut st, e) {

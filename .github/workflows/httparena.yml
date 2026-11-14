@@ -295,6 +295,7 @@ jobs:
             ${{ runner.temp }}/httparena.tsv.rss
             ${{ runner.temp }}/httparena.tsv.lat
             ${{ runner.temp }}/httparena.tsv.thr
+            ${{ runner.temp }}/httparena.tsv.bus
             ${{ runner.temp }}/httparena-env.txt
             ${{ runner.temp }}/rthist.txt
             ${{ runner.temp }}/kstatrate.txt

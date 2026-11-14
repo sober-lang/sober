@@ -1,15 +1,15 @@
 package analyzer
 
 // error のラベル集合の導出（language.md 13 節。今は影: 消費者は開発用の `check --errors-dump` だけ）。
-// 抽象値 = ラベル集合（2 語のビット集合 LSet — flow.sober。添字 = リンク時のタグ = loader のラベル表の順。TOP = 不明）。値は「その式の error の成分」だけを見る:
-// error の成分を持たない式の集合は、error の位置（戻りの error の成分・error の仮引数・error の欄）へ流れないので、過大（TOP）でも結果を汚さない —
+// 抽象値 = ラベル集合（2ワードのビット集合LSet — flow.sober。添字 = リンク時のタグ = loaderのラベル表の順。TOP = 不明）。値は「その式のerrorの成分」だけを見る:
+// errorの成分を持たない式の集合は、errorの位置（戻りのerrorの成分・errorの仮引数・errorのフィールド）へ流れないので、過大（TOP）でも結果を汚さない —
 // 分からない名前・添字の読み・関数値の呼び出しは TOP に倒す（健全の側）。
-// 集合の置き場（スロット — az.er の解き手 — flow.sober）: 関数 fi の戻り R[fi] = スロット fi・ラベル L の cause C[L] = nfn + L（wrap の地点の内側の合併 — 裁定 C-b）・
-// 関数の仮引数 P[fi][j]（呼び手の実引数の合併 — 裁定 P-b。公開関数の error の仮引数は TOP）・error 型の struct の欄（欄の名前ごとの合併 — 閉世界）。
-// package をまたぐ呼び出しは呼び先の `@errors` の宣言を読む（裁定 E2 — 無ければ導出。公開関数に宣言が無いことは declare.sober が拒否する）。
+// 集合の格納場所（スロット — az.erの解き手 — flow.sober）: 関数fiの戻りR[fi] = スロットfi・ラベルLのcause C[L] = nfn + L（wrapの地点の内側の合併 — 決定C-b）・
+// 関数の仮引数P[fi][j]（呼び手の実引数の合併 — 決定P-b。公開関数のerrorの仮引数はTOP）・error型のstructのフィールド（フィールドの名前ごとの合併 — 閉世界）。
+// packageをまたぐ呼び出しは呼び先の `@errors` の宣言を読む（決定E2 — 無ければ導出。公開関数に宣言が無いことはdeclare.soberが拒否する）。
 // 展開される関数 F の匿名の関数型の仮引数 r（結果が error?）の呼び出しの値は擬ラベル FLOW（符号のビット — ラベルの容量を食わない）で、呼んだ r を Cand[F] に記す。
 // FLOW が F の戻り R[F] に届けば Flow[F] = Cand[F]（ビット j = 仮引数 j — 呼んだ r のどれかの失敗が漏れうるなら呼んだ r 全部の過大近似）、
-// 他の置き場（cause・仮引数・欄・switch の subject）に届いた FLOW は TOP（呼び出し点ごとに違う集合 — 関数の中では言えない）。包み替え `r()? L{}`・握って返さない形は漏れない。
+// 他の格納場所（cause・仮引数・フィールド・switchのsubject）に届いたFLOWはTOP（呼び出し点ごとに違う集合 — 関数の中では言えない）。包み替え `r()? L{}`・握って返さない形は漏れない。
 // F の呼び出し点ごとに、Flow の位置の実引数のラベルが合流する（ラムダ = 本体の値・名前つき関数 = その集合・呼び手自身の仮引数 = 呼び手の FLOW へ —
 // language.md 13 節「仮引数の名前の @errors」）。
 // 解き方: スロットを読んだ関数を読み手として登録し、スロットが広がったら読み手を作業の列へ（不動点 — 格子の高さはラベル数）。
@@ -44,7 +44,7 @@ func labelOf(az mut Az, name desugar.StrRef) int {
     return if r.kind == desugar.TopVariant && r.idx == desugar.ERRS { r.sub } else { -1 }
 }
 
-// error 型の欄の名前 name のスロット（無ければ -1）
+// error型のフィールドの名前nameのスロット（無ければ -1）
 func fieldSlot(az mut Az, name desugar.StrRef) int {
     for i <- iter.Range(0, table.Len(mut az.ffield) / 2) {
         if desugar.StrEq(mut az.d, desugar.StrRef(table.Get(mut az.ffield, i * 2)), name) {
@@ -122,7 +122,7 @@ func isLocal(az mut Az, name desugar.StrRef) bool {
 
 // ── 準備と不動点 ──
 
-// 表を立てる（スロット R・C・P と error 型の欄の名前）
+// 表を立てる（スロットR・C・Pとerror型のフィールドの名前）
 func errInit(az mut Az) {
     az.nfn = desugar.Nfn(mut az.d)
     az.nerr = desugar.NErr(mut az.d)
@@ -314,11 +314,11 @@ func est(az mut Az, s desugar.NodeRef) {
         ev(mut az, desugar.NodeRef(x.a))
         blockVal(mut az, desugar.NodeRef(x.b))
     }
-    // 末尾の return: 本体の末尾の if 文の腕が値を返す呼び出しで終わると、check がその if を本体の値として型付けして def error になる（摩擦）
+    // 末尾のreturn: 本体の末尾のif文の分岐が値を返す呼び出しで終わると、checkがそのifを本体の値として型付けして def error になる（摩擦）
     return
 }
 
-// 代入の行き先 t へ集合 m（名前 → 局所・欄 → error 型の欄のスロット・添字 → 歩くだけ）
+// 代入の行き先tへ集合m（名前 → 局所・フィールド → error型のフィールドのスロット・添字 → 歩くだけ）
 func assignTo(az mut Az, t desugar.NodeRef, m LSet) {
     x := node(mut az, t)
     if x.kind == ast.EIdent {
@@ -493,7 +493,7 @@ func evElems(az mut Az, l desugar.ListRef) {
     }
 }
 
-// リテラル: error ラベルなら {L}。struct なら error 型の欄へ値の集合を流す（位置指定の欄は宣言の順で名前を引く）
+// リテラル: errorラベルなら {L}。structならerror型のフィールドへ値の集合を流す（位置指定のフィールドは宣言の順で名前を引く）
 func composite(az mut Az, x ast.Node) LSet {
     name := desugar.StrRef(x.a)
     els := desugar.ListRef(x.b)
@@ -610,7 +610,7 @@ func callVal(az mut Az, callee desugar.NodeRef, args desugar.ListRef, lhs desuga
     }
     if fi >= 0 && desugar.ParOpenErr(mut az.d, fi) {
         // task.Run の err は ChildDied か、Join も Try もしなかった子の err（P3b-4 1b' — 本体で生んだ error を返す task の err の合併。
-        // 子のラムダの集合を scope ごとに集める形は未実装 — 開いた集合として扱う〔網羅の主張をしない〕）。task.Map（scope を開く std の口）も同じ
+        // 子のラムダの集合をscopeごとに集める形は未実装 — 開いた集合として扱う〔網羅の主張をしない〕）。task.Map（scopeを開くstdのAPI）も同じ
         return lsTop()
     }
     if fi == -1 || table.Get(mut az.errfn, fi) == 0 {
@@ -667,13 +667,13 @@ func erLocalCall(az mut Az, lam desugar.NodeRef, args desugar.ListRef, lhs desug
 // 関数 fi（error を返す）の集合
 func fnLabels(az mut Az, fi int) LSet {
     if declHas(mut az, fi) && desugar.FnAt(mut az.d, fi).pkg != desugar.FnAt(mut az.d, az.cur).pkg {
-        // package をまたぐ呼び出しは宣言を読む（裁定 E2 — 依存 package の中を解析しない 29 節の合成と同じ答えになる。宣言と導出の食い違いは宣言側の package で拒否する）
+        // packageをまたぐ呼び出しは宣言を読む（決定E2 — 依存packageの中を解析しない29 節の合成と同じ答えになる。宣言と導出の食い違いは宣言側のpackageで拒否する）
         return declGet(mut az, fi)
     }
     return lsNoFlow(readSlot(mut az, fi))
 }
 
-// 関数 fi の Flow（package をまたぐ宣言つきの呼び先は宣言の仮引数の名前 — 裁定 E2 と同じ）
+// 関数fiのFlow（packageをまたぐ宣言つきの呼び先は宣言の仮引数の名前 — 決定E2と同じ）
 func flowOf(az mut Az, fi int) int {
     if declHas(mut az, fi) && desugar.FnAt(mut az.d, fi).pkg != desugar.FnAt(mut az.d, az.cur).pkg {
         return table.Get(mut az.dflow, fi)
@@ -718,7 +718,7 @@ func argTo(az mut Az, fi int, j int, m LSet) {
     }
 }
 
-// switch: subject の集合 S、腕の束縛（ラベルの型パターンは {L}・その cause は C[L]・他の束縛は TOP）、腕の値の合併。
+// switch: subjectの集合S、分岐の束縛（ラベルの型パターンは {L}・そのcauseはC[L]・他の束縛はTOP）、分岐の値の合併。
 // error ラベルの型パターンを持つ単一の subject の switch は最後の 1 周で記録する（S・覆ったラベル・default の有無）
 func switchVal(az mut Az, e desugar.NodeRef, x ast.Node) LSet {
     subs := desugar.ListRef(x.a)
@@ -767,7 +767,7 @@ func switchVal(az mut Az, e desugar.NodeRef, x ast.Node) LSet {
         exhNote(mut az, e)
     }
     if az.rec && isErr {
-        // 腕ごとの記録 [switch の記録の添字, 腕のパターンの節, タグ]（到達しない腕の拒否 — 裁定 E4-d (ii)）。腕の中の switch が先に記録されるので、
+        // 分岐ごとの記録 [switchの記録の添字, 分岐のパターンの節, タグ]（到達しない分岐の拒否 — 決定E4-d (ii)）。分岐の中のswitchが先に記録されるので、
         // 添字はここ（自分の記録を積む直前）で決める
         swi := table.Len(mut az.sw) / SW_W
         for i <- iter.Range(0, desugar.LenL(mut az.d, cs)) {
@@ -795,8 +795,8 @@ func switchVal(az mut Az, e desugar.NodeRef, x ast.Node) LSet {
     return v
 }
 
-// ラベル L の型パターンの欄: `cause` は C[L]、cause の入れ子のラベルの型パターン（`cause: e A{…}`）は e が {A} でその欄を同じく、
-// 他の欄（ラベルは error を持てない）と入れ子の束縛は TOP
+// ラベルLの型パターンのフィールド: `cause` はC[L]、causeの入れ子のラベルの型パターン（`cause: e A{…}`）はeが {A} でそのフィールドを同じく、
+// 他のフィールド（ラベルはerrorを持てない）と入れ子の束縛はTOP
 func labelFields(az mut Az, L int, fps desugar.ListRef) {
     if fps == -1 {
         return

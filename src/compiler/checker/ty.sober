@@ -3,8 +3,8 @@ package checker
 import "std/table"
 import "obuf"
 
-// コアの型（Lean の Ty — Syntax.lean）の表現と印字。型 = 記録 {tag, a, b, c}（st.types — reaudit 第 2 弾 C7。以前はヒープ st.h の 4 語）。
-// 型の関数（Syntax.lean / Typing.lean の regionsBelow・sub・relocR … と tyEq）は抽出器の生成物 ty_gen.sober（抽出器 E2 — 手書きの写しは退役）
+// コアの型（LeanのTy — Syntax.lean）の表現と印字。型 = 記録 {tag, a, b, c}（st.types — reaudit第2弾C7。以前はヒープst.hの4ワード）。
+// 型の関数（Syntax.lean / Typing.leanのregionsBelow・sub・relocR … とtyEq）は抽出器の生成物ty_gen.sober（抽出器E2 — 手書きのコピーは退役）
 
 const TInt = 1
 const TVar = 2   // a = 添字
@@ -25,7 +25,7 @@ const TF64 = 14
 // own 用の種類（Lean の Ty.own — 単一 task が所有する能力）: a = 種類（0 scope / 1 task / 2 tx / 3 rx — OwnK の構成子の順）, b = 家の region, c = 中身
 const TOwn = 15
 // 再帰型（iso — Lean の Ty.rvar / Ty.mus / Ty.muRs）: TRVar の a = 再帰の変数の添字（de Bruijn）。
-// 同時の μ（相互再帰の組を 1 つの束縛で・自己再帰は n = 1）: TMuS（S）の a = 成分の数 n・b = 成分の番号 i・c = 組（本体の prod の鎖）/
+// 同時の μ（相互再帰の組を1つの束縛で・自己再帰はn = 1）: TMuS（S）のa = 成分の数n・b = 成分の番号i・c = 組（本体のprodのチェーン）/
 // TMuRs（D — 座標つきのコンテナ）の a = 座標 r・b = n・c = i・d = 組
 const TRVar = 16
 const TMuS = 17
@@ -39,7 +39,7 @@ type Ty struct {
     a int
     b int
     c int
-    d int // 4 つ目の欄（TMuRs の組だけ — 他は 0）
+    d int // 4つ目のフィールド（TMuRsの組だけ — 他は0）
 }
 
 const TYBASE = 35184372088832
@@ -83,7 +83,7 @@ func tOpt(st mut S, t int) int {
     return mk(mut st, TOpt, t, 0, 0)
 }
 
-// ref / slice / map（m・r・中身の 3 欄を持つ型）
+// ref / slice / map（m・r・中身の3フィールドを持つ型）
 func isCont(k int) bool {
     return k == TRef || k == TSl || k == TMp
 }

@@ -1,6 +1,6 @@
 package main
 
-// 負例: ラムダの仮引数の mut の印は関数型の mut の席と合わせる — 関数型が値渡しの席に mut は書けない（diag.FnArg kind 4・language.md 25 節）
+// 負例: ラムダの仮引数のmutのマークは関数型のmut仮引数と合わせる — 関数型が値渡しの仮引数にmutは書けない（diag.FnArg kind 4・language.md 25 節）
 
 import "std/task"
 import "std/pool"

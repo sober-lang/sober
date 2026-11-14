@@ -3,13 +3,13 @@ package lower
 // 再帰型（slice / map の要素を通る再帰 — language.md 1 節の D）の境界コピー。型ごとにその場へ並べる relocateTo は再帰型で
 // 止まらないので、互いに含み合う struct / union の組（強連結成分）ごとに補助 rt.rec_relocate#n(p, floor, 成分) を 1 本建てる。
 // 補助は明示の作業スタックで歩く（深い木でネイティブのスタックも region の深度も使わない）:
-//   VISIT（種類 = RC_VISIT + 成分, 値の番地）— 成分の値を 1 段その場で歩く。中の同じ組の値は VISIT を積む
-//   POST（種類 = RC_POST + 場所, ヘッダの番地）— 中身を写し終えてから外側のセル列を写す（relocateCells と同じ 2 相 —
+//   VISIT（種類 = RC_VISIT + 成分, 値の番地）— 成分の値を1レベルその場で歩く。中の同じ組の値はVISITを積む
+//   POST（種類 = RC_POST + 場所, ヘッダの番地）— 中身をコピーし終えてから外側のセル列をコピーする（relocateCellsと同じ2相 —
 //   後から積んだ項が先に済むので、POST を積んでから中身の項を積めば順序が保たれる）
-// 写した先の表（元のセル列の番地 → 写した番地・長さ・深度の印）で、同じセル列を共有する部分木（imm の DAG）は 1 回だけ写す —
-// 共有は観測できないので、共有を保っても木として写しても同じ値。ctx と初めの容量の作業スタックは補助のスタック枠に置く（呼び出しごとに region へ取ると、反復の region が畳まれたループでは
-// 反復ごとに外の region へ積もる）。容量を超えた作業スタックと表は今の深度の region に置く（写す量に比例する分だけ）。
-// 席 A の子では建てない（型は子の外へ出ないので親が補助を組めない）— 子は拒否して直の道へ戻す
+// コピーした先の表（元のセル列の番地 → コピーした番地・長さ・深度のマーク）で、同じセル列を共有する部分木（immのDAG）は1回だけコピーする —
+// 共有は観測できないので、共有を保っても木としてコピーしても同じ値。ctxと初めの容量の作業スタックは補助のスタック枠に置く（呼び出しごとにregionへ取ると、反復のregionが畳まれたループでは
+// 反復ごとに外のregionへ積もる）。容量を超えた作業スタックと表は今の深度のregionに置く（コピーする量に比例する分だけ）。
+// 席Aの子では建てない（型は子の外へ出ないので親が補助を組めない）— 子は拒否して直のパスへ戻す
 
 import "desugar"
 import "std/iter"
@@ -18,11 +18,11 @@ import "std/table"
 const RC_VISIT = 0
 const RC_POST = 1048576
 const RC_E = 3       // 作業スタックの 1 項 [種類, a, b]
-const RC_FE = 4      // 表の 1 項 [元の番地（0 = 空き）, 写した番地, 長さ, 深度の印]
+const RC_FE = 4      // 表の1項 [元の番地（0 = 空き）, コピーした番地, 長さ, 深度のマーク]
 const RC_CAP0 = 16   // 作業スタックの初めの容量（項 — スタック枠に置くので入口で 0 埋めされる。超えたら今の深度の region へ倍々）
-const RC_TCAP0 = 16 // 写した先の表の初めの容量（項 — 表は 2 件目の put で確保する: 1 件目は ctx の中の 1 枠〔RC_C1〕。伸びは 4 倍 — 2 倍だと深い部分木の写しで再ハッシュが支配的だった）
-const RC_CTXW = 11   // ctx: 0 = スタック, 1 = 項数, 2 = 容量, 3 = 表, 4 = 件数, 5 = 表の容量, 6 = 置き場の深度, 7〜10 = 表の前の 1 枠（RC_FE 語）（ctx の直後に初めの作業スタック）
-const RC_C1 = 7      // 表の前の 1 枠の位置（表を作るまでの写した先 — 部分木の深いセル列が 1 本だけの写しは表を作らない）
+const RC_TCAP0 = 16 // コピーした先の表の初めの容量（項 — 表は2件目のputで確保する: 1件目はctxの中の1枠〔RC_C1〕。伸びは4倍 — 2倍だと深い部分木のコピーで再ハッシュが支配的だった）
+const RC_CTXW = 11   // ctx: 0 = スタック, 1 = 項数, 2 = 容量, 3 = 表, 4 = 件数, 5 = 表の容量, 6 = 配置先の深度, 7〜10 = 表の前の1枠（RC_FEワード）（ctxの直後に初めの作業スタック）
+const RC_C1 = 7      // 表の前の1枠の位置（表を作るまでのコピーした先 — 部分木の深いセル列が1本だけのコピーは表を作らない）
 const RC_MUL = -7046029254386353131
 
 // 情報 info の型
@@ -30,7 +30,7 @@ func rcTyOf(st mut St, info int) int {
     return desugar.HeapGet(mut st.d, info + SI_TY)
 }
 
-// 型 x の直の成分（欄・variant の欄・opt の中身・slice の要素・map のキーと値）を todo へ
+// 型xの直の成分（フィールド・variantのフィールド・optの中身・sliceの要素・mapのキーと値）をtodoへ
 func rcKids(st mut St, x int, todo mut []int) {
     k := tTag(mut st, x)
     if k == TStruct {
@@ -172,7 +172,7 @@ func rcRecord(st mut St, info int) int {
     return st.recRels
 }
 
-// relocateTo の再帰型の腕: 補助を呼ぶ
+// relocateToの再帰型の分岐: 補助を呼ぶ
 func rcCall(st mut St, p int, t int, floor int) {
     info := desugar.HeapGet(mut st.d, t + 1)
     r := rcRecord(mut st, info)
@@ -262,7 +262,7 @@ func buildRecReloc(st mut St, r int) {
         kinds = append(kinds, RC_POST + s)
         blks = append(blks, int(b))
     }
-    // 振り分け（pop の末尾から種類の比較の鎖）
+    // 振り分け（popの末尾から種類の比較のチェーン）
     setCur(mut st, pop)
     for i <- iter.Range(0, len(kinds)) {
         nx := newBlock(mut st)
@@ -301,7 +301,7 @@ func rcReachCur(st mut St, t int) bool {
     return rcReach(mut st, t, latI(mut st, ms, 0), true)
 }
 
-// 番地 p + off の型 t の値を歩く（root = 補助が受け持つ成分の値そのもの — 1 段その場で開く）
+// 番地p + offの型tの値を歩く（root = 補助が受け持つ成分の値そのもの — 1レベルその場で開く）
 func rcInl(st mut St, p int, off int, t int, floor int, root bool, ctx int) {
     if isErr(mut st, t) {
         relocateTo(mut st, p, off, t, floor)
@@ -316,7 +316,7 @@ func rcInl(st mut St, p int, off int, t int, floor int, root bool, ctx int) {
         }
         if !root {
             // 前検査: struct のヘッダ（slice / map — 入れ子の struct の中も）が全部 floor 以下の深度なら中身も浅い（浅い region は深い region を
-            // 指さない）— 積まずに飛ばす。宛先構築で子の部分木が先に宛先へ着いている形（返る列への追記）で、要素ごとの積み下ろしが消える
+            // 指さない）— 積まずに飛ばす。宛先構築で子の部分木が先に宛先へ着いている形（返る列への追記）で、要素ごとのスタックの出し入れが消える
             hs, flat := rcHdrOffs(mut st, t, off)
             if k == TStruct && flat {
                 mut any := iconst(mut st, 0)
@@ -380,7 +380,7 @@ func rcInl(st mut St, p int, off int, t int, floor int, root bool, ctx int) {
     relocateTo(mut st, p, off, t, floor)
 }
 
-// struct t（位置 off の語から）のヘッダ（slice / map）の語の位置の列。opt / union / error の欄があれば偽（前検査をしない）
+// struct t（位置offのワードから）のヘッダ（slice / map）のワードの位置の列。opt / union / errorのフィールドがあれば偽（前検査をしない）
 func rcHdrOffs(st mut St, t int, off int) ([]int, bool) {
     if tTag(mut st, t) != TStruct {
         return []int{}, false
@@ -412,7 +412,7 @@ func rcHdrOffs(st mut St, t int, off int) ([]int, bool) {
     return freeze(hs), true
 }
 
-// ヘッダ h（型 t — 中身が今の組へ届く slice / map）: 深ければ、写し済みなら付け替えるだけ・でなければ POST を積んでからセルごとに歩く
+// ヘッダh（型t — 中身が今の組へ届くslice / map）: 深ければ、コピー済みなら付け替えるだけ・でなければPOSTを積んでからセルごとに歩く
 func rcHdr(st mut St, h int, t int, floor int, ctx int) {
     deep := relocateArm(mut st, cmp(mut st, CGt, load(mut st, h, 2), floor))
     old := load(mut st, h, 0)
@@ -431,7 +431,7 @@ func rcHdr(st mut St, h int, t int, floor int, ctx int) {
         setCur(mut st, miss)
     }
     if st.relocFresh {
-        // 元のセルを書き換えない: 外側を先に写して表へ・写した先のセルを歩く（POST なし）
+        // 元のセルを書き換えない: 外側を先にコピーして表へ・コピーした先のセルを歩く（POSTなし）
         regionRelocate(mut st, h, if isMap { mapRepr(mut st, t).cellw } else { tWords(mut st, desugar.HeapGet(mut st.d, t + 1)) }, floor)
         if !isMap {
             call(mut st, st.rtRecPut, list5(mut st, ctx, old, load(mut st, h, 0), n, load(mut st, h, 2)))
@@ -481,7 +481,7 @@ func rcHdr(st mut St, h int, t int, floor int, ctx int) {
     setCur(mut st, deep)
 }
 
-// POST: 中身を写し終えたヘッダ h（型 t）の外側のセル列を写す（slice は写した先を表へ・map は relocateTo の map の腕と同じ後始末）
+// POST: 中身をコピーし終えたヘッダh（型t）の外側のセル列をコピーする（sliceはコピーした先を表へ・mapはrelocateToのmapの分岐と同じ後始末）
 func rcPost(st mut St, h int, t int, floor int, ctx int) {
     old := load(mut st, h, 0)
     if tTag(mut st, t) == TMap {
@@ -528,7 +528,7 @@ func rcSlot(st mut St, key int, mask int) int {
     return bin(mut st, BAnd, bin(mut st, BSar, m, iconst(mut st, 32)), mask)
 }
 
-// 深度 d に n 語を確保して 0 で埋める
+// 深度dにnワードを確保して0で埋める
 func rcZeroAlloc(st mut St, d int, n int) int {
     p := call(mut st, st.rtRalloc, list2(mut st, d, n))
     loop := newBlock(mut st)
@@ -583,11 +583,11 @@ func buildRcPush(st mut St) {
     ret(mut st, -1)
 }
 
-// rt.rec_fwd_get(ctx, 元の番地, 長さ) → 表の項の番地（長さ以上を写した項 — 無ければ 0）
+// rt.rec_fwd_get(ctx, 元の番地, 長さ) → 表の項の番地（長さ以上をコピーした項 — 無ければ0）
 func buildRcGet(st mut St) {
     begin(mut st, st.rtRecGet)
     if st.rtMut == 38 {
-        // 変異 38: 写した先の表を引かない（共有した部分木を木として写す — DAG の写しが部分木の数で膨らむ。網 = 共有の題材の時間と RSS）
+        // ミュータント38: コピーした先の表を引かない（共有した部分木を木としてコピーする — DAGのコピーが部分木の数で膨らむ。検査 = 共有の題材の時間とRSS）
         ret(mut st, iconst(mut st, 0))
         return
     }
@@ -674,7 +674,7 @@ func rcInsert(st mut St, tab int, mask int, key int, nw int, n int, lab int) int
     return added
 }
 
-// rt.rec_fwd_put(ctx, 元の番地, 写した番地, 長さ, 深度の印)
+// rt.rec_fwd_put(ctx, 元の番地, コピーした番地, 長さ, 深度のマーク)
 func buildRcPut(st mut St) {
     begin(mut st, st.rtRecPut)
     c := 0

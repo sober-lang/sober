@@ -1,6 +1,6 @@
 package main
 
-// mut の中身を持つ欄の読み（中身の別名が package の外にできる）
+// mutの中身を持つフィールドの読み（中身の別名がpackageの外にできる）
 import "testdata/fieldpkg/box"
 
 func main() {

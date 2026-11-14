@@ -3,8 +3,8 @@ package diag
 // 診断（C4 — reaudit 第 2 弾）: 位置 Pos と拒否の種類ごとの error ラベル（language.md 13 節 — 種類 = ラベルのタグ）、印字 Format。
 // 層（loader / desugar / lower）は拒否をここのラベルで返し、app が Format で 1 行にする。位置は各層が手元の節（desugar の NodeRef・
 // loader の字句）から raise の時点で Pos に落とす（ファイルは推測しない — 引けなければ -1）。
-// ラベルは位置だけを持つ（文言は Format の腕 — string の欄を持たせると error? の全値が中身つきの境界コピーを背負う）。
-// 溜める形（loader の NameHit・desugar の nomLog）は Pos か (ファイル, 字句) の組を別に持つ
+// ラベルは位置だけを持つ（文言はFormatの分岐 — stringのフィールドを持たせるとerror? の全値が中身つきの境界コピーを背負う）。
+// バッファする形（loaderのNameHit・desugarのnomLog）はPosか (ファイル, 字句) の組を別に持つ
 
 import "lexer"
 import "std/iter"
@@ -41,8 +41,8 @@ type Malformed error {
 
 // 型の違反。kind 0 = 型宣言の区別の違反（language.md 32 節 — 表層型の照合）・1 = string の値の switch（15 節 — 単値の subject は
 // int / union / error / T?）・2 = T? と値の == / !=（絞り込んでから比べる — 15 節）・3 = string を for の生成元に直に置いた（7 節）・
-// 4 = 関数値の option（`F?` の欄・束縛・map の読み）を絞らずに呼んだ・5 = Def として呼ぶジェネリックに region を持つ型引数（31 節 R1）・
-// 6 = 局所に束縛した名前付き関数を値の位置に置いた（spec F-11）・7 = ゼロ値の無い型（関数値・union）の欄をリテラルで省いた・
+// 4 = 関数値のoption（`F?` のフィールド・束縛・mapの読み）を絞らずに呼んだ・5 = Defとして呼ぶジェネリックにregionを持つ型引数（31 節R1）・
+// 6 = 局所に束縛した名前付き関数を値の位置に置いた（spec F-11）・7 = ゼロ値の無い型（関数値・union）のフィールドをリテラルで省いた・
 // 8 = 値化できない名前付き関数型（型引数つき）への変換 `Gen[T](f)`・9 = 別の名前付き関数型の値の変換（nominal）
 type TypeMismatch error {
     at Pos
@@ -59,13 +59,13 @@ type LenString error {
     at Pos
 }
 
-// 期待型の無い位置の nil（`x := if c { 3 } else { nil }`・`f() catch nil` の nil の腕 — 型が決まらない）
+// 期待型の無い位置のnil（`x := if c { 3 } else { nil }`・`f() catch nil` のnilの分岐 — 型が決まらない）
 type UntypedNil error {
     at Pos
 }
 
-// union の型パターンの switch が全 variant を覆わない（default も `_` も無い）。missing = 一度も腕に出ない最初の variant の宣言
-// （全部の variant が腕に出ていて入れ子の欄の網羅だけ漏れていれば None）— 文面は app が missing の字句（variant の名前）を添える（Note・Spell）
+// unionの型パターンのswitchが全variantを覆わない（defaultも `_` も無い）。missing = 一度も分岐に出ない最初のvariantの宣言
+// （全部のvariantが分岐に出ていて入れ子のフィールドの網羅だけ漏れていればNone）— 文面はappがmissingの字句（variantの名前）を添える（Note・Spell）
 type NonExhaustive error {
     at Pos
     missing Pos
@@ -76,7 +76,7 @@ type ImmWrite error {
     at Pos
 }
 
-// struct の composite の欄の値の型が欄の宣言型に合わない（スカラーの欄）
+// structのcompositeのフィールドの値の型がフィールドの宣言型に合わない（スカラーのフィールド）
 type FieldType error {
     at Pos
 }
@@ -242,7 +242,7 @@ type PureExprStmt error {
     kind int
 }
 
-// `case nil:` の腕を写せない形（loader/nilcase.sober — D1）。kind = 1 nil の腕が 2 つ以上・2 `nil | …`・3 前に名前のパターン・4 nil の腕しか無い・5〜8 は 2 位置の `case P, nil:`（loader/mvcase.sober の mvBad）
+// `case nil:` の分岐を変換できない形（loader/nilcase.sober — D1）。kind = 1 nilの分岐が2つ以上・2 `nil | …`・3前に名前のパターン・4 nilの分岐しか無い・5〜8は2位置の `case P, nil:`（loader/mvcase.soberのmvBad）
 type NilCase error {
     at Pos
     kind int
@@ -259,14 +259,14 @@ type LitRange error {
     kind int
 }
 
-// 名前付き実引数（syntax.md 決定 7）を位置へ写せない形（loader/namedargs.sober・名前付き関数型の値は desugar/namedval.sober）。kind = 1 呼び先が func 宣言でも仮引数名を持つ名前付き関数型の値でもない・2 その名前の仮引数が無い・
-// 3 宣言の順でない（重複を含む）・4 位置で渡した仮引数を名前でも渡した・5 省略できない（`T?` でない）仮引数が無い・6 パイプ段で穴 `_` が無い
+// 名前付き実引数（syntax.md決定7）を位置へ変換できない形（loader/namedargs.sober・名前付き関数型の値はdesugar/namedval.sober）。kind = 1呼び先がfunc宣言でも仮引数名を持つ名前付き関数型の値でもない・2その名前の仮引数が無い・
+// 3宣言の順でない（重複を含む）・4位置で渡した仮引数を名前でも渡した・5省略できない（`T?` でない）仮引数が無い・6パイプステージで穴 `_` が無い
 type NamedArg error {
     at Pos
     kind int
 }
 
-// CatchLhs は catch の左辺が `(T, error?)` を返さない func 宣言の呼び出し（loader/catchx.sober — 写した後の多値の束縛の数の照合より先に名指す）
+// CatchLhsはcatchの左辺が `(T, error?)` を返さないfunc宣言の呼び出し（loader/catchx.sober — 変換した後の多値の束縛の数の照合より先に特定する）
 // MultiBind は多値の受け方の誤り（loader — catchx.sober）: kind 0 = 値 1 つの束縛（`d := f()`）の値が 2 つ以上の結果を返す呼び出し・
 // 1 = 多値を既存の名前へ代入（`a, b = f()` — spec X-6: 多値は `:=` の束縛か全部 `_` の捨てでだけ受ける）
 type MultiBind error {
@@ -283,45 +283,45 @@ type CatchLhs error {
     at Pos
 }
 
-// 封の型（欄の型に宣言した package の非公開の型を持つ struct — utf8.View・json.Doc）の、外での欄つきリテラル（loader/sealx.sober・language.md 15 節）
+// 封の型（フィールドの型に宣言したpackageの非公開の型を持つstruct — utf8.View・json.Doc）の、外でのフィールドつきリテラル（loader/sealx.sober・language.md 15 節）
 type Sealed error {
     at Pos
 }
 
 // 同一性を持つ型（std/task の札・handle・端点・Pool、std/io の File）のゼロ値を std の外で作る composite（loader/identityx.sober・language.md 28 節 /
 // 11 節）。kind 1〜6 = 型そのもののゼロ値 `T{}`（1 task.Scope・2 task.Handle・3 task.Sender・4 task.Receiver・5 task.Pool・6 io.File）・
-// 11〜16 = その型を（欄を通して）持つ欄を省いた composite（`W{}`・部分リテラル）
+// 11〜16 = その型を（フィールドを通して）持つフィールドを省いたcomposite（`W{}`・部分リテラル）
 type Identity error {
     at Pos
     kind int
 }
 
 // 開いたファイル io.File の使い方の拒否（desugar/filecheck.sober・language.md 28 節「資源とストリーム」）。kind = filecheck の FC_*
-// （1 規則の形の外の Open・2 直後の文が defer Close でない・3 規則の形の外の Close・4 defer が別の名前を閉じる・5 写しの束縛・6 代入・7 return / File を返す呼び出し・
-// 8 composite・append・9 閉包の捕獲・10 give:）
+// （1規則の形の外のOpen・2直後の文が defer Close でない・3規則の形の外のClose・4 deferが別の名前を閉じる・5コピーの束縛・6代入・7 return / Fileを返す呼び出し・
+// 8 composite・append・9クロージャの捕獲・10 give:）
 type FileUse error {
     at Pos
     kind int
 }
 
-// 関数型の mut 仮引数の席の拒否（language.md 25 節）。kind = 1 η で写す名前付き関数の mut 仮引数の席が関数型と違う・2 仮引数の数が関数型と違う・
-// 3 関数型の mut 仮引数が 2 本以上・4 ラムダの仮引数の mut の印が関数型と違う・5 関数値の呼び出しの実引数の mut の印が席と違う
+// 関数型のmut仮引数の拒否（language.md 25 節）。kind = 1 η で変換する名前付き関数のmut仮引数が関数型と違う・2仮引数の数が関数型と違う・
+// 3関数型のmut仮引数が2本以上・4ラムダの仮引数のmutのマークが関数型と違う・5関数値の呼び出しの実引数のmutのマークがmut仮引数と違う
 type FnArg error {
     at Pos
     kind int
 }
 
 // 省略可の匿名関数型 `(func(…) R)?`（language.md 25 節 Z — loader/optfn.sober）の拒否。kind = 1 裸の `func(…)?`（括弧の形へ誘導）・
-// 2 func 宣言の仮引数の外（名前付き関数型の中・struct の欄・結果・ラムダの仮引数など）・3 実引数の形（nil・ラムダ・関数の名前・囲む関数の省略可の仮引数だけ）・
+// 2 func宣言の仮引数の外（名前付き関数型の中・structのフィールド・結果・ラムダの仮引数など）・3実引数の形（nil・ラムダ・関数の名前・囲む関数の省略可の仮引数だけ）・
 // 4 `if p != nil { … }` の外での使用・5 呼ぶ・渡す・nil と比べる以外の使用（束縛・格納・return など）
 type FnOpt error {
     at Pos
     kind int
 }
 
-// 値の位置（値化可能な named fn type の struct の欄 — language.md 25 節）のラムダの、値になれない形
+// 値の位置（値化可能な named fn type のstructのフィールド — language.md 25 節）のラムダの、値になれない形
 // （loader/fnval.sober）。kind = 1 mut（mut 束縛・mut 実引数）の捕捉・2 非局所 return・3 `?`（非局所脱出）・4 ラムダを越える break / continue・
-// 5 値として写せない捕捉（同一性の型・関数値・能力・mut の器 — desugar/closure.sober が束縛の型で判定）・
+// 5値として変換できない捕捉（同一性の型・関数値・能力・mutの器 — desugar/closure.soberが束縛の型で判定）・
 // 局所の束縛のラムダ（借りの局所 — `f := (…) => …`・loader/fnval.sober の llBind）: 8 mut の束縛・9 他の名前と同時の束縛・10 呼ぶ / 展開の位置へ渡す以外の使用・
 // 11 値の位置・値の呼び出しの実引数へ渡す・12 値の位置のラムダの中での使用・13 本体の return・14 本体の `?`・15 本体を越える break / continue・
 // 16 本体がラムダより後で宣言した名前を指す。17 = 匿名の関数型の仮引数を持つ関数（展開される）どうしの再帰（loader/funcs.sober の scanFuncs）
@@ -330,15 +330,15 @@ type FnCap error {
     kind int
 }
 
-// 失敗しうる生成元（結果が `error?` の呼び出し形の生成元 — language.md 7 節）の印の誤り（loader/forfallible.sober）。
-// kind 1 = 印 `?` が無い（error を黙って捨てる形）・2 = 式の位置の for（yield 形）の生成元・3 = 印 `?` つきだが生成元の結果が `error?` 1 つでない・
+// 失敗しうる生成元（結果が `error?` の呼び出し形の生成元 — language.md 7 節）のマークの誤り（loader/forfallible.sober）。
+// kind 1 = マーク `?` が無い（errorを黙って捨てる形）・2 = 式の位置のfor（yield形）の生成元・3 = マーク `?` つきだが生成元の結果が `error?` 1つでない・
 // 4 = 生成元の呼び先が名前付き関数型の仮引数（展開されないので生成元にならない — L-for の範囲外）
 type ForFallible error {
     at Pos
     kind int
 }
 
-// assert の置き場の拒否: kind 0 = `_test.sober` の外（T7 — assert はテストの語彙）・1 = quick.Check の性質のラムダの中（落ちた試行は縮められない — 偽は最後の bool 式で返す）
+// assertの配置先の拒否: kind 0 = `_test.sober` の外（T7 — assertはテストの語彙）・1 = quick.Checkのプロパティのラムダの中（落ちた試行はシュリンクできない — 偽は最後のbool式で返す）
 type AssertOutsideTest error {
     at Pos
     kind int
@@ -346,23 +346,23 @@ type AssertOutsideTest error {
 
 // 型宣言の形の拒否（loader/alias.sober — language.md 32 節）。kind = 0 定義型の下地が int / bool でない・1 別名の右辺が型宣言の名前でない
 // （組み込みの型・合成の型・型引数つき・error / panic ラベル）・2 別名の循環・3 型パラメータつきの別名・4 別名の右辺が未定義か見えない・
-// 5 書き換えの後に別名を指す名前が残った（fail-closed — loader の段の漏れ）
+// 5書き換えの後に別名を指す名前が残った（fail-closed — loaderのフェーズの漏れ）
 type TypeDecl error {
     at Pos
     kind int
 }
 
-// @layout（language.md 36 節）の拒否（loader/layout.sober）。kind = 1 `[N]T` の欄が @layout の struct の外・2 @layout が struct でない型宣言に付いている・
-// 3 @layout の欄の型が幅の語（か幅の語の `[N]`・N ≥ 1）でない・4 幅の語が @layout の欄の外・5 @layout の struct に欄が無いか型パラメータがある・
-// 6 `layout.X[T]` の T が @layout の struct でない・7 std/layout の口の形（Decode / DecodeAt / Encode は `[T]` をつけて呼ぶ・Size は `[T]` をつけて呼ばない）・
-// 8 @layout の struct のリテラルの欄の整数リテラルが幅に収まらない
+// @layout（language.md 36 節）の拒否（loader/layout.sober）。kind = 1 `[N]T` のフィールドが @layoutのstructの外・2 @layoutがstructでない型宣言に付いている・
+// 3 @layoutのフィールドの型が幅の語（か幅の語の `[N]`、N ≥ 1）でない・4 幅の語が @layoutのフィールドの外・5 @layoutのstructにフィールドが無いか型パラメータがある・
+// 6 `layout.X[T]` のTが @layoutのstructでない・7 std/layoutのAPIの形（Decode / DecodeAt / Encodeは `[T]` をつけて呼ぶ・Sizeは `[T]` をつけて呼ばない）・
+// 8 @layoutのstructのリテラルのフィールドの整数リテラルが幅に収まらない
 type Layout error {
     at Pos
     kind int
 }
 
-// `json.Decode[T]`（shape[T] — loader/jsonshape.sober）の拒否（kind 1 = T が struct でない・2 = 範囲外の欄の型・3 = 型引数つきで呼んでいない・
-// 4 = Decode の T の欄に裸の json.Value）
+// `json.Decode[T]`（shape[T] — loader/jsonshape.sober）の拒否（kind 1 = Tがstructでない・2 = 範囲外のフィールドの型・3 = 型引数つきで呼んでいない・
+// 4 = DecodeのTのフィールドに裸のjson.Value）
 type JsonShape error {
     at Pos
     kind int
@@ -376,7 +376,7 @@ type Intrinsic error {
 }
 
 // structured concurrency（std/task — language.md 11 節）の呼び出し点の拒否（kind 1 = build の経路は未実装・
-// 3〜17 = 呼び出し点の形 — desugar/parcheck.sober の表・18 = 多値の型の置き場 — loader/tupletype.sober）
+// 3〜17 = 呼び出し点の形 — desugar/parcheck.soberの表・18 = 多値の型の格納場所 — loader/tupletype.sober）
 type Par error {
     at Pos
     kind int
@@ -409,7 +409,7 @@ func IsFrozen(err error?) bool {
 }
 
 // panic ラベル（language.md 27 節 — loader/panicx.sober の PL_*）の拒否。kind = 1 裸の `panic()`・2 実引数がラベルのリテラル 1 つでない・
-// 3 リテラルの型が panic ラベルでない・4 RegionExceeded を書いた・5 欄の書き方・6 宣言の欄の型・7 組み込みのラベルの名前の宣言・8 実引数の外の使用
+// 3リテラルの型がpanicラベルでない・4 RegionExceededを書いた・5フィールドの書き方・6宣言のフィールドの型・7組み込みのラベルの名前の宣言・8実引数の外の使用
 type PanicLabel error {
     at Pos
     kind int
@@ -426,7 +426,7 @@ type Double error {
     kind int
 }
 
-// テストの構成の状態の置き場（std/testing/cell — language.md 41 節）の拒否。kind は Format の文面の番号（1〜3 = loader・10〜 = desugar）
+// テストの構成の状態の格納場所（std/testing/cell — language.md 41 節）の拒否。kindはFormatの文面の番号（1〜3 = loader・10〜 = desugar）
 type Cell error {
     at Pos
     kind int
@@ -796,10 +796,10 @@ func Format(err error?, where string) string {
 }
 
 // loadLine は loader の拒否の 1 行（位置があれば `load error at <where>: <理由>`）
-// identityName / identityMaker は同一性の族の番号（Identity の kind）の型の綴りと生成の口
-// 同一性の族の表（i 行目 = package の path・型の名前・族の番号・資源か・作れる口）。loader のゼロ値の検査・desugar の捕捉の検査と filecheck・
-// lower の閉包の照合・この package の文面はみなこの表を読む（名前の集合を 1 か所に — diag はその全部が import する底の package）。
-// 資源 = 開いた接続やファイルの類（filecheck が写し・持ち出し・composite・捕獲・give: を見る）— task の札・handle・端点・Pool・Local は資源でない（task の規則が見る）
+// identityName / identityMakerは同一性の種類の番号（Identityのkind）の型の綴りと生成のAPI
+// 同一性の種類の表（i行目 = packageのpath・型の名前・種類の番号・資源か・作れるAPI）。loaderのゼロ値の検査・desugarの捕捉の検査とfilecheck・
+// lowerのクロージャの照合・このpackageの文面はみなこの表を読む（名前の集合を1か所に — diagはその全部がimportする底のpackage）。
+// 資源 = 開いた接続やファイルの類（filecheckがコピー・持ち出し・composite・捕獲・give: を見る）— taskの札・handle・端点・Pool・Localは資源でない（taskの規則が見る）
 const IdPaths = []string{"std/task", "std/task", "std/task", "std/task", "std/task", "std/task", "std/io", "std/io", "std/net", "std/net", "std/tls", "std/http/client", "std/pg"}
 const IdNames = []string{"Scope", "Handle", "Sender", "Receiver", "Pool", "Local", "File", "Root", "Listener", "Conn", "Conn", "Session", "Conn"}
 const IdFamilies = []int{1, 2, 3, 4, 5, 7, 6, 8, 9, 10, 11, 12, 13}
@@ -858,7 +858,7 @@ func Note(err error?) Pos {
     }
 }
 
-// 脱糖の拒否 err（check の判定の経路が返す種類 — checker.CheckE2 の @errors）の語 [種類, kind, 位置, 2 つ目の位置]（位置 = Pos・
+// 脱糖の拒否err（checkの判定の経路が返す種類 — checker.CheckE2の @errors）のワード [種類, kind, 位置, 2つ目の位置]（位置 = Pos・
 // 種類 0 = 他の拒否 — 値にしない）。check の関数単位キャッシュの拒否の値（checker/defcache.sober）が書いて FromWords で再生する
 type Words struct {
     tag int
@@ -907,7 +907,7 @@ func FromWords(tag int, kind int, at Pos, missing Pos) error? {
     }
 }
 
-// WTag / WKind / WAt / WMissing は Words の欄の読み口
+// WTag / WKind / WAt / WMissingはWordsのフィールドを読むAPI
 func WTag(w Words) int {
     return w.tag
 }

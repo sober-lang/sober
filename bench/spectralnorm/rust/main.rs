@@ -1,4 +1,4 @@
-// spectral-norm の Rust の双子（Go の双子 bench/spectralnorm/go と同じアルゴリズム・同じ演算の順 — 素直な添字のループ・境界検査はそのまま）
+// spectral-normの比較用のRustの実装（比較用のGoの実装bench/spectralnorm/goと同じアルゴリズム・同じ演算の順 — 素直な添字のループ・境界検査はそのまま）
 use std::env;
 
 fn eval_a(i: usize, j: usize) -> f64 {

@@ -1,7 +1,7 @@
 package emit
 
 // minic のバックエンド: 木（後置順）→ スタック VM のバイトコード → 実行。
-// 命令は 2 語（op, arg）。Push の arg は即値、Div の arg はゼロ除算を報告する位置、他は 0
+// 命令は2ワード（op, arg）。Pushのargは即値、Divのargはゼロ除算を報告する位置、他は0
 
 import "std/builder"
 import parse "testdata/minic/parse"

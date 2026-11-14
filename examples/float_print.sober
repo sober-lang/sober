@@ -1,7 +1,7 @@
 package main
 
-// float の印字と解析の口（language.md 37 節）: println と convert.FormatFloat は最短の往復表現（Go の fmt.Println / strconv.FormatFloat(f, 'g', -1, 64)
-// と同じ綴り — 期待値は Go の双子 scripts/oracles/float_print.go）・convert.ParseFloat の誤り（構文・溢れ）
+// floatの印字と解析のAPI（language.md 37 節）: printlnとconvert.FormatFloatは最短の往復表現（Goのfmt.Println / strconv.FormatFloat(f, 'g', -1, 64)
+// と同じ綴り — 期待値は比較用のGoの実装scripts/oracles/float_print.go）・convert.ParseFloatの誤り（構文・溢れ）
 
 import "std/iter"
 import "std/convert"

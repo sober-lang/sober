@@ -1,7 +1,7 @@
 package main
 
 // refs の負例（report-883）: std/task を別名 pp で読み、pp.MarkFailed だけが std/task.MarkFailed。
-// 局所名 MarkFailed・欄 r.MarkFailed・欄キー MarkFailed:・別 package の testdata.refs.neg.lib.MarkFailed・コメントと文字列の綴りは別物
+// 局所名MarkFailed・フィールドr.MarkFailed・フィールドキーMarkFailed:・別packageのtestdata.refs.neg.lib.MarkFailed・コメントと文字列の綴りは別物
 
 import pp "std/task"
 import "testdata/refs/neg/lib"

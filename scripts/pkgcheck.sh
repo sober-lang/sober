@@ -6,7 +6,7 @@
 # 各対象プログラムの各 package P について:
 #   1. `sober check E --pkg P --iface DIR`（P の Def は本体つき・他は .sobi から読んだ署名だけ）を sober-check が受理する
 #   2. 視点の署名表（名前付き関数、`--pkg P --iface DIR --core-json`）の各行が全ソースの署名表にある（名前で包含）
-#      — defsOk_of_parts の仮定 SigEq（各視点の表と全体の表の署名が一致）のうち、名前付き関数の部分を確かめる
+#      — defsOk_of_partsの仮定SigEq（各視点の表と全体の表の署名が一致）のうち、名前付き関数の部分を検証する
 # 全 package が 1 と 2 を満たせば、合成定理により全体の関数表が DefsOk（持ち上げたラムダの添字の再配置は仮定の外）
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -22,7 +22,7 @@ mkdir -p "$W/cap"
 : > "$W/cap.list"
 
 # 対象 = 凍結コーパス scripts/frozen/pkgcheck.list（このゲートは stage1 専用 — 凍結後の言語機能を使う例は stage1 が読めないので、入力を凍結時点に固定する。
-# 旧: examples/*.out の全例から名指しで除外 — 凍結後の例が増えるたびに除外が要った。reaudit round 3 で切り替え）
+# 旧: examples/*.outの全例から列挙して除外 — 凍結後の例が増えるたびに除外が要った。reaudit round 3で切り替え）
 targets=""
 missing=0
 while read -r t; do

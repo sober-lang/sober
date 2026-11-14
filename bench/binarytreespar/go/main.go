@@ -1,4 +1,4 @@
-// binary-trees の並列版の Go の双子（benchmarks game の Go の並列の定番の形 — 深さごとに goroutine・ポインタの木と GC・結果は深さの順に印字）
+// binary-treesの並列版の比較用のGoの実装（benchmarks gameのGoの並列の定番の形 — 深さごとにgoroutine・ポインタの木とGC・結果は深さの順に印字）
 package main
 
 import (

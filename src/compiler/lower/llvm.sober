@@ -1,11 +1,11 @@
 package lower
 
-// region op の展開（src/stage1/ir_rtlower.zig の写し）と IR → LLVM テキスト（src/stage1/ir_llvm.zig の写し — 開発時専用の差分オラクル経路。docs/ir.md 8 節）。
+// region op の展開（src/stage1/ir_rtlower.zigのコピー）とIR → LLVMテキスト（src/stage1/ir_llvm.zigのコピー — 開発時専用の差分オラクル経路。docs/ir.md 8 節）。
 // - rtlower: region_enter → call rt.region_enter / region_depth → load @rt.meta[W_DEPTH] / region_setdepth → store / region_alloc → call rt.region_alloc /
 //   region_bump → load.ptr (gep.word @rt.meta, d)[W_BUMP] / region_relocate → call rt.region_relocate(hdr, const cellw, floor)。
 //   結果の値の番号は元の op のものを引き継ぎ、中間の値は関数の末尾に番号を足す
 // - .ll: ブロック引数は φ（前任は IR ブロックの末尾ラベル — div のガード等でブロック内にラベルが増える）。condbr の辺は中継ブロックを通す。
-//   φ の前任を先に知るため、ラベルの採番（fresh）だけをなぞる前走査で入り辺を集めてから印字する（Zig 版はブロックごとの本文を溜めて後から φ を前に付ける）
+//   φ の前任を先に知るため、ラベルの採番（fresh）だけをなぞる前走査で入り辺を集めてから印字する（Zig版はブロックごとの本文をバッファリングして後から φ を前に付ける）
 
 import "desugar"
 import "obuf"
@@ -20,7 +20,7 @@ func newValueIn(st mut St, f FnRef) int {
     return v
 }
 
-// 命令の記録 r をブロック b の命令の鎖の末尾へつなぐ
+// 命令の記録rをブロックbの命令のチェーンの末尾へつなぐ
 func linkInst(st mut St, b BlkRef, r InsRef) {
     irSetInsNext(mut st, r, -1)
     tail := irBlkITail(mut st, b)
@@ -65,7 +65,7 @@ func rtlower(st mut St) {
                 res := irInsRes(mut st, ins)
                 a := irInsA(mut st, ins)
                 if st.rtMemHw != -1 && (op == OpRSetDepth || (op == OpCall && st.rtRenterLL != -1 && a == int(st.rtRenterLL))) {
-                    // 変異 39: region を捨てる点の手前で高水位を標本（高水位は捨てる直前でだけ極大になる）
+                    // ミュータント39: regionを捨てる点の手前で高水位を標本（高水位は捨てる直前でだけ極大になる）
                     linkInst(mut st, b, mkInst(mut st, -1, OpCall, int(st.rtMemHw), list0(mut st), 0))
                 }
                 if op == OpREnter {
@@ -185,7 +185,7 @@ func divGuarded(st mut St, cs int, y int) bool {
     return !(desugar.HeapGet(mut st.d, cs + 1 + y * 2) != 0 && desugar.HeapGet(mut st.d, cs + 2 + y * 2) != 0 && desugar.HeapGet(mut st.d, cs + 2 + y * 2) != -1)
 }
 
-// incoming はブロックの入り辺の鎖の末尾へ 1 辺足す（[next, from の bi, tag, k, 引数]）
+// incomingはブロックの入り辺のチェーンの末尾へ1辺足す（[next, fromのbi, tag, k, 引数]）
 func incomingAdd(st mut St, inc int, to BlkRef, bi int, tag int, k int, args int) {
     id := irBlkId(mut st, to)
     e := recN(mut st, 5)
@@ -407,7 +407,7 @@ type LlCur struct {
     fresh int
     ctag int
     ck int
-    // gb = 値の列（heap — listN）: 1 = gep.byte の結果（その番地からの語の load は揃っていない — std/binary.Load64 で `align 1`）
+    // gb = 値の列（heap — listN）: 1 = gep.byteの結果（その番地からのワードのloadは揃っていない — std/binary.Load64で `align 1`）
     gb int
 }
 
@@ -617,7 +617,7 @@ func llIns(st mut St, out mut []byte, lc mut LlCur, ins InsRef, bi int, cs int, 
         llTy(mut out, if ic == 1 { TyPtr } else { TyI64 })
         obuf.Lit(mut out, ", ptr ")
         vreg(mut out, r)
-        // gep.byte の番地からの語の load（std/binary.Load64 — 揃いを問わない）は align 1（既定は i64 の ABI の揃い 8 を仮定する — 揃っていなければ UB）
+        // gep.byteの番地からのワードのload（std/binary.Load64 — 揃いを問わない）はalign 1（既定はi64のABIの揃い8を仮定する — 揃っていなければUB）
         obuf.Lit(mut out, if ia >= 0 && desugar.HeapGet(mut st.d, lc.gb + 1 + ia) == 1 { ".p, align 1\n" } else { ".p\n" })
     case OpStore:
         n := lc.fresh
@@ -634,7 +634,7 @@ func llIns(st mut St, out mut []byte, lc mut LlCur, ins InsRef, bi int, cs int, 
         vreg(mut out, ic)
         obuf.Lit(mut out, ", ptr %st")
         num(mut out, n)
-        // gep.byte の番地への語の store（copyloop の形 D — 731）は align 1（load の対・724。既定は ABI の揃い 8 を仮定する — 揃っていなければ UB）
+        // gep.byteの番地へのワードのstore（copyloopの形D — 731）はalign 1（loadの対・724。既定はABIの揃い8を仮定する — 揃っていなければUB）
         if ia >= 0 && desugar.HeapGet(mut st.d, lc.gb + 1 + ia) == 1 {
             obuf.Lit(mut out, ", align 1")
         }
@@ -764,7 +764,7 @@ func llIns(st mut St, out mut []byte, lc mut LlCur, ins InsRef, bi int, cs int, 
     case OpUnwind:
         // .ll の経路は罠を持たない（何もしない — 続く exit がプロセスを終える）
     case OpArea:
-        // .ll の経路は task の積みを付け替えない（tstart の呼び出しの中で連続の形のまま走る — 区画の交換も起きない）
+        // .llの経路はtaskのスタックを付け替えない（tstartの呼び出しの中で連続の形のまま走る — エリアの交換も起きない）
     case OpTSwitch:
         // .ll の経路は task の切替を持たない（何もしない。子は tstart の呼び出しの中で走り切る・待つ形は .ll では動かない）
     case OpTStart:
@@ -823,7 +823,7 @@ func llIns(st mut St, out mut []byte, lc mut LlCur, ins InsRef, bi int, cs int, 
         obuf.Lit(mut out, " = add i64 0, -38\n")
     case OpSyscall:
         if ib == AES_B || ib == MM_B || ib == PF_B {
-            // AES-GCM の塊（aes.sober）は .ll では持たない — cpuaes の印は 0 で、std の分岐が塊を呼ばない（残りの種類も 0 を返すだけ）
+            // AES-GCMのチャンク（aes.sober）は .llでは持たない — cpuaesのフラグは0で、stdの分岐がチャンクを呼ばない（残りの種類も0を返すだけ）
             obuf.Lit(mut out, "  ")
             vreg(mut out, r)
             obuf.Lit(mut out, " = add i64 0, 0\n")

@@ -1,6 +1,6 @@
 package main
 
-// 整えは Scratch の欄ごとに定数の容量で 1 回だけ（diag.Par kind 27 — 容量が実行時の値）
+// 整えはScratchのフィールドごとに定数の容量で1回だけ（diag.Par kind 27 — 容量が実行時の値）
 
 import "std/task"
 import "std/pool"

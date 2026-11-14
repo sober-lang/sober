@@ -1,7 +1,7 @@
 package sha256
 
 // SHA-256（FIPS 180-4）のインクリメンタル API。
-// 状態 State は値（写せば途中の値の写し — TLS の transcript hash は同じ状態から何度も Sum を取る）:
+// 状態Stateは値（コピーすれば途中の値のコピー — TLSの transcript hash は同じ状態から何度もSumを取る）:
 //
 //     mut s := crypto.sha256.New()
 //     crypto.sha256.Write(mut s, a)
@@ -9,14 +9,14 @@ package sha256
 //     crypto.sha256.Write(mut s, b)
 //     h2 := crypto.sha256.Sum(s)        // a ++ b の値
 //
-// ワンショット API は Sum256（std/hash の hash.Sha256 はこれを呼ぶ）。算術は全部 32 bit の語（[0, 2^32)）の上で閉じる — 和は 5 項まで（2^35 未満）を
+// ワンショットAPIはSum256（std/hashのhash.Sha256はこれを呼ぶ）。算術は全部32 bitのワード（[0, 2^32)）の上で閉じる — 和は5項まで（2^35未満）を
 // 足してから mask32 で畳み、回転は shift 2 回 + or。積を使わないので int の 64 bit の溢れに触れない。データに依る分岐・添字は無い（定数時間 —
 // HMAC の鍵を通してよい）
 
 import "std/iter"
 
-// SHA-256 の塊（compiler/lower/mulx.sober の MK_SHA — SHA-NI）: cpusha = この機械で塊を使えるか（x86 の最適化のバックエンドの ELF だけ・
-// SOBER_NOSHA=1 で 0）・sha256blk(h, p, n, k) = 状態の語の番地 h に p から 64 バイトのブロック n 個を畳む（k = kPacked の番地）。倒れ先 = compress
+// SHA-256のチャンク（compiler/lower/mulx.soberのMK_SHA — SHA-NI）: cpusha = この機械でチャンクを使えるか（x86の最適化のバックエンドのELFだけ・
+// SOBER_NOSHA=1で0）・sha256blk(h, p, n, k) = 状態のワードの番地hにpから64バイトのブロックn個を畳む（k = kPackedの番地）。倒れ先 = compress
 @intrinsic("cpusha")
 func cpusha() int
 
@@ -33,7 +33,7 @@ func addrn(b []int) int
 const Size = 32 // 値の長さ
 const BlockSize = 64 // 1 ブロックの長さ
 
-// 途中の状態（h = 8 語の連鎖値・tail = まだ畳んでいない 64 バイト未満の端・n = これまでに書いた長さ）
+// 途中の状態（h = 8ワードの連鎖値・tail = まだ畳んでいない64バイト未満の端・n = これまでに書いた長さ）
 type State struct {
     h []int
     tail []byte
@@ -63,7 +63,7 @@ func Write(s mut State, data []byte) {
     writeS(mut s, data)
 }
 
-// Write の塊の道（t + len(data) ≥ 64 の前提 — 状態の語の写しを塊が書き換えてから s.h に置く）
+// Writeのチャンクのパス（t + len(data) ≥ 64の前提 — 状態のワードのコピーをチャンクが書き換えてからs.hに置く）
 func writeHw(s mut State, data []byte) {
     n := len(data)
     t := len(s.tail)
@@ -90,7 +90,7 @@ func writeHw(s mut State, data []byte) {
     s.n = s.n + n
 }
 
-// Write の Sober の道（塊の無い出力・SOBER_NOSHA=1 — 塊の照合の相手）
+// WriteのSoberのパス（チャンクの無い出力・SOBER_NOSHA=1 — チャンクの照合の相手）
 func writeS(s mut State, data []byte) {
     n := len(data)
     t := len(s.tail)
@@ -124,7 +124,7 @@ func writeS(s mut State, data []byte) {
     s.n = s.n + n
 }
 
-// s に書いた全体の値（32 バイト）。s は変えない（末尾の詰め = 端 + 0x80 + 0 埋め + ビット長〔64 bit big endian〕を写しの上で畳む）
+// sに書いた全体の値（32バイト）。sは変えない（末尾の詰め = 端 + 0x80 + 0埋め + ビット長〔64 bit big endian〕をコピーの上で畳む）
 @effects()
 func Sum(s State) []byte {
     rest := len(s.tail)
@@ -177,7 +177,7 @@ func cat(a []byte, b []byte, from int, to int) []byte {
 
 const mask32 = 0xffffffff
 
-// src[off..off+64) の 16 語（big endian）を w[0..16) に書く
+// src[off..off+64) の16ワード（big endian）をw[0..16) に書く
 func load(w mut []int, src []byte, off int) {
     for i <- iter.Range(0, 16) {
         p := off + 4 * i
@@ -185,7 +185,7 @@ func load(w mut []int, src []byte, off int) {
     }
 }
 
-// 1 ブロック（w[0..16) に読み込み済み）を状態 h に畳み込む。w[16..64) は語の拡張で上書きする
+// 1ブロック（w[0..16) に読み込み済み）を状態hに畳み込む。w[16..64) はワードの拡張で上書きする
 func compress(h mut []int, w mut []int, k []int) {
     for i <- iter.Range(16, 64) {
         x := w[i - 15]
@@ -234,7 +234,7 @@ func rotr(x int, k int) int {
 }
 
 // 丸め定数（最初の 64 個の素数の立方根の小数部の先頭 32 bit — FIPS 180-4 4.2.2）
-// 定数 64 個を 2 個ずつ 1 語に詰めた 32 語（下 32 bit = 偶数番・上 = 奇数番 — 塊が 16 バイトずつ 4 個の 32 bit で読む）
+// 定数64個を2個ずつ1ワードに詰めた32ワード（下32 bit = 偶数番・上 = 奇数番 — チャンクが16バイトずつ4個の32 bitで読む）
 func kPacked() []int {
     return []int{
         0x71374491428a2f98, -0x164a245a4a3f0431, 0x59f111f13956c25b, -0x54e3a12a6dc07d5c,
@@ -248,7 +248,7 @@ func kPacked() []int {
     }
 }
 
-// Sum の Sober の道（詰めの畳みも writeS で — 照合の相手）
+// SumのSoberのパス（詰めの畳みもwriteSで — 照合の相手）
 func sumS(s State) []byte {
     rest := len(s.tail)
     tlen := if rest < 56 { 64 } else { 128 }

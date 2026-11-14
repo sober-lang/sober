@@ -4,7 +4,7 @@
 
 `import "std/http/server"`
 
-multipart/form-data の受け（RFC 7578 — 本文の切り方は RFC 2046 5.1.1）。本文は ServeConn が maxBody で切った r.body に全部載っているので、ここは r.body の上の位置を読むだけ（部分の本文は r.body の切り出し — 写さない）。読むのは芯だけ: Content-Type の boundary・部分ごとのContent-Disposition（form-data の name / filename）と Content-Type・CRLF の規律・閉じの境界。読まないもの: filename\*=（RFC 5987 の符号化 — 他の引数と同じく読み飛ばす）・入れ子の multipart（部分の本文のまま返す）・Content-Transfer-Encoding（解釈しない — RFC 7578 4.7 で非推奨）・name / filename の % の復号（ブラウザが '"' CR LF を %22 %0D %0A にする — WHATWG HTML — のは戻さない。生のまま）
+multipart/form-data の受け（RFC 7578 — 本文の切り方は RFC 2046 5.1.1）。本文は ServeConn が maxBody で切った r.body に全部載っているので、ここはr.bodyの上の位置を読むだけ（部分の本文はr.bodyの切り出し — コピーしない）。読むのは芯だけ: Content-Typeのboundary・部分ごとのContent-Disposition（form-data の name / filename）と Content-Type・CRLF の規律・閉じの境界。読まないもの: filename\*=（RFC 5987 の符号化 — 他の引数と同じく読み飛ばす）・入れ子の multipart（部分の本文のまま返す）・Content-Transfer-Encoding（解釈しない — RFC 7578 4.7 で非推奨）・name / filename の % の復号（ブラウザが '"' CR LF を %22 %0D %0A にする — WHATWG HTML — のは戻さない。生のまま）
 
 ## BadMultipart
 
@@ -12,7 +12,7 @@ multipart/form-data の受け（RFC 7578 — 本文の切り方は RFC 2046 5.1.
 type BadMultipart error
 ```
 
-Multipart が読めない本文（Content-Type が multipart/form-data でない・boundary が無いか形が違う・境界の行や部分の頭の形の誤り・閉じの境界が無い・部分の数か部分の頭の大きさが上限を超える）。応答はふつう 400
+Multipart が読めない本文（Content-Type が multipart/form-data でない・boundary が無いか形が違う・境界の行や部分の頭の形の誤り・閉じの境界が無い・部分の数か部分の頭の大きさが上限を超える）。レスポンスはふつう400
 
 ## Part
 
@@ -27,10 +27,10 @@ type Part struct {
 
 multipart/form-data の部分 1 つ（Multipart の結果 — 本文の順）
 
-欄:
+フィールド:
 
-- `name` — Content-Disposition の name（フォームの欄の名前）
-- `filename` — Content-Disposition の filename（ファイルの欄 — 中身はブラウザが送った名前のまま。パスとして使うなら検査は呼び手。ファイルを選ばなかった欄はブラウザが "" を送る）。filename の無い部分（テキストの欄）は nil
+- `name` — Content-Dispositionのname（フォームのフィールドの名前）
+- `filename` — Content-Dispositionのfilename（ファイルのフィールド — 中身はブラウザが送った名前のまま。パスとして使うなら検査は呼び手。ファイルを選ばなかったフィールドはブラウザが "" を送る）。filenameの無い部分（テキストのフィールド）はnil
 - `contentType` — 部分の Content-Type（前後の空白を除いた値・無ければ "" — RFC 7578 4.4 の既定は text/plain）
 - `body` — 部分の本文（r.body の切り出し — 区切りの前の CRLF は含まない）
 
@@ -72,16 +72,16 @@ type Request struct {
 }
 ```
 
-要求 1 件（この反復の region — route が返ったら消える。外へ持ち出すなら写す）
+リクエスト1件（この反復のregion — routeが返ったら消える。外へ持ち出すならコピーする）
 
-欄:
+フィールド:
 
-- `path` — 要求の対象の '?' の前（生のまま — % のデコードはしない）
-- `query` — 要求の対象の '?' の後（生のまま — % のデコードはしない）
-- `head` — 要求の頭（要求行からヘッダの終わりの空行まで — 検査済み）。認証のヘッダを含むので認証の源（std の外の package で読むと、その値と読んだ関数は認証に届く — [language.md 12 節](../language.md)「出所の依存」。std の中の読み〔Header・Dispatch の写し〕は源にしない）
-- `headers` — head の上のヘッダの位置 × 本数。1 本 = 2 語 [名前の始め | 終わり \<\< 32, 値の始め | 終わり \<\< 32]（lo32 / hi32 で読む — 頭は 4 GiB 未満）
-- `body` — 本文（Content-Length の分・chunked は繋いだ写し）
-- `pattern` — Dispatch が一致させたルートの path（"/users/:id" — ルーターを通らない要求は ""。Param はこれと path を並べて歩く）
+- `path` — リクエストの対象の '?' の前（生のまま — %のデコードはしない）
+- `query` — リクエストの対象の '?' の後（生のまま — %のデコードはしない）
+- `head` — リクエストの頭（リクエスト行からヘッダの終わりの空行まで — 検査済み）。認証のヘッダを含むので認証の源（stdの外のpackageで読むと、その値と読んだ関数は認証に届く — [language.md 12 節](../language.md)「出所の依存」。stdの中の読み〔Header・Dispatchのコピー〕は源にしない）
+- `headers` — headの上のヘッダの位置 × 本数。1本 = 2ワード [名前の始め | 終わり \<\< 32, 値の始め | 終わり \<\< 32]（lo32 / hi32で読む — 頭は4 GiB未満）
+- `body` — 本文（Content-Lengthの分・chunkedは繋いだコピー）
+- `pattern` — Dispatchが一致させたルートのpath（"/users/:id" — ルーターを通らないリクエストは ""。Paramはこれとpathを並べて歩く）
 
 ## Response
 
@@ -101,7 +101,7 @@ type Response struct {
 }
 ```
 
-応答（status・Content-Type〔"" なら書かない〕・本文）。stream があれば本文の代わりに ServeConn が頭の後で stream を呼び、stream がemit に渡したバイト列をそのまま送る（コールバック形式〔継続渡し / CPS〕— [language.md 28 節](../language.md) w2 の「応答の枠」）。emit 1 回 = 送り 1 回（emit をまたいで溜めない）。length があれば Content-Length（stream が emit で送る合計は length ちょうどであること — ServeConn は合計を数え、超えた emit は送らず・stream が返った時点で合計が length でなければ閉じる〔相手は本文の切れで知る〕）。length が nil（長さ不定）なら Transfer-Encoding: chunked（emit 1 回 = chunk 1 つ・空の emit は送らない・stream が nil で返ったら終端の chunk）— HTTP/1.0 の要求には Content-Length も chunked も書かず、stream が返ったら閉じる（閉じで区切る）。stream が誤りを返したら終端を書かずに閉じる。compression: があり・Content-Type が圧縮向き・要求が gzip を受け・coded が無い stream の応答（長さ既知なら length が 1024 以上のとき）は gzip にして chunked で送る（emit 1 回 = deflate の sync flush 1 回 = chunk 1 つ・窓は emit をまたいで持ち越す・HTTP/1.0 は閉じで区切る・Vary は body の応答と同じ）。HEAD では呼ばない（頭は GET と同じ）。stream は要求の値（path など）を捕捉してよいクロージャ。File は捕捉させず path を捕捉して stream の中で開く。送りの状態 out（Out — 中身はstd/http/server の外から見えない）は呼び手が持ち、emit を呼ぶたびに `emit(mut out, b)` と渡す（閉包は mut を捕捉しない — [language.md 25 節](../language.md)「関数型の mut 仮引数」）:
+レスポンス（status・Content-Type〔"" なら書かない〕・本文）。streamがあれば本文の代わりにServeConnが頭の後でstreamを呼び、streamがemitに渡したバイト列をそのまま送る（コールバック形式〔継続渡し / CPS〕— [language.md 28 節](../language.md)w2の「レスポンスの枠」）。emit 1回 = 送り1回（emitをまたいでバッファしない）。length があれば Content-Length（stream が emit で送る合計は length ちょうどであること — ServeConn は合計を数え、超えた emit は送らず・stream が返った時点で合計が length でなければ閉じる〔相手は本文の切れで知る〕）。length が nil（長さ不定）なら Transfer-Encoding: chunked（emit 1 回 = chunk 1 つ・空の emit は送らない・stream が nil で返ったら終端のchunk）— HTTP/1.0のリクエストにはContent-Lengthもchunkedも書かず、streamが返ったら閉じる（閉じで区切る）。streamが誤りを返したら終端を書かずに閉じる。compression: があり・Content-Typeが圧縮向き・リクエストがgzipを受け・codedが無いstreamのレスポンス（長さ既知ならlengthが1024以上のとき）はgzipにしてchunkedで送る（emit 1回 = deflateの sync flush 1回 = chunk 1つ・ウィンドウはemitをまたいで持ち越す・HTTP/1.0は閉じで区切る・Varyはbodyのレスポンスと同じ）。HEADでは呼ばない（頭はGETと同じ）。streamはリクエストの値（pathなど）を捕捉してよいクロージャ。Fileは捕捉させずpathを捕捉してstreamの中で開く。送りの状態out（Out — 中身はstd/http/serverの外から見えない）は呼び手が持ち、emitを呼ぶたびに `emit(mut out, b)` と渡す（クロージャはmutを捕捉しない — [language.md 25 節](../language.md)「関数型のmut仮引数」）:
 
 ```sober
 func handle(r http.server.Request) http.server.Response {
@@ -115,14 +115,14 @@ func sendFile(path string, out mut http.server.Out, emit func(out mut http.serve
 }
 ```
 
-欄:
+フィールド:
 
-- `length` — stream の本文の長さ（Content-Length — nil = 長さ不定 = chunked）。body の応答では読まない
-- `headers` — 任意ヘッダ（書いた順に Cache-Control の後へ）。std/http/server が書く名前（Content-Type・Content-Length・Content-Encoding・Transfer-Encoding・Connection・Vary）・保存の方針と検証子の名前（Cache-Control・CDN-Cache-Control・Surrogate-Control・ETag・Last-Modified — 書くのは型の欄 cache / validators だけ）と CR / LF / NUL を含む名前・値は panic(BadHeader) — 応答の分割の封:     http.server.Response{status: 200, contentType: "text/plain", body: b, headers: http.server.Headers{list: []http.Field{http.Field{name: "X-Request-Id", value: id}}}}
-- `coded` — 本文の符号化を選んだ応答（Static の precompressed — 下の Coded）。あれば ServeConn は Vary: Accept-Encoding を書き、encoding が空でなければContent-Encoding を書き、compression: を掛けない
-- `cache` — 保存の方針（Cache-Control）。応答 1 件で書くのは Private / NoStore — 共有キャッシュも保存してよい方針（Fresh）はルートの行（Route.cache・Static の cache:）で書き、Dispatch がこの欄の無い応答に写す〔std の外で応答 1 件に Fresh / Shared を書くと analyzer が拒否する〕）。どこにも無ければ `Cache-Control: private`（利用者のブラウザだけが保存してよい — 認証つきの要求の応答を CDN の規則が拾う形〔web cache deception〕の入口を狭める既定）    http.server.Response{status: 200, contentType: "text/plain", body: b, cache: http.server.NoStore{}}
-- `validators` — 検証子（ETag・Last-Modified — 作れるのは std/http/server だけ: 封の型。同じ検証子を別の利用者の中身に付けると、確かめに来たキャッシュへの 304 で他人の版が出る — 検証子は中身から std が作る）
-- `cookies` — Set-Cookie（書けるのはこの欄だけ — 下の SetCookie）。書いた順に任意ヘッダの後へ
+- `length` — streamの本文の長さ（Content-Length — nil = 長さ不定 = chunked）。bodyのレスポンスでは読まない
+- `headers` — 任意ヘッダ（書いた順に Cache-Control の後へ）。std/http/server が書く名前（Content-Type・Content-Length・Content-Encoding・Transfer-Encoding・Connection・Vary）・保存の方針と検証子の名前（Cache-Control・CDN-Cache-Control・Surrogate-Control・ETag・Last-Modified — 書くのは型のフィールドcache / validatorsだけ）とCR / LF / NULを含む名前・値はpanic(BadHeader) — レスポンスの分割の封:     http.server.Response{status: 200, contentType: "text/plain", body: b, headers: http.server.Headers{list: []http.Field{http.Field{name: "X-Request-Id", value: id}}}}
+- `coded` — 本文の符号化を選んだレスポンス（Staticのprecompressed — 下のCoded）。あればServeConnはVary: Accept-Encodingを書き、encodingが空でなければContent-Encoding を書き、compression: を掛けない
+- `cache` — 保存の方針（Cache-Control）。レスポンス1件で書くのはPrivate / NoStore — 共有キャッシュも保存してよい方針（Fresh）はルートの行（Route.cache・Staticのcache:）で書き、Dispatchがこのフィールドの無いレスポンスにコピーする〔stdの外でレスポンス1件にFresh / Sharedを書くとanalyzerが拒否する〕）。どこにも無ければ `Cache-Control: private`（利用者のブラウザだけが保存してよい — 認証つきのリクエストのレスポンスをCDNの規則が拾う形〔web cache deception〕の入口を狭める既定）    http.server.Response{status: 200, contentType: "text/plain", body: b, cache: http.server.NoStore{}}
+- `validators` — 検証子（ETag・Last-Modified — 作れるのはstd/http/serverだけ: 封の型。同じ検証子を別の利用者の中身に付けると、検証しに来たキャッシュへの304で他人の版が出る — 検証子は中身から std が作る）
+- `cookies` — Set-Cookie（書けるのはこのフィールドだけ — 下のSetCookie）。書いた順に任意ヘッダの後へ
 - `delay` — 送る前の待ち（ミリ秒 — Delayed で付ける。0 以下 = 待たない）。接続の task はハンドラから戻った浅い点で待つ
 
 ## Validators
@@ -135,7 +135,7 @@ type Validators struct {
 }
 ```
 
-応答の検証子（ETag と Last-Modified — Static が作る。modified は秒・0 以下は Last-Modified を書かない）
+レスポンスの検証子（ETagとLast-Modified — Staticが作る。modifiedは秒・0以下はLast-Modifiedを書かない）
 
 ## Coded
 
@@ -145,7 +145,7 @@ type Coded struct {
 }
 ```
 
-応答の本文が要求の Accept-Encoding で選ばれたこと（encoding = 選んだ符号化〔"br" / "gzip"〕・"" = 候補を見たが元のまま）。本文は既にその符号化のバイト列（ServeConn は圧縮しない — 選ぶだけ）。同じ URL の応答が要求の頭で変わるので、元のままの応答にも Vary を付ける
+レスポンスの本文がリクエストのAccept-Encodingで選ばれたこと（encoding = 選んだ符号化〔"br" / "gzip"〕・"" = 候補を見たが元のまま）。本文は既にその符号化のバイト列（ServeConnは圧縮しない — 選ぶだけ）。同じURLのレスポンスがリクエストの頭で変わるので、元のままのレスポンスにもVaryを付ける
 
 ## Headers
 
@@ -155,7 +155,7 @@ type Headers struct {
 }
 ```
 
-任意ヘッダの列（Response の欄を option の包みにしてあるのは、欄を持たない応答〔大半〕の道に空の列の確保と region の付け替えを積まないため）
+任意ヘッダの列（Responseのフィールドをoptionの包みにしてあるのは、フィールドを持たないレスポンス〔大半〕のパスに空の列の確保とregionの付け替えを積まないため）
 
 ## SetCookie
 
@@ -172,19 +172,19 @@ type SetCookie struct {
 }
 ```
 
-Set-Cookie の 1 本（Response.cookies の要素 — Set-Cookie を書けるのはこの欄だけ。生の Set-Cookie を headers に書くと panic(BadHeader)）。省いた欄のゼロ値が安全な側: Secure・HttpOnly・SameSite=Lax・Path=/・Domain なし（host-only — サブドメインへ送らない）・Max-Age なし（ブラウザを閉じるまで）。緩める欄は dangerously の綴り（grep で全部拾える）。値は符号化しない — cookie-octet〔英数字と記号のうち空白・`"` `,` `;` `\` 以外〕に収まらない値は呼び手が url.Escape か base64url で包む。名前・値・欄の組み合わせが書けなければ panic(BadHeader{name: "Set-Cookie"})
+Set-Cookieの1本（Response.cookiesの要素 — Set-Cookieを書けるのはこのフィールドだけ。生のSet-Cookieをheadersに書くとpanic(BadHeader)）。省いたフィールドのゼロ値が安全な側: Secure・HttpOnly・SameSite=Lax・Path=/・Domainなし（host-only — サブドメインへ送らない）・Max-Ageなし（ブラウザを閉じるまで）。緩めるフィールドはdangerouslyの綴り（grepで全部拾える）。値は符号化しない — cookie-octet〔英数字と記号のうち空白・`"` `,` `;` `\` 以外〕に収まらない値は呼び手がurl.Escapeかbase64urlで包む。名前・値・フィールドの組み合わせが書けなければpanic(BadHeader{name: "Set-Cookie"})
 
 ```sober
 http.server.Response{status: 200, contentType: "text/plain", body: b, cookies: []http.server.SetCookie{http.server.SetCookie{name: "__Host-sid", value: tok}}}
 ```
 
-欄:
+フィールド:
 
 - `maxAge` — 秒（0 = 今ある cookie を消す・負は書けない）。nil = Max-Age を書かない
 - `path` — nil = "/"
 - `domain` — nil = Domain を書かない（host-only）
 - `sameSite` — nil = Lax
-- `dangerouslyAllowHttp` — true で Secure を外す（http の開発環境だけの口 — SameSiteNone・名前の \_\_Host- / \_\_Secure- とは組めない）
+- `dangerouslyAllowHttp` — trueでSecureを外す（httpの開発環境だけのオプション — SameSiteNone・名前の \_\_Host- / \_\_Secure- とは組めない）
 - `dangerouslyScriptReadable` — true で HttpOnly を外す（スクリプトから読ませる）
 
 ## SameSite
@@ -205,7 +205,7 @@ SameSite 属性（RFC 6265bis 5.4.7 — None は Secure が要る）
 type Stream func(out mut Out, emit func(out mut Out, b []byte) error?) error? @errors(emit, io.NotFound, io.Denied, io.Timeout, io.Expired, io.Other)
 ```
 
-応答の本文の供給（emit は借り — 呼ぶ・借りの位置へ渡すだけ。[language.md 25 節](../language.md)「借り」）。out は送りの状態で、emit に毎回 mut で渡す
+レスポンスの本文の供給（emitは借り — 呼ぶ・借りの位置へ渡すだけ。[language.md 25 節](../language.md)「借り」）。outは送りの状態で、emitに毎回mutで渡す
 
 ## Out
 
@@ -227,7 +227,7 @@ stream の送りの状態（圧縮する stream の符号器・送った合計�
 func Text(s string) Response
 ```
 
-200・text/plain の応答
+200・text/plainのレスポンス
 
 ## Delayed
 
@@ -236,7 +236,7 @@ func Text(s string) Response
 func Delayed(ms int, r Response) Response
 ```
 
-r を ms ミリ秒待ってから送る応答（ms ≤ 0 は待たない）。待つのはその応答の頭を書く直前で、同じ接続の前の要求の応答は先に送る。ハンドラの中で os.Sleep してから返すのと送る時刻は同じだが、待つ間ハンドラの積みと要求の region を持たない（接続の task はハンドラから戻った浅い点で寝る）。接続の期限は os.Sleep と同じく待ちを切る（[language.md 28 節](../language.md)）
+rをmsミリ秒待ってから送るレスポンス（ms ≤ 0は待たない）。待つのはそのレスポンスの頭を書く直前で、同じ接続の前のリクエストのレスポンスは先に送る。ハンドラの中でos.Sleepしてから返すのと送る時刻は同じだが、待つ間ハンドラのスタックとリクエストのregionを持たない（接続のtaskはハンドラから戻った浅い点でスリープする）。接続の期限はos.Sleepと同じく待ちを切る（[language.md 28 節](../language.md)）
 
 ```sober
 return http.server.Delayed(50, http.server.Text("ok"))
@@ -249,7 +249,7 @@ return http.server.Delayed(50, http.server.Text("ok"))
 func Json(s string) Response
 ```
 
-200・application/json の応答（s は組み上がった JSON — std/json の Put… / Done）
+200・application/jsonのレスポンス（sは組み上がったJSON — std/jsonのPut… / Done）
 
 ## Event
 
@@ -272,7 +272,7 @@ type BadEvent panic {
 }
 ```
 
-Event の event / id に CR・LF・NUL がある（呼び手の契約違反 — イベントの差し込みの封: 行の区切りを値に書けると、受け手に別のイベントや欄を足せる。panic ラベル）
+Eventのevent / idにCR・LF・NULがある（呼び手の契約違反 — イベントの差し込みの封: 行の区切りを値に書けると、受け手に別のイベントやフィールドを足せる。panicラベル）
 
 ## FormatEvent
 
@@ -281,7 +281,7 @@ Event の event / id に CR・LF・NUL がある（呼び手の契約違反 — 
 func FormatEvent(e Event) string
 ```
 
-e の text/event-stream の 1 イベント（`event:`・`id:`・`retry:`・`data:` の行と、終わりの空行）。data は改行（LF・CRLF・CR）で割って行ごとの `data:` にする（受け手は行を LF で繋ぎ直す — 改行の種類は LF に揃う）。event / id に CR・LF・NUL があれば panic(BadEvent)。配送は応答の stream で、emit 1 回 = 送り 1 回（[language.md 28 節](../language.md)の「SSE」— 長さ不定の stream は chunked）。心拍のコメントは `emit(mut out, bytes(": ping\n\n"))` で書ける:
+e の text/event-stream の 1 イベント（`event:`・`id:`・`retry:`・`data:` の行と、終わりの空行）。data は改行（LF・CRLF・CR）で割って行ごとの `data:` にする（受け手は行をLFで繋ぎ直す — 改行の種類はLFに揃う）。event / idにCR・LF・NULがあればpanic(BadEvent)。配送はレスポンスのstreamで、emit 1回 = 送り1回（[language.md 28 節](../language.md)の「SSE」— 長さ不定の stream は chunked）。心拍のコメントは `emit(mut out, bytes(": ping\n\n"))` で書ける:
 
 ```sober
 http.server.Response{status: 200, contentType: "text/event-stream", cache: http.server.NoStore{}, stream: (out, emit) => {
@@ -297,7 +297,7 @@ http.server.Response{status: 200, contentType: "text/event-stream", cache: http.
 func Status(code http.StatusCode) Response
 ```
 
-本文なしの応答（http.NotFound / http.MethodNotAllowed …）
+本文なしのレスポンス（http.NotFound / http.MethodNotAllowed …）
 
 ## Gzip
 
@@ -308,17 +308,17 @@ type Gzip struct {
 }
 ```
 
-ServeConn の compression: の値（応答の gzip — RFC 1952。level は std/compress/flate と同じ 1〜9・0 は既定の 6 と読む — ゼロ値 `http.server.Gzip{}` が既定）:
+ServeConnのcompression: の値（レスポンスのgzip — RFC 1952。levelはstd/compress/flateと同じ1〜9・0は既定の6と読む — ゼロ値 `http.server.Gzip{}` が既定）:
 
 ```sober
 http.server.ServeConn(c, route, compression: http.server.Gzip{level: 6})
 ```
 
-ServeConn が要求の Accept-Encoding を見て、応答の Content-Type が圧縮向き（text/\* か application/json）で本文が 1024 バイト以上なら、本文をgzip にして Content-Encoding: gzip を付ける。圧縮しうる応答には受けない要求にも Vary: Accept-Encoding を付ける（同じ URL の応答が要求の頭で変わる — 中継のキャッシュの正しさ）。route は圧縮を知らない（middleware と同じ位置 — 要求ごとに直列化 + 圧縮・圧縮済みの写しを溜めない）。1〜9 の外の level は panic(BadLevel)。接続ごとに直近の動的 Huffman の木を記録し（compress.gzip.History — 最初に圧縮した応答で接続あたり 4 KB: 記録 ≈1.2 KB が接続の頁を 1 枚持つ）、似た本文の続く接続では木を作らずに使う:圧縮した本文は接続の要求の列で決まる（同じ列なら同じバイト列）・大きさは記録を使ったブロックで記録なしの 1.03 倍まで（ε = 0.03）。`Gzip{fresh: true}` で記録を持たない（毎回最適の木 = 今までの決定的な道）
+ServeConnがリクエストのAccept-Encodingを見て、レスポンスのContent-Typeが圧縮向き（text/\* かapplication/json）で本文が1024バイト以上なら、本文をgzipにしてContent-Encoding: gzipを付ける。圧縮しうるレスポンスには受けないリクエストにもVary: Accept-Encodingを付ける（同じURLのレスポンスがリクエストの頭で変わる — 中継のキャッシュの正しさ）。routeは圧縮を知らない（middlewareと同じ位置 — リクエストごとに直列化 + 圧縮・圧縮済みのコピーをバッファしない）。1〜9の外のlevelはpanic(BadLevel)。接続ごとに直近の動的Huffmanの木を記録し（compress.gzip.History — 最初に圧縮したレスポンスで接続あたり4 KB: 記録 ≈1.2 KBが接続のページを1枚持つ）、似た本文の続く接続では木を作らずに使う:圧縮した本文は接続のリクエストの列で決まる（同じ列なら同じバイト列）・大きさは記録を使ったブロックで記録なしの1.03倍まで（ε = 0.03）。`Gzip{fresh: true}` で記録を持たない（毎回最適の木 = 今までの決定的なパス）
 
-欄:
+フィールド:
 
-- `fresh` — true = 接続ごとの記録を持たない（毎回その本文の最適の木 = 記録なしの決定的な道 — 圧縮した本文が要求ごとに本文だけで決まる。内容アドレスのキャッシュ等）
+- `fresh` — true = 接続ごとの記録を持たない（毎回その本文の最適の木 = 記録なしの決定的なパス — 圧縮した本文がリクエストごとに本文だけで決まる。内容アドレスのキャッシュ等）
 
 ## BadLevel
 
@@ -345,7 +345,7 @@ ServeConn の work: を compression: なしで渡した（作業域は圧縮の�
 func Header(r Request, name string) string?
 ```
 
-r のヘッダ name の値（名前は大文字小文字を区別しない — 最初の一致。無ければ nil）。認証のヘッダ（Authorization・Proxy-Authorization・Cookie）は読めない（nil）— 読む口は Authorization と Cookie だけ（認証の源の名指し: 認証に届く応答を共有キャッシュへ宣言する形を analyzer が拒否する — [language.md 13 節](../language.md)の補 3）
+r のヘッダ name の値（名前は大文字小文字を区別しない — 最初の一致。無ければ nil）。認証のヘッダ（Authorization・Proxy-Authorization・Cookie）は読めない（nil）— 読むインターフェースはAuthorizationとCookieだけ（認証の源の明示: 認証に届くレスポンスを共有キャッシュへ宣言する形をanalyzerが拒否する — [language.md 13 節](../language.md)の補3）
 
 ## Authorization
 
@@ -403,7 +403,7 @@ func JsonDoc(r Request) (json.Doc, error?)
 type Handler func(r Request) Response
 ```
 
-要求 1 件の処理（ルートの表の行が持つ）
+リクエスト1件の処理（ルートの表の行が持つ）
 
 ## Before
 
@@ -411,7 +411,7 @@ type Handler func(r Request) Response
 type Before func(r Request) Response?
 ```
 
-ハンドラの前に走るコールバック（nil = 続ける・応答を返すと short-circuit — 内側の middleware とハンドラは走らない）
+ハンドラの前に走るコールバック（nil = 続ける・レスポンスを返すとshort-circuit — 内側のmiddlewareとハンドラは走らない）
 
 ## After
 
@@ -419,7 +419,7 @@ type Before func(r Request) Response?
 type After func(r Request, w Response) Response
 ```
 
-ハンドラの後に走るコールバック（内側が返した応答 w を受けて応答を返す）
+ハンドラの後に走るコールバック（内側が返したレスポンスwを受けてレスポンスを返す）
 
 ## Middleware
 
@@ -430,7 +430,7 @@ type Middleware struct {
 }
 ```
 
-ルートの前後に挟む処理（before と after の組 — どちらも省ける）。鎖の順は外から内: before は外→内、ハンドラ、after は内→外。before が応答を返したら、それより外の middleware の after だけを内→外で掛ける（玉ねぎの意味 — short-circuit した mw 自身と内側の after は走らない）。next を受けて内側を呼ぶ形（Express / Koa）は今の言語で書けない（型が自分を関数型の中で名指す再帰型 — [language.md 28 節](../language.md)）
+ルートの前後に挟む処理（beforeとafterの組 — どちらも省ける）。チェーンの順は外から内: beforeは外→内、ハンドラ、afterは内→外。beforeがレスポンスを返したら、それより外のmiddlewareのafterだけを内→外で掛ける（玉ねぎの意味 — short-circuitしたmw自身と内側のafterは走らない）。nextを受けて内側を呼ぶ形（Express / Koa）は今の言語で書けない（型が自分を関数型の中で名前で参照する再帰型 — [language.md 28 節](../language.md)）
 
 ## Route
 
@@ -456,9 +456,9 @@ rs := routes()
 http.server.ServeConn(c, (r) => http.server.Dispatch(rs, r))
 ```
 
-欄:
+フィールド:
 
-- `cache` — この行の応答の保存の方針（応答が cache を持たない 2xx と 304 に Dispatch が写す — 応答の cache が勝つ・他の状態は既定の private。nil = 既定の private）。共有キャッシュも保存してよい方針（Fresh）を書けるのはこの行と Static だけ（Response.cache の欄の説明）
+- `cache` — この行のレスポンスの保存の方針（レスポンスがcacheを持たない2xxと304にDispatchがコピーする・レスポンスのcacheが勝つ・他の状態は既定のprivate。nil = 既定のprivate）。共有キャッシュも保存してよい方針（Fresh）を書けるのはこの行とStaticだけ（Response.cacheのフィールドの説明）
 
 ## Mount
 
@@ -485,7 +485,7 @@ a と b を繋いだ表
 func Dispatch(routes []Route, r Request) Response
 ```
 
-routes から r に一致する行を選んで middleware とハンドラを走らせる。一致は path のパターンと method（大文字小文字を区別する）。優先順は表の並びに依らない: 一致した行どうしは、先頭から見て最初に種類が違うセグメントで 静的 > :name > \*name の方が勝つ（同じ具体さなら表の先の行）。HEAD の要求は HEAD の行が無ければ GET の行へ（本文は ServeConn が落とす）。path が一致する行があって method が合わなければ 405・無ければ 404。パスはデコードしない・末尾の "/" は区別する（リダイレクトしない）
+routes から r に一致する行を選んで middleware とハンドラを走らせる。一致は path のパターンと method（大文字小文字を区別する）。優先順は表の並びに依らない: 一致した行どうしは、先頭から見て最初に種類が違うセグメントで 静的 > :name > \*name の方が勝つ（同じ具体さなら表の先の行）。HEADのリクエストはHEADの行が無ければGETの行へ（本文はServeConnが落とす）。pathが一致する行があってmethodが合わなければ405・無ければ404。パスはデコードしない・末尾の "/" は区別する（リダイレクトしない）
 
 ## Static
 
@@ -501,7 +501,7 @@ rs := http.server.Merge(http.server.Static("/assets", "/srv/www", precompressed:
 http.server.ServeConn(c, (r) => http.server.Dispatch(rs, r))
 ```
 
-要求ごとに root を io.OpenRoot し、`*path` を io.OpenUnder で開いて io.Stat の大きさを Content-Length に、本文を stream で送る（キャッシュしない — ディスクに追従。root の付け替えにも追従）。root の外へ出ないのはカーネルの保証（io.OpenUnder — `..`・絶対パス・外を指す symlink は拒否）で、ここは path を検査しない。無い・根の外・通常のファイルでない・権限なし・`*path` が空 = 404（存在を漏らさない）・それ以外の失敗 = 500。ドットファイルも出す（root は公開するもの）。precompressed: true なら要求の Accept-Encoding で `<name>.br`（br を優先）か `<name>.gz` を選んで素通しし（圧縮はしない）、Content-Encoding とVary: Accept-Encoding を付ける（元の名前のファイルが無ければ 404）。Content-Type は元の名前の拡張子（mimeOf）。条件付き GET（RFC 9110 13 節）: 応答に弱い ETag（送る実体の更新時刻と大きさ + 変種の印 — `W/"<ns の 16 進>-<大きさの 16 進>[-br|-gz]"`）・Last-Modified・Cache-Control（cache: — 省略は Revalidate）を付け、If-Match / If-Unmodified-Since が偽なら 412・If-None-Match が一致するか、If-None-Match が無く If-Modified-Since が Last-Modified とちょうど等しければ 304（等しいだけ — 古い版へ戻したデプロイで新しい版を使い続けさせない）。304 の頭は ETag・Cache-Control・（precompressed なら）Vary だけ。開いてから送るまでの間にファイルが差し替わったら（大きさか更新時刻が変われば）接続を閉じる。root を開いた io.Root で受けないのは、行の handler も stream も値のクロージャで、同一性の型を捕捉できないから（[language.md 28 節](../language.md)「静的ファイル」）
+リクエストごとにrootをio.OpenRootし、`*path` をio.OpenUnderで開いてio.Statの大きさをContent-Lengthに、本文をstreamで送る（キャッシュしない — ディスクに追従。root の付け替えにも追従）。root の外へ出ないのはカーネルの保証（io.OpenUnder — `..`・絶対パス・外を指す symlink は拒否）で、ここは path を検査しない。無い・根の外・通常のファイルでない・権限なし・`*path` が空 = 404（存在を漏らさない）・それ以外の失敗 = 500。ドットファイルも出す（root は公開するもの）。precompressed: trueならリクエストのAccept-Encodingで `<name>.br`（brを優先）か `<name>.gz` を選んで素通しし（圧縮はしない）、Content-EncodingとVary: Accept-Encoding を付ける（元の名前のファイルが無ければ 404）。Content-Type は元の名前の拡張子（mimeOf）。条件付きGET（RFC 9110 13 節）: レスポンスに弱いETag（送る実体の更新時刻と大きさ + 変種のマーク — `W/"<ns の 16 進>-<大きさの 16 進>[-br|-gz]"`）・Last-Modified・Cache-Control（cache: — 省略は Revalidate）を付け、If-Match / If-Unmodified-Since が偽なら 412・If-None-Match が一致するか、If-None-Match が無く If-Modified-Since が Last-Modified とちょうど等しければ 304（等しいだけ — 古い版へ戻したデプロイで新しい版を使い続けさせない）。304 の頭は ETag・Cache-Control・（precompressed なら）Vary だけ。開いてから送るまでの間にファイルが差し替わったら（大きさか更新時刻が変われば）接続を閉じる。root を開いた io.Root で受けないのは、行の handler も stream も値のクロージャで、同一性の型を捕捉できないから（[language.md 28 節](../language.md)「静的ファイル」）
 
 ## Cache
 
@@ -516,16 +516,16 @@ type Cache union {
 }
 ```
 
-保存の方針（Cache-Control の値）。書く所は 2 つ: ルートの行（Route.cache・Static の cache: — 全部の variant）と応答 1 件（Response.cache — Private / NoStore だけ）。Fresh と Shared は共有キャッシュ（CDN・中継）も保存してよい方針（`@shared`）で、ルートの行でだけ書く（共有してよいかはルート単位の宣言 — 認証に届くハンドラ・middleware のルートでの共有の宣言・認証の middleware の Mount の下の共有のルートを analyzer が拒否する — [language.md 12 節](../language.md)「出所の依存」）
+保存の方針（Cache-Controlの値）。書く所は2つ: ルートの行（Route.cache・Staticのcache: — 全部のvariant）とレスポンス1件（Response.cache — Private / NoStore だけ）。Fresh と Shared は共有キャッシュ（CDN・中継）も保存してよい方針（`@shared`）で、ルートの行でだけ書く（共有してよいかはルート単位の宣言 — 認証に届くハンドラ・middleware のルートでの共有の宣言・認証の middleware の Mount の下の共有のルートを analyzer が拒否する — [language.md 12 節](../language.md)「出所の依存」）
 
 variant:
 
-- `Revalidate` — `no-cache` — 保存してよいが、使う前に毎回確かめる（304 で本文を送らない — 確かめの要求は今の要求者の頭を運ぶので、共有可の宣言に数えない）
-- `Fresh` — `max-age=<maxAge>`（immutable なら `, immutable`）— maxAge 秒は確かめずに使う（名前に版やハッシュを入れた資産向け・負の値は 0）
-- `Shared` — `public, max-age=<maxAge>`（sMaxAge があれば `, s-maxage=<sMaxAge>`）— 共有キャッシュにも明示で保存させる（Authorization つきの要求の応答も — RFC 9111 3.5。負の値は 0）
+- `Revalidate` — `no-cache` — 保存してよいが、使う前に毎回検証する（304で本文を送らない — 検証のリクエストは今のリクエスト元の頭を運ぶので、共有可の宣言に数えない）
+- `Fresh` — `max-age=<maxAge>`（immutableなら `, immutable`）— maxAge秒は検証せずに使う（名前に版やハッシュを入れた資産向け・負の値は0）
+- `Shared` — `public, max-age=<maxAge>`（sMaxAgeがあれば `, s-maxage=<sMaxAge>`）— 共有キャッシュにも明示で保存させる（Authorizationつきのリクエストのレスポンスも — RFC 9111 3.5。負の値は 0）
 - `NoStore` — `no-store` — 保存しない
-- `Private` — `private`（maxAge があれば `private, max-age=<maxAge>`）— 利用者のブラウザだけが保存してよい（応答の既定）
-- `Unstated` — 毎応答の頭の 24 バイトが要らない公開の API 向け（認証に届くルートでは書けない — 上の Fresh / Shared と同じ検査）
+- `Private` — `private`（maxAgeがあれば `private, max-age=<maxAge>`）— 利用者のブラウザだけが保存してよい（レスポンスの既定）
+- `Unstated` — 毎レスポンスの頭の24バイトが要らない公開のAPI向け（認証に届くルートでは書けない — 上のFresh / Sharedと同じ検査）
 
 ## Param
 
@@ -534,7 +534,7 @@ variant:
 func Param(r Request, key string) string?
 ```
 
-r のパターンの :key / \*key の値（Dispatch が一致させたパターンと path を並べて歩く — パターンに key が無い・ルーターを通らない要求は nil）
+rのパターンの :key / \*keyの値（Dispatchが一致させたパターンとpathを並べて歩く — パターンにkeyが無い・ルーターを通らないリクエストはnil）
 
 ## ServeConn
 
@@ -544,7 +544,7 @@ r のパターンの :key / \*key の値（Dispatch が一致させたパター�
 func ServeConn(c net.Conn, route func(Request) Response, maxHead int?, maxBody int?, compression Gzip?, work task.Local?) error?
 ```
 
-c の要求を順に route に渡して応答を書く（keep-alive）。相手が閉じる（FIN）・Connection: close・HTTP/1.0 の既定・誤りの応答の後で返る（閉じるのは呼び手 — net.Serve の接続の task の出口）。maxHead = 要求の頭の上限（既定 8 KiB — 超えたら 431）・maxBody = 本文の上限（既定 16 KiB — 超えたら 413）。本文と持ち越しは接続の task の region に載るので、上限は net.Serve の budget（既定 64 KiB）に収まる大きさで（目安: budget ≥ 3 × (maxHead + maxBody) + 16 KiB〔受けの切片〕）。compression: は応答の gzip（上の Gzip — 省略 = 圧縮しない）。work: は compression: の符号器の作業域のストレージ（ワーカー局所の lease — region-domain-pool.md 4d 節）: 省略すると要求ごとに作業域を取る（接続の task のregion に頁として残る — 接続の数に比例）。渡すと同じワーカーのストレージを借りる（作業域は ≈ 200 KB × ワーカーの数で接続の数に依らない・結果は同じバイト列）:
+cのリクエストを順にrouteに渡してレスポンスを書く（keep-alive）。相手が閉じる（FIN）・Connection: close・HTTP/1.0の既定・誤りのレスポンスの後で返る（閉じるのは呼び手 — net.Serveの接続のtaskの出口）。maxHead = リクエストの頭の上限（既定8 KiB — 超えたら431）・maxBody = 本文の上限（既定 16 KiB — 超えたら 413）。本文と持ち越しは接続の task の region に載るので、上限は net.Serve の budget（既定 64 KiB）に収まる大きさで（目安: budget ≥ 3 × (maxHead + maxBody) + 16 KiB〔受けの切片〕）。compression: はレスポンスのgzip（上のGzip — 省略 = 圧縮しない）。work: はcompression: の符号器の作業域のストレージ（ワーカー局所のlease — region-domain-pool.md 4d節）: 省略するとリクエストごとに作業域を取る（接続のtaskのregionにページとして残る — 接続の数に比例）。渡すと同じワーカーのストレージを借りる（作業域は ≈ 200 KB × ワーカーの数で接続の数に依らない・結果は同じバイト列）:
 
 ```sober
 gzw := task.NewLocal((w mut compress.flate.Work) => compress.flate.NewWork(mut w))   // Serve の前に 1 回
@@ -563,6 +563,6 @@ work: は compression: と組みで（compression: なしの work: は panic(Wor
 func ServeWith(recv func(k func([]byte)) error?, send func(b []byte) error?, route func(Request) Response, maxHead int?, maxBody int?, compression Gzip?, work task.Local?, put (func(b []byte) error?)?) error?
 ```
 
-ServeConn の核を転送路の受信コールバック recv（`for chunk <- recv()? { … }` の生成元 — net.Recv / tls.Recv の形）と送信コールバック send に一般化したもの（ServeConn は net の 1 行の包み・TLS の接続は `http.server.ServeWith((k) => tls.Recv(c, k), (b) => tls.Send(c, b), route, put: (b) => tls.Put(c, b))`）。失敗は recv / send / put が返すもの（仮引数の名前の @errors — [language.md 13 節](../language.md): 呼び手は渡したコールバックのラベルで switch を網羅する）。put（省略可 — [language.md 25 節](../language.md) Z）を渡すと送りを 2 段にする: 受けた切片 1 つ分の応答の列を put で積み（送らない）、積んだ分は recv が次の受けを待つ前に送る約束（tls.Recv は切片 1 つを配り終えるたびに tls.Flush する — 送りの完了待ちが応答の作業の region〔受けの反復〕の閉じた後になり、待ちの間に応答の平文の頁を抱えない）。stream の応答（前の応答と頭・emit ごと — emit の間隔のまま相手へ届く）は put があっても send で送る。put を渡さない呼び出し点のコードは put の無い形と同じ（`if put != nil` は呼び出し点ごとに畳まれる）誤りの応答の後の読み捨て（linger）も recv の続きを読む — tls.Recv は 2 度目を Closed で返すので読み捨てずに閉じる（TLS の close\_notify は呼び手の Serve が送る）
+ServeConn の核を転送路の受信コールバック recv（`for chunk <- recv()? { … }` の生成元 — net.Recv / tls.Recv の形）と送信コールバック send に一般化したもの（ServeConn は net の 1 行の包み・TLS の接続は `http.server.ServeWith((k) => tls.Recv(c, k), (b) => tls.Send(c, b), route, put: (b) => tls.Put(c, b))`）。失敗は recv / send / put が返すもの（仮引数の名前の @errors — [language.md 13 節](../language.md): 呼び手は渡したコールバックのラベルで switch を網羅する）。put（省略可 — [language.md 25 節](../language.md)Z）を渡すと送りを2フェーズにする: 受けた切片1つ分のレスポンスの列をputで積み（送らない）、積んだ分はrecvが次の受けを待つ前に送る約束（tls.Recvは切片1つを配り終えるたびにtls.Flushする — 送りの完了待ちがレスポンスの作業のregion〔受けの反復〕の閉じた後になり、待ちの間にレスポンスの平文のページを抱えない）。streamのレスポンス（前のレスポンスと頭・emitごと — emitの間隔のまま相手へ届く）はputがあってもsendで送る。putを渡さない呼び出し点のコードは put の無い形と同じ（`if put != nil` は呼び出し点ごとに畳まれる）誤りのレスポンスの後の読み捨て（linger）もrecvの続きを読む — tls.Recvは2度目をClosedで返すので読み捨てずに閉じる（TLSのclose\_notifyは呼び手のServeが送る）
 
 失敗のラベル: `recv`・`send`・`put`・`io.NotFound`・`io.Denied`・`io.Timeout`・`io.Expired`・`io.Other`

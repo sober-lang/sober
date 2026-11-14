@@ -1,13 +1,13 @@
 package main
 
-// 切片の View を反復の外へ逃がす形の確認（design-dev.md）: 文形 for の k の引数（切片の View）を反復の外へ逃がす形 — 外の mut 変数・struct の欄・
-// Bytes の値ごと — は check が拒否するのでなく、region の境界コピーで写しになる（language.md 28 節「外へ持ち出した View は写しになる」）。
-// ストリームが先へ進んでスロットが使い回された後も、逃がした写しは最初の切片の中身のまま（写しが無ければ後の切片の中身に化ける）。
+// 切片の View を反復の外へ逃がす形の確認（design-dev.md）: 文形 for の k の引数（切片の View）を反復の外へ逃がす形 — 外の mut 変数・struct のフィールド・
+// Bytes の値ごと — は check が拒否するのでなく、region の境界コピーでコピーになる（language.md 28 節「外へ持ち出した View はコピーになる」）。
+// ストリームが先へ進んでスロットが使い回された後も、逃がしたコピーは最初の切片の中身のまま（コピーが無ければ後の切片の中身に化ける）。
 // リポジトリのルートを cwd にして実行する。書き込み先は out/ の下
 import "std/io"
 import "std/iter"
 
-// 切片を欄に逃がす先（b = 切片の写し・c = Bytes の値ごと）
+// 切片をフィールドに逃がす先（b = 切片のコピー・c = Bytes の値ごと）
 type Keep struct {
     b []byte
     n int
@@ -30,7 +30,7 @@ func check(b []byte) bool {
 func run(p string) (bool, bool, bool, int, error?) {
     f := io.Open(p)?
     defer io.Close(f)
-    // 逃がす先 3 つ: 外の mut 変数・struct の欄・Bytes の値ごと
+    // 逃がす先 3 つ: 外の mut 変数・struct のフィールド・Bytes の値ごと
     mut raw := []byte{}
     mut box := Keep{b: []byte{}, n: 0}
     mut held := io.Bytes{}

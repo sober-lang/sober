@@ -1,9 +1,9 @@
 package loader
 
-// モジュールの宣言（language.md 20 節「sober.mod」）: ビルドの起点（cwd）の sober.mod を読み、木での名前（import パスの根の段）の表を作る。
+// モジュールの宣言（language.md 20 節「sober.mod」）: ビルドの起点（cwd）のsober.modを読み、木での名前（importパスの根のセグメント）の表を作る。
 // 起点の外へ sober.mod を探しには行かない（親のディレクトリを遡らない — ディレクトリの位置で解決が変わる隠れた状態を作らない）。
 // 字句は Sober の字句器をそのまま使う（改行 → `;` の自動挿入・`//` のコメント）。`module` / `dep` / `alias` はキーワードでなく、この文法の中だけの語。
-// 解決は表引き 1 回: import パスの根の段が dep の名前ならそのディレクトリへ、それ以外は起点からの相対。std の根は alias で付け替えられる。
+// 解決は表引き1回: importパスの根のセグメントがdepの名前ならそのディレクトリへ、それ以外は起点からの相対。stdの根はaliasで付け替えられる。
 
 import "std/builder"
 import "std/io"
@@ -15,7 +15,7 @@ import "lexer"
 
 const MOD_FILE = "sober.mod"
 
-// 読んだ sober.mod。dep_* は dep の行（木での名前・起点からのディレクトリ・相手の module 名の末尾の段）、al_* は alias の行（名前・付け替える std の根の段）
+// 読んだsober.mod。dep_* はdepの行（木での名前・起点からのディレクトリ・相手のmodule名の末尾のセグメント）、al_* はaliasの行（名前・付け替えるstdの根のセグメント）
 type Mod struct {
     on bool
     name string
@@ -168,7 +168,7 @@ func parseMod(src []byte) (modText, error?) {
     return mt, nil
 }
 
-// 木での名前・module の名前の段の規則（import パスの段と同じ — 小文字の識別子でキーワードでない）
+// 木での名前・moduleの名前のセグメントの規則（importパスのセグメントと同じ — 小文字の識別子でキーワードでない）
 func modNameOk(s string) bool {
     return s != "" && !strings.Contains(s, "/") && importPathOk(s)
 }
@@ -178,7 +178,7 @@ func localSrc(s string) bool {
     return strings.HasPrefix(s, "./") || strings.HasPrefix(s, "../") || strings.HasPrefix(s, "/")
 }
 
-// 焼き込みの std の根の段（std/internal は利用者が import できないので外す）
+// 焼き込みのstdの根のセグメント（std/internalは利用者がimportできないので外す）
 func stdRoots(sm map[string]string) []string {
     mut out := mut []string{}
     ks := keys(sm)
@@ -209,7 +209,7 @@ func ReadMod(sm map[string]string) (Mod, string, error?) {
     mut dm := mut []string{}
     mut files := mut []string{}
     files = append(files, MOD_FILE)
-    // alias（std の根の付け替え）を先に — 付け替えた根の段は木での名前から外れる
+    // alias（stdの根の付け替え）を先に — 付け替えた根のセグメントは木での名前から外れる
     mut an := mut []string{}
     mut ar := mut []string{}
     for i <- iter.Range(0, len(mt.al_name)) {
@@ -265,19 +265,19 @@ func ReadMod(sm map[string]string) (Mod, string, error?) {
     return Mod{true, mt.name, freeze(dn), freeze(dd), freeze(dm), freeze(an), freeze(ar), freeze(files)}, "", nil
 }
 
-// 起点の sober.mod（拒否なら NoMod — 拒否は丸ごとの読みが先に出す道で使う）
+// 起点のsober.mod（拒否ならNoMod — 拒否は丸ごとの読みが先に出すパスで使う）
 func modLax(sm map[string]string) Mod {
     md, _, err := ReadMod(sm)
     return if err != nil { NoMod() } else { md }
 }
 
-// import パス p の最初の段
+// importパスpの最初のセグメント
 func firstSeg(p string) string {
     root, _, _ := strings.Cut(p, "/")
     return root
 }
 
-// dep の番号（p の根の段が dep の名前なら — でなければ -1）
+// depの番号（pの根のセグメントがdepの名前なら — でなければ -1）
 func depOf(md Mod, p string) int {
     if isStd(p) {
         return -1
@@ -301,7 +301,7 @@ func modDir(md Mod, p string) string {
     return if more { md.dep_dir[d] + "/" + rest } else { md.dep_dir[d] }
 }
 
-// package のパス p の package 名の期待（dep の根の package は相手の module 名の末尾の段 — dep の名前で付け替えていても）
+// packageのパスpのpackage名の期待（depの根のpackageは相手のmodule名の末尾のセグメント — depの名前で付け替えていても）
 func modPkgName(md Mod, p string) string {
     d := depOf(md, p)
     return if d >= 0 && md.dep_name[d] == p { md.dep_mod[d] } else { Basename(p) }
@@ -338,7 +338,7 @@ func depImports(t ast.Tree, dep string) ast.Tree {
     return ast.Tree{builder.Build(mut nb), builder.Build(mut db), t.file}
 }
 
-// 木での名前の出所（std の根・dep・起点の木の根の段）。std の根は alias で付け替えた名前
+// 木での名前の出所（stdの根・dep・起点の木の根のセグメント）。stdの根はaliasで付け替えた名前
 func treeName(md Mod, p string) (string, string) {
     if isStd(p) {
         r := firstSeg(cut(p, 4, len(bytes(p))))

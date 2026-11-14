@@ -7,7 +7,7 @@ import "std/cli"
 import "outline"
 
 // `sober outline <path>`: ファイル（ディレクトリなら --depth 段下までの .sober）ごとの宣言の一覧（compiler/outline）。
-// 読めない・parse できないファイルは名指しして飛ばし、終了 1
+// 読めない・parseできないファイルは明示して飛ばし、終了1
 func cmdOutline(cl cli.Parsed) int {
     path := cli.Pos(cl, OPath)
     ps := outline.Files(path, cli.Int(cl, ODepth), cli.Bool(cl, ONoTest)) catch {

@@ -1,6 +1,6 @@
 package main
 
-// mdwecheck の題材（M:N — ワーカーのスレッドは同じアドレス空間なので印も同じ）
+// mdwecheckの題材（M:N — ワーカーのスレッドは同じアドレス空間なのでフラグも同じ）
 import "std/task"
 
 func main() {

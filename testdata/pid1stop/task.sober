@@ -1,6 +1,6 @@
 package main
 
-// pid1stop の相手（M:N — 子 2 本が眠る・ワーカーのスレッドが待ちに入った状態で受ける）
+// pid1stopの相手（M:N — 子2本がスリープする・ワーカーのスレッドが待ちに入った状態で受ける）
 import "std/os"
 import "std/task"
 

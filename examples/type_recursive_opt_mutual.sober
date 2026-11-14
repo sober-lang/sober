@@ -1,6 +1,6 @@
 package main
 
-// opt の中身を通る相互再帰と、値の欄を挟んだ間接の閉路: `A { b B? }` / `B { a A? }`・`Dir { up Entry? }` / `Entry { d Dir }`
+// optの中身を通る相互再帰と、値のフィールドを挟んだ間接の閉路: `A { b B? }` / `B { a A? }`・`Dir { up Entry? }` / `Entry { d Dir }`
 // （Entry は Dir を値で持ち、閉路は Dir.up の `Entry?` だけを通る — 大きさは有限）
 
 type A struct {

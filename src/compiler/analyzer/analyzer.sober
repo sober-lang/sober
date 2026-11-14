@@ -2,7 +2,7 @@ package analyzer
 
 // analyzer 層（受理の定義に含む — docs/design-dev.md 層の線引き。language.md 30 節）: `sober check` が desugar の前に走らせ、build は走らせない。
 // 入力はローダの後の表層 AST（脱糖後は defer が出口ごとに展開され関数名も消えるので、照合はここでしかできない）。
-// 読みは desugar の公開の口（Init が立てる表 — 名前解決・関数表・ラベル表）。出力は指摘の列（1 件で止めない — Zig 版 src/stage1/analyzer.zig と同じ）。
+// 読みはdesugarの公開のAPI（Initが立てる表 — 名前解決・関数表・ラベル表）。出力は指摘の列（1件で止めない — Zig版src/stage1/analyzer.zigと同じ）。
 // 規則: pool.sober（acquire / release の局所照合 R-a — Zig 版の移植）・annot.sober（`@errors` の項の解決）・freeze.sober（freeze の健全性 U1〜U3 —
 // 健全性の規則なのでこれだけは build でも走る: Freeze）・exhaustive.sober（`@exhaustive` の表の網羅）・secret.sober（秘密の値の流れ — `@secret`）。導出: errors.sober（今は影）
 
@@ -32,17 +32,17 @@ type Az struct {
     er Eng                   // 解き手（スロット・読み手・作業の列・局所 — flow.sober）
     pbase table.Table[int]   // 関数の仮引数のスロットの基底
     errfn table.Table[int]   // 関数の結果に error があるか（0 / 1）
-    ffield table.Table[int]  // error 型の欄 [名前, スロット]…
+    ffield table.Table[int]  // error型のフィールド [名前, スロット]…
     cur int                  // 今歩いている関数
     rec bool                 // 最後の 1 周（switch を記録する）
-    sw table.Table[int]      // error の switch の記録 [節, S.lo, S.hi, 覆った.lo, 覆った.hi, default]…（SW_W 語ずつ）
+    sw table.Table[int]      // errorのswitchの記録 [節, S.lo, S.hi, 覆った.lo, 覆った.hi, default]…（SW_Wワードずつ）
     unknown int              // 関数値の呼び出し（TOP に倒した数 — 最後の 1 周も含む延べ）
     walks int                // 不動点までに本体を歩いた回数
-    declared table.Table[int] // 関数の @errors の集合 [有無, lo, hi]…— package をまたぐ呼び出しは導出でなくこれを読む（裁定 E2）
+    declared table.Table[int] // 関数の @errorsの集合 [有無, lo, hi]…— packageをまたぐ呼び出しは導出でなくこれを読む（決定E2）
     swpk table.Table[int]    // error の switch の記録ごとの package（診断の綴り）
-    swarms table.Table[int]  // error の switch の腕 [switch の記録の添字, 腕のパターンの節, タグ]…
+    swarms table.Table[int]  // errorのswitchの分岐 [switchの記録の添字, 分岐のパターンの節, タグ]…
     lit table.Table[int]     // ラベルごとにリテラルの構築があるか（0 / 1 — あれば cause が nil の値がある。cause の入れ子の網羅の領域）
-    wins table.Table[int]    // lease の窓の列 [Local の名前（-1 = 字面の名前でない）, 指摘済み]…（lease.sober — [winBase, winN) が今の task の窓）
+    wins table.Table[int]    // leaseのウィンドウの列 [Localの名前（-1 = 字面の名前でない）, 指摘済み]…（lease.sober — [winBase, winN) が今のtaskのウィンドウ）
     winN int
     winBase int
     flowBase int             // Flow のスロットの基底（関数 fi の Flow = スロット flowBase + fi — ビット j = 匿名の関数型の仮引数 j の呼び出しの失敗が漏れうる）
@@ -55,8 +55,8 @@ type Az struct {
     lamCand int              // 今の F の値のラムダが失敗を漏らしうる仮引数（ビット j）
     lamck table.Table[int]   // F の値のラムダの記録 [ラムダ, 型宣言, 集合.lo, 集合.hi, 呼んだ仮引数]…（最後の 1 周）
     sv Sv                    // 秘密の値の流れ（secret.sober — error の解きの後に同じ az.er へ区間を積む）
-    ef Ef                    // 関数の効果の導出（effects.sober — 本体の走査の前に解く: lease の窓の lint が block を読む）
-    cstDecl desugar.NodeRef  // 今歩いている関数宣言（const の席の明示の伝播 — constseat.sober）
+    ef Ef                    // 関数のエフェクトの導出（effects.sober — 本体の走査の前に解く: leaseのウィンドウのlintがblockを読む）
+    cstDecl desugar.NodeRef  // 今歩いている関数宣言（const 仮引数の明示の伝播 — constseat.sober）
     cstMask int              // その関数の `@const` の仮引数のビット（0 = 無し・const の式を歩く間も 0）
     trySink int              // task.Run の本体の中（> 0）: `?` は scope の失敗で関数の戻り R[cur] に流れない（scope の err は開いた集合 — language.md 11 節「本体の `?`」）
 }
@@ -67,8 +67,8 @@ func Run(p loader.Program) []Finding {
     return runAz(p, false, desugar.TyCacheOff())
 }
 
-// Run に置き場の切り口 γ を掛けた形（check の道）: 全部の型付け（TypeAll）の当たりの package は区画を読み戻す。
-// 当たりの package は freeze の規則も飛ばす（build と同じ — 値は freeze の通った build だけが書く・規則は自分の木と閉包の宣言の相だけを読む。
+// Runに格納場所の切り口 γ を掛けた形（checkのパス）: 全部の型付け（TypeAll）の当たりのpackageは区画を読み戻す。
+// 当たりのpackageはfreezeの規則も飛ばす（buildと同じ — 値はfreezeの通ったbuildだけが書く・規則は自分の木と推移的な依存の宣言の相だけを読む。
 // 暗黙の freeze の点の列は区画に入らない）
 func RunC(p loader.Program, c desugar.TyCache) []Finding {
     return runAz(p, false, c)
@@ -137,12 +137,12 @@ func runAz(p loader.Program, only bool, c desugar.TyCache) []Finding {
     }
     // 綴りはここで組む（走査の mut の関数の中で作った文字列を az に積むと、region の座標が呼び手の外へ出る）
     mut fs := mut []Finding{}
-    // 他の package の struct の欄の書き / mut の中身を持つ欄の読み（表層型検査器の表 — fieldwrite.sober。build も同じ表から数える）
+    // 他のpackageのstructのフィールドの書き / mutの中身を持つフィールドの読み（表層型検査器の表 — fieldwrite.sober。buildも同じ表から数える）
     for j <- iter.Range(0, desugar.FieldViolations(mut az.d)) {
         k, at, f, decl, pk := desugar.FieldViolation(mut az.d, j)
         fs = append(fs, Finding{warn: false, at: desugar.PosOf(mut az.d, at), what: fieldMessage(mut az, k, f, decl, pk)})
     }
-    // std の安全な既定を緩める欄（`dangerously` で始まる欄）に値を与えた構築 — 常時の警告（language.md「安全な既定の緩和」— 抑止の口なし）
+    // stdの安全な既定を緩めるフィールド（`dangerously` で始まるフィールド）に値を与えた構築 — 常時の警告（language.md「安全な既定の緩和」— 抑止のオプションなし）
     for j <- iter.Range(0, desugar.DangerNotes(mut az.d)) {
         at, f, decl, pk := desugar.DangerNote(mut az.d, j)
         fs = append(fs, Finding{warn: true, at: desugar.PosOf(mut az.d, at), what: dangerMessage(mut az, f, decl, pk)})
@@ -207,8 +207,8 @@ func runAz(p loader.Program, only bool, c desugar.TyCache) []Finding {
     return zPlain(freeze(fs))
 }
 
-// 指摘の本文から省略可の関数型の写しの名前の印（`F$z<有無>` の `$z<有無>` — loader/optfn.sober。利用者は `$` を綴れない）を外し、
-// 外した後で同じになった指摘（同じ本体の写しの組ごとの同じ違反）を 1 つにまとめる
+// 指摘の本文から省略可の関数型のコピーの名前のマーク（`F$z<有無>` の `$z<有無>` — loader/optfn.sober。利用者は `$` を綴れない）を外し、
+// 外した後で同じになった指摘（同じ本体のコピーの組ごとの同じ違反）を1つにまとめる
 func zPlain(fs []Finding) []Finding {
     mut out := mut []Finding{}
     for x <- fs {
@@ -227,7 +227,7 @@ func zPlain(fs []Finding) []Finding {
             }
         }
         y := Finding{at: x.at, what: string(freeze(w)) catch x.what, warn: x.warn}
-        // まとめるのは印を外した指摘だけ（写しの組の同じ違反 — 印の無い指摘の重なりは元の数のまま）
+        // まとめるのはマークを外した指摘だけ（コピーの組の同じ違反 — マークの無い指摘の重なりは元の数のまま）
         mut dup := false
         if len(w) != len(b) {
             for o <- out {
@@ -241,7 +241,7 @@ func zPlain(fs []Finding) []Finding {
     return freeze(out)
 }
 
-// 欄の書き / 読みの指摘の文面（k = 0 書き・1 mut の中身を持つ欄の読み・2 mut の中身を返す・7 mut の中身を持つ欄を構築で与える）
+// フィールドの書き / 読みの指摘の文面（k = 0書き・1 mutの中身を持つフィールドの読み・2 mutの中身を返す・7 mutの中身を持つフィールドを構築で与える）
 func fieldMessage(az mut Az, k int, f desugar.StrRef, decl desugar.NodeRef, pk int) string {
     if k == 2 {
         return "a function without mut parameters cannot return a value with mutable contents (a mut slice / map, or a struct or option holding one — language.md 26 節): build it in the caller with a zero-value literal (`mut t := table.Table[int]{}`) and pass it as a mut argument"
@@ -385,7 +385,7 @@ func expr(az mut Az, e desugar.NodeRef) {
         leaseCall(mut az, e, desugar.NodeRef(x.a))
         expr(mut az, desugar.NodeRef(x.a))
         if az.winN > az.winBase && spawnsChild(mut az, desugar.NodeRef(x.a)) {
-            // 子のラムダは別の task — 窓の外として歩く
+            // 子のラムダは別のtask — ウィンドウの外として歩く
             b0 := az.winBase
             az.winBase = az.winN
             exprs(mut az, desugar.ListRef(x.b))

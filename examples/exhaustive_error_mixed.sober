@@ -1,7 +1,7 @@
 package main
 
-// 表の網羅（language.md 13 節「表の網羅」）: 腕のラベルが 2 つの package に跨る error の switch は閉じた集合が定まらないので素通し
-// （main の Busy と std/io の NotFound — io の他のラベルも main の他のラベルも名指さなくてよい）
+// 表の網羅（language.md 13 節「表の網羅」）: 分岐のラベルが2つのpackageに跨るerrorのswitchは閉じた集合が定まらないので素通し
+// （mainのBusyとstd/ioのNotFound — ioの他のラベルもmainの他のラベルも列挙しなくてよい）
 
 import "std/io"
 

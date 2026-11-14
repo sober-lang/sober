@@ -1,6 +1,6 @@
 package main
 
-// 負例: 欄の型は int / byte / bool / string（language.md 27 節「panic ラベル」— loader の拒否）
+// 負例: フィールドの型はint / byte / bool / string（language.md 27 節「panicラベル」— loaderの拒否）
 type L panic {
     xs []int
 }

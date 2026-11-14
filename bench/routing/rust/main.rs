@@ -1,4 +1,4 @@
-// routing の Rust の双子（素直縛り — std だけ）: Sober / Go 版と同じ手書きの線形照合（登録順の最初の一致）。区間は split('/') の Vec<&str>・
+// routingの比較用のRustの実装（素直縛り — stdだけ）: Sober / Go版と同じ手書きの線形照合（登録順の最初の一致）。区間はsplit('/') のVec<&str>・
 // パラメータとクエリは HashMap<&str, String>。出力は Sober 版とバイト一致
 use std::collections::HashMap;
 use std::fs;

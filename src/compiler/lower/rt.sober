@@ -1,9 +1,9 @@
 package lower
 
-// IR で書いたランタイム（src/stage1/ir_rt.zig・src/stage1/ir_rt_io.zig の写しが起点。byte の段 C（string = imm []byte）で str_eq・print_str・io を
+// IRで書いたランタイム（src/stage1/ir_rt.zig・src/stage1/ir_rt_io.zigのコピーが起点。byteの段階C（string = imm []byte）でstr_eq・print_str・ioを
 // バイトのセルに切り替えたので、Zig 版とのバイト一致は終わった — 凍結コーパスの lower 側の照合は退役 scripts/frozen/lower-retired.list）。
-// メタ領域 @rt.meta の配置（語）: [0] 深度、[1 + d] 深度 d の bump、FD、ERRNO、LINE_LEN、SLOTS、SLOT_SIZE、LINE（行バッファ）、ACC + d、ARGV（入口の初期 rsp）。
-// --mem-trace（rt.memtrace）は写していない（Zig 版の既定の出力と同じ形だけ）。
+// メタ領域 @rt.metaの配置（ワード）: [0] 深度、[1 + d] 深度dのbump、FD、ERRNO、LINE_LEN、SLOTS、SLOT_SIZE、LINE（行バッファ）、ACC + d、ARGV（入口の初期rsp）。
+// --mem-trace（rt.memtrace）はコピーしていない（Zig 版の既定の出力と同じ形だけ）。
 // builder の小道具（ir.sober の push / newBlock 等）は以前 @noinline だった — 呼び出し点ごとに展開されると、このファイルだけで lowerdump のビルドが
 // 3 分・4GB を超えた。今は --passes の build が δ（region 透過の実体関数）で、check が E2-S（callM の Def）で下ろすので外した
 
@@ -25,7 +25,7 @@ const DEFAULT_TASK_SLOT_MB = 512
 // wall / sys は揺れの範囲。0 = 全部返すは 203 MB。題材の peak は閾値に依らず同じ — 全部が生きたデータ）
 const DEFAULT_MADV_MB = 1
 const LINE_CAP = 4096
-// メタ領域の語の番地（上の配置を const 式で — bump と ACC は深度 0..MAX_DEPTH の 1 語ずつ、LINE は LINE_CAP バイト）
+// メタ領域のワードの番地（上の配置をconst式で — bumpとACCは深度0..MAX_DEPTHの1ワードずつ、LINEはLINE_CAPバイト）
 const W_DEPTH = 0
 const W_BUMP = 1
 const W_FD = W_BUMP + MAX_DEPTH + 1
@@ -38,17 +38,17 @@ const W_ACC = W_LINE + LINE_CAP / 8
 const W_ARGV = W_ACC + MAX_DEPTH + 1
 const W_MADV = W_ARGV + 1   // スロットの先頭から残す量（バイト — これを超えて触れた範囲は region_enter が OS へ返す）
 const W_MAXD = W_MADV + 1   // 前回の region_enter 以降に入った最深の深度（ここまでのスロットに返す候補が残る）
-// 宛先構築の深度のレジスタ（宛先構築レーン M1c — lower の emitCall が印のある呼び出しの直前に呼び手の宛先の深度を書き、印を持つ関数が入口で読んで 0 に戻す。
+// 宛先構築の深度のレジスタ（宛先構築レーンM1c — lowerのemitCallがマークのある呼び出しの直前に呼び手の宛先の深度を書き、マークを持つ関数が入口で読んで0に戻す。
 // 0 = 無し〔深度 0 は確保の場所にならない〕）
 const W_DEST = W_MAXD + 1
 // mut 実引数の行き先の深度（宛先構築レーン M5 — 呼び手が mut 実引数の束縛の深度の最小を書き、呼ばれた側が入口で読む。0 = 無し）
-// W_DEST に足す旗: 返る列へ追記する呼び出し（loader/dest.sober の印 3）から来た — 呼ばれた側は戻りの写しの床も宛先にする
+// W_DESTに足す旗: 返る列へ追記する呼び出し（loader/dest.soberのマーク3）から来た — 呼ばれた側は戻りのコピーの床も宛先にする
 const DEST_RET = 4294967296
 const W_ANCHOR = W_DEST + 1
 // 深度の計測口の旗（宛先構築レーン M5c — 入口が環境変数 SOBER_DEPTH_REPORT を読んで置く。真なら main の正常終了で rt.depth_report が
 // 到達した最深の深度を stderr へ）
 const W_DREP = W_ANCHOR + 1
-// W_DREP のうち MDWE の確認の口の旗のビット（下位は SOBER_DEPTH_REPORT の値）
+// W_DREPのうちMDWEの確認のオプションの旗のビット（下位はSOBER_DEPTH_REPORTの値）
 const DREP_MDWE = 1099511627776
 const META_WORDS = W_DREP + 1
 // 子 task のスロットの既定の大きさ（バイト — std/task を使うプログラムだけが meta をこの 1 語伸ばして書く・task.sober。使わないプログラムの出力を変えない）。
@@ -63,7 +63,7 @@ const READ_CHUNK = 1048576 // read_file が 1 回の read(2) で region の先�
 
 // ランタイムのグローバルと関数を足して本体を組む（ir_rt.install と同じ順）
 func installRt(st mut St) {
-    // 変異 13（--map-stat）は meta の後ろに map の成長の計数を置く（panic.sober の msAdd）
+    // ミュータント13（--map-stat）はmetaの後ろにmapの成長の計数を置く（panic.soberのmsAdd）
     st.meta = addWorkerGlobal(mut st, int(strLit(mut st, "rt.meta")), META_WORDS + (if st.rtMut == 13 { 2 + MS_N } else if st.rtMut == 39 { 2 + MH_N } else if dlFn(st.rtD3) != 0 { 2 } else if st.taskUse { 1 } else { 0 }))
     if st.trapUse {
         st.trapG = addWorkerGlobal(mut st, int(strLit(mut st, "rt.trap")), TRAP_WORDS)
@@ -92,7 +92,7 @@ func installRt(st mut St) {
         st.rtMemHw = addFunc(mut st, int(strLit(mut st, "rt.mem_sample")), desugar.ListRef(list0(mut st)), -1)
         st.rtStackPaint = addFunc(mut st, int(strLit(mut st, "rt.stack_paint")), desugar.ListRef(list0(mut st)), -1)
     }
-    // byte の列のランタイム（rt8.sober — 段 C で string = imm []byte になったので常に要る。本体は program の最後に組む）
+    // byteの列のランタイム（rt8.sober — 段階Cでstring = imm []byteになったので常に要る。本体はprogramの最後に組む）
     needByteRt(mut st)
     needGrowRt(mut st)
     buildFlush(mut st)
@@ -113,13 +113,13 @@ func buildEntry(st mut St, main_fn FnRef, main_int bool) {
     f := addFunc(mut st, int(strLit(mut st, "sober_entry")), desugar.ListRef(list1(mut st, TyPtr)), -1)
     irSetFnExport(mut st, f, 1)
     st.entryFn = int(f)
-    // PID 1 の停止の口（language.md 27 節「終了コード」）: rt.sigterm / rt.sigint と sigaction の置き場（本体は入口の後で組む）
+    // PID 1の停止のインターフェース（language.md 27 節「終了コード」）: rt.sigterm / rt.sigintとsigactionの配置先（本体は入口の後で組む）
     fTerm := addFunc(mut st, int(strLit(mut st, "rt.sigterm")), desugar.ListRef(list0(mut st)), -1)
     fInt := addFunc(mut st, int(strLit(mut st, "rt.sigint")), desugar.ListRef(list0(mut st)), -1)
     actG := addGlobalInit(mut st, int(strLit(mut st, "rt.sigact")), 4, -1)
     begin(mut st, f)
     sp := 0
-    // ワーカー 0 の記録を %fs へ（段 6 P4-3 — 以降の rt の表は fsaddr で引く）
+    // ワーカー0の記録を %fsへ（段階6 P4-3 — 以降のrtの表はfsaddrで引く）
     if st.taskUse {
         call(mut st, st.rtWorkerInit, list0(mut st))
     }
@@ -161,8 +161,8 @@ func buildEntry(st mut St, main_fn FnRef, main_int bool) {
     // RSS に乗る（小さいプログラムでも 4〜6 MB・触った深度ごとに 2 MB）。題材の cycles は揺れの範囲だった。失敗は無視
     syscall(mut st, list4(mut st, iconst(mut st, 28), bs, a2, iconst(mut st, 15)))
     // 実行可能メモリの放棄: prctl(PR_SET_MDWE = 65, PR_MDWE_REFUSE_EXEC_GAIN | PR_MDWE_NO_INHERIT = 3, 0, 0, 0) — 以後プロセスは書けて実行できる
-    // 頁を作れず、実行できない頁に実行を足せない（コード注入への昇格路を閉じる — Sober は実行時にコードを作らない）。NO_INHERIT（Linux 6.6+）は
-    // fork の子に引き継がない印（os.Run で起動する JIT の処理系を壊さない）。それを知らないカーネル（6.3〜6.5 は EINVAL）・MDWE の無いカーネル
+    // ページを作れず、実行できないページに実行を足せない（コード注入への昇格路を閉じる — Soberは実行時にコードを作らない）。NO_INHERIT（Linux 6.6+）は
+    // forkの子に引き継がないフラグ（os.Runで起動するJITの処理系を壊さない）。それを知らないカーネル（6.3〜6.5はEINVAL）・MDWEの無いカーネル
     // （ENOSYS / EINVAL）では何も掛からない — 継承する形で掛けると子が壊れるので、倒れ先は「掛けない」。
     // SOBER_MDWE=0 だけは掛けない（valgrind 等の動的計装は同じプロセスの中でコードを作る — 起動前に env を操れる者は別のバイナリも走らせられるので守りは減らない）
     mdwe := envMb(mut st, sp, "SOBER_MDWE=", 1, true)
@@ -197,8 +197,8 @@ func buildEntry(st mut St, main_fn FnRef, main_int bool) {
     store(mut st, meta, W_MADV, bin(mut st, BShl, madv, iconst(mut st, 20)))
     store(mut st, meta, W_MAXD, iconst(mut st, 0))
     drep := envMb(mut st, sp, "SOBER_DEPTH_REPORT=", 0, true)
-    // MDWE の確認の口（SOBER_MDWE_REPORT が 0 でなければ main の正常終了で rt.depth_report が `mdwe <PR_GET_MDWE>` を stderr へ —
-    // scripts/mdwecheck.sh）: 旗は W_DREP のビット DREP_MDWE に相乗り（メタの語を増やさない）
+    // MDWEの確認のオプション（SOBER_MDWE_REPORTが0でなければmainの正常終了でrt.depth_reportが `mdwe <PR_GET_MDWE>` をstderrへ —
+    // scripts/mdwecheck.sh）: 旗はW_DREPのビットDREP_MDWEに相乗り（メタのワードを増やさない）
     mrep := envMb(mut st, sp, "SOBER_MDWE_REPORT=", 0, true)
     mbit := bin(mut st, BMul, cmp(mut st, CNe, mrep, iconst(mut st, 0)), iconst(mut st, DREP_MDWE))
     store(mut st, meta, W_DREP, bin(mut st, BOr, bin(mut st, BAnd, drep, iconst(mut st, DREP_MDWE - 1)), mbit))
@@ -243,7 +243,7 @@ func buildEntry(st mut St, main_fn FnRef, main_int bool) {
     exit(mut st, 130)
 }
 
-// prctl(op, a, 0, 0, 0)（MDWE の口は 3〜5 番目の引数が 0 でないと EINVAL — 明示の 0 を渡す）
+// prctl(op, a, 0, 0, 0)（MDWEのオプションは3〜5番目の引数が0でないとEINVAL — 明示の0を渡す）
 func prctl5(st mut St, op int, a int) int {
     args := listN(mut st, 6)
     desugar.HeapSet(mut st.d, args + 1, iconst(mut st, 157))
@@ -330,7 +330,7 @@ func buildFlush(st mut St) {
     setCur(mut st, e1ret)
     ret(mut st, -1)
     setCur(mut st, e1go)
-    // std/task を使うプログラム: フロンティアの task でなければ行を区間の溜めへ（out.sober）
+    // std/taskを使うプログラム: フロンティアのtaskでなければ行を区間のバッファへ（out.sober）
     if st.taskUse {
         outRoute(mut st, meta)
     }
@@ -460,8 +460,8 @@ func buildRegionEnter(st mut St) {
     used := bin(mut st, BSub, load(mut st, gepWord(mut st, meta, k), W_BUMP), start)
     condbr(mut st, cmp(mut st, CGt, used, keep), rel, -1, nxt, -1)
     setCur(mut st, rel)
-    // 窓（移す前 — 塊の頁）は返さない（偽の基底から数えると窓の下の 128 MiB を返してしまう）。窓から移したスロットは普通のスロット
-    // 変異 43（wincheck の網）: 窓の守りを外す — 偽の基底から数えて窓の下の塊を返す
+    // 予約ページ（移す前 — チャンクのページ）は返さない（偽の基底から数えると予約ページの下の128 MiBを返してしまう）。予約ページから移したスロットは普通のスロット
+    // ミュータント43（wincheckの検査）: 予約ページの守りを外す — 偽の基底から数えて予約ページの下のチャンクを返す
     if winArm(mut st) && st.rtMut != 43 {
         relW := newBlock(mut st)
         condbr(mut st, call(mut st, st.rtWinIs, list1(mut st, start)), nxt, -1, relW, -1)
@@ -481,10 +481,10 @@ func buildRegionEnter(st mut St) {
     ret(mut st, -1)
 }
 
-// 確保の溢れ: 窓を組むプログラムは rt.win_ralloc（深度 d が窓なら移して確保し直す — 冷たい道・速い道は今の形のまま）の答えを返す。他は死 102
-// （mode 0 = n 語・1 = n バイトの byte の列 — btip = 先頭 + n はここで置く）
+// 確保の溢れ: 予約ページを組むプログラムはrt.win_ralloc（深度dが予約ページなら移して確保し直す — 低速パス・高速パスは今の形のまま）の答えを返す。他は死102
+// （mode 0 = nワード・1 = nバイトのbyteの列 — btip = 先頭 + nはここで置く）
 func slotOver(st mut St, d int, n int, mode int) {
-    // 変異 42（wincheck の網）: 窓を移さない — 窓の溢れで死 102
+    // ミュータント42（wincheckの検査）: 予約ページを移さない — 予約ページの溢れで死102
     if winArm(mut st) && st.rtMut != 42 {
         r := call(mut st, st.rtWinRalloc, list3(mut st, d, n, iconst(mut st, mode)))
         if mode == 1 {
@@ -496,7 +496,7 @@ func slotOver(st mut St, d int, n int, mode int) {
     memPanic(mut st, PM_SLOT)
 }
 
-// region_alloc(d, n): 深度 d の bump を n 語進め、旧 bump を返す。スロット末尾を超えたら exit 102（窓は移して続ける）
+// region_alloc(d, n): 深度dのbumpをn語進め、旧bumpを返す。スロット末尾を超えたらexit 102（予約ページは移して続ける）
 func buildRegionAlloc(st mut St) {
     begin(mut st, st.rtRalloc)
     d := 0
@@ -533,7 +533,7 @@ func buildCopy(st mut St) {
     ret(mut st, -1)
 }
 
-// region_relocate(hdr, cellw, floor): ヘッダの depth が floor より深ければ、len * cellw 語を深度 floor の先端へ写して付け替える
+// region_relocate(hdr, cellw, floor): ヘッダのdepthがfloorより深ければ、len * cellwワードを深度floorの先端へコピーして付け替える
 func buildRelocate(st mut St) {
     begin(mut st, st.rtReloc)
     hdr := 0
@@ -563,8 +563,8 @@ func buildStrEq(st mut St) {
     condbr(mut st, cmp(mut st, CNe, n, load(mut st, 1, 1)), ne, -1, loop, list1(mut st, iconst(mut st, 0)))
     setCur(mut st, ne)
     ret(mut st, iconst(mut st, 0))
-    // 語の環（バイトずつの比較だと 1BRC の map_find の半分の時間を占めていた）: i + 8 ≤ n の間 8 バイトずつ比べ、
-    // 端数（n ≥ 8 なら最後の 8 バイトを重ねて 1 語・n < 8 ならバイトの環）
+    // ワードの環（バイトずつの比較だと1BRCのmap_findの半分の時間を占めていた）: i + 8 ≤ nの間8バイトずつ比べ、
+    // 端数（n ≥ 8なら最後の8バイトを重ねて1ワード・n < 8ならバイトの環）
     setCur(mut st, loop)
     wbody := newBlock(mut st)
     wnext := newBlock(mut st)
@@ -585,8 +585,8 @@ func buildStrEq(st mut St) {
     short := newBlock(mut st)
     condbr(mut st, cmp(mut st, CGe, n, iconst(mut st, 8)), lastw, -1, short, -1)
     // 1 ≤ n ≤ 7（ここでは i = 0・n = 0 は上で eq へ抜けている）: 両方の番地から 8 バイトを 1 回ずつ読み、下位 n バイトだけ比べる
-    // （little-endian — 差の語を 64 − 8n ビット左へずらして余分を捨てる）。8 バイトの load は同じページの中ならフォルトしない — ページの末尾 7 バイトに
-    // 掛かる番地（(p & 4095) > 4088）のときだけバイトの環へ。開発用 --rt-mutant=12 は常にバイトの環（短い等値の速い道の差分オラクル — scripts/streq.sh）
+    // （little-endian — 差のワードを64 − 8nビット左へずらして余分を捨てる）。8バイトのloadは同じページの中ならフォルトしない — ページの末尾7バイトに
+    // 掛かる番地（(p & 4095) > 4088）のときだけバイトの環へ。開発用 --rt-mutant=12 は常にバイトの環（短い等値の高速パスの差分オラクル — scripts/streq.sh）
     setCur(mut st, short)
     if st.rtMut == 12 {
         br(mut st, bl, list1(mut st, i))
@@ -652,8 +652,8 @@ func buildMapFind(st mut St, f FnRef, r MapRepr) {
     look := newBlock(mut st)
     lip := param(mut st, look, TyPtr)
     lmask := param(mut st, look, TyI64)
-    // 速い道（M13 — 妥当性の検査の償却）: 索引があって持ち主が同じで、索引済みの数がちょうど長さなら（書き換えの後の最初の引きが
-    // 下の遅い道で作り直し・追いつきを済ませている — 容量はそのとき確かめた）そのまま引く。比べるのは 2 語だけ
+    // 高速パス（M13 — 妥当性の検査の償却）: 索引があって持ち主が同じで、索引済みの数がちょうど長さなら（書き換えの後の最初の引きが
+    // 下の低速パスで作り直し・追いつきを済ませている — 容量はそのとき確認した）そのまま引く。比べるのは2ワードだけ
     slow := newBlock(mut st)
     f1 := newBlock(mut st)
     f2 := newBlock(mut st)
@@ -689,9 +689,9 @@ func buildMapFind(st mut St, f FnRef, r MapRepr) {
     br(mut st, cl, list1(mut st, bin(mut st, BMul, cap, iconst(mut st, 2))))
     setCur(mut st, alloc)
     words := bin(mut st, BAdd, cap, iconst(mut st, 3))
-    // 置き場（K1b）: 索引の記憶は索引にだけ使い回す（旧ヘッダ〔22 節〕は持ち主の照合で古い索引を読む — 0 語目に索引以外の値が来ると
+    // 配置先（K1b）: 索引の記憶は索引にだけ使い回す（旧ヘッダ〔22 節〕は持ち主の照合で古い索引を読む — 0語目に索引以外の値が来ると
     // 偶然の一致がありうる）。① 予約の中で作り直す: 持ち主が今のセル列で索引がセル列より前なら [索引, セル列の頭) は rt.map_grow が索引のために
-    // 取った予約（その並びを作るのは map_grow の索引を先に作る道だけ — セル列はその直後に写す）② 先端に居る自分の索引は巻き戻してその場に
+    // 取った予約（その並びを作るのはmap_growの索引を先に作るパスだけ — セル列はその直後にコピーする）② 先端に居る自分の索引は巻き戻してその場に
     // ③ どちらでもなければ先端に新しく
     zj := newBlock(mut st)
     np := param(mut st, zj, TyPtr)
@@ -712,7 +712,7 @@ func buildMapFind(st mut St, f FnRef, r MapRepr) {
     setCur(mut st, tipQ)
     rw := newBlock(mut st)
     ixEnd := bin(mut st, BAdd, idx0, bin(mut st, BMul, bin(mut st, BAdd, load(mut st, ipx, 2), iconst(mut st, 3)), iconst(mut st, 8)))
-    // 先端は meta の語を直に読む（regionBump の命令を置くと map_find が「region を使わない関数」〔opt.sober の P0 — rfLocal〕から外れ、
+    // 先端はmetaのワードを直に読む（regionBumpの命令を置くとmap_findが「regionを使わない関数」〔opt.soberのP0 — rfLocal〕から外れ、
     // map を引くだけの葉の関数の入口の enter が消えなくなる — jsonapi の KeyOf で命令 +1.7%）
     bw := gepWord(mut st, globaladdr(mut st, st.meta), d)
     condbr(mut st, cmp(mut st, CEq, load(mut st, bw, W_BUMP), ixEnd), rw, -1, fresh, -1)
@@ -807,7 +807,7 @@ func buildMapFind(st mut St, f FnRef, r MapRepr) {
     br(mut st, ll, list1(mut st, bin(mut st, BAnd, bin(mut st, BAdd, lj, iconst(mut st, 1)), lmask)))
 }
 
-// セル cp のキーと key の一致（sk = 1 なら string — rt.str_eq・でなければ 1 語の比較）。i64 の真偽
+// セルcpのキーとkeyの一致（sk = 1ならstring — rt.str_eq・でなければ1ワードの比較）。i64の真偽
 func mapKeyEq(st mut St, cp int, key int, sk int) int {
     str_b := newBlock(mut st)
     int_b := newBlock(mut st)
@@ -852,8 +852,8 @@ func mapScan(st mut St, hdr int, key int, cellw int, sk int, r MapRepr, q MQ) {
     ret(mut st, c)
 }
 
-// map_hash(kp, sk) → キーのハッシュ（sk = 1 なら string のバイト列・でなければ 1 語に黄金比の乗算と上位の畳み込み）。
-// string は 8 バイトの語ずつ（h = (h ^ 語) * 黄金比 — M12。バイトずつの FNV-1a は 1BRC の map_find の 27% だった）・端数はバイトずつ FNV-1a。
+// map_hash(kp, sk) → キーのハッシュ（sk = 1ならstringのバイト列・でなければ1ワードに黄金比の乗算と上位の畳み込み）。
+// stringは8バイトのワードずつ（h = (h ^ ワード) * 黄金比 — M12。バイトずつのFNV-1aは1BRCのmap_findの27%だった）・端数はバイトずつFNV-1a。
 // 値は索引の配置にだけ使う（keys の順は挿入順 — 観測に出ない）
 func buildMapHash(st mut St) {
     begin(mut st, st.rtMaphash)
@@ -865,7 +865,7 @@ func buildMapHash(st mut St) {
     setCur(mut st, str_b)
     p := itop(mut st, load(mut st, kp, 0))
     n := load(mut st, kp, 1)
-    // 語の環: i + 8 ≤ n の間 8 バイトずつ
+    // ワードの環: i + 8 ≤ nの間8バイトずつ
     wl := newBlock(mut st)
     wi := param(mut st, wl, TyI64)
     wh := param(mut st, wl, TyI64)
@@ -914,7 +914,7 @@ func installIo(st mut St) {
     st.iobuf = addWorkerGlobal(mut st, int(strLit(mut st, "rt.iobuf")), IO_BUF / 8)
     cstr := addFunc(mut st, int(strLit(mut st, "rt.cstr")), desugar.ListRef(list2(mut st, TyPtr, TyPtr)), TyI64)
     st.rtCstr = cstr
-    // write_file は std/task を使うプログラムでも ring を通さない（同期の write(2)）: ring に出した書きの要求はファイルの参照を close の後まで
+    // write_fileはstd/taskを使うプログラムでもringを通さない（同期のwrite(2)）: ringに出した書きのリクエストはファイルの参照をcloseの後まで
     // 握りうる — 書いた実行ファイルを直後に execve すると ETXTBSY（丸ごとの書きは「返ったら閉じている」の約束を守る）
     wall := addFunc(mut st, int(strLit(mut st, "rt.write_all")), desugar.ListRef(list2(mut st, TyI64, TyPtr)), TyI64)
     st.rtRead = addFunc(mut st, int(strLit(mut st, "rt.read_file")), desugar.ListRef(list3(mut st, TyPtr, TyPtr, TyI64)), -1)
@@ -928,7 +928,7 @@ func installIo(st mut St) {
     buildWriteFd(mut st, wall)
 }
 
-// 先端で作る io の列の本体（read_file / read_args / read_dir — 窓の移し〔colGrow〕は名前つきプールの有無で決まる — 本体の下ろしの後に組む）
+// 先端で作るioの列の本体（read_file / read_args / read_dir — 予約ページの移し〔colGrow〕は名前つきプールの有無で決まる — 本体の下ろしの後に組む）
 func buildIoCols(st mut St) {
     buildReadFile(mut st, st.rtCstr)
     buildReadArgs(mut st)
@@ -1041,7 +1041,7 @@ func buildReadFd(st mut St) {
     }
     begin(mut st, st.rtRfd)
     fd := 0
-    // net を使うプログラム: n の上位の印 RFD_DIRECT = ring を通さずその場の read（非ブロックの socket — ring の READ は内部の poll で待ち、期限で切れない。netpoll.sober）
+    // netを使うプログラム: nの上位のフラグRFD_DIRECT = ringを通さずその場のread（非ブロックのsocket — ringのREADは内部のpollで待ち、期限で切れない。netpoll.sober）
     net := chF(mut st, NETF_WAIT) != -1 && st.taskUse
     limit := if net { bin(mut st, BAnd, 1, iconst(mut st, RFD_DIRECT - 1)) } else { 1 }
     direct := if net { cmp(mut st, CNe, bin(mut st, BAnd, 1, iconst(mut st, RFD_DIRECT)), iconst(mut st, 0)) } else { -1 }
@@ -1072,7 +1072,7 @@ func buildReadFd(st mut St) {
     // std/task を使うプログラムは region の先端へ直に読む（read_file と同じ — 読みの間に task が切り替わるので、ワーカーごとの iobuf は使えない）
     r := if st.taskUse { rfdDirect(mut st, depth, out, fd, c, direct, plain) } else { syscall(mut st, list4(mut st, iconst(mut st, 0), fd, ptoi(mut st, buf), c)) }
     if st.taskUse {
-        // 読みの中で task が待つ（ring の読み・net の受け）間に、同じワーカーの他の task が errno の語を書く — 待ちの後で置き直す（失敗は下で上書き）
+        // 読みの中でtaskが待つ（ringの読み・netの受け）間に、同じワーカーの他のtaskがerrnoのワードを書く — 待ちの後で置き直す（失敗は下で上書き）
         setErrno(mut st, iconst(mut st, 0))
     }
     notIntr := branchIf(mut st, cmp(mut st, CEq, r, iconst(mut st, -4)))
@@ -1099,7 +1099,7 @@ func buildReadFd(st mut St) {
 }
 
 // read_fd の 1 回の読み（std/task を使うプログラム）: 先端 end を c バイト仮に伸ばして rt.uio で読み、読めた分（失敗・EOF は 0）に詰め直す
-// plain（direct の中の印 RFD_PLAIN）= net の ring の受けを張らずにその場の read（std/internal/sock — ワーカーを跨いで借りられる接続）
+// plain（directの中のフラグRFD_PLAIN）= netのringの受けを張らずにその場のread（std/internal/sock — ワーカーを跨いで借りられる接続）
 func rfdDirect(st mut St, depth int, out int, fd int, c int, direct int, plain int) int {
     end := colGrow(mut st, depth, out, c)
     mut r := 0
@@ -1112,7 +1112,7 @@ func rfdDirect(st mut St, depth int, out int, fd int, c int, direct int, plain i
         r = param(mut st, bJ, TyI64)
         condbr(mut st, direct, bS, -1, bR, -1)
         setCur(mut st, bS)
-        // net の ring の受け（netring.sober の rt.netrecv — 宣言されていれば。ring の道でなければ中で read）
+        // netのringの受け（netring.soberのrt.netrecv — 宣言されていれば。ringのパスでなければ中でread）
         nrv := chF(mut st, NETF_RECV)
         if nrv != -1 {
             bP := newBlock(mut st)
@@ -1139,9 +1139,9 @@ func needSleep(st mut St) {
     if st.rtSleep == -1 {
         st.rtSleep = addFunc(mut st, int(strLit(mut st, "rt.sleep")), desugar.ListRef(list1(mut st, TyI64)), TyI64)
         if st.taskUse {
-            // std/task のプログラムは fd の無い期限つき待ち（ring の道 = OP_TIMEOUT・epoll の道 = timerfd を rt.fdwait で待つ — buildSleep）
+            // std/taskのプログラムはfdの無い期限つき待ち（ringのパス = OP_TIMEOUT・epollのパス = timerfdをrt.fdwaitで待つ — buildSleep）
             _ = needNet(mut st)
-            // net の ring の道の sleep は時計の表（ワーカーごとの 4 分ヒープ — netpoll.sober の sleepRing / buildTmr）に積む
+            // netのringのパスのsleepは時計の表（ワーカーごとの4分ヒープ — netpoll.soberのsleepRing / buildTmr）に積む
             st.rtTmrPush = addFunc(mut st, int(strLit(mut st, "rt.tmr_push")), desugar.ListRef(list2(mut st, TyI64, TyI64)), TyI64)
             st.rtTmrFire = addFunc(mut st, int(strLit(mut st, "rt.tmr_fire")), desugar.ListRef(list0(mut st)), TyI64)
             if dlFn(st.rtD3) == 0 {
@@ -1176,9 +1176,9 @@ func buildStat(st mut St) {
 }
 
 // sleep(ms) → errno（std/os の sysSleep）。std/task のプログラム: net の ring のワーカーは IORING_OP_TIMEOUT
-// （netpoll.sober の sleepRing）・他（epoll の道）は timerfd（283 — 非ブロック）に ms を仕掛けて rt.fdwait で待つ — 眠る間はワーカーを譲り（旧 nanosleep はワーカーごと塞いでいた）、期限つき scope の中なら期限が待ちを切って
+// （netpoll.soberのsleepRing）・他（epollのパス）はtimerfd（283 — 非ブロック）にmsを仕掛けてrt.fdwaitで待つ — スリープする間はワーカーを譲り（旧nanosleepはワーカーごと塞いでいた）、期限つきscopeの中なら期限が待ちを切って
 // 早く返る（110 = 期限で切れた・エラーではない — std/os は見ない。起きた時刻は io の入力）。ms ≤ 0 は待たない（timerfd の 0 は止めるの意味）。
-// std/task を使わないプログラムは nanosleep（35 — 期限も他の task も無い）。時間指定は 2 語 / itimerspec 4 語（スタックの一時スロット）
+// std/taskを使わないプログラムはnanosleep（35 — 期限も他のtaskも無い）。時間指定は2ワード / itimerspec 4ワード（スタックの一時スロット）
 func buildSleep(st mut St) {
     if st.rtSleep == -1 {
         return
@@ -1190,7 +1190,7 @@ func buildSleep(st mut St) {
         bGo := branchIf(mut st, cmp(mut st, CLe, ms, zero))
         ret(mut st, zero)
         setCur(mut st, bGo)
-        // net の ring（UR_NET）のワーカーは IORING_OP_TIMEOUT（fd も syscall も無い — sleepRing）。他は timerfd を rt.fdwait で（epoll の道）
+        // netのring（UR_NET）のワーカーはIORING_OP_TIMEOUT（fdもsyscallも無い — sleepRing）。他はtimerfdをrt.fdwaitで（epollのパス）
         wk := globaladdr(mut st, st.wkG)
         rg := load(mut st, wk, WK_RING)
         bR0 := newBlock(mut st)
@@ -1225,9 +1225,9 @@ func buildSleep(st mut St) {
 }
 
 // 開いた fd の登録簿（language.md 28 節「後始末」・Q4 = task ごと）: std/task のプログラムでは rt.open が開いた fd を今の task の
-// 鎖に積み、rt.close が外す。task が死ぬと defer が走らない（11 節）ので、子の入口の出口（rt.task_start — 死も切られた子も通る）が rt.fd_drain で
-// 鎖に残った fd を閉じる。鎖の頭 = TCB の TC_FDS（fd + 1・0 = 空）・次 = @rt.fdreg[fd]（fd ごとに 1 語 — 別の fd の語は別の task しか書かないので
-// ワーカーの間で鍵が要らない）。逐次のプログラムは使わない（defer が必ず走る — 鎖も表も足さない）
+// チェーンに積み、rt.closeが外す。taskが死ぬとdeferが走らない（11 節）ので、子の入口の出口（rt.task_start — 死も切られた子も通る）がrt.fd_drainで
+// チェーンに残ったfdを閉じる。チェーンの頭 = TCBのTC_FDS（fd + 1・0 = 空）・次 = @rt.fdreg[fd]（fdごとに1ワード — 別のfdのワードは別のtaskしか書かないので
+// ワーカーの間で鍵が要らない）。逐次のプログラムは使わない（deferが必ず走る — チェーンも表も足さない）
 const FD_CAP = 65536
 
 // rt.open / rt.close（と std/task のプログラムなら登録簿の表と rt.fd_drain）を（初出なら）宣言する — 使うプログラムでだけ足す
@@ -1244,7 +1244,7 @@ func needOpen(st mut St) {
 }
 
 // open(path) → fd / 負の errno（std/io の sysOpen）: path を C 文字列にして openat（257 — AT_FDCWD・O_RDONLY | O_CLOEXEC）。
-// std/task のプログラムは今の task の鎖に積む（番号が FD_CAP 以上なら閉じて EMFILE — 登録簿に載らない fd を作らない）
+// std/taskのプログラムは今のtaskのチェーンに積む（番号がFD_CAP以上なら閉じてEMFILE — 登録簿に載らないfdを作らない）
 func buildOpen(st mut St) {
     if st.rtOpen == -1 {
         return
@@ -1286,8 +1286,8 @@ func buildOpen(st mut St) {
     ret(mut st, fd)
 }
 
-// close(fd) → errno（std/io の sysClose）: std/task のプログラムは今の task の鎖から外してから close（3 — EINTR でも再試行しない:
-// Linux は fd を既に解放している）。鎖は Open と defer Close の対で積んだ順の逆に外れるので、ふつうは頭で当たる
+// close(fd) → errno（std/ioのsysClose）: std/taskのプログラムは今のtaskのチェーンから外してからclose（3 — EINTRでも再試行しない:
+// Linuxはfdを既に解放している）。チェーンはOpenと defer Close の対で積んだ順の逆に外れるので、ふつうは頭で当たる
 func buildClose(st mut St) {
     if st.rtClose == -1 {
         return
@@ -1317,8 +1317,8 @@ func buildClose(st mut St) {
     retErrno(mut st, syscall(mut st, list2(mut st, iconst(mut st, 3), fd)))
 }
 
-// fd_drain(tcb, stop, exit): task の鎖の頭が stop になるまで fd を閉じて外す（exit = 1 は task の出口 — net の ring の close を ring へ積める）（子の入口の出口 — 死・切られた子は stop = 0 で全部。
-// ふつうに終わった子の鎖は空。縮退して親の中で走った子〔admit.sober の rt.task_inline〕は、子に入る前の頭を stop に渡して子が開いた分だけ）
+// fd_drain(tcb, stop, exit): taskのチェーンの頭がstopになるまでfdを閉じて外す（exit = 1はtaskの出口 — netのringのcloseをringへ積める）（子の入口の出口 — 死・切られた子はstop = 0で全部。
+// ふつうに終わった子のチェーンは空。縮退して親の中で走った子〔admit.soberのrt.task_inline〕は、子に入る前の頭をstopに渡して子が開いた分だけ）
 func buildFdDrain(st mut St) {
     if st.rtFdDrain == -1 {
         return
@@ -1447,7 +1447,7 @@ func branchIf(st mut St, c int) BlkRef {
     return e
 }
 
-// cstr(hdr, buf) → 0 / ENAMETOOLONG / EINVAL: string ヘッダのバイト列を NUL 終端で buf へ写す
+// cstr(hdr, buf) → 0 / ENAMETOOLONG / EINVAL: stringヘッダのバイト列をNUL終端でbufへコピーする
 func buildCstr(st mut St, f FnRef) {
     begin(mut st, f)
     hdr := 0
@@ -1508,7 +1508,7 @@ func buildReadFile(st mut St, cstr FnRef) {
     setErrno(mut st, bin(mut st, BSub, iconst(mut st, 0), fd))
     ret(mut st, -1)
     setCur(mut st, opened)
-    // region の先端（out の終わり）へ直に読む（M12 — 以前は iobuf 4096 バイト → region の写し）: 先端を READ_CHUNK（スロットの残りが
+    // regionの先端（outの終わり）へ直に読む（M12 — 以前はiobuf 4096バイト → regionへのコピー）: 先端をREAD_CHUNK（スロットの残りが
     // それより少なければ残り）まで仮に伸ばして read(2) し、読めた分に詰め直す。out は先端にいる（initOut が今の bump から始め、伸ばすのは自分だけ）
     loop := newBlock(mut st)
     close := newBlock(mut st)
@@ -1523,7 +1523,7 @@ func buildReadFile(st mut St, cstr FnRef) {
     small := newBlock(mut st)
     condbr(mut st, cmp(mut st, CLt, room, iconst(mut st, READ_CHUNK)), small, -1, big, -1)
     setCur(mut st, small)
-    // スロットが満ちていれば 1 バイト伸ばして extend8 の超過の検査（exit 102）に落とす（以前の写しの形と同じ — 黙って切り詰めない）
+    // スロットが満ちていれば1バイト伸ばしてextend8の超過の検査（exit 102）に落とす（以前のコピーの形と同じ — 黙って切り詰めない）
     br(mut st, chunk, list1(mut st, bin(mut st, BAdd, room, cmp(mut st, CEq, room, iconst(mut st, 0)))))
     setCur(mut st, big)
     br(mut st, chunk, list1(mut st, iconst(mut st, READ_CHUNK)))
@@ -1559,7 +1559,7 @@ func buildReadFile(st mut St, cstr FnRef) {
     ret(mut st, -1)
 }
 
-// write_all(fd, data) → errno（0 = 成功）: data のバイト列をそのまま書く（[]byte — 段 C で詰め直しのループは消えた）。
+// write_all(fd, data) → errno（0 = 成功）: dataのバイト列をそのまま書く（[]byte — 段階Cで詰め直しのループは消えた）。
 // 短い書き込みは続きから、EINTR は再試行
 func buildWriteAll(st mut St, f FnRef) {
     begin(mut st, f)
@@ -1631,7 +1631,7 @@ func buildWriteFile(st mut St, cstr FnRef, wall FnRef) {
     ret(mut st, fe)
 }
 
-// out（3 語ヘッダ）を現在深度の region 先端・長さ 0 で初期化し、深度を返す（read_args / read_dir の共通の冒頭）
+// out（3ワードヘッダ）を現在深度のregion先端・長さ0で初期化し、深度を返す（read_args / read_dirの共通の冒頭）
 func initOut(st mut St, out int) int {
     return initOutAt(mut st, out, load(mut st, globaladdr(mut st, st.meta), W_DEPTH))
 }
@@ -1641,8 +1641,8 @@ func initOutAt(st mut St, out int, depth int) int {
     return initOutRaw(mut st, out, depth)
 }
 
-// 先端で作る列 out（深度 depth）を n バイト伸ばし、伸ばす前の終わりを返す。窓の境を越えるなら rt.win_col が作りかけの列を
-// 本物のスロットへ写して付け替える（公開前の列なので写してよい — task.sober の窓の注）
+// 先端で作る列out（深度depth）をnバイト伸ばし、伸ばす前の終わりを返す。予約ページの境を越えるならrt.win_colが作りかけの列を
+// 本物のスロットへコピーして付け替える（公開前の列なのでコピーしてよい — task.soberの予約ページの注記）
 func colGrow(st mut St, depth int, out int, n int) int {
     if winArm(mut st) {
         call(mut st, st.rtWinCol, list3(mut st, depth, ptoi(mut st, out), n))
@@ -1652,7 +1652,7 @@ func colGrow(st mut St, depth int, out int, n int) int {
     return end
 }
 
-// 空の列（窓を移さない — 伸ばさない列）
+// 空の列（予約ページを移さない — 伸ばさない列）
 func initOutRaw(st mut St, out int, depth int) int {
     store(mut st, out, 0, ptoi(mut st, regionBump(mut st, depth)))
     store(mut st, out, 1, iconst(mut st, 0))
@@ -1921,8 +1921,8 @@ func dupFd(st mut St, arg int, to int) {
     setCur(mut st, skip)
 }
 
-// 写した先のヘッダの深度の印（std/task を使うプログラムではワーカーの WK_RLAB が 0 でなければそれ — チャネルの小アリーナへの写しは
-// 印 = MAX_DEPTH にして受け手が必ず自分の region へ写す〔段 6 P4-4 (B4)〕。それ以外は floor — IR 不変）
+// コピーした先のヘッダの深度のマーク（std/taskを使うプログラムではワーカーのWK_RLABが0でなければそれ — チャネルの小アリーナへのコピーは
+// マーク = MAX_DEPTHにして受け手が必ず自分のregionへコピーする〔段階6 P4-4 (B4)〕。それ以外はfloor — IR不変）
 func relocLabel(st mut St, floor int) int {
     if !st.taskUse {
         return floor

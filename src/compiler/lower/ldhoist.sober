@@ -1,25 +1,25 @@
 package lower
 
-// 展開後の欄の読みの巻き上げ: IR の展開（irInline）の後の SSA に掛ける。mut の印のある ptr の仮引数 P から定数の gep.word の鎖で届く語
-// （`load (gep.word P, c)[k]` — 展開した小関数の mut 仮引数が呼び手の struct の欄を指す形。Scratch・slice の欄のヘッダ）の読みを、
-// ループの中でその語を書きうるものが無ければ前置きの 1 本にする。hdr.sober（仮引数の直の P[0..2] を入口へ・展開の前）の一般化で、
+// 展開後のフィールドの読みの巻き上げ: IRの展開（irInline）の後のSSAに掛ける。mutのフラグのあるptrの仮引数Pから定数のgep.wordのチェーンで届くワード
+// （`load (gep.word P, c)[k]` — 展開した小関数のmut仮引数が呼び手のstructのフィールドを指す形。Scratch・sliceのフィールドのヘッダ）の読みを、
+// ループの中でそのワードを書きうるものが無ければ前置きの1本にする。hdr.sober（仮引数の直のP[0..2] を入口へ・展開の前）の一般化で、
 // 別名の事実も hdr の hdrRoot と同じ（docs/ir.md 6 節）:
 //   ① 値はセルの番地を持たない — メモリから読んだ番地（`itop(load …)` の根）は確保したデータで、mut 仮引数のセルではない
-//      （この関数の中で P の鎖の値をメモリへ書く・算術に使う・ブロックへ渡す形があれば P は対象外 — 展開の内部の形の保険）
-//   ② mut 仮引数のセルは mut の場所（mut ローカルかその欄）で slice のデータの中に無い・同じ呼び出しの mut 実引数は排他（diag.MutAlias）
+//      （この関数の中でPのチェーンの値をメモリへ書く・算術に使う・ブロックへ渡す形があればPは対象外 — 展開の内部の形の保険）
+//   ② mut仮引数のセルはmutの場所（mutローカルかそのフィールド）でsliceのデータの中に無い・同じ呼び出しのmut実引数は排他（diag.MutAlias）
 //   ③ スロット・大域（rt.meta 等）・確保する rt の結果は P のセルと重ならない
 // ループの中で許す呼び出しは書く先が P のセルに無い rt だけ（rt.panic / panic_mem — 戻らない・matchlen / str_eq / jclean — 読むだけ・
-// 反復の軽い enter・region_alloc / alloc8 / slice_grow / grow8 — 書くのは新しい列と rt の表）で、実引数に P の鎖の値を渡さないもの。
-// 諦める形: ほかの呼び出し・間接呼び出し・syscall・原子・罠・task の op・relocate の根が P の鎖・番地の根が分からない書き。
-// 前置きの読みはループが 1 周もしなくても安全（P は仮引数 — 常に読める・語はループの中の読みと同じ型の欄）
-// 資格: 狭い語の op（pool.Scratch の表の口）を含むループの関数だけ（rlim.sober の lbScan の印 2 — 走査は rlim と 1 周に相乗り）。
+// 反復の軽いenter・region_alloc / alloc8 / slice_grow / grow8 — 書くのは新しい列とrtの表）で、実引数にPのチェーンの値を渡さないもの。
+// 諦める形: ほかの呼び出し・間接呼び出し・syscall・原子・罠・taskのop・relocateの根がPのチェーン・番地の根が分からない書き。
+// 前置きの読みはループが1周もしなくても安全（Pは仮引数 — 常に読める・ワードはループの中の読みと同じ型のフィールド）
+// 資格: 狭いワードのop（pool.Scratchの表のインターフェース）を含むループの関数だけ（rlim.soberのlbScanのフラグ2 — 走査はrlimと1周に相乗り）。
 // 全関数に掛ける形は、判定の走査だけで自己 build +0.27 G・判定と下流で計 +0.7 G（+0.6%）に対し、コンパイラ自身の定常の効きは +0.06% で棄却
-// （コンパイラの輪は呼び出しを含む — 巻き上がる輪が少なく、巻き上げた先の割り当ての仕事だけが増える）
+// （コンパイラのループは呼び出しを含む — 巻き上がるループが少なく、巻き上げた先の割り当ての仕事だけが増える）
 
 import "desugar"
 import "std/iter"
 
-const LH_SELF = 1   // 番地の根が P の鎖（変位 off — -1 = 定数で言えない）
+const LH_SELF = 1   // 番地の根がPのチェーン（変位off — -1 = 定数で言えない）
 const LH_SAFE = 2   // P のセルと重ならない
 const LH_UNK = 3    // 分からない
 
@@ -33,8 +33,8 @@ func ldhoistModule(st mut St) {
     }
 }
 
-// 利用者のループの頭と mut の印の仮引数があり、呼び出しの無いループに load がある関数か（CFG・支配木を組む前の安い走査 — 支配木を
-// 全関数で組むと自己 build の判定の仕事が +0.4 G）。ブロックごとに「許さない呼び出し・命令がある」「load がある」を印にし、入口からの
+// 利用者のループの頭とmutのフラグの仮引数があり、呼び出しの無いループにloadがある関数か（CFG・支配木を組む前の安い走査 — 支配木を
+// 全関数で組むと自己buildの判定の仕事が +0.4 G）。ブロックごとに「許さない呼び出し・命令がある」「loadがある」をフラグにし、入口からの
 // DFS の後ろの辺 t → h ごとに、スタックの h..t の区間（自然ループの一部）に許さない命令が無く load があるかを前置和で見る
 // （必要条件 — 区間の外のループのブロックは CFG の後の判定が見る）
 func lhCheap(st mut St, f FnRef) bool {
@@ -46,7 +46,7 @@ func lhCheap(st mut St, f FnRef) bool {
     mut loop := false
     mut blk := mut []int{}
     xFill(mut blk, nb, -1)
-    // 印: 1 = 許さない命令あり・2 = load あり（候補の形は CFG の後の判定が見る — 門で値 → 定義の表を組まない）
+    // フラグ: 1 = 許さない命令あり・2 = loadあり（候補の形はCFGの後の判定が見る — 門で値 → 定義の表を組まない）
     mut fl := mut []int{}
     xFill(mut fl, nb, 0)
     mut b := irFnBHead(mut st, f)
@@ -135,13 +135,13 @@ func lhCallOk(st mut St, g FnRef) bool {
         g == st.rtGrow || g == st.rtGrow8 || g == st.rtRalloc || g == st.rtAlloc8
 }
 
-// メモリを書かない・P の鎖の値を運ばない命令か（load / store / 呼び出しは呼び手が見る）
+// メモリを書かない・Pのチェーンの値を運ばない命令か（load / store / 呼び出しは呼び手が見る）
 func lhQuiet(op int) bool {
     return op == OpDead || op == OpConst || op == OpBin || op == OpCmp || op == OpGepW || op == OpGepB || op == OpPtoi || op == OpItop || op == OpSlotaddr ||
         op == OpGlobal || op == OpFsAddr || op == OpFuncaddr || op == OpScanB || op == OpPArith || op == OpCrcFold
 }
 
-// 番地の値 v0 の根を P（mut 仮引数 p）に対して分類する: (LH_SELF, 語の変位〔-1 = 言えない〕) / (LH_SAFE, 0) / (LH_UNK, 0)。
+// 番地の値v0の根をP（mut仮引数p）に対して分類する: (LH_SELF, ワードの変位〔-1 = 言えない〕) / (LH_SAFE, 0) / (LH_UNK, 0)。
 // メモリから読んだ値を経たら（viaLoad）根は確保したデータ（①）— 読んだ番地の根が分かる限り SAFE
 func lhRoot(st mut St, f FnRef, np int, def mut []int, v0 int, p int) (int, int) {
     mut v := v0
@@ -194,13 +194,13 @@ func lhRoot(st mut St, f FnRef, np int, def mut []int, v0 int, p int) (int, int)
     return LH_UNK, 0
 }
 
-// 値 v が P の鎖（根が P で、メモリの読みを経ない）か
+// 値vがPのチェーン（根がPで、メモリの読みを経ない）か
 func lhSelf(st mut St, f FnRef, np int, def mut []int, v int, p int) bool {
     k, _ := lhRoot(mut st, f, np, mut def, v, p)
     return k == LH_SELF
 }
 
-// 関数の中で P の鎖の値が番地・gep の基底・itop / ptoi・比較・直の呼び出しの実引数以外に使われていないか（① の保険 — メモリへの書き・
+// 関数の中でPのチェーンの値が番地・gepの基底・itop / ptoi・比較・直の呼び出しの実引数以外に使われていないか（① の保険 — メモリへの書き・
 // ブロックの実引数〔仮引数を経ると根を追えない〕・算術）
 func lhNoEscape(st mut St, f FnRef, np int, def mut []int, p int) bool {
     mut b := irFnBHead(mut st, f)
@@ -231,7 +231,7 @@ func lhNoEscape(st mut St, f FnRef, np int, def mut []int, p int) bool {
     return true
 }
 
-// ループ（印 pw.mark）に書く先の分からない書き・許さない呼び出しが無いか（分類の前の安い門 — 番地の根は見ない）
+// ループ（フラグpw.mark）に書く先の分からない書き・許さない呼び出しが無いか（分類の前の安い門 — 番地の根は見ない）
 func lhLoopGate(st mut St, w mut m2rW, pw mut PrW) bool {
     mut ld := false
     for bi <- iter.Range(0, w.nb) {
@@ -256,8 +256,8 @@ func lhLoopGate(st mut St, w mut m2rW, pw mut PrW) bool {
     return ld
 }
 
-// ループ（印 pw.mark）の中で P の鎖の語を書く集合を wr に印 mk で付ける（語の変位 — 言えない書きは真を返して諦める）。
-// 番地の根が分からない書き・P の鎖を実引数に渡す呼び出しも諦める
+// ループ（フラグpw.mark）の中でPのチェーンのワードを書く集合をwrにフラグmkで付ける（ワードの変位 — 言えない書きは真を返して諦める）。
+// 番地の根が分からない書き・Pのチェーンを実引数に渡す呼び出しも諦める
 func lhWrites(st mut St, f FnRef, np int, w mut m2rW, pw mut PrW, p int, wr mut map[int]int) bool {
     for bi <- iter.Range(0, w.nb) {
         if pw.inl[bi] != pw.mark || w.blk[bi] < 0 {
@@ -273,7 +273,7 @@ func lhWrites(st mut St, f FnRef, np int, w mut m2rW, pw mut PrW, p int, wr mut 
                     return true
                 }
                 if k == LH_SELF {
-                    // 書く語の範囲（store = 語の変位・狭い書き = バイトの変位・PMem = 2 語）
+                    // 書くワードの範囲（store = ワードの変位・狭い書き = バイトの変位・PMem = 2ワード）
                     if op == OpStore {
                         wr[off + irInsB(mut st, ins)] = 1
                     } else if op == OpPMem {
@@ -320,7 +320,7 @@ func ldhoistFunc(st mut St, f FnRef) {
     mut alR := mut []int{}
     mut alI := mut []int{}
     mut alX := mut []int{}
-    // ループの頭ごとに（逆後順で外側から — 外で巻き上げた読みは消えた印〔付け替え済み〕で内側から外れる）
+    // ループの頭ごとに（逆後順で外側から — 外で巻き上げた読みは消えたフラグ〔付け替え済み〕で内側から外れる）
     for k <- iter.Range(0, w.nrpo) {
         h := w.rpo[k]
         if irBlkLoop(mut st, BlkRef(w.blk[h])) & 1 == 0 {
@@ -344,7 +344,7 @@ func ldhoistFunc(st mut St, f FnRef) {
             if !lhMut(mut st, f, np, p) || desugar.HeapGet(mut st.d, irFnPtys(mut st, f) + 1 + p) != TyPtr {
                 continue
             }
-            // 候補（P の鎖の語の load）があるか先に見る
+            // 候補（Pのチェーンのワードのload）があるか先に見る
             mut cand := false
             for bi <- iter.Range(0, w.nb) {
                 if pw.inl[bi] == pw.mark && w.blk[bi] >= 0 && !cand {
@@ -371,7 +371,7 @@ func ldhoistFunc(st mut St, f FnRef) {
             if lhWrites(mut st, f, np, mut w, mut pw, p, mut wr) {
                 continue
             }
-            // 書かれない語の load を前置きの 1 本へ（語 × 型の印〔c〕ごとに 1 本）
+            // 書かれないワードのloadを前置きの1本へ（ワード × 型のフラグ〔c〕ごとに1本）
             mut newK := mut []int{}
             mut newV := mut []int{}
             for bi <- iter.Range(0, w.nb) {

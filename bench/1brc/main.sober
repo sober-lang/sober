@@ -1,10 +1,10 @@
 package main
 
-// 1BRC（看板 — docs/bench.md）: `<名前>;<気温>` の行（気温は小数 1 桁）を観測所ごとに min / mean / max で集計して名前のバイト順に印字する。
-// 素直な形（Go の双子 bench/1brc/go と同じアルゴリズム）: 行ごとに分割・map[string] で観測所の番号を引き・気温は ×10 の整数。
+// 1BRC（代表 — docs/bench.md）: `<名前>;<気温>` の行（気温は小数1桁）を観測所ごとにmin / mean / maxで集計して名前のバイト順に印字する。
+// 素直な形（比較用のGoの実装bench/1brc/goと同じアルゴリズム）: 行ごとに分割・map[string] で観測所の番号を引き・気温は ×10の整数。
 // 平均は floor((2 × 和 + 件数) / (2 × 件数)) — 0.5 は正の方向へ丸める。
-// 読みは io.Chunks（ファイルを開いて 64 KiB の切片の View を順に貸す — 全体を読まない・写さない。language.md 28 節）。UTF-8 の検査は切片の中の完全な行の範囲に
-// 1 回（utf8.Check — 型つき証人。改行で切るので文字の境界・全バイトを検査する保証は全体に 1 回と同じ。切片をまたぐ行だけ写して検査）・名前は `;` の手前で切るので Str が検査し直さない
+// 読みはio.Chunks（ファイルを開いて64 KiBの切片のViewを順に貸す — 全体を読まない・コピーしない。language.md 28 節）。UTF-8の検査は切片の中の完全な行の範囲に
+// 1回（utf8.Check — 型つき証人。改行で切るので文字の境界・全バイトを検査する保証は全体に1回と同じ。切片をまたぐ行だけコピーして検査）・名前は `;` の手前で切るのでStrが検査し直さない
 
 import "std/io"
 import "std/iter"
@@ -52,8 +52,8 @@ func main() int {
     return if io.WriteStdout(out) != nil { 1 } else { 0 }
 }
 
-// tally は path を切片ずつ読んで観測所ごとに集計する（切片は io.Chunks の View — 写さない）。切片の中の完全な行の範囲を utf8.Check で 1 回だけ検査して
-// 行ごとに集計し（名前は観測所が初めて出たときだけ写す）、切片をまたぐ行は前の切片の残りと次の切片の頭をつないだ写しで同じように集計する
+// tallyはpathを切片ずつ読んで観測所ごとに集計する（切片はio.ChunksのView — コピーしない）。切片の中の完全な行の範囲をutf8.Checkで1回だけ検査して
+// 行ごとに集計し（名前は観測所が初めて出たときだけコピーする）、切片をまたぐ行は前の切片の残りと次の切片の頭をつないだコピーで同じように集計する
 func tally(path string, ix mut map[string]int, names mut []string, st mut []int) error? {
     f := io.Open(path)?
     defer io.Close(f)
@@ -186,7 +186,7 @@ func putInt(out mut []byte, v int) {
     out = append(out, byte('0' + v % 10))
 }
 
-// sorted は names を名前のバイト順に並べた写し（挿入ソート — 観測所は数百）
+// sortedはnamesを名前のバイト順に並べたコピー（挿入ソート — 観測所は数百）
 func sorted(names []string) []string {
     mut xs := mut []string{}
     for i <- iter.Range(0, len(names)) {

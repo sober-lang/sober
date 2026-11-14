@@ -1,7 +1,7 @@
 package calc
 
-// `sober test --mutate` の題材（scripts/mutate.sh）: 変異の種類を全部・どのテストも呼ばない関数（未到達）・生き残る変異（Sign の 0 の境界）・
-// ハングする変異（Sum の `i += 1` を消す — 期限で kill）
+// `sober test --mutate` の題材（scripts/mutate.sh）: ミューテーションの種類を全部・どのテストも呼ばない関数（未到達）・生き残るミュータント（Signの0の境界）・
+// ハングするミュータント（Sumの `i += 1` を消す — 期限でkill）
 
 func Sum(n int) int {
     mut s := 0

@@ -1,7 +1,7 @@
 package main
 
-// 負例（check も build も拒否）: `[]int?` の欄に要素型の違う slice のリテラル `[]int{…}` を書く。
-// 型の文法で `?` は直前の名前に付くので `[]int?` は「int? の slice」— `[]int` とは別の型（暗黙の変換は無い）。check は名指す（diag.FieldType）
+// 負例（checkもbuildも拒否）: `[]int?` のフィールドに要素型の違うsliceのリテラル `[]int{…}` を書く。
+// 型の文法で `?` は直前の名前に付くので `[]int?` は「int? のslice」— `[]int` とは別の型（暗黙の変換は無い）。checkは専用の診断で拒否する（diag.FieldType）
 type S struct {
     w []int?
 }

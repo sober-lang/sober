@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # selfhost の parser 差分オラクル: Sober 版（compiler/parser + compiler/ast + compiler/tools/parsedump）の AST JSON を
-# Zig 版（stage1）の `sober parse --ast-json` の出力とバイト比較する（主役交代 R39 までは C4 黄金 testdata/astjson/ と比べていた —
-# 黄金の生成元が Sober に替わったので、Zig ≡ Sober は凍結コーパスで stage1 を直接呼んで見る）。
+# Zig版（stage1）の `sober parse --ast-json` の出力とバイト比較する（主役交代R39まではC4ゴールデンtestdata/astjson/ と比べていた —
+# ゴールデンの生成元がSoberに替わったので、Zig ≡ Soberは凍結コーパスでstage1を直接呼んで見る）。
 #
 #   scripts/selfhost_parse.sh            到達リスト（scripts/frozen/parse.list — 凍結）の全ファイル。リスト内 fail=0 がゲート
-#   scripts/selfhost_parse.sh --all      黄金の全ファイルを回し、一致 / 不一致を一覧する（リストの外は情報のみ）
+#   scripts/selfhost_parse.sh --all      ゴールデンの全ファイルを回し、一致 / 不一致を一覧する（リストの外は情報のみ）
 #   scripts/selfhost_parse.sh FILE...    指定のソースだけ
 #
-# リストは 1 行 1 ソース（リポジトリルート相対、# はコメント）。段が進むたびに足す。
-# 黄金から除外したソース（EXCLUDED.txt）は Sober 版も拒否することを確かめる。
-# 加えて compiler/ 全体（lexdump と parsedump）が sober check に通ることを確かめる（sober-check があるとき）。
+# リストは1行1ソース（リポジトリルート相対、# はコメント）。ステージが進むたびに足す。
+# ゴールデンから除外したソース（EXCLUDED.txt）はSober版も拒否することを検証する。
+# 加えてcompiler/ 全体（lexdumpとparsedump）が sober check に通ることを検証する（sober-checkがあるとき）。
 # 前提: zig build 済み（$STAGE1 で差し替え可）。
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -52,9 +52,9 @@ for f in "${files[@]}"; do
     g="$tmp/zig.json"
     "$STAGE1" parse --ast-json "$f" > "$g" 2> /dev/null || { echo "FAIL: $f: Zig rejects it"; fail=$((fail + 1)); continue; }
     # 綴りの正規化（決定 16 の α 改名と同じ「同一入力の照合を保つ」扱い）: `string(b)` の合成名は 2026-10-02 に utf8.FromBytes → utf8.Parse
-    # （裁定 N1）。凍結した Zig 版は旧名を合成するので、比べる前に Zig 側の出力を新名へ揃える
+    # （決定N1）。凍結したZig版は旧名を合成するので、比べる前にZig側の出力を新名へ揃える
     sed -i 's/"field": "FromBytes"/"field": "Parse"/g' "$g"
-    # 合成の暗黙 import の行き先（2026-10-20 — 総再審 便 3 の第 2 相）: 補間は $strings std/strings → $convert std/convert・`string(b)` は
+    # 合成の暗黙importの行き先（2026-10-20 — 総再審 タスク 3 の第 2 相）: 補間は $strings std/strings → $convert std/convert・`string(b)` は
     # std/utf8 → std/internal/utf8。凍結した Zig 版は旧い行き先を合成するので、同じく Zig 側の出力を新しい行き先へ揃える
     perl -0pi -e 's/"alias": "\$strings",(\s*)"path": "std\/strings"/"alias": "\$convert",$1"path": "std\/convert"/g; s/"alias": "\$utf8",(\s*)"path": "std\/utf8"/"alias": "\$utf8",$1"path": "std\/internal\/utf8"/g' "$g"
     if ! timeout 20 "$tmp/parsedump" < "$f" > "$tmp/out.json" 2> "$tmp/err"; then
@@ -69,7 +69,7 @@ for f in "${files[@]}"; do
         [ "$all" = 1 ] && echo "ok: $f"
     fi
 done
-# 黄金から除外したソース（Zig 版の cst_to_ast が拒否するもの — testdata/astjson/EXCLUDED.txt）は Sober 版も拒否すること
+# ゴールデンから除外したソース（Zig版のcst_to_astが拒否するもの — testdata/astjson/EXCLUDED.txt）はSober版も拒否すること
 if [ $# -eq 0 ] || [ "$all" = 1 ]; then
     while IFS=$'\t' read -r f _; do
         [ -n "$f" ] || continue

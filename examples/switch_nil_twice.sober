@@ -1,6 +1,6 @@
 package main
 
-// 負例: nil の腕は 1 つだけ（2 つ目は到達しない）
+// 負例: nilの分岐は1つだけ（2つ目は到達しない）
 func pick(k int) int? {
     return if k > 0 { k } else { nil }
 }

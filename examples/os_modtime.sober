@@ -1,6 +1,6 @@
 package main
 
-// std/os.ModTime / Sleep（sober watch の mtime ポーリングの口）: 書いたファイルの更新時刻は 0 より大きく、眠ってから書き直すと進む。
+// std/os.ModTime / Sleep（sober watchのmtimeポーリングのインターフェース）: 書いたファイルの更新時刻は0より大きく、スリープしてから書き直すと進む。
 // 無いパスは io.NotFound。時刻の値そのものは印字しない（比べるだけ — 実行ごとに変わる）
 
 import "std/io"

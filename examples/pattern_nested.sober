@@ -1,6 +1,6 @@
 package main
 
-// 入れ子の型パターン（syntax.md の FieldPattern = identifier [":" Pattern]）: 内側が外れたら default の腕へ
+// 入れ子の型パターン（syntax.mdのFieldPattern = identifier [":" Pattern]）: 内側が外れたらdefaultの分岐へ
 
 type I union {
     I1{v int}

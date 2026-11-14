@@ -280,12 +280,19 @@
           "mut_def": false,
           "has_try": false,
           "callees": [
-            "append",
             "byte",
             "bytesToString",
+            "decWord",
             "freeze",
-            "len"
+            "sysStore64"
           ]
+        },
+        {
+          "name": "decWord",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
         },
         {
           "name": "ParseBool",

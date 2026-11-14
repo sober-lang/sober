@@ -3,7 +3,7 @@ package main
 import "std/http/server"
 
 // 受理: 共有の静的ファイル + 認証の middleware の API（別の Mount）・共有のルートで認証でないヘッダ（Accept-Language）を読む・
-// 認証つきの API の応答は Private / NoStore / 既定の private・認証つきのルートの Revalidate（共有可の宣言の外）
+// 認証つきのAPIのレスポンスはPrivate / NoStore / 既定のprivate・認証つきのルートのRevalidate（共有可の宣言の外）
 func api(r http.server.Request) http.server.Response {
     return http.server.Response{status: 200, contentType: "text/plain", body: bytes("hi ${if http.server.Cookie(r, "sid") != nil { "member" } else { "guest" }}\n"), cache: http.server.Private{maxAge: 30}}
 }

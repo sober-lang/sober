@@ -1,6 +1,6 @@
 package main
 
-// 負例: mut 仮引数を持つ関数は、同じ席に mut を持つ関数型にだけ渡せる（η 展開 — language.md 25 節「関数型の mut 仮引数」）。loader が名指して拒否する
+// 負例: mut 仮引数を持つ関数は、同じ位置に mut を持つ関数型にだけ渡せる（η 展開 — language.md 25 節「関数型の mut 仮引数」）。loader が専用の診断で拒否する
 
 func apply(x int, f func(int) int) int {
     return f(x)

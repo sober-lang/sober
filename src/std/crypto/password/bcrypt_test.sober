@@ -1,6 +1,6 @@
 package password
 
-// bcrypt の核の網（white-box）: x/crypto の既知の 1 例（"allmine"・cost 10）と、golang.org/x/crypto の格子（testdata/crypto/bcrypt.txt —
+// bcryptの核の検査（white-box）: x/cryptoの既知の1例（"allmine"・cost 10）と、golang.org/x/cryptoの格子（testdata/crypto/bcrypt.txt —
 // scripts/oracles/xcrypto。pw の長さ 0〜72 × cost 4〜6・各行は塩を含む文字列）と、bcrypt の base64 の往復
 
 import "std/convert"

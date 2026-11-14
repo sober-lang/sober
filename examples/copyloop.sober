@@ -2,8 +2,8 @@ package main
 
 import "std/iter"
 
-// 写しのループの一括化（lower/copyloop.sober・--passes の経路だけ）: 形 (A) append の写し・(B) 添字の写し・(C) 同じ値の詰め。
-// 一括の経路（範囲が通る）と元のループ（範囲が通らない — 回らない・途中から等）の両方を通す。no-opt ≟ opt（optdiff）と Go の双子が網
+// コピーのループの一括化（lower/copyloop.sober・--passesの経路だけ）: 形 (A) appendのコピー・(B) 添字のコピー・(C) 同じ値の詰め。
+// 一括の経路（範囲が通る）と元のループ（範囲が通らない — 回らない・途中から等）の両方を通す。no-opt ≟ opt（optdiff）と比較用のGoの実装が検査
 
 func appendCopy(src []int, from int, to int) []int {
     mut dst := mut []int{100}
@@ -67,7 +67,7 @@ func main() {
     show(indexCopy(src, 0, 0, 0))
     show(fill(7, 5))
     show(fill(7, 0))
-    // 大きい写し（chunk の境目を跨ぐ — Builder.Build / PushAll の経路は std 側）
+    // 大きいコピー（chunkの境目を跨ぐ — Builder.Build / PushAllの経路はstd側）
     mut big := mut []int{}
     for i <- iter.Range(0, 5000) {
         big = append(big, i)

@@ -1,22 +1,22 @@
-# 抽象化 — interface の代わりに
+# 抽象化 — interfaceの代わりに
 
 [English](abstraction.md) | 日本語
 
-Sober には interface もクラスもメソッドもありません。振る舞いの差し替えは、関数の差し替えです。それ以上の機構はありません。
+Soberにはinterfaceもクラスもメソッドもありません。振る舞いの差し替えは、関数の差し替えです。それ以上の機構はありません。
 
-このページは、他の言語で interface（や trait・型クラス・抽象クラス）を使って書いていたことを、Sober でどう書くかの案内です。形は 3 つだけです。
+このページは、他の言語でinterface（やtrait・型クラス・抽象クラス）を使って書いていたことを、Soberでどう書くかの案内です。形は3つだけです。
 
-| やりたいこと | Sober の形 | 節 |
+| やりたいこと | Soberの形 | 節 |
 | --- | --- | --- |
-| 関数 1 つを差し替える | 名前付き関数型 + クロージャ | 1 |
-| 関数をいくつか組で差し替える | 関数の欄を持つ struct（辞書） | 2 |
-| 決まった種類のどれか、で場合分けする | union + 型パターンの switch | 3 |
+| 関数1つを差し替える | 名前付き関数型 + クロージャ | 1 |
+| 関数をいくつか組で差し替える | 関数のフィールドを持つstruct（辞書） | 2 |
+| 決まった種類のどれか、で場合分けする | union + 型パターンのswitch | 3 |
 
-前提: [言語ツアー](tour.ja.md) の 2 節（ラムダ）と 4 節（struct・union・辞書）。
+前提: [言語ツアー](tour.ja.md) の2節（ラムダ）と4節（struct・union・辞書）。
 
-## 1. 関数 1 つ — 名前付き関数型とクロージャ
+## 1. 関数1つ — 名前付き関数型とクロージャ
 
-std/http/server のハンドラは interface ではなく、名前付きの関数型です。
+std/http/serverのハンドラはinterfaceではなく、名前付きの関数型です。
 
 ```sober
 type Handler func(r Request) Response
@@ -104,12 +104,12 @@ true
 ```
 
 - `greeter` は `http.server.Handler` を返す関数です。返すクロージャが `word` を捕まえていて、何を捕まえたかは `return` の行を見れば分かります。`greeter("hello")` と `greeter("see you")` は、同じ形の別のハンドラです。
-- `Auth` は 2 節の形（関数の欄を持つ struct）で、`before` だけを書いて `after` を省いています。
-- 応答を印字するために、ネットワークの代わりに要求を文字列から流しています（`feed` / `show`）。実際のサーバーでは `http.server.Serve` に同じ `Dispatch` を渡します。
+- `Auth` は2節の形（関数のフィールドを持つstruct）で、`before` だけを書いて `after` を省いています。
+- レスポンスを印字するために、ネットワークの代わりにリクエストを文字列から流しています（`feed` / `show`）。実際のサーバーでは `http.server.Serve` に同じ `Dispatch` を渡します。
 
-## 2. 関数の組 — 関数の欄を持つ struct（辞書）
+## 2. 関数の組 — 関数のフィールドを持つstruct（辞書）
 
-メソッドが何本もある interface の代わりに、関数を欄に持つ struct を値として渡します。この struct を辞書と呼びます（[言語ツアー](tour.ja.md) 4 節の `Ord[T]` も同じ形です）。
+メソッドが何本もあるinterfaceの代わりに、関数をフィールドに持つstructを値として渡します。このstructを辞書と呼びます（[言語ツアー](tour.ja.md) 4節の `Ord[T]` も同じ形です）。
 
 ```sober
 // examples/abstraction_dict.sober
@@ -162,15 +162,15 @@ bulk: 960 (20% off over 5)
 bulk: 360 (no discount)
 ```
 
-- 実装は値です。状態の要らない実装は `const`（`Flat`）、状態の要る実装は欄にクロージャを入れて組み立てる関数（`bulk`）で作ります。`over` と `off` を捕まえているのは `bulk` の中の 2 行だけです。
-- 実装によっては省いてよい欄は `?` を付けます（`note Note?`）。関数型にはゼロ値が無いので、省ける欄は型の上で省けると書くしかありません。呼ぶ側は `nil` かどうかを確かめてから呼びます。
+- 実装は値です。状態の要らない実装は `const`（`Flat`）、状態の要る実装はフィールドにクロージャを入れて組み立てる関数（`bulk`）で作ります。`over` と `off` を捕まえているのは `bulk` の中の2行だけです。
+- 実装によっては省いてよいフィールドは `?` を付けます（`note Note?`）。関数型にはゼロ値が無いので、省けるフィールドは型の上で省けると書くしかありません。呼ぶ側は `nil` かどうかを確認してから呼びます。
 - どの実装が使われるかは、呼び出し（`quote(Flat, …)` / `quote(b, …)`）に書いてあります。
 
-実戦サイズの実物（ルート表・Mount / Merge・middleware の before / after）は [`examples/http_router.sober`](../../examples/http_router.sober) にあります。
+実戦サイズの実物（ルート表・Mount / Merge・middlewareのbefore / after）は [`examples/http_router.sober`](../../examples/http_router.sober) にあります。
 
-## 3. 決まった種類のどれか — union と型パターンの switch
+## 3. 決まった種類のどれか — unionと型パターンのswitch
 
-種類が閉じていて（支払い方法・図形・トークンの種類など）、種類ごとに振る舞いが違うなら、union にして switch で分けます。
+種類が閉じていて（支払い方法・図形・トークンの種類など）、種類ごとに振る舞いが違うなら、unionにしてswitchで分けます。
 
 ```sober
 // examples/abstraction_union.sober
@@ -218,7 +218,7 @@ cash: fee 0
 500 points: fee 0
 ```
 
-switch が union の variant を 1 つでも漏らすと、コンパイルエラーになります。種類を足したときに、直すべき switch を全部コンパイラが名指しします。
+switchがunionのvariantを1つでも漏らすと、コンパイルエラーになります。種類を足したときに、直すべきswitchを全部コンパイラが列挙します。
 
 ```sober
 // examples/abstraction_union_neg.sober
@@ -250,35 +250,35 @@ func main() {
 sober: error at examples/abstraction_union_neg.sober:12:12 (NonExhaustive): switch does not cover every variant of the union — add the missing cases or a default (missing: Points)
 ```
 
-`default` の腕を書くと、漏れの検査はその switch では効かなくなります。種類を足したときに見直したい switch では、variant を全部書きます（`fee` のように）。
+`default` の分岐を書くと、漏れの検査はそのswitchでは効かなくなります。種類を足したときに見直したいswitchでは、variantを全部書きます（`fee` のように）。
 
 ## 4. 失ったものと得たもの
 
 失ったもの:
 
-- `this` が無い — これはオブジェクトではありません。 関数の欄を持つ struct は C の関数ポインタの struct に似ていますが、自分自身を第一引数に受け取る仕組み（`this` / `self`）がありません。状態はクロージャが、作る行で明示に捕まえます
-- メソッドの呼び出しの構文（`x.f()`）と、型にメソッドを足していく書き方。Zig のような method の構文（struct の名前空間に関数を置き、`x.f()` と呼べる糖衣）もありません。呼び方は常に `f(x)` の 1 つです。同じ呼び出しに 2 通りの書き方を作らず、振る舞いがデータに属しているように見える心的モデルの入口を、構文の段階で断っています
-- 暗黙の満足（Go の interface・Haskell の型クラスのインスタンスの解決）。実装は毎回、引数として渡します
+- `this` が無い — これはオブジェクトではありません。 関数のフィールドを持つstructはCの関数ポインタのstructに似ていますが、自分自身を第一引数に受け取る仕組み（`this` / `self`）がありません。状態はクロージャが、作る行で明示に捕まえます
+- メソッドの呼び出しの構文（`x.f()`）と、型にメソッドを足していく書き方。Zigのようなmethodの構文（structの名前空間に関数を置き、`x.f()` と呼べる糖衣）もありません。呼び方は常に `f(x)` の1つです。同じ呼び出しに2通りの書き方を作らず、振る舞いがデータに属しているように見える心的モデルの入口を、構文の段階で断っています
+- 暗黙の満足（Goのinterface・Haskellの型クラスのインスタンスの解決）。実装は毎回、引数として渡します
 
 得たもの:
 
 - どの実装が使われるかが、呼び出しの場所に書いてある。 暗黙の解決を追いかける必要がありません
 - 何を捕まえたかが、クロージャを作った行に書いてある。 隠れたフィールドや継承した状態はありません
-- nil の interface の罠が無い。 関数型にゼロ値が無いので、「欄が空かもしれない」は `?` として型に出ます
-- 種類が閉じているなら union と switch で、足し漏れをコンパイラが見つけます
+- nilのinterfaceの罠が無い。 関数型にゼロ値が無いので、「フィールドが空かもしれない」は `?` として型に出ます
+- 種類が閉じているならunionとswitchで、足し漏れをコンパイラが見つけます
 
 ## 5. 他の言語からの対応表
 
 | 言語 | そこで書いていたもの | Sober |
 | --- | --- | --- |
-| Go | メソッド 1 本の interface（`http.server.Handler`） | 名前付き関数型（`http.server.Handler` は関数型） |
-| Go | メソッドが複数の interface（`sort.Interface`） | 関数の欄を持つ struct を渡す（`Ord[T]{less: …}`） |
-| Rust | trait と `impl Trait for T`・`dyn Trait` | 関数の欄を持つ struct（辞書）を値として渡す |
-| Rust | `enum` と `match` | union と switch |
-| TypeScript / React | `onClick` を props に渡す | そのままの形（関数を値として渡す）。これを書いたことがあれば、もう書けます |
-| TypeScript | 判別可能な union（`kind` の欄）と `switch` | union と型パターンの switch |
-| Java | `Comparator` を `sort` に渡す | 関数（か関数の欄の struct）を渡す。`Comparator` を渡すとき、実質は関数を渡しています |
-| Java | 抽象クラスとサブクラス | 共通の部分は関数に、差し替える部分は関数の欄に |
+| Go | メソッド1本のinterface（`http.server.Handler`） | 名前付き関数型（`http.server.Handler` は関数型） |
+| Go | メソッドが複数のinterface（`sort.Interface`） | 関数のフィールドを持つstructを渡す（`Ord[T]{less: …}`） |
+| Rust | traitと `impl Trait for T`・`dyn Trait` | 関数のフィールドを持つstruct（辞書）を値として渡す |
+| Rust | `enum` と `match` | unionとswitch |
+| TypeScript / React | `onClick` をpropsに渡す | そのままの形（関数を値として渡す）。これを書いたことがあれば、もう書けます |
+| TypeScript | 判別可能なunion（`kind` のフィールド）と `switch` | unionと型パターンのswitch |
+| Java | `Comparator` を `sort` に渡す | 関数（か関数のフィールドを持つstruct）を渡す。`Comparator` を渡すとき、実質は関数を渡しています |
+| Java | 抽象クラスとサブクラス | 共通の部分は関数に、差し替える部分は関数のフィールドに |
 | Haskell | 型クラス（`Ord a =>`） | 辞書を手で渡す（型クラスの辞書渡しを、コンパイラでなく呼び出しの場所に書く） |
 
-まとめると、Sober の抽象化は C の関数ポインタの struct を、型安全・メモリ安全・null 安全にしたものです（関数型にゼロ値が無いので省ける欄は `?` が強制し、捕まえた値の寿命は region が守り、関数が持つエフェクトは宣言に出ます）。
+まとめると、Soberの抽象化はCの関数ポインタのstructを、型安全・メモリ安全・null安全にしたものです（関数型にゼロ値が無いので省けるフィールドは `?` が強制し、捕まえた値の寿命はregionが守り、関数が持つエフェクトは宣言に出ます）。

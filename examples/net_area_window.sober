@@ -1,9 +1,9 @@
 package main
 
-// net.Serve + http.server.ServeConn の接続の task（区画の形 — language.md 11 節「接続の task の積み」）の区画の窓の網: 同じワーカーの上で
-// (1) keep-alive の受けで浅く寝て起きる接続・(2) handler の中で深く寝て、起きてから要求の path（受けの region の中身）をそのまま返す接続・
-// (3) 要求を 2 つに割って送り、途中の要求を受けの region に持ったまま待つ接続 が混ざる。浅く寝た接続の窓の深度は空のまま持たれ、起きた点で
-// ワーカーの区画が替わっていれば付け替えられる。付け替えを取り違えると、深く寝た接続や途中の要求の中身が他の接続の受けで上書きされて答えが崩れる
+// net.Serve + http.server.ServeConnの接続のtask（エリアの形 — language.md 11 節「接続のtaskのスタック」）のエリアのウィンドウのテスト: 同じワーカーの上で
+// (1) keep-aliveの受けでシャロースリープして起きる接続・(2) handlerの中でディープスリープして、起きてからリクエストのpath（受けのregionの中身）をそのまま返す接続・
+// (3) リクエストを2つに割って送り、途中のリクエストを受けの region に持ったまま待つ接続 が混ざる。シャロースリープした接続のウィンドウの深度は空のまま持たれ、起きた点で
+// ワーカーのエリアが替わっていれば付け替えられる。付け替えを取り違えると、ディープスリープした接続や途中のリクエストの中身が他の接続の受けで上書きされて答えが崩れる
 
 import "std/iter"
 import "std/net"
@@ -51,7 +51,7 @@ func run() (string, error?) {
     return out, nil
 }
 
-// 種類 k % 3: 0 = /ok の連打（浅く寝る）・1 = /hold（深く寝て path を返す）・2 = 割った /hold（途中の要求を持って待つ）
+// 種類k % 3: 0 = /okの連打（シャロースリープ）・1 = /hold（ディープスリープしてpathを返す）・2 = 割った /hold（途中のリクエストを持って待つ）
 func client(port int, k int) string {
     v, e := talk(port, k)
     return if e == nil { "client ${k}: ${v}" } else { "client ${k}: error" }
@@ -91,7 +91,7 @@ func talk(port int, k int) (string, error?) {
     return "${good}/6", nil
 }
 
-// 接続ごとに長さの違う印（受けの region の中身の大きさを散らす）
+// 接続ごとに長さの違うマーク（受けのregionの中身の大きさを散らす）
 func pad(k int) string {
     mut p := ""
     for i <- iter.Range(0, 20 * k) {

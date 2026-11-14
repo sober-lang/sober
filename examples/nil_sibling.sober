@@ -1,7 +1,7 @@
 package main
 
-// 兄弟の腕から T? を組む（spec T-16）: 期待型の無い if / switch の式で、腕のどれかが nil で終わり
-// 他の腕から型 T が読めるなら、式の型は T?（T が T? ならそのまま）
+// 兄弟の分岐からT? を組む（spec T-16）: 期待型の無いif / switchの式で、分岐のどれかがnilで終わり
+// 他の分岐から型Tが読めるなら、式の型はT?（TがT? ならそのまま）
 
 import "std/iter"
 
@@ -41,13 +41,13 @@ func side(sh Shape) int? {
 
 func main() {
     for k <- iter.Range(0, 3) {
-        // if の腕
+        // ifの分岐
         a := if k == 0 { 10 } else { nil }
         println(describe(a))
-        // else if の鎖の途中の nil・前に文のある腕
+        // else if のチェーンの途中のnil・前に文のある分岐
         b := if k == 0 { 1 } else if k == 1 { println("mid"); nil } else { 3 }
         println(describe(b))
-        // switch の腕
+        // switchの分岐
         c := switch k {
         case 0: nil
         case 1: 20
@@ -57,7 +57,7 @@ func main() {
             println(c)
         }
     }
-    // struct・string・error の腕
+    // struct・string・errorの分岐
     p := if len(bytes("ab")) == 2 { Point{x: 1, y: 2} } else { nil }
     if p != nil {
         println(p.x + p.y)

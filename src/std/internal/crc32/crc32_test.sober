@@ -1,7 +1,7 @@
 package crc32
 
-// Update の継ぎ足しの網: どこで割っても Update(Update(0, a), b) = Update(0, a ‖ b)（3 つの道〔PCLMULQDQ の畳み 64 B 以上・slicing-by-8 256 B 以上・1 バイトずつ〕を
-// またぐ割り方 — 割った片が別の道に落ちる）と照合値
+// Updateの継ぎ足しの検査一式: どこで割ってもUpdate(Update(0, a), b) = Update(0, a ‖ b)（3つのパス〔PCLMULQDQの畳み64 B以上・slicing-by-8 256 B以上・1バイトずつ〕を
+// またぐ割り方 — 割った片が別のパスに落ちる）と照合値
 
 import "std/iter"
 

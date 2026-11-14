@@ -1,6 +1,6 @@
 package main
 
-// std/json の Value と同じ形の再帰の union（a1dump は単一ファイルの main だけを写すので同形を main に書く）: 関数の結果で組む・
+// std/jsonのValueと同じ形の再帰のunion（a1dumpは単一ファイルのmainだけをコピーするので同形をmainに書く）: 関数の結果で組む・
 // 部分木を共有する・印字（Format と同じ規則）・std/json の View から開いて組む
 
 import "std/iter"
@@ -46,7 +46,7 @@ func show(x J) string {
     }
 }
 
-// std/json の文書の節 n から下を J に開く（ビューを 1 段ずつ — 再帰）
+// std/jsonの文書の節nから下をJに開く（ビューを1レベルずつ — 再帰）
 func open(d json.Doc, n int) J {
     return switch json.At(d, n) {
     case json.ViewNull{}: JNull{}

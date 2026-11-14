@@ -1,7 +1,7 @@
 package lib
 
 // 小分けの check（check --split）の .sobi の読み戻しの題材（F-s ② — report-1242）: 呼び先で展開される関数（mut 仮引数）の本体に catch を置く。
-// .sobi は loader の写しの後の木（`$ctKv, $ctKe := …`）を印字するので、読みは合成ソースの字句（lexer.LexSynth）で
+// .sobiはloaderのコピーの後の木（`$ctKv, $ctKe := …`）を印字するので、読みは合成ソースの字句（lexer.LexSynth）で
 
 import "std/io"
 

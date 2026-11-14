@@ -1,6 +1,6 @@
 package main
 
-// 負例: yield は字句的に囲む生成器（式の位置の for）のもの — 文形 for の本体だけでは使えない（language.md 7 節）
+// 負例: yieldは字句的に囲むジェネレータ（式の位置のfor）のもの — 文形forの本体だけでは使えない（language.md 7 節）
 
 func main() {
     xs := []int{1, 2}

@@ -3,7 +3,7 @@ package lower
 // panic の観測性: 閉世界で panic しうる点を lower が全部数え、点の番号 → 種類 + file:line:col の表を
 // 実行ファイルに焼く。死ぬときは stderr に 1 行（`panic: index out of range at lexer/token.sober:84:12`）を書いてから exit 101。
 // 点の番号は IR の既存の op で運ぶ（`call @rt.panic(const 番号)` の後に今までどおり `exit 101` — IR のテキスト形式は変えない: stage1 の
-// 正規バックエンドが同じ IR テキストを建てる照合〔elfeq〕を保つ）。表は大域 @rt.psites（1 点 1 語 — 種類 | ファイル << 8 | 行 << 24 | 列 << 48）。
+// 正規バックエンドが同じIRテキストを建てる照合〔elfeq〕を保つ）。表は大域 @rt.psites（1点1ワード — 種類 | ファイル << 8 | 行 << 24 | 列 << 48）。
 // region の超過（exit 102）は rt.panic_mem（種類）が深度とスロットごとの使用量を stderr に書く（region のメタから — madvise の高水位と同じ座標）
 
 import "desugar"
@@ -30,12 +30,12 @@ const PK_STALE = 11    // 失効したチャネルの端点（give: で子へ移
 const PK_SENDCLOSED = 12 // 閉じたチャネルへの送り（P3b-4 ③）
 const PK_CLOSE2 = 13   // 閉じたチャネルをもう一度閉じた（P3b-4 ③）
 const PK_POISONED = 15 // 毒された domain への呼び出し（前に本体が死んだ — 状態は半端に書かれているかもしれない・domain.sober）
-const PK_BUDGET = 14   // wait の scope の子の宣言（budget:）が天井を超える — 待っても入れない（段 3 の ③ — language.md 11 節「wait」）
+const PK_BUDGET = 14   // waitのscopeの子の宣言（budget:）が天井を超える — 待っても入れない（段階3の ③ — language.md 11 節「wait」）
 
 // region の超過の種類（rt.panic_mem）
 const PM_DEPTH = 1     // region の入れ子が深度の上限を超えた
 const PM_SLOT = 2      // 1 つの region がスロットの容量を超えた
-const PM_VA = 3        // スロット・task の塊の VA の予約（mmap）が尽きた（4 = PM_STACK — task.sober）
+const PM_VA = 3        // スロット・taskのチャンクのVAの予約（mmap）が尽きた（4 = PM_STACK — task.sober）
 
 // 点 at（種類 kind）の panic: 今のブロックを rt.panic(番号) → exit 101 で閉じる（呼び手は cur を次のブロックに置き直す）
 func panicSite(st mut St, kind int, at desugar.NodeRef) {
@@ -51,8 +51,8 @@ func panicSite(st mut St, kind int, at desugar.NodeRef) {
     exit(mut st, PANIC)
 }
 
-// `panic(…)`（loader の panicx.sober が写した形 — 実引数は [ラベルの名前の文字列] か [名前, 欄の struct の composite]）:
-// 欄の値を書いた順に評価してから、標準エラーへ `panic: L{a: 1, s: "x"}` を書き（欄は宣言順・string は引用 + エスケープ）、rt.panic が ` at file:line:col` を足す。
+// `panic(…)`（loaderのpanicx.soberがコピーした形 — 実引数は [ラベルの名前の文字列] か [名前, フィールドのstructのcomposite]）:
+// フィールドの値を書いた順に評価してから、標準エラーへ `panic: L{a: 1, s: "x"}` を書き（フィールドは宣言順・stringは引用 + エスケープ）、rt.panicが ` at file:line:col` を足す。
 // 実引数なし = 裸の `panic()`（廃止 — loader が拒否するのでここには来ない）
 func panicCall(st mut St, args desugar.ListRef, at desugar.NodeRef) (int, error?) {
     n := lenL(mut st, args)
@@ -183,7 +183,7 @@ func buildPanicMem(st mut St) {
     trapDie(mut st, PANIC_MEM, kind)
     meta := globaladdr(mut st, st.meta)
     toStderr(mut st, meta)
-    // 綴りは panic のラベル（panic(RegionExceeded{…}) の表層）の欄に揃える:
+    // 綴りはpanicのラベル（panic(RegionExceeded{…}) の表層）のフィールドに揃える:
     // `panic: RegionExceeded{cause: <depth_limit | slot_capacity | va_exhausted>, depth: <今の深度>}` + region ごとに `  region{depth: d, high_water: バイト}`
     printLit(mut st, "panic: RegionExceeded{cause: ")
     choose(mut st, kind, []string{"depth_limit", "slot_capacity", "va_exhausted"}, 1)
@@ -241,14 +241,14 @@ func buildPanicMem(st mut St) {
     exit(mut st, PANIC_MEM)
 }
 
-// map の成長の計器（開発用 `sober build --map-stat` = rt の変異 13: map の常駐の帰属）。meta の後ろ（META_WORDS + 2 から MS_N 語 — META_WORDS / + 1 は W_SLOT_DEF / W_VDSO）に
+// mapの成長の計装（開発用 `sober build --map-stat` = rtのミュータント13: mapの常駐の内訳）。metaの後ろ（META_WORDS + 2からMS_Nワード — META_WORDS / + 1はW_SLOT_DEF / W_VDSO）に
 // 索引の作り直し（rt.map_find・rt.map_grow）・セル列の世代（rt.map_grow の中の rt.slice_grow — その場の深度の bump の差）・先端での 1 セル伸長の
-// 総バイトを数え、`mapstat <番号> <バイト>` と印字する（番号 = 下の MS_*）。数え口は普通の load / store（並列の task では数えこぼす — SOBER_WORKERS=1 で使う）。
+// 総バイトを数え、`mapstat <番号> <バイト>` と印字する（番号 = 下のMS_*）。カウンタは普通のload / store（並列のtaskでは数えこぼす — SOBER_WORKERS=1で使う）。
 // 旗の無い build は不変。回数・最大・持ち主の付け替えの数えは付けていない（自己 build の命令が増える代償が見合わない）
 const MS_IDXB = 0 // 索引の確保の総バイト（rt.map_find・rt.map_grow）
 const MS_CELLB = 1 // セル列の新しい確保（map_grow の全コピー・幾何成長）の総バイト
-const MS_TIPB = 2 // 先端での 1 セル伸長の総バイト（挿入の点の速い道）
-const MS_GIDXB = 3 // 索引の確保のうち rt.map_grow（索引を先に作る道）の総バイト
+const MS_TIPB = 2 // 先端での1セル伸長の総バイト（挿入の点の高速パス）
+const MS_GIDXB = 3 // 索引の確保のうちrt.map_grow（索引を先に作るパス）の総バイト
 const MS_N = 4
 
 // 計数 k に v を足す
@@ -257,14 +257,14 @@ func msAdd(st mut St, k int, v int) {
     store(mut st, g, META_WORDS + 2 + k, bin(mut st, BAdd, load(mut st, g, META_WORDS + 2 + k), v))
 }
 
-// region の高水位の標本（開発用 — rt の変異 39・memcheck の網）。meta の後ろ（META_WORDS + 2 から MH_N 語）に
+// regionの高水位の標本（開発用 — rtのミュータント39・memcheckの検査）。metaの後ろ（META_WORDS + 2からMH_Nワード）に
 // Σ_深度 (bump − スロットの先頭) の最大と main の入口の Σ を持ち、rt.depth_report が `memhw <最大> <入口の Σ>` を stderr へ。
-// 標本の点 = region を捨てる点の手前（rtlower — setdepth と反復の軽い enter）と exit。数え口は普通の load / store（SOBER_WORKERS=1 で使う）
+// 標本の点 = regionを捨てる点の手前（rtlower — setdepthと反復の軽いenter）とexit。カウンタは普通のload / store（SOBER_WORKERS=1で使う）
 const MH_MAX = 0
 const MH_ENTRY = 1
-const MH_SREF = 2     // スタックの物差しの基準（main を呼ぶ sober_entry の rsp — S の行と同じ起点）
+const MH_SREF = 2     // スタックの基準（mainを呼ぶsober_entryのrsp — Sの行と同じ起点）
 const MH_SLO = 3      // 塗った範囲の下端
-const MH_SUSE = 4     // main が使ったスタック（基準 − 書き換わった最も低い語 — exit の前に sober_entry が直に数える）
+const MH_SUSE = 4     // mainが使ったスタック（基準 − 書き換わった最も低いワード — exitの前にsober_entryが直に数える）
 const MH_N = 5
 const MH_UP = 24            // rt.stack_paint のスロット → 呼び手の rsp（x86 のフレーム: 戻り番地・push rbp・スロット = rbp − 8）
 const MH_MARGIN = 64        // 塗りの上端（スロットからの距離 — rt.stack_paint 自身のフレームを避ける。MH_UP + これ未満の使用はその値と読める）
@@ -324,7 +324,7 @@ func buildStackPaint(st mut St) {
     ret(mut st, -1)
 }
 
-// main が返った直後（sober_entry の中・呼び出しの前 — 数える間にスタックを使わない）: 塗った範囲を下から見て最初に書き換わった語までの距離を MH_SUSE へ
+// mainが返った直後（sober_entryの中・呼び出しの前 — 数える間にスタックを使わない）: 塗った範囲を下から見て最初に書き換わったワードまでの距離をMH_SUSEへ
 func stackUseCount(st mut St, meta int) {
     lo := load(mut st, meta, META_WORDS + 2 + MH_SLO)
     hi := bin(mut st, BSub, load(mut st, meta, META_WORDS + 2 + MH_SREF), iconst(mut st, MH_UP + MH_MARGIN))
@@ -345,7 +345,7 @@ func stackUseCount(st mut St, meta int) {
     store(mut st, meta, META_WORDS + 2 + MH_SUSE, bin(mut st, BSub, load(mut st, meta, META_WORDS + 2 + MH_SREF), l))
 }
 
-// 最後の標本を取って `memhw <最大> <入口の Σ> <スタック>` を stderr へ（スタック = main が使った量・数えていない道〔task のプログラム・panic〕は -1）（exit と panic 101 / 102 の道 — 印字の fd は stderr のまま返る）
+// 最後の標本を取って `memhw <最大> <入口の Σ> <スタック>` をstderrへ（スタック = mainが使った量・数えていないパス〔taskのプログラム・panic〕は -1）（exitとpanic 101 / 102のパス — 印字のfdはstderrのまま返る）
 func memHwDump(st mut St, meta int) {
     call(mut st, st.rtMemHw, list0(mut st))
     toStderr(mut st, meta)
@@ -359,7 +359,7 @@ func memHwDump(st mut St, meta int) {
     call(mut st, st.rtFlush, list0(mut st))
 }
 
-// rt.depth_report の本体（102 の深度の契約〔27 節〕の消費の計測口・死亡ダンプ以外の口）:
+// rt.depth_reportの本体（102の深度の契約〔27 節〕の消費の計測インターフェース・死亡ダンプ以外のインターフェース）:
 // 旗（W_DREP — 入口が SOBER_DEPTH_REPORT から置く）が立っていれば `region_depth{max: d}` を stderr へ。d = 一度でも入った最深の深度
 // （深度 d の bump は enter〔full・軽い〕でだけ初期化され、出ても 0 に戻らない — 熱い経路に計測の命令を足さずに読める）
 func buildDepthReport(st mut St) {
@@ -388,7 +388,7 @@ func buildDepthReport(st mut St) {
         call(mut st, st.rtFlush, list0(mut st))
         store(mut st, meta, W_FD, iconst(mut st, 1))
     }
-    // MDWE の確認の口（入口の SOBER_MDWE_REPORT — W_DREP の旗のビット）
+    // MDWEの確認のオプション（入口のSOBER_MDWE_REPORT — W_DREPの旗のビット）
     dr := load(mut st, meta, W_DREP)
     mOn := newBlock(mut st)
     mOff := newBlock(mut st)
@@ -553,7 +553,7 @@ func buildPanic(st mut St, p loader.Program) {
     exit(mut st, PANIC)
 }
 
-// rt.panic の task.Join の死の枝（点の語の位置 fsl / line / col・ファイルの綴り paths）:
+// rt.panicのtask.Joinの死の枝（点のワードの位置fsl / line / col・ファイルの綴りpaths）:
 // `panic: ChildDied{cause: <子の死因>} at <Join の位置>` + 子の死因に位置があれば `  cause at <位置>` の 2 行目 → exit 101。
 // 子の死因 = @rt.trap の [1] 終了コード（101 / 102）・[2] 点（rt.panic の点の番号 / rt.panic_mem の種類・ゼロ除算は -1）
 func taskDiedText(st mut St, g int, meta int, fsl int, line int, col int, paths []string) {
@@ -586,7 +586,7 @@ func taskDiedText(st mut St, g int, meta int, fsl int, line int, col int, paths 
     printLit(mut st, "integer divide by zero")
     br(mut st, bHead, -1)
     setCur(mut st, bSite)
-    // `panic(L{…})` の子はラベルの名前（欄は運ばない — `L{…}`）
+    // `panic(L{…})` の子はラベルの名前（フィールドは運ばない — `L{…}`）
     mut x := st.plabs
     while x >= 0 {
         hit := newBlock(mut st)
@@ -666,7 +666,7 @@ func panicTextsFor(ftoi bool, tdied bool) []string {
 // 行バッファを今の fd（標準出力）へ吐いてから、以降の印字の fd を 2 にする
 func toStderr(st mut St, meta int) {
     call(mut st, st.rtFlush, list0(mut st))
-    // std/task を使うプログラム: 溜めた区間を先行順で全部出す（toStderr を通るのは終わりの前だけ）
+    // std/taskを使うプログラム: バッファした区間を先行順で全部出す（toStderrを通るのは終わりの前だけ）
     if st.taskUse {
         call(mut st, st.rtOutDrain, list0(mut st))
     }
@@ -678,7 +678,7 @@ func printLit(st mut St, w string) {
     call(mut st, st.rtPstr, list1(mut st, strlit(mut st, strLit(mut st, w))))
 }
 
-// v に合う文面を印字する（v = base + k のとき ts[k] — 比較の鎖）
+// vに合う文面を印字する（v = base + kのときts[k] — 比較のチェーン）
 func choose(st mut St, v int, ts []string, base int) {
     done := newBlock(mut st)
     for k <- iter.Range(0, len(ts)) {
@@ -697,7 +697,7 @@ func choose(st mut St, v int, ts []string, base int) {
 // p のファイル f の各字句の [行, 列]（1 起点 — diag.Where と同じ数え方）の平らな列。ソースが読めなければ空
 func tokLineCols(p loader.Program, f int) []int {
     src0, ok := loader.SourceFs(p, f, p.std_src)
-    // std の焼き込みの表を持たない Program（Manifest で読む道具 — lldump 等。std はファイルの置き場から）はファイルを直に読む
+    // stdの焼き込みの表を持たないProgram（Manifestで読む道具 — lldump等。stdはファイルの格納場所から）はファイルを直に読む
     src := if ok { src0 } else { io.ReadFile(p.file_path[f]) catch []byte{} }
     toks := lexer.Lex(src)
     mut out := mut []int{}

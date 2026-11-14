@@ -1,7 +1,7 @@
 package main
 
-// カバレッジの計器（`sober build --cover`）の題材: 点の種類を全部（fn・then / else・case・loop・rhs・catch）と、
-// 踏まない腕・呼ばれない関数を持つ。網 = scripts/cover.sh（点の表と踏んだ印の黄金 — testdata/cover）
+// カバレッジの計装（`sober build --cover`）の題材: 点の種類を全部（fn・then / else・case・loop・rhs・catch）と、
+// 踏まない分岐・呼ばれない関数を持つ。検査 = scripts/cover.sh（点の表と踏んだマークのゴールデン — testdata/cover）
 
 import "std/convert"
 

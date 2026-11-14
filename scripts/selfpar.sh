@@ -1,26 +1,26 @@
 #!/usr/bin/env bash
-# selfpar（段 6 P6-1 / P6-3）: コンパイラ自身の並列（check の Def の区間 — compiler/checker/core.sober の
-# checkCoreX・脱糖 + 検査の区間 — compiler/checker/e2s.sober の checkRoundPar）がワーカー数・天井に依らず逐次と同じバイトを出すことの網。
+# selfpar（段階6 P6-1 / P6-3）: コンパイラ自身の並列（checkのDefの区間 — compiler/checker/core.soberの
+# checkCoreX・脱糖 + 検査の区間 — compiler/checker/e2s.soberのcheckRoundPar）がワーカー数・天井に依らず逐次と同じバイトを出すことの検査。
 # gates は全体に SOBER_WORKERS=1 を export するので、ここだけ明示で W8 / 天井 0 を掛ける。
-#   1. 自己 check（compiler/app — std を写した作業木）の判定 JSON: 1 本の経路（SOBER_DESUGAR_PAR=0 — 脱糖を区間に割らない）≡ W1 ≡ W8 ≡ W8 + 天井 0
+#   1. 自己check（compiler/app — stdをコピーした作業木）の判定JSON: 1本の経路（SOBER_DESUGAR_PAR=0 — 脱糖を区間に割らない）≡ W1 ≡ W8 ≡ W8 + 天井0
 #      （SOBER_BUDGET_MB=0 — 全区間が縮退）。自己の iface（L0 を使わない ExclE2 — std の本体も区間で脱糖する・`@expand`）: 1 本の経路 ≡ W8
-#   2. 合成例（区間が複数になる大きさ・def error を区間をまたいで置く）の判定と --def-index: 黄金（testdata/selfpar — 逐次の検査器の出力）≡ W1 ≡ W8 ≡ 天井 0。
+#   2. 合成例（区間が複数になる大きさ・def errorを区間をまたいで置く）の判定と --def-index: ゴールデン（testdata/selfpar — 逐次の検査器の出力）≡ W1 ≡ W8 ≡ 天井0。
 #      W8 では区間が子 task で走ったこと（SOBER_PAR_STATS の ended > 1）も見る
-#   3. 変異: 区間の結果を逆順に畳む検査器を建てると 2 の --def-index が割れること・脱糖 + 検査の区間の合流で根の区間だけを見る
-#      検査器を建てると 2 の判定が割れること（網の自己検査）
-#   4. 層の並走（段 6 P6-2 — checkFront）: 拒否の層を重ねた例の出力が逐次の経路 ≡ W1 ≡ W8 ≡ 天井 0 + 合流の優先順の変異
-#   5. バックエンドの関数の並列（段 6 P6-4 — xParEmit）: 自己 build の ELF が逐次の経路 ≡ W1 ≡ W8 ≡ 天井 0 + 群の合流の逆順の変異
+#   3. ミューテーション: 区間の結果を逆順に畳む検査器をビルドすると2の --def-index が割れること・脱糖 + 検査の区間の合流で根の区間だけを見る
+#      検査器をビルドすると2の判定が割れること（検査の自己検査）
+#   4. 層の並走（段階6 P6-2 — checkFront）: 拒否の層を重ねた例の出力が逐次の経路 ≡ W1 ≡ W8 ≡ 天井0 + 合流の優先順のミューテーション
+#   5. バックエンドの関数の並列（段階6 P6-4 — xParEmit）: 自己buildのELFが逐次の経路 ≡ W1 ≡ W8 ≡ 天井0 + 群の合流の逆順のミューテーション
 #   6. lower の頭の関数単位化（席 A — compiler/lower/split.sober）: 自己 build の ELF が群の子で下ろして LIFO を模擬した形（SOBER_LOWER_SPLIT=3・
-#      子が受け持ちを逆順に下ろす SOBER_LOWER_REV=1）≡ 1 本の経路 + 文字列の rodata の事象を抜くと割れる変異。W8 + SOBER_LOWER_SPLIT=8 は
+#      子が受け持ちを逆順に下ろすSOBER_LOWER_REV=1）≡ 1本の経路 + 文字列のrodataの事象を抜くと割れるミューテーション。W8 + SOBER_LOWER_SPLIT=8は
 #      群の子（task.Map — A-2）で下ろす形・SOBER_LOWER_SPLIT=1 は直の道を強制する形 — どちらも 1 本の経路と同じ ELF（W>1 の既定は分割の道 —
-#      口を外した W8 で証人 groups=8 fallback=none。gates の SOBER_LOWER_SPLIT=1 の固定は j_build が外す）。子の死（SOBER_LOWER_DIE=1）→ 直の道も同じ ELF（証人 #lower split … fallback=died）+ 死を見ずに模擬へ進むと割れる変異
-#   7. finish の検査だけの段の並列（席 D の D-2 — compiler/loader/finpar.sober）: 自己 build の W8 は子の道（証人 #finish … fallback=none）・
-#      子の死（SOBER_FINISH_DIE=1）→ 直の道も同じ ELF。拒否を 2 ファイルに置いた例（testdata/selfpar/finish — 同じ段 / 段をまたぐ / catch の左辺）の
-#      出力が W1（直の道）≡ W2 ≡ W8 ≡ W12 ≡ W8 + 子の死。変異 11〜13: 後のファイルの当たりを選ぶ・規則の位置を後のファイルで上書きする・子の死を見ない
+#      オプションを外したW8で証人groups=8 fallback=none。gatesのSOBER_LOWER_SPLIT=1の固定はj_buildが外す）。子の死（SOBER_LOWER_DIE=1）→ 直のパスも同じELF（証人 #lower split … fallback=died）+ 死を見ずに模擬へ進むと割れるミューテーション
+#   7. finishの検査だけのフェーズの並列（席DのD-2 — compiler/loader/finpar.sober）: 自己buildのW8は子のパス（証人 #finish … fallback=none）・
+#      子の死（SOBER_FINISH_DIE=1）→ 直のパスも同じELF。拒否を2ファイルに置いた例（testdata/selfpar/finish — 同じフェーズ / フェーズをまたぐ / catchの左辺）の
+#      出力がW1（直のパス）≡ W2 ≡ W8 ≡ W12 ≡ W8 + 子の死。ミューテーション11〜13: 後のファイルの当たりを選ぶ・規則の位置を後のファイルで上書きする・子の死を見ない
 #   8. irinl の並びに依らない展開（report-1185）: 自己 build の ELF が処理の入力の並びの撹拌（SOBER_IRINL_ORDER=1 逆順 / 7 乱順）≡ 1 本の経路 +
-#      入力の並びのまま処理する変異 14（撹拌で割れること）
-#   並列（ゲートの高速化便 R0 — report-1220）: 各回の実行と変異の 1 本ずつを gatelib の par_run の仕事にして $JOBS 本ずつ並べる（単体の既定 4）。
-#   仕事は自分の作業ディレクトリ（$PAR_W）だけに書き、変異は専用の木の写しを sed する（共有の $W/tree は読むだけ）。1 本の経路の ELF（bseq）との
+#      入力の並びのまま処理するミューテーション14（撹拌で割れること）
+#   並列（ゲートの高速化タスクR0 — report-1220）: 各回の実行とミューテーションの1本ずつをgatelibのpar_runの仕事にして $JOBS本ずつ並べる（単体の既定4）。
+#   仕事は自分の作業ディレクトリ（$PAR_W）だけに書き、ミューテーションは専用の木のコピーをsedする（共有の $W/treeは読むだけ）。1本の経路のELF（bseq）との
 #   照合は全部の仕事が終わってから。FAIL の行と最後の要約の行の形は逐次の版と同じ
 set -uo pipefail
 # 答えの再生は切る（この網は関数単位キャッシュの当否を見る）
@@ -34,8 +34,8 @@ G=$ROOT/testdata/selfpar
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 JOBS=${JOBS:-4}
-# 検査器の本体の命令数（下の self/check body の線）: W1 の自己 check と、Def の脱糖で止めた check（SOBER_CHECK_STOP=defs）を perf stat で包み、差を取る。
-# perf が無い・使えない環境ではこの線だけ飛ばす
+# 検査器の本体の命令数（下のself/check bodyの上限値）: W1の自己checkと、Defの脱糖で止めたcheck（SOBER_CHECK_STOP=defs）を perf stat で包み、差を取る。
+# perfが無い・使えない環境ではこの上限値だけ飛ばす
 PERF=${PERF:-$(command -v perf || ls -d /nix/store/*perf-linux*/bin/perf 2> /dev/null | head -n 1)}
 INSTP=()
 if [ -n "$PERF" ] && "$PERF" stat -x, -e instructions:u -o /dev/null true > /dev/null 2>&1; then
@@ -66,11 +66,11 @@ mkdir -p "$W/syn"
 gen 120 150 "7 61 113" > "$W/syn/syn.sober"
 gen 120 150 "61" > "$W/syn/one.sober"
 gen 120 150 "" > "$W/syn/ok.sober"
-mytree() { # 仕事専用の木の写し（変異を sed する置き場）→ $PAR_W/tree
+mytree() { # 仕事専用の木のコピー（ミューテーションをsedする配置先）→ $PAR_W/tree
     mkdir -p "$PAR_W/tree"
     cp -r "$W/tree/." "$PAR_W/tree/"
 }
-mutbuild() { # mutbuild <番号> <説明> — 写しの木（sed 済み）から変異の検査器を $W/mut<番号> に建てる。失敗は FAIL の行で 1 を返す
+mutbuild() { # mutbuild <番号> <説明> — コピーの木（sed済み）からミュータントの検査器を $W/mut<番号> にビルドする。失敗はFAILの行で1を返す
     if (cd "$PAR_W/tree" && "$S2" build app --emit=elf --passes -o "$W/mut$1" > "$PAR_W/mutlog" 2>&1); then
         chmod +x "$W/mut$1"
         return 0
@@ -78,7 +78,7 @@ mutbuild() { # mutbuild <番号> <説明> — 写しの木（sed 済み）から
     echo "FAIL: mutant $2build: $(head -c 200 "$PAR_W/mutlog")"
     return 1
 }
-anchor() { # anchor <ファイル（写しの木の中）> <grep の式> <FAIL の文> — 変異の錨が無ければ FAIL の行
+anchor() { # anchor <ファイル（コピーの木の中）> <grepの式> <FAILの文> — ミュータントの錨が無ければFAILの行
     grep -q "$2" "$PAR_W/tree/$1" || echo "FAIL: $3"
 }
 
@@ -129,7 +129,7 @@ j_syn() {
     done
     return 0
 }
-# 3. 変異: 区間の結果を逆順に畳む
+# 3. ミューテーション: 区間の結果を逆順に畳む
 j_mut1() {
     mytree
     anchor checker/core.sober 'o := outs\[k\]' "mutant: the merge loop (o := outs[k]) was not found in checker/core.sober"
@@ -141,7 +141,7 @@ j_mut1() {
     fi
     return 0
 }
-# 3'. 変異: 脱糖 + 検査の区間の合流で根の区間（添字 0）だけを見る（one / syn の def error を落とす）
+# 3'. ミューテーション: 脱糖 + 検査の区間の合流で根の区間（添字0）だけを見る（one / synの def error を落とす）
 j_mut2() {
     mytree
     anchor checker/e2s.sober 'o := outs\[(k + 1) % len(outs)\]' "mutant 2: the merge loop was not found in checker/e2s.sober"
@@ -153,9 +153,9 @@ j_mut2() {
     fi
     return 0
 }
-# 4. 層の並走（段 6 P6-2 — compiler/app/cmd_check.sober の checkFront: ParCheck ‖ analyzer ‖ check を子で走らせ逐次の優先順で畳む）:
+# 4. 層の並走（段階6 P6-2 — compiler/app/cmd_check.soberのcheckFront: ParCheck ‖ analyzer ‖ checkを子で走らせ逐次の優先順で畳む）:
 #    拒否の層を重ねた例の出力（標準出力 + 標準エラー + 終了コード）が逐次の経路（SOBER_DESUGAR_PAR=0）≡ W1 ≡ W8 ≡ 天井 0。
-#    変異: 合流で ParCheck の拒否を見ない（analyzer の指摘が先に出る）と front_all が割れること
+#    ミューテーション: 合流でParCheckの拒否を見ない（analyzerの指摘が先に出る）とfront_allが割れること
 front() { # front <検査器> <例> [env…] → 出力と rc
     local s=$1 e=$2
     shift 2
@@ -187,12 +187,12 @@ j_mut3() {
     fi
     return 0
 }
-# 5. バックエンドの関数の並列（段 6 P6-4 — compiler/lower/x86.sober の xParEmit: 切替 / 罠を持たない関数を群の子で吐いて吐く順に連結）:
+# 5. バックエンドの関数の並列（段階6 P6-4 — compiler/lower/x86.soberのxParEmit: 切替 / 罠を持たない関数を群の子で吐いて吐く順に連結）:
 #    自己 build（--passes の ELF）が 1 本の経路（SOBER_BUILD_PAR=0）≡ W1 ≡ W8 ≡ W8 + 天井 0 のバイト一致・W8 で群の子が走った証人（ended > 1）。
-#    変異: 群の結果を逆順に連結すると ELF が割れること。
-#    移し器の往復（段 4 後半 ラウンド 9 — compiler/lower/move.sober: SOBER_BUILD_PAR=roundtrip で束の前ごとに全関数の本体を詰め、旧い本体を毒で
-#    潰して積み直す）も同じ ELF。変異: 積み直しでブロックの命令の尾（B_ITAIL）を付け替えないと割れること。
-#    W8 は lower の束（B1 / B2）も群の子で回す（ラウンド 10 — lParBatch）: 1 本の経路はそれも外す。変異: 子の B1 の列から licm を抜くと割れること
+#    ミューテーション: 群の結果を逆順に連結するとELFが割れること。
+#    移し器の往復（段階4 後半 ラウンド 9 — compiler/lower/move.sober: SOBER_BUILD_PAR=roundtripでバッチの前ごとに全関数の本体を詰め、旧い本体を毒で
+#    潰して積み直す）も同じELF。ミューテーション: 積み直しでブロックの命令の尾（B_ITAIL）を付け替えないと割れること。
+#    W8はlowerのバッチ（B1 / B2）も群の子で回す（ラウンド10 — lParBatch）: 1本の経路はそれも外す。ミューテーション: 子のB1の列からlicmを抜くと割れること
 BCFGS=("SOBER_WORKERS=1" "SOBER_WORKERS=8 SOBER_PAR_STATS=1" "SOBER_WORKERS=8 SOBER_BUDGET_MB=0" "SOBER_WORKERS=8 SOBER_BUILD_PAR=roundtrip" "SOBER_WORKERS=8 SOBER_LOWER_SPLIT=3 SOBER_LOWER_REV=1 SOBER_PAR_STATS=1" "SOBER_WORKERS=8 SOBER_LOWER_SPLIT=1" "SOBER_WORKERS=8 SOBER_LOWER_SPLIT=8 SOBER_PAR_STATS=1" "SOBER_WORKERS=8 SOBER_LOWER_SPLIT=8 SOBER_LOWER_DIE=1 SOBER_PAR_STATS=1" "SOBER_WORKERS=8 SOBER_FINISH_DIE=1 SOBER_PAR_STATS=1" "SOBER_WORKERS=8 SOBER_IRINL_ORDER=1" "SOBER_WORKERS=8 SOBER_IRINL_ORDER=7")
 j_bseq() {
     (cd "$W/tree" && SOBER_BUILD_PAR=0 SOBER_LOWER_SPLIT=1 SOBER_WORKERS=8 "$S2" build app --emit=elf --passes -o "$W/bseq" > "$PAR_W/blog" 2>&1) || echo "FAIL: self build (1-path): $(head -c 200 "$PAR_W/blog")"
@@ -206,14 +206,14 @@ j_build() { # j_build <番号> — BCFGS の 1 本。ELF は $W/bpar<番号>（b
         ended=$(grep '^#par tasks' "$PAR_W/blog" | sed 's/.*ended=\([0-9]*\).*/\1/')
         [ "${ended:-0}" -gt 1 ] || echo "FAIL: self build (W=8) ran no group task (ended=${ended:-?})"
     fi
-    # 席 A の証人（A-2）: W8 の既定は分割の道（群の数 = ワーカー数・最後まで子の道）・口 SPLIT=8 は分割の道を最後まで通る（fallback=none）・SOBER_LOWER_DIE は
+    # 席Aの証人（A-2）: W8の既定は分割のパス（群の数 = ワーカー数・最後まで子のパス）・オプションSPLIT=8は分割のパスを最後まで通る（fallback=none）・SOBER_LOWER_DIEは
     # 子の死 → 直の道（fallback=died）で、捕まった死は印字されない
-    # 名前付き関数型の写し（desugar/namedval.sober — 席 D の D-1）: 自己 build には写す呼び出しが無い（loader の写しの後に宙に浮いた KNamedArg の節は
+    # 名前付き関数型のコピー（desugar/namedval.sober — 席DのD-1）: 自己buildにはコピーする呼び出しが無い（loaderのコピーの後に宙に浮いたKNamedArgの節は
     # 数えない）ので表層型検査器を走らせない（typed=0 — 全体の TypeAll の 2 回目を走らせない）
     if [[ $cfg == "SOBER_WORKERS=8 SOBER_PAR_STATS=1" ]]; then
         grep -qx '#namedval typed=0' "$PAR_W/blog" || echo "FAIL: self build (W=8) ran the surface typer for named value args: $(grep '^#namedval' "$PAR_W/blog")"
     fi
-    # finish の検査だけの段（loader/finpar.sober — 席 D の D-2）: W8 は子の道を最後まで通る・SOBER_FINISH_DIE は子の死 → 直の道（捕まった死は印字されない）
+    # finishの検査だけのフェーズ（loader/finpar.sober — 席DのD-2）: W8は子のパスを最後まで通る・SOBER_FINISH_DIEは子の死 → 直のパス（捕まった死は印字されない）
     if [[ $cfg == "SOBER_WORKERS=8 SOBER_PAR_STATS=1" ]]; then
         [ "$(grep -c '^#finish \(checks\|rules\)=[0-9]* fallback=none$' "$PAR_W/blog")" = 2 ] || echo "FAIL: self build (W=8) did not take the finish child path: $(grep '^#finish' "$PAR_W/blog")"
     fi
@@ -227,7 +227,7 @@ j_build() { # j_build <番号> — BCFGS の 1 本。ELF は $W/bpar<番号>（b
     if [[ $cfg == "SOBER_WORKERS=8 SOBER_LOWER_SPLIT=8 SOBER_PAR_STATS=1" ]]; then
         grep -qx '#lower split groups=8 fallback=none' "$PAR_W/blog" || echo "FAIL: self build ($cfg) did not take the lower split path: $(grep '^#lower' "$PAR_W/blog")"
     fi
-    # 逆順の子も最後まで子の道で（拒否で直の道へ黙って戻ると ELF は一致してしまう — 段 4 R4 で子が親の店を受け取る形の網）
+    # 逆順の子も最後まで子のパスで（拒否で直のパスへ黙って戻るとELFは一致してしまう — 段階4 R4で子が親の店を受け取る形の検査）
     if [[ $cfg == *LOWER_REV* ]]; then
         grep -qx '#lower split groups=3 fallback=none' "$PAR_W/blog" || echo "FAIL: self build ($cfg) did not take the lower split path: $(grep '^#lower' "$PAR_W/blog")"
     fi
@@ -237,8 +237,8 @@ j_build() { # j_build <番号> — BCFGS の 1 本。ELF は $W/bpar<番号>（b
     fi
     return 0
 }
-# 席 A の子が γ の当たりの店を受け取る形（段 5 R3 — 置き場の切り口 γ: 親の TypeAll が区画を読み戻した店を子へ渡す）: 同じ置き場で冷 → 温を
-# 逆順の子（SOBER_LOWER_SPLIT=3 SOBER_LOWER_REV=1）で建て、温の ELF（$W/bcache）が bseq と一致・温で γ が全部当たり・子の道を最後まで通る
+# 席Aの子が γ の当たりの店を受け取る形（段階5 R3 — 配置先の切り口 γ: 親のTypeAllがエリアを読み戻した店を子へ渡す）: 同じ配置先で冷 → 温を
+# 逆順の子（SOBER_LOWER_SPLIT=3 SOBER_LOWER_REV=1）でビルドし、温のELF（$W/bcache）がbseqと一致・温で γ が全部当たり・子のパスを最後まで通る
 j_cache() {
     local c=$PAR_W/cache cfg="SOBER_WORKERS=8 SOBER_LOWER_SPLIT=3 SOBER_LOWER_REV=1 SOBER_PAR_STATS=1 SOBER_BUILD_CACHE=1 SOBER_CACHE_STAT=1"
     # shellcheck disable=SC2086
@@ -249,7 +249,7 @@ j_cache() {
     grep -q '^cache: alpha .* gamma \([0-9]*\)/\1 ' "$PAR_W/blog" || echo "FAIL: self build (cache warm, split) — gamma did not hit every package: $(grep '^cache: alpha' "$PAR_W/blog" | head -c 160)"
     return 0
 }
-# 語に詰めると同じで長さだけ違う string の字面（testdata/selfpar/strwords）: 1 本道の ELF ≡ 逆順の子の冷 ≡ 温（rodata の大域の鍵の衝突の網）
+# ワードに詰めると同じで長さだけ違うstringの字面（testdata/selfpar/strwords）: 1本道のELF ≡ 逆順の子の冷 ≡ 温（rodataの大域の鍵の衝突の検査）
 j_strwords() {
     local c=$PAR_W/swcache cfg="SOBER_WORKERS=8 SOBER_LOWER_SPLIT=3 SOBER_LOWER_REV=1 SOBER_PAR_STATS=1 SOBER_BUILD_CACHE=1" r
     (cd "$G" && SOBER_BUILD_PAR=0 SOBER_LOWER_SPLIT=1 SOBER_WORKERS=8 "$S2" build strwords.sober --emit=elf --passes -o "$PAR_W/sw.seq" > "$PAR_W/swlog" 2>&1) || { echo "FAIL: strwords (1-path): $(head -c 200 "$PAR_W/swlog")"; return 0; }
@@ -261,15 +261,15 @@ j_strwords() {
     done
     return 0
 }
-# 変異 4〜9 は「変異の検査器で元の木を建てた ELF（$W/bmut<番号>）が bseq と割れること」— 照合は全部の仕事の後（建たなければ ELF が無く、割れた扱い）
-# mutelf <番号> <元のファイル（木の中）> <env…> — 写しの木を元に戻してから変異の検査器で建てる
+# ミューテーション4〜9は「ミュータントの検査器で元の木をビルドしたELF（$W/bmut<番号>）がbseqと割れること」— 照合は全部の仕事の後（ビルドできなければELFが無く、割れた扱い）
+# mutelf <番号> <元のファイル（木の中）> <env…> — コピーの木を元に戻してからミュータントの検査器でビルドする
 mutelf() {
     local k=$1 f=$2
     shift 2
     cp "$W/tree/$f" "$PAR_W/tree/$f"
     (cd "$PAR_W/tree" && env "$@" "$W/mut$k" build app --emit=elf --passes -o "$W/bmut$k" > "$PAR_W/blog" 2>&1)
 }
-# 変異 4: 群の結果を逆順に連結する
+# ミューテーション4: 群の結果を逆順に連結する
 j_mut4() {
     mytree
     anchor lower/x86.sober '        xParMerge(mut st, mut c, mut fx, mut fstart, outs\[k\], of, j)' "mutant 4: the merge (xParMerge … outs[k]) was not found in lower/x86.sober"
@@ -278,7 +278,7 @@ j_mut4() {
     mutelf 4 lower/x86.sober SOBER_WORKERS=8
     return 0
 }
-# 変異 5: 移し器の往復で B_ITAIL を付け替えない
+# ミューテーション5: 移し器の往復でB_ITAILを付け替えない
 j_mut5() {
     mytree
     anchor lower/move.sober '^        mvRel(mut q, at + B_ITAIL, base)$' "mutant 5: the B_ITAIL relocation was not found in lower/move.sober"
@@ -287,7 +287,7 @@ j_mut5() {
     mutelf 5 lower/move.sober SOBER_BUILD_PAR=roundtrip
     return 0
 }
-# 変異 6（段 4 後半 ラウンド 10 — lower の束の群の子 move.sober の lParGroup）: 子の B1 の列から licm を抜くと W8 の自己 build の ELF が割れること
+# ミューテーション6（段階4 後半 ラウンド 10 — lowerのバッチの群の子move.soberのlParGroup）: 子のB1の列からlicmを抜くとW8の自己buildのELFが割れること
 j_mut6() {
     mytree
     anchor lower/move.sober '^    licmFunc(mut st, f)$' "mutant 6: the licm call was not found in lower/move.sober"
@@ -296,7 +296,7 @@ j_mut6() {
     mutelf 6 lower/move.sober SOBER_WORKERS=8
     return 0
 }
-# 変異 7（凍結の口 — 仮裁定 2026-10-07 夜間）: xModule の入口のヒープの凍結（table.Freeze と hfOn）を抜くと、x86 の群の子が空の凍結の表を
+# ミューテーション7（凍結のオプション — 仮決定2026-10-07夜間）: xModuleの入口のヒープの凍結（table.FreezeとhfOn）を抜くと、x86の群の子が空の凍結の表を
 # 読んで W8 の自己 build が建たない / 割れること
 j_mut7() {
     mytree
@@ -307,7 +307,7 @@ j_mut7() {
     mutelf 7 lower/x86.sober SOBER_WORKERS=8
     return 0
 }
-# 変異 8（席 A — split.sober）: 子が文字列の rodata の事象を記録しないと、親の模擬が綴りの初出の順を知らず rodata の番号・並びが割れること
+# ミューテーション8（席A — split.sober）: 子が文字列のrodataの事象を記録しないと、親の模擬が綴りの初出の順を知らずrodataの番号・並びが割れること
 j_mut8() {
     mytree
     anchor lower/cont.sober '^    lsEv(mut st, EV_STR, g, int(s), 0, 0)$' "mutant 8: the string event was not found in lower/cont.sober"
@@ -316,7 +316,7 @@ j_mut8() {
     mutelf 8 lower/cont.sober SOBER_WORKERS=8 SOBER_LOWER_SPLIT=3
     return 0
 }
-# 変異 9（席 A の A-2 — split.sober）: 群の子の死（task.Map の err）を見ずに模擬へ進むと、SOBER_LOWER_DIE の自己 build が建たない / 割れること
+# ミューテーション9（席AのA-2 — split.sober）: 群の子の死（task.Mapのerr）を見ずに模擬へ進むと、SOBER_LOWER_DIEの自己buildがビルドできない / 割れること
 j_mut9() {
     mytree
     anchor lower/split.sober '^    if serr != nil {$' "mutant 9: the child death check was not found in lower/split.sober"
@@ -325,8 +325,8 @@ j_mut9() {
     mutelf 9 lower/split.sober SOBER_WORKERS=8 SOBER_LOWER_SPLIT=8 SOBER_LOWER_DIE=1
     return 0
 }
-# 変異 10（席 D の D-1 — desugar/namedval.sober）: 名前付きの実引数を持つ呼び出しを含む関数に印を付けないと、写しが型の無い呼び先を読み、
-# 的（testdata/selfpar/named_reach — `T?` の名前付き関数型が無いプログラムの名前付きの呼び出し・表層型を付けるのは 3 関数のうち 1 つ = 証人）が建たない / 割れること
+# ミューテーション10（席DのD-1 — desugar/namedval.sober）: 名前付きの実引数を持つ呼び出しを含む関数にフラグを付けないと、コピーが型の無い呼び先を読み、
+# ターゲット（testdata/selfpar/named_reach — `T?` の名前付き関数型が無いプログラムの名前付きの呼び出し・表層型を付けるのは3関数のうち1つ = 証人）がビルドできない / 割れること
 j_mut10() {
     mytree
     anchor desugar/namedval.sober '^                        lput(mut st, mark, fi, 1)$' "mutant 10: the nvReach mark was not found in desugar/namedval.sober"
@@ -339,7 +339,7 @@ j_mut10() {
     fi
     return 0
 }
-# 7. finish の検査だけの段の並列（席 D の D-2 — loader/finpar.sober）: 拒否を 2 ファイルに置いた例の出力（stderr + 終了コード）が W1（直の道）≡ 子の道
+# 7. finishの検査だけのフェーズの並列（席DのD-2 — loader/finpar.sober）: 拒否を2ファイルに置いた例の出力（stderr + 終了コード）がW1（直のパス）≡ 子のパス
 fin() { # fin <検査器> <例> [env…] → 出力と rc
     local s=$1 e=$2
     shift 2
@@ -360,8 +360,8 @@ j_fin() {
     done
     return 0
 }
-# 変異 11〜13（席 D の D-2 — loader/finpar.sober）: 変異した検査器の W8 の出力が W1（直の道）と割れること
-j_finmut() { # j_finmut <番号> <説明> <sed の式> <的の例…> — 変異した検査器を建て、的の例のどれかが W8 で W1 と割れれば捕まえた
+# ミューテーション11〜13（席DのD-2 — loader/finpar.sober）: ミュータントの検査器のW8の出力がW1（直のパス）と割れること
+j_finmut() { # j_finmut <番号> <説明> <sedの式> <ターゲットの例…> — ミュータントの検査器をビルドし、ターゲットの例のどれかがW8でW1と割れれば捕まえた
     local k=$1 what=$2 expr=$3 e caught=0
     shift 3
     mytree
@@ -376,8 +376,8 @@ j_finmut() { # j_finmut <番号> <説明> <sed の式> <的の例…> — 変異
     [ $caught = 1 ] || echo "FAIL: mutant $k ($what) was not caught"
     return 0
 }
-# 変異 14（irinl の並びに依らない展開 — report-1185）: 呼び出しグラフの順をやめて処理の入力の並びのまま処理すると、撹拌（SOBER_IRINL_ORDER=1）で
-# 自己 build の ELF が割れること（上の self build の ORDER=1 / 7 ≡ 1 本の経路 が並び不変の網・この変異がその網の自己検査）
+# ミューテーション14（irinlの並びに依らない展開 — report-1185）: 呼び出しグラフの順をやめて処理の入力の並びのまま処理すると、撹拌（SOBER_IRINL_ORDER=1）で
+# 自己buildのELFが割れること（上の self build の ORDER=1 / 7 ≡ 1 本の経路 が並び不変の検査・このミューテーションがその検査の自己検査）
 j_mut14() {
     mytree
     anchor lower/irinl.sober '^    ord := ilCallersFirst(mut st, fr, inp)$' "mutant 14: the order (ilCallersFirst) was not found in lower/irinl.sober"
@@ -392,7 +392,7 @@ j_mut14() {
     return 0
 }
 
-# 仕事の投入（長いものから — 変異は検査器を建ててから自己 build を 1〜2 回）
+# 仕事の投入（長いものから — ミューテーションは検査器をビルドしてから自己buildを1〜2回）
 for k in 4 5 6 7 8 9 14; do par_run "j_mut$k"; done
 par_run j_bseq
 for i in "${!BCFGS[@]}"; do par_run j_build "$i"; done
@@ -418,14 +418,14 @@ fail=$(grep -c '^FAIL' "$W/jobs.out")
 
 # 全部の仕事の後の照合
 grep -q '"ok":true' "$W/self1" || { echo "FAIL: self check (W1) not accepted: $(head -c 200 "$W/self1")"; fail=$((fail + 1)); }
-# RSS のラチェット（bench/ratchet.txt の self/check rss — 自己 check〔一括・W1〕の peak RSS。段 6 P6-6 で新設）
+# RSSのラチェット（bench/ratchet.txtのself/check rss — 自己check〔一括・W1〕のpeak RSS。段階6 P6-6で新設）
 rlim=$(awk '$1 == "self/check" && $2 == "rss" { print $3 }' "$ROOT/bench/ratchet.txt")
 rss=$(( $(cat "$W/self1.rss") / 1024 ))
 if [ -n "$rlim" ] && [ "$rss" -gt "$rlim" ]; then
     echo "FAIL: ratchet — 自己 check（W1）の peak RSS ${rss} MB > ${rlim} MB（bench/ratchet.txt）"; fail=$((fail + 1))
 fi
-# 検査器の本体の命令数のラチェット（bench/ratchet.txt の self/check body — G 命令・W1 の「最後まで − defs」。核の節の数に出ない検査器の遅さの網:
-# 同じ節の数のまま検査器の時間が 3 倍になった形〔別の region の mut 実引数 2 つを取る再帰の関数 1 つ〕は RSS の線にたまたま掛かっただけだった）
+# 検査器の本体の命令数のラチェット（bench/ratchet.txtのself/check body — G命令・W1の「最後まで − defs」。核の節の数に出ない検査器の遅さの検査:
+# 同じ節の数のまま検査器の時間が3倍になった形〔別のregionのmut実引数2つを取る再帰の関数1つ〕はRSSの上限値にたまたま掛かっただけだった）
 blim=$(awk '$1 == "self/check" && $2 == "body" { print $3 }' "$ROOT/bench/ratchet.txt")
 if [ "${#INSTP[@]}" = 0 ]; then
     echo "SKIP check body ratchet — perf が無いか使えない（PERF で perf の実行ファイルを指す）: 検査器の本体の命令数は照合していない"

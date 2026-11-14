@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# seq ≡ par の照合（段 6 P3a-2c — language.md 11 節「並列化はリファクタリング」の最初の網）: scripts/seqpar.list の対ごとに、
-# 逐次の双子（既定の経路）と並列の例（3 経路 — --passes + SOBER_VERIFY=each・既定・--no-opt）を建てて実行し、stdout と終了コードが全部一致すること。
+# seq ≡ parの照合（段階6 P3a-2c — language.md 11 節「並列化はリファクタリング」の最初の検査）: scripts/seqpar.listの対ごとに、
+# 逐次版（既定の経路）と並列の例（3経路 — --passes + SOBER_VERIFY=each・既定・--no-opt）をビルドして実行し、stdoutと終了コードが全部一致すること。
 # 即時形（P3a）では並列の例は 1 つのスケジュール（子は Spawn の時点で走る）なので、ここで立つのは「par の書き換えの等価」と「最適化の観測一致」まで
 # P4-1 / P4-4: 並列の例はワーカー数の列（SEQPAR_WORKERS — 既定 "1 2 4 8"）ごとに SOBER_WORKERS を付けて走らせる（2 以上 = M:N の本物の並列）
 set -uo pipefail
@@ -11,7 +11,7 @@ trap 'rm -rf "$W"' EXIT
 fail=0
 n=0
 WS=${SEQPAR_WORKERS:-1 2 4 8}
-# 実行ファイルは建てるたびに別の名前（カーネル 6.18 では M:N の実行の直後に同じパスへ書くと ETXTBSY — report-660）
+# 実行ファイルはビルドするたびに別の名前（カーネル6.18ではM:Nの実行の直後に同じパスへ書くとETXTBSY — report-660）
 nb=0
 run() {   # run <entry> <mode> <out> [workers]
     local e=$1 m=$2 o=$3 w=${4:-1} ec=0
@@ -24,7 +24,7 @@ run() {   # run <entry> <mode> <out> [workers]
     esac || { echo "FAIL: build $e ($m)"; return 1; }
     chmod +x "$b"
     SOBER_WORKERS=$w "$b" > "$o" 2> /dev/null || ec=$?
-    # 実行できなかった（126 / 127 — 建てた物が ELF でない等）は失敗（両側の失敗が一致して素通りしないように）
+    # 実行できなかった（126 / 127 — ビルドした物がELFでない等）は失敗（両側の失敗が一致して素通りしないように）
     if [ "$ec" = 126 ] || [ "$ec" = 127 ]; then echo "FAIL: could not run $e ($m)"; return 1; fi
     echo "exit=$ec" >> "$o"
 }

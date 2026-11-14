@@ -80,7 +80,7 @@ func gcEntry(st mut St, p int) int {
     return gepWord(mut st, globaladdr(mut st, st.gcache), bin(mut st, BMul, h, iconst(mut st, GC_W)))
 }
 
-// rt.slice_grow(bs, ln, cellw, d) ptr（語の列 — 要素は cellw 語）/ rt.slice_grow8(bs, ln, d) ptr（byte の列）:
+// rt.slice_grow(bs, ln, cellw, d) ptr（ワードの列 — 要素はcellwワード）/ rt.slice_grow8(bs, ln, d) ptr（byteの列）:
 // 長さ ln の列（先頭 bs）を 1 要素伸ばした先の列の先頭を返す（呼び手が終わりに書き、ヘッダを付け替える）
 func buildSliceGrow(st mut St, b8 bool) {
     begin(mut st, if b8 { st.rtGrow8 } else { st.rtGrow })
@@ -159,7 +159,7 @@ func buildSliceGrow(st mut St, b8 bool) {
 
 // rt.map_grow(h, cellw) ptr: map のヘッダ h（[セル列, 長さ, 深度, 索引]）のセル列が先端でないとき 1 セル伸ばした先のセル列の先頭を返す
 // （呼び手が終わりに書き、ヘッダを付け替える）。水位でその場を試し、だめなら — 先端に居るのが自分の索引（単独の map の索引の作り直し）なら
-// 旧来の道（長さが MAP_IDX_MIN 以上なら索引を先に作り、セル列を長さちょうどで先端へ）、でなければ幾何成長（索引は map_find が作り直す）
+// 旧来のパス（長さがMAP_IDX_MIN以上なら索引を先に作り、セル列を長さちょうどで先端へ）、でなければ幾何成長（索引はmap_findが作り直す）
 func buildMapGrow(st mut St) {
     begin(mut st, st.rtMapGrow)
     h := 0
@@ -173,7 +173,7 @@ func buildMapGrow(st mut St) {
     n1 := bin(mut st, BAdd, ln, iconst(mut st, 1))
     cells := newBlock(mut st)
     mkIdx := newBlock(mut st)
-    // ①水位でその場を試す ②だめなら、先端に居るのが自分の索引（索引の作り直し — 単独の map の成長の普通の形）なら旧来の道（索引を先に・
+    // ①水位でその場を試す ②だめなら、先端に居るのが自分の索引（索引の作り直し — 単独のmapの成長の普通の形）なら旧来のパス（索引を先に・
     // 長さちょうど）、でなければ幾何成長（索引は先に作らない — map_find が追いつくか作り直す）
     // 小さい map（索引を作らない長さ）は rt.slice_grow を直に（その場の試しも中でする）
     smallM := newBlock(mut st)
@@ -228,8 +228,8 @@ func buildMapGrow(st mut St) {
     // rt.btip（byte の列の終わり）は古い索引より前に確保した列のもので、索引の範囲を指さない
     store(mut st, gepWord(mut st, globaladdr(mut st, st.meta), d), W_BUMP, ix)
     // 索引の予約（K1b）: 容量の MAP_IDX_RES 倍（上限 + MAP_IDX_RESMAX 枠）を索引のためだけに取り、0 で埋めるのは今の容量の分だけ
-    // （触らない頁は RSS に乗らない）。セル列はこの直後に写すので、以後の索引の作り直し（rt.map_find — 容量の倍化）は予約の中で済み、
-    // 索引が先端に出てセル列を塞ぐ（次の挿入でセル列を写し直す — 古いセル列が残る）ことが無い
+    // （触らないページはRSSに乗らない）。セル列はこの直後にコピーするので、以後の索引の作り直し（rt.map_find — 容量の倍化）は予約の中で済み、
+    // 索引が先端に出てセル列を塞ぐ（次の挿入でセル列をコピーし直す — 古いセル列が残る）ことが無い
     rcap := bin(mut st, BMul, cap, iconst(mut st, MAP_IDX_RES))
     rmax := bin(mut st, BAdd, cap, iconst(mut st, MAP_IDX_RESMAX))
     rw := newBlock(mut st)
@@ -263,7 +263,7 @@ func buildMapGrow(st mut St) {
     br(mut st, cells, -1)
     setCur(mut st, cells)
     n := bin(mut st, BMul, ln, cellw)
-    // 初回（表に載っていない）は長さちょうどで先端へ写して表に載せる・載っていればその場か余剰容量つき
+    // 初回（表に載っていない）は長さちょうどで先端へコピーして表に載せる・載っていればその場か余剰容量つき
     cb0 := if st.rtMut == 13 { ptoi(mut st, regionBump(mut st, d)) } else { 0 }
     p := call(mut st, st.rtGrow, list5(mut st, bs, ln, cellw, d, geo))
     if st.rtMut == 13 {

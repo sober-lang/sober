@@ -4,7 +4,7 @@
 
 `import "std/layout"`
 
-@layout（[language.md 36 節](../language.md)）の裏方: 利用者は `layout.Decode[T](b, off)`・`layout.DecodeAt[T](b, off, i)`・`layout.Encode[T](mut out, v)`・`layout.Size[T]` を書き、loader の固定テンプレート（compiler/loader/layout.sober）が @layout の struct ごとの写しの関数（普通の Sober）を合成してその呼び出しに写す。ここに置くのは写しの関数が呼ぶ失敗の関数だけ（panic ラベル WidthOverflow / LengthMismatch — exit 101・死亡時に欄が標準エラーへ。[language.md 27 節](../language.md)の panic の契約）
+@layout（[language.md 36 節](../language.md)）の裏方: 利用者は `layout.Decode[T](b, off)`・`layout.DecodeAt[T](b, off, i)`・`layout.Encode[T](mut out, v)`・`layout.Size[T]` を書き、loaderの固定テンプレート（compiler/loader/layout.sober）が @layoutのstructごとの変換の関数（普通のSober）を合成し、呼び出しをその関数の呼び出しに変換する。ここに置くのは変換の関数が呼ぶ失敗の関数だけ（panicラベルWidthOverflow / LengthMismatch — exit 101・死亡時にフィールドが標準エラーへ。[language.md 27 節](../language.md)のpanicの契約）
 
 ## Decode
 
@@ -128,7 +128,7 @@ b の off バイト目から並ぶ T の i 番目を読む（間隔 = Size[T]）
 func Encode[T](out mut builder.Builder[byte], v T)
 ```
 
-v を out の末尾に書く。欄の値が幅に収まらなければ panic(WidthOverflow)・固定長配列の長さが違えば panic(LengthMismatch)
+vをoutの末尾に書く。フィールドの値が幅に収まらなければpanic(WidthOverflow)・固定長配列の長さが違えばpanic(LengthMismatch)
 
 例:
 
@@ -136,7 +136,7 @@ v を out の末尾に書く。欄の値が幅に収まらなければ panic(Wid
 // examples/layout_widths.sober
 package main
 
-// @layout の幅の語の網羅（language.md 36 節 Y1・Y2・Y7）: LE / BE・符号つきは符号拡張・u64le は int の全域（上位ビットはそのまま負の int）・
+// @layoutの幅の語の網羅（language.md 36 節Y1・Y2・Y7）: LE / BE・符号つきは符号拡張・u64leはintの全域（上位ビットはそのまま負のint）・
 // [N]u8 は []byte・[N]幅は []int。書いたバイト列を 1 バイトずつ印字して読み戻す
 
 import "std/builder"
@@ -206,7 +206,7 @@ func main() {
 const Size[T] int
 ```
 
-T の静的な大きさ（バイト — 欄の幅の和）。呼ばずに定数として書く: `layout.Size[T]`
+Tの静的な大きさ（バイト — フィールドの幅の和）。呼ばずに定数として書く: `layout.Size[T]`
 
 ## WidthOverflow
 
@@ -218,7 +218,7 @@ type WidthOverflow panic {
 }
 ```
 
-書き込みの幅あふれ: 欄 field の値 value が幅 width に収まらない
+書き込みの幅あふれ: フィールドfieldの値valueが幅widthに収まらない
 
 ## LengthMismatch
 
@@ -230,7 +230,7 @@ type LengthMismatch panic {
 }
 ```
 
-固定長配列の長さ違い: 欄 field の長さが want でなく got
+固定長配列の長さ違い: フィールドfieldの長さがwantでなくgot
 
 ## FailWidth
 
@@ -239,7 +239,7 @@ type LengthMismatch panic {
 func FailWidth(field string, width string, v int)
 ```
 
-書き込みの幅あふれ: 欄 field の値 v が幅 width に収まらない
+書き込みの幅あふれ: フィールドfieldの値vが幅widthに収まらない
 
 ## FailLength
 
@@ -248,4 +248,4 @@ func FailWidth(field string, width string, v int)
 func FailLength(field string, want int, got int)
 ```
 
-固定長配列の長さ違い: 欄 field の長さが want でなく got
+固定長配列の長さ違い: フィールドfieldの長さがwantでなくgot

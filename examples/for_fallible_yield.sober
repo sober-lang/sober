@@ -18,7 +18,7 @@ func digits(s string, k func(int)) error? {
     return nil
 }
 
-// 失敗しうる生成元は式の位置の for（yield 形）に置けない（Iter[T] は失敗の通り道を持たない — language.md 7 節・diag.ForFallible kind 2）
+// 失敗しうる生成元は式の位置のfor（yield形）に置けない（Iter[T] は失敗が通るパスを持たない — language.md 7 節・diag.ForFallible kind 2）
 func doubled(s string) (int, error?) {
     mut n := 0
     xs := for d <- digits(s)? yield d * 2

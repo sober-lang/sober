@@ -1,7 +1,7 @@
 package obuf
 
 // 出力の小道具（バイトの out に綴りを積む）。compiler/ の印字（ast・loader・desugar・checker・printer・lower）が共有する —
-// 以前は各 package に写しがあり、putInt の写しは負数（printer）・最小値（ast）の扱いが食い違っていた（reaudit 第 2 弾 C8）
+// 以前は各packageにコピーがあり、putIntのコピーは負数（printer）・最小値（ast）の扱いが食い違っていた（reaudit第2弾C8）
 
 import "std/iter"
 
@@ -40,7 +40,7 @@ func Bool(out mut []byte, b bool) {
     }
 }
 
-// JSON 整形の改行 + d 段のインデント（1 段 2 桁 — ast / loader の黄金 JSON）
+// JSON整形の改行 + dレベルのインデント（1レベル2桁 — ast / loaderのゴールデンJSON）
 func Nl(out mut []byte, d int) {
     out = append(out, '\n')
     for i <- iter.Range(0, d * 2) {

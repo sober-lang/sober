@@ -1,6 +1,6 @@
 package main
 
-// net 段 4a-2（epoll の道 — language.md 28 節の net）: 別の task 同士の往復。task.Run の本体（main の task）が Listener を捕獲して 3 本の接続を
+// net段階4a-2（epollのパス — language.md 28 節のnet）: 別のtask同士の往復。task.Runの本体（mainのtask）がListenerを捕獲して3本の接続を
 // 順に受けて送り返し、Spawn した 3 本の子がそれぞれ Dial → 送る → 戻りを受ける。accept / connect / recv / send は socket が非ブロックで、
 // EAGAIN なら task が fd の readiness を待つ（ワーカーは塞がれない）— W1（協調形）でも子が走り、W8 でも同じ出力
 

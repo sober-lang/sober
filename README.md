@@ -2,9 +2,9 @@
 
 English | [日本語](README.ja.md)
 
-A minimal, fast, safe and plain programming language.
+A value-oriented programming language.
 
-Sober is a systems programming language designed to make memory safety and structured concurrency practical without a borrow checker. Instead of tracking ownership through complex borrowing rules, Sober uses region-based memory management to make memory lifetimes predictable and safe by design. Safety here is structural, not disciplinary — use-after-free and data races are not things you carefully avoid; they are things the syntax cannot express.
+A Sober program names only values and mutable bindings. There are no reference or pointer types. Nothing outside a block can point at a value inside it, so a value's lifetime is decided by its block (a region). Sober needs neither a GC nor a borrow checker. A program cannot observe whether an immutable value was copied or shared. Because of that, the implementation can choose how a value is passed and where it is placed. → [What value orientation is](docs/value-oriented.md)
 
 Statically typed (with type inference), expression-oriented, AOT-compiled straight to a native static ELF. No GC. Go-like syntax.
 
@@ -88,7 +88,45 @@ func main() int {
 }
 ```
 
+## Properties derived from value orientation
+
+In Sober, value orientation means the following two promises (see [What value orientation is](docs/value-oriented.md) for more).
+
+- A reference never becomes a value. There is no way to take an address or a reference and store it or pass it around.
+- A program cannot observe whether an immutable value was copied or shared.
+
+The following five properties are derived from these two.
+
+- Escaping references cannot be written. A reference never becomes a value, so there is no way to form something that points into freed memory. A value's lifetime is decided by its block, and a value leaving a block is copied. Every block is a region ([rules](docs/spec/09-memory.ja.md), in Japanese). No GC and no borrow checker are needed.
+- Data races cannot be written. A mutable value never crosses a task boundary. Only immutable values and channels can be passed into a parallel scope ([rules](docs/spec/10-concurrency.ja.md), in Japanese).
+- There are no lifetime annotations and no borrowing rules. With no references, there is nothing to annotate. The only thing to learn is what you cannot write. The forms that cannot be written (shared mutable state outside a domain, escaping references) are compile errors.
+- There is no etiquette for writing fast code. Whether a value is passed by reference or by copy, and where it is placed, is chosen by the implementation. It is not the programmer's choice, so straightforward code is the fastest form.
+- Parallelism does not change the output. Tasks share no mutable state, so the output is the same bytes for any number of workers.
+
 ## Four pillars
+
+### Safe
+
+- Memory safety and freedom from data races, with no GC and no borrow checker. This is derived from value orientation (see the section above).
+- Unhandled errors are rejected. Errors are sets of labels that the analyzer derives from the call graph, and public boundaries must declare them ([rules](docs/spec/07-errors.ja.md), in Japanese).
+
+→ [Why safe](docs/design-notes/safe.md) (in Japanese)
+
+### Fast
+
+- Straightforward code is fast. This is derived from value orientation (see the section above). The mechanisms for speed live only inside the runtime and the compiler, and the Sober side of the benchmarks is kept to the straightforward form.
+- Runtime speed on par with Rust. Against straightforward Rust using the same algorithms, across 9 sequential benchmarks: 4 wins, 3 ties, 2 losses (the losses are reverse-complement 1.47× and n-body 1.17×). Against Go: 6 wins, 3 ties, no losses. <!-- benchsync:readme-speed-en -->
+- A memory footprint on par with Rust. There is no GC. Peak RSS is at or below Rust's in 8 of the 9 benchmarks (the exception is k-nucleotide). <!-- benchsync:readme-rss-en -->
+- Tasks are light. Measured on 2026-10-10, [Skynet](bench/skynet) with 1.11 million tasks ran 5× faster than Go.
+
+→ [Why fast](docs/design-notes/fast.md) (in Japanese)
+
+### Plain
+
+- Ordinary, expression-oriented procedural code. if / switch / blocks / for have values ([rules](docs/spec/04-expressions.ja.md), in Japanese). If you can read Go, you can read Sober.
+- No methods, no type classes, no macros. This is a choice to keep the language small. Of these, the absence of methods can also be explained from value orientation (see "Why there are no methods" in [What value orientation is](docs/value-oriented.md)).
+
+→ [Why plain](docs/design-notes/plain.md) (in Japanese)
 
 ### Minimal
 
@@ -97,29 +135,6 @@ func main() int {
 - Fully bootstrapped from Zig and source alone. Starting from stage1, a frozen compiler written in Zig, the source snapshots in `bootstrap/` are built in order until they produce the current compiler ([the full chain](bootstrap/chain.txt)). There is no seed binary.
 
 → [Why minimal](docs/design-notes/minimal.md) (in Japanese)
-
-### Fast
-
-- Runtime speed on par with Rust. Against straightforward Rust using the same algorithms, across 9 sequential benchmarks: 4 wins, 3 ties, 2 losses (the losses are reverse-complement 1.47× and n-body 1.17×). Against Go: 6 wins, 3 ties, no losses. <!-- benchsync:readme-speed-en -->
-- A memory footprint on par with Rust. There is no GC. Peak RSS is at or below Rust's in 8 of the 9 benchmarks (the exception is k-nucleotide). <!-- benchsync:readme-rss-en -->
-- High parallel performance — and deterministic. Structured-concurrency tasks are light ([Skynet](bench/skynet) with 1.11 million tasks runs 5× faster than Go — measured 2026-10-10), and the output is the same bytes for any number of workers.
-
-→ [Why fast](docs/design-notes/fast.md) (in Japanese)
-
-### Safe
-
-- Memory safety and freedom from data races, with no GC and no borrow checker. Lifetimes match the nesting of scopes (every block is a region — [rules](docs/spec/09-memory.ja.md), in Japanese), and only immutable values and channels can be passed into a parallel scope ([rules](docs/spec/10-concurrency.ja.md), in Japanese).
-- Unhandled errors are rejected. Errors are sets of labels that the analyzer derives from the call graph, and public boundaries must declare them ([rules](docs/spec/07-errors.ja.md), in Japanese).
-- The only thing to learn is what you cannot write. There are no lifetime annotations and no borrowing rules; the forms that cannot be written (shared mutable state outside a domain, escaping references) are simply compile errors.
-
-→ [Why safe](docs/design-notes/safe.md) (in Japanese)
-
-### Plain
-
-- Ordinary, expression-oriented procedural code. if / switch / blocks / for have values ([rules](docs/spec/04-expressions.ja.md), in Japanese), and there are no methods, type classes or macros. If you can read Go, you can read Sober.
-- There is no etiquette for writing fast code. Straightforward code is the fastest form. The mechanisms for speed live only inside the runtime and the compiler, and the Sober side of the benchmarks is kept to the straightforward form.
-
-→ [Why plain](docs/design-notes/plain.md) (in Japanese)
 
 ## What you stop thinking about
 
@@ -216,7 +231,7 @@ Everything below is a real artifact in this tree:
 - The standard library — JSON, gzip/deflate, TLS 1.3, an HTTP client (with certificate-chain verification), crypto (AES-GCM / SHA-256 / RSA / x25519 / password hashing), session tokens, a PostgreSQL client and the io_uring M:N runtime (`src/std/`)
 - Developer tooling — the test runner, property-based testing, fuzzing, coverage, mutation testing and watch (the whole `sober test` stack is itself written in Sober as part of the compiler)
 - Data-processing subjects — 1BRC and benchmarks-game problems, output-identical to their Go / Rust twins (`bench/`)
-- ~530 small examples — the guide's kvstore and more (`examples/` — all output-checked by gates)
+- ~980 small examples (including negative examples that the checker rejects) — the guide's kvstore and more (`examples/` — all output-checked by gates)
 
 ## What is already there
 
@@ -225,7 +240,7 @@ A list of the surface implemented as of v0.7. The full rules are in the [languag
 Language:
 
 - Expression-oriented: if / switch / blocks have values. Multiple values, pipes and holes, defer, type inference
-- Types: slices, maps, structs, unions, nominal types, optionals (`T?`), generics, recursive types (declarations that refer back to themselves through slice / map elements or function types — [rules](docs/spec/02-types.ja.md), in Japanese)
+- Types: slices, maps, structs, unions, nominal types, optionals (`T?`), generics, recursive types (declarations that refer back to themselves through slice / map elements, the contents of `T?`, or function types — [rules](docs/spec/02-types.ja.md), in Japanese)
 - Bindings: const by default, mutation is explicit with `mut`, no shadowing, freeze
 - Functions: lambdas, function values and closures, named arguments (no methods, type classes or macros)
 - Errors: error types, `?`, `catch`, label sets derived and checked for exhaustiveness by the analyzer (`@errors`), distinct from panics
@@ -268,7 +283,7 @@ Standard library (features to implement before 1.0):
 Language and compiler:
 
 - [x] Floating-point completeness (a single float type, IEEE 754 binary64 — bit-deterministic arithmetic and printing, no libm)
-- [x] Recursive data types (recursion through `[]T` / `map[K]T` elements or function types, including mutual recursion and generic recursive unions — design in section 1 of [language.md](docs/language.md), in Japanese)
+- [x] Recursive data types (recursion through `[]T` / `map[K]T` elements, the contents of `T?`, or function types, including mutual recursion and generic recursive unions — design in section 1 of [language.md](docs/language.md), in Japanese)
 - [x] Closures that carry mutable state (locally-bound lambdas capture `mut` bindings by inlining; function types take explicit `mut` parameters — capturing `mut` into a function *value* was deliberately rejected)
 - [x] Long-lived shared state (domains — serialized updates, bounded waits, no locks in the source)
 - [ ] Merging value streams (zip)

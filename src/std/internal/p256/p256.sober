@@ -39,7 +39,7 @@ type fe struct {
     l3 int
 }
 
-// 法 p = 2^256 − 2^224 + 2^192 + 2^96 − 1 の limb（符号つきの語として — p0 = 2^64 − 1・p3 = 0xffffffff00000001）
+// 法p = 2^256 − 2^224 + 2^192 + 2^96 − 1のlimb（符号つきのワードとして — p0 = 2^64 − 1・p3 = 0xffffffff00000001）
 const p0 = -1
 const p1 = 4294967295
 const p2 = 0
@@ -57,7 +57,7 @@ func zfe() fe {
     return fe{l0: 0, l1: 0, l2: 0, l3: 0}
 }
 
-// 32 バイトの大きい端の b[at:at+32] → 体の元（< p かは呼び手が確かめる）
+// 32バイトの大きい端のb[at:at+32] → 体の元（< pかは呼び手が検証する）
 func feOf(b []byte, at int) fe {
     return fe{l0: word(b, at + 24), l1: word(b, at + 16), l2: word(b, at + 8), l3: word(b, at)}
 }
@@ -415,7 +415,7 @@ func finvOf(a fe) fe {
 }
 
 func finv(f field, a fe) fe {
-    // p − 2 の limb（大きい端から — 体の元の欄を読まずに定数で持つ: 欄の読みは秘密の網が型 × 欄名で追う）
+    // p − 2のlimb（大きい端から — 体の元のフィールドを読まずに定数で持つ: フィールドの読みは秘密の検査が型 × フィールド名で追う）
     ws := []int{-4294967295, 0, 4294967295, -3}
     mut r := f.one
     for w <- ws {
@@ -546,7 +546,7 @@ func smul(f field, k []byte, q pt) pt {
 }
 
 // 座標 a（普通の形）が p 未満。相手の公開鍵の検証だけが使う公開の値の判定なので結果を公開に変える
-// （秘密の網は体の元の欄を型 × 欄名で追うので、公開の座標の欄の読みも秘密に見える）
+// （秘密の検査は体の元のフィールドを型 × フィールド名で追うので、公開の座標のフィールドの読みも秘密に見える）
 func ltP(a fe) bool {
     _, br := sub4(a, pfe())
     return internal.bless.Int(br) == 1
@@ -593,7 +593,7 @@ func affine(q pt) []byte {
 }
 
 // q が無限遠点か。スカラー倍の結果が無限遠点になるのはスカラーが位数 n の倍数のときだけ（検証済みの点は位数 n の群の元 — 余因子 1）
-// なので、この印は公開に変えてよい
+// なので、このフラグは公開に変えてよい
 func infinite(q pt) bool {
     return internal.bless.Int(feIsZero(q.z)) == 1
 }
@@ -610,7 +610,7 @@ func PublicKey(d []byte) []byte {
     return internal.bless.Bytes(if infinite(q) { []byte{} } else { affine(q) })
 }
 
-// 相手の公開鍵 pub（非圧縮の 65 バイト — 座標 < p・曲線の上を確かめる）と自分の d（32 バイト）の共有秘密 = d·pub の x 座標（32 バイト）。
+// 相手の公開鍵pub（非圧縮の65バイト — 座標 < p・曲線の上を検証する）と自分のd（32バイト）の共有秘密 = d·pubのx座標（32バイト）。
 // pub が読めない・d が 32 バイトでない・結果が無限遠点なら空（成否は長さで読む — 長さは公開）
 @secret(d)
 @effects()

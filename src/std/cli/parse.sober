@@ -14,7 +14,7 @@ const kInt = 3
 const kChoice = 4
 const kList = 5
 
-// args（0 番 = プログラム名 — os.Args の並び）を app の表で読む。誤りのときも、そこまでに当たったコマンドの道を持つ Parsed を返す
+// args（0番 = プログラム名 — os.Argsの並び）をappの表で読む。誤りのときも、そこまでに当たったコマンドのパスを持つParsedを返す
 // （Format が文面の頭に使う）。予約の綴りは error の Request で返す。表の宣言の誤りは panic(Misdeclared)
 @errors(UnknownFlag, UnknownCommand, MissingValue, BadValue, Missing, Extra, Duplicate, Request)
 @effects(io, panic)
@@ -69,7 +69,7 @@ func helpCmd(app App, args []string) (Parsed, error?) {
     return bare(path), Request{word: "help"}
 }
 
-// 値の無い Parsed（誤りのときの道だけ）
+// 値の無いParsed（誤りのときのパスだけ）
 func bare(path string) Parsed {
     return Parsed{cmd: path, seal: sealed{}}
 }
@@ -506,7 +506,7 @@ func hasInt(xs []int, n int) bool {
     return false
 }
 
-// コマンドの道に語を足す
+// コマンドのパスに語を足す
 func join2(path string, w string) string {
     return if path == "" { w } else { path + " " + w }
 }
@@ -532,7 +532,7 @@ func hasGroup(app App, name string) bool {
     return false
 }
 
-// 道 path の次の語の候補（near の候補）
+// パスpathの次の語の候補（nearの候補）
 func nextWords(app App, path string) []string {
     mut out := mut []string{}
     for ix <- iter.Range(0, len(app.commands)) {

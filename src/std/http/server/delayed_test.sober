@@ -1,7 +1,7 @@
 package server
 
-// Delayed の網: 送る前の待ちはその応答の頭の直前・前の応答は先に送る・後ろの応答は待ちの後・待ちが重なれば順に足される・
-// stream / HEAD / 0 以下の待ち。転送路は偽物（recv は要求の列を 1 切片で渡す・send は送った切片ごとに本文の印と経過を置き場へ）
+// Delayedの検査一式: 送る前の待ちはそのレスポンスの頭の直前・前のレスポンスは先に送る・後ろのレスポンスは待ちの後・待ちが重なれば順に足される・
+// stream / HEAD / 0以下の待ち。転送路は偽物（recvはリクエストの列を1切片で渡す・sendは送った切片ごとに本文のマークと経過を格納場所へ）
 
 import "std/convert"
 import "std/strings"
@@ -26,7 +26,7 @@ func delayRoute(r Request) Response {
     }
 }
 
-// 送った切片の印（含む本文の語 — 表の順）と、始まりからの経過（ms — 下限だけを照合する: 負荷で待ちは延びるだけ）
+// 送った切片のマーク（含む本文の語 — 表の順）と、始まりからの経過（ms — 下限だけを照合する: 負荷で待ちは延びるだけ）
 func delayRecord(b []byte) error? {
     s := string(b) catch ""
     mut tag := ""
@@ -74,21 +74,21 @@ func waitedAtLeast(lo []int) bool {
     return ok
 }
 
-// 前の応答は待ちの前に別の切片で出る・Delayed の応答と後ろの応答は待ちの後に 1 切片で
+// 前のレスポンスは待ちの前に別の切片で出る・Delayedのレスポンスと後ろのレスポンスは待ちの後に1切片で
 func TestDelayedOrder() {
     l := delayServe(delayGet("/A1") + delayGet("/slow") + delayGet("/B2"))
     assert(l == "[A1][SLOW B2]", l)
     assert(waitedAtLeast([]int{0, 60}), testing.cell.Get(Ms))
 }
 
-// 先頭の Delayed は前の送りなしで待つ（後ろの応答も同じ切片）
+// 先頭のDelayedは前の送りなしで待つ（後ろのレスポンスも同じ切片）
 func TestDelayedFirst() {
     l := delayServe(delayGet("/slow") + delayGet("/A1"))
     assert(l == "[A1 SLOW]", l)
     assert(waitedAtLeast([]int{60}), testing.cell.Get(Ms))
 }
 
-// 待ちが 2 つなら順に足される（60 + 40 ms）— 1 つ目の応答は 2 つ目の待ちの前に出る
+// 待ちが2つなら順に足される（60 + 40 ms）— 1つ目のレスポンスは2つ目の待ちの前に出る
 func TestDelayedTwo() {
     l := delayServe(delayGet("/slow") + delayGet("/slow2") + delayGet("/B2"))
     assert(l == "[SLOW][TWO B2]", l)
@@ -101,7 +101,7 @@ func TestDelayedZero() {
     assert(l == "[A1 ZERO B2]", l)
 }
 
-// stream: 前の応答を送ってから、頭の前で待つ
+// stream: 前のレスポンスを送ってから、頭の前で待つ
 func TestDelayedStream() {
     l := delayServe(delayGet("/A1") + delayGet("/stream") + delayGet("/B2"))
     assert(l == "[A1][head][STR][B2]", l)

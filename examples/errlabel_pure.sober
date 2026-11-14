@@ -1,10 +1,10 @@
 package main
 
-// errlabel.sober との突き合わせの対（Lean 側: Examples.lean の v48）。errlabel.sober から出力を抜き、結果を 1 語に畳み込む形。
+// errlabel.soberとの突き合わせの対（Lean側: Examples.leanのv48）。errlabel.soberから出力を抜き、結果を1ワードに畳み込む形。
 // main の末尾の値 r を codegen は println で、Lean は脱糖したコアを機械で走らせて照合する。
 // 以下は errlabel.sober と同じ:
 // 呼び手の string・callee で構築した string・slice がラベルに乗り、`?` で伝播し、戻り値の境界コピーで
-// 呼び手の region へ写る（opt / union の中の relocate — codegen はタグで分岐、Lean は relocR が値ラッパの中まで締める）
+// 呼び手のregionへコピーされる（opt / unionの中のrelocate — codegenはタグで分岐、LeanはrelocRが値ラッパの中まで締める）
 
 type NotFound error {
     path string
@@ -26,7 +26,7 @@ func open(p string, ok bool) (int, error?) {
     return 0, NotFound{path: p}
 }
 
-// 1 段の `?` で伝播（ラベルの string が 2 回の境界を越える）
+// 1つの `?` で伝播（ラベルのstringが2回の境界を越える）
 func openBoth(p string, q string) (int, error?) {
     a := open(p, true)?
     b := open(q, false)?
@@ -60,7 +60,7 @@ func codeOf(n int) (int, error?) {
     return 0, Bad{code: n}
 }
 
-// ラベルの中身を 1 語へ: string は長さと先頭バイト、slice は長さと末尾
+// ラベルの中身を1ワードへ: stringは長さと先頭バイト、sliceは長さと末尾
 func digest(e error?) int {
     return if e != nil {
         switch e {

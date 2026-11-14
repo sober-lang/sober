@@ -1,6 +1,6 @@
 package main
 
-// F-am の元の形: 封のある std の View の欄を外から書く（書けると Str が不正な UTF-8 の string を返した）
+// F-amの元の形: 封のあるstdのViewのフィールドを外から書く（書けるとStrが不正なUTF-8のstringを返した）
 import "std/utf8"
 
 func main() {

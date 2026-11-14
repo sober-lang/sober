@@ -54,7 +54,7 @@ func TestScratchRange() {
     assert(pool.Load(mut s, 3) == top)
 }
 
-// 素の口（LoadRaw / StoreRaw / RenewDense — report-733）: 値は語そのまま（2^32 以上も負も）・RenewDense は先頭 n だけ 0 に書く
+// 素のAPI（LoadRaw / StoreRaw / RenewDense — report-733）: 値はワードそのまま（2^32以上も負も）・RenewDenseは先頭nだけ0に書く
 func TestScratchRaw() {
     mut s := pool.Scratch{}
     pool.NewScratch(mut s, 8)

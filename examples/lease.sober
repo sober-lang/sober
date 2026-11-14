@@ -1,7 +1,7 @@
 package main
 
-// ワーカー局所の lease（region-domain-pool.md 4d 節）: 窓のたびに新しい値 — 前の窓の書き（Scratch の値・スカラーの欄）は見えない。
-// 窓の値は本体の値・窓は文の位置にも置ける・窓の本体は外の束縛を読める
+// ワーカー局所のlease（region-domain-pool.md 4d節）: ウィンドウのたびに新しい値 — 前のウィンドウの書き（Scratchの値・スカラーのフィールド）は見えない。
+// ウィンドウの値は本体の値・ウィンドウは文の位置にも置ける・ウィンドウの本体は外の束縛を読める
 
 import "std/task"
 import "std/pool"

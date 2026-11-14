@@ -1,5 +1,5 @@
 // smapsamp.ts <pid> <out> [ms] — /proc/<pid>/smaps を ms ごとに読み、スロットの帯（512 MiB 以上の匿名の写像）の Rss の和と写像の数を
-// CLOCK_MONOTONIC（ns — rt の数え口の時刻と同じ時計）つきで 1 行ずつ（report-1016）
+// CLOCK_MONOTONIC（ns — rtのカウンタの時刻と同じ時計）つきで1行ずつ（report-1016）
 import { readFileSync, appendFileSync } from "node:fs";
 const [pid, out, msS] = process.argv.slice(2); const ms = +(msS ?? 250);
 const tick = () => {

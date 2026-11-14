@@ -1,21 +1,21 @@
 package server
 
 // multipart/form-data の受け（RFC 7578 — 本文の切り方は RFC 2046 5.1.1）。本文は ServeConn が maxBody で切った r.body に全部載っているので、
-// ここは r.body の上の位置を読むだけ（部分の本文は r.body の切り出し — 写さない）。読むのは芯だけ: Content-Type の boundary・部分ごとの
+// ここはr.bodyの上の位置を読むだけ（部分の本文はr.bodyの切り出し — コピーしない）。読むのは芯だけ: Content-Typeのboundary・部分ごとの
 // Content-Disposition（form-data の name / filename）と Content-Type・CRLF の規律・閉じの境界。読まないもの: filename*=（RFC 5987 の符号化 —
 // 他の引数と同じく読み飛ばす）・入れ子の multipart（部分の本文のまま返す）・Content-Transfer-Encoding（解釈しない — RFC 7578 4.7 で非推奨）・
 // name / filename の % の復号（ブラウザが '"' CR LF を %22 %0D %0A にする — WHATWG HTML — のは戻さない。生のまま）
 
 // Multipart が読めない本文（Content-Type が multipart/form-data でない・boundary が無いか形が違う・境界の行や部分の頭の形の誤り・閉じの境界が無い・
-// 部分の数か部分の頭の大きさが上限を超える）。応答はふつう 400
+// 部分の数か部分の頭の大きさが上限を超える）。レスポンスはふつう400
 type BadMultipart error
 
 // multipart/form-data の部分 1 つ（Multipart の結果 — 本文の順）
 type Part struct {
-    // Content-Disposition の name（フォームの欄の名前）
+    // Content-Dispositionのname（フォームのフィールドの名前）
     name string
-    // Content-Disposition の filename（ファイルの欄 — 中身はブラウザが送った名前のまま。パスとして使うなら検査は呼び手。ファイルを選ばなかった欄は
-    // ブラウザが "" を送る）。filename の無い部分（テキストの欄）は nil
+    // Content-Dispositionのfilename（ファイルのフィールド — 中身はブラウザが送った名前のまま。パスとして使うなら検査は呼び手。ファイルを選ばなかったフィールドは
+    // ブラウザが "" を送る）。filenameの無い部分（テキストのフィールド）はnil
     filename string?
     // 部分の Content-Type（前後の空白を除いた値・無ければ "" — RFC 7578 4.4 の既定は text/plain）
     contentType string
@@ -26,7 +26,7 @@ type Part struct {
 // 部分の数の上限（Go の mime/multipart の既定と同じ 1000 — 小さい部分を並べた本文で結果の列が本文より大きく育つのを止める）
 const multipartMaxParts = 1000
 
-// 部分の頭（ヘッダの行の並び + 空行）の大きさの上限（要求の頭の既定の上限と同じ 8 KiB）
+// 部分の頭（ヘッダの行の並び + 空行）の大きさの上限（リクエストの頭の既定の上限と同じ8 KiB）
 const multipartMaxHead = 8192
 
 // r の本文（Content-Type が multipart/form-data — boundary つき）の部分の列（本文の順）。前置き（最初の境界の前）と後置き（閉じの境界の後）は読み飛ばす。

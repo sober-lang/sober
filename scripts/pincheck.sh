@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# pincheck: ワーカーの CPU の固定の網（language.md 11 節「ワーカーの CPU の固定」）。testdata/pin を走らせ、印字した Ledger の pin / pinGroups と
+# pincheck: ワーカーのCPUの固定の検査（language.md 11 節「ワーカーのCPUの固定」）。testdata/pinを走らせ、印字したLedgerのpin / pinGroupsと
 # /proc/<pid>/task/*/status の Cpus_allowed_list を照合する。
-# - 本物の sysfs（箱の形に依る）: 不変だけ見る — SOBER_PIN=0 は全ワーカーが許可の全体・2 は 1 ワーカー 1 CPU で全部違う・1 は各ワーカーの集合が許可の部分集合で、
+# - 本物のsysfs（マシンの構成に依る）: 不変だけ見る — SOBER_PIN=0は全ワーカーが許可の全体・2は1ワーカー1 CPUで全部違う・1は各ワーカーの集合が許可の部分集合で、
 #   同じ集合どうしは数が群の CPU の数と一致し、pin が 1 か 3（縮退）
-# - 変異 49（作業ディレクトリの llc-fake/ の作った木を読む）: 3 群（0-3,12-15 / 4-7,16-19 / 8-11,20-23）の箱の模造で、taskset の交差・群の数・
+# - ミュータント49（作業ディレクトリのllc-fake/ の作った木を読む）: 3群（0-3,12-15 / 4-7,16-19 / 8-11,20-23）のマシンの模造で、tasksetの交差・群の数・
 #   壊れたファイル（level が 2・cpulist の解釈の失敗）の縮退まで決まった値で見る
-# - 変異 48（index9 — 群が読めない箱）: pin 3・全ワーカーが CPU 1 つへ縮退
+# - ミュータント48（index9 — 群が読めないマシン）: pin 3・全ワーカーがCPU 1つへ縮退
 #   scripts/pincheck.sh
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -60,7 +60,7 @@ while read -r n s; do
 done < <(sets)
 [ "$p" = 3 ] || [ "$(sets | wc -l)" = "$(field groups)" ] || bad "PIN=1: groups $(field groups) vs $(sets | wc -l) sets"
 
-# --- 変異 49: 3 群の模造 ---
+# --- ミュータント49: 3群の模造 ---
 F=$W/fk
 mkdir -p "$F"
 mk() { # mk <cpu> <level> <shared_cpu_list>
@@ -101,7 +101,7 @@ else
     echo "pincheck: skip the m49 fake-topology cases (needs 24+ CPUs all allowed — have $(nproc --all), allowed $allowed)"
 fi
 
-# --- 変異 48: 群が読めない箱 ---
+# --- ミュータント48: 群が読めないマシン ---
 X=pin48
 run . "" SOBER_PIN=1
 nw=$(field workers)

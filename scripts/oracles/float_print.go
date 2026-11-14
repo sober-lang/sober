@@ -1,4 +1,4 @@
-// float_print.go — examples/float_print.sober の Go の双子（期待値の生成元: go run scripts/oracles/float_print.go > examples/float_print.out）
+// float_print.go — examples/float_print.soberの比較用のGoの実装（期待値の生成元: go run scripts/oracles/float_print.go > examples/float_print.out）
 package main
 
 import (

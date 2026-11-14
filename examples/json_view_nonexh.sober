@@ -1,6 +1,6 @@
 package main
 
-// 負例（check が拒否 — 網羅）: json.At のビューを switch で開くとき、variant を落とすと通らない（16 節「雑に読む手段が構成的に無い」— 1 段のビューでも同じ）
+// 負例（checkが拒否 — 網羅）: json.Atのビューをswitchで開くとき、variantを落とすと通らない（16 節「雑に読む手段が構成的に無い」— 1レベルのビューでも同じ）
 
 import "std/json"
 

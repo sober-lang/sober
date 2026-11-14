@@ -76,7 +76,7 @@ func bin(b []byte) Arg {
     return Arg{null: false, bin: true, b: b}
 }
 
-// 場面ごとの送り（pgcap.ts の台本の写し — 独立の符号化と一致すること）
+// 場面ごとの送り（pgcap.tsの台本のコピー — 独立の符号化と一致すること）
 func testWant(name string, user string) []byte {
     noArgs := []Arg{}
     return if name == "startup" {
@@ -135,7 +135,7 @@ func TestEncodeMatchesCapture() {
     assert(hex.Format(EncSslRequest()) == "0000000804d2162f")
 }
 
-// 送りの側も FrameLen / Decode の外形で読める（tag と長さの欄の形が同じ — StartupMessage は tag なしなので除く）
+// 送りの側もFrameLen / Decodeの外形で読める（tagと長さのフィールドの形が同じ — StartupMessageはtagなしなので除く）
 func TestEncodeFrames() {
     for name <- testScenes("17") {
         if name != "startup" {

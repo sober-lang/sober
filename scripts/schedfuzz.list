@@ -1,4 +1,4 @@
-# schedfuzz の対象（scripts/schedfuzz.sh — 1 行 1 例。2 列目 split = 今は割れて当然〔自己検査の証人 — 網が鳴ることの確認〕）
+# schedfuzzの対象（scripts/schedfuzz.sh — 1行1例。2列目split = 今は割れて当然〔自己検査の証人 — 検査が反応することの確認〕）
 examples/task_bind.sober
 examples/task_capture.sober
 examples/task_capture_seq.sober

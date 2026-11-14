@@ -1,18 +1,18 @@
 package loader
 
-// カバレッジの計器（`sober build --cover`）: 利用者の非テストのファイルの分岐の腕の頭に数え口を足す脱糖の固定テンプレート:
+// カバレッジの計装（`sober build --cover`）: 利用者の非テストのファイルの分岐ごとの先頭にカウンタを足す脱糖の固定テンプレート:
 //
 //     func F(…) { 文… }            →  func F(…) { $cover.Hit(k); 文… }                         （fn — ラムダの本体も）
-//     if c { A } else { B }         →  if $cover.Br(c, k, k + 1) { A } else { B }              （then / else — Br が c で片方に印を付けて c を返す・腕に触らない）
+//     if c { A } else { B }         →  if $cover.Br(c, k, k + 1) { A } else { B }              （then / else — Brがcで片方にフラグを付けてcを返す・分岐に触らない）
 //     if x != nil { A }             →  if x != nil { $cover.Hit(k); A } else { $cover.Hit(k + 1) }  （絞り込みの if — 条件の字面を残す）
 //     switch … { case …: A }        →  switch … { case …: $cover.Hit(k); A }                    （case — default も）
 //     while c { A } / for … { A }   →  while c { $cover.Hit(k); A }                             （loop — 文形の for だけ）
 //     a && b / a || b               →  a && ($cover.On(k) && b)                                 （rhs — On は真を返す）
 //
-// 腕の頭に文を足す写し（絞り込みの if・case・ラムダ）は、末尾が期待の型を受ける形の腕を点にしない（cvCtxTail）。式の本体・mut 仮引数のラムダも点にしない。
-// 点 = [ファイル, 字句, 種類] の 3 語（番号 = 添字 / 3 — 全ファイルの通し）。main package の main の頭に `$cover.Start("<鍵>", <点の数>)`（終わりの書き出し先 — テストのビルドの合成の main は StartTest）。
-// flowx の後に掛ける（else の腕を足すと早期脱出・`&&` の連鎖の絞り込みの写しが外れる）。catch（catchx が写した if）の then の腕は種類 catch・
-// 成功の腕は点にしない。関数の字句の区間の外（const の初期化式）は写さない。同じ腕の節を複数の親が指す形（flowx の複製）は 1 回だけ写す
+// 分岐の頭に文を足す変換（絞り込みのif・case・ラムダ）は、末尾が期待の型を受ける形の分岐を点にしない（cvCtxTail）。式の本体・mut仮引数のラムダも点にしない。
+// 点 = [ファイル, 字句, 種類] の3ワード（番号 = 添字 / 3 — 全ファイルの通し）。main packageのmainの頭に `$cover.Start("<鍵>", <点の数>)`（終わりの書き出し先 — テストのビルドの合成のmainはStartTest）。
+// flowxの後に掛ける（elseの分岐を足すと早期脱出・`&&` の連鎖の絞り込みの変換が外れる）。catch（catchxが変換したif）のthenの分岐は種類catch・
+// 成功の分岐は点にしない。関数の字句の区間の外（constの初期化式）は変換しない。同じ分岐の節を複数の親が指す形（flowxの複製）は1回だけ変換する
 
 import "std/builder"
 import "std/iter"
@@ -53,7 +53,7 @@ type coverFile struct {
     pts []int
 }
 
-// 全ファイルの写し（cov = 写すファイルのパス・on = 計器の build か — 写すファイルが無くても合成のテストの main に Start を置く）。
+// 全ファイルの変換（cov = 変換するファイルのパス・on = 計装のbuildか — 変換するファイルが無くても合成のテストのmainにStartを置く）。
 // 点の表の鍵は点の列とファイルのパスの FNV-1a（16 桁）
 func coverAll(ts []ast.Tree, paths []string, pkgs []string, cov []string, on bool) CoverOut {
     if !on {
@@ -74,7 +74,7 @@ func coverAll(ts []ast.Tree, paths []string, pkgs []string, cov []string, on boo
     }
     ps := freeze(pts)
     key := coverKey(ps, paths)
-    // main package の main の頭に Start（鍵が決まってから — 2 巡目。テストのビルドは合成の main — 計器の import は loader の巡が足した）
+    // main package のmainの頭にStart（鍵が決まってから — 2巡目。テストのビルドは合成のmain — 計装のimportはloaderの巡が足した）
     mut out2 := mut []ast.Tree{}
     for i <- iter.Range(0, len(out)) {
         st := pkgs[i] == "main" && (has(cov, paths[i]) || paths[i] == TestMainPath())
@@ -105,7 +105,7 @@ func coverKey(pts []int, paths []string) string {
     return string(freeze(h)) catch ""
 }
 
-// 関数の本体から辿れる節（前の段の写しが残した参照されない節・const の初期化式には点を置かない）
+// 関数の本体から辿れる節（前のフェーズの変換が残した参照されない節・constの初期化式には点を置かない）
 func cvReach(t ast.Tree) []bool {
     mut r := mut []bool{}
     for i <- iter.Range(0, len(t.nodes)) {
@@ -198,7 +198,7 @@ func cvPushList(t ast.Tree, l int, stk mut []int) {
     }
 }
 
-// if の条件が catchx の写しの `$ctKe != nil` か
+// ifの条件がcatchxの変換の `$ctKe != nil` か
 func isCatchIf(t ast.Tree, c int) bool {
     if c < 0 || t.nodes[c].kind != ast.EBinary || t.nodes[c].a != lexer.BangEqual {
         return false
@@ -207,7 +207,7 @@ func isCatchIf(t ast.Tree, c int) bool {
     return l.kind == ast.EIdent && strings.HasPrefix(Name(t, l.a), "$ct")
 }
 
-// 1 ファイルの写し（fi = ファイルの番号・base = このファイルの最初の点の番号）
+// 1ファイルの変換（fi = ファイルの番号・base = このファイルの最初の点の番号）
 func covers(t ast.Tree, fi int, base int) coverFile {
     n0 := len(t.nodes)
     reach := cvReach(t)
@@ -215,7 +215,7 @@ func covers(t ast.Tree, fi int, base int) coverFile {
     for i <- iter.Range(0, n0) {
         ns = append(ns, t.nodes[i])
     }
-    // 写した腕の節（複数の親が同じ腕を指す形で 2 回写さない）
+    // 変換した分岐の節（複数の親が同じ分岐を指す形で2回変換しない）
     mut done := mut []bool{}
     for i <- iter.Range(0, n0) {
         done = append(done, false)
@@ -236,14 +236,14 @@ func covers(t ast.Tree, fi int, base int) coverFile {
             pts = append(append(append(pts, fi), x.tok), CvFn)
             ns[x.e] = ast.WithA(ns[x.e], cvPrepend(mut db, ns[x.e].a, cvHit(mut nb, mut db, n0, x.tok, k)))
         } else if x.kind == ast.ELambda {
-            // 式の本体・末尾が期待の型を受ける形のブロックの本体・mut 仮引数（lease の窓 — 写しの形が決まっている）のラムダは点にしない
+            // 式の本体・末尾が期待の型を受ける形のブロックの本体・mut仮引数（leaseのウィンドウ — 変換の形が決まっている）のラムダは点にしない
             if t.nodes[x.b].kind == ast.EBlock && !cvCtxTail(t, t.nodes[x.b].a) && !cvMutParam(t, x.a) {
                 k := base + len(pts) / 3
                 pts = append(append(append(pts, fi), x.tok), CvFn)
                 ns[x.b] = ast.WithA(ns[x.b], cvPrepend(mut db, ns[x.b].a, cvHit(mut nb, mut db, n0, x.tok, k)))
             }
         } else if x.kind == ast.EIf && nilTestKind(t, x.a) != 0 && !isCatchIf(t, x.a) {
-            // 絞り込みの if（条件の字面を残す — typer が単独の `x != nil` / `x == nil` を読む）: 腕の頭に数え口。末尾が期待の型を受ける形の腕は点にしない
+            // 絞り込みのif（条件の字面を残す — typerが単独の `x != nil` / `x == nil` を読む）: 分岐の頭にカウンタ。末尾が期待の型を受ける形の分岐は点にしない
             if !done[x.b] && !cvCtxTail(t, t.nodes[x.b].a) {
                 done[x.b] = true
                 k := base + len(pts) / 3
@@ -264,7 +264,7 @@ func covers(t ast.Tree, fi int, base int) coverFile {
                 ns[x.c] = ast.WithA(ns[x.c], cvPrepend(mut db, ns[x.c].a, cvHit(mut nb, mut db, n0, x.tok, k)))
             }
         } else if x.kind == ast.EIf {
-            // 条件に印を織り込む（腕に触らない — 値の if の腕の期待の型をそのまま保つ）。catch の写しの if は成功の腕を点にしない
+            // 条件にフラグを織り込む（分岐に触らない — 値のifの分岐の期待の型をそのまま保つ）。catchの変換のifは成功の分岐を点にしない
             isCt := isCatchIf(t, x.a)
             kt := base + len(pts) / 3
             pts = append(append(append(pts, fi), x.tok), if isCt { CvCatch } else { CvThen })
@@ -280,7 +280,7 @@ func covers(t ast.Tree, fi int, base int) coverFile {
             builder.Push(mut nb, ast.Node{ast.ECall, x.tok, at + 1, ast.PutList(mut db, if isCt { []int{x.a, at + 2} } else { []int{x.a, at + 2, at + 3} }), 0, 0, 0, 0})
             ns[i] = ast.WithA(ns[i], at + 4)
         } else if x.kind == ast.ESwitch {
-            // 末尾が期待の型を受ける形の腕は点にしない
+            // 末尾が期待の型を受ける形の分岐は点にしない
             for j <- iter.Range(0, ast.ListLen(t, x.b)) {
                 cb := t.nodes[ast.ListAt(t, x.b, j)].b
                 if !done[cb] && !cvCtxTail(t, t.nodes[cb].a) {
@@ -290,7 +290,7 @@ func covers(t ast.Tree, fi int, base int) coverFile {
                     ns[cb] = ast.WithA(ns[cb], cvPrepend(mut db, ns[cb].a, cvHit(mut nb, mut db, n0, t.nodes[ast.ListAt(t, x.b, j)].tok, k)))
                 }
             }
-            // default の腕の点は switch の字句に置く（木から `default` の字句を引けない — 位置の表示が字句から引き直す）
+            // defaultの分岐の点はswitchの字句に置く（木から `default` の字句を引けない — 位置の表示が字句から引き直す）
             if x.c >= 0 && !done[x.c] && !cvCtxTail(t, t.nodes[x.c].a) {
                 done[x.c] = true
                 k := base + len(pts) / 3
@@ -325,7 +325,7 @@ func covers(t ast.Tree, fi int, base int) coverFile {
     return coverFile{ast.Tree{freeze(ns), builder.Build(mut db), t.file}, freeze(pts)}
 }
 
-// 文 n が写しの足した数え口 `$cover.Hit(k)` か（形を数える検査 — lease の整え — が飛ばす）
+// 文nが変換の足したカウンタ `$cover.Hit(k)` か（形を数える検査 — leaseの整え — が飛ばす）
 func IsCoverStmt(t ast.Tree, n int) bool {
     x := t.nodes[n]
     if x.kind != ast.SExpr || t.nodes[x.a].kind != ast.ECall {
@@ -336,7 +336,7 @@ func IsCoverStmt(t ast.Tree, n int) bool {
 }
 
 // 文の列 l の末尾が期待の型を受ける形の式文か（リテラル・nil・符号つきのリテラル・値の if / switch / ブロック）— 頭に文を足すと
-// 末尾に期待の型が届かず拒否される（`{ g(); 44 }` を byte の位置に置く形 — 写しの前から言語が受けない）ので、その腕は点にしない
+// 末尾に期待の型が届かず拒否される（`{ g(); 44 }` をbyteの位置に置く形 — 変換の前から言語が受けない）ので、その分岐は点にしない
 func cvCtxTail(t ast.Tree, l int) bool {
     n := ast.ListLen(t, l)
     if n == 0 {
@@ -411,7 +411,7 @@ func coverStart(t ast.Tree, key string, n int, start string) ast.Tree {
     return ast.Tree{freeze(ns), builder.Build(mut db), t.file}
 }
 
-// 写すファイルの木に合成の import `$cover` を足す（load の巡が std/internal/cover を読みに行く — 写しの段では import を足せない）
+// 変換するファイルの木に合成のimport `$cover` を足す（loadの巡がstd/internal/coverを読みに行く — 変換のフェーズではimportを足せない）
 func coverImport(t ast.Tree) ast.Tree {
     fx := t.nodes[t.file]
     mut ns := mut []ast.Node{}

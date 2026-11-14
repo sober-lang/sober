@@ -1,7 +1,7 @@
 package main
 
-// ゼロ値リテラル `T{}` の slice / map / Builder の欄は空ヘッダ（使える — 旧 partial_lit の見張りを `T{}` の形で引き継ぐ。
-// reaudit round 6 の穴: 省いた欄が 0 語のまま残り、使うと実行時に落ちていた）
+// ゼロ値リテラル `T{}` のslice / map / Builderのフィールドは空ヘッダ（使える — 旧partial_litの見張りを `T{}` の形で引き継ぐ。
+// reaudit round 6の穴: 省いたフィールドが0ワードのまま残り、使うと実行時に落ちていた）
 
 import "std/builder"
 

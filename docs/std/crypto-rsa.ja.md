@@ -8,7 +8,7 @@ RSA の秘密鍵の読み（PKCS#8 の DER）と RSASSA-PSS（RFC 8017 8.1 — S
 
 ```sober
 k := crypto.rsa.ParsePKCS8(der)?
-sig := crypto.rsa.SignPSS(k, msg, crypto.Rand(32))?   // salt は呼び手が渡す（決定的な網のため）
+sig := crypto.rsa.SignPSS(k, msg, crypto.Rand(32))?   // saltは呼び手が渡す（決定的な検査のため）
 ok := crypto.rsa.VerifyPSS(crypto.rsa.Public(k), msg, sig, 32)
 ```
 
@@ -36,7 +36,7 @@ PKCS#8 の DER（PEM の中身を base64 で戻したもの）の RSA の秘密�
 func NewPublic(nb []byte, eb []byte) (PublicKey, error?)
 ```
 
-大きい端のバイト列の n と e の公開鍵（検証の網の API）
+大きい端のバイト列のnとeの公開鍵（検証に使うAPI）
 
 失敗のラベル: [`BadKey`](#badkey)
 
@@ -71,7 +71,7 @@ type PrivateKey struct {
 
 RSAPrivateKey の成分（RFC 8017 A.1.2 — d は使わない・CRT の p, q〔の Montgomery の文脈 mp, mq〕, dp, dq, qinv）
 
-欄:
+フィールド:
 
 - `pbits` — p, q の bit 長（鍵の大きさ — 公開の値。CRT の冪の回数。秘密の素数そのものから毎回数えない）
 

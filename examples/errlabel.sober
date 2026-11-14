@@ -2,7 +2,7 @@ package main
 
 // 検証例: error ラベルに string / slice のフィールドを持たせる。
 // 呼び手の string・callee で構築した string・slice がラベルに乗り、`?` で伝播し、戻り値の境界コピーで
-// 呼び手の region へ写る（opt / union の中の relocate — codegen はタグで分岐、Lean は relocR が値ラッパの中まで締める）
+// 呼び手のregionへコピーされる（opt / unionの中のrelocate — codegenはタグで分岐、LeanはrelocRが値ラッパの中まで締める）
 
 type NotFound error {
     path string
@@ -24,7 +24,7 @@ func open(p string, ok bool) (int, error?) {
     return 0, NotFound{path: p}
 }
 
-// 1 段の `?` で伝播（ラベルの string が 2 回の境界を越える）
+// 1つの `?` で伝播（ラベルのstringが2回の境界を越える）
 func openBoth(p string, q string) (int, error?) {
     a := open(p, true)?
     b := open(q, false)?

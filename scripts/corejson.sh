@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
-# selfhost の第 3 黄金（コア AST 黄金 — testdata/corejson/）の照合。Zig 版の `sober check <entry> --core-json`
+# selfhostの第3ゴールデン（コアASTゴールデン — testdata/corejson/）の照合。Zig版の `sober check <entry> --core-json`
 # （脱糖器 src/stage1/desugar.zig の出力 = Lean の Json.lean スキーマ）をバイト列のまま固定する。
 #
-#   scripts/corejson.sh            黄金との diff（対象の各 entry を --core-json に通して比較）。加えて 2 回吐いてバイト一致を確かめる（決定性）
-#   scripts/corejson.sh --regen    黄金を再生成する（脱糖器の意図した変更後に使い、diff を見てからコミットする）
+#   scripts/corejson.sh            ゴールデンとのdiff（対象の各entryを --core-json に通して比較）。加えて2回吐いてバイト一致を検証する（決定性）
+#   scripts/corejson.sh --regen    ゴールデンを再生成する（脱糖器の意図した変更後に使い、diffを見てからコミットする）
 #   scripts/corejson.sh --list     対象の entry を 1 行ずつ出す（selfhost_desugar.sh が使う）
 #
 # 対象: examples/*.sober + マルチ package の testdata（*/app）+ testdata/pool/*.sober。
-# Zig 版の脱糖器が拒否する entry は黄金を持たず、EXCLUDED.txt に entry とエラーの 1 行目を並べる
+# Zig版の脱糖器が拒否するentryはゴールデンを持たず、EXCLUDED.txtにentryとエラーの1行目を並べる
 # （拒否の理由が変わったり、通るようになったりしたら差分として出る — astjson の EXCLUDED と同じ流儀）。
-# 黄金の置き場: testdata/corejson/<entry の / を _ にした名前（.sober は落とす）>.json。中身は 1 行の JSON + 改行（Zig 版の出力そのもの）。
+# ゴールデンの配置先: testdata/corejson/<entryの / を _ にした名前（.soberは落とす）>.json。中身は1行のJSON + 改行（Zig版の出力そのもの）。
 # 前提: zig build 済み（$SOBER で差し替え可）。cwd = リポジトリルート（import パスはルート相対）
 set -euo pipefail
 cd "$(dirname "$0")/.."
 source scripts/gatelib.sh
 
-SOBER=${SOBER:-./bin/sober}   # 黄金の生成元 = 主の sober（主役交代 R39 — それまでは Zig 版。付け替え時にバイト不変を確認済み）
+SOBER=${SOBER:-./bin/sober}   # ゴールデンの生成元 = 主のsober（主役交代R39 — それまではZig版。付け替え時にバイト不変を確認済み）
 GOLDEN=testdata/corejson
 [ -x "$SOBER" ] || { echo "error: $SOBER not found (zig build)"; exit 1; }
 # 差分スキップ（$GATECACHE — scripts/gates.sh が立てる）: sober バイナリ・このスクリプト・入力の木の内容ハッシュが前回の成功時と同じなら照合しない
@@ -44,7 +44,7 @@ regen=0
 mkdir -p "$tmp/out"
 : > "$tmp/out/EXCLUDED.txt"
 fail=0
-# entry ごとの仕事を並列に（gatelib の par_run — 出力は番号順にまとめるので EXCLUDED の並びは直列と同じ。足回りの便）
+# entryごとの仕事を並列に（gatelibのpar_run — 出力は番号順にまとめるのでEXCLUDEDの並びは直列と同じ。足回りのタスク）
 JOBS=${JOBS:-$(nproc)}
 par_init "$tmp"
 job() { # $1 = entry
@@ -60,13 +60,13 @@ job() { # $1 = entry
     cmp -s "$tmp/out/$k.json" "$PAR_W/again" || echo "FAIL: $e: output is not deterministic"
     echo "@@ ok"
 }
-# testdata/golden_skip.txt の entry は黄金を作らない（--list は絞らない — 他のゲートが全 entry を読む）
+# testdata/golden_skip.txtのentryはゴールデンを作らない（--listは絞らない — 他のゲートが全entryを読む）
 while IFS= read -r e; do par_run job "$e"; done < <(entries | grep -vxF -f <(grep -v "^#" testdata/golden_skip.txt))
 par_wait > "$tmp/res"
 grep '^@@ excl ' "$tmp/res" | sed 's/^@@ excl //' > "$tmp/out/EXCLUDED.txt" || true
 if grep '^FAIL' "$tmp/res"; then fail=1; fi
 n=$(grep -c '^@@ ok' "$tmp/res" || true)
-# 除外の理由の列は黄金の文面を保つ（生成元の診断文 — gatelib の excluded_keep）
+# 除外の理由の列はゴールデンの文面を保つ（生成元の診断文 — gatelibのexcluded_keep）
 excluded_keep "$tmp/out/EXCLUDED.txt" "$GOLDEN/EXCLUDED.txt" ": "
 
 if [ "$regen" = 1 ]; then
@@ -91,7 +91,7 @@ if ! diff -rq "$tmp/out" "$GOLDEN" > "$tmp/diff"; then
     fi
     exit 1
 fi
-# 双子の照合（型の別名 — language.md 32 節）: 別名で書いた entry と、別名を手で実体の名前へ展開した entry のコアはバイト一致（コアは型の名前を持たない）
+# 対の照合（型の別名 — language.md 32 節）: 別名で書いたentryと、別名を手で実体の名前へ展開したentryのコアはバイト一致（コアは型の名前を持たない）
 for pair in "examples_alias examples_alias_expanded" "testdata_alias_app testdata_alias_x_app"; do
     read -r ta tb <<< "$pair"
     cmp -s "$GOLDEN/$ta.json" "$GOLDEN/$tb.json" || { echo "FAIL: core JSON of $ta differs from its expanded twin $tb (an alias is not transparent)"; fail=1; }

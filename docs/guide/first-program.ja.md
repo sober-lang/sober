@@ -2,7 +2,7 @@
 
 [English](first-program.md) | 日本語
 
-標準入力の行・語・バイトを数える小さな `wc` を書いて、建てて走らせ、package に分けてテストを書くところまでを通します。
+標準入力の行・語・バイトを数える小さな `wc` を書いて、ビルドして走らせ、packageに分けてテストを書くところまでを通します。
 
 ## 入力を読んで数える
 
@@ -50,15 +50,15 @@ printf 'Sober is a minimal language.\nIt is fast, safe and plain.\n\nThe end\n' 
 
 読みどころ:
 
-- `io.ReadStdin() catch return 1` — `ReadStdin` は `([]byte, error?)` を返します。`catch` は「エラーならこうする」を書く場所で、ここでは終了コード 1 で抜けます。エラーは `catch` で扱うか、`?` で呼び手へ返すか、`err` を受けて調べます。
+- `io.ReadStdin() catch return 1` — `ReadStdin` は `([]byte, error?)` を返します。`catch` は「エラーならこうする」を書く場所で、ここでは終了コード1で抜けます。エラーは `catch` で扱うか、`?` で呼び手へ返すか、`err` を受けて調べます。
 - `mut` — 変える束縛だけに `mut` を付けます。`b`（読んだバイト列）は付けていないので、以後は変わりません。
-- `for c <- b { … }` — slice の走査。`c` は `byte` です。
-- 文字リテラル `' '` は ASCII の 1 バイト（`byte`）です。
+- `for c <- b { … }` — sliceの走査。`c` は `byte` です。
+- 文字リテラル `' '` はASCIIの1バイト（`byte`）です。
 - `"${lines} ${words} ${len(b)}"` — 文字列の補間。
 
-## package に分ける
+## packageに分ける
 
-ディレクトリが package です。名前が大文字で始まるものだけが外から見えます（Go と同じ）。
+ディレクトリがpackageです。名前が大文字で始まるものだけが外から見えます（Goと同じ）。
 
 ```
 proj/
@@ -98,7 +98,7 @@ func main() int {
 }
 ```
 
-import のパスはルート（ビルドの起点のディレクトリ — `sober` を実行するディレクトリで、ここでは `proj/`）からの相対です。起点より上のディレクトリは探しません。修飾子はパスの全段を `.` でつないだものです（`import "util/strings"` なら `util.strings.X` — `std/` だけは落として `import "std/json"` は `json.X`）。起点に `sober.mod` を置くと、モジュールの名前とローカルの依存を宣言できます（下の「[モジュールと依存](#モジュールと依存)」）。
+importのパスはルート（ビルドの起点のディレクトリ — `sober` を実行するディレクトリで、ここでは `proj/`）からの相対です。起点より上のディレクトリは探しません。修飾子はパスの全要素を `.` でつないだものです（`import "util/strings"` なら `util.strings.X` — `std/` だけは落として `import "std/json"` は `json.X`）。起点に `sober.mod` を置くと、モジュールの名前とローカルの依存を宣言できます（下の「[モジュールと依存](#モジュールと依存)」）。
 
 ```sh
 cd proj
@@ -106,11 +106,11 @@ sober build app/main.sober -o gcd && ./gcd    # 12
 sober check app/main.sober                     # 型検査と解析器だけ — 結果は JSON の 1 行
 ```
 
-型の誤りがあると、JSON の行（`"ok":false`）の前に、標準エラーへ `sober: type error at app/main.sober:4:14` の形で位置を 1 行出します。
+型の誤りがあると、JSONの行（`"ok":false`）の前に、標準エラーへ `sober: type error at app/main.sober:4:14` の形で位置を1行出します。
 
 ## テストを書く
 
-package の中の `*_test.sober` の `func TestXxx()` がテストです。`assert` はテストのファイルの中だけで使えます。
+packageの中の `*_test.sober` の `func TestXxx()` がテストです。`assert` はテストのファイルの中だけで使えます。
 
 ```sober
 // proj/mathx/mathx_test.sober
@@ -131,7 +131,7 @@ ok   mathx.TestGcd
 1 passed, 0 failed
 ```
 
-`assert` は失敗すると、式の部分ごとの値（power assert）と、失敗した `assert` の位置を出します（5 行目を `== 2` にしたとき）:
+`assert` は失敗すると、式の部分ごとの値（power assert）と、失敗した `assert` の位置を出します（5行目を `== 2` にしたとき）:
 
 ```
 assert failed: Gcd(7, 13) == 2
@@ -141,7 +141,7 @@ panic: testing.AssertFailed{} at mathx/mathx_test.sober:5:5
 
 ## モジュールと依存
 
-別のディレクトリにある木（自分のライブラリや、隣に置いた他人のコード）を使うときは、ビルドの起点に `sober.mod` を置きます。下は `examples/mod/` の 2 つのモジュールで、`text` は文字列の小さなライブラリ、`hello` はそれを依存（dep）として使うプログラムです。
+別のディレクトリにある木（自分のライブラリや、隣に置いた他人のコード）を使うときは、ビルドの起点に `sober.mod` を置きます。下は `examples/mod/` の2つのモジュールで、`text` は文字列の小さなライブラリ、`hello` はそれを依存（dep）として使うプログラムです。
 
 ```
 examples/mod/
@@ -189,7 +189,7 @@ func Left(s string, n int) string {
 }
 ```
 
-使う側の `sober.mod` は自分の名前と dep を宣言します。
+使う側の `sober.mod` は自分の名前とdepを宣言します。
 
 ```sober
 // examples/mod/hello/sober.mod
@@ -225,9 +225,9 @@ func main() int {
 }
 ```
 
-- `module` の行はモジュールのパスで、最後の段が名前です（`example.com/text` なら `text`）。この名前が、使う側の木での既定の名前になります。名前を変えると使う側の参照の綴りが全部変わるので、版を跨いで変えないでください
-- `dep "../text"` は起点からの相対のローカルパスです。import パスは出所ではなく木での名前から書きます（`import "text"` → `text.Shout`・`import "text/pad"` → `text.pad.Left`）。出所を書くのは `sober.mod` だけなので、置き場所を移しても直すのはこの 1 行です
-- 自分の木の package（`greet`）からも、dep を同じ綴りで import します
+- `module` の行はモジュールのパスで、最後の要素が名前です（`example.com/text` なら `text`）。この名前が、使う側の木での既定の名前になります。名前を変えると使う側の参照の綴りが全部変わるので、版を跨いで変えないでください
+- `dep "../text"` は起点からの相対のローカルパスです。importパスは出所ではなく木での名前から書きます（`import "text"` → `text.Shout`・`import "text/pad"` → `text.pad.Left`）。出所を書くのは `sober.mod` だけなので、置き場所を移しても直すのはこの1行です
+- 自分の木のpackage（`greet`）からも、depを同じ綴りでimportします
 
 起点（`examples/mod/hello`）で走らせます。
 
@@ -252,8 +252,8 @@ HELLO, SOBER!
 ....42
 ```
 
-import パスの根の段（std の根の `json`・`http` …、dep の名前、起点の木の根のディレクトリ）は 1 つの名前空間に住みます。名前が重なるとどちらも優先せずに拒否し、解消は `sober.mod` の行で行います: 自分の木に `json/` があって `std/json` も使うなら `alias stdjson "std/json"`（`std/json` の修飾子が `stdjson` になる）、dep どうしなら `dep text2 "../other/text"`（木での名前を `text2` に付け替える）。ファイルごとの別名の import では解消しません。
+importパスの根の要素（stdの根の `json`・`http` …、depの名前、起点の木の根のディレクトリ）は1つの名前空間に住みます。名前が重なるとどちらも優先せずに拒否し、解消は `sober.mod` の行で行います: 自分の木に `json/` があって `std/json` も使うなら `alias stdjson "std/json"`（`std/json` の修飾子が `stdjson` になる）、depどうしなら `dep text2 "../other/text"`（木での名前を `text2` に付け替える）。ファイルごとの別名のimportでは解消しません。
 
-この版の dep はローカルパスだけです（版の指定・他の出所・dep の dep は名指しで拒否します）。規則の全文は [言語仕様 8 package](../spec/08-packages.ja.md) の P-9、Go の go.mod との違いは [language.md 20 節](../language.md) の表にあります。
+この版のdepはローカルパスだけです（版の指定・他の出所・depのdepは専用の診断で拒否します）。規則の全文は [言語仕様8 package](../spec/08-packages.ja.md) のP-9、Goのgo.modとの違いは [language.md 20節](../language.md) の表にあります。
 
 次へ: [言語ツアー](tour.ja.md)

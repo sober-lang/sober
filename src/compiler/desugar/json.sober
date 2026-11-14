@@ -6,7 +6,7 @@ import "obuf"
 
 
 // コア AST の JSON 印字（src/stage1/desugar.zig の JsonWriter と同じバイト列 — 1 行・空白なし）。
-// 式は明示スタックで印字する（let の鎖・文字列リテラルの append の鎖は深い — 再帰の実効上限を踏まない）。型は浅いので再帰
+// 式は明示スタックで印字する（letのチェーン・文字列リテラルのappendのチェーンは深い — 再帰の実効上限を踏まない）。型は浅いので再帰
 
 // 作業の種類（スタックに (op, arg) で積む）
 const OE = 0   // 式を印字
@@ -611,7 +611,7 @@ func exprJson(st mut S, out mut []byte, e0 CoreRef) {
     }
 }
 
-// Def 1 つ（[param, ret, body, tparams]）を印字する（trust = std の信頼の口の Def — trustDefs）
+// Def 1つ（[param, ret, body, tparams]）を印字する（trust = stdの信頼のインターフェースのDef — trustDefs）
 func defJson(st mut S, out mut []byte, d int, trust bool) {
     out = append(out, '{')
     if trust {

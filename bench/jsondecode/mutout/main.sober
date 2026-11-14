@@ -1,7 +1,7 @@
 package main
 
-// イディオム双子 jsondecode の (a) 回避術の形: 呼び手が置き場 r を mut で渡し、手書きの読み（std/json の部品 — shape[T] の写しの関数と同じ手順）が
-// そこへ書く（mut 引数の関数は region 透過 — tags の slice も呼び手の region に直に作られ、戻りの写しが無い）。(b) = ../main.sober（json.Decode[Rec] — 作って返す）
+// イディオムの書き方の対jsondecodeの (a) 回避術の形: 呼び手が配置先rをmutで渡し、手書きの読み（std/jsonの部品 — shape[T] のコピーの関数と同じ手順）が
+// そこへ書く（mut引数の関数はregion透過 — tagsのsliceも呼び手のregionに直に作られ、戻りのコピーが無い）。(b) = ../main.sober（json.Decode[Rec] — 作って返す）
 
 import "std/convert"
 import "std/io"
@@ -24,7 +24,7 @@ type Rec struct {
     note string?
 }
 
-// decodeInto は節 n のレコードを out へ（shape[T] の写しの関数と同じ規則 — 欠けた欄は Missing・note だけ欠けと null を nil）
+// decodeIntoは節nのレコードをoutへ（shape[T] のコピーの関数と同じ規則 — 欠けたフィールドはMissing・noteだけ欠けとnullをnil）
 func decodeInto(d json.Doc, n int, out mut Rec) error? {
     o, e0 := json.NeedObject(d, n)
     if e0 != nil {

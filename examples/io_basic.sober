@@ -17,7 +17,7 @@ func why(p string, e error) string {
     }
 }
 
-// 読んで text にする（2 段の ?: io の失敗と UTF-8 の失敗が同じ error? で上がる）
+// 読んでtextにする（2段階の ?: ioの失敗とUTF-8の失敗が同じerror? で上がる）
 func readText(p string) (string, error?) {
     b := io.ReadFile(p)?
     s := string(b)?

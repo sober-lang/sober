@@ -15,20 +15,20 @@ package session
 //     c := session.Check(u, user.gen)?
 //     who, _ := session.Who(c)                               // 認可に使える subject（ゼロ値の Claims では false）
 //
-// Key・Token・Unchecked・Claims は封の型（外で composite に書けない）。Token と Key に ==・印字の口は無い — 外へ出す口は Seal だけ（grep で数えられる名前）。
-// タグの比較は定数時間（crypto.Equal）で、claims の欄はタグが合ってから読む
+// Key・Token・Unchecked・Claimsは封の型（外でcompositeに書けない）。TokenとKeyに ==・印字のインターフェースは無い — 外へ出すインターフェースはSealだけ（grepで数えられる名前）。
+// タグの比較は定数時間（crypto.Equal）で、claimsのフィールドはタグが合ってから読む
 //
 // 脅威モデル — 備えているもの（攻撃 → 備え）:
 // - トークンの偽造・改竄（subject・世代・期限の書き換え）→ HMAC-SHA256 のタグ。鍵を知らなければ作れず、1 bit の書き換えも Bad
-// - タグの比較の時間から正しいタグを探る → 定数時間の比較（crypto.Equal）。claims の欄はタグが合うまで読まない
+// - タグの比較の時間から正しいタグを探る → 定数時間の比較（crypto.Equal）。claimsのフィールドはタグが合うまで読まない
 // - 盗まれたトークンを長く使い続ける → 期限（ttlSec は必須 — 無期限のトークンは書けない）
 // - パスワードを変えた後も、変える前のトークンで入り続ける（盗んだ側の居座り）→ 世代。パスワードの変更で世代を進めれば、それまでのトークンは全部 Stale。
 //   今の世代を Check に渡さないと Claims は手に入らないので、世代の照合を忘れる書き方が無い
 // - 乗っ取った側がパスワードを変えて本人を締め出す → 世代が進んで乗っ取った側の他のトークンも本人の端末も切れる（黙って並び立てない — 乗っ取りが表に出る）
 // - 短い秘密から鍵を総当たり → KeyFrom は 32 バイト未満を panic(WeakSecret)・HKDF で session の用途の鍵に分ける
 // - ゼロ値の Claims（外の package でも書ける）を検証済みとして渡す → 中身は Check が入れたときだけある。Who と Of はゼロ値で false を返し、
-//   欄を直に読んでも nil の絞りを通らないと中身に届かない
-// - トークンや鍵がログ・印字に漏れる → Token と Key に印字の口が無い。Seal の結果は認証の源（その値を載せた応答は共有キャッシュに置けない）
+//   フィールドを直に読んでもnilの絞りを通らないと中身に届かない
+// - トークンや鍵がログ・印字に漏れる → TokenとKeyに印字のインターフェースが無い。Sealの結果は認証の源（その値を載せたレスポンスは共有キャッシュに置けない）
 // - cookie の盗み読み（スクリプト・平文の経路）→ std/http/server の SetCookie の既定（Secure・HttpOnly・SameSite=Lax）と __Host- の名前で
 //
 // 守らないもの:
@@ -57,7 +57,7 @@ type Key struct {
 type keySeal struct {
 }
 
-// 発行したトークン（外へ出す口は Seal だけ）
+// 発行したトークン（外へ出すインターフェースはSealだけ）
 type Token struct {
     s string
     seal tokenSeal
@@ -82,7 +82,7 @@ type uncheckedSeal struct {
 }
 
 // Check を通ったトークン（作れるのは Check だけ — 受け取った関数は世代まで検証済みと読める）。
-// 中身は Who（subject）と Of（全欄）で読む — ゼロ値の Claims（外でも書ける）ではどちらも false で、検証済みの値として読める形が無い
+// 中身はWho（subject）とOf（全フィールド）で読む — ゼロ値のClaims（外でも書ける）ではどちらもfalseで、検証済みの値として読める形が無い
 type Claims struct {
     v Info?
     seal claimsSeal
@@ -184,8 +184,8 @@ func Mint(k Key, subject string, gen int, now time.Time, ttlSec int) Token {
     return Token{s: base64.EncodeUrl(freeze(w)), seal: tokenSeal{}}
 }
 
-// t の文字列（base64url・詰めなし — cookie の値に引用なしで置ける）。トークンを外へ出す唯一の口で、結果は認証の源
-// （この値を載せた応答は共有キャッシュに置けない）
+// tの文字列（base64url・詰めなし — cookieの値に引用なしで置ける）。トークンを外へ出す唯一のインターフェースで、結果は認証の源
+// （この値を載せたレスポンスは共有キャッシュに置けない）
 @credential
 @effects()
 func Seal(t Token) string {
@@ -194,7 +194,7 @@ func Seal(t Token) string {
 
 // raw（Seal の文字列）を鍵 k で照合し、今の時刻 now で期限を見たもの（世代はまだ見ない — Subject で根の行を引いて Check へ）。
 // 形が崩れている・タグが合わない・知らない版は Bad、now の秒が期限以上なら Expired（根の行を引かずに落とせる）。
-// タグの比較は定数時間で、claims の欄はタグが合ってから読む
+// タグの比較は定数時間で、claimsのフィールドはタグが合ってから読む
 @errors(Bad, Expired)
 @effects(!io, !block, !nondet)
 func Open(k Key, raw string, now time.Time) (Unchecked, error?) {
@@ -246,7 +246,7 @@ func Who(c Claims) (string, bool) {
     return v.subject, true
 }
 
-// c の全欄（世代・id・発行と期限の時刻 — id は端末単位の失効の表の鍵）と true。Check が作った Claims でなければ（ゼロ値）ゼロ値の Info と false
+// cの全フィールド（世代・id・発行と期限の時刻 — idは端末単位の失効の表の鍵）とtrue。Checkが作ったClaimsでなければ（ゼロ値）ゼロ値のInfoとfalse
 @effects()
 func Of(c Claims) (Info, bool) {
     v := c.v

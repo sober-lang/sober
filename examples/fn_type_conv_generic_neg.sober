@@ -1,6 +1,6 @@
 package main
 
-// 負例（check も build も名指しで拒否 — diag.TypeMismatch kind 8）: 型引数つきの名前付き関数型は値の型にならない（借りの仮引数の型にだけ書ける）— 変換もできない
+// 負例（checkもbuildも専用の診断で拒否 — diag.TypeMismatch kind 8）: 型引数つきの名前付き関数型は値の型にならない（借りの仮引数の型にだけ書ける）— 変換もできない
 
 type Gen[T] func(x T) T
 

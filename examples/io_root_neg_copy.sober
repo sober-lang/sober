@@ -1,6 +1,6 @@
 package main
 
-// 負例: io.Root の写しの束縛（同一性の型 — diag.FileUse・language.md 28 節「根の下の開き」）
+// 負例: io.Rootのコピーの束縛（同一性の型 — diag.FileUse・language.md 28 節「根の下の開き」）
 
 import "std/io"
 

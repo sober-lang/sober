@@ -1,6 +1,6 @@
 package main
 
-// 欄を imm の slice のリテラルの要素にした後、兄弟の欄から書く（暗黙の freeze・U2 — 欄の凍結は根ごと）
+// フィールドをimmのsliceのリテラルの要素にした後、兄弟のフィールドから書く（暗黙のfreeze・U2 — フィールドの凍結は根ごと）
 
 type B struct {
     xs mut []byte

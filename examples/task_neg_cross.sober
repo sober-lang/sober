@@ -1,6 +1,6 @@
 package main
 
-// 札を関数の実引数に渡す（diag.Par kind 12 — コアの paramOk が拒否する形を check と build の同じ層で名指し）
+// 札を関数の実引数に渡す（diag.Par kind 12 — コアのparamOkが拒否する形をcheckとbuildの同じ層で特定）
 
 import "std/task"
 

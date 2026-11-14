@@ -1,7 +1,7 @@
 package main
 
 // Web クライアントのガイド 1 節（docs/guide/web-client）: http.client.Request の一発。外の API の代わりに、同じプロセスの中で std/http/server の
-// 小さな API を立てて繋ぐ（本物の API なら url を差し替えるだけ — https も同じ書き方で、証明書の鎖は常に検証される）
+// 小さなAPIを立てて繋ぐ（本物のAPIならurlを差し替えるだけ — httpsも同じ書き方で、証明書のチェーンは常に検証される）
 
 import "std/http/client"
 import "std/http/server"

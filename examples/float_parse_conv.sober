@@ -1,6 +1,6 @@
 package main
 
-// convert.ParseFloat（Clinger の速い道つき — 仮数 ≤ 2^53・|指数| ≤ 22 は float の乗除 1 回）の差分: float_parse と同じ入力と Go の答え（scripts/oracles/float_parse.go）
+// convert.ParseFloat（Clingerの高速パスつき — 仮数 ≤ 2^53・|指数| ≤ 22はfloatの乗除1回）の差分: float_parseと同じ入力とGoの答え（scripts/oracles/float_parse.go）
 
 import "std/convert"
 import "std/math"

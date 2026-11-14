@@ -1,12 +1,12 @@
 package lower
 
 // CRC-32 の PCLMULQDQ の折り畳み（std/hash/crc32.Sum の 64 バイト以上の本文）: 組み込みの鍵 2 つ。
-// cpuclmul = この機械で折り畳みの道を使えるか（0 / 1）・crcfold(b, k, crc) = b[0:k]（k は 64 以上の 16 の倍数 — 境界は std が見る）を反転済みの crc に畳んだ値。
-// 道は x86 の最適化のバックエンドの ELF だけ（st.hwFold）: IR テキスト・.ll・写しのバックエンドでは cpuclmul = 定数 0 で、crcfold は std の分岐で呼ばれない。
+// cpuclmul = この機械で折り畳みのパスを使えるか（0 / 1）・crcfold(b, k, crc) = b[0:k]（kは64以上の16の倍数 — 境界はstdが見る）を反転済みのcrcに畳んだ値。
+// パスはx86の最適化のバックエンドのELFだけ（st.hwFold）: IRテキスト・.ll・コピーのバックエンドではcpuclmul = 定数0で、crcfoldはstdの分岐で呼ばれない。
 // 判定は CPUID.1:ECX（bit 1 = PCLMULQDQ — 最後の 32 ビットの取り出しは SSE2 の範囲で済ませるので SSE4.1 は要らない）を初回の cpuclmul / cpuaes で
-// 1 回だけ取り、rt.cpu（判定の印 + 1・0 = まだ — 印の bit 0 = crc32 の折り畳み・bit 1 = AES-GCM の塊〔aes.sober — AES-NI bit 25・SSSE3 bit 9・PCLMULQDQ〕）に置く
+// 1回だけ取り、rt.cpu（判定のフラグ + 1・0 = まだ — フラグのbit 0 = crc32の折り畳み・bit 1 = AES-GCMのチャンク〔aes.sober — AES-NI bit 25・SSSE3 bit 9・PCLMULQDQ〕）に置く
 // （CPUID は仮想機械で hypervisor へ抜ける — 毎回は叩かない。ワーカーが同時に引いても同じ値を書くだけ — rt.vdso の前例）。
-// SOBER_NOCLMUL=1 / SOBER_NOAES=1 はそれぞれの印を 0 に（同じ実行ファイルの倒れ先の道を網で照合する口）
+// SOBER_NOCLMUL=1 / SOBER_NOAES=1はそれぞれのフラグを0に（同じ実行ファイルの倒れ先のパスを検査で照合するオプション）
 
 import "desugar"
 
@@ -15,7 +15,7 @@ const CF_FOLD = 0    // a = [p, k, crc] → 畳んだ crc
 const CF_PCLMUL = 1  // a = [] → CPUID.1:ECX（32 ビット全部 — rt.cpu_probe の中だけ）
 const CF_CPUID7 = 2  // a = [] → CPUID.7.0:EBX（32 ビット全部 — bit 8 = BMI2〔MULX〕・bit 19 = ADX〔ADCX / ADOX〕・rt.cpu_probe の中だけ — mulx.sober）
 
-// cpuclmul の値（hw の道: rt.cpu の印の bit 0）
+// cpuclmulの値（hwのパス: rt.cpuのフラグのbit 0）
 func cpuClmul(st mut St) int {
     if !st.hwFold {
         return iconst(mut st, 0)
@@ -23,7 +23,7 @@ func cpuClmul(st mut St) int {
     return bin(mut st, BAnd, cpuMarks(mut st), iconst(mut st, 1))
 }
 
-// rt.cpu の印（rt.cpu を読み、0 なら rt.cpu_probe で判定して置く — 印 = 値 - 1）
+// rt.cpuのフラグ（rt.cpuを読み、0ならrt.cpu_probeで判定して置く — フラグ = 値 - 1）
 func cpuMarks(st mut St) int {
     needCpu(mut st)
     zero := iconst(mut st, 0)
@@ -38,7 +38,7 @@ func cpuMarks(st mut St) int {
     return bin(mut st, BSub, v, iconst(mut st, 1))
 }
 
-// crcfold(p, k, crc) の値（p = バイト列の先頭の番地。hw の道でない出力では std の分岐が呼ばない — 0）
+// crcfold(p, k, crc) の値（p = バイト列の先頭の番地。hwのパスでない出力ではstdの分岐が呼ばない — 0）
 func crcFold(st mut St, p int, k int, crc int) int {
     if !st.hwFold {
         return iconst(mut st, 0)
@@ -55,7 +55,7 @@ func needCpu(st mut St) {
     }
 }
 
-// rt.cpu_probe() → 印 + 1 を rt.cpu に置いて返す（印の bit 0 = PCLMULQDQ かつ SOBER_NOCLMUL でない・bit 1 = AES-NI・SSSE3・
+// rt.cpu_probe() → フラグ + 1をrt.cpuに置いて返す（フラグのbit 0 = PCLMULQDQかつSOBER_NOCLMULでない・bit 1 = AES-NI・SSSE3・
 // PCLMULQDQ が揃い SOBER_NOAES でない・bit 2 = BMI2・bit 3 = BMI2 かつ ADX — bit 2 / 3 は SOBER_NOMULX で 0・bit 4 = SHA-NI かつ SSSE3 — SOBER_NOSHA で 0）
 func buildCpuProbe(st mut St) {
     if st.cpuG == -1 {
@@ -72,9 +72,9 @@ func buildCpuProbe(st mut St) {
     nm := envMb(mut st, itop(mut st, load(mut st, globaladdr(mut st, st.meta), W_ARGV)), "SOBER_NOMULX=", 0, true)
     ebx7 := push(mut st, true, OpCrcFold, list0(mut st), 0, CF_CPUID7)
     m2 := bin(mut st, BMul, bin(mut st, BAnd, bin(mut st, BSar, ebx7, iconst(mut st, 8)), iconst(mut st, 1)), cmp(mut st, CEq, nm, iconst(mut st, 0)))
-    // bit 3 = 64 bit の塊（BMI2 かつ ADX〔EBX bit 19 — ADCX / ADOX〕・SOBER_NOMULX でない — RSA の続き (イ-b)）
+    // bit 3 = 64 bitのチャンク（BMI2かつADX〔EBX bit 19 — ADCX / ADOX〕・SOBER_NOMULXでない — RSAの続き (イ-b)）
     m3 := bin(mut st, BAnd, m2, bin(mut st, BSar, ebx7, iconst(mut st, 19)))
-    // bit 4 = SHA-256 の塊（SHA-NI〔EBX bit 29〕かつ SSSE3〔CPUID.1:ECX bit 9 — pshufb〕・SOBER_NOSHA でない）
+    // bit 4 = SHA-256のチャンク（SHA-NI〔EBX bit 29〕かつSSSE3〔CPUID.1:ECX bit 9 — pshufb〕・SOBER_NOSHAでない）
     ns := envMb(mut st, itop(mut st, load(mut st, globaladdr(mut st, st.meta), W_ARGV)), "SOBER_NOSHA=", 0, true)
     m4 := bin(mut st, BMul, bin(mut st, BAnd, bin(mut st, BAnd, bin(mut st, BSar, ebx7, iconst(mut st, 29)), bin(mut st, BSar, ecx, iconst(mut st, 9))), iconst(mut st, 1)), cmp(mut st, CEq, ns, iconst(mut st, 0)))
     r := urAdd(mut st, bin(mut st, BOr, bin(mut st, BOr, bin(mut st, BOr, m0, bin(mut st, BShl, m1, iconst(mut st, 1))), bin(mut st, BOr, bin(mut st, BShl, m2, iconst(mut st, 2)), bin(mut st, BShl, m3, iconst(mut st, 3)))), bin(mut st, BShl, m4, iconst(mut st, 4))), 1)

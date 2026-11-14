@@ -1,7 +1,7 @@
 package loader
 
 // ワーカー局所の lease（region-domain-pool.md 4d 節）: `task.NewLocal` / `task.Lease` の呼び出し点を、脱糖の固定テンプレートで
-// 普通の Sober と std の写し先の呼び出しへ写す（namedargs・eta と同じ層: desugar・lower・typer・analyzer は写した後の木だけを読む。コア・Lean は無変更）:
+// 普通のSoberとstdの変換先の呼び出しへ変換する（namedargs・etaと同じ層: desugar・lower・typer・analyzerは変換した後の木だけを読む。コア・Leanは無変更）:
 //
 //     gzw := task.NewLocal((w mut flate.Work) => { pool.NewScratch(mut w.head, 1 << 15); pool.NewScratch(mut w.prev, 16384) })
 //  →  gzw := { mut w := flate.Work{}; pool.NewScratch(mut w.head, 1 << 15); …; $task.LocalNew(<指紋>, []int{$pool.Cap(mut w.head), $pool.Cap(mut w.prev)}) }
@@ -10,11 +10,11 @@ package loader
 //  →  z := { $lp0 := gzw; $at0 := $task.LeaseTake($lp0, <指紋>); defer $task.LeaseGive($lp0, $at0); mut w := flate.Work{};
 //            $pool.LeaseAttach(mut w.head, $task.LeaseBlock($lp0), $at0, 0); $pool.LeaseAttach(mut w.prev, $task.LeaseBlock($lp0), $at0, 1); flate.EncodeWith(mut w, b, 6) }
 //
-// 意味の約束「窓のたびに新しい値」はテンプレートの形そのもの（スカラーの欄はゼロ値・Scratch は LeaseAttach が整えた直後の全部 0）。置き場の使い回しは
-// 写し先の実装（LeaseTake が区画を返したとき）だけの最適化で、観測に出ない。task.Local は型引数を持たない（T は mut の列を持つ struct で型引数に置けない —
-// language.md 25 節）ので、T の同一性は型の名前（package の path + 名前）の指紋を字面の整数で焼き、LeaseTake が置き場の指紋と照合する（違えば panic）。parser が窓のあるファイルに std/task と std/pool の暗黙 import（$task・$pool）を足す。
-// 拒否（diag.Par）: 24 = 窓の形（mut 仮引数 1 つ・型を書いたラムダ）・26 = T の形（スカラーと pool.Scratch の欄だけの struct）・
-// 27 = 整えの文（`pool.NewScratch(mut w.f, 定数)` を Scratch の欄ごとにちょうど 1 回）・28 = 写し先の直の呼び出し（std の外）
+// 意味の約束「ウィンドウのたびに新しい値」はテンプレートの形そのもの（スカラーのフィールドはゼロ値・ScratchはLeaseAttachが整えた直後の全部0）。格納場所の使い回しは
+// 変換先の実装（LeaseTakeがエリアを返したとき）だけの最適化で、観測に出ない。task.Localは型引数を持たない（Tはmutの列を持つstructで型引数に置けない —
+// language.md 25 節）ので、Tの同一性は型の名前（packageのpath + 名前）の指紋を字面の整数で焼き、LeaseTakeが格納場所の指紋と照合する（違えばpanic）。parserがウィンドウのあるファイルにstd/taskとstd/poolの暗黙import（$task・$pool）を足す。
+// 拒否（diag.Par）: 24 = ウィンドウの形（mut仮引数1つ・型を書いたラムダ）・26 = Tの形（スカラーとpool.Scratchのフィールドだけのstruct）・
+// 27 = 整えの文（`pool.NewScratch(mut w.f, 定数)` をScratchのフィールドごとにちょうど1回）・28 = 変換先の直の呼び出し（stdの外）
 
 import "std/builder"
 import "std/iter"
@@ -28,12 +28,12 @@ const PAR_LEASE_SHAPE = 26
 const PAR_LEASE_PREP = 27
 const PAR_LEASE_RESERVED = 28
 
-// 窓の T の形: Scratch の欄の名前（宣言の順）
+// ウィンドウのTの形: Scratchのフィールドの名前（宣言の順）
 type LShape struct {
     scratch []string
 }
 
-// 全ファイルの task.NewLocal / task.Lease を写す（写し先の直の呼び出し・形の違反は拒否）
+// 全ファイルのtask.NewLocal / task.Leaseを変換する（変換先の直の呼び出し・形の違反は拒否）
 @errors(diag.Par)
 func leaseAll(cx Cx) ([]ast.Tree, error?) {
     ppar := pkgOf(cx, "std/task")
@@ -42,13 +42,13 @@ func leaseAll(cx Cx) ([]ast.Tree, error?) {
     mut k := 0
     for f <- iter.Range(0, len(cx.trees)) {
         t := cx.trees[f]
-        // std/task も std/pool も import しないファイルは触る所が無い（窓のラムダは parser が $task / $pool を足すので、ここに入る）— 自己 build の値札
+        // std/taskもstd/poolもimportしないファイルは触る所が無い（ウィンドウのラムダはparserが $task / $poolを足すので、ここに入る）— 自己buildのコスト
         if !leaseImports(cx, f, ppar, ppool) {
             out = append(out, t)
             continue
         }
         std := strings.HasPrefix(cx.pkg_path[cx.file_pkg[f]], "std/")
-        // 写し先の直の呼び出し（std の外 — 写し先は区画の付け外しを信じる口）
+        // 変換先の直の呼び出し（stdの外 — 変換先はエリアの付け外しを信じるAPI）
         if !std {
             for i <- iter.Range(0, len(t.nodes)) {
                 x := t.nodes[i]
@@ -63,7 +63,7 @@ func leaseAll(cx Cx) ([]ast.Tree, error?) {
                 }
             }
         }
-        // 窓の呼び出し点
+        // ウィンドウの呼び出し点
         mut hits := mut []int{}
         for i <- iter.Range(0, len(t.nodes)) {
             if leaseWhich(cx, f, ppar, t.nodes[i]) != 0 {
@@ -85,7 +85,7 @@ func leaseAll(cx Cx) ([]ast.Tree, error?) {
     return freeze(out), nil
 }
 
-// 欄の名前 s が写し先の名前か
+// フィールドの名前sが変換先の名前か
 func leaseReserved(t ast.Tree, s int) bool {
     return StrIs(t, s, "LocalNew") || StrIs(t, s, "LeaseTake") || StrIs(t, s, "LeaseGive") || StrIs(t, s, "LeaseBlock") || StrIs(t, s, "LeaseAttach")
 }
@@ -110,7 +110,7 @@ func leaseWhich(cx Cx, f int, ppar int, x ast.Node) int {
     return w
 }
 
-// ファイル f の窓の呼び出し点 hs を写した木（節は末尾に足し、呼び出しの節をその場でブロックに差し替える）。k = 隠れた名前の通し番号
+// ファイルfのウィンドウの呼び出し点hsを変換した木（節は末尾に足し、呼び出しの節をその場でブロックに差し替える）。k = 隠れた名前の通し番号
 @errors(diag.Par)
 func leaseRewrite(cx Cx, f int, ppar int, ppool int, hs []int, k0 int) (ast.Tree, int, error?) {
     t := cx.trees[f]
@@ -131,7 +131,7 @@ func leaseRewrite(cx Cx, f int, ppar int, ppool int, hs []int, k0 int) (ast.Tree
         tok := x.tok
         which := leaseWhich(cx, f, ppar, x)
         at := diag.Pos{file: f, tok: tok}
-        // 窓の形: 実引数 2 つ（NewLocal は 1 つ）・最後が仮引数 1 つの mut・型を書いたラムダ
+        // ウィンドウの形: 実引数2つ（NewLocalは1つ）・最後が仮引数1つのmut・型を書いたラムダ
         na := ast.ListLen(t, x.b)
         if (which == 1 && na != 1) || (which == 2 && na != 2) {
             return ast.Tree{}, 0, diag.Par{at: at, kind: PAR_LEASE_FORM}
@@ -153,7 +153,7 @@ func leaseRewrite(cx Cx, f int, ppar int, ppool int, hs []int, k0 int) (ast.Tree
         sc := sh.shape.scratch
         mut stmts := mut []int{}
         if which == 1 {
-            // 整えの文: Scratch の欄ごとに `pool.NewScratch(mut w.f, 定数)` をちょうど 1 回
+            // 整えの文: Scratchのフィールドごとに `pool.NewScratch(mut w.f, 定数)` をちょうど1回
             body := t.nodes[lam.b]
             mut prep := mut []int{}
             if body.kind == ast.EBlock {
@@ -164,7 +164,7 @@ func leaseRewrite(cx Cx, f int, ppar int, ppool int, hs []int, k0 int) (ast.Tree
                 prep = append(prep, 0 - 1 - lam.b)
             }
             ps0 := freeze(prep)
-            // T が別の package なら欄は書けない（他の package の欄の書きの規則）— 整えは T の package の関数 1 つ `F(mut w)` を呼ぶ形で、その本体を同じ規則で検査する
+            // Tが別のpackageならフィールドは書けない（他のpackageのフィールドの書きの規則）— 整えはTのpackageの関数1つ `F(mut w)` を呼ぶ形で、その本体を同じ規則で検査する
             pf := prepCall(cx, f, t, ps0, wName, sh.pk)
             ps := if pf.ok { pf.stmts } else { ps0 }
             pg := if pf.ok { pf.file } else { f }
@@ -265,7 +265,7 @@ type LShapeOk struct {
     ok bool
 }
 
-// ファイル f に書いた型の名前 n の形（型パラメータの無い struct で、欄がスカラー〔int・byte・bool・float〕か pool.Scratch だけなら ok）
+// ファイルfに書いた型の名前nの形（型パラメータの無いstructで、フィールドがスカラー〔int・byte・bool・float〕かpool.Scratchだけならok）
 func leaseShape(cx Cx, f int, ppool int, n string) LShapeOk {
     pk, base := idResolve(cx, f, n)
     if pk < 0 {
@@ -310,7 +310,7 @@ func leaseFields(cx Cx, g int, ppool int, t ast.Tree, td ast.Node) LShapeOk {
     return LShapeOk{LShape{freeze(sc)}, 0, 0, true}
 }
 
-// 整えの式 e が `pool.NewScratch(mut w.f, 定数)` なら f の Scratch の欄の番号（違えば −1）
+// 整えの式eが `pool.NewScratch(mut w.f, 定数)` ならfのScratchのフィールドの番号（違えば −1）
 func prepField(cx Cx, f int, ppool int, t ast.Tree, e int, w string, sc []string) int {
     x := t.nodes[e]
     if x.kind != ast.ECall || ast.ListLen(t, x.b) != 2 {
@@ -450,7 +450,7 @@ func prepFn(cx Cx, pk int, fn string) LPrep {
                 body := gt.nodes[fd.e]
                 mut ss := mut []int{}
                 for k <- iter.Range(0, ast.ListLen(gt, body.a)) {
-                    // カバレッジの計器の数え口（coverx.sober）は整えの形に数えない
+                    // カバレッジの計装のカウンタ（coverx.sober）は整えの形に数えない
                     if !IsCoverStmt(gt, ast.ListAt(gt, body.a, k)) {
                         ss = append(ss, ast.ListAt(gt, body.a, k))
                     }

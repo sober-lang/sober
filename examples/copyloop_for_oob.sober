@@ -1,6 +1,6 @@
 package main
 
-// 写しの for の一括化の負例（区間が範囲の外 — 元の for に落ちて、途中まで積んでから同じ点で panic: src[j] の添字が範囲外 — exit 101）
+// コピーのforの一括化の負例（区間が範囲の外 — 元のforに落ちて、途中まで積んでから同じ点でpanic: src[j] の添字が範囲外 — exit 101）
 
 import "std/iter"
 

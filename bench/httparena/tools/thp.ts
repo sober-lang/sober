@@ -1,4 +1,4 @@
-// thp.ts <pid> — THP=always の模擬（report-1053 — 手元の THP は madvise なので、always の箱〔GHA〕の RSS を手元で見積もる）: nh（NOHUGEPAGE）でない匿名の写像について、2 MiB 境界に揃い写像の内に収まる窓で 1 頁でも
+// thp.ts <pid> — THP=alwaysの模擬（report-1053 — 手元のTHPはmadviseなので、alwaysのマシン〔GHA〕のRSSを手元で見積もる）: nh（NOHUGEPAGE）でない匿名の写像について、2 MiB境界に揃い写像の内に収まるウィンドウで1ページでも
 // 常駐していれば 2 MiB と数える（pagemap の present bit）。出力 = 今の Rss と模擬の Rss（kB）・写像の大きさごと
 import { readFileSync, openSync, readSync } from "node:fs";
 const pid = process.argv[2];

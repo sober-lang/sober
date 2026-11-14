@@ -1,4 +1,4 @@
-// Skynet の Go の双子（段 6 P4-6 — github.com/atemerev/skynet の Go 版と同じ形: goroutine ごとに 10 の子・結果はチャネルで親へ）
+// Skynetの比較用のGoの実装（フェーズ6 P4-6 — github.com/atemerev/skynetのGo版と同じ形: goroutineごとに10の子・結果はチャネルで親へ）
 package main
 
 import (

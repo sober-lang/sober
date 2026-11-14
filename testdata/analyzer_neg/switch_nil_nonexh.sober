@@ -1,6 +1,6 @@
 package main
 
-// 負例（analyzer — check が拒否・build は受理して外れた値で panic = E4-B）: nil の腕があっても、残りの腕が全ラベルを覆わなければ default が要る（language.md 13 節）
+// 負例（analyzer — checkが拒否・buildは受理して外れた値でpanic = E4-B）: nilの分岐があっても、残りの分岐が全ラベルを覆わなければdefaultが要る（language.md 13 節）
 type NotFound error
 type Bad error
 

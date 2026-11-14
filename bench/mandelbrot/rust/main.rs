@@ -1,4 +1,4 @@
-// mandelbrot の Rust の双子（Go の双子 bench/mandelbrot/go の逐語訳 — 逐次・n × n の点を 50 回まで反復・|z|² ≤ 4 を 1 ビットで詰めた PBM〔P4〕。
+// mandelbrotの比較用のRustの実装（比較用のGoの実装bench/mandelbrot/goの逐語訳 — 逐次・n × nの点を50回まで反復・|z|² ≤ 4を1ビットで詰めたPBM〔P4〕。
 // Go の bufio.Writer の WriteByte の鏡として BufWriter へ 1 バイトずつ）
 use std::env;
 use std::io::{self, BufWriter, Write};

@@ -1,10 +1,10 @@
 package checker
 
-// check の関数単位キャッシュの checker の側: 一括の道（checkRoundPar）の 1 周を、鍵の当たりの Def を
+// checkの関数単位キャッシュのcheckerの側: 一括のパス（checkRoundPar）の1周を、鍵の当たりのDefを
 // 区間から外して回す（checkRoundCk）。値 = Def の判定（受理 / 名前付きの本体の落ち / 使う持ち上げの落ち / 上げた関数としての落ち）と落ちの位置
 // （項目の頭からの相対 — desugar.CkRel）。合流は関数表の順で逐次の意味を再現する: 最初に落ちた名前付きの Def → 無ければ最初に持ち上げの落ちを
 // 使う Def → 根の持ち上げ → 根の判定（逐次の checkAll は名前付きの Def → 持ち上げ〔作った順 = 最初に使った Def の順〕→ 根の順に検査する）。
-// 深すぎの値は書かない。脱糖の拒否は帰す先の Def の値（印 CF_REJ・種類・kind・位置）にして当たりで再生する — 逐次の脱糖は Def の順に
+// 深すぎの値は書かない。脱糖の拒否は帰す先のDefの値（マークCF_REJ・種類・kind・位置）にして当たりで再生する — 逐次の脱糖はDefの順に
 // 進んで最初の拒否で止まるので、最初に拒否を持つ Def（それより前の Def は全部脱糖が通ったと分かっている）の拒否が逐次の拒否。
 // 帰す先は子の脱糖器が立てる（S.rejDef — 持ち上げ〔インスタンス・ラムダ〕の本体の拒否は、それを最初に触った Def の脱糖の中で起きる）
 
@@ -15,7 +15,7 @@ import "std/iter"
 
 const CKV_VER = 1
 
-// 値の印
+// 値のマーク
 const CF_NAMED = 1 // 名前付きの本体が落ちた
 const CF_LIFT = 2  // 使う持ち上げが落ちた
 const CF_BACK = 4  // 上げた関数として落ちた（逃げへ戻す）
@@ -24,12 +24,12 @@ const CF_LPOS = 16 // 持ち上げの落ちの位置あり
 const CF_REJ = 32   // 脱糖の拒否（値 = [種類, kind, 位置, 2 つ目の位置] — diag.WordsOf）
 const CF_RMISS = 64 // 拒否の 2 つ目の位置（NonExhaustive の missing）あり
 
-// 置き場の切り口 D の読みの表（loader.PCache の形 — lower.BcCheckView が組む）とコンパイラの鍵
+// 格納場所の切り口Dの読みの表（loader.PCacheの形 — lower.BcCheckViewが組む）とコンパイラの鍵
 type CkCache struct {
     on bool
     view loader.PCache
     self []byte
-    aud bool     // 検証 =2（扉の監査 — 外れの子の Def の脱糖が読んだ項目 ∈ 鍵の届く集合。外は名指しして落とす）
+    aud bool     // 検証 =2（扉の監査 — 外れの子のDefの脱糖が読んだ項目 ∈ 鍵の届く集合。外は専用の診断で拒否する）
 }
 
 // キャッシュを使わない check
@@ -42,7 +42,7 @@ func CkWith(view loader.PCache, self []byte, aud bool) CkCache {
     return CkCache{on: true, view: view, self: self, aud: aud}
 }
 
-// 区間の子の落ちの記録 [関数, 印, 名前付きの位置, 持ち上げの位置]…（関数 = nfn は根・-1 は帰す先の無い持ち上げの落ち・
+// 区間の子の落ちの記録 [関数, マーク, 名前付きの位置, 持ち上げの位置]…（関数 = nfnは根・-1は帰す先の無い持ち上げの落ち・
 // -2 は扉の監査の対 [-2, 関数, 読んだ項目, 0] — 検証 =2）。
 // fp = 検査器の Def ごとの落ち [Def, PackPos]…・m = Def → 上げた関数
 func childRecs(c desugar.Core, m []int, fp []int, nfn int, nsrc int) []int {
@@ -189,7 +189,7 @@ func ckEnc(plan desugar.DefPlan, fl int, np int, lp int, tag int, kind int) []by
     return loader.Varints(freeze(ws))
 }
 
-// CkDec は値の読み（[印, 名前付きの位置, 持ち上げの位置, 種類, kind] — 拒否なら位置 = 拒否の位置 / 2 つ目の位置。読めない・項目が今の build に
+// CkDecは値の読み（[マーク, 名前付きの位置, 持ち上げの位置, 種類, kind] — 拒否なら位置 = 拒否の位置 / 2つ目の位置。読めない・項目が今のbuildに
 // 無ければ空 = 外れ扱い）
 func ckDec(plan desugar.DefPlan, ws []int) []int {
     if len(ws) < 2 || ws[0] != CKV_VER {
@@ -242,7 +242,7 @@ func ckRanges(plan desugar.DefPlan, cost []int, skip []bool, aud bool) []desugar
     return freeze(out)
 }
 
-// キャッシュの道の 1 周（checkRoundPar から — 鍵の計画のある plan）
+// キャッシュのパスの1周（checkRoundParから — 鍵の計画のあるplan）
 @errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap, diag.Cell, diag.FnArg)
 func checkRoundCk(p loader.Program, excl []int, trust bool, plan desugar.DefPlan, cc CkCache) (Round, error?) {
     cost0 := desugar.PlanCost(plan)
@@ -378,7 +378,7 @@ func checkRoundCk(p loader.Program, excl []int, trust bool, plan desugar.DefPlan
             for q <- iter.Range(0, len(rc) / 4) {
                 i := rc[4 * q]
                 if i == -2 {
-                    // 扉の監査（検証 =2）: 鍵を持つ Def が鍵の届く集合の外の項目を読んだら名指し
+                    // 扉の監査（検証 =2）: 鍵を持つDefが鍵の届く集合の外の項目を読んだら専用の診断で拒否
                     fi := rc[4 * q + 1]
                     dq += 1
                     if fi >= 0 && fi < nfn && desugar.CkHas(plan, fi) && !desugar.CkDoor(plan, fi, rc[4 * q + 2], mut dmark, mut dstk, dq) {

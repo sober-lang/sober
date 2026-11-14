@@ -20,21 +20,21 @@ const IReadDir = 8
 const IReadFd = 9
 const IRun = 10
 const IRunFd = 50     // run_fd(argv, ofd, efd) → run と同じで、子の標準出力 / 標準エラーを ofd / efd へ付け替えてから execve（負の fd は付け替えない — rt.run_fd）
-const ICover = 52     // cover(k) → 0（カバレッジの点 k の印 — rt の大域のバイト列の k 番目に 1。std/internal/cover だけ — loader/coverx.sober の写し）
-const ICoverFd = 53   // cover_fd(fd, n) → 0（プロセスの終わりに点のバイト列を書き出す fd — rt が終わりの道で write する・0 なら書かない — と点の数 n）
-const ICoverGet = 54  // cover_get(k) → 0 / 1（点 k の印を読む — std/quick の fuzz の誘導）
-const ICoverN = 55    // cover_n() → 点の数（cover_fd が置いた n — 計器なしのビルドは 0）
-const ICoverMid = 56  // cover_mid() → 選ばれた変異の点の番号 + 1（0 = 基線 — mutation testing の schemata・loader/mutx.sober）
-const ICoverSetMid = 57  // cover_setmid(v) → 0（選ばれた変異の点の番号 + 1 を置く — テストのビルドの合成の main の頭）
-const IMmSel = 59      // mmsel(d, t, idx, n, stride, cnt) → 0（表 cnt 本〔番地 t から stride 語おき〕の idx 本目の先頭 n 語を番地 d へ — 全部の表を読んで mask で選ぶ定数時間の選び。std/crypto/rsa の expMont だけ）
+const ICover = 52     // cover(k) → 0（カバレッジの点kのマーク — rtの大域のバイト列のk番目に1。std/internal/coverだけ — loader/coverx.soberのコピー）
+const ICoverFd = 53   // cover_fd(fd, n) → 0（プロセスの終わりに点のバイト列を書き出すfd — rtが終わりのパスでwriteする・0なら書かない — と点の数n）
+const ICoverGet = 54  // cover_get(k) → 0 / 1（点kのマークを読む — std/quickのfuzzの誘導）
+const ICoverN = 55    // cover_n() → 点の数（cover_fdが置いたn — 計装なしのビルドは0）
+const ICoverMid = 56  // cover_mid() → 選ばれたミュータントの点の番号 + 1（0 = 基線 — mutation testing のschemata・loader/mutx.sober）
+const ICoverSetMid = 57  // cover_setmid(v) → 0（選ばれたミュータントの点の番号 + 1を置く — テストのビルドの合成のmainの頭）
+const IMmSel = 59      // mmsel(d, t, idx, n, stride, cnt) → 0（表cnt本〔番地tからstrideワードおき〕のidx本目の先頭nワードを番地dへ — 全部の表を読んでmaskで選ぶ定数時間の選び。std/crypto/rsaのexpMontだけ）
 const IMmSqr = 60      // montsqr(d, a, m, m0i, n) → 0（a² × R^-1 mod m — montmul の 2 乗の専用の形〔積の対称で積を減らす〕。std/crypto/rsa の montSqr だけ）
 const IFeMul = 61      // femul(d, a, b) → 0（体 2^255 − 19 の積 — 51 bit × 5 limb・std/crypto/x25519 の fmul と limb ごとに同じ値を番地 d へ。fmul だけ）
 const IShaCpu = 62     // cpusha() → この機械で SHA-256 の塊（SHA-NI・SSSE3）を使えるか（0 / 1 — x86 の最適化のバックエンドの ELF の CPUID の判定・他の出力は 0）
-const IShaBlk = 63     // sha256blk(h, p, n, k) → 0（状態 h〔8 語〕に p から 64 バイトのブロック n 個を畳む — k = 定数 64 個を 2 個ずつ詰めた 32 語。std/crypto/sha256 だけ）
+const IShaBlk = 63     // sha256blk(h, p, n, k) → 0（状態h〔8ワード〕にpから64バイトのブロックn個を畳む — k = 定数64個を2個ずつ詰めた32ワード。std/crypto/sha256だけ）
 const IAesSeal = 64    // aesseal(st, src, dst, n) → 0（n は 128 の倍数 — CTR で dst = src ^ 鍵の流れと、その暗号文 dst の GHASH を縫い合わせた 1 回の走査。std/crypto/aesgcm だけ）
 const IAesOpen = 65    // aesopen(st, src, dst, n) → 0（n は 128 の倍数 — 暗号文 src の GHASH と CTR の復号 dst = src ^ 鍵の流れを縫い合わせた 1 回の走査。std/crypto/aesgcm だけ）
-// 狭い語の読み書き（std/pool の LoadRaw16 / StoreRaw16 / LoadRaw32 / StoreRaw32 だけ — 検査なし・境界は呼び手が語の添字で見る）:
-// load16(w, i) → w の語の列をバイト列と見た 2i の位置の 16 ビット（0 拡張）・store16(w, i, v) → v の下位 16 ビットを書く（結果 0）。32 は 4i の位置
+// 狭いワードの読み書き（std/poolのLoadRaw16 / StoreRaw16 / LoadRaw32 / StoreRaw32だけ — 検査なし・境界は呼び手がワードの添字で見る）:
+// load16(w, i) → wのワードの列をバイト列と見た2iの位置の16ビット（0拡張）・store16(w, i, v) → vの下位16ビットを書く（結果0）。32は4iの位置
 const ILoad16 = 66
 const IStore16 = 67
 const ILoad32 = 68
@@ -48,7 +48,7 @@ const IBLoad32 = 71
 const ICtz64 = 72
 // bstore64(b, i, v) → 0（b[i:i+8] に v を little-endian の 8 バイトで書く — 検査なし・境界は std/internal/jsonw の Word が 1 か所で見る。b は呼び手の mut の列）
 const IBStore64 = 73
-const ICellReset = 58  // cell_reset() → 0（std/testing/cell の置き場を全部空にする — std/quick の試行の頭。置き場を使わないプログラムは何もしない）
+const ICellReset = 58  // cell_reset() → 0（std/testing/cellの格納場所を全部空にする — std/quickの試行の頭。格納場所を使わないプログラムは何もしない）
 const IRunFdEnv = 51  // run_fd_env(argv, envz, ofd, efd) → run_fd と同じで、子の環境を envz（「NAME=値 + 0」の連結）だけにする（rt.run_fd_env）
 const IMkdir = 11
 const IStat = 12
@@ -58,36 +58,36 @@ const IWriteFd = 15
 const IWriteMode = 16
 const IRename = 17
 const IParPool = 18     // std/task の名前つきプールの節（lower/admit.sober の rt.pool_new）
-const IParLedger = 19   // std/task の台帳の 1 語の読み（io: 読んだ値は時刻に依る）
+const IParLedger = 19   // std/taskの台帳の1ワードの読み（io: 読んだ値は時刻に依る）
 const IOpen = 20        // std/io の Open（fd / 負の errno。std/task のプログラムは task の登録簿に積む）
 const IClose = 21       // std/io の Close（errno — 登録簿から外す）
 const IChunkOpen = 22   // std/io の Chunks（ストリームの記録 / lower/chunk.sober）: chunk_open(fd, size, gens, off)
 const IChunkNext = 23   // chunk_next(記録) — 次の切片の View（空 = 列の終わり・errno）
 const IChunkClose = 24  // chunk_close(記録) — 読みの完了を待って閉じる
-const IDeadline = 25    // std/io の io の口の頭: 今の task の期限〔task.Run の deadline:〕が過ぎていれば 1（io: 時刻を読む）
+const IDeadline = 25    // std/ioのioの入口の頭: 今のtaskの期限〔task.Runのdeadline:〕が過ぎていれば1（io: 時刻を読む）
 const ISyscall = 26    // std 専用の生の syscall（28 節の囲い）: syscall(nr, a, b, c, d, e, f) → 結果 / 負の errno（同期・rt を通らない）
 const IAddr = 27       // バイト列の先頭の番地（sockaddr・send のバッファ — std の中で値の生存の内側だけで使う）
 const IWaitFd = 28     // fd の readiness の待ち（lower/netpoll.sober の rt.fdwait）: wait_fd(fd, 向き) → 0 / 負の errno（-110 = 期限が待ちを切った）
 const IFdOwn = 29      // fd を今の task の登録簿に積む（Serve の接続の task: 死でも出口の rt.fd_drain が閉じる）: fd_own(fd) → 0
 const INetOp = 31      // net の ring の送り / 閉じ / accept（lower/netring.sober の rt.netop）: net_op(op, fd, a, b) → 結果 / 負の errno（op 1 = 送り・2 = 閉じ・3 = accept）
-const IParFail = 30    // std/task の名前つきプールの節の失敗の数を 1 足す（Serve が handler の失敗を記帳する口・admit.sober PL_FAIL）: par_fail(節) → 0
-const ILeaseOp = 32     // ワーカー局所の lease の rt の口（region-domain-pool.md 4d 節 — std/task・std/pool の写し先だけ）: lease_op(op, blk, off, v) → 結果
-                       // （op 0 = ワーカーの数・1 = 今のワーカーの番号・2 = blk[off] の印を取る〔1 = 取れた・0 = 使用中〕・3 = 返す・4 = blk[off] の生の読み・5 = 生の書き）
-const ILeaseView = 33   // lease_view(blk, off, n) → blk[off:off+n] の語を指す mut []int（置き場の区画を窓の Scratch に付ける — 深度は blk のまま）
-const ILeaseBytes = 47  // lease_bytes(blk, off, n) → blk の off 語目から n バイトを指す mut []byte（lease_view のバイト版 — std/tls の送りの束で使う）
-const ICpuClmul = 35    // cpuclmul() → この機械で crcfold の道を使えるか（0 / 1 — x86 の最適化のバックエンドの ELF の CPUID の判定・他の出力は 0）
+const IParFail = 30    // std/taskの名前つきプールの節の失敗の数を1足す（Serveがhandlerの失敗を記帳するAPI・admit.sober PL_FAIL）: par_fail(節) → 0
+const ILeaseOp = 32     // ワーカー局所のleaseのrtのAPI（region-domain-pool.md 4d節 — std/task・std/poolの変換先だけ）: lease_op(op, blk, off, v) → 結果
+                       // （op 0 = ワーカーの数・1 = 今のワーカーの番号・2 = blk[off] のマークを取る〔1 = 取れた・0 = 使用中〕・3 = 返す・4 = blk[off] の生の読み・5 = 生の書き）
+const ILeaseView = 33   // lease_view(blk, off, n) → blk[off:off+n] のワードを指すmut []int（配置先のエリアを予約ページのScratchに付ける — 深度はblkのまま）
+const ILeaseBytes = 47  // lease_bytes(blk, off, n) → blkのoffワード目からnバイトを指すmut []byte（lease_viewのバイト版 — std/tlsの送りのバッチで使う）
+const ICpuClmul = 35    // cpuclmul() → この機械でcrcfoldのパスを使えるか（0 / 1 — x86の最適化のバックエンドのELFのCPUIDの判定・他の出力は0）
 const IAesCpu = 37      // cpuaes() → この機械で AES-GCM の塊を使えるか（0 / 1 — AES-NI・PCLMULQDQ・SSSE3。x86 の最適化のバックエンドの ELF の CPUID の判定・他の出力は 0）
 const IAesKey = 38      // aeskey(key, ctx) → 0（key = 16 バイトの番地・ctx = 272 バイトの作業域の番地 — 鍵の展開と GHASH の H の冪。std/crypto/aesgcm だけ）
 const IAesCtr = 39      // aesctr(ctx, src, dst, n) → 0（n は 16 の倍数 — ctx の計数器の CTR で dst = src ^ 鍵の流れ・計数器を進める）
-const IAesGhash = 40    // aesghash(ctx, p, n) → 0（n は 16 の倍数 — ctx の GHASH の溜め Y に p[0:n] を畳む）
+const IAesGhash = 40    // aesghash(ctx, p, n) → 0（nは16の倍数 — ctxのGHASHのバッファYにp[0:n] を畳む）
 const IAesTag = 46      // aestag(ctx, dst) → 0（dst[0:16] = Y ⊕ E(J0) — J0 = ctx の計数器のブロックの計数を 1 にした形・ctx は変えない）
 const ICrcFold = 36     // crcfold(b, k, crc) → b[0:k]（k は 64 以上の 16 の倍数・検査なし — 境界は std/hash/crc32 が見る）を反転済みの crc に PCLMULQDQ で畳んだ値
-const IAddrN = 42      // addrn(b) → []int の先頭の番地（std/crypto/rsa の作業域を塊に渡す — 値の生存の内側だけで使う）
+const IAddrN = 42      // addrn(b) → []intの先頭の番地（std/crypto/rsaの作業域をチャンクに渡す — 値の生存の内側だけで使う）
 const IMmCpu = 43      // cpumulx() → この機械で多倍長の塊（BMI2 の MULX）を使えるか（0 / 1 — x86 の最適化のバックエンドの ELF の CPUID の判定・他の出力は 0）
-const IMmMul = 44      // montmul(d, a, b, m, m0i, n) → 0（62 bit limb の Montgomery の積 — 番地 d に n + 1 語・a / b / m は n 語の番地。std/crypto/rsa の montMul だけ）
+const IMmMul = 44      // montmul(d, a, b, m, m0i, n) → 0（62 bit limb のMontgomeryの積 — 番地dにn + 1ワード・a / b / mはnワードの番地。std/crypto/rsaのmontMulだけ）
 const IMulHi = 41      // mulhi(a, b) → a × b の 128 ビットの積の上位 64 ビット（符号なし — IR の BMulHi・x86 の MUL の rdx。std/crypto の多倍長だけ）
-const ICycles = 45     // cycles() → 時刻の計数器（lfence + rdtscp + lfence — x86 の最適化のバックエンドの ELF の道・他の出力は 0。std/internal/dudect だけ — 定数時間の統計の網）
-const IClock = 74      // clock(clk) → clk の時計の今（ns — 0 = CLOCK_REALTIME・1 = CLOCK_MONOTONIC。vDSO の __vdso_clock_gettime・無ければ生の clock_gettime — std/time だけ。効果は io〔Now / Mono の @effects の外形〕）
+const ICycles = 45     // cycles() → 時刻の計数器（lfence + rdtscp + lfence — x86の最適化のバックエンドのELFのパス・他の出力は0。std/internal/dudectだけ — 定数時間の統計の検査一式）
+const IClock = 74      // clock(clk) → clkの時計の今（ns — 0 = CLOCK_REALTIME・1 = CLOCK_MONOTONIC。vDSOの __vdso_clock_gettime・無ければ生のclock_gettime — std/timeだけ。エフェクトはio〔Now / Monoの @effectsの外形〕）
 const IMatchLen = 48    // matchlen(b, i, j, n) → b[i:i+n] と b[j:j+n] の一致の長さ（検査なし — 境界は std/binary の MatchLen が 1 か所で見る・rt.matchlen）
 const IJClean = 49      // jclean(b) → b の中で最初に JSON のエスケープが要るバイト（'"'・'\\'・0x20 未満）の位置・無ければ len(b)（切片が長さを運ぶので検査なし — rt.jclean）
 const ILoad64 = 34      // load64(b, i) → b[i:i+8] の 8 バイトを little-endian で読んだ int（検査なし — 境界は std/binary の Load64 が 1 か所で見る）
@@ -97,14 +97,14 @@ func IntrinsicCode(key string) int {
     return if key == "fsqrt" { IFSqrt } else if key == "fbits" { IFBits } else if key == "ffrombits" { IFFromBits } else if key == "errno" { IErrno } else if key == "args" { IArgs } else if key == "environ" { IEnviron } else if key == "read_file" { IReadFile } else if key == "read_dir" { IReadDir } else if key == "read_fd" { IReadFd } else if key == "run" { IRun } else if key == "run_fd" { IRunFd } else if key == "run_fd_env" { IRunFdEnv } else if key == "mkdir" { IMkdir } else if key == "syscall" { ISyscall } else if key == "addr" { IAddr } else if key == "wait_fd" { IWaitFd } else if key == "fd_own" { IFdOwn } else if key == "net_op" { INetOp } else if key == "stat" { IStat } else if key == "sleep" { ISleep } else if key == "write_file" { IWriteFile } else if key == "write_fd" { IWriteFd } else if key == "write_mode" { IWriteMode } else if key == "rename" { IRename } else if key == "par_pool" { IParPool } else if key == "par_ledger" { IParLedger } else if key == "par_fail" { IParFail } else if key == "open" { IOpen } else if key == "close" { IClose } else if key == "chunk_open" { IChunkOpen } else if key == "chunk_next" { IChunkNext } else if key == "chunk_close" { IChunkClose } else if key == "deadline" { IDeadline } else if key == "lease_op" { ILeaseOp } else if key == "lease_view" { ILeaseView } else if key == "lease_bytes" { ILeaseBytes } else if key == "load64" { ILoad64 } else if key == "load16" { ILoad16 } else if key == "store16" { IStore16 } else if key == "load32" { ILoad32 } else if key == "store32" { IStore32 } else if key == "appendword" { IAppendWord } else if key == "bload32" { IBLoad32 } else if key == "ctz64" { ICtz64 } else if key == "bstore64" { IBStore64 } else if key == "matchlen" { IMatchLen } else if key == "jclean" { IJClean } else if key == "cpuclmul" { ICpuClmul } else if key == "crcfold" { ICrcFold } else if key == "cpuaes" { IAesCpu } else if key == "aeskey" { IAesKey } else if key == "aesctr" { IAesCtr } else if key == "aesghash" { IAesGhash } else if key == "aestag" { IAesTag } else if key == "aesseal" { IAesSeal } else if key == "aesopen" { IAesOpen } else if key == "mulhi" { IMulHi } else if key == "addrn" { IAddrN } else if key == "cpumulx" { IMmCpu } else if key == "montmul" { IMmMul } else if key == "mmsel" { IMmSel } else if key == "montsqr" { IMmSqr } else if key == "femul" { IFeMul } else if key == "cpusha" { IShaCpu } else if key == "sha256blk" { IShaBlk } else if key == "cycles" { ICycles } else if key == "clock" { IClock } else if key == "cover" { ICover } else if key == "cover_fd" { ICoverFd } else if key == "cover_get" { ICoverGet } else if key == "cover_n" { ICoverN } else if key == "cover_mid" { ICoverMid } else if key == "cover_setmid" { ICoverSetMid } else if key == "cell_reset" { ICellReset } else { 0 }
 }
 
-// 関数の効果のビット（language.md 12 節の関数の効果 — v1 の語彙。上位ビットは出所の credential 等、将来の拡張用に予約）
-const EffBlock = 1   // 待ちに入りうる（task の検査点・lease の窓を跨ぐ）
+// 関数のエフェクトのビット（language.md 12 節の関数のエフェクト — v1の語彙。上位ビットは出所のcredential等、将来の拡張用に予約）
+const EffBlock = 1   // 待ちに入りうる（taskの検査点・leaseのウィンドウを跨ぐ）
 const EffIo = 2      // プロセスの外と出入りする（入力も出力も）
 const EffPanic = 4   // 明示の panic(L{…})（境界検査・RegionExceeded は数えない）
 const EffNondet = 8  // io の入力を固定しても値が揺れる（時刻・タイミング）
 const EffAll = 15
 
-// 鍵の番号の効果のビット（葉の表 — 効果の葉は rt の原始の口で、表は compiler が持つ）。
+// 鍵の番号のエフェクトのビット（葉の表 — エフェクトの葉はrtの原始のAPIで、表はcompilerが持つ）。
 // 純な鍵（fsqrt・fbits・errno・addr・load64・cpu*・crcfold・aes*（aesseal・aesopen を含む）・mulhi・montmul・mmsel・montsqr・femul・sha256blk — cpu* は機械に依るが 1 プロセスで一定）と lease_* / par_pool / par_fail（観測は
 // par_ledger の側）は 0
 func IntrinsicEffects(code int) int {
@@ -240,8 +240,8 @@ func intrinsicAll(trees []ast.Tree, fpkg []string, fstd []bool) error? {
             for i <- iter.Range(0, ast.ListLen(t, xs)) {
                 x := t.nodes[ast.ListAt(t, xs, i)]
                 at := diag.Pos{file: f, tok: x.tok}
-                // std のファイルか、std の package の .sobi（展開される関数の本体が参照する宣言 — compiler/iface。.sobi のファイルは std の印を持たない。
-                // 利用者の package は予約 prefix `std/` を名乗れないので、受理の線は同じ）
+                // stdのファイルか、stdのpackageの .sobi（展開される関数の本体が参照する宣言 — compiler/iface。.sobiのファイルはstdのフラグを持たない。
+                // 利用者のpackageは予約prefix `std/` を名乗れないので、受理の基準は同じ）
                 if !fstd[f] && !isStd(fpkg[f]) {
                     return diag.Intrinsic{at: at, kind: 1}
                 }

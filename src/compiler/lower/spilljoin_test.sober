@@ -1,11 +1,11 @@
 package lower
 
-// spill 先の合流の干渉の判定（x86.sober xJoinSlots — 置き場の往復レーン 段 4a）の単体テスト（`cd compiler && ../bin/sober test lower`）:
-// 値の区間（部分区間の鎖）を手で組み、併せる / 併せないを直に見る。値の番号 0〜nv − 1 は最初の部分区間・続きは nv 以降を pnx で繋ぐ
+// spill先の合流の干渉の判定（x86.sober xJoinSlots — 格納場所の往復レーン 段階4a）の単体テスト（`cd compiler && ../bin/sober test lower`）:
+// 値の区間（部分区間のチェーン）を手で組み、併せる / 併せないを直に見る。値の番号0〜nv − 1は最初の部分区間・続きはnv以降をpnxで繋ぐ
 
 import "std/iter"
 
-// 値 nv 個の区間 [s[k], t[k]]（k < nv は値の最初の部分区間・k ≥ nv は pn[k] の値の続き — 鎖は開始の昇順）で、組 (pa, pb) を順に併せた代表を返す（詰めた番号 = 値の番号）
+// 値nv個の区間 [s[k], t[k]]（k < nvは値の最初の部分区間・k ≥ nvはpn[k] の値の続き — チェーンは開始の昇順）で、組 (pa, pb) を順に併せた代表を返す（詰めた番号 = 値の番号）
 func sjT(nv int, s []int, t []int, pn []int, pa []int, pb []int) []int {
     mut ivS := mut []int{}
     mut ivE := mut []int{}
@@ -15,7 +15,7 @@ func sjT(nv int, s []int, t []int, pn []int, pa []int, pb []int) []int {
         ivE = append(ivE, t[k])
         pnx = append(pnx, -1)
     }
-    // 続きの部分区間を値の鎖の最後へ
+    // 続きの部分区間を値のチェーンの最後へ
     for k <- iter.Range(nv, len(s)) {
         mut last := pn[k]
         while pnx[last] >= 0 {

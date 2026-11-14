@@ -1,7 +1,7 @@
 package main
 
 // reqinst の題材 asyncdb のサーバ: HttpArena の async-db（GET /async-db?min=&max=&limit= → std/pg のプールから準備済みの文で読む →
-// 行を JSON で返す）と /pipeline だけを、bench/httparena/main.sober と同じ道（std/http/server の ServeConn・gzip の作業域）で返す。
+// 行をJSONで返す）と /pipelineだけを、bench/httparena/main.soberと同じパス（std/http/serverのServeConn・gzipの作業域）で返す。
 // 相手は DATABASE_URL の PostgreSQL（計測では bench/pgstub の代役 — 平文）。
 //   asyncdb [port]   0.0.0.0:<port>（既定 8080・0 = 空き番号）で待ち、"ready <port>" を出す。DATABASE_URL が無ければ 2 で終わる
 

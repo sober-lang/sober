@@ -6,7 +6,7 @@ import * as readline from "node:readline";
 
 const CROPS = [1.0, 0.999, 0.99, 0.95, 0.9, 0.8, 0.7, 0.6, 0.5];
 const LIMIT = Number(process.env.DUDECT_T ?? "4.5");
-// 記録（bench/data/dudect.tsv の形 — 1 題材 1 行を追記）: DUDECT_TSV = 書く先・DUDECT_ENV = 箱の名（wsl2 / gha-<runner>）・DUDECT_DATE / DUDECT_COMMIT
+// 記録（bench/data/dudect.tsvの形 — 1題材1行を追記）: DUDECT_TSV = 書く先・DUDECT_ENV = マシンの名（wsl2 / gha-<runner>）・DUDECT_DATE / DUDECT_COMMIT
 const TSV = process.env.DUDECT_TSV ?? "";
 const HEAD = "# dudect の記録（scripts/dudect.sh — 1 題材 1 行・追記）。max_t = 上位の切りの段ごとの Welch の |t| の最大値・crop = その段（全体の分位点）・verdict = ok / LEAK（閾値 4.5）\nenv\tname\tn0\tn1\tmax_t\tcrop\tmean0\tmean1\tverdict\tdate\tcommit\n";
 

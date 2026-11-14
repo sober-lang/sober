@@ -1,8 +1,8 @@
 package main
 
-// multipart/form-data の受け（http.server.Multipart — RFC 7578）: ブラウザのファイルのアップロードの形（Chrome の境界の綴り・テキストの欄・ファイルの欄・
-// 選ばなかったファイルの欄〔filename=""〕）を部分ごとに印字し、閉じの境界の無い本文は 400 を返す。
-// ネットの代わりに recv が決まった要求の列を 1 切片で渡し、send が応答を印字する（examples/http_reqresp の形 — 行末の CR は外して印字）
+// multipart/form-dataの受け（http.server.Multipart — RFC 7578）: ブラウザのファイルのアップロードの形（Chromeの境界の綴り・テキストのフィールド・ファイルのフィールド・
+// 選ばなかったファイルのフィールド〔filename=""〕）を部分ごとに印字し、閉じの境界の無い本文は400を返す。
+// ネットの代わりにrecvが決まったリクエストの列を1切片で渡し、sendがレスポンスを印字する（examples/http_reqrespの形 — 行末のCRは外して印字）
 
 import "std/http"
 import "std/http/server"

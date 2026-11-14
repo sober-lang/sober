@@ -1,7 +1,7 @@
 package main
 
-// 表の網羅（language.md 13 節「表の網羅」— `@exhaustive`）: 注釈を付けた関数の switch は、subject の閉じた集合の全員を case に名指す。
-// union = 全 variant / error = 腕のラベルの宣言元の package の全ラベル / named scalar = 型つきの const の全部。default は集合の外の値だけを受ける
+// 表の網羅（language.md 13 節「表の網羅」— `@exhaustive`）: 注釈を付けた関数のswitchは、subjectの閉じた集合の全員をcaseに列挙する。
+// union = 全variant / error = 分岐のラベルの宣言元のpackageの全ラベル / named scalar = 型つきのconstの全部。defaultは集合の外の値だけを受ける
 
 type Shape union {
     Circle{r int}
@@ -38,7 +38,7 @@ func reason(s Status) string {
     }
 }
 
-// Denied は誰も返さないが、表の一員として名指す（@exhaustive の中では導出集合の外のラベルの腕も拒否しない）
+// Deniedは誰も返さないが、表の一員として列挙する（@exhaustiveの中では導出集合の外のラベルの分岐も拒否しない）
 @exhaustive
 func label(e error?) string {
     return switch e {

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # local.sh — HttpArena の HTTP/1.1 の種目を素のプロセスで回す（Docker なし — net 4c・report-671）。Sober のエントリ（main.sober）と Go の対照
-# （go/ — HttpArena の go-stdlib のハンドラの写し）を同じ条件で交互に n 周走らせ、種目ごとに req/s の中央値・サーバの CPU / 要求・比（Sober / Go）を出す。
-# 負荷は HttpArena と同じ gcannon（io_uring）と同じ要求のファイル（requests/*.raw）・同じ形（baseline = GET / POST CL / POST chunked の 3 つを混ぜて
-# 4096 接続・pipelined = /pipeline を 16 本ずつ・limited-conn = 10 要求ごとに張り直し）。HttpArena の採点は 64 スレッド・3 回の最良・5 秒 —
+# （go/ — HttpArenaのgo-stdlibのハンドラのコピー）を同じ条件で交互にn周走らせ、種目ごとにreq/sの中央値・サーバのCPU / リクエスト・比（Sober / Go）を出す。
+# 負荷はHttpArenaと同じgcannon（io_uring）と同じリクエストのファイル（requests/*.raw）・同じ形（baseline = GET / POST CL / POST chunked の3つを混ぜて
+# 4096接続・pipelined = /pipelineを16本ずつ・limited-conn = 10リクエストごとに張り直し）。HttpArenaの採点は64スレッド・3回の最良・5秒 —
 # ここは機の大きさに合わせて縮め、最良でなく中央値で読む（比を正にする — PINS の「HttpArena のベンチ環境」の勘所）。
 #
 #   bench/httparena/local.sh [-n 周] [-d 秒] [-c 接続] [--profiles "baseline pipelined limited-conn json json-comp json-comp-16k latency-1m latency-10k latency-500k-8cpu async async-db"] [-o 結果の TSV] [--summary 要約の md]
@@ -12,36 +12,38 @@
 #                    〔json-comp / json-tls / json-h2c の端点〕ので meta.json の tests には載せない・手元の Sober / Go の直列化の比を見るだけ。report-703）。
 #                    dataset = 本家の data/dataset.json（$ARENA_DATA — 無ければ GitHub から取る）をサーバの DATASET_PATH に
 #   json-comp      = 同じ巡回を Accept-Encoding: gzip, br で（本家 json-comp — 4096 接続。json-comp-16k = 16384 接続 — 本家は 4096,16384 の両方）。
-#                    本家の採点は effectiveRps = rps × (最小の Bpr / 自分の Bpr)²（Bpr = 応答 1 件のバイト — 頭込み）なので、巡回の 3 つの応答の
+#                    本家の採点はeffectiveRps = rps × (最小のBpr / 自分のBpr)²（Bpr = レスポンス1件のバイト — 頭込み）なので、巡回の3つのレスポンスの
 #                    頭 + 本文の平均のバイトを Sober / Go で測って要約の末尾に添える（report-714）
 #   json-tls       = wrk（本家の形 — -c 4096・GET /json/{count}?m= の 7 組の巡回〔requests/json-tls-rotate.lua〕を HTTPS の TLS の port へ。
 #                    ALPN http/1.1・Accept-Encoding なし。証明書 = 本家の certs と同じ対〔testdata/crypto/httparena-server.*〕を TLS_CERT / TLS_KEY で渡す。
 #                    wrk は $WRK か PATH〔workflow は apt の wrk〕・p99 は --latency の分布から。report-841 / 843）
 #   async          = gcannon・GET /delay/10・接続 32000（$ASYNC_CONNS — 保持した接続の数だけ保留のタイマーを運ぶ。天井 = conns/delay = 3.2M）。
 #                    TIME_WAIT を大量に残すので一覧の最後に置くこと（本家 PROFILE_ORDER と同じ理由）
-#   async-db       = gcannon・GET /async-db?min=10&max=50&limit={5,10,20,35,50}（本家 requests/async-db-*.raw の巡回・1024 接続・25 要求ごとに張り直し〔-r 25〕）。
+#   async-db       = gcannon・GET /async-db?min=10&max=50&limit={5,10,20,35,50}（本家requests/async-db-*.rawの巡回・1024接続・25リクエストごとに張り直し〔-r 25〕）。
 #                    本家の参考種目（採点に入らない）。PostgreSQL は外で立てて $ASYNC_DB_URL（本家の DATABASE_URL の形 — postgres://bench:bench@host:port/benchmark・
 #                    items 表を data/pgdb-seed.sql で入れたもの）を渡す — この種目だけサーバに DATABASE_URL と DATABASE_MAX_CONN（$ASYNC_DB_MAX_CONN・既定 256 —
 #                    PG の max_connections と揃える）を渡す（本家 scripts/lib/framework.sh と同じ）。Go の対照は本家 go-stdlib と同じ pgx の pool（go/db.go）
 #   8gbit          = zrk（本家の形 — POST /echo を TLS の port へ・本文 10,240 B〔本家 tools/zrk.sh の決定的な "echo-body:" の繰り返し〕・接続 512・
-#                    レート固定 50K req/s〔$ZRK_RATE_8GBIT〕・5 秒〔$ZRK_DUR_8GBIT〕。採点は latency と同じ式〔CPU / 要求・p99・mean〕— report-848 / 855）
-#   latency-1m/10k = zrk（レート固定 1M / 10K req/s・接続 1024・20 秒 $ZRK_DUR — /baseline11?a=1&b=2）。測るのはサーバの CPU / 要求。
+#                    レート固定50K req/s〔$ZRK_RATE_8GBIT〕・5秒〔$ZRK_DUR_8GBIT〕。採点はlatencyと同じ式〔CPU / リクエスト・p99・mean〕— report-848 / 855）
+#   latency-1m/10k = zrk（レート固定1M / 10K req/s・接続1024・20秒 $ZRK_DUR — /baseline11?a=1&b=2）。測るのはサーバのCPU / リクエスト。
 #                    測る前に同じサーバへ同じ形を $ZRK_WARM 秒（既定 5・0 で無し）流して捨てる（1 周目の p99 がランプの尻〔接続の張り始め・
 #                    ワーカーの起き上がり〕を拾って秒の桁に跳ねた — GHA run 38704859501 の r3 / r4。本家の測りの形〔レート・接続・秒〕は変えない）
 #                    zrk は $ZRK か PATH、無ければ本家の pin（v2.3.0 の静的 tarball・sha256 照合）を取って $W に置く
 #                    分布（zrk の latency_us の p50 / p75 / p90 / p99 / p99.9 / mean / max・max_schedule_lag_us・rate_ratio・CPU µs/req）は周ごとに
-#                    "<-o の TSV>.lat" と要約の表へ（本家の二峰の形を箱・版ごとに読む — report-1170）
+#                    "<-oのTSV>.lat" と要約の表へ（本家の二峰の形をマシン・版ごとに読む — report-1170）
 #   latency-500k-8cpu = latency-1m の形でレート 500K req/s（$ZRK_RATE_500K）・サーバは 8 論理 CPU（本家 profiles.sh の cpuset 0-3,64-67 = 4 物理コア +
-#                    SMT の兄弟 — ここではサーバ側の物理コアの先頭 4 つ + 兄弟〔$SERVER_CPUS_8 で上書き・SMT の無い箱では先頭 8 CPU〕・SOBER_WORKERS /
-#                    GOMAXPROCS も 8）。本家の箱の 4 コアと手元の 4 コアは同じ桁なので、レートは箱で割り直さない（採点 = rate_ratio・CPU / 要求・p99）
+#                    SMTの兄弟 — ここではサーバ側の物理コアの先頭4つ + 兄弟〔$SERVER_CPUS_8で上書き・SMTの無いマシンでは先頭8 CPU〕・SOBER_WORKERS /
+#                    GOMAXPROCSも8）。本家のマシンの4コアと手元の4コアは同じ桁なので、レートはマシンで割り直さない（採点 = rate_ratio・CPU / リクエスト・p99）
 # 前提: gcannon（PATH か $GCANNON）と HttpArena の requests/（$ARENA_REQ — 無ければ GitHub から取る）・go・bin/sober
 # CPU の割り当て: SMT の兄弟を同じ側に置き、前半の物理コアをサーバ・後半を gcannon（$SERVER_CPUS / $LOAD_CPUS で上書き）
 # json-tls の wrk のスレッド数 = $WRK_THREADS（既定 = 負荷側の CPU 数 — 本家は 64。1 スレッドあたりの接続数が wrk の作業集合を決める — report-jtls-0）。
-# SOBER_MAIN_BIN = 建て済みの主の Sober のサーバ（main.sober を建てない）
-# 3 本目の交互（同じ箱で版や env を比べる口）: SOBER_ALT_BIN（別の版で建てた Sober のサーバの実行ファイル）か SOBER_ALT_ENV（Sober のサーバに足す env —
-# SOBER_SRV_ENV の後に書く）のどちらかがあれば、名前 sober-alt を sober / go と同じ周の輪に入れる（実行ファイルが無ければ主の Sober と同じもの）。
+# SOBER_MAIN_BIN = ビルド済みの主のSoberのサーバ（main.soberをビルドしない）
+# 3本目の交互（同じマシンで版やenvを比べるオプション）: SOBER_ALT_BIN（別の版でビルドしたSoberのサーバの実行ファイル）かSOBER_ALT_ENV（Soberのサーバに足すenv —
+# SOBER_SRV_ENVの後に書く）のどちらかがあれば、名前sober-altをsober / goと同じ周のループに入れる（実行ファイルが無ければ主のSoberと同じもの）。
 # 要約には sober-alt / sober の比の表が付く
-# 注: seki の seccomp の下では時間（req/s・CPU）が歪む — 値は参考。公式の数字は GH Actions（.github/workflows/httparena.yml）
+# 負荷側の天井のフィールド（"<-oのTSV>.bus" — 全種目・周ごと）: 負荷側のbusy / user / sys %・サーバ側のbusy %・サーバの自発 / 非自発の切り替え ÷ レスポンス・
+# 客のCPU µs / レスポンス。要約の表で負荷側busy ≥ 95%の種目にclient-boundのマーク（客が律速 — サーバの差がrpsに映らない）
+# 注記: sekiのseccompの下では時間（req/s・CPU）が歪む — 値は参考。公式の数字はGH Actions（.github/workflows/httparena.yml）
 # cgroup の数え（HTTPARENA_CG = 書ける cgroup v2 の dir — memory の制御器を子に配り済みで、このシェルが中の兄弟の葉にいること・
 # workflow が用意する）: サーバを走りごとの子の cgroup で起動し、"$out.rss" の cg_* の列と要約に memory.peak と内訳を足す（本家の mem の数え方）
 set -uo pipefail
@@ -95,7 +97,7 @@ case " $profiles " in *" async-db "*)
         [ -f "$REQ/async-db-$l.raw" ] || curl -fsSL -o "$REQ/async-db-$l.raw" "https://raw.githubusercontent.com/MDA2AV/HttpArena/main/requests/async-db-$l.raw" || { echo "local.sh: cannot fetch requests/async-db-$l.raw" >&2; exit 2; }
     done
 esac
-# json の要求（本家 json-comp の巡回 (25,4)・(40,8)・(50,6) — json は Accept-Encoding なし・json-comp は本家の頭 Accept-Encoding: gzip, br）と dataset
+# jsonのリクエスト（本家json-compの巡回 (25,4)・(40,8)・(50,6) — jsonはAccept-Encodingなし・json-compは本家の頭Accept-Encoding: gzip, br）とdataset
 DATA=${ARENA_DATA:-$W/dataset.json}
 case " $profiles " in *" json "*|*" json-comp"*)
     for cm in 25:4 40:8 50:6; do
@@ -136,8 +138,8 @@ case " $profiles " in *" latency-"*|*" 8gbit "*)
     ;;
 esac
 
-# 建てる（Sober = 主の sober・Go = 静的）
-# SOBER_MAIN_BIN = 建て済みの主のサーバ（箱で鎖を回さない — EC2 の A/B は手元で建てた 2 版を運ぶ。report-jtls-0）
+# ビルドする（Sober = 主のsober・Go = 静的）
+# SOBER_MAIN_BIN = ビルド済みの主のサーバ（マシンでブートストラップチェーンを回さない — EC2のA/Bは手元でビルドした2版を運ぶ。report-jtls-0）
 if [ -n "${SOBER_MAIN_BIN:-}" ]; then
     cp "$SOBER_MAIN_BIN" "$W/sober-srv" || { echo "local.sh: cannot copy SOBER_MAIN_BIN ($SOBER_MAIN_BIN)" >&2; exit 1; }
 else
@@ -169,7 +171,7 @@ CERT=$ROOT/testdata/crypto/httparena-server.crt
 KEY=$ROOT/testdata/crypto/httparena-server.key
 start() {
     local b=$W/$1-srv try
-    # latency-500k-8cpu だけサーバを 8 論理 CPU に絞る（上の注 — $cur_prof は下の周の輪が置く）
+    # latency-500k-8cpuだけサーバを8論理CPUに絞る（上の注記 — $cur_profは下の周のループが置く）
     local scpus=$SERVER_CPUS ns=$nsrv
     [ "${cur_prof:-}" = latency-500k-8cpu ] && { scpus=$SERVER_CPUS_8; ns=$nsrv8; }
     for try in 1 2 3; do
@@ -186,7 +188,7 @@ start() {
         # async-db の周だけ DB の繋ぎ先を渡す（本家 framework.sh — 他の種目のサーバは DATABASE_URL なしで立つ）
         local denv=
         [ "${cur_prof:-}" = async-db ] && denv="DATABASE_URL=$ASYNC_DB_URL DATABASE_MAX_CONN=${ASYNC_DB_MAX_CONN:-256}"
-        # HTTPARENA_CG（下の注）: 走りごとの子の cgroup で起動する — 移すのは exec の前（cgroup v2 は移った後の確保だけを数える）
+        # HTTPARENA_CG（下の注記）: 走りごとの子のcgroupで起動する — 移すのはexecの前（cgroup v2は移った後の確保だけを数える）
         CGDIR=
         if [ -n "${HTTPARENA_CG:-}" ]; then
             CGDIR=$HTTPARENA_CG/srv-$1-${cur_prof:-x}-$try-$$-$RANDOM
@@ -217,11 +219,31 @@ stop() {
 }
 # cpu_ticks: サーバの utime + stime（clock tick）。走りの間に死んだサーバ（/proc が消える）は 0 — 行は残り、req/s = 0 で見える
 cpu_ticks() { awk '{ print $14 + $15 }' "/proc/$SP/stat" 2> /dev/null || echo 0; }
-# thr_snap: サーバのスレッドごとの [tid utime stime]（tick）を標準出力へ。thr_row <名前> <種目> <周> <前の写し> <壁の秒>: 前後差をスレッドごとの CPU %
-# （user / sys / 計）にして "$out.thr" へ — limited-conn と latency 系の Sober の回だけ（report-1162: accept の輪の 1 本が直列の天井かの裏取り）。
-# main = 1 はプロセスの最初のスレッド（ワーカー 0 — Serve の accept の輪が走る）
+# thr_snap: サーバのスレッドごとの [tid utime stime]（tick）を標準出力へ。thr_row <名前> <種目> <周> <前のコピー> <壁の秒>: 前後差をスレッドごとのCPU %
+# （user / sys / 計）にして "$out.thr" へ — limited-connとlatency系のSoberの回だけ（report-1162: acceptのループの1本が直列の天井かの裏取り）。
+# main = 1はプロセスの最初のスレッド（ワーカー0 — Serveのacceptのループが走る）
 # cpu_busy <CPU の列 a,b,c>: /proc/stat のその CPU たちの busy（idle・iowait 以外）の tick の和
 cpu_busy() { awk -v l="$1" 'BEGIN { n = split(l, a, ","); for (i = 1; i <= n; i++) w["cpu" a[i]] = 1 } ($1 in w) { for (i = 2; i <= NF; i++) if (i != 5 && i != 6) b += $i } END { print b + 0 }' /proc/stat; }
+# bus_snap: 負荷側の CPU（user = user + nice・sys = system + irq + softirq・busy = idle と iowait 以外の全部 — cpu_busy と同じ数え方）と
+# サーバ側の busy（tick）・サーバの全スレッドの自発 / 非自発の切り替えの和（/proc/<pid>/task/*/status）・壁の秒を 1 行に。bus_row が前後の差にする
+bus_snap() {
+    local sc=$SERVER_CPUS v
+    [ "${cur_prof:-}" = latency-500k-8cpu ] && sc=$SERVER_CPUS_8
+    v=$(cat /proc/"$SP"/task/*/status 2> /dev/null | awk '/^voluntary_ctxt_switches:/ { v += $2 } /^nonvoluntary_ctxt_switches:/ { n += $2 } END { print v + 0, n + 0 }')
+    echo "$(awk -v l="$LOAD_CPUS" 'BEGIN { n = split(l, a, ","); for (i = 1; i <= n; i++) w["cpu" a[i]] = 1 } ($1 in w) { u += $2 + $3; s += $4 + $7 + $8; for (i = 2; i <= NF; i++) if (i != 5 && i != 6) b += $i } END { print u + 0, s + 0, b + 0 }' /proc/stat) $(cpu_busy "$sc") $v $(date +%s.%N)"
+}
+# bus_row <名前> <種目> <周> <前のコピー> <後のコピー> <レスポンス> <測りの秒>: "$out.bus" へ1行 — 負荷側のbusy / user / sys %・サーバ側のbusy %
+# （CPUの数 × 測りの秒〔-d〕で割る — 壁の秒は負荷の道具の接続の張りと終わりの待ちを含むので、飽和が90%前後に薄まる。壁の秒はフィールドに残す）・
+# サーバの自発 / 非自発の切り替え ÷ レスポンス・客のCPU µs / レスポンス（負荷側の busy tick ÷ レスポンス）。負荷側busy ≥ 95% = 客が律速（要約のマーク）
+bus_row() {
+    local ns=$nsrv
+    [ "$2" = latency-500k-8cpu ] && ns=$nsrv8
+    awk -v n="$1" -v p="$2" -v k="$3" -v a="$4" -v b="$5" -v r="${6:-0}" -v d="${7:-0}" -v hz="$(getconf CLK_TCK)" -v nl="$(echo "$LOAD_CPUS" | tr ',' '\n' | wc -l)" -v ns="$ns" -v e="$HENV" 'BEGIN {
+        split(a, x, " "); split(b, y, " "); wall = y[7] - x[7]; w = d > 0 ? d : wall; if (w <= 0) w = 1
+        lb = (y[3] - x[3]) / hz / nl / w * 100; lu = (y[1] - x[1]) / hz / nl / w * 100; ls = (y[2] - x[2]) / hz / nl / w * 100
+        sb = (y[4] - x[4]) / hz / ns / w * 100
+        printf "%s\t%s\t%d\t%.1f\t%.1f\t%.1f\t%.1f\t%.4f\t%.4f\t%.2f\t%.2f\t%s\n", n, p, k, lb, lu, ls, sb, (r > 0 ? (y[5] - x[5]) / r : 0), (r > 0 ? (y[6] - x[6]) / r : 0), (r > 0 ? (y[3] - x[3]) / hz * 1e6 / r : 0), wall, e }' >> "$out.bus"
+}
 thr_snap() { for t in /proc/"$SP"/task/*; do echo "${t##*/} $(awk '{ print $14, $15 }' "$t/stat" 2> /dev/null)"; done; }
 thr_row() {
     local hz; hz=$(getconf CLK_TCK)
@@ -230,10 +252,10 @@ thr_row() {
 }
 
 # rss_row <名前> <種目> <周>: 走りの直後（stop の前）のサーバの VmHWM（ピーク）と VmRSS（終端）を kB で "$out.rss" へ。
-# サーバは周ごとに建て直すので VmHWM = その周のピーク。死んだサーバは行を出さない（欠けで見える）
+# サーバは周ごとにビルドし直すのでVmHWM = その周のピーク。死んだサーバは行を出さない（欠けで見える）
 # cg_* の列（HTTPARENA_CG のときだけ — 無ければ "-"）: サーバの cgroup の memory.peak と、終端の memory.stat の anon / file / kernel / sock / pagetables（kB）。
 # 本家の mem はコンテナの cgroup の数え方で、VmHWM に入らない分（ソケットの受け / 送りの束・slab・page cache）を含む —
-# 公式との差（report-mem2-3 の 3 節 — ≈0.5 GiB）の帰属の口
+# 公式との差（report-mem2-3の3 節 — ≈0.5 GiB）の要因分析の口
 rss_row() {
     local ahp cg="-	-	-	-	-	-"
     ahp=$(awk '/^AnonHugePages:/ { print $2 }' "/proc/$SP/smaps_rollup" 2> /dev/null)
@@ -245,7 +267,7 @@ rss_row() {
         "/proc/$SP/status" 2> /dev/null >> "$out.rss"
 }
 
-# emit <名前> <種目> <周> <req/s> <応答> <2xx> <tickの差> <p99> <p99.9>: TSV の行（名前 種目 周 req/s 応答 2xx以外 CPUμs/要求 p99 p99.9 env）
+# emit <名前> <種目> <周> <req/s> <レスポンス> <2xx> <tickの差> <p99> <p99.9>: TSVの行（名前 種目 周 req/s レスポンス 2xx以外 CPUμs/リクエスト p99 p99.9 env）
 # p99.9 は分布の尻（report-706 — 本家で p99 と p99.9 が 2 桁割れる実装がある。尻の綺麗さは p99 だけでは見えない）
 emit() {
     awk -v n="$1" -v p="$2" -v k="$3" -v r="${4:-0}" -v resp="${5:-0}" -v ok="${6:-0}" -v d="$7" -v t="$(getconf CLK_TCK)" -v l="${8:--}" -v l9="${9:--}" -v e="$HENV" \
@@ -253,7 +275,7 @@ emit() {
 }
 
 # lat_row <名前> <種目> <周> <tickの差> <zrk の出力>: latency 系の分布の行を "$out.lat" へ（zrk の JSON の latency_us の全部 + max_schedule_lag_us・
-# rate_ratio・CPU µs / 要求 — 本家の二峰〔p75 → p90 で跳ぶ〕の形を版・箱ごとに読むため。report-1160 / 1170）。値は µs・読めなければ行を出さない
+# rate_ratio・CPU µs / リクエスト — 本家の二峰〔p75 → p90で跳ぶ〕の形を版・マシンごとに読むため。report-1160 / 1170）。値は µs・読めなければ行を出さない
 lat_row() {
     node -e '
         const raw = require("fs").readFileSync(process.argv[1], "utf8");
@@ -271,9 +293,9 @@ lat_row() {
 # run_one <name> <profile> <周>: 1 回測って TSV の行を出す
 run_one() {
     local name=$1 prof=$2 k=$3 url args pc=$conns c0 c1 txt
-    # latency-* と 8gbit は zrk（レート固定 — 本家 tools/zrk.sh の形。測るのはサーバの CPU / 要求）
+    # latency-* と8gbitはzrk（レート固定 — 本家tools/zrk.shの形。測るのはサーバのCPU / リクエスト）
     if [ "$prof" = latency-1m ] || [ "$prof" = latency-10k ] || [ "$prof" = latency-500k-8cpu ] || [ "$prof" = 8gbit ]; then
-        # レートは箱に合わせて上書きできる（本家の 1M は 32 コアのベンチ機の値 — 8 コアのサーバでは Go が飽和して rate_ratio が割れる。
+        # レートはマシンに合わせて上書きできる（本家の1Mは32コアのベンチ機の値 — 8コアのサーバではGoが飽和してrate_ratioが割れる。
         # GHA の 16vcpu は ZRK_RATE_1M=250000〔1M × 8/32〕で両者が運べる水準に）
         local rate=${ZRK_RATE_1M:-1000000} zdur=${ZRK_DUR:-20} zc=1024 zargs=("http://localhost:$port/baseline11?a=1&b=2")
         [ "$prof" = latency-10k ] && rate=${ZRK_RATE_10K:-10000}
@@ -282,12 +304,15 @@ run_one() {
             rate=${ZRK_RATE_8GBIT:-50000}; zdur=${ZRK_DUR_8GBIT:-5}; zc=512
             zargs=(-m POST -b "@$ECHO_BODY" -H "Content-Type: application/octet-stream" -k "https://localhost:$tport/echo")
         fi
-        # ウォームアップ（数えない — 上の注）
+        # ウォームアップ（数えない — 上の注記）
         local warm=${ZRK_WARM:-5}
         [ "$warm" -gt 0 ] && timeout $((warm + 40)) taskset -c "$LOAD_CPUS" "$ZRKBIN" -t "$nload" -c "$zc" -d "${warm}s" -R "$rate" --format json --plain "${zargs[@]}" > /dev/null 2>&1
+        local b0 b1
+        b0=$(bus_snap)
         c0=$(cpu_ticks)
         txt=$(timeout $((zdur + 40)) taskset -c "$LOAD_CPUS" "$ZRKBIN" -t "$nload" -c "$zc" -d "${zdur}s" -R "$rate" --format json --plain "${zargs[@]}" 2> "$W/zrk-$name-$prof-$k.err")
         c1=$(cpu_ticks)
+        b1=$(bus_snap)
         echo "$txt" > "$W/gc-$name-$prof-$k.txt"
         # JSON の要約（本家 zrk_parse と同じ読み方 — 外側の {...} だけを取る）: achieved_rate・latency_us.p99 / p99_9・status_codes・rate_ratio
         local parsed
@@ -306,18 +331,22 @@ run_one() {
         # レートを保てなかった走り（本家の妥当性の門 = rate_ratio）は数字が比べられない — 行はそのまま出して警告だけ
         awk -v r="$rr" 'BEGIN { exit !(r < 0.98) }' && echo "local.sh: WARN $name $prof round $k rate_ratio=$rr (< 0.98 — the offered load was not the profile's)" >&2
         emit "$name" "$prof" "$k" "$rps" "$resp" "$ok" $((c1 - c0)) "$p99" "$p999"
+        bus_row "$name" "$prof" "$k" "$b0" "$b1" "$resp" "$zdur"
         case "$prof" in latency-*) lat_row "$name" "$prof" "$k" $((c1 - c0)) "$W/gc-$name-$prof-$k.txt" ;; esac
         return 0
     fi
-    # json-tls は wrk（--latency で分布を出す — 本家の採点は rps だけ・p99 は手元の読み）
+    # json-tlsはwrk（--latencyで分布を出す — 本家の採点はrpsだけ・p99は手元の解釈）
     if [ "$prof" = json-tls ]; then
         # サーバのスレッドごとの CPU（sober / sober-alt — ワーカーの偏り・遊び）と wrk 側の CPU（負荷側が天井かの判定 — 子の CPU の累計の差）
         local thr= t0 w0 w1
         case "$name" in sober|sober-alt) thr=1; thr_snap | sort > "$W/thr0"; t0=$(date +%s.%N) ;; esac
         w0=$(cpu_busy "$LOAD_CPUS"); s0=$(cpu_busy "$SERVER_CPUS")
+        local b0 b1
+        b0=$(bus_snap)
         c0=$(cpu_ticks)
         txt=$(timeout $((dur + 30)) taskset -c "$LOAD_CPUS" "$WRKBIN" -t "${WRK_THREADS:-$nload}" -c "$conns" -d "${dur}s" --latency -s "$REQ/json-tls-rotate.lua" "https://localhost:$tport" 2>&1)
         c1=$(cpu_ticks)
+        b1=$(bus_snap)
         w1=$(cpu_busy "$LOAD_CPUS"); s1=$(cpu_busy "$SERVER_CPUS")
         [ -n "$thr" ] && thr_row "$name" "$prof" "$k" "$W/thr0" "$(awk -v a="$t0" -v b="$(date +%s.%N)" 'BEGIN { print b - a }')"
         echo "$txt" > "$W/gc-$name-$prof-$k.txt"
@@ -328,6 +357,7 @@ run_one() {
         bad=$(echo "$txt" | sed -n 's/^ *Non-2xx or 3xx responses: *\([0-9]*\).*/\1/p')
         p99=$(echo "$txt" | awk '$1 == "99%" { print $2 }')
         emit "$name" "$prof" "$k" "$rps" "$resp" $(( ${resp:-0} - ${bad:-0} )) $((c1 - c0)) "$p99" "-"
+        bus_row "$name" "$prof" "$k" "$b0" "$b1" "$resp" "$dur"
         return 0
     fi
     case "$prof" in
@@ -342,9 +372,12 @@ run_one() {
         async-db) args=(--raw "$REQ/async-db-5.raw,$REQ/async-db-10.raw,$REQ/async-db-20.raw,$REQ/async-db-35.raw,$REQ/async-db-50.raw" -p 1 -r 25); url=http://localhost:$port; pc=1024 ;;
         *) echo "local.sh: unknown profile $prof" >&2; return 1 ;;
     esac
+    local b0 b1
+    b0=$(bus_snap)
     c0=$(cpu_ticks)
     txt=$(timeout $((dur + 30)) taskset -c "$LOAD_CPUS" "$GC" "$url" "${args[@]}" -c "$pc" -t "$nload" -d "${dur}s" 2>&1)
     c1=$(cpu_ticks)
+    b1=$(bus_snap)
     echo "$txt" > "$W/gc-$name-$prof-$k.txt"
     local rps resp ok p99 p999
     rps=$(echo "$txt" | sed -n 's/^ *Throughput: *\([0-9.]*\)\([KM]*\) req\/s.*/\1 \2/p' | awk '{ m = $2 == "M" ? 1e6 : $2 == "K" ? 1e3 : 1; printf "%.0f", $1 * m }')
@@ -354,14 +387,16 @@ run_one() {
     p99=$(echo "$txt" | awk '/^ *Latency +[0-9]/ { print $5 }')
     p999=$(echo "$txt" | awk '/^ *Latency +[0-9]/ { print $6 }')
     emit "$name" "$prof" "$k" "$rps" "$resp" "$ok" $((c1 - c0)) "$p99" "$p999"
+    bus_row "$name" "$prof" "$k" "$b0" "$b1" "$resp" "$dur"
 }
 
-# env の列（dudect.tsv の前例 — 「<箱>/<CPU の型番の短縮>」・末尾の列なので位置で読む集計は変わらない）: HTTPARENA_ENV が無ければ local/<型番の短縮>。
-# 箱の CPU の世代と大きさは run ごとに変わりうる（16vcpu と 64vcpu の取り違え — report-1147）ので行ごとに残す
+# envの列（dudect.tsvの前例 — 「<マシン>/<CPUの型番の短縮>」・末尾の列なので位置で読む集計は変わらない）: HTTPARENA_ENVが無ければlocal/<型番の短縮>。
+# マシンのCPUの世代と大きさはrunごとに変わりうる（16vcpuと64vcpuの取り違え — report-1147）ので行ごとに残す
 HENV=${HTTPARENA_ENV:-local/$(lscpu 2> /dev/null | sed -n 's/^Model name: *//p' | sed "s/^AMD //; s/ [0-9]*-Core Processor\$//; s/ w\/ .*//; s/ /-/g")}
 printf 'name\tprofile\tround\treq_s\tresponses\tnon2xx\tcpu_us_per_req\tp99\tp99_9\tenv\n' > "$out"
 printf 'name\tprofile\tround\tvmhwm_kb\tvmrss_kb\tanonhuge_kb\tcg_peak_kb\tcg_anon_kb\tcg_file_kb\tcg_kernel_kb\tcg_sock_kb\tcg_pagetables_kb\tenv\n' > "$out.rss"
 printf 'name\tprofile\tround\ttid\tmain\tuser_pct\tsys_pct\tcpu_pct\tenv\n' > "$out.thr"
+printf 'name\tprofile\tround\tload_busy_pct\tload_user_pct\tload_sys_pct\tserver_busy_pct\tvcs_per_resp\tnvcs_per_resp\tclient_cpu_us_per_resp\twall_s\tenv\n' > "$out.bus"
 printf 'name\tprofile\tround\trate_ratio\tmean_us\tp50_us\tp75_us\tp90_us\tp99_us\tp99_9_us\tmax_us\tmax_schedule_lag_us\tcpu_us_per_req\tenv\n' > "$out.lat"
 for prof in $profiles; do
     cur_prof=$prof
@@ -387,7 +422,7 @@ for prof in $profiles; do
     done
 done
 
-# 要約: 種目ごとの中央値と比（Sober / Go — req/s は大きいほど良い・CPU / 要求は小さいほど良い）
+# 要約: 種目ごとの中央値と比（Sober / Go — req/sは大きいほど良い・CPU / リクエストは小さいほど良い）
 node --experimental-strip-types --no-warnings summary.ts "$out" > "$W/summary.md"
 # RSS の要約（周の中央値の VmHWM — MB）: 種目 × 名前の表を summary.md に足す
 if [ -s "$out.rss" ]; then
@@ -426,7 +461,7 @@ if [ "$(wc -l < "$out.lat")" -gt 1 ]; then
         echo "env: $HENV"
     } >> "$W/summary.md"
 fi
-# スレッドごとの CPU の要約（周ごと — main のスレッド〔accept の輪〕・残りの最大と中央値: main が 100% に張り付けば直列の天井 — report-1162）
+# スレッドごとのCPUの要約（周ごと — mainのスレッド〔acceptのループ〕・残りの最大と中央値: mainが100%に張り付けば直列の天井 — report-1162）
 if [ "$(wc -l < "$out.thr")" -gt 1 ]; then
     {
         echo
@@ -438,7 +473,21 @@ if [ "$(wc -l < "$out.thr")" -gt 1 ]; then
                 printf "%s\tmain %s%%\trest max %s%% median %s%%\tthreads %d\n", key, (key in mt ? mt[key] : "-"), (key in mx ? mx[key] : "-"), (n ? a[int((n + 1) / 2)] : "-"), c[key] } }'
     } >> "$W/summary.md"
 fi
-# json-comp の応答 1 件のバイト（頭 + 本文・巡回の 3 つの平均 — 本家の採点の Bpr の物差し。gzip を解いた本文が Sober ≡ Go かも見る）
+# 負荷側の天井（周の中央値 — 負荷側busy ≥ 95%の種目は客が律速: サーバの差がrpsに出ない。vcs = サーバの自発の切り替え / レスポンス）
+if [ "$(wc -l < "$out.bus")" -gt 1 ]; then
+    {
+        echo
+        echo "## load side vs server side (per-round median — load busy ≥ 95% marks a client-bound profile)"
+        echo
+        echo "| profile | name | load busy % | load user % | load sys % | server busy % | vcs / resp | nvcs / resp | client CPU µs / resp | |"
+        echo "|---|---|---|---|---|---|---|---|---|---|"
+        awk -F'\t' 'function med(s,   n, a, i, j, t) { n = split(s, a, " "); for (i = 1; i < n; i++) for (j = i + 1; j <= n; j++) if (a[j] + 0 < a[i] + 0) { t = a[i]; a[i] = a[j]; a[j] = t }; return a[int((n + 1) / 2)] }
+            NR > 1 { key = $2 "\t" $1; for (c = 4; c <= 10; c++) v[key, c] = v[key, c] " " $c; seen[key] = 1 }
+            END { for (key in seen) { split(key, kk, "\t"); lb = med(v[key, 4])
+                printf "| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |\n", kk[1], kk[2], lb, med(v[key, 5]), med(v[key, 6]), med(v[key, 7]), med(v[key, 8]), med(v[key, 9]), med(v[key, 10]), (lb + 0 >= 95 ? "client-bound" : "") } }' "$out.bus" | sort
+    } >> "$W/summary.md"
+fi
+# json-compのレスポンス1件のバイト（頭 + 本文・巡回の3つの平均 — 本家の採点のBprの基準。gzipを解いた本文がSober ≡ Goかも見る）
 case " $profiles " in *" json-comp"*)
     for name in sober go; do
         start "$name" || exit 1

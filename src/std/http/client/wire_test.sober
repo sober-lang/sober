@@ -1,6 +1,6 @@
 package client
 
-// URL の読み・要求の書き出し・応答の読み（white-box — 切片の分かれ目を全部の位置で試す）
+// URLの読み・リクエストの書き出し・レスポンスの読み（white-box — 切片の分かれ目を全部の位置で試す）
 
 import "std/http"
 import "std/iter"
@@ -36,7 +36,7 @@ func TestRequestBytes() {
     assert(g == "GET /p HTTP/1.1\r\nHost: h.example:8080\r\nUser-Agent: ua\r\n\r\n")
 }
 
-// 応答 text を k バイトずつ積んで読む（status・本文・済んだか・誤り）
+// レスポンスtextをkバイトずつ積んで読む（status・本文・済んだか・誤り）
 func feedBy(text string, k int, noBody bool, maxBody int) (scanSt, []byte) {
     src := bytes(text)
     mut raw := mut []byte{}

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# m.sh <compiler tag> <tree tag> [loader]: 自己 build の instructions:u（bench.sh の物差し — W1・HASH_SEED 0・--emit=elf --passes）を G で印字。
-# 3 つ目に loader を渡すと `parse --loader-json` だけ（loader 単体の段の目印 — report-780 の主犯の段）。出力の ELF は $INST_WORK/o/elf-<S>-<T>
+# m.sh <compiler tag> <tree tag> [loader]: 自己buildのinstructions:u（bench.shの基準 — W1・HASH_SEED 0・--emit=elf --passes）をGで印字。
+# 3つ目にloaderを渡すと `parse --loader-json` だけ（loader単体の段階の目印 — report-780の主犯の段階）。出力のELFは $INST_WORK/o/elf-<S>-<T>
 set -uo pipefail
 R=$(cd "$(dirname "$0")/../.." && pwd)
 D=${INST_WORK:-$R/out/inst}

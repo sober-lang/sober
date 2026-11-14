@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# flightcheck（report-1176 — 飛行記録の検収の網）: 壊す変異（--rt-mutant=31 = epoll の道の起こしを落とす・32 = 短く送って頼んだ長さを返す）で
-# testdata/httpcheck/srv.sober を建て、SOBER_FLIGHT つきの W1 で check.ts を掛ける。網が落ちた回ごとに、飛行記録（scripts/flight.ts）が落ちの
-# 原因を名指せるかを見る: 31 = 最初の落ちの直前 15 s に「起こしの取りこぼし」か「起こされない PARK」が在る・32 = 直前 1 s に「短い SEND」が在る。lport= の付いた落ち（undici）はその接続の
-# ACCEPT からの列が引ける。網が 1 回も落ちなかった変異は判定できない（種を足す）
-#   scripts/flightcheck.sh [回数（変異ごと・既定 4）]
+# flightcheck（report-1176 — 飛行記録の受け入れ検証）: 壊すミュータント（--rt-mutant=31 = epollのパスのウェイクアップを落とす・32 = 短く送って頼んだ長さを返す）で
+# testdata/httpcheck/srv.soberをビルドし、SOBER_FLIGHTつきのW1でcheck.tsを掛ける。検査が落ちた回ごとに、飛行記録（scripts/flight.ts）が落ちの
+# 原因を特定できるかを見る: 31 = 最初の落ちの直前15 sに「ウェイクアップの取りこぼし」か「ウェイクアップされないPARK」が在る・32 = 直前1 sに「短いSEND」が在る。lport= の付いた落ち（undici）はその接続の
+# ACCEPTからの列が引ける。検査が1回も落ちなかったミュータントは判定できない（シードを足す）
+#   scripts/flightcheck.sh [回数（ミュータントごと・既定4）]
 set -uo pipefail
 cd "$(dirname "$0")/.."
 S2=${STAGE2:-out/stage2/sober2}
@@ -36,7 +36,7 @@ for m in 31 32; do
         fails=$((fails + 1))
         [ -f "$W/fl" ] || { echo "flightcheck: FAIL m$m run $i — no flight record"; bad=1; continue; }
         "${FT[@]}" "$W/fl" --anomaly > "$W/an.txt"
-        # 最初の落ちの時刻（t=）より前に変異の跡が在るか
+        # 最初の落ちの時刻（t=）より前にミュータントの跡が在るか
         t1=$(grep '^  FAIL' "$W/check.out" | sed -n 's/.* t=\([0-9]*\).*/\1/p' | sort -n | head -1)
         want=$([ $m = 31 ] && echo "lost-wake|stuck-park" || echo short-send)
         # 窓 = 落ちの直前（31 は 15 s — 相手の時間切れ 5 s に、1 バイトずつの送りの検査の長さ〔数秒〕を足す。32 は 1 s）。t= の無い落ち（check の時間切れ）は記録の全体

@@ -1,6 +1,6 @@
 package main
 
-// domain の本体は効果なし（待たない・io なし・nondet なし・明示の panic なし — domain を持ったまま走る）: 本体の中の println（io）は拒否
+// domainの本体はエフェクトなし（待たない・ioなし・nondetなし・明示のpanicなし — domainを持ったまま走る）: 本体の中のprintln（io）は拒否
 
 import "std/task"
 

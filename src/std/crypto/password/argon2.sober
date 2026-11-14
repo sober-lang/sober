@@ -3,11 +3,11 @@ package password
 import "std/internal/bless"
 import "std/iter"
 
-// Argon2id（RFC 9106 — 版 0x13）の核。作業域は m' = 4p⌊m / 4p⌋ 個の 1 KiB のブロック（128 語）を 1 本の []int に置き、関数の region で抜けるときに解放する
+// Argon2id（RFC 9106 — 版0x13）の核。作業域はm' = 4p⌊m / 4p⌋ 個の1 KiBのブロック（128ワード）を1本の []intに置き、関数のregionで抜けるときに解放する
 // （最初に確保して region の先端で伸ばす — append の伸長がその場で済み、高水位は作業域の大きさのまま）。
 //
-// 定数時間の規律との関係: 第 1 パスの前半 2 スライスは参照先を公開の値（パス・レーン・スライス・数え）だけから作る（argon2i）が、以降は前のブロックの最初の語
-// （秘密の派生物）で参照先を選ぶ（argon2d — RFC 9106 が GPU 耐性と引き換えに受け入れたキャッシュの時間の漏れ）。その語は参照先の番地そのものとして
+// 定数時間の規律との関係: 第1パスの前半2スライスは参照先を公開の値（パス・レーン・スライス・数え）だけから作る（argon2i）が、以降は前のブロックの最初のワード
+// （秘密の派生物）で参照先を選ぶ（argon2d — RFC 9106がGPU耐性と引き換えに受け入れたキャッシュの時間の漏れ）。そのワードは参照先の番地そのものとして
 // メモリの引きに出るので、internal.bless.Int で公開に落としてから添字・剰余に使う（剰余の時間が漏らすのは番地が漏らすのと同じ情報）
 
 const m32 = 0xffffffff
@@ -30,7 +30,7 @@ func cat2(a []byte, b []byte) []byte {
     return freeze(o)
 }
 
-// 長さ 4 バイトの前置つきの x（LE32(len x) ++ x — H0 の可変長の欄）
+// 長さ4バイトの前置つきのx（LE32(len x) ++ x — H0の可変長のフィールド）
 @secret(x)
 func lenPrefixed(x []byte) []byte {
     return cat2(le32(len(x)), x)
@@ -75,11 +75,11 @@ func gb(z mut []int, a int, b int, c int, d int) {
     z[b] = rotr64(z[b] ^ z[c], 63)
 }
 
-// 置換 P を 16 語に（行 i = 語 16i..16i+15・列 i = 16 バイトのレジスタ i, i+8, …, i+56 = 語 2i+16k と 2i+16k+1）
+// 置換Pを16ワードに（行i = ワード16i..16i+15・列i = 16バイトのレジスタi, i+8, …, i+56 = ワード2i+16kと2i+16k+1）
 func pround(z mut []int, i int, col bool) {
     b := if col { 2 * i } else { 16 * i }
     s := if col { 16 } else { 2 }
-    // v_k の語の位置 = b + s·(k / 2) + k % 2
+    // v_kのワードの位置 = b + s·(k / 2) + k % 2
     gb(mut z, b, b + 2 * s, b + 4 * s, b + 6 * s)
     gb(mut z, b + 1, b + 2 * s + 1, b + 4 * s + 1, b + 6 * s + 1)
     gb(mut z, b + s, b + 3 * s, b + 5 * s, b + 7 * s)
@@ -101,7 +101,7 @@ func blamka(z mut []int) {
 }
 
 // 圧縮 G（RFC 9106 3.5）を作業域の上で: dst ← G(prev, ref)（xor なら dst ← dst ⊕ G(prev, ref) — 版 0x13 の 2 パス目以降）。
-// 引数はブロックの番号・r と z は 128 語の作業用
+// 引数はブロックの番号・rとzは128ワードの作業用
 func fillBlock(mem mut []int, prev int, ref int, dst int, xor bool, r mut []int, z mut []int) {
     for k <- iter.Range(0, 128) {
         x := mem[128 * prev + k] ^ mem[128 * ref + k]
@@ -135,7 +135,7 @@ func nextAddresses(addr mut []int, in mut []int, r mut []int, z mut []int) {
     }
 }
 
-// 1024 バイトを 128 語（little endian）として mem のブロック blk に置く
+// 1024バイトを128ワード（little endian）としてmemのブロックblkに置く
 @secret(b)
 func putBlock(mem mut []int, blk int, b []byte) {
     for k <- iter.Range(0, 128) {

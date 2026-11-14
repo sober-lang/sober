@@ -73,12 +73,12 @@ func hdrFunc(st mut St, f FnRef) {
         optDce(mut st, f)
         optRenumber(mut st, f)
         // 寄せた load で同じ式になった比較（読みと書きの境界検査 `uge i, len` 等）を 1 つの値に — 後の bce の ② が 2 度目を畳む
-        // （nbody のレジスタ昇格 — B2 の bce は展開後の全関数に支配木を組む値札が +1.1 G で棄却）
+        // （nbodyのレジスタ昇格 — B2のbceは展開後の全関数に支配木を組むコストが +1.1 Gで棄却）
         gvnFunc(mut st, f)
     }
 }
 
-// 値 v が関数 f の mut 仮引数（印 F_MUTP — 利用者の関数の、呼び手のセルを指す仮引数）か
+// 値vが関数fのmut仮引数（フラグF_MUTP — 利用者の関数の、呼び手のセルを指す仮引数）か
 func hdrMut(st mut St, f FnRef, v int) bool {
     np := desugar.HeapGet(mut st.d, irFnPtys(mut st, f))
     return v >= 0 && v < np && v < 62 && (irFnMutP(mut st, f) >> v) & 1 == 1
@@ -86,9 +86,9 @@ func hdrMut(st mut St, f FnRef, v int) bool {
 
 // 番地の値 v の根（P に対して — HDR_SAFE / HDR_SELF / HDR_UNK）。
 // 根が別の mut 仮引数 Q のデータ（`load Q[0]`）で P も mut 仮引数なら SAFE: mut 仮引数の指すセルは mut の場所
-// （mut ローカルか、その欄 — 実引数は欄を辿る経路だけで、要素の場所は書けない）で、slice のデータの中には無い。同じ呼び出しの mut 実引数は排他
+// （mutローカルか、そのフィールド — 実引数はフィールドを辿る経路だけで、要素の場所は書けない）で、sliceのデータの中には無い。同じ呼び出しのmut実引数は排他
 // （language.md 26 節 — diag.MutAlias）なので P と Q のセルは重ならず、値はセルの番地を持たない。だから Q の要素への書き込みは P のヘッダに届かない。
-// 印の無い ptr 仮引数（rt の補助・sret）は slice のデータの中のヘッダを指しうるので対象外。region.relocate は据え置き（ext = false — P のデータの根だけ）
+// フラグの無いptr仮引数（rtの補助・sret）はsliceのデータの中のヘッダを指しうるので対象外。region.relocateは据え置き（ext = false — Pのデータの根だけ）
 func hdrRoot(st mut St, f FnRef, v0 int, p int, def mut []int, ext bool) int {
     mut v := v0
     mut n := 0
@@ -129,7 +129,7 @@ func hdrClean(st mut St, f FnRef, p int, def mut []int) bool {
             if op == OpStore || isNarrowSt(op) {
                 a := irInsA(mut st, i)
                 r := hdrRoot(mut st, f, a, p, mut def, true)
-                // 16 / 32 ビットの書き（b = バイトの変位）は p の 3 語（24 バイト）に掛かれば汚す
+                // 16 / 32ビットの書き（b = バイトの変位）はpの3ワード（24バイト）に掛かれば汚す
                 if r == HDR_UNK || (r == HDR_SELF && (a != p || (if op == OpStore16 || op == OpStore32 { irInsB(mut st, i) < 24 } else { irInsB(mut st, i) <= 2 }))) {
                     return false
                 }
@@ -293,7 +293,7 @@ func cmpDupFunc(st mut St, f FnRef) bool {
         b = irBlkNext(mut st, b)
     }
     // 使いが全部付け替えた分岐だった元の比較は `const 0` にする（使われない imm32 の定数は x86 が使う点で作り直すので命令が出ない。
-    // DCE と番号詰めを関数ごとに掛けると自己 build で +0.4 G・鎖から外すと値が欠番になり検証器が拒む）
+    // DCEと番号詰めを関数ごとに掛けると自己buildで +0.4 G・チェーンから外すと値が欠番になり検証器が拒む）
     if hit {
         for v <- iter.Range(0, nv) {
             if moved[v] > 0 && moved[v] == uses[v] {

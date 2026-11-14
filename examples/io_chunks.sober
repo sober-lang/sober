@@ -1,6 +1,6 @@
 package main
 
-// Stream a file slot by slot (io.Chunks) and line by line (io.Lines — language.md 28 節「読みのストリーム」).
+// Stream a file slot by slot (io.Chunks) and line by line (io.Lines — language.md 28 節「読み込みのストリーム」).
 // A chunk is a view into the stream's read slot and lives for one turn of the loop: keeping it past the turn copies it
 // (the region rule — the next slot's read cannot change what was kept). Run from the repository root.
 import "std/io"

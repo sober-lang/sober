@@ -1,7 +1,7 @@
 package cli
 
 // 印字: 使い方（Usage — `--help` の本文）・誤用の文面（Format）・表の JSON（Spec — `--cli-spec`）。幅は 80 桁固定（端末の幅は見ない —
-// 出力が環境で変わらないので黄金にできる）
+// 出力が環境で変わらないのでゴールデンにできる）
 
 import "std/builder"
 import "std/convert"
@@ -10,11 +10,11 @@ import "std/json"
 import "std/sort"
 import "std/strings"
 
-// 折り返しの幅と、左の欄の幅の上限（長い左の欄は説明を次の行へ送る）
+// 折り返しの幅と、左のフィールドの幅の上限（長い左のフィールドは説明を次の行へ送る）
 const width = 80
 const leftMax = 24
 
-// 一覧の 1 行（左の欄・説明・並べ替えの鍵）
+// 一覧の1行（左のフィールド・説明・並べ替えの鍵）
 type row struct {
     left string
     text string
@@ -264,7 +264,7 @@ func argOr(arg string, dflt string) string {
     return if arg == "" { dflt } else { arg }
 }
 
-// 一覧の左の欄（`-s, --name <arg>`・`-n <arg>`）
+// 一覧の左のフィールド（`-s, --name <arg>`・`-n <arg>`）
 func flagLeft(name string, short string, arg string) string {
     mut s := spell(name)
     if short != "" {
@@ -378,7 +378,7 @@ func wrap(o mut builder.Builder[byte], s string, from int, ind int) {
     builder.PushString(mut o, "\n")
 }
 
-// ── 表の JSON（`--cli-spec` — 文書の生成器が実行ファイル自身から表を引く口）──
+// ── 表のJSON（`--cli-spec` — 文書の生成器が実行ファイル自身から表を引くAPI）──
 
 // app の表の JSON（空白なし・宣言の順。フラグは種類つきの 1 本の列 — kind = bool / string / int / choice / list）
 @effects()

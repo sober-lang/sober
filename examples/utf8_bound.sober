@@ -8,7 +8,7 @@ import "std/iter"
 import "std/strings"
 import "std/utf8"
 
-// Str の結果を 1 語に畳む（成功 = 長さ・失敗 = 1000 + 境界でない位置）
+// Strの結果を1ワードに畳む（成功 = 長さ・失敗 = 1000 + 境界でない位置）
 func code(v utf8.View, s int, i int) int {
     x, err := utf8.Str(v, s, i)
     return if err != nil {
@@ -114,7 +114,7 @@ func writeBefore(n int, at int) int {
     return acc
 }
 
-// 負例 6: 値の腕の catch（`catch v0` — 脱出しない）では v は b の View とは限らない（b が不正なら v0）
+// 負例6: 値の分岐のcatch（`catch v0` — 脱出しない）ではvはbのViewとは限らない（bが不正ならv0）
 func fallback(b []byte, v0 utf8.View) string {
     v := utf8.Check(b) catch v0
     mut out := ""

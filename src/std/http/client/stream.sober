@@ -1,6 +1,6 @@
 package client
 
-// 本文を切片で受ける口（Stream）: 応答の頭が揃ったら、受けた切片の本文の分をその場で k へ渡す（応答を丸ごと積まない — 積むのは頭と chunked の
+// 本文を切片で受けるAPI（Stream）: レスポンスの頭が揃ったら、受けた切片の本文の分をその場でkへ渡す（レスポンスを丸ごと積まない — 積むのは頭とchunkedの
 // 長さの行の途中まで）。本文の読みは状態機械（Content-Length の残り・chunked の長さの行 / データ / CRLF / trailer・閉じ区切り）
 
 import "std/http"
@@ -11,7 +11,7 @@ import "std/task"
 import "std/time"
 import "std/internal/record"
 
-// chunked の読みの段
+// chunkedの読みのフェーズ
 const cSize = 0
 const cExt = 1
 const cSizeLf = 2
@@ -48,14 +48,14 @@ type streamSt struct {
     loc string
 }
 
-// Stream の生成元の要素（head = 応答の頭〔body は空 — 要素ごとに同じ値〕・chunk = 本文の切片）
+// Streamの生成元の要素（head = レスポンスの頭〔bodyは空 — 要素ごとに同じ値〕・chunk = 本文の切片）
 type Part struct {
     head Response
     chunk []byte
 }
 
-// url へ要求を送り（method / headers / body / cookies / policy は Request と同じ）、応答の頭と本文の切片を k へ渡す（最初の要素は頭と空の切片で、
-// 本文が空でも 1 度は渡る）。redirect は Request と同じ規則で追い、追った応答は k へ渡さない。本文の合計が policy の maxBody を超えたら BodyTooLarge
+// urlへリクエストを送り（method / headers / body / cookies / policyはRequestと同じ）、レスポンスの頭と本文の切片をkへ渡す（最初の要素は頭と空の切片で、
+// 本文が空でも1度は渡る）。redirectはRequestと同じ規則で追い、追ったレスポンスはkへ渡さない。本文の合計がpolicyのmaxBodyを超えたらBodyTooLarge
 // （大きい本文は maxBody で明示的に上げる）
 //
 //     for part <- http.client.Stream(u)? {
@@ -98,7 +98,7 @@ func Stream(url string, k func(p Part), method string?, headers ([]http.Field)?,
     return TooManyRedirects{}
 }
 
-// 1 往復（follow = この応答が redirect なら k へ渡さずに Location を返す）
+// 1往復（follow = このレスポンスがredirectならkへ渡さずにLocationを返す）
 @errors(Dns, Tls, Timeout, BodyTooLarge, Closed, BadUrl, BadResponse, ProxyRefused, io.Expired)
 @effects(block, io, panic, nondet)
 func streamOnce(c cfg, t target, r outgoing, follow bool, cookie string, k func(p Part)) (streamSt, error?) {
@@ -148,7 +148,7 @@ func streamOnce(c cfg, t target, r outgoing, follow bool, cookie string, k func(
     return ss, nil
 }
 
-// 経路の上で要求を送り、頭が揃ったら本文の切片をその場で k へ
+// 経路の上でリクエストを送り、頭が揃ったら本文の切片をその場でkへ
 @errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other, internal.record.Alert, internal.hsc.CertFailed)
 @effects(block, io, panic, nondet)
 func streamLink(conn net.Conn, blk []int, pa internal.hsc.CParams, pb internal.hsc.CParams, req []byte, hb mut []byte, ss mut streamSt, noBody bool, maxBody int, k func(p Part)) error? {
@@ -308,7 +308,7 @@ func step(d mut bodySt, x byte, maxBody int) {
     }
 }
 
-// b[s, e) の写し
+// b[s, e) のコピー
 func slicePiece(b []byte, s int, e int) []byte {
     mut o := mut []byte{}
     mut i := s

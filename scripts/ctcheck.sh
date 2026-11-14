@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# ctcheck（定数時間の静的な網 — report-790 / 791）: std/crypto の定数時間の関数を既定の build（x86 の最適化のバックエンド・--passes）で建て、
-# 関数ごとの条件分岐の列（j* — jmp を除く）と DIV / IDIV の数を黄金 testdata/ctcheck/expect.txt と照合する。最適化が mask の選択を分岐に変えたり、
-# 秘密に触る形に分岐が足されたりすると列が変わって赤になる（命令の網・出力の網では鳴らない退行のクラス）。黄金の分岐はどれも公開の値（長さ・
-# ループの添字・境界の検査）に依る — 黄金を書き直すときは差分の分岐が公開の値に依ることを機械語で確かめてから（--regen）。
-# neg* は規律を破った見本（秘密で if・早く抜ける比較・可変時間の rt.matchlen の呼び出し）で、網が分岐を数えられること・可変時間の呼び出しを捕まえることの負例として黄金に載る
+# ctcheck（定数時間の静的な検査 — report-790 / 791）: std/cryptoの定数時間の関数を既定のbuild（x86の最適化のバックエンド・--passes）でビルドし、
+# 関数ごとの条件分岐の列（j* — jmpを除く）とDIV / IDIVの数をゴールデンtestdata/ctcheck/expect.txtと照合する。最適化がmaskの選択を分岐に変えたり、
+# 秘密に触る形に分岐が足されたりすると列が変わって赤になる（命令の検査・出力の検査では鳴らない退行のクラス）。ゴールデンの分岐はどれも公開の値（長さ・
+# ループの添字・境界の検査）に依る — ゴールデンを書き直すときは差分の分岐が公開の値に依ることを機械語で検証してから（--regen）。
+# neg* は規律を破った見本（秘密でif・早く抜ける比較・可変時間のrt.matchlenの呼び出し）で、検査が分岐を数えられること・可変時間の呼び出しを捕まえることの負例としてゴールデンに載る
 #   scripts/ctcheck.sh [--regen]
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -30,7 +30,7 @@ for f in "${FUNCS[@]}"; do INF[$f]=1; done
 "$S2" build $D/app.sober --emit=syms -o "$W/syms" > /dev/null || { echo "ctcheck: FAIL syms"; exit 1; }
 # 最後の記号の終わり = 実行の LOAD の終わり（後ろに読み出し専用のデータが続きうるので、最後の関数だけ逆アセンブルを「ret / syscall の直後の nop の詰め・0 のバイト〔add [rax],al〕」で切る。
 # 他の関数は次の記号まで — 全関数に切りを掛けると、関数の途中の ret の直後にループの頭の整列の nop が来た関数が途中で切れていた: report-858）
-# 可変時間の rt（最初の食い違いで止まる — rt.matchlen〔binary.MatchLen・SIMD の核 段 1〕・rt.jclean〔json の文字列の書き出し — 段 2〕）の番地: 照合する関数の機械語がこれを呼んだら赤
+# 可変時間のrt（最初の食い違いで止まる — rt.matchlen〔binary.MatchLen・SIMD の核 段階1〕・rt.jclean〔jsonの文字列の書き出し — 段階2〕）の番地: 照合する関数の機械語がこれを呼んだら赤
 # （analyzer は秘密の値が binary.MatchLen に届く呼び出しを拒否する — その静的な保証の機械語の側の照合）
 # （直の呼び出しと、展開されなかった std/binary.MatchLen への呼び出しの両方 — 番地の並び）
 VT=$(awk '$2 == "@rt.matchlen" || $2 == "@std/binary.MatchLen" || $2 == "@rt.jclean" { printf " 0x%x", strtonum("0x" $1) }' "$W/syms")

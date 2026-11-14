@@ -1,6 +1,6 @@
 package main
 
-// std/quick の fuzz の駆動役の網（scripts/quickfuzz.sh）: Check 0 = 稀な panic（束の二分探索）・1 = ハング（試行の期限）・2 = 性質の偽（束の子の中で縮める）・
+// std/quickのfuzzの駆動役の検査（scripts/quickfuzz.sh）: Check 0 = 稀なpanic（バッチの二分探索）・1 = ハング（試行の期限）・2 = プロパティの偽（バッチの子の中でシュリンクする）・
 // 3 = 失敗しない（期限まで回って exit 0）。引数なしでは走らせない（Check 1 のハングに期限が無い）
 
 import "std/quick"

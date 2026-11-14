@@ -12,7 +12,7 @@ func atoi(s string) int {
     return n
 }
 
-// 交互に 2 本の map へ挿入する（素直な形 — データ構造便の続編の双子 (b)。先端の奪い合いで 2 乗〔n=2 万で 102〕だった形・rt.map_grow で償却 O(1)）
+// 交互に2本のmapへ挿入する（素直な形 — データ構造のタスクの続編の対 (b)。先端の奪い合いで2乗〔n=2万で102〕だった形・rt.map_growで償却O(1)）
 func main() int {
     args := os.Args() catch return 2
     n := atoi(args[1])

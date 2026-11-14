@@ -1,16 +1,16 @@
 package lower
 
 // 孤児の待ち（language.md 28 節「キャンセルは協調的」）: 親の task が死ぬ（切られる）と、その開いている scope の下で io を
-// 待っている子孫は誰にも起こされない（期限なしの scope では期限の走査も来ない — 永眠）。rt は待ちを起こすだけ: 孤児の待ちは -125 で返り（std が io.Expired に）、
-// 子は普通の道で巻き戻る。読み = 「孤児 = 期限が今来た」（期限の走査と同じ取り消し方・同じラベル）。
-// - 孤児の判定 = 祖先を辿る（rt.orph_walk）: 自分の塊から、生んだ scope の印 SR_CUT = 1（drainScopes — 開いた task が死んだ / 切られた）を見て、scope を
-//   開いた task の塊へ上る。cut_walk と同じ道だが純でない task も越える（兄弟の死の印 = 番号 + 2 は見ない — 持ち主は生きている）
-// - 印 = TC_DL := 1（時刻 1 で期限切れ）: deadline: のあるプログラムでは io の口の sysDeadline がそのまま Expired を返し、spawn の子にも写る。無いプログラムでは
-//   使われていない語を印として読む（task の終わりで 0 に戻す — 塊の再利用）
-// - 登録簿（ワーカーごとの配列 — WK_OREG）: task は最初の待ちで 1 回登録し（TCB の TC_ORG = 番号 + 1・待っている間は種類 << 32）、終わりで返す（空きの鎖）。
-//   待ちごとの値札は TCB の先頭頁の 1 語の読み書きだけ（鎖の積み外しは隣の TCB に触る）
-// - 発火: drainScopes の印のたびに @rt.orphgen を進め、ring / epoll で眠るワーカーを eventfd で起こす。rt.uring_poll の頭で世代が動いていたら登録簿を歩き
-//   （rt.orph_scan）、待っている孤児を起こす。走っていた孤児（走査の時に待っていなかった）は次の待ちの入口の関門（世代 ≠ 0 のときだけ — 印か祖先）で捕まる
+// 待っている子孫は誰にもウェイクアップされない（期限なしのscopeでは期限の走査も来ない — 永眠）。rtは待ちをウェイクアップするだけ: 孤児の待ちは -125で返り（stdがio.Expiredに）、
+// 子は普通のパスで巻き戻る。解釈 = 「孤児 = 期限が今来た」（期限の走査と同じ取り消し方・同じラベル）。
+// - 孤児の判定 = 祖先を辿る（rt.orph_walk）: 自分のチャンクから、生んだscopeのフラグSR_CUT = 1（drainScopes — 開いたtaskが死んだ / 切られた）を見て、scopeを
+//   開いたtaskのチャンクへ上る。cut_walkと同じパスだが純でないtaskも越える（兄弟の死のフラグ = 番号 + 2は見ない — 持ち主は生きている）
+// - フラグ = TC_DL := 1（時刻1で期限切れ）: deadline: のあるプログラムではioのAPIのsysDeadlineがそのままExpiredを返し、spawnの子にも反映される。無いプログラムでは
+//   使われていないワードをフラグとして読む（taskの終わりで0に戻す — チャンクの再利用）
+// - 登録簿（ワーカーごとの配列 — WK_OREG）: taskは最初の待ちで1回登録し（TCBのTC_ORG = 番号 + 1・待っている間は種類 << 32）、終わりで返す（空きチェーン）。
+//   待ちごとのコストはTCBの先頭ページの1ワードの読み書きだけ（チェーンの積み外しは隣のTCBに触る）
+// - 発火: drainScopesのフラグのたびに @rt.orphgenを進め、ring / epollでスリープするワーカーをeventfdでウェイクアップする。rt.uring_pollの頭で世代が動いていたら登録簿を歩き
+//   （rt.orph_scan）、待っている孤児をウェイクアップする。走っていた孤児（走査の時に待っていなかった）は次の待ちの入口の関門（世代 ≠ 0のときだけ — フラグか祖先）で捕まる
 // - 取り消さない待ち: 閉じの待ち（止まった完了を待つ — 有限）・os.Sleep（有限）・チャネル / Join / scope の出口（io でない）
 
 import "desugar"
@@ -18,13 +18,13 @@ import "desugar"
 const TC_ORG = 36          // 登録簿の番号 + 1（0 = 未登録）| 待ちの種類 << 32（0 = 待っていない）
 const ORG_KIND = 4294967296
 const ORG_LO = 4294967295
-const OK_EP = 1            // epoll の fdwait（IO_PENDING — 直に起こす）
+const OK_EP = 1            // epollのfdwait（IO_PENDING — 直にウェイクアップする）
 const OK_POLL = 2          // ring の POLL_ADD（IO_PENDING — ASYNC_CANCEL）
-const OK_RT = 3            // 受け / accept の列（PEND_RT — 直に起こす）
+const OK_RT = 3            // 受け / acceptの列（PEND_RT — 直にウェイクアップする）
 const OK_SEND = 4          // SEND の完了（PEND_SEND — ASYNC_CANCEL）
 const WK_OREG = 19         // 登録簿の番地（0 = まだ）
 const WK_ON = 20           // 使った数（高水位）
-const WK_OFREE = 21        // 空きの鎖の頭（番号 + 1・0 = 無し — 空きの要素は (次 << 1) | 1）
+const WK_OFREE = 21        // 空きのチェーンの頭（番号 + 1・0 = 無し — 空きの要素は (次 << 1) | 1）
 const WK_OSEEN = 22        // 最後に走査した @rt.orphgen
 const ORG_CAP = 4194304    // 登録簿の容量（ワーカーごと・NORESERVE 32 MiB — 溢れた task は登録しない = 取り消されない）
 const ORPH_CODE = -125     // 孤児の待ちの結果（ECANCELED — std/net が io.Expired に）
@@ -72,7 +72,7 @@ func orphLeave(st mut St, me int) {
     store(mut st, tp, TC_ORG, bin(mut st, BAnd, load(mut st, tp, TC_ORG), iconst(mut st, ORG_LO)))
 }
 
-// task の終わり（tcb — 自分のワーカーの上・io の後始末の後）: 登録していれば返し、印を消す
+// taskの終わり（tcb — 自分のワーカーの上・ioの後始末の後）: 登録していれば返し、フラグを消す
 func orphEnd(st mut St, tcb int) {
     if !st.orphOn {
         return
@@ -90,7 +90,7 @@ func orphEnd(st mut St, tcb int) {
     store(mut st, tcb, TC_DL, zero)
 }
 
-// drainScopes の印の後: 世代を進め、ring / epoll で眠っているワーカー（眠りの語 2）を eventfd で起こす（rt.uring_poll の頭が走査する）
+// drainScopesのフラグの後: 世代を進め、ring / epollでスリープしているワーカー（スリープのワード2）をeventfdでウェイクアップする（rt.uring_pollの頭が走査する）
 func orphFire(st mut St) {
     if !st.orphOn {
         return
@@ -136,7 +136,7 @@ func buildOrphRt(st mut St) {
     if !st.orphOn {
         return
     }
-    // rt.orph_walk(t) → 1 = 孤児: 生んだ scope の印が 1 か（main = 枠なしで止まる）。辿る塊と記録は生きている（祖先は子孫を待ってから終わる）
+    // rt.orph_walk(t) → 1 = 孤児: 生んだscopeのフラグが1か（main = 枠なしで止まる）。辿るチャンクと記録は生きている（祖先は子孫を待ってから終わる）
     begin(mut st, st.rtOrphWalk)
     z0 := iconst(mut st, 0)
     bL := newBlock(mut st)
@@ -158,7 +158,7 @@ func buildOrphRt(st mut St) {
     ret(mut st, iconst(mut st, 1))
     setCur(mut st, bNo)
     ret(mut st, z0)
-    // rt.orph_gate(me) → ORPH_CODE（孤児 — 印を立てる）/ 0
+    // rt.orph_gate(me) → ORPH_CODE（孤児 — フラグを立てる）/ 0
     begin(mut st, st.rtOrphGate)
     z1 := iconst(mut st, 0)
     mp := itop(mut st, 0)
@@ -203,8 +203,8 @@ func buildOrphRt(st mut St) {
     buildOrphScan(mut st)
 }
 
-// rt.orph_scan(g): 見た世代を g に・登録簿の待っている task（種類 ≠ 0 で結果がまだ）のうち孤児に印を立て、種類ごとに期限の走査と同じ形で起こす
-// （epoll / 受けの列 = 直に ORPH_CODE で起こす・POLL_ADD / SEND = ASYNC_CANCEL — 完了で起きる。UR_DLQ に居れば先に外す — 期限の走査の二重の起こしを防ぐ）
+// rt.orph_scan(g): 見た世代をgに・登録簿の待っているtask（種類 ≠ 0で結果がまだ）のうち孤児にフラグを立て、種類ごとに期限の走査と同じ形でウェイクアップする
+// （epoll / 受けの列 = 直にORPH_CODEでウェイクアップする・POLL_ADD / SEND = ASYNC_CANCEL — 完了で起きる。UR_DLQに居れば先に外す — 期限の走査の二重のウェイクアップを防ぐ）
 func buildOrphScan(st mut St) {
     begin(mut st, st.rtOrphScan)
     zero := iconst(mut st, 0)
@@ -240,7 +240,7 @@ func buildOrphScan(st mut St) {
     setCur(mut st, bOr)
     rg := load(mut st, wk, WK_RING)
     if dlFn(st.rtD3) != 0 {
-        // 期限つきで ring の鎖に居れば外す（epoll の鎖は待ち手が自分で外す — epoll の走査は起こした待ち手を飛ばす）
+        // 期限つきでringのチェーンに居れば外す（epollのチェーンは待ち手が自分で外す — epollの走査はウェイクアップした待ち手を飛ばす）
         bU := branchIf(mut st, bin(mut st, BAnd, cmp(mut st, CNe, k, iconst(mut st, OK_EP)), cmp(mut st, CNe, rg, zero)))
         dlUnlink(mut st, t, load(mut st, tp, TC_DL))
         br(mut st, bU, -1)

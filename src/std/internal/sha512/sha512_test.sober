@@ -1,6 +1,6 @@
 package sha512
 
-// SHA-512 / SHA-384 の網（white-box）: FIPS 180-4 の例（"abc"）と、Python の hashlib の値を長さの境目（詰めが 1 ブロック / 2 ブロック — 112・128 の前後）で固定した表
+// SHA-512 / SHA-384のテスト（white-box）: FIPS 180-4の例（"abc"）と、Pythonのhashlibの値を長さの境目（詰めが1ブロック / 2ブロック — 112・128の前後）で固定した表
 
 import "std/hex"
 import "std/iter"

@@ -1,6 +1,6 @@
 package desugar
 
-// std/task の呼び出し点の写し（language.md 11 節）: task.Run / Spawn / Join / Try をコアの
+// std/taskの呼び出し点の変換（language.md 11 節）: task.Run / Spawn / Join / Tryをコアの
 // scope / spawn / join / tryJ へ。この範囲は error を返さない task（g : func() T・T は loc-free）
 
 import "diag"
@@ -8,7 +8,7 @@ import "ast"
 import "std/iter"
 
 // package pk の型式 pt が std/task の端点の型（Tx[T] / Rx[T]）なら型引数の型式（でなければ -1）。端点のコアの型は own で
-// 宣言の struct の欄の形ではないので、std/task の展開される口（RecvAll — for-Recv の写し先）の仮引数は実引数の型をそのまま使う
+// 宣言のstructのフィールドの形ではないので、std/taskの展開されるインターフェース（RecvAll — for-Recvの変換先）の仮引数は実引数の型をそのまま使う
 func parEpParam(st mut S, pk int, pt NodeRef) NodeRef {
     if !strIs(mut st, PkgPath(mut st, pk), "std/task") || kindN(mut st, pt) != ast.TGeneric || lenL(mut st, lB(nodeOf(mut st, pt))) != 1 {
         return -1
@@ -28,15 +28,15 @@ func parCall(st mut S, key int, fi int, args ListRef, at NodeRef, eb int, ef int
     if ParDom(key) {
         return parDomCall(mut st, key, args, at, eb, ef, depth)
     }
-    // チャネル（language.md 11 節「チャネル」— 形の名指し〔kind 13 / 14 / 15〕は ParCheck が先に出す）: NewChannel = newch r cap t（家 = 今の最内の region・cap は字面）・Send = send・
-    // Recv = recv rx（型は T? — 閉じて空なら nil）・Close = close tx・SpawnGive = let ep in spawn（ep を子の仮引数に束ねて閉包変換 —
+    // チャネル（language.md 11 節「チャネル」— 形の特定〔kind 13 / 14 / 15〕はParCheckが先に出す）: NewChannel = newch r cap t（家 = 今の最内のregion・capは字面）・Send = send・
+    // Recv = recv rx（型はT? — 閉じて空ならnil）・Close = close tx・SpawnGive = let ep in spawn（epを子の仮引数に束ねてクロージャ変換 —
     // 端点は渡す値の組に入り、spawn が持ち主を子へ移す）
     if key == PAR_NEWCHAN {
         if na != 1 || kindN(mut st, latN(mut st, args, 0)) != ast.EInt || nodeOf(mut st, latN(mut st, args, 0)).a < 1 {
             return 0, diag.Malformed{at: posOf(mut st, at)}
         }
         t := parTypeArg(mut st, at)?
-        // ペイロードの型の region は意味を持たない（送りで梱包・受けで受け手の最内へ写す）: 0 へ締めた形で持つ
+        // ペイロードの型のregionは意味を持たない（送りで梱包・受けで受け手の最内へコピーする）: 0へ締めた形で持つ
         return cNewch(mut st, st.rdepth - 1, nodeOf(mut st, latN(mut st, args, 0)).a, tyRelocAll(mut st, t, 0)), nil
     }
     if key == PAR_SEND {
@@ -117,7 +117,7 @@ func parCall(st mut S, key int, fi int, args ListRef, at NodeRef, eb int, ef int
         return if fal { cJoin(mut st, tp, h) } else { c1(mut st, CFst, cJoin(mut st, tp, h)) }, nil
     }
     // Try: `ifnil (tryJ tp h) Died{…} (Ok{v: fst var 0})`（error を返す task は `ifnil (snd var 0) Ok{v: fst var 0} Failed{e: var 0}`）
-    // （Outcome[T] の union の写しは composite と同じ encodeVariant）
+    // （Outcome[T] のunionのコピーはcompositeと同じencodeVariant）
     pk := fnPkg(mut st, fi)
     ok := variantIn(mut st, pk, strLit(mut st, "Ok"), 0)
     died := variantIn(mut st, pk, strLit(mut st, "Died"), 0)
@@ -149,14 +149,14 @@ func parCall(st mut S, key int, fi int, args ListRef, at NodeRef, eb int, ef int
     if e4 != nil {
         return 0, diag.CoreFragment{at: posOf(mut st, at)}
     }
-    // Outcome の注釈の region を handle の region（Try の値が写る scope の region）へ揃える（Failed の err は子のヒープからそこへ写る —
+    // Outcomeの注釈のregionをhandleのregion（Tryの値がコピーされるscopeのregion）へ揃える（Failedのerrは子のヒープからそこへコピーされる —
     // 宣言の error の型は region 0 の形）
     rs := tRegion(mut st, ht)
     return c3(mut st, CIfnil, cTry(mut st, tp, h), coreRelocAnn(mut st, diedv, rs),
         c3(mut st, CIfnil, c1(mut st, CSnd, cVar(mut st, 0)), coreRelocAnn(mut st, okv, rs), coreRelocAnn(mut st, failv, rs))), nil
 }
 
-// 値の構築の式 e（union の腕・組・射影・nil — encodeVariant の出力）の型注釈の imm の region を全部 k へ締めた写し
+// 値の構築の式e（unionの分岐・組・射影・nil — encodeVariantの出力）の型注釈のimmのregionを全部kへ締めたコピー
 func coreRelocAnn(st mut S, e CoreRef, k int) CoreRef {
     x := coreAt(mut st, e)
     if x.tag == CInl || x.tag == CInr {
@@ -224,7 +224,7 @@ func parFallibleY(st mut S, y int) bool {
     return y >= 0 && yk(mut st, y) == YTuple && lenL(mut st, yLa(YAt(mut st, y))) == 2
 }
 
-// 表層型 y（Task[T]）の T が多値ならその i 番目の要素の表層型（でなければ -1 — lower の読み口・P3b-4 1b'）
+// 表層型y（Task[T]）のTが多値ならそのi番目の要素の表層型（でなければ -1 — lowerの読み取りインターフェース・P3b-4 1b'）
 func ParTaskTupleY(st mut S, y int, i int) int {
     if y < 0 || yk(mut st, y) != YDecl || yLc(YAt(mut st, y)) == -1 || lenL(mut st, yLc(YAt(mut st, y))) != 1 {
         return -1
@@ -233,7 +233,7 @@ func ParTaskTupleY(st mut S, y int, i int) int {
     return if parFallibleY(mut st, a) { latI(mut st, yLa(YAt(mut st, a)), i) } else { -1 }
 }
 
-// task.SpawnIn の呼び出しの表層型 y（(Task[T]?, error?)）の i 番目（でなければ -1 — lower の読み口）
+// task.SpawnInの呼び出しの表層型y（(Task[T]?, error?)）のi番目（でなければ -1 — lowerの読み取りインターフェース）
 func ParSpawnInY(st mut S, y int, i int) int {
     return if parFallibleY(mut st, y) { latI(mut st, yLa(YAt(mut st, y)), i) } else { -1 }
 }
@@ -307,7 +307,7 @@ func giveBind(st mut S, lam NodeRef, eb int, depth int, t TyRef) int {
     return bind(mut st, eb, sA(nodeOf(mut st, p)), depth, false, -1, t, -1, tRegion(mut st, t), -1, false, SUNK)
 }
 
-// 呼び出し at の明示の型引数 `f[T](…)` のコアの型（無ければ名指しの拒否 — NewChannel[T] は型引数を書く）
+// 呼び出しatの明示の型引数 `f[T](…)` のコアの型（無ければ専用の診断での拒否 — NewChannel[T] は型引数を書く）
 func parTypeArg(st mut S, at NodeRef) (TyRef, error?) {
     callee := nA(nodeOf(mut st, at))
     if kindN(mut st, callee) != ast.EIndex {
@@ -351,7 +351,7 @@ func parScope(st mut S, fi int, arg NodeRef, at NodeRef, eb int, ef int, depth i
     // jump（関数の `?` と同じテンプレート — call.sober）。return は ParCheck の kind 7 が先に拒否する。ラベルは本体の内側なので scope の Λ = [] は保たれる。
     // `?` が使わなければ包まない（コアは従来の形のまま）
     mut rl := -1
-    // ラベルの型は本体の内側の座標（err の鎖の region = scope の region — 外の et とは座標が違う）
+    // ラベルの型は本体の内側の座標（errのチェーンのregion = scopeのregion — 外のetとは座標が違う）
     etRaw := if tb != -1 { errTy(mut st, st.curPkg, at, TYFUEL) catch TyRef(-1) } else { TyRef(-1) }
     etIn := if etRaw != -1 { pointTy(mut st, etRaw) } else { TyRef(-1) }
     if tb != -1 && etIn != -1 {
@@ -392,16 +392,16 @@ func parScope(st mut S, fi int, arg NodeRef, at NodeRef, eb int, ef int, depth i
     }
     tpt := payloadTy(mut st, td.pkg, vat(mut st, td.decl, td.idx), TYFUEL)?
     tz := zeroOf(mut st, tpt, at)?
-    // ラベルの注釈は宣言の形（region 0）なので、空の鎖・nil（zeroOf / emptyChain — 今の点の region）と同じ座標へ締める（Def の本体では
-    // 点が region 0 でなく、slice を欄に持つラベルがプログラムにあると case の腕の型が食い違って check が def error。Try の coreRelocAnn と同じ手当て）
+    // ラベルの注釈は宣言の形（region 0）なので、空のチェーン・nil（zeroOf / emptyChain — 今の点のregion）と同じ座標へ締める（Defの本体では
+    // 点がregion 0でなく、sliceをフィールドに持つラベルがプログラムにあるとcaseの分岐の型が食い違ってcheckがdef error。TryのcoreRelocAnnと同じ手当て）
     topv := coreRelocAnn(mut st, encodeVariant(mut st, td.pkg, td.decl, 0, td.idx, tz, at)?, st.rdepth - 1)
     ch := emptyChain(mut st, at)?
     errv := c1(mut st, CSome, c2(mut st, CPair, topv, ch))
-    // 本体を包んだなら本体の値は組 (t, err?) そのもの（`?` の失敗は本体の結果の腕 — 出口の優先は 死 > 未回収の失敗 > 本体の結果のまま）
+    // 本体を包んだなら本体の値は組 (t, err?) そのもの（`?` の失敗は本体の結果の分岐 — 出口の優先は 死 > 未回収の失敗 > 本体の結果のまま）
     wrapped := rl != -1 && lab(mut st, rl).used
     live := if wrapped { cVar(mut st, 0) } else { c2(mut st, CPair, cVar(mut st, 0), nilv) }
     dead := c2(mut st, CPair, zv, errv)
-    // 未回収の失敗: scope の err = 子の err（親の最内へ写った値 — var 0）
+    // 未回収の失敗: scopeのerr = 子のerr（親の最内へコピーされた値 — var 0）
     failed := c2(mut st, CPair, zv, c1(mut st, CSome, cVar(mut st, 0)))
     eps := parErrTy(mut st, at)?
     st_t := if wrapped { tProd(mut st, t, tOpt(mut st, pointTy(mut st, et))) } else { t }
@@ -422,7 +422,7 @@ func parInTaskTy(st mut S, args ListRef, eb int, ef int) TyRef {
 }
 
 // `task.SpawnIn(s, pool, () => g)`: `let p = pool in ite tt (pair (some (spawn s a g')) nil) (pair nil (some Shed{}))` —
-// 入場の問い合わせは io（コアの近似は io の intrinsic と同じく値を持たない — 両方の腕が型を持つ）。budget: は運ばない（Spawn と同じ）
+// 入場の問い合わせはio（コアの近似はioのintrinsicと同じく値を持たない — 両方の分岐が型を持つ）。budget: は運ばない（Spawnと同じ）
 func parSpawnIn(st mut S, fi int, args ListRef, at NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
     ht := parInTaskTy(mut st, args, eb, ef)
     if ht == -1 {
@@ -439,8 +439,8 @@ func parSpawnIn(st mut S, fi int, args ListRef, at NodeRef, eb int, ef int, dept
     }
     tpt := payloadTy(mut st, td.pkg, vat(mut st, td.decl, td.idx), TYFUEL)?
     tz := zeroOf(mut st, tpt, at)?
-    // ラベルの注釈は宣言の形（region 0）なので、空の鎖・nil（zeroOf / emptyChain — 今の点の region）と同じ座標へ締める（Def の本体では
-    // 点が region 0 でなく、slice を欄に持つラベルがプログラムにあると case の腕の型が食い違って check が def error。Try の coreRelocAnn と同じ手当て）
+    // ラベルの注釈は宣言の形（region 0）なので、空のチェーン・nil（zeroOf / emptyChain — 今の点のregion）と同じ座標へ締める（Defの本体では
+    // 点がregion 0でなく、sliceをフィールドに持つラベルがプログラムにあるとcaseの分岐の型が食い違ってcheckがdef error。TryのcoreRelocAnnと同じ手当て）
     topv := coreRelocAnn(mut st, encodeVariant(mut st, td.pkg, td.decl, 0, td.idx, tz, at)?, st.rdepth - 1)
     ch := emptyChain(mut st, at)?
     errv := c1(mut st, CSome, c2(mut st, CPair, topv, ch))
@@ -449,7 +449,7 @@ func parSpawnIn(st mut S, fi int, args ListRef, at NodeRef, eb int, ef int, dept
     return cLet(mut st, p, cIte(mut st, cTT(mut st), ok, shed)), nil
 }
 
-// `task.Spawn(s, () => g)`: `spawn s a g'` — 閉包変換（コアの上 — p3a-draft 1.2）: g を親の環境・1 段深い region（子自前の region）で
+// `task.Spawn(s, () => g)`: `spawn s a g'` — クロージャ変換（コアの上 — p3a-draft 1.2）: gを親の環境・1段深いregion（子自前のregion）で
 // 脱糖し、コアの自由変数（親の束縛）を組 a に詰めて、本体の参照を var 0 の射影へ置き換える
 func parSpawn(st mut S, sc CoreRef, arg NodeRef, at NodeRef, eb int, ef int, depth int, np int) (CoreRef, error?) {
     lam := parLambda(mut st, arg, np)
@@ -491,9 +491,9 @@ func parSpawn(st mut S, sc CoreRef, arg NodeRef, at NodeRef, eb int, ef int, dep
     return cSpawn(mut st, sc, pairChain(mut st, vs), kid), nil
 }
 
-// domain の口（language.md 11 節「domain」）: NewDomain = dnew（家 = 札の region・状態の型 = 初期値の型を region 0 へ締めた形 — 梱包して持つ。
-// wait: はコアへ運ばない — rt への実引数だけ〔呼び出し・割り算を含まない整数式 — ParCheck kind 35〕）・domEnter = denter（状態を今の最内へ写して受ける）・
-// domExit = dexit・domMiss = unreach（Await の when が偽の腕）
+// domainのインターフェース（language.md 11 節「domain」）: NewDomain = dnew（家 = 札のregion・状態の型 = 初期値の型をregion 0へ締めた形 — 梱包して持つ。
+// wait: はコアへ運ばない — rtへの実引数だけ〔呼び出し・割り算を含まない整数式 — ParCheck kind 35〕）・domEnter = denter（状態を今の最内へコピーして受ける）・
+// domExit = dexit・domMiss = unreach（Awaitのwhenが偽の分岐）
 func parDomCall(st mut S, key int, args ListRef, at NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
     na := lenL(mut st, args)
     if key == PAR_DNEW {
@@ -572,9 +572,9 @@ func parDomCall(st mut S, key int, args ListRef, at NodeRef, eb int, ef int, dep
     return cUnreach(mut st, t), nil
 }
 
-// domain の状態の値 e の写し（full = mut の器を残した状態の型）: toMut = false なら mut の器を imm の写しへ（作る・出る — 梱包する形 =
+// domainの状態の値eのコピー（full = mutの器を残した状態の型）: toMut = falseならmutの器をimmのコピーへ（作る・出る — 梱包する形 =
 // 状態の型の像。初期値・本体の器と別名にしないので clone してから freeze）・true なら像の器を最内の新しい mut の器へ（入る — clone）。
-// コアの意味は「写して入れ・写して出す」で、lower は状態をその場で書く（排他なので観測は等価）。写せない形（器の要素が mut の器を持つ・mut の参照）は -1
+// コアの意味は「コピーして入れ・コピーして出す」で、lowerは状態をその場で書く（排他なので観測は等価）。コピーできない形（器の要素がmutの器を持つ・mutの参照）は -1
 func domConv(st mut S, e CoreRef, full TyRef, toMut bool) CoreRef {
     if tyMutFreeD(mut st, full) {
         return e
@@ -588,7 +588,7 @@ func domConv(st mut S, e CoreRef, full TyRef, toMut bool) CoreRef {
     if x == TOpt {
         iy := tInner(mut st, full)
         v := domConv(mut st, cVar(mut st, 0), iy, toMut)
-        // 両腕の型を行き先の型（最内 region）に揃える — 写した値は最内・写さない成分は元の region のまま
+        // 両分岐の型を行き先の型（最内region）に揃える — コピーした値は最内・コピーしない成分は元のregionのまま
         ty := domConvTgt(mut st, iy, toMut)
         return if v == -1 { CoreRef(-1) } else { c3(mut st, CIfnil, e, cNil(mut st, ty), c1(mut st, CSome, cAnn(mut st, v, ty))) }
     }
@@ -602,7 +602,7 @@ func domConv(st mut S, e CoreRef, full TyRef, toMut bool) CoreRef {
         return if l == -1 || r == -1 { CoreRef(-1) } else { c3(mut st, CCase, e, cInl(mut st, rty, cAnn(mut st, l, lty)), cInr(mut st, lty, cAnn(mut st, r, rty))) }
     }
     if (x == TSl && tyMutFreeD(mut st, tElem(mut st, full))) || (x == TMp && tyMutFreeD(mut st, tKey(mut st, full)) && tyMutFreeD(mut st, tVal(mut st, full))) {
-        // 読み出しの注釈（imm の器から写すときだけ — call.sober の clone と同じ: imm の map はセル型 prod k (opt v) が常に注釈を持つ）
+        // 読み出しの注釈（immの器からコピーするときだけ — call.soberのcloneと同じ: immのmapはセル型 prod k (opt v) が常に注釈を持つ）
         im := tyImmImg(mut st, full)
         ann := if !toMut { TyRef(-1) } else if x == TSl { readAnn(mut st, im) } else { tProd(mut st, tKey(mut st, im), tOpt(mut st, tVal(mut st, im))) }
         cl := cClone(mut st, e, ann)
@@ -617,26 +617,26 @@ func domConv(st mut S, e CoreRef, full TyRef, toMut bool) CoreRef {
     return -1
 }
 
-// 要素の写しの行き先の型（最内 region k）: 入るなら mut の器を最内に作り直した型・出るなら像
+// 要素のコピーの行き先の型（最内region k）: 入るならmutの器を最内に作り直した型・出るなら像
 func domConvTgt(st mut S, t TyRef, toMut bool) TyRef {
     k := st.rdepth - 1
     return if toMut { tyRelocAllM(mut st, t, k) } else { tyRelocAll(mut st, tyImmImg(mut st, t), k) }
 }
 
-// 輪の仕上げ（acc = 新しい mut の器のセル）: 入るならそのまま・出るなら凍らせて像にする
+// ループの仕上げ（acc = 新しいmutの器のセル）: 入るならそのまま・出るなら凍らせて像にする
 func domConvFin(st mut S, acc CoreRef, toMut bool) CoreRef {
     v := c1(mut st, CDeref, acc)
     return if toMut { v } else { c1(mut st, CFreeze, v) }
 }
 
-// 要素が mut の器を持つ slice の写し（器の写しは浅いので、要素ごとに domConv を当てて新しい器へ積む）:
+// 要素がmutの器を持つsliceのコピー（器のコピーは浅いので、要素ごとにdomConvを当てて新しい器へ積む）:
 //   let src = e; let acc = alloc(mut, mkslice(mut, E')); let i = alloc(mut, 0)
 //   while deref i < len src { acc := append(deref acc, conv(src[deref i])); i := deref i + 1 }; fin(deref acc)
 func domConvSl(st mut S, e CoreRef, full TyRef, toMut bool) CoreRef {
     et := tElem(mut st, full)
     tgt := domConvTgt(mut st, et, toMut)
     ann := if toMut { readAnn(mut st, tyImmImg(mut st, full)) } else { TyRef(-1) }
-    // 輪の中の座標: i = 0・acc = 1・src = 2
+    // ループの中の座標: i = 0・acc = 1・src = 2
     v := domConv(mut st, cIndex(mut st, cVar(mut st, 2), c1(mut st, CDeref, cVar(mut st, 0)), ann), et, toMut)
     if v == -1 {
         return -1
@@ -650,7 +650,7 @@ func domConvSl(st mut S, e CoreRef, full TyRef, toMut bool) CoreRef {
     return cLet(mut st, e, cLet(mut st, cAlloc(mut st, 1, cMkslice(mut st, 1, tgt)), cLet(mut st, cAlloc(mut st, 1, cLit(mut st, 0)), body)))
 }
 
-// 値が mut の器を持つ map の写し（キーのスナップショットを歩いて値ごとに domConv を当てる）:
+// 値がmutの器を持つmapのコピー（キーのスナップショットを歩いて値ごとにdomConvを当てる）:
 //   let src = e; let ks = keys(src); let acc = alloc(mut, mkmap(mut, K', V')); let i = alloc(mut, 0)
 //   while deref i < len ks { let k = ks[deref i]; ifnil src[k] {} some y { acc := setm(deref acc, k, conv(y)) }; i := deref i + 1 }; fin(deref acc)
 func domConvMp(st mut S, e CoreRef, full TyRef, toMut bool) CoreRef {
@@ -659,7 +659,7 @@ func domConvMp(st mut S, e CoreRef, full TyRef, toMut bool) CoreRef {
     tk := domConvTgt(mut st, tKey(mut st, full), toMut)
     tv := domConvTgt(mut st, vt, toMut)
     gt := if toMut { tVal(mut st, tyImmImg(mut st, full)) } else { vt }
-    // 値の写し: y = 0・kx = 1・i = 2・acc = 3・ks = 4・src = 5
+    // 値のコピー: y = 0・kx = 1・i = 2・acc = 3・ks = 4・src = 5
     v := domConv(mut st, cVar(mut st, 0), vt, toMut)
     if v == -1 {
         return -1
@@ -669,7 +669,7 @@ func domConvMp(st mut S, e CoreRef, full TyRef, toMut bool) CoreRef {
     get := c3(mut st, CIfnil, cGetm(mut st, gt, cVar(mut st, 4), cVar(mut st, 0)), cTriv(mut st), putM)
     // get の let の下: i = 2
     next := c2(mut st, CAssign, cVar(mut st, 2), c2(mut st, CAdd, c1(mut st, CDeref, cVar(mut st, 2)), cLit(mut st, 1)))
-    // 輪の中の座標: i = 0・acc = 1・ks = 2・src = 3
+    // ループの中の座標: i = 0・acc = 1・ks = 2・src = 3
     kx := cIndex(mut st, cVar(mut st, 2), c1(mut st, CDeref, cVar(mut st, 0)), readAnn(mut st, tSliceOf(mut st, 0, k, tk, 0)))
     loop := c2(mut st, CWhile, c2(mut st, CLt, c1(mut st, CDeref, cVar(mut st, 0)), c1(mut st, CLen, cVar(mut st, 2))), cLet(mut st, kx, cLet(mut st, get, next)))
     // loop の let の下: i = 1・acc = 2
@@ -678,7 +678,7 @@ func domConvMp(st mut S, e CoreRef, full TyRef, toMut bool) CoreRef {
     return cLet(mut st, e, cLet(mut st, c1(mut st, CKeysm, cVar(mut st, 0)), inner))
 }
 
-// domain の口の結果のコアの型（parDomCall と同じ形 — 分からなければ -1。tex = 明示の型引数の式）
+// domainのインターフェースの結果のコアの型（parDomCallと同じ形 — 分からなければ -1。tex = 明示の型引数の式）
 func parDomTy(st mut S, key int, args ListRef, eb int, ef int, at NodeRef) TyRef {
     na := lenL(mut st, args)
     if key == PAR_DNEW {
@@ -714,7 +714,7 @@ func parDomTy(st mut S, key int, args ListRef, eb int, ef int, at NodeRef) TyRef
     return if te == -1 { TyRef(-1) } else { tyOf(mut st, st.curPkg, te, at, TYFUEL) catch TyRef(-1) }
 }
 
-// std/task の鍵 key の呼び出しの結果のコアの型（分からなければ -1 — computeTy の写し）
+// std/taskの鍵keyの呼び出しの結果のコアの型（分からなければ -1 — computeTyのコピー）
 func parTy(st mut S, key int, fi int, args ListRef, eb int, ef int, tex NodeRef) TyRef {
     na := lenL(mut st, args)
     if ParDom(key) {
@@ -756,7 +756,7 @@ func parTy(st mut S, key int, fi int, args ListRef, eb int, ef int, tex NodeRef)
             return -1
         }
         rt := computeTy(mut st, latN(mut st, args, 0), eb, ef)
-        // 受けた値は今の最内の region へ写る（P3b-4b — コアの recv の型 = t.relocR (d - 1)）
+        // 受けた値は今の最内のregionへコピーされる（P3b-4b — コアのrecvの型 = t.relocR (d - 1)）
         return if rt == -1 || tg(mut st, rt) != TOwn { TyRef(-1) } else { tOpt(mut st, tyRelocAll(mut st, tElem(mut st, rt), st.rdepth - 1)) }
     }
     if key == PAR_SPAWNIN {
@@ -834,9 +834,9 @@ func parTy(st mut S, key int, fi int, args ListRef, eb int, ef int, tex NodeRef)
     return if parTaskFallible(mut st, latN(mut st, args, 0)) { tyRelocAll(mut st, u, tRegion(mut st, ht)) } else { u }
 }
 
-// ── 閉包変換（コアの上 — de Bruijn。束縛子 = let の本体・ifnil の some・case の両腕・scope の本体。spawn の本体は閉じている）──
+// ── クロージャ変換（コアの上 — de Bruijn。束縛子 = letの本体・ifnilのsome・caseの両分岐・scopeの本体。spawnの本体は閉じている）──
 
-// tag の子の欄（ビット 1 = a・2 = b・4 = c）
+// tagの子のフィールド（ビット1 = a・2 = b・4 = c）
 func coreKids(tag int) int {
     if tag == CLet || tag == CAdd || tag == CLt || tag == CPair || tag == CCallv || tag == CCallMv || tag == CAssign || tag == CWhile || tag == CIndex || tag == CAppend || tag == CEqs || tag == CConcat || tag == CSpawn || tag == CSend || tag == CDexit {
         return 3
@@ -859,7 +859,7 @@ func coreKids(tag int) int {
     return 0
 }
 
-// tag の欄 f（1 = a・2 = b・4 = c）の下で増える束縛の数
+// tagのフィールドf（1 = a・2 = b・4 = c）の下で増える束縛の数
 func coreBinds(tag int, f int) int {
     if (tag == CLet && f == 2) || (tag == CIfnil && f == 4) || (tag == CCase && f != 1) || (tag == CScope && f == 2) {
         return 1
@@ -933,7 +933,7 @@ func parTaskDecl(st mut S, dr int) bool {
 
 // 型式 `task.Handle[T]`（handle の slice の要素）のコアの型: 囲む task.Run の region rs の
 // `own task rs (prod T (opt eps))`（Spawn の結果と同じ形 — error を返す task の handle `task.Handle[(T, error?)]` も同じ形）。scope の外は宣言の struct のまま
-// （std/task の宣言の署名 — 呼び出し点で写すので値は作られない）
+// （std/taskの宣言の署名 — 呼び出し点で変換するので値は作られない）
 func parTaskTy(st mut S, pk int, te NodeRef, at NodeRef, fuel int) (TyRef, error?) {
     if lenL(mut st, lB(nodeOf(mut st, te))) != 1 {
         return 0, diag.CoreFragment{at: posOf(mut st, at)}

@@ -2,7 +2,7 @@ package main
 
 import "std/http/server"
 
-// 要求の Authorization から作った値を捕捉したハンドラの共有のルート（値の依存）
+// リクエストのAuthorizationから作った値を捕捉したハンドラの共有のルート（値の依存）
 func routesFor(r http.server.Request) []http.server.Route {
     who := http.server.Authorization(r)
     return []http.server.Route{http.server.Route{method: "GET", path: "/who", handler: (r2) => http.server.Text(if who != nil { who } else { "-" }), cache: http.server.Fresh{maxAge: 60}}}

@@ -2,7 +2,7 @@
 //
 // 1 つのケース表から 2 本を生成する:
 //   - examples/strings_std.sober … Sober 側（`import "std/strings"` で各関数を呼んで println）
-//   - Go の双子プログラム       … 同じ呼び出しを Go の strings で。その出力が examples/strings_std.out
+//   - 比較用のGoの実装       … 同じ呼び出しをGoのstringsで。その出力がexamples/strings_std.out
 //
 // 再生成手順（リポジトリルートで。要件: node 22.6+（型ストリップで .ts を直接実行）、go 1.21+）:
 //   node scripts/strings_oracle.ts examples/strings_std.sober /tmp/strings_oracle.go
@@ -43,11 +43,11 @@ const cases: Case[] = [
   // Cut（3 つの結果 — 助け手 showCut が並べて印字）
   ["Cut", "k=v", "="], ["Cut", "k=v=w", "="], ["Cut", "kv", "="], ["Cut", "", "="], ["Cut", "abc", ""],
   ["Cut", "=v", "="], ["Cut", "k=", "="], ["Cut", "あ=い", "="], ["Cut", "aXXbXXc", "XX"], ["Cut", "あいう", "い"],
-  // CutLast（Go に無い — 双子は strings.LastIndex で同じ形を書く）
+  // CutLast（Goに無い — 比較用の実装はstrings.LastIndexで同じ形を書く）
   ["CutLast", "a/b/c", "/"], ["CutLast", "abc", "/"], ["CutLast", "/abc", "/"], ["CutLast", "abc/", "/"], ["CutLast", "abc", ""],
   ["CutLast", "", ""], ["CutLast", "aXXbXXc", "XX"], ["CutLast", "あ/い/う", "/"], ["CutLast", "aaa", "aa"],
-  // ── 0.7.0 便 2（2026-10-22）。空白と大小は ASCII だけを見るので、Go（Unicode）と食い違う非 ASCII の大小・空白はここに置かない
-  // （食い違いの約束は testdata/stdtest/stdstrings の表で名指し）。非 ASCII は大小の無い文字（あいう）と UTF-8 の境目の確認にだけ使う
+  // ── 0.7.0タスク2（2026-10-22）。空白と大小はASCIIだけを見るので、Go（Unicode）と食い違う非ASCIIの大小・空白はここに置かない
+  // （食い違いの約束はtestdata/stdtest/stdstringsの表で列挙）。非ASCIIは大小の無い文字（あいう）とUTF-8の境目の確認にだけ使う
   // TrimSuffix
   ["TrimSuffix", "a.go", ".go"], ["TrimSuffix", "a.go", ".rs"], ["TrimSuffix", "abc", ""], ["TrimSuffix", "", ""],
   ["TrimSuffix", "bc", "abc"], ["TrimSuffix", "あいう", "う"], ["TrimSuffix", "abcabc", "abc"],

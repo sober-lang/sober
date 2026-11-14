@@ -1,8 +1,8 @@
-// stagewall.ts — 自己 build の段ごとの wall と CPU（report-1183 段 0 — 783 の計器の常設版）。コンパイラの段の印（SOBER_STAGES=1 の
+// stagewall.ts — 自己buildのステージごとのwallとCPU（report-1183段階0 — 783の計測ツールの常設版）。コンパイラのステージのマーク（SOBER_STAGES=1の
 // `@<名前>` — loader/stage.sober）の到着時刻と全スレッドの schedstat の和を区間ごとに取り、W ごとの中央値の表にする。
 //   node scripts/stagewall.ts [-w 1,8,12] [-n 3] [-c <コンパイラ>] [-t <木>] [-o <生データの TSV>]
-// 既定: コンパイラ = out/stage2/sober2・木 = src/compiler + src/std の写し（一時ディレクトリ）。W ごとに交互に回す（同じ時間帯の交互計測）。
-// 表の列 = 段（前の印 -> この印）・W ごとの wall の中央値（ms）と並列度（CPU / wall）
+// 既定: コンパイラ = out/stage2/sober2・木 = src/compiler + src/stdのコピー（一時ディレクトリ）。Wごとに交互に回す（同じ時間帯の交互計測）。
+// 表の列 = ステージ（前のマーク -> このマーク）・Wごとのwallの中央値（ms）と並列度（CPU / wall）
 import { spawn } from "node:child_process";
 import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -33,12 +33,12 @@ function cpuMs(pid: number): number {
   return s / 1e6;
 }
 
-// 1 回の build の区間の列 [段, wall, cpu]（終わったスレッドの CPU は schedstat から消えるので単調な最大値で追う）
+// 1回のbuildの区間の列 [ステージ, wall, cpu]（終わったスレッドのCPUはschedstatから消えるので単調な最大値で追う）
 async function one(W: string): Promise<[string, number, number][]> {
   const t0 = now();
   const ch = spawn(comp, ["build", "app", "--emit=elf", "--passes", "-o", join(work, `o-${W}`)], {
     cwd: tree,
-    env: { ...process.env, SOBER_HASH_SEED: "0", SOBER_WORKERS: W, SOBER_STAGES: "1", SOBER_BUILD_CACHE: process.env.SOBER_BUILD_CACHE ?? "0" }, // キャッシュ（既定 on）は明示しなければ切の道
+    env: { ...process.env, SOBER_HASH_SEED: "0", SOBER_WORKERS: W, SOBER_STAGES: "1", SOBER_BUILD_CACHE: process.env.SOBER_BUILD_CACHE ?? "0" }, // キャッシュ（既定on）は明示しなければ無効のパス
     stdio: ["ignore", "ignore", "pipe"],
   });
   const rows: [string, number, number][] = [];

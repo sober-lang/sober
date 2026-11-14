@@ -1,4 +1,4 @@
-// fasta の Go の双子（Benchmarks Game の仕様 — 素直な形: ALU の繰り返し・線形合同法の乱数で 2 つの表から選ぶ。1 行 60 文字）。
+// fastaの比較用のGoの実装（Benchmarks Gameの仕様 — 素直な形: ALUの繰り返し・線形合同法の乱数で2つの表から選ぶ。1行60文字）。
 // 乱数は max * last / IM の浮動小数・表は累積確率（Sober 側は float が無いので同じ選択を整数の閾値で — bench/fasta/main.sober）
 package main
 

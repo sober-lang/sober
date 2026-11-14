@@ -16,7 +16,7 @@ Prerequisites: sections 1–5 of the [language tour](tour.md), error handling (`
 // examples/web_server_hello.sober
 package main
 
-// Web サーバのガイド 1 節: net.Serve が接続 1 本 = task 1 本で受け、http.server.ServeConn がその接続の要求を順に route へ渡す。
+// Web サーバのガイド 1 節: net.Serve が接続 1 本 = task 1 本で受け、http.server.ServeConn がその接続のリクエストを順に route へ渡す。
 // 客（http.client.Request）は同じプロセスの task。Serve は包む scope の期限で accept を止め、走っている接続の決着を待ってから返す
 
 import "std/http/client"
@@ -94,7 +94,7 @@ A route table is a value of type `[]http.server.Route` (plain data). `Mount` add
 package main
 
 // Web サーバのガイド 2 節: ルートの表（[]http.server.Route — ただのデータ）を Mount / Merge で合成し、Dispatch で引く。
-// /users の下には X-Token を見る middleware（before が応答を返すとハンドラは走らない）。:id は Param で読む。
+// /users の下には X-Token を見る middleware（before がレスポンスを返すとハンドラは走らない）。:id は Param で読む。
 // 一致しない path は 404・path は合うが method が違えば 405（Allow つき）
 
 import "std/http"
@@ -119,7 +119,7 @@ func health(r http.server.Request) http.server.Response {
     return http.server.Text("ok")
 }
 
-// X-Token の無い要求をここで 401 にする
+// X-Token の無いリクエストをここで 401 にする
 func auth(r http.server.Request) http.server.Response? {
     return if http.server.Header(r, "x-token") == nil { http.server.Status(401) } else { nil }
 }
@@ -270,9 +270,9 @@ For large files or bodies produced little by little, pass a function in `stream`
 // examples/http_stream.sober
 package main
 
-// std/http/server の応答の stream（language.md 28 節 w2）: route が返す Response の stream は要求の path を
-// 捕捉した閉包で、ServeConn が頭（Content-Length = length）を送ってから呼ぶ。File は閉包に捕捉させず、path を受けて stream の中で開く
-// （sendFile — emit は借り: 文形 for の本体が捕捉して呼ぶ）。loopback で 1 本の task が Dial → 要求を送る → Accept して ServeConn → 応答を受ける（net_echo の形）
+// std/http/server のレスポンスの stream（language.md 28 節 w2）: route が返す Response の stream はリクエストの path を
+// 捕捉したクロージャで、ServeConn が頭（Content-Length = length）を送ってから呼ぶ。File はクロージャに捕捉させず、path を受けて stream の中で開く
+// （sendFile — emit は借り: 文形 for の本体が捕捉して呼ぶ）。loopback で 1 本の task が Dial → リクエストを送る → Accept して ServeConn → レスポンスを受ける（net_echo の形）
 
 import "std/http/server"
 import "std/io"
@@ -305,7 +305,7 @@ func run(dir string) error? {
     io.WriteFile(dir + "/http_stream.tmp", bytes(body()))?
     for l <- net.Listen("127.0.0.1:0")? {
         for c <- net.Dial("127.0.0.1:${net.Port(l)}")? {
-            // パイプライン 3 本: HEAD（頭だけ — stream は呼ばない）・GET（stream）・その後ろの要求（stream の後も同じ切片の残りを続けて処理する）
+            // パイプライン 3 本: HEAD（頭だけ — stream は呼ばない）・GET（stream）・その後ろのリクエスト（stream の後も同じ切片の残りを続けて処理する）
             net.Send(c, bytes("HEAD /file/http_stream.tmp HTTP/1.1\r\nHost: x\r\n\r\nGET /file/http_stream.tmp HTTP/1.1\r\nHost: x\r\n\r\nGET /none HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n"))?
             _, e := task.Run((s task.Scope) => serveOne(l, dir) catch -1, deadline: 5000 * task.MS)
             if e != nil {
@@ -372,13 +372,13 @@ Server-Sent Events are a `text/event-stream` response sent with a `stream` of un
 // examples/http_sse.sober
 package main
 
-// Server-Sent Events（language.md 28 節の「SSE」）: 応答の stream で text/event-stream を送る。長さ不定の stream なので chunked で、
-// emit 1 回 = chunk 1 つ = 送り 1 回（std は emit をまたいで溜めない — イベントは組んだ順にすぐ届く）。イベントの行は http.server.FormatEvent で組む
+// Server-Sent Events（language.md 28 節の「SSE」）: レスポンスの stream で text/event-stream を送る。長さ不定の stream なので chunked で、
+// emit 1 回 = chunk 1 つ = 送り 1 回（std は emit をまたいでバッファリングしない — イベントは組んだ順にすぐ届く）。イベントの行は http.server.FormatEvent で組む
 // （data の改行は行ごとの `data:` に割る・event / id の改行は panic(BadEvent) — examples/http_sse_bad）。保存させない（cache: NoStore）。
 // text/event-stream は compression: の対象外（ServeWith に compression: を渡しても圧縮しない — 頭に Content-Encoding も Vary も無い）。
 // 繋ぎ直した受け手は最後に受けた id を Last-Event-ID で返す（http.server.Header で読む — ここではその続きから送る）。
 // 長命の接続は scope の deadline の外に置く（ServeConn を deadline つきの task.Run で包むと流れが切れる）。
-// ネットの代わりに recv が決まった要求の列を渡し、send が送りの 1 回ずつを印字する（行末の CR は外す・送りの区切りに `--`）
+// ネットの代わりに recv が決まったリクエストの列を渡し、send が送りの 1 回ずつを印字する（行末の CR は外す・送りの区切りに `--`）
 
 import "std/convert"
 import "std/http/server"
@@ -537,7 +537,7 @@ The only way to write `Set-Cookie` is the `Response.cookies` field. The zero val
 
 ```sober
 // examples/web_login.sober (excerpt)
-// 世代 user.gen のトークンを cookie に載せた応答
+// 世代 user.gen のトークンを cookie に載せたレスポンス
 func issue(name string, user User, k session.Key, msg string) http.server.Response {
     t := session.Mint(k, name, user.gen, time.Now(), ttlSec)
     c := http.server.SetCookie{name: cookieName, value: session.Seal(t), maxAge: ttlSec}
@@ -609,7 +609,7 @@ func whoami(users mut map[string]User, k session.Key, r http.server.Request) (st
 
 ```sober
 // examples/web_login.sober (excerpt)
-// 古いパスワードを確かめて新しいハッシュに替え、世代を進める（他の端末のトークンは全部 Stale になる）。この端末には新しい世代のトークンを渡し直す
+// 古いパスワードを検証して新しいハッシュに替え、世代を進める（他の端末のトークンは全部Staleになる）。この端末には新しい世代のトークンを渡し直す
 func changePassword(users mut map[string]User, k session.Key, r http.server.Request) http.server.Response {
     name, why := whoami(mut users, k, r)
     if name == "" {
@@ -644,7 +644,7 @@ package main
 // ログインのセッション: パスワードのハッシュ（crypto/password）と世代つきのトークン（std/session）を __Host- の cookie に載せる。
 // ユーザーの行はハッシュの隣に世代を持ち、パスワードを変えると世代が進んで、それまでに発行したトークンは全部切れる（他の端末の古い cookie も）。
 // 状態（ユーザーの表）を持つので受けは直列（ServeConn に渡すラムダは借り — mut の表を通せる）。並行に受けるなら状態は外の保存先に置く。
-// 後半の客は 2 台の端末（laptop / phone）の代役で、cookie は値として各端末が持つ（応答から http.client.CookieValue で取り出し、次の要求の cookies: に載せる）
+// 後半の客は 2 台の端末（laptop / phone）の代役で、cookie は値として各端末が持つ（レスポンスから http.client.CookieValue で取り出し、次のリクエストの cookies: に載せる）
 
 import "std/crypto/password"
 import "std/http"
@@ -678,7 +678,7 @@ func field(r http.server.Request, key string) string? {
     return nil
 }
 
-// 世代 user.gen のトークンを cookie に載せた応答
+// 世代 user.gen のトークンを cookie に載せたレスポンス
 func issue(name string, user User, k session.Key, msg string) http.server.Response {
     t := session.Mint(k, name, user.gen, time.Now(), ttlSec)
     c := http.server.SetCookie{name: cookieName, value: session.Seal(t), maxAge: ttlSec}
@@ -745,7 +745,7 @@ func logIn(users mut map[string]User, k session.Key, r http.server.Request) http
     return issue(name, user, k, "welcome ${name}")
 }
 
-// 古いパスワードを確かめて新しいハッシュに替え、世代を進める（他の端末のトークンは全部 Stale になる）。この端末には新しい世代のトークンを渡し直す
+// 古いパスワードを検証して新しいハッシュに替え、世代を進める（他の端末のトークンは全部Staleになる）。この端末には新しい世代のトークンを渡し直す
 func changePassword(users mut map[string]User, k session.Key, r http.server.Request) http.server.Response {
     name, why := whoami(mut users, k, r)
     if name == "" {
@@ -813,7 +813,7 @@ func serve(l net.Listener, n int) error? {
 
 // --- ここから客（端末の代役） ---
 
-// 要求 1 本の結果（応答の行と、Set-Cookie で渡された cookie の値 — 無ければ nil）
+// リクエスト 1 本の結果（レスポンスの行と、Set-Cookie で渡された cookie の値 — 無ければ nil）
 type Reply struct {
     line string
     cookie string?
@@ -839,7 +839,7 @@ func pairs(kv []string) []url.Pair {
     return freeze(ps)
 }
 
-// 2 台の端末でログインし、laptop でパスワードを変えると phone の古いトークンが切れる流れ（要求は 12 本）
+// 2 台の端末でログインし、laptop でパスワードを変えると phone の古いトークンが切れる流れ（リクエストは 12 本）
 func tour(base string) []string {
     mut out := mut []string{}
     none := []url.Pair{}
@@ -928,7 +928,7 @@ func field(r http.server.Request, key string) string? {
 - `__Host-` cookies assume https. Browsers do not accept a `Secure` cookie from an http response, so the example in section 7 (loopback http) cannot be tried in a browser. The example's client (`std/http/client`) keeps the cookie as a value: it reads it with `http.client.CookieValue` and sends it with the next request's `cookies:` (`send`) — the regular way for a client to carry cookies, and it works unchanged against a server published over https (section 9)
 - The values of a `Request` live only for that one request (section 1). Copy them before putting them in a table that outlives the request
 
-- To respond after a wait, return `http.server.Delayed(ms, response)` instead of calling `os.Sleep` inside the handler. The response goes out at the same time, but the connection does not keep the handler's stack and the request region while it waits, so connections that are waiting stay as small as keep-alive connections. The wait happens right before that response's head; earlier responses on the same connection are sent first
+- To respond after a wait, return `http.server.Delayed(ms, response)` instead of calling `os.Sleep` inside the handler. The response goes out at the same time or slightly earlier (it does not wait for its turn to run after the wait ends), and the connection does not keep the handler's stack and the request region while it waits, so connections that are waiting stay as small as keep-alive connections. The wait happens right before that response's head; earlier responses on the same connection are sent first
 
 ```sober
 // examples/http_delayed.sober (excerpt)
@@ -950,7 +950,7 @@ package main
 
 // Web サーバのガイド 9 節: https で公開する。tls.Serve が handshake を済ませた接続だけを app に渡し、app は tls.Recv / tls.Send を
 // http.server.ServeWith の受けと送りに繋ぐ（ServeConn の TLS 版）。証明書と鍵は @embed で焼き込む（起動時にファイルから読むなら tls.Load）。
-// 既定の走りは設定の確かめだけ。`web_server_tls live <port>` で 127.0.0.1:<port> に https で待ち受ける
+// 既定の走りは設定の確認だけ。`web_server_tls live <port>` で127.0.0.1:<port> にhttpsで待ち受ける
 // （試すなら curl --cacert testdata/crypto/httparena-server.crt https://localhost:<port>/ — 自己署名の証明書なので起点を足す）
 
 import "std/http/server"
@@ -969,7 +969,7 @@ func route(r http.server.Request) http.server.Response {
     return if r.path == "/" { http.server.Text("hello over TLS\n") } else { http.server.Status(404) }
 }
 
-// 接続 1 本の handler（handshake は済んでいる — c は復号した後の読み書きの口）
+// 接続1本のhandler（handshakeは済んでいる — cは復号した後の読み書きのインターフェース）
 func app(c tls.Conn) error? {
     return http.server.ServeWith((k) => tls.Recv(c, k), (b) => tls.Send(c, b), route)
 }

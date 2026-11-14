@@ -1,8 +1,8 @@
 package parser
 
-// 再帰下降 parser（src/stage1/grammar.zig の PEG + src/stage1/cst_to_ast.zig の変換を 1 段で行う — CST は作らない）。
+// 再帰下降parser（src/stage1/grammar.zigのPEG + src/stage1/cst_to_ast.zigの変換を1フェーズで行う — CSTは作らない）。
 // 出力は C4 の表層 AST（compiler/ast）。PEG の順序付き選択は、字句の先読みで選ぶ（lambda・束縛・composite・パターン）か、
-// 型だけの試し読み（失敗した試しの節は表に残るが、根から辿れないので出力に出ない）で写す。
+// 型だけの試し読み（失敗した試しの節は表に残るが、根から辿れないので出力に出ない）でコピーする。
 //
 // 各 parse 関数は (nb 節の表, db データプール, cx 文脈, p 字句の位置) を取り、(節の添字, 次の位置) を返す。失敗は節 -1。
 // c は条件位置（if / while / switch の subject・for の生成元とガード）: 裸の composite literal を読まない（決定 5）
@@ -85,7 +85,7 @@ func Parse(src []byte, ts []lexer.Token) (ast.Tree, bool) {
 }
 
 // .sobi（interface — language.md 29 節）の字句列を AST にする: 本体の無い func 宣言（付加の列の 0 番 = 1・本体 -1）と
-// func の前の `@expand`（付加の列の 7 番 — E2-S の逃げ: 呼び出し点ごとに展開する関数の印）を許す。他の文法は .sober と同じ
+// funcの前の `@expand`（付加の列の7番 — E2-Sの逃げ: 呼び出し点ごとに展開する関数のフラグ）を許す。他の文法は .soberと同じ
 func ParseIface(src []byte, ts []lexer.Token) (ast.Tree, bool) {
     c := lexHoles(src, ts)
     return parseCx(Cx{c.src, c.ts, c.first, c.holes, c.fixed, true})
@@ -131,7 +131,7 @@ func FarthestTok(src []byte, ts []lexer.Token) int {
     return if q < len(ts) { q } else { far }
 }
 
-// int のビルダーの写し。一度も Push していないビルダーの Build は panic する（std/builder の cur のゼロ値が 0 で、
+// intのビルダーのコピー。一度もPushしていないビルダーのBuildはpanicする（std/builderのcurのゼロ値が0で、
 // 無い chunk 0 を読む — selfhost-drafts の F-12）ので、空なら空の slice を返す
 func ints(b mut builder.Builder[int]) []int {
     if builder.Len(mut b) == 0 {
@@ -149,7 +149,7 @@ func lexHoles(src []byte, ts []lexer.Token) Cx {
     for k <- iter.Range(0, len(ts)) {
         builder.Push(mut all, ts[k])
     }
-    // 足した穴の字句も走査する: 1 巡ごとに今の列を写して読み、増えなくなったら終わる
+    // 足した穴の字句も走査する: 1巡ごとに今の列をコピーして読み、増えなくなったら終わる
     mut i := 0
     mut nh := 0
     while i < builder.Len(mut all) {
@@ -324,7 +324,7 @@ func parseFile(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx
         if emb >= 0 && (t != lexer.KwConst || noinl != 0) {
             return -1
         }
-        // 引数なしの `@secret` は const の前置だけ（欄は後置 — fieldList）
+        // 引数なしの `@secret` はconstの前置だけ（フィールドは後置 — fieldList）
         if an.secBare != 0 && t != lexer.KwConst {
             return -1
         }
@@ -478,13 +478,13 @@ func importDecl(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], c
     return p
 }
 
-// 宣言の前の注釈の並び: p = 続く宣言の位置（失敗なら -1）、noinl = `@noinline` の印（1）、emb = `@embed("glob")` のパターン（無し -1）、
+// 宣言の前の注釈の並び: p = 続く宣言の位置（失敗なら -1）、noinl = `@noinline` のフラグ（1）、emb = `@embed("glob")` のパターン（無し -1）、
 // errs = `@errors(...)` のラベル名の列（文字列 — 修飾は "ref.N"・否定は先頭に "!"・形の読めない引数は "?"。無し -1）、errsTok = その `@` の字句、
-// layout = `@layout`（引数なし — 続く型宣言の印。language.md 36 節）の印（1）、exh = `@exhaustive`（引数なし — 続く関数宣言の印。language.md 13 節「表の網羅」）の印（1）、
-// sec = `@secret(k, …)`（続く関数宣言の仮引数の名前の列 — 読みは @errors と同じ。無し -1）・secTok = その `@` の字句、secBare = 引数なしの `@secret`（続く const 宣言の印）、
-// bless = `@bless`（引数なし — 全部の名前空間: 1）か `@bless(origin)`（出所の名前空間だけ: 2）— 続く関数宣言の印。受理は std だけ — analyzer）・
-// cred = `@credential`（引数なし — 続く関数宣言の印: 結果は認証の源。受理は std だけ）。@secret / @bless の意味は language.md 12 節「秘密の値の宣言」・
-// @credential / @bless(origin) は 12 節「出所の依存」。effs = `@effects(…)` の項の列（読みは @errors と同じ — 無し -1）・effsTok = その `@` の字句（12 節の関数の効果）
+// layout = `@layout`（引数なし — 続く型宣言のフラグ。language.md 36 節）のフラグ（1）、exh = `@exhaustive`（引数なし — 続く関数宣言のフラグ。language.md 13 節「表の網羅」）のフラグ（1）、
+// sec = `@secret(k, …)`（続く関数宣言の仮引数の名前の列 — 読みは @errorsと同じ。無し -1）・secTok = その `@` の字句、secBare = 引数なしの `@secret`（続くconst宣言のフラグ）、
+// bless = `@bless`（引数なし — 全部の名前空間: 1）か `@bless(origin)`（出所の名前空間だけ: 2）— 続く関数宣言のフラグ。受理はstdだけ — analyzer）・
+// cred = `@credential`（引数なし — 続く関数宣言のフラグ: 結果は認証の源。受理はstdだけ）。@secret / @blessの意味はlanguage.md 12 節「秘密の値の宣言」・
+// @credential / @bless(origin) は12 節「出所の依存」。effs = `@effects(…)` の項の列（読みは @errorsと同じ — 無し -1）・effsTok = その `@` の字句（12 節の関数のエフェクト）
 type Annot struct {
     p int
     noinl int
@@ -535,15 +535,15 @@ func skipParens(cx Cx, p0 int) int {
 // 位置 p0 からの注釈の並び `(annotation ';'?)*`（`@errors(...)` はラベル名の列を持つ — 検査は analyzer。受理の集合は読み捨てていた頃と同じ）
 func annots(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p0 int) Annot {
     mut p := p0
-    // `@noinline`（引数なし）は続く関数宣言の印
+    // `@noinline`（引数なし）は続く関数宣言のフラグ
     mut noinl := 0
-    // `@embed("glob")` は続く const 宣言（名前 1 つ）の印 — KConst の e = パターン（文字列）、f のビット 0（ファイルの読み込みは loader）。引数なしの `@secret` は f のビット 1
+    // `@embed("glob")` は続くconst宣言（名前1つ）のフラグ — KConstのe = パターン（文字列）、fのビット0（ファイルの読み込みはloader）。引数なしの `@secret` はfのビット1
     mut emb := 0 - 1
     mut errs := 0 - 1
     mut errsTok := 0
     mut layout := 0
     mut expand := 0
-    // `@intrinsic("鍵")` は続く本体なしの func 宣言の印（KIntrinsic — 受理は std だけ・鍵の集合は閉じる: loader の検査）
+    // `@intrinsic("鍵")` は続く本体なしのfunc宣言のフラグ（KIntrinsic — 受理はstdだけ・鍵の集合は閉じる: loaderの検査）
     mut intr := 0 - 1
     mut exh := 0
     mut sec := 0 - 1
@@ -551,10 +551,10 @@ func annots(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx
     mut secBare := 0
     mut bless := 0
     mut cred := 0
-    // `@effects(…)` は続く関数宣言の効果の宣言（項の読みは @errors と同じ — 語・型の名前・否定の `!`。照合は analyzer/effects.sober）
+    // `@effects(…)` は続く関数宣言のエフェクトの宣言（項の読みは @errorsと同じ — 語・型の名前の否定の `!`。照合はanalyzer/effects.sober）
     mut effs := 0 - 1
     mut effsTok := 0
-    // `@const(sql, …)` は続く関数宣言の const の席の仮引数の名前の列（読みは @errors と同じ。照合は analyzer/constseat.sober）
+    // `@const(sql, …)` は続く関数宣言の const 仮引数の仮引数の名前の列（読みは @errors と同じ。照合は analyzer/constseat.sober）
     mut cst := 0 - 1
     mut cstTok := 0
     while tg(cx, p) == lexer.At {
@@ -767,10 +767,10 @@ func constDecl(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx
 }
 
 // 暗黙 import（cst_to_ast の書き換え）: for → std/iter、補間 → std/convert（FormatInt）、string(b) → std/internal/utf8（Parse）、
-// float → std/internal/floatfmt（println の印字の Format — 参照名が `$` の合成の import は internal の検問の外・20 節）、assert(…) と import "std/quick" → std/testing と std/convert（loader の assert のテンプレートが Fail の呼び出しと補間を組む）、ラムダの mut 仮引数 → std/task と std/pool（lease の写し）
+// float → std/internal/floatfmt（printlnの印字のFormat — 参照名が `$` の合成のimportはinternalの検問の外・20 節）、assert(…) とimport "std/quick" → std/testingとstd/convert（loaderのassertのテンプレートがFailの呼び出しと補間を組む）、ラムダのmut仮引数 → std/taskとstd/pool（leaseのコピー）
 func implicitImports(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], imports mut []int) {
     ns := builder.Build(mut nb)
-    // std/quick を import するファイルも同じ 2 つを足す（loader の quickx.sober が `_test.sober` の性質の値の式を power assert の形に写す — 写しの段では import を足せない）
+    // std/quickをimportするファイルも同じ2つを足す（loaderのquickx.soberが `_test.sober` のプロパティの値の式を power assert の形に変換する — 変換のフェーズではimportを足せない）
     quick := importsPath(ns, mut db, mut imports, "std/quick")
     asserts := hasAssert(ns, mut db) || quick
     if hasKind(ns, ast.EFor) {
@@ -788,7 +788,7 @@ func implicitImports(nb mut builder.Builder[ast.Node], db mut builder.Builder[in
     if hasFloat(ns, mut db) {
         imports = append(imports, node(mut nb, ast.KImport, 0, ast.PutLit(mut db, "$float"), ast.PutLit(mut db, "std/internal/floatfmt"), 0, 0, 0, 0))
     }
-    // ラムダの mut 仮引数（task.Lease / task.NewLocal の窓 — loader の lease.sober が std/task と std/pool の写し先を呼ぶ形に写す）
+    // ラムダのmut仮引数（task.Lease / task.NewLocalのウィンドウ — loaderのlease.soberがstd/taskとstd/poolのコピー先を呼ぶ形に変換する）
     if hasMutLParam(ns) {
         imports = append(imports, node(mut nb, ast.KImport, 0, ast.PutLit(mut db, "$task"), ast.PutLit(mut db, "std/task"), 0, 0, 0, 0))
         imports = append(imports, node(mut nb, ast.KImport, 0, ast.PutLit(mut db, "$pool"), ast.PutLit(mut db, "std/pool"), 0, 0, 0, 0))

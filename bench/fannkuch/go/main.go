@@ -1,4 +1,4 @@
-// fannkuch-redux の Go の双子（同じアルゴリズム — 逐次版）
+// fannkuch-reduxの比較用のGoの実装（同じアルゴリズム — 逐次版）
 package main
 
 import (

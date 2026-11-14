@@ -1,8 +1,8 @@
 // builtin clone(x) の差分オラクル — Go の slices.Clone / maps.Clone を真実として期待値を作る（docs/oracles.md・strings_oracle.ts と同じ形）。
 //
 // 1 つのケース表から 2 本を生成する:
-//   - examples/clone_std.sober … Sober 側（clone(x) で写し、写した後に元と写しを書き換えて両方を println）
-//   - Go の双子プログラム     … 同じ操作を Go で。その出力が examples/clone_std.out
+//   - examples/clone_std.sober … Sober側（clone(x) でコピーし、コピーした後に元とコピーを書き換えて両方をprintln）
+//   - 比較用のGoのプログラム     … 同じ操作をGoで。その出力がexamples/clone_std.out
 //
 // 再生成手順（リポジトリルートで。要件: node 22.6+、go 1.21+）:
 //   node scripts/clone_oracle.ts examples/clone_std.sober /tmp/clone_oracle.go
@@ -12,7 +12,7 @@
 // `order true` を出し、Go 側は同じ行を定数で出す）
 import { writeFileSync } from "node:fs";
 
-// 列のケース: [名前, 要素, 写した後に元へ足す要素, 写した後に元の添字 0 へ書く値（無ければ null）]
+// 列のケース: [名前, 要素, コピーした後に元へ足す要素, コピーした後に元の添字0へ書く値（無ければnull）]
 type SCase = [name: string, xs: number[], add: number[], set: number | null];
 const sliceCases: SCase[] = [
   ["empty", [], [], null],
@@ -21,12 +21,12 @@ const sliceCases: SCase[] = [
   ["neg", [-1, 0, -9007199254740991], [], -5],
   ["grow", Array.from({ length: 40 }, (_, i) => i * i), [41, 42, 43], 999],
 ];
-// 文字列の列のケース（要素が imm の string — 写しは要素のヘッダの写し）
+// 文字列の列のケース（要素がimmのstring — コピーは要素のヘッダのコピー）
 const strCases: [string, string[], string[]][] = [
   ["words", ["a", "bb", "ccc"], ["dddd"]],
   ["utf8", ["あ", "いう", ""], ["え"]],
 ];
-// map のケース: [名前, 挿入 [鍵, 値]…, 写す前に消す鍵, 写した後に元へ書く [鍵, 値]…, 写した後に元から消す鍵]
+// mapのケース: [名前, 挿入 [鍵, 値]…, コピーする前に消す鍵, コピーした後に元へ書く [鍵, 値]…, コピーした後に元から消す鍵]
 type MCase = [name: string, ins: [string, number][], delBefore: string[], after: [string, number][], delAfter: string[]];
 const mapCases: MCase[] = [
   ["empty", [], [], [["x", 1]], []],
@@ -45,9 +45,9 @@ const allKeys = (c: MCase) => [...new Set([...c[1].map((e) => e[0]), ...c[3].map
 
 let sb = `package main
 
-// 生成物 — scripts/clone_oracle.ts（期待値 clone_std.out は Go の slices.Clone / maps.Clone の双子の出力）。手で直さない。
-// 写した後に元を書き換えても写しは変わらないこと・元は凍らずに書き続けられること（clone は写すだけ — 元を凍らせない）・
-// 写しは書ける（mut — imm の列からも書ける写しが取れる）・imm の位置に置いた clone(x) はその場で凍ること（showInts(…, clone(xs)) の形）を見る
+// 生成物 — scripts/clone_oracle.ts（期待値clone_std.outは比較用のGoの実装slices.Clone / maps.Cloneの出力）。手で直さない。
+// コピーした後に元を書き換えてもコピーは変わらないこと・元は凍らずに書き続けられること（cloneはコピーするだけ — 元を凍らせない）・
+// コピーは書ける（mut — immの列からも書けるコピーが取れる）・immの位置に置いたclone(x) はその場で凍ること（showInts(…, clone(xs)) の形）を見る
 
 func showInts(tag string, xs []int) {
     mut line := "\${tag} \${len(xs)}:"
@@ -105,7 +105,7 @@ func main() {
 `;
 let gb = `package main
 
-// 生成物 — scripts/clone_oracle.ts（Sober の examples/clone_std.sober の双子）
+// 生成物 — scripts/clone_oracle.ts（Soberのexamples/clone_std.soberの比較用の実装）
 
 import (
 \t"fmt"
@@ -163,7 +163,7 @@ for (const [name, xs, add, set] of sliceCases) {
   for (const x of add) gb += `\t${v} = append(${v}, ${x})\n`;
   if (set !== null) gb += `\t${v}[0] = ${set}\n`;
   gb += `\tshowInts("${name}.orig", ${v})\n\tshowInts("${name}.clone", c_${name})\n`;
-  // imm の列から書ける写し: 写しの先頭を書き換えても元（凍った列）は変わらない
+  // immの列から書けるコピー: コピーの先頭を書き換えても元（凍った列）は変わらない
   if (xs.length > 0) {
     sb += `    mut w_${name} := clone(c_${name})\n    w_${name}[0] = 4242\n    w_${name} = append(w_${name}, 1)\n    showInts("${name}.rewrite", freeze(w_${name}))\n    showInts("${name}.clone2", c_${name})\n`;
     gb += `\tw_${name} := slices.Clone(c_${name})\n\tw_${name}[0] = 4242\n\tw_${name} = append(w_${name}, 1)\n\tshowInts("${name}.rewrite", w_${name})\n\tshowInts("${name}.clone2", c_${name})\n`;

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # selfhost の lower の差分オラクル: Sober 版（compiler/lower + compiler/tools/lowerdump）の IR テキストを、その場の Zig 版
-# `$STAGE1 build --emit=ir` とスロットの宣言・番号を除いてバイト比較し（S-1 — gatelib の slot_eq）（stage1 直呼び — 第 4 黄金 testdata/irtext/ は Sober 生成なので相手にしない。Q1 裁定 2026-09-28）、さらに Sober 版の IR テキストを Zig 版バックエンドに食わせて
+# `$STAGE1 build --emit=ir` とスロットの宣言・番号を除いてバイト比較し（S-1 — gatelibのslot_eq）（stage1直呼び — 第4ゴールデンtestdata/irtext/ はSober生成なので相手にしない。Q1決定2026-09-28）、さらにSober版のIRテキストをZig版バックエンドに食わせて
 # （`sober build x.ir -o exe` — ir_parse → mem2reg → rtlower → ir_x86）実行し、期待出力 examples/<name>.out と照合する（実行の裏取り）。
 #
 #   scripts/selfhost_lower.sh            到達リスト scripts/frozen/lower.list（凍結 — 主役交代 R39） の全部（リスト内 fail = 0 がゲート）。
@@ -84,7 +84,7 @@ if [ $# -gt 0 ]; then
     exit
 fi
 
-# 自己適用（compiler/tools/* — cwd = 起点の木の compiler/ = boot_src。凍結の入力）: lowerdump の出力が Zig 版 `sober build --emit=ir` とバイト一致（黄金は持たない — その場で比べる）
+# 自己適用（compiler/tools/* — cwd = 起点の木のcompiler/ = boot_src。凍結の入力）: lowerdumpの出力がZig版 `sober build --emit=ir` とバイト一致（ゴールデンは持たない — その場で比べる）
 BSRC=$(boot_src)
 tool_one() { # $1 = tool 名
     local w=${PAR_W:-$tmp} t=$1

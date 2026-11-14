@@ -1,6 +1,6 @@
 package printer
 
-// printer の単体テスト: @layout の印と `[N]T` の印字（読み → 印字 → 同じ綴り — fmt の不動点）
+// printerの単体テスト: @layoutのフラグと `[N]T` の印字（読み → 印字 → 同じ綴り — fmtの不動点）
 
 import "lexer"
 import "parser"

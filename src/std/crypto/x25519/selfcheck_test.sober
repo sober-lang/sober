@@ -1,6 +1,6 @@
 package x25519
 
-// 体の積の塊（MULX）の照合（white-box）: 塊の fmul と Sober の fmulS を乱数の元・入力と同じ区画への積・2 乗・上限寄りの limb で突き合わせる。
+// 体の積のチャンク（MULX）の照合（white-box）: チャンクのfmulとSoberのfmulSを乱数の元・入力と同じ区画への積・2乗・上限寄りのlimbで突き合わせる。
 // scripts/cryptocheck.sh が SOBER_NOMULX の有無の両方で回す（倒れ先では両方 Sober — 同じ値になる）
 
 import "std/iter"
@@ -11,12 +11,12 @@ func TestFeSelfCheck() {
 }
 
 // 専用命令の体の積 femul と Sober の fmulS の照合。
-// 種 seed の擬似乱数で limb < 2^52（積の前提の上限）の元を rounds 組作り、別の区画への積・入力と同じ区画への積（d = a）・2 乗で両方を比べる。
+// シードseedの擬似乱数でlimb < 2^52（積の前提の上限）の元をrounds組作り、別の区画への積・入力と同じ区画への積（d = a）・2乗で両方を比べる。
 // 食い違いの数を返す
 func feSelfCheck(seed int, rounds int) int {
     mut x := seed
     mut bad := 0
-    // 区画（語の番地）: 0 = a・5 = b・10 / 15 = 積の塊 / Sober・20 / 25 = d = a の塊 / Sober・30 / 35 = 2 乗の塊 / Sober
+    // 区画（ワードの番地）: 0 = a・5 = b・10 / 15 = 積のチャンク / Sober・20 / 25 = d = aのチャンク / Sober・30 / 35 = 2乗のチャンク / Sober
     blk := make0(40)
     mut w := leaseView(blk, 0, 40)
     wa := addrn(blk)

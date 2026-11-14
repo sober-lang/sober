@@ -1,9 +1,9 @@
 package cover
 
-// カバレッジの計器の数え口（std の実装の詳細）: `sober build --cover` の loader の写し（loader/coverx.sober）が利用者の分岐・if の条件・
-// 短絡の右辺に数え口（Hit / Br / Br1 / On — 小さい包みで、lower の irinl が呼ぶ側の大きさを問わず写す）・main の頭に `$internal.cover.Start(鍵)` を足す（参照名が `$` の合成の import — 20 節）。
-// 点 k の印は rt の大域のバイト列の k 番目に 1 を書くだけ（冪等 — 並行の task が同じ点を踏んでも数えこぼさない）。
-// 書き出しは rt がプロセスの終わり（main の後・panic ほか終わりの道の全部）に、Start が渡した fd へバイト列を 1 回 write する
+// カバレッジの計装のカウンタ（stdの実装の詳細）: `sober build --cover` のloaderのコピー（loader/coverx.sober）が利用者の分岐・ifの条件・
+// 短絡の右辺にカウンタ（Hit / Br / Br1 / On — 小さい包みで、lowerのirinlが呼ぶ側の大きさを問わずコピーする）・mainの頭に `$internal.cover.Start(鍵)` を足す（参照名が `$` の合成のimport — 20 節）。
+// 点kのフラグはrtの大域のバイト列のk番目に1を書くだけ（冪等 — 並行のtaskが同じ点を踏んでも数えこぼさない）。
+// 書き出しはrtがプロセスの終わり（mainの後・panicほか終わりのパスの全部）に、Startが渡したfdへバイト列を1回writeする
 
 import "std/iter"
 import "std/os"
@@ -33,23 +33,23 @@ func sysCall(nr int, a int, b int, c int, d int, e int, f int) int
 @intrinsic("addr")
 func sysAddr(b []byte) int
 
-// 点 k を踏んだ印
+// 点kを踏んだフラグ
 func Hit(k int) {
     _ = hit(k)
 }
 
-// 点 k を踏んだ印を付けて真（短絡の右辺の頭 — `a && b` → `a && ($internal.cover.On(k) && b)`）
+// 点kを踏んだフラグを付けて真（短絡の右辺の頭 — `a && b` → `a && ($internal.cover.On(k) && b)`）
 func On(k int) bool {
     return hit(k) == 0
 }
 
-// if の条件の包み: c の真偽で then の点 kt / else の点 kf に印を付けて c を返す
+// ifの条件の包み: cの真偽でthenの点kt / elseの点kfにフラグを付けてcを返す
 func Br(c bool, kt int, kf int) bool {
     _ = hit(if c { kt } else { kf })
     return c
 }
 
-// catch の写しの if の条件の包み（成功の腕は点にしない）
+// catchのコピーのifの条件の包み（成功の分岐は点にしない）
 func Br1(c bool, kt int) bool {
     if c {
         _ = hit(kt)
@@ -57,14 +57,14 @@ func Br1(c bool, kt int) bool {
     return c
 }
 
-// ミュータント k が選ばれているか（`sober test --mutate` の schemata — loader/mutx.sober の写し）。点 k の印も付ける — 基線の 1 周の印が
+// ミュータントkが選ばれているか（`sober test --mutate` のschemata — loader/mutx.soberのコピー）。点kのフラグも付ける — 基線の1周のフラグが
 // テストごとの「届いたミュータント」になる
 func Sel(k int) bool {
     _ = hit(k)
     return mid() == k + 1
 }
 
-// 点の数（計器なしのビルドは 0 — Start が置く）
+// 点の数（計装なしのビルドは0 — Startが置く）
 func N() int {
     return count()
 }

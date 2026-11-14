@@ -3,7 +3,7 @@ package main
 // std/os.Mkdir / Rename / AppendFile / Remove / RemoveDir / Getenv: ディレクトリを作り（2 度目は EEXIST =
 // io.Other{errno: 17}）、一時ファイルに書いて Rename で公開し（既にある to は置き換わる）、読み戻す。AppendFile は末尾に書き足す（親の無いパスは io.NotFound）。Remove はディレクトリを消さず（EISDIR = 21）、
 // RemoveDir は中身があれば消さない（ENOTEMPTY = 39）— ファイルを消してから空のディレクトリを消す（2 度目は無い = io.NotFound）。Getenv は無い名前で nil・値に `=` を含む名前は最初の `=` の後ろ全部 —
-// 正の場合は自分を /usr/bin/env 経由で子として走らせて確かめる（子は環境変数を印字して終わる）
+// 正の場合は自分を /usr/bin/env経由で子として走らせて検証する（子は環境変数を印字して終わる）
 
 import "std/io"
 import "std/os"

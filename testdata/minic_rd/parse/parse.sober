@@ -1,9 +1,9 @@
 package parse
 
 // minic の構文: expr := term (('+' | '-') term)*、term := unary (('*' | '/') unary)*、unary := '-' unary | 数 | '(' expr ')'。
-// 再帰下降版（region 多相の裁定 R2 の検証例 — testdata/minic の演算子順位法を書き直した形）。
+// 再帰下降版（region多相の決定R2の検証例 — testdata/minicの演算子順位法を書き直した形）。
 // expr / term / unary は相互再帰し、Builder と字句の Cursor を mut 引数で引き回す。mut 引数の関数でも
-// 再帰の輪に入るものは Def として呼ばれる（K-a — 呼び出しは anchor つき）。木は []Node + 添字参照で、
+// 再帰のループに入るものはDefとして呼ばれる（K-a — 呼び出しはanchorつき）。木は []Node + 添字参照で、
 // 子が親より先に並ぶ（後置順 = そのままスタック機械の順。演算子順位法版と同じ並びになる）
 
 import "std/builder"
@@ -23,7 +23,7 @@ type Node struct {
     kind, val, pos, l, r int
 }
 
-// peek は次の字句を読むだけ（Cursor の写しを進める）
+// peekは次の字句を読むだけ（Cursorのコピーを進める）
 func peek(c mut testdata.minic_rd.lex.Cursor) testdata.minic_rd.lex.Token {
     mut d := c
     return testdata.minic_rd.lex.Next(mut d)
@@ -103,7 +103,7 @@ func unary(nb mut builder.Builder[Node], c mut testdata.minic_rd.lex.Cursor) (in
 func Parse(ts []testdata.minic_rd.lex.Token) ([]Node, error?) {
     mut nb := builder.Builder[Node]{}
     mut c := testdata.minic_rd.lex.Start(ts)
-    // 別 package の再帰する mut 関数（.sobi では本体なし）を写しの Cursor で呼ぶ — 結果は使わない（R2 の分割検査の経路）
+    // 別packageの再帰するmut関数（.sobiでは本体なし）をコピーのCursorで呼ぶ — 結果は使わない（R2の分割検査の経路）
     mut d := c
     testdata.minic_rd.lex.Remaining(mut d)
     expr(mut nb, mut c)?

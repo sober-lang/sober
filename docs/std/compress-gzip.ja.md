@@ -19,7 +19,7 @@ data を gzip（RFC 1952 — 1 個のメンバ）に符号化する: 10 バイ�
 z := compress.gzip.Encode(bytes(body), 6)   // HTTP の Content-Encoding: gzip の本文
 ```
 
-名前・時刻・コメントの欄は持たない（MTIME 0 = 無し — 同じ入力なら常に同じバイト列）。XFL は level 9 で 2・level 1 で 4（RFC の「最大圧縮 / 最速」の印）・他 0。OS は Go の compress/gzip の既定と同じ 255（対は Decode）
+名前・時刻・コメントのフィールドは持たない（MTIME 0 = 無し — 同じ入力なら常に同じバイト列）。XFLはlevel 9で2・level 1で4（RFCの「最大圧縮 / 最速」のマーク）・他0。OS は Go の compress/gzip の既定と同じ 255（対は Decode）
 
 ## EncodeWith
 
@@ -64,7 +64,7 @@ EncodeHistory を作業域 w で行う（EncodeWith と同じ作業域 — 結�
 type Bad error
 ```
 
-Decode の入力の gzip の包みが違う（ID が 1f 8b でない・CM が 8 でない・FLG の予約ビット・頭の欄の途中で尽きた・FHCRC の不一致・末尾の CRC-32 / 長さ〔ISIZE〕が中身と合わない・メンバの後に余りのバイト）。中身の DEFLATE の誤りは compress.flate.Bad
+Decodeの入力のgzipの包みが違う（IDが1f 8bでない・CMが8でない・FLGの予約ビット・頭のフィールドの途中で尽きた・FHCRCの不一致・末尾の CRC-32 / 長さ〔ISIZE〕が中身と合わない・メンバの後に余りのバイト）。中身の DEFLATE の誤りは compress.flate.Bad
 
 ## Decode
 
@@ -77,7 +77,7 @@ func Decode(data []byte, maxSize int?) ([]byte, error?)
 gzip（RFC 1952）の data を復号したバイト列（Encode の対）。メンバが続いていれば全部を繋ぐ（RFC 1952 2.2 — gzip(1)・Go と同じ）。頭の FNAME・FCOMMENT・FEXTRA は読み飛ばし、FHCRC は照合する。各メンバの CRC-32 と長さ（mod 2^32）を照合する。maxSize は全メンバの出力の合計の上限（compress.flate.Decode と同じ — 越えたら compress.flate.TooLarge・省略 = 上限なし。信頼できない入力には必ず渡す）:
 
 ```sober
-body := compress.gzip.Decode(r.body, maxSize: 1 << 20)?   // Content-Encoding: gzip の要求の本文
+body := compress.gzip.Decode(r.body, maxSize: 1 << 20)?   // Content-Encoding: gzipのリクエストの本文
 ```
 
 失敗のラベル: [`Bad`](#bad)・`compress.flate.Bad`・`compress.flate.TooLarge`

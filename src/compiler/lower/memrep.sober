@@ -1,16 +1,16 @@
 package lower
 
-// メモリの上界の報告（開発の口 `sober build --mem-report`）: rtlower の直前の IR（ELF の道と同じ最適化の後）で、
+// メモリの上界の報告（開発のオプション `sober build --mem-report`）: rtlowerの直前のIR（ELFのパスと同じ最適化の後）で、
 // 関数ごとに H（呼び出しの間の region の論理バイトの高水位 — 入口比）と R（出口で呼び手の region に残る量）を導き、
-// 出ないものは閉じた理由の集合（再帰・反復数・実行時の大きさ・入力・間接・rt・task）と最初の点で名指す。
+// 出ないものは閉じた理由の集合（再帰・反復数・実行時の大きさ・入力・間接・rt・task）と最初の点で特定する。
 // H / R は仮引数の正部 / 負部を変数に持つ単調な多項式（memval.sober）で、呼び出し点で実引数の上界を代入する。大きさと反復数は値の層
-// （整数の値ごとの上界・帰納変数と累積・スロットの語・呼び先の戻り値と仮引数 0 の先へ書く語の要約）から読む。
-// C = 自前の確保の経路の最大（ループは外側の頭 1 点に畳んで中は和 — 分岐の腕は片方しか通らない）+ 呼び先の R × 反復数の和 + 呼び先の (H − R) の最大。
-// 写しの点がある関数は H = C + K（K = 写しの量・C を越えない）・R = 呼び手へ書く点 + K + 呼び先の R（入口で enter しない等は H = 2C）。
-// 写しの rt は深度が床より深いヘッダだけを写す — 深度の語が入口の深度以下（memval の深度の分類）で床が入口以上の写しは 0。
+// （整数の値ごとの上界・帰納変数と累積・スロットのワード・呼び先の戻り値と仮引数0の先へ書くワードの要約）から読む。
+// C = 自前の確保の経路の最大（ループは外側の頭1点に畳んで中は和 — 分岐は片方しか通らない）+ 呼び先のR × 反復数の和 + 呼び先の (H − R) の最大。
+// コピーの点がある関数はH = C + K（K = コピーの量・Cを越えない）・R = 呼び手へ書く点 + K + 呼び先のR（入口でenterしない等はH = 2C）。
+// コピーのrtは深度が床より深いヘッダだけをコピーする — 深度のワードが入口の深度以下（memvalの深度の分類）で床が入口以上のコピーは0。
 // 確保したての列（成長の結果でない）の成長は長さちょうど（rt.gcache の項は成長の結果の番地だけ）。
 // ループ: 確保の深度の値がループの外で定まる点は反復ごとに積もる（外向き）— 反復数の上界を掛け、出なければ理由 loop / while。
-// 反復の region（ループの中の enter が支配する点）の呼び出しの R は反復ごとに捨てる。写しは本体が確保するループでだけ積もる。
+// 反復のregion（ループの中のenterが支配する点）の呼び出しのRは反復ごとに捨てる。コピーは本体が確保するループでだけ積もる。
 // 深度の値の錨が load / 仮引数のときは外向きに倒す（ヘッダの由来は区別しない）
 
 import "desugar"
@@ -18,21 +18,21 @@ import "std/iter"
 import "std/strings"
 import "std/table"
 
-// 理由（⊤ の印 — 重い順に大きい）
+// 理由（⊤ のマーク — 重い順に大きい）
 const MR_SIZE = 1     // 実行時の大きさ（make(n)・連結・伸長）
 const MR_LOOPN = 2    // 外向きのループの反復数が実行時の値（帰納変数あり）
 const MR_LOOPW = 3    // 外向きのループの反復数が定まらない（while）
 const MR_INDIRECT = 4 // 間接呼び出しの候補に ⊤
 const MR_RT = 5       // 上界の表の無い確保する rt
-const MR_RECV = 6     // 再帰型の値の写し（rt.rec_relocate — 量は木の大きさで、作業スタックと表も積む。値の大きさの語彙は R1〜R3 の外）
+const MR_RECV = 6     // 再帰型の値のコピー（rt.rec_relocate — 量は木の大きさで、作業スタックと表も積む。値の大きさの語彙はR1〜R3の外）
 const MR_TASK = 7     // task の生成（子の量は budget の側で見る）
 const MR_INPUT = 8    // 上限のない読み
 const MR_REC = 9      // 確保する再帰
 
 const MR_INF = 1 << 50
 
-// 網の変異（scripts/memcheck.sh --mut — 網が赤になることの確かめ。既定 = -1 で解析は不変）: SOBER_MEMREP_MUT=
-// 1 = 数字の H を 1 減らす・2 = 写しの 2 倍を外す・3 = ループの中の確保と呼び出しを全部反復の region のものと判定する（反復ごとに捨てる — 積もりを数えない）・4 = 呼び先の S を足さない・5 = 外向きのループを全部単独の伸長と判定する・6 = 写しを全部写さないと判定する・7 = 成長を全部確保したての列の成長と判定する・8 = 経路の最大で前任を見ない（点ごとの最大）
+// 検査のミューテーション（scripts/memcheck.sh --mut — 検査が赤になることの確認。既定 = -1で解析は不変）: SOBER_MEMREP_MUT=
+// 1 = 数字のHを1減らす・2 = コピーの2倍を外す・3 = ループの中の確保と呼び出しを全部反復のregionのものと判定する（反復ごとに捨てる — 積もりを数えない）・4 = 呼び先のSを足さない・5 = 外向きのループを全部単独の伸長と判定する・6 = コピーを全部コピーしないと判定する・7 = 成長を全部確保したての列の成長と判定する・8 = 経路の最大で前任を見ない（点ごとの最大）
 func mrMut() int {
     return lsEnvInt("SOBER_MEMREP_MUT")
 }
@@ -75,7 +75,7 @@ func mrMul(a int, b int) int {
     return if a == 0 || b == 0 { 0 } else if a >= MR_INF / b { MR_INF } else { a * b }
 }
 
-// 確保する rt の表: 深度の実引数の位置（-1 = 無し）・大きさの実引数の位置（-1 = 実行時・-2 = 写し）・大きさの単位（語 = 8 / バイト = 1）
+// 確保するrtの表: 深度の実引数の位置（-1 = 無し）・大きさの実引数の位置（-1 = 実行時・-2 = コピー）・大きさの単位（ワード = 8 / バイト = 1）
 func mrRtAlloc(n string) []int {
     return if n == "rt.region_alloc" { []int{0, 1, 8} } else if n == "rt.region_alloc8" { []int{0, 1, 1} } else if n == "rt.cat8" { []int{3, -1, 1} } else if n == "rt.slice_grow" { []int{3, -1, 1} } else if n == "rt.slice_grow8" { []int{2, -1, 1} } else if n == "rt.extend8" || n == "rt.map_grow" { []int{-1, -1, 1} } else if n == "rt.tip8" || n == "rt.tipn8" { []int{0, -1, 1} } else if n == "rt.region_relocate" { []int{2, -2, 1} } else if n == "rt.region_relocate8" || n == "rt.err_relocate" { []int{1, -2, 1} } else { []int{} }
 }
@@ -84,7 +84,7 @@ func mrRtInput(n string) bool {
     return n == "rt.read_args" || n == "rt.read_dir" || n == "rt.environ" || n == "rt.read_file" || n == "rt.run" || n == "rt.run_fd" || n == "rt.run_fd_env" || n == "rt.chunk_open" || n == "rt.chunk_next"
 }
 
-// 上限の実引数つきの読み・パスの写し（大きさは実引数 — 定数の層では size）
+// 上限の実引数つきの読み・パスのコピー（大きさは実引数 — 定数の層ではsize）
 func mrRtSized(n string) bool {
     return n == "rt.read_fd" || n == "rt.stat" || n == "rt.mkdir" || n == "rt.write_mode" || n == "rt.rename"
 }
@@ -99,17 +99,17 @@ type MrLoc struct {
     ownN []int    // そのうち自前の深度の点の分
     enters bool   // 入口で enter する（自前の深度を持つ）
     ownC []int    // そのうち呼び手の深度へ書く点（錨が入口の前の深度・load / 仮引数）の分
-    kc []int      // 写しの量の和の上界（写すヘッダの長さの語から — ⊤ なら写しの 2 倍の式へ戻る）
+    kc []int      // コピーの量の和の上界（コピーするヘッダの長さのワードから — ⊤ ならコピーの2倍の式へ戻る）
     early bool    // 入口の enter より前の呼び出しがある（呼び先の R が呼び手の深度に残る）
     why int       // 自前の ⊤ の理由（0 = 無し）
     blk int       // ⊤ の最初の点（ブロック番号）
-    reloc bool    // 写しの点がある
-    caller bool   // 呼び手の region へ書きうる（入口で enter しない・呼び手の深度への確保 / 写し）
-    calls []int   // [呼び先 FnRef（-1 = 間接）, 種類, ブロック, 間接の照合の印, 実引数の式の位置, 実引数の数] の列。
-                  // 種類: 0 = 普通（R は callT の反復数の積だけ積もる）・-1 / -3 = 外向き（反復数 実行時 / while）の R・-2 / -4 = 写しの待ち（呼び先が確保すれば積もる）
+    reloc bool    // コピーの点がある
+    caller bool   // 呼び手のregionへ書きうる（入口でenterしない・呼び手の深度への確保 / コピー）
+    calls []int   // [呼び先FnRef（-1 = 間接）, 種類, ブロック, 間接の照合のマーク, 実引数の式の位置, 実引数の数] の列。
+                  // 種類: 0 = 普通（RはcallTの反復数の積だけ積もる）・-1 / -3 = 外向き（反復数 実行時 / while）のR・-2 / -4 = コピーの待ち（呼び先が確保すれば積もる）
     callT [][]int // 呼び出しごとの外向きの反復数の積（種類 0 — ループの外なら 1）
     ap [][]int    // 実引数の式（呼び出しごとに [U₀, N₀, U₁, N₁ …] — 呼び先の変数への代入）
-    sig int       // 間接の候補の照合: 仮引数の数 × 4 + 戻りの型の印
+    sig int       // 間接の候補の照合: 仮引数の数 × 4 + 戻りの型のマーク
     sum MvSum     // 呼び手の値の層が読む要約
 }
 
@@ -211,8 +211,8 @@ func mrKids(st mut St, w MrW, cfg []int, v int) []int {
     return []int{1, 1, 1, -1, 0}
 }
 
-// 根 roots の錨の表（明示のスタックで後順に — 辿り中の値への循環は寄与なし）: 結果 = [値ごとの位置（-1 = 未）… (nv)] ++ 塊の列
-// 塊 = [wild, caller, ブロックの数, ブロック…]（ブロックが 64 を越えれば wild に倒す）
+// 根rootsの錨の表（明示のスタックで後順に — 辿り中の値への循環は寄与なし）: 結果 = [値ごとの位置（-1 = 未）… (nv)] ++ チャンクの列
+// チャンク = [wild, caller, ブロックの数, ブロック…]（ブロックが64を越えればwildに倒す）
 func mrAnchorTab(st mut St, w MrW, cfg []int, roots []int) []int {
     nv := w.nv
     mut state := mut []int{}
@@ -220,7 +220,7 @@ func mrAnchorTab(st mut St, w MrW, cfg []int, roots []int) []int {
     xFill(mut state, nv, 0)
     xFill(mut pos, nv, -1)
     mut bl := mut []int{}
-    // 積み: 値・子の次の位置・子の列の先頭（kids の論理の長さ kn — 閉じた枠の子の列は捨てる）
+    // スタック: 値・子の次の位置・子の列の先頭（kidsの論理の長さkn — 閉じた枠の子の列は捨てる）
     mut stk := mut []int{}
     mut kidAt := mut []int{}
     mut kidOff := mut []int{}
@@ -501,11 +501,11 @@ func mrLocal(st mut St, f FnRef, names map[int]string, sums []MvSum, uix map[int
     mut kc := []int{}
     mut why := 0
     mut wblk := 0
-    // 写しの待ち: [ブロックの所属の行（ループ番号）…] を写しごとに — 本体の確保は後で照合
+    // コピーの待ち: [ブロックの所属の行（ループ番号）…] をコピーごとに — 本体の確保は後で照合
     mut pendL := mut []int{}
     mut pendK := mut []int{}
     mut allocBlk := mut []int{}
-    // [ブロック, 深度の値, 大きさの印（-2 = 写し・-3 = 式・-4 = 実行時）, 命令]
+    // [ブロック, 深度の値, 大きさのマーク（-2 = コピー・-3 = 式・-4 = 実行時）, 命令]
     mut sites := mut []int{}
     for bi <- iter.Range(0, nb) {
         b := BlkRef(cw.blk[bi])
@@ -592,7 +592,7 @@ func mrLocal(st mut St, f FnRef, names map[int]string, sums []MvSum, uix map[int
             ins = irInsNext(mut st, ins)
         }
     }
-    // 確保 / 写しの点: 外向きのループの反復数の積
+    // 確保 / コピーの点: 外向きのループの反復数の積
     mut roots := mut []int{}
     for q <- iter.Range(0, len(sites) / 4) {
         roots = append(roots, sites[4 * q + 1])
@@ -663,8 +663,8 @@ func mrLocal(st mut St, f FnRef, names map[int]string, sums []MvSum, uix map[int
             }
         }
     }
-    // 単独の伸長のループ（1 本の byte の列の先端の伸長〔tip8 + slice_grow8 の 1 組〕か 1 本の連結〔cat8〕だけ）: 写しは最初の 1 回だけで、
-    // 以後は先端でその場に伸びる（rt の先端の約束 — tip8 / tipn8 は先端が自分の終わりなら伸ばし、slice_grow8 / cat8 は写した先を先端に置く）
+    // 単独の伸長のループ（1本のbyteの列の先端の伸長〔tip8 + slice_grow8の1組〕か1本の連結〔cat8〕だけ）: コピーは最初の1回だけで、
+    // 以後は先端でその場に伸びる（rtの先端の約束 — tip8 / tipn8は先端が自分の終わりなら伸ばし、slice_grow8 / cat8はコピーした先を先端に置く）
     // ブロックごとの確保の量（経路の最大へ）
     mut bwT := mut [][]int{}
     mut bwC := mut [][]int{}
@@ -706,7 +706,7 @@ func mrLocal(st mut St, f FnRef, names map[int]string, sums []MvSum, uix map[int
                 kc = mpAdd(kc, mrRelocSize(mut st, InsRef(sites[4 * sq + 3]), names, mv))
             }
             if len(outL) > 0 {
-                // 写しの待ち: 外向きのループの本体が確保すれば積もる
+                // コピーの待ち: 外向きのループの本体が確保すれば積もる
                 for l <- outL {
                     pendL = append(pendL, l)
                     pendK = append(pendK, if lw == MR_LOOPW || tF[l] == -3 { MR_LOOPW } else { MR_LOOPN })
@@ -716,7 +716,7 @@ func mrLocal(st mut St, f FnRef, names map[int]string, sums []MvSum, uix map[int
             allocBlk = append(allocBlk, bi)
             mut sz := if szk == -4 { mpTop() } else { mrSiteSize(mut st, w, InsRef(sites[4 * sq + 3]), names, mv.U) }
             if len(outL) == 1 && single[outL[0]] == 1 && !mpIsTop(sz) {
-                // 単独の伸長: 写し（slice_grow8 / cat8 の写しの道）は 1 回・先端の伸長は反復ごとに要素の分（tip8 = 1 バイト + 粒の端 16・cat8 = 右の片 + 粒の端 8）
+                // 単独の伸長: コピー（slice_grow8 / cat8のコピーのパス）は1回・先端の伸長は反復ごとに要素の分（tip8 = 1バイト + 粒の端16・cat8 = 右の片 + 粒の端8）
                 k := mrGrowKind(mut st, szk, InsRef(sites[4 * sq + 3]), names)
                 t := TP[outL[0]]
                 prod = mpConst(1)
@@ -755,7 +755,7 @@ func mrLocal(st mut St, f FnRef, names map[int]string, sums []MvSum, uix map[int
     }
     // 元の呼び出しの数（待ちの行を足しても増やさない）
     nc0 := len(calls) / 6
-    // 写しの待ち: 本体に確保の点があればその級・呼び出しだけなら呼び先次第（種類 -2 / -4 を足す）
+    // コピーの待ち: 本体に確保の点があればその級・呼び出しだけなら呼び先次第（種類 -2 / -4を足す）
     for q <- iter.Range(0, len(pendL)) {
         l := pendL[q]
         mut hit := false
@@ -783,7 +783,7 @@ func mrLocal(st mut St, f FnRef, names map[int]string, sums []MvSum, uix map[int
             }
         }
     }
-    // 経路の和の最大: ループは外側の頭 1 点に畳み（中の点は和）、畳んだ図が非巡回なら入口からの最長の経路（分岐の腕は片方しか通らない）
+    // 経路の和の最大: ループは外側の頭1点に畳み（中の点は和）、畳んだ図が非巡回なら入口からの最長の経路（分岐は片方しか通らない）
     pm := mrPathMax(mut cw, lof, hF, freeze(memb), freeze(moff), [][][]int{freeze(bwT), freeze(bwC), freeze(bwN)})
     loc.own = if len(pm) == 3 { pm[0] } else { own }
     loc.ownC = if len(pm) == 3 { pm[1] } else { ownC }
@@ -857,7 +857,7 @@ func mrSiteSize(st mut St, w MrW, ins InsRef, names map[int]string, U [][]int) [
     return if n == "rt.region_alloc" { mpScale(mrArgU(mut st, l, 1, U), 8) } else if n == "rt.region_alloc8" { mpRound8(mrArgU(mut st, l, 1, U)) } else if n == "rt.cat8" { mpRound8(mpAdd(mrArgU(mut st, l, 1, U), mrArgU(mut st, l, 4, U))) } else if n == "rt.slice_grow8" { mpRound8(mpAdd(mpScale(mrArgU(mut st, l, 1, U), 2), mpConst(4))) } else if n == "rt.slice_grow" { mpScale(mpMul(mrArgU(mut st, l, 2, U), mpAdd(mpScale(mrArgU(mut st, l, 1, U), 2), mpConst(4))), 8) } else if n == "rt.tip8" { mpConst(8) } else if n == "rt.tipn8" { mpRound8(mpAdd(mrArgU(mut st, l, 2, U), mpConst(7))) } else { mpTop() }
 }
 
-// 写しの点の量の上界: region.relocate / rt.region_relocate(8) はヘッダの長さ × 要素の語数を写す（長さの語は値の層のスロットの表から）
+// コピーの点の量の上界: region.relocate / rt.region_relocate(8) はヘッダの長さ × 要素のワード数をコピーする（長さのワードは値の層のスロットの表から）
 func mrRelocSize(st mut St, ins InsRef, names map[int]string, mv MvRes) []int {
     op := irInsOp(mut st, ins)
     if op == OpRReloc {
@@ -995,7 +995,7 @@ func mrFresh(st mut St, w MrW, names map[int]string, v0 int) bool {
     return false
 }
 
-// 写さない写し: ヘッダの深度の語が入口の深度以下で、床が入口の深度以上（rt は深度が床より深いときだけ写す）
+// コピーしないコピー: ヘッダの深度のワードが入口の深度以下で、床が入口の深度以上（rtは深度が床より深いときだけコピーする）
 func mrNoCopy(mv MvRes, h int, fl int) bool {
     return mrMut() == 6 || h >= 0 && h < len(mv.hsh) && mv.hsh[h] != 0 && fl >= 0 && fl < len(mv.dfl) && mv.dfl[fl] != 0
 }
@@ -1042,7 +1042,7 @@ func mrInL(lof []int, nb int, l int, x int) bool {
     return false
 }
 
-// a が b を支配するか（cfg の末尾の idom の写し）
+// aがbを支配するか（cfgの末尾のidomのコピー）
 func mrDom(cfg []int, nb int, a int, b int, w MrW) bool {
     off := nb + 1 + cfg[nb] + nb
     mut x := b
@@ -1064,7 +1064,7 @@ func mrDom(cfg []int, nb int, a int, b int, w MrW) bool {
     return false
 }
 
-// 頭 h（印 mark）のループの反復数: >0 = 定数回の上界・-1 = 実行時（帰納変数と不変の上限）・-3 = while
+// 頭h（マークmark）のループの反復数: >0 = 定数回の上界・-1 = 実行時（帰納変数と不変の上限）・-3 = while
 func mrTrip(st mut St, w MrW, cfg []int, inl mut []int, mark int, h int) int {
     nb := w.nb
     hb := BlkRef(cfg[nb + 1 + cfg[nb] + h])
@@ -1155,7 +1155,7 @@ func mrTrip(st mut St, w MrW, cfg []int, inl mut []int, mark int, h int) int {
             }
             bdInv := bd < w.np || (bd >= 0 && bd < w.nv && inl[w.dblk[bd]] != mark)
             if ivs[4 * q + 1] == 1 {
-                // 対数: 語の幅で 64 回
+                // 対数: ワードの幅で64回
                 if w.cst[bd] != MR_INF || bdInv {
                     return 64
                 }
@@ -1199,7 +1199,7 @@ func mrIvOf(st mut St, w MrW, ivs []int, v int) int {
 
 // 報告の本体: 関数ごとに `mem <関数> H=<式|top> R=<式|top> [why=<理由> at=<関数>:b<ブロック>]` を stdout へ（式の変数 p<i> / n<i> = 仮引数 i の正部 / 負部 — main は数字）
 func memReport(st mut St) {
-    // 関数の番号と名前（names[FnRef] = 名前・names[-FnRef-1] = 本体に確保の op を持つ rt の印）
+    // 関数の番号と名前（names[FnRef] = 名前・names[-FnRef-1] = 本体に確保のopを持つrtのマーク）
     mut fns := mut []int{}
     mut names := mut map[int]string{}
     mut taken := mut []int{}
@@ -1244,7 +1244,7 @@ func memReport(st mut St) {
     nu := len(users)
     ix := freeze(idx)
     sg := freeze(sigs)
-    // 間接の候補（番地を取られた利用者の関数 — 仮引数の数と戻りの印で絞る）
+    // 間接の候補（番地を取られた利用者の関数 — 仮引数の数と戻りのマークで絞る）
     mut cand := mut []int{}
     for g <- taken {
         q := ix[g]
@@ -1419,7 +1419,7 @@ func memReport(st mut St) {
                     continue
                 }
                 if kind == -2 || kind == -4 {
-                    // 写しの待ち: 呼び先が確保すれば積もる
+                    // コピーの待ち: 呼び先が確保すれば積もる
                     kw := if kind == -4 { MR_LOOPW } else { MR_LOOPN }
                     if !mpIsZero(hg) && why < kw {
                         why = kw
@@ -1461,8 +1461,8 @@ func memReport(st mut St) {
             }
             enters := l.enters && !l.early
             if enters && !mpIsTop(l.kc) {
-                // 呼び手の深度へ書く分（呼び手へ書く点 + 写しの量）と自前の深度の分を分けて合成: H = 自前 + 呼び手へ・R = 呼び手へ
-                // 写しの量 = 写しの点の和と確保の総量の小さい方（写しは捨てる region にある分だけ）。呼び先の R は宛先構築で呼び手の region へ書かれうるので R に数える
+                // 呼び手の深度へ書く分（呼び手へ書く点 + コピーの量）と自前の深度の分を分けて合成: H = 自前 + 呼び手へ・R = 呼び手へ
+                // コピーの量 = コピーの点の和と確保の総量の小さい方（コピーは捨てるregionにある分だけ）。呼び先のRは宛先構築で呼び手のregionへ書かれうるのでRに数える
                 kc := if mrMut() == 2 { []int{} } else { mpMinish(l.kc, cc) }
                 H[u] = mpAdd(cc, kc)
                 R[u] = mpAdd(mpAdd(l.ownC, kc), sumR)
@@ -1496,7 +1496,7 @@ func memReport(st mut St) {
     }
 }
 
-// 関数 f の利用者の呼び出し: [呼び先 FnRef（-1 = 間接）, 間接の照合の印] の列（rt は除く）
+// 関数fの利用者の呼び出し: [呼び先FnRef（-1 = 間接）, 間接の照合のマーク] の列（rtは除く）
 func mrCallees(st mut St, f FnRef, names map[int]string) []int {
     mut o := mut []int{}
     mut b := irFnBHead(mut st, f)
@@ -1521,7 +1521,7 @@ func mrCallees(st mut St, f FnRef, names map[int]string) []int {
     return freeze(o)
 }
 
-// rt の関数 f の本体に確保の op があるか（region.alloc・写し）
+// rtの関数fの本体に確保のopがあるか（region.alloc・コピー）
 func mrRtBodyAllocs(st mut St, f FnRef) bool {
     mut b := irFnBHead(mut st, f)
     while b != -1 {
@@ -1654,7 +1654,7 @@ func memStackPrep(st mut St) {
 }
 
 // スタックの上界: S(f) = フレーム + 16（戻り番地と rbp）+ max(呼び先ごとに 8 × 実引数の数 + S(g))。再帰（呼び出しの図の SCC）は top。
-// 間接は番地を取られた関数のうち仮引数の数と戻りの印が一致するものの最大。別のスタックで走る task の本体（tstart / clone）は数えない。
+// 間接は番地を取られた関数のうち仮引数の数と戻りのマークが一致するものの最大。別のスタックで走るtaskの本体（tstart / clone）は数えない。
 // 印字 = `stack <関数> S=<バイト|top>`
 func memStack(st mut St) {
     n := table.Len(mut st.memFn) / 2
@@ -1759,7 +1759,7 @@ func memStack(st mut St) {
                 }
             }
         }
-        // rt だけの再帰の成分は信用する宣言（どの道にも各関数が高々 1 回 — rt は深さを数えず回り込む形を持たない）: 成分のフレームの和 + 外への最大
+        // rtだけの再帰の成分は信用する宣言（どのパスにも各関数が高々1回 — rtは深さを数えず回り込む形を持たない）: 成分のフレームの和 + 外への最大
         mut rtOnly := rec
         for z <- iter.Range(ccnt[c], ccnt[c + 1]) {
             if !strings.HasPrefix(table.Get(mut st.memNm, cm[z]), "rt.") {

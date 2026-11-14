@@ -1,4 +1,4 @@
-// float_format_exact.go — float の最短表現の速い道（正確な 10 進展開が 15 桁以下 — floatfmt.exactShort）を狙った値（整数・m / 2^k・m × 10^k・
+// float_format_exact.go — floatの最短表現の高速パス（正確な10進展開が15桁以下 — floatfmt.exactShort）を狙った値（整数・m / 2^k・m × 10^k・
 // 4 分の 1 刻み・奇数の仮数 × 2^e）と乱択の値の Go の strconv.FormatFloat(f, 'g', -1, 64)。Sober 側は examples/float_format_exact.sober。
 //   go run scripts/oracles/float_format_exact.go 3000 examples/float_format_exact.in examples/float_format_exact.out
 package main

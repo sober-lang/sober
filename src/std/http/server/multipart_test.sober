@@ -1,7 +1,7 @@
 package server
 
-// multipart/form-data の受けの網（white-box — 非公開の multipartOf / paramOf）: RFC 7578 / HTML 4 の例・Chrome と Firefox の実物の形（境界の綴り・
-// 空のファイル欄・%22 の名前・本文に CR LF と "--" を含む部分）・前置きと後置き・境界の後の空白・引数の綴り（token / quoted-string / '\' / 大小）と、
+// multipart/form-dataの受けの検査一式（white-box — 非公開のmultipartOf / paramOf）: RFC 7578 / HTML 4の例・ChromeとFirefoxの実物の形（境界の綴り・
+// 空のファイルフィールド・%22の名前・本文に CR LF と "--" を含む部分）・前置きと後置き・境界の後の空白・引数の綴り（token / quoted-string / '\' / 大小）と、
 // 負例（閉じの境界なし・境界が本文に出る・LF だけの行・頭の形・媒体の型と boundary の形・上限〔部分の数・部分の頭の大きさ〕）・全部の切り詰め
 
 import "std/iter"
@@ -58,7 +58,7 @@ func mpIs(p Part, name string, filename string, ctype string, body string) bool 
 }
 
 func TestMultipartRfc() {
-    // HTML 4.01 17.13.4 / RFC 2388 の例（テキストの欄 + ファイル 1 つ）
+    // HTML 4.01 17.13.4 / RFC 2388の例（テキストのフィールド + ファイル1つ）
     ps := mpOf("multipart/form-data; boundary=AaB03x", "--AaB03x\r\nContent-Disposition: form-data; name=\"submit-name\"\r\n\r\nLarry\r\n--AaB03x\r\nContent-Disposition: form-data; name=\"files\"; filename=\"file1.txt\"\r\nContent-Type: text/plain\r\n\r\n... contents of file1.txt ...\r\n--AaB03x--\r\n")
     assert(len(ps) == 2)
     assert(mpIs(ps[0], "submit-name", "<nil>", "", "Larry"))
@@ -70,7 +70,7 @@ func TestMultipartRfc() {
 }
 
 func TestMultipartBrowsers() {
-    // Chrome（WebKitFormBoundary + 16 字）: テキスト・空のファイル欄（filename="" と application/octet-stream・空の本文）・%22 の名前（戻さない）
+    // Chrome（WebKitFormBoundary + 16字）: テキスト・空のファイルフィールド（filename="" とapplication/octet-stream・空の本文）・%22の名前（戻さない）
     cb := "----WebKitFormBoundary7MA4YWxkTrZu0gW"
     ch := mpOf("multipart/form-data; boundary=" + cb, "--" + cb + "\r\nContent-Disposition: form-data; name=\"title\"\r\n\r\nこんにちは\r\n--" + cb + "\r\nContent-Disposition: form-data; name=\"upload\"; filename=\"\"\r\nContent-Type: application/octet-stream\r\n\r\n\r\n--" + cb + "\r\nContent-Disposition: form-data; name=\"doc\"; filename=\"a%22b.txt\"\r\nContent-Type: text/plain\r\n\r\nline1\r\nline2\r\n\r\n--" + cb + "--\r\n")
     assert(len(ch) == 3)
@@ -213,7 +213,7 @@ func TestMultipartTruncated() {
 }
 
 func TestMultipartRequest() {
-    // Multipart は要求の Content-Type を読む（無い = 誤り）
+    // MultipartはリクエストのContent-Typeを読む（無い = 誤り）
     r := rq("POST /up HTTP/1.1\r\nHost: x\r\nContent-Type: multipart/form-data; boundary=x\r\n\r\n")
     rb := Request{method: r.method, path: r.path, query: r.query, head: r.head, headers: r.headers, body: bytes("--x\r\nContent-Disposition: form-data; name=\"a\"\r\n\r\nv\r\n--x--"), pattern: ""}
     ps := Multipart(rb) catch []Part{}

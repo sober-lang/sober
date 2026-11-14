@@ -61,7 +61,7 @@ for e in $(scripts/irtext.sh --list); do
     run "$e" "$root"
     runc "$e" "$root"
 done
-# 自己適用（compiler/ の import は compiler/ 相対 — std は compiler/std に写す）
+# 自己適用（compiler/ のimportはcompiler/ 相対 — stdはcompiler/stdにコピーする）
 w="$tmp/self"
 mkdir -p "$w"
 cp -r src/compiler "$w/compiler"

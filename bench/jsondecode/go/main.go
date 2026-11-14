@@ -1,5 +1,5 @@
-// bench/jsondecode の Go の双子: 同じ入力を encoding/json で同じ struct の列へ Unmarshal し、同じ集計を印字する（Sober の json.Decode[Rec] との絶対値の物差し）。
-// 規則の違い（Go は欠けた欄をゼロ値で黙って受け、重複キーは後勝ち）は入力が整っているので結果に出ない
+// bench/jsondecodeの比較用のGoの実装: 同じ入力をencoding/jsonで同じstructの列へUnmarshalし、同じ集計を印字する（Soberのjson.Decode[Rec] との絶対値の基準）。
+// 規則の違い（Goは欠けたフィールドをゼロ値で黙って受け、重複キーは後勝ち）は入力が整っているので結果に出ない
 package main
 
 import (

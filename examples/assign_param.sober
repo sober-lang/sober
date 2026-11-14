@@ -1,7 +1,7 @@
 package main
 
 // 仮引数（呼び手の region）の値を mut 局所の名前へそのまま代入する。
-// 脱糖器は欄への代入（fieldValueAnn — field_param_ann）と同じく、値を束縛点の点座標へ ann で緩める
+// 脱糖器はフィールドへの代入（fieldValueAnn — field_param_ann）と同じく、値を束縛点の点座標へannで緩める
 
 type Item struct {
     name string

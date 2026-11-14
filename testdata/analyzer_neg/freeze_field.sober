@@ -1,6 +1,6 @@
 package main
 
-// 欄の freeze の後の書き（U2 — 欄の freeze は根ごと: 兄弟の欄が同じ buffer を指しうる）
+// フィールドのfreezeの後の書き（U2 — フィールドのfreezeは根ごと: 兄弟のフィールドが同じbufferを指しうる）
 
 type B struct {
     xs mut []byte

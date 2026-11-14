@@ -1,6 +1,6 @@
 package main
 
-// 負例（language.md 13 節「表の網羅」）: @exhaustive の error の switch が、腕のラベルの宣言元の package（main）のラベル C を名指していない
+// 負例（language.md 13 節「表の網羅」）: @exhaustiveのerrorのswitchが、分岐のラベルの宣言元のpackage（main）のラベルCを列挙していない
 
 type A error {}
 type B error {}

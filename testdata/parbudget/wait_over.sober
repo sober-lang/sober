@@ -1,6 +1,6 @@
 package main
 
-// parbudget の wait の負例（段 3 の ③）: wait の scope の天井 8 MB に宣言 16 MB の子 — 待っても入れないので spawn の点で名指しの panic（101）
+// parbudgetのwaitの負例（段階3の③）: waitのscopeの天井8 MBに宣言16 MBの子 — 待っても入れないのでspawnの点で明示のpanic（101）
 
 import "std/task"
 

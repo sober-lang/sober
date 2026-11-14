@@ -1,6 +1,6 @@
 package main
 
-// domain の本体から別の domain は呼べない（入りは nondet — 本体は効果なし）: 持ったまま待つ形が書けないので、domain が原因のデッドロックは無い
+// domainの本体から別のdomainは呼べない（入りはnondet — 本体はエフェクトなし）: 持ったまま待つ形が書けないので、domainが原因のデッドロックは無い
 
 import "std/task"
 

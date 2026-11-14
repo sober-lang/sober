@@ -1,10 +1,10 @@
 // regiondrop: 2 本の IR テキスト（.ir）または LLVM テキスト（.ll）の差が「region 操作の行の除去と値の番号の振り直しだけ」かを照合する
-// （黄金の例外 3 件目 — lower の閉包の本体の `{ }` を region で囲まなくした修正）。
+// （ゴールデンの例外3件目 — lowerのクロージャの本体の `{ }` をregionで囲まなくした修正）。
 //
 //   node scripts/regiondrop.ts OLD NEW    exit 0 = 一致、1 = 不一致（理由を stderr に 1 行）
 //
 // 照合: 両方の値の番号（%12・%v12・%st3 …）と .ll の分岐の補助ラベルの連番を伏せ字にしてから、NEW が OLD の部分列で、OLD から落ちた行がすべて region 操作の行であることを見る。
-// region 操作の行: .ir = `%_ = region.depth`・`region.enter`・`region.setdepth %_`。.ll = rtlower の下ろし（深度の語 @rt.meta[0] の読み・書きと
+// region操作の行: .ir = `%_ = region.depth`・`region.enter`・`region.setdepth %_`。.ll = rtlowerの下ろし（深度のワード @rt.meta[0] の読み・書きと
 // rt.region_enter の呼び出し）。番号を伏せるのでデータの流れは見ない — 落ちるのが region 操作だけで、残りの命令列が同じことを見る
 import { readFileSync } from "node:fs";
 

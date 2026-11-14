@@ -1,8 +1,8 @@
 package main
 
-// binary-trees の並列版（段 6 総取り — 逐次の bench/binarytrees と同じ木・同じ出力）: 深さごとに 1 つの子（task.Map — benchmarks game の
+// binary-treesの並列版（フェーズ6総取り — 逐次のbench/binarytreesと同じ木・同じ出力）: 深さごとに1つの子（task.Map — benchmarks game の
 // 並列の定番と同じ切り方）。子は自分の深さの木を iters 本、作って数えて捨てる（木ごとに one の region が捨てる — 子の間に確保の共有点なし）。
-// 素直縛り — ワーカーの数は書かない。Go の双子（go/）は深さごとに goroutine（ポインタの木と GC）
+// 素直縛り — ワーカーの数は書かない。比較用のGoの実装（go/）は深さごとにgoroutine（ポインタの木とGC）
 
 import "std/iter"
 import "std/os"

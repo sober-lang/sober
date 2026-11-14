@@ -2,7 +2,7 @@ package main
 
 import "std/builder"
 
-// 総称の型引数の宣言を辿る欄読み: 総称 struct の欄・総称の関数の結果・明示の型引数・総称 struct の辞書 const のラムダ
+// 総称の型引数の宣言を辿るフィールド読み: 総称structのフィールド・総称の関数の結果・明示の型引数・総称structの辞書constのラムダ
 
 type Tk struct {
     tag int

@@ -2,9 +2,9 @@ package main
 
 // k-nucleotide（benchmarks game — docs/bench.md）: fasta の出力から ">THREE" の配列を大文字で取り出し、長さ k の部分列ごとの出現数を
 // map[string]int で数える。k = 1, 2 は頻度の降順（同数はキーの昇順）に百分率（小数 3 桁）・指定の 5 本は出現数。
-// 素直な形（Go の双子 bench/knucleotide/go と同じアルゴリズム）。キーは配列の部分列のビュー（utf8.Str — 写さない）。
-// **イディオム双子の (b) 作って返す形**（frequencies が map を作って返す — 戻りで呼び手の region へ写る）。(a) mut out 引数の回避術形は
-// bench/knucleotide/mutout（docs/bench.md「イディオムギャップ」— 宛先構築〔RVO〕が入ったら (b) ≒ (a) になるのを追う計器）。
+// 素直な形（比較用のGoの実装bench/knucleotide/goと同じアルゴリズム）。キーは配列の部分列のビュー（utf8.Str — コピーしない）。
+// **イディオムの書き方の対の (b) 作って返す形**（frequenciesがmapを作って返す — 戻りで呼び手のregionへコピーされる）。(a) mut out 引数の回避術形は
+// bench/knucleotide/mutout（docs/bench.md「イディオムギャップ」— 宛先構築〔RVO〕が入ったら (b) ≒ (a) になるのを追う計測ツール）。
 // 百分率は整数で: 100000 × 数 / 総数 を四捨五入（Sober にはまだ float が無い — Go の %.3f と出力は一致・公式の n=1000 とも一致）
 
 import "std/io"

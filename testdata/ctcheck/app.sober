@@ -1,7 +1,7 @@
 package main
 
 // ctcheck の題材（scripts/ctcheck.sh — report-791 / 984）: 秘密の値の流れの導出の表 T（testdata/secretdump/std.txt）の関数を全部呼んで ELF に載せる（tls の handshake は走らない枝から参照）。中身の値は見ない（見るのは機械語の条件分岐）。
-// neg* は規律を破った形の見本（秘密の mask で if・食い違いで早く抜ける比較）— 網が分岐を数えられることの負例として黄金に載せる
+// neg* は規律を破った形の見本（秘密のmaskでif・食い違いで早く抜ける比較）— 検査が分岐を数えられることの負例としてゴールデンに載せる
 
 import "std/binary"
 import "std/crypto"
@@ -106,7 +106,7 @@ func main() {
         cfg, _ := tls.Parse("", "")
         _ = tls.Serve(":0", cfg, (tc) => serveOne(tc, a))
     }
-    // HTTP クライアント（hsc の握手・1.2 の record・束の置き場）は走らない枝から参照する（ELF に載せるだけ）
+    // HTTPクライアント（hscの握手・1.2のrecord・バッチの格納場所）は走らない枝から参照する（ELFに載せるだけ）
     if len(a) == 1000 {
         pol := http.client.Policy{dangerouslyAllowTls12: true}
         _ = http.client.Open("https://x", (s) => {
@@ -114,7 +114,7 @@ func main() {
         }, policy: pol)
         _, _ = http.client.Request("https://x/", policy: pol)
     }
-    // PostgreSQL のクライアント（SCRAM の証明・接続の置き場）も同じく走らない枝から
+    // PostgreSQLのクライアント（SCRAMの証明・接続の格納場所）も同じく走らない枝から
     if len(a) == 1000 {
         _ = pg.Open("postgres://u@x/d", (pc) => {
             _, _ = pg.Exec(pc, "select 1")

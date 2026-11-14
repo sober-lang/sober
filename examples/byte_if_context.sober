@@ -1,7 +1,7 @@
 package main
 
-// byte と named scalar の文脈（戻り・実引数・append・slice / map のリテラルの要素・struct の欄）に置いた if / switch の式:
-// 腕の型なしの定数は期待型に割り当てる。欄にも const と文字リテラルを置ける
+// byteと named scalar の文脈（戻り・実引数・append・slice / mapのリテラルの要素・structのフィールド）に置いたif / switchの式:
+// 分岐の型なしの定数は期待型に割り当てる。フィールドにもconstと文字リテラルを置ける
 
 const K = 3
 

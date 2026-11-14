@@ -1,6 +1,6 @@
 package main
 
-// 文の switch で腕が全部 return（Never）・default なし: 外れは何もせず switch の後ろへ続く（ Zig 版の時代からの
+// 文のswitchで分岐が全部return（Never）・defaultなし: 外れは何もせずswitchの後ろへ続く（Zig版の時代からの
 // lower の穴。外れの経路まで Never にして switch の後ろを落とし、B-3 の IR 検証器が「終端なし」で拾っていた）
 
 func classify(k int) int {
@@ -24,7 +24,7 @@ func name(k int) string {
     return "pos"
 }
 
-// union の全 variant を覆い、腕が全部戻らない: 外れには来ない（コアの unreach と同じ — 外れのブロックは panic で閉じる）
+// unionの全variantを覆い、分岐が全部戻らない: 外れには来ない（コアのunreachと同じ — 外れのブロックはpanicで閉じる）
 type Shape union {
     Circle { r int }
     Sq { s int }

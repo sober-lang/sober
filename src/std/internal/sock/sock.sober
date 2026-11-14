@@ -28,7 +28,7 @@ func sysWaitFd(fd int, ev int) int
 @intrinsic("net_op")
 func sysNetOp(op int, fd int, a int, b int) int
 
-// read_fd の n の印: 1 << 40（rt の read を通さない）| 1 << 41（net の ring の受けも張らない — lower/netpoll.sober の RFD_PLAIN）
+// read_fdのnのフラグ: 1 << 40（rtのreadを通さない）| 1 << 41（netのringの受けも張らない — lower/netpoll.soberのRFD_PLAIN）
 const plainRead = 1099511627776 + 2199023255552
 
 const evIn = 1
@@ -67,13 +67,13 @@ func waitErr(w int) error {
     return errOf(0 - w)
 }
 
-// addr へ繋いだ fd（std/net の Dial で名前を引いて繋ぎ、その接続の fd を写して持つ — Dial の k を抜けると元の fd は閉じる。写しは close-on-exec）
+// addrへ繋いだfd（std/netのDialで名前を引いて繋ぎ、その接続のfdをコピーして持つ — Dialのkを抜けると元のfdは閉じる。コピーはclose-on-exec）
 @errors(net.Bad, net.NoHost, net.NonASCIIHost, io.Closed, io.Timeout, io.Expired, io.Denied, io.Other)
 @effects(block, io, nondet)
 func Dial(addr string) (int, error?) {
     mut fd := -1
     e := net.Dial(addr, (c) => {
-        // fcntl(F_DUPFD_CLOEXEC = 1030) — 写しは非ブロックの印も共有する（ファイルの状態の旗は開いたファイルの側）
+        // fcntl(F_DUPFD_CLOEXEC = 1030) — コピーは非ブロックのフラグも共有する（ファイルの状態の旗は開いたファイルの側）
         fd = sysCall(72, c.fd, 1030, 0, 0, 0, 0)
     })
     if e != nil {

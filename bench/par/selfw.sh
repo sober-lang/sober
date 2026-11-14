@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# selfw.sh（段 6 の総取り — bench/par/README.md の自己 check / build の表）: compiler/ + std を写した木で
+# selfw.sh（フェーズ6の総取り — bench/par/README.mdの自己check / buildの表）: compiler/ + stdをコピーした木で
 # `sober check app` と `sober build app --emit=elf --passes` をワーカー数 1 / 2 / 4 / 8 で測る（stage2 = 今のコンパイラ）。
-# 各点 N 回（W の順に交互）の wall の最小・その回の user と最大 RSS。命令数（instructions:u — 決定的）は W1 で 1 回。判定 / ELF は W ごとに一致を確かめる
+# 各点N回（Wの順に交互）のwallの最小・その回のuserと最大RSS。命令数（instructions:u — 決定的）はW1で1回。判定 / ELFはWごとに一致を確認する
 #   bench/par/selfw.sh [-n 回数] [-o 結果の TSV]
 # 規律: 物理コアごとに 1 論理 CPU の最後の 8 つに固定・bench と gates を同時に回さない
 set -uo pipefail
-# キャッシュは切の道に固定（build / check とも既定 on — 測るのは毎回の仕事）
+# キャッシュは切のパスに固定（build / checkとも既定on — 測るのは毎回の仕事）
 export SOBER_BUILD_CACHE=${SOBER_BUILD_CACHE:-0} SOBER_CHECK_CACHE=${SOBER_CHECK_CACHE:-0}
 cd "$(dirname "$0")/../.."
 ROOT=$PWD

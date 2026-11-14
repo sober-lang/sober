@@ -1,4 +1,4 @@
-// pid1stop の本体（scripts/pid1stop.sh から — 引数 = 建てた実行ファイルの列）: 各実行ファイルに SIGTERM / SIGINT を送り、
+// pid1stopの本体（scripts/pid1stop.shから — 引数 = ビルドした実行ファイルの列）: 各実行ファイルにSIGTERM / SIGINTを送り、
 // ① 非 PID 1: シグナルの死のまま（signalCode = SIGTERM / SIGINT — rt はハンドラを張らない・振る舞いは既定どおり）
 // ② PID 1（unshare -rpf — 利用者の名前空間の pid ns の init）: 終了コード 143 / 130 で 2 秒以内に止まる（rt の入口が getpid() = 1 のときだけ張るハンドラ）
 import { spawn } from "node:child_process";

@@ -1,0 +1,4 @@
+# incrbuild: check / build が失敗してよい対象の例外（1 行 1 対象・# から行末はコメント）。
+# 既定で失敗してよいのは testdata/checkverdict のゴールデンで check が拒否する対象だけ（gatelib の omit_judge）。
+# ここに書いた対象が失敗しなかった・もう対象でないときも FAIL にする
+bench/pgstub/main.sober   # 複数ファイルの package（items.sober・table.sober・wire.sober）— main.sober だけの build は通らない（以前から飛ばしていた）

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# checkstats（段 6 P6-0 — 自己 check の費用の帰属）: `sober check` を段ごとに止めて（SOBER_CHECK_STOP = load / analyzer / desugar / 最後まで）、
-# （typer = 脱糖の表層型検査器まで・defs = Def の脱糖まで〔検査器への写しの前〕— 段 6 P6-3）
-# perf の命令数（instructions:u — 決定的）と peak RSS を測り、前の段との差を段の費用として出す。
-#   scripts/checkstats.sh [--pkg <path>]… [<entry>]   既定 entry = compiler/app（std を写した作業木で — passstats と同じ形）
-# --pkg を付けると一括でなく package ごとの部分検査（check --pkg — iface は先に 1 回書く）を、付けた package ごとに測る（analyzer の段は無い）。
+# checkstats（段階6 P6-0 — 自己checkの費用の要因分析）: `sober check` をフェーズごとに止めて（SOBER_CHECK_STOP = load / analyzer / desugar / 最後まで）、
+# （typer = 脱糖の表層型検査器まで・defs = Defの脱糖まで〔検査器へのコピーの前〕— 段階6 P6-3）
+# perfの命令数（instructions:u — 決定的）と peak RSS を測り、前のフェーズとの差をフェーズの費用として出す。
+#   scripts/checkstats.sh [--pkg <path>]… [<entry>]   既定entry = compiler/app（stdをコピーした作業木で — passstatsと同じ形）
+# --pkg を付けると一括でなくpackageごとの部分検査（check --pkg — ifaceは先に1回書く）を、付けたpackageごとに測る（analyzerのフェーズは無い）。
 # PERF で perf の実行ファイルを指す（無ければ PATH → /nix/store を探す）。SOBER_WORKERS は呼び手の環境のまま（P6 の W 軸はこれで振る）
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -31,7 +31,7 @@ if [ -z "$entry" ]; then
 else
     T=$ROOT
 fi
-one() { # $1 = 止める段（空 = 最後まで）・残り = check の引数 → 「命令数 rssMB」
+one() { # $1 = 止めるフェーズ（空 = 最後まで）・残り = checkの引数 → 「命令数rssMB」
     local stop=$1
     shift
     (cd "$T" && SOBER_CHECK_STOP=$stop "$PERF" stat -x, -e instructions:u -o "$W/p" /usr/bin/time -f "%M" -o "$W/t" "$S2" check "$@" > /dev/null 2> "$W/err") \
@@ -40,7 +40,7 @@ one() { # $1 = 止める段（空 = 最後まで）・残り = check の引数 �
     ins=$(grep instructions "$W/p" | cut -d, -f1)
     echo "$ins $(( $(cat "$W/t" | tail -n 1) / 1024 ))"
 }
-table() { # $1 = 見出し・$2… = 段の名前（最後は空 = 最後まで）・-- の後 = check の引数
+table() { # $1 = 見出し・$2… = フェーズの名前（最後は空 = 最後まで）・-- の後 = checkの引数
     local title=$1
     shift
     local stages=()

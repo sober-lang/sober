@@ -1,7 +1,7 @@
 package main
 
-// カバレッジの計器の口（`sober build --cover` の点の表・`sober test --cover` の読み込み・合わせ・報告・--cover-out）。
-// 点の表は loader（coverx.sober）が決め、印は実行ファイルが終わりに $SOBER_COVER へ書く（見出し `sober cover v1 <鍵>` + 点の数のバイト）
+// カバレッジの計装のインターフェース（`sober build --cover` の点の表・`sober test --cover` の読み込み・合わせ・報告・--cover-out）。
+// 点の表はloader（coverx.sober）が決め、フラグは実行ファイルが終わりに $SOBER_COVERへ書く（見出し `sober cover v1 <鍵>` + 点の数のバイト）
 
 import "std/io"
 import "std/iter"
@@ -31,7 +31,7 @@ func noCover() CovData {
     return CovData{pts: []CovPt{}, hit: []bool{}}
 }
 
-// loadNamed のカバレッジの計器つき（loader.LoadFsCover — parse のキャッシュは使わない）
+// loadNamedのカバレッジの計装つき（loader.LoadFsCover — parseのキャッシュは使わない）
 func loadCover(entry string, std map[string]string) (loader.Program, []loader.PcPut, error?) {
     p, lerr := loader.LoadFsCover(entry, std)
     if lerr != nil {
@@ -41,7 +41,7 @@ func loadCover(entry string, std map[string]string) (loader.Program, []loader.Pc
     return q, []loader.PcPut{}, nerr
 }
 
-// テストのビルドのカバレッジの計器つき（pats = 写す package のパターン）
+// テストのビルドのカバレッジの計装つき（pats = 変換するpackageのパターン）
 func loadTestCover(pkg string, std map[string]string, pats []string) (loader.Program, []loader.PcPut, error?) {
     p, lerr := loader.LoadTestFsCover(pkg, std, pats)
     if lerr != nil {
@@ -162,7 +162,7 @@ func appendStr(b mut []byte, s string) {
     }
 }
 
-// 実行ファイルが path に書いた印（見出しの鍵が key・点の数 n）を hit へ OR で合わせる（無い・鍵が違う・短いファイルは黙って飛ばす —
+// 実行ファイルがpathに書いたフラグ（見出しの鍵がkey・点の数n）をhitへORで合わせる（無い・鍵が違う・短いファイルは黙って飛ばす —
 // シグナルで止まった子は書かない）
 func coverOr(hit mut []bool, path string, key string, n int) {
     b := io.ReadFile(path) catch return
@@ -200,10 +200,10 @@ func covLess(a CovPt, b CovPt) bool {
     return a.kind < b.kind
 }
 
-// 未到達の腕の表示の打ち切り
+// 未到達の分岐の表示の打ち切り
 const CovShow = 20
 
-// package pkg のカバレッジの報告（`cover: <pkg> 87.5% of N arms (fn a/b)` + 未到達の腕を位置の順に CovShow 本まで）
+// package pkg のカバレッジの報告（`cover: <pkg> 87.5% of N arms (fn a/b)` + 未到達の分岐を位置の順にCovShow本まで）
 func coverReport(log mut []byte, pkg string, d CovData) {
     n := len(d.pts)
     if n == 0 {
@@ -299,7 +299,7 @@ func coverOut(path string, d CovData) []byte {
         }
         return freeze(b)
     }
-    // LCOV: ファイルごとに FN / FNDA・BRDA（fn 以外の点 — 点 1 つ = 枝 1 本の塊）・DA（点のある行 — 行の点のどれかを踏めば 1）
+    // LCOV: ファイルごとにFN / FNDA・BRDA（fn以外の点 — 点1つ = 枝1本のチャンク）・DA（点のある行 — 行の点のどれかを踏めば1）
     mut lo := 0
     while lo < len(d.pts) {
         mut hi := lo

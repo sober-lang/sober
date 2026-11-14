@@ -2,7 +2,45 @@
 
 This file records user-facing changes per public release. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow [Semantic Versioning](https://semver.org/) (no backward-compatibility promise while on 0.x).
 
-## v0.7.2 — 2026-11-13
+## v0.7.3 (2026-11-14)
+
+This release changes how a delayed response is sent. It also reorganizes the documents around value orientation. The rules of the language have not changed.
+
+### std
+
+- `std/http/server`: a response from `http.server.Delayed(ms, r)` is now sent directly by the runtime when its delay expires. Before, the expiry woke the task and the task sent the response. On the local benchmark (async, 24,000 connections), user-side cycles per request dropped by 46% and p99 went from 141 ms to 73 ms. The lower bound of the delay (never sent earlier than `ms`) is unchanged
+- With the change above, the order of sends under saturation changes. Before, the most recently expired response was sent first. Now responses are sent in the order they expire. The median is slightly later and the slow tail is shorter
+- `std/http/server`: the method, path and query of a request are cut at the positions of their ASCII delimiters. Before, each cut ran a UTF-8 check
+- `std/convert`: formatting an integer as decimal text is faster. `ParseInt` gained a fast path for 18 digits or fewer
+
+### Compiler
+
+- A large immutable value is passed to a parameter as a one-word address. This applies to immutable structs, unions and `T?` over 8 words that do not contain a map. Before, the value was copied. The meaning of a program does not change
+- The wording of the const parameter diagnostic was fixed ("is a const seat" → "is a const parameter")
+
+### Documents
+
+- Added a document on value orientation ([docs/value-oriented.md](docs/value-oriented.md); Japanese: [docs/value-oriented.ja.md](docs/value-oriented.ja.md)). It explains the idea at the center of Sober in one piece
+- The opening of the README now explains value orientation. The pillars section was reorganized into "Properties derived from value orientation" and "Four pillars"
+- The wording of language rule F-16 was fixed. The lambdas that cannot capture a `mut` binding are the ones that are not inlined (a lambda in a value position, and a lambda passed as a borrowed argument of a value call). A lambda inlined at its call site can capture one. The implementation already worked this way; the text had not kept up
+- Fixed descriptions that had gone stale: the paths a recursive type declaration may go through (including the contents of `T?` and function types), SQL injection (with `std/pg` the SQL text must be a const, so it cannot be written), the shape of `std/pool` (it returns no reference and copies values), and the list of environment variables the runtime reads
+- The data race section of the security guide now explains domains
+- In the Japanese standard library reference and CLI document, two headings were renamed to the settled terms
+
+### Measurements
+
+Requests per second against v0.7.2, on a setup close to the official HttpArena one (EC2 c6a.metal, 64 server workers; median of 6 rounds):
+
+| Test | vs v0.7.2 |
+|---|---|
+| async (32,000 connections) | +10.7% |
+| baseline (4,096 connections) | +1.8% |
+| limited-conn | +1.4% |
+| json-comp | −1.2% |
+
+For the fixed-rate latency tests (latency-10k, latency-1m, 8gbit), p99 and mean are unchanged within the round-to-round spread. The cause of the small drop in json-comp is under investigation.
+
+## v0.7.2 (2026-11-13)
 
 The release that cuts the fixed cost of one HTTP request. The fixed cost that grew from v0.6.6 to v0.7.1 is back below v0.6.6 (on the local pipelined benchmark, instructions per request are −27% and cycles −33% against v0.7.1). Domains no longer take more work to wake the next task when many tasks are waiting, so throughput no longer drops when there are more connections than PostgreSQL pool slots. std/pg receives a row in one pass and makes the statement cache and the pool's cleanup cheaper. The default CPU pinning of server workers goes back to the form used up to v0.7.0.
 
@@ -100,7 +138,7 @@ The release that cuts the fixed cost of one HTTP request. The fixed cost that gr
   - Server user CPU per request: 75–99 µs → 35–50 µs before and after the std/pg changes (row receiving, statement cache, pool cleanup, UTF-8 checks). On this machine requests / s are capped by PostgreSQL's CPU (160–270 µs per request), so the server-side cut hardly shows in requests / s
   - Against Go's pgx (a copy of the upstream go-stdlib entry), measured alternately on the same machine: 1.6–2.25 times the requests / s (in one pair Go came out ahead). The median response time is shorter than Go's, but the p99 is longer
 
-## v0.7.1 — 2026-11-11
+## v0.7.1 (2026-11-11)
 
 The release of domains — long-lived shared state — and a PostgreSQL client. Many tasks updating one state (a connection pool, a counter, and so on) can now be written without writing locks (`task.NewDomain` / `Update` / `Read` / `Await` — bodies run one at a time, and because a body does not wait and does no io, a lock-ordering deadlock cannot be written). std/pg is a PostgreSQL client over wire protocol 3.0 with TLS 1.3 + SCRAM-SHA-256-PLUS by default, transactions and a connection pool. The HTTP server builds JSON responses with a two-pass encoder, and the fixed cost per request is lower. The limited-conn regression of v0.7.0 (−11.5% on the 64-worker box) is fixed.
 
@@ -170,7 +208,7 @@ The release of domains — long-lived shared state — and a PostgreSQL client. 
   - The two changes that landed after the table was measured (the wait queue of a domain's `Await` and the error representation) stay within ±2% on all 12 profiles in a before/after A/B alternating on the same 16 vCPU box (no regression)
   - On this 16 vCPU box json-tls shows −19% against v0.7.0. This is a phase where the server got faster and the load generator (wrk, 8 threads × 4,096 connections) became the bottleneck, not a server regression. Measured in the upstream shape (wrk with 64 threads) against a 64-CPU server (EC2 c6a.metal, AMD EPYC 7R13), requests / s are +1.9% and CPU / request −10% against the version before the JSON encoder
 
-## v0.7.0 — 2026-11-08
+## v0.7.0 (2026-11-08)
 
 The release that reworks imports. A qualifier is now every segment of the import path (`std/http/server` → `http.server.Serve`), and a `sober.mod` at the build root declares the module's name and its local dependencies. std fills in the pieces web applications were missing: password hashing, cryptographic randomness and UUIDs, time and time zones, cookies, versioned sessions, a stub DNS resolver, and an HTTP client that always verifies the certificate chain. `std/http` is split into the server (`std/http/server`), the client (`std/http/client`) and the shared vocabulary (`std/http`). deflate keeps a record of recent Huffman trees so a connection with similar bodies does not rebuild them, which makes the HTTP server's gzip responses faster. At startup, the runtime now locks in W^X (Linux 6.6 and later).
 
@@ -272,7 +310,7 @@ Steps to move 0.6.7 code to 0.7.0:
   - Kernel-side memory (cgroup pagetables, 9V45): baseline 30.8 → 8.9 MB, json-comp 47 → 9 MB, async 283 → 154 MB — a structural saving from the shallow region window of connection tasks (see Runtime)
   - No non-2xx responses in any profile
 
-## v0.6.7 — 2026-11-05
+## v0.6.7 (2026-11-05)
 
 A language-focused release. Sober now accepts plainly written recursive type declarations (forms like `type L struct { v int; next L? }` or `type Value union { Array { items []Value }; … }`), and `std/json` gained `json.Value` / `json.Tree`, which hold JSON values as an actual recursive tree. Floating point reached completion: string interpolation, constant-expression arithmetic, a handful of `std/math` functions, and better out-of-range literal diagnostics. The language also gained locally-bound lambdas and "mut parameters on function types," which let closures carry mutable state through an explicit parameter instead of capture. Narrowing (nil-checking) rules were made uniform across assignment and loop conditions. One miscompilation that predates 0.6.6 and two soundness gaps in `freeze` checking were fixed.
 
@@ -284,7 +322,7 @@ A language-focused release. Sober now accepts plainly written recursive type dec
 
 ### Language
 
-- **Recursive type declarations are now accepted** (iso-recursive). Two forms: cycles through function types (S) and cycles through slice / map / fixed-size array elements (D — including generic type arguments). Self-reference through an optional field (`next L?`) is also accepted now — internally it is represented as a single-cell box, but the declared type stays `L?` as written. Cycles that cannot produce a value at all (e.g. a union variant that holds itself by value directly, which would be infinitely large) are still rejected; the diagnostic now reads "infinite size" instead of the older wording
+- **Recursive type declarations are now accepted** (iso-recursive). Two forms: cycles through function types (S) and cycles through slice / map elements (D — including generic type arguments). Self-reference through an optional field (`next L?`) is also accepted now — internally it is represented as a single-cell box, but the declared type stays `L?` as written. Cycles that cannot produce a value at all (e.g. a union variant that holds itself by value directly, which would be infinitely large) are still rejected; the diagnostic now reads "infinite size" instead of the older wording
 - Building a deep recursive value (e.g. a cons-list-like chain assembled as a function's return value) is now rewritten by the compiler to append into the eventual destination instead of copying the result up through every stack frame. This removes the per-node, depth-proportional copy: building a deep tree now takes time proportional to its size instead of size × depth, and working-set memory drops from quadratic to linear in depth (see Performance below)
 - Floating point is now complete:
   - String interpolation `"${x}"` accepts `float` (joining `int` / `float` / `string` / `bool`)
@@ -319,7 +357,7 @@ Linearized the construction of recursive values (local measurements, on a Zen 5 
 - For a chain of depth `n` built by appending into the eventual destination: going from 90 to 900 links, working-set RSS dropped from 1.7 → 135 MB (quadratic, old) to 0.4 → 3.8 MB (linear)
 - Fixed where the relocation working stack lived, cutting RSS for a loop that builds a cons chain from 158 MB to 3 MB at 100,000 nodes
 
-## v0.6.6 — 2026-11-03
+## v0.6.6 (2026-11-03)
 
 A performance release. The HTTP server's receive buffer ring is now consumed incrementally, which cuts CPU per request. TLS gets faster handshakes (RSA signing, x25519, SHA-256) and faster AES-GCM records, and deflate's lv6 gives up a few percent of compression ratio for speed. The language gains `@replaces` / `@doubles`, which swap a package for a double in a test build (build-time DI), and std/testing/cell, a place for fakes to keep state. `assert` now reports the user's line on failure and takes an optional label. Many disagreements between check and build were fixed.
 
@@ -408,7 +446,7 @@ A performance release. The HTTP server's receive buffer ring is now consumed inc
 
   The previous official run (2026-10-25) was on an AMD EPYC 9V45; the CPU models differ, so the two can't be compared side by side.
 
-## v0.6.5 — 2026-10-31
+## v0.6.5 (2026-10-31)
 
 A testing release. It adds four verification tools — property-based testing with std/quick, `sober fuzz`, `sober test --cover` (coverage) and `sober test --mutate` (mutation testing) — with a guide on writing tests. `sober check` / `sober build` / `sober test` now remember the answer to a query and return it when the same query comes again, and `sober watch` warms build and tests in the background after each save. The CLI is now declared as a table (the new std/cli), and usage errors exit with code 2 (**breaking change** — `-run` → `--run` and others).
 
@@ -465,7 +503,7 @@ A testing release. It adds four verification tools — property-based testing wi
 - A guide to environment variables (docs/guide/env.md / env.ja.md): the variables the compiler, the runtime and std read.
 - Terms: the Japanese documents now use the common names for testing terms (プロパティ, シュリンク, ミュータント, 分岐, シード, ジェネレータ) and エフェクト for effect.
 
-## v0.6.4 — 2026-10-26
+## v0.6.4 (2026-10-26)
 
 A release that moves accept onto every worker. `net.Serve` now holds one listener per worker on the same address, and each worker accepts on its own listener and runs the connection itself. For that, `net.Listen` now sets SO_REUSEPORT (a change in behavior — see Standard library and the security guide). The language gains optional anonymous function-typed parameters, and `http.ServeFlushed` is folded into `http.ServeWith(…, put:)` (**breaking change**). The runtime also gains a flight recorder (off by default) that keeps what it was doing when something fails.
 
@@ -527,7 +565,7 @@ A release that moves accept onto every worker. `net.Serve` now holds one listene
 
 - The security guide (`docs/guide/security.md`, Japanese original `security.ja.md`) adds port sharing with processes of the same uid (a property of SO_REUSEPORT) to what it does not protect against.
 
-## v0.6.3 — 2026-10-25
+## v0.6.3 (2026-10-25)
 
 A performance release. Servers with many connections now take io_uring completions in small steps, which removes the many-connection cliff, and a task that becomes runnable under saturated load now waits at most a bounded time. Memory per request and per connection is lower, and TLS sends and compression encoding are faster. Public std functions now carry `@effects` declarations, and the runtime's depth invariant is always checked.
 
@@ -587,7 +625,7 @@ A performance release. Servers with many connections now take io_uring completio
 - Security guide (`docs/guide/security.md`, Japanese original `security.ja.md`): what the language and std prevent, what they don't, and what is left to you, in 12 sections. It opens with a quick table of three outcomes (cannot happen / becomes a defined death / remains) and a real-world vulnerability (an out-of-bounds write in Node.js's Brotli decompression) worked through in Sober. Code examples are the real files under `examples/security_*`.
 - The benchmark numbers and charts in the public README were re-measured on a 16-vCPU GitHub Actions runner (AMD EPYC 9V45). The measure changed from local cycles to CPU time (task-clock — the median of per-round paired ratios). Across two runs of the same tree, 21 of the 26 ratios stayed within ±3% and every win / tie / loss call matched. 1BRC, binary-trees and logagg move by up to ±10% from day to day, and external sort and k-nucleotide against Rust by ±3–4%; `bench/README.md` notes this.
 
-## v0.6.2 — 2026-10-23
+## v0.6.2 (2026-10-23)
 
 A hotfix for v0.6.1, together with the first part of function effects in the analyzer.
 
@@ -616,7 +654,7 @@ A hotfix for v0.6.1, together with the first part of function effects in the ana
 
 - New gate `scripts/nextgen.sh`: builds the compiler with the current runtime (with a runtime invariant check) and runs its own parallel build and check with 1, 2 and 8 workers, so runtime changes are exercised by the compiler itself before they reach a bootstrap step.
 
-## v0.6.1 — 2026-10-23
+## v0.6.1 (2026-10-23)
 
 A follow-up to the Web release.
 
@@ -756,7 +794,7 @@ A follow-up to the Web release.
 
 - Each tag publishes a toolchain image to ghcr.io/sober-lang/sober (alpine + sober, byte-identical to the release tarball). `FROM ghcr.io/sober-lang/sober:0.6.1` works.
 
-## v0.6.0 — 2026-10-20
+## v0.6.0 (2026-10-20)
 
 The Web release: networking, an HTTP/1.1 server, TLS 1.3 and the cryptography under it are now part of std, written in Sober. The language gains closures, and the whole std API went through a naming review (breaking — see "Renamed" below). The language specification is now written down as rules (docs/spec), and the std reference is generated from the sources.
 
@@ -848,7 +886,7 @@ Packages under `std/internal/…` are implementation details of std and cannot b
 - Fixed the record of a channel created inside a loop being placed in the per-iteration region and overwritten
 - Fixed several cases where `sober check` and `sober build` disagreed (one accepted a program the other rejected)
 
-## v0.5.4 — 2026-10-14
+## v0.5.4 (2026-10-14)
 
 ### Language
 
@@ -876,7 +914,7 @@ Relative to v0.5.3, jsonapi cycles versus Rust improved by −15%, and memory is
 - New benchmark: external sort (bench/extsort) — wall 2.33× → 1.7× of Rust across the release, RSS flat at 177 MB from 256 MiB to 4 GiB inputs (Rust 180 MB, Go 500 MB)
 - Benchmark numbers in the READMEs are now generated from `bench/data/official.tsv` and checked by a gate (no more drift between runs and prose)
 
-## v0.5.3 — 2026-10-12
+## v0.5.3 (2026-10-12)
 
 ### Performance
 
@@ -892,7 +930,7 @@ Relative to v0.5.2, cycles versus Rust improved by routing −23%, knucleotide �
 - Small instruction-selection improvements (three-operand imul for constant multiplies, operand swapping for commutative operations, eliminating reloads right after a write). The result slot of a struct-returning call is no longer shared with other calls (sharing kept it from being promoted to registers after inlining)
 - Regression: mandelbrot cycles +3.6% (instructions −8%). Removing the copies on the loop back edge happens to run slower on this benchmark
 
-## v0.5.2 — 2026-10-11
+## v0.5.2 (2026-10-11)
 
 ### Language
 
@@ -911,7 +949,7 @@ Relative to v0.5.1, cycles versus Rust improved by routing −48%, jsonapi −31
 - Spill-slot coalescing and elimination of reloads right after definition (fewer register-allocation copies)
 - Self-build: ~3% faster (shared typing tables and more), compiler binary −7%
 
-## v0.5.1 — 2026-10-11
+## v0.5.1 (2026-10-11)
 
 ### Language
 
@@ -934,7 +972,7 @@ Relative to v0.5.1, cycles versus Rust improved by routing −48%, jsonapi −31
 - Closed a hole where `sober run` / `sober test` skipped the freeze-uniqueness rules
 - Closed a hole where a par child could capture a mut container through an immutable binding (freeze before Spawn)
 
-## v0.5.0 — 2026-10-10
+## v0.5.0 (2026-10-10)
 
 First public release.
 

@@ -1,5 +1,5 @@
 # 凍結コーパス（主役交代 R39 — 2026-09-28 の時点の入力の一覧）: selfhost_lower の到達リスト（旧 scripts/selfhost_lower.list）
-# Zig（stage1）≡ Sober の差分オラクルの入力。以後 regen しない（新しい例は足さない — 新しい例は obs・Lean 照合・Sober 生成の黄金で見る）。
+# Zig（stage1）≡ Soberの差分オラクルの入力。以後regenしない（新しい例は足さない — 新しい例はobs・Lean照合・Sober生成のゴールデンで見る）。
 # 意味: Sober 側のリファクタが出力バイト不変かの見張り。互換を壊す変更が入ったら、その成分のゲートから退役させる（行を消すのでなくゲートごと）。
 # 消えたファイルの行は各ゲートが飛ばす（件数に出る）
 examples/arith_edge.sober

@@ -1,4 +1,4 @@
-// routing の Go の双子（素直形 — Sober 版と同じ手書きの線形照合: 登録順の最初の一致）: bufio.Scanner で行 → strings.Split で区間 →
+// routingの比較用のGoの実装（素直形 — Sober版と同じ手書きの線形照合: 登録順の最初の一致）: bufio.Scannerで行 → strings.Splitで区間 →
 // map[string]string にパラメータとクエリ → ハンドラが名前で引く。出力は Sober 版とバイト一致
 package main
 

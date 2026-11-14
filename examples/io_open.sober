@@ -1,7 +1,7 @@
 package main
 
 // 開いたファイル io.File（language.md 28 節「資源とストリーム」）。`f := io.Open(p)?`（か catch）の直後の文が `defer io.Close(f)`・
-// 読みは io.ReadAll(f)・File は利用者の関数の実引数に渡せる（受けた側も写せない・外へ出せない）。後始末が抜けないことは開いている fd の数
+// 読みはio.ReadAll(f)・Fileは利用者の関数の実引数に渡せる（受けた側もコピーできない・外へ出せない）。後始末が抜けないことは開いているfdの数
 // （/proc/self/fd の項目の数）の差で見る。リポジトリのルートを cwd にして実行する
 
 import "std/io"

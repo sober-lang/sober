@@ -1,17 +1,17 @@
 package tls
 
 // std/internal/hs（hs は std の内側）: TLS 1.3 のサーバの handshake を
-// Go の crypto/tls のクライアントと突き合わせる。黄金 = scripts/oracles/tls_trace.go が記録したもの: Go の tls.Client（乱数の源を固定 +
-// `//go:debug cryptocustomrand=1` で走りごとに同じ ClientHello）がこのテストの live の道（TestTraceLive — 127.0.0.1 の TCP で待ち受ける子プロセス）と
+// Goのcrypto/tlsのクライアントと突き合わせる。ゴールデン = scripts/oracles/tls_trace.goが記録したもの: Goのtls.Client（乱数の源を固定 +
+// `//go:debug cryptocustomrand=1` で走りごとに同じClientHello）がこのテストのliveのパス（TestTraceLive — 127.0.0.1のTCPで待ち受ける子プロセス）と
 // handshake → "ping" → "echo:ping" → close_notify まで往復し、クライアントが送ったバイト列を testdata/tls/trace-<場合>.hex に、受けたバイト列の
-// SHA-256 と KeyLogWriter の 4 つの secret を testdata/tls/trace.golden に書く。TestTrace（再生の道）はクライアントのバイト列を偽の転送路で流し、
-// サーバの出力の SHA-256・4 つの secret・受けた平文が黄金と一致するかを照合する（Go が受理した handshake のバイト列を Sober が決定的に再現できる =
+// SHA-256とKeyLogWriterの4つのsecretをtestdata/tls/trace.goldenに書く。TestTrace（再生のパス）はクライアントのバイト列を偽の転送路で流し、
+// サーバの出力のSHA-256・4つのsecret・受けた平文がゴールデンと一致するかを照合する（Goが受理したhandshakeのバイト列をSoberが決定的に再現できる =
 // Go の検証〔署名・Finished・record の保護〕を通る出力だったことの証人）。場合 = aes（TLS_AES_128_GCM_SHA256）・chacha（サーバが ChaCha20-Poly1305 を
 // 好む）・hrr（クライアントの key_share が P-256 だけ → HelloRetryRequest → 2 番目の ClientHello で X25519。Go 1.24 以降の crypto/tls は HRR を
-// 起こせないので openssl s_client を中継して記録 — secret は openssl の -keylogfile と照合済み）。塊の無い機械（SOBER_NOAES=1）では aes / hrr を飛ばす
+// 起こせないので openssl s_client を中継して記録 — secretはopensslの -keylogfile と照合済み）。チャンクの無い機械（SOBER_NOAES=1）ではaes / hrrを飛ばす
 //
 //     out/stage2/sober2 test std/tls --run TestTraceLive --work /tmp/tt && (cd scripts/oracles && go run tls_trace.go /tmp/tt/t) > testdata/tls/trace.golden
-//     （黄金の取り直し — live の道。bin/sober は --work を自分の置き場で上書きするので stage2 を直に）
+//     （ゴールデンの取り直し — liveのパス。bin/soberは --work を自分の格納場所で上書きするのでstage2を直に）
 //
 // このファイルの test* の名前（証明書・記録・設定・連結）は hs_reject_test / hs_fsm_test と共用
 
@@ -118,7 +118,7 @@ func testCat(a []byte, b []byte) []byte {
     return freeze(o)
 }
 
-// s を size バイトずつ k へ渡す偽の受けの口
+// sをsizeバイトずつkへ渡す偽の受けのインターフェース
 func trFeed(s []byte, size int, k func([]byte)) error? {
     mut at := 0
     while at < len(s) {
@@ -133,7 +133,7 @@ func trFeed(s []byte, size int, k func([]byte)) error? {
     return nil
 }
 
-// 場合 name の記録を切片の大きさ size で流し直した印字の節（サーバの出力は SHA-256 に畳む — 黄金の節と同じ形）
+// 場合nameの記録を切片の大きさsizeで流し直した印字の節（サーバの出力はSHA-256に畳む — ゴールデンの節と同じ形）
 func trReplay(name string, size int) string {
     c2s, _ := hex.Parse(testFile(testTraces, "testdata/tls/trace-${name}.hex"))
     mut acc := crypto.sha256.New()
@@ -146,7 +146,7 @@ func trPut(acc mut crypto.sha256.State, b []byte) error? {
     return nil
 }
 
-// 127.0.0.1 の TCP の 1 接続（Go の双子が子プロセスとして叩く — 待ち受けの port を標準出力の 1 行目に・印字の行は標準エラーへ）
+// 127.0.0.1のTCPの1接続（Goの比較用の実装が子プロセスとして叩く — 待ち受けのportを標準出力の1行目に・印字の行は標準エラーへ）
 func trLive(name string) error? {
     for l <- net.Listen("127.0.0.1:0")? {
         io.WriteStdout(bytes("port ${net.Port(l)}\n"))?
@@ -180,7 +180,7 @@ func TestTrace() {
     assert(bad == 0)
 }
 
-// 黄金の取り直しの live の道（scripts/oracles/tls_trace.go が子プロセスとして叩く — 場合の名前は環境変数 SOBER_TLS_TRACE_LIVE）。
+// ゴールデンの取り直しのliveのパス（scripts/oracles/tls_trace.goが子プロセスとして叩く — 場合の名前は環境変数SOBER_TLS_TRACE_LIVE）。
 // 変数が無ければ何もしない（`sober test` の既定の走りでは空の通過）
 func TestTraceLive() {
     v, _ := os.Getenv("SOBER_TLS_TRACE_LIVE")

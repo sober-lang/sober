@@ -2,7 +2,7 @@ package main
 
 import "std/task"
 
-// error を型引数に: 総称 struct の欄（error? と []error）と、error? を返す task の handle（Task[error?] — 多値でない task の値としての error?）
+// errorを型引数に: 総称structのフィールド（error? と []error）と、error? を返すtaskのhandle（Task[error?] — 多値でないtaskの値としてのerror?）
 
 type Bad error {
     code int

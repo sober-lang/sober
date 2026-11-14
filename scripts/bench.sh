@@ -1,23 +1,23 @@
 #!/usr/bin/env bash
-# bench（ロードマップ 4 — docs/bench.md）: 題材 6 本（1BRC・binary-trees・fannkuch-redux・fasta・reverse-complement・k-nucleotide — 後ろ 3 本は 5.7 の拡張）を Sober と Go の双子で、コンパイラ自身（stage2 の自己 build / check）と一緒に測る。
+# bench（ロードマップ4 — docs/bench.md）: 題材6本（1BRC・binary-trees・fannkuch-redux・fasta・reverse-complement・k-nucleotide — 後ろ3本は5.7の拡張）をSoberと比較用のGoの実装で、コンパイラ自身（stage2の自己build / check）と一緒に測る。
 #   scripts/bench.sh [--quick | --heavy] [-n 回数] [-o 結果の TSV] [--cpu K | --no-pin] [--load-max L] [--wait-quiet]
-# 騒音の対策（掃除便 D）: 題材の双子は同じ固定コアで走らせる（taskset -c — 既定は最後のコア・--cpu で選ぶ・--no-pin で外す。マイグレーションと
+# 騒音の対策（クリーンアップのタスクD）: 題材の比較用の実装は同じ固定コアで走らせる（taskset -c — 既定は最後のコア・--cpuで選ぶ・--no-pinで外す。マイグレーションと
 # キャッシュの引っ越しの揺れを削る）。各対の前に loadavg（1 分）を見て、上限（--load-max — 既定 = コア数の半分）を超えていたら警告する
 # （--wait-quiet なら下がるまで最大 10 分待つ）。WSL2 では isolcpus / governor は届かない — 根本解は計装の決定的プロファイル（sober prof 第二便）。
 # 運用の規律: bench と gates を同時に回さない
 # 規律（自己適用の CPU は時間帯で ±50% 動く）: 比べるのは同じ走りの中の数字だけ。題材は 1 周ごとに Sober → Go の交互で回し、回数の中央値を出す。
-# 各行に loadavg（1 分）を添える — 負荷の高い時間帯の数字はそれと分かるように。基準値（docs/bench.md）はこのスクリプトの出力をそのまま写す。
+# 各行にloadavg（1分）を添える — 負荷の高い時間帯の数字はそれと分かるように。基準値（docs/bench.md）はこのスクリプトの出力をそのままコピーする。
 # 規模: 既定 = 1BRC 10M 行・binary-trees 18・fannkuch 11・fasta 2.5M / --quick = 1M・16・10・250k / --heavy = 100M・21・12・25M（1BRC 100M の入力は 1.4 GB・
-# fasta 25M は benchmarks game の公式の規模）。reverse-complement と k-nucleotide の入力は同じ規模の fasta の出力（Go の双子で作る）。
+# fasta 25Mは benchmarks game の公式の規模）。reverse-complementとk-nucleotideの入力は同じ規模のfastaの出力（比較用のGoの実装で作る）。
 # float の種目（5.8 第二便）: n-body / spectral-norm / mandelbrot = 既定 5M / 2000 / 4000・--quick 500k / 500 / 1000・--heavy 50M / 5500 / 16000（公式の規模）。
-# 入力は out/bench/ に決定的に作る（bench/1brc/gen — 一度作れば使い回す）。出力の一致（Sober ≡ Go）も毎回確かめる
+# 入力はout/bench/ に決定的に作る（bench/1brc/gen — 一度作れば使い回す）。出力の一致（Sober ≡ Go）も毎回確認する
 set -uo pipefail
-# map のハッシュの種を固定（既定は乱数 — 探査の長さが揺れて命令・cycles が揺れる。出力は種に依らない）
+# mapのハッシュのシードを固定（既定は乱数 — 探査の長さが揺れて命令・cyclesが揺れる。出力はシードに依らない）
 export SOBER_HASH_SEED=${SOBER_HASH_SEED:-0}
-# build のキャッシュ（既定 on）は切の道に固定（線は切の道の値 — 冷 / 温は rebuildbench.sh）
+# buildのキャッシュ（既定on）は切ったパスに固定（基準値は切ったパスの値 — 冷 / 温はrebuildbench.sh）
 export SOBER_BUILD_CACHE=${SOBER_BUILD_CACHE:-0}
 export SOBER_CHECK_CACHE=${SOBER_CHECK_CACHE:-0}
-# lower の分割（席 A — 既定は W ≥ 2 で分割）は直の道に固定（W8 の線と黄金を動かさない。既定の道の値は stagewall で）
+# lowerの分割（席A — 既定はW ≥ 2で分割）は直のパスに固定（W8の基準値とゴールデンを動かさない。既定のパスの値はstagewallで）
 export SOBER_LOWER_SPLIT=${SOBER_LOWER_SPLIT:-1}
 cd "$(dirname "$0")/.."
 ROOT=$PWD
@@ -51,7 +51,7 @@ mkdir -p "$B"
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 [ -n "$res" ] || res=$B/results-$mode-$(date +%Y%m%d-%H%M%S).tsv
-# 出力先は絶対パスに（スクリプトの中の cd を跨ぐと相対が解決できない）・置き場のディレクトリは作る
+# 出力先は絶対パスに（スクリプトの中のcdを跨ぐと相対が解決できない）・配置先のディレクトリは作る
 mkdir -p "$(dirname "$res")" && res=$(realpath -m "$res")
 PIN=()
 [ "$CPU" = none ] || PIN=(taskset -c "$CPU")
@@ -66,7 +66,7 @@ meas() {
     echo "$name $(cat "$W/t") $ld" >> "$res"
 }
 
-# ── 準備: 入力・Go の双子・Sober の build（build の時間と RSS も測る — Go は冷〔空の GOCACHE — runtime / std から〕と温の 2 列）──
+# ── 準備: 入力・比較用のGoの実装・Soberのbuild（buildの時間とRSSも測る — Goは冷〔空のGOCACHE — runtime / stdから〕と温の2列）──
 echo "bench: mode=$mode N=$N (1BRC ${ROWS} rows, binary-trees ${BT}, fannkuch ${FK}, fasta ${FA}, n-body ${NB}, spectral-norm ${SN}, mandelbrot ${MB}, jsonapi ${JA}, routing ${RT}, logagg ${LA}) → $res" >&2
 IN=$B/measurements-$ROWS.txt
 if [ ! -s "$IN" ]; then
@@ -100,7 +100,7 @@ for i in $(seq 1 "$N"); do
         meas "build/sober/$p" ./bin/sober build "bench/$p/main.sober" -o "$B/$p-sober"
         rm -rf "$W/gocache"
         meas "build/go-cold/$p" env GOCACHE="$W/gocache" sh -c "cd bench && go build -o '$B/$p-go' ./$p/go"
-        # 温 = 同じ GOCACHE でもう一度（Go の runtime / std は当たり・main の package とリンクは払う — Sober の L0 + 置き場に近い条件）
+        # 温 = 同じGOCACHEでもう一度（Goのruntime / stdは当たり・mainのpackageとリンクは払う — SoberのL0 + 配置先に近い条件）
         meas "build/go-warm/$p" env GOCACHE="$W/gocache" sh -c "cd bench && go build -o '$W/$p-go2' ./$p/go"
     done
 done
@@ -115,7 +115,7 @@ done
 "$B/spectralnorm-sober" 100 | cmp -s - bench/spectralnorm/expect-100.txt || { echo "bench: FAIL spectralnorm: official output" >&2; exit 1; }
 "$B/mandelbrot-sober" 200 | cmp -s - bench/mandelbrot/expect-200.pbm || { echo "bench: FAIL mandelbrot: official output" >&2; exit 1; }
 
-# BENCH_PREP=1: 入力・双子・公式の期待出力の照合まで済ませて止まる（公式計測の準備 — .github/workflows/bench-official.yml）
+# BENCH_PREP=1: 入力・比較用の実装・公式の期待出力の照合まで済ませて止まる（公式計測の準備 — .github/workflows/bench-official.yml）
 [ "${BENCH_PREP:-0}" = 1 ] && { echo "bench: BENCH_PREP=1 — prepared" >&2; exit 0; }
 
 # ── 題材: 1 周ごとに Sober → Go の交互 ──
@@ -156,17 +156,17 @@ for i in $(seq 1 "$N"); do
     run logagg "$LAIN"
 done
 
-# ── コンパイラ自身: stage2 で compiler/app を build（--passes の ELF）/ check（一括）/ check --split（冷 = 空の置き場・温）──
+# ── コンパイラ自身: stage2でcompiler/appをbuild（--passesのELF）/ check（一括）/ check --split（冷 = 空の配置先・温）──
 S2=$ROOT/out/stage2/sober2
-# -par の物差し: 物理 8 コア（SMT の片割れだけ — selfw.sh と同じ選び方）
+# -par の基準: 物理8コア（SMTの片割れだけ — selfw.shと同じ選び方）
 CPUS8=$(lscpu -p=CPU,CORE | grep -v '^#' | sort -t, -k2,2n -k1,1n | awk -F, '!seen[$2]++ { print $1 }' | tail -n 8 | paste -sd, -)
 T=$W/tree
 mkdir -p "$T"
 cp -r src/compiler/. "$T/"
 cp -r src/std "$T/std"
 for i in $(seq 1 "$N"); do
-    # self/build・self/check はワーカー 1（ラチェットの物差し — stages / selfpar と同じ）・-par は W8 + 物理 8 コアに固定
-    # （selfw.sh と同じ物差し — 機械のコア数に依らない値にする。既定ワーカー数〔この機は 24〕だと束の子のヒープで RSS が機械依存に）
+    # self/build・self/checkはワーカー1（ラチェットの基準 — stages / selfparと同じ）・-parはW8 + 物理8コアに固定
+    # （selfw.shと同じ基準 — 機械のコア数に依らない値にする。既定ワーカー数〔この機は24〕だと束の子のヒープでRSSが機械依存に）
     (cd "$T" && meas "self/build" env SOBER_WORKERS=1 "$S2" build app --emit=elf --passes -o "$W/self.elf") || exit 1
     (cd "$T" && meas "self/build-par" env SOBER_WORKERS=8 taskset -c "$CPUS8" "$S2" build app --emit=elf --passes -o "$W/self.elf") || exit 1
     (cd "$T" && meas "self/check" env SOBER_WORKERS=1 "$S2" check app) || exit 1
@@ -213,16 +213,16 @@ END {
 }' "$res"
 echo "bench: raw results in $res" >&2
 
-# ── ラチェット（bench/ratchet.txt — 「項目 欄 上限 [ref]」の行。欄 = inst〔G 命令 — 決定的な等式で鳴る主の照合〕/ nodes〔核の節の数 — 決定的〕/ rss〔MB〕/ wall〔秒〕。
-# 中央値が上限を超えたら鳴る。4 つ目に ref を書いた行は参考値（記録だけ — 照合しない）。上げるのは裁定つきで ──
+# ── ラチェット（bench/ratchet.txt — 「項目 フィールド 上限 [ref]」の行。フィールド = inst〔G命令 — 決定的な等式で鳴る主の照合〕/ nodes〔核の節の数 — 決定的〕/ rss〔MB〕/ wall〔秒〕。
+# 中央値が上限を超えたら鳴る。4つ目にrefを書いた行は参考値（記録だけ — 照合しない）。上げるのは決定つきで ──
 rfail=0
 while read -r item col lim ref; do
     case "$item" in ''|'#'*) continue ;; esac
     # size（stage3 の ELF の大きさ）は scripts/stages.sh が照合する
     [ "$col" = size ] && continue
-    # self/build3（stage3 の自己 build の命令数）も scripts/stages.sh が照合する — bench.sh の命令数は out/stage2 の物差し
+    # self/build3（stage3の自己buildの命令数）もscripts/stages.shが照合する — bench.shの命令数はout/stage2の基準
     [ "$item" = self/build3 ] && continue
-    # self/check body（検査器の本体の命令数）は scripts/selfpar.sh が、srv/*（要求 1 件の命令と足跡）は scripts/reqinst.sh が照合する
+    # self/check body（検査器の本体の命令数）はscripts/selfpar.shが、srv/*（リクエスト1件の命令と足跡）はscripts/reqinst.shが照合する
     [ "$item $col" = "self/check body" ] && continue
     case "$item" in srv/*) continue ;; esac
     if [ "$col" = nodes ]; then

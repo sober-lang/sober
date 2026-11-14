@@ -1,14 +1,14 @@
 package lower
 
-// 展開後の欄の読みの巻き上げ（ldhoist.sober）の網: IR を手で組んで直に見る（`cd src/compiler && ../../bin/sober test lower`）。
-// 巻き上げは観測を変えない変換なので、別名の判定を緩めすぎる変異は例・題材の出力では鳴りにくい — 巻き上げる / 巻き上げない形をここで固定する
+// 展開後のフィールドの読みの巻き上げ（ldhoist.sober）の検査: IRを手で組んで直に見る（`cd src/compiler && ../../bin/sober test lower`）。
+// 巻き上げは観測を変えない変換なので、別名の判定を緩めすぎるミュータントは例・題材の出力では鳴りにくい — 巻き上げる / 巻き上げない形をここで固定する
 
 import "desugar"
 
-// f(P ptr〔mut の印〕, Q ptr〔印なし〕, n i64) の `for i < n { x = load (gep.word P, 3)[1]; [kind の形] }` に巻き上げを掛け、本体に残った
-// P の鎖の語 4 の load の数を返す。kind: 0 = 何も足さない・1 = 未知の関数の呼び出し・2 = 同じ語への store・3 = P の別の語への store・
-// 4 = P から読んだデータの番地への store・5 = 印なしの仮引数 Q への store・6 = P をデータへ書く（脱出）・7 = 許す rt に P の鎖を渡す・
-// 8 = P に mut の印が無い・9 = 許す rt（slice_grow）の呼び出しだけ
+// f(P ptr〔mutのフラグ〕, Q ptr〔フラグなし〕, n i64) の `for i < n { x = load (gep.word P, 3)[1]; [kind の形] }` に巻き上げを掛け、本体に残った
+// Pのチェーンのワード4のloadの数を返す。kind: 0 = 何も足さない・1 = 未知の関数の呼び出し・2 = 同じワードへのstore・3 = Pの別のワードへのstore・
+// 4 = Pから読んだデータの番地へのstore・5 = フラグなしの仮引数Qへのstore・6 = Pをデータへ書く（脱出）・7 = 許すrtにPのチェーンを渡す・
+// 8 = Pにmutのフラグが無い・9 = 許すrt（slice_grow）の呼び出しだけ
 func lhT(kind int) int {
     mut st := St{}
     initScalars(mut st)
@@ -76,12 +76,12 @@ func lhT(kind int) int {
 }
 
 func TestLdhoist() {
-    // 巻き上げる形: 何も書かない・P の別の語を書く・P のデータを書く・許す rt を呼ぶだけ
+    // 巻き上げる形: 何も書かない・Pの別のワードを書く・Pのデータを書く・許すrtを呼ぶだけ
     assert(lhT(0) == 0, "plain")
     assert(lhT(3) == 0, "other word")
     assert(lhT(4) == 0, "own data")
     assert(lhT(9) == 0, "allowed rt")
-    // 巻き上げない形（判定を緩めすぎる変異はここで落ちる）
+    // 巻き上げない形（判定を緩めすぎるミュータントはここで落ちる）
     assert(lhT(1) == 1, "unknown call")
     assert(lhT(2) == 1, "same word")
     assert(lhT(5) == 1, "unmarked param")

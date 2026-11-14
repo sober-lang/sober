@@ -33,7 +33,7 @@ func Format(bits int) string {
         return bytesToString(freeze(out))
     }
     mut ds := mut []int{}
-    // 速い道: 正確な 10 進展開が 15 桁以下ならそれが一意の最短（別の短い 10 進は最後の桁の 1 単位以上 = 相対 1e-15 以上離れ、
+    // 速いパス: 正確な10進展開が15桁以下ならそれが一意の最短（別の短い10進は最後の桁の1単位以上 = 相対1e-15以上離れ、
     // binary64 の 1/2 ulp〔相対 ≤ 2^-53 ≈ 1.1e-16〕より遠い — 別の float に丸まる）。外れは Burger & Dybvig の多倍長
     fdp := exactShort(mut ds, ex, mant)
     dp := if fdp != NoFast { fdp } else { shortest(mut ds, ex, mant) }
@@ -154,8 +154,8 @@ func FormatFixed(bits int, prec int) string {
     return bytesToString(freeze(out))
 }
 
-// shortest は有限の正の値（指数の欄 ex・仮数の欄 mant — 0 でない）の最短の桁を ds に積み、小数点の位置 dp（値 = 0.d1d2… × 10^dp）を返す
-// NoFast は exactShort が速い道を使えない印
+// shortestは有限の正の値（指数のフィールドex・仮数のフィールドmant — 0でない）の最短の桁をdsに積み、小数点の位置dp（値 = 0.d1d2… × 10^dp）を返す
+// NoFastはexactShortが速いパスを使えないマーク
 const NoFast = -100000
 
 // 値（正規化数の ex・mant）の正確な 10 進展開が 15 桁以下なら、その桁を ds に積んで小数点の位置 dp を返す（でなければ NoFast・ds は空のまま）

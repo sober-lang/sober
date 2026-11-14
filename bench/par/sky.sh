@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# sky.sh（段 6 の総取り — bench/par/README.md の Skynet・粒度・spawn の表）: Skynet 100 万の葉（bench/skynet）・粒度の対照（bench/skynet/gran — 100 万の葉 × 葉の仕事 L 回）・
-# spawn の往復（bench/spawn — loop / wide）を Sober と Go の双子で、ワーカー数（SOBER_WORKERS / GOMAXPROCS）1 / 2 / 4 / 8 ごとに測る。
-# wall は 2 列: N 回の最小と cycles 最小の回の値。EPOCHREALTIME の差（perf の起動を含む — ms 級の上乗せ・time の %e は 10 ms 刻みで粒度の小さい点に足りない）。物差し = cycles:u と instructions:u（perf stat — M:N は回る分を含む）・wall / user / sys / 最大 RSS（/usr/bin/time）。各点 N 回（Sober → Go の交互）で cycles:u の最小の回を採る。
+# sky.sh（フェーズ6の総取り — bench/par/README.mdのSkynet・粒度・spawnの表）: Skynet 100万の葉（bench/skynet）・粒度の対照（bench/skynet/gran — 100万の葉 × 葉の仕事L回）・
+# spawnの往復（bench/spawn — loop / wide）をSoberと比較用のGoの実装で、ワーカー数（SOBER_WORKERS / GOMAXPROCS）1 / 2 / 4 / 8ごとに測る。
+# wallは2列: N回の最小とcycles最小の回の値。EPOCHREALTIMEの差（perfの起動を含む — ms級の上乗せ・timeの %eは10 ms刻みで粒度の小さい点に足りない）。基準 = cycles:uとinstructions:u（perf stat — M:Nは回る分を含む）・wall / user / sys / 最大RSS（/usr/bin/time）。各点N回（Sober → Goの交互）でcycles:uの最小の回を採る。
 #   bench/par/sky.sh [-n 回数] [-o 結果の TSV] [--gran "L…"] [--sky N]
-# 以前の計測台の改良版: Go の双子・W4・粒度の点・spawn を足し、表を出す。規律: 物理コアごとに 1 論理 CPU の最後の 8 つに固定・
+# 以前の計測台の改良版: 比較用のGoの実装・W4・粒度の点・spawnを足し、表を出す。規律: 物理コアごとに1論理CPUの最後の8つに固定・
 # loadavg を各行に記録・答えの一致を毎回（Sober ≡ Go）・bench と gates を同時に回さない
 set -uo pipefail
 cd "$(dirname "$0")/../.."

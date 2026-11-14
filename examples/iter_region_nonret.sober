@@ -1,8 +1,8 @@
 package main
 
 // 戻らない関数（ラベル panic の冷たい関数 — binary.outOfRange の形）は「確保しうる」に数えない、の回帰例:
-// task のプログラム（std/task — ラベル panic の印字の道が rt.out_drain を呼ぶ）で、反復の本体の確保が死ぬ道の panic の値だけのループは
-// 反復の enter が消える（消さないと lloop の軽い enter ≈ 20 命令が毎反復残る — flate の longest / lazy で命令 +368 K / 要求）。
+// taskのプログラム（std/task — ラベルpanicの印字のパスがrt.out_drainを呼ぶ）で、反復の本体の確保が死ぬパスのpanicの値だけのループは
+// 反復のenterが消える（消さないとlloopの軽いenter ≈ 20命令が毎反復残る — flateのlongest / lazyで命令 +368 K / リクエスト）。
 // scripts/iterregion.sh が ① 形（llight 後の main の enter の数）と ② RSS（N と 10N で比例しない — 消した enter の region に
 // 毎反復の確保が漏れていないこと）を見る
 
@@ -18,7 +18,7 @@ func main() {
         v, _ := convert.ParseInt(args[1])
         n = v
     }
-    // task のプログラムにする（panic の印字の道を out_drain の形に）
+    // taskのプログラムにする（panicの印字のパスをout_drainの形に）
     w, _ := task.Run((s task.Scope) => {
         h := task.Spawn(s, () => 1)
         task.Join(h)
@@ -32,7 +32,7 @@ func main() {
     mut t := 0
     mut i := 0
     while i < n {
-        // 本体の確保は Load64 の死ぬ道（panic の値の組み立て — 戻らない outOfRange）だけ → 反復の enter は消える
+        // 本体の確保はLoad64の死ぬパス（panicの値の組み立て — 戻らないoutOfRange）だけ → 反復のenterは消える
         t += binary.Load64(buf, i % 56)
         i += 1
     }

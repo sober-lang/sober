@@ -1,31 +1,31 @@
 package lower
 
-// IR の検証器（src/stage1/ir_verify.zig の写し — 正規バックエンドの Sober 化 B-3）: 構造（定義の一意・終端・入口・前任数・辺の引数の数）と、命令ごとの
+// IRの検証器（src/stage1/ir_verify.zigのコピー — 正規バックエンドのSober化B-3）: 構造（定義の一意・終端・入口・前任数・辺の引数の数）と、命令ごとの
 // オペランドの型・参照の範囲、定義が使用を支配すること（同じブロックなら先に、他のブロックなら支配するブロックで定義）を検査する。
 // 辺の引数の使用点は前任ブロックの末尾。到達しないブロックの中は型と範囲だけを見る（支配は定義されない）。
 // 値の型は記録から導く（valueTypes — Sober の IR は値の型の表を持たない）ので、結果の型の検査は Zig 版より弱い（オペランドの型・数・範囲・支配は同じ）。
-// 正規バックエンドの経路（lower.Elf*）で lower の出力・設計整合パス・mem2reg・rtlower の後に掛ける。違反は内部エラー（panic(InvalidIR{…}) — 死亡時に欄が標準エラーへ）
+// 正規バックエンドの経路（lower.Elf*）でlowerの出力・設計整合パス・mem2reg・rtlowerの後に掛ける。違反は内部エラー（panic(InvalidIR{…}) — 死亡時にフィールドが標準エラーへ）
 
 import "desugar"
 import "std/iter"
 import "std/table"
 
-// IR の検証器の違反（after = どの段の後か・fn = 関数の名前・msg = 違反の文面）
+// IRの検証器の違反（after = どのフェーズの後か・fn = 関数の名前・msg = 違反の文面）
 type InvalidIR panic {
     after string
     fn string
     msg string
 }
 
-// モジュールの全関数を検査する（after = どの段の後か — 診断の文言）
-// vfyModule は段の後の検証（vfyLast のときは掛けない — 最後の vfyFinal がまとめて見る）
+// モジュールの全関数を検査する（after = どのフェーズの後か — 診断の文言）
+// vfyModuleはフェーズの後の検証（vfyLastのときは掛けない — 最後のvfyFinalがまとめて見る）
 func vfyModule(st mut St, after string) {
     if !st.noVfy && !st.vfyLast {
         vfyRun(mut st, after)
     }
 }
 
-// バックエンドの手前の検証（vfyLast でも掛ける — 違反の検出は保ち、どの段で崩れたかの局所化は SOBER_VERIFY=each の段ごとの検証に任せる）
+// バックエンドの手前の検証（vfyLastでも掛ける — 違反の検出は保ち、どのフェーズで崩れたかの局所化はSOBER_VERIFY=eachのフェーズごとの検証に任せる）
 func vfyFinal(st mut St, after string) {
     if !st.noVfy {
         vfyRun(mut st, after)
@@ -40,7 +40,7 @@ func vfyRun(st mut St, after string) {
         if irFnBHead(mut st, f) != -1 && !bcSkipped(mut st, int(f)) {
             // 他のパスと違い式ブロックで包まない（既定の build は最後に 1 回なので積もりは 1 周分 — 包みの得が小さい）
             m0 := vfyFunc(mut st, f, nf)
-            // 全展開した直線の長さ（キャンセルの検査点の距離 K の約束を最終 IR で照合 — 段ごとの検証〔SOBER_VERIFY=each — gates〕の最後の段だけ。
+            // 全展開した直線の長さ（キャンセルの検査点の距離Kの約束を最終IRで照合 — フェーズごとの検証〔SOBER_VERIFY=each — gates〕の最後のフェーズだけ。
             // 既定の build では掛けない — 近似の外れで利用者の build を内部エラーにしない。vfyRun に引数を足すと自己 check の RSS が +40 MB）
             m1 := if m0 == "" && table.Len(mut st.rflowFns) > 0 && rfMarked(mut st, f) { rfVerify(mut st, f) } else { m0 }
             msg := if m1 == "" { urRunMsg(mut st, f) } else { m1 }
@@ -155,7 +155,7 @@ func vfyFunc(st mut St, f FnRef, nf int) string {
     return if v.np > 0 { vfyV128(mut st, mut v, mut w) } else { "" }
 }
 
-// v128 の値の約束（ir.sober の OpPMem の注）: 使うのは packed の op だけ・定義と同じブロックの中だけ（終端の欄に現れない）・
+// v128の値の約束（ir.soberのOpPMemの注記）: 使うのはpackedのopだけ・定義と同じブロックの中だけ（終端のフィールドに現れない）・
 // 定義から使用までの間に呼び出し系の op（call・間接 call・罠・切替・開始・原子・clone）が無い。packed の op を含む関数だけ走る（vfyFunc の 2 周目）
 func vfyV128(st mut St, v mut vfyS, w mut m2rW) string {
     for bi <- iter.Range(0, w.nb) {
@@ -277,8 +277,8 @@ func vfyList(st mut St, v mut vfyS, w mut m2rW, l int, wantTy int, what string) 
     return ""
 }
 
-// 欄の種別の表（opRow）が値・値の列・スロットとする欄の範囲を見る（型・個数・支配は vfyInst の op ごとの場合分け — 表が欄を
-// 取り違えれば、値でない数〔番地・記述・定数〕を値として読むのでここで割れる）。段ごとの検証（SOBER_VERIFY=each — gates）でだけ掛ける
+// フィールドの種別の表（opRow）が値・値の列・スロットとするフィールドの範囲を見る（型・個数・支配はvfyInstのopごとの場合分け — 表がフィールドを
+// 取り違えれば、値でない数〔番地・記述・定数〕を値として読むのでここで割れる）。フェーズごとの検証（SOBER_VERIFY=each — gates）でだけ掛ける
 // （既定の最後に 1 回の検証で掛けると自己 build で +0.5 G 命令。表の正しさは単体テストと全ての走査の照合〔ELF の一致〕が見る）
 func vfyOperands(st mut St, v mut vfyS, f FnRef, ins InsRef) string {
     mut r := st.opk[irInsOp(mut st, ins)]
@@ -296,7 +296,7 @@ func vfyOperands(st mut St, v mut vfyS, f FnRef, ins InsRef) string {
     return ""
 }
 
-// 終端の値・値の列の欄（termRow）の範囲を見る
+// 終端の値・値の列のフィールド（termRow）の範囲を見る
 func vfyTermOperands(st mut St, v mut vfyS, b BlkRef) string {
     mut r := st.tmk[irBlkTerm(mut st, b)]
     mut at := int(b) + B_X1

@@ -1,7 +1,7 @@
 package main
 
-// package と import（language.md 20 節）: import パスはルート相対・修飾子はパスの全段・公開 = 大文字。
-// 他 package の struct の欄は読める（書けない — pkg_neg_field_write）。別名の import は修飾子を短くする用（ファイル局所）
+// package と import（language.md 20 節）: import パスはルート相対・修飾子はパスの全要素・公開 = 大文字。
+// 他 package の struct のフィールドは読める（書けない — pkg_neg_field_write）。別名の import は修飾子を短くする用（ファイル局所）
 
 import "testdata/specpkg/shapes"
 import sh "testdata/specpkg/shapes"

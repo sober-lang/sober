@@ -19,7 +19,7 @@ func macPad(key []byte, pad int) []byte {
 }
 
 // 鍵を吸い終えた内側 ki と外側 ko の状態から HMAC-SHA256(msg)（反復のたびに詰め物のブロックを畳み直さない）。
-// 鍵済みの状態は呼び手の局所に置く — struct の欄に入れたり返したりすると crypto.sha256.State の欄のスロットが秘密になり、公開の SHA-256 の出力まで秘密に読まれる（13 節の補 2「逃げる所」）
+// 鍵済みの状態は呼び手の局所に置く — structのフィールドに入れたり返したりするとcrypto.sha256.Stateのフィールドのスロットが秘密になり、公開のSHA-256の出力まで秘密に読まれる（13 節の補2「逃げる所」）
 @secret(ki, ko, msg)
 @effects(!io, !block, !nondet)
 func mac(ki crypto.sha256.State, ko crypto.sha256.State, msg []byte) []byte {

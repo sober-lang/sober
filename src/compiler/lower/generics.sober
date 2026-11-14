@@ -1,7 +1,7 @@
 package lower
 
 // ジェネリクスの単相化（src/stage1/lower_types.zig の instStruct / typeKey / tyArgOk、src/stage1/lower_inline.zig の genericCall / genericInline /
-// instFunc の写し）と辞書 const（dictConst）。型引数の推論は表層型検査器（desugar/typer.sober）の表を引く（tableTArgs — C1 B2）。
+// instFuncのコピー）と辞書const（dictConst）。型引数の推論は表層型検査器（desugar/typer.sober）の表を引く（tableTArgs — C1 B2）。
 // 型環境 = 型パラメータの束縛の列 [n, (名前, 型)…]（st.tenv — 下ろし中の関数・展開・ジェネリック struct のレイアウト中のもの）
 
 import "diag"
@@ -107,7 +107,7 @@ func tyArgFieldsIn(st mut St, t int, info int, value bool) bool {
 }
 
 // ── 型の綴り（インスタンスのキー — IR の関数名に出る）──
-// 綴りはヒープの先端へ 1 バイト 1 語で直接積む（綴りの途中でヒープの他の記録を作らない — 連続した文字列になる）。
+// 綴りはヒープの先端へ1バイト1ワードで直接積む（綴りの途中でヒープの他の記録を作らない — 連続した文字列になる）。
 // 出力先を別の mut slice にして再帰の Def に渡す形は sober check が def error にした（mut 引数 2 本の再帰 — F-31）
 
 func putLit(st mut St, w string) {
@@ -242,7 +242,7 @@ func instStruct(st mut St, pk int, name desugar.StrRef, args desugar.ListRef, at
 }
 
 // ジェネリック struct / union（型宣言 td・宣言側 package dpk）の型引数 targs（型の列）のインスタンスの情報
-// （union は明示の型引数。レイアウトは layoutBody が型環境 SI_ENV で variant の欄を引く）
+// （unionは明示の型引数。レイアウトはlayoutBodyが型環境SI_ENVでvariantのフィールドを引く）
 func instStructTys(st mut St, td desugar.NodeRef, dpk int, targs desugar.ListRef, at desugar.NodeRef) (int, error?) {
     for i <- iter.Range(0, lenL(mut st, targs)) {
         if !tyArgValueOk(mut st, latI(mut st, targs, i)) {
@@ -288,7 +288,7 @@ func sigIn(st mut St, decl desugar.NodeRef, pk int, env int) (Sig, error?) {
 }
 
 // 呼び出し（callee の節 cn）の型引数: 表層型検査器の表（desugar/typer.sober の YTArgsOf — 明示の型引数・実引数との
-// 単一化・型なしの定数の扱いは検査器の規則が正）を lower の型へ写す。決まらないものがあるか、型引数に置けない型なら拒否（C1 B2）
+// 単一化・型なしの定数の扱いは検査器の規則が正）をlowerの型へコピーする。決まらないものがあるか、型引数に置けない型なら拒否（C1 B2）
 func tableTArgs(st mut St, cn desugar.NodeRef, at desugar.NodeRef, value_ok bool) (desugar.ListRef, error?) {
     yl := desugar.YTArgsOf(mut st.d, desugar.NodeRef(cn))
     if yl == -1 {
@@ -406,7 +406,7 @@ func genericCall(st mut St, fidx int, args desugar.ListRef, at desugar.NodeRef, 
     return emitCall(mut st, infoAt(mut st, fi).ir, -1, desugar.ListRef(infoAt(mut st, fi).params), desugar.ListRef(infoAt(mut st, fi).results), vsrcs, at, decl, 0)
 }
 
-// ジェネリックかつ関数型 / mut の仮引数を持つ関数: 値の引数を先に評価し、閉包は型引数（表層型検査器の表）が決まってから作る。
+// ジェネリックかつ関数型 / mutの仮引数を持つ関数: 値の引数を先に評価し、クロージャは型引数（表層型検査器の表）が決まってから作る。
 // 本体は束縛した型環境で展開する
 func genericInline(st mut St, fidx int, args desugar.ListRef, at desugar.NodeRef, cn desugar.NodeRef) (int, error?) {
     pk := fnPkg(mut st, fidx)
@@ -425,7 +425,7 @@ func genericInline(st mut St, fidx int, args desugar.ListRef, at desugar.NodeRef
         if ast.ParamIsMut(nodeOf(mut st, prm)) {
             mutArgCell(mut st, a, at, false)?
         } else if kindN(mut st, nB(nodeOf(mut st, prm))) == ast.TFunc {
-            // 閉包（ラムダ・for 式・閉包の名前）は型引数が決まってから作る
+            // クロージャ（ラムダ・for式・クロージャの名前）は型引数が決まってから作る
         } else {
             x := expr(mut st, a)?
             if isTag(mut st, x.t, TNever) {
@@ -445,7 +445,7 @@ func genericInline(st mut St, fidx int, args desugar.ListRef, at desugar.NodeRef
 
 // ── 辞書 const ──
 
-// 式を別の文脈で下ろすときに入れ替える束（名前の可視範囲・package・型環境・辞書 const の中か — C10）
+// 式を別の文脈で下ろすときに入れ替えるまとめ（名前の可視範囲・package・型環境・辞書constの中か — C10）
 type ExpCtx struct {
     chain int
     curPkg int

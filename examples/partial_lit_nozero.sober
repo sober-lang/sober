@@ -1,6 +1,6 @@
 package main
 
-// 負例: 部分リテラルで、ゼロ値を持たない欄（union）を省くのは拒否（`T{}` と同じ — union にゼロ値は無い。lower — reaudit round 6。testdata/irtext/EXCLUDED.txt に記録される）
+// 負例: 部分リテラルで、ゼロ値を持たないフィールド（union）を省くのは拒否（`T{}` と同じ — unionにゼロ値は無い。lower — reaudit round 6。testdata/irtext/EXCLUDED.txtに記録される）
 
 type U union {
     A{}

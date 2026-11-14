@@ -2,7 +2,7 @@ package main
 
 // error の switch の網羅は「リンク集合の全ラベル」でなく analyzer の導出集合（language.md 13 節 — error 網羅 analyzer A5・F-33 の解決）。
 // std/io を import する（io のラベル NotFound / Denied / Other が組み込み error の union に入る）が、parse が返しうるのは
-// BadDigit と Empty だけなので、その 2 つを覆えば default は要らない。覆っていないラベルの腕はコアの到達しない項（来たら panic）
+// BadDigitとEmptyだけなので、その2つを覆えばdefaultは要らない。覆っていないラベルの分岐はコアの到達しない項（来たらpanic）
 
 import "std/io"
 
@@ -32,7 +32,7 @@ func parse(s []byte) (int, error?) {
     return n, nil
 }
 
-// 値の位置の switch（腕の型 = int — 覆っていない腕は unreach int）
+// 値の位置のswitch（分岐の型 = int — 覆っていない分岐はunreach int）
 func code(s []byte) int {
     n, err := parse(s)
     if err != nil {

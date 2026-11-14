@@ -1,4 +1,4 @@
-# 凍結コーパス（主役交代 R39 — 2026-09-28 の時点）: selfhost_parse の拒否側（Zig の cst_to_ast が拒否するソース — 旧 testdata/astjson/EXCLUDED.txt の写し）。以後 regen しない
+# 凍結コーパス（主役交代R39 — 2026-09-28の時点）: selfhost_parseの拒否側（Zigのcst_to_astが拒否するソース — 旧testdata/astjson/EXCLUDED.txtのコピー）。以後regenしない
 examples/annot.sober	error: Unsupported at tok 24 (rule annotation): annotation
 examples/bind.sober	error: Unsupported at tok 3 (rule bind_decl): top-level declaration kind
 examples/scope.sober	error: Unsupported at tok 33 (rule scope_expr): primary expression kind

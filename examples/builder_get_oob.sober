@@ -1,6 +1,6 @@
 package main
 
-// std/builder の Get の範囲外（F-7）: fill より先は chunk の中身が確保時の写しで埋まっていて読めてしまうので、
+// std/builderのGetの範囲外（F-7）: fillより先はchunkの中身が確保時のコピーで埋まっていて読めてしまうので、
 // Get は Len 以上の添字を境界検査の panic（exit 101）に落とす
 
 import "std/builder"

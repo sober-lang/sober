@@ -1,7 +1,7 @@
-// benchrepro: 公式ベンチの run 同士の比の再現性の照合（基線の取り直しの検収 — report-922 の条件）。
+// benchrepro: 公式ベンチのrun同士の比の再現性の照合（基線の取り直しの受け入れ検証 — report-922の条件）。
 //   node --experimental-strip-types scripts/benchrepro.ts <official.tsv> <official.tsv> [...]   （scripts/benchfetch.sh --dry が out/bench/gha-<run>/official.tsv を作る）
 // 比 = scripts/benchsync.ts と同じ推定量（同じ周の対の task-clock の比の中央）。題材ごとに Sober/Go・Sober/Rust の run 間の幅（max/min − 1）と
-// ±5% の勝敗の分類の割れを出す。線 = 幅 ±3% 以内かつ分類の割れなし（全部満たせば exit 0）
+// ±5%の勝敗の分類の割れを出す。基準 = 幅 ±3%以内かつ分類の割れなし（全部満たせばexit 0）
 import { readFileSync } from "node:fs";
 
 const median = (xs: number[]) => { const s = [...xs].sort((a, b) => a - b); return s[Math.floor((s.length - 1) / 2)]; };

@@ -1,6 +1,6 @@
 package elf
 
-// ELF の書き出しの単体テスト（`cd compiler && ../bin/sober test elf`）。黄金は凍結した Zig 版（src/stage1/format/elf.zig の writeExecutableRw）に
+// ELFの書き出しの単体テスト（`cd compiler && ../bin/sober test elf`）。ゴールデンは凍結したZig版（src/stage1/format/elf.zigのwriteExecutableRw）に
 // 同じ入力（code 5 バイト・rodata 16 バイト・.bss 24 バイト）を与えた出力 — 一度だけ取った（正規の照合は elfeq の ELF のバイト一致）
 
 import "std/iter"

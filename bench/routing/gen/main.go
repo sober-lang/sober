@@ -1,6 +1,6 @@
 // bench/routing の入力の生成（決定的 — 線形合同法・シード 42）: 引数 N 行のリクエスト（`METHOD /path?query`）を第 2 引数のファイルへ。
-// 約 85% は登録ルート（bench/routing/main.sober と同じ表）のどれかに当たる道、約 10% は 404（知らない区間・末尾の / ・深すぎる道）、
-// 約 5% は 405（道は当たるがメソッド PATCH — PATCH のルートは無い）。約 30% にクエリ（page / limit / sort / expand から 1〜3 個）。
+// 約85%は登録ルート（bench/routing/main.soberと同じ表）のどれかに当たるパス、約10%は404（知らない区間・末尾の / ・深すぎるパス）、
+// 約5%は405（パスは当たるがメソッドPATCH — PATCHのルートは無い）。約30%にクエリ（page / limit / sort / expandから1〜3個）。
 // 値は英数字と - _ . だけ（パーセントエンコーディングは入れない）
 package main
 
@@ -89,7 +89,7 @@ func value(name string) string {
 	return strconv.Itoa(1 + int(next()%999999))
 }
 
-// path は登録ルート r のパターンに値を詰めた道
+// pathは登録ルートrのパターンに値を詰めたパス
 func path(r string) (string, string) {
 	sp := strings.IndexByte(r, ' ')
 	segs := strings.Split(r[sp+2:], "/")
@@ -144,7 +144,7 @@ func main() {
 		case r < 92:
 			p += "/" // 末尾の /
 		case r < 95:
-			p += "/" + pick(words) + "/" + pick(words) // 深すぎる道（/static の下は当たる）
+			p += "/" + pick(words) + "/" + pick(words) // 深すぎるパス（/staticの下は当たる）
 		default:
 			m = "PATCH" // 405
 		}

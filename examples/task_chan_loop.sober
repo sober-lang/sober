@@ -25,7 +25,7 @@ func work(j Job) []int {
     return []int{j.k, len(j.body), j.body[0] + j.body[2]}
 }
 
-// 群ごとに「チャネルを作る → give: で子を起こす → 送る」・終わった順でなく起こした順に積み戻す
+// 群ごとに「チャネルを作る → give: で子をウェイクアップする → 送る」・終わった順でなくウェイクアップした順にスタックへ戻す
 func stream(st mut St, n int) int {
     r, e := task.Run((s task.Scope) => {
         mut hs := mut []task.Handle[[]int]{}

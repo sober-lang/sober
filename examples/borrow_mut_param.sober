@@ -1,7 +1,7 @@
 package main
 
-// 借りの仮引数の mut の席へ渡せるのは mut ローカルと mut 仮引数: mut 仮引数 z（割った struct — 欄ごとのセル）と n（int の ref）を
-// それぞれ別の値の呼び出しの mut の席へ渡す
+// 借りの仮引数が持つmut仮引数へ渡せるのはmutローカルとmut仮引数: mut仮引数z（割ったstruct — フィールドごとのセル）とn（intのref）を
+// それぞれ別の値の呼び出しの mut 仮引数へ渡す
 
 type Z struct {
     acc mut []byte

@@ -1,5 +1,5 @@
-// sdirty.ts <pid> [ms=500] — clear_refs 4 → ms 待つ → 書かれた頁（soft-dirty）と常駐の頁を種類ごとに。スロットの帯は 512 MiB ごとの頭 64 頁だけ読む（速い）
-// 接続ごとの常駐（report-1053: baseline = task の塊 2 頁 + スロットの頭 4 個 × 1 頁）と、それが毎要求書かれているかを見る。スロットの帯を丸ごと読むと 13 秒かかり負荷が終わるので頭だけ。node --experimental-strip-types で
+// sdirty.ts <pid> [ms=500] — clear_refs 4 → ms待つ → 書かれたページ（soft-dirty）と常駐のページを種類ごとに。スロットの帯は512 MiBごとの頭64ページだけ読む（速い）
+// 接続ごとの常駐（report-1053: baseline = taskのチャンク2ページ + スロットの頭4個 × 1ページ）と、それが毎リクエスト書かれているかを見る。スロットの帯を丸ごと読むと13秒かかり負荷が終わるので頭だけ。node --experimental-strip-types で
 import { readFileSync, writeFileSync, openSync, readSync } from "node:fs";
 const pid = process.argv[2]; const ms = +(process.argv[3] ?? 500);
 const maps = readFileSync(`/proc/${pid}/maps`, "utf8").split("\n").map(l => /^([0-9a-f]+)-([0-9a-f]+) (\S+) \S+ \S+ (\d+)\s*(.*)$/.exec(l)).filter(Boolean).map(m => ({ a: BigInt("0x" + m![1]), b: BigInt("0x" + m![2]), perm: m![3], nm: m![5] }));

@@ -1,15 +1,15 @@
 package inflate
 
-// DEFLATE（RFC 1951）の復号の核（std/compress/flate の Decode と std/compress/gzip の Decode が共有する — 公開の口は flate.Decode / gzip.Decode）
+// DEFLATE（RFC 1951）の復号の核（std/compress/flateのDecodeとstd/compress/gzipのDecodeが共有する — 公開のAPIはflate.Decode / gzip.Decode）
 
 import "std/iter"
 
-// At の結果の印（flate.Bad / flate.TooLarge への振り分けは呼び手）
+// Atの結果のフラグ（flate.Bad / flate.TooLargeへの振り分けは呼び手）
 const Ok = 0
 const Bad = 1
 const Large = 2
 
-// data[at:] から始まる DEFLATE の列を最後のブロックまで復号する: (出力, 列の後の最初のバイトの位置, 印)。lim < 0 = 上限なし。
+// data[at:] から始まるDEFLATEの列を最後のブロックまで復号する: (出力, 列の後の最初のバイトの位置, フラグ)。lim < 0 = 上限なし。
 // gzip の中身の読み（列の後に CRC-32 と長さの 8 バイトが続く）と flate.Decode の共通の核
 func At(data []byte, at int, lim int) ([]byte, int, int) {
     mut d := dec{}
@@ -34,15 +34,15 @@ func At(data []byte, at int, lim int) ([]byte, int, int) {
             d.st = Bad
         }
     }
-    // 溜めに残った丸ごとのバイトは読み過ぎ（列の外）— 位置を戻す（端数のビットは最後のバイトの使わないビット）
+    // バッファに残った丸ごとのバイトは読み過ぎ（列の外）— 位置を戻す（端数のビットは最後のバイトの使わないビット）
     used := d.pos - (d.bn >> 3)
     return freeze(d.out), used, d.st
 }
 
-// 復号の状態（mut の欄を持つ struct — 関数から返さず、ゼロ値から inflateAt が整える。flate の符号器の enc と同じ形）
+// 復号の状態（mutのフィールドを持つstruct — 関数から返さず、ゼロ値からinflateAtが整える。flateの符号器のencと同じ形）
 type dec struct {
     in []byte
-    // 次に溜めへ入れる in のバイトの位置・溜め bb の下位 bn ビットが未読（LSB から — RFC 1951 3.1.1）
+    // 次にバッファへ入れるinのバイトの位置・バッファbbの下位bnビットが未読（LSBから — RFC 1951 3.1.1）
     pos int
     bb int
     bn int
@@ -78,7 +78,7 @@ func tables(d mut dec) {
     d.dext = []int{0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13}
 }
 
-// 溜めを 56 ビット以上まで（入力が尽きるまで）バイトで満たす
+// バッファを56ビット以上まで（入力が尽きるまで）バイトで満たす
 func refill(d mut dec) {
     while d.bn <= 48 && d.pos < len(d.in) {
         d.bb = d.bb | (int(d.in[d.pos]) << d.bn)
@@ -220,7 +220,7 @@ func storedBlock(d mut dec) {
     if !room(mut d, n) {
         return
     }
-    // 溜めに残った丸ごとのバイトから先に
+    // バッファに残った丸ごとのバイトから先に
     mut k := 0
     while k < n && d.bn >= 8 {
         d.out = append(d.out, byte(d.bb & 0xff))
@@ -341,7 +341,7 @@ func dynamicBlock(d mut dec) {
     codes(mut d, lit, dist)
 }
 
-// 1 ブロックの記号を終わり（256）まで読み、文字は書き、長さと距離の組は出力の中から写す（RFC 1951 3.2.5）
+// 1ブロックの記号を終わり（256）まで読み、文字は書き、長さと距離の組は出力の中からコピーする（RFC 1951 3.2.5）
 func codes(d mut dec, lit huff, dist huff) {
     while d.st == Ok {
         s := sym(mut d, lit)
@@ -381,7 +381,7 @@ func codes(d mut dec, lit huff, dist huff) {
             if !room(mut d, n) {
                 return
             }
-            // 重なる写し（距離 < 長さ）も 1 バイトずつ前から — 書いたばかりのバイトを読む
+            // 重なるコピー（距離 < 長さ）も1バイトずつ前から — 書いたばかりのバイトを読む
             mut from := len(d.out) - dd
             for k <- iter.Range(0, n) {
                 d.out = append(d.out, d.out[from])

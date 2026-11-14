@@ -1,7 +1,7 @@
 package main
 
 // float の段（language.md 37 節）: IEEE 754 binary64 の算術・比較・変換・特殊値（±Inf・NaN・-0）。値は math.Bits と int への変換でビット単位に照合する
-// （期待値は Go の双子 scripts/oracles/float_basic.go — 同じ計算を float64 で）
+// （期待値は比較用のGoの実装scripts/oracles/float_basic.go — 同じ計算をfloat64で）
 
 import "std/iter"
 import "std/math"
@@ -42,7 +42,7 @@ func main() int {
     // sqrt・abs
     println(math.Bits(math.Sqrt(2.0)), int(math.Sqrt(1.0e16)), math.Bits(math.Sqrt(-1.0)) != 0, math.Bits(math.Sqrt(-0.0)))
     println(math.Bits(math.Abs(-2.5)), math.Bits(math.Abs(-0.0)))
-    // struct の欄・関数・slice・複合代入
+    // structのフィールド・関数・slice・複合代入
     p := P{x: 3.0, y: 4.0}
     println(int(norm(p)), math.Bits(norm(P{x: 1.0, y: 1.0})))
     mut xs := mut []float{}

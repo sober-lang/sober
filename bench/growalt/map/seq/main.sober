@@ -12,7 +12,7 @@ func atoi(s string) int {
     return n
 }
 
-// 1 本ずつ順に挿入する（双子 (a) — 交互を避ける回避術の形）
+// 1本ずつ順に挿入する（対 (a) — 交互を避ける回避術の形）
 func main() int {
     args := os.Args() catch return 2
     n := atoi(args[1])

@@ -2,7 +2,7 @@ package main
 
 // 省略可の匿名関数型の仮引数（language.md 25 節 Z）: `put (func(v int) error?)?` は呼び出し点ごとに有る / 無いが字面で決まり、本体の
 // `if put != nil { … } else { … }` は展開のときに畳まれる（渡さない呼び出し点のコードは put の無い関数と同じ）。
-// 有る（ラムダ・名前付き関数）/ 無い（省略・nil）/ 囲む関数の省略可の仮引数の転送 / `p == nil` の形 / else if の鎖
+// 有る（ラムダ・名前付き関数）/ 無い（省略・nil）/ 囲む関数の省略可の仮引数の転送 / `p == nil` の形 / else if のチェーン
 
 func run(n int, send func(v int) error?, put (func(v int) error?)?) error? {
     if put != nil {
@@ -22,7 +22,7 @@ func relay(n int, put (func(v int) error?)?) error? {
     }, put: put)
 }
 
-// `p == nil` の形と else if の鎖・if の外の比較（true / false に畳む）
+// `p == nil` の形と else if のチェーン・ifの外の比較（true / falseに畳む）
 func pick(n int, lo (func(v int) int)?, hi (func(v int) int)?) int {
     has := lo != nil
     println(has)

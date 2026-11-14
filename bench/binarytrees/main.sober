@@ -2,7 +2,7 @@ package main
 
 // binary-trees（benchmarks game — docs/bench.md）: 深さ d の完全二分木を作っては数えて捨てるのを繰り返す（確保と解放の速さ）。
 // Sober の形: 木は 1 本ずつの arena（mut []int — 節ごとに [左, 右]・葉は -1）。1 本を作って数える関数の region が木ごと捨てる（GC なし — region の
-// 解放がこの題材の「回収」）。長寿命の木は main の region に置く。Go の双子（bench/binarytrees/go）はポインタの木と GC（定番の形）
+// 解放がこの題材の「回収」）。長寿命の木はmainのregionに置く。比較用のGoの実装（bench/binarytrees/go）はポインタの木とGC（定番の形）
 
 import "std/iter"
 import "std/os"

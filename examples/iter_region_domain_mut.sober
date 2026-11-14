@@ -1,6 +1,6 @@
 package main
 
-// 反復の region の約束と mut の器を持つ domain の状態: 本体は状態の mut slice の要素・入れ子の器の要素・mut map を読むだけ・欄のスカラーをその場で書く。
+// 反復のregionの約束とmutの器を持つdomainの状態: 本体は状態の mut slice の要素・入れ子の器の要素・mut mapを読むだけ・フィールドのスカラーをその場で書く。
 // 呼び出しを 10 倍にしても domain の region は伸びない — scripts/iterregion.sh が回数を 10 倍にして RSS を比べる
 
 import "std/convert"

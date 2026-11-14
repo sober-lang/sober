@@ -1,7 +1,7 @@
 package client
 
-// 送受の網（loopback — 親の task が listener で受けて std/http/server のサーバの役をし、子の task が Request で要求する）: 平文の往復・redirect・
-// 本文の上限・壊れた応答・TLS（サーバの役 = std/internal/hs — 証明書は testdata の自己署名を extraRoots で足す）
+// 送受の検査（loopback — 親のtaskがlistenerで受けてstd/http/serverのサーバの役をし、子のtaskがRequestで要求する）: 平文の往復・redirect・
+// 本文の上限・壊れたレスポンス・TLS（サーバの役 = std/internal/hs — 証明書はtestdataの自己署名をextraRootsで足す）
 
 import "std/crypto/pem"
 import "std/crypto/rsa"
@@ -83,7 +83,7 @@ func route(r http.server.Request) http.server.Response {
     return if p == "/login" { loginResponse() } else if p == "/me" { http.server.Text(meText(r)) } else if p == "/hello" { http.server.Text("hello ${r.method}") } else if p == "/to-hello" { redirectTo("/hello") } else if p == "/to-me" { redirectTo("/me") } else if p == "/loop" { redirectTo("/loop") } else if p == "/big" { http.server.Text("0123456789abcdef0123456789abcdef") } else if p == "/echo" { http.server.Text(bytesToString(r.body)) } else { http.server.Status(404) }
 }
 
-// 子の task の要求の結果の要約（"status:body" か誤りの名前）
+// 子のtaskのリクエストの結果の要約（"status:body" か誤りの名前）
 func summary(url string, method string, body string, maxBody int?, redirects int?) string {
     r, e := Request(url, method: method, body: bytes(body), policy: Policy{maxBody: maxBody, timeout: 5000 * task.MS, redirects: redirects})
     return switch e {
@@ -145,7 +145,7 @@ func srvParams() internal.hs.Params {
     return internal.hs.NewParams([][]byte{cb[0].der}, k, []string{"http/1.1"}, []int{internal.record.AesGcm, internal.record.ChaCha}, []byte{})
 }
 
-// l で n 本の接続を受けて TLS 1.3 のサーバの役をする（要求の頭が揃ったら固定の応答を 1 つ返して close_notify）
+// lでn本の接続を受けてTLS 1.3のサーバの役をする（リクエストの頭が揃ったら固定のレスポンスを1つ返してclose_notify）
 func tlsServeN(l net.Listener, n int) error? {
     sp := srvParams()
     mut i := 0
@@ -235,7 +235,7 @@ func kindName(e error?) string {
     }
 }
 
-// 相互接続（scripts/httpinterop.sh が Go の net/http のサーバを起こし、環境変数 SOBER_HTTP_INTEROP にその置き場を渡す — 無ければ何もしない）
+// 相互接続（scripts/httpinterop.shがGoのnet/httpのサーバを起こし、環境変数SOBER_HTTP_INTEROPにその配置先を渡す — 無ければ何もしない）
 func TestHttpInterop() {
     d, e := os.Getenv("SOBER_HTTP_INTEROP")
     if e != nil || d == nil {
@@ -291,10 +291,10 @@ func TestHttpInterop() {
     assert(kindName(a4) == "Tls")
     c12 := Policy{extraRoots: ca, timeout: 5000 * task.MS, dangerouslyAllowTls12: true}
     check(c12, "", "https://localhost:${t12}/chunked", "", "200:one,two,three")
-    // 試験用の CA を足さないと鎖が繋がらない
+    // 試験用のCAを足さないとチェーンが繋がらない
     _, a5 := Request("${s}/len", policy: Policy{timeout: 5000 * task.MS})
     assert(kindName(a5) == "Tls")
-    // 束: 平文と TLS 1.3（Go は握手の後に NewSessionTicket を送る）と TLS 1.2 の各 1 本の接続の上で 4 往復
+    // まとめ: 平文とTLS 1.3（Goは握手の後にNewSessionTicketを送る）とTLS 1.2の各1本の接続の上で4往復
     sp := sessionWith(ca, false, p, []string{"/len", "/chunked", "/method", "/len"})
     assert(sp == "200:hello|200:one,two,three|200:GET:|200:hello")
     ss := sessionWith(ca, false, s, []string{"/len", "/chunked", "/method", "/len"})
@@ -306,7 +306,7 @@ func TestHttpInterop() {
     assert(streamFor(c, "${s}/chunked") == "200|one,two,three")
     assert(streamFor(c, "${p}/redirect?to=/len") == "200|hello")
     // proxy: 平文の proxy で http（絶対 URI）と https（CONNECT）・TLS の proxy で https（TLS の中の TLS）・認証つきの proxy（値なしは ProxyRefused{407}）・
-    // 束（Open）も proxy を通る
+    // まとめ（Open）もproxyを通る
     proxies := []string{"http://127.0.0.1:${px}", "https://localhost:${spx}"}
     for pu <- proxies {
         pc := Policy{extraRoots: ca, timeout: 5000 * task.MS, proxy: proxyOf(pu)}
@@ -387,7 +387,7 @@ func check(c Policy, method string, url string, body string, want string) {
     assert(got == want)
 }
 
-// 束の網: 1 本の接続の上で 3 往復（親の task は接続を 1 本だけ受ける — keep-alive でなければ 2 本目以降が届かない）
+// まとめの検査: 1本の接続の上で3往復（親のtaskは接続を1本だけ受ける — keep-aliveでなければ2本目以降が届かない）
 func sessionSummary(at string, paths []string, extra bool) []string {
     pol := if extra { Policy{extraRoots: testRoots(), timeout: 5000 * task.MS} } else { Policy{timeout: 5000 * task.MS} }
     mut out := mut []string{}
@@ -421,7 +421,7 @@ func TestSessionPlain() {
     assert(e == nil)
 }
 
-// TLS の束のサーバの役: 要求の頭が揃うたびに応答を 1 つ返す（n 往復で close_notify）
+// TLSのまとめのサーバの役: リクエストの頭が揃うたびにレスポンスを1つ返す（n往復でclose_notify）
 func tlsServeKeep(l net.Listener, n int) error? {
     sp := srvParams()
     for c <- net.Accept(l)? {
@@ -470,8 +470,8 @@ func TestSessionTls() {
     assert(e == nil)
 }
 
-// KeyUpdate の網: 2 往復目の応答の前にサーバが update_requested の KeyUpdate を送り、以後は新しい送りの鍵で封じる。
-// クライアントは受けの鍵を進め、3 往復目の要求の前に自分の KeyUpdate を送る（サーバの internal.hs.Feed が受けの鍵を進めて読めれば通る）
+// KeyUpdateの検査: 2往復目のレスポンスの前にサーバがupdate_requestedのKeyUpdateを送り、以後は新しい送りの鍵で封じる。
+// クライアントは受けの鍵を進め、3往復目のリクエストの前に自分のKeyUpdateを送る（サーバのinternal.hs.Feedが受けの鍵を進めて読めれば通る）
 func tlsServeKeyUpdate(l net.Listener) error? {
     sp := srvParams()
     for c <- net.Accept(l)? {
@@ -533,7 +533,7 @@ func TestSessionKeyUpdate() {
     assert(e == nil)
 }
 
-// cookie の運びの網: login の 302 の Set-Cookie を CookieValue で取り出し、次の要求の cookies: に載せる（載せなければ載らない — 状態は呼び手の値だけ）
+// cookieの運びの検査: loginの302のSet-CookieをCookieValueで取り出し、次のリクエストのcookies: に載せる（載せなければ載らない — 状態は呼び手の値だけ）
 func cookieRound(base string) []string {
     pol := Policy{timeout: 5000 * task.MS, redirects: 0}
     r1, _ := Request("${base}/login", method: "POST", body: bytes("pw"), policy: pol)
@@ -576,7 +576,7 @@ func TestCookieValue() {
     assert(cookieLine(nil) == "")
 }
 
-// Stream の網（平文の loopback）: 頭が先に空の切片で渡る・本文が繋がる・redirect を追った応答は渡らない・本文の上限
+// Streamの検査（平文のloopback）: 頭が先に空の切片で渡る・本文が繋がる・redirectを追ったレスポンスは渡らない・本文の上限
 func streamSummary(url string, maxBody int?) string {
     mut n := 0
     mut text := ""
@@ -618,8 +618,8 @@ func TestStreamPlain() {
     assert(e == nil)
 }
 
-// proxy の loopback の網（gates に載る形 — 偽の proxy）: CONNECT に Proxy-Authorization があれば 200 を返してそのまま TLS のサーバの役・無ければ 407・
-// 絶対 URI の要求は対象の綴りを確かめて直に答える
+// proxyのloopbackの検査（gatesに載る形 — 偽のproxy）: CONNECTにProxy-Authorizationがあれば200を返してそのままTLSのサーバの役・無ければ407・
+// 絶対URIのリクエストは対象の綴りを確認して直に答える
 func fakeProxy(l net.Listener, n int) error? {
     sp := srvParams()
     mut i := 0

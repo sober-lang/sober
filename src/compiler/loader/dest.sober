@@ -1,18 +1,18 @@
 package loader
 
-// 宛先構築の印（return の値を呼び手の region に直接置くための印）: 呼び出し（ECall）にも立てる — lower は印のある呼び出しの
-// 直前に自分の宛先の深度をレジスタ（rt の W_DEST）に書き、呼ばれた側の印のある確保がそこを使う（関数をまたいで伝える）。関数ごとに「return に流れ着く名前」を構文で逆向きに閉包し
+// 宛先構築のフラグ（returnの値を呼び手のregionに直接置くためのフラグ）: 呼び出し（ECall）にも立てる — lowerはフラグのある呼び出しの
+// 直前に自分の宛先の深度をレジスタ（rtのW_DEST）に書き、呼ばれた側のフラグのある確保がそこを使う（関数をまたいで伝える）。関数ごとに「returnに流れ着く名前」を構文で逆向きに閉包し
 // （return の式の名前・その名前を束縛 / 代入する式の名前…）、return の式とその名前の初期値 / 代入の式の中の、コンテナのリテラル（ESlicelit / EMaplit）と
-// string の補間・連結（EInterp / EBinary の +）の節の欄 e に 1 を立てる。lower は印のある節の確保を関数の入口の深度（= 戻り値の境界コピーの floor —
-// 呼び手の最内 region）に置き、戻りの写しを消す。意味論は変えない（寿命が呼び手の region まで延びるだけ — 観測等価）。
-// lower は要素が参照を持たない型（スカラー・string のバイト）にだけ印を使う（外側を浅く作ると relocate が中身に降りない）。
+// stringの補間・連結（EInterp / EBinaryの +）の節のフィールドeに1を立てる。lowerはフラグのある節の確保を関数の入口の深度（= 戻り値の境界コピーのfloor —
+// 呼び手の最内region）に置き、戻りのコピーを消す。意味論は変えない（寿命が呼び手のregionまで延びるだけ — 観測等価）。
+// lowerは要素が参照を持たない型（スカラー・stringのバイト）にだけフラグを使う（外側を浅く作るとrelocateが中身に降りない）。
 // ループ（while・for）とラムダの中の節には立てない（呼び手の region に反復ごとのゴミを積まない）。名前の遮蔽は見ない（保守側 — 余分に立っても寿命が延びるだけ）
 
 import "std/iter"
 import "ast"
 import "lexer"
 
-// 全ファイルの関数に印を立てた木
+// 全ファイルの関数にフラグを立てた木
 func destMarksAll(ts []ast.Tree) []ast.Tree {
     vf := valueFns(ts)
     rf, mas := appendTargets(ts)
@@ -25,7 +25,7 @@ func destMarksAll(ts []ast.Tree) []ast.Tree {
     return freeze(out)
 }
 
-// 全ファイルの関数宣言の表（名前の hash → 鎖）: (mask, 鎖の頭 × (mask + 1), 関数ごとに 3 語 = ファイル・宣言の節・鎖の次)。番号は
+// 全ファイルの関数宣言の表（名前のhash → チェーン）: (mask, チェーンの頭 × (mask + 1), 関数ごとに3ワード = ファイル・宣言の節・チェーンの次)。番号は
 // ファイルごとの関数宣言の並びを全ファイルで通した番号
 func fnTable(ts []ast.Tree) (int, []int, []int) {
     mut n := 0
@@ -58,12 +58,12 @@ func fnTable(ts []ast.Tree) (int, []int, []int) {
     return mask, freeze(tab), freeze(ent)
 }
 
-// 関数値として使われうる関数の印（ファイルごとの関数宣言の並びを全ファイルで通した番号 → 1 = 使われうる:
+// 関数値として使われうる関数のフラグ（ファイルごとの関数宣言の並びを全ファイルで通した番号 → 1 = 使われうる:
 // 関数値の呼び出しは呼び手が宛先の深度のレジスタを書くので、関数値の呼び先は全部入口で読んで 0 に戻す形に揃える〔読まない呼び先に残った値を、
-// その中のループの印の無い呼び出しが拾ってしまう〕）。数えるのは呼び出しの callee 以外の位置の名前: 裸の EIdent はそのファイルの package の関数
+// その中のループのフラグの無い呼び出しが拾ってしまう〕）。数えるのは呼び出しのcallee以外の位置の名前: 裸のEIdentはそのファイルのpackageの関数
 // （ローカルの束縛は同じ package のトップレベル名を遮れない — language.md 6 節・spec V-2）、`x.f`（ESelector の base が裸の名前）は package 名 x の関数 f
-// （x が import の参照名でなければ欄の読みで、同名の package の同名の関数が余分に入るだけ）。package は名前で見る — 同じ名前の別の package の同じ名前の
-// 関数も印が付く（保守側 — 余分に付いても入口の読み 1 組が増えるだけ）。文字列は作らない（データプールの上で hash と照合 — fnval.sober の tyTab の形）
+// （xがimportの参照名でなければフィールドの読みで、同名のpackageの同名の関数が余分に入るだけ）。packageは名前で見る — 同じ名前の別のpackageの同じ名前の
+// 関数もフラグが付く（保守側 — 余分に付いても入口の読み1組が増えるだけ）。文字列は作らない（データプールの上でhashと照合 — fnval.soberのtyTabの形）
 func valueFns(ts []ast.Tree) []int {
     mut n := 0
     for f <- iter.Range(0, len(ts)) {
@@ -99,9 +99,9 @@ func valueFns(ts []ast.Tree) []int {
     return freeze(out)
 }
 
-// 返る列へ追記する呼び出し（destAppend の印 3）の呼び先になりうる関数の印（valueFns と同じ番号・名前で引く — 同じ名前の別の関数にも
+// 返る列へ追記する呼び出し（destAppendのフラグ3）の呼び先になりうる関数のフラグ（valueFnsと同じ番号・名前で引く — 同じ名前の別の関数にも
 // 付きうる〔保守側 — 余分に付いても入口の読みが少し増えるだけ〕。付け漏れは旗を読まないだけ — 宛先を使わず今の形に倒れる）
-// 関数ごとの印 3 の節の列（valueFns と同じ番号 — destFile が使う）も返す
+// 関数ごとのフラグ3の節の列（valueFnsと同じ番号 — destFileが使う）も返す
 func appendTargets(ts []ast.Tree) ([]int, [][]int) {
     mut n := 0
     for f <- iter.Range(0, len(ts)) {
@@ -147,7 +147,7 @@ func appendTargets(ts []ast.Tree) ([]int, [][]int) {
     return freeze(out), freeze(mas)
 }
 
-// 名前 nm（木 nt のデータプール）・package 名 pk（木 pt）の関数に印を付ける（無ければ何もしない）
+// 名前nm（木ntのデータプール）・package名pk（木pt）の関数にフラグを付ける（無ければ何もしない）
 func valueMark(ts []ast.Tree, tab []int, ent []int, out mut []int, mask int, nt ast.Tree, nm int, pt ast.Tree, pk int) {
     mut e := tab[dataHash(nt, nm, mask)]
     while e >= 0 {
@@ -159,7 +159,7 @@ func valueMark(ts []ast.Tree, tab []int, ent []int, out mut []int, mask int, nt 
     }
 }
 
-// ファイル t の関数ごとの印（立てる節が無ければ t のまま）
+// ファイルtの関数ごとのフラグ（立てる節が無ければtのまま）
 func destFile(t ast.Tree, vf []int, rf []int, mas [][]int, base int) ast.Tree {
     mut marks := mut []int{}
     mut apnd := mut []int{}
@@ -177,10 +177,10 @@ func destFile(t ast.Tree, vf []int, rf []int, mas [][]int, base int) ast.Tree {
             for j <- iter.Range(0, len(ma)) {
                 apnd = append(apnd, ma[j])
             }
-            // 印を持つ関数は本体の KBlock にも印（lower が入口で宛先の深度のレジスタを読む）。関数値として使われうる関数も
+            // フラグを持つ関数は本体のKBlockにもフラグ（lowerが入口で宛先の深度のレジスタを読む）。関数値として使われうる関数も
             // （関数値の呼び出しの宛先の書きを受けて 0 に戻す。lower は結果が slice を持つ関数でだけ読む）
             if rf[base + k] != 0 {
-                // 返る列へ追記する呼び出し（印 3）の呼び先になりうる: 本体の印 4（lower は入口で宛先の旗も読む — 戻りの写しの床を宛先に）
+                // 返る列へ追記する呼び出し（フラグ3）の呼び先になりうる: 本体のフラグ4（lowerは入口で宛先の旗も読む — 戻りのコピーの床を宛先に）
                 rets = append(rets, fd.e)
             } else if len(ms) > 0 || len(ma) > 0 || vf[base + k] != 0 {
                 marks = append(marks, fd.e)
@@ -199,7 +199,7 @@ func destFile(t ast.Tree, vf []int, rf []int, mas [][]int, base int) ast.Tree {
         x := ns[marks[j]]
         ns[marks[j]] = ast.Node{x.kind, x.tok, x.a, x.b, x.c, x.d, 1, x.f}
     }
-    // ループの中で返る列へ追記する呼び出しの印は 3（destAppend — lower は関数の宛先の深度を書く。外の束縛への代入の右辺の
+    // ループの中で返る列へ追記する呼び出しのフラグは3（destAppend — lowerは関数の宛先の深度を書く。外の束縛への代入の右辺の
     // 行き先〔列の束縛の深度〕ではなく）
     for j <- iter.Range(0, len(apnd)) {
         x := ns[apnd[j]]
@@ -209,7 +209,7 @@ func destFile(t ast.Tree, vf []int, rf []int, mas [][]int, base int) ast.Tree {
         x := ns[rets[j]]
         ns[rets[j]] = ast.Node{x.kind, x.tok, x.a, x.b, x.c, x.d, 4, x.f}
     }
-    // ラムダの本体の印は 2（そのラムダ自身の値へ流れ着く — lower は持ち上げたラムダの本体を下ろすときだけ使う。展開されるラムダの本体では使わない:
+    // ラムダの本体のフラグは2（そのラムダ自身の値へ流れ着く — lowerは持ち上げたラムダの本体を下ろすときだけ使う。展開されるラムダの本体では使わない:
     // 展開の宛先は定義した関数の宛先で、ループの中の展開の結果が反復ごとに外の region へ積もるので別扱いにする）
     for j <- iter.Range(0, len(lm)) {
         x := ns[lm[j]]
@@ -218,7 +218,7 @@ func destFile(t ast.Tree, vf []int, rf []int, mas [][]int, base int) ast.Tree {
     return ast.Tree{nodes: freeze(ns), data: t.data, file: t.file}
 }
 
-// ファイル t のラムダごとの本体の印: 本体の値（式の本体ならその式・ブロックなら末尾の式の文）へ流れ着く
+// ファイルtのラムダごとの本体のフラグ: 本体の値（式の本体ならその式・ブロックなら末尾の式の文）へ流れ着く
 // リテラル・補間・連結・呼び出し（destFunc と同じ規則 — ループと入れ子のラムダの中へは降りない・本体の中の return は外の関数の return なので見ない）。
 // 値の位置か展開の位置かはここでは分からない（fnval の判定は後段）— lower が持ち上げたラムダの本体でだけ使う
 func destLambdas(t ast.Tree, sc []string) []int {
@@ -249,7 +249,7 @@ func destLambdas(t ast.Tree, sc []string) []int {
     return freeze(out)
 }
 
-// 本体 body（KBlock）の印を立てる節の列。tail >= 0 はラムダの本体（destLambdas — return の式の代わりに値の式 tail・本体の中の
+// 本体body（KBlock）のフラグを立てる節の列。tail >= 0はラムダの本体（destLambdas — returnの式の代わりに値の式tail・本体の中の
 // return はラムダの外の関数の return なので見ない）
 func destFunc(t ast.Tree, body int, sc []string, tail int) []int {
     // 1. ループ・ラムダの外の SRet / SBind / SAssign を集める（節と、ループ・ラムダの中か）
@@ -257,14 +257,14 @@ func destFunc(t ast.Tree, body int, sc []string, tail int) []int {
     mut sp := push2(mut st, 0, body, 0)
     mut rets := mut []int{}
     mut binds := mut []int{}
-    // 子の積みは節ごとに作らず使い回す（pushKids は先頭から上書きする）
+    // 子のスタックは節ごとに作らず使い回す（pushKidsは先頭から上書きする）
     mut tmp := mut []int{}
     while sp > 0 {
         sp -= 2
         n := st[sp]
         loop := st[sp + 1]
         x := t.nodes[n]
-        // 節の番号に「ループ・ラムダの中」の印を負で畳む（-1 - n）— 列を 1 本ずつに保つ
+        // 節の番号に「ループ・ラムダの中」のフラグを負で畳む（-1 - n）— 列を1本ずつに保つ
         if x.kind == ast.SRet && tail < 0 {
             rets = append(rets, if loop == 0 { n } else { -1 - n })
         } else if x.kind == ast.SBind || x.kind == ast.SAssign {
@@ -300,7 +300,7 @@ func destFunc(t ast.Tree, body int, sc []string, tail int) []int {
             }
         }
     }
-    // 3. 印: ループの外の return の式と、流れ着く名前の束縛 / 代入の式の中のリテラル・補間・連結（ループ・ラムダの中へは降りない）
+    // 3. フラグ: ループの外のreturnの式と、流れ着く名前の束縛 / 代入の式の中のリテラル・補間・連結（ループ・ラムダの中へは降りない）
     mut marks := mut []int{}
     for i <- iter.Range(0, len(rs)) {
         if rs[i] >= 0 {
@@ -319,10 +319,10 @@ func destFunc(t ast.Tree, body int, sc []string, tail int) []int {
 }
 
 // 本体 body の、ループの中で返る列 c へ追記する呼び出し `c = append(c, f(…))` の f(…) の節の列。追記した値はそのまま返る値の中に
-// 残るので、呼び出しの結果を関数の宛先に直に作っても反復ごとのゴミは生じない（深さの数だけの戻りの写しが 1 回に減る）。
+// 残るので、呼び出しの結果を関数の宛先に直に作っても反復ごとのゴミは生じない（深さの数だけの戻りのコピーが1回に減る）。
 // 返る列の条件（保守 — 宛先にゴミを残さない）:
 //   - 全ての return の式が c を直に含む（式の根から struct / slice のリテラルの要素・括弧・freeze の実引数だけを辿って着く —
-//     他の呼び出しの実引数に渡すだけの列は、その呼び出しが写して捨てうる）
+//     他の呼び出しの実引数に渡すだけの列は、その呼び出しがコピーして捨てうる）
 //   - c はループの外で束縛され、代入は `c = append(c, …)` だけ（添字への格納・別の値の代入なし）・mut の実引数に渡さない・
 //     ラムダの中で代入しない（ラムダの中の return は数えるので、return を持つラムダがあれば多くは候補が落ちる）
 func destAppend(t ast.Tree, body int, sc []string) []int {
@@ -339,7 +339,7 @@ func destAppend(t ast.Tree, body int, sc []string) []int {
         loop := st[sp + 1]
         x := t.nodes[n]
         if loop == 2 && x.kind == ast.SAssign {
-            // ラムダの中の代入の行き先は外す（印はラムダの外の直のループだけ）
+            // ラムダの中の代入の行き先は外す（フラグはラムダの外の直のループだけ）
             for j <- iter.Range(0, ast.ListLen(t, x.a)) {
                 r := rootIdent(t, ast.ListAt(t, x.a, j))
                 if r >= 0 {
@@ -500,7 +500,7 @@ func appendedCall(t ast.Tree, x ast.Node, c string, sc []string) int {
     return e
 }
 
-// 印を畳んだ節の番号を戻す
+// フラグを畳んだ節の番号を戻す
 func unloop(n int) int {
     return if n >= 0 { n } else { -1 - n }
 }
@@ -542,9 +542,9 @@ func destHas(ns mut []string, n string) bool {
     return false
 }
 
-// 式の列 l の中の名前（EIdent）を ns に足す（重複は足さない — ラムダの中も見る: 閉包が捕まえた名前も流れ着きうる）
+// 式の列lの中の名前（EIdent）をnsに足す（重複は足さない — ラムダの中も見る: クロージャが捕まえた名前も流れ着きうる）
 // 結果がスカラーだけの関数（sc — scalarFns）の呼び出しの実引数へは降りない（その値は結果に流れ着かない — 降りると
-// `return check(freeze(a), r)` の a まで印が付き、木が呼び手の深度に作られてしまう）
+// `return check(freeze(a), r)` のaまでフラグが付き、木が呼び手の深度に作られてしまう）
 func addIdents(t ast.Tree, l int, one int, ns mut []string, sc []string) {
     mut st := mut []int{}
     mut sp := if one >= 0 { push(mut st, 0, one) } else { pushList(mut st, 0, t, l) }
@@ -605,7 +605,7 @@ func scalarCall(t ast.Tree, x ast.Node, sc []string) bool {
 }
 
 // 式の列 l の中のリテラル・補間・連結の節を marks に足す（ループ・ラムダの中へは降りない）。
-// 利用者の関数の呼び出しには印を立てるが、その実引数（と受け手の式）へは降りない — 実引数の値は呼び先が読んで捨てうる一時で、
+// 利用者の関数の呼び出しにはフラグを立てるが、その実引数（と受け手の式）へは降りない — 実引数の値は呼び先が読んで捨てうる一時で、
 // 宛先の深度（呼び手の region）に作ると、呼び手の enter が C1 で消えたときに呼び手の呼び手の region に残る。
 // freeze / append の実引数は返る値そのものの一部なので降りる
 func markIn(t ast.Tree, l int, one int, marks mut []int, sc []string) {

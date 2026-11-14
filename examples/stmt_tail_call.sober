@@ -18,7 +18,7 @@ func g(k int) {
 func main() {
     g(2)
     k := 3
-    // 本体の最後の文の if-else の腕が int を返す呼び出しで終わる
+    // 本体の最後の文のif-elseの分岐がintを返す呼び出しで終わる
     if k == 1 {
         f(1)
     } else {

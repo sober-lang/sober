@@ -1,4 +1,4 @@
-// binary-trees の Rust の双子（Go の双子 bench/binarytrees/go の逐語訳 — 節ごとに Box で確保する木・逐次。benchmarks game の Rust は
+// binary-treesの比較用のRustの実装（比較用のGoの実装bench/binarytrees/goの逐語訳 — 節ごとにBoxで確保する木・逐次。benchmarks gameのRustは
 // 型つきアリーナで確保をまとめるが、ここは Go の「節ごとに new」の鏡として Box〔既定のアロケータ〕のまま）
 use std::env;
 

@@ -1,6 +1,6 @@
 package rsa
 
-// 多倍長の塊（MULX）と表引きの塊の照合（white-box）: 塊の montMul / sel と Sober の montMulS / selS を乱数で突き合わせる。
+// 多倍長のチャンク（MULX）と表引きのチャンクの照合（white-box）: チャンクのmontMul / selとSoberのmontMulS / selSを乱数で突き合わせる。
 // scripts/cryptocheck.sh が SOBER_NOMULX / SOBER_NOSHA の有無の両方で回す（倒れ先では両方 Sober — 同じ値になる）
 
 import "std/iter"
@@ -14,7 +14,7 @@ func TestSelSelfCheck() {
     assert(selSelfCheck(5, 40) == 0)
 }
 
-// xmm を作業に使う塊（表引き mmsel）を含む呼び出しを、float を 14 本 xmm に持ったまま跨ぐ（塊を含む関数が呼び手の xmm2〜15 を
+// xmmを作業に使うチャンク（表引きmmsel）を含む呼び出しを、floatを14本xmmに持ったまま跨ぐ（チャンクを含む関数が呼び手のxmm2〜15を
 // 退避しないと float が壊れる）
 func TestSelKeepsXmm() {
     want := []float{248.5166015625, 334.2119140625, 419.9072265625}
@@ -41,7 +41,7 @@ func TestSelKeepsXmm() {
 }
 
 // 専用命令の montMul と Sober の montMulS の照合。
-// 種 seed の擬似乱数で limb の数 1〜maxN の奇数の法 m（最上位の limb は 0 でない）と m 未満の a・b を rounds 組ずつ作り、montMul（専用命令 — 専用命令の無い出力では
+// シードseedの擬似乱数でlimbの数1〜maxNの奇数の法m（最上位のlimbは0でない）とm未満のa・bをrounds組ずつ作り、montMul（専用命令 — 専用命令の無い出力では
 // montMulS そのもの）と montMulS の結果を比べる。2 乗（a = b）と最大値寄り（m − 1）も混ぜる。食い違いの数を返す
 func montSelfCheck(seed int, maxN int, rounds int) int {
     mut x := seed
@@ -78,7 +78,7 @@ func montSelfCheck(seed int, maxN int, rounds int) int {
             }
             mt := newMont(freeze(m))
             l := n + 1
-            // 区画: 0 = a・1 = b・2 = 塊の結果・3 = Sober の結果・4 = 塊の 2 乗・5 = Sober の 2 乗
+            // 区画: 0 = a・1 = b・2 = チャンクの結果・3 = Soberの結果・4 = チャンクの2乗・5 = Soberの2乗
             blk := zeros(6 * l)
             mut w := leaseView(blk, 0, 6 * l)
             wa := addrn(blk)
@@ -98,14 +98,14 @@ func montSelfCheck(seed int, maxN int, rounds int) int {
     return bad
 }
 
-// 専用命令の表引き sel と Sober の selS の照合。種 seed の擬似乱数で
-// 語の数 1〜maxN の表 16 本を作り、idx 0〜15 の全部で両方の結果と表そのものを比べる。食い違いの数を返す
+// 専用命令の表引きselとSoberのselSの照合。シードseedの擬似乱数で
+// ワードの数1〜maxNの表16本を作り、idx 0〜15の全部で両方の結果と表そのものを比べる。食い違いの数を返す
 func selSelfCheck(seed int, maxN int) int {
     mut x := seed
     mut bad := 0
     for n <- iter.Range(1, maxN + 1) {
         l := n + 1
-        // 区画: 0〜15 = 表・16 = 塊の結果・17 = Sober の結果
+        // 区画: 0〜15 = 表・16 = チャンクの結果・17 = Soberの結果
         blk := zeros(18 * l)
         mut w := leaseView(blk, 0, 18 * l)
         wa := addrn(blk)

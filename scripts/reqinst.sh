@@ -1,24 +1,26 @@
 #!/usr/bin/env bash
-# reqinst（要求 1 件の固定費の網）: bench/httparena/main.sober を今の木の stage2 で建て、題材ごとに callgrind で
-# 「命令/要求」（ireq）と「熱い 64 B 行の数」（hot64 — 要求あたり 0.45 回以上実行された命令を含む 64 B の行・熱い道のコードの足跡 = L1i の物差し）を測り、
-# bench/ratchet.txt の `srv/<題材> ireq <上限>` / `srv/<題材> hot64 <上限>` と照合する。機能を足す便でも、全要求の道の固定費が増えたら赤になる
-# （1 便ずつの増分は GHA の A/B の分解能〔±2.5〜3%〕の下に隠れるので、線は揺れの幅だけの余白で引く — × 1.005 の余白では 1 便 +20 命令/要求が素通りする）。
-#   scripts/reqinst.sh          照合。越えたら赤 — 正当な増えなら ireq は実測 + 2、hot64 は実測で引き直し、報告とコミットに明記して事後追認。
-#                               ireq が 0.5% 以上・hot64 が 1 行でも下がったら締め直しの note
-#   scripts/reqinst.sh --mut    網の自己検査: 変異 2 本を焼いたコンパイラをそれぞれ自己 build で建て（1 本約 15 秒）、それで建てたサーバが赤になることを確かめる
-#                               （両方赤 = 終了 0）。dispatch = std/http/server の Dispatch（全要求の道）に要求ごとの写しと分岐〔約 +5 命令/要求〕・
-#                               pgrow = std/pg の rowOf（DataRow の受け — 行ごと）に同じ形の写しと分岐（asyncdb の線だけで照合）
+# reqinst（リクエスト1件の固定費の検査）: bench/httparena/main.soberを今の木のstage2でビルドし、題材ごとにcallgrindで
+# 「命令/リクエスト」（ireq）と「熱い64 B行の数」（hot64 — リクエストあたり0.45回以上実行された命令を含む64 Bの行・ホットパスのコードの足跡 = L1iの基準）を測り、
+# bench/ratchet.txtの `srv/<題材> ireq <上限>` / `srv/<題材> hot64 <上限>` と照合する。機能を足すタスクでも、全リクエストのパスの固定費が増えたら赤になる
+# （1タスクずつの増分はGHAのA/Bの分解能〔±2.5〜3%〕の下に隠れるので、しきい値は揺れの幅だけの余白で引く — × 1.005の余白では1タスク +20命令/リクエストが素通りする）。
+#   scripts/reqinst.sh          照合。越えたら赤 — 正当な増えならireqは実測 + 2、hot64は実測で再設定し、報告とコミットに明記して事後承認。
+#                               ireqが0.5%以上・hot64が1行でも下がったら仕上げ直しのnote
+#   scripts/reqinst.sh --mut    自己検査: ミュータント2本を焼いたコンパイラをそれぞれ自己buildでビルドし（1本約15秒）、それでビルドしたサーバが赤になることを確認する
+#                               （両方赤 = 終了0）。dispatch = std/http/serverのDispatch（全リクエストのパス）にリクエストごとのコピーと分岐〔約 +5命令/リクエスト〕・
+#                               pgrow = std/pgのrowOf（DataRowの受け — 行ごと）に同じ形のコピーと分岐（asyncdbのしきい値だけで照合）
 # 題材 asyncdb は別のサーバ（bench/asyncdb — async-db の 20 行を std/pg のプールから読む）を、PostgreSQL の代役（bench/pgstub — 決まった表を返す）を相手に測る。
-# callgrind に掛けるのはサーバだけで、代役は別の CPU で素のまま走らせる（代役は束ごとの応答を 1 回の送りで返す — サーバの recv の切れ目を揺らさない）。
-# 代役は変異の便でも今の木の stage2 で建てる（変異はサーバの側にだけ当てる）
-# 計器 = callgrind（W1・SOBER_IO=2〔epoll の道 — ring は callgrind で測れない〕・SOBER_HASH_SEED=0）。束 20 と 220（× 16 要求）の 2 本の差 ÷ 3,200 =
-# 起動・接続・終了を除いた要求 1 件の命令。同じ ELF の揺れ = ireq ±0.8・hot64 0。perf stat の instructions:u は揺れ（±数命令/要求 — 起動と終了が混ざる）と
+# callgrindに掛けるのはサーバだけで、代役は別のCPUで素のまま走らせる（代役はバッチごとのレスポンスを1回の送りで返す — サーバのrecvの切れ目を揺らさない）。
+# 代役はミューテーションのタスクでも今の木のstage2でビルドする（ミューテーションはサーバの側にだけ当てる）
+# 計測ツール = callgrind（W1・SOBER_IO=2〔epollのパス — ringはcallgrindで測れない〕・SOBER_HASH_SEED=0）。バッチ20と220（× 16リクエスト）の2本の差 ÷ 3,200 =
+# 起動・接続・終了を除いたリクエスト1件の命令。同じELFの揺れ = ireq ±0.8・hot64 0。perf statのinstructions:uは揺れ（±数命令/リクエスト — 起動と終了が混ざる）と
 # 権限（perf_event_paranoid）が要り、足跡（番地ごとの回数）も取れない。
-# valgrind は VALGRIND → PATH → /nix/store の順に探す。無ければ SKIP（緑 — GHA・利用者の箱）。題材の足し方 = scripts/reqinst.ts の冒頭
+# valgrindはVALGRIND → PATH → /nix/storeの順に探す。無ければSKIP（緑 — GHA・利用者の実行環境）。題材の足し方 = scripts/reqinst.tsの冒頭
 set -uo pipefail
 export SOBER_HASH_SEED=0
 cd "$(dirname "$0")/.."
 R=$PWD
+# STAGE2の明示が無ければstage2を今のcompiler/ とstd/ に合わせる（stage2はstdを焼き込む — 古いstage2でビルドすると古いstdのサーバができる）
+[ -n "${STAGE2:-}" ] || scripts/stage2.sh --quiet || exit 1
 S2=${STAGE2:-out/stage2/sober2}
 case "$S2" in /*) ;; *) S2=$R/$S2 ;; esac
 mut=0
@@ -28,8 +30,8 @@ if [ -z "$VG" ] || ! "$VG" --version > /dev/null 2>&1; then
     echo "SKIP reqinst — valgrind が無い（VALGRIND で valgrind の実行ファイルを指す）: 要求 1 件の命令数と足跡は照合していない"
     exit 0
 fi
-# 客とサーバを別の CPU に 1 つずつ固定する（affinity の最後の 2 つ・asyncdb の代役は最後から 3 つ目 — 3 つ無ければ asyncdb だけ SKIP）— 固定しないと 1 束あたりの空読みの周回が客との競り合いで変わり ±2.5% 揺れる
-# （同じ CPU に置く形は空き CPU では決定的〔−97 命令/要求の別の値〕だが、他のプロセスと CPU を分け合うと揺れる）
+# 客とサーバを別のCPUに1つずつ固定する（affinityの最後の2つ・asyncdbの代役は最後から3つ目 — 3つ無ければasyncdbだけSKIP）— 固定しないと1バッチあたりの空読みの周回が客との競り合いで変わり ±2.5%揺れる
+# （同じCPUに置く形は空きCPUでは決定的〔−97命令/リクエストの別の値〕だが、他のプロセスとCPUを分け合うと揺れる）
 mapfile -t cpus < <(taskset -pc $$ | sed 's/.*: //' | tr ',' '\n' | awk -F- '{ if (NF == 2) for (i = $1; i <= $2; i++) print i; else print $1 }')
 if [ "${#cpus[@]}" -lt 2 ]; then
     echo "SKIP reqinst — 使える CPU が 2 つ未満（客とサーバを別の CPU に固定する計器）: 要求 1 件の命令数と足跡は照合していない"
@@ -55,7 +57,7 @@ ready() { # ready <出力のファイル> <pid>
     echo "$port"
 }
 
-measure() { # measure <srv> <題材> <置き場の頭> [<環境>…] → 「ireq <x> hot64 <n>」
+measure() { # measure <srv> <題材> <格納場所の頭> [<環境>…] → 「ireq <x> hot64 <n>」
     local srv=$1 subj=$2 o=$3 K vp port
     shift 3
     for K in $K1 $K2; do
@@ -73,7 +75,7 @@ measure() { # measure <srv> <題材> <置き場の頭> [<環境>…] → 「ireq
     NODE_NO_WARNINGS=1 node --experimental-strip-types scripts/reqinst.ts acct "$o.$K1" "$o.$K2" $((K2 - K1))
 }
 
-# 変異のコンパイラを $W/mut-<名>/sober2 に建てる（std の 1 関数に写しと分岐 — sed の式は「当てた印」の行を足す）
+# ミュータントのコンパイラを $W/mut-<名>/sober2にビルドする（stdの1関数にコピーと分岐 — sedの式は「当てたマーク」の行を足す）
 mkmut() { # mkmut <名> <std の相対パス> <sed の式>
     local d=$W/mut-$1 f
     mkdir -p "$d/tree"
@@ -92,8 +94,8 @@ for subj in "${subjs[@]}"; do [ "$subj" = asyncdb ] && has_db=1; done
 PGP=""
 if [ $has_db = 1 ] && [ -n "$CP" ]; then
     "$S2" build bench/pgstub --emit=elf --passes -o "$W/pgstub" > "$W/stub.log" 2>&1 || { echo "reqinst: FAIL build bench/pgstub: $(tail -c 400 "$W/stub.log")"; exit 1; }
-    # 応答の前に 300 µs 待たせる: サーバが PG の応答を読みに行った時点では届いていない形（本物の PG と同じ）に揃え、サーバの待ちの回数を揃える
-    # （待たせないと、読みに行った時点で届いているかが回ごとに変わり ±15 命令/要求揺れる。待たせても rt の待ちの道で ±7 残る — 線の余白は ratchet の注）
+    # レスポンスの前に300 µs待たせる: サーバがPGのレスポンスを読みに行った時点では届いていない形（本物のPGと同じ）に揃え、サーバの待ちの回数を揃える
+    # （待たせないと、読みに行った時点で届いているかが回ごとに変わり ±15命令/リクエスト揺れる。待たせてもrtの待ちのパスで ±7残る — しきい値の余白はratchetの注記）
     taskset -c $CP "$W/pgstub" 0 300 > "$W/stub.out" 2>&1 &
     PGP=$(ready "$W/stub.out" $!)
     [ -n "$PGP" ] || { echo "reqinst: FAIL — 代役（bench/pgstub）が ready を出さない: $(tail -c 300 "$W/stub.out")"; exit 1; }
@@ -101,7 +103,7 @@ fi
 
 fail=0
 n=0
-# run_all <コンパイラ> <題材の絞り（all か題材の名）> — 建てて測って線と照合し、fail / n を足す
+# run_all <コンパイラ> <題材の絞り（allか題材の名）> — ビルドして測ってしきい値と照合し、fail / nを足す
 run_all() {
     local cc=$1 only=$2 subj s got ireq hot col v lim srv
     "$cc" build bench/httparena/main.sober --emit=elf --passes -o "$W/srv" > "$W/build.log" 2>&1 || { echo "reqinst: FAIL build bench/httparena/main.sober: $(tail -c 400 "$W/build.log")"; fail=$((fail + 1)); return; }
@@ -143,12 +145,12 @@ run_all() {
 
 if [ $mut = 1 ]; then
     bad=0
-    # dispatch: Dispatch で要求の path の長さを mut の局所に写して読み戻し、分岐する（全要求の道に数命令）
+    # dispatch: Dispatchでリクエストのpathの長さをmutの局所にコピーして読み戻し、分岐する（全リクエストのパスに数命令）
     mkmut dispatch http/server/server.sober '/^func Dispatch(routes \[\]Route, r Request) Response {$/,/^}$/ s|^    pb := bytes(r.path)$|&\n    // reqinst mutant\n    mut mutw := len(pb)\n    mutw = mutw * 3 + len(routes)\n    if mutw == 9999991 {\n        return unrouted(routes, pb)\n    }|' || exit 1
     fail=0; n=0
     run_all "$W/mut-dispatch/sober2" all
     if [ $fail -gt 0 ]; then echo "reqinst --mut: caught dispatch — $fail / $n lines red"; else echo "reqinst --mut: FAIL — 変異 dispatch（Dispatch に要求ごとの写し）が鳴らない"; bad=1; fi
-    # pgrow: rowOf（DataRow の受け）で列の数を mut の局所に写して読み戻し、分岐する（行ごとに数命令 — asyncdb の 20 行で約 +100 命令/要求）
+    # pgrow: rowOf（DataRowの受け）で列の数をmutの局所にコピーして読み戻し、分岐する（行ごとに数命令 — asyncdbの20行で約 +100命令/リクエスト）
     if [ -z "$PGP" ]; then
         echo "SKIP reqinst --mut pgrow — asyncdb を測れない（CPU が 3 つ未満か ratchet に srv/asyncdb が無い）"
     else

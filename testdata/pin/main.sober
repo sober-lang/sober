@@ -1,8 +1,8 @@
 package main
 
-// ワーカーの CPU の固定の形（language.md 11 節「ワーカーの CPU の固定」）を外から確かめる題材 — scripts/pincheck.sh が SOBER_PIN と taskset を
+// ワーカーのCPUの固定の形（language.md 11 節「ワーカーのCPUの固定」）を外から検証する題材 — scripts/pincheck.shがSOBER_PINとtasksetを
 // 変えて走らせ、印字した Ledger の pin / pinGroups と /proc の Cpus_allowed_list を照合する。
-// 子を生んでワーカーを立て、全ワーカーが自分を固定し終えるまで待ってから印字し、引数のミリ秒だけ眠る（その間に外から /proc を読む）
+// 子を生んでワーカーを立て、全ワーカーが自分を固定し終えるまで待ってから印字し、引数のミリ秒だけスリープする（その間に外から /procを読む）
 
 import "std/convert"
 import "std/os"

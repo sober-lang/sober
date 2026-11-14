@@ -2,15 +2,15 @@ package desugar
 
 // 部分検査（check --pkg・小分けの check — st.onlySet）の表層型検査の対象を絞る（視点の固定費）: 視点には依存の package の
 // 本体つきの宣言（.sobi の whole — 展開される関数・mut 関数・総称・リンク可視）が全部入るが、P の脱糖が読むのは P の関数と、P から呼び出しで
-// 推移的に届く本体（展開・インスタンスの持ち上げで P の Def の中に写る分）の表だけ。全部を型付けると、desugar の mut 関数の本体を全部持つ
+// 推移的に届く本体（展開・インスタンスの持ち上げでPのDefの中にコピーされる分）の表だけ。全部を型付けると、desugarのmut関数の本体を全部持つ
 // lower の視点では検査の量の大半が依存の本体の型付けになっていた。
-// 印（YInstNeeded）は呼び先 → 呼び手へ伝わる（YPropagate）ので、届く集合（呼び先について閉じている）の中の印は全体で型付けたときと同じ。
+// フラグ（YInstNeeded）は呼び先 → 呼び手へ伝わる（YPropagate）ので、届く集合（呼び先について閉じている）の中のフラグは全体で型付けたときと同じ。
 // 脱糖テンプレートの暗黙の呼び出し（文字列の補間・string(b) 等 — 字面の呼び出しに出ない）は std の関数を呼ぶので、std の本体は常に入れる（保守的）
 
 import "ast"
 import "std/iter"
 
-// 表層型を付ける関数の印の列（1 = 付ける）: P の関数・std の関数・const の初期化式から呼ばれる関数を種に、本体の中の呼び出しを辿って閉じる
+// 表層型を付ける関数のフラグの列（1 = 付ける）: Pの関数・stdの関数・constの初期化式から呼ばれる関数をシードに、本体の中の呼び出しを辿って閉じる
 func yReach(st mut S) ListRef {
     mark := ListRef(listN(mut st, st.nfn))
     mut work := mut []int{}
@@ -113,7 +113,7 @@ func refGraph(st mut S) RefGraph {
 }
 
 // 名前の参照の節（EIdent / ESelector）を持ち主ごとに振り分けた表（解決はしない — 持ち主の規則は refGraph と同じ: 字句の区間・
-// 省略可の関数型の写しは節の区間）: head[c]..head[c + 1] が持ち主 c（0 = 関数の外・1 + 関数の添字）の節（adj）。数えてから詰める 2 回の走査
+// 省略可の関数型のコピーは節の区間）: head[c]..head[c + 1] が持ち主c（0 = 関数の外・1 + 関数の添字）の節（adj）。数えてから詰める2回の走査
 // （持ち主と節の組の列を積まない — 名前の参照の節は自己で百万の桁。組の列 + 詰めた表の 3 本だと自己 build の peak RSS +7 MB）
 func refOwners(st mut S) RefGraph {
     ff := fileFns(mut st)
@@ -222,10 +222,10 @@ func csrN(src []int, dst []int, n int) RefGraph {
     return RefGraph{head: freeze(head), adj: freeze(adj)}
 }
 
-// Def の区間の子（st.rangeSet）の表層型検査の対象の印: 区間の中で本体を脱糖しうる関数（部分検査の視点の外・L0 の std を除く）・
-// 根の区間なら main・std の関数・const の初期化式が参照する関数を種に、参照の辺（st.refs — 親の refGraph）を辿って閉じる。参照は呼び出しに限らない
-// （関数値として渡す形 — 区間の本体の fnref が指す関数の印〔YInstNeeded〕も全体と同じにする。yReach より保守的）。
-// 印は呼び先 → 呼び手へ伝わるので、届く集合の中の印・表は全体で型付けたときと同じ（yReach と同じ論証）
+// Defの区間の子（st.rangeSet）の表層型検査の対象のフラグ: 区間の中で本体を脱糖しうる関数（部分検査の視点の外・L0のstdを除く）・
+// 根の区間ならmain・stdの関数・constの初期化式が参照する関数をシードに、参照の辺（st.refs — 親のrefGraph）を辿って閉じる。参照は呼び出しに限らない
+// （関数値として渡す形 — 区間の本体のfnrefが指す関数のフラグ〔YInstNeeded〕も全体と同じにする。yReachより保守的）。
+// フラグは呼び先 → 呼び手へ伝わるので、届く集合の中のフラグ・表は全体で型付けたときと同じ（yReachと同じ論証）
 func rangeReach(st mut S) ListRef {
     mark := ListRef(listN(mut st, st.nfn))
     mut work := mut []int{}
@@ -239,7 +239,7 @@ func rangeReach(st mut S) ListRef {
     }
     head := st.refs.head
     adj := st.refs.adj
-    // const の初期化式（呼び手 0）の参照先は種
+    // constの初期化式（呼び手0）の参照先はシード
     for e <- iter.Range(head[0], head[1]) {
         if latI(mut st, mark, adj[e]) == 0 {
             lput(mut st, mark, adj[e], 1)
@@ -260,7 +260,7 @@ func rangeReach(st mut S) ListRef {
     return mark
 }
 
-// ファイル f の節 n の関数: 省略可の関数型の写しの節の区間に入っていればその組の関数（state.sober の zBlock）・でなければ字句で引いた g
+// ファイルfの節nの関数: 省略可の関数型のコピーの節の区間に入っていればその組の関数（state.soberのzBlock）・でなければ字句で引いたg
 func zOr(st mut S, f int, n int, g int) int {
     z := zBlock(mut st, f, n)
     return if z >= 0 { z } else { g }
@@ -412,7 +412,7 @@ func ExpCost(st mut S, own []int) []int {
 }
 
 
-// 入口（main package の main）と const の初期化式から参照の辺（refGraph — ParReach と同じ保守的な辺）で届く関数の印。
+// 入口（main packageのmain）とconstの初期化式から参照の辺（refGraph — ParReachと同じ保守的な辺）で届く関数のフラグ。
 // main が無ければ ok = false（部分検査・package の検査 — 呼び手は全部届く扱いにする）
 func mainReach(st mut S) (ListRef, bool) {
     return mainReachG(mut st, refGraph(mut st))
@@ -451,11 +451,11 @@ func mainReachG(st mut S, g RefGraph) (ListRef, bool) {
     return mark, true
 }
 
-// 入口（main package の main）と const の初期化式から参照の辺で届く関数に std/task の口（ParKey）があるか。
+// 入口（main packageのmain）とconstの初期化式から参照の辺で届く関数にstd/taskのインターフェース（ParKey）があるか。
 // lower の並列モード（task の大域・M:N の rt・罠）の判定: import しただけで届かないプログラム（std/utf8 の内側が par を使っても、それを呼ばない
 // プログラム）は逐次のまま — trap.sober の「使わないプログラムの IR は不変」。辺は refGraph（名前の参照 — 呼び出しに限らず関数値として渡す形も・
-// ラムダと総称の本体の中の参照は囲む関数から）で保守的。届かない扱いの誤りは rt が欠けて壊れる向きなので、lower は par の口を下ろす点で表明する
-// 辺は届いた関数の分だけ解決する（refOwners — 名前の参照の節を持ち主ごとに振り分けるだけ・解決は辿るとき）。最初に口を見つけた所で止まるので、
+// ラムダと総称の本体の中の参照は囲む関数から）で保守的。届かない扱いの誤りはrtが欠けて壊れる向きなので、lowerはparのインターフェースを下ろす点で表明する
+// 辺は届いた関数の分だけ解決する（refOwners — 名前の参照の節を持ち主ごとに振り分けるだけ・解決は辿るとき）。最初にインターフェースを見つけた所で止まるので、
 // task を使うプログラムは全体の名前の解決を払わない（refGraph で全節を解決してから辿る形は自己 build で ≈ 0.7 G 重い）。
 // 答え（届くか）は refGraph の辺で辿ったときと同じ
 func ParReach(st mut S) bool {
@@ -468,7 +468,7 @@ func ParReach(st mut S) bool {
             work = append(work, i)
         }
     }
-    // 持ち主 c（0 = 関数の外 — const の初期化式・1 + 関数の添字）の参照先のうち、まだ印の無い関数を積む
+    // 持ち主c（0 = 関数の外 — constの初期化式・1 + 関数の添字）の参照先のうち、まだフラグの無い関数を積む
     mut c := 0
     mut h := 0
     while c >= 0 {
@@ -493,8 +493,8 @@ func ParReach(st mut S) bool {
     return false
 }
 
-// task の関数 name（NewDomain / Await）を名指す節があるか（std/task の外の `X.name` — lower の domain の rt: 本体で死んだ task の毒の道。
-// 保守的〔届かない関数の中の名指しでも真〕— 参照の辺を全部辿る形は domain を使わないプログラムで全域を歩き、自己 build で +0.9 G だった）
+// taskの関数name（NewDomain / Await）を名前で参照する節があるか（std/taskの外の `X.name` — lowerのdomainのrt: 本体で死んだtaskの毒のパス。
+// 保守的〔届かない関数の中の参照でも真〕— 参照の辺を全部辿る形はdomainを使わないプログラムで全域を歩き、自己buildで +0.9 Gだった）
 func DomNamed(st mut S, name string) bool {
     for f <- iter.Range(0, st.nfile) {
         if strIs(mut st, PkgPath(mut st, FilePkg(mut st, f)), "std/task") {
@@ -510,7 +510,7 @@ func DomNamed(st mut S, name string) bool {
     return false
 }
 
-// main と const の初期化式から参照の辺で届く関数の印（ParReach の閉包そのもの — lower の並列分割の計画: lower/split.sober が群の受け持ちを決める。
+// mainとconstの初期化式から参照の辺で届く関数のフラグ（ParReachの閉包そのもの — lowerの並列分割の計画: lower/split.soberが群の受け持ちを決める。
 // 出力には効かない — 漏れは見つけた子が下ろし、余分は親の模擬が取り出さない）
 func PlanMarks(st mut S) []int {
     g := refGraph(mut st)
@@ -545,7 +545,7 @@ func PlanMarks(st mut S) []int {
     return freeze(mark)
 }
 
-// 関数ごとに task.Await に届くかの印（1 = 届く — 参照の辺の逆向きの不動点・保守的）。lower: Await に届く Spawn の子は縮退しない
+// 関数ごとにtask.Awaitに届くかのフラグ（1 = 届く — 参照の辺の逆向きの不動点・保守的）。lower: Awaitに届くSpawnの子は縮退しない
 // （縮退した子が待てるのは子孫だけ、の約束を domain の待ちで崩さない — language.md 11 節「予算と admission」）
 func AwaitMarks(st mut S) []int {
     g := refGraph(mut st)

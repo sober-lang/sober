@@ -55,7 +55,7 @@ func gap(x int) int {
     return 0
 }
 
-// 到達しない入れ子の腕: W の cause は V を持ちえない
+// 到達しない入れ子の分岐: WのcauseはVを持ちえない
 func dead(x int) int {
     e := wrapW(x)
     if e != nil {
@@ -79,7 +79,7 @@ func nilGap(x int) int {
     return 0
 }
 
-// 網羅: cause を束縛する腕が nil を含めて残りを覆う
+// 網羅: causeを束縛する分岐がnilを含めて残りを覆う
 func covered(x int) int {
     e := wrapV(x)
     if e != nil {

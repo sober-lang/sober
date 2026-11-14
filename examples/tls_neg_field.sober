@@ -1,6 +1,6 @@
 package main
 
-// 負例: tls.Conn は struct の欄に置けない（同一性の型 — 状態は値の外の置き場に住むので、写しが別の値の顔をすると隠れた可変が観測できてしまう。
+// 負例: tls.Connはstructのフィールドに置けない（同一性の型 — 状態は値の外の格納場所に住むので、コピーが別の値の顔をすると隠れた可変が観測できてしまう。
 // diag.FileUse — desugar/filecheck・language.md 28 節の tls）
 
 import "std/tls"

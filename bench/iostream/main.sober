@@ -13,7 +13,7 @@ func atoi(s string) int {
     return n
 }
 
-// 出力を流す（息継ぎ ② の双子 (b) — 素直な形: io.Writer へ 1 バイトずつ・定常メモリ）
+// 出力を流す（息継ぎ ② の対 (b) — 素直な形: io.Writerへ1バイトずつ・定常メモリ）
 func main() int {
     args := os.Args() catch return 2
     n := atoi(args[1])

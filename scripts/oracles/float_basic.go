@@ -1,4 +1,4 @@
-// float_basic.go — examples/float_basic.sober の Go の双子（期待値 examples/float_basic.out の生成元: go run scripts/oracles/float_basic.go > examples/float_basic.out）。
+// float_basic.go — examples/float_basic.soberの比較用のGoの実装（期待値examples/float_basic.outの生成元: go run scripts/oracles/float_basic.go > examples/float_basic.out）。
 // int へは int64(f)（範囲内だけ使う — Sober の int(f) と同じ 0 方向の切り捨て）・ビット列は int64(math.Float64bits(f))
 package main
 

@@ -1,7 +1,7 @@
-// 関数の効果の動的オラクルの判定（scripts/efftrace.sh から — effect の波 段 5a）: 計装つきの実行の出力（`#effin <fi>` / `#effout <fi>` / `#effleaf <ビット>`）から
-// 呼び出しの積みを組み直し、葉のビットを積みの上の全部の関数に数えた観測が、導出（`check --effects-dump` の `fi=<添字> bits=<語の列>`）に含まれるかを見る。
-// 積みは task ごと（行の末尾 = 今の task の TCB の番地）。出口の無い関数（panic・死で終わる）は積みに残るだけ — 次の `#effout` で上から外し、panic の葉の後は
-// その task の積みを捨てる（TCB は使い回される）。子の task の葉は子の積みにだけ数える（親の枠には数えない — 導出は親にも数えるので観測が狭いだけ）
+// 関数のエフェクトの動的オラクルの判定（scripts/efftrace.shから — effect のマイルストーン 段階5a）: 計装つきの実行の出力（`#effin <fi>` / `#effout <fi>` / `#effleaf <ビット>`）から
+// 呼び出しのスタックを組み直し、葉のビットをスタックの上の全部の関数に数えた観測が、導出（`check --effects-dump` の `fi=<添字> bits=<語の列>`）に含まれるかを見る。
+// スタックはtaskごと（行の末尾 = 今のtaskのTCBの番地）。出口の無い関数（panic・死で終わる）はスタックに残るだけ — 次の `#effout` で上から外し、panicの葉の後は
+// そのtaskのスタックを捨てる（TCBは使い回される）。子のtaskの葉は子のスタックにだけ数える（親の枠には数えない — 導出は親にも数えるので観測が狭いだけ）
 //
 //   node --experimental-strip-types scripts/efftrace.ts <dump> <trace> <名前>
 import { readFileSync } from "node:fs";
@@ -39,7 +39,7 @@ for (const line of readFileSync(tracePath, "latin1").split("\n")) {
     } else if (tag === "#effleaf") {
         leaves++;
         for (const f of stack) observed.set(f, (observed.get(f) ?? 0) | n);
-        // panic は task を終わらせる（子なら死 — 出口の印は来ない。TCB の番地は使い回されるので積みを捨てる）
+        // panicはtaskを終わらせる（子なら死 — 出口のマークは来ない。TCBの番地は使い回されるのでスタックを捨てる）
         if ((n & 4) !== 0) stack.length = 0;
     }
 }

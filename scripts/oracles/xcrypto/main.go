@@ -1,4 +1,4 @@
-// std/crypto/password の white-box テストの双子（golang.org/x/crypto — 標準ライブラリに無い方式だけ。版は go.mod で固定）。
+// std/crypto/passwordのwhite-boxテストの比較用の実装（golang.org/x/crypto — 標準ライブラリに無い方式だけ。版はgo.modで固定）。
 // 方式ごとに格子の値を 1 行 1 例で出す（入力は pat(長さ, k) = (i*31 + k*13 + 7) mod 256 — password の _test の pat と同じ）。再生成:
 //   cd scripts/oracles/xcrypto && go run . blake2b > ../../../testdata/crypto/blake2b.txt
 //   cd scripts/oracles/xcrypto && go run . argon2id > ../../../testdata/crypto/argon2id.txt

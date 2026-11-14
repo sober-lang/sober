@@ -14,10 +14,10 @@ import "loader"
 import "analyzer"
 import "clidoc"
 
-// `sober doc --cli <entry> [--ja <訳表>] [-o <file>]`: entry を建てて（run の置き場）`<exe> --cli-spec` の
-// 表の JSON を引き、表の const の `run: <関数>` の欄の関数の効果（analyzer の導出）を添えて clidoc が Markdown にする。表は実行ファイル自身に
+// `sober doc --cli <entry> [--ja <訳表>] [-o <file>]`: entryをビルドして（runの格納場所）`<exe> --cli-spec` の
+// 表のJSONを引き、表のconstの `run: <関数>` のフィールドの関数のエフェクト（analyzerの導出）を添えてclidocがMarkdownにする。表は実行ファイル自身に
 // 吐かせる（文書 ≡ 実装が構成で成り立つ — const の初期化式を読み直す 2 本目の解釈器を持たない）。標準出力は os.Run が捕まえないので /bin/sh の
-// リダイレクトで一時ファイルへ（std/os に出力を捕まえる口が来たら置き換え）
+// リダイレクトで一時ファイルへ（std/osに出力を捕まえるインターフェースが来たら置き換え）
 func cmdDoc(cl cli.Parsed) int {
     if !cli.Bool(cl, DocCli) {
         return misuse("doc needs --cli (the only document so far)")
@@ -68,7 +68,7 @@ func cmdDoc(cl cli.Parsed) int {
     return if o == nil { writeStdout(bytes(page)) } else { writeFile(o, bytes(page)) }
 }
 
-// 表を引く実行ファイル（given があればそれ・無ければ p を run の置き場に建てる）
+// 表を引く実行ファイル（givenがあればそれ・無ければpをrunの格納場所にビルドする）
 func docExe(p loader.Program, std map[string]string, given string?) (string, int) {
     if given != nil {
         return given, 0
@@ -77,7 +77,7 @@ func docExe(p loader.Program, std map[string]string, given string?) (string, int
 }
 
 // p の（std の外の）const の表の `cli.Command{name: "<名前>", …, run: <関数>}` の組（名前の列・`<package>.<関数名>` の列 — ラムダは ""）。
-// 読むのは「欄 name が文字列のリテラル・欄 run が関数の名前かラムダ」の composite だけ（run の欄の lint — 名前の参照に限る）。木は字句のまま読み直す
+// 読むのは「フィールドnameが文字列のリテラル・フィールドrunが関数の名前かラムダ」のcompositeだけ（runのフィールドのlint — 名前の参照に限る）。木は字句のまま読み直す
 // （loader の木では辞書 const の関数の参照がラムダに書き換わっている）
 func runFns(p loader.Program, std map[string]string) ([]string, []string) {
     mut cmds := mut []string{}

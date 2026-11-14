@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# wincheck: 浅い region の窓（language.md 11 節「接続の task の小さいスロット」）の網。testdata/wincheck/win.sober（net.Serve の region: 1 MiB の接続の
-# task が窓を越えて小さいスロットへ移る道 — 持続する深度の積み・先端の 1 バイト伸長・map の成長・ファイルの読み・深い再帰・region: の境）を
-# W2 / W8 × {既定・SOBER_TASK_WIN=0（窓を張らない）・SOBER_MADV_MB=0（深度の入りの返しを毎回走らせる — 窓の守りを踏む）} で走らせ、
-# stdout が testdata/wincheck/win.out と一致することを確かめる（窓の有無で出力は変わらない — region: の上限も窓の有無でちょうど同じ）。
-# W1 は窓を張らない（小さいスロットの task は M:N のときだけ）ので回さない。
-# --mutants: 変異 42（窓を移さない — 溢れで死 102）・43（深度の入りと lease の返しの窓の守りを外す）で建てた題材がどこかの構成で黄金と外れること・
-#   46（窓にしない印を塊に残さない — 接続ごとに頁を返す）で建てた churn が回数の照合で落ちることを確かめる
+# wincheck: 浅いregionの予約ページ（language.md 11 節「接続のtaskの小さいスロット」）の検査。testdata/wincheck/win.sober（net.Serveのregion: 1 MiBの接続の
+# taskが予約ページを越えて小さいスロットへ移るパス — 持続する深度のスタック・先端の1バイト伸長・mapの成長・ファイルの読み・深い再帰・region: の境）を
+# W2 / W8 × {既定・SOBER_TASK_WIN=0（予約ページを張らない）・SOBER_MADV_MB=0（深度の入りの返しを毎回走らせる — 予約ページの守りを踏む）} で走らせ、
+# stdoutがtestdata/wincheck/win.outと一致することを検証する（予約ページの有無で出力は変わらない — region: の上限も予約ページの有無でちょうど同じ）。
+# W1は予約ページを張らない（小さいスロットのtaskはM:Nのときだけ）ので回さない。
+# --mutants: ミューテーション42（予約ページを移さない — 溢れで死102）・43（深度の入りとleaseの返しの予約ページの守りを外す）でビルドした題材がどこかの構成でゴールデンと外れること・
+#   46（予約ページにしないフラグをチャンクに残さない — 接続ごとにページを返す）でビルドしたchurnが回数の照合で落ちることを検証する
 #   scripts/wincheck.sh [--mutants]
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -15,7 +15,7 @@ MUT=0
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 GOLD=testdata/wincheck/win.out
-# judge <実行ファイル> <名前> → 0 = 全構成で黄金と一致（外れた構成を印字）
+# judge <実行ファイル> <名前> → 0 = 全構成でゴールデンと一致（外れた構成を印字）
 judge() {
     local x=$1 name=$2 w e bad=0
     for w in 2 8; do
@@ -33,9 +33,9 @@ judge() {
     return $bad
 }
 "$S2" build testdata/wincheck/win.sober --emit=elf --passes -o "$W/win" > "$W/b.log" 2>&1 || { echo "wincheck: FAIL build ($(head -c 200 "$W/b.log"))"; exit 1; }
-# churn: 1 接続 2 要求で張り直す接続を 300 本（limited-conn の形 — std/http の畳みの park で要求の深度が死ぬ）。窓の頁を返す madvise は
-# 塊の窓ごとに高々 1 回（WSP_NOWIN を塊に残す）— 接続ごとに返すと M:N で TLB の撃ち落とし。回数の不変条件 win_rel ≤ 窓の数 4 × tcb_mmaps で縛る
-# （命令の網にも速さにも鳴らない族）。W2 だけ（窓は M:N のときだけ・W2 で塊の使い回しが最も多い）
+# churn: 1接続2リクエストで張り直す接続を300本（limited-connの形 — std/httpの畳みのparkでリクエストの深度が死ぬ）。予約ページを返すmadviseは
+# チャンクの予約ページごとに高々1回（WSP_NOWINをチャンクに残す）— 接続ごとに返すとM:NでTLBの撃ち落とし。回数の不変条件win_rel ≤ 予約ページの数4 × tcb_mmapsで縛る
+# （命令の検査にも速さにも鳴らない種類）。W2だけ（予約ページはM:Nのときだけ・W2でチャンクの使い回しが最も多い）
 churn() {
     local x=$1 name=$2
     env SOBER_WORKERS=2 SOBER_PAR_STATS=1 timeout 60 "$x" > "$W/cout" 2> "$W/cerr"

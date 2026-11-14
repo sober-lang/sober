@@ -1,7 +1,7 @@
 package main
 
 // lease の整えの転送（region-domain-pool.md 4d）と型の別名（language.md 32 節）: 作業域の型 testdata.alias_lease.flate.Work は別の package の型の別名で、
-// 整えの testdata.alias_lease.flate.NewWork は実体の package の NewWork を呼ぶ本体 1 文の包み — loader が転送を辿り、実体の整え（Scratch の欄ごとに NewScratch 1 回）を検査する
+// 整えのtestdata.alias_lease.flate.NewWorkは実体のpackageのNewWorkを呼ぶ本体1文の包み — loaderが転送を辿り、実体の整え（ScratchのフィールドごとにNewScratch 1回）を検査する
 
 import "std/iter"
 import "std/task"

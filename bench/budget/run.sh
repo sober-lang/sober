@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # メモリの天井の実働のグラフ（README の 3 枚目）: bench/budget を天井あり / なしで走らせ、RSS の時系列（scripts/rsssample.ts）を
-# out/bench/budget-<日時>.tsv に取り、出力の一致を確かめて scripts/benchchart.ts で docs/assets/bench-budget-{light,dark}.svg を描く。
+# out/bench/budget-<日時>.tsvに取り、出力の一致を確認してscripts/benchchart.tsでdocs/assets/bench-budget-{light,dark}.svgを描く。
 #   bench/budget/run.sh [-w ワーカー数（既定 8）]
 set -uo pipefail
 cd "$(dirname "$0")/../.."

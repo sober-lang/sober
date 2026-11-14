@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # cutstat（検査点の間引き — compiler/lower/cancel.sober cutThin・language.md 11 節「キャンセル」）:
-# ① 間引きの表（`sober build --cut-stat` — 利用者のループの頭ごとに 本体の重み B・N・形〔count / every〕）を testdata/cutstat/*.cut の黄金と照合
+# ① 間引きの表（`sober build --cut-stat` — 利用者のループの頭ごとに 本体の重み B・N・形〔count / every〕）をtestdata/cutstat/*.cutのゴールデンと照合
 #   （同時に表の行ごとに N × B ≤ K = 1024 — 約束の内側の検査）
 # ② 間引いた検査点がまだ切ること: examples/task_cancel_spin（切られなければ終わらない純な子 2 つ — 帰納変数のあるループと無いループ）がワーカー 1 / 2 / 8 で時間内に
-#   終わり、出力が黄金どおり
-# ③ 変異の自己検査（1 件で足りる）: 3 = 検査点なし・9 = 数え口が 0 に戻らない → ② が終わらない（timeout）。10 = 間引かない → ① の表が食い違う
+#   終わり、出力がゴールデンどおり
+# ③ ミューテーションの自己検査（1件で足りる）: 3 = 検査点なし・9 = カウンタが0に戻らない → ② が終わらない（timeout）。10 = 間引かない → ① の表が食い違う
 #   scripts/cutstat.sh [--regen]
 set -uo pipefail
 cd "$(dirname "$0")/.."

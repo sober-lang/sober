@@ -156,7 +156,7 @@ func LastIndex(s string, substr string) int {
 // ── 割る・置き換える・空白と大小（Go の strings が仕様のオラクル〔scripts/strings_oracle.ts〕）。
 // 空白と大文字小文字は ASCII だけを見る: 空白 = ' ' '\t' '\n' '\v' '\f' '\r'（Go の Fields / TrimSpace は加えて U+0085・U+00A0 ほか Unicode の空白も見る）、
 // 大小 = 'A'..'Z' ⇄ 'a'..'z'（Go の ToLower / ToUpper / EqualFold は Unicode の case folding — 'É' ⇄ 'é'・K〔U+212A〕≡ k などは対象外）。
-// 非 ASCII のバイトはそのまま写すので、結果は妥当な UTF-8 のまま ──
+// 非ASCIIのバイトはそのままコピーするので、結果は妥当なUTF-8のまま ──
 
 // c が ASCII の空白か（' ' '\t' '\n' '\v' '\f' '\r' — Go の asciiSpace と同じ 6 つ）
 func isSpace(c byte) bool {
@@ -250,7 +250,7 @@ func Replace(s string, old string, new string, n int) string {
     }
     mut out := mut []byte{}
     mut done := 0
-    // i = 次に写す b の位置・at = 次に new を差す位置（old が空なら文字の境目を頭から順に — 末尾の後は -1）
+    // i = 次にコピーするbの位置・at = 次にnewを差す位置（oldが空なら文字の境目を頭から順に — 末尾の後は -1）
     mut i := 0
     mut at := if len(o) == 0 { 0 } else { indexAt(b, 0, o) }
     while at >= 0 && (n < 0 || done < n) {
@@ -374,8 +374,8 @@ func Clone(a mut Arena, s string) string {
     return bytesToString(freeze(c))
 }
 
-// ps を sep で繋いだ string（Go の strings.Join と同じ）。片の長さの和を 1 回だけ写す — 素直な `s = s + sep + p` の繰り返しは
-// 写しが積もる（先端一致の concat の in-place 成長はまだ無い）。積みは 1 本の列の先端なので写しが起きない
+// psをsepで繋いだstring（Goのstrings.Joinと同じ）。片の長さの和を1回だけコピーする — 素直な `s = s + sep + p` の繰り返しは
+// コピーが積もる（先端一致のconcatのin-place成長はまだ無い）。積みは1本の列の先端なのでコピーが起きない
 @effects()
 func Join(ps []string, sep string) string {
     sb := bytes(sep)
@@ -472,8 +472,8 @@ func IndexInvalid(b []byte) int {
 }
 
 // j ≥ i で「b[i:j] は妥当な UTF-8 の列の並び・j は列の頭（か末尾）」となる j を返す — i をそのまま返しても契約どおり
-// （SIMD の速い道への差し替え口）。最適化のバックエンドはこの呼び出しを SSE2 の検査器に差し替える（compiler/lower/irinl.sober の
-// ilUtf8 — 機構の置き場はコンパイラとランタイムの中）。この本体は他の経路（写しのバックエンド・.ll・照合）の形で、意味は全経路で同じ
+// （SIMDの高速パスへの差し替えインターフェース）。最適化のバックエンドはこの呼び出しをSSE2の検査器に差し替える（compiler/lower/irinl.soberの
+// ilUtf8 — 機構の配置先はコンパイラとランタイムの中）。この本体は他の経路（コピーのバックエンド・.ll・照合）の形で、意味は全経路で同じ
 // （IndexInvalid は j から今の走査を続けるので、見つける最初の不正の位置は変わらない）
 func validPrefix(b []byte, i int) int {
     return i

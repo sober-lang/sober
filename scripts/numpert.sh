@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# 番号の摂動の網（インクリ + 並列の波 段 2 — report-1188 案 T / report-1189）: 関数の機械語が発見順の番号（panic の点・spawn の点・
-# ワーカーの表）に依らないこと。番号は札つきの定数（lower の iconstTag — OpConst の欄 b）と OpFsAddr / 罠の表の disp32 で運び、x86 が後埋め
-# （種類 3 / 4 / 5）にする。判定 = `SOBER_NUMNOPATCH=1`（番号の後埋めを書かない — 欄は 0）で下駄 `SOBER_NUMOFF` = 0 / 1 / 1000 の ELF が
+# 番号の摂動の検査（インクリ + 並列の波 段階2 — report-1188案T / report-1189）: 関数の機械語が発見順の番号（panicの点・spawnの点・
+# ワーカーの表）に依らないこと。番号は札つきの定数（lowerのiconstTag — OpConstのフィールドb）とOpFsAddr / 罠の表のdisp32で運び、x86が後埋め
+# （種類3 / 4 / 5）にする。判定 = `SOBER_NUMNOPATCH=1`（番号の後埋めを書かない — フィールドは0）で下駄 `SOBER_NUMOFF` = 0 / 1 / 1000のELFが
 # バイト一致。割れたら = 後埋めを通らない出し口があるか、番号の値で形が変わるパスがある（GVN の併合 — report-1188 0. の 3 で実発）。
-# 割れた entry は syms で関数を名指しする（下駄 0 と K の最初の食い違いの関数）。
+# 割れたentryはsymsで関数を特定する（下駄0とKの最初の食い違いの関数）。
 # 母集団: 自己 build（compiler/ + std/ の木）+ bench の題材 + examples（既定は 4 本に 1 本 — 並びの添字 mod 4 = 0・`--every` で全数 — 約 10 分）
-# 変異 3 つ（網が名指しすること）: m1 = spawn の札を落とす（par.sober の CT_SITE → 0）・m2 = 並列の移し（呼び出しの引数の組み立て — 札つきの定数の主な出し口）の後埋めを落とす（xParallelMove の xTagAt）・
-# m3 = GVN の鍵から札（欄 b）を落とす — 変異のコンパイラは木を stage2 で build して作り、探りの列（下の PROBE）で回す。変異が探りを建てられない
-# （段 6 R1 の規則順の付け直しが札の無い点の定数を InvariantBroken で止める — m1 はこちらで捕まる）のも検出に数える
+# ミュータント3つ（検査が特定すること）: m1 = spawnの札を落とす（par.soberのCT_SITE → 0）・m2 = 並列の移し（呼び出しの引数の組み立て — 札つきの定数の主な出し口）の後埋めを落とす（xParallelMoveのxTagAt）・
+# m3 = GVNの鍵から札（フィールドb）を落とす — ミュータントのコンパイラは木をstage2でbuildして作り、探りの列（下のPROBE）で回す。ミュータントが探りをビルドできない
+# （段階6 R1の規則順の付け直しが札の無い点の定数をInvariantBrokenで止める — m1はこちらで捕まる）のも検出に数える
 # 使い方: scripts/numpert.sh [--every] [--no-mutants]
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -35,9 +35,9 @@ for f in $(ls examples/*.sober | grep -v '_neg'); do
     k=$((k + 1))
 done
 for f in bench/*/main.sober; do entries+=("$f"); done
-# 探り（変異の検出用 — report-1188 の摂動で番号の形が出た例 + spawn の多い例）
+# 探り（ミュータントの検出用 — report-1188の摂動で番号の形が出た例 + spawnの多い例）
 PROBE=(examples/opt_promote.sober examples/switch_nil.sober examples/task_map.sober examples/tour_07_parallel.sober examples/task_budget.sober bench/httparena/main.sober)
-# 名指し: 下駄 0 と K の ELF の関数ごとの最初の食い違い
+# 特定: 下駄0とKのELFの関数ごとの最初の食い違い
 name_fn() { # $1 = cwd $2 = src $3 = コンパイラ $4 = K
     (cd "$1" && SOBER_NUMNOPATCH=1 "$3" build "$2" --emit=syms -o "$W/s0" > /dev/null 2>&1) || return
     node -e '
@@ -78,7 +78,7 @@ r=$?
 n=$((n + 1))
 nm=0
 if [ "$mutants" = 1 ]; then
-    # mutant <名前> <ファイル> <sed の式> <grep の形> — 変異のコンパイラで PROBE（+ 自己）を回して 1 本でも割れれば捕まえた
+    # mutant <名前> <ファイル> <sedの式> <grepの形> — ミュータントのコンパイラでPROBE（+ 自己）を回して1本でも割れれば捕まえた
     mutant() {
         local name=$1 file=$2 expr=$3 pat=$4 caught=0 p
         rm -rf "$W/mt"; mkdir -p "$W/mt"; cp -r "$W/tree/." "$W/mt/"
@@ -91,7 +91,7 @@ if [ "$mutants" = 1 ]; then
             one . "$p" "$p" "$W/mc" > "$W/mout"
             r=$?
             if [ $r = 1 ]; then caught=1; echo "  mutant $name caught by $(cat "$W/mout" | sed 's/^  //')"; break; fi
-            # 探りは基のコンパイラで建つ — 変異が建てられないのも検出（段 6 R1 の規則順の付け直し〔ruleord.sober の roPoints〕が札の無い点の定数を InvariantBroken で止める）
+            # 探りは基のコンパイラでビルドできる — ミュータントがビルドできないのも検出（段階6 R1の規則順の付け直し〔ruleord.soberのroPoints〕が札の無い点の定数をInvariantBrokenで止める）
             if [ $r = 2 ]; then caught=1; echo "  mutant $name caught by $p: build failed — $(grep -m1 . "$W/err" | head -c 160)"; break; fi
         done
         if [ $caught = 0 ]; then

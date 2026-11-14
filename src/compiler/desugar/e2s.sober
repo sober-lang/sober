@@ -1,15 +1,15 @@
 package desugar
 
-// E2-S（docs/formal.md「check の callM の段」）: check の経路だけで、δ の対象（関数型の引数が無く mut 引数だけが
+// E2-S（docs/formal.md「checkのcallMの段階」）: checkの経路だけで、δ の対象（関数型の引数が無くmut引数だけが
 // 展開の理由の非再帰関数 — loader の closed）のうち次を満たす関数を、展開でなく既存の callM（anchor つき呼び出し）の Def として出す。
 //   1. mut 仮引数がちょうど 1 つ（anchor が 1 slot で足りる）
 //   2. 他の仮引数が region を持たない型（imm 実引数の「anchor 以下」が呼び出し点に依らない）
 //   5. 本体の中で、callM で呼ぶ関数（再帰する mut 関数・@noinline・上げる候補）へ mut 実引数を 2 つ以上渡さない（anchor 1 slot — 2 つの mut 実引数が
 //      別の region から来ると callM の規則が落ちる。保守的に「2 つ以上」で外す）
-// 上げる判定は関数の署名と本体だけで決まる（package の中で閉じる・判定 D'）。呼び出し点の形に依る 2 つは、関数の印でなく呼び出し点ごとに選ぶ
+// 上げる判定は関数の署名と本体だけで決まる（packageの中で閉じる・判定D'）。呼び出し点の形に依る2つは、関数のフラグでなく呼び出し点ごとに選ぶ
 // （e2sSiteInline — 形が合わない呼び出し点だけ展開する。展開は inline の許容性の論証の向き〔callM で型付く ⇒ 展開でも型付く〕に倒すだけ）:
 //   3. 型引数が region を持つ（tyArgOk でない）呼び出し点
-//   4. 欄の経路の mut 実引数（`mut x.f`）を渡す呼び出し点
+//   4. フィールドの経路のmut実引数（`mut x.f`）を渡す呼び出し点
 // 本体が Def として型付かなかった関数は、呼び手（checker の CheckE2 等）が検査器の判定で集めて e2sExcl に入れて脱糖し直す（逃げ — 展開へ戻すのは
 // 型付けを緩めるだけなので単調に収束）。lower の経路（Init）は触らない — build は今どおり δ。
 
@@ -17,7 +17,7 @@ import "ast"
 import "std/iter"
 import "std/table"
 
-// 表層型検査器より前に、上げない印の表を用意する（条件 5 — e2sScanCalls）
+// 表層型検査器より前に、上げないフラグの表を用意する（条件5 — e2sScanCalls）
 func e2sPrepare(st mut S) {
     st.e2sBad = ListRef(listN(mut st, st.nfn))
     // 区間の子: 親の計画の走査の結果をそのまま（e2sScanCalls は前段で決まる関数表・木・逃げだけを読む — 子でも同じ結果）
@@ -98,7 +98,7 @@ func tyHasRegion(st mut S, t TyRef) bool {
     }
 }
 
-// 全ファイルの呼び出しを見て条件 5 の印を付ける（呼び手 g の本体の中の、mut 実引数 2 つ以上の callM の呼び出し）
+// 全ファイルの呼び出しを見て条件5のフラグを付ける（呼び手gの本体の中の、mut実引数2つ以上のcallMの呼び出し）
 func e2sScanCalls(st mut S, cand ListRef) {
     for f <- iter.Range(0, st.nfile) {
         t := st.trees[f]
@@ -142,7 +142,7 @@ func e2sCallee(st mut S, pk int, c NodeRef) int {
     return -1
 }
 
-// ファイル f の木の節 n を本体に含む関数（無ければ -1）— 字句の区間で引く（省略可の関数型の写しは節の区間 — zBlock）
+// ファイルfの木の節nを本体に含む関数（無ければ -1）— 字句の区間で引く（省略可の関数型のコピーは節の区間 — zBlock）
 func e2sEnclosing(st mut S, f int, n int) int {
     z := zBlock(mut st, f, n)
     if z >= 0 {

@@ -20,7 +20,7 @@ func Sum(key []byte, msg []byte) []byte {
 }
 
 // AEAD の MAC の入力（ad ‖ 0 埋め ‖ msg[off, off + n) ‖ 0 埋め ‖ len(ad) ‖ n — 長さは各 64 bit の小さい端・RFC 8439 2.8）の tag。
-// 入力を繋いだ写しを作らない（record 層向けの API — msg は受けの切片のまま）
+// 入力を繋いだコピーを作らない（record層向けのAPI — msgは受けの切片のまま）
 @secret(key)
 @effects(!io, !block, !nondet)
 func SumAead(key []byte, ad []byte, msg []byte, off int, n int) []byte {
@@ -62,7 +62,7 @@ func start(key []byte) acc {
 }
 
 // msg[off, off + n) を 16 バイトのブロックずつ畳む。16 バイトに満たない端は、pad なら 0 で埋めた満ちたブロック（AEAD の 0 埋め）・
-// でなければ 0x01 を足して 0 で埋め上のビットを立てない（RFC 8439 2.5 の端）。満ちたブロックは写さずに msg から直に読む
+// でなければ0x01を足して0で埋め上のビットを立てない（RFC 8439 2.5の端）。満ちたブロックはコピーせずにmsgから直に読む
 func absorb(a mut acc, msg []byte, off int, n int, pad bool) {
     r0 := a.r0
     r1 := a.r1
@@ -124,7 +124,7 @@ func tail(msg []byte, at int, k int, pad bool) []byte {
     return freeze(b)
 }
 
-// 累算を締めて s（鍵の後半）を足した tag
+// 累算を仕上げてs（鍵の後半）を足したtag
 func finish(a acc, key []byte) []byte {
     mut h0 := a.h0
     mut h1 := a.h1
@@ -184,12 +184,12 @@ func finish(a acc, key []byte) []byte {
     return freeze(out)
 }
 
-// b[p..p+4) の小さい端の 32 bit の語
+// b[p..p+4) の小さい端の32 bitのワード
 func le32(b []byte, p int) int {
     return int(b[p]) | (int(b[p + 1]) << 8) | (int(b[p + 2]) << 16) | (int(b[p + 3]) << 24)
 }
 
-// 語 w を小さい端の 4 バイトで積む
+// ワードwを小さい端の4バイトで積む
 func put32(out mut []byte, w int) {
     out = append(out, byte(w & 0xff))
     out = append(out, byte((w >> 8) & 0xff))

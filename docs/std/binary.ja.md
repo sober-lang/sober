@@ -4,7 +4,7 @@
 
 `import "std/binary"`
 
-バイト列の語単位の読み（1 バイトずつの読みを 1 回の検査 + 1 回の load に）と末尾への語の書き（AppendWord）。途中の位置を書き換える口（Store64）は無い
+バイト列のワード単位の読み（1バイトずつの読みを1回の検査 + 1回のloadに）と末尾へのワードの書き（AppendWord）。途中の位置を書き換えるAPI（Store64）は無い
 
 ## Load64
 
@@ -42,4 +42,4 @@ b[i:i+n] と b[j:j+n] の先頭からの一致の長さ（0〜n — 最初に食
 func AppendWord(b mut []byte, v int, k int)
 ```
 
-v の下位 k バイトを b の末尾に積む（v の最下位のバイトが先 — little-endian）。k \< 0 か k > 8 なら panic(OutOfRange{k, 8})。結果は byte(v & 0xff), byte((v >> 8) & 0xff), … を k 回 append したのと同じで、b が伸ばせる位置にあれば検査 1 回・書き 1 本で済む（ビットの溜めの吐き出し・可変長の整数の書き）
+v の下位 k バイトを b の末尾に積む（v の最下位のバイトが先 — little-endian）。k \< 0 か k > 8 なら panic(OutOfRange{k, 8})。結果は byte(v & 0xff), byte((v >> 8) & 0xff), … を k 回 append したのと同じで、b が伸ばせる位置にあれば検査 1 回・書き 1 本で済む（ビットバッファのフラッシュ・可変長の整数の書き）

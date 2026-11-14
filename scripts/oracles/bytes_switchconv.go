@@ -1,4 +1,4 @@
-// examples/bytes_switchconv.sober の Go の双子（docs/oracles.md）。再生成:
+// examples/bytes_switchconv.soberの比較用のGoの実装（docs/oracles.md）。再生成:
 //   go run scripts/oracles/bytes_switchconv.go > examples/bytes_switchconv.out
 package main
 

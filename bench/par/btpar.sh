@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# btpar.sh（段 6 の総取り — bench/par/README.md の binary-trees の表）: binary-trees の逐次（bench/binarytrees）と並列（bench/binarytreespar — 深さごとに 1 つの子 /
-# Go は深さごとに goroutine）を Sober と Go の双子で、ワーカー数（SOBER_WORKERS / GOMAXPROCS）1 / 2 / 4 / 8 ごとに測る。並列アロケーションの競合の計器
-# （Go = 並列のミューテータ × GC・Sober = task ごとの region で確保の共有点なし）。物差しと規律は bench/par/sky.sh と同じ（cycles:u の最小の回・物理コアごとに 1 論理 CPU）
+# btpar.sh（フェーズ6の総取り — bench/par/README.mdのbinary-treesの表）: binary-treesの逐次（bench/binarytrees）と並列（bench/binarytreespar — 深さごとに1つの子 /
+# Goは深さごとにgoroutine）をSoberと比較用のGoの実装で、ワーカー数（SOBER_WORKERS / GOMAXPROCS）1 / 2 / 4 / 8ごとに測る。並列アロケーションの競合の計測ツール
+# （Go = 並列のミューテータ × GC・Sober = taskごとのregionで確保の共有点なし）。基準と規律はbench/par/sky.shと同じ（cycles:uの最小の回・物理コアごとに1論理CPU）
 #   bench/par/btpar.sh [-n 回数] [-o 結果の TSV] [--depth N（既定 21 = benchmarks game の値）]
 set -uo pipefail
 cd "$(dirname "$0")/../.."

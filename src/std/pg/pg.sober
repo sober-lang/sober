@@ -1,9 +1,9 @@
 package pg
 
 // PostgreSQL のクライアント（wire protocol 3.0・extended query・TLS 1.3 + SCRAM-SHA-256-PLUS が既定）。
-// SQL の文面は const の席（`@const` — 文字列リテラルか const）で、値は `$1` … の引数で渡す（実行時に組んだ SQL は書けない）。
+// SQL の文面は const 仮引数（`@const` — 文字列リテラルか const）で、値は `$1` … の引数で渡す（実行時に組んだ SQL は書けない）。
 // 接続は Open の範囲の中だけ（CPS — 閉じ忘れが書けない）。文面ごとの prepared statement は接続ごとに 1 回だけ作り、引数の型と列の型を覚える。
-// 結果は binary 形式（第一陣の型）で受けて Value に写す。方針は呼び手のデータ Policy（ゼロ値 = 既定 — どの欄も安全な側）
+// 結果は binary 形式（第一陣の型）で受けて Value に変換する。方針は呼び手のデータ Policy（ゼロ値 = 既定 — どのフィールドも安全な側）
 //
 //     pg.Open("postgres://app@db.local/shop", (c) => {
 //         _ = list(c, 500)
@@ -30,7 +30,7 @@ import "std/task"
 import "std/time"
 import "std/tls"
 
-// 方針（省いた欄・nil は既定）: password = SCRAM の password（URL には書かない・"" = 無し — サーバが SCRAM を求めれば 28P01 で断られる）・extraRoots = 焼き込みの WebPKI のルートに足す起点（私的 PKI — tls.ParseRoots の値）・
+// 方針（省いたフィールド・nil は既定）: password = SCRAM の password（URL には書かない・"" = 無し — サーバが SCRAM を求めれば 28P01 で断られる）・extraRoots = 焼き込みの WebPKI のルートに足す起点（私的 PKI — tls.ParseRoots の値）・
 // timeout = 1 回の呼び出し〔Open の握手と認証・Query / Exec / Script の往復 — Query は k の時間も含む〕の期限 ns・既定 30 秒〔0 以下も既定〕・
 // maxRow = 1 つのメッセージ〔行〕の上限バイト・既定 16 MiB・上限 1 GiB・appName = application_name〔既定 "sober"〕・
 // dangerouslyPlaintext = TLS を使わない・dangerouslyAllowNoChannelBinding = TLS の上で SCRAM-SHA-256-PLUS を出さないサーバ〔PgBouncer 等〕も受ける・
@@ -62,10 +62,10 @@ type Auth error
 // TLS が張れない（サーバが SSLRequest を断った・証明書の検証・握手の失敗）
 type Tls error
 
-// 接続が使えない（相手が閉じた・期限切れや壊れた応答の後）
+// 接続が使えない（相手が閉じた・期限切れや壊れたレスポンスの後）
 type Closed error
 
-// サーバの応答が wire protocol の形でない
+// サーバのレスポンスが wire protocol の形でない
 type Protocol error
 
 // URL が読めない（形・port・password や クエリを含む — password は Policy に）
@@ -102,7 +102,7 @@ type Reentered panic {
     hint string
 }
 
-// 接続 1 本（同一性の型 — Open の k の仮引数としてだけ生まれる。状態は値の外の置き場 blk〔transport.sober〕）
+// 接続 1 本（同一性の型 — Open の k の仮引数としてだけ生まれる。状態は値の外の格納場所 blk〔transport.sober〕）
 type Conn struct {
     fd int
     blk []int
@@ -114,7 +114,7 @@ type Conn struct {
 type connSeal struct {
 }
 
-// 結果の 1 行（k の中で読む — 列は番号で）。DataRow の body のまま持ち、列の値は読むときに body から作る（形は受けたときに全列を確かめ済み）
+// 結果の 1 行（k の中で読む — 列は番号で）。DataRow の body のまま持ち、列の値は読むときに body から作る（形は受けたときに全列を確認済み）
 type Row struct {
     body []byte
     cells []int // 列ごとの [body の中の値の位置, 長さ（-1 = NULL）]
@@ -122,7 +122,7 @@ type Row struct {
     fmts []int
 }
 
-// Policy を読み解いた設定と URL の欄
+// Policy を読み解いた設定と URL のフィールド
 type cfg struct {
     user string
     db string
@@ -254,7 +254,7 @@ func startup(conn int, blk []int, c cfg, cp internal.hsc.CParams) error? {
 }
 
 // 行を 1 行ずつ k に渡す呼び出し形の生成元: `for r <- pg.Query(c, sql, args: …)? { … }`。本体の `?` / return / break で抜けると、残りの行を読み捨てて
-// 接続を使える状態に戻す（生成元の defer）。sql は const の席。本体の中から同じ Conn を使うと panic(Reentered) — 行を読み切ってから使うか、別の接続で
+// 接続を使える状態に戻す（生成元の defer）。sql は const 仮引数。本体の中から同じ Conn を使うと panic(Reentered) — 行を読み切ってから使うか、別の接続で
 @const(sql)
 @errors(Server, Protocol, Closed, BadArg, io.Expired)
 @effects(block, io, panic, nondet)
@@ -270,7 +270,7 @@ func Query(c Conn, sql string, k func(r Row), args ([]Value)?) error? {
     return q.fail
 }
 
-// 文を 1 つ実行して影響行数（CommandComplete の数 — 行を返す文は返した行の数）を返す。sql は const の席
+// 文を 1 つ実行して影響行数（CommandComplete の数 — 行を返す文は返した行の数）を返す。sql は const 仮引数
 @const(sql)
 @errors(Server, Protocol, Closed, BadArg, io.Expired)
 @effects(block, io, panic, nondet)
@@ -286,7 +286,7 @@ func Exec(c Conn, sql string, args ([]Value)?) (int, error?) {
     return q.count, nil
 }
 
-// 複数の文（; 区切り — migration 用・引数なし）を simple query で 1 回に送る。最初の誤りで止まる（サーバの振る舞い）。sql は const の席
+// 複数の文（; 区切り — migration 用・引数なし）を simple query で 1 回に送る。最初の誤りで止まる（サーバの振る舞い）。sql は const 仮引数
 @const(sql)
 @errors(Server, Protocol, Closed, io.Expired)
 @effects(block, io, panic, nondet)
@@ -294,7 +294,7 @@ func Script(c Conn, sql string) error? {
     return plain(c, sql)
 }
 
-// simple query の往復（Script と Tx の制御文 — 文面は呼び手が const の席か std の中で組んだもの）
+// simple query の往復（Script と Tx の制御文 — 文面は呼び手が const 仮引数か std の中で組んだもの）
 @errors(Server, Protocol, Closed, io.Expired)
 @effects(block, io, panic, nondet)
 func plain(c Conn, sql string) error? {
@@ -327,7 +327,7 @@ func scriptOn(c Conn, sql string) error? {
     return fail
 }
 
-// 往復の入口: 死んだ接続は Closed・入れ子（Query の本体の中から同じ Conn）は panic・期限の起点を置き場へ
+// 往復の入口: 死んだ接続は Closed・入れ子（Query の本体の中から同じ Conn）は panic・期限の起点を格納場所へ
 @errors(Closed)
 @effects(io, panic, nondet)
 func enter(c Conn) error? {
@@ -355,7 +355,7 @@ func publicOrServer(blk []int, err error?) error? {
     return out
 }
 
-// 往復の内側の誤り（nil でない）の公開のラベル（サーバの ErrorResponse・壊れた応答・期限・他は接続の失敗）
+// 往復の内側の誤り（nil でない）の公開のラベル（サーバの ErrorResponse・壊れたレスポンス・期限・他は接続の失敗）
 @errors(Server, Protocol, Closed, io.Expired)
 func publicOf(err error) error? {
     return switch err {
@@ -459,7 +459,7 @@ func prepare(c Conn, r mut rx, sql string) ([]int, []int, string, error?) {
         return params, cols, name, nil
     }
     if name != "" {
-        // 語の置き場が満ちた: 名前つきの文は捨てて無名で作り直す（Bind は無名の文を指す）
+        // ワードの格納場所が満ちた: 名前つきの文は捨てて無名で作り直す（Bind は無名の文を指す）
         sendMsg(c.fd, c.blk, catBytes(catBytes(internal.pgwire.EncClose('S', name), internal.pgwire.EncParse("", sql, []int{})), internal.pgwire.EncSync()))?
         drainTo(c, mut r)?
     }
@@ -555,7 +555,7 @@ func recvMsg(c Conn, r mut rx) (internal.pgwire.Msg, error?) {
     return m, de
 }
 
-// ReadyForQuery の状態を置き場へ（Tx が COMMIT の前に失敗の状態 'E' を見る）
+// ReadyForQuery の状態を格納場所へ（Tx が COMMIT の前に失敗の状態 'E' を見る）
 func noteReady(blk []int, m internal.pgwire.Msg) {
     switch m {
     case internal.pgwire.Ready{status}: setW(blk, lTxStatus, int(status))
@@ -647,7 +647,7 @@ func rowOf(body []byte, cols []int, fmts []int) (Row, error?) {
     if nc != len(cols) {
         return emptyRow(), internal.pgwire.Protocol{}
     }
-    // body は Decode が形を確かめ済み（列の長さの欄は body に収まる）— 列の位置を前から 1 回で拾い、列ごとに値の形を型に照らす
+    // body は Decode が形を確認済み（列の長さのフィールドは body に収まる）— 列の位置を前から 1 回で拾い、列ごとに値の形を型に照らす
     mut cs := mut []int{}
     mut at := 2
     for i <- iter.Range(0, nc) {

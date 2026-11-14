@@ -1,18 +1,18 @@
 package lower
 
-// 切片の読み（std/io の Chunks / Lines の下ろし先。language.md 28 節「読みのストリーム」・region-domain-pool.md 4c 節）:
+// 切片の読み（std/io の Chunks / Lines の下ろし先。language.md 28 節「読み込みのストリーム」・region-domain-pool.md 4c 節）:
 // 1 本のストリーム（Chunks の 1 回の for）が自分のスロット gens 個（既定 64 KiB × 2 — std が渡す）を私有する。ストリームの記録は chunk_open を呼んだ
 // 深度の region に置く（Chunks の出口で region と一緒に消える — 出口の chunk_close が先に読みの完了を待つ）。
-// 1 回の chunk_next が 1 つのスロットをプログラムへ貸し（View = ヘッダの ptr がスロット・depth は呼んだ時点の深度 — 外へは境界の写しでだけ出る）、
+// 1回のchunk_nextが1つのスロットをプログラムへ貸し（View = ヘッダのptrがスロット・depthは呼んだ時点の深度 — 外へは境界のコピーでだけ出る）、
 // 前に貸したスロットを空きへ戻し、空いたスロットへ次の読みを先に出す（世代の回転 = 反復の境目）。
-// - スロットの置き場: std/task のプログラムでワーカーに ring があれば、ワーカーのアリーナ（AR_N 個 × 64 KiB — そのワーカーの最初の chunk_open で mmap し、
+// - スロットの格納場所: std/taskのプログラムでワーカーにringがあれば、ワーカーのアリーナ（AR_N個 × 64 KiB — そのワーカーの最初のchunk_openでmmapし、
 //   ring に 1 本の固定バッファとして REGISTER_BUFFERS で 1 回だけ登録する）から gens 個を取り、READ_FIXED（buf_index 0）で読む。アリーナが尽きた・
 //   登録できない・大きさが違うときは記録と同じ region に取り、READ で読む。ストリームごとに登録しない理由: 5.15 は登録を外した分の memlock の戻りが
 //   遅延 work なので、短いストリームが続くと BUFFERS_UPDATE が ENOMEM で落ちる（実測）
-// - 読みは ring に出す（待たずに提出 — user_data = スロットの組の番地 | 1・完了は rt.uring_poll が組に書き、待っている task を起こす）
-// - ring の無い道（逐次・W1・probe の失敗・SOBER_IO=1/2・積んだ io が UR_FLYMAX 本）は同期の read(2) — 先読みの位置は ring と同じ
+// - 読みはringに出す（待たずに提出 — user_data = スロットの組の番地 | 1・完了はrt.uring_pollが組に書き、待っているtaskをウェイクアップする）
+// - ringの無いパス（逐次・W1・probeの失敗・SOBER_IO=1/2・積んだioがUR_FLYMAX本）は同期のread(2) — 先読みの位置はringと同じ
 //   （読みの回数・順序が backend に依らない — ファイルの位置も同じ）
-// - task の死（defer が走らない）: ストリームの記録は task の鎖（TCB の TC_CHS — 次 = 記録の CH_LINK）に載り、子の入口の出口の rt.chunk_drain が
+// - taskの死（deferが走らない）: ストリームの記録はtaskのチェーン（TCBのTC_CHS — 次 = 記録のCH_LINK）に載り、子の入口の出口のrt.chunk_drainが
 //   chunk_close を呼んで読みの完了を待ち、スロットを返す（fd_drain の前 — region・アリーナのスロットが再利用される前に）
 // 書かないもの（4c 節の前提の 1 文）: chunk_open / chunk_next / chunk_close が書くのは、自分の記録・スロット（貸出中の pool）・戻りの値と W_ERRNO だけ
 
@@ -20,7 +20,7 @@ import "desugar"
 import "diag"
 import "std/iter"
 
-// ストリームの記録（語）
+// ストリームの記録（ワード）
 const CH_FD = 0
 const CH_FIX = 1     // 1 = スロットはワーカーのアリーナ（READ_FIXED）・0 = region（READ / 同期）
 const CH_SIZE = 2
@@ -30,7 +30,7 @@ const CH_HELD = 5    // プログラムへ貸しているスロット（-1 = 無
 const CH_NEXT = 6    // 次に渡すスロット
 const CH_SUBM = 7    // 次に読みを出すスロット
 const CH_DONE = 8    // 1 = 列の終わり（EOF か失敗を渡した）
-const CH_LINK = 9    // task の鎖の次の記録（std/task）
+const CH_LINK = 9    // taskのチェーンの次の記録（std/task）
 const CH_WAIT = 10   // 完了を待っている task（0 = 無し）
 const CH_INFL = 11   // ring に出して完了を取り込んでいない読みの数
 const CH_ERR = 12    // 列の終わりの errno（0 = EOF）
@@ -39,16 +39,16 @@ const CH_CELL = 14   // スロット i の組 [結果, 記録の番地, スロ�
 const CH_GMAX = 8
 const CH_WORDS = CH_CELL + 3 * CH_GMAX
 const CH_EMPTY = -9223372036854775806   // 組の結果: 読みを出していない（IO_PENDING = 出して完了待ち）
-// ワーカーのアリーナ（ring の記録の語 — uring.sober の UR_* の続き）
+// ワーカーのアリーナ（ringの記録のワード — uring.soberのUR_* の続き）
 const UR_ARENA = 24  // アリーナの番地（0 = まだ・-1 = 作れない / 登録できない）
 const UR_FREE = 25   // 空きのスロットのビット（AR_N 個）
-const UR_IOV = 26    // REGISTER_BUFFERS の iovec（2 語）
+const UR_IOV = 26    // REGISTER_BUFFERSのiovec（2ワード）
 const AR_N = 16
 const AR_SLOT = 65536
-// 開いた fd の鎖の次の語（task.sober の TC_FDS の次 — 記録の先頭の頁）
+// 開いたfdのチェーンの次のワード（task.soberのTC_FDSの次 — 記録の先頭のページ）
 const TC_CHS = TC_WORDS + 1
 
-// rt の io の関数の記録（Chunks の 5 本 + net の 3 本 — 使わない欄は 0〔chF は -1 で返す〕。St の欄は rtCh 1 つ）
+// rtのioの関数の記録（Chunksの5本 + netの3本 — 使わないフィールドは0〔chFは -1で返す〕。StのフィールドはrtCh 1つ）
 func ioRec(st mut St) int {
     if st.rtCh == -1 {
         st.rtCh = listN(mut st, NETF_NWAIT + 1)
@@ -69,7 +69,7 @@ func needChunk(st mut St) {
     }
 }
 
-// rt.chunk_* の記録の欄（needChunk）
+// rt.chunk_* の記録のフィールド（needChunk）
 const CHF_OPEN = 0
 const CHF_NEXT = 1
 const CHF_CLOSE = 2
@@ -82,7 +82,7 @@ func chF(st mut St, k int) FnRef {
     return FnRef(if x == 0 { -1 } else { x })
 }
 
-// 子の入口の出口で task の鎖に残ったストリームを閉じる（fdDrainCall の前 — Chunks を使う std/task のプログラムだけ）
+// 子の入口の出口でtaskのチェーンに残ったストリームを閉じる（fdDrainCallの前 — Chunksを使うstd/taskのプログラムだけ）
 func chDrainCall(st mut St) {
     if chF(mut st, CHF_DRAIN) != -1 {
         call(mut st, chF(mut st, CHF_DRAIN), list2(mut st, 0, iconst(mut st, 0)))
@@ -167,7 +167,7 @@ func buildChunkSubmit(st mut St) {
 }
 
 // chunk_open(fd, size, gens, off) → 記録の番地: 今の深度の region に記録を取り、スロットを決めて（アリーナか region）最初のスロットへ
-// 読みを出す。std/task のプログラムは task の鎖に積む
+// 読みを出す。std/taskのプログラムはtaskのチェーンに積む
 func buildChunkOpen(st mut St) {
     begin(mut st, chF(mut st, CHF_OPEN))
     fd := 0
@@ -262,7 +262,7 @@ func chTakeSlots(st mut St, rp int, size int, gens int, bRegion BlkRef, bGo BlkR
     bTake := newBlock(mut st)
     condbr(mut st, cmp(mut st, CGt, arena, zero), bTake, -1, bRegion, -1)
     setCur(mut st, bTake)
-    // 空きのビットの下から gens 個（足りなければ取らずに region へ — 組の番地は region の道が書き直す）
+    // 空きのビットの下からgens個（足りなければ取らずにregionへ — 組の番地はregionのパスが書き直す）
     free := load(mut st, ring, UR_FREE)
     sl := newBlock(mut st)
     b := param(mut st, sl, TyI64)
@@ -387,7 +387,7 @@ func buildChunkClose(st mut St) {
         chWait(mut st, rp, -1, 1)
     }
     // 先に読んで渡していない分だけファイルの位置を戻す（for を途中で抜けた後の読みが続きから読める — 通常のファイル。pipe 等は lseek が
-    // ESPIPE で戻せない: 先読みの分は捨てる）。組の結果の空き・完了待ちの印は負なので 0 として数える
+    // ESPIPEで戻せない: 先読みの分は捨てる）。組の結果の空き・完了待ちのフラグは負なので0として数える
     mut sum := zero
     for k <- iter.Range(0, CH_GMAX) {
         sum = bin(mut st, BAdd, sum, imax(mut st, load(mut st, rp, CH_CELL + 3 * k), zero))
@@ -411,7 +411,7 @@ func buildChunkClose(st mut St) {
         store(mut st, rp, CH_FIX, zero)
         br(mut st, bLink, -1)
         setCur(mut st, bLink)
-        // 鎖から外す（Chunks の入れ子は積んだ順の逆に閉じるので、ふつうは頭で当たる）
+        // チェーンから外す（Chunksの入れ子は積んだ順の逆に閉じるので、ふつうは頭で当たる）
         me := chMe(mut st)
         loop := newBlock(mut st)
         p := param(mut st, loop, TyI64)
@@ -432,8 +432,8 @@ func buildChunkClose(st mut St) {
     ret(mut st, zero)
 }
 
-// chunk_drain(tcb, stop): task の鎖の頭が stop になるまでストリームを閉じる（子の入口の出口 — 死・切られた子は stop = 0 で全部。
-// ふつうに終わった子の鎖は空。縮退して親の中で走った子は子に入る前の頭 — rt.fd_drain と同じ形）
+// chunk_drain(tcb, stop): taskのチェーンの頭がstopになるまでストリームを閉じる（子の入口の出口 — 死・切られた子はstop = 0で全部。
+// ふつうに終わった子のチェーンは空。縮退して親の中で走った子は子に入る前の頭 — rt.fd_drainと同じ形）
 func buildChunkDrain(st mut St) {
     begin(mut st, chF(mut st, CHF_DRAIN))
     tcb := 0
@@ -452,7 +452,7 @@ func buildChunkDrain(st mut St) {
     ret(mut st, -1)
 }
 
-// rt.uring_poll の完了のうちスロットの読み（user_data の下位ビット 1）: 組に結果を書き、記録の完了待ちを減らして待ち手を起こす
+// rt.uring_pollの完了のうちスロットの読み（user_dataの下位ビット1）: 組に結果を書き、記録の完了待ちを減らして待ち手をウェイクアップする
 func chReap(st mut St, ud int, res int, tk int) {
     cell := itop(mut st, bin(mut st, BAnd, ud, iconst(mut st, -2)))
     store(mut st, cell, 0, res)

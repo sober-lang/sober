@@ -1,7 +1,7 @@
 package exact
 
-// 検算そのものの網: 正しい結果を受け、ビット列で 1 つずらした結果を拒む（同点の偶数への丸め・溢れ・非正規数・0 の符号・特殊値・最短の印字）。
-// 加えて internal.bigint.Mul の網 — bigint の中には白箱のテストを置けない（std/testing が convert → floatfmt → bigint に届いて循環する）。
+// 検算そのものの検査: 正しい結果を受け、ビット列で1つずらした結果を拒む（同点の偶数への丸め・溢れ・非正規数・0の符号・特殊値・最短の印字）。
+// 加えてinternal.bigint.Mulの検査 — bigintの中には白箱のテストを置けない（std/testingがconvert → floatfmt → bigintに届いて循環する）。
 // 参照 = 肢ごとの MulAdd と Shl で組んだ Σ a × b[j] × 2^(30j)・可換・境界
 
 import "std/internal/bigint"

@@ -1,6 +1,6 @@
 package main
 
-// 負例: http.client.Session は値の閉包に捕獲できない（名前つきの関数型の値は Open の範囲の外へ運ばれて呼ばれうる。借りの位置のラムダ — Open の k 自身 — は
+// 負例: http.client.Sessionは値のクロージャに捕獲できない（名前つきの関数型の値はOpenの範囲の外へ運ばれて呼ばれうる。借りの位置のラムダ — Openのk自身 — は
 // 捕獲してよい。diag.FileUse — desugar/filecheck）
 
 import "std/http/client"

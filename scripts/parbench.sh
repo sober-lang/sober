@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# parbench（段 6 P4-6 — 並列の数字）: 1BRC の並列版（bench/1brcpar）と Skynet（bench/skynet）を Sober と Go の双子で、ワーカー数
-# （SOBER_WORKERS / GOMAXPROCS）1 / 2 / 4 / 8 の曲線で測る。逐次の 1BRC（bench/1brc）を基準の列に添える（並列化の配当を逐次との連続で見る）。
+# parbench（段階6 P4-6 — 並列の数字）: 1BRCの並列版（bench/1brcpar）とSkynet（bench/skynet）をSoberとGoの比較用の実装で、ワーカー数
+# （SOBER_WORKERS / GOMAXPROCS）1 / 2 / 4 / 8の曲線で測る。逐次の1BRC（bench/1brc）を基準の列に添える（並列化の効果を逐次との連続で見る）。
 #   scripts/parbench.sh [-n 回数] [--rows N] [--sky N] [-o 結果の TSV] [--load-max L]
 # 規律（bench.sh と同じ）: 全部を同じ 8 コアに固定（taskset -c — 物理コアごとに 1 論理 CPU の最後の 8 つ）・各行の前に loadavg（1 分）を見て上限を越えていたら警告・
 # 1 周ごとに Sober → Go の交互・回数の中央値。wall と RSS は /usr/bin/time・命令数（instructions:u）は perf で 1 回（M:N は回る分の揺れを含む）。
-# 検査点の税率（相談 B の再訪材料）: Sober の並列版を --rt-mutant=3（検査点を置かない）でも建て、同じワーカー数の命令数と wall を並べる。
-# 出力の一致（Sober ≡ Go ≡ 逐次）も毎回確かめる。運用の規律: bench と gates を同時に回さない
+# 検査点の税率（相談Bの再訪材料）: Soberの並列版を --rt-mutant=3（検査点を置かない）でもビルドし、同じワーカー数の命令数とwallを並べる。
+# 出力の一致（Sober ≡ Go ≡ 逐次）も毎回確認する。運用の規律: benchとgatesを同時に回さない
 set -uo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$PWD

@@ -1,6 +1,6 @@
 package main
 
-// 借りの仮引数の mut の席の anchor: z はループの外（anchor = z の region < 呼び手の最内）・借りのラムダはループの中で作る。
+// 借りの仮引数が持つ mut 仮引数の anchor: z はループの外（anchor = z の region < 呼び手の最内）・借りのラムダはループの中で作る。
 // ラムダはループの中で作った imm（tag — 反復の region）も捕捉し、stream は反復の region の slice を emit する — imm の成分は anchor へ形式コピー
 
 type Z struct {

@@ -1,9 +1,9 @@
 package lot
 
-// 接続の預かり所（std の内側 — std/pg の Pool。language.md 28 節「資源とストリーム」・11 節「domain」）: 接続の実体（fd と値の外の置き場）を枠に預かり、
+// 接続の預かり所（stdの内側 — std/pgのPool。language.md 28 節「資源とストリーム」・11 節「domain」）: 接続の実体（fdと値の外の格納場所）を枠に預かり、
 // task の間を同一性の値として渡さずに貸し借りする。どの枠を借りてよいか（待機の本数・張れる本数）は呼び手の domain が数え、ここは枠の状態だけを持つ。
-// 枠の状態は取り合う（別のワーカーの task が同時に走査する）ので比較交換で動かす。借りている枠は借り手の task の lease の鎖に印を積む —
-// 借り手が死ぬと rt.lease_drain が印を 0 に戻す（defer は走らない）ので、「使用中なのに印が 0」の枠が死んだ借り手の枠（Reap が回収する）。
+// 枠の状態は取り合う（別のワーカーのtaskが同時に走査する）ので比較交換で動かす。借りている枠は借り手のtaskのleaseのチェーンにマークを積む —
+// 借り手が死ぬとrt.lease_drainがマークを0に戻す（deferは走らない）ので、「使用中なのにマークが0」の枠が死んだ借り手の枠（Reapが回収する）。
 // fd は rt の登録簿に積まない（死んだ借り手の fd は Reap か Close が閉じる — 二重の閉じを作らない）
 
 import "std/internal/sock"
@@ -11,9 +11,9 @@ import "std/iter"
 
 // 枠の状態
 const sFree = 0     // 空き（fd なし）
-const sIdle = 1     // 待機（fd と置き場を預かっている — 借りられる）
+const sIdle = 1     // 待機（fdと格納場所を預かっている — 借りられる）
 const sClaim = 2    // 取り中（持ち主の task だけが触る過渡の状態）
-const sBusy = 3     // 使用中（借り手の印が鎖に積まれている）
+const sBusy = 3     // 使用中（借り手のマークがチェーンに積まれている）
 const sReap = 4     // 回収中（死んだ借り手の枠を Reap が取った）
 
 // 枠の語: [印, 鎖]（lease_op 2 / 3 の区画 — 並びは rt の約束）・状態・fd・置き場の語
@@ -22,18 +22,18 @@ const wState = 2
 const wFd = 3
 const wHead = 4
 
-// 表の頭: 枠の数・枠ごとの置き場の語数・Reap が最後に走査した時の死の通し番号（lease_op 9）
+// 表の頭: 枠の数・枠ごとの格納場所のワード数・Reapが最後に走査した時の死の通し番号（lease_op 9）
 const hN = 0
 const hW = 1
 const hSeen = 2
 const hHead = 3
 
-// 預かり所（表は imm の列 — 語の読み書きは lease_op の生の口）
+// 預かり所（表はimmの列 — ワードの読み書きはlease_opの生のAPI）
 type Lot struct {
     blk []int
 }
 
-// n 枠・枠ごとに w 語の置き場の預かり所（全部空き）
+// n枠・枠ごとにwワードの格納場所の預かり所（全部空き）
 func New(n int, w int) Lot {
     stride := wHead + w
     mut b := mut []int{}
@@ -85,7 +85,7 @@ func take(l Lot, from int) int {
     return -1
 }
 
-// 取り中の枠 i に張った fd を置き、置き場を 0 から始める（Hold の前 — 張ったばかりの接続）
+// 取り中の枠iに張ったfdを置き、格納場所を0から始める（Holdの前 — 張ったばかりの接続）
 func Fresh(l Lot, i int, fd int) {
     b := base(l, i)
     _ = leaseOp(5, l.blk, b + wFd, fd)
@@ -95,7 +95,7 @@ func Fresh(l Lot, i int, fd int) {
     }
 }
 
-// 取り中の枠 i を使用中に（印を今の task の鎖へ — この task が死ぬと rt が印を 0 に戻す）
+// 取り中の枠iを使用中に（マークを今のtaskのチェーンへ — このtaskが死ぬとrtがマークを0に戻す）
 func Hold(l Lot, i int) {
     b := base(l, i)
     _ = leaseOp(2, l.blk, b + wMark, 0)
@@ -107,12 +107,12 @@ func Fd(l Lot, i int) int {
     return leaseOp(4, l.blk, base(l, i) + wFd, 0)
 }
 
-// 枠 i の置き場（imm の窓 — 語は lease_op で読み書きする）
+// 枠iの格納場所（immのウィンドウ — ワードはlease_opで読み書きする）
 func Place(l Lot, i int) []int {
     return freeze(leaseView(l.blk, base(l, i) + wHead, leaseOp(4, l.blk, hW, 0)))
 }
 
-// 使用中の枠 i を待機へ戻す（印を外す — 取り中を挟む: 生きた借り手の「使用中・印 0」が Reap に見えないように）
+// 使用中の枠iを待機へ戻す（マークを外す — 取り中を挟む: 生きた借り手の「使用中・マーク0」がReapに見えないように）
 func Park(l Lot, i int) {
     b := base(l, i)
     _ = leaseOp(5, l.blk, b + wState, sClaim)
@@ -120,7 +120,7 @@ func Park(l Lot, i int) {
     _ = leaseOp(5, l.blk, b + wState, sIdle)
 }
 
-// 使用中の枠 i を捨てる（印を外し・fd を閉じて空きへ）
+// 使用中の枠iを捨てる（マークを外し・fdを閉じて空きへ）
 func Drop(l Lot, i int) {
     b := base(l, i)
     _ = leaseOp(5, l.blk, b + wState, sClaim)
@@ -143,9 +143,9 @@ func release(l Lot, i int) {
     _ = leaseOp(5, l.blk, b + wState, sFree)
 }
 
-// 死んだ借り手の枠（使用中・印 0）を回収して空きへ戻し、その数を返す（呼び手は domain の数え口から引く — 二相の 1 相目）。
-// 状態 → 印の順に読み、使用中 → 回収中の比較交換で取る（生きた借り手は使用中の間ずっと印が 1・返すときは取り中を挟む）。
-// 走査は lease の死の通し番号が前の走査から動いたときだけ: rt は印を外してから番号を上げるので、走査の前に読んだ番号までの死は走査に見える。
+// 死んだ借り手の枠（使用中・マーク0）を回収して空きへ戻し、その数を返す（呼び手はdomainのカウンタから引く — 二相の1相目）。
+// 状態 → マークの順に読み、使用中 → 回収中の比較交換で取る（生きた借り手は使用中の間ずっとマークが1・返すときは取り中を挟む）。
+// 走査はleaseの死の通し番号が前の走査から動いたときだけ: rtはマークを外してから番号を上げるので、走査の前に読んだ番号までの死は走査に見える。
 // 番号は走査の前に読み、走査の後に書く（後で読むと、走査が通り過ぎた枠の死の番号を見たことにして取りこぼす）。並んだ Reap が古い番号を書き戻しても、次の走査が 1 回増えるだけ
 func Reap(l Lot) int {
     seen := leaseOp(9, l.blk, 0, 0)
@@ -167,7 +167,7 @@ func Reap(l Lot) int {
     return lost
 }
 
-// 待機の枠を順に k へ渡して（別れの挨拶 — 置き場と fd）から、全部の枠の fd を閉じる（預かり所の持ち主の出口 — 借り手はもう居ない）
+// 待機の枠を順にkへ渡して（別れの挨拶 — 格納場所とfd）から、全部の枠のfdを閉じる（預かり所の持ち主の出口 — 借り手はもう居ない）
 func Close(l Lot, k func(fd int, place []int)) {
     n := size(l)
     mut i := 0
@@ -180,7 +180,7 @@ func Close(l Lot, k func(fd int, place []int)) {
     }
 }
 
-// lease_op（rt の口 — op 2 = 印を取って鎖へ・3 = 印を外す・4 = 生の読み・5 = 生の書き・8 = 比較交換・9 = lease の死の通し番号）
+// lease_op（rtのAPI — op 2 = マークを取ってチェーンへ・3 = マークを外す・4 = 生の読み・5 = 生の書き・8 = 比較交換・9 = leaseの死の通し番号）
 @intrinsic("lease_op")
 func leaseOp(op int, blk []int, off int, v int) int
 

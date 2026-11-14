@@ -1,7 +1,7 @@
 package main
 
 // 定数引数の特化（spec.sober）の回帰例: 定数の引数で呼ぶ点（文字列リテラル・整数）を、同じ関数を実行時の値（列から引いた引数 —
-// 特化に乗らない）で呼んだ参照と突き合わせる。形 = 2 段 / 3 段の連鎖（hp3 → hp → pfx）・同じ callee に違う定数・同じ定数で 2 点・2 つの定数の
+// 特化に乗らない）で呼んだ参照と突き合わせる。形 = 入れ子が2レベル / 3レベルの連鎖（hp3 → hp → pfx）・同じcalleeに違う定数・同じ定数で2点・2つの定数の
 // 仮引数（入れ替えると答えが変わる）・片方の仮引数だけが定数で位置が違う 2 点（同じ値 — 複製の鍵が位置を見ないと取り違える）・定数の上限の
 // ループ・再帰する callee・std の HasPrefix / TrimPrefix / Cut。食い違いの数（0）と和を印字
 
@@ -20,14 +20,14 @@ func pfx(b []byte, at int, p []byte) bool {
     return true
 }
 
-// 2 段の連鎖（hp → pfx）
+// 入れ子が2レベルの連鎖（hp → pfx）
 func hp(s string, p string) bool {
     b := bytes(s)
     q := bytes(p)
     return len(b) >= len(q) && pfx(b, 0, q)
 }
 
-// 3 段（hp3 → hp → pfx）
+// 入れ子が3レベル（hp3 → hp → pfx）
 func hp3(s string, p string) bool {
     return hp(s, p)
 }

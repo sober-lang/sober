@@ -2,7 +2,7 @@ package main
 
 // 仮引数由来の imm slice の 2 つの形（selfhost-drafts F-14 の回帰例）。どちらも imm の上界を緩めるだけで健全に受理できるが、
 // 脱糖器が結果型 / 要素型への ann を名前にしか付けず、def error になっていた:
-// (1) 名前でない式の return（`return p[0:k]`・`return s.a`・腕が一致する if 式）
+// (1) 名前でない式のreturn（`return p[0:k]`・`return s.a`・分岐が一致するif式）
 // (2) 局所の mut コンテナへの append（`append(out, p)`・`append(out, xs[i])`）
 
 type Pair struct {

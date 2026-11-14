@@ -1,8 +1,8 @@
 package aesgcm
 
-// 縫い合わせの塊（aesseal / aesopen — 128 の倍数の部分）の網（white-box）: 縫い合わせない塊（aesctr / aesghash）だけで組んだ参照の Seal と、
+// 縫い合わせのチャンク（aesseal / aesopen — 128の倍数の部分）の検査（white-box）: 縫い合わせないチャンク（aesctr / aesghash）だけで組んだ参照のSealと、
 // SealTo（その場）・SealInto（pt → dst）・tail つき・OpenAt の往復を、長さの境目（16・128 の倍数の前後・record の上限）で突き合わせ、
-// 大きい暗号文（縫い合わせの道を通る長さ）の tag・暗号文を 1 ビット変えたものが Auth になることを確かめる
+// 大きい暗号文（縫い合わせのパスを通る長さ）のtag・暗号文を1ビット変えたものがAuthになることを検証する
 
 import "std/iter"
 
@@ -45,7 +45,7 @@ func TestStitch() {
             p, oe := OpenAt(k, nonce, ad, want, 0, len(want))
             assert(oe == nil)
             assert(same(p, pt))
-            // 改竄: tag の最後のビット・暗号文の頭のビット（縫い合わせの道の中）
+            // 改竄: tagの最後のビット・暗号文の頭のビット（縫い合わせのパスの中）
             bad := flip(want, len(want) - 1)
             _, be := OpenAt(k, nonce, ad, bad, 0, len(bad))
             assert(be != nil)
@@ -58,7 +58,7 @@ func TestStitch() {
     }
 }
 
-// 縫い合わせない塊だけの Seal（暗号文 ‖ tag）
+// 縫い合わせないチャンクだけのSeal（暗号文 ‖ tag）
 func refSeal(k Key, nonce []byte, ad []byte, pt []byte) []byte {
     n := len(pt)
     full := n - n % 16

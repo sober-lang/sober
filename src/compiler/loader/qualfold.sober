@@ -1,9 +1,9 @@
 package loader
 
-// 多段の修飾子の畳み（language.md 20 節）: `http.server.Serve` の選択子の連鎖のうち、package の import の修飾子
-// （`http.server` — alias の無い多段の import）に一致する最長の頭を、名前がその修飾子の EIdent 1 つに写す。
-// 以降の段（検査・desugar・lower・analyzer）は「EIdent を基底とする選択子 = 修飾参照」の 1 段の形だけを見る。
-// 修飾子の段は小文字・公開の名前は大文字なので、一致する頭は高々 1 つに決まる（探索も優先順位も持たない）。
+// 複数セグメントの修飾子の畳み（language.md 20 節）: `http.server.Serve` の選択子の連鎖のうち、package の import の修飾子
+// （`http.server` — aliasの無い複数セグメントのimport）に一致する最長の頭を、名前がその修飾子のEIdent 1つに変換する。
+// 以降のステージ（検査・desugar・lower・analyzer）は「EIdentを基底とする選択子 = 修飾参照」の1レベルの形だけを見る。
+// 修飾子のセグメントは小文字・公開の名前は大文字なので、一致する頭は高々1つに決まる（探索も優先順位も持たない）。
 // 型名の綴り（`http.server.Request`）は parser が 1 本の文字列にするので畳まない — 修飾子と名前の境は最後の '.'。
 // 一致の表は package 単位（import はファイルごとの約束の検査 — NotImported — は畳んだ後の木で fileimports.sober が見る）
 
@@ -11,7 +11,7 @@ import "std/builder"
 import "std/iter"
 import "ast"
 
-// 木の列を畳む（多段の修飾子を持たない package の木はそのまま。ファイルは package ごとに連続 — finish の約束）
+// 木の列を畳む（複数セグメントの修飾子を持たない package の木はそのまま。ファイルは package ごとに連続 — finish の約束）
 func qualFoldAll(trees []ast.Tree, fpkg []string) []ast.Tree {
     mut out := mut []ast.Tree{}
     mut lo := 0
@@ -29,7 +29,7 @@ func qualFoldAll(trees []ast.Tree, fpkg []string) []ast.Tree {
     return freeze(out)
 }
 
-// ファイル [lo, hi)（1 つの package）の import の多段の修飾子
+// ファイル [lo, hi)（1 つの package）の import の複数セグメントの修飾子
 func pkgQuals(trees []ast.Tree, lo int, hi int) []string {
     mut qs := mut []string{}
     for f <- iter.Range(lo, hi) {
@@ -63,7 +63,7 @@ func chainText(t ast.Tree, i int) string {
 }
 
 // 木 t の選択子 y で、基底 y.a の連鎖の綴りが qs にあり y 自身の綴りが qs に無いもの（= 最長の一致）の基底を、
-// その綴りの EIdent に写す。基底の下の節も同じ綴りの EIdent に写す（根から辿れない節を名前の検査が拾わないように）
+// その綴りのEIdentに変換する。基底の下の節も同じ綴りのEIdentに変換する（根から辿れない節を名前の検査が拾わないように）
 func qualFold(t ast.Tree, qs []string) ast.Tree {
     mut roots := mut []string{}
     for q <- qs {

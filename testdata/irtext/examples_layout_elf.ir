@@ -2174,693 +2174,677 @@ b0:
   store %53[9], %63
   %64 = const 1
   %65 = add %0, %64
-  %66 = load.i64 %24[0]
-  %67 = load.i64 %24[1]
-  %68 = load.i64 %24[2]
-  %69 = load.i64 %24[3]
-  %70 = load.i64 %24[4]
-  %71 = load.i64 %24[5]
-  %72 = load.i64 %24[6]
-  %73 = load.i64 %24[7]
-  %74 = load.i64 %24[8]
-  %75 = load.i64 %24[9]
-  %76 = load.i64 %24[10]
-  %77 = load.i64 %24[11]
-  %78 = load.i64 %24[12]
-  %79 = load.i64 %24[13]
-  %80 = load.i64 %24[14]
-  %81 = load.i64 %24[15]
-  %82 = globaladdr @rt.meta
-  store %82[2572], %65
-  call @main.$layoutEncode_0_0(%53, %66, %67, %68, %69, %70, %71, %72, %73, %74, %75, %76, %77, %78, %79, %80, %81)
-  %83 = region.depth
-  %84 = const 0
-  %85 = const 2
-  %86 = slotaddr s6
-  %87 = region.depth
-  %88 = slotaddr s7
-  store %88[0], %84
-  %89 = region.depth
+  %66 = globaladdr @rt.meta
+  store %66[2572], %65
+  call @main.$layoutEncode_0_0(%53, %24)
+  %67 = region.depth
+  %68 = const 0
+  %69 = const 2
+  %70 = slotaddr s6
+  %71 = region.depth
+  %72 = slotaddr s7
+  store %72[0], %68
+  %73 = region.depth
   br b3
 b1:
-  region.setdepth %83
-  %110 = slotaddr s9
-  %111 = const 1
-  %112 = add %0, %111
-  %113 = globaladdr @rt.meta
-  store %113[2572], %112
-  call @"std/builder.Build[byte]"(%110, %53)
-  %114 = slotaddr s1
-  %115 = load.i64 %110[0]
-  store %114[0], %115
-  %116 = load.i64 %110[1]
-  store %114[1], %116
-  %117 = load.i64 %110[2]
-  store %114[2], %117
-  %118 = load.i64 %114[1]
-  call @rt.print_int(%118)
-  %119 = const 10
-  call @rt.print_char(%119)
-  %120 = const 64
-  call @rt.print_int(%120)
-  %121 = const 10
-  call @rt.print_char(%121)
-  %122 = const 56
-  call @rt.print_int(%122)
-  %123 = const 10
-  call @rt.print_char(%123)
-  %124 = const 0
-  %125 = load.i64 %114[1]
-  %126 = uge %124, %125
-  condbr %126, b7, b8
+  region.setdepth %67
+  %94 = slotaddr s9
+  %95 = const 1
+  %96 = add %0, %95
+  %97 = globaladdr @rt.meta
+  store %97[2572], %96
+  call @"std/builder.Build[byte]"(%94, %53)
+  %98 = slotaddr s1
+  %99 = load.i64 %94[0]
+  store %98[0], %99
+  %100 = load.i64 %94[1]
+  store %98[1], %100
+  %101 = load.i64 %94[2]
+  store %98[2], %101
+  %102 = load.i64 %98[1]
+  call @rt.print_int(%102)
+  %103 = const 10
+  call @rt.print_char(%103)
+  %104 = const 64
+  call @rt.print_int(%104)
+  %105 = const 10
+  call @rt.print_char(%105)
+  %106 = const 56
+  call @rt.print_int(%106)
+  %107 = const 10
+  call @rt.print_char(%107)
+  %108 = const 0
+  %109 = load.i64 %98[1]
+  %110 = uge %108, %109
+  condbr %110, b7, b8
 b2:
   br b1
 b3:
-  region.setdepth %89
-  %90 = load.i64 %88[0]
-  %91 = lt %90, %85
-  condbr %91, b4, b5
+  region.setdepth %73
+  %74 = load.i64 %72[0]
+  %75 = lt %74, %69
+  condbr %75, b4, b5
 b4:
   region.enter
-  %92 = region.depth
-  %93 = load.i64 %88[0]
-  %94 = region.depth
-  %95 = const 1
-  %96 = add %0, %95
-  %97 = slotaddr s8
-  call @main.segment(%97, %93)
-  %98 = load.i64 %97[0]
-  %99 = load.i64 %97[1]
-  %100 = load.i64 %97[2]
-  %101 = load.i64 %97[3]
-  %102 = load.i64 %97[4]
-  %103 = load.i64 %97[5]
-  %104 = load.i64 %97[6]
-  %105 = load.i64 %97[7]
-  %106 = globaladdr @rt.meta
-  store %106[2572], %96
-  call @main.$layoutEncode_0_1(%53, %98, %99, %100, %101, %102, %103, %104, %105)
+  %76 = region.depth
+  %77 = load.i64 %72[0]
+  %78 = region.depth
+  %79 = const 1
+  %80 = add %0, %79
+  %81 = slotaddr s8
+  call @main.segment(%81, %77)
+  %82 = load.i64 %81[0]
+  %83 = load.i64 %81[1]
+  %84 = load.i64 %81[2]
+  %85 = load.i64 %81[3]
+  %86 = load.i64 %81[4]
+  %87 = load.i64 %81[5]
+  %88 = load.i64 %81[6]
+  %89 = load.i64 %81[7]
+  %90 = globaladdr @rt.meta
+  store %90[2572], %80
+  call @main.$layoutEncode_0_1(%53, %82, %83, %84, %85, %86, %87, %88, %89)
   br b6
 b5:
-  region.setdepth %89
+  region.setdepth %73
   br b2
 b6:
-  region.setdepth %94
-  %107 = const 1
-  %108 = load.i64 %88[0]
-  %109 = add %108, %107
-  store %88[0], %109
+  region.setdepth %78
+  %91 = const 1
+  %92 = load.i64 %72[0]
+  %93 = add %92, %91
+  store %72[0], %93
   br b3
 b7:
-  %127 = const 0
-  call @rt.panic(%127)
+  %111 = const 0
+  call @rt.panic(%111)
   exit 101
 b8:
-  %128 = load.i64 %114[0]
-  %129 = itop %128
-  %130 = gep.byte %129, %124
-  %131 = load8 %130[0]
-  call @rt.print_int(%131)
-  %132 = const 10
-  call @rt.print_char(%132)
-  %133 = const 1
-  %134 = load.i64 %114[1]
-  %135 = uge %133, %134
-  condbr %135, b9, b10
+  %112 = load.i64 %98[0]
+  %113 = itop %112
+  %114 = gep.byte %113, %108
+  %115 = load8 %114[0]
+  call @rt.print_int(%115)
+  %116 = const 10
+  call @rt.print_char(%116)
+  %117 = const 1
+  %118 = load.i64 %98[1]
+  %119 = uge %117, %118
+  condbr %119, b9, b10
 b9:
-  %136 = const 1
-  call @rt.panic(%136)
+  %120 = const 1
+  call @rt.panic(%120)
   exit 101
 b10:
-  %137 = load.i64 %114[0]
-  %138 = itop %137
-  %139 = gep.byte %138, %133
-  %140 = load8 %139[0]
-  %141 = const 69
-  %142 = eq %140, %141
-  condbr %142, b11, b12(%142)
+  %121 = load.i64 %98[0]
+  %122 = itop %121
+  %123 = gep.byte %122, %117
+  %124 = load8 %123[0]
+  %125 = const 69
+  %126 = eq %124, %125
+  condbr %126, b11, b12(%126)
 b11:
-  %144 = const 2
-  %145 = load.i64 %114[1]
-  %146 = uge %144, %145
-  condbr %146, b13, b14
-b12(%143 i64):
-  condbr %143, b15, b16(%143)
+  %128 = const 2
+  %129 = load.i64 %98[1]
+  %130 = uge %128, %129
+  condbr %130, b13, b14
+b12(%127 i64):
+  condbr %127, b15, b16(%127)
 b13:
-  %147 = const 2
-  call @rt.panic(%147)
+  %131 = const 2
+  call @rt.panic(%131)
   exit 101
 b14:
-  %148 = load.i64 %114[0]
-  %149 = itop %148
-  %150 = gep.byte %149, %144
-  %151 = load8 %150[0]
-  %152 = const 76
-  %153 = eq %151, %152
-  br b12(%153)
+  %132 = load.i64 %98[0]
+  %133 = itop %132
+  %134 = gep.byte %133, %128
+  %135 = load8 %134[0]
+  %136 = const 76
+  %137 = eq %135, %136
+  br b12(%137)
 b15:
-  %155 = const 3
-  %156 = load.i64 %114[1]
-  %157 = uge %155, %156
-  condbr %157, b17, b18
-b16(%154 i64):
-  condbr %154, b19, b20
+  %139 = const 3
+  %140 = load.i64 %98[1]
+  %141 = uge %139, %140
+  condbr %141, b17, b18
+b16(%138 i64):
+  condbr %138, b19, b20
 b17:
-  %158 = const 3
-  call @rt.panic(%158)
+  %142 = const 3
+  call @rt.panic(%142)
   exit 101
 b18:
-  %159 = load.i64 %114[0]
-  %160 = itop %159
-  %161 = gep.byte %160, %155
-  %162 = load8 %161[0]
-  %163 = const 70
-  %164 = eq %162, %163
-  br b16(%164)
+  %143 = load.i64 %98[0]
+  %144 = itop %143
+  %145 = gep.byte %144, %139
+  %146 = load8 %145[0]
+  %147 = const 70
+  %148 = eq %146, %147
+  br b16(%148)
 b19:
-  %165 = const 116
-  call @rt.print_char(%165)
-  %166 = const 114
-  call @rt.print_char(%166)
-  %167 = const 117
-  call @rt.print_char(%167)
-  %168 = const 101
-  call @rt.print_char(%168)
+  %149 = const 116
+  call @rt.print_char(%149)
+  %150 = const 114
+  call @rt.print_char(%150)
+  %151 = const 117
+  call @rt.print_char(%151)
+  %152 = const 101
+  call @rt.print_char(%152)
   br b21
 b20:
-  %169 = const 102
-  call @rt.print_char(%169)
-  %170 = const 97
-  call @rt.print_char(%170)
-  %171 = const 108
-  call @rt.print_char(%171)
-  %172 = const 115
-  call @rt.print_char(%172)
-  %173 = const 101
-  call @rt.print_char(%173)
+  %153 = const 102
+  call @rt.print_char(%153)
+  %154 = const 97
+  call @rt.print_char(%154)
+  %155 = const 108
+  call @rt.print_char(%155)
+  %156 = const 115
+  call @rt.print_char(%156)
+  %157 = const 101
+  call @rt.print_char(%157)
   br b21
 b21:
-  %174 = const 10
-  call @rt.print_char(%174)
-  %175 = slotaddr s10
-  %176 = load.i64 %114[0]
-  %177 = load.i64 %114[1]
-  %178 = load.i64 %114[2]
-  %179 = const 0
-  call @main.$layoutDecode_0_0(%175, %176, %177, %178, %179)
-  %180 = slotaddr s11
-  %181 = load.i64 %175[0]
-  store %180[0], %181
-  %182 = load.i64 %175[1]
-  store %180[1], %182
-  %183 = load.i64 %175[2]
-  store %180[2], %183
-  %184 = load.i64 %175[3]
-  store %180[3], %184
-  %185 = load.i64 %175[4]
-  store %180[4], %185
-  %186 = load.i64 %175[5]
-  store %180[5], %186
-  %187 = load.i64 %175[6]
-  store %180[6], %187
-  %188 = load.i64 %175[7]
-  store %180[7], %188
-  %189 = load.i64 %175[8]
-  store %180[8], %189
-  %190 = load.i64 %175[9]
-  store %180[9], %190
-  %191 = load.i64 %175[10]
-  store %180[10], %191
-  %192 = load.i64 %175[11]
-  store %180[11], %192
-  %193 = load.i64 %175[12]
-  store %180[12], %193
-  %194 = load.i64 %175[13]
-  store %180[13], %194
-  %195 = load.i64 %175[14]
-  store %180[14], %195
-  %196 = load.i64 %175[15]
-  store %180[15], %196
-  %197 = load.i64 %175[16]
-  store %180[16], %197
-  %198 = load.i64 %180[0]
-  %199 = const 0
-  %200 = ne %198, %199
-  condbr %200, b22, b23
+  %158 = const 10
+  call @rt.print_char(%158)
+  %159 = slotaddr s10
+  %160 = load.i64 %98[0]
+  %161 = load.i64 %98[1]
+  %162 = load.i64 %98[2]
+  %163 = const 0
+  call @main.$layoutDecode_0_0(%159, %160, %161, %162, %163)
+  %164 = slotaddr s11
+  %165 = load.i64 %159[0]
+  store %164[0], %165
+  %166 = load.i64 %159[1]
+  store %164[1], %166
+  %167 = load.i64 %159[2]
+  store %164[2], %167
+  %168 = load.i64 %159[3]
+  store %164[3], %168
+  %169 = load.i64 %159[4]
+  store %164[4], %169
+  %170 = load.i64 %159[5]
+  store %164[5], %170
+  %171 = load.i64 %159[6]
+  store %164[6], %171
+  %172 = load.i64 %159[7]
+  store %164[7], %172
+  %173 = load.i64 %159[8]
+  store %164[8], %173
+  %174 = load.i64 %159[9]
+  store %164[9], %174
+  %175 = load.i64 %159[10]
+  store %164[10], %175
+  %176 = load.i64 %159[11]
+  store %164[11], %176
+  %177 = load.i64 %159[12]
+  store %164[12], %177
+  %178 = load.i64 %159[13]
+  store %164[13], %178
+  %179 = load.i64 %159[14]
+  store %164[14], %179
+  %180 = load.i64 %159[15]
+  store %164[15], %180
+  %181 = load.i64 %159[16]
+  store %164[16], %181
+  %182 = load.i64 %164[0]
+  %183 = const 0
+  %184 = ne %182, %183
+  condbr %184, b22, b23
 b22:
-  %201 = const 1
-  %202 = gep.word %180, %201
-  %203 = slotaddr s2
-  %204 = load.i64 %202[0]
-  store %203[0], %204
-  %205 = load.i64 %202[1]
-  store %203[1], %205
-  %206 = load.i64 %202[2]
-  store %203[2], %206
-  %207 = load.i64 %202[3]
-  store %203[3], %207
-  %208 = load.i64 %202[4]
-  store %203[4], %208
-  %209 = load.i64 %202[5]
-  store %203[5], %209
-  %210 = load.i64 %202[6]
-  store %203[6], %210
-  %211 = load.i64 %202[7]
-  store %203[7], %211
-  %212 = load.i64 %202[8]
-  store %203[8], %212
-  %213 = load.i64 %202[9]
-  store %203[9], %213
-  %214 = load.i64 %202[10]
-  store %203[10], %214
-  %215 = load.i64 %202[11]
-  store %203[11], %215
-  %216 = load.i64 %202[12]
-  store %203[12], %216
-  %217 = load.i64 %202[13]
-  store %203[13], %217
-  %218 = load.i64 %202[14]
-  store %203[14], %218
-  %219 = load.i64 %202[15]
-  store %203[15], %219
-  %220 = load.i64 %203[3]
-  %221 = load.i64 %24[3]
-  %222 = eq %220, %221
-  condbr %222, b24, b25(%222)
+  %185 = const 1
+  %186 = gep.word %164, %185
+  %187 = slotaddr s2
+  %188 = load.i64 %186[0]
+  store %187[0], %188
+  %189 = load.i64 %186[1]
+  store %187[1], %189
+  %190 = load.i64 %186[2]
+  store %187[2], %190
+  %191 = load.i64 %186[3]
+  store %187[3], %191
+  %192 = load.i64 %186[4]
+  store %187[4], %192
+  %193 = load.i64 %186[5]
+  store %187[5], %193
+  %194 = load.i64 %186[6]
+  store %187[6], %194
+  %195 = load.i64 %186[7]
+  store %187[7], %195
+  %196 = load.i64 %186[8]
+  store %187[8], %196
+  %197 = load.i64 %186[9]
+  store %187[9], %197
+  %198 = load.i64 %186[10]
+  store %187[10], %198
+  %199 = load.i64 %186[11]
+  store %187[11], %199
+  %200 = load.i64 %186[12]
+  store %187[12], %200
+  %201 = load.i64 %186[13]
+  store %187[13], %201
+  %202 = load.i64 %186[14]
+  store %187[14], %202
+  %203 = load.i64 %186[15]
+  store %187[15], %203
+  %204 = load.i64 %187[3]
+  %205 = load.i64 %24[3]
+  %206 = eq %204, %205
+  condbr %206, b24, b25(%206)
 b23:
   br b73
 b24:
-  %224 = load.i64 %203[4]
-  %225 = load.i64 %24[4]
-  %226 = eq %224, %225
-  br b25(%226)
-b25(%223 i64):
-  condbr %223, b26, b27(%223)
+  %208 = load.i64 %187[4]
+  %209 = load.i64 %24[4]
+  %210 = eq %208, %209
+  br b25(%210)
+b25(%207 i64):
+  condbr %207, b26, b27(%207)
 b26:
-  %228 = load.i64 %203[5]
-  %229 = load.i64 %24[5]
-  %230 = eq %228, %229
-  br b27(%230)
-b27(%227 i64):
-  condbr %227, b28, b29(%227)
+  %212 = load.i64 %187[5]
+  %213 = load.i64 %24[5]
+  %214 = eq %212, %213
+  br b27(%214)
+b27(%211 i64):
+  condbr %211, b28, b29(%211)
 b28:
-  %232 = load.i64 %203[6]
-  %233 = load.i64 %24[6]
-  %234 = eq %232, %233
-  br b29(%234)
-b29(%231 i64):
-  condbr %231, b30, b31
+  %216 = load.i64 %187[6]
+  %217 = load.i64 %24[6]
+  %218 = eq %216, %217
+  br b29(%218)
+b29(%215 i64):
+  condbr %215, b30, b31
 b30:
-  %235 = const 116
-  call @rt.print_char(%235)
-  %236 = const 114
-  call @rt.print_char(%236)
-  %237 = const 117
-  call @rt.print_char(%237)
-  %238 = const 101
-  call @rt.print_char(%238)
+  %219 = const 116
+  call @rt.print_char(%219)
+  %220 = const 114
+  call @rt.print_char(%220)
+  %221 = const 117
+  call @rt.print_char(%221)
+  %222 = const 101
+  call @rt.print_char(%222)
   br b32
 b31:
-  %239 = const 102
-  call @rt.print_char(%239)
-  %240 = const 97
-  call @rt.print_char(%240)
-  %241 = const 108
-  call @rt.print_char(%241)
-  %242 = const 115
-  call @rt.print_char(%242)
-  %243 = const 101
-  call @rt.print_char(%243)
+  %223 = const 102
+  call @rt.print_char(%223)
+  %224 = const 97
+  call @rt.print_char(%224)
+  %225 = const 108
+  call @rt.print_char(%225)
+  %226 = const 115
+  call @rt.print_char(%226)
+  %227 = const 101
+  call @rt.print_char(%227)
   br b32
 b32:
-  %244 = const 10
-  call @rt.print_char(%244)
-  %245 = load.i64 %203[7]
-  %246 = load.i64 %24[7]
-  %247 = eq %245, %246
-  condbr %247, b33, b34(%247)
+  %228 = const 10
+  call @rt.print_char(%228)
+  %229 = load.i64 %187[7]
+  %230 = load.i64 %24[7]
+  %231 = eq %229, %230
+  condbr %231, b33, b34(%231)
 b33:
-  %249 = load.i64 %203[10]
-  %250 = load.i64 %24[10]
-  %251 = eq %249, %250
-  br b34(%251)
-b34(%248 i64):
-  condbr %248, b35, b36(%248)
+  %233 = load.i64 %187[10]
+  %234 = load.i64 %24[10]
+  %235 = eq %233, %234
+  br b34(%235)
+b34(%232 i64):
+  condbr %232, b35, b36(%232)
 b35:
-  %253 = load.i64 %203[11]
-  %254 = load.i64 %24[11]
-  %255 = eq %253, %254
-  br b36(%255)
-b36(%252 i64):
-  condbr %252, b37, b38(%252)
+  %237 = load.i64 %187[11]
+  %238 = load.i64 %24[11]
+  %239 = eq %237, %238
+  br b36(%239)
+b36(%236 i64):
+  condbr %236, b37, b38(%236)
 b37:
-  %257 = load.i64 %203[12]
-  %258 = load.i64 %24[12]
-  %259 = eq %257, %258
-  br b38(%259)
-b38(%256 i64):
-  condbr %256, b39, b40(%256)
+  %241 = load.i64 %187[12]
+  %242 = load.i64 %24[12]
+  %243 = eq %241, %242
+  br b38(%243)
+b38(%240 i64):
+  condbr %240, b39, b40(%240)
 b39:
-  %261 = load.i64 %203[13]
-  %262 = load.i64 %24[13]
-  %263 = eq %261, %262
-  br b40(%263)
-b40(%260 i64):
-  condbr %260, b41, b42
+  %245 = load.i64 %187[13]
+  %246 = load.i64 %24[13]
+  %247 = eq %245, %246
+  br b40(%247)
+b40(%244 i64):
+  condbr %244, b41, b42
 b41:
-  %264 = const 116
-  call @rt.print_char(%264)
-  %265 = const 114
-  call @rt.print_char(%265)
-  %266 = const 117
-  call @rt.print_char(%266)
-  %267 = const 101
-  call @rt.print_char(%267)
+  %248 = const 116
+  call @rt.print_char(%248)
+  %249 = const 114
+  call @rt.print_char(%249)
+  %250 = const 117
+  call @rt.print_char(%250)
+  %251 = const 101
+  call @rt.print_char(%251)
   br b43
 b42:
-  %268 = const 102
-  call @rt.print_char(%268)
-  %269 = const 97
-  call @rt.print_char(%269)
-  %270 = const 108
-  call @rt.print_char(%270)
-  %271 = const 115
-  call @rt.print_char(%271)
-  %272 = const 101
-  call @rt.print_char(%272)
+  %252 = const 102
+  call @rt.print_char(%252)
+  %253 = const 97
+  call @rt.print_char(%253)
+  %254 = const 108
+  call @rt.print_char(%254)
+  %255 = const 115
+  call @rt.print_char(%255)
+  %256 = const 101
+  call @rt.print_char(%256)
   br b43
 b43:
-  %273 = const 10
-  call @rt.print_char(%273)
-  %274 = load.i64 %203[1]
-  call @rt.print_int(%274)
-  %275 = const 10
-  call @rt.print_char(%275)
-  %276 = const 4
-  %277 = load.i64 %203[1]
-  %278 = uge %276, %277
-  condbr %278, b44, b45
+  %257 = const 10
+  call @rt.print_char(%257)
+  %258 = load.i64 %187[1]
+  call @rt.print_int(%258)
+  %259 = const 10
+  call @rt.print_char(%259)
+  %260 = const 4
+  %261 = load.i64 %187[1]
+  %262 = uge %260, %261
+  condbr %262, b44, b45
 b44:
-  %279 = const 4
-  call @rt.panic(%279)
+  %263 = const 4
+  call @rt.panic(%263)
   exit 101
 b45:
-  %280 = load.i64 %203[0]
-  %281 = itop %280
-  %282 = gep.byte %281, %276
-  %283 = load8 %282[0]
-  call @rt.print_int(%283)
-  %284 = const 10
-  call @rt.print_char(%284)
-  %285 = load.i64 %203[6]
-  call @rt.print_int(%285)
-  %286 = const 10
-  call @rt.print_char(%286)
-  %287 = region.depth
-  %288 = const 0
-  %289 = load.i64 %203[12]
-  %290 = slotaddr s7
-  %291 = region.depth
-  %292 = slotaddr s6
-  store %292[0], %288
-  %293 = region.depth
+  %264 = load.i64 %187[0]
+  %265 = itop %264
+  %266 = gep.byte %265, %260
+  %267 = load8 %266[0]
+  call @rt.print_int(%267)
+  %268 = const 10
+  call @rt.print_char(%268)
+  %269 = load.i64 %187[6]
+  call @rt.print_int(%269)
+  %270 = const 10
+  call @rt.print_char(%270)
+  %271 = region.depth
+  %272 = const 0
+  %273 = load.i64 %187[12]
+  %274 = slotaddr s7
+  %275 = region.depth
+  %276 = slotaddr s6
+  store %276[0], %272
+  %277 = region.depth
   br b48
 b46:
-  region.setdepth %287
+  region.setdepth %271
   br b73
 b47:
   br b46
 b48:
-  region.setdepth %293
-  %294 = load.i64 %292[0]
-  %295 = lt %294, %289
-  condbr %295, b49, b50
+  region.setdepth %277
+  %278 = load.i64 %276[0]
+  %279 = lt %278, %273
+  condbr %279, b49, b50
 b49:
   region.enter
-  %296 = region.depth
-  %297 = load.i64 %292[0]
-  %298 = region.depth
-  %299 = slotaddr s12
-  %300 = load.i64 %114[0]
-  %301 = load.i64 %114[1]
-  %302 = load.i64 %114[2]
-  %303 = load.i64 %203[7]
-  call @main.$layoutDecodeAt_0_1(%299, %300, %301, %302, %303, %297)
-  %304 = slotaddr s13
-  %305 = load.i64 %299[0]
-  store %304[0], %305
-  %306 = load.i64 %299[1]
-  store %304[1], %306
-  %307 = load.i64 %299[2]
-  store %304[2], %307
-  %308 = load.i64 %299[3]
-  store %304[3], %308
-  %309 = load.i64 %299[4]
-  store %304[4], %309
-  %310 = load.i64 %299[5]
-  store %304[5], %310
-  %311 = load.i64 %299[6]
-  store %304[6], %311
-  %312 = load.i64 %299[7]
-  store %304[7], %312
-  %313 = load.i64 %299[8]
-  store %304[8], %313
-  %314 = load.i64 %304[0]
-  %315 = const 0
-  %316 = ne %314, %315
-  condbr %316, b52, b53
+  %280 = region.depth
+  %281 = load.i64 %276[0]
+  %282 = region.depth
+  %283 = slotaddr s12
+  %284 = load.i64 %98[0]
+  %285 = load.i64 %98[1]
+  %286 = load.i64 %98[2]
+  %287 = load.i64 %187[7]
+  call @main.$layoutDecodeAt_0_1(%283, %284, %285, %286, %287, %281)
+  %288 = slotaddr s13
+  %289 = load.i64 %283[0]
+  store %288[0], %289
+  %290 = load.i64 %283[1]
+  store %288[1], %290
+  %291 = load.i64 %283[2]
+  store %288[2], %291
+  %292 = load.i64 %283[3]
+  store %288[3], %292
+  %293 = load.i64 %283[4]
+  store %288[4], %293
+  %294 = load.i64 %283[5]
+  store %288[5], %294
+  %295 = load.i64 %283[6]
+  store %288[6], %295
+  %296 = load.i64 %283[7]
+  store %288[7], %296
+  %297 = load.i64 %283[8]
+  store %288[8], %297
+  %298 = load.i64 %288[0]
+  %299 = const 0
+  %300 = ne %298, %299
+  condbr %300, b52, b53
 b50:
-  region.setdepth %293
+  region.setdepth %277
   br b47
 b51:
-  region.setdepth %298
-  %390 = const 1
-  %391 = load.i64 %292[0]
-  %392 = add %391, %390
-  store %292[0], %392
+  region.setdepth %282
+  %374 = const 1
+  %375 = load.i64 %276[0]
+  %376 = add %375, %374
+  store %276[0], %376
   br b48
 b52:
-  %317 = const 1
-  %318 = gep.word %304, %317
-  %319 = slotaddr s14
-  %320 = load.i64 %318[0]
-  store %319[0], %320
-  %321 = load.i64 %318[1]
-  store %319[1], %321
-  %322 = load.i64 %318[2]
-  store %319[2], %322
-  %323 = load.i64 %318[3]
-  store %319[3], %323
-  %324 = load.i64 %318[4]
-  store %319[4], %324
-  %325 = load.i64 %318[5]
-  store %319[5], %325
-  %326 = load.i64 %318[6]
-  store %319[6], %326
-  %327 = load.i64 %318[7]
-  store %319[7], %327
-  %328 = slotaddr s15
-  call @main.segment(%328, %297)
-  %329 = slotaddr s16
-  %330 = load.i64 %328[0]
-  store %329[0], %330
-  %331 = load.i64 %328[1]
-  store %329[1], %331
-  %332 = load.i64 %328[2]
-  store %329[2], %332
-  %333 = load.i64 %328[3]
-  store %329[3], %333
-  %334 = load.i64 %328[4]
-  store %329[4], %334
-  %335 = load.i64 %328[5]
-  store %329[5], %335
-  %336 = load.i64 %328[6]
-  store %329[6], %336
-  %337 = load.i64 %328[7]
-  store %329[7], %337
-  %338 = load.i64 %319[0]
-  %339 = load.i64 %329[0]
-  %340 = eq %338, %339
-  condbr %340, b54, b55(%340)
+  %301 = const 1
+  %302 = gep.word %288, %301
+  %303 = slotaddr s14
+  %304 = load.i64 %302[0]
+  store %303[0], %304
+  %305 = load.i64 %302[1]
+  store %303[1], %305
+  %306 = load.i64 %302[2]
+  store %303[2], %306
+  %307 = load.i64 %302[3]
+  store %303[3], %307
+  %308 = load.i64 %302[4]
+  store %303[4], %308
+  %309 = load.i64 %302[5]
+  store %303[5], %309
+  %310 = load.i64 %302[6]
+  store %303[6], %310
+  %311 = load.i64 %302[7]
+  store %303[7], %311
+  %312 = slotaddr s15
+  call @main.segment(%312, %281)
+  %313 = slotaddr s16
+  %314 = load.i64 %312[0]
+  store %313[0], %314
+  %315 = load.i64 %312[1]
+  store %313[1], %315
+  %316 = load.i64 %312[2]
+  store %313[2], %316
+  %317 = load.i64 %312[3]
+  store %313[3], %317
+  %318 = load.i64 %312[4]
+  store %313[4], %318
+  %319 = load.i64 %312[5]
+  store %313[5], %319
+  %320 = load.i64 %312[6]
+  store %313[6], %320
+  %321 = load.i64 %312[7]
+  store %313[7], %321
+  %322 = load.i64 %303[0]
+  %323 = load.i64 %313[0]
+  %324 = eq %322, %323
+  condbr %324, b54, b55(%324)
 b53:
   br b72
 b54:
-  %342 = load.i64 %319[1]
-  %343 = load.i64 %329[1]
-  %344 = eq %342, %343
-  br b55(%344)
-b55(%341 i64):
-  condbr %341, b56, b57(%341)
+  %326 = load.i64 %303[1]
+  %327 = load.i64 %313[1]
+  %328 = eq %326, %327
+  br b55(%328)
+b55(%325 i64):
+  condbr %325, b56, b57(%325)
 b56:
-  %346 = load.i64 %319[2]
-  %347 = load.i64 %329[2]
-  %348 = eq %346, %347
-  br b57(%348)
-b57(%345 i64):
-  condbr %345, b58, b59(%345)
+  %330 = load.i64 %303[2]
+  %331 = load.i64 %313[2]
+  %332 = eq %330, %331
+  br b57(%332)
+b57(%329 i64):
+  condbr %329, b58, b59(%329)
 b58:
-  %350 = load.i64 %319[3]
-  %351 = load.i64 %329[3]
-  %352 = eq %350, %351
-  br b59(%352)
-b59(%349 i64):
-  condbr %349, b60, b61(%349)
+  %334 = load.i64 %303[3]
+  %335 = load.i64 %313[3]
+  %336 = eq %334, %335
+  br b59(%336)
+b59(%333 i64):
+  condbr %333, b60, b61(%333)
 b60:
-  %354 = load.i64 %319[4]
-  %355 = load.i64 %329[4]
-  %356 = eq %354, %355
-  br b61(%356)
-b61(%353 i64):
-  condbr %353, b62, b63
+  %338 = load.i64 %303[4]
+  %339 = load.i64 %313[4]
+  %340 = eq %338, %339
+  br b61(%340)
+b61(%337 i64):
+  condbr %337, b62, b63
 b62:
-  %357 = const 116
-  call @rt.print_char(%357)
-  %358 = const 114
-  call @rt.print_char(%358)
-  %359 = const 117
-  call @rt.print_char(%359)
-  %360 = const 101
-  call @rt.print_char(%360)
+  %341 = const 116
+  call @rt.print_char(%341)
+  %342 = const 114
+  call @rt.print_char(%342)
+  %343 = const 117
+  call @rt.print_char(%343)
+  %344 = const 101
+  call @rt.print_char(%344)
   br b64
 b63:
-  %361 = const 102
-  call @rt.print_char(%361)
-  %362 = const 97
+  %345 = const 102
+  call @rt.print_char(%345)
+  %346 = const 97
+  call @rt.print_char(%346)
+  %347 = const 108
+  call @rt.print_char(%347)
+  %348 = const 115
+  call @rt.print_char(%348)
+  %349 = const 101
+  call @rt.print_char(%349)
+  br b64
+b64:
+  %350 = const 10
+  call @rt.print_char(%350)
+  %351 = load.i64 %303[5]
+  %352 = load.i64 %313[5]
+  %353 = eq %351, %352
+  condbr %353, b65, b66(%353)
+b65:
+  %355 = load.i64 %303[6]
+  %356 = load.i64 %313[6]
+  %357 = eq %355, %356
+  br b66(%357)
+b66(%354 i64):
+  condbr %354, b67, b68(%354)
+b67:
+  %359 = load.i64 %303[7]
+  %360 = load.i64 %313[7]
+  %361 = eq %359, %360
+  br b68(%361)
+b68(%358 i64):
+  condbr %358, b69, b70
+b69:
+  %362 = const 116
   call @rt.print_char(%362)
-  %363 = const 108
+  %363 = const 114
   call @rt.print_char(%363)
-  %364 = const 115
+  %364 = const 117
   call @rt.print_char(%364)
   %365 = const 101
   call @rt.print_char(%365)
-  br b64
-b64:
-  %366 = const 10
-  call @rt.print_char(%366)
-  %367 = load.i64 %319[5]
-  %368 = load.i64 %329[5]
-  %369 = eq %367, %368
-  condbr %369, b65, b66(%369)
-b65:
-  %371 = load.i64 %319[6]
-  %372 = load.i64 %329[6]
-  %373 = eq %371, %372
-  br b66(%373)
-b66(%370 i64):
-  condbr %370, b67, b68(%370)
-b67:
-  %375 = load.i64 %319[7]
-  %376 = load.i64 %329[7]
-  %377 = eq %375, %376
-  br b68(%377)
-b68(%374 i64):
-  condbr %374, b69, b70
-b69:
-  %378 = const 116
-  call @rt.print_char(%378)
-  %379 = const 114
-  call @rt.print_char(%379)
-  %380 = const 117
-  call @rt.print_char(%380)
-  %381 = const 101
-  call @rt.print_char(%381)
   br b71
 b70:
-  %382 = const 102
-  call @rt.print_char(%382)
-  %383 = const 97
-  call @rt.print_char(%383)
-  %384 = const 108
-  call @rt.print_char(%384)
-  %385 = const 115
-  call @rt.print_char(%385)
-  %386 = const 101
-  call @rt.print_char(%386)
+  %366 = const 102
+  call @rt.print_char(%366)
+  %367 = const 97
+  call @rt.print_char(%367)
+  %368 = const 108
+  call @rt.print_char(%368)
+  %369 = const 115
+  call @rt.print_char(%369)
+  %370 = const 101
+  call @rt.print_char(%370)
   br b71
 b71:
-  %387 = const 10
-  call @rt.print_char(%387)
-  %388 = load.i64 %319[3]
-  call @rt.print_int(%388)
-  %389 = const 10
-  call @rt.print_char(%389)
+  %371 = const 10
+  call @rt.print_char(%371)
+  %372 = load.i64 %303[3]
+  call @rt.print_int(%372)
+  %373 = const 10
+  call @rt.print_char(%373)
   br b72
 b72:
   br b51
 b73:
-  %393 = slotaddr s17
-  %394 = load.i64 %114[0]
-  %395 = load.i64 %114[1]
-  %396 = load.i64 %114[2]
-  %397 = load.i64 %24[7]
-  %398 = const 2
-  call @main.$layoutDecodeAt_0_1(%393, %394, %395, %396, %397, %398)
-  %399 = load.i64 %393[0]
-  %400 = const 0
-  %401 = eq %399, %400
-  condbr %401, b74, b75
+  %377 = slotaddr s17
+  %378 = load.i64 %98[0]
+  %379 = load.i64 %98[1]
+  %380 = load.i64 %98[2]
+  %381 = load.i64 %24[7]
+  %382 = const 2
+  call @main.$layoutDecodeAt_0_1(%377, %378, %379, %380, %381, %382)
+  %383 = load.i64 %377[0]
+  %384 = const 0
+  %385 = eq %383, %384
+  condbr %385, b74, b75
 b74:
-  %402 = const 116
-  call @rt.print_char(%402)
-  %403 = const 114
-  call @rt.print_char(%403)
-  %404 = const 117
-  call @rt.print_char(%404)
-  %405 = const 101
-  call @rt.print_char(%405)
+  %386 = const 116
+  call @rt.print_char(%386)
+  %387 = const 114
+  call @rt.print_char(%387)
+  %388 = const 117
+  call @rt.print_char(%388)
+  %389 = const 101
+  call @rt.print_char(%389)
   br b76
 b75:
-  %406 = const 102
-  call @rt.print_char(%406)
-  %407 = const 97
-  call @rt.print_char(%407)
-  %408 = const 108
-  call @rt.print_char(%408)
-  %409 = const 115
-  call @rt.print_char(%409)
-  %410 = const 101
-  call @rt.print_char(%410)
+  %390 = const 102
+  call @rt.print_char(%390)
+  %391 = const 97
+  call @rt.print_char(%391)
+  %392 = const 108
+  call @rt.print_char(%392)
+  %393 = const 115
+  call @rt.print_char(%393)
+  %394 = const 101
+  call @rt.print_char(%394)
   br b76
 b76:
-  %411 = const 10
-  call @rt.print_char(%411)
-  %412 = slotaddr s18
-  %413 = slotaddr s19
-  call @main.elfIdent(%413)
-  %414 = load.i64 %413[0]
-  %415 = load.i64 %413[1]
-  %416 = load.i64 %413[2]
-  %417 = const 0
-  call @main.$layoutDecode_0_0(%412, %414, %415, %416, %417)
-  %418 = load.i64 %412[0]
-  %419 = const 0
-  %420 = eq %418, %419
-  condbr %420, b77, b78
+  %395 = const 10
+  call @rt.print_char(%395)
+  %396 = slotaddr s18
+  %397 = slotaddr s19
+  call @main.elfIdent(%397)
+  %398 = load.i64 %397[0]
+  %399 = load.i64 %397[1]
+  %400 = load.i64 %397[2]
+  %401 = const 0
+  call @main.$layoutDecode_0_0(%396, %398, %399, %400, %401)
+  %402 = load.i64 %396[0]
+  %403 = const 0
+  %404 = eq %402, %403
+  condbr %404, b77, b78
 b77:
-  %421 = const 116
-  call @rt.print_char(%421)
-  %422 = const 114
-  call @rt.print_char(%422)
-  %423 = const 117
-  call @rt.print_char(%423)
-  %424 = const 101
-  call @rt.print_char(%424)
+  %405 = const 116
+  call @rt.print_char(%405)
+  %406 = const 114
+  call @rt.print_char(%406)
+  %407 = const 117
+  call @rt.print_char(%407)
+  %408 = const 101
+  call @rt.print_char(%408)
   br b79
 b78:
-  %425 = const 102
-  call @rt.print_char(%425)
-  %426 = const 97
-  call @rt.print_char(%426)
-  %427 = const 108
-  call @rt.print_char(%427)
-  %428 = const 115
-  call @rt.print_char(%428)
-  %429 = const 101
-  call @rt.print_char(%429)
+  %409 = const 102
+  call @rt.print_char(%409)
+  %410 = const 97
+  call @rt.print_char(%410)
+  %411 = const 108
+  call @rt.print_char(%411)
+  %412 = const 115
+  call @rt.print_char(%412)
+  %413 = const 101
+  call @rt.print_char(%413)
   br b79
 b79:
-  %430 = const 10
-  call @rt.print_char(%430)
+  %414 = const 10
+  call @rt.print_char(%414)
   region.setdepth %0
   ret
 }
@@ -4055,1208 +4039,1190 @@ b110:
   ret
 }
 
-func @main.$layoutEncode_0_0(%0 ptr, %1 i64, %2 i64, %3 i64, %4 i64, %5 i64, %6 i64, %7 i64, %8 i64, %9 i64, %10 i64, %11 i64, %12 i64, %13 i64, %14 i64, %15 i64, %16 i64) {
-  slot s0 [16]
+func @main.$layoutEncode_0_0(%0 ptr, %1 ptr) {
+  slot s0 [3]
   slot s1 [3]
-  slot s2 [3]
-  slot s3 [1]
-  slot s4 [3]
+  slot s2 [1]
+  slot s3 [3]
 b0:
-  %17 = slotaddr s0
-  store %17[0], %1
-  store %17[1], %2
-  store %17[2], %3
-  store %17[3], %4
-  store %17[4], %5
-  store %17[5], %6
-  store %17[6], %7
-  store %17[7], %8
-  store %17[8], %9
-  store %17[9], %10
-  store %17[10], %11
-  store %17[11], %12
-  store %17[12], %13
-  store %17[13], %14
-  store %17[14], %15
-  store %17[15], %16
-  %18 = region.depth
-  %19 = globaladdr @rt.meta
-  %20 = load.i64 %19[2572]
-  %21 = const 0
-  %22 = eq %20, %21
-  %23 = mul %22, %18
-  %24 = add %20, %23
-  %25 = slotaddr s1
-  %26 = load.i64 %17[0]
-  store %25[0], %26
-  %27 = load.i64 %17[1]
-  store %25[1], %27
-  %28 = load.i64 %17[2]
-  store %25[2], %28
-  %29 = load.i64 %25[1]
-  %30 = const 16
-  %31 = ne %29, %30
-  condbr %31, b1, b2
+  %2 = region.depth
+  %3 = globaladdr @rt.meta
+  %4 = load.i64 %3[2572]
+  %5 = const 0
+  %6 = eq %4, %5
+  %7 = mul %6, %2
+  %8 = add %4, %7
+  %9 = slotaddr s0
+  %10 = load.i64 %1[0]
+  store %9[0], %10
+  %11 = load.i64 %1[1]
+  store %9[1], %11
+  %12 = load.i64 %1[2]
+  store %9[2], %12
+  %13 = load.i64 %9[1]
+  %14 = const 16
+  %15 = ne %13, %14
+  condbr %15, b1, b2
 b1:
-  %32 = globaladdr @str.18
-  %33 = const 17
-  %34 = const 0
-  %35 = slotaddr s2
-  %36 = ptoi %32
-  store %35[0], %36
-  store %35[1], %33
-  store %35[2], %34
-  %37 = load.i64 %35[0]
-  %38 = load.i64 %35[1]
-  %39 = load.i64 %35[2]
-  %40 = const 16
-  %41 = load.i64 %25[1]
-  call @std/layout.FailLength(%37, %38, %39, %40, %41)
+  %16 = globaladdr @str.18
+  %17 = const 17
+  %18 = const 0
+  %19 = slotaddr s1
+  %20 = ptoi %16
+  store %19[0], %20
+  store %19[1], %17
+  store %19[2], %18
+  %21 = load.i64 %19[0]
+  %22 = load.i64 %19[1]
+  %23 = load.i64 %19[2]
+  %24 = const 16
+  %25 = load.i64 %9[1]
+  call @std/layout.FailLength(%21, %22, %23, %24, %25)
   br b3
 b2:
   br b3
 b3:
-  %42 = const 0
-  %43 = slotaddr s3
-  store %43[0], %42
-  %44 = region.depth
+  %26 = const 0
+  %27 = slotaddr s2
+  store %27[0], %26
+  %28 = region.depth
   br b4
 b4:
-  region.setdepth %44
-  %45 = load.i64 %43[0]
-  %46 = const 16
-  %47 = lt %45, %46
-  condbr %47, b5, b6
+  region.setdepth %28
+  %29 = load.i64 %27[0]
+  %30 = const 16
+  %31 = lt %29, %30
+  condbr %31, b5, b6
 b5:
   region.enter
-  %48 = region.depth
-  %49 = load.i64 %43[0]
-  %50 = load.i64 %25[1]
-  %51 = uge %49, %50
-  condbr %51, b7, b8
+  %32 = region.depth
+  %33 = load.i64 %27[0]
+  %34 = load.i64 %9[1]
+  %35 = uge %33, %34
+  condbr %35, b7, b8
 b6:
-  region.setdepth %44
-  %61 = load.i64 %17[3]
-  %62 = const 0
-  %63 = lt %61, %62
-  condbr %63, b10(%63), b9
+  region.setdepth %28
+  %45 = load.i64 %1[3]
+  %46 = const 0
+  %47 = lt %45, %46
+  condbr %47, b10(%47), b9
 b7:
-  %52 = const 54
-  call @rt.panic(%52)
+  %36 = const 54
+  call @rt.panic(%36)
   exit 101
 b8:
-  %53 = load.i64 %25[0]
-  %54 = itop %53
-  %55 = gep.byte %54, %49
-  %56 = load8 %55[0]
-  %57 = globaladdr @rt.meta
-  store %57[2572], %24
-  call @"std/builder.Push[byte]"(%0, %56)
-  %58 = const 1
-  %59 = load.i64 %43[0]
-  %60 = add %59, %58
-  store %43[0], %60
+  %37 = load.i64 %9[0]
+  %38 = itop %37
+  %39 = gep.byte %38, %33
+  %40 = load8 %39[0]
+  %41 = globaladdr @rt.meta
+  store %41[2572], %8
+  call @"std/builder.Push[byte]"(%0, %40)
+  %42 = const 1
+  %43 = load.i64 %27[0]
+  %44 = add %43, %42
+  store %27[0], %44
   br b4
 b9:
-  %65 = const 65535
-  %66 = gt %61, %65
-  br b10(%66)
-b10(%64 i64):
-  condbr %64, b11, b12
+  %49 = const 65535
+  %50 = gt %45, %49
+  br b10(%50)
+b10(%48 i64):
+  condbr %48, b11, b12
 b11:
-  %67 = globaladdr @str.14
-  %68 = const 16
-  %69 = const 0
-  %70 = slotaddr s2
-  %71 = ptoi %67
-  store %70[0], %71
-  store %70[1], %68
-  store %70[2], %69
-  %72 = load.i64 %70[0]
-  %73 = load.i64 %70[1]
-  %74 = load.i64 %70[2]
-  %75 = globaladdr @str.8
-  %76 = const 5
-  %77 = const 0
-  %78 = slotaddr s4
-  %79 = ptoi %75
-  store %78[0], %79
-  store %78[1], %76
-  store %78[2], %77
-  %80 = load.i64 %78[0]
-  %81 = load.i64 %78[1]
-  %82 = load.i64 %78[2]
-  call @std/layout.FailWidth(%72, %73, %74, %80, %81, %82, %61)
+  %51 = globaladdr @str.14
+  %52 = const 16
+  %53 = const 0
+  %54 = slotaddr s1
+  %55 = ptoi %51
+  store %54[0], %55
+  store %54[1], %52
+  store %54[2], %53
+  %56 = load.i64 %54[0]
+  %57 = load.i64 %54[1]
+  %58 = load.i64 %54[2]
+  %59 = globaladdr @str.8
+  %60 = const 5
+  %61 = const 0
+  %62 = slotaddr s3
+  %63 = ptoi %59
+  store %62[0], %63
+  store %62[1], %60
+  store %62[2], %61
+  %64 = load.i64 %62[0]
+  %65 = load.i64 %62[1]
+  %66 = load.i64 %62[2]
+  call @std/layout.FailWidth(%56, %57, %58, %64, %65, %66, %45)
   br b13
 b12:
   br b13
 b13:
-  %83 = const 0
-  %84 = sar %61, %83
-  %85 = const 255
-  %86 = and_ %84, %85
-  %87 = const 256
-  %88 = uge %86, %87
-  condbr %88, b14, b15
+  %67 = const 0
+  %68 = sar %45, %67
+  %69 = const 255
+  %70 = and_ %68, %69
+  %71 = const 256
+  %72 = uge %70, %71
+  condbr %72, b14, b15
 b14:
-  %89 = const 55
-  call @rt.panic(%89)
+  %73 = const 55
+  call @rt.panic(%73)
   exit 101
 b15:
-  %90 = globaladdr @rt.meta
-  store %90[2572], %24
-  call @"std/builder.Push[byte]"(%0, %86)
-  %91 = const 8
-  %92 = sar %61, %91
-  %93 = const 255
-  %94 = and_ %92, %93
-  %95 = const 256
-  %96 = uge %94, %95
-  condbr %96, b16, b17
+  %74 = globaladdr @rt.meta
+  store %74[2572], %8
+  call @"std/builder.Push[byte]"(%0, %70)
+  %75 = const 8
+  %76 = sar %45, %75
+  %77 = const 255
+  %78 = and_ %76, %77
+  %79 = const 256
+  %80 = uge %78, %79
+  condbr %80, b16, b17
 b16:
-  %97 = const 56
-  call @rt.panic(%97)
+  %81 = const 56
+  call @rt.panic(%81)
   exit 101
 b17:
-  %98 = globaladdr @rt.meta
-  store %98[2572], %24
-  call @"std/builder.Push[byte]"(%0, %94)
-  %99 = load.i64 %17[4]
-  %100 = const 0
-  %101 = lt %99, %100
-  condbr %101, b19(%101), b18
+  %82 = globaladdr @rt.meta
+  store %82[2572], %8
+  call @"std/builder.Push[byte]"(%0, %78)
+  %83 = load.i64 %1[4]
+  %84 = const 0
+  %85 = lt %83, %84
+  condbr %85, b19(%85), b18
 b18:
-  %103 = const 65535
-  %104 = gt %99, %103
-  br b19(%104)
-b19(%102 i64):
-  condbr %102, b20, b21
+  %87 = const 65535
+  %88 = gt %83, %87
+  br b19(%88)
+b19(%86 i64):
+  condbr %86, b20, b21
 b20:
-  %105 = globaladdr @str.16
-  %106 = const 19
-  %107 = const 0
-  %108 = slotaddr s4
-  %109 = ptoi %105
-  store %108[0], %109
-  store %108[1], %106
-  store %108[2], %107
-  %110 = load.i64 %108[0]
-  %111 = load.i64 %108[1]
-  %112 = load.i64 %108[2]
-  %113 = globaladdr @str.8
-  %114 = const 5
-  %115 = const 0
-  %116 = slotaddr s2
-  %117 = ptoi %113
-  store %116[0], %117
-  store %116[1], %114
-  store %116[2], %115
-  %118 = load.i64 %116[0]
-  %119 = load.i64 %116[1]
-  %120 = load.i64 %116[2]
-  call @std/layout.FailWidth(%110, %111, %112, %118, %119, %120, %99)
+  %89 = globaladdr @str.16
+  %90 = const 19
+  %91 = const 0
+  %92 = slotaddr s3
+  %93 = ptoi %89
+  store %92[0], %93
+  store %92[1], %90
+  store %92[2], %91
+  %94 = load.i64 %92[0]
+  %95 = load.i64 %92[1]
+  %96 = load.i64 %92[2]
+  %97 = globaladdr @str.8
+  %98 = const 5
+  %99 = const 0
+  %100 = slotaddr s1
+  %101 = ptoi %97
+  store %100[0], %101
+  store %100[1], %98
+  store %100[2], %99
+  %102 = load.i64 %100[0]
+  %103 = load.i64 %100[1]
+  %104 = load.i64 %100[2]
+  call @std/layout.FailWidth(%94, %95, %96, %102, %103, %104, %83)
   br b22
 b21:
   br b22
 b22:
-  %121 = const 0
-  %122 = sar %99, %121
-  %123 = const 255
-  %124 = and_ %122, %123
-  %125 = const 256
-  %126 = uge %124, %125
-  condbr %126, b23, b24
+  %105 = const 0
+  %106 = sar %83, %105
+  %107 = const 255
+  %108 = and_ %106, %107
+  %109 = const 256
+  %110 = uge %108, %109
+  condbr %110, b23, b24
 b23:
-  %127 = const 57
-  call @rt.panic(%127)
+  %111 = const 57
+  call @rt.panic(%111)
   exit 101
 b24:
-  %128 = globaladdr @rt.meta
-  store %128[2572], %24
-  call @"std/builder.Push[byte]"(%0, %124)
-  %129 = const 8
-  %130 = sar %99, %129
-  %131 = const 255
-  %132 = and_ %130, %131
-  %133 = const 256
-  %134 = uge %132, %133
-  condbr %134, b25, b26
+  %112 = globaladdr @rt.meta
+  store %112[2572], %8
+  call @"std/builder.Push[byte]"(%0, %108)
+  %113 = const 8
+  %114 = sar %83, %113
+  %115 = const 255
+  %116 = and_ %114, %115
+  %117 = const 256
+  %118 = uge %116, %117
+  condbr %118, b25, b26
 b25:
-  %135 = const 58
-  call @rt.panic(%135)
+  %119 = const 58
+  call @rt.panic(%119)
   exit 101
 b26:
-  %136 = globaladdr @rt.meta
-  store %136[2572], %24
-  call @"std/builder.Push[byte]"(%0, %132)
-  %137 = load.i64 %17[5]
-  %138 = const 0
-  %139 = lt %137, %138
-  condbr %139, b28(%139), b27
+  %120 = globaladdr @rt.meta
+  store %120[2572], %8
+  call @"std/builder.Push[byte]"(%0, %116)
+  %121 = load.i64 %1[5]
+  %122 = const 0
+  %123 = lt %121, %122
+  condbr %123, b28(%123), b27
 b27:
-  %141 = const 4294967295
-  %142 = gt %137, %141
-  br b28(%142)
-b28(%140 i64):
-  condbr %140, b29, b30
+  %125 = const 4294967295
+  %126 = gt %121, %125
+  br b28(%126)
+b28(%124 i64):
+  condbr %124, b29, b30
 b29:
-  %143 = globaladdr @str.21
-  %144 = const 19
-  %145 = const 0
-  %146 = slotaddr s2
-  %147 = ptoi %143
-  store %146[0], %147
-  store %146[1], %144
-  store %146[2], %145
-  %148 = load.i64 %146[0]
-  %149 = load.i64 %146[1]
-  %150 = load.i64 %146[2]
-  %151 = globaladdr @str.7
-  %152 = const 5
-  %153 = const 0
-  %154 = slotaddr s4
-  %155 = ptoi %151
-  store %154[0], %155
-  store %154[1], %152
-  store %154[2], %153
-  %156 = load.i64 %154[0]
-  %157 = load.i64 %154[1]
-  %158 = load.i64 %154[2]
-  call @std/layout.FailWidth(%148, %149, %150, %156, %157, %158, %137)
+  %127 = globaladdr @str.21
+  %128 = const 19
+  %129 = const 0
+  %130 = slotaddr s1
+  %131 = ptoi %127
+  store %130[0], %131
+  store %130[1], %128
+  store %130[2], %129
+  %132 = load.i64 %130[0]
+  %133 = load.i64 %130[1]
+  %134 = load.i64 %130[2]
+  %135 = globaladdr @str.7
+  %136 = const 5
+  %137 = const 0
+  %138 = slotaddr s3
+  %139 = ptoi %135
+  store %138[0], %139
+  store %138[1], %136
+  store %138[2], %137
+  %140 = load.i64 %138[0]
+  %141 = load.i64 %138[1]
+  %142 = load.i64 %138[2]
+  call @std/layout.FailWidth(%132, %133, %134, %140, %141, %142, %121)
   br b31
 b30:
   br b31
 b31:
-  %159 = const 0
-  %160 = sar %137, %159
+  %143 = const 0
+  %144 = sar %121, %143
+  %145 = const 255
+  %146 = and_ %144, %145
+  %147 = const 256
+  %148 = uge %146, %147
+  condbr %148, b32, b33
+b32:
+  %149 = const 59
+  call @rt.panic(%149)
+  exit 101
+b33:
+  %150 = globaladdr @rt.meta
+  store %150[2572], %8
+  call @"std/builder.Push[byte]"(%0, %146)
+  %151 = const 8
+  %152 = sar %121, %151
+  %153 = const 255
+  %154 = and_ %152, %153
+  %155 = const 256
+  %156 = uge %154, %155
+  condbr %156, b34, b35
+b34:
+  %157 = const 60
+  call @rt.panic(%157)
+  exit 101
+b35:
+  %158 = globaladdr @rt.meta
+  store %158[2572], %8
+  call @"std/builder.Push[byte]"(%0, %154)
+  %159 = const 16
+  %160 = sar %121, %159
   %161 = const 255
   %162 = and_ %160, %161
   %163 = const 256
   %164 = uge %162, %163
-  condbr %164, b32, b33
-b32:
-  %165 = const 59
+  condbr %164, b36, b37
+b36:
+  %165 = const 61
   call @rt.panic(%165)
   exit 101
-b33:
+b37:
   %166 = globaladdr @rt.meta
-  store %166[2572], %24
+  store %166[2572], %8
   call @"std/builder.Push[byte]"(%0, %162)
-  %167 = const 8
-  %168 = sar %137, %167
+  %167 = const 24
+  %168 = sar %121, %167
   %169 = const 255
   %170 = and_ %168, %169
   %171 = const 256
   %172 = uge %170, %171
-  condbr %172, b34, b35
-b34:
-  %173 = const 60
+  condbr %172, b38, b39
+b38:
+  %173 = const 62
   call @rt.panic(%173)
   exit 101
-b35:
-  %174 = globaladdr @rt.meta
-  store %174[2572], %24
-  call @"std/builder.Push[byte]"(%0, %170)
-  %175 = const 16
-  %176 = sar %137, %175
-  %177 = const 255
-  %178 = and_ %176, %177
-  %179 = const 256
-  %180 = uge %178, %179
-  condbr %180, b36, b37
-b36:
-  %181 = const 61
-  call @rt.panic(%181)
-  exit 101
-b37:
-  %182 = globaladdr @rt.meta
-  store %182[2572], %24
-  call @"std/builder.Push[byte]"(%0, %178)
-  %183 = const 24
-  %184 = sar %137, %183
-  %185 = const 255
-  %186 = and_ %184, %185
-  %187 = const 256
-  %188 = uge %186, %187
-  condbr %188, b38, b39
-b38:
-  %189 = const 62
-  call @rt.panic(%189)
-  exit 101
 b39:
-  %190 = globaladdr @rt.meta
-  store %190[2572], %24
-  call @"std/builder.Push[byte]"(%0, %186)
-  %191 = load.i64 %17[6]
-  %192 = const 0
-  %193 = sar %191, %192
+  %174 = globaladdr @rt.meta
+  store %174[2572], %8
+  call @"std/builder.Push[byte]"(%0, %170)
+  %175 = load.i64 %1[6]
+  %176 = const 0
+  %177 = sar %175, %176
+  %178 = const 255
+  %179 = and_ %177, %178
+  %180 = const 256
+  %181 = uge %179, %180
+  condbr %181, b40, b41
+b40:
+  %182 = const 63
+  call @rt.panic(%182)
+  exit 101
+b41:
+  %183 = globaladdr @rt.meta
+  store %183[2572], %8
+  call @"std/builder.Push[byte]"(%0, %179)
+  %184 = const 8
+  %185 = sar %175, %184
+  %186 = const 255
+  %187 = and_ %185, %186
+  %188 = const 256
+  %189 = uge %187, %188
+  condbr %189, b42, b43
+b42:
+  %190 = const 64
+  call @rt.panic(%190)
+  exit 101
+b43:
+  %191 = globaladdr @rt.meta
+  store %191[2572], %8
+  call @"std/builder.Push[byte]"(%0, %187)
+  %192 = const 16
+  %193 = sar %175, %192
   %194 = const 255
   %195 = and_ %193, %194
   %196 = const 256
   %197 = uge %195, %196
-  condbr %197, b40, b41
-b40:
-  %198 = const 63
+  condbr %197, b44, b45
+b44:
+  %198 = const 65
   call @rt.panic(%198)
   exit 101
-b41:
+b45:
   %199 = globaladdr @rt.meta
-  store %199[2572], %24
+  store %199[2572], %8
   call @"std/builder.Push[byte]"(%0, %195)
-  %200 = const 8
-  %201 = sar %191, %200
+  %200 = const 24
+  %201 = sar %175, %200
   %202 = const 255
   %203 = and_ %201, %202
   %204 = const 256
   %205 = uge %203, %204
-  condbr %205, b42, b43
-b42:
-  %206 = const 64
+  condbr %205, b46, b47
+b46:
+  %206 = const 66
   call @rt.panic(%206)
   exit 101
-b43:
+b47:
   %207 = globaladdr @rt.meta
-  store %207[2572], %24
+  store %207[2572], %8
   call @"std/builder.Push[byte]"(%0, %203)
-  %208 = const 16
-  %209 = sar %191, %208
+  %208 = const 32
+  %209 = sar %175, %208
   %210 = const 255
   %211 = and_ %209, %210
   %212 = const 256
   %213 = uge %211, %212
-  condbr %213, b44, b45
-b44:
-  %214 = const 65
+  condbr %213, b48, b49
+b48:
+  %214 = const 67
   call @rt.panic(%214)
   exit 101
-b45:
+b49:
   %215 = globaladdr @rt.meta
-  store %215[2572], %24
+  store %215[2572], %8
   call @"std/builder.Push[byte]"(%0, %211)
-  %216 = const 24
-  %217 = sar %191, %216
+  %216 = const 40
+  %217 = sar %175, %216
   %218 = const 255
   %219 = and_ %217, %218
   %220 = const 256
   %221 = uge %219, %220
-  condbr %221, b46, b47
-b46:
-  %222 = const 66
+  condbr %221, b50, b51
+b50:
+  %222 = const 68
   call @rt.panic(%222)
   exit 101
-b47:
+b51:
   %223 = globaladdr @rt.meta
-  store %223[2572], %24
+  store %223[2572], %8
   call @"std/builder.Push[byte]"(%0, %219)
-  %224 = const 32
-  %225 = sar %191, %224
+  %224 = const 48
+  %225 = sar %175, %224
   %226 = const 255
   %227 = and_ %225, %226
   %228 = const 256
   %229 = uge %227, %228
-  condbr %229, b48, b49
-b48:
-  %230 = const 67
+  condbr %229, b52, b53
+b52:
+  %230 = const 69
   call @rt.panic(%230)
   exit 101
-b49:
+b53:
   %231 = globaladdr @rt.meta
-  store %231[2572], %24
+  store %231[2572], %8
   call @"std/builder.Push[byte]"(%0, %227)
-  %232 = const 40
-  %233 = sar %191, %232
+  %232 = const 56
+  %233 = sar %175, %232
   %234 = const 255
   %235 = and_ %233, %234
   %236 = const 256
   %237 = uge %235, %236
-  condbr %237, b50, b51
-b50:
-  %238 = const 68
+  condbr %237, b54, b55
+b54:
+  %238 = const 70
   call @rt.panic(%238)
   exit 101
-b51:
-  %239 = globaladdr @rt.meta
-  store %239[2572], %24
-  call @"std/builder.Push[byte]"(%0, %235)
-  %240 = const 48
-  %241 = sar %191, %240
-  %242 = const 255
-  %243 = and_ %241, %242
-  %244 = const 256
-  %245 = uge %243, %244
-  condbr %245, b52, b53
-b52:
-  %246 = const 69
-  call @rt.panic(%246)
-  exit 101
-b53:
-  %247 = globaladdr @rt.meta
-  store %247[2572], %24
-  call @"std/builder.Push[byte]"(%0, %243)
-  %248 = const 56
-  %249 = sar %191, %248
-  %250 = const 255
-  %251 = and_ %249, %250
-  %252 = const 256
-  %253 = uge %251, %252
-  condbr %253, b54, b55
-b54:
-  %254 = const 70
-  call @rt.panic(%254)
-  exit 101
 b55:
-  %255 = globaladdr @rt.meta
-  store %255[2572], %24
-  call @"std/builder.Push[byte]"(%0, %251)
-  %256 = load.i64 %17[7]
-  %257 = const 0
-  %258 = sar %256, %257
+  %239 = globaladdr @rt.meta
+  store %239[2572], %8
+  call @"std/builder.Push[byte]"(%0, %235)
+  %240 = load.i64 %1[7]
+  %241 = const 0
+  %242 = sar %240, %241
+  %243 = const 255
+  %244 = and_ %242, %243
+  %245 = const 256
+  %246 = uge %244, %245
+  condbr %246, b56, b57
+b56:
+  %247 = const 71
+  call @rt.panic(%247)
+  exit 101
+b57:
+  %248 = globaladdr @rt.meta
+  store %248[2572], %8
+  call @"std/builder.Push[byte]"(%0, %244)
+  %249 = const 8
+  %250 = sar %240, %249
+  %251 = const 255
+  %252 = and_ %250, %251
+  %253 = const 256
+  %254 = uge %252, %253
+  condbr %254, b58, b59
+b58:
+  %255 = const 72
+  call @rt.panic(%255)
+  exit 101
+b59:
+  %256 = globaladdr @rt.meta
+  store %256[2572], %8
+  call @"std/builder.Push[byte]"(%0, %252)
+  %257 = const 16
+  %258 = sar %240, %257
   %259 = const 255
   %260 = and_ %258, %259
   %261 = const 256
   %262 = uge %260, %261
-  condbr %262, b56, b57
-b56:
-  %263 = const 71
+  condbr %262, b60, b61
+b60:
+  %263 = const 73
   call @rt.panic(%263)
   exit 101
-b57:
+b61:
   %264 = globaladdr @rt.meta
-  store %264[2572], %24
+  store %264[2572], %8
   call @"std/builder.Push[byte]"(%0, %260)
-  %265 = const 8
-  %266 = sar %256, %265
+  %265 = const 24
+  %266 = sar %240, %265
   %267 = const 255
   %268 = and_ %266, %267
   %269 = const 256
   %270 = uge %268, %269
-  condbr %270, b58, b59
-b58:
-  %271 = const 72
+  condbr %270, b62, b63
+b62:
+  %271 = const 74
   call @rt.panic(%271)
   exit 101
-b59:
+b63:
   %272 = globaladdr @rt.meta
-  store %272[2572], %24
+  store %272[2572], %8
   call @"std/builder.Push[byte]"(%0, %268)
-  %273 = const 16
-  %274 = sar %256, %273
+  %273 = const 32
+  %274 = sar %240, %273
   %275 = const 255
   %276 = and_ %274, %275
   %277 = const 256
   %278 = uge %276, %277
-  condbr %278, b60, b61
-b60:
-  %279 = const 73
+  condbr %278, b64, b65
+b64:
+  %279 = const 75
   call @rt.panic(%279)
   exit 101
-b61:
+b65:
   %280 = globaladdr @rt.meta
-  store %280[2572], %24
+  store %280[2572], %8
   call @"std/builder.Push[byte]"(%0, %276)
-  %281 = const 24
-  %282 = sar %256, %281
+  %281 = const 40
+  %282 = sar %240, %281
   %283 = const 255
   %284 = and_ %282, %283
   %285 = const 256
   %286 = uge %284, %285
-  condbr %286, b62, b63
-b62:
-  %287 = const 74
+  condbr %286, b66, b67
+b66:
+  %287 = const 76
   call @rt.panic(%287)
   exit 101
-b63:
+b67:
   %288 = globaladdr @rt.meta
-  store %288[2572], %24
+  store %288[2572], %8
   call @"std/builder.Push[byte]"(%0, %284)
-  %289 = const 32
-  %290 = sar %256, %289
+  %289 = const 48
+  %290 = sar %240, %289
   %291 = const 255
   %292 = and_ %290, %291
   %293 = const 256
   %294 = uge %292, %293
-  condbr %294, b64, b65
-b64:
-  %295 = const 75
+  condbr %294, b68, b69
+b68:
+  %295 = const 77
   call @rt.panic(%295)
   exit 101
-b65:
+b69:
   %296 = globaladdr @rt.meta
-  store %296[2572], %24
+  store %296[2572], %8
   call @"std/builder.Push[byte]"(%0, %292)
-  %297 = const 40
-  %298 = sar %256, %297
+  %297 = const 56
+  %298 = sar %240, %297
   %299 = const 255
   %300 = and_ %298, %299
   %301 = const 256
   %302 = uge %300, %301
-  condbr %302, b66, b67
-b66:
-  %303 = const 76
+  condbr %302, b70, b71
+b70:
+  %303 = const 78
   call @rt.panic(%303)
   exit 101
-b67:
-  %304 = globaladdr @rt.meta
-  store %304[2572], %24
-  call @"std/builder.Push[byte]"(%0, %300)
-  %305 = const 48
-  %306 = sar %256, %305
-  %307 = const 255
-  %308 = and_ %306, %307
-  %309 = const 256
-  %310 = uge %308, %309
-  condbr %310, b68, b69
-b68:
-  %311 = const 77
-  call @rt.panic(%311)
-  exit 101
-b69:
-  %312 = globaladdr @rt.meta
-  store %312[2572], %24
-  call @"std/builder.Push[byte]"(%0, %308)
-  %313 = const 56
-  %314 = sar %256, %313
-  %315 = const 255
-  %316 = and_ %314, %315
-  %317 = const 256
-  %318 = uge %316, %317
-  condbr %318, b70, b71
-b70:
-  %319 = const 78
-  call @rt.panic(%319)
-  exit 101
 b71:
-  %320 = globaladdr @rt.meta
-  store %320[2572], %24
-  call @"std/builder.Push[byte]"(%0, %316)
-  %321 = load.i64 %17[8]
-  %322 = const 0
-  %323 = sar %321, %322
+  %304 = globaladdr @rt.meta
+  store %304[2572], %8
+  call @"std/builder.Push[byte]"(%0, %300)
+  %305 = load.i64 %1[8]
+  %306 = const 0
+  %307 = sar %305, %306
+  %308 = const 255
+  %309 = and_ %307, %308
+  %310 = const 256
+  %311 = uge %309, %310
+  condbr %311, b72, b73
+b72:
+  %312 = const 79
+  call @rt.panic(%312)
+  exit 101
+b73:
+  %313 = globaladdr @rt.meta
+  store %313[2572], %8
+  call @"std/builder.Push[byte]"(%0, %309)
+  %314 = const 8
+  %315 = sar %305, %314
+  %316 = const 255
+  %317 = and_ %315, %316
+  %318 = const 256
+  %319 = uge %317, %318
+  condbr %319, b74, b75
+b74:
+  %320 = const 80
+  call @rt.panic(%320)
+  exit 101
+b75:
+  %321 = globaladdr @rt.meta
+  store %321[2572], %8
+  call @"std/builder.Push[byte]"(%0, %317)
+  %322 = const 16
+  %323 = sar %305, %322
   %324 = const 255
   %325 = and_ %323, %324
   %326 = const 256
   %327 = uge %325, %326
-  condbr %327, b72, b73
-b72:
-  %328 = const 79
+  condbr %327, b76, b77
+b76:
+  %328 = const 81
   call @rt.panic(%328)
   exit 101
-b73:
+b77:
   %329 = globaladdr @rt.meta
-  store %329[2572], %24
+  store %329[2572], %8
   call @"std/builder.Push[byte]"(%0, %325)
-  %330 = const 8
-  %331 = sar %321, %330
+  %330 = const 24
+  %331 = sar %305, %330
   %332 = const 255
   %333 = and_ %331, %332
   %334 = const 256
   %335 = uge %333, %334
-  condbr %335, b74, b75
-b74:
-  %336 = const 80
+  condbr %335, b78, b79
+b78:
+  %336 = const 82
   call @rt.panic(%336)
   exit 101
-b75:
+b79:
   %337 = globaladdr @rt.meta
-  store %337[2572], %24
+  store %337[2572], %8
   call @"std/builder.Push[byte]"(%0, %333)
-  %338 = const 16
-  %339 = sar %321, %338
+  %338 = const 32
+  %339 = sar %305, %338
   %340 = const 255
   %341 = and_ %339, %340
   %342 = const 256
   %343 = uge %341, %342
-  condbr %343, b76, b77
-b76:
-  %344 = const 81
+  condbr %343, b80, b81
+b80:
+  %344 = const 83
   call @rt.panic(%344)
   exit 101
-b77:
+b81:
   %345 = globaladdr @rt.meta
-  store %345[2572], %24
+  store %345[2572], %8
   call @"std/builder.Push[byte]"(%0, %341)
-  %346 = const 24
-  %347 = sar %321, %346
+  %346 = const 40
+  %347 = sar %305, %346
   %348 = const 255
   %349 = and_ %347, %348
   %350 = const 256
   %351 = uge %349, %350
-  condbr %351, b78, b79
-b78:
-  %352 = const 82
+  condbr %351, b82, b83
+b82:
+  %352 = const 84
   call @rt.panic(%352)
   exit 101
-b79:
+b83:
   %353 = globaladdr @rt.meta
-  store %353[2572], %24
+  store %353[2572], %8
   call @"std/builder.Push[byte]"(%0, %349)
-  %354 = const 32
-  %355 = sar %321, %354
+  %354 = const 48
+  %355 = sar %305, %354
   %356 = const 255
   %357 = and_ %355, %356
   %358 = const 256
   %359 = uge %357, %358
-  condbr %359, b80, b81
-b80:
-  %360 = const 83
+  condbr %359, b84, b85
+b84:
+  %360 = const 85
   call @rt.panic(%360)
   exit 101
-b81:
+b85:
   %361 = globaladdr @rt.meta
-  store %361[2572], %24
+  store %361[2572], %8
   call @"std/builder.Push[byte]"(%0, %357)
-  %362 = const 40
-  %363 = sar %321, %362
+  %362 = const 56
+  %363 = sar %305, %362
   %364 = const 255
   %365 = and_ %363, %364
   %366 = const 256
   %367 = uge %365, %366
-  condbr %367, b82, b83
-b82:
-  %368 = const 84
+  condbr %367, b86, b87
+b86:
+  %368 = const 86
   call @rt.panic(%368)
   exit 101
-b83:
-  %369 = globaladdr @rt.meta
-  store %369[2572], %24
-  call @"std/builder.Push[byte]"(%0, %365)
-  %370 = const 48
-  %371 = sar %321, %370
-  %372 = const 255
-  %373 = and_ %371, %372
-  %374 = const 256
-  %375 = uge %373, %374
-  condbr %375, b84, b85
-b84:
-  %376 = const 85
-  call @rt.panic(%376)
-  exit 101
-b85:
-  %377 = globaladdr @rt.meta
-  store %377[2572], %24
-  call @"std/builder.Push[byte]"(%0, %373)
-  %378 = const 56
-  %379 = sar %321, %378
-  %380 = const 255
-  %381 = and_ %379, %380
-  %382 = const 256
-  %383 = uge %381, %382
-  condbr %383, b86, b87
-b86:
-  %384 = const 86
-  call @rt.panic(%384)
-  exit 101
 b87:
-  %385 = globaladdr @rt.meta
-  store %385[2572], %24
-  call @"std/builder.Push[byte]"(%0, %381)
-  %386 = load.i64 %17[9]
-  %387 = const 0
-  %388 = lt %386, %387
-  condbr %388, b89(%388), b88
+  %369 = globaladdr @rt.meta
+  store %369[2572], %8
+  call @"std/builder.Push[byte]"(%0, %365)
+  %370 = load.i64 %1[9]
+  %371 = const 0
+  %372 = lt %370, %371
+  condbr %372, b89(%372), b88
 b88:
-  %390 = const 4294967295
-  %391 = gt %386, %390
-  br b89(%391)
-b89(%389 i64):
-  condbr %389, b90, b91
+  %374 = const 4294967295
+  %375 = gt %370, %374
+  br b89(%375)
+b89(%373 i64):
+  condbr %373, b90, b91
 b90:
-  %392 = globaladdr @str.15
-  %393 = const 17
-  %394 = const 0
-  %395 = slotaddr s4
-  %396 = ptoi %392
-  store %395[0], %396
-  store %395[1], %393
-  store %395[2], %394
-  %397 = load.i64 %395[0]
-  %398 = load.i64 %395[1]
-  %399 = load.i64 %395[2]
-  %400 = globaladdr @str.7
-  %401 = const 5
-  %402 = const 0
-  %403 = slotaddr s2
-  %404 = ptoi %400
-  store %403[0], %404
-  store %403[1], %401
-  store %403[2], %402
-  %405 = load.i64 %403[0]
-  %406 = load.i64 %403[1]
-  %407 = load.i64 %403[2]
-  call @std/layout.FailWidth(%397, %398, %399, %405, %406, %407, %386)
+  %376 = globaladdr @str.15
+  %377 = const 17
+  %378 = const 0
+  %379 = slotaddr s3
+  %380 = ptoi %376
+  store %379[0], %380
+  store %379[1], %377
+  store %379[2], %378
+  %381 = load.i64 %379[0]
+  %382 = load.i64 %379[1]
+  %383 = load.i64 %379[2]
+  %384 = globaladdr @str.7
+  %385 = const 5
+  %386 = const 0
+  %387 = slotaddr s1
+  %388 = ptoi %384
+  store %387[0], %388
+  store %387[1], %385
+  store %387[2], %386
+  %389 = load.i64 %387[0]
+  %390 = load.i64 %387[1]
+  %391 = load.i64 %387[2]
+  call @std/layout.FailWidth(%381, %382, %383, %389, %390, %391, %370)
   br b92
 b91:
   br b92
 b92:
-  %408 = const 0
-  %409 = sar %386, %408
+  %392 = const 0
+  %393 = sar %370, %392
+  %394 = const 255
+  %395 = and_ %393, %394
+  %396 = const 256
+  %397 = uge %395, %396
+  condbr %397, b93, b94
+b93:
+  %398 = const 87
+  call @rt.panic(%398)
+  exit 101
+b94:
+  %399 = globaladdr @rt.meta
+  store %399[2572], %8
+  call @"std/builder.Push[byte]"(%0, %395)
+  %400 = const 8
+  %401 = sar %370, %400
+  %402 = const 255
+  %403 = and_ %401, %402
+  %404 = const 256
+  %405 = uge %403, %404
+  condbr %405, b95, b96
+b95:
+  %406 = const 88
+  call @rt.panic(%406)
+  exit 101
+b96:
+  %407 = globaladdr @rt.meta
+  store %407[2572], %8
+  call @"std/builder.Push[byte]"(%0, %403)
+  %408 = const 16
+  %409 = sar %370, %408
   %410 = const 255
   %411 = and_ %409, %410
   %412 = const 256
   %413 = uge %411, %412
-  condbr %413, b93, b94
-b93:
-  %414 = const 87
+  condbr %413, b97, b98
+b97:
+  %414 = const 89
   call @rt.panic(%414)
   exit 101
-b94:
+b98:
   %415 = globaladdr @rt.meta
-  store %415[2572], %24
+  store %415[2572], %8
   call @"std/builder.Push[byte]"(%0, %411)
-  %416 = const 8
-  %417 = sar %386, %416
+  %416 = const 24
+  %417 = sar %370, %416
   %418 = const 255
   %419 = and_ %417, %418
   %420 = const 256
   %421 = uge %419, %420
-  condbr %421, b95, b96
-b95:
-  %422 = const 88
+  condbr %421, b99, b100
+b99:
+  %422 = const 90
   call @rt.panic(%422)
   exit 101
-b96:
-  %423 = globaladdr @rt.meta
-  store %423[2572], %24
-  call @"std/builder.Push[byte]"(%0, %419)
-  %424 = const 16
-  %425 = sar %386, %424
-  %426 = const 255
-  %427 = and_ %425, %426
-  %428 = const 256
-  %429 = uge %427, %428
-  condbr %429, b97, b98
-b97:
-  %430 = const 89
-  call @rt.panic(%430)
-  exit 101
-b98:
-  %431 = globaladdr @rt.meta
-  store %431[2572], %24
-  call @"std/builder.Push[byte]"(%0, %427)
-  %432 = const 24
-  %433 = sar %386, %432
-  %434 = const 255
-  %435 = and_ %433, %434
-  %436 = const 256
-  %437 = uge %435, %436
-  condbr %437, b99, b100
-b99:
-  %438 = const 90
-  call @rt.panic(%438)
-  exit 101
 b100:
-  %439 = globaladdr @rt.meta
-  store %439[2572], %24
-  call @"std/builder.Push[byte]"(%0, %435)
-  %440 = load.i64 %17[10]
-  %441 = const 0
-  %442 = lt %440, %441
-  condbr %442, b102(%442), b101
+  %423 = globaladdr @rt.meta
+  store %423[2572], %8
+  call @"std/builder.Push[byte]"(%0, %419)
+  %424 = load.i64 %1[10]
+  %425 = const 0
+  %426 = lt %424, %425
+  condbr %426, b102(%426), b101
 b101:
-  %444 = const 65535
-  %445 = gt %440, %444
-  br b102(%445)
-b102(%443 i64):
-  condbr %443, b103, b104
+  %428 = const 65535
+  %429 = gt %424, %428
+  br b102(%429)
+b102(%427 i64):
+  condbr %427, b103, b104
 b103:
-  %446 = globaladdr @str.17
-  %447 = const 18
-  %448 = const 0
-  %449 = slotaddr s2
-  %450 = ptoi %446
-  store %449[0], %450
-  store %449[1], %447
-  store %449[2], %448
-  %451 = load.i64 %449[0]
-  %452 = load.i64 %449[1]
-  %453 = load.i64 %449[2]
-  %454 = globaladdr @str.8
-  %455 = const 5
-  %456 = const 0
-  %457 = slotaddr s4
-  %458 = ptoi %454
-  store %457[0], %458
-  store %457[1], %455
-  store %457[2], %456
-  %459 = load.i64 %457[0]
-  %460 = load.i64 %457[1]
-  %461 = load.i64 %457[2]
-  call @std/layout.FailWidth(%451, %452, %453, %459, %460, %461, %440)
+  %430 = globaladdr @str.17
+  %431 = const 18
+  %432 = const 0
+  %433 = slotaddr s1
+  %434 = ptoi %430
+  store %433[0], %434
+  store %433[1], %431
+  store %433[2], %432
+  %435 = load.i64 %433[0]
+  %436 = load.i64 %433[1]
+  %437 = load.i64 %433[2]
+  %438 = globaladdr @str.8
+  %439 = const 5
+  %440 = const 0
+  %441 = slotaddr s3
+  %442 = ptoi %438
+  store %441[0], %442
+  store %441[1], %439
+  store %441[2], %440
+  %443 = load.i64 %441[0]
+  %444 = load.i64 %441[1]
+  %445 = load.i64 %441[2]
+  call @std/layout.FailWidth(%435, %436, %437, %443, %444, %445, %424)
   br b105
 b104:
   br b105
 b105:
-  %462 = const 0
-  %463 = sar %440, %462
-  %464 = const 255
-  %465 = and_ %463, %464
-  %466 = const 256
-  %467 = uge %465, %466
-  condbr %467, b106, b107
+  %446 = const 0
+  %447 = sar %424, %446
+  %448 = const 255
+  %449 = and_ %447, %448
+  %450 = const 256
+  %451 = uge %449, %450
+  condbr %451, b106, b107
 b106:
-  %468 = const 91
-  call @rt.panic(%468)
+  %452 = const 91
+  call @rt.panic(%452)
   exit 101
 b107:
-  %469 = globaladdr @rt.meta
-  store %469[2572], %24
-  call @"std/builder.Push[byte]"(%0, %465)
-  %470 = const 8
-  %471 = sar %440, %470
-  %472 = const 255
-  %473 = and_ %471, %472
-  %474 = const 256
-  %475 = uge %473, %474
-  condbr %475, b108, b109
+  %453 = globaladdr @rt.meta
+  store %453[2572], %8
+  call @"std/builder.Push[byte]"(%0, %449)
+  %454 = const 8
+  %455 = sar %424, %454
+  %456 = const 255
+  %457 = and_ %455, %456
+  %458 = const 256
+  %459 = uge %457, %458
+  condbr %459, b108, b109
 b108:
-  %476 = const 92
-  call @rt.panic(%476)
+  %460 = const 92
+  call @rt.panic(%460)
   exit 101
 b109:
-  %477 = globaladdr @rt.meta
-  store %477[2572], %24
-  call @"std/builder.Push[byte]"(%0, %473)
-  %478 = load.i64 %17[11]
-  %479 = const 0
-  %480 = lt %478, %479
-  condbr %480, b111(%480), b110
+  %461 = globaladdr @rt.meta
+  store %461[2572], %8
+  call @"std/builder.Push[byte]"(%0, %457)
+  %462 = load.i64 %1[11]
+  %463 = const 0
+  %464 = lt %462, %463
+  condbr %464, b111(%464), b110
 b110:
-  %482 = const 65535
-  %483 = gt %478, %482
-  br b111(%483)
-b111(%481 i64):
-  condbr %481, b112, b113
+  %466 = const 65535
+  %467 = gt %462, %466
+  br b111(%467)
+b111(%465 i64):
+  condbr %465, b112, b113
 b112:
-  %484 = globaladdr @str.19
-  %485 = const 21
-  %486 = const 0
-  %487 = slotaddr s4
-  %488 = ptoi %484
-  store %487[0], %488
-  store %487[1], %485
-  store %487[2], %486
-  %489 = load.i64 %487[0]
-  %490 = load.i64 %487[1]
-  %491 = load.i64 %487[2]
-  %492 = globaladdr @str.8
-  %493 = const 5
-  %494 = const 0
-  %495 = slotaddr s2
-  %496 = ptoi %492
-  store %495[0], %496
-  store %495[1], %493
-  store %495[2], %494
-  %497 = load.i64 %495[0]
-  %498 = load.i64 %495[1]
-  %499 = load.i64 %495[2]
-  call @std/layout.FailWidth(%489, %490, %491, %497, %498, %499, %478)
+  %468 = globaladdr @str.19
+  %469 = const 21
+  %470 = const 0
+  %471 = slotaddr s3
+  %472 = ptoi %468
+  store %471[0], %472
+  store %471[1], %469
+  store %471[2], %470
+  %473 = load.i64 %471[0]
+  %474 = load.i64 %471[1]
+  %475 = load.i64 %471[2]
+  %476 = globaladdr @str.8
+  %477 = const 5
+  %478 = const 0
+  %479 = slotaddr s1
+  %480 = ptoi %476
+  store %479[0], %480
+  store %479[1], %477
+  store %479[2], %478
+  %481 = load.i64 %479[0]
+  %482 = load.i64 %479[1]
+  %483 = load.i64 %479[2]
+  call @std/layout.FailWidth(%473, %474, %475, %481, %482, %483, %462)
   br b114
 b113:
   br b114
 b114:
-  %500 = const 0
-  %501 = sar %478, %500
-  %502 = const 255
-  %503 = and_ %501, %502
-  %504 = const 256
-  %505 = uge %503, %504
-  condbr %505, b115, b116
+  %484 = const 0
+  %485 = sar %462, %484
+  %486 = const 255
+  %487 = and_ %485, %486
+  %488 = const 256
+  %489 = uge %487, %488
+  condbr %489, b115, b116
 b115:
-  %506 = const 93
-  call @rt.panic(%506)
+  %490 = const 93
+  call @rt.panic(%490)
   exit 101
 b116:
-  %507 = globaladdr @rt.meta
-  store %507[2572], %24
-  call @"std/builder.Push[byte]"(%0, %503)
-  %508 = const 8
-  %509 = sar %478, %508
-  %510 = const 255
-  %511 = and_ %509, %510
-  %512 = const 256
-  %513 = uge %511, %512
-  condbr %513, b117, b118
+  %491 = globaladdr @rt.meta
+  store %491[2572], %8
+  call @"std/builder.Push[byte]"(%0, %487)
+  %492 = const 8
+  %493 = sar %462, %492
+  %494 = const 255
+  %495 = and_ %493, %494
+  %496 = const 256
+  %497 = uge %495, %496
+  condbr %497, b117, b118
 b117:
-  %514 = const 94
-  call @rt.panic(%514)
+  %498 = const 94
+  call @rt.panic(%498)
   exit 101
 b118:
-  %515 = globaladdr @rt.meta
-  store %515[2572], %24
-  call @"std/builder.Push[byte]"(%0, %511)
-  %516 = load.i64 %17[12]
-  %517 = const 0
-  %518 = lt %516, %517
-  condbr %518, b120(%518), b119
+  %499 = globaladdr @rt.meta
+  store %499[2572], %8
+  call @"std/builder.Push[byte]"(%0, %495)
+  %500 = load.i64 %1[12]
+  %501 = const 0
+  %502 = lt %500, %501
+  condbr %502, b120(%502), b119
 b119:
-  %520 = const 65535
-  %521 = gt %516, %520
-  br b120(%521)
-b120(%519 i64):
-  condbr %519, b121, b122
+  %504 = const 65535
+  %505 = gt %500, %504
+  br b120(%505)
+b120(%503 i64):
+  condbr %503, b121, b122
 b121:
-  %522 = globaladdr @str.23
-  %523 = const 17
-  %524 = const 0
-  %525 = slotaddr s2
-  %526 = ptoi %522
-  store %525[0], %526
-  store %525[1], %523
-  store %525[2], %524
-  %527 = load.i64 %525[0]
-  %528 = load.i64 %525[1]
-  %529 = load.i64 %525[2]
-  %530 = globaladdr @str.8
-  %531 = const 5
-  %532 = const 0
-  %533 = slotaddr s4
-  %534 = ptoi %530
-  store %533[0], %534
-  store %533[1], %531
-  store %533[2], %532
-  %535 = load.i64 %533[0]
-  %536 = load.i64 %533[1]
-  %537 = load.i64 %533[2]
-  call @std/layout.FailWidth(%527, %528, %529, %535, %536, %537, %516)
+  %506 = globaladdr @str.23
+  %507 = const 17
+  %508 = const 0
+  %509 = slotaddr s1
+  %510 = ptoi %506
+  store %509[0], %510
+  store %509[1], %507
+  store %509[2], %508
+  %511 = load.i64 %509[0]
+  %512 = load.i64 %509[1]
+  %513 = load.i64 %509[2]
+  %514 = globaladdr @str.8
+  %515 = const 5
+  %516 = const 0
+  %517 = slotaddr s3
+  %518 = ptoi %514
+  store %517[0], %518
+  store %517[1], %515
+  store %517[2], %516
+  %519 = load.i64 %517[0]
+  %520 = load.i64 %517[1]
+  %521 = load.i64 %517[2]
+  call @std/layout.FailWidth(%511, %512, %513, %519, %520, %521, %500)
   br b123
 b122:
   br b123
 b123:
-  %538 = const 0
-  %539 = sar %516, %538
-  %540 = const 255
-  %541 = and_ %539, %540
-  %542 = const 256
-  %543 = uge %541, %542
-  condbr %543, b124, b125
+  %522 = const 0
+  %523 = sar %500, %522
+  %524 = const 255
+  %525 = and_ %523, %524
+  %526 = const 256
+  %527 = uge %525, %526
+  condbr %527, b124, b125
 b124:
-  %544 = const 95
-  call @rt.panic(%544)
+  %528 = const 95
+  call @rt.panic(%528)
   exit 101
 b125:
-  %545 = globaladdr @rt.meta
-  store %545[2572], %24
-  call @"std/builder.Push[byte]"(%0, %541)
-  %546 = const 8
-  %547 = sar %516, %546
-  %548 = const 255
-  %549 = and_ %547, %548
-  %550 = const 256
-  %551 = uge %549, %550
-  condbr %551, b126, b127
+  %529 = globaladdr @rt.meta
+  store %529[2572], %8
+  call @"std/builder.Push[byte]"(%0, %525)
+  %530 = const 8
+  %531 = sar %500, %530
+  %532 = const 255
+  %533 = and_ %531, %532
+  %534 = const 256
+  %535 = uge %533, %534
+  condbr %535, b126, b127
 b126:
-  %552 = const 96
-  call @rt.panic(%552)
+  %536 = const 96
+  call @rt.panic(%536)
   exit 101
 b127:
-  %553 = globaladdr @rt.meta
-  store %553[2572], %24
-  call @"std/builder.Push[byte]"(%0, %549)
-  %554 = load.i64 %17[13]
-  %555 = const 0
-  %556 = lt %554, %555
-  condbr %556, b129(%556), b128
+  %537 = globaladdr @rt.meta
+  store %537[2572], %8
+  call @"std/builder.Push[byte]"(%0, %533)
+  %538 = load.i64 %1[13]
+  %539 = const 0
+  %540 = lt %538, %539
+  condbr %540, b129(%540), b128
 b128:
-  %558 = const 65535
-  %559 = gt %554, %558
-  br b129(%559)
-b129(%557 i64):
-  condbr %557, b130, b131
+  %542 = const 65535
+  %543 = gt %538, %542
+  br b129(%543)
+b129(%541 i64):
+  condbr %541, b130, b131
 b130:
-  %560 = globaladdr @str.20
-  %561 = const 21
-  %562 = const 0
-  %563 = slotaddr s4
-  %564 = ptoi %560
-  store %563[0], %564
-  store %563[1], %561
-  store %563[2], %562
-  %565 = load.i64 %563[0]
-  %566 = load.i64 %563[1]
-  %567 = load.i64 %563[2]
-  %568 = globaladdr @str.8
-  %569 = const 5
-  %570 = const 0
-  %571 = slotaddr s2
-  %572 = ptoi %568
-  store %571[0], %572
-  store %571[1], %569
-  store %571[2], %570
-  %573 = load.i64 %571[0]
-  %574 = load.i64 %571[1]
-  %575 = load.i64 %571[2]
-  call @std/layout.FailWidth(%565, %566, %567, %573, %574, %575, %554)
+  %544 = globaladdr @str.20
+  %545 = const 21
+  %546 = const 0
+  %547 = slotaddr s3
+  %548 = ptoi %544
+  store %547[0], %548
+  store %547[1], %545
+  store %547[2], %546
+  %549 = load.i64 %547[0]
+  %550 = load.i64 %547[1]
+  %551 = load.i64 %547[2]
+  %552 = globaladdr @str.8
+  %553 = const 5
+  %554 = const 0
+  %555 = slotaddr s1
+  %556 = ptoi %552
+  store %555[0], %556
+  store %555[1], %553
+  store %555[2], %554
+  %557 = load.i64 %555[0]
+  %558 = load.i64 %555[1]
+  %559 = load.i64 %555[2]
+  call @std/layout.FailWidth(%549, %550, %551, %557, %558, %559, %538)
   br b132
 b131:
   br b132
 b132:
-  %576 = const 0
-  %577 = sar %554, %576
-  %578 = const 255
-  %579 = and_ %577, %578
-  %580 = const 256
-  %581 = uge %579, %580
-  condbr %581, b133, b134
+  %560 = const 0
+  %561 = sar %538, %560
+  %562 = const 255
+  %563 = and_ %561, %562
+  %564 = const 256
+  %565 = uge %563, %564
+  condbr %565, b133, b134
 b133:
-  %582 = const 97
-  call @rt.panic(%582)
+  %566 = const 97
+  call @rt.panic(%566)
   exit 101
 b134:
-  %583 = globaladdr @rt.meta
-  store %583[2572], %24
-  call @"std/builder.Push[byte]"(%0, %579)
-  %584 = const 8
-  %585 = sar %554, %584
-  %586 = const 255
-  %587 = and_ %585, %586
-  %588 = const 256
-  %589 = uge %587, %588
-  condbr %589, b135, b136
+  %567 = globaladdr @rt.meta
+  store %567[2572], %8
+  call @"std/builder.Push[byte]"(%0, %563)
+  %568 = const 8
+  %569 = sar %538, %568
+  %570 = const 255
+  %571 = and_ %569, %570
+  %572 = const 256
+  %573 = uge %571, %572
+  condbr %573, b135, b136
 b135:
-  %590 = const 98
-  call @rt.panic(%590)
+  %574 = const 98
+  call @rt.panic(%574)
   exit 101
 b136:
-  %591 = globaladdr @rt.meta
-  store %591[2572], %24
-  call @"std/builder.Push[byte]"(%0, %587)
-  %592 = load.i64 %17[14]
-  %593 = const 0
-  %594 = lt %592, %593
-  condbr %594, b138(%594), b137
+  %575 = globaladdr @rt.meta
+  store %575[2572], %8
+  call @"std/builder.Push[byte]"(%0, %571)
+  %576 = load.i64 %1[14]
+  %577 = const 0
+  %578 = lt %576, %577
+  condbr %578, b138(%578), b137
 b137:
-  %596 = const 65535
-  %597 = gt %592, %596
-  br b138(%597)
-b138(%595 i64):
-  condbr %595, b139, b140
+  %580 = const 65535
+  %581 = gt %576, %580
+  br b138(%581)
+b138(%579 i64):
+  condbr %579, b139, b140
 b139:
-  %598 = globaladdr @str.24
-  %599 = const 17
-  %600 = const 0
-  %601 = slotaddr s2
-  %602 = ptoi %598
-  store %601[0], %602
-  store %601[1], %599
-  store %601[2], %600
-  %603 = load.i64 %601[0]
-  %604 = load.i64 %601[1]
-  %605 = load.i64 %601[2]
-  %606 = globaladdr @str.8
-  %607 = const 5
-  %608 = const 0
-  %609 = slotaddr s4
-  %610 = ptoi %606
-  store %609[0], %610
-  store %609[1], %607
-  store %609[2], %608
-  %611 = load.i64 %609[0]
-  %612 = load.i64 %609[1]
-  %613 = load.i64 %609[2]
-  call @std/layout.FailWidth(%603, %604, %605, %611, %612, %613, %592)
+  %582 = globaladdr @str.24
+  %583 = const 17
+  %584 = const 0
+  %585 = slotaddr s1
+  %586 = ptoi %582
+  store %585[0], %586
+  store %585[1], %583
+  store %585[2], %584
+  %587 = load.i64 %585[0]
+  %588 = load.i64 %585[1]
+  %589 = load.i64 %585[2]
+  %590 = globaladdr @str.8
+  %591 = const 5
+  %592 = const 0
+  %593 = slotaddr s3
+  %594 = ptoi %590
+  store %593[0], %594
+  store %593[1], %591
+  store %593[2], %592
+  %595 = load.i64 %593[0]
+  %596 = load.i64 %593[1]
+  %597 = load.i64 %593[2]
+  call @std/layout.FailWidth(%587, %588, %589, %595, %596, %597, %576)
   br b141
 b140:
   br b141
 b141:
-  %614 = const 0
-  %615 = sar %592, %614
-  %616 = const 255
-  %617 = and_ %615, %616
-  %618 = const 256
-  %619 = uge %617, %618
-  condbr %619, b142, b143
+  %598 = const 0
+  %599 = sar %576, %598
+  %600 = const 255
+  %601 = and_ %599, %600
+  %602 = const 256
+  %603 = uge %601, %602
+  condbr %603, b142, b143
 b142:
-  %620 = const 99
-  call @rt.panic(%620)
+  %604 = const 99
+  call @rt.panic(%604)
   exit 101
 b143:
-  %621 = globaladdr @rt.meta
-  store %621[2572], %24
-  call @"std/builder.Push[byte]"(%0, %617)
-  %622 = const 8
-  %623 = sar %592, %622
-  %624 = const 255
-  %625 = and_ %623, %624
-  %626 = const 256
-  %627 = uge %625, %626
-  condbr %627, b144, b145
+  %605 = globaladdr @rt.meta
+  store %605[2572], %8
+  call @"std/builder.Push[byte]"(%0, %601)
+  %606 = const 8
+  %607 = sar %576, %606
+  %608 = const 255
+  %609 = and_ %607, %608
+  %610 = const 256
+  %611 = uge %609, %610
+  condbr %611, b144, b145
 b144:
-  %628 = const 100
-  call @rt.panic(%628)
+  %612 = const 100
+  call @rt.panic(%612)
   exit 101
 b145:
-  %629 = globaladdr @rt.meta
-  store %629[2572], %24
-  call @"std/builder.Push[byte]"(%0, %625)
-  %630 = load.i64 %17[15]
-  %631 = const 0
-  %632 = lt %630, %631
-  condbr %632, b147(%632), b146
+  %613 = globaladdr @rt.meta
+  store %613[2572], %8
+  call @"std/builder.Push[byte]"(%0, %609)
+  %614 = load.i64 %1[15]
+  %615 = const 0
+  %616 = lt %614, %615
+  condbr %616, b147(%616), b146
 b146:
-  %634 = const 65535
-  %635 = gt %630, %634
-  br b147(%635)
-b147(%633 i64):
-  condbr %633, b148, b149
+  %618 = const 65535
+  %619 = gt %614, %618
+  br b147(%619)
+b147(%617 i64):
+  condbr %617, b148, b149
 b148:
-  %636 = globaladdr @str.22
-  %637 = const 20
-  %638 = const 0
-  %639 = slotaddr s4
-  %640 = ptoi %636
-  store %639[0], %640
-  store %639[1], %637
-  store %639[2], %638
-  %641 = load.i64 %639[0]
-  %642 = load.i64 %639[1]
-  %643 = load.i64 %639[2]
-  %644 = globaladdr @str.8
-  %645 = const 5
-  %646 = const 0
-  %647 = slotaddr s2
-  %648 = ptoi %644
-  store %647[0], %648
-  store %647[1], %645
-  store %647[2], %646
-  %649 = load.i64 %647[0]
-  %650 = load.i64 %647[1]
-  %651 = load.i64 %647[2]
-  call @std/layout.FailWidth(%641, %642, %643, %649, %650, %651, %630)
+  %620 = globaladdr @str.22
+  %621 = const 20
+  %622 = const 0
+  %623 = slotaddr s3
+  %624 = ptoi %620
+  store %623[0], %624
+  store %623[1], %621
+  store %623[2], %622
+  %625 = load.i64 %623[0]
+  %626 = load.i64 %623[1]
+  %627 = load.i64 %623[2]
+  %628 = globaladdr @str.8
+  %629 = const 5
+  %630 = const 0
+  %631 = slotaddr s1
+  %632 = ptoi %628
+  store %631[0], %632
+  store %631[1], %629
+  store %631[2], %630
+  %633 = load.i64 %631[0]
+  %634 = load.i64 %631[1]
+  %635 = load.i64 %631[2]
+  call @std/layout.FailWidth(%625, %626, %627, %633, %634, %635, %614)
   br b150
 b149:
   br b150
 b150:
-  %652 = const 0
-  %653 = sar %630, %652
-  %654 = const 255
-  %655 = and_ %653, %654
-  %656 = const 256
-  %657 = uge %655, %656
-  condbr %657, b151, b152
+  %636 = const 0
+  %637 = sar %614, %636
+  %638 = const 255
+  %639 = and_ %637, %638
+  %640 = const 256
+  %641 = uge %639, %640
+  condbr %641, b151, b152
 b151:
-  %658 = const 101
-  call @rt.panic(%658)
+  %642 = const 101
+  call @rt.panic(%642)
   exit 101
 b152:
-  %659 = globaladdr @rt.meta
-  store %659[2572], %24
-  call @"std/builder.Push[byte]"(%0, %655)
-  %660 = const 8
-  %661 = sar %630, %660
-  %662 = const 255
-  %663 = and_ %661, %662
-  %664 = const 256
-  %665 = uge %663, %664
-  condbr %665, b153, b154
+  %643 = globaladdr @rt.meta
+  store %643[2572], %8
+  call @"std/builder.Push[byte]"(%0, %639)
+  %644 = const 8
+  %645 = sar %614, %644
+  %646 = const 255
+  %647 = and_ %645, %646
+  %648 = const 256
+  %649 = uge %647, %648
+  condbr %649, b153, b154
 b153:
-  %666 = const 102
-  call @rt.panic(%666)
+  %650 = const 102
+  call @rt.panic(%650)
   exit 101
 b154:
-  %667 = globaladdr @rt.meta
-  store %667[2572], %24
-  call @"std/builder.Push[byte]"(%0, %663)
-  region.setdepth %18
+  %651 = globaladdr @rt.meta
+  store %651[2572], %8
+  call @"std/builder.Push[byte]"(%0, %647)
+  region.setdepth %2
   ret
 }
 

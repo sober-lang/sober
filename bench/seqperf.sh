@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# seqperf.sh（bench/README.md の逐次の表）: scripts/bench.sh が建てた逐次 9 題材 + Web コア（jsonapi・routing・logagg）の双子（out/bench/<題材>-sober / -go）を perf stat で測る。
+# seqperf.sh（bench/README.mdの逐次の表）: scripts/bench.shがビルドした逐次9題材 + Webコア（jsonapi・routing・logagg）の対（out/bench/<題材>-sober / -go）を perf stat で測る。
 # 各題材 N 回（Sober → Go の交互）で、cycles:u の最小・instructions:u（決定的）・wall の最小（EPOCHREALTIME の差 — perf の起動を含む）・最大 RSS（perf → time → 本体の順なので taskset の床なし）。
 # raw の列 = 名前-実装 wall user rssKB cycles:u instructions:u loadavg task-clock(ns)。PMU の無い VM（GitHub Actions — report-921）では cycles / 命令は NA で、
-# 公式の物差しは task-clock の周ごとの比（scripts/benchsync.ts — report-922）
+# 公式の基準はtask-clockの周ごとの比（scripts/benchsync.ts — report-922）
 # 規模は bench.sh の既定と同じ。先に scripts/bench.sh を一度走らせて実行ファイルと入力を置くこと
 #   bench/seqperf.sh [-n 回数] [-o 結果の TSV] [--cpu K] [--rust]
-# --rust: Rust の双子（bench/<題材>/rust — bench/rust/build.sh が out/rust/release/ に建てる）も Sober → Go → Rust素 の交互で測り、3 実装の表にする
+# --rust: 比較用のRustの実装（bench/<題材>/rust — bench/rust/build.shがout/rust/release/ にビルドする）も Sober → Go → Rust素 の交互で測り、3実装の表にする
 # bench/<題材>/rustopt/main.rs がある題材（負け組の慣用チューニング版）は
-# out/rust/release/<題材>-opt も同じ輪に Rust慣 として足し、表の末尾に「Rust慣 cycles」「Sober/Rust慣」列を追加する（無い題材は "-"）
+# out/rust/release/<題材>-opt も同じループに Rust慣 として足し、表の末尾に「Rust慣cycles」「Sober/Rust慣」列を追加する（無い題材は "-"）
 # 規律: 同じ 1 つの論理 CPU に固定（既定は bench.sh と同じ最後のコア）・bench と gates を同時に回さない・出力の一致（Sober ≡ Go）を毎回
 set -uo pipefail
-# map のハッシュの種を固定（既定は乱数 — 探査の長さが揺れて命令・cycles が揺れる。出力は種に依らない）
+# mapのハッシュのシードを固定（既定は乱数 — 探査の長さが揺れて命令・cyclesが揺れる。出力はシードに依らない）
 export SOBER_HASH_SEED=${SOBER_HASH_SEED:-0}
 cd "$(dirname "$0")/.."
 ROOT=$PWD

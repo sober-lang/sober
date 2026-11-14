@@ -17,13 +17,13 @@ trap 'rm -rf "$tmp"' EXIT
 one() {
     local w=${PAR_W:-$tmp} e=$1 cb ir
     "$STAGE2" check "$e" --core-json-expanded > "$w/c.json" 2> /dev/null || { echo "@@ skip"; return; }
-    # IR は展開の口（SOBER_RAW_EXPAND=1 — raw の既定は透過の実体関数で、透過の関数の本体の block は呼び出し点の数だけ数えられない。report-1278）
+    # IRは展開のオプション（SOBER_RAW_EXPAND=1 — rawの既定は透過の実体関数で、透過の関数の本体のblockは呼び出し点の数だけ数えられない。report-1278）
     SOBER_RAW_EXPAND=1 "$STAGE2" build "$e" --emit=ir -o "$w/p.ir" 2> /dev/null || { echo "@@ lskip"; return; }   # check ⊃ build の形は F 台帳と他のゲートが見る
     # ループ本体の反復の region（宛先構築レーン M4 / M5）は両側から除く — 総称関数の単相化で IR 側だけループが複製されるので数が合わない。
     # コア = while の本体の block・IR = ラベルの直後の region.enter（式ブロックと関数の入口の enter は必ず直前に region.depth がある）
-    # 段 6 P3a: コアの scope は block と同じく region を 1 段開く（lower = task.Run の enter）。spawn の子の region は子の関数の入口（lower/task.sober の kid#N）
+    # 段階6 P3a: コアのscopeはblockと同じくregionを1レベル開く（lower = task.Runのenter）。spawnの子のregionは子の関数の入口（lower/task.soberのkid#N）
     # 数えるのは main の式から呼び出し（call / callm / fnref の f）で届く Def だけ — lower は届く関数しか下ろさない。読み込んだ std の届かない Def
-    # （std/utf8 の内側の par の Scope 等 — 全プログラムに暗黙で読み込まれる）は IR に現れない（並列 1.0× 便）
+    # （std/utf8の内側のparのScope等 — 全プログラムに暗黙で読み込まれる）はIRに現れない（並列1.0× のタスク）
     cb=$(jq '
         def calls: [.. | objects | select(.k == "call" or .k == "callm" or .k == "fnref") | .f] | unique;
         def reach($defs; $set): ($set | map($defs[.] | calls) | add // []) as $new | (($set + $new) | unique) as $s2
@@ -45,7 +45,7 @@ par_init "$tmp"
 if [ $# -gt 0 ]; then
     for e in "$@"; do par_run one "$e"; done
 else
-    # scripts/noopt-excluded.list の entry（展開の口で肥大して建たない entry — 理由はリストの中）は外す
+    # scripts/noopt-excluded.listのentry（展開のオプションで肥大してビルドできないentry — 理由はリストの中）は外す
     # scripts/regionbound-known.list の entry（境界の数の既知の食い違い — 帰属待ち）も外す
     excl=$(sed 's/#.*//; s/^ *//; s/ *$//' scripts/noopt-excluded.list scripts/regionbound-known.list | grep -v '^$') || true
     while IFS= read -r e; do par_run one "$e"; done < <(scripts/irtext.sh --list | grep -vxF -e "${excl:-//}")

@@ -1,6 +1,6 @@
 package hsc
 
-// クライアントの handshake の網（white-box — 同じ package のサーバの役 Hs と、record のバイトを受け渡して往復させる。決定的: 乱数は seed から）:
+// クライアントのhandshakeの検査（white-box — 同じpackageのサーバの役Hsと、recordのバイトを受け渡して往復させる。決定的: 乱数はseedから）:
 // 握手が済む・ALPN・アプリのデータの往復・KeyUpdate・名前違い / 信頼の起点なし / 期限切れは CertFailed（cause が x509 のラベル）・サーバの flight を 1 バイト壊すと alert
 
 import "std/crypto/pem"
@@ -109,7 +109,7 @@ func TestHandshakeAndData() {
     assert(e5 == nil && bytesToString(app) == "HTTP/1.1 200 OK\r\n\r\n")
 }
 
-// 鎖の検証の失敗の cause（入れ子のパターン — spec E-9）
+// チェーンの検証の失敗のcause（入れ子のパターン — spec E-9）
 func certCause(e error?) string {
     return switch e {
     case nil: "ok"
@@ -156,8 +156,8 @@ func TestTamperedFlight() {
     assert(!done && e != nil && certCause(e) == "alert")
 }
 
-// 相互接続（scripts/tlsinterop.sh が Go の crypto/tls のサーバを起こし、環境変数 SOBER_TLS_INTEROP にその置き場を渡す — 無ければ何もしない）:
-// ECDSA P-256 / P-384 / RSA-2048 の葉の 3 つのサーバに TLS 1.3 で繋ぎ、HTTP の要求を送って本文 `ok-<葉>` を受ける
+// 相互接続（scripts/tlsinterop.shがGoのcrypto/tlsのサーバを起こし、環境変数SOBER_TLS_INTEROPにその格納場所を渡す — 無ければ何もしない）:
+// ECDSA P-256 / P-384 / RSA-2048の葉の3つのサーバにTLS 1.3で繋ぎ、HTTPのリクエストを送って本文 `ok-<葉>` を受ける
 func TestInterop() {
     d, e := os.Getenv("SOBER_TLS_INTEROP")
     if e != nil || d == nil {
@@ -293,7 +293,7 @@ func rep32(b int) []byte {
     return freeze(o)
 }
 
-// 1.3 を申し出たのに 1.2 を選んだサーバの降格の印（DOWNGRD\x01）は中止・印の無い 1.2 は先へ進む
+// 1.3を申し出たのに1.2を選んだサーバの降格のマーク（DOWNGRD\x01）は中止・マークの無い1.2は先へ進む
 func TestDowngradeSentinel() {
     cp := WithTls12(NewCParams("localhost", []string{"http/1.1"}, testRoots(), testNow, bytes("cli-seed")))
     c0, _ := StartClient(cp)
@@ -319,7 +319,7 @@ func TestDowngradeSentinel() {
     assert(alertDesc(e4) == "alert 70")
 }
 
-// HelloRetryRequest: cookie だけなら 2 番目の ClientHello（CCS の後・cookie を写す）・key_share を求める HRR は illegal_parameter
+// HelloRetryRequest: cookieだけなら2番目のClientHello（CCSの後・cookieをコピーする）・key_shareを求めるHRRはillegal_parameter
 func TestHelloRetry() {
     cp := NewCParams("localhost", []string{"http/1.1"}, testRoots(), testNow, bytes("cli-seed"))
     c0, _ := StartClient(cp)

@@ -1,7 +1,7 @@
 package shapes
 
-// `sober test --cover` の題材（scripts/cover.sh）: テストごとに別の腕を踏む（印の OR）・どのテストも呼ばない関数（分母の静的列挙）・
-// 101 と 102 で死ぬテスト（終わりの道の書き出し）・計器の対象外の package（unit — --cover-pkg で広げる）
+// `sober test --cover` の題材（scripts/cover.sh）: テストごとに別の分岐を踏む（フラグのOR）・どのテストも呼ばない関数（分母の静的列挙）・
+// 101と102で死ぬテスト（終わりのパスの書き出し）・計装の対象外のpackage（unit — --cover-pkg で広げる）
 
 import "testdata/cover/shapes/unit"
 

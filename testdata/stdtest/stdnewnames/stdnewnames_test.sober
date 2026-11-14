@@ -1,7 +1,7 @@
 package stdnewnames
 
-// 総再審 便 3 の第 1 相（2026-10-20 — report-900）で足した口の網: strings.Valid / IndexInvalid（std/utf8 の写し）・hex.Format / Parse（Encode / Decode の
-// 新しい名前）・convert.FormatInt（strings.FormatInt の写し）。表は stdutf8 の写しで、旧い口と同じ値になることも照合する（第 2 相で旧い口が消えるまで）
+// 総再審 タスク3 の第 1 相（2026-10-20 — report-900）で足したAPIの検査: strings.Valid / IndexInvalid（std/utf8のコピー）・hex.Format / Parse（Encode / Decodeの
+// 新しい名前）・convert.FormatInt（strings.FormatIntのコピー）。表はstdutf8のコピーで、旧いAPIと同じ値になることも照合する（第2相で旧いAPIが消えるまで）
 
 import "std/convert"
 import "std/hex"

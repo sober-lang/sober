@@ -1,7 +1,7 @@
 package x509
 
-// X.509 v3 の証明書の読み（RFC 5280 4.1 — std の内側: TLS のクライアントの鎖の検証の下）。厳密な DER（不定長・非最短の長さは拒否）・
-// 署名の値と公開鍵は中身のまま持ち、検証は鎖の側（chain）で。名前（issuer / subject）は DER のまま持って鎖の照合はバイトの一致で
+// X.509 v3 の証明書の読み（RFC 5280 4.1 — stdの内側: TLSのクライアントのチェーンの検証の下）。厳密なDER（不定長・非最短の長さは拒否）・
+// 署名の値と公開鍵は中身のまま持ち、検証はチェーンの側（chain）で。名前（issuer / subject）はDERのまま持ってチェーンの照合はバイトの一致で
 
 import "std/iter"
 
@@ -12,7 +12,7 @@ type Ext struct {
     value []byte
 }
 
-// 読んだ証明書（時刻は UNIX 秒・欄の無い拡張は既定値: bcValid false・pathLen -1・keyUsage 0）
+// 読んだ証明書（時刻はUNIX秒・フィールドの無い拡張は既定値: bcValid false・pathLen -1・keyUsage 0）
 type Cert struct {
     raw []byte
     tbs []byte
@@ -20,7 +20,7 @@ type Cert struct {
     serial []byte
     sigAlg int
     sig []byte
-    // 署名の BIT STRING の使わない bit の数（0 でなければ鎖の検証で拒否 — 読みは受ける）
+    // 署名の BIT STRING の使わないbitの数（0でなければチェーンの検証で拒否 — 読みは受ける）
     sigPad int
     issuer []byte
     subject []byte
@@ -48,7 +48,7 @@ type Cert struct {
     ncOther bool
     // 信頼の起点の distrust-after（UNIX 秒 — この時刻より後の notBefore を持つ leaf はこの起点で信頼しない。0 = 無し・Roots が付ける）
     distrustAfter int
-    // 焼き込みの信頼ストア（Roots）の起点か — この起点で止まる鎖の leaf には CA/B の leaf 規則（CabLeaf）を掛ける
+    // 焼き込みの信頼ストア（Roots）の起点か — この起点で止まるチェーンのleafにはCA/Bのleaf規則（CabLeaf）を掛ける
     baked bool
 }
 
@@ -198,7 +198,7 @@ func parseTbs(b []byte, t El, c mut Cert) bool {
     if !(oka && oki && okv2 && oks && okp) || alg.tag != 0x30 || iss.tag != 0x30 || val.tag != 0x30 || sub.tag != 0x30 || spk.tag != 0x30 {
         return false
     }
-    // TBS の中の署名のアルゴリズムは外の欄と同じ（RFC 5280 4.1.1.2）
+    // TBSの中の署名のアルゴリズムは外のフィールドと同じ（RFC 5280 4.1.1.2）
     if sigAlgOf(b, alg) != c.sigAlg {
         return false
     }

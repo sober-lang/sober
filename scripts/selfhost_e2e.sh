@@ -5,13 +5,13 @@
 #   scripts/selfhost_e2e.sh            全対象（下）。fail = 0 がゲート
 #   scripts/selfhost_e2e.sh ENTRY...   指定の entry だけ（cwd = ルート）
 #
-# 対象: 第 3 黄金の全 entry（scripts/frozen/entries.list — 凍結、脱糖の拒否 10 本を含む）+ testdata/checkneg（Lean の拒否）+
+# 対象: 第3ゴールデンの全entry（scripts/frozen/entries.list — 凍結、脱糖の拒否10本を含む）+ testdata/checkneg（Leanの拒否）+
 #       testdata/loader_neg（load の拒否）+ compiler/tools/*（cwd = compiler/。sobercheck 自身を含む）
 # 一致の条件:
 #   - Zig が判定 JSON を出す（Lean まで届く）なら、sobercheck の出力とバイト一致（受理も拒否も — 型の印字まで）
 #   - Zig が load / 脱糖で拒否する（判定 JSON が無い）なら、sobercheck も `sobercheck: load error` / `desugar error` で拒否
 # 加えて、Lean まで届く entry では sobercheck の出力が checkdump（JSON 経由の Sober 版）の出力とバイト一致することも見る
-# （直結の写し替え — checker/core.sober — が JSON の往復と同じ記録を作っていることの確認）。
+# （直結の置き換え — checker/core.sober — がJSONの往復と同じ記録を作っていることの確認）。
 # （旧 64MB スロットでは、コア AST が 8MB を超える entry — compiler/tools の大きい 3 本 — を checkdump が読めず、この照合だけ飛ばしていた。
 #  region 予約の拡大 = で全 entry を照合する — checkdump の出力が空でも FAIL）
 # 自己適用の到達点（上限で落ちる tool）は report に記録し、ここでは落ちたら FAIL にする（SELFHOST_E2E_SKIP で名前を外せる）。
@@ -87,7 +87,7 @@ one() { # $1 = cwd, $2 = entry
 # （sober check は検査器の stdout をそのまま中継する — src/stage1/main.zig の cmdCheck）。Zig の脱糖も 1 回で済む（--core-json を別に呼ばない）
 STUB=$(lean_stub "$tmp")
 mkdir -p "$tmp/e"
-onea() { # 段 A（並列）: $1 = cwd, $2 = entry, $3 = 結果の置き場
+onea() { # 段A（並列）: $1 = cwd, $2 = entry, $3 = 結果の格納場所
     local dir=$1 e=$2 r=$3 ec=0
     mkdir -p "$r"
     echo "$e" > "$r/name"
@@ -100,7 +100,7 @@ onea() { # 段 A（並列）: $1 = cwd, $2 = entry, $3 = 結果の置き場
     fi
     echo "@@ a"
 }
-onec() { # 段 C: $1 = 結果の置き場（段 B の Lean の判定は $tmp/lean）
+onec() { # 段C: $1 = 結果の格納場所（段BのLeanの判定は $tmp/lean）
     local r=$1 e ec
     e=$(cat "$r/name")
     ec=$(cat "$r/s.ec")

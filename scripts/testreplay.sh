@@ -13,7 +13,7 @@ trap 'rm -rf "$W"' EXIT
 # 再生と温めを既定の道で見る（gates の検証の道〔SOBER_VERIFY=each〕・切の道は build の再生を通さない）
 unset SOBER_CHECK_REPLAY SOBER_CACHE_VERIFY TR_NAME SOBER_VERIFY SOBER_BUILD_PAR SOBER_LOWER_SPLIT SOBER_CHECK_CACHE
 export SOBER_CACHE=$W/cache SOBER_BUILD_CACHE=1
-# ワーカー数は既定（コア数 — gates の SOBER_WORKERS=1 を外す）: M:N の親が書いたテストの実行ファイルを直後に走らせる道を網に入れる
+# ワーカー数は既定（コア数 — gatesのSOBER_WORKERS=1を外す）: M:Nの親が書いたテストの実行ファイルを直後に走らせるパスを検査に入れる
 unset SOBER_WORKERS
 mkdir -p "$W/p/pkg/testdata" "$W/p/bad" "$W/p/dyn"
 cd "$W/p"

@@ -1,6 +1,6 @@
 package main
 
-// 関数型の仮引数と slice を両方通る相互再帰（S と D の組 — next 形の middleware）: Mw は次の鎖 Next を受けて内側を呼ぶ
+// 関数型の仮引数とsliceを両方通る相互再帰（SとDの組 — next形のmiddleware）: Mwは次のチェーンNextを受けて内側を呼ぶ
 
 type Mw func(r int, next Next) int
 

@@ -1,6 +1,6 @@
 package binary
 
-// バイト列の語単位の読み（1 バイトずつの読みを 1 回の検査 + 1 回の load に）と末尾への語の書き（AppendWord）。途中の位置を書き換える口（Store64）は無い
+// バイト列のワード単位の読み（1バイトずつの読みを1回の検査 + 1回のloadに）と末尾へのワードの書き（AppendWord）。途中の位置を書き換えるAPI（Store64）は無い
 
 // 組み込みの宣言（本体なし。実装はコンパイラの表: loader/intrinsic.sober・lower の ioBuiltin）。検査なしの読み — 境界は下の Load64 の 1 か所だけで見る
 @intrinsic("load64")
@@ -42,14 +42,14 @@ func MatchLen(b []byte, i int, j int, n int) int {
     return sysMatchLen(b, i, j, n)
 }
 
-// 末尾への語の書きの組み込み（v を 8 バイト書いて長さを k 進めた列か、b を伸ばせる位置になければ b のまま — 検査なし。
+// 末尾へのワードの書きの組み込み（vを8バイト書いて長さをk進めた列か、bを伸ばせる位置になければbのまま — 検査なし。
 // k の範囲は下の AppendWord が見る・b は AppendWord の mut の束縛の値）
 @intrinsic("appendword")
 func sysAppendWord(b []byte, v int, k int) mut []byte
 
 // v の下位 k バイトを b の末尾に積む（v の最下位のバイトが先 — little-endian）。k < 0 か k > 8 なら panic(OutOfRange{k, 8})。
 // 結果は byte(v & 0xff), byte((v >> 8) & 0xff), … を k 回 append したのと同じで、b が伸ばせる位置にあれば検査 1 回・書き 1 本で済む
-// （ビットの溜めの吐き出し・可変長の整数の書き）
+// （ビットバッファのフラッシュ・可変長の整数の書き）
 @effects(panic)
 func AppendWord(b mut []byte, v int, k int) {
     if k < 0 || k > 8 {
@@ -62,7 +62,7 @@ func AppendWord(b mut []byte, v int, k int) {
     }
 }
 
-// AppendWord の遅い道（b が伸ばせる位置にない — 1 バイトずつ。k = 0 なら何もしない）
+// AppendWordの低速パス（bが伸ばせる位置にない — 1バイトずつ。k = 0なら何もしない）
 func appendBytes(b mut []byte, v int, k int) {
     mut x := v
     mut i := 0

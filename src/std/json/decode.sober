@@ -4,22 +4,22 @@ import "std/convert"
 import "std/iter"
 
 // shape[T] の裏方（language.md 16 節 2）: 利用者は `json.Decode[T](d, n)` を書き、loader の固定テンプレート（compiler/loader/jsonshape.sober）が
-// struct T（と欄から届く struct・`[]U`・`U?`）ごとの写しの関数（普通の Sober）を合成してその呼び出しに写す。ここに置くのは写しの関数が呼ぶ
-// 部品（ノードの種類の検査・欄の引き・スカラーの解釈）と失敗のラベルだけ。欄の名前 = JSON のキー（Rename 辞書は未実装 — 実需まで足さない）
+// struct T（とフィールドから届くstruct・`[]U`・`U?`）ごとの変換の関数（普通のSober）を合成し、呼び出しをその関数の呼び出しに変換する。ここに置くのは変換の関数が呼ぶ
+// 部品（ノードの種類の検査・フィールドの引き・スカラーの解釈）と失敗のラベルだけ。フィールドの名前 = JSONのキー（Rename辞書は未実装 — 実需まで足さない）
 
-// T? でない欄 field が無い（pos = オブジェクトの位置）
+// T? でないフィールドfieldが無い（pos = オブジェクトの位置）
 type Missing error {
     pos int
     field string
 }
 
-// ノードの種類が欄の型に合わない（want = 期待した JSON の種類: object・array・string・number・int・bool）
+// ノードの種類がフィールドの型に合わない（want = 期待したJSONの種類: object・array・string・number・int・bool）
 type WrongType error {
     pos int
     want string
 }
 
-// int の欄の数が int に収まらない（小数・指数を含む数は WrongType{want: "int"}）
+// intのフィールドの数がintに収まらない（小数・指数を含む数はWrongType{want: "int"}）
 type IntOutOfRange error {
     pos int
 }
@@ -34,14 +34,14 @@ func NeedObject(d Doc, n int) (int, error?) {
     return n, nil
 }
 
-// オブジェクト n の欄 key の値のノード（無ければ Missing）
+// オブジェクトnのフィールドkeyの値のノード（無ければMissing）
 @errors(Missing)
 @effects()
 func Need(d Doc, n int, key string) (int, error?) {
     return NeedAt(d, n, key, -1)
 }
 
-// Need に手掛かりの位置 hint を足したもの（GetAt と同じ — 写しの関数は欄の宣言の位置を渡す）
+// Needに手掛かりの位置hintを足したもの（GetAtと同じ — 変換の関数はフィールドの宣言の位置を渡す）
 @errors(Missing)
 @effects()
 func NeedAt(d Doc, n int, key string, hint int) (int, error?) {
@@ -137,13 +137,13 @@ func ParseFloat(d Doc, n int) (float, error?) {
     return f, nil
 }
 
-// 以下は loader が合成する口（std に実体は無い — 呼び出しは型ごとの写しの関数へ写る）
+// 以下はloaderが合成するAPI（stdに実体は無い — 呼び出しは型ごとの変換の関数へ変換される）
 
 // 合成: func Decode[T](d Doc, n int) (T, error?)
-// ノード n を struct T に読む。欄の名前 = JSON のキー。T の欄に書ける型は int・float・bool・string・struct・`[]U`・`U?`（U は前のどれか か json.Value —
-// 裸の json.Value の欄は拒否: union はゼロ値を持たない）。T = json.Value は Tree と同じ（値の木）。
-// 欠けた欄は Missing（`U?` の欄だけ欠けと null を nil で受ける）・種類の合わないノードは WrongType・int の欄の範囲外は IntOutOfRange。余った欄は無視する
+// ノードnを struct T に読む。フィールドの名前 = JSONのキー。Tのフィールドに書ける型はint・float・bool・string・struct・`[]U`・`U?`（U は前のどれか か json.Value —
+// 裸のjson.Valueのフィールドは拒否: unionはゼロ値を持たない）。T = json.ValueはTreeと同じ（値の木）。
+// 欠けたフィールドはMissing（`U?` のフィールドだけ欠けとnullをnilで受ける）・種類の合わないノードはWrongType・intのフィールドの範囲外はIntOutOfRange。余ったフィールドは無視する
 // 例: examples/json_decode.sober
 
 // 合成: func DecodeWith[T](d Doc, n int, rename map[string]string) (T, error?)
-// Decode の欄名の対応つき版（rename = 欄名 → JSON のキー・入れ子の struct の欄にも同じ辞書が掛かる・対応の無い欄は欄名のまま）
+// Decodeのフィールド名の対応つき版（rename = フィールド名 → JSONのキー・入れ子のstructのフィールドにも同じ辞書が掛かる・対応の無いフィールドはフィールド名のまま）

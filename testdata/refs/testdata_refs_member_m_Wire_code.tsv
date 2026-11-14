@@ -1,19 +1,19 @@
-OTHER	field-key:dir:testdata/refs/member/m.Req	testdata/refs/member/a/main.sober	624	628	14:37	q := testdata.refs.member.m.Req{code: 2, path: "/x"}
-TARGET	field-key:dir:testdata/refs/member/m.Wire	testdata/refs/member/a/main.sober	911	915	18:71	println(testdata.refs.member.m.Render(testdata.refs.member.m.Wire{code: r.code, inner: testdata.refs.member.m.Inner{tag: "t"}}))
-OTHER	field-sel:dir:testdata/refs/member/m.Resp	testdata/refs/member/a/main.sober	919	923	18:79	println(testdata.refs.member.m.Render(testdata.refs.member.m.Wire{code: r.code, inner: testdata.refs.member.m.Inner{tag: "t"}}))
-OTHER	bare	testdata/refs/member/a/main.sober	1007	1011	19:34	testdata.refs.member.m.Check(code: q.code - 10)
-OTHER	field-sel:dir:testdata/refs/member/m.Req	testdata/refs/member/a/main.sober	1015	1019	19:42	testdata.refs.member.m.Check(code: q.code - 10)
-OTHER	field-sel-interp:dir:testdata/refs/member/m.Resp	testdata/refs/member/a/main.sober	714	718	16:18	println("${r.code} ${q.code} ${r.body} ${other(scale: 1)} ${testdata.refs.member.m.Handle(q, scale: 2).code}")
-OTHER	field-sel-interp:dir:testdata/refs/member/m.Req	testdata/refs/member/a/main.sober	724	728	16:28	println("${r.code} ${q.code} ${r.body} ${other(scale: 1)} ${testdata.refs.member.m.Handle(q, scale: 2).code}")
-OTHER	field-sel-interp:dir:testdata/refs/member/m.Resp	testdata/refs/member/a/main.sober	804	808	16:108	println("${r.code} ${q.code} ${r.body} ${other(scale: 1)} ${testdata.refs.member.m.Handle(q, scale: 2).code}")
-OTHER	field-decl:dir:testdata/refs/member/m.Req	testdata/refs/member/m/m.sober	382	386	9:5	code int
-OTHER	field-decl:dir:testdata/refs/member/m.Resp	testdata/refs/member/m/m.sober	433	437	14:5	code int
-TARGET	field-decl:dir:testdata/refs/member/m.Wire	testdata/refs/member/m/m.sober	484	488	19:5	code int
-OTHER	field-decl:dir:testdata/refs/member/m.Oops	testdata/refs/member/m/m.sober	572	576	28:5	code int
-OTHER	field-key:dir:testdata/refs/member/m.Resp	testdata/refs/member/m/m.sober	637	641	32:15	r := Resp{code: req.code * scale, body: req.path}
-OTHER	field-sel:dir:testdata/refs/member/m.Req	testdata/refs/member/m/m.sober	647	651	32:25	r := Resp{code: req.code * scale, body: req.path}
-OTHER	bare	testdata/refs/member/m/m.sober	768	772	40:12	func Check(code int) {
-OTHER	bare	testdata/refs/member/m/m.sober	787	791	41:8	if code < 0 {
-OTHER	field-key:dir:testdata/refs/member/m.Oops	testdata/refs/member/m/m.sober	817	821	42:20	panic(Oops{code: code})
-OTHER	bare	testdata/refs/member/m/m.sober	823	827	42:26	panic(Oops{code: code})
-WARN	json-wire	-	-	-	-	dir:testdata/refs/member/m.Wire は json.Encode / Decode に届く型 — 欄 code の改名は JSON のキーを変える（EncodeWith / DecodeWith の辞書の鍵の文字列も手で）
+OTHER	field-key:dir:testdata/refs/member/m.Req	testdata/refs/member/a/main.sober	630	634	14:37	q := testdata.refs.member.m.Req{code: 2, path: "/x"}
+TARGET	field-key:dir:testdata/refs/member/m.Wire	testdata/refs/member/a/main.sober	917	921	18:71	println(testdata.refs.member.m.Render(testdata.refs.member.m.Wire{code: r.code, inner: testdata.refs.member.m.Inner{tag: "t"}}))
+OTHER	field-sel:dir:testdata/refs/member/m.Resp	testdata/refs/member/a/main.sober	925	929	18:79	println(testdata.refs.member.m.Render(testdata.refs.member.m.Wire{code: r.code, inner: testdata.refs.member.m.Inner{tag: "t"}}))
+OTHER	bare	testdata/refs/member/a/main.sober	1013	1017	19:34	testdata.refs.member.m.Check(code: q.code - 10)
+OTHER	field-sel:dir:testdata/refs/member/m.Req	testdata/refs/member/a/main.sober	1021	1025	19:42	testdata.refs.member.m.Check(code: q.code - 10)
+OTHER	field-sel-interp:dir:testdata/refs/member/m.Resp	testdata/refs/member/a/main.sober	720	724	16:18	println("${r.code} ${q.code} ${r.body} ${other(scale: 1)} ${testdata.refs.member.m.Handle(q, scale: 2).code}")
+OTHER	field-sel-interp:dir:testdata/refs/member/m.Req	testdata/refs/member/a/main.sober	730	734	16:28	println("${r.code} ${q.code} ${r.body} ${other(scale: 1)} ${testdata.refs.member.m.Handle(q, scale: 2).code}")
+OTHER	field-sel-interp:dir:testdata/refs/member/m.Resp	testdata/refs/member/a/main.sober	810	814	16:108	println("${r.code} ${q.code} ${r.body} ${other(scale: 1)} ${testdata.refs.member.m.Handle(q, scale: 2).code}")
+OTHER	field-decl:dir:testdata/refs/member/m.Req	testdata/refs/member/m/m.sober	414	418	9:5	code int
+OTHER	field-decl:dir:testdata/refs/member/m.Resp	testdata/refs/member/m/m.sober	465	469	14:5	code int
+TARGET	field-decl:dir:testdata/refs/member/m.Wire	testdata/refs/member/m/m.sober	516	520	19:5	code int
+OTHER	field-decl:dir:testdata/refs/member/m.Oops	testdata/refs/member/m/m.sober	604	608	28:5	code int
+OTHER	field-key:dir:testdata/refs/member/m.Resp	testdata/refs/member/m/m.sober	669	673	32:15	r := Resp{code: req.code * scale, body: req.path}
+OTHER	field-sel:dir:testdata/refs/member/m.Req	testdata/refs/member/m/m.sober	679	683	32:25	r := Resp{code: req.code * scale, body: req.path}
+OTHER	bare	testdata/refs/member/m/m.sober	800	804	40:12	func Check(code int) {
+OTHER	bare	testdata/refs/member/m/m.sober	819	823	41:8	if code < 0 {
+OTHER	field-key:dir:testdata/refs/member/m.Oops	testdata/refs/member/m/m.sober	849	853	42:20	panic(Oops{code: code})
+OTHER	bare	testdata/refs/member/m/m.sober	855	859	42:26	panic(Oops{code: code})
+WARN	json-wire	-	-	-	-	dir:testdata/refs/member/m.Wire は json.Encode / Decode に届く型 — フィールド code の改名は JSON のキーを変える（EncodeWith / DecodeWith の辞書の鍵の文字列も手で）

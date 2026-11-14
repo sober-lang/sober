@@ -4,10 +4,10 @@ package dudect
 // 題材の名前は exp_ で始まる — scripts/dudect.ts は判定を印字するが失敗にしない（漏れと出ることが実験の結果になりうる）。読み方:
 // exp_poly_aa（乱数どうし — A/A）が漏れ = ハーネスの偏り / aa は ok で exp_poly_ff（固定 A 対 固定 B）が漏れ = 値に依る効果（同じ値の繰り返しの効果は否定）/
 // exp_poly_zero・exp_poly_ones（ビットの重みの両端の固定鍵 対 乱数）の |t| が桁で跳ねる = 消費電力から周波数の形（Hertzbleed の類）/
-// ff は ok で固定 対 乱数だけ漏れ = 同じ値の繰り返しの効果。msg と種は poly1305_sum_otk（ports_test）と同じ。
+// ff は ok で固定 対 乱数だけ漏れ = 同じ値の繰り返しの効果。msgとシードはpoly1305_sum_otk（ports_test）と同じ。
 // 実測: A/A は白・ff は Zen 4（EPYC 9V74）で漏れ（今の呼び出しの鍵にだけ付く・鍵ごとに決まる 0.1 cycle 級のずれ）・zero / ones は白・Zen 5 は全部白。
-// exp_poly_fixed（旧 poly1305_sum の固定 対 乱数 — 判定の口は 1 回限りの鍵の形に移した）・exp_imul_chain（下）・
-// Sum の段割り（std/crypto/poly1305 の poly1305_dudect_test.sober — start / absorb / finish を white-box で）も同じ網で測る
+// exp_poly_fixed（旧 poly1305_sum の固定 対 乱数 — 判定のインターフェースは1回限りの鍵の形に移した）・exp_imul_chain（下）・
+// Sumの段割り（std/crypto/poly1305のpoly1305_dudect_test.sober — start / absorb / finishをwhite-boxで）も同じ検査で測る
 
 import "std/crypto/poly1305"
 import "std/iter"
@@ -37,7 +37,7 @@ func TestExpPolyOnes() {
         return
     }
     msg := pat(64, 7)
-    // クラス 0 = 全 0xff の鍵（r は締めの mask の全ビット）・クラス 1 = 乱数
+    // クラス0 = 全0xffの鍵（rはクランプのmaskの全ビット）・クラス1 = 乱数
     Measure("exp_poly_ones", n, 8, (c, i) => if c == 0 { fill(32, 255) } else { rnd(32, i) }, (x) => len(crypto.poly1305.Sum(x, msg)) == 16)
 }
 
@@ -71,14 +71,14 @@ func TestExpPolyFixed() {
     Measure("exp_poly_fixed", n, 8, (c, i) => sec(c, i, 32), (x) => len(crypto.poly1305.Sum(x, msg)) == 16)
 }
 
-// b[p..p+4) の小さい端の 32 bit の語
+// b[p..p+4) の小さい端の32 bitのワード
 func lw(b []byte, p int) int {
     return int(b[p]) | (int(b[p + 1]) << 8) | (int(b[p + 2]) << 16) | (int(b[p + 3]) << 24)
 }
 
-// Poly1305 の absorb と同じ形の積と加算の鎖（26 bit × 5 limb の 5 × 5 の積・× 5 の畳み・繰り上がり）を、鍵から作った limb に 4 周掛ける。
-// 暗号の関数でなく、メモリの読み書き（le32 の切片の読み・put32 の書き・結果の写し）を鎖の外に出した形 — 入力の読みは頭の 1 回だけ・結果は bool 1 つ。
-// これに ff のずれが出れば、ずれは Zen 3 / 4 の積と加算の鎖そのものの性質（ソフトウェアの外）
+// Poly1305のabsorbと同じ形の積と加算のチェーン（26 bit × 5 limbの5 × 5の積・× 5の畳み・繰り上がり）を、鍵から作ったlimbに4周掛ける。
+// 暗号の関数でなく、メモリの読み書き（le32の切片の読み・put32の書き・結果のコピー）をチェーンの外に出した形 — 入力の読みは頭の1回だけ・結果はbool 1つ。
+// これにffのずれが出れば、ずれはZen 3 / 4の積と加算のチェーンそのものの性質（ソフトウェアの外）
 func chain(k []byte) bool {
     r0 := lw(k, 0) & 0x3ffffff
     r1 := (lw(k, 3) >> 2) & 0x3ffff03
@@ -119,7 +119,7 @@ func chain(k []byte) bool {
         h1 = h1 + (h0 >> 26)
         h0 = h0 & 0x3ffffff
     }
-    // 結果は bool 1 つ（秘密の値の bool — Measure は窓の外で列に積むだけ）
+    // 結果はbool 1つ（秘密の値のbool — Measureはウィンドウの外で列に積むだけ）
     return ((h0 ^ h1 ^ h2 ^ h3 ^ h4) & 1) == 1
 }
 

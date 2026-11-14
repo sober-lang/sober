@@ -3,14 +3,14 @@ package main
 // refs: リネーム道具の参照検索（読むだけ）。対象 = package のトップレベル名（関数・const・型・variant・error ラベル）。
 // 標準入力のファイル一覧（1 行 1 つ・リポジトリルート相対）の .sober を 1 本ずつ字句 + parse し、名前の綴りが一致する字句を全数
 // 「対象 TARGET / 別物 OTHER（理由つき）/ 未分類 UNCLASSIFIED」に振り分けて TSV で書く（国勢調査 — fail-closed: 未分類が 1 つでもあれば終了コード 2）。
-// 振り分けは 2 系統の突き合わせ: (A) 構文木の名前の欄（tok の字句と綴りを照合）と (B) 字句だけの証明
+// 振り分けは2系統の突き合わせ: (A) 構文木の名前のフィールド（tokの字句と綴りを照合）と (B) 字句だけの証明
 // （裸の名前は自分の package のトップレベル名しか指さない・`ref.名前` は import の参照名 ref の package — シャドーイング禁止と
 // 「局所名はトップレベル名・import の参照名と同名不可」〔loader/localnames.sober〕が根拠）。食い違いは未分類。
 // コメント・文字列リテラルの中の綴りは TEXT として候補に出す（書き換えの対象外 — 手で見る）。compiler/ の文字列リテラルは
-// COMPILER-LIT（コンパイラが名前で知っている候補 — 鎖の罠の手掛かり）。
-// loadcheck: entry を loader で読み、各ファイルの import の参照名の表（この道具の規則）≡ loader の表を照合する（道具の解決の網）。
-// 構文木は compiler/ の parser で読む（コンパイラと同じ文法）。補間の穴の字句列は parser の lexHoles と同じ規則の写し（allTokens —
-// parser に輸出を足すと自己 build の命令の線に乗るので写した。乖離すると tok の字句の照合が崩れて未分類に出る）
+// COMPILER-LIT（コンパイラが名前で知っている候補 — ブートストラップチェーンの罠の手掛かり）。
+// loadcheck: entryをloaderで読み、各ファイルのimportの参照名の表（この道具の規則）≡ loaderの表を照合する（道具の解決の検査）。
+// 構文木はcompiler/ のparserで読む（コンパイラと同じ文法）。補間の穴の字句列はparserのlexHolesと同じ規則のコピー（allTokens —
+// parserに輸出を足すと自己buildの命令の上限値に乗るのでコピーした。乖離するとtokの字句の照合が崩れて未分類に出る）
 
 import "std/io"
 import "std/os"
@@ -33,7 +33,7 @@ type Toks struct {
     host []int
 }
 
-// 構文木の名前の欄の 1 つ（tok = 名前の字句・穴の中なら囲む文字列の字句）
+// 構文木の名前のフィールドの1つ（tok = 名前の字句・穴の中なら囲む文字列の字句）
 type Hit struct {
     tok int
     cls int
@@ -111,7 +111,7 @@ func pkgOf(path string) string {
 }
 
 // from（import を書いたファイル）の import のパスの package（pkgOf と同じ綴り）。std 以外は cwd 相対（loader の LoadFs）—
-// cwd は src/compiler の下なら src/compiler（stage2 の建て方・tools）、それ以外はリポジトリのルート（examples・bench・testdata の entry — loaderjson.list の規約）
+// cwdはsrc/compilerの下ならsrc/compiler（stage2のビルドの仕方・tools）、それ以外はリポジトリのルート（examples・bench・testdataのentry — loaderjson.listの規約）
 func impPkg(from string, path string) string {
     if strings.HasPrefix(path, "std/") {
         return path
@@ -146,7 +146,7 @@ func lexQual(f File, ts []lexer.Token, k int) string {
         segs = append(segs, lexeme(f.src, ts[j - 2]))
         j -= 2
     }
-    // segs は名前に近い順 — 根から i 段（i = len … 1）の綴りを長い順に試す
+    // segsは名前に近い順 — 根からiレベル（i = len … 1）の綴りを長い順に試す
     mut n := len(segs)
     while n > 1 {
         mut q := segs[n - 1]
@@ -224,7 +224,7 @@ func isName(src []byte, ts []lexer.Token, k int, name string) bool {
     return k >= 0 && k < len(ts) && ts[k].tag == lexer.Identifier && lexeme(src, ts[k]) == name
 }
 
-// 名前の欄の文字列 s（`N` か `R.N`）が tok から書かれている形の名前の字句の番号と参照名（裸なら ""・形が合わなければ -1）
+// 名前のフィールドの文字列s（`N` か `R.N`）がtokから書かれている形の名前の字句の番号と参照名（裸なら ""・形が合わなければ -1）
 func qualified(f File, ts []lexer.Token, tok0 int, s string, name string) (int, string) {
     // `mut T` の型式の節の tok は `mut` の字句
     tok := if tok0 >= 0 && tok0 + 1 < len(ts) && ts[tok0].tag == lexer.KwMut { tok0 + 1 } else { tok0 }
@@ -246,9 +246,9 @@ func refCls(f File, ref string, q string) int {
     return if refPkg(f, ref) == q { Target } else { Other }
 }
 
-// 節の種類ごとの欄の中身（desugar/init.sober の desc の写し + 脱糖器が見ない種類 — 1 = 節・2 = 文字列・3 = 節の列・4 = 文字列の列・
-// 0 = 値か無し）。到達できる節だけを辿るのに使う: parser の試し読みの残骸（composite の欄キーを先に式として読んだ EIdent 等）は表に残るが
-// 木から辿れない。表が古くて欄を見落とすと、その下の名前は構文木の欄に出ず字句の証明だけになる（対象の package では未分類 — fail-closed）
+// 節の種類ごとのフィールドの中身（desugar/init.soberのdescのコピー + 脱糖器が見ない種類 — 1 = 節・2 = 文字列・3 = 節の列・4 = 文字列の列・
+// 0 = 値か無し）。到達できる節だけを辿るのに使う: parserの試し読みの残骸（compositeのフィールドキーを先に式として読んだEIdent等）は表に残るが
+// 木から辿れない。表が古くてフィールドを見落とすと、その下の名前は構文木のフィールドに出ず字句の証明だけになる（対象のpackageでは未分類 — fail-closed）
 func desc(k int, b int) int {
     return switch k {
     case ast.EIdent | ast.EStrlit | ast.EMutArg | ast.TName: d6(2, 0, 0, 0, 0, 0)
@@ -301,7 +301,7 @@ func push(st mut []int, sp int, v int) int {
     return sp + 1
 }
 
-// 根（KFile）から辿れる節の印
+// 根（KFile）から辿れる節のマーク
 func reach(t ast.Tree) []bool {
     n := len(t.nodes)
     mut seen := mut []bool{}
@@ -342,7 +342,7 @@ func reach(t ast.Tree) []bool {
     return freeze(seen)
 }
 
-// 構文木の名前の欄のうち綴りが name のもの（tok の字句と照合済み — 合わないものは synth に数える）
+// 構文木の名前のフィールドのうち綴りがnameのもの（tokの字句と照合済み — 合わないものはsynthに数える）
 func astHits(f File, tt Toks, t ast.Tree, q string, name string) ([]Hit, int) {
     ts := tt.ts
     mut hs := mut []Hit{}
@@ -437,7 +437,7 @@ func annotHits(f File, ts []lexer.Token, q string, name string) []Hit {
     return freeze(hs)
 }
 
-// 字句だけの証明（字句 k は綴り name の識別子）: Target = 対象でありうる（裸で自分の package が対象 / 対象の package の参照名の欄）・
+// 字句だけの証明（字句kは綴りnameの識別子）: Target = 対象でありうる（裸で自分のpackageが対象 / 対象のpackageの参照名のフィールド）・
 // Other = 対象でないことが字句で決まる。理由を添える
 func lexCls(f File, tt Toks, k int, q string) (int, string) {
     ts := tt.ts
@@ -592,7 +592,7 @@ func scanTop(b mut builder.Builder[byte], path string, q string, name string, cn
         }
         cnt.synth += synth
         if synth > 0 {
-            builder.PushString(mut b, "SYNTH\tunlocated\t${path}\t0\t0\t0:0\t${synth} 節が対象を指すが字句に無い（parser の合成 — コンパイラが名前で知る参照: 鎖の罠の候補）\n")
+            builder.PushString(mut b, "SYNTH\tunlocated\t${path}\t0\t0\t0:0\t${synth} 節が対象を指すが字句に無い（parser の合成 — コンパイラが名前で知る参照: ブートストラップチェーンの罠の候補）\n")
         }
     } else {
         cnt.noparse += 1
@@ -657,7 +657,7 @@ func scanTop(b mut builder.Builder[byte], path string, q string, name string, cn
             } else if lc == Other {
                 cls = "OTHER"
             } else if k + 1 < len(ts) && ts[k + 1].tag == lexer.Colon {
-                // `名前: 値`（composite の欄キー KElem — 構文木は tok を持たない）
+                // `名前: 値`（compositeのフィールドキーKElem — 構文木はtokを持たない）
                 cls = "OTHER"
                 kind = "field-key"
             } else {
@@ -697,7 +697,7 @@ func cmdRefs(sym string, typedPath string) int {
         return 1
     }
     if sy.mode == ModeMember && typedPath == "" {
-        _ = io.WriteStderr(bytes("refs: 欄の対象は表層型検査器の印（--typed — scripts/refs.sh が作る）が要る\n"))
+        _ = io.WriteStderr(bytes("refs: フィールドの対象は表層型検査器のマーク（--typed — scripts/refs.sh が作る）が要る\n"))
         return 1
     }
     mut b := builder.Builder[byte]{}
@@ -707,9 +707,9 @@ func cmdRefs(sym string, typedPath string) int {
         mut ot := mut []int{}
         scanFile(mut b, files[i], sy, th, mut cnt, mut tg, mut ot)
     }
-    // json の wire 警告: 欄の持ち主が `$json/` の合成（json.Encode / Decode の写し）に現れる — 欄名が JSON のキー
+    // jsonのwire警告: フィールドの持ち主が `$json/` の合成（json.Encode / Decodeのコピー）に現れる — フィールド名がJSONのキー
     if sy.mode == ModeMember && has(js, sy.owner) {
-        builder.PushString(mut b, "WARN	json-wire	-	-	-	-	${sy.owner} は json.Encode / Decode に届く型 — 欄 ${sy.name} の改名は JSON のキーを変える（EncodeWith / DecodeWith の辞書の鍵の文字列も手で）\n")
+        builder.PushString(mut b, "WARN	json-wire	-	-	-	-	${sy.owner} は json.Encode / Decode に届く型 — フィールド ${sy.name} の改名は JSON のキーを変える（EncodeWith / DecodeWith の辞書の鍵の文字列も手で）\n")
     }
     _ = io.WriteStdout(builder.Build(mut b))
     _ = io.WriteStderr(bytes("refs ${sym}: files=${cnt.files} target=${cnt.target} decl=${cnt.decl} other=${cnt.other} unclassified=${cnt.uncl} negative=${cnt.neg} text=${cnt.text} strlit=${cnt.lit} synth=${cnt.synth} noparse=${cnt.noparse}\n"))
@@ -717,7 +717,7 @@ func cmdRefs(sym string, typedPath string) int {
     return if cnt.uncl > 0 { 2 } else if cnt.synth > 0 { 3 } else { 0 }
 }
 
-// ── 欄・仮引数 ──
+// ── フィールド・仮引数 ──
 
 const ModeTop = 1
 const ModeMember = 2
@@ -726,8 +726,8 @@ const ModeParam = 3
 // 字句の番号の無し（`catch 0 - 1` は `(… catch 0) - 1` と読まれる — 定数で）
 const NoTok = -1
 
-// 対象: トップレベル名 `<pkg>.<Name>`・欄 `<pkg>.<型か variant>.<欄>`・仮引数 `<pkg>.<関数>(<仮引数>)`。
-// q = package（内部の綴り）・name = 字句で探す綴り（名前 / 欄 / 仮引数）・owner = 欄の持ち主（`<q>.<型か variant>`）・fn = 仮引数の関数
+// 対象: トップレベル名 `<pkg>.<Name>`・フィールド `<pkg>.<型か variant>.<フィールド>`・仮引数 `<pkg>.<関数>(<仮引数>)`。
+// q = package（内部の綴り）・name = 字句で探す綴り（名前 / フィールド / 仮引数）・owner = フィールドの持ち主（`<q>.<型か variant>`）・fn = 仮引数の関数
 type Sym struct {
     mode int
     q string
@@ -736,7 +736,7 @@ type Sym struct {
     fn string
 }
 
-// 表層型検査器の印（tools の `typed` が出す — 欄の selector の基底の型宣言・`$json/` の合成ファイルが参照する型）
+// 表層型検査器のマーク（toolsの `typed` が出す — フィールドのselectorの基底の型宣言・`$json/` の合成ファイルが参照する型）
 type THit struct {
     path string
     tok int
@@ -815,7 +815,7 @@ func has(xs []string, x string) bool {
     return false
 }
 
-// 型の名前の欄の文字列 s（`X` か `R.X`）の持ち主（`<package>.X` — 解決できなければ ""）
+// 型の名前のフィールドの文字列s（`X` か `R.X`）の持ち主（`<package>.X` — 解決できなければ ""）
 func typeOwner(f File, s string) string {
     r, x, dot := strings.CutLast(s, ".")
     if !dot {
@@ -845,14 +845,14 @@ func matchClose(tt Toks, k int) int {
     return 0 - 1
 }
 
-// 欄の持ち主つきの位置（構文木から — 欄の宣言・欄パターン・composite の欄キー）
+// フィールドの持ち主つきの位置（構文木から — フィールドの宣言・フィールドパターン・compositeのフィールドキー）
 type MHit struct {
     tok int
     owner string
     kind string
 }
 
-// 欄の綴り name の位置と持ち主（到達できる節だけ）
+// フィールドの綴りnameの位置と持ち主（到達できる節だけ）
 func memberHits(f File, tt Toks, t ast.Tree, name string) []MHit {
     ts := tt.ts
     live := reach(t)
@@ -893,7 +893,7 @@ func memberHits(f File, tt Toks, t ast.Tree, name string) []MHit {
                 }
             }
         } else if x.kind == ast.EComposite && x.tok >= 0 && x.tok < len(ts) && tt.host[x.tok] < 0 {
-            // 欄キー（KElem は tok を持たない）: 型の名前（と型引数）の後の `{` から対応の `}` まで、深さ 1 の `名前 :`
+            // フィールドキー（KElemはtokを持たない）: 型の名前（と型引数）の後の `{` から対応の `}` まで、深さ1の `名前 :`
             own := typeOwner(f, loader.Name(t, x.a))
             mut k := x.tok
             while k < len(ts) && ts[k].tag != lexer.LBrace {
@@ -933,7 +933,7 @@ func mhitAt(hs []MHit, k int) int {
     return 0 - 1
 }
 
-// typedCls は欄の selector の字句 k（穴の中なら host）の、表層型検査器の印の持ち主の集合からの判定（"" = 印なし・"*" = 食い違い）
+// typedClsはフィールドのselectorの字句k（穴の中ならhost）の、表層型検査器のマークの持ち主の集合からの判定（"" = マークなし・"*" = 食い違い）
 func typedOwner(th []THit, path string, k int) string {
     mut o := ""
     for i <- iter.Range(0, len(th)) {
@@ -948,7 +948,7 @@ func typedOwner(th []THit, path string, k int) string {
     return o
 }
 
-// 穴の中の idx 番目（全 n 個）の `.欄` の持ち主: 印の通し番号がちょうど 0..n-1 で揃い、同じ番号の持ち主が entry をまたいで一致するときだけ
+// 穴の中のidx番目（全n個）の `.フィールド` の持ち主: マークの通し番号がちょうど0..n-1で揃い、同じ番号の持ち主がentryをまたいで一致するときだけ
 func holeOwner(th []THit, path string, h int, idx int, n int) string {
     if idx < 0 {
         return ""
@@ -990,7 +990,7 @@ func isNegPath(path string) bool {
     return false
 }
 
-// 未分類の印を、負例のファイルなら NEGATIVE に
+// 未分類のマークを、負例のファイルならNEGATIVEに
 func negOr(f File, cls string) string {
     return if cls == "UNCLASSIFIED" && isNegPath(f.path) { "NEGATIVE" } else { cls }
 }
@@ -1007,8 +1007,8 @@ func clsCount(cnt mut Count, cls string) {
     }
 }
 
-// 欄の 1 ファイルの国勢調査: 欄の宣言・欄パターン・欄キーは構文木の持ち主、`x.欄` は表層型検査器の印（th）、
-// 裸の名前は欄でない（局所・トップレベル・仮引数）。`ref.欄` の形で ref が import の参照名なら package の名前で欄でない
+// フィールドの1ファイルの国勢調査: フィールドの宣言・フィールドパターン・フィールドキーは構文木の持ち主、`x.フィールド` は表層型検査器のマーク（th）、
+// 裸の名前はフィールドでない（局所・トップレベル・仮引数）。`ref.フィールド` の形でrefがimportの参照名ならpackageの名前でフィールドでない
 func scanMember(b mut builder.Builder[byte], f File, tt Toks, t ast.Tree, ok bool, sy Sym, th []THit, cnt mut Count, tg mut []int, ot mut []int) {
     ts := tt.ts
     mh := if ok { memberHits(f, tt, t, sy.name) } else { []MHit{} }
@@ -1031,7 +1031,7 @@ func scanMember(b mut builder.Builder[byte], f File, tt Toks, t ast.Tree, ok boo
             cls = "OTHER"
             kind = "pkg-member"
         } else if dotted && tt.host[k] >= 0 {
-            // 穴の中: 囲む文字列の中の `.欄` の字句（参照名の package を除く）の何番目かを、印の通し番号と突き合わせる（数が合わなければ未分類）
+            // 穴の中: 囲む文字列の中の `.フィールド` の字句（参照名のpackageを除く）の何番目かを、マークの通し番号と突き合わせる（数が合わなければ未分類）
             h := tt.host[k]
             mut idx := 0 - 1
             mut n := 0
@@ -1066,7 +1066,7 @@ func scanMember(b mut builder.Builder[byte], f File, tt Toks, t ast.Tree, ok boo
             cls = if k + 1 < len(ts) && ts[k + 1].tag == lexer.Colon { "UNCLASSIFIED" } else { "OTHER" }
             kind = "no-parse"
         } else if tt.host[k] < 0 && k + 1 < len(ts) && ts[k + 1].tag == lexer.Colon && (ts[k - 1].tag == lexer.LBrace || ts[k - 1].tag == lexer.Comma) && !isNamedArgAt(t, k) {
-            // `名前:` で構文木の欄キーに無い（穴の中の composite 等）— 持ち主が分からない
+            // `名前:` で構文木のフィールドキーに無い（穴の中のcomposite等）— 持ち主が分からない
             cls = "UNCLASSIFIED"
             kind = "unmapped-key"
         } else {
@@ -1074,7 +1074,7 @@ func scanMember(b mut builder.Builder[byte], f File, tt Toks, t ast.Tree, ok boo
             kind = "bare"
         }
         cls = negOr(f, cls)
-        // 変異 5（道具の網の検査 — 欄の別 struct 誤爆）: 最初の別の持ち主の欄を対象に数える
+        // ミュータント5（道具のテスト一式の検査 — フィールドの別struct誤爆）: 最初の別の持ち主のフィールドを対象に数える
         if cls == "OTHER" && strings.HasPrefix(kind, "field-") && cnt.mutdone == 0 && getenv("REFS_MUTANT") == "5" {
             cls = "TARGET"
             cnt.mutdone = 1
@@ -1117,7 +1117,7 @@ func calleeIs(f File, t ast.Tree, c0 int, q string, fn string) bool {
 }
 
 // 仮引数の 1 ファイルの国勢調査: 関数 fn（package q）の仮引数の宣言・本体の裸の名前（シャドーイング禁止で全部その仮引数）・
-// fn を callee とする呼び出しの名前つき実引数が TARGET。他の関数の名前つき実引数・欄・他の場所の裸の名前は OTHER
+// fnをcalleeとする呼び出しの名前つき実引数がTARGET。他の関数の名前つき実引数・フィールド・他の場所の裸の名前はOTHER
 func scanParam(b mut builder.Builder[byte], f File, tt Toks, t ast.Tree, ok bool, sy Sym, cnt mut Count, tg mut []int, ot mut []int) {
     ts := tt.ts
     // 関数 fn の字句の範囲と仮引数の宣言の字句
@@ -1205,7 +1205,7 @@ func scanParam(b mut builder.Builder[byte], f File, tt Toks, t ast.Tree, ok bool
             cls = "TARGET"
             kind = "named-arg"
         } else if hasInt(no, k) {
-            // 変異 4（道具の網の検査 — 名前つき実引数の callee 取り違え）: 別の関数への名前つき実引数も対象に数える
+            // ミュータント4（道具のテスト一式の検査 — 名前つき実引数のcallee取り違え）: 別の関数への名前つき実引数も対象に数える
             cls = if getenv("REFS_MUTANT") == "4" { "TARGET" } else { "OTHER" }
             kind = "named-arg-other"
         } else if dotted {
@@ -1243,7 +1243,7 @@ func scanParam(b mut builder.Builder[byte], f File, tt Toks, t ast.Tree, ok bool
             cls = "TARGET"
             kind = "ref"
         } else if inside {
-            // fn の中で裸の名前の節に無い（欄キー `名前:` か宣言の字句の取りこぼし）
+            // fnの中で裸の名前の節に無い（フィールドキー `名前:` か宣言の字句の取りこぼし）
             cls = if k + 1 < len(ts) && ts[k + 1].tag == lexer.Colon { "OTHER" } else { "UNCLASSIFIED" }
             kind = if cls == "OTHER" { "field-key" } else { "unmapped-in-fn" }
         } else {
@@ -1301,8 +1301,8 @@ func scanFile(b mut builder.Builder[byte], path string, sy Sym, th []THit, cnt m
     textRows(mut b, f, tt, sy.name, mut cnt)
 }
 
-// entry ごとに表層型検査器を回し、欄 name の selector の基底の型宣言（`SEL\t<path>\t<tok>\t<持ち主>` — 不明は `?`）と、
-// `$json/` の合成ファイル（std/json の写し — json.Encode / Decode に届く型の閉包）が参照する型（`JSON\t<持ち主>`）を出す。
+// entryごとに表層型検査器を回し、フィールドnameのselectorの基底の型宣言（`SEL\t<path>\t<tok>\t<持ち主>` — 不明は `?`）と、
+// `$json/` の合成ファイル（std/jsonのコピー — json.Encode / Decodeに届く型の推移的な依存）が参照する型（`JSON\t<持ち主>`）を出す。
 // prefix = cwd のルート相対（"" か "src/compiler/"）— パスと持ち主をルート相対に揃える
 func cmdTyped(stdDir string, prefix string, name string, entries []string) int {
     mut sm := mut map[string]string{}
@@ -1358,8 +1358,8 @@ func cmdTyped(stdDir string, prefix string, name string, entries []string) int {
     return 0
 }
 
-// `mut x.欄`（EMutArg — 名前は "x.欄" の 1 語・型検査器は途中の型を記録しない）の欄の字句の印を出す。基底 x の型 =
-// 同じ関数の中の同名の裸の名前の表層型（シャドーイング禁止で一意）か、無ければ仮引数の型の名前。対象は x の直下の欄だけ（`mut x.a.欄` は持ち主 "?" — 未分類）
+// `mut x.フィールド`（EMutArg — 名前は "x.フィールド" の1語・型検査器は途中の型を記録しない）のフィールドの字句のマークを出す。基底xの型 =
+// 同じ関数の中の同名の裸の名前の表層型（シャドーイング禁止で一意）か、無ければ仮引数の型の名前。対象はxの直下のフィールドだけ（`mut x.a.フィールド` は持ち主 "?" — 未分類）
 func mutArgSel(b mut builder.Builder[byte], p loader.Program, sm map[string]string, prefix string, st mut desugar.S, f int, i int, name string) {
     t := p.trees[f]
     x := t.nodes[i]
@@ -1374,7 +1374,7 @@ func mutArgSel(b mut builder.Builder[byte], p loader.Program, sm map[string]stri
     if !isName(src, ts, t0, base) {
         return
     }
-    // 欄の並びの何番目が name か（1 番目 = x の直下）
+    // フィールドの並びの何番目がnameか（1番目 = xの直下）
     mut idx := 1
     mut r := rest
     mut found := 0 - 1
@@ -1511,7 +1511,7 @@ func typeNameOwner(p loader.Program, prefix string, f int, ty ast.Node) string {
     return ""
 }
 
-// 節 r から辿れる節の印（reach の根を r にした形）
+// 節rから辿れる節のマーク（reachの根をrにした形）
 func reachFrom(t ast.Tree, r int) []bool {
     n := len(t.nodes)
     mut seen := mut []bool{}
@@ -1651,7 +1651,7 @@ func sortInts(xs []int) []int {
     return freeze(ys)
 }
 
-// src[lo:hi] の、ed（昇順・開始バイト）のうち範囲に入る位置の oldLen バイトを rep に差し替えた列（alt 番目の書き換えだけ altRep — 変異の口）
+// src[lo:hi] の、ed（昇順・開始バイト）のうち範囲に入る位置のoldLenバイトをrepに差し替えた列（alt番目の書き換えだけaltRep — ミューテーションのインターフェース）
 func splice(src []byte, lo int, hi int, ed []int, oldLen int, rep []byte, alt int, altRep []byte) []byte {
     mut out := mut []byte{}
     mut j := 0
@@ -1716,8 +1716,8 @@ func getenv(k string) string {
 
 // sym を new へ書き換える（標準入力 = コーパスのファイル一覧）。終了コード: 0 = 済 / 2 = 未分類あり / 3 = 合成の参照あり /
 // 4 = 拒否（新しい名前が識別子でない・頭の大小が変わる・新しい名前が既に対象の package に在る）/ 5 = 書き換えの後の検査が赤 / 1 = 入出力。
-// dry なら書かずに計画（file・位置）だけ出す。開発の口 REFS_MUTANT（道具の網の検査 — 1 = 多い〔書き換えるファイルの最初の OTHER も書く〕/
-// 2 = 少ない〔最後の TARGET を書かない〕/ 3 = 綴り違い〔最初の書き換えを new + "x"〕/ 4 = 名前つき実引数の callee 取り違え〔別の関数への名前つき実引数も対象〕/ 5 = 欄の別 struct 誤爆〔最初の別の持ち主の欄も対象〕）・REFS_NOPOSTCHECK=1（書き換えの後の検査を飛ばす — 変異を alphacheck へ通す）
+// dryなら書かずに計画（file・位置）だけ出す。開発のオプションREFS_MUTANT（道具のテスト一式の検査 — 1 = 多い〔書き換えるファイルの最初のOTHERも書く〕/
+// 2 = 少ない〔最後のTARGETを書かない〕/ 3 = 綴り違い〔最初の書き換えをnew + "x"〕/ 4 = 名前つき実引数のcallee取り違え〔別の関数への名前つき実引数も対象〕/ 5 = フィールドの別struct誤爆〔最初の別の持ち主のフィールドも対象〕）・REFS_NOPOSTCHECK=1（書き換えの後の検査を飛ばす — ミューテーションをalphacheckへ通す）
 func cmdRename(sym string, nn string, dry bool, typedPath string) int {
     sy, ok := parseSym(sym)
     q := sy.q
@@ -1731,17 +1731,17 @@ func cmdRename(sym string, nn string, dry bool, typedPath string) int {
         _ = io.WriteStderr(bytes("rename: ${nn} は識別子でないか、旧名と同じか、頭の大小（公開 / 非公開）が変わる\n"))
         return 4
     }
-    // 衝突: トップレベル名は新名の国勢調査に対象が在れば（package に既に在る）。欄は持ち主に同名の欄の宣言が在れば（selector は新名の印が無いので数えない）。
+    // 衝突: トップレベル名は新名の国勢調査に対象が在れば（packageに既に在る）。フィールドは持ち主に同名のフィールドの宣言が在れば（selectorは新名のマークが無いので数えない）。
     // 仮引数は関数の中の同名（仮引数・局所）か package のトップレベル名に在れば（局所名はトップレベル名と同名不可）
     cn := census(files, symWith(sy, nn), th)
     ctop := census(files, Sym{ModeTop, q, nn, "", ""}, []THit{})
     clash := if sy.mode == ModeTop { cn.target > 0 || cn.uncl > 0 || cn.synth > 0 } else if sy.mode == ModeMember { cn.decl > 0 } else { cn.target > 0 || ctop.target > 0 }
     if clash {
-        _ = io.WriteStderr(bytes("rename: ${nn} は既に在る（target=${cn.target} decl=${cn.decl} unclassified=${cn.uncl} synth=${cn.synth} top=${ctop.target}）— scripts/refs.sh で確かめる\n"))
+        _ = io.WriteStderr(bytes("rename: ${nn} は既に在る（target=${cn.target} decl=${cn.decl} unclassified=${cn.uncl} synth=${cn.synth} top=${ctop.target}）— scripts/refs.sh で確認する\n"))
         return 4
     }
     if sy.mode == ModeMember && has(js, sy.owner) {
-        _ = io.WriteStderr(bytes("rename: 警告 — ${sy.owner} は json.Encode / Decode に届く型（欄名 = JSON のキー）。改名は wire の互換を変える（EncodeWith / DecodeWith の辞書の鍵の文字列は書き換えない — 手で）\n"))
+        _ = io.WriteStderr(bytes("rename: 警告 — ${sy.owner} は json.Encode / Decode に届く型（フィールド名 = JSON のキー）。改名は wire の互換を変える（EncodeWith / DecodeWith の辞書の鍵の文字列は書き換えない — 手で）\n"))
     }
     mutant := getenv("REFS_MUTANT")
     post := getenv("REFS_NOPOSTCHECK") != "1"
@@ -1847,7 +1847,7 @@ func cmdRename(sym string, nn string, dry bool, typedPath string) int {
     if !post {
         return 0
     }
-    // 欄・仮引数の書いた後の国勢調査は scripts/refs.sh（新名の表層型検査器の印を作り直してから — 道具の中では作れない）
+    // フィールド・仮引数の書いた後の国勢調査はscripts/refs.sh（新名の表層型検査器のマークを作り直してから — 道具の中では作れない）
     if sy.mode != ModeTop {
         _ = io.WriteStderr(bytes("rename: PRE target=${cnt.target} other=${cnt.other} newother=${cn.other}\n"))
         return 0
@@ -1864,7 +1864,7 @@ func cmdRename(sym string, nn string, dry bool, typedPath string) int {
     return 0
 }
 
-// 置き場 dir（…/src/std）の .sober を `std/<相対>` の鍵で読む（LoadFs の焼き込みの表の代役）
+// 格納場所dir（…/src/std）の .soberを `std/<相対>` の鍵で読む（LoadFsの焼き込みの表の代役）
 func stdMap(dir string, rel string, m mut map[string]string) bool {
     es := io.ReadDir(dir) catch return false
     for i <- iter.Range(0, len(es)) {
@@ -1932,7 +1932,7 @@ func cmdLoadcheck(stdDir string, entries []string) int {
 
 // cmdFiles は各 entry が loader で読むファイルのパス（`<entry>\t<path>` — std は `std/…`・読めない entry は `<entry>\t!LOADFAIL`）。
 // alphacheck が書き換えたファイルを読む entry を選ぶのに使う
-// ── 鎖の罠の手掛かりと package 改名 ──
+// ── ブートストラップチェーンの罠の手掛かりとpackage改名 ──
 
 func readFile(path string) ([]byte, bool) {
     b := io.ReadFile(path) catch return []byte{}, false
@@ -2100,7 +2100,7 @@ func editsEq(a []byte, b []byte, eds []Edit) bool {
 // package の改名（パス old → new — std のパスかルート相対のディレクトリ。src/compiler の package は対象外）の字句の書き換え:
 // import のパスの文字列（参照の書き手から解決して old に当たるもの）・alias なしの import の参照名 `ref.`（参照名が変わるとき）・package の中のファイルの
 // `package 名前`（最後の要素が変わるとき）。ディレクトリの移動は scripts/refs.sh。alias つきの import の参照名は変えない。
-// 新しい参照名が書き換えるファイルに識別子として既に在れば拒否（4）。開発の口 REFS_MUTANT=6（参照名を書かない — import のパスだけ）
+// 新しい参照名が書き換えるファイルに識別子として既に在れば拒否（4）。開発のオプションREFS_MUTANT=6（参照名を書かない — importのパスだけ）
 func cmdPkgRename(old string, nw string, dry bool) int {
     files, ok := readList()
     if !ok || old == nw || strings.HasPrefix(old, "src/") || strings.HasPrefix(nw, "src/") || strings.HasPrefix(old, "std/") != strings.HasPrefix(nw, "std/") {
@@ -2176,7 +2176,7 @@ func cmdPkgRename(old string, nw string, dry bool) int {
         }
         ed := sortEdits(freeze(eds))
         out := applyEdits(src, 0, len(src), ed)
-        // 参照名を変えたファイルに旧い参照名の `ref.` が残っていない（import のパスだけ書いて参照名を書き漏らす形 — 変異 6 — は loader が受理してしまう）
+        // 参照名を変えたファイルに旧い参照名の `ref.` が残っていない（importのパスだけ書いて参照名を書き漏らす形 — ミュータント6 — はloaderが受理してしまう）
         if refEdit && getenv("REFS_NOPOSTCHECK") != "1" {
             to := allTokens(out, lexer.Lex(out))
             for k <- iter.Range(0, len(to.ts)) {
@@ -2262,7 +2262,7 @@ func usage() int {
 
 func main() int {
     args0 := os.Args() catch return 1
-    // `--typed <file>`（欄の対象 — scripts/refs.sh が `typed` で作る）を抜いた残り
+    // `--typed <file>`（フィールドの対象 — scripts/refs.shが `typed` で作る）を抜いた残り
     mut typedPath := ""
     mut rest := mut []string{}
     mut i := 0

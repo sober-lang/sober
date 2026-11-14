@@ -3,19 +3,19 @@ package checker
 import "std/iter"
 import "std/table"
 
-// JSON 境界の写し（Json.lean の tyFromJson / exprFromJson / programFromJson / partsFromJson）。
+// JSON境界の変換（Json.leanのtyFromJson / exprFromJson / programFromJson / partsFromJson）。
 //
 // 入力のバイト列を 1 回なめて、型・式の記録を直接組む（汎用の JSON の木は作らない — 入力 5MB 級でヒープを倹約する。仮決め R11-2）:
-// - parse は反復（明示の枠）。深さごとの枠に「語の番号 → (stamp, tag, val, gen)」の欄を持ち、object が閉じた時点で
+// - parseは反復（明示の枠）。深さごとの枠に「語の番号 → (stamp, tag, val, gen)」のフィールドを持ち、objectが閉じた時点で
 //   "k" の値を見て型か式の記録を組む。キーの順は問わず、同じキーは後勝ち（Lean の Json の object = RBNode.insert）
 // - 型の kind と式の kind は語が交わらないので、閉じた object は自分の k だけで型か式かが決まる。
-//   位置（Lean の tyFromJson / exprFromJson のどちらで読まれるか）との食い違いは、親が欄を読む時点で拒否する
-// - 組めない object（未知の k・欄の欠け）は V_ERR として運び、親が読んだときに初めて parse error にする
-//   （Lean は読まない欄の中身を検査しない — 余計なキーの中身は壊れていてよい）
+//   位置（LeanのtyFromJson / exprFromJsonのどちらで読まれるか）との食い違いは、親がフィールドを読む時点で拒否する
+// - 組めないobject（未知のk・フィールドの欠け）はV_ERRとして運び、親が読んだときに初めて parse error にする
+//   （Leanは読まないフィールドの中身を検査しない — 余計なキーの中身は壊れていてよい）
 // - 深さ 3 以下の object は汎用の記録 gen も残す（根の object と defs の要素 — programFromJson / defFromJson が読む）
 //
 // 文字列は語の表（キーと kind の綴り）で番号に引く。escape を含む文字列は番号 0（どの語とも一致しない扱い）— Lean は escape を
-// 解いてから比べるので、`"k"` のような綴りは食い違う（コーパスに現れない — 仮決め R11-2 の注）
+// 解いてから比べるので、`"k"` のような綴りは食い違う（コーパスに現れない — 仮決めR11-2の注記）
 
 // 語の番号（キー 1〜29・式の kind 30〜90・型の kind 91〜102）
 const W_K = 1
@@ -120,18 +120,18 @@ const W_SLICE = 99
 const W_MAP = 100
 const W_CHAN = 101
 const W_FN = 102
-// strlit の段で足した語（既存の番号を動かさないため末尾に置く — 式の kind の範囲判定は isExprKind が W_STRLIT を明示で足す）
+// strlitのフェーズで足した語（既存の番号を動かさないため末尾に置く — 式のkindの範囲判定はisExprKindがW_STRLITを明示で足す）
 const W_BS = 103
 const W_STRLIT = 104
-// keysm の段で足した語（同じく末尾）
+// keysmのフェーズで足した語（同じく末尾）
 const W_KEYSM = 105
-// 到達しない項の段で足した語（同じく末尾）
+// 到達しない項のフェーズで足した語（同じく末尾）
 const W_UNREACH = 106
-// byte の段で足した語（同じく末尾 — 式の kind は isExprKind、型の kind は isTyKind が明示で足す）
+// byteのフェーズで足した語（同じく末尾 — 式のkindはisExprKind、型のkindはisTyKindが明示で足す）
 const W_TOBYTE = 107
 const W_TOINT = 108
 const W_BYTE = 109
-// float の段で足した語（同じく末尾 — Lean の flit / farith / fcmp / fconv と型 f64）
+// floatのフェーズで足した語（同じく末尾 — Leanのflit / farith / fcmp / fconvと型f64）
 const W_FLIT = 110
 const W_FADD = 111  // 111〜114 = farith（fadd fsub fmul fdiv）
 const W_FSUB = 112
@@ -152,7 +152,7 @@ const W_FFROMBITS = 126
 const W_F64 = 127
 // 境界コピー式の語（宛先構築レーン — Lean の copyTo）
 const W_COPYTO = 128
-// scope / spawn / join / tryJ / newch の式と型 own 用の語（Lean 対応 — 欄 o / cap / s / h と能力の種類の綴り）
+// scope / spawn / join / tryJ / newchの式と型own用の語（Lean対応 — フィールドo / cap / s / hと能力の種類の綴り）
 const W_SCOPE = 129  // 129〜133 = scope spawn join try newch の式 — 範囲判定は W_SCOPE..W_NEWCH。"scope" は own の o の綴りも兼ねる
 const W_SPAWN = 130
 const W_JOIN = 131
@@ -168,9 +168,9 @@ const W_TX = 140
 const W_RX = 141
 // P3b-4 ③ で足した語（Lean の close — 送り端を閉じる）
 const W_CLOSE = 142
-// P3b-4 1b' で足した語（scope の err の型の欄 "eps"）
+// P3b-4 1b' で足した語（scopeのerrの型のフィールド "eps"）
 const W_EPS = 143
-// clone の段で足した語（Lean の clone — 読み出しの注釈 "t" は省略可）
+// cloneのフェーズで足した語（Leanのclone — 読み出しの注釈 "t" は省略可）
 const W_CLONE = 144
 // L1 で足した語（Lean の callMv — anchor つきの関数値の呼び出し。記録は [callmv, nc, f, e, a]）
 const W_CALLMV = 145
@@ -180,7 +180,7 @@ const W_UNFOLD = 147
 const W_RVAR = 148
 const W_MUS = 149
 const W_MURS = 150
-// domain の段で足した語（Lean の dnew / denter / dexit の式・dom の型・欄 "d"）。記録は dnew = [dnew, nc, r, i, t]・
+// domainのフェーズで足した語（Leanのdnew / denter / dexitの式・domの型・フィールド "d"）。記録はdnew = [dnew, nc, r, i, t]・
 // denter = [denter, nc, t, d]・dexit = [dexit, nc, d, v]・dom の型 = TDom (r, t)
 const W_DNEW = 151
 const W_DENTER = 152
@@ -191,7 +191,7 @@ const NW = 156
 // 注釈つき block（Lean の blockR）の式の kind。綴りは持たない（JSON では "block" + "t"）
 const K_BLOCKR = 156
 
-// 綴りの表は switch（if 式の鎖は F-22 の形 — 入れ子が深くなる）
+// 綴りの表はswitch（if式のチェーンはF-22の形 — 入れ子が深くなる）
 func wordStr(c int) string {
     return switch c {
     case W_K: "k"
@@ -360,9 +360,9 @@ func isTyKind(c int) bool {
     return c >= W_INT && c <= W_FN || c == W_BYTE || c == W_F64 || c == W_OWN || c == W_RVAR || c == W_MUS || c == W_MURS || c == W_DOM
 }
 
-// 値の tag（parse 中の欄・配列の要素）
+// 値のtag（parse中のフィールド・配列の要素）
 const V_NUM = 1   // val = 整数（i64 に収まる）
-const V_BIG = 2   // i64 を超える整数（Int としては読める。Nat の欄では拒否 — コーパスに現れない）
+const V_BIG = 2   // i64を超える整数（Intとしては読める。Natのフィールドでは拒否 — コーパスに現れない）
 const V_FRAC = 3  // 小数・指数つき（Lean の getInt? / getNat? は通さない）
 const V_STR = 4   // val = 語の番号（0 = 語の表に無い）
 const V_TRUE = 5
@@ -433,7 +433,7 @@ func wordOf(st mut S, src []byte, s int, e int) int {
     return 0
 }
 
-// ── parse の枠（深さごと。[ctype, stamp, curKey, arrN, arrHead, arrTail] + 語ごとの欄 [stamp, tag, val, gen]）──
+// ── parseの枠（深さごと。[ctype, stamp, curKey, arrN, arrHead, arrTail] + 語ごとのフィールド [stamp, tag, val, gen]）──
 
 const FS = 6 + 4 * NW
 const C_OBJ = 1
@@ -459,7 +459,7 @@ func sVal(st mut S, fb int, w int) int {
     return table.Get(mut st.h, slotOf(fb, w) + 2)
 }
 
-// 欄の読み出し（読めなければ -1。Lean の getObjVal? >>= … の失敗 = parse error）
+// フィールドの読み出し（読めなければ -1。LeanのgetObjVal? >>= … の失敗 = parse error）
 func fE(st mut S, fb int, w int) int {
     return if sTag(mut st, fb, w) == V_EXPR { sVal(mut st, fb, w) } else { -1 }
 }
@@ -477,7 +477,7 @@ func fB(st mut S, fb int, w int) int {
     return if t == V_TRUE { 1 } else if t == V_FALSE { 0 } else { -1 }
 }
 
-// 綴りの欄の語の番号（綴りでなければ -1。語の表に無い綴りは 0）
+// 綴りのフィールドの語の番号（綴りでなければ -1。語の表に無い綴りは0）
 func fW(st mut S, fb int, w int) int {
     return if sTag(mut st, fb, w) == V_STR { sVal(mut st, fb, w) } else { -1 }
 }
@@ -496,7 +496,7 @@ func node(st mut S, k int, n int, a int, b int, c int) int {
     return rec5(mut st, k, n, a, b, c)
 }
 
-// "ts" の欄（省略 = -1、空の配列も -1）。要素が型でなければ -2（parse error）
+// "ts" のフィールド（省略 = -1、空の配列も -1）。要素が型でなければ -2（parse error）
 func tsOf(st mut S, fb int) int {
     t := sTag(mut st, fb, W_TS)
     if t == 0 {
@@ -619,7 +619,7 @@ func buildExpr(st mut S, fb int, c int) int {
         i := fN(mut st, fb, W_I)
         return if i < 0 { -1 } else { node(mut st, c, 0, i, 0, 0) }
     }
-    // 式 2 つ（欄の語 w1, w2）
+    // 式2つ（フィールドの語w1, w2）
     if c == W_LET || c == W_ADD || c == W_LT || (c >= W_SUB && c <= W_GE) || (c >= W_FADD && c <= W_FGE) || c == W_PAIR || c == W_CALLV || c == W_ASSIGN || c == W_WHILE || c == W_APPEND || c == W_EQS || c == W_CONCAT || c == W_PAR || c == W_SEND {
         w1 := if c == W_LET { W_E } else if c == W_CALLV { W_F } else if c == W_ASSIGN { W_L } else if c == W_WHILE { W_C } else if c == W_APPEND { W_E } else if c == W_PAR { W_E1 } else if c == W_SEND { W_C } else { W_A }
         w2 := if c == W_LET || c == W_WHILE { W_BODY } else if c == W_CALLV || c == W_ASSIGN || c == W_SEND { W_E } else if c == W_APPEND { W_V } else if c == W_PAR { W_E2 } else { W_B }
@@ -816,7 +816,7 @@ func buildExpr(st mut S, fb int, c int) int {
             return -1
         }
         return node(mut st, c, 1, rc, t, 0)
-    // Lean の noNewchan: scope / spawn / join / try は子の論理和（Def の本体での par を許すため）・newch は 0（家の region は shiftTy / renTy で写る）
+    // LeanのnoNewchan: scope / spawn / join / tryは子の論理和（Defの本体でのparを許すため）・newchは0（家のregionはshiftTy / renTyで変換される）
     case W_SCOPE:
         t := fT(mut st, fb, W_T)
         ep := fT(mut st, fb, W_EPS)
@@ -853,7 +853,7 @@ func buildExpr(st mut S, fb int, c int) int {
     return -1
 }
 
-// 枠 fb の立っている欄を汎用の記録 [n, (語, tag, val, gen)…] に写す
+// 枠fbの立っているフィールドを汎用の記録 [n, (語, tag, val, gen)…] に変換する
 func genRec(st mut S, fb int) int {
     mut n := 0
     mut w := 1
@@ -879,7 +879,7 @@ func genRec(st mut S, fb int) int {
     return at
 }
 
-// 汎用の記録 g の語 w の欄（[tag, val, gen] の先頭の添字。無ければ -1）
+// 汎用の記録gの語wのフィールド（[tag, val, gen] の先頭の添字。無ければ -1）
 func gField(st mut S, g int, w int) int {
     if g < 0 {
         return -1

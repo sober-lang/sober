@@ -2,7 +2,7 @@ package main
 
 import "std/http/server"
 
-// 応答 1 件に共有の方針を書く（共有の宣言はルートの行だけ）
+// レスポンス1件に共有の方針を書く（共有の宣言はルートの行だけ）
 func main() {
     rs := []http.server.Route{http.server.Route{method: "GET", path: "/x", handler: (r) => http.server.Response{status: 200, contentType: "text/plain", body: bytes("x"), cache: http.server.Fresh{maxAge: 60}}}}
     println(len(rs))

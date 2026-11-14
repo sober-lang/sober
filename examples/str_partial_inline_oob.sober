@@ -2,7 +2,7 @@ package main
 
 import "std/utf8"
 
-// 部分インラインの意味の網（panic の位置）: 写した std/utf8.Str の切り出しの範囲の検査の panic は、写さない形と同じ位置（std/utf8 の行）を出す
+// 部分インラインの意味の検査（panicの位置）: コピーしたstd/utf8.Strの切り出しの範囲の検査のpanicは、コピーしない形と同じ位置（std/utf8の行）を出す
 func main() int {
     b := bytes("abc;de;")
     v := utf8.Check(b) catch return 1

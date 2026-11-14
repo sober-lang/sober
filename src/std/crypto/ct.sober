@@ -7,7 +7,7 @@ package crypto
 //   2. 秘密に依存する添字を書かない（表引きなし — ソフトの AES を書かない理由）
 //   3. 秘密を / と % に渡さない（x86 の DIV は可変時間）
 //   4. ループの回数は公開の値だけで決める
-// 網: scripts/ctcheck.sh（ct の関数の機械語の条件分岐の数を黄金で照合）
+// 検査: scripts/ctcheck.sh（ctの関数の機械語の条件分岐の数をゴールデンで照合）
 
 import "std/iter"
 import "std/rand"

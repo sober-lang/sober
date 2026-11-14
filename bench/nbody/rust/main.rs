@@ -1,4 +1,4 @@
-// n-body の Rust の双子（Go の双子 bench/nbody/go と同じ — 5 天体・添字のループ・境界検査はそのまま）
+// n-bodyの比較用のRustの実装（比較用のGoの実装bench/nbody/goと同じ — 5天体・添字のループ・境界検査はそのまま）
 use std::env;
 
 #[derive(Clone, Copy)]

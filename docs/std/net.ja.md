@@ -4,7 +4,7 @@
 
 `import "std/net"`
 
-名前の解決（スタブリゾルバ — libc の getaddrinfo を使わない）: Dial が IPv4 の綴りでないホストを受けたときに、/etc/hosts → /etc/resolv.conf の nameserver（最大 3 本を順に・1 回の問い合わせは期限つき）へ A を問う。search / ndots の候補の順（resolv.conf(5)）・応答の切り詰め（TC）は TCP で問い直す・応答の CNAME の鎖を追う（answer 節の中だけ・8 段まで）・txid は getrandom・応答は txid と問いの名前と型の一致を確かめる。AAAA も読めるが、Dial は IPv4 だけ。非 ASCII のホスト名（IDN）は名指しで拒否する（punycode は URL の層の仕事）。DNSSEC・DoH / DoT・キャッシュは持たない
+名前の解決（スタブリゾルバ — libc の getaddrinfo を使わない）: Dial が IPv4 の綴りでないホストを受けたときに、/etc/hosts → /etc/resolv.conf の nameserver（最大3本を順に・1回の問い合わせは期限つき）へAを問う。search / ndotsの候補の順（resolv.conf(5)）・レスポンスの切り詰め（TC）はTCPで問い直す・レスポンスのCNAMEのチェーンを追う（answer節の中だけ・8レベルまで）・txidはgetrandom・レスポンスはtxidと問いの名前と型の一致を確認する。AAAAも読めるが、DialはIPv4だけ。非ASCIIのホスト名（IDN）は専用の診断で拒否する（punycodeはURLの層の仕事）。DNSSEC・DoH / DoT・キャッシュは持たない
 
 ## NoHost
 
@@ -31,7 +31,7 @@ type Listener struct {
 }
 ```
 
-listen している socket（同一性の型 — 写せない・外へ出せない・give: で渡せない。fd の番号は封）
+listenしているsocket（同一性の型 — コピーできない・外へ出せない・give: で渡せない。fdの番号は封）
 
 ## Conn
 
@@ -129,6 +129,6 @@ b を全部 c へ送る（同期 — 短い書きは続きから・MSG\_NOSIGNAL
 func Serve(l Listener, h func(Conn) error?, budget int?, conns int?, reject string?, region int?, maxWait int?, backlog int?) error?
 ```
 
-l の接続を受けるたびに接続 1 本 = task 1 本で h を走らせる（accept の輪は std が持つ — ワーカーごとに 1 本・l と同じ番地に SO\_REUSEPORT で足した listener で受ける）。h は `func(c net.Conn) error?`（名前つき関数をそのまま — `net.Serve(l, echo, …)`。η 展開 — [language.md 25 節](../language.md)）。h の失敗は Serve が吸収する（接続を閉じて続ける — 数えるのは Serve のプールの Ledger の fail・死は died）。admission は名前つきプールのノード 1 つ（天井 = conns × budget バイト — 省略時は budget = 64 \* task.KB・conns = 10000）+ 接続ごとの SpawnIn（budget = 接続 1 本の上界）: 入れなければ reject の定数のバイト列を 1 回送って閉じる（既定は送らずに閉じる・利用者のコードは走らせない）。h の死は Serve の scope が吸収して Serve は続く。受けた Conn はServe が閉じる（接続の task の登録簿 — 死んでも出口で閉じる）。Serve が返るのは listener の失敗か、Serve を包む scope の期限（accept の待ちが切れる）— 走っている接続の決着を待ってから。listener の失敗は 1 つでも全部の輪を止める（残りの listener を shutdown — 受けていない listener に接続が振られて残らないように）: 以後 l は listen していない。Serve が足した listener は Serve が閉じる・l は Listen が閉じる。region = 接続の task の region 1 つの上限（既定 128 \* task.MB・2 の冪に切り上げ・1 MiB 未満は 1 MiB・子の task の既定〔512 MiB〕より大きくはならない）: 超えるとその接続の task の死（RegionExceeded{cause: slot\_capacity} — Serve が吸収し Ledger の died が数える）。小さいスロットは既定のスロットを割って深度ごとに 1 本（接続数 × 深度ぶんの VA を減らす — [language.md 11 節](../language.md)「接続の task の小さいスロット」）。maxWait = 飽和下の待ちの上限 D（ns・既定 100 \* task.MS・1 ms 未満は 1 ms）: accept の輪・接続の task とその子が継ぐ。走れるようになってから D を過ぎた task は、期限の順に、まだ期限の来ていない task より先に走る（同じワーカーに違う D の task が混ざると順は積んだ順）。飽和しない負荷では効かない。D を越えて走った数と越えた量はtask.Ledger() の late / maxLate で読める（[language.md 28 節](../language.md) ring の道「飽和下の待ちの上限」）。backlog = 接続の task とその子が列に積んでおける未着手の子の本数（1〜255・既定 255 — task.Run の backlog: と同じ。観測は task.Ledger() の backlog / backlogYield）
+lの接続を受けるたびに接続1本 = task 1本でhを走らせる（acceptのループはstdが持つ — ワーカーごとに1本・lと同じ番地にSO\_REUSEPORTで足したlistenerで受ける）。hは `func(c net.Conn) error?`（名前つき関数をそのまま — `net.Serve(l, echo, …)`。η 展開 — [language.md 25 節](../language.md)）。h の失敗は Serve が吸収する（接続を閉じて続ける — 数えるのは Serve のプールの Ledger の fail・死は died）。admission は名前つきプールのノード 1 つ（天井 = conns × budget バイト — 省略時は budget = 64 \* task.KB・conns = 10000）+ 接続ごとの SpawnIn（budget = 接続 1 本の上界）: 入れなければ reject の定数のバイト列を 1 回送って閉じる（既定は送らずに閉じる・利用者のコードは走らせない）。h の死は Serve の scope が吸収して Serve は続く。受けた Conn はServe が閉じる（接続の task の登録簿 — 死んでも出口で閉じる）。Serve が返るのは listener の失敗か、Serve を包む scope の期限（accept の待ちが切れる）— 走っている接続の決着を待ってから。listenerの失敗は1つでも全部のループを止める（残りのlistenerをshutdown — 受けていないlistenerに接続が振られて残らないように）: 以後lはlistenしていない。Serve が足した listener は Serve が閉じる・l は Listen が閉じる。region = 接続の task の region 1 つの上限（既定 128 \* task.MB・2 の冪に切り上げ・1 MiB 未満は 1 MiB・子の task の既定〔512 MiB〕より大きくはならない）: 超えるとその接続の task の死（RegionExceeded{cause: slot\_capacity} — Serve が吸収し Ledger の died が数える）。小さいスロットは既定のスロットを割って深度ごとに 1 本（接続数 × 深度ぶんの VA を減らす — [language.md 11 節](../language.md)「接続の task の小さいスロット」）。maxWait = 飽和下の待ちの上限D（ns・既定100 \* task.MS・1 ms未満は1 ms）: acceptのループ・接続のtaskとその子が継ぐ。走れるようになってからDを過ぎたtaskは、期限の順に、まだ期限の来ていない task より先に走る（同じワーカーに違う D の task が混ざると順は積んだ順）。飽和しない負荷では効かない。D を越えて走った数と越えた量はtask.Ledger() のlate / maxLateで読める（[language.md 28 節](../language.md)ringのパス「飽和下の待ちの上限」）。backlog = 接続の task とその子が列に積んでおける未着手の子の本数（1〜255・既定 255 — task.Run の backlog: と同じ。観測は task.Ledger() の backlog / backlogYield）
 
 失敗のラベル: `io.Closed`・`io.Timeout`・`io.Expired`・`io.Denied`・`io.Other`

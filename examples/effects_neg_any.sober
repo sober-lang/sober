@@ -1,6 +1,6 @@
 package main
 
-// 負例（check が拒否 — analyzer）: 匿名の関数型の欄の値の呼び出しは、プログラムの全部の関数値の効果の合併（ANY — 閉じた世界の上界）
+// 負例（checkが拒否 — analyzer）: 匿名の関数型のフィールドの値の呼び出しは、プログラムの全部の関数値のエフェクトの合併（ANY — 閉じた世界の上界）
 
 type Box struct {
     f func(int) int

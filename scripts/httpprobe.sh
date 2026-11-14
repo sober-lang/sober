@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# httpprobe（report-1175 — 低確率の httpcheck の赤の再現網）: httpcheck の 1 構成（既定 W1）だけを、通常の build とカオスの build（--rt-mutant=30 —
-# 非 ring の道の偽の EAGAIN・短い書き / 読み・ep_poll の受け皿の縮めと sched_yield。種 = SOBER_CHAOS_SEED）で交互に、時間の許す限り回す。
+# httpprobe（report-1175 — 低確率のhttpcheckの赤の再現検査）: httpcheckの1構成（既定W1）だけを、通常のbuildとカオスのbuild（--rt-mutant=30 —
+# 非ringのパスの偽のEAGAIN・短い書き / 読み・ep_pollの受け皿の縮めとsched_yield。シード = SOBER_CHAOS_SEED）で交互に、時間の許す限り回す。
 # 落ちた回は <out>/fail-<回>-<plain|chaos>/ に check の出力・srv の stderr・listener の ss・env と、飛行記録（SOBER_FLIGHT — flight.bin と
 # scripts/flight.ts の --anomaly / 落ちの lport= ごとの --conn の読み）を残す（CI は upload-artifact で拾う）
 #   scripts/httpprobe.sh <srv-plain> <srv-chaos|-> <分> <out> [構成の env …]

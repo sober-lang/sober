@@ -1,13 +1,13 @@
 package main
 
-// std/sort の乱択の検査（scripts/sortcheck.sh — report-619）: 形 9 種（乱数・昇順・降順・4 値・全部同じ・山・鋸・ほぼ昇順・100 値）× 長さ 27 種 × 種 3 で、
+// std/sortの乱択の検査（scripts/sortcheck.sh — report-619）: 形9種（乱数・昇順・降順・4値・全部同じ・山・鋸・ほぼ昇順・100値）× 長さ27種 × シード3で、
 // Order は「並び・安定・置換」、OrderUnstable は「並び・置換」と同じ呼び出しの 2 回の一致を見る。狭義の弱順序でない less（決まった乱数で答える）でも
 // 両方が 0..n−1 の置換を返す（落ちない）ことも見る。最後の行 = OrderUnstable の結果の全部の検査和（2 回の走り・最適化の有無で一致 — 決定性）
 
 import "std/iter"
 import "std/sort"
 
-// 乱数（決定的 — 種から）
+// 乱数（決定的 — シードから）
 func next(x int) int {
     mut y := x
     y = y ^ (y << 13)
@@ -16,7 +16,7 @@ func next(x int) int {
     return y
 }
 
-// gen は形 kind・長さ n・種 seed の値の列
+// genは形kind・長さn・シードseedの値の列
 func gen(kind int, n int, seed int) []int {
     mut v := mut []int{}
     mut x := seed * 2654435761 + 1

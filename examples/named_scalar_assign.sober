@@ -1,7 +1,7 @@
 package main
 
 // 回帰例（language.md 32 節 — リテラルは代入の文脈の named に割り当てられる）: 型なしのリテラル・const を
-// named scalar の局所・mut struct の欄・mut 仮引数の欄へ代入する。lower（build）が代入の右辺を期待型なしで評価して拒否していた（check は受理）
+// named scalar の局所・mut structのフィールド・mut仮引数のフィールドへ代入する。lower（build）が代入の右辺を期待型なしで評価して拒否していた（checkは受理）
 
 type Ref int
 

@@ -9,7 +9,7 @@ func page(r http.server.Request) http.server.Response {
     return http.server.Text("ok ${len(bytes(r.path))}")
 }
 
-// 1 接続 2 要求（limited-conn の形）
+// 1接続2リクエスト（limited-connの形）
 func once(port int, i int) (int, error?) {
     mut ok := 0
     for a <- net.Dial("127.0.0.1:${port}")? {
@@ -24,7 +24,7 @@ func once(port int, i int) (int, error?) {
     return ok, nil
 }
 
-// n 本を 1 本ずつ順に（塊が使い回される）
+// n本を1本ずつ順に（チャンクが使い回される）
 func client(port int, n int) int {
     mut ok := 0
     for i <- iter.Range(0, n) {

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# sober fix の網（effect の波 段 5a-3 — language.md 12 節「関数の効果の宣言」・13 節の 4 点組の「正の列挙は fix が書く」）: testdata/fix（宣言の無い公開関数・
-# 古い正の列挙・古い @errors・否定形と内部関数〔触らない〕）を写して `sober fix` を掛け、
-#   ① 書き換えた木 ≡ 黄金（testdata/fixgold/fix/）② もう 1 回の fix は何も書かない（不動点）③ 書き換えた木を check が受理する
+# sober fix の検査（effect のマイルストーン 段階5a-3 — language.md 12 節「関数のエフェクトの宣言」・13 節の4点組の「正の列挙はfixが書く」）: testdata/fix（宣言の無い公開関数・
+# 古い正の列挙・古い @errors・否定形と内部関数〔触らない〕）をコピーして `sober fix` を掛け、
+#   ① 書き換えた木 ≡ ゴールデン（testdata/fixgold/fix/）② もう1回のfixは何も書かない（不動点）③ 書き換えた木をcheckが受理する
 #   ④ fix が書いた正の列挙 ≡ `check --effects-dump` の導出のビット
-#   ⑤ std（段 5b の強制）: std の全 package を import する合成の main に `fix --effects --std` を掛けて何も書かない（木の std の宣言 = 正規形の不動点。
+#   ⑤ std（段階5bの強制）: stdの全packageをimportする合成のmainに `fix --effects --std` を掛けて何も書かない（木のstdの宣言 = 正規形の不動点。
 #      欠け・古さの負例は stage2 の L0 bake〔std の check〕が MEffMissing / MEffStale で落ちる形が受け持つ — CLI は焼き込みの std しか読まない）
 #
 #   scripts/fixcheck.sh [--regen]

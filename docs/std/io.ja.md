@@ -4,7 +4,7 @@
 
 `import "std/io"`
 
-ファイル・標準ストリーム・ディレクトリの読み書き（[language.md 28 節](../language.md)）と根の下の開き（OpenRoot / OpenUnder）。どの関数も同期の形で、バイト列は []byte で受け渡す。失敗は errno を写したラベル（NotFound・Denied・Timeout・Other）か、囲む task.Run の期限が尽きた後の Expired で返る。text として読むなら `s := string(io.ReadFile(p)?)?`（UTF-8 の検査つき）
+ファイル・標準ストリーム・ディレクトリの読み書き（[language.md 28 節](../language.md)）と根の下の開き（OpenRoot / OpenUnder）。どの関数も同期の形で、バイト列は []byte で受け渡す。失敗はerrnoを反映したラベル（NotFound・Denied・Timeout・Other）か、囲むtask.Runの期限が尽きた後のExpiredで返る。text として読むなら `s := string(io.ReadFile(p)?)?`（UTF-8 の検査つき）
 
 ## NotFound
 
@@ -65,7 +65,7 @@ type Stream struct {
 }
 ```
 
-標準ストリーム（[language.md 28 節](../language.md)「標準ストリーム」— Stdin / Stdout / Stderr の 3 つだけ）。プロセスの寿命で開いていて Close が無く、コピーしても害が無い値の型（同一性なし — Open が返す同一性の型 io.File とは別の型）。fd の番号は値にしない — 非公開の型の封の欄 seal があるので外からは欄つきで書けず（utf8.View と同じ形）、int と Stream の間の変換の関数は無い。番号は std と rt の中にだけある。ゼロ値 `io.Stream{}` は番号 0（Writer の欄としては標準出力へ読み替える — 下の Writer）
+標準ストリーム（[language.md 28 節](../language.md)「標準ストリーム」— Stdin / Stdout / Stderr の 3 つだけ）。プロセスの寿命で開いていて Close が無く、コピーしても害が無い値の型（同一性なし — Open が返す同一性の型 io.File とは別の型）。fd の番号は値にしない — 非公開の型の封のフィールドsealがあるので外からはフィールドつきで書けず（utf8.Viewと同じ形）、intとStreamの間の変換の関数は無い。番号はstdとrtの中にだけある。ゼロ値 `io.Stream{}` は番号0（Writerのフィールドとしては標準出力へ読み替える — 下のWriter）
 
 ## Stdin
 
@@ -100,7 +100,7 @@ type File struct {
 }
 ```
 
-Open で開いたファイル（[language.md 28 節](../language.md)「資源とストリーム」— 同一性を持つ型: 作る関数は Open だけ・後始末は同じブロックの`defer io.Close(f)`・写せない・外へ出せない・give: では渡せない — 子は path から自分で開く。desugar/filecheck の規則）。fd の番号は封の欄の中で、std と rt の外に出ない。標準ストリームの Stream とは別の型（Stream はプロセスの寿命・Close なし・写して害なし）
+Open で開いたファイル（[language.md 28 節](../language.md)「資源とストリーム」— 同一性を持つ型: 作る関数は Open だけ・後始末は同じブロックの`defer io.Close(f)`・コピーできない・外へ出せない・give: では渡せない — 子はpathから自分で開く。desugar/filecheckの規則）。fdの番号は封のフィールドの中で、stdとrtの外に出ない。標準ストリームのStreamとは別の型（Streamはプロセスの寿命・Closeなし・コピーして害なし）
 
 ## Open
 
@@ -132,7 +132,7 @@ type Root struct {
 }
 ```
 
-根として開いたディレクトリ（[language.md 28 節](../language.md)「根の下の開き」— File と同じ同一性の型: 作る関数は OpenRoot だけ・後始末は同じブロックの`defer io.CloseRoot(r)`・写せない・外へ出せない・give: では渡せない）。OpenUnder の根になる capability で、中身は O\_PATH の fd（読み書きの口は無い）。ディレクトリの項目の種類 EntryKind の Dir とは別物
+根として開いたディレクトリ（[language.md 28 節](../language.md)「根の下の開き」— File と同じ同一性の型: 作る関数は OpenRoot だけ・後始末は同じブロックの`defer io.CloseRoot(r)`・コピーできない・外へ出せない・give: では渡せない）。OpenUnderの根になるcapabilityで、中身はO\_PATHのfd（読み書きのインターフェースは無い）。ディレクトリの項目の種類 EntryKind の Dir とは別物
 
 ## OpenRoot
 
@@ -179,7 +179,7 @@ type FileInfo struct {
 
 Stat が返す開いた File の属性（fstat 1 回 — 開いたその実体を見て path を引き直さない。kind に Symlink は来ない — 開くときに辿る）
 
-欄:
+フィールド:
 
 - `size` — 大きさ（バイト — st\_size。通常のファイル以外は意味を持たない）
 - `modTime` — 更新時刻（st\_mtim — Unix エポック〔1970 年 1 月 1 日 UTC〕からの ns。std/os の ModTime と同じ値）
@@ -220,7 +220,7 @@ type Bytes struct {
 }
 ```
 
-読むだけのバイト列の View（Chunks / Lines の切片 — [language.md 28 節](../language.md)「読みのストリーム」）。作れるのは std/io だけ（封 — utf8.View と同じ形）。中身は rt のスロット（貸出中の pool — region-domain-pool.md 4c 節）を指し、for の 1 反復の間だけ有効: 反復の外の変数への代入・return・送りは境界の写しになる（region の規則 — 外へは写してしか出せない）。書きの関数は無い
+読むだけのバイト列の View（Chunks / Lines の切片 — [language.md 28 節](../language.md)「読み込みのストリーム」）。作れるのは std/io だけ（封 — utf8.View と同じ形）。中身は rt のスロット（貸出中の pool — region-domain-pool.md 4c 節）を指し、for の 1 反復の間だけ有効: 反復の外の変数への代入・return・送りは境界のコピーになる（regionの規則 — 外へはコピーしてしか出せない）。書きの関数は無い
 
 ## Raw
 
@@ -263,7 +263,7 @@ f の off バイト目から EOF まで切片ずつ k へ渡す（Chunks と同�
 func Lines(f File, k func(Bytes)) error?
 ```
 
-f の行を順に k へ渡す（区切り = '\n'・行末の '\r' は落とす・最後の行は改行が無くても渡す — Go の bufio.ScanLines と同じ）。行は切片の部分 View で、切片をまたぐ行だけ std の中で写す
+f の行を順に k へ渡す（区切り = '\n'・行末の '\r' は落とす・最後の行は改行が無くても渡す — Go の bufio.ScanLines と同じ）。行は切片の部分Viewで、切片をまたぐ行だけstdの中でコピーする
 
 失敗のラベル: [`NotFound`](#notfound)・[`Denied`](#denied)・[`Other`](#other)・[`Timeout`](#timeout)・[`Expired`](#expired)
 
@@ -374,16 +374,16 @@ type Writer struct {
 }
 ```
 
-書きバッファ（定常メモリで流す — 64 KiB のバッファを添字で使い回し、満杯で書き出す。溜め込んで最後に 1 回書く形の RSS の回避）:
+書きバッファ（定常メモリで流す — 64 KiBのバッファを添字で使い回し、満杯で書き出す。バッファして最後に1回書く形のRSSの回避）:
 
 ```sober
-mut w := io.Writer{}            // ゼロ値は標準出力へ書く（欄 to のゼロ値 = 番号 0 は標準出力へ読み替える — 標準入力へは書かない）。標準エラーへは io.SetFile(mut w, io.Stderr)
+mut w := io.Writer{}            // ゼロ値は標準出力へ書く（フィールドtoのゼロ値 = 番号0は標準出力へ読み替える — 標準入力へは書かない）。標準エラーへはio.SetFile(mut w, io.Stderr)
 io.WriteString(mut w, "hello\n")
 io.WriteByte(mut w, 'x')
 err := io.Flush(mut w)          // 残りを書き出す — 最後に Flush しないとバッファに残った分は書かれない
 ```
 
-書き出しの失敗は err に貯め（以後の書き出しはしない — 失敗の後に書いたバイトは捨てられる）、Flush が返す（bufio と同じ「後で返す」）。Flush が失敗を返すと貯めた失敗は消え、次の書き出しから再び書く。構築の関数（WriterOf）を持たないのは、mut の欄を持つ struct を関数から返す形を check が受けないため（[language.md 26 節](../language.md) G3）— ゼロ値 + SetFile の形にした
+書き出しの失敗は err に貯め（以後の書き出しはしない — 失敗の後に書いたバイトは捨てられる）、Flush が返す（bufio と同じ「後で返す」）。Flush が失敗を返すと貯めた失敗は消え、次の書き出しから再び書く。構築の関数（WriterOf）を持たないのは、mutのフィールドを持つstructを関数から返す形をcheckが受けないため（[language.md 26 節](../language.md)G3）— ゼロ値 + SetFileの形にした
 
 ## SetFile
 
@@ -401,7 +401,7 @@ func SetFile(w mut Writer, f Stream)
 func WriteByte(w mut Writer, c byte)
 ```
 
-1 バイト書く（速い道 = 空きがあれば書いて進めるだけ — 呼び手に展開される大きさに保つ。満杯・初回は writerByteSlow）
+1バイト書く（高速パス = 空きがあれば書いて進めるだけ — 呼び手に展開される大きさに保つ。満杯・初回はwriterByteSlow）
 
 ## WriteBytes
 
@@ -410,7 +410,7 @@ func WriteByte(w mut Writer, c byte)
 func WriteBytes(w mut Writer, b []byte)
 ```
 
-バイト列を書く（バッファの空きの分ずつ — 内側は添字の写しの形で、最適化のバックエンドが一括の写しにする）
+バイト列を書く（バッファの空きの分ずつ — 内側は添字のコピーの形で、最適化のバックエンドが一括のコピーにする）
 
 ## WriteString
 

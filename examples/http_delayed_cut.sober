@@ -1,0 +1,145 @@
+package main
+
+// http.server.Delayedのレスポンスが送られない2つのパス: 接続の期限が待ちの途中で来る・接続のtaskの親が待ちの途中で死ぬ（孤児）。
+// どちらも、ハンドラの中でos.Sleepしてから返す形と同じくレスポンスは出ない（期限はio.Expired・孤児は閉じられて相手はFINだけを見る）。
+// 期限が待ちより後の接続では待ちの後にレスポンスが届く（対照）
+
+import "std/http/server"
+import "std/io"
+import "std/net"
+import "std/os"
+import "std/task"
+
+const hour = 3600000 * task.MS
+
+func route(r http.server.Request) http.server.Response {
+    return http.server.Delayed(200, http.server.Text("late"))
+}
+
+func label(e error?) string {
+    return switch e {
+    case nil: "ok"
+    case io.Expired{}: "expired"
+    case io.Timeout{}: "timeout"
+    case io.Closed{}: "closed"
+    case io.NotFound{}: "not found"
+    case io.Denied{}: "denied"
+    case io.Other{errno}: "errno ${errno}"
+    }
+}
+
+// 相手のレスポンスを相手が閉じるまで（最大2秒）読む → 届いたか
+func reply(c net.Conn) string {
+    r, _ := task.Run((s task.Scope) => {
+        mut n := 0
+        _ = recvAll(c, mut n)
+        if n > 0 { "response" } else { "no response" }
+    }, deadline: 2000 * task.MS)
+    return r
+}
+
+func recvAll(c net.Conn, n mut int) error? {
+    for chunk <- net.Recv(c)? {
+        n += len(chunk)
+    }
+    return nil
+}
+
+const req = "GET /x HTTP/1.1\r\nHost: x\r\nConnection: keep-alive\r\n\r\n"
+
+func main() {
+    println(run() catch "listen failed")
+}
+
+func run() (string, error?) {
+    for l <- net.Listen("127.0.0.1:0")? {
+        addr := "127.0.0.1:${net.Port(l)}"
+        // 対照: 接続の期限400 ms > 待ち200 ms — 待ちの後にレスポンスが届き、期限でServeConnが返って閉じる
+        for c <- net.Dial(addr)? {
+            for sc <- net.Accept(l)? {
+                net.Send(c, bytes(req))?
+                _, _ = task.Run((s task.Scope) => label(http.server.ServeConn(sc, route)), deadline: 400 * task.MS)
+                break
+            }
+            println("no deadline in reach: ${reply(c)}")
+        }
+        // 期限: 接続の期限50 ms < 待ち200 ms — レスポンスは出ず、ServeConnはio.Expired。客（別のtask）は2件目のリクエストを待ちの途中に別の切片で送る
+        // （後のリクエストは満了の後にしか読まれない — ServeConnは受けではなく満了の待ちの中で期限を迎える）
+        _, _ = task.Run((s task.Scope) => {
+            h := task.Spawn(s, () => client2(addr))
+            _ = h
+            serveDeadline(l) catch "accept failed"
+        })
+        // 孤児: 接続のtask（相手から張った接続でServeConn）の親が50 msで死ぬ — 受けの待ちが切れて閉じる。レスポンスは出ない
+        _, e := task.Run((s task.Scope) => {
+            h := task.Spawn(s, () => orphan(addr))
+            _ = h
+            println("orphan: ${acceptReply(l) catch "accept failed"}")
+            0
+        })
+        println("orphan: outer died=${e != nil}")
+        break
+    }
+    return "done", nil
+}
+
+// 接続の期限 50 ms で 1 本の接続を ServeConn する（io.Expired で返る）
+func serveDeadline(l net.Listener) (string, error?) {
+    for sc <- net.Accept(l)? {
+        _, _ = task.Run((s task.Scope) => label(http.server.ServeConn(sc, route)), deadline: 50 * task.MS)
+        break
+    }
+    return "", nil
+}
+
+// リクエストを送り、20 ms後に2件目を送ってからレスポンスを読む
+func client2(addr string) int {
+    e := send2(addr)
+    if e != nil {
+        println("deadline: dial failed")
+    }
+    return 0
+}
+
+func send2(addr string) error? {
+    for c <- net.Dial(addr)? {
+        net.Send(c, bytes(req))?
+        os.Sleep(20)
+        net.Send(c, bytes(req))?
+        println("deadline: ${reply(c)}")
+        break
+    }
+    return nil
+}
+
+// 相手から張られた接続にリクエストを送り、レスポンスを読む
+func acceptReply(l net.Listener) (string, error?) {
+    for mc <- net.Accept(l)? {
+        net.Send(mc, bytes(req))?
+        return reply(mc), nil
+    }
+    return "no accept", nil
+}
+
+func orphan(addr string) int {
+    _, e := task.Run((s task.Scope) => {
+        h := task.Spawn(s, () => {
+            _ = serveOne(addr)
+            0
+        })
+        _ = h
+        os.Sleep(50)
+        xs := []int{1}
+        xs[9]
+    })
+    _ = e
+    return 0
+}
+
+func serveOne(addr string) error? {
+    for sc <- net.Dial(addr)? {
+        _ = http.server.ServeConn(sc, route)
+        break
+    }
+    return nil
+}

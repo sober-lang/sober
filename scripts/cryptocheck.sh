@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# cryptocheck（AES-GCM の塊の道の格子 — report-796）: std/crypto/aesgcm の例を {既定の build（--passes）, --no-opt} × {SOBER_NOAES 無し, =1} と
-# 写しのバックエンド（塊を持たない — cpuaes = 0）で走らせる。塊の道は .out（Go の双子の値）と一致・倒れ先（NOAES=1 / 写し）は NoHardware の印字だけ
-# （ソフトの AES は無い — 倒れ先は TLS の suite の選択で ChaCha20-Poly1305 — ユーザー裁定 2）。塊の無い機械では塊の道の照合を飛ばす（SKIP を印字）
+# cryptocheck（AES-GCMのチャンクのパスの格子 — report-796）: std/crypto/aesgcmの例を {既定のbuild（--passes）, --no-opt} × {SOBER_NOAES無し, =1} と
+# コピーのバックエンド（チャンクを持たない — cpuaes = 0）で走らせる。チャンクのパスは .out（比較用のGoの実装の値）と一致・倒れ先（NOAES=1 / コピー）はNoHardwareの印字だけ
+# （ソフトのAESは無い — 倒れ先はTLSのsuiteの選択でChaCha20-Poly1305 — ユーザー決定2）。チャンクの無い機械ではチャンクのパスの照合を飛ばす（SKIPを印字）
 #   scripts/cryptocheck.sh
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -34,9 +34,9 @@ for ex in crypto_aesgcm crypto_wycheproof_aesgcm; do
     timeout 60 "$W/$ex.c" > "$W/out" 2>&1; e=$?
     if [ $e != 0 ] || ! grep -q '^no hardware' <<< "$(head -n 1 "$W/out")"; then echo "FAIL $ex [copy] the copy backend should have no AES path (exit $e)"; fail=$((fail + 1)); fi
 done
-# 多倍長の塊（MULX — RSA の続き report-864）: RSA の例は倒れ先（SOBER_NOMULX=1・--no-opt・写しのバックエンド — Sober の montMulS）も .out と同じ値
-# （RSA は TLS に必須なので NoHardware の逃げは無い — 塊と倒れ先が同じ結果であることを格子で照合）。x25519 の体の積の塊（femul）も同じ格子に載せる
-# （x25519 の例 2 本は倒れ先も .out と同じ値）。SHA-256 の塊（SHA-NI — 倒れ先は SOBER_NOSHA=1 で同じ格子の NOMULX=1 の列に相乗り）: crypto_hmac_hkdf は倒れ先も .out と同じ値
+# 多倍長のチャンク（MULX — RSAの続きreport-864）: RSAの例は倒れ先（SOBER_NOMULX=1・--no-opt・コピーのバックエンド — SoberのmontMulS）も .outと同じ値
+# （RSAはTLSに必須なのでNoHardwareの逃げは無い — チャンクと倒れ先が同じ結果であることを格子で照合）。x25519の体の積のチャンク（femul）も同じ格子に載せる
+# （x25519の例2本は倒れ先も .outと同じ値）。SHA-256のチャンク（SHA-NI — 倒れ先はSOBER_NOSHA=1で同じ格子のNOMULX=1の列に相乗り）: crypto_hmac_hkdfは倒れ先も .outと同じ値
 mx=1
 grep -qw bmi2 /proc/cpuinfo || mx=0
 for ex in crypto_rsa crypto_wycheproof_pss crypto_x25519 crypto_wycheproof_x25519 crypto_hmac_hkdf; do
@@ -54,7 +54,7 @@ for ex in crypto_rsa crypto_wycheproof_pss crypto_x25519 crypto_wycheproof_x2551
         done
     done
 done
-# 塊 ≡ Sober の乱数照合（white-box の _test — rsa の montMul / sel と xmm の退避・x25519 の femul・sha256 の SHA-NI）を倒れ先の有無の両方で
+# チャンク ≡ Soberの乱数照合（white-boxの _test — rsaのmontMul / selとxmmの退避・x25519のfemul・sha256のSHA-NI）を倒れ先の有無の両方で
 for nm in 0 1; do
     if [ $nm = 0 ] && [ $mx = 0 ]; then echo "SKIP selfcheck MULX path (no BMI2)"; continue; fi
     n=$((n + 1))

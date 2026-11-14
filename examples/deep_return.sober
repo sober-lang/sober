@@ -1,7 +1,7 @@
 package main
 
 // 検証例: callee のフレームで作った入れ子のコンテナ（中身もフレームで作ったもの）を返す。
-// 戻りの境界コピーが中身ごと呼び手の region へ写る。
+// 戻りの境界コピーが中身ごと呼び手のregionへコピーされる。
 
 import "std/convert"
 
@@ -33,7 +33,7 @@ func grid(n int) [][]int {
     return rows
 }
 
-// 2 段の呼び出し越しに転送する（call 結果の再転送 — 深く締めた型が一致する）
+// 2つ入れ子になった呼び出し越しに転送する（call結果の再転送 — 深く締めた型が一致する）
 func twice(n int) [][]int {
     return grid(n)
 }

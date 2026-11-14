@@ -1,22 +1,22 @@
 package loader
 
 // η 展開（language.md 25 節「名前付き関数を関数型の引数に渡す」）: 関数型リテラル（`func(…)`）の仮引数に名前付き関数（`f` / `pkg.F`）を
-// 渡した実引数を、同じ数の仮引数のラムダに写す — 脱糖の固定テンプレート（namedargs と同じ層: desugar・lower・typer・analyzer は写した後の木だけを読む。
+// 渡した実引数を、同じ数の仮引数のラムダに変換する — 脱糖の固定テンプレート（namedargsと同じ層: desugar・lower・typer・analyzerは変換した後の木だけを読む。
 // コア・Lean は無変更）:
 //
 //     func app(x int, k func(int) int) int      app(3, dbl)  →  app(3, ($e0) => dbl($e0))
 //
-// 写す相手は func 宣言の直接呼び出し（`f(…)`・`ref.F(…)`・`f[T](…)`）とパイプ段の実引数。名前は局所の束縛と衝突しない（LocalTop — 局所は
-// トップレベルの名前を使えない）ので、func 宣言の名前ならそれを指す。名前付き関数型（`type Fn func(…)`）の仮引数は関数値を受ける位置なので写さない。
-// mut 仮引数は同じ席の mut 仮引数（`func(a mut int, x int)`）へ写す — `($e0, $e1) => f(mut $e0, $e1)`（ラムダの仮引数に mut の印）。
-// 写せない形は loader の拒否（diag.FnArg）: 1 = mut 仮引数の席が関数型と違う・2 = 仮引数の数が関数型と違う
+// 変換する相手はfunc宣言の直接呼び出し（`f(…)`・`ref.F(…)`・`f[T](…)`）とパイプステージの実引数。名前は局所の束縛と衝突しない（LocalTop — 局所は
+// トップレベルの名前を使えない）ので、func宣言の名前ならそれを指す。名前付き関数型（`type Fn func(…)`）の仮引数は関数値を受ける位置なので変換しない。
+// mut仮引数は同じ位置のmut仮引数（`func(a mut int, x int)`）へ変換する — `($e0, $e1) => f(mut $e0, $e1)`（ラムダの仮引数にmutのマーク）。
+// 変換できない形はloaderの拒否（diag.FnArg）: 1 = mut仮引数の位置が関数型と違う・2 = 仮引数の数が関数型と違う
 
 import "std/builder"
 import "std/iter"
 import "ast"
 import "diag"
 
-// 全ファイルの木の関数型の実引数に置かれた名前付き関数をラムダへ写す（写せない形は拒否）。ft = namedArgsAll と同じ関数表
+// 全ファイルの木の関数型の実引数に置かれた名前付き関数をラムダへ変換する（変換できない形は拒否）。ft = namedArgsAllと同じ関数表
 @errors(diag.FnArg)
 func etaAll(cx Cx, ft FnTab) ([]ast.Tree, error?) {
     mut out := mut []ast.Tree{}
@@ -41,7 +41,7 @@ func etaAll(cx Cx, ft FnTab) ([]ast.Tree, error?) {
     return freeze(out), nil
 }
 
-// 呼び出しの節 i の関数型の位置の名前付き関数を hits に [呼び出しの節, 実引数の位置, 仮引数の数, mut の席のビット] の 4 語ずつ積む
+// 呼び出しの節iの関数型の位置の名前付き関数をhitsに [呼び出しの節, 実引数の位置, 仮引数の数, mut仮引数のビット] の4ワードずつ積む
 // （拒否なら kind + 実引数の字句 × 4）
 func etaScan(cx Cx, ft FnTab, f int, i int, hits mut builder.Builder[int]) int {
     t := cx.trees[f]
@@ -65,7 +65,7 @@ func etaScan(cx Cx, ft FnTab, f int, i int, hits mut builder.Builder[int]) int {
     }
     dt := cx.trees[ft.file[fi]]
     ps := dt.nodes[ft.node[fi]].c
-    // 穴の無いパイプ段は左辺が第 1 仮引数（実引数 k = 仮引数 k + 1）
+    // 穴の無いパイプステージは左辺が第1仮引数（実引数k = 仮引数k + 1）
     off := if pipe && !holes { 1 } else { 0 }
     k = 0
     while k < na && k + off < ast.ListLen(dt, ps) {
@@ -121,7 +121,7 @@ func etaFnTy(cx Cx, df int, pty int) (int, int) {
     return tf, tt.nodes[d.c].a
 }
 
-// hits（[呼び出しの節, 実引数の位置, 仮引数の数] — 節の順）の実引数を `($e<節>_0, …) => f($e<節>_0, …)` に写した木
+// hits（[呼び出しの節, 実引数の位置, 仮引数の数] — 節の順）の実引数を `($e<節>_0, …) => f($e<節>_0, …)` に変換した木
 // （仮引数の名前は利用者が綴れない合成名 — catch の `$v` と同じ。節の字句は実引数の名前 = 診断の位置）
 func etaRewrite(t ast.Tree, hs []int) ast.Tree {
     mut ns := mut []ast.Node{}
@@ -144,7 +144,7 @@ func etaRewrite(t ast.Tree, hs []int) ast.Tree {
             repl = append(repl, ast.ListAt(t, args, k))
             k += 1
         }
-        // 同じ呼び出しの写す実引数を全部（hits は呼び出しごとに連続）
+        // 同じ呼び出しの変換する実引数を全部（hitsは呼び出しごとに連続）
         while h < len(hs) && hs[h] == i {
             a := repl[hs[h + 1]]
             tok := t.nodes[a].tok

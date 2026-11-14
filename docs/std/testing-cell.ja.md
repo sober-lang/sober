@@ -4,7 +4,7 @@
 
 `import "std/testing/cell"`
 
-テストの構成（`_test.sober`・`_double.sober`）の状態の置き場（[language.md 41 節](../language.md)「状態を貯める fake」）。把手は const の宣言だけが作り（`const Rows = testing.cell.Cell[[]Row]{}`・初期値は `init:`）、値はプロセスに 1 つの置き場に写して持つ。Get / Set / Update の呼び出しは compiler が呼び出し点で置き場の読み書きに写す（下の本体は使われない）
+テストの構成（`_test.sober`・`_double.sober`）の状態の格納場所（[language.md 41 節](../language.md)「状態を貯めるfake」）。把手はconstの宣言だけが作り（`const Rows = testing.cell.Cell[[]Row]{}`・初期値は `init:`）、値はプロセスに1つの格納場所にコピーして持つ。Get / Set / Updateの呼び出しはcompilerが呼び出し点で格納場所の読み書きに変換する（下の本体は使われない）
 
 ## Cell
 
@@ -15,7 +15,7 @@ type Cell[T] struct {
 }
 ```
 
-置き場の把手（key は loader が const の宣言ごとに振る — 書かない）
+格納場所の把手（keyはloaderがconstの宣言ごとに振る — 書かない）
 
 ## Get
 
@@ -24,7 +24,7 @@ type Cell[T] struct {
 func Get[T](h Cell[T]) T
 ```
 
-置き場の今の値（一度も Set していなければ init — 書いていなければ T のゼロ値）
+格納場所の今の値（一度もSetしていなければinit — 書いていなければTのゼロ値）
 
 ## Set
 
@@ -33,7 +33,7 @@ func Get[T](h Cell[T]) T
 func Set[T](h Cell[T], v T)
 ```
 
-置き場の値を v にする
+格納場所の値をvにする
 
 ## Update
 
@@ -42,4 +42,4 @@ func Set[T](h Cell[T], v T)
 func Update[T](h Cell[T], f func(T) T)
 ```
 
-置き場の値を f(今の値) にする（読みと書きの間に他の task の書きが挟まらない）。f はラムダのリテラルで効果なし — 置き場のロックを持ったまま走る
+格納場所の値をf(今の値) にする（読みと書きの間に他のtaskの書きが挟まらない）。fはラムダのリテラルでエフェクトなし — 格納場所のロックを持ったまま走る

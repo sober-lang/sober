@@ -1,7 +1,7 @@
 package main
 
 // 型の別名（language.md 32 節「型の別名」）: `type A = B` の A は B と同じ型の別の名前。右辺は型宣言の名前だけで、別名の別名は実体まで辿る。
-// 別名の値は実体の仮引数・欄・mut 仮引数・リテラルにそのまま置ける（loader が別名の参照を実体の名前へ写す — 手で展開した alias_expanded と同じコア）
+// 別名の値は実体の仮引数・フィールド・mut仮引数・リテラルにそのまま置ける（loaderが別名の参照を実体の名前へ変換する — 手で展開したalias_expandedと同じコア）
 
 type Point struct {
     x int

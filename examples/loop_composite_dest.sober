@@ -2,8 +2,8 @@ package main
 
 import "std/builder"
 
-// ループの中から外の mut 場所へ代入する struct リテラルは、mut のコンテナの欄を行き先（外の束縛の region）に作る。
-// 省いた欄のゼロ値（Builder の seed / chunks）・入れ子のリテラル・丸ごとの代入・欄の imm の値（行き先へ写す）。
+// ループの中から外のmut場所へ代入するstructリテラルは、mutのコンテナのフィールドを行き先（外の束縛のregion）に作る。
+// 省いたフィールドのゼロ値（Builderのseed / chunks）・入れ子のリテラル・丸ごとの代入・フィールドのimmの値（行き先へコピーする）。
 // 直さないと check が反復の region に作ってしまい def error になる（build は正しく走る）
 
 type In struct {

@@ -1,6 +1,6 @@
 // dudect の生の記録（scripts/dudect.sh の DUDECT_RAW — 「<名前> <クラス> <cycles>」の gzip）を分位点ごとに読む（report-1026）。
 // 題材ごとに、各分位点のクラス 0 / 1 の cycles・差（1 − 0）・比（1 / 0）と、両クラスを合わせた分位点で区切った帯ごとのクラス別の平均を並べる。差が分位点を通して一定なら「命令の形」（足し算の段差）・
-// 比が一定なら「周波数の形」（TSC で測った時間の掛け算のずれ）の読みの材料。
+// 比が一定なら「周波数の形」（TSCで測った時間の掛け算のずれ）の解釈の材料。
 //   node --experimental-strip-types scripts/dudectq.ts <raw.txt.gz> [名前の接頭辞]
 import * as fs from "node:fs";
 import * as readline from "node:readline";
@@ -29,7 +29,7 @@ rl.on("close", () => {
       const x = at(a, q), y = at(b, q);
       console.log(`  ${q.toFixed(2).padEnd(5)} ${x.toFixed(0).padStart(8)} ${y.toFixed(0).padStart(9)} ${(y - x).toFixed(0).padStart(9)} ${(y / x).toFixed(5).padStart(9)}`);
     }
-    // 帯ごとの平均（両クラスを合わせた分位点で区切る — 計時の刻みが粗い箱でも、帯の中の平均の差で小さなずれを読む）
+    // 帯ごとの平均（両クラスを合わせた分位点で区切る — 計時の刻みが粗いマシンでも、帯の中の平均の差で小さなずれを読む）
     const all = Float64Array.from([...a, ...b]).sort();
     const cuts = [0, ...QS, 1].map((q) => at(all, q));
     console.log("  band          lo      hi   n0+n1         m0         m1    diff");

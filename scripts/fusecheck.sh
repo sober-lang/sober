@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# fusecheck（送り置きの網 — 旧 report-fuse-1 の畳みの網を作り直した）: testdata/httpcheck/srv.sober を W2（net の ring の道）で立て、1 本の keep-alive の接続で
-# 要求を N 本順に送り（curl の URL の列 — 前の応答を読んでから次を送る）、飛行記録（SOBER_FLIGHT — scripts/flight.ts --summary）で
-# 1 要求あたりの ENTER（io_uring_enter）と RUN（task の走り）を数える。送り置きなら ≈ 1 回ずつ・送り置きしない道（SOBER_NET_FUSE=0）は ≈ 2 回ずつ。
-# 判定: 既定 ≤ 1.4 かつ FUSE=0 ≥ 1.6（物差しが効いていること）・全応答が揃うこと（8 本の接続を並べた回も）。
-# 遅い読み手（testdata/httpcheck/slowread.py）: 受けの窓の小さい相手が要求を 1 本ずつ送りながら作りより遅く読む keep-alive の接続 1 本（送りのバッファが満ちたまま
-# 送り置きが短くなる）。送り残しの後の眠りが保険の timeout まで滞ると 1 本ごとに ≈100 ms 伸びる — 30 秒以内に全応答を読み切ること。
+# fusecheck（送信バッファリングの検査 — 旧report-fuse-1の畳みの検査を作り直した）: testdata/httpcheck/srv.soberをW2（netのringのパス）で立て、1本のkeep-aliveの接続で
+# リクエストをN本順に送り（curlのURLの列 — 前のレスポンスを読んでから次を送る）、飛行記録（SOBER_FLIGHT — scripts/flight.ts --summary）で
+# 1リクエストあたりのENTER（io_uring_enter）とRUN（taskの走り）を数える。送信バッファリングなら ≈ 1回ずつ・送信バッファリングしないパス（SOBER_NET_FUSE=0）は ≈ 2回ずつ。
+# 判定: 既定 ≤ 1.4かつFUSE=0 ≥ 1.6（基準が効いていること）・全レスポンスが揃うこと（8本の接続を並べた回も）。
+# 遅い読み手（testdata/httpcheck/slowread.py）: 受けのウィンドウの小さい相手がリクエストを1本ずつ送りながら作りより遅く読むkeep-aliveの接続1本（送りのバッファが満ちたまま
+# 送信バッファリングが短くなる）。送り残しの後のスリープが保険のtimeoutまで滞ると1本ごとに ≈100 ms伸びる — 30秒以内に全レスポンスを読み切ること。
 # 記録の詰め: NR_QS（頭の読んだバイト数と送りの状態）を素で読み書きするのは qoff* / sst* の 4 関数だけ。
-# 留める相手を混ぜた溢れ（testdata/httpcheck/hold.py — 受けの窓 2 KB で ≈8 KB の応答の要求を 900 本送り一切読まない接続 4 本 → 満ちた後の送り置きが未完で留まる）:
-# その間に keep-alive の接続 2 本で N × 10 本を送り、送り場に入らなかった送り置き（飛行記録の POST の b = 0・長さ ≤ 16384）が 0 であること
-# --mutants: 変異 40（送り置きの MSG_WAITALL を落とす — 短い完了が誤りになり接続が切れる）・41（印を消費しても送り置きしない）・42（塊を空きへ返さない）で建てた srv に
-#   判定を掛け、どれも落ちることを確かめる
+# 留める相手を混ぜた溢れ（testdata/httpcheck/hold.py — 受けのウィンドウ2 KBで ≈8 KBのレスポンスのリクエストを900本送り一切読まない接続4本 → 満ちた後の送信バッファリングが未完で留まる）:
+# その間にkeep-aliveの接続2本でN × 10本を送り、送り場に入らなかった送信バッファリング（飛行記録のPOSTのb = 0・長さ ≤ 16384）が0であること
+# --mutants: ミュータント40（送信バッファリングのMSG_WAITALLを落とす — 短い完了が誤りになり接続が切れる）・41（フラグを消費しても送信バッファリングしない）・42（チャンクを空きへ返さない）でビルドしたsrvに
+#   判定を掛け、どれも落ちることを確認する
 #   scripts/fusecheck.sh [--mutants] [本数（既定 200）]
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -22,7 +22,7 @@ SP=
 trap '[ -n "$SP" ] && kill $SP 2>/dev/null; rm -rf "$W"' EXIT
 urls=()
 for i in $(seq "$N"); do urls+=("http://127.0.0.1:PORT/baseline11?a=$i&b=1"); done
-# run <srv> <env…> → "<応答の数> <enter/req> <run/req>"
+# run <srv> <env…> → "<レスポンスの数> <enter/req> <run/req>"
 run() {
     local srv=$1; shift
     rm -f "$W/fl"
@@ -36,7 +36,7 @@ run() {
     done
     [ -z "$port" ] && { kill $SP 2>/dev/null; SP=; echo "0 0 0"; return; }
     if [ -n "${PAR:-}" ]; then
-        # 並ぶ接続（同じワーカーに 2 本以上が載る — 送りの完了が受けより先に取り込まれ、受けの待ちへ移る道を通る）
+        # 並ぶ接続（同じワーカーに2本以上が載る — 送りの完了が受けより先に取り込まれ、受けの待ちへ移るパスを通る）
         local k
         for k in $(seq "$PAR"); do timeout 20 curl -s -m 15 -w '\n' "${urls[@]//PORT/$port}" > "$W/resp.$k" 2>/dev/null & done
         wait $(jobs -p | grep -vx "$SP")
@@ -62,11 +62,11 @@ judge() {
 }
 "$S2" build testdata/httpcheck/srv.sober --emit=elf --passes -o "$W/srv" > "$W/b.log" 2>&1 || { echo "fusecheck: FAIL build ($(head -c 200 "$W/b.log"))"; exit 1; }
 bad=0
-# 記録の詰めの網: NR_QS の素の読み書きが qoff* / sst* の外に無いこと
+# 記録の詰めの検査: NR_QSの素の読み書きがqoff* / sst* の外に無いこと
 raw=$(awk '/^func /{f=$2} /NR_QS/ && !/^const NR_QS/ && f !~ /^(qoffGet|qoffSet|sstGet|sstSet)\(/' src/compiler/lower/netring.sober | grep -v '^ *//')
 [ -n "$raw" ] && { echo "fusecheck: FAIL — raw NR_QS access outside qoff*/sst*: $raw"; bad=1; }
 judge base "$W/srv" || { echo "fusecheck: FAIL — the posted send is not taken or loses responses"; bad=1; }
-# slow <名前> <srv> → 0 = 遅い読み手の接続で全応答を 30 秒以内に読み切る
+# slow <名前> <srv> → 0 = 遅い読み手の接続で全レスポンスを30秒以内に読み切る
 slow() {
     local name=$1 srv=$2 port= r rc
     env SOBER_WORKERS=2 DATASET_PATH=testdata/httpcheck/dataset.json "$srv" 0 > "$W/srv.out" 2> "$W/srv.err" &
@@ -78,7 +78,7 @@ slow() {
     case $r in "read ms:"*) return 0 ;; *) return 1 ;; esac
 }
 slow base "$W/srv" || { echo "fusecheck: FAIL — a slow reader stalls or loses the connection"; bad=1; }
-# held <名前> <srv> → 0 = 留める相手を混ぜても送り置きが溢れない
+# held <名前> <srv> → 0 = 留める相手を混ぜても送信バッファリングが溢れない
 held() {
     local name=$1 srv=$2 port= k ov
     rm -f "$W/fl"

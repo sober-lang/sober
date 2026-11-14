@@ -1,6 +1,6 @@
 package main
 
-// 負例: @layout の struct のリテラルの欄に直に書いた整数リテラルが幅に収まらなければコンパイルエラー（Y5 ②）（language.md 36 節 — loader の拒否 diag.Layout）
+// 負例: @layoutのstructのリテラルのフィールドに直に書いた整数リテラルが幅に収まらなければコンパイルエラー（Y5 ②）（language.md 36 節 — loaderの拒否diag.Layout）
 
 import "std/builder"
 import "std/layout"

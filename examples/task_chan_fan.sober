@@ -1,7 +1,7 @@
 package main
 
 // 3 本の生産者がそれぞれのチャネル（容量 2）で送り、親が順に受ける（fan-in を正準順で — select なし）。
-// 切替点が多い形（spawn ごとの子 / 親の順・走れる task の選び方）— schedvec が全スケジュールで同じ観測を確かめる
+// 切替点が多い形（spawnごとの子 / 親の順・走れるtaskの選び方）— schedvecが全スケジュールで同じ観測を確認する
 
 import "std/task"
 

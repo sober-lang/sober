@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# framestat（F-1 段 0 — report-1002 / 1003）: 開発の口 `--frame-stat`（1 本の経路で建て、関数ごとに
+# framestat（F-1段階0 — report-1002 / 1003）: 開発のオプション `--frame-stat`（1本の経路でビルドし、関数ごとに
 # `frame <関数> <フレーム B> <スロット B> <零初期化 B> <退避 B> <spill ほか B> <spill の部分区間の数>` を stdout へ — x86.sober xFrameStat）で、
 # scripts/framestat.list の上限（ラチェット — 実測 ×1.01 で引き、越えたら赤・2% 以上下がったら締め直しの note）を照合する。フレームの大きさは出力を変えないので
-# optdiff では鳴らない — スロット / spill の枠の割り当て（彩色）が黙って効かなくなる退行の網
+# optdiffでは鳴らない — スロット / spillの枠の割り当て（彩色）が黙って効かなくなる退行の検査
 #   scripts/framestat.sh            # 照合
 #   scripts/framestat.sh --show     # 照合 + 各題材の上位 8 本を印字
-# list の行 = `<題材> <関数 | @sum | @zero> <上限 B>`。題材 @self は自己 build の木（compiler + std の写し）
-# `<題材> @room <本体> <入口>` = 接続の task の本体の枠が塊の頁 0 の余白に収まる線: 本体の枠 + 入口の枠 + 72（入口の実引数・戻り番地・rbp）
-#   + 16（本体の戻り番地と rbp）≤ TCB_TOP_ROOM（src/compiler/lower/task.sober）。越えると本体は今の連続の積みの形に落ちる。
-#   網の自己検査として毎回、同じ題材を変異 60（全関数の枠 +512 B）で建てて @room が赤になることも確かめる（build 1 本ぶん）
-# `<題材> @shallow <本体> <下限>` = 接続の task の本体が浅い待ち（rt.netwait の呼び出しの点 — 受け）を下限の数以上持つ（`shallow <関数>` の行の数）。
-#   網の自己検査として変異 67（記しを付けない）で 0 になることも確かめる
+# listの行 = `<題材> <関数 | @sum | @zero> <上限 B>`。題材 @selfは自己buildの木（compiler + stdのコピー）
+# `<題材> @room <本体> <入口>` = 接続のtaskの本体の枠がチャンクのページ0の余白に収まるしきい値: 本体の枠 + 入口の枠 + 72（入口の実引数・戻り番地・rbp）
+#   + 16（本体の戻り番地とrbp）≤ TCB_TOP_ROOM（src/compiler/lower/task.sober）。越えると本体は今の連続のスタックの形に落ちる。
+#   自己検査として毎回、同じ題材をミューテーション60（全関数の枠 +512 B）でビルドして @roomが赤になることも確認する（build 1本ぶん）
+# `<題材> @shallow <本体> <下限>` = 接続のtaskの本体がシャロースリープ（rt.netwaitの呼び出しの点 — 受け）を下限の数以上持つ（`shallow <関数>` の行の数）。
+#   自己検査としてミューテーション67（記しを付けない）で0になることも確認する
 set -uo pipefail
 export SOBER_HASH_SEED=${SOBER_HASH_SEED:-0}
 cd "$(dirname "$0")/.."
@@ -36,7 +36,7 @@ stat() {   # stat <題材> [build の追加の旗…] → $W/<鍵>.txt
     echo "$W/$key.txt"
 }
 fr() { awk -v n="$2" '$1 == "frame" && $2 == n { print $3; exit }' "$1"; }
-roomsum() {   # roomsum <frame-stat の出力> <本体> <入口> → 頁 0 に積む B（関数が無ければ空）
+roomsum() {   # roomsum <frame-statの出力> <本体> <入口> → ページ0に積むB（関数が無ければ空）
     local b e; b=$(fr "$1" "$2"); e=$(fr "$1" "$3")
     [ -n "$b" ] && [ -n "$e" ] && echo $((b + e + 72 + 16))
 }

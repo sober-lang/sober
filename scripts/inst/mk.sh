@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # mk.sh <commit | ディレクトリ> <tag>: 木（コミットなら git archive の src/compiler + src/std・ディレクトリなら compiler/* + std を並べた木）を
-# 鎖の最後の boot で stage2 に建てる（scripts/stage2.sh と同じ 2 段 = L0 の焼き込み込み — HEAD を建てると out/stage2/sober2 とバイト一致・report-780）。
-# 置き場: $INST_WORK（既定 out/inst）/s2/<tag>（stage2）・/t/<tag>（自己 build 用の木）。tag は同じ長さに揃えなくてよい（自己 build の命令はパス長に鈍い）
+# ブートストラップチェーンの最後のbootでstage2にビルドする（scripts/stage2.shと同じ2ステージ = L0の焼き込み込み — HEADをビルドするとout/stage2/sober2とバイト一致・report-780）。
+# 格納場所: $INST_WORK（既定out/inst）/s2/<tag>（stage2）・/t/<tag>（自己build用の木）。tagは同じ長さに揃えなくてよい（自己buildの命令はパス長に鈍い）
 set -euo pipefail
 src=$1; tag=$2
 R=$(cd "$(dirname "$0")/../.." && pwd)

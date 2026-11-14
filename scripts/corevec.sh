@@ -2,13 +2,13 @@
 # 差分テストベクタ（testdata/corevec.jsonl）の照合。
 #
 #   scripts/corevec.sh            golden との diff（sober-gen を同じシードで再実行して比較）。
-#                                 typecheck / 生成器 / JSON 境界の意図しない変化を検出する
+#                                 typecheck / ジェネレータ / JSON境界の意図しない変化を検出する
 #   scripts/corevec.sh --binary   加えて全数を sober-check バイナリ（gatelib の lean_batch — 1 プロセスのバッチ経路）に通し、
 #                                 golden の判定と一致するか照合（プロセス境界の検査）
 #   scripts/corevec.sh --regen    golden を再生成する（typecheck の意図した変更後に使い、
 #                                 diff を見てからコミットする）
 #
-# golden の一致の後に scripts/corevec_cov.ts（被覆ラチェット + 生成器の自己検査 + 分布表 — corevec v2）を通す。
+# goldenの一致の後にscripts/corevec_cov.ts（被覆ラチェット + ジェネレータの自己検査 + 分布表 — corevec v2）を通す。
 # 各行は {"e": コア AST, "g": 出自 typed | mut:<種別> | chaos, "v": 判定}（消費者は e / v だけ読む）。
 #
 # 前提: lean/ で `lake build sober-gen sober-check` 済み。

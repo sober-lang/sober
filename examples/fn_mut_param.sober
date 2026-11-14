@@ -1,7 +1,7 @@
 package main
 
 // 関数型の mut 仮引数（language.md 25 節「関数型の mut 仮引数」）: 状態は呼び手が持ち、呼ぶたびに `h(mut st, …)` と渡す。
-// 閉包は mut を捕捉しない — 書き込みの先は呼び出しの印に見える
+// クロージャはmutを捕捉しない — 書き込みの先は呼び出しのフラグに見える
 
 // イベントの受け手の表（後で呼ぶ — 値の位置）
 type App struct {
@@ -43,7 +43,7 @@ func inner(st mut int, n int, next Mw?) int {
     return n + 1
 }
 
-// 借りの仮引数の mut の席（emit は呼ぶだけ — 状態は呼び手から渡す）
+// 借りの仮引数が持つ mut 仮引数（emit は呼ぶだけ — 状態は呼び手から渡す）
 type Acc struct {
     sum int
     n int
@@ -66,7 +66,7 @@ func drain(src Source, w int) Acc {
     return acc
 }
 
-// 展開される関数の匿名の関数型の仮引数・struct の欄の匿名の関数型
+// 展開される関数の匿名の関数型の仮引数・structのフィールドの匿名の関数型
 func twice(f func(a mut int, x int), x int) int {
     mut s := 1
     f(mut s, x)

@@ -2,7 +2,7 @@
 //
 // 1 つのケース表から 2 本を生成する:
 //   - examples/table_std.sober … Sober 側（`import "std/table"` の Table に Push / Set / Get / Len）
-//   - Go の双子プログラム     … 同じ操作列を Go の slice で。その出力が examples/table_std.out
+//   - 比較用のGoの実装     … 同じ操作列をGoのsliceで。その出力がexamples/table_std.out
 // 操作列は両言語で同じ LCG（x ← (x · 1103515245 + 12345) mod 2^31）から作る。n は chunk の境目（CHUNK = 8192）の前後を踏む。
 //
 // 再生成手順（リポジトリルートで。要件: node 22.6+、go 1.21+）:
@@ -62,7 +62,7 @@ func run(n int, sets int, seed int) {
     }
 }
 
-// getP は非ジェネリックの包み（ジェネリックな Get の結果の struct は欄の型が脱糖器に見えない — selfhost-drafts F-10）
+// 非ジェネリックの包み（ジェネリックなGetの結果のstructはフィールドの型が脱糖器に見えない — selfhost-drafts F-10）
 func getP(t mut table.Table[P], i int) P {
     return table.Get(mut t, i)
 }

@@ -1,4 +1,4 @@
-<!-- `sober doc --cli` が std/cli の表から生成 — 手で直さない。英語版 sober.md が正で、この頁は訳表 sober.ja.json の訳（usage の塊は実行ファイルの英語のまま） -->
+<!-- `sober doc --cli` が std/cli の表から生成 — 手で直さない。英語版 sober.md が正で、このページは訳表 sober.ja.json の訳（usage の塊は実行ファイルの英語のまま） -->
 
 # sober
 
@@ -64,7 +64,7 @@ environment:
 run 'sober build --help=dev' for the development flags
 ```
 
-効果: `block, io, panic, nondet`
+エフェクト: `block, io, panic, nondet`
 
 ## sober run
 
@@ -86,7 +86,7 @@ environment:
 run 'sober run --help=dev' for the development flags
 ```
 
-効果: `block, io, panic, nondet`
+エフェクト: `block, io, panic, nondet`
 
 ## sober check
 
@@ -111,7 +111,7 @@ environment:
 run 'sober check --help=dev' for the development flags
 ```
 
-効果: `block, io, panic, nondet`
+エフェクト: `block, io, panic, nondet`
 
 ## sober test
 
@@ -159,7 +159,7 @@ environment:
                         watch those files too)
 ```
 
-効果: `block, io, panic, nondet`
+エフェクト: `block, io, panic, nondet`
 
 ## sober fuzz
 
@@ -188,7 +188,7 @@ flags:
   --time <dur>     how long to fuzz each property (500ms, 30s, 2m) (default 30s)
 ```
 
-効果: `block, io, panic, nondet`
+エフェクト: `block, io, panic, nondet`
 
 ## sober watch
 
@@ -214,7 +214,7 @@ environment:
   SOBER_CHECK_CACHE  0 turns the check cache off (default on)
 ```
 
-効果: `block, io, panic, nondet`
+エフェクト: `block, io, panic, nondet`
 
 ## sober fmt
 
@@ -229,7 +229,7 @@ arguments:
   <file>  a .sober file
 ```
 
-効果: `io, panic, nondet`
+エフェクト: `io, panic, nondet`
 
 ## sober iface
 
@@ -250,7 +250,7 @@ flags:
 run 'sober iface --help=dev' for the development flags
 ```
 
-効果: `block, io, panic, nondet`
+エフェクト: `block, io, panic, nondet`
 
 ## sober fix
 
@@ -271,11 +271,11 @@ flags:
   --std <dir>  also write the std files under <dir>
 ```
 
-効果: `block, io, panic, nondet`
+エフェクト: `block, io, panic, nondet`
 
 ## sober doc
 
-プログラムの文書を生成する: --cli ならコマンド行（std/cli）の Markdown の頁 — コマンドごとの使い方と、run の関数の効果
+プログラムの文書を生成する: --cli ならコマンド行（std/cli）の Markdown のページ — コマンドごとの使い方と、run の関数のエフェクト
 
 ```text
 usage: sober doc [flags] <entry>
@@ -295,7 +295,7 @@ flags:
 run 'sober doc --help=dev' for the development flags
 ```
 
-効果: `block, io, panic, nondet`
+エフェクト: `block, io, panic, nondet`
 
 ## sober outline
 
@@ -319,7 +319,7 @@ flags:
   --public         only the public declarations
 ```
 
-効果: `io, panic, nondet`
+エフェクト: `io, panic, nondet`
 
 ## sober cache info
 
@@ -334,7 +334,7 @@ environment:
   SOBER_CACHE  the cache directory (default $XDG_CACHE_HOME/sober)
 ```
 
-効果: `io, panic, nondet`
+エフェクト: `io, panic, nondet`
 
 ## sober cache gc
 
@@ -353,4 +353,4 @@ environment:
 run 'sober cache gc --help=dev' for the development flags
 ```
 
-効果: `io, panic, nondet`
+エフェクト: `io, panic, nondet`

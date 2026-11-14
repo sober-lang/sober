@@ -1,6 +1,6 @@
 package wk
 
-// 置き場の T を宣言する package（欄は外から書けない — 整えはこの package の関数 Prep）
+// 格納場所のTを宣言するpackage（フィールドは外から書けない — 整えはこのpackageの関数Prep）
 
 import "std/iter"
 import "std/pool"
@@ -12,7 +12,7 @@ type Work struct {
     tab pool.Scratch
 }
 
-// Prep は置き場の整え（容量は定数）
+// Prepは格納場所の整え（容量は定数）
 func Prep(w mut Work) {
     pool.NewScratch(mut w.tab, Size * 2)
 }

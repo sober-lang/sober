@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# schedvec の駆動（gates — タグ lower backend）: scripts/schedvec.list の例を建てて scripts/schedvec.ts に渡す（全スケジュールの観測が 1 つ）
+# schedvecの駆動（gates — タグlower backend）: scripts/schedvec.listの例をビルドしてscripts/schedvec.tsに渡す（全スケジュールの観測が1つ）
 set -uo pipefail
 cd "$(dirname "$0")/.."
 S2=${STAGE2:-out/stage2/sober2}

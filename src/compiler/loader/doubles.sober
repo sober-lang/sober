@@ -1,6 +1,6 @@
 package loader
 
-// テストの構成の差し替え（language.md 41 節）: テストの package の `_test.sober` の package 節の前の `@doubles("…", …)` が名指した double の
+// テストの構成の差し替え（language.md 41 節）: テストのpackageの `_test.sober` のpackage節の前の `@doubles("…", …)` が名前で参照したdoubleの
 // ディレクトリ（ファイルは全部 `_double.sober`・先頭に `@replaces("相手")`）を、そのテストのビルドの中で相手の package として読む。
 // 名乗り（@replaces）の検査・import の付け替え・本物の公開面との契約（名前・署名・型・const・@errors・@effects）の検査をここに置く
 
@@ -207,7 +207,7 @@ func dropReplaces(t ast.Tree) ast.Tree {
     return ast.Tree{freeze(ns), t.data, t.file}
 }
 
-// 読み終えた木の検査と写し: @replaces の置き場と外し・@doubles の置き場・double の名前と import・相手が閉包にあるか・本物との契約・
+// 読み終えた木の検査と変換: @replacesの配置先と外し・@doublesの配置先・doubleの名前とimport・相手が閉包にあるか・本物との契約・
 // double にだけある名前の参照。dbl = import を付け替えた import の (ファイル, 参照名) の列（double のパス経由の参照）
 // 契約の検査が読む本物のファイル（テストの結果・答えの再生が照合する読んだファイルに足す — 本物は Program に入らない）
 func contractFiles(m Manifest, fsm bool, sm map[string]string, w Wiring) []string {
@@ -383,7 +383,7 @@ func realTrees(m Manifest, fsm bool, sm map[string]string, tgt string, base int)
 }
 
 // double（ts の宣言 dd）と本物（rts の宣言 rd）の公開面の契約: 同じ名前は同じ種類・関数の署名・const・型（struct / error の
-// 共通の欄の型・それ以外は形ごと）・@errors（double ⊆ 本物）・@effects（本物の宣言が要る — double の宣言があれば ⊆）
+// 共通のフィールドの型・それ以外は形ごと）・@errors（double ⊆ 本物）・@effects（本物の宣言が要る — doubleの宣言があれば ⊆）
 @errors(diag.Double, diag.Cell)
 func contract(ts []ast.Tree, dd Decls, rts []ast.Tree, rd Decls) error? {
     for i <- iter.Range(0, len(dd.name)) {
@@ -504,7 +504,7 @@ func sigEq(ta ast.Tree, a int, tb ast.Tree, b int) bool {
     return tyListEq(ta, x.d, pa, tb, y.d, pb)
 }
 
-// 欄の列 la と lb（KField / KVariant の列）の共通の名前の欄が同じ型か（all = 名前の集合と並びも同じであること）
+// フィールドの列laとlb（KField / KVariantの列）の共通の名前のフィールドが同じ型か（all = 名前の集合と並びも同じであること）
 func fieldsEq(ta ast.Tree, la int, pa []string, tb ast.Tree, lb int, pb []string, all bool) bool {
     if all && ast.ListLen(ta, la) != ast.ListLen(tb, lb) {
         return false
@@ -531,7 +531,7 @@ func fieldsEq(ta ast.Tree, la int, pa []string, tb ast.Tree, lb int, pb []string
     return true
 }
 
-// 型宣言（struct / error / panic は共通の欄の型だけ・union は variant の名前と欄が同じ・名前付き関数型は署名と後置の注釈の綴り・他は下地）
+// 型宣言（struct / error / panicは共通のフィールドの型だけ・unionはvariantの名前とフィールドが同じ・名前付き関数型は署名と後置の注釈の綴り・他は下地）
 func typeDeclEq(ta ast.Tree, a int, tb ast.Tree, b int) bool {
     x := ta.nodes[a]
     y := tb.nodes[b]
@@ -604,7 +604,7 @@ func extAt(t ast.Tree, x ast.Node, k int, def int) int {
 const EXT_ERRS = 5
 const EXT_EFFS = 12
 
-// 効果の項の列の許容のビット（語だけ — 型の名前の項があれば -1）
+// エフェクトの項の列の許容のビット（ワードだけ — 型の名前の項があれば -1）
 func effAllow(t ast.Tree, l int) int {
     ws := strList(t, l)
     mut bits := 0
@@ -688,7 +688,7 @@ func returnsError(t ast.Tree, x ast.Node) bool {
     return r.kind == ast.TOpt && t.nodes[r.a].kind == ast.TName && StrIs(t, t.nodes[r.a].a, "error")
 }
 
-// 木 t の公開の関数で @effects の無いものに、本物（rts・rd）の同じ名前の関数の @effects の項を写した木
+// 木tの公開の関数で @effectsの無いものに、本物（rts・rd）の同じ名前の関数の @effectsの項をコピーした木
 func injectEffects(t ast.Tree, rts []ast.Tree, rd Decls) ast.Tree {
     fl := t.nodes[t.file].d
     mut db := builder.Builder[int]{}

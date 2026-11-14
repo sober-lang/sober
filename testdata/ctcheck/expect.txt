@@ -121,7 +121,7 @@
 @std/internal/hs.put24: je je jne jle je je je jne jle je je je jne jle je | div=0
 @std/internal/hs.put8: je je jne jle je | div=0
 @std/internal/hs.putBytes: jle jne je jle jg jg | div=0
-@std/internal/hsc.PackConn: jle jne jg je jne jg jne je jne jg jne jne jg jne je jne jg jne je jne jg jne jne jg jne jne jg jne jge jne jle jne | div=0
+@std/internal/hsc.PackConn: jge jg jle jb jle jle jae jle jne jge jl jge jl jge jl jge jl jg je jne jg jne je jne jg jne jne jg jne je jne jg jne je jne jg jne jne jg jne jne jg jne jge jne jle jne jle jg | div=0
 @std/internal/hsc.cat: jge jg jle jb jle jle jae jg jle | div=0
 @std/internal/hsc.deriveSecret: - | div=0
 @std/internal/hsc.flight12: jg je jg jge je jl jle je jle je jne je jne jg jg jg jle jle jle | div=0
@@ -138,10 +138,10 @@
 @std/internal/hsc.putDir: jle jne jge jl jge jl jge jl jge jl jle jne jg jne jg jle jne jg jne jg jge jl | div=0
 @std/internal/hsc.putWords: jne jg jne jge jge jge jae jb jl jne jle jne jl | div=0
 @std/internal/hsc.seal12: jne jae jae jg je je jg je jg je jg je je je je je | div=0
-@std/internal/hsc.skx12: jle jae jne jle jae jae je jg jle jae jle jae jae jle jae jae jne je jg je je jne jne jne jne jne je je jne jne jne jne jne je je jne jne jne jne jne jne jge je jl jge jae jg jne jne jle jg | div=0
+@std/internal/hsc.skx12: jne je je jne je je je je jne jne jne je je jne jne jne je je jne jne jne jne je je je | div=0
 @std/internal/hsc.sliceOf: jge jg jle jb jle jle jae jg jg jl jg jne je jle jg jg jge jae je je jne jle je jl jle | div=0
-@std/internal/p256.PublicKey: jge jg jle jb jle jle jae je jg jle je jg jle | div=0
-@std/internal/p256.Shared: jge jg jle jb jle jle jae je jg jle je jg jle je jg jle jle | div=0
+@std/internal/p256.PublicKey: jge jg jle jb jle jle jae je jg jle jne jg jle | div=0
+@std/internal/p256.Shared: jge jg jle jb jle jle jae je jg jle je jg jle jne jg jle jle | div=0
 @std/internal/p256.add4: - | div=0
 @std/internal/p256.affine: jge jg jle jb jle jle jae jg jle | div=0
 @std/internal/p256.affineX: jge jg jle jb jle jle jae jg jle | div=0
@@ -161,7 +161,7 @@
 @std/internal/p256.putWord: jl jb jl je je jne jle je jge | div=0
 @std/internal/p256.reduce: - | div=0
 @std/internal/p256.sel: - | div=0
-@std/internal/p256.smul: jg jge jae jne jle jne jl jge jae jb jl jae jae jae jae jae jae jae jae jae jae jae jae jae jae jae jae jl | div=0
+@std/internal/p256.smul: jg jge jae jne jle jne jl jge jae jb jl jge jae jl jl | div=0
 @std/internal/p256.sub4: - | div=0
 @std/internal/p256.top: - | div=0
 @std/internal/pbkdf2.Key: jge jg jle jb jle jle jae jg jge jge jle jae jle jg jne je jle jg jle jge jb jl je je jne jle je jl jle jg jne je jle jg jle jge jae je je jne jle je jl jle jge jle jae jge jge jle jae jge jge jle jae jge jae jae jae jl jle jle jge jl jae jne jl jle | div=0
@@ -197,7 +197,7 @@
 @std/tls.putDir: jle jne jge jl jge jl jge jl jge jl jle jne jg jne jg jle jne jg jne jg jge jl | div=0
 @std/tls.putWr: jge jge jl | div=0
 @std/tls.sealPut: jge jg jle jb jle jle jae jne jl | div=0
-@std/tls.sendNow: jge jg jle jb jle jle jae je jg jne je jge jg je jne jg je jle jge jne jne jl jne je jne jg je jle jge jne jne jl | div=0
+@std/tls.sendNow: jge jg jle jb jle jle jae je jg jne je jge jg je jne jg jle jge jne jne jl jge jge jl jne je jne jg jle jge jne jne jl | div=0
 @std/tls.setFlags: jge jg jle jb jle jle jae | div=0
 @std/tls.setSeq: jge jg jle jb jle jle jae | div=0
 @std/tls.view: - | div=0

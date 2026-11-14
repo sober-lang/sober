@@ -281,7 +281,7 @@ func mpDiv(p []int, k int) []int {
     return if mpIsConst(p) { mpConst(mpConstOf(p) / k) } else { mpPos(p) }
 }
 
-// 対数の原子: 変数 v（仮引数の正部 / 負部）を k で割り続けて 0 になるまでの回数 — 変数 MP_LOG + v × 1024 + k（単調・語の幅で上限あり）
+// 対数の原子: 変数v（仮引数の正部 / 負部）をkで割り続けて0になるまでの回数 — 変数MP_LOG + v × 1024 + k（単調・ワードの幅で上限あり）
 const MP_LOG = 1 << 19
 
 const MP_WMAX = 9223372036854775807
@@ -297,7 +297,7 @@ func mpSteps(c int, k int) int {
     return n
 }
 
-// p（の正部）を k で割り続ける回数の上界: 定数なら回数・仮引数の変数 1 つ（変数の番号 < lim）なら原子・それ以外は語の幅の上限
+// p（の正部）をkで割り続ける回数の上界: 定数なら回数・仮引数の変数1つ（変数の番号 < lim）なら原子・それ以外はワードの幅の上限
 func mpLogOf(p []int, k int, lim int) []int {
     if !mpIsTop(p) && mpIsConst(p) {
         return mpConst(mpSteps(mpConstOf(p), k))
@@ -344,7 +344,7 @@ func mpInstVar(v int, sub [][]int, lim int) []int {
     return if v < len(sub) { sub[v] } else { mpVar(v) }
 }
 
-// バイト数を語に切り上げた上界（定数なら厳密・でなければ +7）
+// バイト数をワードに切り上げた上界（定数なら厳密・でなければ +7）
 func mpRound8(p []int) []int {
     return if mpIsTop(p) { p } else if mpIsConst(p) { mpConst((mpConstOf(p) + 7) / 8 * 8) } else { mpAdd(p, mpConst(7)) }
 }
@@ -392,7 +392,7 @@ func mpVName(v int) string {
 
 // ── 関数の要約（呼び手の値の層が読む）──
 
-// ret / retN = i64 の戻り値の上界・sret / sretN = 仮引数 0 の番地へ書く語ごとの上界（stop = 書く語が定まらない）・wr = 仮引数ごとに番地を通して書きうるか
+// ret / retN = i64の戻り値の上界・sret / sretN = 仮引数0の番地へ書くワードごとの上界（stop = 書くワードが定まらない）・wr = 仮引数ごとに番地を通して書きうるか
 type MvSum struct {
     known bool
     ret []int
@@ -412,9 +412,9 @@ type MvRes struct {
     U [][]int     // 値 → 上界
     N [][]int     // 値 → 下界の符号を返したもの
     T [][]int     // ループ → 反復数（後ろの辺を通る回数）の上界
-    hlen [][]int  // 番地の値 → 指すヘッダの長さの語（語のずれ + 1）の上界（スロットの語の表から — 番地でなければ ⊤）
-    hsh []int     // 番地の値 → 指すヘッダの深度の語が入口の深度以下なら 1（写しの rt は床より深いときだけ写す）
-    dfl []int     // 値 → 入口の深度以上と分かる深度なら 1（写しの床）
+    hlen [][]int  // 番地の値 → 指すヘッダの長さのワード（ワードのずれ + 1）の上界（スロットのワードの表から — 番地でなければ ⊤）
+    hsh []int     // 番地の値 → 指すヘッダの深度のワードが入口の深度以下なら1（コピーのrtは床より深いときだけコピーする）
+    dfl []int     // 値 → 入口の深度以上と分かる深度なら1（コピーの床）
     sum MvSum
 }
 
@@ -437,7 +437,7 @@ func mvFn(st mut St, f FnRef, w MrW, cw mut m2rW, heads []int, memb []int, moff 
     np := w.np
     nsl := irFnNSlot(mut st, f)
     nl := len(heads)
-    // 番地の値 → [スロット, 語のずれ]… の列（スロット = 関数のスロット・nsl + i = 仮引数 i の指す先）
+    // 番地の値 → [スロット, ワードのずれ]… の列（スロット = 関数のスロット・nsl + i = 仮引数iの指す先）
     mut pts := mut [][]int{}
     for v <- iter.Range(0, nv) {
         pts = append(pts, []int{})
@@ -515,7 +515,7 @@ func mvFn(st mut St, f FnRef, w MrW, cw mut m2rW, heads []int, memb []int, moff 
         }
     }
     // 逃げ: 番地の値の使い方を見る（読み = load の基底・書き = store の基底は記録・それ以外は逃げ）
-    // 書きの記録: [スロット, 語, 値] / 呼び出しの sret: [スロット, ずれ, 呼び先の番号, 実引数の列]
+    // 書きの記録: [スロット, ワード, 値] / 呼び出しのsret: [スロット, ずれ, 呼び先の番号, 実引数の列]
     mut wrs := mut []int{}
     mut srs := mut []int{}
     mut rfl := mut []int{}
@@ -543,7 +543,7 @@ func mvFn(st mut St, f FnRef, w MrW, cw mut m2rW, heads []int, memb []int, moff 
                     mvEsc(pts, mut esc, irInsA(mut st, ins))
                 }
             } else if op == OpCall && mvRelocHdr(mrNm(names, int(irInsFn(mut st, ins)))) {
-                // 写しの rt はヘッダの番地と深度の語（0・2）だけを書き換える（長さの語は保つ — rt の信用する宣言）
+                // コピーのrtはヘッダの番地と深度のワード（0・2）だけを書き換える（長さのワードは保つ — rtの信用する宣言）
                 l := desugar.ListRef(irInsB(mut st, ins))
                 fk := if mrNm(names, int(irInsFn(mut st, ins))) == "rt.region_relocate" { 2 } else { 1 }
                 fl := if fk < lenL(mut st, l) { latI(mut st, l, fk) } else { -1 }
@@ -558,7 +558,7 @@ func mvFn(st mut St, f FnRef, w MrW, cw mut m2rW, heads []int, memb []int, moff 
                             wrs = append(wrs, pts[a][2 * z + 1] + 2 * wq)
                             wrs = append(wrs, -1)
                         }
-                        // 深度の語は写した先の床か元のまま
+                        // 深度のワードはコピーした先の床か元のまま
                         rfl = append(rfl, pts[a][2 * z])
                         rfl = append(rfl, pts[a][2 * z + 1] + 2)
                         rfl = append(rfl, fl)
@@ -593,7 +593,7 @@ func mvFn(st mut St, f FnRef, w MrW, cw mut m2rW, heads []int, memb []int, moff 
                     mvEsc(pts, mut esc, a)
                 }
             } else {
-                // 他の命令: 被演算子に番地があれば逃げ（store8 / gep.byte / ptoi / 間接の呼び出し / 写し / syscall …）
+                // 他の命令: 被演算子に番地があれば逃げ（store8 / gep.byte / ptoi / 間接の呼び出し / コピー / syscall …）
                 mvEscIns(mut st, pts, mut esc, ins, op)
             }
             ins = irInsNext(mut st, ins)
@@ -603,7 +603,7 @@ func mvFn(st mut St, f FnRef, w MrW, cw mut m2rW, heads []int, memb []int, moff 
             mvEsc(pts, mut esc, x)
         }
     }
-    // スロットの語の上界（鍵 = スロット << 16 | 語）: 書きのある語だけ 0 から始めて書きの和へ（落ち着くまで）
+    // スロットのワードの上界（鍵 = スロット << 16 | ワード）: 書きのあるワードだけ0から始めて書きの和へ（落ち着くまで）
     mut skey := mut map[int]int{}
     mut sU := mut [][]int{}
     mut sN := mut [][]int{}
@@ -657,7 +657,7 @@ func mvFn(st mut St, f FnRef, w MrW, cw mut m2rW, heads []int, memb []int, moff 
         }
         round += 1
     }
-    // 要約: 戻り値・仮引数 0 の先へ書く語・仮引数ごとの書き
+    // 要約: 戻り値・仮引数0の先へ書くワード・仮引数ごとの書き
     mut retU := []int{}
     mut retN := []int{}
     mut anyRet := false
@@ -689,7 +689,7 @@ func mvFn(st mut St, f FnRef, w MrW, cw mut m2rW, heads []int, memb []int, moff 
             wr[srs[4 * q] - nsl] = 1
         }
     }
-    // 仮引数 0 の先の語（語のずれ 0..）
+    // 仮引数0の先のワード（ワードのずれ0..）
     mut sret := mut [][]int{}
     mut sretN := mut [][]int{}
     mut stop := np == 0 || esc[nsl] != 0
@@ -719,7 +719,7 @@ func mvFn(st mut St, f FnRef, w MrW, cw mut m2rW, heads []int, memb []int, moff 
             }
         }
     }
-    // ヘッダの長さの語（写しの量の上界 — 写しの rt はヘッダの長さだけ写す）
+    // ヘッダの長さのワード（コピーの量の上界 — コピーのrtはヘッダの長さだけコピーする）
     mut hl := mut [][]int{}
     for v <- iter.Range(0, nv) {
         mut u := mpTop()
@@ -775,7 +775,7 @@ func mvEsc(pts [][]int, esc mut []int, v int) {
     }
 }
 
-// 命令 ins の被演算子（値の欄と値の列 — op の行の種別 st.opk）に番地があれば逃げに
+// 命令insの被演算子（値のフィールドと値の列 — opの行の種別st.opk）に番地があれば逃げに
 func mvEscIns(st mut St, pts [][]int, esc mut []int, ins InsRef, op int) {
     row := st.opk[op]
     for q <- iter.Range(0, 3) {
@@ -831,7 +831,7 @@ func mvSuccs(st mut St, b BlkRef) []int {
     return []int{}
 }
 
-// 値の評価の 1 周（スロットの語の上界 sU / sN を与えて）
+// 値の評価の1周（スロットのワードの上界sU / sNを与えて）
 func mvEval(st mut St, f FnRef, w MrW, cw mut m2rW, heads []int, memb []int, moff []int, tc []int, sums []MvSum, ix map[int]int, pts [][]int, esc []int, skey map[int]int, sU [][]int, sN [][]int, nsl int) MvRes {
     nb := w.nb
     nv := w.nv
@@ -870,7 +870,7 @@ func mvEval(st mut St, f FnRef, w MrW, cw mut m2rW, heads []int, memb []int, mof
         pHi = append(pHi, 0)
         T = append(T, mpTop())
     }
-    // ループごとの本体の印（ブロック → 入るか — 頭の引数の初期値と後ろの辺の区別）
+    // ループごとの本体のマーク（ブロック → 入るか — 頭の引数の初期値と後ろの辺の区別）
     // 初期値: 頭の引数ごとに [U, N]（ループの外の前任から）
     mut initU := mut [][]int{}
     mut initN := mut [][]int{}
@@ -1419,10 +1419,10 @@ func mvFlip(op int) int {
     return if op == CLt { CGt } else if op == CGt { CLt } else if op == CLe { CGe } else if op == CGe { CLe } else { op }
 }
 
-// 深度の語の分類: [0] = 番地の値ごとに、指すヘッダの深度の語が入口の深度 D0 以下か（1）・[1] = 値ごとに D0 以上の深度か（1）。
+// 深度のワードの分類: [0] = 番地の値ごとに、指すヘッダの深度のワードが入口の深度D0以下か（1）・[1] = 値ごとにD0以上の深度か（1）。
 // D0 以下の値 = 定数 ≤ 0（静的な列）・入口の enter より前の region.depth・仮引数（呼び手の値の深度 — 呼び手の生きた値は呼び手の深度以下）・
 // 宛先の深度の挟み（a + [1 ≤ x ≤ a] × (x − a)）・呼び手の記憶の読み・D0 以下だけを受けるブロックの引数（大きい不動点 — 全部の入りが D0 以下なら）。
-// 深度の語へ書く値は深度（型の約束）なので、仮引数・呼び手の記憶をそのまま D0 以下と読める
+// 深度のワードへ書く値は深度（型の約束）なので、仮引数・呼び手の記憶をそのままD0以下と読める
 func mvDepthCls(st mut St, w MrW, cw mut m2rW, pts [][]int, esc []int, wrs []int, srs []int, rfl []int, nsl int) [][]int {
     nv := w.nv
     mut sh := mut []int{}
@@ -1433,7 +1433,7 @@ func mvDepthCls(st mut St, w MrW, cw mut m2rW, pts [][]int, esc []int, wrs []int
     for i <- iter.Range(0, w.np) {
         dp[i] = 0
     }
-    // 語の鍵 → 書きの値の列の印（書きのある語の集合 — 呼び先の書きは D0 以下と言えない）
+    // ワードの鍵 → 書きの値の列のマーク（書きのあるワードの集合 — 呼び先の書きはD0以下と言えない）
     mut bad := mut map[int]int{}
     mut seen := mut map[int]int{}
     for q <- iter.Range(0, len(srs) / 4) {
@@ -1448,7 +1448,7 @@ func mvDepthCls(st mut St, w MrW, cw mut m2rW, pts [][]int, esc []int, wrs []int
     mut changed := true
     while changed {
         changed = false
-        // 語ごとの書きの判定（写しの -1 は rfl の床で読む）
+        // ワードごとの書きの判定（コピーの -1はrflの床で読む）
         for q <- iter.Range(0, len(wrs) / 3) {
             v := wrs[3 * q + 2]
             key := wrs[3 * q] * 65536 + wrs[3 * q + 1]
@@ -1463,13 +1463,13 @@ func mvDepthCls(st mut St, w MrW, cw mut m2rW, pts [][]int, esc []int, wrs []int
         for q <- iter.Range(0, len(rfl) / 3) {
             v := rfl[3 * q + 2]
             key := rfl[3 * q] * 65536 + rfl[3 * q + 1]
-            // 床が D0 以上なら、D0 以下の深度は写されず元のまま（D0 より深ければ語はもう悪い）
+            // 床がD0以上なら、D0以下の深度はコピーされず元のまま（D0より深ければワードはもう悪い）
             if (v < 0 || v >= nv || (sh[v] == 0 && dp[v] == 0)) && bad[key] == nil {
                 bad[key] = 1
                 changed = true
             }
         }
-        // 周ごとの写し（判定は前の周の推定で — 落ちるだけなので収束は変わらない）
+        // 周ごとのコピー（判定は前の周の推定で — 落ちるだけなので収束は変わらない）
         bad0 := clone(bad)
         sh0 := clone(sh)
         dp0 := clone(dp)
@@ -1517,7 +1517,7 @@ func mvDepthCls(st mut St, w MrW, cw mut m2rW, pts [][]int, esc []int, wrs []int
             }
         }
     }
-    // 番地の値ごと: 指す先の深度の語（ずれ + 2）が全部 D0 以下
+    // 番地の値ごと: 指す先の深度のワード（ずれ + 2）が全部D0以下
     mut hs := mut []int{}
     for v <- iter.Range(0, nv) {
         mut ok := len(pts[v]) > 0

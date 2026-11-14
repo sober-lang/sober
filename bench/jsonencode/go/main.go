@@ -1,4 +1,4 @@
-// bench/jsonencode の Go の双子（encoding/json.Marshal — 同じ木・同じ綴り。長さと FNV-1a で Sober の出力と照合）
+// bench/jsonencodeの比較用のGoの実装（encoding/json.Marshal — 同じ木・同じ綴り。長さとFNV-1aでSoberの出力と照合）
 package main
 
 import (

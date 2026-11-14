@@ -1,6 +1,6 @@
 package main
 
-// 負例（syntax.md 決定 7 の kind 1）: 辞書の欄の関数値は位置だけ（欄の型が名前付き関数型でも）
+// 負例（syntax.md決定7のkind 1）: 辞書のフィールドの関数値は位置だけ（フィールドの型が名前付き関数型でも）
 type Fetch func(url int, retries int?) int
 
 type Client struct {

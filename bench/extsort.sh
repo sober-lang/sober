@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# extsort.sh（実証便 その 2 — 外部ソートの題材・report-612〜614）: bench/extsort の Sober / Go / Rust素 と GNU sort を同じ窓 W で交互に測る。
-# seqperf に載せない理由: 引数が 2〜3 つ（入力・一時 dir・窓）・GNU sort の 4 つ目の列・run の片付け・RSS の図（入力の大きさを振る）が要る
-#   bench/extsort.sh [-n 回数] [-w 窓 MiB] [--size バイト] [--chart "バイト…"] [--cpu K] [--mem-high MiB] [-o 結果の TSV]
-# 1. 看板の表: 入力 --size（既定 1 GiB）を 4 実装 × n 回（既定 5）の交互で。cycles:u / instructions:u / task-clock / wall / 最大 RSS
+# extsort.sh（実証のタスク その 2 — 外部ソートの題材・report-612〜614）: bench/extsort の Sober / Go / Rust素 と GNU sort を同じウィンドウ W で交互に測る。
+# seqperfに載せない理由: 引数が2〜3つ（入力・一時dir・ウィンドウ）・GNU sortの4つ目の列・runの片付け・RSSの図（入力の大きさを振る）が要る
+#   bench/extsort.sh [-n 回数] [-w ウィンドウ MiB] [--size バイト] [--chart "バイト…"] [--cpu K] [--mem-high MiB] [-o 結果の TSV]
+# 1. 代表の表: 入力 --size（既定1 GiB）を4実装 × n回（既定5）の交互で。cycles:u / instructions:u / task-clock / wall / 最大RSS
 #    （perf → time → 本体 — seqperf と同じ並び）。出力の md5 を毎回 `LC_ALL=C sort` の出力の md5 と照合する
-# 2. RSS の図: --chart の大きさ（既定 256 MiB / 1 GiB・--chart "" で省く）で各実装 1 回ずつ — 「RSS は窓 × 定数で、入力の大きさに比例しない」の確認
+# 2. RSSの図: --chart の大きさ（既定256 MiB / 1 GiB・--chart "" で省く）で各実装1回ずつ — 「RSSはウィンドウ × 定数で、入力の大きさに比例しない」の確認
 # RAM の天井（--mem-high・既定 768 MiB — 0 で外す）: 各実装を cgroup（systemd-run --scope の MemoryHigh・swap なし）の中で走らせ、入力 1 GiB を「RAM 超」にする。
 # 天井は run のファイルのページキャッシュも数えるので、書いた run は天井で押し戻される（溢れ・背圧の形が 1 GiB で出る — 入力を RAM より大きくする代わり）。
 # 入力は天井の外で先に読んであるのでキャッシュに載ったまま（warm の規律は変えない）。天井は全実装の作業集合（最大 = Go の約 540 MB）より上に置く —
 # 下回ると swap なしの匿名メモリが締め付けられ、ソートでなく天井を測る。張れない環境（systemd のバスも sudo も無い）では止まる（--mem-high 0 で天井なしの旧形）
 # 規律: warm（入力はページキャッシュに載る大きさ — デバイスは測らない。WSL2 の VHD はデバイス縛りを歪める）・同じ 1 つの論理 CPU に固定・
 # ワーカー 1（SOBER_WORKERS=1 — 逐次の土俵。GNU sort も --parallel=1）・gates と同時に回さない。
-# cycles:u は利用者の空間だけを数える（写し・ページフォールト・ファイルの読み書きのカーネルの費用は task-clock と wall に出る — report-610 の注）
+# cycles:uは利用者の空間だけを数える（コピー・ページフォールト・ファイルの読み書きのカーネルの費用はtask-clockとwallに出る — report-610の注記）
 set -uo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$PWD
@@ -60,7 +60,7 @@ input() {
     fi
 }
 TMP=$B/extsort-tmp
-# cg: 天井の cgroup に入れて走らせる前置き（user の systemd → sudo の systemd の順に試す。sudo の道は env を落とすので one が env で渡し直す）
+# cg: 天井のcgroupに入れて走らせる前置き（userのsystemd → sudoのsystemdの順に試す。sudoのパスはenvを落とすのでoneがenvで渡し直す）
 cg=()
 if [ "$MH" -gt 0 ]; then
     cgp=(--scope -q -p "MemoryHigh=${MH}M" -p MemorySwapMax=0)

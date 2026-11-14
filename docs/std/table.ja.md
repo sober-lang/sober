@@ -16,7 +16,7 @@ type Table[T] struct {
 }
 ```
 
-添字で読み書きできる可変長の列（[language.md 21 節](../language.md)の緩和策 2 の添字版）。固定長の chunk の鎖に積み、Get / Set は O(1)（chunk = 添字 / CHUNK、chunk の中 = 添字 & (CHUNK - 1)）。同じ region で他の割り当てと交錯して成長しても、成長のコピーによるゴミが出ない（chunk は一度確保したら動かない）。std/builder の Builder（倍々の chunk・Get は O(log n)・Set なし）は小さな列を積んで Build する用途、Table は大きな表を添字で読み書きする用途（コンパイラの脱糖器 / lower の記録）。
+添字で読み書きできる可変長の列（[language.md 21 節](../language.md)の緩和策 2 の添字版）。固定長のchunkのチェーンに積み、Get / SetはO(1)（chunk = 添字 / CHUNK、chunkの中 = 添字 & (CHUNK - 1)）。同じ region で他の割り当てと交錯して成長しても、成長のコピーによるゴミが出ない（chunk は一度確保したら動かない）。std/builder の Builder（倍々の chunk・Get は O(log n)・Set なし）は小さな列を積んで Build する用途、Table は大きな表を添字で読み書きする用途（コンパイラの脱糖器 / lower の記録）。
 
 ```sober
 mut t := table.Table[int]{}
@@ -25,8 +25,8 @@ table.Set(mut t, 0, table.Get(mut t, 0) + 1)
 ```
 
 表現:
-- chunks は chunk ヘッダの列。初回の Push で空ヘッダ seed の写しを DIR0 本積み、足りなくなったら本数を倍にする（伸ばすときは列の写し〔ヘッダだけ — chunk の中身は動かない〕が出うる。倍々なので償却 O(1)）
-- chunk は CHUNK 要素ずつ、seed の写しへ連続 append して確保する（seed は Table の region にあるので、確保先は Push を呼んだ深さに依らない）。以降は添字で書く
+- chunksはchunkヘッダの列。初回のPushで空ヘッダseedのコピーをDIR0本積み、足りなくなったら本数を倍にする（伸ばすときは列のコピー〔ヘッダだけ — chunk の中身は動かない〕が出うる。倍々なので償却 O(1)）
+- chunkはCHUNK要素ずつ、seedのコピーへ連続appendして確保する（seedはTableのregionにあるので、確保先はPushを呼んだ深さに依らない）。以降は添字で書く
 - 容量の上限は無い（chunk ヘッダの列が倍々で伸びる）
 
 ## CHUNK_BITS
@@ -116,7 +116,7 @@ Freeze が返す凍った表（imm — 書く関数が無い。par の子へそ�
 func Freeze[T](t mut Table[T]) Frozen[T]
 ```
 
-t の中身を写さずに凍らせて返し、t を空の表に戻す（取り出し形 — [language.md 17 節](../language.md)の bottom-up 凍結の Table 版:中身のある chunk を 1 本ずつ取り出して表の欄を空の seed に差し替えてから freeze する。凍らせた chunk に届くのは返す Frozen だけ。t は以後も普通の空の表として使える — 新しく積む分は新しい chunk に入り、凍らせた中身には届かない）
+tの中身をコピーせずに凍らせて返し、tを空の表に戻す（取り出し形 — [language.md 17 節](../language.md)のbottom-up凍結のTable版:中身のあるchunkを1本ずつ取り出して表のフィールドを空のseedに差し替えてからfreezeする。凍らせたchunkに届くのは返すFrozenだけ。t は以後も普通の空の表として使える — 新しく積む分は新しい chunk に入り、凍らせた中身には届かない）
 
 ## FrozenLen
 
@@ -143,4 +143,4 @@ func At[T](f Frozen[T], i int) T
 func Read[T](t mut Table[T], i int, n int, dst mut []T)
 ```
 
-t の [i, i + n) を dst の [0, n) へ写す（Get を n 回呼んで dst に書くのと同じ値 — chunk ごとにまとめて写す）。範囲外（i \< 0・n \< 0・i + n が Len を越える・n が len(dst) を越える）なら Get と同じく境界検査で panic する。記録 1 つ（数語〜数十語）を局所の列へ一括で読み、局所で添字で読む形のための口（Get を語ごとに呼ぶと、語ごとに範囲の判定と chunk の二重の境界検査を払う）
+tの [i, i + n) をdstの [0, n) へコピーする（Getをn回呼んでdstに書くのと同じ値 — chunkごとにまとめてコピーする）。範囲外（i \< 0・n \< 0・i + n が Len を越える・n が len(dst) を越える）なら Get と同じく境界検査で panic する。記録 1 つ（数語〜数十語）を局所の列へ一括で読み、局所で添字で読む形のためのインターフェース（Getをワードごとに呼ぶと、ワードごとに範囲の判定とchunkの二重の境界検査を払う）

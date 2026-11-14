@@ -1,8 +1,8 @@
 package main
 
-// ワーカー局所の lease の反復（region-domain-pool.md 4d 節）の回帰例: 窓を n 回借りても、置き場の区画は使い回され（世代を進めるだけ）、窓の値は反復の
-// region に作られて積もらない — 子 task の窓も同じ（json-comp の接続の task の形）。n 回（既定 2000 — scripts/iterregion.sh が 10 倍にして
-// RSS が比例しないことを見る。窓のたびに置き場を作り直す〔倒れ〕形でも反復の region に返るので平ら — 鳴るのは窓の書きが外の region に積もる形）
+// ワーカー局所のleaseの反復（region-domain-pool.md 4d節）の回帰例: ウィンドウをn回借りても、配置先のエリアは使い回され（世代を進めるだけ）、ウィンドウの値は反復の
+// regionに作られて積もらない — 子taskのウィンドウも同じ（json-compの接続のtaskの形）。n回（既定2000 — scripts/iterregion.shが10倍にして
+// RSSが比例しないことを見る。ウィンドウのたびに配置先を作り直す〔倒れ〕形でも反復のregionに返るので平ら — 鳴るのはウィンドウの書きが外のregionに積もる形）
 
 import "std/convert"
 import "std/os"
@@ -14,7 +14,7 @@ type Work struct {
     tab pool.Scratch
 }
 
-// tab の 64 語を書いて読み、窓の値（小さな列）を返す
+// tabの64ワードを書いて読み、ウィンドウの値（小さな列）を返す
 func touch(w mut Work, k int) []int {
     mut s := 0
     mut i := 0

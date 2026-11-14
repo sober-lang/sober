@@ -12,7 +12,7 @@ HTTP の語彙のうちサーバ（std/http/server）とクライアント（std
 type StatusCode int
 ```
 
-応答の状態の番号（RFC 9110 15 節）。std/http/server が理由句を知る番号は下の型つきの const（http.OK …）— 状態行の表はこの const の全部を名指す（@exhaustive — [language.md 13 節](../language.md)の補「表の網羅」）。const に無い番号も `http.StatusCode(418)` や整数のリテラル（`status: 418`）で書ける（理由句は空）
+レスポンスの状態の番号（RFC 9110 15 節）。std/http/serverが理由句を知る番号は下の型つきのconst（http.OK …）— 状態行の表はこのconstの全部を列挙する（@exhaustive — [language.md 13 節](../language.md)の補「表の網羅」）。constに無い番号も `http.StatusCode(418)` や整数のリテラル（`status: 418`）で書ける（理由句は空）
 
 ## OK
 
@@ -68,7 +68,7 @@ const NotModified = 304
 const BadRequest = 400
 ```
 
-400 Bad Request（要求の頭が読めない）
+400 Bad Request（リクエストの頭が読めない）
 
 ## Unauthorized
 
@@ -124,7 +124,7 @@ const ContentTooLarge = 413
 const RequestHeaderFieldsTooLarge = 431
 ```
 
-431 Request Header Fields Too Large（要求の頭が上限を超える）
+431 Request Header Fields Too Large（リクエストの頭が上限を超える）
 
 ## InternalServerError
 

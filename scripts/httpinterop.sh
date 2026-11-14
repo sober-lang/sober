@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# httpinterop（std/http/client の相互接続の網）: Go の net/http のサーバ（scripts/oracles/httpserver — 平文・TLS 1.3・TLS 1.2 だけの 3 本）を起こし、
+# httpinterop（std/http/clientの相互接続の検査）: Goのnet/httpのサーバ（scripts/oracles/httpserver — 平文・TLS 1.3・TLS 1.2だけの3本）を起こし、
 # std/http/client の TestHttpInterop を SOBER_HTTP_INTEROP で走らせる。Go の道具が要るので gates に入れない（tlsinterop と同じ扱い — クライアントを変えたら手で回す）
-# 通ったら conf: の行を testdata/conformance/interop/http.txt へ記録する（scripts/confrecord.sh — 準拠文書の最終確認の欄）
+# 通ったらconf: の行をtestdata/conformance/interop/http.txtへ記録する（scripts/confrecord.sh — 準拠文書の最終確認のフィールド）
 #   scripts/httpinterop.sh
 set -uo pipefail
 cd "$(dirname "$0")/.."

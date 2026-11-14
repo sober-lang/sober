@@ -42,7 +42,7 @@ func TestUnprintableSkipped() {
     assert(c == 'B' && p.a + n == 6)
 }
 
-// 関数型の名前は束縛せずに渡す（閉包の値の行は出さない）
+// 関数型の名前は束縛せずに渡す（クロージャの値の行は出さない）
 func applyFails(f func(int) bool) {
     assert(Apply(f, 3))
 }
@@ -64,12 +64,12 @@ func TestMutArgFails() {
     assert(Inc(mut x))
 }
 
-// catch の写しは見出しと値の行に元の綴りで出る
+// catchのコピーは見出しと値の行に元の綴りで出る
 func TestCatchFails() {
     assert((Parse("") catch 7) == Double(1))
 }
 
-// ラベル（第 2 実引数）は見出しに出る — テーブル駆動で落ちたケースを名指す
+// ラベル（第2実引数）は見出しに出る — テーブル駆動で落ちたケースを特定する
 func TestLabelFails() {
     names := []string{"zero", "one", "two"}
     for i <- iter.Range(0, len(names)) {

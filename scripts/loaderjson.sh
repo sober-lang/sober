@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# selfhost の第 2 黄金（loader 黄金 — testdata/loaderjson/）の照合。
+# selfhostの第2ゴールデン（loaderゴールデン — testdata/loaderjson/）の照合。
 #
-#   scripts/loaderjson.sh            黄金との diff（scripts/loaderjson.list の各 entry を `sober parse --loader-json` に通して比較）。
-#                                    加えて 2 回吐いてバイト一致を確かめる（決定性 — import 表は hash map なので特に）
-#   scripts/loaderjson.sh --regen    黄金を再生成する（loader / emitter / スキーマの意図した変更後に使い、diff を見てからコミットする）
+#   scripts/loaderjson.sh            ゴールデンとのdiff（scripts/loaderjson.listの各entryを `sober parse --loader-json` に通して比較）。
+#                                    加えて2回吐いてバイト一致を確認する（決定性 — import表は hash map なので特に）
+#   scripts/loaderjson.sh --regen    ゴールデンを再生成する（loader / emitter / スキーマの意図した変更後に使い、diffを見てからコミットする）
 #
-# 黄金の置き場: testdata/loaderjson/<entry の / を _ にした名前>.json。
+# ゴールデンの配置先: testdata/loaderjson/<entryの / を _ にした名前>.json。
 # 前提: zig build 済み（$SOBER で差し替え可）。load は cwd = リポジトリルート（import パスはルート相対）
 set -euo pipefail
 cd "$(dirname "$0")/.."
 source scripts/gatelib.sh
 
-SOBER=${SOBER:-./bin/sober}   # 黄金の生成元 = 主の sober（主役交代 R39 — それまでは Zig 版。付け替え時にバイト不変を確認済み）
+SOBER=${SOBER:-./bin/sober}   # ゴールデンの生成元 = 主のsober（主役交代R39 — それまではZig版。付け替え時にバイト不変を確認済み）
 GOLDEN=testdata/loaderjson
 LIST=scripts/loaderjson.list
 [ -x "$SOBER" ] || { echo "error: $SOBER not found (zig build)"; exit 1; }

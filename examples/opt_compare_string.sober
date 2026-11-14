@@ -1,6 +1,6 @@
 package main
 
-// 負例（check も build も名指しで拒否 — diag.TypeMismatch kind 2）: `string?` と string の == も T? と値の比較（spec T-18 — 絞ってから比べる）
+// 負例（checkもbuildも専用の診断で拒否 — diag.TypeMismatch kind 2）: `string?` とstringの == もT? と値の比較（spec T-18 — 絞ってから比べる）
 
 func get(b bool) string? {
     return if b { "2" } else { nil }

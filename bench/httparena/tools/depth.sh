@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # depth.sh <srvbin> <raw> [conns] [secs] [p] [env…] — サーバの中の溜まりの深さ（report-683）。layer4.sh と同じ形で perf の事象を取りながら、
 # 負荷の途中で ss を 3 回（1 秒おき・CPU 23 で）サンプリングし、接続ごとの未読（Recv-Q > 0）の数を数える:
-#   srvq = サーバ側のソケットで未読の接続（カーネルに届いたが rt がまだ読んでいない — epoll / 9c の「起こし待ち・取り込み待ち」）
-#   cliq = クライアント側のソケットで未読の接続（応答が届いたが gcannon がまだ読んでいない — 負荷の側の溜まり）
+#   srvq = サーバ側のソケットで未読の接続（カーネルに届いたがrtがまだ読んでいない — epoll / 9cの「ウェイクアップ待ち・取り込み待ち」）
+#   cliq = クライアント側のソケットで未読の接続（レスポンスが届いたがgcannonがまだ読んでいない — 負荷の側の溜まり）
 #   little = gcannon の平均遅延 × req/s。**溜まりの推定には使えない**（report-683 — 閉じたループなら ≈ 接続数のはずが、epoll の 4096 接続では
 #            700〜1,700 しか出ない: gcannon の遅延は周期の一部しか覆わない場面がある）— 参考の列。溜まりは srvq（直接の観測）で読む
-#   zero / top25 = 公平さ（report-684）: ss -tni の接続ごとの segs_out を 1 秒あけて 2 回取り、その 1 秒に応答（送りのセグメント）が 0 だった接続の
-#            割合と、上位 25% の接続が運んだ割合。公平な一巡なら zero ≈ 0%・top25 ≈ 25〜35%（epoll の道は 4096 接続で zero ≈ 70%・top25 ≈ 98% —
+#   zero / top25 = 公平さ（report-684）: ss -tni の接続ごとのsegs_outを1秒あけて2回取り、その1秒にレスポンス（送りのセグメント）が0だった接続の
+#            割合と、上位25%の接続が運んだ割合。公平な一巡ならzero ≈ 0%・top25 ≈ 25〜35%（epollのパスは4096接続でzero ≈ 70%・top25 ≈ 98% —
 #            一部の接続だけを温かく回し残りを飢えさせる。その速さは小さい作業集合から来る）
-# 注: main の ring は multishot でカーネルが先に PBUF へ写すので、rt の中に溜まる分は srvq に出ない（≈ 接続数 − srvq − cliq）
-. "$(dirname "$0")/env.sh"   # S（計器）・GC・R・W（作業） — env.sh の注
+# 注記: mainのringはmultishotでカーネルが先にPBUFへコピーするので、rtの中に溜まる分はsrvqに出ない（≈ 接続数 − srvq − cliq）
+. "$(dirname "$0")/env.sh"   # S（計測ツール）・GC・R・W（作業） — env.shの注記
 P=$(ls -d /nix/store/*perf-linux*/bin/perf | head -n1)
 EV=${EV:-cycles:u,instructions:u}
 b=$1; raw=$2; c=${3:-4096}; d=${4:-5}; p=${5:-1}; shift $(( $# < 5 ? $# : 5 ))   # 引数が N 未満でも位置引数を残さない（shift N の失敗で "$@" にサーバのパスが残り env の後ろで起動を壊す — report-689）

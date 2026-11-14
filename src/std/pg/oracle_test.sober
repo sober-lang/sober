@@ -2,7 +2,7 @@ package pg
 
 // 実の PostgreSQL との往復（SOBER_PG_ORACLE が無ければ何もしない — scripts/pgoracle.sh が 17 / 18 を立てて渡す。設定の行は
 // std/internal/pgwire の oracle_test と同じ）: TLS + SCRAM-SHA-256-PLUS と平文の SCRAM で Open・型の第一陣の読み（境界値と NULL）・
-// statement キャッシュの再利用・生成元の break の後の再利用・一意制約違反 23505・hint の欄（42883）・password 違い 28P01・
+// statement キャッシュの再利用・生成元の break の後の再利用・一意制約違反 23505・hint のフィールド（42883）・password 違い 28P01・
 // Tx（COMMIT・? で ROLLBACK・入れ子の ROLLBACK TO が外を残す・握りつぶした誤り → Aborted・水準と読みだけは外を受け継ぐ・Serializable の 2 接続で 40001）
 
 import "std/io"
@@ -60,7 +60,7 @@ func checkTypes(c Conn, name string) int {
     return bad
 }
 
-// 式 1 つを読む（文面は実行時に組むので Script と同じ simple query ではなく、const の席の外の道 — 網の中だけの口 qdyn）
+// 式 1 つを読む（文面は実行時に組むので Script と同じ simple query ではなく、const 仮引数を通らないパス — テストの中だけの API qdyn）
 func typeOf(c Conn, expr string) string {
     mut out := "none"
     e := qdyn(c, "select ${expr}", (r) => {
@@ -69,7 +69,7 @@ func typeOf(c Conn, expr string) string {
     return if e != nil { "error" } else { out }
 }
 
-// 網のための const の席の外の Query（同じ道 — begin / nextRow / finish）
+// テストのための const 仮引数を通らない Query（同じパス — begin / nextRow / finish）
 func qdyn(c Conn, sql string, k func(r Row)) error? {
     mut q := begin(c, sql, []Value{})?
     defer finish(c, q)
@@ -110,7 +110,7 @@ func session(c Conn, name string) {
     println("conf-item: interop/pg ${name} std-pg")
 }
 
-// 1 行 1 列の int（網の中だけ — 文面を実行時に組む）
+// 1 行 1 列の int（テストの中だけ — 文面を実行時に組む）
 func scalar(c Conn, sql string) int {
     mut v := -1
     e := qdyn(c, sql, (r) => {

@@ -6,7 +6,7 @@
 
 zigtest: examples lean src/stage1 testdata   # zig build test が stage1 のソースと examples / std / Lean の判定を読む（スクリプトが無い札）
 stages: bench/ratchet.txt examples lean testdata/errnonint scripts/inst/README.md scripts/rawcheck.sh scripts/selfhost_cli.sh src/stage1 testdata/checkneg testdata/errpkg testdata/frozen_src testdata/iface testdata/lltext testdata/loader_neg testdata/minic testdata/pkgdemo testdata/selfhost_fmt testdata/selfhost_lex testdata/sobertest
-incrmut: bench examples scripts/checkverdict.sh scripts/incrbuild.sh scripts/incrcheck.sh scripts/irtext.sh src/stage1 testdata
+incrmut: bench examples scripts/checkverdict.sh scripts/incrbuild.sh scripts/incrcheck.sh scripts/irtext.sh src/stage1 testdata scripts/omit/incrbuild.list
 incrcheck_self: src/stage1 ~examples ~scripts/checkverdict.sh ~scripts/irtext.sh ~testdata   # 本文の例題の相（--ex のときだけ）が言及する — --self は読まない
 axes: bench/ratchet.txt testdata/astjson testdata/corejson testdata/irtext testdata/lltext ~testdata   # testdata/<種類> は ratchet.txt の golden/ の行の種類だけ
 incrcheck_ex: examples scripts/checkverdict.sh scripts/irtext.sh src/stage1 testdata
@@ -20,7 +20,7 @@ a1oracle: examples testdata/a1   # 題材 = examples の type_recursive* 5 本 +
 memcheck: examples testdata/memcheck testdata/alias testdata/specpkg   # 題材 = .out を持つ examples（上界の黄金は testdata/memcheck/expect.txt）+ 手組み・alias / specpkg = 題材の import 先
 guidetest: examples testdata/guide ~testdata   # 本文の testdata/fuzz は写しの中の題材のコーパス（木の testdata は読まない）
 testreplay: src/stage1 ~testdata   # 本文の testdata は一時の package の中の名前（木の testdata は読まない）
-incrbuild: bench examples fuzz/progen src/stage1   # fuzz/progen = 鎖の題材の生成器（抽出が拾わない — 手で足す）
+incrbuild: bench examples fuzz/progen src/stage1 scripts/omit/incrbuild.list testdata/checkverdict   # fuzz/progen = 鎖の題材の生成器（抽出が拾わない — 手で足す）
 incrrace: examples src/stage1
 cacheaudit: bench examples src/stage1
 tyorder: bench examples src/stage1
@@ -30,7 +30,7 @@ selfhost_ll: examples src/stage1 testdata/checkneg testdata/errpkg testdata/froz
 selfhost_e2e: examples lean src/stage1 testdata/checkneg testdata/errpkg testdata/frozen_src testdata/iface testdata/loader_neg testdata/pkgdemo testdata/selfhost_fmt testdata/selfhost_lex
 leanbatch: lean scripts/checkmut.ts scripts/leanbatch_skip.txt scripts/selfhost_check_tools.txt testdata/corejson testdata/corevec.jsonl
 sobi: examples lean src/stage1 testdata
-selfhost_check: lean scripts/checkmut.ts scripts/selfhost_check_tools.txt src/stage1 testdata/checkneg testdata/corejson testdata/corevec.jsonl testdata/corevec_byte testdata/corevec_copyto testdata/corevec_float testdata/corevec_par testdata/corevec_narrow testdata/errpkg testdata/frozen_src testdata/iface testdata/pkgdemo
+selfhost_check: lean lean/.lake/build/bin/sober-gen scripts/checkmut.ts scripts/selfhost_check_tools.txt src/stage1 testdata/checkneg testdata/corejson testdata/corevec.jsonl testdata/corevec_byte testdata/corevec_copyto testdata/corevec_float testdata/corevec_par testdata/corevec_narrow testdata/errpkg testdata/frozen_src testdata/iface testdata/pkgdemo
 selfhost_lower: examples src/stage1 testdata/checkneg testdata/errpkg testdata/frozen_src testdata/iface testdata/loader_neg testdata/pkgdemo testdata/selfhost_fmt testdata/selfhost_lex
 selfhost_fmt: README.ja.md README.md bench docs examples lean scripts src/stage1 testdata/checkneg testdata/errpkg testdata/frozen_src testdata/iface testdata/loader_neg testdata/pkgdemo testdata/selfhost_fmt ~testdata   # testdata は監査（report-1222）で読む単位に詰めた — M2 で確認
 selfhost_load: README.ja.md README.md bench docs examples lean scripts src/stage1 testdata
@@ -41,14 +41,14 @@ hermetic: examples src/stage1 testdata
 obs: examples src/stage1 testdata
 elfeq: examples scripts/elfeq.list scripts/obs.sh src/stage1 testdata
 io_args: examples
-errtrace: examples src/stage1 testdata
+errtrace: examples src/stage1 testdata scripts/omit/errtrace.list
 passes: examples scripts/irtext.sh src/stage1 testdata
 regionbound: examples scripts/irtext.sh testdata scripts/noopt-excluded.list scripts/regionbound-known.list
 checkverdict: examples scripts/irtext.sh testdata
 checksplit: examples scripts/irtext.sh testdata
 checkpos: examples scripts/checkpos.ts testdata   # 変異の題材の生成（node）と黄金の検査器の拒否の entry
 cachesplit: examples scripts/checkverdict.sh scripts/irtext.sh testdata
-cachekey: examples testdata
+cachekey: examples testdata scripts/omit/cachekey.list scripts/omit/cachekey-gh.list
 panicmsg: examples testdata
 optdiff: bench examples fuzz/progen src/stage1 testdata scripts/noopt-excluded.list   # fuzz/progen = 乱択の母集団の生成器（抽出が拾わない — 手で足す）
 typerdiff: examples scripts/irtext.sh src/stage1 testdata
@@ -63,10 +63,10 @@ pool_oracle: lean src/stage1 testdata
 analyzer_neg: testdata/analyzer_neg testdata/fieldpkg   # M2（report-1222）が名指し: Sober のプログラムが実行時に読む・import する入力（本文の抽出では見えない）
 secretdump: examples src/stage1 testdata/secretdump
 effectsdump: examples src/stage1 testdata/effectsdump
-efftrace: examples scripts/efftrace.ts src/stage1 testdata
+efftrace: examples scripts/efftrace.ts src/stage1 testdata scripts/omit/efftrace.list
 fixcheck: src/stage1 testdata/fix testdata/fixgold ~testdata   # testdata は監査（report-1222）で読む単位に詰めた — M2 で確認
-uniqfreeze: bench examples lean scripts/uniqfreeze.list testdata/analyzer_neg testdata/implicitfreeze
-implicitfreeze: bench examples scripts/implicitfreeze.ts testdata
+uniqfreeze: bench examples lean scripts/uniqfreeze.list testdata/analyzer_neg testdata/implicitfreeze scripts/omit/uniqfreeze.list testdata/checkverdict
+implicitfreeze: bench examples scripts/implicitfreeze.ts testdata scripts/omit/implicitfreeze.list
 sobertest: testdata/sobertest ~testdata
 doubles: testdata/cells testdata/cells.expect testdata/cellneg testdata/doubles ~testdata   # 本文の testdata は一時の場所に写した木の中の名前（木の testdata は doubles の下だけ読む）   # 本文の propsfuzz/testdata は一時の場所に写した package の中の名前（木の testdata は読まない）
 jsonsuite: scripts/oracles testdata/jsonfast testdata/jsonpkg testdata/jsontestsuite
@@ -88,20 +88,20 @@ doclead: examples scripts/doclead.ts src/stage1
 docsync: README.ja.md README.md docs examples scripts/docsync.ts testdata/checkverdict testdata/guide testdata/mod ~testdata   # 本文の testdata/mod/${…} は規則の参照の題材の黄金（宣言の testdata/mod の中）
 confsync: docs/conformance examples testdata/conformance testdata/crypto testdata/pg testdata/ctcheck testdata/httpcheck testdata/stdtest testdata/tls testdata/wycheproof testdata/x509 scripts/confsync.ts ~scripts   # std の _test.sober が @embed で読む testdata と主張の証拠の黄金・~scripts = 文書と道具の注が名指す相互接続の道具（読まない — 記録は testdata/conformance）
 benchsync: README.ja.md README.md bench docs scripts/bench.sh scripts/benchchart.ts scripts/benchfetch.sh scripts/benchsync.ts
-maprepr: bench examples testdata
-streq: bench examples testdata
+maprepr: bench examples testdata ?out/bench/measurements-1000000.txt ?out/bench/fasta-250000.txt scripts/omit/maprepr.list   # out/bench の入力は有るときだけ題材に足す（木によって有無が違う）
+streq: bench examples testdata ?out/bench/logagg-500000.txt ?out/bench/routing-500000.txt ?out/bench/jsonapi-100000.ndjson scripts/omit/streq.list   # out/bench の入力は有るときだけ題材に足す（木によって有無が違う）
 strix: examples src/stage1
 ubfstat: bench/1brc examples scripts/ubfstat.list
 framestat: bench/httparena scripts/framestat.list
-reqinst: bench/httparena bench/asyncdb bench/pgstub bench/ratchet.txt scripts/reqinst.ts ~bench   # ~bench = DATABASE_URL の user 名（postgres://bench:bench@…）が lint にパスと読まれるだけ
-ringinst: bench/httparena bench/ratchet.txt scripts/reqinst.ts
+reqinst: bench/httparena bench/asyncdb bench/pgstub bench/ratchet.txt scripts/reqinst.ts ~bench ~src/stage1   # ~src/stage1 = 冒頭で呼ぶ scripts/stage2.sh の言及（stage1は全ゲートに共通の成分）・~bench = DATABASE_URL の user 名（postgres://bench:bench@…）が lint にパスと読まれるだけ
+ringinst: bench/httparena bench/ratchet.txt scripts/reqinst.ts ~src/stage1   # ~src/stage1 = 冒頭で呼ぶ scripts/stage2.sh の言及（stage1は全ゲートに共通の成分）
 sortcheck: testdata/sortcheck
 matchlencheck: testdata/matchlen
 jcleancheck: testdata/jclean
 flatecheck: examples testdata/flatecheck testdata/httpcheck
 ctcheck: testdata/ctcheck testdata/secretdump
 cryptocheck: examples testdata/crypto testdata/wycheproof   # M2（report-1222）が名指し: Sober のプログラムが実行時に読む・import する入力（本文の抽出では見えない）
-tlsfsm: lean testdata/tls
+tlsfsm: lean lean/.lake/build/bin/sober-gen testdata/tls
 iterregion: examples
 rflowmeter: bench/httparena   # ゴミ計つきのコンパイラで build する題材（std は stage2 の鍵に入る）
 fitcheck: bench examples src/stage1 testdata
@@ -109,8 +109,9 @@ numpert: bench examples src/stage1
 fnhash: 
 tyhash: 
 iouring: examples testdata/io_par ~testdata   # testdata は監査（report-1222）で読む単位に詰めた — M2 で確認
-httpcheck: scripts/flight.ts testdata/httpcheck
+httpcheck: scripts/flight.ts testdata/httpcheck examples
 starve: testdata/starve
+tschain: testdata/delaylat
 fusecheck: scripts/flight.ts testdata/httpcheck
 wincheck: testdata/wincheck testdata/httpcheck/dataset.json
 stackcheck: bench/httparena scripts/stackcheck.ts testdata/httpcheck
@@ -124,12 +125,13 @@ rootsync: scripts/rootstore.sh scripts/nssroots.ts testdata/x509/nss src/std/int
 tzsync: scripts/tzstore.sh scripts/tzgen.ts testdata/tz src/std/time/zones.sober   # 生成物と組んだ TZif の束と銘
 datadce: testdata/datadce examples   # 題材（目印は std の生成物から — std は共通の成分）
 stdref: docs/language.md docs/std examples scripts/stdref/head.ja.md testdata/stdref   # M2（report-1222）が名指し: Sober のプログラムが実行時に読む・import する入力（本文の抽出では見えない）
-corevec: lean scripts/corevec_cov.ts testdata/corevec.jsonl
-extract: lean
+corevec: lean lean/.lake/build/bin/sober-gen scripts/corevec_cov.ts testdata/corevec.jsonl
+extract: lean lean/.lake/build/bin/sober-extract lean/.lake/build/bin/sober-gen   # 道具のファイルは中身で数える（宣言の lean は .lake の下を数えない — ソースが同じで道具だけ古い / 無い木で HIT しないように）
 obs_zig: examples src/stage1 testdata
 hermetic_zig: examples src/stage1 testdata
 ir_roundtrip: examples src/stage1
 gatememo: scripts   # 本体は全部の宣言のパスと本文を読む — @always で毎回走る
 
-@nondet: stages selfpar incrrace seqpar schedvec schedfuzz parbudget iouring httpcheck starve fusecheck wincheck stackcheck areacheck pincheck pid1stop
+@nondet: stages selfpar incrrace seqpar schedvec schedfuzz parbudget iouring httpcheck starve tschain fusecheck wincheck stackcheck areacheck pincheck pid1stop
 @always: gatememo refs   # refs は .git を読むので M2 の写し（.git なし）で確かめられない — 毎回走らせる（29 s）。 M1 と lint は全部の宣言と本文を読む（数秒）— 記録せず毎回走らせる
+@local: stages selfpar reqinst ringinst axes   # 実行時の命令数・RSS を bench/ratchet.txt の上限値と比べる — パスの長さで値が動くので、記録を木の間で共有しない（キーに木のルートを入れる）

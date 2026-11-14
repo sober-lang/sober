@@ -1,8 +1,8 @@
 package main
 
-// lease の窓の性能 lint（警告 — 受理は変えない。analyzer/lease.sober）: 窓の中の待ち（block 効果の導出 — 推移的に）と、同じ Local の入れ子の窓。
-// 鳴らない形: 純な窓・違う Local の入れ子・窓の中で spawn した子の待ち（別の task）・窓の外の待ち。
-// 名前付き関数型の値の呼び出しは型の値の合併（関数の効果の導出 — language.md 12 節「関数の効果の宣言」）: 待つ Waiter の値がどこかにあれば鳴る
+// leaseのウィンドウの性能lint（警告 — 受理は変えない。analyzer/lease.sober）: ウィンドウの中の待ち（blockエフェクトの導出 — 推移的に）と、同じLocalの入れ子のウィンドウ。
+// 鳴らない形: 純なウィンドウ・違うLocalの入れ子・ウィンドウの中でspawnした子の待ち（別のtask）・ウィンドウの外の待ち。
+// 名前付き関数型の値の呼び出しは型の値の合併（関数のエフェクトの導出 — language.md 12 節「関数のエフェクトの宣言」）: 待つWaiterの値がどこかにあれば鳴る
 
 import "std/iter"
 import "std/os"
@@ -44,14 +44,14 @@ func main() {
         os.Sleep(0)
         sum(mut w)
     })
-    // 鳴る: 推移的な待ち（1 つの窓に 1 回だけ）
+    // 鳴る: 推移的な待ち（1つのウィンドウに1回だけ）
     b := task.Lease(lw, (w mut Work) => sum(mut w) + nap(0) + nap(0))
     // 鳴る: 同じ Local の入れ子
     c := task.Lease(lw, (w mut Work) => sum(mut w) + task.Lease(lw, (u mut Work) => sum(mut u)))
-    // 鳴らない: 違う Local の入れ子・純な窓・窓の外の待ち
+    // 鳴らない: 違うLocalの入れ子・純なウィンドウ・ウィンドウの外の待ち
     d := task.Lease(lw, (w mut Work) => sum(mut w) + task.Lease(lv, (u mut Work) => sum(mut u)))
     os.Sleep(0)
-    // 鳴らない: 窓の中で spawn した子の待ち（scope は窓の外）
+    // 鳴らない: ウィンドウの中でspawnした子の待ち（scopeはウィンドウの外）
     r, err := task.Run((s) => {
         task.Lease(lw, (w mut Work) => {
             _ = task.Spawn(s, () => nap(0))

@@ -2,7 +2,7 @@ package main
 
 import "std/iter"
 
-// union の variant の composite の欄も暗黙の freeze の点（struct の欄と同じ — 「composite の欄」に区別は無い）
+// unionのvariantのcompositeのフィールドも暗黙のfreezeの点（structのフィールドと同じ — 「compositeのフィールド」に区別は無い）
 
 type R union {
     D { xs []int; m map[string]int }

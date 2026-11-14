@@ -1,10 +1,10 @@
 package client
 
-// keep-alive の束: Open が 1 つの origin への接続を 1 本張り（https なら握手まで）、その接続の Session を k に渡し、k が返ったら閉じる。
-// k の中の Send は同じ接続の上で要求と応答を 1 往復ずつ進める。接続の状態（TLS の鍵と番号・受けて配っていないバイト・死んだ印）は
-// Session の値の外の置き場（接続の寿命の int の列 — std/tls の Conn と同じ lease の口）に住む: 値に置くと値の写しが鍵と番号を複製し、
-// 二つの写しが同じ番号で別の平文を封じる（AES-GCM / ChaCha20-Poly1305 の nonce の再利用）。Session は同一性の型で、写し・持ち出し・
-// 欄・捕獲を構文で拒否する
+// keep-aliveのまとめ: Openが1つのoriginへの接続を1本張り（httpsなら握手まで）、その接続のSessionをkに渡し、kが返ったら閉じる。
+// kの中のSendは同じ接続の上でリクエストとレスポンスを1往復ずつ進める。接続の状態（TLSの鍵と番号・受けて配っていないバイト・死んだマーク）は
+// Sessionの値の外の格納場所（接続の寿命のintの列 — std/tlsのConnと同じleaseのAPI）に住む: 値に置くと値のコピーが鍵と番号を複製し、
+// 二つのコピーが同じ番号で別の平文を封じる（AES-GCM / ChaCha20-Poly1305のnonceの再利用）。Sessionは同一性の型で、コピー・持ち出し・
+// フィールド・捕獲を構文で拒否する
 //
 //     http.client.Open("https://api.example", (s) => {
 //         a := http.client.Send(s, "/v1/a") catch …
@@ -20,8 +20,8 @@ import "std/task"
 import "std/time"
 import "std/internal/record"
 
-// 1 つの origin への keep-alive の接続（同一性の型 — Open の k の仮引数としてだけ生まれる。blk = 経路の層の置き場〔link.sober〕・pa / pb = proxy / 行き先の握手の設定・
-// p = Open の policy を読み解いた設定〔束の往復の期限・上限・経路〕）
+// 1つのoriginへのkeep-aliveの接続（同一性の型 — Openのkの仮引数としてだけ生まれる。blk = 経路の層の格納場所〔link.sober〕・pa / pb = proxy / 行き先の握手の設定・
+// p = Openのpolicyを読み解いた設定〔まとめの往復の期限・上限・経路〕）
 type Session struct {
     c net.Conn
     p cfg
@@ -36,7 +36,7 @@ type sessionSeal struct {
 }
 
 // at の origin（"https://host[:port]" — path は見ない）へ接続を張り（proxy があれば proxy を通す）、Session を k に渡す（k が返ったら TLS なら close_notify を送って閉じる）。
-// policy（既定 = Policy{}）は束の全往復に掛かる。policy の timeout の期限は経路の層を重ねるまで（proxy への TLS・CONNECT・行き先への TLS の握手）— TCP の接続そのものの不達は OS の connect の期限に任せる。
+// policy（既定 = Policy{}）はまとめの全往復に掛かる。policyのtimeoutの期限は経路の層を重ねるまで（proxyへのTLS・CONNECT・行き先へのTLSの握手）— TCPの接続そのものの不達はOSのconnectの期限に任せる。
 // k の中の誤りは k の中で受ける（Open が返すのは接続と経路の失敗だけ）
 @errors(Dns, Tls, Timeout, Closed, BadUrl, BadResponse, ProxyRefused, io.Expired)
 @effects(block, io, panic, nondet)
@@ -91,9 +91,9 @@ func openOn(conn net.Conn, c cfg, rt via, t target, pa internal.hsc.CParams, pb 
     return nil
 }
 
-// s の接続の上で要求を 1 往復（url は "/path" か s と同じ origin の絶対 URL — 別の origin は BadUrl・method / headers / body / cookies は Request と同じ）。
-// redirect は追わない（3xx をそのまま返す — 束は 1 本の接続の往復）。期限・本文の上限は Open の policy。相手が閉じた後・閉じで区切る応答の後・
-// Connection: close の応答の後・途中の失敗の後の Send は Closed（張り直すのは呼び手 — 新しい Open で）
+// sの接続の上でリクエストを1往復（urlは "/path" かsと同じoriginの絶対URL — 別のoriginはBadUrl・method / headers / body / cookiesはRequestと同じ）。
+// redirectは追わない（3xxをそのまま返す — まとめは1本の接続の往復）。期限・本文の上限はOpenのpolicy。相手が閉じた後・閉じで区切るレスポンスの後・
+// Connection: closeのレスポンスの後・途中の失敗の後のSendはClosed（張り直すのは呼び手 — 新しいOpenで）
 @errors(Tls, Timeout, BodyTooLarge, Closed, BadUrl, BadResponse, io.Expired)
 @effects(block, io, panic, nondet)
 func Send(s Session, url string, method string?, headers ([]http.Field)?, body ([]byte)?, cookies ([]Cookie)?) (Response, error?) {
@@ -167,7 +167,7 @@ func classifyTrip(e error, timedOut bool) error? {
     return nil
 }
 
-// r.url を s の origin の上の要求の対象に（"/path" はそのまま・絶対 URL は origin が同じときだけ）
+// r.urlをsのoriginの上のリクエストの対象に（"/path" はそのまま・絶対URLはoriginが同じときだけ）
 func sameOrigin(base target, u string) (target, bool) {
     b := bytes(u)
     if len(b) > 0 && b[0] == '/' {

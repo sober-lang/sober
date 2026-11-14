@@ -4,7 +4,7 @@
 
 `import "std/time"`
 
-時刻: 壁時計の Time（UNIX 時刻 — 秒 + ns・UTC）と経過を測る Instant（単調時計）を別の型で持つ（壁時計の差で期限を測る事故を型で消す）。壁時計を読む口は Now の 1 か所だけ — 時刻を使う std の口（x509 の検証・クッキーの期限など）は Time を値で受ける（決定的・テストは値を渡す）。書式は RFC 3339（UTC か固定のオフセット）と HTTP の日付（IMF-fixdate — 読みは RFC 9110 5.6.7 の旧い 2 形も）。地域の時刻の規則（tzdata）は Zone
+時刻: 壁時計の Time（UNIX 時刻 — 秒 + ns・UTC）と経過を測る Instant（単調時計）を別の型で持つ（壁時計の差で期限を測る事故を型で消す）。壁時計を読むインターフェースはNowの1か所だけ — 時刻を使うstdのインターフェース（x509の検証・クッキーの期限など）はTimeを値で受ける（決定的・テストは値を渡す）。書式は RFC 3339（UTC か固定のオフセット）と HTTP の日付（IMF-fixdate — 読みは RFC 9110 5.6.7 の旧い 2 形も）。地域の時刻の規則（tzdata）は Zone
 
 ```sober
 t := time.Now()
@@ -114,7 +114,7 @@ type Time struct {
 }
 ```
 
-壁時計の時刻（UNIX 時刻の秒と 0〜999999999 の ns・UTC。作るのは Now・Unix・Parse… — 欄を直に書くなら ns は範囲の中で）
+壁時計の時刻（UNIX時刻の秒と0〜999999999のns・UTC。作るのはNow・Unix・Parse… — フィールドを直に書くならnsは範囲の中で）
 
 ## Instant
 

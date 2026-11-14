@@ -177,7 +177,7 @@ func unary(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx,
 }
 
 // arguments: '(' argument_list? ')'（argument <- (IDENT ':')? (mut_arg / expression) — 名前付き〔決定 7〕は位置の後にだけ・可変長は拒否）。
-// holes なら直下の `_` は穴（-1 — パイプ段。穴は位置引数としてだけ）。名前付きは KNamedArg（loader が位置へ写す）
+// holesなら直下の `_` は穴（-1 — パイプステージ。穴は位置引数としてだけ）。名前付きはKNamedArg（loaderが位置へ変換する）
 func arguments(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p0 int, holes bool) (int, int) {
     mut out := mut []int{}
     mut p := p0 + 1
@@ -193,7 +193,7 @@ func arguments(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx
             return -1, p
         }
         n0 := len(out)
-        // mut 実引数 `mut x` / `mut x.f.g`（欄の経路 — F-17 案 2α で解禁。字句は隙間なく続くこと。名前は経路の綴りそのまま）
+        // mut実引数 `mut x` / `mut x.f.g`（フィールドの経路 — F-17案2α で解禁。字句は隙間なく続くこと。名前は経路の綴りそのまま）
         mut mq := p + 2
         if tg(cx, p) == lexer.KwMut && tg(cx, p + 1) == lexer.Identifier {
             while tg(cx, mq) == lexer.Dot && tg(cx, mq + 1) == lexer.Identifier && cx.ts[mq - 1].end == cx.ts[mq].start && cx.ts[mq].end == cx.ts[mq + 1].start {
@@ -251,7 +251,7 @@ func postfix(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx C
     mut lastCall := false
     while going {
         t := tg(cx, p)
-        // 抜ける周回（どの後置でもない）では直前の後置の印を残す
+        // 抜ける周回（どの後置でもない）では直前の後置のフラグを残す
         if t == lexer.LParen || t == lexer.Dot || t == lexer.LBracket || t == lexer.Question {
             lastCall = t == lexer.LParen
         }
@@ -516,7 +516,7 @@ func primary(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx C
     case lexer.FloatLiteral:
         return floatLit(mut nb, mut db, cx, p)
     case lexer.CharLiteral:
-        // 文字リテラルは型なし整数定数（language.md 33 節）— EInt に綴りの印 b = 1（printer と AST JSON だけが見る）
+        // 文字リテラルは型なし整数定数（language.md 33 節）— EIntに綴りのフラグb = 1（printerと AST JSON だけが見る）
         x := cx.ts[p]
         return node(mut nb, ast.EInt, tk(cx, p), lexer.CharValue(cx.src, x.start, x.end), 1, 0, 0, 0, 0), p + 1
     case lexer.StringLiteral:
@@ -542,7 +542,7 @@ func primary(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx C
     return -1, p
 }
 
-// 整数リテラル（10 進・`0x` / `0o` / `0b` — i64 に収まらなければ拒否）。n 進の綴りは EInt の b に基数で印を付ける
+// 整数リテラル（10進・`0x` / `0o` / `0b` — i64に収まらなければ拒否）。n進の綴りはEIntのbに基数でフラグを付ける
 // （printer と AST JSON だけが見る — 文字リテラルの b = 1 と同じ扱い）
 func intLit(nb mut builder.Builder[ast.Node], cx Cx, p int) (int, int) {
     t := cx.ts[p]

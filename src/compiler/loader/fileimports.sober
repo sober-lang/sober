@@ -28,7 +28,7 @@ func notImportedIn(cx Cx, f int) int {
     return if r >= 0 { r } else { notImportedRef(cx, f) }
 }
 
-// 多段の修飾子の根の段だけを修飾に使った最初の字句（`http.Serve` — import は std/http/server だけ。根の段は package の参照名ではない）
+// 複数セグメントの修飾子の根のセグメントだけを修飾に使った最初の字句（`http.Serve` — importはstd/http/serverだけ。根のセグメントはpackageの参照名ではない）
 func rootOnlyIn(cx Cx, f int) int {
     mut roots := mut []string{}
     mut refs := mut []string{}

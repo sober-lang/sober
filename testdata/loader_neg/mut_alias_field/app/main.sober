@@ -1,6 +1,6 @@
 package main
 
-// mut 実引数の排他（diag.MutAlias）: 束縛とその欄（一方が他方の接頭）は重なる — 名前付き実引数でも同じ（位置へ写した後に見る）
+// mut実引数の排他（diag.MutAlias）: 束縛とそのフィールド（一方が他方の接頭）は重なる — 名前付き実引数でも同じ（位置へコピーした後に見る）
 type P struct {
     x int
     y int

@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# selfhost C4: 表層 AST JSON 黄金（testdata/astjson/）の照合。
+# selfhost C4: 表層 AST JSON ゴールデン（testdata/astjson/）の照合。
 #
-#   scripts/astjson.sh            黄金との diff（examples/*.sober・testdata/**/*.sober・std/**/*.sober を
+#   scripts/astjson.sh            ゴールデンとのdiff（examples/*.sober・testdata/**/*.sober・std/**/*.soberを
 #                                 `sober parse --ast-json` に通して比較）。加えて各ファイルを 2 回吐いて
-#                                 バイト一致を確かめる（決定性）
-#   scripts/astjson.sh --regen    黄金を再生成する（cst_to_ast / スキーマの意図した変更後に使い、
+#                                 バイト一致を検証する（決定性）
+#   scripts/astjson.sh --regen    ゴールデンを再生成する（cst_to_ast / スキーマの意図した変更後に使い、
 #                                 diff を見てからコミットする）
 #
-# 黄金の置き場: testdata/astjson/<ソースの相対パス>.json（拡張子 .sober → .json）。
+# ゴールデンの配置先: testdata/astjson/<ソースの相対パス>.json（拡張子 .sober → .json）。
 # cst_to_ast が拒否するファイル（parse のみの例）は testdata/astjson/EXCLUDED.txt に
 # 「パス<TAB>エラー行」で並べる。拒否の理由が変わる / 通るようになるのも差分として検出する。
 # 前提: zig build 済み（$SOBER で差し替え可）。
@@ -15,7 +15,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 source scripts/gatelib.sh
 
-SOBER=${SOBER:-./bin/sober}   # 黄金の生成元 = 主の sober（主役交代 R39 — それまでは Zig 版。付け替え時にバイト不変を確認済み）
+SOBER=${SOBER:-./bin/sober}   # ゴールデンの生成元 = 主のsober（主役交代R39 — それまではZig版。付け替え時にバイト不変を確認済み）
 GOLDEN=testdata/astjson
 EXCLUDED=$GOLDEN/EXCLUDED.txt
 
@@ -38,7 +38,7 @@ regen=0
 [ "${1:-}" = "--regen" ] && regen=1
 
 fail=0
-# ファイルごとの仕事を並列に（gatelib の par_run — 出力は番号順にまとめるので除外の並びは直列と同じ。足回りの便）
+# ファイルごとの仕事を並列に（gatelibのpar_run — 出力は番号順にまとめるので除外の並びは直列と同じ。足回りのタスク）
 JOBS=${JOBS:-$(nproc)}
 par_init "$tmp"
 job() { # $1 = ソース
@@ -58,10 +58,10 @@ while IFS= read -r src; do par_run job "$src"; done < <(sources)
 par_wait > "$tmp/res"
 grep '^@@ excl ' "$tmp/res" | sed 's/^@@ excl //' > "$tmp/excluded" || true
 if grep '^FAIL' "$tmp/res"; then fail=1; fi
-# 除外したファイルの出力先に mkdir -p した空ディレクトリを刈る（git は空ディレクトリを持たない — 黄金の木に残すと fresh clone / git archive の木で偽赤）
+# 除外したファイルの出力先にmkdir -p した空ディレクトリを刈る（gitは空ディレクトリを持たない — ゴールデンの木に残すと fresh clone / git archive の木で偽赤）
 find "$tmp/out" -mindepth 1 -type d -empty -delete
 n=$(grep -c '^@@ ok' "$tmp/res" || true)
-# 除外の理由の列は黄金の文面を保つ（生成元の診断文 — gatelib の excluded_keep）
+# 除外の理由の列はゴールデンの文面を保つ（生成元の診断文 — gatelibのexcluded_keep）
 excluded_keep "$tmp/excluded" "$EXCLUDED" "$(printf '\t')"
 
 if [ "$regen" = 1 ]; then

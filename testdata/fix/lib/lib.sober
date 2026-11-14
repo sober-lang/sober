@@ -1,6 +1,6 @@
 package lib
 
-// sober fix の網（scripts/fixcheck.sh — effect の波 段 5a-3）: 宣言の無い公開関数・古い正の列挙・古い @errors・否定形と漏れ（触らない）
+// sober fix の検査（scripts/fixcheck.sh — effectのマイルストーンの段階5a-3）: 宣言の無い公開関数・古い正の列挙・古い @errors・否定形と漏れ（触らない）
 
 import "std/os"
 

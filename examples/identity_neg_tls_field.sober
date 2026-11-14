@@ -1,6 +1,6 @@
 package main
 
-// 負例（language.md 15 節 ② — 同一性の型のゼロ値）: tls.Conn を欄に持つ struct の、その欄を省いたリテラル（省いた欄はゼロ値 = 偽物の接続）は拒否
+// 負例（language.md 15 節 ② — 同一性の型のゼロ値）: tls.Connをフィールドに持つstructの、そのフィールドを省いたリテラル（省いたフィールドはゼロ値 = 偽物の接続）は拒否
 
 import "std/tls"
 

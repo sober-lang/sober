@@ -93,7 +93,7 @@ const LeftArrow = 76
 const Eof = 77
 const Invalid = 78
 
-// byte の段で足した種類（既存の番号を動かさないため末尾に置く — Zig 版の Tag には無い）
+// byteのフェーズで足した種類（既存の番号を動かさないため末尾に置く — Zig版のTagには無い）
 const CharLiteral = 79
 
 // キーワード（catch 式。番号は末尾に足す — 既存の番号を動かさない）

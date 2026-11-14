@@ -1,4 +1,4 @@
-// 1BRC の Rust の双子（Go の双子 bench/1brc/go の逐語訳 — 全体を読んで行ごとに走査・HashMap（既定のハッシュ）で集計・気温は ×10 の整数・
+// 1BRCの比較用のRustの実装（比較用のGoの実装bench/1brc/goの逐語訳 — 全体を読んで行ごとに走査・HashMap（既定のハッシュ）で集計・気温は ×10の整数・
 // 名前はバッファの切片を鍵に借りる〔Go の m[string(b[s:i])] が割り当てない形の鏡〕・境界検査はそのまま）
 use std::collections::HashMap;
 use std::env;

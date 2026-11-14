@@ -1,4 +1,4 @@
-// extsort の Rust の双子（素直縛り — std だけ）: Sober / Go 版と同じアルゴリズム。run = 入力を 64 KiB ずつ読んで窓 W に達するまで 1 本の Vec<u8> に積み、
+// extsortの比較用のRustの実装（素直縛り — stdだけ）: Sober / Go版と同じアルゴリズム。run = 入力を64 KiBずつ読んでウィンドウWに達するまで1本のVec<u8> に積み、
 // 完全な行の部分列を sort_unstable で並べて fs::write で `<dir>/run-<i>` へ全量書く。マージ = run ごとに BufReader（64 KiB）を持ち、
 // 頭の行が最小の run を線形の走査で選んで BufWriter（64 KiB）で標準出力へ。出力は Sober 版とバイト一致
 use std::env;

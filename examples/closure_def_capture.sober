@@ -1,7 +1,7 @@
 package main
 
-// 捕捉つきの閉包を欄に持つ struct は Def の境界を越える（env は named fn type の閉じた union — language.md 25 節 工程 4 B1）:
-// handler の Def が引数の string を捕捉した応答を返し、呼び手が欄を読んで呼ぶ
+// 捕捉つきのクロージャをフィールドに持つstructはDefの境界を越える（envは named fn type の閉じたunion — language.md 25 節 工程 4 B1）:
+// handlerのDefが引数のstringを捕捉した応答を返し、呼び手がフィールドを読んで呼ぶ
 
 type Gen func(n int) int
 

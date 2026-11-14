@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-# **退役（2026-09-28、reaudit round 5 — F-17 案 2α）**: mut struct の束縛を欄ごとのセルに割ったので、Sober 版の脱糖器のコア AST は Zig 版と
+# **退役（2026-09-28、reaudit round 5 — F-17案2α）**: mut struct の束縛をフィールドごとのセルに割ったので、Sober版の脱糖器のコアASTはZig版と
 # バイト一致しない（型も変わるので正規化でも戻せない）。gates.sh のゲート一覧から外した（凍結コーパスの規則 — 互換を壊した成分はゲートごと退役）。
-# 脱糖器は第 3 黄金（Sober 生成）・Lean 照合（leanbatch / selfhost_check / selfhost_e2e）・固定点が見る。以下は記録として残す
+# 脱糖器は第3ゴールデン（Sober生成）・Lean照合（leanbatch / selfhost_check / selfhost_e2e）・固定点が見る。以下は記録として残す
 # selfhost の脱糖器の差分オラクル: Sober 版（compiler/desugar + compiler/tools/desugardump）の出力を、Zig 版 `sober check --core-json` と
-# バイト比較する（Zig 版の出力は第 3 黄金 testdata/corejson/ で固定されている — scripts/corejson.sh）。
+# バイト比較する（Zig版の出力は第3ゴールデンtestdata/corejson/ で固定されている — scripts/corejson.sh）。
 #
-#   scripts/selfhost_desugar.sh            全対象: 黄金の全 entry（scripts/frozen/entries.list — 凍結、拒否の 10 本を含む）+ compiler/tools/* の 7 本
+#   scripts/selfhost_desugar.sh            全対象: ゴールデンの全entry（scripts/frozen/entries.list — 凍結、拒否の10本を含む）+ compiler/tools/* の7本
 #                                          （cwd = compiler/。desugardump 自身を含む）。fail = 0 がゲート
 #   scripts/selfhost_desugar.sh ENTRY...   指定の entry だけ（cwd = ルート）
 #
-# 大きい 3 本（desugardump・checkdump・sobercheck — コア AST 9.6〜10.6MB）は、出力バッファ（1 バイト 1 語）が旧 64MB スロットを超えるので
+# 大きい3本（desugardump・checkdump・sobercheck — コアAST 9.6〜10.6MB）は、出力バッファ（1バイト1ワード）が旧64MBスロットを超えるので
 # 外していた（selfhost-drafts F-17）。region 予約の拡大で解除
 #
-# Zig 版が拒否する entry は、Sober 版も拒否すること（診断の文言は比べない — 座標と文言の照合は診断の段）。
+# Zig版が拒否するentryは、Sober版も拒否すること（診断の文言は比べない — 座標と文言の照合は診断のフェーズ）。
 # Sober 版の入力は Manifest（loaderdump と同じ — 仮決め R8-2 / R8-3）。前提: zig build 済み（$STAGE1 で差し替え可）
 set -euo pipefail
 cd "$(dirname "$0")/.."

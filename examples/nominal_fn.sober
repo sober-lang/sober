@@ -1,6 +1,6 @@
 package main
 
-// 負例（language.md 32 節）: 別の名前付き関数型に束縛した閉包は渡せない（X3 — 代入可能性は Go と同じ）
+// 負例（language.md 32 節）: 別の名前付き関数型に束縛したクロージャは渡せない（X3 — 代入可能性はGoと同じ）
 
 type F func(x int) int
 type G func(x int) int

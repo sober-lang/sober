@@ -1,6 +1,6 @@
 package main
 
-// Clinger の速い道の境界（2^53 の際・指数 22 / 23 の際・負のゼロ・桁の多い 0 — scripts/oracles/float_clinger.go の Go の答えと照合）
+// Clingerの高速パスの境界（2^53の際・指数22 / 23の際・負のゼロ・桁の多い0 — scripts/oracles/float_clinger.goのGoの答えと照合）
 
 import "std/convert"
 import "std/math"

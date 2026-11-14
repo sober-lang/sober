@@ -1,6 +1,6 @@
 package lower
 
-// switch（src/stage1/lower_switch.zig の写し）: subject の評価、case の順次照合（定数・束縛・`_`・型パターン）、腕の合流
+// switch（src/stage1/lower_switch.zigのコピー）: subjectの評価、caseの順次照合（定数・束縛・`_`・型パターン）、分岐の合流
 
 import "diag"
 import "desugar"
@@ -37,7 +37,7 @@ func isBindAlt(st mut St, alts desugar.ListRef) bool {
 }
 
 // 型パターンの名前 pn（"V" か "ref.V"）が union の型 ut の何番目の variant か（でなければ -1）。名前は desugar.ResolveVariant
-// （check と同じ解決 — 修飾・公開の検査つき）で引き、ut の宣言（error なら全ラベルの union）の variant であることを確かめる
+// （checkと同じ解決 — 修飾・公開の検査つき）で引き、utの宣言（errorなら全ラベルのunion）のvariantであることを確認する
 func patVariant(st mut St, pn desugar.StrRef, ut int) int {
     if !isTag(mut st, ut, TUnion) {
         return -1
@@ -51,7 +51,7 @@ func patVariant(st mut St, pn desugar.StrRef, ut int) int {
     return if r.idx == ud { r.sub } else { -1 }
 }
 
-// 束縛の鎖 = [head, tail]、項 = [next, name, 型, 値]
+// 束縛のチェーン = [head, tail]、項 = [next, name, 型, 値]
 func bindAdd(st mut St, bs int, name int, t int, v int) {
     en := rec4(mut st, -1, name, t, v)
     if desugar.HeapGet(mut st.d, bs + 1) < 0 {
@@ -129,7 +129,7 @@ func switchExpr(st mut St, sw desugar.NodeRef) (Val, error?) {
         }
         mut av := armTail(mut st, lA(nodeOf(mut st, nB(nodeOf(mut st, c)))))?
         popScope(mut st)
-        // 期待型が byte / named scalar なら、末尾が型なしの定数の腕をそれに割り当てる（if 式の腕と同じ規則）
+        // 期待型がbyte / named scalar なら、末尾が型なしの定数の分岐をそれに割り当てる（if式の分岐と同じ規則）
         if cw >= 0 && cur(mut st) != -1 && armUntyped(mut st, nB(nodeOf(mut st, c))) && armFits(mut st, cw, av.t, nB(nodeOf(mut st, c))) {
             av = Val{t: cw, v: av.v}
         }
@@ -140,8 +140,8 @@ func switchExpr(st mut St, sw desugar.NodeRef) (Val, error?) {
         setCur(mut st, nx)
     }
     // error の switch（単一の subject）は網羅を要求しない — 網羅は analyzer が導出集合で判定し（language.md 13 節・error 網羅 analyzer A5）、
-    // build は analyzer を走らせないので、覆っていないラベルが来たら exit 101（決定 E4-B — 下の外れの腕）
-    // （リンク集合の全ラベルを覆う error の switch は今までどおり — 外れの腕はゼロ値のまま、IR は変わらない）
+    // buildはanalyzerを走らせないので、覆っていないラベルが来たらexit 101（決定E4-B — 下の外れの分岐）
+    // （リンク集合の全ラベルを覆うerrorのswitchは今までどおり — 外れの分岐はゼロ値のまま、IRは変わらない）
     mut errGap := false
     isErrSw := nsub == 1 && isErr(mut st, desugar.HeapGet(mut st.d, subj + 1))
     // 網羅を見る subject の型（error の switch はリンク集合の全ラベルの union）
@@ -161,17 +161,17 @@ func switchExpr(st mut St, sw desugar.NodeRef) (Val, error?) {
             endsAdd(mut st, ends, cur(mut st), dv.t, dv.v)
         }
     } else if errGap {
-        // 覆っていないラベル（到達しない腕 — コアの unreach と同じ panic）
+        // 覆っていないラベル（到達しない分岐 — コアのunreachと同じpanic）
         if cur(mut st) != -1 {
             panicSite(mut st, PK_UNREACH, at)
         }
     } else if t >= 0 && isTag(mut st, t, TNever) && switchCovers(mut st, sw, cty) {
-        // 腕が全部戻らず（return 等）、腕が値を全部覆う: 外れには来ない（コアの unreach と同じ panic — 外れのブロックを終端なしで残さない）
+        // 分岐が全部戻らず（return等）、分岐が値を全部覆う: 外れには来ない（コアのunreachと同じpanic — 外れのブロックを終端なしで残さない）
         if cur(mut st) != -1 {
             panicSite(mut st, PK_UNREACH, at)
         }
     } else {
-        // 外れの経路は「何もせず抜ける」— 腕が全部 Never でも、覆っていなければ外れは unit で後ろへ続く（全部 Never を外れにも写すと
+        // 外れの経路は「何もせず抜ける」— 分岐が全部Neverでも、覆っていなければ外れはunitで後ろへ続く（全部Neverを外れにも反映すると
         // switch の後ろを落とし、外れのブロックが終端なしで残る — Zig 版の時代からの穴。B-3 の検証器が拾った）
         rt := if t < 0 || isTag(mut st, t, TNever) { tNone(mut st) } else { t }
         t = joinType(mut st, t, rt, at)?
@@ -189,7 +189,7 @@ func checkCover(st mut St, sw desugar.NodeRef, sty int, t int) error? {
         return nil
     }
     if isTag(mut st, sty, TUnion) && typePatRows(mut st, sw) > 0 {
-        // 網羅漏れは名指す（落ちている variant — check と同じ desugar.MissingVariant）
+        // 網羅漏れは特定する（落ちているvariant — checkと同じdesugar.MissingVariant）
         ud := desugar.HeapGet(mut st.d, desugar.HeapGet(mut st.d, sty + 1) + SI_DECL)
         if ud == -1 {
             return diag.Mismatch{at: posOf(mut st, sw)}
@@ -202,7 +202,7 @@ func checkCover(st mut St, sw desugar.NodeRef, sty int, t int) error? {
                 ps = append(ps, latI(mut st, pats, i))
             }
         }
-        // 名指すのは同じ package の union だけ（check と同じ — 別 package の宣言はソースが引けない場合がある）
+        // 特定するのは同じpackageのunionだけ（checkと同じ — 別packageの宣言はソースが引けない場合がある）
         mv := if desugar.HeapGet(mut st.d, desugar.HeapGet(mut st.d, sty + 1) + SI_PKG) == st.curPkg { desugar.MissingVariant(mut st.d, st.curPkg, desugar.NodeRef(ud), freeze(ps)) } else { desugar.NodeRef(-1) }
         return diag.NonExhaustive{at: posOf(mut st, sw), missing: if mv == desugar.NodeRef(-1) { diag.None() } else { posOf(mut st, mv) }}
     }
@@ -215,7 +215,7 @@ func checkCover(st mut St, sw desugar.NodeRef, sty int, t int) error? {
     return nil
 }
 
-// 型パターン 1 つだけの腕の数
+// 型パターン1つだけの分岐の数
 func typePatRows(st mut St, sw desugar.NodeRef) int {
     cases := lB(nodeOf(mut st, sw))
     mut n := 0
@@ -228,8 +228,8 @@ func typePatRows(st mut St, sw desugar.NodeRef) int {
     return n
 }
 
-// default なしの switch の腕が値を全部覆うか（全域の case — `_`・束縛 — があるか、subject sty が union で型パターンの腕が
-// 全 variant を入れ子の欄まで覆う）
+// defaultなしのswitchの分岐が値を全部覆うか（全域のcase — `_`・束縛 — があるか、subject styがunionで型パターンの分岐が
+// 全variantを入れ子のフィールドまで覆う）
 func switchCovers(st mut St, sw desugar.NodeRef, sty int) bool {
     cases := lB(nodeOf(mut st, sw))
     for ci <- iter.Range(0, lenL(mut st, cases)) {
@@ -242,7 +242,7 @@ func switchCovers(st mut St, sw desugar.NodeRef, sty int) bool {
         }
     }
     if isTag(mut st, sty, TUnion) {
-        // 型パターンの腕の行列（1 列 = subject）が全 variant を入れ子の欄まで覆うか（パターン行列 — check と共有の desugar.PmUseful1）
+        // 型パターンの分岐の行列（1列 = subject）が全variantを入れ子のフィールドまで覆うか（パターン行列 — checkと共有のdesugar.PmUseful1）
         mut n := 0
         for ci <- iter.Range(0, lenL(mut st, cases)) {
             pats := lA(nodeOf(mut st, latN(mut st, cases, ci)))
@@ -319,7 +319,7 @@ func matchPattern(st mut St, p desugar.NodeRef, sty int, sv int, nx BlkRef, bs i
     if sty < 0 {
         return diag.Mismatch{at: posOf(mut st, at)}
     }
-    // error: 先頭ラベルのタグ（語 0）で照合し、欄は列の末尾のセルから・`cause` は列から作る 1 つ内側の error?
+    // error: 先頭ラベルのタグ（ワード0）で照合し、フィールドは列の末尾のセルから・`cause` は列から作る1つ内側のerror?
     is_err := isErr(mut st, sty)
     sty0 := sty
     ut := if is_err { desugar.HeapGet(mut st.d, errsInfo(mut st) + SI_TY) } else { sty0 }
@@ -383,7 +383,7 @@ func matchPattern(st mut St, p desugar.NodeRef, sty int, sv int, nx BlkRef, bs i
     return nil
 }
 
-// switch の腕（default を含む）のどれかが nil で終わるか
+// switchの分岐（defaultを含む）のどれかがnilで終わるか
 func nilCaseL(st mut St, sw desugar.NodeRef) bool {
     cs := lB(nodeOf(mut st, sw))
     for i <- iter.Range(0, lenL(mut st, cs)) {

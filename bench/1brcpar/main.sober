@@ -1,6 +1,6 @@
 package main
 
-// 1BRC の並列版（段 6 P4-6 — 逐次の bench/1brc と同じ集計・同じ出力）: 全体を読んで UTF-8 を 1 回だけ検査し、行の切れ目で NCHUNK 個の区間に
+// 1BRCの並列版（フェーズ6 P4-6 — 逐次のbench/1brcと同じ集計・同じ出力）: 全体を読んでUTF-8を1回だけ検査し、行の切れ目でNCHUNK個の区間に
 // 分けて区間ごとに task.Map で集計（子ごとに自分の map と列）、親が生んだ順に合わせる。素直縛り — ワーカーの数は書かない（区間の数は固定・
 // 余った区間は pull で均される）
 
@@ -187,7 +187,7 @@ func putInt(out mut []byte, v int) {
     out = append(out, byte('0' + v % 10))
 }
 
-// sorted は names を名前のバイト順に並べた写し（挿入ソート — 観測所は数百）
+// sortedはnamesを名前のバイト順に並べたコピー（挿入ソート — 観測所は数百）
 func sorted(names []string) []string {
     mut xs := mut []string{}
     for i <- iter.Range(0, len(names)) {

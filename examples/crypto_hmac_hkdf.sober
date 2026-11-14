@@ -1,7 +1,7 @@
 package main
 
 // std/crypto の sha256（逐次）・hmac・hkdf: RFC 4231 の HMAC-SHA256 の 7 例・RFC 5869 の HKDF-SHA256 の 3 例・逐次の SHA-256 の
-// 切り方の全部（長さ 0〜200 を 1〜70 バイトずつ書いて一回の口と一致）と途中の Sum が状態を変えないこと。Go の双子 = scripts/oracles/crypto_hmac_hkdf.go
+// 切り方の全部（長さ0〜200を1〜70バイトずつ書いて一回のAPI呼び出しと一致）と途中のSumが状態を変えないこと。比較用のGoの実装 = scripts/oracles/crypto_hmac_hkdf.go
 // （crypto/hmac・crypto/hkdf・crypto/sha256 の値 + RFC の期待値の照合）
 
 import "std/crypto"
@@ -74,7 +74,7 @@ func main() {
     println("hkdf max", len(om), em == nil)
     _, eo := crypto.hkdf.Expand(p1, bytes(""), 8161)
     println("hkdf over", eo != nil)
-    // 逐次: 長さ 0〜200 × 切り幅 1〜70 が一回の口と一致した数
+    // 逐次: 長さ0〜200 × 切り幅1〜70が一回のAPI呼び出しと一致した数
     mut ok := 0
     mut bad := 0
     for n <- iter.Range(0, 201) {

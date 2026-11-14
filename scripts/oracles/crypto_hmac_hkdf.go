@@ -1,4 +1,4 @@
-// examples/crypto_hmac_hkdf.sober の Go の双子（std/crypto の sha256 / hmac / hkdf の差分オラクル — report-792）。
+// examples/crypto_hmac_hkdf.soberの比較用のGoの実装（std/cryptoのsha256 / hmac / hkdfの差分オラクル — report-792）。
 // crypto/hmac・crypto/hkdf・crypto/sha256 で同じ入力の値を出し、RFC 4231 の 1・2 例と RFC 5869 A.1 の期待値をここに固定して照合する
 // （食い違いは標準エラーに出して exit 1）。再生成:
 //   go run scripts/oracles/crypto_hmac_hkdf.go > examples/crypto_hmac_hkdf.out

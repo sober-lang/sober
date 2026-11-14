@@ -2,7 +2,7 @@ package loader
 
 // interface 視点のロード（check --pkg・language.md 29 節「interface 視点のローダ」）: <dir>/link.txt（iface -o が書くリンク集合）の順に、
 // package target だけソースから・他の package は <dir>/<path>.sobi から読む（parser.ParseIface — 本体の無い func 宣言・@expand）。
-// import を辿る発見ループは回さない（ロード順はリンク表が持つ）。以降の段は load と同じ（finish）
+// importを辿る発見ループは回さない（ロード順はリンク表が持つ）。以降のステージはloadと同じ（finish）
 
 import "ast"
 import "diag"
@@ -46,7 +46,7 @@ func LoadViewMem(entry string, target string, paths []string, sobis []Sobi, sm m
     return p, err
 }
 
-// LoadViewMem に加えて、loader の写しの前の生の木（ファイルごと — target のファイルは parse したまま・他は .sobi の木）を返す
+// LoadViewMemに加えて、loaderの変換の前の生の木（ファイルごと — targetのファイルはparseしたまま・他は .sobiの木）を返す
 // （iface.Emit が target の原文の形で .sobi を書くのに使う — 書き出しのたびにソースを読み直して parse し直さない）
 @errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.Mod, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.LeadingZero, diag.LitRange, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.Par, diag.Cell)
 func LoadViewMemRaw(entry string, target string, paths []string, sobis []Sobi, sm map[string]string) (Program, []ast.Tree, error?) {
@@ -63,7 +63,7 @@ func loadView(entry string, target string, paths []string, dir string, sobis []S
 func loadViewRaw(entry string, target string, paths []string, dir string, sobis []Sobi, sm map[string]string) (Program, []ast.Tree, error?) {
     m := Manifest{entry, "", []string{}, "", "", false, []string{}, 0, []string{}, []string{}, NoMod()}
     mut trees := mut []ast.Tree{}
-    // 生の木（loader の写しの前 — iface.Emit が原文の形で書く）。trees は写した木（catch の束縛 — 以降の段が読む）
+    // 生の木（loaderの変換の前 — iface.Emitが原文の形で書く）。treesは変換した木（catchの束縛 — 以降のステージが読む）
     mut raws := mut []ast.Tree{}
     mut fpkg := mut []string{}
     mut fpath := mut []string{}
@@ -91,7 +91,7 @@ func loadViewRaw(entry string, target string, paths []string, dir string, sobis 
             fpath = append(fpath, sp)
             fstd = append(fstd, false)
             pre := sobiPre(l, dir, sobis)
-            // .sobi の本体は原文の形（catch 式のまま — iface.Emit）なので、ソースと同じく写してから以降の段へ
+            // .sobiの本体は原文の形（catch式のまま — iface.Emit）なので、ソースと同じく変換してから以降のステージへ
             if pre >= 0 {
                 trees = append(trees, surfaceRewrites(sobis[pre].tree))
                 raws = append(raws, sobis[pre].tree)

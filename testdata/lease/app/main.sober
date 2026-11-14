@@ -1,12 +1,12 @@
 package main
 
-// 別の package の T の置き場を子 task が借りる（Local は imm のデータとして捕獲で渡る — 出力は W に依らない）
+// 別のpackageのTの格納場所を子taskが借りる（Localはimmのデータとして捕獲で渡る — 出力はWに依らない）
 
 import "std/iter"
 import "std/task"
 import "testdata/lease/wk"
 
-// count は窓 1 つ（Local は imm のデータとして実引数でも渡る）
+// countはウィンドウ1つ（Localはimmのデータとして実引数でも渡る）
 func count(lw task.Local, i int) int {
     return task.Lease(lw, (w mut testdata.lease.wk.Work) => testdata.lease.wk.Count(mut w, []int{i}))
 }

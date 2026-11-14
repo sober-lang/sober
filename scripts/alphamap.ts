@@ -74,7 +74,7 @@ const norm = (t0: string) => {
     if (ir) t = decodeIr(t);
     if (core) t = decodeCore(t);
     if (!cols) return t;
-    // panic の点の表（@rt.psites — 1 点 1 語 = 種類 | ファイル << 8 | 行 << 24 | 列 << 48 — lower/panic.sober）の列も伏せる
+    // panicの点の表（@rt.psites — 1点1ワード = 種類 | ファイル << 8 | 行 << 24 | 列 << 48 — lower/panic.sober）の列も伏せる
     const mask = (ws: string, pre: string) =>
         ws.split(",").map((w) => pre + (BigInt.asUintN(64, BigInt(w.trim().replace(/^i64 /, ""))) & ((1n << 48n) - 1n)).toString()).join(", ");
     t = t

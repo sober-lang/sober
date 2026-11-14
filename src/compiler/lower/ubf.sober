@@ -1,8 +1,8 @@
 package lower
 
-// UTF-8 の境界の畳み（展開の後の関数ごとの段 lB2Func）: std/utf8.Str の写しの中の
-// std/utf8.boundary の写しの判定 `load8 P[X] & 192 != 128`（X が文字の頭か）を、呼び手で分かっている事実から真と証明できたら br に畳む。
-// 対象の読みは印つき（irinl.sober — boundary の本体の byte の読みの写しにだけ付き、写しを重ねても継ぐ）なので、P は View の中身を指す。
+// UTF-8の境界の畳み（展開の後の関数ごとのフェーズlB2Func）: std/utf8.Strのコピーの中の
+// std/utf8.boundaryのコピーの判定 `load8 P[X] & 192 != 128`（Xが文字の頭か）を、呼び手で分かっている事実から真と証明できたらbrに畳む。
+// 対象の読みはフラグつき（irinl.sober — boundaryの本体のbyteの読みのコピーにだけ付き、コピーを重ねても継ぐ）なので、PはViewの中身を指す。
 // 前提（どれも言語の約束から — 新しい仮定は足さない）:
 //   ①不変の読み: View の中身は imm で、freeze の一意性（language.md 17 節 U1〜U3 — 一意でない freeze は検査器が拒否）により凍結の後に書く
 //     別名が静的に存在しない。よって同じ番地・同じ添字の byte の読みは、間に store / call があっても同じ値
@@ -10,15 +10,15 @@ package lower
 // 証明の形（どれも支配する condbr の辺の事実だけ — bce と同じ骨格）:
 //   i 側: 支配する辺で `load8 P'[X] == K`（K は ASCII の定数・P' と P は同じ番地の値）→ その byte は K で、K & 192 != 128（算術だけ — ②を使わない）
 //   s 側: X = Y + 1 で、支配する辺で `load8 P'[Y] == K`（ASCII）→ ②で X は文字の頭。X がループの頭の仮引数なら、入りの値が全部
-//         「0（boundary の写しは p > 0 の後でしか読まないので読みに届かない）か、その辺で ASCII と分かっている byte の次」
-// Str の写しの View の P が呼び手の b と同じ値になるのは lower の束縛の事実から（lower.sober の ubBind — `v := utf8.Check(b) catch <脱出>` の v を
+//         「0（boundaryのコピーはp > 0の後でしか読まないので読みに届かない）か、その辺でASCIIと分かっているbyteの次」
+// StrのコピーのViewのPが呼び手のbと同じ値になるのはlowerの束縛の事実から（lower.soberのubBind — `v := utf8.Check(b) catch <脱出>` のvを
 // View{b: b のヘッダ} に組み直す — Check の契約〔成功なら View.b = b〕を std の語彙として lower に置く）。
-// 事実の読みの条件: 同じ番地を検査する Check の呼び出し（写さない — irinl.sober）がこの関数にあれば、その点が事実の読みを支配すること
+// 事実の読みの条件: 同じ番地を検査するCheckの呼び出し（コピーしない — irinl.sober）がこの関数にあれば、その点が事実の読みを支配すること
 
 import "desugar"
 import "std/iter"
 
-// boundary の写しの byte の読みの印（load8 の C 欄 — 他の段は load8 の C を読まない。ubfFunc が消す）
+// boundaryのコピーのbyteの読みのフラグ（load8のCフィールド — 他のフェーズはload8のCを読まない。ubfFuncが消す）
 const UB_MARK = 2
 
 // 全関数に掛ける（逐次の経路 — 群の子の経路は lB2Func）。--ubf-stat なら畳めた数を `ubf <関数> <数>` で印字
@@ -37,7 +37,7 @@ func ubfModule(st mut St) {
     }
 }
 
-// 命令 x が boundary の写しの byte の読みか
+// 命令xがboundaryのコピーのbyteの読みか
 func ubMarked(st mut St, x InsRef) bool {
     return irInsOp(mut st, x) == OpLoad8 && irInsC(mut st, x) == UB_MARK
 }
@@ -55,7 +55,7 @@ func ubfFunc(st mut St, f FnRef) int {
     if st.ubBound == -1 {
         return 0
     }
-    // 先に安い走査: 印つきの読みが無ければ何もしない
+    // 先に安い走査: フラグつきの読みが無ければ何もしない
     mut any := false
     mut b0 := irFnBHead(mut st, f)
     while b0 != -1 && !any {
@@ -119,7 +119,7 @@ func ubfFunc(st mut St, f FnRef) int {
             }
         }
     }
-    // 印を消す（後段は load8 の C を 0 として読む）
+    // フラグを消す（後段はload8のCを0として読む）
     mut b1 := irFnBHead(mut st, f)
     while b1 != -1 {
         mut ins := irBlkIHead(mut st, b1)
@@ -141,7 +141,7 @@ func ubfFunc(st mut St, f FnRef) int {
     return folded
 }
 
-// 条件 c が「印つきの読み L で `and L, 192` != 128」で、番号 bb のブロックの点で真と証明できるか
+// 条件cが「フラグつきの読みLで `and L, 192` != 128」で、番号bbのブロックの点で真と証明できるか
 func ubBoundaryTrue(st mut St, w mut m2rW, uw mut UbW, bb int, c int) bool {
     cd := uw.defIns[c]
     if cd < 0 || irInsOp(mut st, InsRef(cd)) != OpCmp || irInsA(mut st, InsRef(cd)) != CNe || !ubIsConst(mut st, mut uw, irInsC(mut st, InsRef(cd)), 128) {
@@ -251,13 +251,13 @@ func ubAddr(st mut St, uw mut UbW, l InsRef) (int, int, bool) {
     return irInsA(mut st, InsRef(gd)), irInsB(mut st, InsRef(gd)), true
 }
 
-// 番地の値 a・b が同じ番地か（itop / ptoi の鎖を両側とも剥がした根が同じ値 — 語と番地の行き来はビット列を変えない。Check の実引数は
-// ヘッダの語〔i64〕・読みの番地はその itop なので、片側だけの鎖も同じと見る — ubFrozenAt が Check の呼び出しを見落とさない）
+// 番地の値a・bが同じ番地か（itop / ptoiのチェーンを両側とも剥がした根が同じ値 — ワードと番地の行き来はビット列を変えない。Checkの実引数は
+// ヘッダのワード〔i64〕・読みの番地はそのitopなので、片側だけのチェーンも同じと見る — ubFrozenAtがCheckの呼び出しを見落とさない）
 func ubSameBase(st mut St, uw mut UbW, a int, b int, fuel int) bool {
     return a >= 0 && b >= 0 && ubRoot(mut st, mut uw, a, fuel) == ubRoot(mut st, mut uw, b, fuel)
 }
 
-// 値 v から itop / ptoi の鎖を（fuel 段まで）剥がした値
+// 値vからitop / ptoiのチェーンを（fuelレベルまで）剥がした値
 func ubRoot(st mut St, uw mut UbW, v int, fuel int) int {
     mut x := v
     mut k := fuel

@@ -3,7 +3,7 @@ package desugar
 import "std/iter"
 import "std/table"
 
-// コア式（Lean の Expr と同形 — 5 語 [tag, a, b, c, d]）
+// コア式（LeanのExprと同形 — 5ワード [tag, a, b, c, d]）
 
 const CLit = 1       // a = 値
 const CTT = 2
@@ -51,26 +51,26 @@ const CLenm = 43     // a
 const CLabel = 44    // a = ラベルの記録（LB*）, b = 型, c = e, d = 整形（W*）
 const CJump = 45     // a = ラベルの id, b = 型, c = e
 const CStrlit = 46   // a = バイト列（ヒープの文字列）, b = region（Lean の strlit — region b の imm int セル列）
-const CKeysm = 47    // a（keysm の段 — map のキー列のスナップショット）
-const CUnreach = 48  // a = 型（到達しない — error の switch の覆っていない腕。error 網羅 analyzer A5・formal.md「到達しない項の段」）
-const CToByte = 49   // a（byte の段 — `byte(n)`: int → byte、範囲外は panic。language.md 33 節・formal.md「byte の段」）
+const CKeysm = 47    // a（keysmの段階 — mapのキー列のスナップショット）
+const CUnreach = 48  // a = 型（到達しない — errorのswitchの覆っていない分岐。error網羅analyzer A5・formal.md「到達しない項の段階」）
+const CToByte = 49   // a（byteの段階 — `byte(n)`: int → byte、範囲外はpanic。language.md 33 節・formal.md「byteの段階」）
 const CToInt = 50    // a（`int(b)`: byte → int）
-const CFlit = 51     // a = ビット列（float の段 — IEEE 754 binary64 を i64 の 2 の補数で読んだ値。language.md 37 節・Lean の flit）
+const CFlit = 51     // a = ビット列（floatの段階 — IEEE 754 binary64をi64の2の補数で読んだ値。language.md 37 節・Leanのflit）
 const CFBin = 52     // a = 種類（FB*）, b, c（float × float → float / bool — Lean の farith / fcmp）
 const CFConv = 53    // a = 種類（FC*）, b = e（neg / sqrt / ofInt / toInt / bits / fromBits — Lean の fconv）
-const CCopyTo = 54   // a = 型, b = e, c = 写し先の region k（境界コピー式 — Lean の copyTo・宛先構築レーン M3）
+const CCopyTo = 54   // a = 型, b = e, c = コピー先のregion k（境界コピー式 — LeanのcopyTo・宛先構築レーンM3）
 // task の木（Lean の scope / spawn / join / tryJ。scope の型は union t unit — inr = 子の死）
-const CScope = 55    // a = 型 t（本体の写した型）, b = 本体（var 0 = 札）, c = err の型 eps（未回収の失敗の写し先の型・region 0 の形）
+const CScope = 55    // a = 型t（本体のコピーした型）, b = 本体（var 0 = 札）, c = errの型eps（未回収の失敗のコピー先の型・region 0の形）
 const CSpawn = 56    // a = 札, b = 渡す値, c = 子の本体（閉じている — var 0 = 渡す値）
-const CJoin = 57     // a = 型 t（結果型 — 子の結果を scope の region へ写すときに歩く型）, b = handle
+const CJoin = 57     // a = 型t（結果型 — 子の結果をscopeのregionへコピーするときに歩く型）, b = handle
 const CTry = 58      // a = 型 t（死のときの nil の注釈）, b = handle
 const CNewch = 59    // a = 家の region r, b = 容量, c = ペイロードの型（端点の組 prod (own tx r t) (own rx r t)）
 const CSend = 60     // a = 送り端, b = 値
 const CRecv = 61     // a = 受け端（型は T? — 閉じて空なら nil）
 const CClose = 62    // a = 送り端（P3b-4 ③ — 閉じる）
-const CClone = 63    // a = e, b = 読み出しの注釈の型（-1 = 注釈なし — CIndex と同じ）（clone の段 — slice / map の浅い写しを最内 region の mut へ）
-const CCallMv = 64   // a = f, b = e, c = anchor の region（anchor つきの関数値の呼び出し — Lean の callMv・関数型の mut 仮引数の席）
-// 再帰型（iso — Lean の fold / unfold）: CFold の a = 型（μ）, b = e（中身は 1 段の展開の型）/ CUnfold の a = e
+const CClone = 63    // a = e, b = 読み出しの注釈の型（-1 = 注釈なし — CIndexと同じ）（cloneの段階 — slice / mapの浅いコピーを最内regionのmutへ）
+const CCallMv = 64   // a = f, b = e, c = anchorのregion（anchorつきの関数値の呼び出し — LeanのcallMv・関数型のmut仮引数）
+// 再帰型（iso — Leanのfold / unfold）: CFoldのa = 型（μ）, b = e（中身は1レベルの展開の型）/ CUnfoldのa = e
 const CFold = 65
 const CUnfold = 66
 // domain（Lean の dnew / denter / dexit）: CDnew の a = 家の region r, b = 初期値, c = 状態の型 / CDenter の a = 状態の型, b = domain /
@@ -91,7 +91,7 @@ const FLe = 8
 const FGt = 9
 const FGe = 10
 
-// float の単項の写しの種類
+// floatの単項の変換の種類
 const FCNeg = 1
 const FCSqrt = 2
 const FCOfInt = 3
@@ -121,7 +121,7 @@ const WDiscard = 1
 const WAnn = 2
 
 // コア式 1 つ（st.cores の要素 — 作ったら変えない）。参照 = CBASE + 添字（ヒープの番地・型の参照と取り違えて読むと
-// 範囲外で panic する）。欄は int の記録 — 子の式は int(e) で入れ、読むのは CoreRef(x.a) 等
+// 範囲外でpanicする）。フィールドはintの記録 — 子の式はint(e) で入れ、読むのはCoreRef(x.a) 等
 type CoreExpr struct {
     tag int
     a int
@@ -135,7 +135,7 @@ const CBASE = 2199023255552
 // コア式の参照（CBASE + 添字。-1 = 無し）
 type CoreRef int
 
-// コア式を作る（欄は生の int — 種類つきの構築子だけが呼ぶ）
+// コア式を作る（フィールドは生のint — 種類つきの構築子だけが呼ぶ）
 func ce(st mut S, tag int, a int, b int, c int, d int) CoreRef {
     n := table.Len(mut st.cores)
     table.Push(mut st.cores, CoreExpr{tag: tag, a: a, b: b, c: c, d: d})
@@ -150,7 +150,7 @@ func coreAt(st mut S, x CoreRef) CoreExpr {
     return table.Get(mut st.cores, int(x) - CBASE)
 }
 
-// latCore / hgetCore / hsetCore はヒープの列・記録越しのコア式（ヒープの語は int）
+// latCore / hgetCore / hsetCoreはヒープの列・記録越しのコア式（ヒープのワードはint）
 func latCore(st mut S, l ListRef, i int) CoreRef {
     return CoreRef(latI(mut st, l, i))
 }
@@ -165,7 +165,7 @@ func hsetCore(st mut S, i int, e CoreRef) {
 
 // ── 子が全部式のコア式 ──
 
-// float の段の記録（a は種類・ビット列 — 子でない欄）
+// floatの段階の記録（aは種類・ビット列 — 子でないフィールド）
 func cFlit(st mut S, bits int) CoreRef {
     return ce(mut st, CFlit, bits, 0, 0, 0)
 }
@@ -210,7 +210,7 @@ func cIte(st mut S, c CoreRef, t CoreRef, e CoreRef) CoreRef {
     return ce(mut st, CIte, int(c), int(t), int(e), 0)
 }
 
-// ── 整数の欄を持つコア式 ──
+// ── 整数のフィールドを持つコア式 ──
 
 func cLit(st mut S, n int) CoreRef {
     return ce(mut st, CLit, n, 0, 0, 0)
@@ -245,7 +245,7 @@ func cStrlit(st mut S, s int, r int) CoreRef {
     return ce(mut st, CStrlit, s, r, 0, 0)
 }
 
-// ── 型を欄に持つコア式（型は int(t) で入れ、読むのは TyRef(x.b) 等）──
+// ── 型をフィールドに持つコア式（型はint(t) で入れ、読むのはTyRef(x.b) 等）──
 
 func cAnn(st mut S, e CoreRef, t TyRef) CoreRef {
     return ce(mut st, CAnn, int(e), int(t), 0, 0)
@@ -326,12 +326,12 @@ func cClose(st mut S, c CoreRef) CoreRef {
     return ce(mut st, CClose, int(c), 0, 0, 0)
 }
 
-// anchor つきの関数値の呼び出し（anchor = region a — env か引数に mut の束縛を持つ閉包の呼び出し）
+// anchorつきの関数値の呼び出し（anchor = region a — envか引数にmutの束縛を持つクロージャの呼び出し）
 func cCallMv(st mut S, a int, f CoreRef, e CoreRef) CoreRef {
     return ce(mut st, CCallMv, int(f), int(e), a, 0)
 }
 
-// e を外側の region k へ写す境界コピー式（型 t は k 以下しか指さない）
+// eを外側の region k へコピーする境界コピー式（型tはk以下しか指さない）
 func cCopyTo(st mut S, k int, t TyRef, e CoreRef) CoreRef {
     return ce(mut st, CCopyTo, int(t), int(e), k, 0)
 }
@@ -345,7 +345,7 @@ func cMksliceAt(st mut S, m int, t TyRef, r int) CoreRef {
     return ce(mut st, CMkslice, m, int(t), 0, r + 1)
 }
 
-// clone(x) の写し（t は読み出しの注釈 — -1 = 注釈なし）
+// clone(x) のコピー（tは読み出しの注釈 — -1 = 注釈なし）
 func cClone(st mut S, e CoreRef, t TyRef) CoreRef {
     return ce(mut st, CClone, int(e), int(t), 0, 0)
 }
@@ -382,7 +382,7 @@ func cJump(st mut S, id int, t TyRef, e CoreRef) CoreRef {
     return ce(mut st, CJump, id, int(t), int(e), 0)
 }
 
-// 値の列 → 右結合の pair 鎖（0 は triv、1 は素の値）
+// 値の列 → 右結合のpairチェーン（0はtriv、1は素の値）
 func pairChain(st mut S, l ListRef) CoreRef {
     n := lenL(mut st, l)
     if n == 0 {

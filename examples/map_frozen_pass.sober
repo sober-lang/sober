@@ -1,8 +1,8 @@
 package main
 
-// 凍った map を値で渡して呼ぶたびに引く（language.md 17 節の map の封）: 呼ばれた側は自分の仮引数の写しに索引を作るので、
+// 凍ったmapを値で渡して呼ぶたびに引く（language.md 17 節のmapの封）: 呼ばれた側は自分の仮引数のコピーに索引を作るので、
 // 凍らせた時点で索引が古い map（長さ 513 = 予約の尽きる長さ・関数から返した長さ 8）は、呼ぶたびに索引を作り直して region に積もり、
-// 20 万回で RegionExceeded{slot_capacity} だった。凍った map は封じた形（索引が確定）なので写しの引きは確保も書きもしない
+// 20万回でRegionExceeded{slot_capacity} だった。凍ったmapは封じた形（索引が確定）なのでコピーの引きは確保も書きもしない
 
 import "std/iter"
 

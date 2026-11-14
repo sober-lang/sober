@@ -10,27 +10,27 @@ import "std/os"
 import "std/table"
 import "x86"
 
-// ── 後段の関数キャッシュの置き場と値 ──
+// ── 後段の関数キャッシュの格納場所と値 ──
 //
-// 置き場 = 世代のディレクトリ（`<cacheDir>/sober-build-1/<コンパイラの鍵の先頭 16 桁>/` — main が組んで Knob.bcDir で渡す）に build ごとに 1 つの
+// 格納場所 = 世代のディレクトリ（`<cacheDir>/sober-build-1/<コンパイラの鍵の先頭 16 桁>/` — mainが組んでKnob.bcDirで渡す）にbuildごとに1つの
 // パック（`<pid>-<乱数>-<バイト数>.pack` — tmp + rename で公開・書いたら変えない・大きさは一覧〔bcGens〕が stat せずに数えるため）。パック = 値の並び + 索引（varint の [切り口, 鍵 h1, h2, 位置, 長さ,
-// 値の検査和]…）+ 尾（印 8 B・索引の長さ 8 B・索引の検査和 8 B）。読みは世代の全部のパックの索引を表にして、当たりの値だけを検査和で確かめて使う。
+// 値の検査和]…）+ 尾（マーク8 B・索引の長さ8 B・索引の検査和8 B）。読みは世代の全部のパックの索引を表にして、当たりの値だけを検査和で検証して使う。
 // 切り口は 3 つ: α（BC_A — B1 の後の本体）・β1（BC_B1 — B2 の後の呼び出し / 番地取りの相手の列。鍵 = B2 の入力の鍵）・β2（BC_B2 — 機械語・
-// 後埋めの列・xmm の組。鍵 = ckBeta）。値の外を指す語は安定な鍵のハッシュ（正準形）で、読み戻しで今の build の記録・番号へ戻す。
-// 検証モード（SOBER_CACHE_VERIFY=1）は当たりでも作り直し、作った値と置き場の値をバイトで比べる（違えば `cache: stale entry` で落ちる）
+// 後埋めの列・xmmの組。鍵 = ckBeta）。値の外を指すワードは安定な鍵のハッシュ（正準形）で、読み戻しで今のbuildの記録・番号へ戻す。
+// 検証モード（SOBER_CACHE_VERIFY=1）は当たりでも作り直し、作った値と格納場所の値をバイトで比べる（違えば `cache: stale entry` で落ちる）
 
 const BC_A = 0
 const BC_B1 = 1
 const BC_B2 = 2
 const BC_P = 4   // P0 — parse のファイル単位の木（loader/pcache.sober。鍵 = ソースの中身のハッシュ 2 本）
-const BC_D = 5   // D — check の関数単位の判定（checker/defcache.sober。鍵 = K-D・値 = 判定の印と落ちの位置の相対）
+const BC_D = 5   // D — checkの関数単位の判定（checker/defcache.sober。鍵 = K-D・値 = 判定のフラグと落ちの位置の相対）
 const BC_G = 3   // γ — TypeAll の package の区画（desugar/tycache.sober。鍵 = K1・値 = tyValEnc の語の可変長）
 const BC_MAGIC = 3550277445330518355 // "SBCPACK1"（LE）
 const BC_LOW63 = 9223372036854775807
 const BC_LOW57 = 144115188075855871
 
 // 読みの表（子へ渡す — 凍った値だけ）: 切り口ごとの鍵 h1 → 項目（bcProbe の開番地の表）・項目の h2 / パック / 位置 / 長さ / 検査和・
-// パックの中身。切り口の表は map にしない: 親の凍らせた map を束の子が引くと表の番地が 0 で落ちる（rt の口の問題）。slice だけの表なら子の読みは ckt の slice と同じ口
+// パックの中身。切り口の表はmapにしない: 親の凍らせたmapをバッチの子が引くと表の番地が0で落ちる（rtのインターフェースの問題）。sliceだけの表なら子の読みはcktのsliceと同じインターフェース
 type BcView struct {
     on bool
     vfy bool
@@ -73,7 +73,7 @@ func bcSum(b []byte, lo int, hi int) int {
 
 // ── varint（zigzag）──
 
-// 語 w を zigzag の varint で out へ
+// ワードwをzigzagのvarintでoutへ
 func bcPut(out mut table.Table[byte], w int) {
     mut z := (w << 1) ^ (w >> 63)
     while z < 0 || z >= 128 {
@@ -91,7 +91,7 @@ type BcRd struct {
     bad bool
 }
 
-// 次の語（読めなければ 0 で bad を立てる）
+// 次のワード（読めなければ0でbadを立てる）
 func bcGet(r mut BcRd) int {
     mut z := 0
     mut s := 0
@@ -110,9 +110,9 @@ func bcGet(r mut BcRd) int {
     return ((z >> 1) & BC_LOW63) ^ -(z & 1)
 }
 
-// ── 外を指す語の正準形 ──
+// ── 外を指すワードの正準形 ──
 
-// 外を指す語 v（関数・大域の記録 — v < 0 は無し）を out へ: [0, v] か [1, 安定な鍵の h1, h2]
+// 外を指すワードv（関数・大域の記録 — v < 0は無し）をoutへ: [0, v] か [1, 安定な鍵のh1, h2]
 func bcRef(out mut table.Table[byte], t CkTab, v int) {
     if v < 0 {
         bcPut(mut out, 0)
@@ -172,8 +172,8 @@ func bcNumGet(r mut BcRd, t CkTab, tag int) int {
 
 // ── α の値 ──
 
-// 詰めた本体 p の正準形を out へ（語の数 + 語の並び。命令の欄と終端の欄の K_FN / K_GLOB は安定な鍵・OpConst は欄 b〔札〕を
-// 先に書き、札つきなら a は点の安定な鍵 — 読み戻しは b を見てから a を読む）。語の列を作ってから 1 本のループで varint にする（語ごとの呼び出しを挟まない）
+// 詰めた本体pの正準形をoutへ（ワードの数 + ワードの並び。命令のフィールドと終端のフィールドのK_FN / K_GLOBは安定な鍵・OpConstはフィールドb〔札〕を
+// 先に書き、札つきならaは点の安定な鍵 — 読み戻しはbを見てからaを読む）。ワードの列を作ってから1本のループでvarintにする（ワードごとの呼び出しを挟まない）
 func bcAlphaEnc(out mut table.Table[byte], p []int, opk []int, tmk []int, t CkTab) {
     mut ws := mut []int{}
     ws = append(ws, len(p))
@@ -186,7 +186,7 @@ func bcAlphaEnc(out mut table.Table[byte], p []int, opk []int, tmk []int, t CkTa
         ws = append(ws, p[w])
         w += 1
     }
-    // ブロック: 終端の欄の K_FN / K_GLOB だけ置き換える
+    // ブロック: 終端のフィールドのK_FN / K_GLOBだけ置き換える
     while w < pOff {
         r := tmk[p[w + B_TERM]]
         for k <- iter.Range(0, BSZ) {
@@ -262,8 +262,8 @@ func bcAlphaEnc(out mut table.Table[byte], p []int, opk []int, tmk []int, t CkTa
 }
 
 // bcAlphaEnc(mvPack(f)) と同じバイト列を、本体を壊さずにヒープから直に作る（W1 の α の書き — 詰めて積み戻す費用を払わない）。
-// 鎖の欄は歩く順の序数から・ブロック / スロットの参照は関数の中の索引から・列は初出の順（命令の順 → 終端の順 — mvPack と同じ）に置く。
-// 末尾の欄（B_PTAIL / B_ITAIL・F_BTAIL / F_STAIL）が鎖の最後でない形は空を返す（呼び手が詰める道に落ちる）
+// チェーンのフィールドは歩く順の序数から・ブロック / スロットの参照は関数の中の索引から・列は初出の順（命令の順 → 終端の順 — mvPackと同じ）に置く。
+// 末尾のフィールド（B_PTAIL / B_ITAIL・F_BTAIL / F_STAIL）がチェーンの最後でない形は空を返す（呼び手が詰めるパスに落ちる）
 func bcAlphaHeap(st mut St, f FnRef, t CkTab) []byte {
     mut ss := mut []int{}
     mut sm := mut map[int]int{}
@@ -310,7 +310,7 @@ func bcAlphaHeap(st mut St, f FnRef, t CkTab) []byte {
     bOff := sOff + ns * MV_SLOT
     pOff := bOff + nb * BSZ
     iOff := pOff + np * MV_PAR
-    // 列の置き場（初出の順）— 中身は wl に写しておく（最後に ws へ続ける）
+    // 列の格納場所（初出の順）— 中身はwlにコピーしておく（最後にwsへ続ける）
     mut lm := mut map[int]int{}
     mut wl := mut []int{}
     lb := iOff + ni * ISZ
@@ -358,7 +358,7 @@ func bcAlphaHeap(st mut St, f FnRef, t CkTab) []byte {
         }
     }
     lend := lb + len(wl)
-    // 末尾の欄の確かめ（鎖の最後を指すこと）
+    // 末尾のフィールドの検証（チェーンの最後を指すこと）
     fb := desugar.HeapGet(mut st.d, int(f) + F_BTAIL)
     fs := desugar.HeapGet(mut st.d, int(f) + F_STAIL)
     mut ok := (if nb == 0 { fb < 0 } else { fb == bs[nb - 1] }) && (if ns == 0 { fs < 0 } else { fs == ss[ns - 1] })
@@ -512,12 +512,12 @@ func bcAlphaHeap(st mut St, f FnRef, t CkTab) []byte {
     return bcVarints(freeze(ws))
 }
 
-// 語の列 ws の zigzag の varint の並び（bcPut を語ごとに呼ぶのと同じバイト — 符号化の口 loader.Varints）
+// ワードの列wsのzigzagのvarintの並び（bcPutをワードごとに呼ぶのと同じバイト — 符号化のインターフェースloader.Varints）
 func bcVarints(ws []int) []byte {
     return loader.Varints(ws)
 }
 
-// 外を指す語 v（記録）の安定な鍵の添字（表に無ければ鍵が閉じない — 落とす）
+// 外を指すワードv（記録）の安定な鍵の添字（表に無ければ鍵が閉じない — 落とす）
 func bcRi(t CkTab, v int) int {
     i := ckIdx(t.ix, v)
     if i < 0 {
@@ -536,8 +536,8 @@ func bcNk(t CkTab, tag int, v int) int {
     return k
 }
 
-// bcAlphaEnc の読み戻し（今の build の記録・番号の詰めた本体 — 読めなければ r.bad）。値を一括で語の列に戻し（loader.Unvarints）、
-// 語の列を添字で読む（1 語ずつ読み手の欄を出し入れする bcGet を挟まない）。読めたら r.at = r.end
+// bcAlphaEncの読み戻し（今のbuildの記録・番号の詰めた本体 — 読めなければr.bad）。値を一括でワードの列に戻し（loader.Unvarints）、
+// ワードの列を添字で読む（1ワードずつ読み手のフィールドを出し入れするbcGetを挟まない）。読めたらr.at = r.end
 func bcAlphaDec(r mut BcRd, opk []int, tmk []int, t CkTab) []int {
     ws, wok := loader.Unvarints(r.b, r.at, r.end)
     nw := len(ws)
@@ -664,7 +664,7 @@ func bcAlphaDec(r mut BcRd, opk []int, tmk []int, t CkTab) []int {
     return freeze(p)
 }
 
-// 語の列 ws の q からの外を指す語（bcRef の形 [0, v] / [1, h1, h2]）の読み戻し: (記録, 次の位置, 読めない)
+// ワードの列wsのqからの外を指すワード（bcRefの形 [0, v] / [1, h1, h2]）の読み戻し: (記録, 次の位置, 読めない)
 func bcRefW(ws []int, q int, t CkTab) (int, int, bool) {
     if q >= len(ws) {
         return -1, q, true
@@ -685,7 +685,7 @@ func bcRefW(ws []int, q int, t CkTab) (int, int, bool) {
     return t.rec[i], q + 3, false
 }
 
-// 語の列 ws の q からの番号の定数（bcNum の形 [h1, h2, 下 2 bit]）の読み戻し: (今の build の番号, 次の位置, 読めない)
+// ワードの列wsのqからの番号の定数（bcNumの形 [h1, h2, 下2 bit]）の読み戻し: (今のbuildの番号, 次の位置, 読めない)
 func bcNumW(ws []int, q int, t CkTab, tag int) (int, int, bool) {
     if q + 2 >= len(ws) {
         return 0, q + 3, true
@@ -700,7 +700,7 @@ func bcNumW(ws []int, q int, t CkTab, tag int) (int, int, bool) {
     return if tag == CT_PSITE { k + t.off } else { ((k + t.off + 1) << 2) | low }, q + 3, false
 }
 
-// ── 置き場の読み ──
+// ── 格納場所の読み ──
 
 // 世代のディレクトリ dir の全部のパックを読んで表にする（読めないパック・壊れたパックは飛ばす — キャッシュは速さのためだけ）
 func bcLoad(dir string, vfy bool) BcView {
@@ -817,9 +817,9 @@ func bcSame(v BcView, e int, b []byte) bool {
     return true
 }
 
-// ── 置き場の書き ──
+// ── 格納場所の書き ──
 
-// 作った値 vb（切り口 cut・鍵 [k1, k2]）を書きの束へ。置き場に同じ鍵があれば書かない — 検証モードではそこで比べる（違えば stale に積む）
+// 作った値vb（切り口cut・鍵 [k1, k2]）を書きのバッチへ。格納場所に同じ鍵があれば書かない — 検証モードではそこで比べる（違えばstaleに積む）
 func bcAdd(st mut St, cut int, k1 int, k2 int, vb []byte) {
     e := bcFind(st.bcv, cut, k1, k2)
     if e >= 0 {
@@ -851,7 +851,7 @@ func bcEq(a []byte, b []byte) bool {
     return true
 }
 
-// 凍らせた表 f の中身の連結（chunk ごとの写し — 写しのループの形）
+// 凍らせた表fの中身の連結（chunkごとのコピー — コピーのループの形）
 func bcCat(f table.Frozen[byte]) []byte {
     mut out := mut []byte{}
     mut k := 0
@@ -868,7 +868,7 @@ func bcCat(f table.Frozen[byte]) []byte {
     return freeze(out)
 }
 
-// 書きの束をパックにして世代のディレクトリへ（tmp + rename）・stale があれば落とす・SOBER_CACHE_STAT=1 なら当否を標準エラーへ
+// 書きのバッチをパックにして世代のディレクトリへ（tmp + rename）・staleがあれば落とす・SOBER_CACHE_STAT=1なら当否を標準エラーへ
 func bcFlush(st mut St) {
     if st.bcAud {
         bcAudReport(mut st)
@@ -913,8 +913,8 @@ func bcFlush(st mut St) {
         bcAfter(st.bcDir, 0, hits == 0)
         return
     }
-    // 値の並び → 索引 → 尾（印・索引の長さ・索引の検査和 — 24 B）の順に一時ファイルへ。値の束は写さず chunk ごとに書き足す
-    // （os.AppendFile — 1 本の列へ写すと束の大きさ分の山が要る）。最初の書きは WriteFile（作り直し）
+    // 値の並び → 索引 → 尾（マーク・索引の長さ・索引の検査和 — 24 B）の順に一時ファイルへ。値のバッチはコピーせずchunkごとに書き足す
+    // （os.AppendFile — 1本の列へコピーするとバッチの大きさ分の山が要る）。最初の書きはWriteFile（作り直し）
     f := table.Freeze(mut st.bcW)
     nv := f.n
     mut ix := mut []int{}
@@ -958,7 +958,7 @@ func bcFlush(st mut St) {
     bcAfter(st.bcDir, tot, hits == 0)
 }
 
-// 語 w を 8 B（LE）で out へ
+// ワードwを8 B（LE）でoutへ
 func bcLe(out mut []byte, w int) {
     for j <- iter.Range(0, 8) {
         out = append(out, byte((w >> (8 * j)) & 255))
@@ -976,8 +976,8 @@ func bcMkdirs(path string) {
     }
 }
 
-// 一時ファイルの名前の印 `<pid>-<乱数>`（pid = /proc/self/stat の最初の欄・乱数 = /proc/sys/kernel/random/uuid の 32 桁）。
-// 同じ置き場に同時に書く 2 つのプロセスが同じ一時ファイルを奪い合わない（check の置き場 cachePut も使う）
+// 一時ファイルの名前のマーク `<pid>-<乱数>`（pid = /proc/self/statの最初のフィールド・乱数 = /proc/sys/kernel/random/uuidの32桁）。
+// 同じ格納場所に同時に書く2つのプロセスが同じ一時ファイルを奪い合わない（checkの格納場所cachePutも使う）
 func TmpTag() string {
     sb := io.ReadFile("/proc/self/stat") catch []byte{}
     ub := io.ReadFile("/proc/sys/kernel/random/uuid") catch []byte{}
@@ -996,7 +996,7 @@ func TmpTag() string {
     return string(freeze(out)) catch "0"
 }
 
-// 値 vb を書きの束の末尾へ積み、索引 [切り口, h1, h2, 位置, 長さ, 検査和] を足す（置き場に無いと分かっている鍵）
+// 値vbを書きのバッチの末尾へ積み、索引 [切り口, h1, h2, 位置, 長さ, 検査和] を足す（格納場所に無いと分かっている鍵）
 func bcPutV(st mut St, cut int, k1 int, k2 int, vb []byte) {
     table.Push(mut st.bcWi, cut)
     table.Push(mut st.bcWi, k1)
@@ -1009,14 +1009,14 @@ func bcPutV(st mut St, cut int, k1 int, k2 int, vb []byte) {
 
 // ── γ（TypeAll の package の区画）──
 
-// 置き場の γ の項目を desugar の TyCache へ（検査和の合う項目だけ）。コンパイラの鍵 = 世代のディレクトリの名前（コンパイラの鍵の
-// 先頭 16 桁 — 置き場の根のパスは入れない）
+// 格納場所の γ の項目をdesugarのTyCacheへ（検査和の合う項目だけ）。コンパイラの鍵 = 世代のディレクトリの名前（コンパイラの鍵の
+// 先頭16桁 — 格納場所の根のパスは入れない）
 func bcGammaView(st mut St) desugar.TyCache {
     return BcGammaCache(st.bcv, st.bcDir)
 }
 
-// 置き場 v（世代のディレクトリ dir）の γ の項目を TyCache へ（build の bcGammaView と check の analyzer。
-// check は読むだけ — 値の検査の語 GC_OK は build の検査が通った印なので check からは書かない）
+// 格納場所v（世代のディレクトリdir）の γ の項目をTyCacheへ（buildのbcGammaViewとcheckのanalyzer。
+// checkは読むだけ — 値の検査のワードGC_OKはbuildの検査が通ったフラグなのでcheckからは書かない）
 func BcGammaCache(v BcView, dir string) desugar.TyCache {
     mut k1 := mut []int{}
     mut k2 := mut []int{}
@@ -1041,8 +1041,8 @@ func BcGammaCache(v BcView, dir string) desugar.TyCache {
     return desugar.TyCache{on: true, vfy: if vm == 1 { 1 } else if vm == 2 { 2 } else { 0 }, exe: gen, k1: freeze(k1), k2: freeze(k2), vs: freeze(vs)}
 }
 
-// TypeAllC の書きの側を検査の後で書きの束へ（値の末尾に検査の語 — desugar.TyValSeal・bcAdd — 置き場に同じ鍵があれば検証モードで
-// 比べる）・当否の数（bcCnt 9 / 10）・読み戻しの照合の食い違い（SOBER_CACHE_VERIFY=2）は名指しして落ちる
+// TypeAllCの書きの側を検査の後で書きのバッチへ（値の末尾に検査のワード — desugar.TyValSeal・bcAdd — 格納場所に同じ鍵があれば検証モードで
+// 比べる）・当否の数（bcCnt 9 / 10）・読み戻しの照合の食い違い（SOBER_CACHE_VERIFY=2）は特定して落ちる
 func bcGammaPut(st mut St, p desugar.TyPut) {
     for i <- iter.Range(0, len(p.k1)) {
         bcAdd(mut st, BC_G, p.k1[i], p.k2[i], desugar.TyValSeal(mut st.d, p.pk[i], p.vs[i]))
@@ -1061,7 +1061,7 @@ func bcGammaPut(st mut St, p desugar.TyPut) {
 
 // ── P0（parse のファイル単位の木）──
 
-// 世代のディレクトリ dir の置き場の読み（bcLoad — 検証モードは SOBER_CACHE_VERIFY=1 / 2・dir = "" は置き場を使わない build の空の表）。
+// 世代のディレクトリdirの格納場所の読み（bcLoad — 検証モードはSOBER_CACHE_VERIFY=1 / 2・dir = "" は格納場所を使わないbuildの空の表）。
 // app が parse の前に 1 回読み、parse のキャッシュ（BcParseView）と lower（ElfPassesCache）が同じ表を使う
 func BcOpen(dir string) BcView {
     if dir == "" {
@@ -1073,7 +1073,7 @@ func BcOpen(dir string) BcView {
     return v
 }
 
-// 置き場の P0 の項目を loader の読みの表へ（検査和の合う項目だけ — 値は写さずパックの中身を指す）
+// 格納場所のP0の項目をloaderの読みの表へ（検査和の合う項目だけ — 値はコピーせずパックの中身を指す）
 func BcParseView(v BcView) loader.PCache {
     mut k1 := mut []int{}
     mut k2 := mut []int{}
@@ -1093,8 +1093,8 @@ func BcParseView(v BcView) loader.PCache {
     return loader.PCache{on: v.on, vfy: v.vfy, pt: loader.PcTable(freeze(k1)), k2: freeze(k2), ef: freeze(ef), eo: freeze(eo), el: freeze(el), fs: v.fs}
 }
 
-// loader の読みの結果を書きの束へ（外れと検証モードの値 — bcAdd・置き場に同じ鍵があれば検証モードで比べる）・当否の数（bcCnt 11 / 12）・
-// 読み戻しの照合の食い違い（検証モード）は名指しして落ちる
+// loaderの読みの結果を書きのバッチへ（外れと検証モードの値 — bcAdd・格納場所に同じ鍵があれば検証モードで比べる）・当否の数（bcCnt 11 / 12）・
+// 読み戻しの照合の食い違い（検証モード）は特定して落ちる
 func bcParsePut(st mut St, ps []loader.PcPut) {
     st.pcPut = ps
     mut bad := 0
@@ -1119,7 +1119,7 @@ func bcParsePut(st mut St, ps []loader.PcPut) {
 
 // ── D（check の関数単位の判定）──
 
-// 置き場の D の項目を checker の読みの表へ（loader.PCache の形 — 検査和の合う項目だけ・値は写さずパックの中身を指す）
+// 格納場所のDの項目をcheckerの読みの表へ（loader.PCacheの形 — 検査和の合う項目だけ・値はコピーせずパックの中身を指す）
 func BcCheckView(v BcView) loader.PCache {
     mut k1 := mut []int{}
     mut k2 := mut []int{}
@@ -1139,8 +1139,8 @@ func BcCheckView(v BcView) loader.PCache {
     return loader.PCache{on: v.on, vfy: v.vfy, pt: loader.PcTable(freeze(k1)), k2: freeze(k2), ef: freeze(ef), eo: freeze(eo), el: freeze(el), fs: v.fs}
 }
 
-// check の道の parse の読みの結果 ps（loader の PcPut）から置き場へ書く項目（外れ・検証モードで置き場に無いもの）を選ぶ。
-// 検証モードの読み戻しの照合の食い違い（st = 4）と置き場の値との食い違い（stale — build の bcAdd と同じ比べ方）は名指しして落ちる
+// checkのパスのparseの読みの結果ps（loaderのPcPut）から格納場所へ書く項目（外れ・検証モードで格納場所に無いもの）を選ぶ。
+// 検証モードの読み戻しの照合の食い違い（st = 4）と格納場所の値との食い違い（stale — buildのbcAddと同じ比べ方）は特定して落ちる
 func BcParseCheck(v BcView, ps []loader.PcPut) []loader.PcPut {
     mut out := mut []loader.PcPut{}
     mut bad := 0
@@ -1208,7 +1208,7 @@ func BcWriteD(dir string, ps []loader.PcPut, pps []loader.PcPut, cold bool) {
 
 // ── α（B1）──
 
-// 束を回さない道（W1）の B1: 関数ごとに α の鍵を引き、当たりは値を読み戻して積み、外れは optFunc + lB1Func（束の子と同じ列）を掛けて
+// バッチを回さないパス（W1）のB1: 関数ごとに α の鍵を引き、当たりは値を読み戻して積み、外れはoptFunc + lB1Func（バッチの子と同じ列）を掛けて
 // 値を書く（詰めて積み戻す — 詰めた形が値の素）。ckAll(0) の後に呼ぶ
 func bcAlphaW1(st mut St) {
     a0 := ckStage(mut st, 0)
@@ -1245,7 +1245,7 @@ func bcAlphaFn(st mut St, f FnRef, q int, ab []int) {
     if st.bcAud {
         bcAudEnd(mut st)
     }
-    // 値は本体を壊さずに直に（形が合わなければ詰めて積み戻す道 — 検証モードは両方を作って照合）
+    // 値は本体を壊さずに直に（形が合わなければ詰めて積み戻すパス — 検証モードは両方を作って照合）
     vh := bcAlphaHeap(mut st, f, st.ckt)
     if len(vh) > 0 && !st.bcv.vfy {
         bcPutV(mut st, BC_A, k1, k2, vh)
@@ -1262,12 +1262,12 @@ func bcAlphaFn(st mut St, f FnRef, q int, ab []int) {
     bcAdd(mut st, BC_A, k1, k2, vp)
 }
 
-// 束の子の 1 関数の置き場の段（stage 0 = α・1 = B2 の入力 — β1）: 当たりの項目（-1 = 外れ・検証モードは常に外れ）
+// バッチの子の1関数の格納場所のフェーズ（stage 0 = α・1 = B2の入力 — β1）: 当たりの項目（-1 = 外れ・検証モードは常に外れ）
 func bcKid(bv BcView, stage int, k1 int, k2 int) int {
     return if bv.vfy { -1 } else { bcFind(bv, if stage == 1 { BC_B1 } else { BC_A }, k1, k2) }
 }
 
-// 束の子が積み戻した結果 o の置き場の分を親へ（α の値の書き / 比べ・β1 の当たりの関数の印）。fr[lo..] が o の関数の順
+// バッチの子が積み戻した結果oの格納場所の分を親へ（α の値の書き / 比べ・β1の当たりの関数のフラグ）。fr[lo..] がoの関数の順
 func bcKidPut(st mut St, fr []int, lo int, o LOut, stage int) {
     mut at := 0
     mut va := 0
@@ -1298,8 +1298,8 @@ func bcKidPut(st mut St, fr []int, lo int, o LOut, stage int) {
 
 // ── β1（B2 の後の呼び出し・番地取りの相手）──
 
-// 束を回さない道（W1）の B2: 関数ごとに β1 の鍵（B2 の入力の鍵）を引き、当たりは B2 を飛ばし（本体は入力のまま — β2 が外れたら
-// bcPreX86 が遅れて掛ける）、外れは lB2Func（束の子と同じ列）。ckAll(1) の後に呼ぶ
+// バッチを回さないパス（W1）のB2: 関数ごとに β1の鍵（B2の入力の鍵）を引き、当たりはB2を飛ばし（本体は入力のまま — β2が外れたら
+// bcPreX86が遅れて掛ける）、外れはlB2Func（バッチの子と同じ列）。ckAll(1) の後に呼ぶ
 func bcB2W1(st mut St) {
     b1 := ckStage(mut st, 1)
     ab := if st.bcAud { bcAudBase(st.ckt, lParCfg(mut st, true), 1) } else { []int{} }
@@ -1327,7 +1327,7 @@ func bcB2W1(st mut St) {
     }
 }
 
-// 関数 f の本体の [印, 相手]…（印 0 = OpCall・1 = OpFuncaddr — cutCallees と xAddrTaken が読む相手）と、切替 / 罠を持つか（末尾の 1 語）
+// 関数fの本体の [フラグ, 相手]…（フラグ0 = OpCall・1 = OpFuncaddr — cutCalleesとxAddrTakenが読む相手）と、切替 / 罠を持つか（末尾の1ワード）
 func bcCalls(st mut St, f FnRef) []int {
     mut out := mut []int{}
     mut ctx := 0
@@ -1355,7 +1355,7 @@ func bcCalls(st mut St, f FnRef) []int {
 func bcB1Collect(st mut St) {
     b1 := ckStage(mut st, 1)
     mut sk := mut map[int]int{}
-    // 相手の列は表に積む（関数ごとの作業の値と交互に伸ばす slice は伸ばすたびに丸ごと写る — RSS +770 MB）
+    // 相手の列は表に積む（関数ごとの作業の値と交互に伸ばすsliceは伸ばすたびに丸ごとコピーされる — RSS +770 MB）
     mut inf := table.Table[int]{}
     n := table.Len(mut st.bcSkL) / 2
     for k <- iter.Range(0, n) {
@@ -1426,7 +1426,7 @@ func bcSkipped(st mut St, f int) bool {
     return st.bcv.on && st.bcSk[f] != nil
 }
 
-// 飛ばした関数 f の呼び出し・番地取りの相手（cutCallees の形 — rt を除くのは呼び手）を [印, 相手]… で
+// 飛ばした関数fの呼び出し・番地取りの相手（cutCalleesの形 — rtを除くのは呼び手）を [フラグ, 相手]… で
 func bcSkCalls(sk map[int]int, inf table.Frozen[int], f int) []int {
     at := sk[f]
     if at == nil {
@@ -1442,7 +1442,7 @@ func bcSkCalls(sk map[int]int, inf table.Frozen[int], f int) []int {
 
 // ── β2（機械語・後埋め・xmm）──
 
-// xAddrTaken の置き場の版（凍結の前・本体のある関数は bcB1Collect が集めた相手の列から — 飛ばした関数は β1 の値）
+// xAddrTakenの格納場所の版（凍結の前・本体のある関数はbcB1Collectが集めた相手の列から — 飛ばした関数は β1の値）
 func bcAddr(st mut St, fr []int, entryRec int) []int {
     mut out := mut []int{}
     xFill(mut out, len(fr), 0)
@@ -1473,7 +1473,7 @@ func bcAddr(st mut St, fr []int, entryRec int) []int {
     return freeze(out)
 }
 
-// 凍結の前の β2 の段: 番地を取られる印（bcAddr）と β2 の鍵（ckBeta）を組み、関数ごとに β2 を引いて当たりの値を読み戻す
+// 凍結の前の β2のフェーズ: 番地を取られるフラグ（bcAddr）と β2の鍵（ckBeta）を組み、関数ごとに β2を引いて当たりの値を読み戻す
 // （bcDp / bcDf / bcDo）。B2 を飛ばした関数で β2 が外れたものは、ここで B2 と置くはずだった検査点を遅れて掛けて検証する（x86 は今までどおり吐く）
 func bcPreX86(st mut St, entryRec int, t CkTab) {
     fr := fnIds(mut st)
@@ -1536,7 +1536,7 @@ func bcLate(st mut St, f FnRef, c int?) {
     }
 }
 
-// β2 の項目 e を読み戻して bcDp（機械語のパック — 写さずに指す）/ bcDf（後埋め [関数の頭からの位置, 種類, 相手の番号]…）/ bcDo（[機械語のパックの中の位置, 長さ,
+// β2の項目eを読み戻してbcDp（機械語のパック — コピーせずに指す）/ bcDf（後埋め [関数の頭からの位置, 種類, 相手の番号]…）/ bcDo（[機械語のパックの中の位置, 長さ,
 // 後埋めの位置, 数, xmm]）に積む。読み戻せなければ何も積まずに false
 func bcDecB2(st mut St, e int, t CkTab, fr []int, gr []int) bool {
     mut r := bcRdOf(st.bcv, e)
@@ -1645,8 +1645,8 @@ func bcNote(st mut St, i int, s int, en int, e int, f0 int, f1 int, xmm int) {
     table.PushAll(mut st.bcCr, xs)
 }
 
-// bcNote の候補の β2 の値を書く: 機械語は後埋めの後の ELF exe から切り出し、後埋めの欄（4 B）を 0 に戻す（後埋めは毎回全部を
-// 上書きするので、値の欄は 0 で正準）。値 = [長さ, 機械語…, 入口 − s, 後埋めの数, [位置 − s, 種類, 相手]…, xmm]
+// bcNoteの候補の β2の値を書く: 機械語は後埋めの後の ELF exe から切り出し、後埋めのフィールド（4 B）を0に戻す（後埋めは毎回全部を
+// 上書きするので、値のフィールドは0で正準）。値 = [長さ, 機械語…, 入口 − s, 後埋めの数, [位置 − s, 種類, 相手]…, xmm]
 func bcCaptureAll(st mut St, exe []byte, fx mut table.Table[int], fr []int, gr []int, t CkTab) {
     n := table.Len(mut st.bcCr) / 7
     for k <- iter.Range(0, n) {
@@ -1707,7 +1707,7 @@ func bcCaptureAll(st mut St, exe []byte, fx mut table.Table[int], fr []int, gr [
     }
 }
 
-// 実行中のコンパイラ（/proc/self/exe）の鍵の 32 桁（build の置き場の世代 — SHA-256 の selfKey より安い語単位の混ぜ 2 本。読めなければ ""）
+// 実行中のコンパイラ（/proc/self/exe）の鍵の32桁（buildの格納場所の世代 — SHA-256のselfKeyより安い語単位の混ぜ2本。読めなければ ""）
 func BcExeKey() string {
     b := io.ReadFile("/proc/self/exe") catch return ""
     mut out := mut []byte{}
@@ -1717,27 +1717,27 @@ func BcExeKey() string {
 
 // ── 扉の監査（SOBER_CACHE_VERIFY=2）──
 //
-// 関数ごとの作り直し（α = optFunc + lB1Func・β1 = lB2Func・β2 = xFunc）が鍵の外の事実を読んでいないかを、外の事実を読む扉で記録して確かめる:
-// lFnRet（呼び先の戻りの型 — α / β1）・xRegCc（番地を取られる印 — β2）・x86 の読み口 xg（ヒープの読み全部 — β2）。鍵に入れた相手 = 自分 +
-// 入力の本体の関数の参照（ckFn が歩いた列 — 監査のときは α の段も st.ckk に積む）+ 束の cfg の関数（β2 は x86 の cfg も・rt の関数は番地取りの
-// 印だけ — 鍵は rt の印の和を持つ）。β2 は関数の外のヒープの読みを全部記録する: 許しは鍵に入れた相手の記録の事実の欄（ckFact — 関数の
-// F_RET / F_MUTP・大域の G_WSLOT）と自分の引数の型の列（spec の複製と共有されうる）だけで、他の関数の記録の他の欄・本体・引数の型の列・大域の
-// 記録の他の欄と初期値・持ち主の無い語ははみ出し。はみ出しは build の終わり（bcFlush）に `cache: undeclared read <切り口> <関数> → <相手>` で
-// 印字して落ちる。監査は検証モード（=1）を含み、束・群の子を外し（親で関数ごとに回す — 扉の記録を親に置く）、x86 はヒープを凍らせずに読む
-// （xg の遅い道）。xg の記録（bcAudHeap）は木の xg には書かない: 遅い道は凍結の前のパスで熱く、分岐 1 つで自己 build の off の命令が +0.49 G
-// 監査の網（scripts/cacheaudit.sh）が xg の遅い道に `if st.bcAud { bcAudHeap(mut st, i) }` を差し込んだ監査用のコンパイラを
-// 建てる。差し込みの無いコンパイラの =2 は β2 のヒープの読みを見ていないと印字する（bcAudReport）
+// 関数ごとの作り直し（α = optFunc + lB1Func・β1 = lB2Func・β2 = xFunc）が鍵の外の事実を読んでいないかを、外の事実を読む扉で記録して検証する:
+// lFnRet（呼び先の戻りの型 — α / β1）・xRegCc（番地を取られるフラグ — β2）・x86の読みインターフェースxg（ヒープの読み全部 — β2）。鍵に入れた相手 = 自分 +
+// 入力の本体の関数の参照（ckFnが歩いた列 — 監査のときは α のフェーズもst.ckkに積む）+ バッチのcfgの関数（β2はx86のcfgも・rtの関数は番地取りの
+// フラグだけ — 鍵はrtのフラグの和を持つ）。β2は関数の外のヒープの読みを全部記録する: 許しは鍵に入れた相手の記録の事実のフィールド（ckFact — 関数の
+// F_RET / F_MUTP / F_REFP・大域のG_WSLOT）と自分の引数の型の列（specの複製と共有されうる）だけで、他の関数の記録の他のフィールド・本体・引数の型の列・大域の
+// 記録の他のフィールドと初期値・持ち主の無いワードははみ出し。はみ出しはbuildの終わり（bcFlush）に `cache: undeclared read <切り口> <関数> → <相手>` で
+// 印字して落ちる。監査は検証モード（=1）を含み、バッチ・群の子を外し（親で関数ごとに回す — 扉の記録を親に置く）、x86はヒープを凍らせずに読む
+// （xgの遅いパス）。xgの記録（bcAudHeap）は木のxgには書かない: 遅いパスは凍結の前のパスで熱く、分岐1つで自己buildのoffの命令が +0.49 G
+// 監査の検査（scripts/cacheaudit.sh）がxgの遅いパスに `if st.bcAud { bcAudHeap(mut st, i) }` を差し込んだ監査用のコンパイラを
+// ビルドする。差し込みの無いコンパイラの =2は β2のヒープの読みを見ていないと印字する（bcAudReport）
 
 const BA_RET = 1    // lFnRet の相手（α / β1）
-const BA_ADDR = 2   // 番地を取られる印の相手（β2 — xRegCc）
-const BA_FREC = 10  // 他の関数の記録の欄（欄 = 記録の中の位置）
+const BA_ADDR = 2   // 番地を取られるフラグの相手（β2 — xRegCc）
+const BA_FREC = 10  // 他の関数の記録のフィールド（フィールド = 記録の中の位置）
 const BA_FBODY = 11 // 他の関数の本体
 const BA_FSIG = 12  // 他の関数の引数の型の列
-const BA_NONE = 20  // 持ち主の無い語
-const BA_GREC = 30  // 大域の記録の欄
+const BA_NONE = 20  // 持ち主の無いワード
+const BA_GREC = 30  // 大域の記録のフィールド
 const BA_GINIT = 31 // 大域の初期値の列
 
-// cfg の列の関数の記録 [記録, 値]…（値 1 = 戻りの型と番地取りの印・2 = 番地取りの印だけ）
+// cfgの列の関数の記録 [記録, 値]…（値1 = 戻りの型と番地取りのフラグ・2 = 番地取りのフラグだけ）
 func bcAudBase(t CkTab, cfg []int, v int) []int {
     mut out := mut []int{}
     for w <- cfg {
@@ -1805,7 +1805,7 @@ func bcAudRec(st mut St, kind int, g int, fl int, at int) {
     table.Push(mut st.bcUt, at)
 }
 
-// 相手 g が鍵に入っているか（need 1 = 戻りの型も・2 = 番地取りの印だけで足りる）
+// 相手gが鍵に入っているか（need 1 = 戻りの型も・2 = 番地取りのフラグだけで足りる）
 func bcAudDecl(st mut St, g int, need int) bool {
     d := st.bcDecl[g]
     if d == nil {
@@ -1842,8 +1842,8 @@ func bcAudHeap(st mut St, i int) {
             return
         }
         if k == 0 {
-            // 鍵の記録の事実（ckFact）に入れた欄
-            if (i - g == F_RET || i - g == F_MUTP) && bcAudDecl(mut st, g, 1) {
+            // 鍵の記録の事実（ckFact）に入れたフィールド
+            if (i - g == F_RET || i - g == F_MUTP || i - g == F_REFP) && bcAudDecl(mut st, g, 1) {
                 return
             }
             bcAudRec(mut st, BA_FREC, g, i - g, i)
@@ -1890,9 +1890,9 @@ func bcOwnList(st mut St, l int, v int) {
     }
 }
 
-// ヒープの語の持ち主の表（x86 の監査 — 凍結の代わりに xModule が組む）: 関数 g の記録 = 4g・本体（スロット・ブロック・引数・命令・
+// ヒープのワードの持ち主の表（x86の監査 — 凍結の代わりにxModuleが組む）: 関数gの記録 = 4g・本体（スロット・ブロック・引数・命令・
 // 命令と終端の値の列 — mvPack が詰める範囲）= 4g + 1・引数の型の列 = 4g + 2・大域 gr の記録 = -(2 + 2gr)・初期値の列 = -(3 + 2gr)・他 = -1。
-// β2 の鍵に入れた cfg の相手（B2 の cfg + x86 の cfg + rt の関数の番地取りの印 — ckBeta）も st.bcXab に
+// β2の鍵に入れたcfgの相手（B2のcfg + x86のcfg + rtの関数の番地取りのフラグ — ckBeta）もst.bcXabに
 func bcAudOwn(st mut St, ckt CkTab) {
     st.bcXab = bcAudJoin(bcAudJoin(bcAudBase(ckt, lParCfg(mut st, true), 1), bcAudBase(ckt, xParCfg(mut st), 1)), bcAudBase(ckt, st.ckRt, 2))
     n := desugar.HeapLen(mut st.d)
@@ -2029,7 +2029,7 @@ func bcAudJoin(a []int, b []int) []int {
     return freeze(out)
 }
 
-// 関数の鎖の順の名前（検証モードの stale の名指し — 凍結の前に xModule が組む）
+// 関数のチェーンの順の名前（検証モードのstaleの特定 — 凍結の前にxModuleが組む）
 func bcNamesOf(st mut St) [][]byte {
     mut out := mut [][]byte{}
     ids := fnIds(mut st)
@@ -2041,7 +2041,7 @@ func bcNamesOf(st mut St) [][]byte {
     return freeze(out)
 }
 
-// stale の鍵 [k1, k2]（切り口 cut）の関数の名前（α / β1 = st.ckk の段 0 / 1・β2 = st.bcBk — 関数の鎖の順の添字。引けなければ `?`）
+// staleの鍵 [k1, k2]（切り口cut）の関数の名前（α / β1 = st.ckkのフェーズ0 / 1・β2 = st.bcBk — 関数のチェーンの順の添字。引けなければ `?`）
 func bcStaleName(st mut St, cut int, k1 int, k2 int) []byte {
     if cut == BC_P {
         for pp <- st.pcPut {
@@ -2081,8 +2081,8 @@ func bcStaleName(st mut St, cut int, k1 int, k2 int) []byte {
     return if ix >= 0 && ix < len(st.bcNames) { st.bcNames[ix] } else { bytes("?") }
 }
 
-// 世代のディレクトリ dir の検査（開発の口 SOBER_CACHE_FSCK=1 — 2 プロセスの網）: 全部のパックの尾・索引の検査和・全項目の値の
-// 検査和を確かめ、`cache: fsck packs=… bad-packs=… entries=… bad-entries=… tmp=…` を標準エラーへ（tmp = 書きの途中で止まった一時ファイルの数 —
+// 世代のディレクトリdirの検査（開発のオプションSOBER_CACHE_FSCK=1 — 2プロセスの検査）: 全部のパックの尾・索引の検査和・全項目の値の
+// 検査和を検証、`cache: fsck packs=… bad-packs=… entries=… bad-entries=… tmp=…` を標準エラーへ（tmp = 書きの途中で止まった一時ファイルの数 —
 // 読みは見ない名前なので壊れではない）。読み（bcLoad）は壊れたパック・項目を飛ばすだけなので、壊れはここで数える
 func bcFsck(dir string) {
     mut np := 0
@@ -2128,7 +2128,7 @@ func bcFsck(dir string) {
     _ = io.WriteStderr(bytes("cache: fsck packs=${np} bad-packs=${bp} entries=${ne} bad-entries=${be} tmp=${nt}\n"))
 }
 
-// 切り口 cut の項目の鍵 h1 → 項目の開番地の表（[鍵, 項目 + 1]… — 大きさは 2 の冪で項目の数の 2 倍以上・空きの欄 = 0。cs / ks は項目ごとの
+// 切り口cutの項目の鍵h1 → 項目の開番地の表（[鍵, 項目 + 1]… — 大きさは2の冪で項目の数の2倍以上・空きのフィールド = 0。cs / ksは項目ごとの
 // 切り口と鍵 h1・bcLoad が同じ鍵を 2 度積まない）
 func bcProbe(cs []int, ks []int, cut int) []int {
     mut n := 0
@@ -2172,9 +2172,9 @@ func bcProbeGet(t []int, k int) int {
     return -1
 }
 
-// ── 置き場の一覧と世代の LRU の印 ──
+// ── 格納場所の一覧と世代のLRUのマーク ──
 //
-// 置き場の根 = `<cacheDir>/sober-build-1`・世代 = 根の下の 16 桁の名前のディレクトリ。LRU の時刻 = 世代の印 `.used` の mtime（build の終わりに
+// 格納場所の根 = `<cacheDir>/sober-build-1`・世代 = 根の下の16桁の名前のディレクトリ。LRUの時刻 = 世代のマーク `.used` のmtime（buildの終わりに
 // bcTouch が tmp + rename で置き直す。ディレクトリの mtime は使わない — 掃除が他の世代の一時ファイルを消すと進んでしまう）
 
 // 世代 1 つの数（名前・mtime〔ns〕・パック / 一時ファイルの数・大きさの和〔バイト — パックだけ・一時ファイルは数だけ〕・最初の満杯の大きさ〔無ければ -1〕）
@@ -2215,7 +2215,7 @@ func bcIsGen(nb []byte) bool {
 }
 
 // パックの名前 `<pid>-<乱数>-<バイト数>.pack` の大きさ（名前に大きさが無い古い形・読めない名前は中身を読んで数える）。大きさを名前に
-// 持たせるのは、io.Open + io.Stat を compiler の閉包で使うと自己 build の仕事が +2.15 G 増えるため（一覧は build ごとに走る）
+// 持たせるのは、io.Open + io.Statをcompilerの推移的な依存で使うと自己buildの仕事が +2.15 G増えるため（一覧はbuildごとに走る）
 func bcPackSize(dir string, nb []byte) int {
     mut e := len(nb) - 5
     mut v := 0
@@ -2246,7 +2246,7 @@ func bcHasDash(nb []byte, e int) bool {
 // 世代のディレクトリ `<root>/<name>` の数
 func bcGenOf(root string, name string) BcGen {
     dir := "${root}/${name}"
-    // LRU の時刻 = 印 `.used` の mtime（ディレクトリの mtime は掃除が中の一時ファイルを消しても進む — 印の無い古い世代だけディレクトリで）
+    // LRUの時刻 = マーク `.used` のmtime（ディレクトリのmtimeは掃除が中の一時ファイルを消しても進む — マークの無い古い世代だけディレクトリで）
     d0 := os.ModTime(dir) catch 0
     mt := os.ModTime("${dir}/.used") catch d0
     mut np := 0
@@ -2299,19 +2299,19 @@ func bcMaxGens() int {
     return if n < 1 { 8 } else { n }
 }
 
-// 置き場全体の大きさの線（SOBER_CACHE_MAX — MiB・既定 4096 = 4 GiB）
+// 格納場所全体の大きさのしきい値（SOBER_CACHE_MAX — MiB・既定4096 = 4 GiB）
 func bcMaxBytes() int {
     n := lsEnvInt("SOBER_CACHE_MAX")
     return (if n < 1 { 4096 } else { n }) * 1048576
 }
 
-// 世代の中のゴミの線の床（SOBER_CACHE_FLOOR — MiB・既定 64。網が小さい置き場で線を越えさせる口）
+// 世代の中のゴミのしきい値の床（SOBER_CACHE_FLOOR — MiB・既定64。検査で小さい格納場所でしきい値を越えさせるオプション）
 func bcGenFloor() int {
     n := lsEnvInt("SOBER_CACHE_FLOOR")
     return (if n < 1 { 64 } else { n }) * 1048576
 }
 
-// 世代のディレクトリ dir の LRU の印を置き直す（`<pid>-<乱数>.used.tmp` に書いて `.used` へ rename — 印の mtime = 今）
+// 世代のディレクトリdirのLRUのマークを置き直す（`<pid>-<乱数>.used.tmp` に書いて `.used` へrename — マークのmtime = 今）
 func bcTouch(dir string) {
     bcMkdirs(dir)
     tmp := "${dir}/${TmpTag()}.used.tmp"
@@ -2321,8 +2321,8 @@ func bcTouch(dir string) {
     _ = os.Rename(tmp, "${dir}/.used")
 }
 
-// `sober cache info`: 置き場の根 root の世代の一覧（新しい順 — LRU の順位・パック・一時ファイル・大きさ・最初の満杯）と合計・線を
-// 標準出力へ。now = 今のコンパイラの世代の名前（印 `*`）
+// `sober cache info`: 格納場所の根rootの世代の一覧（新しい順 — LRUの順位・パック・一時ファイル・大きさ・最初の満杯）と合計・しきい値を
+// 標準出力へ。now = 今のコンパイラの世代の名前（マーク `*`）
 func BcInfo(root string, now string) {
     gs := bcGens(root)
     println("cache: ${root}")
@@ -2337,19 +2337,19 @@ func BcInfo(root string, now string) {
     println("total: gens=${len(gs)} bytes=${tot}  limits: gens=${bcMaxGens()} bytes=${bcMaxBytes()} (SOBER_CACHE_GENS / SOBER_CACHE_MAX in MiB)")
 }
 
-// ── 置き場の併合と掃除 ──
+// ── 格納場所の併合と掃除 ──
 //
-// build の終わり（bcFlush）に bcAfter が 1 回走る: ① 世代の LRU の印 ② 満杯の記録（`.full` — 当たりが 0 の build〔冷〕が書いた大きさの最大）
-// ③ 世代の中のゴミの線（世代の大きさ > max(満杯 × 4, 床 — SOBER_CACHE_FLOOR MiB・既定 64) なら世代ごと捨てる — 次は冷）④ 世代のパックが BC_MERGE 個を超えたら 1 つに
-// 併合 ⑤ 根の掃除（世代の数・置き場の大きさの線・古い一時ファイル・隠した世代の残り）。錠は使わない: 消すのは rename で隠してから（世代）か、
-// 一覧の後に消えても読み手が外れとして扱うもの（パック — bcLoad は読めないパックを飛ばす）だけ。時刻はファイルシステムの時計（今置いた印の mtime）
+// buildの終わり（bcFlush）にbcAfterが1回走る: ① 世代のLRUのマーク ② 満杯の記録（`.full` — 当たりが0のbuild〔冷〕が書いた大きさの最大）
+// ③ 世代の中のゴミのしきい値（世代の大きさ > max(満杯 × 4, 床 — SOBER_CACHE_FLOOR MiB・既定64) なら世代ごと捨てる — 次は冷）④ 世代のパックがBC_MERGE個を超えたら1つに
+// 併合 ⑤ 根の掃除（世代の数・格納場所の大きさのしきい値・古い一時ファイル・隠した世代の残り）。錠は使わない: 消すのはrenameで隠してから（世代）か、
+// 一覧の後に消えても読み手が外れとして扱うもの（パック — bcLoadは読めないパックを飛ばす）だけ。時刻はファイルシステムの時計（今置いたマークのmtime）
 // と比べる。③ の満杯を「最初の build の大きさ」にしない: 1 つの世代を小さいプログラムが多数共有すると（例題・std の作業）最初の 1 本の 4 倍を
 // すぐ越えて捨て続ける — 冷の最大と床で、自己の世代では最初の冷（28 MB）の 4 倍・小さいプログラムの群では床で止まる）
 
 const BC_MERGE = 32
 const BC_TMP_AGE = 600000000000 // 一時ファイルを書きかけの残りとみなす年齢（ns — 10 分。書きは build の終わりの一瞬）
 
-// build の終わりの印・満杯の記録・ゴミの線・併合・掃除（dir = 今の世代のディレクトリ・wrote = この build が書いたパックの大きさ・
+// buildの終わりのマーク・満杯の記録・ゴミのしきい値・併合・掃除（dir = 今の世代のディレクトリ・wrote = このbuildが書いたパックの大きさ・
 // cold = 当たりが 0 だったか）
 func bcAfter(dir string, wrote int, cold bool) {
     bcTouch(dir)
@@ -2398,7 +2398,7 @@ func bcSetFull(dir string, n int) {
     _ = os.Rename(tmp, "${dir}/.full")
 }
 
-// ファイルシステムの時計の今（世代のディレクトリの印 `.used` の mtime — bcTouch の直後に読む。読めなければ 0 = 年齢で消さない）
+// ファイルシステムの時計の今（世代のディレクトリのマーク `.used` のmtime — bcTouchの直後に読む。読めなければ0 = 年齢で消さない）
 func bcNow(dir string) int {
     return os.ModTime("${dir}/.used") catch 0
 }
@@ -2503,7 +2503,7 @@ func bcDropGen(root string, gen string) {
     bcRmDir(hid)
 }
 
-// 隠したディレクトリ dir の中のファイルを 1 つずつ名指しで消してから dir を消す（世代の中に下のディレクトリは作らない）
+// 隠したディレクトリdirの中のファイルを1つずつ明示的に消してからdirを消す（世代の中に下のディレクトリは作らない）
 func bcRmDir(dir string) {
     es := io.ReadDir(dir) catch []io.DirEntry{}
     for e <- es {
@@ -2521,7 +2521,7 @@ func bcIsDead(nb []byte) bool {
 }
 
 // 根 root の掃除（keep = 消さない世代 — 今の build の世代・"" なら無し）: ① 隠した世代の残り（掃除の途中で止まった分）を消す
-// ② 各世代の古い一時ファイル（年齢 > BC_TMP_AGE — 書きの途中で死んだ build の残り）を消す ③ 世代の数 > 上限か大きさの和 > 線なら、古い世代から
+// ② 各世代の古い一時ファイル（年齢 > BC_TMP_AGE — 書きの途中で死んだbuildの残り）を消す ③ 世代の数 > 上限か大きさの和 > しきい値なら、古い世代から
 // 捨てる（keep は捨てない）。消した世代の数を返す
 func bcGc(root string, keep string, verbose bool) int {
     es := io.ReadDir(root) catch []io.DirEntry{}
@@ -2562,7 +2562,7 @@ func bcGc(root string, keep string, verbose bool) int {
     return dropped
 }
 
-// ファイルシステムの時計の今（根に印 `.now` を tmp + rename で置いてその mtime — `sober cache gc` と今の世代でない世代の掃除用）
+// ファイルシステムの時計の今（根にマーク `.now` をtmp + renameで置いてそのmtime — `sober cache gc` と今の世代でない世代の掃除用）
 func bcClock(root string) int {
     tmp := "${root}/${TmpTag()}.now.tmp"
     if io.WriteFile(tmp, []byte{}) != nil {
@@ -2594,7 +2594,7 @@ func bcTmpSweep(dir string, now int, verbose bool) {
     }
 }
 
-// `sober cache gc`: 根 root の掃除（線を越えていれば古い世代から捨てる・古い一時ファイル・隠した世代の残り）。今のコンパイラの世代 now は
+// `sober cache gc`: 根rootの掃除（しきい値を越えていれば古い世代から捨てる・古い一時ファイル・隠した世代の残り）。今のコンパイラの世代nowは
 // 捨てない
 func BcGc(root string, now string) {
     d := bcGc(root, now, true)

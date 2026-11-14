@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 線の跨ぎの詰め物の網（配置の便 案 A）: 詰め物の量が決まるまで、落ちない点からの窓を別の表へ本番として吐き、本表へ継ぐ
+# しきい値の跨ぎの詰め物の検査（配置のタスク 案 A）: 詰め物の量が決まるまで、落ちない点からの窓を別の表へ本番として吐き、本表へ継ぐ
 # （compiler/lower/x86.sober の xFitSplice — 窓の中で積んだ位置の記録〔ブロックの番地・飛び・ゼロ除算・外置きの辺・fx〕に継いだ位置を足す）。
 # `build --fit-check`（窓を作るが詰めない）と `build --fit-off`（窓を作らない）の ELF がバイト一致すること = 継ぎの足し直しに漏れが無いこと。
 # 列 = obs の列（examples/*.out・testdata/*/app.out）+ bench の 9 題材 + Web コア + 粒度の葉 + compiler 自身（compiler/ + std/ の木）

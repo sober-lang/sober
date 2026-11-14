@@ -1,6 +1,6 @@
 package main
 
-// 失敗しうる生成元（language.md 7 節）: 結果が error? の呼び出し形の生成元は for に印 `?` を付けて回す — `for x <- g(a)? { … }`。
+// 失敗しうる生成元（language.md 7 節）: 結果がerror? の呼び出し形の生成元はforにマーク `?` を付けて回す — `for x <- g(a)? { … }`。
 // 脱糖 = `g(a, (x) => { … })?`。生成元が失敗を返したら、生成元の defer を走らせてから `?` で伝播する。break は成功の出口（`?` は走らない）
 
 type BadDigit error {

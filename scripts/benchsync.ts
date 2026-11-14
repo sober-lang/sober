@@ -1,15 +1,15 @@
 // benchsync: ベンチの数字の正 = bench/data/official.tsv（公式計測の raw を整形した 1 本）。README{,.ja}.md と bench/README.md の
-// 数字の行・表をここから生成する（docsync と同型 — 文書の写しがずれたら鳴る）。生成するのはマーカーの中だけ:
-//   行の印  `… <!-- benchsync:NAME -->`（行末）— その行を丸ごと生成し直す（同じ印を何か所に置いてもよい）
-//   塊の印  `<!-- benchsync:begin NAME -->` 〜 `<!-- benchsync:end NAME -->` — 間の行を生成し直す
+// 数字の行・表をここから生成する（docsyncと同型 — 文書のコピーがずれたら鳴る）。生成するのはマーカーの中だけ:
+//   行のマーク  `… <!-- benchsync:NAME -->`（行末）— その行を丸ごと生成し直す（同じマークを何か所に置いてもよい）
+//   チャンクのマーク  `<!-- benchsync:begin NAME -->` 〜 `<!-- benchsync:end NAME -->` — 間の行を生成し直す
 // グラフ: docs/assets/bench-{speed,rss}-{light,dark}.svg の 4 枚はファイルごと生成物（scripts/benchchart.ts の seqChartsFrom — 同じ tsv から）
-// 物差しの 2 つのレジーム（official.tsv の中身で決まる）:
+// 基準の2つのレジーム（official.tsvの中身で決まる）:
 //   task-clock（GitHub Actions — .github/workflows/bench-official.yml・report-922）: seqperf の行に tc_rounds_ns（周ごとの task-clock）がある。
-//     比 = 同じ周の交互の対（Sober の周 i / 相手の周 i）の比を全周とって中央（周ごとに全実装に乗る箱の揺れを打ち消す）。
+//     比 = 同じ周の交互の対（Soberの周i / 相手の周i）の比を全周とって中央（周ごとに全実装に乗るマシンの揺れを打ち消す）。
 //     VM はハードウェアのカウンタを出さない（report-921）ので cycles / 命令は NA
 //   cycles（手元 WSL2 — 2026-10-19 まで）: cycles:u の最小の比
 // 勝敗: 比を小数 2 桁に丸め、0.95 未満 = 勝ち・1.05 超 = 負け・その間 = 互角（表に見える数字と分類を一致させる）
-// 計測環境: official.tsv の `# env: k=v; k=v` の行（--import が bench-env.txt から書く）→ bench-env の印。無ければ手元の旧環境の記述
+// 計測環境: official.tsvの `# env: k=v; k=v` の行（--importがbench-env.txtから書く）→ bench-envのマーク。無ければ手元の旧環境の記述
 //   node --experimental-strip-types scripts/benchsync.ts           文書を書き換える
 //   node --experimental-strip-types scripts/benchsync.ts --check   生成結果と現物が違えば差を出して exit 1（gates）
 //   node --experimental-strip-types scripts/benchsync.ts --import <seqperf.tsv> <extsort.tsv> <日付> <木のコミット> [--env <bench-env.txt>]
@@ -25,7 +25,7 @@ const TSV = process.env.BENCHSYNC_TSV ?? "bench/data/official.tsv";
 const OUT = process.env.BENCHSYNC_OUT ?? "";
 const COLS = ["run", "bench", "impl", "cycles_min", "insts", "wall_med", "rss_kb", "taskclock_med_ns", "tc_rounds_ns", "n", "date", "commit", "raw"] as const;
 type Row = Record<(typeof COLS)[number], string>;
-// 命令数の列（ナビ裁定 2026-10-20 — GitHub Actions では取れず、手元の値との併記は出所が 2 つになるので落とす。命令数の規律は gates / ratchet の別系統）。
+// 命令数の列（ナビ決定2026-10-20 — GitHub Actions では取れず、手元の値との併記は出所が2つになるので落とす。命令数の規律はgates / ratchetの別系統）。
 // 戻すときは true に（cycles のレジームの表にだけ出る）
 const SHOW_INSTS = false;
 
@@ -165,10 +165,10 @@ function build(rows: Row[], env: Record<string, string>) {
     (TC ? `The numbers are CPU time (task-clock) measured on GitHub Actions (${env.cpu ?? "?"}) by \`.github/workflows/bench-official.yml\`; to reproduce locally: \`scripts/bench.sh -n 3\` → \`bench/seqperf.sh -n 5 --rust\`. `
       : "To reproduce: `scripts/bench.sh -n 3` → `bench/seqperf.sh -n 5 --rust`. ") +
     "The Go and Rust twins of each benchmark live in `bench/<benchmark>/go` and `bench/<benchmark>/rust`. Measurement conditions and rules are in [docs/bench.md](docs/bench.md) (in Japanese).";
-  gen["readme-repro-ja"] = "速度とメモリのグラフは、[bench/data/official.tsv](bench/data/official.tsv) から `scripts/benchsync.sh` で生成しています。このページのベンチの数字はすべてこのファイルが出どころで、グラフと数字がこのファイルと一致することを gate が確かめます。" +
+  gen["readme-repro-ja"] = "速度とメモリのグラフは、[bench/data/official.tsv](bench/data/official.tsv) から `scripts/benchsync.sh` で生成しています。このページのベンチの数字はすべてこのファイルが出どころで、グラフと数字がこのファイルと一致することを gate が確認します。" +
     (TC ? `数字は GitHub Actions（${env.cpu ?? "?"}）で \`.github/workflows/bench-official.yml\` が測った CPU 時間（task-clock）です。手元での再現: \`scripts/bench.sh -n 3\` → \`bench/seqperf.sh -n 5 --rust\`。`
       : "再現: `scripts/bench.sh -n 3` → `bench/seqperf.sh -n 5 --rust`。") +
-    "各題材の Go と Rust の双子は `bench/<題材>/go`・`bench/<題材>/rust` にあります。計測の条件と規律は [docs/bench.md](docs/bench.md) に書いています。";
+    "各題材の Go と Rust の比較用の実装は `bench/<題材>/go`・`bench/<題材>/rust` にあります。計測の条件と規律は [docs/bench.md](docs/bench.md) に書いています。";
 
   // bench/README — 冒頭の要約の行
   const goRssOver = SEQ.filter((b) => rss(b, "sober") > rss(b, "go"));
@@ -177,8 +177,8 @@ function build(rows: Row[], env: Record<string, string>) {
     `・負け ${tg.loss.length}` + (tg.loss.length ? `（${list(tg.loss, "・")}）` : "") + `。最も差が大きいのは ${list(tg.win.slice(0, 1), "")}`;
   gen["bench-rss-go"] = `- RSS は 9 題材中 ${goRssUnder.length} 題材で Go 以下（${rx(Math.min(...goRssUnder), 1)}〜${rx(Math.max(...goRssUnder), 1)}）。` +
     (goRssOver.length ? `上回るのは ${goRssOver.map((b) => `${NAME[b]}（${x(ratio(rss(b, "sober") / rss(b, "go")))}）`).join("・")}` : "上回る題材は無い");
-  gen["bench-rust"] = `- 対 Rust の双子（逐次 9 題材・${date}）: Sober の ${tr.win.length} 勝・${tr.tie.length} 互角・${tr.loss.length} 敗` +
-    (tr.loss.length ? `（負けは ${list(tr.loss, "・")} — 下の「Rust の双子との比較」）` : "");
+  gen["bench-rust"] = `- 対 Rust の比較用の実装（逐次 9 題材・${date}）: Sober の ${tr.win.length} 勝・${tr.tie.length} 互角・${tr.loss.length} 敗` +
+    (tr.loss.length ? `（負けは ${list(tr.loss, "・")} — 下の「Rust の実装との比較」）` : "");
   gen["bench-updated"] = TC
     ? `最終更新 ${date}（逐次 = 木 ${commit} — ${ghaEnv} で \`bench/seqperf.sh -n 5 --rust\`・raw = ${raw}・数字の正 = [data/official.tsv](data/official.tsv)。` +
       "並列 = 2026-10-08〜10 の手元の取り直しのまま — 日付は [par/README.md](par/README.md) の各節）。生データと測り方は [par/README.md](par/README.md)（並列）と本ファイルの末尾（逐次）。"
@@ -200,7 +200,7 @@ function build(rows: Row[], env: Record<string, string>) {
   gen["bench-seq"] = seqGo.join("\n");
   gen["bench-method"] = TC
     ? `${ghaEnv} の 1 つの vCPU（最後の vCPU）に固定し、Sober → Go → Rust の交互で 5 周測った（準備の後に loadavg が 1.5 を割るまで待ってから）。` +
-      "物差しは CPU 時間（task-clock — カーネルの時間を含む）で、比は同じ周の対（Sober の周 i / 相手の周 i）の比の 5 周の中央をとる（周ごとに全実装に同時に乗る箱の揺れが打ち消される — 同じ箱で 3 run の比の幅は最大 3.7%・report-922）。" +
+      "指標は CPU 時間（task-clock — カーネルの時間を含む）で、比は同じ周の対（Sober の周 i / 相手の周 i）の比の 5 周の中央をとる（周ごとに全実装に同時に乗るマシンの揺れが打ち消される — 同じマシンで 3 run の比の幅は最大 3.7%・report-922）。" +
       "表の CPU 時間と wall は中央、RSS は最大。GitHub Actions の VM はハードウェアのカウンタを出さないので cycles と命令数は無い（命令数の規律は gates のラチェットが見る）。" +
       "数字の正は [data/official.tsv](data/official.tsv) で、表と要約の行は `scripts/benchsync.sh` が生成する（gates の benchsync が文書との一致を見る）。" +
       "出力は毎回 Sober ≡ Go ≡ Rust で、fasta / revcomp / k-nucleotide / n-body / spectral-norm / mandelbrot は benchmarks game の公式の期待出力とも一致する。" +
@@ -210,14 +210,14 @@ function build(rows: Row[], env: Record<string, string>) {
       "出力は毎回 Sober ≡ Go で、fasta / revcomp / k-nucleotide / n-body / spectral-norm / mandelbrot は benchmarks game の公式の期待出力とも一致する。" +
       "再現: `scripts/bench.sh -n 5`（実行ファイルと入力を置く）→ `bench/seqperf.sh -n 5 --rust`。";
   gen["bench-metric-note"] = TC
-    ? "- 物差しは CPU 時間（task-clock）。2026-10-19 までの手元（WSL2）の cycles:u は利用者の空間だけを数えたが、task-clock はカーネルの時間（ファイルの読み・ページフォールト）も含む — 入力を読む題材（1BRC・Web 3 本）は比が動く。wall は参考"
-    : "- 物差しは cycles。命令数は 3 題材で Sober の方が多いが、cycles では互角かそれ以下に収まる（1 命令あたりの仕事が軽い — 依存の鎖・メモリ待ちで律速する形）。wall は同居の負荷（今回の loadavg 1.2〜1.9）で揺れるので参考";
+    ? "- 指標は CPU 時間（task-clock）。2026-10-19 までの手元（WSL2）の cycles:u は利用者の空間だけを数えたが、task-clock はカーネルの時間（ファイルの読み込み・ページフォールト）も含む — 入力を読む題材（1BRC・Web 3 本）は比が動く。wall は参考"
+    : "- 指標は cycles。命令数は 3 題材で Sober の方が多いが、cycles では互角かそれ以下に収まる（1 命令あたりの仕事が軽い — 依存チェーン・メモリ待ちで律速する形）。wall は同居の負荷（今回の loadavg 1.2〜1.9）で揺れるので参考";
 
-  // bench/README — Rust の双子の表 + 勝敗の行
+  // bench/README — Rustの比較用の実装の表 + 勝敗の行
   const rt = TC
-    ? [`### Rust の双子との比較（${date} — 木 ${commit}）`, "",
+    ? [`### Rust の実装との比較（${date} — 木 ${commit}）`, "",
       "| 題材 | CPU 時間 中央 s Sober / Go / Rust | Sober / Rust | Go / Rust | wall 中央 s Sober / Go / Rust | 最大 RSS MB Sober / Go / Rust |", "|---|---|---|---|---|---|"]
-    : [`### Rust の双子との比較（${date} — 木 ${commit}）`, "",
+    : [`### Rust の実装との比較（${date} — 木 ${commit}）`, "",
       `| 題材 | cycles:u G Sober / Go / Rust | Sober / Rust | Go / Rust |${SHOW_INSTS ? " 命令 Sober / Rust |" : ""} wall 中央 s Sober / Go / Rust | 最大 RSS MB Sober / Go / Rust |`, `|---|---|---|---|${SHOW_INSTS ? "---|" : ""}---|---|`];
   for (const b of SEQ) {
     const s = get("seqperf", b, "sober"), o = get("seqperf", b, "go"), r = get("seqperf", b, "rust");
@@ -234,7 +234,7 @@ function build(rows: Row[], env: Record<string, string>) {
 
   // bench/README — 外部ソートの表
   const e0 = get("extsort", "extsort-1024m", "sober");
-  const et = [`### 外部ソート（${e0.date} — 木 ${e0.commit}・\`bench/extsort.sh -n ${e0.n}\`・入力 1 GiB・窓 64 MiB・W1・warm・交互 ${e0.n} 回）`, "",
+  const et = [`### 外部ソート（${e0.date} — 木 ${e0.commit}・\`bench/extsort.sh -n ${e0.n}\`・入力 1 GiB・ウィンドウ 64 MiB・W1・warm・交互 ${e0.n} 回）`, "",
     TC ? "| 実装 | wall 中央 s | CPU 時間 中央 s | 最大 RSS MB | CPU 時間 対 Rust素 |" : `| 実装 | wall 中央 s | task-clock 中央 s | cycles:u G |${SHOW_INSTS ? " 命令 G |" : ""} 最大 RSS MB | wall 対 Rust素 |`,
     TC ? "|---|---|---|---|---|" : `|---|---|---|---|${SHOW_INSTS ? "---|" : ""}---|---|`];
   for (const im of ["sober", "go", "rust", "gnu"]) {
@@ -260,16 +260,16 @@ function build(rows: Row[], env: Record<string, string>) {
   }
   gen["bench-raw"] = rw.join("\n");
   gen["bench-raw-note"] = TC
-    ? "物差しは CPU 時間（task-clock）の、同じ周の対の比の 5 周の中央。wall は 5 回の中央（参考）。cycles と命令数は GitHub Actions の VM では取れない（命令数の規律は gates のラチェット〔bench/ratchet.txt〕が見る）。"
-    : "主の物差しは cycles（命令数は決定的な値だが表からは外した — 命令数の規律は gates のラチェット〔bench/ratchet.txt〕が見る）。wall は 5 回の中央（EPOCHREALTIME の差 — 同居の負荷で揺れ、壊れた値を含むことがある）。";
+    ? "指標は CPU 時間（task-clock）の、同じ周の対の比の 5 周の中央。wall は 5 回の中央（参考）。cycles と命令数は GitHub Actions の VM では取れない（命令数の規律は gates のラチェット〔bench/ratchet.txt〕が見る）。"
+    : "主の指標は cycles（命令数は決定的な値だが表からは外した — 命令数の規律は gates のラチェット〔bench/ratchet.txt〕が見る）。wall は 5 回の中央（EPOCHREALTIME の差 — 同居の負荷で揺れ、壊れた値を含むことがある）。";
 
   // bench/README — 計測環境（2 つのレジームの同居を明示する — 逐次の公式と手元の節）
   gen["bench-env"] = [
     TC ? `- 逐次・外部ソート（[data/official.tsv](data/official.tsv)）: ${ghaEnv}・Go ${(env.go ?? "?").replace(/^go/, "")}・Rust ${env.rust ?? "?"}・perf ${env.perf ?? "?"}。` +
-        "1 つの vCPU（最後の vCPU）に固定。同じラベルでも箱の CPU の型番が run で変わるので、公式に取り込むのは基線と同じ型番の run だけ（`scripts/benchfetch.sh` が照合）"
-      : `- 逐次・外部ソート（[data/official.tsv](data/official.tsv) — ${date}）: 手元 ${LOCAL_SEQ_ENV}。1 つの論理 CPU（最後のコア）に固定。loadavg は 2〜5 で同居の負荷があり、wall は ±50% 揺れるので主の物差しは cycles:u とした`,
+        "1 つの vCPU（最後の vCPU）に固定。同じラベルでもマシンの CPU の型番が run で変わるので、公式に取り込むのはベースラインと同じ型番の run だけ（`scripts/benchfetch.sh` が照合）"
+      : `- 逐次・外部ソート（[data/official.tsv](data/official.tsv) — ${date}）: 手元 ${LOCAL_SEQ_ENV}。1 つの論理 CPU（最後のコア）に固定。loadavg は 2〜5 で同居の負荷があり、wall は ±50% 揺れるので主の指標は cycles:u とした`,
     `- 並列・コンパイラ自身・イディオムギャップ（[par/README.md](par/README.md)・本ファイルの 2・3・5 節）: 手元 ${LOCAL_PAR_ENV}。並列は物理コアごとに 1 論理 CPU の 8 つに固定した`,
-    "- 逐次の表は `SOBER_WORKERS=1` で走らせる（std の内側の並列 — 大きい入力の utf8.Check の区間割り — を逐次の列に混ぜない。並列の配当は [par/README.md](par/README.md) の W 軸で見る）",
+    "- 逐次の表は `SOBER_WORKERS=1` で走らせる（std の内側の並列 — 大きい入力の utf8.Check の区間分割 — を逐次の列に混ぜない。並列の効果は [par/README.md](par/README.md) の W 軸で見る）",
   ].join("\n");
   gen["bench-env-local"] = `計測環境: 手元（${LOCAL_PAR_ENV}）${TC ? " — 逐次の表〔GitHub Actions〕とは別の機械" : ""}。詳細は 6 節`;
 
@@ -277,10 +277,23 @@ function build(rows: Row[], env: Record<string, string>) {
   const chart = new Map<string, { cyc: number; rss: number }>();
   for (const b of SEQ) for (const im of ["sober", "go", "rust"]) chart.set(`${b}-${im}`, { cyc: im === "rust" ? 1 : rel("seqperf", b, im, "rust"), rss: rss(b, im) });
   const axis = TC ? "CPU time (task-clock) relative to the straightforward Rust twin (same algorithm)" : "CPU cycles relative to the straightforward Rust twin (same algorithm)";
+  for (const k of Object.keys(gen)) gen[k] = despaceJa(gen[k]);
   return { gen, charts: seqChartsFrom(chart, axis) };
 }
 
-// ── 印の中を差し替える ──
+// 日本語と半角英数字の境界の半角スペースを消す（文書の表記の規則 — 境界は差し込んだ値で決まるので生成の後に掛ける）。
+// インラインコード・URL・リンクの宛先・HTML タグの中は触らない。英語の行は日本語の文字を含まないので変わらない
+const JP = "[\\u3000-\\u303F\\u3040-\\u30FF\\u3400-\\u4DBF\\u4E00-\\u9FFF\\uF900-\\uFAFF\\uFF00-\\uFFEF]";
+const JP_A = new RegExp(`(${JP}) (?=[A-Za-z0-9])`, "g");
+const JP_B = new RegExp(`([A-Za-z0-9]|%) (?=${JP})`, "g");
+const PROT = /(`+)(?:(?!\1)[^])*?\1|https?:\/\/[^\s)）」』\]]+|\]\([^)\n]*\)|<[A-Za-z\/!][^>\n]*>/g;
+function despaceJa(s: string): string {
+  let out = "", last = 0;
+  for (const m of s.matchAll(PROT)) { out += s.slice(last, m.index).replace(JP_A, "$1").replace(JP_B, "$1") + m[0]; last = m.index! + m[0].length; }
+  return out + s.slice(last).replace(JP_A, "$1").replace(JP_B, "$1");
+}
+
+// ── マークの中を差し替える ──
 function apply(text: string, gen: Record<string, string>, used: Set<string>, file: string): string {
   const out: string[] = [];
   const ls = text.split("\n");

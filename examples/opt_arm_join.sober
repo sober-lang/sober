@@ -1,7 +1,7 @@
 package main
 
-// T と T? の腕の合流（spec T-16）: 期待型の無い位置の if / switch の式で、腕の型が T と T? に分かれるなら式の型は T?。
-// nil の腕から組む T?（examples/nil_sibling）と同じ道で、T の腕を T? へ寄せる。T と U?（T ≠ U）は今までどおり拒否
+// TとT? の分岐の合流（spec T-16）: 期待型の無い位置のif / switchの式で、分岐の型がTとT? に分かれるなら式の型はT?。
+// nilの分岐から組むT?（examples/nil_sibling）と同じパスで、Tの分岐をT? へ寄せる。TとU?（T ≠ U）は今までどおり拒否
 
 func get(n int) int? {
     if n > 0 {

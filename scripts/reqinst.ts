@@ -1,14 +1,14 @@
 // reqinst の道具（scripts/reqinst.sh が呼ぶ）。
-//   node scripts/reqinst.ts cli <port> <束の数> <題材> [<束の大きさ>]   1 接続で題材の要求を 16 本（既定）ずつ束で送り、束の応答を受けてから次の束（pipelined -p 16 の形・1 なら keep-alive の要求 1 本ずつ）
-//   node scripts/reqinst.ts acct <cg 少> <cg 多> <束の差>  callgrind（--dump-instr=yes）2 本の差から「命令/要求 熱い 64 B 行の数」を 1 行で
-// 題材 = 下の SUBJ の鍵（asyncdb だけは別のサーバ〔bench/asyncdb〕と代役の PG〔bench/pgstub〕を相手に測る — scripts/reqinst.sh）。足すときは SUBJ に要求を 1 本・bench/ratchet.txt に `srv/<鍵> ireq` と `srv/<鍵> hot64` の 2 行（bench/httparena/README.md の reqinst の節）
+//   node scripts/reqinst.ts cli <port> <バッチの数> <題材> [<バッチの大きさ>]   1接続で題材のリクエストを16本（既定）ずつバッチで送り、バッチのレスポンスを受けてから次のバッチ（pipelined -p 16の形・1ならkeep-aliveのリクエスト1本ずつ）
+//   node scripts/reqinst.ts acct <cg少> <cg多> <バッチの差>  callgrind（--dump-instr=yes）2本の差から「命令/リクエスト 熱い 64 B 行の数」を1行で
+// 題材 = 下のSUBJの鍵（asyncdbだけは別のサーバ〔bench/asyncdb〕と代役のPG〔bench/pgstub〕を相手に測る — scripts/reqinst.sh）。足すときはSUBJにリクエストを1本・bench/ratchet.txtに `srv/<鍵> ireq` と `srv/<鍵> hot64` の2行（bench/httparena/README.mdのreqinstの節）
 import * as net from "node:net";
 import { readFileSync } from "node:fs";
 
 const SUBJ: Record<string, string> = {
-  // ヘッダ 1 行の最小の要求（HttpArena の pipelined の種目の形）
+  // ヘッダ1行の最小のリクエスト（HttpArenaのpipelinedの種目の形）
   pipeline: "GET /pipeline HTTP/1.1\r\nHost: localhost\r\n\r\n",
-  // ヘッダ 8 行の要求（ブラウザの頭の形）— 頭の行ごとの費用はこちらでしか見えない
+  // ヘッダ8行のリクエスト（ブラウザの頭の形）— 頭の行ごとの費用はこちらでしか見えない
   hdr: "GET /baseline11?a=1&b=2 HTTP/1.1\r\nHost: localhost:8080\r\nUser-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0\r\n" +
     "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\nAccept-Language: en-US,en;q=0.5\r\nAccept-Encoding: identity\r\n" +
     "Connection: keep-alive\r\nCache-Control: no-cache\r\nPragma: no-cache\r\n\r\n",
@@ -71,8 +71,8 @@ function acct(a: string, b: string, k: number): void {
   let ta = 0, tb = 0;
   for (const v of sa.values()) ta += v;
   for (const v of sb.values()) tb += v;
-  // 熱い 64 B 行 = 要求あたり 0.45 回以上実行された命令を含む行。回数は 16 本の束の刻み（1/16）で並ぶので、境目を刻みの間に置く
-  // （0.5 ちょうど〔束の半分の要求で通る行〕を境目にすると、計測の揺れで 0.495 / 0.500 を往復して数が出入りする）
+  // 熱い64 B行 = リクエストあたり0.45回以上実行された命令を含む行。回数は16本のバッチの刻み（1/16）で並ぶので、境目を刻みの間に置く
+  // （0.5ちょうど〔バッチの半分のリクエストで通る行〕を境目にすると、計測の揺れで0.495 / 0.500を往復して数が出入りする）
   const hot = new Set<number>();
   for (const [ad, v] of sb) if ((v - (sa.get(ad) ?? 0)) / n >= 0.45) hot.add(Math.floor(ad / 64));
   console.log(`ireq ${((tb - ta) / n).toFixed(1)} hot64 ${hot.size}`);

@@ -1,13 +1,13 @@
 package main
 
-// 浅い region の窓の網（scripts/wincheck.sh）: net.Serve の region: 1 MiB の接続の task が、窓（深度ごとに 1 頁）を越えて
-// 小さいスロットへ移る道を一通り踏む。出力は窓を張らない構成（SOBER_TASK_WIN=0）と一致しなければならない。
-//   acc  — 持続する深度に往復ごとに 1 KiB を積む（何往復目かで窓を越えて移る）
-//   tip  — 先端で 1 バイトずつ伸ばす列が窓の境を跨ぐ
-//   map  — map の成長が窓の境を跨ぐ
-//   file — ファイルの読み（先端で作る io の列）が窓の境を跨ぐ
+// 浅いregionの予約ページの検査（scripts/wincheck.sh）: net.Serveのregion: 1 MiBの接続のtaskが、予約ページ（深度ごとに1ページ）を越えて
+// 小さいスロットへ移るパスを一通り踏む。出力は予約ページを張らない構成（SOBER_TASK_WIN=0）と一致しなければならない。
+//   acc  — 持続する深度に往復ごとに1 KiBを積む（何往復目かで予約ページを越えて移る）
+//   tip  — 先端で1バイトずつ伸ばす列が予約ページの境を跨ぐ
+//   map  — mapの成長が予約ページの境を跨ぐ
+//   file — ファイルの読み（先端で作るioの列）が予約ページの境を跨ぐ
 //   deep — ハンドラが深く再帰しながら各段で列を作る
-//   edge — 1 回の往復で K KiB を持続する深度に積む。生き残る最大の K を二分探索（窓を使っても上限はちょうど region: のまま）
+//   edge — 1回の往復で K KiB を持続する深度に積む。生き残る最大のKを二分探索（予約ページを使っても上限はちょうどregion: のまま）
 
 import "std/convert"
 import "std/io"
@@ -31,7 +31,7 @@ func show(e error?) string {
     }
 }
 
-// seed から決まる n 語の列
+// seedから決まるnワードの列
 func fill(n int, seed int) []int {
     mut xs := mut []int{}
     for i <- iter.Range(0, n) {
@@ -88,14 +88,14 @@ func file() string {
     return "file ${len(b)} hash ${s}"
 }
 
-// n 段の再帰の各段で w 語の列を作り、戻り際に壊れていない段の数を返す
+// nレベルの再帰の各レベルでwワードの列を作り、戻り際に壊れていないレベルの数を返す
 func deep(n int, w int) int {
     xs := fill(w, n)
     r := if n == 0 { 0 } else { deep(n - 1, w) }
     return r + (if sum(xs) == sum(fill(w, n)) { 1 } else { 0 })
 }
 
-// 1 往復目の語で道を選ぶ。acc / edge は以後の往復ごとに持続する深度へ 1 KiB を積む
+// 1往復目のワードでパスを選ぶ。acc / edgeは以後の往復ごとに持続する深度へ1 KiBを積む
 func handle(c net.Conn) error? {
     mut keep := mut [][]int{}
     mut mode := ""
@@ -165,7 +165,7 @@ func client(port int, m string) string {
     return if e == nil { "${m}: ${v}" } else { "${m}: ${show(e)}" }
 }
 
-// edge: K KiB を積んで生き残る最大の K（接続ごとに 1 回 — 死ねば応答なし）
+// edge: K KiB を積んで生き残る最大のK（接続ごとに1回 — 死ねばレスポンスなし）
 func edge(port int) string {
     mut lo := 256
     mut hi := 2048
@@ -181,7 +181,7 @@ func edge(port int) string {
     return "max ${lo}"
 }
 
-// acc は 40 往復（40 KiB — 窓を越える）・他は 2 往復（2 回目は前の往復の窓を使い直す）
+// accは40往復（40 KiB — 予約ページを越える）・他は2往復（2回目は前の往復の予約ページを使い直す）
 func ask(port int, m string, rounds int) (string, error?) {
     mut last := ""
     mut n := 0

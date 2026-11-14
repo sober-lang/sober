@@ -1,6 +1,6 @@
 package main
 
-// std/math の Trunc / Floor / Ceil / Min / Max（ビット操作と比較だけ — libm なし・決定的）。期待値は Go の双子 scripts/oracles/math_round.go
+// std/mathのTrunc / Floor / Ceil / Min / Max（ビット操作と比較だけ — libmなし・決定的）。期待値は比較用のGoの実装scripts/oracles/math_round.go
 // （Go の math の同名の関数）。端の値は印字・乱択の 3,000 値は結果のビット列の XOR（NaN は「NaN か」だけを見る — NaN のビットは Go と約束しない）
 
 import "std/iter"

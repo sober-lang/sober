@@ -15,7 +15,7 @@ const Ca = env.StrVar{name: "PG_CA", help: "a PEM file of extra trusted CAs", op
 
 const Vars = env.Table{strs: []env.StrVar{Url, Password, Ca}}
 
-// 方針: password は URL に書かず Policy に（@secret の欄）・私的 PKI の CA は extraRoots に足す
+// 方針: password は URL に書かず Policy に（@secret のフィールド）・私的 PKI の CA は extraRoots に足す
 func policyOf(e env.Values) pg.Policy {
     pw := env.StrOpt(e, Password)
     ca := env.StrOpt(e, Ca)
@@ -37,7 +37,7 @@ func setup(c pg.Conn) error? {
     return nil
 }
 
-// 値は $1 … の引数で渡す（SQL の文面は const の席 — 実行時に組んだ文字列は渡せない）
+// 値は $1 … の引数で渡す（SQL の文面は const 仮引数 — 実行時に組んだ文字列は渡せない）
 func add(c pg.Conn, id int, name string, price int) error? {
     _ = pg.Exec(c, "insert into item (id, name, price) values ($1, $2, $3)", args: []pg.Value{pg.Int{v: id}, pg.String{v: name}, pg.Int{v: price}})?
     return nil

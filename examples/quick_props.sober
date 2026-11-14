@@ -1,7 +1,7 @@
 package main
 
 // std/quick: 真のプロパティは全試行（既定 100）を通って何も印字しない。引いた後の変換（* 2）も同じ選択の列から決まる。
-// 腕の選び分けは Pick と switch で書く（ジェネレータの値の列は持たない）。条件は構成で狭めるのが先で、Assume は最後の手
+// 分岐の選び分けはPickとswitchで書く（ジェネレータの値の列は持たない）。条件は構成で狭めるのが先で、Assumeは最後の手
 
 import "std/quick"
 import "std/strings"

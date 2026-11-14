@@ -1,6 +1,6 @@
-// examples/crypto_rsa.sober の Go の双子（std/crypto/rsa + pem の差分オラクル — report-795）。同じ鍵（testdata/crypto/*.key）・同じ決定的な salt で
+// examples/crypto_rsa.soberの比較用のGoの実装（std/crypto/rsa + pemの差分オラクル — report-795）。同じ鍵（testdata/crypto/*.key）・同じ決定的なsaltで
 // EMSA-PSS-ENCODE（RFC 8017 9.1.1）を手で組み、big.Int の m^d mod n で署名を作る（バイト一致の照合）。その署名を crypto/rsa.VerifyPSS
-// （標準ライブラリ）でも受理すること・改竄の拒否を確かめる（食い違いは標準エラーに出して exit 1）。再生成（リポジトリの根で）:
+// （標準ライブラリ）でも受理すること・改竄の拒否を検証する（食い違いは標準エラーに出してexit 1）。再生成（リポジトリの根で）:
 //   (cd scripts/oracles && go run crypto_rsa.go) > examples/crypto_rsa.out
 package main
 

@@ -12,7 +12,7 @@ func cell(r Row, i int) ([]byte)? {
     return if ln < 0 { nil } else { r.body[at:at + ln] }
 }
 
-// 列 i の型（binary で受けた列だけ — text で受けた列は 0。型つきの読みの腕を選ぶ — 形は受けたときに確かめ済み）
+// 列iの型（binaryで受けた列だけ — textで受けた列は0。型つきの読みの分岐を選ぶ — 形は受けたときに検証済み）
 func binOf(r Row, i int) int {
     return if r.fmts[i] == 1 { r.oids[i] } else { 0 }
 }
@@ -143,13 +143,13 @@ func ColJson(r Row, i int) ([]byte, error?) {
     ln := r.cells[2 * i + 1]
     o := r.oids[i]
     if ln >= 0 && r.fmts[i] == 1 && (o == oidJsonb || o == oidJson) {
-        // jsonb は版のバイト 1 の後ろが JSON の字句（版は受けたときに確かめ済み）
+        // jsonbは版のバイト1の後ろがJSONの字句（版は受けたときに検証済み）
         return if o == oidJsonb { r.body[at + 1:at + ln] } else { r.body[at:at + ln] }, nil
     }
     return []byte{}, miss(r, i)
 }
 
-// 列 i の値 — json / jsonb の列の JSON の字句を string で（json.Put で応答へそのまま積める）。UTF-8 は行を受けたときに確かめ済み
+// 列 i の値 — json / jsonb の列の JSON の字句を string で（json.Put でレスポンスへそのまま積める）。UTF-8 は行を受けたときに確認済み
 @errors(NullColumn, WrongType)
 @effects()
 func ColJsonText(r Row, i int) (string, error?) {

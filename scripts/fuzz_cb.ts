@@ -1,11 +1,11 @@
 // check ≟ build の差分オラクル（desugar 規律スイープ ③）: fuzz/progen の生成したプログラムを `sober check` と `sober build`（+ 実行）に通し、
-// 受理 / 拒否の食い違いを拾う。食い違いは行の単位（1 行の文か、{ … } の塊）を消す縮小で最小化して out/fuzz/ に置く。
-//   node --experimental-strip-types scripts/fuzz_cb.ts [--from N] [--count M] [--size S] [--keep] [--both] [--par]（--both = both-reject も縮めて残す・
-//   --par = progen に std/task の文を混ぜる〔段 6 P3a — 捕獲の 2 実装の網〕+ 既定と --no-opt の実行の観測〔stdout・終了コード〕を照合して食い違いを opt-diff に）
-// 分類: ok = 両方受理 / both-reject = 両方拒否（生成器が型の合わないものを作った — 一致）/ check-only = check だけ受理（build が拒否 — check ⊃ build）/
+// 受理 / 拒否の食い違いを拾う。食い違いは行の単位（1行の文か、{ … } のチャンク）を消す縮小で最小化してout/fuzz/ に置く。
+//   node --experimental-strip-types scripts/fuzz_cb.ts [--from N] [--count M] [--size S] [--keep] [--both] [--par]（--both = both-rejectもシュリンクして残す・
+//   --par = progenにstd/taskの文を混ぜる〔段階6 P3a — 捕獲の2実装の検査〕+ 既定と --no-opt の実行の観測〔stdout・終了コード〕を照合して食い違いをopt-diffに）
+// 分類: ok = 両方受理 / both-reject = 両方拒否（ジェネレータが型の合わないものを作った — 一致）/ check-only = checkだけ受理（buildが拒否 — check ⊃ build）/
 //       build-only = build だけ受理（check が拒否 — check ⊂ build。F 台帳の主な型）/ run-crash = 両方受理したが実行が 0 / 101 以外で終わった
-// 縮小した結果は既知族（F 台帳）の署名で振り分け、ファイル名に族を付ける（`build-only-Ff-s7-z3.sober` / 署名に当たらなければ `-new-`）。
-//   node --experimental-strip-types scripts/fuzz_cb.ts --sig <file>...   手元のファイルの振り分けだけを見る（署名の確かめ用）
+// 縮小した結果は既知系統（F台帳）の署名で振り分け、ファイル名に系統を付ける（`build-only-Ff-s7-z3.sober` / 署名に当たらなければ `-new-`）。
+//   node --experimental-strip-types scripts/fuzz_cb.ts --sig <file>...   手元のファイルの振り分けだけを見る（署名の検証用）
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -15,22 +15,22 @@ const args = process.argv.slice(2);
 const opt = (k: string, d: number) => { const i = args.indexOf(k); return i >= 0 ? Number(args[i + 1]) : d; };
 const from = opt('--from', 1), count = opt('--count', 50), size = opt('--size', 4);
 
-// 既知族の署名（縮小後のプログラムの字面 + check の診断）。progen の名前の規約 = 仮引数は v0、局所は v1 以降。字面の当て推量なので、当たった族は
-// 「その形を含む」であって「その形だけが原因」ではない（縮小は分類を保つだけ）— 新族の候補は -new- のものだけ手で見る
+// 既知系統の署名（縮小後のプログラムの字面 + checkの診断）。progenの名前の規約 = 仮引数はv0、局所はv1以降。字面の当て推量なので、当たった系統は
+// 「その形を含む」であって「その形だけが原因」ではない（縮小は分類を保つだけ）— 新しい系統の候補は -new- のものだけ手で見る
 function families(src: string, check: string): string[] {
   const body = src.split('\n').filter(l => !l.trim().startsWith('//')).join('\n');
   const out: string[] = [];
-  // 生成器の誤り: mut 実引数の排他（diag.MutAlias — 1 つの呼び出しの mut 実引数は根を重ねない — progen の varOther）を生成器が破った
+  // ジェネレータの誤り: mut実引数の排他（diag.MutAlias — 1つの呼び出しのmut実引数は根を重ねない — progenのvarOther）をジェネレータが破った
   if (check.includes('mut arguments overlap')) out.push('GenMutAlias');
-  // F-f: region を持つ値のブロック式（値の位置の `{ … }` — 代入・return・実引数・演算子の右・括弧の中・if / switch の腕の中・if の条件）
+  // F-f: regionを持つ値のブロック式（値の位置の `{ … }` — 代入・return・実引数・演算子の右・括弧の中・if / switchの分岐の中・ifの条件）
   if (/(:=|=|return|if|\(|,|\+|\{|:)\s*\{ /.test(body)) out.push('Ff');
-  // F-n: struct 値の switch 式（の欄読み）で desugar CoreFragment
+  // F-n: struct値のswitch式（のフィールド読み）で desugar CoreFragment
   if (check.includes('CoreFragment') && /switch [^\n]*\{[^\n]*case [^\n]*: [A-Z]\w*\{/.test(body)) out.push('Fn');
   // F-p: string 値の switch 式を bytes(…) に通すと desugar Malformed（束縛を挟んでも同じ）
   if (check.includes('Malformed') && /switch /.test(body) && /bytes\(/.test(body)) out.push('Fp');
-  // F-m: switch 式の腕が仮引数 v0 を値に持つ（struct の欄の中も含む）
+  // F-m: switch式の分岐が仮引数v0を値に持つ（structのフィールドの中も含む）
   if (check.includes('def error') && /switch [^\n]*(case [^;}\n]*|default): [^;}\n]*\bv0\b/.test(body)) out.push('Fm');
-  // F-o: 局所へ仮引数 v0 をそのまま（または struct の欄に入れて）代入
+  // F-o: 局所へ仮引数v0をそのまま（またはstructのフィールドに入れて）代入
   if (check.includes('def error') && /^\s*v[1-9]\d* = ([^\n]*[{,:] )?v0\b(?! \+)/m.test(body)) out.push('Fo');
   return out;
 }
@@ -62,7 +62,7 @@ function classify(src: string): { cls: Cls; check: string; build: string } {
     const r = spawnSync(exe, [], { encoding: 'utf8', timeout: 10000 });
     if (r.status !== 0 && r.status !== 101) return { cls: 'run-crash', check, build: `run exit=${r.status}` };
     if (usePar) {
-      // 罠（trap）を跨ぐ最適化の網: --no-opt と観測が割れたら opt-diff（depth の穴の同族）
+      // 罠（trap）を跨ぐ最適化の検査: --no-opt と観測が割れたらopt-diff（depthの穴の同じ系統）
       const exe2 = path.join(work, 'p0.exe');
       const b2 = spawnSync(SOBER, ['build', f, '--no-opt', '-o', exe2], { encoding: 'utf8', timeout: 120000 });
       const r2 = b2.status === 0 ? spawnSync(exe2, [], { encoding: 'utf8', timeout: 10000 }) : null;
@@ -73,12 +73,12 @@ function classify(src: string): { cls: Cls; check: string; build: string } {
   return { cls: checkOk ? 'check-only' : buildOk ? 'build-only' : 'both-reject', check, build };
 }
 
-// 縮小: 消せる単位 = 1 行の文か { で終わる行から対応する } までの塊（} else { の続きを含む）。消しても分類が変わらなければ残す（不動点まで）
+// 縮小: 消せる単位 = 1行の文か { で終わる行から対応する } までのチャンク（} else { の続きを含む）。消しても分類が変わらなければ残す（不動点まで）
 function units(lines: string[]): [number, number][] {
   const out: [number, number][] = [];
   for (let i = 0; i < lines.length; i++) {
     const t = lines[i].trim();
-    // 型宣言・return・構造体の欄は消さない（消すと両方が拒否する形か、build が検査しない形〔未定義の型を持つ未使用の関数・return の無い本体〕に
+    // 型宣言・return・構造体のフィールドは消さない（消すと両方が拒否する形か、buildが検査しない形〔未定義の型を持つ未使用の関数・returnの無い本体〕に
     // 縮んで偽の食い違いになる）
     if (t === '' || t === '}' || t.startsWith('} else') || t.startsWith('package ') || t.startsWith('//') || t.startsWith('type ') ||
         t.startsWith('return ') || /^[a-z]\w* (int|string)$/.test(t)) continue;
@@ -159,11 +159,11 @@ function shrink(src: string, cls: Cls, kind = ''): string {
       if (same(classify(cand.join('\n')), cls, kind)) { lines = cand; progress = true; break; }
     }
     if (progress) continue;
-    // 行が消せなくなったら式を縮める
+    // 行が消せなくなったら式をシュリンクする
     outer: for (let i = 0; i < lines.length; i++) {
       for (const nl of exprMoves(lines[i])) {
         const cand = [...lines.slice(0, i), nl, ...lines.slice(i + 1)];
-        // 式の縮小でも到達性を保つ（`println(f0(…))` を `println(1)` に縮めて f0 を未使用にすると、build が f0 を検査しない偽の食い違いになる）
+        // 式の縮小でも到達性を保つ（`println(f0(…))` を `println(1)` にシュリンクしてf0を未使用にすると、buildがf0を検査しない偽の食い違いになる）
         if (!reachable(cand)) continue;
         if (same(classify(cand.join('\n')), cls, kind)) { lines = cand; progress = true; break outer; }
       }
@@ -178,7 +178,7 @@ for (let seed = from; seed < from + count; seed++) {
   const src = execFileSync(progen, usePar ? [String(seed), String(size), 'par'] : [String(seed), String(size)], { encoding: 'utf8' });
   const r = classify(src);
   tally[r.cls] = (tally[r.cls] ?? 0) + 1;
-  // --both: 拡張した文法（掃除枠 C 段 3）は型の合うプログラムを狙うので、both-reject も誤拒否（書けてよい形）の候補として縮めて残す
+  // --both: 拡張した文法（クリーンアップC段階3）は型の合うプログラムを狙うので、both-rejectも誤拒否（書けてよい形）の候補としてシュリンクして残す
   if (r.cls === 'ok' || (r.cls === 'both-reject' && !args.includes('--both'))) continue;
   const min = shrink(src, r.cls, kindOf(r.check));
   const fin = classify(min);

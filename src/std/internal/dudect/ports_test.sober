@@ -1,7 +1,7 @@
 package dudect
 
-// dudect の題材: std/crypto の公開の口。クラス 0 = 固定の秘密・クラス 1 = 乱数の秘密（入力は計時の前に作る）。
-// 鍵を変えられない口（crypto.rsa.SignPSS — 鍵は 1 本の試験鍵）は平文を変える。結果は f の bool（窓の外で畳む — Measure の型が強制する）
+// dudectの題材: std/cryptoの公開のAPI。クラス0 = 固定の秘密・クラス1 = 乱数の秘密（入力は計時の前に作る）。
+// 鍵を変えられないAPI（crypto.rsa.SignPSS — 鍵は1本の試験鍵）は平文を変える。結果はfのbool（ウィンドウの外で畳む — Measureの型が強制する）
 
 import "std/crypto"
 import "std/crypto/aesgcm"
@@ -93,7 +93,7 @@ func TestAesgcmOpenAt() {
     })
 }
 
-// 縫い合わせの塊の道（128 の倍数の部分 — aesseal / aesopen）: 平文 256 バイト
+// 縫い合わせのチャンクのパス（128の倍数の部分 — aesseal / aesopen）: 平文256バイト
 func TestAesgcmSealTo256() {
     n := Count()
     if n == 0 || !crypto.aesgcm.Available() {
@@ -157,7 +157,7 @@ func TestChachaOpenAt() {
     })
 }
 
-// i ごとに決まる乱数の鍵 32 バイトで、r の上の limb（r4 = 鍵の 13〜15 バイト目 — 締めの後は 2^20 未満で一様）だけを 2^8 未満に絞ったもの
+// iごとに決まる乱数の鍵32バイトで、rの上のlimb（r4 = 鍵の13〜15バイト目 — クランプの後は2^20未満で一様）だけを2^8未満に絞ったもの
 // （14・15 バイト目を 0 に — s〔16〜31 バイト目〕と r の他の limb は乱数のまま）
 func smallR4(i int) []byte {
     r := rnd(32, i + 1000000007)
@@ -170,7 +170,7 @@ func smallR4(i int) []byte {
 
 // poly1305_sum_otk: Poly1305 の鍵は 1 回限り（AEAD ではメッセージごとに chacha20 から導く・Sum の doc も「1 回だけ使う鍵」）なので、題材も両クラスとも毎回違う鍵にして、
 // クラスで変えるのは鍵の性質だけにする — クラス 0 = r の上の limb が小さい鍵の群（smallR4）・クラス 1 = 一様乱数の鍵。検定するのは「鍵の性質の差が時間に出るか」で、
-// 古典の固定 対 乱数（固定鍵を数百万回）より検出力は落ちる（固定の値ごとのずれは平均で消える）。棄てた形: 固定 対 乱数（旧 poly1305_sum — exp_test の
+// 古典の固定 対 乱数（固定鍵を数百万回）よりテストの強さは落ちる（固定の値ごとのずれは平均で消える）。棄てた形: 固定 対 乱数（旧poly1305_sum — exp_testの
 // exp_poly_fixed に informational として残置）は、Zen 3 / Zen 4（GHA の EPYC 7763 / 9V74）で固定鍵の値ごとに決まる 0.1 cycle 級のずれ（1 呼び出し ≈ 480 cycle の
 // 0.01〜0.03%・仕組みは未特定 — 積の早抜けでもビットの重みでもない・Zen 5 では出ない）を拾って |t| 5〜19 と出ていた。1 回限りの鍵では
 // 1 つの鍵を 1 回しか測れないので、そのずれは使われ方では掘れない
@@ -215,7 +215,7 @@ func TestRsaSignPSS() {
     bs, _ := crypto.pem.Parse(kt)
     k, _ := crypto.rsa.ParsePKCS8(bs[0].der)
     salt := pat(32, 10)
-    // 鍵は 1 本（試験鍵）— 秘密の側の入力として平文 64 バイトを変える（鍵を変える網は鍵の生成の口が要る — 積み）
+    // 鍵は1本（試験鍵）— 秘密の側の入力として平文64バイトを変える（鍵を変える検査は鍵の生成のAPIが要る — 積み）
     Measure("rsa_signpss", n, 11, (c, i) => sec(c, i, 64), (x) => {
         s, _ := crypto.rsa.SignPSS(k, x, salt)
         len(s) > 0

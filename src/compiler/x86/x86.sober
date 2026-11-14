@@ -1,6 +1,6 @@
 package x86
 
-// x86_64 の命令エンコーダ（src/stage1/arch/x86_64.zig の写し — 正規バックエンドの Sober 化）。IR を知らない。
+// x86_64の命令エンコーダ（src/stage1/arch/x86_64.zigのコピー — 正規バックエンドのSober化）。IRを知らない。
 // 書き先はバイトの表（table.Table[byte] — 追記と、call / jmp の rel32・番地の imm32 の後埋め）。
 // 正しさは GNU as との照合（scripts/x86enc.sh — 全レジスタの組み合わせ）と、ELF のバイト一致（elfeq）で見る。
 // ビットの詰め（REX・ModRM・SIB・opcode | reg）は int のシフトで書く — @layout のビット粒度は入れない（language.md 36 節）。
@@ -211,20 +211,20 @@ func Lfence(c mut table.Table[byte]) {
     put(mut c, 0xe8)
 }
 
-// rdtscp — 0F 01 F9（edx:eax = 時刻の計数器・ecx = プロセッサの印 — 前の命令が終わってから読む）
+// rdtscp — 0F 01 F9（edx:eax = 時刻の計数器・ecx = プロセッサのマーク — 前の命令が終わってから読む）
 func Rdtscp(c mut table.Table[byte]) {
     put(mut c, 0x0f)
     put(mut c, 0x01)
     put(mut c, 0xf9)
 }
 
-// rdtsc — 0F 31（edx:eax = 時刻の計数器 — 前後の命令と並べ替わりうる。順序の要らない粗い時計の口 — rt のスケジューラ）
+// rdtsc — 0F 31（edx:eax = 時刻の計数器 — 前後の命令と並べ替わりうる。順序の要らない粗い時計のインターフェース — rtのスケジューラ）
 func Rdtsc(c mut table.Table[byte]) {
     put(mut c, 0x0f)
     put(mut c, 0x31)
 }
 
-// prefetcht0 [rax] — 0F 18 08（rax の番地の線を全段のキャッシュへ — 値を返さず・不正な番地でも落ちない）
+// prefetcht0 [rax] — 0F 18 08（raxの番地のラインを全段のキャッシュへ — 値を返さず・不正な番地でも落ちない）
 func PrefetchT0Rax(c mut table.Table[byte]) {
     put(mut c, 0x0f)
     put(mut c, 0x18)
@@ -322,7 +322,7 @@ func MovMem8Reg(c mut table.Table[byte], base int, disp int, src int) {
     opMem(mut c, false, 0x88, -1, src, base, disp, src >= 4 && src < 8)
 }
 
-// MovChMem8 / MovMem8Ch は mov ch, byte ptr [base + disp] / その逆 — 8A /5・88 /5（REX なし — base は rax〜rdi だけ。rt.copy8 の短い写しが
+// MovChMem8 / MovMem8Chはmov ch, byte ptr [base + disp] / その逆 — 8A /5・88 /5（REXなし — baseはrax〜rdiだけ。rt.copy8の短いコピーが
 // rcx の下の長さを残したまま 1 バイトを運ぶ — d-3）
 func MovChMem8(c mut table.Table[byte], base int, disp int) {
     opMem(mut c, false, 0x8a, -1, 5, base, disp, false)
@@ -379,7 +379,7 @@ func MovMem32RegSib(c mut table.Table[byte], base int, index int, scale int, dis
     opSib(mut c, false, 0x89, -1, src, base, index, scale, disp, false)
 }
 
-// rep stosq — F3 48 AB（rcx 語を rdi から rax で埋める。フレームスロットの入口ゼロ初期化）
+// rep stosq — F3 48 AB（rcxワードをrdiからraxで埋める。フレームスロットの入口ゼロ初期化）
 func RepStosq(c mut table.Table[byte]) {
     put(mut c, 0xf3)
     put(mut c, rexW)
@@ -392,7 +392,7 @@ func RepMovsb(c mut table.Table[byte]) {
     put(mut c, 0xa4)
 }
 
-// rep movsq — F3 48 A5（rcx 語を rsi から rdi へ。rt.copy の呼び出しの代わり）
+// rep movsq — F3 48 A5（rcxワードをrsiからrdiへ。rt.copyの呼び出しの代わり）
 func RepMovsq(c mut table.Table[byte]) {
     put(mut c, 0xf3)
     put(mut c, rexW)
@@ -620,7 +620,7 @@ func ShlRegImm(c mut table.Table[byte], reg int, imm int) {
     put(mut c, imm & 255)
 }
 
-// shr reg, imm8 — REX.W C1 /5 ib（量 1 は REX.W D1 /5）（論理のずらし — 多倍長の塊 mulx.sober で使用）
+// shr reg, imm8 — REX.W C1 /5 ib（量1は REX.W D1 /5）（論理のずらし — 多倍長のチャンクmulx.soberで使用）
 func ShrRegImm(c mut table.Table[byte], reg int, imm int) {
     if imm == 1 {
         opExt(mut c, 0xd1, 5, reg)
@@ -631,7 +631,7 @@ func ShrRegImm(c mut table.Table[byte], reg int, imm int) {
 }
 
 // mulx hi, lo, src — rdx × src（符号なし）→ hi:lo・フラグを変えない（BMI2 — VEX.LZ.F2.0F38.W1 F6 /r: ModRM.reg = hi・VEX.vvvv = lo・
-// ModRM.rm = src。多倍長の塊 mulx.sober で使用）
+// ModRM.rm = src。多倍長のチャンクmulx.soberで使用）
 func MulxRRR(c mut table.Table[byte], hiR int, loR int, src int) {
     put(mut c, 0xc4)
     put(mut c, ((1 - hi(hiR)) << 7) | (1 << 6) | ((1 - hi(src)) << 5) | 0x02)
@@ -640,8 +640,8 @@ func MulxRRR(c mut table.Table[byte], hiR int, loR int, src int) {
     table.Push(mut c, modrm(3, lo(hiR), lo(src)))
 }
 
-// 多倍長の塊の 64 bit の形: MULX のメモリ形・ADCX / ADOX（BMI2 / ADX — 2 本の独立な
-// 繰り上がりの鎖 CF / OF）・SBB・JRCXZ（フラグを読まないループの戻り — 鎖の途中で add / cmp を使えない）。メモリは [base + disp]（index = -1）か
+// 多倍長のチャンクの64 bitの形: MULXのメモリ形・ADCX / ADOX（BMI2 / ADX — 2本の独立な
+// 繰り上がりのチェーンCF / OF）・SBB・JRCXZ（フラグを読まないループの戻り — チェーンの途中でadd / cmpを使えない）。メモリは [base + disp]（index = -1）か
 // [base + index * scale + disp]（index に rsp は置けない）
 
 // ModRM(+SIB)(+disp) のメモリオペランド（index = -1 は memOperand の [base + disp]・それ以外は opSib と同じ SIB の形）
@@ -783,7 +783,7 @@ func PunpcklqdqXX(c mut table.Table[byte], x int, y int) {
     sseRR(mut c, 0x66, false, 0x6c, x, y)
 }
 
-// punpckldq x, y（下位 2 つの 32 ビットのレーンを交互に — rt.jclean の 4〜7 バイトの道）— 66 0F 62 /r
+// punpckldq x, y（下位2つの32ビットのレーンを交互に — rt.jcleanの4〜7バイトのパス）— 66 0F 62 /r
 func PunpckldqXX(c mut table.Table[byte], x int, y int) {
     sseRR(mut c, 0x66, false, 0x62, x, y)
 }
@@ -857,17 +857,17 @@ func sseNp38(c mut table.Table[byte], op int, x int, y int) {
     table.Push(mut c, modrm(3, lo(x), lo(y)))
 }
 
-// sha256rnds2 x, y（暗黙の xmm0 = 次の 2 段の語 + 定数）— 2 段: x = 状態 C D G H を入れて A B E F を出す・y = A B E F — NP 0F 38 CB /r
+// sha256rnds2 x, y（暗黙のxmm0 = 次の2ラウンドのワード + 定数）— 2ラウンド: x = 状態 C D G H を入れて A B E F を出す・y = A B E F — NP 0F 38 CB /r
 func Sha256rnds2XX(c mut table.Table[byte], x int, y int) {
     sseNp38(mut c, 0xcb, x, y)
 }
 
-// sha256msg1 x, y（語の拡張の前半 — σ0）— NP 0F 38 CC /r
+// sha256msg1 x, y（ワードの拡張の前半 — σ0）— NP 0F 38 CC /r
 func Sha256msg1XX(c mut table.Table[byte], x int, y int) {
     sseNp38(mut c, 0xcc, x, y)
 }
 
-// sha256msg2 x, y（語の拡張の後半 — σ1）— NP 0F 38 CD /r
+// sha256msg2 x, y（ワードの拡張の後半 — σ1）— NP 0F 38 CD /r
 func Sha256msg2XX(c mut table.Table[byte], x int, y int) {
     sseNp38(mut c, 0xcd, x, y)
 }
@@ -883,12 +883,12 @@ func PalignrXXI(c mut table.Table[byte], x int, y int, imm int) {
     put(mut c, imm & 255)
 }
 
-// aesenc x, y（AES の 1 段 — AES-NI の CPU だけ。std/crypto/aesgcm で使用）— 66 [REX] 0F 38 DC /r
+// aesenc x, y（AESの1ラウンド — AES-NIのCPUだけ。std/crypto/aesgcmで使用）— 66 [REX] 0F 38 DC /r
 func AesencXX(c mut table.Table[byte], x int, y int) {
     sse38(mut c, 0xdc, x, y)
 }
 
-// aesenclast x, y（最後の段）— 66 [REX] 0F 38 DD /r
+// aesenclast x, y（最後のラウンド）— 66 [REX] 0F 38 DD /r
 func AesenclastXX(c mut table.Table[byte], x int, y int) {
     sse38(mut c, 0xdd, x, y)
 }
@@ -954,7 +954,7 @@ func MovqRX(c mut table.Table[byte], r int, x int) {
     sseRR(mut c, 0x66, true, 0x7e, x, r)
 }
 
-// movapd x, y（xmm の値の写し — opt バックエンドの float のレジスタ同士）— 66 0F 28 /r
+// movapd x, y（xmmの値のコピー — optバックエンドのfloatのレジスタ同士）— 66 0F 28 /r
 func MovapdXX(c mut table.Table[byte], x int, y int) {
     sseRR(mut c, 0x66, false, 0x28, x, y)
 }
@@ -1087,7 +1087,7 @@ func MovdquMemX(c mut table.Table[byte], base int, disp int, x int) {
     sseMem(mut c, 0xf3, 0x7f, x, base, disp)
 }
 
-// MovdquXSib / MovdquSibX は movdqu の [base + index * 1 + disp] の読み / 書き — F3 0F 6F / 7F（rt.copy8 の短い写し — d-3）
+// MovdquXSib / MovdquSibXはmovdquの [base + index * 1 + disp] の読み / 書き — F3 0F 6F / 7F（rt.copy8の短いコピー — d-3）
 func MovdquXSib(c mut table.Table[byte], x int, base int, index int, disp int) {
     sseSib(mut c, 0xf3, 0x6f, x, base, index, Scale1, disp)
 }
@@ -1284,7 +1284,7 @@ func Syscall(c mut table.Table[byte]) {
     put(mut c, 0x05)
 }
 
-// ud2 — 0F 0B（到達しない印。_start の入口呼び出しの後ろ）
+// ud2 — 0F 0B（到達しないマーク。_startの入口呼び出しの後ろ）
 func Ud2(c mut table.Table[byte]) {
     put(mut c, 0x0f)
     put(mut c, 0x0b)

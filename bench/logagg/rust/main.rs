@@ -1,10 +1,10 @@
-// logagg の Rust の双子（素直縛り — std だけ）: Sober / Go 版と同じ手書きの規則（語の分割・RFC 3339 の部分集合の時刻・1 分の固定窓 × svc の配列・
-// 5 分の滑り窓）。行は lines()・語は &str の部分列・ユーザーは HashMap<&str, i64>。出力は Sober 版とバイト一致
+// logaggの比較用のRustの実装（素直縛り — stdだけ）: Sober / Go版と同じ手書きの規則（語の分割・RFC 3339の部分集合の時刻・1分の固定ウィンドウ × svcの配列・
+// 5分のスライディングウィンドウ）。行はlines()・語は &strの部分列・ユーザーはHashMap<&str, i64>。出力はSober版とバイト一致
 use std::collections::HashMap;
 use std::fs;
 use std::io::{self, Write};
 
-const W: usize = 1442; // 分の窓の数（起点の 1 分前から 24 時間 + 1 分）
+const W: usize = 1442; // 分のウィンドウの数（起点の1分前から24時間 + 1分）
 const H: usize = 24; // 遅延のヒストグラムの箱（log2）
 const SVCS: [&str; 8] = ["api", "auth", "orders", "payments", "search", "catalog", "users", "static"];
 const LEVELS: [&str; 4] = ["debug", "info", "warn", "error"];
@@ -291,7 +291,7 @@ fn main() {
                 break;
             }
         }
-        // 滑り窓: 直近 5 分の 5xx が 5% を超えた分の数
+        // スライディングウィンドウ: 直近5分の5xxが5%を超えた分の数
         let mut alarms = 0;
         for m in 4..W {
             let (mut wn, mut w5) = (0i64, 0i64);

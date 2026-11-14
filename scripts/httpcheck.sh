@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# httpcheck（net 段 4c — std/http・report-670）: testdata/httpcheck/srv.sober（HttpArena の題材の端点 /baseline11・/pipeline・/delay/{ms}）を建てて立て、
-# testdata/httpcheck/check.ts（HttpArena の validate.sh / validate-frag.py を模した網 — baseline の GET / POST〔Content-Length と chunked〕・乱数の入力・
+# httpcheck（net段階4c — std/http・report-670）: testdata/httpcheck/srv.sober（HttpArenaの題材の端点 /baseline11・/pipeline・/delay/{ms}）をビルドして立て、
+# testdata/httpcheck/check.ts（HttpArenaのvalidate.sh / validate-frag.pyを模した検査 — baselineのGET / POST〔Content-Lengthとchunked〕・乱数の入力・
 # 小文字のヘッダ・断片化〔CR と LF の間・Content-Length の桁の途中・chunk の 16 進の途中・ヘッダ名の途中 + 乱数の位置 100〕・1 バイトずつの送り・
-# パイプライン 16 本と混ぜた列・keep-alive の張り直し 50 × 10・HTTP/1.0・誤り〔400 / 413 / 431 / 501 / 505 — 応答の後に閉じる〕・上限ちょうど・/delay の待ち・
-# /json/{count}?m= の全欄を dataset〔testdata/httpcheck/dataset.json = HttpArena の data/dataset.json・MIT〕と照合 — 本家 validate.sh の json の検査の形）を掛ける。
-# 構成 = W8（net の ring — カーネルが受ければ）と W1（協調形・epoll の道）。番号は空いているものをサーバが選んで "ready <port>" で知らせる
+# パイプライン16本と混ぜた列・keep-aliveの張り直し50 × 10・HTTP/1.0・誤り〔400 / 413 / 431 / 501 / 505 — レスポンスの後に閉じる〕・上限ちょうど・/delayの待ち・
+# /json/{count}?m= の全フィールドをdataset〔testdata/httpcheck/dataset.json = HttpArenaのdata/dataset.json・MIT〕と照合 — 本家validate.shのjsonの検査の形）を掛ける。
+# 構成 = W8（netのring — カーネルが受ければ）とW1（協調形・epollのパス）。番号は空いているものをサーバが選んで "ready <port>" で知らせる
 #   scripts/httpcheck.sh
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -19,8 +19,8 @@ fail=0
 sum=
 # 構成 = ワーカー数 × 符号器の作業域（SRV_WORK=1 = ServeConn の work: — ワーカー局所の lease・report-720）+ echo の大きい本文（SRV_MAXBODY = 128 KiB の
 # maxBody: で check.ts --echo-big — HttpArena の 8gbit の validate の 100 KB と上限ちょうどの 128 KiB を Content-Length と chunked で・超えた 1 本〔+1 B・1 MB〕は 413。
-# 上限は bench/httparena の entry と同じ値。W8 / W1 — report-848 / 849）。W8 の受けは増分消費の環（カーネル 6.12 以上）が既定 — SOBER_PBUF_INC=0 の 2 構成で固定スロットの環の道も見る。
-# 平文の keep-alive の応答の送りは次の受けの待ちと畳む（rt.netop 9 — 既定）— SOBER_NET_FUSE=0 の構成で畳まない道も見る。
+# 上限はbench/httparenaのentryと同じ値。W8 / W1 — report-848 / 849）。W8の受けは増分消費の環（カーネル6.12以上）が既定 — SOBER_PBUF_INC=0の2構成で固定スロットの環のパスも見る。
+# 平文のkeep-aliveのレスポンスの送りは次の受けの待ちと畳む（rt.netop 9 — 既定）— SOBER_NET_FUSE=0の構成で畳まないパスも見る。
 # TLS の構成（SRV_TLS=1 — srv が tls.Serve + ServeWith の put: で立ち、check.ts --tls が生の送受の群〔パイプライン・stream を挟むパイプライン・誤り・echo〕を TLS の上で掛ける）
 for cfg in "SOBER_WORKERS=8" "SOBER_WORKERS=1" "SOBER_WORKERS=8 SRV_WORK=1" "SOBER_WORKERS=1 SRV_WORK=1" "SOBER_WORKERS=8 SRV_MAXBODY=131072" "SOBER_WORKERS=1 SRV_MAXBODY=131072" "SOBER_WORKERS=8 SOBER_PBUF_INC=0" "SOBER_WORKERS=8 SRV_MAXBODY=131072 SOBER_PBUF_INC=0" "SOBER_WORKERS=8 SRV_MAXBODY=131072 SRV_TLS=1" "SOBER_WORKERS=1 SRV_TLS=1" "SOBER_WORKERS=8 SOBER_NET_FUSE=0" "SOBER_WORKERS=8 SRV_FRESH=1"; do
     rm -rf "$W/static" && mkdir -p "$W/static/www"
@@ -68,8 +68,36 @@ for cfg in "SOBER_WORKERS=8" "SOBER_WORKERS=1" "SOBER_WORKERS=8 SRV_WORK=1" "SOB
     fi
     FL_KEEP=
 done
+# 時刻つきの送信バッファリング（Delayed — rt.netop 9のms）の検査一式の自己検査: ミュータント84（受けが満了を待たない）・87（格納場所の容量2で溢れた送りが待たずに出る）でビルドした
+# srvはDelayedの検査で落ちる・88（容量2 — 溢れてrt.sleepに倒す正しい形）は通る。examples/http_delayed_cut.soberは既定でゴールデン（.out）どおり、
+# ミュータント85（期限で切ったマークを見ない）・86（閉じが送らないマークを付けない）はW8・87はW1（ringのパスでない送りの待ち）でゴールデンから外れる
+for m in 84 87 88; do
+    "$S2" build testdata/httpcheck/srv.sober --emit=elf --passes --rt-mutant=$m -o "$W/srv.m$m" > "$W/build.m$m.log" 2>&1 || { echo "httpcheck: FAIL build srv mutant $m"; fail=1; continue; }
+    for w in 1 8; do
+        env SOBER_WORKERS=$w DATASET_PATH=testdata/httpcheck/dataset.json "$W/srv.m$m" 0 > "$W/srvm.out" 2> /dev/null &
+        SP=$!
+        port=
+        for i in $(seq 100); do port=$(sed -n 's/^ready \([0-9]*\)$/\1/p' "$W/srvm.out"); [ -n "$port" ] && break; sleep 0.05; done
+        rc=0
+        timeout 60 node --experimental-strip-types --no-warnings testdata/httpcheck/check.ts "$port" --delayed-only > "$W/m$m.$w.log" 2>&1 || rc=$?
+        kill $SP 2>/dev/null; wait $SP 2>/dev/null; SP=
+        if [ $m = 88 ] && [ $rc != 0 ]; then echo "httpcheck: FAIL delayed with pool capacity 2 (mutant 88) W$w"; tail -5 "$W/m$m.$w.log"; fail=1; fi
+        if [ $m != 88 ] && [ $w = 8 ] && [ $rc = 0 ]; then echo "httpcheck: FAIL — mutant $m was not caught by the delayed check W$w"; fail=1; fi
+    done
+done
+"$S2" build examples/http_delayed_cut.sober --emit=elf --passes -o "$W/cut" > /dev/null 2>&1 || { echo "httpcheck: FAIL build http_delayed_cut"; fail=1; }
+for w in 1 8; do
+    env SOBER_WORKERS=$w timeout 30 "$W/cut" > "$W/cut.$w" 2>&1
+    cmp -s "$W/cut.$w" examples/http_delayed_cut.out || { echo "httpcheck: FAIL http_delayed_cut W$w"; diff examples/http_delayed_cut.out "$W/cut.$w" | head -5; fail=1; }
+done
+for mw in "85 8" "86 8" "87 1"; do
+    set -- $mw
+    "$S2" build examples/http_delayed_cut.sober --emit=elf --passes --rt-mutant=$1 -o "$W/cut.m$1" > /dev/null 2>&1 || { echo "httpcheck: FAIL build http_delayed_cut mutant $1"; fail=1; continue; }
+    env SOBER_WORKERS=$2 timeout 30 "$W/cut.m$1" > "$W/cut.m$1.out" 2>&1
+    cmp -s "$W/cut.m$1.out" examples/http_delayed_cut.out && { echo "httpcheck: FAIL — mutant $1 was not caught by http_delayed_cut W$2"; fail=1; }
+done
 if [ $fail = 0 ]; then
-    echo "httpcheck:$sum fail=0"
+    echo "httpcheck:$sum + Delayed mutants 84〜87 caught, 88 ok fail=0"
 else
     echo "httpcheck: FAIL"
 fi

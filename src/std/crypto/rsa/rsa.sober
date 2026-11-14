@@ -4,7 +4,7 @@ package rsa
 // TLS 1.3 の CertificateVerify（rsa_pss_rsae_sha256）の本体。
 //
 //     k := crypto.rsa.ParsePKCS8(der)?
-//     sig := crypto.rsa.SignPSS(k, msg, crypto.Rand(32))?   // salt は呼び手が渡す（決定的な網のため）
+//     sig := crypto.rsa.SignPSS(k, msg, crypto.Rand(32))?   // saltは呼び手が渡す（決定的な検査のため）
 //     ok := crypto.rsa.VerifyPSS(crypto.rsa.Public(k), msg, sig, 32)
 //
 // 署名は CRT（m^dp mod p・m^dq mod q を合わせる）で、出した署名を公開鍵で検証してから返す（CRT の故障攻撃〔Bellcore〕の古典の防御 —
@@ -73,7 +73,7 @@ func SignPSS(k PrivateKey, msg []byte, salt []byte) ([]byte, error?) {
     np := len(mp.m)
     sp := expMont(toMont(x, mp), k.dp, k.pbits, mp)
     sq := expMont(toMont(x, k.mq), k.dq, k.qbits, k.mq)
-    // 区画（各 np + 1 語）: 0 = sp_M・1 = sq_M・2 = 差・3 = qinv・4 = h
+    // 区画（各np + 1ワード）: 0 = sp_M・1 = sq_M・2 = 差・3 = qinv・4 = h
     l := np + 1
     blk := zeros(5 * l)
     mut w := leaseView(blk, 0, 5 * l)
@@ -111,7 +111,7 @@ func VerifyPSS(pub PublicKey, msg []byte, sig []byte, sLen int) bool {
     m := bnToBytes(expPub(toMont(s, pub.mt), pub.e, bnBits(pub.e), pub.mt), pub.k)
     emBits := pub.bits - 1
     emLen := (emBits + 7) / 8
-    // k - emLen 個の先頭の 0 を確かめて落とす
+    // k - emLen個の先頭の0を確認して落とす
     for i <- iter.Range(0, pub.k - emLen) {
         if m[i] != byte(0) {
             return false

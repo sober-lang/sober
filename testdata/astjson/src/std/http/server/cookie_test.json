@@ -2927,6 +2927,7 @@
                       "_",
                       "_",
                       "out",
+                      "_",
                       "e"
                     ],
                     "mutable": false,
@@ -2936,7 +2937,7 @@
                         "callee": {
                           "k": "ident",
                           "name": "serveBuf",
-                          "tok": 1072
+                          "tok": 1074
                         },
                         "args": [
                           {
@@ -2952,32 +2953,27 @@
                               "callee": {
                                 "k": "ident",
                                 "name": "gzRecord",
-                                "tok": 1078
+                                "tok": 1080
                               },
                               "args": [
                                 {
                                   "k": "ident",
                                   "name": "b",
-                                  "tok": 1080
+                                  "tok": 1082
                                 }
                               ],
-                              "tok": 1079
+                              "tok": 1081
                             },
-                            "tok": 1077
+                            "tok": 1079
                           },
                           {
                             "k": "ident",
                             "name": "req",
-                            "tok": 1083
+                            "tok": 1085
                           },
                           {
                             "k": "ident",
                             "name": "gzCookieRoute",
-                            "tok": 1085
-                          },
-                          {
-                            "k": "int",
-                            "value": 8192,
                             "tok": 1087
                           },
                           {
@@ -2987,25 +2983,35 @@
                           },
                           {
                             "k": "int",
-                            "value": 6,
+                            "value": 8192,
                             "tok": 1091
+                          },
+                          {
+                            "k": "int",
+                            "value": 6,
+                            "tok": 1093
                           },
                           {
                             "k": "ident",
                             "name": "true",
-                            "tok": 1093
+                            "tok": 1095
                           },
                           {
                             "k": "nil",
-                            "tok": 1095
+                            "tok": 1097
                           },
                           {
                             "k": "mut_arg",
                             "name": "hist",
-                            "tok": 1098
+                            "tok": 1100
+                          },
+                          {
+                            "k": "ident",
+                            "name": "false",
+                            "tok": 1102
                           }
                         ],
-                        "tok": 1073
+                        "tok": 1075
                       }
                     ],
                     "tok": 1064
@@ -3017,7 +3023,7 @@
                       "callee": {
                         "k": "ident",
                         "name": "assert",
-                        "tok": 1101
+                        "tok": 1105
                       },
                       "args": [
                         {
@@ -3026,16 +3032,16 @@
                           "lhs": {
                             "k": "ident",
                             "name": "e",
-                            "tok": 1103
+                            "tok": 1107
                           },
                           "rhs": {
                             "k": "nil",
-                            "tok": 1105
+                            "tok": 1109
                           },
-                          "tok": 1104
+                          "tok": 1108
                         }
                       ],
-                      "tok": 1102
+                      "tok": 1106
                     }
                   },
                   {
@@ -3057,43 +3063,43 @@
                               "base": {
                                 "k": "ident",
                                 "name": "testing",
-                                "tok": 1110
+                                "tok": 1114
                               },
                               "field": "cell",
-                              "tok": 1112
+                              "tok": 1116
                             },
                             "field": "Get",
-                            "tok": 1114
+                            "tok": 1118
                           },
                           "args": [
                             {
                               "k": "ident",
                               "name": "GzSent",
-                              "tok": 1116
+                              "tok": 1120
                             }
                           ],
-                          "tok": 1115
+                          "tok": 1119
                         },
                         "rhs": {
                           "k": "call",
                           "callee": {
                             "k": "ident",
                             "name": "headOf",
-                            "tok": 1119
+                            "tok": 1123
                           },
                           "args": [
                             {
                               "k": "ident",
                               "name": "out",
-                              "tok": 1121
+                              "tok": 1125
                             }
                           ],
-                          "tok": 1120
+                          "tok": 1124
                         },
-                        "tok": 1118
+                        "tok": 1122
                       }
                     ],
-                    "tok": 1108
+                    "tok": 1112
                   },
                   {
                     "k": "expr",
@@ -3102,7 +3108,7 @@
                       "callee": {
                         "k": "ident",
                         "name": "assert",
-                        "tok": 1124
+                        "tok": 1128
                       },
                       "args": [
                         {
@@ -3112,32 +3118,32 @@
                             "base": {
                               "k": "ident",
                               "name": "strings",
-                              "tok": 1126
+                              "tok": 1130
                             },
                             "field": "Contains",
-                            "tok": 1128
+                            "tok": 1132
                           },
                           "args": [
                             {
                               "k": "ident",
                               "name": "h",
-                              "tok": 1130
+                              "tok": 1134
                             },
                             {
                               "k": "strlit",
                               "value": "Content-Encoding: gzip\r\n",
-                              "tok": 1132
+                              "tok": 1136
                             }
                           ],
-                          "tok": 1129
+                          "tok": 1133
                         },
                         {
                           "k": "ident",
                           "name": "h",
-                          "tok": 1135
+                          "tok": 1139
                         }
                       ],
-                      "tok": 1125
+                      "tok": 1129
                     }
                   },
                   {
@@ -3147,7 +3153,7 @@
                       "callee": {
                         "k": "ident",
                         "name": "assert",
-                        "tok": 1138
+                        "tok": 1142
                       },
                       "args": [
                         {
@@ -3157,32 +3163,32 @@
                             "base": {
                               "k": "ident",
                               "name": "strings",
-                              "tok": 1140
+                              "tok": 1144
                             },
                             "field": "Contains",
-                            "tok": 1142
+                            "tok": 1146
                           },
                           "args": [
                             {
                               "k": "ident",
                               "name": "h",
-                              "tok": 1144
+                              "tok": 1148
                             },
                             {
                               "k": "strlit",
                               "value": "Set-Cookie: sid=abc; Path=/; Secure; HttpOnly; SameSite=Lax\r\n",
-                              "tok": 1146
+                              "tok": 1150
                             }
                           ],
-                          "tok": 1143
+                          "tok": 1147
                         },
                         {
                           "k": "ident",
                           "name": "h",
-                          "tok": 1149
+                          "tok": 1153
                         }
                       ],
-                      "tok": 1139
+                      "tok": 1143
                     }
                   }
                 ]
@@ -3196,7 +3202,7 @@
       "bodiless": false,
       "span": {
         "start": 1014,
-        "end": 1156
+        "end": 1160
       },
       "sig_end": 1018
     }

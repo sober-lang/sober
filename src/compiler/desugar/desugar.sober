@@ -21,7 +21,7 @@ func defOf(st mut S, fi int, ienv int) (int, error?) {
     st.taskFloor = 0
     saved_ps := st.parScope1
     st.parScope1 = 0
-    // 出所の追跡: Def の本体の根（戻りのラベル・仮引数の let）の出所は関数の頭（戻りの型の食い違いは関数の頭で名指す — build の Missing と同じ点）
+    // 出所の追跡: Defの本体の根（戻りのラベル・仮引数のlet）の出所は関数の頭（戻りの型の食い違いは関数の頭で特定する — buildのMissingと同じ点）
     saved_op := st.opos
     if st.track {
         st.opos = PackPos(posOf(mut st, fnNode(mut st, fi)))
@@ -48,7 +48,7 @@ func defOf(st mut S, fi int, ienv int) (int, error?) {
         }
         t := tyOf(mut st, pk, nB(nodeOf(mut st, prm)), at, TYFUEL)?
         hsetTy(mut st, int(vtys) + 1 + i, t)
-        // mut 仮引数: struct は欄ごとのセルの木（F-17 案 2α）、他は ref
+        // mut仮引数: structはフィールドごとのセルの木（F-17案2α）、他はref
         pty := if !ast.ParamIsMut(nodeOf(mut st, prm)) {
             t
         } else if teSplits(mut st, pk, st.tenv, nB(nodeOf(mut st, prm))) {
@@ -117,7 +117,7 @@ func outsideOnly(st mut S, i int) bool {
 
 // 本体に型パラメータ型の補間の穴があるジェネリック Def（typer の YInstNeeded）を抽象の Def の列から外し
 // （Def の添字 = DINST — 呼び出しごとのインスタンスを call.sober の instDef が足す）、残りの Def の添字を宣言順に詰め直す。
-// 印の付いた関数が無ければ何もしない（添字は init の振り方のまま）
+// フラグの付いた関数が無ければ何もしない（添字はinitの振り方のまま）
 func renumberDefs(st mut S) {
     YPropagate(mut st)
     mut any := false
@@ -168,7 +168,7 @@ func prefix(st mut S) error? {
         e2sPrepare(mut st)
     }
     // 区間の計画（PlanDefs）は型付けしない: 区間は関数表の添字で切り、費用は E2-S の上げの後の展開の有無だけで決まる
-    // （上げの判定は型付けを読まない — e2sScanCalls と署名）。Def の添字の振り直し（印を読む）もしない
+    // （上げの判定は型付けを読まない — e2sScanCallsと署名）。Defの添字の振り直し（フラグを読む）もしない
     if st.planOnly {
         if st.e2s {
             e2sPromote(mut st)
@@ -332,7 +332,7 @@ func run(st mut S) (ListRef, CoreRef, error?) {
     return defs, root, nil
 }
 
-// Def の添字ごとの「std の信頼の口」の印（1 = std/table.Freeze・std/strings.Clone の Def — language.md 17 節。コア JSON の Def の
+// Defの添字ごとの「stdの信頼のインターフェース」のフラグ（1 = std/table.Freeze・std/strings.CloneのDef — language.md 17 節。コアJSONのDefの
 // `"trust":true` — Lean の述語 uniqFreeze〔UniqFreeze.lean〕がその Def の本体の U1 / U3 を見ない。analyzer の freeze.sober と同じ 2 関数を名前で焼き込む）
 func trustDefs(st mut S) []int {
     mut out := mut []int{}
@@ -468,7 +468,7 @@ func DefAt(p loader.Program, excl []int, j int) (diag.Pos, error?) {
 
 // Program p から表層 AST のヒープと表（package・関数・const・error）を組む（initState — 名前付き関数型の展開込み）。
 // Sober 版 lower（compiler/lower）が同じ層を読む — 「解決済み AST 層を desugar と共有する」（docs/ir.md 1 節）の最初の形。
-// 表現は state.sober の冒頭（表層 AST は loader の木を参照で指す・表と記録は S の欄とヒープの添字）
+// 表現はstate.soberの冒頭（表層ASTはloaderの木を参照で指す・表と記録はSのフィールドとヒープの添字）
 func Init(st mut S, p loader.Program) {
     initState(mut st, p)
     st.ty.h0 = hlen(mut st)
@@ -482,7 +482,7 @@ func Typed(st mut S, p loader.Program) {
 
 // Typed に置き場の切り口 γ を掛けた形（check の analyzer）: 当たりの package は区画を読み戻す・外れの値は捨てる（γ を書くのは
 // 検査の通った build だけ — 値の検査の語 GC_OK）。検証 =1 は当たりでも型付けした値を置き場の値（末尾の検査の語 1 バイトを除く — build の検査の
-// 歩きの印は check では組まない）とバイトで比べ、=2 は読み戻しの照合 — 食い違いは名指しして落ちる
+// 歩きのフラグはcheckでは組まない）とバイトで比べ、=2は読み戻しの照合 — 食い違いは特定して落ちる
 func TypedC(st mut S, p loader.Program, c TyCache) {
     Init(mut st, p)
     tp := TypeAllC(mut st, c)
@@ -512,7 +512,7 @@ func TypedC(st mut S, p loader.Program, c TyCache) {
     }
 }
 
-// 当否の記録の口（SOBER_CACHE_STAT=1）
+// 当否の記録のインターフェース（SOBER_CACHE_STAT=1）
 func statOn() bool {
     v, err := os.Getenv("SOBER_CACHE_STAT")
     if err != nil || v == nil {

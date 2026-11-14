@@ -6,13 +6,13 @@
 # 述語（健全性 = 見逃し側だけ — language.md 未決「analyzer の実装方針」）:
 #   analyzer が受理したプログラムは、終了直前の未返却が 0（最終行 "outstanding 0"）
 # コーパス testdata/pool/*.sober は Pool を main に持ち、最終行で pool.Outstanding を出す約束。
-# 変異: 各 `defer ...Release(...)` 行を 1 本ずつ消す → analyzer は必ず拒否（静的）。build は analyzer を
-# 走らせないので変異体も実行でき、未返却 > 0 が観測されたら「オラクルも漏れを見た」として数える（動的）。
-# 実行されない枝の変異は動的には見えない — 静的拒否だけが要求で、動的観測は参考値。
+# ミューテーション: 各 `defer ...Release(...)` 行を1本ずつ消す → analyzerは必ず拒否（静的）。buildはanalyzerを
+# 走らせないのでミュータントも実行でき、未返却 > 0が観測されたら「オラクルも漏れを見た」として数える（動的）。
+# 実行されない枝のミュータントは動的には見えない — 静的拒否だけが要求で、動的観測は参考値。
 # ディレクトリ entry（複数 package の例 — testdata/minic/app、V5-7）も同じ約束で回す。import はリポのルート相対なので、
-# 変異はリポの外に写した testdata の木で作り、その木を cwd にして check / build / 実行する（リポの作業木は触らない）。
+# ミュータントはリポの外にコピーしたtestdataの木で作り、その木をcwdにしてcheck / build / 実行する（リポの作業木は触らない）。
 # analyzer は主の sober（compiler/analyzer — A1 で Zig 版から移植）。凍結した Zig 版（src/stage1/analyzer.zig）とは指摘の行を全部照合する
-# （本体・変異体・負例 testdata/pool_neg/forms.sober — 負例は期待の forms.err とも照合）。
+# （本体・ミュータント・負例testdata/pool_neg/forms.sober — 負例は期待のforms.errとも照合）。
 set -uo pipefail
 cd "$(dirname "$0")/.."
 SOBER=$(realpath ./bin/sober)

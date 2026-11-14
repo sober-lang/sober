@@ -1,6 +1,6 @@
 package main
 
-// @layout の固定長配列の欄に長さ違いの値を書くと panic（language.md 36 節 Y2 — exit 101）
+// @layoutの固定長配列のフィールドに長さ違いの値を書くとpanic（language.md 36 節Y2 — exit 101）
 
 import "std/builder"
 import "std/layout"

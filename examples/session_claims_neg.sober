@@ -1,6 +1,6 @@
 package main
 
-// 負例: session.Claims は Check だけが作る — Open で止めて、世代を見ずに Claims を組むことはできない（封の型の外での欄つきリテラルは拒否 — diag.Sealed・language.md 15 節）。
+// 負例: session.ClaimsはCheckだけが作る — Openで止めて、世代を見ずにClaimsを組むことはできない（封の型の外でのフィールドつきリテラルは拒否 — diag.Sealed・language.md 15 節）。
 // ゼロ値 session.Claims{} は書けるが、中身が無いので session.Who も session.Of も false を返す
 
 import "std/session"

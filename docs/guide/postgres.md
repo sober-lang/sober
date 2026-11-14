@@ -60,7 +60,7 @@ const Ca = env.StrVar{name: "PG_CA", help: "a PEM file of extra trusted CAs", op
 
 const Vars = env.Table{strs: []env.StrVar{Url, Password, Ca}}
 
-// 方針: password は URL に書かず Policy に（@secret の欄）・私的 PKI の CA は extraRoots に足す
+// 方針: password は URL に書かず Policy に（@secret のフィールド）・私的 PKI の CA は extraRoots に足す
 func policyOf(e env.Values) pg.Policy {
     pw := env.StrOpt(e, Password)
     ca := env.StrOpt(e, Ca)
@@ -82,7 +82,7 @@ func setup(c pg.Conn) error? {
     return nil
 }
 
-// 値は $1 … の引数で渡す（SQL の文面は const の席 — 実行時に組んだ文字列は渡せない）
+// 値は $1 … の引数で渡す（SQL の文面は const 仮引数 — 実行時に組んだ文字列は渡せない）
 func add(c pg.Conn, id int, name string, price int) error? {
     _ = pg.Exec(c, "insert into item (id, name, price) values ($1, $2, $3)", args: []pg.Value{pg.Int{v: id}, pg.String{v: name}, pg.Int{v: price}})?
     return nil
@@ -296,8 +296,8 @@ The k of `pg.OpenPool` runs inside the body of a task scope (a domain keeps the 
 // examples/pg_pool.sober
 package main
 
-// PostgreSQL のガイド 6 節（docs/guide/postgres）: 接続のプール。pg.OpenPool の k の中で受ける要求ごとに pg.With で 1 本借りる —
-// プールの値 p は関数の実引数にできるので、ハンドラは名前つきの関数のまま p を受ける。ここでは要求をネットの代わりに決まった列で流す
+// PostgreSQL のガイド 6 節（docs/guide/postgres）: 接続のプール。pg.OpenPool の k の中で受けるリクエストごとに pg.With で 1 本借りる —
+// プールの値 p は関数の実引数にできるので、ハンドラは名前つきの関数のまま p を受ける。ここではリクエストをネットの代わりに決まった列で流す
 // （http.server.ServeWith — net の接続なら `net.Serve(l, (c) => http.server.ServeConn(c, (r) => route(p, r)))` の形）。
 // 繋ぎ先は環境変数（PG_URL・PG_PASSWORD・PG_CA — examples/pg_shop と同じ）。scripts/pgoracle.sh が PostgreSQL 17 / 18 で走らせて出力を照合する
 
@@ -335,7 +335,7 @@ func setup(c pg.Conn) error? {
     return nil
 }
 
-// GET /item?id=N — 1 行を読んで返す（借りた接続は With が返したあと次の要求へ回る）
+// GET /item?id=N — 1 行を読んで返す（借りた接続は With が返したあと次のリクエストへ回る）
 func route(p pg.Pool, r http.server.Request) http.server.Response {
     q := http.server.Query(r, "id")
     id := if q == nil { -1 } else { convert.ParseInt(q) catch -1 }
@@ -357,7 +357,7 @@ func lookup(c pg.Conn, id int) (string, error?) {
     return out, nil
 }
 
-// 送られた応答（続けて来た要求の応答は 1 回の送りにまとまることがある — 行の終わりの \r を落として印字）
+// 送られたレスポンス（続けて来たリクエストのレスポンスは 1 回の送りにまとまることがある — 行の終わりの \r を落として印字）
 func show(b []byte) error? {
     println(strings.TrimSpace(strings.Replace(string(b) catch "", "\r\n", "\n", -1)))
     return nil

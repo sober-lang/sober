@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# sober watch の網（便 2 R3 — report-1266）: watch の道（一括の check + 関数単位キャッシュ〔切り口 D〕）の差分の出力（watchReport の形 — `+ 行`・`- 行`・
-# `watch: …`）を黄金 testdata/watchcheck/expect.txt と照合する。編集の列 = 受理 → 脱糖の拒否 → 検査器の拒否 → 直す → 同じ拒否をもう一度（拒否の値の当たり）
+# sober watch の検査（タスク2 R3 — report-1266）: watchのパス（一括のcheck + 関数単位キャッシュ〔切り口D〕）の差分の出力（watchReportの形 — `+ 行`・`- 行`・
+# `watch: …`）をゴールデンtestdata/watchcheck/expect.txtと照合する。編集の列 = 受理 → 脱糖の拒否 → 検査器の拒否 → 直す → 同じ拒否をもう一度（拒否の値の当たり）
 # → 直す。各周の `watch:` の行が出るのを待ってから次の編集を当てる（時間で待たない）。周ごとの当否（SOBER_CACHE_STAT）は照合の外で、最後の 2 周が
 # 当たりであることだけ見る。使い方: scripts/watchcheck.sh [--regen]
 set -uo pipefail
@@ -78,7 +78,7 @@ query after-watch 1/1
 echo '// edited without watch' >> "$W/main.sober"
 query after-edit 0/1
 query again 1/1
-# ディレクトリの entry（package main のディレクトリ）: ファイルを足すと閉包が変わる — 足した後の問い合わせは外れて、足したファイルの拒否を返す
+# ディレクトリのentry（package mainのディレクトリ）: ファイルを足すと推移的な依存が変わる — 足した後の問い合わせは外れて、足したファイルの拒否を返す
 mkdir -p "$W/pkg"
 printf 'package main\n\nfunc main() {\n    println(1)\n}\n' > "$W/pkg/a.sober"
 dquery() { # dquery <名前> <当否の期待>
@@ -95,7 +95,7 @@ dquery first 0/1
 dquery warm 1/1
 printf 'package main\n\nfunc b() int {\n    return len("s")\n}\n' > "$W/pkg/b.sober"
 dquery added-file 0/1
-# 鍵の環境変数: 宣言済みの開発の口（答えは変えない SOBER_TYORDER）を立てた問い合わせは別の鍵 — 外れる
+# 鍵の環境変数: 宣言済みの開発のオプション（答えは変えないSOBER_TYORDER）を立てた問い合わせは別の鍵 — 外れる
 ( cd "$W" && SOBER_TYORDER=1 SOBER_CACHE=$W/cc SOBER_CACHE_STAT=1 "$C" check pkg ) > /dev/null 2> "$W/q.err"
 grep -q '^cache: check-replay 0/1$' "$W/q.err" || { echo "watchcheck: FAIL env query: a declared environment variable is not in the replay key"; grep '^cache: check-replay' "$W/q.err"; exit 1; }
 # build の再生と watch の温め（build のキャッシュを入れて）: 素の build は 2 回目で再生に当たり、ELF は置き場なしの build とバイト一致。

@@ -1,6 +1,6 @@
-// 代役の照合: 本物の PG から録った往復（scripts/pgcap.ts / bench/pgstub/cap.ts の形）の C 行を代役へ順に流し、代役の応答を記録の S 行と比べる。
+// 代役の照合: 本物のPGから録った往復（scripts/pgcap.ts / bench/pgstub/cap.tsの形）のC行を代役へ順に流し、代役のレスポンスを記録のS行と比べる。
 //   node --experimental-strip-types --no-warnings bench/pgstub/replay.ts <port> <trace.hex> <場面>…
-// 比べ方: startup は型の印の並び・AuthenticationOk・BackendKeyData の長さ・ReadyForQuery をバイトで（ParameterStatus は値が版と設定で違う — 印と名前の集合で）。
+// 比べ方: startupは型のフラグの並び・AuthenticationOk・BackendKeyDataの長さ・ReadyForQueryをバイトで（ParameterStatusは値が版と設定で違う — フラグと名前の集合で）。
 // items-narrow（既定より狭い price の範囲）は、代役の DataRow の列が記録の DataRow の列の先頭に一致すること（代役の表は既定の引数の 50 行だけを持つ —
 // 狭い範囲の本物の答えのうち、その 50 行に入る行 = 本物の答えの先頭）。他の場面はバイト一致（代役の表は本物と同じ表の OID・列・行を持つ）。1 場面でも違えば終了 1
 import * as net from "node:net";

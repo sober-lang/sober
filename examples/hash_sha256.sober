@@ -1,7 +1,7 @@
 package main
 
-// std/hash（SHA-256 — FIPS 180-4）と std/hex（16 進の綴り）の検証例。Go の双子 scripts/oracles/hash_sha256.go（crypto/sha256）が .out を作り、
-// NIST の公式テストベクタ（FIPS 180-2 付録 B / CAVP の短いメッセージ — 双子が標準エラーで照合）を含む。
+// std/hash（SHA-256 — FIPS 180-4）とstd/hex（16進の綴り）の検証例。比較用のGoの実装scripts/oracles/hash_sha256.go（crypto/sha256）が .outを作り、
+// NISTの公式テストベクタ（FIPS 180-2付録B / CAVPの短いメッセージ — 比較用のGoの実装が標準エラーで照合）を含む。
 // ブロック境界（パディングが 1 ブロックに収まる 55・2 ブロックに割れる 56・ちょうど 64 等）と長入力（100 万バイト）を通す
 
 import "std/hash"

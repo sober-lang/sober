@@ -1,6 +1,6 @@
 package main
 
-// 負例: 名前付き関数を関数型の値にするとき、mut 仮引数の席は関数型と同じ（language.md 25 節）
+// 負例: 名前付き関数を関数型の値にするとき、mut仮引数は関数型と同じ（language.md 25 節）
 
 type Step func(acc mut int, x int)
 

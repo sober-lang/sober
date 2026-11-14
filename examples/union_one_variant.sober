@@ -1,6 +1,6 @@
 package main
 
-// variant が 1 つの union（再帰・総称も）: 和を組まずペイロードそのもので表す — switch の腕は 1 つで網羅
+// variantが1つのunion（再帰・総称も）: 和を組まずペイロードそのもので表す — switchの分岐は1つで網羅
 
 type Box union {
     Only { v int }

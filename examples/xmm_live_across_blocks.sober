@@ -32,7 +32,7 @@ func scanAscii(b []byte) int {
     return n
 }
 
-// 数え上げ（json.bound の形 — 16 バイトの塊ずつ当たりを数える）
+// 数え上げ（json.boundの形 — 16バイトのチャンクずつ当たりを数える）
 func countQuote(b []byte) int {
     mut n := 0
     mut c := 0
@@ -55,7 +55,7 @@ func checkUtf8(b []byte) int {
     return n
 }
 
-// CRC-32（64 バイト以上は折り畳みの塊）
+// CRC-32（64バイト以上は折り畳みのチャンク）
 func crc(b []byte) int {
     mut n := 0
     n += hash.crc32.Sum(b) & 0xffff

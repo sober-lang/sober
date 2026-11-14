@@ -233,4 +233,4 @@ std/internal/p256/p256.sober:35:6: field fe.l0 from the @secret parameter 'd' of
 std/internal/p256/p256.sober:35:6: field fe.l1 from the @secret parameter 'd' of 'std/internal/p256.PublicKey'
 std/internal/p256/p256.sober:35:6: field fe.l2 from the @secret parameter 'd' of 'std/internal/p256.PublicKey'
 std/internal/p256/p256.sober:35:6: field fe.l3 from the @secret parameter 'd' of 'std/internal/p256.PublicKey'
-summary atoms=62 secret-fns=200 secret-fields=35 violations=0 walks=3381
+summary atoms=62 secret-fns=200 secret-fields=35 violations=0 walks=3385

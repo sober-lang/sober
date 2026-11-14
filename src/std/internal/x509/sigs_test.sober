@@ -1,6 +1,6 @@
 package x509
 
-// 署名の検証の口の網（white-box）: RSA-PSS（SHA-256 / 384 / 512・salt = ハッシュの長さ）を Go の crypto/rsa の署名と 1 ビット変えた署名で
+// 署名の検証のAPIのテスト（white-box）: RSA-PSS（SHA-256 / 384 / 512・salt = ハッシュの長さ）をGoのcrypto/rsaの署名と1ビット変えた署名で
 // （testdata/crypto/rsapss.txt — scripts/oracles/crypto_rsapss.go）
 
 import "std/convert"

@@ -3,7 +3,7 @@ package main
 import "std/builder"
 
 // 再帰する mut 引数の関数に frame の imm slice を渡す（anchor 1 slot）。
-// imm の実引数は anchor の region へ形式コピーする（imm は同一性が観測不能なので写しは常に健全）
+// immの実引数はanchorのregionへ形式コピーする（immは同一性が観測不能なのでコピーは常に健全）
 func walk(nb mut builder.Builder[int], w string, n int) int {
     builder.Push(mut nb, n)
     if n == 0 {

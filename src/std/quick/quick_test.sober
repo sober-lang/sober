@@ -1,7 +1,7 @@
 package quick
 
-// white-box の網: 真の性質は全試行を通る・縮めは最小形に届く（和の制約・0 の側への寄せ・範囲の端）・
-// 縮めは止まる（いつも偽の性質・単調でない性質でも再実行の上限の内）・同じ種なら同じ列
+// white-boxの検査: 真のプロパティは全試行を通る・シュリンクは最小形に届く（和の制約・0の側への寄せ・範囲の端）・
+// シュリンクは止まる（いつも偽のプロパティ・単調でないプロパティでも再実行の上限の内）・同じシードなら同じ列
 
 import "std/math"
 import "std/strings"
@@ -67,7 +67,7 @@ func TestTrueProperties() {
     Check(mut q, () => strings.Valid(bytes(Runes(mut q, 6))) && len(bytes(Runes(mut q, 6))) <= 24)
 }
 
-// prop の最小の反例を探して縮め、最小の列で prop をもう一度呼ぶ（捕捉した値は最小の反例の値になる・q.log = 最小の列）。再実行の回数を返す
+// propの最小の反例を探してシュリンクし、最小の列でpropをもう一度呼ぶ（捕捉した値は最小の反例の値になる・q.log = 最小の列）。再実行の回数を返す
 func minimal(q mut Src, prop func() bool) int {
     seed := q.seed
     k, _ := search(mut q, prop, seed, 0, 100, false, 0)
@@ -122,7 +122,7 @@ func TestShrinkStops() {
     // 最小の列 = バイト列を止める選択 0 と、整数の 0
     assert(len(q.log) == 2)
     assert(q.log[0] == 0 && q.log[1] == 0)
-    // 単調でない性質（和の偶奇）でも上限の内で止まる
+    // 単調でないプロパティ（和の偶奇）でも上限の内で止まる
     _ = minimal(mut q, () => {
         xs := Slice(mut q, 50, () => Int(mut q, 0, 1 << 40))
         sum(xs) % 2 == 0
@@ -178,7 +178,7 @@ func TestAssume() {
     k2, d2 := search(mut q, () => Assume(mut q, String(mut q, 8) == "hello"), 3, 0, 100, false, 0)
     assert(k2 == 0)
     assert(d2 > discardRatio * 100)
-    // 縮めは捨てる列を採らない — 0 の側の x < 10 は不成立なので最小の反例は 50
+    // シュリンクは捨てる列を採らない — 0の側のx < 10は不成立なので最小の反例は50
     mut x := 0
     _ = minimal(mut q, () => {
         x = Int(mut q, 0, 100)
@@ -187,8 +187,8 @@ func TestAssume() {
     assert(x == 50)
 }
 
-// Float は 3 つの腕（端の値・小さい 2 進の分数・任意のビット列）から引き、NaN・±Inf・-0・非正規数・負の値が全部出る。
-// 縮めは小さい値へ寄る — 「100 より大きければ偽」の最小の反例は 101（2 進の分数の腕の m = 101）・「x == x」の最小の反例は NaN
+// Floatは3つの分岐（端の値・小さい2進の分数・任意のビット列）から引き、NaN・±Inf・-0・非正規数・負の値が全部出る。
+// シュリンクは小さい値へ寄る — 「100より大きければ偽」の最小の反例は101（2進の分数の分岐のm = 101）・「x == x」の最小の反例はNaN
 func TestFloat() {
     mut q := Seed(3)
     mut nan := 0

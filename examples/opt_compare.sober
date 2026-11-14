@@ -1,6 +1,6 @@
 package main
 
-// 負例（check が名指しで拒否 — diag.TypeMismatch kind 2）: T? と値の == / != は言語に無い（language.md 15 節 — 絞り込んでから比べる）。
+// 負例（checkが専用の診断で拒否 — diag.TypeMismatch kind 2）: T? と値の == / != は言語に無い（language.md 15 節 — 絞り込んでから比べる）。
 // 比べる前に `v != nil && …` か if / switch で絞る
 
 func differs(v int?, j int) bool {

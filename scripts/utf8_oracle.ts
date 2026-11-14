@@ -2,7 +2,7 @@
 //
 // 1 つのケース表（バイト列）から 2 本を生成する:
 //   - examples/utf8_std.sober … Sober 側（strings.IndexInvalid / strings.Valid と `string(b)` を呼んで println）
-//   - Go の双子プログラム     … 同じバイト列を Go で。その出力が examples/utf8_std.out
+//   - 比較用のGoの実装     … 同じバイト列をGoで。その出力がexamples/utf8_std.out
 //
 // 再生成手順（リポジトリルートで。要件: node 22.6+、go 1.21+）:
 //   node scripts/utf8_oracle.ts examples/utf8_std.sober /tmp/utf8_oracle.go
@@ -19,7 +19,7 @@ const cases: number[][] = [
   [0xf4, 0x90, 0x80, 0x80], [0xf5, 0x80, 0x80, 0x80], [0xf0, 0x9f, 0x98], [0xff], [0xfe], [0x80], [0xbf],
   [0x61, 0xc3, 0xa9, 0xe2, 0x82, 0xac, 0xf0, 0x9f, 0x98, 0x80], [0x61, 0x62, 0x80, 0x63],
 ];
-// 塊の境目をまたぐ長いケース（UTF-8 の SIMD 速い道便: 最適化のバックエンドの検査器は 16 バイトの塊ずつ読む）。前置き（ASCII の
+// チャンクの境目をまたぐ長いケース（UTF-8のSIMD高速パスのタスク: 最適化のバックエンドの検査器は16バイトのチャンクずつ読む）。前置き（ASCIIの
 // 12〜17・28〜33 バイト・多バイト文字の連なり）の後に列（妥当・不正・特別な頭・切れ）を置き、ASCII で 40 バイト前後まで埋める
 const seqs: number[][] = [
   [0xc3, 0xa9], [0xe3, 0x81, 0x82], [0xef, 0xbf, 0xbd], [0xf0, 0x9f, 0x98, 0x80], [0xc3], [0xc3, 0x41], [0xe3, 0x81, 0x41],

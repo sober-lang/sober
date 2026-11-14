@@ -1,7 +1,7 @@
 package main
 
 // 負例（language.md 22 / 270 行 — sum type の switch の網羅はコンパイラ）: 入れ子の型パターンが網羅していない（O1 の x が I2 の値が漏れる）のに
-// wild（default / `_`）が無い。build は外れると値ゼロを返していた（入れ子の欄の中身を網羅の検査が見ていなかった）
+// wild（default / `_`）が無い。buildは外れると値ゼロを返していた（入れ子のフィールドの中身を網羅の検査が見ていなかった）
 
 type I union {
     I1{v int}

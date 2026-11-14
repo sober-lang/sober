@@ -1,13 +1,13 @@
 package main
 
-// switch 式の値の型を脱糖器が読む: computeTy・declOfExpr・retExprTy・exprSty0 が if 式と同じく switch 式の腕の末尾を辿る
+// switch式の値の型を脱糖器が読む: computeTy・declOfExpr・retExprTy・exprSty0がif式と同じくswitch式の分岐の末尾を辿る
 
 type T struct {
     a int
     s string
 }
 
-// struct 値の switch 式を束縛して欄を読む
+// struct値のswitch式を束縛してフィールドを読む
 func field(k int) int {
     v := switch k { case 0: T{a: 1, s: "x"}; default: T{a: 3, s: "y"} }
     return v.a
@@ -19,7 +19,7 @@ func width(k int) int {
     return len(bytes(x)) + len(bytes(switch k { case 0: "def"; default: "" }))
 }
 
-// if の腕の中の switch 式: if の else の腕が仮引数を値に持つ switch 式
+// ifの分岐の中のswitch式: ifのelseの分岐が仮引数を値に持つswitch式
 func pick(v string, k int) string {
     return if v == "a" { v } else { switch k { case 0: "x"; default: v } }
 }

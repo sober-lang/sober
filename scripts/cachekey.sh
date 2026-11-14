@@ -1,20 +1,21 @@
 #!/usr/bin/env bash
-# G-f0（3'' 第 2 段 C1）: 小分けの check のキャッシュの鍵（`check --split --cache-trace` — 鍵と当否を標準エラーへ）の照合。
+# G-f0（3'' 第2段階C1）: 小分けのcheckのキャッシュの鍵（`check --split --cache-trace` — 鍵と当否を標準エラーへ）の照合。
 #   1. 決定性: 多 package の entry（examples の import を持つもの + testdata/*/app）で 2 回回して鍵の列がバイト一致
 #   2. 共有: 同じ std の package の鍵が entry をまたいで 1 つ（std の package の入力は entry に依らない — gates の中の共有の前提）
-#   3. 変異（testdata/cachekey の写しの上で — leaf ← mid ← main・leaf に @embed）:
+#   3. ミューテーション（testdata/cachekeyのコピーの上で — leaf ← mid ← main・leafに @embed）:
 #      a. leaf の本体のコメントだけ → leaf の鍵だけ変わる（.sobi は不変 — 依存の項は .sobi の中身のハッシュ = 早期打ち切り）
 #      b. leaf の関数本体の式 → leaf の鍵だけ変わる（非展開の関数の本体は .sobi に載らない）
 #      c. leaf の公開関数の署名 → leaf・mid・main の全部が変わる
 #      d. @embed のファイルの中身 → leaf の鍵が変わる・ファイルを足す（パターンの一致の集合）→ leaf の鍵が変わる
 #      e. コンパイラの鍵（SOBER_SELF_KEY）→ 全部が変わる
-#   4. 当否: 置き場（SOBER_CACHE）に鍵のファイルを置くとその package だけ hit
-#   6. G-h（(c) — 視点の生の木を書き出しに使う形の網）: 小分けが置き場に書いた .sobi が、`sober iface`（ソースを読み直して書く経路）の .sobi と
+#   4. 当否: 配置先（SOBER_CACHE）に鍵のファイルを置くとそのpackageだけhit
+#   6. G-h（(c) — 視点の生の木を書き出しに使う形の検査）: 小分けが配置先に書いた .sobiが、`sober iface`（ソースを読み直して書く経路）の .sobiと
 #      バイト一致（多 package の entry 全部 + compiler/app — 判定のゲートでは下流が読まない部分の取り違えを捕まえられない）
-#   5. G-g（C2 — 本当の置き場で）: 温の置き場で変異を当てたときの外れの集合 = 期待。本体の変異 → leaf だけ（早期打ち切り）・署名の変異 → leaf の
-#      逆依存の閉包（題材の import 文から機械で出す — side は外れない）
+#   5. G-g（C2 — 本当の配置先で）: 温の配置先でミューテーションを当てたときの外れの集合 = 期待。本体のミューテーション → leafだけ（早期打ち切り）・署名のミューテーション → leafの
+#      逆依存の推移的な依存（題材のimport文から機械で出す — sideは外れない）
 set -uo pipefail
 cd "$(dirname "$0")/.."
+source scripts/gatelib.sh
 ROOT=$PWD
 STAGE2=${STAGE2:-$ROOT/out/stage2/sober2}
 SELF=$(cat "$(dirname "$STAGE2")/.key" 2>/dev/null || echo none)
@@ -26,16 +27,27 @@ bad() { echo "FAIL: $*"; fail=$((fail + 1)); }
 trace() { ( cd "$1" && SOBER_SELF_KEY=${3:-$SELF} "$STAGE2" check "$2" --split --cache-trace 2>&1 >/dev/null | grep '^cache: ' | awk '{print $2, $3}' ); }
 
 # 1・2
-n=0
-: > "$tmp/all"
-for e in $( (grep -l '^import' examples/*.sober; ls -d testdata/*/app) | sort ); do
-    "$STAGE2" check "$e" > /dev/null 2>&1 || continue
+# entry ごとに独立 — $JOBS 本ずつ並列に。各仕事は失敗の行・std の鍵の行（@@ std <package> <鍵>）・結果の行（@@ ok / @@ bad）を吐く
+# （par_wait が entry の順に並べる — 失敗の行と件数は直列のときと同じ）
+detone() {
+    local e=$1 a b
+    "$STAGE2" check "$e" > /dev/null 2>&1 || { echo "@@ omit $e"; return 0; }
     a=$(trace "$ROOT" "$e")
     b=$(trace "$ROOT" "$e")
-    [ "$a" = "$b" ] || bad "keys not deterministic: $e"
-    echo "$a" | grep '^std/' >> "$tmp/all"
-    n=$((n + 1))
-done
+    echo "$a" | grep '^std/' | sed 's/^/@@ std /'
+    if [ "$a" = "$b" ]; then echo "@@ ok"; else echo "FAIL: keys not deterministic: $e"; echo "@@ bad"; fi
+}
+par_init "$tmp"
+( grep -l '^import' examples/*.sober; ls -d testdata/*/app ) | sort > "$tmp/det.tried"
+for e in $(cat "$tmp/det.tried"); do par_run detone "$e"; done
+par_wait > "$tmp/det"
+# check が失敗して飛ばした entry（check が拒否する例）は、失敗してよい一覧と照合する — 件数の減少に失敗が隠れない
+sed -n 's/^@@ omit //p' "$tmp/det" > "$tmp/det.omitted"
+omit_judge cachekey scripts/omit/cachekey.list "$tmp/det.tried" "$tmp/det.omitted" || fail=$((fail + 1))
+grep -v '^@@ ' "$tmp/det" || true
+sed -n 's/^@@ std //p' "$tmp/det" > "$tmp/all"
+n=$(( $(par_count ok "$tmp/det") + $(par_count bad "$tmp/det") ))
+fail=$((fail + $(par_count bad "$tmp/det") + $(par_count fail "$tmp/det")))
 multi=$(sort -u "$tmp/all" | awk '{print $1}' | uniq -d)
 [ -z "$multi" ] || bad "std package with more than one key across entries: $multi"
 nstd=$(sort -u "$tmp/all" | wc -l)
@@ -50,7 +62,7 @@ M=testdata/cachekey/mid
 fresh
 base=$(trace "$W" "$E")
 [ "$(echo "$base" | wc -l)" = 4 ] || bad "cachekey: expected 4 packages, got: $base"
-# changed <変異後の鍵の列> <変わるべき package…>: 変わった集合が期待と一致するか
+# changed <ミューテーション後の鍵の列> <変わるべきpackage…>: 変わった集合が期待と一致するか
 changed() {
     local after=$1 what=$2; shift 2
     local got="" p
@@ -72,7 +84,7 @@ changed "$(trace "$W" "$E")" "embed match set" "$L"
 fresh
 changed "$(trace "$W" "$E" other-compiler)" "compiler key" "$L" "$M" testdata/cachekey/side main
 
-# 4（置き場の値は先頭の行の鍵・長さ・値のハッシュが合うものだけが当たり — 冷の run で書いた本物の値を mid の分だけ残す）
+# 4（配置先の値は先頭の行の鍵・長さ・値のハッシュが合うものだけが当たり — 冷のrunで書いた本物の値をmidの分だけ残す）
 C=$tmp/cache
 fresh
 ( cd "$W" && SOBER_SELF_KEY=$SELF SOBER_CACHE=$C "$STAGE2" check "$E" --split > /dev/null 2>&1 )
@@ -89,7 +101,7 @@ grep -qx -- "$M" <<< "$hits" && bad "cachekey corrupted value: $M still hits"
 grep -q fonc "$f" && bad "cachekey corrupted value was not overwritten"
 
 # 5
-# misses <cwd> <置き場>: 外れた package の列（trace の順）
+# misses <cwd> <配置先>: 外れたpackageの列（traceの順）
 misses() { ( cd "$1" && SOBER_SELF_KEY=$SELF SOBER_CACHE=$2 "$STAGE2" check "$E" --split --cache-trace 2>&1 >/dev/null ) | awk '$4 == "miss" {print $2}' | tr '\n' ' '; }
 # rdeps <package>: 題材の中で <package> を推移的に import する package と自分（main は import の行で引く — 題材のパスは testdata/cachekey/<名前>）
 rdeps() {
@@ -121,25 +133,33 @@ want=$(inorder "$(rdeps "$L")")
 case "$want" in *testdata/cachekey/side*) bad "G-g: the reverse closure should not contain side" ;; esac
 
 # 6
-H=$tmp/h
-nh=0
+# entryごとに独立 — 配置先（H）は仕事ごと（$PAR_W）。各仕事は失敗の行と、照合した .sobiごとに @@ sobi・失敗ごとに @@ badを吐く
 sobicmp() { # $1 = cwd・$2 = entry
+    local H=${PAR_W:-$tmp/h}
     rm -rf "$H"; mkdir -p "$H"
-    ( cd "$1" && SOBER_SELF_KEY=$SELF SOBER_CACHE=$H/c "$STAGE2" check "$2" --split > /dev/null 2>&1 ) || return 0
-    ( cd "$1" && "$ROOT/bin/sober" iface "$2" -o "$H/i" > /dev/null 2>&1 ) || { bad "G-h: iface failed: $2"; return 0; }
+    ( cd "$1" && SOBER_SELF_KEY=$SELF SOBER_CACHE=$H/c "$STAGE2" check "$2" --split > /dev/null 2>&1 ) || { echo "@@ omit $2"; return 0; }
+    ( cd "$1" && "$ROOT/bin/sober" iface "$2" -o "$H/i" > /dev/null 2>&1 ) || { echo "FAIL: G-h: iface failed: $2"; echo "@@ bad"; return 0; }
     local f g found
     for f in $(find "$H/c" -type f); do
         tail -c +$(( $(head -1 "$f" | wc -c) + 1 )) "$f" > "$H/v"
         grep -q '^// sobi 1' <<< "$(head -n 1 "$H/v")" || continue
-        nh=$((nh + 1)); found=0
+        echo "@@ sobi"; found=0
         for g in $(find "$H/i" -name '*.sobi'); do cmp -s "$H/v" "$g" && { found=1; break; }; done
-        [ $found = 1 ] || bad "G-h: $2: split-written .sobi differs from iface ($(sed -n 2p "$H/v"))"
+        [ $found = 1 ] || { echo "FAIL: G-h: $2: split-written .sobi differs from iface ($(sed -n 2p "$H/v"))"; echo "@@ bad"; }
     done
 }
-for e in $( (grep -l '^import "[^s]' examples/*.sober; ls -d testdata/*/app) | sort -u ); do sobicmp "$ROOT" "$e"; done
 mkdir -p "$tmp/self"; cp -r src/compiler "$tmp/self/compiler"; cp -r src/std "$tmp/self/compiler/std"
 ulimit -s unlimited
-sobicmp "$tmp/self/compiler" app
+par_init "$tmp/gh"
+( grep -l '^import "[^s]' examples/*.sober; ls -d testdata/*/app; echo app ) | sort -u > "$tmp/gh.tried"
+for e in $(grep -vx app "$tmp/gh.tried"); do par_run sobicmp "$ROOT" "$e"; done
+par_run sobicmp "$tmp/self/compiler" app
+par_wait > "$tmp/gh.out"
+sed -n 's/^@@ omit //p' "$tmp/gh.out" > "$tmp/gh.omitted"
+omit_judge cachekey-gh scripts/omit/cachekey-gh.list "$tmp/gh.tried" "$tmp/gh.omitted" || fail=$((fail + 1))
+grep -v '^@@ ' "$tmp/gh.out" || true
+nh=$(par_count sobi "$tmp/gh.out")
+fail=$((fail + $(par_count bad "$tmp/gh.out") + $(par_count fail "$tmp/gh.out")))
 
 echo "cachekey: $n entries deterministic, $nstd std package keys shared across entries, mutations 6 + hit 1, G-g miss sets 3, G-h $nh .sobi equal to iface, fail=$fail"
 [ "$fail" = 0 ]

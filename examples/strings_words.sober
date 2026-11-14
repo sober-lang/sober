@@ -26,6 +26,6 @@ func main() {
     at := strings.LastIndex(file, ".")
     println(at, strings.TrimSuffix(file, ".gz") + ".zst", strings.Replace(file, ".", "_", -1))
 
-    // 非 ASCII は大小を写さない・EqualFold も等しくしない
+    // 非ASCIIは大小を変換しない・EqualFoldも等しくしない
     println(strings.ToUpper("café"), strings.EqualFold("É", "é"))
 }

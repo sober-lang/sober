@@ -1,7 +1,7 @@
 package main
 
-// clidoc の網の題材（scripts/clidoc.sh — `sober doc --cli` の生成物 ≡ tool.md / tool.ja.md）: 名前の参照の run（効果が違う 2 本）・ラムダの run・
-// run の無いコマンド・dev のコマンドと環境変数（頁に出ない）・`|` を含む文（表の升の逃がし）・サブコマンドの名前の空白（錨）
+// clidocの検査の題材（scripts/clidoc.sh — `sober doc --cli` の生成物 ≡ tool.md / tool.ja.md）: 名前の参照のrun（エフェクトが違う2本）・ラムダのrun・
+// runの無いコマンド・devのコマンドと環境変数（ページに出ない）・`|` を含む文（表の升の逃がし）・サブコマンドの名前の空白（錨）
 
 import "std/cli"
 import "std/io"

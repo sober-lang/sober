@@ -1,13 +1,13 @@
 package main
 
-// std/json（language.md 16 節）: 平らな文書 Doc を 1 段ずつ開くビュー View で歩く — 各段の switch は網羅が要る（負例 json_view_nonexh）。
-// 入れ子は明示のスタックで（関数の再帰でも書ける — 普通の関数なので）。印字は決定的（空白なし・欄はソースの順・数は字句のまま）
+// std/json（language.md 16 節）: 平らな文書Docを1レベルずつ開くビューViewで歩く — 各レベルのswitchは網羅が要る（負例json_view_nonexh）。
+// 入れ子は明示のスタックで（関数の再帰でも書ける — 普通の関数なので）。印字は決定的（空白なし・フィールドはソースの順・数は字句のまま）
 
 import "std/io"
 import "std/iter"
 import "std/json"
 
-// 節 n から下を深さ優先で 1 行ずつ印字する（path = そこまでの道）
+// 節nから下を深さ優先で1行ずつ印字する（path = そこまでのパス）
 func walk(d json.Doc, n int, path string) {
     switch json.At(d, n) {
     case json.ViewNull{}: println("${path} = null")

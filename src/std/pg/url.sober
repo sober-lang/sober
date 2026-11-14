@@ -19,7 +19,7 @@ func noTarget() target {
     return target{user: "", host: "", port: 0, db: ""}
 }
 
-// s の欄（読めなければ false）
+// sのフィールド（読めなければfalse）
 func parseUrl(s string) (target, bool) {
     mut rest := ""
     if strings.HasPrefix(s, "postgres://") {
@@ -86,7 +86,7 @@ func portOf(s string) (int, bool) {
     return p, p > 0 && p < 65536
 }
 
-// 方針 p と URL の欄 t を読み解く
+// 方針pとURLのフィールドtを読み解く
 func resolve(t target, p Policy) cfg {
     mut roots := mut []internal.x509.Cert{}
     for r <- internal.x509.Roots() {

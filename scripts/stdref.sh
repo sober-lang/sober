@@ -2,7 +2,7 @@
 # stdref（gates）: std リファレンス（docs/std/ — docs 補完 B-1・report-903 の 3〜4 節）の照合。生成器の本体は src/compiler/tools/docgen
 # （loader / parser / printer を in-process で使う — 署名は .sobi と同じ印字器・doc コメントは宣言の字句の位置からソースを遡って取る）。
 #
-#   scripts/stdref.sh             ① 生成物の一致: 生成し直した docs/std/*.ja.md ≡ リポジトリのもの（黄金の形）
+#   scripts/stdref.sh             ① 生成物の一致: 生成し直したdocs/std/*.ja.md ≡ リポジトリのもの（ゴールデンの形）
 #                                 ② doc の lint（赤 — en-* だけは英訳表〔B-3〕までの間は警告で数を出すだけ）
 #                                 ③ 負例: testdata/stdref/neg（lint の各条を 1 本ずつ破った最小の std）の警告 ≡ expect.tsv
 #   scripts/stdref.sh --regen     docs/std/ を生成し直す（README.ja.md と <package>.ja.md — 英訳表 docs/std/en/ は触らない）
@@ -10,7 +10,7 @@
 #   scripts/stdref.sh --regen-neg 負例の期待（testdata/stdref/neg/expect.tsv）を作り直す
 #
 # lint の種類: nodoc（公開の宣言・package に doc なし）・name（1 文目が「<名前> は」で始まる — doc は宣言の直下で読むので名前を繰り返さず説明の本体から書く。
-#   宣言・欄・package〔パスの最後の要素〕が対象・const の群は群の先頭の名前・`[T]` / `(a, b)` / `・名前` の続きも同じ形）・
+#   宣言・フィールド・package〔パスの最後の要素〕が対象・constの群は群の先頭の名前・`[T]` / `(a, b)` / `・名前` の続きも同じ形）・
 #   jargon（report-N / 便 / 段 N / 日付 / P3a 形）・section（`language.md N 節` の節が無い・裸の `N 節` — `language.md` を付けて書く。他の `.md` と `RFC NNNN N 節` は除く）・example（`例: examples/…` の実物が無い）・
 #   bold（コードの区間の外の `**` — 人間向けの文書に強調の太字は使わない）・
 # 合成の口 = `// 合成: <印字>` で始まる宣言に付かない塊（std に実体が無く loader が写す口 — layout.Decode[T]・json.Decode[T] 等）: 印字は手書き・塊の残りの行が doc・
@@ -40,13 +40,13 @@ fi
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 
-# entry <std の置き場> <出力>: std の全 package を import する合成の main（stage2.sh の l0_bake と同じ列挙）
+# entry <stdの配置先> <出力>: stdの全packageをimportする合成のmain（stage2.shのl0_bakeと同じ列挙）
 entry() {
     { echo "package main"; echo; for d in $(cd "$1/.." && find std -name '*.sober' ! -name '*_test.sober' ! -path 'std/internal/*' -printf '%h\n' | sort -u); do echo "import \"$d\""; done
       echo; echo "func main() {"; echo "}"; } > "$2"
 }
 
-# gen <出力の置き場>: docs/std の生成（警告の行は $W/warn.tsv）
+# gen <出力の配置先>: docs/stdの生成（警告の行は $W/warn.tsv）
 gen() {
     mkdir -p "$1"
     # 合成の入口は _test.sober の名前（std/testing/cell はテストの構成のファイルからだけ import できる — language.md 41 節）
@@ -101,7 +101,7 @@ if ! diff testdata/stdref/neg/expect.tsv "$W/neg.tsv" > "$W/negdiff"; then
     cat "$W/negdiff"
     fail=1
 fi
-# 負例が各条を 1 回以上鳴らしていること（期待の黄金が空洞化しない）
+# 負例が各条を1回以上鳴らしていること（期待のゴールデンが空洞化しない）
 for k in nodoc name jargon section example bold en-none en-missing en-stale; do
     grep -q "^WARN	$k	" testdata/stdref/neg/expect.tsv || { echo "stdref: FAIL negative case missing for $k"; fail=1; }
 done

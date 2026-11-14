@@ -1,6 +1,6 @@
 package server
 
-// pairOf の旧新照合: 書き換え前の pairOf（strings.Cut の 2 段）を Ref の名前で写して基準にし、& と = と短い鍵の切れ端を
+// pairOfの旧新照合: 書き換え前のpairOf（strings.Cutの2段階）をRefの名前でコピーして基準にし、& と = と短い鍵の切れ端を
 // 並べた query（空・= なし・重複の鍵・& の連続・先頭 / 末尾の &・= の重なり・非 ASCII）で、鍵ごとの結果が一致することを照合する
 
 import "std/quick"

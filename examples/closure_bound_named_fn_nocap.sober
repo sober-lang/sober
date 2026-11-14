@@ -1,6 +1,6 @@
 package main
 
-// 負例（closure_bound_named_fn の対照 — 捕捉の無い K でも同じく拒否。lower では関数値 1 語どうしだが、check の核と同じ線で build も拒否する）
+// 負例（closure_bound_named_fnの対照 — 捕捉の無いKでも同じく拒否。lowerでは関数値1ワードどうしだが、checkの核と同じ基準でbuildも拒否する）
 type Gen func(n int) int
 
 type R struct {

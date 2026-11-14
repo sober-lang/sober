@@ -1,6 +1,6 @@
 package p
 
-// 名前付き関数型の署名がこの package の型（R）を含む — 別 package で値の位置（結果・仮引数・欄）とジェネリックに使う題材（scripts/fnpkg.sh）
+// 名前付き関数型の署名がこのpackageの型（R）を含む — 別packageで値の位置（結果・仮引数・フィールド）とジェネリックに使う題材（scripts/fnpkg.sh）
 
 type R struct {
     n int

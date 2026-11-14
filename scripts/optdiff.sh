@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# optdiff（性能投資の網）: 最適化なし（`build --no-opt` — IR パスを何も掛けない）と既定（設計整合パス + SROA + mem2reg + GVN …）の
+# optdiff（性能投資の検査一式）: 最適化なし（`build --no-opt` — IRパスを何も掛けない）と既定（設計整合パス + SROA + mem2reg + GVN …）の
 # 実行の観測（標準出力・終了コード・標準エラー〔panic の 1 行 — 位置つき〕）が一致することを見る。消去・変換のパスが観測を変えたら鳴る。
 #   scripts/optdiff.sh [--full] [-j N]   受理集合の照合（全数 — 食い違いを全部出す）
-#   scripts/optdiff.sh --mut [-j N]      変異の確認（パスをわざと壊した木で「網が鳴る」ことだけを見る — 小さい母集団・timeout 5 s・最初の食い違いで打ち切って成功）
+#   scripts/optdiff.sh --mut [-j N]      ミューテーションの確認（パスをわざと壊した木で「検査が反応する」ことだけを見る — 小さい母集団・timeout 5 s・最初の食い違いで打ち切って成功）
 # 母集団:
-#   obs の entry（examples/*.out・testdata/*/app.out）— 期待値を持つので **--no-opt の側だけ** 建てて期待値（.out / .exit / .stderr）と照合する
+#   obsのentry（examples/*.out・testdata/*/app.out）— 期待値を持つので **--no-optの側だけ** ビルドして期待値（.out / .exit / .stderr）と照合する
 #     （既定の側は obs と panicmsg が同じ期待値と照合している — 推移で opt ≟ no-opt。同じビルドを二重に払わない）
-#   progen の固定シード（size 3 / 4 × 既定 20 本・--full は 60 本 — 旗なしと旗 float の 2 列）と bench の 6 題材（小さい規模 — float の 3 種目を含む）— 期待値が無いので両方を建てて突き合わせる
-#     （参照の側は --no-opt --backend=copy — 写しのバックエンド。既定の側の最適化のバックエンド〔性能投資 M4〜〕も照合に入る）
-#   展開の口（SOBER_RAW_EXPAND=1 の --no-opt — mut 引数だけの関数を呼び出し点ごとに展開する旧の raw の形）の obs の entry も期待値と照合する（種類 expx — --mut では回さない）:
+#   progenの固定シード（size 3 / 4 × 既定20本・--fullは60本 — 旗なしと旗floatの2列）とbenchの6題材（小さい規模 — floatの3種目を含む）— 期待値が無いので両方をビルドして突き合わせる
+#     （参照の側は --no-opt --backend=copy — コピーのバックエンド。既定の側の最適化のバックエンド〔性能投資M4〜〕も照合に入る）
+#   展開のオプション（SOBER_RAW_EXPAND=1の --no-opt — mut引数だけの関数を呼び出し点ごとに展開する旧のrawの形）のobsのentryも期待値と照合する（種類expx — --mut では回さない）:
 #     raw の既定は透過の実体関数（report-1278）なので、既定の照合は透過 ↔ 透過。expx が「展開 ≡ 透過」の実行の照合を受け持つ（期待値を介した推移）。
-#     scripts/noopt-excluded.list の entry（展開の口で肥大して建たない — std/cli の例題）は expx から外す — 照合の網の限界（展開 ≡ 透過は照合されない）
-# 規律: 1 件で足りる検証（変異・負例）と全数が要る検証（受理集合の照合）を同じ形で回さない — --mut は前者の形
+#     scripts/noopt-excluded.listのentry（展開のオプションで肥大してビルドできない — std/cliの例題）はexpxから外す — 照合の検査の限界（展開 ≡ 透過は照合されない）
+# 規律: 1件で足りる検証（ミューテーション・負例）と全数が要る検証（受理集合の照合）を同じ形で回さない — --mut は前者の形
 set -uo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$PWD
@@ -30,7 +30,7 @@ while [ $# -gt 0 ]; do
     esac
     shift
 done
-# stage2 の鮮度は最初に 1 回だけ確かめる（以降の bin/sober の呼び出しは飛ばす）
+# stage2の鮮度は最初に1回だけ確認する（以降のbin/soberの呼び出しは飛ばす）
 if [ -z "${SOBER_STAGE2_CHECKED:-}" ]; then
     scripts/stage2.sh --quiet > /dev/null || exit 1
     export SOBER_STAGE2_CHECKED=1
@@ -39,37 +39,37 @@ W=$(mktemp -d)
 # 後始末: 子孫のプロセスを全部止める（--mut の打ち切りで走りかけのビルド・実行を残さない）
 killtree() { local c; for c in $(pgrep -P "$1"); do killtree "$c"; kill -9 "$c" 2> /dev/null; done; }
 trap 'exec 2> /dev/null; killtree $$; rm -rf "$W"' EXIT
-# 生成器は最適化なし + 写しのバックエンドで建てる（パス・バックエンドをわざと壊した木〔--mut〕で生成器そのものが壊れないように）
+# ジェネレータは最適化なし + コピーのバックエンドでビルドする（パス・バックエンドをわざと壊した木〔--mut〕でジェネレータそのものが壊れないように）
 "$SOBER" build fuzz/progen/main.sober --no-opt --backend=copy -o "$W/progen" > /dev/null || { echo "optdiff: FAIL build progen"; exit 1; }
 mkdir -p "$W/src" "$W/r"
-# 列: 「種類 名前 ソース 引数…」（種類 = exp〔期待値と照合〕/ pair〔両方を建てて突き合わせ〕）
+# 列: 「種類 名前 ソース 引数…」（種類 = exp〔期待値と照合〕/ pair〔両方をビルドして突き合わせ〕）
 list=()
 if [ "$MUT" = 1 ]; then
     # 代表: 集約（slice / map / struct）・ループ・panic・error を突く例（hdr_mut2 = hdr の自分のヘッダの書き込み — 他の例は素通りした・
-    # callconv_cold = 冷たい呼び出しの退避 — report-463・opt_hloop = mut slice の仮引数へループで append — hloop / rlim・opt_cpfwd = 写しと使い道の間の書き換え — cpfwd・opt_bce_const = 小さい定数添字の後の大きい定数添字が範囲外 — bce ⑤・opt_bver = 長さがちょうど最大の定数添字 — 版分けの入口の判定・opt_slp = nbody の形の束ね — SLP のレーン・結合・opt_count = 等値の数え上げ — 畳む間隔・重なる K・opt_spec = 定数引数の特化 — 鍵の位置・定数の仮引数の位置・opt_spec_panic = 特化した複製の中の panic の点・task_scope_try = scope の本体の `?` — 戻りの文脈の出口と合流・copyloop_for / copyloop_for_oob = 写しの for の一括化 — 形の判定・区間の範囲の検査・copyloop_writer / copyloop_writer_oob = Writer への写し — 枠の空き・欄の経路の (B)・copyloop_fill / copyloop_fill_edge = 定数の詰め — (C) / (Z) の形・空と逆向きの区間・Range の評価の順・iter_region_inner / iter_region_outer_assign = 反復の region の enter の残し方 — llight の本体の範囲と外の深度への写し〔観測は iterregion.sh の形と RSS〕・fnval_err = 関数型の結果の error? と η 展開 — 閉包の `?` の合流・寄せた T? の包み・sret_defer_mut / sret_defer_mut_fnval = 受け皿を書いた後に defer が mut の実引数を書く — slotcolor の受け皿と mut の席の干渉〔直 / 間接〕）
+    # callconv_cold = 冷たい呼び出しの退避 — report-463・opt_hloop = mut slice の仮引数へループでappend — hloop / rlim・opt_cpfwd = コピーと使い道の間の書き換え — cpfwd・opt_bce_const = 小さい定数添字の後の大きい定数添字が範囲外 — bce ⑤・opt_bver = 長さがちょうど最大の定数添字 — 版分けの入口の判定・opt_slp = nbodyの形のまとめ — SLPのレーン・結合・opt_count = 等値の数え上げ — 畳む間隔・重なるK・opt_spec = 定数引数の特化 — 鍵の位置・定数の仮引数の位置・opt_spec_panic = 特化した複製の中のpanicの点・task_scope_try = scopeの本体の `?` — 戻りの文脈の出口と合流・copyloop_for / copyloop_for_oob = コピーのforの一括化 — 形の判定・区間の範囲の検査・copyloop_writer / copyloop_writer_oob = Writerへのコピー — 枠の空き・フィールドの経路の (B)・copyloop_fill / copyloop_fill_edge = 定数の詰め — (C) / (Z) の形・空と逆向きの区間・Rangeの評価の順・iter_region_inner / iter_region_outer_assign = 反復のregionのenterの残し方 — llightの本体の範囲と外の深度へのコピー〔観測はiterregion.shの形とRSS〕・fnval_err = 関数型の結果のerror? と η 展開 — クロージャの `?` の合流・寄せたT? の包み・sret_defer_mut / sret_defer_mut_fnval = 受け皿を書いた後にdeferがmutの実引数を書く — slotcolorの受け皿とmut仮引数の干渉〔直 / 間接〕）
     for n in opt_cse opt_bce opt_rlight_depth opt_divpow2 opt_vec_scan opt_vec_scan_panic map_key_slice map_index slice panic_slice errparse panic_label catch arith_edge bytes_packed for_stmt hdr_mut2 opt_promote opt_promote_panic opt_unroll opt_unroll_panic utf8_std utf8_simd map_update map_keyreloc callconv_cold opt_hloop opt_cpfwd opt_bce_const opt_bver opt_slp opt_count opt_spec opt_spec_panic task_scope_try copyloop_for copyloop_for_oob copyloop_writer copyloop_writer_oob copyloop_fill copyloop_fill_edge iter_region_inner iter_region_outer_assign fnval_err sret_defer_mut sret_defer_mut_fnval; do
         [ -f "examples/$n.out" ] && list+=("exp ex_$n examples/$n.sober")
     done
 else
     for f in examples/*.out; do n=$(basename "$f" .out); list+=("exp ex_$n examples/$n.sober"); done
     for f in testdata/*/app.out; do d=${f%/app.out}; list+=("exp td_$(basename "$d") $d/app"); done
-    # 展開 ≡ 透過（expx）: 同じ obs の entry を展開の口で（scripts/noopt-excluded.list の entry を除く — 理由はリストの中）
+    # 展開 ≡ 透過（expx）: 同じobsのentryを展開のオプションで（scripts/noopt-excluded.listのentryを除く — 理由はリストの中）
     excl=$(sed 's/#.*//; s/^ *//; s/ *$//' scripts/noopt-excluded.list | grep -v '^$') || true
     for f in examples/*.out; do n=$(basename "$f" .out); grep -qxF -e "examples/$n.sober" <<< "$excl" || list+=("expx xex_$n examples/$n.sober"); done
     for f in testdata/*/app.out; do d=${f%/app.out}; grep -qxF -e "$d/app" <<< "$excl" || list+=("expx xtd_$(basename "$d") $d/app"); done
 fi
 list+=("pair bench_fannkuch bench/fannkuch/main.sober 8" "pair bench_binarytrees bench/binarytrees/main.sober 10" "pair bench_1brc bench/1brc/main.sober testdata/bench1brc.txt")
-# float の 3 題材（小さい規模 — xmm の割り当て・SLP の束ね・比較の融合を突く）
+# floatの3題材（小さい規模 — xmmの割り当て・SLPのまとめ・比較の融合を突く）
 list+=("pair bench_nbody bench/nbody/main.sober 1000" "pair bench_spectralnorm bench/spectralnorm/main.sober 100" "pair bench_mandelbrot bench/mandelbrot/main.sober 200")
 for z in 3 4; do
     for s in $(seq 1 "$SEEDS"); do
         timeout 10 "$W/progen" "$s" "$z" > "$W/src/p${s}_$z.sober" 2> /dev/null && list+=("pair pg_${s}_$z $W/src/p${s}_$z.sober")
-        # float の式を混ぜた同じ種（progen の旗 float — 旗なしの列は変えない）
+        # floatの式を混ぜた同じシード（progenの旗float — 旗なしの列は変えない）
         timeout 10 "$W/progen" "$s" "$z" float > "$W/src/pf${s}_$z.sober" 2> /dev/null && list+=("pair pgf_${s}_$z $W/src/pf${s}_$z.sober")
     done
 done
 run() { # run <実行ファイル> <出力の前置き> <引数…> → 前置き.o / .e / .c（標準入力 = $RUNIN〔例の .in〕か /dev/null）
-    # timeout は KILL（壊した最適化の暴走は TERM を受けないことがある — 深度の検査を外した変異 M9-c で外側ごと止まった）
+    # timeoutはKILL（壊した最適化の暴走はTERMを受けないことがある — 深度の検査を外したミュータントM9-cで外側ごと止まった）
     local x=$1 o=$2
     shift 2
     timeout -s KILL "$TO" "$x" "$@" > "$o.o" 2> "$o.e" < "${RUNIN:-/dev/null}"
@@ -80,7 +80,7 @@ one() { # 結果は $W/r/<名前>（空 = 一致・.skip = 両方とも建たな
     shift 3
     if [ "$kind" = exp ] || [ "$kind" = expx ]; then
         local exp=${src%.sober}
-        # 通常は最適化なしの側（既定の側は obs / panicmsg が見る）。--mut は壊した最適化を見るので既定の側。expx = 展開の口の最適化なし
+        # 通常は最適化なしの側（既定の側はobs / panicmsgが見る）。--mutは壊した最適化を見るので既定の側。expx = 展開のオプションの最適化なし
         local fl=--no-opt ex=0
         [ "$MUT" = 1 ] && fl=
         [ "$kind" = expx ] && ex=1
@@ -99,7 +99,7 @@ one() { # 結果は $W/r/<名前>（空 = 一致・.skip = 両方とも建たな
         return
     fi
     local b1=0 b2=0
-    # 参照の側 = 最適化なし + 写しのバックエンド（--backend=copy — 凍結した写し。IR パスとバックエンドの最適化〔M4〜〕を一度に照合する）
+    # 参照の側 = 最適化なし + コピーのバックエンド（--backend=copy — 凍結したコピー。IRパスとバックエンドの最適化〔M4〜〕を一度に照合する）
     timeout "$BTO" "$SOBER" build "$src" --no-opt --backend=copy -o "$W/$n.raw" > /dev/null 2>&1 || b1=1
     timeout "$BTO" "$SOBER" build "$src" -o "$W/$n.opt" > /dev/null 2>&1 || b2=1
     if [ "$b1$b2" = 11 ]; then : > "$W/r/$n.skip"; return; fi

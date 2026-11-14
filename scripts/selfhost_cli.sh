@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # stage2 の CLI（compiler/app — Sober 製の `sober`）の差分オラクル（selfhost の R35）。
 #   1. build: 凍結コーパスの全 entry について `stage2 build <entry> --emit=ll -o <out>`と `--emit=ir` が、その場の Zig 版
-#      `$STAGE1 build --emit=ll|ir` とバイト一致・exit 0（stage1 直呼び — 黄金は Sober 生成なので Zig ≡ Sober の相手にしない。Q1 裁定 2026-09-28）。
-#      Zig 版が拒否する entry は stage2 が exit 1 か、受理（wider — Sober 版 lower が写していない拒否側の検査・未到達関数を下ろさない差 — docs/ir.md 1 節。数えて出す）
+#      `$STAGE1 build --emit=ll|ir` とバイト一致・exit 0（stage1直呼び — ゴールデンはSober生成なのでZig ≡ Soberの相手にしない。Q1決定2026-09-28）。
+#      Zig版が拒否するentryはstage2がexit 1か、受理（wider — Sober版lowerがコピーしていない拒否側の検査・未到達関数を下ろさない差 — docs/ir.md 1 節。数えて出す）
 #   2. check: 同じ entry について `stage2 check <entry>` の stdout と exit code が Zig 版 `sober check`（Lean の判定）と一致
 #      （Zig 版が Lean の前で拒否した — stdout が空の — ときは exit code だけを比べる。診断の文言は比べない）
 #   3. 器: 使い方の誤り・読めない entry は exit 1、`-o` 無しは標準出力（F-20 — `>>` の追記先で前の出力を消さない）、ディレクトリ entry、
@@ -36,7 +36,7 @@ one() { # $1 = entry
             if [ "$ec" != 0 ]; then echo "FAIL build[$kind] $e: exit $ec: $(head -c 200 "$w/err")"; echo "@@ fail"; return; fi
             if ! slot_eq "$w/z.$kind" "$w/out.$kind" 2> "$w/sm"; then echo "FAIL build[$kind] $e: differs from stage1 --emit=$kind: $(cat "$w/sm")"; echo "@@ fail"; return; fi
         elif [ "$ec" = 0 ]; then
-            # 受理が Zig 版より広い（Sober 版 lower は拒否側の検査を全部は写していない — selfhost-drafts「(c) 第一段の総括」）
+            # 受理がZig版より広い（Sober版lowerは拒否側の検査を全部はコピーしていない — selfhost-drafts「(c) 第一段の総括」）
             [ "$kind" = ll ] && { echo "wider: $e"; echo "@@ wider"; }
         elif [ "$ec" != 1 ]; then
             echo "FAIL build[$kind] $e: Zig rejects but stage2 exit $ec"; echo "@@ fail"; return

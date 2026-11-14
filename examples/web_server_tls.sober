@@ -2,7 +2,7 @@ package main
 
 // Web サーバのガイド 9 節: https で公開する。tls.Serve が handshake を済ませた接続だけを app に渡し、app は tls.Recv / tls.Send を
 // http.server.ServeWith の受けと送りに繋ぐ（ServeConn の TLS 版）。証明書と鍵は @embed で焼き込む（起動時にファイルから読むなら tls.Load）。
-// 既定の走りは設定の確かめだけ。`web_server_tls live <port>` で 127.0.0.1:<port> に https で待ち受ける
+// 既定の走りは設定の確認だけ。`web_server_tls live <port>` で127.0.0.1:<port> にhttpsで待ち受ける
 // （試すなら curl --cacert testdata/crypto/httparena-server.crt https://localhost:<port>/ — 自己署名の証明書なので起点を足す）
 
 import "std/http/server"
@@ -21,7 +21,7 @@ func route(r http.server.Request) http.server.Response {
     return if r.path == "/" { http.server.Text("hello over TLS\n") } else { http.server.Status(404) }
 }
 
-// 接続 1 本の handler（handshake は済んでいる — c は復号した後の読み書きの口）
+// 接続1本のhandler（handshakeは済んでいる — cは復号した後の読み書きのインターフェース）
 func app(c tls.Conn) error? {
     return http.server.ServeWith((k) => tls.Recv(c, k), (b) => tls.Send(c, b), route)
 }

@@ -2,7 +2,7 @@
 # backend レーン所有: IR テキストの往復不動点（B-6）。examples/*.out の各例について
 #   sober build x.sober --emit=ir → a.ir、sober build a.ir --emit=ir → b.ir で a.ir ≡ b.ir（print(parse(t)) == t）、
 #   sober build a.ir --emit=ll ≡ sober build x.sober --emit=ll（テキストを経由しても同じ .ll — コンポーネント境界の成立）
-# IR パスの出力（--opt: mem2reg）も同じく往復すること（c.ir ≡ d.ir）を確かめる。実行: リポジトリルートで `zig build` 済みの状態から scripts/ir_roundtrip.sh [例名 ...]
+# IRパスの出力（--opt: mem2reg）も同じく往復すること（c.ir ≡ d.ir）を確認する。実行: リポジトリルートで `zig build` 済みの状態からscripts/ir_roundtrip.sh [例名 ...]
 cd "$(dirname "$0")/.." || exit 1
 STAGE1=./src/stage1/zig-out/bin/sober
 W=$(mktemp -d)

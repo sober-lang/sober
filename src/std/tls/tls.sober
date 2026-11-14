@@ -2,13 +2,13 @@ package tls
 
 // TLS 1.3 のサーバ（RFC 9846 — X25519・AES-128-GCM / ChaCha20-Poly1305・RSA-PSS の証明書・resumption / 0-RTT なし）。
 // tls.Serve(addr, cfg, k) が net.Serve を包み、handshake が済んだ接続だけを k に渡す（handshake 中の接続を利用者に触らせない）。
-// tls.Conn は net.Conn と同じ顔の同一性の型（写せない・外へ出せない・give: で渡せない）で、tls.Recv / tls.Send が net.Recv / net.Send と同じ形。
+// tls.Connはnet.Connと同じ顔の同一性の型（コピーできない・外へ出せない・give: で渡せない）で、tls.Recv / tls.Sendがnet.Recv / net.Sendと同じ形。
 // net.Conn と顔が違う唯一の点: tls.Recv を break で途中で抜けると、その接続の読みは終わる（次の tls.Recv は Closed — 切片に残った record を持ち越さない）。
-// 誤りは粗い 3 ラベル（HandshakeFailed〔alert の種は欄〕・BadRecord・Closed）。
+// 誤りは粗い3ラベル（HandshakeFailed〔alertの種はフィールド〕・BadRecord・Closed）。
 // 信頼の起点の値 Roots（ParseRoots が作る — 私的 PKI の CA を足すとき std/http/client の Policy の extraRoots: に渡す）もここに住む
 
 // 接続の状態（送りの鍵と seq・受けた KeyUpdate の要求・handshake の残りのバイト）は値の外 — 接続の task の region に 1 回作る int の列（blk）に住み、
-// Recv / Send が rt の口（lease_view / lease_op — std/pool・std/task の lease と同じ鍵）で読み書きする（net.Conn の TCP の seq がカーネルにあるのと同じ形。
+// Recv / Sendがrtのインターフェース（lease_view / lease_op — std/pool・std/taskのleaseと同じ鍵）で読み書きする（net.ConnのTCPのseqがカーネルにあるのと同じ形。
 // 同一性の型の規則が隠れた可変を観測できなくする）
 
 import "std/crypto/pem"
@@ -31,7 +31,7 @@ type BadRecord error
 // 接続が閉じている（相手の切断・相手の alert・転送路の失敗・途中で抜けた後の Recv）
 type Closed error
 
-// サーバの設定（Load / Parse が作る — 証明書の鎖・葉の鍵・受ける ALPN）
+// サーバの設定（Load / Parseが作る — 証明書のチェーン・葉の鍵・受けるALPN）
 type Config struct {
     chain [][]byte
     key crypto.rsa.PrivateKey
@@ -47,7 +47,7 @@ type Roots struct {
 type rootsSeal struct {
 }
 
-// ParseRoots の PEM が読めない（CERTIFICATE の塊が無い・塊の DER が証明書の形でない）
+// ParseRootsのPEMが読めない（CERTIFICATEのチャンクが無い・チャンクのDERが証明書の形でない）
 type BadRoots error
 
 // handshake の済んだ接続（同一性の型 — net.Conn と同じ規則。tls.Serve の k の仮引数としてだけ生まれる）
@@ -65,7 +65,7 @@ type Handler func(c Conn) error?
 type tlsSeal struct {
 }
 
-// ストレージの列の形: [旗, 残りのバイト数 L, 送りの方向 × dirW, 受けの方向 × dirW, 束に積んだバイト数, 送りの束 × sendW, 残りのバイト（8 バイト / 語）…]
+// ストレージの列の形: [旗, 残りのバイト数L, 送りの方向 × dirW, 受けの方向 × dirW, バッチに積んだバイト数, 送りのバッチ × sendW, 残りのバイト（8バイト / ワード）…]
 const fFlags = 0
 const fLeft = 1
 const fWr = 2
@@ -75,8 +75,8 @@ const fPend = 2 + 80 + 80
 const fSend = 2 + 80 + 80 + 1
 const fBytes = 2 + 80 + 80 + 1 + sendW
 
-// 送りの束（application の record 1 つ丸ごと = 頭 5 + 平文 2^14 + 内容の型 1 + tag 16 バイト）: Put は record を接続の寿命の置き場へ Seal して積み、
-// Flush が送る — 呼び手は平文の region を閉じてから Flush で待てる（送りの完了待ち〔park〕の間、要求の作業の region を空にしておく。rt が空のスロットを
+// 送りのバッチ（applicationのrecord 1つ丸ごと = 頭5 + 平文2^14 + 内容の型1 + tag 16バイト）: Putはrecordを接続の寿命の格納場所へSealして積み、
+// Flushが送る — 呼び手は平文のregionを閉じてからFlushで待てる（送りの完了待ち〔park〕の間、リクエストの作業のregionを空にしておく。rtが空のスロットを
 // 手放す）
 const sendCap = 5 + 16384 + 1 + 16
 const sendW = (sendCap + 7) / 8
@@ -85,11 +85,11 @@ const sendW = (sendCap + 7) / 8
 const bUpdate = 1   // 相手が KeyUpdate で update_requested を送った（次の Send が先に自分の KeyUpdate を送る）
 const bRead = 2     // Recv を 1 度回した（2 度目は Closed — 読みは接続の終わりまでの 1 本の流れ）
 const bDead = 4     // 閉じた（alert を送った・受けた — Send は Closed）
-const bRekey = 8    // 送りの鍵を KeyUpdate で進めた（Conn の wr は handshake の鍵のまま — 以後の Send は置き場の列から展開し直す）
+const bRekey = 8    // 送りの鍵をKeyUpdateで進めた（Connのwrはhandshakeの鍵のまま — 以後のSendは格納場所の列から展開し直す）
 
 // ── 設定 ──
 
-// PEM の証明書の鎖（CERTIFICATE が 1 つ以上 — 葉が先頭）と PKCS#8 の RSA の鍵の Config（ALPN の既定 = http/1.1 — 変えるなら Alpn）
+// PEMの証明書のチェーン（CERTIFICATEが1つ以上 — 葉が先頭）とPKCS#8のRSAの鍵のConfig（ALPNの既定 = http/1.1 — 変えるならAlpn）
 @errors(crypto.pem.Bad, crypto.rsa.BadKey)
 @effects()
 func Parse(certPem string, keyPem string) (Config, error?) {
@@ -108,7 +108,7 @@ func Parse(certPem string, keyPem string) (Config, error?) {
     return Config{chain: freeze(chain), key: k, alpn: []string{"http/1.1"}}, nil
 }
 
-// PEM の文字列 pem の CERTIFICATE の塊を全部読んだ信頼の起点（私的 PKI の CA — 外部ファイルを読む口は作らない。読めない塊が 1 つでもあれば BadRoots）
+// PEMの文字列pemのCERTIFICATEのチャンクを全部読んだ信頼の起点（私的PKIのCA — 外部ファイルを読むインターフェースは作らない。読めないチャンクが1つでもあればBadRoots）
 @errors(BadRoots)
 @effects()
 func ParseRoots(pem string) (Roots, error?) {
@@ -153,13 +153,13 @@ func Serve(addr string, cfg Config, k Handler, region int?, maxWait int?) error?
     return nil
 }
 
-// 1 接続の handshake（handshake）の後に k を呼ぶ。handshake の作業域（受けの溜め・Hs・署名の作業）は handshake の region に置き、
-// k を呼ぶ前に返す — 接続の寿命いっぱい（k の間）抱えない（置き場の列だけが外へ写る）
+// 1接続のhandshake（handshake）の後にkを呼ぶ。handshakeの作業域（受けのバッファ・Hs・署名の作業）はhandshakeのregionに置き、
+// kを呼ぶ前に返す — 接続の寿命いっぱい（kの間）抱えない（格納場所の列だけが外へコピーされる）
 func accept(nc net.Conn, cfg Config, k Handler) error? {
     blk := handshake(nc, cfg)?
-    // handshake の深い作業（署名・鍵の導出 — 1 回きり）の頁を返す: スロットの頁は task の寿命いっぱい残るので、要求の道より深い高水位が接続の常駐になる
+    // handshakeの深い作業（署名・鍵の導出 — 1回きり）のページを返す: スロットのページはtaskの寿命いっぱい残るので、リクエストのパスより深い高水位が接続の常駐になる
     _ = leaseOp(6, []int{}, 0, 0)
-    // 送りの方向は handshake の鍵のまま展開して持つ（Send のたびに置き場の列から鍵の素材を写し直さない — 変わるのは seq の語だけ）
+    // 送りの方向はhandshakeの鍵のまま展開して持つ（Sendのたびに格納場所の列から鍵の素材をコピーし直さない — 変わるのはseqのワードだけ）
     c := Conn{c: nc, blk: blk, wr: internal.record.Unpack(freeze(leaseView(blk, fWr, dirW)), 0), seal: tlsSeal{}}
     ke := k(c)
     // 積み残し（Put の後に Flush しないで k が返った）を送ってから close_notify
@@ -168,8 +168,8 @@ func accept(nc net.Conn, cfg Config, k Handler) error? {
     return ke
 }
 
-// 1 接続の handshake（handshake の record は小さいので、切片を写して溜める）→ 置き場の列（newBlk）。Connected になった切片の残り
-// （クライアントは Finished と最初の要求を同じ flight で送るのが普通）は置き場に置く — k の中の tls.Recv が同じ fd の続きを読む
+// 1接続のhandshake（handshakeのrecordは小さいので、切片をコピーしてバッファする）→ 格納場所の列（newBlk）。Connectedになった切片の残り
+// （クライアントはFinishedと最初のリクエストを同じflightで送るのが普通）は格納場所に置く — kの中のtls.Recvが同じfdの続きを読む
 @errors(HandshakeFailed, Closed)
 func handshake(nc net.Conn, cfg Config) ([]int, error?) {
     p := internal.hs.NewParams(cfg.chain, cfg.key, cfg.alpn, []int{internal.record.AesGcm, internal.record.ChaCha}, []byte{})
@@ -227,7 +227,7 @@ func alertOf(e error?) int {
     }
 }
 
-// handshake の済んだ hs の置き場（送り / 受けの方向・残りのバイト）
+// handshakeの済んだhsの格納場所（送り / 受けの方向・残りのバイト）
 func newBlk(h internal.hs.Hs, left []byte) []int {
     rd, wr := internal.hs.Dirs(h)
     mut b := mut []int{}
@@ -254,7 +254,7 @@ func newBlk(h internal.hs.Hs, left []byte) []int {
     return freeze(b)
 }
 
-// 方向の語の列を dirW 語の席に（余りは 0）
+// 方向のワードの列をdirWワードの席に（余りは0）
 func putDir(b mut []int, w []int) {
     if len(w) > dirW {
         panic(Overflow{})
@@ -269,7 +269,7 @@ func putDir(b mut []int, w []int) {
     }
 }
 
-// 方向の語の列が席に入らない（std の内部の約束違反 — panic ラベル）
+// 方向のワードの列が席に入らない（stdの内部の約束違反 — panicラベル）
 type Overflow panic
 
 // ── 受け ──
@@ -310,11 +310,11 @@ func Recv(c Conn, k func([]byte)) error? {
     return nil
 }
 
-// handshake の残りのバイトを先に渡してから net.Recv の続き（internal.record.Frames の受けの口）。
-// 残りは net.Recv と同じ入れ子（反復の region + 式ブロックの region）の中で k へ渡す — 直に k(left) と呼ぶと最初の要求の道だけが
-// 2 段浅い深度を通り、その深度のスロットに本文の大きさの頁を一度だけ付けて接続の寿命いっぱい残してしまう。
-// 切片 1 つを k へ渡し終えるたびに、Recv の k が Put で積んだ応答を送る（Flush — k の反復の region が閉じた後なので、送りの完了待ちの間に
-// 応答の作業の頁を抱えない）
+// handshakeの残りのバイトを先に渡してからnet.Recvの続き（internal.record.Framesの受けのインターフェース）。
+// 残りはnet.Recvと同じ入れ子（反復のregion + 式ブロックのregion）の中でkへ渡す — 直にk(left) と呼ぶと最初のリクエストのパスだけが
+// 2段浅い深度を通り、その深度のスロットに本文の大きさのページを一度だけ付けて接続の寿命いっぱい残してしまう。
+// 切片1つをkへ渡し終えるたびに、RecvのkがPutで積んだレスポンスを送る（Flush — kの反復のregionが閉じた後なので、送りの完了待ちの間に
+// レスポンスの作業のページを抱えない）
 func pump(c Conn, left []byte, k func([]byte)) error? {
     mut once := len(left) > 0
     while once {
@@ -342,8 +342,8 @@ func Send(c Conn, b []byte) error? {
     return Flush(c)
 }
 
-// b を application の record にして c の送りの束に積む（送らない — Flush か、tls.Recv の k が戻ったときか、束に入らない次の Put か、Serve の出口が送る。
-// 空の b は積まない）。束に入らない（積んだ分と合わせて record 1 つ分を越える）・鍵を進める前後は、積んだ分を送ってから b の record をその場で送る（順序は保つ）
+// bをapplicationのrecordにしてcの送りのバッチに積む（送らない — Flushか、tls.Recvのkが戻ったときか、バッチに入らない次のPutか、Serveの出口が送る。
+// 空のbは積まない）。バッチに入らない（積んだ分と合わせてrecord 1つ分を越える）・鍵を進める前後は、積んだ分を送ってからbのrecordをその場で送る（順序は保つ）
 @errors(Closed)
 @effects(block, io, panic, nondet)
 func Put(c Conn, b []byte) error? {
@@ -368,7 +368,7 @@ func Put(c Conn, b []byte) error? {
     return sendNow(c, b, fl)
 }
 
-// c の送りの束に積んだ record を送る（無ければ何もしない）
+// cの送りのバッチに積んだrecordを送る（無ければ何もしない）
 @errors(Closed)
 @effects(block, io, nondet)
 func Flush(c Conn) error? {
@@ -381,7 +381,7 @@ func Flush(c Conn) error? {
     return nil
 }
 
-// b の record をこの関数の region に作ってその場で送る（束に入らない b・鍵を進める前後 — 束の前の形）
+// bのrecordをこの関数のregionに作ってその場で送る（バッチに入らないb・鍵を進める前後 — バッチの前の形）
 func sendNow(c Conn, b []byte, fl int) error? {
     mut wr := if (fl & bRekey) != 0 { internal.record.Unpack(view(c, fWr, dirW), 0) } else { internal.record.WithSeq(c.wr, leaseOp(4, c.blk, fWr + 1, 0)) }
     mut pre := []byte{}
@@ -397,8 +397,8 @@ func sendNow(c Conn, b []byte, fl int) error? {
     return nil
 }
 
-// b を送りの束の at から Seal した record 1 つのバイト数（束に入らない・鍵の使用上限の手前なら −1）。作業の列（頭・nonce・AEAD の record の状態）は
-// この関数の region に積もって戻れば捨てられる（ループでない式ブロックで包む形は、最適化の道で region が消えて呼び手に合流するので使わない）
+// bを送りのバッチのatからSealしたrecord 1つのバイト数（バッチに入らない・鍵の使用上限の手前なら −1）。作業の列（頭・nonce・AEADのrecordの状態）は
+// この関数のregionに積もって戻れば捨てられる（ループでない式ブロックで包む形は、最適化のパスでregionが消えて呼び手に合流するので使わない）
 func sealPut(c Conn, b []byte, seq int, at int) int {
     wr := internal.record.WithSeq(c.wr, seq)
     if internal.record.NeedUpdate(wr) {
@@ -429,7 +429,7 @@ func die(c Conn, desc int) {
     }
 }
 
-// ── 置き場の口 ──
+// ── 格納場所のインターフェース ──
 
 func flags(c Conn) int {
     return leaseOp(4, c.blk, fFlags, 0)
@@ -439,12 +439,12 @@ func setFlags(c Conn, v int) {
     _ = leaseOp(5, c.blk, fFlags, v)
 }
 
-// 送りの方向の seq の語（Pack の 2 語目）だけを書き戻す
+// 送りの方向のseqのワード（Packの2ワード目）だけを書き戻す
 func setSeq(c Conn, seq int) {
     _ = leaseOp(5, c.blk, fWr + 1, seq)
 }
 
-// 送りの方向の語の列を席に書き戻す（KeyUpdate の後）
+// 送りの方向のワードの列を席に書き戻す（KeyUpdateの後）
 func putWr(c Conn, w []int) {
     v := leaseView(c.blk, fWr, dirW)
     mut i := 0
@@ -454,7 +454,7 @@ func putWr(c Conn, w []int) {
     }
 }
 
-// 置き場の [off, off + n) の語（写さない — 読みはこの列から）
+// 格納場所の [off, off + n) のワード（コピーしない — 読みはこの列から）
 func view(c Conn, off int, n int) []int {
     v := leaseView(c.blk, off, n)
     return freeze(v)
@@ -484,7 +484,7 @@ func cat(a []byte, b []byte) []byte {
     return freeze(o)
 }
 
-// a[at:] の写し
+// a[at:] のコピー
 func rest(a []byte, at int) []byte {
     mut o := mut []byte{}
     mut i := at
@@ -495,7 +495,7 @@ func rest(a []byte, at int) []byte {
     return freeze(o)
 }
 
-// leaseOp / leaseView は rt の口（std/task・std/pool と同じ鍵 — op 4 = 生の読み・5 = 生の書き・6 = 今の深度より深い死んだスロットの頁を返す）
+// leaseOp / leaseViewはrtのインターフェース（std/task・std/poolと同じ鍵 — op 4 = 生の読み・5 = 生の書き・6 = 今の深度より深い死んだスロットのページを返す）
 @intrinsic("lease_op")
 func leaseOp(op int, blk []int, off int, v int) int
 

@@ -1,6 +1,6 @@
 package main
 
-// net 段 4a-3（N2 — reject）: Serve の admission はプールの節 1 つ（天井 = conns × budget）+ 接続ごとの SpawnIn。入れなければ reject の定数の
+// net段階4a-3（N2 — reject）: Serveのadmissionはプールの節1つ（天井 = conns × budget）+ 接続ごとのSpawnIn。入れなければrejectの定数の
 // バイト列を 1 回送って閉じる（利用者のコードは走らせない）。conns: 1 で 1 本目の接続が handler の中にいる間に 2 本目を Dial する —
 // 2 本目は "busy" を受けて閉じられ、台帳の shed が 1 つ数えられる（決定的: 1 本目は戻りを受けるまで handler の中にいる）
 

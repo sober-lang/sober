@@ -3,7 +3,7 @@ package analyzer
 // 宣言の書き換え器（`sober fix` — language.md 12 節の 4 点組の「正の列挙は fix が書き tightness を見る」）: 導出から宣言の行を作る。
 // 書くのは std の外のファイルの本体のある公開関数（std = true なら std の強制の掛かる公開関数にも正規形）:
 //   --effects: `@effects` の無い関数に導出の正の列挙を前置で足す・語だけの正の列挙が導出より広ければ縮める（否定形・型の名前の項を持つ列挙・漏れは触らない —
-//              漏れは人の裁定: 宣言を広げるか、コードを直すか）
+//              漏れは人の決定: 宣言を広げるか、コードを直すか）
 //   --errors:  `@errors` の無い error を返す関数（MErrMissing）に導出の列挙を足す・古い宣言（MErrStale / MErrFlowStale）を導出に縮める（漏れは触らない）
 // 編集は [ファイル, 字句, 置き換え（0 = 字句の行の頭に行を足す・1 = 字句の `@` から閉じ括弧までを置き換え）, 本文] の列で返し、ファイルへの書き込みは呼び手（app）
 
@@ -20,7 +20,7 @@ type Fix struct {
     text string
 }
 
-// 効果のビットの正の列挙の中身（`block, io` — 空は空文字）
+// エフェクトのビットの正の列挙の中身（`block, io` — 空は空文字）
 func efWordsStr(b int) string {
     return if b == 0 { "" } else { efBitsStr(b) }
 }

@@ -1,9 +1,9 @@
 package lower
 
-// domain（language.md 11 節「domain」）の呼び出し点: 記録は NewDomain を字面に囲む最も外の scope の region（チャネルの記録と同じ置き場）。
-// 状態は作るときに記録と同じ region へ 1 回だけ深く写し（印 MAX_DEPTH — 読み手は必ず自分の region へ写し直す）、以後はその場で書く
+// domain（language.md 11 節「domain」）の呼び出し点: 記録はNewDomainを字面に囲む最も外のscopeのregion（チャネルの記録と同じ配置先）。
+// 状態は作るときに記録と同じregionへ1回だけ深くコピーし（マークMAX_DEPTH — 読み手は必ず自分のregionへコピーし直す）、以後はその場で書く
 // （本体が状態に書けるのは loc-free の値だけ — 照合は parcheck の kind 36 / 37 — なので region は伸びない）。入る = 鍵を取り状態の箱を浅く読む・
-// 出る = 浅く書き戻して鍵を返す・本体の結果は呼び手の最内へ写す（domOut）。本体で死んだ task は task の終わりで毒を立てて鍵を返す
+// 出る = 浅く書き戻して鍵を返す・本体の結果は呼び手の最内へコピーする（domOut）。本体で死んだtaskはtaskの終わりで毒を立てて鍵を返す
 
 import "desugar"
 import "std/iter"
@@ -12,15 +12,15 @@ const DM_LOCK = 0    // 鍵（cellLock と同じ xchg — 本体は待たない�
 const DM_POISON = 1  // 1 = 本体が死んだ（以後の呼び出しは呼び手を死なせる）
 const DM_BOX = 2     // 状態の箱の番地
 const DM_D = 3       // Await の待ちの上限（ns）
-// Await の待ち手は列 P（眠っている — 到着の番号 TC_DQSEQ の昇順・鎖の対は TC_DQNEXT / TC_DQPREV・手渡しは P の頭から）か、起こされ済みで
-// まだ鍵を取り直していない（TC_DQH = 1 — 鎖に繋がない: 歩く者が居ない）かのどちらか。手渡しは CAS を試した者を P から外すので、出る側の手渡しは
-// 起こされ済みの待ち手を越えて歩かない
+// Awaitの待ち手は列P（スリープしている — 到着の番号TC_DQSEQの昇順・チェーンの対はTC_DQNEXT / TC_DQPREV・手渡しはPの頭から）か、ウェイクアップ済みで
+// まだ鍵を取り直していない（TC_DQH = 1 — チェーンに繋がない: 歩く者が居ない）かのどちらか。手渡しはCASを試した者をPから外すので、出る側の手渡しは
+// ウェイクアップ済みの待ち手を越えて歩かない
 const DM_WHEAD = 4   // P の頭と尾
 const DM_WTAIL = 5
 const DM_NWAIT = 6   // P の人数・最長の待ち・満了の数
 const DM_MAXW = 7
 const DM_EXP = 8
-// 待ち手の束ね（domHand）: 版 = 出るたびに +1・偽の記録 = この版で偽と分かった when の鍵（0 = なし）。列の待ち手の鍵の代表と、
+// 待ち手のまとめ（domHand）: 版 = 出るたびに +1・偽の記録 = この版で偽と分かったwhenの鍵（0 = なし）。列の待ち手の鍵の代表と、
 // その鍵の待ち手の数（全員が偽の鍵なら手渡しは列を歩かない）
 const DM_VER = 9
 const DM_FKEY = 10
@@ -28,21 +28,21 @@ const DM_FVER = 11
 const DM_KEY1 = 12
 const DM_NKEY1 = 13
 const DM_SEQ = 14    // 次の到着の番号
-// 最後に眠り直しで P へ入れた待ち手（P に居る間だけ — 外れたら P の前の者へ寄せる・0 = なし）。眠り直しはおおむね番号の順に来るので、
-// 自分より若くなければここから歩き始める（同時に起こされて先に眠り直した古い待ち手を頭から越えない）
+// 最後に再スリープでPへ入れた待ち手（Pに居る間だけ — 外れたらPの前の者へ寄せる・0 = なし）。再スリープはおおむね番号の順に来るので、
+// 自分より若くなければここから歩き始める（同時にウェイクアップされて先に再スリープした古い待ち手を頭から越えない）
 const DM_RLAST = 15
 const DM_WORDS = 16
 // Await の待ちの上限の既定（ns — NewDomain にも呼び出しにも wait: が無いとき）
 const DM_DDEF = 2000000000
 
-// 開発用 --rt-mutant の domain の検査（既定の build には何も足さない）: 出る点で書き戻す状態の最上段のヘッダの印が 0（深度 0 — 写さずに
-// 持ち込んだ部分）か MAX_DEPTH（domNew の写し）でなければ exit 104。呼び手の region へ写された状態（出口で回収される）を捕まえる
+// 開発用 --rt-mutant のdomainの検査（既定のbuildには何も足さない）: 出る点で書き戻す状態の最上段のヘッダのフラグが0（深度0 — コピーせずに
+// 持ち込んだ部分）かMAX_DEPTH（domNewのコピー）でなければexit 104。呼び手のregionへコピーされた状態（出口で回収される）を捕まえる
 const DM_CHK = 75        // 検査だけ
-const DM_CHK_NOFIX = 76  // 検査 + 状態の読み直しの代入に格納点の写しを戻す（lower.sober relocFree の ④ を外す — 網の自己検査）
+const DM_CHK_NOFIX = 76  // 検査 + 状態の読み直しの代入に格納点のコピーを戻す（lower.sober relocFreeの ④ を外す — 検査の自己検査）
 const DM_NOFIX = 77      // ④ を外すだけ
 const DM_EXIT = 104
 
-// 置き場 p + off 語の型 t の値の最上段（struct の欄を辿る — opt / union の中と要素の中は見ない）の slice / map のヘッダの印を確かめる
+// 配置先p + offワードの型tの値の最上段（structのフィールドを辿る — opt / unionの中と要素の中は見ない）のslice / mapのヘッダのフラグを検証する
 func domLabChk(st mut St, p int, off int, t int) {
     k := desugar.HeapGet(mut st.d, t)
     if k == TSlice || k == TMap {
@@ -153,9 +153,9 @@ func domCall(st mut St, key int, args desugar.ListRef, at desugar.NodeRef) (int,
     panic(InvariantBroken{})
 }
 
-// NewDomain(s, init, wait): 記録と状態の箱を囲む scope の region に置き、init を深く写す（どの深度のセルも写す — 状態はその場で書くので
-// init の元のセルと別名にしない）。深度 0 のスロットと bump を記録の region の今の位置へ付け替えて深度 0 より深い部分を写し（印 MAX_DEPTH）、
-// 進んだ bump を記録の region へ戻す（cellStore の付け替えと同じ形 — 置き場がプールのアリーナでなく scope の region なので出口の後始末が要らない）
+// NewDomain(s, init, wait): 記録と状態の箱を囲むscopeのregionに置き、initを深くコピーする（どの深度のセルもコピーする — 状態はその場で書くので
+// initの元のセルと別名にしない）。深度0のスロットとbumpを記録のregionの今の位置へ付け替えて深度0より深い部分をコピーし（マークMAX_DEPTH）、
+// 進んだbumpを記録のregionへ戻す（cellStoreの付け替えと同じ形 — 配置先がプールのアリーナでなくscopeのregionなので出口の後始末が要らない）
 func domNew(st mut St, args desugar.ListRef, at desugar.NodeRef) (int, error?) {
     _ = expr(mut st, latN(mut st, args, 0))?
     x := expr(mut st, latN(mut st, args, 1))?
@@ -211,7 +211,7 @@ func domDiedIn(st mut St, tcb int) {
     store(mut st, tcb, TC_DOM, iconst(mut st, 0))
     atomicXadd(mut st, globaladdr(mut st, st.mnG), MN_DPOIS, iconst(mut st, 1))
     if st.domWait {
-        // 待ち手を全部起こす（入り直しで毒を見て死ぬ）
+        // 待ち手を全部ウェイクアップする（入り直しで毒を見て死ぬ）
         domHandAll(mut st, load(mut st, p, DM_WHEAD))
     }
     cellUnlock(mut st, p)
@@ -220,8 +220,8 @@ func domDiedIn(st mut St, tcb int) {
 }
 
 // Await の待ち（domWait — 鍵を持って呼ぶ）: 最初の待ちなら期限 TC_DQDL = 今 + D を置いて列の尾に積む・手渡しで戻った待ち手なら列の次へ
-// 手渡しを続ける。鍵を返して自分のワーカーの poller の期限の鎖に min(TC_DL, TC_DQDL) で積み（io の待ちに数える — poller で眠る・デッドロックの
-// 判定の外）、task_wait をちょうど 1 回（起こしは CAS の勝者が 1 回だけ — 先に来た起こしは task_wait が吸う）。手渡されたら鍵を取り直して 1、
+// 手渡しを続ける。鍵を返して自分のワーカーのpollerの期限のチェーンにmin(TC_DL, TC_DQDL) で積み（ioの待ちに数える — pollerでスリープする・デッドロックの
+// 判定の外）、task_waitをちょうど1回（ウェイクアップはCASの勝者が1回だけ — 先に来たウェイクアップはtask_waitが吸う）。手渡されたら鍵を取り直して1、
 // 満了なら鍵の下で列から外して 0
 func domWaitOn(st mut St, rec int, me int, wv int, key int, at desugar.NodeRef) int {
     _ = needNet(mut st)
@@ -269,7 +269,7 @@ func domWaitOn(st mut St, rec int, me int, wv int, key int, at desugar.NodeRef) 
     store(mut st, me, TC_IORES, iconst(mut st, PEND_DOM))
     store(mut st, me, TC_DOM, zero)
     cellUnlock(mut st, rec)
-    // 自分のワーカーの poller の期限の鎖へ（net の ring か epoll — 無ければ作る）
+    // 自分のワーカーのpollerの期限のチェーンへ（netのringかepoll — 無ければ作る）
     old := load(mut st, me, TC_DL)
     // 期限 = 到着 + D（呼び出しの wait: か domain の wait: か既定）— 手渡しで戻っても到着から数える
     d0 := load(mut st, rec, DM_D)
@@ -300,7 +300,7 @@ func domWaitOn(st mut St, rec int, me int, wv int, key int, at desugar.NodeRef) 
     store(mut st, me, TC_DL, old)
     res := load(mut st, me, TC_IORES)
     got := cmp(mut st, CEq, res, one)
-    // 手渡しの起こしは待ち手の数を減らさない（期限の走査の起こしは減らす — epWake と同じ）
+    // 手渡しのウェイクアップは待ち手の数を減らさない（期限の走査のウェイクアップは減らす — epWakeと同じ）
     store(mut st, wk, WK_NETW, bin(mut st, BSub, load(mut st, wk, WK_NETW), got))
     cellLock(mut st, rec)
     bOk := branchIf(mut st, cmp(mut st, CNe, load(mut st, rec, DM_POISON), zero))
@@ -390,9 +390,9 @@ func domPUncount(st mut St, rec int, w int) {
     store(mut st, rec, DM_NWAIT, urAdd(mut st, load(mut st, rec, DM_NWAIT), -1))
 }
 
-// P の w を起こされ済みにする（P から外して印を立てる）
+// Pのwをウェイクアップ済みにする（Pから外してフラグを立てる）
 func domOffP(st mut St, rec int, w int) {
-    // 変異 54 = P から外さずに印だけ立てる（P に残ったまま出口が外さない — 出た task の記録が P に残る）
+    // ミュータント54 = Pから外さずにフラグだけ立てる（Pに残ったまま出口が外さない — 出たtaskの記録がPに残る）
     if st.rtMut != 54 {
         domUnlink(mut st, rec, w)
         domPUncount(mut st, rec, w)
@@ -424,7 +424,7 @@ func domPInsert(st mut St, rec int, me int) {
     setCur(mut st, l)
     condbr(mut st, cmp(mut st, CEq, p, zero), d, list2(mut st, pp, p), t, -1)
     setCur(mut st, t)
-    // 変異 53 = 番号を見ずに P の尾へ入れる（眠り直しが FIFO の順を崩す）
+    // ミュータント53 = 番号を見ずにPの尾へ入れる（再スリープがFIFOの順を崩す）
     condbr(mut st, if st.rtMut == 53 { iconst(mut st, 1) } else { cmp(mut st, CLt, load(mut st, itop(mut st, p), TC_DQSEQ), sq) }, a, -1, d, list2(mut st, pp, p))
     setCur(mut st, a)
     br(mut st, l, list2(mut st, load(mut st, itop(mut st, p), TC_DQNEXT), p))
@@ -457,8 +457,8 @@ func domPInsert(st mut St, rec int, me int) {
     setCur(mut st, c3)
 }
 
-// P の w から順に、待ち中（PEND_DOM）の最初の待ち手へ CAS で手渡して起こす。CAS を試した者は勝ち負けによらず P から外す（負けた = 満了 —
-// 本人は鍵を取り直して出るだけ。P の歩みが満了した者を 2 度越えない）。今の版で偽と分かった鍵の待ち手は起こさずに位置のまま飛ばす（when は効果を持たず捕捉の無い when は状態だけの関数なので、見直しても同じ偽 — 観測等価な省略）。
+// Pのwから順に、待ち中（PEND_DOM）の最初の待ち手へCASで手渡してウェイクアップする。CASを試した者は勝ち負けによらずPから外す（負けた = 満了 —
+// 本人は鍵を取り直して出るだけ。Pの歩みが満了した者を2度越えない）。今の版で偽と分かった鍵の待ち手はウェイクアップせずに位置のまま飛ばす（whenはエフェクトを持たず捕捉の無いwhenは状態だけの関数なので、見直しても同じ偽 — 観測等価な省略）。
 // 列の全員がその鍵なら歩かない
 func domHand(st mut St, rec int, w0 int) {
     zero := iconst(mut st, 0)
@@ -481,7 +481,7 @@ func domHand(st mut St, rec int, w0 int) {
     setCur(mut st, cs)
     n := load(mut st, wp, TC_DQNEXT)
     o := atomicCas(mut st, wp, TC_IORES, iconst(mut st, PEND_DOM), iconst(mut st, 1))
-    // 変異 52 = 手渡しで起こした待ち手を P から外さない（印も立たない — 眠り直しが P の同じ位置へ入れ直し、鎖が輪になる）
+    // ミュータント52 = 手渡しでウェイクアップされた待ち手をPから外さない（フラグも立たない — 再スリープがPの同じ位置へ入れ直し、チェーンがループになる）
     if st.rtMut != 52 {
         domOffP(mut st, rec, wp)
     }
@@ -494,7 +494,7 @@ func domHand(st mut St, rec int, w0 int) {
     setCur(mut st, d)
 }
 
-// P の全部の待ち手へ手渡して起こす（毒 — 起きた待ち手は毒を見て死ぬ。P の外の者は起こされ済みで、鍵を取り直して毒を見る）
+// Pの全部の待ち手へ手渡してウェイクアップする（毒 — ウェイクアップされた待ち手は毒を見て死ぬ。Pの外の者はウェイクアップ済みで、鍵を取り直して毒を見る）
 func domHandAll(st mut St, w0 int) {
     zero := iconst(mut st, 0)
     l := newBlock(mut st)
@@ -519,7 +519,7 @@ func domHandAll(st mut St, w0 int) {
     setCur(mut st, d)
 }
 
-// 期限の走査（自分のワーカーの poller — uring.sober / netpoll.sober）が満了を見た待ち手 t: 手渡しと CAS で競い、勝てば -110 で起こす
+// 期限の走査（自分のワーカーのpoller — uring.sober / netpoll.sober）が満了を見た待ち手t: 手渡しとCASで競い、勝てば -110でウェイクアップする
 func domExpire(st mut St, t int) {
     tp := itop(mut st, t)
     o := atomicCas(mut st, tp, TC_IORES, iconst(mut st, PEND_DOM), iconst(mut st, -110))
@@ -532,7 +532,7 @@ func domExpire(st mut St, t int) {
     setCur(mut st, bW)
 }
 
-// Ledger().domains.maxWait を w（ns）まで上げる（CAS の輪 — 読み手は xchg で 0 に戻す）
+// Ledger().domains.maxWaitをw（ns）まで上げる（CASのループ — 読み手はxchgで0に戻す）
 func domMaxWait(st mut St, w int) {
     mn := globaladdr(mut st, st.mnG)
     l := newBlock(mut st)
@@ -548,8 +548,8 @@ func domMaxWait(st mut St, w int) {
     setCur(mut st, d)
 }
 
-// Await の when（domWait の 3 つ目の実引数 — 閉包に束縛された名前）の束ねの鍵: 捕捉の無い when はラムダの節と型環境の組の通し番号（1 始まり）・
-// 捕捉のある when・閉包でない実引数は 0（束ねない — 捕捉の値が待ち手ごとに違いうる）
+// Awaitのwhen（domWaitの3つ目の実引数 — クロージャに束縛された名前）のまとめの鍵: 捕捉の無いwhenはラムダの節と型環境の組の通し番号（1始まり）・
+// 捕捉のあるwhen・クロージャでない実引数は0（まとめない — 捕捉の値が待ち手ごとに違いうる）
 func domWhenKey(st mut St, args desugar.ListRef) int {
     if lenL(mut st, args) < 3 {
         return 0

@@ -102,8 +102,8 @@ func strs(out mut []byte, t Tree, d int, first bool, name string, l int) {
     }
 }
 
-// kList / kNode はキー + 節の列 / キー + 節。再帰の輪（emit ↔ list）に入る mut 引数の関数（anchor つきで呼ぶ Def）にキー名の
-// 文字列リテラルを渡すが、Def 呼び出しの実引数のリテラルは region 0（strlit の段）なので anchor 1 slot の条件に掛からない
+// kList / kNodeはキー + 節の列 / キー + 節。再帰のループ（emit ↔ list）に入るmut引数の関数（anchorつきで呼ぶDef）にキー名の
+// 文字列リテラルを渡すが、Def呼び出しの実引数のリテラルはregion 0（strlitのフェーズ）なのでanchor 1 slotの条件に掛からない
 func kList(out mut []byte, t Tree, d int, first bool, name string, l int) {
     obuf.Key(mut out, d, first, name)
     list(mut out, t, d, l)
@@ -174,7 +174,7 @@ func OpName(op int) string {
     }
 }
 
-// composite の中身（"k" を除いた欄）。Try.wrap は k なしでこれだけを書く
+// compositeの中身（"k" を除いたフィールド）。Try.wrapはkなしでこれだけを書く
 func compositeBody(out mut []byte, t Tree, d int, first bool, x Node) {
     kStr(mut out, t, d, first, "type_name", x.a)
     obuf.Key(mut out, d, false, "elems")
@@ -234,7 +234,7 @@ func emit(out mut []byte, t Tree, n0 int, d int) {
         kStr(mut out, t, e, true, "name", x.a)
         strs(mut out, t, e, false, "type_params", x.b)
         kNode(mut out, t, e, false, "body", x.c)
-        // `@layout` の印は立っているときだけ書く（無い型宣言の JSON は前と同じ）
+        // `@layout` のフラグは立っているときだけ書く（無い型宣言のJSONは前と同じ）
         if x.f != 0 {
             kBool(mut out, e, "layout", x.f)
         }
@@ -318,7 +318,7 @@ func emit(out mut []byte, t Tree, n0 int, d int) {
     } else if k == KLParam {
         kStr(mut out, t, e, true, "name", x.a)
         kNode(mut out, t, e, false, "type", x.b)
-        // mut 仮引数の印は立っているときだけ（窓のラムダ — 既存の黄金を動かさない）
+        // mut仮引数のフラグは立っているときだけ（ウィンドウのラムダ — 既存のゴールデンを動かさない）
         if x.c != 0 {
             kBool(mut out, e, "mutable", x.c)
         }
@@ -459,7 +459,7 @@ func emitExpr(out mut []byte, t Tree, e int, x Node) {
         tag(mut out, e, "int")
         kInt(mut out, e, "value", x.a)
         if x.b == 1 {
-            // 文字リテラルの綴り（byte の段で足した欄 — 印の無い節の出力は変えない）
+            // 文字リテラルの綴り（byteのフェーズで足したフィールド — フラグの無い節の出力は変えない）
             kBool(mut out, e, "char", 1)
         } else if x.b != 0 {
             // n 進リテラルの基数（16 / 8 / 2 — 同上）

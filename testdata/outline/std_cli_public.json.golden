@@ -3,7 +3,7 @@
   {"kind":"type","name":"Handler","sig":"type Handler func(r Parsed) int","lines":[15,15],"doc":"コマンドの本体（Main が解析の後に呼ぶ — 戻り値が終了コード）"},
   {"kind":"type","name":"BoolFlag","sig":"type BoolFlag struct { name string; short string; help string; dev bool }","lines":[18,23],"doc":"値を取らないフラグ（`--name` が出れば true）。"},
   {"kind":"type","name":"StrFlag","sig":"type StrFlag struct { name string; short string; arg string; help string; def string?; env string?; opt bool; dev bool }","lines":[27,36],"doc":"文字列の値のフラグ。"},
-  {"kind":"type","name":"IntFlag","sig":"type IntFlag struct { name string; short string; arg string; help string; def int?; min int?; max int?; allow []int; env string?; opt bool; dev bool }","lines":[39,51],"doc":"整数の値のフラグ（10 進）。"},
+  {"kind":"type","name":"IntFlag","sig":"type IntFlag struct { name string; short string; arg string; help string; def int?; min int?; max int?; allow []int; env string?; opt bool; dev bool }","lines":[39,51],"doc":"整数の値のフラグ（10進）。"},
   {"kind":"type","name":"ChoiceFlag","sig":"type ChoiceFlag struct { name string; arg string; help string; choices []string; dev []string; def string?; opt bool }","lines":[54,62],"doc":"選択肢のどれかを取るフラグ。"},
   {"kind":"type","name":"ListFlag","sig":"type ListFlag struct { name string; short string; arg string; help string; dev bool }","lines":[65,71],"doc":"繰り返して出せる文字列の値のフラグ（List は出た順の列 — 出なければ空）"},
   {"kind":"type","name":"Positional","sig":"type Positional struct { name string; help string; many bool; optional bool }","lines":[74,79],"doc":"位置引数。"},
@@ -42,6 +42,6 @@
   {"kind":"func","name":"Spec","sig":"func Spec(app App) string  @effects()","lines":[384,408],"doc":"app の表の JSON（空白なし・宣言の順。"}
 ]},
 {"file":"src/std/cli/parse.sober","package":"cli","imports":["std/convert","std/iter","std/os","std/strings"],"decls":[
-  {"kind":"func","name":"Parse","sig":"func Parse(app App, args []string) (Parsed, error?)  @errors(UnknownFlag, UnknownCommand, MissingValue, BadValue, Missing, Extra, Duplicate, Request) @effects(io, panic)","lines":[19,57],"doc":"args（0 番 = プログラム名 — os.Args の並び）を app の表で読む。"}
+  {"kind":"func","name":"Parse","sig":"func Parse(app App, args []string) (Parsed, error?)  @errors(UnknownFlag, UnknownCommand, MissingValue, BadValue, Missing, Extra, Duplicate, Request) @effects(io, panic)","lines":[19,57],"doc":"args（0番 = プログラム名 — os.Argsの並び）をappの表で読む。"}
 ]}
 ]

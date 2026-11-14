@@ -1,6 +1,6 @@
 package main
 
-// 回帰: `?` の脱出と `T{}` が float の欄のゼロ値（0.0）を埋める（lower の requireZero は float のゼロ値も扱う）
+// 回帰: `?` の脱出と `T{}` がfloatのフィールドのゼロ値（0.0）を埋める（lowerのrequireZeroはfloatのゼロ値も扱う）
 
 type M struct {
     name string

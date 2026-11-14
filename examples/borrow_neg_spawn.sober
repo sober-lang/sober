@@ -1,6 +1,6 @@
 package main
 
-// 借りの関数値は task.Spawn の子に捕捉させられない（(α-L0) — 借りの閉包は同一性の型〔Conn〕を運びうる・子 task から叩く形は同一性の 1 task の破れ）
+// 借りの関数値はtask.Spawnの子に捕捉させられない（(α-L0) — 借りのクロージャは同一性の型〔Conn〕を運びうる・子taskから叩く形は同一性の1 taskの破れ）
 
 import "std/task"
 

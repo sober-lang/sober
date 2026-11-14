@@ -1,6 +1,6 @@
 package password
 
-// PBKDF2-HMAC-SHA256 の核の網（white-box）: RFC 7914 11 節の 2 例と、Go の crypto/pbkdf2 の格子（testdata/crypto/pbkdf2_sha256.txt —
+// PBKDF2-HMAC-SHA256の核の検査（white-box）: RFC 7914 11 節の2例と、Goのcrypto/pbkdf2の格子（testdata/crypto/pbkdf2_sha256.txt —
 // scripts/oracles/crypto_pbkdf2.go）。格子は鍵の長さ（ブロック 64 の前後 — 縮める境目）・塩の長さ（塩 ++ 番号が 1 ブロックに収まる / 収まらない）・
 // 反復（区切り pbkdf2Chunk の前後）・出力の長さ（32 の前後 — T_i の 2 本目）を跨ぐ
 

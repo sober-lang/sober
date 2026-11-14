@@ -1,12 +1,12 @@
 package lower
 
-// GVN の添字 0 の gep の畳み（gvn.sober）と LICM の網: IR を手で組んで直に見る（`cd src/compiler && ../../bin/sober test lower`）。
+// GVNの添字0のgepの畳み（gvn.sober）とLICMの検査: IRを手で組んで直に見る（`cd src/compiler && ../../bin/sober test lower`）。
 // どちらも観測を変えない変換なので、例・題材の出力では鳴らない — 畳む / 畳まない gep の形をここで固定する
 
 import "desugar"
 
 // `for i < n { x = ptoi(gep.byte(globaladdr G, idx)); i = i + x }` に GVN → LICM を掛け、
-// （入口のブロックの OpGlobal の数・輪の本体の OpGlobal の数・残った OpGepB の数）を返す
+// （入口のブロックのOpGlobalの数・ループの本体のOpGlobalの数・残ったOpGepBの数）を返す
 func lcT(idx int) (int, int, int) {
     mut st := St{}
     initScalars(mut st)

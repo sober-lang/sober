@@ -2,11 +2,11 @@
 # benchfetch: 公式ベンチの GitHub Actions の run（.github/workflows/bench-official.yml）の artifact を取り込む（report-920 の案 C — コミットと push は手元の規律のまま）
 #   scripts/benchfetch.sh <run-id> [--dry] [--accept-cpu]
 # 1. `gh run download` で out/bench/gha-<run-id>/ へ（seqperf.tsv・extsort.tsv・bench-env.txt）
-# 2. 型番の照合: bench-env.txt の cpu と official.tsv の `# env:` の cpu が違えば拒否（同じラベルでも箱の型番が run で変わる — report-921/922。
+# 2. 型番の照合: bench-env.txtのcpuとofficial.tsvの `# env:` のcpuが違えば拒否（同じラベルでもマシンの型番がrunで変わる — report-921/922。
 #    比は型番をまたぐと比べられない）。official.tsv に env が無い（手元のレジームからの最初の切り替え）か、基線を替えるときは --accept-cpu
-# 3. raw + env を bench/data/raw/<日付>-<run-id>/ へ写し（artifact は保持期限で消える — raw はリポジトリに置く）→ benchsync --import → 文書とグラフの生成
+# 3. raw + envをbench/data/raw/<日付>-<run-id>/ へコピーし（artifactは保持期限で消える — rawはリポジトリに置く）→ benchsync --import → 文書とグラフの生成
 # --dry: リポジトリに書かない — out/bench/gha-<run-id>/official.tsv へ import し、文書とグラフを out/bench/gha-<run-id>/render/ へ書く（基線の検証用 — scripts/benchrepro.ts で run 同士の比を照合）
-# 取り込みの後は gates の docs 範囲（benchsync）を回してから、意味の単位でコミットする（push はユーザー同席の調停）
+# 取り込みの後はgatesのdocs範囲（benchsync）を回してから、意味の単位でコミットする（pushはユーザーが立ち会って調停する）
 set -uo pipefail
 cd "$(dirname "$0")/.."
 RUN=""
@@ -28,7 +28,7 @@ if [ ! -s "$G/bench-env.txt" ]; then
     rm -rf "$G.dl"
     gh run download "$RUN" -D "$G.dl" || { echo "benchfetch: gh run download $RUN failed" >&2; exit 1; }
     mkdir -p "$G"
-    # artifact は 1 つ（bench-official-<run>-<attempt>）— 中身を平らに写す
+    # artifactは1つ（bench-official-<run>-<attempt>）— 中身を平らにコピーする
     find "$G.dl" -type f -exec cp {} "$G/" \;
     rm -rf "$G.dl"
 fi

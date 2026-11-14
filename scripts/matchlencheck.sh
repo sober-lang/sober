@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# matchlencheck（一致の長さの核 binary.MatchLen / rt.matchlen の網 — SIMD の核 段 1・report-1137）: testdata/matchlen を最適化のバックエンド（--passes —
-# x86 の手書きの本体 xMatchLenBody）と最適化なし（--no-opt — rt.matchlen の IR の本体 = 参照の意味）で建てて走らせ、失敗が 0 で 2 つの出力が一致すること。
-# 続けて変異の自己検査: 開発用 --rt-mutant=13（16 バイトの塊の食い違いの位置 +1）・14（端数の重ねた読みを省く）で建てた本体を網が捕まえること
+# matchlencheck（一致の長さの核binary.MatchLen / rt.matchlenの検査 — SIMD の核 段階1・report-1137）: testdata/matchlenを最適化のバックエンド（--passes —
+# x86の手書きの本体xMatchLenBody）と最適化なし（--no-opt — rt.matchlenのIRの本体 = 参照の意味）でビルドして走らせ、失敗が0で2つの出力が一致すること。
+# 続けてミュータントの自己検査: 開発用 --rt-mutant=13（16 バイトのチャンクの食い違いの位置 +1）・14（端数の重ねた読みを省く）でビルドした本体を検査が捕まえること
 #   scripts/matchlencheck.sh
 set -uo pipefail
 cd "$(dirname "$0")/.."

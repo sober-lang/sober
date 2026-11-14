@@ -1,6 +1,6 @@
 package main
 
-// task_chan_regions の逐次の双子（seq ≡ par — scripts/seqpar.sh）
+// task_chan_regionsの逐次版（seq ≡ par — scripts/seqpar.sh）
 
 func build(n int) []int {
     mut xs := mut []int{}

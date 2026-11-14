@@ -1,11 +1,11 @@
-// src/std/internal/hs_trace_test.sober の Go の双子（std/internal/hs の差分オラクル — TLS 便 R3・report-811 0 節 C / 828）。Go の crypto/tls のクライアントが
-// Sober のテストの live の道（TestTraceLive — 場合の名前は環境変数 SOBER_TLS_TRACE_LIVE）（127.0.0.1 の TCP で待ち受ける子プロセス — 待ち受けの port は子の標準出力の 1 行目）と TLS 1.3 の handshake → "ping" → "echo:ping" → close_notify まで往復する。
+// src/std/internal/hs_trace_test.soberの比較用のGoの実装（std/internal/hsの差分オラクル — TLSのタスクR3・report-811 0 節C / 828）。Goのcrypto/tlsのクライアントが
+// Soberのテストのliveのパス（TestTraceLive — 場合の名前は環境変数SOBER_TLS_TRACE_LIVE）（127.0.0.1のTCPで待ち受ける子プロセス — 待ち受けのportは子の標準出力の1行目）とTLS 1.3のhandshake → "ping" → "echo:ping" → close_notifyまで往復する。
 // 乱数の源は固定（下の //go:debug cryptocustomrand=1 で Config.Rand が効き、走りごとに同じ ClientHello）。Go の検証（証明書の署名〔CertificateVerify〕・
-// Finished・record の保護）を通った往復だけを黄金にする: クライアントが送ったバイト列を testdata/tls/trace-<場合>.hex に、受けたバイト列の SHA-256・
-// KeyLogWriter の 4 つの secret・受けた平文を標準出力（= testdata/tls/trace.golden の形）に書く。InsecureSkipVerify は証明書の鎖の検証だけを外す
+// Finished・recordの保護）を通った往復だけをゴールデンにする: クライアントが送ったバイト列をtestdata/tls/trace-<場合>.hexに、受けたバイト列のSHA-256・
+// KeyLogWriterの4つのsecret・受けた平文を標準出力（= testdata/tls/trace.goldenの形）に書く。InsecureSkipVerifyは証明書チェーンの検証だけを外す
 // （HttpArena の自己署名の試験用の対 — CertificateVerify の署名は Go が葉の公開鍵で検証する）。再生成:
 //   out/stage2/sober2 test std/tls --run TestTraceLive --work /tmp/tt && (cd scripts/oracles && go run tls_trace.go /tmp/tt/t) > testdata/tls/trace.golden
-//   （記録が変わったら `sober test std/tls --run TestTrace` で照合 — trace-*.hex と黄金はテストに @embed で焼き込まれる）。hrr の場合は openssl s_client の中継（viaOpenSSL）
+//   （記録が変わったら `sober test std/tls --run TestTrace` で照合 — trace-*.hexとゴールデンはテストに @embedで焼き込まれる）。hrrの場合は openssl s_client の中継（viaOpenSSL）
 //
 //go:debug cryptocustomrand=1
 package main
@@ -60,7 +60,7 @@ func (f *fixedRand) Read(b []byte) (int, error) {
 	return len(b), nil
 }
 
-// live は Sober のテストの実行ファイルの live の道（TestTraceLive）の子プロセス
+// liveはSoberのテストの実行ファイルのliveのパス（TestTraceLive）の子プロセス
 func live(bin, name string) *exec.Cmd {
 	cmd := exec.Command(bin, "TestTraceLive")
 	cmd.Env = append(os.Environ(), "SOBER_TLS_TRACE_LIVE="+name)
@@ -148,8 +148,8 @@ func one(bin, name string) {
 }
 
 // viaOpenSSL は hrr の場合: Go 1.24 以降の crypto/tls は CurvePreferences の順を無視して X25519 の key_share を出すので HelloRetryRequest を
-// 起こせない — openssl s_client（-groups P-256:X25519 = key_share は P-256 だけ）を中継して記録する。openssl の乱数は決められないので
-// 取り直すたびに記録は変わる（黄金の資格 = openssl が handshake を受理し "echo:ping" を受けた・HRR が起きた〔ServerHello 2 通〕・
+// 起動できない — openssl s_client（-groups P-256:X25519 = key_shareはP-256だけ）を中継して記録する。opensslの乱数は決められないので
+// 取り直すたびに記録は変わる（ゴールデンの資格 = opensslがhandshakeを受理し "echo:ping" を受けた・HRRが起きた〔ServerHello 2通〕・
 // openssl の -keylogfile の 4 つの secret ≡ Sober の key schedule の値）
 func viaOpenSSL(bin, name string) {
 	cmd := live(bin, name)

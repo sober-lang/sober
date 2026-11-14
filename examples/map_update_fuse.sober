@@ -40,7 +40,7 @@ func main() int {
     m3["y"] = if c3 != nil { c3 + 1 } else { 0 }
     println(len(m3), get(m3, "y"))
 
-    // 間に成長（索引の閾値を越える挿入 — セル列が写る）: 1 回目のセルは古いセル列
+    // 間に成長（索引の閾値を越える挿入 — セル列がコピーされる）: 1回目のセルは古いセル列
     mut m4 := mut map[int]int{0: 1}
     c4 := m4[0]
     for i <- iter.Range(1, 40) {

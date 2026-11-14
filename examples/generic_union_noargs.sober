@@ -1,6 +1,6 @@
 package main
 
-// 負例（language.md 25 節）: ジェネリック union の variant のリテラルは型引数が要る（期待型からの推論は後の段 — 今は build・check とも拒否）
+// 負例（language.md 25 節）: ジェネリックunionのvariantのリテラルは型引数が要る（期待型からの推論は後のフェーズ — 今はbuild・checkとも拒否）
 
 type Opt[T] union {
     Some { v T }

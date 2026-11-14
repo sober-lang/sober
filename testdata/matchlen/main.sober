@@ -1,9 +1,9 @@
 package main
 
-// binary.MatchLen の網羅の検査（scripts/matchlencheck.sh — SIMD の核 段 1・report-1137）: 長さ n = 0〜80 × 食い違いの位置 m = 0〜n（m = n は全部一致）×
+// binary.MatchLenの網羅の検査（scripts/matchlencheck.sh — SIMD の核 段階1・report-1137）: 長さn = 0〜80 × 食い違いの位置m = 0〜n（m = nは全部一致）×
 // 置き方 4 種（離れた 2 区間・2 番目の区間が列の末尾で終わる・引数を入れ替えて 1 番目の区間が列の末尾で終わる・重なる 2 区間〔距離 1〜7 の周期の列〕）。
 // 区間の直後のバイトは 2 区間で等しくしてある（列の外まで含めて）— 手書きの本体が区間の外を読んで比べると、一致の長さが n を越えて答えが変わる。
-// 答えは 1 バイトずつのループ（ref）と照合する。xmm の破壊の網: float の値を多く生かしたまま MatchLen を呼ぶループ（fmix）と、同じ計算を
+// 答えは1バイトずつのループ（ref）と照合する。xmmの破壊の検査: floatの値を多く生かしたままMatchLenを呼ぶループ（fmix）と、同じ計算を
 // 呼ばずに行うループ（fref）の結果が一致すること（手書きの本体が壊してよい xmm は 0 / 1 だけ — docs/ir.md 7 節）。
 // 出力: 1 行目 = 検査した数・2 行目 = 失敗の数・3 行目 = 答えの検査和（--passes と --no-opt で一致 — 参照の意味 ≡ 手書きの本体）
 
@@ -75,7 +75,7 @@ func periodic(n int, m int, d int, seed int) ([]byte, int, int) {
     return f[0:j + n], i, j
 }
 
-// fmix は float の値を 12 本生かしたまま MatchLen を呼ぶ（xmm の破壊の網）
+// fmixはfloatの値を12本生かしたままMatchLenを呼ぶ（xmmの破壊の検査）
 func fmix(b []byte, rounds int) float {
     mut a0 := 1.5
     mut a1 := 2.25
@@ -174,7 +174,7 @@ func main() int {
             }
         }
     }
-    // xmm の破壊の網
+    // xmmの破壊の検査
     fb, _, _ := disjoint(60, 45, 77, false)
     cases += 1
     if fmix(fb, 1000) != fref(fb, 1000) {

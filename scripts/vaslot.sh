@@ -2,7 +2,7 @@
 # vaslot（net 4a-4 の直し — report-654/655）: region のスロットの VA の約束。
 #   ① va_exhausted: スロットの補充（mmap）の失敗は RegionExceeded{cause: va_exhausted} を名乗る（旧 = slot_capacity の誤名乗り）。
 #      SOBER_REGION_MB=SOBER_TASK_REGION_MB=65536（スロット 64 GiB — main のアリーナ 64 TiB・子の補充 16 本 = 1 TiB）+ ulimit -v 64.5 TiB で最初の子の補充を決定的に失敗させる
-#   ② 宣言（budget:）の無い子の region 1 つの上限 = 子のスロットの既定（SOBER_TASK_REGION_MB — 網は 1 MiB）: 超えれば slot_capacity（main は 4 GiB のまま）
+#   ② 宣言（budget:）の無い子のregion 1つの上限 = 子のスロットの既定（SOBER_TASK_REGION_MB — 検査は1 MiB）: 超えればslot_capacity（mainは4 GiBのまま）
 #   ③ 宣言が既定を超える子は宣言以上の 2 の冪のスロット（自前の mmap / munmap — 既定の子と交互に回してプールと取り違えない）
 #   （<名前>.out があれば stdout も照合）
 #   scripts/vaslot.sh
@@ -25,7 +25,7 @@ expect() {
         echo "FAIL: $e ($*${VA_ULIMIT:+ ulimit -v $VA_ULIMIT}): exit $ec (want $want)"; head -3 "$W/$e.err"; fail=$((fail + 1))
     fi
 }
-# ① va_exhausted（W = 1 / 既定の両方 — 補充の道は協調形と M:N で別）
+# ① va_exhausted（W = 1 / 既定の両方 — 補充のパスは協調形とM:Nで別）
 build va_exhausted && for w in 1 2; do
     VA_ULIMIT=69256347648 expect va_exhausted 101 'panic: ChildDied{cause: RegionExceeded{cause: va_exhausted}} at va_exhausted.sober:19:18' SOBER_REGION_MB=65536 SOBER_TASK_REGION_MB=65536 SOBER_WORKERS=$w
 done

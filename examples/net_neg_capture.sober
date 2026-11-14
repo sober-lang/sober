@@ -1,6 +1,6 @@
 package main
 
-// 負例: 子 task の閉包は Listener を捕獲できない（for の本体を抜けると std が閉じる — 子が閉じた fd か再利用された番号を見る）。
+// 負例: 子taskのクロージャはListenerを捕獲できない（forの本体を抜けるとstdが閉じる — 子が閉じたfdか再利用された番号を見る）。
 // task.Run の本体の lambda への捕獲は許す（N6）が、その中の Spawn の g は今どおり拒否（diag.FileUse — desugar/filecheck・language.md 28 節の net）
 
 import "std/net"

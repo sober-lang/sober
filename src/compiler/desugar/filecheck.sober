@@ -1,13 +1,13 @@
 package desugar
 
 // 開いたファイル io.File の使い方の検査（language.md 28 節「資源とストリーム」）。
-// File はコアでは封のデータ（fd 1 語）で、同一性は表層のこの規則が持つ。check と build が同じ層（ParCheck / ParCheckTyped — 表層型つき）:
-// - 開く: `f := io.Open(path)?` か `f := io.Open(path) catch D`（loader の catchx が `$ctKv, $ctKe := io.Open(path)` + `f := if … else { $ctKv }` に写した形）。
+// Fileはコアでは封のデータ（fd 1ワード）で、同一性は表層のこの規則が持つ。checkとbuildが同じ層（ParCheck / ParCheckTyped — 表層型つき）:
+// - 開く: `f := io.Open(path)?` か `f := io.Open(path) catch D`（loaderのcatchxが `$ctKv, $ctKe := io.Open(path)` + `f := if … else { $ctKv }` に変換した形）。
 //   直後の文は `defer io.Close(f)`（30 節の acquire / release の局所照合 R-a の形の移植 — 間に脱出が挟まる漏れが形で起きない）。
 //   Open はこの束縛の形の外に書けず、Close はこの defer の形の外に書けない。根の下の開き（28 節）も同じ形: `f := io.OpenUnder(r, rel)?` +
 //   `defer io.Close(f)`・`r := io.OpenRoot(path)?` + `defer io.CloseRoot(r)`（Root は File と同じ同一性の型）
-// - 許す使い方: io の口・利用者の関数の実引数（受けた仮引数も同じ規則の下 — 外へは出せない）
-// - 拒否: 写しの束縛・代入・return と File を持つ値を返す呼び出し・composite（struct / slice / map — 型が File を持つリテラル）・append・閉包の捕獲・
+// - 許す使い方: ioのインターフェース・利用者の関数の実引数（受けた仮引数も同じ規則の下 — 外へは出せない）
+// - 拒否: コピーの束縛・代入・returnとFileを持つ値を返す呼び出し・composite（struct / slice / map — 型がFileを持つリテラル）・append・クロージャの捕獲・
 //   give:（scope の本体で開いた File を子へ渡すと、本体の defer Close が子の合流より先に走る — 子は path から自分で開く）
 // io.Open / io.OpenRoot を書かないプログラムでは走らない（File / Root の値はほかに作れない — compiler 自身は書かないので自己 build の仕事は増えない）
 
@@ -20,16 +20,16 @@ const FC_OPEN = 1      // 規則の形の外の Open
 const FC_UNCLOSED = 2  // 直後の文が defer io.Close でない
 const FC_CLOSE = 3     // 規則の形の外の Close
 const FC_DEFER = 4     // 直後の defer が別の名前を閉じている
-const FC_COPY = 5      // 写しの束縛
+const FC_COPY = 5      // コピーの束縛
 const FC_ASSIGN = 6    // 代入
 const FC_ESCAPE = 7    // return / File を持つ値を返す呼び出し
 const FC_HOLD = 8      // composite・append に入れる
-const FC_CAPTURE = 9   // 閉包の捕獲
+const FC_CAPTURE = 9   // クロージャの捕獲
 const FC_GIVE = 10     // give:
 const FC_BORROW = 11   // 借りの関数値を呼ぶ・借りの位置へ渡す以外に使った（(α-L0)）
 
 // 呼び出し先の節 callee が std/io の Open / OpenUnder（1 — File を開く）・Close（2）・OpenRoot（3 — Root を開く）・CloseRoot（4）か（違えば 0。
-// 奇数 = 開く・偶数 = 閉じる — 開く口 k の対の閉じる口は k + 1）
+// 奇数 = 開く・偶数 = 閉じる — 開くインターフェースkの対の閉じるインターフェースはk + 1）
 func fcFn(st mut S, callee NodeRef) int {
     k := kindN(mut st, callee)
     if k != ast.EIdent && k != ast.ESelector {
@@ -44,7 +44,7 @@ func fcFn(st mut S, callee NodeRef) int {
 }
 
 // 表層型 y が同一性を持つ資源の型か（diag の表の資源の行 — io の File・Root、net の Listener・Conn、tls の Conn、http/client の Session。
-// Open / Close の対の照合は File だけ — 写し・持ち出し・捕獲・give: の規則は共通）
+// Open / Closeの対の照合はFileだけ — コピー・持ち出し・捕獲・give: の規則は共通）
 func fcIsFile(st mut S, y int) bool {
     if yk(mut st, y) != YDecl {
         return false
@@ -70,7 +70,7 @@ func fcOwner(st mut S, pp StrRef) bool {
     return false
 }
 
-// 表層型 y が File を持つか（`T?`・slice / map の要素・多値・struct の欄・型引数を fuel 段まで）
+// 表層型yがFileを持つか（`T?`・slice / mapの要素・多値・structのフィールド・型引数をfuelレベルまで）
 func fcHolds(st mut S, y int, fuel int) bool {
     if y < 0 || fuel == 0 {
         return false
@@ -134,11 +134,11 @@ func fcOpenCall(st mut S, v NodeRef, try bool) NodeRef {
     return c
 }
 
-// 文の列 l の i 番から始まる Open の束縛の形（`f := io.Open(p)?` = 1 文・catch の写し = 2 文）の文の数（形でなければ 0）と、
+// 文の列lのi番から始まるOpenの束縛の形（`f := io.Open(p)?` = 1文・catchの変換 = 2文）の文の数（形でなければ0）と、
 // Open の呼び出しの節・束縛した名前
 func fcOpenAt(st mut S, l ListRef, i int) (int, NodeRef, StrRef) {
     s := latN(mut st, l, i)
-    // 列の穴（パイプの段の `_` は -1）: io / net 以外のプログラムでも借りの検査がこの列を歩くので、穴を素通りさせる
+    // 列の穴（パイプのステージの `_` は -1）: io / net以外のプログラムでも借りの検査がこの列を歩くので、穴を素通りさせる
     if s == -1 || kindN(mut st, s) != ast.SBind {
         return 0, -1, -1
     }
@@ -150,7 +150,7 @@ func fcOpenAt(st mut S, l ListRef, i int) (int, NodeRef, StrRef) {
         c := fcOpenCall(mut st, latN(mut st, lC(b), 0), true)
         return if c == -1 { 0 } else { 1 }, c, latS(mut st, lA(b), 0)
     }
-    // catch の写し: `$ctKv, $ctKe := io.Open(p)` の次の文が `f := if $ctKe != nil { D } else { $ctKv }`
+    // catchの変換: `$ctKv, $ctKe := io.Open(p)` の次の文が `f := if $ctKe != nil { D } else { $ctKv }`
     if lenL(mut st, lA(b)) != 2 || !strHasPrefix(mut st, latS(mut st, lA(b), 0), "$ct") || i + 1 >= lenL(mut st, l) {
         return 0, -1, -1
     }
@@ -211,7 +211,7 @@ func fcWalk(st mut S, n NodeRef) PcHit {
             return PcHit{at: latN(mut st, args, 1), kind: FC_GIVE}
         }
         // task.Run の本体の lambda は捕獲を許す（本体は同じ task の上で同期に走り、Scope が返ってから外の defer Close が走る）。
-        // 本体の中は今どおり歩く（中の Spawn の g・他の閉包への捕獲は拒否）
+        // 本体の中は今どおり歩く（中のSpawnのg・他のクロージャへの捕獲は拒否）
         if fk >= 0 && ParKey(mut st, fk) == PAR_SCOPE && lenL(mut st, args) >= 1 && kindN(mut st, latN(mut st, args, 0)) == ast.ELambda {
             for i <- iter.Range(0, lenL(mut st, args)) {
                 a := latN(mut st, args, i)
@@ -223,7 +223,7 @@ func fcWalk(st mut S, n NodeRef) PcHit {
             return pcNone()
         }
         // 借りの位置（(α-L0) — language.md 25 節「借り」）: 展開される関数の匿名の関数型の仮引数のうち借りとして安全なもの（fsSafe）と、
-        // 値の呼び出し（値化可能な named fn type の閉包）の実引数。そこに置いたラムダは同一性の型・借りの値を捕捉してよい（捕捉の検査を飛ばして本体を歩く）
+        // 値の呼び出し（値化可能な named fn type のクロージャ）の実引数。そこに置いたラムダは同一性の型・借りの値を捕捉してよい（捕捉の検査を飛ばして本体を歩く）
         vcall := fk < 0 && fcValueCallee(mut st, cal)
         if fk >= 0 || vcall {
             mut any := false
@@ -289,7 +289,7 @@ func fcWalk(st mut S, n NodeRef) PcHit {
         for i <- iter.Range(0, lenL(mut st, vs)) {
             v := latN(mut st, vs, i)
             kv := kindN(mut st, v)
-            // 呼び出し・composite は下の歩きが名指す（返す呼び出し・入れる形の文面で）
+            // 呼び出し・compositeは下の歩きが特定する（返す呼び出し・入れる形の文面で）
             if kv != ast.ECall && kv != ast.EPipe && kv != ast.ETry && kv != ast.ESlicelit && kv != ast.EMaplit && kv != ast.EComposite && fcNodeHolds(mut st, v) {
                 return PcHit{at: v, kind: FC_COPY}
             }
@@ -345,7 +345,7 @@ func fcWalk(st mut S, n NodeRef) PcHit {
             }
         } else if d == 3 && v != -1 {
             // 文（か式）の列: Open の束縛の形を見つけたら直後の defer Close と照合し、形の中の Open / Close の呼び出しは歩かない
-            // （Open の実引数・catch の腕 D は歩く。束縛の値の File〔catch の $ctKv〕は写しの束縛の外）
+            // （Openの実引数・catchの分岐Dは歩く。束縛の値のFile〔catchの $ctKv〕はコピーの束縛の外）
             l := ListRef(v)
             mut i := 0
             while i < lenL(mut st, l) {
@@ -434,7 +434,7 @@ func fileCheck(st mut S) error? {
 
 // ── 借り（(α-L0) — language.md 25 節「借り」）──
 
-// 名前の参照 e が値の位置のラムダの借りの仮引数（閉包の値 — 同一性を捕捉しうる）か（loader の表 cap_brw のビット。
+// 名前の参照eが値の位置のラムダの借りの仮引数（クロージャの値 — 同一性を捕捉しうる）か（loaderの表cap_brwのビット。
 // 影の禁止 — 名前で引ける。名前付き関数の匿名の関数型の仮引数は展開 — 借りの位置の安全は fcBrwPos が呼び手の側で見る）
 func fcBrwVal(st mut S, e NodeRef) bool {
     if kindN(mut st, e) != ast.EIdent {
@@ -464,7 +464,7 @@ func pow2(i int) int {
     return r
 }
 
-// callee（名前付き関数でない）が値の呼び出し（値化可能な named fn type の閉包・借りの閉包）か
+// callee（名前付き関数でない）が値の呼び出し（値化可能な named fn type のクロージャ・借りのクロージャ）か
 func fcValueCallee(st mut S, cal NodeRef) bool {
     k := kindN(mut st, cal)
     if k != ast.EIdent && k != ast.ESelector {
@@ -488,7 +488,7 @@ func fcValueCallee(st mut S, cal NodeRef) bool {
 }
 
 // 名前付き関数 fk の i 番目の仮引数が借りとして安全な位置か: 匿名の関数型で、本体がその仮引数を呼ぶ・借りの位置へ渡す・借りの位置の
-// ラムダに捕捉する、だけ（fsSafe）。std/task は Scope の本体だけ（Spawn の族・Map は子 task で走る）
+// ラムダに捕捉する、だけ（fsSafe）。std/taskはScopeの本体だけ（Spawnの系統・Mapは子taskで走る）
 func fcBrwPos(st mut S, fk int, i int, fuel int) bool {
     if fk < 0 || fuel == 0 {
         return false

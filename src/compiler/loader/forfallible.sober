@@ -1,17 +1,17 @@
 package loader
 
-// 失敗しうる生成元の印（language.md 7 節「失敗しうる生成元」）: 呼び出し形の生成元（仮引数が実引数より 1 つ多く、最後が関数型）で
-// 結果が `error?` 1 つのものは、for に印 `?` を付けて書く — `for x <- g(a)? { … }`（脱糖 = `g(a, (x) => { … })?` — desugar の forGen が `?` の節で包む）。
+// 失敗しうる生成元のマーク（language.md 7 節「失敗しうる生成元」）: 呼び出し形の生成元（仮引数が実引数より1つ多く、最後が関数型）で
+// 結果が `error?` 1つのものは、forにマーク `?` を付けて書く — `for x <- g(a)? { … }`（脱糖 = `g(a, (x) => { … })?` — desugarのforGenが `?` の節で包む）。
 // 判定は宣言の署名だけ（固定テンプレート — 呼び出し形の生成元と同じ）。呼び出し形でない `f()?`（slice を返す `([]T, error?)` の呼び出し）は普通の `?` のまま。
-// 拒否（diag.ForFallible の kind）: 1 = 印が無い（結果の `error?` を黙って捨てる — 11 節「defer 内のエラー」の暗黙の drop の拒否と同じ線）・
-// 2 = 式の位置の for（yield 形 — Iter[T] は失敗の通り道を持たない）・3 = 印つきだが生成元の結果が `error?` 1 つでない。check と build が同じ層（loader）。
-// 閉包の名前の呼び出し形（`for x <- recv(a)? { … }`・recv は囲む関数の匿名の関数型の仮引数）も同じテンプレートを仮引数の型の字面で掛ける。
-// 4 = 生成元の呼び先が名前付き関数型の仮引数（値の位置の閉包は展開されないので生成元にならない）
+// 拒否（diag.ForFallibleのkind）: 1 = マークが無い（結果の `error?` を黙って捨てる — 11 節「defer内のエラー」の暗黙のdropの拒否と同じ基準）・
+// 2 = 式の位置のfor（yield形 — Iter[T] は失敗のパスを持たない）・3 = マークつきだが生成元の結果が `error?` 1つでない。checkとbuildが同じ層（loader）。
+// クロージャの名前の呼び出し形（`for x <- recv(a)? { … }`・recvは囲む関数の匿名の関数型の仮引数）も同じテンプレートを仮引数の型の字面で掛ける。
+// 4 = 生成元の呼び先が名前付き関数型の仮引数（値の位置のクロージャは展開されないので生成元にならない）
 
 import "std/iter"
 import "ast"
 
-// ファイル f の for x の生成元の最初の印の誤りの kind と生成元の字句（無ければ kind 0 — noderules.sober の走査から）
+// ファイルfの for x の生成元の最初のマークの誤りのkindと生成元の字句（無ければkind 0 — noderules.soberの走査から）
 func forHit(cx Cx, ft FnTab, f int, x ast.Node) (int, int) {
     t := cx.trees[f]
     for j <- iter.Range(0, ast.ListLen(t, x.a)) {
@@ -24,7 +24,7 @@ func forHit(cx Cx, ft FnTab, f int, x ast.Node) (int, int) {
     return 0, 0
 }
 
-// 生成元の節 g（文形の for なら stmt）の印の誤りの kind（無ければ 0）
+// 生成元の節g（文形のforならstmt）のマークの誤りのkind（無ければ0）
 func forGenHit(cx Cx, ft FnTab, f int, g int, stmt bool) int {
     t := cx.trees[f]
     src := t.nodes[g].b
@@ -37,8 +37,8 @@ func forGenHit(cx Cx, ft FnTab, f int, g int, stmt bool) int {
     na := ast.ListLen(t, t.nodes[c].b)
     mut fallible := false
     if fi < 0 {
-        // 閉包の名前: 囲む関数の仮引数の匿名の関数型（a = 仮引数の型の列・b = 結果の列）。名前付き関数型の仮引数（型宣言の中身が BFunc —
-        // 値の位置の閉包）は展開されないので生成元にならない — 4。他の型の仮引数を呼ぶ形は下流の型検査に任せる
+        // クロージャの名前: 囲む関数の仮引数の匿名の関数型（a = 仮引数の型の列・b = 結果の列）。名前付き関数型の仮引数（型宣言の中身がBFunc —
+        // 値の位置のクロージャ）は展開されないので生成元にならない — 4。他の型の仮引数を呼ぶ形は下流の型検査に任せる
         pa := closureParam(cx, ft, f, g, t.nodes[c].a)
         if pa < 0 {
             return 0

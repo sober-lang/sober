@@ -39,7 +39,7 @@ func sumAll(s string) (int, error?) {
     return n, nil
 }
 
-// slice を返す呼び出しの生成元（継続の席は無い — 名前付き引数はそのまま）
+// sliceを返す呼び出しの生成元（継続の位置は無い — 名前付き引数はそのまま）
 func evens(n int, from int?, step int?) []int {
     mut o := mut []int{}
     mut i := if from == nil { 0 } else { from }

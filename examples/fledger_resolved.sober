@@ -1,7 +1,7 @@
 package main
 
 // 以前は拒否されていた形の回帰例:
-// ① error? 仮引数を struct の欄に入れて返す ② error ラベルの string 欄の束縛を return ③ bytes(if …)
+// ① error? 仮引数をstructのフィールドに入れて返す ② errorラベルのstringフィールドの束縛をreturn ③ bytes(if …)
 // ④ Def の中で呼び出し結果の []byte を string(…) にして string 仮引数と比べる
 
 type Bad error {

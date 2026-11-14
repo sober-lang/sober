@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# layer.sh <srvbin> <raw files,> [conns] [secs] [pipeline] [env…] — 要求あたりの instructions:u・user / sys の CPU µs・応答数（report-673 — 置き換えの層別）。
-# サーバを perf stat の下で立て（スレッドを継承）、gcannon で負荷 → SIGTERM で止めて perf の数を読む。起動と終わりの固定費も入る（数十万要求で薄まる）
-. "$(dirname "$0")/env.sh"   # S（計器）・GC・R・W（作業） — env.sh の注
+# layer.sh <srvbin> <raw files,> [conns] [secs] [pipeline] [env…] — リクエストあたりのinstructions:u・user / sysのCPU µs・レスポンス数（report-673 — 置き換えの層別）。
+# サーバを perf stat の下で立て（スレッドを継承）、gcannonで負荷 → SIGTERMで止めてperfの数を読む。起動と終わりの固定費も入る（数十万リクエストで薄まる）
+. "$(dirname "$0")/env.sh"   # S（計測ツール）・GC・R・W（作業） — env.shの注記
 P=$(ls -d /nix/store/*perf-linux*/bin/perf | head -n1)
 b=$1; raw=$2; c=${3:-4096}; d=${4:-5}; p=${5:-1}; rq=${RPC:-0}; shift $(( $# < 5 ? $# : 5 ))   # 引数が N 未満でも位置引数を残さない（shift N の失敗で "$@" にサーバのパスが残り env の後ろで起動を壊す — report-689）
 port=$((30000 + RANDOM % 20000))

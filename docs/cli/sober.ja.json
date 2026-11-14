@@ -22,7 +22,7 @@
   "write derived @effects / @errors declarations": "導出した @effects / @errors の宣言を書き込む",
   "write derived @effects / @errors declarations to the public functions outside std (both when neither flag is given)": "std の外の公開の関数に、導出した @effects / @errors の宣言を書き込む（どちらのフラグも無ければ両方）",
   "generate documents of a program": "プログラムの文書を生成する",
-  "generate documents of a program: with --cli, the Markdown page of its command line (std/cli) — the usage of each command and the effects of its run function": "プログラムの文書を生成する: --cli ならコマンド行（std/cli）の Markdown の頁 — コマンドごとの使い方と、run の関数の効果",
+  "generate documents of a program: with --cli, the Markdown page of its command line (std/cli) — the usage of each command and the effects of its run function": "プログラムの文書を生成する: --cli ならコマンド行（std/cli）の Markdown のページ — コマンドごとの使い方と、run の関数のエフェクト",
   "print the declarations of source files with their line ranges": "ソースファイルの宣言を行の範囲つきで印字する",
   "print the package, the imports and the declarations (types, functions, constants) of source files with their line ranges — read from the source only, with the annotations as written": "ソースファイルの package・import・宣言（型・関数・定数）を行の範囲つきで印字する — ソースだけを読み、注釈は書かれたまま",
   "list the build cache": "ビルドキャッシュの中身を一覧する",

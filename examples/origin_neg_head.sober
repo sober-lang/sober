@@ -2,7 +2,7 @@ package main
 
 import "std/http/server"
 
-// 共有のルートのハンドラが要求の頭（Request.head — 認証のヘッダを含む）を直に読む
+// 共有のルートのハンドラがリクエストの頭（Request.head — 認証のヘッダを含む）を直に読む
 import "std/utf8"
 
 func main() {

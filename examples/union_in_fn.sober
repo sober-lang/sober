@@ -1,6 +1,6 @@
 package main
 
-// region を持つ欄の variant がある union を、main 以外の関数の中で組む・slice に詰めて渡す・展開される関数（mut の仮引数）の中で読む
+// regionを持つフィールドのvariantがあるunionを、main以外の関数の中で組む・sliceに詰めて渡す・展開される関数（mutの仮引数）の中で読む
 
 import "std/iter"
 

@@ -1,32 +1,32 @@
 package lower
 
 // 入場と縮退（language.md 11 節「予算と admission」）
-// - 入場（rt.task_new の頭 — admitIn）: 台帳の 1 語（rt.mn の MN_LED — バイトの欄〔ビット 0〜39〕と task の数の欄〔41〜61〕・それぞれの
-//   上にあふれビット〔40・62〕。欄の初期値 = 欄の最大 − 天井）へ見積もり（バイト + 1 << LED_TSHIFT）を鍵なしの xadd で足し、どちらのあふれビットも
-//   立たなければ入場（SWAR — 欄が天井を超えると桁上がりがその欄のあふれビットを立て、上の欄へは及ばない）。立ったら足した分を戻して縮退
-//   （rt.task_inline）。give: の子は縮退しない — 常に入場して超過を記帳。task の終わり（admitEnd）で足した分を引く。spawn の点は塊が 0 なら縮退の分岐だけ（spawn の点の値を増やすと
+// - 入場（rt.task_newの頭 — admitIn）: 台帳の1ワード（rt.mnのMN_LED — バイトのフィールド〔ビット0〜39〕とtaskの数のフィールド〔41〜61〕・それぞれの
+//   上にあふれビット〔40・62〕。フィールドの初期値 = フィールドの最大 − 天井）へ見積もり（バイト + 1 << LED_TSHIFT）を鍵なしのxaddで足し、どちらのあふれビットも
+//   立たなければ入場（SWAR — フィールドが天井を超えると桁上がりがそのフィールドのあふれビットを立て、上のフィールドへは及ばない）。立ったら足した分を戻して縮退
+//   （rt.task_inline）。give: の子は縮退しない — 常に入場して超過を記帳。taskの終わり（admitEnd）で足した分を引く。spawnの点はチャンクが0なら縮退の分岐だけ（spawnの点の値を増やすと
 //   呼び手の関数のレジスタ割り当てが崩れて命令が増える — spawnbench で実測）
 // - 見積もり = spawn の点ごとの観測した使用量の最大（rt.pest — task の終わりに自前のスロットの使った量の和・台帳に引く形で持つ）。まだ観測が無ければ EST_INIT。
 //   観測に EST_FLOOR を足す（終わりの時点の bump は機械スタック）。
-//   宣言（budget: — P5-3）> 見積もりの順（宣言の口は P5-3）
+//   宣言（budget: — P5-3）> 見積もりの順（宣言のインターフェースはP5-3）
 // - 縮退（rt.task_inline）: 入場できない子をその場で今の task の上で呼ぶ（P3a の即時形 — 罠を張って呼び、枠に状態・死因を書く）。
-//   子の間は今の塊の欄（枠・子の関数・預かりの欄・番号・開いている scope）を子のものに付け替え、終わったら戻す（kid_keep・死の drainScopes・
-//   検査点が「今の task」の欄を読むため）。縮退した子は切らない（TC_CUTOK = 0 — 切ってよいのは死だけ・切るのは任意）。塊・スロット・VA を新しく取らない。
+//   子の間は今のチャンクのフィールド（枠・子の関数・預かりのフィールド・番号・開いているscope）を子のものに付け替え、終わったら戻す（kid_keep・死のdrainScopes・
+//   検査点が「今のtask」のフィールドを読むため）。縮退した子は切らない（TC_CUTOK = 0 — 切ってよいのは死だけ・切るのは任意）。チャンク・スロット・VAを新しく取らない。
 //   出力は今の区間へそのまま（子を先にの順 = 先行順の位置 — O1）。値・死因・stdout は子を先にの 1 つのスケジュールと同じ（Kahn）
 
 import "desugar"
 import "std/iter"
 
-const LED_TSHIFT = 41                 // task の数の欄の位置
+const LED_TSHIFT = 41                 // taskの数のフィールドの位置
 const LED_OVF = 4611687117939015680   // あふれビット（1 << 40 | 1 << 62）
-const LED_BMAX = 1099511627775        // バイトの欄の最大（2^40 - 1 = 1 TiB）
-const LED_TMAX = 2097151              // task の数の欄の最大（2^21 - 1）
+const LED_BMAX = 1099511627775        // バイトのフィールドの最大（2^40 - 1 = 1 TiB）
+const LED_TMAX = 2097151              // taskの数のフィールドの最大（2^21 - 1）
 const LED_ONE = 2199023255552         // task 1 つ（1 << LED_TSHIFT）
 const EST_INIT = 1048576              // 観測の無い spawn の点の見積もり（1 MiB — W_MADV の既定と揃える）
-const EST_FLOOR = 16384               // 見積もりに足す量（16 KiB — 機械スタック・塊の頁）
-const EST_MARK = 2199024304129        // 観測の前の表の値（EST_INIT + 1 task + 1 — 奇数の印: 観測の値は偶数〔確保は 8 の倍数〕）
+const EST_FLOOR = 16384               // 見積もりに足す量（16 KiB — 機械スタック・チャンクのページ）
+const EST_MARK = 2199024304129        // 観測の前の表の値（EST_INIT + 1 task + 1 — 奇数のマーク: 観測の値は偶数〔確保は8の倍数〕）
 const VA_BUDGET = 70368744177664      // task のスロットに使ってよい VA（2^46 = 64 TiB — ユーザー空間 128 TiB の半分）
-const VA_SHED = 105553116266496       // SpawnIn が shed に回る写したスロットの VA（96 TiB — ユーザー空間 128 TiB の 3/4。越えた先は va_exhausted の死の手前）
+const VA_SHED = 105553116266496       // SpawnInがshedに回るコピーしたスロットのVA（96 TiB — ユーザー空間128 TiBの3/4。越えた先はva_exhaustedの死の手前）
 
 func needAdmitRt(st mut St) {
     lsNeed(mut st, NEED_ADMIT, 0)
@@ -55,8 +55,8 @@ func buildAdmitRt(st mut St) {
 }
 
 // ── 名前つきプール（std/task の NewPool / SpawnIn / Ledger）──
-// 節の表 rt.pools = [作った数, 節 0 の語…, 節 1 の語…, …]（POOL_MAX 本 × POOL_W 語・大域 — プールの札はどの region からも使える）。節の番地 = 語の先頭 − SR_LED 語
-// （scope の天井の節の記録と同じ位置に台帳の語と親の節 — admitIn の節の歩き・ledUndo・admitReturn がそのまま乗る）。台帳の語は task の数の欄に天井なし
+// 節の表rt.pools = [作った数, 節0のワード…, 節1のワード…, …]（POOL_MAX本 × POOL_Wワード・大域 — プールの札はどのregionからも使える）。節の番地 = ワードの先頭 − SR_LEDワード
+// （scopeの天井の節の記録と同じ位置に台帳のワードと親の節 — admitInの節の歩き・ledUndo・admitReturnがそのまま乗る）。台帳のワードはtaskの数のフィールドに天井なし
 const POOL_MAX = 4096
 const POOL_W = 8
 const PL_CAP = SR_LED + 2     // 天井（バイト）
@@ -101,16 +101,16 @@ func buildPoolNew(st mut St) {
     store(mut st, slot, 4, iconst(mut st, 0))
     store(mut st, slot, 6, iconst(mut st, 0))
     store(mut st, slot, 7, iconst(mut st, 0))
-    // 親の番号 = (親の節 + SR_LED 語 − 表の節 0) ÷ (POOL_W 語) + 1（親が無ければ 0）
+    // 親の番号 = (親の節 + SR_LEDワード − 表の節0) ÷ (POOL_Wワード) + 1（親が無ければ0）
     base := bin(mut st, BAdd, ptoi(mut st, pg), iconst(mut st, 8))
     pidx := bin(mut st, BAdd, bin(mut st, BSar, bin(mut st, BSub, bin(mut st, BAdd, 1, iconst(mut st, SR_LED * 8)), base), iconst(mut st, 6)), iconst(mut st, 1))
     store(mut st, slot, 5, bin(mut st, BMul, pidx, cmp(mut st, CNe, 1, iconst(mut st, 0))))
     ret(mut st, bin(mut st, BSub, ptoi(mut st, slot), iconst(mut st, SR_LED * 8)))
 }
 
-// rt.ledger(k)（std/task の ledgerWord — @intrinsic "par_ledger"・Ledger の読み口）: k = 0 プールの数・1 根の天井・2 計上中のバイト・
+// rt.ledger(k)（std/taskのledgerWord — @intrinsic "par_ledger"・Ledgerの読みのインターフェース）: k = 0プールの数・1根の天井・2計上中のバイト・
 // 3 計上中の task の数・4 縮退・5 天井を超えた入場・6 宣言超過・7 shed・8 ワーカー数・9 wait の待ち・10 待ちの最大（ns — 全ワーカーの WK_MAXW を
-// xchg で 0 に戻して集める）・11 待ちの上限が効いた回数（全ワーカーの WK_AGED の和 — language.md 11 節「メトリクス」）・12 未着手の子・13 譲った回数・14 CPU の固定の形・15 固定した群の数・16 D を越えて走った数（全ワーカーの WK_LATE の和）・17 越えた量の最大（ns — WK_MAXL を xchg で 0 に戻して集める）・18 / 19 / 20 / 21 浅い待ち・深い待ち・窓で深くした待ち・浅い待ちの前の交換の数（全ワーカーの WK_PSHAL / WK_PDEEP / WK_PDWIN / WK_PSWAP の和）・22 + 8p + f = プール p の {0 天井, 1 計上中のバイト, 2 task の数,
+// xchgで0に戻して集める）・11待ちの上限が効いた回数（全ワーカーのWK_AGEDの和 — language.md 11 節「メトリクス」）・12未着手の子・13譲った回数・14 CPUの固定の形・15固定した群の数・16 Dを越えて走った数（全ワーカーのWK_LATEの和）・17越えた量の最大（ns — WK_MAXLをxchgで0に戻して集める）・18 / 19 / 20 / 21シャロースリープ・ディープスリープ・ウィンドウで深くした待ち・シャロースリープの前の交換の数（全ワーカーのWK_PSHAL / WK_PDEEP / WK_PDWIN / WK_PSWAPの和）・22 + 8p + f = プールpの {0天井, 1計上中のバイト, 2 taskの数,
 // 3 入場, 4 shed, 5 親の番号 + 1, 6 失敗, 7 死}（範囲の外は 0）・負 = domain の合計の行（-1 待っている数・-2 到着から入るまでの最大・-3 満了・-4 毒）
 func buildLedger(st mut St) {
     begin(mut st, st.rtLedger)
@@ -169,10 +169,10 @@ func buildLedger(st mut St) {
     ret(mut st, iconst(mut st, 0))
 }
 
-// 台帳の語の番号でプールの節が始まるところ（それより前は根の語）
+// 台帳のワードの番号でプールの節が始まるところ（それより前は根のワード）
 const POOL_K0 = 22
 
-// k = kMax（ワーカーの語 wMax の最大 — TSC の数を ns へ・xchg で 0 に戻す）/ kSum（語 wSum の和）なら全ワーカーの語を集めて返す（どちらでもなければ次のブロックへ続く）
+// k = kMax（ワーカーのワードwMaxの最大 — TSCの数をnsへ・xchgで0に戻す）/ kSum（ワードwSumの和）なら全ワーカーのワードを集めて返す（どちらでもなければ次のブロックへ続く）
 func ledgerSched(st mut St, k int, mn int, kMax int, kSum int, wMax int, wSum int) {
     zero := iconst(mut st, 0)
     bS := newBlock(mut st)
@@ -190,7 +190,7 @@ func ledgerSched(st mut St, k int, mn int, kMax int, kSum int, wMax int, wSum in
     setCur(mut st, lp)
     condbr(mut st, cmp(mut st, CLt, i, n), body, -1, done, -1)
     setCur(mut st, body)
-    // ワーカーが立つ前（rt.mn_start の前 — コンパイラ自身が起動の早い段で Ledger().workers を読む）は番地 0: 飛ばす
+    // ワーカーが立つ前（rt.mn_startの前 — コンパイラ自身が起動の早いステージでLedger().workersを読む）は番地0: 飛ばす
     wa := load(mut st, gepWord(mut st, mn, i), MN_WK)
     w := itop(mut st, wa)
     bM := newBlock(mut st)
@@ -218,7 +218,7 @@ func ledgerSched(st mut St, k int, mn int, kMax int, kSum int, wMax int, wSum in
     setCur(mut st, bN)
 }
 
-// k = kSum なら全ワーカーの語 wSum の和を返す（でなければ次のブロックへ続く）
+// k = kSumなら全ワーカーのワードwSumの和を返す（でなければ次のブロックへ続く）
 func ledgerSum(st mut St, k int, mn int, kSum int, wSum int) {
     zero := iconst(mut st, 0)
     bS := newBlock(mut st)
@@ -294,7 +294,7 @@ func imin(st mut St, a int, b int) int {
     return bin(mut st, BSub, a, bin(mut st, BMul, cmp(mut st, CGt, a, b), bin(mut st, BSub, a, b)))
 }
 
-// 台帳の語（天井 cap バイト・tcap task — 入口で 1 度。rt.pcap_init から）: 欄 = 欄の最大 − 天井（天井は 0〜欄の最大に丸める）
+// 台帳のワード（天井capバイト・tcap task — 入口で1度。rt.pcap_initから）: フィールド = フィールドの最大 − 天井（天井は0〜フィールドの最大に丸める）
 func ledInit(st mut St, capB int, capT int) {
     b := imin(mut st, imax(mut st, capB, iconst(mut st, 0)), iconst(mut st, LED_BMAX))
     t := imin(mut st, imax(mut st, capT, iconst(mut st, 0)), iconst(mut st, LED_TMAX))
@@ -310,10 +310,10 @@ type Adm struct {
 
 // rt.task_new の頭の入場（仮引数の番号: code = spawn の点 × 4 + 根だけ × 2 + give〔0 = 計上しない〕・decl = 宣言の上界〔0 = 無し〕・
 // pool = プールの節〔rt.task_new_in — task.SpawnIn。-1 = rt.task_new〕）。
-// 足す量 e = 宣言があれば宣言（偶数へ丸め）+ 1 task・無ければ spawn の点の見積もり（観測の前は EST_MARK — 奇数の印）。天井の節（scope の budget: —
+// 足す量e = 宣言があれば宣言（偶数へ丸め）+ 1 task・無ければspawnの点の見積もり（観測の前はEST_MARK — 奇数のマーク）。天井の節（scopeのbudget: —
 // 今の task の TC_CNODE から SR_PNODE を辿る）と根の台帳の全部に足し、どれかがあふれたら足した分を全部戻して rt.task_new から 0 を返す（縮退 — 呼び手が
 // rt.task_inline）。give: の子は戻さず超過を記帳して入場（端点を受け取る子は縮退しない）。
-// pool の形: 節の鎖 = プールの節から親のプールへ（scope の天井の節は見ない）・節であふれたら全部戻して 0（shed — 呼び手が (nil, Shed{})）・根であふれたら
+// poolの形: 節のチェーン = プールの節から親のプールへ（scopeの天井の節は見ない）・節であふれたら全部戻して0（shed — 呼び手が (nil, Shed{})）・根であふれたら
 // 超過で入場（縮退しない — give: と同じ）。入場・shed の数をプールの節（葉）に数える
 func admitIn(st mut St, code int, decl int, pool int) Adm {
     mn := globaladdr(mut st, st.mnG)
@@ -392,9 +392,9 @@ func admitIn(st mut St, code int, decl int, pool int) Adm {
         br(mut st, bNOk, list3(mut st, f, c, im))
         setCur(mut st, bNInl)
         if awFn(st.rtD3) != 0 {
-            // 自分だけであふれたか（節の task の数の欄 = 計上中の task の数 — 天井なし）・自分がこの節に計上されているか（入場した節から根への鎖に n がある）
+            // 自分だけであふれたか（節のtaskの数のフィールド = 計上中のtaskの数 — 天井なし）・自分がこの節に計上されているか（入場した節から根へのチェーンにnがある）
             alone := cmp(mut st, CEq, bin(mut st, BAnd, bin(mut st, BSar, nw, iconst(mut st, LED_TSHIFT)), iconst(mut st, 2 * LED_TMAX + 1)), one)
-            // 自分（入場した task — TC_ADM ≠ 0）の入場した節 TC_NODE から根への鎖に n があるか
+            // 自分（入場したtask — TC_ADM ≠ 0）の入場した節TC_NODEから根へのチェーンにnがあるか
             cl := newBlock(mut st)
             m := param(mut st, cl, TyI64)
             cb := newBlock(mut st)
@@ -429,7 +429,7 @@ func admitIn(st mut St, code int, decl int, pool int) Adm {
     condbr(mut st, rOv, bNo, -1, bFit, -1)
     setCur(mut st, bFit)
     condbr(mut st, cmp(mut st, CEq, f, zero), bOk, -1, bNo, -1)
-    // 計上の高水位（計測のときだけ — 入場の時点の語は入場済みの和の上界〔並行に足しかけて戻す途中の分も含む〕で、入場は語があふれないときだけなので
+    // 計上の高水位（計測のときだけ — 入場の時点のワードは入場済みの和の上界〔並行に足しかけて戻す途中の分も含む〕で、入場はワードがあふれないときだけなので
     // 高水位 ≤ 天井。天井の外の超過〔give:・縮退〕は over / inline の側）
     setCur(mut st, bOk)
     bS := newBlock(mut st)
@@ -476,7 +476,7 @@ func admitIn(st mut St, code int, decl int, pool int) Adm {
             bWait := newBlock(mut st)
             bEstI := newBlock(mut st)
             condbr(mut st, imAll, bImp, -1, bWait, -1)
-            // 上界 > 天井（待っても入れない）: 宣言のある子は spawn の点の panic（1 を返す — 呼び手が名指しの診断で死ぬ）・見積もりの子は縮退
+            // 上界 > 天井（待っても入れない）: 宣言のある子はspawnの点のpanic（1を返す — 呼び手が明示の診断で死ぬ）・見積もりの子は縮退
             // （見積もりはスケジュールに依るので死の理由にしない）
             setCur(mut st, bImp)
             bPan := newBlock(mut st)
@@ -497,8 +497,8 @@ func admitIn(st mut St, code int, decl int, pool int) Adm {
             condbr(mut st, cmp(mut st, CEq, gp, g0), bW2, -1, bTry, -1)
             setCur(mut st, bW2)
             atomicXadd(mut st, mn, MN_LWAIT, one)
-            // 待ち: 鍵の下で待ちの鎖に積み、番号が動いていれば（試しの後に返しがあった）鎖から自分を外して試し直す（外せなければ起こしが来ている —
-            // 待って受ける）。動いていなければ rt.task_wait で譲る（ワーカーを塞がない — 起こしは rt.admit_wake）
+            // 待ち: 鍵の下で待ちのチェーンに積み、番号が動いていれば（試しの後に返しがあった）チェーンから自分を外して試し直す（外せなければウェイクアップが来ている —
+            // 待って受ける）。動いていなければrt.task_waitで譲る（ワーカーを塞がない — ウェイクアップはrt.admit_wake）
             gw := bin(mut st, BAdd, g0, one)
             spinLock(mut st, mn, MN_ALOCK)
             awPush(mut st, urAdd(mut st, ptoi(mut st, mn), MN_AWAIT * 8), ptoi(mut st, me))
@@ -507,7 +507,7 @@ func admitIn(st mut St, code int, decl int, pool int) Adm {
             bOut := newBlock(mut st)
             bDone := newBlock(mut st)
             condbr(mut st, cmp(mut st, CEq, atomicXadd(mut st, mn, MN_AGEN, zero), gw), bSleep, -1, bOut, -1)
-            // 番号が動いた: 鍵の下で鎖から自分を外す（TC_AWPREV = 0 なら起こし手が鎖ごと取った後）
+            // 番号が動いた: 鍵の下でチェーンから自分を外す（TC_AWPREV = 0ならウェイクアップする側がチェーンごと取った後）
             setCur(mut st, bOut)
             spinLock(mut st, mn, MN_ALOCK)
             bGone := newBlock(mut st)
@@ -518,7 +518,7 @@ func admitIn(st mut St, code int, decl int, pool int) Adm {
             awCut(mut st, pv, ptoi(mut st, me))
             atomicXchg(mut st, mn, MN_ALOCK, zero)
             br(mut st, bDone, -1)
-            // 鎖に居ない = 起こし手が取った（起こしが来ている／来る — 待って受ける）
+            // チェーンに居ない = ウェイクアップする側が取った（ウェイクアップが来ている／来る — 待って受ける）
             setCur(mut st, bGone)
             atomicXchg(mut st, mn, MN_ALOCK, zero)
             br(mut st, bSleep, -1)
@@ -543,7 +543,7 @@ func admitIn(st mut St, code int, decl int, pool int) Adm {
 }
 
 // 台帳を返した点（task の終わり・縮退の終わり・入場の戻し — wait の scope があるプログラムだけ呼ぶ）の後: 返しの番号を進め、入場を待つ task が
-// いれば rt.admit_wake で全部起こす（進める前の番号を返す）。返し手は「足す → 番号を進める → 鎖を見る」・待ち手は「鎖に積む → 番号を見る」の順（どちらかが相手を見る）
+// いればrt.admit_wakeで全部ウェイクアップする（進める前の番号を返す）。返し手は「足す → 番号を進める → チェーンを見る」・待ち手は「チェーンに積む → 番号を見る」の順（どちらかが相手を見る）
 func ledWakeG(st mut St) int {
     mn := globaladdr(mut st, st.mnG)
     g := atomicXadd(mut st, mn, MN_AGEN, iconst(mut st, 1))
@@ -557,7 +557,7 @@ func ledWakeG(st mut St) int {
     return g
 }
 
-// rt.admit_wake(): 鍵の下で待ちの鎖を丸ごと取り、全部を走れるようにする（起こされた task は入場を試し直す — 入れなければまた待つ）
+// rt.admit_wake(): 鍵の下で待ちのチェーンを丸ごと取り、全部を走れるようにする（ウェイクアップされたtaskは入場を試し直す — 入れなければまた待つ）
 func buildAdmitWake(st mut St) {
     begin(mut st, awFn(st.rtD3))
     mn := globaladdr(mut st, st.mnG)
@@ -565,7 +565,7 @@ func buildAdmitWake(st mut St) {
     spinLock(mut st, mn, MN_ALOCK)
     h := load(mut st, mn, MN_AWAIT)
     store(mut st, mn, MN_AWAIT, zero)
-    // 取った節の TC_AWPREV を鍵の下で 0 に（番号が動いて自分を外しに来る待ち手に「鎖に居ない」を見せる）
+    // 取った節のTC_AWPREVを鍵の下で0に（番号が動いて自分を外しに来る待ち手に「チェーンに居ない」を見せる）
     cl := newBlock(mut st)
     ct := param(mut st, cl, TyI64)
     cb := newBlock(mut st)
@@ -594,7 +594,7 @@ func buildAdmitWake(st mut St) {
     ret(mut st, -1)
 }
 
-// 計測のときだけ、根の語 rw（足した後）の計上中のバイトで MN_LPEAKA の高水位を上げる（あふれビットを値に含める — 天井を超えた計上も数える）
+// 計測のときだけ、根のワードrw（足した後）の計上中のバイトでMN_LPEAKAの高水位を上げる（あふれビットを値に含める — 天井を超えた計上も数える）
 func ledPeakAll(st mut St, mn int, rw int) {
     bS := newBlock(mut st)
     bD := newBlock(mut st)
@@ -605,7 +605,7 @@ func ledPeakAll(st mut St, mn int, rw int) {
     setCur(mut st, bD)
 }
 
-// 天井の節の鎖を n0 から stop の手前まで辿り、各節から e を引く
+// 天井の節のチェーンをn0からstopの手前まで辿り、各節からeを引く
 func ledUndo(st mut St, n0 int, stop int, e int) {
     loop := newBlock(mut st)
     n := param(mut st, loop, TyI64)
@@ -629,8 +629,8 @@ func pestInit(st mut St) {
     }
 }
 
-// rt.task_inline(frame, kid, idx, koff)（縮退 — 入場できない子をその場で）: 今の塊の欄を子のものへ付け替えて罠を張って呼び、
-// 枠に死因・状態を書き、scope の記録の死の数を数え、欄を戻す。生きている子の数・出力の区間・起こしには触れない（子の handle はまだ誰も持っていない）
+// rt.task_inline(frame, kid, idx, koff)（縮退 — 入場できない子をその場で）: 今のチャンクのフィールドを子のものへ付け替えて罠を張って呼び、
+// 枠に死因・状態を書き、scopeの記録の死の数を数え、フィールドを戻す。生きている子の数・出力の区間・ウェイクアップには触れない（子のhandleはまだ誰も持っていない）
 func buildTaskInline(st mut St) {
     begin(mut st, st.rtTaskInline)
     frame := 0
@@ -665,13 +665,13 @@ func buildTaskInline(st mut St) {
     d0 := regionDepth(mut st)
     dest0 := load(mut st, meta, W_DEST)
     anc0 := load(mut st, meta, W_ANCHOR)
-    // 子が開く fd・ストリームは今の task（親）の鎖に積まれる — 子が死んだら子に入る前の頭まで閉じる（task の出口の fd_drain / chunk_drain と同じ後始末）
+    // 子が開くfd・ストリームは今のtask（親）のチェーンに積まれる — 子が死んだら子に入る前の頭まで閉じる（taskの出口のfd_drain / chunk_drainと同じ後始末）
     fh := if st.rtFdDrain != -1 { load(mut st, me, TC_FDS) } else { zero }
     chh := if chF(mut st, CHF_DRAIN) != -1 { load(mut st, me, TC_CHS) } else { zero }
     lh := if st.rtLeaseDrain != -1 { load(mut st, me, TC_LEASE) } else { zero }
     mut r := zero
     if st.rtMut == 8 {
-        // 変異 8（網の自己検査 — parbudget）: 縮退した子の罠を張らない（子の死が親の死に化ける）
+        // ミュータント8（検査の自己検査 — parbudget）: 縮退した子の罠を張らない（子の死が親の死に化ける）
         callIndirect(mut st, 1, list1(mut st, fieldPtr(mut st, frame, FR_RES)), -1)
     } else {
         r = trapCall(mut st, 1, fieldPtr(mut st, frame, FR_RES))
@@ -694,7 +694,7 @@ func buildTaskInline(st mut St) {
     store(mut st, meta, W_ANCHOR, anc0)
     tg := globaladdr(mut st, st.trapG)
     store(mut st, frame, FR_CAUSE, bin(mut st, BOr, bin(mut st, BShl, load(mut st, tg, TW_SITE), iconst(mut st, 8)), load(mut st, tg, TW_CODE)))
-    // 死んだら後ろの兄弟の打ち切りの印・開いている scope の子を待つ（rt.cut_end — 縮退した子は切られる側にならない: TC_CUTOK = 0）
+    // 死んだら後ろの兄弟の打ち切りのマーク・開いているscopeの子を待つ（rt.cut_end — 縮退した子は切られる側にならない: TC_CUTOK = 0）
     cut := cutEnd(mut st, me, frame, r)
     dead := bin(mut st, BMul, r, bin(mut st, BSub, iconst(mut st, 1), cut))
     store(mut st, frame, FR_STATE, bin(mut st, BAdd, bin(mut st, BAdd, r, iconst(mut st, 1)), bin(mut st, BMul, cut, bin(mut st, BSub, iconst(mut st, 2), r))))
@@ -709,7 +709,7 @@ func buildTaskInline(st mut St) {
     store(mut st, me, TC_SCOPE, s0)
     // 子が budget: の scope の中で死ぬと今効いている節が戻らない — ここで戻す
     store(mut st, me, TC_CNODE, cn0)
-    // 縮退の記帳を返す（子と、子が開いた scope の子孫は全部終わった後 — 変異 7 は入場した task の返しと同じく返さない）
+    // 縮退の記帳を返す（子と、子が開いたscopeの子孫は全部終わった後 — ミュータント7は入場したtaskの返しと同じく返さない）
     if awFn(st.rtD3) != 0 {
         store(mut st, me, TC_WAIT, w0)
     }
@@ -726,11 +726,11 @@ func buildTaskInline(st mut St) {
     ret(mut st, -1)
 }
 
-// task tcb の終わり（結果を公開した後・待ち手を起こす前 — 起こされた scope の出口より先に台帳が空く）: 入場で足した量を根と天井の節
+// task tcb の終わり（結果を公開した後・待ち手をウェイクアップする前 — ウェイクアップされたscopeの出口より先に台帳が空く）: 入場で足した量を根と天井の節
 // （TC_NODE から）から引く（入場していない task〔走らせ直し〕は 0）
 func admitReturn(st mut St, tcb int) {
     if st.rtMut == 7 {
-        // 変異 7（網の自己検査 — parbudget）: 終わりで台帳へ返さない（漏れ — 入場が細り続け縮退が増える）
+        // ミュータント7（検査の自己検査 — parbudget）: 終わりで台帳へ返さない（漏れ — 入場が細り続け縮退が増える）
         return
     }
     a := load(mut st, tcb, TC_ADM)
@@ -749,7 +749,7 @@ func admitReturn(st mut St, tcb int) {
 }
 
 // 終わる task tcb の死（dead = 1）を、入場した節（TC_NODE）が名前つきプールの節ならその死の数へ足す（名前つきプールを使うプログラムだけ —
-// 速い道は dead の比較 1 つ・死んだときだけ節の番地が表の範囲かを見る〔scope の budget: の節は数えない〕）
+// 高速パスはdeadの比較1つ・死んだときだけ節の番地が表の範囲かを見る〔scopeのbudget: の節は数えない〕）
 func poolDied(st mut St, tcb int, dead int) {
     if !st.poolOn {
         return
@@ -769,15 +769,15 @@ func poolDied(st mut St, tcb int, dead int) {
     setCur(mut st, bEnd)
 }
 
-// task tcb の終わり（acc = 自前のスロットの使った量の和 — slotRelease の数え）: 観測（acc + EST_FLOOR〔機械スタック・塊の頁 — 終わりの bump は
-// 数えない〕+ 1 task）が足した量 a を超えたか a が観測の前の印（奇数）なら rt.est_up（見積もりを上げる・宣言のある task は宣言超過を数える）。
-// 速い道は TCB の a と比べるだけ — 表を読まない
+// task tcb の終わり（acc = 自前のスロットの使った量の和 — slotReleaseの数え）: 観測（acc + EST_FLOOR〔機械スタック・チャンクのページ — 終わりのbumpは
+// 数えない〕+ 1 task）が足した量aを超えたかaが観測の前のマーク（奇数）ならrt.est_up（見積もりを上げる・宣言のあるtaskは宣言超過を数える）。
+// 高速パスはTCBのaと比べるだけ — 表を読まない
 func admitEnd(st mut St, tcb int, acc int) {
     a := load(mut st, tcb, TC_ADM)
     nwE := bin(mut st, BAdd, acc, iconst(mut st, EST_FLOOR + LED_ONE))
     bW := newBlock(mut st)
     bN := newBlock(mut st)
-    // 印〔奇数〕は 2^62 を引いて比べる = 最初の観測が必ず勝つ。a = 0（走らせ直し）は spawn の点 0 へ書く（使わない欄）
+    // マーク〔奇数〕は2^62を引いて比べる = 最初の観測が必ず勝つ。a = 0（走らせ直し）はspawnの点0へ書く（使わないフィールド）
     condbr(mut st, cmp(mut st, CGt, nwE, bin(mut st, BSub, a, bin(mut st, BShl, bin(mut st, BAnd, a, iconst(mut st, 1)), iconst(mut st, 62)))), bW, -1, bN, -1)
     setCur(mut st, bW)
     call(mut st, st.rtEstUp, list2(mut st, tcb, acc))
@@ -786,7 +786,7 @@ func admitEnd(st mut St, tcb int, acc int) {
 }
 
 // rt.est_up(tcb, acc): 宣言のある task は使用量 acc が宣言を超えたら宣言超過を数える（見積もりの表は動かさない — 宣言 > 見積もり）。
-// 無ければ spawn の点の見積もりを acc + EST_FLOOR + 1 task へ上げる（今の値が印〔奇数〕なら必ず書く・それ以外は大きいときだけ — CAS）
+// 無ければspawnの点の見積もりをacc + EST_FLOOR + 1 taskへ上げる（今の値がマーク〔奇数〕なら必ず書く・それ以外は大きいときだけ — CAS）
 func buildEstUp(st mut St) {
     begin(mut st, st.rtEstUp)
     d := load(mut st, 0, TC_DECL)
@@ -820,7 +820,7 @@ func buildEstUp(st mut St) {
 }
 
 // budget: の scope の記録 rec を天井の節にして今の task の今効いている節にする（b = 宣言のバイト — 0 以下なら節を作らない〔int? の nil〕）。
-// task の数の欄は天井なし（欄の最大 − 欄の最大 = 0）。外の節 = 今効いている節
+// taskの数のフィールドは天井なし（フィールドの最大 − フィールドの最大 = 0）。外の節 = 今効いている節
 func ledNodeOpen(st mut St, rec int, b int) {
     me := itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
     bY := newBlock(mut st)

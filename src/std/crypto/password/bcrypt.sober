@@ -4,12 +4,12 @@ import "std/internal/bless"
 import "std/iter"
 
 // bcrypt（$2b$ — Provos と Mazières 1999・OpenBSD の実装の形）の核: EksBlowfish の鍵の準備を 2^cost 回まわし、"OrpheanBeholderScryDoubt" を 64 回暗号化した先頭 23 バイト。
-// 鍵 = pw ++ 0x00（pw は 72 バイト以下で NUL を含まない — 公開の口が検査する。72 バイトの pw だけは終端の 0 が鍵の 72 バイトの外に落ちる）。
+// 鍵 = pw ++ 0x00（pwは72バイト以下でNULを含まない — 公開のAPIが検査する。72バイトのpwだけは終端の0が鍵の72バイトの外に落ちる）。
 //
-// 定数時間の規律との関係: Blowfish の F は秘密の派生物のバイトで S-box を引く（表引きの暗号 — 定義どおりのキャッシュの時間の漏れ）。F の入力の語を
+// 定数時間の規律との関係: BlowfishのFは秘密の派生物のバイトでS-boxを引く（表引きの暗号 — 定義どおりのキャッシュの時間の漏れ）。Fの入力のワードを
 // internal.bless.Int で公開に落としてから添字にする（argon2d 側の参照先と同じ扱い）
 
-// 状態の語の数（P 18 語 + S-box 4 × 256 語 — 状態の配列では P の後ろに S0〜S3 が続く）
+// 状態のワードの数（P 18ワード + S-box 4 × 256ワード — 状態の配列ではPの後ろにS0〜S3が続く）
 const bfWords = 1042
 
 // 初期の P と S-box（π の 16 進の小数部）

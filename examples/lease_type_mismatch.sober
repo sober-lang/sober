@@ -1,6 +1,6 @@
 package main
 
-// NewLocal と違う T の窓で借りると panic(task.LocalType{})（T の同一性は指紋で照合 — task.Local は型引数を持たない）
+// NewLocalと違うTのウィンドウで借りるとpanic(task.LocalType{})（Tの同一性は指紋で照合 — task.Localは型引数を持たない）
 
 import "std/task"
 import "std/pool"

@@ -1,7 +1,7 @@
 package x509
 
 // 拡張の読み（RFC 5280 4.2.1 — basicConstraints・keyUsage・extKeyUsage・subjectAltName・subjectKeyIdentifier・authorityKeyIdentifier）。
-// 同じ拡張の 2 本目は拒否。知らない拡張は exts に残すだけ（critical の扱いは鎖の側）
+// 同じ拡張の2本目は拒否。知らない拡張はextsに残すだけ（criticalの扱いはチェーンの側）
 
 import "std/iter"
 
@@ -69,7 +69,7 @@ func same(a []byte, b []byte) bool {
     return true
 }
 
-// 知っている拡張の中身 v を c の欄へ
+// 知っている拡張の中身vをcのフィールドへ
 func decodeExt(oid []byte, v []byte, c mut Cert) bool {
     if same(oid, hexBytes("551d13")) {
         return basicConstraints(v, mut c)

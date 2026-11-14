@@ -7,7 +7,7 @@ package x25519
 //
 // 定数時間: 秘密（鍵のビット・体の元）に依る分岐・添字は無い — ladder の入れ替えは mask の xor（cswap）・ループは 255 段固定・逆元は p - 2 乗（指数は公開）
 
-// 体の元 = 51 bit × 5 limb（donna-c64 の位置）を、1 本の mut []int の作業域の 5 語の区画（番地 = 区画の先頭の添字 — 公開の値）に置く。ladder は
+// 体の元 = 51 bit × 5 limb（donna-c64の位置）を、1本のmut []intの作業域の5ワードの区画（番地 = 区画の先頭の添字 — 公開の値）に置く。ladderは
 // 作業域を 1 回作るだけで、体の演算は確保しない。
 // limb の積は 2^109 未満で 64 bit に収まらないので、乗数を 2^12 倍に置いて掛ける: 128 bit の積の上位語（組み込み mulhi — x86 の MUL 1 命令）が
 // 52 bit より上・下位語 >> 12 が下の 52 bit。列ごとに下と上を別に足し（5 項でどちらも 2^61 未満）、上は 2 倍して次の列へ（2^52 = 2 × 2^51）。
@@ -19,8 +19,8 @@ import "std/iter"
 @intrinsic("mulhi")
 func mulhi(a int, b int) int
 
-// 体の積の塊（compiler/lower/mulx.sober の MK_FE — MULX の 25 本の積で fmulS と limb ごとに同じ値を番地 d へ）: cpumulx = この機械で塊を使えるか・
-// addrn / lease_view = 作業域を imm の []int に置いて番地と mut の窓の両方で触る口（std/crypto/rsa の bn と同じ形）
+// 体の積のチャンク（compiler/lower/mulx.soberのMK_FE — MULXの25本の積でfmulSとlimbごとに同じ値を番地dへ）: cpumulx = この機械でチャンクを使えるか・
+// addrn / lease_view = 作業域をimmの []intに置いて番地とmutのウィンドウの両方で触るAPI（std/crypto/rsaのbnと同じ形）
 @intrinsic("cpumulx")
 func cpumulx() int
 
@@ -36,7 +36,7 @@ func leaseView(blk []int, off int, n int) mut []int
 const mask51 = 0x7ffffffffffff
 const mask52 = 0xfffffffffffff
 
-// 作業域の区画（各 5 語）: ladder の変数（RFC 7748 5 節の名前）と定数 a24 = 121665
+// 作業域の区画（各5ワード）: ladderの変数（RFC 7748 5 節の名前）と定数a24 = 121665
 const fX1 = 0
 const fX2 = 5
 const fZ2 = 10
@@ -167,7 +167,7 @@ func fsub(w mut []int, d int, a int, b int) {
     carry(mut w, d, w[a] + 0xfffffffffffda - w[b], w[a + 1] + 0xffffffffffffe - w[b + 1], w[a + 2] + 0xffffffffffffe - w[b + 2], w[a + 3] + 0xffffffffffffe - w[b + 3], w[a + 4] + 0xffffffffffffe - w[b + 4])
 }
 
-// 区画 d = a × b mod p（d は a / b と同じでよい）。塊が使える機械では femul（fmulS と limb ごとに同じ値）・それ以外は fmulS
+// 区画d = a × b mod p（dはa / bと同じでよい）。チャンクが使える機械ではfemul（fmulSとlimbごとに同じ値）・それ以外はfmulS
 func fmul(w mut []int, wa int, d int, a int, b int) {
     if cpumulx() == 1 {
         _ = femul(wa + 8 * d, wa + 8 * a, wa + 8 * b)
@@ -176,7 +176,7 @@ func fmul(w mut []int, wa int, d int, a int, b int) {
     fmulS(mut w, d, a, b)
 }
 
-// fmul の Sober の形（塊の無い出力の道・塊の照合の相手）。d は a / b と同じでよい — 入力を全部読んでから書く。limb < 2^52 の前提で、乗数 x = a × 2^12 < 2^64・
+// fmulのSoberの形（チャンクの無い出力のパス・チャンクの照合の相手）。dはa / bと同じでよい — 入力を全部読んでから書く。limb < 2^52の前提で、乗数x = a × 2^12 < 2^64・
 // 相手 y = b か 19b < 2^57: 積 < 2^109 → 上 < 2^57。列 k の和 = l_k + h_k × 2^52（5 項 — l < 2^55・h < 2^60）。h_k × 2 を列 k + 1 へ、
 // h_4 × 2 は 19 倍して列 0 へ（2^61 × 19 は溢れるので 51 bit で割って列 0 と列 1 に分ける）。どの列の和も 2^62 未満で carry に渡せる
 func fmulS(w mut []int, d int, a int, b int) {
@@ -236,7 +236,7 @@ func unpack(w mut []int, d int, b []byte) {
 }
 
 // 区画 d を完全に mod p に縮めた 32 バイト（小さい端 — ref10 の fe_tobytes の形）。q = ⌊(h + 19) / 2^255⌋（h < 2p なので 0 か 1 —
-// 繰り上げの鎖だけで分岐なしに出る）を出して h + 19q を繰り上げ、2^255 の位を捨てると h - qp
+// 繰り上げのチェーンだけで分岐なしに出る）を出してh + 19qを繰り上げ、2^255の位を捨てるとh - qp
 func pack(w []int, d int) []byte {
     mut q := (w[d] + 19) >> 51
     q = (w[d + 1] + q) >> 51

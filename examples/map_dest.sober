@@ -1,7 +1,7 @@
 package main
 
 // map の宛先構築（knucleotide の frequencies の形）の回帰例: return に流れ着く `mut map[string]V{}` は呼び手の region に作り、
-// 戻りの写し（セル列の relocate と索引の作り直し）を省く。関数の中で作った string（自分の region の補間）を鍵・値に挿入しても、挿入の写し
+// 戻りのコピー（セル列のrelocateと索引の作り直し）を省く。関数の中で作ったstring（自分のregionの補間）を鍵・値に挿入しても、挿入のコピー
 // （mapSet の relocKey / relocVal — ヘッダの深度へ）で中身は呼び手の region に移る — 戻った後に読んでも壊れない。
 // 呼び手の反復ごとに作って捨てる（反復の region に作られ、積もらない — scripts/iterregion.sh が N と 10N の RSS を見る）
 

@@ -1,6 +1,6 @@
 package time
 
-// 地域の規則の網（white-box）: 焼き込みの全ゾーンを読み、照合の表（testdata/tz/samples.txt — 同じ tz のソースを zic -b fat -r 1900〜2100 で
+// 地域の規則の検査（white-box）: 焼き込みの全ゾーンを読み、照合の表（testdata/tz/samples.txt — 同じtzのソースをzic -b fat -r 1900〜2100で
 // 全部の遷移に展開した束の値）の時刻ごとのオフセット・夏時間・略称が、slim の遷移 + 末尾の規則の評価と一致するか
 
 import "std/strings"

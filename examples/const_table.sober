@@ -1,6 +1,6 @@
 package main
 
-// 組み立ての const の表（language.md 25 節）: コマンドの表を const の struct と slice で書く — 欄に名前付き関数の参照とラムダ、
+// 組み立てのconstの表（language.md 25 節）: コマンドの表をconstのstructとsliceで書く — フィールドに名前付き関数の参照とラムダ、
 // 同じ const（フラグ・ラムダを持つ辞書）を複数の表から参照する。参照する点で組み立てるが、持ち上げたラムダは 1 本に寄せる
 type Flag struct {
     name string

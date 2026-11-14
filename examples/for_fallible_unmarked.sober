@@ -18,7 +18,7 @@ func digits(s string, k func(int)) error? {
     return nil
 }
 
-// 失敗しうる生成元（結果が error?）に印 `?` が無い — error を黙って捨てる形（language.md 7 節 — diag.ForFallible kind 1）
+// 失敗しうる生成元（結果がerror?）にマーク `?` が無い — errorを黙って捨てる形（language.md 7 節 — diag.ForFallible kind 1）
 func sum(s string) (int, error?) {
     mut n := 0
     for d <- digits(s) {

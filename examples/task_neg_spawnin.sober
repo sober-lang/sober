@@ -1,6 +1,6 @@
 package main
 
-// task.SpawnIn の子の捕獲は task.Spawn と同じ柵（handle を捕獲できない — kind 6）。check と build が同じ名指しで拒否（desugar/parcheck.sober）
+// task.SpawnInの子の捕獲はtask.Spawnと同じ柵（handleを捕獲できない — kind 6）。checkとbuildが同じ専用の診断で拒否（desugar/parcheck.sober）
 
 import "std/task"
 

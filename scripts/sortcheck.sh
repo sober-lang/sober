@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# sortcheck（std/sort の乱択の検査 — report-619）: testdata/sortcheck を最適化のバックエンド（--passes）と最適化なし（--no-opt）で建てて 2 回ずつ走らせ、
+# sortcheck（std/sortの乱択の検査 — report-619）: testdata/sortcheckを最適化のバックエンド（--passes）と最適化なし（--no-opt）でビルドして2回ずつ走らせ、
 # 失敗の数が 0（Order = 並び・安定・置換・OrderUnstable = 並び・置換・同じ呼び出しの 2 回の一致・壊れた less でも置換）で、4 つの出力が全部一致すること
 # （最後の行 = OrderUnstable の結果の検査和 — 決定性: 走りごと・最適化の有無で変わらない）
 #   scripts/sortcheck.sh

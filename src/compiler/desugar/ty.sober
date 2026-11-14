@@ -4,7 +4,7 @@ import "ast"
 import "std/iter"
 import "std/table"
 
-// コアの型（Lean の Ty と同形 — [tag, a, b, c, d]）と、src/stage1/desugar.zig の型の小道具の写し。
+// コアの型（LeanのTyと同形 — [tag, a, b, c, d]）と、src/stage1/desugar.zigの型の小道具のコピー。
 // 型は st.types（Ty の表）に intern する — 同じ形の型は同じ参照（mkTy）。型の記録は作ったら変えない。
 // 型の参照 = TyRef（TBASE + 添字。ヒープの番地と取り違えて hget すると範囲外で panic する — 音を立てる）。無しは -1（`!= -1` で見る）
 
@@ -13,21 +13,21 @@ const TVar = 2   // a = 添字
 const TBool = 3
 const TUnit = 4
 const TOpt = 5   // a = 中身
-const TSl = 6    // a = m, b = r, c = 要素, d = str（string の印）
+const TSl = 6    // a = m, b = r, c = 要素, d = str（stringのフラグ）
 const TMp = 7    // a = m, b = r, c = キー, d = 値
 const TUn = 8    // a = l, b = r
 const TPr = 9    // a = l, b = r
 const TRef = 10  // a = m, b = r, c = 中身
 const TChan = 11 // a = rc, b = 中身
 const TFn = 12   // a = p, b = r
-// byte の段で足した種類（Lean の Ty.byte — language.md 33 節。区域系の述語は int と同じ扱い）
+// byteの段階で足した種類（LeanのTy.byte — language.md 33 節。区域系の述語はintと同じ扱い）
 const TByte = 13
-// float の段で足した種類（Lean の Ty.f64 — language.md 37 節。表層の名前は float。区域系の述語は int と同じ扱い）
+// floatの段階で足した種類（LeanのTy.f64 — language.md 37 節。表層の名前はfloat。区域系の述語はintと同じ扱い）
 const TFloat = 14
 // 単一 task が所有する能力（Lean の Ty.own）: a = 種類（OWN_*）, b = 家の region, c = 結果 / ペイロードの型
 const TOwn = 15
 // 再帰型（Lean の Ty.rvar / Ty.mus / Ty.muRs — iso の同時の μ。language.md 1 節）: TRVar の a = 再帰の変数（de Bruijn）・
-// TMuS（S）の a = 成分の数 n・b = 成分の番号 i・c = 組（本体の prod の鎖）/ TMuRs（D）の a = 座標 r・b = n・c = i・d = 組（本体は局所座標 — region 0）
+// TMuS（S）のa = 成分の数n・b = 成分の番号i・c = 組（本体のprodのチェーン）/ TMuRs（D）のa = 座標r・b = n・c = i・d = 組（本体は局所座標 — region 0）
 const TRVar = 16
 const TMuS = 17
 const TMuRs = 18
@@ -35,7 +35,7 @@ const OWN_SCOPE = 0
 const OWN_TASK = 1
 const OWN_TX = 2
 const OWN_RX = 3
-// domain（Lean の Ty.dom r s — 種類 4 の own として持ち、JSON と checker の境で dom へ写す: region のずらし・写しの腕は own と同じ）
+// domain（Leanの Ty.dom r s — 種類4のownとして持ち、JSONとcheckerの境でdomへ変換する: regionのずらし・変換の分岐はownと同じ）
 const OWN_DOM = 4
 
 // 推論用のプレースホルダ tvar の底
@@ -44,7 +44,7 @@ const PH = 1048576
 // 型の参照（language.md 32 節の named scalar — 式・節・ヒープの番地の int と取り違えない）
 type TyRef int
 
-// 型 1 つ（st.types の要素）。欄の意味は種類ごとに違う（上の表）— 読むのは下の型付きの読み口から
+// 型1つ（st.typesの要素）。フィールドの意味は種類ごとに違う（上の表）— 読むのは下の型付きの読み出しAPIから
 type Ty struct {
     tag int
     a int
@@ -83,8 +83,8 @@ func tyHash(x int) int {
     return (x % 1000003 + 1000003) % 1000003
 }
 
-// 型 [tag, a, b, c, d] の参照（同じ形が既にあればそれ — intern。表の鎖 = st.tyBucket の頭 → st.tyNext）。
-// 欄は生の int（子の型は int(t)）— 外からは下の種類つきの構築子で作る
+// 型 [tag, a, b, c, d] の参照（同じ形が既にあればそれ — intern。表のチェーン = st.tyBucketの頭 → st.tyNext）。
+// フィールドは生のint（子の型はint(t)）— 外からは下の種類つきの構築子で作る
 func mkTy(st mut S, tag int, a int, b int, c int, d int) TyRef {
     if table.Len(mut st.tyBucket) == 0 {
         for _ <- iter.Range(0, bucketsOf(st.hbuckets)) {
@@ -115,7 +115,7 @@ func tg(st mut S, t TyRef) int {
     return tyAt(mut st, t).tag
 }
 
-// ── 種類つきの構築子（m / str は 0 / 1 の印、r は region の添字）──
+// ── 種類つきの構築子（m / strは0 / 1のフラグ、rはregionの添字）──
 
 func tRVar(st mut S, i int) TyRef {
     return mkTy(mut st, TRVar, i, 0, 0, 0)
@@ -135,7 +135,7 @@ func tMuRsAt(st mut S, t TyRef, r int) TyRef {
     return mkTy(mut st, TMuRs, r, x.b, x.c, x.d)
 }
 
-// 組の鎖 bs の c 番目の成分の本体（鎖の外は unit — Lean の Ty.comp）
+// 組のチェーンbsのc番目の成分の本体（チェーンの外はunit — LeanのTy.comp）
 func tyComp(st mut S, bs TyRef, c int) TyRef {
     mut t := bs
     mut k := c
@@ -179,7 +179,7 @@ func tyShiftR(st mut S, t TyRef, r int) TyRef {
     }
 }
 
-// 1 段の展開（Lean の Ty.unfold — 組の全成分を局所座標で代入してから本体ごと r へ）。μ でなければそのまま
+// 1レベルの展開（LeanのTy.unfold — 組の全成分を局所座標で代入してから本体ごとrへ）。μ でなければそのまま
 func tyUnfold(st mut S, t TyRef) TyRef {
     x := tyAt(mut st, t)
     if x.tag == TMuRs {
@@ -273,7 +273,7 @@ func tString(st mut S) TyRef {
     return tSlice(mut st, false, 0, tByte(mut st), true)
 }
 
-// ── ヒープ越しの型（型の列・型環境の欄 — ヒープは int の表なので出し入れで変換する）──
+// ── ヒープ越しの型（型の列・型環境のフィールド — ヒープはintの表なので出し入れで変換する）──
 
 func hgetTy(st mut S, i int) TyRef {
     return TyRef(hget(mut st, i))
@@ -287,7 +287,7 @@ func latTy(st mut S, l ListRef, i int) TyRef {
     return TyRef(latI(mut st, l, i))
 }
 
-// ── 型付きの読み口 ──
+// ── 型付きの読み出しAPI ──
 
 // T? の中身
 func tInner(st mut S, t TyRef) TyRef {
@@ -331,7 +331,7 @@ func tRegion(st mut S, t TyRef) int {
     return tyAt(mut st, t).b
 }
 
-// slice の string の印
+// sliceのstringのフラグ
 func tStrBit(st mut S, t TyRef) int {
     return tyAt(mut st, t).d
 }
@@ -359,7 +359,7 @@ func isPair(k int) bool {
     return k == TUn || k == TPr || k == TFn
 }
 
-// 構造一致（region・mut・string の印も見る）
+// 構造一致（region・mut・stringのフラグも見る）
 func tyEql(st mut S, a TyRef, b TyRef) bool {
     k := tg(mut st, a)
     if k != tg(mut st, b) {
@@ -389,9 +389,9 @@ func tyEql(st mut S, a TyRef, b TyRef) bool {
     }
 }
 
-// a を b へ緩められるか（Lean の Ty.sub の鏡 — mut の腕は等しいときだけ）
+// aをbへ緩められるか（LeanのTy.subの鏡 — mutの分岐は等しいときだけ）
 func tyLooser(st mut S, a TyRef, b TyRef) bool {
-    // 型の読めない値（-1 — 腕の型を束縛なしで推定するときのパターンの名前など）は比べない
+    // 型の読めない値（-1 — 分岐の型を束縛なしで推定するときのパターンの名前など）は比べない
     if a == -1 || b == -1 {
         return false
     }
@@ -405,9 +405,9 @@ func tyLooser(st mut S, a TyRef, b TyRef) bool {
     case TSl: if tMutBit(mut st, a) != 0 || tMutBit(mut st, b) != 0 { tyEql(mut st, a, b) } else { tRegion(mut st, a) <= tRegion(mut st, b) && tyLooser(mut st, tElem(mut st, a), tElem(mut st, b)) }
     case TMp: if tMutBit(mut st, a) != 0 || tMutBit(mut st, b) != 0 { tyEql(mut st, a, b) } else { tRegion(mut st, a) <= tRegion(mut st, b) && tyLooser(mut st, tKey(mut st, a), tKey(mut st, b)) && tyLooser(mut st, tVal(mut st, a), tVal(mut st, b)) }
     case TRef: if tMutBit(mut st, a) != 0 || tMutBit(mut st, b) != 0 { tyEql(mut st, a, b) } else { tRegion(mut st, a) <= tRegion(mut st, b) && tyEql(mut st, tElem(mut st, a), tElem(mut st, b)) }
-    // D の μ: 同じ組・同じ成分で外の座標だけ（深く共変な組なら r ≤ r'・そうでなければ r = r' — Lean の sub の muRs の腕）
+    // Dの μ: 同じ組・同じ成分で外の座標だけ（深く共変な組ならr ≤ r'・そうでなければr = r' — LeanのsubのmuRsの分岐）
     case TMuRs: muRsBody(mut st, a) == muRsBody(mut st, b) && tyAt(mut st, a).b == tyAt(mut st, b).b && tyAt(mut st, a).c == tyAt(mut st, b).c && (tyAt(mut st, a).a == tyAt(mut st, b).a || (tyAt(mut st, a).a <= tyAt(mut st, b).a && tyCovOk(mut st, muRsBody(mut st, a))))
-    // domain: 家の region は上界（Lean の sub の dom の腕）・状態の型は一致
+    // domain: 家のregionは上界（Leanのsubのdomの分岐）・状態の型は一致
     case TOwn: if tyAt(mut st, a).a == OWN_DOM && tyAt(mut st, b).a == OWN_DOM { tyAt(mut st, a).b <= tyAt(mut st, b).b && tyEql(mut st, TyRef(tyAt(mut st, a).c), TyRef(tyAt(mut st, b).c)) } else { tyEql(mut st, a, b) }
     default: tyEql(mut st, a, b)
     }
@@ -443,7 +443,7 @@ func tyEqlLoose(st mut S, a TyRef, b TyRef) bool {
     }
 }
 
-// base 座標の型を今の点座標（最内 region = rdepth - 1）へ写す
+// base座標の型を今の点座標（最内region = rdepth - 1）へ変換する
 func pointTy(st mut S, t TyRef) TyRef {
     k := tg(mut st, t)
     r := st.rdepth - 1
@@ -463,7 +463,7 @@ func pointTy(st mut S, t TyRef) TyRef {
     case TMuRs:
         return tMuRsAt(mut st, t, r)
     case TOwn:
-        // domain（関数の仮引数・欄の型 — 家の region 0 は呼び手空間の上界）: 点の最内へ
+        // domain（関数の仮引数・フィールドの型 — 家のregion 0は呼び手空間の上界）: 点の最内へ
         if tyAt(mut st, t).a == OWN_DOM {
             return mkTy(mut st, TOwn, OWN_DOM, r, tyAt(mut st, t).c, tyAt(mut st, t).d)
         }
@@ -472,7 +472,7 @@ func pointTy(st mut S, t TyRef) TyRef {
 }
 
 // tyClamp は imm の region を k へ締める（Lean の Ty.clampR）
-// tyRelocAll は imm のコンテナ / 参照の region を全部 k へ（Lean の Ty.relocR k の imm の腕 — task の結果の型の写し先・P3b-4。
+// tyRelocAllはimmのコンテナ / 参照のregionを全部kへ（Leanの Ty.relocR k のimmの分岐 — taskの結果の型の変換先・P3b-4。
 // mut は触らない — task の結果は mutFree）
 func tyRelocAll(st mut S, t TyRef, k int) TyRef {
     x := tg(mut st, t)
@@ -505,7 +505,7 @@ func tyRelocAll(st mut S, t TyRef, k int) TyRef {
 }
 
 // domain の型（家の region r）: c = コアの状態の型（mut の器を imm に倒して region を全部 0 へ締めた像 — Lean の dom が梱包して持つ形）・
-// d = 器を mut のまま region を 0 へ締めた状態の型 + 1（脱糖が入る / 出るの写しを組むときに引く — 型の同一性には入らない）
+// d = 器をmutのままregionを0へ締めた状態の型 + 1（脱糖が入る / 出るの変換を組むときに引く — 型の同一性には入らない）
 func tOwnDom(st mut S, r int, full TyRef) TyRef {
     return mkTy(mut st, TOwn, OWN_DOM, r, int(tyRelocAll(mut st, tyImmImg(mut st, full), 0)), int(tyRelocAllM(mut st, full, 0)) + 1)
 }
@@ -536,7 +536,7 @@ func tyImmImg(st mut S, t TyRef) TyRef {
     return t
 }
 
-// tyRelocAll の mut の器も k へ寄せる版（domain の状態を入る側の最内へ写した型 — 器は入る写しで最内に作り直す）
+// tyRelocAllのmutの器もkへ寄せる版（domainの状態を入る側の最内へ変換した型 — 器は入る変換で最内に作り直す）
 func tyRelocAllM(st mut S, t TyRef, k int) TyRef {
     x := tg(mut st, t)
     switch x {
@@ -620,7 +620,7 @@ func retTy(st mut S, t TyRef) TyRef {
     return t
 }
 
-// 型の列（ヒープの列 — 要素は int(TyRef)）→ 右結合の prod 鎖（0 は unit、1 は素の型）
+// 型の列（ヒープの列 — 要素はint(TyRef)）→ 右結合のprodチェーン（0はunit、1は素の型）
 func tyChain(st mut S, l ListRef) TyRef {
     n := lenL(mut st, l)
     if n == 0 {
@@ -663,12 +663,12 @@ func wrapsContainer(st mut S, t TyRef) bool {
 }
 
 // t の imm の slice / map の region を r 以上へ上げた型（imm の参照は region の添字を上界に読める — 31 節。mut は上げない・
-// imm の要素・キー・値の中も上げる。string〔str の印〕の要素は byte なので触らない）。
-// struct / union / opt は成分ごと（値位置の if の腕の合流）
+// immの要素・キー・値の中も上げる。string〔strのフラグ〕の要素はbyteなので触らない）。
+// struct / union / optは成分ごと（値位置のifの分岐の合流）
 func upRegion(st mut S, t TyRef, r int) TyRef {
     k := tg(mut st, t)
     if (k == TSl || k == TMp) && tMutBit(mut st, t) == 0 {
-        // imm の中身も上界へ読める（imm の slice / map の要素・キー・値: `[]string` の腕は要素の string の region も合わせないと合流しない）
+        // immの中身も上界へ読める（immのslice / mapの要素・キー・値: `[]string` の分岐は要素のstringのregionも合わせないと合流しない）
         x := tyAt(mut st, t)
         c := if k == TSl && x.d != 0 { x.c } else { int(upRegion(mut st, TyRef(x.c), r)) }
         d := if k == TMp { int(upRegion(mut st, TyRef(x.d), r)) } else { x.d }
@@ -745,7 +745,7 @@ func tyChanFree(st mut S, t TyRef) bool {
     }
 }
 
-// 型が mut のコンテナ・参照を持たないか（Lean の Ty.mutFree — copyTo で写せる値の型の判定。M4）
+// 型がmutのコンテナ・参照を持たないか（LeanのTy.mutFree — copyToでコピーできる値の型の判定。M4）
 func tyMutFreeD(st mut S, t TyRef) bool {
     x := tg(mut st, t)
     return switch x {
@@ -818,7 +818,7 @@ func unifyTy(st mut S, pat TyRef, act TyRef, binds ListRef) bool {
     }
 }
 
-// D の μ の組（本体の prod の鎖）
+// Dの μ の組（本体のprodのチェーン）
 func muRsBody(st mut S, t TyRef) TyRef {
     return TyRef(tyAt(mut st, t).d)
 }

@@ -1,4 +1,4 @@
-// /async-db（本家 go-stdlib の asyncDb・queryItems・loadPgPool の写し — pgx の pool・pool の大きさ = min(DATABASE_MAX_CONN − 8, NumCPU × 4)）。
+// /async-db（本家go-stdlibのasyncDb・queryItems・loadPgPoolのコピー — pgxのpool・poolの大きさ = min(DATABASE_MAX_CONN − 8, NumCPU × 4)）。
 // DATABASE_URL が無い・繋がらないときは本家と同じく {"items":[],"count":0}
 package main
 

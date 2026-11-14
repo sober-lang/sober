@@ -1,5 +1,5 @@
-// examples/rand_xoshiro.sober の Go の双子（std/rand の差分オラクル — docs/oracles.md）。
-// xoshiro128**（Blackman / Vigna の参照実装の写し — uint32 の算術そのまま）と、std/rand と同じシードの拡散（SplitMix32 — fmix32）。
+// examples/rand_xoshiro.soberの比較用のGoの実装（std/randの差分オラクル — docs/oracles.md）。
+// xoshiro128**（Blackman / Vignaの参照実装のコピー — uint32の算術そのまま）と、std/randと同じシードの拡散（SplitMix32 — fmix32）。
 // std/rand は 32 bit の算術を int の上で桁に割って書くので、uint32 の wrap で書いたこちらと出力が一致すればよい。再生成:
 //   go run scripts/oracles/rand_xoshiro.go > examples/rand_xoshiro.out
 package main
@@ -75,7 +75,7 @@ func (r *Rand) Split() Rand {
 }
 
 func main() {
-	// 写しの確かめ（標準エラーへ — .out には入れない）: 参照実装の既知の列 = 状態 {1, 2, 3, 4} から 11520 0 5927040 70819200 2031721883 1637235492
+	// コピーの検証（標準エラーへ — .outには入れない）: 参照実装の既知の列 = 状態 {1, 2, 3, 4} から11520 0 5927040 70819200 2031721883 1637235492
 	ref := Rand{[4]uint32{1, 2, 3, 4}}
 	for i := 0; i < 6; i++ {
 		fmt.Fprintln(os.Stderr, ref.Next())

@@ -1,6 +1,6 @@
 package lower
 
-// task の罠（段 6 P3a-2a — docs/ir.md「罠」）: IR の op `trap callee(arg)`（OpTrapI — 罠を張って呼ぶ・結果 0 = 戻った / 1 = 中で死んだ）と
+// taskの罠（段階6 P3a-2a — docs/ir.md「罠」）: IRのop `trap callee(arg)`（OpTrapI — 罠を張って呼ぶ・結果0 = 戻った / 1 = 中で死んだ）と
 // `unwind`（OpUnwind — 罠があれば最内の罠へ巻き戻る）。死（exit 101 / 102）の手前で rt.panic / rt.panic_mem が罠を見て、張られていれば
 // 死因を @rt.trap に書いて巻き戻る（印字しない — 死を受けるのは罠を張った側）。罠が無ければ今までどおり印字して exit。
 // 罠を使うモジュール（st.trapUse — 入口の前に立てる）だけが @rt.trap と巻き戻しの分岐を持つ（使わないプログラムの IR は不変）。
@@ -11,7 +11,7 @@ package lower
 import "desugar"
 import "std/iter"
 
-// @rt.trap の配置（語）: [0] 最内の罠の記録の番地（0 = 無し）・[1] 死因の終了コード（101 / 102）・[2] 死因の点（rt.panic の点の番号 / rt.panic_mem の種類・ゼロ除算は -1）
+// @rt.trapの配置（ワード）: [0] 最内の罠の記録の番地（0 = 無し）・[1] 死因の終了コード（101 / 102）・[2] 死因の点（rt.panicの点の番号 / rt.panic_memの種類・ゼロ除算は -1）
 const TRAP_WORDS = 3
 const TW_TOP = 0
 const TW_CODE = 1
@@ -19,7 +19,7 @@ const TW_SITE = 2
 
 // rt.panic / rt.panic_mem の入口の分岐: 罠が張られていれば死因（終了コード code・点 site）を書いて巻き戻る
 func trapDie(st mut St, code int, site int) {
-    // 開発用 `sober build --death-trace`（rt の変異 14）: task の死を罠で吸収せず、罠の外の死と同じく印字して終了する
+    // 開発用 `sober build --death-trace`（rt のミュータント14）: taskの死を罠で吸収せず、罠の外の死と同じく印字して終了する
     // （死因の種・panic のラベル・位置が stderr に 1 行。吸収された死が観測に何も残さない形の切り分け用）
     if !st.trapUse || st.rtMut == 14 {
         return
@@ -37,8 +37,8 @@ func trapDie(st mut St, code int, site int) {
     setCur(mut st, tLive)
 }
 
-// ── 罠の単体の例（`sober build --trap-probe` — 開発用・scripts/trapprobe.sh の網）──
-// 入口が main の代わりに trap.probe を呼ぶ。子 = 戻る・index の死（101）・region の死（102）・ゼロ除算（x86 の死の口）・罠の入れ子・
+// ── 罠の単体の例（`sober build --trap-probe` — 開発用・scripts/trapprobe.shのテスト）──
+// 入口がmainの代わりにtrap.probeを呼ぶ。子 = 戻る・indexの死（101）・regionの死（102）・ゼロ除算（x86の死のインターフェース）・罠の入れ子・
 // 深い再帰の中の死。罠を跨いで生きる値（callee-saved に乗る）の和で巻き戻しの callee-saved の復元を見る。最後に罠の外で死ぬ（今までどおり印字して 101）
 
 // 文字列 w と値 v を 1 行に印字する
@@ -48,7 +48,7 @@ func probeLine(st mut St, w string, v int) {
     call(mut st, st.rtPchar, list1(mut st, iconst(mut st, '\n')))
 }
 
-// 子の関数 trap.<name>（引数 1 語・結果なし）を作り、本体の入口に立った状態で返す（引数の値 = 0）
+// 子の関数trap.<name>（引数1ワード・結果なし）を作り、本体の入口に立った状態で返す（引数の値 = 0）
 func probeKid(st mut St, name string) FnRef {
     f := addFunc(mut st, int(strLit(mut st, name)), desugar.ListRef(list1(mut st, TyI64)), -1)
     begin(mut st, f)

@@ -1,6 +1,6 @@
 package main
 
-// 借りの仮引数の mut の席（language.md 25 節「関数型の mut 仮引数」）: 状態 n は呼び手が持ち、stream が emit に毎回 mut で渡す。
+// 借りの仮引数が持つ mut 仮引数（language.md 25 節「関数型の mut 仮引数」）: 状態 n は呼び手が持ち、stream が emit に毎回 mut で渡す。
 // emit の呼び出しをまたいだ更新が呼び手に見える（長さ既知の stream の emit の合計の形）。コアは anchor つきの値の呼び出し callMv
 
 type Stream func(n mut int, emit func(n mut int, b []byte) error?) error?

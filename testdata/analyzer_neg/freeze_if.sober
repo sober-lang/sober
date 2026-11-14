@@ -1,6 +1,6 @@
 package main
 
-// if 式の値の freeze の後の腕の束縛への書き（U2 — F-ap: 値の末尾の道ごとに凍る。2026-10-11 まで analyzer が根を取らずに通していた）
+// if式の値のfreezeの後の分岐の束縛への書き（U2 — F-ap: 値の末尾のパスごとに凍る。2026-10-11までanalyzerが根を取らずに通していた）
 
 func main() int {
     mut m := mut []int{1, 2}

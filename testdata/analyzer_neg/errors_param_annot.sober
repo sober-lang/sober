@@ -1,7 +1,7 @@
 package main
 
 // analyzer の負例（scripts/analyzer_neg.sh — 期待は errors_param_annot.err）: @errors の仮引数の名前の項は、匿名の関数型で結果に error を持つ
-// 仮引数だけ（language.md 13 節）— 関数型でない仮引数・結果に error の無い関数型・名前つき関数型（自分の @errors を持つ席 — 25 節）は拒否
+// 仮引数だけ（language.md 13 節）— 関数型でない仮引数・結果にerrorの無い関数型・名前つき関数型（自分の @errorsを持つ仮引数の位置 — 25 節）は拒否
 
 type Bad error
 

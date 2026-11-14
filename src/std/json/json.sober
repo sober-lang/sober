@@ -1,15 +1,15 @@
 package json
 
 // JSON（RFC 8259）の読みと決定的な印字（language.md 16 節）。文書は平らな表 Doc（ノードの番号で子を指す — compiler/ の ast.Tree と同じ形）に置き、
-// 触るのは 1 段だけ開くビューの union View（json.At）— 各段の switch に網羅が要る（雑に読む手段が構成的に無い — language.md 16 節）。
+// 触るのは1段階だけ開くビューのunion View（json.At）— 各段階のswitchに網羅が要る（雑に読む手段が構成的に無い — language.md 16 節）。
 // 値の木（再帰の union Value）は書きの側: 組んで Encode[json.Value] で書く・Doc の節から Tree で開く。
 //
 //     d := json.Parse(b)?                       // 全量・入れ子の深さは MaxDepth まで
 //     switch json.At(d, json.Root(d)) {
-//     case json.ViewObject{names, vals}: …          // 子はノードの番号 — json.At(d, vals[i]) で 1 段ずつ開く
+//     case json.ViewObject{names, vals}: …          // 子はノードの番号 — json.At(d, vals[i]) で1段階ずつ開く
 //     …
 //     }
-//     s := json.Format(d, json.Root(d))        // 決定的（空白なし・欄はソースの順・数は字句のまま）
+//     s := json.Format(d, json.Root(d))        // 決定的（空白なし・フィールドはソースの順・数は字句のまま）
 //
 // 数（Num）は字句のまま持つ（解釈はデコードの点まで遅らせる — 64 ビットを超える整数・精度・金額を float に黙って丸めない）。
 // 重複したキーは拒否（防御の既定 — パーサ間で解釈が割れる攻撃面。Go は後勝ち）。不正な UTF-8 は文書のどこでも拒否（Go は U+FFFD に置き換え）
@@ -24,9 +24,9 @@ const kFalse = 1
 const kTrue = 2
 const kNum = 3      // a, b = src の [a, b)
 const kStr = 4      // a, b = src の [a, b)（エスケープなし — 入力をそのまま指す）
-const kStrEsc = 5   // a, b = esc の [a, b)（エスケープを解いた写し）
+const kStrEsc = 5   // a, b = escの [a, b)（エスケープを解いたコピー）
 const kArr = 6      // a = kids の先頭, b = 要素の数
-const kObj = 7      // a = kids の先頭（キーの節 b 個、続けて値の節 b 個）, b = 欄の数
+const kObj = 7      // a = kidsの先頭（キーの節b個、続けて値の節b個）, b = フィールドの数
 
 // 入れ子の深さの上限（配列とオブジェクトの開き — 防御の上限。読みは明示のスタックで再帰しないので、深さはスタックの長さにだけ効く）
 const MaxDepth = 1000
@@ -44,9 +44,9 @@ type BadJson error {
 }
 
 // 読んだ文書: ノードの表（番号 = 添字。子は親より先に並ぶ — 根は最後）。書き換えない値なので task の子へそのまま渡せる（例: examples/json_put.sober）。作れるのは Parse だけ（証人 — 外から作った表を At に渡させない）:
-// 非公開の型の封の欄 seal があるので、外からは composite に書けない（部分リテラルは拒否・sealed の値は外で書けない）。型は公開のまま
-// （引数の型に json.Doc と書ける — shape[T] の写しの関数も）。欄の読みは塞いでいない（裸の int で At なしには解釈できない — 規律の面だけ）。
-// 再訪条件: 可視性の細分（構築のみ私有・欄の私有）が入ったら封を外してそれに置き換える
+// 非公開の型の封のフィールドsealがあるので、外からはcompositeに書けない（部分リテラルは拒否・sealedの値は外で書けない）。型は公開のまま
+// （引数の型にjson.Docと書ける — shape[T] の変換の関数も）。フィールドの読みは塞いでいない（裸のintでAtなしには解釈できない — 規律の面だけ）。
+// 再訪条件: 可視性の細分（構築のみ私有・フィールドの私有）が入ったら封を外してそれに置き換える
 type Doc struct {
     src []byte
     esc []byte
@@ -100,7 +100,7 @@ func At(d Doc, n int) View {
     a := d.a[n]
     b := d.b[n]
     k := d.kind[n]
-    // 文の if + return で書く（値の位置の switch だと、[]string を持つ variant の腕の合流を check が拒否する）
+    // 文のif + returnで書く（値の位置のswitchだと、[]stringを持つvariantの分岐の合流をcheckが拒否する）
     if k == kObj {
         return ViewObject{names: keysOf(d, a, b), vals: d.kids[a + b:a + b + b]}
     }
@@ -176,15 +176,15 @@ func text(d Doc, k int) string {
     return if d.kind[k] == kStr { bytesToString(d.src[d.a[k]:d.b[k]]) } else { bytesToString(d.esc[d.a[k]:d.b[k]]) }
 }
 
-// オブジェクトのノード n の欄 key の値のノード（n がオブジェクトでない・欄が無ければ nil）
+// オブジェクトのノードnのフィールドkeyの値のノード（nがオブジェクトでない・フィールドが無ければnil）
 @effects()
 func Get(d Doc, n int, key string) int? {
     return GetAt(d, n, key, -1)
 }
 
-// Get に手掛かりの位置 hint を足したもの: hint 番目の欄のキーを先に見て、外れたら線形に探す（shape[T] の写しの関数は欄の宣言の位置を
+// Getに手掛かりの位置hintを足したもの: hint番目のフィールドのキーを先に見て、外れたら線形に探す（shape[T] の変換の関数はフィールドの宣言の位置を
 // 渡す — 宣言と同じ順の JSON なら 1 回の比較で当たる）
-// キーの比較は手で展開してある（Doc の欄を局所に取ってから回す — 旧 keyIs は Doc を値で渡す呼び出しを欄ごとに払っていた）。見る順 = 手掛かり（t = -1）→ 0 から線形
+// キーの比較は手で展開してある（Docのフィールドを局所に取ってから回す — 旧keyIsはDocを値で渡す呼び出しをフィールドごとに払っていた）。見る順 = 手掛かり（t = -1）→ 0から線形
 @effects()
 func GetAt(d Doc, n int, key string, hint int) int? {
     kind := d.kind
@@ -335,7 +335,7 @@ func strScan(b []byte, i int) (int, bool, int) {
                     return -1, false, j
                 }
                 if cp >= 55296 && cp <= 56319 {
-                    // 上位サロゲート — 続く \uDC00..DFFF が要る（単独のサロゲートは UTF-8 に写せないので拒否）
+                    // 上位サロゲート — 続く \uDC00..DFFFが要る（単独のサロゲートはUTF-8に変換できないので拒否）
                     lo := if j + 7 < len(b) && b[j + 6] == '\\' && b[j + 7] == 'u' { hex4(b, j + 8) } else { -1 }
                     if lo < 56320 || lo > 57343 {
                         return -1, false, j
@@ -427,7 +427,7 @@ func put(st mut []int, sp int, x int) {
 }
 
 // ノードの表の組み立て（Parse の作業域）: 4 本の列と子の列 kids を、入力から数えた上界の長さで先に確保して添字で書く
-// （Builder に積んで Build で写す形は chunk の倍々の余りと写しで RSS が表の 3 倍だった）。n = ノードの数・nk = 子の数
+// （Builderに積んでBuildでコピーする形はchunkの倍々の余りとコピーでRSSが表の3倍だった）。n = ノードの数・nk = 子の数
 type nodes struct {
     kind mut []int
     a mut []int
@@ -481,7 +481,7 @@ func Parse(b []byte) (Doc, error?) {
         return Doc{}, BadJson{pos: bad, kind: BadUtf8}
     }
     nb := bound(b)
-    // 列を 1 本ずつ確保しきる（交互に伸ばすと先端を失って 2 乗の写し）
+    // 列を1本ずつ確保しきる（交互に伸ばすと先端を失って2乗のコピー）
     mut ns := nodes{kind: mut []int{}, a: mut []int{}, b: mut []int{}, pos: mut []int{}, kids: mut []int{}, n: 0, nk: 0}
     zeroFill(mut ns.kind, nb)
     zeroFill(mut ns.a, nb)
@@ -678,9 +678,9 @@ func dupKey(d Doc) int {
     return best
 }
 
-// 欄の少ないオブジェクトの総当たり: 長さの違うキーは比べない（安い前判定 — 総当たりの比較の大半がここで落ちる）。長さの等しい組は
-// 中身をバイトで比べる（Doc の欄を局所に取ってから回す — GetAt と同じ・旧 keyEq の展開）。署名（長さ + 先頭 7 バイトの 1 語）を先に作る形は、作る費用が
-// 前判定の後に残る比較より高く棄てた（jsonapi 命令 +0.14 G の値札）
+// フィールドの少ないオブジェクトの総当たり: 長さの違うキーは比べない（安い前判定 — 総当たりの比較の大半がここで落ちる）。長さの等しい組は
+// 中身をバイトで比べる（Docのフィールドを局所に取ってから回す — GetAtと同じ・旧keyEqの展開）。署名（長さ + 先頭7バイトの1ワード）を先に作る形は、作る費用が
+// 前判定の後に残る比較より高く棄てた（jsonapi命令 +0.14 Gのコスト）
 func dupSmall(d Doc, a int, m int) int {
     kind := d.kind
     ka := d.a
@@ -724,7 +724,7 @@ func dupLarge(d Doc, a int, m int) int {
     return -1
 }
 
-// ノード n の決定的な JSON（空白なし・欄はソースの順・数は字句のまま・文字列は '"' '\\' と制御文字だけをエスケープ）
+// ノードnの決定的なJSON（空白なし・フィールドはソースの順・数は字句のまま・文字列は '"' '\\' と制御文字だけをエスケープ）
 @effects()
 func Format(d Doc, n int) string {
     mut out := builder.Builder[byte]{}
@@ -799,7 +799,7 @@ func putLit(out mut builder.Builder[byte], s string) {
 func sysClean(b []byte) int
 
 // s を JSON の文字列として書く（エスケープの要らない区間はまとめて積む — 区間の終わりは sysClean で探す。全部が要らない文字列は
-// 引用符と一緒に 1 回で積む — 速い道を呼び出し点に展開される大きさに保ち、エスケープのある文字列は quoteEsc）
+// 引用符と一緒に1回で積む — 高速パスを呼び出し点に展開される大きさに保ち、エスケープのある文字列はquoteEsc）
 func quote(out mut builder.Builder[byte], s []byte) {
     i := sysClean(s)
     if i == len(s) {
@@ -809,7 +809,7 @@ func quote(out mut builder.Builder[byte], s []byte) {
     }
 }
 
-// quote の遅い道（i = 最初のエスケープの要るバイトの位置）
+// quoteの低速パス（i = 最初のエスケープの要るバイトの位置）
 func quoteEsc(out mut builder.Builder[byte], s []byte, i0 int) {
     mut i := i0
     builder.Push(mut out, '"')

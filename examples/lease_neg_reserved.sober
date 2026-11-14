@@ -1,6 +1,6 @@
 package main
 
-// 写し先（LocalNew / LeaseTake …）は利用者が呼べない（diag.Par kind 28）
+// コピー先（LocalNew / LeaseTake …）は利用者が呼べない（diag.Par kind 28）
 
 import "std/task"
 import "std/pool"

@@ -1,6 +1,6 @@
 package main
 
-// 局所のラムダが mut の仮引数の席をそのまま返す — 結果の freeze は mut で渡した実引数を凍らせる（U2）
+// 局所のラムダがmut仮引数をそのまま返す — 結果のfreezeはmutで渡した実引数を凍らせる（U2）
 
 func main() int {
     mut m := mut []int{1, 2}

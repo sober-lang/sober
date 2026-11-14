@@ -1,6 +1,6 @@
 package main
 
-// 回帰例: 束縛つきの内側の型パターン（`case O1{x: e I1{v}, y}:` — e は欄 x の値）。check は断片外にしていた（build は受理）
+// 回帰例: 束縛つきの内側の型パターン（`case O1{x: e I1{v}, y}:` — eはフィールドxの値）。checkは断片外にしていた（buildは受理）
 
 type I union {
     I1{v int}

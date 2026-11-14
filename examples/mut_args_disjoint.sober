@@ -1,6 +1,6 @@
 package main
 
-// mut 実引数の排他（language.md 26 節）の正当な側: 接頭でない綴り（ab と a）・兄弟の欄（t.p.x と t.p.y）・別の根・
+// mut実引数の排他（language.md 26 節）の正当な側: 接頭でない綴り（abとa）・兄弟のフィールド（t.p.xとt.p.y）・別の根・
 // mut と imm の重なり（imm 側は呼び出しの前の値を見る — 境界コピー）は受理。重なりの拒否は testdata/loader_neg/mut_alias*
 type P struct {
     x int

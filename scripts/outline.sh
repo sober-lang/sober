@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# outline（gates）: `sober outline` の出力 ≡ 黄金 testdata/outline/*.golden（text / json）+ json の形の照合（node）。
+# outline（gates）: `sober outline` の出力 ≡ ゴールデンtestdata/outline/*.golden（text / json）+ jsonの形の照合（node）。
 #   題材 = testdata/outline/sample.sober（宣言の種類・注釈・複数行の署名・doc）・examples の 2 本・std の package（ディレクトリ・--depth・--no-test・--public）
-#   scripts/outline.sh [--regen]   --regen は黄金を書き直す
+#   scripts/outline.sh [--regen]   --regen はゴールデンを書き直す
 set -uo pipefail
 cd "$(dirname "$0")/.."
 scripts/stage2.sh --quiet || exit 1
@@ -44,7 +44,7 @@ for c in "${CASES[@]}"; do
             if (!ok) { console.log("FAIL json shape: " + process.argv[1]); process.exit(1); }' "$W/$name" || fail=1 ;;
     esac
 done
-# 負例: parse できないファイルは名指しして終了 1・使い方の誤りは終了 2
+# 負例: parseできないファイルは明示して終了1・使い方の誤りは終了2
 "$S2" outline examples/bind.sober > /dev/null 2> "$W/neg.err"; ec=$?
 { [ $ec = 1 ] && grep -q 'parse error in examples/bind.sober' "$W/neg.err"; } || { echo "FAIL parse error not named (exit $ec):"; cat "$W/neg.err"; fail=1; }
 "$S2" outline "$G/sample.sober" --format=xml > /dev/null 2>&1; ec=$?

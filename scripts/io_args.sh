@@ -11,7 +11,7 @@ SOBER=${SOBER:-./bin/sober}   # 主の sober（主役交代 R39）
 ZIG=${ZIG:-zig}
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
-# sober run の置き場はこの走りの一時ディレクトリ（利用者の置き場を汚さない）
+# sober run の格納場所はこの走りの一時ディレクトリ（利用者の格納場所を汚さない）
 export SOBER_CACHE=$W/cache
 fail=0
 ran=0
@@ -48,7 +48,7 @@ check 2 "invalid utf-8 at 1" -- ok "z$(printf '\xff')"
 many=$(seq 1 1000)
 check 0 "$(printf '1000 args'; for i in $many; do printf '\n[%d] %d (%d bytes)' "$i" "$i" "${#i}"; done)" -- $many
 
-# sober run: 置き場には 1 本だけ（4 回とも同じ鍵 — 2 回目からは build を飛ばす）・標準入力を子が継ぐ
+# sober run: 格納場所には1本だけ（4回とも同じ鍵 — 2回目からはbuildを飛ばす）・標準入力を子が継ぐ
 n=$(ls "$W/cache/sober-run" 2> /dev/null | wc -l)
 [ "$n" = 1 ] || { echo "FAIL [run]: $n executables in the cache (want 1 — same key)"; fail=1; }
 if ! "$SOBER" run examples/io_stdin.sober < examples/io_stdin.in | cmp -s - examples/io_stdin.out; then

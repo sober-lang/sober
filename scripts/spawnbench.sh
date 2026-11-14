@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# spawnbench: spawn の固定費のマイクロベンチ（inst / rss = ワーカー 1 の協調形 — SOBER_WORKERS=1。wall = M:N のワーカー数ごとの往復 — 段 6 P4-6）（bench/spawn/main.sober）を perf の命令数（決定的）と RSS で測り、
+# spawnbench: spawnの固定費のマイクロベンチ（inst / rss = ワーカー1の協調形 — SOBER_WORKERS=1。wall = M:Nのワーカー数ごとの往復 — 段階6 P4-6）（bench/spawn/main.sober）をperfの命令数（決定的）とRSSで測り、
 # bench/spawn/ratchet.txt の上限と照合する。gates には入れない（perf が要る — PERF で perf の実行ファイルを指す・無ければ /nix/store を探す）
 #   scripts/spawnbench.sh
 set -uo pipefail
@@ -13,7 +13,7 @@ fail=0
 while read -r mode n col lim w; do
     case "$mode" in ''|'#'*) continue ;; esac
     if [ "$col" = wall ]; then
-        # M:N の行（段 6 P4-6）: ワーカー w の wall（秒 — 3 回の最小。揺れるので上限は目標〔往復 1 µs〕で置く）
+        # M:Nの行（段階6 P4-6）: ワーカーwのwall（秒 — 3回の最小。揺れるので上限は目標〔往復1 µs〕で置く）
         best=""
         for r in 1 2 3; do
             /usr/bin/time -f "%e" -o "$W/t" env SOBER_WORKERS="$w" "$W/spawn" "$mode" "$n" > /dev/null

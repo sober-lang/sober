@@ -1,6 +1,6 @@
 package main
 
-// 再帰の型宣言の木: build が自フレームで組んだ部分木を返り境界で呼び手の region へ写す（再帰の写し）
+// 再帰の型宣言の木: buildが自フレームで組んだ部分木を返り境界で呼び手のregionへコピーする（再帰のコピー）
 
 type Tree struct {
     kids []Tree

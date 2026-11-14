@@ -1,6 +1,6 @@
 package main
 
-// examples/task_print_indirect の逐次の双子（scripts/seqpar.list）: spawn の木の先行順 = 子 0〜3 の印字・親・終わり
+// examples/task_print_indirectの逐次版（scripts/seqpar.list）: spawnの木の先行順 = 子0〜3の印字・親・終わり
 
 func main() {
     println("start")

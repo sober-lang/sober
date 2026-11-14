@@ -1,0 +1,168 @@
+package main
+
+import "std/iter"
+
+// 語数の多い imm の集成値の仮引数（呼び手のスロットの番地で渡す — docs/ir.md 6 節）: 呼び出しの間に呼び手の側から書かれる値
+// （mutの束縛・そのフィールド・sliceの要素）を渡しても、呼ばれた関数が見る値は呼び出しの点の値のまま。値の意味はワードに展開して渡す形と同じ
+
+type R struct {
+    a string
+    b string
+    c string
+    n int
+    m int
+}
+
+type M struct {
+    r R
+    tab map[string]int
+}
+
+func show(r R) string {
+    return "${r.a}/${r.b}/${r.c}/${r.n}/${r.m}"
+}
+
+// 同じ値を mut でも受けて書き換えた後に、imm の側を読む
+func bump(r R, out mut R) string {
+    out.a = "changed"
+    out.n = out.n + 100
+    return show(r)
+}
+
+// 受けた値をさらに渡す・返す・格納する
+func outer(r R) string { return show(r) }
+
+func id(r R) R { return r }
+
+func keep(r R, xs mut []R) {
+    xs = append(xs, r)
+}
+
+// slice の要素を渡しつつ、同じ slice を mut で書き換える
+func elem(r R, xs mut []R) string {
+    xs[0] = R{a: "x", b: "y", c: "z", n: 9, m: 9}
+    return show(r)
+}
+
+// 関数を挟んで呼び手の mut の束縛を書き換える
+func viaFn(r R, f func(x mut R), x mut R) string {
+    f(mut x)
+    return show(r)
+}
+
+func opt(r R?) string {
+    if r == nil {
+        return "nil"
+    }
+    return show(r)
+}
+
+func withMap(v M) int {
+    k := v.tab["k"]
+    if k == nil {
+        return -1
+    }
+    return k + v.r.n
+}
+
+// 総称関数の型引数に入る 10 ワードの値（総称関数は region を持つ型を型引数に取らないので int だけ）
+type W struct {
+    a int
+    b int
+    c int
+    d int
+    e int
+    f int
+    g int
+    h int
+    i int
+    j int
+}
+
+func sumW(w W) int {
+    return w.a + w.b + w.c + w.d + w.e + w.f + w.g + w.h + w.i + w.j
+}
+
+func pick[T](a T, b T, first bool) T {
+    return if first { a } else { b }
+}
+
+// 参照で受けた仮引数を捕獲するラムダ
+func capt(r R) string {
+    g := () => show(r)
+    return g()
+}
+
+// mut の束縛のセルをコピーせずに渡す条件（lower cellRefOk）の各項を外すと値が変わる形
+func peek(r R, n int) string {
+    return "${show(r)}#${n}"
+}
+
+// 他の実引数の評価の中の呼び出しがセルを書く
+func touch(r mut R) int {
+    r.a = "touched"
+    return 7
+}
+
+// 格納したクロージャ（mut を捕獲できない — 状態は関数型の mut 仮引数で受ける）が同じ呼び出しの mut 実引数を書く
+type Hook struct {
+    f func(r mut R) int
+}
+
+func viaHook(r R, h Hook, x mut R) string {
+    _ = h.f(mut x)
+    return show(r)
+}
+
+func mk(n int) R {
+    return R{a: "p", b: "q", c: "r", n: n, m: n * 2}
+}
+
+func main() {
+    x := R{a: "a", b: "b", c: "c", n: 1, m: 2}
+    println(show(x))
+    println(outer(x))
+    println(show(id(x)))
+    mut y := x
+    println(bump(y, mut y))
+    println(show(y))
+    mut xs := mut []R{}
+    keep(y, mut xs)
+    y.a = "later"
+    println(show(xs[0]))
+    println(elem(xs[0], mut xs))
+    println(show(xs[0]))
+    g := show
+    println(g(x))
+    println(viaFn(y, (t) => { t.b = "fn" }, mut y))
+    println(show(y))
+    println(opt(x))
+    println(opt(nil))
+    println(show(mk(5)))
+    mut tab := mut map[string]int{}
+    tab["k"] = 40
+    v := M{r: x, tab: freeze(tab)}
+    println(withMap(v))
+    mut sum := 0
+    for i <- iter.Range(0, 3) {
+        z := mk(i)
+        sum += len(bytes(outer(z)))
+    }
+    println(sum)
+    f1 := show
+    f2 := outer
+    f3 := capt
+    println(f1(y))
+    println(f2(y))
+    println(f3(y))
+    w1 := W{a: 1, b: 2, c: 3, d: 4, e: 5, f: 6, g: 7, h: 8, i: 9, j: 10}
+    mut w2 := W{a: 10, b: 20, c: 30, d: 40, e: 50, f: 60, g: 70, h: 80, i: 90, j: 100}
+    println(sumW(pick(w1, w2, false)))
+    println(sumW(pick[W](w2, w1, true)))
+    println(peek(y, y.n + 1))
+    println(peek(y, touch(mut y)))
+    println(show(y))
+    hk := Hook{f: (t mut R) => { t.c = "hook"; 1 }}
+    println(viaHook(y, hk, mut y))
+    println(show(y))
+}

@@ -1,6 +1,6 @@
 package desugar
 
-// 呼び出し（src/stage1/desugar.zig の call / inlineCall / lambdaCall / liftLambda / tryExpr 一族の写し）
+// 呼び出し（src/stage1/desugar.zigのcall / inlineCall / lambdaCall / liftLambda / tryExprの系統のコピー）
 
 import "diag"
 import "ast"
@@ -8,17 +8,17 @@ import "loader"
 import "std/iter"
 import "std/table"
 
-// ラムダの閉包（st.closures の要素 — 添字で指す）: 定義時の束縛の鎖・関数の鎖・package・型環境・return の行き先・
-// 展開中の関数の鎖を凍結して持つ（本体は字句的に定義点のもの）
+// ラムダのクロージャ（st.closuresの要素 — 添字で指す）: 定義時の束縛のチェーン・関数のチェーン・package・型環境・returnの行き先・
+// 展開中の関数のチェーンを凍結して持つ（本体は字句的に定義点のもの）
 type Closure struct {
     lambda NodeRef     // ラムダの節
-    envB int       // 定義時の値の束縛の鎖
-    envF int       // 定義時の関数型の束縛の鎖
+    envB int       // 定義時の値の束縛のチェーン
+    envF int       // 定義時の関数型の束縛のチェーン
     pkg int
     tenv int
     ft TyRef       // 関数型（-1 = 不明）
     retTarget int
-    inlrec int     // 定義時の展開中の関数の鎖
+    inlrec int     // 定義時の展開中の関数のチェーン
 }
 
 func closure(st mut S, lam NodeRef, eb int, ef int, ft TyRef) int {
@@ -27,7 +27,7 @@ func closure(st mut S, lam NodeRef, eb int, ef int, ft TyRef) int {
     return at
 }
 
-// 閉包 cl の記録（非ジェネリックの包み）
+// クロージャclの記録（非ジェネリックの包み）
 func clo(st mut S, cl int) Closure {
     return table.Get(mut st.closures, cl)
 }
@@ -44,7 +44,7 @@ func fnRef(st mut S, fi int, at NodeRef) (CoreRef, error?) {
     return cFnref(mut st, d, -1), nil
 }
 
-// 関数値の呼び出し（関数値を先に評価し、引数は pair 鎖）
+// 関数値の呼び出し（関数値を先に評価し、引数はpairチェーン）
 func callValue(st mut S, callee NodeRef, ft TyRef, args ListRef, at NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
     f := expr(mut st, callee, eb, ef, depth)?
     n := lenL(mut st, args)
@@ -101,7 +101,7 @@ func call(st mut S, callee0 NodeRef, args ListRef, at NodeRef, eb int, ef int, d
             v := expr(mut st, a0, eb, ef, depth)?
             return c1(mut st, CToInt, v), nil
         }
-        // float の変換（language.md 37 節）: `float(i)` は int → float（コアの tofloat — 型なしの整数定数も同じ写し）・`float(f)` は恒等 /
+        // floatの変換（language.md 37 節）: `float(i)` はint → float（コアのtofloat — 型なしの整数定数も同じ変換）・`float(f)` は恒等 /
         // `int(f)` は float → int（ftoint — NaN・範囲外は実行時に panic）。named scalar との間は変換しない
         if cv == CONV_FLOAT {
             if isTag(mut st, t0, TFloat) {
@@ -122,7 +122,7 @@ func call(st mut S, callee0 NodeRef, args ListRef, at NodeRef, eb int, ef int, d
         }
         return expr(mut st, a0, eb, ef, depth)
     }
-    // 閉包の値（値の位置 — closure.sober）の呼び出し
+    // クロージャの値（値の位置 — closure.sober）の呼び出し
     ct := closureCallee(mut st, callee, eb, ef)
     if ct != -1 {
         return callClosure(mut st, callee, ct, args, at, eb, ef, depth)
@@ -135,7 +135,7 @@ func call(st mut S, callee0 NodeRef, args ListRef, at NodeRef, eb int, ef int, d
         name := sA(nodeOf(mut st, callee))
         if strIs(mut st, name, "println") {
             // 実引数は lower が印字できる型だけ（int・byte・bool・string — named scalar はコアで int）。型が読めない実引数・分岐する式
-            // （if / switch / ブロック式 — 腕の中の絞り込みを computeTy が見ない: `if v != nil { v } else { 0 }`）は今までどおり通す
+            // （if / switch / ブロック式 — 分岐の中の絞り込みをcomputeTyが見ない: `if v != nil { v } else { 0 }`）は今までどおり通す
             for k <- iter.Range(0, na) {
                 ak := kindN(mut st, latN(mut st, args, k))
                 pt := if ak == ast.EIf || ak == ast.ESwitch || ak == ast.EBlock { TyRef(-1) } else { computeTy(mut st, latN(mut st, args, k), eb, ef) }
@@ -167,7 +167,7 @@ func call(st mut S, callee0 NodeRef, args ListRef, at NodeRef, eb int, ef int, d
             v := expr(mut st, a0, eb, ef, depth)?
             return c1(mut st, CLen, v), nil
         }
-        // keys(m)（keysm の段）: map のキー列のスナップショット（最内 region の imm slice）
+        // keys(m)（keysmの段階）: mapのキー列のスナップショット（最内regionのimm slice）
         if strIs(mut st, name, "keys") {
             if na != 1 {
                 return 0, diag.Malformed{at: posOf(mut st, at)}
@@ -183,7 +183,7 @@ func call(st mut S, callee0 NodeRef, args ListRef, at NodeRef, eb int, ef int, d
             v := expr(mut st, a0, eb, ef, depth)?
             return c1(mut st, CKeysm, v), nil
         }
-        // clone(x)（clone の段 — freeze の双対）: slice / map の浅い写しを最内 region の mut へ。読み出しの注釈は index と同じ
+        // clone(x)（cloneの段階 — freezeの双対）: slice / mapの浅いコピーを最内regionのmutへ。読み出しの注釈はindexと同じ
         // （imm の slice は要素型が注釈を持つとき・imm の map はセル型 prod k (opt v) が常に注釈を持つ — Lean の readAs）
         if strIs(mut st, name, "clone") {
             if na != 1 {
@@ -217,7 +217,7 @@ func call(st mut S, callee0 NodeRef, args ListRef, at NodeRef, eb int, ef int, d
                 return cFConv(mut st, if sk == loader.IFSqrt { FCSqrt } else if sk == loader.IFBits { FCBits } else { FCFromBits }, v), nil
             }
             if sk == loader.IAppendWord {
-                // 末尾への語の書き（std/binary.AppendWord の `b = sysAppendWord(b, v, k)`）: コアの近似は b への append（結果は b と同じ region の列 —
+                // 末尾へのワードの書き（std/binary.AppendWordの `b = sysAppendWord(b, v, k)`）: コアの近似はbへのappend（結果はbと同じregionの列 —
                 // 新しい slice の近似では外の region の b へ代入できない）。v・k は要素の位置で左から評価して捨てる
                 subject := expr(mut st, latN(mut st, args, 0), eb, ef, depth)?
                 v1 := expr(mut st, latN(mut st, args, 1), eb, ef, depth)?
@@ -323,7 +323,7 @@ func call(st mut S, callee0 NodeRef, args ListRef, at NodeRef, eb int, ef int, d
         return r, ierr
     }
     // mut の部分を持つ値を外の region から普通の関数（mut 引数なし）へ渡す呼び出し（反復の region・式ブロックの中）は展開する:
-    // call の規則は仮引数の region を呼び手の最内へ写すので、外の region の mut の部分（写せない）と一致しない
+    // callの規則は仮引数のregionを呼び手の最内へコピーするので、外のregionのmutの部分（コピーできない）と一致しない
     if !fnMutDef(mut st, fi) && mutValInline(mut st, fi, args, eb, ef) {
         if st.mvInlN < table.Len(mut st.mvInl) {
             table.Set(mut st.mvInl, st.mvInlN, fi)
@@ -356,8 +356,8 @@ func call(st mut S, callee0 NodeRef, args ListRef, at NodeRef, eb int, ef int, d
     penv := paramEnv(mut st, tps, ts, nt)
     vs := ListRef(listN(mut st, na))
     // callM の anchor（mut の実引数の根の束縛の region — 最も外）。今の最内がそれより深ければ（反復の region・式ブロックの中）、
-    // imm の実引数を anchor へ形式コピーする（1 slot の規則は imm の仮引数も anchor へ写す。imm は同一性が観測不能なので
-    // 写しは常に健全・lower は読むだけの引数を写さない観測等価の実装）
+    // immの実引数をanchorへ形式コピーする（1 slotの規則はimmの仮引数もanchorへコピーする。immは同一性が観測不能なので
+    // コピーは常に健全・lowerは読むだけの引数をコピーしない観測等価の実装）
     mut anchor := -1
     if fnMutDef(mut st, fi) {
         for q <- iter.Range(0, na) {
@@ -395,7 +395,7 @@ func call(st mut S, callee0 NodeRef, args ListRef, at NodeRef, eb int, ef int, d
             w, err := tyIn(mut st, fnPkg(mut st, fi), penv, nB(nodeOf(mut st, prm)), at)
             fdr := if err == nil { fieldFnValDecl(mut st, fnPkg(mut st, fi), penv, nB(nodeOf(mut st, prm)))? } else { -1 }
             if fdr >= 0 {
-                // 値化可能な named fn type の仮引数は値の位置（閉包の組を渡す）
+                // 値化可能な named fn type の仮引数は値の位置（クロージャの組を渡す）
                 hsetCore(mut st, int(vs) + 1 + i, closureValue(mut st, arg, w, fdr, eb, ef, depth, at)?)
             } else if err == nil && kindN(mut st, arg) == ast.EStrlit && isStringTy(mut st, w) {
                 // string リテラルの実引数は region 0（呼び手空間の上界 — 再帰する mut Def の imm 引数の条件に掛けない）。spawn の子の中は子の床（taskFloor）
@@ -425,7 +425,7 @@ func call(st mut S, callee0 NodeRef, args ListRef, at NodeRef, eb int, ef int, d
 }
 
 // 関数 fi の呼び出し（実引数 args）を mut の部分を持つ値のために展開するか: 関数のラベルより深い region にいて、
-// mut 引数でない実引数のどれかの型が mut のコンテナを含み、fi が展開中の積みに無い（再帰しない）とき
+// mut引数でない実引数のどれかの型がmutのコンテナを含み、fiが展開中のスタックに無い（再帰しない）とき
 func mutValInline(st mut S, fi int, args ListRef, eb int, ef int) bool {
     if st.retTarget < 0 || st.rdepth <= lab(mut st, labelAt(mut st, st.retTarget)).rdepth {
         return false
@@ -462,7 +462,7 @@ func explicitCallee(st mut S, callee0 NodeRef, eb int) Callee {
     return Callee{callee: callee0, explicit: -1}
 }
 
-// 型パラメータ tps（nt 個）を型引数 ts に束ねた型環境（[n, (名前, 型, -1) × n]）
+// 型パラメータtps（nt個）を型引数tsにまとめた型環境（[n, (名前, 型, -1) × n]）
 func paramEnv(st mut S, tps ListRef, ts ListRef, nt int) int {
     penv := listN(mut st, nt * 3)
     hset(mut st, penv, nt)
@@ -476,12 +476,12 @@ func paramEnv(st mut S, tps ListRef, ts ListRef, nt int) int {
 
 // ── ジェネリック Def のインスタンス（型パラメータ型の補間の穴）──
 // 本体に型パラメータ型の補間の穴がある Def は抽象の Def を出さず（穴の脱糖 = FormatInt・if・そのままの連結が型引数で分かれる）、
-// 呼び出しの表層型の型引数ごとに型引数を代入した Def を持ち上げたラムダと同じ鎖（st.ndef 以降の添字）に足す。
-// 印は typer の YInstNeeded、添字の振り直しは desugar.sober の run（印の付いた関数の Def の添字は DINST）
+// 呼び出しの表層型の型引数ごとに型引数を代入したDefを持ち上げたラムダと同じチェーン（st.ndef以降の添字）に足す。
+// フラグはtyperのYInstNeeded、添字の振り直しはdesugar.soberのrun（フラグの付いた関数のDefの添字はDINST）
 
 const DINST = -2
 
-// 型環境 env（インスタンス・展開のもの）の表層型の型引数 ya を対応の鎖に積む
+// 型環境env（インスタンス・展開のもの）の表層型の型引数yaを対応のチェーンに積む
 func noteInstEnv(st mut S, env int, ya ListRef) {
     if ya != -1 {
         st.instEnvs = rec5(mut st, env, int(ya), st.instEnvs, 0, 0)
@@ -518,7 +518,7 @@ func callYArgs(st mut S, cn NodeRef, outer int) ListRef {
     return r
 }
 
-// 印の付いたジェネリック Def fi の、呼び出し（callee の節 cn・型環境 penv — 型引数を代入したもの）のインスタンスの Def の添字。
+// フラグの付いたジェネリック Def fi の、呼び出し（calleeの節cn・型環境penv — 型引数を代入したもの）のインスタンスのDefの添字。
 // 同じ表層型の型引数のインスタンスは 1 つ（再帰の呼び出しは脱糖の前に表へ載せた添字を引く）
 func instDef(st mut S, fi int, cn NodeRef, penv int, at NodeRef) (int, error?) {
     ya := callYArgs(mut st, cn, st.tenv)
@@ -668,21 +668,21 @@ func inlineCall(st mut S, fi int, cn NodeRef, explicit NodeRef, args ListRef, at
             if kindN(mut st, pt) == ast.TFunc {
                 w, fsty := tyStyIn(mut st, pk, body_tenv, pt, at)?
                 c := closureArg(mut st, arg, w, eb, ef, at)?
-                // 名前付き関数型の照合（X3 — 別の名前付き関数型に束縛した閉包は渡せない。ラムダ・for 式は名前なしで可）
+                // 名前付き関数型の照合（X3 — 別の名前付き関数型に束縛したクロージャは渡せない。ラムダ・for式は名前なしで可）
                 asty := if kindN(mut st, arg) == ast.EIdent && lookup(mut st, eb, sA(nodeOf(mut st, arg))) < 0 { lookupFSty(mut st, ef, sA(nodeOf(mut st, arg))) } else { SFREE }
                 if !Assignable(mut st, fsty, asty) {
                     nomFail(mut st, arg)?
                 }
                 fenv = bindFT(mut st, fenv, nodeOf(mut st, p).a, c, fsty, pt, pk, body_tenv)
             } else if strIs(mut st, PkgPath(mut st, pk), "std/task") && strIs(mut st, sA(nodeOf(mut st, p)), "budget") {
-                // std/task の展開される口（Map / mapE）の budget: はコアへ運ばない — 本体での使い道は Spawn の budget: だけで、
-                // Spawn の写しは捨てる（呼び出しを含まない整数式 — ParCheck kind 20）。束ねないので budget: の無い呼び出しのコアは不変
+                // std/taskの展開される入口（Map / mapE）のbudget: はコアへ運ばない — 本体での使い道はSpawnのbudget: だけで、
+                // Spawnのコピーは捨てる（呼び出しを含まない整数式 — ParCheck kind 20）。まとめないのでbudget: の無い呼び出しのコアは不変
                 {}
             } else if parEpParam(mut st, pk, pt) != -1 || ParHandlesParam(mut st, pk, pt) {
-                // std/task の端点の仮引数（RecvAll）: コアの型は own — 実引数の型のまま束ねる（ann しない）
+                // std/taskの端点の仮引数（RecvAll）: コアの型はown — 実引数の型のまままとめる（annしない）
                 hsetCore(mut st, int(vals) + 1 + nv, expr(mut st, arg, eb, ef, level)?)
                 nv += 1
-                // domain の仮引数（Update / Read / Await）は実引数の宣言を運ぶ — 状態の struct の宣言を domEnter の束縛まで届ける（mut の欄のセルの割り）
+                // domainの仮引数（Update / Read / Await）は実引数の宣言を運ぶ — 状態のstructの宣言をdomEnterの束縛まで届ける（mutのフィールドのセルの割り）
                 ad := if parDomParam(mut st, pk, pt) { declOfExpr(mut st, arg, eb, ef) } else { -1 }
                 benv = bind(mut st, benv, sA(nodeOf(mut st, p)), level, false, ad, computeTy(mut st, arg, eb, ef), -1, 0, -1, false, SUNK)
                 level += 1
@@ -792,8 +792,8 @@ func mutParamArg(st mut S, fi int, p NodeRef, arg NodeRef, body_tenv int, eb int
             }
         }
         // struct の場所（ref の木）は ann しない: 木の型は実引数の宣言 pl.dr から組む（仮引数の型との照合ではない）うえ、ref true を葉とする
-        // 木の sub は等値だけ（緩めない）なので、ann は冗長な自己整合の表明 — 欄の数 × 展開点の数でコアを膨らませる。
-        // 木の型（placeTy → splitTy）も組まない: 欄の型が引けないことによる拒否は、上の仮引数の型の tyOf（同じ型宣言 — 直前で照合）が
+        // 木のsubは等値だけ（緩めない）なので、annは冗長な自己整合の表明 — フィールドの数 × 展開点の数でコアを膨らませる。
+        // 木の型（placeTy → splitTy）も組まない: フィールドの型が引けないことによる拒否は、上の仮引数の型のtyOf（同じ型宣言 — 直前で照合）が
         // 先に err で出す。組むと mut 実引数 1 つごとに数百語の型の記録がコアに残らずヒープに積もる（自己適用で 750 万語）
         if pl.dr >= 0 {
             return pl.refs, nil
@@ -819,7 +819,7 @@ func mutParamArg(st mut S, fi int, p NodeRef, arg NodeRef, body_tenv int, eb int
     return cAnn(mut st, ref, tRefOf(mut st, 1, bnd(mut st, b).region, inner)), nil
 }
 
-// 関数型の引数位置に書ける形（ラムダ・閉包の名前・for 式）
+// 関数型の引数位置に書ける形（ラムダ・クロージャの名前・for式）
 func closureArg(st mut S, arg NodeRef, want TyRef, eb int, ef int, at NodeRef) (int, error?) {
     k := kindN(mut st, arg)
     if k == ast.EFor {
@@ -842,7 +842,7 @@ func closureArg(st mut S, arg NodeRef, want TyRef, eb int, ef int, at NodeRef) (
                 return c, nil
             }
         }
-        // 借りの値の転送（(α-L0)）は loader が η の展開のラムダに写して来る（loader/fnval.sober の fvBrwEta — check と build が同じ木を読む）
+        // 借りの値の転送（(α-L0)）はloaderが η の展開のラムダにコピーしてくる（loader/fnval.soberのfvBrwEta — checkとbuildが同じ木を読む）
     }
     return 0, diag.CoreFragment{at: posOf(mut st, at)}
 }
@@ -853,7 +853,7 @@ const FSlice = 0
 const FMap = 1
 const FClosure = 2
 const FCall = 3
-const FCallV = 4    // 閉包の名前の呼び出し形（`for x <- recv(a)? { … }` — recv は展開される関数の匿名の関数型の仮引数・language.md 7 節 L-for）
+const FCallV = 4    // クロージャの名前の呼び出し形（`for x <- recv(a)? { … }` — recvは展開される関数の匿名の関数型の仮引数・language.md 7 節L-for）
 
 // for の生成元の種類（forLower が書き換えを選ぶ）
 func forSrcKind(st mut S, src NodeRef, eb int, ef int) int {
@@ -869,7 +869,7 @@ func forSrcKind(st mut S, src NodeRef, eb int, ef int) int {
     return if isTag(mut st, computeTy(mut st, src, eb, ef), TMp) { FMap } else { FSlice }
 }
 
-// 生成元が閉包の名前の呼び出し形か（`recv(a…)` / 印つき `recv(a…)?` — recv が閉包に束縛された名前で、そのラムダの仮引数が
+// 生成元がクロージャの名前の呼び出し形か（`recv(a…)` / マークつき `recv(a…)?` — recvがクロージャに束縛された名前で、そのラムダの仮引数が
 // 実引数より 1 つ多く、束縛の型の最後の仮引数が関数型）。判定は束縛の型（展開される関数の宣言の匿名の関数型）だけ — 呼び出し形の生成元と同じテンプレート
 func closureGenCall(st mut S, src NodeRef, eb int, ef int) bool {
     c := if kindN(mut st, src) == ast.ETry { nA(nodeOf(mut st, src)) } else { src }
@@ -895,8 +895,8 @@ func isCallGen(st mut S, src NodeRef, eb int) bool {
     return CallGenFn(mut st, src, st.curPkg) >= 0
 }
 
-// 生成元の呼び出しの節: 失敗しうる生成元の印 `g(a)?`（language.md 7 節 — 呼び出し形の生成元に付いた `?`）なら `?` の内側の呼び出し、
-// それ以外は src のまま（呼び出し形でない `f()?` — slice を返す呼び出しに `?` — は普通の `?` の式）。印の有無と結果の形は loader（forfallible.sober）が先に検査済み
+// 生成元の呼び出しの節: 失敗しうる生成元のマーク `g(a)?`（language.md 7 節 — 呼び出し形の生成元に付いた `?`）なら `?` の内側の呼び出し、
+// それ以外はsrcのまま（呼び出し形でない `f()?` — sliceを返す呼び出しに `?` — は普通の `?` の式）。マークの有無と結果の形はloader（forfallible.sober）が先に検査済み
 func GenCallOf(st mut S, src NodeRef, from int) NodeRef {
     if kindN(mut st, src) == ast.ETry && CallGenFn(mut st, nA(nodeOf(mut st, src)), from) >= 0 {
         return nA(nodeOf(mut st, src))
@@ -924,7 +924,7 @@ func CallGenFn(st mut S, src NodeRef, from int) int {
     }
     ps := fnParams(mut st, fi)
     np := lenL(mut st, ps)
-    // 名前付き引数を並べ直した呼び出し: 継続 k の席は loader の印（GenSlot）の位置で、実引数の数 = 仮引数の数
+    // 名前付き引数を並べ直した呼び出し: 継続kの席はloaderのマーク（GenSlot）の位置で、実引数の数 = 仮引数の数
     slot := genSlotOf(mut st, lB(nodeOf(mut st, src)))
     if slot >= 0 {
         return if np == lenL(mut st, lB(nodeOf(mut st, src))) && kindN(mut st, nB(nodeOf(mut st, latN(mut st, ps, slot)))) == ast.TFunc { fi } else { -1 }
@@ -932,7 +932,7 @@ func CallGenFn(st mut S, src NodeRef, from int) int {
     return if np == lenL(mut st, lB(nodeOf(mut st, src))) + 1 && kindN(mut st, nB(nodeOf(mut st, latN(mut st, ps, np - 1)))) == ast.TFunc { fi } else { -1 }
 }
 
-// for 式 fe の生成元の呼び出しで継続 k が入る実引数の番号（loader の印の席 — 印が無ければ末尾 = 実引数の数 - 1 を返すのは呼び手）。印が無ければ -1
+// for式feの生成元の呼び出しで継続kが入る実引数の番号（loaderのマークの席 — マークが無ければ末尾 = 実引数の数 - 1を返すのは呼び手）。マークが無ければ -1
 func GenSlotIn(st mut S, fe NodeRef) int {
     g := latN(mut st, lA(nodeOf(mut st, fe)), 0)
     src := nB(nodeOf(mut st, g))
@@ -940,7 +940,7 @@ func GenSlotIn(st mut S, fe NodeRef) int {
     return if kindN(mut st, c) == ast.ECall { genSlotOf(mut st, lB(nodeOf(mut st, c))) } else { -1 }
 }
 
-// 実引数の列の継続 k の席（loader が名前付き引数を並べ直したときに置く印つきの nil — loader.GenSlot）。無ければ -1
+// 実引数の列の継続kの席（loaderが名前付き引数を並べ直したときに置くマークつきのnil — loader.GenSlot）。無ければ -1
 func genSlotOf(st mut S, args ListRef) int {
     for j <- iter.Range(0, lenL(mut st, args)) {
         aj := NodeRef(latI(mut st, args, j))
@@ -952,12 +952,12 @@ func genSlotOf(st mut S, args ListRef) int {
 }
 
 // for 式 → Iter[T] 型のラムダ（forexpand.zig の lower — 表層 AST の節をヒープに足す）:
-// `(yield) => { GEN(src, (x) => { if g { yield(e) } }) }`。map の生成元は `iter#.Slice(keys(src), k)`（keysm の段）
+// `(yield) => { GEN(src, (x) => { if g { yield(e) } }) }`。mapの生成元は `iter#.Slice(keys(src), k)`（keysmの段階）
 func forLower(st mut S, fe NodeRef, kind int) NodeRef {
     return lambda1(mut st, int(strLit(mut st, "yield")), forGen(mut st, fe, kind), fe)
 }
 
-// ForLower / ForGen / IsForStmt / ForOut は lower の読み口（書き換えの組み立てと形の判定を共有する）。from = for を書いた package（lower の今の package —
+// ForLower / ForGen / IsForStmt / ForOutはlowerの読みインターフェース（書き換えの組み立てと形の判定を共有する）。from = forを書いたpackage（lowerの今のpackage —
 // st.curPkg は ParCheckTyped の歩きが最後の関数の package のまま残すので、生成元の名前を引く前に付け替える）
 func ForLower(st mut S, fe NodeRef, kind int, from int) NodeRef {
     st.curPkg = from
@@ -996,7 +996,7 @@ func forStmt(st mut S, fe NodeRef, eb int, ef int) (NodeRef, error?) {
     return forGen(mut st, fe, forSrcKind(mut st, nB(nodeOf(mut st, g)), eb, ef)), nil
 }
 
-// string は回し方が一意でないので for の生成元に直に置けない（language.md 7 節 — 見方を名指す `for c <- bytes(s)`）
+// stringは回し方が一意でないのでforの生成元に直に置けない（language.md 7 節 — 見方を明示する `for c <- bytes(s)`）
 func notStringSrc(st mut S, src NodeRef, eb int, ef int) error? {
     if isStringTy(mut st, computeTy(mut st, src, eb, ef)) {
         return diag.TypeMismatch{at: posOf(mut st, src), kind: 3}
@@ -1024,7 +1024,7 @@ func forGen(st mut S, fe NodeRef, kind int) NodeRef {
         src := if kind == FCallV && kindN(mut st, try0) == ast.ETry { nA(nodeOf(mut st, try0)) } else { GenCallOf(mut st, try0, st.curPkg) }
         sargs := lB(nodeOf(mut st, src))
         na := lenL(mut st, sargs)
-        // 継続 k の席: loader が名前付き引数を並べ直した呼び出しは k の仮引数の席に印つきの nil（loader.GenSlot）を置く — そこを埋める。無ければ末尾に足す
+        // 継続kの席: loaderが名前付き引数を並べ直した呼び出しはkの仮引数の席にマークつきのnil（loader.GenSlot）を置く — そこを埋める。無ければ末尾に足す
         hole := genSlotOf(mut st, sargs)
         args := listN(mut st, if hole >= 0 { na } else { na + 1 })
         for j <- iter.Range(0, na) {
@@ -1065,7 +1065,7 @@ func blockOf(st mut S, e NodeRef) NodeRef {
     return NodeRef(rec8(mut st, ast.KBlock, NodeRef(-1), list1(mut st, s), 0, 0, 0, 0, 0))
 }
 
-// 引数が閉包として束縛される形か（ラムダ・for 式・閉包の名前）
+// 引数がクロージャとして束縛される形か（ラムダ・for式・クロージャの名前）
 func isClosureArg(st mut S, arg NodeRef, eb int, ef int) bool {
     k := kindN(mut st, arg)
     if k == ast.ELambda || k == ast.EFor {
@@ -1116,8 +1116,8 @@ func lambdaCall(st mut S, cl int, args ListRef, at NodeRef, eb int, ef int, dept
         lp := latN(mut st, lps, i)
         arg := latN(mut st, args, i)
         want := latTy(mut st, wants, i)
-        // mut 仮引数の席（関数型の `func(a mut T, …)` — 期待型は ref か欄ごとのセルの木）: 呼び手の場所の ref（の木）を束ねる（func 宣言の mut 仮引数の展開と同じ）
-        // 局所の束縛のラムダ（型なしの閉包）は仮引数の mut の印が席
+        // mut仮引数（関数型の `func(a mut T, …)` — 期待型はrefかフィールドごとのセルの木）: 呼び手の場所のref（の木）をまとめる（func宣言のmut仮引数の展開と同じ）
+        // 局所の束縛のラムダ（型なしのクロージャ）は仮引数のmutのマークが席
         seat := if ft == -1 { nodeOf(mut st, lp).c != 0 } else { want != -1 && mutSeatTy(mut st, want) }
         if ft != -1 && (nodeOf(mut st, lp).c != 0 && !seat || nodeOf(mut st, lp).c == 0 && nB(nodeOf(mut st, lp)) != -1 && seat) {
             return 0, diag.FnArg{at: posOf(mut st, lam), kind: 4}
@@ -1175,7 +1175,7 @@ func lambdaCall(st mut S, cl int, args ListRef, at NodeRef, eb int, ef int, dept
         pushLabel(mut st, cont)
     }
     lbody := nB(nodeOf(mut st, lam))
-    // 結果が T?（`func(c Conn) error?` — 28 節 net の handler）なら本体の値を期待型で寄せる（ラベル・nil・if の腕。他の結果型は従来どおり ann だけ）
+    // 結果がT?（`func(c Conn) error?` — 28 節netのhandler）なら本体の値を期待型で寄せる（ラベル・nil・ifの分岐。他の結果型は従来どおりannだけ）
     rw := if loop == 0 && isTag(mut st, ft, TFn) && tg(mut st, tRight(mut st, ft)) == TOpt { pointTy(mut st, tRight(mut st, ft)) } else { TyRef(-1) }
     // 結果が byte なら本体の末尾の型なしの定数を byte に（language.md 33 節 — `(x) => { g(); 9 }`）
     bw := if loop == 0 && isTag(mut st, ft, TFn) && tg(mut st, tRight(mut st, ft)) == TByte { tRight(mut st, ft) } else { TyRef(-1) }
@@ -1369,11 +1369,11 @@ func tryExpr(st mut S, e NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
     callee := if kindN(mut st, c0) == ast.EIndex { nA(nodeOf(mut st, c0)) } else { c0 }
     // 名前付き関数か、名前付き関数から束縛した関数値（n25 — 結果の型式の列は束縛が持つ）
     res := fnResOf(mut st, callee, eb)
-    // 関数型の仮引数に束縛した閉包の呼び出し（`f(c)?` — 結果の型式は持たないのでコア型の組の鎖から読む）
-    // 値の位置の閉包（値化可能な named fn type の値の束縛・欄の読み — `g(x)?` は束縛して見る形と同じ結果の型）
+    // 関数型の仮引数に束縛したクロージャの呼び出し（`f(c)?` — 結果の型式は持たないのでコア型の組のチェーンから読む）
+    // 値の位置のクロージャ（値化可能な named fn type の値の束縛・フィールドの読み — `g(x)?` は束縛して見る形と同じ結果の型）
     ct0 := if res == -1 { cloResTy(mut st, callee, eb, ef) } else { TyRef(-1) }
     cv := if res == -1 && ct0 == -1 { closureCallee(mut st, callee, eb, ef) } else { TyRef(-1) }
-    // 局所の束縛のラムダ（閉包の型なし）は呼び出しの式の型（本体の値の型）
+    // 局所の束縛のラムダ（クロージャの型なし）は呼び出しの式の型（本体の値の型）
     crt := if cv != -1 { closRet(mut st, cv) } else if ct0 == -1 && res == -1 && localCloName(mut st, callee, eb, ef) { computeTy(mut st, tc0, eb, ef) } else { ct0 }
     if res == -1 && crt == -1 {
         return 0, diag.CoreFragment{at: posOf(mut st, at)}
@@ -1425,7 +1425,7 @@ func tryExpr(st mut S, e NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
         i += 1
     }
     p := expr(mut st, tc0, eb, ef, depth)?
-    // some 腕（深さ depth + 2: var 0 = err、var 1 = p）
+    // some分岐（深さdepth + 2: var 0 = err、var 1 = p）
     sd := depth + 2
     vs := ListRef(listN(mut st, n))
     // ゼロ値はその場で組む（深い位置の imm コンテナは jump の clampR — R4b — がラベルの region へ締める）
@@ -1488,7 +1488,7 @@ func tyStyIn(st mut S, pk int, env int, te NodeRef, at NodeRef) (TyRef, int, err
     return t, SurfaceOf(mut st, pk, te), nil
 }
 
-// 型環境 env のもとで型式 te のコア型と、mut の場所として欄ごとに割るか（teSplits）を読む（型環境は出口で戻す）
+// 型環境envのもとで型式teのコア型と、mutの場所としてフィールドごとに割るか（teSplits）を読む（型環境は出口で戻す）
 func tySplitIn(st mut S, pk int, env int, te NodeRef, at NodeRef) (TyRef, bool, error?) {
     saved := st.tenv
     st.tenv = env

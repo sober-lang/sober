@@ -1,6 +1,6 @@
 package main
 
-// 負例（check / build とも名指しで拒否 — diag.ImmWrite）: 束縛は mut でも値が imm の map へ書く（`mut m := map[K]V{}` は右辺の mut の書き忘れ —
+// 負例（check / buildとも専用の診断で拒否 — diag.ImmWrite）: 束縛はmutでも値がimmのmapへ書く（`mut m := map[K]V{}` は右辺のmutの書き忘れ —
 // 書けるのは `mut m := mut map[K]V{}`）。以前は check が位置なしの def error・build が Mismatch
 
 func main() {

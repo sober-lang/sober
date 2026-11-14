@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tlsinterop（std/internal/hsc のクライアントの相互接続の網）: Go の crypto/tls のサーバ（scripts/oracles/tlsserver — ECDSA P-256 / P-384 / RSA-2048 の葉・
-# TLS 1.3・X25519）を起こし、std/internal/hsc の TestInterop を SOBER_TLS_INTEROP で走らせる。Go の道具が要るので gates に入れない（暗号の便の締めに手で回す）
-# 通ったら conf: の行を testdata/conformance/interop/tls.txt へ記録する（scripts/confrecord.sh — 準拠文書の最終確認の欄）
+# TLS 1.3・X25519）を起こし、std/internal/hscのTestInteropをSOBER_TLS_INTEROPで走らせる。Goの道具が要るのでgatesに入れない（暗号のタスクの仕上げに手で回す）
+# 通ったらconf: の行をtestdata/conformance/interop/tls.txtへ記録する（scripts/confrecord.sh — 準拠文書の最終確認のフィールド）
 #   scripts/tlsinterop.sh
 set -uo pipefail
 cd "$(dirname "$0")/.."

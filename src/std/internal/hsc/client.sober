@@ -1,9 +1,9 @@
 package hsc
 
 // TLS 1.3 のクライアントの handshake（RFC 9846 — std/http/client の下）。鍵交換は X25519 だけ・suite は TLS_AES_128_GCM_SHA256 と TLS_CHACHA20_POLY1305_SHA256・
-// サーバの証明書の鎖は std/internal/x509 の Verify（時刻と信頼の起点は値で受ける — 失効は見ない）・CertificateVerify は ECDSA P-256 / P-384 と RSA-PSS（rsae）。
+// サーバの証明書のチェーンはstd/internal/x509のVerify（時刻と信頼の起点は値で受ける — 失効は見ない）・CertificateVerifyはECDSA P-256 / P-384とRSA-PSS（rsae）。
 // 鍵共有の群は X25519 と secp256r1（最初の key_share は X25519 — secp256r1 だけを受けるサーバ〔PostgreSQL 17 以前の既定ほか〕は HelloRetryRequest で求め、2 番目の ClientHello を P-256 で送る）。
-// HelloRetryRequest は cookie と secp256r1 の要求を受ける（送ってある X25519 や知らない群を求める HRR は illegal_parameter）。PSK / 0-RTT / クライアント証明書なし・
+// HelloRetryRequestはcookieとsecp256r1のリクエストを受ける（送ってあるX25519や知らない群を求めるHRRはillegal_parameter）。PSK / 0-RTT / クライアント証明書なし・
 // NewSessionTicket は読み捨てる。サーバの役の Hs と同じく、record の枠を Feed に食わせて送る record の列と受けた平文を Out で返す
 
 import "std/crypto"
@@ -24,7 +24,7 @@ const aCertificateExpired = 45
 const aUnknownCa = 48
 
 // クライアントの設定（host = SNI と証明書の名前の照合・alpn = 申し出る ALPN〔空 = 使わない〕・roots = 信頼の起点・now = 証明書の時刻の照合の UNIX 秒・
-// seed = 乱数の源〔空 = crypto.Rand — 網の決定的な黄金〕・allowTls12 = TLS 1.2 も申し出る〔既定 false — 公開の綴りは dangerouslyAllowTls12〕）
+// seed = 乱数の源〔空 = crypto.Rand — 検査の決定的なゴールデン〕・allowTls12 = TLS 1.2も申し出る〔既定false — 公開の綴りはdangerouslyAllowTls12〕）
 type CParams struct {
     host string
     alpn []string
@@ -83,7 +83,7 @@ type Ch struct {
     ccs bool
     sessid []byte
     upd bool
-    // TLS 1.2 の道（v12 = 1.2 で握手中か済んだ・crandom / srandom = hello の乱数・ms = master secret・w* / r* = 送り / 受けの鍵と IV と番号・
+    // TLS 1.2のパス（v12 = 1.2で握手中か済んだ・crandom / srandom = helloの乱数・ms = master secret・w* / r* = 送り / 受けの鍵とIVと番号・
     // rkeyed = サーバの CCS を受けた・certReq = CertificateRequest を受けた）
     v12 bool
     crandom []byte
@@ -101,7 +101,7 @@ type Ch struct {
     certReq bool
 }
 
-// 鎖の検証の失敗（包み替えの cause に x509 の誤りのラベル — std/http/client が Tls の誤りに運ぶ）
+// チェーンの検証の失敗（包み替えのcauseにx509の誤りのラベル — std/http/clientがTlsの誤りに運ぶ）
 type CertFailed error
 
 // handshake を始める: 最初の ClientHello の record と状態
@@ -394,12 +394,12 @@ func onServerHello(h mut Ch, p CParams, m []byte) (Out, error?) {
     if ver != 0x0304 {
         return none(), alert(aProtocolVersion)
     }
-    // 1.3 のサーバは legacy_session_id をそのまま返す（RFC 9846 4.1.3 — 1.2 のサーバは自分の session_id を返すので 1.2 の道では見ない）
+    // 1.3のサーバはlegacy_session_idをそのまま返す（RFC 9846 4.1.3 — 1.2のサーバは自分のsession_idを返すので1.2のパスでは見ない）
     if !same(sid, h.sessid) {
         return none(), alert(aIllegalParameter)
     }
     if same(random, hrrRandom()) {
-        // HelloRetryRequest: 2 回目は無い・群の要求は secp256r1 だけ（X25519 は送ってある）・何も変えない HRR（群も cookie も無い）は不正
+        // HelloRetryRequest: 2回目は無い・群のリクエストはsecp256r1だけ（X25519は送ってある）・何も変えないHRR（群もcookieも無い）は不正
         if h.hrr || (group != 0 && group != groupSecp256r1) || (group == 0 && len(cookie) == 0) {
             return none(), alert(aIllegalParameter)
         }
@@ -544,7 +544,7 @@ func eeAlpn(m []byte, p CParams) (string, error?) {
     return got, nil
 }
 
-// Certificate（文脈は空・1 本以上）→ 鎖の検証（internal.x509.Verify — 失敗は CertFailed）
+// Certificate（文脈は空・1本以上）→ チェーンの検証（internal.x509.Verify — 失敗はCertFailed）
 @errors(internal.record.Alert, CertFailed)
 func onCertificate(m []byte, p CParams) (internal.x509.Cert, error?) {
     mut c := cur(4, len(m))

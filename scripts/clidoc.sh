@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # clidoc（gates）: CLI の文書 ≡ 実装（docsync の CLI 版）。
-#   ① 生成物の一致: `sober doc --cli` の頁 ≡ docs/cli/sober.md（英 — 正）・sober.ja.md（訳表 docs/cli/sober.ja.json）。表は stage2 自身に吐かせる
-#      （--exe — stage2 は今の木の app を建てたもの）・効果は compiler/ の木（std を写した — effectsdump の自己と同じ形）で導出。
+#   ① 生成物の一致: `sober doc --cli` のページ ≡ docs/cli/sober.md（英 — 正）・sober.ja.md（訳表docs/cli/sober.ja.json）。表はstage2自身に吐かせる
+#      （--exe — stage2は今の木のappをビルドしたもの）・エフェクトはcompiler/ の木（stdをコピーした — effectsdumpの自己と同じ形）で導出。
 #      題材 testdata/clidoc/tool.sober（名前の run / ラムダの run / run 無し / dev の除外 / `|` の逃がし / サブコマンドの錨）≡ tool.md・tool.ja.md
 #   ①' 訳表の陳腐化: 訳の無い文・使われない訳で生成が落ちること（負例 2 本）
 #   ②③ scripts/clidoc.ts（環境変数の綴り ⊆ 表の宣言 ∪ docs/guide/env.ja.md の表・scripts と bin/sober が渡すフラグ ⊆ 表の宣言）
@@ -33,7 +33,7 @@ fi
 for f in docs/cli/sober.md docs/cli/sober.ja.md "$T/tool.md" "$T/tool.ja.md"; do
     diff -q "$W/$(basename "$f")" "$f" > /dev/null 2>&1 || { echo "FAIL $f differs from the generated page (scripts/clidoc.sh --regen):"; diff "$W/$(basename "$f")" "$f" | head -8; fail=1; }
 done
-# ①' 負例: 訳を 1 本抜く（訳なし）・余分な訳を足す（使われない）— どちらも生成が名指しで落ちる
+# ①' 負例: 訳を1本抜く（訳なし）・余分な訳を足す（使われない）— どちらも生成が該当の訳を特定して落ちる
 node -e 'const t=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));delete t["count the bytes"];require("fs").writeFileSync(process.argv[2],JSON.stringify(t))' "$T/tool.ja.json" "$W/miss.json"
 node -e 'const t=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));t["no such text"]="無い";require("fs").writeFileSync(process.argv[2],JSON.stringify(t))' "$T/tool.ja.json" "$W/extra.json"
 (cd "$T" && "$S2" doc --cli tool.sober --ja "$W/miss.json" -o "$W/x.md" 2> "$W/miss.err")

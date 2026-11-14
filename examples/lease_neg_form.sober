@@ -1,6 +1,6 @@
 package main
 
-// 窓は型を書いた mut 仮引数 1 つのラムダ（diag.Par kind 24）
+// ウィンドウは型を書いたmut仮引数1つのラムダ（diag.Par kind 24）
 
 import "std/task"
 import "std/pool"

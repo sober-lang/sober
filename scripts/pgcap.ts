@@ -1,6 +1,6 @@
-// pgcap: 実の PostgreSQL と平文・trust で決まった台本を往復し、両向きのバイト列を記録する（std/internal/pgwire の黄金 — testdata/pg/trace-<版>.hex）。
+// pgcap: 実のPostgreSQLと平文・trustで決まった台本を往復し、両向きのバイト列を記録する（std/internal/pgwireのゴールデン — testdata/pg/trace-<版>.hex）。
 //   使い方: node --experimental-strip-types --no-warnings scripts/pgcap.ts <host:port> <user> > testdata/pg/trace-<版>.hex
-//   std/internal/pgwire と独立の符号化（ここ）で書いた要求を std/internal/pgwire の符号化器がバイト一致で作れること・応答を同じ復号器が読めることを
+//   std/internal/pgwireと独立の符号化（ここ）で書いたリクエストをstd/internal/pgwireの符号化器がバイト一致で作れること・レスポンスを同じ復号器が読めることを
 //   std/internal/pgwire/wire_test.sober が照合する。記録は手で取り直すだけ（gates は読むだけ — 実 PG を要らない）
 //   形: `# <場面>` の行の後に `C <hex>`（送ったもの 1 回分）と `S <hex>`（ReadyForQuery か切断まで受けたもの）の行が交互に続く
 import * as net from "node:net";

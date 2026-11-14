@@ -1,7 +1,7 @@
 package main
 
-// net_orphan と同じ 6 つの形を、外の scope に長い期限（deadline: 20 秒 — 届かない）を書いたプログラムで（期限の機構を組むプログラム: 孤児の印は
-// 期限の語に立ち〔時刻 1〕、io の口の期限の検査がそのまま Expired を返す・期限の鎖に居る待ち手は鎖から外してから起こす — lower/orphan.sober）
+// net_orphanと同じ6つの形を、外のscopeに長い期限（deadline: 20秒 — 届かない）を書いたプログラムで（期限の機構を組むプログラム: 孤児のマークは
+// 期限のワードに立ち〔時刻1〕、ioのインターフェースの期限の検査がそのままExpiredを返す・期限のチェーンに居る待ち手はチェーンから外してからウェイクアップする — lower/orphan.sober）
 
 import "std/io"
 import "std/iter"
@@ -91,7 +91,7 @@ func waitAccept() error? {
     return nil
 }
 
-// 孫: 子は自分の scope を開いて孫に Recv を待たせ、孫を待つ（子の scope に印は無い — 印は死んだ親の scope にだけ立つ）
+// 孫: 子は自分のscopeを開いて孫にRecvを待たせ、孫を待つ（子のscopeにマークは無い — マークは死んだ親のscopeにだけ立つ）
 func grand(addr string) {
     _, e := task.Run((s task.Scope) => {
         h := task.Spawn(s, () => {
@@ -138,7 +138,7 @@ func flood(addr string) error? {
     return nil
 }
 
-// 親の死の時には眠っていた（待ちの登録簿に居ない）子: 起きてからの最初の待ちの入口が祖先を辿って捕まえる
+// 親の死の時にはスリープしていた（待ちの登録簿に居ない）子: 起きてからの最初の待ちの入口が祖先を辿って捕まえる
 func late(addr string) {
     os.Sleep(200)
     println("late recv: ${label(waitRecv(addr))}")

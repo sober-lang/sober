@@ -1,4 +1,4 @@
-// fannkuch-redux の Rust の双子（Go の双子 bench/fannkuch/go の逐語訳 — 同じアルゴリズム・逐次・境界検査はそのまま）
+// fannkuch-reduxの比較用のRustの実装（比較用のGoの実装bench/fannkuch/goの逐語訳 — 同じアルゴリズム・逐次・境界検査はそのまま）
 use std::env;
 
 fn main() {

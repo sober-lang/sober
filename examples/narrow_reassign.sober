@@ -1,7 +1,7 @@
 package main
 
 // 絞った mut の名前への代入で絞りが外れる（language.md 15 節）: 右辺は絞ったまま読み、代入した文の後ろでは名前は外の T? のセル。
-// while の条件の `x != nil` は周の頭で毎回絞り直す — 鎖の歩き `while c != nil { …; c = c.next }` がそのまま書ける
+// whileの条件の `x != nil` は周の頭で毎回絞り直す — チェーンの歩き `while c != nil { …; c = c.next }` がそのまま書ける
 
 type L struct {
     v int
@@ -24,7 +24,7 @@ func bump(p mut int?) {
 }
 
 func main() {
-    // 鎖の歩き
+    // チェーンの歩き
     l := build(10)
     mut c := l.next
     mut s := l.v
@@ -33,7 +33,7 @@ func main() {
         c = c.next
     }
     println(s)
-    // 腕の中の代入の後に読む（x は int? — 絞り直すと中身）
+    // 分岐の中の代入の後に読む（xはint? — 絞り直すと中身）
     mut x := get(3)
     if x != nil {
         y := x + 1

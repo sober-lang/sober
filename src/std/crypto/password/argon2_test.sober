@@ -1,6 +1,6 @@
 package password
 
-// BLAKE2b と Argon2id の核の網（white-box）: RFC 7693 付録 A・RFC 9106 5.3 と、golang.org/x/crypto の格子
+// BLAKE2bとArgon2idの核の検査（white-box）: RFC 7693付録A・RFC 9106 5.3と、golang.org/x/cryptoの格子
 // （testdata/crypto/blake2b.txt・argon2id.txt — scripts/oracles/xcrypto）。BLAKE2b の格子はブロック 128 の前後と出力の長さ 1〜64・
 // Argon2id の格子はパス 1〜3・レーン 1〜4・m が 4p で割り切れない値・番地のブロックの作り直し（1 スライス 128 ブロック超）・H' の長さ（64 以下 / 65 / 100 / 1024）を跨ぐ
 

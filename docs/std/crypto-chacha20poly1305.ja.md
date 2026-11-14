@@ -11,7 +11,7 @@ ct := crypto.chacha20poly1305.Seal(key, nonce, ad, pt)?       // 暗号文 ‖ t
 pt := crypto.chacha20poly1305.Open(key, nonce, ad, ct)?       // 改竄なら crypto.chacha20poly1305.Auth
 ```
 
-record 層向けの API（aesgcm と同じ形）: Prepare（鍵の長さを見る）・SealTo（head ‖ 暗号文 ‖ tag）・OpenAt（b[off, off + n) を写さずに検証してから復号）。MAC は入力を繋がずに crypto.poly1305.SumAead で
+record 層向けの API（aesgcm と同じ形）: Prepare（鍵の長さを見る）・SealTo（head ‖ 暗号文 ‖ tag）・OpenAt（b[off, off + n) をコピーせずに検証してから復号）。MACは入力を繋がずにcrypto.poly1305.SumAeadで
 
 ## KeySize
 
@@ -117,7 +117,7 @@ Seal の逆（tag を照合してから復号する）
 func SealInto(k Key, nonce []byte, ad []byte, pt []byte, head []byte, tail []byte, dst mut []byte, at int) int
 ```
 
-SealTo の宛先を呼び手の列 dst[at:] にした形（aesgcm.SealInto と同じ口 — 書いたバイト数・入らなければ / nonce の長さが違えば −1）。SealTo の結果を写す（ChaCha は鍵ストリームの列を作るので直書きの得が無い — 作業の列は呼び手の region に積もる）
+SealToの宛先を呼び手の列dst[at:] にした形（aesgcm.SealIntoと同じAPI — 書いたバイト数・入らなければ / nonceの長さが違えば −1）。SealToの結果をコピーする（ChaChaは鍵ストリームの列を作るので直書きの得が無い — 作業の列は呼び手のregionに積もる）
 
 ## SealTo
 
@@ -128,7 +128,7 @@ SealTo の宛先を呼び手の列 dst[at:] にした形（aesgcm.SealInto と�
 func SealTo(k Key, nonce []byte, ad []byte, pt []byte, head []byte, tail []byte) ([]byte, error?)
 ```
 
-head ‖ 暗号文 ‖ tag（平文 = pt ‖ tail — tail は呼び手が pt に繋いで写さずに渡す後ろの数バイト。無ければ []byte{}・aesgcm.SealTo と同じ口）。nonce は同じ鍵で 1 回だけ使う（Seal と同じ）・nonce の長さが違えば BadSize
+head ‖ 暗号文 ‖ tag（平文 = pt ‖ tail — tailは呼び手がptに繋いでコピーせずに渡す後ろの数バイト。無ければ []byte{}・aesgcm.SealToと同じAPI）。nonce は同じ鍵で 1 回だけ使う（Seal と同じ）・nonce の長さが違えば BadSize
 
 失敗のラベル: [`BadSize`](#badsize)
 
@@ -142,7 +142,7 @@ head ‖ 暗号文 ‖ tag（平文 = pt ‖ tail — tail は呼び手が pt �
 func OpenAt(k Key, nonce []byte, ad []byte, b []byte, off int, n int) ([]byte, error?)
 ```
 
-b[off, off + n)（暗号文 ‖ tag）を写さずに tag を照合してから復号した平文。nonce の長さが違う・n が tag より短い・[off, off + n) が b の外なら BadSize
+b[off, off + n)（暗号文 ‖ tag）をコピーせずにtagを照合してから復号した平文。nonceの長さが違う・nがtagより短い・[off, off + n) がbの外ならBadSize
 
 失敗のラベル: [`BadSize`](#badsize)・[`Auth`](#auth)
 

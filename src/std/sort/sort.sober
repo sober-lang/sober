@@ -1,7 +1,7 @@
 package sort
 
-// 並べ替え（language.md 34 節「並べ替え」の族）。値の列でなく添字を並べる: 比べ方は呼び手のクロージャが持ち（行の開始位置の列とバイト列・struct の欄 …）、
-// 並べた結果は添字の列で返す — 呼び手は元の列を写さずに、その順で読むか組み直す。
+// 並べ替え（language.md 34 節「並べ替え」の種類）。値の列でなく添字を並べる: 比べ方は呼び手のクロージャが持ち（行の開始位置の列とバイト列・structのフィールド …）、
+// 並べた結果は添字の列で返す — 呼び手は元の列をコピーせずに、その順で読むか組み直す。
 // less(a, b) は「添字 a の要素が添字 b の要素より前」で、狭義の弱順序であること（そうでなければ順は決まらないが、添字の列であることは保ち、範囲の外で落ちない —
 // ループは全部境界で止まる）。どちらの関数も決定的（同じ入力・同じ less なら常に同じ列 — 乱択の pivot を使わない）
 
@@ -17,7 +17,7 @@ const partialLimit = 8
 
 // 0..n−1 を less の順に並べた添字の列を返す（安定 — less で前後の付かない添字は小さい順のまま）。
 // 実装 = 自然な列のマージソート: 昇順の列と狭義の降順の列（反転する — 等しいものを含まないので安定のまま）を拾い、base より短い列は二分挿入で伸ばして、
-// 隣どうしを対でマージする周を列が 1 本になるまで繰り返す（既に並んでいる対は写すだけ・右が丸ごと前なら右・左の順に写す）。比べる回数は O(n log n)・並んだ入力と逆順の入力は O(n)・作業域は添字 2n 語
+// 隣どうしを対でマージする周を列が1本になるまで繰り返す（既に並んでいる対はコピーするだけ・右が丸ごと前なら右・左の順にコピーする）。比べる回数はO(n log n)・並んだ入力と逆順の入力はO(n)・作業域は添字2nワード
 // 例: examples/sort_order.sober
 @effects(!io, !block, !nondet)
 func Order(n int, less func(int, int) bool) []int {
@@ -94,14 +94,14 @@ func Order(n int, less func(int, int) bool) []int {
                 m := bs[k + 1]
                 h := bs[k + 2]
                 if !less(ab[from + m], ab[from + m - 1]) {
-                    // 既に並んでいる: 写すだけ
+                    // 既に並んでいる: コピーするだけ
                     mut t := l
                     while t < h {
                         ab[to + t] = ab[from + t]
                         t += 1
                     }
                 } else if less(ab[from + h - 1], ab[from + l]) {
-                    // 右が丸ごと左より前（狭義 — 安定のまま）: 右・左の順に写す
+                    // 右が丸ごと左より前（狭義 — 安定のまま）: 右・左の順にコピーする
                     mut t := l
                     mut s := m
                     while s < h {
@@ -158,7 +158,7 @@ func Order(n int, less func(int, int) bool) []int {
                 bs[nr + 1] = h
                 k += 2
             } else {
-                // 対の無い最後の列: 写すだけ
+                // 対の無い最後の列: コピーするだけ
                 h := bs[k + 1]
                 mut t := l
                 while t < h {
@@ -181,9 +181,9 @@ func Order(n int, less func(int, int) bool) []int {
 }
 
 // 0..n−1 を less の順に並べた添字の列を返す（不安定 — less で前後の付かない添字の順は約束しない。ただし決定的: 同じ入力・同じ less なら
-// 常に同じ列）。Order より速い（写しの作業域が要らず、要素の動きが少ない）。外部ソートの run の組み立てのように、行の全体で比べて同値の順が観測できない形に。
+// 常に同じ列）。Orderより速い（コピーの作業域が要らず、要素の動きが少ない）。外部ソートのrunの組み立てのように、行の全体で比べて同値の順が観測できない形に。
 // 実装 = pattern-defeating quicksort（pdqsort）: pivot = 3 点（長い区間は 9 点）の中央値・pivot と等しい要素が多い区間は等しいものを左へ寄せて飛ばす・
-// 分割が既に済んでいた区間は部分挿入ソートで仕上げを試す・偏った分割が log₂ n 回続いた区間は heapsort（最悪 O(n log n)）・偏った分割の後は決まった位置を入れ替えて並びの癖を崩す（乱択しない）。短い区間は挿入ソート。再帰しない（区間を積む）。作業域は区間の積み（O(log n) 語）
+// 分割が既に済んでいた区間は部分挿入ソートで仕上げを試す・偏った分割がlog₂ n回続いた区間はheapsort（最悪O(n log n)）・偏った分割の後は決まった位置を入れ替えて並びの癖を崩す（乱択しない）。短い区間は挿入ソート。再帰しない（区間をスタックに積む）。作業域は区間のスタック（O(log n) ワード）
 // 例: examples/sort_order.sober
 @effects(!io, !block, !nondet)
 func OrderUnstable(n int, less func(int, int) bool) []int {
@@ -195,10 +195,10 @@ func OrderUnstable(n int, less func(int, int) bool) []int {
     while (1 << lg) < n {
         lg += 1
     }
-    // 区間の積み: [lo, hi, 偏った分割の残り, 左端か] の 4 語ずつ（sp = 積んだ語の数）
+    // 区間のスタック: [lo, hi, 偏った分割の残り, 左端か] の4ワードずつ（sp = 積んだワードの数）
     mut stk := mut []int{0, n, lg + 1, 1}
     mut sp := 4
-    // 3 点の並べの対（pivot の選び — 1 つの比べの口で回す）
+    // 3点の並べの対（pivotの選び — 1つの比べのインターフェースで回す）
     mut prs := mut []int{}
     for i <- iter.Range(0, 24) {
         prs = append(prs, 0)
@@ -317,7 +317,7 @@ func OrderUnstable(n int, less func(int, int) bool) []int {
                     if finished {
                         going = false
                     } else {
-                        // 左を積み、右を続ける
+                        // 左をスタックに積み、右を続ける
                         if sp + 4 > len(stk) {
                             for w <- iter.Range(0, 4) {
                                 stk = append(stk, 0)

@@ -1,6 +1,6 @@
 package stdflate
 
-// std/compress/flate・gzip の Decode の負例と境目（report-1021 — 往復と zlib / Go の双子は scripts/flatecheck.sh）: 切り詰め（全部の接頭辞）・余りのバイト・
+// std/compress/flate・gzipのDecodeの負例と境目（report-1021 — 往復とzlib / Goの比較用の実装はscripts/flatecheck.sh）: 切り詰め（全部の接頭辞）・余りのバイト・
 // 手で組んだ壊れた列（ブロックの型 3・stored の LEN / NLEN・頭より前を指す距離・使えない記号・符号の長さの表の過剰 / 数え過ぎ）・gzip の包みの誤り・
 // maxSize（展開爆弾）・1 ビットずつ反転した列で落ちないこと
 
@@ -35,7 +35,7 @@ func plus(a []byte, b []byte) []byte {
     return freeze(r)
 }
 
-// flipped は b の bit i を反転した写し
+// flippedはbの bit i を反転したコピー
 func flipped(b []byte, i int) []byte {
     mut r := mut []byte{}
     for k <- iter.Range(0, len(b)) {
@@ -44,7 +44,7 @@ func flipped(b []byte, i int) []byte {
     return freeze(r)
 }
 
-// at は b の k バイト目を v にした写し
+// atはbのkバイト目をvにしたコピー
 func at(b []byte, k int, v int) []byte {
     mut r := mut []byte{}
     for j <- iter.Range(0, len(b)) {

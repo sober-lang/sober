@@ -1,8 +1,8 @@
 package main
 
 // reverse-complement（benchmarks game — docs/bench.md）: fasta の出力を読み、記録（'>' の見出し行 + 配列の行）ごとに見出しはそのまま・
-// 配列は改行を除いて逆順の相補にして 1 行 60 文字で書く。素直な形（Go の双子 bench/revcomp/go と同じアルゴリズム・書き出しも双子と同じく
-// 64 KiB の枠〔io.Writer — bufio.Writer / BufWriter の鏡〕へ流す — 出力の全体を 1 本の slice に溜めない）。
+// 配列は改行を除いて逆順の相補にして1行60文字で書く。素直な形（比較用のGoの実装bench/revcomp/goと同じアルゴリズム・書き出しも比較用の実装と同じく
+// 64 KiBの枠〔io.Writer — bufio.Writer / BufWriterの鏡〕へ流す — 出力の全体を1本のsliceにバッファしない）。
 // 見出しの行末と次の見出しまでの走査は素直なバイトのループ（第三便のベクトル化の対象の形 — 配列の区間は長い）
 
 import "std/io"

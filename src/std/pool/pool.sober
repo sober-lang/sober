@@ -92,7 +92,7 @@ func live[T](p mut Pool[T], h Handle) bool {
     return h.idx >= 0 && h.idx < len(p.gens) && p.gens[h.idx] == h.gen
 }
 
-// 世代印つきの固定容量の作業域（region-domain-pool.md 4d 節 — ワーカー局所の lease のストレージに置ける容器）。
+// 世代タグつきの固定容量の作業域（region-domain-pool.md 4d節 — ワーカー局所のleaseのストレージに置ける容器）。
 // 項目は 0 以上 2^32 未満の int。Renew で「全部 0 に戻した」のと同じ観測になる — 中身を消さずに世代を 1 つ進めるだけ（O(1)）:
 //
 //     mut s := pool.Scratch{}
@@ -101,20 +101,20 @@ func live[T](p mut Pool[T], h Handle) bool {
 //     pool.Renew(mut s)
 //     pool.Load(mut s, 3)   // 0
 //
-// 形（zlib の head の世代と同じ手）: 1 語 = (世代 32 ビット ‖ 値 32 ビット)。tag = 今の世代 << 32 で、読みは語 ^ tag の上位 32 ビットが 0 なら
+// 形（zlibのheadの世代と同じ手）: 1ワード = (世代32ビット ‖ 値32ビット)。tag = 今の世代 << 32で、読みはワード ^ tagの上位32ビットが0なら
 // 下位 32 ビット・違えば 0（前の世代の書き）。世代は 2^32 回で一周し、一周の Renew だけが本当に全部を消す（償却 0）。
-// 容量は NewScratch で 1 回だけ決める（lease のストレージの大きさを宣言から導く — 窓の中で伸ばさない）。添字の範囲外は列の添字と同じ panic
+// 容量はNewScratchで1回だけ決める（leaseのストレージの大きさを宣言から導く — ウィンドウの中で伸ばさない）。添字の範囲外は列の添字と同じpanic
 type Scratch struct {
     words mut []int
     tag int
-    // 置き場の住所（lease の窓で付けたときだけ — home = 区画の tag の語の位置 + 1・0 = 付けていない）。Renew は進めた tag を置き場へ書き戻す
-    // （書き戻さないと次の窓の LeaseAttach が同じ tag を配り、窓の中の Renew の後の書きが次の窓に見える — 約束「窓のたびに新しい値」の破れ）
+    // 格納場所の住所（leaseのウィンドウで付けたときだけ — home = エリアのtagのワードの位置 + 1・0 = 付けていない）。Renewは進めたtagを格納場所へ書き戻す
+    // （書き戻さないと次のウィンドウのLeaseAttachが同じtagを配り、ウィンドウの中のRenewの後の書きが次のウィンドウに見える — 約束「ウィンドウのたびに新しい値」の破れ）
 
     blk []int
     home int
 }
 
-// 容量 0 の s を容量 n・全部 0 にする（容量は 1 回だけ — 容量のある s に呼ぶと panic(ScratchSized{}): lease の窓の中でストレージを
+// 容量0のsを容量n・全部0にする（容量は1回だけ — 容量のあるsに呼ぶとpanic(ScratchSized{}): leaseのウィンドウの中でストレージを
 // 作り直すと、新しい列が task の region に取られて長命のストレージから宙吊りになる — region-domain-pool.md 4d 節）
 @effects(panic)
 func NewScratch(s mut Scratch, n int) {
@@ -125,8 +125,8 @@ func NewScratch(s mut Scratch, n int) {
     zeros(mut s.words, n)
 }
 
-// 空の列 xs を長さ n の 0 にする（仮引数へ同じ値を append する for は lower の copyloop の詰めの形 — 伸ばすのは 1 回。欄へ直に append する形や、
-// 局所の列を欄へ代入する形はこの形に乗らない）
+// 空の列xsを長さnの0にする（仮引数へ同じ値をappendするforはlowerのcopyloopの詰めの形 — 伸ばすのは1回。フィールドへ直にappendする形や、
+// 局所の列をフィールドへ代入する形はこの形に乗らない）
 func zeros(xs mut []int, n int) {
     for j <- iter.Range(0, n) {
         xs = append(xs, 0)
@@ -155,7 +155,7 @@ func Store(s mut Scratch, i int, v int) {
     s.words[i] = s.tag | v
 }
 
-// Store の契約違反の panic（Store の本体を小さく保つ — 呼び出し点に展開される大きさに。panic の値の組み立ては冷たい道のここだけ）
+// Storeの契約違反のpanic（Storeの本体を小さく保つ — 呼び出し点に展開される大きさに。panicの値の組み立ては低速パスのここだけ）
 func badScratch(v int) {
     panic(BadScratch{v: v})
 }
@@ -176,9 +176,9 @@ func Renew(s mut Scratch) {
     }
 }
 
-// s の i 番目の語をそのまま読む（生のアクセサ — 世代に触れない。毎アクセスの世代の検査〔xor・上位の判定〕を払わない代わりに、
+// sのi番目のワードをそのまま読む（生のアクセサ — 世代に触れない。毎アクセスの世代の検査〔xor・上位の判定〕を払わない代わりに、
 // 鮮度は呼び手が持つ: 読む添字は RenewDense で 0 に戻した範囲か、同じ世代で先に StoreRaw した添字だけ、が契約。
-// 世代つきの Load / Store と同じ Scratch で混ぜない — 世代の印が語に残り、素の読みが印ごと返す
+// 世代つきのLoad / Storeと同じScratchで混ぜない — 世代のタグがワードに残り、素の読みがタグごと返す
 @effects()
 func LoadRaw(s mut Scratch, i int) int {
     return s.words[i]
@@ -190,9 +190,9 @@ func StoreRaw(s mut Scratch, i int, v int) {
     s.words[i] = v
 }
 
-// s を 16 ビットの項目の列と見た i 番目（語 i >> 2 の (i & 3) × 16 ビット目から — little endian・0〜65535）。生のアクセサ（LoadRaw と同じ契約 —
+// sを16ビットの項目の列と見たi番目（ワードi >> 2の (i & 3) × 16ビット目から — little endian・0〜65535）。生のアクセサ（LoadRawと同じ契約 —
 // 世代に触れない・鮮度は呼び手が持つ）。i の範囲は 0〜4 × Cap − 1（外は列の添字と同じ panic）。64 ビットの LoadRaw / StoreRaw と同じ Scratch で
-// 混ぜてよい（読み書きする語を分けて使う限り）
+// 混ぜてよい（読み書きするワードを分けて使う限り）
 @effects()
 func LoadRaw16(s mut Scratch, i int) int {
     _ = s.words[i >> 2]
@@ -206,7 +206,7 @@ func StoreRaw16(s mut Scratch, i int, v int) {
     _ = store16(s.words, i, v)
 }
 
-// s を 32 ビットの項目の列と見た i 番目（語 i >> 1 の (i & 1) × 32 ビット目から — 0〜2^32 − 1）。i の範囲は 0〜2 × Cap − 1
+// sを32ビットの項目の列と見たi番目（ワードi >> 1の (i & 1) × 32ビット目から — 0〜2^32 − 1）。iの範囲は0〜2 × Cap − 1
 @effects()
 func LoadRaw32(s mut Scratch, i int) int {
     _ = s.words[i >> 1]
@@ -220,7 +220,7 @@ func StoreRaw32(s mut Scratch, i int, v int) {
     _ = store32(s.words, i, v)
 }
 
-// 狭い語の読み書きの組み込み（検査なし — 境界は上の 4 つが語の添字で見る）
+// 狭いワードの読み書きの組み込み（検査なし — 境界は上の4つがワードの添字で見る）
 @intrinsic("load16")
 func load16(w []int, i int) int
 
@@ -234,8 +234,8 @@ func load32(w []int, i int) int
 func store32(w []int, i int, v int) int
 
 // s の先頭 n 項目を本当に 0 に書く（生のアクセサ版の Renew — O(n)。世代は進めない: 生のアクセサは世代を読まないので、
-// この後 LoadRaw する範囲（< n）を 0 にすれば「全部 0 に戻した」と同じ観測。lease の窓の約束（前の窓の書きは見えない）も
-// 同じ理由で保たれる — 窓の頭の LeaseAttach の世代は生のアクセサには効かないが、読む範囲を 0 にするのはこの関数）
+// この後LoadRawする範囲（< n）を0にすれば「全部0に戻した」と同じ観測。leaseのウィンドウの約束（前のウィンドウの書きは見えない）も
+// 同じ理由で保たれる — ウィンドウの頭のLeaseAttachの世代は生のアクセサには効かないが、読む範囲を0にするのはこの関数）
 @effects()
 func RenewDense(s mut Scratch, n int) {
     mut i := 0
@@ -253,9 +253,9 @@ type BadScratch panic {
 // NewScratch を容量のある Scratch に呼んだ（容量は 1 回だけ — 呼び手の契約違反）
 type ScratchSized panic
 
-// task.Lease の写し先（loader が組む — 利用者の直の呼び出しは loader が拒否）: 窓の w の i 番目の Scratch の欄 s を、ストレージ blk の
-// 区画 at に付ける（at = −1 = 倒れ: 新しい割り当て）。blk の形は std/task の Local（[指紋, n, 容量 × n, W, 区画 …]・区画 = [印, 鎖, (tag, 語 × 容量) …]）。
-// 付けるたびに区画の tag を 1 世代進めて書き戻す（= Renew — 前の窓の書きは見えない）。一周したら区画の語を本当に消す
+// task.Leaseの変換先（loaderが組む — 利用者の直の呼び出しはloaderが拒否）: ウィンドウのwのi番目のScratchのフィールドsを、ストレージblkの
+// エリアatに付ける（at = −1 = 倒れ: 新しい割り当て）。blkの形はstd/taskのLocal（[指紋, n, 容量 × n, W, エリア …]・エリア = [フラグ, チェーン, (tag, ワード × 容量) …]）。
+// 付けるたびにエリアのtagを1世代進めて書き戻す（= Renew — 前のウィンドウの書きは見えない）。一周したらエリアのワードを本当に消す
 @effects(panic)
 func LeaseAttach(s mut Scratch, blk []int, at int, i int) {
     if at < 0 {
@@ -284,7 +284,7 @@ func LeaseAttach(s mut Scratch, blk []int, at int, i int) {
     }
 }
 
-// leaseOp / leaseView は rt の口（std/task と同じ鍵 — region-domain-pool.md 4d 節）
+// leaseOp / leaseViewはrtのAPI（std/taskと同じ鍵 — region-domain-pool.md 4d節）
 @intrinsic("lease_op")
 func leaseOp(op int, blk []int, off int, v int) int
 

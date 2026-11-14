@@ -1,21 +1,21 @@
-// corevec_cov: 差分テストベクタ（testdata/corevec.jsonl）の被覆ラチェットと生成器の自己検査（corevec v2）。
+// corevec_cov: 差分テストベクタ（testdata/corevec.jsonl）の被覆ラチェットとジェネレータの自己検査（corevec v2）。
 //
 //   node scripts/corevec_cov.ts [corevec.jsonl]     exit 0 = 合格、1 = 不合格（理由を出す）
 //
-// - 構成子の一覧は機械で取る: lean/FeatherweightSober/Json.lean の exprToJson の腕（`  | .ctor …`）から
-//   構成子 → JSON の kind・欄（どの欄が子の式か）を読み、Syntax.lean の Expr の doc に「ソースには現れない / ソース項でない」と
-//   書かれた構成子（実行時専用）を外す。同じ kind を持つ構成子（block / blockR、mkslice / mksliceAt、mkmap / mkmapAt）は欄の有無で見分ける
+// - 構成子の一覧は機械で取る: lean/FeatherweightSober/Json.leanのexprToJsonの分岐（`  | .ctor …`）から
+//   構成子 → JSONのkind・フィールド（どのフィールドが子の式か）を読み、Syntax.leanのExprのdocに「ソースには現れない / ソース項でない」と
+//   書かれた構成子（実行時専用）を外す。同じkindを持つ構成子（block / blockR、mkslice / mksliceAt、mkmap / mkmapAt）はフィールドの有無で見分ける
 // - 被覆: ソースの構成子ごとに「その構成子を含む accept のベクタ数 ≥ MIN_ACC」「reject のベクタ数 ≥ MIN_REJ」（関数表の本体は数えない）。
 //   コアに op を足して Gen を追いつかせないと、ここが鳴る（Gen 総追いつき — 据え置きが黙って積もった再発防止）
-// - 自己検査: 出自 g = "typed" のベクタが reject なら生成器のバグとして不合格。g = "mut:*" の accept は等価な変異として数えるだけ
+// - 自己検査: 出自g = "typed" のベクタがrejectならジェネレータのバグとして不合格。g = "mut:*" のacceptは等価なミュータントとして数えるだけ
 // - 分布表（構成子 × accept / reject、出自 × accept / reject）を毎回出す
 import { readFileSync } from "node:fs";
 
 const MIN_ACC = 3;
 const MIN_REJ = 3;
-// accept 側の被覆から外す構成子（型指向がまだ出さない — Gen 総追いつき段 B で region を持つターゲットを入れたら外す）
+// accept側の被覆から外す構成子（型指向がまだ出さない — Gen総追いつき段階Bでregionを持つターゲットを入れたら外す）
 const EXEMPT_ACC = new Set(["blockR", "copyTo"]);
-// 被覆を丸ごと外す構成子（段 6 P1 の並列の構成子 scope / spawn / join / tryJ / newch は P2a で、domain の dnew / denter / dexit は
+// 被覆を丸ごと外す構成子（段階6 P1の並列の構成子scope / spawn / join / tryJ / newchはP2aで、domainのdnew / denter / dexitは
 // 型付けの規則と同時に compiler/checker と Gen が追いついて解除済み）
 const EXEMPT_ALL = new Set<string>([]);
 

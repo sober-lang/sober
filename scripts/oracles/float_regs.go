@@ -1,4 +1,4 @@
-// float_regs.go — examples/float_regs.sober の Go の双子（期待値の生成元: go run scripts/oracles/float_regs.go > examples/float_regs.out）
+// float_regs.go — examples/float_regs.soberの比較用のGoの実装（期待値の生成元: go run scripts/oracles/float_regs.go > examples/float_regs.out）
 package main
 
 import (

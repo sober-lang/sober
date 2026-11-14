@@ -1,7 +1,7 @@
 package loader
 
-// 節の規則の束: namedargs・panic の写しの後の木の節ごとの規則 6 本 — catch の左辺・値 1 つの束縛に多値 / 多値の既存の名前への代入（catchx.sober）・
-// 失敗しうる生成元の印（forfallible.sober）・封の型の欄つきリテラル（sealx.sober）・同一性のゼロ値（identityx.sober）・mut 実引数の排他（mutalias.sober）—
+// 節の規則群: namedargs・panicの変換の後の木の節ごとの規則6本 — catchの左辺・値1つの束縛に多値 / 多値の既存の名前への代入（catchx.sober）・
+// 失敗しうる生成元のマーク（forfallible.sober）・封の型のフィールドつきリテラル（sealx.sober）・同一性のゼロ値（identityx.sober）・mut実引数の排他（mutalias.sober）—
 // を全部の木の全節の 1 回の走査で検査する（規則ごとに全節をなめると 1 本 0.02 G 前後 — 関数の表も 1 回だけ作る）。
 // 規則ごとの最初の位置（ファイル順 × 節の順）を覚えて、上の規則の順で最初のものを返す（規則ごとに走査した形と同じ答え）
 
@@ -10,11 +10,11 @@ import "std/strings"
 import "ast"
 import "diag"
 
-// 規則の束の最初の拒否（無ければ nil）
+// 規則群の最初の拒否（無ければnil）
 @errors(diag.CatchLhs, diag.MultiBind, diag.ForFallible, diag.Sealed, diag.Identity, diag.MutAlias)
 func nodeRules(cx Cx, ft FnTab) error? {
     sl := sealedTab(cx)
-    // 同一性の項の表と、項ごとの「持つ族」の不動点（identityx.sober — 候補の列の初め = 裸の型パラメータの欄を持つ総称の項）
+    // 同一性の項の表と、項ごとの「持つ種類」の不動点（identityx.sober — 候補の列の初め = 裸の型パラメータのフィールドを持つ総称の項）
     es := idEntries(cx)
     n := len(es) / 7
     mut nb := mut []string{}
@@ -30,14 +30,14 @@ func nodeRules(cx Cx, ft FnTab) error? {
         }
     }
     idHolds(cx, es, nm, mut hold)
-    // ワーカー 2 以上はファイルごとの子で（finpar.sober）。子の死は下の直の道で検査し直す
+    // ワーカー2以上はファイルごとの子で（finpar.sober）。子の死は下の直接のパスで検査し直す
     if finParOn(len(cx.trees)) {
         pe, ok := rulesPar(cx, ft, sl, es, nm, clone(hold))
         if ok {
             return pe
         }
     }
-    // 規則 0〜4（多値の束縛・生成元の印・封・同一性・mut 実引数）の最初の位置: [ファイル + 1, 字句, kind] の 3 語ずつ（0 = 無し）。
+    // 規則0〜4（多値の束縛・生成元のマーク・封・同一性・mut実引数）の最初の位置: [ファイル + 1, 字句, kind] の3ワードずつ（0 = 無し）。
     // catch の左辺は最初の規則なので、見つけたらその場で返す
     mut hit := mut []int{}
     for r <- iter.Range(0, 15) {
@@ -52,7 +52,7 @@ func nodeRules(cx Cx, ft FnTab) error? {
     return nrPick(freeze(hit))
 }
 
-// 規則 0〜4 の最初の位置の表 hit（noteHit の 3 語ずつ）から、規則の順で最初の拒否（無ければ nil）
+// 規則0〜4の最初の位置の表hit（noteHitの3ワードずつ）から、規則の順で最初の拒否（無ければnil）
 @errors(diag.MultiBind, diag.ForFallible, diag.Sealed, diag.Identity, diag.MutAlias)
 func nrPick(hit []int) error? {
     if hit[0] > 0 {

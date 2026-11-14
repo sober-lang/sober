@@ -1,6 +1,6 @@
 package props
 
-// sober test の std/quick の網の題材（和・逆順）
+// sober test のstd/quickの検査の題材（和・逆順）
 
 func Sum(xs []int) int {
     mut t := 0

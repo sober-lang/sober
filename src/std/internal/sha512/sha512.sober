@@ -1,7 +1,7 @@
 package sha512
 
-// SHA-512 と SHA-384（FIPS 180-4 — 64 bit の語・80 段）のワンショットの口（std の内側 — ECDSA の P-384 と X.509 の ecdsa-with-SHA384 の下）。
-// 算術は 64 bit の語の mod 2^64（int の和の wrap）・右回転と右シフトは算術シフトの上の bit を mask で落とす。データに依る分岐・添字は無い
+// SHA-512とSHA-384（FIPS 180-4 — 64 bitのワード・80段）のワンショットのAPI（stdの内側 — ECDSAのP-384とX.509のecdsa-with-SHA384の下）。
+// 算術は64 bitのワードのmod 2^64（intの和のwrap）・右回転と右シフトは算術シフトの上のbitをmaskで落とす。データに依る分岐・添字は無い
 
 import "std/iter"
 
@@ -15,7 +15,7 @@ func shr(x int, k int) int {
     return (x >> k) & ((1 << (64 - k)) - 1)
 }
 
-// 丸め定数（最初の 80 個の素数の立方根の小数部の先頭 64 bit — FIPS 180-4 4.2.3。2^63 以上の語は負の int で書く）
+// 丸め定数（最初の80個の素数の立方根の小数部の先頭64 bit — FIPS 180-4 4.2.3。2^63以上のワードは負のintで書く）
 func k512() []int {
     return []int{
         0x428a2f98d728ae22, 0x7137449123ef65cd, -0x4a3f043013b2c4d1, -0x164a245a7e762444,
@@ -47,7 +47,7 @@ func Sum512(data []byte) []byte {
     return sum(data, []int{0x6a09e667f3bcc908, -0x4498517a7b3558c5, 0x3c6ef372fe94f82b, -0x5ab00ac5a0e2c90f, 0x510e527fade682d1, -0x64fa9773d4c193e1, 0x1f83d9abfb41bd6b, 0x5be0cd19137e2179}, 64)
 }
 
-// data の SHA-384（48 バイト — 初期値の違う SHA-512 の先頭 6 語）
+// dataのSHA-384（48バイト — 初期値の違うSHA-512の先頭6ワード）
 @effects()
 func Sum384(data []byte) []byte {
     return sum(data, []int{-0x344462a23efa6128, 0x629a292a367cd507, -0x6ea6fea5cf8f22e9, 0x152fecd8f70e5939, 0x67332667ffc00b31, -0x714bb57897a7eaef, -0x24f3d1f29b067059, 0x47b5481dbefa4fa4}, 48)
@@ -97,7 +97,7 @@ func sum(data []byte, iv []int, n int) []byte {
     return freeze(out)
 }
 
-// b[off:off + 128] を h に畳む（w は 80 語の作業域）
+// b[off:off + 128] をhに畳む（wは80ワードの作業域）
 func block(h mut []int, w mut []int, k []int, b []byte, off int) {
     for i <- iter.Range(0, 16) {
         mut x := 0

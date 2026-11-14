@@ -1,6 +1,6 @@
 package main
 
-// Writer への写しの一括化の負例（区間が範囲の外 — 元の for に落ちて、途中まで書いてから同じ点で panic: s[j] の添字が範囲外 — exit 101）
+// Writerへのコピーの一括化の負例（区間が範囲の外 — 元のforに落ちて、途中まで書いてから同じ点でpanic: s[j] の添字が範囲外 — exit 101）
 
 import "std/io"
 import "std/iter"

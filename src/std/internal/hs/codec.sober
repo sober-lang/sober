@@ -1,8 +1,8 @@
 package hs
 
-// codec: handshake のメッセージの読み書きの部品。読みは粘着する失敗の印つきのカーソル（Cur — 読む範囲 [at, end) だけを
+// codec: handshakeのメッセージの読み書きの部品。読みは粘着する失敗のフラグつきのカーソル（Cur — 読む範囲 [at, end) だけを
 // 持ち、切片は読みのたびに渡す。範囲の外を読んだら bad が立って以後 0 を返す・呼び手は区切りごとに 1 回だけ見る — decode_error）。
-// 書きは mut []byte への積み（u8 / u16 / u24 と長さ前置きの塊）
+// 書きはmut []byteへの積み（u8 / u16 / u24と長さ前置きのチャンク）
 
 import "std/iter"
 
@@ -58,7 +58,7 @@ func sub(c mut Cur, n int) Cur {
     return s
 }
 
-// 今の位置から n バイトの写し
+// 今の位置からnバイトのコピー
 func take(b []byte, c mut Cur, n int) []byte {
     if n < 0 || c.at + n > c.end {
         c.bad = true
@@ -119,7 +119,7 @@ func cat(a []byte, b []byte) []byte {
     return freeze(o)
 }
 
-// b[at, at + n) の写し
+// b[at, at + n) のコピー
 func sliceOf(b []byte, at int, n int) []byte {
     mut o := mut []byte{}
     for i <- iter.Range(at, at + n) {

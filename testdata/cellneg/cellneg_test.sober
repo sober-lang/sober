@@ -1,6 +1,6 @@
 package cellneg
 
-// check キャッシュの道の文面の網: 脱糖の拒否 diag.Cell（関数値を貯める cell — kind 11）が置き場の当たり・外れのどちらでも同じ文面（diag.Words の tag 14）
+// checkキャッシュのパスの文面の検査: 脱糖の拒否diag.Cell（関数値を貯めるcell — kind 11）が配置先の当たり・外れのどちらでも同じ文面（diag.Wordsのtag 14）
 
 import "std/testing/cell"
 

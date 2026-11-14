@@ -1,7 +1,7 @@
 package props
 
-// std/quick の写し（loader の quickx）: 性質の値の式は縮めた反例の再生でだけ power assert の形で印字される・
-// quick.New() の種はテストの名前で変わる・Assume の捨てた数は ok の行に出る
+// std/quickのコピー（loaderのquickx）: プロパティの値の式はシュリンクした反例の再生でだけ power assert の形で印字される・
+// quick.New() のシードはテストの名前で変わる・Assumeの捨てた数はokの行に出る
 
 import "std/quick"
 

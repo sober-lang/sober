@@ -18,7 +18,7 @@ type Rand struct {
 
 const mask32 = 0xffffffff
 
-// シード seed（任意の int — 負でもよい）の Rand。状態の 4 語を SplitMix32 で埋める（下位 32 bit を数え上げ、上位 32 bit を 2 語目と 4 語目に混ぜる —
+// シードseed（任意のint — 負でもよい）のRand。状態の4ワードをSplitMix32で埋める（下位32 bitを数え上げ、上位32 bitを2ワード目と4ワード目に混ぜる —
 // 違うシードは違う状態になる。全部 0 にはしない）
 @effects()
 func New(seed int) Rand {
@@ -72,7 +72,7 @@ func Intn(r mut Rand, n int) int {
     return v % n
 }
 
-// [0, 1) の float（2^-53 刻みの 2^53 通りが等確率）。Int62 の上位 53 bit を 2^-53 倍する — どちらの段も正確なので丸めは入らない
+// [0, 1) のfloat（2^-53刻みの2^53通りが等確率）。Int62の上位53 bitを2^-53倍する — どちらのフェーズも正確なので丸めは入らない
 @effects()
 func Float(r mut Rand) float {
     return float(Int62(mut r) >> 9) * 1.1102230246251565e-16

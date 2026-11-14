@@ -1,7 +1,7 @@
 package main
 
-// shape[T] の最小形（language.md 16 節 2）: json.Decode[T](d, n) が struct T（欄 = int・float・bool・string・入れ子の struct・[]T・T?）へ写す。
-// 欠けた欄は json.Missing・T? の欄だけ欠けと null が nil・余った欄は無視・型の合わない節は json.WrongType・int に収まらない数は json.IntOutOfRange
+// shape[T] の最小形（language.md 16 節2）: json.Decode[T](d, n) がstruct T（フィールド = int・float・bool・string・入れ子のstruct・[]T・T?）へ変換する。
+// 欠けたフィールドはjson.Missing・T? のフィールドだけ欠けとnullがnil・余ったフィールドは無視・型の合わない節はjson.WrongType・intに収まらない数はjson.IntOutOfRange
 
 import "std/convert"
 import "std/io"
@@ -35,7 +35,7 @@ func show(s Shape) {
     showOrigin(s.origin)
 }
 
-// T? の欄は仮引数で受けて絞る（欄から束縛した struct の T? の絞り込みは check が拒否する）
+// T? のフィールドは仮引数で受けて絞る（フィールドから束縛したstructのT? の絞り込みはcheckが拒否する）
 func showOrigin(o Point?) {
     if o != nil {
         println("  origin: (${o.x}, ${o.y})")

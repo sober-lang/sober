@@ -4,9 +4,9 @@
 // - --conn P: ACCEPT の相手の port = P の接続（undici の cause.socket.localPort — check.ts の lport=）の列: ACCEPT → その fd の RECV / SEND / PARK / CLOSE と、
 //   ACCEPT の直後の SPAWN の子・PARK の待ち手の TCB の RUN / WAKE / END（fd の使い回しは ACCEPT 〜 CLOSE で切る）
 // - --around T: [T − window, T + 50 ms] のイベント（window 既定 1000 ms — check.ts の t= と同じ時計）
-// - --anomaly: 起こしの取りこぼし（epoll が返した待ち手〔READY〕に対の WAKE が無い）・起こされない PARK（同じ TCB の WAKE / 後の RUN が無い — listener の待ちは除く）・
+// - --anomaly: ウェイクアップの取りこぼし（epollが返した待ち手〔READY〕に対のWAKEが無い）・ウェイクアップされないPARK（同じTCBのWAKE / 後のRUNが無い — listenerの待ちは除く）・
 //   短い SEND（結果 < 頼んだ長さ）を並べる
-// 時刻: TSC → CLOCK_MONOTONIC は頭の組と CLOCK のイベント（眠りの前）の区間ごとの線形の補い
+// 時刻: TSC → CLOCK_MONOTONICは頭の組とCLOCKのイベント（スリープの前）の区間ごとの線形の補い
 import { readFileSync } from "node:fs";
 
 const KIND = ["?", "ACCEPT", "SPAWN", "RUN", "PARK", "WAKE", "SEND", "RECV", "CLOSE", "ENTER", "EPWAIT", "CLOCK", "END", "PANIC", "READY", "POST"];
@@ -129,13 +129,13 @@ if (args.includes("--summary")) {
     for (const e of out) c.set(e.kind, (c.get(e.kind) ?? 0) + 1);
     console.log([...c].map(([k, n]) => `${k}=${n}`).join(" "));
 } else if (args.includes("--anomaly")) {
-    // 起こされない PARK: その TCB の後の WAKE も RUN も無い（listener の fd〔ACCEPT の lfd〕の待ちは除く — 止められたサーバの最後の待ち）
+    // ウェイクアップされないPARK: そのTCBの後のWAKEもRUNも無い（listenerのfd〔ACCEPTのlfd〕の待ちは除く — 止められたサーバの最後の待ち）
     const lfds = new Set<number>();
     for (const e of evs) if (e.kind === "ACCEPT") lfds.add(lo32(e.a));
     for (let i = 0; i < out.length; i++) {
         const e = out[i];
         if (e.kind === "PARK" && !lfds.has(lo32(e.a)) && !out.slice(i + 1).some((x) => (x.kind === "WAKE" || x.kind === "RUN") && x.a === e.b)) console.log(`stuck-park ${fmt(e)}`);
-        // 起こしの取りこぼし: epoll が返した待ち中の待ち手（READY pending=1）に対の WAKE が無い（次の PARK までに）
+        // ウェイクアップの取りこぼし: epollが返した待ち中の待ち手（READY pending=1）に対のWAKEが無い（次のPARKまでに）
         if (e.kind === "READY" && e.b === 1n) {
             let woke = false;
             for (const x of out.slice(i + 1)) {

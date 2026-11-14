@@ -1,8 +1,8 @@
 package main
 
 // n-body（benchmarks game — docs/bench.md）: 5 天体〔太陽・木星・土星・天王星・海王星〕の重力の時間発展、前後のエネルギーを小数 9 桁で。
-// 素直な形（Go の双子 bench/nbody/go と同じアルゴリズム・同じ演算の順 — float は IEEE 754 binary64 で同じビット）。
-// 天体は 7 欄（x y z vx vy vz 質量）を詰めた 1 本の mut []float（struct の slice の欄の書き換えの代わり）
+// 素直な形（比較用のGoの実装bench/nbody/goと同じアルゴリズム・同じ演算の順 — floatはIEEE 754 binary64で同じビット）。
+// 天体は7フィールド（x y z vx vy vz 質量）を詰めた1本のmut []float（structのsliceのフィールドの書き換えの代わり）
 
 import "std/convert"
 import "std/iter"

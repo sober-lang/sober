@@ -1,6 +1,6 @@
 package main
 
-// 子が imm を読み、親が古い別名で書く — データ競合（凍結は composite の imm の欄 — 暗黙の freeze・U2）
+// 子がimmを読み、親が古い別名で書く — データ競合（凍結はcompositeのimmのフィールド — 暗黙のfreeze・U2）
 
 import "std/task"
 

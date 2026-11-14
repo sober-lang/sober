@@ -9,7 +9,7 @@ import "std/iter"
 // 2 回目の結果を 1 回目の結果に付け替えて呼び出しを消す。構文は足さない（綴りは今のまま速くする）。
 // 間の命令の条件（保守的）: 純粋な命令（const・算術・比較・gep・ptoi / itop・load・番地）と、スロットへの store（map のヘッダのスロット・キーの
 // スロットは除く — ただしキーのスロットへ 1 回目の直前と同じ値を書き直す store は可: lower がキーを置き直す形）。呼び出し・それ以外の store は不可。
-// 支配と経路: 2 回目のブロックから前任を逆に辿り、1 回目のブロックで止まる。入口に届けば支配していない・2 回目のブロックに戻れば輪を挟む — どちらも諦める。
+// 支配と経路: 2回目のブロックから前任を逆に辿り、1回目のブロックで止まる。入口に届けば支配していない・2回目のブロックに戻ればループを挟む — どちらも諦める。
 // 辿れたブロック（1 回目から 2 回目への全経路）の命令と、1 回目の後ろ・2 回目の前の命令を検査する。panic の点（exit）は 2 回目へ届かないので入らない
 func mapFuseModule(st mut St) {
     if st.rtMapfind == -1 {
@@ -100,8 +100,8 @@ func mfFunc(st mut St, f FnRef) {
     mut epoch := 0
     optReset(mut st, nv, nb)
     mut any := false
-    // 組はブロックの鎖の順に依らず両方の向きで試す（読みの引きより set の引きのブロックが鎖の前に来る形 — for の本体の分岐の合流 — を
-    // 取りこぼしていた。どちらが支配するかは mfClear が経路を辿って確かめる）。畳んだ呼び出し（OpDead）は 1 回目にも 2 回目にもしない
+    // 組はブロックのチェーンの順に依らず両方の向きで試す（読みの引きよりsetの引きのブロックがチェーンの前に来る形 — forの本体の分岐の合流 — を
+    // 取りこぼしていた。どちらが支配するかはmfClearが経路を辿って確認する）。畳んだ呼び出し（OpDead）は1回目にも2回目にもしない
     for k2 <- iter.Range(0, len(calls)) {
         mut j := 0
         mut done := irInsOp(mut st, InsRef(calls[k2])) != OpCall
@@ -225,7 +225,7 @@ func mfHarmless(st mut St, def mut []int, i InsRef, h int, kp int, c1 InsRef, b1
     if a != kp {
         return true
     }
-    // キーのスロットへの書き直し: 1 回目の直前（同じブロック）の同じ欄への最後の store と同じ値なら可
+    // キーのスロットへの書き直し: 1回目の直前（同じブロック）の同じフィールドへの最後のstoreと同じ値なら可
     if op != OpStore {
         return false
     }
@@ -235,7 +235,7 @@ func mfHarmless(st mut St, def mut []int, i InsRef, h int, kp int, c1 InsRef, b1
         if irInsOp(mut st, j) == OpStore && irInsA(mut st, j) == kp && irInsB(mut st, j) == irInsB(mut st, i) {
             last = irInsC(mut st, j)
         } else if isNarrowSt(irInsOp(mut st, j)) && irInsA(mut st, j) == kp {
-            // バイトの書き込みは欄の境界が読めないので打ち消す
+            // バイトの書き込みはフィールドの境界が読めないので打ち消す
             last = -1
         }
         j = irInsNext(mut st, j)

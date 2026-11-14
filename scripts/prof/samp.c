@@ -1,7 +1,7 @@
 // samp — ptrace の簡易サンプラ（perf の無い環境で -O0 の Sober バイナリを測る道具。gates には組み込まない）
 // 使い方:
-//   zig cc -O2 scripts/prof/samp.c -o /tmp/samp                       # 建てる
-//   (ulimit -s unlimited; /tmp/samp out.txt ./sober_x check tools/sobercheck/main.sober)   # 2 ms ごとに RIP + rbp の鎖を 1 行ずつ
+//   zig cc -O2 scripts/prof/samp.c -o /tmp/samp                       # ビルドする
+//   (ulimit -s unlimited; /tmp/samp out.txt ./sober_x check tools/sobercheck/main.sober)   # 2 msごとにRIP + rbpのチェーンを1行ずつ
 //   node --experimental-strip-types scripts/prof/sym.ts ./sober_x out.txt 30               # self / inclusive（under.ts は関数を指定して内訳と呼び手）
 // 前提: フレームポインタが残るバイナリ（zig cc -O0）・シンボルあり（nm）。子の stdout は /dev/null へ捨てる
 #include <sys/ptrace.h>

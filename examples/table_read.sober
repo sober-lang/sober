@@ -1,6 +1,6 @@
 package main
 
-// std/table.Read: 表の範囲を局所の列へ一括で写す。chunk（8192 要素）を跨ぐ範囲も Get を並べたのと同じ値。n = 0 は何も写さない
+// std/table.Read: 表の範囲を局所の列へ一括でコピーする。chunk（8192要素）を跨ぐ範囲もGetを並べたのと同じ値。n = 0は何もコピーしない
 
 import "std/iter"
 import "std/table"

@@ -1,9 +1,9 @@
 package main
 
-// net 段 4a-1（language.md 28 節の net）: loopback の echo を 1 本の task で。listen（port 0 — 割り当てを Port で読む）→ Dial して 3 つの塊を送る
+// net段階4a-1（language.md 28 節のnet）: loopbackのechoを1本のtaskで。listen（port 0 — 割り当てをPortで読む）→ Dialして3つのチャンクを送る
 // （接続はカーネルの backlog に入るので accept の前に送れる）→ 同じ task が Accept で受け、届いた分を送り返す → Dial の側で戻りを受ける。
-// 寿命は for の本体（閉じる口は無い）。Listener は task.Run の本体の lambda に捕獲できる（N6 — 期限の内側で受ける形）。
-// 4a-1 の syscall は同期（accept / connect はワーカーをブロックする）なので、別の task 同士の往復は 4a-2（epoll の道）の網で
+// 寿命はforの本体（閉じるインターフェースは無い）。Listenerはtask.Runの本体のlambdaに捕獲できる（N6 — 期限の内側で受ける形）。
+// 4a-1のsyscallは同期（accept / connectはワーカーをブロックする）なので、別のtask同士の往復は4a-2（epollのパス）のテストで
 
 import "std/net"
 import "std/task"

@@ -80,7 +80,7 @@ func releaseSpelling(az mut Az, callee desugar.NodeRef) string {
     return "Release"
 }
 
-// 束縛 s が Acquire なら、直後の文 next を照合して両方の呼び出しを「規則どおり」に印をつける
+// 束縛sがAcquireなら、直後の文nextを照合して両方の呼び出しを「規則どおり」にマークをつける
 func acquireBind(az mut Az, s desugar.NodeRef, next desugar.NodeRef) {
     b := node(mut az, s)
     vals := desugar.ListRef(b.c)

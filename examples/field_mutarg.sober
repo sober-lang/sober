@@ -1,7 +1,7 @@
 package main
 
-// フィールドの mut 実引数（language.md 26 節）と、欄ごとのセルに割った mut struct の読み・代入・値としての使用・
-// 丸ごとの代入・再帰する mut 引数の Def の中の欄の別名渡し（struct の欄 = Builder / Pt、int の欄）
+// フィールドのmut実引数（language.md 26 節）と、フィールドごとのセルに割った mut struct の読み・代入・値としての使用・
+// 丸ごとの代入・再帰するmut引数のDefの中のフィールドの別名渡し（structのフィールド = Builder / Pt、intのフィールド）
 
 import "std/builder"
 

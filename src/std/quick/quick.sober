@@ -10,15 +10,15 @@ package quick
 //         sum(xs) < 30
 //     })
 //
-// シュリンクは値の型を知らない — 引き出しは全部 [0, n) の選択の列の上に建ち、0 が最も単純な値になるように写す。
+// シュリンクは値の型を知らない — 引き出しは全部 [0, n) の選択の列の上に建ち、0が最も単純な値になるように変換する。
 // 引いた後の変換（`quick.Int(mut q, 0, 9) * 2`）も同じ列から決まるので一緒にシュリンクされる。
 // シードは固定（SOBER_QUICK_SEED で変える）なので、同じ木なら同じ試行・同じ反例になる。シュリンクは再実行の回数で切り、時間では切らない。
 // 例: examples/quick_shrink.sober・examples/quick_props.sober
 //
 // fuzz（期限まで試行を回し続ける）は、テストの実行ファイルが自分を子として走らせ直す形（引数の `quick:` の指示で役を分ける — fuzz.sober）。
-// 駆動役（`quick:fuzz=<ms>`）が試行の束を回す子を起こし続け、子がプロパティの中の panic かハング（試行ごとの期限 `quick:hang=<ms>` — SIGALRM）で
-// 死んだら、束を二分探索して最初に死ぬ試行を決め、その試行の選択の列を記録し、列を 1 つずつ再生する子で同じ死に方か確かめながらシュリンクする。
-// プロパティの偽は束の子の中でシュリンクする。試行はシードと番号で決まるので、走らせ直せば同じ所で同じ死に方をする
+// 駆動役（`quick:fuzz=<ms>`）が試行のバッチを回す子を起こし続け、子がプロパティの中のpanicかハング（試行ごとの期限 `quick:hang=<ms>` — SIGALRM）で
+// 死んだら、バッチを二分探索して最初に死ぬ試行を決め、その試行の選択の列を記録し、列を1つずつ再生する子で同じ死に方か検証しながらシュリンクする。
+// プロパティの偽はバッチの子の中でシュリンクする。試行はシードと番号で決まるので、走らせ直せば同じ所で同じ死に方をする
 
 import "std/rand"
 import "std/os"
@@ -28,7 +28,7 @@ import "std/convert"
 import "std/hex"
 import "std/math"
 
-// std/testing/cell の置き場を空にする（試行・再生の頭 — 前の試行の書きが次の試行の入力にならない）
+// std/testing/cellの格納場所を空にする（試行・再生の頭 — 前の試行の書きが次の試行の入力にならない）
 @intrinsic("cell_reset")
 func cellReset() int
 
@@ -92,7 +92,7 @@ const shrinkRuns = 1000
 // 既定の試行の数
 const defaultTrials = 100
 
-// fuzz の束の子が 1 本で回す試行の数
+// fuzzのバッチの子が1本で回す試行の数
 const fuzzBatch = 1000
 
 // fuzz の試行ごとの期限の既定（ms）
@@ -143,7 +143,7 @@ func Check(q mut Src, prop func() bool, trials int?) {
         once(mut q, prop, r)
         return
     }
-    // 束の試行の役は試行 [from, to) を Assume で捨てた試行も数えて回す（駆動役の二分探索が番号で切る）
+    // バッチの試行の役は試行 [from, to) をAssumeで捨てた試行も数えて回す（駆動役の二分探索が番号で切る）
     work := r.kind == roleWork
     n := if work { r.to - r.from } else { envInt(trialsVar, if trials != nil { trials } else { defaultTrials }) }
     if n < 1 {
@@ -162,7 +162,7 @@ func Check(q mut Src, prop func() bool, trials int?) {
         from = corpus(mut q, prop, r, idx)
     }
     k, dropped := runTrials(mut q, prop, r, seed, if from == "" { n } else { 0 }, work || from != "")
-    // プロパティの中の死でなく Check が報告して落ちる道（と通る道）は印を消す
+    // プロパティの中の死でなくCheckが報告して落ちるパス（と通るパス）はマークを消す
     unmark(r)
     if work && k + dropped == n {
         return
@@ -249,7 +249,7 @@ func search(q mut Src, prop func() bool, seed int, a0 int, n int, all bool, hang
     return k, dropped
 }
 
-// Check の試行（束の子でシードの置き場があればカバレッジの誘導つき — searchGuided）
+// Checkの試行（バッチの子でシードの格納場所があればカバレッジの誘導つき — searchGuided）
 func runTrials(q mut Src, prop func() bool, r role, seed int, n int, all bool) (int, int) {
     if r.kind == roleWork && r.pool != "" {
         return searchGuided(mut q, prop, r, r.from, n)
@@ -295,14 +295,14 @@ type tried struct {
 }
 
 // 失敗する列 bad0 をシュリンクした列と、使った再実行の回数（上限 shrinkRuns）。try(候補, 今の最良) が候補を走らせて同じ失敗か・小さいかを決める
-// （in-process の再生と、fuzz の駆動役の子の再生の両方がこの段を使う）
+// （in-processの再生と、fuzzの駆動役の子の再生の両方がこのフェーズを使う）
 func shrink(bad0 []int, try func([]int, []int) tried) ([]int, int) {
     mut bad := bad0
     mut runs := 0
     mut changed := true
     while changed && runs < shrinkRuns {
         changed = false
-        // 1. 塊を消す（要素ごとの「続けるか」の選択と一緒に消えれば要素が消える）
+        // 1. チャンクを消す（要素ごとの「続けるか」の選択と一緒に消えれば要素が消える）
         mut w := 8
         while w >= 1 && runs < shrinkRuns {
             mut a := 0
@@ -386,7 +386,7 @@ func tryHere(q mut Src, prop func() bool, c []int, best []int, hang int, out str
     return tried{better: better, log: l}
 }
 
-// シュリンクした列を再生して報告している回か（`_test.sober` の Check の写し先 — プロパティの偽をこの回だけ部分式で印字する。利用者は呼ばない）
+// シュリンクした列を再生して報告している回か（`_test.sober` のCheckの変換先 — プロパティの偽をこの回だけ部分式で印字する。利用者は呼ばない）
 @effects()
 func Reporting(q Src) bool {
     return q.show
@@ -422,9 +422,9 @@ func Bool(q mut Src) bool {
     return v
 }
 
-// float を 1 つ（端の値・小さい 2 進の分数・任意のビット列 — NaN・±Inf・-0 も出る）。3 つの腕: ①端の値（±0・±1・0.5・2・最小の非正規数・最小の正規数・最大の有限値・±Inf・NaN）
-// ②小さい 2 進の分数 ±m / 2^d（m < 1024・d ≤ 10 — 引く段で丸めが入らない）③64 bit の任意のビット列（非正規数・NaN の別のビットも出る）。
-// シュリンクは前の腕・小さい選択の側へ — 最小の反例は 0.0・端の値・小さい分数に寄る。NaN を除くなら `quick.Assume(mut q, x == x)`
+// floatを1つ（端の値・小さい2進の分数・任意のビット列 — NaN・±Inf・-0も出る）。3つの分岐: ①端の値（±0・±1・0.5・2・最小の非正規数・最小の正規数・最大の有限値・±Inf・NaN）
+// ②小さい2進の分数 ±m / 2^d（m < 1024・d ≤ 10 — 引くフェーズで丸めが入らない）③64 bitの任意のビット列（非正規数・NaNの別のビットも出る）。
+// シュリンクは前の分岐・小さい選択の側へ — 最小の反例は0.0・端の値・小さい分数に寄る。NaNを除くなら `quick.Assume(mut q, x == x)`
 @effects(io, panic, nondet)
 func Float(q mut Src) float {
     v := switch choose(mut q, 3) {
@@ -459,7 +459,7 @@ func floatDyadic(q mut Src) float {
     return if neg { -m } else { m }
 }
 
-// [0, n) の添字（シュリンクは 0 へ）— 腕を選ぶ口: `switch quick.Pick(mut q, 3) { case 0: … }`
+// [0, n) の添字（シュリンクは0へ）— 分岐を選ぶインターフェース: `switch quick.Pick(mut q, 3) { case 0: … }`
 @effects(io, panic, nondet)
 func Pick(q mut Src, n int) int {
     if n < 1 {
@@ -538,7 +538,7 @@ func Runes(q mut Src, max int) string {
     return s
 }
 
-// 長さ max 以下の列（要素は g が引く — g の中で同じ源から引く）。要素ごとに「続けるか」の選択を挟む（シュリンクで塊が消えると要素が消える）
+// 長さmax以下の列（要素はgが引く — gの中で同じ源から引く）。要素ごとに「続けるか」の選択を挟む（シュリンクでチャンクが消えると要素が消える）
 @effects(io, panic, nondet)
 func Slice[T](q mut Src, max int, g func() T) []T {
     if max < 0 {

@@ -1,11 +1,11 @@
 package desugar
 
 // パターン行列（型パターンの switch の網羅と到達 — desugar・lower・analyzer の共有層。language.md 13 節・22 節）。
-// 行 = 腕のパターンの列（-1 は全域）、列 = 値の領域。判定は Maranget の useful（行列 P に対してパターンの列 q が
-// 新しく覆う値があるか）: 網羅 = 全域の q が useful でない・腕 i に届く = 前の腕の行列に対して腕 i が useful。
-// 意味は上から順の照合（lower の逐次照合・desugar の外れたら次の腕 — どちらも最初に一致した腕）と同じ。
-// 領域: PmSum = union（構築子 = variant、欄は宣言の型で union なら入れ子の領域）・PmErr = error のラベル集合（構築子 = ラベル、
-// 欄 + `cause`。cause の領域はラベルごとの cz — 無ければ全ラベル + nil）・PmOpaque = 全域の行だけが覆う（スカラー・struct・型パラメータ）
+// 行 = 分岐のパターンの列（-1は全域）、列 = 値の領域。判定はMarangetのuseful（行列Pに対してパターンの列qが
+// 新しく覆う値があるか）: 網羅 = 全域のqがusefulでない・分岐iに届く = 前の分岐の行列に対して分岐iがuseful。
+// 意味は上から順の照合（lowerの逐次照合・desugarの外れたら次の分岐 — どちらも最初に一致した分岐）と同じ。
+// 領域: PmSum = union（構築子 = variant、フィールドは宣言の型でunionなら入れ子の領域）・PmErr = errorのラベル集合（構築子 = ラベル、
+// フィールド + `cause`。causeの領域はラベルごとのcz — 無ければ全ラベル + nil）・PmOpaque = 全域の行だけが覆う（スカラー・struct・型パラメータ）
 
 import "ast"
 import "std/iter"
@@ -17,7 +17,7 @@ const PmErr = 2
 const PmTop = 4611686018427387904  // h の 1 << 62（ラベル集合の不明 — analyzer の TOP と同じ）
 const PmBits = 126
 
-// 列の領域: PmSum は a = union の型宣言・b = 宣言側 package、PmErr はラベルの 2 語の集合（a = ラベル 0〜63・h = 64〜125 のビット 0〜61 —
+// 列の領域: PmSumはa = unionの型宣言・b = 宣言側package、PmErrはラベルの2ワードの集合（a = ラベル0〜63・h = 64〜125のビット0〜61 —
 // h の PmTop は不明。analyzer の LSet と同じ並び）・b = nil がありうるか（1）
 type PmCol struct {
     kind int
@@ -26,7 +26,7 @@ type PmCol struct {
     h int
 }
 
-// 長さ n の列（腕のパターンの列・cause の領域の表 — PmSet で埋める）
+// 長さnの列（分岐のパターンの列・causeの領域の表 — PmSetで埋める）
 func PmList(st mut S, n int) ListRef {
     return ListRef(listN(mut st, n))
 }
@@ -35,13 +35,13 @@ func PmSet(st mut S, l ListRef, i int, v int) {
     lput(mut st, l, i, v)
 }
 
-// 1 列の行列（腕のパターンの列 pats の先頭 n 個 — -1 は全域）に対してパターン q（-1 は全域）が新しく覆う値があるか。
+// 1列の行列（分岐のパターンの列patsの先頭n個 — -1は全域）に対してパターンq（-1は全域）が新しく覆う値があるか。
 // from = パターンの名前を解決する package、dom = subject の領域、cz = ラベル L の cause の領域（[集合, nil] × ラベル数 — -1 なら全ラベル + nil）
 func PmUseful1(st mut S, from int, pats ListRef, n int, q NodeRef, dom PmCol, cz ListRef) bool {
     return pmUseful(mut st, from, pmRows1(mut st, pats, n, q), pmCols1(mut st, dom), cz, -1)
 }
 
-// error の switch（1 列 — 領域 dom は PmErr）で覆い切れていないラベルの集合（ラベル L の値のうち、どの腕にも一致しないものがある L — 2 語）
+// errorのswitch（1列 — 領域domはPmErr）で覆い切れていないラベルの集合（ラベルLの値のうち、どの分岐にも一致しないものがあるL — 2ワード）
 func PmGapLabels(st mut S, from int, pats ListRef, n int, dom PmCol, cz ListRef) (int, int) {
     mut glo := 0
     mut ghi := 0
@@ -59,7 +59,7 @@ func PmGapLabels(st mut S, from int, pats ListRef, n int, dom PmCol, cz ListRef)
     return glo, ghi
 }
 
-// 型パターン p（error の switch の腕）の先頭のラベル（ラベルでなければ -1）
+// 型パターンp（errorのswitchの分岐）の先頭のラベル（ラベルでなければ -1）
 func PmHeadLabel(st mut S, from int, p NodeRef) int {
     if p == -1 || kindN(mut st, p) != ast.KPType {
         return -1
@@ -100,7 +100,7 @@ func pmNLab(st mut S) int {
     return NErr(mut st)
 }
 
-// ラベルの 2 語の集合 (a, h) がラベル L を含むか
+// ラベルの2ワードの集合 (a, h) がラベルLを含むか
 func pmHas(a int, h int, L int) bool {
     return if L >= 0 && L < 64 { (a & (1 << L)) != 0 } else if L >= 64 && L < PmBits { (h & (1 << (L - 64))) != 0 } else { false }
 }
@@ -163,7 +163,7 @@ func pmVariant(st mut S, col int, c int) NodeRef {
     return vat(mut st, hgetN(mut st, col + 2), c)
 }
 
-// 列 col の構築子 c の欄の領域の列（+ error ラベルは cause）に、残りの列 rest を続けたもの
+// 列colの構築子cのフィールドの領域の列（+ errorラベルはcause）に、残りの列restを続けたもの
 func pmSubCols(st mut S, col int, c int, rest ListRef, cz ListRef) ListRef {
     isErr := hget(mut st, col + 1) == PmErr
     v := pmVariant(mut st, col, c)
@@ -186,8 +186,8 @@ func pmSubCols(st mut S, col int, c int, rest ListRef, cz ListRef) ListRef {
     return out
 }
 
-// 欄の型式 ft（package pk の文脈）の領域: union の名前（型引数つきも）なら PmSum、他は PmOpaque
-// （型パラメータの欄は宣言からは領域が決まらない — 全域の行だけが覆う）
+// フィールドの型式ft（package pkの文脈）の領域: unionの名前（型引数つきも）ならPmSum、他はPmOpaque
+// （型パラメータのフィールドは宣言からは領域が決まらない — 全域の行だけが覆う）
 func pmFieldCol(st mut S, pk int, ft NodeRef) int {
     k := kindN(mut st, ft)
     if k == ast.TName || k == ast.TGeneric {
@@ -199,7 +199,7 @@ func pmFieldCol(st mut S, pk int, ft NodeRef) int {
     return pmColRec(mut st, PmCol{kind: PmOpaque, a: 0, b: 0, h: 0})
 }
 
-// 型パターン p（列 col の構築子 c）の欄の下位パターン（書いていない・下位パターンの無い欄は全域 -1）+ error ラベルは cause
+// 型パターンp（列colの構築子c）のフィールドの下位パターン（書いていない・下位パターンの無いフィールドは全域 -1）+ errorラベルはcause
 func pmSubPats(st mut S, p NodeRef, col int, c int, out ListRef, at int) {
     v := pmVariant(mut st, col, c)
     fs := vfields(mut st, v)
@@ -240,7 +240,7 @@ func pmFieldSubIs(st mut S, p NodeRef, name string) NodeRef {
     return -1
 }
 
-// 列 col の構築子 c の部分列の数（欄 + error ラベルは cause）
+// 列colの構築子cの部分列の数（フィールド + errorラベルはcause）
 func pmArity(st mut S, col int, c int) int {
     n := lenL(mut st, vfields(mut st, pmVariant(mut st, col, c)))
     return if hget(mut st, col + 1) == PmErr { n + 1 } else { n }
@@ -274,7 +274,7 @@ func pmHeads(st mut S, from int, m ListRef, col int) ListRef {
     return out
 }
 
-// 行列 m の構築子 c での特殊化（先頭が c か全域の行だけ残し、先頭を欄の下位パターンに開く）。c = -1 は既定の行列（先頭が全域の行の残り）。
+// 行列mの構築子cでの特殊化（先頭がcか全域の行だけ残し、先頭をフィールドの下位パターンに開く）。c = -1は既定の行列（先頭が全域の行の残り）。
 // 列は行数で取って、残した数を長さに書き戻す
 func pmSpec(st mut S, from int, m ListRef, heads ListRef, col int, c int) ListRef {
     nr := lenL(mut st, m)
@@ -291,7 +291,7 @@ func pmSpec(st mut S, from int, m ListRef, heads ListRef, col int, c int) ListRe
     return out
 }
 
-// 行 row の特殊化: 先頭（全域なら w）を構築子 c の欄の下位パターン（c = -1 なら無し）に開き、残りを続ける
+// 行rowの特殊化: 先頭（全域ならw）を構築子cのフィールドの下位パターン（c = -1なら無し）に開き、残りを続ける
 func pmSpecRow(st mut S, from int, row ListRef, col int, c int, w bool) ListRef {
     a := if c == -1 { 0 } else { pmArity(mut st, col, c) }
     nr := lenL(mut st, row)
@@ -335,7 +335,7 @@ func pmComplete(st mut S, heads ListRef, nq int, col int) bool {
     return true
 }
 
-// 行列 m（最後の行が問い q、他が腕 — 列の領域 cols）で q が新しく覆う値があるか。force >= 0 なら先頭の列を構築子 force に
+// 行列m（最後の行が問いq、他が分岐 — 列の領域cols）でqが新しく覆う値があるか。force >= 0なら先頭の列を構築子forceに
 // 限って問う（q の先頭は全域 — PmGapLabels）
 func pmUseful(st mut S, from int, m ListRef, cols ListRef, cz ListRef, force int) bool {
     nr := lenL(mut st, m)

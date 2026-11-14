@@ -1,12 +1,12 @@
 package pg
 
-// 接続ごとの statement キャッシュ（置き場の中 — transport.sober）: SQL の文面ごとに名前つきの文（"s<番号>"）を 1 回だけ Parse + Describe し、
-// 引数の型と列の型を覚える。文面は const の席（`@const`）なので種類はプログラムの const の数で有界 — 追い出しは無い。
-// 表か語の置き場が満ちたら以後の新しい文面は無名の文で毎回 Parse + Describe する（正しさは同じ・往復が 1 回増える）
+// 接続ごとのstatementキャッシュ（格納場所の中 — transport.sober）: SQLの文面ごとに名前つきの文（"s<番号>"）を1回だけParse + Describeし、
+// 引数の型と列の型を覚える。文面は const 仮引数（`@const`）なので種類はプログラムの const の数で有界 — 追い出しは無い。
+// 表かワードの格納場所が満ちたら以後の新しい文面は無名の文で毎回Parse + Describeする（正しさは同じ・往復が1回増える）
 
 import "std/iter"
 
-// 表の行の欄: [文面のハッシュ, 文面の語の位置, 文面の長さ, 型の語の位置]（型の語 = [引数の数, 引数の型…, 列の数, 列の型…]）
+// 表の行のフィールド: [文面のハッシュ, 文面のワードの位置, 文面の長さ, 型のワードの位置]（型のワード = [引数の数, 引数の型…, 列の数, 列の型…]）
 const eHash = 0
 const eSql = 1
 const eLen = 2
@@ -34,7 +34,7 @@ func cacheFind(blk []int, sql string) int {
     return -1
 }
 
-// 置き場の語 off から（putBytes の詰め方 — 8 バイト / 語・下位から）の文面が b と同じか（語ごとに比べる）
+// 格納場所のワードoffから（putBytesの詰め方 — 8バイト / ワード・下位から）の文面がbと同じか（ワードごとに比べる）
 func sameWords(blk []int, off int, b []byte) bool {
     ws := view(blk, off, (len(b) + 7) / 8)
     mut i := 0

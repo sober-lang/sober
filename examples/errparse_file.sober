@@ -128,7 +128,7 @@ func run(src []byte) (int, error?) {
     return v, nil
 }
 
-// 行の区切り: 各行の [開始, 終わり) を 2 語ずつ並べる（改行は含めない。末尾の改行の後の空行は数えない）
+// 行の区切り: 各行の [開始, 終わり) を2ワードずつ並べる（改行は含めない。末尾の改行の後の空行は数えない）
 func lines(b []byte) []int {
     mut out := mut []int{}
     mut start := 0

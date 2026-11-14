@@ -1,6 +1,6 @@
 package main
 
-// 負例: 他 package で宣言された struct の欄は外から書けない（language.md 20 節「欄の書きと mut の中身の読み」）。構築（リテラル）と読みは書ける
+// 負例: 他 package で宣言された struct のフィールドは外から書けない（language.md 20 節「フィールドの書きと mut の中身の読み出し」）。構築（リテラル）と読み出しは書ける
 
 import "testdata/specpkg/shapes"
 

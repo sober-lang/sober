@@ -2,10 +2,10 @@
 # a1oracle（再帰型の差分オラクル — report-rec-15）: 再帰の型宣言を使う題材ごとに、ネイティブの build（再帰型の lowering）と
 # A1 への書き換え（src/compiler/tools/a1dump — 値ごとに自分の部分木の表 + 根・再帰型の無い今の言語）の build を走らせ、
 # stdout と終了コードが一致すること。A1 側は「出力に再帰の組が残っていない」（a1dump --groups = 0）も見る。
-# 断片の外（a1dump の exit 2）は題材の列にある限り赤。負例 testdata/a1/neg は逆に exit 2 + `a1: unsupported:` で名指されること。
+# 断片の外（a1dumpのexit 2）は題材の列にある限り赤。負例testdata/a1/negは逆にexit 2 + `a1: unsupported:` で拒否されること。
 #   scripts/a1oracle.sh            題材の列の全部
 #   scripts/a1oracle.sh --list     題材の列を出す
-#   scripts/a1oracle.sh --mut      網の確かめ: a1dump の変異 2 本（A1_MUT=shift / kids）でそれぞれ少なくとも 1 題材が赤になること
+#   scripts/a1oracle.sh --mut      検査の確認: a1dumpのミューテーション2本（A1_MUT=shift / kids）でそれぞれ少なくとも1題材が赤になること
 set -uo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$PWD
@@ -22,7 +22,7 @@ else
     (cd src/compiler && "$SOBER" build tools/a1dump/main.sober -o "$W/a1dump") > "$W/tb" 2>&1 || { echo "a1oracle: FAIL build src/compiler/tools/a1dump"; cat "$W/tb"; exit 1; }
 fi
 # 1 題材: native ≡ A1。出力 = 空（一致）か理由の 1 行
-one() { # $1 = 題材 $2 = 置き場
+one() { # $1 = 題材 $2 = 格納場所
     local f=$1 d=$2 nc ac
     mkdir -p "$d"
     "$SOBER" build "$f" -o "$d/n" > "$d/nb" 2>&1 || { echo "native build: $(head -1 "$d/nb")"; return; }
@@ -36,7 +36,7 @@ one() { # $1 = 題材 $2 = 置き場
     [ "$nc" = "$ac" ] || { echo "exit code native $nc ≠ A1 $ac"; return; }
     cmp -s "$d/n.out" "$d/a.out" || { echo "stdout differs: $(diff "$d/n.out" "$d/a.out" | head -2 | tr '\n' ' ')"; return; }
 }
-run() { # $1 = 印 — 題材ごとの判定を $W/<印>/res に
+run() { # $1 = マーク — 題材ごとの判定を $W/<マーク>/resに
     local i=0 f
     for f in "${LIST[@]}"; do
         ( r=$(one "$f" "$W/$1/$i"); echo "$f	$r" > "$W/$1/$i.res" ) &
@@ -59,7 +59,7 @@ mkdir -p "$W/base"
 run base
 fail=$(awk -F'\t' '$2 != ""' "$W/base.res" | wc -l)
 awk -F'\t' '$2 != "" { print "FAIL: " $1 ": " $2 }' "$W/base.res"
-# 負例（testdata/a1/neg）: 断片の外を a1dump が exit 2 と `a1: unsupported:` で名指す（黙って書き換えずに通さない）
+# 負例（testdata/a1/neg）: 断片の外をa1dumpがexit 2と `a1: unsupported:` で拒否する（黙って書き換えずに通さない）
 nneg=0
 for f in testdata/a1/neg/*.sober; do
     nneg=$((nneg + 1))

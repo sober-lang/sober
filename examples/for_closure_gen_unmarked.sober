@@ -1,6 +1,6 @@
 package main
 
-// 負例（language.md 7 節 L-for）: 結果が error? の閉包の呼び出し形を印 `?` なしで回す — 失敗を黙って捨てる形は呼び出し形の生成元と同じ拒否
+// 負例（language.md 7 節L-for）: 結果がerror? のクロージャの呼び出し形をマーク `?` なしで回す — 失敗を黙って捨てる形は呼び出し形の生成元と同じ拒否
 
 func gen(n int, k func(int)) error? {
     mut i := 0

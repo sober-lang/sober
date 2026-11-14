@@ -1,19 +1,19 @@
 package lower
 
-// キャンセル（language.md 11 節「キャンセル = 印 + 決定的セーフポイント」）:
-// - 発火 = scope の子の死（task_start が scope の印 SR_CUT を「番号 i + 2」へ cas で下げる: 番号が i + 1 以上の子を切ってよい）。巻き戻った task
-//   （死んだ / 切られた）の開いている scope には印 1（全部の子 — drainScopes・task.sober）。印を立てたら打ち切りの世代 @rt.cutgen を進める
+// キャンセル（language.md 11 節「キャンセル = フラグ + 決定的セーフポイント」）:
+// - 発火 = scopeの子の死（task_startがscopeのフラグSR_CUTを「番号i + 2」へcasで下げる: 番号がi + 1以上の子を切ってよい）。巻き戻ったtask
+//   （死んだ / 切られた）の開いているscopeにはフラグ1（全部の子 — drainScopes・task.sober）。フラグを立てたら打ち切りの世代 @rt.cutgenを進める
 // - 切ってよい子 = **純な子だけ**（子の関数から io も チャネルも 間接呼び出しも届かない — 閉世界の呼び出しグラフで build の最後に決める・cutPatch）。
 //   保守側（11 節の「端点を一度も持たなかった task」より狭い）: 切られた子は観測に何も残さない（出力なし・チャネルなし）ので、打ち切りの位置が
 //   時刻で揺れても stdout は動かない。Join / Try が切られた子の値を求めたら切らない形で走らせ直す（rt.task_rerun — 純なので観測は同じ）
-// - 切られる側の判定 = 祖先を辿る（rt.cut_walk）: 自分の塊から、生んだ scope の印と自分の番号を比べ、scope を開いた task の塊へ上る（純な task の間だけ —
-//   純でない task は切られず子の値を使いうるので、その下へは届けない）。遅延の連鎖を「検査点で辿る」形にした（待っている親を起こす口が要らない）
+// - 切られる側の判定 = 祖先を辿る（rt.cut_walk）: 自分のチャンクから、生んだscopeのフラグと自分の番号を比べ、scopeを開いたtaskのチャンクへ上る（純なtaskの間だけ —
+//   純でないtaskは切られず子の値を使いうるので、その下へは届けない）。遅延の連鎖を「検査点で辿る」形にした（待っている親をウェイクアップするインターフェースが要らない）
 // - 検査点 = 純な子から届く関数（rt を除く）のループの後ろの辺の手前・再帰する関数の入口のブロックの末尾（+ Join / Try が切られた子に当たったとき）。
-//   速い道 = ワーカーの見直しの印 WK_CUT の load と分岐 1 つ（印を立てたら全ワーカーの WK_CUT = 1・切替で「@rt.cutgen ≠ 0」）。遅い道 =
-//   rt.cancel_check（WK_CUT を xchg で 0 にしてから辿って切るか戻る）。置くのは最適化の後（cutInsert — どの経路でも同じ点・遅い道の呼び出しが最適化を妨げない）。純な子の無いプログラムは IR 不変
+//   速いパス = ワーカーの見直しのフラグWK_CUTのloadと分岐1つ（フラグを立てたら全ワーカーのWK_CUT = 1・切替で「@rt.cutgen ≠ 0」）。遅いパス =
+//   rt.cancel_check（WK_CUTをxchgで0にしてから辿って切るか戻る）。置くのは最適化の後（cutInsert — どの経路でも同じ点・遅いパスの呼び出しが最適化を妨げない）。純な子の無いプログラムはIR不変
 // - 間引き（language.md 11 節）: 最内で呼び出しの無い利用者のループ（本体が非巡回・命令が全部 cutLight）は戻り辺 N 回に 1 回だけ検査する。
 //   N = K / 本体の IR 命令数 B を 2 の冪に切り下げ（K = CUT_K = 1,024）— 約束 = 2 つの検査の間の IR 命令は N × B ≤ K（外側のループは毎反復なので、
-//   内側は入るたびに数え直しても合成して有界）。形 = 頭の仮引数の数え口（P1 — 入りで N。帰納変数の mask〔P3〕は分岐予測を外すので棄てた）。網 = scripts/cutstat.sh
+//   内側は入るたびに数え直しても合成して有界）。形 = 頭の仮引数のカウンタ（P1 — 入りでN。帰納変数のmask〔P3〕は分岐予測を外すので棄てた）。検査 = scripts/cutstat.sh
 // - 切られた task の枠の状態 = 3（scope の値に出ない・死の数に数えない — 出口の死因 / 未回収の失敗の走査は状態 2 / 1 しか見ない）。
 //   切られる側の task が検査点を通らずに戻った・死んだ（子が切られた後の値・死かもしれない）ときも状態 3（rt.cut_end が辿る）
 
@@ -24,10 +24,10 @@ import "obuf"
 import "std/iter"
 import "std/table"
 
-// 罠の死因の終了コードの代わりに書く印（死 = 101 / 102 — task_start が巻き戻りの理由を読み分ける）
+// 罠の死因の終了コードの代わりに書くフラグ（死 = 101 / 102 — task_startが巻き戻りの理由を読み分ける）
 const CUT_CODE = 1
 
-// 下ろしている関数がチャネルに触る印（NewChannel / Send / Recv / Close / give: の Spawn — 純でない）
+// 下ろしている関数がチャネルに触るフラグ（NewChannel / Send / Recv / Close / give: のSpawn — 純でない）
 func cutMarkChan(st mut St) {
     st.chanFns = rec4(mut st, st.chanFns, int(st.fn), 0, 0)
     lsEv(mut st, EV_CHAN, 0, 0, 0, 0)
@@ -41,8 +41,8 @@ func cutFlag(st mut St, kid FnRef) int {
     return flag
 }
 
-// task_start の終わり方の判定（r = 1 なら罠へ戻った）: 切られたなら 1。速い道 = 普通に戻り、打ち切りの印が 1 度も立っていない（世代 0）。
-// それ以外は rt.cut_end（判定・本物の死なら後ろの兄弟の印・罠へ戻ったなら開いている scope の子を待つ）
+// task_startの終わり方の判定（r = 1なら罠へ戻った）: 切られたなら1。速いパス = 普通に戻り、打ち切りのフラグが1度も立っていない（世代0）。
+// それ以外はrt.cut_end（判定・本物の死なら後ろの兄弟のフラグ・罠へ戻ったなら開いているscopeの子を待つ）
 func cutEnd(st mut St, tcb int, frame int, r int) int {
     gen := load(mut st, globaladdr(mut st, st.cutGenG), 0)
     bS := newBlock(mut st)
@@ -55,11 +55,11 @@ func cutEnd(st mut St, tcb int, frame int, r int) int {
     return cut
 }
 
-// rt.cut_walk（祖先を辿って切られる側か）・rt.cut_end（task の終わり方の遅い道）・rt.cancel_check（検査点の遅い道）・
+// rt.cut_walk（祖先を辿って切られる側か）・rt.cut_end（taskの終わり方の遅いパス）・rt.cancel_check（検査点の遅いパス）・
 // rt.task_rerun（切られた子を切らない形で走らせ直す）の本体
 func buildCancelRt(st mut St) {
-    // rt.cut_walk(tcb) → 1 = 切られる側: 純な子の塊から、生んだ scope の印（c > 0 かつ 番号 + 1 ≥ c）を見て、その scope を開いた task の塊へ上る。
-    // 純でない task（切られない — 子の値を使いうる）・main・走らせ直しで止まる。辿る塊と記録は生きている（祖先は子孫を待ってから終わる）
+    // rt.cut_walk(tcb) → 1 = 切られる側: 純な子のチャンクから、生んだscopeのフラグ（c > 0 かつ 番号 + 1 ≥ c）を見て、そのscopeを開いたtaskのチャンクへ上る。
+    // 純でないtask（切られない — 子の値を使いうる）・main・走らせ直しで止まる。辿るチャンクと記録は生きている（祖先は子孫を待ってから終わる）
     begin(mut st, st.rtCutWalk)
     zero := iconst(mut st, 0)
     bNo := newBlock(mut st)
@@ -91,7 +91,7 @@ func buildCancelRt(st mut St) {
 func buildCutEnd(st mut St) {
     // rt.cut_end(tcb, r) → 1 = 切られた: 罠へ戻った理由が CUT_CODE か、切られる側（純な子で世代 ≠ 0、祖先を辿ると切られる）。切られる側は普通に
     // 戻っても死んでも「切られた」にする（子孫が切られた後の値・死は本物と限らない — 値を求める Join / Try は走らせ直す。本物の死はそこで出る）。
-    // 切られたら死因の語に走らせ直しの材料（子の関数 | 預かりの欄の位置 << 32）。本物の死なら scope の印を「番号 + 2」まで下げる（cas — 子は並行に死ぬ）。
+    // 切られたら死因のワードに走らせ直しの材料（子の関数 | 預かりのフィールドの位置 << 32）。本物の死ならscopeのフラグを「番号 + 2」まで下げる（cas — 子は並行に死ぬ）。
     // 罠へ戻ったなら開いている scope の子を待つ（drainScopes — 死因は呼び手が読み済み）
     begin(mut st, st.rtCutEnd)
     z0 := iconst(mut st, 0)
@@ -147,7 +147,7 @@ func buildCutEnd(st mut St) {
 }
 
 func buildCancelCheck(st mut St) {
-    // rt.cancel_check(): 見直しの印を xchg で下ろしてから辿る（辿る間に立った印は次の検査点で見る — 柵なので下ろしが辿りの読みを追い越さない）。
+    // rt.cancel_check(): 見直しのフラグをxchgで下ろしてから辿る（辿る間に立ったフラグは次の検査点で見る — 柵なので下ろしが辿りの読みを追い越さない）。
     // 切られる側なら罠へ巻き戻る（TW_CODE = CUT_CODE）
     begin(mut st, st.rtCancel)
     atomicXchg(mut st, globaladdr(mut st, st.wkG), WK_CUT, iconst(mut st, 0))
@@ -198,7 +198,7 @@ func cutIsRt(st mut St, f FnRef) bool {
     return slen(mut st, s) >= 3 && sat(mut st, s, 0) == 114 && sat(mut st, s, 1) == 116 && sat(mut st, s, 2) == 46
 }
 
-// 純な子から呼んでよい rt の関数か（確保・写し・map・task の器・死・遅延注入の口 — 観測に出る io とチャネルの rt は含まない）
+// 純な子から呼んでよいrtの関数か（確保・コピー・map・taskの器・死・遅延注入のインターフェース — 観測に出るioとチャネルのrtは含まない）
 func cutRtPure(st mut St, g FnRef) bool {
     return g == st.rtAlloc8 || g == st.rtCat8 || g == st.rtCopy || g == st.rtCopy8 || g == st.rtExtend8 || g == st.rtGrow || g == st.rtGrow8 || g == st.rtGrowTry ||
         g == st.rtKidKeep || g == st.rtMapGrow || isMapRt(mut st, g) || g == st.rtMaphash || g == st.rtPanic || g == st.rtPanicMem || g == st.rtRalloc || g == st.rtReloc ||
@@ -206,7 +206,7 @@ func cutRtPure(st mut St, g FnRef) bool {
         g == st.rtTaskGo || g == st.rtTaskNew || g == st.rtTaskInline || g == st.rtTaskWait || g == st.rtTaskWaitK || g == st.rtTip8 || g == st.rtTipN8 || g == st.rtUnmap || g == st.rtTaskRerun || g == st.rtCancel || g == st.rtCutWalk || g == st.rtCutEnd || g == st.rtMnDelay
 }
 
-// spawn の置き場の定数を書く（純な子 = 1・純でないが stdout に書かない子 = 2）: 純でない関数 = チャネルに触る・syscall / 間接呼び出し /
+// spawnの格納場所の定数を書く（純な子 = 1・純でないがstdoutに書かない子 = 2）: 純でない関数 = チャネルに触る・syscall / 間接呼び出し /
 // 罠 / 切替 / clone を持つ・純でない rt を呼ぶ・純でない関数を呼ぶか番地を取る（固定点）。stdout に書く関数は outSolve（下）
 func cutPatch(st mut St) {
     if st.cutSites == -1 {
@@ -224,7 +224,7 @@ func cutPatch(st mut St) {
     mut leaf := mut []int{}
     mut ind := mut []int{}
     mut taken := mut []int{}
-    // 置き場の印（rt.netop 5 — Serve）を使うか: Serve のプログラムの印（mnInit の即値 — CPU の固定の既定）
+    // 格納場所のフラグ（rt.netop 5 — Serve）を使うか: Serveのプログラムのフラグ（mnInitの即値 — CPUの固定の既定）
     mut place := false
     mut f := st.fhead
     while f != -1 {
@@ -329,14 +329,14 @@ func cutConstArg0(st mut St, f FnRef, ci InsRef) int {
     return -1
 }
 
-// stdout に書きうる利用者の関数の集合（出力の正準順の区間〔out.sober〕が要る子）: 葉 = println / print の rt の口
-// （rt.print_char / print_int / print_str / print_qstr — 行バッファに積む口。死・計測・trace の印字は fd 2 に切り替えてから書く）を本体から呼ぶ関数。
+// stdoutに書きうる利用者の関数の集合（出力の正準順の区間〔out.sober〕が要る子）: 葉 = println / printのrtのインターフェース
+// （rt.print_char / print_int / print_str / print_qstr — 行バッファに積むインターフェース。死・計測・traceの印字はfd 2に切り替えてから書く）を本体から呼ぶ関数。
 // 呼ぶ・番地を取る（spawn の子・関数値）利用者の関数へ伝える（cs = cutPatch の [関数, 数, 呼び先…] — 逆辺の作業列）。間接呼び出しは
 // 「全部書く」に倒さず、番地を取られた全関数の合併（閉じた世界 — 番地を取られた関数のどれかが書くなら、間接呼び出しを持つ関数は全部書く側。
 // spawn の子の入口は番地を取られるが OpTStart で始まり、間接呼び出しの先にならないので除く）。直の io の書き込み（WriteFd・syscall）は区間の
 // 対象外（11 節 — 行バッファを通らない）なので葉にしない
 func outSolve(st mut St, cs []int, leaf []int, ind []int, taken []int) map[int]int {
-    // 逆辺: 呼び先 g → 呼び手の鎖（rhead[g] = 辺の番号・rnext / rfrom = 辺の列）
+    // 逆辺: 呼び先g → 呼び手のチェーン（rhead[g] = 辺の番号・rnext / rfrom = 辺の列）
     mut rhead := mut map[int]int{}
     mut rnext := mut []int{}
     mut rfrom := mut []int{}
@@ -414,7 +414,7 @@ func cutSuccs(st mut St, b BlkRef, out mut []int) {
 
 // 関数 f が直に呼ぶ / 番地を取る利用者の関数（rt を除く）
 func cutCallees(st mut St, f FnRef, out mut []int) {
-    // β1 の当たりで B2 を飛ばした関数（本体は B2 の入力のまま）は置き場の相手の列から（bcache.sober）
+    // β1の当たりでB2を飛ばした関数（本体はB2の入力のまま）は格納場所の相手の列から（bcache.sober）
     if bcSkipped(mut st, int(f)) {
         cs := bcSkCalls(st.bcSk, st.bcInf, int(f))
         mut j := 0
@@ -501,7 +501,7 @@ func cutRecursive(st mut St, f FnRef, inR mut map[int]int) bool {
     return false
 }
 
-// f の検査点を置く: 後ろの辺の出どころのブロック（深さ優先 — 積みの上にいるブロックへの辺）と、rec なら入口のブロック。
+// fの検査点を置く: 後ろの辺の出どころのブロック（深さ優先 — スタックの上にいるブロックへの辺）と、recなら入口のブロック。
 // 最内で呼び出しの無い利用者のループは戻り辺 N 回に 1 回へ間引く（cutThin — 頭の冒頭の規則と約束）。それ以外は毎反復（cutPoint）
 func cutFunc(st mut St, f FnRef, rec bool) {
     b0 := irFnBHead(mut st, f)
@@ -510,7 +510,7 @@ func cutFunc(st mut St, f FnRef, rec bool) {
     mut mb := mut []int{}
     mut ms := mut []int{}
     mut rs := mut []int{}
-    // 積み = [ブロック, 次に見る後続の添字]
+    // スタック = [ブロック, 次に見る後続の添字]
     mut stack := mut []int{}
     mut sp := llPush(mut stack, 0, int(b0))
     sp = llPush(mut stack, sp, 0)
@@ -598,7 +598,7 @@ func cutFunc(st mut St, f FnRef, rec bool) {
 
 // 間引きの約束: 2 つの検査の間に実行される IR 命令は K 以下（ループの本体が非巡回なので 1 反復は本体の重み B 以下 — N × B ≤ K）
 const CUT_K = 1024
-// 間引きの N の上限: 数え口の抜け（N 回に 1 回）を分岐予測が当てられる周期に抑える。短いループ（B ≤ 8 — 葉）で N = 128 だと
+// 間引きのNの上限: カウンタの抜け（N回に1回）を分岐予測が当てられる周期に抑える。短いループ（B ≤ 8 — 葉）でN = 128だと
 // 抜けのたびに予測を外し（予測ミス 0.55 → 4.5 M・gran の cycles 中央 +12%）、64 以下なら当たる（Zen 5 で実測 — 32 / 64 とも 0.53〜0.58 M）。
 // 32 は 64 より gran の中央で −3%（layvar 8 配置）・1BRC 並列は中立。約束 K は上限で強まるだけ
 const CUT_NMAX = 32
@@ -678,15 +678,15 @@ func cutThinN(st mut St, f FnRef, s BlkRef, mb mut []int, ms mut []int, rs mut [
         b = irBlkNext(mut st, b)
     }
     mut n := 1
-    // 変異 10（開発用 — 網の自己検査）: 間引かない（N = 1 — 間引きの表が食い違う）
+    // ミュータント10（開発用 — 検査の自己検査）: 間引かない（N = 1 — 間引きの表が食い違う）
     while n * 2 * w <= CUT_K && n < CUT_NMAX && st.rtMut != 10 {
         n *= 2
     }
     return n, w
 }
 
-// 間引きの表（開発用 `sober build --cut-stat` — 網 scripts/cutstat.sh）: 検査点を置いた利用者のループの頭ごとに 1 行
-// 「関数 b<頭> B=<本体の重み> N=<間引き> <形>」（形 = count〔数え口〕/ every〔毎反復〕・B の負は間引けない理由 — cutThinN）
+// 間引きの表（開発用 `sober build --cut-stat` — 検査scripts/cutstat.sh）: 検査点を置いた利用者のループの頭ごとに1行
+// 「関数b<頭> B=<本体の重み> N=<間引き> <形>」（形 = count〔カウンタ〕/ every〔毎反復〕・Bの負は間引けない理由 — cutThinN）
 @errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch)
 func CutStat(p loader.Program, n int, vmode int) ([]byte, error?) {
     mut k := knob(KElf, true, true, false, false, 0, vmode)
@@ -695,7 +695,7 @@ func CutStat(p loader.Program, n int, vmode int) ([]byte, error?) {
     return lowerWith(p, k)
 }
 
-// 間引きの表のテキスト（elfOutSt が cutInsert の直後に — x86 の段がヒープを凍らせる前に読む）
+// 間引きの表のテキスト（elfOutStがcutInsertの直後に — x86のフェーズがヒープを凍らせる前に読む）
 func cutStatText(st mut St) []byte {
     mut lines := mut []int{}
     mut r := st.cutRecs
@@ -722,7 +722,7 @@ func cutStatText(st mut St) []byte {
     return freeze(out)
 }
 
-// f の前任の鎖（preds[ブロックの番号] = 先頭の節・節 q = [pnext[q], pfrom[q]] — -1 = 終わり）
+// fの前任のチェーン（preds[ブロックの番号] = 先頭の節・節q = [pnext[q], pfrom[q]] — -1 = 終わり）
 func cutPreds(st mut St, f FnRef, nb int, preds mut []int, pnext mut []int, pfrom mut []int) {
     xFill(mut preds, nb, -1)
     mut b := irFnBHead(mut st, f)
@@ -775,17 +775,17 @@ func cutSetArgsTo(st mut St, b BlkRef, s BlkRef, l int) {
     }
 }
 
-// 頭 s のループを N 回に 1 回の検査へ間引く（形 = 頭の仮引数の数え口〔P1〕— 入りで N・戻り辺で −1。返す形の番号は 2 = count）。
-// 熱い道は 2 命令（sub + jcc — x86 の xFuseScan が手前の演算の flags を読む）。ワーカーの表の番地は冷たい検査の中で作り直す
+// 頭sのループをN回に1回の検査へ間引く（形 = 頭の仮引数のカウンタ〔P1〕— 入りでN・戻り辺で −1。返す形の番号は2 = count）。
+// 熱いパスは2命令（sub + jcc — x86のxFuseScanが手前の演算のflagsを読む）。ワーカーの表の番地は冷たい検査の中で作り直す
 // （関数全体に生かさない — 入口の圧で spill して毎反復読み直す形を作らない）。
 // 帰納変数の mask（P3 — `test 値, N − 1`）は棄てた: 発火の位置が帰納変数の始まりに依るデータ依存になり、短く何度も入るループで分岐予測を外す
-// （1BRC 並列で予測ミス +1.2 M・cycles +1.3〜1.5%）。数え口なら N より短いループでは一度も発火しない
+// （1BRC並列で予測ミス +1.2 M・cycles +1.3〜1.5%）。カウンタならNより短いループでは一度も発火しない
 func cutThin(st mut St, f FnRef, s BlkRef, n int, mb mut []int, ms mut []int) int {
-    // 変異 9（開発用 — 網の自己検査）: 数え口が 0 に戻らない（数え口を 2^40 に）— 切れなくなる
+    // ミュータント9（開発用 — 検査の自己検査）: カウンタが0に戻らない（カウンタを2^40に）— 切れなくなる
     mut2 := st.rtMut == 9
-    // 並べ方: 検査のブロック（と遅い道）は元の終端の写しで終わる — 続き cont へ合流させると吐く順（逆後順）で検査のブロックが b と cont の間に入り、
-    // 熱い道に飛びが 1 つ増える（葉のループで cycles +40%）。cutPoint の遅い道と同じ形
-    // P1: 頭に数え口の仮引数 c を足す — 外からの入りは N、戻る辺は c − 1（0 になったら検査して N へ戻す）
+    // 並べ方: 検査のブロック（と遅いパス）は元の終端のコピーで終わる — 続きcontへ合流させると吐く順（逆後順）で検査のブロックがbとcontの間に入り、
+    // 熱いパスに飛びが1つ増える（葉のループでcycles +40%）。cutPointの遅いパスと同じ形
+    // P1: 頭にカウンタの仮引数cを足す — 外からの入りはN、戻る辺はc − 1（0になったら検査してNへ戻す）
     nn := if mut2 { 1 << 40 } else { n }
     c := param(mut st, s, TyI64)
     mut b := irFnBHead(mut st, f)
@@ -818,8 +818,8 @@ func cutThin(st mut St, f FnRef, s BlkRef, n int, mb mut []int, ms mut []int) in
     return 2
 }
 
-// 冷たい検査のブロック chk の中身: ワーカーの表の番地を作り直して印を読み、立っていなければ元の終端の写し・立っていれば
-// rt.cancel_check を呼んでから元の終端の写し（cont の終端 — rv ≥ 0 なら s への辺の実引数の最後を rv に差し替える〔P1 の数え口を N へ〕）
+// 冷たい検査のブロックchkの中身: ワーカーの表の番地を作り直してフラグを読み、立っていなければ元の終端のコピー・立っていれば
+// rt.cancel_checkを呼んでから元の終端のコピー（contの終端 — rv ≥ 0ならsへの辺の実引数の最後をrvに差し替える〔P1のカウンタをNへ〕）
 func cutSlowCheck(st mut St, chk BlkRef, cont BlkRef, s BlkRef, rv int) {
     setCur(mut st, chk)
     v := load(mut st, globaladdr(mut st, st.wkG), WK_CUT)
@@ -833,7 +833,7 @@ func cutSlowCheck(st mut St, chk BlkRef, cont BlkRef, s BlkRef, rv int) {
     cutTermCopy(mut st, cont, s, rv)
 }
 
-// 今のブロックを cont の終端の写しで終える（rv ≥ 0 なら s への辺の実引数の最後を rv に）
+// 今のブロックをcontの終端のコピーで終える（rv ≥ 0ならsへの辺の実引数の最後をrvに）
 func cutTermCopy(st mut St, cont BlkRef, s BlkRef, rv int) {
     t := irBlkTerm(mut st, cont)
     if t == TmBr {
@@ -845,7 +845,7 @@ func cutTermCopy(st mut St, cont BlkRef, s BlkRef, rv int) {
     }
 }
 
-// 実引数の列の写し（toS かつ rv ≥ 0 なら最後を rv に）
+// 実引数の列のコピー（toSかつrv ≥ 0なら最後をrvに）
 func cutArgsRv(st mut St, l int, toS bool, rv int) int {
     c := cutArgs(mut st, l)
     if toS && rv >= 0 {
@@ -919,7 +919,7 @@ func cutEntry(st mut St, f FnRef, b0 BlkRef) {
 }
 
 // ブロック b の末尾（終端の手前）に検査点を置く: b の終端を新しいブロック cont（b の直後に並べる）へ移し、b = 検査 + 分岐・
-// 遅い道 = rt.cancel_check の呼び出し（関数の最後に並べる — 冷たい）。速い道 = WK_CUT の load と分岐
+// 遅いパス = rt.cancel_checkの呼び出し（関数の最後に並べる — 冷たい）。速いパス = WK_CUTのloadと分岐
 func cutPoint(st mut St, f FnRef, b BlkRef, wkp int) {
     st.fn = f
     t := irBlkTerm(mut st, b)
@@ -940,7 +940,7 @@ func cutPoint(st mut St, f FnRef, b BlkRef, wkp int) {
     setCur(mut st, cont)
     terminate(mut st, t, x1, x2, x3, x4, x5)
     setCur(mut st, b)
-    // 遅い道は元の終端の写しで終わる（続きへ飛ぶと吐く順〔逆後順〕で遅い道が続きの手前に来て、熱い道に飛びが 1 つ増える）
+    // 遅いパスは元の終端のコピーで終わる（続きへ飛ぶと吐く順〔逆後順〕で遅いパスが続きの手前に来て、熱いパスに飛びが1つ増える）
     v := load(mut st, wkp, WK_CUT)
     slow := newBlock(mut st)
     condbr(mut st, cmp(mut st, CEq, v, iconst(mut st, 0)), cont, -1, slow, -1)
@@ -955,7 +955,7 @@ func cutPoint(st mut St, f FnRef, b BlkRef, wkp int) {
     }
 }
 
-// 分岐の実引数の列の写し（-1 = 無し）
+// 分岐の実引数の列のコピー（-1 = 無し）
 func cutArgs(st mut St, l int) int {
     if l < 0 {
         return l
@@ -968,7 +968,7 @@ func cutArgs(st mut St, l int) int {
     return c
 }
 
-// 今のブロックの末尾に検査と分岐を足す（wkp = ワーカーの表・続き = cont・遅い道 = 関数の最後に並べたブロックの rt.cancel_check）
+// 今のブロックの末尾に検査と分岐を足す（wkp = ワーカーの表・続き = cont・遅いパス = 関数の最後に並べたブロックのrt.cancel_check）
 func cutCheck(st mut St, cont BlkRef, wkp int) {
     v := load(mut st, wkp, WK_CUT)
     slow := newBlock(mut st)
@@ -978,7 +978,7 @@ func cutCheck(st mut St, cont BlkRef, wkp int) {
     br(mut st, cont, -1)
 }
 
-// 打ち切りの印を立てた後: 世代を進め（切替の見直しの判定）、起きている全ワーカーの WK_CUT を 1 に（素の store — 下ろすのは xchg）
+// 打ち切りのフラグを立てた後: 世代を進め（切替の見直しの判定）、起きている全ワーカーのWK_CUTを1に（素のstore — 下ろすのはxchg）
 func cutRaise(st mut St) {
     atomicXadd(mut st, globaladdr(mut st, st.cutGenG), 0, iconst(mut st, 1))
     mn := globaladdr(mut st, st.mnG)

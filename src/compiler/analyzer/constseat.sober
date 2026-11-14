@@ -1,16 +1,16 @@
 package analyzer
 
-// const の席（language.md 12 節「const の席」・spec A-19）: `@const(p, …)` を付けた関数の仮引数 p への実引数は、ビルド時に文面の決まる
+// const 仮引数（language.md 12 節「const仮引数」・spec A-19）: `@const(p, …)` を付けた関数の仮引数 p への実引数は、ビルド時に文面の決まる
 // 文字列だけ — 補間の無い文字列リテラル・const の名前・それらの `+`・括弧、と呼び手自身の `@const` の仮引数（明示の伝播 — 推論はしない）。
 // 判定は構文だけで足りる（シャドーイングが無い — 裸の名前が const / 仮引数に解決すれば、それがその名前の実体）。
-// 関数値の呼び出しは席が見えないので、`@const` を持つ関数は呼び出しの callee の位置でしか書けない（値として取り出せない）
+// 関数値の呼び出しは const 仮引数が見えないので、`@const` を持つ関数は呼び出しの callee の位置でしか書けない（値として取り出せない）
 
 import "ast"
 import "desugar"
 import "lexer"
 import "std/iter"
 
-const MConstArg = 50    // const の席に文面の決まらない実引数（at = 実引数, 付帯 = 呼び先の関数の添字 * 256 + 仮引数の添字）
+const MConstArg = 50    // const 仮引数に文面の決まらない実引数（at = 実引数, 付帯 = 呼び先の関数の添字 * 256 + 仮引数の添字）
 const MConstValue = 51  // `@const` を持つ関数を値として取り出した（at = 名前の節, 付帯 = 関数の添字）
 const MConstAnn = 52    // `@const(…)` の項が仮引数の名前でない・string でない・mut（at = 関数宣言, 付帯 = 項の添字）
 
@@ -48,7 +48,7 @@ func cstFn(az mut Az, e desugar.NodeRef) int {
     return -1
 }
 
-// 式 e の中で文面がビルド時に決まらない最初の節（全部決まれば -1 — const の席の実引数の形）
+// 式 e の中で文面がビルド時に決まらない最初の節（全部決まれば -1 — const 仮引数の実引数の形）
 func cstBad(az mut Az, e desugar.NodeRef) desugar.NodeRef {
     x := node(mut az, e)
     k := x.kind
@@ -93,7 +93,7 @@ func declParam(az mut Az, fd ast.Node, name desugar.StrRef) int {
     return -1
 }
 
-// 呼び出し callee(args)（pipe なら左辺 lhs が穴の位置か先頭）の const の席を照合し、callee の名前の節を「呼び出しの位置」と印す
+// 呼び出しcallee(args)（pipeなら左辺lhsが穴の位置か先頭）のconst仮引数を照合し、calleeの名前の節を「呼び出しの位置」とマークする
 func constCall(az mut Az, callee desugar.NodeRef, args desugar.ListRef, lhs desugar.NodeRef) {
     fi := cstFn(mut az, callee)
     if fi < 0 {
@@ -132,7 +132,7 @@ func cstArg(az mut Az, fi int, m int, j int, a desugar.NodeRef) {
     }
 }
 
-// 名前の節 e（裸の名前・選択子）が `@const` を持つ関数を値として取り出していれば指摘（呼び出しの callee の位置は constCall が印した）
+// 名前の節e（裸の名前・選択子）が `@const` を持つ関数を値として取り出していれば指摘（呼び出しのcalleeの位置はconstCallがマークした）
 func constValue(az mut Az, e desugar.NodeRef) {
     if isOk(mut az, e) {
         return
@@ -143,7 +143,7 @@ func constValue(az mut Az, e desugar.NodeRef) {
     }
 }
 
-// 関数宣言 fd の仮引数 j が const の席になれるか（型 string・mut でない）
+// 関数宣言 fd の仮引数 j が const 仮引数になれるか（型 string・mut でない）
 func cstParamOk(az mut Az, fd ast.Node, j int) bool {
     p := node(mut az, nat(mut az, desugar.ListRef(fd.c), j))
     t := node(mut az, desugar.NodeRef(p.b))
@@ -170,10 +170,10 @@ func constMessage(az mut Az, k int, x int) string {
     if k == MConstArg {
         fi := x / 256
         p := str(mut az, desugar.StrRef(node(mut az, nat(mut az, desugar.ListRef(fnDecl(mut az, fi).c), x % 256)).a))
-        return "`${p}` of ${fnName(mut az, fi)} is a const seat (@const) — pass a string literal, a const, or a `+` of them (a string built at run time cannot be passed here). Pass the varying values as separate arguments, and pick between fixed texts with a switch over consts (language.md 12 節「const の席」)"
+        return "`${p}` of ${fnName(mut az, fi)} is a const parameter (@const) — pass a string literal, a const, or a `+` of them (a string built at run time cannot be passed here). Pass the varying values as separate arguments, and pick between fixed texts with a switch over consts (language.md 12 節「const仮引数」)"
     }
     if k == MConstValue {
-        return "${fnName(mut az, x)} has a const seat (@const) and can only be called directly — it cannot be taken as a function value (the seat would not be checked through the value — language.md 12 節「const の席」)"
+        return "${fnName(mut az, x)} has a const parameter (@const) and can only be called directly — it cannot be taken as a function value (the parameter would not be checked through the value — language.md 12 節「const仮引数」)"
     }
     return ""
 }
@@ -182,5 +182,5 @@ func constMessage(az mut Az, k int, x int) string {
 func constAnnMessage(az mut Az, fd desugar.NodeRef, k int) string {
     l, _ := desugar.FuncConst(mut az.d, node(mut az, fd))
     nm := str(mut az, desugar.StrRef(desugar.LatI(mut az.d, l, k)))
-    return "@const(${nm}): a const seat must name a parameter of type string that is not mut"
+    return "@const(${nm}): a const parameter must name a parameter of type string that is not mut"
 }

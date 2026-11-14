@@ -1,8 +1,8 @@
 package main
 
 // TLS 1.3 のサーバ（std/tls — language.md 28 節の tls）: tls.Serve が handshake を済ませた接続だけを k に渡し、k は tls.Recv / tls.Send で
-// net.Conn と同じ顔に読み書きする（ここでは echo）。既定の走りは設定の網（Parse の成功・ALPN の替え・壊れた PEM・鍵でない塊 — switch はラベルを網羅）。
-// `tls_serve live <port>` は 127.0.0.1:<port> で待ち受ける（`live-once` は break の後の Recv を見る once）（openssl s_client で HRR・ChaCha20・KeyUpdate の受けを確かめる口）
+// net.Connと同じ顔に読み書きする（ここではecho）。既定の走りは設定の検査（Parseの成功・ALPNの替え・壊れたPEM・鍵でないチャンク — switchはラベルを網羅）。
+// `tls_serve live <port>` は127.0.0.1:<port> で待ち受ける（`live-once` はbreakの後のRecvを見るonce）（openssl s_clientでHRR・ChaCha20・KeyUpdateの受けを検証する入口）
 
 import "std/crypto/pem"
 import "std/crypto/rsa"

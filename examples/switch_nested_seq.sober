@@ -1,7 +1,7 @@
 package main
 
-// 入れ子の型パターンの逐次照合（パターン行列 — language.md 22 節）: 同じ外側の variant の腕を並べ、内側が外れたら次の腕へ
-// （上から順に最初に一致した腕 — build の逐次照合と check の脱糖が同じ意味）。新しい形（f）と、前から受理していた 2 段の switch（g）の
+// 入れ子の型パターンの逐次照合（パターン行列 — language.md 22 節）: 同じ外側のvariantの分岐を並べ、内側が外れたら次の分岐へ
+// （上から順に最初に一致した分岐 — buildの逐次照合とcheckの脱糖が同じ意味）。新しい形（f）と、前から受理していた2レベルのswitch（g）の
 // 出力が全入力で一致することの回帰例
 
 type Leaf union {
@@ -52,7 +52,7 @@ func leaf(l Leaf, k int) int {
     }
 }
 
-// 文の switch・最後の腕が全域（`_`）: 外れた値は `_` へ
+// 文のswitch・最後の分岐が全域（`_`）: 外れた値は `_` へ
 func h(t Top) {
     switch t {
     case T1{m: M1{l: L2{b}}, k}:

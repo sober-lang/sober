@@ -1,6 +1,6 @@
 package main
 
-// シリアライザの双子 (b) の参考列: (b)〔../pieces〕と同じ形で、子の片の繋ぎを std の strings.Join にしたもの（計器は ../pieces のまま）。
+// シリアライザの対 (b) の参考列: (b)〔../pieces〕と同じ形で、子の片の繋ぎをstdのstrings.Joinにしたもの（計測ツールは ../piecesのまま）。
 // (a) = ../builder（mut builder を引き回す形）。出力は (a) と同じバイト列（長さと FNV で照合）
 import "std/convert"
 import "std/iter"

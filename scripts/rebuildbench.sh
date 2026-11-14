@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# 再 build の bench（report-1183 段 0 — インクリメンタルの波の物差し・editbench.sh の build 版）: 固定のコンパイラ（今の stage2）で、
-# 自己適用（compiler/app の写し）に決まった編集を当てて build（--emit=elf --passes）を測る。
-#   whole = 置き場なし（SOBER_CACHE 空・build のキャッシュ off）・warm = 編集前の木で温めた置き場の写し（check の C2 + build の後段の関数キャッシュ
-#   〔段 3 — SOBER_BUILD_CACHE=1〕）・alt = 同じ温めた置き場を別パスの写し（長いパス + 絶対パスの entry）で当てる（段 3 の鍵と成果物のパス非依存 —
-#   report-1194 5.2）・cold = 空の置き場（1 周目だけ）
-# 温 / 別パス / 冷の ELF は whole の ELF とバイトで比べる（elf=same / DIFF）。外れ = 段 3 の切り口ごとの外れの数（α/β1/β2/γ/P — SOBER_CACHE_STAT）・
-# 置き場 = build の後の build のキャッシュの根の大きさ（KB）。最後に中央値の表（編集 × 種類 × W）を出す
+# 再buildのbench（report-1183段階0 — インクリメンタルのマイルストーンの基準・editbench.shのbuild版）: 固定のコンパイラ（今のstage2）で、
+# 自己適用（compiler/appのコピー）に決まった編集を当ててbuild（--emit=elf --passes）を測る。
+#   whole = 格納場所なし（SOBER_CACHE空・buildのキャッシュoff）・warm = 編集前の木で温めた格納場所のコピー（checkのC2 + buildの後段の関数キャッシュ
+#   〔段階3 — SOBER_BUILD_CACHE=1〕）・alt = 同じ温めた格納場所を別パスのコピー（長いパス + 絶対パスのentry）で当てる（段階3の鍵と成果物のパス非依存 —
+#   report-1194 5.2）・cold = 空の格納場所（1周目だけ）
+# 温 / 別パス / 冷のELFはwholeのELFとバイトで比べる（elf=same / DIFF）。外れ = 段階3の切り口ごとの外れの数（α/β1/β2/γ/P — SOBER_CACHE_STAT）・
+# 格納場所 = buildの後のbuildのキャッシュの根の大きさ（KB）。最後に中央値の表（編集 × 種類 × W）を出す
 # 編集（editbench と同じ — std はコンパイラに焼き込みなので std の代役に ast〔ほぼ全 package が import〕を使う）:
 #   none / lower-body / desugar-body / ast-body（.sobi に載らない本体）/ ast-sig（.sobi が変わる — ast に依る全 package が外れる）
-# 使い方: scripts/rebuildbench.sh [回数（既定 3）] [W の列（既定 "1 8"）]・scripts/rebuildbench.sh --fnhash（関数ごとの成果物のハッシュの stray の網 — 下）・--tyhash（package の区画のハッシュと鍵の網 — 下） — 出力 = 1 行 1 計測（編集 種類 W 秒 RSS-KB 外れ elf 置き場-KB）+ 中央値の表。長い — 背景で回して出力をファイルで読む
+# 使い方: scripts/rebuildbench.sh [回数（既定3）] [Wの列（既定 "1 8"）]・scripts/rebuildbench.sh --fnhash（関数ごとの成果物のハッシュのstrayの検査 — 下）・--tyhash（packageの区画のハッシュと鍵の検査 — 下） — 出力 = 1行1計測（編集 種類 W 秒 RSS-KB 外れ elf 格納場所-KB）+ 中央値の表。長い — 背景で回して出力をファイルで読む
 set -uo pipefail
-# 答えの再生は切る（この網は関数単位キャッシュの当否を見る）
+# 答えの再生は切る（この検査は関数単位キャッシュの当否を見る）
 export SOBER_CHECK_REPLAY=0
 cd "$(dirname "$0")/.."
 ROOT=$PWD
@@ -24,9 +24,9 @@ mkdir -p "$W/base"
 cp -r src/compiler "$W/base/compiler"
 cp -r src/std "$W/base/compiler/std"
 ulimit -s unlimited
-# --fnhash（段 2 R2 の網 — report-1188 3.3 / report-1191）: 関数ごとの成果物のハッシュ（`build --emit=fnhash`）が、無関係な編集で
+# --fnhash（段階2 R2の検査 — report-1188 3.3 / report-1191）: 関数ごとの成果物のハッシュ（`build --emit=fnhash`）が、無関係な編集で
 # 編集した関数（とその持ち主の下 — `/K` `/L` `#p` `#s`）と L 類の合成 rt（全体の数から組む本体 — FH_SYNTH）の外で変わらないこと（stray = 0）。
-# 列: W1 ≡ W8・別パスの写し（1183 6 節の条件 2 — 成果物にパス由来のバイトが入らない）・panic-add（app の main に panic の点 1 つ — 後ろの点の
+# 列: W1 ≡ W8・別パスのコピー（1183 6 節の条件2 — 成果物にパス由来のバイトが入らない）・panic-add（appのmainにpanicの点1つ — 後ろの点の
 # 番号が全部ずれる）・lambda-add（loader の checksPar に task.Map のラムダ 1 つ — 子の関数と spawn の点の番号がずれる。自己には持ち上がるラムダ
 # 〔lambda#〕が無い — 全部展開・融合）
 if [ "${1:-}" = "--fnhash" ]; then
@@ -73,12 +73,12 @@ process.exit(stray.length ? 1 : 0);' "$1" "$2" "$3" "$4" "$FH_SYNTH"
     done
     exit $bad
 fi
-# --tyhash（段 4 R3 の網 — report-1226）: package の区画の正準形のハッシュ（`build --emit=tyhash`）と鍵（`--emit=tykeys`）。
-# 列: W1 ≡ W8・別パスの写し・package の順の撹拌（SOBER_TYORDER=pkgrev — 区画は依存の区画と自分の入力だけで決まる）で何も変わらない・
+# --tyhash（段階4 R3の検査 — report-1226）: packageの区画の正準形のハッシュ（`build --emit=tyhash`）と鍵（`--emit=tykeys`）。
+# 列: W1 ≡ W8・別パスのコピー・packageの順の撹拌（SOBER_TYORDER=pkgrev — 区画は依存の区画と自分の入力だけで決まる）で何も変わらない・
 # ast-body（ast の関数の本体の編集）で ast の外のハッシュと鍵が変わらない（ast の鍵は変わる — ソースの要約）・ast-decl（ast に関数を 1 つ足す —
 # 宣言の編集）で ast と、ast に依存する package（parser）の鍵が変わり、std の鍵は変わらない。tyhash の行の扉の数（door / body / xents）は全部 0。
-# 段 5 R1（report-1230）: 型付けの前の鍵 K1（`--emit=tykeys0` — 推移の import の閉包で組む）も同じ列（+ 種 7・撹拌 rev / shuf:7）で不変・
-# 行の監査の欄（post = 事後の鍵との食い違い・dmis = 宣言の要約の食い違い・door・yfa）が全部 0・編集で K1 の変わる package ⊇ tyhash の変わる
+# 段階5 R1（report-1230）: 型付けの前の鍵K1（`--emit=tykeys0` — importの推移的な依存で組む）も同じ列（+ 案7・撹拌rev / shuf:7）で不変・
+# 行の監査のフィールド（post = 事後の鍵との食い違い・dmis = 宣言の要約の食い違い・door・yfa）が全部0・編集でK1の変わるpackage ⊇ tyhashの変わる
 # package（sup — 鍵の外の変化を見落とさない）。K1 と参照表の鍵（tykeys — K2 の形）の変わる数の差を印字する（外れの差 — K1 / K2 の判定）
 if [ "${1:-}" = "--tyhash" ]; then
     th() { # $1 = 木の compiler/・$2 = W・$3 = tyhash / tykeys・$4 = 出力・$5 = 追加の env
@@ -124,8 +124,8 @@ process.exit(miss.length ? 1 : 0);' "$@"
         th "$W/base/compiler" 1 $kind "$W/v.$kind" SOBER_HASH_SEED=7
         tj "$kind-seed7" "$W/b1.$kind" "$W/v.$kind" "" "" || bad=1
     done
-    # package の中の順の撹拌（rev / shuf:7）は区画の記録の序数を動かす（読み戻しは序数で引く）— 口の値は K1 のコンパイラの設定の側に入る。
-    # 網 = 撹拌で tyhash の変わる package ⊆ K1 の変わる package
+    # packageの中の順の撹拌（rev / shuf:7）は区画の記録の序数を動かす（読み戻しは序数で引く）— オプションの値はK1のコンパイラの設定の側に入る。
+    # 検査 = 撹拌でtyhashの変わるpackage ⊆ K1の変わるpackage
     for v in rev shuf:7; do
         for kind in tyhash tykeys tykeys0; do
             th "$W/base/compiler" 1 $kind "$W/v.$kind" SOBER_TYORDER=$v
@@ -165,8 +165,8 @@ process.exit(miss.length ? 1 : 0);' "$@"
     done
     exit $bad
 fi
-# 温めた置き場（編集前の木）
-# 網の環境の SOBER_VERIFY（gates の =each）はキャッシュの道に入らない — 外す（report-1202 最終追記）
+# 温めた格納場所（編集前の木）
+# 検査の環境のSOBER_VERIFY（gatesの =each）はキャッシュのパスに入らない — 外す（report-1202最終追記）
 unset SOBER_VERIFY
 mkdir -p "$W/warm"
 ( cd "$W/base/compiler" && SOBER_CACHE=$W/warm SOBER_BUILD_CACHE=1 "$STAGE2" build app --emit=elf --passes -o "$W/base.elf" > /dev/null 2>&1 ) || { echo "rebuildbench: base build failed" >&2; exit 1; }
@@ -194,7 +194,7 @@ meas() { # $1 = 編集・$2 = 種類（whole / warm / alt / cold）・$3 = W
     ( cd "$src" && SOBER_CACHE=$dir SOBER_BUILD_CACHE=$bc SOBER_CACHE_STAT=$bc SOBER_WORKERS=$3 /usr/bin/time -o "$t" -f '%e %M' "$STAGE2" build "$entry" --emit=elf --passes -o "$o" > /dev/null 2> "$tr" ) || { echo "rebuildbench: FAIL $1 $2 W$3" >&2; cat "$tr" >&2; exit 1; }
     if [ "$2" != whole ]; then
         if cmp -s "$o" "$W/whole.elf"; then elf=same; else elf=DIFF; fi
-        # 「cache: alpha a/n beta1 b/n beta2 c/n gamma d/n parse e/n …」→ 外れ α/β1/β2/γ/P（表示が無ければ NOCACHE — キャッシュの道に入っていない）
+        # 「cache: alpha a/n beta1 b/n beta2 c/n gamma d/n parse e/n …」→ 外れ α/β1/β2/γ/P（表示が無ければNOCACHE — キャッシュのパスに入っていない）
         miss=$(grep -m1 '^cache: alpha' "$tr" | awk '{ split($3, a, "/"); split($5, b, "/"); split($7, c, "/"); split($9, d, "/"); split($11, e, "/"); printf "%d/%d/%d/%d/%d", a[2] - a[1], b[2] - b[1], c[2] - c[1], d[2] - d[1], e[2] - e[1] }')
         [ -n "$miss" ] || miss=NOCACHE
         store=$(du -sk "$dir/sober-build-1" 2> /dev/null | awk '{ print $1 }')
@@ -214,7 +214,7 @@ for r in $(seq 1 "$N"); do
         done
     done
 done
-# 中央値の表（秒・RSS は中央値・外れ / elf / 置き場は最後の計測 — 同じ編集なら周ごとに同じ）
+# 中央値の表（秒・RSSは中央値・外れ / elf / 格納場所は最後の計測 — 同じ編集なら周ごとに同じ）
 echo
 node -e '
 const rows = require("fs").readFileSync(process.argv[1], "utf8").trim().split("\n").map(l => l.split(" "));

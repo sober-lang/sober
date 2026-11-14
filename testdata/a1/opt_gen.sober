@@ -1,6 +1,6 @@
 package main
 
-// ジェネリックの再帰 struct の opt の欄 N[T] { next N[T]? }
+// ジェネリックの再帰structのoptのフィールドN[T] { next N[T]? }
 
 type N[T] struct {
     v T

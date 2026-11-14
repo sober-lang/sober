@@ -112,7 +112,7 @@ func TestCopiesLeaveTheSourceIntact() {
     assert(indexed("k") == "kv")
 }
 
-// 入力の列のビューで組んだ値（utf8.Check → Str — 写さない）を書いて読み直しても、次の書きの後も、元の値と元の列はそのまま
+// 入力の列のビューで組んだ値（utf8.Check → Str — コピーしない）を書いて読み直しても、次の書きの後も、元の値と元の列はそのまま
 func TestViewsLeaveTheSourceIntact() {
     src := bytes("héllo-wörld")
     p, err := viewParts(src, 6)

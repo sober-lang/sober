@@ -6,7 +6,7 @@ package printer
 // 印字の規則（parser の受理形との対応）:
 // - 改行は文の終わり・`{` の後・`}` の前だけに置く（セミコロンの自動挿入に任せる。式の途中では折らない）
 // - 補間の穴は 1 行でなければならない（字句の規則 — 文字列の中の改行は不可）ので、穴の中は flat（ブロックも `{ a; b; }` の 1 行）
-// - C1 の書き換えは逆に写す: 合成の暗黙 import（tok = 0）は印字しない、`$utf8.Parse(b)` は `string(b)` に戻す
+// - C1の書き換えは逆に変換する: 合成の暗黙import（tok = 0）は印字しない、`$utf8.Parse(b)` は `string(b)` に戻す
 // - 括弧（EParen）は AST に残っているのでそのまま出す。優先順位から括弧を足す処理は要らない（AST は parse 由来）
 // - 情報の落ちるもの: コメント・`@errors(...)` の読めない項（"?" に潰れる — 印字の "?" は再 parse でまた "?"）、宣言の順序（types → consts → funcs に並べ替える）、
 //   `a, b int` のような名前の並び（1 名ずつに割る）
@@ -26,7 +26,7 @@ func Print(t ast.Tree) []byte {
 
 // ── 整形の骨（再帰しない — 呼び出し点に展開される）──
 
-// newline は改行 + d 段のインデント（4 桁 — JSON の obuf.Nl は 2 桁）
+// newlineは改行 + dレベルのインデント（4桁 — JSONのobuf.Nlは2桁）
 // TypeDeclText / FuncDeclText / ConstText / IntrinsicDeclText は宣言 1 つの綴り（file と同じ印字 — .sobi の書き出し compiler/iface が宣言を選んで並べる）。
 // FuncDeclText の sig = 署名だけ（本体を書かない）・expand = `@expand` の行を足す
 func TypeDeclText(t ast.Tree, n int) []byte {
@@ -267,7 +267,7 @@ func intrinsicDecl(out mut []byte, t ast.Tree, x ast.Node) {
     results(mut out, t, x.d)
 }
 
-// KField の列。flat なら `x int; y int`（union の variant の中）、そうでなければ 1 行 1 つ（d 段）
+// KFieldの列。flatなら `x int; y int`（unionのvariantの中）、そうでなければ1行1つ（dレベル）
 func fields(out mut []byte, t ast.Tree, l int, d int, flat bool) {
     n := t.data[l]
     for i <- iter.Range(0, n) {
@@ -437,7 +437,7 @@ func funcDeclX(out mut []byte, t ast.Tree, x ast.Node, sig bool, expand bool) {
     if expand || (t.data[x.f] >= 8 && t.data[x.f + 8] != 0) {
         obuf.Lit(mut out, "@expand\n")
     }
-    // `@exhaustive`（付加の列の 9 番 — 本体の検査の印なので署名だけの .sobi には書かない）
+    // `@exhaustive`（付加の列の9番 — 本体の検査のフラグなので署名だけの .sobiには書かない）
     if !sig && t.data[x.f] >= 9 && t.data[x.f + 9] != 0 {
         obuf.Lit(mut out, "@exhaustive\n")
     }
@@ -453,7 +453,7 @@ func funcDeclX(out mut []byte, t ast.Tree, x ast.Node, sig bool, expand bool) {
         p := t.nodes[t.data[x.c + 1 + i]]
         raw(mut out, t, p.a)
         out = append(out, ' ')
-        // mut 引数の印: コンテナ（slice / map）は型の mut と 1 つの `mut` を共有する（parser の typeOf の param 規則）
+        // mut引数のフラグ: コンテナ（slice / map）は型のmutと1つの `mut` を共有する（parserのtypeOfのparam規則）
         ty := t.nodes[p.b].kind
         if p.c != 0 && ty != ast.TSlice && ty != ast.TMap {
             obuf.Lit(mut out, "mut ")
@@ -572,7 +572,7 @@ func funcTypeParams(out mut []byte, t ast.Tree, l int, pnames int) {
 
 // ── 文・ブロック ──
 
-// 文の列 l を `{ … }` で書く（d はブロックの開きの段。flat なら 1 行で `{ a; b; }`）
+// 文の列lを `{ … }` で書く（dはブロックの開きのレベル。flatなら1行で `{ a; b; }`）
 func block(out mut []byte, t ast.Tree, l int, d int, flat bool) {
     if t.data[l] == 0 {
         obuf.Lit(mut out, "{}")
@@ -588,7 +588,7 @@ func block(out mut []byte, t ast.Tree, l int, d int, flat bool) {
     }
 }
 
-// 文の列を 1 行 1 文（d 段）で書く。flat なら ` a; b;`（文の終わりは明示の ';' — case の本体も次の case の前で閉じる）
+// 文の列を1行1文（dレベル）で書く。flatなら ` a; b;`（文の終わりは明示の ';' — caseの本体も次のcaseの前で閉じる）
 func stmtLines(out mut []byte, t ast.Tree, l int, d int, flat bool) {
     n := t.data[l]
     for i <- iter.Range(0, n) {
@@ -868,7 +868,7 @@ func lambda(out mut []byte, t ast.Tree, x ast.Node, d int, flat bool) {
             raw(mut out, t, p.a)
             if p.b >= 0 {
                 out = append(out, ' ')
-                // mut 仮引数の印（宣言の仮引数と同じ — コンテナは型の mut と共有）
+                // mut仮引数のフラグ（宣言の仮引数と同じ — コンテナは型のmutと共有）
                 ty := t.nodes[p.b].kind
                 if p.c != 0 && ty != ast.TSlice && ty != ast.TMap {
                     obuf.Lit(mut out, "mut ")
@@ -992,8 +992,8 @@ func forExpr(out mut []byte, t ast.Tree, x ast.Node, d int, flat bool) {
     }
 }
 
-// loader の catch の写し（`{ $ctKv, $ctKe := L; if $ctKe != nil { D } else { $ctKv } }`）を `L catch D` に戻して書く
-// （assert の見出しは写した後の木を印字する）。写しの形でなければ何も書かずに false
+// loaderのcatchの変換（`{ $ctKv, $ctKe := L; if $ctKe != nil { D } else { $ctKv } }`）を `L catch D` に戻して書く
+// （assertの見出しは変換した後の木を印字する）。変換した形でなければ何も書かずにfalse
 func catchBack(out mut []byte, t ast.Tree, x ast.Node, d int, flat bool) bool {
     if t.data[x.a] != 2 {
         return false

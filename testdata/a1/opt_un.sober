@@ -1,6 +1,6 @@
 package main
 
-// union の variant の opt の欄（Add { a E?; b E? }）と switch の分解
+// unionのvariantのoptのフィールド（Add { a E?; b E? }）とswitchの分解
 
 type E union {
     Lit { n int }

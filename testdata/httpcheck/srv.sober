@@ -1,10 +1,10 @@
 package main
 
-// HttpArena の題材のサーバ（gate httpcheck の相手 — srv <port>〔0 = 空いている番号〕）: /baseline11・/pipeline・/delay/{ms}・/json/{count}?m=・
-// /stream/{n}・/file（応答の stream — report-763）・/sse・/sse-body（SSE — 便 8 の段 8-3）・/static/*（http.server.Static — STATIC_ROOT の下・precompressed — report-956）・POST /echo（要求の本文をそのまま返す — HttpArena の 8gbit の端点・CL と chunked の受けの byte 一致の網 — report-848）・POST /upload（http.server.Multipart の部分の列を
+// HttpArena の題材のサーバ（gate httpcheck の相手 — srv <port>〔0 = 空いている番号〕）: /baseline11・/pipeline・/delay/{ms}・/stamp/{ms}（http.server.Delayed — 本文 = ハンドラの os.Monotonic）・/json/{count}?m=・
+// /stream/{n}・/file（レスポンスのstream — report-763）・/sse・/sse-body（SSE — タスク8の段階8-3）・/static/*（http.server.Static — STATIC_ROOTの下・precompressed — report-956）・POST /echo（リクエストの本文をそのまま返す — HttpArenaの8gbitの端点・CLとchunkedの受けのbyte一致の検査 — report-848）・POST /upload（http.server.Multipartの部分の列を
 // 1 行 1 部分〔name TAB filename か - TAB Content-Type TAB 長さ TAB 本文の和〕で返す — 読めなければ 400・report-1022）。
 // "ready <port>" を出してから受ける（bench/httparena/main.sober と同じ route — /json の dataset は DATASET_PATH〔httpcheck.sh が testdata/httpcheck/dataset.json を渡す〕）。
-// 応答の gzip は既定の level（compression: http.server.Gzip{} — json-comp の検査は check.ts の jsonComp・SRV_FRESH が空でなければ Gzip{fresh: true} = 接続ごとの記録なし）。SRV_WORK が空でなければ符号器の作業域を
+// レスポンスのgzipは既定のlevel（compression: http.server.Gzip{} — json-compの検査はcheck.tsのjsonComp・SRV_FRESHが空でなければGzip{fresh: true} = 接続ごとの記録なし）。SRV_WORKが空でなければ符号器の作業域を
 // ワーカー局所の lease で借りる（ServeConn の work: — report-720。httpcheck.sh が両方の構成で回す）。SRV_MAXBODY（バイト）があれば ServeConn の maxBody:
 // （既定 16 KiB — httpcheck.sh の echo の大きい本文の構成〔8gbit の検査の 100 KB と上限 128 KiB〕だけが渡す）
 // SRV_TLS_PORT があれば平文の代わりに TLS で 127.0.0.1:<SRV_TLS_PORT> に立つ（tls.Serve + ServeWith の put: = `(b) => tls.Put(c, b)` — bench/httparena の
@@ -49,7 +49,7 @@ type Item struct {
     rating Rating
 }
 
-// Processed は応答の 1 本（Item の欄 + total）
+// Processedはレスポンスの1本（Itemのフィールド + total）
 type Processed struct {
     id int
     name string
@@ -67,7 +67,7 @@ type Body struct {
     count int
 }
 
-// dpath は dataset の置き場（DATASET_PATH — 無ければ /data/dataset.json）
+// dpathはdatasetの格納場所（DATASET_PATH — 無ければ /data/dataset.json）
 func dpath() string {
     p, _ := os.Getenv("DATASET_PATH")
     return if p != nil { p } else { "/data/dataset.json" }
@@ -91,7 +91,7 @@ func load() []Item {
     return freeze(xs)
 }
 
-// items は /json/{count}?m= の応答（毎要求で組んで直列化する）
+// itemsは /json/{count}?m= のレスポンス（毎リクエストで組んで直列化する）
 func items(ds []Item, r http.server.Request) http.server.Response {
     c := num(strings.TrimPrefix(r.path, "/json/"))
     n := if c < 0 { 0 } else if c > len(ds) { len(ds) } else { c }
@@ -105,7 +105,7 @@ func items(ds []Item, r http.server.Request) http.server.Response {
     return http.server.Json(json.Encode[Body](Body{items: freeze(out), count: n}))
 }
 
-// genBytes は /stream/{n} の本文: 'a' + i % 26 の n バイトを 1000 バイトずつ emit する（stream の閉包の網 — report-763）
+// genBytesは /stream/{n} の本文: 'a' + i % 26のnバイトを1000バイトずつemitする（streamのクロージャの検査 — report-763）
 func genBytes(n int, out mut http.server.Out, emit func(out mut http.server.Out, b []byte) error?) error? {
     mut i := 0
     while i < n {
@@ -120,7 +120,7 @@ func genBytes(n int, out mut http.server.Out, emit func(out mut http.server.Out,
     return nil
 }
 
-// sendFile は /file の本文: path を stream の中で開いて切片ごとに emit する（File は閉包に捕捉させない — 28 節）
+// sendFileは /fileの本文: pathをstreamの中で開いて切片ごとにemitする（Fileはクロージャに捕捉させない — 28 節）
 func sendFile(path string, out mut http.server.Out, emit func(out mut http.server.Out, b []byte) error?) error? {
     f := io.Open(path)?
     defer io.Close(f)
@@ -130,7 +130,7 @@ func sendFile(path string, out mut http.server.Out, emit func(out mut http.serve
     return nil
 }
 
-// stream は /stream/{n}（n バイトの生成）と /file（dataset を stream で — 長さは起動時に読んだ大きさ）の応答
+// streamは /stream/{n}（nバイトの生成）と /file（datasetをstreamで — 長さは起動時に読んだ大きさ）のレスポンス
 func stream(dp string, dl int, r http.server.Request) http.server.Response {
     if r.path == "/file" {
         return http.server.Response{status: 200, contentType: "application/json", length: dl, stream: (out, emit) => sendFile(dp, mut out, emit)}
@@ -140,9 +140,9 @@ func stream(dp string, dl int, r http.server.Request) http.server.Response {
     return http.server.Response{status: 200, contentType: "text/plain", length: n, stream: (out, emit) => genBytes(n, mut out, emit)}
 }
 
-// chunked は /chunked/{n}?k=&e=&fail= の応答（長さ不定の stream — chunked で送る・HTTP/1.0 は閉じで区切る — 便 8 の段 8-2）: 'a' + i % 26 の n バイトを
+// chunkedは /chunked/{n}?k=&e=&fail= のレスポンス（長さ不定のstream — chunkedで送る・HTTP/1.0は閉じで区切る — タスク8の段階8-2）: 'a' + i % 26のnバイトを
 // k バイト（既定 1000）ずつ emit・e=1 なら各 emit の前に空の emit を挟む（送られないこと）・fail=m なら m バイト送った後で誤りを返す（終端を書かずに閉じる）。
-// len=L なら長さ既知（length: L — n と食い違えば合計の検査で閉じる・compress + stream の段 8-5）・bin=1 なら application/octet-stream（圧縮しない Content-Type）
+// len=Lなら長さ既知（length: L — nと食い違えば合計の検査で閉じる・compress + streamの段階8-5）・bin=1ならapplication/octet-stream（圧縮しないContent-Type）
 func chunked(r http.server.Request) http.server.Response {
     n0 := num(strings.TrimPrefix(r.path, "/chunked/"))
     n := if n0 < 0 { 0 } else { n0 }
@@ -179,7 +179,7 @@ func genChunks(n int, k int, em bool, fl int, out mut http.server.Out, emit func
     return nil
 }
 
-// slow は /chunked-slow の応答（"first" を emit してから 300 ms 待って "second" — emit 1 回 = 送り 1 回の網: 受け手は stream が返る前に 1 つ目を受ける）
+// slowは /chunked-slowのレスポンス（"first" をemitしてから300 ms待って "second" — emit 1回 = 送り1回の検査: 受け手はstreamが返る前に1つ目を受ける）
 func slow(r http.server.Request) http.server.Response {
     return http.server.Response{status: 200, contentType: "text/plain", stream: (out, emit) => slowBody(mut out, emit)}
 }
@@ -191,8 +191,8 @@ func slowBody(out mut http.server.Out, emit func(out mut http.server.Out, b []by
     return nil
 }
 
-// sse は /sse?n= の応答（Server-Sent Events — 便 8 の段 8-3）: Last-Event-ID の次の番号から n 個（既定 2）のイベント（event: tick・data は 2 行・id = 番号）。
-// 1 つ目の後に 300 ms 待つ（到着の網: 1 つ目は stream が返る前に届く）・最後に retry: 100 の終わりのイベント。保存させない（NoStore）
+// sseは /sse?n= のレスポンス（Server-Sent Events — タスク8の段階8-3）: Last-Event-IDの次の番号からn個（既定2）のイベント（event: tick・dataは2行・id = 番号）。
+// 1つ目の後に300 ms待つ（到着の検査: 1つ目はstreamが返る前に届く）・最後にretry: 100の終わりのイベント。保存させない（NoStore）
 func sse(r http.server.Request) http.server.Response {
     n0 := num(http.server.Query(r, "n"))
     n := if n0 <= 0 { 2 } else { n0 }
@@ -213,7 +213,7 @@ func sseBody(from int, n int, out mut http.server.Out, emit func(out mut http.se
     return nil
 }
 
-// sseFlat は /sse-body の応答（text/event-stream の body 2000 バイト — compression: の対象外: Content-Encoding も Vary も付かない）
+// sseFlatは /sse-bodyのレスポンス（text/event-streamのbody 2000バイト — compression: の対象外: Content-EncodingもVaryも付かない）
 func sseFlat(r http.server.Request) http.server.Response {
     mut b := mut []byte{}
     for x <- bytes(": pad\n\n") {
@@ -227,7 +227,7 @@ func sseFlat(r http.server.Request) http.server.Response {
     return http.server.Response{status: 200, contentType: "text/event-stream", body: freeze(b)}
 }
 
-// me は認証に届く応答（Cookie の sid を返す — 共有の宣言をしない: 既定の private。出所の動的オラクルの「網が鳴る」側 — check.ts の originEp）
+// meは認証に届くレスポンス（Cookieのsidを返す — 共有の宣言をしない: 既定のprivate。出所の動的オラクルの「検査が鳴る」側 — check.tsのoriginEp）
 func me(r http.server.Request) http.server.Response {
     s := http.server.Cookie(r, "sid")
     return http.server.Text("sid=${if s != nil { s } else { "-" }}")
@@ -256,6 +256,7 @@ func route(ds []Item, st []http.server.Route, sh []http.server.Route, dp string,
         body := if r.method == "POST" { num(string(r.body) catch "") } else { 0 }
         http.server.Text(convert.FormatInt(num(http.server.Query(r, "a")) + num(http.server.Query(r, "b")) + body))
     }
+    case strings.HasPrefix(r.path, "/stamp/"): http.server.Delayed(num(strings.TrimPrefix(r.path, "/stamp/")), http.server.Text(convert.FormatInt(os.Monotonic())))
     case strings.HasPrefix(r.path, "/delay/"): {
         ms := num(strings.TrimPrefix(r.path, "/delay/"))
         os.Sleep(ms)
@@ -266,7 +267,7 @@ func route(ds []Item, st []http.server.Route, sh []http.server.Route, dp string,
     }
 }
 
-// upload は POST /upload の応答（部分ごとに name・filename〔nil は "-"〕・Content-Type・本文の長さ・本文の和〔Σ b[i] × (i + 1) mod 1000000007〕の 1 行）
+// uploadはPOST /uploadのレスポンス（部分ごとにname・filename〔nilは "-"〕・Content-Type・本文の長さ・本文の和〔Σ b[i] × (i + 1) mod 1000000007〕の1行）
 func upload(r http.server.Request) http.server.Response {
     parts := http.server.Multipart(r) catch return http.server.Status(http.BadRequest)
     mut out := ""
@@ -283,7 +284,7 @@ func upload(r http.server.Request) http.server.Response {
     return http.server.Text(out)
 }
 
-// workOf は work: の値（SRV_WORK が無いか空なら nil — 要求ごとに作業域を取る形）
+// workOfはwork: の値（SRV_WORKが無いか空ならnil — リクエストごとに作業域を取る形）
 func workOf(sw string?, g task.Local) task.Local? {
     if sw == nil || sw == "" {
         return nil
@@ -306,7 +307,7 @@ func run(port string) error? {
     if tp == nil || tp == "" {
         return plain(port, ds, st, sh, dp, dl, mb, wk)
     }
-    // TLS の構成: 同じ route を tls.Serve の上の ServeWith（put: = tls.Put — 応答の列を積む口）で 127.0.0.1:<SRV_TLS_PORT> に立てる（平文の待ち受けは立てない）
+    // TLSの構成: 同じrouteをtls.Serveの上のServeWith（put: = tls.Put — レスポンスの列を積むオプション）で127.0.0.1:<SRV_TLS_PORT> に立てる（平文の待ち受けは立てない）
     cfg := tls.Load("testdata/crypto/httparena-server.crt", "testdata/crypto/httparena-server.key")?
     println("tls-ready ${tp}")
     return serveTls(tp, cfg, ds, if sr != nil { sr } else { "/nonexistent" }, dp, dl, mb)
@@ -322,7 +323,7 @@ func plain(port string, ds []Item, st []http.server.Route, sh []http.server.Rout
     return nil
 }
 
-// TLS の構成の待ち受け（符号器の作業域は要求ごと — work: は平文の構成だけが見る・route の表は接続ごとに組む — Handler の閉包は平たい値だけを捕捉する）
+// TLSの構成の待ち受け（符号器の作業域はリクエストごと — work: は平文の構成だけが見る・routeの表は接続ごとに組む — Handlerのクロージャは平たい値だけを捕捉する）
 func serveTls(tp string, cfg tls.Config, ds []Item, root string, dp string, dl int, mb int) error? {
     return tls.Serve("127.0.0.1:${tp}", cfg, (c tls.Conn) => serveTlsConn(c, ds, root, dp, dl, mb))
 }

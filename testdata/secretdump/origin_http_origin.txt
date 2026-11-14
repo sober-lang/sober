@@ -9,4 +9,4 @@ std/http/server/server.sober:667:6: shared Cache the shared cache policy 'Fresh'
 std/http/server/server.sober:667:6: shared Cache the shared cache policy 'Shared'
 std/http/server/server.sober:667:6: shared Cache the shared cache policy 'Unstated'
 std/http/server/server.sober:488:6: meet-point std/http/server.Mount
-summary atoms=7 credentials=3 eff-fns=2 shared=3 shared-fields=2 violations=0 walks=813
+summary atoms=7 credentials=3 eff-fns=2 shared=3 shared-fields=2 violations=0 walks=816

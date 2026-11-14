@@ -1,10 +1,10 @@
 package lower
 
-// Sober 版 lower（src/lower*.zig の写し — 表層 AST → 独自 SSA IR → IR テキスト。docs/ir.md が境界の正）の状態と土台。
+// Sober版lower（src/lower*.zigのコピー — 表層AST → 独自 SSA IR → IRテキスト。docs/ir.mdが境界の正）の状態と土台。
 //
 // 表現: 状態 St は脱糖器の desugar.S（int ヒープ 1 本 st.d.h）を包む。表層 AST と表（package・関数・const）は
 // desugar.Init が組んだものをそのまま読む（節 = nodeOf — loader の木か合成の表、列 = [n, 要素…]、文字列 = [n, バイト…] — 木の列・文字列は参照で指す）。
-// lower 自身の状態のスカラーは St の欄に置き、IR（モジュール・関数・ブロック・命令）と
+// lower自身の状態のスカラーはStのフィールドに置き、IR（モジュール・関数・ブロック・命令）と
 // 型・スコープの記録はすべて同じヒープ st.d.h に積む（記録は添字で指し、無しは -1）。
 // 再帰する関数は `st mut St` を持ち回る Def（callM）になる。渡す imm の値は int と string リテラルだけにする
 
@@ -43,29 +43,29 @@ type Arg struct {
     v int
 }
 
-// lower の状態: 脱糖器の状態 d（表層 AST・表・ヒープ）を包み、lower 自身の状態のスカラーを欄に持つ
+// lowerの状態: 脱糖器の状態d（表層AST・表・ヒープ）を包み、lower自身の状態のスカラーをフィールドに持つ
 type St struct {
     d desugar.S
-    // freeze の規則（analyzer の U1〜U3）の作業域 — build が d と同じ anchor（st の 2 欄）で FreezeCount へ渡す（Fz を局所に置くと
+    // freezeの規則（analyzerのU1〜U3）の作業域 — buildがdと同じanchor（stの2フィールド）でFreezeCountへ渡す（Fzを局所に置くと
     // 呼び手の d と別の region の 2 つの mut 実引数になり、check で Def に上がらず E2-S の逃げに回る）
     fz analyzer.Fz
     infos table.Table[FnInfo]  // 下ろす関数（FnInfo）の表
-    closures table.Table[Closure]  // ラムダ引数の閉包の表
+    closures table.Table[Closure]  // ラムダ引数のクロージャの表
     scopes table.Table[Scope]
     loops table.Table[Loop]
-    fhead FnRef // 関数の記録の鎖（追加順 = 印字順）
+    fhead FnRef // 関数の記録のチェーン（追加順 = 印字順）
     ftail FnRef
-    ghead int // グローバルの鎖（追加順）
+    ghead int // グローバルのチェーン（追加順）
     gtail int
     fn FnRef // 組み立て中の関数
     cur BlkRef // 組み立て中のブロック（-1 = 到達しない）
     meta int // @rt.meta
-    // task の罠（段 6 P3a-2a — trap.sober）: trapUse = このモジュールが罠を使う（入口の前に立てる）・trapG = @rt.trap（[最内の罠の記録, 死因の終了コード, 死因の点]）
+    // taskの罠（段階6 P3a-2a — trap.sober）: trapUse = このモジュールが罠を使う（入口の前に立てる）・trapG = @rt.trap（[最内の罠の記録, 死因の終了コード, 死因の点]）
     trapUse bool
     trapG int
     trapProbe bool
-    // std/task の子の関数（段 6 P3a-2b — task.sober）: kids = 子の FnInfo の鎖（[次, FnInfo の添字]・-1 = 無し）・nkid = 名前の通し番号
-    // task の器（段 6 P3b-1 — task.sober）: taskUse = std/task を使う（task の大域と rt を持つ）
+    // std/taskの子の関数（段階6 P3a-2b — task.sober）: kids = 子のFnInfoのチェーン（[次, FnInfoの添字]・-1 = 無し）・nkid = 名前の通し番号
+    // taskの器（段階6 P3b-1 — task.sober）: taskUse = std/taskを使う（taskの大域とrtを持つ）
     taskUse bool
     taskG int
     mainTcb int
@@ -78,10 +78,10 @@ type St struct {
     rtTaskWait FnRef
     rtTaskWaitK FnRef
     rtShLand FnRef
-    // rt.netwait（codegen の群の子へも写す — x86.sober xParCfg）
+    // rt.netwait（codegenの群の子へもコピーする — x86.sober xParCfg）
     xNWait FnRef
     rtTaskPop FnRef
-    rtRdySpill FnRef   // rt.ready_spill / rt.ready_unspill（走れる積みの溢れの冷たい道 — task.sober）
+    rtRdySpill FnRef   // rt.ready_spill / rt.ready_unspill（走れるスタックの溢れの低速パス — task.sober）
     rtRdyUnspill FnRef
     rtSchedPick FnRef
     schedG int
@@ -94,7 +94,7 @@ type St struct {
     rtOutWrite FnRef
     rtOutDrain FnRef
     rtOutFork FnRef
-    // ワーカーの記録（段 6 P4-3）: nwslot = 表の数・workerG = ワーカー 0 の記録（表の番地の列）・rtWorkerInit = 入口で組んで %fs に置く
+    // ワーカーの記録（段階6 P4-3）: nwslot = 表の数・workerG = ワーカー0の記録（表の番地の列）・rtWorkerInit = 入口で組んで %fsに置く
     nwslot int
     workerG int
     rtWorkerInit FnRef
@@ -103,11 +103,11 @@ type St struct {
     sigG int
     kids int
     nkid int
-    rtMut int // M:N の rt の変異（段 6 P4-4 — RtMutant・0 = 無し）
-    scopeKeep bool // 下ろしている scope の本体に結果が region を持つ子がいる（出口で預かりのスロットを返す — 段 6 P4-4 (B1)）
+    rtMut int // M:Nのrtのミューテーション（段階6 P4-4 — RtMutant・0 = 無し）
+    scopeKeep bool // 下ろしているscopeの本体に結果がregionを持つ子がいる（出口で預かりのスロットを返す — 段階6 P4-4 (B1)）
     rtSlotGive FnRef
     rtSlotTrim FnRef
-    // M:N の rt（段 6 P4-4 — mn.sober）
+    // M:Nのrt（段階6 P4-4 — mn.sober）
     mnG int
     sresG int
     sdpG int
@@ -135,12 +135,12 @@ type St struct {
     nsite int
     pestG int
     rtTaskInline FnRef
-    // 段 3 の rt の 2 つの FnRef を 1 語に（St の欄 1 つで自己 check の核の節が約 1.1k 縮む）: 下位 32 ビット = rt.admit_wake（③ wait の scope —
+    // 段階3のrtの2つのFnRefを1ワードに（Stのフィールド1つで自己checkの核の節が約1.1k縮む）: 下位32ビット = rt.admit_wake（③ waitのscope —
     // `wait: true` の字面があるプログラムだけ）・上位 = rt.dl_expired（④ deadline.sober — deadline: を書くプログラムだけ）。どちらも 0 = 組まない
     // （lower の途中 / 入口の後で足すので 0 番にはならない — 使うかの旗を兼ねる）。読みは awFn / dlFn
     rtD3 int
     rtEstUp FnRef
-    poolOn bool        // 名前つきプール（段 6 P5-4 — NewPool / SpawnIn / Ledger を使うプログラムだけ）
+    poolOn bool        // 名前つきプール（段階6 P5-4 — NewPool / SpawnIn / Ledgerを使うプログラムだけ）
     poolG int
     rtTaskNewIn FnRef
     rtPoolNew FnRef
@@ -149,30 +149,30 @@ type St struct {
     ssmG int
     rtSmGive FnRef
     rtSmTake FnRef
-    // 浅い region の窓を組むか（std/task を使い std/net の Serve を持つプログラムだけ — 窓を張る task〔region: の接続〕が無いプログラムは
-    // 窓の道・先端の伸長の比較を組まない。下ろしの前に決まる）
+    // 浅いregionの予約ページを組むか（std/taskを使いstd/netのServeを持つプログラムだけ — 予約ページを張るtask〔region: の接続〕が無いプログラムは
+    // 予約ページのパス・先端の伸長の比較を組まない。下ろしの前に決まる）
     winOn bool
-    // 接続の task の積みを本体の枠（塊の頁 0）+ ワーカーの区画に分ける形を組むか（std/net の Serve を使うプログラム — area.sober）
+    // 接続のtaskのスタックを本体の枠（チャンクのページ0）+ ワーカーのエリアに分ける形を組むか（std/netのServeを使うプログラム — area.sober）
     areaOn bool
-    winG int           // 窓の有効の印（rt.win — 0 = 未読・1 = SOBER_TASK_WIN=0・2 = 有効）と窓の rt（task.sober の窓の注）
+    winG int           // 予約ページの有効のマーク（rt.win — 0 = 未読・1 = SOBER_TASK_WIN=0・2 = 有効）と予約ページのrt（task.soberの予約ページの注記）
     rtWinSpill FnRef
     rtWinRalloc FnRef
     rtWinPark FnRef
     rtWinCol FnRef
     rtWinStart FnRef
     rtWinIs FnRef
-    parIn int          // task.SpawnIn の (handle?) の置き場（parSpawn の形の切り替え — -1 = Spawn）
-    parInShed BlkRef   // task.SpawnIn の shed の道のブロック（parSpawn が作る）
+    parIn int          // task.SpawnInの (handle?) の配置先（parSpawnの形の切り替え — -1 = Spawn）
+    parInShed BlkRef   // task.SpawnInのshedのパスのブロック（parSpawnが作る）
     parDiscard int     // handle を `_` に捨てる束縛の右辺の節（bindStmt / assignStmt が書き、parSpawn が自分の呼び出しの節と比べて読んだら戻す — -1 = 無し）
-    parToks int // 字面の task.Run の札の積み（rec4 [次, 名前, budget: あり, 0] — 段 6 P5-3 parRootOnly。-1 = 空）
-    optInB1 bool  // 設計整合パスの関数ごとの段（optFunc）を束 B1 の子の頭で掛ける（elfOutSt が optPre だけを済ませた — lParBatch。回せなければ optimizeSsa が親で掛ける）
-    chanDepth int // 字面に囲む最も外の task.Run の region の深度の値（NewChannel の記録の置き場 — parNewChan。-1 = 囲む scope なし。funcBody が戻す）
+    parToks int // 字面のtask.Runの札の積み（rec4 [次, 名前, budget: あり, 0] — 段階6 P5-3 parRootOnly。-1 = 空）
+    optInB1 bool  // 設計整合パスの関数ごとのフェーズ（optFunc）をバッチB1の子の頭で掛ける（elfOutStがoptPreだけを済ませた — lParBatch。回せなければoptimizeSsaが親で掛ける）
+    chanDepth int // 字面に囲む最も外のtask.Runのregionの深度の値（NewChannelの記録の配置先 — parNewChan。-1 = 囲むscopeなし。funcBodyが戻す）
     rtMnSteal FnRef
     rtMnAnyDq FnRef
     rtMnAnyDqAll FnRef
     rtMnTrace FnRef
     rtUringInit FnRef   // rt.uring_init（uring.sober）
-    rtUio FnRef         // rt.uio（ring に出して待つ io の口）
+    rtUio FnRef         // rt.uio（ringに出して待つioのインターフェース）
     rtUpoll FnRef       // rt.uring_poll（同 — 提出と完了の取り込み）
     rtTcbFree FnRef
     rtMnPin FnRef
@@ -180,20 +180,20 @@ type St struct {
     rtSlotTake FnRef
     rtUnmap FnRef
     rtChanFree FnRef
-    // キャンセル（段 6 P4-5 — cancel.sober）: rt.cancel_check（検査点の遅い道）・rt.task_rerun（切られた子の走らせ直し）・cutSites = 打ち切りの印の番地の
-    // 置き場の鎖（[次, 定数の命令, 子の関数]）・chanFns = チャネルに触る関数の鎖（[次, 関数]）・cutKids = 純な子の数（0 なら検査点を置かない）
+    // キャンセル（段階6 P4-5 — cancel.sober）: rt.cancel_check（検査点の低速パス）・rt.task_rerun（切られた子の走らせ直し）・cutSites = 打ち切りのマークの番地の
+    // 配置先のチェーン（[次, 定数の命令, 子の関数]）・chanFns = チャネルに触る関数のチェーン（[次, 関数]）・cutKids = 純な子の数（0なら検査点を置かない）
     rtCancel FnRef
     rtCutWalk FnRef
     rtCutEnd FnRef
     cutGenG int
-    // std/testing/cell の置き場の表（lower/cell.sober — 0 = 無し）
+    // std/testing/cellの配置先の表（lower/cell.sober — 0 = 無し）
     cellG int
     cellUse bool
-    domWait bool         // 入口の木が task.Await を名指す（domain.sober の待ちの列・手渡し — desugar.DomNamed の Await 版）
+    domWait bool         // 入口の木がtask.Awaitを名前で参照する（domain.soberの待ちの列・手渡し — desugar.DomNamedのAwait版）
     domAt int            // 展開中の利用者の task.Update / Read / Await の呼び出し点（毒の死の場所 — domain.sober・-1 = 無し）
     domKeys []int        // Await の when の鍵の表（[ラムダの節, 型環境] の組 — 通し番号 = 組の添字 + 1・domWhenKey）
     awaitMarks []int     // 関数ごとに task.Await に届くか（desugar.AwaitMarks — domWait のプログラムで最初の Spawn が引く・空 = まだ）
-    domUse bool          // 入口から task.NewDomain に届く（domain.sober — 本体で死んだ task の毒の道を task の終わりに組む）
+    domUse bool          // 入口からtask.NewDomainに届く（domain.sober — 本体で死んだtaskの毒のパスをtaskの終わりに組む）
     // 孤児の待ち（orphan.sober）: orphOn = 組む（std/task のプログラムで wait_fd を使う）・@rt.orphgen・rt.orph_*
     orphOn bool
     orphGenG int
@@ -205,29 +205,29 @@ type St struct {
     cutSites int
     chanFns int
     cutKids int
-    // Serve のプログラムの印: mnInit の即値の命令（cutPatch が置き場の印〔rt.netop 5 — Serve〕の呼び出しを見つけたら 1 に — CPU の固定の既定が読む）
+    // Serveのプログラムのマーク: mnInitの即値の命令（cutPatchが配置先のマーク〔rt.netop 5 — Serve〕の呼び出しを見つけたら1に — CPUの固定の既定が読む）
     mnExtra int
-    // 検査点の間引き（cancel.sober cutThin）: cutStat = 間引きの表を出力にする（開発用 `sober build --cut-stat`）・cutRecs = 表の鎖
+    // 検査点の間引き（cancel.sober cutThin）: cutStat = 間引きの表を出力にする（開発用 `sober build --cut-stat`）・cutRecs = 表のチェーン
     // （[次, 関数, 頭のブロックの番号, 本体の重み B, N, 形]）
     cutStat bool
     cutRecs int
-    // 呼び出しの計数（開発用 `sober build --call-stat`）: 関数ごとの入口の数え口の大域（csCnt）・名前の表（csTbl = [n, 位置, 長さ…]）・
-    // 名前のバイト列（csBlob）。表と名前は数え口を入れるとき（callStatInsert — パスの後）に大域の初期値として埋める
+    // 呼び出しの計数（開発用 `sober build --call-stat`）: 関数ごとの入口のカウンタの大域（csCnt）・名前の表（csTbl = [n, 位置, 長さ…]）・
+    // 名前のバイト列（csBlob）。表と名前はカウンタを入れるとき（callStatInsert — パスの後）に大域の初期値として埋める
     callStat bool
     csSite bool
     csCnt int
     csTbl int
     csBlob int
-    // カバレッジの計器（cover.sober — std/internal/cover の intrinsic が使うときだけ）: 点のバイト列の大域（covG — 大きさは buildPanic が
+    // カバレッジの計装（cover.sober — std/internal/coverのintrinsicが使うときだけ）: 点のバイト列の大域（covG — 大きさはbuildPanicが
     // Program の点の数で決める）・終わりの書き出しの fd の大域（covFdG）・点の数（covN）
     covG int
     covFdG int
     covN int
-    // 選ばれた変異の番号の大域（cover.sober — mutation testing の schemata の読み口が使うときだけ）
+    // 選ばれたミュータントの番号の大域（cover.sober — mutation testing のschemataの読みのインターフェースが使うときだけ）
     covMidG int
-    // 配置の計器（開発用 `sober build --layout=S` = S〔v2〕/ `--layout-v1=S` = 1000 + S〔v1〕— x86.sober xLayPad / xLayInner）。0 = ずらしなし
+    // 配置の計測ツール（開発用 `sober build --layout=S` = S〔v2〕/ `--layout-v1=S` = 1000 + S〔v1〕— x86.sober xLayPad / xLayInner）。0 = ずらしなし
     xLay int
-    // 毒の口（環境変数 SOBER_SLOT_POISON — 開発用・最適化のバックエンドの入口で零初期化しない語を 0x5a… で埋める — zeroinit.sober）
+    // 毒のオプション（環境変数SOBER_SLOT_POISON — 開発用・最適化のバックエンドの入口で零初期化しないワードを0x5a… で埋める — zeroinit.sober）
     slotPoison bool
     rtKidKeep FnRef
     rtFrameNew FnRef   // rt.frame_new（handle を捨てた子の枠 — 使うプログラムだけ・-1 = 無し）
@@ -237,23 +237,23 @@ type St struct {
     rtPint FnRef
     rtRenter FnRef
     rtRenterLL FnRef // rt.region_enter_lloop（ループの反復の軽い enter — 幾何成長の世代を進める。-1 = まだ無い）
-    // UTF-8 の境界の畳み（ubf.sober）: std/utf8.Check（写さない — 呼び出しの点が中身の凍結済みの点）・std/utf8.boundary
-    // （写しの byte の読みに印 — load8 の C 欄 UB_MARK）。-1 = 無い。ubStat = 畳めた数を関数ごとに印字（開発の口 --ubf-stat — 1 本の経路だけ）
+    // UTF-8の境界の畳み（ubf.sober）: std/utf8.Check（コピーしない — 呼び出しの点が中身の凍結済みの点）・std/utf8.boundary
+    // （コピーのbyteの読みにマーク — load8のCフィールドUB_MARK）。-1 = 無い。ubStat = 畳めた数を関数ごとに印字（開発のオプション --ubf-stat — 1本の経路だけ）
     ubCheck FnRef
     ubBound FnRef
     ubStat bool
-    // フレームの内訳の印字（開発の口 --frame-stat — 1 本の経路だけ。x86.sober xFunc が関数ごとに `frame …` を stdout へ）
+    // フレームの内訳の印字（開発のオプション --frame-stat — 1本の経路だけ。x86.sober xFuncが関数ごとに `frame …` をstdoutへ）
     frStat bool
-    // メモリの上界の報告（開発の口 --mem-report — memrep.sober。rtlower の手前で印字して止まる）
+    // メモリの上界の報告（開発のオプション --mem-report — memrep.sober。rtlowerの手前で印字して止まる）
     memRep bool
-    // スタックの上界の材料（--mem-report）: 関数 [記録, 仮引数の数 × 4 + 戻りの印]…・呼び出し [呼び手の番号, 呼び先の記録（-1 = 間接）, 実引数の数, 印]…・
+    // スタックの上界の材料（--mem-report）: 関数 [記録, 仮引数の数 × 4 + 戻りのマーク]…・呼び出し [呼び手の番号, 呼び先の記録（-1 = 間接）, 実引数の数, マーク]…・
     // 番地を取られた関数の記録・x86 が決めたフレーム [記録, バイト]…・関数の名前（関数の列と同じ順）
     memFn table.Table[int]
     memEd table.Table[int]
     memTk table.Table[int]
     memFr table.Table[int]
     memNm table.Table[string]
-    // 割り当ての結果のダンプ（開発用の口 — SOBER_XDBG の値のバイト列・空 = 口なし。名前の照合は xdbgMatch）
+    // 割り当ての結果のダンプ（開発用のオプション — SOBER_XDBGの値のバイト列・空 = オプションなし。名前の照合はxdbgMatch）
     xdbgPat []int
     // lower の束縛の事実（lower.sober の ubBind — `$k, $e := utf8.Check(b)` の直後の `v := if $e != nil { 脱出 } else { $k }`）: 文の通し番号・
     // 待ちの束縛の文の番号・$k / $e の名前・b の値（スロットの番地）
@@ -271,7 +271,7 @@ type St struct {
     rtAlloc8 FnRef
     rtTip8 FnRef
     rtTipN8 FnRef // rt.tipn8（先端一致の concat）
-    rtCat8 FnRef  // rt.cat8（連結の頭 — 先端ならその場・でなければ確保して写す）
+    rtCat8 FnRef  // rt.cat8（連結の頭 — 先端ならその場・でなければ確保してコピーする）
     // slice の幾何成長（rtgrow.sober）
     rtGrow FnRef
     rtGrow8 FnRef
@@ -284,9 +284,9 @@ type St struct {
     rtExtend8 FnRef
     rtStreq FnRef
     rtMatchLen FnRef  // rt.matchlen（一致の長さ — rt8.sober の needMatchLen・-1 = 無し）
-    recRels int          // 再帰型の境界コピーの組の記録の鎖（recreloc.sober — [次, 補助, 組んだか, 成分の列]・-1 = 無し）
-    recRelsF int         // 同じ・元を書き換えない写し（relocFresh）の補助の鎖
-    relocFresh bool      // 境界コピーが元のセルを書き換えない形で写す間（外側を先に写し、写した先のセルの中身を写す — cont.sober relocateCells）
+    recRels int          // 再帰型の境界コピーの組の記録のチェーン（recreloc.sober — [次, 補助, 組んだか, 成分の列]・-1 = 無し）
+    recRelsF int         // 同じ・元を書き換えないコピー（relocFresh）の補助のチェーン
+    relocFresh bool      // 境界コピーが元のセルを書き換えない形でコピーする間（外側を先にコピーし、コピーした先のセルの中身をコピーする — cont.sober relocateCells）
     rcMemo int           // 情報ごとの「再帰するか」の覚え（[次, 情報, 0 / 1]）
     nrec int             // 補助の通し番号
     rcCur int            // 組んでいる補助の組の記録（-1 = 組んでいない）
@@ -301,14 +301,14 @@ type St struct {
     rtRecRehash FnRef
     rtErrReloc FnRef  // rt.err_relocate（組み込み error の境界コピー — cont.sober の needErrReloc・-1 = 無し）
     rtErrAlloc FnRef  // rt.err_alloc（return 文の error ラベルのセルの確保 — errs.sober の needErrAlloc・-1 = 無し）
-    rtVdso FnRef      // rt.vdso_get（rt.vdso の初回の引き — 歩きを熱い道の外に置く・deadline.sober needVdso・-1 = 無し）
+    rtVdso FnRef      // rt.vdso_get（rt.vdsoの初回の引き — 歩きをホットパスの外に置く・deadline.sober needVdso・-1 = 無し）
     rtJClean FnRef    // rt.jclean（JSON のエスケープの要らない区間の長さ — rt8.sober の needJClean・-1 = 無し）
-    rtMapfind FnRef   // 最初に建てた map の引き（有無の印 — 族は mapFinds）
-    mapFinds int      // map の引きの族の表（maprepr.sober — [数, 鍵, 関数…]・-1 = 無し）
-    hseed int         // map のハッシュの種の大域 rt.hash_seed（2 語 — mum の引きがあるときだけ・入口が埋める）・-1 = 無し
+    rtMapfind FnRef   // 最初にビルドしたmapの引き（有無のマーク — 系統はmapFinds）
+    mapFinds int      // mapの引きの系統の表（maprepr.sober — [数, 鍵, 関数…]・-1 = 無し）
+    hseed int         // mapのハッシュのシードの大域rt.hash_seed（2ワード — mumの引きがあるときだけ・入口が埋める）・-1 = 無し
     sealFn int        // 封の鍵のスロットを取った関数（par.sober の sealHdr — 関数ごとに 1 本・-1 = 無し）
-    sealSlot int      // その関数の封の鍵のスロットの番号（SEAL_KW 語・使い回さない — 点ごとに slotaddr を出し直す）
-    entryFn int       // 入口 sober_entry（program の最後に種の初期化の呼び出しを先頭へ差し込む — maprepr.sober）
+    sealSlot int      // その関数の封の鍵のスロットの番号（SEAL_KWワード・使い回さない — 点ごとにslotaddrを出し直す）
+    entryFn int       // 入口sober_entry（programの最後にシードの初期化の呼び出しを先頭へ差し込む — maprepr.sober）
     rtMaphash FnRef   // rt.map_hash（map の索引 — M0）
     rtPstr FnRef
     rtRead FnRef
@@ -316,35 +316,35 @@ type St struct {
     iobuf int
     nstr int // 文字列リテラルの rodata の数
     fninfo int // 関数表の添字 → FnInfo（列、無しは -1）
-    work int // 本体を下ろす作業列（FnInfo の鎖 — 積んだ順の逆に取る = Zig の work.pop）
+    work int // 本体を下ろす作業列（FnInfoのチェーン — 積んだ順の逆に取る = Zigのwork.pop）
     info int // 下ろし中の FnInfo
     curPkg int
-    scopeTop int // スコープの鎖の先頭（内側）
+    scopeTop int // スコープのチェーンの先頭（内側）
     nscope int
-    loop int // ループの鎖の先頭
+    loop int // ループのチェーンの先頭
     nloop int
     entryDepth int
-    // 戻り値の写しの床（普通は入口の深度・std/task の子は scope の region の深度 — P3b-4 の境界コピー）
+    // 戻り値のコピーの床（普通は入口の深度・std/taskの子はscopeのregionの深度 — P3b-4の境界コピー）
     retFloor int
-    // 次の error ラベルのリテラルが return 文の値（compositeIn が読んで戻す — セルを戻りの写し先に作る）
+    // 次のerrorラベルのリテラルがreturn文の値（compositeInが読んで戻す — セルを戻りのコピー先に作る）
     errRet bool
-    // rt.err_alloc の印を出すか（llight の走る経路 — 最適化のバックエンドの ELF だけ。IR / .ll のテキストと写しのバックエンドは rt.region_alloc のまま）
+    // rt.err_allocのフラグを出すか（llightの走る経路 — 最適化のバックエンドのELFだけ。IR / .llのテキストとコピーのバックエンドはrt.region_allocのまま）
     errMark bool
-    // 宛先構築（loader/dest.sober の印）を使ってよい関数か — main は使わない（入口の深度 0 の region は確保の場所にならない）
+    // 宛先構築（loader/dest.soberのマーク）を使ってよい関数か — mainは使わない（入口の深度0のregionは確保の場所にならない）
     destOk bool
-    // ラムダの本体の印（loader/dest.sober の 2 — そのラムダの値へ流れ着く節）を使ってよいか: 持ち上げたラムダの本体を下ろしている間だけ真
+    // ラムダの本体のマーク（loader/dest.soberの2 — そのラムダの値へ流れ着く節）を使ってよいか: 持ち上げたラムダの本体を下ろしている間だけ真
     // （展開されるラムダの本体の間は偽）
     lamDest bool
-    // 宛先の深度（印のある確保の置き場 — 入口の深度か、呼び手がレジスタで渡したより浅い深度 — M1c）
+    // 宛先の深度（マークのある確保の配置先 — 入口の深度か、呼び手がレジスタで渡したより浅い深度 — M1c）
     destDepth int
-    // 返る列へ追記する呼び出しの印（loader/dest.sober の 3）の置き場 — 関数では戻りの写しの床（展開の本体・展開されるラムダの本体はその宛先）。
+    // 返る列へ追記する呼び出しのマーク（loader/dest.soberの3）の配置先 — 関数では戻りのコピーの床（展開の本体・展開されるラムダの本体はその宛先）。
     // destDepth は外の束縛への代入の右辺の間だけ束縛の深度に差し替わるので別に持つ
     fnDest int
-    // ラムダの塊の本体の末尾の式の期待型 + 1（0 = 無し）: lambdaCall が armValue の直前に置き、blockTail が入口で読んで消す（文の中の塊へは届かない）
+    // ラムダのチャンクの本体の末尾の式の期待型 + 1（0 = 無し）: lambdaCallがarmValueの直前に置き、blockTailが入口で読んで消す（文の中のチャンクへは届かない）
     tailW int
-    // 値の switch 式の腕の型なし定数を割り当てる型（byte・named scalar）+ 1（0 = 無し）: exprExpecting が置き、switchExpr が入口で読んで消す
+    // 値のswitch式の分岐の型なし定数を割り当てる型（byte・named scalar）+ 1（0 = 無し）: exprExpectingが置き、switchExprが入口で読んで消す
     swW int
-    // 宛先構築レーン M5（格納点の写し）: 字面の region の入れ子（反復の region・式ブロック）・各段の入口で退避した深度（IR の値）・
+    // 宛先構築レーンM5（格納点のコピー）: 字面のregionの入れ子（反復のregion・式ブロック）・各レベルの入口で退避した深度（IRの値）・
     // mut 仮引数の行き先の深度（呼び手が W_ANCHOR で渡す — 入口で読む IR の値・-1 = 無し）・今の関数が region 透過か
     rnest int
     rsaved table.Table[int]
@@ -362,101 +362,105 @@ type St struct {
     tByte int     // byte（types.sober の tByte — 使うまで 0）
     tNever int
     tNil int
-    types int // 型宣言の記録の鎖（StructInfo / UnionInfo）
-    strs int // 文字列リテラルの rodata の鎖（[next, 綴り, global]）
+    types int // 型宣言の記録のチェーン（StructInfo / UnionInfo）
+    strs int // 文字列リテラルのrodataのチェーン（[next, 綴り, global]）
     strIx table.Table[int] // 綴り → strs の記録の開番地の索引（枠 = [記録 + 1, ハッシュ]・0 = 空き — cont.sober strGlobal）
-    strIxMode int          // 網 strix の口 SOBER_STRIX（1 = ハッシュを潰す・2 = 2 枠から）
+    strIxMode int          // 検査strixのオプションSOBER_STRIX（1 = ハッシュを潰す・2 = 2枠から）
     ninterp int // 補間の穴の合成名の通し番号
     errs int // error ラベルの union の情報（errs.sober — 初出で作る）
     errstruct int // 組み込み error の struct の情報（初出で作る）
-    chain int // 名前の可視範囲の鎖（[n, (lo, hi)…] — スコープ番号の区間。hi = VOPEN は先頭まで）
+    chain int // 名前の可視範囲のチェーン（[n, (lo, hi)…] — スコープ番号の区間。hi = VOPENは先頭まで）
     rets int // return の行き先のスタック（[prev, ctx] — ctx = -1 は実体の関数、他は InlineCtx）
     floors int // break / continue が届くループの下限のスタック（[prev, 床]）
     inlining int // 展開中の inline 関数の宣言の節の列（再帰の展開の拒否 — declListHas）
     nlambda int // 持ち上げたラムダの通し番号
-    numOff int  // 摂動の口 SOBER_NUMOFF（段 2 の網 numpert — panic / spawn の点・ワーカーの表の番号に下駄。0 = 無し）
-    sk table.Table[int] // 安定な鍵の材料（split.sober の skAdd: [種類, 語数, 中身…]…・関数の記録には欄を足さない）
+    numOff int  // 摂動のオプションSOBER_NUMOFF（段階2の検査numpert — panic / spawnの点・ワーカーの表の番号に下駄。0 = 無し）
+    sk table.Table[int] // 安定な鍵の材料（split.soberのskAdd: [種類, 語数, 中身…]…・関数の記録にはフィールドを足さない）
     fnHash bool         // `--emit=fnhash`（関数ごとの成果物のハッシュ — x86.sober の xFnHash）
-    ckOn bool           // 後段の関数キャッシュの鍵を計算する（段 3 — ckey.sober。置き場の build〔既定 on〕・SOBER_BUILD_CACHE=1・`--emit=cachekeys`。束の道を W1 でも通す）
+    ckOn bool           // 後段の関数キャッシュの鍵を計算する（段階3 — ckey.sober。配置先のbuild〔既定on〕・SOBER_BUILD_CACHE=1・`--emit=cachekeys`。バッチのパスをW1でも通す）
     ckEmit bool         // `--emit=cachekeys`（関数ごとの鍵の印字 — ELF の代わり）
-    ckk table.Table[int] // 束の子が返した鍵 [段（0 = α / 1 = B2）, 関数の記録, h1, h2]…
+    ckk table.Table[int] // バッチの子が返した鍵 [段階（0 = α / 1 = B2）, 関数の記録, h1, h2]…
     ckt CkTab           // 鍵の表（ckey.sober — 歩きの熱い呼び出しに struct を値で渡さないように St に置く）
     ckCal table.Table[int] // ckFn が歩いた本体の関数の参照（β の材料 — 関数ごとの区間を ckFn が切り出す）
-    ckRt []int          // rt の関数の記録（名前が @rt. — β の「番地を取られる」印の和の材料・凍結の前に xModule が集める）
-    ckLa int            // ckey.sober の作業域（欄 1 つの正準形のハッシュ — 補助の関数が mut 引数を 2 つ取らないように St に置く）
+    ckRt []int          // rtの関数の記録（名前が @rt. — β の「番地を取られる」マークの和の材料・凍結の前にxModuleが集める）
+    ckLa int            // ckey.soberの作業域（フィールド1つの正準形のハッシュ — 補助の関数がmut引数を2つ取らないようにStに置く）
     ckLc int
     ckBad bool          // ckey.sober の作業域（表の外の記録・点を歩いた — ckFn が歩きの後で落とす）
     ckCut table.Table[int] // cutInsert が検査点を置いた関数 [関数の記録, 自分へ戻る路つき]…（β の鍵の 2 bit）
-    bcv BcView           // 後段の関数キャッシュの置き場の読みの表（段 3 R2 — bcache.sober。置き場を使わない build は on = false）
-    bcDir string         // 置き場の世代のディレクトリ
-    bcW table.Table[byte] // 書きの束の値の並び
-    bcWi table.Table[int] // 書きの束の索引 [切り口, h1, h2, 位置, 長さ, 検査和]…
+    bcv BcView           // 後段の関数キャッシュの配置先の読みの表（段階3 R2 — bcache.sober。配置先を使わないbuildはon = false）
+    bcDir string         // 配置先の世代のディレクトリ
+    bcW table.Table[byte] // 書きのバッチの値の並び
+    bcWi table.Table[int] // 書きのバッチの索引 [切り口, h1, h2, 位置, 長さ, 検査和]…
     bcStale table.Table[int] // 検証モードの食い違い [切り口, h1, h2]…
-    pcPut []loader.PcPut     // parse のキャッシュの読みの結果（loader — stale の名指しにファイルのパスを引く）
+    pcPut []loader.PcPut     // parseのキャッシュの読みの結果（loader — staleの特定にファイルのパスを引く）
     bcCnt table.Table[int] // 当否の数 [α 当たり, 外れ, β1 当たり, 外れ, β2 当たり, 外れ]
     bcSkL table.Table[int] // β1 が当たって B2 を飛ばした関数 [関数の記録, 項目]…（bcB1Collect が bcSk にする）
-    bcSk map[int]int     // β1 が当たって B2 を飛ばした関数 → bcInf の位置（[数, 印, 相手…] — 印 0 = 呼び出し・1 = 番地取り）
+    bcSk map[int]int     // β1が当たってB2を飛ばした関数 → bcInfの位置（[数, マーク, 相手…] — マーク0 = 呼び出し・1 = 番地取り）
     bcCl map[int]int     // 本体のある全部の関数 → bcInf の位置（B2 の後の相手の列 — bcAddr）
     bcInf table.Frozen[int]
     bcCutD table.Table[int] // 飛ばした関数に置くはずだった検査点 [関数の記録, 自分へ戻る路つき]…（β2 が外れたら遅れて cutFunc）
     bcHx []int           // x86 の関数の添字 → 読み戻した β2 の bcDo の添字（-1 = 外れ）
     bcBk []int           // x86 の関数の添字ごとの β2 の鍵 [h1, h2]…（[0, 0] = 鍵なし）
-    bcDp table.Table[int]  // 読み戻した β2 の機械語のパック（置き場の fs の添字 — 機械語は写さずパックの中身を指す。bcDo と同じ添字）
+    bcDp table.Table[int]  // 読み戻した β2の機械語のパック（配置先のfsの添字 — 機械語はコピーせずパックの中身を指す。bcDoと同じ添字）
     bcDf table.Table[int]  // 読み戻した β2 の後埋め [関数の頭からの位置, 種類, 相手の番号]…
     bcDo table.Table[int]  // 読み戻した β2 の [機械語のパックの中の位置, 長さ, 後埋めの位置, 数, xmm]…
     bcDf0 table.Table[int] // 読み戻した β2 の入口の位置（吐き始めから — bcDo と同じ添字）
     bcCr table.Table[int]  // β2 の書きの候補 [関数の添字, 吐き始め, 入口, 末尾, 後埋めの位置, 末尾, xmm]…（bcNote — 値は bcCaptureAll が ELF から）
-    bcXp []XPar          // 群の子の結果（置き場を使う build の吐き — 関数ごとに切って並べ直す）
+    bcXp []XPar          // 群の子の結果（配置先を使うbuildの吐き — 関数ごとに切って並べ直す）
     bcXi []int           // x86 の関数の添字 → bcXp の [群, 群の中の添字]（-1 = 子で吐いていない）
-    bcAud bool           // 扉の監査（SOBER_CACHE_VERIFY=2 — bcache.sober の bcAud*。束・群の子を外し、x86 はヒープを凍らせずに読む）
+    bcAud bool           // 扉の監査（SOBER_CACHE_VERIFY=2 — bcache.soberのbcAud*。バッチ・群の子を外し、x86はヒープを凍らせずに読む）
     bcAf int             // 監査中の関数の記録（-1 = 関数の外 — 記録しない）
     bcAc int             // 監査中の切り口（BC_A / BC_B1 / BC_B2）
-    bcDecl map[int]int   // 監査中の関数の鍵に入れた相手（関数の記録 → 1 = 戻りの型と番地取りの印・2 = 番地取りの印だけ）
-    bcOwn table.Table[int] // ヒープの語の持ち主（x86 の監査 — bcAudOwn の符号）
-    bcUt table.Table[int]  // 監査中の関数のはみ出した読み [種類, 相手, 欄, 番地]…（関数の終わりに bcUnd へ重複を除いて移す）
-    bcUnd table.Table[int] // はみ出した読み [切り口, 関数, 種類, 相手, 欄, 番地]…
+    bcDecl map[int]int   // 監査中の関数の鍵に入れた相手（関数の記録 → 1 = 戻りの型と番地取りのマーク・2 = 番地取りのマークだけ）
+    bcOwn table.Table[int] // ヒープのワードの持ち主（x86の監査 — bcAudOwnの符号）
+    bcUt table.Table[int]  // 監査中の関数のはみ出した読み [種類, 相手, フィールド, 番地]…（関数の終わりにbcUndへ重複を除いて移す）
+    bcUnd table.Table[int] // はみ出した読み [切り口, 関数, 種類, 相手, フィールド, 番地]…
     bcXab []int          // β2 の鍵に入れた cfg の相手（bcAudBase の列 — bcAudOwn）
     bcAh int             // β2 のヒープの読みを記録したか（1 — 監査用のコンパイラの xg の差し込み）
-    bcNames [][]byte     // 関数の鎖の順の名前（検証モードの stale の名指し — bcNamesOf）
-    fnvBusy int // 署名を引いている途中の named fn type の積み（closure.sober fnvPush — 0 = 空）
-    closKs int // 閉包の値形（closure.sober）: K ごとの env の形の鎖の頭 + 1（0 = 無し）
-    closFns int // 持ち上げた閉包の関数の捕捉の記録の鎖の頭 + 1（0 = 無し）
+    bcNames [][]byte     // 関数のチェーンの順の名前（検証モードのstaleの特定 — bcNamesOf）
+    fnvBusy int // 署名を引いている途中の named fn type のスタック（closure.sober fnvPush — 0 = 空）
+    closKs int // クロージャの値形（closure.sober）: Kごとのenvの形のチェーンの頭 + 1（0 = 無し）
+    closFns int // 持ち上げたクロージャの関数の捕捉の記録のチェーンの頭 + 1（0 = 無し）
     liftBrw int // 次の liftClosure が借りの実引数のラムダか（1 — emitCall の間接呼び出しの実引数が立て、liftClosure が入口で消費する）
     callEnv int // 次の emitCall が隠れ第 1 引数に渡す env の番地 + 1（0 = 無し — emitCall が入口で消費する）
     // `return g(…)` の転送（retStmt が立てる）: 呼び出しの節 sretAt - 1（0 = 無し）の emitCall は、結果の型の列が sretTs と同じなら新しいスロットでなく
-    // 自分の受け皿 st.sret を g の受け皿に渡す（g が全語を書くので写しが要らない）。使ったら sretHit
+    // 自分の受け皿st.sretをgの受け皿に渡す（gが全語を書くのでコピーが要らない）。使ったらsretHit
     sretAt int
     sretTs int
     sretHit bool
+    // 呼び出しの間に書かれない集成値の番地（imm の束縛の私有のスロット・参照の仮引数・
+    // 呼び出しの受け皿と、それらからの定数の gep — 関数ごとに privGen を進めて空にする）。emitCall はここにある番地だけをコピーせずに参照の位置へ渡す
+    privT table.Table[int] // 値 → その値を記録した関数の通し番号（privGen と等しければ記録あり）
+    privGen int
     tenv int // 型環境（generics.sober — [n, (名前, 型)…]、-1 = 空）
     // レイアウトの入れ子の深さと、slice / map の要素の位置で出会って後回しにした型宣言（types.sober — 要素の大きさは外側の大きさに効かない。
     // 再帰の組〔Dir → []File → File.parent Dir?〕で外側が並べ中の宣言を値で持つ形を外側の後に並べる）
     layDepth int
     layPend []int
-    // 箱の欄を mut 実引数に渡した写し（optbox.sober — [箱の型, 箱の番地, 直の opt の一時, 書き戻しの深度]…）: 呼び出しの後で箱へ詰め戻す
+    // 箱のフィールドをmut実引数に渡したコピー（optbox.sober — [箱の型, 箱の番地, 直のoptの一時, 書き戻しの深度]…）: 呼び出しの後で箱へ詰め戻す
     boxWB []int
     // 絞った mut の名前（narrowkill.sober — [名前, 中身の記録, 外のセルの記録]…）: 書く文の頭 / 後ろで外のセルへ戻す
     nrwCells []int
-    insts int // ジェネリック関数のインスタンスの鎖（[next, キー, FnInfo]）
+    insts int // ジェネリック関数のインスタンスのチェーン（[next, キー, FnInfo]）
     inDict int // 辞書 const の展開中か（0 / 1）
-    traceEffs bool   // 開発用 `--trace-effects`: 関数の入口 / 出口と効果の葉の印字（traceEff / traceLeaf — 関数の効果の動的オラクル）
+    traceEffs bool   // 開発用 `--trace-effects`: 関数の入口 / 出口とエフェクトの葉の印字（traceEff / traceLeaf — 関数のエフェクトの動的オラクル）
     traceErrs bool   // 開発用 `--trace-errors`: error を返す出口ごとにタグを出す計装（traceErr — error 網羅 analyzer の動的オラクル）
-    stopAt int       // 計測の口（`--stop-after=<段>` — scripts/passstats.sh）: 0 = 最後まで・k = 段 k の後で止めて空の出力（StageCode の表）
-    halted bool      // stopAt の段に着いた
-    dumpIr bool      // 計測の口（`--dump-ir`）: 止めた段の IR テキストを出力にする
-    irTags bool      // 開発の口 SOBER_IR_TAGS=1（写像同値の照合器）: IR テキストの札つきの定数に ` !p`（panic の点）/ ` !s`（spawn の点）を付ける
-    noRflow bool     // `--no-rflow`（C1 — rflow.sober）: 戻り値へ流れる関数の region の省略を掛けない（網 = 掛けた ≟ 掛けない）
-    noSpec bool      // `--no-spec`: 定数引数の特化を掛けない（網 = 掛けた ≟ 掛けない）
-    noVec bool       // `--no-vec`: ベクトル化を掛けない（網 = 掛けた ≟ 掛けない）
-    noVfy bool       // 計測の口（`--no-verify`）: IR の検証器を掛けない（検証器の費用の帰属用）
-    vfyLast bool     // ELF の build の既定: 検証器を段ごとでなく最後に 1 回だけ（vfyFinal — 段ごとは SOBER_VERIFY=each・gates が立てる）
-    vfyRuns bool     // 最後の段の段ごとの検証の間だけ立つ（全展開の直線の長さの検査 — unroll.sober の urRunMsg。vfyFinal が立てる）
-    xXmm int         // 割り当てが使う xmm の和（ビット k = xmm k — 段 6 P4-6）: 切替と罠はこの組だけ積む（xModule が切替 / 罠を持つ関数を最後に吐く）
-    xAddr []int      // 番地を取られる関数（OpFuncaddr の行き先 — fr の添字ごとに 1）: 呼び出し規約の段 3 の例外（旧規約 = 引数は全部スタック）。xModuleFrozen が作る
-    hfOn bool        // ヒープを凍らせた表 hf から読む（x86 の段 — xModule の入口で table.Freeze。凍結の口）
+    stopAt int       // 計測のオプション（`--stop-after=<フェーズ>` — scripts/passstats.sh）: 0 = 最後まで・k = フェーズkの後で止めて空の出力（StageCodeの表）
+    halted bool      // stopAtのフェーズに着いた
+    dumpIr bool      // 計測のオプション（`--dump-ir`）: 止めたフェーズのIRテキストを出力にする
+    irTags bool      // 開発のオプションSOBER_IR_TAGS=1（写像同値の照合器）: IRテキストの札つきの定数に ` !p`（panicの点）/ ` !s`（spawnの点）を付ける
+    noRflow bool     // `--no-rflow`（C1 — rflow.sober）: 戻り値へ流れる関数のregionの省略を掛けない（検査 = 掛けた ≟ 掛けない）
+    noSpec bool      // `--no-spec`: 定数引数の特化を掛けない（検査 = 掛けた ≟ 掛けない）
+    noVec bool       // `--no-vec`: ベクトル化を掛けない（検査 = 掛けた ≟ 掛けない）
+    noVfy bool       // 計測のオプション（`--no-verify`）: IRの検証器を掛けない（検証器の費用の内訳用）
+    vfyLast bool     // ELFのbuildの既定: 検証器をフェーズごとでなく最後に1回だけ（vfyFinal — フェーズごとはSOBER_VERIFY=each・gatesが立てる）
+    vfyRuns bool     // 最後のフェーズのフェーズごとの検証の間だけ立つ（全展開の直線の長さの検査 — unroll.soberのurRunMsg。vfyFinalが立てる）
+    xXmm int         // 割り当てが使うxmmの和（ビットk = xmm k — 段階6 P4-6）: 切替と罠はこの組だけ積む（xModuleが切替 / 罠を持つ関数を最後に吐く）
+    xAddr []int      // 番地を取られる関数（OpFuncaddrの行き先 — frの添字ごとに1）: 呼び出し規約の段階3の例外（旧規約 = 引数は全部スタック）。xModuleFrozenが作る
+    hfOn bool        // ヒープを凍らせた表hfから読む（x86のフェーズ — xModuleの入口でtable.Freeze。凍結のインターフェース）
     hf table.Frozen[int]
     xseq bool        // バックエンドの関数の並列を外す（1 本の経路: 照合用 — ElfPassesSeq）
-    xcopy bool       // 写しのバックエンド（`--backend=copy` — M4 の両持ち。false = 最適化の命令選択・配置）
+    xcopy bool       // コピーのバックエンド（`--backend=copy` — M4の両持ち。false = 最適化の命令選択・配置）
     transparent bool // `--passes`: 関数型の引数を持たない展開関数を region 透過の実体関数として呼ぶ（language.md 26 節）
     ymode int        // 表層型検査器（desugar/typer.sober）: 0 = 走らせない・1 = 走らせる（費用の計測）・2 = 式ごとに lower の型と突き合わせる（TyperDiff）
     ymatch int       // 突き合わせの数: 一致・不一致・表に無い・比べない（型パラメータを含む・never 等）
@@ -480,8 +484,8 @@ type St struct {
     rtSleep FnRef
     rtTmrPush FnRef // rt.tmr_push / rt.tmr_fire（sleep の時計の表 — ワーカーごとの 4 分ヒープ・netpoll.sober の sleepRing。-1 = 組まない）
     rtTmrFire FnRef
-    vdsoG int      // rt.vdso（vDSO の __vdso_clock_gettime の番地 + 1・0 = まだ — deadline: の無いプログラムが初回に引く: std/task の sleep の ring の道・clock の組み込み〔deadline.sober clockAt〕。-1 = 組まない）
-    hwFold bool    // x86 の最適化のバックエンドの ELF（crc32 の CLMUL の道 — clmul.sober。他の出力では cpuclmul = 0）
+    vdsoG int      // rt.vdso（vDSOの __vdso_clock_gettimeの番地 + 1・0 = まだ — deadline: の無いプログラムが初回に引く: std/taskのsleepのringのパス・clockの組み込み〔deadline.sober clockAt〕。-1 = 組まない）
+    hwFold bool    // x86の最適化のバックエンドのELF（crc32のCLMULのパス — clmul.sober。他の出力ではcpuclmul = 0）
     cpuG int       // rt.cpu（CPUID の判定 + 1・0 = まだ — clmul.sober。-1 = 組まない）
     rtCpuProbe FnRef
     rtRfd FnRef    // rt.read_fd（std/io の sysReadFd）
@@ -492,27 +496,27 @@ type St struct {
     rtLeaseOp FnRef
     rtLeaseDrain FnRef
     rtCh int        // rt.chunk_open / next / close / submit / drain の記録（std/io の Chunks — chunk.sober の chF。-1 = 使わない。
-                    // St の欄 1 つに畳む — 欄は St を組む箇所ごとに自己 check の核の節を足す）
-    fdregG int     // rt.fdreg（開いた fd の登録簿の鎖 — fd ごとに 1 語。std/task のプログラムだけ）
-    statbuf int    // rt.statbuf（stat(2) の struct stat — 18 語）
+                    // Stのフィールド1つに畳む — フィールドはStを組む箇所ごとに自己checkの核の節を足す）
+    fdregG int     // rt.fdreg（開いたfdの登録簿のチェーン — fdごとに1ワード。std/taskのプログラムだけ）
+    statbuf int    // rt.statbuf（stat(2) の struct stat — 18ワード）
     rtPanic FnRef     // rt.panic(点の番号) / rt.panic_mem(種類) — panic の観測性（panic.sober）
     rtPanicMem FnRef
     rtDrep FnRef
-    rtMemHw FnRef     // rt.mem_sample（変異 39 — region の高水位の標本。-1 = 無し）
-    rtStackPaint FnRef // rt.stack_paint（変異 39 — スタックの実測の塗り。-1 = 無し）
-    rtPqstr FnRef     // rt.print_qstr（string を二重引用符 + エスケープで — panic ラベルの欄の印字）
+    rtMemHw FnRef     // rt.mem_sample（ミュータント39 — regionの高水位の標本。-1 = 無し）
+    rtStackPaint FnRef // rt.stack_paint（ミュータント39 — スタックの実測の塗り。-1 = 無し）
+    rtPqstr FnRef     // rt.print_qstr（stringを二重引用符 + エスケープで — panicラベルのフィールドの印字）
     lastConstV int    // 最後に iconst で作った値の番号と定数（ir.sober — 定数で 0 でない除数のゼロ除算の検査を省く）
     lastConstN int
     rflowFns table.Table[int] // 戻り値へ流れる関数の region の省略（C1 — rflow.sober）で入口の enter を消した関数（検証器が照合する — rfVerify）
     psites table.Table[int]   // panic の点 [種類, ファイル, 字句]…（番号 = 添字 / 3）
-    ptIns table.Table[int]    // panic の点 k の札つきの定数の命令（ruleord.sober の roPoints が番号を付け直す口。split.sober の lsEv / lsReplay が控える）
+    ptIns table.Table[int]    // panicの点kの札つきの定数の命令（ruleord.soberのroPointsが番号を付け直すインターフェース。split.soberのlsEv / lsReplayが控える）
     stIns table.Table[int]    // spawn の点 k（1 起点 — 添字 0 は -1）の札つきの定数の命令（同上）
     iobuf2 int     // rt.iobuf2（rt.rename の 2 つ目の path の C 文字列）
     rtCstr FnRef // rt.cstr（io の器 — rt.write_mode の本体が使う）
     // スロットの使い回し（ir.sober newSlot / lower.sober releaseSlots — S-1）
-    slive table.Table[int] // 使用中の一時スロット（記録）の積み — 文の出口で自分の分を返す
+    slive table.Table[int] // 使用中の一時スロット（記録）のスタック — 文の出口で自分の分を返す
     slen int               // slive の使用中の長さ
-    sfree table.Table[int] // 語数 → 空きスロットの鎖の先頭（記録、無しは -1）
+    sfree table.Table[int] // 語数 → 空きスロットのチェーンの先頭（記録、無しは -1）
     slast int              // 直前の newSlot の記録
     // 設計整合パスの作業域（opt.sober）
     optw table.Table[int] // 値ごと
@@ -520,12 +524,12 @@ type St struct {
     // optDce の作業列（使用の数が 0 になった値 — opnd の mode 1 が積む）
     dcew table.Table[int]
     dceN int
-    // 欄の種別の表の写し（ir.sober の opRow / termRow — kindsInit が組む）
+    // フィールドの種別の表のコピー（ir.soberのopRow / termRow — kindsInitが組む）
     opk []int
     tmk []int
-    lkid bool    // 束の群の子（move.sober の lParGroup — 呼び先の戻りの型は lret から）
+    lkid bool    // バッチの群の子（move.soberのlParGroup — 呼び先の戻りの型はlretから）
     lret []int   // 呼び先の戻りの型の表 [関数の記録, F_RET]…（記録の番地の昇順 — lFnRet）
-    mvRound bool // 束の前ごとに全関数の本体を詰めて積み直す（move.sober の網 — SOBER_BUILD_PAR=roundtrip）
+    mvRound bool // バッチの前ごとに全関数の本体を詰めて積み直す（move.soberの検査 — SOBER_BUILD_PAR=roundtrip）
     ls LSplit    // 席 A（split.sober）: lower の頭の関数単位化 — 子の事象の記録
 }
 
@@ -631,9 +635,9 @@ func initScalars(st mut St) {
 
 const VOPEN = 1099511627776
 
-// ── ヒープの読み書き（desugar の欄 h = std/table の Table）──
-// 呼び出し点で desugar.HeapGet / HeapSet / HeapPush / HeapLen(mut st.d, …) を直に呼ぶ（他の package の欄は書けず、mut の中身を持つ欄は読めない —
-// language.md 20 節）。lower に包み（hget 系）を残して desugar の口を呼ぶ形は、IR インライナが 1 段しか畳まないので呼び出しが 1 段残り
+// ── ヒープの読み書き（desugarのフィールドh = std/tableのTable）──
+// 呼び出し点でdesugar.HeapGet / HeapSet / HeapPush / HeapLen(mut st.d, …) を直に呼ぶ（他のpackageのフィールドは書けず、mutの中身を持つフィールドは読めない —
+// language.md 20 節）。lowerに包み（hget系）を残してdesugarのインターフェースを呼ぶ形は、IRインライナが1レベルしか畳まないので呼び出しが1レベル残り
 // 自己 build の命令が目立って増える
 
 // ── ヒープの小道具（展開される — 呼び出し点ごとに小さい）──
@@ -646,7 +650,7 @@ func top(st mut St) int {
     return desugar.HeapLen(mut st.d)
 }
 
-// n 語の記録を確保する（中身は -1 — 呼び手が埋める）
+// nワードの記録を確保する（中身は -1 — 呼び手が埋める）
 func recN(st mut St, n int) int {
     at := desugar.HeapLen(mut st.d)
     for i <- iter.Range(0, n) {
@@ -725,7 +729,7 @@ func list5(st mut St, x int, y int, z int, w int, v int) int {
     return at
 }
 
-// 生の 1 語（文字列のバイト — 木の文字列もヒープの文字列も読める。desugar.Dat）
+// 生の1ワード（文字列のバイト — 木の文字列もヒープの文字列も読める。desugar.Dat）
 func dat(st mut St, x int) int {
     return desugar.Dat(mut st.d, x)
 }
@@ -808,7 +812,7 @@ func posOf(st mut St, n desugar.NodeRef) diag.Pos {
     return desugar.PosOf(mut st.d, n)
 }
 
-// ── 型付きの読み口（desugar.NodeRef / ListRef — desugar の state.sober と同じ並び）──
+// ── 型付きの読みのインターフェース（desugar.NodeRef / ListRef — desugarのstate.soberと同じ並び）──
 
 func nodeOf(st mut St, n desugar.NodeRef) ast.Node {
     return desugar.NodeOf(mut st.d, n)
@@ -982,7 +986,7 @@ func fnMutDef(st mut St, i int) bool {
     return desugar.FnAt(mut st.d, i).mutDef
 }
 
-// 関数宣言の欄（KFuncDecl: a = 名前, b = type_params, c = params, d = results, e = body, f = 付加 [bodiless, …]）
+// 関数宣言のフィールド（KFuncDecl: a = 名前, b = type_params, c = params, d = results, e = body, f = 付加 [bodiless, …]）
 func fnName(st mut St, i int) desugar.StrRef {
     return sA(nodeOf(mut st, fnNode(mut st, i)))
 }

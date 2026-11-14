@@ -1,4 +1,4 @@
-// extsort の Go の双子（素直縛り — 標準ライブラリだけ）: Sober 版と同じアルゴリズム。run = 入力を 64 KiB ずつ読んで窓 W に達するまで 1 本のバイト列に積み、
+// extsortの比較用のGoの実装（素直縛り — 標準ライブラリだけ）: Sober版と同じアルゴリズム。run = 入力を64 KiBずつ読んでウィンドウWに達するまで1本のバイト列に積み、
 // 完全な行の部分列を slices.SortFunc（bytes.Compare）で並べて os.WriteFile で `<dir>/run-<i>` へ全量書く。マージ = run ごとに開いたファイルと
 // bufio.Reader（64 KiB）を持ち、頭の行が最小の run を線形の走査で選んで bufio.Writer（64 KiB）で標準出力へ。出力は Sober 版とバイト一致
 package main

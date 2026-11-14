@@ -1,6 +1,6 @@
 package main
 
-// 負例: 同じ呼び出しの mut 実引数どうしは重ならない — 同じ場所や、一方が他方の欄（language.md 26 節）
+// 負例: 同じ呼び出しのmut実引数どうしは重ならない — 同じ場所や、一方が他方のフィールド（language.md 26 節）
 
 func swap(a mut int, b mut int) {
     t := a

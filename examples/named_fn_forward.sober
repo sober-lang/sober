@@ -1,7 +1,7 @@
 package main
 
 // 名前付き関数型の値を展開される関数どうしで転送する。展開の実引数のラムダは値の位置へ持ち上げた値として
-// 期待型（名前付き関数型 Sink）のまま束ね、次の値の位置への転送でも同じ型で照合する（check ≡ build）
+// 期待型（名前付き関数型Sink）のまままとめ、次の値の位置への転送でも同じ型で照合する（check ≡ build）
 
 type Sink func(emit func([]byte) error?) error?
 

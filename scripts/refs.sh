@@ -1,25 +1,25 @@
 #!/usr/bin/env bash
 # リネーム道具の参照検索（R1 — 読むだけ。report-882 / 883）。道具の本体は src/compiler/tools/refs（loader / parser を in-process で使う）。
 #
-#   scripts/refs.sh <sym>             参照の一覧（TSV）を標準出力へ。<sym> = <pkg>.<Name>（トップレベル名）/ <pkg>.<型か variant>.<欄> /
+#   scripts/refs.sh <sym>             参照の一覧（TSV）を標準出力へ。<sym> = <pkg>.<Name>（トップレベル名）/ <pkg>.<型かvariant>.<フィールド> /
 #                                     <pkg>.<関数>(<仮引数>)。<pkg> は std のパス（std/task）かルート相対のディレクトリ（testdata/refs/neg/lib）。
-#                                     欄は全 entry を表層型検査器に通して `x.欄` の基底の型を決める（typed — 数秒）・json に届く型の欄は WARN json-wire
+#                                     フィールドは全entryを表層型検査器に通して `x.欄` の基底の型を決める（typed — 数秒）・jsonに届く型のフィールドはWARN json-wire
 #                                     1 部 = .sober の国勢調査（道具 — 綴りが一致する字句を全数 TARGET / OTHER / UNCLASSIFIED に振る。
 #                                       コメント・文字列は TEXT・compiler/ の文字列リテラルは COMPILER-LIT・parser の合成の参照は SYNTH）
-#                                     2 部 = .sober 以外の置き場（PLACE — 黄金 GOLDEN〔regen で作り直す〕/ 文書 DOCS〔候補 → 手〕/
+#                                     2部 = .sober以外の格納場所（PLACE — ゴールデンGOLDEN〔regenで作り直す〕/ 文書DOCS〔候補 → 手〕/
 #                                       履歴 HISTORY〔不変〕/ 凍結 FROZEN〔触らない〕/ lean LEAN〔候補〕/ その他 MISC〔候補〕）
 #                                     終了コード: 0 = 書き換えの前提が揃う・2 = 未分類あり（書き換え不可）・3 = 合成の参照あり（コンパイラが名前を知る）
 #   scripts/refs.sh --rename <sym> <new> [--dry-run]
 #                                     TARGET の行の位置だけを書き換える（未分類・合成の参照があれば拒否）。書いた後に字句列の照合
 #                                     （書き換えた位置以外の字句・コメント・空白が不変）と国勢調査（新名の対象数 = 書き換えた数・旧名 0）。
 #                                     意味の照合は scripts/alphacheck.sh（V1〜V4）
-#   scripts/refs.sh --chain <sym>     鎖の罠の判定（safe / compiler-known / chain — chain なら二相の手順を出す）。<sym> は上と同じか package のパス
+#   scripts/refs.sh --chain <sym>     ブートストラップチェーンの罠の判定（safe / compiler-known / chain — chainなら二相の手順を出す）。<sym> は上と同じかpackageのパス
 #   scripts/refs.sh --pkgrename <old> <new> [--dry-run]
 #                                     package の改名（import のパス・alias なしの参照名・package 節 + ディレクトリの移動）。compiler/ の import に当たれば拒否（chain）
 #   scripts/refs.sh --entries         loadcheck の entry の一覧（<cwd>\t<entry> — cwd はルート相対）
-#   scripts/refs.sh --loadcheck       各 entry を loader で読み、道具の import の参照名の表 ≡ loader の表を照合（道具の解決の網 —
+#   scripts/refs.sh --loadcheck       各entryをloaderで読み、道具のimportの参照名の表 ≡ loaderの表を照合（道具の解決の検査 —
 #                                     import の表は国勢調査の 2 系統の共通の根なので、ここでしか捕まらない）
-#   scripts/refs.sh --selftest        loadcheck + 負例（testdata/refs/neg — 同綴りの別物・testdata/refs/member — 欄 / 仮引数 / json 警告）の期待の TSV との一致 + 仮決め名 4 つの未分類 0
+#   scripts/refs.sh --selftest        loadcheck + 負例（testdata/refs/neg — 同綴りの別物・testdata/refs/member — フィールド / 仮引数 / json警告）の期待のTSVとの一致 + 仮決め名4つの未分類0
 #
 # コーパス = git の追跡下の .sober から bootstrap/ と src/stage1/ を除いたもの（凍結 — 2 部の FROZEN に数える）
 set -euo pipefail
@@ -28,7 +28,7 @@ source scripts/gatelib.sh
 
 BIN=out/refs/refs
 mkdir -p out/refs
-# 道具は compiler の lexer / parser / ast / loader を読むので、どれかが新しければ建て直す（gates の $SELFHOST_BIN があればそれを写す）
+# 道具はcompilerのlexer / parser / ast / loaderを読むので、どれかが新しければビルドし直す（gatesの $SELFHOST_BINがあればそれをコピーする）
 if [ -n "${SELFHOST_BIN:-}" ] || [ ! -x "$BIN" ] || [ -n "$(find src/compiler/tools/refs src/compiler/lexer src/compiler/parser src/compiler/ast src/compiler/loader -newer "$BIN" -name '*.sober' -print -quit)" ]; then
     tool_bin refs "$PWD/$BIN" >&2 || { echo "refs.sh: FAIL build src/compiler/tools/refs" >&2; exit 1; }
 fi
@@ -38,7 +38,7 @@ corpus() { { git ls-files '*.sober'; git ls-files --others --exclude-standard '*
 
 entries() {
     # cwd = ルート: 追跡下で `func main` を持つ .sober 全部（単一ファイルの entry — 複数ファイルの main package の 1 本なら読めず LOADFAIL で害なし）・
-    # loader 黄金の entry（複数ファイルの package）・テストの package（`test:<dir>` — _test.sober はテストのビルドでしか読まれない）
+    # loaderゴールデンのentry（複数ファイルのpackage）・テストのpackage（`test:<dir>` — _test.soberはテストのビルドでしか読まれない）
     corpus | grep -v '^src/compiler/' | while read -r f; do if grep -q '^func main' "$f"; then printf '.\t%s\n' "$f"; fi; done
     grep -v '^#' scripts/loaderjson.list | grep . | sed 's/^/.\t/'
     git ls-files '*_test.sober' | grep -v '^bootstrap/\|^src/stage1/\|^src/compiler/' | xargs -r -n1 dirname | sort -u | sed 's/^/.\ttest:/'
@@ -52,7 +52,7 @@ mode_of() { case "$1" in *')') echo param ;; *) local b=${1##*/}; b=${b#*.}; cas
 name_of() { case "$(mode_of "$1")" in param) local x=${1##*(}; echo "${x%)}" ;; *) echo "${1##*.}" ;; esac; }
 with_name() { case "$(mode_of "$1")" in param) echo "${1%(*}($2)" ;; *) echo "${1%.*}.$2" ;; esac; }
 
-# typed_for <綴り> <出力>: 全 entry を表層型検査器に通し、欄の selector の型の印と json に届く型を集める（欄の対象だけ要る）
+# typed_for <綴り> <出力>: 全entryを表層型検査器に通し、フィールドのselectorの型のマークとjsonに届く型を集める（フィールドの対象だけ要る）
 typed_for() {
     : > "$2"
     local list cwd es std pre
@@ -71,7 +71,7 @@ typed_for() {
     rm -rf "$ct"
 }
 
-# make_ctree: compiler/* と std/ の写しを並べた作業木（stage2.sh の形 — symlink は @embed の走査が辿らないので写し）。パスを出す — 消すのは呼び手
+# make_ctree: compiler/* とstd/ のコピーを並べた作業木（stage2.shの形 — symlinkは @embedの走査が辿らないのでコピー）。パスを出す — 消すのは呼び手
 make_ctree() {
     local ct
     ct=$(mktemp -d)
@@ -89,8 +89,8 @@ norm_sym() {
     if [ -d "src/std/$head" ] && [ ! -d "$head" ]; then echo "std/$s"; elif [ -d "$head" ]; then echo "$s"; else echo ""; fi
 }
 
-# chain <sym>: 鎖の罠の判定（report-886）。stage2 は boot が建て、compiler/ の `std/…` の import は boot に焼き込まれた旧い std から読む
-#   chain          = compiler/（stage2 の閉包 = app/main が読むファイル）が対象を参照する（package なら import する）— 新名は boot の std に無い → 二相
+# chain <sym>: ブートストラップチェーンの罠の判定（report-886）。stage2はbootがビルドし、compiler/ の `std/…` のimportはbootに焼き込まれた旧いstdから読む
+#   chain          = compiler/（stage2の推移的な依存 = app/mainが読むファイル）が対象を参照する（packageならimportする）— 新名はbootのstdに無い → 二相
 #   compiler-known = parser の合成の参照（SYNTH）か、package の文脈つきで名前と一致する compiler/ の文字列リテラル（EXACT pkg）— 同じコミットでリテラルも直す
 #   safe           = どちらも無い（弱い候補 — 部分一致・連結・文脈なし — は一覧に出す。判定は手）
 chain() {
@@ -102,7 +102,7 @@ chain() {
     case "${sym##*/}" in *.*) mode=$(mode_of "$sym") ;; *) mode=package ;; esac
     if [ "$mode" = package ]; then pkg=$sym; name=$sym; else local pre=${sym%/*} base=${sym##*/}; [ "$pre" = "$sym" ] && pre= || pre=$pre/; pkg=$pre${base%%.*}; name=$(name_of "$sym"); fi
     echo "chain: $sym（類型 $mode・package $pkg・綴り $name）"
-    # stage2 の閉包（app/main が読むファイル — 作業木で）
+    # stage2の推移的な依存（app/mainが読むファイル — 作業木で）
     ct=$(make_ctree)
     (cd "$ct" && "$OLDPWD/$BIN" files "$OLDPWD/src/std" app) | cut -f2 > "$T/closure"
     rm -rf "$ct"
@@ -110,19 +110,19 @@ chain() {
     grep -v '^std/\|^\$' "$T/closure" | sed 's#^#src/compiler/#' | sort -u > "$T/cfiles"
     inclosure=0; grep -qx "$pkg" "$T/stdpkgs" && inclosure=1
     echo "  std の閉包: $(wc -l < "$T/stdpkgs") package（$pkg は$( [ $inclosure = 1 ] && echo '閉包の中' || echo '閉包の外')）・compiler/ のファイル $(wc -l < "$T/cfiles")"
-    # 書き換えの計画（触るファイル）— compiler/ の閉包のファイルに当たれば chain
+    # 書き換えの計画（触るファイル）— compiler/ の推移的な依存のファイルに当たればchain
     if [ "$mode" = package ]; then
         corpus | "$BIN" pkgrename "$pkg" "${pkg%/*}/zz9refschain" --dry-run 2> /dev/null | grep -v '^POSTCHECK' | cut -f1 | sort -u > "$T/touched"
     else
-        # 触るファイル = 国勢調査の TARGET の行（書き換えの計画は合成の参照や未分類で拒否されて空になる — 判定の道では拒否しない）
+        # 触るファイル = 国勢調査のTARGETの行（書き換えの計画は合成の参照や未分類で拒否されて空になる — 判定のパスでは拒否しない）
         { "$0" "$sym" 2> /dev/null || true; } | awk -F'\t' '$1 == "TARGET" { print $3 }' | sort -u > "$T/touched"
     fi
     comm -12 "$T/touched" "$T/cfiles" > "$T/cuse"
     # 合成の参照（parser の固定テンプレート — トップレベル名だけ）
     synth=0
-    # 道具は合成の参照があると終了コード 3 — pipefail + set -e で判定の道が落ちないように
+    # 道具は合成の参照があると終了コード3 — pipefail + set -e で判定のパスが落ちないように
     if [ "$mode" = top ]; then synth=$({ corpus | "$BIN" refs "$sym" 2>&1 > /dev/null || true; } | sed -n 's/.* synth=\([0-9]*\).*/\1/p'); fi
-    # compiler/ の閉包のファイルの文字列リテラル
+    # compiler/ の推移的な依存のファイルの文字列リテラル
     "$BIN" lits "$name" "$pkg" < "$T/cfiles" > "$T/lits"
     # 強い候補 = EXACT で package の文脈あり・または QUAL（文字列の中の `x.名前` — loader の合成コード・診断の文面 — report-895）
     strong=$(grep -c $'^LIT\tEXACT\tpkg\|^LIT\tQUAL' "$T/lits" || true)
@@ -194,7 +194,7 @@ place() { # $1 = 名前: .sober 以外の追跡下のファイル（と凍結の
         i = index(r, ":"); col = substr(r, 1, i - 1); r = substr(r, i + 1)
         sub(/^[ \t]+/, "", r)
         if (file ~ /^(bootstrap|src\/stage1|scripts\/frozen)\//) {
-            # 凍結物は触らないので行は出さず、置き場（bootstrap の段・src/stage1・scripts/frozen）ごとの件数 1 行に畳む
+            # 凍結物は触らないので行は出さず、格納場所（bootstrapのステージ・src/stage1・scripts/frozen）ごとの件数1行に畳む
             split(file, a, "/"); n[a[1] "/" a[2]]++; next
         }
         if (file ~ /^testdata\//) cls = "GOLDEN"
@@ -217,7 +217,7 @@ case "${1:-}" in
         trap 'rm -rf "$T"' EXIT
         targs=()
         if [ "$(mode_of "$sym")" = member ]; then typed_for "$(name_of "$sym")" "$T/typed"; targs=(--typed "$T/typed"); fi
-        # 欄・仮引数の書く前の新名の別物の数（新名の型の印で数える — 道具の中では旧名の印しか無い）
+        # フィールド・仮引数の書く前の新名の別物の数（新名の型のマークで数える — 道具の中では旧名のマークしか無い）
         pn=
         if [ -z "${4:-}" ] && [ "$(mode_of "$sym")" != top ] && [ "${REFS_NOPOSTCHECK:-}" != 1 ]; then
             na0=()
@@ -227,7 +227,7 @@ case "${1:-}" in
         rc=0
         corpus | "$BIN" rename "$sym" "$new" ${4:-} "${targs[@]}" 2> >(tee "$T/err" >&2) || rc=$?
         wait
-        # 欄・仮引数の書いた後の国勢調査（道具の中では新名の型の印が作れない — ここで）: 新名の対象数 = 書き換えた数・旧名 0・未分類 0・別物の数が不変
+        # フィールド・仮引数の書いた後の国勢調査（道具の中では新名の型のマークが作れない — ここで）: 新名の対象数 = 書き換えた数・旧名0・未分類0・別物の数が不変
         if [ $rc -eq 0 ] && [ -z "${4:-}" ] && [ "$(mode_of "$sym")" != top ] && [ "${REFS_NOPOSTCHECK:-}" != 1 ]; then
             pre=$(grep -o 'PRE target=[0-9]* other=[0-9]* newother=[0-9]*' "$T/err")
             pt=$(echo "$pre" | sed 's/.*PRE target=\([0-9]*\).*/\1/'); po=$(echo "$pre" | sed 's/.* other=\([0-9]*\).*/\1/')
@@ -256,7 +256,7 @@ case "${1:-}" in
         [ -d "$(dir "$old")" ] || { echo "pkgrename: $(dir "$old") が無い" >&2; exit 4; }
         [ ! -e "$(dir "$new")" ] || { echo "pkgrename: $(dir "$new") が既に在る" >&2; exit 4; }
         if [ -z "${4:-}" ] && [ "${REFS_ALLOW_CHAIN:-}" != 1 ]; then
-            # stage2 の閉包のファイル（compiler/app が読むもの — tools は外）の import に当たる改名は chain（第 2 相でだけ — REFS_ALLOW_CHAIN=1）
+            # stage2の推移的な依存のファイル（compiler/appが読むもの — toolsは外）のimportに当たる改名はchain（第2相でだけ — REFS_ALLOW_CHAIN=1）
             vd=$(chain "$old" 2>&1 | sed -n 's/^CHAIN-VERDICT: //p')
             if [ "$vd" = chain ]; then
                 echo "pkgrename: stage2 の閉包の import に当たる — chain（scripts/refs.sh --chain $old で二相の手順。第 2 相なら REFS_ALLOW_CHAIN=1）" >&2; exit 6
@@ -286,19 +286,19 @@ case "${1:-}" in
         for sym in std/task.MarkFailed testdata/refs/neg/lib.MarkFailed; do
             exp=testdata/refs/$(echo "$sym" | tr '/.' '__').tsv
             got=$(corpus | "$BIN" refs "$sym" 2> /dev/null | grep -v '^TEXT\|^COMPILER-LIT' | grep 'testdata/refs/neg/' || true)
-            [ -n "${REFS_REGEN:-}" ] && printf '%s\n' "$got" > "$exp"   # 期待の TSV を作り直す（分類を目で確かめてから）
+            [ -n "${REFS_REGEN:-}" ] && printf '%s\n' "$got" > "$exp"   # 期待のTSVを作り直す（分類を目で確認してから）
             if [ "$got" != "$(cat "$exp")" ]; then
                 echo "FAIL: refs $sym — 負例の振り分けが $exp と違う"; diff <(printf '%s\n' "$got") "$exp" | head -20; rc=1
             fi
         done
-        # 欄・仮引数（R3）: 同綴りの欄の持ち主の別・json の wire 警告の有無・名前つき実引数の callee の別（testdata/refs/member）
+        # フィールド・仮引数（R3）: 同綴りのフィールドの持ち主の別・jsonのwire警告の有無・名前つき実引数のcalleeの別（testdata/refs/member）
         T=$(mktemp -d)
         trap 'rm -rf "$T"' EXIT
         typed_for code "$T/typed"
         for sym in testdata/refs/member/m.Req.code testdata/refs/member/m.Wire.code 'testdata/refs/member/m.Handle(scale)'; do
             exp=testdata/refs/$(echo "$sym" | tr '/.()' '____').tsv
             got=$(corpus | "$BIN" refs "$sym" --typed "$T/typed" 2> /dev/null | grep -av '^TEXT\|^COMPILER-LIT' | grep -a 'testdata/refs/member/\|^WARN' || true)
-            [ -n "${REFS_REGEN:-}" ] && printf '%s\n' "$got" > "$exp"   # 期待の TSV を作り直す（分類を目で確かめてから）
+            [ -n "${REFS_REGEN:-}" ] && printf '%s\n' "$got" > "$exp"   # 期待のTSVを作り直す（分類を目で確認してから）
             if [ "$got" != "$(cat "$exp")" ]; then
                 echo "FAIL: refs $sym — 欄・仮引数の振り分けが $exp と違う"; diff <(printf '%s\n' "$got") "$exp" | head -20; rc=1
             fi

@@ -1,7 +1,7 @@
 package main
 
-// 負例: http.client.Session は写せない（同一性の型 — 接続の状態〔TLS の鍵と番号〕は値の外の置き場に住むので、写しが別の値の顔をすると
-// 二つの写しが同じ番号で別の平文を封じうる。diag.FileUse — desugar/filecheck・language.md 28 節の HTTP クライアント）
+// 負例: http.client.Sessionはコピーできない（同一性の型 — 接続の状態〔TLSの鍵と番号〕は値の外の格納場所に住むので、コピーが別の値の顔をすると
+// 二つのコピーが同じ番号で別の平文を封じうる。diag.FileUse — desugar/filecheck・language.md 28 節のHTTPクライアント）
 
 import "std/http/client"
 

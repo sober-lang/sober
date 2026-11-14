@@ -1,9 +1,9 @@
 package main
 
-// ループの中のメモリの積算のレジスタ昇格（promote.sober）の網（scripts/optdiff.sh --mut の代表）:
+// ループの中のメモリの積算のレジスタ昇格（promote.sober）の検査（scripts/optdiff.sh --mut の代表）:
 //   pairs: 天体の組の積算（nbody の形 — j は i + 1 から・a[o + k] の読み書きを昇格・a[o + 3] は読みだけの不変番地）
 //   alias: j が i から始まる（j = i で a[p + 1] と a[o + 1] が同じ番地 — 昇格すると読み書きの順が変わって値が変わる。昇格してはいけない形）
-//   spare: i の最後の回は o が範囲外だが内側が 0 回（前置きの読み込みが範囲外を読んではいけない — 守りの網）
+//   spare: iの最後の回はoが範囲外だが内側が0回（前置きの読み込みが範囲外を読んではいけない — 守りの検査）
 //   early: 内側の break（出口が 2 つ — 両方で書き戻す）
 
 import "std/iter"

@@ -1,11 +1,11 @@
-// std/http/client の相互接続の相手（scripts/httpinterop.sh が起こす）: Go の net/http のサーバを平文・TLS 1.3・TLS 1.2 だけの 3 本、127.0.0.1 の空きの port で開く。
+// std/http/clientの相互接続の相手（scripts/httpinterop.shが起動する）: Goのnet/httpのサーバを平文・TLS 1.3・TLS 1.2だけの3本、127.0.0.1の空きのportで開く。
 // 証明書は毎回作る試験用の CA（ECDSA P-256）が署名した葉（SAN = localhost / 127.0.0.1）。<dir>/ca.pem と <dir>/ports（`名前 port` の行）を書いてから <dir>/ready を作る
 //   go run ./scripts/oracles/httpserver <dir>
 //
-// 道: /len（Content-Length）・/chunked（Flush を挟んで 3 回書く — chunked）・/echo（本文をそのまま）・/auth（受けた Authorization の値）・
+// パス: /len（Content-Length）・/chunked（Flushを挟んで3回書く — chunked）・/echo（本文をそのまま）・/auth（受けたAuthorizationの値）・
 // /redirect?to=<url>（302）・/see-other（303 → /method）・/method（受けた method）・/head（HEAD でも GET と同じ頭）。
 // 加えて forward proxy を平文（proxy）・TLS（sproxy — 同じ葉）・認証つき（authproxy — Proxy-Authorization: Basic dTpw〔u:p〕が要る・無ければ 407）の 3 本:
-// 絶対 URI の要求は転送し（Via: sober-test-proxy を足す）、CONNECT は行き先へ TCP を張って双方向に写す
+// 絶対URIのリクエストは転送し（Via: sober-test-proxyを足す）、CONNECTは行き先へTCPを張って双方向にコピーする
 package main
 
 import (

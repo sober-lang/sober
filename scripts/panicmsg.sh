@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# panic の観測性（第一便）: 死ぬ例の stderr（`panic: <種類> at <file>:<line>:<col>` / region の超過の死亡ダンプ）を黄金 <例>.stderr と照合する。
-# obs は終了コードと stdout だけを見る（stderr は捨てる）ので、ここが stderr の網。対象 = examples/*.exit と testdata/*/app.exit のうち .stderr を持つもの。
+# panicの観測性（最初のタスク）: 死ぬ例のstderr（`panic: <種類> at <file>:<line>:<col>` / regionの超過の死亡ダンプ）をゴールデン <例>.stderrと照合する。
+# obsは終了コードとstdoutだけを見る（stderrは捨てる）ので、ここがstderrの検査。対象 = examples/*.exitとtestdata/*/app.exitのうち .stderrを持つもの。
 #   scripts/panicmsg.sh            照合
 #   scripts/panicmsg.sh --regen    .exit を持つ例全部の .stderr を作り直す（文面を意図して変えたとき — 差分を見てからコミット）
 set -uo pipefail

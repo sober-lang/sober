@@ -1,8 +1,8 @@
 package main
 
 // handle を捨てた子の死は枠を残さない（language.md 11 節）の回帰例: 返らない scope（net.Serve の accept のループの形）の中で
-// handle を `_` に捨てた子が死に続けても、scope の記録に残るのは (生んだ順の番号の最小, その死因) の 2 語だけで、死んだ子の枠は子の終わりで返る。
-// n 本（既定 20000 — scripts/iterregion.sh が 10 倍にして RSS が比例しないことを見る。壊れると 1 死 ≈ 256 B の塊で 20000 → 200000 回で +45 MB）
+// handleを `_` に捨てた子が死に続けても、scopeの記録に残るのは (生んだ順の番号の最小, その死因) の2ワードだけで、死んだ子の枠は子の終わりで返る。
+// n本（既定20000 — scripts/iterregion.shが10倍にしてRSSが比例しないことを見る。壊れると1死 ≈ 256 Bのチャンクで20000 → 200000回で +45 MB）
 
 import "std/convert"
 import "std/os"

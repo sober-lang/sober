@@ -1,6 +1,6 @@
 package lot
 
-// 預かり所の網（DB なし — fd の欄には負の偽の番号を置くので閉じない）: 多くの task が待機の枠を取り合っても同じ枠を 2 本が同時に持たない・
+// 預かり所のテスト（DBなし — fdのフィールドには負の偽の番号を置くので閉じない）: 多くのtaskが待機の枠を取り合っても同じ枠を2本が同時に持たない・
 // 預け直した枠がまた借りられる・借り手の task が死んだ枠を Reap が数えて空きへ戻す（生きた借り手の枠は回収しない）
 
 import "std/iter"
@@ -21,7 +21,7 @@ func fill(l Lot) {
     }
 }
 
-// 待機の枠を n 回借りて返す（取れなければ数えない）。借りている間は置き場の語 0 に自分の印を書き、返す前に読み直す
+// 待機の枠をn回借りて返す（取れなければ数えない）。借りている間は格納場所のワード0に自分のマークを書き、返す前に読み直す
 func churn(l Lot, me int, n int) int {
     mut got := 0
     for _ <- iter.Range(0, n) {
@@ -100,7 +100,7 @@ func TestReapDead() {
     assert(free == 2, "reaped slots are free: ${free}")
 }
 
-// 比較交換（rt の lease_op 8）: 期待どおりなら書いて成功・違えば書かずに失敗（同じ枠を 2 本が取れない芯 — 取り合いの窓そのものは乱択のスケジュールでは狙えない）
+// 比較交換（rtのlease_op 8）: 期待どおりなら書いて成功・違えば書かずに失敗（同じ枠を2本が取れない芯 — 取り合いのウィンドウそのものは乱択のスケジュールでは狙えない）
 func TestCas() {
     l := New(1, 1)
     assert(cas(l, 0, sFree, sClaim), "free → claim")
@@ -115,9 +115,9 @@ func TestReapRace() {
     rounds := 16
     dying := 4
     l := New(1024, 1)
-    // 回ごとの終わりの印（枠 r の語 0 — 死に役の scope が決着したら 1。Reap 役はそれまで回り続ける）
+    // 回ごとの終わりのマーク（枠rのワード0 — 死に役のscopeが決着したら1。Reap役はそれまで回り続ける）
     ctl := New(rounds, 0)
-    // LOT_REAP_LATE=1: 網の自己検査（scripts/schedfuzz.sh）— 番号を走査の後で読む写しで回し、この試験が落ちること
+    // LOT_REAP_LATE=1: テストの自己検査（scripts/schedfuzz.sh）— 番号を走査の後で読むコピーで回し、この試験が落ちること
     late := envSet("LOT_REAP_LATE")
     mut reaped := 0
     for r <- iter.Range(0, rounds) {
@@ -168,7 +168,7 @@ func TestReapRace() {
     }
 }
 
-// Reap の誤った写し（番号を走査の後で読む — TestReapRace が捕まえるべき形）
+// Reapの誤ったコピー（番号を走査の後で読む — TestReapRaceが捕まえるべき形）
 func reapLate(l Lot) int {
     if leaseOp(9, l.blk, 0, 0) == leaseOp(4, l.blk, hSeen, 0) {
         return 0

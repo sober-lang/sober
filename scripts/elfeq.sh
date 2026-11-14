@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # 正規バックエンドの Sober 化の照合（B-1d）: Sober の正規バックエンド（stage2 の `build --emit=elf` —
-# compiler/lower/x86.sober）の ELF が、stage1（凍結した Zig の正規バックエンド）が同じ IR テキストから建てた ELF（`build x.ir --no-opt`）と
+# compiler/lower/x86.sober）のELFが、stage1（凍結したZigの正規バックエンド）が同じIRテキストからビルドしたELF（`build x.ir --no-opt`）と
 # バイト一致すること + 実行の観測（stdout・終了コード）が期待値と一致すること（obs.sh --backend sober）。
-# 中間成分（区間・置き場）は Zig と照合できない（src/ 凍結）— ずれは ELF の最初の不一致バイトから逆アセンブルの差分で場所を特定する。
+# 中間成分（区間・格納場所）はZigと照合できない（src/ 凍結）— ずれはELFの最初の不一致バイトから逆アセンブルの差分で場所を特定する。
 # 列 = obs の列（examples/*.out・testdata/*/app.out）+ scripts/elfeq.list（観測の期待値を持たない入力 — 1 行 1 entry、# はコメント）。
-# list の行は「entry [フラグ…]」（フラグは両側の build に渡す — 例: --test）。compiler/ で始まる entry は cwd = compiler/ で建てる（import は compiler/ 相対）
+# listの行は「entry [フラグ…]」（フラグは両側のbuildに渡す — 例: --test）。compiler/ で始まるentryはcwd = compiler/ でビルドする（importはcompiler/ 相対）
 # 形は 3 つ（下の cmp3 — IR パスなし・mem2reg・設計整合パス + mem2reg）
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -29,13 +29,13 @@ fi
 #   raw     stage2 --emit=ir         → stage1 build x.ir --no-opt   ≡ stage2 --emit=elf --no-opt
 #   m2r     stage2 --emit=ir         → stage1 build x.ir（mem2reg）  ≡ stage2 --emit=elf（mem2reg — B-3）
 #   passes  stage2 --emit=ir --passes → stage1 build x.ir（mem2reg） ≡ stage2 --emit=elf --passes（bin/sober の既定の形）
-# stage2 の ELF の側は写しのバックエンド（--backend=copy — 性能投資 M4 の両持ち。既定の最適化のバックエンドは stage1 が追えないので obs / optdiff が見る）
+# stage2のELFの側はコピーのバックエンド（--backend=copy — 性能投資M4の両持ち。既定の最適化のバックエンドはstage1が追えないのでobs / optdiffが見る）
 cmp3() { # $1 = 行 $2 = 鍵 $3 = 形の名前 $4 = cwd $5 = src $6 = フラグ $7 = IR のフラグ $8 = stage1 のフラグ $9 = ELF のフラグ
     local line=$1 k=$2.$3 cwd=$4 src=$5 flags=$6
     if ! (cd "$cwd" && "$S2" build "$src" $flags $7 --emit=ir -o "$W/$k.ir") 2> "$W/$k.err"; then
         echo "FAIL: $line [$3]: --emit=ir: $(head -c 200 "$W/$k.err")"; return
     fi
-    # stage1 の IR の語彙を越える entry（float の段 — gatelib の beyond_stage1）は照合しない（観測は obs --backend sober が見る）
+    # stage1のIRの語彙を越えるentry（floatの段階 — gatelibのbeyond_stage1）は照合しない（観測はobs --backend soberが見る）
     if beyond_stage1 "$W/$k.ir"; then
         touch "$W/beyond.$2"; rm -f "$W/$k.ir"; return
     fi

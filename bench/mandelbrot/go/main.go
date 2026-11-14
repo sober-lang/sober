@@ -1,4 +1,4 @@
-// mandelbrot の Go の双子（Benchmarks Game の仕様 — 素直な形・逐次: n × n の点を 50 回まで反復、|z|² ≤ 4 を 1 ビットで詰めた PBM（P4）を標準出力へ）
+// mandelbrotの比較用のGoの実装（Benchmarks Gameの仕様 — 素直な形・逐次: n × nの点を50回まで反復、|z|² ≤ 4を1ビットで詰めたPBM（P4）を標準出力へ）
 package main
 
 import (

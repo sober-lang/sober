@@ -1,6 +1,6 @@
 package main
 
-// 負例（check が拒否 — analyzer）: 宣言 `@effects(!io)` の関数が io の関数を呼ぶ（漏れは宣言の位置で — 入った呼び出しを名指す）
+// 負例（checkが拒否 — analyzer）: 宣言 `@effects(!io)` の関数がioの関数を呼ぶ（漏れは宣言の位置で — 入った呼び出しを特定する）
 
 func log(x int) {
     println(x)

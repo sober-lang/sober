@@ -1,4 +1,4 @@
-// プロファイルの口（性能投資 M0）: Sober の実行ファイルを perf でサンプリングし、関数ごと（と熱い番地）の比率を出す。
+// プロファイルのインターフェース（性能投資M0）: Soberの実行ファイルをperfでサンプリングし、関数ごと（と熱い番地）の比率を出す。
 // Sober の ELF はシンボルを持たないので、`sober build --emit=syms`（既定の build と同じ形の関数の先頭番地の表）でサンプルを関数へ振る。
 //   node --experimental-strip-types scripts/prof.ts <entry.sober> [--top N] [--hot N] -- <実行の引数…>
 // perf は環境変数 PERF（既定 `perf`）。cpu-clock 2 kHz のサンプリング（WSL でも取れる）。命令数だけ見たいなら `perf stat -e instructions:u`

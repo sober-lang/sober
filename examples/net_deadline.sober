@@ -1,7 +1,7 @@
 package main
 
-// net 段 4a-2（N5 — 期限が net の待ちを切る）: socket の待ちは相手次第で終わらないので、task.Run の deadline: は待ちに入った task も起こす
-// （その口は io.Expired）。網は時刻に依らない両端だけ: 誰も来ない Accept・何も届かない Recv は 30 ms で切れ、1 時間の期限の Recv は届いた分を受ける。
+// net段階4a-2（N5 — 期限がnetの待ちを切る）: socketの待ちは相手次第で終わらないので、task.Runのdeadline: は待ちに入ったtaskもウェイクアップする
+// （そのインターフェースはio.Expired）。テストは時刻に依らない両端だけ: 誰も来ないAccept・何も届かないRecvは30 msで切れ、1時間の期限のRecvは届いた分を受ける。
 // 切れた後も接続はそのまま使える（待ちの登録は外れている — 次の Recv が続きを受ける）
 
 import "std/io"

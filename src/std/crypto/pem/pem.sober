@@ -1,11 +1,11 @@
 package pem
 
-// PEM（RFC 7468 — "-----BEGIN <label>-----" 〜 "-----END <label>-----" の間の base64）の読み。証明書の鎖（CERTIFICATE が複数）と鍵（PRIVATE KEY）を同じ関数で読む。塊は書かれた順のまま返す（TLS の証明書の鎖は葉が先頭）。中身（der）の解釈はしない — PKCS#8 の RSA の鍵は rsa.ParsePKCS8 へ（TLS の設定は tls.Parse / tls.Load が両方をまとめて読む）
+// PEM（RFC 7468 — "-----BEGIN <label>-----" 〜 "-----END <label>-----" の間のbase64）の読み。証明書のチェーン（CERTIFICATEが複数）と鍵（PRIVATE KEY）を同じ関数で読む。チャンクは書かれた順のまま返す（TLSの証明書のチェーンは葉が先頭）。中身（der）の解釈はしない — PKCS#8のRSAの鍵はrsa.ParsePKCS8へ（TLSの設定はtls.Parse / tls.Loadが両方をまとめて読む）
 // base64 の綴りの検査は厳格（標準の字母・'=' の詰めは末尾だけ・行の間の空白と改行は飛ばす）
 
 import "std/iter"
 
-// 1 つの PEM の塊（label = BEGIN の後ろの名前・der = 中身）
+// 1つのPEMのチャンク（label = BEGINの後ろの名前・der = 中身）
 type Block struct {
     label string
     der []byte
@@ -14,7 +14,7 @@ type Block struct {
 // PEM の形が違う（BEGIN と END が対にならない・base64 の綴りが違う）
 type Bad error
 
-// text の中の PEM の塊の全部（塊の外の行は無視 — RFC 7468 の説明文の扱い）
+// textの中のPEMのチャンクの全部（チャンクの外の行は無視 — RFC 7468の説明文の扱い）
 @errors(Bad)
 @effects(!io, !block, !nondet)
 func Parse(text string) ([]Block, error?) {

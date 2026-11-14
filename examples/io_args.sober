@@ -1,6 +1,6 @@
 package main
 
-// R31: os.Args — 0 番 = プログラム名（置き場で変わるので印字しない）。引数ありの照合は scripts/io_args.sh
+// R31: os.Args — 0番 = プログラム名（配置先で変わるので印字しない）。引数ありの照合はscripts/io_args.sh
 // （実行ハーネスは引数を渡さないので、ここでの .out は引数なしの形）。不正な UTF-8 の引数があれば全体が strings.BadUtf8、終了コード 2
 
 import "std/os"

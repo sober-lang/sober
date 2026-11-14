@@ -1,6 +1,6 @@
 package main
 
-// 写しの別名（`mut a := m`）からの書き — 凍結は composite の imm の欄に入れたところ（暗黙の freeze・U1 の別名）
+// コピーの別名（`mut a := m`）からの書き — 凍結はcompositeのimmのフィールドに入れたところ（暗黙のfreeze・U1の別名）
 
 type H struct {
     xs []byte

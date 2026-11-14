@@ -1,6 +1,6 @@
 package main
 
-// シリアライザの双子 (d) 再帰の型 1 本の素直な形: (b)〔../pieces〕と同じ書き方で、入れ子の型 N0〜N5 を再帰の struct N 1 本に（葉は深さ 0 — kids を書かない）。
+// シリアライザの対 (d) 再帰の型1本の素直な形: (b)〔../pieces〕と同じ書き方で、入れ子の型N0〜N5を再帰の struct N 1本に（葉は深さ0 — kidsを書かない）。
 // (a) と同じバイト列（長さと FNV で照合）
 
 import "std/builder"
@@ -38,8 +38,8 @@ func sN(n N, d int) string {
     return "{\"id\":${n.id},\"name\":\"${n.name}\",\"score\":${convert.FormatFloat(n.score)},\"kids\":[${join(freeze(ps))}]}"
 }
 
-// join は片を ',' で繋ぐ（std に strings.Join が無いので同じ形を書く — 片の長さの和を 1 回だけ写す。
-// `s = s + "," + p` の素直な繋ぎは先端一致の concat の in-place 成長が無いので 2 乗の写し — 深さ 2〔片 550 個〕で region 4 GB を溢れた）
+// joinは片を ',' で繋ぐ（stdにstrings.Joinが無いので同じ形を書く — 片の長さの和を1回だけコピーする。
+// `s = s + "," + p` の素直な繋ぎは先端一致のconcatのin-place成長が無いので2乗のコピー — 深さ2〔片550個〕でregion 4 GBを溢れた）
 func join(ps []string) string {
     mut o := builder.Builder[byte]{}
     for i <- iter.Range(0, len(ps)) {

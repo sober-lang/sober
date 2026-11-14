@@ -1,6 +1,6 @@
-// logagg の Go の双子（素直形 — Sober 版と同じ手書きの規則）: bufio.Scanner で行 → 手のバイトループで語に割る（引用符の中の空白は割らない・
-// 引用符の中の \ は次の 1 バイトを守る）→ 鍵と値 → 欄を名前で引く → ts（RFC 3339 の部分集合）を手書きで epoch 秒に → 1 分の固定窓 × svc の
-// 配列に集計・ユーザーは map[string]int。時刻の parse は 3 言語同じ手書き（time.Parse は使わない — report-448 裁定 A）。出力は Sober 版とバイト一致
+// logaggの比較用のGoの実装（素直形 — Sober版と同じ手書きの規則）: bufio.Scannerで行 → 手のバイトループで語に割る（引用符の中の空白は割らない・
+// 引用符の中の \ は次の1バイトを守る）→ 鍵と値 → フィールドを名前で引く → ts（RFC 3339の部分集合）を手書きでepoch秒に → 1分の固定ウィンドウ × svcの
+// 配列に集計・ユーザーはmap[string]int。時刻のparseは3言語同じ手書き（time.Parseは使わない — report-448決定A）。出力はSober版とバイト一致
 package main
 
 import (
@@ -10,7 +10,7 @@ import (
 	"strconv"
 )
 
-const W = 1442 // 分の窓の数（起点の 1 分前から 24 時間 + 1 分）
+const W = 1442 // 分のウィンドウの数（起点の1分前から24時間 + 1分）
 const H = 24   // 遅延のヒストグラムの箱（log2）
 
 var svcs = []string{"api", "auth", "orders", "payments", "search", "catalog", "users", "static"}
@@ -313,7 +313,7 @@ func main() {
 				break
 			}
 		}
-		// 滑り窓: 直近 5 分の 5xx が 5% を超えた分の数
+		// スライディングウィンドウ: 直近5分の5xxが5%を超えた分の数
 		alarms := 0
 		for m := 4; m < W; m++ {
 			wn, w5 := 0, 0

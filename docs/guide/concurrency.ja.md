@@ -2,21 +2,21 @@
 
 [English](concurrency.md) | 日本語
 
-Sober の並行は `std/task` の関数で書きます。新しい構文はありません。このページは並行のプログラムをどう書くか、そして言語が何を約束するかを短くまとめた案内です。規則の正確な定義は [言語仕様 10 章](../spec/10-concurrency.ja.md) にあります。
+Soberの並行は `std/task` の関数で書きます。新しい構文はありません。このページは並行のプログラムをどう書くか、そして言語が何を約束するかを短くまとめた案内です。規則の正確な定義は [言語仕様10章](../spec/10-concurrency.ja.md) にあります。
 
-| やりたいこと | Sober の形 | 節 |
+| やりたいこと | Soberの形 | 節 |
 | --- | --- | --- |
-| 仕事を分けて並列に走らせる | `task.Run` の scope + `task.Spawn` / `task.Map` | 1 |
+| 仕事を分けて並列に走らせる | `task.Run` のscope + `task.Spawn` / `task.Map` | 1 |
 | 子に値を渡す | 捕獲（不変の値だけ）・`freeze` | 2 |
-| task の間で値を流す | チャネル（送り手 1・受け手 1） | 3 |
-| 子の失敗と死を受ける | `task.Join` / `task.Try` / scope の err | 4 |
-| 多くの task から 1 つの状態を更新する | domain | 5 |
+| taskの間で値を流す | チャネル（送り手1・受け手1） | 3 |
+| 子の失敗と死を受ける | `task.Join` / `task.Try` / scopeのerr | 4 |
+| 多くのtaskから1つの状態を更新する | domain | 5 |
 
-前提: [言語ツアー](tour.ja.md) の 6 節（mut と freeze）と 7 節（並列）。
+前提: [言語ツアー](tour.ja.md) の6節（mutとfreeze）と7節（並列）。
 
-## 1. task と scope — 並列でも逐次と同じ結果
+## 1. taskとscope — 並列でも逐次と同じ結果
 
-`task.Run((s task.Scope) => 本体)` が scope を開き、本体の中の `task.Spawn(s, g)` が子の task を生みます。子は scope の出口までに必ず終わります。scope より長く生きる task はありません。
+`task.Run((s task.Scope) => 本体)` がscopeを開き、本体の中の `task.Spawn(s, g)` が子のtaskを生みます。子はscopeの出口までに必ず終わります。scopeより長く生きるtaskはありません。
 
 子と親の両方が標準出力に書く例です。
 
@@ -64,15 +64,15 @@ parent
 2
 ```
 
-親の `parent` は 2 つの子の出力の後に出ます。`println` の出力の順は spawn の木の先行順で、子の出力全体が親の spawn の位置に入ります。ワーカー 1 本で子を先に走らせたときと同じ順です。ワーカーの数（`SOBER_WORKERS`）を変えても、標準出力は同じバイトになります。
+親の `parent` は2つの子の出力の後に出ます。`println` の出力の順はspawnの木の先行順で、子の出力全体が親のspawnの位置に入ります。ワーカー1本で子を先に走らせたときと同じ順です。ワーカーの数（`SOBER_WORKERS`）を変えても、標準出力は同じバイトになります。
 
-結果の値も同じです。io の入力を固定すれば、scope の値は実行のスケジュールにもワーカーの数にも依りません。並列に走らせた結果は逐次に走らせた結果と一致します。
+結果の値も同じです。ioの入力を固定すれば、scopeの値は実行のスケジュールにもワーカーの数にも依りません。並列に走らせた結果は逐次に走らせた結果と一致します。
 
-要素ごとに task を生むなら `task.Map(xs, f)` です。結果は添字の順に並びます（[言語ツアー 7 節](tour.ja.md#7-並列--structured-concurrencyチャネル)）。
+要素ごとにtaskを生むなら `task.Map(xs, f)` です。結果は添字の順に並びます（[言語ツアー7節](tour.ja.md#7-並列--structured-concurrencyチャネル)）。
 
 ## 2. 値を渡す — 共有して書くのでなく、不変の値を渡す
 
-子の本体（`task.Spawn` に渡すラムダ）が捕まえられるのは不変の値だけです。mut の束縛を捕まえる形は検査が拒否します。
+子の本体（`task.Spawn` に渡すラムダ）が捕まえられるのは不変の値だけです。mutの束縛を捕まえる形は検査が拒否します。
 
 ```sober
 // examples/task_neg_mut.sober
@@ -95,9 +95,9 @@ func main() {
 sober: load error at examples/task_neg_mut.sober:9:70: a spawned task cannot capture a mut binding (the child sees only imm values — pass a copy: v := x before the Spawn)
 ```
 
-だから、2 つの task が同じ値を同時に書く形（データ競合）は書けません。lock も要りません。
+だから、2つのtaskが同じ値を同時に書く形（データ競合）は書けません。lockも要りません。
 
-mut で組み立てた値を子に読ませるなら、`freeze` で不変にしてから渡します。
+mutで組み立てた値を子に読ませるなら、`freeze` で不変にしてから渡します。
 
 ```sober
 // examples/task_frozen_map.sober（抜粋）
@@ -114,20 +114,20 @@ func direct(n int) int {
 
 `freeze(m0)` の後は `m0` に書けません。子は不変の `m` を読むだけです。
 
-子の結果も不変のデータです。string・slice・map・それらの struct を返せて、値は子から scope へ写ります。
+子の結果も不変のデータです。string・slice・map・それらのstructを返せて、値は子からscopeへコピーされます。
 
-## 3. チャネル — 送り手 1・受け手 1
+## 3. チャネル — 送り手1・受け手1
 
-`task.NewChannel[T](cap: n)` は送り端と受け端の組を作ります。端はどちらも 1 つの task だけが持ちます。子へは `give:` でちょうど 1 つ渡します（捕獲では渡せません）。
+`task.NewChannel[T](cap: n)` は送り端と受け端の組を作ります。端はどちらも1つのtaskだけが持ちます。子へは `give:` でちょうど1つ渡します（捕獲では渡せません）。
 
-1 本のチャネルの送り手は 1 つなので、「どの送り手の値が先に着いたか」という順はそもそもありません。`select`（どのチャネルに届いているかを見る構文）もありません。複数の生産者から受けるときは、決まった順に待って受けます。
+1本のチャネルの送り手は1つなので、「どの送り手の値が先に着いたか」という順はそもそもありません。`select`（どのチャネルに届いているかを見る構文）もありません。複数の生産者から受けるときは、決まった順に待って受けます。
 
 ```sober
 // examples/task_chan_fan.sober
 package main
 
 // 3 本の生産者がそれぞれのチャネル（容量 2）で送り、親が順に受ける（fan-in を正準順で — select なし）。
-// 切替点が多い形（spawn ごとの子 / 親の順・走れる task の選び方）— schedvec が全スケジュールで同じ観測を確かめる
+// 切替点が多い形（spawnごとの子 / 親の順・走れるtaskの選び方）— schedvecが全スケジュールで同じ観測を確認する
 
 import "std/task"
 
@@ -183,9 +183,9 @@ func main() {
 242966
 ```
 
-3 本の生産者がそれぞれのチャネルで送り、親は `ra`・`rb`・`rc` の順に受けます。どの生産者が先に走っても、親が受ける順はこのコードの順です。
+3本の生産者がそれぞれのチャネルで送り、親は `ra`・`rb`・`rc` の順に受けます。どの生産者が先に走っても、親が受ける順はこのコードの順です。
 
-送った値は受け手の側へ写ります。送り手の region が先に閉じても、受け手は読めます。全部の task が互いを待って止まったら、`Deadlock{}` で panic します（終了コード 101）。デッドロックが起きるかどうかも、スケジュールに依りません。
+送った値は受け手の側へコピーされます。送り手のregionが先に閉じても、受け手は読めます。全部のtaskが互いを待って止まったら、`Deadlock{}` でpanicします（終了コード101）。デッドロックが起きるかどうかも、スケジュールに依りません。
 
 ## 4. 失敗と死
 
@@ -193,39 +193,39 @@ func main() {
 
 - `task.Join(h)` — 子の値を待って読む。子が死ねば（panic・資源の上限）、呼び手も死ぬ
 - `task.Try(h)` — 子の結末を `task.Ok{v}` / `task.Failed{e}` / `task.Died{cause}` の値として見る
-- どちらもしなかった子の失敗と死は、scope の err に集まる
+- どちらもしなかった子の失敗と死は、scopeのerrに集まる
 
-scope の err がどれになるかは、子の終わった順ではなく生んだ順で決まります。死は失敗より優先され、同じ種類なら先に生んだ子のものです。だから失敗したときの観測もスケジュールによって変わりません。規則の全文は [言語仕様 10.2 節](../spec/10-concurrency.ja.md#102-jointry失敗と死) にあります。
+scopeのerrがどれになるかは、子の終わった順ではなく生んだ順で決まります。死は失敗より優先され、同じ種類なら先に生んだ子のものです。だから失敗したときの観測もスケジュールによって変わりません。規則の全文は [言語仕様10.2節](../spec/10-concurrency.ja.md#102-jointry失敗と死) にあります。
 
-## 5. domain — 多くの task から 1 つの状態へ
+## 5. domain — 多くのtaskから1つの状態へ
 
-domain は、多くの task から書き換えられる状態を 1 つ持ち、その状態への呼び出しを 1 つずつ（直列に）走らせる値です。呼び出しには、条件が成り立つまで待ってから状態に入る形（`task.Await`）もあります。lock は見えません。状態に当てる本体は待たないので、domain を持ったまま待つ形が無く、lock の順序で起きるデッドロックは書けません。
+domainは、多くのtaskから書き換えられる状態を1つ持ち、その状態への呼び出しを1つずつ（直列に）走らせる値です。呼び出しには、条件が成り立つまで待ってから状態に入る形（`task.Await`）もあります。lockは見えません。状態に適用する本体は待たないので、domainを持ったまま待つ形が無く、lockの順序で起きるデッドロックは書けません。
 
-domain は `std/task` の関数 4 つで使います。新しい構文はありません。
+domainは `std/task` の関数4つで使います。新しい構文はありません。
 
 | 関数 | すること |
 | --- | --- |
-| `task.NewDomain(s, init, wait: …)` | scope `s` の中に、初期値 `init` の状態を持つ domain を作る |
+| `task.NewDomain(s, init, wait: …)` | scope `s` の中に、初期値 `init` の状態を持つdomainを作る |
 | `task.Update(d, (st mut S) => 本体)` | 本体で状態を書き、本体の値を返す |
 | `task.Read(d, (st S) => 本体)` | 状態を変えずに読み、本体の値を返す |
-| `task.Await(d, (st mut S) => 本体, when: (st S) => 条件)` | 条件が真になるまで待ってから本体を当てる。待ちが上限を越えたら `io.Expired` |
+| `task.Await(d, (st mut S) => 本体, when: (st S) => 条件)` | 条件が真になるまで待ってから本体を適用する。待ちが上限を越えたら `io.Expired` |
 
-Go を知っている読み手へ: Go なら `sync.Mutex` と条件変数（`sync.Cond`）で書く仕事を、Sober では domain の 3 つの呼び出しで書きます。domain には lock の値が無いので、取り忘れも返し忘れも起こりません。lock を持ったまま待つ形は、検査が拒否します（5.5 節）。
+Goを知っている読み手へ: Goなら `sync.Mutex` と条件変数（`sync.Cond`）で書く仕事を、Soberではdomainの3つの呼び出しで書きます。domainにはlockの値が無いので、取り忘れも返し忘れも起こりません。lockを持ったまま待つ形は、検査が拒否します（5.5節）。
 
-### 5.1 いつ domain を使うか
+### 5.1 いつdomainを使うか
 
 | 形 | 使うもの |
 | --- | --- |
-| 親が組み立てた値を子に読ませる | 捕獲・`freeze`（2 節） |
-| 1 つの task から別の 1 つの task へ値を流す | チャネル（3 節） |
-| 多くの task が 1 つの状態を読み書きする（接続のプール・カウンタ・キーの表・流量の数え） | domain |
+| 親が組み立てた値を子に読ませる | 捕獲・`freeze`（2節） |
+| 1つのtaskから別の1つのtaskへ値を流す | チャネル（3節） |
+| 多くのtaskが1つの状態を読み書きする（接続のプール・カウンタ・キーの表・流量の数え） | domain |
 | 状態が大きい・プロセスが落ちても残したい | 外の保存先（データベースなど） |
 
-チャネルは送り手 1・受け手 1 なので、多くの task から 1 つの状態へ集まる形はチャネルでは書けません。子の task は mut の束縛を捕まえられないので（2 節）、共有の変数を直に書く形もありません。この合流に使うのが domain です。
+チャネルは送り手1・受け手1なので、多くのtaskから1つの状態へ集まる形はチャネルでは書けません。子のtaskはmutの束縛を捕まえられないので（2節）、共有の変数を直に書く形もありません。この合流に使うのがdomainです。
 
-domain の本体は短い更新のためのものです。本体の中では io も待ちもできないので、状態を見て決めたことを、本体の外で実行します（たとえば「空いている接続の数を 1 減らす」は本体の中・「接続を張る」は本体の外）。
+domainの本体は短い更新のためのものです。本体の中ではioも待ちもできないので、状態を見て決めたことを、本体の外で実行します（たとえば「空いている接続の数を1減らす」は本体の中・「接続を張る」は本体の外）。
 
-### 5.2 Update と Read — 1 つずつ当てる
+### 5.2 UpdateとRead — 1つずつ適用する
 
 ```sober
 // examples/domain_counter.sober
@@ -271,15 +271,15 @@ func main() {
 342
 ```
 
-- `task.NewDomain(s, init)` が、scope `s` の中に状態の初期値 `init` を持つ domain を作ります。状態の型 `S` は `init` の型で、domain の型は `task.Domain[S]` です。domain は scope の出口で状態ごと消えます
-- `task.Update(d, (st mut S) => 本体)` は本体を状態に当て、本体の値を返します。本体が `st` に書いた値は、次の呼び出しから見えます
+- `task.NewDomain(s, init)` が、scope `s` の中に状態の初期値 `init` を持つdomainを作ります。状態の型 `S` は `init` の型で、domainの型は `task.Domain[S]` です。domainはscopeの出口で状態ごと消えます
+- `task.Update(d, (st mut S) => 本体)` は本体を状態に適用し、本体の値を返します。本体が `st` に書いた値は、次の呼び出しから見えます
 - `task.Read(d, (st S) => 本体)` は状態を変えずに読みます
 
-同じ domain の呼び出しは、どの task から来ても 1 つずつ走ります。2 つの本体が同時に状態を書くことはありません。
+同じdomainの呼び出しは、どのtaskから来ても1つずつ走ります。2つの本体が同時に状態を書くことはありません。
 
-どの task の呼び出しが先に走るかはスケジュールで決まります。言語はその順を、ファイルやネットワークから読む値と同じく、プログラムへの入力として扱います（6 節）。同じ順を与えれば、scope の値はスケジュールに依りません。上の例で印字する値（通し番号の和と、書いたバイト数の和）は、どちらの子が先に入っても同じです。3 つの呼び出しは効果 `nondet`（他の task の更新が見える）を持ち、この効果は関数の署名に出ます。
+どのtaskの呼び出しが先に走るかはスケジュールで決まります。言語はその順を、ファイルやネットワークから読む値と同じく、プログラムへの入力として扱います（6節）。同じ順を与えれば、scopeの値はスケジュールに依りません。上の例で印字する値（通し番号の和と、書いたバイト数の和）は、どちらの子が先に入っても同じです。3つの呼び出しはエフェクト `nondet`（他のtaskの更新が見える）を持ち、このエフェクトは関数の署名に出ます。
 
-domain は捕獲でき（子の task へも）、関数の実引数にもできます。struct の欄に入れて渡せるので、ハンドラを名前つきの関数のまま書けます。
+domainは捕獲でき（子のtaskへも）、関数の実引数にもできます。structのフィールドに入れて渡せるので、ハンドラを名前つきの関数のまま書けます。
 
 ```sober
 // examples/domain_arg.sober
@@ -347,7 +347,7 @@ demo: 5 hits, 150 bytes
 
 ### 5.3 Await — 条件が成り立つまで待つ
 
-`task.Await(d, 本体, when: 条件)` は、状態について条件が真になるまで待ってから本体を当てます。値は `(R, error?)` で、待ちが上限を越えたときの err は `io.Expired` です。
+`task.Await(d, 本体, when: 条件)` は、状態について条件が真になるまで待ってから本体を適用します。値は `(R, error?)` で、待ちが上限を越えたときのerrは `io.Expired` です。
 
 ```sober
 // examples/domain_await.sober
@@ -392,9 +392,9 @@ func main() {
 2
 ```
 
-条件が初めから真なら、待たずに入ります。偽なら呼び出しは domain の待ちの列に並んで眠り、他の呼び出しが状態を変えて出るたびに、列の先頭から起こされて条件を見直します。
+条件が初めから真なら、待たずに入ります。偽なら呼び出しはdomainの待ちの列に並んでスリープし、他の呼び出しが状態を変えて出るたびに、列の先頭からウェイクアップされて条件を見直します。
 
-8 つの消費者が `Await` で 1 つずつ取り、1 つの生産者が `Update` で 5 つずつ足す例です。どのスケジュールでも、どの品物もちょうど 1 回取られます。
+8つの消費者が `Await` で1つずつ取り、1つの生産者が `Update` で5つずつ足す例です。どのスケジュールでも、どの品物もちょうど1回取られます。
 
 ```sober
 // examples/domain_handoff.sober
@@ -466,11 +466,11 @@ taken 200 / left 0
 
 待ちについて言語が約束すること:
 
-- **順番**: 待っている呼び出しどうしは、来た順に状態へ入ります。起こされても条件がまだ偽なら、列の元の位置へ戻ります（`examples/domain_requeue.sober`）
-- **期限**: 待ちには上限があります。`NewDomain` の `wait:` に書き（省略すると 2 秒）、呼び出しごとに `wait:` で上書きできます。越えた呼び出しは本体を走らせずに `io.Expired` を返し、状態は変わりません
-- **観測**: `task.Ledger().domains` が、全 domain をまとめた 1 行（今待っている数 `waiting`・到着から入るまでの待ちの最大 `maxWait`（読むと 0 に戻る）・満了の累計 `expired`・毒になった domain の累計 `poisoned`）を返します
+- **順番**: 待っている呼び出しどうしは、来た順に状態へ入ります。ウェイクアップされても条件がまだ偽なら、列の元の位置へ戻ります（`examples/domain_requeue.sober`）
+- **期限**: 待ちには上限があります。`NewDomain` の `wait:` に書き（省略すると2秒）、呼び出しごとに `wait:` で上書きできます。越えた呼び出しは本体を走らせずに `io.Expired` を返し、状態は変わりません
+- **観測**: `task.Ledger().domains` が、全domainをまとめた1行（今待っている数 `waiting`・到着から入るまでの待ちの最大 `maxWait`（読むと0に戻る）・満了の累計 `expired`・毒になったdomainの累計 `poisoned`）を返します
 
-条件が真にならない `Await` は、上限で `io.Expired` を返します。domain の待ちで止まったままになる task はありません。
+条件が真にならない `Await` は、上限で `io.Expired` を返します。domainの待ちで止まったままになるtaskはありません。
 
 ```sober
 // examples/domain_expire.sober
@@ -516,7 +516,7 @@ ledger: waiting 0 / expired 1 / poisoned 0
 
 ### 5.4 本体が死んだとき — 毒
 
-本体（`when:` を含む）が死ぬと（境界検査・ゼロ除算・region の上限など）、呼び手の task が死に、domain は毒された状態になります。以後のその domain の呼び出しは、呼び手を `task.Poisoned{}` で死なせます。待っている `Await` も起きて、同じく死にます。半端に書かれた状態の上で、続きの呼び出しが走ることはありません。
+本体（`when:` を含む）が死ぬと（境界検査・ゼロ除算・regionの上限など）、呼び手のtaskが死に、domainは毒された状態になります。以後のそのdomainの呼び出しは、呼び手を `task.Poisoned{}` で死なせます。待っている `Await` も起きて、同じく死にます。半端に書かれた状態の上で、続きの呼び出しが走ることはありません。
 
 ```sober
 // examples/domain_poison.sober
@@ -570,15 +570,15 @@ poisoned domains: 1
 
 ### 5.5 本体に書けない形と、その理由
 
-本体は domain を持ったまま走ります。だから、持ったまま待つ形や、状態を際限なく伸ばす形は検査が拒否します。拒否の文面は、どれも書き換えの形を示します。
+本体はdomainを持ったまま走ります。だから、持ったまま待つ形や、状態を際限なく伸ばす形は検査が拒否します。拒否の文面は、どれも書き換えの形を示します。
 
-本体は待たず、io をせず、別の domain も呼びません（効果を持たない — 明示の `panic` もなし）。
+本体は待たず、ioをせず、別のdomainも呼びません（エフェクトを持たない — 明示の `panic` もなし）。
 
 ```sober
 // examples/domain_neg_nested.sober
 package main
 
-// domain の本体から別の domain は呼べない（入りは nondet — 本体は効果なし）: 持ったまま待つ形が書けないので、domain が原因のデッドロックは無い
+// domainの本体から別のdomainは呼べない（入りはnondet — 本体はエフェクトなし）: 持ったまま待つ形が書けないので、domainが原因のデッドロックは無い
 
 import "std/task"
 
@@ -605,9 +605,9 @@ func main() {
 examples/domain_neg_nested.sober:15:38: error: the body of a domain call (task.Update / task.Read / task.Await and its when:) may have the effect nondet via the call of 'std/task.Read': it runs holding the domain, so it has no effects (no waiting, no io, no other domain, no explicit panic) (Analyzer)
 ```
 
-本体の中から別の domain を呼べないので、domain を 2 つ持ったまま互いを待つ形はありません。lock の順序の取り決めは要りません。本体の中の `println` も同じ理由で拒否されます（`examples/domain_neg_effect.sober`）。
+本体の中から別のdomainを呼べないので、domainを2つ持ったまま互いを待つ形はありません。lockの順序の取り決めは要りません。本体の中の `println` も同じ理由で拒否されます（`examples/domain_neg_effect.sober`）。
 
-状態は domain と同じだけ生き、その場で書かれます。だから本体が状態に書けるのは region を持たない値（int・bool・byte・float と、それらの struct・union・option）だけです。状態の slice への append は、呼び出しのたびに状態を伸ばすので拒否されます。
+状態はdomainと同じだけ生き、その場で書かれます。だから本体が状態に書けるのはregionを持たない値（int・bool・byte・floatと、それらのstruct・union・option）だけです。状態のsliceへのappendは、呼び出しのたびに状態を伸ばすので拒否されます。
 
 ```sober
 // examples/domain_neg_grow.sober
@@ -641,48 +641,48 @@ func main() {
 sober: load error at examples/domain_neg_grow.sober:17:16: the body of a domain call writes only region-free values (int, bool, byte, float and structs of them) into the state, and not through a map index — the state lives as long as the domain and is written in place, so append, re-slicing, strings or map writes would grow it on every call. Rewrite: (1) preallocate a mut slice in init: and write its elements (st.items[i] = v), (2) keep a count or an index in the state and the growing data outside the domain, or (3) return the value from the body and store it outside
 ```
 
-状態は mut の slice や map を持てて（入れ子も）、本体は slice の要素をその場で書けます（`examples/domain_slots.sober`）。map への書きは状態を伸ばしうるので拒否されます。足りる長さを初期値で用意して要素を書くか、伸びるデータは domain の外に置きます。
+状態はmutのsliceやmapを持てて（入れ子も）、本体はsliceの要素をその場で書けます（`examples/domain_slots.sober`）。mapへの書きは状態を伸ばしうるので拒否されます。足りる長さを初期値で用意して要素を書くか、伸びるデータはdomainの外に置きます。
 
 ほかに拒否される形:
 
-- 本体が呼び手の mut の束縛を捕まえて書く（`examples/domain_neg_capture.sober`）— 本体は呼び手と別の task で走りうるので、捕まえられるのは imm の値だけです
-- 状態の slice を mut の束縛にして append する（`mut v := st.items` — `examples/domain_neg_alias.sober`）
-- 状態を、状態を伸ばしうる関数へ mut の実引数で渡す（`examples/domain_neg_mutarg.sober`）。呼び先が本体と同じ規則で書くと呼び先の本体から分かるなら渡せます（`examples/domain_mutarg.sober`）
-- domain を作った scope の外へ出す — scope の値・task の結果・チャネルで送る値・関数の戻り値にする、scope の外で作った場所へ入れる（`examples/domain_neg_escape.sober`・`examples/domain_neg_return.sober`・`examples/domain_neg_outlive_*.sober`）。domain は scope の出口で状態ごと消えるからです
+- 本体が呼び手のmutの束縛を捕まえて書く（`examples/domain_neg_capture.sober`）— 本体は呼び手と別のtaskで走りうるので、捕まえられるのはimmの値だけです
+- 状態のsliceをmutの束縛にしてappendする（`mut v := st.items` — `examples/domain_neg_alias.sober`）
+- 状態を、状態を伸ばしうる関数へmutの実引数で渡す（`examples/domain_neg_mutarg.sober`）。呼び先が本体と同じ規則で書くと呼び先の本体から分かるなら渡せます（`examples/domain_mutarg.sober`）
+- domainを作ったscopeの外へ出す — scopeの値・taskの結果・チャネルで送る値・関数の戻り値にする、scopeの外で作った場所へ入れる（`examples/domain_neg_escape.sober`・`examples/domain_neg_return.sober`・`examples/domain_neg_outlive_*.sober`）。domainはscopeの出口で状態ごと消えるからです
 
-初期値は domain へ写して入れ、本体の値も呼び手へ写して返します。だから、状態の slice や map が domain の外から書かれることはありません。
+初期値はdomainへコピーして入れ、本体の値も呼び手へコピーして返します。だから、状態のsliceやmapがdomainの外から書かれることはありません。
 
 ### 5.6 標準ライブラリでの使われ方と費用
 
-`std/pg` の接続のプール（`pg.OpenPool` / `pg.With` — [PostgreSQL のガイド 6 節](postgres.ja.md#6-接続のプール--pgopenpool-と-pgwith)）は domain の上に書かれています。待機中の接続の数と張っている数を domain の状態に置き、空きが無ければ `Await` で来た順に待ちます。
+`std/pg` の接続のプール（`pg.OpenPool` / `pg.With` — [PostgreSQLのガイド6節](postgres.ja.md#6-接続のプール--pgopenpool-と-pgwith)）はdomainの上に書かれています。待機中の接続の数と張っている数をdomainの状態に置き、空きが無ければ `Await` で来た順に待ちます。
 
-domain の呼び出しにかかる命令数（x86-64・callgrind で数えた、競合のない最小のプログラムの 1 回あたりの命令数）:
+domainの呼び出しにかかる命令数（x86-64・callgrindで数えた、競合のない最小のプログラムの1回あたりの命令数）:
 
 | 呼び出し | 命令/回 |
 | --- | --- |
-| `task.Update`（本体はカウンタを 1 足すだけ） | ≈ 60 |
-| `task.Read`（欄を 1 つ読むだけ） | ≈ 80 |
+| `task.Update`（本体はカウンタを1足すだけ） | ≈ 60 |
+| `task.Read`（フィールドを1つ読むだけ） | ≈ 80 |
 | `task.Await`（条件が真で、待たずに入る） | ≈ 120 |
 
-競合のない 1 回の出入りは、数十〜百数十命令です。待っている呼び出しが多くても、状態から出る呼び出しが起こすのは列の先頭の 1 つだけで、出る側の仕事は待っている数に依りません。
+競合のない1回の出入りは、数十〜百数十命令です。待っている呼び出しが多くても、状態から出る呼び出しがウェイクアップするのは列の先頭の1つだけで、出る側の仕事は待っている数に依りません。
 
 ## 6. 言語が約束する範囲
 
-io の入力を固定したとき、次はスケジュールにもワーカーの数にも依りません。
+ioの入力を固定したとき、次はスケジュールにもワーカーの数にも依りません。
 
-- scope の値（成功の値と、失敗のときの err）
-- `println` の標準出力（spawn の木の先行順）
+- scopeの値（成功の値と、失敗のときのerr）
+- `println` の標準出力（spawnの木の先行順）
 - デッドロックが起きるかどうか
 
 次は「入力」として扱います。同じ値を与えれば同じ結果になりますが、値そのものは実行ごとに変わりえます。
 
 - ファイル・ネットワーク・時計（期限 `deadline:` を含む）
 - `task.SpawnIn` が受けられずに返す `task.Shed{}`
-- domain の呼び出しが走った順
+- domainの呼び出しが走った順
 
 言語が約束しないもの:
 
 - `io.WriteStdout` で直に書いた出力の順
-- 死ぬ実行の標準出力の途中まで（ワーカー 2 本以上のとき）
+- 死ぬ実行の標準出力の途中まで（ワーカー2本以上のとき）
 
-入口ごとの一覧は [決定の記録](../language.md) の 11 節「決定性の約束の範囲」に、規則は [言語仕様 10.5 節](../spec/10-concurrency.ja.md#105-決定性とキャンセル) にあります。予算・プール・期限（`budget:` / `task.NewPool` / `deadline:`）は [言語仕様 10.6 節](../spec/10-concurrency.ja.md#106-予算プール期限) にあります。
+入口ごとの一覧は [決定の記録](../language.md) の11節「決定性の約束の範囲」に、規則は [言語仕様10.5節](../spec/10-concurrency.ja.md#105-決定性とキャンセル) にあります。予算・プール・期限（`budget:` / `task.NewPool` / `deadline:`）は [言語仕様10.6節](../spec/10-concurrency.ja.md#106-予算プール期限) にあります。

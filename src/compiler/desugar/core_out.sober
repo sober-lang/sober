@@ -1,7 +1,7 @@
 package desugar
 
-// 脱糖の結果をプロセス内で渡す口（Sober 版 `sober check` の直結 — compiler/tools/sobercheck。JSON を経ない）。
-// 意味は Json と同じ: run の結果（関数表・持ち上げたラムダの鎖・根の式）を、ヒープの読み出し専用の眺めとして受け手 k に渡す。
+// 脱糖の結果をプロセス内で渡すインターフェース（Sober版 `sober check` の直結 — compiler/tools/sobercheck。JSONを経ない）。
+// 意味はJsonと同じ: runの結果（関数表・持ち上げたラムダのチェーン・根の式）を、ヒープの読み出し専用の眺めとして受け手kに渡す。
 // 記録の形（Def の [param, ret, body, tparams, next]）は json.sober の印字が読む形そのまま。ラベルは Labels（CLabel の a = 添字）、型は Types（参照 − TBASE = 添字）、コア式は Exprs（参照 − CBASE = 添字）
 
 import "loader"
@@ -9,7 +9,7 @@ import "std/iter"
 import "std/table"
 import "diag"
 
-// ヒープの眺め。Defs = 名前付き関数の列 [n, def…]、Lifted = 持ち上げたラムダの鎖の頭（def + 4 = 次、-1 = 終わり）
+// ヒープの眺め。Defs = 名前付き関数の列 [n, def…]、Lifted = 持ち上げたラムダのチェーンの頭（def + 4 = 次、-1 = 終わり）
 type Core struct {
     H []int
     Labels []Label
@@ -43,7 +43,7 @@ func WithCorePkg[T](p loader.Program, excl []int, only int, z T, k func(Core, []
 // WithCorePkg に trust（L0: std の Def は署名だけ・受理印は焼き込みが運ぶ）を足したもの。
 // rng は Def の区間（WholeRng = 全部）。
 // 拒否のときは zr(拒否を帰す先の Def — S.rejDef) を err と一緒に返す（check の関数単位キャッシュの拒否の値）。
-// stopAt は計測の口（SOBER_CHECK_STOP）: 4 = 表層型検査器（TypeAll）の後・5 = Def と根の脱糖の後（検査器への写しの前）で止めて z を返す。0 = 止めない。
+// stopAtは計測のインターフェース（SOBER_CHECK_STOP）: 4 = 表層型検査器（TypeAll）の後・5 = Defと根の脱糖の後（検査器へのコピーの前）で止めてzを返す。0 = 止めない。
 // 本体は関数型の引数を取る総称 = 呼び出し点ごとに展開されるので、呼び手は 1 か所で呼ぶ（raw ビルドの lower のヒープの容量）
 @errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap, diag.Cell, diag.FnArg)
 func WithCoreOpt[T](p loader.Program, excl []int, only int, trust bool, stopAt int, rng DefRng, zr func(int) T, k func(Core, []int) T) (T, error?) {
@@ -83,7 +83,7 @@ func WithCoreOpt[T](p loader.Program, excl []int, only int, trust bool, stopAt i
         dkFlush(mut st)
     }
     lifted := st.liftedHead
-    // 検査器へは連続した imm の列で渡す（1 回だけ写す）
+    // 検査器へは連続したimmの列で渡す（1回だけコピーする）
     mut hs := mut []int{}
     mut i := 0
     while i < hlen(mut st) {
@@ -156,7 +156,7 @@ type DefPlan struct {
     bad []int
     refs RefGraph
     ck DefCk     // check の関数単位キャッシュの鍵の計画（PlanDefs の self が空でなく前走りの要らないプログラムのとき）
-    rok int      // 届く閉包の印（capLive）: 0 = 渡さない（子が遅延で作る）・1 = main が無い（全部届く扱い）・2 = reach（関数の添字ごとの 0 / 1）
+    rok int      // 届くクロージャのフラグ（capLive）: 0 = 渡さない（子が遅延で作る）・1 = mainが無い（全部届く扱い）・2 = reach（関数の添字ごとの0 / 1）
     reach []int
 }
 
@@ -174,7 +174,7 @@ func RangeCk(d DefPlan, lo int, hi int, root bool, skip []bool, aud bool) DefRng
     return DefRng{set: true, lo: lo, hi: hi, root: root, plan: d, skip: skip, lazy: root, lu: true, aud: aud}
 }
 
-// RngLo / RngHi / RngRoot は区間の欄の読み口（checker から）
+// RngLo / RngHi / RngRootは区間のフィールドの読みインターフェース（checkerから）
 func RngLo(r DefRng) int {
     return r.lo
 }
@@ -183,7 +183,7 @@ func RngHi(r DefRng) int {
     return r.hi
 }
 
-// PlanCost / PlanHeap は DefPlan の欄の読み口（checker から）
+// PlanCost / PlanHeapはDefPlanのフィールドの読みインターフェース（checkerから）
 func PlanCost(d DefPlan) []int {
     return d.cost
 }
@@ -228,7 +228,7 @@ func PlanDefs(p loader.Program, excl []int, only int, trust bool, self []byte) (
     // 鍵の計画（self が空でなければ — check の関数単位キャッシュ）: 前走り（env の形の和 U_F）の要るプログラムは鍵が閉じないので組まない
     loader.Stage("ds-plan")
     ck := if len(self) > 0 && only < 0 && !needShapes(p) { ckPlan(mut st, self, trust) } else { emptyCk() }
-    // 届く閉包の印（capLive）は親が 1 回作って子へ渡す — 子が脱糖の途中で遅延で作ると、そのとき脱糖中の Def が全部の木の名前の解決を読んだことになる
+    // 届くクロージャのフラグ（capLive）は親が1回作って子へ渡す — 子が脱糖の途中で遅延で作ると、そのとき脱糖中のDefが全部の木の名前の解決を読んだことになる
     // （check の関数単位キャッシュの鍵の外の読みになる）
     refs := refGraph(mut st)
     mk, rok := mainReachG(mut st, refs)

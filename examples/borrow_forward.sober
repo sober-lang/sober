@@ -1,7 +1,7 @@
 package main
 
 // 借りの値の使い方の受理の形（(α-L0)）: 呼ぶ・展開の仮引数へ転送（η）・文形 for の本体と借りの位置のラムダへの捕捉。
-// 借りの閉包の捕捉は imm（string）— env は借りの位置ごとの閉じた union
+// 借りのクロージャの捕捉はimm（string）— envは借りの位置ごとの閉じたunion
 
 type Stream func(emit func(n int) int) int
 

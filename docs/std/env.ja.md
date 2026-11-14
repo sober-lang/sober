@@ -18,7 +18,7 @@ type StrVar struct {
 }
 ```
 
-文字列の環境変数。def は無いときの値。def も値も無いときは、opt なら StrOpt が nil を返し、opt でなければ Load が Missing で落とす。dev は開発の口（文書の印 — 読みは同じ）
+文字列の環境変数。def は無いときの値。def も値も無いときは、opt なら StrOpt が nil を返し、opt でなければ Load が Missing で落とす。devは開発のAPI（文書のマーク — 読みは同じ）
 
 ## IntVar
 
@@ -34,7 +34,7 @@ type IntVar struct {
 }
 ```
 
-整数の環境変数（10 進）。min / max は両端を含む範囲。他の欄は StrVar と同じ
+整数の環境変数（10進）。min / maxは両端を含む範囲。他のフィールドはStrVarと同じ
 
 ## BoolVar
 
@@ -76,7 +76,7 @@ type Values struct {
 }
 ```
 
-読んだ値の表。作れるのは Load / Parse だけ（非公開の型の封の欄）。値は把手で引く
+読んだ値の表。作れるのはLoad / Parseだけ（非公開の型の封のフィールド）。値は把手で引く
 
 ## Missing
 
@@ -152,7 +152,7 @@ t の変数を全部プロセスの環境から読んで検査する（誤りは
 func Parse(t Table, pairs []string) (Values, error?)
 ```
 
-t の変数を pairs（`NAME=value` の列 — environ と同じ形・同名は最初の 1 つ）から読んで検査する（Load の中身 — テストと再現の口）
+tの変数をpairs（`NAME=value` の列 — environと同じ形・同名は最初の1つ）から読んで検査する（Loadの中身 — テストと再現のAPI）
 
 失敗のラベル: [`Missing`](#missing)・[`BadValue`](#badvalue)
 

@@ -1,6 +1,6 @@
 package main
 
-// mut 実引数の排他（diag.MutAlias）: パイプの段の実引数も同じ規則（欄とその欄 — `mut t.p` と `mut t.p.y`）
+// mut実引数の排他（diag.MutAlias）: パイプの段階の実引数も同じ規則（フィールドとそのフィールド — `mut t.p` と `mut t.p.y`）
 type P struct {
     x int
     y int

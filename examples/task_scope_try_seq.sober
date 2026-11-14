@@ -1,6 +1,6 @@
 package main
 
-// examples/task_scope_try の逐次の双子（scripts/seqpar.list — 本体の `?` = scope の失敗を、名前付き関数の `?` と出口の優先の手書きで書いたもの）
+// examples/task_scope_tryの逐次版（scripts/seqpar.list — 本体の `?` = scopeの失敗を、名前付き関数の `?` と出口の優先の手書きで書いたもの）
 
 import "std/iter"
 

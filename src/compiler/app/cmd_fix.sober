@@ -12,7 +12,7 @@ import "analyzer"
 // `sober fix [--effects] [--errors] [--std <dir>] <entry>`（宣言の書き換え器 analyzer.FixPlan）: 導出から `@effects` / `@errors` の宣言の行を
 // std の外のファイルの公開関数に書く（どちらのフラグも無ければ両方）。--std は std の強制の掛かる公開関数にも正規形を書き、焼き込みの std のファイルを
 // <dir>/std/… へ書く（std の宣言を手で書かない道具）。書いたファイルごとに `fix: <path>: <件数>` を出す。漏れ（導出 ⊄ 宣言）は書き換えない —
-// 続けて `sober check` が名指す
+// 続けて `sober check` が専用の診断で拒否する
 func cmdFix(cl cli.Parsed) int {
     mut effects := cli.Bool(cl, FEffects)
     mut errors := cli.Bool(cl, FErrors)

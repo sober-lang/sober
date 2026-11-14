@@ -2,12 +2,12 @@ package analyzer
 
 // 出所の依存（language.md 12 節「出所の依存」・13 節の補 3）: 値の流れのエンジンの 3 本目。秘密の walker（secret.sober）を
 // og のモードで同じ解き手 az.er の 3 区間目に走らせる（秘密の解きの後 — Run が az.sv を作り直す）。モードの差:
-// 値は丸ごと（struct の値は欄の中身の合併を持ち、欄の読みは基底の丸ごと — 道・別名・型 × 名前のスロットは使わない）・分岐 / 番地 / 除算は sink にしない。
-// 原子: O = `@credential` の関数の結果と `@credential` の欄の読み（std の外の package の読みだけ — std の中の読み〔Header・condOf・Dispatch の写し〕は源にしない）・
-// SH = `@shared` の variant のリテラル・C = 呼ぶと源に届きうる関数値（Eff[f] — 源の口を呼ぶ・Eff の呼び先を呼ぶ・C を持つ関数値を呼ぶ）。
-// 拒否 = 出会い: std の外の struct の構築（リテラル・欄の書き込み）で SH の欄（`@shared` の variant を持つ union の型の欄）の値と他の欄の値の
-// O / C が出会う・利用者が応答 1 件の方針の欄（std/http/server の Response.cache）へ SH を書く・std/http/server の Mount（名指しの出会いの口）の routes の SH と mw の O / C。
-// 仮引数由来の値は Pin で文脈に鈍く具体化して照合する（違反の名指しは構築の位置）
+// 値は丸ごと（structの値はフィールドの中身の合併を持ち、フィールドの読みは基底の丸ごと — パス・別名・型 × 名前のスロットは使わない）・分岐 / 番地 / 除算はsinkにしない。
+// 原子: O = `@credential` の関数の結果と `@credential` のフィールドの読み（stdの外のpackageの読みだけ — stdの中の読み〔Header・condOf・Dispatchのコピー〕は源にしない）・
+// SH = `@shared` のvariantのリテラル・C = 呼ぶと源に届きうる関数値（Eff[f] — 源のAPIを呼ぶ・Effの呼び先を呼ぶ・Cを持つ関数値を呼ぶ）。
+// 拒否 = 出会い: stdの外のstructの構築（リテラル・フィールドの書き込み）でSHのフィールド（`@shared` のvariantを持つunionの型のフィールド）の値と他のフィールドの値の
+// O / Cが出会う・利用者がレスポンス1件の方針のフィールド（std/http/serverのResponse.cache）へSHを書く・std/http/serverのMount（明示の出会いのAPI）のroutesのSHとmwのO / C。
+// 仮引数由来の値はPinで文脈に鈍く具体化して照合する（違反の明示は構築の位置）
 
 import "ast"
 import "desugar"
@@ -17,16 +17,16 @@ import "std/iter"
 import "std/table"
 
 const MOrgMeet = 42  // 出所の出会い（at = 構築 / 呼び出しの節, 付帯 = 違反の記録の添字）
-const MOrgStd = 43   // std の外の `@credential` / `@shared` / `@bless(origin)`（at = 宣言, 付帯 = 種類 0 関数 / 1 欄 / 2 variant / 3 祝福）
+const MOrgStd = 43   // stdの外の `@credential` / `@shared` / `@bless(origin)`（at = 宣言, 付帯 = 種類0関数 / 1フィールド / 2 variant / 3祝福）
 
 // 違反の種類
-const OgRoute = 0  // 共有の方針の欄と、源に届く欄が 1 つの struct の値で出会う
-const OgResp = 1   // 応答 1 件の方針の欄へ SH
+const OgRoute = 0  // 共有の方針のフィールドと、源に届くフィールドが1つのstructの値で出会う
+const OgResp = 1   // レスポンス1件の方針のフィールドへSH
 const OgMount = 2  // Mount の routes の SH と mw の O / C
 
 // ── 準備（svInit から） ──
 
-// 関数 fi の `@credential` の原子と std 限定の検査・Mount の名指し
+// 関数fiの `@credential` の原子とstd限定の検査・Mountの明示
 func ogInitFn(az mut Az, fi int, fd ast.Node) {
     pk := desugar.FnAt(mut az.d, fi).pkg
     std := desugar.IsStdPkg(mut az.d, pk)
@@ -48,7 +48,7 @@ func ogInitFn(az mut Az, fi int, fd ast.Node) {
     }
 }
 
-// 欄の項の型の式 ty（SH の欄の判定の材料 — 名前付き関数型の仮引数の項は -1）と std 限定の検査（td = 型宣言・f = ファイル・cred = `@credential` の欄）
+// フィールドの項の型の式ty（SHのフィールドの判定の材料 — 名前付き関数型の仮引数の項は -1）とstd限定の検査（td = 型宣言・f = ファイル・cred = `@credential` のフィールド）
 func ogInitField(az mut Az, td desugar.NodeRef, ty desugar.NodeRef, f int, cred bool) {
     pk := desugar.FilePkg(mut az.d, f)
     table.Push(mut az.sv.ftn, int(ty))
@@ -75,7 +75,7 @@ func ogInitUnion(az mut Az, td desugar.NodeRef, body desugar.NodeRef, f int) {
     }
 }
 
-// 原子 C と欄の項ごとの SH の欄の印（源が 1 本以上あるときだけ）
+// 原子Cとフィールドの項ごとのSHのフィールドのマーク（源が1本以上あるときだけ）
 func ogInitRest(az mut Az) {
     az.sv.catom = az.sv.natom
     az.sv.oMask = az.sv.oMask | (1 << az.sv.natom)
@@ -116,7 +116,7 @@ func ogSharedType(az mut Az, tn desugar.NodeRef, pk int) bool {
     return false
 }
 
-// ── 効果のビット ──
+// ── エフェクトのビット ──
 
 // 今の関数（と今のラムダ）が源に届いた
 func ogEff(az mut Az) {
@@ -124,7 +124,7 @@ func ogEff(az mut Az) {
     az.sv.effHit = true
 }
 
-// 関数 fi を呼ぶと源に届きうるか（`@bless(origin)` の関数は届かない側 — 祝福した std の口）
+// 関数fiを呼ぶと源に届きうるか（`@bless(origin)` の関数は届かない側 — 祝福したstdのAPI）
 func ogEffOf(az mut Az, fi int) bool {
     if desugar.FuncBlessOrigin(mut az.d, fnDecl(mut az, fi)) {
         return false
@@ -132,7 +132,7 @@ func ogEffOf(az mut Az, fi int) bool {
     return table.Get(mut az.sv.credf, fi) != -1 || readSlot(mut az, az.sv.effBase + fi).lo != 0
 }
 
-// 直の呼び出し e（呼び先 fi・実引数の値 fv）の効果のビットと Mount の出会い
+// 直の呼び出しe（呼び先fi・実引数の値fv）のエフェクトのビットとMountの出会い
 func ogCall(az mut Az, e desugar.NodeRef, fi int, fv []LSet) {
     if ogEffOf(mut az, fi) {
         ogEff(mut az)
@@ -146,9 +146,9 @@ func ogCall(az mut Az, e desugar.NodeRef, fi int, fv []LSet) {
     }
 }
 
-// ── 欄と構築 ──
+// ── フィールドと構築 ──
 
-// 欄の読み base.name の源（`@credential` の欄 — std の外の package の読みだけ）
+// フィールドの読みbase.nameの源（`@credential` のフィールド — stdの外のpackageの読みだけ）
 func ogFieldRead(az mut Az, base desugar.NodeRef, name desugar.StrRef) LSet {
     q := svField(mut az, desugar.ExprDecl(mut az.d, base), name)
     if q == -1 || desugar.IsStdPkg(mut az.d, az.pk) {
@@ -162,7 +162,7 @@ func ogFieldRead(az mut Az, base desugar.NodeRef, name desugar.StrRef) LSet {
     return svAtom(a)
 }
 
-// 欄の書き込み t（base.name = m）の出会い（std の外だけ）
+// フィールドの書き込みt（base.name = m）の出会い（stdの外だけ）
 func ogFieldWrite(az mut Az, t desugar.NodeRef, base desugar.NodeRef, name desugar.StrRef, m LSet) {
     if desugar.IsStdPkg(mut az.d, az.pk) {
         return
@@ -191,7 +191,7 @@ func ogFieldWrite(az mut Az, t desugar.NodeRef, base desugar.NodeRef, name desug
     }
 }
 
-// 型宣言 d が SH の欄（印 1）を持つか
+// 型宣言dがSHのフィールド（マーク1）を持つか
 func ogMeetDecl(az mut Az, d desugar.NodeRef) bool {
     if d == -1 {
         return false
@@ -209,7 +209,7 @@ func ogMeetDecl(az mut Az, d desugar.NodeRef) bool {
     return false
 }
 
-// リテラル e（節 x）: 値は要素の合併（struct の値は欄の中身を持つ）・`@shared` の variant は SH・std の外の struct は出会いを照合する
+// リテラルe（節x）: 値は要素の合併（structの値はフィールドの中身を持つ）・`@shared` のvariantはSH・stdの外のstructは出会いを照合する
 func ogComposite(az mut Az, e desugar.NodeRef, x ast.Node) LSet {
     els := desugar.ListRef(x.b)
     r := desugar.ResolveType(mut az.d, az.pk, desugar.StrRef(x.a))
@@ -299,7 +299,7 @@ func ogShName(az mut Az, a int) string {
     return "the shared cache policy '${str(mut az, desugar.StrRef(v.a))}'"
 }
 
-// 源の原子 a の綴り（-1 = C だけ — 源の口を呼ぶ関数値）
+// 源の原子aの綴り（-1 = Cだけ — 源のAPIを呼ぶ関数値）
 func ogSrcName(az mut Az, a int) string {
     if a < 0 {
         return "a handler or middleware that reaches a credential source (server.Authorization / server.Cookie / Request.head)"
@@ -328,7 +328,7 @@ func ogMessage(az mut Az, i int) string {
     return "${sh} meets ${src} in one route — ${why}; use server.Private / server.NoStore for this route, or move the credential read out of it"
 }
 
-// std の外の印の本文
+// stdの外のマークの本文
 func ogStdMessage(x int) string {
     w := switch x {
     case 0: "@credential (a function)"
@@ -339,8 +339,8 @@ func ogStdMessage(x int) string {
     return "${w} is for std only (credential sources, shared cache policies and their blessings are declared by the standard library — language.md 12 節「出所の依存」)"
 }
 
-// 出所の導出（開発用 `check --origin-dump`）: 源の口（`@credential` の関数と欄）・`@shared` の variant・SH の欄（route = ルートの行 /
-// response = 応答 1 件の方針の欄）・出会いの口（Mount）・Eff の関数（呼ぶと源に届きうる — 源の口そのものと `@bless(origin)` を除く）・違反を 1 件 1 行、最後に要約（位置の無い 1 行）。
+// 出所の導出（開発用 `check --origin-dump`）: 源のAPI（`@credential` の関数とフィールド）・`@shared` のvariant・SHのフィールド（route = ルートの行 /
+// response = レスポンス1件の方針のフィールド）・出会いのAPI（Mount）・Effの関数（呼ぶと源に届きうる — 源のAPIそのものと `@bless(origin)` を除く）・違反を1件1行、最後に要約（位置の無い1行）。
 // 源の無い木（std/http/server を import しない — compiler/ 自身）では表は空
 func OriginDump(p loader.Program) []Finding {
     mut az := Az{d: desugar.S{}, pk: 0, out: table.Table[int]{}, ok: table.Table[int]{}, nfn: 0, nerr: 0, er: Eng{sets: table.Table[int]{}, rhead: table.Table[int]{}, rnode: table.Table[int]{}, work: table.Table[int]{}, inq: table.Table[int]{}, env: table.Table[int]{}, envN: 0, envChanged: false},

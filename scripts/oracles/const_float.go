@@ -1,4 +1,4 @@
-// const_float.go — examples/const_float.sober の Go の双子（go run scripts/oracles/const_float.go > examples/const_float.out）。
+// const_float.go — examples/const_float.soberの比較用のGoの実装（go run scripts/oracles/const_float.go > examples/const_float.out）。
 // Go の const は正確な算術なので、Sober の型つきの IEEE の演算に合わせて変数を経て実行時に計算する
 package main
 

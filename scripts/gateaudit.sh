@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# gateaudit（ゲートの高速化便 R2 — report-1222）: 宣言の監査 — 開発時の道具で、鍵の経路には入れない（ナビ裁定 2026-10-27 — openat が io_uring に
-# 載ると syscall の観測は黙って欠ける。網羅の主の網は scripts/gatemut.sh の変異）。ゲートを strace の下で 1 本ずつ走らせ（gates.sh --gate・--no-cache）、
+# gateaudit（ゲートの高速化便R2 — report-1222）: 宣言の監査 — 開発時の道具で、鍵の経路には入れない（ナビ決定2026-10-27 — openatがio_uringに
+# 載るとsyscallの観測は黙って欠ける。網羅の主の検査はscripts/gatemut.shのミュータント）。ゲートをstraceの下で1本ずつ走らせ（gates.sh --gate・--no-cache）、
 # 木の中の読みのうち鍵（共通の成分 + 入口 + scripts/gatedeps.txt の宣言）が覆わないものと、読んだ testdata の 1 段目を出す（宣言を詰める材料）。
 #   scripts/gateaudit.sh [-P 並べる数] gate…
 set -uo pipefail

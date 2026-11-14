@@ -2,7 +2,7 @@ package password
 
 import "std/iter"
 
-// BLAKE2b（RFC 7693 — 鍵なし・出力の長さ 1〜64 バイト）。Argon2 の H と H' の下。算術は 64 bit の語の mod 2^64（int の和の wrap）で、
+// BLAKE2b（RFC 7693 — 鍵なし・出力の長さ1〜64バイト）。Argon2のHとH' の下。算術は64 bitのワードのmod 2^64（intの和のwrap）で、
 // 右回転は算術シフトの上の bit を mask で落とす。データに依る分岐・添字は無い
 
 // 64 bit の右回転（k は 1..63）
@@ -10,12 +10,12 @@ func rotr64(x int, k int) int {
     return ((x >> k) & ((1 << (64 - k)) - 1)) | (x << (64 - k))
 }
 
-// 初期値（SHA-512 の IV — 2^63 以上の語は負の int で書く）
+// 初期値（SHA-512のIV — 2^63以上のワードは負のintで書く）
 func b2iv() []int {
     return []int{0x6a09e667f3bcc908, -0x4498517a7b3558c5, 0x3c6ef372fe94f82b, -0x5ab00ac5a0e2c90f, 0x510e527fade682d1, -0x64fa9773d4c193e1, 0x1f83d9abfb41bd6b, 0x5be0cd19137e2179}
 }
 
-// メッセージの語の並べ替え（10 段 — 11・12 段目は 1・2 段目の繰り返し）
+// メッセージのワードの並べ替え（10段 — 11・12段目は1・2段目の繰り返し）
 func b2sigma() []int {
     return []int{
         0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,

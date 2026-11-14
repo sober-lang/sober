@@ -1,4 +1,4 @@
-// examples/hash_sha256.sober の Go の双子（std/hash の差分オラクル — docs/oracles.md）。
+// examples/hash_sha256.soberの比較用のGoの実装（std/hashの差分オラクル — docs/oracles.md）。
 // crypto/sha256 で同じ入力の値を出す。加えて NIST の公式テストベクタ（FIPS 180-2 付録 B.1〜B.3 = "abc"・448 bit・100 万個の 'a' と
 // CAVP SHA256ShortMsg の Len = 0）の期待値をここに固定し、crypto/sha256 の値と照合する（食い違いは標準エラーに出して exit 1）。再生成:
 //   go run scripts/oracles/hash_sha256.go > examples/hash_sha256.out

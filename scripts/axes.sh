@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# 宣言なき軸の線（report-1282 / 1283 — 今日の 4 件〔raw 展開の肥大・黄金 361 MB の混入未遂 …〕は線を宣言していない軸の無自覚な劣化だった）:
-# 決定的な軸を bench/ratchet.txt の上限と照合する（生成はしない — 黄金を stat して awk で舐めるだけ・2 秒前後）。
-#   golden/<種類> maxfile <MB>   testdata/<種類> の 1 ファイルの最大（黄金の外れ値 — cli の raw の irtext 30 MB / lltext 80 MB はこれで鳴る）
+# 宣言なき軸の上限値（report-1282 / 1283 — 今日の4件〔raw展開の肥大・ゴールデン361 MBの混入未遂 …〕は上限値を宣言していない軸の無自覚な劣化だった）:
+# 決定的な軸をbench/ratchet.txtの上限と照合する（生成はしない — ゴールデンをstatしてawkで舐めるだけ・2秒前後）。
+#   golden/<種類> maxfile <MB>   testdata/<種類> の1ファイルの最大（ゴールデンの外れ値 — cliのrawのirtext 30 MB / lltext 80 MBはこれで鳴る）
 #   golden/<種類> total <MB> ref 合計（記録だけ — 例題を足せば正当に伸びる）
-#   ir/maxfn lines <行>          raw IR（testdata/irtext の黄金）の 1 関数の最大行数（展開の掛け算 — @std/cli.Spec の 110 万行はこれで鳴る）
-# 越えたら実測 × 1.005 で引き直し・報告とコミットメッセージに明記して事後追認（標準運用）。
+#   ir/maxfn lines <行>          raw IR（testdata/irtextのゴールデン）の1関数の最大行数（展開の掛け算 — @std/cli.Specの110万行はこれで鳴る）
+# 越えたら実測 × 1.005で再設定・報告とコミットメッセージに明記して事後承認（標準運用）。
 #   scripts/axes.sh [--warn]   --warn = 越えても終了 0（regen.sh の末尾の照合 — 行は WARN で出す）
 set -uo pipefail
 cd "$(dirname "$0")/.."

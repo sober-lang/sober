@@ -1,6 +1,6 @@
 package env
 
-// 受理 / 拒否の表駆動の網（white-box — Parse に environ の形の列を渡す）: 既定値・opt・空の値・同名の最初・整数の範囲・真偽の綴り・
+// 受理 / 拒否の表駆動の検査（white-box — Parseにenvironの形の列を渡す）: 既定値・opt・空の値・同名の最初・整数の範囲・真偽の綴り・
 // 誤りのラベルと宣言の順・Spec の形
 
 const tHome = StrVar{name: "T_HOME", help: "the home", def: "/home"}
@@ -17,7 +17,7 @@ type ecase struct {
     want string
 }
 
-// Parse の結果の 1 行（受理 = `ok`・誤り = ラベルと欄）
+// Parseの結果の1行（受理 = `ok`・誤り = ラベルとフィールド）
 func verdict(pairs []string) string {
     v, e := Parse(tTable, pairs)
     return switch e {

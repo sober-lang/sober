@@ -1,4 +1,4 @@
-// check.ts <port> [--frag-random N] [--echo-big] — HttpArena の validate.sh / validate-frag.py を模した網（net 4c — gate httpcheck）。
+// check.ts <port> [--frag-random N] [--echo-big] — HttpArenaのvalidate.sh / validate-frag.pyを模した検査（net 4c — gate httpcheck）。
 // 相手 = testdata/httpcheck/srv.sober（/baseline11・/pipeline・/delay/{ms}・/json/{count}?m=・POST /echo・POST /upload・/sse）。node --experimental-strip-types check.ts 18080
 // --echo-big: echo の大きい本文の格子だけ（100 KB・上限ちょうどの 128 KiB を Content-Length と chunked で + 上限を超えた 128 KiB + 1 B と 1 MB は 413 —
 // 相手は SRV_MAXBODY = 131072 の srv〔bench/httparena の entry と同じ上限〕。report-848 / 849）
@@ -27,15 +27,15 @@ function ok(name: string, cond: boolean, detail = "") {
     if (cond) pass++;
     else {
         fail++;
-        // 落ちた時刻（CLOCK_MONOTONIC — サーバの飛行記録の窓を引く。詳細に既に t= があれば足さない）
+        // 落ちた時刻（CLOCK_MONOTONIC — サーバの飛行記録のウィンドウを引く。詳細に既にt= があれば足さない）
         fails.push(`${name}${detail ? " — " + detail : ""}${detail.includes("t=") ? "" : ` t=${process.hrtime.bigint()}`}`);
     }
 }
 
 type Resp = { status: number; headers: Map<string, string>; body: string; chunks?: number[] };
 
-// parseAll は受けたバイト列の応答を順に読む（Content-Length・chunked〔chunks = chunk の長さの列 — 終端の 0 は含まない・trailer は無い前提〕・
-// 閉じで区切る〔Content-Length も Transfer-Encoding も無い本文つきの応答 — 相手が閉じた後だけ: closed〕— 便 8 の段 8-2）
+// parseAllは受けたバイト列のレスポンスを順に読む（Content-Length・chunked〔chunks = chunkの長さの列 — 終端の0は含まない・trailerは無い前提〕・
+// 閉じで区切る〔Content-LengthもTransfer-Encodingも無い本文つきのレスポンス — 相手が閉じた後だけ: closed〕— タスク8の段階8-2）
 let headOnly = false;
 function parseAll(buf: Buffer, closed = false): { resps: Resp[]; rest: number } {
     const resps: Resp[] = [];
@@ -93,7 +93,7 @@ function parseAll(buf: Buffer, closed = false): { resps: Resp[]; rest: number } 
     return { resps, rest: p };
 }
 
-// exchange は parts を間隔 gap ms で書き、want 件の応答が揃うか相手が閉じるまで読む → 応答と閉じられたか
+// exchangeはpartsを間隔 gap ms で書き、want件のレスポンスが揃うか相手が閉じるまで読む → レスポンスと閉じられたか
 // lport = 手元の port（サーバの飛行記録の ACCEPT の相手の port と 1:1 — 落ちの詳細に出す）
 function exchange(parts: (string | Buffer)[], want: number, gap = 20, timeout = 5000): Promise<{ resps: Resp[]; closed: boolean; raw: Buffer; lport: number }> {
     return new Promise((resolve) => {
@@ -114,7 +114,7 @@ function exchange(parts: (string | Buffer)[], want: number, gap = 20, timeout = 
             buf = Buffer.concat([buf, d]);
             if (want > 0 && parseAll(buf).resps.length >= want && want < 1000) {
                 // 揃った — こちらの書きを閉じて（FIN）相手の閉じを少しだけ待つ（keep の検査は呼び手が closed を見る。
-                // 誤りの応答の後のサーバは残りを読み捨ててから閉じる — lingering close）
+                // 誤りのレスポンスの後のサーバは残りを読み捨ててから閉じる — lingering close）
                 s.end();
                 setTimeout(() => finish(false), 300);
             }
@@ -134,7 +134,7 @@ function exchange(parts: (string | Buffer)[], want: number, gap = 20, timeout = 
 
 const rnd = (a: number, b: number) => a + Math.floor(Math.random() * (b - a + 1));
 
-// mono は今の CLOCK_MONOTONIC（ns — Linux の process.hrtime。サーバの飛行記録〔SOBER_FLIGHT — report-1175〕の時刻と同じ時計で、落ちた瞬間の窓を引く）
+// monoは今のCLOCK_MONOTONIC（ns — Linuxのprocess.hrtime。サーバの飛行記録〔SOBER_FLIGHT — report-1175〕の時刻と同じ時計で、落ちた瞬間のウィンドウを引く）
 const mono = () => `t=${process.hrtime.bigint()}`;
 
 // errWhy は失敗した fetch の理由（undici は接続の誤りを err.cause に持つ — 名前・code・message）+ 時刻と、undici の SocketError なら手元の port
@@ -173,7 +173,7 @@ async function baseline() {
     await one("lower-cased headers", `POST /baseline11?a=13&b=42 HTTP/1.1\r\nhost: localhost\r\ncontent-type: text/plain\r\ncontent-length: 2\r\nconnection: close\r\n\r\n20`, 200, "75");
     await one("pipeline", `GET /pipeline HTTP/1.1\r\n${H}Connection: close\r\n\r\n`, 200, "ok", { ctype: "text/plain" });
     await one("404", `GET /nope HTTP/1.1\r\n${H}Connection: close\r\n\r\n`, 404, "");
-    // 保存の方針の既定（effect の波 段 4a — cache の無い動的な応答は Cache-Control: private・404 も。Static は cache: 省略で no-cache — staticEp）
+    // 保存の方針の既定（effectのマイルストーンの段階4a — cacheの無い動的なレスポンスはCache-Control: private・404も。Staticはcache: 省略でno-cache — staticEp）
     const cp = await exchange([`GET /pipeline HTTP/1.1\r\n${H}\r\nGET /nope HTTP/1.1\r\n${H}Connection: close\r\n\r\n`], 2);
     ok("default cache-control private", cp.resps.length === 2 && cp.resps.every((x) => x.headers.get("cache-control") === "private"),
         JSON.stringify(cp.resps.map((x) => x.headers.get("cache-control"))));
@@ -265,7 +265,7 @@ async function pipeline() {
         `GET /pipeline HTTP/1.1\r\n${H}\r\n`;
     const m = await exchange([mix], 1000);
     ok("pipelined mix + close", m.resps.map((x) => x.body).join(",") === "3,7,8,ok" && m.closed, `${m.resps.map((x) => x.body).join(",")} closed=${m.closed}`);
-    // limited-conn: 10 要求ずつ張り直し × 50
+    // limited-conn: 10リクエストずつ張り直し × 50
     let good = 0;
     for (let c = 0; c < 50; c++) {
         const s = dial();
@@ -298,7 +298,7 @@ async function pipeline() {
     ok("HTTP/1.0 keep-alive", k.resps.length === 2 && k.resps[0].headers.get("connection") === "keep-alive" && k.closed, `n=${k.resps.length} closed=${k.closed}`);
 }
 
-// ── 誤り（400 / 413 / 431 / 501 / 505 — 応答の後は閉じる）
+// ── 誤り（400 / 413 / 431 / 501 / 505 — レスポンスの後は閉じる）
 async function errors() {
     const e = async (name: string, req: string | Buffer, st: number) => one(name, req, st, "", { closed: true });
     await e("garbage request line", "HELLO\r\n\r\n", 400);
@@ -328,6 +328,51 @@ async function errors() {
     ok("chunked 16 x 1 KiB ok", r.resps[0]?.body === "ok", `got ${r.resps[0]?.status}`);
 }
 
+// ── Delayed（/stamp — 256接続のkeep-alive〔ワーカー1本でも送り場のチャンクの数を越えて待つ〕。本文 = ハンドラのos.Monotonic〔ns〕。受けた時刻はprocess.hrtime = 同じCLOCK_MONOTONIC）: どのレスポンスもmsを待たずに出ない・
+// レスポンスの前に次のリクエストを切片を分けて送る客では、後のリクエストのハンドラは前のDelayedの満了の後に走る
+async function delayed() {
+    const ds = [5, 10, 20];
+    const conns = 256, per = 20;
+    let n = 0;
+    const early: string[] = [];
+    await Promise.all(Array.from({ length: conns }, (_, c) => new Promise<void>((done) => {
+        const s = dial();
+        s.setNoDelay(true);
+        let buf = Buffer.alloc(0);
+        let k = 0;
+        const ms = ds[c % ds.length];
+        const send = () => s.write(`GET /stamp/${ms} HTTP/1.1\r\n${H}\r\n`);
+        const t = setTimeout(() => { s.destroy(); done(); }, 20000);
+        s.on("data", (d) => {
+            const now = process.hrtime.bigint();
+            buf = Buffer.concat([buf, d]);
+            const r = parseAll(buf);
+            if (r.resps.length === 0) return;
+            buf = buf.subarray(r.rest);
+            for (const x of r.resps) {
+                n++;
+                const dt = Number(now - BigInt(x.body)) / 1e6;
+                if (!(dt >= ms)) early.push(`${ms} ms: ${dt.toFixed(3)} ms`);
+                k++;
+            }
+            if (k < per) send();
+            else { clearTimeout(t); s.destroy(); done(); }
+        });
+        s.on("error", () => { clearTimeout(t); done(); });
+        s.on(CONNECT, send);
+    })));
+    ok("delayed keep-alive all", n === conns * per, `${n} / ${conns * per}`);
+    ok("delayed keep-alive never early", early.length === 0, early.slice(0, 5).join(", "));
+    // 切片を分けた後のリクエスト: ハンドラは満了の後（接続のtaskは満了まで次の受けを返さない）。1切片の2件: 後のリクエストのハンドラは待ちの前に走る
+    // （待つのはリクエストのループを出てから — 順番を保つのはレスポンスだけ）ので、レスポンスが2件・順に揃うことだけを見る
+    const parts = [`GET /stamp/50 HTTP/1.1\r\n${H}\r\n`, `GET /stamp/0 HTTP/1.1\r\n${H}\r\n`];
+    const r1 = await exchange(parts, 2, 10);
+    const a = BigInt(r1.resps[0]?.body ?? "0"), b = BigInt(r1.resps[1]?.body ?? "0");
+    ok("delayed next handler after expiry", r1.resps.length === 2 && Number(b - a) / 1e6 >= 50, `${r1.resps.length} resps ${(Number(b - a) / 1e6).toFixed(3)} ms`);
+    const r0 = await exchange([parts.join("")], 2);
+    ok("delayed pipelined in one chunk", r0.resps.length === 2 && r0.resps.every((x) => x.status === 200), `${r0.resps.length} resps`);
+}
+
 // ── async（/delay — 待ちの下限と 32 本の並び）
 async function delay() {
     const t0 = performance.now();
@@ -348,7 +393,7 @@ async function delay() {
     void t0;
 }
 
-// ── json（/json/{count}?m= — 本家 validate.sh の json の検査の形: 乱数の count × m を 4 組・全欄を dataset と照合〔作った item の自己整合では通らない〕・
+// ── json（/json/{count}?m= — 本家validate.shのjsonの検査の形: 乱数のcount × mを4組・全フィールドをdatasetと照合〔作ったitemの自己整合では通らない〕・
 // Content-Type。加えて go-stdlib と同じ寛容さの端: count 0 / 本数超え・m が数でない / 0 → 1）
 async function jsonEp() {
     const src = JSON.parse(readFileSync(new URL("./dataset.json", import.meta.url), "utf8"));
@@ -383,7 +428,7 @@ async function jsonEp() {
     }
 }
 
-// ── json-comp（/json/{count}?m= の gzip — 本家 validate.sh の json-comp の 3 検査〔Accept-Encoding: gzip, br で Content-Encoding が付き、解くと全欄が
+// ── json-comp（/json/{count}?m= のgzip — 本家validate.shのjson-compの3検査〔Accept-Encoding: gzip, brでContent-Encodingが付き、解くと全フィールドが
 // dataset と一致・Accept-Encoding なしで Content-Encoding を付けない〕+ Accept-Encoding の解釈〔token・q=0・x-gzip・*・複数の行〕・閾値 1024・Vary・
 // HEAD の Content-Length・パイプライン — report-714）
 function itemsOk(src: any[], body: string, want: number, m: number): string {
@@ -486,7 +531,7 @@ async function jsonComp() {
 }
 
 // ── stream（Response の stream — report-763: Content-Length = length・本文は stream が emit したバイト列・HEAD は呼ばない・
-// stream の後ろのパイプラインの要求も処理する）
+// streamの後ろのパイプラインのリクエストも処理する）
 function genBody(n: number): string {
     let s = "";
     for (let i = 0; i < n; i++) s += String.fromCharCode(97 + (i % 26));
@@ -499,8 +544,8 @@ async function streamEp() {
         ok(`stream ${n}`, x?.status === 200 && x.headers.get("content-length") === String(n) && x.body === genBody(n) && r.closed,
             `got ${x?.status} cl=${x?.headers.get("content-length")} len=${x?.body.length} closed=${r.closed}`);
     }
-    // 圧縮しうる stream（text/plain・length ≥ 1024）: gzip を受けない要求には Content-Length のまま Vary だけ・gzMin 未満は Vary も無い
-    // （受ける要求の圧縮は gzipStream — compress + stream の段 8-5）
+    // 圧縮しうるstream（text/plain・length ≥ 1024）: gzipを受けないリクエストにはContent-LengthのままVaryだけ・gzMin未満はVaryも無い
+    // （受けるリクエストの圧縮はgzipStream — compress + streamの段階8-5）
     const g = await exchange([`GET /stream/3000 HTTP/1.1\r\n${H}Connection: close\r\n\r\n`], 1);
     ok("stream plain has Vary", g.resps[0]?.status === 200 && !g.resps[0].headers.has("content-encoding") && g.resps[0].headers.get("vary") === "Accept-Encoding" &&
         g.resps[0].headers.get("content-length") === "3000" && g.resps[0].body === genBody(3000), `ce=${g.resps[0]?.headers.get("content-encoding")} vary=${g.resps[0]?.headers.get("vary")}`);
@@ -513,7 +558,7 @@ async function streamEp() {
     headOnly = false;
     ok("stream HEAD", h.resps[0]?.status === 200 && h.resps[0].headers.get("content-length") === "777" && h.raw.length === h.raw.indexOf("\r\n\r\n") + 4,
         `raw=${h.raw.length}`);
-    // パイプライン: stream の前後の要求（同じ切片）
+    // パイプライン: streamの前後のリクエスト（同じ切片）
     const p = await exchange([`GET /baseline11?a=1&b=2 HTTP/1.1\r\n${H}\r\nGET /stream/2500 HTTP/1.1\r\n${H}\r\nGET /stream/7 HTTP/1.1\r\n${H}\r\nGET /baseline11?a=3&b=4 HTTP/1.1\r\n${H}Connection: close\r\n\r\n`], 4);
     ok("stream pipeline", p.resps.length === 4 && p.resps[0].body === "3" && p.resps[1].body === genBody(2500) && p.resps[2].body === genBody(7) && p.resps[3].body === "7",
         `n=${p.resps.length}`);
@@ -527,7 +572,7 @@ async function streamEp() {
         `cl=${f.resps[0]?.headers.get("content-length")} want=${src.length}`);
 }
 
-// ── chunked（長さ不定の stream — 便 8 の段 8-2・language.md 28 節 w2 の「応答の枠」: Transfer-Encoding: chunked・emit 1 回 = chunk 1 つ・空の emit は送らない・
+// ── chunked（長さ不定のstream — タスク8の段階8-2・language.md 28 節w2の「レスポンスの枠」: Transfer-Encoding: chunked・emit 1回 = chunk 1つ・空のemitは送らない・
 // 終端 0 CRLF CRLF・HEAD は頭だけ・HTTP/1.0 は閉じで区切る・途中の誤りは終端なしで閉じる。受け手 = 手組みの読み・undici〔fetch〕・node:http・curl）
 function splits(n: number, k: number): number[] {
     const out: number[] = [];
@@ -557,7 +602,7 @@ async function chunkedEp() {
     const h = await exchange([`HEAD /chunked/777 HTTP/1.1\r\n${H}Connection: close\r\n\r\n`], 1);
     headOnly = false;
     ok("chunked HEAD", h.resps[0]?.status === 200 && isChunked(h.resps[0]) && h.raw.length === h.raw.indexOf("\r\n\r\n") + 4, `raw=${h.raw.length}`);
-    // パイプライン: chunked の前後の要求（同じ切片）・長さ 0 の chunked・長さ既知の stream と混ぜる
+    // パイプライン: chunkedの前後のリクエスト（同じ切片）・長さ0のchunked・長さ既知のstreamと混ぜる
     const p = await exchange([`GET /baseline11?a=1&b=2 HTTP/1.1\r\n${H}\r\nGET /chunked/2500 HTTP/1.1\r\n${H}\r\nGET /stream/7 HTTP/1.1\r\n${H}\r\nGET /chunked/0 HTTP/1.1\r\n${H}\r\nGET /baseline11?a=3&b=4 HTTP/1.1\r\n${H}Connection: close\r\n\r\n`], 5);
     ok("chunked pipeline", p.resps.length === 5 && p.resps[0].body === "3" && p.resps[1].body === genBody(2500) && isChunked(p.resps[1]) && p.resps[2].body === genBody(7) &&
         p.resps[3].body === "" && isChunked(p.resps[3]) && p.resps[4].body === "7", `n=${p.resps.length}`);
@@ -571,7 +616,7 @@ async function chunkedEp() {
         ok(`chunked HTTP/1.0 close-delimited${ka ? " (keep-alive asked)" : ""}`, x?.status === 200 && !x.headers.has("content-length") && !x.headers.has("transfer-encoding") &&
             x.headers.get("connection") === "close" && x.body === genBody(3000) && r.closed, `got ${x?.status} te=${x?.headers.get("transfer-encoding")} len=${x?.body.length} closed=${r.closed}`);
     }
-    // 途中の誤り: 終端を書かずに閉じる（送れた chunk は届く・応答は完結しない）
+    // 途中の誤り: 終端を書かずに閉じる（送れたchunkは届く・レスポンスは完結しない）
     const f = await exchange([`GET /chunked/5000?fail=2500 HTTP/1.1\r\n${H}\r\n`], 1);
     const fr = f.raw.toString("latin1");
     ok("chunked failure has no terminator", f.resps.length === 0 && f.closed && fr.includes("Transfer-Encoding: chunked") && fr.endsWith(genBody(3000).slice(2000) + "\r\n") && !fr.includes("\r\n0\r\n\r\n"),
@@ -637,7 +682,7 @@ async function chunkedEp() {
     ok("chunked curl sees the cut", cf.status !== 0, `rc=${cf.status}`);
 }
 
-// ── compress + stream（段 8-5 — language.md 28 節: compression: があり・Content-Type が圧縮向き・要求が gzip を受け・coded が無い stream の応答〔長さ既知なら
+// ── compress + stream（段階8-5 — language.md 28 節: compression: があり・Content-Typeが圧縮向き・リクエストがgzipを受け・codedが無いstreamのレスポンス〔長さ既知なら
 // length ≥ 1024〕を gzip の chunked で送る。emit 1 回 = deflate の sync flush 1 回 = chunk 1 つ — 各 chunk までの接頭辞で、そこまでの平文が復号できる〔node:zlib の
 // Z_SYNC_FLUSH の読み〕・最後の chunk は最後のブロックと CRC-32 と長さ・HTTP/1.0 は閉じの区切り・長さ既知の stream の合計の検査〔不足 / 超過は終端なしで閉じる〕）
 function gzOk(x: Resp | undefined): boolean {
@@ -689,13 +734,13 @@ async function gzipStream() {
     const k1 = (await exchange([`GET /chunked/40?k=1 HTTP/1.1\r\n${H}${AE}Connection: close\r\n\r\n`], 1)).resps[0];
     ok("gzip stream k=1", gzOk(k1) && k1!.chunks?.length === 41 && JSON.stringify(k1 ? prefixes(k1) : null) === JSON.stringify([...cum(splits(40, 1)), 40]) && unzip(k1!.body) === genBody(40),
         `chunks=${k1?.chunks?.length}`);
-    // 窓は emit をまたいで持ち越す: 本文は 26 バイトの周期 — 2 つ目以降の emit は頭から窓の中への一致だけで書ける（持ち越さなければ頭の 26 バイトは字のまま
+    // ウィンドウはemitをまたいで持ち越す: 本文は26バイトの周期 — 2つ目以降のemitは頭からウィンドウの中への一致だけで書ける（持ち越さなければ頭の26バイトは字のまま
     // ≈ 40 バイト/chunk）
     const w = (await exchange([`GET /chunked/26000?k=1000 HTTP/1.1\r\n${H}${AE}Connection: close\r\n\r\n`], 1)).resps[0];
     const wc = w?.chunks ?? [];
     ok("gzip stream window carries over emits", gzOk(w) && wc.length === 27 && wc.slice(1, 26).every((c) => c < 30) && unzip(w!.body) === genBody(26000),
         `chunks=${JSON.stringify(wc.slice(0, 6))}`);
-    // 受けない要求・圧縮向きでない Content-Type・gzMin 未満の長さ既知・SSE は圧縮しない
+    // 受けないリクエスト・圧縮向きでないContent-Type・gzMin未満の長さ既知・SSEは圧縮しない
     const nz = (await exchange([`GET /chunked/3000 HTTP/1.1\r\n${H}Accept-Encoding: br\r\nConnection: close\r\n\r\n`], 1)).resps[0];
     ok("gzip stream not accepted: plain chunked + Vary", nz?.headers.get("transfer-encoding") === "chunked" && !nz.headers.has("content-encoding") &&
         nz.headers.get("vary") === "Accept-Encoding" && nz.body === genBody(3000), `ce=${nz?.headers.get("content-encoding")}`);
@@ -718,7 +763,7 @@ async function gzipStream() {
             !x.headers.has("transfer-encoding") && x.headers.get("connection") === "close" && unzip(x.body) === genBody(3000) && r.closed,
             `te=${x?.headers.get("transfer-encoding")} closed=${r.closed}`);
     }
-    // パイプライン・keep-alive: 圧縮した stream の前後の要求
+    // パイプライン・keep-alive: 圧縮したstreamの前後のリクエスト
     const pp = await exchange([`GET /baseline11?a=1&b=2 HTTP/1.1\r\n${H}\r\nGET /chunked/2500 HTTP/1.1\r\n${H}${AE}\r\nGET /stream/2000 HTTP/1.1\r\n${H}${AE}\r\nGET /baseline11?a=3&b=4 HTTP/1.1\r\n${H}Connection: close\r\n\r\n`], 4);
     ok("gzip stream pipeline", pp.resps.length === 4 && pp.resps[0].body === "3" && gzOk(pp.resps[1]) && unzip(pp.resps[1].body) === genBody(2500) &&
         gzOk(pp.resps[2]) && unzip(pp.resps[2].body) === genBody(2000) && pp.resps[3].body === "7", `n=${pp.resps.length}`);
@@ -791,7 +836,7 @@ async function gzipStream() {
     }
 }
 
-// ── SSE（GET /sse?n= — text/event-stream の stream・Last-Event-ID の次から・1 つ目の後に 300 ms・retry: 100 の終わりのイベント / GET /sse-body — 便 8 の段 8-3）
+// ── SSE（GET /sse?n= — text/event-streamのstream・Last-Event-IDの次から・1つ目の後に300 ms・retry: 100の終わりのイベント / GET /sse-body — タスク8の段階8-3）
 function sseEv(i: number): string {
     return `event: tick\nid: ${i}\ndata: n=${i}\ndata: sq=${i * i}\n\n`;
 }
@@ -827,7 +872,7 @@ async function sseEp() {
         s.on("connect", () => s.write(`GET /sse HTTP/1.1\r\n${H}Connection: close\r\n\r\n`));
     });
     ok("sse first event arrives before the stream returns", tFirst >= 0 && tEnd >= 0 && tEnd - tFirst >= 200, `first=${tFirst.toFixed(0)} end=${tEnd.toFixed(0)}`);
-    // text/event-stream の body の応答も compression: の対象外（gzMin 以上・gzip を受ける要求でも）
+    // text/event-streamのbodyのレスポンスもcompression: の対象外（gzMin以上・gzipを受けるリクエストでも）
     const b = (await exchange([`GET /sse-body HTTP/1.1\r\n${H}Accept-Encoding: gzip\r\nConnection: close\r\n\r\n`], 1)).resps[0];
     ok("sse body response not compressed", b?.status === 200 && !b.headers.has("content-encoding") && !b.headers.has("vary") && (b.body.length ?? 0) >= 2000 && b.body.startsWith(": pad\n\n"),
         `ce=${b?.headers.get("content-encoding")} vary=${b?.headers.get("vary")} len=${b?.body.length}`);
@@ -855,7 +900,7 @@ async function sseEp() {
 }
 
 // ── echo（POST /echo — HttpArena の 8gbit の端点〔validate.sh の 8gbit の節〕。乱数の本文を byte 一致で: Content-Length と chunked〔乱数の切り方・
-// 16 進の大小・chunk-ext・trailer〕・乱数の位置で断片化した送り・パイプライン。本文は応答の Content-Type = application/octet-stream で返る。report-848）
+// 16進の大小・chunk-ext・trailer〕・乱数の位置で断片化した送り・パイプライン。本文はレスポンスのContent-Type = application/octet-streamで返る。report-848）
 // chunkedOf は body を乱数の大きさの chunk に切った chunked の本文（終わりの 0 の chunk・時々 chunk-ext と trailer）
 function chunkedOf(body: Buffer, maxChunk: number): Buffer {
     const parts: Buffer[] = [];
@@ -872,7 +917,7 @@ function chunkedOf(body: Buffer, maxChunk: number): Buffer {
     return Buffer.concat(parts);
 }
 
-// echoReq は body を送る POST /echo の要求（chunked なら chunkedOf・そうでなければ Content-Length）
+// echoReqはbodyを送るPOST /echoのリクエスト（chunkedならchunkedOf・そうでなければContent-Length）
 function echoReq(body: Buffer, chunked: boolean, maxChunk: number, close = true): Buffer {
     const conn = close ? "Connection: close\r\n" : "";
     const head = chunked
@@ -917,7 +962,7 @@ async function echoEp(sizes: number[], timeout: number) {
     echoOk("echo chunked empty", (await exchange([echoReq(Buffer.alloc(0), true, 1)], 1)).resps[0], Buffer.alloc(0));
 }
 
-// echoPipe は同じ切片に CL と chunked の echo を並べた列（応答の順と本文の境界）
+// echoPipeは同じ切片にCLとchunkedのechoを並べた列（レスポンスの順と本文の境界）
 async function echoPipe() {
     const bs = [randomBytes(700), randomBytes(3000), randomBytes(1), randomBytes(5000)];
     const reqs = bs.map((b, i) => echoReq(b, i % 2 === 1, 512, i === bs.length - 1));
@@ -939,7 +984,7 @@ function upReq(ct: string, body: Buffer, chunked = false): Buffer {
     const head = Buffer.from(`POST /upload HTTP/1.1\r\n${H}Content-Type: ${ct}\r\n${te}Connection: close\r\n\r\n`, "latin1");
     return Buffer.concat([head, chunked ? chunkedOf(body, 97) : body]);
 }
-// mpBody は境界 bd の本文（parts の各頭は手で書いた行 — ブラウザの形を写す）
+// mpBodyは境界bdの本文（partsの各頭は手で書いた行 — ブラウザの形をコピーする）
 function mpBody(bd: string, parts: { head: string; body: Buffer }[]): Buffer {
     const xs: Buffer[] = [];
     for (const p of parts) xs.push(Buffer.from(`--${bd}\r\n${p.head}\r\n`, "utf8"), p.body, Buffer.from("\r\n"));
@@ -966,7 +1011,7 @@ async function uploadEp() {
         // undici は名前の空のファイルに filename を書かない（ブラウザは filename="" — 下の Chrome の形で見る）
         { name: "empty", filename: null, ctype: "application/octet-stream", body: Buffer.alloc(0) },
     ].map(upLine).join("");
-    // 応答の本文は latin1 で読まれる（parseAll）— 期待も UTF-8 のバイト列を latin1 で
+    // レスポンスの本文はlatin1で読まれる（parseAll）— 期待もUTF-8のバイト列をlatin1で
     const wantL = Buffer.from(want, "utf8").toString("latin1");
     await one("upload formdata", upReq(uct, ub), 200, wantL);
     await one("upload formdata chunked", upReq(uct, ub, true), 200, wantL);
@@ -995,8 +1040,8 @@ async function uploadEp() {
     await one("upload GET 405", `GET /upload HTTP/1.1\r\n${H}Connection: close\r\n\r\n`, 405, null);
 }
 
-// 分割受信の接続の常駐（--rss-pid <srv の pid> — echo-big の構成で）: 要求の頭を 2 回に割って送った接続を n 本開いたまま、srv の VmRSS の増えを
-// 割らない接続 n 本の増えと比べる。持ち越しの列は未完の要求の長さだけ取る約束（maxHead + 2 × maxBody の一括確保なら 1 本 ≈ 270 KB 増える）
+// 分割受信の接続の常駐（--rss-pid <srvのpid> — echo-bigの構成で）: リクエストの頭を2回に割って送った接続をn本開いたまま、srvのVmRSSの増えを
+// 割らない接続n本の増えと比べる。持ち越しの列は未完のリクエストの長さだけ取る約束（maxHead + 2 × maxBodyの一括確保なら1本 ≈ 270 KB増える）
 const rssPid = process.argv.includes("--rss-pid") ? Number(process.argv[process.argv.indexOf("--rss-pid") + 1]) : 0;
 async function splitRss(pid: number, n: number) {
     const rss = () => Number(/VmRSS:\s+(\d+)/.exec(readFileSync(`/proc/${pid}/status`, "utf8"))![1]);
@@ -1042,7 +1087,7 @@ if (echoBig) {
     // 8gbit の validate の大きさ（1 / 1 KB / 10 KB / 100 KB・chunked 10 KB / 100 KB）+ 上限ちょうど（128 KiB）
     await echoEp([1, 1024, 10240, 102400, 131072], 30000);
     if (rssPid) await splitRss(rssPid, 200);
-    // 上限を超えたら 413（頭だけ送る — 本文を送り切ると lingering close の上限〔64 KiB〕の後の RST で応答が落ちうる。既存の「CL > 16 KiB」と同じ形）
+    // 上限を超えたら413（頭だけ送る — 本文を送り切ると lingering close の上限〔64 KiB〕の後のRSTでレスポンスが落ちうる。既存の「CL > 16 KiB」と同じ形）
     for (const n of [131073, 1048576]) {
         await one(`echo CL ${n} 413`, `POST /echo HTTP/1.1\r\n${H}Content-Length: ${n}\r\n\r\n`, 413, null);
         await one(`echo chunked ${n} 413`, `POST /echo HTTP/1.1\r\n${H}Transfer-Encoding: chunked\r\n\r\n${n.toString(16)}\r\n`, 413, null);
@@ -1052,7 +1097,7 @@ if (echoBig) {
     process.exit(fail ? 1 : 0);
 }
 // ── static（http.Static — report-956: GET /static/*path を STATIC_ROOT〔= --static の dir — ここで中身を作る〕の下から・precompressed・根の外は 404・
-// 毎要求ディスクを読む〔キャッシュなし〕・compression: の外）
+// 毎リクエストディスクを読む〔キャッシュなし〕・compression: の外）
 async function staticEp() {
     if (!staticDir) return;
     const big = randomBytes(200000);
@@ -1179,20 +1224,20 @@ async function staticEp() {
     ok("static rollback ims is 200", r1?.headers.get("last-modified") === imf(T + 100) && r2?.status === 200 && r2.body === "old version", show(r2));
     const r3 = await get("/static/roll.txt", `If-None-Match: ${r1?.headers.get("etag")}\r\n`);
     ok("static rollback inm is 200", r3?.status === 200 && r3.headers.get("etag") !== r1?.headers.get("etag"), show(r3));
-    // 304 の後のパイプライン（本文の無い応答の framing — 次の応答が崩れない）
+    // 304の後のパイプライン（本文の無いレスポンスのframing — 次のレスポンスが崩れない）
     const cp = await exchange([`GET /static/index.html HTTP/1.1\r\n${H}If-None-Match: ${ix}\r\n\r\nGET /static/big.bin HTTP/1.1\r\n${H}\r\n` +
         `GET /static/app.js HTTP/1.1\r\n${H}Accept-Encoding: br\r\nIf-None-Match: ${vt.br}\r\n\r\nGET /static/index.html HTTP/1.1\r\n${H}Connection: close\r\n\r\n`], 4);
     ok("static 304 pipeline", cp.resps.length === 4 && is304(cp.resps[0], ix) && cp.resps[1].body === big.toString("latin1") && is304(cp.resps[2], vt.br) &&
         cp.resps[3].body === "<p>hi</p>", `n=${cp.resps.length} ${cp.resps.map((x) => x.status).join(",")}`);
-    // パイプライン: static の stream の前後の要求
+    // パイプライン: staticのstreamの前後のリクエスト
     const pp = await exchange([`GET /baseline11?a=1&b=2 HTTP/1.1\r\n${H}\r\nGET /static/big.bin HTTP/1.1\r\n${H}\r\nGET /static/nope HTTP/1.1\r\n${H}\r\nGET /static/index.html HTTP/1.1\r\n${H}Connection: close\r\n\r\n`], 4);
     ok("static pipeline", pp.resps.length === 4 && pp.resps[0].body === "3" && pp.resps[1].body === big.toString("latin1") && pp.resps[2].status === 404 && pp.resps[3].body === "<p>hi</p>",
         `n=${pp.resps.length}`);
 }
 
-// ── 出所の動的オラクル（effect の波 段 4c — language.md 12 節「出所の依存」）: 共有キャッシュも保存してよいと宣言した応答（Cache-Control に public か
-// private / no-store の無い max-age）は、要求の認証の頭（Cookie・Authorization）を変えても同じでなければならない（非干渉の観測 — analyzer が受理した
-// srv で、観測した依存 ⊆ 導出〔共有のルートは源に届かない〕）。網が鳴る証明 = /me（Cookie を読む・共有の宣言なし）は頭で応答が変わり、private
+// ── 出所の動的オラクル（effectのマイルストーンの段階4c — language.md 12 節「出所の依存」）: 共有キャッシュも保存してよいと宣言したレスポンス（Cache-Controlにpublicか
+// private / no-storeの無いmax-age）は、リクエストの認証の頭（Cookie・Authorization）を変えても同じでなければならない（非干渉の観測 — analyzerが受理した
+// srvで、観測した依存 ⊆ 導出〔共有のルートは源に届かない〕）。検査が鳴る証明 = /me（Cookieを読む・共有の宣言なし）は頭でレスポンスが変わり、private
 async function originEp() {
     const creds = ["", "Cookie: sid=alice; theme=dark\r\n", "Authorization: Bearer t0k\r\nCookie: sid=bob\r\n"];
     const shared = (x: Resp | undefined) => {
@@ -1221,11 +1266,19 @@ async function originEp() {
     }
 }
 
+// --delayed-only: Delayedの検査だけ（httpcheck.shのミューテーションの自己検査 — 時刻つきの送信バッファリングのrtのミュータント84 / 87 / 88でビルドしたsrvに掛ける）
+if (process.argv.includes("--delayed-only")) {
+    await delayed();
+    console.log(`check: ${pass} passed, ${fail} failed (delayed only)`);
+    for (const f of fails.slice(0, 30)) console.log("  FAIL " + f);
+    process.exit(fail ? 1 : 0);
+}
 await baseline();
 const nfrag = await frag();
 await pipeline();
 await errors();
 await delay();
+await delayed();
 await jsonEp();
 await jsonComp();
 await streamEp();

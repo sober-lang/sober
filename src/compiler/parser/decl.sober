@@ -49,9 +49,9 @@ func typeParams(db mut builder.Builder[int], cx Cx, p0 int) (int, int) {
 
 // func_decl <- 'func' IDENT type_params? signature block?（本体なしは .sobi だけ — cx.iface。付加の列の 7 番 = `@expand`〔.sobi だけ — 無ければ列は 7 個〕）
 // noinl: 直前に `@noinline` があったか（付加の列の 5 番目 — loader が mut_def の判定に使う）。errs / errsTok: `@errors` のラベル名の列と
-// その `@` の字句（付加の列の 6・7 番目 — analyzer が読む。無ければ -1。AST JSON には出さない）。exh: `@exhaustive` の印（付加の列の 9 番目 —
-// 印があるときだけ 8 番目〔expand〕を 0 で埋めて 9 個にする。analyzer の表の網羅が読む）。`@secret(k, …)` の名前の列 / その `@` の字句 / `@bless` の印は
-// 付加の列の 10〜12 番目（どれかがあるときだけ 12 個にする — 無ければ -1 / 0 / 0。analyzer が読む。AST JSON には出さない）。12 番目は印のビット:
+// その `@` の字句（付加の列の6・7番目 — analyzerが読む。無ければ -1。AST JSONには出さない）。exh: `@exhaustive` のフラグ（付加の列の9番目 —
+// フラグがあるときだけ8番目〔expand〕を0で埋めて9個にする。analyzerの表の網羅が読む）。`@secret(k, …)` の名前の列 / その `@` の字句 / `@bless` のフラグは
+// 付加の列の10〜12番目（どれかがあるときだけ12個にする — 無ければ -1 / 0 / 0。analyzerが読む。AST JSONには出さない）。12番目はフラグのビット:
 // 0 = `@bless`・1 = `@bless(origin)`・2 = `@credential`
 func funcDecl(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p0 int, start int, an Annot) (int, int) {
     noinl := an.noinl
@@ -94,7 +94,7 @@ func funcDecl(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx 
     return node(mut nb, ast.KFuncDecl, tk(cx, p0 + 1), fname, tps, params, results, body, ext), q2 + 1
 }
 
-// 付加の列 head（8 個 — 番号 0〜7）に注釈の欄を足した列: `@secret` / `@bless` / `@credential` があれば 12 個・`@effects` があれば 14 個
+// 付加の列head（8個 — 番号0〜7）に注釈のフィールドを足した列: `@secret` / `@bless` / `@credential` があれば12個・`@effects` があれば14個
 // （12・13 番 = 項の列・`@` の字句）・`@const` があれば 16 個（14・15 番 = 名前の列・`@` の字句 — `@effects` が無ければ 12・13 番は -1 / 0）・
 // `@exhaustive` だけなら 9 個（どれも無ければ head のまま）
 func funcExt(db mut builder.Builder[int], head []int, an Annot) int {
@@ -142,7 +142,7 @@ func intrinsicDecl(nb mut builder.Builder[ast.Node], db mut builder.Builder[int]
 
 // parameters <- '(' (parameter_decl (',' parameter_decl)* ','?)? ')'。
 // mode 0 = 宣言（名前つき必須、KParam の列）/ 1 = 関数型（型の列 — 名前つきなら名前の数だけ型を並べる）/
-// 2 = lambda（KLParam の列 — 型だけの parameter_decl は名前として読む・c = mut 引数の印）
+// 2 = lambda（KLParamの列 — 型だけのparameter_declは名前として読む・c = mut引数のフラグ）
 func parameters(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p0 int, mode int) (int, int) {
     l, _, q := parametersN(mut nb, mut db, cx, p0, mode)
     return l, q
@@ -177,7 +177,7 @@ func parametersN(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], 
         }
         mut done := false
         if len(names) > 0 {
-            // 仮引数の先頭の mut は mut 引数の印。関数型（mode 1）では仮引数の型を ast.TMutP で包む（mut の席 — language.md 25 節「関数型の mut 仮引数」）
+            // 仮引数の先頭のmutはmut引数のフラグ。関数型（mode 1）では仮引数の型をast.TMutPで包む（mut仮引数 — language.md 25 節「関数型のmut仮引数」）
             pm := tg(cx, q) == lexer.KwMut
             ty, r := typeOf(mut nb, mut db, cx, q, true)
             if ty >= 0 {
@@ -280,7 +280,7 @@ func resultOpt(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx
     return ast.PutList(mut db, []int{}), p
 }
 
-// qualName: type_name の綴り（IDENT ('.' IDENT)* / 'error' — 修飾子は多段 `http.server.Request`）。結果は（文字列, 次の位置）
+// qualName: type_name の綴り（IDENT ('.' IDENT)* / 'error' — 修飾子は複数セグメント `http.server.Request`）。結果は（文字列, 次の位置）
 func qualName(db mut builder.Builder[int], cx Cx, p int) (int, int) {
     if tg(cx, p) == lexer.KwError {
         return ast.PutLit(mut db, "error"), p + 1
@@ -292,7 +292,7 @@ func qualName(db mut builder.Builder[int], cx Cx, p int) (int, int) {
     if q == p + 1 {
         return name(mut db, cx, p), p + 1
     }
-    // 段の字句は p, p + 2, …（間は '.'）
+    // レベルの字句はp, p + 2, …（間は '.'）
     mut n := (q - p) / 2
     mut k := p
     while k < q {
@@ -375,7 +375,7 @@ func typeArg(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx C
 }
 
 // typeOf: type <- 'mut'? (type_name type_args? / type_lit / '(' type ')') '?'?。
-// param なら先頭の mut は mut 引数の印（呼び手が字句で読む — parameters）で、型の mut はコンテナ（slice / map）だけに残す。
+// paramなら先頭のmutはmut引数のフラグ（呼び手が字句で読む — parameters）で、型のmutはコンテナ（slice / map）だけに残す。
 // それ以外の位置の mut はコンテナ限定（他は拒否）
 func typeOf(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p0 int, param bool) (int, int) {
     mut p := p0
@@ -431,7 +431,7 @@ func typeOf(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx
         p = r
     } else if t == lexer.LParen && tg(cx, p + 1) != lexer.RParen {
         // 括弧の型 `(T)` / `(T)?`（syntax.md の Type — 省略可の匿名関数型 `(func(…) R)?` の綴り。language.md 25 節 Z）。
-        // `?` の付いた形は TOpt の b = 1（括弧の印 — 裸の `func(…)?` は loader が括弧の形へ誘導して拒否する）
+        // `?` の付いた形はTOptのb = 1（括弧のフラグ — 裸の `func(…)?` はloaderが括弧の形へ誘導して拒否する）
         inner, q := typeOf(mut nb, mut db, cx, p + 1, false)
         if inner < 0 || tg(cx, q) != lexer.RParen {
             return -1, p
@@ -482,9 +482,9 @@ func typeOf(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx
     return base, p
 }
 
-// fieldList: (field_decl (';' / &'}'))*（field_decl <- identifier_list (array_type / type) ('@' ('secret' / 'credential'))? — 後置の注釈は struct の欄の
-// `@secret`〔KField の c = 1〕と `@credential`〔c = 2〕だけ〔ann〕。union の variant / error / panic の欄は拒否）。p は '{' の次。
-// array_type `[N]T`（N は整数リテラル）は欄の型の最上段にだけ受ける（@layout の struct の外は loader の拒否 — language.md 36 節）
+// fieldList: (field_decl (';' / &'}'))*（field_decl <- identifier_list (array_type / type) ('@' ('secret' / 'credential'))? — 後置の注釈はstructのフィールドの
+// `@secret`〔KFieldのc = 1〕と `@credential`〔c = 2〕だけ〔ann〕。unionのvariant / error / panicのフィールドは拒否）。pは '{' の次。
+// array_type `[N]T`（Nは整数リテラル）はフィールドの型の最上段にだけ受ける（@layoutのstructの外はloaderの拒否 — language.md 36 節）
 func fieldList(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p0 int, ann bool) (int, int) {
     mut out := mut []int{}
     mut p := p0
@@ -527,7 +527,7 @@ func fieldList(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx
     return ast.PutList(mut db, freeze(out)), p
 }
 
-// 欄の型: `[N]T`（N は整数リテラル — TArray）か普通の型
+// フィールドの型: `[N]T`（Nは整数リテラル — TArray）か普通の型
 func fieldType(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p int) (int, int) {
     if tg(cx, p) == lexer.LBracket && tg(cx, p + 1) == lexer.IntegerLiteral && tg(cx, p + 2) == lexer.RBracket {
         n, np := intLit(mut nb, cx, p + 1)
@@ -563,7 +563,7 @@ func typeDecl(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx 
     t := tg(cx, p)
     mut body := -1
     if t == lexer.Equal {
-        // 型の別名 `type A = B`（language.md 32 節）: 右辺は型式として読み、形（型宣言の名前だけ・型パラメータなし）は loader の alias.sober が名指しで拒否する
+        // 型の別名 `type A = B`（language.md 32 節）: 右辺は型式として読み、形（型宣言の名前だけ・型パラメータなし）はloaderのalias.soberが専用の診断で拒否する
         te, q := typeOf(mut nb, mut db, cx, p + 1, false)
         if te < 0 {
             return -1, p

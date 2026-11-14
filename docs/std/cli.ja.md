@@ -4,7 +4,7 @@
 
 `import "std/cli"`
 
-コマンド行の解析と使い方の文書: フラグ・位置引数・環境変数・コマンドを const の表で宣言し（BoolFlag・StrFlag・IntFlag・ChoiceFlag・ListFlag・Positional・Env・Command・App）、Main が引数の解析・`--help`・`--version`・誤用の印字・コマンドへの振り分けを持つ。値は宣言の const を把手にして引く（Str・Bool・Int・Choice・List・Pos — 綴りの誤りはコンパイルで落ち、値の型は把手の型で決まる）。綴りの規則: 長い名前は `--name`（値は `--name=v` か `--name v`）・1 文字の名前と short は `-x`（値は `-x v` — 束ね `-abc` は受けない）・`--` の後は全部位置引数・フラグと位置引数は混ぜてよい。予約の綴り = `--help` `-h` `--help=dev` `--version` `--cli-spec`（表を JSON で標準出力へ）。使い方の誤りの終了コードは 2（処理の失敗の 1 と分ける）。例: examples/cli\_wc.sober
+コマンド行の解析と使い方の文書: フラグ・位置引数・環境変数・コマンドを const の表で宣言し（BoolFlag・StrFlag・IntFlag・ChoiceFlag・ListFlag・Positional・Env・Command・App）、Main が引数の解析・`--help`・`--version`・誤用の印字・コマンドへの振り分けを持つ。値は宣言の const を把手にして引く（Str・Bool・Int・Choice・List・Pos — 綴りの誤りはコンパイルで落ち、値の型は把手の型で決まる）。綴りの規則: 長い名前は `--name`（値は `--name=v` か `--name v`）・1文字の名前とshortは `-x`（値は `-x v` — まとめ `-abc` は受けない）・`--` の後は全部位置引数・フラグと位置引数は混ぜてよい。予約の綴り = `--help` `-h` `--help=dev` `--version` `--cli-spec`（表を JSON で標準出力へ）。使い方の誤りの終了コードは 2（処理の失敗の 1 と分ける）。例: examples/cli\_wc.sober
 
 ## Handler
 
@@ -62,7 +62,7 @@ type IntFlag struct {
 }
 ```
 
-整数の値のフラグ（10 進）。min / max は両端を含む範囲・allow が空でなければ許す値の表。他の欄は StrFlag と同じ（arg の既定は `<n>`）
+整数の値のフラグ（10進）。min / maxは両端を含む範囲・allowが空でなければ許す値の表。他のフィールドはStrFlagと同じ（argの既定は `<n>`）
 
 ## ChoiceFlag
 
@@ -183,7 +183,7 @@ type Parsed struct {
 }
 ```
 
-解析の結果（当たったコマンドと値の表）。作れるのは Parse だけ（非公開の型の封の欄 — 外からは composite に書けない）。値は把手で引く
+解析の結果（当たったコマンドと値の表）。作れるのはParseだけ（非公開の型の封のフィールド — 外からはcompositeに書けない）。値は把手で引く
 
 ## UnknownFlag
 
@@ -459,6 +459,6 @@ app の表の JSON（空白なし・宣言の順。フラグは種類つきの 1
 func Parse(app App, args []string) (Parsed, error?)
 ```
 
-args（0 番 = プログラム名 — os.Args の並び）を app の表で読む。誤りのときも、そこまでに当たったコマンドの道を持つ Parsed を返す（Format が文面の頭に使う）。予約の綴りは error の Request で返す。表の宣言の誤りは panic(Misdeclared)
+args（0番 = プログラム名 — os.Argsの並び）をappの表で読む。誤りのときも、そこまでに当たったコマンドのパスを持つParsedを返す（Format が文面の頭に使う）。予約の綴りは error の Request で返す。表の宣言の誤りは panic(Misdeclared)
 
 失敗のラベル: [`UnknownFlag`](#unknownflag)・[`UnknownCommand`](#unknowncommand)・[`MissingValue`](#missingvalue)・[`BadValue`](#badvalue)・[`Missing`](#missing)・[`Extra`](#extra)・[`Duplicate`](#duplicate)・[`Request`](#request)

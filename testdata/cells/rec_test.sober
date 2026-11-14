@@ -2,7 +2,7 @@ package cells
 
 import "std/testing/cell"
 
-// 置き場の値が再帰の union（チャネルのペイロードと同じく写せる）と、error? の欄を持つ struct の列（Get の結果の要素の欄読み）
+// 格納場所の値が再帰のunion（チャネルのペイロードと同じくコピーできる）と、error? のフィールドを持つstructの列（Getの結果の要素のフィールド読み）
 
 type Node union {
     Leaf { s string }

@@ -1,7 +1,7 @@
 package main
 
 // ブロック式の中の多値の束縛の値を末尾に置く例:
-// 脱糖器の型の読みが多値の束縛の成分の型も呼び手の座標で読むので、ブロックの出口の付け替えが発火する（式の位置の catch の写しの形）
+// 脱糖器の型の読みが多値の束縛の成分の型も呼び手の座標で読むので、ブロックの出口の付け替えが発火する（式の位置のcatchのコピーの形）
 
 type Bad error {
     code int
@@ -22,7 +22,7 @@ func plain(n int) string {
     return s
 }
 
-// 式の中（catch の写し — `len(bytes(name(n) catch "none"))`）
+// 式の中（catchのコピー — `len(bytes(name(n) catch "none"))`）
 func width(n int) int {
     return len(bytes({
         v, e := name(n)

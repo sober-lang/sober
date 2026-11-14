@@ -1,6 +1,6 @@
-// std/net の名前の解決の送受の網の相手（scripts/dnsinterop.sh が起こす — 標準ライブラリだけの偽の DNS サーバ）: 127.0.0.1 の空きの port で UDP と TCP を受け、
-// 決めた名前に決めた応答を返す — a.test（A 10.0.0.1）・alias.test（CNAME a.test + A）・big.test（UDP は TC を立てて空・TCP は A 10.0.0.2）・nx.test（NXDOMAIN）・
-// spoof.test（先に txid の違う応答・次に A 10.0.0.3）・slow.test（答えない）・svc.corp.test（A 10.0.0.4 — search で引く名前）。<dir>/port を書いてから <dir>/ready
+// std/netの名前の解決の送受の検査の相手（scripts/dnsinterop.shが起動する — 標準ライブラリだけの偽のDNSサーバ）: 127.0.0.1の空きのportでUDPとTCPを受け、
+// 決めた名前に決めたレスポンスを返す — a.test（A 10.0.0.1）・alias.test（CNAME a.test + A）・big.test（UDPはTCを立てて空・TCPはA 10.0.0.2）・nx.test（NXDOMAIN）・
+// spoof.test（先にtxidの違うレスポンス・次にA 10.0.0.3）・slow.test（答えない）・svc.corp.test（A 10.0.0.4 — searchで引く名前）。<dir>/portを書いてから <dir>/ready
 //   go run scripts/oracles/dnsserver/main.go <dir>
 package main
 
@@ -43,7 +43,7 @@ func rr(name []byte, t uint16, data []byte) []byte {
 	return append(o, data...)
 }
 
-// q への応答（tcp = TCP で来た・ok = 返すか）
+// qへのレスポンス（tcp = TCPで来た・ok = 返すか）
 func answer(q []byte, tcp bool) ([][]byte, bool) {
 	name, end := qname(q)
 	head := func(id uint16, flags byte, rcode byte, an int, body []byte) []byte {

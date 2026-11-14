@@ -1,7 +1,7 @@
 package main
 
-// error 網羅 analyzer の動的オラクル（scripts/errtrace.sh）のコーパス: struct の error? の欄を通る流れ
-// （名前つき・位置指定のリテラル・欄への代入 → 読んで戻す / switch する）
+// error網羅analyzerの動的オラクル（scripts/errtrace.sh）のコーパス: structのerror? のフィールドを通る流れ
+// （名前つき・位置指定のリテラル・フィールドへの代入 → 読んで戻す / switchする）
 
 type A error {
     n int

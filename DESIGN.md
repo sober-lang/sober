@@ -42,7 +42,7 @@ Chosen: a change to the compiler goes in only after passing all of the following
 
 Rejected: an ad hoc net of "write as many tests as you can". Each kind of check in the net has its own independent oracle, and any one of them going off stops the change.
 
-What it gives the user: a compiler kept small (the target-independent core is under 100,000 lines) that can be boldly reworked without breaking. The net itself is public, and anyone can run the same checks.
+What it gives the user: a compiler kept small (about 140,000 lines) that can be boldly reworked without breaking. The net itself is public, and anyone can run the same checks.
 
 → Design notes: [minimal](docs/design-notes/minimal.md)
 

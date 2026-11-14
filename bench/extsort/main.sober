@@ -1,15 +1,15 @@
 package main
 
-// 外部ソート（実証便 その 2 — docs/bench.md）: 1 行 1 キーのテキストを、窓 W バイトより大きくても、バイト列の辞書順（`LC_ALL=C sort` と同じ）に並べて標準出力へ書く。
-// 引数 = 入力のパス・一時ファイルの dir（在ること）・窓 W の MiB（省略 = 64）。行は改行で終わり、64 KiB より短いこと。
-// 素直な形（Go / Rust の双子 bench/extsort/go・rust と同じアルゴリズム）:
-// 1. run を作る: 入力を io.Chunks で読んで窓 W に達するまで 1 本のバイト列に積み（W に達した切片で break — 先読みの分は位置が戻る）、
-//    完全な行の開始位置の列を std/sort の OrderUnstable（pdqsort — 添字を比較の閉包で並べる。等しい行の順は出力に現れないので安定は要らない）で並べ、並べた行を io.WriteFile で `<dir>/run-<i>` へ全量書く。1 本の run は 1 回の関数の呼び出しで、
-//    窓の分のメモリは呼び出しの出口で region ごと消える（次の run へ持ち越すのは最後の改行より後ろの欠けた行だけ）
+// 外部ソート（実証のタスク その 2 — docs/bench.md）: 1行1キーのテキストを、ウィンドウWバイトより大きくても、バイト列の辞書順（`LC_ALL=C sort` と同じ）に並べて標準出力へ書く。
+// 引数 = 入力のパス・一時ファイルのdir（在ること）・ウィンドウWのMiB（省略 = 64）。行は改行で終わり、64 KiBより短いこと。
+// 素直な形（比較用のGo / Rustの実装bench/extsort/go・rustと同じアルゴリズム）:
+// 1. runを作る: 入力をio.Chunksで読んでウィンドウWに達するまで1本のバイト列に積み（Wに達した切片でbreak — 先読みの分は位置が戻る）、
+//    完全な行の開始位置の列をstd/sortのOrderUnstable（pdqsort — 添字を比較のクロージャで並べる。等しい行の順は出力に現れないので安定は要らない）で並べ、並べた行をio.WriteFileで `<dir>/run-<i>` へ全量書く。1本のrunは1回の関数の呼び出しで、
+//    ウィンドウの分のメモリは呼び出しの出口でregionごと消える（次のrunへ持ち越すのは最後の改行より後ろの欠けた行だけ）
 // 2. k 本の run をマージする: run ごとに 2 × 64 KiB の枠を 1 本の mut のバイト列（k 本分を最初に 1 回だけ作る）の中に持ち、
-//    枠の中に完全な行が無くなったら、残りを枠の頭へ寄せて run のファイルの「次に読む位置」から io.ChunksAt で 1 切片だけ写し足す
+//    枠の中に完全な行が無くなったら、残りを枠の頭へ寄せてrunのファイルの「次に読む位置」からio.ChunksAtで1切片だけコピーして足す
 //    （開いた io.File は列に持てない — run ごとに持つのは位置の int だけ）。先頭の行が最小の run を線形の走査で選び、io.Writer で標準出力へ
-// メモリ = 窓の分（行のバイト列・開始位置の列・並べ替えの作業域）+ k × 128 KiB の枠。入力の大きさには比例しない（k = N / W の分を除く）
+// メモリ = ウィンドウの分（行のバイト列・開始位置の列・並べ替えの作業域）+ k × 128 KiBの枠。入力の大きさには比例しない（k = N / Wの分を除く）
 
 import "std/io"
 import "std/iter"
@@ -35,7 +35,7 @@ func main() int {
     return if io.Flush(mut w) != nil { 1 } else { 0 }
 }
 
-// makeRuns は path を窓 w バイトずつの run に切って dir へ書き、run の本数を返す
+// makeRunsはpathをウィンドウwバイトずつのrunに切ってdirへ書き、runの本数を返す
 func makeRuns(path string, dir string, w int) (int, error?) {
     f := io.Open(path)?
     defer io.Close(f)
@@ -57,7 +57,7 @@ func makeRuns(path string, dir string, w int) (int, error?) {
     return k, nil
 }
 
-// oneRun は f の今の位置から窓 w バイト（head の欠けた行を頭に）を読み、完全な行を並べて out へ書く。最後の改行より後ろの欠けた行・EOF に達したか・
+// oneRunはfの今の位置からウィンドウwバイト（headの欠けた行を頭に）を読み、完全な行を並べてoutへ書く。最後の改行より後ろの欠けた行・EOFに達したか・
 // 書いたか（行が無ければ書かない）を返す
 func oneRun(f io.File, out string, w int, head []byte) ([]byte, bool, bool, error?) {
     mut buf := mut []byte{}
@@ -107,7 +107,7 @@ func oneRun(f io.File, out string, w int, head []byte) ([]byte, bool, bool, erro
     return freeze(rest), eof, true, nil
 }
 
-// lineOrder は行 0..n−1 を行の辞書順に並べた番号の列（std/sort の OrderUnstable — 比べ方は less の閉包。行の全体で比べるので、等しい行は
+// lineOrderは行0..n−1を行の辞書順に並べた番号の列（std/sortのOrderUnstable — 比べ方はlessのクロージャ。行の全体で比べるので、等しい行は
 // バイト列ごと同じで、その順は出力に現れない — 安定は要らない）
 func lineOrder(buf []byte, st []int, n int) []int {
     return sort.OrderUnstable(n, (x, y) => less(buf, st, x, y))
@@ -201,7 +201,7 @@ func fill(dir string, r int, ar mut []byte, ss mut []int) error? {
         }
         ss[r * 4] = base
         // 式ブロックで包む: pull は mut の引数を持つので region 透過で、包まないと切片の枠（io.ChunksAt の 1 回ごとに 2 × 64 KiB）が
-        // マージの間ずっと積もる（RSS が入力の大きさの約 2 倍 — 包むと窓の分だけ）
+        // マージの間ずっと積もる（RSSが入力の大きさの約2倍 — 包むとウィンドウの分だけ）
         n := { pull("${dir}/run-${r}", ss[r * 4 + 2], mut ar, d) catch -1 }
         if n < 0 {
             return io.Other{errno: 5}
@@ -216,7 +216,7 @@ func fill(dir string, r int, ar mut []byte, ss mut []int) error? {
     return nil
 }
 
-// pull は path の off から 1 切片を ar[at ..] へ写し、写したバイト数を返す（0 = EOF）
+// pullはpathのoffから1切片をar[at ..] へコピーし、コピーしたバイト数を返す（0 = EOF）
 func pull(path string, off int, ar mut []byte, at int) (int, error?) {
     f := io.Open(path)?
     defer io.Close(f)

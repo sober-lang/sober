@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# 別 package の名前付き関数型の網: 署名が宣言側の package の型を含む名前付き関数型（testdata/fnpkg/p の F・G[T]）を、別 package（app）の
-# 値の位置（Def の結果・仮引数・struct の欄）とジェネリックの型引数つきで使う題材を、check が受理し・build した実行ファイルの出力が
+# 別packageの名前付き関数型の検査: 署名が宣言側のpackageの型を含む名前付き関数型（testdata/fnpkg/pのF・G[T]）を、別package（app）の
+# 値の位置（Defの結果・仮引数・structのフィールド）とジェネリックの型引数つきで使う題材を、checkが受理し・buildした実行ファイルの出力が
 # testdata/fnpkg/app.out と一致する（署名の型名を参照側の package で引くと、check は UnknownName・build は UndefinedType で割れていた）
 set -uo pipefail
 cd "$(dirname "$0")/.."

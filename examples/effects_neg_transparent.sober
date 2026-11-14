@@ -1,6 +1,6 @@
 package main
 
-// 負例（check が拒否 — analyzer）: 匿名の関数型の仮引数は透過 — 渡したラムダの io は呼び手の効果（each 自身は io をしない）
+// 負例（checkが拒否 — analyzer）: 匿名の関数型の仮引数は透過 — 渡したラムダのioは呼び手のエフェクト（each自身はioをしない）
 
 func each(xs []int, k func(int)) {
     for x <- xs {

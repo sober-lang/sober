@@ -1,6 +1,6 @@
 package main
 
-// 値の位置の switch の腕の region: 欄の束縛は subject の座標（仮引数の string は仮引数の region）・腕どうしの合流は if と同じ
+// 値の位置のswitchの分岐のregion: フィールドの束縛はsubjectの座標（仮引数のstringは仮引数のregion）・分岐どうしの合流はifと同じ
 
 type J union {
     JNull {}

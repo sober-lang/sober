@@ -1,6 +1,6 @@
 // bench/jsonapi の入力の生成（決定的 — 線形合同法・シード 42）: 引数 N 行の NDJSON（1 行 = 注文の API のリクエスト 1 件）を第 2 引数のファイルへ。
 // 約 8% は不正なリクエストで、1 行に欠陥は 1 つだけ（json / missing / type / range / currency — 3 言語で「どの誤りを先に報告するか」の差を持ち込まない）。
-// 欄の順と空白は行ごとに揺らす。note はときどき JSON のエスケープ（\" \\ \n é）を含む。数は全部整数（最小単位の通貨）
+// フィールドの順と空白は行ごとに揺らす。noteはときどきJSONのエスケープ（\" \\ \n é）を含む。数は全部整数（最小単位の通貨）
 package main
 
 import (
@@ -95,7 +95,7 @@ func line(id int) string {
 		`"items":` + sp() + "[" + strings.Join(items, ","+sp()) + "]",
 	}
 	switch next() % 4 {
-	case 0: // coupon なし（欄ごと省く）
+	case 0: // couponなし（フィールドごと省く）
 	case 1:
 		fields = append(fields, `"coupon":`+sp()+`null`)
 	case 2:

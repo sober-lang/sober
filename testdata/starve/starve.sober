@@ -1,8 +1,8 @@
 package main
 
-// starve（gate — 飽和下の待ちの上限の網・language.md 28 節 ring の道・report-1142）: 同じプロセスに echo の net.Serve と閉ループの客 512 本を立て、
-// 少ないワーカー（網は SOBER_WORKERS=2）で積みを深くして飽和させる。Serve の期限（3 秒）の後に task.Ledger() の maxWait（ms）と aged を出す。
-// 網の判定は scripts/starve.sh（aged > 0 = 飽和した・maxWait ≤ 1 s）。接続の task の D は 10 ms（期限の拾いの道を
+// starve（gate — 飽和下の待ちの上限の検査・language.md 28 節io_uringのパス・report-1142）: 同じプロセスにechoのnet.Serveと閉ループの客512本を立て、
+// 少ないワーカー（検査はSOBER_WORKERS=2）でスタックを深くして飽和させる。Serveの期限（3秒）の後にtask.Ledger() のmaxWait（ms）とagedを出す。
+// 検査の判定はscripts/starve.sh（aged > 0 = 飽和した・maxWait ≤ 1 s）。接続のtaskのDは10 ms（期限の拾いのパスを
 // 短い Serve の間に確実に通す — report-1150 / 1154）
 
 import "std/net"

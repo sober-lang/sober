@@ -2,7 +2,7 @@ package parse
 
 // minic の構文: expr := term (('+' | '-') term)*、term := unary (('*' | '/') unary)*、unary := '-' unary | 数 | '(' expr ')'。
 // 再帰下降でなく演算子順位法（明示のスタック）で読む — mut 引数の関数は展開されるので再帰に持ち込めない（26 節）うえ、
-// 再帰の深さ上限（1023 段）にも当たらない。木は []Node + 添字参照で、子が親より先に並ぶ（後置順 = そのままスタック機械の順）
+// 再帰の深さ上限（1023レベル）にも当たらない。木は []Node + 添字参照で、子が親より先に並ぶ（後置順 = そのままスタック機械の順）
 
 import "std/builder"
 import lex "testdata/minic/lex"
@@ -21,7 +21,7 @@ type Node struct {
     kind, val, pos, l, r int
 }
 
-// 演算子スタックの印: '(' は -1
+// 演算子スタックのマーク: '(' は -1
 const paren = 0 - 1
 
 type Stack struct {

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# テスティングガイド（docs/guide/testing{,.ja}.md）と最初のガイドの「モジュールと依存」（first-program — testdata/guide/modules.cmds・examples/mod/hello が起点）の `$ sober …` の出力の網: testdata/guide/testing.cmds の各コマンドを、examples/guide（sober.mod のモジュール — 起点）の写しの中で
-# 上から順に走らせ（標準出力 + 標準エラー・終了コードの行つき）、黄金 testdata/guide/testing/<名前>.out と照合する。ワーカー 1 と 8 で同じ。
-# fuzz の「見つからない」の行の試行数は期限に依るので `<n>` に置き換える。ページの塊と黄金の一致は docsync が見る。あわせて題材の写しの整合
+# テスティングガイド（docs/guide/testing{,.ja}.md）と最初のガイドの「モジュールと依存」（first-program — testdata/guide/modules.cmds・examples/mod/helloが起点）の `$ sober …` の出力の検査: testdata/guide/testing.cmdsの各コマンドを、examples/guide（sober.modのモジュール — 起点）のコピーの中で
+# 上から順に走らせ（標準出力 + 標準エラー・終了コードの行つき）、ゴールデンtestdata/guide/testing/<名前>.outと照合する。ワーカー1と8で同じ。
+# fuzzの「見つからない」の行の試行数は期限に依るので `<n>` に置き換える。ページのチャンクとゴールデンの一致はdocsyncが見る。あわせて題材のコピーの整合
 # （kv2 / kv3 / kvbug の kv.sober は kv と虫だけの差 — kv2 / kv3 は 4 節の虫 1 匹・kvbug は 3 匹・kv2 / kv3 のテストは kv のテストの頭）も見る
 #   scripts/guidetest.sh            照合
-#   scripts/guidetest.sh --regen    黄金を作り直す（差分を見てからコミット）
+#   scripts/guidetest.sh --regen    ゴールデンを作り直す（差分を見てからコミット）
 set -uo pipefail
 cd "$(dirname "$0")/.."
 SOBER=${SOBER:-./bin/sober}
@@ -17,7 +17,7 @@ fail=0
 bad() { echo "FAIL: $*"; fail=$((fail + 1)); }
 "$SOBER" build examples/hello.sober -o "$W/h" > /dev/null 2>&1 || { echo "FAIL: build"; exit 1; }
 S2=$(pwd)/out/stage2/sober2
-# 題材の写しの整合
+# 題材のコピーの整合
 pk() { sed "1s/^package .*/package kv/" "$1"; }
 for d in kv2 kv3; do
     [ "$(diff <(pk examples/guide/$d/kv.sober) examples/guide/kv/kv.sober | grep -c '^[<>]')" = 2 ] || bad "examples/guide/$d/kv.sober should differ from kv/kv.sober by the escape bug of section 4 only"
@@ -37,7 +37,7 @@ run() {
         sed -i -E 's/quick: fuzz: [0-9]+ trials, no failure/quick: fuzz: <n> trials, no failure/' "$o/$name"
     done < testdata/guide/testing.cmds
 }
-# 最初のガイドの「モジュールと依存」: examples/mod の写しの hello を起点に testdata/guide/modules.cmds を走らせる（黄金 testdata/guide/modules/）
+# 最初のガイドの「モジュールと依存」: examples/modのコピーのhelloを起点にtestdata/guide/modules.cmdsを走らせる（ゴールデンtestdata/guide/modules/）
 runmod() {
     local w=$1 d="$W/m$1/mod" o="$W/m$1/out"
     mkdir -p "$W/m$1" "$o"

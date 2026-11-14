@@ -1,7 +1,7 @@
 package loader
 
 // 名前の検査（syntax.md 決定 13・16・variant 名の一意）— loader で一度だけ走らせるので、脱糖器と lower は同じ規則を構成的に共有する:
-// - ローカルの束縛（`:=`・仮引数・ラムダの仮引数・for の生成元の名前・型パターンの束縛・欄パターンの略記）は、同じ package の
+// - ローカルの束縛（`:=`・仮引数・ラムダの仮引数・forの生成元の名前・型パターンの束縛・フィールドパターンの略記）は、同じpackageの
 //   トップレベル名（const・func・型・variant）とも import の参照名とも同名にできない（syntax.md 決定 13 とその延長）
 // - 型パラメータ（func / type の `[T]`）はトップレベルの型名と同名にできない（同上の追加の制約）
 // - ローカル束縛どうしのシャドーイングと同じスコープでの再宣言（決定 13 — shadowHit。以前は check が受理し lower が拒否していた）
@@ -26,7 +26,7 @@ type NameHit struct {
     err error?
 }
 
-// package のトップレベル名と import の参照名の索引（鎖 — head[バケツ]・next[項]）
+// packageのトップレベル名とimportの参照名の索引（チェーン — head[バケツ]・next[項]）
 type NameIx struct {
     names []string
     kinds []int
@@ -91,7 +91,7 @@ func pkgNames(cx Cx, pk int) NameIx {
     }
     for e <- iter.Range(0, len(cx.imp_pkg)) {
         if cx.imp_pkg[e] == pk {
-            // 多段の修飾子は根の段がファイルの名前空間の住人（`http.server` の `http` — 局所名にすると修飾子と欄の読みが割れる）
+            // 複数セグメントの修飾子は根のセグメントがファイルの名前空間の住人（`http.server` の `http` — 局所名にすると修飾子とフィールドの解釈が割れる）
             ns = append(ns, RootSeg(cx.imp_ref[e]))
             ks = append(ks, NImport)
             pos = append(pos, 0 - 1)
@@ -137,8 +137,8 @@ func kindOfName(ix NameIx, n string) int {
     return k
 }
 
-// ── データプールのまま引く口（ローカル束縛の検査 — 名前は識別子で ASCII だけ〔lexer〕なので Name の string とバイト列が一致する。
-// 束縛ごとに string を作って比べていた写しを省く）──
+// ── データプールのまま引く入口（ローカル束縛の検査 — 名前は識別子でASCIIだけ〔lexer〕なのでNameのstringとバイト列が一致する。
+// 束縛ごとにstringを作って比べていたコピーを省く）──
 
 // データプールの名前 s が決定 16 の組み込みの名前か（reserved と同じ集合）
 func reservedAt(t ast.Tree, s int) bool {
@@ -301,7 +301,7 @@ func bodyHit(t ast.Tree, ix NameIx, root int, f int) NameHit {
     return h
 }
 
-// 式・文・パターンの節 x の子（名前でない欄）を積む
+// 式・文・パターンの節xの子（名前でないフィールド）を積む
 func pushKids(st mut []int, sp0 int, t ast.Tree, x ast.Node) int {
     mut sp := sp0
     k := x.kind
@@ -414,12 +414,12 @@ func namesIn(cx Cx, ix NameIx, f int) NameHit {
 }
 
 // ── ローカル束縛どうしのシャドーイング（決定 13 — 同じスコープでの再宣言を含む）──
-// スコープ = 関数本体・ブロック（KBlock / EBlock）・ラムダ（仮引数 + 本体）・for（生成元の名前 + ガード + 本体）・case（パターンの束縛 + 腕）。
+// スコープ = 関数本体・ブロック（KBlock / EBlock）・ラムダ（仮引数 + 本体）・for（生成元の名前 + ガード + 本体）・case（パターンの束縛 + 分岐）。
 // 兄弟のスコープで同じ名前を使うのはよい。パターン位置の裸の識別子は既知の名前（ローカル束縛）なら比較なので束縛に数えない（syntax.md 9 節）。
-// 走査は明示のスタック: 積むのは (節, 動作) の対 — 動作 = 訪問・スコープを閉じる（束縛の数を戻す — 節の欄に戻す数）・名前を足す
+// 走査は明示のスタック: 積むのは (節, 動作) の対 — 動作 = 訪問・スコープを閉じる（束縛の数を戻す — 節のフィールドに戻す数）・名前を足す
 
 const WVisit = 0
-const WPop = 1      // 節の欄の代わりに、戻す束縛の数を積む
+const WPop = 1      // 節のフィールドの代わりに、戻す束縛の数を積む
 const WGen = 2      // KGen の名前を足す
 const WCase = 3     // KCase のパターンの束縛を足す
 
@@ -441,7 +441,7 @@ func bindLocal(t ast.Tree, env mut []int, n int, x int, f int, tok int) (int, Na
     return n + 1, noHit()
 }
 
-// パターン p の束縛（型パターンの束縛名・欄パターンの略記・入れ子）を足す
+// パターンpの束縛（型パターンの束縛名・フィールドパターンの略記・入れ子）を足す
 func patBinds(t ast.Tree, env mut []int, n0 int, p0 int, f int) (int, NameHit) {
     mut n := n0
     mut h := noHit()
@@ -485,7 +485,7 @@ func pushW(st mut []int, sp int, x int, m int) int {
     return sp + 2
 }
 
-// pushScope はスコープを開く: 閉じる印を先に積み、続けて中身を積む（中身が先に回る）
+// pushScopeはスコープを開く: 閉じるマークを先に積み、続けて中身を積む（中身が先に回る）
 func pushStmtsRev(st mut []int, sp0 int, t ast.Tree, l int) int {
     mut sp := sp0
     mut i := ast.ListLen(t, l)
@@ -591,7 +591,7 @@ func shadowHit(t ast.Tree, ix NameIx, fd ast.Node, f int) NameHit {
     return earlier(hb, h)
 }
 
-// 束縛を持たない節の子を積む（pushKids と同じ欄 — ただし束縛を持つ節は shadowHit が扱う）。tmp は子の並べ替えの作業域（呼び手が使い回す —
+// 束縛を持たない節の子を積む（pushKidsと同じフィールド — ただし束縛を持つ節はshadowHitが扱う）。tmpは子の並べ替えの作業域（呼び手が使い回す —
 // 節ごとに作ると、region 透過の走査の間ずっと積もる）
 func pushKidsW(st mut []int, sp0 int, tmp mut []int, t ast.Tree, x ast.Node) int {
     n := pushKids(mut tmp, 0, t, x)

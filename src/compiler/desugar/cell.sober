@@ -1,8 +1,8 @@
 package desugar
 
-// std/testing/cell の呼び出し点（language.md 41 節「状態を貯める fake」）のコアの近似。置き場は rt の外の状態で、コアからは
-// io の葉と同じく不透明: Get = 把手の init 欄（置き場の値は写した T — 型は init と同じ）・Set = 実引数を評価して捨てる・
-// Update = ラムダの仮引数を init 欄に束ねて本体を評価し、値を捨てる（書きの先は置き場）
+// std/testing/cellの呼び出し点（language.md 41 節「状態を貯めるfake」）のコアの近似。格納場所はrtの外の状態で、コアからは
+// ioの葉と同じく不透明: Get = 把手のinitフィールド（格納場所の値はコピーしたT — 型はinitと同じ）・Set = 実引数を評価して捨てる・
+// Update = ラムダの仮引数をinitフィールドにまとめて本体を評価し、値を捨てる（書きの先は格納場所）
 
 import "diag"
 import "ast"
@@ -22,7 +22,7 @@ func cellCall(st mut S, key int, args ListRef, at NodeRef, eb int, ef int, depth
     if key == CELL_GET {
         return projection(mut st, h, 1, 2), nil
     }
-    // 置く値は T（呼び手の最内へ写した形 — 外の region の値は部分型で受ける）
+    // 置く値はT（呼び手の最内へコピーした形 — 外のregionの値は部分型で受ける）
     want := if ht0 != -1 && tg(mut st, ht0) == TPr { tyRelocAll(mut st, tRight(mut st, ht0), st.rdepth - 1) } else { TyRef(-1) }
     if want == -1 {
         return 0, diag.CoreFragment{at: posOf(mut st, at)}
@@ -48,15 +48,15 @@ func cellCall(st mut S, key int, args ListRef, at NodeRef, eb int, ef int, depth
     sty := if pt != -1 { SurfaceOf(mut st, st.curPkg, pt) } else { SUNK }
     // 本体は h の束縛（level depth）と仮引数（depth + 1）の内側
     eb1 := bind(mut st, eb, strLit(mut st, "$cellh"), depth, false, dr, ht, -1, 0, -1, false, SUNK)
-    // 仮引数は置き場の値を呼び手の最内へ緩めた型（want）で受ける — 本体の外の値（仮引数の string など）を足す append と座標が揃う
+    // 仮引数は格納場所の値を呼び手の最内へ緩めた型（want）で受ける — 本体の外の値（仮引数のstringなど）を足すappendと座標が揃う
     eb2 := bind(mut st, eb1, sA(nodeOf(mut st, lp)), depth + 1, false, d, want, el, 0, -1, false, sty)
     lbody := nB(nodeOf(mut st, lam))
     body := if kindN(mut st, lbody) == ast.EBlock { scoped(mut st, lA(nodeOf(mut st, lbody)), eb2, ef, depth + 2, false, false, -1)? } else { expr(mut st, lbody, eb2, ef, depth + 2)? }
     return cLet(mut st, h, cLet(mut st, cAnn(mut st, projection(mut st, cVar(mut st, 0), 1, 2), want), cLet(mut st, cAnn(mut st, body, want), cTriv(mut st)))), nil
 }
 
-// 置き場に置ける型か: 閉包の捕捉と同じ素のデータ（capTyOk）に、再帰型（μ の本体を見る・再帰の変数は組の成分 = 同じ判定の中）を足したもの
-// （置き場の写しは再帰型を写せる — チャネルの送りと同じ梱包）
+// 格納場所に置ける型か: クロージャの捕捉と同じ素のデータ（capTyOk）に、再帰型（μ の本体を見る・再帰の変数は組の成分 = 同じ判定の中）を足したもの
+// （格納場所のコピーは再帰型をコピーできる — チャネルの送りと同じ梱包）
 func cellTyOk(st mut S, t TyRef, fuel int) bool {
     if fuel == 0 {
         return false

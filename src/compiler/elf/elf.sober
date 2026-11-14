@@ -1,6 +1,6 @@
 package elf
 
-// 2 セグメントの静的 ELF（src/stage1/format/elf.zig の写し — 正規バックエンドの Sober 化 B-1c）。ヘッダは @layout（language.md 36 節）で書く。
+// 2セグメントの静的ELF（src/stage1/format/elf.zigのコピー — 正規バックエンドのSober化B-1c）。ヘッダは @layout（language.md 36 節）で書く。
 //   セグメント 1（R+X）: ELF ヘッダ + phdr 2 本、code、8 整列の rodata（読み取り専用の語列 — 文字列リテラル）
 //   セグメント 2（R+W）: .bss（filesz 0 / memsz n — カーネルが 0 で埋める。IR ランタイムの rt.meta・rt.iobuf）
 // 番地は 0x400000 帯（< 2^31）なので、コードは global / 関数の番地を imm32 の絶対値で持てる。入口はコードの先頭
@@ -83,8 +83,8 @@ func ident() []byte {
 }
 
 // 実行ファイルのバイト列（code の全部・rodata・.bss の大きさ bssBytes）
-// ヘッダ（176 B）だけ Builder で組み、本体は 1 本の slice へ直に append する（region の先端で伸びるので途中の写しは出ない）。
-// 全部を Builder に積んで Build で連続の slice へ写す形は取らない — 機械語の表・Builder・連続の slice の 3 つが同時に生きて、自己 build の RSS の高水位（+15 MB）になる
+// ヘッダ（176 B）だけBuilderで組み、本体は1本のsliceへ直にappendする（regionの先端で伸びるので途中のコピーは出ない）。
+// 全部をBuilderに積んでBuildで連続のsliceへコピーする形は取らない — 機械語の表・Builder・連続のsliceの3つが同時に生きて、自己buildのRSSの高水位（+15 MB）になる
 func Executable(code mut table.Table[byte], rodata []byte, bssBytes int) []byte {
     n := table.Len(mut code)
     lay := LayoutOf(n, len(rodata))

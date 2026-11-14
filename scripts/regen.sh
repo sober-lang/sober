@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# regen.sh: IR / コア / AST を変えるコミットの黄金 5 種（astjson・checkverdict・corejson・irtext・lltext）+ std リファレンス（stdref — docs/std/）+ outline・effectsdump（効果の集計 — 自己の集計は compiler の関数の数で動く）・cutstat（検査点の間引きの表 — 輪の本体の IR の命令数で動く）の黄金を並列に作り直す（足回りの便）。
+# regen.sh: IR / コア / ASTを変えるコミットのゴールデン5種（astjson・checkverdict・corejson・irtext・lltext）+ stdリファレンス（stdref — docs/std/）+ outline・effectsdump（エフェクトの集計 — 自己の集計はcompilerの関数の数で動く）・cutstat（検査点の間引きの表 — ループの本体のIRの命令数で動く）のゴールデンを並列に作り直す（足回りのタスク）。
 #   scripts/regen.sh            9 種を同時に（各スクリプトの中も entry ごとに並列 — JOBS は nproc / 4・最低 4）
-# 規律は今までどおり: regen は gates 緑の木 / 意図した差だけを確かめてから（黄金 regen は gates 緑からだけ）。差は git diff で見る
+# 規律は今までどおり: regenはgates緑の木 / 意図した差だけを確認してから（ゴールデンregenはgates緑からだけ）。差は git diff で見る
 set -uo pipefail
 cd "$(dirname "$0")/.."
 scripts/stage2.sh --quiet > /dev/null || exit 1
@@ -23,7 +23,7 @@ for g in astjson checkverdict corejson irtext lltext stdref outline effectsdump 
     [ "$ec" = 0 ] || { fail=1; cat "$W/$g.log"; }
 done
 echo "regen: wall $(( $(date +%s) - t0 ))s (JOBS=$JOBS), fail=$fail"
-# 差分の量（宣言なき軸の線 — report-1283: 動いた黄金の本数とバイトをコミットの前に目に入れる）と線の照合（scripts/axes.sh --warn — 越えたら WARN の行）
+# 差分の量（宣言なき軸のしきい値 — report-1283: 動いたゴールデンの本数とバイトをコミットの前に目に入れる）としきい値の照合（scripts/axes.sh --warn — 越えたらWARNの行）
 echo "regen: golden changes — $(git -c core.quotepath=off status --porcelain -- testdata docs/std | wc -l) files ($(git diff --shortstat -- testdata docs/std | sed 's/^ *//')); untracked $(git ls-files --others --exclude-standard -- testdata docs/std | xargs -r stat -c %s | awk '{ t += $1 } END { printf "%.1f MB", t / 1e6 }')"
 scripts/axes.sh --warn | grep -E '^(WARN|axes:)'
 [ "$fail" = 0 ]

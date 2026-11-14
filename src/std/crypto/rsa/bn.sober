@@ -2,31 +2,31 @@ package rsa
 
 import "std/iter"
 
-// 多倍長の部品（package rsa の中 — 64 bit の limb・小さい端から。int を符号なしの 64 bit の語として扱う: 積の下位語は * 〔折り返し〕・上位語は
+// 多倍長の部品（package rsaの中 — 64 bitのlimb・小さい端から。intを符号なしの64 bitのワードとして扱う: 積の下位ワードは * 〔折り返し〕・上位ワードは
 // 組み込み mulhi〔x86 の MUL 1 命令 — 符号なし〕・和 / 差の繰り上がり / 借りは最上位 bit の式〔cy / bw — Hacker's Delight 2-13〕。
-// Sober の形は内側の 1 周が重い — 熱い道の montMul は x86 の専用命令の実装（MULX + ADCX / ADOX）が受け持ち、ここは倒れ先と照合の相手）。
+// Soberの形は内側の1周が重い — ホットパスのmontMulはx86の専用命令の実装（MULX + ADCX / ADOX）が受け持ち、ここは倒れ先と照合の相手）。
 // どれも長さ（limb の数 — 法の大きさ = 公開の値）だけで回り、値に依る分岐・添字は無い（定数時間）。
-// 熱い道（montMul・condSub・addMod・subMod）は確保しない — 宛先と作業域は呼び手が渡す（expMont / toMont が呼び出しごとに 1 回だけ作る）
+// ホットパス（montMul・condSub・addMod・subMod）は確保しない — 宛先と作業域は呼び手が渡す（expMont / toMontが呼び出しごとに1回だけ作る）
 
 // 組み込みの宣言（本体なし — loader/intrinsic.sober の IMulHi・IR の BMulHi）
 @intrinsic("mulhi")
 func mulhi(a int, b int) int
 
-// 多倍長の塊（compiler/lower/mulx.sober）: cpumulx = この機械で塊を使えるか（BMI2 の MULX・x86 の最適化のバックエンドの ELF だけ —
-// 他の出力と SOBER_NOMULX=1 は 0）・montmul(d, a, b, m, m0i, n) = montMul の 1 回まるごと（番地で — 書くのは d の n + 1 語だけ）。
-// 作業域は imm の []int（blk）に住み、Sober は lease_view の窓（mut []int — 同じ語）で書き、塊には addrn(blk) の番地を渡す（mut の切片を組み込みに
-// 渡せない壁を、std/tls の置き場と同じ 2 つの口の組み合わせで越える）。倒れ先 = Sober の montMulS（塊の照合の相手）
+// 多倍長のチャンク（compiler/lower/mulx.sober）: cpumulx = この機械でチャンクを使えるか（BMI2のMULX・x86の最適化のバックエンドのELFだけ —
+// 他の出力とSOBER_NOMULX=1は0）・montmul(d, a, b, m, m0i, n) = montMulの1回まるごと（番地で — 書くのはdのn + 1ワードだけ）。
+// 作業域はimmの []int（blk）に住み、Soberはlease_viewのウィンドウ（mut []int — 同じワード）で書き、チャンクにはaddrn(blk) の番地を渡す（mutの切片を組み込みに
+// 渡せない壁を、std/tlsの配置先と同じ2つのAPIの組み合わせで越える）。倒れ先 = SoberのmontMulS（チャンクの照合の相手）
 @intrinsic("cpumulx")
 func cpumulx() int
 
 @intrinsic("montmul")
 func montmul(d int, a int, b int, m int, m0i int, n int) int
 
-// montsqr(d, a, m, m0i, n) = montSqr の 1 回まるごと（番地で — 書くのは d の n + 1 語だけ）。倒れ先 = montMulS(a, a)
+// montsqr(d, a, m, m0i, n) = montSqrの1回まるごと（番地で — 書くのはdのn + 1ワードだけ）。倒れ先 = montMulS(a, a)
 @intrinsic("montsqr")
 func montsqr(d int, a int, m int, m0i int, n int) int
 
-// mmsel(d, t, idx, n, stride, cnt) = sel の 1 回まるごと（番地 d へ n 語 — 表 k は番地 t + 8 × stride × k）。倒れ先 = Sober の selS
+// mmsel(d, t, idx, n, stride, cnt) = selの1回まるごと（番地dへnワード — 表kは番地t + 8 × stride × k）。倒れ先 = SoberのselS
 @intrinsic("mmsel")
 func mmsel(d int, t int, idx int, n int, stride int, cnt int) int
 
@@ -138,7 +138,7 @@ func newMont(m []int) mont {
     return mont{m: m, m0i: -y, r2: freeze(x)}
 }
 
-// 熱い道の作業域は 1 本の mut []int（w）を n + 1 語の区画に割って番地（区画の先頭の添字）で指す — 区画どうしを別の切片にすると、読むために渡した
+// ホットパスの作業域は1本のmut []int（w）をn + 1ワードの区画に割って番地（区画の先頭の添字）で指す — 区画どうしを別の切片にすると、読むために渡した
 // 切片が暗黙の freeze で書けなくなる（language.md の implicit freeze）。区画の番地・長さは公開の値
 
 // w[d..d+n]（w[d+n] は上の溢れ）が m 以上なら m を引く（< 2m の前提）。w[d+n] は 0 に戻す。
@@ -164,8 +164,8 @@ func condSub(w mut []int, d int, m []int) {
     w[d + n] = 0
 }
 
-// w[d..] = w[a..] × w[b..] × R^-1 mod m（wa = 作業域の語の番地 — addrn(blk)・w = 同じ語の窓）（d は n + 1 語の区画で a, b と重ならない・a = b は可 — 2 乗。a × b < m × R の前提で結果は m 未満）。
-// CIOS: 外の段ごとに a[i] × b と f × m を 1 周で足す（2 つの積の和は別の繰り上がり c1 / c2 で運ぶ — 語 + 語 × 語 + 語 < 2^128 なので c は 1 語に収まる）
+// w[d..] = w[a..] × w[b..] × R^-1 mod m（wa = 作業域のワードの番地 — addrn(blk)・w = 同じワードのウィンドウ）（dはn + 1ワードの区画でa, bと重ならない・a = bは可 — 2乗。a × b < m × Rの前提で結果はm未満）。
+// CIOS: 外の段ごとにa[i] × bとf × mを1周で足す（2つの積の和は別の繰り上がりc1 / c2で運ぶ — ワード + ワード × ワード + ワード < 2^128なのでcは1ワードに収まる）
 func montMul(w mut []int, wa int, d int, a int, b int, mt mont) {
     if cpumulx() == 1 {
         _ = montmul(wa + 8 * d, wa + 8 * a, wa + 8 * b, addrn(mt.m), mt.m0i, len(mt.m))
@@ -174,7 +174,7 @@ func montMul(w mut []int, wa int, d int, a int, b int, mt mont) {
     montMulS(mut w, d, a, b, mt)
 }
 
-// w[d..] = w[a..]² × R^-1 mod m（montMul の 2 乗 — 塊は積の対称で積を減らす形。d と a は重ならない・a < m の前提）
+// w[d..] = w[a..]² × R^-1 mod m（montMulの2乗 — チャンクは積の対称で積を減らす形。dとaは重ならない・a < mの前提）
 func montSqr(w mut []int, wa int, d int, a int, mt mont) {
     if cpumulx() == 1 {
         _ = montsqr(wa + 8 * d, wa + 8 * a, addrn(mt.m), mt.m0i, len(mt.m))
@@ -183,7 +183,7 @@ func montSqr(w mut []int, wa int, d int, a int, mt mont) {
     montMulS(mut w, d, a, a, mt)
 }
 
-// montMul の Sober の形（塊の無い出力の道・塊の照合の相手）
+// montMulのSoberの形（チャンクの無い出力のパス・チャンクの照合の相手）
 func montMulS(w mut []int, d int, a int, b int, mt mont) {
     m := mt.m
     n := len(m)
@@ -194,7 +194,7 @@ func montMulS(w mut []int, d int, a int, b int, mt mont) {
     m0 := m[0]
     for i <- iter.Range(0, n) {
         ai := w[a + i]
-        // j = 0: d[0] + ai × b[0] + f × m[0] の下の語は 0（f の選び方）— 繰り上がりだけ運ぶ
+        // j = 0: d[0] + ai × b[0] + f × m[0] の下のワードは0（fの選び方）— 繰り上がりだけ運ぶ
         l0 := ai * b0
         x0 := w[d]
         z0 := x0 + l0
@@ -272,12 +272,12 @@ func put(w mut []int, d int, x []int, n int) {
     }
 }
 
-// x（limb の数は任意）の Montgomery の形 x × R mod m（n + 1 limb）。上の n limb の塊から Horner で
-// r = r × R + 塊 を Montgomery の形のまま進める: (r × R)_M = montMul(r_M, R^2)・塊_M = montMul(塊, R^2)（塊 < R・R^2 < m で前提を満たす）
+// x（limbの数は任意）のMontgomeryの形x × R mod m（n + 1 limb）。上の n limb のチャンクからHornerで
+// r = r × R + チャンク を Montgomery の形のまま進める: (r × R)_M = montMul(r_M, R^2)・チャンク_M = montMul(チャンク, R^2)（チャンク < R・R^2 < mで前提を満たす）
 func toMont(x []int, mt mont) []int {
     n := len(mt.m)
     l := n + 1
-    // 区画: 0 = R^2・1 = r・2 = t・3 = u・4 = 塊
+    // 区画: 0 = R^2・1 = r・2 = t・3 = u・4 = チャンク
     blk := zeros(5 * l)
     mut w := leaseView(blk, 0, 5 * l)
     wa := addrn(blk)
@@ -300,11 +300,11 @@ func toMont(x []int, mt mont) []int {
 }
 
 // xm^e（xm は Montgomery の形・e は limb の列・nb = 舐める e の下からのビット数 — 公開の値: 秘密の指数は法のビット長・公開の指数は e の実ビット長）を
-// 普通の形で（n + 1 limb）。4 ビットの固定窓 — 表引きは 16 個全部を読んで mask で選び、窓の数は nb だけで決まる。作業域（表 16 本・溜め・選び）はここで 1 回だけ作り、montMul は確保しない
+// 普通の形で（n + 1 limb）。4ビットの固定ウィンドウ — 表引きは16個全部を読んでmaskで選び、ウィンドウの数はnbだけで決まる。作業域（表16本・バッファ・選び）はここで1回だけ作り、montMulは確保しない
 func expMont(xm []int, e []int, nb int, mt mont) []int {
     n := len(mt.m)
     l := n + 1
-    // 区画: 0 = R^2・1 = 1・2 = xm・3 = 溜め・4 = t・5 = 選び・6〜21 = 表（xm^0〜xm^15 の Montgomery の形）
+    // 区画: 0 = R^2・1 = 1・2 = xm・3 = バッファ・4 = t・5 = 選び・6〜21 = 表（xm^0〜xm^15のMontgomeryの形）
     blk := zeros(22 * l)
     mut w := leaseView(blk, 0, 22 * l)
     wa := addrn(blk)
@@ -316,7 +316,7 @@ func expMont(xm []int, e []int, nb int, mt mont) []int {
     for i <- iter.Range(1, 16) {
         montMul(mut w, wa, (6 + i) * l, (5 + i) * l, 2 * l, mt)
     }
-    // 溜めと作業の区画は窓ごとに入れ替える（番地は公開の値 — 写しを省く）
+    // バッファと作業の区画はウィンドウごとに入れ替える（番地は公開の値 — コピーを省く）
     mut acc := 3 * l
     mut tmp := 4 * l
     for j <- iter.Range(0, l) {
@@ -325,7 +325,7 @@ func expMont(xm []int, e []int, nb int, mt mont) []int {
     nw := (nb + 3) / 4
     for k <- iter.Range(0, nw) {
         top := 4 * (nw - 1 - k)
-        // 4 回の 2 乗（溜め → 作業 → 溜めの行き来）
+        // 4回の2乗（バッファ → 作業 → バッファの行き来）
         montSqr(mut w, wa, tmp, acc, mt)
         montSqr(mut w, wa, acc, tmp, mt)
         montSqr(mut w, wa, tmp, acc, mt)
@@ -342,7 +342,7 @@ func expMont(xm []int, e []int, nb int, mt mont) []int {
         acc = tmp
         tmp = t
     }
-    // 普通の形へ: 溜め × 1 × R^-1
+    // 普通の形へ: バッファ × 1 × R^-1
     montMul(mut w, wa, tmp, acc, l, mt)
     mut out := mut []int{}
     for i <- iter.Range(0, l) {
@@ -351,8 +351,8 @@ func expMont(xm []int, e []int, nb int, mt mont) []int {
     return freeze(out)
 }
 
-// w[d..d+n) = 表 idx（表 k は w[t + stride × k ..] — cnt 本）の先頭 n 語（w[d+n] は触らない）。表を全部・同じ順で読み、一致の mask で選ぶ
-// （idx は秘密の窓の値 — 添字にも分岐にも使わない）。区画 d は表と重ならない
+// w[d..d+n) = 表idx（表kはw[t + stride × k ..] — cnt本）の先頭nワード（w[d+n] は触らない）。表を全部・同じ順で読み、一致のmaskで選ぶ
+// （idxは秘密のウィンドウの値 — 添字にも分岐にも使わない）。区画dは表と重ならない
 func sel(w mut []int, wa int, d int, t int, idx int, n int, stride int, cnt int) {
     if cpumulx() == 1 {
         _ = mmsel(wa + 8 * d, wa + 8 * t, idx, n, stride, cnt)
@@ -361,7 +361,7 @@ func sel(w mut []int, wa int, d int, t int, idx int, n int, stride int, cnt int)
     selS(mut w, d, t, idx, n, stride, cnt)
 }
 
-// sel の Sober の形（塊の無い出力の道・塊の照合の相手）
+// selのSoberの形（チャンクの無い出力のパス・チャンクの照合の相手）
 func selS(w mut []int, d int, t int, idx int, n int, stride int, cnt int) {
     for j <- iter.Range(0, n) {
         w[d + j] = 0
@@ -377,21 +377,21 @@ func selS(w mut []int, d int, t int, idx int, n int, stride int, cnt int) {
 
 // xm^e（xm は Montgomery の形・e は**公開の**指数・nb = e の実ビット長）を普通の形で（n + 1 limb）。表を作らない 2 進の square-and-multiply —
 // e のビットが時間に出てよい（公開鍵の操作 = 検証・署名の自己検証の側だけ。Go の ExpShortVarTime と同じ形 — 65537 なら 2 乗 16 回 + 掛け 1 回で、
-// expMont の 4 ビット窓〔表 16 本 + 窓 5 つ ≈ 41 回〕より軽い）。**秘密の指数には使わない**（定数時間でない — ctcheck の対象外）
+// expMontの4ビットウィンドウ〔表16本 + ウィンドウ5つ ≈ 41回〕より軽い）。**秘密の指数には使わない**（定数時間でない — ctcheckの対象外）
 func expPub(xm []int, e []int, nb int, mt mont) []int {
     if nb < 1 {
         return expMont(xm, e, nb, mt)
     }
     n := len(mt.m)
     l := n + 1
-    // 区画: 0 = xm・1 = 溜め・2 = t・3 = 1
+    // 区画: 0 = xm・1 = バッファ・2 = t・3 = 1
     blk := zeros(4 * l)
     mut w := leaseView(blk, 0, 4 * l)
     wa := addrn(blk)
     put(mut w, 0, xm, n)
     put(mut w, l, xm, n)
     w[3 * l] = 1
-    // 最上位のビット（1）は溜めの初期値 — 残りを上から
+    // 最上位のビット（1）はバッファの初期値 — 残りを上から
     for k <- iter.Range(1, nb) {
         pos := nb - 1 - k
         montMul(mut w, wa, 2 * l, l, l, mt)
@@ -403,7 +403,7 @@ func expPub(xm []int, e []int, nb int, mt mont) []int {
             }
         }
     }
-    // 普通の形へ: 溜め × 1 × R^-1
+    // 普通の形へ: バッファ × 1 × R^-1
     montMul(mut w, wa, 2 * l, l, 3 * l, mt)
     mut out := mut []int{}
     for i <- iter.Range(0, l) {

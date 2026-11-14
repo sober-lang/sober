@@ -1,9 +1,9 @@
 package server
 
-// 要求の枠と頭の読み（frameAt / request）の旧新照合の網: 書き換え前の frameAt / request と補助の関数を Ref の名前で
-// そのまま写して基準（オラクル）にし、手で組んだ要求の種（CRLF / LF・先頭の空行・HTTP/1.0・Content-Length / chunked・食い違う Content-Length・
+// リクエストの枠と頭の読み（frameAt / request）の旧新照合の検査一式: 書き換え前のframeAt / requestと補助の関数をRefの名前で
+// そのままコピーして基準（オラクル）にし、手で組んだリクエストのシード（CRLF / LF・先頭の空行・HTTP/1.0・Content-Length / chunked・食い違うContent-Length・
 // 非 chunked の Transfer-Encoding・Connection の token・obs-fold・裸の CR・505・パイプライン・未完）に 1 バイトの置き換え・削除・重複と全部の切り詰めを掛け、
-// mh / mb の境目（431 / 413）も含めて、新しい frameAt の枠（st・s・he・end・chunked・keep・v10）と、揃った要求の request の結果
+// mh / mbの境目（431 / 413）も含めて、新しいframeAtの枠（st・s・he・end・chunked・keep・v10）と、揃ったリクエストのrequestの結果
 // （誤りか・method・path・query・head・headers・body）が基準と一致することを照合する（受理集合不変の契約）
 
 import "std/iter"
@@ -12,19 +12,19 @@ import "std/utf8"
 type frameRef struct {
     // st: 0 = 足りない・1 = 揃った・他 = 誤りの status
     st int
-    // s = 要求の始め（先頭の空行の後）・he = 頭の終わり（本文の始め）・end = 要求の終わり
+    // s = リクエストの始め（先頭の空行の後）・he = 頭の終わり（本文の始め）・end = リクエストの終わり
     s int
     he int
     end int
     chunked bool
-    // keep = 応答の後も保つ・v10 = HTTP/1.0
+    // keep = レスポンスの後も保つ・v10 = HTTP/1.0
     keep bool
     v10 bool
 }
 
 func frameAtRef(b []byte, at int, mh int, mb int) frameRef {
     n := len(b)
-    // 要求の前の空行は読み飛ばす（RFC 9112 2.2）
+    // リクエストの前の空行は読み飛ばす（RFC 9112 2.2）
     mut s := at
     while s < n && (b[s] == '\r' || b[s] == '\n') {
         s += 1
@@ -46,7 +46,7 @@ func frameAtRef(b []byte, at int, mh int, mb int) frameRef {
     if he < 0 {
         return frRef(if n - s >= mh { 431 } else { 0 }, s)
     }
-    // 要求行: method SP target SP version
+    // リクエスト行: method SP target SP version
     le := lineEndRef(b, s)
     ce := contentEndRef(b, s, le)
     if bareCRRef(b, s, ce) {
@@ -411,7 +411,7 @@ func sameInts(a []int, b []int) bool {
     return true
 }
 
-// 1 本 2 語の位置の表（Request.headers）を基準の 1 本 4 語 [名前の始め, 終わり, 値の始め, 終わり] に開く
+// 1本2ワードの位置の表（Request.headers）を基準の1本4ワード [名前の始め, 終わり, 値の始め, 終わり] に開く
 func unpack(h []int) []int {
     mut out := mut []int{}
     for x <- h {
@@ -421,7 +421,7 @@ func unpack(h []int) []int {
     return freeze(out)
 }
 
-// b の at からの枠と要求が基準と一致するか（違えば 1 行出して偽）
+// bのatからの枠とリクエストが基準と一致するか（違えば1行出して偽）
 func agree(b []byte, at int, mh int, mb int) bool {
     o := frameAtRef(b, at, mh, mb)
     mut hs := mut []int{}
@@ -449,7 +449,7 @@ func agree(b []byte, at int, mh int, mb int) bool {
     return true
 }
 
-// 要求の種（"|" で区切った 1 本の文字列 — 種の中に | は使わない）
+// リクエストのシード（"|" で区切った1本の文字列 — シードの中に | は使わない）
 func seeds() []string {
     return []string{
         "GET /baseline11?a=1&b=2 HTTP/1.1\r\nHost: localhost:8080\r\nUser-Agent: zrk\r\nConnection: keep-alive\r\n\r\n",
@@ -479,6 +479,9 @@ func seeds() []string {
         "GET / HTTP/1.1\n\r\n",
         "PUT /u HTTP/1.1\r\ncontent-length: 012\r\n\r\n123456789012",
         "GET /é HTTP/1.1\r\nX: é\r\n\r\n",
+        // 区切り（SP・'?'）の直前・直後がマルチバイトの字（request はそこで検査せずに切る）
+        "GET /パス?キー=値 HTTP/1.1\r\nHost: x\r\n\r\n",
+        "GETé /é?é HTTP/1.1\r\n\r\n",
         // 8 バイトずつの読みの罠: 探す字の直後に「字 ^ 1」（SP → '!'・':' → ';'）が来る形と、境目をまたぐ字（CR → 0x0c・LF → 0x0b は muts の置き換えで）
         "GET /!a !b HTTP/1.1\r\nX:;y\r\n\r\n",
         "GET /abcd HTTP/1.1\r\nAbcdefg:;;;;;;;:v\r\n\r\n",
@@ -493,7 +496,7 @@ func muts() []byte {
     return []byte{'\r', '\n', ' ', '\t', ':', ',', 'a', 'K', '0', '(', '/', '!', ';', byte(0x0b), byte(0x0c), byte(0), byte(0x80), byte(0xff)}
 }
 
-// 種 s のどの位置でも置き換え・削除・重複した列と、全部の切り詰めを k に渡す
+// シードsのどの位置でも置き換え・削除・重複した列と、全部の切り詰めをkに渡す
 func each(s string, k func([]byte) bool) bool {
     b := bytes(s)
     mut ok := true
@@ -550,4 +553,17 @@ func TestFrameLimits() {
         }
     }
     assert(ok)
+}
+
+// マルチバイトの字が区切りに接するリクエスト行のmethod / path / query（frameAtの区切りの位置でちょうど切れていること）
+func TestRequestCutsAtDelimiters() {
+    b := bytes("GETé /пу́ть?ключ=值 HTTP/1.1\r\nHost: x\r\n\r\n")
+    mut hs := mut []int{}
+    f := frameAt(b, 0, 8192, 8192, mut hs)
+    assert(f.st == 1)
+    r, e := request(b, f, freeze(hs))
+    assert(e == nil)
+    assert(r.method == "GETé")
+    assert(r.path == "/пу́ть")
+    assert(r.query == "ключ=值")
 }

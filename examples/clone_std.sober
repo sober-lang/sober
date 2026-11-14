@@ -1,8 +1,8 @@
 package main
 
-// 生成物 — scripts/clone_oracle.ts（期待値 clone_std.out は Go の slices.Clone / maps.Clone の双子の出力）。手で直さない。
-// 写した後に元を書き換えても写しは変わらないこと・元は凍らずに書き続けられること（clone は写すだけ — 元を凍らせない）・
-// 写しは書ける（mut — imm の列からも書ける写しが取れる）・imm の位置に置いた clone(x) はその場で凍ること（showInts(…, clone(xs)) の形）を見る
+// 生成物 — scripts/clone_oracle.ts（期待値clone_std.outは比較用のGoの実装slices.Clone / maps.Cloneの出力）。手で直さない。
+// コピーした後に元を書き換えてもコピーは変わらないこと・元は凍らずに書き続けられること（cloneはコピーするだけ — 元を凍らせない）・
+// コピーは書ける（mut — immの列からも書けるコピーが取れる）・immの位置に置いたclone(x) はその場で凍ること（showInts(…, clone(xs)) の形）を見る
 
 func showInts(tag string, xs []int) {
     mut line := "${tag} ${len(xs)}:"

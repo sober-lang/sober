@@ -1,8 +1,8 @@
 package lower
 
-// 欄の種別の表（ir.sober の opRow / termRow）と x86 の専用形（xNOps / xOpnd / xNTermOps / xTermOpnd — 熱い読み口なので
-// if の列のまま）の照合（`cd compiler && ../bin/sober test lower`）。どの欄にも長さ 2 の別々の値の列を入れた命令・終端を全 op × 全終端で作り、
-// 同じ値を同じ順に返すことを見る（値と列の取り違え・欄の取り違えはどれも値が変わる）。置き換える前の if の列 ≡ 表の照合は コミットにある
+// フィールドの種別の表（ir.soberのopRow / termRow）とx86の専用形（xNOps / xOpnd / xNTermOps / xTermOpnd — 熱い読み取りインターフェースなので
+// ifの列のまま）の照合（`cd compiler && ../bin/sober test lower`）。どのフィールドにも長さ2の別々の値の列を入れた命令・終端を全op × 全終端で作り、
+// 同じ値を同じ順に返すことを見る（値と列の取り違え・フィールドの取り違えはどれも値が変わる）。置き換える前の if の列 ≡ 表の照合は コミットにある
 
 import "desugar"
 import "std/iter"
@@ -72,7 +72,7 @@ func termOperandsT(st mut St, b BlkRef, out mut []int) {
     }
 }
 
-// x86 の読み口の表の走査（欄の順に値・値の列を数える / k 番目を引く）
+// x86の読み取りインターフェースの表の走査（フィールドの順に値・値の列を数える / k番目を引く）
 func xNOpsT(st mut St, i InsRef) int {
     mut n := 0
     for k <- iter.Range(0, 3) {

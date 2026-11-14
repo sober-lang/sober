@@ -1,7 +1,7 @@
 package main
 
-// json.Encode の書きの写し（loader/jsonshape.sober の 2 系統 — rename なし = 定数のキーの断片・rename つき = 欄ごとの KeyOf）と PutInt（桁を直に積む）の境界:
-// int の 0・1 桁・桁の繰り上がり（9 / 10・99 / 100）・負・最大・最小・入れ子の struct と struct の列と U? を、Encode と EncodeWith（入れ子の欄の改名も）で
+// json.Encodeの書きのコピー（loader/jsonshape.soberの2系統 — renameなし = 定数のキーの断片・renameつき = フィールドごとのKeyOf）とPutInt（桁を直に積む）の境界:
+// intの0・1桁・桁の繰り上がり（9 / 10・99 / 100）・負・最大・最小・入れ子のstructとstructの列とU? を、EncodeとEncodeWith（入れ子のフィールドの改名も）で
 
 import "std/json"
 

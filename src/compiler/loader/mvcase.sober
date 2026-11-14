@@ -1,22 +1,22 @@
 package loader
 
-// `(T, error?)` の 2 位置の switch（13 節 — 多値を返す呼び出し `switch f() { … }` か 2 subject `switch x, err { … }`）の `case P, nil:` の腕 — nilcase.sober と
-// 同じ脱糖の固定テンプレートで if に写す:
+// `(T, error?)` の2位置のswitch（13 節 — 多値を返す呼び出し `switch f() { … }` か2 subject `switch x, err { … }`）の `case P, nil:` の分岐 — nilcase.soberと
+// 同じ脱糖の固定テンプレートでifに変換する:
 //
 //     switch S { case P, nil: A  …  case _, Q: B  …  default: D }
 //  →  { $mvKv, $mvKe := S; if $mvKe != nil { switch $mvKe { case Q: B …  default: D } } else { switch $mvKv { case P: A … } } }
 //
-// subject が名前 2 つなら束縛を置かない。腕の並びは保つ（nil の腕は else 側の switch・エラーの腕は then 側の switch へ — 2 番目のパターンだけ / 1 番目のパターンだけを残す）。
-// default は then 側（エラーがあるとき）にだけ置く。desugar・lower・typer・analyzer は写した後の木（単値の switch の入れ子）だけを読む — コア・Lean は無変更。
+// subjectが名前2つなら束縛を置かない。分岐の並びは保つ（nilの分岐はelse側のswitch・エラーの分岐はthen側のswitchへ — 2番目のパターンだけ / 1番目のパターンだけを残す）。
+// defaultはthen側（エラーがあるとき）にだけ置く。desugar・lower・typer・analyzerは変換した後の木（単値のswitchの入れ子）だけを読む — コア・Leanは無変更。
 // 網羅は内側の switch の既存の検査（エラーの側は導出集合の全ラベル — analyzer）。
-// 写せない形（源の順の意味と写した後の意味がずれる・default が両側に要る）は loader が理由を名指して拒否（diag.NilCase の kind 5〜8）
+// 変換できない形（源の順の意味と変換した後の意味がずれる・defaultが両側に要る）はloaderが理由を明示して拒否（diag.NilCaseのkind 5〜8）
 
 import "std/builder"
 import "std/iter"
 import "ast"
 import "lexer"
 
-// switch 節 x が対象か: subject が 1 つか 2 つ・全部の腕のパターンが 2 つ・1 番目に型パターンが無い・2 番目に nil の腕がある
+// switch節xが対象か: subjectが1つか2つ・全部の分岐のパターンが2つ・1番目に型パターンが無い・2番目にnilの分岐がある
 func mvApplies(t ast.Tree, x ast.Node) bool {
     ns := ast.ListLen(t, x.a)
     if ns != 1 && ns != 2 {
@@ -70,8 +70,8 @@ func patWild(t ast.Tree, p int) bool {
     return patName(t, p) && StrIs(t, t.nodes[ast.ListAt(t, t.nodes[p].a, 0)].a, "_")
 }
 
-// 写せない理由（0 = 写せる・2 = `nil | …`・3 = nil の腕より前に `_, e`（nil にも当たる）・5 = エラーの腕の 1 番目が `_` でない・
-// 6 = `_, e` があるのに nil の腕が値を全部は覆わない・7 = default が nil の側にも要る・8 = nil でないエラーの行き先が無い）と位置
+// 変換できない理由（0 = 変換できる・2 = `nil | …`・3 = nilの分岐より前に `_, e`（nilにも当たる）・5 = エラーの分岐の1番目が `_` でない・
+// 6 = `_, e` があるのにnilの分岐が値を全部は覆わない・7 = defaultがnilの側にも要る・8 = nilでないエラーの行き先が無い）と位置
 func mvBad(t ast.Tree, x ast.Node) (int, int) {
     mut nilCatch := false
     mut errName := false
@@ -114,7 +114,7 @@ func mvBad(t ast.Tree, x ast.Node) (int, int) {
     return 0, 0
 }
 
-// 木 t の対象の switch を写した木（節は末尾に足し、switch の節をその場で差し替える）。
+// 木tの対象のswitchを変換した木（節は末尾に足し、switchの節をその場で差し替える）。
 // switch が文の値そのもの（式文・束縛 / 代入の唯一の値・return の先頭の値）なら、subject の束縛をその文の直前に文として置く（`$v, $e := S` — 評価の順は同じ）。
 // それ以外の位置はブロック `{ $v, $e := S; if … }` に包む（ブロック式の中からの return は check が拒否するため）
 func mvCases(t ast.Tree) ast.Tree {
@@ -171,8 +171,8 @@ func mvCases(t ast.Tree) ast.Tree {
             named := two && t.nodes[s0].kind == ast.EIdent && t.nodes[ast.ListAt(t, x.a, 1)].kind == ast.EIdent
             vn := if named { t.nodes[s0].a } else { ast.PutLit(mut db, "$mv${k}v") }
             en := if named { t.nodes[ast.ListAt(t, x.a, 1)].a } else { ast.PutLit(mut db, "$mv${k}e") }
-            // 慣用句の形（nil の腕 1 本で値のパターンが名前・エラーの腕 1 本で名前・default なし）は内側の switch を作らず、腕の中で名前を束縛し直す
-            // （`if $e != nil { e := $e; B } else { v := $v; A }` — 値の型は束縛から推せる。腕の名前が腕の外へ漏れない）
+            // 慣用句の形（nilの分岐1本で値のパターンが名前・エラーの分岐1本で名前・defaultなし）は内側のswitchを作らず、分岐の中で名前を束縛し直す
+            // （`if $e != nil { e := $e; B } else { v := $v; A }` — 値の型は束縛から推せる。分岐の名前が分岐の外へ漏れない）
             nv, ne := oneNames(t, x)
             mut nilArms := mut []int{}
             mut errArms := mut []int{}
@@ -301,7 +301,7 @@ func directValue(t ast.Tree, sn int) int {
     return 0 - 1
 }
 
-// 文の列 body の前に `name := src` を置いた列（腕の名前を合成の束縛から束縛し直す）
+// 文の列bodyの前に `name := src` を置いた列（分岐の名前を合成の束縛から束縛し直す）
 func rebind(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], n0 int, tok int, name int, src int, body int, t ast.Tree) int {
     at := n0 + builder.Len(mut nb)
     builder.Push(mut nb, ast.Node{ast.EIdent, tok, src, 0, 0, 0, 0, 0})
@@ -313,7 +313,7 @@ func rebind(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], n0 in
     return ast.PutList(mut db, freeze(l))
 }
 
-// 慣用句の形の束縛名: nil の腕が 1 本でその値のパターンが `_` 以外の名前なら (その名前, …)、エラーの腕が 1 本でそのパターンが `_` 以外の名前で
+// 慣用句の形の束縛名: nilの分岐が1本でその値のパターンが `_` 以外の名前なら (その名前, …)、エラーの分岐が1本でそのパターンが `_` 以外の名前で
 // default が無ければ (…, その名前)。当たらなければ -1（`_` は合成の名前で束縛する）
 func oneNames(t ast.Tree, x ast.Node) (int, int) {
     mut nv := 0 - 1

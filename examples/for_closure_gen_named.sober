@@ -1,6 +1,6 @@
 package main
 
-// 負例（language.md 7 節 L-for の範囲）: 名前付き関数型の仮引数は値の位置の閉包で展開されないので、for の生成元の呼び先にならない
+// 負例（language.md 7 節L-forの範囲）: 名前付き関数型の仮引数は値の位置のクロージャで展開されないので、forの生成元の呼び先にならない
 // （匿名の関数型 `recv func(k func(int)) error?` なら書ける — examples/for_closure_gen）
 
 type Recv func(k func(int)) error?

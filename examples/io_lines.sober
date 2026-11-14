@@ -1,7 +1,7 @@
 package main
 
 // io.Lines の確認: 切片（64 KiB）の境界をまたぐ行の縫い直し・空行・CRLF・LF の無い末尾の行。
-// 行の設計: alpha / 空行 / crlf(CRLF) / 'x' × 70,000（切片 1 と 2 をまたぐ — またいだ行だけ std の中で写す）/ tail（LF なし）。
+// 行の設計: alpha / 空行 / crlf(CRLF) / 'x' × 70,000（切片1と2をまたぐ — またいだ行だけstdの中でコピーする）/ tail（LFなし）。
 // リポジトリのルートを cwd にして実行する。書き込み先は out/ の下
 import "std/io"
 import "std/iter"

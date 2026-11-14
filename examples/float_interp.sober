@@ -1,7 +1,7 @@
 package main
 
 // 文字列補間の float の穴（language.md 24 節・37 節）: 綴りは println と同じ最短の往復表現（convert.FormatFloat — Go の strconv 'g' -1）。
-// 特殊値（NaN・±Inf・-0）・指数の形・型パラメータの穴（float のインスタンス）・式の穴。期待値は Go の双子 scripts/oracles/float_interp.go
+// 特殊値（NaN・±Inf・-0）・指数の形・型パラメータの穴（floatのインスタンス）・式の穴。期待値は比較用のGoの実装scripts/oracles/float_interp.go
 
 type Pt struct {
     x float

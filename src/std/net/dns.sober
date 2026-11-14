@@ -1,9 +1,9 @@
 package net
 
 // 名前の解決（スタブリゾルバ — libc の getaddrinfo を使わない）: Dial が IPv4 の綴りでないホストを受けたときに、/etc/hosts → /etc/resolv.conf の nameserver
-// （最大 3 本を順に・1 回の問い合わせは期限つき）へ A を問う。search / ndots の候補の順（resolv.conf(5)）・応答の切り詰め（TC）は TCP で問い直す・
-// 応答の CNAME の鎖を追う（answer 節の中だけ・8 段まで）・txid は getrandom・応答は txid と問いの名前と型の一致を確かめる。AAAA も読めるが、Dial は IPv4 だけ。
-// 非 ASCII のホスト名（IDN）は名指しで拒否する（punycode は URL の層の仕事）。DNSSEC・DoH / DoT・キャッシュは持たない
+// （最大3本を順に・1回の問い合わせは期限つき）へAを問う。search / ndotsの候補の順（resolv.conf(5)）・レスポンスの切り詰め（TC）はTCPで問い直す・
+// レスポンスのCNAMEのチェーンを追う（answer節の中だけ・8レベルまで）・txidはgetrandom・レスポンスはtxidと問いの名前と型の一致を確認する。AAAAも読めるが、DialはIPv4だけ。
+// 非ASCIIのホスト名（IDN）は専用の診断で拒否する（punycodeはURLの層の仕事）。DNSSEC・DoH / DoT・キャッシュは持たない
 
 import "std/io"
 import "std/iter"
@@ -176,7 +176,7 @@ func dnsQuery(id int, name string, qtype int) []byte {
     return freeze(q)
 }
 
-// 応答の読み（rcode・切り詰め・答えの番地の列・形が正しいか）
+// レスポンスの読み（rcode・切り詰め・答えの番地の列・形が正しいか）
 type dnsAnswer struct {
     rcode int
     tc bool
@@ -188,7 +188,7 @@ func badAnswer() dnsAnswer {
     return dnsAnswer{rcode: 0, tc: false, addrs: [][]byte{}, ok: false}
 }
 
-// b の at からの名前（圧縮の指し先は前へだけ・64 回まで — 輪を断つ）と、名前の直後の位置（-1 = 形の誤り）
+// bのatからの名前（圧縮の指し先は前へだけ・64回まで — ループを断つ）と、名前の直後の位置（-1 = 形の誤り）
 func readName(b []byte, at0 int) (string, int) {
     mut at := at0
     mut end := -1
@@ -229,7 +229,7 @@ func readName(b []byte, at0 int) (string, int) {
     return "", -1
 }
 
-// 応答 b を問い（id・name・qtype）と照らして読む（answer 節の CNAME の鎖を追って qtype の番地を集める）
+// レスポンスbを問い（id・name・qtype）と照らして読む（answer節のCNAMEのチェーンを追ってqtypeの番地を集める）
 func parseAnswer(b []byte, id int, name string, qtype int) dnsAnswer {
     if len(b) < 12 || (int(b[0]) << 8 | int(b[1])) != id || (int(b[2]) & 0x80) == 0 {
         return badAnswer()

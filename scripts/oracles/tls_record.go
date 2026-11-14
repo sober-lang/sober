@@ -1,6 +1,6 @@
-// std/internal/record/oracle_test.sober の Go の双子（record 層の差分オラクル）。RFC 9846 5 節（record の保護）と 7.1 / 7.2
+// std/internal/record/oracle_test.soberの比較用のGoの実装（record層の差分オラクル）。RFC 9846 5 節（recordの保護）と7.1 / 7.2
 // （HKDF-Expand-Label・KeyUpdate）を crypto/hkdf + crypto/aes の GCM で組み、AES-128-GCM の record 列のバイト列の SHA-256 と ExpandLabel の値を出す。
-// Go の std に ChaCha20-Poly1305 が無いので ChaCha の行と拒否の行は Sober の期待値をそのまま書く（自己の黄金）。再生成:
+// GoのstdにChaCha20-Poly1305が無いのでChaChaの行と拒否の行はSoberの期待値をそのまま書く（自己のゴールデン）。再生成:
 //   (cd scripts/oracles && go run tls_record.go) > testdata/crypto/tls_record.txt
 package main
 
@@ -107,7 +107,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "record count", recs)
 		os.Exit(1)
 	}
-	// ChaCha と拒否の行は Sober の値（自己の黄金 — 上の注）
+	// ChaChaと拒否の行はSoberの値（自己のゴールデン — 上の注記）
 	for _, l := range []string{
 		"chacha stream 73843 64bf312966fb93256ab0640283e8c22a49691f63aa8d1e7f797af681743a5fa9",
 		"chacha replay 1 12 9 nil", "chacha replay 7 12 9 nil", "chacha replay 100 12 9 nil", "chacha replay 4096 12 9 nil", "chacha replay 65536 12 9 nil", "chacha replay 0 12 9 nil",

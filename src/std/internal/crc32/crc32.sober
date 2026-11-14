@@ -1,6 +1,6 @@
 package crc32
 
-// CRC-32（IEEE 802.3 の多項式）の核（std/hash/crc32 の Sum と、std/compress/gzip の逐次の符号器が共有する — 公開の口は internal.crc32.Sum）
+// CRC-32（IEEE 802.3の多項式）の核（std/hash/crc32のSumと、std/compress/gzipの逐次の符号器が共有する — 公開のAPIはinternal.crc32.Sum）
 
 import "std/binary"
 import "std/iter"
@@ -8,8 +8,8 @@ import "std/iter"
 // crc（data の前までの CRC-32 — 何も無ければ 0）に data を足した CRC-32（Go の internal.crc32.Update と同じ向き: 入口と出口で反転するので、
 // Update(Update(0, a), b) = Update(0, a ‖ b)）。値は [0, 2^32) の int。
 // 64 バイト以上で機械が PCLMULQDQ を持てば、16 の倍数の先頭を繰り上がりのない積で畳む（cpuclmul / crcfold。端数は 1 バイトずつ）。
-// 倒れ先（PCLMULQDQ の無い機械・x86 の最適化のバックエンド以外の出力）: 256 バイト以上は slicing-by-8（8 バイトの語を 1 回で読み、8 つの表を独立に
-// 引いて xor — 表引きの依存の鎖が 1 / 8 に。表 8 × 256 語は呼び出しごとに table() から作る ≈ 1,800 項目）。短い入力と端の 7 バイトまでは
+// 倒れ先（PCLMULQDQの無い機械・x86の最適化のバックエンド以外の出力）: 256バイト以上はslicing-by-8（8バイトのワードを1回で読み、8つの表を独立に
+// 引いてxor — 表引きの依存チェーンが1 / 8に。表8 × 256ワードは呼び出しごとにtable() から作る ≈ 1,800項目）。短い入力と端の7バイトまでは
 // 1 バイトずつの表引き
 func Update(crc int, data []byte) int {
     t := table()

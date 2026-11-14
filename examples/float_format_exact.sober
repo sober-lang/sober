@@ -1,6 +1,6 @@
 package main
 
-// float の最短表現の速い道（正確な 10 進展開が 15 桁以下なら多倍長なし — floatfmt.exactShort）の差分: scripts/oracles/float_format_exact.go の Go の答えと照合
+// floatの最短表現の高速パス（正確な10進展開が15桁以下なら多倍長なし — floatfmt.exactShort）の差分: scripts/oracles/float_format_exact.goのGoの答えと照合
 
 import "std/convert"
 import "std/io"

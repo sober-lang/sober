@@ -1,6 +1,6 @@
 package main
 
-// selfpar の検査の束の網（席 D の D-2 — loader/finpar.sober）: 同じ段（名前の検査）の拒否を 2 ファイルに置く — 前のファイル（a）の拒否が出る
+// selfparの検査のバッチのテスト群（席DのD-2 — loader/finpar.sober）: 同じフェーズ（名前の検査）の拒否を2ファイルに置く — 前のファイル（a）の拒否が出る
 func f(n int) int {
     x := n
     x := n + 1

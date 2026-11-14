@@ -3,7 +3,7 @@
 tls-server	yes	-	TLS 1.3（RFC 8446）	TLS 1.3 (RFC 8446)	test:std/tls.TestTrace gold:testdata/tls/trace.golden:suite_4865
 tls-server	intentional	-	TLS 1.2 以前・SSL（サーバは 1.3 だけ — 降格・再交渉・CBC の面を構造的に持たない。1.2 の客は LB / プロキシで受ける）	TLS 1.2 and older, SSL (the server is 1.3-only — no downgrade, renegotiation or CBC surface by construction; 1.2 clients go through an LB or proxy)	item:tls/reject:tls12
 tls-server	yes	-	TLS_AES_128_GCM_SHA256	TLS_AES_128_GCM_SHA256	gold:testdata/tls/trace.golden:suite_4865
-tls-server	yes	-	TLS_CHACHA20_POLY1305_SHA256（AES-NI の無い機械の倒れ先）	TLS_CHACHA20_POLY1305_SHA256 (the fallback on machines without AES-NI)	gold:testdata/tls/trace.golden:suite_4867
+tls-server	yes	-	TLS_CHACHA20_POLY1305_SHA256（AES-NI の無い機械のフォールバック先）	TLS_CHACHA20_POLY1305_SHA256 (the fallback on machines without AES-NI)	gold:testdata/tls/trace.golden:suite_4867
 tls-server	planned	0.8	TLS_AES_256_GCM_SHA384	TLS_AES_256_GCM_SHA384	item:tls/reject:nosuite
 tls-server	yes	-	鍵交換 X25519	Key exchange X25519	gold:testdata/tls/trace.golden:==_chacha
 tls-server	planned	0.8	鍵交換 secp256r1（P-256）	Key exchange secp256r1 (P-256)	item:tls/reject:nogroup
@@ -21,33 +21,33 @@ tls-server	intentional	-	PSK・session resumption・クライアント証明書�
 tls-client	yes	-	TLS 1.3（既定 — 1.3 だけを申し出る）	TLS 1.3 (default — offers 1.3 only)	test:std/internal/hsc.TestHandshakeAndData interop:tls:p256
 tls-client	partial	-	TLS 1.2（dangerouslyAllowTls12 の明示でだけ・ECDHE X25519 × AES-128-GCM / ChaCha20-Poly1305 × ECDSA / RSA の 4 suite）	TLS 1.2 (only with an explicit dangerouslyAllowTls12; 4 suites: ECDHE X25519 × AES-128-GCM / ChaCha20-Poly1305 × ECDSA / RSA)	interop:tls:p256-12-gcm interop:tls:p256-12-chacha interop:tls:rsa-12-gcm interop:tls:rsa-12-chacha
 tls-client	yes	-	TLS 1.2: extended master secret（RFC 7627）必須・renegotiation_info（RFC 5746）必須で再交渉は断る	TLS 1.2: extended master secret (RFC 7627) required; renegotiation_info (RFC 5746) required and renegotiation refused	interop:tls:rsa-12-gcm
-tls-client	yes	-	降格の印（RFC 8446 4.1.3 — 1.3 を申し出て 1.2 を選んだサーバは中止）	Downgrade sentinel (RFC 8446 4.1.3 — abort when a server picks 1.2 after we offered 1.3)	test:std/internal/hsc.TestDowngradeSentinel
+tls-client	yes	-	降格の目印（RFC 8446 4.1.3 — 1.3 を申し出て 1.2 を選んだサーバは中止）	Downgrade sentinel (RFC 8446 4.1.3 — abort when a server picks 1.2 after we offered 1.3)	test:std/internal/hsc.TestDowngradeSentinel
 tls-client	intentional	-	TLS 1.2 の CBC・RSA 鍵交換・静的 DH の suite・TLS 1.1 以前	TLS 1.2 CBC, RSA key exchange and static DH suites; TLS 1.1 and older	-
 tls-client	yes	-	サーバの署名 ECDSA P-256 / P-384・RSA-PSS（rsae）	Server signatures ECDSA P-256 / P-384, RSA-PSS (rsae)	interop:tls:p256 interop:tls:p384 interop:tls:rsa
-tls-client	yes	-	証明書の鎖は常に検証する（検証を切る設定は無い — x509 の章）	The certificate chain is always verified (there is no setting to turn it off — see the x509 chapter)	test:std/internal/hsc.TestCertFailures interop:http:unknown-ca-refused
+tls-client	yes	-	証明書チェーンは常に検証する（検証を切る設定は無い — x509 の章）	The certificate chain is always verified (there is no setting to turn it off — see the x509 chapter)	test:std/internal/hsc.TestCertFailures interop:http:unknown-ca-refused
 tls-client	yes	-	HelloRetryRequest の cookie	HelloRetryRequest with a cookie	test:std/internal/hsc.TestHelloRetry
 tls-client	yes	-	secp256r1 を求める HelloRetryRequest（P-256 の鍵交換 — X25519 を受けないサーバ）	HelloRetryRequest asking for secp256r1 (P-256 key exchange — servers without X25519)	test:std/internal/hsc.TestHelloRetryP256 interop:tls:p256-ecdhe
 tls-client	yes	-	SNI・ALPN の申し出	SNI and ALPN in the ClientHello	test:std/internal/hsc.TestHandshakeAndData
 tls-client	partial	-	CertificateRequest（TLS 1.2 — 空の Certificate で答える。クライアント証明書は持たない）	CertificateRequest (TLS 1.2 — answered with an empty Certificate; no client certificates)	interop:tls:rsa-12-req
 tls-client	intentional	-	session resumption・0-RTT（NewSessionTicket は読み捨てる）	Session resumption, 0-RTT (NewSessionTicket is discarded)	-
 tls-client	yes	-	改竄した flight の拒否	Rejects a tampered flight	test:std/internal/hsc.TestTamperedFlight
-x509-verify	yes	-	鎖の組み立て（名前のバイトの一致 + AKI / SKI・深さ 8・署名の検査 100 回まで）	Path building (name bytes + AKI / SKI; depth 8; at most 100 signature checks)	test:std/internal/x509.TestGoVerify conf:limbo/agree
+x509-verify	yes	-	チェーンの組み立て（名前のバイトの一致 + AKI / SKI・深さ 8・署名の検査 100 回まで）	Path building (name bytes + AKI / SKI; depth 8; at most 100 signature checks)	test:std/internal/x509.TestGoVerify conf:limbo/agree
 x509-verify	yes	-	署名 ECDSA P-256 / P-384・RSA PKCS#1 v1.5（2048 bit 以上）× SHA-256 / 384 / 512	Signatures ECDSA P-256 / P-384, RSA PKCS#1 v1.5 (2048 bits or more) × SHA-256 / 384 / 512	test:std/internal/x509.TestGoVerify conf:pkits/in-scope
 x509-verify	intentional	-	証明書の署名の SHA-1・RSA-PSS・DSA（Unsupported で拒否）	SHA-1, RSA-PSS and DSA certificate signatures (rejected as Unsupported)	test:std/internal/x509.TestGoVerify
 x509-verify	yes	-	有効期間（時刻は呼び手が渡す — 決定的）	Validity period (the caller passes the time — deterministic)	test:std/internal/x509.TestTime
 x509-verify	yes	-	basicConstraints・keyUsage・pathLen・EKU（serverAuth）・知らない critical の拡張	basicConstraints, keyUsage, pathLen, EKU (serverAuth), unknown critical extensions	conf:pkits/in-scope conf:limbo/cases
 x509-verify	yes	-	名前の照合は SAN だけ（DNS・IP・ワイルドカードは最左のラベル丸ごと）	Name matching uses the SAN only (DNS, IP; a wildcard is a whole leftmost label)	test:std/internal/x509.TestNames
 x509-verify	partial	-	nameConstraints（dNSName と iPAddress — 他の形の部分木を持つ CA は Unsupported）	nameConstraints (dNSName and iPAddress — CAs with other subtree forms are Unsupported)	test:std/internal/x509.TestGoVerify conf:pkits/out/nc-other-forms
-x509-verify	yes	-	CA/B Forum の leaf の規則（焼き込みの WebPKI の起点で止まる鎖だけ — 私的 PKI の追加の起点には掛けない）	CA/B Forum leaf rules (only for chains ending at a built-in WebPKI root — not for extra private-PKI roots)	test:std/internal/x509.TestCabLeaf
+x509-verify	yes	-	CA/B Forum の leaf の規則（焼き込みの WebPKI の起点で止まるチェーンだけ — 私的 PKI の追加の起点には掛けない）	CA/B Forum leaf rules (only for chains ending at a built-in WebPKI root — not for extra private-PKI roots)	test:std/internal/x509.TestCabLeaf
 x509-verify	yes	-	信頼ストア（Mozilla NSS の焼き込み・distrust-after）と追加の起点（PEM）	Trust store (built-in Mozilla NSS, distrust-after) and extra roots (PEM)	test:std/internal/x509.TestDistrustAfter test:std/internal/x509.TestRootsFromPEM conf:nss/anchors
 x509-verify	intentional	-	失効（CRL・OCSP を取りに行かない）	Revocation (no CRL, no OCSP fetching)	conf:pkits/out/crl
 x509-verify	intentional	-	証明書ポリシー	Certificate policies	conf:pkits/out/policy
 x509-verify	intentional	-	CN による名前の照合	Name matching by CN	test:std/internal/x509.TestGoVerify
-x509-verify	planned	0.8	OCSP stapling の照合（TLS の章と同じ席）	Checking a stapled OCSP response (same slot as in the TLS chapter)	-
+x509-verify	planned	0.8	OCSP stapling の照合（TLS の章と同じ扱い）	Checking a stapled OCSP response (same slot as in the TLS chapter)	-
 x509-verify	planned	0.8	public suffix の表で広すぎるワイルドカードを拒否する	Rejecting over-broad wildcards with the public suffix list	conf:limbo/known/psl-wildcard
 x509-verify	planned	0.8	公開の std/crypto/x509（今は std の内側 — TLS のクライアントの下）	A public std/crypto/x509 (today internal to std, under the TLS client)	-
 crypto-prims	yes	-	AEAD: AES-128-GCM（AES-NI + PCLMULQDQ）・ChaCha20-Poly1305	AEAD: AES-128-GCM (AES-NI + PCLMULQDQ), ChaCha20-Poly1305	conf:wycheproof/aes-gcm conf:wycheproof/chacha20-poly1305
-crypto-prims	intentional	-	ソフトウェアの AES（塊の無い機械では NoHardware — TLS は ChaCha20-Poly1305 へ倒れる）	Software AES (NoHardware on machines without AES-NI — TLS falls back to ChaCha20-Poly1305)	-
+crypto-prims	intentional	-	ソフトウェアの AES（AES-NI の無い機械では NoHardware — TLS は ChaCha20-Poly1305 へフォールバックする）	Software AES (NoHardware on machines without AES-NI — TLS falls back to ChaCha20-Poly1305)	-
 crypto-prims	planned	0.8	AES-256-GCM	AES-256-GCM	-
 crypto-prims	yes	-	ハッシュ・MAC・KDF: SHA-256・SHA-384 / 512（std の内側）・HMAC-SHA256・HKDF-SHA256	Hashes, MAC, KDF: SHA-256, SHA-384 / 512 (internal to std), HMAC-SHA256, HKDF-SHA256	conf:wycheproof/hmac-sha256 conf:wycheproof/hkdf-sha256 conf:hashlib/sha512
 crypto-prims	yes	-	鍵交換 X25519	Key exchange X25519	conf:wycheproof/x25519
@@ -55,49 +55,49 @@ crypto-prims	yes	-	鍵交換 P-256（ECDH・定数時間 — TLS の secp256r1�
 crypto-prims	yes	-	署名の検証 ECDSA P-256 / P-384・RSA-PSS・RSA PKCS#1 v1.5	Signature verification ECDSA P-256 / P-384, RSA-PSS, RSA PKCS#1 v1.5	conf:cavp/ecdsa-sigver conf:wycheproof/rsa-pss-2048-sha256-mgf1-32
 crypto-prims	partial	-	署名の生成（RSA-PSS だけ — TLS のサーバの CertificateVerify）	Signing (RSA-PSS only — the TLS server's CertificateVerify)	test:std/tls.TestTrace
 crypto-prims	planned	0.8	ECDSA の署名（RFC 6979）	ECDSA signing (RFC 6979)	-
-crypto-prims	yes	-	秘密に触る関数の定数時間（静的な網 ctcheck — 関数ごとの条件分岐の列を黄金と照合）	Constant time for functions that touch secrets (static gate ctcheck — per-function conditional branches checked against a golden)	gold:testdata/ctcheck/expect.txt:aesgcm
+crypto-prims	yes	-	秘密に触る関数の定数時間（静的な検査 ctcheck — 関数ごとの条件分岐の列をゴールデンと照合）	Constant time for functions that touch secrets (static gate ctcheck — per-function conditional branches checked against a golden)	gold:testdata/ctcheck/expect.txt:aesgcm
 crypto-prims	yes	-	パスワードハッシュ: Argon2id（推し）・bcrypt・PBKDF2-HMAC-SHA256・PHC 文字列の Verify	Password hashing: Argon2id (recommended), bcrypt, PBKDF2-HMAC-SHA256, Verify of PHC strings	conf:xcrypto/argon2id conf:xcrypto/bcrypt conf:go/pbkdf2-sha256
 crypto-prims	intentional	-	scrypt・MD5 / SHA-1 のハッシュ	scrypt, MD5 / SHA-1 hashes	-
-http-server	yes	-	HTTP/1.1 と 1.0 の要求・keep-alive・パイプライン（RFC 9112）	HTTP/1.1 and 1.0 requests, keep-alive, pipelining (RFC 9112)	gold:testdata/httpcheck/check.ts:pipelined_16 gold:testdata/httpcheck/check.ts:HTTP/1.0_keep-alive test:std/http/server.TestFrameAgrees
+http-server	yes	-	HTTP/1.1 と 1.0 のリクエスト・keep-alive・パイプライン（RFC 9112）	HTTP/1.1 and 1.0 requests, keep-alive, pipelining (RFC 9112)	gold:testdata/httpcheck/check.ts:pipelined_16 gold:testdata/httpcheck/check.ts:HTTP/1.0_keep-alive test:std/http/server.TestFrameAgrees
 http-server	yes	-	本文の Content-Length と chunked（chunk の拡張と trailer は読み捨て）	Bodies with Content-Length and chunked (chunk extensions and trailers are discarded)	gold:testdata/httpcheck/check.ts:chunk_ext_+_trailer gold:testdata/httpcheck/check.ts:POST_chunked
-http-server	yes	-	要求の密輸の形の拒否（CL + TE・食い違う CL・obs-fold・裸の CR・空白の前のコロン）= 400	Rejects request-smuggling shapes (CL + TE, conflicting CL, obs-fold, bare CR, space before colon) with 400	gold:testdata/httpcheck/check.ts:CL_+_TE gold:testdata/httpcheck/check.ts:CL_twice_differ gold:testdata/httpcheck/check.ts:obs-fold gold:testdata/httpcheck/check.ts:bare_CR
+http-server	yes	-	リクエストの密輸の形の拒否（CL + TE・食い違う CL・obs-fold・裸の CR・空白の前のコロン）= 400	Rejects request-smuggling shapes (CL + TE, conflicting CL, obs-fold, bare CR, space before colon) with 400	gold:testdata/httpcheck/check.ts:CL_+_TE gold:testdata/httpcheck/check.ts:CL_twice_differ gold:testdata/httpcheck/check.ts:obs-fold gold:testdata/httpcheck/check.ts:bare_CR
 http-server	yes	-	上限 = 431（頭）・413（本文）・chunked 以外の Transfer-Encoding = 501・HTTP/1.x 以外 = 505	Limits: 431 (head), 413 (body); Transfer-Encoding other than chunked = 501; non-HTTP/1.x = 505	gold:testdata/httpcheck/check.ts:head_>_8_KiB gold:testdata/httpcheck/check.ts:CL_>_16_KiB gold:testdata/httpcheck/check.ts:TE_gzip gold:testdata/httpcheck/check.ts:HTTP/2.0 test:std/http/server.TestFrameLimits
-http-server	yes	-	応答の gzip（Accept-Encoding の交渉・Vary）と事前圧縮のファイルの br / gz の選択	Response gzip (Accept-Encoding negotiation, Vary) and choosing precompressed br / gz files	gold:testdata/httpcheck/check.ts:gzip_stream_node:http gold:testdata/httpcheck/check.ts:static_gz_roundtrip
-http-server	yes	-	応答の stream（長さ既知 = Content-Length・長さ不定 = chunked・HTTP/1.0 は閉じで区切る）	Streamed responses (known length = Content-Length, unknown = chunked, HTTP/1.0 delimited by close)	gold:testdata/httpcheck/check.ts:stream_file gold:testdata/httpcheck/check.ts:chunked_node:http
+http-server	yes	-	レスポンスの gzip（Accept-Encoding の交渉・Vary）と事前圧縮のファイルの br / gz の選択	Response gzip (Accept-Encoding negotiation, Vary) and choosing precompressed br / gz files	gold:testdata/httpcheck/check.ts:gzip_stream_node:http gold:testdata/httpcheck/check.ts:static_gz_roundtrip
+http-server	yes	-	レスポンスの stream（長さ既知 = Content-Length・長さ不定 = chunked・HTTP/1.0 は閉じで区切る）	Streamed responses (known length = Content-Length, unknown = chunked, HTTP/1.0 delimited by close)	gold:testdata/httpcheck/check.ts:stream_file gold:testdata/httpcheck/check.ts:chunked_node:http
 http-server	yes	-	条件付き GET（RFC 9110 13 — ETag・Last-Modified・304 / 412）と Cache-Control の既定 private	Conditional GET (RFC 9110 13 — ETag, Last-Modified, 304 / 412) and a private Cache-Control default	test:std/http/server.TestTagIn test:std/http/server.TestParseDate gold:testdata/httpcheck/check.ts:static_304_if-none-match gold:testdata/httpcheck/check.ts:default_cache-control_private
 http-server	yes	-	multipart/form-data（RFC 7578）	multipart/form-data (RFC 7578)	test:std/http/server.TestMultipartRfc test:std/http/server.TestMultipartBrowsers gold:testdata/httpcheck/check.ts:upload_formdata
 http-server	yes	-	Server-Sent Events（text/event-stream・Last-Event-ID）	Server-Sent Events (text/event-stream, Last-Event-ID)	test:std/http/server.TestFormatEvent gold:testdata/httpcheck/check.ts:sse_Last-Event-ID
-http-server	intentional	-	Expect: 100-continue の 100 応答（送らずに本文を待つ — クライアントは待ちの期限の後に本文を送る）	The 100 response to Expect: 100-continue (not sent; the body is awaited — clients send it after their wait)	-
+http-server	intentional	-	Expect: 100-continue の 100 レスポンス（送らずに本文を待つ — クライアントは待ちの期限の後に本文を送る）	The 100 response to Expect: 100-continue (not sent; the body is awaited — clients send it after their wait)	-
 http-server	planned	0.8	Range（206）	Range requests (206)	-
 http-server	planned	0.8	HTTP/2（h2 / h2c — 外部オラクル h2spec）	HTTP/2 (h2 / h2c — external oracle h2spec)	-
 http-server	planned	0.8	HTTP/3（QUIC — 外部オラクル quic-interop-runner）	HTTP/3 (QUIC — external oracle quic-interop-runner)	-
 http-server	intentional	-	Upgrade（WebSocket を含む）・CONNECT（サーバからの押し出しは SSE が今の答え — WebSocket は実需が立てば 0.8 以降のピンへ上げる）	Upgrade (including WebSocket), CONNECT (SSE is today's answer for server push — WebSocket moves to a 0.8+ pin once there is a real demand)	-
 http-client	yes	-	http と https（TLS の章）・Content-Length / chunked / 閉じ区切りの本文・HEAD	http and https (see the TLS chapter), Content-Length / chunked / close-delimited bodies, HEAD	test:std/http/client.TestPlainLoopback test:std/http/client.TestBodyMachine interop:http:chunked interop:http:head
 http-client	yes	-	redirect（10 回まで・301 / 302 / 303 は GET へ・307 / 308 は保つ・origin が変われば認証の頭を落とす・https → http は追わない）	Redirects (up to 10; 301 / 302 / 303 become GET, 307 / 308 keep the method; auth headers dropped across origins; never https → http)	interop:http:redirect-303 interop:http:redirect-auth-same-origin-only interop:http:insecure-redirect-refused
-http-client	yes	-	keep-alive の束（Open / Send）・stream（Stream）	Keep-alive sessions (Open / Send), streaming (Stream)	test:std/http/client.TestSessionPlain test:std/http/client.TestStreamPlain interop:http:session interop:http:stream
+http-client	yes	-	keep-alive のセッション（Open / Send）・stream（Stream）	Keep-alive sessions (Open / Send), streaming (Stream)	test:std/http/client.TestSessionPlain test:std/http/client.TestStreamPlain interop:http:session interop:http:stream
 http-client	yes	-	proxy（CONNECT のトンネル・Proxy-Authorization）	Proxy (CONNECT tunnel, Proxy-Authorization)	test:std/http/client.TestProxyLoopback interop:http:proxy-connect interop:http:proxy-auth
-http-client	yes	-	1xx の中間の応答を読み捨てる	Skips 1xx interim responses	test:std/http/client.TestScanSplits
+http-client	yes	-	1xx の中間のレスポンスを読み捨てる	Skips 1xx interim responses	test:std/http/client.TestScanSplits
 http-client	yes	-	期限と本文の上限（ゼロ値で有効）	Timeouts and body limits (on in the zero value)	test:std/http/client.TestTimeoutAndRefused
 http-client	intentional	-	URL の userinfo（user:pass@）	userinfo in URLs (user:pass@)	test:std/http/client.TestTarget
 http-client	planned	0.8	IPv6 の番地への接続	Connecting to IPv6 addresses	test:std/http/client.TestTarget
-http-client	planned	0.8	応答の Content-Encoding の復号（今は Accept-Encoding を送らない）	Decoding a response Content-Encoding (Accept-Encoding is not sent today)	-
+http-client	planned	0.8	レスポンスの Content-Encoding の復号（今は Accept-Encoding を送らない）	Decoding a response Content-Encoding (Accept-Encoding is not sent today)	-
 http-client	planned	0.8	HTTP/2	HTTP/2	-
 http-cookie	yes	-	Set-Cookie を書く（ゼロ値が安全な側: Secure・HttpOnly・SameSite=Lax・Path=/・host-only）	Writing Set-Cookie (the zero value is the safe side: Secure, HttpOnly, SameSite=Lax, Path=/, host-only)	test:std/http/server.TestSetCookieDefaults test:std/http/server.TestSetCookieRejects
 http-cookie	yes	-	__Host- / __Secure- の前置きの約束（RFC 6265bis 4.1.3）	__Host- / __Secure- prefixes (RFC 6265bis 4.1.3)	test:std/http/server.TestSetCookieRejects
-http-cookie	yes	-	クライアントの cookie はデータ（応答の Set-Cookie から CookieValue で取り出し、要求の cookies: に載せる — origin が変わる redirect では落とす）	Client cookies are data (read from Set-Cookie with CookieValue, sent with the request's cookies: argument — dropped on a cross-origin redirect)	test:std/http/client.TestCookieValue test:std/http/client.TestCookieLoopback
+http-cookie	yes	-	クライアントの cookie はデータ（レスポンスの Set-Cookie から CookieValue で取り出し、リクエストの cookies: に載せる — origin が変わる redirect では落とす）	Client cookies are data (read from Set-Cookie with CookieValue, sent with the request's cookies: argument — dropped on a cross-origin redirect)	test:std/http/client.TestCookieValue test:std/http/client.TestCookieLoopback
 http-cookie	intentional	-	cookie jar（RFC 6265 5 の自動の保存と送り — 載せるものは呼び手が書く。任意の origin を渡る汎用エージェントの機械は std に置かない）	Cookie jar (RFC 6265 5 automatic storage and sending — the caller writes what is sent; the machinery of a general agent crossing arbitrary origins is not in std)	-
 http-url	yes	-	percent-encoding（RFC 3986 2.1）の Escape / Unescape	percent-encoding (RFC 3986 2.1) Escape / Unescape	test:testdata/stdtest/stdurl.TestEscape test:testdata/stdtest/stdurl.TestUnescape test:testdata/stdtest/stdurl.TestUnescapeRejects
 http-url	yes	-	application/x-www-form-urlencoded のクエリの読み書き	Reading and writing application/x-www-form-urlencoded queries	test:testdata/stdtest/stdurl.TestParseQuery test:testdata/stdtest/stdurl.TestFormatQuery
-http-url	partial	-	URL の読み（HTTP クライアントの http / https の絶対 URL だけ — 汎用の URL の型は無い）	URL parsing (absolute http / https URLs inside the HTTP client only — no general URL type)	test:std/http/client.TestTarget test:std/http/client.TestLocation
-http-url	intentional	-	WHATWG URL Standard の構文解析（ブラウザの寛容な読みは持たない — RFC 3986 の厳格な側）	WHATWG URL Standard parsing (no browser-style lenient parsing — the strict RFC 3986 side)	-
+http-url	partial	-	URL の構文解析（HTTP クライアントの http / https の絶対 URL だけ — 汎用の URL の型は無い）	URL parsing (absolute http / https URLs inside the HTTP client only — no general URL type)	test:std/http/client.TestTarget test:std/http/client.TestLocation
+http-url	intentional	-	WHATWG URL Standard の構文解析（ブラウザの寛容な解釈は持たない — RFC 3986 の厳格な側）	WHATWG URL Standard parsing (no browser-style lenient parsing — the strict RFC 3986 side)	-
 http-url	planned	0.8	IDN（punycode）	IDN (punycode)	-
 dns-resolver	yes	-	スタブリゾルバ（libc を使わない）: /etc/hosts → /etc/resolv.conf の nameserver（3 本まで・期限つき・attempts）	Stub resolver (no libc): /etc/hosts → /etc/resolv.conf nameservers (up to 3, with timeouts and attempts)	test:std/net.TestResolvConf test:std/net.TestHosts interop:dns:7
 dns-resolver	yes	-	search / ndots の候補の順（resolv.conf(5)）	search / ndots candidate order (resolv.conf(5))	test:std/net.TestCandidates
-dns-resolver	yes	-	切り詰め（TC）は TCP で問い直す・CNAME の鎖（8 段まで）	Truncated (TC) answers retried over TCP; CNAME chains (up to 8)	test:std/net.TestParseAnswer interop:dns:7
-dns-resolver	yes	-	偽装への備え: txid は getrandom・応答の txid と問いの名前と型の一致を確かめる・名前の圧縮の輪を断つ	Spoofing defenses: getrandom txid; the answer's txid, name and type must match; compression loops are cut	test:std/net.TestParseAnswer interop:dns:7
+dns-resolver	yes	-	切り詰め（TC）は TCP で問い直す・CNAME のチェーン（深さ 8 まで）	Truncated (TC) answers retried over TCP; CNAME chains (up to 8)	test:std/net.TestParseAnswer interop:dns:7
+dns-resolver	yes	-	偽装への備え: txid は getrandom・レスポンスの txid と問いの名前と型の一致を確認する・名前の圧縮のループを断つ	Spoofing defenses: getrandom txid; the answer's txid, name and type must match; compression loops are cut	test:std/net.TestParseAnswer interop:dns:7
 dns-resolver	partial	-	A と AAAA を読む（Dial は IPv4 だけ）	Reads A and AAAA (Dial is IPv4-only)	test:std/net.TestParseAnswer test:std/net.TestDialLocalhost
-dns-resolver	intentional	-	非 ASCII のホスト名（IDN は URL の層の仕事 — 名指しで拒否）	Non-ASCII host names (IDN belongs to the URL layer — rejected by name)	test:std/net.TestNameCheck
+dns-resolver	intentional	-	非 ASCII のホスト名（IDN は URL の層の仕事 — 専用の診断で拒否）	Non-ASCII host names (IDN belongs to the URL layer — rejected by name)	test:std/net.TestNameCheck
 dns-resolver	intentional	-	DNSSEC の検証（スタブは上流のリゾルバを信頼する）	DNSSEC validation (a stub trusts its upstream resolver)	-
 dns-resolver	intentional	-	DoH / DoT・キャッシュ（OS や上流の役）	DoH / DoT, caching (the job of the OS or the upstream)	-
-dns-resolver	planned	0.8	EDNS0（今は 512 バイトを超える応答が TCP へ倒れる）	EDNS0 (today answers over 512 bytes fall back to TCP)	-
+dns-resolver	planned	0.8	EDNS0（今は 512 バイトを超えるレスポンスが TCP へフォールバックする）	EDNS0 (today answers over 512 bytes fall back to TCP)	-
 dns-resolver	planned	0.8	IPv6 の nameserver と IPv6 への Dial	IPv6 nameservers and dialing IPv6	-

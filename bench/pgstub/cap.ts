@@ -1,4 +1,4 @@
-// 実の PostgreSQL（平文・trust）と async-db の文の往復を記録する — 代役（bench/pgstub）の応答を照合する黄金（bench/pgstub/trace-items.hex）。
+// 実のPostgreSQL（平文・trust）とasync-dbの文の往復を記録する — 代役（bench/pgstub）のレスポンスを照合するゴールデン（bench/pgstub/trace-items.hex）。
 //   node --experimental-strip-types --no-warnings bench/pgstub/cap.ts <host:port> <user> <db> > bench/pgstub/trace-items.hex
 // 相手は bench/httparena の seed（data/pgdb-seed.sql の items）を入れた PG。形は scripts/pgcap.ts と同じ
 // （`# <場面>` の後に `C <hex>`〔送ったもの〕と `S <hex>`〔ReadyForQuery か切断まで受けたもの〕）。

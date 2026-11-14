@@ -5,8 +5,8 @@ package lower
 // 呼び出しの後ろを切ってブロックを TmExit（PANIC — 到達しない）で閉じる。呼び出しの後ろに続きがあると、
 // ① 呼び出しをまたいで生きる値が callee-saved / スタックへ押し出され（longest の運搬値 best / ch / start の退避）
 // ② ループの中の呼び出しとして読みの持ち上げを止める（LICM / GVN）。
-// 閉じたブロックは x86 の配置で冷たい側へ（TmExit の種 — irinl の ilHot と同じ読み）。切って到達しなくなったブロックは中身を消して TmExit に（値の使い手は
-// 支配される側にしかいないので一緒に消える）— 鎖から外すのは cfgClean の P4
+// 閉じたブロックはx86の配置で冷たい側へ（TmExitのシード — irinlのilHotと同じ解釈）。切って到達しなくなったブロックは中身を消してTmExitに（値の使い手は
+// 支配される側にしかいないので一緒に消える）— チェーンから外すのはcfgCleanのP4
 func noretModule(st mut St) {
     mut f := st.fhead
     while f != -1 {

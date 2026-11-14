@@ -21,7 +21,7 @@ type UUID struct {
 }
 ```
 
-16 バイトを big endian の 64 bit 2 語で（hi = 0〜7 バイト目・lo = 8〜15 バイト目）
+16バイトを big endian の64 bit 2ワードで（hi = 0〜7バイト目・lo = 8〜15バイト目）
 
 ## Bad
 

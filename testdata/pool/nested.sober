@@ -2,7 +2,7 @@ package main
 
 import "std/pool"
 
-// 入れ子のブロック・switch の腕・inline 展開される関数型引数の本体での acquire / release
+// 入れ子のブロック・switchの分岐・inline展開される関数型引数の本体でのacquire / release
 type Buf struct {
     n int
 }

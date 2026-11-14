@@ -4,7 +4,7 @@
 
 `import "std/testing"`
 
-テストの語彙の裏方: `_test.sober` の `assert(e)` は loader の固定テンプレート（compiler/loader/assert.sober）が「部分式を束縛 → 偽なら Report して assert の位置で panic」に写す。利用者は assert を書く（ここの関数を直接呼ばない）。値の印字は総称関数 Show[T] でなくテンプレートが組む補間 `"<式> = ${値}"`（int / bool / string — 補間の型の分岐をそのまま使う）。総称関数で書けないのは、T = string の Def が region を持つ型引数で拒否されるため — それが言語に入ったら Show[T] へ移す
+テストの語彙の裏方: `_test.sober` の `assert(e)` は loader の固定テンプレート（compiler/loader/assert.sober）が「部分式を束縛 → 偽ならReportしてassertの位置でpanic」に変換する。利用者はassertを書く（ここの関数を直接呼ばない）。値の印字は総称関数 Show[T] でなくテンプレートが組む補間 `"<式> = ${値}"`（int / bool / string — 補間の型の分岐をそのまま使う）。総称関数で書けないのは、T = string の Def が region を持つ型引数で拒否されるため — それが言語に入ったら Show[T] へ移す
 
 ## AssertFailed
 
@@ -12,7 +12,7 @@
 type AssertFailed panic
 ```
 
-assert の失敗（panic ラベル — 欄なし: 式と部分式の値は Report が前置で印字する。[language.md 27 節](../language.md)）
+assertの失敗（panicラベル — フィールドなし: 式と部分式の値はReportが前置で印字する。[language.md 27 節](../language.md)）
 
 ## Report
 

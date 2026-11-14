@@ -1,15 +1,15 @@
 package task
 
 // structured concurrency の表層（language.md 11 節「表層」）と、多くの task から 1 つの状態への直列の更新 domain（NewDomain / Update / Read / Await — language.md 11 節「domain」）。task.Run が scope を開き、その中で task.Spawn した子の task を Join / Try で待つ。
-// task の結果は写せる imm のデータ（string・slice・map も Join / Try が scope の region へ写す）。error を返す task
+// taskの結果はコピーできるimmのデータ（string・slice・mapもJoin / Tryがscopeのregionへコピーする）。errorを返すtask
 // （g が `(T, error?)` を返す）の Join は 2 値・Try は Outcome の Failed・Join も Try もしなかった失敗は scope の err へ集約
 
-// Run / Spawn / Join / Try は desugar（check の経路）と lower（build の経路）が呼び出し点で固定のテンプレートに写す
-// （コンパイラが名前で引く閉じた集合 — ユーザーは鋳造できない）。本体は写しが外れたときの柵で、到達しない
+// Run / Spawn / Join / Tryはdesugar（checkの経路）とlower（buildの経路）が呼び出し点で固定のテンプレートに変換する
+// （コンパイラが名前で引く閉じた集合 — ユーザーは鋳造できない）。本体は変換が外れたときの柵で、到達しない
 
 import "std/io"
 
-// 札・handle・死因の封（非公開 — 外で値を書けないので、外からは作れない）。1 語は build の実装が運ぶ値
+// 札・handle・死因の封（非公開 — 外で値を書けないので、外からは作れない）。1ワードはbuildの実装が運ぶ値
 // （札 = scope の記録・handle = 子の枠・死因 = 終了コードと点 — lower/par.sober。番地は言語から観測できない）
 type sealed struct {
     w int
@@ -50,7 +50,7 @@ const GB = 1073741824
 // 期限の単位（1 ミリ秒 — `deadline: 500 * MS`。値はナノ秒の相対時間 — 時刻源は CLOCK_MONOTONIC）
 const MS = 1000000
 
-// 呼び出し点の写しが外れた柵（到達しない）
+// 呼び出し点の変換が外れた柵（到達しない）
 type NotLowered panic
 
 // region を 1 段開き、本体 f をハンドルで走らせる。子が全部決着してから戻り、死んだ子がいれば err = ChildDied、
@@ -70,12 +70,12 @@ func Run[T](f func(Scope) T, budget int?, wait bool?, deadline int?, backlog int
     return panic(NotLowered{}), ChildDied{cause: Cause{seal: sealed{}}}
 }
 
-// 柵（写しが外れたら panic — 宣言の @errors を本体が書ける形にするための分岐）
+// 柵（変換が外れたらpanic — 宣言の @errorsを本体が書ける形にするための分岐）
 func fence() bool {
     return true
 }
 
-// 子の task を生む（g の捕獲は imm のデータだけ・結果は scope の region へ写る）。budget = この子を逐次で走らせたときの使用量の上界（バイト・省略可。書けば入場の見積もりの代わりに使う — 省略なら spawn の点ごとに観測した使用量の高水位〔観測の無い間は 1 MiB〕が見積もり。呼び出しを含まない整数式）。
+// 子のtaskを生む（gの捕獲はimmのデータだけ・結果はscopeのregionへコピーされる）。budget = この子を逐次で走らせたときの使用量の上界（バイト・省略可。書けば入場の見積もりの代わりに使う — 省略ならspawnの点ごとに観測した使用量の高水位〔観測の無い間は1 MiB〕が見積もり。呼び出しを含まない整数式）。
 // budget の無い子の region 1 つの上限は 512 MiB（超えると RegionExceeded の死 — 大きい作業域の子は budget を書く・書けばそれ以上の 2 の冪）
 @effects()
 func Spawn[T](s Scope, g func() T, budget int?) Handle[T] {
@@ -124,7 +124,7 @@ func Recv[T](rx Receiver[T]) T? {
     return panic(NotLowered{})
 }
 
-// `for l <- task.Recv(rx) { … }` の写し先（loader が呼び先を付け替える — 閉じて空になるまで受けて k へ渡す）（対の SendAll は実需まで足さない — 34 節 2 の注記）
+// `for l <- task.Recv(rx) { … }` の変換先（loaderが呼び先を付け替える — 閉じて空になるまで受けてkへ渡す）（対の SendAll は実需まで足さない — 34 節2の注記）
 @effects(block)
 func RecvAll[T](rx Receiver[T], k func(T)) {
     mut more := true
@@ -146,7 +146,7 @@ func Close[T](tx Sender[T]) {
     }
 }
 
-// `Spawn(s, give: ep, (ep) => …)` の写し先（loader が呼び先を付け替える — 端点 ep をちょうど 1 つの子へ移す。親に残った別名は失効）
+// `Spawn(s, give: ep, (ep) => …)` の変換先（loaderが呼び先を付け替える — 端点epをちょうど1つの子へ移す。親に残った別名は失効）
 @effects()
 func SpawnGive[T, E](s Scope, give E, g func(E) T, budget int?) Handle[T] {
     return panic(NotLowered{})
@@ -261,8 +261,8 @@ func mapE[T, U](xs []T, f func(T) (U, error?), budget int?) ([]U, error?) {
     return r.vs, r.e
 }
 
-// 名前つきプール（テナント・エンドポイント — language.md 11 節「天井の木」）のハンドル: task.SpawnIn の第 2 実引数。
-// 1 語は rt の台帳のノード（imm のデータ — 子へ捕獲できる）。shed の単位 = プールのノード（枯れたノードの配下の SpawnIn だけが失敗する）
+// 名前つきプール（テナント・エンドポイント — language.md 11 節「上限の木」）のハンドル: task.SpawnIn の第 2 実引数。
+// 1ワードはrtの台帳のノード（immのデータ — 子へ捕獲できる）。shedの単位 = プールのノード（枯れたノードの配下のSpawnInだけが失敗する）
 type Pool struct {
     seal sealed
 }
@@ -277,11 +277,11 @@ type PoolLimit panic
 @intrinsic("par_pool")
 func newPool(budget int, parent int) int
 
-// 台帳の 1 語（k — Ledger の読み口。io: 読んだ値は時刻に依る）
+// 台帳の1ワード（k — Ledgerの読み出しのインターフェース。io: 読んだ値は時刻に依る）
 @intrinsic("par_ledger")
 func ledgerWord(k int) int
 
-// プールのノード w の失敗の数を 1 足す（MarkFailed の口）
+// プールのノードwの失敗の数を1足す（MarkFailedのインターフェース）
 @intrinsic("par_fail")
 func poolFail(w int) int
 
@@ -315,10 +315,10 @@ type PoolView struct {
     died int // このプールで入場した task の死の数（net.Serve — handler が死んだ接続）
 }
 
-// domain の合計の行（Ledger().domains — language.md 11 節「domain」の観測の口）: 全 domain をまとめた 1 行
+// domainの合計の行（Ledger().domains — language.md 11 節「domain」の観測のインターフェース）: 全domainをまとめた1行
 type DomainView struct {
     waiting int // 今 Await で待っている呼び出しの数
-    maxWait int // 待った Await の到着から入るまでの最大（ns — 読むと 0 に戻る窓の値・maxWait と同じ流儀）
+    maxWait int // 待ったAwaitの到着から入るまでの最大（ns — 読むと0に戻るウィンドウの値・maxWaitと同じ流儀）
     expired int // 待ちの上限が来て io.Expired で返った回数の累計
     poisoned int // 本体が死んで毒になった domain の数の累計
 }
@@ -335,23 +335,23 @@ type LedgerView struct {
     declOver int
     shed int
     waits int // wait の scope で入場を待った回数（language.md 11 節「wait」）
-    maxWait int // 走れるようになってから走るまでの待ちの最大（ns・全ワーカー — 読むと 0 に戻る。language.md 28 節 ring の道「飽和下の待ちの上限」）
-    aged int // 待ちの上限が効いて積みの底から取った回数の累計（飽和の印 — 底を期限で救った数）
-    late int // 自分の D を越えてから走った task の数の累計（aged の救いに加え、積みが浅いときの越えも数える — aged ⊆ late）
-    maxLate int // 越えた量（待ち − D）の最大（ns・全ワーカー — 読むと 0 に戻る窓の値・maxWait と同じ流儀）
+    maxWait int // 走れるようになってから走るまでの待ちの最大（ns・全ワーカー — 読むと0に戻る。language.md 28 節io_uringのパス「飽和下の待ちの上限」）
+    aged int // 待ちの上限が効いてスタックの底から取った回数の累計（飽和のフラグ — 底を期限で救った数）
+    late int // 自分のDを越えてから走ったtaskの数の累計（agedの救いに加え、スタックが浅いときの越えも数える — aged ⊆ late）
+    maxLate int // 越えた量（待ち − D）の最大（ns・全ワーカー — 読むと0に戻るウィンドウの値・maxWaitと同じ流儀）
     backlog int // 今の未着手の子の数（全ワーカーの列の和 — ワーカーあたり 255 まで。language.md 11 節「未着手の子の上限」）
-    backlogYield int // 列があふれて子をその場で先に走らせた（生んだ task が譲った）回数の累計（背圧が効いた印）
+    backlogYield int // 列があふれて子をその場で先に走らせた（生んだtaskが譲った）回数の累計（背圧が効いたフラグ）
     pin int // ワーカーの CPU の固定の形（0 = なし・1 = L3 キャッシュを共有する CPU の群・2 = CPU 1 つ・3 = L3 の群が読めず CPU 1 つへ縮退したワーカーがある）
     pinGroups int // 固定した群の数（ワーカーは起動の後に自分を固定する — 全部が数えられるのはワーカーが立ち上がった後）
-    parkShallow int // 接続の task が浅く寝た回数の累計（本体より下の積みを捨て、ワーカーの区画を持たずに寝た — language.md 11 節「メトリクス」）
-    parkDeep int // 接続の task がワーカーの区画を持って寝た回数の累計（区画の交換 — 本体より下の枠が生きている待ち）
-    parkDeepWin int // 浅く寝られる点だったが区画の窓に中身があって深く寝た回数の累計（parkDeep の内数 — 受けの region に途中の要求を持って待つ等）
-    parkSwap int // 浅く寝る前に持ち札の区画とワーカーの区画を入れ替えた回数の累計（parkShallow の内数 — 深い待ちの後の受け）
+    parkShallow int // 接続のtaskがシャロースリープした回数の累計（本体より下のスタックを捨て、ワーカーのエリアを持たずにスリープした — language.md 11 節「メトリクス」）
+    parkDeep int // 接続のtaskがワーカーのエリアを持ってディープスリープした回数の累計（エリアの交換 — 本体より下の枠が生きている待ち）
+    parkDeepWin int // シャロースリープできる点だったがエリアのウィンドウに中身があってディープスリープした回数の累計（parkDeepの内数 — 受けのregionに途中のリクエストを持って待つ等）
+    parkSwap int // シャロースリープする前に所有エリアとワーカーのエリアを入れ替えた回数の累計（parkShallowの内数 — ディープスリープの後の受け）
     pools []PoolView
     domains DomainView // domain の合計の行
 }
 
-// 台帳の今の値（io の効果 — 読んだ値は時刻に依る: 時計と同じ扱い）
+// 台帳の今の値（ioのエフェクト — 読んだ値は時刻に依る: 時計と同じ扱い）
 @effects(nondet)
 func Ledger() LedgerView {
     np := ledgerWord(0)
@@ -377,43 +377,43 @@ func SpawnIn[T](s Scope, pool Pool, g func() T, budget int?) (Handle[T]?, error?
     return nil, Shed{}
 }
 
-// ワーカーローカルストレージのハンドル（region-domain-pool.md 4d 節 — task.NewLocal が作る）: ワーカーごとに T を 1 つ持ち、task.Lease の窓に貸す。
-// 中身は NewLocal を呼んだ region に住む imm の列（region の規則がそのまま効く — 外へ出すと列ごと写る〔別のストレージ — 観測は同じ・遅いだけ〕）。
-// 子 task へは imm のデータとして捕獲で渡る。ゼロ値は何も指さない偽物（同一性の族 — NewLocal だけが作る）。
-// 型引数を持たない: ストレージの T は mut の列（pool.Scratch）を持つ struct で、型引数に置けない（language.md 25 節 — 型引数は写せる型）。
+// ワーカーローカルストレージのハンドル（region-domain-pool.md 4d節 — task.NewLocalが作る）: ワーカーごとにTを1つ持ち、task.Leaseのウィンドウに貸す。
+// 中身はNewLocalを呼んだregionに住むimmの列（regionの規則がそのまま効く — 外へ出すと列ごとコピーされる〔別のストレージ — 観測は同じ・遅いだけ〕）。
+// 子taskへはimmのデータとして捕獲で渡る。ゼロ値は何も指さない偽物（同一性の種類 — NewLocalだけが作る）。
+// 型引数を持たない: ストレージのTはmutの列（pool.Scratch）を持つstructで、型引数に置けない（language.md 25 節 — 型引数はコピーできる型）。
 // T の同一性は loader が型の名前から焼いた指紋で Lease ごとに照合する（違えば panic(LocalType{}) — 呼び手の契約違反）
 type Local struct {
     blk []int
 }
 
-// NewLocal と違う T の窓で Lease した（ストレージの T の指紋が合わない）
+// NewLocalと違うTのウィンドウでLeaseした（ストレージのTの指紋が合わない）
 type LocalType panic
 
 // T のストレージをワーカーの数だけ作る: `gzw := task.NewLocal((w mut flate.Work) => { pool.NewScratch(mut w.head, 1 << 15) … })`。
-// 窓のラムダは T の Scratch の欄を定数の容量で整える文だけ（loader の検査）。T はスカラーと pool.Scratch の欄だけの struct。
-// 呼び出し点は loader が写す（lease.sober — 本体は写しが外れたときの柵）
+// ウィンドウのラムダはTのScratchのフィールドを定数の容量で整える文だけ（loaderの検査）。Tはスカラーとpool.Scratchのフィールドだけのstruct。
+// 呼び出し点はloaderが変換する（lease.sober — 本体は変換が外れたときの柵）
 @effects(panic)
 func NewLocal(prep func()) Local {
     return panic(NotLowered{})
 }
 
-// lp の今のワーカーのストレージを窓 body に貸す: `z := task.Lease(gzw, (w mut flate.Work) => flate.EncodeWith(mut w, b, 6))`。
-// 意味は「窓のたびに新しい値」— `{ mut w := T{}; 整え(mut w); body(mut w) }` と観測上同じ（スカラーは 0・Scratch は全部 0・容量は NewLocal の整えのまま）。
-// ストレージが使用中（窓の中で譲った task が持っている）なら新しい割り当てに倒れる（遅いだけ）。呼び出し点は loader が写す
+// lpの今のワーカーのストレージをウィンドウbodyに貸す: `z := task.Lease(gzw, (w mut flate.Work) => flate.EncodeWith(mut w, b, 6))`。
+// 意味は「ウィンドウのたびに新しい値」— `{ mut w := T{}; 整え(mut w); body(mut w) }` と観測上同じ（スカラーは0・Scratchは全部0・容量はNewLocalの整えのまま）。
+// ストレージが使用中（ウィンドウの中で譲ったtaskが持っている）なら新しい割り当てに倒れる（遅いだけ）。呼び出し点はloaderが変換する
 @effects(panic)
 func Lease[U](lp Local, body func() U) U {
     return panic(NotLowered{})
 }
 
-// LocalNew / LeaseTake / LeaseGive / LeaseBlock は task.NewLocal / task.Lease の写し先（loader が組む — 利用者の直の呼び出しは loader が拒否）。
-// ストレージの列の形: [T の指紋, Scratch の欄の数 n, 欄ごとの容量 × n, ワーカーの数 W, ワーカーごとの区画 × W]。区画 = [印, 鎖, 欄ごとに (tag, 語 × 容量)]
-// （印と鎖は rt の lease_op が書く・tag と語は pool.LeaseAttach が付けた窓の Scratch が書く — imm の列の語を rt の口だけが書く）
+// LocalNew / LeaseTake / LeaseGive / LeaseBlockはtask.NewLocal / task.Leaseの変換先（loaderが組む — 利用者の直の呼び出しはloaderが拒否）。
+// ストレージの列の形: [Tの指紋, Scratchのフィールドの数n, フィールドごとの容量 × n, ワーカーの数W, ワーカーごとのエリア × W]。エリア = [フラグ, チェーン, フィールドごとに (tag, ワード × 容量)]
+// （フラグとチェーンはrtのlease_opが書く・tagとワードはpool.LeaseAttachが付けたウィンドウのScratchが書く — immの列のワードをrtのインターフェースだけが書く）
 
-// rt の口（op 0 = ワーカーの数・1 = 今のワーカーの番号・2 = blk[off] の印を取る〔1 / 0 = 使用中〕・3 = 返す・4 = 生の読み・5 = 生の書き・6 = 今の深度より深い死んだスロットの頁を返す — std/tls の handshake の後）
+// rtのインターフェース（op 0 = ワーカーの数・1 = 今のワーカーの番号・2 = blk[off] のフラグを取る〔1 / 0 = 使用中〕・3 = 返す・4 = 生の読み・5 = 生の書き・6 = 今の深度より深い死んだスロットのページを返す — std/tlsのhandshakeの後）
 @intrinsic("lease_op")
 func leaseOp(op int, blk []int, off int, v int) int
 
-// task.NewLocal / task.Lease の写し先（loader が組む — 利用者の直の呼び出しは loader が拒否）: T の指紋 fp と Scratch の欄の容量の列 caps からストレージを作る（ワーカーの数だけの区画を今の region に先取り — 全部 0）
+// task.NewLocal / task.Leaseの変換先（loaderが組む — 利用者の直の呼び出しはloaderが拒否）: Tの指紋fpとScratchのフィールドの容量の列capsからストレージを作る（ワーカーの数だけのエリアを今のregionに先取り — 全部0）
 @effects()
 func LocalNew(fp int, caps []int) Local {
     n := len(caps)
@@ -434,7 +434,7 @@ func LocalNew(fp int, caps []int) Local {
         i += 1
     }
     b = append(b, nw)
-    // 区画は全部 0 から（1 回きり — ワーカーの数 × 区画の大きさ）
+    // エリアは全部0から（1回きり — ワーカーの数 × エリアの大きさ）
     mut k := len(b)
     while k < total {
         b = append(b, 0)
@@ -443,7 +443,7 @@ func LocalNew(fp int, caps []int) Local {
     return Local{blk: freeze(b)}
 }
 
-// task.NewLocal / task.Lease の写し先（loader が組む — 利用者の直の呼び出しは loader が拒否）: T の指紋 fp を照合し、今のワーカーの区画の位置を返す（使用中なら −1 = 倒れ）
+// task.NewLocal / task.Leaseの変換先（loaderが組む — 利用者の直の呼び出しはloaderが拒否）: Tの指紋fpを照合し、今のワーカーのエリアの位置を返す（使用中なら −1 = 倒れ）
 @effects(panic)
 func LeaseTake(lp Local, fp int) int {
     if len(lp.blk) == 0 || lp.blk[0] != fp {
@@ -465,7 +465,7 @@ func LeaseTake(lp Local, fp int) int {
     return if leaseOp(2, lp.blk, at, 0) == 1 { at } else { 0 - 1 }
 }
 
-// task.NewLocal / task.Lease の写し先（loader が組む — 利用者の直の呼び出しは loader が拒否）: LeaseTake で取った区画 at を返す（−1 なら何もしない）
+// task.NewLocal / task.Leaseの変換先（loaderが組む — 利用者の直の呼び出しはloaderが拒否）: LeaseTakeで取ったエリアatを返す（−1なら何もしない）
 @effects()
 func LeaseGive(lp Local, at int) {
     if at >= 0 {
@@ -473,7 +473,7 @@ func LeaseGive(lp Local, at int) {
     }
 }
 
-// task.NewLocal / task.Lease の写し先（loader が組む — 利用者の直の呼び出しは loader が拒否）: ストレージの列（pool.LeaseAttach へ渡す）
+// task.NewLocal / task.Leaseの変換先（loaderが組む — 利用者の直の呼び出しはloaderが拒否）: ストレージの列（pool.LeaseAttachへ渡す）
 @effects()
 func LeaseBlock(lp Local) []int {
     return lp.blk
@@ -486,13 +486,13 @@ type Domain[S] struct {
 }
 
 // 札 s の scope に状態の初期値 init を持つ domain を作る。wait = Await の待ちの上限（ナノ秒の相対時間・省略で既定値）。
-// 呼び出し点は desugar がコアの dnew へ写す（本体は写しが外れたときの柵）
+// 呼び出し点はdesugarがコアのdnewへ変換する（本体は変換が外れたときの柵）
 @effects()
 func NewDomain[S](s Scope, init S, wait int?) Domain[S] {
     return panic(NotLowered{})
 }
 
-// f を d の状態に当て、f の値を写して返す。f は待たない・io なし・nondet なし・明示の panic なし・捕獲は imm のデータだけ
+// fをdの状態に当て、fの値をコピーして返す。fは待たない・ioなし・nondetなし・明示のpanicなし・捕獲はimmのデータだけ
 @effects(nondet)
 func Update[S, R](d Domain[S], f func(st mut S) R) R {
     mut st := domEnter(d)
@@ -501,7 +501,7 @@ func Update[S, R](d Domain[S], f func(st mut S) R) R {
     return domOut(r)
 }
 
-// g の値を写して返す（状態は変えない）。g の約束は Update の f と同じ
+// gの値をコピーして返す（状態は変えない）。gの約束はUpdateのfと同じ
 @effects(nondet)
 func Read[S, R](d Domain[S], g func(st S) R) R {
     st := domEnter(d)
@@ -528,7 +528,7 @@ func Await[S, R](d Domain[S], f func(st mut S) R, when func(st S) bool, wait int
     return domOut(r), nil
 }
 
-// Update / Read / Await の写し先の口（desugar がコアの denter / dexit へ写す）: 番が来たら入り、状態を今の最内へ写して受ける
+// Update / Read / Awaitの変換先のインターフェース（desugarがコアのdenter / dexitへ変換する）: 番が来たら入り、状態を今の最内へコピーして受ける
 @effects(nondet)
 func domEnter[S](d Domain[S]) S {
     return panic(NotLowered{})
@@ -542,7 +542,7 @@ func domExit[S](d Domain[S], st S) {
     }
 }
 
-// 本体の結果を呼び手の最内へ写す（状態と別名にしない — desugar は恒等で写す）
+// 本体の結果を呼び手の最内へコピーする（状態と別名にしない — desugarは恒等でコピーする）
 @effects()
 func domOut[R](r R) R {
     if fence() {
@@ -551,14 +551,14 @@ func domOut[R](r R) R {
     return r
 }
 
-// 鍵を手放して待ちの列に積み、手渡されたら鍵を持って true・上限が来たら鍵を持たずに false（コアの unreach）。when は待ち手を束ねる鍵にだけ使う
-// （捕捉の無い同じ when が同じ状態で偽と分かった待ち手は起こさない — 呼ばない）
+// 鍵を手放して待ちの列に積み、手渡されたら鍵を持ってtrue・上限が来たら鍵を持たずにfalse（コアのunreach）。whenは待ち手をまとめる鍵にだけ使う
+// （捕捉の無い同じwhenが同じ状態で偽と分かった待ち手はウェイクアップしない — 呼ばない）
 @effects(block)
 func domWait[S](d Domain[S], wait int?, when func(st S) bool) bool {
     return panic(NotLowered{})
 }
 
-// 本体の状態を imm の見方で渡す（mut の器を持つ状態でも g / when の仮引数の型に合う — 写さない）
+// 本体の状態をimmの見方で渡す（mutの器を持つ状態でもg / whenの仮引数の型に合う — コピーしない）
 @effects()
 func domView[S](st S) S {
     if fence() {
@@ -573,7 +573,7 @@ func domLoad[S](d Domain[S]) S {
     return panic(NotLowered{})
 }
 
-// Await の when が偽のまま入った腕（コアの unreach）
+// Awaitのwhenが偽のまま入った分岐（コアのunreach）
 @effects()
 func domMiss[R]() R {
     return panic(NotLowered{})

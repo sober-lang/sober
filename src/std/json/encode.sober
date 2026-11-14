@@ -5,9 +5,9 @@ import "std/convert"
 import "std/internal/jsonw"
 import "std/iter"
 
-// T→JSON の裏方（shape[T] の逆向き — language.md 16 節 2）: 利用者は `json.Encode[T](v)`（欄名の対応つきは `json.EncodeWith[T](v, map[string]string{"欄": "キー"})`）を書き、
-// loader の固定テンプレート（compiler/loader/jsonshape.sober）が型ごとの写しの関数（mut の builder に書く普通の Sober）を合成する。ここは部品だけ。
-// 綴り: 空白なし・欄は宣言の順・`U?` の nil は null・数は int の 10 進と float の最短の往復表現（convert.FormatFloat）・文字列は Format と同じエスケープ
+// T→JSONの裏方（shape[T] の逆向き — language.md 16 節2）: 利用者は `json.Encode[T](v)`（フィールド名の対応つきは `json.EncodeWith[T](v, map[string]string{"欄": "キー"})`）を書き、
+// loaderの固定テンプレート（compiler/loader/jsonshape.sober）が型ごとの変換の関数（mutのbuilderに書く普通のSober）を合成する。ここは部品だけ。
+// 綴り: 空白なし・フィールドは宣言の順・`U?` のnilはnull・数はintの10進とfloatの最短の往復表現（convert.FormatFloat）・文字列はFormatと同じエスケープ
 // （`"` `\` と制御文字だけ — Go の Marshal と違い < > & は素のまま）。NaN / ±Inf は JSON に無いので panic（NotFinite）
 
 // JSON に書けない float（NaN・±Inf）を Encode に渡した
@@ -15,11 +15,11 @@ type NotFinite panic {
     field string
 }
 
-// 欄 field の JSON のキー（rename の対応が無ければ欄名のまま。rename は省略可能な引数〔map[K]V?〕にしない — map の T? は
+// フィールドfieldのJSONのキー（renameの対応が無ければフィールド名のまま。renameは省略可能な引数〔map[K]V?〕にしない — mapのT? は
 // 実引数に map を渡すと build が拒否・絞って使うと check が拒否する言語の穴がある。対応なしは空の map）
 @effects()
 func KeyOf(rename map[string]string, field string) string {
-    // 対応なし（Decode / Encode — 空の辞書）は引かない（欄ごとの map の引きがデコードの +3% だった）
+    // 対応なし（Decode / Encode — 空の辞書）は引かない（フィールドごとのmapの引きがデコードの +3%だった）
     if len(rename) == 0 {
         return field
     }
@@ -36,7 +36,7 @@ func Put(o mut builder.Builder[byte], s string) {
     builder.PushString(mut o, s)
 }
 
-// 欄の頭（2 つ目以降は ','・キーの文字列・':'）
+// フィールドの頭（2つ目以降は ','・キーの文字列・':'）
 @effects()
 func PutKey(o mut builder.Builder[byte], key string, first bool) {
     if !first {
@@ -52,8 +52,8 @@ func PutString(o mut builder.Builder[byte], s string) {
     quote(mut o, bytes(s))
 }
 
-// n の 10 進を builder へ直に積む（FormatInt の string を経ない）。割るのは定数だけ（10・10^8・10^16 — 乗算に下りる）: 8 桁ずつの塊を
-// 下の桁から 1 語に詰めて（1 バイト / 桁）上の桁から積む（棄てた形: 桁の数の 10 の冪 p で n / p — 割る数が変数で桁ごとに idiv）
+// nの10進をbuilderへ直に積む（FormatIntのstringを経ない）。割るのは定数だけ（10・10^8・10^16 — 乗算に下りる）: 8桁ずつのチャンクを
+// 下の桁から1ワードに詰めて（1バイト / 桁）上の桁から積む（棄てた形: 桁の数の10の冪pでn / p — 割る数が変数で桁ごとにidiv）
 @effects()
 func PutInt(o mut builder.Builder[byte], n int) {
     if n < 0 {
@@ -103,7 +103,7 @@ func PutInt(o mut builder.Builder[byte], n int) {
     putDigits(mut o, r % 100000000, 8)
 }
 
-// v（< 10^8）の 10 進を積む（w = 0 なら最短・w > 0 なら上を 0 で埋めて w 桁）。桁は下から 1 語に詰める（最上位の桁が最下位のバイト）
+// v（< 10^8）の10進を積む（w = 0なら最短・w > 0なら上を0で埋めてw桁）。桁は下から1ワードに詰める（最上位の桁が最下位のバイト）
 func putDigits(o mut builder.Builder[byte], v int, w int) {
     mut x := v
     mut acc := 0
@@ -123,7 +123,7 @@ func PutBool(o mut builder.Builder[byte], b bool) {
     Put(mut o, if b { "true" } else { "false" })
 }
 
-// f の最短の往復表現（NaN・±Inf は panic — field = 欄名）
+// fの最短の往復表現（NaN・±Infはpanic — field = フィールド名）
 @effects(panic)
 func PutFloat(o mut builder.Builder[byte], f float, field string) {
     if f != f || f - f != 0.0 {
@@ -138,8 +138,8 @@ func Done(o mut builder.Builder[byte]) string {
     return bytesToString(builder.Build(mut o))
 }
 
-// 値の木 v を o に書く（json.Encode[json.Value] の写しと、欄の型が json.Value の struct の写しが呼ぶ部品）。印字の規則は Format と同じ
-// （空白なし・欄は並びの順・数は字句のまま）。再帰の深さ = 木の深さ（Tree で開いた木なら MaxDepth まで）
+// 値の木vをoに書く（json.Encode[json.Value] の変換と、フィールドの型がjson.Valueのstructの変換が呼ぶ部品）。印字の規則はFormatと同じ
+// （空白なし・フィールドは並びの順・数は字句のまま）。再帰の深さ = 木の深さ（Treeで開いた木ならMaxDepthまで）
 @effects()
 func PutValue(o mut builder.Builder[byte], x Value) {
     switch x {
@@ -172,12 +172,12 @@ func PutValue(o mut builder.Builder[byte], x Value) {
     }
 }
 
-// 以下は loader が合成する口（std に実体は無い — 呼び出しは型ごとの写しの関数へ写る）
+// 以下はloaderが合成するAPI（stdに実体は無い — 呼び出しは型ごとの変換の関数へ変換される）
 
 // 合成: func Encode[T](v T) string
-// v の JSON（空白なし・欄は宣言の順・`U?` の nil は null）。T の範囲は Decode と同じ + 裸の json.Value の欄・T = json.Value（値の木 — 印字は Format と同じ規則）。
+// vのJSON（空白なし・フィールドは宣言の順・`U?` のnilはnull）。Tの範囲はDecodeと同じ + 裸のjson.Valueのフィールド・T = json.Value（値の木 — 印字はFormatと同じ規則）。
 // float の NaN / ±Inf は panic(NotFinite)
 // 例: examples/json_encode.sober
 
 // 合成: func EncodeWith[T](v T, rename map[string]string) string
-// Encode の欄名の対応つき版（rename は DecodeWith と同じ辞書 — 同じ辞書で両方向に使える）
+// Encodeのフィールド名の対応つき版（renameはDecodeWithと同じ辞書 — 同じ辞書で両方向に使える）

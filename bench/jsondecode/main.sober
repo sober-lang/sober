@@ -1,7 +1,7 @@
 package main
 
-// イディオム双子 jsondecode（scripts/idiomgap.sh — RVO の的の基準値）の (b) 素直な形: json.Decode[Rec] が作って返す（shape[T] の写しの関数 —
-// 戻りの struct と tags の slice は呼び手の region へ写る）。(a) = mutout/main.sober（呼び手が置き場を mut で渡す回避術の形）
+// イディオムの書き方の対jsondecode（scripts/idiomgap.sh — RVOのターゲットの基準値）の (b) 素直な形: json.Decode[Rec] が作って返す（shape[T] のコピーの関数 —
+// 戻りのstructとtagsのsliceは呼び手のregionへコピーされる）。(a) = mutout/main.sober（呼び手が配置先をmutで渡す回避術の形）
 
 import "std/convert"
 import "std/io"

@@ -1,7 +1,7 @@
 package main
 
-// parbudget の wait の約束の網（language.md 11 節「wait」— 段 3 の ③）: inline.sober と同じ形の scope を wait: true で。天井に入れない直接の子は
-// 縮退せずに待つ — 網は ① 実使用（最大 RSS − `base` で走らせた最大 RSS）≤ 天井（宣言 = 本当の上限）② 待ちが起きた（#par admit waits > 0）
+// parbudgetのwaitの約束の検査（language.md 11 節「wait」— 段階3の③）: inline.soberと同じ形のscopeをwait: trueで。天井に入れない直接の子は
+// 縮退せずに待つ — 検査は ① 実使用（最大RSS − `base` で走らせた最大RSS）≤ 天井（宣言 = 本当の上限）② 待ちが起きた（#par admit waits > 0）
 // ③ 縮退が 0 ④ 出力が W 1 / 2 / 8 で一致（待ちは遅らせるだけ — Kahn）を見る
 
 import "std/iter"

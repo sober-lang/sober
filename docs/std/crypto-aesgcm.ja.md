@@ -10,7 +10,7 @@ AES-128-GCM（NIST SP 800-38D — 鍵 16 バイト・nonce 12 バイト・tag 16
 if crypto.aesgcm.Available() { ct := crypto.aesgcm.Seal(key, nonce, ad, pt)? }
 ```
 
-record 層向けの API: 鍵の展開は Prepare で 1 回（接続ごと方向ごと — 鍵の表は以後読むだけ）・record ごとは小さい状態の列（計数器・GHASH の溜め・端のブロック）を 1 本だけ作る。SealTo は head ‖ 暗号文 ‖ tag を 1 回の確保に直に書き、OpenAt は b[off, off + n) を平文の列へ復号しながら検証する（tag が合わなければ平文を 0 で消して Auth — 平文は外へ出ない）
+record層向けのAPI: 鍵の展開はPrepareで1回（接続ごと方向ごと — 鍵の表は以後読むだけ）・recordごとは小さい状態の列（計数器・GHASHのバッファ・端のブロック）を1本だけ作る。SealTo は head ‖ 暗号文 ‖ tag を 1 回の確保に直に書き、OpenAt は b[off, off + n) を平文の列へ復号しながら検証する（tag が合わなければ平文を 0 で消して Auth — 平文は外へ出ない）
 
 ```sober
 k := crypto.aesgcm.Prepare(key)?
@@ -140,7 +140,7 @@ Seal の逆（復号しながら GHASH を畳み、tag を crypto.Equal で照�
 func SealTo(k Key, nonce []byte, ad []byte, pt []byte, head []byte, tail []byte) ([]byte, error?)
 ```
 
-head ‖ 暗号文 ‖ tag（平文 = pt ‖ tail — tail は TLS 1.3 の内側の型と詰め物のような後ろの数バイトを、呼び手が pt に繋いで写さずに渡す口。無ければ []byte{}）。nonce は同じ鍵で 1 回だけ使う（Seal と同じ）・nonce の長さが違えば BadSize（1 回の確保 — head と pt と tail を宛先へ一括で写し、CTR は宛先のその場で〔16 の倍数に切り上げ — はみ出しは tag の席〕・GHASH は宛先の暗号文を読む・tag は塊が宛先へ書く〔aestag — Y ⊕ E(J0)・宛先は凍っているので Sober の添字では書かない〕。作業域は record 1 つに 1 本）
+head ‖ 暗号文 ‖ tag（平文 = pt ‖ tail — tailはTLS 1.3の内側の型と詰め物のような後ろの数バイトを、呼び手がptに繋いでコピーせずに渡すAPI。無ければ []byte{}）。nonceは同じ鍵で1回だけ使う（Sealと同じ）・nonceの長さが違えばBadSize（1回の確保 — headとptとtailを宛先へ一括でコピーし、CTRは宛先のその場で〔16の倍数に切り上げ — はみ出しはtagの席〕・GHASHは宛先の暗号文を読む・tagはチャンクが宛先へ書く〔aestag — Y ⊕ E(J0)・宛先は凍っているのでSoberの添字では書かない〕。作業域はrecord 1つに1本）
 
 失敗のラベル: [`BadSize`](#badsize)
 
@@ -154,7 +154,7 @@ head ‖ 暗号文 ‖ tag（平文 = pt ‖ tail — tail は TLS 1.3 の内側
 func SealInto(k Key, nonce []byte, ad []byte, pt []byte, head []byte, tail []byte, dst mut []byte, at int) int
 ```
 
-SealTo の宛先を呼び手の列 dst[at:] にした形（head ‖ 暗号文 ‖ tag を dst へ書いて、書いたバイト数を返す — 入らなければ −1・nonce の長さが違えば −1）。pt の 16 の倍数の部分は CTR が pt から dst へ直に書く（Sober の写しなし）・端（pt の残り ‖ tail）は record の状態の中に並べて CTR が dst へ書く。作業の列（record の状態 — 計数器・GHASH の溜め・端）は呼び手の region に積もるので、送りの park の深度を空けたい呼び手（std/tls の送りの束）は式ブロックで包む
+SealTo の宛先を呼び手の列 dst[at:] にした形（head ‖ 暗号文 ‖ tag を dst へ書いて、書いたバイト数を返す — 入らなければ −1・nonce の長さが違えば −1）。ptの16の倍数の部分はCTRがptからdstへ直に書く（Soberのコピーなし）・端（ptの残り ‖ tail）はrecordの状態の中に並べてCTRがdstへ書く。作業の列（recordの状態 — 計数器・GHASHのバッファ・端）は呼び手のregionに積もるので、送りのparkの深度を空けたい呼び手（std/tlsの送りのバッチ）は式ブロックで包む
 
 ## OpenAt
 

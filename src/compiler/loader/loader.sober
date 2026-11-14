@@ -1,13 +1,13 @@
 package loader
 
-// パッケージローダ（src/stage1/loader.zig の写し — language.md 20 節「名前解決の最小形」）。
+// パッケージローダ（src/stage1/loader.zigの変換 — language.md 20 節「名前解決の最小形」）。
 // ファイル集合の読み込み → parse → package 構成（dir 名 = package 名）→ import 解決（未ロードの import を読み足して繰り返す）→
 // 循環の拒否 → expands の確定（名前付き関数型の引数）→ markMutDefs（呼び出しグラフの循環）→ 組み込み error の合成 → const の畳み込み。
 //
 // Zig 版との差:
-// - ディレクトリの列挙（readdir）と argv が無いので、入力は Manifest（entry・std の置き場・ファイル一覧）で受ける。
+// - ディレクトリの列挙（readdir）とargvが無いので、入力はManifest（entry・stdの格納場所・ファイル一覧）で受ける。
 //   package のディレクトリを読む = 一覧から dirname が一致するものをファイル名順に拾う
-// - std の焼き込みの代わりに、`std/` で始まる package は std の置き場から読む（一覧の `std/…` はその置き場の相対パス）
+// - stdの焼き込みの代わりに、`std/` で始まるpackageはstdの格納場所から読む（一覧の `std/…` はその格納場所の相対パス）
 // - 局所名の衝突（localnames.sober）には決定 16（組み込みの名前の再束縛不可）と variant 名の一意を足した（Zig 版はどちらも検査しない）
 
 import "std/io"
@@ -29,21 +29,21 @@ type Manifest struct {
     // （entry = TestMainPath() のときだけ読む）
     test string
     test_main string
-    // カバレッジの計器（coverx.sober — `sober build --cover` / `sober test --cover`）: 写す package の非テストのファイルを写す。
-    // cover_pkg = 写す package のパターン（空 = std の外の全部・`p` = package p・`p/...` = p とその下）
+    // カバレッジの計装（coverx.sober — `sober build --cover` / `sober test --cover`）: 変換するpackageの非テストのファイルを変換する。
+    // cover_pkg = 変換するpackageのパターン（空 = stdの外の全部・`p` = package p・`p/...` = pとその下）
     cover bool
     cover_pkg []string
-    // mutation testing の写し（mutx.sober — `sober test --mutate`）: 0 = 無し・1 = schemata（全部の変異を 1 本に）・k + 2 = 変異 k だけ。
-    // cover を真にして使う（写すファイルと Start の置き方は計器と同じ — 点は変異の点だけ）
+    // mutation testing の変換（mutx.sober — `sober test --mutate`）: 0 = 無し・1 = schemata（全部のミュータントを1本に）・k + 2 = ミュータントkだけ。
+    // coverを真にして使う（変換するファイルとStartの置き方は計装と同じ — 点はミュータントの点だけ）
     mutate int
     // テストの構成の差し替え（doubles.sober）: dbl_t[i] の package のファイルを double のディレクトリ dbl_d[i] から読む
     dbl_t []string
     dbl_d []string
-    // 起点の sober.mod（mod.sober — load が fsm の道で読む。dep のディレクトリの解決と木での名前）
+    // 起点のsober.mod（mod.sober — loadがfsmのパスで読む。depのディレクトリの解決と木での名前）
     mod Mod
 }
 
-// Manifest のテキスト（1 行目 = entry、2 行目 = std の置き場、3 行目以降 = ファイル一覧。空行は捨てる）を読む。
+// Manifestのテキスト（1行目 = entry、2行目 = stdの格納場所、3行目以降 = ファイル一覧。空行は捨てる）を読む。
 // 行が 2 本に満たなければ false（compiler/tools の標準入力の形 — argv と readdir が無いための代役）
 // 行が UTF-8 でなくても false
 func ManifestOf(b []byte) (Manifest, bool) {
@@ -98,13 +98,13 @@ type Program struct {
     // 組み込み error の variant（ロード順 × ファイル順 × 宣言順）
     err_name []string
     err_pkg []int
-    // ファイルのパスと std の印（trees と同じ順 — 診断の位置を引くためにソースを読み直す: SourceFs）
+    // ファイルのパスとstdのフラグ（treesと同じ順 — 診断の位置を引くためにソースを読み直す: SourceFs）
     file_path []string
     file_std []bool
     // std のソースの表（LoadFs / LoadView に渡された焼き込み — lower が panic の点の行・列を出すのに SourceFs で読み直す）
     std_src map[string]string
     // 値の位置のラムダの捕捉の表（loader/fnval.sober。ラムダは [cap_file, cap_node] で引き、
-    // 捕捉の名前は cap_names[cap_lo, cap_hi)。捕捉 0 本でも「値の位置」の印として載る — desugar / lower が同じ判定を読む）
+    // 捕捉の名前はcap_names[cap_lo, cap_hi)。捕捉0本でも「値の位置」のマークとして載る — desugar / lowerが同じ判定を読む）
     cap_file []int
     cap_node []int
     cap_lo []int
@@ -112,19 +112,19 @@ type Program struct {
     cap_names []string
     // ラムダごとの借りの仮引数のビット（i 番目の仮引数が匿名の関数型 = 借り — (α-L0)・desugar/filecheck が読む）
     cap_brw []int
-    // 展開待ちの捕捉（loader/fnval.sober の FnVals.cap_pend と同じ詰めた列 — 名前ごとの的・行ごとの流れの印・的ごとの流れる行）
+    // 展開待ちの捕捉（loader/fnval.soberのFnVals.cap_pendと同じ詰めた列 — 名前ごとのターゲット・行ごとの流れのフラグ・ターゲットごとの流れる行）
     cap_pend []int
-    // 省略可の匿名関数型の仮引数を持つ関数の写し（loader/optfn.sober — [ファイル, 宣言の節, 節の区間 lo, hi) の 4 語ずつ。写しは元の宣言と同じ字句の区間を持つので、
-    // 節 → 関数の帰属は字句でなく節の区間で引く — desugar の ZBlock。analyzer は公開関数の @errors の tightness をこれらに掛けない — どの組の写しも全部の腕を持たない）
+    // 省略可の匿名関数型の仮引数を持つ関数の変換（loader/optfn.sober — [ファイル, 宣言の節, 節の区間lo, hi) の4ワードずつ。変換は元の宣言と同じ字句の区間を持つので、
+    // 節がどの関数に属するかは字句でなく節の区間で引く — desugarのZBlock。analyzerは公開関数の @errorsのtightnessをこれらに掛けない — どの組の変換も全部の分岐を持たない）
     z_decl []int
-    // カバレッジの点（coverx.sober — [ファイル, 字句, 種類] の 3 語ずつ・番号 = 添字 / 3）と点の表の鍵（写さない build は空）
+    // カバレッジの点（coverx.sober — [ファイル, 字句, 種類] の3ワードずつ・番号 = 添字 / 3）と点の表の鍵（変換しないbuildは空）
     cover_pts []int
     cover_key string
     // テストの構成の差し替えの契約の検査が読んだ本物のファイル（doubles.sober — 読んだファイルの照合に足す）
     contract_files []string
 }
 
-// 位置つきの失敗の Program（診断が位置を引けるようにファイルのパスと std の印だけを持たせる — SourceFs）
+// 位置つきの失敗のProgram（診断が位置を引けるようにファイルのパスとstdのフラグだけを持たせる — SourceFs）
 func located(fpath []string, fstd []bool) Program {
     mut p := Program{}
     p.file_path = fpath
@@ -132,13 +132,13 @@ func located(fpath []string, fstd []bool) Program {
     return p
 }
 
-// package pkg の path のファイルをカバレッジの計器で写すか（std・テストのファイル・double・合成のテストの main の外 — std は計器の import の閉包と輪になりうる。
-// double はテストの道具で被検体でない — 計器も変異も打たない）
+// package pkg のpathのファイルをカバレッジの計装で変換するか（std・テストのファイル・double・合成のテストのmainの外 — stdは計装のimportの推移的な依存とループになりうる。
+// doubleはテストの道具で被検体でない — 計装もミューテーションも打たない）
 func coverOn(m Manifest, path string, std bool, pkg string) bool {
     return m.cover && !std && !strings.HasSuffix(path, "_test.sober") && !isDoubleFile(path) && path != TestMainPath() && coverPkgIs(m.cover_pkg, pkg)
 }
 
-// package pkg が写す package のパターンの列 pats に当たるか（空 = 全部・`p` = p だけ・`p/...` = p とその下・`...` = 全部）
+// package pkg が変換するpackageのパターンの列patsに当たるか（空 = 全部・`p` = pだけ・`p/...` = pとその下・`...` = 全部）
 func coverPkgIs(pats []string, pkg string) bool {
     if len(pats) == 0 {
         return true
@@ -158,7 +158,7 @@ func coverPkgIs(pats []string, pkg string) bool {
     return false
 }
 
-// path のファイルの木に計器の import を足すか（写すファイル + 計器の build の合成のテストの main — 書き出し先を開く $cover.Start を置く）
+// pathのファイルの木に計装のimportを足すか（変換するファイル + 計装のbuildの合成のテストのmain — 書き出し先を開く $cover.Startを置く）
 func coverImp(m Manifest, path string, std bool, pkg string) bool {
     return coverOn(m, path, std, pkg) || (m.cover && path == TestMainPath())
 }
@@ -195,9 +195,9 @@ func isInternal(p string) bool {
 }
 
 // import 節 im がコンパイラの合成した暗黙の import か（参照名が `$` で始まる — 利用者は `$` を綴れない。parser の implicitImports）。
-// 合成の import は std/internal/… の検問の外（20 節 — 補間・`string(b)`・float の印字の裏方の置き場は internal）。
+// 合成のimportはstd/internal/… の検問の外（20 節 — 補間・`string(b)`・floatの印字の裏方の配置先はinternal）。
 // `sober test` の合成のテストの main（TestMainPath — 実在しないパスの予約・利用者のファイルは置けない）も外: その import はテストする package と std/os だけで、
-// `sober test std/internal/…`（std の内側の package の単体テスト）を走らせる口
+// `sober test std/internal/…`（stdの内側のpackageの単体テスト）を走らせるAPI
 func synthImport(t ast.Tree, im ast.Node) bool {
     return im.a >= 0 && strings.HasPrefix(Name(t, im.a), "$")
 }
@@ -226,7 +226,7 @@ func isStd(p string) bool {
     return strings.HasPrefix(p, "std/")
 }
 
-// ファイルを読む（std は置き場の下から。fsm = LoadFs のときは焼き込んだ表 sm から）
+// ファイルを読む（stdは格納場所の下から。fsm = LoadFsのときは焼き込んだ表smから）
 func readSrc(m Manifest, fsm bool, sm map[string]string, path string, std bool) ([]byte, bool) {
     if path == TestMainPath() {
         return bytes(m.test_main), m.test_main != ""
@@ -258,7 +258,7 @@ func parseFile(m Manifest, fsm bool, sm map[string]string, path string, std bool
     if !ok {
         return ast.Tree{[]ast.Node{}, []int{}, 0 - 1}, pcNone(), diag.ReadFail{at: diag.None()}
     }
-    // parse のキャッシュ（pcache.sober — 置き場を使う build だけ。当たりは字句・構文・catchExprs を飛ばす）
+    // parseのキャッシュ（pcache.sober — 格納場所を使うbuildだけ。当たりは字句・構文・catchExprsを飛ばす）
     kk := if pc.on { pcKey(src) } else { PcKey{0, 0} }
     e := if pc.on { pcFind(pc, kk.a, kk.b) } else { 0 - 1 }
     if e >= 0 && !pc.vfy {
@@ -271,8 +271,8 @@ func parseFile(m Manifest, fsm bool, sm map[string]string, path string, std bool
     if perr != nil {
         return t, pcNone(), perr
     }
-    // catch 式・列の要素の欄への代入を既存の形へ写す（catchx.sober・elemassign.sober — 以降の段は写した後の木だけを読む）。置き場を使わない道は束縛せずに返す（束縛すると木を
-    // この関数の region に作ってから写すので、境界コピーが 1 回増える — 自己 build で +0.03 G）
+    // catch式・列の要素のフィールドへの代入を既存の形へ変換する（catchx.sober・elemassign.sober — 以降のフェーズは変換した後の木だけを読む）。格納場所を使わないパスは束縛せずに返す（束縛すると木を
+    // この関数のregionに作ってから変換するので、境界コピーが1回増える — 自己buildで +0.03 G）
     if !pc.on {
         return surfaceRewrites(t), pcNone(), nil
     }
@@ -280,7 +280,7 @@ func parseFile(m Manifest, fsm bool, sm map[string]string, path string, std bool
     v := pcEnc(ct)
     mut st := 2
     if pc.vfy && e >= 0 {
-        // 検証モード: 値が置き場の値と違えば lower の bcAdd が stale（鍵の穴）で名指し。同じなら読み戻しの照合（読み戻した木 ≡ parse した木 —
+        // 検証モード: 値が格納場所の値と違えばlowerのbcAddがstale（鍵の穴）で特定する。同じなら読み戻しの照合（読み戻した木 ≡ parseした木 —
         // 自分とは整合する欠けた符号・読みの誤り）
         st = 3
         if pcSame(pc, e, v) {
@@ -291,7 +291,7 @@ func parseFile(m Manifest, fsm bool, sm map[string]string, path string, std bool
     return ct, PcPut{st, kk.a, kk.b, v, path}, nil
 }
 
-// ソース src の字句 + 構文（loader の写し〔catchExprs〕の前の木）
+// ソースsrcの字句 + 構文（loaderの変換〔catchExprs〕の前の木）
 @errors(diag.LeadingZero, diag.LitRange, diag.GrammarMismatch)
 func parseSrc(src []byte, fi int) (ast.Tree, error?) {
     ts := lexer.Lex(src)
@@ -305,8 +305,8 @@ func parseSrc(src []byte, fi int) (ast.Tree, error?) {
     t, pok := parser.Parse(src, ts)
     if !pok {
         far := parser.FarthestTok(src, ts)
-        // 値が型に収まらないリテラル（int の範囲外・float で ±Inf に丸まる）があれば parser はそこで必ず落ちる — 文法の不一致に紛れさせず名指す
-        // （拒否の道だけで数える — 受理の道は parser の値の計算が判定を兼ねる）
+        // 値が型に収まらないリテラル（intの範囲外・floatで ±Infに丸まる）があればparserはそこで必ず落ちる — 文法の不一致に紛れさせず明示する
+        // （拒否のパスだけで数える — 受理のパスはparserの値の計算が判定を兼ねる）
         for k <- iter.Range(0, len(ts)) {
             lk := litOut(src, ts[k])
             if lk >= 0 {
@@ -331,7 +331,7 @@ func litOut(src []byte, x lexer.Token) int {
     return -1
 }
 
-// parseFile の写しの前の木（置き場を使わない道 — 小分けの check の視点の target。写した木は呼び手が catchExprs で作る）
+// parseFileの変換の前の木（格納場所を使わないパス — 小分けのcheckの視点のtarget。変換した木は呼び手がcatchExprsで作る）
 @errors(diag.ReadFail, diag.LeadingZero, diag.LitRange, diag.GrammarMismatch)
 func parseFileRaw(m Manifest, fsm bool, sm map[string]string, path string, std bool, fi int) (ast.Tree, error?) {
     src, ok := readSrc(m, fsm, sm, path, std)
@@ -343,7 +343,7 @@ func parseFileRaw(m Manifest, fsm bool, sm map[string]string, path string, std b
 
 // package のディレクトリ dir の .sober ファイル（ファイル名順）。Manifest なら一覧のうち dirname が dir のもの（一覧の順）、
 // fsm（LoadFs）なら io.ReadDir の通常ファイルで .sober で終わるもの（Zig 版 readPkgDir と同じ規則 — ReadDir は名前のバイト順）。
-// fsm の std は焼き込んだ表 sm のキーから（keysm の段 — stage2 は cwd の std/ に依存しない）
+// fsmのstdは焼き込んだ表smのキーから（keysmのフェーズ — stage2はcwdのstd/ に依存しない）
 func dirFiles(m Manifest, fsm bool, sm map[string]string, dir string) []string {
     for i <- iter.Range(0, len(m.dbl_t)) {
         if m.dbl_t[i] == dir {
@@ -354,7 +354,7 @@ func dirFiles(m Manifest, fsm bool, sm map[string]string, dir string) []string {
 }
 
 // `_test.sober` と `_double.sober` のファイルを除いた列（テストのビルドの対象 m.test の package の `_test.sober` は残す — testmain.sober。
-// `_double.sober` は差し替えの表が名指したディレクトリからだけ読む — dirFiles）
+// `_double.sober` は差し替えの表が名前で指定したディレクトリからだけ読む — dirFiles）
 func noTests(m Manifest, dir string, fs []string) []string {
     mut out := mut []string{}
     for i <- iter.Range(0, len(fs)) {
@@ -390,7 +390,7 @@ func readPkgDir(dir string) []string {
     es := io.ReadDir(dir) catch return freeze(out)
     mut i := 0
     while i < len(es) {
-        // 通常のファイル = 下の 3 つ以外（variant の名前 Regular を書かない形 — 鎖の行を足すまで boot の焼き込みの std と今の std の両方で通る）
+        // 通常のファイル = 下の3つ以外（variantの名前Regularを書かない形 — ブートストラップチェーンの行を足すまでbootの焼き込みのstdと今のstdの両方で通る）
         isFile := switch es[i].Kind {
         case io.Dir{}: false
         case io.Symlink{}: false
@@ -443,7 +443,7 @@ func Load(m Manifest) (Program, error?) {
 
 // stage2 の CLI の入口: entry（.sober ファイルか main package のディレクトリ — cwd 相対）から、package のディレクトリを
 // io.ReadDir で読み、`std/` の中身は焼き込んだ表 sm（パス → ソース — `@embed("std/**/*.sober")`）から取る。
-// std の package のファイル一覧も表のキーから引く（keysm の段 — R35-2 の暫定 ReadDir を撤去）
+// stdのpackageのファイル一覧も表のキーから引く（keysmのフェーズ — R35-2の暫定ReadDirを撤去）
 @errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.Mod, diag.ImportPath, diag.NoStd, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.LeadingZero, diag.LitRange, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.Par, diag.Double, diag.Cell)
 func LoadFs(entry string, sm map[string]string) (Program, error?) {
     if doubleDir(Manifest{}, true, sm, entry) {
@@ -453,8 +453,8 @@ func LoadFs(entry string, sm map[string]string) (Program, error?) {
     return load(Manifest{entry, "", []string{}, "", "", false, []string{}, 0, []string{}, []string{}, NoMod()}, true, sm, PcOff(), mut sink)
 }
 
-// LoadFs に parse のキャッシュの読みの表 pc を足したもの（build の置き場を使う道 — app が lower.BcParseView で組む）。
-// ファイルごとの読みの結果は sink へ（lower が書きの束へ）。test = テストのビルド（LoadTestFs — キャッシュは使わない）
+// LoadFsにparseのキャッシュの読みの表pcを足したもの（buildの格納場所を使うパス — appがlower.BcParseViewで組む）。
+// ファイルごとの読みの結果はsinkへ（lowerが書きのバッチへ）。test = テストのビルド（LoadTestFs — キャッシュは使わない）
 @errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.Mod, diag.ImportPath, diag.NoStd, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.LeadingZero, diag.LitRange, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.Par, diag.TestSignature, diag.Double, diag.Cell)
 func LoadFsC(entry string, sm map[string]string, pc PCache, test bool, sink mut PcSink) (Program, error?) {
     if test {
@@ -466,14 +466,14 @@ func LoadFsC(entry string, sm map[string]string, pc PCache, test bool, sink mut 
     return load(Manifest{entry, "", []string{}, "", "", false, []string{}, 0, []string{}, []string{}, NoMod()}, true, sm, pc, mut sink)
 }
 
-// LoadFs のカバレッジの計器つき（利用者の非テストのファイルの分岐の腕に数え口 — coverx.sober。parse のキャッシュは使わない）
+// LoadFsのカバレッジの計装つき（利用者の非テストのファイルの分岐にカウンタ — coverx.sober。parseのキャッシュは使わない）
 @errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.Mod, diag.ImportPath, diag.NoStd, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.LeadingZero, diag.LitRange, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.Par, diag.Double, diag.Cell)
 func LoadFsCover(entry string, sm map[string]string) (Program, error?) {
     mut sink := PcSink{}
     return load(Manifest{entry, "", []string{}, "", "", true, []string{}, 0, []string{}, []string{}, NoMod()}, true, sm, PcOff(), mut sink)
 }
 
-// LoadFs の mutation testing の写しつき（mutx.sober — 全部の変異を 1 本に。開発の口 `sober build --mutate` — 型付けが通るかの網）
+// LoadFsの mutation testing の変換つき（mutx.sober — 全部のミュータントを1本に。開発のAPI `sober build --mutate` — 型付けが通るかの検査）
 @errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.Mod, diag.ImportPath, diag.NoStd, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.LeadingZero, diag.LitRange, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.Par, diag.Double, diag.Cell)
 func LoadFsMutate(entry string, sm map[string]string) (Program, error?) {
     mut sink := PcSink{}
@@ -489,7 +489,7 @@ func SourceFs(p Program, f int, sm map[string]string) ([]byte, bool) {
 }
 
 func load(m0 Manifest, fsm bool, sm map[string]string, pc PCache, sink mut PcSink) (Program, error?) {
-    // 起点の sober.mod（mod.sober — fsm の道だけ。Manifest の道〔compiler/tools〕は持たない）
+    // 起点のsober.mod（mod.sober — fsmのパスだけ。Manifestのパス〔compiler/tools〕は持たない）
     mut m := m0
     if fsm {
         md, mpath, merr := ReadMod(sm)
@@ -503,7 +503,7 @@ func load(m0 Manifest, fsm bool, sm map[string]string, pc PCache, sink mut PcSin
     mut fpkg := mut []string{}
     mut fpath := mut []string{}
     mut fstd := mut []bool{}
-    // 写すファイルのパス（カバレッジの計器 — 利用者の非テストのファイル）
+    // 変換するファイルのパス（カバレッジの計装 — 利用者の非テストのファイル）
     mut cov := mut []string{}
     main := "main"
     entryIsFile := if fsm { !isDir(m.entry) } else { has(m.files, m.entry) }
@@ -692,7 +692,7 @@ func load(m0 Manifest, fsm bool, sm map[string]string, pc PCache, sink mut PcSin
     return p, err
 }
 
-// ファイルの集合（ロード順 — package ごとに連続）から Program を組む（@layout・@embed・固定テンプレートの写し・表・検査）。
+// ファイルの集合（ロード順 — packageごとに連続）からProgramを組む（@layout・@embed・固定テンプレートの変換・表・検査）。
 // load（import を辿って集める）と LoadView（link.txt の順に .sobi とソースを読む）が共用する
 @errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.Mod, diag.ImportPath, diag.NoStd, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.LeadingZero, diag.LitRange, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.Par, diag.Double, diag.Cell)
 func finish(trees0 []ast.Tree, fpkg []string, fpath []string, fstd []bool, cov []string, covOn bool, mutate int, md Mod) (Program, error?) {
@@ -701,8 +701,8 @@ func finish(trees0 []ast.Tree, fpkg []string, fpath []string, fstd []bool, cov [
     if mderr != nil {
         return located(fpath, fstd), mderr
     }
-    // std/internal/… の検問（20 節 — load は import を辿る巡で先に止める。LoadView〔.sobi の小分け〕の道はここで）。
-    // .sobi の木は fstd が立たないので package のパスでも std を見る（std/tls の .sobi は公開の型の欄のために std/internal/hs を import する — intrinsicAll と同じ形）
+    // std/internal/… の検問（20 節 — loadはimportを辿る巡で先に止める。LoadView〔.sobiの小分け〕のパスはここで）。
+    // .sobiの木はfstdが立たないのでpackageのパスでもstdを見る（std/tlsの .sobiは公開の型のフィールドのためにstd/internal/hsをimportする — intrinsicAllと同じ形）
     for f <- iter.Range(0, len(trees)) {
         if !fstd[f] && !isStd(fpkg[f]) && fpath[f] != TestMainPath() {
             t := trees[f]
@@ -715,9 +715,9 @@ func finish(trees0 []ast.Tree, fpkg []string, fpath []string, fstd []bool, cov [
             }
         }
     }
-    // 型の別名（alias.sober — language.md 32 節）: 別名を指す名前を実体の名前へ写し・定義型の下地を検査する。以降の段は写した後の木（trees1）だけを読む
-    //（別名の宣言は検査の束の後で剥がす — 名前の規則が別名の名前を型の名前として見る）
-    // 多段の修飾子の畳み（qualfold.sober — `http.server.Serve` の頭を 1 つの参照名に。以降の段は 1 段の修飾参照だけを見る）
+    // 型の別名（alias.sober — language.md 32 節）: 別名を指す名前を実体の名前へ変換し・定義型の下地を検査する。以降のフェーズは変換した後の木（trees1）だけを読む
+    //（別名の宣言は検査のバッチの後で剥がす — 名前の規則が別名の名前を型の名前として見る）
+    // 複数セグメントの修飾子の畳み（qualfold.sober — `http.server.Serve` の頭を1つの参照名に。以降のフェーズは1レベルの修飾参照だけを見る）
     trees1, atab, alerr := aliasAll(qualFoldAll(trees, fpkg), fpkg)
     if alerr != nil {
         return located(fpath, fstd), alerr
@@ -732,13 +732,13 @@ func finish(trees0 []ast.Tree, fpkg []string, fpath []string, fstd []bool, cov [
     if xerr != nil {
         return located(fpath, fstd), xerr
     }
-    // @layout（layout.sober — language.md 36 節）: 欄の型の写し・`layout.X[T]` の差し替え・写しの関数の合成ファイルを package の末尾に足す。
-    // 以降の段は足した後の列（lay）だけを読む
+    // @layout（layout.sober — language.md 36 節）: フィールドの型の変換・`layout.X[T]` の差し替え・変換の関数の合成ファイルをpackageの末尾に足す。
+    // 以降のフェーズは足した後の列（lay）だけを読む
     lay0, lerr := layoutAll(trees1c, fpkg, fpath, fstd)
     if lerr != nil {
         return located(fpath, fstd), lerr
     }
-    // shape[T]（jsonshape.sober — language.md 16 節）: `json.Decode[T](…)` を写しの関数へ・合成ファイルを package の末尾に足す
+    // shape[T]（jsonshape.sober — language.md 16 節）: `json.Decode[T](…)` を変換の関数へ・合成ファイルをpackageの末尾に足す
     lay, jerr := jsonAll(lay0.trees, lay0.pkg, lay0.path, lay0.std)
     if jerr != nil {
         return located(lay0.path, lay0.std), jerr
@@ -748,28 +748,28 @@ func finish(trees0 []ast.Tree, fpkg []string, fpath []string, fstd []bool, cov [
     if eerr != nil {
         return located(lay.path, lay.std), eerr
     }
-    // `T?` の switch の `case nil:` を if に写す（nilcase.sober — 脱糖の固定テンプレート。以降の層は写した後の木だけを読む）
+    // `T?` のswitchの `case nil:` をifに変換する（nilcase.sober — 脱糖の固定テンプレート。以降の層は変換した後の木だけを読む）
     ts1, nerr := nilCasesAll(ts0)
     if nerr != nil {
         return located(lay.path, lay.std), nerr
     }
-    // flow typing の連鎖（`&&` の右辺・`||` の否定側）と早期脱出の後ろを if の入れ子に写す（flowx.sober）
+    // flow typing の連鎖（`&&` の右辺・`||` の否定側）と早期脱出の後ろをifの入れ子に変換する（flowx.sober）
     ts1f0 := flowAll(ts1)
-    // カバレッジの計器（coverx.sober — 利用者の非テストのファイルの分岐の腕に数え口。flowx の後: else の腕を足すと flowx の写しが外れる）
-    // mutation testing の写しは計器の代わりに同じ段で（mutx.sober — 両方を掛けると計器が schemata の if を腕として数える）
+    // カバレッジの計装（coverx.sober — 利用者の非テストのファイルの分岐にカウンタ。flowxの後: elseの分岐を足すとflowxの変換が外れる）
+    // mutation testing の変換は計装の代わりに同じフェーズで（mutx.sober — 両方を掛けると計装がschemataのifを分岐として数える）
     cvo := if mutate != 0 { mutAll(ts1f0, lay.path, lay.pkg, cov, mutate - 2) } else { coverAll(ts1f0, lay.path, lay.pkg, cov, covOn) }
     ts1f := cvo.trees
-    // `_test.sober` の std/quick の写し（quickx.sober — 性質の値の式を $qassert に包む・New に囲む関数の名前を入れる）
+    // `_test.sober` のstd/quickの変換（quickx.sober — プロパティの値の式を $qassertに包む・Newに囲む関数の名前を入れる）
     ts1q, qerr := quicksAll(ts1f, lay.path)
     if qerr != nil {
         return located(lay.path, lay.std), qerr
     }
-    // `_test.sober` の assert を写す（assert.sober。外の assert は拒否）
+    // `_test.sober` のassertを変換する（assert.sober。外のassertは拒否）
     ts2, aerr := assertsAll(ts1q, lay.path)
     if aerr != nil {
         return located(lay.path, lay.std), aerr
     }
-    // 宛先構築の印（dest.sober: return に流れ着くリテラル・補間・連結を lower が呼び手の region に作る）
+    // 宛先構築のマーク（dest.sober: returnに流れ着くリテラル・補間・連結をlowerが呼び手のregionに作る）
     ts := destMarksAll(ts2)
     Stage("f-trees")
     fp := lay.pkg
@@ -796,22 +796,22 @@ func finish(trees0 []ast.Tree, fpkg []string, fpath []string, fstd []bool, cov [
     }
     pnames := pt.name
 
-    // ── 検査の束（finpar.sober: ワーカー 2 以上はファイルごとの子で・最初の拒否は段の順 → ファイルの順）:
+    // ── 検査のバッチ（finpar.sober: ワーカー2以上はファイルごとの子で・最初の拒否はフェーズの順 → ファイルの順）:
     //    多値の型 `(T, error?)` は std/task の Task の型引数にだけ（tupletype.sober）→ import はファイルごと（fileimports.sober）→
     //    名前の検査（ローカル束縛の衝突・組み込みの名前・variant 名の一意 — localnames.sober）→ 式文の検査（exprstmt.sober）──
     bh := checksB(cx, pnames)
     if bh.file >= 0 {
         return located(lay.path, lay.std), bh.err
     }
-    // 別名の宣言を型の列から外す（alias.sober — 以降の段と desugar・lower・analyzer は別名を見ない）
+    // 別名の宣言を型の列から外す（alias.sober — 以降のフェーズとdesugar・lower・analyzerは別名を見ない）
     cx = aliasStripCx(cx, atab)
 
-    // ── 名前付き実引数と `T?` 仮引数の省略を位置引数へ写し、関数型の実引数に置いた名前付き関数を η 展開する（namedargs.sober — 決定 7・eta.sober — 25 節。以降の段は写した後の木だけを読む）──
-    // 関数表（namedargs.sober の fnTab）は写す前の木で 1 回組み、namedargs・η 展開・fnval・noderules が共有する（木の写しは節を足すだけ —
+    // ── 名前付き実引数と `T?` 仮引数の省略を位置引数へ変換し、関数型の実引数に置いた名前付き関数を η 展開する（namedargs.sober — 決定7・eta.sober — 25 節。以降のフェーズは変換した後の木だけを読む）──
+    // 関数表（namedargs.soberのfnTab）は変換する前の木で1回組み、namedargs・η 展開・fnval・noderulesが共有する（木の変換は節を足すだけ —
     // 関数の宣言の節と名前のデータの位置は変わらない（3 か所で組み直すより RSS が小さく、出力は同じ）
     Stage("f-checks")
-    // 省略可の匿名関数型の仮引数（optfn.sober — language.md 25 節 Z）: 名前付き実引数の写しの後に、呼び出し点ごとの有無で関数を写し分け
-    // （`F` / `F$z<有無>`）・`p != nil` の分岐を畳み、続けて η 展開。以降の段は省略可の関数型を見ない（写しが無ければ木も関数表もそのまま）
+    // 省略可の匿名関数型の仮引数（optfn.sober — language.md 25 節Z）: 名前付き実引数の変換の後に、呼び出し点ごとの有無で関数を変換し分け
+    // （`F` / `F$z<有無>`）・`p != nil` の分岐を畳み、続けて η 展開。以降のフェーズは省略可の関数型を見ない（変換が無ければ木も関数表もそのまま）
     merr := fnTyMutOne(cx)
     if merr != nil {
         return located(lay.path, lay.std), merr
@@ -822,21 +822,21 @@ func finish(trees0 []ast.Tree, fpkg []string, fpath []string, fstd []bool, cov [
     }
     cx = Cx{oz.trees, cx.file_pkg, cx.pkg_path, cx.pkg_lo, cx.pkg_hi, cx.imp_pkg, cx.imp_ref, cx.imp_path, cx.tys}
 
-    // ── ワーカー局所の lease（lease.sober — region-domain-pool.md 4d 節）: task.NewLocal / task.Lease の窓を普通の Sober と std の写し先へ写す ──
+    // ── ワーカー局所のlease（lease.sober — region-domain-pool.md 4d節）: task.NewLocal / task.Leaseのウィンドウを普通のSoberとstdの変換先へ変換する ──
     lts, lerr2 := leaseAll(cx)
     if lerr2 != nil {
         return located(lay.path, lay.std), lerr2
     }
     cx = Cx{lts, cx.file_pkg, cx.pkg_path, cx.pkg_lo, cx.pkg_hi, cx.imp_pkg, cx.imp_ref, cx.imp_path, cx.tys}
 
-    // ── panic ラベル（panicx.sober — language.md 27 節）: `panic(L{…})` の検査と写し・宣言を BStruct に。以降の段は写した後の木だけを読む ──
+    // ── panicラベル（panicx.sober — language.md 27 節）: `panic(L{…})` の検査と変換・宣言をBStructに。以降のフェーズは変換した後の木だけを読む ──
     po := panicLabelsAll(cx, pnames, false)
     if po.err != nil {
         return located(lay.path, lay.std), po.err
     }
     cx = Cx{po.trees, cx.file_pkg, cx.pkg_path, cx.pkg_lo, cx.pkg_hi, cx.imp_pkg, cx.imp_ref, cx.imp_path, cx.tys}
 
-    // ── 値の位置の判定と捕捉（fnval.sober: named fn type の欄の η 展開・値の位置のラムダの捕捉の表・FnCap の拒否）──
+    // ── 値の位置の判定と捕捉（fnval.sober: named fn type のフィールドの η 展開・値の位置のラムダの捕捉の表・FnCapの拒否）──
     Stage("f-lease-panic")
     fv, fverr := fnValAll(cx, oz.ft)
     if fverr != nil {
@@ -844,7 +844,7 @@ func finish(trees0 []ast.Tree, fpkg []string, fpath []string, fstd []bool, cov [
     }
     cx = Cx{fv.trees, cx.file_pkg, cx.pkg_path, cx.pkg_lo, cx.pkg_hi, cx.imp_pkg, cx.imp_ref, cx.imp_path, cx.tys}
 
-    // ── 節の規則の束（noderules.sober — catch の左辺・値 1 つの束縛に多値・失敗しうる生成元の印・封の型の欄つきリテラル・同一性のゼロ値・mut 実引数の排他）──
+    // ── 節の規則のバッチ（noderules.sober — catchの左辺・値1つの束縛に多値・失敗しうる生成元のマーク・封の型のフィールドつきリテラル・同一性のゼロ値・mut実引数の排他）──
     Stage("f-fnval")
     rerr := nodeRules(cx, oz.ft)
     if rerr != nil {
@@ -982,7 +982,7 @@ type ErrTab struct {
     pkg []int
 }
 
-// 木の列 ts の error ラベルの表（ラベルの欄に error / error? があれば拒否 — 再帰型）
+// 木の列tsのerrorラベルの表（ラベルのフィールドにerror / error? があれば拒否 — 再帰型）
 func errorLabels(ts []ast.Tree, file_pkg []int) (ErrTab, error?) {
     mut ename := mut []string{}
     mut epkg := mut []int{}
@@ -1032,8 +1032,8 @@ type Cx struct {
     imp_pkg []int
     imp_ref []string
     imp_path []string
-    // 型宣言の索引（fnval.sober の tyTab — package と名前 → 型宣言。木の写しは節を足すだけで型宣言の節と名前のデータは動かないので、
-    // 最初の Cx で 1 回組んで写しの Cx へ引き継ぐ — 関数表 fnTab と同じ前提）
+    // 型宣言の索引（fnval.soberのtyTab — packageと名前 → 型宣言。木の変換は節を足すだけで型宣言の節と名前のデータは動かないので、
+    // 最初のCxで1回組んで変換後のCxへ引き継ぐ — 関数表fnTabと同じ前提）
     tys []int
 }
 
@@ -1126,7 +1126,7 @@ func cycleAt(cx Cx) diag.Pos {
     return diag.None()
 }
 
-// p の木だけを ts に替えた Program（desugar.NamedValueArgs — 名前付き関数型を通した呼び出しの写し。節は末尾に足すだけなので表の添字は変わらない）
+// pの木だけをtsに替えたProgram（desugar.NamedValueArgs — 名前付き関数型を通した呼び出しの変換。節は末尾に足すだけなので表の添字は変わらない）
 func WithTrees(p Program, ts []ast.Tree) Program {
     mut q := p
     q.trees = ts

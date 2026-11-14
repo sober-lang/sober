@@ -1,6 +1,6 @@
 package main
 
-// fail-fast Map の計測（段 6 P4-5 — 再取得の器: 当時の scratch と同じ形）: task.Map の 16 の子のうち子 3 が死に、
+// fail-fast Mapの計測（フェーズ6 P4-5 — 再取得の器: 当時のscratchと同じ形）: task.Mapの16の子のうち子3が死に、
 // 他の子はそれぞれ 3,000 万回の剰余（idiv）のループ。純な子は死の後で切られる（--rt-mutant=3 = 検査点を置かない形では切れず全部が走る — 対照）
 import "std/task"
 

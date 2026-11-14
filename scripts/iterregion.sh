@@ -1,49 +1,49 @@
 #!/usr/bin/env bash
 # iterregion（反復の region の約束 — language.md「while の本体・文形 for の本体は反復ごとの region を持つ」と llight〔compiler/lower/rlight.sober の
-# loopLightModule — 確保しない反復の enter を消す〕の網）: enter を消すかは観測に出ない（出力は同じ・メモリだけが積もる）ので、出力の照合
+# loopLightModule — 確保しない反復のenterを消す〕の検査）: enterを消すかは観測に出ない（出力は同じ・メモリだけが積もる）ので、出力の照合
 # （obs / optdiff）では外れても鳴らない（report-620 — routing の RSS 110.9 MB が行数に比例していた・m4 の形）。
 #   ① 形: `--stop-after=llight --dump-ir` で main の反復の enter の残り（region.enter・軽い enter の呼び出し — 関数の入口の 1 つを含む）を数えて照合する
 #      - iter_region_inner（routing の形 — 外の反復の確保が内側のループの後ろ）: 入口 + 外の反復 = 2（L1 — 本体の範囲が内側のループの頭で止まると 1）
-#      - iter_region_outer_assign（logagg の形 — 外の反復の変数へ内側のループの中で代入）: 入口 + 行の反復 = 2（P1 — 外の反復の深度への写しを
-#        語の反復の確保と数えると 3）
-#      - iter_region_errcont（失敗の戻りの道だけで確保する呼び先の失敗を catch して回すループ）: 入口 + 反復 = 2（失敗の辺が頭へ戻る —
+#      - iter_region_outer_assign（logaggの形 — 外の反復の変数へ内側のループの中で代入）: 入口 + 行の反復 = 2（P1 — 外の反復の深度へのコピーを
+#        ワードの反復の確保と数えると3）
+#      - iter_region_errcont（失敗の戻りのパスだけで確保する呼び先の失敗をcatchして回すループ）: 入口 + 反復 = 2（失敗の辺が頭へ戻る —
 #        失敗の辺がループの外へ出る形は数えない精密化〔rlight の llErrEdge〕の負例。RSS も N と 10N で比例しない — 壊すと 192 → 1536 KB）
 #   ② RSS: iter_region_inner を行数 N と 10N で走らせ、最大 RSS が比例しないこと（10N の RSS ≤ N の RSS + 1 MiB。比例すると +10 MB を超える）
 #   ③ RSS: iter_region_inline_dest（inline 展開の本体の宛先構築 — report-689・std/http.ServeConn の形）も同じ形で（壊れると 2000 → 20000 で +2.3 MB）
-#   ⑤ 形: inline_dest_direct（展開の宛先の直結 — report-693 / 694）— 展開の呼び出し点に呼び手の印があるとき、本体の印つきの確保は呼び手の宛先に作る。
+#   ⑤ 形: inline_dest_direct（展開の宛先の直結 — report-693 / 694）— 展開の呼び出し点に呼び手のフラグがあるとき、本体のフラグつきの確保は呼び手の宛先に作る。
 #      `--stop-after=llight --dump-ir` の ranks で、region.enter の後に読んだ region.depth（展開入口の深度）を深度に使う region.alloc が 0 本であること
-#      （展開入口に作る形 = 1 本 — 結果を呼び手の return でもう一度写す二重の写し。写しの有無は実行時の深度の比較なので relocate の数には出ない）
+#      （展開入口に作る形 = 1本 — 結果を呼び手のreturnでもう一度コピーする二重のコピー。コピーの有無は実行時の深度の比較なのでrelocateの数には出ない）
 #   ⑥ RSS: task_spawn_discard（handle を捨てた子の枠は子の寿命 — report-696 / 697・net.Serve の accept のループの形）: 返らない scope で子を生み続けても
-#      枠が scope の region に積もらないこと。W1（10N ≤ N + 1 MiB — 壊れると 20000 → 200000 で 3.0 → 31 MB）と W4（盗まれた子の枠が持ち主へ戻る道 —
+#      枠がscopeのregionに積もらないこと。W1（10N ≤ N + 1 MiB — 壊れると20000 → 200000で3.0 → 31 MB）とW4（盗まれた子の枠が持ち主へ戻るパス —
 #      生きている task の高水位がやや伸びるので 10N ≤ N + 4 MiB。壊れると 3.8 → 32 MB）。W1 / W4 とも RSS から未着手の子の積み残しを引いた残差で比べる（下の resid）
 #   ⑦ RSS: task_spawn_discard_die（handle を捨てた子の死は枠を残さない — report-704 B / 705）: 返らない scope で捨てた子が死に続けても、記録に残るのは
-#      (番号の最小, 死因) の 2 語だけ。W1 / W4 とも ⑥ と同じ余白（壊れると 20000 → 200000 で 5.0 → 50 MB — 1 死 ≈ 256 B の塊）
-#   ⑧ RSS: lease_iter（ワーカー局所の lease — region-domain-pool.md 4d 節・report-719b）: 窓を n 回借りても置き場の区画は使い回され、窓の値は反復の
+#      (番号の最小, 死因) の2ワードだけ。W1 / W4とも ⑥ と同じ余白（壊れると20000 → 200000で5.0 → 50 MB — 1死 ≈ 256 Bのチャンク）
+#   ⑧ RSS: lease_iter（ワーカー局所のlease — region-domain-pool.md 4d節・report-719b）: ウィンドウをn回借りても格納場所のエリアは使い回され、ウィンドウの値は反復の
 #      region に作られて積もらない（main の反復と子 task の反復）。W1 / W4 とも 10N ≤ N + 1 MiB
 #   ④ RSS: iter_region_dest_reg（宛先の深度のレジスタ W_DEST の残り — report-692）も同じ形で（壊れると 2000 → 20000 で 7.9 → 80 MB）
 #   ⑨ 形 + RSS: iter_region_nonret（戻らない関数は「確保しうる」に数えない — #8 report-725 / 726）: task のプログラムで、反復の本体の確保が
-#      死ぬ道の panic の値（ラベル panic の冷たい関数 — binary.outOfRange）だけのループは enter が消える（入口 + 0 = 1。旧形 = 2 が負例 —
+#      死ぬパスのpanicの値（ラベルpanicの冷たい関数 — binary.outOfRange）だけのループはenterが消える（入口 + 0 = 1。旧形 = 2が負例 —
 #      flate の longest / lazy の lloop ≈ 20 命令 / 反復の税）。RSS は N と 10N で比例しない（消した enter の region への漏れの番）
-#   ⑫ RSS: iter_region_fnval_dest（関数値の呼び出しの宛先の深度のレジスタ — report-1006 a1 / a2・report-1007）: 印のある関数値の呼び出しは呼び手の
+#   ⑫ RSS: iter_region_fnval_dest（関数値の呼び出しの宛先の深度のレジスタ — report-1006 a1 / a2・report-1007）: フラグのある関数値の呼び出しは呼び手の
 #      宛先を書くので、関数値の呼び先（関数値として使われる名前付き関数・持ち上げたラムダ）は入口で読んで 0 に戻す。読まない呼び先が残すと ④ と同じ形で
 #      反復ごとに外の region へ積もる（2000 → 20000 で 24 → 240 MB / ラムダの読みだけ外すと 8 → 80 MB — 負例は確認済み）。nested = 持ち上げたラムダの
-#      本体の中で展開されるラムダ（段 2 のラムダの印は展開の本体では使わない — 使うと 8 → 80 MB）。nores = 結果の無い持ち上げたラムダ（形: 末尾の式の
+#      本体の中で展開されるラムダ（フェーズ2のラムダのフラグは展開の本体では使わない — 使うと8 → 80 MB）。nores = 結果の無い持ち上げたラムダ（形: 末尾の式の
 #      連結〔rt.cat8〕の深度が入口で読んだ region.depth = 呼び手の region でないこと — report-1008。反復の region があるので RSS には出ない）
 #   ⑩ 形 + RSS: iter_region_writer（入口で region を開く関数の自分の深度での呼び出しは「確保しうる」を伝えない — report-874）: 外の io.Writer へ
 #      1 バイトずつ書く反復は enter が消え、反復の中で作る Writer の反復は残る（入口 + 1 = 2。旧形 = 3 が負例 — writerByteSlow の枠の空けを
 #      数えて反復ごとに軽い enter）。RSS は N と 10N で比例しない（反復の中の Writer の枠が関数の region に積もらないこと）
 #   ⑪ 形 + RSS: map_dest（map の宛先構築 — report-875・knucleotide の frequencies の形）: return に流れ着く `mut map[string]V{}` の空のヘッダは
 #      呼び手の宛先の深度に作る — build / counts の最初の region.bump の深度が enter の後に読んだ region.depth（自分の深度）でないこと（旧形 = 自分の
-#      深度に作って戻りでセル列を写す — 負例）。RSS は呼び手の反復の N と 10N で比例しない（宛先 = 呼び手の反復の region に積もらない）
-#   ⑫ RSS: iter_region_rcell（関数型の mut 仮引数の席へ渡す 64 語以上の集合値の束縛 — 旧 (α-L1) の region 置きのセル〔report-1068〕は 2026-11-04 に撤去し、
+#      深度に作って戻りでセル列をコピーする — 負例）。RSSは呼び手の反復のNと10Nで比例しない（宛先 = 呼び手の反復のregionに積もらない）
+#   ⑫ RSS: iter_region_rcell（関数型のmut仮引数へ渡す64語以上の集合値の束縛 — 旧 (α-L1) のregion置きのセル〔report-1068〕は2026-11-04に撤去し、
 #      束縛は普通のセル〔フレームの枠〕）: RSS は N と 10N で比例しない（反復ごとの束縛が関数の region に積もらない）
-#   ⑬ RSS: iter_region_reccons（再帰型の境界コピーの補助の作業域 — report-repr-1）: 反復を越える cons の鎖の写しの作業スタックが
-#      反復ごとに外の region へ積もらないこと。鎖は保持する値なので増分は節点の数に比例する — 20000 → 200000 で節点あたり 128 B 以下
+#   ⑬ RSS: iter_region_reccons（再帰型の境界コピーの補助の作業域 — report-repr-1）: 反復を越えるconsのチェーンのコピーの作業スタックが
+#      反復ごとに外のregionへ積もらないこと。チェーンは保持する値なので増分は節点の数に比例する — 20000 → 200000で節点あたり128 B以下
 #      （壊れると 1.6 KB / 節点）
-#   ⑮ RSS: iter_region_optcons（opt の中身を通る再帰型 — 欄は 1 セルの箱・report-repr2-2）: ⑬ と同じ形・同じ線（箱のセルと写しの作業域が反復ごとに積もらない）
+#   ⑮ RSS: iter_region_optcons（optの中身を通る再帰型 — フィールドは1セルの箱・report-repr2-2）: ⑬ と同じ形・同じ基準（箱のセルとコピーの作業域が反復ごとに積もらない）
 #   ⑯ RSS: iter_region_domain_mut（mut の器を持つ domain の状態 — 本体はその場で書く）: 呼び出しを 10 倍にしても RSS は 1 MiB 以内
-#   ⑭ RSS: dest_append_rec（宛先構築の返る列への追記 — loader/dest.sober の印 3・report-repr-2）: `ks = append(ks, mk(…))` の再帰で組む深さ n の鎖が
-#      深さの数だけ写らないこと — 90 → 900 段で +16 MB 以下（深度ごとの region の頁 ≈ 4 KB / 段だけ。壊れると 1.7 → 135 MB）
+#   ⑭ RSS: dest_append_rec（宛先構築の返る列への追記 — loader/dest.soberのフラグ3・report-repr-2）: `ks = append(ks, mk(…))` の再帰で組む深さnのチェーンが
+#      深さの数だけコピーされないこと — 90 → 900レベルで +16 MB以下（深度ごとのregionのページ ≈ 4 KB / レベルだけ。壊れると1.7 → 135 MB）
 #   scripts/iterregion.sh
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -166,7 +166,7 @@ if [ "$m2" -gt $((m1 + 1024)) ]; then
     fail=$((fail + 1))
 fi
 # ⑥⑦ の peak RSS は生きている task の数の最大（未着手の子の積み残し — 負荷で決まり上限が無い）に比例して伸びる: peak ≈ 600 KB + 4.3 KB × maxTasks。
-# 線は積み残しを引いた残差（peak − 4.3 KB × maxTasks — 題材が `ledger` の引数で印字）で比べる。残差は負荷・試行数に依らず一定で、枠の取りこぼしだけが伸ばす。
+# 基準は積み残しを引いた残差（peak − 4.3 KB × maxTasks — 題材が `ledger` の引数で印字）で比べる。残差は負荷・試行数に依らず一定で、枠の取りこぼしだけが伸ばす。
 # 積み残しそのものは未着手の子の上限（ワーカーあたり 255 — language.md 11 節）で頭打ち: maxTasks ≤ W × 256 + 64（走っている task の分の余白）
 resid() { local m; m=$(sed -n 's/^maxTasks //p' "$1.out"); echo $(( $(cat "$1") - ${m:-0} * 43 / 10 )); }
 "$S2" build examples/task_spawn_discard.sober -o "$W/psd" > /dev/null 2>&1 || { echo "FAIL: build task_spawn_discard"; exit 1; }
@@ -207,7 +207,7 @@ done
 /usr/bin/time -f %M -o "$W/k1" "$W/rcons" 20000 > /dev/null || fail=$((fail + 1))
 /usr/bin/time -f %M -o "$W/k2" "$W/rcons" 200000 > /dev/null || fail=$((fail + 1))
 k1=$(cat "$W/k1"); k2=$(cat "$W/k2")
-# 増分は節点の数に比例する（鎖は保持する値）— 節点あたり 128 B 以下（180,000 節点 = 22,500 KB）
+# 増分は節点の数に比例する（チェーンは保持する値）— 節点あたり128 B以下（180,000 節点 = 22,500 KB）
 if [ "$k2" -gt $((k1 + 22500)) ]; then
     echo "FAIL: iter_region_reccons: RSS grows faster than the nodes ($k1 KB at 20000 → $k2 KB at 200000)"
     fail=$((fail + 1))
@@ -216,7 +216,7 @@ fi
 /usr/bin/time -f %M -o "$W/o1" "$W/ocons" 20000 > /dev/null || fail=$((fail + 1))
 /usr/bin/time -f %M -o "$W/o2" "$W/ocons" 200000 > /dev/null || fail=$((fail + 1))
 o1=$(cat "$W/o1"); o2=$(cat "$W/o2")
-# ⑮ 箱の欄（next L?）の鎖も ⑬ と同じ線 — 節点あたり 128 B 以下
+# ⑮ 箱のフィールド（next L?）のチェーンも ⑬ と同じ基準 — 節点あたり128 B以下
 if [ "$o2" -gt $((o1 + 22500)) ]; then
     echo "FAIL: iter_region_optcons: RSS grows faster than the nodes ($o1 KB at 20000 → $o2 KB at 200000)"
     fail=$((fail + 1))
@@ -225,7 +225,7 @@ fi
 /usr/bin/time -f %M -o "$W/a1" "$W/darec" 90 > /dev/null || fail=$((fail + 1))
 /usr/bin/time -f %M -o "$W/a2" "$W/darec" 900 > /dev/null || fail=$((fail + 1))
 a1=$(cat "$W/a1"); a2=$(cat "$W/a2")
-# 深さに比例するのは深度ごとの region の頁だけ（≈ 4 KB / 段）— 部分木を深さの数だけ写すと 2 乗（90 → 900 で +130 MB）
+# 深さに比例するのは深度ごとのregionのページだけ（≈ 4 KB / レベル）— 部分木を深さの数だけコピーすると2乗（90 → 900で +130 MB）
 if [ "$a2" -gt $((a1 + 16384)) ]; then
     echo "FAIL: dest_append_rec: RSS grows with the square of the depth ($a1 KB at 90 → $a2 KB at 900)"
     fail=$((fail + 1))

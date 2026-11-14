@@ -1,5 +1,5 @@
-// schedvec（段 6 P3b-3 — par-draft 8 節）: 小さい並列のプログラムの全スケジュールを列挙し、観測（stdout・終了コード・`#sched` 以外の stderr）の集合が
-// 1 要素であること（Kahn の定理の実装側の網 — ランタイムのスケジューラ・切替・region の付け替えが到着順に依る値を漏らしていないか）。
+// schedvec（段階6 P3b-3 — par-draft 8 節）: 小さい並列のプログラムの全スケジュールを列挙し、観測（stdout・終了コード・`#sched` 以外のstderr）の集合が
+// 1要素であること（Kahnの定理の実装側の検査 — ランタイムのスケジューラ・切替・regionの付け替えが到着順に依る値を漏らしていないか）。
 //   node --experimental-strip-types scripts/schedvec.ts <ELF>... [--depth K] [--budget N]
 // 列挙 = 状態なしのモデル検査の素朴形: 接頭の選択の列 prefix で走らせ、`#sched n v` の選択点の列を読み、prefix より後ろの各点 i（深さ K まで）の
 // 0 以外の選択 v を prefix + [0…] + [v] で掘る（各走行は prefix の後ろを既定 0 で走る）。走行数が budget を超えたら打ち切る（打ち切りは報告に出す）

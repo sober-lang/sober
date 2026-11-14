@@ -1,6 +1,6 @@
 package main
 
-// std/table の Get / Set の範囲外: chunk の中身は確保時の写しで埋まっていて Len 以降も読めてしまうので、
+// std/tableのGet / Setの範囲外: chunkの中身は確保時のコピーで埋まっていてLen以降も読めてしまうので、
 // Len 以上の添字は境界検査の panic（exit 101）に落とす
 
 import "std/table"

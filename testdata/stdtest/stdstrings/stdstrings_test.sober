@@ -66,8 +66,8 @@ func TestJoin() {
     assert(strings.Join([]string{"あ", "い"}, "・") == "あ・い")
 }
 
-// ── 0.7.0 便 2（2026-10-22）。Go との一致は scripts/strings_oracle.ts の表（examples/strings_std）が持つ。ここは Go の文字列リテラルで書けない
-// 空白（\v \f）と、ASCII だけを見る約束が Go（Unicode）と食い違う所の名指し ──
+// ── 0.7.0タスク2（2026-10-22）。Goとの一致はscripts/strings_oracle.tsの表（examples/strings_std）が持つ。ここはGoの文字列リテラルで書けない
+// 空白（\v \f）と、ASCIIだけを見る約束がGo（Unicode）と食い違う所の検査 ──
 
 // sp は \v（11）と \f（12）を含む string（Sober の文字列リテラルに escape が無いのでバイト列から）
 func sp(b []byte) string {
@@ -91,11 +91,11 @@ func TestAsciiSpace() {
 }
 
 func TestAsciiCase() {
-    // 大小は 'A'..'Z' ⇄ 'a'..'z' だけ（Go は 'É' ⇄ 'é' も写す — ここでは非 ASCII はそのまま）
+    // 大小は 'A'..'Z' ⇄ 'a'..'z' だけ（Goは 'É' ⇄ 'é' も変換する — ここでは非ASCIIはそのまま）
     assert(strings.ToLower("ÉCOLE") == "École")
     assert(strings.ToUpper("école") == "éCOLE")
     assert(strings.ToLower("ΑΒΓ") == "ΑΒΓ")
-    // 境界の隣（'@' '[' '`' '{'）は写さない
+    // 境界の隣（'@' '[' '`' '{'）は変換しない
     assert(strings.ToLower("@AZ[") == "@az[")
     assert(strings.ToUpper("`az{") == "`AZ{")
     // EqualFold も ASCII だけ（Go は K〔U+212A〕≡ k・ſ ≡ s・'É' ≡ 'é' を等しいとする — ここでは等しくない）

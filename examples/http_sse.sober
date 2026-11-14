@@ -1,12 +1,12 @@
 package main
 
-// Server-Sent Events（language.md 28 節の「SSE」）: 応答の stream で text/event-stream を送る。長さ不定の stream なので chunked で、
-// emit 1 回 = chunk 1 つ = 送り 1 回（std は emit をまたいで溜めない — イベントは組んだ順にすぐ届く）。イベントの行は http.server.FormatEvent で組む
+// Server-Sent Events（language.md 28 節の「SSE」）: レスポンスの stream で text/event-stream を送る。長さ不定の stream なので chunked で、
+// emit 1 回 = chunk 1 つ = 送り 1 回（std は emit をまたいでバッファリングしない — イベントは組んだ順にすぐ届く）。イベントの行は http.server.FormatEvent で組む
 // （data の改行は行ごとの `data:` に割る・event / id の改行は panic(BadEvent) — examples/http_sse_bad）。保存させない（cache: NoStore）。
 // text/event-stream は compression: の対象外（ServeWith に compression: を渡しても圧縮しない — 頭に Content-Encoding も Vary も無い）。
 // 繋ぎ直した受け手は最後に受けた id を Last-Event-ID で返す（http.server.Header で読む — ここではその続きから送る）。
 // 長命の接続は scope の deadline の外に置く（ServeConn を deadline つきの task.Run で包むと流れが切れる）。
-// ネットの代わりに recv が決まった要求の列を渡し、send が送りの 1 回ずつを印字する（行末の CR は外す・送りの区切りに `--`）
+// ネットの代わりに recv が決まったリクエストの列を渡し、send が送りの 1 回ずつを印字する（行末の CR は外す・送りの区切りに `--`）
 
 import "std/convert"
 import "std/http/server"

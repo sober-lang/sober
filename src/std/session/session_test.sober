@@ -1,6 +1,6 @@
 package session
 
-// 公開の口の網（white-box）: 往復・二段（Open → Subject → Check）・期限の境界と飽和・世代の不一致・改竄（全バイトの 1 bit 反転）・鍵違い・KeyFrom の決定性・読めない raw の形・知らない版
+// 公開のインターフェースの検査（white-box）: 往復・二段（Open → Subject → Check）・期限の境界と飽和・世代の不一致・改竄（全バイトの1 bit反転）・鍵違い・KeyFromの決定性・読めないrawの形・知らない版
 
 import "std/base64"
 import "std/crypto"
@@ -184,7 +184,7 @@ func TestTamper() {
     assert(check(k, base64.EncodeUrl(freeze(x)), t0(), 1) == 1)
 }
 
-// 正しい鍵で封じても版が 1 でなければ Bad（形式替えの口）
+// 正しい鍵で封じても版が1でなければBad（形式替えの入口）
 func TestUnknownVersion() {
     k := key1()
     w, _ := base64.DecodeUrl(Seal(Mint(k, "alice", 1, t0(), 60)))

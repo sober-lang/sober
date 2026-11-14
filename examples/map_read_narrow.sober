@@ -1,6 +1,6 @@
 package main
 
-// map の読み（値の T?）を絞ってから欄を読む
+// mapの読み（値のT?）を絞ってからフィールドを読む
 
 type P struct {
     rows []int

@@ -1,6 +1,6 @@
 package main
 
-// mdwecheck の題材（os.Run の子）: 子は印を引き継がない（PR_MDWE_NO_INHERIT — JIT の処理系を起動しても壊さない）。
+// mdwecheckの題材（os.Runの子）: 子はフラグを引き継がない（PR_MDWE_NO_INHERIT — JITの処理系を起動しても壊さない）。
 // 子の側で PR_GET_MDWE を読むのは python3 の ctypes
 import "std/os"
 

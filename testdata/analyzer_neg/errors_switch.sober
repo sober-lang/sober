@@ -1,9 +1,9 @@
 package main
 
 // analyzer の負例（scripts/analyzer_neg.sh — 期待は errors_switch.err）: error の switch の網羅（error 網羅 analyzer A5）。
-// 網羅の対象は subject の導出集合。覆わないラベルを名指して拒否・導出できない（TOP）subject は default を要求。
-// 到達しない腕（subject が持ちえないラベルの腕）と到達しない default（腕が導出集合を覆っているのに default）も拒否（ユーザー裁定 E4-d (ii)）。
-// build は analyzer を走らせない（ユーザー裁定 E4-B）ので受理し、覆っていないラベルが来たら exit 101（errors_switch.exit）
+// 網羅の対象はsubjectの導出集合。覆わないラベルを明示して拒否・導出できない（TOP）subjectはdefaultを要求。
+// 到達しない分岐（subjectが持ちえないラベルの分岐）と到達しないdefault（分岐が導出集合を覆っているのにdefault）も拒否（ユーザー決定E4-d (ii)）。
+// buildはanalyzerを走らせない（ユーザー決定E4-B）ので受理し、覆っていないラベルが来たらexit 101（errors_switch.exit）
 
 type A error {
     n int
@@ -13,7 +13,7 @@ type B error
 
 type C error
 
-// D はどこからも返らない（腕を書くと到達しない腕）
+// Dはどこからも返らない（分岐を書くと到達しない分岐）
 type D error
 
 func f(n int) (int, error?) {
@@ -35,7 +35,7 @@ func pick(i int) error? {
     return es[i]
 }
 
-// 到達しない腕（D）と到達しない default（A・B・C を覆った上の default）— main からは呼ばない
+// 到達しない分岐（D）と到達しないdefault（A・B・Cを覆った上のdefault）— mainからは呼ばない
 func dead(k int) int {
     _, e := f(k)
     if e != nil {

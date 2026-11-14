@@ -1,6 +1,6 @@
 package main
 
-// 束縛つき型パターン（`case e UA{}:` — syntax.md 決定 3）と欄の `_`（`c: _`）。以前は build だけが受理し check は断片外だった（p14c・p14e）
+// 束縛つき型パターン（`case e UA{}:` — syntax.md決定3）とフィールドの `_`（`c: _`）。以前はbuildだけが受理しcheckは断片外だった（p14c・p14e）
 
 type U union {
     UA { a, c int }

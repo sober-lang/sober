@@ -1,6 +1,6 @@
 package main
 
-// 負例（check も build も名指しで拒否 — load の式文の検査）: 結果を持つ func の本体の末尾の呼び出しの値は戻り値にならない（spec F-2）— `return k(n)` と書く
+// 負例（checkもbuildも専用の診断で拒否 — loadの式文の検査）: 結果を持つfuncの本体の末尾の呼び出しの値は戻り値にならない（spec F-2）— `return k(n)` と書く
 
 func k(n int) int {
     return n

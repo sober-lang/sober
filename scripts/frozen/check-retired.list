@@ -1,10 +1,10 @@
 # 凍結コーパスの check 側（Zig の脱糖器 → Lean の判定を Sober と比べる照合 — selfhost_e2e の Zig 側・pkgcheck）から退役させた entry。
-# 退役の理由（2026-10-01、byte の段 S4 — 草案 G1 の同方向の帰結・決定 A）: string = imm []byte に切り替えた（段 C）ので、
+# 退役の理由（2026-10-01、byteの段階S4 — 草案G1の同方向の帰結・決定A）: string = imm []byteに切り替えた（段階C）ので、
 # 凍結した Zig 版の脱糖器が出す string（`slice … int`）を新しい Lean（`slice … byte`）が拒否する。string を使う entry の「Zig の脱糖 → Lean」の判定が
 # 意味の差ではなく凍結物の語彙の差で食い違う。対になる lower 側の退役は scripts/frozen/lower-retired.list（全部）。
 # ここに載せた entry は check 側のゲートだけが飛ばす（gatelib の check_retired）。構文と名前解決の照合（lex / parse / fmt / load）は残る
-# （load は両側とも凍結時点の std を読む — scripts/selfhost_load.sh）。Zig ≡ Sober の**意味の照合は byte の段で実質終了** — 残る網 = obs・Lean・
-# Sober 生成の黄金・selfhost_check の corevec / 実コーパス / 変異体
+# （loadは両側とも凍結時点のstdを読む — scripts/selfhost_load.sh）。Zig ≡ Soberの**意味の照合はbyteの段階で実質終了** — 残る検査 = obs・Lean・
+# Sober生成のゴールデン・selfhost_checkのcorevec / 実コーパス / ミュータント
 examples/arith_edge.sober
 testdata/frozen_src/examples/block_escape.sober
 examples/builder_empty.sober
@@ -47,9 +47,9 @@ testdata/frozen_src/examples/utf8_std.sober
 testdata/iface/app
 testdata/frozen_src/testdata/minic/app
 testdata/frozen_src/testdata/minic_rd/app
-# S5（2026-10-01 — 鎖の最後の boot が byte の段 S4 の言語になった）: 起点の木の compiler/tools（道具の自己適用 — selfhost_e2e が起点の木の道具を
+# S5（2026-10-01 — ブートストラップチェーンの最後のbootがbyteの段階S4の言語になった）: 起点の木のcompiler/tools（道具の自己適用 — selfhost_e2eが起点の木の道具を
 # Zig と Sober の両方で検査して比べる）。起点の木は bytes(s) : []int の旧い言語で書かれていて、新しい言語の Sober（stage2）は型エラーで拒否する —
-# 意味の差でなく言語の版の差。compiler/tools/<名前> の行は selfhost_e2e の道具の段を飛ばす印（lower-retired.list の同じ印と対）。
+# 意味の差でなく言語の版の差。compiler/tools/<名前> の行はselfhost_e2eの道具の段階を飛ばすマーク（lower-retired.listの同じマークと対）。
 # 今の compiler/tools の自己適用は toolcheck・selfhost_check・leanbatch（stage2 と Lean — 今の言語）が見る
 compiler/tools/checkdump
 compiler/tools/desugardump
@@ -60,7 +60,7 @@ compiler/tools/loaderdump
 compiler/tools/lowerdump
 compiler/tools/parsedump
 compiler/tools/sobercheck
-# std 命名規則のリネーム（2026-10-01。pool.Outstanding → pool.Len 等）: 凍結の入力（testdata/frozen_src の写し）は旧い名前を呼ぶ。
+# std命名規則のリネーム（2026-10-01。pool.Outstanding → pool.Len等）: 凍結の入力（testdata/frozen_srcのコピー）は旧い名前を呼ぶ。
 # Zig は凍結した std（src/stage1/std_frozen）を読んで受理し、主の sober は今の std を読んで拒否する — 意味の差でなく std の版の差
 testdata/frozen_src/examples/pool.sober
 testdata/frozen_src/testdata/pool/exits.sober

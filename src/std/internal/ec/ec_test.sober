@@ -1,6 +1,6 @@
 package ec
 
-// ECDSA の検証の網（white-box）: Wycheproof（testdata/wycheproof — P-256 × SHA-256・P-384 × SHA-384 の DER と P1363 の 4 ファイル・
+// ECDSAの検証の検査（white-box）: Wycheproof（testdata/wycheproof — P-256 × SHA-256・P-384 × SHA-384のDERとP1363の4ファイル・
 // valid は受理・invalid は拒否）。ハッシュは std/crypto/sha256 と std/internal/sha512
 
 import "std/crypto/sha256"

@@ -1,13 +1,13 @@
 package loader
 
-// 列の要素の欄への代入（`xs[i].f = v`・`a.xs[i].p.q = v`）と添字への直の複合代入（`xs[i] += v` — 欄の列が空）: 要素を丸ごと読んで欄を差し替えて
-// 書き戻す固定テンプレートで写す:
+// 列の要素のフィールドへの代入（`xs[i].f = v`・`a.xs[i].p.q = v`）と添字への直の複合代入（`xs[i] += v` — フィールドの列が空）: 要素を丸ごと読んでフィールドを差し替えて
+// 書き戻す固定テンプレートで変換する:
 //
 //     B[I].p op= V   →   $eaKi := I; $eaKv := V; mut $eaKt := B[$eaKi]; $eaKt.p op= $eaKv; B[$eaKi] = $eaKt
 //
-// p は欄の列（1 つ以上）・op は = か複合代入の演算子。B は名前・欄・添字（添字は名前か整数のリテラル）だけの経路 — 読みと書き戻しで 2 回評価しても同じ値になる形に限る
-// （それ以外は写さず、後段が今どおり拒否する）。評価の順は添字 → 右辺 → 要素の読み → 書き（Go の「左辺の添字・右辺を先に評価してから書く」と同じ）。
-// 書き戻しは今の `B[I] = x` の道（imm の列への書きの名指し・region の写し）をそのまま通る。desugar・lower・Lean は写した後の木だけを読む。
+// pはフィールドの列（1つ以上）・opは = か複合代入の演算子。Bは名前・フィールド・添字（添字は名前か整数のリテラル）だけの経路 — 読みと書き戻しで2回評価しても同じ値になる形に限る
+// （それ以外は変換せず、後段が今どおり拒否する）。評価の順は添字 → 右辺 → 要素の読み → 書き（Goの「左辺の添字・右辺を先に評価してから書く」と同じ）。
+// 書き戻しは今の `B[I] = x` のパス（immの列への書きの特定・regionのコピー）をそのまま通る。desugar・lower・Leanは変換した後の木だけを読む。
 // parse の直後（catchExprs の後 — surfaceRewrites）に掛ける
 
 import "std/builder"
@@ -15,7 +15,7 @@ import "std/iter"
 import "ast"
 import "lexer"
 
-// parse の直後の表層の写し（catch 式 → 列の要素の欄への代入）
+// parseの直後の表層の変換（catch式 → 列の要素のフィールドへの代入）
 func surfaceRewrites(t ast.Tree) ast.Tree {
     return elemAssigns(catchExprs(t))
 }
@@ -43,7 +43,7 @@ func elemAssigns(t ast.Tree) ast.Tree {
     for j <- iter.Range(0, len(t.data)) {
         builder.Push(mut db, t.data[j])
     }
-    // 写した文（元の文 → r5 の中の 5 文の位置 — 無ければ -1）
+    // 変換した文（元の文 → r5の中の5文の位置 — 無ければ -1）
     mut r5 := mut []int{}
     mut repl := mut []int{}
     for i <- iter.Range(0, n0) {
@@ -61,14 +61,14 @@ func elemAssigns(t ast.Tree) ast.Tree {
             vnm := ast.PutLit(mut db, "$ea${k}v")
             tnm := ast.PutLit(mut db, "$ea${k}t")
             base := n0 + builder.Len(mut nb)
-            // base + 0 = $i の束縛・1 = $v の束縛・2 = $i の名前・3 = B[$i]・4 = mut $t の束縛・5 = $t の名前（欄の鎖の底）
+            // base + 0 = $iの束縛・1 = $vの束縛・2 = $iの名前・3 = B[$i]・4 = mut $tの束縛・5 = $tの名前（フィールドのチェーンの底）
             builder.Push(mut nb, ast.Node{ast.SBind, tok, ast.PutList(mut db, []int{inm}), 0, ast.PutList(mut db, []int{t.nodes[ix].b}), 0, 0, 0})
             builder.Push(mut nb, ast.Node{ast.SBind, tok, ast.PutList(mut db, []int{vnm}), 0, ast.PutList(mut db, []int{ast.ListAt(t, x.c, 0)}), 0, 0, 0})
             builder.Push(mut nb, ast.Node{ast.EIdent, tok, inm, 0, 0, 0, 0, 0})
             builder.Push(mut nb, ast.Node{ast.EIndex, tok, bse, base + 2, 0, 0, 0, 0})
             builder.Push(mut nb, ast.Node{ast.SBind, tok, ast.PutList(mut db, []int{tnm}), 1, ast.PutList(mut db, []int{base + 3}), 0, 0, 0})
             builder.Push(mut nb, ast.Node{ast.EIdent, tok, tnm, 0, 0, 0, 0, 0})
-            // 欄の鎖を底（$t）から上へ組み直す: 元の鎖を上から集めて逆順に
+            // フィールドのチェーンを底（$t）から上へ組み直す: 元のチェーンを上から集めて逆順に
             mut sels := mut []int{}
             mut c := tgt
             while c != ix {
@@ -136,14 +136,14 @@ func elemAssigns(t ast.Tree) ast.Tree {
     return ast.Tree{freeze(ns), builder.Build(mut db), t.file}
 }
 
-// 代入 i が「欄の鎖の下に列の要素」の形（`B[I].p op= V` — 1 対 1・B は 2 回評価しても同じ経路）なら要素の読みの節 B[I]（でなければ -1）
+// 代入iが「フィールドのチェーンの下に列の要素」の形（`B[I].p op= V` — 1対1・Bは2回評価しても同じ経路）なら要素の読みの節B[I]（でなければ -1）
 func elemAssignAt(t ast.Tree, i int) int {
     x := t.nodes[i]
     if ast.ListLen(t, x.a) != 1 || ast.ListLen(t, x.c) != 1 {
         return -1
     }
     mut c := ast.ListAt(t, x.a, 0)
-    // 添字への直の複合代入 `B[I] op= V`（欄の鎖が空 — `$t op= $v; B[$i] = $t`）。素の `B[I] = V` は格納の道のまま
+    // 添字への直の複合代入 `B[I] op= V`（フィールドのチェーンが空 — `$t op= $v; B[$i] = $t`）。素の `B[I] = V` は格納のパスのまま
     if t.nodes[c].kind == ast.EIndex && x.b != lexer.Equal {
         return if eaPurePath(t, t.nodes[c].a) { c } else { -1 }
     }
@@ -159,7 +159,7 @@ func elemAssignAt(t ast.Tree, i int) int {
     return c
 }
 
-// e が名前・欄・添字（添字は名前か整数のリテラル）だけの経路か
+// eが名前・フィールド・添字（添字は名前か整数のリテラル）だけの経路か
 func eaPurePath(t ast.Tree, e0 int) bool {
     mut e := e0
     while e >= 0 {

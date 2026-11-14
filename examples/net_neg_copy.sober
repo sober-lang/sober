@@ -1,6 +1,6 @@
 package main
 
-// 負例: Conn は写せない（同一性の型 — File と同じ規則。diag.FileUse — desugar/filecheck・language.md 28 節の net）
+// 負例: Connはコピーできない（同一性の型 — Fileと同じ規則。diag.FileUse — desugar/filecheck・language.md 28 節のnet）
 
 import "std/net"
 

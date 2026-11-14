@@ -1,6 +1,6 @@
 package main
 
-// else つき if の本体の絞り（spec T-17）: `A && x != nil && B` の本体と `A || x == nil || B` の else の腕で x は T
+// elseつきifの本体の絞り（spec T-17）: `A && x != nil && B` の本体と `A || x == nil || B` のelseの分岐でxはT
 
 func label(n int?, loud bool) string {
     return if loud && n != nil { "N${n + 1}" } else { "-" }

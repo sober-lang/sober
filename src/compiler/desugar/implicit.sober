@@ -3,9 +3,9 @@ package desugar
 // 暗黙の freeze: 期待型が imm のコンテナの位置に、同じ形の mut のコンテナの式を置くと、その式は `freeze(式)` と同じ意味。
 // 点は表層型検査器（TypeAll）が型付けのついでに表へ積む（yNoteImplicit — 別キー 0 - IMPLKEY - 節）。analyzer（U1〜U3 の事象）・脱糖器（CFreeze）・
 // lower（mut → imm の型の付け替え）は位置を見ず、節が表にあるか（IsImplicit）だけを引く — 受理する点 ⊆ 表 = 規則が見る点が構成で決まる
-// （差し込み忘れは型の拒否に落ちるだけ。位置ごとに 3 者が判定すると、腕の合流で期待型が腕へ押し込まれる形などで点の集合がずれる）。
-// 起こす位置（v1）= 実引数（直接・総称・展開・関数値・パイプ・std/task の関数 — チャネルの送信も）・関数の return・欄 / imm の場所への代入・
-// 添字 / map への格納・composite の欄・slice / map のリテラルの要素・append の要素・for の slice の生成元（iter.Slice の xs）。起こさない位置 = 束縛（期待型が無い）・if / switch の腕の合流・
+// （差し込み忘れは型の拒否に落ちるだけ。位置ごとに3者が判定すると、分岐の合流で期待型が分岐へ押し込まれる形などで点の集合がずれる）。
+// 起こす位置（v1）= 実引数（直接・総称・展開・関数値・パイプ・std/taskの関数 — チャネルの送信も）・関数のreturn・フィールド / immの場所への代入・
+// 添字 / mapへの格納・compositeのフィールド・slice / mapのリテラルの要素・appendの要素・forのsliceの生成元（iter.Sliceのxs）。起こさない位置 = 束縛（期待型が無い）・if / switchの分岐の合流・
 // ラムダの return（typer がラムダの結果の型を持たない）・par の子の捕獲
 
 import "ast"
@@ -14,9 +14,9 @@ import "loader"
 import "std/iter"
 import "std/table"
 
-// 期待型 want の位置に置いた式 e で暗黙の freeze が起きるか。e は局所の束縛を根に持つ道（名前・欄・添字・括弧 — v1）に限る
+// 期待型wantの位置に置いた式eで暗黙のfreezeが起きるか。eは局所の束縛を根に持つパス（名前・フィールド・添字・括弧 — v1）に限る
 // （呼び出しの結果・if 式などは点にしない — 分岐の合流は analyzer が根を取れない）。par の handle（Task / 札）を含む型は点にしない
-// （freeze できない — kind 16。`task.Gather(hs)` の mut の handle の slice は既存の特例の道のまま）
+// （freezeできない — kind 16。`task.Gather(hs)` のmutのhandleのsliceは既存の特例のパスのまま）
 func ImplicitFreeze(st mut S, e NodeRef, want int) bool {
     if e == -1 || want < 0 || !(yIsPath(mut st, e) || yIsClone(mut st, e)) {
         return false
@@ -32,7 +32,7 @@ func yElemHasPar(st mut S, y int) bool {
 }
 
 // e が `clone(x)` の呼び出しか（括弧は透過）。clone の結果は新しい値（別名が無い）なので、imm の位置に置けばその場で凍らせてよい —
-// 「写しを渡す」の素直な形 `f(clone(xs))`（clone の段 — 道でない式の中で clone だけを点にする。一般の呼び出しの結果には広げない）
+// 「コピーを渡す」の素直な形 `f(clone(xs))`（cloneのフェーズ — パスでない式の中でcloneだけを点にする。一般の呼び出しの結果には広げない）
 func yIsClone(st mut S, e NodeRef) bool {
     k := kindN(mut st, e)
     if k == ast.EParen {
@@ -45,7 +45,7 @@ func yIsClone(st mut S, e NodeRef) bool {
     return kindN(mut st, c) == ast.EIdent && strIs(mut st, sA(nodeOf(mut st, c)), "clone") && lenL(mut st, lB(nodeOf(mut st, e))) == 1
 }
 
-// e が局所の束縛を根に持つ道か（名前・欄・添字・括弧の鎖）
+// eが局所の束縛を根に持つパスか（名前・フィールド・添字・括弧のチェーン）
 func yIsPath(st mut S, e NodeRef) bool {
     k := kindN(mut st, e)
     if k == ast.EIdent {
@@ -72,7 +72,7 @@ func yFreezes(st mut S, have int, want int) bool {
     return false
 }
 
-// package pk の中の呼び出しの callee の節 callee0 の k 番の仮引数の型（引けなければ -1）。関数値（局所の名前・欄）は typer が
+// package pk の中の呼び出しのcalleeの節callee0のk番の仮引数の型（引けなければ -1）。関数値（局所の名前・フィールド）はtyperが
 // callee の節に載せた関数型から、名前付き関数は宣言の型（総称は呼び出しの型引数 YTArgsOf を代入・std/task の振り分け PREDIR の後の関数）から
 func WantParam(st mut S, pk int, callee0 NodeRef, k int) int {
     if callee0 == -1 || k < 0 {
@@ -117,7 +117,7 @@ func WantParam(st mut S, pk int, callee0 NodeRef, k int) int {
     return if ta == -1 { -1 } else { ySubst(mut st, t, ta) }
 }
 
-// 代入の受け手 t（名前・欄・添字の道）の期待型（map の添字は値の型 — 読みの型 T? ではなく）
+// 代入の受け手t（名前・フィールド・添字のパス）の期待型（mapの添字は値の型 — 読みの型T? ではなく）
 func WantStore(st mut S, t NodeRef) int {
     if kindN(mut st, t) == ast.EIndex {
         b := YTypeOf(mut st, nA(nodeOf(mut st, t)))
@@ -135,7 +135,7 @@ func IsImplicit(st mut S, e NodeRef) bool {
     return st.nimpl > 0 && e != -1 && yGet(mut st, 0 - IMPLKEY - int(e)) >= 0
 }
 
-const FORSRCKEY = 4503599627370496  // 2^52（for の生成元の点の印の別キー — IMPLKEY〔2^51〕と重ならない）
+const FORSRCKEY = 4503599627370496  // 2^52（forの生成元の点のマークの別キー — IMPLKEY〔2^51〕と重ならない）
 
 // 暗黙の freeze の点 e が for の生成元か（診断の文面を分ける — 「渡す」でなく「for で回す」）
 func IsForSource(st mut S, e NodeRef) bool {
@@ -158,7 +158,7 @@ func explicitFreezeArg(st mut S, e NodeRef) NodeRef {
 }
 
 // p の利用者のコード（std を除く）の明示の `freeze(x)` のうち、外して x にすると同じ点で暗黙の freeze になるものの位置
-// （開発の口 `check --freeze-sites` — 暗黙 ≡ 明示のオラクル scripts/implicitfreeze.sh が外した木を作る）
+// （開発のオプション `check --freeze-sites` — 暗黙 ≡ 明示のオラクルscripts/implicitfreeze.shが外した木を作る）
 func FreezeSites(p loader.Program) []diag.Pos {
     mut st := S{}
     Init(mut st, p)
@@ -171,8 +171,8 @@ func FreezeSites(p loader.Program) []diag.Pos {
     return freeze(out)
 }
 
-// ImplicitCount / ImplicitNode は暗黙の freeze の点の列（積んだ順 — analyzer の freeze の規則が自前の集合に写す。IsImplicit の
-// yGet は型の全項と鎖を共有していて、式ごとに引くと重い）
+// ImplicitCount / ImplicitNodeは暗黙のfreezeの点の列（積んだ順 — analyzerのfreezeの規則が自前の集合にコピーする。IsImplicitの
+// yGetは型の全項とチェーンを共有していて、式ごとに引くと重い）
 func ImplicitCount(st mut S) int {
     return table.Len(mut st.ypts)
 }
@@ -181,7 +181,7 @@ func ImplicitNode(st mut S, i int) NodeRef {
     return NodeRef(table.Get(mut st.ypts, i))
 }
 
-// p の暗黙の freeze の点の位置（std を含む全部 — 開発の口 `check --implicit-points`）
+// pの暗黙のfreezeの点の位置（stdを含む全部 — 開発のオプション `check --implicit-points`）
 func ImplicitPoints(p loader.Program) []diag.Pos {
     mut st := S{}
     Typed(mut st, p)
@@ -207,7 +207,7 @@ func yNoteImplicit(st mut S, e NodeRef, want int) {
     }
 }
 
-// 実引数 i（節の列 an・型の列 at — typer が計算済み）が点の候補か（型の表を引き直さない — 自己 build の値札）
+// 実引数i（節の列an・型の列at — typerが計算済み）が点の候補か（型の表を引き直さない — 自己buildのコスト）
 func yArgCand(st mut S, an ListRef, at ListRef, i int) bool {
     if i < lenL(mut st, at) && yMutTy(mut st, latI(mut st, at, i)) {
         return true

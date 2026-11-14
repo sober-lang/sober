@@ -1,7 +1,7 @@
 package main
 
-// imm の欄に、暗黙の freeze の点にならない mut のコンテナ（局所のラムダの呼び出し — 捕捉した m の別名）を置く形。
-// コアの struct は欄の型を持たないので、check が受理し build の lower だけが落としていた
+// immのフィールドに、暗黙のfreezeの点にならないmutのコンテナ（局所のラムダの呼び出し — 捕捉したmの別名）を置く形。
+// コアのstructはフィールドの型を持たないので、checkが受理しbuildのlowerだけが落としていた
 
 type H struct {
     xs []int

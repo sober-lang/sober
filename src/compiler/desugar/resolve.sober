@@ -1,18 +1,18 @@
 package desugar
 
-// 名前解決と型式 → コアの型（src/stage1/desugar.zig の resolveIn / lookupType / findFn / findVariant / tyOf 一族の写し）
+// 名前解決と型式 → コアの型（src/stage1/desugar.zigのresolveIn / lookupType / findFn / findVariant / tyOf系統のコピー）
 
 import "diag"
 import "ast"
 import "std/iter"
 import "std/table"
 
-// 組み込み error の宣言（Zig の prog.errors）を指す印。variant の列はヒープの errv
+// 組み込みerrorの宣言（Zigのprog.errors）を指すマーク。variantの列はヒープのerrv
 const ERRS = -2
 
 // ── 記録の形 ──
-// 関数型の束縛（3 語）: [parent, name, closure]
-// 型宣言の参照（3 語）: [decl（型宣言の節か ERRS）, pkg, tenv]
+// 関数型の束縛（3ワード）: [parent, name, closure]
+// 型宣言の参照（3ワード）: [decl（型宣言の節かERRS）, pkg, tenv]
 // 型パラメータの束縛の列: [n, (name, ty, decl)…]
 
 // 値の束縛（st.binds の要素 — 積んだ順の添字で指し、無しは -1。積んだ後は変えない）
@@ -29,7 +29,7 @@ type Binding struct {
     split bool    // 割った mut 束縛（split.sober）
     sty int       // 表層型（surface.sober — SUNK = 不明）
     fres ListRef      // 関数値の結果の型式の列（名前付き関数から束縛した imm の関数値 — 後置 `?` の形。-1 = 不明）
-    brw int       // 借りの閉包の仮引数なら借りの位置の型式（値化可能な named fn type の匿名の関数型の仮引数の節）+ 1（0 = 借りでない — (α-L0)）
+    brw int       // 借りのクロージャの仮引数なら借りの位置の型式（値化可能な named fn type の匿名の関数型の仮引数の節）+ 1（0 = 借りでない — (α-L0)）
     nrw int       // mut の T? を絞った束縛なら絞った if の節 + 1（0 = 絞りでない — 書く文の後ろで外の束縛へ戻す: narrowkill.sober）
 }
 
@@ -41,7 +41,7 @@ func bind(st mut S, eb int, name StrRef, level int, mutable bool, decl int, ty T
     return at
 }
 
-// 束縛 b の記録（非ジェネリックの包み — ジェネリックな Get の結果の struct は欄の型が脱糖器に見えない F-10）
+// 束縛bの記録（非ジェネリックの包み — ジェネリックなGetの結果のstructはフィールドの型が脱糖器に見えないF-10）
 func bnd(st mut S, b int) Binding {
     return table.Get(mut st.binds, b)
 }
@@ -101,7 +101,7 @@ func bindFT(st mut S, ef int, name int, cl int, sty int, te NodeRef, pk int, ten
     return at
 }
 
-// 閉包の束縛 name の記録（無ければ -1）
+// クロージャの束縛nameの記録（無ければ -1）
 func lookupFRec(st mut S, ef int, name StrRef) int {
     mut b := ef
     while b >= 0 {
@@ -113,7 +113,7 @@ func lookupFRec(st mut S, ef int, name StrRef) int {
     return -1
 }
 
-// 閉包の束縛 name の表層型（無ければ SUNK — 名前付き関数型の仮引数に束縛した閉包はその型、ラムダ・for 式は SFREE）
+// クロージャの束縛nameの表層型（無ければSUNK — 名前付き関数型の仮引数に束縛したクロージャはその型、ラムダ・for式はSFREE）
 func lookupFSty(st mut S, ef int, name StrRef) int {
     mut b := ef
     while b >= 0 {
@@ -234,7 +234,7 @@ func ResolveTop(st mut S, from int, name StrRef, shadowed bool, want int) TopRef
     return topIn(mut st, pk, name, lo, want)
 }
 
-// 選択子 `ref.N`（ref = 基底の名前の文字列、n = 欄の名前の文字列）を package from から解決する（ref が import の参照名で、N が公開のときだけ）
+// 選択子 `ref.N`（ref = 基底の名前の文字列、n = フィールドの名前の文字列）を package from から解決する（refがimportの参照名で、Nが公開のときだけ）
 func ResolveSel(st mut S, from int, ref StrRef, n StrRef, want int) TopRef {
     pk := selIn(mut st, from, ref, int(n))
     if pk < 0 {
@@ -311,7 +311,7 @@ func topIn(st mut S, pk int, name StrRef, lo int, want int) TopRef {
 }
 
 // package pk の型宣言（名前は文字列 name のバイト [lo, 末尾)）の節（無ければ -1）
-// 索引の鎖はファイル・宣言の順（線形探索と同じ — 最初に一致した宣言）
+// 索引のチェーンはファイル・宣言の順（線形探索と同じ — 最初に一致した宣言）
 func typeIn(st mut S, pk int, name StrRef, lo int) NodeRef {
     if table.Len(mut st.tyBucketI) == 0 {
         buildTypeIndex(mut st)
@@ -330,7 +330,7 @@ func typeIn(st mut S, pk int, name StrRef, lo int) NodeRef {
     return -1
 }
 
-// 組み済みの型宣言の索引の節を今のファイルの根の型宣言へ差し替える（並びは buildTypeIndex と同じ — 名前は変わらないので鎖はそのまま）
+// 組み済みの型宣言の索引の節を今のファイルの根の型宣言へ差し替える（並びはbuildTypeIndexと同じ — 名前は変わらないのでチェーンはそのまま）
 func refreshTypeIndex(st mut S) {
     if table.Len(mut st.tyIdxNode) == 0 {
         return
@@ -347,7 +347,7 @@ func refreshTypeIndex(st mut S) {
     }
 }
 
-// 型宣言の索引を組む（型宣言は init の後は変わらない）。宣言を順に並べ、鎖の先頭が前の宣言になるよう後ろから積む
+// 型宣言の索引を組む（型宣言はinitの後は変わらない）。宣言を順に並べ、チェーンの先頭が前の宣言になるよう後ろから積む
 func buildTypeIndex(st mut S) {
     for _ <- iter.Range(0, FNBUCKETS) {
         table.Push(mut st.tyBucketI, -1)
@@ -378,7 +378,7 @@ func lookupType(st mut S, from int, name StrRef) int {
 }
 
 // package pk の const（名前は文字列 name のバイト [lo, 末尾)）の表の添字（無ければ -1）
-// 索引の鎖は添字の小さい順（線形探索と同じ — 最初に一致した const）
+// 索引のチェーンは添字の小さい順（線形探索と同じ — 最初に一致したconst）
 func lookupConst(st mut S, pk int, name StrRef, lo int) int {
     if table.Len(mut st.conBucket) == 0 {
         buildConIndex(mut st)
@@ -469,7 +469,7 @@ func findFn(st mut S, callee NodeRef, eb int) int {
 }
 
 // package pk の関数（名前は文字列 name のバイト [lo, 末尾)）の関数の表の添字（無ければ -1）。
-// 索引の鎖は添字の小さい順（全関数の線形探索と同じ — 最初に一致した関数）
+// 索引のチェーンは添字の小さい順（全関数の線形探索と同じ — 最初に一致した関数）
 func fnIn(st mut S, pk int, name StrRef, lo int) int {
     if table.Len(mut st.fnBucket) == 0 {
         buildFnIndex(mut st)
@@ -498,7 +498,7 @@ func fnHash(st mut S, pk int, s int, lo int) int {
     return h % FNBUCKETS
 }
 
-// 関数の索引を組む（関数の表は init の後は変わらない）。鎖の先頭が添字の小さい方になるよう大きい方から積む
+// 関数の索引を組む（関数の表はinitの後は変わらない）。チェーンの先頭が添字の小さい方になるよう大きい方から積む
 func buildFnIndex(st mut S) {
     for _ <- iter.Range(0, FNBUCKETS) {
         table.Push(mut st.fnBucket, -1)
@@ -624,7 +624,7 @@ func variantIn(st mut S, pk int, name StrRef, lo int) VariantRef {
 // ── 型式 → コアの型 ──
 
 // 名前付き型（宣言の節 decl）の解決の記録: 型環境なし（tenv = -1 — env = -1）の参照か、ジェネリック struct の型引数の束縛 env
-// （genericEnv の平坦な列 — 欄の型名はこの束縛と宣言の package だけで引かれる）のもとで、fuel 以下の燃料で解けた型 ty。
+// （genericEnvの平坦な列 — フィールドの型名はこの束縛と宣言のpackageだけで引かれる）のもとで、fuel以下の燃料で解けた型ty。
 // 型は intern されるので同じ解決は同じ参照になり、燃料は「解けたときの燃料以上なら同じく解ける」ので memo は元の判定と同じ結果を返す
 type TyMemo struct {
     decl int
@@ -736,7 +736,7 @@ func tyOf(st mut S, pk int, te NodeRef, at NodeRef, fuel int) (TyRef, error?) {
             if isRecDecl(mut st, decl) {
                 return recTy(mut st, dpk, decl, -1, at, fuel)
             }
-            // 型環境なしの参照は memo する（欄の型名は今の型環境で引くので、型環境つきの参照は結果が環境に依る — 対象外）
+            // 型環境なしの参照はmemoする（フィールドの型名は今の型環境で引くので、型環境つきの参照は結果が環境に依る — 対象外）
             if noTenv(mut st) {
                 m := memoGet(mut st, int(decl), -1, fuel)
                 if m != -1 {
@@ -760,7 +760,7 @@ func tyOf(st mut S, pk int, te NodeRef, at NodeRef, fuel int) (TyRef, error?) {
             }
             return if u == 0 { st.tInt } else { st.tBool }, nil
         case ast.BFunc:
-            // 値化可能な named fn type は閉包の型（closure.sober）。それ以外は値にならない
+            // 値化可能な named fn type はクロージャの型（closure.sober）。それ以外は値にならない
             if fnValDeclNode(mut st, decl) {
                 return closTyOf(mut st, dpk, decl, at, fuel)
             }
@@ -775,8 +775,8 @@ func tyOf(st mut S, pk int, te NodeRef, at NodeRef, fuel int) (TyRef, error?) {
         env := genericEnv(mut st, pk, dr, lB(nodeOf(mut st, te)), at)?
         decl := hgetN(mut st, dr)
         if parDomDecl(mut st, dr) && !strIs(mut st, PkgPath(mut st, pk), "std/task") {
-            // `task.Domain[S]`（関数の仮引数・struct の欄）: コアの dom（家の region 0 = 圧縮された呼び手空間 — imm の参照と同じ上界・状態の型は 0 へ締める）。
-            // std/task の中の署名（NewDomain・domEnter ほか — 呼び出し点で鍵に写す柵）は宣言の struct のまま
+            // `task.Domain[S]`（関数の仮引数・structのフィールド）: コアのdom（家のregion 0 = 圧縮された呼び手空間 — immの参照と同じ上界・状態の型は0へ締める）。
+            // std/taskの中の署名（NewDomain・domEnterほか — 呼び出し点で鍵にコピーする柵）は宣言のstructのまま
             if lenL(mut st, lB(nodeOf(mut st, te))) != 1 {
                 return 0, diag.CoreFragment{at: posOf(mut st, at)}
             }
@@ -802,7 +802,7 @@ func tyOf(st mut S, pk int, te NodeRef, at NodeRef, fuel int) (TyRef, error?) {
         }
         saved := st.tenv
         st.tenv = env
-        // ジェネリック union（明示の型引数）: variant の欄の型を型引数の束縛で引く
+        // ジェネリックunion（明示の型引数）: variantのフィールドの型を型引数の束縛で引く
         if bk == ast.BUnion {
             defer {
                 st.tenv = saved
@@ -818,7 +818,7 @@ func tyOf(st mut S, pk int, te NodeRef, at NodeRef, fuel int) (TyRef, error?) {
         memoPut(mut st, int(decl), env, fuel, t)
         return t, nil
     case ast.TFunc:
-        // 値の位置の匿名の関数型の欄は閉包の型（env の鍵 = 関数型の構造 — 欄どうしで共有・借りの位置とは別）
+        // 値の位置の匿名の関数型のフィールドはクロージャの型（envの鍵 = 関数型の構造 — フィールドどうしで共有・借りの位置とは別）
         if anonFieldTE(mut st, te) {
             return closTyOfKey(mut st, pk, te, brwKey(mut st, pk, te, at, fuel, true)?, at, fuel)
         }
@@ -849,7 +849,7 @@ func tyOf(st mut S, pk int, te NodeRef, at NodeRef, fuel int) (TyRef, error?) {
         v := tyOf(mut st, pk, nB(nodeOf(mut st, te)), at, fuel - 1)?
         return tMap(mut st, nodeOf(mut st, te).c != 0, 0, key, v), nil
     case ast.TTuple:
-        // 多値の型（型引数の位置だけ — task.Handle[(T, error?)]・P3b 残穴1）: 右結合の prod の鎖（多値の戻りと同じ形）
+        // 多値の型（型引数の位置だけ — task.Handle[(T, error?)]・P3b残穴1）: 右結合のprodのチェーン（多値の戻りと同じ形）
         l := lA(nodeOf(mut st, te))
         n := lenL(mut st, l)
         ts := ListRef(listN(mut st, n))
@@ -888,7 +888,7 @@ func genericEnv(st mut S, pk int, dr int, args ListRef, at NodeRef) (int, error?
         }
         hset(mut st, env + 1 + i * 3, latI(mut st, tps, i))
         hsetTy(mut st, env + 2 + i * 3, t)
-        // 型引数の宣言（`B[Tk]` の欄 `one T` を読んだ値の欄読みが Tk の宣言を引ける）
+        // 型引数の宣言（`B[Tk]` のフィールド `one T` を読んだ値のフィールド読みがTkの宣言を引ける）
         hset(mut st, env + 3 + i * 3, declOfTypeExpr(mut st, pk, latN(mut st, args, i)))
     }
     hset(mut st, env, n)
@@ -906,7 +906,7 @@ func tyIn(st mut S, pk int, env int, te NodeRef, at NodeRef) (TyRef, error?) {
     return t, nil
 }
 
-// フィールドの列 → 右結合の prod 鎖（0 は unit、1 は素の型）
+// フィールドの列 → 右結合のprodチェーン（0はunit、1は素の型）
 func fieldsTy(st mut S, pk int, fs ListRef, at NodeRef, fuel int) (TyRef, error?) {
     n := lenL(mut st, fs)
     if n == 0 {
@@ -941,7 +941,7 @@ func unionTreeTy(st mut S, pk int, decl NodeRef, start int, at NodeRef, fuel int
         }
     }
     if n == 1 {
-        // variant 1 つの union（error のラベル 1 つと同じ）: 和を組まずペイロードそのもの — caseTree の n == 1 の腕と対
+        // variant 1つのunion（errorのラベル1つと同じ）: 和を組まずペイロードそのもの — caseTreeのn == 1の分岐と対
         return payloadTy(mut st, pk, vat(mut st, decl, start), fuel)
     }
     if n < 2 {
@@ -952,7 +952,7 @@ func unionTreeTy(st mut S, pk int, decl NodeRef, start int, at NodeRef, fuel int
     return tUnion(mut st, l, r), nil
 }
 
-// 組み込み error の型（prod L []L — L は全ラベルの閉じた union、鎖は imm slice の base 座標 r0）
+// 組み込みerrorの型（prod L []L — Lは全ラベルの閉じたunion、チェーンは imm slice のbase座標r0）
 func errTy(st mut S, pk int, at NodeRef, fuel int) (TyRef, error?) {
     l := unionTreeTy(mut st, pk, NodeRef(ERRS), 0, at, fuel)?
     chain := tSlice(mut st, false, 0, l, false)
@@ -989,7 +989,7 @@ func elemDeclOfTypeExpr(st mut S, pk int, te NodeRef) int {
     if kindN(mut st, te) == ast.TSlice {
         return declOfTypeExpr(mut st, pk, nA(nodeOf(mut st, te)))
     }
-    // map の読み（`m[k]` — 値の T?）の中身の宣言: 絞った後の欄読みが引ける（slice の要素と同じ）
+    // mapの読み（`m[k]` — 値のT?）の中身の宣言: 絞った後のフィールド読みが引ける（sliceの要素と同じ）
     if kindN(mut st, te) == ast.TMap {
         return declOfTypeExpr(mut st, pk, nB(nodeOf(mut st, te)))
     }
@@ -1009,19 +1009,19 @@ func structFields(st mut S, dr int) ListRef {
 }
 
 // fieldIndex はフィールドの列 fs の名前 name の位置（無ければ -1）
-// ── composite の欄の照合（build と check の共有）──
-// 規則: 空の要素の列は `T{}`（全ゼロ値）・位置と名前の混在は誤り・位置は欄の数ちょうど・名前は重複なし・未知の欄なし。
-// 名前つきは一部の欄だけでよい（部分リテラル — 省いた欄はゼロ値。language.md 15 節）。
-// 誤りの種類は層ごとの診断に写す（desugar = Malformed、lower = 種類ごと）
+// ── compositeのフィールドの照合（buildとcheckの共有）──
+// 規則: 空の要素の列は `T{}`（全ゼロ値）・位置と名前の混在は誤り・位置はフィールドの数ちょうど・名前は重複なし・未知のフィールドなし。
+// 名前つきは一部のフィールドだけでよい（部分リテラル — 省いたフィールドはゼロ値。language.md 15 節）。
+// 誤りの種類は層ごとの診断に反映する（desugar = Malformed、lower = 種類ごと）
 
 const CMOk = 0
 const CMMixed = 1     // 位置と名前の混在
 const CMDup = 2       // 名前の重複
-const CMUnknown = 3   // 未知の欄の名前
-const CMCount = 4     // 位置の個数が欄の数と違う
+const CMUnknown = 3   // 未知のフィールドの名前
+const CMCount = 4     // 位置の個数がフィールドの数と違う
 
-// struct / variant のリテラルの要素の列 elems（KElem — a = 欄の名前か -1、b = 値）を欄の名前の列 names（文字列の列）に照らし、
-// 要素ごとの欄の添字の列と誤りの種類（CMOk 以外なら列は -1）を返す。空の elems は長さ 0 の列（`T{}`）
+// struct / variantのリテラルの要素の列elems（KElem — a = フィールドの名前か -1、b = 値）をフィールドの名前の列names（文字列の列）に照らし、
+// 要素ごとのフィールドの添字の列と誤りの種類（CMOk以外なら列は -1）を返す。空のelemsは長さ0の列（`T{}`）
 func CompositeFields(st mut S, names ListRef, elems ListRef) (ListRef, int) {
     ne := lenL(mut st, elems)
     nf := lenL(mut st, names)
@@ -1065,7 +1065,7 @@ func CompositeFields(st mut S, names ListRef, elems ListRef) (ListRef, int) {
     return out, CMOk
 }
 
-// 欄の宣言の節の列 fs（KField — a = 名前）の名前の列
+// フィールドの宣言の節の列fs（KField — a = 名前）の名前の列
 func fieldNames(st mut S, fs ListRef) ListRef {
     n := lenL(mut st, fs)
     out := ListRef(listN(mut st, n))

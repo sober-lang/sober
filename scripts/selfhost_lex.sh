@@ -8,7 +8,7 @@
 #
 # Sober 版は compiler/ をモジュールルートにしてビルドする（import "lexer" = compiler/lexer）。
 # lexdump は argv を取らない（io のスコープ外）ので、入力は stdin から渡す。
-# 加えて Sober 版（lexdump + lexer package）が sober check に通ることを確かめる（sober-check があるとき）。
+# 加えてSober版（lexdump + lexer package）が sober check に通ることを検証する（sober-checkがあるとき）。
 # 前提: zig build 済み（$STAGE1 で差し替え可）。
 set -euo pipefail
 cd "$(dirname "$0")/.."

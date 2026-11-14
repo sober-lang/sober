@@ -1,23 +1,23 @@
 package desugar
 
 // std/task の呼び出し点の形の検査（language.md 11 節）: Spawn の g が捕獲できない値・本体からの脱出・
-// task の結果の形を名指しで拒否する（diag.Par の kind 3〜10）。check と build の両方が通る層（NamedValueArgs の後 — 表層の木と表層型）に置く:
+// taskの結果の形を専用の診断で拒否する（diag.Parのkind 3〜10）。checkとbuildの両方が通る層（NamedValueArgsの後 — 表層の木と表層型）に置く:
 // check だけで拒否すると build が通って意味が割れる（D1 の MutAlias と同じ理由）。コアの検査（givable・Λ = []・regionsBelow）も同じ形を拒否するが、
-// 名指しはここ。std/task を import しないプログラムでは走らない
+// 専用の診断はここ。std/taskをimportしないプログラムでは走らない
 //
 // kind: 3 = 実引数が生のラムダでない・4 = mut の束縛の捕獲・5 = 札（task.Scope）の捕獲・6 = handle（task.Handle）の捕獲・
-//       7 = 本体から外への脱出（return / `?` / 外のループへの break・continue）・8 = task の結果が写せない（関数値・札・handle — string・slice・map・error は P3b-4 から写せる）・
+//       7 = 本体から外への脱出（return / `?` / 外のループへのbreak・continue）・8 = taskの結果がコピーできない（関数値・札・handle — string・slice・map・errorはP3b-4からコピーできる）・
 //       9 = scope の結果が札・handle を持つ（scope の外へ逃げる）。10（main 以外の関数の中）は撤去 — Def の本体の par は Lean の noNewchan の解禁で受理・
 //       16 = handle を imm の slice に（mut slice だけ — Gather）・17 = error を返す task の handle を `task.Handle[T]` の slice に
 //       （要素の型は `task.Handle[(T, error?)]`）
 //       20 = budget: が呼び出し・割り算を含む
 //       21 = mut の中身を持つ値（imm の束縛の mut の別名 `v := m` を含む）の捕獲
-//       19 = chan のペイロードの型が札・handle・端点を含む（欄・`T?` の中も）・30 = give: の値がチャネルの端点でない
-//       11 = 関数型の仮引数（展開される閉包 — 子へは値しか渡せない）の捕獲・12 = 札・handle・端点を関数の実引数に・domain も含めて戻り値に（コアの paramOk / retOk が拒否する形 — domain は実引数に置ける）
+//       19 = chanのペイロードの型が札・handle・端点を含む（フィールド・`T?` の中も）・30 = give: の値がチャネルの端点でない
+//       11 = 関数型の仮引数（展開されるクロージャ — 子へは値しか渡せない）の捕獲・12 = 札・handle・端点を関数の実引数に・domainも含めて戻り値に（コアのparamOk / retOkが拒否する形 — domainは実引数に置ける）
 //       domain（language.md 11 節「domain」— Update / Read / Await は展開される std の関数・NewDomain は鍵）: 31 = 本体・when: が生のラムダ（仮引数 1 つ）でない・
 //       32 = 本体・when: の捕獲が imm のデータでない（mut の束縛・mut の中身・札・handle・端点・関数型の仮引数）・33 = 本体・when: から外への脱出・
 //       35 = wait: が呼び出し・割り算を含む・39 = domain を作った scope より長く生きる場所へ置く（domesc.sober）。domain の値（task.Domain）は札・handle と同じ側（8 / 9 / 19 と 12 の戻り値が拒否 — 捕獲と関数の実引数は通す）
-// Join の結果の数（PC_CATCHLHS / PC_MULTIBIND — diag.Par でなく loader の診断を名指す）: Join の結果は字面で T 1 つで、fallible な task の T = `(U, error?)` は
+// Joinの結果の数（PC_CATCHLHS / PC_MULTIBIND — diag.Parでなくloaderの診断を名前で参照する）: Joinの結果は字面でT 1つで、fallibleなtaskのT = `(U, error?)` は
 // 呼び出し点の型引数で決まる。loader（catchx.sober）は字面で数えるので Join の判定をここへ保留する — `task.Join(h) catch D` は fallible な task だけ（CatchLhs）・
 // 値 1 つの束縛 `d := task.Join(h)` は infallible な task だけ（MultiBind）
 
@@ -55,7 +55,7 @@ func ParCheckTyped(st mut S, p loader.Program) error? {
         return nil
     }
     pcMemoInit(mut st)
-    // γ の当たりの package は飛ばす（tycache.sober の GC_*）: 区画の外へ出る印（deadline:）だけ値から足す
+    // γ の当たりのpackageは飛ばす（tycache.soberのGC_*）: 区画の外へ出るマーク（deadline:）だけ値から足す
     if gcDlAny(mut st) {
         table.Set(mut st.pcMemo, PC_MEMO * 2, 1)
     }
@@ -76,7 +76,7 @@ func ParCheckTyped(st mut S, p loader.Program) error? {
         }
     }
     // domain の脱出（kind 39 — domesc.sober）: 歩きの環境の領域は 1 回だけ取って関数ごとに先端を戻す
-    // 歩くのは印のある関数と domain を運ぶ仮引数を持つ関数（domesc.sober の deNeeds — 被覆を増分検査のキャッシュの当たり外れに依らせない）
+    // 歩くのはマークのある関数とdomainを運ぶ仮引数を持つ関数（domesc.soberのdeNeeds — 被覆を増分検査のキャッシュの当たり外れに依らせない）
     hd := deEnvNew(mut st)
     for fi <- iter.Range(0, st.nfn) {
         body := fnBody(mut st, fi)
@@ -125,7 +125,7 @@ func pcNone() PcHit {
     return PcHit{at: -1, kind: 0}
 }
 
-// 節 x の欄の種類の表（EFor は形で変わる — astref の treeNode と同じ）
+// 節xのフィールドの種類の表（EForは形で変わる — astrefのtreeNodeと同じ）
 func pcDesc(st mut S, x ast.Node) int {
     if x.kind == ast.EFor {
         return if kindHasStmts(x) { d6(3, 0, 3, 0, 0, 0) } else { d6(3, 0, 1, 0, 0, 0) }
@@ -133,12 +133,12 @@ func pcDesc(st mut S, x ast.Node) int {
     return if x.kind >= 0 && x.kind < ast.NKinds { st.descs[x.kind] } else { 0 }
 }
 
-// EFor の節が文の列の形か（読み口の節は欄を付け替え済み — c が列か節かは desc の作りで決まる）
+// EForの節が文の列の形か（読み取りインターフェースの節はフィールドを付け替え済み — cが列か節かはdescの作りで決まる）
 func kindHasStmts(x ast.Node) bool {
     return x.b == 1
 }
 
-// 節 x の j 番目（0 = a … 5 = f）の欄
+// 節xのj番目（0 = a … 5 = f）のフィールド
 func pcField(x ast.Node, j int) int {
     return if j == 0 { x.a } else if j == 1 { x.b } else if j == 2 { x.c } else if j == 3 { x.d } else if j == 4 { x.e } else { x.f }
 }
@@ -193,7 +193,7 @@ func pcWalk(st mut S, fi int, n NodeRef) PcHit {
                 deMark(mut st, fi)
             }
             // 札・handle・端点は関数の実引数にならない（コアの paramOk が拒否する — build だけ通る割れを作らない）。domain は置ける（paramOk の argFree）。
-            // std/task の展開される口（RecvAll）は除く
+            // std/taskの展開されるインターフェース（RecvAll）は除く
             args := lB(x)
             for i <- iter.Range(0, lenL(mut st, args)) {
                 a := latN(mut st, args, i)
@@ -203,7 +203,7 @@ func pcWalk(st mut S, fi int, n NodeRef) PcHit {
             }
         }
     }
-    // 穴のある段 `xs |> task.Map(_, g, budget: b)` の budget:（kind 20）
+    // 穴のあるステージ `xs |> task.Map(_, g, budget: b)` のbudget:（kind 20）
     if x.kind == ast.EPipe && x.c != -1 {
         fp := findFn(mut st, nB(x), -1)
         pa := ListRef(x.c)
@@ -211,7 +211,7 @@ func pcWalk(st mut S, fi int, n NodeRef) PcHit {
             return PcHit{at: latN(mut st, pa, 2), kind: 20}
         }
     }
-    // handle の slice は mut slice だけ（コアの写し〔copyTo / imm の append の境界コピー〕は handle を写せない）
+    // handleのsliceは mut slice だけ（コアのコピー〔copyTo / immのappendの境界コピー〕はhandleをコピーできない）
     if x.kind == ast.ESlicelit && x.c == 0 && pcImmHandles(mut st, YTypeOf(mut st, n)) {
         return PcHit{at: n, kind: 16}
     }
@@ -254,7 +254,7 @@ func pcJoinBind(st mut S, n NodeRef) PcHit {
     }
     cx := nodeOf(mut st, c)
     cal := if kindN(mut st, nA(cx)) == ast.EIndex { nA(nodeOf(mut st, nA(cx))) } else { nA(cx) }
-    // 名前の篩い（findFn は `pkg.Fn` の名前を組むので、束縛ごとに引かない — 値札 +0.05 G → 篩いの後）
+    // 名前の篩い（findFnは `pkg.Fn` の名前を組むので、束縛ごとに引かない — コスト +0.05 G → 篩いの後）
     ck := kindN(mut st, cal)
     if !(ck == ast.ESelector && strIs(mut st, sB(nodeOf(mut st, cal)), "Join")) && !(ck == ast.EIdent && strIs(mut st, sA(nodeOf(mut st, cal)), "Join")) {
         return pcNone()
@@ -265,7 +265,7 @@ func pcJoinBind(st mut S, n NodeRef) PcHit {
     }
     fal := parTaskFallible(mut st, latN(mut st, lB(cx), 0))
     names := lA(x)
-    // catch の写した束縛 `$ctKv, $ctKe := task.Join(h)`（loader/catchx.sober — 名前の `$` は合成の名前にだけ現れる）
+    // catchの変換した束縛 `$ctKv, $ctKe := task.Join(h)`（loader/catchx.sober — 名前の `$` は合成の名前にだけ現れる）
     if lenL(mut st, names) == 2 && strHasPrefix(mut st, latS(mut st, names, 0), "$ct") && !fal {
         return PcHit{at: n, kind: PC_CATCHLHS}
     }
@@ -304,7 +304,7 @@ func pcCall(st mut S, fi int, n NodeRef, key int) PcHit {
         if kindN(mut st, nA(nodeOf(mut st, n))) != ast.EIndex {
             return PcHit{at: n, kind: 14}
         }
-        // ペイロードは札・handle・端点を運ばない（kind 19 — 欄・`T?` の中も。handle / 札が task の境界を越える道）
+        // ペイロードは札・handle・端点を運ばない（kind 19 — フィールド・`T?` の中も。handle / 札がtaskの境界を越えるパス）
         ta := YTArgsOf(mut st, nA(nodeOf(mut st, n)))
         if ta != -1 && lenL(mut st, ta) >= 1 && pcParDeep(mut st, latI(mut st, ta, 0), 8) != 0 {
             return PcHit{at: n, kind: 19}
@@ -312,7 +312,7 @@ func pcCall(st mut S, fi int, n NodeRef, key int) PcHit {
         return pcNone()
     }
     if key == PAR_SCOPE || key == PAR_SPAWN || key == PAR_SPAWNGIVE || key == PAR_SPAWNIN {
-        // 実引数の数・ラムダの位置・ラムダの仮引数の数: Scope (s) => …・Spawn () => …・SpawnGive（give: の写し — loader）(ep) => …・
+        // 実引数の数・ラムダの位置・ラムダの仮引数の数: Scope (s) => …・Spawn () => …・SpawnGive（give: の変換 — loader）(ep) => …・
         // SpawnIn（[札, プール, ラムダ]）() => …。末尾は budget:（省略は loader が nil で埋める）
         // Scope は [本体, budget, wait, deadline, backlog]
         na := if key == PAR_SCOPE { 5 } else if key == PAR_SPAWN { 3 } else { 4 }
@@ -332,8 +332,8 @@ func pcCall(st mut S, fi int, n NodeRef, key int) PcHit {
             if kindN(mut st, wx) != ast.ENil && !(kindN(mut st, wx) == ast.EIdent && (strIs(mut st, sA(nodeOf(mut st, wx)), "true") || strIs(mut st, sA(nodeOf(mut st, wx)), "false"))) {
                 return PcHit{at: wx, kind: 22}
             }
-            // deadline: も budget: と同じ形（kind 23 — 呼び出し・割り算を含まない整数式。check の経路は捨てる）。書いた Scope があれば印を立てる
-            // （lower が期限の rt と io の口の判定を組むかの事前の印 — pcMemo の末尾の語・pcDeadlineMark）
+            // deadline: もbudget: と同じ形（kind 23 — 呼び出し・割り算を含まない整数式。checkの経路は捨てる）。書いたScopeがあればマークを立てる
+            // （lowerが期限のrtとioのインターフェースの判定を組むかの事前のマーク — pcMemoの末尾のワード・pcDeadlineMark）
             dx := latN(mut st, args, 3)
             if kindN(mut st, dx) != ast.ENil {
                 if !pcSizeExpr(mut st, dx) {
@@ -347,7 +347,7 @@ func pcCall(st mut S, fi int, n NodeRef, key int) PcHit {
                 return PcHit{at: kx, kind: 29}
             }
         }
-        // give: の値はチャネルの端点 1 つ（kind 30 — SpawnGive の型引数 E は制約を持たないので、ここで名指す。端点でない値は捕獲で渡す）
+        // give: の値はチャネルの端点1つ（kind 30 — SpawnGiveの型引数Eは制約を持たないので、ここで特定する。端点でない値は捕獲で渡す）
         if key == PAR_SPAWNGIVE {
             gx := latN(mut st, args, 1)
             if pcParKind(mut st, YTypeOf(mut st, gx)) != 3 {
@@ -389,7 +389,7 @@ func pcDomCall(st mut S, fi int, n NodeRef, dk int) PcHit {
         return PcHit{at: latN(mut st, args, 3), kind: 35}
     }
     if dk == 3 {
-        // Await の待ちの上限は期限の機構（rt.dl_expired と poller の期限の鎖）に載る
+        // Awaitの待ちの上限は期限の機構（rt.dl_expiredとpollerの期限のチェーン）に載る
         pcDeadlineMark(mut st)
     }
     for i <- iter.Range(1, if dk == 3 { 3 } else { 2 }) {
@@ -443,7 +443,7 @@ func pcInRoots(st mut S, name StrRef) bool {
     return false
 }
 
-// 式 n が根の集合の名前に触れるか（添字・欄・絞り・腕・呼び出しの実引数のどれを経ても — 呼び出しの結果は実引数の部分の別名でありうる）
+// 式nが根の集合の名前に触れるか（添字・フィールド・絞り・分岐・呼び出しの実引数のどれを経ても — 呼び出しの結果は実引数の部分の別名でありうる）
 func pcTouchesRoots(st mut S, n NodeRef) bool {
     if n == -1 {
         return false
@@ -634,8 +634,8 @@ func pcDomCallW(st mut S, n NodeRef) PcHit {
     return pcNone()
 }
 
-// 呼び先 fk の k 番目の仮引数が、本体と同じ規則（kind 36 / 37 — 仮引数の名前を根とする根の集合で pcDomBody）を守るか。保守の線: 呼び先が
-// 分からない（関数値・局所ラムダ・組み込み）・総称・本体が無い・std/task の口・再帰（調べ中）は偽
+// 呼び先fkのk番目の仮引数が、本体と同じ規則（kind 36 / 37 — 仮引数の名前を根とする根の集合でpcDomBody）を守るか。保守の方針: 呼び先が
+// 分からない（関数値・局所ラムダ・組み込み）・総称・本体が無い・std/taskのインターフェース・再帰（調べ中）は偽
 func pcParamNoGrow(st mut S, fk int, k int) bool {
     if fk < 0 || k >= 64 || lenL(mut st, fnTParams(mut st, fk)) != 0 || fnBody(mut st, fk) == -1 || ParKey(mut st, fk) != 0 {
         return false
@@ -665,7 +665,7 @@ func pcParamNoGrow(st mut S, fk int, k int) bool {
     return r
 }
 
-// 場所の式 t（欄・添字・括弧の鎖）の根の識別子の節（根が名前でなければ -1）
+// 場所の式t（フィールド・添字・括弧のチェーン）の根の識別子の節（根が名前でなければ -1）
 func pcPlaceRoot(st mut S, t NodeRef) NodeRef {
     x := nodeOf(mut st, t)
     if x.kind == ast.EIdent {
@@ -677,7 +677,7 @@ func pcPlaceRoot(st mut S, t NodeRef) NodeRef {
     return -1
 }
 
-// 場所の式 t（欄・添字・括弧の鎖）の根が根の集合の名前か
+// 場所の式t（フィールド・添字・括弧のチェーン）の根が根の集合の名前か
 func pcRootIn(st mut S, t NodeRef) bool {
     x := nodeOf(mut st, t)
     if x.kind == ast.EIdent {
@@ -689,7 +689,7 @@ func pcRootIn(st mut S, t NodeRef) bool {
     return false
 }
 
-// 場所の式 t の鎖が map の添字を通るか
+// 場所の式tのチェーンがmapの添字を通るか
 func pcViaMap(st mut S, t NodeRef) bool {
     x := nodeOf(mut st, t)
     if x.kind == ast.EIndex {
@@ -835,8 +835,8 @@ func pcCaptures(st mut S, fi int, lam NodeRef) PcHit {
     return pcUses(mut st, fi, nB(nodeOf(mut st, lam)), base, end)
 }
 
-// ラムダ lam の本体が参照する名前（EIdent — 重複なし・出現順）のうち、ラムダの中で束ねていないもの。lower の閉包変換
-// （lower/task.sober — 子の関数の捕獲）が今の可視範囲の局所で絞って使う。捕獲の拒否（pcCaptures）と同じ走査なので、名指しと持ち上げの捕獲の集合が割れない
+// ラムダlamの本体が参照する名前（EIdent — 重複なし・出現順）のうち、ラムダの中で束ねていないもの。lowerのクロージャ変換
+// （lower/task.sober — 子の関数の捕獲）が今の可視範囲の局所で絞って使う。捕獲の拒否（pcCaptures）と同じ走査なので、特定と持ち上げの捕獲の集合が割れない
 func LamFree(st mut S, lam NodeRef) ListRef {
     base := hlen(mut st)
     pcDecls(mut st, lam)
@@ -933,7 +933,7 @@ func pcUses(st mut S, fi int, n NodeRef, base int, end int) PcHit {
                 return PcHit{at: n, kind: 11}
             }
             if mk == 0 {
-                // 欄・`T?` の中の札・handle・端点も（struct に包んだ捕獲: check はコアが拒否・build が通る割れだった）
+                // フィールド・`T?` の中の札・handle・端点も（structに包んだ捕獲: checkはコアが拒否・buildが通る割れだった）
                 y := YTypeOf(mut st, n)
                 pk := pcCapDeep(mut st, y, 8)
                 if pk != 0 {
@@ -1001,7 +1001,7 @@ func pcLocalMut(st mut S, fi int, name StrRef, dotted bool) int {
     return pcBindMut(mut st, fnBody(mut st, fi), name, dotted)
 }
 
-// 名前 name が関数 fi の関数型の仮引数か（展開される閉包 — lower では値でなく本体の写し）
+// 名前nameが関数fiの関数型の仮引数か（展開されるクロージャ — lowerでは値でなく本体のコピー）
 func pcParamFn(st mut S, fi int, name StrRef) bool {
     ps := fnParams(mut st, fi)
     for i <- iter.Range(0, lenL(mut st, ps)) {
@@ -1052,7 +1052,7 @@ func pcBindMut(st mut S, n NodeRef, name StrRef, dotted bool) int {
     return -1
 }
 
-// 表層型 y（欄・`T?` を fuel 段まで）が含む、捕獲できない札（1）・handle（2）・端点（3）の最初の種類（無ければ 0 — domain は捕獲できる）
+// 表層型y（フィールド・`T?` をfuelレベルまで）が含む、捕獲できない札（1）・handle（2）・端点（3）の最初の種類（無ければ0 — domainは捕獲できる）
 func pcCapDeep(st mut S, y int, fuel int) int {
     if y < 0 || fuel == 0 {
         return 0
@@ -1093,7 +1093,7 @@ func pcParKind(st mut S, y int) int {
     return if strIs(mut st, nm, "Scope") { 1 } else if strIs(mut st, nm, "Handle") { 2 } else if strIs(mut st, nm, "Sender") || strIs(mut st, nm, "Receiver") { 3 } else if strIs(mut st, nm, "Domain") { 4 } else { 0 }
 }
 
-// 表層型 y（欄・`T?` を fuel 段まで）が含む札（1）・handle（2）・端点（3）・domain（4）の最初の種類（無ければ 0）
+// 表層型y（フィールド・`T?` をfuelレベルまで）が含む札（1）・handle（2）・端点（3）・domain（4）の最初の種類（無ければ0）
 func pcParDeep(st mut S, y int, fuel int) int {
     if y < 0 || fuel == 0 {
         return 0
@@ -1118,7 +1118,7 @@ func pcParDeep(st mut S, y int, fuel int) int {
     return 0
 }
 
-// 表層型 y（欄・要素を fuel 段まで）が mut の slice / map を含むか
+// 表層型y（フィールド・要素をfuelレベルまで）がmutのslice / mapを含むか
 func pcHasMut(st mut S, y int, fuel int) bool {
     if y < 0 || fuel == 0 {
         return false
@@ -1144,7 +1144,7 @@ func pcHasMut(st mut S, y int, fuel int) bool {
     return false
 }
 
-// 表層型 y（欄を fuel 段まで）が札・handle を含むか
+// 表層型y（フィールドをfuelレベルまで）が札・handleを含むか
 func pcHasPar(st mut S, y int, fuel int) bool {
     return pcHasParK(mut st, y, fuel, false)
 }
@@ -1168,8 +1168,8 @@ func pcHasParK(st mut S, y int, fuel int, arg bool) bool {
         return pcHasParK(mut st, YAt(mut st, y).a, fuel - 1, arg)
     }
     if k == YDecl && kindN(mut st, nC(nodeOf(mut st, yNa(YAt(mut st, y))))) == ast.BStruct {
-        // 型引数の無い struct は欄の型が置換に依らない — 宣言 × fuel でメモする（全部の呼び出しの実引数の `mut st`〔欄が百を超える〕を
-        // 8 段まで毎回辿る形は自己 check の load を 5 → 88 G にする）
+        // 型引数の無いstructはフィールドの型が置換に依らない — 宣言 × fuelでメモする（全部の呼び出しの実引数の `mut st`〔フィールドが百を超える〕を
+        // 8レベルまで毎回辿る形は自己checkのloadを5 → 88 Gにする）
         dn := int(yNa(YAt(mut st, y)))
         mk := if arg { fuel + 16 } else { fuel }
         plain := lenL(mut st, lB(nodeOf(mut st, yNa(YAt(mut st, y))))) == 0
@@ -1198,8 +1198,8 @@ func pcHasParK(st mut S, y int, fuel int, arg bool) bool {
 const PC_MEMO = 8192
 
 func pcMemoInit(st mut S) {
-    // 末尾の 1 語（PC_MEMO * 2）= deadline: を書いた Scope がある印（S の欄を足さない: 欄 1 つで自己 check の核の節が数百 × 呼び出し点）・
-    // 末尾の 2 語目 = domain の脱出の検査を掛ける関数の印の鎖の頭（domesc.sober の deMark）・その後ろ = domesc.sober のメモの表（deMemo）
+    // 末尾の1ワード（PC_MEMO * 2）= deadline: を書いたScopeがあるマーク（Sのフィールドを足さない: フィールド1つで自己checkの核の節が数百 × 呼び出し点）・
+    // 末尾の2ワード目 = domainの脱出の検査を掛ける関数のマークのチェーンの頭（domesc.soberのdeMark）・その後ろ = domesc.soberのメモの表（deMemo）
     for i <- iter.Range(0, PC_MEMO * 2 + 2 + DE_MEMO * 2) {
         table.Push(mut st.pcMemo, 0)
     }
@@ -1260,8 +1260,8 @@ func pcSlot(key int) int {
 }
 
 
-// task の結果として scope の region へ写せる型か（境界コピー: imm のデータは string・slice・map・error を
-// 含めて写せる。写せないのは札・handle・端点〔mutFree でない〕・関数値〔lower の制限 — 閉包を写す形が無い〕。loc-free だけでなく imm 全般まで緩めた形）
+// taskの結果としてscopeのregionへコピーできる型か（境界コピー: immのデータはstring・slice・map・errorを
+// 含めてコピーできる。コピーできないのは札・handle・端点〔mutFreeでない〕・関数値〔lowerの制限 — クロージャをコピーする形が無い〕。loc-freeだけでなくimm全般まで緩めた形）
 func pcCopyable(st mut S, y int, fuel int) bool {
     if y < 0 || fuel == 0 {
         return true

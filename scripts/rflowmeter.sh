@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# rflowmeter（C1 のゴミ計の網 — language.md の「戻り値へ流れる関数の region の省略」・lower/rflow.sober の rfMeter）: SOBER_RFLOW_METER=1 で
-# コンパイラ自身を建てる（C1 に掛かる関数を書き換えずに残し、出口で「自分の深度に積んだバイト − 出口の relocate が写したバイト」が正なら
+# rflowmeter（C1のゴミ計の検査 — language.mdの「戻り値へ流れる関数のregionの省略」・lower/rflow.soberのrfMeter）: SOBER_RFLOW_METER=1で
+# コンパイラ自身をビルドする（C1に掛かる関数を書き換えずに残し、出口で「自分の深度に積んだバイト − 出口のrelocateがコピーしたバイト」が正なら
 # 関数の名前とバイト数を stderr に出して exit 99）。そのコンパイラで
 #   ① 自分自身（compiler/app）を build する
-#   ② bench/httparena/main.sober を build する（std の広い面 — http・tls・json・utf8 の import 閉包を loader・lower が通る。
-#      自己 build だけでは素通りした穴がある — 宛先構築の印が実引数の位置の呼び出しに立ち、C1 で消えた enter の外へ一時が残る形）
+#   ② bench/httparena/main.soberをbuildする（stdの広い面 — http・tls・json・utf8のimportの推移的な依存をloader・lowerが通る。
+#      自己buildだけでは素通りした穴がある — 宛先構築のマークが実引数の位置の呼び出しに立ち、C1で消えたenterの外へ一時が残る形）
 # のどちらも exit 0 であること。出力の照合はしない（判定はゴミ計の鳴りだけ）
 set -uo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-# 判定されるのは建てる側（stage2）の印と C1 — RFLOWMETER_S2 は負例を確かめる試験の口（旧の stage2 で鳴ること）
+# 判定されるのはビルドする側（stage2）のマークとC1 — RFLOWMETER_S2は負例を検証する試験のオプション（旧のstage2で鳴ること）
 S2=${RFLOWMETER_S2:-$ROOT/out/stage2/sober2}
 [ -x "$S2" ] || { echo "rflowmeter: $S2 not found"; exit 1; }
 W=$(mktemp -d)

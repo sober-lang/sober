@@ -2,9 +2,9 @@ package main
 
 // std/crypto/aesgcm（AES-NI + PCLMULQDQ の塊）: NIST の GCM の仕様の例 1〜4（AES-128）・長さ 0〜300 × ad の長さ 3 通りの往復と
 // Go の crypto/aes + cipher.GCM の値（擬似乱数の鍵・nonce・平文の暗号文 ‖ tag を混ぜた値）・1 ビットの改竄が Auth で落ちること。
-// record 層の口: Prepare した Key 1 つを 301 record に使い回し（nonce = iv ⊕ seq・ad = record の頭 5 バイト）・SealTo の
+// record層のインターフェース: PrepareしたKey 1つを301 recordに使い回し（nonce = iv ⊕ seq・ad = recordの頭5バイト）・SealToの
 // head ‖ 暗号文 ‖ tag の値・前後に屑を挟んだ受けの切片からの OpenAt の往復・切片の中の改竄が Auth で落ち切片の外の改竄は効かないこと・長さの検査。
-// Go の双子 = scripts/oracles/crypto_aesgcm.go。塊の無い機械（SOBER_NOAES=1）では NoHardware だけを印字する形（.out は塊ありの機械の値）
+// 比較用のGoの実装 = scripts/oracles/crypto_aesgcm.go。塊の無い機械（SOBER_NOAES=1）ではNoHardwareだけを印字する形（.outは塊ありの機械の値）
 
 import "std/crypto/aesgcm"
 import "std/crypto/sha256"

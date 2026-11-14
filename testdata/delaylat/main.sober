@@ -1,0 +1,158 @@
+package main
+
+// delaylat（gate tschain の題材 — Delayed の遅延・report-fq-7）: 同じプロセスに http.server.ServeConn の net.Serve（GET → Delayed(10 ms)）と
+// 閉ループの客CLIENTS本（既定256）を立て、2秒の間のレスポンスの遅延（送ってからレスポンスを受け切るまで — os.Monotonic）の分布を集める。
+// 出力: n（レスポンスの数）・early（10 msより早く届いたレスポンスの数）・median / p99 / p99.9の超過（遅延 − 10 ms・µs）とtask.Ledger() の待ちの形の数。検査scripts/tschain.shはearlyと、
+// SOBER_PAR_STATS の ts_chain（満了で積んだ SEND だけで入った頭の取り込みの数）を数で見る — 遅延の数字は判定に使わない（負荷と機械で揺れる）
+
+import "std/convert"
+import "std/http/server"
+import "std/net"
+import "std/os"
+import "std/task"
+
+const delayMs = 10
+// 桶: 60 ms までは 50 µs 刻み（1200 個）・その先 2 s までは 1 ms 刻み（1940 個）
+const bucketUs = 50
+const nFine = 1200
+const nBucket = 3140
+
+func route(r http.server.Request) http.server.Response {
+    return http.server.Delayed(delayMs, http.server.Text("x"))
+}
+
+const req = "GET /d HTTP/1.1\r\nHost: x\r\n\r\n"
+
+// レスポンス1件を受け切る（頭の終わりの空行の後の1バイト = 本文 "x"）→ 受け切れたか
+func recvOne(c net.Conn) (bool, error?) {
+    // 頭の終わり（\r\n\r\n）の一致の長さ・空行の後に読んだバイト
+    mut m := 0
+    mut body := 0
+    for chunk <- net.Recv(c)? {
+        for x <- chunk {
+            if m == 4 {
+                body += 1
+            } else if x == byte(13) && (m == 0 || m == 2) || x == byte(10) && (m == 1 || m == 3) {
+                m += 1
+            } else {
+                m = if x == byte(13) { 1 } else { 0 }
+            }
+        }
+        if body >= 1 {
+            return true, nil
+        }
+    }
+    return false, nil
+}
+
+// 閉ループの客1本: 終わりの時刻までリクエストを送って受け、遅延の超過を桶に数える（最後の要素 = 早く届いた数）
+func client(port int, end int) []int {
+    mut h := mut []int{}
+    while len(h) <= nBucket {
+        h = append(h, 0)
+    }
+    e := talk(port, end, mut h)
+    _ = e
+    return freeze(h)
+}
+
+func talk(port int, end int, h mut []int) error? {
+    for c <- net.Dial("127.0.0.1:${port}")? {
+        while os.Monotonic() < end {
+            t0 := os.Monotonic()
+            net.Send(c, bytes(req))?
+            ok, _ := recvOne(c)
+            if !ok {
+                return nil
+            }
+            us := (os.Monotonic() - t0) / 1000 - delayMs * 1000
+            if us < 0 {
+                h[nBucket] += 1
+            } else {
+                b := if us < nFine * bucketUs { us / bucketUs } else { nFine + (us - nFine * bucketUs) / 1000 }
+                h[if b >= nBucket { nBucket - 1 } else { b }] += 1
+            }
+        }
+        break
+    }
+    return nil
+}
+
+func clients() int {
+    v, _ := os.Getenv("CLIENTS")
+    return if v != nil { convert.ParseInt(v) catch 256 } else { 256 }
+}
+
+// 桶 i の上端（超過の µs）
+func edge(i int) int {
+    return if i < nFine { (i + 1) * bucketUs } else { nFine * bucketUs + (i - nFine + 1) * 1000 }
+}
+
+// 桶の分布の q 分位（超過の µs — 桶の上端）
+func quantile(h []int, n int, q int) int {
+    want := (n * q + 99) / 100
+    mut acc := 0
+    mut i := 0
+    while i < nBucket {
+        acc += h[i]
+        if acc >= want {
+            return edge(i)
+        }
+        i += 1
+    }
+    return edge(nBucket - 1)
+}
+
+// 千分位（q / 1000）
+func quantile1000(h []int, n int, q int) int {
+    want := (n * q + 999) / 1000
+    mut acc := 0
+    mut i := 0
+    while i < nBucket {
+        acc += h[i]
+        if acc >= want {
+            return edge(i)
+        }
+        i += 1
+    }
+    return edge(nBucket - 1)
+}
+
+func main() {
+    k := clients()
+    _ = net.Listen("127.0.0.1:0", (l) => {
+        port := net.Port(l)
+        end := os.Monotonic() + 2000 * 1000000
+        hs, _ := task.Run((s task.Scope) => {
+            mut cs := mut []task.Handle[[]int]{}
+            mut i := 0
+            while i < k {
+                cs = append(cs, task.Spawn(s, () => client(port, end)))
+                i += 1
+            }
+            _, _ = task.Run((s2 task.Scope) => net.Serve(l, (c net.Conn) => http.server.ServeConn(c, route), conns: 4096), deadline: 2500 * task.MS)
+            task.Gather(cs)
+        })
+        mut sum := mut []int{}
+        while len(sum) <= nBucket {
+            sum = append(sum, 0)
+        }
+        for h <- hs {
+            mut j := 0
+            while j <= nBucket {
+                sum[j] += h[j]
+                j += 1
+            }
+        }
+        mut n := 0
+        mut j := 0
+        while j < nBucket {
+            n += sum[j]
+            j += 1
+        }
+        all := freeze(sum)
+        println("n=${n} early=${all[nBucket]} median_us=${quantile(all, n, 50)} p99_us=${quantile(all, n, 99)} p999_us=${quantile1000(all, n, 999)}")
+        lg := task.Ledger()
+        println("parkShallow=${lg.parkShallow} parkDeep=${lg.parkDeep} parkSwap=${lg.parkSwap}")
+    })
+}

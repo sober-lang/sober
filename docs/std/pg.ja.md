@@ -4,7 +4,7 @@
 
 `import "std/pg"`
 
-PostgreSQL のクライアント（wire protocol 3.0・extended query・TLS 1.3 + SCRAM-SHA-256-PLUS が既定）。SQL の文面は const の席（`@const` — 文字列リテラルか const）で、値は `$1` … の引数で渡す（実行時に組んだ SQL は書けない）。接続は Open の範囲の中だけ（CPS — 閉じ忘れが書けない）。文面ごとの prepared statement は接続ごとに 1 回だけ作り、引数の型と列の型を覚える。結果は binary 形式（第一陣の型）で受けて Value に写す。方針は呼び手のデータ Policy（ゼロ値 = 既定 — どの欄も安全な側）
+PostgreSQL のクライアント（wire protocol 3.0・extended query・TLS 1.3 + SCRAM-SHA-256-PLUS が既定）。SQL の文面は const 仮引数（`@const` — 文字列リテラルか const）で、値は `$1` … の引数で渡す（実行時に組んだ SQL は書けない）。接続は Open の範囲の中だけ（CPS — 閉じ忘れが書けない）。文面ごとの prepared statement は接続ごとに 1 回だけ作り、引数の型と列の型を覚える。結果は binary 形式（第一陣の型）で受けて Value に変換する。方針は呼び手のデータ Policy（ゼロ値 = 既定 — どのフィールドも安全な側）
 
 ```sober
 pg.Open("postgres://app@db.local/shop", (c) => {
@@ -36,7 +36,7 @@ type Policy struct {
 }
 ```
 
-方針（省いた欄・nil は既定）: password = SCRAM の password（URL には書かない・"" = 無し — サーバが SCRAM を求めれば 28P01 で断られる）・extraRoots = 焼き込みの WebPKI のルートに足す起点（私的 PKI — tls.ParseRoots の値）・timeout = 1 回の呼び出し〔Open の握手と認証・Query / Exec / Script の往復 — Query は k の時間も含む〕の期限 ns・既定 30 秒〔0 以下も既定〕・maxRow = 1 つのメッセージ〔行〕の上限バイト・既定 16 MiB・上限 1 GiB・appName = application\_name〔既定 "sober"〕・dangerouslyPlaintext = TLS を使わない・dangerouslyAllowNoChannelBinding = TLS の上で SCRAM-SHA-256-PLUS を出さないサーバ〔PgBouncer 等〕も受ける・dangerouslyAllowTls12 = TLS 1.2 も申し出る（どれも既定は安全な側 — 綴りで緩めたことが grep で拾え、check が毎回警告する）
+方針（省いたフィールド・nil は既定）: password = SCRAM の password（URL には書かない・"" = 無し — サーバが SCRAM を求めれば 28P01 で断られる）・extraRoots = 焼き込みの WebPKI のルートに足す起点（私的 PKI — tls.ParseRoots の値）・timeout = 1 回の呼び出し〔Open の握手と認証・Query / Exec / Script の往復 — Query は k の時間も含む〕の期限 ns・既定 30 秒〔0 以下も既定〕・maxRow = 1 つのメッセージ〔行〕の上限バイト・既定 16 MiB・上限 1 GiB・appName = application\_name〔既定 "sober"〕・dangerouslyPlaintext = TLS を使わない・dangerouslyAllowNoChannelBinding = TLS の上で SCRAM-SHA-256-PLUS を出さないサーバ〔PgBouncer 等〕も受ける・dangerouslyAllowTls12 = TLS 1.2 も申し出る（どれも既定は安全な側 — 綴りで緩めたことが grep で拾え、check が毎回警告する）
 
 ## Server
 
@@ -74,7 +74,7 @@ TLS が張れない（サーバが SSLRequest を断った・証明書の検証�
 type Closed error
 ```
 
-接続が使えない（相手が閉じた・期限切れや壊れた応答の後）
+接続が使えない（相手が閉じた・期限切れや壊れたレスポンスの後）
 
 ## Protocol
 
@@ -82,7 +82,7 @@ type Closed error
 type Protocol error
 ```
 
-サーバの応答が wire protocol の形でない
+サーバのレスポンスが wire protocol の形でない
 
 ## BadUrl
 
@@ -170,7 +170,7 @@ type Conn struct {
 }
 ```
 
-接続 1 本（同一性の型 — Open の k の仮引数としてだけ生まれる。状態は値の外の置き場 blk〔transport.sober〕）
+接続 1 本（同一性の型 — Open の k の仮引数としてだけ生まれる。状態は値の外の格納場所 blk〔transport.sober〕）
 
 ## Row
 
@@ -183,9 +183,9 @@ type Row struct {
 }
 ```
 
-結果の 1 行（k の中で読む — 列は番号で）。DataRow の body のまま持ち、列の値は読むときに body から作る（形は受けたときに全列を確かめ済み）
+結果の 1 行（k の中で読む — 列は番号で）。DataRow の body のまま持ち、列の値は読むときに body から作る（形は受けたときに全列を確認済み）
 
-欄:
+フィールド:
 
 - `cells` — 列ごとの [body の中の値の位置, 長さ（-1 = NULL）]
 
@@ -209,7 +209,7 @@ at（URL "postgres://user@host[:port]/db" — "postgresql://" も・port の既�
 func Query(c Conn, sql string, k func(r Row), args ([]Value)?) error?
 ```
 
-行を 1 行ずつ k に渡す呼び出し形の生成元: `for r <- pg.Query(c, sql, args: …)? { … }`。本体の `?` / return / break で抜けると、残りの行を読み捨てて接続を使える状態に戻す（生成元の defer）。sql は const の席。本体の中から同じ Conn を使うと panic(Reentered) — 行を読み切ってから使うか、別の接続で
+行を 1 行ずつ k に渡す呼び出し形の生成元: `for r <- pg.Query(c, sql, args: …)? { … }`。本体の `?` / return / break で抜けると、残りの行を読み捨てて接続を使える状態に戻す（生成元の defer）。sql は const 仮引数。本体の中から同じ Conn を使うと panic(Reentered) — 行を読み切ってから使うか、別の接続で
 
 失敗のラベル: [`Server`](#server)・[`Protocol`](#protocol)・[`Closed`](#closed)・[`BadArg`](#badarg)・`io.Expired`
 
@@ -221,7 +221,7 @@ func Query(c Conn, sql string, k func(r Row), args ([]Value)?) error?
 func Exec(c Conn, sql string, args ([]Value)?) (int, error?)
 ```
 
-文を 1 つ実行して影響行数（CommandComplete の数 — 行を返す文は返した行の数）を返す。sql は const の席
+文を 1 つ実行して影響行数（CommandComplete の数 — 行を返す文は返した行の数）を返す。sql は const 仮引数
 
 失敗のラベル: [`Server`](#server)・[`Protocol`](#protocol)・[`Closed`](#closed)・[`BadArg`](#badarg)・`io.Expired`
 
@@ -233,7 +233,7 @@ func Exec(c Conn, sql string, args ([]Value)?) (int, error?)
 func Script(c Conn, sql string) error?
 ```
 
-複数の文（; 区切り — migration 用・引数なし）を simple query で 1 回に送る。最初の誤りで止まる（サーバの振る舞い）。sql は const の席
+複数の文（; 区切り — migration 用・引数なし）を simple query で 1 回に送る。最初の誤りで止まる（サーバの振る舞い）。sql は const 仮引数
 
 失敗のラベル: [`Server`](#server)・[`Protocol`](#protocol)・[`Closed`](#closed)・`io.Expired`
 
@@ -417,7 +417,7 @@ func ColJson(r Row, i int) ([]byte, error?)
 func ColJsonText(r Row, i int) (string, error?)
 ```
 
-列 i の値 — json / jsonb の列の JSON の字句を string で（json.Put で応答へそのまま積める）。UTF-8 は行を受けたときに確かめ済み
+列 i の値 — json / jsonb の列の JSON の字句を string で（json.Put でレスポンスへそのまま積める）。UTF-8 は行を受けたときに確認済み
 
 失敗のラベル: [`NullColumn`](#nullcolumn)・[`WrongType`](#wrongtype)
 

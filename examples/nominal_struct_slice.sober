@@ -1,6 +1,6 @@
 package main
 
-// 負例（language.md 32 節）: struct の slice を名前なしの slice に渡す（1 欄の struct はコア型が下地と同じ — nominal の区別は表層型で見る。
+// 負例（language.md 32 節）: structのsliceを名前なしのsliceに渡す（1フィールドのstructはコア型が下地と同じ — nominalの区別は表層型で見る。
 // 旧 check は named scalar の無いプログラムで照合を飛ばしていて受理していた — C1 B3）
 
 type S struct {

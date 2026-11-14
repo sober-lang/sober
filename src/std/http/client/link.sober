@@ -2,9 +2,9 @@ package client
 
 // 経路の層: 接続 1 本の上に、proxy への TLS（外の層 — proxy が https のとき）・CONNECT のトンネル・行き先への TLS（内の層 — 行き先が https のとき）を
 // 重ね、いちばん上の層の平文を送り受けする。外と内の両方が TLS なら TLS の中の TLS（内の record を外の record の平文で運ぶ）。
-// 各層の状態（握手の済んだ鍵と番号・切片をまたぐ record の持ち越し）と、いちばん上の平文の持ち越しは値の外の置き場（lease の int の列）に住む —
-// 値に置くと値の写しが鍵と番号を複製する（nonce の再利用）。置き場は Session の寿命か、Do / Stream の往復 1 回の寿命。
-// 層の握手の間は、その層の 1 つ下がいちばん上の層（読みと送りは同じ口 — 握手が済んでから層の旗を立てる）
+// 各層の状態（握手の済んだ鍵と番号・切片をまたぐrecordの持ち越し）と、いちばん上の平文の持ち越しは値の外の格納場所（leaseのintの列）に住む —
+// 値に置くと値のコピーが鍵と番号を複製する（nonceの再利用）。格納場所はSessionの寿命か、Do / Streamの往復1回の寿命。
+// 層の握手の間は、その層の1つ下がいちばん上の層（読みと送りは同じAPI — 握手が済んでから層の旗を立てる）
 
 import "std/internal/hsc"
 import "std/io"
@@ -12,7 +12,7 @@ import "std/iter"
 import "std/net"
 import "std/internal/record"
 
-// 置き場の形: [旗, 上の平文の持ち越しのバイト数, 外の層, 内の層, 上の平文の持ち越し × appW]。層 = [接続の状態 × ConnW, 持ち越しのバイト数, 持ち越し × leftW]
+// 格納場所の形: [旗, 上の平文の持ち越しのバイト数, 外の層, 内の層, 上の平文の持ち越し × appW]。層 = [接続の状態 × ConnW, 持ち越しのバイト数, 持ち越し × leftW]
 const lFlags = 0
 const lAppLen = 1
 const leftCap = 16384 + 512
@@ -25,7 +25,7 @@ const appCap = 65536 + 16384
 const appW = (appCap + 7) / 8
 
 // 旗のビット
-const bDead = 1    // 接続はもう使えない（相手が閉じた・閉じで区切る応答・Connection: close・途中の失敗）
+const bDead = 1    // 接続はもう使えない（相手が閉じた・閉じで区切るレスポンス・Connection: close・途中の失敗）
 const bOuter = 2   // 外の層（proxy への TLS）がある
 const bInner = 4   // 内の層（行き先への TLS）がある
 
@@ -201,7 +201,7 @@ func feed(conn net.Conn, blk []int, layer int, p internal.hsc.CParams, in []byte
     return freeze(out), closed, nil
 }
 
-// 層 layer（1 = 外・2 = 内）の TLS の握手（その層の 1 つ下がいちばん上の層 — 送りと読みはその口）。済んだら層の旗を立てる
+// 層layer（1 = 外・2 = 内）のTLSの握手（その層の1つ下がいちばん上の層 — 送りと読みはそのAPI）。済んだら層の旗を立てる
 @errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other, internal.record.Alert, internal.hsc.CertFailed)
 @effects(block, io, panic, nondet)
 func handshakeAt(conn net.Conn, blk []int, layer int, p internal.hsc.CParams, pa internal.hsc.CParams) error? {
@@ -272,7 +272,7 @@ func tailOf2(b []byte, at int) []byte {
     return freeze(o)
 }
 
-// 置き場の語 off からの n バイト（8 バイト / 語）
+// 格納場所のワードoffからのnバイト（8バイト / ワード）
 func getBytes(blk []int, off int, n int) []byte {
     mut o := mut []byte{}
     mut i := 0
@@ -298,7 +298,7 @@ func putBytes(blk []int, off int, b []byte) {
     }
 }
 
-// 接続の状態を置き場の層 slot へ
+// 接続の状態を格納場所の層slotへ
 func putConn(blk []int, slot int, ch internal.hsc.Ch) {
     w := internal.hsc.PackConn(ch)
     v := leaseView(blk, slot, internal.hsc.ConnW)
@@ -313,7 +313,7 @@ func view(blk []int, off int, n int) []int {
     return freeze(leaseView(blk, off, n))
 }
 
-// leaseOp / leaseView は rt の口（std/tls・std/pool と同じ鍵 — op 4 = 生の読み・5 = 生の書き）
+// leaseOp / leaseViewはrtのAPI（std/tls・std/poolと同じ鍵 — op 4 = 生の読み・5 = 生の書き）
 @intrinsic("lease_op")
 func leaseOp(op int, blk []int, off int, v int) int
 

@@ -1,7 +1,7 @@
 package main
 
-// シリアライザの双子 (a) mut builder を引き回す形（宛先構築レーンの入口の計測 — docs/bench.md「イディオムギャップ」）。
-// 深さ d（2 / 4 / 6 — 入れ子の型 N0〜N5 の下から d 段）の木を作って JSON に書く。(b) = ../pieces（各節が文字列片を返して親が繋ぐ素直な形）
+// シリアライザの対 (a) mut builder を引き回す形（宛先構築レーンの入口の計測 — docs/bench.md「イディオムギャップ」）。
+// 深さd（2 / 4 / 6 — 入れ子の型N0〜N5の下からdレベル）の木を作ってJSONに書く。(b) = ../pieces（各節が文字列片を返して親が繋ぐ素直な形）
 
 import "std/builder"
 import "std/convert"

@@ -1,7 +1,7 @@
 package main
 
-// `T?` の単値 subject の switch に `case nil:` の腕（language.md 13 / 22 節）。loader の固定テンプレートで
-// `if x != nil { switch x { …残りの腕… } } else { nil の腕 }` に写す — 網羅は内側の switch の検査（nil + 全ラベルなら default は要らない）
+// `T?` の単値subjectのswitchに `case nil:` の分岐（language.md 13 / 22 節）。loaderの固定テンプレートで
+// `if x != nil { switch x { …残りの分岐… } } else { nil の分岐 }` に変換する — 網羅は内側のswitchの検査（nil + 全ラベルならdefaultは要らない）
 
 import "std/iter"
 
@@ -37,7 +37,7 @@ func main() {
     for k <- iter.Range(0, 3) {
         println(describe(find(k)))
     }
-    // 式の subject（束縛を置く）・nil の腕が後ろ・int? と default
+    // 式のsubject（束縛を置く）・nilの分岐が後ろ・int? とdefault
     for k <- iter.Range(-1, 3) {
         v := switch age(k) {
         case 0: 1
@@ -46,7 +46,7 @@ func main() {
         }
         println(v)
     }
-    // 文の switch（腕が文の列）
+    // 文のswitch（分岐が文の列）
     for k <- iter.Range(0, 3) {
         switch find(k) {
         case nil:
@@ -58,7 +58,7 @@ func main() {
             println(at)
         }
     }
-    // 入れ子（nil の腕の本体の中にもう 1 つ）。式の subject の値の switch は束縛のブロックになるので値は int
+    // 入れ子（nilの分岐の本体の中にもう1つ）。式のsubjectの値のswitchは束縛のブロックになるので値はint
     // （string を値に持つブロック式は check が拒否する既知の穴）
     for k <- iter.Range(0, 2) {
         println(switch find(k) {

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# ubfstat（UTF-8 の検査消去便 段 1 — report-478 / 479 の網の裁定）: UTF-8 の境界の畳み（compiler/lower/ubf.sober — Str の写しの境界の判定を
-# 呼び手の事実から畳む）が畳めた数を、開発の口 `--ubf-stat`（1 本の経路で建て `ubf <関数> <数>` を stdout へ）で数え、scripts/ubfstat.list の
+# ubfstat（UTF-8 の検査消去タスク 段階1 — report-478 / 479の検査の決定）: UTF-8の境界の畳み（compiler/lower/ubf.sober — Strのコピーの境界の判定を
+# 呼び手の事実から畳む）が畳めた数を、開発のオプション `--ubf-stat`（1本の経路でビルドし `ubf <関数> <数>` をstdoutへ）で数え、scripts/ubfstat.listの
 # 数とちょうど一致することを照合する。畳みは lower の束縛の事実（`v := utf8.Check(b) catch <脱出>` — lower.sober の ubBind）と展開の形に依るので、
-# 形が変わると黙って効かなくなる（畳まないだけで出力は変わらない — optdiff では鳴らない）— その黙った退行の網
+# 形が変わると黙って効かなくなる（畳まないだけで出力は変わらない — optdiffでは鳴らない）— その黙った退行の検査
 #   scripts/ubfstat.sh
 set -uo pipefail
 export SOBER_HASH_SEED=${SOBER_HASH_SEED:-0}

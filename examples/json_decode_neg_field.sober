@@ -1,6 +1,6 @@
 package main
 
-// 負例（load が拒否 — diag.JsonShape 2）: shape[T] がサポートする範囲外の欄の型（map — union・総称・named scalar・[]T? も同じ）
+// 負例（loadが拒否 — diag.JsonShape 2）: shape[T] がサポートする範囲外のフィールドの型（map — union・総称・named scalar・[]T? も同じ）
 
 import "std/json"
 

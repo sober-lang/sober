@@ -1,11 +1,11 @@
 package desugar
 
-// 表層型検査器の店: typer の記録と型の列を共有ヒープ st.h から外へ出し、1 つの値（S の欄 ty）にまとめる。
+// 表層型検査器の店: typerの記録と型の列を共有ヒープst.hから外へ出し、1つの値（Sのフィールドty）にまとめる。
 // - 型の記録（ytys）・節 → 型の表（yents + ybucket）・memo（yfnres / yfnsig / yconty）・値の位置のラムダの鍵（ylam*）・局所の束縛（ybinds）
-// - 型の列（YFn の仮引数と結果・YTuple の成分・YDecl の型引数）と印の列（ymark）・辺の鎖（yedges）は店の列の表 yl に積む。
+// - 型の列（YFnの仮引数と結果・YTupleの成分・YDeclの型引数）とフラグの列（ymark）・辺のチェーン（yedges）は店の列の表ylに積む。
 //   参照 = YLBASE + yl の添字（列 = [n, 要素…] — ヒープの列と同じ形）。読みは lenL / latI の木の列の枝（>= LBASE）の中で振り分ける
-//   （ヒープの列の読みの値札は 0 — 足すのは木の列の読みの比較 1 つ）
-// - 作業の列（実引数の節と型・推論の途中の型環境 — 記録が指さないもの）はヒープのまま。記録がヒープの列を指さないことは監査の口が見る（TyAudit）
+//   （ヒープの列の読みのコストは0 — 足すのは木の列の読みの比較1つ）
+// - 作業の列（実引数の節と型・推論の途中の型環境 — 記録が指さないもの）はヒープのまま。記録がヒープの列を指さないことは監査のインターフェースが見る（TyAudit）
 // 店の参照は package を跨ぐ番号（関数の添字・節の参照・package 番号）をまだ持つ（正準の参照への置き換えは tycanon.sober 側で別途行う）
 
 import "std/io"
@@ -17,8 +17,8 @@ const YLBASE = 35184372088832   // 2^45（LBASE + 3 × LK より上 — 木の�
 
 type TyStore struct {
     ytys table.Table[YT]
-    yl table.Table[int]   // 型の列・印の列・辺の鎖（参照 = YLBASE + 添字）
-    // 値の位置のラムダの鍵（lower が env の形を F ごとに集める口）: yLambda が期待型の named fn type の宣言を記録する
+    yl table.Table[int]   // 型の列・フラグの列・辺のチェーン（参照 = YLBASE + 添字）
+    // 値の位置のラムダの鍵（lowerがenvの形をFごとに集めるインターフェース）: yLambdaが期待型の named fn type の宣言を記録する
     ylamN table.Table[int]
     ylamK table.Table[int]
     ylamY table.Table[int]
@@ -28,9 +28,9 @@ type TyStore struct {
     yfnres table.Table[int]   // 関数ごとの呼び出しの結果の型（-2 = まだ）
     yfnsig table.Table[int]   // 関数ごとの関数値の型（-2 = まだ）
     yconty table.Table[int]   // 辞書 const ごとの型（-2 = まだ）
-    ymark int    // 印の列（関数ごと 0 / 1 — 本体に型パラメータ型の補間の穴がある。店の列）
-    yedges int   // 型パラメータを型引数に渡す呼び出しの辺（店の鎖 [呼び手の関数, 呼ばれる関数, next] — 印の伝播）
-    // TypeAll の終わりの大きさ（監査の口 TyAudit が後の書きを数える — 店は積むだけなので差が後の書き）
+    ymark int    // フラグの列（関数ごと0 / 1 — 本体に型パラメータ型の補間の穴がある。店の列）
+    yedges int   // 型パラメータを型引数に渡す呼び出しの辺（店のチェーン [呼び手の関数, 呼ばれる関数, next] — フラグの伝播）
+    // TypeAllの終わりの大きさ（監査のインターフェースTyAuditが後の書きを数える — 店は積むだけなので差が後の書き）
     n0tys int
     n0yl int
     n0ents int
@@ -42,16 +42,16 @@ type TyStore struct {
     fo int     // package 番号 → ford の区間の頭（[npkg + 1]）
     cord int   // const の順（同じ形 — 区間は co）
     co int
-    frev int   // ファイルを package の中で逆に回す（撹拌の口 — 0 / 1）
-    ordOn int  // 撹拌の口が効いている（証人を出す — 0 / 1）
-    preg int   // package ごとの区画の境（PRSZ 語 — 下の PR* の位置）
+    frev int   // ファイルをpackageの中で逆に回す（撹拌のオプション — 0 / 1）
+    ordOn int  // 撹拌のオプションが効いている（証人を出す — 0 / 1）
+    preg int   // packageごとの区画の境（PRSZワード — 下のPR* の位置）
     ydk int    // 宣言の相を回している package（-1 = 相の外）
     ycur int   // 型付けしている package（宣言の相・本体の相 — TypeAll の外は npkg。型引数つきの yFieldAt の memo を package ごとに分ける扉）
-    late int   // 宣言の相の外で埋まった memo（呼び手の都合で別の区画に積まれた署名 — 監査の口が数える）
-    // yFieldAt の memo（欄の型 — 型引数なしの struct は型宣言 × 欄・型引数つきは記録 × 欄）: yfmh = 鎖の頭・yfm = [鍵, next, 欄の数, 値 + 2…]
+    late int   // 宣言の相の外で埋まったmemo（呼び手の都合で別の区画に積まれた署名 — 監査のインターフェースが数える）
+    // yFieldAtのmemo（フィールドの型 — 型引数なしのstructは型宣言 × フィールド・型引数つきは記録 × フィールド）: yfmh = チェーンの頭・yfm = [鍵, next, フィールドの数, 値 + 2…]
     yfmh table.Table[int]
     yfm table.Table[int]
-    // 正準の直列化の作業（tycanon.sober — 混ぜの 2 語・今の package・参照表〔package → 番号 + 1 / 番号 → package〕・推移の import の表・扉の数）
+    // 正準の直列化の作業（tycanon.sober — 混ぜの2ワード・今のpackage・参照表〔package → 番号 + 1 / 番号 → package〕・推移のimportの表・扉の数）
     ch1 int
     ch2 int
     ck int
@@ -62,13 +62,13 @@ type TyStore struct {
     cdoor int
     cbody int
     cents int
-    // 型付けの前の鍵（tycanon.sober の TyKeyOn。0 = 切 — ヒープの塊 KS* の頭。欄を 1 語に畳む — S の語は自己 build の値札）
+    // 型付けの前の鍵（tycanon.soberのTyKeyOn。0 = 切 — ヒープのチャンクKS* の頭。フィールドを1ワードに畳む — Sのワードは自己buildのコスト）
     kst int
     h0 int     // Init の終わりのヒープの長さ（γ の読み戻しが積んだ文字列を席 A の子へ渡す基準 — TyFreeze）
 }
 
-// 区画の境（package ごとの PRSZ 語 — [lo, hi) の組。Init が合成の節・TypeAll が記録・店の列・節 → 型の記録・宣言の相の記録（[lo, 相の終わり)）・
-// 値の位置のラムダの鍵・辺の鎖（[頭, 相の終わりの頭) — 鎖は新しい順）
+// 区画の境（packageごとのPRSZワード — [lo, hi) の組。Initが合成の節・TypeAllが記録・店の列・節 → 型の記録・宣言の相の記録（[lo, 相の終わり)）・
+// 値の位置のラムダの鍵・辺のチェーン（[頭, 相の終わりの頭) — チェーンは新しい順）
 const PRSZ = 14
 const PRSYN = 0
 const PRTYS = 2
@@ -79,7 +79,7 @@ const PRLAM = 10
 const PREDGE = 12
 const YFMB = 4093
 
-// package pk の区画の境の欄 at（lo）と at + 1（hi）を書く
+// package pk の区画の境のフィールドat（lo）とat + 1（hi）を書く
 func prSet(st mut S, pk int, at int, lo int, hi int) {
     hset(mut st, st.ty.preg + 1 + pk * PRSZ + at, lo)
     hset(mut st, st.ty.preg + 2 + pk * PRSZ + at, hi)
@@ -97,7 +97,7 @@ func yLate(st mut S, owner int) {
     }
 }
 
-// yFieldAt の memo の鍵 key（欄の数 nf）の値の頭（yfm の添字 — 無ければ作る。値 0 = まだ）
+// yFieldAtのmemoの鍵key（フィールドの数nf）の値の頭（yfmの添字 — 無ければ作る。値0 = まだ）
 func yfmCells(st mut S, key int, nf int) int {
     h := (key % YFMB + YFMB) % YFMB
     mut e := table.Get(mut st.ty.yfmh, h)
@@ -156,7 +156,7 @@ func ylAt(st mut S, l int, i int) int {
     return table.Get(mut st.ty.yl, l - YLBASE + 1 + i)
 }
 
-// TypeAll の終わりの大きさを控える（監査の口の基準）
+// TypeAllの終わりの大きさを控える（監査のインターフェースの基準）
 func tySeal(st mut S) {
     st.ty.n0tys = table.Len(mut st.ty.ytys)
     st.ty.n0yl = table.Len(mut st.ty.yl)
@@ -164,7 +164,7 @@ func tySeal(st mut S) {
     st.ty.n0syn = table.Len(mut st.syn)
 }
 
-// yListField は記録 x の列の欄の数（YFn = 2・YTuple = 1・型引数つきの YDecl = 1）と i 番の値
+// yListFieldは記録xの列のフィールドの数（YFn = 2・YTuple = 1・型引数つきのYDecl = 1）とi番の値
 func yListFields(x YT) int {
     return switch x.k {
     case YFn: 2
@@ -178,8 +178,8 @@ func yListField(x YT, i int) int {
     return if x.k == YFn && i == 1 { x.b } else if x.k == YDecl { x.c } else { x.a }
 }
 
-// 監査の口 SOBER_TYAUDIT: 空でなければ証人 `#tyaudit <at> …` を stderr へ — 記録が店の外の列を指す数（leak）・
-// TypeAll の後に積んだ記録・列の語・節 → 型の記録の数（post*）・TypeAll より前の合成の節の差し替えの数（synset）・店の大きさ
+// 監査のオプションSOBER_TYAUDIT: 空でなければ証人 `#tyaudit <at> …` をstderrへ — 記録が店の外の列を指す数（leak）・
+// TypeAllの後に積んだ記録・列のワード・節 → 型の記録の数（post*）・TypeAllより前の合成の節の差し替えの数（synset）・店の大きさ
 func TyAudit(st mut S, at string) {
     v, err := os.Getenv("SOBER_TYAUDIT")
     if err != nil || v == nil {
@@ -225,8 +225,8 @@ func TyAudit(st mut S, at string) {
 
 
 // ── 凍らせた店の受け渡し: 席 A の子は型付けを走らせ直さず、親の店を受け取る ──
-// - 親は店の写しを凍らせて渡し（親の表はそのまま）、子は Init の後で自分の表へ積み直す。凍った基底 + 上の表で読む形（写さない）は
-//   読みの振り分けが直の道にも毎回掛かる（自己 build +0.14%）ので採らない
+// - 親は店のコピーを凍らせて渡し（親の表はそのまま）、子はInitの後で自分の表へ積み直す。凍った基底 + 上の表で読む形（コピーしない）は
+//   読みの振り分けが直のパスにも毎回掛かる（自己build +0.14%）ので採らない
 // - 局所の束縛 ybinds は型付けの作業なので渡さない。区画の境（preg — ヒープの列）は子では Init の分だけ（監査と emit だけが読む）
 
 // 凍らせた店（imm — 子へそのまま渡せる）
@@ -243,7 +243,7 @@ type TyFrozen struct {
     lamY []int
     yfmh []int
     yfm []int
-    sc []int   // 店の語（TyFreeze が積む並び — TyAdopt が同じ並びで戻す）
+    sc []int   // 店のワード（TyFreezeが積む並び — TyAdoptが同じ並びで戻す）
     heap []int // Init の後のヒープの尾（γ の当たりがあった build だけ — 読み戻しが型変数の名前を strOf でヒープへ積む。子は Init の後の同じ番地へ積み直す）
 }
 
@@ -262,7 +262,7 @@ func tyRefill(t mut table.Table[int], xs []int) {
     }
 }
 
-// 親の店の写しを凍らせて返す（子へ渡す値 — 親の表は変えない）
+// 親の店のコピーを凍らせて返す（子へ渡す値 — 親の表は変えない）
 func TyFreeze(st mut S) TyFrozen {
     mut cpT := table.Table[YT]{}
     for i <- iter.Range(0, table.Len(mut st.ty.ytys)) {
@@ -335,7 +335,7 @@ func TyAdopt(st mut S, f TyFrozen) {
     st.ty.ydk = f.sc[7]
     st.ty.ycur = f.sc[8]
     st.ty.late = f.sc[9]
-    // 店の外の型付けの結果の語: 暗黙の freeze の点の数（IsImplicit の門 — 点そのものは節 → 型の表の別キー〔IMPLKEY〕で店の中。
+    // 店の外の型付けの結果のワード: 暗黙のfreezeの点の数（IsImplicitの門 — 点そのものは節 → 型の表の別キー〔IMPLKEY〕で店の中。
     // 点の列 ypts は analyzer の Freeze だけが読む — 子は検査しないので渡さない）
     st.nimpl = f.sc[10]
     // γ の読み戻しの文字列（ヒープの尾 — Init の終わりの長さが親と同じことが前提: Init は決定的）
@@ -347,7 +347,7 @@ func TyAdopt(st mut S, f TyFrozen) {
             hpush(mut st, w)
         }
     }
-    // TypeAll の頭が立てる S の語（型付けの作業の状態 — 終わった後の値と同じ）
+    // TypeAllの頭が立てるSのワード（型付けの作業の状態 — 終わった後の値と同じ）
     st.yfi = -1
     st.instEnvs = -1
     st.insts = -1

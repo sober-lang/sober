@@ -1,6 +1,6 @@
 package lib
 
-// refs の負例（report-883）: std/task.MarkFailed と同綴りの別物を並べる — この package の関数 MarkFailed・欄 MarkFailed・variant の欄 MarkFailed
+// refsの負例（report-883）: std/task.MarkFailedと同綴りの別物を並べる — このpackageの関数MarkFailed・フィールドMarkFailed・variantのフィールドMarkFailed
 
 type Rec struct {
     MarkFailed int

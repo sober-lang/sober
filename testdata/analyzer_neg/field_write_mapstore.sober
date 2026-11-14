@@ -1,6 +1,6 @@
 package main
 
-// map の欄への格納
+// mapのフィールドへの格納
 import "testdata/fieldpkg/box"
 
 func main() {

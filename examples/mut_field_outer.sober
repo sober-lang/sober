@@ -1,6 +1,6 @@
 package main
 
-// mut の成分を持つ struct の mut 局所: 書かない mut の欄・mut の欄への外の値の append・mut 仮引数の関数へ渡す
+// mutの成分を持つstructのmut局所: 書かないmutのフィールド・mutのフィールドへの外の値のappend・mut仮引数の関数へ渡す
 
 type C struct {
     ts []string

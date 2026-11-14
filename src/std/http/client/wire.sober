@@ -1,13 +1,13 @@
 package client
 
-// 要求の書き出しと応答の読み（HTTP/1.1 — RFC 9112）。応答は受けたバイトの列に積み、scan が頭の終わり・本文の区切り（Content-Length /
+// リクエストの書き出しとレスポンスの読み（HTTP/1.1 — RFC 9112）。レスポンスは受けたバイトの列に積み、scanが頭の終わり・本文の区切り（Content-Length /
 // chunked / 閉じ）の進みを前回の続きから読む（chunked の切れ目の位置を持ち越す — 積むたびに頭から読み直さない）。済んだら finish が本文を組む
 
 import "std/http"
 import "std/iter"
 import "std/strings"
 
-// 応答の頭の上限（状態行 + ヘッダ）
+// レスポンスの頭の上限（状態行 + ヘッダ）
 const maxHead = 65536
 
 // 本文の区切りの形
@@ -17,8 +17,8 @@ const mLength = 2
 const mChunked = 3
 const mClose = 4
 
-// 読みの進み（base = 今の応答の頭の始め — 1xx の中間の応答を読み捨てると進む・hscan = 頭の終わりを探した位置・hend = 本文の始め〔-1 = 頭が未着〕・
-// clen = Content-Length・cpos = chunked の次の chunk の頭の位置・blen = chunked の本文の長さの合計・end = 応答の終わり〔-1 = 未着〕・
+// 読みの進み（base = 今のレスポンスの頭の始め — 1xxの中間のレスポンスを読み捨てると進む・hscan = 頭の終わりを探した位置・hend = 本文の始め〔-1 = 頭が未着〕・
+// clen = Content-Length・cpos = chunkedの次のchunkの頭の位置・blen = chunkedの本文の長さの合計・end = レスポンスの終わり〔-1 = 未着〕・
 // bad = 形の誤り・big = 本文の上限超え）
 type scanSt struct {
     base int
@@ -43,7 +43,7 @@ func settled(s scanSt) bool {
     return s.end >= 0 || s.bad || s.big
 }
 
-// 要求のバイト列（呼び手の頭は Host / Content-Length / Transfer-Encoding / Connection を書けない — panic(http.BadHeader)・名前と値の形も http の応答の頭と同じ検査）
+// リクエストのバイト列（呼び手の頭はHost / Content-Length / Transfer-Encoding / Connectionを書けない — panic(http.BadHeader)・名前と値の形もhttpのレスポンスの頭と同じ検査）
 func requestBytes(method string, t target, headers []http.Field, body []byte, ua string, keep bool, cookie string) []byte {
     m := if method == "" { "GET" } else { method }
     if !tokenOk(bytes(m)) {
@@ -110,7 +110,7 @@ func fieldOk(f http.Field) bool {
     return n != "host" && n != "content-length" && n != "transfer-encoding" && n != "connection"
 }
 
-// b[0, n) の読みを s から進める（noBody = HEAD の要求 — 本文を持たない）
+// b[0, n) の読みをsから進める（noBody = HEADのリクエスト — 本文を持たない）
 func scan(b mut []byte, n int, s0 scanSt, noBody bool, maxBody int) scanSt {
     mut s := s0
     while s.hend < 0 && !s.bad {
@@ -121,7 +121,7 @@ func scan(b mut []byte, n int, s0 scanSt, noBody bool, maxBody int) scanSt {
             return s
         }
         s = headOf(mut b, s.base, at + 4, noBody, maxBody)
-        // 1xx（101 以外）は中間の応答 — 読み捨てて次の頭を待つ
+        // 1xx（101以外）は中間のレスポンス — 読み捨てて次の頭を待つ
         if !s.bad && s.status >= 100 && s.status < 200 && s.status != 101 {
             s = newScan()
             s.base = at + 4
@@ -255,7 +255,7 @@ func chunks(b mut []byte, n int, s0 scanSt, maxBody int) scanSt {
     return s
 }
 
-// 済んだ応答の本文（chunked は繋ぎ直す・閉じで区切る形は n まで）
+// 済んだレスポンスの本文（chunkedは繋ぎ直す・閉じで区切る形はnまで）
 func bodyOf(b []byte, n int, s scanSt) []byte {
     mut o := mut []byte{}
     if s.mode == mChunked {

@@ -1,17 +1,17 @@
 package main
 
 // a1dump: 再帰の型宣言を使う単一ファイルの package main を、再帰型の無い形（A1 — 値ごとに自分の部分木の表 + 根）へ書き換えて標準出力に書く。
-// 検査用の脱糖器（差分オラクル scripts/a1check.sh の片側）: 速さは要らない — 構築は子の表を写すので O(節点 × 深さ)。
+// 検査用の脱糖器（差分オラクルscripts/a1check.shの片側）: 速さは要らない — 構築は子の表をコピーするのでO(節点 × 深さ)。
 //
 // 目標形（組 G・成分 A〔struct〕/ U〔union〕— 型の名前は元のまま）:
 //   type a1_G_Row union { a1_G_A_r { …再帰の位置は添字 int… }; a1_G_U_V_r { … }; … }
 //   type A struct { rows []a1_G_Row; root int }          値 = 自分の部分木の表 + 根の添字
-//   type a1_U_O union { V { …欄は元の型… }; … }          U を 1 段開いた形（switch の subject の行き先・variant の名前は元のまま）
+//   type a1_U_O union { V { …フィールドは元の型… }; … }          Uを1段開いた形（switchのsubjectの行き先・variantの名前は元のまま）
 // 使い点: `A{…}` / `V{…}` → a1_A_mk / a1_U_mk_V・`e.f`（e が A）→ a1_A_get_f(e)・`switch e`（e が U）→ switch a1_U_open(e)。
-// 子の読みは親の表を共有する（値は imm なので写さなくても意味は同じ）。
+// 子の読みは親の表を共有する（値はimmなのでコピーしなくても意味は同じ）。
 // 断片の外は `a1: unsupported: <理由> at <行>` を stderr に出して exit 2（黙って素通しにしない）。
 //
-// 使い方: a1dump [--groups] <std の置き場> <file.sober>（--groups は再帰の組の数だけを出す）
+// 使い方: a1dump [--groups] <stdの格納場所> <file.sober>（--groupsは再帰の組の数だけを出す）
 
 import "std/io"
 import "std/os"
@@ -143,7 +143,7 @@ func tyText(t ast.Tree, g Grp, n int, row bool) string {
     return "?"
 }
 
-// 断片の外の型式（成分の欄に書けない形）を探す: 関数型・タプル・mut のコンテナ・配列の中の成分
+// 断片の外の型式（成分のフィールドに書けない形）を探す: 関数型・タプル・mutのコンテナ・配列の中の成分
 func badTy(t ast.Tree, g Grp, n int) string {
     x := t.nodes[n]
     k := x.kind
@@ -375,7 +375,7 @@ func put(b mut builder.Builder[byte], s string) {
     builder.PushString(mut b, s)
 }
 
-// 値 src（型 ty）の写しの文を ind の字下げで b に出し、結果の式を返す。mode 0 = 元の型 → 行の型（子の表を a1_rows へ graft）・
+// 値src（型ty）のコピーの文をindの字下げでbに出し、結果の式を返す。mode 0 = 元の型 → 行の型（子の表をa1_rowsへgraft）・
 // 1 = 行の型 → 元の型（子は a1_v.rows を共有）・2 = 行の型 → 行の型（添字に a1_off の下駄）。tag は局所の名前の一意化
 func gen(b mut builder.Builder[byte], t ast.Tree, g Grp, ty int, src string, mode int, tag string, ind string) string {
     if !hasM(t, g, ty) {
@@ -387,7 +387,7 @@ func gen(b mut builder.Builder[byte], t ast.Tree, g Grp, ty int, src string, mod
         nm := loader.Name(t, x.a)
         if mode == 0 {
             put(mut b, "${ind}a1_o${tag} := len(a1_rows)\n")
-            // 欄は仮引数で受けた補助で読む（map の読みを絞った局所の欄の読みは check が断片の外 — FLEDGER F-rec-a1）
+            // フィールドは仮引数で受けた補助で読む（mapの読みを絞った局所のフィールドの読みはcheckが断片の外 — FLEDGER F-rec-a1）
             put(mut b, "${ind}a1_rows = a1_${g.name}_cat${tpArgs(g)}(a1_rows, a1_${nm}_rows${tpArgs(g)}(${src}))\n")
             return "a1_o${tag} + a1_${nm}_root${tpArgs(g)}(${src})"
         }
@@ -414,7 +414,7 @@ func gen(b mut builder.Builder[byte], t ast.Tree, g Grp, ty int, src string, mod
         put(mut b, "${ind}        a1_s${tag}[a1_k${tag}] = ${r}\n")
         put(mut b, "${ind}    }\n")
         put(mut b, "${ind}}\n")
-        // 明示の freeze: union の variant の欄は暗黙の freeze の位置に入らない（build が型の誤り — FLEDGER F-rec-a1 ②）
+        // 明示のfreeze: unionのvariantのフィールドは暗黙のfreezeの位置に入らない（buildが型の誤り — FLEDGER F-rec-a1 ②）
         return "freeze(a1_s${tag})"
     }
     if k == ast.TOpt {
@@ -427,7 +427,7 @@ func gen(b mut builder.Builder[byte], t ast.Tree, g Grp, ty int, src string, mod
     return src
 }
 
-// 網の変異（scripts/a1oracle.sh --mut — 網が赤になることの確かめ）: A1_MUT=shift（graft の下駄を 1 ずらす）/
+// 検査のミューテーション（scripts/a1oracle.sh --mut — 検査が赤くなることの確認）: A1_MUT=shift（graftの下駄を1ずらす）/
 // kids（子の読みの根を親のまま）
 func mutIs(w string) bool {
     v, _ := os.Getenv("A1_MUT")
@@ -478,7 +478,7 @@ func genGroup(b mut builder.Builder[byte], t ast.Tree, g Grp) {
             put(mut b, "}\n")
         }
     }
-    // shift: 行の添字の欄に下駄
+    // shift: 行の添字のフィールドに下駄
     put(mut b, "\nfunc a1_${g.name}_shift${tp}(a1_r ${rn}${ta}, a1_off int) ${rn}${ta} {\n    return switch a1_r {\n")
     for m <- g.mems {
         for v <- m.vars {
@@ -493,12 +493,12 @@ func genGroup(b mut builder.Builder[byte], t ast.Tree, g Grp) {
         }
     }
     put(mut b, "    }\n}\n")
-    // cat: 子の表を写して末尾へ
+    // cat: 子の表をコピーして末尾へ
     put(mut b, "\nfunc a1_${g.name}_cat${tp}(a1_rows ${"[]"}${rn}${ta}, a1_cs []${rn}${ta}) []${rn}${ta} {\n")
     put(mut b, "    a1_off := len(a1_rows)\n    mut a1_o := a1_rows\n    for a1_c <- a1_cs {\n        a1_o = append(a1_o, a1_${g.name}_shift${ta}(a1_c, a1_off))\n    }\n    return a1_o\n}\n")
     multi := nRowVars(g) > 1
     for m <- g.mems {
-        // 構築: 欄の宣言順の位置引数（元の型）— 子を graft して自分の行を末尾に
+        // 構築: フィールドの宣言順の位置引数（元の型）— 子をgraftして自分の行を末尾に
         for v <- m.vars {
             fname := if m.isUnion { "a1_${m.name}_mk_${v.name}" } else { "a1_${m.name}_mk" }
             mut ps := ""
@@ -515,7 +515,7 @@ func genGroup(b mut builder.Builder[byte], t ast.Tree, g Grp) {
             put(mut b, "    return ${m.name}${ta}{rows: a1_rows, root: len(a1_rows) - 1}\n}\n")
         }
         if m.isUnion {
-            // 開く: 根の行を元の型の欄へ
+            // 開く: 根の行を元の型のフィールドへ
             put(mut b, "\nfunc a1_${m.name}_open${tp}(a1_v ${m.name}${ta}) a1_${m.name}_O${ta} {\n    return switch a1_v.rows[a1_v.root] {\n")
             for v <- m.vars {
                 put(mut b, "    case ${rowVar(g, m, v)}{${fldList(v)}}: {\n")
@@ -531,7 +531,7 @@ func genGroup(b mut builder.Builder[byte], t ast.Tree, g Grp) {
             }
             put(mut b, "    }\n}\n")
         } else {
-            // 欄の読み
+            // フィールドの読み
             v := m.vars[0]
             for i <- iter.Range(0, len(v.flds)) {
                 fl := v.flds[i]
@@ -550,7 +550,7 @@ func genGroup(b mut builder.Builder[byte], t ast.Tree, g Grp) {
 
 // ── 使い点の書き換え ──
 
-// 書き換えの作業場（節と data の写し — 節の置き換えは同じ添字へ・新しい節は末尾へ）
+// 書き換えの作業場（節とdataのコピー — 節の置き換えは同じ添字へ・新しい節は末尾へ）
 type W struct {
     ns mut []ast.Node
     ds mut []int
@@ -721,7 +721,7 @@ func unparen(t ast.Tree, n0 int) int {
     return n
 }
 
-// 節 n の表層型（load した木と新しく parse した木で節が揃っていなければ揃わない印 -2）
+// 節nの表層型（loadした木と新しくparseした木で節が揃っていなければ揃わないフラグ -2）
 func tyOf(p loader.Program, st mut desugar.S, fi int, t ast.Tree, n int) int {
     lt := p.trees[fi]
     if n >= len(lt.nodes) || lt.nodes[n].kind != t.nodes[n].kind || lt.nodes[n].tok != t.nodes[n].tok {
@@ -730,7 +730,7 @@ func tyOf(p loader.Program, st mut desugar.S, fi int, t ast.Tree, n int) int {
     return desugar.YTypeOf(mut st, desugar.NodeRef(desugar.ABASE + fi * desugar.FW + n))
 }
 
-// 構築の実引数（欄の宣言順）
+// 構築の実引数（フィールドの宣言順）
 func ctorArgs(t ast.Tree, v Var, elems int) ([]int, Bad?) {
     es := listOr(t, elems)
     mut out := []int{}
@@ -754,7 +754,7 @@ func ctorArgs(t ast.Tree, v Var, elems int) ([]int, Bad?) {
     return out, nil
 }
 
-// f が再帰の組の struct の成分の欄の名前か
+// fが再帰の組のstructの成分のフィールドの名前か
 func recField(gs []Grp, f string) bool {
     for g <- gs {
         for m <- g.mems {
@@ -781,7 +781,7 @@ func rewrite(p loader.Program, st mut desugar.S, fi int, t ast.Tree, gs []Grp) (
         w.ds = append(w.ds, d)
     }
     n0 := len(t.nodes)
-    // 1 周目: 構築と欄の読み・断片の外の検出（同じ添字へ置き換え — 親の指す先は変わらない）
+    // 1周目: 構築とフィールドの読み・断片の外の検出（同じ添字へ置き換え — 親の指す先は変わらない）
     for i <- iter.Range(0, n0) {
         x := t.nodes[i]
         if x.kind == ast.EComposite {
@@ -826,8 +826,8 @@ func rewrite(p loader.Program, st mut desugar.S, fi int, t ast.Tree, gs []Grp) (
                 wCall(mut w, i, x.tok, "a1_${m.name}_get_${loader.Name(t, x.b)}${ta}", []int{x.a})
             }
         } else if x.kind == ast.EMutArg {
-            // `mut e.f`（道の 2 段目以降）の欄が再帰の struct の欄なら断片の外 — A1 の値は表と根で、欄を mut の場所として渡す形が無い。
-            // 道は名前の列だけで基底の型を引けないので、欄の名前が再帰の struct のどれかの欄と同じなら名指す（無関係の struct の同名の欄も名指す側に倒す）
+            // `mut e.f`（経路の2段目以降）のフィールドが再帰のstructのフィールドなら断片の外 — A1の値は表と根で、フィールドをmutの場所として渡す形が無い。
+            // 経路は名前の列だけで基底の型を引けないので、フィールドの名前が再帰のstructのどれかのフィールドと同じなら名前で参照する（無関係のstructの同名のフィールドも名前で参照する側に倒す）
             segs := strings.Split(loader.Name(t, x.a), ".")
             for k <- iter.Range(1, len(segs)) {
                 if recField(gs, segs[k]) {
@@ -863,7 +863,7 @@ func rewrite(p loader.Program, st mut desugar.S, fi int, t ast.Tree, gs []Grp) (
             }
         }
     }
-    // 2 周目: switch の subject を開く（subject の節を末尾へ写し、元の添字を open の呼び出しに）
+    // 2周目: switchのsubjectを開く（subjectの節を末尾へコピーし、元の添字をopenの呼び出しに）
     for i <- iter.Range(0, n0) {
         x := t.nodes[i]
         if x.kind == ast.ESwitch {
@@ -972,7 +972,7 @@ func main() int {
     if gbad != nil {
         return unsupported(src, ts, gbad)
     }
-    // --groups: 再帰の組の数だけを出す（a1check が A1 の出力に組が残っていないことを見る口）
+    // --groups: 再帰の組の数だけを出す（a1checkがA1の出力に組が残っていないことを見るインターフェース）
     if len(args0) >= 3 && args0[len(args0) - 3] == "--groups" {
         println(len(gs))
         return 0

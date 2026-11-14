@@ -1,26 +1,26 @@
 package main
 
-// 期待型（byte・byte?・string?）が、文を前に持つ塊の腕・ラムダの塊の本体・switch の腕の末尾まで届く形。
+// 期待型（byte・byte?・string?）が、文を前に持つブロックの分岐・ラムダのブロックの本体・switchの分岐の末尾まで届く形。
 // 型なしの定数は末尾でも期待の byte に割り当て、return の値の catch nil は結果の T? から nil の型を取る
 
 func g() {}
 
-// byte? の腕の末尾の定数
+// byte? の分岐の末尾の定数
 func opt(s string) byte? {
     return if len(bytes(s)) > 2 { g(); 44 } else { nil }
 }
 
-// 絞り込んだ腕と、文を前に持つ else の塊
+// 絞り込んだ分岐と、文を前に持つelseのブロック
 func orZero(v byte?) byte {
     return if v != nil { v } else { g(); 0 }
 }
 
-// byte を返す関数型の実引数のラムダ（塊の本体・式の本体）
+// byteを返す関数型の実引数のラムダ（ブロックの本体・式の本体）
 func run(f func(int) byte) byte {
     return f(1)
 }
 
-// switch の腕（文を前に持つ腕・定数だけの腕）
+// switchの分岐（文を前に持つ分岐・定数だけの分岐）
 func pick(n int) byte {
     return switch n {
     case 0: g(); 44

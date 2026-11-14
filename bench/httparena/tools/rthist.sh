@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# rthist.sh <srv> <形>… — 変異 4（--rt-mutant=4）の dlsrv を形ごとに 1 回走らせ、`#w` の 25〜48 列目
-# （環の深さ・取った task の環での待ち・off-CPU — src/compiler/lower/mn.sober の WK_KD / WK_KA / WK_KO の注）を集計して出す。
+# rthist.sh <srv> <形>… — ミューテーション4（--rt-mutant=4）のdlsrvを形ごとに1回走らせ、`#w` の25〜48列目
+# （環の深さ・取ったtaskの環での待ち・off-CPU — src/compiler/lower/mn.soberのWK_KD / WK_KA / WK_KOの注記）を集計して出す。
 # 形: churn（limited-conn の形 — -r 10・get / post_cl / post_chunked の巡回・4096 接続）/ ka（keep-alive — get・4096 接続）/
 #     async（GET /delay/10 — $ASYNC_CONNS 接続・既定 32000）
 # 環境: GCANNON（gcannon の実行ファイル — 無ければ PATH）・ARENA_REQ（requests/*.raw — 無ければ GitHub から取る）・

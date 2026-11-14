@@ -1,7 +1,7 @@
 package main
 
-// 語に詰めると同じで長さだけ違う string の字面（"/" と "/\0"・"ab" と "ab\0\0"）— rodata の大域が語の列で名指される（関数の置き場の鍵）ので、
-// 別の大域にすると温の置き場 + lower の分割で参照が入れ替わる（scripts/selfpar.sh の j_strwords — 1 本道 ≡ 冷 ≡ 温の ELF）
+// ワードに詰めると同じで長さだけ違うstringの字面（"/" と "/\0"・"ab" と "ab\0\0"）— rodataの大域がワードの列で名前で参照される（関数の格納場所の鍵）ので、
+// 別の大域にすると温の格納場所 + lowerの分割で参照が入れ替わる（scripts/selfpar.shのj_strwords — 1本道 ≡ 冷 ≡ 温のELF）
 
 func a() string {
     return "/"

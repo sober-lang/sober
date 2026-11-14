@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# 編集ループの bench（3'' 第 2 段 C3・M4 の裁定材料）: 固定のコンパイラ（今の stage2）で、自己適用（compiler/app の写し）に
-# 決まった編集を当てて、一括の check と小分けの check（温 — 編集前の木で温めた置き場の写し）を交互に測る。冷（空の置き場）も 1 回ずつ。
+# 編集ループのbench（3'' 第2段階C3・M4の決定材料）: 固定のコンパイラ（今のstage2）で、自己適用（compiler/appのコピー）に
+# 決まった編集を当てて、一括のcheckと小分けのcheck（温 — 編集前の木で温めた配置先のコピー）を交互に測る。冷（空の配置先）も1回ずつ。
 # 編集（std はコンパイラに焼き込み — std の編集はコンパイラの作り直しで鍵が全部変わるので、std の代役に ast〔ほぼ全 package が import〕を使う）:
 #   none          変更なし
 #   lower-body    lower/lower.sober の最初の `return nil` の前に 1 文
@@ -20,7 +20,7 @@ mkdir -p "$W/base"
 cp -r src/compiler "$W/base/compiler"
 cp -r src/std "$W/base/compiler/std"
 ulimit -s unlimited
-# 温めた置き場（編集前の木）
+# 温めた配置先（編集前の木）
 ( cd "$W/base/compiler" && SOBER_CACHE=$W/warm "$STAGE2" check app --split > /dev/null 2>&1 )
 edit() { # $1 = 編集・$2 = 木の compiler/
     case "$1" in

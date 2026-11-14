@@ -12,7 +12,7 @@ func atoi(s string) int {
     return n
 }
 
-// 交互に 2 本の mut []int と 2 本の mut []byte を伸ばす（素直な形 — データ構造便の双子 (b)。成長が先端の奪い合いで 2 乗だった形・rtgrow.sober で償却 O(1)）
+// 交互に2本のmut []intと2本のmut []byteを伸ばす（素直な形 — データ構造のタスクの対 (b)。成長が先端の奪い合いで2乗だった形・rtgrow.soberで償却O(1)）
 func main() int {
     args := os.Args() catch return 2
     n := atoi(args[1])

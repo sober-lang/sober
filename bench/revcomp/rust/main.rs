@@ -1,4 +1,4 @@
-// reverse-complement の Rust の双子（Go の双子 bench/revcomp/go の逐語訳 — 全体を読み、記録ごとに見出しはそのまま・配列は改行を除いて逆順の相補を
+// reverse-complementの比較用のRustの実装（比較用のGoの実装bench/revcomp/goの逐語訳 — 全体を読み、記録ごとに見出しはそのまま・配列は改行を除いて逆順の相補を
 // 1 行 60 文字で。Go の bufio.Writer〔64 KiB〕の WriteByte の鏡として BufWriter〔64 KiB〕へ 1 バイトずつ write_all）
 use std::env;
 use std::fs;

@@ -1,8 +1,8 @@
 package main
 
-// HTTP クライアントの束（std/http/client の Open / Send）: 1 本の接続の上で要求を 3 往復。loopback で、親の task が接続を 1 本だけ受けて
+// HTTP クライアントのセッション（std/http/client の Open / Send）: 1 本の接続の上でリクエストを 3 往復。loopback で、親の task が接続を 1 本だけ受けて
 // std/http/server のサーバの役をし（ServeConn — keep-alive）、子の task が Open の範囲の中で Send を 3 回呼ぶ。Session は Open の k の仮引数としてだけ生まれ、
-// k が返ると接続が閉じる（同一性の型 — 写し・欄・捕獲・持ち出しは負例 client_neg_*）
+// k が返ると接続が閉じる（同一性の型 — コピー・フィールド・捕捉・持ち出しは負例 client_neg_*）
 
 import "std/http/client"
 import "std/http/server"

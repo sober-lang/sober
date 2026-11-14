@@ -1,7 +1,7 @@
 package main
 
-// selfpar の変異 10（desugar/namedval.sober の nvReach）の的: `T?` の仮引数を持つ名前付き関数型が無いプログラムの、名前付き関数型を通した
-// 名前付きの呼び出し — 表層型は呼び出しを含む関数（merge）にだけ付く。印を付けないと呼び先の型が引けず、拒否に化ける
+// selfparのミュータント10（desugar/namedval.soberのnvReach）のターゲット: `T?` の仮引数を持つ名前付き関数型が無いプログラムの、名前付き関数型を通した
+// 名前付きの呼び出し — 表層型は呼び出しを含む関数（merge）にだけ付く。フラグを付けないと呼び先の型が引けず、拒否に化ける
 type Merge func(a int, b int) int
 
 func merge(m Merge, x int) int {

@@ -1,6 +1,6 @@
 package main
 
-// 負例（language.md 13 節「表の網羅」）: @exhaustive の union の switch が variant を名指していない（default が黙って Tri を拾う形）
+// 負例（language.md 13 節「表の網羅」）: @exhaustiveのunionのswitchがvariantを列挙していない（defaultが黙ってTriを拾う形）
 
 type Shape union {
     Circle{r int}

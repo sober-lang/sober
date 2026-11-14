@@ -3,11 +3,11 @@ package lower
 // 軽い region.enter（M9 — 最適化のバックエンドの経路だけ・rtlower の手前。IR テキストと --backend=copy は掛けない形のまま）:
 // 自分の深度で何も確保しないと構造で示せる関数の `region.enter` を `call @rt.region_enter_light()`（深度 +1・上限の検査〔exit 102〕・深度と
 // その深度の bump の初期化だけ — 深い region の返却〔madvise〕のループと W_MAXD の更新を省く）に置き換える。
-// 的 = 再帰で深度の契約（1023 段 — 27 節）のためだけに region を開く関数（binary-trees の bottomUp / check — P0 は再帰の輪を外す）。
+// ターゲット = 再帰で深度の契約（1023レベル — 27 節）のためだけにregionを開く関数（binary-treesのbottomUp / check — P0は再帰のループを外す）。
 // 観測は同じ: 深度と上限の検査は同じ・bump を初期化するので exit 102 の高水位の印字も同じ。返却は次の full の enter まで遅れるだけ（RSS の振る舞い）
 // 自分の深度で確保しないことの構造の条件（保守的）:
 //   ① region.enter がちょうど 1 つで入口のブロックにあり、region.depth は enter より前（呼び手の深度 — 出口の setdepth 用）にしか無い
-//   ② スロットなし（呼び出しの結果の集約の置き場 = 自分の深度のヘッダを受け取る口が無い）・ptr を返す呼び出しなし・間接呼び出しなし・region.relocate なし
+//   ② スロットなし（呼び出しの結果の集約の配置先 = 自分の深度のヘッダを受け取るインターフェースが無い）・ptrを返す呼び出しなし・間接呼び出しなし・region.relocateなし
 //   ③ 直に呼ぶ関数は入口で region.enter（か軽い enter）をするか、P0 の region を使わない関数（region 透過の関数は呼び手の今の深度 = 自分の深度で確保しうる）
 // ①②から、確保の深度の被演算子は仮引数か呼び手のメモリから読んだヘッダの深度だけ（どちらも呼び手以下の深度）
 
@@ -30,9 +30,9 @@ func regionLightModule(st mut St) {
 // 本体（enter のブロックから、`region.setdepth` で始まるブロック = ループの頭 / 出口の手前まで）が自分の深度で何も確保しないなら消し、
 // 確保しうるなら軽い enter（深度 +1・上限の検査・bump の初期化 — madvise の返却のループを省く）に置き換える。
 // 反復ごとの full の enter が熱いループの支配項になった（stage3 の自己 build で rt.region_enter 8% — 実測）。
-// 消しても観測は同じ（確保しない region は空のまま捨てられるだけ・段の深度は enter の直後の region.depth で読む）。返却は関数の入口の full の enter で
-// 前提: ヘッダの深度の印 X の値は深度 X の region 以上に生きる（消すと深度 X が外の region と合流する — region の外の領域〔子の結果の預かり・
-// チャネルの小アリーナ〕は印 = MAX_DEPTH で、この前提の外に置く）
+// 消しても観測は同じ（確保しないregionは空のまま捨てられるだけ・レベルの深度はenterの直後のregion.depthで読む）。返却は関数の入口のfullのenterで
+// 前提: ヘッダの深度のマークXの値は深度Xのregion以上に生きる（消すと深度Xが外のregionと合流する — regionの外の領域〔子の結果の預かり・
+// チャネルの小アリーナ〕はマーク = MAX_DEPTHで、この前提の外に置く）
 func loopLightModule(st mut St, dirty mut map[int]int) {
     // 関数の要約: 呼び手の今の深度で確保しうるか（固定点 — 偽から真へ単調。鍵は関数の記録）。関数ごとの局所の事実（自前の確保・
     // 直に呼ぶ関数の列）を 1 回だけ集め、固定点は呼び出しグラフの上で回す
@@ -45,10 +45,10 @@ func loopLightModule(st mut St, dirty mut map[int]int) {
         f = irFnNext(mut st, f)
     }
     // mx = 呼び手の今の深度でない、呼び手が指す深度へも確保しうるか（mut 実引数の行き先への relocate・中身の分からない呼び出し — llFnEscape）。
-    // 入口で region を開く関数の自分の深度での呼び出し（llCallees が負の印で積む）は、呼ぶ関数の ma を伝えない — 今の深度 = 自分の region への確保で、
-    // 戻れば捨てられる（io.Writer の遅い道 writerByteSlow が枠の空け〔writerSpill の端数の写し〕を数えて反復の region を開く形の網）。
+    // 入口でregionを開く関数の自分の深度での呼び出し（llCalleesが負のマークで積む）は、呼ぶ関数のmaを伝えない — 今の深度 = 自分のregionへの確保で、
+    // 戻れば捨てられる（io.Writerの低速パスwriterByteSlowが枠の空け〔writerSpillの端数のコピー〕を数えて反復のregionを開く形の検査）。
     // mx は伝える（行き先が呼び手の束縛の region でありうる — 旧来どおり ma にも）。mx ⊆ ma（下の vx）
-    // 関数の密な番号（cs の並び）と、呼ばれる側から呼ぶ側への逆の辺（CSR — 呼ぶ側の番号 * 2 + 負の印〔自分の深度での呼び出し〕）
+    // 関数の密な番号（csの並び）と、呼ばれる側から呼ぶ側への逆の辺（CSR — 呼ぶ側の番号 * 2 + 負のマーク〔自分の深度での呼び出し〕）
     mut idx := mut map[int]int{}
     mut fs := mut []int{}
     mut at := 0
@@ -102,7 +102,7 @@ func loopLightModule(st mut St, dirty mut map[int]int) {
         gi += 1
         at += 2 + cs[at + 1]
     }
-    // 種まき（戻らない関数は llCallees が呼び先の列を空にしてあり、llFnOwnAlloc も偽 — #8）
+    // シード化（戻らない関数はllCalleesが呼び先の列を空にしてあり、llFnOwnAllocも偽 — #8）
     mut wl := mut []int{}
     mut sp := 0
     for k <- iter.Range(0, nf) {
@@ -148,7 +148,7 @@ func loopLightModule(st mut St, dirty mut map[int]int) {
             ma[fs[k]] = 1
         }
     }
-    // 失敗の戻りの道だけで呼び手の深度に確保する関数（eo）: 確保が全部 rt.err_alloc（return 文の error ラベルのセル）で、呼び手の深度で
+    // 失敗の戻りのパスだけで呼び手の深度に確保する関数（eo）: 確保が全部rt.err_alloc（return文のerrorラベルのセル）で、呼び手の深度で
     // 呼ぶ関数（正の辺）に確保しうるものが無い。呼び手はこの関数の呼び出しの確保を、結果の error が非 nil の辺でだけ数える（llAllocContinues）
     mut eo := mut map[int]int{}
     at = 0
@@ -210,7 +210,7 @@ func loopLightModule(st mut St, dirty mut map[int]int) {
     }
 }
 
-// 積み（先頭 sp 個が生きている）に x を積んで新しい sp
+// スタック（先頭sp個が生きている）にxを積んで新しいsp
 func llPush(stack mut []int, sp int, x int) int {
     if sp < len(stack) {
         stack[sp] = x
@@ -221,7 +221,7 @@ func llPush(stack mut []int, sp int, x int) int {
 }
 
 // mut 実引数の行き先の深度のレジスタ（W_ANCHOR — M5）の書き込みのうち、呼ぶ関数がそれを要らないものを消す。
-// 「要る」は呼び出しグラフの固定点（M5c）: 入口で読んだ W_ANCHOR の値（とその算術の結果）を、格納点の写しの floor 等に実際に使うか、
+// 「要る」は呼び出しグラフの固定点（M5c）: 入口で読んだW_ANCHORの値（とその算術の結果）を、格納点のコピーのfloor等に実際に使うか、
 // 要る関数の呼び出しの直前に W_ANCHOR へ書いて転送する関数だけが要る。読んで次の mut 引数の呼び出しへ転送するだけの連鎖
 // （irInsOp → hget → table.Get の類 — 入口の読み・正規化・書き戻しが小関数の命令の半分を占めた）は丸ごと要らない。
 // 書き込みの値の計算と入口の読みは DCE が後で消す
@@ -318,7 +318,7 @@ func apTaint(st mut St, f FnRef, fw mut []int, at int) bool {
     if !any {
         return false
     }
-    // 伝播（算術とブロックの引数）。並びの順に 1 周 — 後ろの辺（並びで先のブロックへの引数）で印が増えたときだけもう 1 周
+    // 伝播（算術とブロックの引数）。並びの順に1周 — 後ろの辺（並びで先のブロックへの引数）でマークが増えたときだけもう1周
     mut pos := mut []int{}
     for k <- iter.Range(0, irFnNBlk(mut st, f) + 1) {
         pos = append(pos, 0)
@@ -416,7 +416,7 @@ func apTaint(st mut St, f FnRef, fw mut []int, at int) bool {
     return false
 }
 
-// 分岐先 t が並びで今のブロック（here 番目）以前か（後ろの辺 — 写した印を同じ周で読み損ねうる）
+// 分岐先tが並びで今のブロック（here番目）以前か（後ろの辺 — 反映したマークを同じ周で読み損ねうる）
 func apBack(st mut St, pos mut []int, t BlkRef, here int) bool {
     id := irBlkId(mut st, t)
     return id < 0 || id >= len(pos) || pos[id] <= here
@@ -432,7 +432,7 @@ func apMark(tv mut []bool, v int) {
     }
 }
 
-// 値の列 l に印の値があるか
+// 値の列lにマークの値があるか
 func apList(st mut St, tv mut []bool, l int) bool {
     if l < 0 {
         return false
@@ -446,7 +446,7 @@ func apList(st mut St, tv mut []bool, l int) bool {
     return false
 }
 
-// 分岐の実引数の列 l の印をブロック t の仮引数へ写す（真 = 増えた）
+// 分岐の実引数の列lのマークをブロックtの仮引数へ反映する（真 = 増えた）
 func apArgs(st mut St, tv mut []bool, l int, t BlkRef) bool {
     if l < 0 {
         return false
@@ -552,7 +552,7 @@ func apNeeded(st mut St, i0 InsRef, metas mut []int, rd mut map[int]int) bool {
 
 // 関数 f が戻りうるか（TmRet のブロックがあるか — 本体の無い宣言は保守的に真）。戻らない関数（exit / 巻き戻りで終わる —
 // ラベル panic の冷たい関数等）の呼び出しの後には呼び手の反復も関数の残りも続かないので、固定点は「確保しうる」に数えない（#8）:
-// 消した反復の region に確保されうるのは死ぬ道の panic の印字だけで、罠で巻き戻る task の死でも残るのは死の 1 回分。
+// 消した反復のregionに確保されうるのは死ぬパスのpanicの印字だけで、罠で巻き戻るtaskの死でも残るのは死の1回分。
 // f の中の反復の enter の判定（llAllocContinues）は ma でなく命令を直接見るので、f 自身の内側のループの確保はこの除外に影響されない
 func llReturns(st mut St, f FnRef) bool {
     mut b := irFnBHead(mut st, f)
@@ -578,8 +578,8 @@ func llMa(ma mut map[int]int, g FnRef) bool {
 }
 
 // rt の関数 g の呼び出しが呼び手の深度で確保しうるか（確保しないと分かっている rt だけ偽 — 他の rt は真）。
-// rt.chunk_open / chunk_next（chunk.sober）も真: 記録を今の深度に取り、切片の View の印は今の深度（反復の region — View の寿命は次の chunk_next まで）。
-// 反復の region を消すと印が外の変数の床と合流し、外への代入が写さずにスロットを指したままになる（上の前提「印 X の値は深度 X の region 以上に生きる」）
+// rt.chunk_open / chunk_next（chunk.sober）も真: 記録を今の深度に取り、切片のViewのマークは今の深度（反復のregion — Viewの寿命は次のchunk_nextまで）。
+// 反復のregionを消すとマークが外の変数の床と合流し、外への代入がコピーせずにスロットを指したままになる（上の前提「マークXの値は深度Xのregion以上に生きる」）
 func llRtAlloc(st mut St, g FnRef) bool {
     if g == st.rtCopy || g == st.rtCopy8 || g == st.rtStreq || g == st.rtMatchLen || g == st.rtJClean || isMapRt(mut st, g) || g == st.rtMaphash || g == st.rtPchar || g == st.rtPint || g == st.rtPstr || g == st.rtPqstr || g == st.rtFlush || g == st.rtPanic || g == st.rtPanicMem || g == st.rtWrite || g == st.rtWfd || g == st.rtRenter || g == st.rtRenterL || g == st.rtRenterLL || g == st.rtTip8 || g == st.rtTipN8 || g == st.rtGrowTry || g == st.rtCpuProbe {
         return false
@@ -605,7 +605,7 @@ func llDepths(st mut St, f FnRef) map[int]int {
     return freeze(m)
 }
 
-// rt の確保・写しの呼び出し i の深度の引数の値（深度を取らない呼び出しは -1）
+// rtの確保・コピーの呼び出しiの深度の引数の値（深度を取らない呼び出しは -1）
 func llRtDepthArg(st mut St, i InsRef) int {
     g := irInsFn(mut st, i)
     args := desugar.ListRef(irInsB(mut st, i))
@@ -664,12 +664,12 @@ func llInsAllocs(st mut St, i InsRef, ma mut map[int]int, ds map[int]int) bool {
 
 // 関数 f の呼び出しが、呼ぶ関数を見ずに、呼び手の今の深度で確保しうるか: 入口で region を開かない関数は本体のどこかで
 // 今の深度へ確保すれば真・開く関数は relocate（戻り値・mut 実引数の行き先 — 呼び手以下の深度へ書く）か確保しうる rt / 間接の呼び出しがあれば真（保守的）
-// skipErr なら rt.err_alloc（return 文の error ラベルのセル — 非 nil の error を返す道だけ）を数えない
+// skipErrならrt.err_alloc（return文のerrorラベルのセル — 非nilのerrorを返すパスだけ）を数えない
 func llFnOwnAlloc(st mut St, f FnRef, skipErr bool) bool {
     if llRtAlloc(mut st, f) {
         return true
     }
-    // 戻らない関数は数えない（#8 — llReturns のコメント）。種まきと伝播（llCallees）の両方で外すので、ma に入らない =
+    // 戻らない関数は数えない（#8 — llReturnsのコメント）。シード化と伝播（llCallees）の両方で外すので、maに入らない =
     // llAllocContinues の呼び出しの判定（llMa）でも確保と数えられない
     if !llReturns(mut st, f) {
         return false
@@ -677,7 +677,7 @@ func llFnOwnAlloc(st mut St, f FnRef, skipErr bool) bool {
     ds := llDepths(mut st, f)
     enters := rlEnters(mut st, f)
     mut none := mut map[int]int{}
-    // 値の定義の表（llCallerDepth は 1 回ごとに関数を頭から走査する — 確保・写しの深度の問い合わせは表で引く）
+    // 値の定義の表（llCallerDepthは1回ごとに関数を頭から走査する — 確保・コピーの深度の問い合わせは表で引く）
     defs := if enters { llDefMap(mut st, f) } else { map[int]int{} }
     mut b := irFnBHead(mut st, f)
     while b != -1 {
@@ -687,15 +687,15 @@ func llFnOwnAlloc(st mut St, f FnRef, skipErr bool) bool {
             if op == OpCall && !llRtKnown(mut st, irInsFn(mut st, i)) {
                 // 利用者の関数の呼び出しは固定点で見る
             } else if skipErr && op == OpCall && irInsFn(mut st, i) == st.rtErrAlloc {
-                // 失敗の戻りの道の確保（呼び手は失敗の辺で数える — llErrEdge）
+                // 失敗の戻りのパスの確保（呼び手は失敗の辺で数える — llErrEdge）
             } else if enters && (op == OpRAlloc || op == OpRBump) {
-                // enter する関数の確保は自分の深度が普通だが、宛先構築（M1 の印 — 呼び手の深度・W_DEST）は呼び手の深度へ作る（見落とすと
+                // enterする関数の確保は自分の深度が普通だが、宛先構築（M1のマーク — 呼び手の深度・W_DEST）は呼び手の深度へ作る（見落とすと
                 // binary-trees の one() の木が呼び手の深度に作られ、呼ぶループの反復の region を消していたので反復ごとの木が main に積もる — 1 GB 級）
                 if llCallerDepthD(mut st, defs, irInsA(mut st, i)) {
                     return true
                 }
             } else if enters && op == OpCall && llRtDepthArg(mut st, i) >= 0 {
-                // enter する関数の rt の確保・写しの深度も同じ: 宛先の深度の算術（戻りの写しの床を含む — 返る列へ追記する呼び出しから来たときは宛先）
+                // enterする関数のrtの確保・コピーの深度も同じ: 宛先の深度の算術（戻りのコピーの床を含む — 返る列へ追記する呼び出しから来たときは宛先）
                 // は呼び手の深度でありうる
                 if llCallerDepthD(mut st, defs, llRtDepthArg(mut st, i)) {
                     return true
@@ -837,7 +837,7 @@ func llCallees(st mut St, f FnRef, cs mut []int) {
     // 入口で region を開かない関数は、自分のループの残る enter の下の呼び出しを数えない（llInLoop — G'）
     enters := rlEnters(mut st, f)
     inl := if enters { []bool{} } else { llInLoop(mut st, f) }
-    // 入口で region を開く関数は、今の深度が自分の深度（以深）の点の呼び出しを負の印（-g - 2）で積む（loopLightModule の mx — 今の深度への確保は伝えない）。
+    // 入口でregionを開く関数は、今の深度が自分の深度（以深）の点の呼び出しを負のマーク（-g - 2）で積む（loopLightModuleのmx — 今の深度への確保は伝えない）。
     // 宛先の深度のレジスタ（W_DEST）へ書く関数は呼び先が呼び手の深度へ作りうるので全部を正で（保守的）
     own := enters && !llStoresDest(mut st, f)
     mut dv := mut map[int]int{}
@@ -1004,9 +1004,9 @@ func llCallerBlocks(st mut St, f FnRef, dv mut map[int]int) []bool {
 // 反復ごとには積もらない — 抜けた先で 1 回きり（外のループへ戻れるなら b0 にも戻れる — 外のループが内のループを再び回すので真）。
 // fannkuch の「次の順列」の `while true`（確保は return の手前の println の補間だけ）が反復ごとに軽い enter を払っていた
 // 確保と数えるのは、本体の中で読んだ深度（b0 の enter の後と内側のループのもの）への確保と、呼び手の今の深度で確保しうる呼び出しだけ。本体の外で読んだ深度
-// （本体を支配する — 外の反復・関数の深度）への確保は、enter を消しても行き先が同じ region なので数えない（logagg の語のループで
-// 行の反復の変数への写しを語ごとの確保と数えると、enter と熱いループのレジスタの崩れで命令が目立って増える）。本体の範囲（llLoopBody）が欠けると中の深度を外と誤るので、範囲の正しさが前提
-// 呼び先が失敗の戻りの道だけで確保する関数（eo）なら、その呼び出しの確保はブロックの終わりの「結果の error が非 nil」の辺（then）からだけ辿る
+// （本体を支配する — 外の反復・関数の深度）への確保は、enterを消しても行き先が同じregionなので数えない（logaggのワードのループで
+// 行の反復の変数へのコピーをワードごとの確保と数えると、enterと熱いループのレジスタの崩れで命令が目立って増える）。本体の範囲（llLoopBody）が欠けると中の深度を外と誤るので、範囲の正しさが前提
+// 呼び先が失敗の戻りのパスだけで確保する関数（eo）なら、その呼び出しの確保はブロックの終わりの「結果のerrorが非nil」の辺（then）からだけ辿る
 // （成功の辺は確保を経ていない — 失敗を catch して回すループは then から b0 へ戻るので数えられる）。形が読めなければ全部の後続から（保守的）
 func llAllocContinues(st mut St, f FnRef, b0 BlkRef, ma mut map[int]int, eo mut map[int]int) bool {
     nb := irFnNBlk(mut st, f)
@@ -1116,8 +1116,8 @@ func llConstOf(st mut St, defs map[int]int, v int) (int, bool) {
     return irInsA(mut st, d), true
 }
 
-// 呼び出し c（ブロック b の中）の結果の error? のタグ（sret の置き場の末尾の 5 語の頭 — error? は 5 語）が非 nil なら then へ行く
-// condbr でブロックが終わるか（`ne (load 置き場[語]), 0` — 置き場は呼び出しの第 1 実引数のスロット・gep の定数の添字を足して読む）
+// 呼び出しc（ブロックbの中）の結果のerror? のタグ（sretの配置先の末尾の5ワードの頭 — error? は5ワード）が非nilならthenへ行く
+// condbrでブロックが終わるか（`ne (load 配置先[ワード]), 0` — 配置先は呼び出しの第1実引数のスロット・gepの定数の添字を足して読む）
 func llErrEdge(st mut St, f FnRef, b BlkRef, c InsRef, defs map[int]int) bool {
     if irBlkTerm(mut st, b) != TmCondbr {
         return false
@@ -1184,7 +1184,7 @@ func llErrEdge(st mut St, f FnRef, b BlkRef, c InsRef, defs map[int]int) bool {
     return off == tagAt
 }
 
-// ブロック b の後続を積みに積んで新しい sp
+// ブロックbの後続をスタックに積んで新しいsp
 func llSuccs(st mut St, b BlkRef, stack mut []int, sp0 int) int {
     mut sp := sp0
     t := irBlkTerm(mut st, b)
@@ -1197,7 +1197,7 @@ func llSuccs(st mut St, b BlkRef, stack mut []int, sp0 int) int {
     return sp
 }
 
-// ループ本体（ブロック b0 から、外の深度へ戻す `region.setdepth` で始まるブロックの手前まで — b0 を含む）のブロックの列（訪問済みはブロック番号の表・積みは 1 本の slice）。
+// ループ本体（ブロックb0から、外の深度へ戻す `region.setdepth` で始まるブロックの手前まで — b0を含む）のブロックの列（訪問済みはブロック番号の表・スタックは1本のslice）。
 // 本体の中で読んだ深度へ戻す setdepth（内側のループの頭・出口）は越える — そこで止めると内側のループより後ろの確保を見落とし、外の反復の enter を誤って消す
 // （誤ると routing の行ごとの列が関数の region に積もって RSS が行数に比例する — 反復の region の約束の破れ）
 func llLoopBody(st mut St, b0 BlkRef, nb int) []int {
@@ -1279,7 +1279,7 @@ func llInLoop(st mut St, f FnRef) []bool {
     b0 = irBlkNext(mut st, e)
     while b0 != -1 {
         if llHasEnter(mut st, b0) {
-            // 本体（llLoopBody と同じ走査 — 印は版の番号で使い回す）
+            // 本体（llLoopBodyと同じ走査 — マークは版の番号で使い回す）
             stamp += 1
             mut body := mut []int{}
             mut calls := false
@@ -1306,7 +1306,7 @@ func llInLoop(st mut St, f FnRef) []bool {
             }
             // 本体の途中の setdepth（戻る手前・呼び出しの後の深度の戻し）の後ろは入口の深度でありうる — その本体は諦める
             if calls && !mixed {
-                // 本体が b0 だけから入られるか（本体の b0 以外のブロックの入る辺が全部本体から）・b0 へ直に戻るか本体の外の近くから b0 に着く後続を持つ種
+                // 本体がb0だけから入られるか（本体のb0以外のブロックの入る辺が全部本体から）・b0へ直に戻るか本体の外の近くからb0に着く後続を持つシード
                 for k <- iter.Range(0, len(body)) {
                     x := BlkRef(body[k])
                     sp := llSuccs(mut st, x, mut stack, 0)
@@ -1328,7 +1328,7 @@ func llInLoop(st mut St, f FnRef) []bool {
                         single = false
                     }
                 }
-                // b0 へ戻れる本体のブロック（種から本体の中で逆に — 固定点）
+                // b0へ戻れる本体のブロック（シードから本体の中で逆に — 固定点）
                 mut going := single
                 while going {
                     going = false
@@ -1359,7 +1359,7 @@ func llInLoop(st mut St, f FnRef) []bool {
     return freeze(inl)
 }
 
-// ブロック s から 16 ブロック以内の前向きの探索で b0 に着くか（ループの頭 → 条件 → b0 の短い鎖 — 長い道は偽〔保守的〕）
+// ブロックsから16ブロック以内の前向きの探索でb0に着くか（ループの頭 → 条件 → b0の短いチェーン — 長いパスは偽〔保守的〕）
 func llNear(st mut St, s BlkRef, b0 BlkRef) bool {
     mut stack := mut []int{}
     mut sp := llPush(mut stack, 0, int(s))
@@ -1388,7 +1388,7 @@ func llHasEnter(st mut St, b BlkRef) bool {
     return false
 }
 
-// ブロック b の命令の印: 1 = 利用者の関数の直の呼び出しがある・2 = region.setdepth がある
+// ブロックbの命令のフラグ: 1 = 利用者の関数の直の呼び出しがある・2 = region.setdepthがある
 func llBlkScan(st mut St, b BlkRef) int {
     mut k := 0
     mut i := irBlkIHead(mut st, b)
@@ -1455,7 +1455,7 @@ func rlEligible(st mut St, f FnRef) bool {
                 }
                 r := irFnRFree(mut st, g)
                 // rt.panic / rt.panic_mem は戻らない（P0 の rfCallees と同じ — std/task のプログラムでは P0 を満たさない）。
-                // 戻らない利用者の関数（ラベル panic の冷たい関数 — task のプログラムでは印字の道が region を使うので P0 を満たさない）も
+                // 戻らない利用者の関数（ラベルpanicの冷たい関数 — taskのプログラムでは印字のパスがregionを使うのでP0を満たさない）も
                 // 同じ特例（#8 の原理 — llReturns のコメント。この判定が無いと Load64 の入口の enter が task のプログラムでだけ light のまま残り、
                 // 展開先の insert / longest が ≈ 20 命令 / 呼び出しを払う）。llReturns は最後（短絡 — 落ちる呼び出しだけ走査）
                 free := (r >= 0 && desugar.HeapGet(mut st.d, r) == 1) || g == st.rtPanic || g == st.rtPanicMem
@@ -1574,15 +1574,15 @@ func rlBuild(st mut St, fnr FnRef, gen bool) {
 }
 
 // 葉の region の省略（M15 — 最適化のバックエンドの経路だけ・regionLightModule の手前）: 自分の深度で何も確保しない葉の関数の
-// `region.enter` を消す（深度を進めない）。的 = 可謬の葉（utf8.Str 等 — 結果の集約の置き場〔スロット〕と出口の relocate があるので M9 の軽い enter の対象外）。
+// `region.enter` を消す（深度を進めない）。ターゲット = 可謬の葉（utf8.Str等 — 結果の集約の配置先〔スロット〕と出口のrelocateがあるのでM9の軽いenterの対象外）。
 // 条件（保守的）:
 //   ① region.enter がちょうど 1 つで入口のブロックにあり、region.depth は enter より前（呼び手の深度）にしか無い — 確保の深度の被演算子は呼び手以下だけ
 //   ② 直に呼ぶのは P0 の region を使わない関数と、今の深度に確保しない rt（panic・relocate・str_eq）だけ・間接呼び出しなし
-//      — region を使わない関数は region を使う関数を呼ばないので f へ戻る路が無い（再帰に関与しない・深度の加算は静的に 0 段で有界）。
-//      戻らない利用者の関数（ラベル panic の冷たい関数 — 727）も可: 戻らないので f へ戻る路が無く、region を使っても死ぬ道の 1 回分だけ。
-//      戻る道で region に触れない関数（reQuiet — region を使うのは戻らない呼び出しの先だけ。binary.Load64 の境界の panic の形）も同じ理由で可
+//      — regionを使わない関数はregionを使う関数を呼ばないのでfへ戻る路が無い（再帰に関与しない・深度の加算は静的に0レベルで有界）。
+//      戻らない利用者の関数（ラベルpanicの冷たい関数 — 727）も可: 戻らないのでfへ戻る路が無く、regionを使っても死ぬパスの1回分だけ。
+//      戻るパスでregionに触れない関数（reQuiet — regionを使うのは戻らない呼び出しの先だけ。binary.Load64の境界のpanicの形）も同じ理由で可
 // 書き換え = enter を消し、relocate（宛先 = 呼び手の深度 = 省略後の今の深度。値は全部それ以下に住むので空振り）と出口の setdepth（同じ深度へ戻すだけ）も消す。
-// 観測: 深度の上限（27 節 — 実装の限界であって意味ではない）に届く段数が葉の分だけ遅れる方向にしか動かない（再帰の資源の有界性は再帰の輪の中の enter が守る）
+// 観測: 深度の上限（27 節 — 実装の限界であって意味ではない）に届く段数が葉の分だけ遅れる方向にしか動かない（再帰の資源の有界性は再帰のループの中のenterが守る）
 func regionElideModule(st mut St) {
     why := rflowWhyEnv()
     // 省いた関数は呼び手の判定（呼び先が region を使うか）を変えうるので、省けた関数が無くなるまで回す（関数の並びの順に依らない）
@@ -1643,10 +1643,10 @@ func reDepthArith(st mut St, f FnRef) bool {
     return false
 }
 
-// g が戻る道で region に触れないか: 自身に region の op・間接呼び出し・task の op が無く、直に呼ぶのは ② の関数（region を使わない・
+// gが戻るパスでregionに触れないか: 自身にregionのop・間接呼び出し・taskのopが無く、直に呼ぶのは ② の関数（regionを使わない・
 // 今の深度に確保しない rt・戻らない利用者の関数）か同じ類の関数だけ。戻れば深度も確保も呼ぶ前のまま — 呼び手から見て region を使わない関数と同じ。
-// region を使うのは戻らない呼び出しの先だけ（死ぬ道の 1 回分）。qm: 0 = 未計算・1 = 触れない・2 = 触れうる・3 = 数えている途中（輪 — 触れうるに倒す）
-// 呼び先をたどる深さ優先は再帰でなく積みで回す（枠 = [関数, ブロック, 命令] の 3 語）— mut の仮引数 2 つの再帰は check で Def に上がらず、
+// regionを使うのは戻らない呼び出しの先だけ（死ぬパスの1回分）。qm: 0 = 未計算・1 = 触れない・2 = 触れうる・3 = 数えている途中（ループ — 触れうるに倒す）
+// 呼び先をたどる深さ優先は再帰でなくスタックで回す（枠 = [関数, ブロック, 命令] の3ワード）— mutの仮引数2つの再帰はcheckでDefに上がらず、
 // 自己 check の時間と RSS が倍になる
 func reQuiet(st mut St, qm mut map[int]int, g FnRef) bool {
     x := qm[int(g)]
@@ -1727,7 +1727,7 @@ func reQuiet(st mut St, qm mut map[int]int, g FnRef) bool {
     return res
 }
 
-// g を数え始める（数えている途中の印 3）か。本体の無い関数と rt は中を見ずに触れうる（2）に倒す — rt の本体は深度の表を直に読み書きする（region の op を持たない）
+// gを数え始める（数えている途中のマーク3）か。本体の無い関数とrtは中を見ずに触れうる（2）に倒す — rtの本体は深度の表を直に読み書きする（regionのopを持たない）
 func reQuietOpen(st mut St, qm mut map[int]int, g FnRef) bool {
     if irFnBHead(mut st, g) == -1 || ilIsRt(mut st, g) {
         qm[int(g)] = 2
@@ -1775,7 +1775,7 @@ func reEligible(st mut St, qm mut map[int]int, why bool, f FnRef) bool {
                 g := irInsFn(mut st, i)
                 r := irFnRFree(mut st, g)
                 free := r >= 0 && desugar.HeapGet(mut st.d, r) == 1
-                // 戻らない利用者の関数も可（rlEligible と同じ特例 — 727。戻らないので f へ戻る路が無く、深度の加算は死ぬ道の 1 回分だけ）
+                // 戻らない利用者の関数も可（rlEligibleと同じ特例 — 727。戻らないのでfへ戻る路が無く、深度の加算は死ぬパスの1回分だけ）
                 if !free && !reRtOk(mut st, g) && llReturns(mut st, g) && !reQuiet(mut st, mut qm, g) {
                     reWhy(mut st, why, f, "callee using regions:", g)
                     return false
@@ -1811,17 +1811,17 @@ func reRewrite(st mut St, f FnRef) {
         }
         b = irBlkNext(mut st, b)
     }
-    // 消した命令を鎖から外して番号を詰める（depth.sober と同じ後始末）
+    // 消した命令をチェーンから外して番号を詰める（depth.soberと同じ後始末）
     optReset(mut st, irFnNVal(mut st, f), irFnNBlk(mut st, f))
     optDce(mut st, f)
     optRenumber(mut st, f)
 }
 
-// enter の無い関数の、今の深度への relocate を消す（葉の省略の 2 回目の後 — C1 で enter を消した関数の出口の relocate が的）。
+// enterの無い関数の、今の深度へのrelocateを消す（葉の省略の2回目の後 — C1でenterを消した関数の出口のrelocateがターゲット）。
 // region.enter も深度を上げる rt（軽い enter）も無く、setdepth は region.depth の結果へ戻すだけで、深度の値を算術に使うのは宛先構築の式
 // （W_DEST / W_ANCHOR の読みに依る — どちらも呼び手が書く呼び手の深度以下の値で、結果は D 以下。rfVerify と同じ認識）だけの関数では、
 // region.depth の結果は全部入口の深度 D（呼び先は戻る前に深度を戻す）。生きている値は全部 D 以下に住む（実引数は呼び手の深度以下・
-// 呼び先の結果は呼び先の出口で D 以下へ写されている・自前の確保は D か宛先〔呼び手の深度以下〕）ので、行き先が D の relocate は何も写さない。
+// 呼び先の結果は呼び先の出口でD以下へコピーされている・自前の確保はDか宛先〔呼び手の深度以下〕）ので、行き先がDのrelocateは何もコピーしない。
 // rflow の判定（rfPtrMask が呼び先の出口の relocate を数える）と葉の省略が済んだ後に掛ける
 func relocNoopModule(st mut St) {
     mut f := st.fhead

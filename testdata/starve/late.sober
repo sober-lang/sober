@@ -1,6 +1,6 @@
-// 浅い積みの越え（Ledger の late / maxLate の網 — scripts/starve.sh）: 同時に起きる 3 本の task がそれぞれ CPU を 300 ms 以上握る。
+// 浅いスタックの越え（Ledgerのlate / maxLateの検査 — scripts/starve.sh）: 同時に起きる3本のtaskがそれぞれCPUを300 ms以上握る。
 // 同じワーカーで後に走る側は D を越えて待つ — late ≥ 1・maxLate > 0 を出す。
-// 3 本はワーカー 2 本（starve.sh）より多い: 眠りから覚めた task は盗まれないので、どれか 2 本は同じワーカーで起きる
+// 3本はワーカー2本（starve.sh）より多い: スリープから覚めたtaskは盗まれないので、どれか2本は同じワーカーでウェイクアップする
 // （2 本だと、未着手のうちに盗まれて 2 本が別のワーカーで並んで走り、誰も待たない回がある）
 package main
 

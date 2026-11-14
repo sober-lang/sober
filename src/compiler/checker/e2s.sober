@@ -1,6 +1,6 @@
 package checker
 
-// E2-S の逃げ（docs/formal.md「check の callM の段」の条件 6）: 脱糖器が callM へ上げた関数のうち、本体が Def として型付かなかったものを
+// E2-Sの逃げ（docs/formal.md「checkのcallMの段階」の条件6）: 脱糖器がcallMへ上げた関数のうち、本体がDefとして型付かなかったものを
 // 検査器の判定で集め、展開へ戻して脱糖し直す（周回）。展開へ戻すのは型付けを緩めるだけなので単調に収束する。最後の周回の判定をそのまま使う
 // （落ちた上げた関数が無い周回 = 判定が確定した周回）。周回 1 回は 1 つの関数（Def）に割る — 脱糖器のヒープの region を周回ごとに捨てるため
 
@@ -26,7 +26,7 @@ type Round struct {
 }
 
 func roundOf(c desugar.Core, m []int, idx bool, stop int, rng desugar.DefRng) Round {
-    // 計測の口（SOBER_CHECK_STOP=desugar）: 脱糖して検査器へ渡すところで止める（判定は空・周回は 1 回で終わる）
+    // 計測用のインターフェース（SOBER_CHECK_STOP=desugar）: 脱糖して検査器へ渡すところで止める（判定は空・周回は1回で終わる）
     if stop != 0 {
         return Round{[]byte{}, -1, []int{}, []int{}, 0, []int{}, []loader.PcPut{}, []int{}, []int{}}
     }
@@ -167,7 +167,7 @@ func rangeRounds(p loader.Program, excl []int, only int, trust bool, stop int, r
     return outs
 }
 
-// 脱糖の拒否の印（Round.def）: 区間の子の拒否と、check の関数単位キャッシュの道の拒否の判定（checkRoundCk）。
+// 脱糖の拒否のマーク（Round.def）: 区間の子の拒否と、checkの関数単位キャッシュのパスの拒否の判定（checkRoundCk）。
 // recs = [帰す先の Def〔関数 i・根 nfn・どれでもない −1〕, 種類, kind, 位置, 2 つ目の位置]（diag.WordsOf・位置は PackPos）
 const R_REJ = -3
 
@@ -260,8 +260,8 @@ func CheckE2Trust(p loader.Program, excl0 []int, dpar bool) ([]byte, error?) {
     return r.round.out, nil
 }
 
-// 計測の口（SOBER_CHECK_STOP=desugar）: 判定の経路（一括 = only -1・trust / excl0 は CheckE2Trust と同じ・package = only）を
-// 脱糖まで走らせて検査器を呼ばずに止める（lvl = 3 脱糖の後・4 表層型検査器の後・5 Def の脱糖の後で写しの前 — WithCoreOpt の stopAt。出力は空 — 脱糖と検査の費用の帰属を perf の命令数の差で取る）
+// 計測用のインターフェース（SOBER_CHECK_STOP=desugar）: 判定の経路（一括 = only -1・trust / excl0はCheckE2Trustと同じ・package = only）を
+// 脱糖まで走らせて検査器を呼ばずに止める（lvl = 3脱糖の後・4表層型検査器の後・5 Defの脱糖の後で変換の前 — WithCoreOptのstopAt。出力は空 — 脱糖と検査の費用の内訳をperfの命令数の差で取る）
 @errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap, diag.Cell, diag.FnArg)
 func CheckStop(p loader.Program, only int, trust bool, excl0 []int, lvl int, dpar bool) ([]byte, error?) {
     r := runE2X(p, false, only, trust, excl0, lvl, dpar)?
@@ -317,7 +317,7 @@ func RunE2C(p loader.Program, trust bool, excl0 []int, dpar bool, cc CkCache) (E
     return runE2C(p, false, -1, trust, excl0, 0, dpar, cc)
 }
 
-// Puts / CkCount / Stale は E2Out のキャッシュの欄の読み口
+// Puts / CkCount / StaleはE2Outのキャッシュのフィールドの読み出し用のインターフェース
 func Puts(r E2Out) []loader.PcPut {
     return r.puts
 }
@@ -326,7 +326,7 @@ func CkCount(r E2Out) []int {
     return r.cnt
 }
 
-// E2Out の確定した周回が脱糖の拒否（check の関数単位キャッシュの道。値の書きの後に返す）ならその拒否（でなければ nil）
+// E2Outの確定した周回が脱糖の拒否（checkの関数単位キャッシュのパス。値の書きの後に返す）ならその拒否（でなければnil）
 @errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap, diag.FnArg, diag.Cell)
 func RejErr(r E2Out) error? {
     if r.round.def != R_REJ {

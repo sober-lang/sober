@@ -16,7 +16,7 @@ func resolveSys(host string) ([][]byte, error?) {
     return resolveIn(host, parseResolvConf(bytesToString(conf)), bytesToString(hosts), 53)
 }
 
-// 名前の解決の本体（port = nameserver の port — 網の偽のサーバのため）
+// 名前の解決の本体（port = nameserverのport — テストの偽のサーバのため）
 @errors(Bad, NoHost, NonASCIIHost, io.Timeout, io.Expired)
 @effects(block, io, nondet)
 func resolveIn(host string, c dnsConf, hostsText string, port int) ([][]byte, error?) {
@@ -69,8 +69,8 @@ func ask(server string, name string, qtype int, timeout int) dnsAnswer {
     return if te != nil { badAnswer() } else { t }
 }
 
-// 問い合わせの txid（getrandom の 2 バイト — 偽の応答への備え。getrandom が無いカーネル〔3.17 未満〕では単調時計の下位で埋める:
-// crypto.Rand の panic を Dial の効果に持ち込まないため）
+// 問い合わせのtxid（getrandomの2バイト — 偽のレスポンスへの備え。getrandomが無いカーネル〔3.17未満〕では単調時計の下位で埋める:
+// crypto.RandのpanicをDialのエフェクトに持ち込まないため）
 @effects(io)
 func txid() int {
     mut b := mut []byte{0, 0}
@@ -82,7 +82,7 @@ func txid() int {
     return ((ns & 255) << 8 | (ns >> 8) & 255) ^ (ns >> 16) & 255
 }
 
-// UDP で 1 回問う（txid と問いの合わない応答は捨てて次の datagram を待つ — 期限まで）
+// UDPで1回問う（txidと問いの合わないレスポンスは捨てて次のdatagramを待つ — 期限まで）
 @effects(block, io, nondet)
 func udpAsk(server string, q []byte, id int, name string, qtype int) dnsAnswer {
     sa := sockaddr(server)

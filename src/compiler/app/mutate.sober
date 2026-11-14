@@ -1,8 +1,8 @@
 package main
 
-// `sober test --mutate`（mutation testing）: package のテストのビルドに全部の変異を入れた 1 本（loader/mutx.sober の schemata）を建て、
-// 基線（変異なし）で各テストを 1 回ずつ走らせて「届いた変異」の印を集め、変異ごとに届いたテストだけを名前の順に走らせて最初に落ちたところで
-// kill と数える。どのテストも届かない変異は走らせずに未到達。期限は基線のそのテストの時間 × 10 + 0.5 s（子が自分で SIGALRM）。
+// `sober test --mutate`（mutation testing）: packageのテストのビルドに全部のミュータントを入れた1本（loader/mutx.soberのschemata）をビルドし、
+// 基線（ミュータントなし）で各テストを1回ずつ走らせて「届いたミュータント」のフラグを集め、ミュータントごとに届いたテストだけを名前の順に走らせて最初に落ちたところで
+// killと数える。どのテストも届かないミュータントは走らせずに未到達。期限は基線のそのテストの時間 × 10 + 0.5 s（子が自分でSIGALRM）。
 // スコア = kill / 到達（未到達は分母に入れない — 「テストが無い」と「テストが弱い」を分ける）
 
 import "std/io"
@@ -15,7 +15,7 @@ import "loader"
 import "lower"
 import "desugar"
 
-// 変異 1 体の結果（res = survived / unreached / ignored / killed / mem / timeout / crash・by = 殺したテスト）
+// ミュータント1体の結果（res = survived / unreached / ignored / killed / mem / timeout / crash・by = 殺したテスト）
 type MutRes struct {
     at string
     desc string
@@ -25,7 +25,7 @@ type MutRes struct {
 }
 
 // package 1 つ分の mutation testing（log = 印字の列〔結果の再生の値 — --mutate-out の行は fd 3 の項として積み、印字しない〕・
-// one ≥ 0 なら変異 one だけの build で全部のテストを走らせて 1 行 — 照合の網）。変異の実行は task.Map で並べる（子プロセスは /dev/null へ）
+// one ≥ 0ならミュータントoneだけのbuildで全部のテストを走らせて1行 — 照合の検査）。ミュータントの実行はtask.Mapで並べる（子プロセスは /dev/nullへ）
 func mutatePkg(pkg string, std map[string]string, work string, prefix string, log mut []byte, one int) TestTally {
     p, lerr := loadTestMutate(pkg, std, one)
     if lerr != nil {
@@ -68,7 +68,7 @@ func mutatePkg(pkg string, std map[string]string, work string, prefix string, lo
         }
         return TestTally{pass: 0, fail: 0, files: fs, envs: ev.names, envOk: false, cover: noCover()}
     }
-    // 基線: 各テストを 1 回ずつ（届いた変異の印と時間）
+    // 基線: 各テストを1回ずつ（届いたミュータントのフラグと時間）
     mut pass := 0
     mut failn := 0
     mut reach0 := mut [][]bool{}
@@ -102,7 +102,7 @@ func mutatePkg(pkg string, std map[string]string, work string, prefix string, lo
     hang := freeze(hang0)
     ign := mutIgnore(pkg)
     ord := covOrder(pts)
-    // 走らせる変異（位置の順・届いて抑止されていないもの）
+    // 走らせるミュータント（位置の順・届いて抑止されていないもの）
     mut todo := mut []int{}
     mut used := mut []bool{}
     for i <- iter.Range(0, len(ign)) {
@@ -156,7 +156,7 @@ func mutatePkg(pkg string, std map[string]string, work string, prefix string, lo
     return TestTally{pass: pass, fail: failn, files: fs, envs: ev.names, envOk: ev.ok, cover: noCover()}
 }
 
-// 変異 k を、k に届いたテストで名前の順に走らせる（最初に落ちたところで打ち切り）。結果 = `<結果>\t<殺したテスト>`
+// ミュータントkを、kに届いたテストで名前の順に走らせる（最初に落ちたところで打ち切り）。結果 = `<結果>\t<殺したテスト>`
 func mutRun(bin string, names []string, reach [][]bool, hang []int, corpus string, k int) string {
     for t <- iter.Range(0, len(names)) {
         if reach[t][k] {
@@ -169,7 +169,7 @@ func mutRun(bin string, names []string, reach [][]bool, hang []int, corpus strin
     return "survived\t-"
 }
 
-// どれかのテストが変異 k に届いたか
+// どれかのテストがミュータントkに届いたか
 func mutReached(reach [][]bool, k int) bool {
     for t <- iter.Range(0, len(reach)) {
         if reach[t][k] {
@@ -179,7 +179,7 @@ func mutReached(reach [][]bool, k int) bool {
     return false
 }
 
-// package の testdata/mutate.ignore の行（`<位置>\t<変異>` — --mutate-out の行の頭 2 欄。後ろの欄・空行・`#` の行は捨てる。無ければ空）
+// packageのtestdata/mutate.ignoreの行（`<位置>\t<変異>` — --mutate-out の行の頭2フィールド。後ろのフィールド・空行・`#` の行は捨てる。無ければ空）
 func mutIgnore(pkg string) []string {
     b := io.ReadFile("${pkg}/testdata/mutate.ignore") catch return []string{}
     src := string(b) catch return []string{}
@@ -207,7 +207,7 @@ func mutIgnored(ign []string, at string, desc string) int {
     return -1
 }
 
-// テストのビルドの mutation testing の写しつき（parse のキャッシュは使わない）
+// テストのビルドの mutation testing の変換つき（parseのキャッシュは使わない）
 func loadTestMutate(pkg string, std map[string]string, one int) (loader.Program, error?) {
     p, lerr := loader.LoadTestFsMutate(pkg, std, one)
     if lerr != nil {

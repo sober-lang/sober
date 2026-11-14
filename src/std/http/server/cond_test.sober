@@ -1,7 +1,7 @@
 package server
 
-// 条件付き GET の部品の網（white-box — 非公開の httpDate / parseDate / tagIn / etagOf / cacheValue）: HTTP の日付の書きと読み（RFC 9110 5.6.7 の 3 形・
-// 閏年・世紀・範囲の外・壊れた形）・書いて読むの往復・entity-tag のリストの比較（弱い / 強い・`*`・空白とコンマ・崩れた形）・ETag の変種の印・Cache-Control の値
+// 条件付きGETの部品の検査一式（white-box — 非公開のhttpDate / parseDate / tagIn / etagOf / cacheValue）: HTTPの日付の書きと読み（RFC 9110 5.6.7の3形・
+// 閏年・世紀・範囲の外・壊れた形）・書いて読むの往復・entity-tagのリストの比較（弱い / 強い・`*`・空白とコンマ・崩れた形）・ETagの変種のマーク・Cache-Controlの値
 
 import "std/io"
 
@@ -106,7 +106,7 @@ func TestCacheValue() {
     assert(cacheValue(NoStore{}) == "no-store")
 }
 
-// sendUnder は開き直した実体の大きさか更新時刻が handler で見た値と違えば ESTALE（差し替えの窓 — 古い ETag に新しいバイト列を載せない）
+// sendUnderは開き直した実体の大きさか更新時刻がhandlerで見た値と違えばESTALE（差し替えのウィンドウ — 古いETagに新しいバイト列を載せない）
 func TestSendUnderStale() {
     w := "out/http_cond_test"
     _ = io.WriteFile(w + ".txt", bytes("abc"))

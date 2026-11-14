@@ -1,6 +1,6 @@
 package main
 
-// 関数型の結果を通る struct との相互再帰（状態を返し直す生成器）: Next は次の 1 歩 Step を返し、Step は続きの Next を持つ。
+// 関数型の結果を通るstructとの相互再帰（状態を返し直すジェネレータ）: Nextは次の1歩Stepを返し、Stepは続きのNextを持つ。
 // 仮引数 0 本の named fn type が組の成分になる形
 
 type Next func() Step

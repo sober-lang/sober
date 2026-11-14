@@ -1,6 +1,6 @@
 package wire
 
-// @layout の struct を他 package に置く（language.md 36 節）: 写しの関数は呼ぶ側のファイルごとに合成される — この package は宣言だけ
+// @layoutのstructを他packageに置く（language.md 36 節）: コピーの関数は呼ぶ側のファイルごとに合成される — このpackageは宣言だけ
 
 @layout
 type Frame struct {

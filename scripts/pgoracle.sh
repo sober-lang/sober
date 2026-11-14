@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# pgoracle（std/pg の実 PostgreSQL との相互接続の網）: 使い捨ての PostgreSQL（17 と 18 — TLS つき・SCRAM の役割）を立て、
+# pgoracle（std/pgの実PostgreSQLとの相互接続の検査）: 使い捨てのPostgreSQL（17と18 — TLSつき・SCRAMの役割）を立て、
 # std/internal/pgwire と std/pg の TestOracle を SOBER_PG_ORACLE で走らせる。PostgreSQL のバイナリが要るので gates に入れない（R2 / R3 の節目に手で回す）。
-# バイナリ = PG_BIN_17 / PG_BIN_18（initdb・pg_ctl・postgres のある bin/ — 既定は embedded-postgres の写し ~/.cache/sqlshape/pg-<版>/bin）。
-# 片方しか無ければある方だけで走る（無い方は名指しで飛ばす）。証明書は openssl で毎回作る（自己署名の CA + localhost / 127.0.0.1 の葉 — RSA 2048）
+# バイナリ = PG_BIN_17 / PG_BIN_18（initdb・pg_ctl・postgresのあるbin/ — 既定はembedded-postgresのコピー ~/.cache/sqlshape/pg-<版>/bin）。
+# 片方しか無ければある方だけで走る（無い方は明示して飛ばす）。証明書はopensslで毎回作る（自己署名のCA + localhost / 127.0.0.1の葉 — RSA 2048）
 #   scripts/pgoracle.sh
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -57,7 +57,7 @@ done
 [ "$n" -gt 0 ] || { echo "pgoracle: FAIL — no PostgreSQL binaries"; exit 1; }
 SOBER_PG_ORACLE=$conf "$ROOT/bin/sober" test std/internal/pgwire std/pg --run TestOracle -v --fresh
 rc=$?
-# ガイドの例（examples/pg_*.sober — .out を持たない: 検査の網は DB を持たないので建てて検査するだけ）を各サーバに向けて走らせ、
+# ガイドの例（examples/pg_*.sober — .outを持たない: 検査一式はDBを持たないのでビルドして検査するだけ）を各サーバに向けて走らせ、
 # 出力を testdata/pg/<例>.out と照合する（TLS + SCRAM-SHA-256-PLUS・私的 CA）
 for ex in pg_shop pg_transfer pg_pool; do
     "$ROOT/bin/sober" build "$ROOT/examples/$ex.sober" -o "$W/$ex" > "$W/$ex.build.log" 2>&1 \

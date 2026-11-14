@@ -1,4 +1,4 @@
-// binary-trees の Go の双子（benchmarks game の定番の形 — ポインタの木と GC・逐次）
+// binary-treesの比較用のGoの実装（benchmarks gameの定番の形 — ポインタの木とGC・逐次）
 package main
 
 import (

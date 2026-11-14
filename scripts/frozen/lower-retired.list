@@ -1,7 +1,7 @@
 # 凍結コーパスの lower 側（Zig ≡ Sober の lower / .ll / CLI の照合 — selfhost_lower・selfhost_ll・selfhost_cli）から退役させた entry。
-# 退役の理由（2026-09-29、裁定 (A1)）: 凍結した Zig 版の lower が健全性の穴を持つ — ブロック本体のラムダ（文形 for の本体を含む）を
+# 退役の理由（2026-09-29、決定 (A1)）: 凍結したZig版のlowerが健全性の穴を持つ — ブロック本体のラムダ（文形forの本体を含む）を
 # 式位置の `{ }` として region で囲んで下ろす（check = 脱糖器は scope だけ）。本体で確保した値を外へ書き戻すと宙吊りになる。
-# Sober 版 lower を check に揃えた（閉包の本体の `{ }` は armValue — region を開かない）ので、閉包の本体に `{ }` を持つ次の entry は Zig と IR が一致しなくなった。
+# Sober版lowerをcheckに揃えた（クロージャの本体の `{ }` はarmValue — regionを開かない）ので、クロージャの本体に `{ }` を持つ次のentryはZigとIRが一致しなくなった。
 # 脱糖・Lean の照合（selfhost_e2e など — entries.list を直に読む）は影響を受けないので残す。ここに載せた entry は lower 側のゲートだけが飛ばす（gatelib の frozen_lower）
 examples/early_return.sober
 examples/early_return_pure.sober
@@ -9,10 +9,10 @@ examples/inline.sober
 testdata/frozen_src/examples/lexer_iter.sober
 examples/map_keys.sober
 
-# ── 2026-10-01（byte の段 S4 — 草案 G1・決定）: **凍結コーパスの lower 側を全部退役** ──
-# 理由: string = imm []byte に切り替えた（段 C）。ランタイムの関数（str_eq・print_str・io の 7 本・byte の列の rt8）がすべての IR / .ll に出るので、
+# ── 2026-10-01（byteの段階S4 — 草案G1・決定）: **凍結コーパスのlower側を全部退役** ──
+# 理由: string = imm []byteに切り替えた（段階C）。ランタイムの関数（str_eq・print_str・ioの7本・byteの列のrt8）がすべてのIR / .llに出るので、
 # string を使わない entry も含めて凍結した Zig 版の IR と一致しなくなった（詰めが目的そのもの — 草案 G1）。compiler/tools/<名前> の行は各ゲートの
-# 道具の自己適用（起点の木の compiler/tools を Zig と Sober で下ろして比べる）を飛ばす印。残る網 = obs（x86 / LLVM の実行一致）・Lean・Sober 生成の黄金
+# 道具の自己適用（起点の木のcompiler/toolsをZigとSoberで下ろして比べる）を飛ばすマーク。残る検査 = obs（x86 / LLVMの実行一致）・Lean・Sober生成のゴールデン
 examples/annot.sober
 examples/arith_edge.sober
 examples/bind.sober

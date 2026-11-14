@@ -8,9 +8,9 @@ package iface
 // - 展開される関数（関数型の引数・mut 引数 — loader の fn_expands）・総称関数 = 宣言ごと（脱糖器の inlineCall・単相化が本体を要る）
 // - 他の関数 = 署名だけ（注釈 `@errors` / `@noinline` つき — 本体なし）
 // - std の `@intrinsic` の宣言 = 載せた範囲（展開される関数の本体）が参照したものだけ（std/io の Chunks — 本体から鍵を呼ぶ展開される関数。stage1 の .sobi には無い — std だけ）
-// - 畳める const = 畳んだ値だけ（`const step = 4` — `@secret` の印は残す）・他の const（辞書・@embed）は原文の宣言のまま
+// - 畳めるconst = 畳んだ値だけ（`const step = 4` — `@secret` のマークは残す）・他のconst（辞書・@embed）は原文の宣言のまま
 // - E2-S の逃げ（callM の Def として型付かなかった関数 — checker.ExclE2）は宣言の前に `@expand`（呼び出し点ごとに展開する — 判定 D'）
-// 載せる範囲 = 根（公開の項目 + error ラベル全部）からのリンク可視の閉包: 載せた範囲の識別子（欄の選択 `x.f` の f と文字列リテラルを除く）が
+// 載せる範囲 = 根（公開の項目 + errorラベル全部）からのリンク可視の閉包: 載せた範囲の識別子（フィールドの選択 `x.f` のfと文字列リテラルを除く）が
 // package のトップレベル名（union の variant 名はその union）なら足す。import は載せた範囲が参照したものだけ（暗黙の import は落とす）。
 // 並びは印字器の file と同じ: 型 → const → 関数（種類の中はファイル順 × 宣言順 — 関数表・error のタグの順は種類の中の順だけを使う）
 
@@ -29,8 +29,8 @@ type Item struct {
     name string
 }
 
-// package pk の .sobi の本文（excl = E2-S の逃げの関数の表の添字）。raw = ファイルごとのソースを読み直した生の木（loader の写しの前 —
-// @layout の欄の幅の型・@embed の受け皿・catch を原文のまま書くため。loader の写しは節を末尾に足すか同じ添字で差し替えるだけなので、宣言の節の添字は
+// package pk の .sobiの本文（excl = E2-Sの逃げの関数の表の添字）。raw = ファイルごとのソースを読み直した生の木（loaderの変換の前 —
+// @layoutのフィールドの幅の型・@embedの受け皿・catchを原文のまま書くため。loaderの変換は節を末尾に足すか同じ添字で差し替えるだけなので、宣言の節の添字は
 // p の表〔fn_node / c_node〕とそろう）。読み直せないファイル（loader が合成した `$layout/…` — file = -1）は載せない（依存する側の loader が自分の
 // 呼び出しのぶんを合成し直す）
 func Emit(p loader.Program, pk int, excl []int, raw []ast.Tree) []byte {
@@ -61,7 +61,7 @@ func Emit(p loader.Program, pk int, excl []int, raw []ast.Tree) []byte {
         if inc[i] && items[i].kind == 2 {
             ci := constIndex(q, items[i])
             if ci >= 0 && !q.c_dict[ci] && q.c_has[ci] {
-                // 畳んだ値でも `@secret` の印は落とさない（源の宣言 — language.md 12 節「秘密の値の宣言」）
+                // 畳んだ値でも `@secret` のマークは落とさない（源の宣言 — language.md 12 節「秘密の値の宣言」）
                 if (q.trees[items[i].file].nodes[items[i].node].f & 2) != 0 {
                     obuf.Lit(mut out, "@secret\n")
                 }
@@ -222,8 +222,8 @@ func constIndex(p loader.Program, it Item) int {
     return -1
 }
 
-// 関数を宣言ごと載せるか（展開される・総称・省略可の匿名関数型の仮引数を持つ — 依存する側の loader が呼び出し点の有無で写し分ける。
-// loader の写しの後の関数表に元の宣言は載らないので、生の木の仮引数で見る — loader/optfn.sober）
+// 関数を宣言ごと載せるか（展開される・総称・省略可の匿名関数型の仮引数を持つ — 依存する側のloaderが呼び出し点の有無で変換し分ける。
+// loaderの変換の後の関数表に元の宣言は載らないので、生の木の仮引数で見る — loader/optfn.sober）
 func wholeFn(p loader.Program, it Item, fi int) bool {
     t := p.trees[it.file]
     return (fi >= 0 && p.fn_expands[fi]) || ast.ListLen(t, t.nodes[it.node].b) > 0 || optFnDecl(t, it.node)
@@ -259,7 +259,7 @@ func isParRedirect(p loader.Program, it Item) bool {
     return p.pkg_path[p.file_pkg[it.file]] == "std/task" && (it.name == "gatherE" || it.name == "mapE")
 }
 
-// 載せる項目の印（根 = 公開 + error ラベル・リンク可視の閉包）
+// 載せる項目のフラグ（根 = 公開 + errorラベル・リンク可視の閉包）
 func closure(p loader.Program, items []Item, names map[string]int) []bool {
     mut inc := mut []bool{}
     for i <- iter.Range(0, len(items)) {

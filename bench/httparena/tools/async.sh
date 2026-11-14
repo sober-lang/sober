@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # async.sh <srv> [conns] [secs] [env…] — async の形（GET /delay/10 を conns 接続で保持 — 本家の async 種目・天井 = conns / 10 ms）を 1 回掛けて、
-# req/s・p50 / p99・サーバの CPU µs / 要求（utime + stime）・中間の VmSize・reconnects を 1 行に（report-691 3 節 — 眠りの器〔rt.sleep・期限・タイマー〕を触ったら前後を交互に）。
+# req/s・p50 / p99・サーバのCPU µs / リクエスト（utime + stime）・中間のVmSize・reconnectsを1行に（report-691 3 節 — スリープの器〔rt.sleep・期限・タイマー〕を触ったら前後を交互に）。
 # 既定 4096 接続 × 8 秒（本家は 32000 — 手元の ephemeral の範囲〔32768〜60999 = 28K〕では張れない。GHA の local.sh async で）。
 # サーバの port は 18000 番台（ephemeral の範囲の外 — 乱数の port が ephemeral に当たると TIME_WAIT の客側 port と衝突して起動できない: 691 で 1024 の 3 回が
-# これで落ちた。local.sh と同じ穴・同じ直し）。要求の raw は $R/async-delay.raw（HttpArena の requests/ — env.sh の注）
-. "$(dirname "$0")/env.sh"   # GC・R・W — env.sh の注
+# これで落ちた。local.shと同じ穴・同じ直し）。リクエストのrawは $R/async-delay.raw（HttpArenaのrequests/ — env.shの注記）
+. "$(dirname "$0")/env.sh"   # GC・R・W — env.shの注記
 srv=$1; c=${2:-4096}; d=${3:-8}; shift 3 2>/dev/null || shift $#
 [ -f "$R/async-delay.raw" ] || { echo "async.sh: $R/async-delay.raw not found（HttpArena の requests/async-delay.raw）" >&2; exit 2; }
 port=$((18000 + RANDOM % 900))

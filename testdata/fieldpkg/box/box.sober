@@ -1,7 +1,7 @@
 package box
 
-// 欄の書き / 読みの規則（language.md 20 節）の相手の package: 他の package（testdata/fieldpkg/app・testdata/analyzer_neg/field_*）から見た struct。
-// 欄の書きはこの package の中だけ。mut の中身を持つ欄（xs・tags）は外から読めない — 読み書きは関数を通す
+// フィールドの書き / 読みの規則（language.md 20 節）の相手のpackage: 他のpackage（testdata/fieldpkg/app・testdata/analyzer_neg/field_*）から見たstruct。
+// フィールドの書きはこのpackageの中だけ。mutの中身を持つフィールド（xs・tags）は外から読めない — 読み書きは関数を通す
 type Inner struct {
     k int
 }

@@ -1,12 +1,12 @@
 package main
 
 // std/http/server の静的ファイル（language.md 28 節「静的ファイル」）: http.server.Static(prefix, root, precompressed:) は `GET <prefix>/*path` の 1 行の表を返し、
-// 要求ごとに root を io.OpenRoot して `*path` を io.OpenUnder で開く（root の外へ出ないのはカーネルの保証 — `..`・外を指す symlink は 404）。
+// リクエストごとにrootをio.OpenRootして `*path` をio.OpenUnderで開く（rootの外へ出ないのはカーネルの保証 — `..`・外を指すsymlinkは404）。
 // precompressed は Accept-Encoding で `.br` / `.gz` を選んで素通しし、Content-Encoding と Vary を付ける。Content-Type は元の名前の拡張子。
-// 条件付き GET: 弱い ETag（送る変種の更新時刻と大きさ + 変種の印）・Last-Modified・Cache-Control（cache: — 省略は no-cache）。If-None-Match の一致・
+// 条件付きGET: 弱いETag（送る変種の更新時刻と大きさ + 変種のマーク）・Last-Modified・Cache-Control（cache: — 省略はno-cache）。If-None-Matchの一致・
 // If-Modified-Since のちょうどの一致は 304（ETag・Cache-Control・Vary だけ — Content-Length も本文も無い）・If-Match / If-Unmodified-Since が偽なら 412。
 // 更新時刻は touch -d で固定する（ETag と Last-Modified が決まる）。
-// loopback で 1 本の task が Dial → パイプラインの要求を送る → Accept して ServeConn → 応答を受ける（http_stream の形）。
+// loopbackで1本のtaskがDial → パイプラインのリクエストを送る → AcceptしてServeConn → レスポンスを受ける（http_streamの形）。
 // リポジトリのルートを cwd にして実行する（作業域は out/http_static — symlink は ln で張る）
 
 import "std/http/server"
@@ -66,7 +66,7 @@ func req(method string, path string, ae string) string {
     return "${method} ${path} HTTP/1.1\r\nHost: x\r\n${ae}\r\n"
 }
 
-// 条件付き GET の要求（index.html の ETag = W/"17979cfe53f76500-9"・更新時刻の秒 = Tue, 14 Nov 2023 22:13:20 GMT・
+// 条件付きGETのリクエスト（index.htmlのETag = W/"17979cfe53f76500-9"・更新時刻の秒 = Tue, 14 Nov 2023 22:13:20 GMT・
 // app.js = W/"17979cfe71c4ca00-8"・app.js.br = W/"17979cfee8fa5e00-4-br"）
 func conds() string {
     ix := "W/\"17979cfe53f76500-9\""

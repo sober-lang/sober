@@ -1,6 +1,6 @@
 package desugar
 
-// domain の値がそれを作った scope より長く生きる場所へ流れる形の名指し（diag.Par kind 39 — コアの region の上界: domain は家の region より外へ出ない）。
+// domainの値がそれを作ったscopeより長く生きる場所へ流れる形の特定（diag.Par kind 39 — コアのregionの上界: domainは家のregionより外へ出ない）。
 // コアの検査（Lean）も同じ形を拒否するが build は通らないので、ここで check と build の両方に鳴らす。
 // 深さ = 関数の本体を 0 として、task.Run の本体と scope を作る関数へ渡したラムダの本体で 1 つ深くなる。値の家 = それが運ぶ domain を作った scope の深さ
 // （仮引数から来たものは 0）。拒否するのは ① 局所の束縛を根とする場所へ、根の束縛より深い家の値を書く ② mut 仮引数を根とする場所へ domain を運ぶ値を書く
@@ -11,10 +11,10 @@ import "std/iter"
 import "std/table"
 
 const DE_NONE = -1
-// 束縛の印: task.Run の札（深さ = その scope の深さ）・mut 仮引数（深さの欄）
+// 束縛のマーク: task.Runの札（深さ = そのscopeの深さ）・mut仮引数（深さのフィールド）
 const DE_SCOPE = -5
 const DE_MUTP = -1
-// 束縛の環境の 1 項 = [名前, 深さ, 家]・ヒープの頭 3 語 = [領域の始め, 容量, 先端]
+// 束縛の環境の1項 = [名前, 深さ, 家]・ヒープの頭3ワード = [領域の始め, 容量, 先端]
 const DE_W = 3
 const DE_CAP0 = 1024
 
@@ -45,7 +45,7 @@ func dePush(st mut S, hd int, name int, depth int, home int) {
     cap := hget(mut st, hd + 1)
     tp := hget(mut st, hd + 2)
     if tp == cap {
-        // 容量を倍にした領域をヒープの末尾に取り直す（項は添字でしか指さないので写してよい）
+        // 容量を倍にした領域をヒープの末尾に取り直す（項は添字でしか指さないのでコピーしてよい）
         nb := hlen(mut st)
         for i <- iter.Range(0, cap * 2 * DE_W) {
             hpush(mut st, if i < cap * DE_W { hget(mut st, eb + i) } else { 0 })
@@ -156,7 +156,7 @@ func deBad(st mut S, e int, h int) bool {
     return dep == DE_MUTP || (dep >= 0 && hget(mut st, e + 2) != DE_SCOPE && h > dep)
 }
 
-// 木 n を深さ d で歩く（ph = パターンが束ねる名前の家 — switch の主語の家）
+// 木nを深さdで歩く（ph = パターンがまとめる名前の家 — switchの主語の家）
 func deWalk(st mut S, hd int, n NodeRef, d int, ph int) PcHit {
     if n == -1 {
         return pcNone()
@@ -277,7 +277,7 @@ func deKids(st mut S, hd int, x ast.Node, d int, ph int) PcHit {
     return pcNone()
 }
 
-// ラムダ lam の仮引数を家 hp で束ね、本体を深さ bd で歩く
+// ラムダlamの仮引数を家hpでまとめ、本体を深さbdで歩く
 func deLam(st mut S, hd int, lam NodeRef, bd int, hp int, ph int) PcHit {
     x := nodeOf(mut st, lam)
     ps := lA(x)
@@ -390,7 +390,7 @@ func deScopes(st mut S, fk int) bool {
     }
     deMemoPut(mut st, 4503599627370496 + fk, 3)
     if deMemoGet(mut st, 4503599627370496 + fk) != 3 {
-        // メモの表が溢れた（調べ中の印が置けない — 再帰で止まらない）: scope を作るとみなす（拒否の側）
+        // メモの表が溢れた（調べ中のマークが置けない — 再帰で止まらない）: scopeを作るとみなす（拒否の側）
         return true
     }
     // 名前は呼び先の package で引く
@@ -438,7 +438,7 @@ func deScanScope(st mut S, n NodeRef) bool {
     return false
 }
 
-// 表層型 y（欄・`T?`・要素を fuel 段まで）が domain を含むか（構造体は宣言 × 段でメモ — deMemo）
+// 表層型y（フィールド・`T?`・要素をfuelレベルまで）がdomainを含むか（構造体は宣言 × レベルでメモ — deMemo）
 func deHasDom(st mut S, y int, fuel int) bool {
     if y < 0 || fuel == 0 {
         return false
@@ -478,8 +478,8 @@ func deHasDom(st mut S, y int, fuel int) bool {
 }
 
 // 歩く関数の門（domain の値は仮引数・NewDomain・実引数のラムダの仮引数からしか生まれない — どれも無い関数には当たりが無い）:
-// ParCheck の歩きが NewDomain / domain の口の呼び出しと、仮引数に domain を運ぶラムダの実引数を見たら印を積む
-// （ヒープの鎖 [fi, 前の頭] — 頭は pcMemo の末尾の 2 語目。メモの表と違って溢れで落ちない）
+// ParCheckの歩きがNewDomain / domainのインターフェースの呼び出しと、仮引数にdomainを運ぶラムダの実引数を見たらフラグを積む
+// （ヒープのチェーン [fi, 前の頭] — 頭はpcMemoの末尾の2語目。メモの表と違って溢れで落ちない）
 func deMark(st mut S, fi int) {
     hd := table.Get(mut st.pcMemo, PC_MEMO * 2 + 1)
     if deMarked(mut st, fi) {
@@ -548,7 +548,7 @@ func deNeeds(st mut S, fi int) bool {
     return false
 }
 
-// 仮引数の型式 te が domain を運ぶか。関数型の仮引数は運ばない（展開される閉包 — 呼ぶときに渡すのはこの関数の値）。
+// 仮引数の型式teがdomainを運ぶか。関数型の仮引数は運ばない（展開されるクロージャ — 呼ぶときに渡すのはこの関数の値）。
 // 名前だけの型式は (package, 名前) でメモする（deMemo の鍵 2^50 + package × 2^26 + 名前 — 自己 check の仮引数の大半は `st mut S` 形）
 func deParamDom(st mut S, fi int, te NodeRef) bool {
     k := kindN(mut st, te)
@@ -570,7 +570,7 @@ func deParamDom(st mut S, fi int, te NodeRef) bool {
     return r
 }
 
-// domain の検査のメモ（pcMemo の表の後ろの DE_MEMO 枠 — 鍵と値の 2 語。探索は DE_PROBE 歩まで — 溢れたらメモしないだけ）
+// domainの検査のメモ（pcMemoの表の後ろのDE_MEMO枠 — 鍵と値の2ワード。探索はDE_PROBE歩まで — 溢れたらメモしないだけ）
 const DE_MEMO = 32768
 const DE_PROBE = 32
 

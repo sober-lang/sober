@@ -1,6 +1,6 @@
 package main
 
-// `sober check` の handler と check の道（一括 / 小分け / 関数単位キャッシュ・L0・前段の並走）— watch もこの道で検査し直す
+// `sober check` のhandlerとcheckのパス（一括 / 小分け / 関数単位キャッシュ・L0・前段の並走）— watchもこのパスで検査し直す
 
 import "std/io"
 import "std/hex"
@@ -23,13 +23,13 @@ func check(p loader.Program) (checker.E2Out, error?) {
     return checkW(p, false)
 }
 
-// check に watch の印 wc を足したもの
+// checkにwatchのフラグwcを足したもの
 func checkW(p loader.Program, wc bool) (checker.E2Out, error?) {
     return checkWC(p, wc, ckNoCache())
 }
 
-// check の道で load の前に開いた置き場（P0 と analyzer の γ と D が同じ表を使う）と parse の読みの結果（書く木の候補）。
-// ok = false なら check の子が置き場を開く（load が置き場を読まない道 — 逐次の開発の口など）
+// checkのパスでloadの前に開いた格納場所（P0とanalyzerの γ とDが同じ表を使う）とparseの読みの結果（書く木の候補）。
+// ok = falseならcheckの子が格納場所を開く（loadが格納場所を読まないパス — 逐次の開発用のオプションなど）
 type CkCache struct {
     ok bool
     v lower.BcView
@@ -40,7 +40,7 @@ func ckNoCache() CkCache {
     return CkCache{ok: false, v: lower.BcOpen(""), pcs: []loader.PcPut{}}
 }
 
-// checkW に load の前に開いた置き場 cc を足したもの
+// checkWにloadの前に開いた格納場所ccを足したもの
 func checkWC(p loader.Program, wc bool, cc CkCache) (checker.E2Out, error?) {
     // E2-S の逃げの周回込み（checker/e2s.sober — 周回ごとに脱糖器のヒープの region を捨てる）。L0 がプログラムの std を全部持てば std の Def は
     // 検査しない（受理印は焼き込みが運ぶ — 逃げは焼き込みの .sobi の `@expand`）
@@ -56,8 +56,8 @@ func checkWC(p loader.Program, wc bool, cc CkCache) (checker.E2Out, error?) {
     return checker.RunE2(p, false, []int{}, desugarPar())
 }
 
-// check の関数単位キャッシュの道（既定 on — SOBER_CHECK_CACHE=0 で切れる・置き場 = build と同じ世代のディレクトリの切り口 D）:
-// 置き場を読んで判定し、外れの値（脱糖の拒否も）を書く。検証モード（SOBER_CACHE_VERIFY=1）の食い違いは名指しして落ちる・SOBER_CACHE_STAT=1 なら当否を標準エラーへ
+// checkの関数単位キャッシュのパス（既定on — SOBER_CHECK_CACHE=0で切れる・格納場所 = buildと同じ世代のディレクトリの切り口D）:
+// 格納場所を読んで判定し、外れの値（脱糖の拒否も）を書く。検証モード（SOBER_CACHE_VERIFY=1）の食い違いは専用の診断で拒否する・SOBER_CACHE_STAT=1なら当否を標準エラーへ
 func checkCached(p loader.Program, trust bool, excl0 []int, dir string, ca CkCache) (checker.E2Out, error?) {
     v := ca.v
     pps := lower.BcParseCheck(v, ca.pcs)
@@ -84,7 +84,7 @@ func checkCached(p loader.Program, trust bool, excl0 []int, dir string, ca CkCac
     return r, nil
 }
 
-// check の関数単位キャッシュの世代のディレクトリ（既定で使う — SOBER_CHECK_CACHE=0 で切れる。build の置き場と同じ世代。無ければ ""）
+// checkの関数単位キャッシュの世代のディレクトリ（既定で使う — SOBER_CHECK_CACHE=0で切れる。buildの格納場所と同じ世代。無ければ ""）
 func checkCacheDir(wc bool) string {
     if envIs("SOBER_CHECK_CACHE", "0") {
         return ""
@@ -117,16 +117,16 @@ func rejLines(p loader.Program, std map[string]string, r checker.E2Out) []string
         return []string{}
     }
     at := desugar.UnpackPos(checker.At(r))
-    // 位置の無い拒否（合成の関数の中など — 網 checkpos が数える）も行は出す（検査器の拒否は必ず stderr に 1 行）
+    // 位置の無い拒否（合成の関数の中など — 検査一式checkposが数える）も行は出す（検査器の拒否は必ずstderrに1行）
     if at.file < 0 || at.file >= len(p.file_path) {
         return []string{"sober: type error (no source position)"}
     }
-    // 合成のファイル（`$json/…` など — 型の宣言から生成したコード）はソースが無いので、生成コードの中だと名指す
+    // 合成のファイル（`$json/…` など — 型の宣言から生成したコード）はソースが無いので、生成コードの中だと明示する
     fp := p.file_path[at.file]
     return if strings.HasPrefix(fp, "$") { []string{"sober: type error in generated code ${fp}"} } else { []string{"sober: type error at ${where(p, std, at)}"} }
 }
 
-// check と同じ経路（L0 の信頼の有無）を脱糖まで走らせて止める（計測の口 — checkStop の 3）
+// checkと同じ経路（L0の信頼の有無）を脱糖まで走らせて止める（計測用のインターフェース — checkStopの3）
 func checkStopAll(p loader.Program, lvl int) ([]byte, error?) {
     l0 := L0
     if l0On() && l0Complete(p, l0) {
@@ -135,9 +135,9 @@ func checkStopAll(p loader.Program, lvl int) ([]byte, error?) {
     return checker.CheckStop(p, -1, false, []int{}, lvl, desugarPar())
 }
 
-// 計測の口（scripts/checkstats.sh）: 環境変数 SOBER_CHECK_STOP の段で check を止める（出力は空・終了コード 0）。
-// 1 = load（読んで表層の写しまで）・2 = analyzer（一括の check だけ）・3 = desugar（脱糖して検査器の手前）・
-// 4 = typer（脱糖の前段の後）・5 = defs（Def と根の脱糖の後・検査器への写しの前）・6 = init（前段の表層型検査器の前）・7 = typeall（表層型検査器の直後）・
+// 計測用のインターフェース（scripts/checkstats.sh）: 環境変数SOBER_CHECK_STOPのフェーズでcheckを止める（出力は空・終了コード0）。
+// 1 = load（読んで表層への変換まで）・2 = analyzer（一括のcheckだけ）・3 = desugar（脱糖して検査器の手前）・
+// 4 = typer（脱糖の前段の後）・5 = defs（Defと根の脱糖の後・検査器への変換の前）・6 = init（前段の表層型検査器の前）・7 = typeall（表層型検査器の直後）・
 // 0 = 止めない。4〜7 は判定の経路の区間の並列でも効く（親の計画 + 子ごとに止める）
 func checkStop() int {
     v, err := os.Getenv("SOBER_CHECK_STOP")
@@ -245,7 +245,7 @@ func analyzeAll(p loader.Program, std map[string]string) AzLines {
     return analyzeAllC(p, std, desugar.TyCacheOff())
 }
 
-// analyzeAll に置き場の切り口 γ を掛けた形（check の道）
+// analyzeAllに格納場所の切り口 γ を掛けた形（checkのパス）
 func analyzeAllC(p loader.Program, std map[string]string, c desugar.TyCache) AzLines {
     fs := analyzer.RunC(p, c)
     loader.Stage("ck-analyzer")
@@ -308,7 +308,7 @@ func verdictOk(out []byte) bool {
     return true
 }
 
-// check の道の読み（置き場 v が開いていれば parse の木 P0 を引く）・2 つ目の戻り = ファイルごとの読みの結果（check の子が書く）。
+// checkのパスの読み（格納場所vが開いていればparseの木P0を引く）・2つ目の戻り = ファイルごとの読みの結果（checkの子が書く）。
 // 積み先 sink はここで持つ（loadNamed と同じ — 読みの作業域を呼び手に残さない）
 func loadCk(entry string, test bool, std map[string]string, v lower.BcView) (loader.Program, []loader.PcPut, error?) {
     mut sink := loader.PcSink{}
@@ -318,7 +318,7 @@ func loadCk(entry string, test bool, std map[string]string, v lower.BcView) (loa
 
 // `sober check <entry> --pkg <path> --iface <dir> [--sigs]`（--sigs = 視点の関数の署名表 — G-d。package 単位の部分検査）: <dir>（iface -o の書き出し）の link.txt の順に
 // package <path> だけソースから・他は .sobi から読み（loader.LoadView）、その package の Def だけを本体つきで検査した判定 JSON（checker.CheckPkgE2）。
-// stage1 の --pkg と同じく analyzer は走らせない（analyzer の小分けは別の道）
+// stage1の --pkg と同じくanalyzerは走らせない（analyzerの小分けは別のパス）
 func cmdCheckPkg(entry string, pkg string, dir string, sigs bool) int {
     std := Std
     p0, lerr := loader.LoadView(entry, pkg, dir, std)
@@ -359,12 +359,12 @@ func cmdCheckPkg(entry string, pkg string, dir string, sigs bool) int {
 }
 
 // 小分けの check（`sober check <entry> --split`）: 全体を 1 回読んで analyzer を一括で走らせ（error の
-// ラベル集合の導出 — cause の合併 C[L]・error 型の欄の合併 — は依存する側の package も含む閉世界の合併で、package の中で閉じない点に注意）、
-// 依存の順に package ごとの region で「依存の .sobi を読む（LoadViewMem）→ その package の Def だけ check（E2-S の周回込み）→ .sobi を外へ写す」を回す。
+// ラベル集合の導出 — causeの合併C[L]・error型のフィールドの合併 — は依存する側のpackageも含む閉世界の合併で、packageの中で閉じない点に注意）、
+// 依存の順にpackageごとのregionで「依存の .sobiを読む（LoadViewMem）→ そのpackageのDefだけcheck（E2-Sの周回込み）→ .sobiを外へ反映する」を回す。
 // 出力は一括の check と同じ（最初に落ちた package の判定か診断・全部受理なら main の判定）
-// キャッシュ: 置き場 = cacheDir（SOBER_CACHE — 空文字なら無効）。package ごとに鍵を計算し、当たりなら
+// キャッシュ: 格納場所 = cacheDir（SOBER_CACHE — 空文字なら無効）。packageごとに鍵を計算し、当たりなら
 // その package の検査を飛ばして値（main 以外 = .sobi・main = 判定 JSON）を使う。外れて受理なら値を書く（拒否は書かない）。
-// 検証モード（SOBER_CACHE_VERIFY=1）は当たりでも検査し直して値をバイト比較し、違えば stale と名指して落ちる（ゲートの網）。
+// 検証モード（SOBER_CACHE_VERIFY=1）は当たりでも検査し直して値をバイト比較し、違えばstaleとして拒否する（ゲートの検査一式）。
 // trace = `--cache-trace`（鍵と当否を標準エラーへ）
 func checkSplit(entry string, trace bool, l0out string) int {
     use := trace || cacheDir() != ""
@@ -414,7 +414,7 @@ func checkSplitR(entry string, trace bool, l0out string, self []byte) CheckRes {
     mut sobis := mut []loader.Sobi{}
     for i <- iter.Range(0, len(pl.order)) {
         path := pl.order[i]
-        // L0（std の焼き込み — 鍵は要らない・L1 より先）→ L1（置き場）
+        // L0（stdの焼き込み — 鍵は要らない・L1より先）→ L1（格納場所）
         lk := lookupL0(l0on, l0, path, lookup(use, dir, self, path, pl, i, freeze(sobis)))
         if trace && traceLine(path, lk.key, lk.hit) != 0 {
             return CheckRes{1, []byte{}, []string{}, fs}
@@ -459,7 +459,7 @@ func checkSplitR(entry string, trace bool, l0out string, self []byte) CheckRes {
     return failRes("no main package", fs)
 }
 
-// 1 package のキャッシュの引き当て（key = 鍵・hit = 置き場に正しい値があった・val = その値）
+// 1 packageのキャッシュの引き当て（key = 鍵・hit = 格納場所に正しい値があった・val = その値）
 type Lookup struct {
     key string
     hit bool
@@ -584,7 +584,7 @@ func pkgIndex(p loader.Program, pkg string) int {
     return 0 - 1
 }
 
-// `sober check`（表 = Check）。既定の形（開発の口なし）と --test は判定、開発の口は 1 本ずつ（組は --pkg + --iface [+ --sigs]・
+// `sober check`（表 = Check）。既定の形（開発用のオプションなし）と --test は判定、開発用のオプションは1本ずつ（組は --pkg + --iface [+ --sigs]・
 // --split [+ --l0-out <file> | --cache-trace] だけ — 他の組は misuse）
 func cmdCheck(cl cli.Parsed) int {
     entry := cli.Pos(cl, Entry)
@@ -608,7 +608,7 @@ func cmdCheck(cl cli.Parsed) int {
     odump := cli.Bool(cl, OriginDump)
     fdump := cli.Bool(cl, EffectsDump)
     xrep := cli.Bool(cl, ExpReport)
-    // 開発用: 関数ごとの費用（Def の本体・展開の寄与）と展開の辺・package の import の辺（関数単位の check キャッシュ — scripts の外の計器が閉包を数える）
+    // 開発用: 関数ごとの費用（Defの本体・展開の寄与）と展開の辺・packageのimportの辺（関数単位のcheckキャッシュ — scriptsの外の計測ツールが推移的な依存を数える）
     dcost := cli.Bool(cl, DefCost)
     // 開発用: 検査する Def ごとの鍵 K-D（関数単位の check キャッシュ — desugar/defkey.sober）・--def-graph は項目と辺も
     dgraph := cli.Bool(cl, DefGraph)
@@ -650,7 +650,7 @@ func cmdCheck(cl cli.Parsed) int {
         return writeStdout(iface.Sigs(p))
     }
     std := Std
-    // 判定だけを出す既定の形は ParCheck ‖ analyzer ‖ check の並走（checkFront）。開発用のフラグ・計測の口・1 本の経路は逐次
+    // 判定だけを出す既定の形はParCheck ‖ analyzer ‖ checkの並走（checkFront）。開発用のフラグ・計測用のインターフェース・1本の経路は逐次
     if nmode == 0 || tst {
         if checkStop() == 0 && desugarPar() {
             return checkFront(entry, tst, std)
@@ -662,7 +662,7 @@ func cmdCheck(cl cli.Parsed) int {
     }
     if edump || sdump || odump || fdump {
         // 開発用: error のラベル集合の導出（compiler/analyzer の errors.sober — error 網羅 analyzer A2 の影）・秘密の値の流れの表 T（secret.sober）・
-        // 出所の表（origin.sober — 源の口・Eff の関数・SH の variant と欄・出会いの口・違反）
+        // 出所の表（origin.sober — 源のインターフェース・Effの関数・SHのvariantとフィールド・出会いのインターフェース・違反）
         fs := if sdump { analyzer.SecretDump(p) } else if odump { analyzer.OriginDump(p) } else if fdump { analyzer.EffectsDump(p) } else { analyzer.ErrorsDump(p) }
         mut msg := ""
         for i <- iter.Range(0, len(fs)) {
@@ -671,7 +671,7 @@ func cmdCheck(cl cli.Parsed) int {
         return writeStdout(bytes(msg))
     }
     if xrep {
-        // 開発用: 関数ごとの展開の寄与（コア式の節の数）の上位 40（desugar.ExpansionReport — コスト可視化の口）
+        // 開発用: 関数ごとの展開の寄与（コア式の節の数）の上位40（desugar.ExpansionReport — コスト可視化のインターフェース）
         r, xerr := desugar.ExpansionReport(p, 40)
         if xerr != nil {
             return fail(errDiag(p, std, xerr))
@@ -739,7 +739,7 @@ func cmdCheck(cl cli.Parsed) int {
             return fail(errDiag(p, std, derr))
         }
         j := checker.Def(r)
-        // E2-S の逃げの周回（docs/formal.md「check の callM の段」の条件 6）の数と展開へ戻した関数の数
+        // E2-Sの逃げの周回（docs/formal.md「checkのcallMの段階」の条件6）の数と展開へ戻した関数の数
         e2 := " (e2s: rounds=${checker.Rounds(r)} back=${len(checker.Excl(r))})"
         if j == -2 {
             return writeStdout(bytes("checker: too deep${e2}\n"))
@@ -839,12 +839,12 @@ type CkMsg struct {
     rej []string   // 検査器の拒否の位置の行（rejLines）
 }
 
-// `sober check <entry>` の既定の形: 読んで名前付き実引数を写した後、
+// `sober check <entry>` の既定の形: 読んで名前付き実引数を変換した後、
 // ParCheck（std/task の呼び出し点の形 — load の拒否の層）・analyzer・check（脱糖 + 検査）を 3 つの子で並走させ、親が逐次の優先順で畳む:
 // ParCheck の拒否 > analyzer の指摘 > check の結果（逐次では前の層が拒否すれば後ろの層は走らない — 後ろの子の結果は捨てるだけで値は同じ）。
 // 子は印字しない（診断の行の文字列を返す — ソースの読み直しは読みの io だけ）。どれかの子が死んだら（前の層が拒否した入力で後ろの層が死ぬ形を含む）
 // 結果を全部捨てて逐次の経路で走らせ直す（死の順・死因も逐次と同じ）。
-// budget: = 木の節の数 × 係数 + 余白（親で計算 — 宣言の段。校正 = 自己 check〔37 万節〕の実測: ParCheck 15 MB・analyzer 3.8 MB・check は自分 2.4 MB +
+// budget: = 木の節の数 × 係数 + 余白（親で計算 — 宣言のフェーズ。校正 = 自己check〔37万節〕の実測: ParCheck 15 MB・analyzer 3.8 MB・checkは自分2.4 MB +
 // 区間の子の最大 197 MB〔逐次の上界は子を含む〕→ 64 / 16 / 768 B / 節 — どれも 1.5〜2.6 倍の側。analyzer は表層型の表〔TypeAll —
 // 暗黙の freeze の点〕を組むので ParCheck の分を足して 80）
 func checkFront(entry string, tst bool, std map[string]string) int {
@@ -871,13 +871,13 @@ func checkFront(entry string, tst bool, std map[string]string) int {
 
 // ── 答えの再生（watch 温め係 — docs/incremental.md）──
 //
-// 既定の `sober check <entry>` の答え（終了コード・標準出力・診断の行）を置き場に丸ごと覚え、次の同じ問い合わせは検査せずに返す。
-// 鍵 = entry の綴り ‖ test の印 ‖ 答えに効く宣言済みの環境変数（置き場は世代のディレクトリ — コンパイラが変われば別）。値には答えと一緒に
+// 既定の `sober check <entry>` の答え（終了コード・標準出力・診断の行）を格納場所に丸ごと覚え、次の同じ問い合わせは検査せずに返す。
+// 鍵 = entryの綴り ‖ testのフラグ ‖ 答えに効く宣言済みの環境変数（格納場所は世代のディレクトリ — コンパイラが変われば別）。値には答えと一緒に
 // 読んだ利用者のファイルの中身のハッシュと、そのディレクトリの .sober の名前の列のハッシュを持ち、引くときに全部を照合する（1 つでも違えば外れ —
 // ファイルの編集・追加・削除を拾う）。std は焼き込みなので世代が持つ。@embed を持つファイルは埋め込みの入力（パターンの一致と中身 —
 // loader.EmbedInputs）のハッシュも持って照合する
 
-// 答えに効かない環境変数（置き場・計測・watch の口）— 鍵に入れない
+// 答えに効かない環境変数（格納場所・計測・watchのオプション）— 鍵に入れない
 const replayEnvSkip = []string{"SOBER_CACHE", "SOBER_CACHE_MAX", "SOBER_CACHE_GENS", "SOBER_CACHE_FLOOR", "SOBER_CACHE_STAT", "SOBER_CACHE_VERIFY",
     "SOBER_CACHE_FSCK", "SOBER_CHECK_CACHE", "SOBER_CHECK_REPLAY", "SOBER_BUILD_CACHE", "SOBER_SELF_KEY", "SOBER_WATCH_MS",
     "SOBER_WATCH_QUIET", "SOBER_WATCH_BUILD", "SOBER_WATCH_TEST", "SOBER_COVER", "SOBER_TEST_FILES_OUT"}
@@ -1118,9 +1118,9 @@ func resEq(a CheckRes, b CheckRes) bool {
     return true
 }
 
-// checkFront の本体（出し方は emitRes — `sober watch` と共有する。wc = watch の印〔checkW〕・files = 読んだ利用者のファイル）
+// checkFrontの本体（出し方はemitRes — `sober watch` と共有する。wc = watchのフラグ〔checkW〕・files = 読んだ利用者のファイル）
 func checkFrontR(entry string, tst bool, std map[string]string, wc bool) CheckRes {
-    // 関数単位キャッシュの置き場は load の前に 1 回開く（parse の木 P0・analyzer の全部の型付けの γ・check の D が同じ表を使う）
+    // 関数単位キャッシュの格納場所はloadの前に1回開く（parseの木P0・analyzerの全部の型付けの γ・checkのDが同じ表を使う）
     dir := checkCacheDir(wc)
     cv := lower.BcOpen(dir)
     p0, pcs, lerr := loadCk(entry, tst, std, cv)
@@ -1200,7 +1200,7 @@ func frontRes(r FrontRes, fs []string) CheckRes {
     return CheckRes{if verdictOk(r.out) { 0 } else { 1 }, r.out, r.msgs, fs}
 }
 
-// checkFront の逐次の経路（子が死んだときの走らせ直し — ParCheck → analyzer → check の順。名前付き実引数の写しの後の p から）
+// checkFrontの逐次の経路（子が死んだときの走らせ直し — ParCheck → analyzer → checkの順。名前付き実引数の変換の後のpから）
 func checkSeqR(p loader.Program, std map[string]string, wc bool, fs []string, cc CkCache) CheckRes {
     r, _ := checkSeqAt(p, std, wc, fs, cc)
     return r
@@ -1249,7 +1249,7 @@ func ckMsg(p loader.Program, std map[string]string, wc bool, cc CkCache) CkMsg {
     return CkMsg{checker.Out(r), "", rejLines(p, std, r)}
 }
 
-// p の木の節の数の和（checkFront の budget: の物差し）
+// pの木の節の数の和（checkFrontのbudget: の基準）
 func nodeCount(p loader.Program) int {
     mut n := 0
     for f <- iter.Range(0, len(p.trees)) {
@@ -1260,7 +1260,7 @@ func nodeCount(p loader.Program) int {
 
 
 // ── 小分けの check のキャッシュの鍵。鍵を計算して当否を印字するだけ（`check --split --cache-trace` —
-// 置き場は読むだけで書かない）。
+// 格納場所は読むだけで書かない）。
 //   key(P) = SHA-256("sobercache 1" ‖ コンパイラの鍵 ‖ P のパス ‖ P の入力の要約 ‖ 視点のリンク集合の各依存 D について D のパス ‖ SHA-256(sobi(D)))
 //   P の入力の要約 = SHA-256(P の各ファイルの パス ‖ 長さ ‖ SHA-256(中身) ‖ その木の @embed の入力)
 // 依存の項は鍵でなく .sobi の中身のハッシュ（早期打ち切り — 依存の本体だけの編集で .sobi が変わらなければ P は当たる）。
@@ -1298,20 +1298,20 @@ func sobiOf(sobis []loader.Sobi, path string) []byte {
     return []byte{}
 }
 
-// 置き場 dir の鍵 key のファイル（`<dir>/sobercache-1/<先頭 2 桁>/<64 桁>` — cache-draft 5.2）
+// 格納場所dirの鍵keyのファイル（`<dir>/sobercache-1/<先頭 2 桁>/<64 桁>` — cache-draft 5.2）
 func cachePath(dir string, key string) string {
     b := bytes(key)
     head := string(b[0:2]) catch "00"
     return "${dir}/sobercache-1/${head}/${key}"
 }
 
-// 置き場から読んだ値（ok = 鍵の行と長さが合った）
+// 格納場所から読んだ値（ok = 鍵の行と長さが合った）
 type CacheVal struct {
     ok bool
     val []byte
 }
 
-// 置き場 dir の鍵 key の値。ファイルの形 = `sobercache 1 <鍵> <長さ> <値の SHA-256>\n` + 値（cache-draft 5.2）— 先頭の行の鍵・長さ・
+// 格納場所dirの鍵keyの値。ファイルの形 = `sobercache 1 <鍵> <長さ> <値の SHA-256>\n` + 値（cache-draft 5.2）— 先頭の行の鍵・長さ・
 // 値のハッシュが合わなければ外れ（書きかけ・壊れ・手での改竄 — 計算し直して上書きされる）。dir が空なら外れ
 func cacheGet(dir string, key string) CacheVal {
     if dir == "" {
@@ -1347,7 +1347,7 @@ func cacheGet(dir string, key string) CacheVal {
     return CacheVal{true, v}
 }
 
-// 値 val を鍵 key で置き場に書く（一時ファイルに書いて Rename で公開 — 読み手は書きかけを見ない。失敗は黙って捨てる — キャッシュは
+// 値valを鍵keyで格納場所に書く（一時ファイルに書いてRenameで公開 — 読み手は書きかけを見ない。失敗は黙って捨てる — キャッシュは
 // 速さのためだけで、書けなくても結果は変わらない）。同じ鍵を 2 つのプロセスが同時に書いても値は同じバイト列（内容アドレス + 決定的）
 func cachePut(dir string, key string, val []byte) {
     p := cachePath(dir, key)

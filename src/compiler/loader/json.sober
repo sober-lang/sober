@@ -1,6 +1,6 @@
 package loader
 
-// loader 黄金（testdata/loaderjson/）の JSON（src/stage1/loader_json.zig と同じバイト列）。
+// loaderゴールデン（testdata/loaderjson/）のJSON（src/stage1/loader_json.zigと同じバイト列）。
 // 形は固定の深さなので再帰しない。import 表は参照名のバイト順、callees は重複を除いたバイト順
 
 import "ast"
@@ -77,7 +77,7 @@ func sortedIdx(xs []string, lo int, hi int, dedup bool) []int {
     return freeze(out)
 }
 
-// Program を loader 黄金の JSON にする
+// ProgramをloaderゴールデンのJSONにする
 func Json(p Program) []byte {
     mut out := mut []byte{}
     out = append(out, '{')

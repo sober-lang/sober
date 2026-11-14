@@ -1,12 +1,12 @@
 package loader
 
-// panic ラベル（language.md 27 節「panic ラベル」）: `panic(L{欄})` を検査して、後段が読む形に写す:
+// panicラベル（language.md 27 節「panicラベル」）: `panic(L{欄})` を検査して、後段が読む形に変換する:
 //
-//     panic(Unreachable{})       →  panic("Unreachable")                     欄のないラベル（組み込み・宣言）
-//     panic(L{a: x, s: y})       →  panic("pkg.L", L{a: x, s: y})            欄のあるラベル — 宣言 `type L panic{…}` は BStruct に写す
+//     panic(Unreachable{})       →  panic("Unreachable")                     フィールドのないラベル（組み込み・宣言）
+//     panic(L{a: x, s: y})       →  panic("pkg.L", L{a: x, s: y})            フィールドのあるラベル — 宣言 `type L panic{…}` はBStructに変換する
 //
-// 先頭の文字列は死亡時に印字するラベルの名前（組み込みと main package のラベルは無修飾・他は宣言の package 名で修飾）。欄の値は普通の struct の
-// composite として後段（desugar・lower・typer）が型を検査する — check は値を捨てて unreach・lower は欄を宣言順に標準エラーへ印字して exit 101。
+// 先頭の文字列は死亡時に印字するラベルの名前（組み込みと main package のラベルは無修飾・他は宣言のpackage名で修飾）。フィールドの値は普通のstructの
+// compositeとして後段（desugar・lower・typer）が型を検査する — checkは値を捨ててunreach・lowerはフィールドを宣言順に標準エラーへ印字してexit 101。
 // 名前付き実引数（namedargs.sober）の後に掛ける（Cx の木を読む）。拒否は diag.PanicLabel（種類は下の PL_*）
 
 import "std/builder"
@@ -19,12 +19,12 @@ const PL_BARE = 1        // 裸の `panic()`（廃止 — 理由のラベルが�
 const PL_ARG = 2         // 実引数がラベルのリテラル 1 つでない
 const PL_NOTLABEL = 3    // リテラルの型が panic ラベルでない
 const PL_RUNTIME = 4     // RegionExceeded を書いた（ランタイム専用）
-const PL_FIELDS = 5      // 欄の書き方（名前つき・1 回ずつ・宣言の欄だけ — 省いた欄はゼロ値）
-const PL_FIELDTY = 6     // 宣言の欄の型が int / byte / bool / string でない
+const PL_FIELDS = 5      // フィールドの書き方（名前つき・1回ずつ・宣言のフィールドだけ — 省いたフィールドはゼロ値）
+const PL_FIELDTY = 6     // 宣言のフィールドの型がint / byte / bool / stringでない
 const PL_BUILTIN = 7     // 組み込みのラベルと同名の宣言
 const PL_USE = 8         // panic の実引数の外でラベルを使った
 
-// 写した木の列と最初の拒否（無ければ nil）
+// 変換した木の列と最初の拒否（無ければnil）
 type PanicOut struct {
     trees []ast.Tree
     err error?
@@ -35,9 +35,9 @@ func builtinLabel(n string) bool {
     return n == "Unreachable" || n == "InvariantBroken"
 }
 
-// 全部の木の panic ラベルを検査して写す（allowBare: 裸の `panic()` を通すか — 鎖の移行の間だけ true だった。今は常に false）
+// 全部の木のpanicラベルを検査して変換する（allowBare: 裸の `panic()` を通すか — ブートストラップチェーンの移行の間だけtrueだった。今は常にfalse）
 func panicLabelsAll(cx Cx, pnames []string, allowBare bool) PanicOut {
-    // ラベルの表: [package, ファイル, 型宣言の節] の 3 語ずつ
+    // ラベルの表: [package, ファイル, 型宣言の節] の3ワードずつ
     mut lab := builder.Builder[int]{}
     for f <- iter.Range(0, len(cx.trees)) {
         t := cx.trees[f]
@@ -46,7 +46,7 @@ func panicLabelsAll(cx Cx, pnames []string, allowBare bool) PanicOut {
             tdi := ast.ListAt(t, tys, k)
             td := t.nodes[tdi]
             n := Name(t, td.a)
-            // 組み込みのラベルの名前はどの型宣言にも使えない（`panic(Unreachable{})` の読みを package の型で変えない）
+            // 組み込みのラベルの名前はどの型宣言にも使えない（`panic(Unreachable{})` の解釈をpackageの型で変えない）
             if builtinLabel(n) || n == "RegionExceeded" {
                 return PanicOut{cx.trees, diag.PanicLabel{at: diag.Pos{file: f, tok: td.tok}, kind: PL_BUILTIN}}
             }
@@ -76,7 +76,7 @@ func panicLabelsAll(cx Cx, pnames []string, allowBare bool) PanicOut {
     return PanicOut{freeze(out), nil}
 }
 
-// 欄の型の節 ty が int / byte / bool / string か（死亡時の印字 — println と同じ集合）
+// フィールドの型の節tyがint / byte / bool / stringか（死亡時の印字 — printlnと同じ集合）
 func printableTy(t ast.Tree, ty int) bool {
     x := t.nodes[ty]
     if x.kind != ast.TName {
@@ -109,13 +109,13 @@ func labelAt(cx Cx, lt []int, f int, name string) int {
     return 0 - 1
 }
 
-// 1 ファイルの写し
+// 1ファイルの変換
 type FileOut struct {
     tree ast.Tree
     err error?
 }
 
-// ファイル f の panic の呼び出しを検査して写し、panic ラベルの宣言を BStruct に写す
+// ファイルfのpanicの呼び出しを検査して変換し、panicラベルの宣言をBStructに変換する
 func panicFile(cx Cx, pnames []string, lt []int, f int, allowBare bool) FileOut {
     t := cx.trees[f]
     n0 := len(t.nodes)
@@ -207,7 +207,7 @@ func panicFile(cx Cx, pnames []string, lt []int, f int, allowBare bool) FileOut 
                 if nf == 0 && ast.ListLen(t, c.b) != 0 {
                     return FileOut{t, diag.PanicLabel{at: cat, kind: PL_FIELDS}}
                 }
-                // 名前の文字列の節（base）・欄があれば composite を 2 つ目に
+                // 名前の文字列の節（base）・フィールドがあればcompositeを2つ目に
                 base := n0 + builder.Len(mut nb)
                 builder.Push(mut nb, ast.Node{ast.EStrlit, c.tok, ast.PutLit(mut db, shown), 0, 0, 0, 0, 0})
                 args := if nf == 0 { []int{base} } else { []int{base, ci} }
@@ -227,11 +227,11 @@ func isPanicCallee(t ast.Tree, x ast.Node) bool {
     return x.kind == ast.ECall && t.nodes[x.a].kind == ast.EIdent && StrIs(t, t.nodes[x.a].a, "panic")
 }
 
-// composite の欄の列 es（木 t）が宣言の欄の列 fl（木 dt）を名前つきで全部・1 回ずつ書いているか
+// compositeのフィールドの列es（木t）が宣言のフィールドの列fl（木dt）を名前つきで全部・1回ずつ書いているか
 func fieldsOk(t ast.Tree, es int, dt ast.Tree, fl int) bool {
     n := ast.ListLen(t, es)
     nd := ast.ListLen(dt, fl)
-    // 一部の欄だけでよい（部分リテラル — 省いた欄はゼロ値。一般の struct リテラルと同じ規則）
+    // 一部のフィールドだけでよい（部分リテラル — 省いたフィールドはゼロ値。一般のstructリテラルと同じ規則）
     if n > nd {
         return false
     }

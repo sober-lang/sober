@@ -1,8 +1,8 @@
 package main
 
 // 省略可の匿名関数型の仮引数の @errors（language.md 13 節 — 仮引数の名前の項）: `@errors(Busy, send, put)` は「Busy と、send / put に渡したものが返すもの」。
-// put を渡さない呼び出し点の集合に put の項は入らない（呼び手の switch に腕が要らない）。渡した点では渡したラムダのラベルが入る。
-// 公開関数（Deliver）の宣言の tightness は組ごとの写しに掛けない（put の有る組は send を呼ばない — 宣言は全部の腕についての上界）
+// putを渡さない呼び出し点の集合にputの項は入らない（呼び手のswitchに分岐が要らない）。渡した点では渡したラムダのラベルが入る。
+// 公開関数（Deliver）の宣言のtightnessは組ごとのコピーに掛けない（putの有る組はsendを呼ばない — 宣言は全部の分岐についての上界）
 
 type Busy error
 type Full error {
@@ -31,7 +31,7 @@ func main() {
     case nil: println("ok")
     case Busy{}: println("busy")
     }
-    // put あり: put のラムダの Full も腕が要る
+    // putあり: putのラムダのFullも分岐が要る
     switch Deliver(2, (v) => {
         println(v)
         nil

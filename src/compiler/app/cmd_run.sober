@@ -1,6 +1,6 @@
 package main
 
-// `sober run` の handler と、run の置き場で実行ファイルを建てる道（doc --cli も使う）
+// `sober run` のhandlerと、runの格納場所で実行ファイルをビルドするパス（doc --cli も使う）
 
 import "std/io"
 import "std/hex"
@@ -12,10 +12,10 @@ import "loader"
 import "lower"
 
 // `sober run <entry> [--] [<args>…]`（開発スクリプトの Sober 化の前提）: build（`--emit=elf --passes` と同じ ELF）して
-// 子プロセスとして走らせ、子の終了コードをそのまま返す（標準入出力は継ぐ）。実行ファイルは置き場（cacheDir()/sober-run/<鍵> — 置き場が無ければ
+// 子プロセスとして走らせ、子の終了コードをそのまま返す（標準入出力は継ぐ）。実行ファイルは格納場所（cacheDir()/sober-run/<鍵> — 格納場所が無ければ
 // /tmp/sober-run）に残し、同じ鍵なら build を飛ばす。鍵 = SHA-256(版 ‖ コンパイラの鍵 ‖ 全 package の パス ‖ 入力の要約) — check --split の鍵と同じ材料
-// （内容アドレス + 決定的ビルドなので、同じ鍵の実行ファイルは同じバイト列）。check はしない（build と同じ — 検査は `sober check` / watch の席）。
-// `run --exe <entry>` は走らせずに置き場の実行ファイルのパスを標準出力へ（bin/sober はこれで建てて自分で exec する — 引数をバイト列のまま渡せる
+// （内容アドレス + 決定的ビルドなので、同じ鍵の実行ファイルは同じバイト列）。checkはしない（buildと同じ — 検査は `sober check` / watchの担当）。
+// `run --exe <entry>` は走らせずに格納場所の実行ファイルのパスを標準出力へ（bin/soberはこれでビルドして自分でexecする — 引数をバイト列のまま渡せる
 // 〔os.Args は不正な UTF-8 を拒む〕・rt.run の引数 511 本の上限が無い・プロセスが 1 段減る）
 func cmdRun(cl cli.Parsed) int {
     exeOnly := cli.Bool(cl, Exe)
@@ -43,7 +43,7 @@ func cmdRun(cl cli.Parsed) int {
     return code
 }
 
-// p の実行ファイルの置き場の道（run の置き場 — 鍵 = コンパイラの鍵 + package ごとの内容。無ければ建てる）。失敗は印字して終了コード ≠ 0
+// pの実行ファイルの格納場所のパス（runの格納場所 — 鍵 = コンパイラの鍵 + packageごとの内容。無ければビルドする）。失敗は印字して終了コード ≠ 0
 func runExe(p loader.Program, std map[string]string) (string, int) {
     self := selfKey()
     mut kb := mut []byte{}
@@ -57,7 +57,7 @@ func runExe(p loader.Program, std map[string]string) (string, int) {
     cd := cacheDir()
     dir := if cd == "" { "/tmp/sober-run" } else { cd + "/sober-run" }
     exe := "${dir}/${key}"
-    // 置き場に無ければ（鍵の材料が欠けていれば毎回）建てる: 一時ファイルに書いて実行の bit を付け、Rename で公開（書きかけを走らせない）
+    // 格納場所に無ければ（鍵の材料が欠けていれば毎回）ビルドする: 一時ファイルに書いて実行のbitを付け、Renameで公開（書きかけを走らせない）
     mt := os.ModTime(exe) catch -1
     if len(self) == 0 || mt < 0 {
         out, berr := lower.ElfPasses(p)

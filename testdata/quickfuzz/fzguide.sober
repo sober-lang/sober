@@ -1,7 +1,7 @@
 package main
 
-// fuzz のカバレッジの誘導の題材（scripts/quickfuzz.sh — `sober build --cover` で建てる）: 入れ子の 4 バイトの魔法値。
-// 乱数だけの試行では 40 万試行で届かず（1 試行あたり ≈ 2^-32）、誘導（quick:pool）つきは入れ子の if の点を 1 段ずつ開いて届く
+// fuzzのカバレッジの誘導の題材（scripts/quickfuzz.sh — `sober build --cover` でビルドする）: 入れ子の4バイトの魔法値。
+// 乱数だけの試行では40万試行で届かず（1試行あたり ≈ 2^-32）、誘導（quick:pool）つきは入れ子のifの点を1レベルずつ開いて届く
 
 import "std/quick"
 

@@ -1,16 +1,16 @@
 package desugar
 
 // 区画の正準形と鍵: package の区画（st.ty.preg の境）を、ロード順・
-// 関数表の添字・package 番号・ヒープの番地に依らない語の列へ直列化してハッシュにする（置き場が書く形。店の中の表現は変えない）。
+// 関数表の添字・package番号・ヒープの番地に依らないワードの列へ直列化してハッシュにする（格納場所が書く形。店の中の表現は変えない）。
 // - 他の区画の記録 = （参照表の番号, 持ち主の区画の中の序数）。参照表 = 直列化の走査で最初に出会った package の順（0 番 = 自分 — 走査が正準なので
 //   順も正準）。前置きの記録（TypeAll の頭の基本の型）は添字のまま
 // - 型宣言・関数 = （参照表の番号, 名前）— 依存の本体の編集で節の添字がずれても変わらない。自分の節（節 → 型の表の鍵・ラムダ）は
 //   （ファイルの package の中の序数, 添字）・Init の合成の節は持ち主の区画の中の序数
 // - 列は中身をその場で（参照の番地は持たない）・文字列は綴り
 // 鍵（tykeys）= 版 ‖ コンパイラの鍵 ‖ 論理パス ‖ ソースの要約（package のファイルの木の節と data）‖ 参照表の各 package の論理パスと宣言の要約
-// （宣言の相の記録・関数の署名と結果の型・const の型・関数の印）。絶対パスは入れない
+// （宣言の相の記録・関数の署名と結果の型・constの型・関数のフラグ）。絶対パスは入れない
 // 扉の監査（TyAudit の door）: 区画が推移の import の外の package を指す（door）・依存の区画の本体の相の記録を指す（body）・自分の外の節を
-// 節 → 型の表の鍵に持つ（ents）を数える — どれも 0 でないと、区画を置き場から読んだとき依存の外の変化を見落とす
+// 節 → 型の表の鍵に持つ（ents）を数える — どれも0でないと、区画を格納場所から読んだとき依存の外の変化を見落とす
 
 import "ast"
 import "loader"
@@ -33,7 +33,7 @@ const TC_S2 = -8796714831421723037
 
 func tcW(st mut S, w int) {
     if st.ty.kst < 0 {
-        // 値の写し取りの間（tyValue — 塊の頭を負にして印にする: 語ごとの読みを足さない）
+        // 値の写し取りの間（tyValue — チャンクの頭を負にしてフラグにする: ワードごとの読みを足さない）
         tcCap(mut st, w)
     }
     a := (st.ty.ch1 ^ w) * TC_M1
@@ -251,7 +251,7 @@ func tcOwnNode(st mut S, n NodeRef) {
 }
 
 // 節 → 型の表の記録（鍵は節か別キー — 0 - 1 - 節 = 型引数の組・PREDIR = 振り分け先の関数・IMPLKEY = 暗黙の freeze の期待型・
-// FORSRCKEY = for の生成元の印〔値は印の数〕）。頭に札（0 = 節・1〜4 = 別キー）— 値を読み戻すときに節の参照の札〔TC_NODE〕と取り違えない
+// FORSRCKEY = forの生成元のフラグ〔値はフラグの数〕）。頭に札（0 = 節・1〜4 = 別キー）— 値を読み戻すときに節の参照の札〔TC_NODE〕と取り違えない
 func tcEnt(st mut S, e YEnt) {
     if e.key >= 0 {
         tcW(mut st, 0)
@@ -302,7 +302,7 @@ func tcRecord(st mut S, x YT) {
         if x.c > 0 {
             tcDecl(mut st, NodeRef(x.c - 1))
         } else {
-            // 名前なし: 0 の印 + mut 仮引数の席のビット
+            // 名前なし: 0のフラグ + mut仮引数のスロットのビット
             tcW(mut st, 0)
             tcW(mut st, 0 - x.c)
         }
@@ -318,7 +318,7 @@ func tcRecord(st mut S, x YT) {
     }
 }
 
-// Init の合成の節（欄は desc の種類どおり）
+// Initの合成の節（フィールドはdescの種類どおり）
 func tcSynNode(st mut S, x ast.Node) {
     tcW(mut st, x.kind)
     tcW(mut st, x.tok)
@@ -350,7 +350,7 @@ func tcSynNode(st mut S, x ast.Node) {
     }
 }
 
-// package k の区画の直列化（decl = 宣言の要約だけ — 宣言の相の記録・署名・結果の型・const の型・関数の印）
+// package k の区画の直列化（decl = 宣言の要約だけ — 宣言の相の記録・署名・結果の型・constの型・関数のフラグ）
 func tcRegion(st mut S, k int, decl bool) {
     tcReset(mut st, k)
     lo, hi := PkgRegion(mut st, k, PRTYS)
@@ -358,7 +358,7 @@ func tcRegion(st mut S, k int, decl bool) {
     for y <- iter.Range(lo, if decl { de } else { hi }) {
         tcRecord(mut st, YAt(mut st, y))
     }
-    // 関数・const は package の区間（tyPlan の fo / ford・co / cord — 既定の順は表の順。全関数を舐めて package で振り分ける形は鍵の口で
+    // 関数・constはpackageの区間（tyPlanのfo / ford・co / cord — 既定の順は表の順。全関数を舐めてpackageで振り分ける形は鍵のインターフェースで
     // package ごとに払うコストになる）
     for j <- iter.Range(hget(mut st, st.ty.fo + 1 + k), hget(mut st, st.ty.fo + 2 + k)) {
         fi := hget(mut st, st.ty.ford + 1 + j)
@@ -398,8 +398,8 @@ func tcRegion(st mut S, k int, decl bool) {
     }
 }
 
-// package k のソースの要約（ファイルの木の節と data — ファイル内の添字だけで閉じる）。鍵の口が型付けの番ごとに全節を歩くので
-// 混ぜは局所の 2 語で回す（tcW を語ごとに呼ぶ形はコストが大きい）
+// package k のソースの要約（ファイルの木の節とdata — ファイル内の添字だけで閉じる）。鍵のインターフェースが型付けの番ごとに全節を歩くので
+// 混ぜは局所の2ワードで回す（tcWをワードごとに呼ぶ形はコストが大きい）
 func tcSrc(st mut S, k int) {
     mut a := TC_S1
     mut b := TC_S2
@@ -517,28 +517,28 @@ func TyEmit(p loader.Program, wantKeys bool, exe string) []byte {
 }
 
 // ── 型付けの前の鍵 K1 と区画の値 ──
-// key(k) = 版 ‖ コンパイラの鍵 ‖ 論理パス(k) ‖ tcSrc(k) ‖ 推移の import の閉包の各 d（論理パスの順）: 論理パス(d) ‖ decl(d)。
+// key(k) = 版 ‖ コンパイラの鍵 ‖ 論理パス(k) ‖ tcSrc(k) ‖ importの推移的な依存の各d（論理パスの順）: 論理パス(d) ‖ decl(d)。
 // TypeAll が package k の番の頭で組む（依存の d は後順で先に済み、decl(d) は d の番の終わりに控えてある — tyKeyPost）。参照表（tykeys）の代わりに
-// 閉包を使うので型付けの前に引ける — 扉の監査 door = 0（区画は推移の import の外を指さない）が「閉包 ⊇ 参照表」の根拠。
-// 状態はヒープの塊（st.ty.kst — 0 = 切）: 欄を S に足すと S を持つフレームの零初期化と写しが自己 build 全体に掛かる
+// 推移的な依存を使うので型付けの前に引ける — 扉の監査door = 0（区画は推移のimportの外を指さない）が「推移的な依存 ⊇ 参照表」の根拠。
+// 状態はヒープのチャンク（st.ty.kst — 0 = 切）: フィールドをSに足すとSを持つフレームの零初期化とコピーが自己build全体に掛かる
 const KSX1 = 1    // コンパイラの鍵の要約
 const KSX2 = 2
-const KSKK = 3    // package → 鍵（2 語）
-const KSKD = 4    // package → 宣言の要約（2 語 — 番の終わりに控える）
-const KSST = 5    // package → 区画の外へ出る状態（KSN 語 — 番の頭に控え、終わりに差にする）
+const KSKK = 3    // package → 鍵（2ワード）
+const KSKD = 4    // package → 宣言の要約（2ワード — 番の終わりに控える）
+const KSST = 5    // package → 区画の外へ出る状態（KSNワード — 番の頭に控え、終わりに差にする）
 const KSPO = 6    // 論理パスの順の package の列
 const KSCV = 7    // （空き — 旧: 値の写し取りの形。写し取りの間は st.ty.kst が負）
 const KSCP = 8    // （空き — 旧: 写し取りの位置。今はヒープの長さから — tcCapAt）
 const KSCB = 9    // 写し取りの先（listN の列）
-const KSKS = 10   // package → ソースの要約（2 語）
-const KSVB = 11   // （空き — 旧: 写し取りの語の可変長のバイト数。今は tykeys0 が写した語から数える — tcVarBytes）
-const KSYF = 12   // package → 番の頭と終わりの yFieldAt の memo の長さ（2 語 — 値の memo の節の区間）
+const KSKS = 10   // package → ソースの要約（2ワード）
+const KSVB = 11   // （空き — 旧: 写し取りのワードの可変長のバイト数。今はtykeys0がコピーしたワードから数える — tcVarBytes）
+const KSYF = 12   // package → 番の頭と終わりのyFieldAtのmemoの長さ（2ワード — 値のmemoの節の区間）
 const KSGC = 13   // package → 検査の飛ばし（tycache.sober の GC_*: 当たりで検査を飛ばす・deadline: を書いた Scope がある）
 const KSCD = 14   // fileCheck の外読みの数（監査の証人 — tycache.sober の gcDoor）
 const KSZ = 14
-const KSN = 4     // 暗黙の freeze の点の数（nimpl）・借りの位置の鍵の数（bkSig）・欄の書きの鎖が伸びたか（yfa）・点の列（ypts）
+const KSN = 4     // 暗黙のfreezeの点の数（nimpl）・借りの位置の鍵の数（bkSig）・フィールドの書きのチェーンが伸びたか（yfa）・点の列（ypts）
 
-// 鍵の口を開く（Init の後・TypeAll の前 — 閉包と論理パスの順を組む）。exe = コンパイラの鍵
+// 鍵のインターフェースを開く（Initの後・TypeAllの前 — 推移的な依存と論理パスの順を組む）。exe = コンパイラの鍵
 func TyKeyOn(st mut S, exe string) {
     np := st.npkg
     b := listN(mut st, KSZ)
@@ -547,8 +547,8 @@ func TyKeyOn(st mut S, exe string) {
     st.ty.ch1 = TC_S1
     st.ty.ch2 = TC_S2
     tcBytes(mut st, bytes(exe))
-    // package の中の順の撹拌（SOBER_TYORDER=rev / shuf — 開発の口）は区画の記録の序数を動かす = 別のコンパイラ。package の順だけの撹拌（pkgrev）は
-    // 区画を変えない（tyhash の網）ので入れない
+    // packageの中の順の撹拌（SOBER_TYORDER=rev / shuf — 開発のオプション）は区画の記録の序数を動かす = 別のコンパイラ。packageの順だけの撹拌（pkgrev）は
+    // 区画を変えない（tyhashの検証）ので入れない
     mode, seed := tyOrderMode()
     if mode == 1 || mode == 3 {
         tcW(mut st, mode)
@@ -590,7 +590,7 @@ func tcPathLess(st mut S, a int, b int) bool {
     return na < nb
 }
 
-// 鍵の状態の塊の頭（写し取りの間は負で持つ）
+// 鍵の状態のチャンクの頭（写し取りの間は負で持つ）
 func ksB(st mut S) int {
     return if st.ty.kst < 0 { 0 - st.ty.kst } else { st.ty.kst }
 }
@@ -625,8 +625,8 @@ func tyK1(st mut S, k int, s1 int, s2 int, dl int) (int, int) {
     tcW(mut st, s1)
     tcW(mut st, s2)
     if st.ty.frev != 0 {
-        // package の中の並びを動かす撹拌の口（開発の口 rev / shuf — shuf は全体の乱数の列で決まり、他の package の編集で動く）: package の中の
-        // 関数・const の並びを名前の列で混ぜる（既定の順と pkgrev は package のソースで決まり tcSrc に入っている — 鍵は既定と同じ・切の道と既定の道は
+        // packageの中の並びを動かす撹拌のオプション（開発のオプションrev / shuf — shufは全体の乱数の列で決まり、他のpackageの編集で動く）: packageの中の
+        // 関数・constの並びを名前の列で混ぜる（既定の順とpkgrevはpackageのソースで決まりtcSrcに入っている — 鍵は既定と同じ・切のパスと既定のパスは
         // 払わない）
         for j <- iter.Range(hget(mut st, st.ty.fo + 1 + k), hget(mut st, st.ty.fo + 2 + k)) {
             tcStr(mut st, sA(nodeOf(mut st, fnNode(mut st, hget(mut st, st.ty.ford + 1 + j)))))
@@ -677,17 +677,17 @@ func tyKeyPost(st mut S, k int) {
 }
 
 // 値の写し取り（tcW から — 写し取りの先〔ヒープの末尾の列〕へ積むだけ。位置はヒープの長さから — tcCapAt。
-// 語ごとに状態の塊を読み書きしない）
+// ワードごとに状態のチャンクを読み書きしない）
 func tcCap(st mut S, w int) {
     hpush(mut st, w)
 }
 
-// 写し取りの位置（写し取りの先の列に積んだ語の数）
+// 写し取りの位置（写し取りの先の列に積んだワードの数）
 func tcCapAt(st mut S) int {
     return hlen(mut st) - hget(mut st, ksB(mut st) + KSCB) - 1
 }
 
-// 写し取りの先の語 n 個を可変長（zigzag + 7 ビットずつ）にしたときのバイト数（置き場の量の見積もり — tykeys0 の vb）
+// 写し取りの先のワードn個を可変長（zigzag + 7ビットずつ）にしたときのバイト数（格納場所の量の見積もり — tykeys0のvb）
 func tcVarBytes(st mut S, buf int, n int) int {
     mut t := 0
     for i <- iter.Range(0, n) {
@@ -706,13 +706,13 @@ func tcVarBytes(st mut S, buf int, n int) int {
     return t
 }
 
-// package k の区画の値（置き場の切り口 γ が書く語の列 — 長さを返す。write なら写し取りの先〔KSCB〕へ書く）:
-// 区画の直列化（tcRegion(k, false) の語 — ns 語）‖ yFieldAt の memo の節（番の間に足した項目 — 鍵・欄の数・値）‖ 参照表（数・番号の順の論理パス）‖
-// 宣言の要約 2 語 ‖ 区画の外へ出る状態 KSN 語 ‖ 数 9 語（記録・宣言の相の記録・関数・const・節 → 型・ラムダ・辺・合成の節・memo の項目）‖
-// memo の節の語数 ‖ ns。読む側（tycache.sober の tyRead）は尾から読む。値は写し取りの先（KSCB — ヒープの末尾の [n, 語…]）に残る
+// package k の区画の値（格納場所の切り口 γ が書くワードの列 — 長さを返す。writeなら写し取りの先〔KSCB〕へ書く）:
+// 区画の直列化（tcRegion(k, false) のワード — nsワード）‖ yFieldAtのmemoの節（番の間に足した項目 — 鍵・フィールドの数・値）‖ 参照表（数・番号の順の論理パス）‖
+// 宣言の要約2ワード ‖ 区画の外へ出る状態KSNワード ‖ 数9ワード（記録・宣言の相の記録・関数・const・節 → 型・ラムダ・辺・合成の節・memoの項目）‖
+// memoの節のワード数 ‖ ns。読む側（tycache.soberのtyRead）は尾から読む。値は写し取りの先（KSCB — ヒープの末尾の [n, ワード…]）に残る
 func tyValue(st mut S, k int) int {
     b := ksB(mut st)
-    // 1 回の直列化でヒープの末尾へ積む（[n, 語…] — listN の形。写し取りの間はヒープに確保しない — tcReset の参照表は使い回し）
+    // 1回の直列化でヒープの末尾へ積む（[n, ワード…] — listNの形。写し取りの間はヒープに確保しない — tcResetの参照表は使い回し）
     tcReset(mut st, k)
     hset(mut st, b + KSCB, hlen(mut st))
     hpush(mut st, 0)
@@ -785,7 +785,7 @@ func tyValue(st mut S, k int) int {
     return n
 }
 
-// package k の区画の値をバイトへ（語ごとに zigzag + 7 ビットずつの可変長 — 符号化の口 loader.Varints）
+// package k の区画の値をバイトへ（ワードごとにzigzag + 7ビットずつの可変長 — 符号化のAPI loader.Varints）
 func tyValEnc(st mut S, k int) []byte {
     n := tyValue(mut st, k)
     buf := hget(mut st, ksB(mut st) + KSCB)
@@ -833,9 +833,9 @@ func tcStrEq(st mut S, a StrRef, b StrRef) bool {
 
 // `sober build --emit=tykeys0`: 型付けの前の鍵（K1）の 1 行 1 package（ロード順）
 // `<論理パス> <鍵> clo=<閉包の数> refs=<参照表の数> post=<事後の鍵との食い違い> dmis=<宣言の要約の食い違い> door= yfa= vh= vw=<値の語数> vb=<可変長のバイト数> nimpl= bk= pts= dup=`。
-// 事後 = TypeAll の後で宣言の要約・ソースの要約を取り直して組んだ鍵（後の package の型付けが前の区画の宣言を動かさない・型付けが木を動かさないことの網）。
-// door = 参照表の閉包の外（扉の監査）・yfa = 欄の書きの鎖が伸びた（受理する package では 0 — 当たりの区画の鎖は空）・vh = 値を書く道で写した
-// 直列化の語を混ぜ直して区画のハッシュに戻らない
+// 事後 = TypeAllの後で宣言の要約・ソースの要約を取り直して組んだ鍵（後のpackageの型付けが前の区画の宣言を動かさない・型付けが木を動かさないことの検証）。
+// door = 参照表の推移的な依存の外（扉の監査）・yfa = フィールドの書きのチェーンが伸びた（受理するpackageでは0 — 当たりの区画のチェーンは空）・vh = 値を書くパスでコピーした
+// 直列化のワードを混ぜ直して区画のハッシュに戻らない
 func TyEmitK0(p loader.Program, exe string) []byte {
     mut st := S{}
     Init(mut st, p)

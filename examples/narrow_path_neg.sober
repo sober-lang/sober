@@ -1,6 +1,6 @@
 package main
 
-// 負例（型の不一致）: 絞るのは名前だけ — 欄の道（`l.next != nil`）では絞らない。名前に束縛してから絞る（`n := l.next; if n != nil { … }`）
+// 負例（型の不一致）: 絞るのは名前だけ — フィールドのパス（`l.next != nil`）では絞らない。名前に束縛してから絞る（`n := l.next; if n != nil { … }`）
 
 type L struct {
     v int

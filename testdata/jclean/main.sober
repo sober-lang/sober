@@ -1,11 +1,11 @@
 package main
 
-// json の文字列の書き出し（json.PutString → quote → rt.jclean）の網羅の検査（scripts/jcleancheck.sh — SIMD の核 段 2・report-1165）:
+// jsonの文字列の書き出し（json.PutString → quote → rt.jclean）の網羅の検査（scripts/jcleancheck.sh — SIMD の核 段階2・report-1165）:
 // 長さ n = 0〜80 × 当たりの位置 m = 0〜n（m = n は当たりなし）× 置くバイト 12 種（エスケープの要る '"'・'\\'・'\n'・0x00・0x01・0x1f と、
 // 要らない境目の 0x20・'#'・'['・']'・0x7f）× 地のバイト 2 種（印字できる字・UTF-8 の 'é'〔0xc3 0xa9 — 0x80 以上の符号なしの判定〕を混ぜた列）。2 つ目の当たりを
 // 区間の後ろの方に置く形も混ぜる（quote が当たりの後の残りの区間を探し直す — 揃いの違う部分列）。文字列は大きな列の部分列で、直前と直後のバイトは
 // '"'（手書きの本体が区間の外を読んで判定すると、当たりの位置が変わって出力が変わる）。答えは 1 バイトずつの参照の書き出し（ref）と照合する。
-// xmm の破壊の網: float の値を多く生かしたまま PutString を呼ぶループ（fmix）と、同じ計算を参照で行うループ（fref）の結果が一致すること。
+// xmmの破壊の検査: floatの値を多く生かしたままPutStringを呼ぶループ（fmix）と、同じ計算を参照で行うループ（fref）の結果が一致すること。
 // 出力: 1 行目 = 検査した数・2 行目 = 失敗の数・3 行目 = 出力の検査和（--passes と --no-opt で一致 — 参照の意味 ≡ 手書きの本体）
 
 import "std/builder"
@@ -102,7 +102,7 @@ func make(n int, m int, x int, m2 int, y int, hi bool, seed int) []byte {
     return f[1:1 + n]
 }
 
-// fmix は float の値を 12 本生かしたまま PutString を呼ぶ（xmm の破壊の網）
+// fmixはfloatの値を12本生かしたままPutStringを呼ぶ（xmmの破壊の検査）
 func fmix(s string, rounds int) float {
     mut a0 := 1.5
     mut a1 := 2.25
@@ -199,7 +199,7 @@ func main() int {
             }
         }
     }
-    // xmm の破壊の網（当たりなし 40 バイト・当たりあり 9 バイトの 2 種）
+    // xmmの破壊の検査（当たりなし40バイト・当たりあり9バイトの2種）
     s1 := string(make(40, 40, 0, -1, 0, false, 5)) catch ""
     s2 := string(make(9, 3, 34, -1, 0, false, 6)) catch ""
     cases += 1

@@ -1,7 +1,7 @@
-// checkpos.ts — 位置の網（scripts/checkpos.sh）の変異の題材: 受理する例題の本体の整数のリテラルを 1 か所 `(1 < 2)`（bool）に置き換え、
+// checkpos.ts — 位置の検査（scripts/checkpos.sh）のミューテーションの題材: 受理する例題の本体の整数のリテラルを1か所 `(1 < 2)`（bool）に置き換え、
 // 検査器の型の拒否を作る。置き換える位置は本体の行（字下げつき・文字列とコメントを含まない行）の整数のリテラルの出現の中ほど（決定的）。
 //   node scripts/checkpos.ts <out-dir> <input.sober>...
-// <out-dir>/<入力名> に変異体を書き、標準出力に「<変異体のパス> <置き換えた行>」を 1 行ずつ出す（当てる場所が無い入力は出さない）
+// <out-dir>/<入力名> にミュータントを書き、標準出力に「<ミュータントのパス> <置き換えた行>」を1行ずつ出す（当てる場所が無い入力は出さない）
 import { readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 

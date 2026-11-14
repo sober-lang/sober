@@ -1,6 +1,6 @@
 package diag
 
-// minic の診断: 失敗のラベル（位置はファイル先頭からのバイトオフセット 1 語 — V4 の errparse と同じ）と、
+// minicの診断: 失敗のラベル（位置はファイル先頭からのバイトオフセット1ワード — V4のerrparseと同じ）と、
 // 位置 → line:col の変換。ラベルのフィールドは loc-free 限定（language.md 13 節 io-1）なので、位置だけを持つ
 
 type UnexpectedChar error {

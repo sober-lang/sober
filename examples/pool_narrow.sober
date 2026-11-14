@@ -1,13 +1,13 @@
 package main
 
-// pool.Scratch の狭い語の口（region-domain-pool.md 4d 節）: 語の列を 16 / 32 ビットの項目の列と見て読み書きする。添字は項目の単位・容量は語のまま
-// （容量 4 語 = 16 ビットの項目 16 個 = 32 ビットの項目 8 個）。項目は語の中に little endian で並び、書きは値の下位だけを残す。
-// 64 ビットの LoadRaw と同じ Scratch で混ぜてよい（ここでは同じ語を両方の目で読んで並びを見せる）
+// pool.Scratchの狭いワードのインターフェース（region-domain-pool.md 4d節）: ワードの列を16 / 32ビットの項目の列と見て読み書きする。添字は項目の単位・容量はワードのまま
+// （容量4ワード = 16ビットの項目16個 = 32ビットの項目8個）。項目はワードの中に little endian で並び、書きは値の下位だけを残す。
+// 64ビットのLoadRawと同じScratchで混ぜてよい（ここでは同じワードを両方の目で読んで並びを見せる）
 
 import "std/iter"
 import "std/pool"
 
-// b の各バイトの出現の数を 16 ビットの項目の表に数える（表 = 256 項目 = 64 語）
+// bの各バイトの出現の数を16ビットの項目の表に数える（表 = 256項目 = 64ワード）
 func count(t mut pool.Scratch, b []byte) {
     for i <- iter.Range(0, len(b)) {
         k := int(b[i])
@@ -24,9 +24,9 @@ func main() {
     // 4099 × 15 = 61485 は 16 ビットに収まる・下位だけ残る書き
     pool.StoreRaw16(mut s, 1, 70000)
     println("${pool.LoadRaw16(mut s, 1)} ${pool.LoadRaw16(mut s, 15)}")
-    // 語 0 = 項目 0〜3 の並び（項目 0 が最下位の 16 ビット）
+    // ワード0 = 項目0〜3の並び（項目0が最下位の16ビット）
     println("${pool.LoadRaw(mut s, 0)}")
-    // 同じ語を 32 ビットの項目の目で: 項目 0 = 16 ビットの項目 0 ‖ 1
+    // 同じワードを32ビットの項目の目で: 項目0 = 16ビットの項目0 ‖ 1
     println("${pool.LoadRaw32(mut s, 0)} ${pool.LoadRaw32(mut s, 1)}")
     pool.StoreRaw32(mut s, 7, 4294967295 + 6)
     println("${pool.LoadRaw32(mut s, 7)} ${pool.LoadRaw16(mut s, 14)} ${pool.LoadRaw16(mut s, 15)}")

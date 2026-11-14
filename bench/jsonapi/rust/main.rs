@@ -1,4 +1,4 @@
-// jsonapi の Rust の双子（素直縛り — std だけ・crate なし）: serde が使えないので、汎用の値の木（enum Value）へ再帰下降で parse してから欄を引く
+// jsonapiの比較用のRustの実装（素直縛り — stdだけ・crateなし）: serdeが使えないので、汎用の値の木（enum Value）へ再帰下降でparseしてからフィールドを引く
 // （crate 無しの Rust で最初に書く形）。検証 → 小計・割引・税 → レスポンスは format! で直列化。出力は Sober 版とバイト一致
 use std::fs;
 use std::io::{self, Write};

@@ -2,7 +2,7 @@ package main
 
 // map の索引（長い map は rt の開番地法の索引を引く）が意味論（language.md 22 節）を 1 ミリも動かさないことの回帰:
 // 挿入順の keys・墓石の再挿入が元の位置・値のヘッダ（コピーした旧ヘッダは成長の後も旧テーブルを見る — 先端の伸長と全コピーの両方）・
-// int / string のキー・struct の欄の map・関数から返す map（relocate — 索引を外して作り直す）・freeze
+// int / stringのキー・structのフィールドのmap・関数から返すmap（relocate — 索引を外して作り直す）・freeze
 
 import "std/iter"
 
@@ -85,7 +85,7 @@ func main() {
     // int キー・関数から返す map
     f := fill(50)
     println(len(f), geti(f, 0), geti(f, 343), geti(f, 7 * 49), geti(f, 1))
-    // struct の欄
+    // structのフィールド
     bx := Box{m: m}
     println(get(bx.m, "k10"), get(bx.m, "k3"))
     mut sum := 0

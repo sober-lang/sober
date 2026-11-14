@@ -1,7 +1,7 @@
 package stdtime
 
 // std/time の black-box テスト: 暦と書式（Python の datetime で作った値 — 1970 の前後・閏日・9999 年・西暦 1 年）・オフセットつきの RFC 3339・
-// 端数の秒・HTTP の日付の 3 形・負例・Now と Mono の粗い性質
+// 端数の秒・HTTPの日付の3形・負例・NowとMonoの粗いプロパティ
 
 import "std/iter"
 import "std/time"

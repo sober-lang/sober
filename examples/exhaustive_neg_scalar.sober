@@ -1,7 +1,7 @@
 package main
 
-// 負例（language.md 13 節「表の網羅」）: @exhaustive の named scalar の switch が型つきの const Gone を名指していない
-// （型の無い const Plain は Status の集合の外 — 名指さなくてよい）
+// 負例（language.md 13 節「表の網羅」）: @exhaustiveの named scalar のswitchが型つきの const Gone を列挙していない
+// （型の無い const Plain はStatusの集合の外 — 列挙しなくてよい）
 
 type Status int
 

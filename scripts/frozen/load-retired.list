@@ -1,12 +1,12 @@
 # 凍結コーパスの load 側（Zig ≡ Sober の loader JSON の照合 — selfhost_load）から退役させた entry。
-# 退役の理由（2026-10-17、クロージャの波 工程 5d — 匿名欄の反転・report-762）: 第一階の匿名の関数型の欄も値の位置になり、欄に置いた名前付き関数を
-# loader が η（`($f…) => g($f…)` — loader/fnval.sober）に写す。η のラムダの本体が g を呼ぶので、loader JSON の呼び先の列（callees）に g が載る
-# （凍結した Zig 版の loader は欄の η を持たない — 意味の差でなく凍結物の語彙の差）。build は η を g の番地へ畳むので IR は不変（irtext / lltext の黄金が網）。
-# ここに載せた entry は selfhost_load だけが飛ばす。loader JSON の黄金（scripts/loaderjson.sh — 主の sober が生成元）は残る
+# 退役の理由（2026-10-17、クロージャのマイルストーン 工程 5d — 匿名フィールドの反転・report-762）: 第一階の匿名の関数型のフィールドも値の位置になり、フィールドに置いた名前付き関数を
+# loaderが η（`($f…) => g($f…)` — loader/fnval.sober）に変換する。η のラムダの本体がgを呼ぶので、loader JSONの呼び先の列（callees）にgが載る
+# （凍結したZig版のloaderはフィールドの η を持たない — 意味の差でなく凍結物の語彙の差）。buildは η をgの番地へ畳むのでIRは不変（irtext / lltextのゴールデンが検査）。
+# ここに載せたentryはselfhost_loadだけが飛ばす。loader JSONのゴールデン（scripts/loaderjson.sh — 主のsoberが生成元）は残る
 examples/fnvalue.sober
 examples/sort.sober
 
-# 退役の理由（2026-10-20、API 総再審 便 3 の第 2 相 — report-905）: 合成の暗黙 import の行き先が変わった（文字列補間・assert は $strings std/strings →
+# 退役の理由（2026-10-20、API 総再審 タスク3 の第 2 相 — report-905）: 合成の暗黙importの行き先が変わった（文字列補間・assertは $strings std/strings →
 # $convert std/convert・`string(b)` は std/utf8 → std/internal/utf8）。この照合の Sober 側は凍結した std（src/stage1/std_frozen）を読むので、新しい行き先の
 # package が無く load で拒否になる（意味の差でなく凍結物の語彙の差 — parse 側の照合は selfhost_parse.sh で綴りを揃えて残した）。
 # 補間か `string(b)` を使う entry 24 本。同じ理由で compiler/tools の 4 本（起点の木の lexdump / parsedump / fmtdump / loaderdump）の照合も外した（selfhost_load.sh）
@@ -35,8 +35,8 @@ examples/io_stdout.sober
 testdata/frozen_src/examples/pool_string.sober
 testdata/frozen_src/examples/utf8_std.sober
 
-# 退役の理由（2026-11-06、import 便 R1 — 修飾子 = import パスの全段・language.md 20 節）: import の表の参照名が修飾子（`testdata.pkgdemo.lib`）と
-# 移行の間の旧綴り（パスの最後の段）の 2 行になり、loader JSON の import の列が凍結した Zig 版（最後の段の 1 行）と割れる（意味の差でなく表の形の差）。
-# 木の綴りを書き換える段（R2）で旧綴りが消えると Zig 版はこの入力の新しい綴りを読めないので、名前解決を通る照合からは戻さない（report-imp-1 N-3）
+# 退役の理由（2026-11-06、importタスクR1 — 修飾子 = importパスの全段・language.md 20 節）: importの表の参照名が修飾子（`testdata.pkgdemo.lib`）と
+# 移行の間の旧綴り（パスの最後のレベル）の2行になり、loader JSONのimportの列が凍結したZig版（最後のレベルの1行）と割れる（意味の差でなく表の形の差）。
+# 木の綴りを書き換えるフェーズ（R2）で旧綴りが消えるとZig版はこの入力の新しい綴りを読めないので、名前解決を通る照合からは戻さない（report-imp-1 N-3）
 testdata/pkgdemo/app
 testdata/errpkg/app

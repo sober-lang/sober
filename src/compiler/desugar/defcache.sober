@@ -120,7 +120,7 @@ func ckPlan(st mut S, self []byte, trust bool) DefCk {
     return DefCk{on: true, nfn: nfn, has: freeze(has), k1: freeze(k1), k2: freeze(k2), ih1: g.h1, ih2: g.h2, sf: g.sf, slo: g.slo, shi: g.shi, head: g.head, adj: g.adj, tyNode: g.tyNode, istd: freeze(istd)}
 }
 
-// CkOn / CkHas / CkK1 / CkK2 は鍵の計画の読み口（checker から）
+// CkOn / CkHas / CkK1 / CkK2は鍵の計画の読みインターフェース（checkerから）
 func CkOn(d DefPlan) bool {
     return d.ck.on
 }
@@ -163,7 +163,7 @@ func CkAbs(d DefPlan, h1 int, h2 int, off int) int {
     return 0
 }
 
-// RngLu / RngPlan / PlanNfn は区間と計画の読み口（checker から）
+// RngLu / RngPlan / PlanNfnは区間と計画の読みインターフェース（checkerから）
 func RngLu(r DefRng) bool {
     return r.lu
 }
@@ -178,7 +178,7 @@ func PlanNfn(d DefPlan) int {
 
 // 扉の監査（検証 =2）: Def（関数 i）の脱糖が読んだ項目 code（dkRead の符号 — 署名 fi・本体 nfn + fi・const 2nfn + c・型宣言 = −節・
 // error の variant = −1）が鍵の届く集合の中か（std の項目は焼き込み — コンパイラの鍵が運ぶので外でよい）。mark / stk は呼び手の作業域・
-// stamp = 問い合わせごとに違う正の数（見つけた時点で探索を打ち切るので、同じ Def の 2 回目に前の印を使い回せない）
+// stamp = 問い合わせごとに違う正の数（見つけた時点で探索を打ち切るので、同じDefの2回目に前のマークを使い回せない）
 func CkDoor(d DefPlan, i int, code int, mark mut []int, stk mut []int, stamp int) bool {
     c := d.ck
     nfn := c.nfn

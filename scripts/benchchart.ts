@@ -1,7 +1,7 @@
 // benchchart: README のグラフ（SVG）を作る。依存なし（自前の SVG の組み立て — 将来の Sober 化の候補）。
 // 速度・RSS の 4 枚の正は bench/data/official.tsv（seqperf の行）で、scripts/benchsync.sh が生成と --check（gates）をする（seqChartsFrom をここから読む）。
 //   node --experimental-strip-types scripts/benchchart.ts [--seq <seqperf の raw TSV>] [--budget <budget の時系列 TSV>] [-o docs/assets]
-//   （--seq は旧来の口 — 公式の図は benchsync.sh で。budget の図は official.tsv に無いデータなので benchsync の網の外）
+//   （--seqは旧来のオプション — 公式の図はbenchsync.shで。budgetの図はofficial.tsvに無いデータなのでbenchsyncの検査の外）
 // 出力（各ライト / ダークの 2 枚 — README は <picture> で出し分ける）:
 //   bench-speed-{light,dark}.svg   9 題材の相対の実行時間（cycles:u・Rust素 = 1.0・短いほど速い）— Sober / Go の横棒と 1.0 の基準線
 //   bench-rss-{light,dark}.svg     9 題材の最大 RSS（Rust = 1.0 の相対・線形の軸 — 速度のグラフと同じ文法）— Sober / Go の横棒。ラベルは絶対値の MB と比

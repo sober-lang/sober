@@ -1,7 +1,7 @@
 package main
 
 // stage2 の CLI: Sober で書いたコンパイラの単体の入口。コマンド・フラグ・環境変数は下の const の表（std/cli）が
-// 正で、`sober --help` / `sober <command> --help`（開発の口は `--help=dev`）・`sober --cli-spec`（表の JSON）はそこから出る。
+// 正で、`sober --help` / `sober <command> --help`（開発用のオプションは `--help=dev`）・`sober --cli-spec`（表のJSON）はそこから出る。
 // entry は .sober ファイルか main package のディレクトリ（cwd 相対 — import もルート = cwd 相対）。
 // 終了コード: 成功 0・処理の失敗（load / parse / 脱糖 / lower の拒否・型エラー・読み書きの失敗）1・使い方の誤り 2（std/cli — フラグの組の誤りも handler が 2 で返す）。
 // 診断は 1 行（`sober: load error` 等）。
@@ -27,14 +27,14 @@ import "analyzer"
 const Std = map[string]string{}
 
 // L0（std のプリビルド焼き込み）: std の各 package の .sobi（小分けの check の 1 周の値 —
-// `l0/<path>.sobi`）。stage2.sh が 2 段で建てる（L0 なしの仮の stage2 に `check <std 全部> --split --l0-out` で書かせ、それを焼き込んで本番を建てる —
+// `l0/<path>.sobi`）。stage2.shが2ステージでビルドする（L0なしの仮のstage2に `check <std 全部> --split --l0-out` で書かせ、それを焼き込んで本番をビルドする —
 // 同じコードが計算した値）。中身はこのコンパイラ自身と std の焼き込み（Std）だけで決まるので鍵は要らず、stale は定義から起きない（パスで引く）。
-// 木の l0/ には仮の 1 ファイル（l0/placeholder.sobi — @embed は一致 0 を拒否するため）だけ — stages の stage3 等、stage2.sh の外で建てたものは L0 が空
+// 木のl0/ には仮の1ファイル（l0/placeholder.sobi — @embedは一致0を拒否するため）だけ — stagesのstage3等、stage2.shの外でビルドしたものはL0が空
 @embed("l0/**/*.sobi")
 const L0 = map[string]string{}
 
 // ── コマンド行の表（std/cli）: 宣言の const を把手にして handler が値を引く。相互の組（`--pkg` と `--iface`・`--split` と `--l0-out` /
-// `--cache-trace`・`--ast-json` と `--loader-json`・iface の `--view` と <dir>・check の開発の口の排他）は handler が見る（misuse — 2）
+// `--cache-trace`・`--ast-json` と `--loader-json`・ifaceの `--view` と <dir>・checkの開発用のオプションの排他）はhandlerが見る（misuse — 2）
 
 // 共通の環境変数（文書だけ — 読むのは各所の os.Getenv）
 const EBuildCache = cli.Env{name: "SOBER_BUILD_CACHE", help: "0 turns the build cache off (default on)"}
@@ -90,7 +90,7 @@ const ESlotPoison = cli.Env{name: "SOBER_SLOT_POISON", help: "poison the slots o
 const EStrix = cli.Env{name: "SOBER_STRIX", help: "the mode of the string index of the lowering", dev: true}
 const ESymsMn = cli.Env{name: "SOBER_SYMS_MN", help: "1 appends the address of rt.mn to the symbol list (the areacheck net)", dev: true}
 
-// build（--emit も開発の口も無ければ `--emit=elf --passes` と同じ実行ファイルを -o〔既定 a.out〕へ。--emit か開発の口があれば -o が無いとき標準出力へ）
+// build（--emitも開発用のオプションも無ければ `--emit=elf --passes` と同じ実行ファイルを -o〔既定a.out〕へ。--emitか開発用のオプションがあれば -o が無いとき標準出力へ）
 const Entry = cli.Positional{name: "entry", help: "a .sober file or a main package directory"}
 const Out = cli.StrFlag{name: "o", arg: "<file>", help: "write the output to <file> (default a.out for an executable, else the standard output)", opt: true}
 const NoOpt = cli.BoolFlag{name: "no-opt", help: "skip the IR passes"}
@@ -118,7 +118,7 @@ const TraceErrors = cli.BoolFlag{name: "trace-errors", help: "instrument the err
 const TraceEffects = cli.BoolFlag{name: "trace-effects", help: "instrument the function effects", dev: true}
 const VecCheck = cli.BoolFlag{name: "vec-check", help: "check the window of every SIMD block read (rt mutant 56 — exit 103)", dev: true}
 const Mutant = cli.IntFlag{name: "rt-mutant", help: "build with an rt mutant (self-tests of the nets)", opt: true, dev: true,
-    allow: []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81}}
+    allow: []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 84, 85, 86, 87, 88, 89}}
 const Layout = cli.IntFlag{name: "layout", arg: "<seed>", help: "permute the code layout (v2)", min: 1, max: 999, opt: true, dev: true}
 const LayoutV1 = cli.IntFlag{name: "layout-v1", arg: "<seed>", help: "permute the code layout (v1)", min: 1, max: 999, opt: true, dev: true}
 const FitCheck = cli.BoolFlag{name: "fit-check", help: "make the line-crossing windows but do not pad", dev: true}
@@ -250,7 +250,7 @@ const Outline = cli.Command{name: "outline", summary: "print the declarations of
     bools: []cli.BoolFlag{ONoTest, OPublic}, ints: []cli.IntFlag{ODepth}, choices: []cli.ChoiceFlag{OFormat}, pos: []cli.Positional{OPath}, run: cmdOutline}
 
 // version は `sober --version` の版。リポジトリでは "dev"。Release（.github/workflows/release.yml）はタグの名前で version の行を
-// 書き換えてから stage2 を建てる（版を焼き込む口はこの 1 行だけ — 言語機能も鎖も増やさない）
+// 書き換えてからstage2をビルドする（版を焼き込むインターフェースはこの1行だけ — 言語機能もブートストラップチェーンも増やさない）
 const Sober = cli.App{
     name: "sober",
     version: "dev", // sober-version
@@ -299,9 +299,9 @@ func lowerFail(p loader.Program, std map[string]string, err error?) int {
     if diag.IsFrozen(err) {
         return frozenLines(p, std)
     }
-    // 内部段の名前だけの拒否（Mismatch / Unsupported）: check も同じ宣言の中で拒否するなら check と同じ診断を出す（冷たい道 — 文面の出どころを 1 つに）。
+    // 内部段の名前だけの拒否（Mismatch / Unsupported）: checkも同じ宣言の中で拒否するならcheckと同じ診断を出す（冷たいパス — 文面の出どころを1つに）。
     // 同じ誤りでも check と lower の位置は字句数個ずれる（演算子と被演算子・文と式）ので宣言の粒で見る。check が受理する・別の宣言で拒否するなら
-    // lower の拒否のまま（別の宣言の誤りに差し替えると、build を落とした箇所を名指せない）
+    // lowerの拒否のまま（別の宣言の誤りに差し替えると、buildを落とした箇所を特定できない）
     if diag.IsInternal(err) {
         r, at := checkSeqAt(p, std, false, []string{}, ckNoCache())
         if r.code != 0 && len(r.msgs) > 0 && sameDecl(p, at, diag.At(err)) {
@@ -333,7 +333,7 @@ func declStart(p loader.Program, at diag.Pos) int {
         if l != 0 {
             for j <- iter.Range(0, ast.ListLen(t, l)) {
                 x := t.nodes[ast.ListAt(t, l, j)]
-                // 宣言の字句の範囲 [a, b)（ast の KTypeDecl / KFuncDecl / KConst — outline と同じ欄）
+                // 宣言の字句の範囲 [a, b)（astのKTypeDecl / KFuncDecl / KConst — outlineと同じフィールド）
                 a := if kind == 0 { x.d } else if kind == 1 { t.data[x.f + 2] } else { x.c }
                 b := if kind == 0 { x.e } else if kind == 1 { t.data[x.f + 3] } else { x.d }
                 if a <= at.tok && at.tok < b {
@@ -393,7 +393,7 @@ func where(p loader.Program, std map[string]string, at diag.Pos) string {
 }
 
 // build の entry を読む（test なら package のテストのビルド — loader.LoadTestFs）。名前付き関数型を通した呼び出しの名前付き実引数は
-// ここで位置へ写す（desugar.NamedValueArgs — 型を知る層の写し。check・build・analyzer が同じ木を読む）
+// ここで位置へ変換する（desugar.NamedValueArgs — 型を知る層の変換。check・build・analyzerが同じ木を読む）
 func loadEntry(entry string, test bool, std map[string]string) (loader.Program, error?) {
     p, lerr := loadRaw(entry, test, std)
     if lerr != nil {
@@ -402,9 +402,9 @@ func loadEntry(entry string, test bool, std map[string]string) (loader.Program, 
     return surface(p)
 }
 
-// lower へ渡す entry を読む（名前付き実引数の写しまで — std/task の呼び出し点の形の検査〔ParCheck〕は lower の build が自分の表の上で掛ける。
-// TypeAll は 1 回が重い — 自己 build で 1.9 G 命令）。pc = parse のキャッシュの読みの表（build の置き場を使う道だけ — 他は loader.PcOff()）・
-// 2 つ目の戻り = ファイルごとの読みの結果（lower が書きの束へ）。積み先 sink はここで持つ: 読みは mut 引数の鎖で region 透過になるので、
+// lowerへ渡すentryを読む（名前付き実引数の変換まで — std/taskの呼び出し点の形の検査〔ParCheck〕はlowerのbuildが自分の表の上で掛ける。
+// TypeAllは1回が重い — 自己buildで1.9 G命令）。pc = parseのキャッシュの読みの表（buildの格納場所を使うパスだけ — 他はloader.PcOff()）・
+// 2つ目の戻り = ファイルごとの読みの結果（lowerが書きのバッチへ）。積み先sinkはここで持つ: 読みはmut引数のチェーンでregion透過になるので、
 // 持ち主を build の頭（cmdBuild）に置くと読みの作業域が build の間ずっと残る（自己 build の RSS +35 MB の実測）
 func loadNamed(entry string, test bool, std map[string]string, pc loader.PCache) (loader.Program, []loader.PcPut, error?) {
     mut sink := loader.PcSink{}
@@ -417,7 +417,7 @@ func loadNamed(entry string, test bool, std map[string]string, pc loader.PCache)
     return q, loader.PcList(mut sink), nerr
 }
 
-// 読んだ木を check・build・analyzer が共有する形へ（名前付き関数型を通した名前付き実引数の写し・std/task の呼び出し点の形の検査 —
+// 読んだ木をcheck・build・analyzerが共有する形へ（名前付き関数型を通した名前付き実引数の変換・std/taskの呼び出し点の形の検査 —
 // 両方とも型を知る層。check と build が同じ拒否をする）
 func surface(p0 loader.Program) (loader.Program, error?) {
     p, nerr := desugar.NamedValueArgs(p0)
@@ -471,7 +471,7 @@ func main() int {
 }
 
 // コンパイラ自身の鍵: 環境変数 SOBER_SELF_KEY（bin/sober が stage2 の .key を渡す — compiler/ + std/ + boot の内容ハッシュ。
-// 決定的ビルドなので同じ .key は同じバイナリ）。無ければ実行中のバイナリ（/proc/self/exe）の SHA-256。どちらも取れなければ空（鍵の材料が欠けた印 —
+// 決定的ビルドなので同じ .keyは同じバイナリ）。無ければ実行中のバイナリ（/proc/self/exe）のSHA-256。どちらも取れなければ空（鍵の材料が欠けたマーク —
 // 呼び手は当否を出さない）
 func selfKey() []byte {
     v, err := os.Getenv("SOBER_SELF_KEY")
@@ -485,9 +485,9 @@ func selfKey() []byte {
     return bytes(exeMemo("sha256"))
 }
 
-// 実行ファイルから作る鍵の memo: /proc/self/exe の（大きさ, 更新時刻）が前と同じなら置き場の `exekey-<kind>` から引き、違えば作って
-// 書き直す（16 MB のハッシュ ≈ 40 ms を起動ごとに払わない）。kind = "sha256"（selfKey）か "bc"（置き場の世代 — lower.BcExeKey）。
-// 置き場が無ければ毎回作る
+// 実行ファイルから作る鍵のmemo: /proc/self/exeの（大きさ, 更新時刻）が前と同じなら格納場所の `exekey-<kind>` から引き、違えば作って
+// 書き直す（16 MBのハッシュ ≈ 40 msを起動ごとに払わない）。kind = "sha256"（selfKey）か "bc"（格納場所の世代 — lower.BcExeKey）。
+// 格納場所が無ければ毎回作る
 func exeMemo(kind string) string {
     root := buildCacheRoot()
     if root == "" {
@@ -555,7 +555,7 @@ func hasEmbed(src []byte) bool {
     return false
 }
 
-// build の後段の関数キャッシュの根（cacheDir()/sober-build-1 — 置き場が無ければ ""）
+// buildの後段の関数キャッシュの根（cacheDir()/sober-build-1 — 格納場所が無ければ ""）
 func exeKeyOf(kind string) string {
     if kind == "bc" {
         return lower.BcExeKey()
@@ -564,7 +564,7 @@ func exeKeyOf(kind string) string {
     return hex.Format(hash.Sha256(b))
 }
 
-// build の後段の関数キャッシュの世代のディレクトリ（既定 on — SOBER_BUILD_CACHE=0 で切る。置き場かコンパイラの鍵が無ければ ""）
+// buildの後段の関数キャッシュの世代のディレクトリ（既定on — SOBER_BUILD_CACHE=0で切る。格納場所かコンパイラの鍵が無ければ ""）
 func buildCacheDir() string {
     v, err := os.Getenv("SOBER_BUILD_CACHE")
     if err != nil {
@@ -628,13 +628,13 @@ func parentOf(path string) string {
     return if !slashed || dir == "" { "." } else { dir }
 }
 
-// 置き場: 環境変数 SOBER_CACHE（空文字なら無効 = ""）。無ければ $XDG_CACHE_HOME/sober・$HOME/.cache/sober（どれも無ければ無効）
+// 格納場所: 環境変数SOBER_CACHE（空文字なら無効 = ""）。無ければ $XDG_CACHE_HOME/sober・$HOME/.cache/sober（どれも無ければ無効）
 func cacheDir() string {
     v, err := os.Getenv("SOBER_CACHE")
     if err != nil {
         return ""
     }
-    // if 式の腕に「値」と「リテラル」を並べると腕の region が合わない（F-35 — loader の orDot と同じ）ので腕ごとに return する
+    // if式の分岐に「値」と「リテラル」を並べると分岐のregionが合わない（F-35 — loaderのorDotと同じ）ので分岐ごとにreturnする
     if v != nil {
         return v
     }

@@ -1,7 +1,7 @@
 package main
 
 // ワーカーごとの列 + 未着手の子の盗み。木の形の spawn（fan-out 10・深さ 4 = 1 万の葉）と、1 scope に
-// 列の大きさ（DQ_CAP = 256）を越える子（あふれ — 共有の積みへ）の両方を通す。値は Kahn によりスケジュールに依らない（schedfuzz が W 1/2/4/8 × 種で照合）
+// 列の大きさ（DQ_CAP = 256）を越える子（あふれ — 共有のスタックへ）の両方を通す。値はKahnによりスケジュールに依らない（schedfuzzがW 1/2/4/8 × シードで照合）
 
 import "std/iter"
 import "std/task"

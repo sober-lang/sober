@@ -1,6 +1,6 @@
 package main
 
-// const の席: `@const(q)` の仮引数には、ビルド時に文面の決まる文字列（リテラル・const・その `+`）と、
+// const 仮引数: `@const(q)` の仮引数には、ビルド時に文面の決まる文字列（リテラル・const・その `+`）と、
 // 呼び手自身の `@const` の仮引数だけを渡せる。値は別の引数で渡し、文面の選び分けは const の switch で
 
 const ByName = "select id from item order by name"
@@ -11,7 +11,7 @@ func describe(q string, arg int) string {
     return "${q} -- arg ${arg}"
 }
 
-// 明示の伝播: 自分の `@const` の仮引数をそのまま席へ渡せる
+// 明示の伝播: 自分の `@const` の仮引数をそのまま const 仮引数へ渡せる
 @const(q)
 func twice(q string) string {
     return describe(q, 1) + "\n" + describe(q + " desc", 2)

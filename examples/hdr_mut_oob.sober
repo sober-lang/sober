@@ -2,7 +2,7 @@ package main
 
 import "std/iter"
 
-// hdr の網: u が v より短いとき、v の長さで u を引く — 境界検査は消してはいけない（panic の位置が opt / no-opt で一致する）
+// hdrのテスト: uがvより短いとき、vの長さでuを引く — 境界検査は消してはいけない（panicの位置がopt / no-optで一致する）
 
 func dot(v mut []int, u mut []int) {
     for i <- iter.Range(0, len(v)) {

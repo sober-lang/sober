@@ -10,9 +10,9 @@ import "checker"
 import "iface"
 
 // cmdIface は `sober iface <entry> [--pkg <path> | --no-expand]`: package の interface（.sobi — compiler/iface）。--pkg なら その package の .sobi を、
-// 無ければ全 package を束で（`== <path>.sobi` の行 + 本文・最後に `== link.txt` + リンク集合 — bin/sober の -o が書き分ける。std に mkdir の口が無いため）。
-// E2-S の逃げ（`@expand` の印）は check の周回で決める（checker.ExclE2 — 脱糖の拒否ならその診断で失敗）
-// rawTrees はファイルごとのソースを読み直して parse した生の木（loader の写しの前 — iface.Emit が原文の形で書く）。読み直せないファイル
+// 無ければ全packageをまとめて（`== <path>.sobi` の行 + 本文・最後に `== link.txt` + リンク集合 — bin/soberの -o が書き分ける。stdにmkdirのインターフェースが無いため）。
+// E2-Sの逃げ（`@expand` のフラグ）はcheckの周回で決める（checker.ExclE2 — 脱糖の拒否ならその診断で失敗）
+// rawTreesはファイルごとのソースを読み直してparseした生の木（loaderの変換の前 — iface.Emitが原文の形で書く）。読み直せないファイル
 // （loader が合成した `$layout/…`）は file = -1 の空の木
 func rawTrees(p loader.Program, std map[string]string) []ast.Tree {
     mut out := mut []ast.Tree{}
@@ -23,7 +23,7 @@ func rawTrees(p loader.Program, std map[string]string) []ast.Tree {
 }
 
 // `sober iface <entry> --view <path> <dir>`（scripts/sobi.sh の G-a — .sobi の不動点）: <dir> の視点（package <path> だけソース・他は .sobi）で
-// 読んだプログラムから、<path> 以外の全 package の .sobi を束で書く（`@expand` は読んだ .sobi の印のまま — E2-S は回さない）
+// 読んだプログラムから、<path> 以外の全packageの .sobiをまとめて書く（`@expand` は読んだ .sobiのフラグのまま — E2-Sは回さない）
 func cmdIfaceView(entry string, pkg string, dir string) int {
     std := Std
     p, lerr := loader.LoadView(entry, pkg, dir, std)
@@ -46,7 +46,7 @@ func cmdIface(cl cli.Parsed) int {
     vw := cli.StrOpt(cl, View)
     dir := cli.PosOpt(cl, IDir)
     ip := cli.StrOpt(cl, IPkg)
-    // --no-expand = E2-S の周回を走らせない（`@expand` の印なし — stage1 の .sobi との照合 scripts/sobi.sh が凍結コーパスに掛ける。
+    // --no-expand = E2-Sの周回を走らせない（`@expand` のフラグなし — stage1の .sobiとの照合scripts/sobi.shが凍結コーパスに掛ける。
     // 凍結した例には今の脱糖器が拒否するものがある）
     noexp := cli.Bool(cl, NoExpand)
     if vw != nil {

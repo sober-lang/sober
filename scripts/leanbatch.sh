@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # sober-check のバッチ入力（`--batch` — lean/Main.lean）の回帰検査: バッチ出力の各行が、同じ入力の 1 件ずつの実行の stdout とバイト一致すること。
 #
-#   scripts/leanbatch.sh          第 3 黄金・corevec・compiler/tools・端の入力（約 400 本）
-#   scripts/leanbatch.sh --all    加えて変異体（約 1,000 本 — 拒否の経路を厚く）
+#   scripts/leanbatch.sh          第3ゴールデン・corevec・compiler/tools・端の入力（約400本）
+#   scripts/leanbatch.sh --all    加えてミュータント（約1,000本 — 拒否の経路を厚く）
 #
-# 入力: 第 3 黄金 testdata/corejson/*.json・corevec 300 本・compiler/tools/* のコア AST（大きい入力）・scripts/checkmut.ts の変異体（拒否の多い入力）・
+# 入力: 第3ゴールデンtestdata/corejson/*.json・corevec 300本・compiler/tools/* のコアAST（大きい入力）・scripts/checkmut.tsのミュータント（拒否の多い入力）・
 # 端の入力（空・壊れた JSON・改行を含む整形済みの JSON・受理しない kind）。バッチは gatelib.sh の lean_batch（ゲートが使う経路そのもの）で流す。
 # 前提: lean で lake build 済み（$SOBER_CHECK で差し替え可）・zig build 済み
 set -euo pipefail
@@ -39,7 +39,7 @@ while IFS= read -r line; do
     t=${line%%=*}
     skip+=("$t")
     if [ "$line" != "$t" ]; then reps+=("$t=${line#*=}"); continue; fi
-    case "$sc_tools" in *" $t "*) echo "leanbatch: SKIP tool_$t (Lean verdict cross-checked by selfhost_check (ii))" ;;
+    case "$sc_tools" in *" $t "*) echo "leanbatch: excluded tool_$t (Lean verdict cross-checked by selfhost_check (ii))" ;;
         *) echo "FAIL: scripts/leanbatch_skip.txt: $t is not in scripts/selfhost_check_tools.txt — nothing else cross-checks its Lean verdict"; exit 1 ;; esac
 done < scripts/leanbatch_skip.txt
 mkdir -p "$tmp/rep"
@@ -62,7 +62,7 @@ for r in "${reps[@]}"; do
     if [ $((same * 10000)) -lt $((sz * 9999)) ]; then
         echo "FAIL: scripts/leanbatch_skip.txt: $t=$rep: core JSONs share only $same of $sz leading bytes (more than main's Def differs)"; exit 1
     fi
-    echo "leanbatch: SKIP tool_$t (represented by tool_$rep — $same/$sz leading bytes identical)"
+    echo "leanbatch: excluded tool_$t (represented by tool_$rep — $same/$sz leading bytes identical)"
 done
 if [ "${1:-}" = "--all" ]; then
     mkdir -p "$tmp/mut"
@@ -80,6 +80,16 @@ printf '{"k":"lit","n":1} {"k":"triv"}' > "$tmp/in/edge_two_values.json"
 
 find "$tmp/in" -type f | LC_ALL=C sort > "$tmp/list"
 n=$(wc -l < "$tmp/list")
+# 入力の一致で省く（$GATECACHE — gates.sh が立てる。--no-cache では立たないので必ず走る）: 判定は sober-check と入力だけで決まる
+# （コンパイラが効くのは tools のコア JSON だけ — それも入力に含めて比べる）。鍵 = sober-check の中身・このスクリプトと gatelib.sh（lean_batch）の中身・
+# 入力の一覧（相対の名前 + 中身）。前回のPASSと同じ鍵なら照合せず、前回の要約の行にマークを付けて出す
+LB_KEY=$( { sha256sum < "$SOBER_CHECK"; sha256sum < "$0"; sha256sum < scripts/gatelib.sh; (cd "$tmp/in" && find . -type f | LC_ALL=C sort | xargs -d '\n' sha256sum); } | sha256sum | cut -d' ' -f1)
+LB_FILE=${GATECACHE:+$GATECACHE/leanbatch.inputs}
+if [ -n "$LB_FILE" ] && [ -f "$LB_FILE" ] && [ "$(head -1 "$LB_FILE")" = "$LB_KEY" ]; then
+    echo "SKIP: inputs unchanged since the last pass (sober-check + $n inputs — key $LB_KEY)"
+    echo "$(sed -n 2p "$LB_FILE") — inputs identical to the last PASS, not re-run"
+    exit 0
+fi
 JOBS=${JOBS:-8}
 lean_batch "$tmp/list" "$tmp/batch"
 
@@ -104,4 +114,8 @@ grep -v '^@@ ' "$tmp/all" || true
 ok=$(par_count ok "$tmp/all")
 fail=$(par_count fail "$tmp/all")
 echo "leanbatch: $n inputs, ok=$ok, fail=$fail"
-[ "$fail" = 0 ] && [ "$ok" = "$n" ]
+[ "$fail" = 0 ] && [ "$ok" = "$n" ] || exit 1
+if [ -n "$LB_FILE" ]; then
+    mkdir -p "$GATECACHE"
+    printf '%s\nleanbatch: %s inputs, ok=%s, fail=%s\n' "$LB_KEY" "$n" "$ok" "$fail" > "$LB_FILE.tmp" && mv "$LB_FILE.tmp" "$LB_FILE"
+fi

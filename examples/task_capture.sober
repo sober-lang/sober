@@ -1,6 +1,6 @@
 package main
 
-// task.Run / Spawn / Join（language.md 11 節）— 子の本体の捕獲（imm の局所・string・slice・struct）は閉包変換で
+// task.Run / Spawn / Join（language.md 11 節）— 子の本体の捕獲（immの局所・string・slice・struct）はクロージャ変換で
 // 渡す値の組になる。scope の本体は親の文脈を見てよい（mut の局所への代入・ループの中の Spawn）。build は即時形（子は Spawn の時点で走る）
 
 import "std/task"

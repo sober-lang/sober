@@ -1,7 +1,7 @@
 package flate
 
 // 公開の package（std/compress/flate の位置）: 作業域の型は別名で約束の面に残し、関数は本体 1 文の包み。
-// task.NewLocal の整えは包み（NewWork）を名指してよい — loader が 1 文の転送を実体の package の NewWork まで辿る（region-domain-pool.md 4d）
+// task.NewLocalの整えは包み（NewWork）を名前で参照してよい — loaderが1文の転送を実体のpackageのNewWorkまで辿る（region-domain-pool.md 4d）
 
 import "testdata/alias_lease/deflate"
 
@@ -16,7 +16,7 @@ func NewWork(w mut Work) {
     testdata.alias_lease.deflate.NewWork(mut w)
 }
 
-// 包みの包み（転送の鎖 — 同じ package の中）
+// 包みの包み（転送のチェーン — 同じpackageの中）
 func Ready(w mut Work) {
     NewWork(mut w)
 }

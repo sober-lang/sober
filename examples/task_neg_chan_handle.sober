@@ -1,6 +1,6 @@
 package main
 
-// chan のペイロードに handle（kind 19） — check と build が同じ名指しで拒否（desugar/parcheck.sober）。縮退の前提「縮退した子が待てるのは自分の子孫だけ」の柵
+// chanのペイロードにhandle（kind 19） — checkとbuildが同じ専用の診断で拒否（desugar/parcheck.sober）。縮退の前提「縮退した子が待てるのは自分の子孫だけ」の柵
 
 import "std/task"
 

@@ -1,6 +1,6 @@
 package p256
 
-// P-256 の ECDH の網（white-box）: Wycheproof の ECDH secp256r1（非圧縮の点 — valid は共有秘密が一致・invalid と acceptable〔圧縮点 —
+// P-256のECDHのテスト（white-box）: WycheproofのECDH secp256r1（非圧縮の点 — validは共有秘密が一致・invalidとacceptable〔圧縮点 —
 // TLS の key_share は非圧縮だけ〕は拒否）と、独立の実装で作った d·G の 30 組（testdata/crypto/p256_base.txt）
 
 import "std/hex"

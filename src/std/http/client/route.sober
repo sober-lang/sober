@@ -1,6 +1,6 @@
 package client
 
-// proxy の経路（Policy の proxy〔ParseProxy の値〕/ proxyAuth — 環境変数は読まない）: http の行き先は proxy へ絶対 URI の要求（Proxy-Authorization つき）・
+// proxyの経路（Policyのproxy〔ParseProxyの値〕/ proxyAuth — 環境変数は読まない）: httpの行き先はproxyへ絶対URIのリクエスト（Proxy-Authorizationつき）・
 // https の行き先は proxy への CONNECT のトンネルの上で行き先と TLS（proxy が https なら TLS の中の TLS）
 
 import "std/http"
@@ -9,7 +9,7 @@ import "std/io"
 import "std/net"
 import "std/internal/record"
 
-// proxy が CONNECT を断った（status = proxy の応答の状態 — 407 は認証の要求）
+// proxyがCONNECTを断った（status = proxyのレスポンスの状態 — 407は認証の要求）
 type ProxyRefused error {
     status int
 }
@@ -37,7 +37,7 @@ func ParseProxy(s string) (Proxy, error?) {
     return Proxy{t: t, seal: proxySeal{}}, nil
 }
 
-// 要求 1 本の経路（proxied = proxy を通す・px = proxy の URL・auth = Proxy-Authorization の値〔"" = 書かない〕）
+// リクエスト1本の経路（proxied = proxyを通す・px = proxyのURL・auth = Proxy-Authorizationの値〔"" = 書かない〕）
 type via struct {
     proxied bool
     px target
@@ -53,7 +53,7 @@ func firstHop(rt via, t target) string {
     return dialAddr(if rt.proxied { rt.px } else { t })
 }
 
-// 要求の対象（proxy へ平文の http を頼むときは絶対 URI — RFC 9112 3.2.2）
+// リクエストの対象（proxyへ平文のhttpを頼むときは絶対URI — RFC 9112 3.2.2）
 func requestTarget(rt via, t target) target {
     if !rt.proxied || t.tls {
         return t
@@ -61,7 +61,7 @@ func requestTarget(rt via, t target) target {
     return target{tls: false, host: t.host, port: t.port, path: "http://${hostHeader(t)}${t.path}"}
 }
 
-// 要求の頭に Proxy-Authorization を足す（proxy へ平文の http を頼むときだけ — CONNECT のときは CONNECT の頭に）
+// リクエストの頭にProxy-Authorizationを足す（proxyへ平文のhttpを頼むときだけ — CONNECTのときはCONNECTの頭に）
 func withProxyAuth(rt via, t target, fs []http.Field) []http.Field {
     if !rt.proxied || t.tls || rt.auth == "" {
         return fs
@@ -113,7 +113,7 @@ func setupLink(conn net.Conn, blk []int, rt via, t target, pa internal.hsc.CPara
     return nil
 }
 
-// 経路の上の 1 往復（要求を送り、応答が済むか相手が閉じるまで読む — 済んだ応答の後ろの平文は置き場へ持ち越す）
+// 経路の上の1往復（リクエストを送り、レスポンスが済むか相手が閉じるまで読む — 済んだレスポンスの後ろの平文は格納場所へ持ち越す）
 @errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other, internal.record.Alert, internal.hsc.CertFailed)
 @effects(block, io, panic, nondet)
 func linkTrip(conn net.Conn, blk []int, pa internal.hsc.CParams, pb internal.hsc.CParams, req []byte, raw mut []byte, st mut scanSt, noBody bool, maxBody int) error? {
@@ -140,7 +140,7 @@ func linkTrip(conn net.Conn, blk []int, pa internal.hsc.CParams, pb internal.hsc
     return nil
 }
 
-// b[at:] の写し（mut の引数からも読める形 — 新しい列を作って凍らせる）
+// b[at:] のコピー（mutの引数からも読める形 — 新しい列を作って凍らせる）
 func tailOf(b mut []byte, at int) []byte {
     mut o := mut []byte{}
     mut i := at

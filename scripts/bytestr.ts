@@ -1,5 +1,5 @@
-// bytestr: 2 本のコア AST JSON（corejson の黄金）の差が「imm slice の要素型 int → byte の置き換えだけ」かを照合する
-// （黄金の例外 4 件目 — byte の段 S4: string = imm []byte。草案 §4 の機械照合 ②）。
+// bytestr: 2本のコアAST JSON（corejsonのゴールデン）の差が「imm sliceの要素型int → byteの置き換えだけ」かを照合する
+// （ゴールデンの例外4件目 — byteの段階S4: string = imm []byte。草案 §4の機械照合 ②）。
 //
 //   node scripts/bytestr.ts OLD NEW     exit 0 = 一致（置き換えた箇所の数を stdout に 1 行）、1 = 不一致（最初の食い違いの場所を stderr に 1 行）
 //

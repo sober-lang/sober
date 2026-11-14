@@ -1,28 +1,28 @@
 package lower
 
-// IR → x86_64 機械語 → 静的 ELF（正規バックエンド — src/stage1/ir_x86.zig・ir_x86_ra.zig・ir_live.zig・ir_cfg.zig の写し。B-1d）。
+// IR → x86_64機械語 → 静的ELF（正規バックエンド — src/stage1/ir_x86.zig・ir_x86_ra.zig・ir_live.zig・ir_cfg.zigの変換。B-1d）。
 // 入力は rtlower を通した IR（region op を含まない）。ランタイムは IR の関数としてほかと同じに下ろす。
-// 照合 = stage1 が同じ IR テキストから建てた ELF とのバイト一致（elfeq）— 中間成分（区間・置き場）の Zig との照合は無い（src/ 凍結）。
+// 照合 = stage1が同じIRテキストからビルドしたELFとのバイト一致（elfeq）— 中間成分（区間・格納場所）のZigとの照合は無い（src/ 凍結）。
 //
 // 呼び出し規約（自前 — ABI は揃えない）: 引数は全部スタック（呼び手が後ろから push、callee は [rbp + 16 + 8k]、call の後に呼び手が add rsp, 8n）・
 // 戻り値は rax・割り当て可能な 10 本はすべて callee-saved・一時は rax / rcx / rdx / r11（割り当てない）。
-// 最適化のバックエンド（!st.xcopy — 呼び出し規約の段 1）は 10 本を callee-saved 5 本（rbx・r12〜r15）と caller-saved 5 本（rsi・rdi・r8〜r10）に割る:
+// 最適化のバックエンド（!st.xcopy — 呼び出し規約の段階1）は10本をcallee-saved 5本（rbx・r12〜r15）とcaller-saved 5本（rsi・rdi・r8〜r10）に割る:
 // 呼び出し（xIsCallOp）を跨ぐ区間は callee-saved だけ・入口は使った callee-saved だけを退避・罠と切替の記録も callee-saved だけ（xCtxRegs）。
-// 段 2: スロット・spill・退避・呼び出しの無い関数はフレームを立てない（e.nofr）。
-// 段 3: 番地を取られない関数（st.xAddr — OpFuncaddr の行き先でない）への直の call は、先頭 4 引数を rsi・r8・r9・r10 で渡し（xArgReg）、
+// 段階2: スロット・spill・退避・呼び出しの無い関数はフレームを立てない（e.nofr）。
+// 段階3: 番地を取られない関数（st.xAddr — OpFuncaddrの行き先でない）への直のcallは、先頭4引数をrsi・r8・r9・r10で渡し（xArgReg）、
 // 5 本目以降を今までどおり後ろから push（呼ばれ側は [rbp + 16 + 8(k − 4)]）。番地を取られる関数（task の入口・par の子・罠の行き先・比較関数・
-// シグナルの口）と間接の道（OpCallI・罠・開始・clone の子）は旧規約。関数の番地の即値を作るのは OpFuncaddr だけ（xAbs kind 1）なので、
-// 間接に呼ばれうる関数は必ず印を持つ。手書きの呼び手を持つ sober_entry（_start が初期の rsp を push）も印あり。並びに rdi を入れないのは、入口のスロットのゼロ初期化（rep stosq）が rdi を壊すため（逃がしの mov が要らない）。
+// シグナルの口）と間接のパス（OpCallI・罠・開始・cloneの子）は旧規約。関数の番地の即値を作るのはOpFuncaddrだけ（xAbs kind 1）なので、
+// 間接に呼ばれうる関数は必ずマークを持つ。手書きの呼び手を持つsober_entry（_startが初期のrspをpush）もマークあり。並びにrdiを入れないのは、入口のスロットのゼロ初期化（rep stosq）がrdiを壊すため（逃がしのmovが要らない）。
 // 冷たい呼び出し（xColdCall — 成長の rt への呼び出し）は跨ぎの集合に入れない: それだけを跨ぐ区間は 10 本ぜんぶ（callee-saved を先に）
-// に置け、呼び手がその呼び出しの前後で跨ぐ caller-saved を退避・復元する（xColdSave / xColdLoad — 熱い道の命令は増えない）。
+// に置け、呼び手がその呼び出しの前後で跨ぐcaller-savedを退避・復元する（xColdSave / xColdLoad — 熱いパスの命令は増えない）。
 // 写しのバックエンドは旧規約のまま（elfeq の照合と optdiff の参照）。
 // フレーム: push rbp; mov rbp, rsp; sub rsp, F。[rbp - …] に IR スロット（入口で rep stosq のゼロ初期化）→ 退避域 → spill の順。
 // 命令選択はオペランドを全部読んでから結果を書く（割り当て器が同じ位置で終わる区間のレジスタを始まる区間へ渡す前提）。
 // 到達しないブロックは吐かない。ブロックは後続を後ろから辿る逆後順に並べる。番地は 0x400000 帯の imm32 の絶対値、call / jmp は rel32 — 配置の後で埋める。
 //
-// IR の読み口（xBlk 等）はこのファイルの先頭に集める — 記録の形（ir.sober の F_* / B_* / I_*）を知るのはここだけ（C7 の Table 化は読み口の中身の差し替えで済む）。
+// IRの読み取りインターフェース（xBlk等）はこのファイルの先頭に集める — 記録の形（ir.soberのF_* / B_* / I_*）を知るのはここだけ（C7のTable化は読み取りインターフェースの中身の差し替えで済む）
 //
-// 置き場 Loc は int に詰める: レジスタ r = r × 2 + 1（奇数）、フレームの変位 d = d × 2（偶数）
+// 格納場所Locはintに詰める: レジスタr = r × 2 + 1（奇数）、フレームの変位d = d × 2（偶数）
 
 import "loader"
 import "desugar"
@@ -32,7 +32,7 @@ import "std/task"
 import "std/table"
 import "x86"
 
-// ── IR の読み口 ──
+// ── IRの読み取りインターフェース ──
 
 func xFnNParam(st mut St, f FnRef) int { return xg(mut st, xfPtys(mut st, f)) }
 func xSlotNext(st mut St, s int) int { return xg(mut st, s) }
@@ -65,7 +65,7 @@ func xIsEntry(st mut St, f FnRef) bool {
 }
 
 // 命令のオペランド（値）の数と k 番目（ir_live.operands と同じ集合 — region op の分は rtlower の前に掛ける mem2reg が使う）。
-// 欄の種別の表（ir.sober の opRow / termRow）の専用形: 熱い読み口なので if の列のまま（表を走査する形は自己 build で +0.52 G 命令）。
+// フィールドの種別の表（ir.soberのopRow / termRow）の専用形: 熱い読み取りインターフェースなのでifの列のまま（表を走査する形は自己buildで +0.52 G命令）。
 // 表との一致は lower の単体テスト（kinds_test.sober — 全 op × 全終端）が見る
 func xNOps(st mut St, i InsRef) int {
     op := xiOp(mut st, i)
@@ -110,7 +110,7 @@ func xSucc(st mut St, b BlkRef, k int) int {
     return xbId(mut st, to)
 }
 
-// ── 置き場 ──
+// ── 格納場所 ──
 
 func xLocReg(r int) int { return r * 2 + 1 }
 func xLocFrame(d int) int { return d * 2 }
@@ -118,9 +118,9 @@ func xIsReg(l int) bool { return l & 1 == 1 }
 func xLocVal(l int) int { return l >> 1 }
 
 const xNone = -1
-const xSpill = 1099511627776 // 割り当て中の「spill の置き場（未定）」の印（偶数 — どの変位とも重ならない）
+const xSpill = 1099511627776 // 割り当て中の「spillの格納場所（未定）」のマーク（偶数 — どの変位とも重ならない）
 const xPanic = 101
-const xRemat = 17592186044416 // 2^44: 並行コピーの読み元の「作り直す定数」の印の基点（xSrcLoc）
+const xRemat = 17592186044416 // 2^44: 並行コピーの読み元の「作り直す定数」のマークの基点（xSrcLoc）
 
 // 割り当て可能なレジスタ（割り当てる順 — syscall の引数に使う rsi / rdi / r8〜r10 は後ろ）。11 本目の r11 は最適化のバックエンドで、
 // r11 を作業に使う命令を持たない関数だけ（xUsesR11 — e.ng）。取る順は最後（10 本が埋まったときだけ）
@@ -130,10 +130,10 @@ func xAllocReg(k int) int {
 }
 
 const xNAlloc = 10
-// 最適化のバックエンドの規約（呼び出し規約の段 1）: xAllocReg の前 5 本（rbx・r12〜r15）が callee-saved・後ろ 5 本（rsi・rdi・r8〜r10）が caller-saved
+// 最適化のバックエンドの規約（呼び出し規約の段階1）: xAllocRegの前5本（rbx・r12〜r15）がcallee-saved・後ろ5本（rsi・rdi・r8〜r10）がcaller-saved
 const xNCallee = 5
 
-// float のクラス（opt のバックエンドだけ）: xmm k は置き場の番号 xX0 + k（xLocReg(xX0 + k)）。割り当ての組は xmm8〜15
+// floatのクラス（optのバックエンドだけ）: xmm k は格納場所の番号xX0 + k（xLocReg(xX0 + k)）。割り当ての組はxmm8〜15
 // （xmm0〜7 は scanb の作業と float の演算の scratch〔xmm0 / xmm1〕）。callee-saved（汎用レジスタと同じ規約 — 使った xmm を入口で退避・出口で戻す）
 const xX0 = 16
 const xNXmm = 8
@@ -142,7 +142,7 @@ const xNXmmWide = 14
 
 // 割り当ての k 番目の xmm（xmm8〜15 を先に・広い組では続けて xmm2〜7）
 func xXmmReg(k int) int { return if k < 8 { xX0 + 8 + k } else { xX0 + 2 + (k - 8) } }
-// 関数に xmm を作業に使う塊（OpSyscall の b = AES_B の鍵・CTR・GHASH — aes.sober／b = MM_B の xmm の種類 — mulx.sober の xMmXmm）があるか
+// 関数にxmmを作業に使うチャンク（OpSyscallのb = AES_Bの鍵・CTR・GHASH — aes.sober／b = MM_Bのxmmの種類 — mulx.soberのxMmXmm）があるか
 func xHasXmmBlk(st mut St, e mut xF) bool {
     for k <- iter.Range(0, e.nb) {
         b := BlkRef(e.blk[k])
@@ -194,7 +194,7 @@ func xHasScanB(st mut St, e mut xF) bool {
 }
 
 // 関数に r11 を作業に使う命令があるか（あれば割り当ては 10 本）: 関数値の呼び出し（呼び先の番地を r11 に）・罠 / 切替 / 開始 /
-// clone（文脈の退避）・scanb / crc / utf8 / countb の塊・AES の塊。syscall（カーネルが r11 を壊す）は xSyscall が跨ぐ値を積み、並行コピーの輪の中継は rcx、
+// clone（文脈の退避）・scanb / crc / utf8 / countbのチャンク・AESのチャンク。syscall（カーネルがr11を壊す）はxSyscallが跨ぐ値を積み、並行コピーのループの中継はrcx、
 // ret の xmm の戻しの中継は生きた値が rax だけの点なので、それぞれ r11 を使ってよい
 func xUsesR11(st mut St, e mut xF) bool {
     for k <- iter.Range(0, e.nb) {
@@ -218,14 +218,14 @@ func xIsGpr(l int) bool { return xIsReg(l) && xLocVal(l) < xX0 }
 
 func xParamDisp(k int) int { return 16 + 8 * k }
 
-// 呼び出し規約の段 3: 引数レジスタ（k < xNArgReg）
+// 呼び出し規約の段階3: 引数レジスタ（k < xNArgReg）
 const xNArgReg = 4
 func xArgReg(k int) int {
     regs := []int{x86.Rsi, x86.R8, x86.R9, x86.R10}
     return regs[k]
 }
 
-// 関数 f が段 3 の規約（先頭 4 引数をレジスタで）で呼ばれるか — 呼び手と呼ばれ側が同じ述語を引く
+// 関数fが段階3の規約（先頭4引数をレジスタで）で呼ばれるか — 呼び手と呼ばれ側が同じ述語を引く
 func xRegCc(st mut St, f FnRef, frecs []int) bool {
     if st.bcAud {
         bcAudAddr(mut st, int(f))
@@ -233,10 +233,10 @@ func xRegCc(st mut St, f FnRef, frecs []int) bool {
     return !st.xcopy && st.xAddr[xIndex(frecs, int(f))] == 0
 }
 
-// 仮引数 k の呼び手が積んだ置き場（[rbp + 返り値]）・レジスタで来る仮引数は -1
+// 仮引数kの呼び手が積んだ格納場所（[rbp + 返り値]）・レジスタで来る仮引数は -1
 func xParamHome(e mut xF, k int) int { return if k < e.nreg { -1 } else { xParamDisp(k - e.nreg) } }
 
-// fr の添字ごとに「OpFuncaddr の行き先か」（段 3 の例外の印）。sober_entry も印あり（_start が初期の rsp を push して呼ぶ — 手書きの呼び手）
+// frの添字ごとに「OpFuncaddrの行き先か」（段階3の例外のマーク）。sober_entryもマークあり（_startが初期のrspをpushして呼ぶ — 手書きの呼び手）
 func xAddrTaken(st mut St, fr []int, entryRec int) []int {
     mut out := mut []int{}
     xFill(mut out, len(fr), 0)
@@ -266,8 +266,8 @@ func xFill(a mut []int, n int, v int) {
 
 // ── モジュール ──
 
-// 後埋め: 表に 3 語ずつ [位置, 種類, 相手の番号]（種類 0 = call rel32 → 関数・1 = 関数の番地 imm32・2 = global の番地 imm32・3 = panic の点の番号 imm32・4 = spawn の点の番号 imm32〔札つきの定数 — xTagAt〕・5 = ワーカーの表の fs の disp32〔相手 = global — 段 2〕）。
-// 平らな 3 語の並びは XPar.fix・bcache の写しと同じ形（合流と写しが語の写しで済む）
+// 後埋め: 表に3ワードずつ [位置, 種類, 相手の番号]（種類0 = call rel32 → 関数・1 = 関数の番地imm32・2 = globalの番地imm32・3 = panicの点の番号imm32・4 = spawnの点の番号imm32〔札つきの定数 — xTagAt〕・5 = ワーカーの表のfsのdisp32〔相手 = global — 段階2〕）。
+// 平らな3ワードの並びはXPar.fix・bcacheのコピーと同じ形（合流とコピーがワードのコピーで済む）
 func xFixAdd(fx mut table.Table[int], at int, kind int, id int) {
     table.Push(mut fx, at)
     table.Push(mut fx, kind)
@@ -275,7 +275,7 @@ func xFixAdd(fx mut table.Table[int], at int, kind int, id int) {
 }
 
 // rtlower を通したモジュールの ELF（syms = true なら ELF の代わりに関数の先頭番地の表 — `sober build --emit=syms` の
-// プロファイルの口: 1 行 `<16 進の番地> <関数名>`・番地の昇順。Sober の ELF はシンボルを持たないので perf のサンプルをこれで関数へ振る — scripts/prof.ts）
+// プロファイルのインターフェース: 1行 `<16 進の番地> <関数名>`・番地の昇順。SoberのELFはシンボルを持たないのでperfのサンプルをこれで関数へ振る — scripts/prof.ts）
 func xModule(st mut St, syms bool) []byte {
     // 名前で引くもの（入口の関数・syms の名前 — 名前の文字列はヒープにもある）は凍結の前に引く
     mut entryRec := -1
@@ -297,21 +297,21 @@ func xModule(st mut St, syms bool) []byte {
         }
     }
     fk := if st.fnHash || st.ckEmit { xFnKeys(mut st) } else { [][]byte{} }
-    // 段 3 の β の鍵の表（凍結の前 — 名前を読む。x86 の cfg の正準形つき）
+    // 段階3の β の鍵の表（凍結の前 — 名前を読む。x86のcfgの正準形つき）
     ckt := if st.ckOn { ckTab(mut st, xParCfg(mut st)) } else { ckNone() }
     if st.ckOn {
         st.ckRt = ckRtFns(mut st)
     }
-    // 段 3 の置き場の β2（bcache.sober）: 鍵を組んで引き、B2 を飛ばしたのに外れた関数へ遅れて B2 を掛ける（ヒープを書く — 凍結の前）
+    // 段階3の格納場所の β2（bcache.sober）: 鍵を組んで引き、B2を飛ばしたのに外れた関数へ遅れてB2を掛ける（ヒープを書く — 凍結の前）
     if st.bcv.on {
         bcPreX86(mut st, entryRec, ckt)
     }
-    // 検証モードの stale の名指し（凍結の後は名前を読めない — bcStaleName）
+    // 検証モードのstaleの明示（凍結の後は名前を読めない — bcStaleName）
     if st.bcv.vfy {
         st.bcNames = bcNamesOf(mut st)
     }
-    // ヒープを凍らせる（以後 x86 の段はヒープを書かない — 読みは xg が凍らせた表から。凍結の口）。
-    // 扉の監査（SOBER_CACHE_VERIFY=2）は凍らせずに xg の遅い道で読み、語の持ち主の表を組む（bcAudOwn — 読みの記録 bcAudHeap は監査用の
+    // ヒープを凍らせる（以後x86のフェーズはヒープを書かない — 読みはxgが凍らせた表から。凍結のインターフェース）。
+    // 扉の監査（SOBER_CACHE_VERIFY=2）は凍らせずにxgの遅いパスで読み、ワードの持ち主の表を組む（bcAudOwn — 読みの記録bcAudHeapは監査用の
     // コンパイラだけ xg に差し込む — scripts/cacheaudit.sh）
     if st.bcAud {
         bcAudOwn(mut st, ckt)
@@ -323,9 +323,9 @@ func xModule(st mut St, syms bool) []byte {
     return xModuleFrozen(mut st, syms, entryRec, if st.fnHash || st.ckEmit { fk } else { freeze(names) }, ckt)
 }
 
-// 凍結の後の xModule の本体（呼び出しの閉包がヒープ〔st.d.h・hget / hset / hpush・dat〕に届かないことを scripts/lparcfg.ts の網が見る）
+// 凍結の後のxModuleの本体（呼び出しの及ぶ範囲がヒープ〔st.d.h・hget / hset / hpush・dat〕に届かないことをscripts/lparcfg.tsの検査が見る）
 func xModuleFrozen(st mut St, syms bool, entryRec int, names [][]byte, ckt CkTab) []byte {
-    // 関数・global の記録 → 番号（番地の昇順の位置 — 二分探索で引く。配置は鎖の順 = ford / gord — recIds）
+    // 関数・globalの記録 → 番号（番地の昇順の位置 — 二分探索で引く。配置はチェーンの順 = ford / gord — recIds）
     mut fch := mut []int{}
     mut f := st.fhead
     while f != -1 {
@@ -335,11 +335,11 @@ func xModuleFrozen(st mut St, syms bool, entryRec int, names [][]byte, ckt CkTab
     frecs := recIds(freeze(fch))
     ford := recOrd(frecs, freeze(fch))
     nf := len(frecs)
-    // 置き場を使う build は bcPreX86 が組んだ印（B2 を飛ばした関数は置き場の相手の列から）
+    // 格納場所を使うbuildはbcPreX86が組んだマーク（B2を飛ばした関数は格納場所の相手の列から）
     if !st.bcv.on {
         st.xAddr = xAddrTaken(mut st, frecs, entryRec)
     }
-    // 段 3 の β の鍵（ckey.sober）: `--emit=cachekeys` は鍵の印字で終わる・SOBER_BUILD_CACHE=1 は計算だけ（置き場を使う build は bcPreX86 が計算済み）
+    // 段階3の β の鍵（ckey.sober）: `--emit=cachekeys` は鍵の印字で終わる・SOBER_BUILD_CACHE=1は計算だけ（格納場所を使うbuildはbcPreX86が計算済み）
     if ckt.on && !st.bcv.on {
         beta := ckBeta(mut st, ckt, frecs)
         if st.ckEmit {
@@ -404,12 +404,12 @@ func xModuleFrozen(st mut St, syms bool, entryRec int, names [][]byte, ckt CkTab
     x86.Ud2(mut c)
     mut fstart := mut []int{}
     xFill(mut fstart, nf, 0)
-    // 切替 / 罠を持つ関数は最後に（段 6 P4-6）: それらが積む xmm の組 = 全関数の割り当てが使う xmm の和（st.xXmm — 値は float でなくても
+    // 切替 / 罠を持つ関数は最後に（段階6 P4-6）: それらが積むxmmの組 = 全関数の割り当てが使うxmmの和（st.xXmm — 値はfloatでなくても
     // xmm に載りうる）。自分たちの使う分も和に入れるため、先に下書き（割り当てまで — 吐かない）を走らせてから本番を吐く（xFunc は st を書かない — 同じ機械語）
     st.xXmm = 0
     mut ctx := mut []int{}
     xFill(mut ctx, nf, 0)
-    // 吐かない関数の印（置き場を使う build の群の子は β2 の当たりも外す — 当たりは切替 / 罠を持たない関数だけで、本体は B2 の入力のままでありうる）
+    // 吐かない関数のマーク（格納場所を使うbuildの群の子は β2の当たりも外す — 当たりは切替 / 罠を持たない関数だけで、本体はB2の入力のままでありうる）
     mut skip := mut []int{}
     for i <- iter.Range(0, nf) {
         hit := st.bcv.on && st.bcHx[i] >= 0
@@ -418,20 +418,20 @@ func xModuleFrozen(st mut St, syms bool, entryRec int, names [][]byte, ckt CkTab
         }
         skip = append(skip, if hit { 1 } else { ctx[i] })
     }
-    // 線の跨ぎの詰め物の nop の下書きの表（xFitShift — モジュールで 1 つを積み増して使う。窓ごとに新しい表を作ると最初の Push の chunk の確保〔8192 要素〕が
-    // 窓の数だけ掛かった — 自己 build +0.45 G）
+    // 線の跨ぎの詰め物のnopの下書きの表（xFitShift — モジュールで1つを積み増して使う。ウィンドウごとに新しい表を作ると最初のPushのchunkの確保〔8192要素〕が
+    // ウィンドウの数だけ掛かった — 自己build +0.45 G）
     mut wb := table.Table[byte]{}
     // 切替 / 罠を持たない関数は群の子で（xParEmit。写しのバックエンドと 1 本の経路〔st.xseq〕・群が 1 つ以下は逐次）
     // 吐く周は 3 つ（0 = 切替 / 罠を持たない関数の逐次・1 = 切替 / 罠を持つ関数の下書き〔割り当てで xmm の和を集めるだけ — 吐かない〕・2 = その本番）。
     // xFunc の呼び出し点は 1 か所に保つ: check は mut 引数の関数を呼び出し点ごとに展開して型付けするので、呼び出し点が増えると x86 の全体が
-    // その数だけ写される（自己 check の作業域）
+    // その数だけコピーされる（自己checkの作業域）
     loader.Stage("x-pre")
     seq := st.xcopy || st.xseq || st.bcAud || !xParEmit(mut st, mut c, mut fx, mut fstart, freeze(skip), fr, gr0, ford, st.bcv.on)
     loader.Stage("x-emit")
-    // 置き場を使う build は切替 / 罠を持たない関数を全部この周で吐く順に並べる: 手元の機械語（β2 の当たり・群の子の結果 — bcSplice）か xFunc。
-    // 吐いた関数の β2 の値の印を積む（bcNote — xmm の組は関数ごとに数える。値は後埋めの後の ELF から切り出す — bcCaptureAll）
+    // 格納場所を使うbuildは切替 / 罠を持たない関数を全部この周で吐く順に並べる: 手元の機械語（β2の当たり・群の子の結果 — bcSplice）かxFunc。
+    // 吐いた関数の β2の値のマークを積む（bcNote — xmmの組は関数ごとに数える。値は後埋めの後のELFから切り出す — bcCaptureAll）
     bc := st.bcv.on
-    // 扉の監査の鍵に入れた相手の素（β2 = B2 の入力の鍵 + x86 の cfg + rt の番地取りの印の和 — ckBeta・cfg の分は bcAudOwn が組む）
+    // 扉の監査の鍵に入れた相手の素（β2 = B2の入力の鍵 + x86のcfg + rtの番地取りのマークの和 — ckBeta・cfgの分はbcAudOwnが組む）
     ab2 := if st.bcAud { ckStage(mut st, 1) } else { map[int]int{} }
     for pass <- iter.Range(0, 3) {
         for fk <- iter.Range(0, nf) {
@@ -466,7 +466,7 @@ func xModuleFrozen(st mut St, syms bool, entryRec int, names [][]byte, ckt CkTab
         }
     }
     if st.fnHash {
-        // 後埋めの前（欄は全部 0）に関数ごとの成果物をハッシュする（段 2 R2）
+        // 後埋めの前（フィールドは全部0）に関数ごとの成果物をハッシュする（段階2 R2）
         return xFnHash(mut st, mut c, mut fx, freeze(fstart), names, nf, ng, x86.Here(mut c))
     }
     lay := elf.LayoutOf(x86.Here(mut c), len(rodata))
@@ -481,7 +481,7 @@ func xModuleFrozen(st mut St, syms bool, entryRec int, names [][]byte, ckt CkTab
             }
             out = append(out, '\n')
         }
-        // SOBER_SYMS_MN=1: 末尾に rt.mn の番地の 1 行（`<番地> =rt.mn` — 外から全ワーカーの記録〔MN_WK〕を読む網 scripts/areacheck.ts の口）
+        // SOBER_SYMS_MN=1: 末尾にrt.mnの番地の1行（`<番地> =rt.mn` — 外から全ワーカーの記録〔MN_WK〕を読む検査scripts/areacheck.tsのオプション）
         if lsEnvInt("SOBER_SYMS_MN") == 1 {
             for i <- iter.Range(0, ng) {
                 if gr0[i] == st.mnG {
@@ -494,7 +494,7 @@ func xModuleFrozen(st mut St, syms bool, entryRec int, names [][]byte, ckt CkTab
         }
         return freeze(out)
     }
-    // 網 numpert の口（SOBER_NUMNOPATCH=1）: 番号の後埋め（種類 3〜5）を書かない — 欄は 0 のまま。下駄（SOBER_NUMOFF）を変えても ELF が
+    // 検査numpertのオプション（SOBER_NUMNOPATCH=1）: 番号の後埋め（種類3〜5）を書かない — フィールドは0のまま。下駄（SOBER_NUMOFF）を変えてもELFが
     // バイト一致 = 関数の機械語が番号に依らない（scripts/numpert.sh）
     nopatch := lsEnvInt("SOBER_NUMNOPATCH") == 1
     for k <- iter.Range(0, table.Len(mut fx) / 3) {
@@ -526,19 +526,19 @@ func xModuleFrozen(st mut St, syms bool, entryRec int, names [][]byte, ckt CkTab
 
 // ── 関数の並列 ──
 //
-// 切替 / 罠を持たない関数を、吐く順（鎖の順）に連続した群に割り（命令の数でおよそ XG_COST ずつ — ワーカー数を読まない）、群ごとに task.Map の子が
-// 自前の St で xFunc を回す。子はヒープを親が凍らせた表（st.hf — xModule の入口の table.Freeze: 写さない。凍結の口）から同じ番地で読む:
-// このファイルの IR の読み口は xg を通す（st.hfOn なら凍らせた表を直に、でなければ st.d.h を読む — 記録の番号の
-// 付け替えが要らない）。xFunc はヒープを書かない。xModule の呼び出しの閉包が凍結の後にヒープへ届かないことは scripts/lparcfg.ts の網が見る。
+// 切替 / 罠を持たない関数を、吐く順（チェーンの順）に連続した群に割り（命令の数でおよそXG_COSTずつ — ワーカー数を読まない）、群ごとにtask.Mapの子が
+// 自前のStでxFuncを回す。子はヒープを親が凍らせた表（st.hf — xModuleの入口のtable.Freeze: コピーしない。凍結のインターフェース）から同じ番地で読む:
+// このファイルのIRの読み取りインターフェースはxgを通す（st.hfOnなら凍らせた表を直に、でなければst.d.hを読む — 記録の番号の
+// 付け替えが要らない）。xFuncはヒープを書かない。xModuleの呼び出しの及ぶ範囲が凍結の後にヒープへ届かないことはscripts/lparcfg.tsの検査が見る。
 // 子は機械語のバイト列・群の中の関数の先頭位置・後埋めの表（位置は群の頭から）・割り当てが使った xmm の和を返し、親が群の順（= 吐く順）に連結する
 // （関数の先頭番地 = 累積和。後埋めは全関数の後で一括 — 今のまま）。切替 / 罠の関数（xmm の和が要る 2 段目）は親が今までどおり後で吐く。
-// **xFunc が読む St の欄は xParCfg の 12 語とヒープだけ** — このファイルで st.〈欄〉を新しく読む・lower の他のファイルの関数を新しく呼ぶときは
-// 子の St に写すこと（足し忘れは子がゼロ値を読む — selfpar の 1 本の経路 ≡ W8 の ELF の照合が網）。
-// ワーカー 1 では逐次（写しはヒープの全体 — 純粋な上乗せ・自己 build の RSS のラチェット〔W1〕を越える）。出力はどちらでも同じバイト
+// **xFuncが読むStのフィールドはxParCfgの12ワードとヒープだけ** — このファイルでst.〈フィールド〉を新しく読む・lowerの他のファイルの関数を新しく呼ぶときは
+// 子のStにコピーすること（足し忘れは子がゼロ値を読む — selfparの1本の経路 ≡ W8のELFの照合が検査）。
+// ワーカー1では逐次（コピーはヒープの全体 — 純粋な上乗せ・自己buildのRSSのラチェット〔W1〕を越える）。出力はどちらでも同じバイト
 
 const XG_COST = 25000  // 群の目標の太さ（命令の数）
 
-// ヒープの i 語目（子は親の写しを読む）
+// ヒープのi語目（子は親のコピーを読む）
 func xg(st mut St, i int) int {
     if st.hfOn {
         // 凍結した表を直に読む（範囲の検査は table.Get / At と同じ形 — 呼び出しを挟まない）
@@ -548,7 +548,7 @@ func xg(st mut St, i int) int {
     return desugar.HeapGet(mut st.d, i)
 }
 
-// IR の読み口（ir.sober の irXxx の xg 版 — 子でも読める）
+// IRの読み取りインターフェース（ir.soberのirXxxのxg版 — 子でも読める）
 func xbIHead(st mut St, b BlkRef) InsRef { return InsRef(xg(mut st, int(b) + B_IHEAD)) }
 func xbITail(st mut St, b BlkRef) InsRef { return InsRef(xg(mut st, int(b) + B_ITAIL)) }
 func xbId(st mut St, b BlkRef) int { return xg(mut st, int(b) + B_ID) }
@@ -578,7 +578,7 @@ type XPar struct {
     starts []int   // 群の中の関数ごとの先頭位置（群の頭から）
     fix []int      // 後埋め [位置, 種類, 相手] — 位置は群の頭から
     xmm int
-    ends []int     // 群の中の関数ごとの出した長さの末尾（段 3 R2 — 関数ごとに [begs, ends) で切る。入口 = starts は begs から線の跨ぎの詰め物の分だけ後ろでありうる）
+    ends []int     // 群の中の関数ごとの出した長さの末尾（段階3 R2 — 関数ごとに [begs, ends) で切る。入口 = startsはbegsから線の跨ぎの詰め物の分だけ後ろでありうる）
     begs []int     // 群の中の関数ごとの吐き始めの位置（整列の後・xFunc の前）
     xmms []int     // 関数ごとの xmm の組（同上）
     frs []int      // --mem-report のフレーム [関数の記録, バイト]…（それ以外は空）
@@ -590,16 +590,16 @@ type XGroup struct {
     cost int
 }
 
-// 子の St に写す欄（xFunc が読む St の欄の全部 — 上の注意）
+// 子のStにコピーするフィールド（xFuncが読むStのフィールドの全部 — 上の注意）
 func xParCfg(st mut St) []int {
-    // 末尾の語 = SOBER_XDBG の値の長さ。値のバイト列はその後ろへ（xdbgCfg — 鍵にも入るので値を変えればキャッシュに当たらない）
+    // 末尾のワード = SOBER_XDBGの値の長さ。値のバイト列はその後ろへ（xdbgCfg — 鍵にも入るので値を変えればキャッシュに当たらない）
     return xdbgCfg([]int{int(st.rtCopy), int(st.rtCopy8), int(st.rtGrow), int(st.rtGrow8), int(st.rtGrowTry), int(st.rtMapGrow), int(st.rtReloc), int(st.rtReloc8),
         st.trapG, if st.trapUse { 1 } else { 0 }, if st.taskUse { 1 } else { 0 }, if st.xcopy { 1 } else { 0 }, st.xLay, int(st.rtPanic), int(st.rtPanicMem), if st.slotPoison { 1 } else { 0 }, if st.frStat { 1 } else { 0 }, int(st.rtMatchLen), st.rtMut, int(st.rtJClean), int(st.rtErrReloc), if st.memRep { 1 } else { 0 }, int(st.rtWinRalloc), st.taskG, st.wkG, st.pstatG, int(st.xNWait), len(st.xdbgPat)}, st.xdbgPat)
 }
 
 // 整列（配置の土台）: 関数の先頭とループの頭を XA_* バイトの境界へ nop で詰める（最適化のバックエンドだけ — 写しのバックエンドは
 // stage1 とバイト一致のまま）。番地は lay.Code（= 基底 + elf.CodeOffset）からなので、整列は CodeOffset を足した位置で測る。ループの頭は関数の先頭からの
-// 相対で詰める（関数の先頭が整列しているので絶対でも揃う）。同じ機械語のループが 32 B の取り込みの窓を 2 つまたぐか 3 つまたぐかで cycles が
+// 相対で詰める（関数の先頭が整列しているので絶対でも揃う）。同じ機械語のループが32 Bの取り込みのウィンドウを2つまたぐか3つまたぐかでcyclesが
 // 1.4 倍動いた（粒度の葉 — 命令は同じ）。
 // 関数の先頭は 64 B（取り込みの線の幅）: 関数の中の線の上の配置（分岐の線の中の位置・ループの跨ぎ）がその関数自身の機械語だけで
 // 決まり、ほかの関数の大きさの変化で動かない。32 B では上流が 16 B 伸びるたびに mod 64 が 0 / 16 / 32 / 48 を行き来し、fannkuch の予測ミスが
@@ -613,7 +613,7 @@ func xAlignFn(st mut St, c mut table.Table[byte]) {
     }
 }
 
-// 配置の計器のずらし（開発用 — xLay = 0 なら何もしない）。同じ形の配置を振って cycles の分布を取る:
+// 配置の計装のずらし（開発用 — xLay = 0なら何もしない）。同じ形の配置を振ってcyclesの分布を取る:
 //   v2（`--layout=S` — xLay = S）: 整列した関数の先頭の後ろに 0 / 64 / 128 / 192 B（上位の bit だけ — 関数の 64 B 整列の後に起こりうる、ほかの関数の変化）。
 //     関数の中の変化は xLayInner（最初の落ちない点に 0〜48 B — その関数の手前のコードの大きさの変化を模す）
 //   v1（`--layout-v1=S` — xLay = 1000 + S）: 整列した関数の先頭の後ろに 0 / 16 / 32 / 48 B（32 B 整列の時代の「上流の関数の伸び」）
@@ -630,7 +630,7 @@ func xLayHash(lay int, f int) int {
     return ((f + 1) * (s * 2 + 1) * 2654435761) >> 16
 }
 
-// 計器 v2 の関数の中のずらし: 最初の落ちない点（手前のブロックが jmp / ret で終わる — 詰め物は実行されない）に 0 / 16 / 32 / 48 B
+// 計装v2の関数の中のずらし: 最初の落ちない点（手前のブロックがjmp / retで終わる — 詰め物は実行されない）に0 / 16 / 32 / 48 B
 func xLayInner(st mut St, c mut table.Table[byte], f int) {
     if st.xLay > 0 && st.xLay < 1000 && !st.xcopy {
         x86.Nop(mut c, (xLayHash(st.xLay, f) & 3) * 16)
@@ -672,7 +672,7 @@ func xParEmit(st mut St, c mut table.Table[byte], fx mut table.Table[int], fstar
             big = gs[k].cost
         }
     }
-    // budget: = 群の命令の数の最大 × 128 B + 4 MiB（子の作業域 = xF の表と機械語 — 写しは親の分で子は数えない。校正: 自己 build の群〔2.5 万命令〕の子の peak 2.4 MB）
+    // budget: = 群の命令の数の最大 × 128 B + 4 MiB（子の作業域 = xFの表と機械語 — コピーは親の分で子は数えない。校正: 自己buildの群〔2.5万命令〕の子のpeak 2.4 MB）
     bud := big * 128 + 4 * task.MB
     hf := st.hf
     cfg := xParCfg(mut st)
@@ -684,7 +684,7 @@ func xParEmit(st mut St, c mut table.Table[byte], fx mut table.Table[int], fstar
     mut j := 0
     of := freeze(order)
     if stash {
-        // 置き場を使う build（段 3 R2）: 連結せずに取っておき、吐く周が関数ごとに切って並べる（bcSplice）
+        // 格納場所を使うbuild（段階3 R2）: 連結せずに取っておき、吐く周が関数ごとに切って並べる（bcSplice）
         mut xi := mut []int{}
         xFill(mut xi, 2 * len(fr), -1)
         for k <- iter.Range(0, len(outs)) {
@@ -724,7 +724,7 @@ func xParMerge(st mut St, c mut table.Table[byte], fx mut table.Table[int], fsta
     }
 }
 
-// 関数の命令の数（群の太さの物差し）
+// 関数の命令の数（群の太さの基準）
 func xFnCost(st mut St, f FnRef) int {
     mut ni := 0
     mut b := xfBHead(mut st, f)
@@ -758,15 +758,15 @@ func xParGroup(g XGroup, hf table.Frozen[int], cfg []int, addr []int, fr []int, 
     st.taskUse = cfg[10] == 1
     st.xcopy = cfg[11] == 1
     st.xLay = cfg[12]
-    // 呼び出し規約の段 1 / 段 2（xIsCallOp・xNoCall）が戻らない panic の call を見分ける — 無いと群の中だけ St{} の 0 を panic とみなし、W1 と ELF が食い違う
+    // 呼び出し規約の段階1 / 段階2（xIsCallOp・xNoCall）が戻らないpanicのcallを見分ける — 無いと群の中だけSt{} の0をpanicとみなし、W1とELFが食い違う
     st.rtPanic = FnRef(cfg[13])
     st.rtPanicMem = FnRef(cfg[14])
     st.slotPoison = cfg[15] == 1
     st.frStat = cfg[16] == 1
-    // rt.matchlen の手書きの本体（xMatchLenBody — 変異 13 / 14 は開発用 --rt-mutant）
+    // rt.matchlenの手書きの本体（xMatchLenBody — ミュータント13 / 14は開発用 --rt-mutant）
     st.rtMatchLen = FnRef(cfg[17])
     st.rtMut = cfg[18]
-    // rt.jclean の手書きの本体（xJCleanBody — 変異 25〜27 は開発用 --rt-mutant）
+    // rt.jcleanの手書きの本体（xJCleanBody — ミュータント25〜27は開発用 --rt-mutant）
     st.rtJClean = FnRef(cfg[19])
     st.rtErrReloc = FnRef(cfg[20])
     // メモリの上界の報告（--mem-report）: フレームを子の作業域 memFr に積み、結果（XPar.frs）で親へ返す
@@ -778,10 +778,10 @@ func xParGroup(g XGroup, hf table.Frozen[int], cfg []int, addr []int, fr []int, 
     st.taskG = cfg[23]
     st.wkG = cfg[24]
     st.pstatG = cfg[25]
-    // 浅い待ちの点（xShallowFn / xShCall — rt.netwait）
+    // シャロースリープの点（xShallowFn / xShCall — rt.netwait）
     st.xNWait = FnRef(cfg[26])
     st.xdbgPat = xdbgPatOf(cfg, cfg[27])
-    // 段 3 の例外の印（xRegCc）
+    // 段階3の例外のマーク（xRegCc）
     st.xAddr = addr
     st.xXmm = 0
     mut c := table.Table[byte]{}
@@ -819,7 +819,7 @@ func xParGroup(g XGroup, hf table.Frozen[int], cfg []int, addr []int, fr []int, 
     return XPar{freeze(code), freeze(starts), freeze(fix), st.xXmm, freeze(ends), freeze(begs), freeze(xmms), freeze(frs)}
 }
 
-// 関数に task の切替 / 罠（OpTSwitch・OpTStart・OpTrapI）があるか（段 6 P4-6 — 積む xmm の組をプログラム全体の和で決めるので最後に吐く）
+// 関数にtaskの切替 / 罠（OpTSwitch・OpTStart・OpTrapI）があるか（段階6 P4-6 — 積むxmmの組をプログラム全体の和で決めるので最後に吐く）
 func xCtxFn(st mut St, f FnRef) bool {
     mut b := xfBHead(mut st, f)
     while int(b) != -1 {
@@ -836,8 +836,8 @@ func xCtxFn(st mut St, f FnRef) bool {
     return false
 }
 
-// 鎖の順に集めた記録 chain を番地の昇順に並べた表（関数 / グローバルの番号 = この表の位置。段 6 R1 — 鎖の順は配置と印字の順で、
-// 番地の昇順とは限らない〔規則順に繋ぎ直した鎖〕。番号は内部の表の添字と後埋めの的だけなので、番地の昇順の位置で引く）
+// チェーンの順に集めた記録chainを番地の昇順に並べた表（関数 / グローバルの番号 = この表の位置。段階6 R1 — チェーンの順は配置と印字の順で、
+// 番地の昇順とは限らない〔規則順に繋ぎ直したチェーン〕。番号は内部の表の添字と後埋めのターゲットだけなので、番地の昇順の位置で引く）
 func recIds(chain []int) []int {
     mut asc := true
     for k <- iter.Range(1, len(chain)) {
@@ -884,7 +884,7 @@ func recIds(chain []int) []int {
     return freeze(a)
 }
 
-// 鎖の k 番目の記録の番号（ids = recIds(chain)）— 配置の環はこの順で回す
+// チェーンのk番目の記録の番号（ids = recIds(chain)）— 配置の環はこの順で回す
 func recOrd(ids []int, chain []int) []int {
     mut o := mut []int{}
     for k <- iter.Range(0, len(chain)) {
@@ -893,7 +893,7 @@ func recOrd(ids []int, chain []int) []int {
     return freeze(o)
 }
 
-// 関数の記録を番号の順（番地の昇順）に — 凍結の前の読み手（名前・鍵の表）が番号で揃える口
+// 関数の記録を番号の順（番地の昇順）に — 凍結の前の読み手（名前・鍵の表）が番号で揃えるインターフェース
 func fnIds(st mut St) []int {
     mut ch := mut []int{}
     mut f := st.fhead
@@ -934,11 +934,11 @@ type xF struct {
     order mut []int      // 吐く順（到達するブロックだけ）
     norder int
     bpos mut []int       // ブロックの頭の位置（到達しないブロックは -1）
-    // 区間（区間分割レーン S1b — 部分区間の表現）: 割り当ての単位は「部分区間」。値 v の最初の部分区間の番号は v 自身・続きは pnx の鎖で
+    // 区間（区間分割レーンS1b — 部分区間の表現）: 割り当ての単位は「部分区間」。値vの最初の部分区間の番号はv自身・続きはpnxのチェーンで
     // 番号 nv 以降（開始の昇順・重ならない）。pv = 部分区間 → 値。区間が 1 本の値は pnx[v] = -1 で、今までの「値ごとに 1 本」と同じ
     ivS mut []int        // 部分区間 → 始まり（無しは -1）
     ivE mut []int
-    loc mut []int        // 部分区間 → 置き場（読みは xLocAt — 位置つき）
+    loc mut []int        // 部分区間 → 格納場所（読みはxLocAt — 位置つき）
     pnx mut []int        // 部分区間 → 同じ値の次の部分区間（-1 = 最後）
     pv mut []int         // 部分区間 → 値
     npc int              // 部分区間の数（≥ nv）
@@ -952,7 +952,7 @@ type xF struct {
     ldep mut []int
     pfix mut []int       // 二段目の固定（部分区間 → 一段目のレジスタ・-1 = 固定しない — 割った値の真ん中と一段目で spill した値・-2 = spill に固定 — spill した値の外側・
                          // -3 = spill した値のループの中の部分区間 — 一段目で spill した残りの後に余りの枠だけを取る）
-    // 辺の写しの外置き: 条件分岐の写しの要る側を関数の末尾へ出した辺の [jcc の位置, 分岐の位置 e.pos, 行き先, 実引数]
+    // 辺のコピーの外置き: 条件分岐のコピーの要る側を関数の末尾へ出した辺の [jccの位置, 分岐の位置e.pos, 行き先, 実引数]
     eoA mut []int
     eoP mut []int
     eoT mut []int
@@ -967,15 +967,15 @@ type xF struct {
     aB mut []int
     aC mut []int
     aN mut []int
-    // 一段目の追い出し（docs/regalloc.md の追い出し）の作業域 1 本（欄を足すと mut xF を受ける関数の展開ごとに核の節が増える — 6 欄で +60k）:
-    // 部分区間 c ごとに 4 語 [4c] = 追い出された回数・[4c + 1] = 処理済みの印・[4c + 2] = 中の触れの重み・[4c + 3] = 中の使用の数（xPcInit）、
+    // 一段目の追い出し（docs/regalloc.mdの追い出し）の作業域1本（フィールドを足すと mut xF を受ける関数の展開ごとに核の節が増える — 6フィールドで +60k）:
+    // 部分区間cごとに4ワード [4c] = 追い出された回数・[4c + 1] = 処理済みのマーク・[4c + 2] = 中の触れの重み・[4c + 3] = 中の使用の数（xPcInit）、
     // 続けて [4 npc] = 中の触れを数えたか・[4 npc + 1] = ヒープの個数・[4 npc + 2 〜] = 追い出して列へ戻した部分区間のヒープ（xPrioBefore の順）
     ev mut []int
     slotDisp mut []int
     isConst mut []int
     constV mut []int
-    // 番号の札（段 2）: [値] = 札つきの定数の後埋めの種類（3 = panic の点・4 = spawn の点・0 = 札なし）、nv 語の後ろに
-    // 札つきの imm32 を出した点 [位置, 種類, 番号]…（欄は 0 を書き、xFunc の終わりで後埋めの表へ — 位置は xFitShift がずらす）
+    // 番号の札（段階2）: [値] = 札つきの定数の後埋めの種類（3 = panicの点・4 = spawnの点・0 = 札なし）、nvワードの後ろに
+    // 札つきのimm32を出した点 [位置, 種類, 番号]…（フィールドは0を書き、xFuncの終わりで後埋めの表へ — 位置はxFitShiftがずらす）
     tg mut []int
     saveReg mut []int
     saveDisp mut []int
@@ -1024,35 +1024,35 @@ type xF struct {
     nx int
     ng int               // 汎用の割り当て可能な本数（xNAlloc か r11 込みの xNAlloc + 1 — xUsesR11）
     // 割れた値の spill 先が正しいか: svOk[j × nb + ブロックの番号] = 1 なら、割れた値 e.sv[j] の spill 先は
-    // そのブロックの終わりで値を持っている（xSlotValid）。reg → mem の境目の写し（store）はそこでは要らない
+    // そのブロックの終わりで値を持っている（xSlotValid）。reg → memの境目のコピー（store）はそこでは要らない
     svOk mut []int
-    // 呼び出し規約の段 1（opt のときだけ）: 呼び出しの位置（昇順 — xLive）。区間がどれかを跨ぐ部分区間は callee-saved の組だけ（xPrioPick）
+    // 呼び出し規約の段階1（optのときだけ）: 呼び出しの位置（昇順 — xLive）。区間がどれかを跨ぐ部分区間はcallee-savedの組だけ（xPrioPick）
     cp mut []int
     // 冷たい呼び出しの局所 caller-save: 冷たい呼び出しの位置（昇順 — 跨ぎの集合 cp には入れない）・その位置で真に生きる
     // caller-saved のレジスタの組（ビット — xAllocFrame）・レジスタごとの退避の枠の変位（0 = 無し）
     cpc mut []int
     cpm mut []int
     csd mut []int
-    // 段 2（葉のフレームの省略 — opt）: スロット・spill・退避・呼び出しの無い関数は rbp を立てない（xNoFrame）。引数は [rsp + 8 + 8k]・出口は ret だけ
+    // 段階2（葉のフレームの省略 — opt）: スロット・spill・退避・呼び出しの無い関数はrbpを立てない（xNoFrame）。引数は [rsp + 8 + 8k]・出口はretだけ
     nofr bool
-    // 接続の task の本体で浅い待ち（rt.netwait の呼び出し）を持つ: 跨いで生きる callee-saved を置く枠の語の始まり（rbp からの変位 — 0 = 持たない）
+    // 接続のtaskの本体でシャロースリープ（rt.netwaitの呼び出し）を持つ: 跨いで生きるcallee-savedを置く枠のワードの始まり（rbpからの変位 — 0 = 持たない）
     shAt int
-    // 入口の零初期化の区間（zeroinit.sober）: 位置 zTop（rbp - 8 × zTop）から上へ zCnt 語。0 語なら零初期化を出さない
+    // 入口の零初期化の区間（zeroinit.sober）: 位置zTop（rbp - 8 × zTop）から上へzCntワード。0ワードなら零初期化を出さない
     zTop int
     zCnt int
-    // 段 3（引数のレジスタ渡し — opt）: この関数が段 3 の規約で呼ばれるか・レジスタで来る仮引数の数・値ごとのレジスタのヒント（-1 = 無し）
+    // 段階3（引数のレジスタ渡し — opt）: この関数が段階3の規約で呼ばれるか・レジスタで来る仮引数の数・値ごとのレジスタのヒント（-1 = 無し）
     rc bool
     nreg int
     hR mut []int
-    // 定義直後の読み直しの省略（置き場の往復レーン 段 4a — opt）: 最後に xPut がフレームへ store した値・その読み元のレジスタ・store の直後の
+    // 定義直後の読み直しの省略（格納場所の往復レーン 段階4a — opt）: 最後にxPutがフレームへstoreした値・その読み元のレジスタ・storeの直後の
     // 表の位置（-1 = 無し）。xGet / xGetInto が同じ値を表の位置が動く前に読むなら、レジスタに残っている値を使い load を省く。ブロックの頭で消す
     putV int
     putR int
     putAt int
-    // 零初期化の沈め（置き場の往復レーン 段 4b (b1-z) — opt）: zAt[ブロックの番号] = 1 なら、そのブロックの頭で零初期化を吐く（入口では吐かない）。
+    // 零初期化の沈め（格納場所の往復レーン 段階4b (b1-z) — opt）: zAt[ブロックの番号] = 1なら、そのブロックの頭で零初期化を吐く（入口では吐かない）。
     // 空 = 沈めない（入口で吐く）
     zAt mut []int
-    // 吐くときの scratch の中身の覚え書き（段 B の D1・opt）: mA / mC / mD = rax / rcx / rdx が今持つ値（-1 = 無し）。
+    // 吐くときのscratchの中身の覚え書き（段階BのD1・opt）: mA / mC / mD = rax / rcx / rdxが今持つ値（-1 = 無し）。
     // memOn = 白名簿の命令（定数・load / store・番地を出さない gep / slotaddr — xMemoOp）を吐いている間。覚え書きはその間だけ引き・書き、
     // 名簿の外の命令の頭とブロックの頭で全部消す（名簿の外の吐き方が scratch を書くのを 1 つずつ追わない — 漏れが誤コンパイルになるので）
     mA int
@@ -1063,7 +1063,7 @@ type xF struct {
     u8x int
 }
 
-// 関数 f のフレームの内訳を 1 行で stdout へ（開発の口 --frame-stat — F-1 段 0）:
+// 関数fのフレームの内訳を1行でstdoutへ（開発用のオプション --frame-stat — F-1段階0）:
 // `frame <関数> <フレーム B> <スロット B> <入口の零初期化 B> <退避 B> <spill ほか B> <spill した部分区間の数>`（フレームの無い関数は印字しない）
 func xFrameStat(st mut St, f FnRef, xs []int) {
     xStatLine(mut st, "frame", f, xs)
@@ -1100,11 +1100,11 @@ func xPutDec(out mut []byte, n int) {
     }
 }
 
-// 最適化のバックエンドの rt.copy8 の本体（d-3 — 棚の「rep movsb サイズ分岐」）: rax = dst・rdx = src・rcx = n（呼び手 — xInst）。
+// 最適化のバックエンドのrt.copy8の本体（d-3 — バックログの「rep movsbサイズ分岐」）: rax = dst・rdx = src・rcx = n（呼び手 — xInst）。
 // 32 バイト以下は始めと終わりから重ねて読む 2 本の mov（16 / 8 / 4 バイト — 読みを全部済ませてから書く）・3 バイト以下は ch で 1 バイトずつ前から。
-// 長いもの（と dst が src の n バイト以内の後ろにある前向きの重なり）は rep movsb。意味は IR の本体（1 バイトずつ前から写す — copyloop は
-// この重なりの意味を当てにする）と同じ: 重なりが無いか dst が src より前なら、読みを先に済ませる写しも前からの写しも同じ値になる。
-// 壊すのは rax / rcx / rdx / xmm0 / xmm1 / フラグ（割り当てに使わない作業）だけ — rsi / rdi は長い道で積んで戻す。棄てた案: 呼び出し点ごとに
+// 長いもの（とdstがsrcのnバイト以内の後ろにある前向きの重なり）はrep movsb。意味はIRの本体（1バイトずつ前からコピーする — copyloopは
+// この重なりの意味を当てにする）と同じ: 重なりが無いかdstがsrcより前なら、読みを先に済ませるコピーも前からのコピーも同じ値になる。
+// 壊すのはrax / rcx / rdx / xmm0 / xmm1 / フラグ（割り当てに使わない作業）だけ — rsi / rdiは長いパスで積んで戻す。棄てた案: 呼び出し点ごとに
 // 展開（2123 か所 × ≈145 B — 自己 build の ELF +3%）
 func xCopy8Body(c mut table.Table[byte]) int {
     entry := x86.Here(mut c)
@@ -1173,10 +1173,10 @@ func xCopy8Body(c mut table.Table[byte]) int {
 
 // 最適化のバックエンドの rt.matchlen の本体: rax = p・rdx = q・rcx = n（呼び手 — xInst）→ rax = p[0:n] と
 // q[0:n] の一致の長さ。意味は IR の本体（rt8.sober の buildMatchLen — 1 バイトずつ前から比べる）と同じ。区間の外を読まない: n ≥ 16 は 16 バイトずつ
-// （pcmpeqb / pmovmskb — 印 + 1 の最下位の立ったビットが最初の食い違い）・端数は区間の終わりに揃えた 16 バイトの重ねた読み（重なった分は比べ済みで等しい）・
+// （pcmpeqb / pmovmskb — マーク + 1の最下位の立ったビットが最初の食い違い）・端数は区間の終わりに揃えた16バイトの重ねた読み（重なった分は比べ済みで等しい）・
 // 8 ≤ n < 16 は 8 バイトの xor を始めと終わりから・n < 8 は 1 バイトずつ。壊すのは rax / rcx / rdx / xmm0 / xmm1 / フラグだけ（docs/ir.md 7 節の約束 —
-// rsi（p の先頭）・rdi（区間の終わり）・rbx（1 バイトずつの道）は積んで戻す）。mut = 開発用 --rt-mutant（13 = 16 バイトの塊の食い違いの位置 +1・
-// 14 = 端数の重ねた読みを省く — testdata/matchlen と optdiff の網が鳴ることの確認用）
+// rsi（pの先頭）・rdi（区間の終わり）・rbx（1バイトずつのパス）は積んで戻す）。mut = 開発用 --rt-mutant（13 = 16バイトのチャンクの食い違いの位置 +1・
+// 14 = 端数の重ねた読みを省く — testdata/matchlenとoptdiffの検査が鳴ることの確認用）
 func xMatchLenBody(c mut table.Table[byte], mut0 int) int {
     entry := x86.Here(mut c)
     x86.PushReg(mut c, x86.Rsi)
@@ -1278,9 +1278,9 @@ func xMatchLenBody(c mut table.Table[byte], mut0 int) int {
     return entry
 }
 
-// xmm0 の 16 バイトの「JSON のエスケープが要るか」の印を rcx の下位 16 ビットへ（'"' か '\\' か 0x20 未満 — 符号なし。
+// xmm0の16バイトの「JSONのエスケープが要るか」のフラグをrcxの下位16ビットへ（'"' か '\\' か0x20未満 — 符号なし。
 // 0x20 未満は pminub(x, 0x1f) == x）。壊すのは rcx / rdx / xmm1 だけ（xmm0 はそのまま）。定数は rdx から作り直す（xmm2 以上は呼び手の組 — 触らない）。
-// mut0 = 25 は '\\' の判定を省く（開発用 --rt-mutant — testdata/jclean の網が鳴ることの確認用）
+// mut0 = 25は '\\' の判定を省く（開発用 --rt-mutant — testdata/jcleanの検査が鳴ることの確認用）
 func xJCleanClass(c mut table.Table[byte], mut0 int) {
     x86.MovRegImm64(mut c, x86.Rdx, 0x2222222222222222)
     x86.MovqXR(mut c, 1, x86.Rdx)
@@ -1306,11 +1306,11 @@ func xJCleanClass(c mut table.Table[byte], mut0 int) {
 
 // 最適化のバックエンドの rt.jclean の本体: rax = p・rcx = n（呼び手 — xInst）→ rax = p[0:n] の中で最初に
 // JSON のエスケープが要るバイトの位置（無ければ n）。意味は IR の本体（rt8.sober の buildJClean — 1 バイトずつ前から）と同じ。区間の外を読まない:
-// n ≥ 16 は 16 バイトずつ（端数は区間の終わりに揃えた 16 バイトの重ねた読み — 重なった分は判定済みで印が立たない）・8 ≤ n < 16 は始めと終わりの 8 バイト
-// （movq × 2 を 16 レーンに並べる — 印の位置 k < 8 は p + k・k ≥ 8 は終わり − 16 + k）・4 ≤ n < 8 は始めと終わりの 4 バイト（movd × 2 — 上の 8 レーンは 0 で
-// 印が立つので下位 8 ビットだけを見る・k ≥ 4 は終わり − 8 + k）・n < 4 は 1 バイトずつ（p の手前・終わりの後ろに余白が無くても読まない）。
+// n ≥ 16は16バイトずつ（端数は区間の終わりに揃えた16バイトの重ねた読み — 重なった分は判定済みでフラグが立たない）・8 ≤ n < 16は始めと終わりの8バイト
+// （movq × 2を16レーンに並べる — フラグの位置k < 8はp + k・k ≥ 8は終わり − 16 + k）・4 ≤ n < 8は始めと終わりの4バイト（movd × 2 — 上の8レーンは0で
+// フラグが立つので下位8ビットだけを見る・k ≥ 4は終わり − 8 + k）・n < 4は1バイトずつ（pの手前・終わりの後ろに余白が無くても読まない）。
 // 壊すのは rax / rcx / rdx / xmm0 / xmm1 / フラグだけ（docs/ir.md 7 節の約束 — rsi〔p〕・rdi〔区間の終わり〕は積んで戻す）。
-// mut0 = 開発用 --rt-mutant（25 = '\\' の判定を省く・26 = n ≥ 16 の端数の重ねた読みを省く・27 = 8〜15 バイトの道の後ろの語の位置を p + k に）
+// mut0 = 開発用 --rt-mutant（25 = '\\' の判定を省く・26 = n ≥ 16の端数の重ねた読みを省く・27 = 8〜15バイトのパスの後ろのワードの位置をp + kに）
 func xJCleanBody(c mut table.Table[byte], mut0 int) int {
     entry := x86.Here(mut c)
     x86.PushReg(mut c, x86.Rsi)
@@ -1490,7 +1490,7 @@ func xFunc(st mut St, c mut table.Table[byte], fx mut table.Table[int], wb mut t
                 }
             } else if e.opt && xiOp(mut st, i) == OpSlotaddr && xiRes(mut st, i) >= 0 {
                 // スロットの番地も使う点で作り直す（remat 2 — lea rbp + 変位。constV = スロットの番号。番地を区間に乗せると、
-                // 多値の結果の写しのたびにフレームから番地を読み直すことになる — 1BRC の main）
+                // 多値の結果のコピーのたびにフレームから番地を読み直すことになる — 1BRCのmain）
                 r := xiRes(mut st, i)
                 e.constV[r] = xiA(mut st, i)
                 e.remat[r] = 2
@@ -1521,12 +1521,12 @@ func xFunc(st mut St, c mut table.Table[byte], fx mut table.Table[int], wb mut t
         e.slotDisp = append(e.slotDisp, -8 * slotWords)
         s = xSlotNext(mut st, s)
     }
-    // 入口の零初期化の区間: 写しのバックエンドは全語（stage1 と同じ — elfeq）・最適化のバックエンドは要零の語を覆う最小の区間だけ（zeroinit.sober）
+    // 入口の零初期化の区間: 写しのバックエンドは全ワード（stage1と同じ — elfeq）・最適化のバックエンドは要零のワードを覆う最小の区間だけ（zeroinit.sober）
     e.zTop = slotWords
     e.zCnt = slotWords
     if e.opt && slotWords > 0 {
         zn0 := xZeroNeed(mut st, f, freeze(sws))
-        // スロットの彩色（F-1 段 2 — slotcolor.sober）: 置き場を置き直し、要零の位置を新しい並びへ移す（要零のスロットは頭に固まる）
+        // スロットの彩色（F-1段階2 — slotcolor.sober）: 格納場所を置き直し、要零の位置を新しい並びへ移す（要零のスロットは頭に固まる）
         nc := xSlotColor(mut st, f, freeze(sws), zn0)
         ns := len(sws)
         mut zn := mut []int{}
@@ -1595,7 +1595,7 @@ func xFunc(st mut St, c mut table.Table[byte], fx mut table.Table[int], wb mut t
         if !xHasScanB(mut st, mut e) {
             e.nx = xNXmmWide
         }
-        // xmm を作業に使う塊（AES-GCM は xmm0〜15 を全部）— この関数では xmm に値を置かない（std/crypto の小さい関数だけが持つ — float なし）
+        // xmmを作業に使うチャンク（AES-GCMはxmm0〜15を全部）— この関数ではxmmに値を置かない（std/cryptoの小さい関数だけが持つ — floatなし）
         if xHasXmmBlk(mut st, mut e) {
             e.nx = 0
         }
@@ -1629,9 +1629,9 @@ func xFunc(st mut St, c mut table.Table[byte], fx mut table.Table[int], wb mut t
         xSlotValid(mut st, mut e)
     }
     areaIn := xAreaEntry(mut st, f)
-    // 浅い待ちの点を持つ本体は、跨いで生きる callee-saved を置く語を枠の底に足す（opt は callee-saved 5 本・写しのバックエンドは 10 本ぜんぶ）
+    // シャロースリープの点を持つ本体は、跨いで生きるcallee-savedを置くワードを枠の底に足す（optはcallee-saved 5本・写しのバックエンドは10本ぜんぶ）
     e.shAt = if areaIn && xShallowFn(mut st, f) { bottom - 8 * (if e.opt { 5 } else { 10 }) } else { 0 }
-    // 変異 60 は全関数の枠を 512 B 太らせる（意味は変えない — framestat の @room の網の自己検査）
+    // ミュータント60は全関数の枠を512 B太らせる（意味は変えない — framestatの @roomの自己検査）
     frame := (0 - (if e.shAt != 0 { e.shAt } else { bottom }) + 15) / 16 * 16 + if st.rtMut == 60 { 512 } else { 0 }
     if st.memRep {
         table.Push(mut st.memFr, int(f))
@@ -1692,16 +1692,16 @@ func xFunc(st mut St, c mut table.Table[byte], fx mut table.Table[int], wb mut t
     chk := st.xLay == -1
     fitOn := e.opt && st.xLay != -2
     // 関数の先頭から最初の候補まで落ちない点が無ければ、関数の入口の手前（前の関数の ret の後 — 実行されない）に詰める（粒度の葉 — 葉が inline
-    // された先の熱いループは入口から落ちて流れる）。入口は 64 B の整列からずれるが、ずれの量はこの関数自身の機械語だけで決まる（案 B の性質は保つ）
+    // された先の熱いループは入口から落ちて流れる）。入口は64 Bの整列からずれるが、ずれの量はこの関数自身の機械語だけで決まる（案Bのプロパティは保つ）
     mut entry := x86.Here(mut c)
     mut inner := true
     // 戻しの詰め物: 線の跨ぎの詰め物 P を置いたら、次の落ちない点に (64 − P) mod 64 を置き、その先のコードの線の中の位置を詰め物なしと同じに保つ
     // （詰め物の影響をそのループの周りに閉じる — 1BRC の map_find で、前半の小ループの詰め物が後ろの長い熱い区間をずらして cycles +2%）
     mut back := 0
     mut kb := 0
-    // 窓（線の跨ぎの詰め物 — xFitWant）: 本物の表へそのまま吐き進め、詰め物の量が決まったら窓の頭へ挿す（xFitShift）。窓の中か否かは状態で持ち、
-    // xEmitBlk・xProlog の呼び出し点を 1 か所に保つ（check は mut 引数の関数を呼び出し点ごとに展開する — 窓の別の表へ吐く 2 か所目で
-    // xEmitBlk の下の全部が 2 倍に写ってしまう。棄てた案: 表の取り替え〔mut 仮引数の中身の逃げで Analyzer が拒否〕）
+    // ウィンドウ（線の跨ぎの詰め物 — xFitWant）: 本物の表へそのまま吐き進め、詰め物の量が決まったらウィンドウの頭へ挿す（xFitShift）。ウィンドウの中か否かは状態で持ち、
+    // xEmitBlk・xPrologの呼び出し点を1か所に保つ（checkはmut引数の関数を呼び出し点ごとに展開する — ウィンドウの別の表へ吐く2か所目で
+    // xEmitBlkの下の全部が2倍にコピーされてしまう。棄てた案: 表の取り替え〔mut仮引数の中身の逃げでAnalyzerが拒否〕）
     mut win := false
     mut kk := 0
     mut hiMax := 0
@@ -1748,7 +1748,7 @@ func xFunc(st mut St, c mut table.Table[byte], fx mut table.Table[int], wb mut t
                 stop = false
             }
         }
-        // 窓の中: 吐くのは kk（落ちない点で切れる — そこから先は本番の続きに任せる・窓には整列も関数の中のずらしも入らない）
+        // ウィンドウの中: 吐くのはkk（落ちない点で切れる — そこから先は本番の続きに任せる・ウィンドウには整列も関数の中のずらしも入らない）
         mut k := kb
         mut emit := true
         if win {
@@ -1778,8 +1778,8 @@ func xFunc(st mut St, c mut table.Table[byte], fx mut table.Table[int], wb mut t
                 kb += 1
             }
         } else {
-            // 窓を閉じる。落ちない点で切れた: 頭を通った候補を、そこまでに積んだ後ろの辺で判定する（粒度の葉 — 熱いラッチは切れ目の手前・
-            // 体の最後は先の検査点の道）
+            // ウィンドウを閉じる。落ちない点で切れた: 頭を通った候補を、そこまでに積んだ後ろの辺で判定する（粒度の葉 — 熱いラッチは切れ目の手前・
+            // 体の最後は先の検査点のパス）
             if pad < 0 {
                 for h <- iter.Range(kb, kk) {
                     if pad < 0 && candF[h] >= kk {
@@ -1811,7 +1811,7 @@ func xFunc(st mut St, c mut table.Table[byte], fx mut table.Table[int], wb mut t
         }
         xExit(mut c, xPanic, st.taskUse)
     }
-    // 外置きした辺の写し（分岐の位置の置き場で読む）
+    // 外置きした辺のコピー（分岐の位置の格納場所で読む）
     for k <- iter.Range(0, len(e.eoA)) {
         x86.PatchRel32(mut c, e.eoA[k], x86.Here(mut c))
         e.pos = e.eoP[k]
@@ -1832,10 +1832,10 @@ func xFunc(st mut St, c mut table.Table[byte], fx mut table.Table[int], wb mut t
     return entry
 }
 
-// xProlog は関数の入口（フレーム・callee-saved の退避・スロットのゼロ初期化・レジスタに載る引数）。本番と、線の跨ぎの詰め物の窓（xFunc）の両方
-// 入口の零初期化の store の列（段 2 — xZeroStores）: 最適化のバックエンドは要零の区間が XZ_T 語以下なら rep stosq
-// （起動に数十 cycles）でなく xor eax + mov [rbp - …], rax の列で 0 にする。T と形は値札で選んだ（T = 8 / 16 / 32 × rax / xmm —
-// コンパイラ自身の自己 build の cycles は T = 16 で −1.8%）。棄てた案: pxor xmm0 + movdqu の 2 語ずつ（命令は少ないが knucleotide / logagg の cycles が
+// xPrologは関数の入口（フレーム・callee-savedの退避・スロットのゼロ初期化・レジスタに載る引数）。本番と、線の跨ぎの詰め物のウィンドウ（xFunc）の両方
+// 入口の零初期化のstoreの列（段階2 — xZeroStores）: 最適化のバックエンドは要零の区間がXZ_T語以下なら rep stosq
+// （起動に数十cycles）でなく xor eax + mov [rbp - …], raxの列で0にする。Tと形はコストで選んだ（T = 8 / 16 / 32 × rax / xmm —
+// コンパイラ自身の自己buildのcyclesはT = 16で −1.8%）。棄てた案: pxor xmm0 + movdquの2ワードずつ（命令は少ないがknucleotide / logaggのcyclesが
 // 両順で + — 16 B の store を 8 B で読み戻す形の疑い）・T = 32（binarytrees が両順で +1.8%）
 const XZ_T = 16
 
@@ -1847,12 +1847,12 @@ func xZeroStores(c mut table.Table[byte], ztop int, cnt int) {
     }
 }
 
-// 入口の零初期化を、入口から始まる領域 E の出口へ沈める（置き場の往復レーン 段 4b (b1-z)）: E = 入口から、零初期化の区間に
-// 重なるスロットの番地（slotaddr）を持たないブロックだけを辿った集合。E の中では区間の語を指す番地が作られないので、区間の語は読まれも書かれも
-// しない（呼び出しも区間の語には届かない — 番地が渡らない）。番地は定義が使用を支配するので、定義のブロックだけを見ればよい。
-// 零初期化は E の外のブロックのうち E から入るもの（前線）の頭で吐く — 前線の前任が全部 E で、E の外から E へ戻る辺が無いとき（どの道でも
-// 前線をちょうど 1 回通ってから区間の語に触れる）。E の中の ret（早期 return）は零初期化を払わない。条件を満たさない・E に ret が無い・
-// 前線が 4 つを超えるなら沈めない。毒の口（SOBER_SLOT_POISON）は入口に残る（毒 → 前線の 0）
+// 入口の零初期化を、入口から始まる領域Eの出口へ沈める（格納場所の往復レーン 段階4b (b1-z)）: E = 入口から、零初期化の区間に
+// 重なるスロットの番地（slotaddr）を持たないブロックだけを辿った集合。Eの中では区間のワードを指す番地が作られないので、区間のワードは読まれも書かれも
+// しない（呼び出しも区間のワードには届かない — 番地が渡らない）。番地は定義が使用を支配するので、定義のブロックだけを見ればよい。
+// 零初期化はEの外のブロックのうちEから入るもの（前線）の頭で吐く — 前線の前任が全部Eで、Eの外からEへ戻る辺が無いとき（どのパスでも
+// 前線をちょうど1回通ってから区間のワードに触れる）。Eの中のret（早期return）は零初期化を払わない。条件を満たさない・Eにretが無い・
+// 前線が4つを超えるなら沈めない。毒のオプション（SOBER_SLOT_POISON）は入口に残る（毒 → 前線の0）
 func xZeroSink(st mut St, e mut xF, sws []int) {
     nb := e.nb
     lo := -8 * e.zTop
@@ -1897,7 +1897,7 @@ func xZeroSink(st mut St, e mut xF, sws []int) {
 }
 
 // xZeroSink の判定（ブロックの番号 0 = 入口・後続は CSR〔sc / sx〕・ok = 区間に重なるスロットの番地を持たない・isRet = ret で終わる・
-// live = 到達する）: 前線の印の列（ブロックの番号ごと 1 / 0）か、沈めないなら空
+// live = 到達する）: 前線のフラグの列（ブロックの番号ごと1 / 0）か、沈めないなら空
 func xZeroSinkCalc(sc []int, sx []int, ok []int, isRet []int, live []int) []int {
     nb := len(ok)
     if nb == 0 || ok[0] == 0 {
@@ -1957,7 +1957,7 @@ func xZeroSinkCalc(sc []int, sx []int, ok []int, isRet []int, live []int) []int 
     return freeze(fr)
 }
 
-// store の列の変位（rbp から — 区間 [rbp - 8 × ztop, rbp - 8 × (ztop - cnt)) を 1 語ずつちょうど覆う — zeroinit_test）
+// storeの列の変位（rbpから — 区間 [rbp - 8 × ztop, rbp - 8 × (ztop - cnt)) を1ワードずつちょうど覆う — zeroinit_test）
 func xZeroPlan(ztop int, cnt int) []int {
     mut pl := mut []int{}
     mut d := -8 * ztop
@@ -1969,7 +1969,7 @@ func xZeroPlan(ztop int, cnt int) []int {
     return freeze(pl)
 }
 
-// 関数 f が task の本体の入口の印（OpArea AREA_ENTRY — 先頭のブロックの中）を持つか
+// 関数fがtaskの本体の入口のマーク（OpArea AREA_ENTRY — 先頭のブロックの中）を持つか
 func xAreaEntry(st mut St, f FnRef) bool {
     b := xfBHead(mut st, f)
     if b == -1 {
@@ -1985,7 +1985,7 @@ func xAreaEntry(st mut St, f FnRef) bool {
     return false
 }
 
-// 関数 f が rt.netwait を呼ぶか（接続の task の本体の受けの浅い待ち — lowering が read_fd の前に置く）
+// 関数fがrt.netwaitを呼ぶか（接続のtaskの本体の受けのシャロースリープ — loweringがread_fdの前に置く）
 func xShallowFn(st mut St, f FnRef) bool {
     nw := st.xNWait
     if nw == -1 {
@@ -2005,9 +2005,9 @@ func xShallowFn(st mut St, f FnRef) bool {
     return false
 }
 
-// 位置 p の rt.netwait の呼び出しを浅い待ちにするか: 本体（枠に置き場がある）で、跨いで生きる xmm が無い（xmm は置き場を持たない — 深い待ちのまま）
+// 位置pのrt.netwaitの呼び出しをシャロースリープにするか: 本体（枠に格納場所がある）で、跨いで生きるxmmが無い（xmmは格納場所を持たない — ディープスリープのまま）
 func xShCall(st mut St, e mut xF, fnr FnRef, p int) bool {
-    // 変異 67 = 記しを付けない（受けも深い待ち — areacheck の浅く寝る塊が 0）
+    // ミュータント67 = 記しを付けない（受けもディープスリープ — areacheckのシャロースリープするチャンクが0）
     if e.shAt == 0 || fnr != st.xNWait || st.rtMut == 67 {
         return false
     }
@@ -2023,8 +2023,8 @@ func xShCall(st mut St, e mut xF, fnr FnRef, p int) bool {
     return true
 }
 
-// 浅い待ちの記し（rt.netwait の呼び出しの前 — area.sober）: 切替が積む汎用レジスタ（rbp を除く — 跨いで生きる値と、本体の呼び手の callee-saved）を
-// 枠の置き場へ・TCB に本体の rbp と戻り先（呼び出しの直後 — 返る lea の rel32 の位置を返す）・TC_ONW の bit 3。r11 / rcx だけを使う（実引数はこの後に置く）
+// シャロースリープの記し（rt.netwaitの呼び出しの前 — area.sober）: 切替が積む汎用レジスタ（rbpを除く — 跨いで生きる値と、本体の呼び手のcallee-saved）を
+// 枠の格納場所へ・TCBに本体のrbpと戻り先（呼び出しの直後 — 返るleaのrel32の位置を返す）・TC_ONWのbit 3。r11 / rcxだけを使う（実引数はこの後に置く）
 func xShArm(st mut St, e mut xF, c mut table.Table[byte], fx mut table.Table[int], grecs []int, rs []int) int {
     x86.MovRegFs(mut c, x86.R11, 0)
     xFixAdd(mut fx, x86.Here(mut c) - 4, 5, xIndex(grecs, st.taskG))
@@ -2045,7 +2045,7 @@ func xShArm(st mut St, e mut xF, c mut table.Table[byte], fx mut table.Table[int
     return at
 }
 
-// 浅い待ちの着地（呼び出しの直後 — 普通に返っても shallow_land から跳んで来ても同じ列）: 記しを消し、置き場からレジスタを読み戻す。rax（結果）は触らない
+// シャロースリープの着地（呼び出しの直後 — 普通に返ってもshallow_landから跳んで来ても同じ列）: 記しを消し、格納場所からレジスタを読み戻す。rax（結果）は触らない
 func xShLand(st mut St, e mut xF, c mut table.Table[byte], fx mut table.Table[int], grecs []int, rs []int) {
     x86.MovRegFs(mut c, x86.R11, 0)
     xFixAdd(mut fx, x86.Here(mut c) - 4, 5, xIndex(grecs, st.taskG))
@@ -2053,7 +2053,7 @@ func xShLand(st mut St, e mut xF, c mut table.Table[byte], fx mut table.Table[in
     x86.MovRegMem(mut c, x86.Rcx, x86.R11, 8 * TC_ONW)
     x86.AndRegImm(mut c, x86.Rcx, -1 - AREA_SARM - AREA_SPARK)
     x86.MovMemReg(mut c, x86.R11, 8 * TC_ONW, x86.Rcx)
-    // 変異 68 = 読み戻さない（浅く寝て起きた本体が死んだ枠の値を使う — areacheck が捕まえる）
+    // ミュータント68 = 読み戻さない（シャロースリープして起きた本体が死んだ枠の値を使う — areacheckが捕まえる）
     if st.rtMut == 68 {
         return
     }
@@ -2066,11 +2066,11 @@ func xShLand(st mut St, e mut xF, c mut table.Table[byte], fx mut table.Table[in
     }
 }
 
-// task の本体の prologue（area.sober）: 印のある task（TC_ONW の bit 0）だけが付け替える。r11 / rcx だけを使う（引数のレジスタは rsi / r8〜r10）。
-// - 枠の底（入口の rsp − 8 − frame）が塊の頁 0 の余白（TCB − TCB_TOP_ROOM 以上）に収まる: 枠は頁 0 に作り、rsp をワーカーの区画の頂上へ・
-//   TC_ONW の bit 1 と AREA_NEAR を立てる（以後の呼び出しは区画の上 — 止まると rt.task_switch が区画を交換する）
-// - 収まらない: 枠を作る前に、戻り番地と実引数を持ち札の区画の頂上へ写して rsp をそこへ（連続の形を持ち札の上で — 交換しない）。
-//   持ち札は他の塊の積みの領域でありうるので、自分の塊の積みの領域へ伸ばさない
+// taskの本体のprologue（area.sober）: マークのあるtask（TC_ONWのbit 0）だけが付け替える。r11 / rcxだけを使う（引数のレジスタはrsi / r8〜r10）。
+// - 枠の底（入口のrsp − 8 − frame）がチャンクのページ0の余白（TCB − TCB_TOP_ROOM以上）に収まる: 枠はページ0に作り、rspをワーカーのエリアの頂上へ・
+//   TC_ONWのbit 1とAREA_NEARを立てる（以後の呼び出しはエリアの上 — 止まるとrt.task_switchがエリアを交換する）
+// - 収まらない: 枠を作る前に、戻り番地と実引数を所有エリアの頂上へコピーしてrspをそこへ（連続の形を所有エリアの上で — 交換しない）。
+//   所有エリアは他のチャンクのスタックの領域でありうるので、自分のチャンクのスタックの領域へ伸ばさない
 func xAreaProlog(st mut St, c mut table.Table[byte], fx mut table.Table[int], grecs []int, frame int, np int) {
     x86.MovRegFs(mut c, x86.R11, 0)
     xFixAdd(mut fx, x86.Here(mut c) - 4, 5, xIndex(grecs, st.taskG))
@@ -2095,8 +2095,8 @@ func xAreaProlog(st mut St, c mut table.Table[byte], fx mut table.Table[int], gr
     x86.MovMemReg(mut c, x86.R11, 8 * TC_ONW, x86.Rcx)
     jDone := x86.JmpRel32(mut c)
     x86.PatchRel32(mut c, jFar, x86.Here(mut c))
-    // 持ち札が自分の積みの領域なら付け替えずにその場で連続の形（頁 0 の余白から下へ — 区画を使わない task と同じ積み）。付け替えると頁 0 の余白が
-    // 空いたまま区画の頁が 1 枚増える。変異 65 = いつも付け替える（areacheck の遠い道の行が捕まえる）
+    // 所有エリアが自分のスタックの領域なら付け替えずにその場で連続の形（ページ0の余白から下へ — エリアを使わないtaskと同じスタック）。付け替えるとページ0の余白が
+    // 空いたままエリアのページが1枚増える。ミュータント65 = いつも付け替える（areacheckの遠いパスの行が捕まえる）
     mut jOwn := -1
     if st.rtMut != 65 {
         x86.MovRegMem(mut c, x86.Rcx, x86.R11, 8 * TC_AREA)
@@ -2107,8 +2107,8 @@ func xAreaProlog(st mut St, c mut table.Table[byte], fx mut table.Table[int], gr
         jOwn = x86.JmpRel32(mut c)
         x86.PatchRel32(mut c, jOth, x86.Here(mut c))
     }
-    // 実引数（積みで来るなら多くて np 語 — 余分に写しても読むのは頁 0 の上）を持ち札の区画の頂上へ写し、戻り番地の欄には帰りの口（下の stub —
-    // rsp を入口の値へ戻して元の戻り番地へ ret）を置く。入口の rsp は区画の頂上の 1 語に預ける。揃え（入口の rsp ≡ 8 mod 16）を保つ
+    // 実引数（スタックで来るなら多くてnpワード — 余分にコピーしても読むのはページ0の上）を所有エリアの頂上へコピーし、戻り番地のフィールドには帰りの口（下のstub —
+    // rspを入口の値へ戻して元の戻り番地へret）を置く。入口のrspはエリアの頂上の1ワードに預ける。揃え（入口のrsp ≡ 8 mod 16）を保つ
     x86.MovRegMem(mut c, x86.Rcx, x86.R11, 8 * TC_AREA)
     nw := 3 + np + (np & 1)
     for k <- iter.Range(1, 1 + np) {
@@ -2126,7 +2126,7 @@ func xAreaProlog(st mut St, c mut table.Table[byte], fx mut table.Table[int], gr
     x86.LeaRegMem(mut c, x86.Rsp, x86.Rcx, -8 * nw)
     xAreaFar(mut st, mut c, mut fx, grecs)
     jPro := x86.JmpRel32(mut c)
-    // 帰りの口（本体の ret が来る — rsp = 区画の頂上 − 8 nw + 8）
+    // 帰りの口（本体のretが来る — rsp = エリアの頂上 − 8 nw + 8）
     stub := x86.Here(mut c)
     x86.MovRegMem(mut c, x86.Rsp, x86.Rsp, 8 * nw - 16)
     x86.Ret(mut c)
@@ -2145,7 +2145,7 @@ func xAreaProlog(st mut St, c mut table.Table[byte], fx mut table.Table[int], gr
     x86.PatchRel32(mut c, jDone, x86.Here(mut c))
 }
 
-// 区画の形になれなかった印つきの task の数（#par tasks の area_far — ゲートは httparena で 0 を見る）。r11 / rcx を壊す
+// エリアの形になれなかったマークつきのtaskの数（#par tasksのarea_far — ゲートはhttparenaで0を見る）。r11 / rcxを壊す
 func xAreaFar(st mut St, c mut table.Table[byte], fx mut table.Table[int], grecs []int) {
     x86.MovRegImm32(mut c, x86.R11, 0)
     xFixAdd(mut fx, x86.Here(mut c) - 4, 2, xIndex(grecs, st.pstatG))
@@ -2156,7 +2156,7 @@ func xAreaFar(st mut St, c mut table.Table[byte], fx mut table.Table[int], grecs
 // areaIn: rbp と枠は xAreaProlog が組み済み
 func xProlog(st mut St, e mut xF, c mut table.Table[byte], frame int, slotWords int, areaIn bool) {
     if e.nofr {
-        // 段 2: フレームなし — 引数は呼び手の積んだ [rsp + 8 + 8k]（戻り番地の上）。段 3: レジスタで来る引数を先に並行コピー
+        // 段階2: フレームなし — 引数は呼び手の積んだ [rsp + 8 + 8k]（戻り番地の上）。段階3: レジスタで来る引数を先に並行コピー
         xArgMoves(mut e, mut c)
         mut k1 := e.nreg
         k1End := e.np
@@ -2190,8 +2190,8 @@ func xProlog(st mut St, e mut xF, c mut table.Table[byte], frame int, slotWords 
         k2 += 1
     }
     if e.opt && st.slotPoison && slotWords > 0 {
-        // 毒の口（SOBER_SLOT_POISON — 開発用・最適化のバックエンドだけ）: 全語を 0x5a… で埋めてから要零の区間を 0 に — 要零でないと判定した語を
-        // 読む IR があれば、落ちるか出力が変わる（判定の誤りを観測できる形にする網）
+        // 毒のオプション（SOBER_SLOT_POISON — 開発用・最適化のバックエンドだけ）: 全ワードを0x5a… で埋めてから要零の区間を0に — 要零でないと判定したワードを
+        // 読むIRがあれば、落ちるか出力が変わる（判定の誤りを観測できる形にする検査）
         x86.LeaRegMem(mut c, x86.Rdi, x86.Rbp, -8 * slotWords)
         x86.MovRegImm32(mut c, x86.Rcx, slotWords)
         x86.MovRegImm64(mut c, x86.Rax, 6510615555426900570)
@@ -2207,7 +2207,7 @@ func xProlog(st mut St, e mut xF, c mut table.Table[byte], frame int, slotWords 
         x86.XorRegReg(mut c, x86.Rax, x86.Rax)
         x86.RepStosq(mut c)
     }
-    // 段 3: レジスタで来る引数（rsi・r8〜r10 — rep stosq は壊さない）の並行コピーを先に（スタックで来る引数の書き先が引数レジスタでありうる）
+    // 段階3: レジスタで来る引数（rsi・r8〜r10 — rep stosq は壊さない）の並行コピーを先に（スタックで来る引数の書き先が引数レジスタでありうる）
     xArgMoves(mut e, mut c)
     mut k := e.nreg
     kEnd := e.np
@@ -2220,7 +2220,7 @@ func xProlog(st mut St, e mut xF, c mut table.Table[byte], frame int, slotWords 
     }
 }
 
-// レジスタで来た仮引数（段 3）を入口の置き場（レジスタか spill 先）へ並行コピーする。使われない仮引数（区間が入口の 1 点）は写さない
+// レジスタで来た仮引数（段階3）を入口の格納場所（レジスタかspill先）へ並行コピーする。使われない仮引数（区間が入口の1点）はコピーしない
 func xArgMoves(e mut xF, c mut table.Table[byte]) {
     mut n := 0
     for k <- iter.Range(0, e.nreg) {
@@ -2233,7 +2233,7 @@ func xArgMoves(e mut xF, c mut table.Table[byte]) {
     xParallelMove(mut e, mut c, n)
 }
 
-// 吐く順の k 番目のブロック（命令と終端）を吐き、終端が次のブロックへ落ちたかを返す（本表と、線の跨ぎの詰め物の窓の表の両方）
+// 吐く順のk番目のブロック（命令と終端）を吐き、終端が次のブロックへ落ちたかを返す（本表と、線の跨ぎの詰め物のウィンドウの表の両方）
 func xEmitBlk(st mut St, e mut xF, c mut table.Table[byte], fx mut table.Table[int], k int, frecs []int, grecs []int) bool {
     bi := e.order[k]
     blk := BlkRef(e.blk[bi])
@@ -2274,17 +2274,17 @@ func xEmitBlk(st mut St, e mut xF, c mut table.Table[byte], fx mut table.Table[i
 // ループには中立（同じ機械語を 64 通りに置いて cycles が平ら）。
 // 詰め物は T の手前の最も近い「落ちない点」（手前のブロックが jmp / ret で終わる境目）か関数の入口の手前（前の関数の ret の後）に置き、実行されない
 // （落ちてくる頭の前に置くと、ループに入るたびに実行される — fannkuch 命令 +4.0%・knucleotide +3.4%）。区間の大きさは吐くまで
-// 分からないので、落ちない点に着いたら、そこからの窓（次の落ちない点か候補の体の最後まで）を本番として吐き進め、詰め物の量が決まってから
-// 窓の頭へ挿してずらす（xFitShift — 吐き直しは無い。旧 = 別の表へ吐いて継ぐ xFitSplice — xEmitBlk の呼び出し点が 2 つになり check の展開が倍になる）。
+// 分からないので、落ちない点に着いたら、そこからのウィンドウ（次の落ちない点か候補の体の最後まで）を本番として吐き進め、詰め物の量が決まってから
+// ウィンドウの頭へ挿してずらす（xFitShift — 吐き直しは無い。旧 = 別の表へ吐いて継ぐxFitSplice — xEmitBlkの呼び出し点が2つになりcheckの展開が倍になる）。
 // 棄てた案: 関数を丸ごと 2 回吐く（自己 build +19.5%）/ 吐く部分を全部 2 周
-// （詰め物の要る関数だけでも +2.3%）/ 窓を捨てる表へ下見して本番を吐き直す（+1.0%・空振りの下見が半分）/
-// 関数を吐き終えた後に挿してずらす（整列の再計算まで要る — 窓は落ちない点で切れるので整列を含まない）
+// （詰め物の要る関数だけでも +2.3%）/ ウィンドウを捨てる表へ下見して本番を吐き直す（+1.0%・空振りの下見が半分）/
+// 関数を吐き終えた後に挿してずらす（整列の再計算まで要る — ウィンドウは落ちない点で切れるので整列を含まない）
 const XFIT_LINE = 64
-// 窓を作るのは、落ちない点から XFIT_AHEAD ブロック以内に候補があるときだけ（間に実際の落ちない点があれば窓はそこで切れ、先はその点に任せる。
+// ウィンドウを作るのは、落ちない点からXFIT_AHEADブロック以内に候補があるときだけ（間に実際の落ちない点があればウィンドウはそこで切れ、先はその点に任せる。
 // 落ちない点を吐く前に見込む形〔後続に次のブロックが無い〕は、空の中継の飛び越し等で外れて候補を取り逃した）
 const XFIT_AHEAD = 12
-// 窓の上限（IR の命令の数）: 候補のループ（頭 〜 体の最後）が XFIT_MAXI を超えるなら熱い区間が 64 B に収まる見込みが薄いので候補にしない・
-// 落ちない点から頭までが XFIT_REACH を超えるなら窓を作らない（どちらも正しさには関わらない — 取り逃しが増えるだけ）
+// ウィンドウの上限（IRの命令の数）: 候補のループ（頭 〜 体の最後）がXFIT_MAXIを超えるなら熱い区間が64 Bに収まる見込みが薄いので候補にしない・
+// 落ちない点から頭までがXFIT_REACHを超えるならウィンドウを作らない（どちらも正しさには関わらない — 取り逃しが増えるだけ）
 const XFIT_MAXI = 40
 const XFIT_REACH = 64
 
@@ -2296,12 +2296,12 @@ func xFitPad(a int, s int) int {
 
 // 吐く前の候補: cand[k] = 吐く順の位置 k のブロックが最内ループの頭なら、そのループの体の最後の位置（でなければ -1）。
 // 最内 = lpR の範囲 [頭, 体の最後] の中に別の頭を持たない。candB[k] = 回転するラッチを持つループの本体の先頭の位置（xRotLatch と同じ選び方・
-// でなければ -1）。後ろの辺の行き先 T は窓で決める（頭へ戻る辺が範囲の中にあれば頭 — 粒度の葉は数え口の jne が頭へ・検査点の続きの jl が
+// でなければ -1）。後ろの辺の行き先Tはウィンドウで決める（頭へ戻る辺が範囲の中にあれば頭 — 粒度の葉はカウンタのjneが頭へ・検査点の続きのjlが
 // 本体へ戻る 2 本のラッチを持ち、熱いのは頭のほう。無ければ回転の本体）
 func xFitCand(st mut St, e mut xF, rot []int, cand mut []int, candB mut []int, pre mut []int) {
     xFill(mut cand, e.norder, -1)
     xFill(mut candB, e.norder, -1)
-    // pre[k] = 吐く順で k より手前のブロックの IR の命令の数の和（窓の大きさの見積もりの物差し）
+    // pre[k] = 吐く順でkより手前のブロックのIRの命令の数の和（ウィンドウの大きさの見積もりの基準）
     xFill(mut pre, e.norder + 1, 0)
     for k <- iter.Range(0, e.norder) {
         mut n := 0
@@ -2342,7 +2342,7 @@ func xFitCand(st mut St, e mut xF, rot []int, cand mut []int, candB mut []int, p
     }
 }
 
-// 落ちない点（吐く順の位置 k の手前）で窓を作るか: XFIT_AHEAD ブロック・IR XFIT_REACH 命令以内に候補の頭がある
+// 落ちない点（吐く順の位置kの手前）でウィンドウを作るか: XFIT_AHEADブロック・IR XFIT_REACH命令以内に候補の頭がある
 func xFitWant(e mut xF, k int, cand []int, pre []int) bool {
     mut kt := k
     while kt < e.norder && kt - k <= XFIT_AHEAD && pre[kt] - pre[k] <= XFIT_REACH {
@@ -2354,7 +2354,7 @@ func xFitWant(e mut xF, k int, cand []int, pre []int) bool {
     return false
 }
 
-// 窓の終わりの上限（窓の中の候補の体の最後の最大）
+// ウィンドウの終わりの上限（ウィンドウの中の候補の体の最後の最大）
 func xFitHiMax(e mut xF, k int, cand []int, pre []int) int {
     mut hi := -1
     mut kt := k
@@ -2367,9 +2367,9 @@ func xFitHiMax(e mut xF, k int, cand []int, pre []int) int {
     return hi
 }
 
-// 窓（c の p0 以降・fx の f0 以降 — 本物の表へ直に吐いた区間）の頭に n バイトの詰め物を挿す: 窓のバイトを n 後ろへずらし、空いた所へ
-// nop を置き（nop のバイトは下書きの表 w に吐いて写す — 窓ごとに新しい表を作らない）、窓の中で積んだ位置の記録（ブロックの番地・飛び・ゼロ除算・
-// 外置きの辺・fx）に n を足す。窓は落ちない点で切れるので中に整列は無く、足し直すのはこの 5 種だけ（漏れは詰め物ありの ELF の照合と
+// ウィンドウ（cのp0以降・fxのf0以降 — 本物の表へ直に吐いた区間）の頭にnバイトの詰め物を挿す: ウィンドウのバイトをn後ろへずらし、空いた所へ
+// nopを置き（nopのバイトは下書きの表wに吐いてコピーする — ウィンドウごとに新しい表を作らない）、ウィンドウの中で積んだ位置の記録（ブロックの番地・飛び・ゼロ除算・
+// 外置きの辺・fx）にnを足す。ウィンドウは落ちない点で切れるので中に整列は無く、足し直すのはこの5種だけ（漏れは詰め物ありのELFの照合と
 // `--fit-check` ≡ `--fit-off` のバイト一致が鳴らす — scripts/fitcheck.sh）。n = 0 は何もしない
 func xFitShift(e mut xF, c mut table.Table[byte], fx mut table.Table[int], w mut table.Table[byte], p0 int, f0 int, k int, kk int, nj0 int, nd0 int, ne0 int, n int) {
     if n > 0 {
@@ -2412,7 +2412,7 @@ func xFitShift(e mut xF, c mut table.Table[byte], fx mut table.Table[int], w mut
     }
 }
 
-// 頭の位置 h の候補の詰め物（区間が 64 B 以下で後ろの辺が窓の中にあれば詰め物の大きさ ≥ 0・でなければ -1）。的は頭へ戻る辺が
+// 頭の位置hの候補の詰め物（区間が64 B以下で後ろの辺がウィンドウの中にあれば詰め物の大きさ ≥ 0・でなければ -1）。ターゲットは頭へ戻る辺が
 // あれば頭・無ければ回転の本体（candB）
 func xFitJudge(e mut xF, nj0 int, h int, cand []int, candB []int, a int) int {
     mut tb := e.order[h]
@@ -2425,7 +2425,7 @@ func xFitJudge(e mut xF, nj0 int, h int, cand []int, candB []int, a int) int {
     return if end > 0 && end - pt <= XFIT_LINE { xFitPad(a + pt, end - pt) } else { -1 }
 }
 
-// 窓で積んだ飛び（nj0 以降）のうち、ブロック tb へ戻る後ろの辺の末尾の最大（無ければ -1）
+// ウィンドウで積んだ飛び（nj0以降）のうち、ブロックtbへ戻る後ろの辺の末尾の最大（無ければ -1）
 func xFitEnd(e mut xF, nj0 int, tb int) int {
     pt := e.blockAt[tb]
     mut end := -1
@@ -2482,7 +2482,7 @@ func xOrder(st mut St, e mut xF) {
         // 冷たいブロックを末尾の 1 区画へ（M5 / 区間分割 S3b: 熱いコードが連続し、区間が短くなる）: exit で終わる panic の点と、ループの外の冷たい領域（xColdBlocks）。
         // 合流して戻る冷たいブロックで使う値は、末尾の分を本体と別の外包（部分区間）にする（xTouch）— 1 本の区間のまま末尾へ寄せると外包が関数の終わりまで
         // 伸びて熱い値と全部重なった（fannkuch 23.2 → 56.5 G）。
-        // ループの中の冷たい領域は寄せない（印は重みにだけ使う）: 寄せると合流の仮引数の合体が崩れ、revcomp の 1 文字ごとの後ろの辺に 3 命令の入れ替えが入った
+        // ループの中の冷たい領域は寄せない（マークは重みにだけ使う）: 寄せると合流の仮引数の合体が崩れ、revcompの1文字ごとの後ろの辺に3命令の入れ替えが入った
         // （命令 +3.3%）。入口は動かさない。1 本の列を 2 周で積む（2 本へ交互に append しない — 運用の地雷）
         xFill(mut e.cold, np, 0)
         xColdBlocks(mut st, mut e)
@@ -2775,7 +2775,7 @@ func xLive(st mut St, e mut xF) {
             bi5 += 1
         }
         if pass == 1 {
-            // 値ごとに live-in を前任へ辿る（印 = v + 1）
+            // 値ごとにlive-inを前任へ辿る（マーク = v + 1）
             mut mark := mut []int{}
             xFill(mut mark, nb, 0)
             mut work := mut []int{}
@@ -2860,7 +2860,7 @@ func xLive(st mut St, e mut xF) {
         while p >= 0 {
             xTouch(mut e, xParamVal(mut st, p), bs)
             if e.opt {
-                // 使われない仮引数でも入口の 1 点を越えて生かす（同じ入口で始まる値に置き場を譲らない — 辺の並行コピーが書く先）
+                // 使われない仮引数でも入口の1点を越えて生かす（同じ入口で始まる値に格納場所を譲らない — 辺の並行コピーが書く先）
                 xTouch(mut e, xParamVal(mut st, p), bs + 1)
             }
             p = xParamNext(mut st, p)
@@ -2902,9 +2902,9 @@ func xLive(st mut St, e mut xF) {
             xTouch(mut e, xTermOpnd(mut st, b, j3), be)
             j3 += 1
         }
-        // 辺の並行コピーは前任の終端で後続の仮引数の置き場へ書く — 仮引数はそこでも生きている。
+        // 辺の並行コピーは前任の終端で後続の仮引数の格納場所へ書く — 仮引数はそこでも生きている。
         // 最適化のバックエンド（M5）は数えない: 辺のコピーは分岐の後のその辺の経路だけで書き、そこで生きている値は後続の入口でも生きている
-        // （後続の仮引数と区間が重なる）ので、仮引数の置き場を壊さない。実引数と仮引数が同じ置き場を取れる（ループの合流の mov が消える）
+        // （後続の仮引数と区間が重なる）ので、仮引数の格納場所を壊さない。実引数と仮引数が同じ格納場所を取れる（ループの合流のmovが消える）
         mut j := 0
         jEnd := if e.opt { 0 } else { xNSucc(mut st, b) }
         while j < jEnd {
@@ -2920,7 +2920,7 @@ func xLive(st mut St, e mut xF) {
     if e.opt {
         xSortInts(mut e.cp)
         xSortInts(mut e.cpc)
-        // 熱いブロックに使用の無い値（冷たい道でだけ働く — 熱い部分では定義と恒等の辺の実引数だけ）は冷たいブロックを深さ 0 で数えた重みに（S3a）
+        // 熱いブロックに使用の無い値（冷たいパスでだけ働く — 熱い部分では定義と恒等の辺の実引数だけ）は冷たいブロックを深さ0で数えた重みに（S3a）
         mut v5 := 0
         while v5 < nv {
             if e.hu[v5] == 0 {
@@ -2931,7 +2931,7 @@ func xLive(st mut St, e mut xF) {
     }
 }
 
-// 命令 i が呼び出し（呼び出し規約の段 1 — 呼ばれ側が caller-saved の組を壊す）か: call・間接 call・罠・task の切替と開始・clone。
+// 命令iが呼び出し（呼び出し規約の段階1 — 呼ばれ側がcaller-savedの組を壊す）か: call・間接call・罠・taskの切替と開始・clone。
 // 除くもの: rep movs に置き換える rt.copy / rt.copy8（xInst — rsi / rdi を自分で積む）・戻らない rt.panic / rt.panic_mem（後ろで生きる値が無い —
 // 罠への巻き戻りは罠の記録が callee-saved を戻す）・syscall（rcx / r11 しか壊さない — 引数レジスタに載って跨ぐ値は xSyscall が積む）
 func xIsCallOp(st mut St, i InsRef) bool {
@@ -2944,10 +2944,10 @@ func xIsCallOp(st mut St, i InsRef) bool {
 }
 
 // 呼び出し i（xIsCallOp）が冷たい呼び出しか（跨ぎの集合から外し、呼び手が前後で caller-saved を退避・復元する）:
-// 成長の rt（slice_grow・slice_grow8・grow_try・map_grow — 容器ごとの償却 O(1)）と窓の溢れ（rt.win_ralloc — 写した rt.region_alloc の冷たい道）への直の call。根拠は「まれ」ではなく「退避の往復〔最大 5 語〕の
-// 費用が呼び出しそのものの費用で抑えられる」こと（要求ごとの容器の成長は反復に比例して走る — routing の map_grow 16 万回）。
-// region_relocate(8) は入れない（反復ごとの境界のコピー — logagg 395 万回 — xColdBlocks の種とは別）。棄てた案: 死ぬブロック（exit でしか
-// 終わらない道 — panic の文言の印字の rt.flush）の呼び出しも入れる形 — 題材 8 本の命令が同じで cycles にも符号一致の差が無く、判定の分だけ
+// 成長のrt（slice_grow・slice_grow8・grow_try・map_grow — 容器ごとの償却O(1)）と予約ページの溢れ（rt.win_ralloc — コピーしたrt.region_allocの冷たいパス）への直のcall。根拠は「まれ」ではなく「退避の往復〔最大5ワード〕の
+// 費用が呼び出しそのものの費用で抑えられる」こと（リクエストごとの容器の成長は反復に比例して走る — routingのmap_grow 16万回）。
+// region_relocate(8) は入れない（反復ごとの境界のコピー — logagg 395万回 — xColdBlocksのシードとは別）。棄てた案: 死ぬブロック（exitでしか
+// 終わらないパス — panicの文言の印字のrt.flush）の呼び出しも入れる形 — 題材8本の命令が同じでcyclesにも符号一致の差が無く、判定の分だけ
 // 自己 build の仕事が増えた。ループの運搬値だけに caller-saved を許す形 — routing の予測ミスの悪化は消えず fasta の回収が半分
 func xColdCall(st mut St, i InsRef) bool {
     if xiOp(mut st, i) != OpCall {
@@ -2981,7 +2981,7 @@ func xColdMask(e mut xF, p int) int {
     return if lo < len(e.cpc) && e.cpc[lo] == p { e.cpm[lo] } else { 0 }
 }
 
-// 冷たい呼び出しの前（実引数の前）に組 m のレジスタを枠へ・xColdLoad は呼び出しと結果の写しの後で戻す
+// 冷たい呼び出しの前（実引数の前）に組mのレジスタを枠へ・xColdLoadは呼び出しと結果のコピーの後で戻す
 func xColdSave(e mut xF, c mut table.Table[byte], m int) {
     for r <- iter.Range(0, if m == 0 { 0 } else { 16 }) {
         if (m >> r & 1) == 1 {
@@ -3015,7 +3015,7 @@ func xCrossCall(e mut xF, v int) bool {
     return lo < len(e.cp) && e.cp[lo] < t
 }
 
-// 関数に呼び出しが無いか（段 2 — フレームを省いてよい形の一部）: rep movs に置き換える rt.copy / rt.copy8 と戻らない rt.panic /
+// 関数に呼び出しが無いか（段階2 — フレームを省いてよい形の一部）: rep movs に置き換えるrt.copy / rt.copy8と戻らないrt.panic /
 // rt.panic_mem の call は許す（panic は rsp の 16 B の揃いを読まない — 揃えを要る命令〔aligned の load / store〕をメモリに使わない）。
 // 罠・切替・開始・clone・間接 call・ほかの call があれば偽
 func xNoCall(st mut St, e mut xF) bool {
@@ -3037,7 +3037,7 @@ func xNoCall(st mut St, e mut xF) bool {
     return true
 }
 
-// 汎用レジスタ r が callee-saved の組（rbx・r12〜r15）か — opt の規約（呼び出し規約の段 1）。写しのバックエンドは 10 本すべて
+// 汎用レジスタrがcallee-savedの組（rbx・r12〜r15）か — optの規約（呼び出し規約の段階1）。写しのバックエンドは10本すべて
 func xCalleeSaved(r int) bool {
     return r == x86.Rbx || r == x86.R12 || r == x86.R13 || r == x86.R14 || r == x86.R15
 }
@@ -3055,7 +3055,7 @@ func xPieces(st mut St, e mut xF) {
         }
         xHolePieces(mut st, mut e)
         // 末尾の区画（冷たいブロック — S3b）の外包: 本体の触れが無ければそれが区間・あれば 2 本目の部分区間（重み 1 — 冷たい。本体と末尾の間は穴 —
-        // 値はそこで死んでいる）。本体 ⇄ 末尾の辺の写しは xSplitMoves（割る点 = 末尾の始まり − 1）。運搬値の穴で割れた値は鎖の最後へ足す
+        // 値はそこで死んでいる）。本体 ⇄ 末尾の辺のコピーはxSplitMoves（割る点 = 末尾の始まり − 1）。運搬値の穴で割れた値はチェーンの最後へ足す
         mut anyTail := false
         for v <- iter.Range(0, e.nv) {
             if e.tS[v] >= 0 {
@@ -3097,11 +3097,11 @@ func xPieces(st mut St, e mut xF) {
 }
 
 // ループの頭の仮引数（運搬値）の本体の区間を、生きているブロック（live-in・頭）の吐く順の連なりごとの部分区間に割る（間は穴 — 値はそこで死んでいる）
-// 運搬値がループの後ろで使われると、線形の区間がラッチまで伸びて戻り辺の実引数と重なり、同じレジスタを取れず戻り辺に写しが残った
+// 運搬値がループの後ろで使われると、線形の区間がラッチまで伸びて戻り辺の実引数と重なり、同じレジスタを取れず戻り辺にコピーが残った
 // （葉の `mov r14, rbx`）。連なりの終わりは、出ていく辺で生きていればブロックの終わり・でなければブロックの中の最後の使用。部分区間の重みは値の重み（どれも同じ）。
 // 連なりは吐く順で続くブロックの列で、値がブロックから出ていかない（終わりがブロックの終わりより前）ところでも切る（docs/regalloc.md の連なりの切り方 — 運搬値が
 // ラッチの手前で死ぬと戻り辺の実引数〔更新値〕が仮引数と同じレジスタを取れる: logagg の `lea r8,[rbx+1]; mov rbx,r8`・fasta・spectralnorm）。
-// 穴をまたぐ辺の写しは xSplitMoves（割る点 = 2 本目以降の連なりの始まり − 1）
+// 穴をまたぐ辺のコピーはxSplitMoves（割る点 = 2本目以降の連なりの始まり − 1）
 func xHolePieces(st mut St, e mut xF) {
     nh := len(e.hvV)
     if nh == 0 {
@@ -3222,9 +3222,9 @@ func xHoleEnd(st mut St, e mut xF, v int, bi int, live mut []int) int {
 // - 素通りの値 = 外包が範囲を丸ごと含み、範囲の中に定義も使用も無い値（の部分区間 — 値の 1 本目と運搬値の穴の本体の部分区間）。範囲の手前と後ろ（どちらも「次のブロックの頭 − 1」の奇数の位置 — 問い合わせの
 //   位置は偶数なので境界で迷わない）で割る。真ん中の部分区間は重み 0（最後に割り当てる — ループの中だけ spill するか兄弟のヒントで同じレジスタ）
 // - 本数の上限: ループ・組ごとに spill した値の数まで。素通りの値を優先度の低い順（一段目で先にどかされる側）に先着で枠を取る
-// - 入れ子は使用の間の隙間ごとに、隙間に丸ごと入る最も外の圧のあるループで割る。境界の写しは辺ごと（xSplitMoves）
-// 棄てた形: ループの中で使う値も割る（内側のループの出入りごとにレジスタ間の写し — fannkuch の命令 23.2 → 32.9 G）・
-// 素通りの値を圧と無関係に全部割る（ループの中の値が素通りの値のレジスタを先に取り、得るもの無しの写しが出入りごとに — fannkuch +16%・knucleotide +8%）
+// - 入れ子は使用の間の隙間ごとに、隙間に丸ごと入る最も外の圧のあるループで割る。境界のコピーは辺ごと（xSplitMoves）
+// 棄てた形: ループの中で使う値も割る（内側のループの出入りごとにレジスタ間のコピー — fannkuchの命令23.2 → 32.9 G）・
+// 素通りの値を圧と無関係に全部割る（ループの中の値が素通りの値のレジスタを先に取り、得るもの無しのコピーが出入りごとに — fannkuch +16%・knucleotide +8%）
 func xSplitLoops(st mut St, e mut xF, spills mut []int, nsp int) bool {
     e.npc0 = e.npc
     mut k1 := 0
@@ -3261,7 +3261,7 @@ func xSplitLoops(st mut St, e mut xF, spills mut []int, nsp int) bool {
     }
     // 候補 = 外包がどれかのループの範囲を丸ごと含む部分区間（値の 1 本目と、運搬値の穴で割れた値の本体の部分区間 — docs/regalloc.md:
     // 穴の 2 本目以降が内側のループを素通りすると、値の 1 本目しか見ない割り方ではその部分区間が割れずに内側のループの枠を塞いだ —
-    // revcomp の外側の運搬値）。cand は値ごと（使用の列を集める印）・cp は部分区間の列
+    // revcompの外側の運搬値）。candは値ごと（使用の列を集めるマーク）・cpは部分区間の列
     mut cand := mut []int{}
     xFill(mut cand, e.nv, 0)
     mut cp := mut []int{}
@@ -3292,7 +3292,7 @@ func xSplitLoops(st mut St, e mut xF, spills mut []int, nsp int) bool {
         k3 += 1
     }
     // 割る候補は一段目でレジスタを持っていた部分区間だけ（上の xIsReg — spill していた値は割ってもレジスタを明け渡さない — 真ん中がほかのループで
-    // レジスタを取り写しが増えるだけだった: fannkuch の main で優先度の低い spill 済みの素通りの値が枠を先に取った）
+    // レジスタを取りコピーが増えるだけだった: fannkuchのmainで優先度の低いspill済みの素通りの値が枠を先に取った）
     // spill した値の候補: 一段目で丸ごと spill した値（末尾の区画の部分区間を持たない）を、使用のあるループの境界で割り、
     // ループの中の部分区間だけを二段目に回す（外側の部分区間は spill に固定 — 外側が二段目でほかの値の枠を取ると 1brc / knucleotide が退行した: 形 (2)）。
     // 内側の部分区間はレジスタの空き（一段目の固定と、それより重い残り）に収まるときだけレジスタへ — 追い出しはしない
@@ -3312,7 +3312,7 @@ func xSplitLoops(st mut St, e mut xF, spills mut []int, nsp int) bool {
     while k4 < nsp {
         v := e.pv[spills[k4]]
         if spills[k4] == v && e.pnx[v] < 0 && e.ivS[v] >= 0 && e.fcls[v] != 2 {
-            // la < t のループの数 → その中の lb の最大が s を越えれば重なる（はみ出しは割る段で見る）
+            // la < tのループの数 → その中のlbの最大がsを越えれば重なる（はみ出しは割る段階で見る）
             jt := xFirstAfter(mut la, nl, e.ivE[v] - 1)
             if jt > 0 && pmax[jt - 1] > e.ivS[v] {
                 scand[v] = 1
@@ -3594,7 +3594,7 @@ func xSplitLoops(st mut St, e mut xF, spills mut []int, nsp int) bool {
     }
     xSortInts(mut cl)
     // 作り直す（重複を除いた数が前の列より短いと末尾に古い点が残り、昇順が崩れて xSplitMoves の二分探索が割る点を見落とす — 前の列が
-    // 2 点以上で重複を含むと発火する。運搬値の穴〔T2〕で辺の写しが抜け parser.parametersN を誤コンパイルした実例）
+    // 2点以上で重複を含むと発火する。運搬値の穴〔T2〕で辺のコピーが抜けparser.parametersNを誤コンパイルした実例）
     mut cu := mut []int{}
     mut i2 := 0
     i2End := len(cl)
@@ -3605,7 +3605,7 @@ func xSplitLoops(st mut St, e mut xF, spills mut []int, nsp int) bool {
         i2 += 1
     }
     e.cuts = cu
-    // 二段目の固定: 一段目でレジスタだった部分区間から割った部分区間（真ん中を除く）はそのレジスタ（e.loc はまだ一段目の部分区間ごとの置き場 — 出所は porig）
+    // 二段目の固定: 一段目でレジスタだった部分区間から割った部分区間（真ん中を除く）はそのレジスタ（e.locはまだ一段目の部分区間ごとの格納場所 — 出所はporig）
     mut k6 := 0
     k6End := e.npc
     while k6 < k6End {
@@ -3635,7 +3635,7 @@ func xSplitLoops(st mut St, e mut xF, spills mut []int, nsp int) bool {
 }
 
 // 二段目の後、部分区間が全部 spill のままの割った値（spill した値の内側の部分区間が枠を得なかったもの）を 1 本に畳み戻し、
-// 割れた値の列から外す（写しは要らない — spill 先は値ごとに 1 つ。残すと辺ごとの xSplitMoves と置き場の読みが鎖をなめ続け、自己 build の仕事 +0.5%）。
+// 割れた値の列から外す（コピーは要らない — spill先は値ごとに1つ。残すと辺ごとのxSplitMovesと格納場所の読みがチェーンをなめ続け、自己buildの仕事 +0.5%）。
 // 畳んだ部分区間は区間なし（ivS = -1）にする
 func xUnsplitSpilled(e mut xF) {
     mut keep := mut []int{}
@@ -3667,7 +3667,7 @@ func xUnsplitSpilled(e mut xF) {
     e.sv = keep
 }
 
-// 値 v の組（int / xmm）のどれかのレジスタで、一段目の割り当て（割った値の最初の部分区間は縮めた後）が [s, t] と重ならないか —
+// 値vの組（int / xmm）のどれかのレジスタで、一段目の割り当て（割った値の最初の部分区間は縮めた後）が [s, t] と重ならないか —
 // 楽観（割った値の外側の部分区間はまだ列に無い）。どこにも入らない内側の部分区間は割らない（二段目の仕事を増やすだけ — 自己 build +0.6%）
 func xAnyFree(e mut xF, v int, s int, t int) bool {
     fl := e.fcls[v] != 0
@@ -3808,11 +3808,11 @@ func xPieceAt(e mut xF, v int, p int) int {
     return -1
 }
 
-// 割れた値ごとに、spill 先が値を持っているかをブロックの終わりで求める。前向きの「すべての道で」の不動点:
+// 割れた値ごとに、spill先が値を持っているかをブロックの終わりで求める。前向きの「すべてのパスで」の不動点:
 // 入り(b) = 前任すべての出(p) の論理積（入口は偽）・出(b) = b の終わりで値が spill 先にいる ∨（入り(b) ∧ b で定義しない）。spill 先にいる点では必ず正しい
 // （定義が spill 先へ書いたか、reg → mem の境目で書いたか — 書かなかった境目はそこで既に正しかった）。値が死んでいる点は偽（安全側 — 生きている点の
-// 前任はみな生きているので結果に効かない）。定義のブロックの入りは偽（仮引数は頭のブロック — 後ろの辺の写しが書き直すので定義と同じ扱い）。
-// 関数の引数は使わない（xSplitMoves が呼び手の積んだ番地への写しを別に外している）
+// 前任はみな生きているので結果に効かない）。定義のブロックの入りは偽（仮引数は頭のブロック — 後ろの辺のコピーが書き直すので定義と同じ扱い）。
+// 関数の引数は使わない（xSplitMovesが呼び手の積んだ番地へのコピーを別に外している）
 func xSlotValid(st mut St, e mut xF) {
     nb := e.nb
     ns := len(e.sv)
@@ -3908,7 +3908,7 @@ func xSlotValid(st mut St, e mut xF) {
         v := e.sv[j]
         // 値の外包 [lo, hi]（最初の部分区間の始まり 〜 最後の部分区間の終わり）と交わるブロックだけを見る — 外では死んでいる（出 = 偽）。
         // 生きて入るブロックの前任は生きて出るので外包と交わる（範囲の外の前任は考えなくてよい）
-        // 置き場がレジスタの部分区間と spill 先の部分区間の両方を持つ値だけ（どちらか一方なら reg → mem の境目は無い）
+        // 格納場所がレジスタの部分区間とspill先の部分区間の両方を持つ値だけ（どちらか一方ならreg → memの境目は無い）
         lo := e.ivS[v]
         mut hi := e.ivE[v]
         mut anyR := false
@@ -3946,7 +3946,7 @@ func xSlotValid(st mut St, e mut xF) {
             mut changed := true
             while changed {
                 changed = false
-                // 部分区間は開始の昇順・ブロックの終わりも吐く順に昇順 — 鎖を先頭から 1 回なめる
+                // 部分区間は開始の昇順・ブロックの終わりも吐く順に昇順 — チェーンを先頭から1回なめる
                 mut pk := v
                 mut k7 := k0
                 while k7 < k1 {
@@ -3997,7 +3997,7 @@ func xBlkOfPos(e mut xF, p int) int {
     return e.order[lo]
 }
 
-// v が行き先 to の仮引数か（辺の仮引数の写しが書くので、割れた値の写しからは外す）
+// vが行き先toの仮引数か（辺の仮引数のコピーが書くので、割れた値のコピーからは外す）
 func xIsParamOf(st mut St, to BlkRef, v int) bool {
     mut p := xbPHead(mut st, to)
     while p >= 0 {
@@ -4009,11 +4009,11 @@ func xIsParamOf(st mut St, to BlkRef, v int) bool {
     return false
 }
 
-// 辺（今のブロックの終わり → 行き先 to の頭）の割れた値の写しを e.mvD / e.mvS の n 番目から足し、新しい本数を返す:
-// 両端を覆う部分区間の置き場が違う値だけ（両端の間に割る点が無ければ何もしない）。覆う部分区間があれば値は死んでいても写してよい —
-// 書き先の置き場は外包の中でその値に取ってある（同じ辺で生きている値は行き先の頭を覆うので重ならない）。
-// 例外 = 行き先の仮引数（最初の部分区間が行き先の頭で始まる値 — 入口以外ではそれだけ）: この辺が仮引数の写しで書くので外す
-// （ループの頭の仮引数は外包が後ろの辺の元まで届き、古い値を写すと仮引数の写しと同じ置き場へ二重に書く）
+// 辺（今のブロックの終わり → 行き先toの頭）の割れた値のコピーをe.mvD / e.mvSのn番目から足し、新しい本数を返す:
+// 両端を覆う部分区間の格納場所が違う値だけ（両端の間に割る点が無ければ何もしない）。覆う部分区間があれば値は死んでいてもコピーしてよい —
+// 書き先の格納場所は外包の中でその値に取ってある（同じ辺で生きている値は行き先の頭を覆うので重ならない）。
+// 例外 = 行き先の仮引数（最初の部分区間が行き先の頭で始まる値 — 入口以外ではそれだけ）: この辺が仮引数のコピーで書くので外す
+// （ループの頭の仮引数は外包が後ろの辺の元まで届き、古い値をコピーすると仮引数のコピーと同じ格納場所へ二重に書く）
 func xSplitMoves(st mut St, e mut xF, to BlkRef, n0 int) int {
     mut n := n0
     nc := len(e.cuts)
@@ -4044,8 +4044,8 @@ func xSplitMoves(st mut St, e mut xF, to BlkRef, n0 int) int {
         ka := if xIsParamOf(mut st, to, v) { -1 } else { xPieceAt(mut e, v, a) }
         if ka >= 0 {
             kb := xPieceAt(mut e, v, b)
-            // 関数の引数の置き場（呼び手が積んだ番地 — スタックで来た引数だけ）へ書く写しは要らない — そこは入口からずっとその値を持つ（ほかの値は置かれない）
-            // reg → spill 先の写しは、spill 先がこの辺の元のブロックの終わりで既に値を持っていれば要らない（SSA の値は変わらない — xSlotValid）
+            // 関数の引数の格納場所（呼び手が積んだ番地 — スタックで来た引数だけ）へ書くコピーは要らない — そこは入口からずっとその値を持つ（ほかの値は置かれない）
+            // reg → spill先のコピーは、spill先がこの辺の元のブロックの終わりで既に値を持っていれば要らない（SSAの値は変わらない — xSlotValid）
             if kb >= 0 && e.loc[ka] != e.loc[kb] && !(v < e.np && v >= e.nreg && e.loc[kb] == xLocFrame(xParamHome(mut e, v))) && !(xIsReg(e.loc[ka]) && !xIsReg(e.loc[kb]) && len(e.svOk) > 0 && e.svOk[j * e.nb + xBlkOfPos(mut e, a)] == 1) {
                 e.mvD[n] = e.loc[kb]
                 e.mvS[n] = e.loc[ka]
@@ -4119,7 +4119,7 @@ func xLoopDepth(st mut St, e mut xF) mut []int {
         }
         k += 1
     }
-    // 頭ごとに体を印（印 = 頭の位置 + 1 — 頭ごとに一意）
+    // 頭ごとに体をマーク（マーク = 頭の位置 + 1 — 頭ごとに一意）
     mut mark := mut []int{}
     xFill(mut mark, n, 0)
     mut stack := mut []int{}
@@ -4207,7 +4207,7 @@ func xWeigh(st mut St, e mut xF, b BlkRef, dp int, cold bool) {
         }
         i = xiNext(mut st, i)
     }
-    // 辺の実引数は、行き先の仮引数がその値自身（後ろの辺で変わらない変数 — 置き場が同じなら写しは 0 命令）なら数えない（区間分割 S3a）
+    // 辺の実引数は、行き先の仮引数がその値自身（後ろの辺で変わらない変数 — 格納場所が同じならコピーは0命令）なら数えない（区間分割S3a）
     t := xbTerm(mut st, b)
     if t == TmBr {
         xWeighArgs(mut st, mut e, xbBrTo(mut st, b), xTermX(mut st, b, 2), w, wc, h)
@@ -4243,15 +4243,15 @@ func xWeighArgs(st mut St, e mut xF, to BlkRef, args int, w int, wc int, h int) 
     }
 }
 
-// 冷たい領域のブロックに印を付ける（e.cold — 区間分割 S3a）。印は重みの補正にだけ使う: ループの中の熱いブロックに
-// 使用の無い値（冷たい道でだけ働く — 熱い部分では定義と恒等の辺の実引数だけ）は、冷たいブロックを深さ 0 で数えた重み（xLive の末尾）。
-// 冷たいブロックの重みを全部の値で深さ 0 にする形は棄却: 熱い道と遅い道の両方で使う値の重みが下がり、長い区間が短い熱い一時値を追い越して
+// 冷たい領域のブロックにマークを付ける（e.cold — 区間分割S3a）。マークは重みの補正にだけ使う: ループの中の熱いブロックに
+// 使用の無い値（冷たいパスでだけ働く — 熱い部分では定義と恒等の辺の実引数だけ）は、冷たいブロックを深さ0で数えた重み（xLiveの末尾）。
+// 冷たいブロックの重みを全部の値で深さ0にする形は棄却: 熱いパスと遅いパスの両方で使う値の重みが下がり、長い区間が短い熱い一時値を追い越して
 // revcomp の内側のループで spill が増えた（cycles +18%）。優先度を密度（重み ÷ 長さ）にする形も全題材で +5〜20% で棄却
 // 冷たい = exit で終わるブロック（panic の点）と、冷たい辺の行き先から前向きに「前任（後ろの辺を除く）が全部冷たい」で広がる領域。
-// 冷たい辺 = 条件分岐の片側だけが、単一入口・単一出口の鎖を辿って遅い道の rt（幾何成長・map の成長・境界コピー）を呼ぶブロックへ届くとき、その側。
-// 種を遅い道の rt に限るのは、ユーザーの呼び出し（再帰など）を冷たいと誤らないため。rt.region_alloc は確保の本道でもあるので種にしない。
-// 判定をブロック単位（遅い道の rt を呼ぶブロックだけ）にした試みは無効果だった — 冷たい道の中の速い道のブロック（先端での append のインライン）の
-// 使用が深さの重みのまま残る（1BRC の main で、挿入の道でだけ働くループの頭の仮引数が重み 129 で熱い部分のレジスタを占めていた）
+// 冷たい辺 = 条件分岐の片側だけが、単一入口・単一出口のチェーンを辿って遅いパスのrt（幾何成長・mapの成長・境界コピー）を呼ぶブロックへ届くとき、その側。
+// シードを遅いパスのrtに限るのは、ユーザーの呼び出し（再帰など）を冷たいと誤らないため。rt.region_allocは確保の本道でもあるのでシードにしない。
+// 判定をブロック単位（遅いパスのrtを呼ぶブロックだけ）にした試みは無効果だった — 冷たいパスの中の速いパスのブロック（先端でのappendのインライン）の
+// 使用が深さの重みのまま残る（1BRCのmainで、挿入のパスでだけ働くループの頭の仮引数が重み129で熱い部分のレジスタを占めていた）
 func xColdBlocks(st mut St, e mut xF) {
     n := e.norder
     mut kOf := mut []int{}
@@ -4261,7 +4261,7 @@ func xColdBlocks(st mut St, e mut xF) {
         kOf[e.order[k2]] = k2
         k2 += 1
     }
-    // 種（遅い道の rt を呼ぶ）と前任の数（後ろの辺 = 吐く順で後ろから前へ — を除く）
+    // シード（遅いパスのrtを呼ぶ）と前任の数（後ろの辺 = 吐く順で後ろから前へ — を除く）
     mut seed := mut []int{}
     xFill(mut seed, n, 0)
     mut npred := mut []int{}
@@ -4338,7 +4338,7 @@ func xColdBlocks(st mut St, e mut xF) {
     }
 }
 
-// 吐く順の k0 から単一入口・単一出口の鎖（前へ進む辺だけ）を辿って種に届くか（k0 の前任は分岐 kb だけであること）
+// 吐く順のk0から単一入口・単一出口のチェーン（前へ進む辺だけ）を辿ってシードに届くか（k0の前任は分岐kbだけであること）
 func xColdChain(st mut St, e mut xF, kOf mut []int, seed mut []int, npred mut []int, k0 int, kb int) bool {
     if k0 <= kb || npred[k0] != 1 {
         return false
@@ -4361,7 +4361,7 @@ func xColdChain(st mut St, e mut xF, kOf mut []int, seed mut []int, npred mut []
     return false
 }
 
-// 鎖（xColdChain が種に届いた k0 から種まで）を冷たくする
+// チェーン（xColdChainがシードに届いたk0からシードまで）を冷たくする
 func xColdMark(st mut St, e mut xF, kOf mut []int, npred mut []int, cold mut []int, k0 int) {
     mut k := k0
     while k >= 0 {
@@ -4375,7 +4375,7 @@ func xColdMark(st mut St, e mut xF, kOf mut []int, npred mut []int, cold mut []i
     }
 }
 
-// 遅い道の rt か（冷たい領域の種 — xColdBlocks）
+// 遅いパスのrtか（冷たい領域のシード — xColdBlocks）
 func xSlowRt(st mut St, f int) bool {
     return f >= 0 && (f == int(st.rtGrow) || f == int(st.rtGrow8) || f == int(st.rtGrowTry) || f == int(st.rtMapGrow) || f == int(st.rtReloc) || f == int(st.rtReloc8) || f == int(st.rtErrReloc) || f == int(st.rtWinRalloc))
 }
@@ -4388,7 +4388,7 @@ func xSpillCost(e mut xF, v int) int {
     return e.wt[e.pv[v]] * 4096 / (if n > 256 { 256 } else { n })
 }
 
-// 区間を spill の費用（重み — ループの深さで 8 倍ずつ）の高い順に彩色する（M8）: レジスタごとに割り当て済みの区間の鎖を持ち、
+// 区間をspillの費用（重み — ループの深さで8倍ずつ）の高い順に彩色する（M8）: レジスタごとに割り当て済みの区間のチェーンを持ち、
 // 重ならないレジスタに置く（ヒントのレジスタを先に試す）。置けなければ spill。linear scan は「その時点の active の中で最安を落とす」局所の選び方で、
 // 内側のループで重く使う長命の値（slice の base）を短い一時値より先に落としていた。重なり = s < e' かつ s' < e（end ≤ start は共有可 — linear scan と同じ）。
 // 置けない部分区間は、運搬値の穴で割れた値の「中に使用の無い」部分区間（素通り — 定義と境目だけ）を、その費用が自分の費用の半分以下なら追い出す
@@ -4564,8 +4564,8 @@ func xPosW(e mut xF, p int) int {
     return if e.cold[k] == 1 { 1 } else { xDepW(e.ldep[k]) }
 }
 
-// 部分区間 c を mem に置いたときの費用: 中の触れ（使用は load・定義は store）+ 隣の部分区間がレジスタ（か未処理）なら境目の写し 1 本
-// （隣が mem なら写しは無い）。重みは静的（深さの 8 倍）— 中に触れの無い素通りの部分区間（運搬値の穴で割れた区間）は境目だけの値段になる
+// 部分区間cをmemに置いたときの費用: 中の触れ（使用はload・定義はstore）+ 隣の部分区間がレジスタ（か未処理）なら境目のコピー1本
+// （隣がmemならコピーは無い）。重みは静的（深さの8倍）— 中に触れの無い素通りの部分区間（運搬値の穴で割れた区間）は境目だけの値段になる
 func xPcCost(e mut xF, c int) int {
     mut cost := e.ev[4 * c + 2]
     v := e.pv[c]
@@ -4588,7 +4588,7 @@ func xPcCost(e mut xF, c int) int {
 // 置けない部分区間 v のために、重なる先客の費用の和が v の費用より安いレジスタを探し、先客を列から外して（追い出された回数 +1・
 // ヒープへ戻す）そのレジスタを返す（無ければ -1）。追い出せるのは追い出された回数が n 未満の先客だけ（連鎖の上限）。候補の組は xPrioPick と同じ
 func xPrioEvict(e mut xF, v int, n int) int {
-    // 先客の費用の和が v の費用の半分以下のときだけ（2 倍の余裕 — 費用のモデルの外の写し〔ヒントで合体していた辺の写しのずれ〕の分）
+    // 先客の費用の和がvの費用の半分以下のときだけ（2倍の余裕 — 費用のモデルの外のコピー〔ヒントで合体していた辺のコピーのずれ〕の分）
     // v の費用: 運搬値の穴の部分区間は中の触れ + 境目・ほかは部分区間の重み（値の重み — 融合した gep の使用は数えない xWeigh の規則）
     cv := (if xHoleP(mut e, v) { xPcCost(mut e, v) } else { e.pwt[v] }) / 2 + 1
     fl := e.fcls[e.pv[v]] != 0
@@ -4762,7 +4762,7 @@ func xPrioRealloc(e mut xF, used mut []int, spills mut []int, nsp1 int) int {
     xFill(mut e.loc, e.npc - len(e.loc), xSpill)
     // pfix = -2: spill した値の外側の部分区間（xSplitLoops — 二段目でも spill のまま）
     // -3（spill した値のループの中の部分区間）と割った値の真ん中（重み 0）は、一段目で spill した残りの後に余りの枠だけを取る — 中の部分区間が重みで先に枠を取ると、
-    // 一段目で spill して二段目で枠を得ていたループの運搬値を押し出し、毎反復 store → load の鎖になった（revcomp の cycles +10.6%）
+    // 一段目でspillして二段目で枠を得ていたループの運搬値を押し出し、毎反復store → loadのチェーンになった（revcompのcycles +10.6%）
     mut rest := mut []int{}
     mut rest2 := mut []int{}
     mut fixed := mut []int{}
@@ -4817,7 +4817,7 @@ func xPrioPlace(e mut xF, used mut []int, r int, v int) {
     e.loc[v] = xLocReg(r)
     used[r] = 1
     if e.aN[r] == e.aC[r] {
-        // 満杯: 末尾へ倍の枠を取り、写して付け替える（古い枠は捨てる — 総量は O(区間の数)）
+        // 満杯: 末尾へ倍の枠を取り、コピーして付け替える（古い枠は捨てる — 総量はO(区間の数)）
         nb := len(e.aL)
         mut j1 := 0
         j1End := 2 * e.aC[r]
@@ -4837,9 +4837,9 @@ func xPrioPlace(e mut xF, used mut []int, r int, v int) {
     xPrioInsert(mut e, r, v)
 }
 
-// 部分区間 v のレジスタ（無ければ -1）: 空きの判定は「重ならない」— xHintReg の free の口をこの部分区間で作り、ヒント → 空きの最初。
+// 部分区間vのレジスタ（無ければ -1）: 空きの判定は「重ならない」— xHintRegのfreeのインターフェースをこの部分区間で作り、ヒント → 空きの最初。
 // float のクラスは xmm の組・他は汎用の組（組をまたがない）
-// 汎用の組（呼び出し規約の段 1）: 呼び出しを跨ぐ部分区間は callee-saved の 5 本だけ・跨がない部分区間は caller-saved の 5 本を先に
+// 汎用の組（呼び出し規約の段階1）: 呼び出しを跨ぐ部分区間はcallee-savedの5本だけ・跨がない部分区間はcaller-savedの5本を先に
 // （xAllocReg の後ろ 5 本 → 前 5 本。入口で退避しなくて済む）
 func xPrioPick(e mut xF, free mut []int, v int) int {
     fl := e.fcls[e.pv[v]] != 0
@@ -4859,11 +4859,11 @@ func xPrioPick(e mut xF, free mut []int, v int) int {
         j2 += 1
     }
     mut r := xHintReg(mut e, v, mut free)
-    // 段 3: ヒントの無い部分区間は、まだ割り当てていないレジスタ引数が重なる区間で待っている引数レジスタを後回しにする
-    // （先に取ると引数が入口で写される — スタックで来た引数が r8 / r9 を先に取っていた）
+    // 段階3: ヒントの無い部分区間は、まだ割り当てていないレジスタ引数が重なる区間で待っている引数レジスタを後回しにする
+    // （先に取ると引数が入口でコピーされる — スタックで来た引数がr8 / r9を先に取っていた）
     mut wait := if r < 0 && !fl { xArgWait(mut e, v) } else { 0 }
     // 予約（一段目だけ — docs/regalloc.md の予約）: 辺の実引数を先に置いたレジスタは、行き先の仮引数がまだ置かれていなければその仮引数のために後回しにする。
-    // 運搬値の更新値（重い）が仮引数より先に置かれ、穴で縮んだ別の仮引数がヒントの無いまま空きの最初として取ると、仮引数どうしの置き場が
+    // 運搬値の更新値（重い）が仮引数より先に置かれ、穴で縮んだ別の仮引数がヒントの無いまま空きの最初として取ると、仮引数どうしの格納場所が
     // 辺で 1 つずつずれて戻り辺の並行コピーが環になる（mandelbrot の xmm の φ 4 本）
     if r < 0 && len(free) > 32 && free[64] != 0 {
         mut j3 := 0
@@ -5126,7 +5126,7 @@ func xAllocRegs(st mut St, e mut xF, used mut []int, spills mut []int) int {
 // 割り当ての結果からフレームを組む（退避するレジスタ・spill 先の変位・区間を持たない値の番地 — 1 回だけ）
 func xAllocFrame(st mut St, e mut xF, frameTop int, used mut []int, spills mut []int, nsp int) int {
     nv := e.npc
-    // 値を載せる xmm の和（段 6 P4-6 — 切替と罠が積む組。下の scanb の作業の退避は値を載せないので入れない）
+    // 値を載せるxmmの和（段階6 P4-6 — 切替と罠が積む組。下のscanbの作業の退避は値を載せないので入れない）
     mut k1 := 2
     while k1 < 16 {
         if used[xX0 + k1] == 1 {
@@ -5135,11 +5135,11 @@ func xAllocFrame(st mut St, e mut xF, frameTop int, used mut []int, spills mut [
         k1 += 1
     }
     // 割り当てに使わなくても壊すレジスタも退避する: スロットのゼロ初期化の rdi と syscall の引数レジスタ（rdx は割り当てない）。
-    // opt の規約（呼び出し規約の段 1）ではどちらも caller-saved なので退避しない
+    // optの規約（呼び出し規約の段階1）ではどちらもcaller-savedなので退避しない
     if !e.opt && xfSHead(mut st, e.f) >= 0 {
         used[x86.Rdi] = 1
     }
-    // scanb / crcfold の塊は xmm を作業に使う — 呼び手が xmm2〜7 に値を置く（塊を含まない関数の広い組 — xNXmmWide）ので、塊が書く分（xBlkXmm）を退避する
+    // scanb / crcfoldのチャンクはxmmを作業に使う — 呼び手がxmm2〜7に値を置く（チャンクを含まない関数の広い組 — xNXmmWide）ので、チャンクが書く分（xBlkXmm）を退避する
     if e.opt && e.nx == xNXmm {
         mut wm := 0
         for k <- iter.Range(0, e.nb) {
@@ -5160,7 +5160,7 @@ func xAllocFrame(st mut St, e mut xF, frameTop int, used mut []int, spills mut [
             k2 += 1
         }
     }
-    // xmm を作業に使う塊は xmm0〜15 を壊しうる — 呼び手が xmm2〜15 に置いた値（f64 の 8 B）を入口で退避する（xmm0 / 1 は scratch）
+    // xmmを作業に使うチャンクはxmm0〜15を壊しうる — 呼び手がxmm2〜15に置いた値（f64の8 B）を入口で退避する（xmm0 / 1はscratch）
     if xHasXmmBlk(mut st, mut e) {
         mut k7 := 2
         while k7 < 16 {
@@ -5168,7 +5168,7 @@ func xAllocFrame(st mut St, e mut xF, frameTop int, used mut []int, spills mut [
             k7 += 1
         }
     }
-    // UTF-8 の検査器の定数は、この関数が xmm8〜13 を割り当てに使っていなければそこに置く（塊ごとのスタックからの読み直し 6 本が消える）。
+    // UTF-8の検査器の定数は、この関数がxmm8〜13を割り当てに使っていなければそこに置く（チャンクごとのスタックからの読み直し6本が消える）。
     // 値を載せない作業なので退避は入口の 8 B で足りる（v128 は呼び出しを跨がない — 呼び手の xmm の値は f64 の 8 B だけ）
     if e.opt && e.nx == xNXmm && xHasUtf8Pre(mut st, mut e) {
         mut free := true
@@ -5251,7 +5251,7 @@ func xAllocFrame(st mut St, e mut xF, frameTop int, used mut []int, spills mut [
         k7 += 1
     }
     // spill 先は値ごとに 1 つ（同じ値の部分区間で共有 — 最初に spill された部分区間の順に変位を配る）。opt は合流した値の組で 1 つ（xSpillJoin）、
-    // さらに区間が重ならない群どうしで枠を共有する（xSpillColor — F-1 段 1）
+    // さらに区間が重ならない群どうしで枠を共有する（xSpillColor — F-1段階1）
     xFill(mut e.spd, e.nv, 0)
     if e.opt && nsp > 0 {
         xSpillJoin(mut st, mut e)
@@ -5263,10 +5263,10 @@ func xAllocFrame(st mut St, e mut xF, frameTop int, used mut []int, spills mut [
         if u < e.np && u >= e.nreg {
             e.loc[spills[k]] = xLocFrame(xParamHome(mut e, u))
         } else {
-            // 正の spd = 合流の群の代表の値 + 1（xSpillJoin — 変位は代表の欄に配る）
+            // 正のspd = 合流の群の代表の値 + 1（xSpillJoin — 変位は代表のフィールドに配る）
             g := if e.spd[u] > 0 { e.spd[u] - 1 } else { u }
             if e.spd[g] == 0 {
-                // v128（fcls 2 — 段 4②a）は 16 B の枠（movupd — 辺に現れないので合流の群には入らない）
+                // v128（fcls 2 — 段階4②a）は16 Bの枠（movupd — 辺に現れないので合流の群には入らない）
                 d = d - (if e.fcls[u] == 2 { 16 } else { 8 })
                 e.spd[g] = d
             }
@@ -5286,13 +5286,13 @@ func xAllocFrame(st mut St, e mut xF, frameTop int, used mut []int, spills mut [
     return if d < frameTop - 8 { d } else { frameTop - 8 }
 }
 
-// spill の枠の彩色（F-1 段 1）: spill 先を持つ群（xSpillJoin の群 — 群でない値は自身 1 つ）の
+// spillの枠の彩色（F-1段階1）: spill先を持つ群（xSpillJoinの群 — 群でない値は自身1つ）の
 // 区間 = 群の全部の値の全部の部分区間（レジスタに置いたものも — xSlotValid の前提で spill 先はそこでも値を持つ）の外包 [最小の始まり, 最大の終わり)。
 // 外包の穴は使わない（安全側）。重なりの規則は xIvMeet と同じ（始まり < 相手の終わり かつ 相手の始まり < 終わり・同じ点で始まるなら重なる —
-// 長さ 0 の外包は 1 に延ばして「同じ点で始まる」を拾う）。重ならない群は同じ枠でよい — レジスタの共有（xPrioFits）と同じ干渉なので、辺の写しの
-// 書き点の論証（xSpillJoin の注）もそのまま継ぐ。算法 = 線形走査: 始まりの順（同じ位置は群の番号の順）に、終わりが今の始まり以下の群の枠を
+// 長さ0の外包は1に延ばして「同じ点で始まる」を拾う）。重ならない群は同じ枠でよい — レジスタの共有（xPrioFits）と同じ干渉なので、辺のコピーの
+// 書き点の論証（xSpillJoinの注記）もそのまま継ぐ。算法 = 線形走査: 始まりの順（同じ位置は群の番号の順）に、終わりが今の始まり以下の群の枠を
 // 空きの列へ戻してから、空きの列の頭（無ければ新しい枠）を配る。v128（fcls 2 — 16 B）は別の空きの列。決定的（鍵と群の番号だけ — ハッシュ・
-// 並列なし）。結果は群の代表の e.spd に負の変位で書く（xAllocFrame の配りの道はそれを読むだけ）。返り値 = 新しいフレームの底（fb 以下 — fb = 退避域の下の今の底）。
+// 並列なし）。結果は群の代表のe.spdに負の変位で書く（xAllocFrameの配りのパスはそれを読むだけ）。返り値 = 新しいフレームの底（fb以下 — fb = 退避域の下の今の底）。
 // 区間を持たない群（どの部分区間も始まりが無い）は専用の枠
 func xSpillColor(e mut xF, spills mut []int, nsp int, fb int) int {
     // gid[x] = -1（未見）・代表 x の群の番号 i なら 2i・外包へ足した値は下位ビット 1（代表でない群の値は 1 だけ）— 作業域は値の数の表 1 本
@@ -5348,7 +5348,7 @@ func xSpillColor(e mut xF, spills mut []int, nsp int, fb int) int {
     // 始まりの順 / 終わりの順（同じ位置は群の番号の順 — 安定なマージ）。作業域は群の数だけ（関数の位置の数に比例する表を作らない — 自己 build の仕事）
     oS := xOrderBy(freeze(glo), freeze(ids))
     oE := xOrderBy(freeze(ghi), freeze(ids))
-    // 空きの列（8 B / 16 B — 積みの高さ n8 / n16・後に戻した枠から配る）
+    // 空きの列（8 B / 16 B — スタックの高さn8 / n16・後に戻した枠から配る）
     mut f8 := mut []int{}
     xFill(mut f8, ng, 0)
     mut f16 := mut []int{}
@@ -5430,14 +5430,14 @@ func xOrderBy(key []int, ids []int) []int {
     return freeze(a)
 }
 
-// spill 先の合流（置き場の往復レーン 段 4a — opt）: 辺の実引数と行き先の仮引数がどちらも spill 先を持ち、区間（全部の部分区間 —
-// レジスタに置いたものも）が重ならないなら同じ spill 先を配る — 辺の写しが「同じ置き場」になり xParallelMove が出さない。
-// 結果は e.spd に書く: 代表でない群の値 v は spd[v] = 代表の値 + 1（正 — 変位は負なので混ざらない。xAllocFrame が代表の欄に変位を配る）。
+// spill先の合流（格納場所の往復レーン 段階4a — opt）: 辺の実引数と行き先の仮引数がどちらもspill先を持ち、区間（全部の部分区間 —
+// レジスタに置いたものも）が重ならないなら同じspill先を配る — 辺のコピーが「同じ格納場所」になりxParallelMoveが出さない。
+// 結果はe.spdに書く: 代表でない群の値vはspd[v] = 代表の値 + 1（正 — 変位は負なので混ざらない。xAllocFrameが代表のフィールドに変位を配る）。
 // 作業域は組に出る値だけ（関数の値の数に比例する表を作らない — 自己 build の仕事）。レジスタの部分区間も数えるのは、割れた値の spill 先がそこでも値を持つ
 // 前提（xSlotValid — 覆われたブロックの終わりだけで引き継ぐ）があるから。部分区間の間の穴（運搬値の穴・本体と末尾の区画の間）は値が死んで
-// いるので数えない。辺の写しが仮引数の置き場へ書く点（前任の終わり）は仮引数の区間の外だが、そこで値が要る別の値は行き先の入口で生きている
-// （仮引数と区間が重なる）ので群に入らない — レジスタの共有（xLive の opt の注）と同じ理屈。同じ辺の読み元と書き先が同じ置き場になる組は
-// xParallelMove が置き場の単位で順序を付ける。割り当て（どの値がレジスタに載るか）は変えない
+// いるので数えない。辺のコピーが仮引数の格納場所へ書く点（前任の終わり）は仮引数の区間の外だが、そこで値が要る別の値は行き先の入口で生きている
+// （仮引数と区間が重なる）ので群に入らない — レジスタの共有（xLiveのoptの注記）と同じ理屈。同じ辺の読み元と書き先が同じ格納場所になる組は
+// xParallelMoveが格納場所の単位で順序を付ける。割り当て（どの値がレジスタに載るか）は変えない
 func xSpillJoin(st mut St, e mut xF) {
     // 候補の組（辺の実引数, 仮引数）— 深いループの辺から併せる
     mut pa := mut []int{}
@@ -5502,7 +5502,7 @@ func xSpillJoin(st mut St, e mut xF) {
     }
 }
 
-// 値 v の部分区間のどれかが spill されたか（xAllocFrame が変位を配る前 — 置き場が xSpill のまま）
+// 値vの部分区間のどれかがspillされたか（xAllocFrameが変位を配る前 — 格納場所がxSpillのまま）
 func xHasSpill(e mut xF, v int) bool {
     mut q := v
     while q >= 0 {
@@ -5515,7 +5515,7 @@ func xHasSpill(e mut xF, v int) bool {
 }
 
 // 組 (pa[k], pb[k])（詰めた番号 — 番号 i の値は vs[i]）を順に併せる: 両方の群のどの 2 値の区間も重ならないときだけ。値 v の
-// 区間 = 部分区間の鎖（v から pnx を辿る・始まり ivS / 終わり ivE・始まりが負なら無し）。重なり = xPrioFits と同じ（始まり < 相手の終わり
+// 区間 = 部分区間のチェーン（vからpnxを辿る・始まりivS / 終わりivE・始まりが負なら無し）。重なり = xPrioFitsと同じ（始まり < 相手の終わり
 // かつ 相手の始まり < 終わり・または同じ点で始まる）。群は 16 値まで（判定の仕事を抑える）。返り値 = 番号 → 群の代表の番号（併せない値は自身）
 func xJoinSlots(ivS mut []int, ivE mut []int, pnx mut []int, vs []int, pa []int, pb []int) []int {
     n := len(vs)
@@ -5580,9 +5580,9 @@ func xIvMeet(ivS mut []int, ivE mut []int, pnx mut []int, x int, y int) bool {
     return false
 }
 
-// ── 値の出し入れ（置き場を問わない）──
+// ── 値の出し入れ（格納場所を問わない）──
 
-// 位置 p での v の置き場（v の部分区間のうち p で生きているもの — 鎖を開始の順に辿り、終わり ≥ p の最初）。
+// 位置pでのvの格納場所（vの部分区間のうちpで生きているもの — チェーンを開始の順に辿り、終わり ≥ pの最初）。
 // 命令の被演算子と結果は e.pos・終端と辺の読み元はブロックの終わり・辺の書き先は行き先のブロックの頭で引く
 func xLocAt(e mut xF, v int, p int) int {
     return if e.pnx[v] < 0 { e.loc[v] } else { xLocWalk(mut e, v, p) }
@@ -5596,7 +5596,7 @@ func xLocWalk(e mut xF, v int, p int) int {
     return e.loc[k]
 }
 
-// 輪の外で定義し、それより深い輪の中で使う大域の番地（とその ptoi / itop）は作り直さず区間に乗せる（輪の中で毎周の即値にするより
+// ループの外で定義し、それより深いループの中で使う大域の番地（とそのptoi / itop）は作り直さず区間に乗せる（ループの中で毎周の即値にするより
 // 番地をレジスタに持つ形が速い）。深さは並べた順のブロックの深さ（e.ldep）だけを見る — 割り当ての結果には依らない
 func xGlobLoop(st mut St, e mut xF) {
     nk := if len(e.ldep) < e.norder { len(e.ldep) } else { e.norder }
@@ -5644,13 +5644,13 @@ func xGlobKeep(e mut xF, gd []int, v int, d int) {
     }
 }
 
-// v をレジスタに載せる（置き場がレジスタならそれ、フレームなら scratch に読む）
+// vをレジスタに載せる（格納場所がレジスタならそれ、フレームならscratchに読む）
 func xGet(e mut xF, c mut table.Table[byte], v int, scratch int) int {
     l := if e.remat[v] == 0 { xLocAt(mut e, v, e.pos) } else { 0 }
     if xIsGpr(l) {
         return xLocVal(l)
     }
-    // ここから先は scratch へ書く。scratch がまだ v を持つなら書かない（直前の xPut の読み元 — 段 4a の E・白名簿の間の覚え書き — 段 B の D1）
+    // ここから先はscratchへ書く。scratchがまだvを持つなら書かない（直前のxPutの読み元 — 段階4aのE・白名簿の間の覚え書き — 段階BのD1）
     if xMemoHit(mut e, scratch, v, x86.Here(mut c)) {
         return scratch
     }
@@ -5659,7 +5659,7 @@ func xGet(e mut xF, c mut table.Table[byte], v int, scratch int) int {
     } else if e.remat[v] == 2 {
         x86.LeaRegMem(mut c, scratch, x86.Rbp, e.slotDisp[e.constV[v]])
     } else if xIsXmm(l) {
-        // float のクラスの値を汎用の口で読む（ビット列 — movq）
+        // floatのクラスの値を汎用のインターフェースで読む（ビット列 — movq）
         x86.MovqRX(mut c, scratch, xLocVal(l) - xX0)
     } else {
         x86.MovRegMem(mut c, scratch, x86.Rbp, xLocVal(l))
@@ -5756,7 +5756,7 @@ func xGetInto(e mut xF, c mut table.Table[byte], v int, dst int) {
     if xIsXmm(l) {
         x86.MovqRX(mut c, dst, xLocVal(l) - xX0)
     } else if xIsReg(l) {
-        // xPut がレジスタへ写した直後で、写しの読み元が dst なら dst はまだ v を持つ（段 A）
+        // xPutがレジスタへコピーした直後で、コピーの読み元がdstならdstはまだvを持つ（段階A）
         if xLocVal(l) != dst && !(xPutLive(mut e, v, x86.Here(mut c)) && e.putR == dst) {
             x86.MovRegReg(mut c, dst, xLocVal(l))
         }
@@ -5769,7 +5769,7 @@ func xGetInto(e mut xF, c mut table.Table[byte], v int, dst int) {
     }
 }
 
-// src にある結果を v の置き場へ
+// srcにある結果をvの格納場所へ
 func xPut(e mut xF, c mut table.Table[byte], v int, src int) {
     xMemoSet(mut e, src, v)
     l := xLocAt(mut e, v, e.pos)
@@ -5784,7 +5784,7 @@ func xPut(e mut xF, c mut table.Table[byte], v int, src int) {
     } else {
         return
     }
-    // 直後の読みは src を使える（フレーム — 段 4a の E・レジスタ — 段 A）
+    // 直後の読みはsrcを使える（フレーム — 段階4aのE・レジスタ — 段階A）
     if e.opt && src < 16 {
         e.putV = v
         e.putR = src
@@ -5866,7 +5866,7 @@ func xInst(st mut St, e mut xF, c mut table.Table[byte], fx mut table.Table[int]
             }
             xPut(mut e, mut c, res, x86.Rax)
         } else if (a == BShl || a == BSar) && e.opt && xIsGpr(xLocAt(mut e, res, e.pos)) {
-            // 可変の量も結果のレジスタで直に（量 → rcx を先に — 結果のレジスタが量の置き場と同じでも壊さない。rcx は割り当てない scratch なので
+            // 可変の量も結果のレジスタで直に（量 → rcxを先に — 結果のレジスタが量の格納場所と同じでも壊さない。rcxは割り当てないscratchなので
             // 左の値は rcx に居ない）。rax の往復を省く
             d := xLocVal(xLocAt(mut e, res, e.pos))
             xGetInto(mut e, mut c, cc, x86.Rcx)
@@ -5959,7 +5959,7 @@ func xInst(st mut St, e mut xF, c mut table.Table[byte], fx mut table.Table[int]
         v := xGet(mut e, mut c, cc, x86.Rdx)
         xMemSib(mut e, mut c, a, if op == OpStore { 8 * b } else { b }, v, narrowW(op), false)
     } else if (op == OpLoad || op == OpStore) && e.opt && (e.remat[a] == 2 || (op == OpStore && e.remat[cc] == 1)) {
-        // 番地がスロット（remat 2）なら [rbp + 変位] を直に・値が imm32 の定数（remat 1）なら mov [番地], imm32（段 6 P4-6 — lea / mov imm の往復を省く）
+        // 番地がスロット（remat 2）なら [rbp + 変位] を直に・値がimm32の定数（remat 1）ならmov [番地], imm32（段階6 P4-6 — lea / mov imm の往復を省く）
         mut base := x86.Rbp
         mut disp := 8 * b
         if e.remat[a] == 2 {
@@ -6036,10 +6036,10 @@ func xInst(st mut St, e mut xF, c mut table.Table[byte], fx mut table.Table[int]
     } else if op == OpGlobal {
         xAbs(mut e, mut c, mut fx, res, 2, xIndex(grecs, a))
     } else if op == OpFsAddr {
-        // ワーカーの記録の表 k の番地 = fs:[8k]（段 6 P4-3）
+        // ワーカーの記録の表kの番地 = fs:[8k]（段階6 P4-3）
         l := xLocAt(mut e, res, e.pos)
         r := if xIsReg(l) { xLocVal(l) } else { x86.Rax }
-        // disp32 は後埋め（種類 5 — 番号 = ワーカーの表の番号・段 2）
+        // disp32は後埋め（種類5 — 番号 = ワーカーの表の番号・段階2）
         x86.MovRegFs(mut c, r, 0)
         xFixAdd(mut fx, x86.Here(mut c) - 4, 5, xIndex(grecs, a))
         if !xIsReg(l) {
@@ -6048,7 +6048,7 @@ func xInst(st mut St, e mut xF, c mut table.Table[byte], fx mut table.Table[int]
     } else if op == OpFuncaddr {
         xAbs(mut e, mut c, mut fx, res, 1, xIndex(frecs, a))
     } else if op == OpCall && e.opt && FnRef(a) == st.rtCopy8 {
-        // rt.copy8 は手で書いた本体（xCopy8Body — 短い写しの分岐）への call。壊すのは rax / rcx / rdx / xmm0 / xmm1 / フラグだけ（どれも割り当てに
+        // rt.copy8は手で書いた本体（xCopy8Body — 短いコピーの分岐）へのcall。壊すのはrax / rcx / rdx / xmm0 / xmm1 / フラグだけ（どれも割り当てに
         // 使わない作業 — xIsCallOp の外のまま）
         xGetInto(mut e, mut c, xAt(mut st, b, 0), x86.Rax)
         xGetInto(mut e, mut c, xAt(mut st, b, 1), x86.Rdx)
@@ -6068,7 +6068,7 @@ func xInst(st mut St, e mut xF, c mut table.Table[byte], fx mut table.Table[int]
         xFixAdd(mut fx, x86.CallRel32(mut c), 0, xIndex(frecs, a))
         xPut(mut e, mut c, res, x86.Rax)
     } else if op == OpCall && e.opt && FnRef(a) == st.rtCopy {
-        // rt.copy（語）の呼び出しは rep movsq で（1 要素ずつの写しのループが ReadFile の戻り値の
+        // rt.copy（ワード）の呼び出しは rep movsq で（1要素ずつのコピーのループがReadFileの戻り値の
         // 境界コピー〔140 MB〕等で支配的だった）。引数は scratch（rax / rdx / rcx）へ集めてから rdi / rsi へ — 割り当てに使う rdi / rsi は退避
         xGetInto(mut e, mut c, xAt(mut st, b, 0), x86.Rax)
         xGetInto(mut e, mut c, xAt(mut st, b, 1), x86.Rdx)
@@ -6081,9 +6081,9 @@ func xInst(st mut St, e mut xF, c mut table.Table[byte], fx mut table.Table[int]
         x86.PopReg(mut c, x86.Rdi)
         x86.PopReg(mut c, x86.Rsi)
     } else if op == OpCall && xRegCc(mut st, FnRef(a), frecs) && xShCall(mut st, mut e, FnRef(a), e.pos) {
-        // 浅い待ちの点（rt.netwait — 実引数 1 本はレジスタ・積みに何も置かない: 着地は rsp = 区画の頂上で来る）: 記し → 呼び出し → 着地
+        // シャロースリープの点（rt.netwait — 実引数1本はレジスタ・スタックに何も置かない: 着地はrsp = エリアの頂上で来る）: 記し → 呼び出し → 着地
         rs := xCtxRegs(mut e, e.pos, 0)
-        // `--frame-stat` の行 `shallow <本体>`（framestat の @shallow — 本体の浅い待ちの点の数）
+        // `--frame-stat` の行 `shallow <本体>`（framestatの @shallow — 本体のシャロースリープの点の数）
         if st.frStat {
             xStatLine(mut st, "shallow", e.f, []int{})
         }
@@ -6093,12 +6093,12 @@ func xInst(st mut St, e mut xF, c mut table.Table[byte], fx mut table.Table[int]
         xParallelMove(mut e, mut c, 1)
         xFixAdd(mut fx, x86.CallRel32(mut c), 0, xIndex(frecs, a))
         x86.PatchRel32(mut c, at, x86.Here(mut c))
-        // 読み戻しが先: 結果の置き場が跨ぐレジスタの集合に入りうる（呼び出しの前の値を置き場から戻すと結果を上書きする）
+        // 読み戻しが先: 結果の格納場所が跨ぐレジスタの集合に入りうる（呼び出しの前の値を格納場所から戻すと結果を上書きする）
         xShLand(mut st, mut e, mut c, mut fx, grecs, rs)
         xAfterCall(mut e, mut c, res, 0)
     } else if op == OpCall && xRegCc(mut st, FnRef(a), frecs) {
-        // 段 3: 5 本目以降を後ろから push・先頭 4 本は引数レジスタへ並行コピー（ここで caller-saved に載るのはこの呼び出しの実引数と結果だけ — 段 1。
-        // 冷たい呼び出しは跨ぐ caller-saved を実引数の前に退避し、結果の写しの後で戻す — xColdCall）
+        // 段階3: 5本目以降を後ろからpush・先頭4本は引数レジスタへ並行コピー（ここでcaller-savedに載るのはこの呼び出しの実引数と結果だけ — 段階1。
+        // 冷たい呼び出しは跨ぐcaller-savedを実引数の前に退避し、結果のコピーの後で戻す — xColdCall）
         cm := xColdMask(mut e, e.pos)
         xColdSave(mut e, mut c, cm)
         n := xLen(mut st, b)
@@ -6192,7 +6192,7 @@ func xAbs(e mut xF, c mut table.Table[byte], fx mut table.Table[int], r int, kin
     xFixAdd(mut fx, x86.Here(mut c) - 4, kind, id)
 }
 
-// 実引数 lo 本目以降を後ろから積む（段 3 の規約では lo = レジスタで渡す本数）
+// 実引数lo本目以降を後ろから積む（段階3の規約ではlo = レジスタで渡す本数）
 func xPushArgs(st mut St, e mut xF, c mut table.Table[byte], args int, lo int) {
     mut k := xLen(mut st, args)
     while k > lo {
@@ -6402,7 +6402,7 @@ func xFuseScan(st mut St, e mut xF) {
             e.fuse[cv] = 1
             // flags の流用（検査点の間引き — cancel.sober）: `eq / ne x, 0` の x がすぐ手前の add / sub / and の結果なら、その演算が立てた ZF を
             // そのまま読む（比較を吐かない — 2）。and の結果の使い道がこの比較だけで右が imm32 なら、and の代わりに test を吐く（3 — 結果を作らない）。
-            // 間に挟まりうる写し・再読み込みは mov だけで flags を壊さない
+            // 間に挟まりうるコピー・再読み込みはmovだけでflagsを壊さない
             if lk == CEq || lk == CNe {
                 x := xiB(mut st, last)
                 z := xiC(mut st, last)
@@ -6434,7 +6434,7 @@ func xPrevIns(st mut St, b BlkRef, i InsRef) InsRef {
     return p
 }
 
-// float の値 v の入った xmm の番号（xmm にあればそれ・なければ xmm の scratch へ写して scratch — 汎用・フレームはビット列を movq）
+// floatの値vの入ったxmmの番号（xmmにあればそれ・なければxmmのscratchへコピーしてscratch — 汎用・フレームはビット列をmovq）
 func xGetX(e mut xF, c mut table.Table[byte], v int, scratch int) int {
     l := xLocAt(mut e, v, e.pos)
     if e.remat[v] == 0 && xIsXmm(l) {
@@ -6462,7 +6462,7 @@ func xIntoX(e mut xF, c mut table.Table[byte], v int, d int) {
     }
 }
 
-// xmm s にある結果を v の置き場へ（xmm なら movapd・汎用は movq・フレームは rax を中継）
+// xmm s にある結果をvの格納場所へ（xmmならmovapd・汎用はmovq・フレームはraxを中継）
 func xPutX(e mut xF, c mut table.Table[byte], v int, s int) {
     l := xLocAt(mut e, v, e.pos)
     if xIsXmm(l) {
@@ -6478,14 +6478,14 @@ func xPutX(e mut xF, c mut table.Table[byte], v int, s int) {
 }
 
 // float の二項・単項（language.md 37 節）: 結果が xmm に置かれていればそこで直に計算する（float のクラス — opt）。
-// 置き場が汎用・フレームなら xmm0 で計算して戻す（写しのバックエンドは常にこちら — 値は汎用レジスタのビット列）。scratch は xmm0 / xmm1。
+// 格納場所が汎用・フレームならxmm0で計算して戻す（写しのバックエンドは常にこちら — 値は汎用レジスタのビット列）。scratchはxmm0 / xmm1。
 // 単項（sqrt / ofInt / toInt）は c を読まない
 func xFloatBin(e mut xF, c mut table.Table[byte], res int, a int, b int, cc int) {
     rl := xLocAt(mut e, res, e.pos)
     d := if xIsXmm(rl) { xLocVal(rl) - xX0 } else { 0 }
     if a == BFOfInt {
         x := xGet(mut e, mut c, b, x86.Rax)
-        // cvtsi2sd / sqrtsd は書き先の上位 64 bit を残す（書き先の前の値への偽の依存）— pxor で切る（ループの運搬値の鎖のレジスタに当たると
+        // cvtsi2sd / sqrtsdは書き先の上位64 bitを残す（書き先の前の値への偽の依存）— pxorで切る（ループの運搬値のチェーンのレジスタに当たると
         // 反復が直列になる: imm64 の定数の巻き上げで spectral-norm の evalA の cvtsi2sd が運搬値の xmm に乗って 5.3 倍）
         if e.opt {
             x86.PxorXX(mut c, d, d)
@@ -6542,8 +6542,8 @@ func xFloatBin(e mut xF, c mut table.Table[byte], res int, a int, b int, cc int)
     xPutX(mut e, mut c, res, d)
 }
 
-// ── packed f64（ir.sober の OpPMem の注）: v128 の値は xmm の組（fcls 2）か 16 B の spill 枠だけに住む（汎用レジスタには置かない —
-// 辺・呼び出しを跨がないので境目の写し〔xMove〕にも現れない）。scratch は float の段と同じ xmm0 / xmm1 ──
+// ── packed f64（ir.soberのOpPMemの注記）: v128の値はxmmの組（fcls 2）か16 Bのspill枠だけに住む（汎用レジスタには置かない —
+// 辺・呼び出しを跨がないので境目のコピー〔xMove〕にも現れない）。scratchはfloatの段階と同じxmm0 / xmm1 ──
 
 // v128 の値 v の入った xmm の番号（xmm にあればそれ・spill 枠なら scratch へ movupd して scratch）
 func xGetV(e mut xF, c mut table.Table[byte], v int, scratch int) int {
@@ -6555,7 +6555,7 @@ func xGetV(e mut xF, c mut table.Table[byte], v int, scratch int) int {
     return scratch
 }
 
-// xmm s にある v128 の結果を v の置き場へ（xmm なら movapd・spill 枠なら movupd。区間の無い値は置かない — 置き場は 8 B の仮の番地）
+// xmm s にあるv128の結果をvの格納場所へ（xmmならmovapd・spill枠ならmovupd。区間の無い値は置かない — 格納場所は8 Bの仮の番地）
 func xPutV(e mut xF, c mut table.Table[byte], v int, s int) {
     if e.ivS[v] < 0 {
         return
@@ -6710,7 +6710,7 @@ func xFloatClass(st mut St, e mut xF) {
         }
         k1 += 1
     }
-    // float の演算が 1 つも無い関数は xmm のクラスを立てない（段 6 P4-6）: 楽観の不動点は store / 呼び出しの実引数 / ret にしか使われない
+    // floatの演算が1つも無い関数はxmmのクラスを立てない（段階6 P4-6）: 楽観の不動点はstore / 呼び出しの実引数 / retにしか使われない
     // int のブロックの仮引数の環も xmm に置いていた（使うたび movq で汎用へ — 切替と罠が積む xmm の組も広げる）
     mut anyF := false
     mut v1 := 0
@@ -6827,7 +6827,7 @@ func xDirectBin(e mut xF, c mut table.Table[byte], res int, a int, b int, cc int
     d := xLocVal(l)
     yl := xLocAt(mut e, cc, e.pos)
     imm := e.isConst[cc] == 1 && e.constV[cc] >= -2147483648 && e.constV[cc] <= 2147483647
-    // 3 番地形: 左が d と別のレジスタにある add / sub imm は lea で（`mov d, x; add d, y` の写しを省く・右が d にある add も
+    // 3番地形: 左がdと別のレジスタにあるadd / sub imm はleaで（`mov d, x; add d, y` のコピーを省く・右がdにあるaddも
     // rax を経由しない）。flags を後ろの condbr が読む演算（fuse 2）は lea にしない
     bl := xLocAt(mut e, b, e.pos)
     if e.flg[res] == 0 && e.isConst[b] == 0 && e.remat[b] == 0 && xIsGpr(bl) && xLocVal(bl) != d && (a == BAdd || (a == BSub && imm && e.constV[cc] != -2147483648)) {
@@ -6841,13 +6841,13 @@ func xDirectBin(e mut xF, c mut table.Table[byte], res int, a int, b int, cc int
             return true
         }
     }
-    // 定数倍は 3 番地形の imul d, x, imm（置き場どうしの段 A）: `mov rcx, imm; imul d, rcx` の即値の読みと、左がレジスタなら d への写しも省く
+    // 定数倍は3番地形のimul d, x, imm（格納場所どうしの段階A）: `mov rcx, imm; imul d, rcx` の即値の読みと、左がレジスタならdへのコピーも省く
     if imm && a == BMul {
         x := if e.isConst[b] == 0 && e.remat[b] == 0 && xIsGpr(bl) { xLocVal(bl) } else { xGet(mut e, mut c, b, d) }
         x86.ImulRegRegImm(mut c, d, x, e.constV[cc])
         return true
     }
-    // 下位 32 ビットの仮面（and x, 0xffffffff — imm32 に収まらず定数がレジスタかスロットに置かれる）は mov d32, x32（4 バイトのハッシュの語）
+    // 下位32ビットの仮面（and x, 0xffffffff — imm32に収まらず定数がレジスタかスロットに置かれる）はmov d32, x32（4バイトのハッシュのワード）
     if a == BAnd && e.isConst[cc] == 1 && e.constV[cc] == 4294967295 && e.flg[res] == 0 {
         x := if e.isConst[b] == 0 && e.remat[b] == 0 && xIsGpr(bl) { xLocVal(bl) } else { xGet(mut e, mut c, b, d) }
         x86.MovRegReg32(mut c, d, x)
@@ -6905,14 +6905,14 @@ func xDirectBin(e mut xF, c mut table.Table[byte], res int, a int, b int, cc int
 // ── ループの回転 ──
 // 後ろへ戻る `br 頭` のラッチで、頭の判定（int の比較 1 本 + condbr — 比較は融合）をラッチの末尾に複製し、ループの中の行き先へ jcc で直に戻る
 // （`jmp 頭; 頭: cmp; jge 出口` → `cmp; jl 本体` — 反復ごとに jmp 1 本と分岐 1 本が消える）。並べる順・区間・割り当ては変えない（頭のブロックも
-// そのまま残り、入口からはそこを通る）: 辺の写しで頭の入りの状態を作ってから、頭の位置の置き場で比較と頭の終端を吐くだけ。
+// そのまま残り、入口からはそこを通る）: 辺のコピーで頭の入りの状態を作ってから、頭の位置の格納場所で比較と頭の終端を吐くだけ。
 // 棄てた案: 頭のブロックを本体の後ろへ並べ替える（Go の looprotate — 並べる順は割り当ての線形の順そのもので、ループの範囲〔頭が先頭〕・運搬値の穴・
 // 冷たいブロックの末尾寄せの前提を全部崩す）。
 // 代価: 反復の短い最内ループ（fannkuch の swap — 回数はデータで決まる）では、抜けの判定が頭の jge（taken）からラッチの jl（不成立）へ移り、
-// 予測ミスが +5% 増える（swap だけ回さない対照で基準に戻る）。Go の双子も同じ水準の予測ミスを払っている（Go と同じ形の構造的な代価）ので、形で除外はしない
+// 予測ミスが +5%増える（swapだけ回さない対照で基準に戻る）。比較用のGoの実装も同じ水準の予測ミスを払っている（Goと同じ形の構造的な代価）ので、形で除外はしない
 
 // ラッチ b の `br h` を回転できるか: h が順で手前（後ろの辺）・b が末尾の冷たい区画の外・h が融合した int の比較 1 本 + condbr で、
-// 行き先の片方がループの中（深さが h 以上）・もう片方が出口（深さが h より浅い）、ループの中への辺に写しが要らない
+// 行き先の片方がループの中（深さがh以上）・もう片方が出口（深さがhより浅い）、ループの中への辺にコピーが要らない
 func xRotOk(st mut St, e mut xF, b BlkRef, h BlkRef) bool {
     if !e.opt {
         return false
@@ -6937,11 +6937,11 @@ func xRotOk(st mut St, e mut xF, b BlkRef, h BlkRef) bool {
     if !inT && !inE {
         return false
     }
-    // 頭の判定が 2 段（`while i < 50 && tr + ti <= 4.0` — ループの中の行き先が、頭と同じ出口へ分かれる条件分岐）なら回さない:
+    // 頭の判定が2段階（`while i < 50 && tr + ti <= 4.0` — ループの中の行き先が、頭と同じ出口へ分かれる条件分岐）なら回さない:
     // 回すとラッチが 2 段目へ直に戻る形になり、mandelbrot で命令 −4.2% のまま cycles +7%・nbody +1.8%（layvar 8 配置で一様 — FE 空きも予測ミスも
-    // 変わらない）。同じ番地でループを差し替える対照で、mandelbrot の鎖で律速されるループは、出口の判定の手前の uop の
-    // 並びで ±6% 揺れる当たり外れの族と分かった（定数の常駐でも +5.9%・使わない int → xmm の転送 1 本で戻る — FP のスケジューラの満杯と連動）。
-    // 回転の 2 段目はこの族の外れ側（単独で +6.9%）。これは 1 題材の当たり外れに合わせた除外で、一般の法則ではない（形の良し悪しの言い伝えにしない —
+    // 変わらない）。同じ番地でループを差し替える対照で、mandelbrotのチェーンで律速されるループは、出口の判定の手前のuopの
+    // 並びで ±6%揺れる当たり外れの系統と分かった（定数の常駐でも +5.9%・使わないint → xmmの転送1本で戻る — FPのスケジューラの満杯と連動）。
+    // 回転の2段目はこの系統の外れ側（単独で +6.9%）。これは1題材の当たり外れに合わせた除外で、一般の法則ではない（形の良し悪しの言い伝えにしない —
     // 並びの当たり外れを割り当て・命令選択で制御できるようになったら外す）。
     // 境界検査（panic の点へ分かれる）で始まる本体は回す
     ib := if inT { xbThen(mut st, h) } else { xbElse(mut st, h) }
@@ -6987,10 +6987,10 @@ func xRotN(st mut St, h BlkRef) int {
 func xRotLatch(st mut St, e mut xF, c mut table.Table[byte], b BlkRef) {
     h := xbBrTo(mut st, b)
     hb := xbId(mut st, h)
-    // 頭の入りの状態（仮引数・割れた値の写し）— 飛ばない
+    // 頭の入りの状態（仮引数・割れた値のコピー）— 飛ばない
     xEdgeMv(mut st, mut e, mut c, h, xTermX(mut st, b, 2))
     p0 := e.pos
-    // 頭の比較（頭の比較の位置の置き場で）
+    // 頭の比較（頭の比較の位置の格納場所で）
     i := xRotCmp(mut st, mut e, h)
     e.pos = e.bpos[hb] + 2 * (xRotN(mut st, h) - 1 + 1)
     x := xGet(mut e, mut c, xiB(mut st, i), x86.Rax)
@@ -7004,7 +7004,7 @@ func xRotLatch(st mut St, e mut xF, c mut table.Table[byte], b BlkRef) {
         x86.CmpRegReg(mut c, x, xGet(mut e, mut c, cc, x86.Rcx))
     }
     k := xCond(xiA(mut st, i))
-    // 頭の終端（頭の終わりの位置の置き場で）: ループの中へ jcc・出口へは辺の写しをして飛ぶ（次のブロックなら落ちる）
+    // 頭の終端（頭の終わりの位置の格納場所で）: ループの中へjcc・出口へは辺のコピーをして飛ぶ（次のブロックなら落ちる）
     e.pos = e.bpos[hb] + 2 * (xRotN(mut st, h) + 1)
     th := xbThen(mut st, h)
     if e.bdep[xbId(mut st, th)] >= e.bdep[hb] {
@@ -7041,8 +7041,8 @@ func xTermEmitOpt(st mut St, e mut xF, c mut table.Table[byte], b BlkRef) {
         thenNext := xbId(mut st, thenTo) == e.next
         fwd := if thenNext { xFwdTo(mut st, mut e, thenTo) } else { -1 }
         if fwd >= 0 && !xEdgeMoves(mut st, mut e, thenTo, thenArgs) {
-            // then が次のブロックで、写しの無い空の中継（`br X` だけ — 検査点の間引きの続き cont 等）: X へ直に飛び、else へは jmp（熱い道の飛びを 1 本に —
-            // 写しが消えたラッチで `je 検査; jmp 頭` だった）
+            // thenが次のブロックで、コピーの無い空の中継（`br X` だけ — 検査点の間引きの続きcont等）: Xへ直に飛び、elseへはjmp（熱いパスの飛びを1本に —
+            // コピーが消えたラッチで `je 検査; jmp 頭` だった）
             xJcc(mut st, mut e, mut c, cc, BlkRef(fwd))
             xEdge(mut st, mut e, mut c, elseTo, elseArgs, true)
         } else if thenNext && !xEdgeMoves(mut st, mut e, elseTo, elseArgs) {
@@ -7050,8 +7050,8 @@ func xTermEmitOpt(st mut St, e mut xF, c mut table.Table[byte], b BlkRef) {
             xJcc(mut st, mut e, mut c, cc ^ 1, elseTo)
             xEdge(mut st, mut e, mut c, thenTo, thenArgs, true)
         } else if thenNext && e.bdep[xbId(mut st, elseTo)] < e.bdep[xbId(mut st, b)] && !xEdgeMoves(mut st, mut e, thenTo, thenArgs) {
-            // then が次のブロックで、写しが要るのはループの出口（深さの下がる辺）の else だけ（区間分割の写し等）: else の写しを関数の末尾へ出し、then へ落ちる
-            // （写しをその場に置くと条件が反転して then へ毎回 taken の分岐 + 出口の jmp になる — gran の葉で予測ミス 8 倍）。
+            // thenが次のブロックで、コピーが要るのはループの出口（深さの下がる辺）のelseだけ（区間分割のコピー等）: elseのコピーを関数の末尾へ出し、thenへ落ちる
+            // （コピーをその場に置くと条件が反転してthenへ毎回takenの分岐 + 出口のjmpになる — granの葉で予測ミス8倍）。
             // ループの中の辺（revcomp のラッチ）は熱い側なので外置きしない（末尾へ出すと毎回 jmp が 2 本）
             e.eoA = append(e.eoA, x86.JccRel32(mut c, cc ^ 1))
             e.eoP = append(e.eoP, e.pos)
@@ -7059,8 +7059,8 @@ func xTermEmitOpt(st mut St, e mut xF, c mut table.Table[byte], b BlkRef) {
             e.eoX = append(e.eoX, elseArgs)
             xEdge(mut st, mut e, mut c, thenTo, thenArgs, true)
         } else if e.bpos[xbId(mut st, elseTo)] >= e.c0 && e.bpos[xbId(mut st, thenTo)] < e.c0 && !xEdgeMoves(mut st, mut e, thenTo, thenArgs) {
-            // else が末尾の冷たい区画（panic の点・遅い道）で写しが要る: 写しを関数の末尾へ出し、then へは落ちるか jmp（写しをその場に置くと
-            // 境界検査の熱い道がすべて taken に反転する）
+            // elseが末尾の冷たい区画（panicの点・遅いパス）でコピーが要る: コピーを関数の末尾へ出し、thenへは落ちるかjmp（コピーをその場に置くと
+            // 境界検査の熱いパスがすべてtakenに反転する）
             e.eoA = append(e.eoA, x86.JccRel32(mut c, cc ^ 1))
             e.eoP = append(e.eoP, e.pos)
             e.eoT = append(e.eoT, int(elseTo))
@@ -7238,19 +7238,19 @@ func xMemSib(e mut xF, c mut table.Table[byte], g int, off int, r int, w int, is
     }
 }
 
-// 開発用 --vec-check（変異 56〜59 — 番号の意味は XV_*）: 手書きの塊（scanb・UTF-8 の検査器・数え上げ・crcfold）の窓の読みの前に、
-// 窓が列の内側にあることを確かめ、外なら exit 103（XV_EXIT）で止まる。既定の build には何も足さない
+// 開発用 --vec-check（ミュータント56〜59 — 番号の意味はXV_*）: 手書きのチャンク（scanb・UTF-8の検査器・数え上げ・crcfold）のウィンドウの読みの前に、
+// ウィンドウが列の内側にあることを確認し、外ならexit 103（XV_EXIT）で止まる。既定のbuildには何も足さない
 func xVecChk(st mut St) bool {
     return st.rtMut >= XV_CHECK && st.rtMut <= XV_NOSIGN
 }
 
 const XV_CHECK = 56   // 検査だけ
-const XV_SCANB1 = 57  // 検査 + scanb の端数の窓を 1 後ろ（網の自己検査）
-const XV_UTF8P1 = 58  // 検査 + UTF-8 の検査器の端数の窓を 1 後ろ
-const XV_NOSIGN = 59  // 検査 + scanb の入口の符号の検査を外し、塊の比較を符号つきに（負の始点・始点 + 16 のあふれの穴を戻す）
+const XV_SCANB1 = 57  // 検査 + scanbの端数のウィンドウを1後ろ（自己検査）
+const XV_UTF8P1 = 58  // 検査 + UTF-8の検査器の端数のウィンドウを1後ろ
+const XV_NOSIGN = 59  // 検査 + scanbの入口の符号の検査を外し、チャンクの比較を符号つきに（負の始点・始点 + 16のあふれの穴を戻す）
 const XV_EXIT = 103
 
-// 窓 [p + idx, p + idx + 16) ⊂ [p, p + 上限)（0 ≤ idx かつ idx ≤ 上限 − 16 — 符号つき）。レジスタも、続く命令が読む旗も壊さない
+// ウィンドウ [p + idx, p + idx + 16) ⊂ [p, p + 上限)（0 ≤ idxかつidx ≤ 上限 − 16 — 符号つき）。レジスタも、続く命令が読む旗も壊さない
 // （上限は 16 を引いて比べ、旗を書かない lea で戻す）
 func xWinChk(st mut St, c mut table.Table[byte], idx int, bound int) {
     if !xVecChk(mut st) {
@@ -7269,7 +7269,7 @@ func xWinChk(st mut St, c mut table.Table[byte], idx int, bound int) {
     x86.PatchRel32(mut c, ok, x86.Here(mut c))
 }
 
-// 窓 [p + off, p + off + 16) ⊂ [p, p + 残り)（残り ≥ off + 16 — 符号つき。crcfold の形 — p が進み残りが減る）
+// ウィンドウ [p + off, p + off + 16) ⊂ [p, p + 残り)（残り ≥ off + 16 — 符号つき。crcfoldの形 — pが進み残りが減る）
 func xWinChkRem(st mut St, c mut table.Table[byte], rem int, off int) {
     if !xVecChk(mut st) {
         return
@@ -7286,11 +7286,11 @@ func xWinExit(c mut table.Table[byte]) {
     x86.Syscall(mut c)
 }
 
-// scanb（ベクトル化のスパイク — vec.sober）: 16 バイトの塊ずつ、j + 16 ≤ 上限の間、出口のレーン（述語のどれかが成り立つバイト）が
-// 無ければ j += 16・あれば j += そのレーンの番号で止める。塊を 1 つ以上読んで上限の手前に端数が残れば、最後の 16 バイトを重ねて読み
+// scanb（ベクトル化のスパイク — vec.sober）: 16バイトのチャンクずつ、j + 16 ≤ 上限の間、出口のレーン（述語のどれかが成り立つバイト）が
+// 無ければj += 16・あればj += そのレーンの番号で止める。チャンクを1つ以上読んで上限の手前に端数が残れば、最後の16バイトを重ねて読み
 // j を出口のレーンか上限へ進める。結果 = j。使うレジスタ = rax（j）・rdx（上限）・r11（p）・rcx（作業）・xmm0〜7（外では使わない）。
 // 述語の種類: 0 = x == K・1 = x != K・2 = x <u K・3 = x >=u K（K は 1〜255 — 2 / 3 は (x ^ 0x80) >s ((K - 1) ^ 0x80) で x >=u K）
-// 塊 i が書く xmm2〜7 の印（ビット k = xmm k — 入口の退避はこの和だけ）。下の吐き方と組: 出口が「x >=u 128」だけの scanb は xmm0 だけ・
+// チャンクiが書くxmm2〜7のフラグ（ビットk = xmm k — 入口の退避はこの和だけ）。下の吐き方と組: 出口が「x >=u 128」だけのscanbはxmm0だけ・
 // 他の scanb（述語の定数・xScanLanes・countb・UTF-8 の検査器）は xmm1〜7・crcfold は xmm0〜5
 func xBlkXmm(st mut St, i InsRef) int {
     op := xiOp(mut st, i)
@@ -7303,7 +7303,7 @@ func xBlkXmm(st mut St, i InsRef) int {
     return 0
 }
 
-// 出口が「x >=u 128」だけの走査（ASCII の区間の読み飛ばし）: 出口のレーン = 上位ビットなので pmovmskb がそのまま出口の印（xmm0 だけを使う）
+// 出口が「x >=u 128」だけの走査（ASCIIの区間の読み飛ばし）: 出口のレーン = 上位ビットなのでpmovmskbがそのまま出口のフラグ（xmm0だけを使う）
 func xScanBHb(st mut St, desc int) bool {
     return xAt(mut st, desc, 0) != -1 && xAt(mut st, desc, 0) != -2 && xAt(mut st, desc, 1) == 1 && xAt(mut st, desc, 2) == VK_GE && xAt(mut st, desc, 3) == 128
 }
@@ -7329,10 +7329,10 @@ func xScanB(st mut St, e mut xF, c mut table.Table[byte], res int, ops int, desc
         x86.PatchRel32(mut c, skip, x86.Here(mut c))
     }
     np := xAt(mut st, desc, 1)
-    // 出口 = x >=u 128（utf8 の検査）の語読み（SWAR）と端数の 8 バイトの SIMD の塊は試して不採用（M12 — 命令は減るが 1BRC の cycles が
+    // 出口 = x >=u 128（utf8の検査）の語読み（SWAR）と端数の8バイトのSIMDのチャンクは試して不採用（M12 — 命令は減るが1BRCのcyclesが
     // それぞれ +5%: 名前 ≈ 9 バイトの区間ではバイトずつの分岐の当たるスカラーのループと同じかそれより遅い）
-    // i0 か上限が負なら塊を読まずにスカラーへ（i0 < 0 はスカラーが最初の反復で panic する点 — 読み飛ばすと panic が消え範囲外を読む）。
-    // 両方が非負なら j + 16 は符号なしであふれないので、塊の比較は符号なし（符号つきだと i0 が 2^63 − 16 より上で負に回って素通りする）
+    // i0か上限が負ならチャンクを読まずにスカラーへ（i0 < 0はスカラーが最初の反復でpanicする点 — 読み飛ばすとpanicが消え範囲外を読む）。
+    // 両方が非負ならj + 16は符号なしであふれないので、チャンクの比較は符号なし（符号つきだとi0が2^63 − 16より上で負に回って素通りする）
     noSign := st.rtMut == XV_NOSIGN
     mut neg := -1
     if !noSign {
@@ -7340,13 +7340,13 @@ func xScanB(st mut St, e mut xF, c mut table.Table[byte], res int, ops int, desc
         x86.OrRegReg(mut c, x86.Rcx, x86.Rdx)
         neg = x86.JccRel32(mut c, x86.CondS)
     }
-    // 最初の塊が上限を越えるなら定数の用意の前に抜ける（短い区間 — 名前・行の欄 — で固定費を払わない）
+    // 最初のチャンクが上限を越えるなら定数の用意の前に抜ける（短い区間 — 名前・行のフィールド — で固定費を払わない）
     x86.LeaRegMem(mut c, x86.Rcx, x86.Rax, 16)
     x86.CmpRegReg(mut c, x86.Rcx, x86.Rdx)
     early := x86.JccRel32(mut c, if noSign { x86.CondG } else { x86.CondA })
     // 出口が「x >=u 128」だけ（ASCII の区間の読み飛ばし — utf8 の検査・`b[i] < 128` の走査）なら出口のレーン = 上位ビットなので、
-    // pmovmskb がそのまま出口の印になる: 定数の用意も比較も要らない（utf8.Check は非 ASCII のたびに抜けて入り直すので、
-    // 入るたびの定数の用意 7 命令と塊ごとの比較 5 命令が検査の大半だった）
+    // pmovmskbがそのまま出口のフラグになる: 定数の用意も比較も要らない（utf8.Checkは非ASCIIのたびに抜けて入り直すので、
+    // 入るたびの定数の用意7命令とチャンクごとの比較5命令が検査の大半だった）
     hb := xScanBHb(mut st, desc)
     // 定数のベクトル: xmm7 = 全 1・xmm6 = 0x80 の並び（符号なしの比較があるとき）・xmm1 / xmm2 = 述語の K（2 / 3 は (K - 1) ^ 0x80）
     if !hb {
@@ -7369,7 +7369,7 @@ func xScanB(st mut St, e mut xF, c mut table.Table[byte], res int, ops int, desc
         x86.MovqXR(mut c, 6, x86.Rcx)
         x86.PunpcklqdqXX(mut c, 6, 6)
     }
-    // 16 バイトの塊の環
+    // 16バイトのチャンクの環
     topAt := x86.Here(mut c)
     x86.LeaRegMem(mut c, x86.Rcx, x86.Rax, 16)
     x86.CmpRegReg(mut c, x86.Rcx, x86.Rdx)
@@ -7387,9 +7387,9 @@ func xScanB(st mut St, e mut xF, c mut table.Table[byte], res int, ops int, desc
     x86.AddRegImm(mut c, x86.Rax, 16)
     backJ := x86.JmpRel32(mut c)
     x86.PatchRel32(mut c, backJ, topAt)
-    // 端数: 環を抜けたとき（≥ 1 塊を読んだ後 — 上限 − 16 < j ≤ 上限）、最後の 16 バイト [上限 − 16, 上限) を重ねて読む。
-    // 重なり [上限 − 16, j) は出口の無かった直前の塊 [j − 16, j) の内側なので印は 0 — 最初の印のレーンは j 以後。レーン 16 に番兵
-    // （= 上限の位置）を立てるので bsf の入力は 0 にならず、結果 = [j, 上限) の最初の出口のレーンか上限。found の道（塊の中に出口 —
+    // 端数: 環を抜けたとき（≥ 1チャンクを読んだ後 — 上限 − 16 < j ≤ 上限）、最後の16バイト [上限 − 16, 上限) を重ねて読む。
+    // 重なり [上限 − 16, j) は出口の無かった直前のチャンク [j − 16, j) の内側なのでフラグは0 — 最初のフラグのレーンはj以後。レーン16に番兵
+    // （= 上限の位置）を立てるのでbsfの入力は0にならず、結果 = [j, 上限) の最初の出口のレーンか上限。foundのパス（チャンクの中に出口 —
     // 重なりに出口がありうる）は通さない
     x86.PatchRel32(mut c, outJ, x86.Here(mut c))
     x86.LeaRegMem(mut c, x86.Rax, x86.Rdx, if st.rtMut == XV_SCANB1 { -15 } else { -16 })
@@ -7402,7 +7402,7 @@ func xScanB(st mut St, e mut xF, c mut table.Table[byte], res int, ops int, desc
         x86.PmovmskbRX(mut c, x86.Rcx, 5)
     }
     x86.OrRegImm(mut c, x86.Rcx, 65536)
-    // found の道と端数の合流（端数は rax = 上限 − 16・rcx = 印 | 番兵）
+    // foundのパスと端数の合流（端数はrax = 上限 − 16・rcx = フラグ | 番兵）
     x86.PatchRel32(mut c, foundJ, x86.Here(mut c))
     x86.BsfRR(mut c, x86.Rcx, x86.Rcx)
     x86.AddRegReg(mut c, x86.Rax, x86.Rcx)
@@ -7413,17 +7413,17 @@ func xScanB(st mut St, e mut xF, c mut table.Table[byte], res int, ops int, desc
     xPut(mut e, mut c, res, x86.Rax)
 }
 
-// CRC-32 の折り畳み（OpCrcFold — clmul.sober）。CF_PCLMUL: CPUID.1 の ECX（32 ビット全部 — 印は clmul.sober の rt.cpu_probe が切り出す。
+// CRC-32の折り畳み（OpCrcFold — clmul.sober）。CF_PCLMUL: CPUID.1のECX（32ビット全部 — フラグはclmul.soberのrt.cpu_probeが切り出す。
 // rbx は割り当てに使うので積んで戻す）。
 // CF_FOLD: ops = [p, k, crc]（k は 64 以上の 16 の倍数・crc は反転済みの 32 ビット）→ p[0:k] を畳んだ反転済みの crc。算法は Intel の白書
-// 「Fast CRC Computation for Generic Polynomials Using PCLMULQDQ」の反転形（Go の crc32_amd64.s の ieeeCLMUL の SSE の枝と同じ定数）: 4 本の溜め（xmm1〜4）を
+// 「Fast CRC Computation for Generic Polynomials Using PCLMULQDQ」の反転形（Goのcrc32_amd64.sのieeeCLMULのSSEの枝と同じ定数）: 4本のバッファ（xmm1〜4）を
 // 64 バイトずつ r2r1 で畳み、r4r3 で 1 本へ・16 バイトずつの残り・r5 と Barrett（rupoly）で 32 ビットへ。取り出しは psrldq + movq（SSE2 — pextrd の SSE4.1 を
 // 要らなくする）。使うレジスタ = r11（p）・rdx（残り）・rax（crc / 結果）・rcx（定数の作業）・xmm0〜5（scanb と同じ「関数の外では使わない」約束 — xHasScanB）。
 // 定数は .rodata を持たず imm64 から作る（呼ぶたびに数命令 — 本文 ≥ 64 バイトでは無視できる）
 // 前提（入口で検査しない — 呼び手が保つ）: k は 64 以上の 16 の倍数で ≤ len(b)。呼び手は std/internal/crc32 の非公開の sysCrcFold だけ（Update が決める）
 func xCrcFold(st mut St, e mut xF, c mut table.Table[byte], res int, ops int, kind int) {
     if kind == CF_CPUID7 {
-        // leaf 7 を持たない CPU（CPUID.0:EAX < 7）は最大の leaf の値を返しうる — BMI2 の bit を誤読して MULX が不正命令で落ちないよう、先に 0 を確かめて無ければ 0
+        // leaf 7を持たないCPU（CPUID.0:EAX < 7）は最大のleafの値を返しうる — BMI2のbitを誤読してMULXが不正命令で落ちないよう、先に0を確認して無ければ0
         x86.PushReg(mut c, x86.Rbx)
         x86.XorRegReg(mut c, x86.Rax, x86.Rax)
         x86.XorRegReg(mut c, x86.Rcx, x86.Rcx)
@@ -7464,7 +7464,7 @@ func xCrcFold(st mut St, e mut xF, c mut table.Table[byte], res int, ops int, ki
     x86.SubRegImm(mut c, x86.Rdx, 64)
     x86.CmpRegImm(mut c, x86.Rdx, 64)
     toR64 := x86.JccRel32(mut c, x86.CondB)
-    // 64 バイトの環: 溜めごとに lo × r1・hi × r2 の xor + 次の 16 バイト
+    // 64バイトの環: バッファごとにlo × r1・hi × r2のxor + 次の16バイト
     xCrcConst(mut c, 0x154442bd4, 0x1c6e41596)
     l64At := x86.Here(mut c)
     for k <- iter.Range(0, 4) {
@@ -7519,7 +7519,7 @@ func xCrcFold(st mut St, e mut xF, c mut table.Table[byte], res int, ops int, ki
     x86.PandXX(mut c, 1, 3)
     x86.PclmulqdqXXI(mut c, 1, 0, 0x00)
     x86.PxorXX(mut c, 1, 2)
-    // 結果 = 2 番目の 32 ビット（psrldq 4 で下へ・上の 32 ビットは xmm3 の印で落とす）
+    // 結果 = 2番目の32ビット（psrldq 4で下へ・上の32ビットはxmm3のフラグで落とす）
     x86.PsrldqXI(mut c, 1, 4)
     x86.PandXX(mut c, 1, 3)
     x86.MovqRX(mut c, x86.Rax, 1)
@@ -7535,7 +7535,7 @@ func xCrcConst(c mut table.Table[byte], lo int, hi int) {
     x86.PunpcklqdqXX(mut c, 0, 5)
 }
 
-// 溜め xmm(x) を xmm0 の定数で 1 段畳む: x = clmul(x.lo, k.lo) ^ clmul(x.hi, k.hi)（xmm5 を作業に）
+// バッファxmm(x) をxmm0の定数で1段畳む: x = clmul(x.lo, k.lo) ^ clmul(x.hi, k.hi)（xmm5を作業に）
 func xCrcStep(c mut table.Table[byte], x int) {
     x86.MovdqaXX(mut c, 5, x)
     x86.PclmulqdqXXI(mut c, x, 0, 0x00)
@@ -7543,13 +7543,13 @@ func xCrcStep(c mut table.Table[byte], x int) {
     x86.PxorXX(mut c, x, 5)
 }
 
-// AES-128-GCM の塊（OpSyscall の b = AES_B — aes.sober）。鍵の表と record の状態の配置は aes.sober の頭（AK_KEY が表を置き、AK_CTR / AK_GHASH / AK_TAG は
+// AES-128-GCMのチャンク（OpSyscallのb = AES_B — aes.sober）。鍵の表とrecordの状態の配置はaes.soberの頭（AK_KEYが表を置き、AK_CTR / AK_GHASH / AK_TAGは
 // 状態を読み書きして表は読むだけ — 汎用レジスタを 4 本〔r11・rax・rcx・rdx — 割り当てに使わない scratch〕に収めるため、状態の番地 r11 を積んで
 // r11 を表の番地に差し替え、出口で戻す）。
 // GHASH は Go の crypto/internal/fips140/aes/gcm の gcm_amd64（Intel の白書の反転の形）と同じ流儀: ブロックはバイト順を反転して扱い、H は 2 倍
 // （x を掛けた形）で持つので積の 1 ビットのずらしが要らない・還元は多項式 0xc2… の上の 64 ビットとの積 2 回。CTR は 8 ブロックを交互に・
-// GHASH は 8 ブロックを H^8〜H^1 で束ねて還元 1 回。xmm0〜15 を全部作業に使う（xHasXmmBlk — この関数では xmm に値を置かない）。
-// AK_CPU は 0（写しのバックエンドの印 — hw の道では出ない）
+// GHASHは8ブロックをH^8〜H^1でまとめて還元1回。xmm0〜15を全部作業に使う（xHasXmmBlk — この関数ではxmmに値を置かない）。
+// AK_CPUは0（写しのバックエンドのフラグ — hwのパスでは出ない）
 func xAes(st mut St, e mut xF, c mut table.Table[byte], res int, ops int, kind int) {
     if kind == AK_CPU {
         x86.XorRegReg(mut c, x86.Rcx, x86.Rcx)
@@ -7601,17 +7601,17 @@ func xCycles(e mut xF, c mut table.Table[byte], res int, ord int) {
     xPut(mut e, mut c, res, x86.Rax)
 }
 
-// 多倍長の塊（OpSyscall の b = MM_B — mulx.sober）。MK_MUL: ops = [d, a, b, m, m0i, n]（d / a / b / m は語の番地）→
+// 多倍長のチャンク（OpSyscallのb = MM_B — mulx.sober）。MK_MUL: ops = [d, a, b, m, m0i, n]（d / a / b / mはワードの番地）→
 // d[0..n] = a × b × R^-1 mod m（64 bit limb — std/crypto/rsa の montMulS と同じ値）。形は Go の bigmod の montgomeryMul（addMulVVW の MULX + ADCX + ADOX）:
-// スタックに T（2n 語・下の n 語を 0 埋め）を取り、行 i ごとに T[i..i+n) += a[i] × b（c1）・f = T[i] × m0i・T[i..i+n) += f × m（c2）・
-// T[n+i] = c1 + c2 + c（c = 行をまたぐ繰り上がり 0 / 1）。各パスの 1 語 = mulx（rdx = 乗数）→ adcx（前の語の上位 + CF の鎖）→ adox（T の語 + OF の鎖）→
-// store — 2 本の鎖は独立に 1 cycle / 語で回る（62 bit の形は律速 = 2 本の鎖の直列を外すための形）。ループの戻りはフラグを読まない
-// lea + jrcxz（rcx = −n から 0 へ — 鎖の途中で add / cmp を使えない）。最後に Go の maybeSubtract: d = T[n..2n) − m（sbb の鎖）を書き、
+// スタックにT（2nワード・下のnワードを0埋め）を取り、行iごとにT[i..i+n) += a[i] × b（c1）・f = T[i] × m0i・T[i..i+n) += f × m（c2）・
+// T[n+i] = c1 + c2 + c（c = 行をまたぐ繰り上がり0 / 1）。各パスの1ワード = mulx（rdx = 乗数）→ adcx（前のワードの上位 + CFのチェーン）→ adox（Tのワード + OFのチェーン）→
+// store — 2本のチェーンは独立に1 cycle / ワードで回る（62 bitの形は律速 = 2本のチェーンの直列を外すための形）。ループの戻りはフラグを読まない
+// lea + jrcxz（rcx = −nから0へ — チェーンの途中でadd / cmpを使えない）。最後にGoのmaybeSubtract: d = T[n..2n) − m（sbbのチェーン）を書き、
 // 引くべき（c = 1 か借りなし）でなければ mask で T に戻す。d[n] = 0。分岐は n だけで決まる（定数時間 — ctcheck）。
 // レジスタ: 入口で 10 本（rbx・rsi・rdi・r8〜r10・r12〜r15）を積んで出口で戻す（rax・rcx・rdx・r11 は作業 — r11 は xUsesR11 の門）。引数は積んだ後に
 // 1 本ずつ rax 経由で積む（[r15+0] = n・8 = m0i・16 = m・24 = b・32 = a・40 = d — r15 = T を取る前の rsp）。
-// 塊の中: rsi = a[i] の番地・r8 / r9 = b / m の末・r10 = T + 8i + 8n（行の末）・r12 = 残りの行・r13 = c・r14 = −n・rdi = c1 → d の末
-// MK_CPU は 0（hw の道でない出力の印）
+// チャンクの中: rsi = a[i] の番地・r8 / r9 = b / mの末・r10 = T + 8i + 8n（行の末）・r12 = 残りの行・r13 = c・r14 = −n・rdi = c1 → dの末
+// MK_CPUは0（hwのパスでない出力のフラグ）
 func xMontMul(st mut St, e mut xF, c mut table.Table[byte], res int, ops int, kind int) {
     if kind == MK_CPU {
         x86.XorRegReg(mut c, x86.Rcx, x86.Rcx)
@@ -7652,7 +7652,7 @@ func xMontMul(st mut St, e mut xF, c mut table.Table[byte], res int, ops int, ki
     x86.AddRegReg(mut c, x86.R9, x86.Rax)
     x86.MovRegMem(mut c, x86.Rsi, x86.R15, 32)
     x86.MovRegReg(mut c, x86.R12, x86.R14)
-    // T = rsp（2n 語）・r10 = T + 8n
+    // T = rsp（2nワード）・r10 = T + 8n
     x86.SubRegReg(mut c, x86.Rsp, x86.Rax)
     x86.MovRegReg(mut c, x86.R10, x86.Rsp)
     x86.SubRegReg(mut c, x86.Rsp, x86.Rax)
@@ -7690,10 +7690,10 @@ func xMontMul(st mut St, e mut xF, c mut table.Table[byte], res int, ops int, ki
     xPut(mut e, mut c, res, x86.Rcx)
 }
 
-// 塊の後半（montmul / montsqr 共通）: T[n..2n)（= [r15 − 8n, r15)）と行をまたぐ繰り上がり r13 から d = T − m を借りの鎖で作り、
+// チャンクの後半（montmul / montsqr共通）: T[n..2n)（= [r15 − 8n, r15)）と行をまたぐ繰り上がりr13からd = T − mを借りのチェーンで作り、
 // mask = −(c | 借りなし) で T と選ぶ・d[n] = 0・積んだ引数（dOff = d の位置 — 最後に積んだ n が 0）と退避を戻す。r9 = m の末・r14 = −n
 func xMmTail(c mut table.Table[byte], dOff int, saved []int) {
-    // r10 = r15: 結果 T[n + j] = [r15 + 8(j − n)]。d の末（rdi = d + 8n）に d = T[n..2n) − m（借りの鎖）
+    // r10 = r15: 結果T[n + j] = [r15 + 8(j − n)]。dの末（rdi = d + 8n）にd = T[n..2n) − m（借りのチェーン）
     x86.MovRegMem(mut c, x86.Rdi, x86.R15, dOff)
     x86.MovRegMem(mut c, x86.Rax, x86.R15, 0)
     x86.ShlRegImm(mut c, x86.Rax, 3)
@@ -7760,7 +7760,7 @@ func xMontSqr(st mut St, e mut xF, c mut table.Table[byte], res int, ops int) {
     x86.MovRegReg(mut c, x86.R10, x86.Rsp)
     x86.SubRegReg(mut c, x86.Rsp, x86.Rax)
     x86.NegReg(mut c, x86.R14)
-    // T[0..n) = 0・T[2n − 1] = 0（上三角が書かない語 — 他は上三角の行の末で初めて書かれる）
+    // T[0..n) = 0・T[2n − 1] = 0（上三角が書かないワード — 他は上三角の行の末で初めて書かれる）
     x86.XorRegReg(mut c, x86.Rbx, x86.Rbx)
     x86.MovRegReg(mut c, x86.Rcx, x86.R14)
     lz := x86.Here(mut c)
@@ -7768,8 +7768,8 @@ func xMontSqr(st mut St, e mut xF, c mut table.Table[byte], res int, ops int) {
     x86.AddRegImm(mut c, x86.Rcx, 1)
     x86.PatchRel32(mut c, x86.JccRel32(mut c, x86.CondNe), lz)
     x86.MovMemReg(mut c, x86.R15, -8, x86.Rbx)
-    // 上三角: 行 i（L = n − 1 − i 語）で T[2i+1 .. i+n) += a[i] × a[i+1..n)・T[i+n] = 行の繰り上がり。r10 = &T[i+n]・r12 = L。
-    // 8 語の束（rcx = −q・番地の末 rdi / rsi）を先に、残り r = L % 8 語（rcx = −r・番地の末 r8 / r10）を後に
+    // 上三角: 行i（L = n − 1 − iワード）でT[2i+1 .. i+n) += a[i] × a[i+1..n)・T[i+n] = 行の繰り上がり。r10 = &T[i+n]・r12 = L。
+    // 8ワードのバッチ（rcx = −q・番地の末rdi / rsi）を先に、残りr = L % 8ワード（rcx = −r・番地の末r8 / r10）を後に
     // n = 16（RSA-2048 の CRT の半分）は上三角を展開した直線の形
     x86.CmpRegImm(mut c, x86.R14, -16)
     toGen := x86.JccRel32(mut c, x86.CondNe)
@@ -7806,7 +7806,7 @@ func xMontSqr(st mut St, e mut xF, c mut table.Table[byte], res int, ops int) {
     x86.PatchRel32(mut c, x86.JccRel32(mut c, x86.CondNe), lrow)
     x86.PatchRel32(mut c, noTri, x86.Here(mut c))
     x86.PatchRel32(mut c, toDbl, x86.Here(mut c))
-    // 2 倍と対角を 1 周で: T[2i..2i+2) = 2 × T + a[i]²（2 倍 = CF の鎖の adcx x, x・対角 = OF の鎖 — 和 a² < 2^(128n) なのでどちらの鎖も溢れない）
+    // 2倍と対角を1周で: T[2i..2i+2) = 2 × T + a[i]²（2倍 = CFのチェーンのadcx x, x・対角 = OFのチェーン — 和a² < 2^(128n) なのでどちらのチェーンも溢れない）
     x86.LeaRegSib(mut c, x86.Rdi, x86.R15, x86.R14, x86.Scale8)
     x86.LeaRegSib(mut c, x86.Rdi, x86.Rdi, x86.R14, x86.Scale8)
     x86.MovRegReg(mut c, x86.Rcx, x86.R14)
@@ -7857,7 +7857,7 @@ func xMontSqr(st mut St, e mut xF, c mut table.Table[byte], res int, ops int) {
 }
 
 // xMontSqr の上三角の n = 16 の直線の形（行 i = 0〜14: T[2i+1 .. i+16) += a[i] × a[i+1..16)・T[i+16] = 行の繰り上がり）。
-// rsi = &a[0]・rdi = &T[0]（番地のずれは全部定数）・rcx = 0（鎖の尾の 0）
+// rsi = &a[0]・rdi = &T[0]（番地のずれは全部定数）・rcx = 0（チェーンの尾の0）
 func xSqrTri16(c mut table.Table[byte]) {
     x86.LeaRegMem(mut c, x86.Rsi, x86.R8, -128)
     x86.LeaRegMem(mut c, x86.Rdi, x86.R15, -256)
@@ -7881,7 +7881,7 @@ func xSqrTri16(c mut table.Table[byte]) {
     }
 }
 
-// T[..] += rdx × vec[..] の 8 語の束（rcx = −q〔8 の倍数・0 なら何もしない〕から 0 へ・vec / tb = 列の末の番地）。鎖の入りと出は rbx（上位語）・CF・OF
+// T[..] += rdx × vec[..] の8ワードのバッチ（rcx = −q〔8の倍数・0なら何もしない〕から0へ・vec / tb = 列の末の番地）。チェーンの入りと出はrbx（上位ワード）・CF・OF
 func xMmChunks(c mut table.Table[byte], vec int, tb int) {
     z := x86.JrcxzRel8(mut c)
     toL := x86.JmpRel32(mut c)
@@ -7904,7 +7904,7 @@ func xMmChunks(c mut table.Table[byte], vec int, tb int) {
     x86.PatchRel32(mut c, toOut, x86.Here(mut c))
 }
 
-// xMmChunks の 1 語ずつの形（rcx = −r〔0 なら何もしない〕から 0 へ）
+// xMmChunksの1ワードずつの形（rcx = −r〔0なら何もしない〕から0へ）
 func xMmSingles(c mut table.Table[byte], vec int, tb int) {
     z := x86.JrcxzRel8(mut c)
     l1 := x86.Here(mut c)
@@ -7920,7 +7920,7 @@ func xMmSingles(c mut table.Table[byte], vec int, tb int) {
     x86.PatchRel8(mut c, z, x86.Here(mut c))
 }
 
-// MK_FE: ops = [d, a, b]（語の番地 — 各 5 語・d は a / b と重なってよい）→ d = a × b mod 2^255 − 19（51 bit × 5 limb）。std の fmul と
+// MK_FE: ops = [d, a, b]（ワードの番地 — 各5ワード・dはa / bと重なってよい）→ d = a × b mod 2^255 − 19（51 bit × 5 limb）。stdのfmulと
 // limb ごとに同じ値を出す: fmul の出力は整数 Y = C0 + C1·2^51 + C2·2^102 + C3·2^153 + l4·2^204 + 38·h4（C_k = 列 k の積の和〔折り返しは 19 b_j〕・
 // 列 4 だけは積ごとの下 52 bit の和 l4 と上の和 h4 に分けた形）の 51 bit の桁で、上の溢れ c4 を 19 倍して桁 0 へ・桁 0 の溢れを桁 1 へ足した形。
 // ここでは Y を 128 bit の列の和（r10:r9）から直に組む。積は mulx（rdx = a の limb）・t_j = 19 b_j は r12〜r15・桁はスタック（d が a / b と重なる）
@@ -7933,7 +7933,7 @@ func xFeMul(st mut St, e mut xF, c mut table.Table[byte], res int, ops int) {
         xGetInto(mut e, mut c, xAt(mut st, ops, k), x86.Rax)
         x86.PushReg(mut c, x86.Rax)
     }
-    // 積んだ順の逆: b → rsi・a → rdi・d → r8。桁の置き場 = [rsp, rsp + 40)
+    // 積んだ順の逆: b → rsi・a → rdi・d → r8。桁の格納場所 = [rsp, rsp + 40)
     x86.PopReg(mut c, x86.Rsi)
     x86.PopReg(mut c, x86.Rdi)
     x86.PopReg(mut c, x86.R8)
@@ -8014,9 +8014,9 @@ func xFeMul(st mut St, e mut xF, c mut table.Table[byte], res int, ops int) {
     xPut(mut e, mut c, res, x86.Rcx)
 }
 
-// MK_SHA: ops = [h, p, n, k] → 状態 h（8 語 — 各語の下 32 bit が a〜h）に p から 64 バイトのブロック n 個（n ≥ 1）を畳む（SHA-NI —
-// Intel の白書の形: 状態は ABEF / CDGH の 2 本〔xmm1 / xmm2〕・4 段ごとに語 + 定数 k〔32 bit を 4 個ずつ〕を xmm0 に作って sha256rnds2 を 2 回・
-// 語の拡張は msg1 / palignr / msg2 で 4 本の語の xmm3〜6 を回す）。xmm0〜10 を作業に使う（xHasXmmBlk）。分岐はブロックの数だけ
+// MK_SHA: ops = [h, p, n, k] → 状態h（8ワード — 各ワードの下32 bitがa〜h）にpから64バイトのブロックn個（n ≥ 1）を畳む（SHA-NI —
+// Intelの白書の形: 状態はABEF / CDGHの2本〔xmm1 / xmm2〕・4段ごとにワード + 定数k〔32 bitを4個ずつ〕をxmm0に作ってsha256rnds2を2回・
+// ワードの拡張はmsg1 / palignr / msg2で4本のワードのxmm3〜6を回す）。xmm0〜10を作業に使う（xHasXmmBlk）。分岐はブロックの数だけ
 func xShaBlk(st mut St, e mut xF, c mut table.Table[byte], res int, ops int) {
     x86.PushReg(mut c, x86.Rsi)
     x86.PushReg(mut c, x86.Rdi)
@@ -8028,13 +8028,13 @@ func xShaBlk(st mut St, e mut xF, c mut table.Table[byte], res int, ops int) {
     x86.PopReg(mut c, x86.Rdx)
     x86.PopReg(mut c, x86.Rsi)
     x86.PopReg(mut c, x86.Rdi)
-    // xmm8 = 語ごとのバイト順の反転（大きい端の語を読む）
+    // xmm8 = ワードごとのバイト順の反転（大きい端のワードを読む）
     x86.MovRegImm64(mut c, x86.Rax, 0x0405060700010203)
     x86.MovqXR(mut c, 8, x86.Rax)
     x86.MovRegImm64(mut c, x86.Rax, 0x0c0d0e0f08090a0b)
     x86.MovqXR(mut c, 7, x86.Rax)
     x86.PunpcklqdqXX(mut c, 8, 7)
-    // 8 語（64 bit の語の下 32 bit）→ ABEF = [f, e, b, a]・CDGH = [h, g, d, c]（32 bit のレーン 0〜3）
+    // 8ワード（64 bitのワードの下32 bit）→ ABEF = [f, e, b, a]・CDGH = [h, g, d, c]（32 bitのレーン0〜3）
     xShaPair(mut c, 1, 32, 0)
     xShaPair(mut c, 2, 48, 16)
     lb := x86.Here(mut c)
@@ -8069,7 +8069,7 @@ func xShaBlk(st mut St, e mut xF, c mut table.Table[byte], res int, ops int) {
     x86.AddRegImm(mut c, x86.Rsi, 64)
     x86.SubRegImm(mut c, x86.Rdx, 1)
     x86.PatchRel32(mut c, x86.JccRel32(mut c, x86.CondNe), lb)
-    // 戻し: (a, b)・(c, d)・(e, f)・(g, h) を 64 bit の語へ（上 32 bit = 0）
+    // 戻し: (a, b)・(c, d)・(e, f)・(g, h) を64 bitのワードへ（上32 bit = 0）
     x86.PxorXX(mut c, 7, 7)
     xShaPut(mut c, 1, 0x0b, 0)
     xShaPut(mut c, 2, 0x0b, 16)
@@ -8081,7 +8081,7 @@ func xShaBlk(st mut St, e mut xF, c mut table.Table[byte], res int, ops int) {
     xPut(mut e, mut c, res, x86.Rcx)
 }
 
-// xmm x = [h[lo + 1], h[lo], h[hi + 1], h[hi]]（32 bit のレーン — h の 64 bit の語 [rdi + lo]・[rdi + hi] の組の下 32 bit を逆順に）。xmm7 を作業に
+// xmm x = [h[lo + 1], h[lo], h[hi + 1], h[hi]]（32 bitのレーン — hの64 bitのワード [rdi + lo]・[rdi + hi] の組の下32 bitを逆順に）。xmm7を作業に
 func xShaPair(c mut table.Table[byte], x int, lo int, hi int) {
     x86.MovdquXMem(mut c, x, x86.Rdi, lo)
     x86.PshufdXXI(mut c, x, x, 0x02)
@@ -8090,16 +8090,16 @@ func xShaPair(c mut table.Table[byte], x int, lo int, hi int) {
     x86.PunpcklqdqXX(mut c, x, 7)
 }
 
-// [rdi + at] の 64 bit の語 2 つ = xmm x の 32 bit のレーンを pshufd の imm で 2 つ選んで 0 で広げた値（xmm7 = 0・xmm3 を作業に）
+// [rdi + at] の64 bitのワード2つ = xmm x の32 bitのレーンをpshufdのimmで2つ選んで0で広げた値（xmm7 = 0・xmm3を作業に）
 func xShaPut(c mut table.Table[byte], x int, imm int, at int) {
     x86.PshufdXXI(mut c, 3, x, imm)
     x86.PunpckldqXX(mut c, 3, 7)
     x86.MovdquMemX(mut c, x86.Rdi, at, 3)
 }
 
-// MK_SEL: ops = [d, t, idx, n, stride, cnt] → d[0..n) = 表 idx の先頭 n 語（表 k は t + 8 × stride × k）。表を全部・同じ順で読み、
-// 一致の mask（(k ^ idx) − 1 の符号）で and / or して選ぶ — 分岐は n・cnt（公開の値）だけ。n が 8 の倍数は 8 語を xmm0〜3 に溜める形・
-// それ以外は 1 語ずつ（照合の網が両方を踏む）。n ≥ 1・cnt ≥ 1 の前提
+// MK_SEL: ops = [d, t, idx, n, stride, cnt] → d[0..n) = 表idxの先頭nワード（表kはt + 8 × stride × k）。表を全部・同じ順で読み、
+// 一致のmask（(k ^ idx) − 1の符号）でand / orして選ぶ — 分岐はn・cnt（公開の値）だけ。nが8の倍数は8ワードをxmm0〜3にバッファする形・
+// それ以外は1ワードずつ（照合の検査が両方を踏む）。n ≥ 1・cnt ≥ 1の前提
 func xMmSel(st mut St, e mut xF, c mut table.Table[byte], res int, ops int) {
     saved := []int{x86.Rbx, x86.Rsi, x86.Rdi, x86.R8, x86.R9, x86.R10, x86.R12, x86.R13}
     for r <- saved {
@@ -8119,7 +8119,7 @@ func xMmSel(st mut St, e mut xF, c mut table.Table[byte], res int, ops int) {
     x86.PopReg(mut c, x86.R8)
     x86.TestRegImm(mut c, x86.R11, 7)
     toOne := x86.JccRel32(mut c, x86.CondNe)
-    // 8 語ずつ: rdi = 塊の番地のずれ（バイト）・rbx = 8n
+    // 8ワードずつ: rdi = チャンクの番地のずれ（バイト）・rbx = 8n
     x86.MovRegReg(mut c, x86.Rbx, x86.R11)
     x86.ShlRegImm(mut c, x86.Rbx, 3)
     x86.XorRegReg(mut c, x86.Rdi, x86.Rdi)
@@ -8150,7 +8150,7 @@ func xMmSel(st mut St, e mut xF, c mut table.Table[byte], res int, ops int) {
     x86.CmpRegReg(mut c, x86.Rdi, x86.Rbx)
     x86.PatchRel32(mut c, x86.JccRel32(mut c, x86.CondNe), l8)
     done := x86.JmpRel32(mut c)
-    // 1 語ずつ: rdi = 語の添字
+    // 1ワードずつ: rdi = ワードの添字
     x86.PatchRel32(mut c, toOne, x86.Here(mut c))
     x86.XorRegReg(mut c, x86.Rdi, x86.Rdi)
     l1 := x86.Here(mut c)
@@ -8188,8 +8188,8 @@ func xSelMask(c mut table.Table[byte]) {
 }
 
 // xMontMul の 1 本の積和 T[i..i+n) += rdx × vec[0..n)（vec = 列の末・r10 = T の行の末・r14 = −n）→ rbx = 繰り上がりの出・rcx = 0・CF = OF = 0。
-// 1 語 = mulx hi:rax → adcx rax, 前の hi（+ CF）→ adox rax, T（+ OF）→ store。n が 8 の倍数（RSA の法の大きさ — 2048 / 3072 / 4096 bit の CRT と全体）は
-// 8 語の展開で hi を r11 / rbx の交互に置き（mov を消す — 1 語 4 命令）、それ以外は 1 語ずつ（倒れ先の照合の網が limb 1〜40 を全部踏む）
+// 1ワード = mulx hi:rax → adcx rax, 前のhi（+ CF）→ adox rax, T（+ OF）→ store。nが8の倍数（RSAの法の大きさ — 2048 / 3072 / 4096 bitのCRTと全体）は
+// 8ワードの展開でhiをr11 / rbxの交互に置き（movを消す — 1ワード4命令）、それ以外は1ワードずつ（倒れ先の照合の検査がlimb 1〜40を全部踏む）
 func xMmPass(c mut table.Table[byte], vec int) {
     x86.MovRegReg(mut c, x86.Rcx, x86.R14)
     x86.TestRegImm(mut c, x86.R14, 7)
@@ -8220,7 +8220,7 @@ func xMmPass(c mut table.Table[byte], vec int) {
     x86.PatchRel32(mut c, x86.JmpRel32(mut c), l1)
     x86.PatchRel8(mut c, out8, x86.Here(mut c))
     x86.PatchRel8(mut c, out1, x86.Here(mut c))
-    // rcx = 0: 最後の上位語 + CF + OF（溢れない — 語 + 語 × 語 + 語 < 2^128）
+    // rcx = 0: 最後の上位ワード + CF + OF（溢れない — ワード + ワード × ワード + ワード < 2^128）
     x86.AdcxRR(mut c, x86.Rbx, x86.Rcx)
     x86.AdoxRR(mut c, x86.Rbx, x86.Rcx)
 }
@@ -8433,7 +8433,7 @@ func xAesCtr(c mut table.Table[byte]) {
 
 // AK_TAG（r11 = 状態・rax = dst）: dst[0:16] = Y ⊕ E(J0)。J0 = 計数器のブロック [0, 16) の後ろ 4 バイトを大きい端の 1 にした形
 // （前 12 バイト = nonce — 汎用レジスタで組む: 前 8 バイト → xmm0・後ろ 8 バイトの下 4 バイト | 1 << 56 → xmm1）。状態は読むだけ（計数器を進めない —
-// Open が tag を先に照合してから本文を開く順でも、Seal の本文の後でも使える）。Y は反転したバイト順なので印で戻してから xor
+// Openがtagを先に照合してから本文を開く順でも、Sealの本文の後でも使える）。Yは反転したバイト順なのでフラグで戻してからxor
 func xAesTag(c mut table.Table[byte]) {
     x86.MovRegMem(mut c, x86.Rcx, x86.R11, 0)
     x86.MovqXR(mut c, 0, x86.Rcx)
@@ -8463,7 +8463,7 @@ func xAesTag(c mut table.Table[byte]) {
 }
 
 // AK_GHASH（r11 = 状態・rax = p・rdx = n〔16 の倍数〕）: Y = (((Y ^ C1)·H ^ C2)·H …)。128 バイトずつ (Y ^ C1)·H^8 ^ C2·H^7 ^ … ^ C8·H を
-// 足してから還元 1 回（還元の鎖が 8 ブロックに 1 本 — H^5〜H^8 は表から 1 本ずつ xmm5 へ）・64 バイトずつ同じ形で H^4〜H^1・残りは 16 バイトずつ H で
+// 足してから還元1回（還元のチェーンが8ブロックに1本 — H^5〜H^8は表から1本ずつxmm5へ）・64バイトずつ同じ形でH^4〜H^1・残りは16バイトずつHで
 func xAesGhash(c mut table.Table[byte]) {
     x86.MovdquXMem(mut c, 10, x86.R11, AS_Y)
     xAesEnter(mut c)
@@ -8543,10 +8543,10 @@ func xAesGhash(c mut table.Table[byte]) {
 }
 
 // AK_SEAL / AK_OPEN（r11 = 状態・rax = src・rcx = dst・rdx = n〔128 の倍数・> 0〕）: CTR の 8 ブロックの段の間に GHASH の 8 ブロックを挟んだ
-// 1 回の走査（AES の単位と PCLMUL の単位を同時に働かせる）。Seal は 1 束遅れ（束 i の暗号化の段の間に、書き終えた束 i − 1 の暗号文 [rcx − 128] を
-// GHASH — 頭の束は暗号化だけ・最後に残りの束の GHASH だけ）・Open は同じ束の暗号文 [rax] を GHASH してから同じ束を復号する（src = dst でも読みが先）。
+// 1回の走査（AESの単位とPCLMULの単位を同時に働かせる）。Sealは1バッチ遅れ（バッチiの暗号化の段の間に、書き終えたバッチi − 1の暗号文 [rcx − 128] を
+// GHASH — 頭のバッチは暗号化だけ・最後に残りのバッチのGHASHだけ）・Openは同じバッチの暗号文 [rax] をGHASHしてから同じバッチを復号する（src = dstでも読みが先）。
 // GHASH は Karatsuba（ブロックあたり pclmul 3 本 — 中の積 = (x の上下の xor)·(H の上下の xor — 表の [AK_KAR]) ^ 下 ^ 上）。
-// xmm0〜7 = 束・8 = 段の鍵 / 計数器・9 / 10 / 11 = 積の下 / 上 / 中・12 = ブロック・13 = H・14 = 作業・15 = バイト順の反転の印。
+// xmm0〜7 = バッチ・8 = 段の鍵 / 計数器・9 / 10 / 11 = 積の下 / 上 / 中・12 = ブロック・13 = H・14 = 作業・15 = バイト順の反転のフラグ。
 // 計数器（反転した形）と Y はスタックの 32 バイトに置き（[rsp] / [rsp + 16]）、出口で状態へ戻す
 func xAesStitch(c mut table.Table[byte], open bool) {
     x86.MovdquXMem(mut c, 8, x86.R11, 0)
@@ -8592,7 +8592,7 @@ func xAesStitchStep(c mut table.Table[byte]) {
     x86.SubRegImm(mut c, x86.Rdx, 128)
 }
 
-// 束 1 つ: enc = 8 ブロックの CTR（src [rax] ^ 鍵の流れ → dst [rcx]）・gh = [base + disp] の 8 ブロックを GHASH（段の間に 1 ブロックずつ）
+// バッチ1つ: enc = 8ブロックのCTR（src [rax] ^ 鍵の流れ → dst [rcx]）・gh = [base + disp] の8ブロックをGHASH（段の間に1ブロックずつ）
 func xAesStitchBatch(c mut table.Table[byte], enc bool, gh bool, base int, disp int) {
     if enc {
         x86.MovdquXMem(mut c, 8, x86.Rsp, 0)
@@ -8656,7 +8656,7 @@ func xAesStitchBatch(c mut table.Table[byte], enc bool, gh bool, base int, disp 
     }
 }
 
-// GHASH の束の k 番目のブロック [base + disp + 16k] × H^(8 − k) を積の下 / 上 / 中（xmm9 / 10 / 11）に足す（k = 0 は Y を先に xor）
+// GHASHのバッチのk番目のブロック [base + disp + 16k] × H^(8 − k) を積の下 / 上 / 中（xmm9 / 10 / 11）に足す（k = 0はYを先にxor）
 func xGhStepKar(c mut table.Table[byte], k int, base int, disp int) {
     x86.MovdquXMem(mut c, 12, base, disp + 16 * k)
     x86.PshufbXX(mut c, 12, 15)
@@ -8679,14 +8679,14 @@ func xGhStepKar(c mut table.Table[byte], k int, base int, disp int) {
 }
 
 // UTF-8 の検査器（scanb の記述の列の先頭 = -1 — irinl の ilUtf8 が std/utf8.validPrefix から作る）: ops = [p, i, 上限 n]。
-// 16 バイトの塊ずつ妥当な UTF-8 の列の並びを読み進め、結果 = j（b[i:j] は妥当・j は列の頭 — 最初の不正の位置以下。0 進んでも契約どおり）。
-// SSE2 だけ（pshufb / palignr なし）: y = x ^ 0x80（符号つき）で a = 頭（≥ C0）・b3 = 3 バイト頭（≥ E0）の印、要る継続 = a を 1・b3 を 2 バイト右へ
-// ずらした列（前の塊の末尾を pslldq / psrldq の or で継ぐ）、誤り = (継続 xor 要る継続) | C0 / C1 | 特別な頭（E0・ED・≥ F0 — 2 番目のバイトの
-// 狭い範囲と 4 バイト列はスカラーに任せる）。誤りの塊で止め、最後に読み終えた列の頭まで戻る（継続バイトを読み戻す）。ASCII の塊は前の塊からの
-// 持ち越し（rsi）が無ければ pmovmskb 1 本で飛ばす（非 ASCII の塊の後は検査の環に留まる — 下）。使うレジスタ = rax（j）・rdx（n）・r11（p）・
+// 16バイトのチャンクずつ妥当なUTF-8の列の並びを読み進め、結果 = j（b[i:j] は妥当・jは列の頭 — 最初の不正の位置以下。0進んでも契約どおり）。
+// SSE2だけ（pshufb / palignrなし）: y = x ^ 0x80（符号つき）でa = 頭（≥ C0）・b3 = 3バイト頭（≥ E0）のフラグ、要る継続 = aを1・b3を2バイト右へ
+// ずらした列（前のチャンクの末尾をpslldq / psrldqのorで継ぐ）、誤り = (継続xor要る継続) | C0 / C1 | 特別な頭（E0・ED・≥ F0 — 2番目のバイトの
+// 狭い範囲と4バイト列はスカラーに任せる）。誤りのチャンクで止め、最後に読み終えた列の頭まで戻る（継続バイトを読み戻す）。ASCIIのチャンクは前のチャンクからの
+// 持ち越し（rsi）が無ければpmovmskb 1本で飛ばす（非ASCIIのチャンクの後は検査の環に留まる — 下）。使うレジスタ = rax（j）・rdx（n）・r11（p）・
 // rcx（作業）・rsi / rdi / r8（退避）・xmm0〜7・定数 6 本（xmm8〜13 — 関数が割り当てに使っていなければ。でなければスタックの 96 バイト）
 // 前提（入口で検査しない — 呼び手が保つ）: 0 ≤ i ≤ n = len(b)。呼び手は std/strings の非公開の validPrefix だけ（xScanB と違い、負の i や
-// i + 16 のあふれを塊の比較が弾かない — 呼び手を増やすなら xScanB と同じ入口の検査を足す）
+// i + 16のあふれをチャンクの比較が弾かない — 呼び手を増やすならxScanBと同じ入口の検査を足す）
 func xUtf8Pre(st mut St, e mut xF, c mut table.Table[byte], res int, ops int) {
     xGetInto(mut e, mut c, xAt(mut st, ops, 0), x86.R11)
     xGetInto(mut e, mut c, xAt(mut st, ops, 1), x86.Rax)
@@ -8722,9 +8722,9 @@ func xUtf8Pre(st mut St, e mut xF, c mut table.Table[byte], res int, ops int) {
     x86.PxorXX(mut c, 6, 6)
     x86.XorRegReg(mut c, x86.Rsi, x86.Rsi)
     topAt := x86.Here(mut c)
-    // 速い道: 持ち越し（rsi）が無く ASCII だけの塊は pmovmskb 1 本で飛ばす。非 ASCII の塊を見たら検査の環（fullAt — 塊ごとの ASCII の判定を
-    // しない）に入り、ASCII の塊が 4 つ続くまで留まる（非 ASCII が混ざる入力で「ASCII だけの塊か」の分岐が塊ごとの乱数になって予測ミスが
-    // 出ていた — 1BRC の名前。分岐なしで全部の塊を検査する形は ASCII だけの入力で命令 +6%〔logagg〕・32 B ずつの判定は得が小さく棄てた）
+    // 速いパス: 持ち越し（rsi）が無くASCIIだけのチャンクはpmovmskb 1本で飛ばす。非ASCIIのチャンクを見たら検査の環（fullAt — チャンクごとのASCIIの判定を
+    // しない）に入り、ASCIIのチャンクが4つ続くまで留まる（非ASCIIが混ざる入力で「ASCIIだけのチャンクか」の分岐がチャンクごとの乱数になって予測ミスが
+    // 出ていた — 1BRCの名前。分岐なしで全部のチャンクを検査する形はASCIIだけの入力で命令 +6%〔logagg〕・32 Bずつの判定は得が小さく棄てた）
     x86.LeaRegMem(mut c, x86.Rcx, x86.Rax, 16)
     x86.CmpRegReg(mut c, x86.Rcx, x86.Rdx)
     endJ := x86.JccRel32(mut c, x86.CondG)
@@ -8737,7 +8737,7 @@ func xUtf8Pre(st mut St, e mut xF, c mut table.Table[byte], res int, ops int) {
     back1 := x86.JmpRel32(mut c)
     x86.PatchRel32(mut c, back1, topAt)
     x86.PatchRel32(mut c, slowJ, x86.Here(mut c))
-    // 検査の環に入る（ASCII の塊が続いた数 r8 = 0）
+    // 検査の環に入る（ASCIIのチャンクが続いた数r8 = 0）
     x86.XorRegReg(mut c, x86.R8, x86.R8)
     toBody := x86.JmpRel32(mut c)
     fullAt := x86.Here(mut c)
@@ -8754,7 +8754,7 @@ func xUtf8Pre(st mut St, e mut xF, c mut table.Table[byte], res int, ops int) {
     x86.PcmpgtbXX(mut c, 2, xU8K(mut c, kx, 0, 4))
     x86.MovdqaXX(mut c, 3, 1)
     x86.PcmpgtbXX(mut c, 3, xU8K(mut c, kx, 1, 4))
-    // 要る継続（xmm5）= a を 1 バイト・b3 を 2 バイト右へ（前の塊の末尾を継ぐ）
+    // 要る継続（xmm5）= aを1バイト・b3を2バイト右へ（前のチャンクの末尾を継ぐ）
     x86.PsrldqXI(mut c, 5, 15)
     x86.MovdqaXX(mut c, 4, 2)
     x86.PslldqXI(mut c, 4, 1)
@@ -8794,7 +8794,7 @@ func xUtf8Pre(st mut St, e mut xF, c mut table.Table[byte], res int, ops int) {
     x86.PmovmskbRX(mut c, x86.Rcx, 6)
     x86.CmpRegImm(mut c, x86.Rcx, 0)
     stopJ := x86.JccRel32(mut c, x86.CondNe)
-    // 次の塊への持ち越し（rsi）= 末尾の頭（a の 15・b3 の 14 / 15）。前の塊 = xmm5 / xmm6
+    // 次のチャンクへの持ち越し（rsi）= 末尾の頭（aの15・b3の14 / 15）。前のチャンク = xmm5 / xmm6
     x86.PmovmskbRX(mut c, x86.Rcx, 2)
     x86.AndRegImm(mut c, x86.Rcx, 32768)
     x86.PmovmskbRX(mut c, x86.Rsi, 3)
@@ -8803,7 +8803,7 @@ func xUtf8Pre(st mut St, e mut xF, c mut table.Table[byte], res int, ops int) {
     x86.MovdqaXX(mut c, 5, 2)
     x86.MovdqaXX(mut c, 6, 3)
     x86.AddRegImm(mut c, x86.Rax, 16)
-    // ASCII の塊が続いた数（分岐なし — mask − 1 の符号で 0 に戻す）。4 つ続いたら速い道へ戻る
+    // ASCIIのチャンクが続いた数（分岐なし — mask − 1の符号で0に戻す）。4つ続いたら速いパスへ戻る
     x86.PmovmskbRX(mut c, x86.Rcx, 0)
     x86.SubRegImm(mut c, x86.Rcx, 1)
     x86.SarRegImm(mut c, x86.Rcx, 63)
@@ -8814,10 +8814,10 @@ func xUtf8Pre(st mut St, e mut xF, c mut table.Table[byte], res int, ops int) {
     x86.PatchRel32(mut c, fastJ, topAt)
     backF := x86.JmpRel32(mut c)
     x86.PatchRel32(mut c, backF, fullAt)
-    // 端数（速い道の出口だけ）: endJ に着くのは ASCII の塊 [j − 16, j) を読んだ直後（back1 か fastJ — 入口からの最初の比較は early と同じで
-    // 着かない）なので 上限 − 16 < j ≤ 上限。最後の 16 バイト [上限 − 16, 上限) を重ねて読む — 重なりは ASCII で印は 0 なので、最初の印の
+    // 端数（速いパスの出口だけ）: endJに着くのはASCIIのチャンク [j − 16, j) を読んだ直後（back1かfastJ — 入口からの最初の比較はearlyと同じで
+    // 着かない）なので 上限 − 16 < j ≤ 上限。最後の16バイト [上限 − 16, 上限) を重ねて読む — 重なりはASCIIでフラグは0なので、最初のフラグの
     // レーンは [j, 上限) の最初の非 ASCII か番兵（レーン 16 = 上限）。進めた j の手前は ASCII = 列の頭の並びなので止めの処理をそのまま通る。
-    // 持ち越し（rsi）はこの道では 0（速い道は rsi = 0 でしか回らない）。endJ2・stopJ は通さない
+    // 持ち越し（rsi）はこのパスでは0（速いパスはrsi = 0でしか回らない）。endJ2・stopJは通さない
     x86.PatchRel32(mut c, endJ, x86.Here(mut c))
     x86.LeaRegMem(mut c, x86.Rax, x86.Rdx, if st.rtMut == XV_UTF8P1 { -15 } else { -16 })
     xWinChk(mut st, mut c, x86.Rax, x86.Rdx)
@@ -8856,9 +8856,9 @@ func xUtf8Pre(st mut St, e mut xF, c mut table.Table[byte], res int, ops int) {
 }
 
 // 数え上げ（scanb の記述の列の先頭 = -2 — vec.sober の vecCount）: ops = [p, i0, j]（j − i0 は 16 の倍数）・記述 = [-2, m, K1 … Km]（K は重ならない）。
-// [i0, j) のバイトのうち K のどれかに等しいものの数を返す。塊ごとに K ごとの pcmpeqb（当たり = −1）を psubb でバイトの積算へ足し（K が重ならないので
-// レーンごとの和は 0 か 1）、255 塊ごとに psadbw で 64 ビットの和へ畳む（バイトの積算は 255 で溢れる手前）。使うレジスタ = rax（i）・rdx（j）・r11（p）・
-// rcx（作業）・rsi（和）/ rdi（塊の残り）— 退避・xmm0（塊）・xmm1〜4（K）・xmm5（積算）・xmm6（作業）・xmm7（0）
+// [i0, j) のバイトのうちKのどれかに等しいものの数を返す。チャンクごとにKごとのpcmpeqb（当たり = −1）をpsubbでバイトの積算へ足し（Kが重ならないので
+// レーンごとの和は0か1）、255チャンクごとにpsadbwで64ビットの和へ畳む（バイトの積算は255で溢れる手前）。使うレジスタ = rax（i）・rdx（j）・r11（p）・
+// rcx（作業）・rsi（和）/ rdi（チャンクの残り）— 退避・xmm0（チャンク）・xmm1〜4（K）・xmm5（積算）・xmm6（作業）・xmm7（0）
 func xCountB(st mut St, e mut xF, c mut table.Table[byte], res int, ops int, desc int) {
     xGetInto(mut e, mut c, xAt(mut st, ops, 0), x86.R11)
     xGetInto(mut e, mut c, xAt(mut st, ops, 1), x86.Rax)
@@ -8875,7 +8875,7 @@ func xCountB(st mut St, e mut xF, c mut table.Table[byte], res int, ops int, des
         x86.PunpcklqdqXX(mut c, 1 + k, 1 + k)
     }
     x86.PxorXX(mut c, 7, 7)
-    // 外の環: 積算を 0 にして最大 255 塊
+    // 外の環: 積算を0にして最大255チャンク
     outerAt := x86.Here(mut c)
     x86.PxorXX(mut c, 5, 5)
     x86.MovRegImm64(mut c, x86.Rdi, XCOUNT_FLUSH)
@@ -8893,7 +8893,7 @@ func xCountB(st mut St, e mut xF, c mut table.Table[byte], res int, ops int, des
     x86.SubRegImm(mut c, x86.Rdi, 1)
     innerJ := x86.JccRel32(mut c, x86.CondNe)
     x86.PatchRel32(mut c, innerJ, innerAt)
-    // 畳む（塊の残りが尽きたか j に着いた）: psadbw x5, 0 → 2 つの 64 ビットの和
+    // 畳む（チャンクの残りが尽きたかjに着いた）: psadbw x5, 0 → 2つの64ビットの和
     x86.PatchRel32(mut c, flushJ, x86.Here(mut c))
     x86.PsadbwXX(mut c, 5, 7)
     x86.MovqRX(mut c, x86.Rcx, 5)
@@ -8911,7 +8911,7 @@ func xCountB(st mut St, e mut xF, c mut table.Table[byte], res int, ops int, des
     xPut(mut e, mut c, res, x86.Rax)
 }
 
-// 数え上げの積算を畳む間隔（塊の数 — バイトの積算は 255 まで）
+// 数え上げの積算を畳む間隔（チャンクの数 — バイトの積算は255まで）
 const XCOUNT_FLUSH = 255
 
 // UTF-8 の検査器の k 番目の定数のレジスタ（xmm(kx + k) — kx < 0 なら [rsp + 16k] を作業の xmm t に読んで t）
@@ -8951,14 +8951,14 @@ func xScanLanes(st mut St, c mut table.Table[byte], desc int, np int, useX80 boo
 
 // 割り当てのヒントを集める（M5）: 辺の実引数 v → 仮引数 p（hP）・仮引数 p → 入りの実引数（hA1 / hA2）・
 // 算術 / ptoi / itop の結果 → 左の被演算子（hOp — 被演算子がそこで死ねば同じレジスタで mov が要らない）
-// 棄てた案（段 3）: 呼び手側のヒント（呼び出しで区間が終わる実引数を引数レジスタへ）。命令は −0.1〜−0.6 ポイント得だが、
+// 棄てた案（段階3）: 呼び手側のヒント（呼び出しで区間が終わる実引数を引数レジスタへ）。命令は −0.1〜−0.6ポイント得だが、
 // cycles（8 配置の中央）は routing が呼ばれ側だけの形より +5.3%（最小〜最大で符号一致・予測ミス +17%）・ほかは揺れの幅
 func xHints(st mut St, e mut xF) {
     xFill(mut e.hP, e.nv, -1)
     xFill(mut e.hA1, e.nv, -1)
     xFill(mut e.hA2, e.nv, -1)
     xFill(mut e.hOp, e.nv, -1)
-    // 段 3: レジスタで来る仮引数は引数レジスタへ（合えば入口の写しが 0 本）
+    // 段階3: レジスタで来る仮引数は引数レジスタへ（合えば入口のコピーが0本）
     xFill(mut e.hR, e.nv, -1)
     for k <- iter.Range(0, e.nreg) {
         e.hR[k] = xArgReg(k)
@@ -9003,8 +9003,8 @@ func xHintEdge(st mut St, e mut xF, to BlkRef, args int) {
     }
 }
 
-// 部分区間 k のヒントのレジスタ（今空いているもの・無ければ -1）: 同じ値の割り当て済みの部分区間（隣を先に — 境界の写しを消す）→
-// 値のヒント（辺の実引数 → 仮引数・仮引数 → 入りの実引数 2 本・演算の結果 → 左の被演算子）の値の、k の始まりでの置き場
+// 部分区間kのヒントのレジスタ（今空いているもの・無ければ -1）: 同じ値の割り当て済みの部分区間（隣を先に — 境界のコピーを消す）→
+// 値のヒント（辺の実引数 → 仮引数・仮引数 → 入りの実引数2本・演算の結果 → 左の被演算子）の値の、kの始まりでの格納場所
 func xHintReg(e mut xF, k int, free mut []int) int {
     v := e.pv[k]
     fl := e.fcls[v] != 0
@@ -9057,7 +9057,7 @@ func xHintReg(e mut xF, k int, free mut []int) int {
     return -1
 }
 
-// 置き場 l が空いているレジスタで組（float か）が合えばそのレジスタ
+// 格納場所lが空いているレジスタで組（floatか）が合えばそのレジスタ
 func xHintLoc(l int, free mut []int, fl bool) int {
     return if xIsReg(l) && free[xLocVal(l)] == 1 && xIsXmm(l) == fl { xLocVal(l) } else { -1 }
 }
@@ -9073,7 +9073,7 @@ func xEdgeMoves(st mut St, e mut xF, to BlkRef, args int) bool {
         n += 1
         p = xParamNext(mut st, p)
     }
-    // 割れた値の写しは書き先 = 読み元のもの（xParallelMove が出さない）を数えない — 数えると写しの無い辺で条件が反転し `je 次; jmp 頭` になる（T2 の葉のラッチ）
+    // 割れた値のコピーは書き先 = 読み元のもの（xParallelMoveが出さない）を数えない — 数えるとコピーの無い辺で条件が反転し `je 次; jmp 頭` になる（T2の葉のラッチ）
     nm := xSplitMoves(mut st, mut e, to, 0)
     mut k := 0
     while k < nm {
@@ -9085,7 +9085,7 @@ func xEdgeMoves(st mut St, e mut xF, to BlkRef, args int) bool {
     return false
 }
 
-// b が写しの無い空の中継（命令なし・`br X` で X への辺に写しが無い）なら X（BlkRef の番号）・でなければ -1
+// bがコピーの無い空の中継（命令なし・`br X` でXへの辺にコピーが無い）ならX（BlkRefの番号）・でなければ -1
 func xFwdTo(st mut St, e mut xF, b BlkRef) int {
     if xbIHead(mut st, b) != -1 || xbTerm(mut st, b) != TmBr || xbPHead(mut st, b) >= 0 || (len(e.zAt) > 0 && e.zAt[xbId(mut st, b)] == 1) {
         return -1
@@ -9120,7 +9120,7 @@ func xEdge(st mut St, e mut xF, c mut table.Table[byte], to BlkRef, args int, fa
     e.nj = e.nj + 1
 }
 
-// 辺の並行コピー（実引数 → 仮引数・割れた値の写し）だけをする
+// 辺の並行コピー（実引数 → 仮引数・割れた値のコピー）だけをする
 func xEdgeMv(st mut St, e mut xF, c mut table.Table[byte], to BlkRef, args int) {
     mut n := 0
     mut p := xbPHead(mut st, to)
@@ -9237,7 +9237,7 @@ func xParallelMove(e mut xF, c mut table.Table[byte], n int) {
         }
         k0 += 1
     }
-    // 輪を切る中継は rcx（割り当てない作業用 — 移動の中継の rax とも別。r11 は割り当てに使う。写しのバックエンドは stage1 と同じ r11）
+    // ループを切る中継はrcx（割り当てない作業用 — 移動の中継のraxとも別。r11は割り当てに使う。写しのバックエンドはstage1と同じr11）
     r11 := xLocReg(if e.opt { x86.Rcx } else { x86.R11 })
     while alive > 0 {
         mut ready := -1
@@ -9299,12 +9299,12 @@ func xParallelMove(e mut xF, c mut table.Table[byte], n int) {
     }
 }
 
-// 並行コピーの読み元の置き場（作り直す定数は印 xRemat + 2 × 値 — 偶数で xSpill より上・どの書き先とも一致しない。M5）
+// 並行コピーの読み元の格納場所（作り直す定数はマークxRemat + 2 × 値 — 偶数でxSpillより上・どの書き先とも一致しない。M5）
 func xSrcLoc(e mut xF, v int) int {
     return if e.remat[v] != 0 { xRemat + 2 * v } else { xLocAt(mut e, v, e.pos) }
 }
 
-// 即値を置き場へ
+// 即値を格納場所へ
 func xMoveImm(c mut table.Table[byte], dst int, imm int, addr bool) int {
     if xIsXmm(dst) {
         x86.MovRegImm32(mut c, x86.Rax, imm)
@@ -9332,8 +9332,8 @@ func xImmReg(e mut xF, c mut table.Table[byte], r int, v int) {
     xTagAt(mut e, v, x86.Here(mut c) - 4)
 }
 
-// 値 v（定数）の imm32 を位置 at に出した記録: 札つきなら後埋めの点を積む（欄の 0 書きと後埋めの表への移しは xFunc の終わり・
-// 番号は xModuleFrozen が書く — 段 2）。mut の引数は e の 1 つだけに保つ（2 つ以上だと check が呼び出し点ごとに展開する — 300 か所で +13 万節）
+// 値v（定数）のimm32を位置atに出した記録: 札つきなら後埋めの点を積む（フィールドの0書きと後埋めの表への移しはxFuncの終わり・
+// 番号はxModuleFrozenが書く — 段階2）。mutの引数はeの1つだけに保つ（2つ以上だとcheckが呼び出し点ごとに展開する — 300か所で +13万節）
 func xTagAt(e mut xF, v int, at int) {
     if e.tg[v] != 0 {
         e.tg = append(e.tg, at)
@@ -9376,20 +9376,20 @@ func xMove(c mut table.Table[byte], dst int, src int) {
     }
 }
 
-// ── task の罠（段 6 P3a-2a — trap.sober）──
+// ── taskの罠（段階6 P3a-2a — trap.sober）──
 
 // 罠が退避する汎用レジスタ（呼び手の callee-saved 全部 — 割り当て可能な 10 本 + rbp。積む順）
 func xTrapRegs() []int {
     return []int{x86.Rbp, x86.Rbx, x86.R12, x86.R13, x86.R14, x86.R15, x86.Rsi, x86.Rdi, x86.R8, x86.R9, x86.R10}
 }
 
-// 位置 p の切替 / 罠が積む汎用レジスタ（xTrapRegs の順の部分列 — 段 6 P4-6）: rbp・この関数の入口が退避していないもの
+// 位置pの切替 / 罠が積む汎用レジスタ（xTrapRegsの順の部分列 — 段階6 P4-6）: rbp・この関数の入口が退避していないもの
 // （呼び手の値が載っている — 相手の task / 死んだ子が壊す）・p を跨いで生きる値の載るもの。入口が退避していて跨ぐ値の無いレジスタは、
 // 戻った後に読む者がいない（この関数の出口は入口の退避から戻す）ので積まない
 func xCtxRegs(e mut xF, p int, xm int) []int {
     mut keep := mut []int{}
     xFill(mut keep, 16, 1)
-    // opt の規約（呼び出し規約の段 1）: caller-saved の組には呼び手の値が載らず、切替 / 罠を跨ぐ値も載らない（xPrioPick）— 積まない
+    // optの規約（呼び出し規約の段階1）: caller-savedの組には呼び手の値が載らず、切替 / 罠を跨ぐ値も載らない（xPrioPick）— 積まない
     for k <- iter.Range(0, if e.opt { xNAlloc } else { 0 }) {
         if !xCalleeSaved(xAllocReg(k)) {
             keep[xAllocReg(k)] = 0
@@ -9506,7 +9506,7 @@ func xTrap(e mut xF, c mut table.Table[byte], fx mut table.Table[int], res int, 
 }
 
 // 切替の前半: callee-saved と xmm2〜15 を積み、call で再開番地を積んで内側（返す番地 = 内側の先頭）へ。再開番地は jmp で後半へ跳ぶ。
-// 呼び手は内側で rsp を退避先へ書いてから相手へ移る。戻る道 = 誰かが退避した rsp を戻して ret → 再開番地 → xTRestore
+// 呼び手は内側でrspを退避先へ書いてから相手へ移る。戻るパス = 誰かが退避したrspを戻してret → 再開番地 → xTRestore
 func xTSave(c mut table.Table[byte], xs []int, rs []int) (int, int) {
     for k <- iter.Range(0, len(rs)) {
         x86.PushReg(mut c, rs[k])
@@ -9539,7 +9539,7 @@ func xTRestore(c mut table.Table[byte], rest int, xs []int, rs []int) {
     }
 }
 
-// `tswitch save(load)`（段 6 P3b — ir.md 4.6）: 今の文脈を積んで rsp を [save] へ、[load] の rsp へ移って ret（相手の再開番地）
+// `tswitch save(load)`（段階6 P3b — ir.md 4.6）: 今の文脈を積んでrspを [save] へ、[load] のrspへ移ってret（相手の再開番地）
 func xTSwitch(e mut xF, c mut table.Table[byte], save int, other int, xs []int, rs []int) {
     xGetInto(mut e, mut c, other, x86.R11)
     xGetInto(mut e, mut c, save, x86.Rdx)
@@ -9584,7 +9584,7 @@ func xUnwind(c mut table.Table[byte], fx mut table.Table[int], g int, fsd int, c
     x86.PatchRel32(mut c, skip, x86.Here(mut c))
 }
 
-// 原子の op（段 6 P4-4）: 番地 → rcx・値 → rax（cas は期待 → rax・新 → rdx）・結果 = rax（古い値）
+// 原子のop（段階6 P4-4）: 番地 → rcx・値 → rax（casは期待 → rax・新 → rdx）・結果 = rax（古い値）
 func xAtomic(st mut St, e mut xF, c mut table.Table[byte], res int, p int, vs int, kc int) {
     k := kc & 7
     d := 8 * (kc >> 3)
@@ -9614,9 +9614,9 @@ func xAtomic(st mut St, e mut xF, c mut table.Table[byte], res int, p int, vs in
     }
 }
 
-// `clone sp(fn, arg, tls)`（段 6 P4-4）: 子のスタックの頂上の下に [fn, arg] を置いて clone(CLONE_VM | FS | FILES | SIGHAND | THREAD | SYSVSEM |
-// SETTLS)。子の道は syscall の直後に fn を pop して call する（引数はスタック — xTStart と同じ自前の規約）— 親のスタックの番地を一切読まない
-// （生の clone の子は親と同じ命令列を別の rsp で続けるため、割り当て器の退避の読み戻しを通らない短い道だけにする）。fn が戻ったらスレッドだけ終わる（exit 60）
+// `clone sp(fn, arg, tls)`（段階6 P4-4）: 子のスタックの頂上の下に [fn, arg] を置いてclone(CLONE_VM | FS | FILES | SIGHAND | THREAD | SYSVSEM |
+// SETTLS)。子のパスはsyscallの直後にfnをpopしてcallする（引数はスタック — xTStartと同じ自前の規約）— 親のスタックの番地を一切読まない
+// （生のcloneの子は親と同じ命令列を別のrspで続けるため、割り当て器の退避の読み戻しを通らない短いパスだけにする）。fnが戻ったらスレッドだけ終わる（exit 60）
 func xClone(st mut St, e mut xF, c mut table.Table[byte], res int, sp int, ops int) {
     // syscall の引数に使う rdi / rsi / r8 / r10 は割り当ての組（callee-saved の規約）— 積んで戻す
     saved := []int{x86.Rdi, x86.Rsi, x86.R8, x86.R10}
@@ -9656,7 +9656,7 @@ func xClone(st mut St, e mut xF, c mut table.Table[byte], res int, sp int, ops i
     }
 }
 
-// 罠の表の fs の変位（std/task を使うプログラムではワーカーの表 — 段 6 P4-4。それ以外は -1 = 大域の番地）
+// 罠の表のfsの変位（std/taskを使うプログラムではワーカーの表 — 段階6 P4-4。それ以外は -1 = 大域の番地）
 func xTrapFs(st mut St) int {
     return if st.taskUse && xg(mut st, st.trapG + G_WSLOT) >= 0 { 8 * xg(mut st, st.trapG + G_WSLOT) } else { -1 }
 }
@@ -9664,7 +9664,7 @@ func xTrapFs(st mut St) int {
 // rax = 罠の表の番地（ワーカーの表なら fs:[fsd] の 1 命令・大域なら mov imm32 + fixup）
 func xTrapBase(c mut table.Table[byte], fx mut table.Table[int], g int, fsd int) {
     if fsd >= 0 {
-        // disp32 は後埋め（種類 5 — 段 2）
+        // disp32は後埋め（種類5 — 段階2）
         x86.MovRegFs(mut c, x86.Rax, 0)
         xFixAdd(mut fx, x86.Here(mut c) - 4, 5, g)
     } else {
@@ -9681,9 +9681,9 @@ func xExit(c mut table.Table[byte], code int, grp bool) {
 }
 
 // xHex は v の 16 桁の 16 進
-// ── 関数ごとの成果物のハッシュ（`--emit=fnhash` — 段 2）──
+// ── 関数ごとの成果物のハッシュ（`--emit=fnhash` — 段階2）──
 //
-// 成果物 = 関数の機械語（後埋めの欄 = 0）‖ 後埋めの列（関数の頭からの位置・種類・相手の安定な鍵）。安定な鍵は発見順の番号に依らない名前:
+// 成果物 = 関数の機械語（後埋めのフィールド = 0）‖ 後埋めの列（関数の頭からの位置・種類・相手の安定な鍵）。安定な鍵は発見順の番号に依らない名前:
 // 普通の関数・インスタンス・rt = 名前のまま・持ち上げたラムダ = 持ち主の鍵 + `/λ<持ち主の中の序数>`・子の関数 = `/κ<序数>`・spec の複製 =
 // callee の鍵 + `$s(<位置>:<種類>:<値>…)`（大域の値は大域の鍵）・大域 = 名前（文字列リテラル `str.<n>` は `str:<中身のハッシュ>`）・panic の点 =
 // 持ち主の鍵 + `#p<序数>`・spawn の点 = `#s<序数>`（材料は st.sk — split.sober の skAdd）
@@ -9846,7 +9846,7 @@ func xGlobKey(st mut St, g int) []byte {
     return nm
 }
 
-// fnhash の鍵の列（凍結の前 — ヒープの名前を読む）: 関数（鎖の順）‖ 大域（鎖の順）‖ panic の点（番号の順）‖ spawn の点（番号 1〜）
+// fnhashの鍵の列（凍結の前 — ヒープの名前を読む）: 関数（チェーンの順）‖ 大域（チェーンの順）‖ panicの点（番号の順）‖ spawnの点（番号1〜）
 func xFnKeys(st mut St) [][]byte {
     ix := xSkIndex(mut st)
     mut fks := mut [][]byte{}
@@ -9882,7 +9882,7 @@ func xFnKeys(st mut St) [][]byte {
     return freeze(fks)
 }
 
-// 関数ごとの成果物のハッシュの印字（1 行 `<鍵> <16 進>`・関数の鎖の順）。後埋めの前に呼ぶ（欄は 0）。end = 機械語の終わり
+// 関数ごとの成果物のハッシュの印字（1行 `<鍵> <16 進>`・関数のチェーンの順）。後埋めの前に呼ぶ（フィールドは0）。end = 機械語の終わり
 func xFnHash(st mut St, c mut table.Table[byte], fx mut table.Table[int], fstart []int, fks [][]byte, nf int, ng int, end int) []byte {
     np := table.Len(mut st.psites) / 3
     if len(fks) != nf + ng + np + st.nsite {

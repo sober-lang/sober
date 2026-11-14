@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# std/quick の fuzz の駆動役（テストの実行ファイルの自己再実行）の網: testdata/quickfuzz/fz.sober の Check ごとに駆動役を走らせ、
-#   - 稀な panic・ハング・性質の偽を見つけて縮めた報告（標準エラー）とコーパスの列が黄金 check<N>.stderr / check<N>.list と一致
-#   - 二分探索が最初の死を当てた（報告の試行 K で、束の試行 [0, K−1) が通り [K−1, K) が死ぬ — ハングは期限の 142）
+# std/quickのfuzzの駆動役（テストの実行ファイルの自己再実行）の検査: testdata/quickfuzz/fz.soberのCheckごとに駆動役を走らせ、
+#   - 稀なpanic・ハング・プロパティの偽を見つけてシュリンクした報告（標準エラー）とコーパスの列がゴールデンcheck<N>.stderr / check<N>.listと一致
+#   - 二分探索が最初の死を当てた（報告の試行Kで、バッチの試行 [0, K−1) が通り [K−1, K) が死ぬ — ハングは期限の142）
 #   - スケジュールの軸（quick:sched — testdata/quickfuzz/fzsched.sober）: 軸なしは通り・軸ありは偽を見つけて `sched <種>` つきの列を書き、その列の再生で同じ偽
-#   - カバレッジの誘導（quick:pool — testdata/quickfuzz/fzguide.sober を --cover で建てる）: 入れ子の 4 バイトの魔法値を、誘導つきは 40 万試行の中で見つけ
-#     （報告が黄金 guide.stderr と一致 — 種の置き場を空から 2 回走らせて同じ）、誘導なしは同じ 40 万試行で見つけない
-#   - コーパスの列の再生役が同じ panic で死ぬ・駆動役が試行の前にコーパスの列を再生して同じ失敗を名指す・失敗しない Check は期限まで回って exit 0
+#   - カバレッジの誘導（quick:pool — testdata/quickfuzz/fzguide.soberを --cover でビルドする）: 入れ子の4バイトの魔法値を、誘導つきは40万試行の中で見つけ
+#     （報告がゴールデンguide.stderrと一致 — シードの格納場所を空から2回走らせて同じ）、誘導なしは同じ40万試行で見つけない
+#   - コーパスの列の再生役が同じpanicで死ぬ・駆動役が試行の前にコーパスの列を再生して同じ失敗を特定する・失敗しないCheckは期限まで回ってexit 0
 #   scripts/quickfuzz.sh            照合
-#   scripts/quickfuzz.sh --regen    黄金を作り直す（差分を見てからコミット）
+#   scripts/quickfuzz.sh --regen    ゴールデンを作り直す（差分を見てからコミット）
 set -uo pipefail
 cd "$(dirname "$0")/.."
 SOBER=${SOBER:-./bin/sober}
@@ -27,7 +27,7 @@ for c in 0 1 2; do
     [ "$ec" = 101 ] || bad "check $c: driver exit $ec (want 101)"
     f=$(ls "$W/c$c/main" 2> /dev/null | head -1)
     [ -n "$f" ] || { bad "check $c: no corpus file"; continue; }
-    # コーパスのファイル名（<check>-<列のハッシュ>）と中身を 1 本の黄金に
+    # コーパスのファイル名（<check>-<列のハッシュ>）と中身を1本のゴールデンに
     { echo "$f"; cat "$W/c$c/main/$f"; } > "$W/l$c"
     # 報告の中の作業場所のパスと std/quick の中の位置（std/quick を編集するたびに動く）は消す
     sed "s#$W/c$c#CORPUS#; s#at std/quick/[a-z_]*\.sober:[0-9]*:[0-9]*#at std/quick#" "$W/e$c" > "$W/s$c"
@@ -37,7 +37,7 @@ for c in 0 1 2; do
         cmp -s "$W/s$c" "$D/check$c.stderr" || { bad "check $c: stderr differs from $D/check$c.stderr"; diff "$D/check$c.stderr" "$W/s$c" | head -6; }
         cmp -s "$W/l$c" "$D/check$c.list" || { bad "check $c: corpus differs from $D/check$c.list"; diff "$D/check$c.list" "$W/l$c" | head -6; }
     fi
-    # 二分探索: 報告の試行 K（1 始まり）の前の束は通り、K の試行だけで死ぬ
+    # 二分探索: 報告の試行K（1始まり）の前のバッチは通り、Kの試行だけで死ぬ
     k=$(sed -n 's/.* at trial \([0-9]*\) .*/\1/p' "$W/e$c" | head -1)
     if [ -n "$k" ]; then
         "$W/fz" quick:work=$c:0:0:$((k - 1)) quick:hang=$HANG > /dev/null 2>&1 < /dev/null
@@ -58,7 +58,7 @@ if [ -n "$f0" ]; then
     [ "$ec" = 101 ] || bad "replay of the corpus: exit $ec (want 101)"
     grep -q '^panic: index out of range at ' "$W/r0" || bad "replay of the corpus: not the same panic"
 fi
-# コーパスの回帰: 前に書いた列を試行の前に再生して同じ失敗を名指す（試行は回さない — 期限 1 ms でも見つかる）
+# コーパスの回帰: 前に書いた列を試行の前に再生して同じ失敗を特定する（試行は回さない — 期限1 msでも見つかる）
 for c in 0 2; do
     "$W/fz" quick:fuzz=1 quick:check=$c quick:hang=$HANG quick:tmp="$W/t$c" quick:corpus="$W/c$c" > /dev/null 2> "$W/k$c" < /dev/null
     ec=$?
@@ -71,7 +71,7 @@ ec=$?
 [ "$ec" = 0 ] || bad "check 3: exit $ec (want 0)"
 grep -q '^quick: fuzz: [0-9]* trials, no failure (check 3, seed 0)$' "$W/e3" || { bad "check 3: no 'no failure' line"; head -3 "$W/e3"; }
 # スケジュールの軸（testdata/quickfuzz/fzsched.sober — 2 つの task の書き足しの順）: 軸なし（ワーカー 1・既定のスケジュール）では通り、
-# quick:sched で試行ごとの SOBER_SCHED_SEED を振ると偽を見つけ、コーパスの列に `sched <種>` を持たせる。その列は駆動役の再生で同じ偽を名指す
+# quick:schedで試行ごとのSOBER_SCHED_SEEDを振ると偽を見つけ、コーパスの列に `sched <種>` を持たせる。その列は駆動役の再生で同じ偽を特定する
 "$SOBER" build "$D/fzsched.sober" -o "$W/fzs" > "$W/build.log" 2>&1 || { echo "FAIL: build fzsched"; cat "$W/build.log"; exit 1; }
 mkdir -p "$W/s"
 ( cd "$W/s" && SOBER_WORKERS=1 "$W/fzs" quick:fuzz=300 quick:tmp="$W/s/t" > /dev/null 2>&1 < /dev/null )
@@ -97,7 +97,7 @@ if [ -n "$f" ]; then
 else
     bad "fzsched: no corpus file"
 fi
-# カバレッジの誘導（種の置き場は空から — 試行は種・番号・束の頭の種の列で決まるので 2 回とも同じ所で見つける）
+# カバレッジの誘導（シードの格納場所は空から — 試行はシード・番号・バッチの頭のシードの列で決まるので2回とも同じ所で見つける）
 "$SOBER" build "$D/fzguide.sober" --cover -o "$W/fg" > "$W/gbuild.log" 2>&1 || { bad "fzguide: build"; cat "$W/gbuild.log"; }
 for i in 1 2; do
     mkdir -p "$W/gp$i"

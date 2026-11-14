@@ -3,10 +3,10 @@ package lower
 // 並列の台帳の器（language.md 11 節「予算と admission」）: 挙動を変えない計測だけ。
 // - プロセスの天井の読み（入口で 1 度 — rt.pcap_init）: cgroup v2 の cpu.max / memory.max（/proc/self/cgroup の `0::<経路>` から
 //   /sys/fs/cgroup/<経路>/…）・/proc/meminfo の MemTotal・/proc/self/statm の入口の RSS。ワーカー数 = min(affinity, ⌈cpu.max⌉)（mnInit）・
-//   根の天井 = min(memory.max, MemTotal) − 入口の RSS − PCAP_SLACK（試験の口 SOBER_BUDGET_MB があればそれ）。天井はまだ入場に使わない
-// - task ごとの使用量の計測（SOBER_PAR_STATS=1 のときだけ — 印の load + 分岐 1 つ）: spawn で生きている数 + 1（高水位）・終わりで自前のスロットの
+//   根の天井 = min(memory.max, MemTotal) − 入口のRSS − PCAP_SLACK（試験のオプションSOBER_BUDGET_MBがあればそれ）。天井はまだ入場に使わない
+// - taskごとの使用量の計測（SOBER_PAR_STATS=1のときだけ — フラグのload + 分岐1つ）: spawnで生きている数 + 1（高水位）・終わりで自前のスロットの
 //   使った量の和（終わりの時点の bump — 入り直した深度は最後の命の量）を spawn の点（TC_SITE）ごとの最大へ・スロットの VA の予約の本数
-// - 終わりに標準エラーへ `#par …` の行（rt.pstat_dump — 網と運用の口。stdout は動かない）
+// - 終わりに標準エラーへ `#par …` の行（rt.pstat_dump — 検査と運用のインターフェース。stdoutは動かない）
 
 import "desugar"
 import "std/iter"
@@ -14,11 +14,12 @@ import "std/iter"
 // @rt.pstat（プロセスに 1 つ — 計測のときだけ書く。群ごとに 8 語以上離す）
 const PS_LIVE = 0     // 生きている task の数（main を除く）
 const PS_PEAK = 1     // その高水位
-const PS_TCBMAP = 2   // 新しく mmap した task の塊の数（入力に比例しないことの網）
-const PS_WINREL = 3   // rt.win_park が窓の頁を返した回数（塊ごとに高々 1 回 — ≤ PS_TCBMAP の網）
-const PS_STACKHW = 4  // task の積みの最深（TCB からの B — 終わりの時点で塊の積みを走査した最大・使い回しの塊は前の task の最深を保つ）
-const PS_STACK_SCAN = 65536 // その走査の範囲（TCB の下 64 KiB — 越える積みは 64 KiB と読む）
-const PS_AFAR = 5     // 印つき（接続）の task のうち本体の枠が頁 0 の余白に入らず区画の形になれなかった数（x86.sober xAreaProlog — area.sober）
+const PS_TCBMAP = 2   // 新しくmmapしたtaskのチャンクの数（入力に比例しないことの検査）
+const PS_WINREL = 3   // rt.win_parkが予約ページを返した回数（チャンクごとに高々1回 — ≤ PS_TCBMAPの検査）
+const PS_STACKHW = 4  // taskのスタックの最深（TCBからのB — 終わりの時点でチャンクのスタックを走査した最大・使い回しのチャンクは前のtaskの最深を保つ）
+const PS_STACK_SCAN = 65536 // その走査の範囲（TCBの下64 KiB — 越えるスタックは64 KiBと読む）
+const PS_AFAR = 5     // フラグつき（接続）のtaskのうち本体の枠がページ0の余白に入らずエリアの形になれなかった数（x86.sober xAreaProlog — area.sober）
+const PS_TSCHAIN = 6  // 満了で積んだSENDだけで未提出がUR_POKEに届いて入った頭の取り込みの数（チェーンの形 — 今の形では0・ミュータント89で0でない — uring.sober urNetGate）
 const PS_ENDED = 8    // 終わった task の数
 const PS_MAXB = 9     // task の使用量（終わりの時点の自前のスロットの使った量の和）の最大
 const PS_SUMB = 10    // その和
@@ -26,7 +27,7 @@ const PS_VA = 16      // 予約したスロットの本数（VA = 本数 × ス�
 const PS_SITE = 24    // spawn の点 k（1 始まり — 0 = 走らせ直し）の [task の数, 使用量の最大] = PS_SITE + 2k・+1
 // @rt.pbuf（入口の読みの作業域 — [終わりの添字, 読んだバイト…]・経路は PB_PATH から）
 const PB_END = 0
-const PB_DATA = 8     // バイトの位置（語 1 から）
+const PB_DATA = 8     // バイトの位置（ワード1から）
 const PB_CAP = 4000
 const PB_PATH = 4096  // 経路の組み立て（バイトの位置）
 const PB_WORDS = 1024
@@ -55,12 +56,12 @@ func buildPstatRt(st mut St) {
     buildPcapInit(mut st)
 }
 
-// 計測の印（SOBER_PAR_STATS — rt.mn の読むだけの語）が立っているか（値 0 / 1）
+// 計測のフラグ（SOBER_PAR_STATS — rt.mnの読むだけのワード）が立っているか（値0 / 1）
 func pstatOn(st mut St) int {
     return cmp(mut st, CNe, load(mut st, globaladdr(mut st, st.mnG), MN_STATS), iconst(mut st, 0))
 }
 
-// 印が立っていれば f(args) を呼ぶ
+// フラグが立っていればf(args) を呼ぶ
 func pstatCall(st mut St, f FnRef, args int) {
     bY := newBlock(mut st)
     bN := newBlock(mut st)
@@ -86,7 +87,7 @@ func atomicMax(st mut St, p int, off int, v int) {
     setCur(mut st, done)
 }
 
-// rt.pstat_spawn()（rt.task_go の頭から — 印のときだけ）: 生きている数 + 1 とその高水位
+// rt.pstat_spawn()（rt.task_goの頭から — フラグのときだけ）: 生きている数 + 1とその高水位
 func buildPstatSpawn(st mut St) {
     begin(mut st, st.rtPstatSpawn)
     ps := globaladdr(mut st, st.pstatG)
@@ -95,7 +96,7 @@ func buildPstatSpawn(st mut St) {
     ret(mut st, -1)
 }
 
-// rt.pstat_end(tcb)（task の終わり — スロットを返す前・印のときだけ）: 自前のスロット（深度 TC_BASE + 1 〜 own）の使った量の和を
+// rt.pstat_end(tcb)（taskの終わり — スロットを返す前・フラグのときだけ）: 自前のスロット（深度TC_BASE + 1〜own）の使った量の和を
 // 全体と spawn の点ごとの最大へ
 func buildPstatEnd(st mut St) {
     begin(mut st, st.rtPstatEnd)
@@ -125,7 +126,7 @@ func buildPstatEnd(st mut St) {
     sp := gepWord(mut st, ps, bin(mut st, BAdd, bin(mut st, BMul, site, iconst(mut st, 2)), iconst(mut st, PS_SITE)))
     atomicXadd(mut st, sp, 0, iconst(mut st, 1))
     atomicMax(mut st, sp, 1, acc)
-    // 積みの最深: [TCB − PS_STACK_SCAN, TCB) を下から上へ、非 0 の最初の語まで（新しい塊の積みは 0 の頁 — 書かれた所だけ非 0）
+    // スタックの最深: [TCB − PS_STACK_SCAN, TCB) を下から上へ、非0の最初のワードまで（新しいチャンクのスタックは0のページ — 書かれた所だけ非0）
     tcb := ptoi(mut st, 0)
     sl := newBlock(mut st)
     a := param(mut st, sl, TyI64)
@@ -141,7 +142,7 @@ func buildPstatEnd(st mut St) {
     ret(mut st, -1)
 }
 
-// スロットを n 本予約した印（slotRefill の mmap の道 — 印のときだけ）
+// スロットをn本予約したフラグ（slotRefillのmmapのパス — フラグのときだけ）
 func pstatVa(st mut St, n int) {
     bY := newBlock(mut st)
     bN := newBlock(mut st)
@@ -158,7 +159,7 @@ func pfield(st mut St, name string, v int) {
     call(mut st, st.rtPint, list1(mut st, v))
 }
 
-// rt.pstat_dump()（終わり — main の後・出力の区間を全部出した後）: 印が立っていれば標準エラーへ
+// rt.pstat_dump()（終わり — mainの後・出力の区間を全部出した後）: フラグが立っていれば標準エラーへ
 //   #par root workers=… affinity=… cpuq=… cap=… capsrc=… rss0=…
 //   #par tasks live_peak=… ended=… bytes_max=… bytes_sum=… va_slots=… slot_bytes=…
 //   #par site k tasks=… peak=…（task のあった点だけ）
@@ -172,7 +173,7 @@ func buildPstatDump(st mut St) {
     mn := globaladdr(mut st, st.mnG)
     ps := globaladdr(mut st, st.pstatG)
     // 標準エラーへ（stdout は終わりの drain で出し切っている。toStderr / stdout の flush は出力の区間の drain を通る — drain の後に 2 度目を踏むと
-    // M:N の印で回り続ける。mn_trace と同じく fd を直に切り替える）
+    // M:Nのフラグで回り続ける。mn_traceと同じくfdを直に切り替える）
     fd0 := load(mut st, meta, W_FD)
     store(mut st, meta, W_FD, iconst(mut st, 2))
     printLit(mut st, "#par root")
@@ -194,6 +195,7 @@ func buildPstatDump(st mut St) {
     pfield(mut st, "win_rel", load(mut st, ps, PS_WINREL))
     pfield(mut st, "stack_hw", load(mut st, ps, PS_STACKHW))
     pfield(mut st, "area_far", load(mut st, ps, PS_AFAR))
+    pfield(mut st, "ts_chain", load(mut st, ps, PS_TSCHAIN))
     call(mut st, st.rtPchar, list1(mut st, iconst(mut st, '\n')))
     // 入場の台帳: 入場・縮退・超過の数・計上の高水位・task の数の天井・終わりの計上（全部返れば 0）
     printLit(mut st, "#par admit")
@@ -202,12 +204,12 @@ func buildPstatDump(st mut St) {
     pfield(mut st, "decl_over", load(mut st, mn, MN_LDOVER))
     pfield(mut st, "peak_bytes", load(mut st, mn, MN_LPEAKB))
     pfield(mut st, "peak_tasks", load(mut st, mn, MN_LPEAKT))
-    // 天井を超えた計上（give:・縮退の記帳）込みの高水位（段 3 の ② — 計上 ≥ 実使用の網）
+    // 天井を超えた計上（give:・縮退の記帳）込みの高水位（段階3の ② — 計上 ≥ 実使用の検査）
     pfield(mut st, "peak_all", load(mut st, mn, MN_LPEAKA))
-    // wait の scope で入場を待った回数（段 3 の ③）
+    // waitのscopeで入場を待った回数（段階3の ③）
     pfield(mut st, "waits", load(mut st, mn, MN_LWAIT))
     pfield(mut st, "tcap", load(mut st, mn, MN_TCAP))
-    // 終わりの計上（全部返っていれば 0 — 変異 7 の網）
+    // 終わりの計上（全部返っていれば0 — ミュータント7の検査）
     ledE := load(mut st, mn, MN_LED)
     pfield(mut st, "held_bytes", bin(mut st, BAdd, load(mut st, mn, MN_CAP), bin(mut st, BSub, bin(mut st, BAnd, ledE, iconst(mut st, 2 * LED_BMAX + 1)), iconst(mut st, LED_BMAX))))
     pfield(mut st, "held_tasks", bin(mut st, BAdd, load(mut st, mn, MN_TCAP), bin(mut st, BSub, bin(mut st, BAnd, bin(mut st, BSar, ledE, iconst(mut st, LED_TSHIFT)), iconst(mut st, 2 * LED_TMAX + 1)), iconst(mut st, LED_TMAX))))
@@ -364,7 +366,7 @@ func buildPcapInit(st mut St) {
     condbr(mut st, bin(mut st, BAnd, atLine, m3), gotCg, list1(mut st, bin(mut st, BAdd, fi, iconst(mut st, 3))), fNext, -1)
     setCur(mut st, fNext)
     br(mut st, find, list1(mut st, bin(mut st, BAdd, fi, iconst(mut st, 1))))
-    // 経路を写す（作業域の gs から改行 / NUL まで → 組み立て域の "/sys/fs/cgroup" の後ろへ）
+    // 経路をコピーする（作業域のgsから改行 / NULまで → 組み立て域の "/sys/fs/cgroup" の後ろへ）
     setCur(mut st, gotCg)
     pre := putPath(mut st, iconst(mut st, PB_PATH), "/sys/fs/cgroup", false)
     cp := newBlock(mut st)
@@ -410,7 +412,7 @@ func buildPcapInit(st mut St) {
     br(mut st, bCap, list1(mut st, imax(mut st, call(mut st, st.rtPnum, list1(mut st, zero)), zero)))
     setCur(mut st, noCg)
     br(mut st, bCap, list1(mut st, zero))
-    // 根の天井: 試験の口（SOBER_BUDGET_MB）> min(memory.max, MemTotal) − 入口の RSS − 余白。出どころ 1 = memory.max・2 = MemTotal・3 = 試験の口
+    // 根の天井: 試験のオプション（SOBER_BUDGET_MB）> min(memory.max, MemTotal) − 入口のRSS − 余白。出どころ1 = memory.max・2 = MemTotal・3 = 試験のオプション
     setCur(mut st, bCap)
     useMm := bin(mut st, BAnd, cmp(mut st, CGt, mmax, zero), bin(mut st, BOr, cmp(mut st, CLt, mmax, mt), cmp(mut st, CEq, mt, zero)))
     base := bin(mut st, BAdd, mt, bin(mut st, BMul, useMm, bin(mut st, BSub, mmax, mt)))
@@ -420,7 +422,7 @@ func buildPcapInit(st mut St) {
     bSet := newBlock(mut st)
     cv := param(mut st, bSet, TyI64)
     cs := param(mut st, bSet, TyI64)
-    // SOBER_BUDGET_MB=0 は天井 0（spawn の子は give: 以外全部縮退 — parbudget の網の口）・無ければ -1
+    // SOBER_BUDGET_MB=0は天井0（spawnの子はgive: 以外全部縮退 — parbudgetの検査のインターフェース）・無ければ -1
     condbr(mut st, cmp(mut st, CGe, 0, zero), bEnv, -1, bSet, list2(mut st, capv, src))
     setCur(mut st, bEnv)
     br(mut st, bSet, list2(mut st, bin(mut st, BShl, 0, iconst(mut st, 20)), iconst(mut st, 3)))

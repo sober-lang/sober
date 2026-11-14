@@ -1,6 +1,6 @@
 package parser
 
-// parser の単体テスト: @layout の印と struct の欄の `[N]T`（language.md 36 節）— 受ける形・拒否する形・節の欄
+// parserの単体テスト: @layoutのフラグとstructのフィールドの `[N]T`（language.md 36 節）— 受ける形・拒否する形・節のフィールド
 
 import "ast"
 import "lexer"
@@ -63,7 +63,7 @@ func TestArrayField() {
     assert(kindCount(src, ast.TArray) == 2)
     x := firstOf(src, ast.TArray)
     assert(x.a == 16)
-    // 欄の型の最上段の外（仮引数・slice の要素・長さが式）は文法の拒否
+    // フィールドの型の最上段の外（仮引数・sliceの要素・長さが式）は文法の拒否
     assert(!parses("package main\n\nfunc f(x [4]u8) {\n}\n"))
     assert(!parses("package main\n\ntype H struct {\n    xs [][4]u8\n}\n"))
     assert(!parses("package main\n\ntype H struct {\n    xs [2 + 2]u8\n}\n"))

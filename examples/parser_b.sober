@@ -53,7 +53,7 @@ func numValue(text string, t Token) int {
 }
 
 // Builder 形（V3-5 のゲート）: parser_x と同じ交錯成長（nodes と kids を同じ region で交互に積む）を
-// std/builder で書く。チャンク鎖はコピーせずに伸び、Build で連続 slice へ 1 回だけ写すので、
+// std/builderで書く。チャンクチェーンはコピーせずに伸び、Buildで連続sliceへ1回だけコピーするので、
 // 交錯していても成長のゴミが出ない（--mem-trace で 20 → 40 項がほぼ 2 倍 = O(n)）
 func parse(src string) ([]Node, []Pair, int) {
     toks := lex(src)

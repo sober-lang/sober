@@ -1,6 +1,6 @@
 package main
 
-// task_def の逐次の双子（seq ≡ par の照合 — scripts/seqpar.sh）
+// task_defの逐次版（seq ≡ parの照合 — scripts/seqpar.sh）
 
 func work(n int, name string) int {
     return n * 10 + len(bytes(name))

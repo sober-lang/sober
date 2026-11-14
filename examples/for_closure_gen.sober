@@ -1,6 +1,6 @@
 package main
 
-// 閉包の名前の呼び出し形の生成元（language.md 7 節 L-for）: 展開される関数の匿名の関数型の仮引数 `recv func(k func(T)) error?` を
+// クロージャの名前の呼び出し形の生成元（language.md 7 節L-for）: 展開される関数の匿名の関数型の仮引数 `recv func(k func(T)) error?` を
 // 文形 for の生成元に置ける — `for x <- recv()? { … }`。脱糖は呼び出し形の生成元と同じ（継続 `(x) => { … }` を末尾の実引数に足す — 展開で
 // recv が実引数のラムダに置き換わってから文形 for の脱糖に乗る）。本体の `?`・break・continue・非局所 return は普通の文形 for と同じ。
 // 使用例 = 転送路の抽象（http.ServeWith(recv, send, …)）の形
@@ -38,7 +38,7 @@ func sendv(v int, limit int) error? {
     return nil
 }
 
-// 受けの閉包から回して送りの閉包へ（1 は飛ばす・stop で打ち切り・ret で非局所 return）
+// 受けのクロージャから回して送りのクロージャへ（1は飛ばす・stopで打ち切り・retで非局所return）
 func relay(recv func(k func(int)) error?, send func(v int) error?, stop int, ret int) error? {
     for x <- recv()? {
         if x == 1 {
@@ -64,7 +64,7 @@ func count(n int, k func(int)) {
     }
 }
 
-// 失敗しない閉包の呼び出し形（印なし・実引数つき）
+// 失敗しないクロージャの呼び出し形（マークなし・実引数つき）
 func sum(src func(n int, k func(int)), n int) int {
     mut s := 0
     for x <- src(n) {

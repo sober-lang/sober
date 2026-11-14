@@ -2,7 +2,7 @@
 //   ② src/compiler の "SOBER_…" の綴りの全数 ⊆ 表の環境変数の宣言（App と全コマンド・dev 込み）・src/std の綴り（Sober のプログラムが読む層）
 //      ⊆ docs/guide/env.ja.md の表（ランタイムが rt の中で字句でなく読む名前は "…" の照合に掛からない — 表の側の全数は見ていない）
 //   ③ bin/sober と scripts/ が sober に渡すフラグの綴り ⊆ そのコマンドの表の宣言（dev 込み）+ 予約の綴り + bin/sober だけが解くフラグ
-//      （行の中の `"$S2" <command> …` 等の呼び出しの形と、bin/sober の cmd_<command> の case の腕を読む — 網は粗く「表に無い綴り」だけを赤にする）
+//      （行の中の `"$S2" <command> …` 等の呼び出しの形と、bin/soberのcmd_<command> のcaseの分岐を読む — 検査は粗く「表に無い綴り」だけを赤にする）
 import { readFileSync, readdirSync } from "node:fs";
 
 const spec = JSON.parse(readFileSync(process.argv[2], "utf8"));

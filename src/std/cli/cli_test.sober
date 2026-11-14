@@ -1,6 +1,6 @@
 package cli
 
-// 受理 / 拒否の表駆動の網（white-box — 非公開の dist・closest・wrap も見る）: 綴りの全形（`--name=v`・`--name v`・`-x v`・short・`--`・rest・
+// 受理 / 拒否の表駆動の検査（white-box — 非公開のdist・closest・wrapも見る）: 綴りの全形（`--name=v`・`--name v`・`-x v`・short・`--`・rest・
 // 混在）・誤用のラベル 7 種と argv の添字・near・既定値と env・サブコマンド・予約の綴り・使い方の折り返しの幅
 
 import "std/builder"
@@ -36,7 +36,7 @@ type pcase struct {
     want string
 }
 
-// Parse の結果の 1 行（受理 = `ok <コマンド>`・誤り = ラベルと欄）
+// Parseの結果の1行（受理 = `ok <コマンド>`・誤り = ラベルとフィールド）
 func verdict(app App, args []string) string {
     r, e := Parse(app, args)
     if e == nil {
@@ -176,7 +176,7 @@ func TestDist() {
 func TestUsage() {
     u := Usage(tApp, "build", false)
     assert(strings.HasPrefix(u, "usage: t build [flags] <entry> [<more>...]\n"))
-    // 左の欄は最長の左の欄に揃う（名前の辞書順）
+    // 左のフィールドは最長の左のフィールドに揃う（名前の辞書順）
     assert(strings.Contains(u, "\nflags:\n  --emit=<emit>      form: elf (default), ll\n  -I, --inc <value>  include dir (repeatable)\n  -j, --jobs <n>     jobs (default 1)\n"))
     assert(!strings.Contains(u, "--mutant"))
     assert(!strings.Contains(u, "syms"))

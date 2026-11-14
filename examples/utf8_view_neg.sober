@@ -1,6 +1,6 @@
 package main
 
-// 負例: utf8 の証人 View は Check だけが作る — 外の package は検査を経ずに証人を作れない（封の型の外での欄つきリテラルは拒否 — diag.Sealed・language.md 15 節。部分リテラルで seal をゼロ値にする偽造も塞ぐ）
+// 負例: utf8の証人ViewはCheckだけが作る — 外のpackageは検査を経ずに証人を作れない（封の型の外でのフィールドつきリテラルは拒否 — diag.Sealed・language.md 15 節。部分リテラルでsealをゼロ値にする偽造も塞ぐ）
 
 import "std/utf8"
 

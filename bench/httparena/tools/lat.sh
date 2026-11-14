@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # lat.sh <srv> [conns=1024] [rate=500000] [secs=10] [env…] — latency-500k-8cpu の形（サーバ = CPU 0-7〔4 コア + SMT〕・SOBER_WORKERS=8・zrk のレート固定・
-# GET /baseline11?a=1&b=2）で、温め 5 秒の後の secs 秒だけ perf stat -p（:u の事象 — EV で上書き）と /proc の utime / stime を要求あたりに（report-1049〜1053）。
-# 既定の事象は記憶の取り込みの元（L2 / 同 CCX の L3 / DRAM）と L2 TLB の外れ — 1 要求が冷えた行をいくつ触るかの物差し（report-1053 4 節: 接続数を 256 / 1024 / 4096 で振ると
+# GET /baseline11?a=1&b=2）で、温め5秒の後のsecs秒だけ perf stat -p（:u の事象 — EVで上書き）と /procのutime / stimeをリクエストあたりに（report-1049〜1053）。
+# 既定の事象は記憶の取り込みの元（L2 / 同CCXのL3 / DRAM）と L2 TLB の外れ — 1リクエストが冷えた行をいくつ触るかの基準（report-1053 4 節: 接続数を256 / 1024 / 4096で振ると
 # L2 の外から取る行は一定のまま取り先が DRAM へ移る）。zrk = $ZRK（local.sh が $W/zrk に落とす v2.3.0）。負荷 = CPU 12-23。版どうしは交互に
 Z=${ZRK:?set ZRK to the zrk binary (local.sh downloads it to its work dir)}
 P=$(ls -d /nix/store/*perf-linux*/bin/perf 2>/dev/null | head -n1); P=${P:-perf}
