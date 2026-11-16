@@ -1,0 +1,459 @@
+package lower
+
+// 反復のregionを開く点を沈める（loopLightModuleが残す反復のenterの位置）: 本体の頭で開く代わりに、本体の中で開いたregionが要る点
+// （敏感な点）の全部を支配する最も遅い点で開く。確保がまれな分岐にしか無いループ（区切りでだけ切り出す走査）は、確保しない周でregionを開かない。
+// 敏感な点 = 本体の中で読んだ深度への確保と、呼び出し側の深度で確保しうる呼び出し（llInsAllocs。失敗のパスだけで確保する呼び出し先も、呼び出しそのもの）・
+// 本体の中のregion.depthの読み出し（確保の深度・内側のループのsetdepth・W_DEST / W_ANCHORの値は全部ここから来る）・内側のループのenter。
+// 位置は1反復に高々1回しか通らない所（本体の中の内側の閉路の外）に置く。閉路の中で開くと、深度が周ごとに進む。
+// 閉じる側は変えない: 頭・出口・returnのsetdepthは読んだ深度の値そのものへ戻すので、開かなかった周では何も変えない。
+// 観測の差はllightと同じ（深度の上限の発火点とdepthの印字が、深度の境界で浅い方へずれうること。開く点の前の呼び出し先が1つ浅い深度で入る）
+
+import "std/iter"
+import "std/io"
+import "std/os"
+import "std/table"
+
+// 設定と統計: stat = SOBER_RSINK_STAT（[頭のまま（避けられない合流点）, 頭のまま（支配点がb0）, 別のブロックへ, 閉路で上げた]）・
+// mut = SOBER_RSINK_MUT（検査の自己確認のミュータント。1 = 敏感な点の1つを越えて沈める・2 = 1と同じで検証の記録を残さない）
+type RsCfg struct {
+    stat bool
+    mode int
+    n mut []int
+}
+
+func rsEnvOn(name string) bool {
+    vv, err := os.Getenv(name)
+    return err == nil && vv != nil
+}
+
+func rsMutMode() int {
+    vv, err := os.Getenv("SOBER_RSINK_MUT")
+    if err != nil || vv == nil {
+        return 0
+    }
+    return if vv == "2" { 2 } else { 1 }
+}
+
+func rsStatPrint(c mut RsCfg) {
+    if !c.stat {
+        return
+    }
+    _ = io.WriteStderr(bytes("rsink: unavoidable=${c.n[0]} b0=${c.n[1]} sunk=${c.n[2]} lifted=${c.n[3]}\n"))
+}
+
+// 関数ごとの作業域（ブロック数の長さ・enterごとに作り直さない）: inBody・first・stopsはrsRegionの結果（vis[0:nvis] = 範囲のブロック。
+// 次のrsRegionはその分だけ戻す）。seen[番号] == genが、辿ったことのマーク（rsInCycle・rsAvoidableがgenを進める）
+type RsScr struct {
+    inBody mut []int
+    first mut []int
+    stops mut []int
+    seen mut []int
+    gen int
+    vis mut []int
+    nvis int
+    stack mut []int
+}
+
+func rsScrInit(s mut RsScr, nb int) {
+    xFill(mut s.inBody, nb, 0)
+    xFill(mut s.first, nb, -2)
+    xFill(mut s.stops, nb, -1)
+    xFill(mut s.seen, nb, 0)
+}
+
+// 命令iが敏感な点か（own = 本体の中で読んだ深度の値）
+func rsSensitive(st mut St, i InsRef, ma mut map[int]int, own map[int]int) bool {
+    op := irInsOp(mut st, i)
+    if op == OpRDepth || op == OpREnter || rlEnterCall(mut st, i) {
+        return true
+    }
+    return llInsAllocs(mut st, i, mut ma, own)
+}
+
+// ブロック番号dから範囲の中を辿って、b0を通らずにdへ戻れるか（dが範囲の中の内側の閉路にある。途中で止まるブロックからは先へ出ない）
+func rsInCycle(st mut St, w mut m2rW, s mut RsScr, b0id int, d int) bool {
+    s.gen = s.gen + 1
+    g := s.gen
+    mut sp := 0
+    for k <- iter.Range(0, xNSucc(mut st, BlkRef(w.blk[d]))) {
+        sp = llPush(mut s.stack, sp, xSucc(mut st, BlkRef(w.blk[d]), k))
+    }
+    while sp > 0 {
+        sp -= 1
+        x := s.stack[sp]
+        if x == d {
+            return true
+        }
+        if x != b0id && s.inBody[x] == 1 && s.seen[x] != g {
+            s.seen[x] = g
+            for k <- iter.Range(0, xNSucc(mut st, BlkRef(w.blk[x]))) {
+                sp = llPush(mut s.stack, sp, xSucc(mut st, BlkRef(w.blk[x]), k))
+            }
+        }
+    }
+    return false
+}
+
+// 開いたregionの範囲と敏感な点: b0の命令s0から辿り、外の深度（範囲の中で読んでいない深度）へ戻すsetdepthの手前で止める
+// （ループの頭・出口・return・式ブロックの終わり。止まるsetdepthはブロックの途中にもある）。
+// inBody[番号] = 1（ブロックの全部が範囲）・2（途中のsetdepthで止まる。後続へは出ない）・0（範囲の外）。
+// first[番号] = 範囲の中の最初の敏感な点（無ければ -2）・stops[番号] = 止まったsetdepth（-1 = 無し）。skip（-1 = 無し）は数えない命令（検証で、動かしたenter自身）。
+// 戻り値 = 範囲の全部のブロックをb0が支配するか（偽なら動かさない。範囲が外からの経路と合流する形）
+func rsRegion(st mut St, w mut m2rW, b0 BlkRef, s0 InsRef, skip InsRef, ma mut map[int]int, s mut RsScr) bool {
+    for k <- iter.Range(0, s.nvis) {
+        id := s.vis[k]
+        s.inBody[id] = 0
+        s.first[id] = -2
+        s.stops[id] = -1
+    }
+    s.nvis = 0
+    b0id := irBlkId(mut st, b0)
+    // 1周目: 範囲（読んだ深度は範囲の中の値。SSAなので、読み出しはそれを使うsetdepthを支配し、先に訪れる）
+    mut inner := mut map[int]int{}
+    mut sp := llPush(mut s.stack, 0, b0id)
+    mut ok := true
+    while sp > 0 {
+        sp -= 1
+        id := s.stack[sp]
+        if s.inBody[id] == 0 {
+            b := BlkRef(w.blk[id])
+            mut i := if id == b0id { s0 } else { irBlkIHead(mut st, b) }
+            mut stop := InsRef(-1)
+            while i != -1 && stop == -1 {
+                op := irInsOp(mut st, i)
+                if op == OpRDepth {
+                    inner[irInsRes(mut st, i)] = 1
+                } else if op == OpRSetDepth && inner[irInsA(mut st, i)] == nil {
+                    stop = i
+                }
+                if stop == -1 {
+                    i = irInsNext(mut st, i)
+                }
+            }
+            if stop != -1 && id != b0id && stop == irBlkIHead(mut st, b) {
+                // ブロックの頭で外へ戻す（ループの頭・出口）: 範囲の外
+            } else {
+                s.inBody[id] = if stop == -1 { 1 } else { 2 }
+                s.stops[id] = int(stop)
+                s.nvis = llPush(mut s.vis, s.nvis, id)
+                if w.rpoIx[id] < 0 || !vfyDominates(mut w, b0id, id) {
+                    ok = false
+                }
+                if stop == -1 {
+                    for k <- iter.Range(0, xNSucc(mut st, b)) {
+                        x := xSucc(mut st, b, k)
+                        if x != b0id {
+                            sp = llPush(mut s.stack, sp, x)
+                        }
+                    }
+                }
+            }
+        }
+    }
+    innerF := freeze(inner)
+    // 2周目: 敏感な点（own = 範囲の中で読んだ深度）
+    for k <- iter.Range(0, s.nvis) {
+        id := s.vis[k]
+        b := BlkRef(w.blk[id])
+        mut i := if id == b0id { s0 } else { irBlkIHead(mut st, b) }
+        while i != -1 && i != InsRef(s.stops[id]) && s.first[id] == -2 {
+            if i != skip && rsSensitive(mut st, i, mut ma, innerF) {
+                s.first[id] = int(i)
+            }
+            i = irInsNext(mut st, i)
+        }
+    }
+    return ok
+}
+
+// 反復のenter eの後ろ、同じブロックの中に敏感な点があるか（外の深度へ戻すsetdepthで止まる）。真ならrsSinkPosの共通の支配点は
+// eのブロックで、動かさない。region.depthの読み出しはそれ自体が敏感な点なので、読んだ深度の集合は空のまま見てよい
+func rsHeadSensitive(st mut St, e InsRef, ma mut map[int]int) bool {
+    none := map[int]int{}
+    mut i := irInsNext(mut st, e)
+    while i != -1 {
+        op := irInsOp(mut st, i)
+        if op == OpRSetDepth {
+            return false
+        }
+        if rsSensitive(mut st, i, mut ma, none) {
+            return true
+        }
+        i = irInsNext(mut st, i)
+    }
+    return false
+}
+
+// 反復のenter e（ブロックb0）を置く位置: (ブロック, 直前に置く命令〔-1 = 終端の直前〕)。動かさないなら (b0, eの次の命令か -1)
+func rsSinkPos(st mut St, w mut m2rW, s mut RsScr, b0 BlkRef, e InsRef, ma mut map[int]int, c mut RsCfg) (BlkRef, InsRef) {
+    b0id := irBlkId(mut st, b0)
+    if !rsRegion(mut st, mut w, b0, irInsNext(mut st, e), InsRef(-1), mut ma, mut s) {
+        c.n[0] = c.n[0] + 1
+        return b0, irInsNext(mut st, e)
+    }
+    // 敏感な点を持つブロックの共通の支配点
+    mut d := -1
+    mut last := -1
+    for k <- iter.Range(0, s.nvis) {
+        id := s.vis[k]
+        if s.first[id] != -2 {
+            d = if d < 0 { id } else { m2rIntersect(mut w, d, id) }
+            last = if id > last { id } else { last }
+        }
+    }
+    if d < 0 {
+        c.n[0] = c.n[0] + 1
+        return b0, irInsNext(mut st, e)
+    }
+    if c.mode != 0 {
+        // ミュータント: 共通の支配点の代わりに、敏感な点を持つ最後のブロックの最初の敏感な点の後ろ（敏感な点の少なくとも1つを支配しない）
+        return BlkRef(w.blk[last]), irInsNext(mut st, InsRef(s.first[last]))
+    }
+    while d != b0id && rsInCycle(mut st, mut w, mut s, b0id, d) {
+        d = w.idom[d]
+        c.n[3] = c.n[3] + 1
+    }
+    // 動かして得があるのは、開かずに済む周があるときだけ: b0の中で後ろへ動かすだけ・dを避けて周を終える経路が無い（dが毎周通る合流点）
+    // なら動かさない（実行の回数は同じで、越えた値が展開したenterをまたいで生き、退避が増える。net.Send・routingのmatchの実測）
+    if d == b0id || !rsAvoidable(mut st, mut w, mut s, b0id, d) {
+        c.n[if d == b0id { 1 } else { 0 }] = c.n[if d == b0id { 1 } else { 0 }] + 1
+        return b0, irInsNext(mut st, e)
+    }
+    c.n[2] = c.n[2] + 1
+    // dの最初の敏感な点の直前に置く（ブロックの頭に置くと、開いた深度の値がdの前半でも生きて退避が増える）
+    at := if s.first[d] >= 0 { InsRef(s.first[d]) } else if s.inBody[d] == 2 { InsRef(s.stops[d]) } else { InsRef(-1) }
+    return BlkRef(w.blk[d]), at
+}
+
+// b0から範囲の中を、ブロックdを通らずに辿って周を終えられるか（b0へ戻る・範囲の外へ出る・途中のsetdepthで止まるブロックに着く）。
+// 後続の無いブロック（panicのexit）は周を終える経路に数えない
+func rsAvoidable(st mut St, w mut m2rW, s mut RsScr, b0id int, d int) bool {
+    s.gen = s.gen + 1
+    g := s.gen
+    mut sp := llPush(mut s.stack, 0, b0id)
+    s.seen[b0id] = g
+    while sp > 0 {
+        sp -= 1
+        x := s.stack[sp]
+        if s.inBody[x] == 2 {
+            return true
+        }
+        for k <- iter.Range(0, xNSucc(mut st, BlkRef(w.blk[x]))) {
+            y := xSucc(mut st, BlkRef(w.blk[x]), k)
+            if y == b0id || s.inBody[y] == 0 {
+                return true
+            }
+            if y != d && s.seen[y] != g {
+                s.seen[y] = g
+                sp = llPush(mut s.stack, sp, y)
+            }
+        }
+    }
+    return false
+}
+
+// 命令iをブロックbのチェーンから外す（iの前の命令を返す。先頭なら -1）
+func rsUnlink(st mut St, b BlkRef, i InsRef) InsRef {
+    mut prev := InsRef(-1)
+    mut x := irBlkIHead(mut st, b)
+    while x != -1 && x != i {
+        prev = x
+        x = irInsNext(mut st, x)
+    }
+    nx := irInsNext(mut st, i)
+    if prev == -1 {
+        irSetBlkIHead(mut st, b, nx)
+    } else {
+        irSetInsNext(mut st, prev, nx)
+    }
+    if irBlkITail(mut st, b) == i {
+        irSetBlkITail(mut st, b, prev)
+    }
+    irSetInsNext(mut st, i, -1)
+    return prev
+}
+
+// 命令iをブロックbの命令atの直前へ（at = -1なら末尾。終端の直前）
+func rsInsertBefore(st mut St, b BlkRef, at InsRef, i InsRef) {
+    if at == -1 {
+        linkInst(mut st, b, i)
+        return
+    }
+    mut prev := InsRef(-1)
+    mut x := irBlkIHead(mut st, b)
+    while x != -1 && x != at {
+        prev = x
+        x = irInsNext(mut st, x)
+    }
+    irSetInsNext(mut st, i, at)
+    if prev == -1 {
+        irSetBlkIHead(mut st, b, i)
+    } else {
+        irSetInsNext(mut st, prev, i)
+    }
+}
+
+// 反復のenter e（ブロックb0・軽いenterの呼び出しに置き換え済み）を (b, at) へ動かし、検証の記録を残す
+func rsMove(st mut St, f FnRef, b0 BlkRef, e InsRef, b BlkRef, at InsRef, c mut RsCfg) {
+    if b == b0 && at == irInsNext(mut st, e) {
+        return
+    }
+    prev := rsUnlink(mut st, b0, e)
+    rsInsertBefore(mut st, b, at, e)
+    if c.mode != 2 {
+        table.Push(mut st.rsRecs, int(f))
+        table.Push(mut st.rsRecs, int(b0))
+        table.Push(mut st.rsRecs, int(prev))
+        table.Push(mut st.rsRecs, int(e))
+    }
+}
+
+// 関数fの本体が、呼ぶ利用者の関数を見ずに、どの深度にでも確保するかregionを開きうるか（戻らない関数は数えない。maと同じ）
+func rsTouches(st mut St, f FnRef) bool {
+    if !llReturns(mut st, f) {
+        return false
+    }
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            op := irInsOp(mut st, i)
+            if op == OpREnter || op == OpRAlloc || op == OpRBump || op == OpRReloc || op == OpCallI || op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpClone {
+                return true
+            }
+            if op == OpCall {
+                g := irInsFn(mut st, i)
+                if g == st.rtRenter || rlEnterCall(mut st, i) || llRtAlloc(mut st, g) {
+                    return true
+                }
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return false
+}
+
+// 要約（mz。呼び出しがどの深度にでも確保しうるか）のうち真の関数を検証のために残す
+func rsKeepMa(st mut St, ma mut map[int]int, fs []int) {
+    for k <- iter.Range(0, len(fs)) {
+        if llMa(mut ma, FnRef(fs[k])) {
+            table.Push(mut st.rsMa, fs[k])
+        }
+    }
+}
+
+// 反復のenterを動かした関数の不変条件（検証器のインターフェース。戻り値は違反の文言・空 = 無し）: 動かしたenterは元の本体の中にあり、
+// 本体の敏感な点を全部支配し（同じブロックなら前）、本体の中の内側の閉路に無い
+func rsVerify(st mut St, f FnRef) string {
+    mut ma := mut map[int]int{}
+    mut marked := false
+    for k <- iter.Range(0, table.Len(mut st.rsRecs) / 4) {
+        if table.Get(mut st.rsRecs, 4 * k) == int(f) {
+            marked = true
+        }
+    }
+    if !marked {
+        return ""
+    }
+    for k <- iter.Range(0, table.Len(mut st.rsMa)) {
+        ma[table.Get(mut st.rsMa, k)] = 1
+    }
+    nb := irFnNBlk(mut st, f)
+    mut w := m2rW{nb: nb, blk: mut []int{}, rpoIx: mut []int{}, rpo: mut []int{}, nrpo: 0, pcnt: mut []int{}, preds: mut []int{}, idom: mut []int{}}
+    m2rCfg(mut st, mut w, f)
+    mut sc := RsScr{inBody: mut []int{}, first: mut []int{}, stops: mut []int{}, seen: mut []int{}, gen: 0, vis: mut []int{}, nvis: 0, stack: mut []int{}}
+    rsScrInit(mut sc, nb)
+    for k <- iter.Range(0, table.Len(mut st.rsRecs) / 4) {
+        if table.Get(mut st.rsRecs, 4 * k) == int(f) {
+            b0 := BlkRef(table.Get(mut st.rsRecs, 4 * k + 1))
+            prev := InsRef(table.Get(mut st.rsRecs, 4 * k + 2))
+            e := InsRef(table.Get(mut st.rsRecs, 4 * k + 3))
+            // enterのブロック
+            mut eb := -1
+            for bi <- iter.Range(0, nb) {
+                mut x := irBlkIHead(mut st, BlkRef(w.blk[bi]))
+                while x != -1 && eb < 0 {
+                    if x == e {
+                        eb = bi
+                    }
+                    x = irInsNext(mut st, x)
+                }
+            }
+            if eb < 0 {
+                return "the moved loop region enter is gone"
+            }
+            // b0の中で数えるのは元のenterの位置より後ろ（前の命令が消えていたらb0の全部。厳しい側）
+            mut s0 := irBlkIHead(mut st, b0)
+            if prev != -1 {
+                mut x := irBlkIHead(mut st, b0)
+                while x != -1 && x != prev {
+                    x = irInsNext(mut st, x)
+                }
+                if x != -1 {
+                    s0 = irInsNext(mut st, x)
+                }
+            }
+            _ = rsRegion(mut st, mut w, b0, s0, e, mut ma, mut sc)
+            b0id := irBlkId(mut st, b0)
+            if sc.inBody[eb] == 0 || (sc.inBody[eb] == 2 && !rsBefore(mut st, BlkRef(w.blk[eb]), e, InsRef(sc.stops[eb]))) {
+                return "the moved loop region enter is outside the loop body (b${b0id} → b${eb})"
+            }
+            if eb != b0id && rsInCycle(mut st, mut w, mut sc, b0id, eb) {
+                return "the moved loop region enter b${eb} is on an inner cycle of the loop body b${b0id}"
+            }
+            for id <- iter.Range(0, nb) {
+                if sc.first[id] != -2 {
+                    if !vfyDominates(mut w, eb, id) {
+                        return "the loop region enter b${eb} does not dominate the allocation / depth point in b${id} (loop body b${b0id})"
+                    }
+                    if id == eb {
+                        // 同じブロック: 敏感な点がenterより前にあってはいけない
+                        mut x := irBlkIHead(mut st, BlkRef(w.blk[eb]))
+                        if eb == b0id {
+                            x = s0
+                        }
+                        while x != -1 && x != e {
+                            if x == InsRef(sc.first[id]) {
+                                return "the loop region enter in b${eb} comes after an allocation / depth point (loop body b${b0id})"
+                            }
+                            x = irInsNext(mut st, x)
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return ""
+}
+
+// ブロックbの中で命令aがbより前にあるか
+func rsBefore(st mut St, b BlkRef, a InsRef, x InsRef) bool {
+    mut i := irBlkIHead(mut st, b)
+    while i != -1 {
+        if i == a {
+            return true
+        }
+        if i == x {
+            return false
+        }
+        i = irInsNext(mut st, i)
+    }
+    return false
+}
+
+// 反復のenterを動かした全部の関数を検証する（フェーズごとの検証。SOBER_VERIFY=eachのときだけ。llightの直後）
+func rsVerifyModule(st mut St) {
+    mut f := st.fhead
+    while f != -1 {
+        if irFnBHead(mut st, f) != -1 {
+            msg := rsVerify(mut st, f)
+            if msg != "" {
+                mut out := mut []byte{}
+                printName(mut st, mut out, irFnName(mut st, f))
+                panic(InvalidIR{after: "llight", fn: string(freeze(out)) catch "?", msg: msg})
+            }
+        }
+        f = irFnNext(mut st, f)
+    }
+}

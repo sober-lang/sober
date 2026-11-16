@@ -74,6 +74,7 @@ type St struct {
     rtTaskStart FnRef
     rtTaskSwitch FnRef
     rtSegv FnRef
+    rtSegvProbe FnRef // 計測用のミュータント97: 罠の中で不正な番地を読む子（rt.segvの判定の検査）
     rtSlotNew FnRef
     rtTaskWait FnRef
     rtTaskWaitK FnRef
@@ -81,8 +82,7 @@ type St struct {
     // rt.netwait（codegenの群の子へもコピーする — x86.sober xParCfg）
     xNWait FnRef
     rtTaskPop FnRef
-    rtRdySpill FnRef   // rt.ready_spill / rt.ready_unspill（走れるスタックの溢れの低速パス — task.sober）
-    rtRdyUnspill FnRef
+    rtRdySpill FnRef   // rt.ready_spill（実行待ちの列の溢れの低速パス。task.sober）
     rtSchedPick FnRef
     schedG int
     rtDeadlock FnRef
@@ -227,6 +227,11 @@ type St struct {
     covMidG int
     // 配置の計測ツール（開発用 `sober build --layout=S` = S〔v2〕/ `--layout-v1=S` = 1000 + S〔v1〕— x86.sober xLayPad / xLayInner）。0 = ずらしなし
     xLay int
+    // 配置の計測のオプション（開発用 `--layout-save` / `--layout-pin`。place.sober）。xPlKeys = 関数とグローバルのキー（凍結の前に組む）・
+    // xPlOut = 保存する番地の表
+    xPl Place
+    xPlKeys [][]byte
+    xPlOut []byte
     // 毒のオプション（環境変数SOBER_SLOT_POISON — 開発用・最適化のバックエンドの入口で零初期化しないワードを0x5a… で埋める — zeroinit.sober）
     slotPoison bool
     rtKidKeep FnRef
@@ -508,6 +513,8 @@ type St struct {
     lastConstV int    // 最後に iconst で作った値の番号と定数（ir.sober — 定数で 0 でない除数のゼロ除算の検査を省く）
     lastConstN int
     rflowFns table.Table[int] // 戻り値へ流れる関数の region の省略（C1 — rflow.sober）で入口の enter を消した関数（検証器が照合する — rfVerify）
+    rsRecs table.Table[int]   // 反復のenterを動かした記録 [関数, 元のブロック, 元の位置の前の命令（-1 = 先頭）, enter]…（検証器rsVerifyが照合する）
+    rsMa table.Table[int]     // 呼び出し側の深度で確保しうる関数（loopLightModuleの要約ma。rsVerifyが引く）
     psites table.Table[int]   // panic の点 [種類, ファイル, 字句]…（番号 = 添字 / 3）
     ptIns table.Table[int]    // panicの点kの札つきの定数の命令（ruleord.soberのroPointsが番号を付け直すインターフェース。split.soberのlsEv / lsReplayが控える）
     stIns table.Table[int]    // spawn の点 k（1 起点 — 添字 0 は -1）の札つきの定数の命令（同上）

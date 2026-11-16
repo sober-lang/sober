@@ -28,6 +28,7 @@ import "loader"
 import "desugar"
 import "elf"
 import "std/iter"
+import "std/io"
 import "std/task"
 import "std/table"
 import "x86"
@@ -296,7 +297,10 @@ func xModule(st mut St, syms bool) []byte {
             names = append(names, freeze(nm))
         }
     }
-    fk := if st.fnHash || st.ckEmit { xFnKeys(mut st) } else { [][]byte{} }
+    fk := if st.fnHash || st.ckEmit || st.xPl.on { xFnKeys(mut st) } else { [][]byte{} }
+    if st.xPl.on {
+        st.xPlKeys = fk
+    }
     // 段階3の β の鍵の表（凍結の前 — 名前を読む。x86のcfgの正準形つき）
     ckt := if st.ckOn { ckTab(mut st, xParCfg(mut st)) } else { ckNone() }
     if st.ckOn {
@@ -364,24 +368,45 @@ func xModuleFrozen(st mut St, syms bool, entryRec int, names [][]byte, ckt CkTab
     xFill(mut gro, ng, 0)
     mut rodata := mut []byte{}
     mut bss := 0
+    // `--layout-pin`: グローバルの位置は表から（plGlobOff）。rodataは表の長さのゼロで始めて、位置へ書く
+    pin := st.xPl.pinOn
+    gl := if pin { plGlobOff(mut st, nf, gr0, gord, mut goff) } else { []int{0, 0, 0} }
+    for k <- iter.Range(0, gl[0]) {
+        rodata = append(rodata, byte(0))
+    }
     for gk <- iter.Range(0, ng) {
         i := gord[gk]
         gr := gr0[i]
         init := xGlobInit(mut st, gr)
         words := xGlobWords(mut st, gr)
         if init >= 0 {
-            goff[i] = len(rodata)
+            o := if pin { goff[i] } else { len(rodata) }
+            goff[i] = o
             gro[i] = 1
             n := xLen(mut st, init)
             for k <- iter.Range(0, words) {
                 w := if k < n { xAt(mut st, init, k) } else { 0 }
                 for j <- iter.Range(0, 8) {
-                    rodata = append(rodata, byte(w >> (8 * j) & 255))
+                    if pin {
+                        rodata[o + 8 * k + j] = byte(w >> (8 * j) & 255)
+                    } else {
+                        rodata = append(rodata, byte(w >> (8 * j) & 255))
+                    }
                 }
             }
-        } else {
+        } else if !pin {
             goff[i] = bss
             bss = bss + 8 * words
+        }
+    }
+    if pin {
+        bss = gl[1]
+    }
+    // rodataの使った長さ（保存するビルドは後ろに4096 Bの余白を足す。place.sober）
+    ru := if pin { gl[2] } else { len(rodata) }
+    if st.xPl.save && !pin {
+        for k <- iter.Range(0, 4096) {
+            rodata = append(rodata, byte(0))
         }
     }
     mut entry := -1
@@ -402,8 +427,14 @@ func xModuleFrozen(st mut St, syms bool, entryRec int, names [][]byte, ckt CkTab
     x86.PushReg(mut c, x86.Rax)
     xFixAdd(mut fx, x86.CallRel32(mut c), 0, entry)
     x86.Ud2(mut c)
+    st0 := x86.Here(mut c)
     mut fstart := mut []int{}
     xFill(mut fstart, nf, 0)
+    // 関数の出力の範囲 [fbeg, fend)（fbeg = 整列と配置のずらしの後。入口の手前のパディングを含む。配置の計測のオプションが関数を置き直す単位）
+    mut fbeg := mut []int{}
+    xFill(mut fbeg, nf, 0)
+    mut fend := mut []int{}
+    xFill(mut fend, nf, 0)
     // 切替 / 罠を持つ関数は最後に（段階6 P4-6）: それらが積むxmmの組 = 全関数の割り当てが使うxmmの和（st.xXmm — 値はfloatでなくても
     // xmm に載りうる）。自分たちの使う分も和に入れるため、先に下書き（割り当てまで — 吐かない）を走らせてから本番を吐く（xFunc は st を書かない — 同じ機械語）
     st.xXmm = 0
@@ -426,7 +457,7 @@ func xModuleFrozen(st mut St, syms bool, entryRec int, names [][]byte, ckt CkTab
     // xFunc の呼び出し点は 1 か所に保つ: check は mut 引数の関数を呼び出し点ごとに展開して型付けするので、呼び出し点が増えると x86 の全体が
     // その数だけコピーされる（自己checkの作業域）
     loader.Stage("x-pre")
-    seq := st.xcopy || st.xseq || st.bcAud || !xParEmit(mut st, mut c, mut fx, mut fstart, freeze(skip), fr, gr0, ford, st.bcv.on)
+    seq := st.xcopy || st.xseq || st.bcAud || !xParEmit(mut st, mut c, mut fx, mut fstart, mut fbeg, mut fend, freeze(skip), fr, gr0, ford, st.bcv.on)
     loader.Stage("x-emit")
     // 格納場所を使うbuildは切替 / 罠を持たない関数を全部この周で吐く順に並べる: 手元の機械語（β2の当たり・群の子の結果 — bcSplice）かxFunc。
     // 吐いた関数の β2の値のマークを積む（bcNote — xmmの組は関数ごとに数える。値は後埋めの後のELFから切り出す — bcCaptureAll）
@@ -461,6 +492,8 @@ func xModuleFrozen(st mut St, syms bool, entryRec int, names [][]byte, ckt CkTab
                 }
                 if pass != 1 {
                     fstart[i] = s
+                    fbeg[i] = p0
+                    fend[i] = x86.Here(mut c)
                 }
             }
         }
@@ -468,6 +501,15 @@ func xModuleFrozen(st mut St, syms bool, entryRec int, names [][]byte, ckt CkTab
     if st.fnHash {
         // 後埋めの前（フィールドは全部0）に関数ごとの成果物をハッシュする（段階2 R2）
         return xFnHash(mut st, mut c, mut fx, freeze(fstart), names, nf, ng, x86.Here(mut c))
+    }
+    if st.xPl.pinOn || st.xPl.gap > 0 {
+        mut c2 := table.Table[byte]{}
+        xPlace(mut st, mut c, mut c2, mut fx, mut fstart, mut fbeg, mut fend, st0, fr)
+        c = c2
+    }
+    ce := if st.xPl.on { plEnd(mut st, mut c) } else { 0 }
+    if st.xPl.save {
+        st.xPlOut = xPlTable(mut st, freeze(fbeg), freeze(fend), ce, x86.Here(mut c), gr0, gord, freeze(gro), freeze(goff), ru, bss, len(rodata))
     }
     lay := elf.LayoutOf(x86.Here(mut c), len(rodata))
     if syms {
@@ -619,10 +661,13 @@ func xAlignFn(st mut St, c mut table.Table[byte]) {
 //   v1（`--layout-v1=S` — xLay = 1000 + S）: 整列した関数の先頭の後ろに 0 / 16 / 32 / 48 B（32 B 整列の時代の「上流の関数の伸び」）
 func xLayPad(st mut St, c mut table.Table[byte], f int) {
     if st.xLay > 0 && !st.xcopy {
-        v1 := st.xLay > 1000
-        h := xLayHash(st.xLay, f)
-        x86.Nop(mut c, if v1 { (h & 3) * 16 } else { ((h >> 2) & 3) * 64 })
+        x86.Nop(mut c, xLayAmt(st.xLay, f))
     }
+}
+
+func xLayAmt(lay int, f int) int {
+    h := xLayHash(lay, f)
+    return if lay > 1000 { (h & 3) * 16 } else { ((h >> 2) & 3) * 64 }
 }
 
 func xLayHash(lay int, f int) int {
@@ -639,7 +684,7 @@ func xLayInner(st mut St, c mut table.Table[byte], f int) {
 
 // 切替 / 罠を持たない関数（ctx[i] = 0）を群の子で吐いて c / fx へ吐く順に連結する（fstart を埋め st.xXmm に和を足す）。
 // 群が 1 つ以下かワーカー 1 なら何もせず false（呼び手が今までの逐次で吐く）
-func xParEmit(st mut St, c mut table.Table[byte], fx mut table.Table[int], fstart mut []int, ctx []int, fr []int, gr []int, ford []int, stash bool) bool {
+func xParEmit(st mut St, c mut table.Table[byte], fx mut table.Table[int], fstart mut []int, fbeg mut []int, fend mut []int, ctx []int, fr []int, gr []int, ford []int, stash bool) bool {
     if task.Ledger().workers <= 1 {
         return false
     }
@@ -674,12 +719,18 @@ func xParEmit(st mut St, c mut table.Table[byte], fx mut table.Table[int], fstar
     }
     // budget: = 群の命令の数の最大 × 128 B + 4 MiB（子の作業域 = xFの表と機械語 — コピーは親の分で子は数えない。校正: 自己buildの群〔2.5万命令〕の子のpeak 2.4 MB）
     bud := big * 128 + 4 * task.MB
+    // SOBER_XPAR_DIE=1（開発用）: 全部の群の子が頭で死ぬ（やり直しの経路の検査。やり直しは死なない）
+    die := lsEnvInt("SOBER_XPAR_DIE") == 1
     hf := st.hf
     cfg := xParCfg(mut st)
     addr := st.xAddr
-    outs, serr := task.Map(freeze(gs), (g) => xParGroup(g, hf, cfg, addr, fr, gr), budget: bud)
-    if serr != nil {
-        return panic(InvariantBroken{})
+    gz := freeze(gs)
+    outs0, serr := task.Map(gz, (g) => xParGroup(g, hf, cfg, addr, fr, gr, die), budget: bud)
+    // 子が死んだら、同じ本体を親が群の順に逐次で呼び直す。死因は読めないが、呼び直しが見分ける: 見積もりの外れによるスロットの超過は
+    // 親の大きいスロットでは起きず、コードの不変条件の破れは決定的なので親で同じ死因と位置のまま起きる（子の中だけの破れも同じ関数なので隠れない）
+    outs := if serr != nil { xParRetry(gz, hf, cfg, addr, fr, gr) } else { outs0 }
+    if lsEnvInt("SOBER_PAR_STATS") == 1 {
+        _ = io.WriteStderr(bytes("#x86 par groups=${len(gz)} retried=${if serr != nil { len(gz) } else { 0 }}\n"))
     }
     mut j := 0
     of := freeze(order)
@@ -699,18 +750,29 @@ func xParEmit(st mut St, c mut table.Table[byte], fx mut table.Table[int], fstar
         return true
     }
     for k <- iter.Range(0, len(outs)) {
-        xParMerge(mut st, mut c, mut fx, mut fstart, outs[k], of, j)
+        xParMerge(mut st, mut c, mut fx, mut fstart, mut fbeg, mut fend, outs[k], of, j)
         j += len(outs[k].starts)
     }
     return true
 }
 
+// 子の死の後に、全部の群を親で吐き直す。子と同じ本体なので、出力は子のパスとバイト一致する
+func xParRetry(gs []XGroup, hf table.Frozen[int], cfg []int, addr []int, fr []int, gr []int) []XPar {
+    mut outs := mut []XPar{}
+    for k <- iter.Range(0, len(gs)) {
+        outs = append(outs, xParGroup(gs[k], hf, cfg, addr, fr, gr, false))
+    }
+    return freeze(outs)
+}
+
 // 群の子の結果を c / fx の末尾へ（関数の先頭番地 = 今の末尾 + 群の中の位置）
-func xParMerge(st mut St, c mut table.Table[byte], fx mut table.Table[int], fstart mut []int, o XPar, order []int, j0 int) {
+func xParMerge(st mut St, c mut table.Table[byte], fx mut table.Table[int], fstart mut []int, fbeg mut []int, fend mut []int, o XPar, order []int, j0 int) {
     xAlignFn(mut st, mut c)
     base := x86.Here(mut c)
     for k <- iter.Range(0, len(o.starts)) {
         fstart[order[j0 + k]] = base + o.starts[k]
+        fbeg[order[j0 + k]] = base + o.begs[k]
+        fend[order[j0 + k]] = base + o.ends[k]
     }
     for k <- iter.Range(0, len(o.code)) {
         table.Push(mut c, o.code[k])
@@ -739,8 +801,11 @@ func xFnCost(st mut St, f FnRef) int {
     return ni
 }
 
-// 子の本体: 凍らせた表を読む St を組み、群の関数を吐く
-func xParGroup(g XGroup, hf table.Frozen[int], cfg []int, addr []int, fr []int, gr []int) XPar {
+// 子の本体: 凍らせた表を読むStを組み、群の関数を吐く（die: 頭で死ぬ。SOBER_XPAR_DIEの検査に使う）
+func xParGroup(g XGroup, hf table.Frozen[int], cfg []int, addr []int, fr []int, gr []int, die bool) XPar {
+    if die {
+        panic(InvariantBroken{})
+    }
     mut st := St{}
     kindsInit(mut st)
     st.hfOn = true

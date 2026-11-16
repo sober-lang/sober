@@ -335,9 +335,6 @@ type LedgerView struct {
     shed int
     waits int
     maxWait int
-    aged int
-    late int
-    maxLate int
     backlog int
     backlogYield int
     pin int
@@ -356,10 +353,7 @@ type LedgerView struct {
 フィールド:
 
 - `waits` — wait の scope で入場を待った回数（[language.md 11 節](../language.md)「wait」）
-- `maxWait` — 走れるようになってから走るまでの待ちの最大（ns・全ワーカー — 読むと0に戻る。[language.md 28 節](../language.md)io\_uringのパス「飽和下の待ちの上限」）
-- `aged` — 待ちの上限が効いてスタックの底から取った回数の累計（飽和のフラグ — 底を期限で救った数）
-- `late` — 自分のDを越えてから走ったtaskの数の累計（agedの救いに加え、スタックが浅いときの越えも数える — aged ⊆ late）
-- `maxLate` — 越えた量（待ち − D）の最大（ns・全ワーカー — 読むと0に戻るウィンドウの値・maxWaitと同じ流儀）
+- `maxWait` — 走れるようになってから走るまでの待ちの最大（ns・全ワーカー。読むと0に戻る。実行待ちの列はFIFOなので、飽和した閉ループでは列の1周の時間の程度）
 - `backlog` — 今の未着手の子の数（全ワーカーの列の和 — ワーカーあたり 255 まで。[language.md 11 節](../language.md)「未着手の子の上限」）
 - `backlogYield` — 列があふれて子をその場で先に走らせた（生んだtaskが譲った）回数の累計（背圧が効いたフラグ）
 - `pin` — ワーカーの CPU の固定の形（0 = なし・1 = L3 キャッシュを共有する CPU の群・2 = CPU 1 つ・3 = L3 の群が読めず CPU 1 つへ縮退したワーカーがある）

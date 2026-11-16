@@ -1,12 +1,15 @@
 package main
 
-// starve（gate — 飽和下の待ちの上限の検査・language.md 28 節io_uringのパス・report-1142）: 同じプロセスにechoのnet.Serveと閉ループの客512本を立て、
-// 少ないワーカー（検査はSOBER_WORKERS=2）でスタックを深くして飽和させる。Serveの期限（3秒）の後にtask.Ledger() のmaxWait（ms）とagedを出す。
-// 検査の判定はscripts/starve.sh（aged > 0 = 飽和した・maxWait ≤ 1 s）。接続のtaskのDは10 ms（期限の拾いのパスを
-// 短い Serve の間に確実に通す — report-1150 / 1154）
+// starve（gate: 実行待ちの列のFIFOの保証の検査）: 同じプロセスにechoのnet.Serveと閉ループの客512本を立て、少ないワーカー
+// （検査はSOBER_WORKERS=2）で実行待ちの列を深くして飽和させる。Serveの期限（3秒）の後に、task.Ledger() のmaxWait（µs）と、
+// 往復の数の和・1回以上往復した客の数を出す。1周の時間（往復1回の平均 = 期限 × 往復した客の数 ÷ 往復の和）と待ちの最大を比べる
+// 判定はscripts/starve.sh。M:Nでは、列が空にならない間は未着手の客が走り始めないので、往復しない客が残る（往復した客の数で割る理由）
 
 import "std/net"
 import "std/task"
+
+const CLIENTS = 512
+const SERVE_MS = 3000
 
 func echo(c net.Conn) error? {
     for chunk <- net.Recv(c)? {
@@ -15,8 +18,8 @@ func echo(c net.Conn) error? {
     return nil
 }
 
-// talk は接続 1 本で 32 バイトを送って受け返すのを、相手が閉じるか期限が切れるまで繰り返す
-func talk(port int, msg []byte) error? {
+// 接続 1 本で 32 バイトを送って受け返すのを、相手が閉じるか期限が切れるまで繰り返す。往復の数を n に足す
+func talkOn(port int, msg []byte, n mut int) error? {
     for c <- net.Dial("127.0.0.1:${port}")? {
         while true {
             net.Send(c, msg)?
@@ -30,9 +33,16 @@ func talk(port int, msg []byte) error? {
             if got < len(msg) {
                 return nil
             }
+            n += 1
         }
     }
     return nil
+}
+
+func talk(port int, msg []byte) int {
+    mut n := 0
+    _ = talkOn(port, msg, mut n)
+    return n
 }
 
 func main() {
@@ -40,16 +50,27 @@ func main() {
     _ = net.Listen("127.0.0.1:0", (l) => {
         port := net.Port(l)
         _, _ = task.Run((s task.Scope) => {
+            mut hs := mut []task.Handle[int]{}
             mut i := 0
-            while i < 512 {
-                _ = task.Spawn(s, () => talk(port, msg) != nil)
+            while i < CLIENTS {
+                hs = append(hs, task.Spawn(s, () => talk(port, msg)))
                 i += 1
             }
-            _, _ = task.Run((s2 task.Scope) => net.Serve(l, echo, conns: 1024, maxWait: 10 * task.MS), deadline: 3000 * task.MS)
+            _, _ = task.Run((s2 task.Scope) => net.Serve(l, echo, conns: 1024), deadline: SERVE_MS * task.MS)
+            lg := task.Ledger()
+            vs := task.Gather(hs)
+            mut sum := 0
+            mut act := 0
+            mut j := 0
+            while j < len(vs) {
+                sum += vs[j]
+                if vs[j] > 0 {
+                    act += 1
+                }
+                j += 1
+            }
+            println("maxWait_us=${lg.maxWait / 1000} rounds=${sum} active=${act} serve_ms=${SERVE_MS}")
             0
         }, deadline: 6000 * task.MS)
     })
-    lg := task.Ledger()
-    println("maxWait_ms=${lg.maxWait / task.MS} aged=${lg.aged}")
-    println("late=${lg.late} maxLate_ms=${lg.maxLate / task.MS}")
 }

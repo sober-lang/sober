@@ -59,8 +59,8 @@ func (d *dir) seal(ctype int, pt []byte, pad int) []byte {
 	var out []byte
 	for at := 0; at < len(pt) || (at == 0 && len(pt) == 0); {
 		m := len(pt) - at
-		if m > 16384 {
-			m = 16384
+		if m > 16384-pad {
+			m = 16384 - pad
 		}
 		inner := append(append([]byte{}, pt[at:at+m]...), byte(ctype))
 		inner = append(inner, make([]byte, pad)...)
@@ -92,7 +92,8 @@ func main() {
 			w = newDir(expandLabel(w.secret, "traffic upd", nil, 32))
 		}
 		n := plan[3*i+1]
-		recs += (n + 16383) / 16384
+		capa := 16384 - plan[3*i+2]
+		recs += (n + capa - 1) / capa
 		if n == 0 {
 			recs++
 		}
@@ -109,9 +110,9 @@ func main() {
 	}
 	// ChaChaと拒否の行はSoberの値（自己のゴールデン — 上の注記）
 	for _, l := range []string{
-		"chacha stream 73843 64bf312966fb93256ab0640283e8c22a49691f63aa8d1e7f797af681743a5fa9",
+		"chacha stream 73843 bae4e3432d55f859317b0521feffb592bfb2210fc14738744a0feb506e9f0dfd",
 		"chacha replay 1 12 9 nil", "chacha replay 7 12 9 nil", "chacha replay 100 12 9 nil", "chacha replay 4096 12 9 nil", "chacha replay 65536 12 9 nil", "chacha replay 0 12 9 nil",
-		"tamper alert 20", "truncated nil alert 50", "cut transport", "overflow alert 22 alert 22", "outer alert 10", "zeros alert 10",
+		"tamper alert 20", "truncated nil alert 50", "cut transport", "overflow alert 22 alert 22", "overflow-split alert 22 alert 22", "outer alert 10", "zeros alert 10",
 	} {
 		fmt.Println(l)
 	}

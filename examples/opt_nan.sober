@@ -1,0 +1,65 @@
+package main
+
+// NaN は 1 つの値（math.Bits で読むとどれも 0x7ff8000000000000）: 最適化のバックエンドは + と * の被演算子の順を入れ替えてよく、
+// 両方が NaN のときに結果に残る NaN（CPU は 1 つ目の被演算子の NaN を返す）が変わっても、出力は最適化の有無で同じ。
+// payload の違う NaN・符号つきの NaN・単項の - と math.Abs を掛けた NaN・Min / Max を通した NaN・0 / 0 と負の Sqrt の NaN、
+// 文字列の解析と印字を通した NaN を並べる。後半は SLP の根の対の形（同じ op で独立な 2 本の sqrt / div）に NaN を混ぜる
+
+import "std/convert"
+import "std/iter"
+import "std/math"
+
+func groups(b mut []float) {
+    _ = b[23]
+    s0 := b[0] * b[0] + b[1] * b[1] + b[2] * b[2]
+    b[16] = b[3] / (s0 * math.Sqrt(s0))
+    b[17] = b[3] / b[0]
+    s1 := b[4] * b[4] + b[5] * b[5] + b[6] * b[6]
+    b[18] = b[7] / (s1 * math.Sqrt(s1))
+    b[19] = b[7] / b[4]
+    s2 := b[8] * b[8] + b[9] * b[9] + b[10] * b[10]
+    b[20] = b[11] / (s2 * math.Sqrt(s2))
+    b[21] = b[11] / b[8]
+    s3 := b[12] * b[12] + b[13] * b[13] + b[14] * b[14]
+    b[22] = b[15] / (s3 * math.Sqrt(s3))
+    b[23] = b[15] / b[12]
+}
+
+func main() {
+    // NaN 4 種（payload 1・payload 0xabc・符号つき・符号つきの quiet で payload 0）と普通の値
+    ns := []int{0x7ff8000000000001, 0x7ff8000000000abc, -0x7fffffffffffd, -0x8000000000000, 0x3ff0000000000000}
+    for i <- iter.Range(0, len(ns)) {
+        for j <- iter.Range(0, len(ns)) {
+            a := math.FromBits(ns[i])
+            b := math.FromBits(ns[j])
+            println("${i} ${j} ${math.Bits(a + b)} ${math.Bits(b + a)} ${math.Bits(a * b)} ${math.Bits(b * a)} ${math.Bits(a - b)} ${math.Bits(a / b)}")
+            println("  ${math.Bits(math.Min(a, b))} ${math.Bits(math.Max(a, b))} ${math.Bits(math.Min(b, a))} ${math.Bits(math.Max(b, a))}")
+        }
+        x := math.FromBits(ns[i])
+        println("${i} ${math.Bits(x)} ${math.Bits(-x)} ${math.Bits(math.Abs(x))} ${math.Bits(math.Trunc(x))} ${math.Bits(math.Floor(x))} ${math.Bits(math.Ceil(x))} ${x != x} ${convert.FormatFloat(x)} ${convert.FormatFixed(-x, 2)}")
+    }
+    zero := math.FromBits(0)
+    q := zero / zero
+    neg := math.Sqrt(zero - 1.0)
+    back := math.FromBits(math.Bits(q))
+    println("${math.Bits(q)} ${math.Bits(neg)} ${math.Bits(back)}")
+    words := []string{"nan", "NaN", "NAN"}
+    for w <- iter.Range(0, len(words)) {
+        s := words[w]
+        v, err := convert.ParseFloat(s)
+        println("${s} ${math.Bits(v)} ${err == nil}")
+    }
+    // SLP の根の対の形: 組ごとに特別な値（NaN 3 種・±Inf・-0・非正規化数・1）と普通の値を混ぜる
+    sp := []int{0x7ff8000000000001, 0x7ff8000000000abc, -0x7fffffffffffd, 0x7ff0000000000000, -0x10000000000000, -0x7fffffffffffffff - 1, 1, 0xfffffffffffff, 0x3ff0000000000000}
+    for r <- iter.Range(0, 24) {
+        mut b := mut []float{}
+        for k <- iter.Range(0, 24) {
+            v := if (k + r) % 3 != 1 { math.FromBits(sp[(k * 5 + r) % len(sp)]) } else { 0.25 * float(k + 1) - 1.5 * float(r % 5) }
+            b = append(b, v)
+        }
+        groups(mut b)
+        for k <- iter.Range(16, 24) {
+            println(math.Bits(b[k]))
+        }
+    }
+}

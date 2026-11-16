@@ -169,10 +169,10 @@ type SetCookie struct {
     sameSite SameSite?
     dangerouslyAllowHttp bool
     dangerouslyScriptReadable bool
-}
+} @personal
 ```
 
-Set-Cookieの1本（Response.cookiesの要素 — Set-Cookieを書けるのはこのフィールドだけ。生のSet-Cookieをheadersに書くとpanic(BadHeader)）。省いたフィールドのゼロ値が安全な側: Secure・HttpOnly・SameSite=Lax・Path=/・Domainなし（host-only — サブドメインへ送らない）・Max-Ageなし（ブラウザを閉じるまで）。緩めるフィールドはdangerouslyの綴り（grepで全部拾える）。値は符号化しない — cookie-octet〔英数字と記号のうち空白・`"` `,` `;` `\` 以外〕に収まらない値は呼び手がurl.Escapeかbase64urlで包む。名前・値・フィールドの組み合わせが書けなければpanic(BadHeader{name: "Set-Cookie"})
+Set-Cookieの1本（Response.cookiesの要素。Set-Cookieを書けるのはこのフィールドだけ。生のSet-Cookieをheadersに書くとpanic(BadHeader)）。利用者ごとの値（`@personal`）: 共有キャッシュに保存されうる方針（`@stored`・`@shared`）のルートとレスポンスでは返せない（analyzerが拒否・実行時はpanic(BadHeader)）。省いたフィールドのゼロ値が安全な側: Secure・HttpOnly・SameSite=Lax・Path=/・Domainなし（host-only — サブドメインへ送らない）・Max-Ageなし（ブラウザを閉じるまで）。緩めるフィールドはdangerouslyの綴り（grepで全部拾える）。値は符号化しない — cookie-octet〔英数字と記号のうち空白・`"` `,` `;` `\` 以外〕に収まらない値は呼び手がurl.Escapeかbase64urlで包む。名前・値・フィールドの組み合わせが書けなければpanic(BadHeader{name: "Set-Cookie"})
 
 ```sober
 http.server.Response{status: 200, contentType: "text/plain", body: b, cookies: []http.server.SetCookie{http.server.SetCookie{name: "__Host-sid", value: tok}}}
@@ -347,6 +347,15 @@ func Header(r Request, name string) string?
 
 r のヘッダ name の値（名前は大文字小文字を区別しない — 最初の一致。無ければ nil）。認証のヘッダ（Authorization・Proxy-Authorization・Cookie）は読めない（nil）— 読むインターフェースはAuthorizationとCookieだけ（認証の源の明示: 認証に届くレスポンスを共有キャッシュへ宣言する形をanalyzerが拒否する — [language.md 13 節](../language.md)の補3）
 
+## HeaderList
+
+```sober
+@effects()
+func HeaderList(r Request) []http.Field
+```
+
+rのヘッダの全部（受けた順・同じ名前の行は別の要素）。名前は小文字にする（大文字を含む名前だけコピーし、ほかは頭の上の区間）。値は頭の上の区間で、コピーしない。認証のヘッダ（Authorization・Proxy-Authorization・Cookie）は含まない。読むインターフェースはAuthorizationとCookieだけ（Headerと同じ）
+
 ## Authorization
 
 ```sober
@@ -507,7 +516,7 @@ http.server.ServeConn(c, (r) => http.server.Dispatch(rs, r))
 
 ```sober
 type Cache union {
-    Revalidate {}
+    Revalidate {} @stored
     Fresh { maxAge int; immutable bool? } @shared
     Shared { maxAge int; sMaxAge int? } @shared
     NoStore {}
@@ -520,7 +529,7 @@ type Cache union {
 
 variant:
 
-- `Revalidate` — `no-cache` — 保存してよいが、使う前に毎回検証する（304で本文を送らない — 検証のリクエストは今のリクエスト元の頭を運ぶので、共有可の宣言に数えない）
+- `Revalidate` — `no-cache`: 保存してよいが、使う前に毎回検証する（304で本文を送らない）。検証のリクエストは今のリクエストを送った側のヘッダを運ぶので、共有可の宣言に数えない。共有キャッシュは保存しうる（`@stored`）: 304で検証が通ると保存したヘッダを使うので、Set-Cookieとは組み合わせられない
 - `Fresh` — `max-age=<maxAge>`（immutableなら `, immutable`）— maxAge秒は検証せずに使う（名前に版やハッシュを入れた資産向け・負の値は0）
 - `Shared` — `public, max-age=<maxAge>`（sMaxAgeがあれば `, s-maxage=<sMaxAge>`）— 共有キャッシュにも明示で保存させる（Authorizationつきのリクエストのレスポンスも — RFC 9111 3.5。負の値は 0）
 - `NoStore` — `no-store` — 保存しない

@@ -186,7 +186,8 @@ function commonComps(): [string, string][] {
 }
 function commonComps1(): [string, string][] {
     const c: [string, string][] = [];
-    for (const p of ["scripts/gates.sh", "scripts/gatememo.ts", "scripts/gatedeps.txt"]) c.push([p, compHash(p)]);
+    // stagelib.sh = stage2.sh・stage3.sh・stages.shがsourceするコンパイラ自身のビルドの手順（stage2を作る手順なので全ゲートに共通）
+    for (const p of ["scripts/gates.sh", "scripts/gatememo.ts", "scripts/gatedeps.txt", "scripts/stagelib.sh"]) c.push([p, compHash(p)]);
     for (const p of gatelibClosure()) c.push([p, compHash(p)]);
     // stage2 = コンパイラと std のソース（中身）+ コンパイラの ELF の中身。out/stage2/.key は使わない — stage2.sh は入力の stat が変わらなければ
     // キーを計算し直さないので、キーの形式を変えた後も古い形式（絶対パス入り）のまま残る。ELF は木が違っても同じ入力ならバイト一致

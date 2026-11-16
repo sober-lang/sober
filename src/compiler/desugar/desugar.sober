@@ -58,7 +58,7 @@ func defOf(st mut S, fi int, ienv int) (int, error?) {
         }
         hsetTy(mut st, int(ptys) + 1 + i, pty)
     }
-    param := tyChain(mut st, ptys)
+    param := tyTree(mut st, ptys)
     rl0 := fnResults(mut st, fi)
     nr := lenL(mut st, rl0)
     rtys := ListRef(listN(mut st, nr))
@@ -66,7 +66,7 @@ func defOf(st mut S, fi int, ienv int) (int, error?) {
         rt := tyOf(mut st, pk, latN(mut st, rl0, i), at, TYFUEL)?
         hsetTy(mut st, int(rtys) + 1 + i, retTy(mut st, rt))
     }
-    ret := tyChain(mut st, rtys)
+    ret := resTy(mut st, rtys)
     if st.sigOnly {
         // 部分検査の視点の外の Def は署名だけ（本体 -1 — 検査器は検査しない。stage1 の sig_only）
         setFnCtx(mut st, saved)
@@ -85,7 +85,7 @@ func defOf(st mut S, fi int, ienv int) (int, error?) {
     } else if np >= 2 {
         for i <- iter.Range(0, np) {
             prm := latN(mut st, ps, i)
-            hsetCore(mut st, int(exs) + 1 + i, projection(mut st, cVar(mut st, d - 1), i, np))
+            hsetCore(mut st, int(exs) + 1 + i, treeProj(mut st, cVar(mut st, d - 1), i, np))
             mutable := ast.ParamIsMut(nodeOf(mut st, prm))
             dd := declOfTypeExpr(mut st, pk, nB(nodeOf(mut st, prm)))
             el := elemDeclOfTypeExpr(mut st, pk, nB(nodeOf(mut st, prm)))

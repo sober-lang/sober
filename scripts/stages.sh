@@ -31,6 +31,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$PWD
 source scripts/gatelib.sh
+source scripts/stagelib.sh
 # buildのキャッシュ（既定on）は無効のパスに固定（単体で回してもinst / RSSの上限値が温の値に化けない）
 export SOBER_BUILD_CACHE=${SOBER_BUILD_CACHE:-0}
 export SOBER_CHECK_CACHE=${SOBER_CHECK_CACHE:-0}
@@ -51,9 +52,7 @@ T0=$(now)
 
 # ── ビルドの木（compiler/* + std/ のコピー）──
 B=$W/root
-mkdir -p "$B"
-cp -r src/compiler/. "$B/"
-cp -r src/std "$B/std"
+stage_tree "$B"
 
 fail=0
 # stage2: 共有の stage2（scripts/stage2.sh — 唯一の作り手。compiler/ + std/ + stage1 のハッシュが同じなら作り直さない — 主役交代 R39）
@@ -61,10 +60,12 @@ t=$(now)
 S2=$(STAGE1=$STAGE1 scripts/stage2.sh) || { echo "stages: FAIL scripts/stage2.sh"; exit 1; }
 cp "$S2" "$W/stage2"
 echo "stage2: scripts/stage2.sh $(dt "$t" "$(now)")s (ELF $(stat -c %s "$W/stage2") bytes)"
+# 木にstdのL0を焼く（配るstage3〔scripts/stage3.sh〕と同じ手順。stage3・stage4は、L0を焼き込んだ形で固定点を確かめる）
+stage_l0 "$W/stage2" "$B" "$W" || { echo "stages: FAIL L0 bake"; exit 1; }
 
 # stage3: stage2 が正規バックエンドで ELF に（固定点の左辺）+ .ll（暫定形の固定点の左辺）
 t=$(now)
-(cd "$B" && "$W/stage2" build app --emit=elf --passes -o "$W/stage3") || { echo "stages: FAIL stage2 build of src/compiler/app (exit $?)"; exit 1; }
+stage_build "$W/stage2" "$B" "$W/stage3" || { echo "stages: FAIL stage2 build of src/compiler/app (exit $?)"; exit 1; }
 t1=$(now)
 (cd "$B" && "$W/stage2" build app --emit=ll --passes -o "$W/stage3.ll") || { echo "stages: FAIL stage2 build of src/compiler/app (.ll)"; exit 1; }
 t2=$(now)
@@ -152,7 +153,7 @@ if [ -n "$PERF" ] && "$PERF" stat -x, -e instructions:u -o /dev/null true > /dev
     INSTP=("$PERF" stat -x, -e instructions:u -o "$W/stage4.inst")
 fi
 t=$(now)
-(cd "$B" && env -u SOBER_VERIFY SOBER_WORKERS=1 SOBER_HASH_SEED=0 "$W/stage3" build app --emit=elf --passes -o "$W/stage4") || { echo "stages: FAIL stage3 build of src/compiler/app"; exit 1; }
+(unset SOBER_VERIFY; export SOBER_WORKERS=1 SOBER_HASH_SEED=0; stage_build "$W/stage3" "$B" "$W/stage4") || { echo "stages: FAIL stage3 build of src/compiler/app"; exit 1; }
 t1=$(now)
 (cd "$B" && "$W/stage3" build app --emit=ll --passes -o "$W/stage4.ll") || { echo "stages: FAIL stage3 build of src/compiler/app (.ll)"; exit 1; }
 echo "stage4: stage3 → ELF $(dt "$t" "$t1")s, → .ll $(dt "$t1" "$(now)")s"
@@ -163,7 +164,8 @@ echo "stage4: stage3 → ELF $(dt "$t" "$t1")s, → .ll $(dt "$t1" "$(now)")s"
 M=$W/meas
 t=$(now)
 mkdir -p "$M"
-tar -C "$B" --exclude=./std -cf - . | tar -C "$M" -xf - || { echo "stages: FAIL meas tree"; exit 1; }
+# L0の焼き込み（l0/std/）は測りの木に入れない（上限値の基準の木を、L0を焼く前と同じに保つ）。l0/placeholder.sobiは残す（@embedは一致0を拒否する）
+tar -C "$B" --exclude=./std --exclude=./l0/std -cf - . | tar -C "$M" -xf - || { echo "stages: FAIL meas tree"; exit 1; }
 for p in $( (cd "$B" && "$W/stage3" parse --loader-json app) | grep -o '"path": "std/[^"]*"' | sed 's/.*"\(std\/[^"]*\)"/\1/' | sort -u); do
     mkdir -p "$M/$p" && find "$B/$p" -maxdepth 1 -type f -exec cp {} "$M/$p/" \;
 done

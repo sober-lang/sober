@@ -46,7 +46,7 @@ global @str.37 [5] = {7309940765259427104, 7599578576357124455, 6874858533597243
 global @str.38 [1] = {139141276781}
 global @str.39 [1] = {10}
 global @str.40 [3] = {7232620951369114994, 8674334734093152357, 8250}
-global @rt.psites [57] = {3659174948897537, 465278136502714369, 491736784313516033, 507499383009312769, 522417556774977537, 530580331099586561, 534802455750246401, 552535379283017729, 9288675372302595, 4222138374423041, 9851637925413378, 9851637925413378, 9851637925413378, 8162788350362114, 8162788350362114, 8162788350362114, 8725738337337858, 8725738337337858, 8725738337337858, 4503614290657795, 8725727767692290, 8725727767692290, 8725727767692290, 5629503141315587, 2814753374209025, 2814753458095105, 7599828129285122, 7599828129285122, 7599828129285122, 7318350099121409, 2814750488528129, 6192450594931969, 3659175905199361, 7318350803764481, 7318350870873345, 3940651150345473, 7599826116019457, 8444251096483073, 8444251180369153, 5066551459841281, 7318351642625281, 7881301679932675, 3940652005983489, 7036877018236163, 6192452876633345, 9007202710848769, 7318353102243073, 2814753508427009, 7318353219683585, 3940653499155713, 2814753642644737, 2814750924736008, 6192451870000641, 2814752149472769, 7599826887771650, 7599826887771650, 7599826887771650}
+global @rt.psites [55] = {3659174948897537, 461337486828765185, 487796134639566849, 503558733335363585, 532550655936561153, 9288675372302595, 4222138374423041, 9851637925413378, 9851637925413378, 9851637925413378, 8162788350362114, 8162788350362114, 8162788350362114, 8725738337337858, 8725738337337858, 8725738337337858, 4503614290657795, 8725727734137858, 8725727734137858, 8725727734137858, 5629503107761155, 2814753340654593, 2814753424540673, 7599828095730690, 7599828095730690, 7599828095730690, 7318350099121409, 2814750488528129, 6192450594931969, 3659175905199361, 7318350803764481, 7318350870873345, 3940651150345473, 7599826116019457, 8444251096483073, 8444251180369153, 5066551459841281, 7318351642625281, 7881301679932675, 3940652005983489, 7036877018236163, 6192452876633345, 9007202710848769, 7318353102243073, 2814753508427009, 7318353219683585, 3940653499155713, 2814753642644737, 1688851269551617, 2814751360943624, 6192452306208257, 2814752585680385, 7599827323979266, 7599827323979266, 7599827323979266}
 global @str.41 [3] = {8462017926321696361, 7953763900396085364, 25959}
 global @str.42 [4] = {8026013105759284339, 8391735665840385653, 7453001576142499616, 101}
 global @str.43 [4] = {8462017844986274166, 7953763900396085364, 7070777237752014183, 6648953}
@@ -2647,36 +2647,28 @@ b0:
   %11 = slotaddr s1
   store %11[0], %1
   %12 = load.i64 %11[0]
-  %13 = const 0
-  %14 = add %12, %13
-  %15 = const 249685746299
-  %16 = globaladdr @rt.meta
-  store %16[2572], %10
-  call @std/internal/jsonw.Word(%0, %14, %15)
-  %17 = const 5
-  %18 = load.i64 %11[0]
-  %19 = add %18, %17
-  store %11[0], %19
-  %20 = load.i64 %11[0]
-  %21 = load.i64 %3[0]
-  %22 = globaladdr @rt.meta
-  store %22[2572], %10
-  %23 = call @std/internal/jsonw.Int(%0, %20, %21)
-  store %11[0], %23
-  %24 = load.i64 %11[0]
-  %25 = const 0
-  %26 = add %24, %25
-  %27 = const 125
-  %28 = globaladdr @rt.meta
-  store %28[2572], %10
-  call @std/internal/jsonw.Word(%0, %26, %27)
-  %29 = const 1
-  %30 = load.i64 %11[0]
-  %31 = add %30, %29
-  store %11[0], %31
-  %32 = load.i64 %11[0]
+  %13 = const 249685746299
+  %14 = const 5
+  %15 = globaladdr @rt.meta
+  store %15[2572], %10
+  %16 = call @std/internal/jsonw.Put(%0, %12, %13, %14)
+  store %11[0], %16
+  %17 = load.i64 %11[0]
+  %18 = load.i64 %3[0]
+  %19 = globaladdr @rt.meta
+  store %19[2572], %10
+  %20 = call @std/internal/jsonw.Int(%0, %17, %18)
+  store %11[0], %20
+  %21 = load.i64 %11[0]
+  %22 = const 125
+  %23 = const 1
+  %24 = globaladdr @rt.meta
+  store %24[2572], %10
+  %25 = call @std/internal/jsonw.Put(%0, %21, %22, %23)
+  store %11[0], %25
+  %26 = load.i64 %11[0]
   region.setdepth %4
-  ret %32
+  ret %26
 }
 
 func @main.$jsonEncode_0_1(%0 ptr, %1 i64, %2 i64, %3 i64, %4 i64, %5 i64, %6 i64, %7 i64) {
@@ -3291,121 +3283,101 @@ b0:
   %17 = slotaddr s1
   store %17[0], %1
   %18 = load.i64 %17[0]
-  %19 = const 0
-  %20 = add %18, %19
-  %21 = const 63919387910779
-  %22 = globaladdr @rt.meta
-  store %22[2572], %16
-  call @std/internal/jsonw.Word(%0, %20, %21)
-  %23 = const 6
-  %24 = load.i64 %17[0]
-  %25 = add %24, %23
-  store %17[0], %25
-  %26 = load.i64 %17[0]
-  %27 = load.i64 %9[0]
-  %28 = globaladdr @rt.meta
-  store %28[2572], %16
-  %29 = call @std/internal/jsonw.Int(%0, %26, %27)
-  store %17[0], %29
-  %30 = load.i64 %17[0]
-  %31 = const 0
-  %32 = add %30, %31
-  %33 = const 4189023171907428908
-  %34 = const 249685746299
-  %35 = globaladdr @rt.meta
-  store %35[2572], %16
-  call @std/internal/jsonw.Word2(%0, %32, %33, %34)
-  %36 = const 13
-  %37 = load.i64 %17[0]
-  %38 = add %37, %36
+  %19 = const 63919387910779
+  %20 = const 6
+  %21 = globaladdr @rt.meta
+  store %21[2572], %16
+  %22 = call @std/internal/jsonw.Put(%0, %18, %19, %20)
+  store %17[0], %22
+  %23 = load.i64 %17[0]
+  %24 = load.i64 %9[0]
+  %25 = globaladdr @rt.meta
+  store %25[2572], %16
+  %26 = call @std/internal/jsonw.Int(%0, %23, %24)
+  store %17[0], %26
+  %27 = load.i64 %17[0]
+  %28 = const 4189023171907428908
+  %29 = const 249685746299
+  %30 = const 13
+  %31 = globaladdr @rt.meta
+  store %31[2572], %16
+  %32 = call @std/internal/jsonw.Put2(%0, %27, %28, %29, %30)
+  store %17[0], %32
+  %33 = load.i64 %17[0]
+  %34 = const 1
+  %35 = gep.word %9, %34
+  %36 = load.i64 %35[0]
+  %37 = globaladdr @rt.meta
+  store %37[2572], %16
+  %38 = call @std/internal/jsonw.Int(%0, %33, %36)
   store %17[0], %38
   %39 = load.i64 %17[0]
-  %40 = const 1
-  %41 = gep.word %9, %40
-  %42 = load.i64 %41[0]
+  %40 = const 7311138133316349053
+  %41 = const 3809907
+  %42 = const 11
   %43 = globaladdr @rt.meta
   store %43[2572], %16
-  %44 = call @std/internal/jsonw.Int(%0, %39, %42)
+  %44 = call @std/internal/jsonw.Put2(%0, %39, %40, %41, %42)
   store %17[0], %44
   %45 = load.i64 %17[0]
-  %46 = const 0
-  %47 = add %45, %46
-  %48 = const 7311138133316349053
-  %49 = const 3809907
-  %50 = globaladdr @rt.meta
-  store %50[2572], %16
-  call @std/internal/jsonw.Word2(%0, %47, %48, %49)
-  %51 = const 11
-  %52 = load.i64 %17[0]
-  %53 = add %52, %51
-  store %17[0], %53
-  %54 = load.i64 %17[0]
-  %55 = const 2
-  %56 = gep.word %9, %55
-  %57 = load.i64 %56[0]
-  %58 = load.i64 %56[1]
-  %59 = load.i64 %56[2]
-  %60 = globaladdr @rt.meta
-  store %60[2572], %16
-  %61 = call @main.$jsonWrite_0_2(%0, %54, %57, %58, %59)
-  store %17[0], %61
-  %62 = load.i64 %17[0]
-  %63 = const 0
-  %64 = lt %62, %63
-  condbr %64, b1, b2
+  %46 = const 2
+  %47 = gep.word %9, %46
+  %48 = load.i64 %47[0]
+  %49 = load.i64 %47[1]
+  %50 = load.i64 %47[2]
+  %51 = globaladdr @rt.meta
+  store %51[2572], %16
+  %52 = call @main.$jsonWrite_0_2(%0, %45, %48, %49, %50)
+  store %17[0], %52
+  %53 = load.i64 %17[0]
+  %54 = const 0
+  %55 = lt %53, %54
+  condbr %55, b1, b2
 b1:
-  %65 = load.i64 %17[0]
+  %56 = load.i64 %17[0]
   region.setdepth %10
-  ret %65
+  ret %56
 b2:
   br b3
 b3:
-  %66 = load.i64 %17[0]
-  %67 = const 0
-  %68 = add %66, %67
-  %69 = const 2477387114592150060
-  %70 = const 58
-  %71 = globaladdr @rt.meta
-  store %71[2572], %16
-  call @std/internal/jsonw.Word2(%0, %68, %69, %70)
-  %72 = const 9
-  %73 = load.i64 %17[0]
-  %74 = add %73, %72
-  store %17[0], %74
-  %75 = load.i64 %17[0]
-  %76 = const 5
-  %77 = gep.word %9, %76
-  %78 = load.i64 %77[0]
-  %79 = load.i64 %77[1]
-  %80 = globaladdr @rt.meta
-  store %80[2572], %16
-  %81 = call @main.$jsonWrite_0_3(%0, %75, %78, %79)
-  store %17[0], %81
-  %82 = load.i64 %17[0]
-  %83 = const 0
-  %84 = lt %82, %83
-  condbr %84, b4, b5
+  %57 = load.i64 %17[0]
+  %58 = const 2477387114592150060
+  %59 = const 58
+  %60 = const 9
+  %61 = globaladdr @rt.meta
+  store %61[2572], %16
+  %62 = call @std/internal/jsonw.Put2(%0, %57, %58, %59, %60)
+  store %17[0], %62
+  %63 = load.i64 %17[0]
+  %64 = const 5
+  %65 = gep.word %9, %64
+  %66 = load.i64 %65[0]
+  %67 = load.i64 %65[1]
+  %68 = globaladdr @rt.meta
+  store %68[2572], %16
+  %69 = call @main.$jsonWrite_0_3(%0, %63, %66, %67)
+  store %17[0], %69
+  %70 = load.i64 %17[0]
+  %71 = const 0
+  %72 = lt %70, %71
+  condbr %72, b4, b5
 b4:
-  %85 = load.i64 %17[0]
+  %73 = load.i64 %17[0]
   region.setdepth %10
-  ret %85
+  ret %73
 b5:
   br b6
 b6:
-  %86 = load.i64 %17[0]
-  %87 = const 0
-  %88 = add %86, %87
-  %89 = const 125
-  %90 = globaladdr @rt.meta
-  store %90[2572], %16
-  call @std/internal/jsonw.Word(%0, %88, %89)
-  %91 = const 1
-  %92 = load.i64 %17[0]
-  %93 = add %92, %91
-  store %17[0], %93
-  %94 = load.i64 %17[0]
+  %74 = load.i64 %17[0]
+  %75 = const 125
+  %76 = const 1
+  %77 = globaladdr @rt.meta
+  store %77[2572], %16
+  %78 = call @std/internal/jsonw.Put(%0, %74, %75, %76)
+  store %17[0], %78
+  %79 = load.i64 %17[0]
   region.setdepth %10
-  ret %94
+  ret %79
 }
 
 func @main.$jsonEncode_0_2(%0 ptr, %1 i64, %2 i64, %3 i64) {
@@ -3662,136 +3634,92 @@ b0:
   store %13[0], %1
   %14 = load.i64 %13[0]
   %15 = const 91
-  %16 = load.i64 %0[1]
-  %17 = uge %14, %16
-  condbr %17, b1, b2
+  %16 = globaladdr @rt.meta
+  store %16[2572], %12
+  %17 = call @std/internal/jsonw.Byte(%0, %14, %15)
+  store %13[0], %17
+  %18 = const 0
+  %19 = slotaddr s2
+  store %19[0], %18
+  %20 = region.depth
+  br b1
 b1:
-  %18 = const 4
-  call @rt.panic(%18)
-  exit 101
+  region.setdepth %20
+  %21 = load.i64 %19[0]
+  %22 = load.i64 %5[1]
+  %23 = lt %21, %22
+  condbr %23, b2, b3
 b2:
-  %19 = load.i64 %0[0]
-  %20 = itop %19
-  %21 = gep.byte %20, %14
-  store8 %21[0], %15
-  %22 = const 1
-  %23 = load.i64 %13[0]
-  %24 = add %23, %22
-  store %13[0], %24
-  %25 = const 0
-  %26 = slotaddr s2
-  store %26[0], %25
-  %27 = region.depth
-  br b3
-b3:
-  region.setdepth %27
-  %28 = load.i64 %26[0]
-  %29 = load.i64 %5[1]
-  %30 = lt %28, %29
-  condbr %30, b4, b5
-b4:
   region.enter
-  %31 = region.depth
-  %32 = load.i64 %26[0]
-  %33 = const 0
-  %34 = gt %32, %33
-  condbr %34, b6, b7
-b5:
-  region.setdepth %27
-  %80 = load.i64 %13[0]
-  %81 = const 93
-  %82 = load.i64 %0[1]
-  %83 = uge %80, %82
-  condbr %83, b13, b14
-b6:
-  %35 = load.i64 %13[0]
-  %36 = const 44
-  %37 = load.i64 %0[1]
-  %38 = uge %35, %37
-  condbr %38, b8, b9
-b7:
-  br b10
-b8:
-  %39 = const 5
-  call @rt.panic(%39)
-  exit 101
-b9:
-  %40 = load.i64 %0[0]
-  %41 = itop %40
-  %42 = gep.byte %41, %35
-  store8 %42[0], %36
-  %43 = const 1
-  %44 = load.i64 %13[0]
-  %45 = add %44, %43
-  store %13[0], %45
-  br b10
-b10:
-  %46 = load.i64 %26[0]
-  %47 = load.i64 %5[1]
-  %48 = uge %46, %47
-  condbr %48, b11, b12
-b11:
-  %49 = const 6
-  call @rt.panic(%49)
-  exit 101
-b12:
-  %50 = load.i64 %5[0]
-  %51 = itop %50
-  %52 = const 1
-  %53 = mul %46, %52
-  %54 = gep.word %51, %53
-  %55 = slotaddr s3
-  %56 = load.i64 %54[0]
-  store %55[0], %56
-  %57 = load.i64 %13[0]
-  %58 = const 0
-  %59 = add %57, %58
-  %60 = const 249685746299
-  %61 = globaladdr @rt.meta
-  store %61[2572], %12
-  call @std/internal/jsonw.Word(%0, %59, %60)
-  %62 = const 5
-  %63 = load.i64 %13[0]
-  %64 = add %63, %62
-  store %13[0], %64
-  %65 = load.i64 %13[0]
-  %66 = load.i64 %55[0]
-  %67 = globaladdr @rt.meta
-  store %67[2572], %12
-  %68 = call @std/internal/jsonw.Int(%0, %65, %66)
-  store %13[0], %68
-  %69 = load.i64 %13[0]
-  %70 = const 0
-  %71 = add %69, %70
-  %72 = const 125
-  %73 = globaladdr @rt.meta
-  store %73[2572], %12
-  call @std/internal/jsonw.Word(%0, %71, %72)
-  %74 = const 1
-  %75 = load.i64 %13[0]
-  %76 = add %75, %74
-  store %13[0], %76
-  %77 = const 1
-  %78 = load.i64 %26[0]
-  %79 = add %78, %77
-  store %26[0], %79
-  br b3
-b13:
-  %84 = const 7
-  call @rt.panic(%84)
-  exit 101
-b14:
-  %85 = load.i64 %0[0]
-  %86 = itop %85
-  %87 = gep.byte %86, %80
-  store8 %87[0], %81
-  %88 = const 1
-  %89 = load.i64 %13[0]
-  %90 = add %89, %88
-  store %13[0], %90
-  %91 = load.i64 %13[0]
+  %24 = region.depth
+  %25 = load.i64 %19[0]
+  %26 = const 0
+  %27 = gt %25, %26
+  condbr %27, b4, b5
+b3:
+  region.setdepth %20
+  %60 = load.i64 %13[0]
+  %61 = const 93
+  %62 = globaladdr @rt.meta
+  store %62[2572], %12
+  %63 = call @std/internal/jsonw.Byte(%0, %60, %61)
+  store %13[0], %63
+  %64 = load.i64 %13[0]
   region.setdepth %6
-  ret %91
+  ret %64
+b4:
+  %28 = load.i64 %13[0]
+  %29 = const 44
+  %30 = globaladdr @rt.meta
+  store %30[2572], %12
+  %31 = call @std/internal/jsonw.Byte(%0, %28, %29)
+  store %13[0], %31
+  br b6
+b5:
+  br b6
+b6:
+  %32 = load.i64 %19[0]
+  %33 = load.i64 %5[1]
+  %34 = uge %32, %33
+  condbr %34, b7, b8
+b7:
+  %35 = const 4
+  call @rt.panic(%35)
+  exit 101
+b8:
+  %36 = load.i64 %5[0]
+  %37 = itop %36
+  %38 = const 1
+  %39 = mul %32, %38
+  %40 = gep.word %37, %39
+  %41 = slotaddr s3
+  %42 = load.i64 %40[0]
+  store %41[0], %42
+  %43 = load.i64 %13[0]
+  %44 = const 249685746299
+  %45 = const 5
+  %46 = globaladdr @rt.meta
+  store %46[2572], %12
+  %47 = call @std/internal/jsonw.Put(%0, %43, %44, %45)
+  store %13[0], %47
+  %48 = load.i64 %13[0]
+  %49 = load.i64 %41[0]
+  %50 = globaladdr @rt.meta
+  store %50[2572], %12
+  %51 = call @std/internal/jsonw.Int(%0, %48, %49)
+  store %13[0], %51
+  %52 = load.i64 %13[0]
+  %53 = const 125
+  %54 = const 1
+  %55 = globaladdr @rt.meta
+  store %55[2572], %12
+  %56 = call @std/internal/jsonw.Put(%0, %52, %53, %54)
+  store %13[0], %56
+  %57 = const 1
+  %58 = load.i64 %19[0]
+  %59 = add %58, %57
+  store %19[0], %59
+  br b1
 }
 
 func @main.$jsonEncode_0_3(%0 ptr, %1 i64, %2 i64) {
@@ -3976,16 +3904,12 @@ b1:
   condbr %26, b3, b4
 b2:
   %28 = load.i64 %12[0]
-  %29 = const 0
-  %30 = add %28, %29
-  %31 = const 1819047278
-  %32 = globaladdr @rt.meta
-  store %32[2572], %11
-  call @std/internal/jsonw.Word(%0, %30, %31)
-  %33 = const 4
-  %34 = load.i64 %12[0]
-  %35 = add %34, %33
-  store %12[0], %35
+  %29 = const 1819047278
+  %30 = const 4
+  %31 = globaladdr @rt.meta
+  store %31[2572], %11
+  %32 = call @std/internal/jsonw.Put(%0, %28, %29, %30)
+  store %12[0], %32
   br b6
 b3:
   %27 = load.i64 %12[0]
@@ -3996,9 +3920,9 @@ b4:
 b5:
   br b6
 b6:
-  %36 = load.i64 %12[0]
+  %33 = load.i64 %12[0]
   region.setdepth %5
-  ret %36
+  ret %33
 }
 
 func @std/json.KeyOf(%0 ptr, %1 i64, %2 i64, %3 i64, %4 i64, %5 i64, %6 i64, %7 i64) {
@@ -4273,7 +4197,7 @@ b10:
 b11:
   br b14
 b12:
-  %39 = const 8
+  %39 = const 5
   call @rt.panic(%39)
   exit 101
 b13:
@@ -4675,7 +4599,7 @@ b3:
   %157 = lt %154, %156
   condbr %157, b33, b34
 b4:
-  %26 = const 9
+  %26 = const 6
   call @rt.panic(%26)
   exit 101
 b5:
@@ -4689,14 +4613,14 @@ b5:
   %34 = lt %31, %33
   condbr %34, b6, b7
 b6:
-  %35 = const 10
+  %35 = const 7
   call @rt.panic(%35)
   exit 101
 b7:
   %36 = lt %32, %31
   condbr %36, b8, b9
 b8:
-  %37 = const 11
+  %37 = const 8
   call @rt.panic(%37)
   exit 101
 b9:
@@ -4704,7 +4628,7 @@ b9:
   %39 = gt %32, %38
   condbr %39, b10, b11
 b10:
-  %40 = const 12
+  %40 = const 9
   call @rt.panic(%40)
   exit 101
 b11:
@@ -4878,14 +4802,14 @@ b26:
   %135 = lt %132, %134
   condbr %135, b27, b28
 b27:
-  %136 = const 13
+  %136 = const 10
   call @rt.panic(%136)
   exit 101
 b28:
   %137 = lt %133, %132
   condbr %137, b29, b30
 b29:
-  %138 = const 14
+  %138 = const 11
   call @rt.panic(%138)
   exit 101
 b30:
@@ -4893,7 +4817,7 @@ b30:
   %140 = gt %133, %139
   condbr %140, b31, b32
 b31:
-  %141 = const 15
+  %141 = const 12
   call @rt.panic(%141)
   exit 101
 b32:
@@ -4915,14 +4839,14 @@ b32:
   store %13[0], %153
   br b1
 b33:
-  %158 = const 16
+  %158 = const 13
   call @rt.panic(%158)
   exit 101
 b34:
   %159 = lt %155, %154
   condbr %159, b35, b36
 b35:
-  %160 = const 17
+  %160 = const 14
   call @rt.panic(%160)
   exit 101
 b36:
@@ -4930,7 +4854,7 @@ b36:
   %162 = gt %155, %161
   condbr %162, b37, b38
 b37:
-  %163 = const 18
+  %163 = const 15
   call @rt.panic(%163)
   exit 101
 b38:
@@ -4985,7 +4909,7 @@ b3(%8 i64):
   %10 = uge %8, %9
   condbr %10, b4, b5
 b4:
-  %11 = const 19
+  %11 = const 16
   call @rt.panic(%11)
   exit 101
 b5:
@@ -5166,14 +5090,14 @@ b3:
 b4:
   br b11
 b5:
-  %69 = const 20
+  %69 = const 17
   call @rt.panic(%69)
   exit 101
 b6:
   %70 = lt %66, %64
   condbr %70, b7, b8
 b7:
-  %71 = const 21
+  %71 = const 18
   call @rt.panic(%71)
   exit 101
 b8:
@@ -5181,7 +5105,7 @@ b8:
   %73 = gt %66, %72
   condbr %73, b9, b10
 b9:
-  %74 = const 22
+  %74 = const 19
   call @rt.panic(%74)
   exit 101
 b10:
@@ -5337,7 +5261,7 @@ b14:
   region.setdepth %160
   condbr %2, b19, b20
 b15:
-  %176 = const 23
+  %176 = const 20
   call @rt.panic(%176)
   exit 101
 b16:
@@ -5345,7 +5269,7 @@ b16:
   %178 = uge %168, %177
   condbr %178, b17, b18
 b17:
-  %179 = const 24
+  %179 = const 21
   call @rt.panic(%179)
   exit 101
 b18:
@@ -5373,7 +5297,7 @@ b19:
 b20:
   br b23
 b21:
-  %195 = const 25
+  %195 = const 22
   call @rt.panic(%195)
   exit 101
 b22:
@@ -5398,14 +5322,14 @@ b23:
   %208 = lt %205, %207
   condbr %208, b24, b25
 b24:
-  %209 = const 26
+  %209 = const 23
   call @rt.panic(%209)
   exit 101
 b25:
   %210 = lt %206, %205
   condbr %210, b26, b27
 b26:
-  %211 = const 27
+  %211 = const 24
   call @rt.panic(%211)
   exit 101
 b27:
@@ -5413,7 +5337,7 @@ b27:
   %213 = gt %206, %212
   condbr %213, b28, b29
 b28:
-  %214 = const 28
+  %214 = const 25
   call @rt.panic(%214)
   exit 101
 b29:
@@ -5583,7 +5507,7 @@ b2:
   call @"std/builder.pushSlow[byte]"(%0, %1)
   br b7
 b3:
-  %15 = const 29
+  %15 = const 26
   call @rt.panic(%15)
   exit 101
 b4:
@@ -5604,7 +5528,7 @@ b4:
   %27 = uge %25, %26
   condbr %27, b5, b6
 b5:
-  %28 = const 30
+  %28 = const 27
   call @rt.panic(%28)
   exit 101
 b6:
@@ -5799,7 +5723,7 @@ b21(%95 i64):
   %100 = uge %98, %99
   condbr %100, b22, b23
 b22:
-  %101 = const 31
+  %101 = const 28
   call @rt.panic(%101)
   exit 101
 b23:
@@ -5944,7 +5868,7 @@ b39:
   store %112[0], %113
   br b24
 b40:
-  %194 = const 32
+  %194 = const 29
   call @rt.panic(%194)
   exit 101
 b41:
@@ -6027,7 +5951,7 @@ b4:
   %91 = gt %12, %90
   condbr %91, b23, b24
 b5:
-  %23 = const 33
+  %23 = const 30
   call @rt.panic(%23)
   exit 101
 b6:
@@ -6120,7 +6044,7 @@ b18:
   region.setdepth %60
   br b9
 b19:
-  %69 = const 34
+  %69 = const 31
   call @rt.panic(%69)
   exit 101
 b20:
@@ -6132,7 +6056,7 @@ b20:
   %75 = uge %65, %74
   condbr %75, b21, b22
 b21:
-  %76 = const 35
+  %76 = const 32
   call @rt.panic(%76)
   exit 101
 b22:
@@ -6226,7 +6150,7 @@ b7:
   %40 = uge %38, %39
   condbr %40, b10, b11
 b8:
-  %29 = const 36
+  %29 = const 33
   call @rt.panic(%29)
   exit 101
 b9:
@@ -6243,7 +6167,7 @@ b9:
   store %13[0], %37
   br b31
 b10:
-  %41 = const 37
+  %41 = const 34
   call @rt.panic(%41)
   exit 101
 b11:
@@ -6361,7 +6285,7 @@ b26:
   region.setdepth %93
   br b17
 b27:
-  %104 = const 38
+  %104 = const 35
   call @rt.panic(%104)
   exit 101
 b28:
@@ -6373,7 +6297,7 @@ b28:
   %110 = uge %98, %109
   condbr %110, b29, b30
 b29:
-  %111 = const 39
+  %111 = const 36
   call @rt.panic(%111)
   exit 101
 b30:
@@ -6456,7 +6380,7 @@ b4:
   call @std/builder.pushWordSlow(%0, %1, %2)
   br b14
 b5:
-  %20 = const 40
+  %20 = const 37
   call @rt.panic(%20)
   exit 101
 b6:
@@ -6509,7 +6433,7 @@ b9:
   store %64[0], %62
   br b14
 b10:
-  %45 = const 41
+  %45 = const 38
   call @rt.panic(%45)
   exit 101
 b11:
@@ -6517,7 +6441,7 @@ b11:
   %47 = uge %39, %46
   condbr %47, b12, b13
 b12:
-  %48 = const 42
+  %48 = const 39
   call @rt.panic(%48)
   exit 101
 b13:
@@ -6576,7 +6500,7 @@ b3:
   region.setdepth %3
   ret
 b4:
-  %22 = const 43
+  %22 = const 40
   call @rt.panic(%22)
   exit 101
 b5:
@@ -6683,7 +6607,7 @@ b6:
   region.setdepth %2
   ret
 b7:
-  %47 = const 44
+  %47 = const 41
   call @rt.panic(%47)
   exit 101
 b8:
@@ -6849,7 +6773,7 @@ b29:
   region.setdepth %131
   br b14
 b30:
-  %142 = const 45
+  %142 = const 42
   call @rt.panic(%142)
   exit 101
 b31:
@@ -6958,7 +6882,7 @@ b2:
   call @"std/builder.pushBetweenSlow[byte]"(%0, %1, %114, %115, %116, %5)
   br b25
 b3:
-  %24 = const 46
+  %24 = const 43
   call @rt.panic(%24)
   exit 101
 b4:
@@ -6979,7 +6903,7 @@ b4:
   %36 = uge %34, %35
   condbr %36, b5, b6
 b5:
-  %37 = const 47
+  %37 = const 44
   call @rt.panic(%37)
   exit 101
 b6:
@@ -7059,7 +6983,7 @@ b18:
   region.setdepth %69
   br b9
 b19:
-  %78 = const 48
+  %78 = const 45
   call @rt.panic(%78)
   exit 101
 b20:
@@ -7071,7 +6995,7 @@ b20:
   %84 = uge %74, %83
   condbr %84, b21, b22
 b21:
-  %85 = const 49
+  %85 = const 46
   call @rt.panic(%85)
   exit 101
 b22:
@@ -7085,7 +7009,7 @@ b22:
   store %44[0], %91
   br b16
 b23:
-  %95 = const 50
+  %95 = const 47
   call @rt.panic(%95)
   exit 101
 b24:
@@ -7152,7 +7076,6 @@ b0:
 
 func @std/internal/jsonw.Grow(%0 ptr, %1 i64) {
   slot s0 [3]
-  slot s1 [3]
 b0:
   %2 = region.depth
   %3 = globaladdr @rt.meta
@@ -7161,131 +7084,92 @@ b0:
   %6 = eq %4, %5
   %7 = mul %6, %2
   %8 = add %4, %7
-  %9 = const 0
-  %10 = const 0
-  %11 = const 0
-  %12 = sub %1, %10
-  %13 = le %12, %9
-  condbr %13, b1, b2
-b1:
+  %9 = load.i64 %0[1]
+  %10 = load.i64 %0[2]
+  %13 = const 1
+  %14 = lt %1, %13
+  condbr %14, b3, b2
+b1(%11 ptr, %12 i64):
+  %58 = slotaddr s0
+  %59 = ptoi %11
+  store %58[0], %59
+  store %58[1], %12
+  store %58[2], %10
+  %60 = load.i64 %58[0]
+  store %0[0], %60
+  %61 = load.i64 %58[1]
+  store %0[1], %61
+  %62 = load.i64 %58[2]
+  store %0[2], %62
   region.setdepth %2
   ret
 b2:
-  %14 = slotaddr s0
+  %17 = load.i64 %0[0]
+  %18 = load.i64 %0[1]
+  %19 = add %17, %18
+  %22 = globaladdr @rt.btip
+  %23 = gep.word %22, %10
+  %24 = load.i64 %23[0]
+  %25 = eq %24, %19
+  condbr %25, b7, b5
+b3:
   %15 = load.i64 %0[0]
-  store %14[0], %15
-  %16 = load.i64 %0[1]
-  store %14[1], %16
-  %17 = load.i64 %0[2]
-  store %14[2], %17
-  %18 = load.i64 %14[2]
-  %19 = load.i64 %14[0]
-  %20 = load.i64 %14[1]
-  %21 = add %19, %20
-  %24 = globaladdr @rt.btip
-  %25 = gep.word %24, %18
-  %26 = load.i64 %25[0]
-  %27 = eq %26, %21
-  condbr %27, b6, b4
-b3(%22 ptr, %23 ptr):
-  %59 = const 255
-  %60 = and_ %11, %59
-  %61 = const 72340172838076673
-  %62 = mul %60, %61
-  %63 = const 3
-  %64 = sar %12, %63
-  %66 = const 0
-  br b11(%66)
-b4:
-  %55 = add %20, %12
-  %56 = call @rt.region_alloc8(%18, %55)
-  %57 = itop %19
-  call @rt.copy8(%56, %57, %20)
-  %58 = gep.byte %56, %20
-  br b3(%56, %58)
+  %16 = itop %15
+  br b1(%16, %9)
+b4(%20 ptr, %21 ptr):
+  %57 = add %9, %1
+  br b1(%20, %57)
 b5:
-  %53 = itop %19
-  %54 = gep.byte %53, %20
-  br b3(%53, %54)
+  %53 = add %18, %1
+  %54 = call @rt.region_alloc8(%10, %53)
+  %55 = itop %17
+  call @rt.copy8(%54, %55, %18)
+  %56 = gep.byte %54, %18
+  br b4(%54, %56)
 b6:
-  %28 = const 7
-  %29 = add %21, %28
-  %30 = const -8
-  %31 = and_ %29, %30
-  %32 = add %21, %12
-  %33 = const 7
-  %34 = add %32, %33
-  %35 = const -8
-  %36 = and_ %34, %35
-  %37 = globaladdr @rt.meta
-  %38 = gep.word %37, %18
-  %39 = load.i64 %38[1]
-  %40 = le %32, %31
-  %41 = eq %39, %31
-  %42 = or_ %40, %41
-  %43 = const 0
-  %44 = ne %42, %43
-  condbr %44, b7, b4
+  %51 = itop %17
+  %52 = gep.byte %51, %18
+  br b4(%51, %52)
 b7:
-  %45 = gt %36, %39
-  condbr %45, b8, b9
+  %26 = const 7
+  %27 = add %19, %26
+  %28 = const -8
+  %29 = and_ %27, %28
+  %30 = add %19, %1
+  %31 = const 7
+  %32 = add %30, %31
+  %33 = const -8
+  %34 = and_ %32, %33
+  %35 = globaladdr @rt.meta
+  %36 = gep.word %35, %10
+  %37 = load.i64 %36[1]
+  %38 = le %30, %29
+  %39 = eq %37, %29
+  %40 = or_ %38, %39
+  %41 = const 0
+  %42 = ne %40, %41
+  condbr %42, b8, b5
 b8:
-  %46 = load.i64 %37[1029]
-  %47 = const 1
-  %48 = add %18, %47
-  %49 = load.i64 %37[1030]
-  %50 = mul %48, %49
-  %51 = add %46, %50
-  %52 = gt %36, %51
-  condbr %52, b4, b10
+  %43 = gt %34, %37
+  condbr %43, b9, b10
 b9:
-  store %25[0], %32
-  br b5
+  %44 = load.i64 %35[1029]
+  %45 = const 1
+  %46 = add %10, %45
+  %47 = load.i64 %35[1030]
+  %48 = mul %46, %47
+  %49 = add %44, %48
+  %50 = gt %34, %49
+  condbr %50, b5, b11
 b10:
-  store %38[1], %36
-  br b9
-b11(%65 i64):
-  %67 = lt %65, %64
-  condbr %67, b12, b13
-b12:
-  %68 = const 3
-  %69 = shl %65, %68
-  %70 = gep.byte %23, %69
-  store %70[0], %62
-  %71 = const 1
-  %72 = add %65, %71
-  br b11(%72)
-b13:
-  %74 = const 3
-  %75 = shl %64, %74
-  br b14(%75)
-b14(%73 i64):
-  %76 = lt %73, %12
-  condbr %76, b15, b16
-b15:
-  %77 = gep.byte %23, %73
-  store8 %77[0], %11
-  %78 = const 1
-  %79 = add %73, %78
-  br b14(%79)
-b16:
-  %80 = load.i64 %14[1]
-  %81 = add %80, %12
-  %82 = slotaddr s1
-  %83 = ptoi %22
-  store %82[0], %83
-  store %82[1], %81
-  store %82[2], %18
-  %84 = load.i64 %82[0]
-  store %0[0], %84
-  %85 = load.i64 %82[1]
-  store %0[1], %85
-  %86 = load.i64 %82[2]
-  store %0[2], %86
-  br b1
+  store %23[0], %30
+  br b6
+b11:
+  store %36[1], %34
+  br b10
 }
 
-func @std/internal/jsonw.Word(%0 ptr, %1 i64, %2 i64) {
+func @std/internal/jsonw.word(%0 ptr, %1 i64, %2 i64) {
 b0:
   %3 = region.depth
   %4 = globaladdr @rt.meta
@@ -7321,7 +7205,7 @@ b5:
   ret
 }
 
-func @std/internal/jsonw.Word2(%0 ptr, %1 i64, %2 i64, %3 i64) {
+func @std/internal/jsonw.Put(%0 ptr, %1 i64, %2 i64, %3 i64) i64 {
 b0:
   %4 = region.depth
   %5 = globaladdr @rt.meta
@@ -7335,7 +7219,7 @@ b0:
   condbr %12, b2(%12), b1
 b1:
   %14 = load.i64 %0[1]
-  %15 = const 16
+  %15 = const 8
   %16 = sub %14, %15
   %17 = gt %1, %16
   br b2(%17)
@@ -7353,15 +7237,80 @@ b5:
   %21 = gep.byte %20, %1
   store %21[0], %2
   %22 = const 0
-  %23 = const 8
-  %24 = add %1, %23
-  %25 = load.i64 %0[0]
-  %26 = itop %25
-  %27 = gep.byte %26, %24
-  store %27[0], %3
-  %28 = const 0
+  %23 = add %1, %3
   region.setdepth %4
-  ret
+  ret %23
+}
+
+func @std/internal/jsonw.Put2(%0 ptr, %1 i64, %2 i64, %3 i64, %4 i64) i64 {
+b0:
+  %5 = region.depth
+  %6 = globaladdr @rt.meta
+  %7 = load.i64 %6[2572]
+  %8 = const 0
+  %9 = eq %7, %8
+  %10 = mul %9, %5
+  %11 = add %7, %10
+  %12 = const 0
+  %13 = lt %1, %12
+  condbr %13, b2(%13), b1
+b1:
+  %15 = load.i64 %0[1]
+  %16 = const 16
+  %17 = sub %15, %16
+  %18 = gt %1, %17
+  br b2(%18)
+b2(%14 i64):
+  condbr %14, b3, b4
+b3:
+  %19 = load.i64 %0[1]
+  call @std/internal/jsonw.overflow(%1, %19)
+  br b5
+b4:
+  br b5
+b5:
+  %20 = load.i64 %0[0]
+  %21 = itop %20
+  %22 = gep.byte %21, %1
+  store %22[0], %2
+  %23 = const 0
+  %24 = const 8
+  %25 = add %1, %24
+  %26 = load.i64 %0[0]
+  %27 = itop %26
+  %28 = gep.byte %27, %25
+  store %28[0], %3
+  %29 = const 0
+  %30 = add %1, %4
+  region.setdepth %5
+  ret %30
+}
+
+func @std/internal/jsonw.Byte(%0 ptr, %1 i64, %2 i64) i64 {
+b0:
+  %3 = region.depth
+  %4 = globaladdr @rt.meta
+  %5 = load.i64 %4[2572]
+  %6 = const 0
+  %7 = eq %5, %6
+  %8 = mul %7, %3
+  %9 = add %5, %8
+  %10 = load.i64 %0[1]
+  %11 = uge %1, %10
+  condbr %11, b1, b2
+b1:
+  %12 = const 48
+  call @rt.panic(%12)
+  exit 101
+b2:
+  %13 = load.i64 %0[0]
+  %14 = itop %13
+  %15 = gep.byte %14, %1
+  store8 %15[0], %2
+  %16 = const 1
+  %17 = add %1, %16
+  region.setdepth %3
+  ret %17
 }
 
 func @std/internal/jsonw.IntSize(%0 i64) i64 {
@@ -7497,7 +7446,7 @@ b0:
   store %52[1], %50
   store %52[2], %51
   call @rt.print_str(%52)
-  %54 = const 51
+  %54 = const 49
   call @rt.panic(%54)
   exit 101
 }
@@ -7631,7 +7580,7 @@ b10:
   %91 = load.i64 %17[0]
   %92 = globaladdr @rt.meta
   store %92[2572], %9
-  call @std/internal/jsonw.Word(%0, %1, %91)
+  call @std/internal/jsonw.word(%0, %1, %91)
   %93 = load.i64 %19[0]
   %94 = add %1, %93
   region.setdepth %3
@@ -7751,7 +7700,7 @@ b17:
   region.setdepth %47
   br b8
 b18:
-  %56 = const 52
+  %56 = const 50
   call @rt.panic(%56)
   exit 101
 b19:
@@ -7763,7 +7712,7 @@ b19:
   %62 = uge %52, %61
   condbr %62, b20, b21
 b20:
-  %63 = const 53
+  %63 = const 51
   call @rt.panic(%63)
   exit 101
 b21:
@@ -7804,14 +7753,14 @@ b0:
   %19 = lt %17, %18
   condbr %19, b1, b2
 b1:
-  %20 = const 54
+  %20 = const 52
   call @rt.panic(%20)
   exit 101
 b2:
   %21 = lt %4, %17
   condbr %21, b3, b4
 b3:
-  %22 = const 55
+  %22 = const 53
   call @rt.panic(%22)
   exit 101
 b4:
@@ -7819,7 +7768,7 @@ b4:
   %24 = gt %4, %23
   condbr %24, b5, b6
 b5:
-  %25 = const 56
+  %25 = const 54
   call @rt.panic(%25)
   exit 101
 b6:

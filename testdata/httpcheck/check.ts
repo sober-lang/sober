@@ -170,6 +170,8 @@ async function baseline() {
         await one(`GET random ${a},${b}`, `GET /baseline11?a=${a}&b=${b} HTTP/1.1\r\n${H}Connection: close\r\n\r\n`, 200, String(a + b));
         await one(`POST random body ${body}`, `POST /baseline11?a=13&b=42 HTTP/1.1\r\n${H}Content-Length: ${String(body).length}\r\nConnection: close\r\n\r\n${body}`, 200, String(55 + body));
     }
+    // HeaderList: 受けた順・名前は小文字・認証のヘッダは含まない
+    await one("header list", `GET /headers HTTP/1.1\r\n${H}X-Spec-Probe: AbC\r\nAuthorization: Bearer t\r\nCookie: a=1\r\nX-Spec-Probe: 2\r\nConnection: close\r\n\r\n`, 200, "host: localhost\nx-spec-probe: AbC\nx-spec-probe: 2\nconnection: close\n");
     await one("lower-cased headers", `POST /baseline11?a=13&b=42 HTTP/1.1\r\nhost: localhost\r\ncontent-type: text/plain\r\ncontent-length: 2\r\nconnection: close\r\n\r\n20`, 200, "75");
     await one("pipeline", `GET /pipeline HTTP/1.1\r\n${H}Connection: close\r\n\r\n`, 200, "ok", { ctype: "text/plain" });
     await one("404", `GET /nope HTTP/1.1\r\n${H}Connection: close\r\n\r\n`, 404, "");
@@ -305,26 +307,81 @@ async function errors() {
     await e("two spaces", "GET  / HTTP/1.1\r\n\r\n", 400);
     await e("extra token", "GET / HTTP/1.1 x\r\n\r\n", 400);
     await e("HTTP/2.0", "GET / HTTP/2.0\r\n\r\n", 505);
+    // 版の文字列の形の誤り（RFC 9112 2.3）= 400・形は正しく対応しない版 = 505
+    await e("version missing minor", `GET / HTTP/1\r\n${H}\r\n`, 400);
+    await e("version leading zeros", `GET / HTTP/01.01\r\n${H}\r\n`, 400);
+    await e("HTTP/1.2", `GET / HTTP/1.2\r\n${H}\r\n`, 505);
     await e("obs-fold", `GET / HTTP/1.1\r\n${H}X-A: 1\r\n  continued\r\n\r\n`, 400);
     await e("space before colon", `GET / HTTP/1.1\r\nHost : x\r\n\r\n`, 400);
     await e("no colon", `GET / HTTP/1.1\r\nHost\r\n\r\n`, 400);
-    await e("bare CR", `GET / HTTP/1.1\r\nX-A: a\rb\r\n\r\n`, 400);
-    await e("CL not digits", `POST / HTTP/1.1\r\nContent-Length: 1x\r\n\r\n1`, 400);
-    await e("CL twice differ", `POST / HTTP/1.1\r\nContent-Length: 1\r\nContent-Length: 2\r\n\r\n12`, 400);
-    await e("CL + TE", `POST / HTTP/1.1\r\nContent-Length: 1\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n`, 400);
-    await e("TE gzip", `POST / HTTP/1.1\r\nTransfer-Encoding: gzip\r\n\r\n`, 501);
-    await e("chunk size bad", `POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\nzz\r\n`, 400);
-    await e("chunk no CRLF after data", `POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n1\r\nab\r\n0\r\n\r\n`, 400);
-    await e("invalid UTF-8 path", Buffer.concat([Buffer.from("GET /\xff HTTP/1.1\r\n", "latin1"), Buffer.from("\r\n")]), 400);
-    await e("CL > 16 KiB", `POST / HTTP/1.1\r\nContent-Length: 16385\r\n\r\n`, 413);
-    await e("chunked > 16 KiB", `POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n4001\r\n`, 413);
-    await e("head > 8 KiB", `GET / HTTP/1.1\r\nX-Big: ${"a".repeat(9000)}\r\n\r\n`, 431);
+    await e("bare CR", `GET / HTTP/1.1\r\n${H}X-A: a\rb\r\n\r\n`, 400);
+    await e("CL not digits", `POST / HTTP/1.1\r\n${H}Content-Length: 1x\r\n\r\n1`, 400);
+    await e("CL twice differ", `POST / HTTP/1.1\r\n${H}Content-Length: 1\r\nContent-Length: 2\r\n\r\n12`, 400);
+    await e("CL + TE", `POST / HTTP/1.1\r\n${H}Content-Length: 1\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n`, 400);
+    // Transfer-Encoding（RFC 9112 6.1）: chunked が 1 回だけ最後に無い形と文法の誤りは 400・文法は正しくほかの符号化を含む形は 501
+    await e("TE gzip", `POST / HTTP/1.1\r\n${H}Transfer-Encoding: gzip\r\n\r\n`, 400);
+    await e("TE gzip, chunked", `POST / HTTP/1.1\r\n${H}Transfer-Encoding: gzip, chunked\r\n\r\n0\r\n\r\n`, 501);
+    await e("TE chunked, chunked", `POST / HTTP/1.1\r\n${H}Transfer-Encoding: chunked, chunked\r\nContent-Length: 5\r\n\r\nhello`, 400);
+    await e("TE chunked not final", `POST / HTTP/1.1\r\n${H}Transfer-Encoding: chunked, gzip\r\n\r\n0\r\n\r\n`, 400);
+    await e("TE empty", `POST / HTTP/1.1\r\n${H}Transfer-Encoding: \r\nContent-Length: 5\r\n\r\nhello`, 400);
+    // 空の要素は読み飛ばす（RFC 9110 5.6.1）
+    await one("TE leading comma", `POST /pipeline HTTP/1.1\r\n${H}Transfer-Encoding: , chunked\r\nConnection: close\r\n\r\n0\r\n\r\n`, 200, "ok");
+    await one("TE trailing comma", `POST /pipeline HTTP/1.1\r\n${H}Transfer-Encoding: chunked,\r\nConnection: close\r\n\r\n0\r\n\r\n`, 200, "ok");
+    await e("TE two lines", `POST / HTTP/1.1\r\n${H}Transfer-Encoding: chunked\r\nTransfer-Encoding: identity\r\nContent-Length: 5\r\n\r\nhello`, 400);
+    await e("TE vertical tab", `POST / HTTP/1.1\r\n${H}Transfer-Encoding: \x0bchunked\r\nContent-Length: 5\r\n\r\nhello`, 400);
+    await e("TE in HTTP/1.0", "POST / HTTP/1.0\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n", 400);
+    await e("TE NUL", `POST / HTTP/1.1\r\n${H}Transfer-Encoding: chunked\0\r\nContent-Length: 5\r\n\r\nhello`, 400);
+    await e("chunk size bad", `POST / HTTP/1.1\r\n${H}Transfer-Encoding: chunked\r\n\r\nzz\r\n`, 400);
+    await e("chunk no CRLF after data", `POST / HTTP/1.1\r\n${H}Transfer-Encoding: chunked\r\n\r\n1\r\nab\r\n0\r\n\r\n`, 400);
+    await e("invalid UTF-8 path", Buffer.concat([Buffer.from(`GET /\xff HTTP/1.1\r\n${H}`, "latin1"), Buffer.from("\r\n")]), 400);
+    await e("CL > 16 KiB", `POST / HTTP/1.1\r\n${H}Content-Length: 16385\r\n\r\n`, 413);
+    await e("chunked > 16 KiB", `POST / HTTP/1.1\r\n${H}Transfer-Encoding: chunked\r\n\r\n4001\r\n`, 413);
+    // 空白の無い長すぎるメソッド = 501（RFC 9112 3）
+    await e("method > 8 KiB", "G".repeat(9000), 501);
+    // どのルートにも一致しない CONNECT = 501（RFC 9110 9.1）・asterisk-form は OPTIONS 以外は 400（RFC 9112 3.2）・OPTIONS * は 404
+    await one("CONNECT", `CONNECT localhost:443 HTTP/1.1\r\n${H}Connection: close\r\n\r\n`, 501, null);
+    await one("GET *", `GET * HTTP/1.1\r\n${H}Connection: close\r\n\r\n`, 400, null);
+    await one("OPTIONS *", `OPTIONS * HTTP/1.1\r\n${H}Connection: close\r\n\r\n`, 404, null);
+    // ターゲットの NUL と制御文字（RFC 9112 3.2）= 400。0x80 以上のバイトは UTF-8 として受ける
+    await e("target NUL", `GET /a\0b HTTP/1.1\r\n${H}\r\n`, 400);
+    await e("target control", `GET /a\x01b HTTP/1.1\r\n${H}\r\n`, 400);
+    await e("target tab", `GET /a\tb HTTP/1.1\r\n${H}\r\n`, 400);
+    await one("target raw UTF-8", Buffer.from(`GET /パス HTTP/1.1\r\n${H}Connection: close\r\n\r\n`, "utf8"), 404, null);
+    // trailer（RFC 9112 7.1.2）: ヘッダの行と同じ文法
+    await one("trailer ok", `POST /pipeline HTTP/1.1\r\n${H}Transfer-Encoding: chunked\r\nConnection: close\r\n\r\n0\r\nX-T: 1\r\n\r\n`, 200, "ok");
+    await e("trailer no colon", `POST /pipeline HTTP/1.1\r\n${H}Transfer-Encoding: chunked\r\n\r\n0\r\nno colon\r\n\r\n`, 400);
+    await e("trailer bad name", `POST /pipeline HTTP/1.1\r\n${H}Transfer-Encoding: chunked\r\n\r\n0\r\nBad Name: 1\r\n\r\n`, 400);
+    await e("trailer NUL", `POST /pipeline HTTP/1.1\r\n${H}Transfer-Encoding: chunked\r\n\r\n0\r\nX-T: a\0b\r\n\r\n`, 400);
+    // Host（RFC 9112 3.2）: HTTP/1.1 で無い・2 本（同じ値も）・userinfo・path・空・コンマ = 400
+    await e("Host missing", "GET / HTTP/1.1\r\n\r\n", 400);
+    await e("Host twice", `GET / HTTP/1.1\r\n${H}Host: other.example.com\r\n\r\n`, 400);
+    await e("Host twice same", `GET / HTTP/1.1\r\n${H}${H}\r\n`, 400);
+    await e("Host userinfo", "GET / HTTP/1.1\r\nHost: user@localhost\r\n\r\n", 400);
+    await e("Host path", "GET / HTTP/1.1\r\nHost: localhost/path\r\n\r\n", 400);
+    await e("Host empty", "GET / HTTP/1.1\r\nHost: \r\n\r\n", 400);
+    await e("Host comma", "GET / HTTP/1.1\r\nHost: localhost, other.example.com\r\n\r\n", 400);
+    // ヘッダの値の制御文字（RFC 9110 5.5）: NUL・BEL・BS・VT・DEL = 400
+    await e("NUL in value", `GET / HTTP/1.1\r\n${H}X-Test: val\0ue\r\n\r\n`, 400);
+    await e("control chars in value", `GET / HTTP/1.1\r\n${H}X-Test: abc\x07\x08\x0bdef\r\n\r\n`, 400);
+    await e("DEL in value", `GET / HTTP/1.1\r\n${H}X-Test: a\x7fb\r\n\r\n`, 400);
+    // chunk-ext（RFC 9112 7.1.1）: 桁の後の空白で終わる・名前が無い・token の外の字・NUL・裸の CR = 400
+    await e("chunk size trailing OWS", `POST / HTTP/1.1\r\n${H}Transfer-Encoding: chunked\r\n\r\n5 \r\nhello\r\n0\r\n\r\n`, 400);
+    await e("chunk bare semicolon", `POST / HTTP/1.1\r\n${H}Transfer-Encoding: chunked\r\n\r\n5;\r\nhello\r\n0\r\n\r\n`, 400);
+    await e("chunk ext invalid token", `POST / HTTP/1.1\r\n${H}Transfer-Encoding: chunked\r\n\r\n5;bad[=x\r\nhello\r\n0\r\n\r\n`, 400);
+    await e("chunk ext NUL", `POST / HTTP/1.1\r\n${H}Transfer-Encoding: chunked\r\n\r\n5;\0ext\r\nhello\r\n0\r\n\r\n`, 400);
+    await e("chunk ext bare CR", `POST / HTTP/1.1\r\n${H}Transfer-Encoding: chunked\r\n\r\n5;a\rX\r\nhello\r\n0\r\n\r\n`, 400);
+    await e("target > 8 KiB", `GET /${"a".repeat(9000)} HTTP/1.1\r\n${H}\r\n`, 414);
+    await e("head > 8 KiB", `GET / HTTP/1.1\r\n${H}X-Big: ${"a".repeat(9000)}\r\n\r\n`, 431);
+    await one("chunk ext quoted-string", `POST /pipeline HTTP/1.1\r\n${H}Transfer-Encoding: chunked\r\nConnection: close\r\n\r\n2 ; a = "q\\"s" ; b\r\nok\r\n0\r\n\r\n`, 200, "ok");
+    await one("HTTP/1.0 without Host", "GET /pipeline HTTP/1.0\r\n\r\n", 200, "ok");
+    await one("Host IPv6 literal and port", "GET /pipeline HTTP/1.1\r\nHost: [::1]:8080\r\nConnection: close\r\n\r\n", 200, "ok");
+    await one("HTAB and obs-text in value", Buffer.concat([Buffer.from(`GET /pipeline HTTP/1.1\r\n${H}X-A: a\tb\r\nX-B: `), Buffer.from([0xc3, 0xa9]), Buffer.from("\r\nConnection: close\r\n\r\n")]), 200, "ok");
     // 上限ちょうどは通る（本文 16384）
     const big = "1".repeat(16384);
-    await one("CL = 16 KiB ok", `POST /pipeline HTTP/1.1\r\nContent-Length: 16384\r\nConnection: close\r\n\r\n${big}`, 200, "ok");
-    const fb = await exchange([`POST /pipeline HTTP/1.1\r\nContent-Length: 16384\r\nConnection: close\r\n\r\n${big.slice(0, 5000)}`, big.slice(5000, 9000), big.slice(9000, 16000), big.slice(16000)], 1, 30);
+    await one("CL = 16 KiB ok", `POST /pipeline HTTP/1.1\r\n${H}Content-Length: 16384\r\nConnection: close\r\n\r\n${big}`, 200, "ok");
+    const fb = await exchange([`POST /pipeline HTTP/1.1\r\n${H}Content-Length: 16384\r\nConnection: close\r\n\r\n${big.slice(0, 5000)}`, big.slice(5000, 9000), big.slice(9000, 16000), big.slice(16000)], 1, 30);
     ok("CL = 16 KiB fragmented ok", fb.resps[0]?.body === "ok", `got ${fb.resps[0]?.status}`);
-    const r = await exchange([`POST /pipeline HTTP/1.1\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n`, ...Array.from({ length: 16 }, () => `400\r\n${"x".repeat(1024)}\r\n`), "0\r\n\r\n"], 1, 5);
+    const r = await exchange([`POST /pipeline HTTP/1.1\r\n${H}Transfer-Encoding: chunked\r\nConnection: close\r\n\r\n`, ...Array.from({ length: 16 }, () => `400\r\n${"x".repeat(1024)}\r\n`), "0\r\n\r\n"], 1, 5);
     ok("chunked 16 x 1 KiB ok", r.resps[0]?.body === "ok", `got ${r.resps[0]?.status}`);
 }
 
@@ -1244,7 +1301,7 @@ async function originEp() {
         const cc = x?.headers.get("cache-control") ?? "";
         return /public|max-age/.test(cc) && !/private|no-store/.test(cc);
     };
-    const paths = staticDir ? ["/shared/index.html", "/shared/app.js", "/shared/nope", "/pub", "/pub?x=1", "/me"] : ["/pub", "/pub?x=1", "/me"];
+    const paths = staticDir ? ["/shared/index.html", "/shared/app.js", "/shared/nope", "/pub", "/pub?x=1", "/me", "/login"] : ["/pub", "/pub?x=1", "/me", "/login"];
     for (const p of paths) {
         const rs: (Resp | undefined)[] = [];
         for (const c of creds) {
@@ -1254,10 +1311,16 @@ async function originEp() {
         if (rs.some((x) => shared(x))) {
             ok(`origin shared ${p} independent of credentials`, rs.every((x) => key(x) === key(rs[0])), rs.map((x) => `${x?.status}:${x?.body?.slice(0, 20)}`).join(" | "));
         }
+        // 共有キャッシュに保存されうるレスポンス（no-cacheを含む）はSet-Cookieを持たない
+        const stored = (x: Resp | undefined) => { const cc = x?.headers.get("cache-control"); return cc === undefined || (!/private|no-store/.test(cc)); };
+        ok(`origin stored ${p} has no Set-Cookie`, rs.every((x) => !stored(x) || !x?.headers.has("set-cookie")), rs.map((x) => `${x?.headers.get("cache-control")}/${x?.headers.get("set-cookie")}`).join(" | "));
     }
     const m = await Promise.all(creds.map(async (c) => (await exchange([`GET /me HTTP/1.1\r\n${H}${c}Connection: close\r\n\r\n`], 1)).resps[0]));
     ok("origin /me depends on credentials and is private", m[0]?.body === "sid=-" && m[1]?.body === "sid=alice" && m.every((x) => x?.headers.get("cache-control") === "private"),
         m.map((x) => `${x?.body}/${x?.headers.get("cache-control")}`).join(" | "));
+    const li = (await exchange([`GET /login HTTP/1.1\r\n${H}Connection: close\r\n\r\n`], 1)).resps[0];
+    ok("origin /login keeps Set-Cookie under Private", li?.headers.get("cache-control") === "private, max-age=30" && (li?.headers.get("set-cookie") ?? "").startsWith("sid=s1;"),
+        `cc=${li?.headers.get("cache-control")} sc=${li?.headers.get("set-cookie")}`);
     const pub = (await exchange([`GET /pub HTTP/1.1\r\n${H}Connection: close\r\n\r\n`], 1)).resps[0];
     ok("origin /pub is shared (Fresh)", pub?.headers.get("cache-control") === "max-age=60", `cc=${pub?.headers.get("cache-control")}`);
     if (staticDir) {

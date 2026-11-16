@@ -1,30 +1,30 @@
 # Sober vs Go — 現在地
 
-- 逐次9題材（対Go・CPU時間〔task-clock〕・±5%を互角）: 勝ち6・互角3（spectral-norm 0.98×・fannkuch-redux 1.03×・mandelbrot 1.03×）・負け0。最も差が大きいのはbinary-trees 0.31× <!-- benchsync:bench-go -->
-- RSSは9題材中9題材でGo以下（0.002×〜0.82×）。上回る題材は無い <!-- benchsync:bench-rss-go -->
-- 対Rustの比較用の実装（逐次9題材・2026-10-25）: Soberの4勝・3互角・2敗（負けはreverse-complement 1.47×・n-body 1.17× — 下の「Rustの実装との比較」） <!-- benchsync:bench-rust -->
+- 逐次9題材（対Go・CPU時間〔task-clock〕・±5%を互角）: 勝ち6・互角3（spectral-norm 0.98×・fannkuch-redux 1.01×・mandelbrot 1.04×）・負け0。最も差が大きいのはbinary-trees 0.30× <!-- benchsync:bench-go -->
+- RSSは9題材中9題材でGo以下（0.002×〜0.92×）。上回る題材は無い <!-- benchsync:bench-rss-go -->
+- 対Rustの比較用の実装（逐次9題材・2026-11-14）: Soberの6勝・2互角・1敗（負けはn-body 1.17× — 下の「Rustの実装との比較」） <!-- benchsync:bench-rust -->
 - 並列: Skynet（111万task）はGoの5倍速く、binary-trees並列はW8で2.5倍速い。RSSは1/17〜1/500（Skynet — 2026-10-10取り直し）。メモリの上限を下げても死なず、逐次の速さまで滑らかに落ちる（[par/README.md](par/README.md)）
 
-最終更新2026-10-25（逐次 = 木a8bfbd8a — GitHub Actions linux-x64-16vcpu（AMD EPYC 9V45 96-Core Processor・kernel 6.17.0-1022-azure・run 40160907459） で `bench/seqperf.sh -n 5 --rust`・raw = bench/data/raw/2026-10-25-40160907459/seqperf.tsv・数字の正 = [data/official.tsv](data/official.tsv)。並列 = 2026-10-08〜10の手元の取り直しのまま — 日付は [par/README.md](par/README.md) の各節）。生データと測り方は [par/README.md](par/README.md)（並列）と本ファイルの末尾（逐次）。 <!-- benchsync:bench-updated -->
+最終更新2026-11-14（逐次 = 木95d41d6a — GitHub Actions linux-x64-16vcpu（AMD EPYC 9V45 96-Core Processor・kernel 7.0.0-1017-azure・run 43596331186） で `bench/seqperf.sh -n 5 --rust`・raw = bench/data/raw/2026-11-14-43596331186/seqperf.tsv・数字の正 = [data/official.tsv](data/official.tsv)。並列 = 2026-10-08〜10の手元の取り直しのまま — 日付は [par/README.md](par/README.md) の各節）。生データと測り方は [par/README.md](par/README.md)（並列）と本ファイルの末尾（逐次）。 <!-- benchsync:bench-updated -->
 
 ## 1. 逐次9題材
 
 <!-- benchsync:begin bench-seq -->
 | 題材（規模） | CPU時間 中央s Sober / Go | 比 | wall中央s Sober / Go | 比 | 最大RSS MB Sober / Go | 比 |
 |---|---|---|---|---|---|---|
-| 1BRC（1,000万行）※ | 0.241 / 0.372 | 0.65× | 0.25 / 0.38 | 0.66× | 0.4 / 240 | 0.002× |
-| binary-trees（18） | 0.510 / 1.679 | 0.31× | 0.52 / 1.69 | 0.31× | 17 / 51 | 0.34× |
-| fannkuch-redux（11） | 2.149 / 2.078 | 1.03× | 2.16 / 2.09 | 1.03× | 0.3 / 5.7 | 0.05× |
-| fasta（250万） | 0.193 / 0.306 | 0.63× | 0.22 / 0.33 | 0.67× | 0.3 / 3.5 | 0.07× |
-| reverse-complement | 0.047 / 0.060 | 0.79× | 0.06 / 0.07 | 0.86× | 24 / 30 | 0.82× |
-| k-nucleotide | 0.825 / 2.681 | 0.31× | 0.84 / 2.69 | 0.31× | 53 / 78 | 0.67× |
-| n-body（500万） | 0.196 / 0.295 | 0.67× | 0.20 / 0.30 | 0.67× | 0.3 / 5.7 | 0.05× |
-| spectral-norm（2000） | 0.148 / 0.151 | 0.98× | 0.16 / 0.16 | 0.99× | 0.3 / 5.7 | 0.04× |
-| mandelbrot（4000） | 0.773 / 0.746 | 1.03× | 0.78 / 0.76 | 1.04× | 1.9 / 5.7 | 0.33× |
+| 1BRC（1,000万行）※ | 0.256 / 0.471 | 0.54× | 0.28 / 0.51 | 0.55× | 0.5 / 237 | 0.002× |
+| binary-trees（18） | 0.530 / 1.792 | 0.30× | 0.56 / 1.82 | 0.31× | 17 / 49 | 0.35× |
+| fannkuch-redux（11） | 2.222 / 2.229 | 1.01× | 2.25 / 2.25 | 1.00× | 0.3 / 2.0 | 0.13× |
+| fasta（250万） | 0.211 / 0.324 | 0.65× | 0.25 / 0.36 | 0.70× | 0.3 / 1.8 | 0.14× |
+| reverse-complement | 0.039 / 0.071 | 0.55× | 0.07 / 0.10 | 0.67× | 24 / 26 | 0.92× |
+| k-nucleotide | 0.884 / 2.930 | 0.30× | 0.91 / 2.96 | 0.31× | 53 / 75 | 0.70× |
+| n-body（500万） | 0.208 / 0.312 | 0.66× | 0.23 / 0.34 | 0.69× | 0.3 / 2.0 | 0.13× |
+| spectral-norm（2000） | 0.158 / 0.161 | 0.98× | 0.18 / 0.18 | 1.00× | 0.3 / 2.0 | 0.13× |
+| mandelbrot（4000） | 0.829 / 0.798 | 1.04× | 0.85 / 0.82 | 1.04× | 1.9 / 2.0 | 0.92× |
 <!-- benchsync:end bench-seq -->
 
 <!-- benchsync:begin bench-method -->
-GitHub Actions linux-x64-16vcpu（AMD EPYC 9V45 96-Core Processor・kernel 6.17.0-1022-azure・run 40160907459） の1つのvCPU（最後のvCPU）に固定し、Sober → Go → Rustの交互で5周測った（準備の後にloadavgが1.5を割るまで待ってから）。指標はCPU時間（task-clock — カーネルの時間を含む）で、比は同じ周の対（Soberの周i / 相手の周i）の比の5周の中央をとる（周ごとに全実装に同時に乗るマシンの揺れが打ち消される — 同じマシンで3 runの比の幅は最大3.7%・report-922）。表のCPU時間とwallは中央、RSSは最大。GitHub ActionsのVMはハードウェアのカウンタを出さないのでcyclesと命令数は無い（命令数の規律はgatesのラチェットが見る）。数字の正は [data/official.tsv](data/official.tsv) で、表と要約の行は `scripts/benchsync.sh` が生成する（gatesのbenchsyncが文書との一致を見る）。出力は毎回Sober ≡ Go ≡ Rustで、fasta / revcomp / k-nucleotide / n-body / spectral-norm / mandelbrotはbenchmarks gameの公式の期待出力とも一致する。公式の再現: `.github/workflows/bench-official.yml`（workflow_dispatch）→ `scripts/benchfetch.sh <run-id>`。手元: `scripts/bench.sh -n 5`（実行ファイルと入力を置く）→ `bench/seqperf.sh -n 5 --rust`。
+GitHub Actions linux-x64-16vcpu（AMD EPYC 9V45 96-Core Processor・kernel 7.0.0-1017-azure・run 43596331186） の1つのvCPU（最後のvCPU）に固定し、Sober → Go → Rustの交互で5周測った（準備の後にloadavgが1.5を割るまで待ってから）。指標はCPU時間（task-clock — カーネルの時間を含む）で、比は同じ周の対（Soberの周i / 相手の周i）の比の5周の中央をとる（周ごとに全実装に同時に乗るマシンの揺れが打ち消される — 同じマシンで3 runの比の幅は最大3.7%・report-922）。表のCPU時間とwallは中央、RSSは最大。GitHub ActionsのVMはハードウェアのカウンタを出さないのでcyclesと命令数は無い（命令数の規律はgatesのラチェットが見る）。数字の正は [data/official.tsv](data/official.tsv) で、表と要約の行は `scripts/benchsync.sh` が生成する（gatesのbenchsyncが文書との一致を見る）。出力は毎回Sober ≡ Go ≡ Rustで、fasta / revcomp / k-nucleotide / n-body / spectral-norm / mandelbrotはbenchmarks gameの公式の期待出力とも一致する。公式の再現: `.github/workflows/bench-official.yml`（workflow_dispatch）→ `scripts/benchfetch.sh <run-id>`。手元: `scripts/bench.sh -n 5`（実行ファイルと入力を置く）→ `bench/seqperf.sh -n 5 --rust`。
 <!-- benchsync:end bench-method -->
 
 - 指標はCPU時間（task-clock）。2026-10-19までの手元（WSL2）のcycles:uは利用者の空間だけを数えたが、task-clockはカーネルの時間（ファイルの読み込み・ページフォールト）も含む — 入力を読む題材（1BRC・Web 3本）は比が動く。wallは参考 <!-- benchsync:bench-metric-note -->
@@ -45,35 +45,35 @@ GitHub Actions linux-x64-16vcpu（AMD EPYC 9V45 96-Core Processor・kernel 6.17.
 Soberはstdを焼き込んだ単一バイナリなので、冷 / 温の区別がほぼない。Goの温（runtime / stdがキャッシュ済み）はSoberより2.5〜3倍速い。
 
 <!-- benchsync:begin bench-rust-table -->
-### Rustの実装との比較（2026-10-25 — 木a8bfbd8a）
+### Rustの実装との比較（2026-11-14 — 木95d41d6a）
 
 | 題材 | CPU時間 中央s Sober / Go / Rust | Sober / Rust | Go / Rust | wall中央s Sober / Go / Rust | 最大RSS MB Sober / Go / Rust |
 |---|---|---|---|---|---|
-| 1BRC ※ | 0.241 / 0.372 / 0.269 | 0.90× | 1.38× | 0.25 / 0.38 / 0.28 | 0.4 / 240 / 135 |
-| binary-trees | 0.510 / 1.679 / 0.717 | 0.73× | 2.37× | 0.52 / 1.69 / 0.73 | 17 / 51 / 34 |
-| fannkuch-redux | 2.149 / 2.078 / 2.216 | 0.97× | 0.93× | 2.16 / 2.09 / 2.23 | 0.3 / 5.7 / 2.2 |
-| fasta | 0.193 / 0.306 / 0.254 | 0.76× | 1.20× | 0.22 / 0.33 / 0.27 | 0.3 / 3.5 / 2.2 |
-| reverse-complement | 0.047 / 0.060 / 0.032 | 1.47× | 1.85× | 0.06 / 0.07 / 0.04 | 24 / 30 / 26 |
-| k-nucleotide | 0.825 / 2.681 / 1.227 | 0.67× | 2.19× | 0.84 / 2.69 / 1.24 | 53 / 78 / 53 |
-| n-body | 0.196 / 0.295 / 0.168 | 1.17× | 1.76× | 0.20 / 0.30 / 0.18 | 0.3 / 5.7 / 2.1 |
-| spectral-norm | 0.148 / 0.151 / 0.144 | 1.03× | 1.05× | 0.16 / 0.16 / 0.15 | 0.3 / 5.7 / 2.3 |
-| mandelbrot | 0.773 / 0.746 / 0.768 | 1.01× | 0.98× | 0.78 / 0.76 / 0.78 | 1.9 / 5.7 / 2.2 |
+| 1BRC ※ | 0.256 / 0.471 / 0.332 | 0.77× | 1.42× | 0.28 / 0.51 / 0.36 | 0.5 / 237 / 135 |
+| binary-trees | 0.530 / 1.792 / 0.761 | 0.70× | 2.37× | 0.56 / 1.82 / 0.79 | 17 / 49 / 34 |
+| fannkuch-redux | 2.222 / 2.229 / 2.377 | 0.94× | 0.94× | 2.25 / 2.25 / 2.40 | 0.3 / 2.0 / 2.1 |
+| fasta | 0.211 / 0.324 / 0.269 | 0.78× | 1.20× | 0.25 / 0.36 / 0.29 | 0.3 / 1.8 / 2.2 |
+| reverse-complement | 0.039 / 0.071 / 0.044 | 0.89× | 1.62× | 0.07 / 0.10 / 0.07 | 24 / 26 / 26 |
+| k-nucleotide | 0.884 / 2.930 / 1.313 | 0.66× | 2.23× | 0.91 / 2.96 / 1.34 | 53 / 75 / 51 |
+| n-body | 0.208 / 0.312 / 0.177 | 1.17× | 1.77× | 0.23 / 0.34 / 0.20 | 0.3 / 2.0 / 2.2 |
+| spectral-norm | 0.158 / 0.161 / 0.155 | 1.03× | 1.04× | 0.18 / 0.18 / 0.18 | 0.3 / 2.0 / 2.2 |
+| mandelbrot | 0.829 / 0.798 / 0.826 | 1.00× | 0.98× | 0.85 / 0.82 / 0.85 | 1.9 / 2.0 / 2.2 |
 <!-- benchsync:end bench-rust-table -->
 
-- 対Rust（CPU時間〔task-clock〕・小数2桁で0.95〜1.05× を互角）: Soberの4勝（k-nucleotide・binary-trees・fasta・1BRC）・3互角（fannkuch-redux・mandelbrot・spectral-norm）・2敗（reverse-complement 1.47×・n-body 1.17×）。GoはRustに対して1勝（fannkuch-redux）・2互角（mandelbrot・spectral-norm）・6敗 <!-- benchsync:bench-rust-tally -->
+- 対Rust（CPU時間〔task-clock〕・小数2桁で0.95〜1.05× を互角）: Soberの6勝（k-nucleotide・binary-trees・1BRC・fasta・reverse-complement・fannkuch-redux）・2互角（mandelbrot・spectral-norm）・1敗（n-body 1.17×）。GoはRustに対して1勝（fannkuch-redux）・2互角（mandelbrot・spectral-norm）・6敗 <!-- benchsync:bench-rust-tally -->
 - 比較用のRustの実装は `bench/<題材>/rust/main.rs`（比較用のGoの実装の逐語訳 — --releaseの既定・明示SIMD / unsafe / 依存のcrateなし）。測り方は上の表と同じ指標で `bench/rust/build.sh` → `bench/seqperf.sh -n 5 --rust`（Sober → Go → Rustの交互・出力の一致を毎回）
 - 取り方の恣意が残る題材: fasta / revcomp / mandelbrotはGoの1バイト書き（WriteByte）の鏡として `BufWriter` へ1バイトずつ書く（Rustの素直な書き方としては行単位のほうが多い — fastaのRustは1バイト書きのコストを含む）。binary-treesはGoの「節ごとにnew」の鏡として `Box`（benchmarks gameのRustは型つきアリーナ）。k-nucleotideと1BRCの鍵は切片を借りる（Goの `m[string(b)]` が割り当てない形の鏡）
 - 負けの内訳（2026-10-19までの手元のcyclesの分析 — CPU時間の指標では取り直していない）: n-bodyはsqrt / divの依存チェーンとスカラーに残るzの成分（SSE2の2番地形では水平の和に得が無い）。reverse-complementは未切り分け。1BRCは手元のcyclesでは互角（0.96×）で、mapの引きと名前のUTF-8の検査・切片の形の行のループの命令 +4.8%を要因としていた — CPU時間ではカーネルの読み込みの分をSoberが払わない形で勝ちに入った
 
 <!-- benchsync:begin bench-extsort -->
-### 外部ソート（2026-10-25 — 木a8bfbd8a・`bench/extsort.sh -n 6`・入力1 GiB・ウィンドウ64 MiB・W1・warm・交互6回）
+### 外部ソート（2026-11-14 — 木95d41d6a・`bench/extsort.sh -n 6`・入力1 GiB・ウィンドウ64 MiB・W1・warm・交互6回）
 
 | 実装 | wall中央s | CPU時間 中央s | 最大RSS MB | CPU時間 対Rust素 |
 |---|---|---|---|---|
-| Sober | 33.6 | 33.6 | 176.9 | 2.09× |
-| Go | 24.0 | 24.0 | 536.9 | 1.50× |
-| Rust素 | 16.1 | 16.1 | 180.1 | 1.00× |
-| GNU sort | 17.6 | 17.6 | 67.3 | 1.09× |
+| Sober | 46.5 | 33.0 | 176.9 | 1.82× |
+| Go | 31.8 | 26.0 | 452.7 | 1.45× |
+| Rust素 | 27.4 | 18.1 | 179.0 | 1.00× |
+| GNU sort | 31.6 | 18.9 | 67.3 | 1.06× |
 <!-- benchsync:end bench-extsort -->
 
 - 主な特長 = メモリの約束: SoberのRSSは入力の大きさ（256 MiB〜4 GiB）に依らずウィンドウの約2.8倍で一定（Rust素と同じ水準・Goの1/2〜1/3 — 入力の大きさを振った図は2026-10-25のrun 40160907459: Sober 176.9 / 176.9 / 176.9 MB・Go 346.7 / 418.5 / 536.9・Rust素179.8 / 179.1 / 179.9・GNU sort 67.2 / 67.3 / 67.3 MB〔256 MiB / 1 GiB / 4 GiB〕）。runを1回の関数の呼び出しで組んでregionごと捨て、マージはk本の枠を1本のmutのバイト列に持つ
@@ -138,7 +138,7 @@ compiler/ + stdをコピーした木で測った（W軸の詳細は [par/README.
 ## 6. 環境と再現
 
 <!-- benchsync:begin bench-env -->
-- 逐次・外部ソート（[data/official.tsv](data/official.tsv)）: GitHub Actions linux-x64-16vcpu（AMD EPYC 9V45 96-Core Processor・kernel 6.17.0-1022-azure・run 40160907459）・Go 1.26.1・Rust 1.89.0・perf 6.17.13。1つのvCPU（最後のvCPU）に固定。同じラベルでもマシンのCPUの型番がrunで変わるので、公式に取り込むのはベースラインと同じ型番のrunだけ（`scripts/benchfetch.sh` が照合）
+- 逐次・外部ソート（[data/official.tsv](data/official.tsv)）: GitHub Actions linux-x64-16vcpu（AMD EPYC 9V45 96-Core Processor・kernel 7.0.0-1017-azure・run 43596331186）・Go 1.26.1・Rust 1.89.0・perf 7.0.14。1つのvCPU（最後のvCPU）に固定。同じラベルでもマシンのCPUの型番がrunで変わるので、公式に取り込むのはベースラインと同じ型番のrunだけ（`scripts/benchfetch.sh` が照合）
 - 並列・コンパイラ自身・イディオムギャップ（[par/README.md](par/README.md)・本ファイルの2・3・5節）: 手元AMD Ryzen AI MAX PRO 390（12物理コア × SMT 2）・32 GB・WSL2（kernel 5.15 — 2026-10-08〜10の取り直しの当時）・Go 1.26.1・perf 7.2.6。並列は物理コアごとに1論理CPUの8つに固定した
 - 逐次の表は `SOBER_WORKERS=1` で走らせる（stdの内側の並列 — 大きい入力のutf8.Checkの区間分割 — を逐次の列に混ぜない。並列の効果は [par/README.md](par/README.md) のW軸で見る）
 <!-- benchsync:end bench-env -->
@@ -152,22 +152,39 @@ scripts/idiomgap.sh -n 3     # イディオムギャップ
 # 並列は par/README.md の再現の節
 ```
 
-<!-- benchsync:begin bench-raw -->
-### 逐次の生データ（2026-10-25 — 木a8bfbd8a・GitHub Actions linux-x64-16vcpu（AMD EPYC 9V45 96-Core Processor・kernel 6.17.0-1022-azure・run 40160907459））
+### 配置による揺れを外す（計測専用のオプション）
 
-bench/seqperf.sh -n 5 --rust（raw = bench/data/raw/2026-10-25-40160907459/seqperf.tsv・CPU時間はtask-clockの中央・RSSは最大・wallは中央）:
+実行されない関数の大きさが変わるだけで、実行頻度の高い関数の番地がずれ、cyclesとrpsが数%動くことがある。別のELFどうしを比べるときは、`sober build` の開発用のオプションで配置をそろえる。どれも計測専用で、生成するコードは変えない。
+
+- `--layout-save=<file>`: 関数とグローバルの番地を表に書く。このビルドは、コードの後ろに64 KiB、rodataの後ろに4096 Bの余白を取る（ふつうのビルドとはその分だけ違う）
+- `--layout-pin=<file>`: 表にあり、大きさが表のスロットに収まる関数とグローバルを、表と同じ番地に置く。収まらない関数と新しい関数は表の後ろに置く。中身が同じ関数は、表を保存したビルドとバイト列まで同じになる
+- `--layout-gap=<seed>`: 関数のおよそ32本に1本の手前に、0〜4032 B（64 Bの倍数）のパディングを入れる。`--layout-pin` と組むと、表の後ろに置いた関数（変えた関数・新しい関数）だけをずらす
+
+```sh
+sober build base/main.sober --layout-save=t.txt -o a       # 基準（表を保存したビルドと比べる。ふつうのビルドとは比べない）
+sober build new/main.sober --layout-pin=t.txt -o b         # 変えていない関数はaと同じ番地
+for s in 1 2 3 4; do sober build new/main.sober --layout-pin=t.txt --layout-gap=$s -o b$s; done   # 変えた関数の置き場所の偶然を見る系列
+```
+
+- 保証しないもの: 変えた関数そのものの置き場所の偶然（`--layout-gap` の系列で見る）。番号の即値（panicとspawnの点・グローバルのスロット）は、点やグローバルの増減で変わる（長さは変わらない）。コンテキストスイッチやトラップを持つ関数は、全関数が使うxmmの組で機械語が変わることがある
+- 検査: ゲートlaypin
+
+<!-- benchsync:begin bench-raw -->
+### 逐次の生データ（2026-11-14 — 木95d41d6a・GitHub Actions linux-x64-16vcpu（AMD EPYC 9V45 96-Core Processor・kernel 7.0.0-1017-azure・run 43596331186））
+
+bench/seqperf.sh -n 5 --rust（raw = bench/data/raw/2026-11-14-43596331186/seqperf.tsv・CPU時間はtask-clockの中央・RSSは最大・wallは中央）:
 
 | 題材 | wall中央s Sober / Go | CPU時間 中央s Sober / Go | 最大RSS MB Sober / Go |
 |---|---|---|---|
-| 1brc | 0.251 / 0.382 | 0.241 / 0.372 | 0.4 / 240.3 |
-| binarytrees | 0.520 / 1.691 | 0.510 / 1.679 | 17.0 / 50.5 |
-| fannkuch | 2.158 / 2.087 | 2.149 / 2.078 | 0.3 / 5.7 |
-| fasta | 0.221 / 0.329 | 0.193 / 0.306 | 0.3 / 3.5 |
-| revcomp | 0.061 / 0.071 | 0.047 / 0.060 | 24.4 / 29.9 |
-| knucleotide | 0.838 / 2.692 | 0.825 / 2.681 | 52.6 / 78.3 |
-| nbody | 0.204 / 0.303 | 0.196 / 0.295 | 0.3 / 5.7 |
-| spectralnorm | 0.157 / 0.159 | 0.148 / 0.151 | 0.3 / 5.7 |
-| mandelbrot | 0.783 / 0.755 | 0.773 / 0.746 | 1.9 / 5.7 |
+| 1brc | 0.283 / 0.511 | 0.256 / 0.471 | 0.5 / 236.6 |
+| binarytrees | 0.562 / 1.821 | 0.530 / 1.792 | 17.0 / 49.0 |
+| fannkuch | 2.248 / 2.252 | 2.222 / 2.229 | 0.3 / 2.0 |
+| fasta | 0.253 / 0.362 | 0.211 / 0.324 | 0.3 / 1.8 |
+| revcomp | 0.068 / 0.101 | 0.039 / 0.071 | 24.4 / 26.4 |
+| knucleotide | 0.913 / 2.959 | 0.884 / 2.930 | 52.8 / 75.0 |
+| nbody | 0.231 / 0.335 | 0.208 / 0.312 | 0.3 / 2.0 |
+| spectralnorm | 0.183 / 0.183 | 0.158 / 0.161 | 0.3 / 2.0 |
+| mandelbrot | 0.852 / 0.821 | 0.829 / 0.798 | 1.9 / 2.0 |
 <!-- benchsync:end bench-raw -->
 
 指標はCPU時間（task-clock）の、同じ周の対の比の5周の中央。wallは5回の中央（参考）。cyclesと命令数はGitHub ActionsのVMでは取れない（命令数の規律はgatesのラチェット〔bench/ratchet.txt〕が見る）。 <!-- benchsync:bench-raw-note -->

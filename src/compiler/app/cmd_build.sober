@@ -77,6 +77,23 @@ func emitExe(p loader.Program, std map[string]string, path string, out []byte, e
     return writeExe(path, out)
 }
 
+// 配置の計測のオプションつきのbuild（save / pin = 番地の表のファイル・空 = 使わない・gap = パディングの系列の番号・0 = なし）
+func buildPlaced(p loader.Program, std map[string]string, op string, mutant int, lay int, syms bool, save string, pin string, gap int) int {
+    mut pb := []byte{}
+    if pin != "" {
+        pb = io.ReadFile(pin) catch return fail("cannot read ${pin}")
+        hd := bytes(lower.PlaceHeader)
+        if len(pb) <= len(hd) || pb[len(hd)] != '\n' || !bytesEq(pb[0:len(hd)], hd) {
+            return fail("${pin}: not a layout table (written by --layout-save)")
+        }
+    }
+    o, berr := lower.RtMutantPlace(p, mutant, lay, syms, if verifyEach() { lower.VfyEach } else { lower.VfyLast }, lower.PlaceOf(save != "", pin != "", pb, gap))
+    if berr == nil && save != "" && io.WriteFile(save, o.tab) != nil {
+        return fail("cannot write ${save}")
+    }
+    return if syms { emit(p, std, op, o.exe, berr) } else { emitExe(p, std, op, o.exe, berr) }
+}
+
 // 実行ファイルを書く（実行の bit つき・tmp + rename。path が空なら標準出力）
 func writeExe(path string, out []byte) int {
     if path == "" {
@@ -158,9 +175,14 @@ func cmdBuild(cl cli.Parsed) int {
     l2 := cli.IntOpt(cl, Layout)
     l1 := cli.IntOpt(cl, LayoutV1)
     lay := if l2 != nil { l2 } else if l1 != nil { 1000 + l1 } else if cli.Bool(cl, FitCheck) { -1 } else if cli.Bool(cl, FitOff) { -2 } else { 0 }
+    // 配置の計測のオプション（lower/place.sober）: 番地の表の保存と固定・パディングの系列
+    lsv := cli.StrOpt(cl, LayoutSave)
+    lpn := cli.StrOpt(cl, LayoutPin)
+    lgp := cli.IntOpt(cl, LayoutGap)
+    place := lsv != nil || lpn != nil || lgp != nil
     o := cli.StrOpt(cl, Out)
     mut op := if o == nil { "" } else { o }
-    devFlag := typer > 0 || trace || traceEff || probe || cutStat || callStat || ubfStat || frStat || memRep || mutant > 0 || lay != 0 || stopAt > 0 || dumpIr || copyBe || noVec || noSpec || noRflow || noVfy
+    devFlag := typer > 0 || trace || traceEff || probe || cutStat || callStat || ubfStat || frStat || memRep || mutant > 0 || lay != 0 || place || stopAt > 0 || dumpIr || copyBe || noVec || noSpec || noRflow || noVfy
     if !emitSet && !devFlag {
         // 既定 = bin/sober の既定と同じ形（--emit=elf + --no-opt でなければ --passes）。-o が無ければ a.out へ（ELF を標準出力へ流さない）
         if op == "" {
@@ -221,6 +243,9 @@ func cmdBuild(cl cli.Parsed) int {
     if callStat {
         out, berr := lower.CallStat(p, callSite, if verifyEach() { lower.VfyEach } else { lower.VfyLast })
         return emitExe(p, std, op, out, berr)
+    }
+    if place {
+        return buildPlaced(p, std, op, mutant, lay, syms, if lsv == nil { "" } else { lsv }, if lpn == nil { "" } else { lpn }, if lgp == nil { 0 } else { lgp })
     }
     if mutant > 0 || lay != 0 {
         // --emit=syms と組めば、ミュータント / 配置つきの関数の先頭番地の表（配置ごとのプロファイルのAPI）

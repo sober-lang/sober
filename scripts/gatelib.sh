@@ -11,7 +11,21 @@
 #    ここのcompiler/ を入力にする（凍結コーパスと同じ考え方 — 起点はstage1がビルドできるのでZig版が読める。決定2026-09-28）
 #    展開した木には scripts/alpha16.ts を掛ける: 局所名 keys の α 改名（決定 16 の導入のため。意味不変 — 決定 2026-09-30、ユーザー確認待ち）
 
+# 5. ゲートの環境（gate_env）: gates.shがexportする既定を、まだ値の無い変数にだけ入れる（LC_ALLだけは、gates.shと同じく上書きする）。W1を前提にするスクリプト（obs・optdiff・elfeq）を
+#    単独で呼んでも、gates.sh経由と同じ結果にする。値はgates.shの冒頭とSOBER_VERIFYの行に合わせる。ワーカー数を自分で掛けるスクリプトは呼ばない
+
 GATELIB_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+
+gate_env() {
+    export LC_ALL=C.UTF-8
+    export SOBER_HASH_SEED=${SOBER_HASH_SEED:-0}
+    export SOBER_WORKERS=${SOBER_WORKERS:-1}
+    export SOBER_BUILD_CACHE=${SOBER_BUILD_CACHE:-0}
+    export SOBER_CHECK_CACHE=${SOBER_CHECK_CACHE:-0}
+    export SOBER_CHECK_REPLAY=${SOBER_CHECK_REPLAY:-0}
+    export SOBER_LOWER_SPLIT=${SOBER_LOWER_SPLIT:-1}
+    export SOBER_VERIFY=${SOBER_VERIFY:-each}
+}
 
 # ── 並列 ──
 

@@ -2446,8 +2446,16 @@ func @std/math.Bits(%0 i64) i64 {
 b0:
   %1 = region.depth
   region.enter
+  %2 = fne %0, %0
+  condbr %2, b1, b2
+b1:
+  %3 = const 9221120237041090560
+  br b3(%3)
+b2:
+  br b3(%0)
+b3(%4 i64):
   region.setdepth %1
-  ret %0
+  ret %4
 }
 
 func @std/rand.New(%0 ptr, %1 i64) {

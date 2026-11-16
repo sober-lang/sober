@@ -59,6 +59,10 @@
         {
           "ref": "internal.floatfmt",
           "path": "std/internal/floatfmt"
+        },
+        {
+          "ref": "math",
+          "path": "std/math"
         }
       ],
       "funcs": [
@@ -69,7 +73,7 @@
           "has_try": false,
           "callees": [
             "internal.floatfmt.Format",
-            "sysFBits"
+            "math.Bits"
           ]
         },
         {
@@ -79,7 +83,7 @@
           "has_try": false,
           "callees": [
             "internal.floatfmt.FormatFixed",
-            "sysFBits"
+            "math.Bits"
           ]
         },
         {
@@ -325,6 +329,110 @@
         {
           "name": "NoFast",
           "value": -100000,
+          "dict": false
+        }
+      ]
+    },
+    {
+      "path": "std/math",
+      "name": "math",
+      "imports": [
+        {
+          "ref": "$float",
+          "path": "std/internal/floatfmt"
+        }
+      ],
+      "funcs": [
+        {
+          "name": "Sqrt",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "sysFSqrt"
+          ]
+        },
+        {
+          "name": "Abs",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "FromBits",
+            "sysFBits"
+          ]
+        },
+        {
+          "name": "Bits",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "sysFBits"
+          ]
+        },
+        {
+          "name": "FromBits",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "sysFFromBits"
+          ]
+        },
+        {
+          "name": "Trunc",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "FromBits",
+            "sysFBits"
+          ]
+        },
+        {
+          "name": "Floor",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "Trunc"
+          ]
+        },
+        {
+          "name": "Ceil",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "Floor"
+          ]
+        },
+        {
+          "name": "Min",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "FromBits",
+            "sysFBits"
+          ]
+        },
+        {
+          "name": "Max",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "FromBits",
+            "sysFBits"
+          ]
+        }
+      ],
+      "consts": [
+        {
+          "name": "nanBits",
+          "value": 9221120237041090560,
           "dict": false
         }
       ]

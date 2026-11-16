@@ -14,6 +14,7 @@ package lower
 import "std/iter"
 import "desugar"
 import "std/io"
+import "std/table"
 
 // 条件を満たす関数の region.enter を軽い enter に置き換える
 func regionLightModule(st mut St) {
@@ -174,31 +175,87 @@ func loopLightModule(st mut St, dirty mut map[int]int) {
         gi += 1
         at += 2 + cs[at + 1]
     }
+    // mz = 呼び出しがどの深度にでも確保しうるか・regionを開きうるか（ma ⊆ mz・どの辺でも伝える）。反復のenterを動かす位置の敏感な点に使う:
+    // 開く点の前にこれらの呼び出しを置かないので、動かした後もすべての確保とregionの出入りは動かす前と同じ深度で起こる
+    mut vz := mut []bool{}
+    for k <- iter.Range(0, nf) {
+        vz = append(vz, va[k] || rsTouches(mut st, FnRef(fs[k])))
+    }
+    for k <- iter.Range(0, nf) {
+        if vz[k] {
+            sp = llPush(mut wl, sp, k)
+        }
+    }
+    while sp > 0 {
+        sp -= 1
+        j := wl[sp]
+        for e <- iter.Range(deg[j], deg[j + 1]) {
+            if !vz[rev[e] / 2] {
+                vz[rev[e] / 2] = true
+                sp = llPush(mut wl, sp, rev[e] / 2)
+            }
+        }
+    }
+    mut mz := mut map[int]int{}
+    for k <- iter.Range(0, nf) {
+        if vz[k] {
+            mz[fs[k]] = 1
+        }
+    }
+    mut rc := RsCfg{stat: rsEnvOn("SOBER_RSINK_STAT"), mode: rsMutMode(), n: mut []int{0, 0, 0, 0}}
     f = st.fhead
     while f != -1 {
         b0 := irFnBHead(mut st, f)
         if b0 != -1 {
             mut dead := false
+            // 入口以外のenterを先に集める（置く位置〔rsink.sober〕を決めるときに命令を後ろのブロックへ動かすので、走査と分ける）
+            mut ens := mut []int{}
             mut b := irBlkNext(mut st, b0)
             while b != -1 {
                 mut i := irBlkIHead(mut st, b)
                 while i != -1 {
                     if irInsOp(mut st, i) == OpREnter {
-                        if llAllocContinues(mut st, f, b, mut ma, mut eo) {
-                            rlNeedLoop(mut st)
-                            irSetInsOp(mut st, i, OpCall)
-                            irSetInsRes(mut st, i, -1)
-                            irSetInsA(mut st, i, int(st.rtRenterLL))
-                            irSetInsB(mut st, i, list0(mut st))
-                            irSetInsC(mut st, i, 0)
-                        } else {
-                            irSetInsOp(mut st, i, OpDead)
-                            dead = true
-                        }
+                        ens = append(ens, int(b))
+                        ens = append(ens, int(i))
                     }
                     i = irInsNext(mut st, i)
                 }
                 b = irBlkNext(mut st, b)
+            }
+            nb := irFnNBlk(mut st, f)
+            mut w := m2rW{nb: nb, blk: mut []int{}, rpoIx: mut []int{}, rpo: mut []int{}, nrpo: 0, pcnt: mut []int{}, preds: mut []int{}, idom: mut []int{}}
+            mut sc := RsScr{inBody: mut []int{}, first: mut []int{}, stops: mut []int{}, seen: mut []int{}, gen: 0, vis: mut []int{}, nvis: 0, stack: mut []int{}}
+            mut haveCfg := false
+            for k <- iter.Range(0, len(ens) / 2) {
+                eb := BlkRef(ens[2 * k])
+                i := InsRef(ens[2 * k + 1])
+                if llAllocContinues(mut st, f, eb, mut ma, mut eo) {
+                    mut sb := eb
+                    mut sAt := irInsNext(mut st, i)
+                    if rc.mode == 0 && rsHeadSensitive(mut st, i, mut mz) {
+                        // 本体の頭のブロックに敏感な点があれば、共通の支配点は頭のブロック（動かさない）。CFGを作らずに決まる
+                        rc.n[1] = rc.n[1] + 1
+                    } else {
+                        if !haveCfg {
+                            m2rCfg(mut st, mut w, f)
+                            rsScrInit(mut sc, nb)
+                            haveCfg = true
+                        }
+                        sb0, sAt0 := rsSinkPos(mut st, mut w, mut sc, eb, i, mut mz, mut rc)
+                        sb = sb0
+                        sAt = sAt0
+                    }
+                    rlNeedLoop(mut st)
+                    irSetInsOp(mut st, i, OpCall)
+                    irSetInsRes(mut st, i, -1)
+                    irSetInsA(mut st, i, int(st.rtRenterLL))
+                    irSetInsB(mut st, i, list0(mut st))
+                    irSetInsC(mut st, i, 0)
+                    rsMove(mut st, f, eb, i, sb, sAt, mut rc)
+                } else {
+                    irSetInsOp(mut st, i, OpDead)
+                    dead = true
+                }
             }
             if dead {
                 // 後始末は rlCleanModule（anchorPruneModule と 1 回にまとめる）。消した enter の反復の頭 / 出口の setdepth と退避の region.depth は
@@ -208,6 +265,10 @@ func loopLightModule(st mut St, dirty mut map[int]int) {
         }
         f = irFnNext(mut st, f)
     }
+    if table.Len(mut st.rsRecs) > 0 {
+        rsKeepMa(mut st, mut mz, fs)
+    }
+    rsStatPrint(mut rc)
 }
 
 // スタック（先頭sp個が生きている）にxを積んで新しいsp

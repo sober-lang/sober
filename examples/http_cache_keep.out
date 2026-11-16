@@ -1,0 +1,33 @@
+--- send
+HTTP/1.1 200 OK
+Content-Type: text/plain
+Cache-Control: private
+Set-Cookie: sid=s1; Path=/; Secure; HttpOnly; SameSite=Lax
+Content-Length: 3
+
+hi
+HTTP/1.1 200 OK
+Content-Type: text/plain
+Cache-Control: private, max-age=30
+Set-Cookie: sid=s1; Path=/; Secure; HttpOnly; SameSite=Lax
+Content-Length: 3
+
+hi
+HTTP/1.1 200 OK
+Content-Type: text/plain
+Cache-Control: no-store
+Set-Cookie: sid=s1; Path=/; Secure; HttpOnly; SameSite=Lax
+Content-Length: 3
+
+hi
+
+--- send
+HTTP/1.1 200 OK
+Content-Type: text/plain
+Cache-Control: max-age=60
+Content-Length: 5
+Connection: close
+
+slow
+
+true

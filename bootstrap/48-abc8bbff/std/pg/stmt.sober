@@ -1,0 +1,94 @@
+package pg
+
+// 接続ごとのstatementキャッシュ（格納場所の中 — transport.sober）: SQLの文面ごとに名前つきの文（"s<番号>"）を1回だけParse + Describeし、
+// 引数の型と列の型を覚える。文面は const 仮引数（`@const`）なので種類はプログラムの const の数で有界 — 追い出しは無い。
+// 表かワードの格納場所が満ちたら以後の新しい文面は無名の文で毎回Parse + Describeする（正しさは同じ・往復が1回増える）
+
+import "std/iter"
+
+// 表の行のフィールド: [文面のハッシュ, 文面のワードの位置, 文面の長さ, 型のワードの位置]（型のワード = [引数の数, 引数の型…, 列の数, 列の型…]）
+const eHash = 0
+const eSql = 1
+const eLen = 2
+const eMeta = 3
+
+func hashOf(b []byte) int {
+    mut h := 1469598103934665603
+    for x <- b {
+        h = (h ^ int(x)) * 1099511628211
+    }
+    return h
+}
+
+// sql の行の番号（無ければ -1）
+func cacheFind(blk []int, sql string) int {
+    b := bytes(sql)
+    h := hashOf(b)
+    n := getW(blk, lCacheN)
+    for i <- iter.Range(0, n) {
+        e := lTab + i * eW
+        if getW(blk, e + eHash) == h && getW(blk, e + eLen) == len(b) && sameWords(blk, lWords + getW(blk, e + eSql), b) {
+            return i
+        }
+    }
+    return -1
+}
+
+// 格納場所のワードoffから（putBytesの詰め方 — 8バイト / ワード・下位から）の文面がbと同じか（ワードごとに比べる）
+func sameWords(blk []int, off int, b []byte) bool {
+    ws := view(blk, off, (len(b) + 7) / 8)
+    mut i := 0
+    while i < len(b) {
+        mut v := 0
+        mut j := 0
+        while j < 8 && i + j < len(b) {
+            v = v | (int(b[i + j]) << (j * 8))
+            j += 1
+        }
+        if ws[i / 8] != v {
+            return false
+        }
+        i += 8
+    }
+    return true
+}
+
+// 行 i の引数の型と列の型
+func cacheMeta(blk []int, i int) ([]int, []int) {
+    m := lWords + getW(blk, lTab + i * eW + eMeta)
+    np := getW(blk, m)
+    nc := getW(blk, m + 1 + np)
+    ws := view(blk, m, 2 + np + nc)
+    return ws[1:1 + np], ws[2 + np:2 + np + nc]
+}
+
+// 次に足す行の番号（入らなければ -1 — 無名の文で進める）
+func cacheSlot(blk []int, sql string, params []int, cols []int) int {
+    n := getW(blk, lCacheN)
+    need := (len(bytes(sql)) + 7) / 8 + 2 + len(params) + len(cols)
+    return if n < cacheN && getW(blk, lCacheUsed) + need <= cacheWords { n } else { -1 }
+}
+
+// 行 i（cacheSlot の番号）に sql と型を書く（Parse + Describe が通った後）
+func cacheAdd(blk []int, i int, sql string, params []int, cols []int) {
+    b := bytes(sql)
+    used := getW(blk, lCacheUsed)
+    sw := (len(b) + 7) / 8
+    putBytes(blk, lWords + used, b)
+    m := used + sw
+    setW(blk, lWords + m, len(params))
+    for j <- iter.Range(0, len(params)) {
+        setW(blk, lWords + m + 1 + j, params[j])
+    }
+    setW(blk, lWords + m + 1 + len(params), len(cols))
+    for j <- iter.Range(0, len(cols)) {
+        setW(blk, lWords + m + 2 + len(params) + j, cols[j])
+    }
+    e := lTab + i * eW
+    setW(blk, e + eHash, hashOf(b))
+    setW(blk, e + eSql, used)
+    setW(blk, e + eLen, len(b))
+    setW(blk, e + eMeta, m)
+    setW(blk, lCacheUsed, m + 2 + len(params) + len(cols))
+    setW(blk, lCacheN, i + 1)
+}

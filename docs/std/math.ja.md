@@ -22,7 +22,7 @@ x の平方根（IEEE 754 の sqrt — 正しく丸めた値・負は NaN・-0 �
 func Abs(x float) float
 ```
 
-x の絶対値（符号ビットを落とす — NaN の符号も落ちる・-0 は +0）
+x の絶対値（符号ビットを落とす・-0 は +0）
 
 ## Bits
 
@@ -31,7 +31,7 @@ x の絶対値（符号ビットを落とす — NaN の符号も落ちる・-0 
 func Bits(x float) int
 ```
 
-x の IEEE 754 のビット列（i64 で読んだ値 — 変換でなく同じビットの読み替え）
+x の IEEE 754 のビット列（i64 で読んだ値で、変換でなく同じビットの読み替え）。NaN はどれも 0x7ff8000000000000（正の quiet NaN・payload は 0）。NaN は 1 つの値で、符号と payload の違いは観測できない。float のビット列を読む組み込みは、この関数だけが呼ぶ（loader が検査する）
 
 ## FromBits
 
@@ -40,7 +40,7 @@ x の IEEE 754 のビット列（i64 で読んだ値 — 変換でなく同じ�
 func FromBits(b int) float
 ```
 
-ビット列 b の float（±Inf・NaN もこれで作る）
+ビット列 b の float（±Inf・NaN もこれで作る）。NaN のビット列はどれも同じ NaN になり、Bits で読み戻すと 0x7ff8000000000000
 
 ## Trunc
 
@@ -76,7 +76,7 @@ x 以上の最小の整数（-0.5 → -0・±Inf・NaN はそのまま）
 func Min(x float, y float) float
 ```
 
-x と y の小さいほう（どちらかが NaN ならその NaN・-0 と +0 では -0）
+x と y の小さいほう（どちらかが NaN なら NaN・-0 と +0 では -0）
 
 ## Max
 
@@ -85,4 +85,4 @@ x と y の小さいほう（どちらかが NaN ならその NaN・-0 と +0 �
 func Max(x float, y float) float
 ```
 
-x と y の大きいほう（どちらかが NaN ならその NaN・-0 と +0 では +0）
+x と y の大きいほう（どちらかが NaN なら NaN・-0 と +0 では +0）

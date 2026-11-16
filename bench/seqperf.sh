@@ -43,7 +43,16 @@ LAIN=$B/logagg-500000.txt
 for f in "$IN" "$FIN" "$JAIN" "$RTIN" "$LAIN"; do [ -s "$f" ] || { echo "seqperf.sh: $f が無い（先に scripts/bench.sh）" >&2; exit 2; }; done
 : > "$res"
 # ev <perf の -x, の出力> <事象>: 値（<not supported> / <not counted> は NA — 中の空白で列がずれないように）
-ev() { local v; v=$(grep -m1 ",$2" "$1" | cut -d, -f1); case $v in [0-9]*) echo "$v" ;; *) echo NA ;; esac; }
+# ev <perfの-x,の出力> <事象>: 値。task-clockはperfの版で単位が違う（6.xはナノ秒の整数・7.xはmsecの小数）ので、単位の欄を読んでナノ秒の整数にそろえる
+ev() {
+    awk -F, -v e="$2" '!d && ($3 == e || index($3, e ":") == 1) {
+        d = 1
+        if ($1 !~ /^[0-9]/) { print "NA"; exit }
+        m = $2 == "msec" ? 1e6 : $2 == "usec" ? 1e3 : $2 == "sec" ? 1e9 : 1
+        if (m == 1) print $1; else printf "%.0f\n", $1 * m
+        exit
+    } END { if (!d) print "NA" }' "$1"
+}
 one() { # one <名前> <実行ファイル> <引数>: `名前 wall user rssKB cycles insts load` を足す
     local name=$1 exe=$2 a=$3 ld t0 t1
     ld=$(cut -d' ' -f1 /proc/loadavg)

@@ -60,7 +60,7 @@ attributes #0 = { nounwind "no-builtins" "frame-pointer"="all" }
 @"str.40" = internal constant [1 x i64] [i64 139141276781]
 @"str.41" = internal constant [1 x i64] [i64 10]
 @"str.42" = internal constant [3 x i64] [i64 7232620951369114994, i64 8674334734093152357, i64 8250]
-@"rt.psites" = internal constant [212 x i64] [i64 213639507323387905, i64 241224055041032193, i64 285134151407894529, i64 296956100429742081, i64 305118874754351105, i64 311311324241985537, i64 317503773729619969, i64 341710621726736385, i64 369295169444380673, i64 413205265811243009, i64 425027214833090561, i64 433189989157699585, i64 439382438645334017, i64 445574888132968449, i64 3940650194043137, i64 10977524628586753, i64 9288675103867137, i64 5066550553870593, i64 3940650764468481, i64 12666375059276033, i64 6192450628485377, i64 8162775465459969, i64 10696050255855873, i64 5066550721642754, i64 5066550721642754, i64 5066550721642754, i64 4503600885661953, i64 11259000360272129, i64 3940651301339393, i64 10977525735883009, i64 3659176374960385, i64 3659176391737601, i64 4785076315357441, i64 5348026335887617, i64 12103425810497793, i64 13229325801226497, i64 12103426028601601, i64 9288675372302851, i64 10977526927065857, i64 5910977463714561, i64 16325551602008833, i64 18295876438983425, i64 15199651695166210, i64 15199651695166210, i64 15199651695166210, i64 28991925553988353, i64 30962250390962945, i64 27866025647145730, i64 27866025647145730, i64 27866025647145730, i64 3377702924976897, i64 3377703059194625, i64 3377703075971841, i64 5066553036899073, i64 4503603100254977, i64 3940653163610881, i64 5629503057429249, i64 10133102701576961, i64 14355227352236801, i64 10133102768685825, i64 14355227419345665, i64 7881303038886657, i64 8725728220676865, i64 6473928625095425, i64 9288678442533633, i64 2533279051809537, i64 10696053426750209, i64 6473928843199233, i64 10414578550702849, i64 10696053577745153, i64 6755403970904833, i64 10977528621564673, i64 7881303911301889, i64 12103428561961729, i64 10414578752029441, i64 10696053779071745, i64 6192454604686081, i64 4222130002592513, i64 5348030110761729, i64 13792279546299137, i64 19421779080512257, i64 4222130774344449, i64 5348030765073153, i64 9851630727987971, i64 9851630761542403, i64 9851630778319619, i64 9851630811874051, i64 9851630828651267, i64 9851630845428483, i64 9851630878982915, i64 9851630895760131, i64 9851630912537347, i64 9851630929314563, i64 3659181626229505, i64 7036881346757377, i64 3096231840580353, i64 3377707169612545, i64 2533282256257793, i64 2533282273035009, i64 3096232243233537, i64 4222132317848321, i64 5348033046774529, i64 13792282549420801, i64 21955056874029825, i64 7881308088828673, i64 6192459067425537, i64 5348034154070785, i64 6755409289282305, i64 16888508786410242, i64 16888508786410242, i64 16888508786410242, i64 20266208506938114, i64 20266208506938114, i64 20266208506938114, i64 23643908227465986, i64 23643908227465986, i64 23643908227465986, i64 27584557901415170, i64 27584557901415170, i64 27584557901415170, i64 31806682552075010, i64 31806682552075010, i64 31806682552075010, i64 6755409809376001, i64 6755409960370945, i64 3377710541832961, i64 9007210159932161, i64 5629510439404289, i64 12103434954081025, i64 7881310387307265, i64 4503610666779393, i64 9007210310927105, i64 4503610683556609, i64 10977535198233345, i64 5066560804750081, i64 10133110385541889, i64 5910985751659265, i64 5910985768436481, i64 5348036167336705, i64 4785086230692609, i64 4785086247469825, i64 6192461147800321, i64 6473936158065409, i64 5910986221421313, i64 5066561308066561, i64 8444261045371649, i64 9851635962479361, i64 13792285636428545, i64 9288686076166913, i64 4503611673412353, i64 9007211334337281, i64 7036886497362689, i64 4222138374423297, i64 9851637925413634, i64 9851637925413634, i64 9851637925413634, i64 8162788350362370, i64 8162788350362370, i64 8162788350362370, i64 8725738337338114, i64 8725738337338114, i64 8725738337338114, i64 4503614290658051, i64 8725727767692290, i64 8725727767692290, i64 8725727767692290, i64 5629503141315587, i64 2814753374209025, i64 2814753458095105, i64 7599828129285122, i64 7599828129285122, i64 7599828129285122, i64 7318350099121409, i64 2814750488528129, i64 6192450594931969, i64 3659175905199361, i64 7318350803764481, i64 7318350870873345, i64 3940651150345473, i64 7599826116019457, i64 8444251096483073, i64 8444251180369153, i64 5066551459841281, i64 7318351642625281, i64 7881301679932675, i64 3940652005983489, i64 7036877018236163, i64 6192452876633345, i64 9007202710848769, i64 7318353102243073, i64 2814753508427009, i64 7318353219683585, i64 3940653499155713, i64 2814753642644737, i64 2814750924736008, i64 1688851772868097, i64 6192451467347457, i64 2814751746819585, i64 1688851890308609, i64 6192451870000641, i64 2814752149472769, i64 7599826887771650, i64 7599826887771650, i64 7599826887771650, i64 8725731207022337, i64 14073755764524801, i64 4222131663537921, i64 8444256800737025, i64 5348032191137537, i64 16607031276340993, i64 19984731063977729, i64 28428980365297409]
+@"rt.psites" = internal constant [207 x i64] [i64 211950657463123969, i64 239535205180768257, i64 283445301547630593, i64 311311324241985537, i64 342555046656868353, i64 370139594374512641, i64 414049690741374977, i64 441915713435729921, i64 3940650194043137, i64 10977524628586753, i64 9288675103867137, i64 5066550553870593, i64 3940650764468481, i64 12666375059276033, i64 6192450628485377, i64 8162775465459969, i64 10696050255855873, i64 5066550721642754, i64 5066550721642754, i64 5066550721642754, i64 4503600885661953, i64 11259000360272129, i64 3940651301339393, i64 10977525735883009, i64 3659176374960385, i64 3659176391737601, i64 4785076315357441, i64 5348026335887617, i64 12103425810497793, i64 13229325801226497, i64 12103426028601601, i64 9288675372302851, i64 10977526927065857, i64 5910977463714561, i64 16325551602008833, i64 18295876438983425, i64 15199651695166210, i64 15199651695166210, i64 15199651695166210, i64 28991925553988353, i64 30962250390962945, i64 27866025647145730, i64 27866025647145730, i64 27866025647145730, i64 3377702924976897, i64 3377703059194625, i64 3377703075971841, i64 5066553036899073, i64 4503603100254977, i64 3940653163610881, i64 5629503057429249, i64 10133102701576961, i64 14355227352236801, i64 10133102768685825, i64 14355227419345665, i64 7881303038886657, i64 8725728220676865, i64 6473928625095425, i64 9288678442533633, i64 2533279051809537, i64 10696053426750209, i64 6473928843199233, i64 10414578550702849, i64 10696053577745153, i64 6755403970904833, i64 10977528621564673, i64 7881303911301889, i64 12103428561961729, i64 10414578752029441, i64 10696053779071745, i64 6192454604686081, i64 4222130002592513, i64 5348030110761729, i64 13792279546299137, i64 19421779080512257, i64 4222130774344449, i64 5348030765073153, i64 9851630727987971, i64 9851630761542403, i64 9851630778319619, i64 9851630811874051, i64 9851630828651267, i64 9851630845428483, i64 9851630878982915, i64 9851630895760131, i64 9851630912537347, i64 9851630929314563, i64 3659181626229505, i64 7036881346757377, i64 3096231840580353, i64 3377707169612545, i64 2533282256257793, i64 2533282273035009, i64 3096232243233537, i64 4222132317848321, i64 5348033046774529, i64 13792282549420801, i64 21955056874029825, i64 7881308088828673, i64 6192459067425537, i64 5348034154070785, i64 6755409289282305, i64 16888508786410242, i64 16888508786410242, i64 16888508786410242, i64 20266208506938114, i64 20266208506938114, i64 20266208506938114, i64 23643908227465986, i64 23643908227465986, i64 23643908227465986, i64 27584557901415170, i64 27584557901415170, i64 27584557901415170, i64 31806682552075010, i64 31806682552075010, i64 31806682552075010, i64 6755409809376001, i64 6755409960370945, i64 3377710541832961, i64 9007210159932161, i64 5629510439404289, i64 12103434954081025, i64 7881310387307265, i64 4503610666779393, i64 9007210310927105, i64 4503610683556609, i64 10977535198233345, i64 5066560804750081, i64 10133110385541889, i64 5910985751659265, i64 5910985768436481, i64 5348036167336705, i64 4785086230692609, i64 4785086247469825, i64 6192461147800321, i64 6473936158065409, i64 5910986221421313, i64 5066561308066561, i64 8444261045371649, i64 9851635962479361, i64 13792285636428545, i64 9288686076166913, i64 4503611673412353, i64 9007211334337281, i64 7036886497362689, i64 4222138374423297, i64 9851637925413634, i64 9851637925413634, i64 9851637925413634, i64 8162788350362370, i64 8162788350362370, i64 8162788350362370, i64 8725738337338114, i64 8725738337338114, i64 8725738337338114, i64 4503614290658051, i64 8725727734137858, i64 8725727734137858, i64 8725727734137858, i64 5629503107761155, i64 2814753340654593, i64 2814753424540673, i64 7599828095730690, i64 7599828095730690, i64 7599828095730690, i64 7318350099121409, i64 2814750488528129, i64 6192450594931969, i64 3659175905199361, i64 7318350803764481, i64 7318350870873345, i64 3940651150345473, i64 7599826116019457, i64 8444251096483073, i64 8444251180369153, i64 5066551459841281, i64 7318351642625281, i64 7881301679932675, i64 3940652005983489, i64 7036877018236163, i64 6192452876633345, i64 9007202710848769, i64 7318353102243073, i64 2814753508427009, i64 7318353219683585, i64 3940653499155713, i64 2814753642644737, i64 1688851269551617, i64 2814751360943624, i64 1688852209075713, i64 6192451903555073, i64 2814752183027201, i64 1688852326516225, i64 6192452306208257, i64 2814752585680385, i64 7599827323979266, i64 7599827323979266, i64 7599827323979266, i64 8725731207022337, i64 14073755764524801, i64 4222131663537921, i64 8444256800737025, i64 5348032191137537, i64 16607031276340993, i64 19984731063977729, i64 28428980365297409]
 @"str.43" = internal constant [3 x i64] [i64 8462017926321696361, i64 7953763900396085364, i64 25959]
 @"str.44" = internal constant [4 x i64] [i64 8026013105759284339, i64 8391735665840385653, i64 7453001576142499616, i64 101]
 @"str.45" = internal constant [4 x i64] [i64 8462017844986274166, i64 7953763900396085364, i64 7070777237752014183, i64 6648953]
@@ -5407,8 +5407,8 @@ b0:
   store i64 %v6, ptr %st4
   %st5 = getelementptr i64, ptr %v8, i64 5
   store i64 %v7, ptr %st5
-  %v65 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v9.p = getelementptr i64, ptr %v65, i64 0
+  %v56 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v9.p = getelementptr i64, ptr %v56, i64 0
   %v9 = load i64, ptr %v9.p
   %v10 = getelementptr i64, ptr @"rt.meta", i64 0
   %v11.p = getelementptr i64, ptr %v10, i64 2572
@@ -5423,128 +5423,113 @@ b0:
   store i64 %v1, ptr %st6
   %v17.p = getelementptr i64, ptr %v16, i64 0
   %v17 = load i64, ptr %v17.p
-  %v18 = add i64 0, 0
-  %v19 = add i64 %v17, %v18
-  %v20 = add i64 0, 63919640552059
-  %v21 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st7 = getelementptr i64, ptr %v21, i64 2572
+  %v18 = add i64 0, 63919640552059
+  %v19 = add i64 0, 6
+  %v20 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st7 = getelementptr i64, ptr %v20, i64 2572
   store i64 %v15, ptr %st7
-  call void @"std/internal/jsonw.Word"(ptr %v0, i64 %v19, i64 %v20)
-  %v22 = add i64 0, 6
-  %v23.p = getelementptr i64, ptr %v16, i64 0
-  %v23 = load i64, ptr %v23.p
-  %v24 = add i64 %v23, %v22
+  %v21 = call i64 @"std/internal/jsonw.Put"(ptr %v0, i64 %v17, i64 %v18, i64 %v19)
   %st8 = getelementptr i64, ptr %v16, i64 0
-  store i64 %v24, ptr %st8
-  %v25.p = getelementptr i64, ptr %v16, i64 0
+  store i64 %v21, ptr %st8
+  %v22.p = getelementptr i64, ptr %v16, i64 0
+  %v22 = load i64, ptr %v22.p
+  %v23.p = getelementptr i64, ptr %v8, i64 0
+  %v23 = load i64, ptr %v23.p
+  %v24.p = getelementptr i64, ptr %v8, i64 1
+  %v24 = load i64, ptr %v24.p
+  %v25.p = getelementptr i64, ptr %v8, i64 2
   %v25 = load i64, ptr %v25.p
-  %v26.p = getelementptr i64, ptr %v8, i64 0
-  %v26 = load i64, ptr %v26.p
-  %v27.p = getelementptr i64, ptr %v8, i64 1
-  %v27 = load i64, ptr %v27.p
-  %v28.p = getelementptr i64, ptr %v8, i64 2
-  %v28 = load i64, ptr %v28.p
-  %v29 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st9 = getelementptr i64, ptr %v29, i64 2572
+  %v26 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st9 = getelementptr i64, ptr %v26, i64 2572
   store i64 %v15, ptr %st9
-  %v30 = call i64 @"main.$jsonWrite_0_1"(ptr %v0, i64 %v25, i64 %v26, i64 %v27, i64 %v28)
+  %v27 = call i64 @"main.$jsonWrite_0_1"(ptr %v0, i64 %v22, i64 %v23, i64 %v24, i64 %v25)
   %st10 = getelementptr i64, ptr %v16, i64 0
-  store i64 %v30, ptr %st10
-  %v31.p = getelementptr i64, ptr %v16, i64 0
-  %v31 = load i64, ptr %v31.p
-  %v32 = add i64 0, 0
-  %v33.c = icmp slt i64 %v31, %v32
-  %v33 = zext i1 %v33.c to i64
-  %c.b0 = icmp ne i64 %v33, 0
+  store i64 %v27, ptr %st10
+  %v28.p = getelementptr i64, ptr %v16, i64 0
+  %v28 = load i64, ptr %v28.p
+  %v29 = add i64 0, 0
+  %v30.c = icmp slt i64 %v28, %v29
+  %v30 = zext i1 %v30.c to i64
+  %c.b0 = icmp ne i64 %v30, 0
   br i1 %c.b0, label %b0.t12, label %b0.e13
 b0.t12:
   br label %b1
 b0.e13:
   br label %b2
 b1:
-  %v34.p = getelementptr i64, ptr %v16, i64 0
-  %v34 = load i64, ptr %v34.p
-  %v66 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st13 = getelementptr i64, ptr %v66, i64 0
+  %v31.p = getelementptr i64, ptr %v16, i64 0
+  %v31 = load i64, ptr %v31.p
+  %v57 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st13 = getelementptr i64, ptr %v57, i64 0
   store i64 %v9, ptr %st13
-  ret i64 %v34
+  ret i64 %v31
 b2:
   br label %b3
 b3:
-  %v35.p = getelementptr i64, ptr %v16, i64 0
-  %v35 = load i64, ptr %v35.p
-  %v36 = add i64 0, 0
-  %v37 = add i64 %v35, %v36
-  %v38 = add i64 0, 2482439340071723564
-  %v39 = add i64 0, 58
-  %v40 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st14 = getelementptr i64, ptr %v40, i64 2572
+  %v32.p = getelementptr i64, ptr %v16, i64 0
+  %v32 = load i64, ptr %v32.p
+  %v33 = add i64 0, 2482439340071723564
+  %v34 = add i64 0, 58
+  %v35 = add i64 0, 9
+  %v36 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st14 = getelementptr i64, ptr %v36, i64 2572
   store i64 %v15, ptr %st14
-  call void @"std/internal/jsonw.Word2"(ptr %v0, i64 %v37, i64 %v38, i64 %v39)
-  %v41 = add i64 0, 9
-  %v42.p = getelementptr i64, ptr %v16, i64 0
-  %v42 = load i64, ptr %v42.p
-  %v43 = add i64 %v42, %v41
+  %v37 = call i64 @"std/internal/jsonw.Put2"(ptr %v0, i64 %v32, i64 %v33, i64 %v34, i64 %v35)
   %st15 = getelementptr i64, ptr %v16, i64 0
-  store i64 %v43, ptr %st15
-  %v44.p = getelementptr i64, ptr %v16, i64 0
-  %v44 = load i64, ptr %v44.p
-  %v45 = add i64 0, 3
-  %v46 = getelementptr i64, ptr %v8, i64 %v45
-  %v47.p = getelementptr i64, ptr %v46, i64 0
-  %v47 = load i64, ptr %v47.p
-  %v48.p = getelementptr i64, ptr %v46, i64 1
-  %v48 = load i64, ptr %v48.p
-  %v49.p = getelementptr i64, ptr %v46, i64 2
-  %v49 = load i64, ptr %v49.p
-  %v50 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st16 = getelementptr i64, ptr %v50, i64 2572
+  store i64 %v37, ptr %st15
+  %v38.p = getelementptr i64, ptr %v16, i64 0
+  %v38 = load i64, ptr %v38.p
+  %v39 = add i64 0, 3
+  %v40 = getelementptr i64, ptr %v8, i64 %v39
+  %v41.p = getelementptr i64, ptr %v40, i64 0
+  %v41 = load i64, ptr %v41.p
+  %v42.p = getelementptr i64, ptr %v40, i64 1
+  %v42 = load i64, ptr %v42.p
+  %v43.p = getelementptr i64, ptr %v40, i64 2
+  %v43 = load i64, ptr %v43.p
+  %v44 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st16 = getelementptr i64, ptr %v44, i64 2572
   store i64 %v15, ptr %st16
-  %v51 = call i64 @"main.$jsonWrite_0_2"(ptr %v0, i64 %v44, i64 %v47, i64 %v48, i64 %v49)
+  %v45 = call i64 @"main.$jsonWrite_0_2"(ptr %v0, i64 %v38, i64 %v41, i64 %v42, i64 %v43)
   %st17 = getelementptr i64, ptr %v16, i64 0
-  store i64 %v51, ptr %st17
-  %v52.p = getelementptr i64, ptr %v16, i64 0
-  %v52 = load i64, ptr %v52.p
-  %v53 = add i64 0, 0
-  %v54.c = icmp slt i64 %v52, %v53
-  %v54 = zext i1 %v54.c to i64
-  %c.b3 = icmp ne i64 %v54, 0
+  store i64 %v45, ptr %st17
+  %v46.p = getelementptr i64, ptr %v16, i64 0
+  %v46 = load i64, ptr %v46.p
+  %v47 = add i64 0, 0
+  %v48.c = icmp slt i64 %v46, %v47
+  %v48 = zext i1 %v48.c to i64
+  %c.b3 = icmp ne i64 %v48, 0
   br i1 %c.b3, label %b3.t19, label %b3.e20
 b3.t19:
   br label %b4
 b3.e20:
   br label %b5
 b4:
-  %v55.p = getelementptr i64, ptr %v16, i64 0
-  %v55 = load i64, ptr %v55.p
-  %v67 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st20 = getelementptr i64, ptr %v67, i64 0
+  %v49.p = getelementptr i64, ptr %v16, i64 0
+  %v49 = load i64, ptr %v49.p
+  %v58 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st20 = getelementptr i64, ptr %v58, i64 0
   store i64 %v9, ptr %st20
-  ret i64 %v55
+  ret i64 %v49
 b5:
   br label %b6
 b6:
-  %v56.p = getelementptr i64, ptr %v16, i64 0
-  %v56 = load i64, ptr %v56.p
-  %v57 = add i64 0, 0
-  %v58 = add i64 %v56, %v57
-  %v59 = add i64 0, 125
-  %v60 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st21 = getelementptr i64, ptr %v60, i64 2572
+  %v50.p = getelementptr i64, ptr %v16, i64 0
+  %v50 = load i64, ptr %v50.p
+  %v51 = add i64 0, 125
+  %v52 = add i64 0, 1
+  %v53 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st21 = getelementptr i64, ptr %v53, i64 2572
   store i64 %v15, ptr %st21
-  call void @"std/internal/jsonw.Word"(ptr %v0, i64 %v58, i64 %v59)
-  %v61 = add i64 0, 1
-  %v62.p = getelementptr i64, ptr %v16, i64 0
-  %v62 = load i64, ptr %v62.p
-  %v63 = add i64 %v62, %v61
+  %v54 = call i64 @"std/internal/jsonw.Put"(ptr %v0, i64 %v50, i64 %v51, i64 %v52)
   %st22 = getelementptr i64, ptr %v16, i64 0
-  store i64 %v63, ptr %st22
-  %v64.p = getelementptr i64, ptr %v16, i64 0
-  %v64 = load i64, ptr %v64.p
-  %v68 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st23 = getelementptr i64, ptr %v68, i64 0
+  store i64 %v54, ptr %st22
+  %v55.p = getelementptr i64, ptr %v16, i64 0
+  %v55 = load i64, ptr %v55.p
+  %v59 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st23 = getelementptr i64, ptr %v59, i64 0
   store i64 %v9, ptr %st23
-  ret i64 %v64
+  ret i64 %v55
 }
 
 define internal void @"main.$jsonDecode_0_1"(ptr %v0, ptr %v1, i64 %v2, i64 %v3, i64 %v4, i64 %v5, i64 %v6) #0 {
@@ -6387,8 +6372,8 @@ b0:
   store i64 %v3, ptr %st1
   %st2 = getelementptr i64, ptr %v5, i64 2
   store i64 %v4, ptr %st2
-  %v79 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v6.p = getelementptr i64, ptr %v79, i64 0
+  %v58 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v6.p = getelementptr i64, ptr %v58, i64 0
   %v6 = load i64, ptr %v6.p
   %v7 = getelementptr i64, ptr @"rt.meta", i64 0
   %v8.p = getelementptr i64, ptr %v7, i64 2572
@@ -6404,218 +6389,149 @@ b0:
   %v14.p = getelementptr i64, ptr %v13, i64 0
   %v14 = load i64, ptr %v14.p
   %v15 = add i64 0, 91
-  %v16.p = getelementptr i64, ptr %v0, i64 1
-  %v16 = load i64, ptr %v16.p
-  %v17.c = icmp uge i64 %v14, %v16
-  %v17 = zext i1 %v17.c to i64
-  %c.b0 = icmp ne i64 %v17, 0
-  br i1 %c.b0, label %b0.t5, label %b0.e6
-b0.t5:
+  %v16 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st4 = getelementptr i64, ptr %v16, i64 2572
+  store i64 %v12, ptr %st4
+  %v17 = call i64 @"std/internal/jsonw.Byte"(ptr %v0, i64 %v14, i64 %v15)
+  %st5 = getelementptr i64, ptr %v13, i64 0
+  store i64 %v17, ptr %st5
+  %v18 = add i64 0, 0
+  %v19 = getelementptr i64, ptr %s2, i64 0
+  %st6 = getelementptr i64, ptr %v19, i64 0
+  store i64 %v18, ptr %st6
+  %v59 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v20.p = getelementptr i64, ptr %v59, i64 0
+  %v20 = load i64, ptr %v20.p
   br label %b1
-b0.e6:
-  br label %b2
 b1:
-  %v18 = add i64 0, 3
-  call void @"rt.panic"(i64 %v18)
-  call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
-  unreachable
-b2:
-  %v19.p = getelementptr i64, ptr %v0, i64 0
-  %v19 = load i64, ptr %v19.p
-  %v20 = inttoptr i64 %v19 to ptr
-  %v21 = getelementptr i8, ptr %v20, i64 %v14
-  %st6 = getelementptr i8, ptr %v21, i64 0
-  %st6.b = trunc i64 %v15 to i8
-  store i8 %st6.b, ptr %st6
-  %v22 = add i64 0, 1
-  %v23.p = getelementptr i64, ptr %v13, i64 0
-  %v23 = load i64, ptr %v23.p
-  %v24 = add i64 %v23, %v22
-  %st7 = getelementptr i64, ptr %v13, i64 0
-  store i64 %v24, ptr %st7
-  %v25 = add i64 0, 0
-  %v26 = getelementptr i64, ptr %s2, i64 0
-  %st8 = getelementptr i64, ptr %v26, i64 0
-  store i64 %v25, ptr %st8
-  %v80 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v27.p = getelementptr i64, ptr %v80, i64 0
-  %v27 = load i64, ptr %v27.p
+  %v60 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st7 = getelementptr i64, ptr %v60, i64 0
+  store i64 %v20, ptr %st7
+  %v21.p = getelementptr i64, ptr %v19, i64 0
+  %v21 = load i64, ptr %v21.p
+  %v22.p = getelementptr i64, ptr %v5, i64 1
+  %v22 = load i64, ptr %v22.p
+  %v23.c = icmp slt i64 %v21, %v22
+  %v23 = zext i1 %v23.c to i64
+  %c.b1 = icmp ne i64 %v23, 0
+  br i1 %c.b1, label %b1.t9, label %b1.e10
+b1.t9:
+  br label %b2
+b1.e10:
   br label %b3
-b3:
-  %v81 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st9 = getelementptr i64, ptr %v81, i64 0
-  store i64 %v27, ptr %st9
-  %v28.p = getelementptr i64, ptr %v26, i64 0
-  %v28 = load i64, ptr %v28.p
-  %v29.p = getelementptr i64, ptr %v5, i64 1
-  %v29 = load i64, ptr %v29.p
-  %v30.c = icmp slt i64 %v28, %v29
-  %v30 = zext i1 %v30.c to i64
-  %c.b3 = icmp ne i64 %v30, 0
-  br i1 %c.b3, label %b3.t11, label %b3.e12
-b3.t11:
-  br label %b4
-b3.e12:
-  br label %b5
-b4:
+b2:
   call void @"rt.region_enter"()
-  %v82 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v31.p = getelementptr i64, ptr %v82, i64 0
-  %v31 = load i64, ptr %v31.p
-  %v32.p = getelementptr i64, ptr %v26, i64 0
-  %v32 = load i64, ptr %v32.p
-  %v33 = add i64 0, 0
-  %v34.c = icmp sgt i64 %v32, %v33
-  %v34 = zext i1 %v34.c to i64
-  %c.b4 = icmp ne i64 %v34, 0
-  br i1 %c.b4, label %b4.t13, label %b4.e14
-b4.t13:
+  %v61 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v24.p = getelementptr i64, ptr %v61, i64 0
+  %v24 = load i64, ptr %v24.p
+  %v25.p = getelementptr i64, ptr %v19, i64 0
+  %v25 = load i64, ptr %v25.p
+  %v26 = add i64 0, 0
+  %v27.c = icmp sgt i64 %v25, %v26
+  %v27 = zext i1 %v27.c to i64
+  %c.b2 = icmp ne i64 %v27, 0
+  br i1 %c.b2, label %b2.t11, label %b2.e12
+b2.t11:
+  br label %b4
+b2.e12:
+  br label %b5
+b3:
+  %v62 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st12 = getelementptr i64, ptr %v62, i64 0
+  store i64 %v20, ptr %st12
+  %v53.p = getelementptr i64, ptr %v13, i64 0
+  %v53 = load i64, ptr %v53.p
+  %v54 = add i64 0, 93
+  %v55 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st13 = getelementptr i64, ptr %v55, i64 2572
+  store i64 %v12, ptr %st13
+  %v56 = call i64 @"std/internal/jsonw.Byte"(ptr %v0, i64 %v53, i64 %v54)
+  %st14 = getelementptr i64, ptr %v13, i64 0
+  store i64 %v56, ptr %st14
+  %v57.p = getelementptr i64, ptr %v13, i64 0
+  %v57 = load i64, ptr %v57.p
+  %v63 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st15 = getelementptr i64, ptr %v63, i64 0
+  store i64 %v6, ptr %st15
+  ret i64 %v57
+b4:
+  %v28.p = getelementptr i64, ptr %v13, i64 0
+  %v28 = load i64, ptr %v28.p
+  %v29 = add i64 0, 44
+  %v30 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st16 = getelementptr i64, ptr %v30, i64 2572
+  store i64 %v12, ptr %st16
+  %v31 = call i64 @"std/internal/jsonw.Byte"(ptr %v0, i64 %v28, i64 %v29)
+  %st17 = getelementptr i64, ptr %v13, i64 0
+  store i64 %v31, ptr %st17
   br label %b6
-b4.e14:
-  br label %b7
 b5:
-  %v83 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st14 = getelementptr i64, ptr %v83, i64 0
-  store i64 %v27, ptr %st14
-  %v67.p = getelementptr i64, ptr %v13, i64 0
-  %v67 = load i64, ptr %v67.p
-  %v68 = add i64 0, 93
-  %v69.p = getelementptr i64, ptr %v0, i64 1
-  %v69 = load i64, ptr %v69.p
-  %v70.c = icmp uge i64 %v67, %v69
-  %v70 = zext i1 %v70.c to i64
-  %c.b5 = icmp ne i64 %v70, 0
-  br i1 %c.b5, label %b5.t16, label %b5.e17
-b5.t16:
-  br label %b16
-b5.e17:
-  br label %b17
+  br label %b6
 b6:
-  %v35.p = getelementptr i64, ptr %v13, i64 0
-  %v35 = load i64, ptr %v35.p
-  %v36 = add i64 0, 44
-  %v37.p = getelementptr i64, ptr %v0, i64 1
-  %v37 = load i64, ptr %v37.p
-  %v38.c = icmp uge i64 %v35, %v37
-  %v38 = zext i1 %v38.c to i64
-  %c.b6 = icmp ne i64 %v38, 0
-  br i1 %c.b6, label %b6.t18, label %b6.e19
-b6.t18:
+  %v32.p = getelementptr i64, ptr %v13, i64 0
+  %v32 = load i64, ptr %v32.p
+  %v33.p = getelementptr i64, ptr %v19, i64 0
+  %v33 = load i64, ptr %v33.p
+  %v34.p = getelementptr i64, ptr %v5, i64 1
+  %v34 = load i64, ptr %v34.p
+  %v35.c = icmp uge i64 %v33, %v34
+  %v35 = zext i1 %v35.c to i64
+  %c.b6 = icmp ne i64 %v35, 0
+  br i1 %c.b6, label %b6.t19, label %b6.e20
+b6.t19:
+  br label %b7
+b6.e20:
   br label %b8
-b6.e19:
-  br label %b9
 b7:
-  br label %b10
-b8:
-  %v39 = add i64 0, 4
-  call void @"rt.panic"(i64 %v39)
+  %v36 = add i64 0, 3
+  call void @"rt.panic"(i64 %v36)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
-b9:
-  %v40.p = getelementptr i64, ptr %v0, i64 0
-  %v40 = load i64, ptr %v40.p
-  %v41 = inttoptr i64 %v40 to ptr
-  %v42 = getelementptr i8, ptr %v41, i64 %v35
-  %st19 = getelementptr i8, ptr %v42, i64 0
-  %st19.b = trunc i64 %v36 to i8
-  store i8 %st19.b, ptr %st19
-  %v43 = add i64 0, 1
-  %v44.p = getelementptr i64, ptr %v13, i64 0
-  %v44 = load i64, ptr %v44.p
-  %v45 = add i64 %v44, %v43
-  %st20 = getelementptr i64, ptr %v13, i64 0
-  store i64 %v45, ptr %st20
-  br label %b10
-b10:
+b8:
+  %v37.p = getelementptr i64, ptr %v5, i64 0
+  %v37 = load i64, ptr %v37.p
+  %v38 = inttoptr i64 %v37 to ptr
+  %v39 = add i64 0, 2
+  %v40 = mul i64 %v33, %v39
+  %v41 = getelementptr i64, ptr %v38, i64 %v40
+  %v42.p = getelementptr i64, ptr %v41, i64 0
+  %v42 = load i64, ptr %v42.p
+  %v43.p = getelementptr i64, ptr %v41, i64 1
+  %v43 = load i64, ptr %v43.p
+  %v44 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st20 = getelementptr i64, ptr %v44, i64 2572
+  store i64 %v12, ptr %st20
+  %v45 = call i64 @"main.$jsonWrite_0_3"(ptr %v0, i64 %v32, i64 %v42, i64 %v43)
+  %st21 = getelementptr i64, ptr %v13, i64 0
+  store i64 %v45, ptr %st21
   %v46.p = getelementptr i64, ptr %v13, i64 0
   %v46 = load i64, ptr %v46.p
-  %v47.p = getelementptr i64, ptr %v26, i64 0
-  %v47 = load i64, ptr %v47.p
-  %v48.p = getelementptr i64, ptr %v5, i64 1
-  %v48 = load i64, ptr %v48.p
-  %v49.c = icmp uge i64 %v47, %v48
-  %v49 = zext i1 %v49.c to i64
-  %c.b10 = icmp ne i64 %v49, 0
-  br i1 %c.b10, label %b10.t22, label %b10.e23
-b10.t22:
+  %v47 = add i64 0, 0
+  %v48.c = icmp slt i64 %v46, %v47
+  %v48 = zext i1 %v48.c to i64
+  %c.b8 = icmp ne i64 %v48, 0
+  br i1 %c.b8, label %b8.t23, label %b8.e24
+b8.t23:
+  br label %b9
+b8.e24:
+  br label %b10
+b9:
+  %v49.p = getelementptr i64, ptr %v13, i64 0
+  %v49 = load i64, ptr %v49.p
+  %v64 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st24 = getelementptr i64, ptr %v64, i64 0
+  store i64 %v6, ptr %st24
+  ret i64 %v49
+b10:
   br label %b11
-b10.e23:
-  br label %b12
 b11:
-  %v50 = add i64 0, 5
-  call void @"rt.panic"(i64 %v50)
-  call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
-  unreachable
-b12:
-  %v51.p = getelementptr i64, ptr %v5, i64 0
+  %v50 = add i64 0, 1
+  %v51.p = getelementptr i64, ptr %v19, i64 0
   %v51 = load i64, ptr %v51.p
-  %v52 = inttoptr i64 %v51 to ptr
-  %v53 = add i64 0, 2
-  %v54 = mul i64 %v47, %v53
-  %v55 = getelementptr i64, ptr %v52, i64 %v54
-  %v56.p = getelementptr i64, ptr %v55, i64 0
-  %v56 = load i64, ptr %v56.p
-  %v57.p = getelementptr i64, ptr %v55, i64 1
-  %v57 = load i64, ptr %v57.p
-  %v58 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st23 = getelementptr i64, ptr %v58, i64 2572
-  store i64 %v12, ptr %st23
-  %v59 = call i64 @"main.$jsonWrite_0_3"(ptr %v0, i64 %v46, i64 %v56, i64 %v57)
-  %st24 = getelementptr i64, ptr %v13, i64 0
-  store i64 %v59, ptr %st24
-  %v60.p = getelementptr i64, ptr %v13, i64 0
-  %v60 = load i64, ptr %v60.p
-  %v61 = add i64 0, 0
-  %v62.c = icmp slt i64 %v60, %v61
-  %v62 = zext i1 %v62.c to i64
-  %c.b12 = icmp ne i64 %v62, 0
-  br i1 %c.b12, label %b12.t26, label %b12.e27
-b12.t26:
-  br label %b13
-b12.e27:
-  br label %b14
-b13:
-  %v63.p = getelementptr i64, ptr %v13, i64 0
-  %v63 = load i64, ptr %v63.p
-  %v84 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st27 = getelementptr i64, ptr %v84, i64 0
-  store i64 %v6, ptr %st27
-  ret i64 %v63
-b14:
-  br label %b15
-b15:
-  %v64 = add i64 0, 1
-  %v65.p = getelementptr i64, ptr %v26, i64 0
-  %v65 = load i64, ptr %v65.p
-  %v66 = add i64 %v65, %v64
-  %st28 = getelementptr i64, ptr %v26, i64 0
-  store i64 %v66, ptr %st28
-  br label %b3
-b16:
-  %v71 = add i64 0, 6
-  call void @"rt.panic"(i64 %v71)
-  call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
-  unreachable
-b17:
-  %v72.p = getelementptr i64, ptr %v0, i64 0
-  %v72 = load i64, ptr %v72.p
-  %v73 = inttoptr i64 %v72 to ptr
-  %v74 = getelementptr i8, ptr %v73, i64 %v67
-  %st29 = getelementptr i8, ptr %v74, i64 0
-  %st29.b = trunc i64 %v68 to i8
-  store i8 %st29.b, ptr %st29
-  %v75 = add i64 0, 1
-  %v76.p = getelementptr i64, ptr %v13, i64 0
-  %v76 = load i64, ptr %v76.p
-  %v77 = add i64 %v76, %v75
-  %st30 = getelementptr i64, ptr %v13, i64 0
-  store i64 %v77, ptr %st30
-  %v78.p = getelementptr i64, ptr %v13, i64 0
-  %v78 = load i64, ptr %v78.p
-  %v85 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st31 = getelementptr i64, ptr %v85, i64 0
-  store i64 %v6, ptr %st31
-  ret i64 %v78
+  %v52 = add i64 %v51, %v50
+  %st25 = getelementptr i64, ptr %v19, i64 0
+  store i64 %v52, ptr %st25
+  br label %b1
 }
 
 define internal void @"main.$jsonDecode_0_2"(ptr %v0, ptr %v1, i64 %v2, i64 %v3, i64 %v4, i64 %v5, i64 %v6) #0 {
@@ -7026,7 +6942,7 @@ b14.t54:
 b14.e55:
   br label %b34
 b15:
-  %v84 = add i64 0, 7
+  %v84 = add i64 0, 4
   call void @"rt.panic"(i64 %v84)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -7531,7 +7447,7 @@ b6.t15:
 b6.e16:
   br label %b8
 b7:
-  %v29 = add i64 0, 8
+  %v29 = add i64 0, 5
   call void @"rt.panic"(i64 %v29)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -7646,7 +7562,7 @@ b3:
   store i64 %v4, ptr %st11
   ret i64 %v35
 b4:
-  %v18 = add i64 0, 9
+  %v18 = add i64 0, 6
   call void @"rt.panic"(i64 %v18)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -7703,8 +7619,8 @@ b0:
   store i64 %v3, ptr %st1
   %st2 = getelementptr i64, ptr %v5, i64 2
   store i64 %v4, ptr %st2
-  %v81 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v6.p = getelementptr i64, ptr %v81, i64 0
+  %v60 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v6.p = getelementptr i64, ptr %v60, i64 0
   %v6 = load i64, ptr %v6.p
   %v7 = getelementptr i64, ptr @"rt.meta", i64 0
   %v8.p = getelementptr i64, ptr %v7, i64 2572
@@ -7720,222 +7636,153 @@ b0:
   %v14.p = getelementptr i64, ptr %v13, i64 0
   %v14 = load i64, ptr %v14.p
   %v15 = add i64 0, 91
-  %v16.p = getelementptr i64, ptr %v0, i64 1
-  %v16 = load i64, ptr %v16.p
-  %v17.c = icmp uge i64 %v14, %v16
-  %v17 = zext i1 %v17.c to i64
-  %c.b0 = icmp ne i64 %v17, 0
-  br i1 %c.b0, label %b0.t5, label %b0.e6
-b0.t5:
+  %v16 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st4 = getelementptr i64, ptr %v16, i64 2572
+  store i64 %v12, ptr %st4
+  %v17 = call i64 @"std/internal/jsonw.Byte"(ptr %v0, i64 %v14, i64 %v15)
+  %st5 = getelementptr i64, ptr %v13, i64 0
+  store i64 %v17, ptr %st5
+  %v18 = add i64 0, 0
+  %v19 = getelementptr i64, ptr %s2, i64 0
+  %st6 = getelementptr i64, ptr %v19, i64 0
+  store i64 %v18, ptr %st6
+  %v61 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v20.p = getelementptr i64, ptr %v61, i64 0
+  %v20 = load i64, ptr %v20.p
   br label %b1
-b0.e6:
-  br label %b2
 b1:
-  %v18 = add i64 0, 10
-  call void @"rt.panic"(i64 %v18)
-  call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
-  unreachable
+  %v62 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st7 = getelementptr i64, ptr %v62, i64 0
+  store i64 %v20, ptr %st7
+  %v21.p = getelementptr i64, ptr %v19, i64 0
+  %v21 = load i64, ptr %v21.p
+  %v22.p = getelementptr i64, ptr %v5, i64 1
+  %v22 = load i64, ptr %v22.p
+  %v23.c = icmp slt i64 %v21, %v22
+  %v23 = zext i1 %v23.c to i64
+  %c.b1 = icmp ne i64 %v23, 0
+  br i1 %c.b1, label %b1.t9, label %b1.e10
+b1.t9:
+  br label %b2
+b1.e10:
+  br label %b3
 b2:
-  %v19.p = getelementptr i64, ptr %v0, i64 0
-  %v19 = load i64, ptr %v19.p
-  %v20 = inttoptr i64 %v19 to ptr
-  %v21 = getelementptr i8, ptr %v20, i64 %v14
-  %st6 = getelementptr i8, ptr %v21, i64 0
-  %st6.b = trunc i64 %v15 to i8
-  store i8 %st6.b, ptr %st6
-  %v22 = add i64 0, 1
-  %v23.p = getelementptr i64, ptr %v13, i64 0
-  %v23 = load i64, ptr %v23.p
-  %v24 = add i64 %v23, %v22
-  %st7 = getelementptr i64, ptr %v13, i64 0
-  store i64 %v24, ptr %st7
-  %v25 = add i64 0, 0
-  %v26 = getelementptr i64, ptr %s2, i64 0
-  %st8 = getelementptr i64, ptr %v26, i64 0
-  store i64 %v25, ptr %st8
-  %v82 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v27.p = getelementptr i64, ptr %v82, i64 0
-  %v27 = load i64, ptr %v27.p
-  br label %b3
-b3:
-  %v83 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st9 = getelementptr i64, ptr %v83, i64 0
-  store i64 %v27, ptr %st9
-  %v28.p = getelementptr i64, ptr %v26, i64 0
-  %v28 = load i64, ptr %v28.p
-  %v29.p = getelementptr i64, ptr %v5, i64 1
-  %v29 = load i64, ptr %v29.p
-  %v30.c = icmp slt i64 %v28, %v29
-  %v30 = zext i1 %v30.c to i64
-  %c.b3 = icmp ne i64 %v30, 0
-  br i1 %c.b3, label %b3.t11, label %b3.e12
-b3.t11:
-  br label %b4
-b3.e12:
-  br label %b5
-b4:
   call void @"rt.region_enter"()
-  %v84 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v31.p = getelementptr i64, ptr %v84, i64 0
-  %v31 = load i64, ptr %v31.p
-  %v32.p = getelementptr i64, ptr %v26, i64 0
-  %v32 = load i64, ptr %v32.p
-  %v33 = add i64 0, 0
-  %v34.c = icmp sgt i64 %v32, %v33
-  %v34 = zext i1 %v34.c to i64
-  %c.b4 = icmp ne i64 %v34, 0
-  br i1 %c.b4, label %b4.t13, label %b4.e14
-b4.t13:
-  br label %b6
-b4.e14:
-  br label %b7
-b5:
-  %v85 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st14 = getelementptr i64, ptr %v85, i64 0
-  store i64 %v27, ptr %st14
-  %v69.p = getelementptr i64, ptr %v13, i64 0
-  %v69 = load i64, ptr %v69.p
-  %v70 = add i64 0, 93
-  %v71.p = getelementptr i64, ptr %v0, i64 1
-  %v71 = load i64, ptr %v71.p
-  %v72.c = icmp uge i64 %v69, %v71
-  %v72 = zext i1 %v72.c to i64
-  %c.b5 = icmp ne i64 %v72, 0
-  br i1 %c.b5, label %b5.t16, label %b5.e17
-b5.t16:
-  br label %b16
-b5.e17:
-  br label %b17
-b6:
-  %v35.p = getelementptr i64, ptr %v13, i64 0
-  %v35 = load i64, ptr %v35.p
-  %v36 = add i64 0, 44
-  %v37.p = getelementptr i64, ptr %v0, i64 1
-  %v37 = load i64, ptr %v37.p
-  %v38.c = icmp uge i64 %v35, %v37
-  %v38 = zext i1 %v38.c to i64
-  %c.b6 = icmp ne i64 %v38, 0
-  br i1 %c.b6, label %b6.t18, label %b6.e19
-b6.t18:
-  br label %b8
-b6.e19:
-  br label %b9
-b7:
-  br label %b10
-b8:
-  %v39 = add i64 0, 11
-  call void @"rt.panic"(i64 %v39)
-  call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
-  unreachable
-b9:
-  %v40.p = getelementptr i64, ptr %v0, i64 0
-  %v40 = load i64, ptr %v40.p
-  %v41 = inttoptr i64 %v40 to ptr
-  %v42 = getelementptr i8, ptr %v41, i64 %v35
-  %st19 = getelementptr i8, ptr %v42, i64 0
-  %st19.b = trunc i64 %v36 to i8
-  store i8 %st19.b, ptr %st19
-  %v43 = add i64 0, 1
-  %v44.p = getelementptr i64, ptr %v13, i64 0
-  %v44 = load i64, ptr %v44.p
-  %v45 = add i64 %v44, %v43
-  %st20 = getelementptr i64, ptr %v13, i64 0
-  store i64 %v45, ptr %st20
-  br label %b10
-b10:
-  %v46.p = getelementptr i64, ptr %v13, i64 0
-  %v46 = load i64, ptr %v46.p
-  %v47.p = getelementptr i64, ptr %v26, i64 0
-  %v47 = load i64, ptr %v47.p
-  %v48.p = getelementptr i64, ptr %v5, i64 1
-  %v48 = load i64, ptr %v48.p
-  %v49.c = icmp uge i64 %v47, %v48
-  %v49 = zext i1 %v49.c to i64
-  %c.b10 = icmp ne i64 %v49, 0
-  br i1 %c.b10, label %b10.t22, label %b10.e23
-b10.t22:
-  br label %b11
-b10.e23:
-  br label %b12
-b11:
-  %v50 = add i64 0, 12
-  call void @"rt.panic"(i64 %v50)
-  call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
-  unreachable
-b12:
-  %v51.p = getelementptr i64, ptr %v5, i64 0
-  %v51 = load i64, ptr %v51.p
-  %v52 = inttoptr i64 %v51 to ptr
-  %v53 = add i64 0, 4
-  %v54 = mul i64 %v47, %v53
-  %v55 = getelementptr i64, ptr %v52, i64 %v54
-  %v56.p = getelementptr i64, ptr %v55, i64 0
-  %v56 = load i64, ptr %v56.p
-  %v57.p = getelementptr i64, ptr %v55, i64 1
-  %v57 = load i64, ptr %v57.p
-  %v58.p = getelementptr i64, ptr %v55, i64 2
-  %v58 = load i64, ptr %v58.p
-  %v59.p = getelementptr i64, ptr %v55, i64 3
+  %v63 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v24.p = getelementptr i64, ptr %v63, i64 0
+  %v24 = load i64, ptr %v24.p
+  %v25.p = getelementptr i64, ptr %v19, i64 0
+  %v25 = load i64, ptr %v25.p
+  %v26 = add i64 0, 0
+  %v27.c = icmp sgt i64 %v25, %v26
+  %v27 = zext i1 %v27.c to i64
+  %c.b2 = icmp ne i64 %v27, 0
+  br i1 %c.b2, label %b2.t11, label %b2.e12
+b2.t11:
+  br label %b4
+b2.e12:
+  br label %b5
+b3:
+  %v64 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st12 = getelementptr i64, ptr %v64, i64 0
+  store i64 %v20, ptr %st12
+  %v55.p = getelementptr i64, ptr %v13, i64 0
+  %v55 = load i64, ptr %v55.p
+  %v56 = add i64 0, 93
+  %v57 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st13 = getelementptr i64, ptr %v57, i64 2572
+  store i64 %v12, ptr %st13
+  %v58 = call i64 @"std/internal/jsonw.Byte"(ptr %v0, i64 %v55, i64 %v56)
+  %st14 = getelementptr i64, ptr %v13, i64 0
+  store i64 %v58, ptr %st14
+  %v59.p = getelementptr i64, ptr %v13, i64 0
   %v59 = load i64, ptr %v59.p
-  %v60 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st23 = getelementptr i64, ptr %v60, i64 2572
-  store i64 %v12, ptr %st23
-  %v61 = call i64 @"main.$jsonWrite_0_4"(ptr %v0, i64 %v46, i64 %v56, i64 %v57, i64 %v58, i64 %v59)
-  %st24 = getelementptr i64, ptr %v13, i64 0
-  store i64 %v61, ptr %st24
-  %v62.p = getelementptr i64, ptr %v13, i64 0
-  %v62 = load i64, ptr %v62.p
-  %v63 = add i64 0, 0
-  %v64.c = icmp slt i64 %v62, %v63
-  %v64 = zext i1 %v64.c to i64
-  %c.b12 = icmp ne i64 %v64, 0
-  br i1 %c.b12, label %b12.t26, label %b12.e27
-b12.t26:
-  br label %b13
-b12.e27:
-  br label %b14
-b13:
-  %v65.p = getelementptr i64, ptr %v13, i64 0
-  %v65 = load i64, ptr %v65.p
-  %v86 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st27 = getelementptr i64, ptr %v86, i64 0
-  store i64 %v6, ptr %st27
-  ret i64 %v65
-b14:
-  br label %b15
-b15:
-  %v66 = add i64 0, 1
-  %v67.p = getelementptr i64, ptr %v26, i64 0
-  %v67 = load i64, ptr %v67.p
-  %v68 = add i64 %v67, %v66
-  %st28 = getelementptr i64, ptr %v26, i64 0
-  store i64 %v68, ptr %st28
-  br label %b3
-b16:
-  %v73 = add i64 0, 13
-  call void @"rt.panic"(i64 %v73)
+  %v65 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st15 = getelementptr i64, ptr %v65, i64 0
+  store i64 %v6, ptr %st15
+  ret i64 %v59
+b4:
+  %v28.p = getelementptr i64, ptr %v13, i64 0
+  %v28 = load i64, ptr %v28.p
+  %v29 = add i64 0, 44
+  %v30 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st16 = getelementptr i64, ptr %v30, i64 2572
+  store i64 %v12, ptr %st16
+  %v31 = call i64 @"std/internal/jsonw.Byte"(ptr %v0, i64 %v28, i64 %v29)
+  %st17 = getelementptr i64, ptr %v13, i64 0
+  store i64 %v31, ptr %st17
+  br label %b6
+b5:
+  br label %b6
+b6:
+  %v32.p = getelementptr i64, ptr %v13, i64 0
+  %v32 = load i64, ptr %v32.p
+  %v33.p = getelementptr i64, ptr %v19, i64 0
+  %v33 = load i64, ptr %v33.p
+  %v34.p = getelementptr i64, ptr %v5, i64 1
+  %v34 = load i64, ptr %v34.p
+  %v35.c = icmp uge i64 %v33, %v34
+  %v35 = zext i1 %v35.c to i64
+  %c.b6 = icmp ne i64 %v35, 0
+  br i1 %c.b6, label %b6.t19, label %b6.e20
+b6.t19:
+  br label %b7
+b6.e20:
+  br label %b8
+b7:
+  %v36 = add i64 0, 7
+  call void @"rt.panic"(i64 %v36)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
-b17:
-  %v74.p = getelementptr i64, ptr %v0, i64 0
-  %v74 = load i64, ptr %v74.p
-  %v75 = inttoptr i64 %v74 to ptr
-  %v76 = getelementptr i8, ptr %v75, i64 %v69
-  %st29 = getelementptr i8, ptr %v76, i64 0
-  %st29.b = trunc i64 %v70 to i8
-  store i8 %st29.b, ptr %st29
-  %v77 = add i64 0, 1
-  %v78.p = getelementptr i64, ptr %v13, i64 0
-  %v78 = load i64, ptr %v78.p
-  %v79 = add i64 %v78, %v77
-  %st30 = getelementptr i64, ptr %v13, i64 0
-  store i64 %v79, ptr %st30
-  %v80.p = getelementptr i64, ptr %v13, i64 0
-  %v80 = load i64, ptr %v80.p
-  %v87 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st31 = getelementptr i64, ptr %v87, i64 0
-  store i64 %v6, ptr %st31
-  ret i64 %v80
+b8:
+  %v37.p = getelementptr i64, ptr %v5, i64 0
+  %v37 = load i64, ptr %v37.p
+  %v38 = inttoptr i64 %v37 to ptr
+  %v39 = add i64 0, 4
+  %v40 = mul i64 %v33, %v39
+  %v41 = getelementptr i64, ptr %v38, i64 %v40
+  %v42.p = getelementptr i64, ptr %v41, i64 0
+  %v42 = load i64, ptr %v42.p
+  %v43.p = getelementptr i64, ptr %v41, i64 1
+  %v43 = load i64, ptr %v43.p
+  %v44.p = getelementptr i64, ptr %v41, i64 2
+  %v44 = load i64, ptr %v44.p
+  %v45.p = getelementptr i64, ptr %v41, i64 3
+  %v45 = load i64, ptr %v45.p
+  %v46 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st20 = getelementptr i64, ptr %v46, i64 2572
+  store i64 %v12, ptr %st20
+  %v47 = call i64 @"main.$jsonWrite_0_4"(ptr %v0, i64 %v32, i64 %v42, i64 %v43, i64 %v44, i64 %v45)
+  %st21 = getelementptr i64, ptr %v13, i64 0
+  store i64 %v47, ptr %st21
+  %v48.p = getelementptr i64, ptr %v13, i64 0
+  %v48 = load i64, ptr %v48.p
+  %v49 = add i64 0, 0
+  %v50.c = icmp slt i64 %v48, %v49
+  %v50 = zext i1 %v50.c to i64
+  %c.b8 = icmp ne i64 %v50, 0
+  br i1 %c.b8, label %b8.t23, label %b8.e24
+b8.t23:
+  br label %b9
+b8.e24:
+  br label %b10
+b9:
+  %v51.p = getelementptr i64, ptr %v13, i64 0
+  %v51 = load i64, ptr %v51.p
+  %v66 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st24 = getelementptr i64, ptr %v66, i64 0
+  store i64 %v6, ptr %st24
+  ret i64 %v51
+b10:
+  br label %b11
+b11:
+  %v52 = add i64 0, 1
+  %v53.p = getelementptr i64, ptr %v19, i64 0
+  %v53 = load i64, ptr %v53.p
+  %v54 = add i64 %v53, %v52
+  %st25 = getelementptr i64, ptr %v19, i64 0
+  store i64 %v54, ptr %st25
+  br label %b1
 }
 
 define internal void @"main.$jsonDecode_0_3"(ptr %v0, ptr %v1, i64 %v2, i64 %v3, i64 %v4, i64 %v5, i64 %v6) #0 {
@@ -8339,8 +8186,8 @@ b0:
   store i64 %v2, ptr %st0
   %st1 = getelementptr i64, ptr %v4, i64 1
   store i64 %v3, ptr %st1
-  %v29 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v5.p = getelementptr i64, ptr %v29, i64 0
+  %v26 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v5.p = getelementptr i64, ptr %v26, i64 0
   %v5 = load i64, ptr %v5.p
   %v6 = getelementptr i64, ptr @"rt.meta", i64 0
   %v7.p = getelementptr i64, ptr %v6, i64 2572
@@ -8379,27 +8226,22 @@ b1:
 b2:
   %v20.p = getelementptr i64, ptr %v12, i64 0
   %v20 = load i64, ptr %v20.p
-  %v21 = add i64 0, 0
-  %v22 = add i64 %v20, %v21
-  %v23 = add i64 0, 1819047278
-  %v24 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st7 = getelementptr i64, ptr %v24, i64 2572
+  %v21 = add i64 0, 1819047278
+  %v22 = add i64 0, 4
+  %v23 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st7 = getelementptr i64, ptr %v23, i64 2572
   store i64 %v11, ptr %st7
-  call void @"std/internal/jsonw.Word"(ptr %v0, i64 %v22, i64 %v23)
-  %v25 = add i64 0, 4
-  %v26.p = getelementptr i64, ptr %v12, i64 0
-  %v26 = load i64, ptr %v26.p
-  %v27 = add i64 %v26, %v25
+  %v24 = call i64 @"std/internal/jsonw.Put"(ptr %v0, i64 %v20, i64 %v21, i64 %v22)
   %st8 = getelementptr i64, ptr %v12, i64 0
-  store i64 %v27, ptr %st8
+  store i64 %v24, ptr %st8
   br label %b3
 b3:
-  %v28.p = getelementptr i64, ptr %v12, i64 0
-  %v28 = load i64, ptr %v28.p
-  %v30 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st9 = getelementptr i64, ptr %v30, i64 0
+  %v25.p = getelementptr i64, ptr %v12, i64 0
+  %v25 = load i64, ptr %v25.p
+  %v27 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st9 = getelementptr i64, ptr %v27, i64 0
   store i64 %v5, ptr %st9
-  ret i64 %v28
+  ret i64 %v25
 }
 
 define internal void @"main.$jsonDecode_0_4"(ptr %v0, ptr %v1, i64 %v2, i64 %v3, i64 %v4, i64 %v5, i64 %v6) #0 {
@@ -8993,8 +8835,8 @@ b0:
   store i64 %v4, ptr %st2
   %st3 = getelementptr i64, ptr %v6, i64 3
   store i64 %v5, ptr %st3
-  %v43 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v7.p = getelementptr i64, ptr %v43, i64 0
+  %v40 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v7.p = getelementptr i64, ptr %v40, i64 0
   %v7 = load i64, ptr %v7.p
   %v8 = getelementptr i64, ptr @"rt.meta", i64 0
   %v9.p = getelementptr i64, ptr %v8, i64 2572
@@ -9062,25 +8904,20 @@ b1.e14:
 b2:
   %v34.p = getelementptr i64, ptr %v14, i64 0
   %v34 = load i64, ptr %v34.p
-  %v35 = add i64 0, 0
-  %v36 = add i64 %v34, %v35
-  %v37 = add i64 0, 1819047278
-  %v38 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st14 = getelementptr i64, ptr %v38, i64 2572
+  %v35 = add i64 0, 1819047278
+  %v36 = add i64 0, 4
+  %v37 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st14 = getelementptr i64, ptr %v37, i64 2572
   store i64 %v13, ptr %st14
-  call void @"std/internal/jsonw.Word"(ptr %v0, i64 %v36, i64 %v37)
-  %v39 = add i64 0, 4
-  %v40.p = getelementptr i64, ptr %v14, i64 0
-  %v40 = load i64, ptr %v40.p
-  %v41 = add i64 %v40, %v39
+  %v38 = call i64 @"std/internal/jsonw.Put"(ptr %v0, i64 %v34, i64 %v35, i64 %v36)
   %st15 = getelementptr i64, ptr %v14, i64 0
-  store i64 %v41, ptr %st15
+  store i64 %v38, ptr %st15
   br label %b6
 b3:
   %v33.p = getelementptr i64, ptr %v14, i64 0
   %v33 = load i64, ptr %v33.p
-  %v44 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st16 = getelementptr i64, ptr %v44, i64 0
+  %v41 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st16 = getelementptr i64, ptr %v41, i64 0
   store i64 %v7, ptr %st16
   ret i64 %v33
 b4:
@@ -9088,12 +8925,12 @@ b4:
 b5:
   br label %b6
 b6:
-  %v42.p = getelementptr i64, ptr %v14, i64 0
-  %v42 = load i64, ptr %v42.p
-  %v45 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st17 = getelementptr i64, ptr %v45, i64 0
+  %v39.p = getelementptr i64, ptr %v14, i64 0
+  %v39 = load i64, ptr %v39.p
+  %v42 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st17 = getelementptr i64, ptr %v42, i64 0
   store i64 %v7, ptr %st17
-  ret i64 %v42
+  ret i64 %v39
 }
 
 define internal void @"std/json.NeedObject"(ptr %v0, ptr %v1, i64 %v2) #0 {
@@ -9149,7 +8986,7 @@ b0.t1:
 b0.e2:
   br label %b2
 b1:
-  %v8 = add i64 0, 14
+  %v8 = add i64 0, 8
   call void @"rt.panic"(i64 %v8)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -9188,7 +9025,7 @@ b3.e6:
 b4:
   br label %b9
 b5:
-  %v22 = add i64 0, 15
+  %v22 = add i64 0, 9
   call void @"rt.panic"(i64 %v22)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -9548,7 +9385,7 @@ b5.t19:
 b5.e20:
   br label %b7
 b6:
-  %v47 = add i64 0, 16
+  %v47 = add i64 0, 10
   call void @"rt.panic"(i64 %v47)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -9701,7 +9538,7 @@ b0.t1:
 b0.e2:
   br label %b2
 b1:
-  %v7 = add i64 0, 17
+  %v7 = add i64 0, 11
   call void @"rt.panic"(i64 %v7)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -9798,7 +9635,7 @@ b0.t2:
 b0.e3:
   br label %b2
 b1:
-  %v18 = add i64 0, 18
+  %v18 = add i64 0, 12
   call void @"rt.panic"(i64 %v18)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -9847,7 +9684,7 @@ b3.e10:
 b4:
   br label %b9
 b5:
-  %v36 = add i64 0, 19
+  %v36 = add i64 0, 13
   call void @"rt.panic"(i64 %v36)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -10018,7 +9855,7 @@ b9.t46:
 b9.e47:
   br label %b11
 b10:
-  %v90 = add i64 0, 20
+  %v90 = add i64 0, 14
   call void @"rt.panic"(i64 %v90)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -10044,7 +9881,7 @@ b11.t48:
 b11.e49:
   br label %b13
 b12:
-  %v101 = add i64 0, 21
+  %v101 = add i64 0, 15
   call void @"rt.panic"(i64 %v101)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -10070,7 +9907,7 @@ b13.t50:
 b13.e51:
   br label %b15
 b14:
-  %v112 = add i64 0, 22
+  %v112 = add i64 0, 16
   call void @"rt.panic"(i64 %v112)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -10094,7 +9931,7 @@ b15.t52:
 b15.e53:
   br label %b17
 b16:
-  %v122 = add i64 0, 23
+  %v122 = add i64 0, 17
   call void @"rt.panic"(i64 %v122)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -10108,7 +9945,7 @@ b17.t54:
 b17.e55:
   br label %b19
 b18:
-  %v124 = add i64 0, 24
+  %v124 = add i64 0, 18
   call void @"rt.panic"(i64 %v124)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -10124,7 +9961,7 @@ b19.t56:
 b19.e57:
   br label %b21
 b20:
-  %v127 = add i64 0, 25
+  %v127 = add i64 0, 19
   call void @"rt.panic"(i64 %v127)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -10289,7 +10126,7 @@ b0.t2:
 b0.e3:
   br label %b2
 b1:
-  %v18 = add i64 0, 26
+  %v18 = add i64 0, 20
   call void @"rt.panic"(i64 %v18)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -10351,7 +10188,7 @@ b5.e12:
 b6:
   br label %b11
 b7:
-  %v39 = add i64 0, 27
+  %v39 = add i64 0, 21
   call void @"rt.panic"(i64 %v39)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -10633,7 +10470,7 @@ b0.t1:
 b0.e2:
   br label %b2
 b1:
-  %v8 = add i64 0, 28
+  %v8 = add i64 0, 22
   call void @"rt.panic"(i64 %v8)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -10672,7 +10509,7 @@ b3.e6:
 b4:
   br label %b9
 b5:
-  %v22 = add i64 0, 29
+  %v22 = add i64 0, 23
   call void @"rt.panic"(i64 %v22)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -10829,7 +10666,7 @@ b9.t40:
 b9.e41:
   br label %b11
 b10:
-  %v71 = add i64 0, 30
+  %v71 = add i64 0, 24
   call void @"rt.panic"(i64 %v71)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -10855,7 +10692,7 @@ b11.t42:
 b11.e43:
   br label %b13
 b12:
-  %v82 = add i64 0, 31
+  %v82 = add i64 0, 25
   call void @"rt.panic"(i64 %v82)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -10879,7 +10716,7 @@ b13.t44:
 b13.e45:
   br label %b15
 b14:
-  %v91 = add i64 0, 32
+  %v91 = add i64 0, 26
   call void @"rt.panic"(i64 %v91)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -10989,7 +10826,7 @@ b24:
   store i64 %v235, ptr %st59
   br label %b21
 b25:
-  %v115 = add i64 0, 33
+  %v115 = add i64 0, 27
   call void @"rt.panic"(i64 %v115)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -11040,7 +10877,7 @@ b29.e66:
 b30:
   br label %b35
 b31:
-  %v130 = add i64 0, 34
+  %v130 = add i64 0, 28
   call void @"rt.panic"(i64 %v130)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -11246,7 +11083,7 @@ b40.e107:
 b41:
   br label %b46
 b42:
-  %v196 = add i64 0, 35
+  %v196 = add i64 0, 29
   call void @"rt.panic"(i64 %v196)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -11440,7 +11277,7 @@ b52.e143:
 b53:
   br label %b58
 b54:
-  %v261 = add i64 0, 36
+  %v261 = add i64 0, 30
   call void @"rt.panic"(i64 %v261)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -12074,7 +11911,7 @@ b10.e16:
 b11:
   br label %b14
 b12:
-  %v39 = add i64 0, 37
+  %v39 = add i64 0, 31
   call void @"rt.panic"(i64 %v39)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -12718,7 +12555,7 @@ b6:
   store i64 %v95, ptr %st24
   br label %b3
 b7:
-  %v48 = add i64 0, 38
+  %v48 = add i64 0, 32
   call void @"rt.panic"(i64 %v48)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -12921,7 +12758,7 @@ b0.t2:
 b0.e3:
   br label %b2
 b1:
-  %v27 = add i64 0, 39
+  %v27 = add i64 0, 33
   call void @"rt.panic"(i64 %v27)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -12972,7 +12809,7 @@ b4.t8:
 b4.e9:
   br label %b16
 b5:
-  %v40 = add i64 0, 40
+  %v40 = add i64 0, 34
   call void @"rt.panic"(i64 %v40)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -12998,7 +12835,7 @@ b6.t10:
 b6.e11:
   br label %b8
 b7:
-  %v51 = add i64 0, 41
+  %v51 = add i64 0, 35
   call void @"rt.panic"(i64 %v51)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -13021,7 +12858,7 @@ b8.t12:
 b8.e13:
   br label %b10
 b9:
-  %v60 = add i64 0, 42
+  %v60 = add i64 0, 36
   call void @"rt.panic"(i64 %v60)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -13035,7 +12872,7 @@ b10.t14:
 b10.e15:
   br label %b12
 b11:
-  %v62 = add i64 0, 43
+  %v62 = add i64 0, 37
   call void @"rt.panic"(i64 %v62)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -13051,7 +12888,7 @@ b12.t16:
 b12.e17:
   br label %b14
 b13:
-  %v65 = add i64 0, 44
+  %v65 = add i64 0, 38
   call void @"rt.panic"(i64 %v65)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -13073,7 +12910,7 @@ b14:
   store i64 %v70, ptr %st19
   br label %b25
 b15:
-  %v79 = add i64 0, 45
+  %v79 = add i64 0, 39
   call void @"rt.panic"(i64 %v79)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -13099,7 +12936,7 @@ b16.t21:
 b16.e22:
   br label %b18
 b17:
-  %v90 = add i64 0, 46
+  %v90 = add i64 0, 40
   call void @"rt.panic"(i64 %v90)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -13122,7 +12959,7 @@ b18.t23:
 b18.e24:
   br label %b20
 b19:
-  %v99 = add i64 0, 47
+  %v99 = add i64 0, 41
   call void @"rt.panic"(i64 %v99)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -13136,7 +12973,7 @@ b20.t25:
 b20.e26:
   br label %b22
 b21:
-  %v101 = add i64 0, 48
+  %v101 = add i64 0, 42
   call void @"rt.panic"(i64 %v101)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -13152,7 +12989,7 @@ b22.t27:
 b22.e28:
   br label %b24
 b23:
-  %v104 = add i64 0, 49
+  %v104 = add i64 0, 43
   call void @"rt.panic"(i64 %v104)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -13300,7 +13137,7 @@ b0.t7:
 b0.e8:
   br label %b2
 b1:
-  %v17 = add i64 0, 50
+  %v17 = add i64 0, 44
   call void @"rt.panic"(i64 %v17)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -13426,7 +13263,7 @@ b5.t30:
 b5.e31:
   br label %b7
 b6:
-  %v60 = add i64 0, 51
+  %v60 = add i64 0, 45
   call void @"rt.panic"(i64 %v60)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -13450,7 +13287,7 @@ b7.t32:
 b7.e33:
   br label %b9
 b8:
-  %v69 = add i64 0, 52
+  %v69 = add i64 0, 46
   call void @"rt.panic"(i64 %v69)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -13586,7 +13423,7 @@ b20.t52:
 b20.e53:
   br label %b22
 b21:
-  %v103 = add i64 0, 53
+  %v103 = add i64 0, 47
   call void @"rt.panic"(i64 %v103)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -13610,7 +13447,7 @@ b22.t54:
 b22.e55:
   br label %b24
 b23:
-  %v112 = add i64 0, 54
+  %v112 = add i64 0, 48
   call void @"rt.panic"(i64 %v112)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -13634,7 +13471,7 @@ b24.t56:
 b24.e57:
   br label %b26
 b25:
-  %v121 = add i64 0, 55
+  %v121 = add i64 0, 49
   call void @"rt.panic"(i64 %v121)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -13674,7 +13511,7 @@ b27.e62:
 b28:
   br label %b57
 b29:
-  %v134 = add i64 0, 56
+  %v134 = add i64 0, 50
   call void @"rt.panic"(i64 %v134)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -13760,7 +13597,7 @@ b37.t72:
 b37.e73:
   br label %b35
 b38:
-  %v151 = add i64 0, 57
+  %v151 = add i64 0, 51
   call void @"rt.panic"(i64 %v151)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -13785,7 +13622,7 @@ b39.t74:
 b39.e75:
   br label %b41
 b40:
-  %v159 = add i64 0, 58
+  %v159 = add i64 0, 52
   call void @"rt.panic"(i64 %v159)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -13854,7 +13691,7 @@ b46.t83:
 b46.e84:
   br label %b44
 b47:
-  %v177 = add i64 0, 59
+  %v177 = add i64 0, 53
   call void @"rt.panic"(i64 %v177)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -13879,7 +13716,7 @@ b48.t85:
 b48.e86:
   br label %b50
 b49:
-  %v185 = add i64 0, 60
+  %v185 = add i64 0, 54
   call void @"rt.panic"(i64 %v185)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -13921,7 +13758,7 @@ b52.e90:
 b53:
   br label %b56
 b54:
-  %v201 = add i64 0, 61
+  %v201 = add i64 0, 55
   call void @"rt.panic"(i64 %v201)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -14108,7 +13945,7 @@ b5.t13:
 b5.e14:
   br label %b3
 b6:
-  %v15 = add i64 0, 62
+  %v15 = add i64 0, 56
   call void @"rt.panic"(i64 %v15)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -14212,7 +14049,7 @@ b2.t9:
 b2.e10:
   br label %b6
 b3:
-  %v14 = add i64 0, 63
+  %v14 = add i64 0, 57
   call void @"rt.panic"(i64 %v14)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -14273,7 +14110,7 @@ b9.t16:
 b9.e17:
   br label %b13
 b10:
-  %v31 = add i64 0, 64
+  %v31 = add i64 0, 58
   call void @"rt.panic"(i64 %v31)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -14313,7 +14150,7 @@ b14.t19:
 b14.e20:
   br label %b16
 b15:
-  %v45 = add i64 0, 65
+  %v45 = add i64 0, 59
   call void @"rt.panic"(i64 %v45)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -14402,7 +14239,7 @@ b23.t31:
 b23.e32:
   br label %b21
 b24:
-  %v63 = add i64 0, 66
+  %v63 = add i64 0, 60
   call void @"rt.panic"(i64 %v63)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -14451,7 +14288,7 @@ b28.t37:
 b28.e38:
   br label %b32
 b29:
-  %v80 = add i64 0, 67
+  %v80 = add i64 0, 61
   call void @"rt.panic"(i64 %v80)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -14510,7 +14347,7 @@ b34.t44:
 b34.e45:
   br label %b38
 b35:
-  %v97 = add i64 0, 68
+  %v97 = add i64 0, 62
   call void @"rt.panic"(i64 %v97)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -14596,7 +14433,7 @@ b44.t54:
 b44.e55:
   br label %b42
 b45:
-  %v116 = add i64 0, 69
+  %v116 = add i64 0, 63
   call void @"rt.panic"(i64 %v116)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -14645,7 +14482,7 @@ b49.t60:
 b49.e61:
   br label %b57
 b50:
-  %v133 = add i64 0, 70
+  %v133 = add i64 0, 64
   call void @"rt.panic"(i64 %v133)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -14683,7 +14520,7 @@ b53:
   %v140 = phi i64 [ %v139, %b51.t62 ], [ %v150, %b55 ]
   br label %b49
 b54:
-  %v144 = add i64 0, 71
+  %v144 = add i64 0, 65
   call void @"rt.panic"(i64 %v144)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -14742,7 +14579,7 @@ b59.t71:
 b59.e72:
   br label %b67
 b60:
-  %v161 = add i64 0, 72
+  %v161 = add i64 0, 66
   call void @"rt.panic"(i64 %v161)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -14780,7 +14617,7 @@ b63:
   %v168 = phi i64 [ %v167, %b61.t73 ], [ %v178, %b65 ]
   br label %b59
 b64:
-  %v172 = add i64 0, 73
+  %v172 = add i64 0, 67
   call void @"rt.panic"(i64 %v172)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -14841,7 +14678,7 @@ b70.t82:
 b70.e83:
   br label %b74
 b71:
-  %v189 = add i64 0, 74
+  %v189 = add i64 0, 68
   call void @"rt.panic"(i64 %v189)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -14927,7 +14764,7 @@ b80.t92:
 b80.e93:
   br label %b78
 b81:
-  %v208 = add i64 0, 75
+  %v208 = add i64 0, 69
   call void @"rt.panic"(i64 %v208)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -15191,7 +15028,7 @@ b9:
   store i64 %v49, ptr %st17
   br label %b6
 b10:
-  %v30 = add i64 0, 76
+  %v30 = add i64 0, 70
   call void @"rt.panic"(i64 %v30)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -15329,7 +15166,7 @@ b3:
   store i64 %v6, ptr %st14
   ret void
 b4:
-  %v20 = add i64 0, 77
+  %v20 = add i64 0, 71
   call void @"rt.panic"(i64 %v20)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -15470,7 +15307,7 @@ b16.t38:
 b16.e39:
   br label %b18
 b17:
-  %v57 = add i64 0, 78
+  %v57 = add i64 0, 72
   call void @"rt.panic"(i64 %v57)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -15613,7 +15450,7 @@ b29.t60:
 b29.e61:
   br label %b33
 b30:
-  %v94 = add i64 0, 79
+  %v94 = add i64 0, 73
   call void @"rt.panic"(i64 %v94)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -15653,7 +15490,7 @@ b33.t64:
 b33.e65:
   br label %b37
 b34:
-  %v107 = add i64 0, 80
+  %v107 = add i64 0, 74
   call void @"rt.panic"(i64 %v107)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -15984,7 +15821,7 @@ b3:
   store i64 %v7, ptr %st10
   ret void
 b4:
-  %v22 = add i64 0, 81
+  %v22 = add i64 0, 75
   call void @"rt.panic"(i64 %v22)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -16033,7 +15870,7 @@ b7.t16:
 b7.e17:
   br label %b9
 b8:
-  %v38 = add i64 0, 82
+  %v38 = add i64 0, 76
   call void @"rt.panic"(i64 %v38)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -16205,7 +16042,7 @@ b2.t5:
 b2.e6:
   br label %b6
 b3:
-  %v13 = add i64 0, 83
+  %v13 = add i64 0, 77
   call void @"rt.panic"(i64 %v13)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -16241,7 +16078,7 @@ b6.t10:
 b6.e11:
   br label %b12
 b7:
-  %v23 = add i64 0, 84
+  %v23 = add i64 0, 78
   call void @"rt.panic"(i64 %v23)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -16264,7 +16101,7 @@ b8.t13:
 b8.e14:
   br label %b10
 b9:
-  %v31 = add i64 0, 85
+  %v31 = add i64 0, 79
   call void @"rt.panic"(i64 %v31)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -16305,7 +16142,7 @@ b12.t18:
 b12.e19:
   br label %b20
 b13:
-  %v41 = add i64 0, 86
+  %v41 = add i64 0, 80
   call void @"rt.panic"(i64 %v41)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -16331,7 +16168,7 @@ b14.t21:
 b14.e22:
   br label %b16
 b15:
-  %v51 = add i64 0, 87
+  %v51 = add i64 0, 81
   call void @"rt.panic"(i64 %v51)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -16354,7 +16191,7 @@ b16.t24:
 b16.e25:
   br label %b18
 b17:
-  %v59 = add i64 0, 88
+  %v59 = add i64 0, 82
   call void @"rt.panic"(i64 %v59)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -16365,7 +16202,7 @@ b18:
   call void @"std/builder.Push[byte]"(ptr %v0, i64 %v56)
   br label %b27
 b19:
-  %v67 = add i64 0, 89
+  %v67 = add i64 0, 83
   call void @"rt.panic"(i64 %v67)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -16391,7 +16228,7 @@ b20.t28:
 b20.e29:
   br label %b22
 b21:
-  %v77 = add i64 0, 90
+  %v77 = add i64 0, 84
   call void @"rt.panic"(i64 %v77)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -16417,7 +16254,7 @@ b22.t31:
 b22.e32:
   br label %b24
 b23:
-  %v87 = add i64 0, 91
+  %v87 = add i64 0, 85
   call void @"rt.panic"(i64 %v87)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -16440,7 +16277,7 @@ b24.t34:
 b24.e35:
   br label %b26
 b25:
-  %v95 = add i64 0, 92
+  %v95 = add i64 0, 86
   call void @"rt.panic"(i64 %v95)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -16623,7 +16460,7 @@ b9:
   store i64 %v50, ptr %st22
   br label %b6
 b10:
-  %v34 = add i64 0, 93
+  %v34 = add i64 0, 87
   call void @"rt.panic"(i64 %v34)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -16646,7 +16483,7 @@ b11.t24:
 b11.e25:
   br label %b13
 b12:
-  %v41 = add i64 0, 94
+  %v41 = add i64 0, 88
   call void @"rt.panic"(i64 %v41)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -16763,7 +16600,7 @@ b2.t8:
 b2.e9:
   br label %b6
 b3:
-  %v14 = add i64 0, 95
+  %v14 = add i64 0, 89
   call void @"rt.panic"(i64 %v14)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -16853,7 +16690,7 @@ b0.t1:
 b0.e2:
   br label %b2
 b1:
-  %v15 = add i64 0, 96
+  %v15 = add i64 0, 90
   call void @"rt.panic"(i64 %v15)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -16879,7 +16716,7 @@ b2.t4:
 b2.e5:
   br label %b4
 b3:
-  %v25 = add i64 0, 97
+  %v25 = add i64 0, 91
   call void @"rt.panic"(i64 %v25)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -16905,7 +16742,7 @@ b4.t7:
 b4.e8:
   br label %b6
 b5:
-  %v35 = add i64 0, 98
+  %v35 = add i64 0, 92
   call void @"rt.panic"(i64 %v35)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -16931,7 +16768,7 @@ b6.t10:
 b6.e11:
   br label %b8
 b7:
-  %v45 = add i64 0, 99
+  %v45 = add i64 0, 93
   call void @"rt.panic"(i64 %v45)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -17038,7 +16875,7 @@ b3:
   store i64 %v4, ptr %st11
   ret i64 %v39
 b4:
-  %v17 = add i64 0, 100
+  %v17 = add i64 0, 94
   call void @"rt.panic"(i64 %v17)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -19066,7 +18903,7 @@ b15.t313:
 b15.e314:
   br label %b17
 b16:
-  %v399 = add i64 0, 101
+  %v399 = add i64 0, 95
   call void @"rt.panic"(i64 %v399)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -19619,7 +19456,7 @@ b33.t425:
 b33.e426:
   br label %b36
 b34:
-  %v564 = add i64 0, 102
+  %v564 = add i64 0, 96
   call void @"rt.panic"(i64 %v564)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -19665,7 +19502,7 @@ b39:
   %v574 = phi i64 [ %v573, %b36.e428 ], [ %v584, %b41 ]
   br label %b37
 b40:
-  %v578 = add i64 0, 103
+  %v578 = add i64 0, 97
   call void @"rt.panic"(i64 %v578)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -19736,7 +19573,7 @@ b43.t436:
 b43.e437:
   br label %b47
 b44:
-  %v609 = add i64 0, 104
+  %v609 = add i64 0, 98
   call void @"rt.panic"(i64 %v609)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -22017,7 +21854,7 @@ b91.t917:
 b91.e918:
   br label %b93
 b92:
-  %v1325 = add i64 0, 105
+  %v1325 = add i64 0, 99
   call void @"rt.panic"(i64 %v1325)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -22046,7 +21883,7 @@ b93.t919:
 b93.e920:
   br label %b95
 b94:
-  %v1337 = add i64 0, 106
+  %v1337 = add i64 0, 100
   call void @"rt.panic"(i64 %v1337)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -22968,7 +22805,7 @@ b113.t1112:
 b113.e1113:
   br label %b117
 b114:
-  %v1522 = add i64 0, 107
+  %v1522 = add i64 0, 101
   call void @"rt.panic"(i64 %v1522)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -23528,7 +23365,7 @@ b129.t1229:
 b129.e1230:
   br label %b131
 b130:
-  %v1795 = add i64 0, 108
+  %v1795 = add i64 0, 102
   call void @"rt.panic"(i64 %v1795)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -23542,7 +23379,7 @@ b131.t1231:
 b131.e1232:
   br label %b133
 b132:
-  %v1797 = add i64 0, 109
+  %v1797 = add i64 0, 103
   call void @"rt.panic"(i64 %v1797)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -23558,7 +23395,7 @@ b133.t1233:
 b133.e1234:
   br label %b135
 b134:
-  %v1800 = add i64 0, 110
+  %v1800 = add i64 0, 104
   call void @"rt.panic"(i64 %v1800)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -23604,7 +23441,7 @@ b135.t1241:
 b135.e1242:
   br label %b137
 b136:
-  %v1817 = add i64 0, 111
+  %v1817 = add i64 0, 105
   call void @"rt.panic"(i64 %v1817)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -23618,7 +23455,7 @@ b137.t1243:
 b137.e1244:
   br label %b139
 b138:
-  %v1819 = add i64 0, 112
+  %v1819 = add i64 0, 106
   call void @"rt.panic"(i64 %v1819)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -23634,7 +23471,7 @@ b139.t1245:
 b139.e1246:
   br label %b141
 b140:
-  %v1822 = add i64 0, 113
+  %v1822 = add i64 0, 107
   call void @"rt.panic"(i64 %v1822)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -23680,7 +23517,7 @@ b141.t1253:
 b141.e1254:
   br label %b143
 b142:
-  %v1839 = add i64 0, 114
+  %v1839 = add i64 0, 108
   call void @"rt.panic"(i64 %v1839)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -23694,7 +23531,7 @@ b143.t1255:
 b143.e1256:
   br label %b145
 b144:
-  %v1841 = add i64 0, 115
+  %v1841 = add i64 0, 109
   call void @"rt.panic"(i64 %v1841)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -23710,7 +23547,7 @@ b145.t1257:
 b145.e1258:
   br label %b147
 b146:
-  %v1844 = add i64 0, 116
+  %v1844 = add i64 0, 110
   call void @"rt.panic"(i64 %v1844)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -23756,7 +23593,7 @@ b147.t1265:
 b147.e1266:
   br label %b149
 b148:
-  %v1861 = add i64 0, 117
+  %v1861 = add i64 0, 111
   call void @"rt.panic"(i64 %v1861)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -23770,7 +23607,7 @@ b149.t1267:
 b149.e1268:
   br label %b151
 b150:
-  %v1863 = add i64 0, 118
+  %v1863 = add i64 0, 112
   call void @"rt.panic"(i64 %v1863)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -23786,7 +23623,7 @@ b151.t1269:
 b151.e1270:
   br label %b153
 b152:
-  %v1866 = add i64 0, 119
+  %v1866 = add i64 0, 113
   call void @"rt.panic"(i64 %v1866)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -23834,7 +23671,7 @@ b153.t1277:
 b153.e1278:
   br label %b155
 b154:
-  %v1884 = add i64 0, 120
+  %v1884 = add i64 0, 114
   call void @"rt.panic"(i64 %v1884)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -23848,7 +23685,7 @@ b155.t1279:
 b155.e1280:
   br label %b157
 b156:
-  %v1886 = add i64 0, 121
+  %v1886 = add i64 0, 115
   call void @"rt.panic"(i64 %v1886)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -23864,7 +23701,7 @@ b157.t1281:
 b157.e1282:
   br label %b159
 b158:
-  %v1889 = add i64 0, 122
+  %v1889 = add i64 0, 116
   call void @"rt.panic"(i64 %v1889)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -24725,7 +24562,7 @@ b2.t8:
 b2.e9:
   br label %b6
 b3:
-  %v20 = add i64 0, 123
+  %v20 = add i64 0, 117
   call void @"rt.panic"(i64 %v20)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -25014,7 +24851,7 @@ b16.t65:
 b16.e66:
   br label %b20
 b17:
-  %v110 = add i64 0, 124
+  %v110 = add i64 0, 118
   call void @"rt.panic"(i64 %v110)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -25299,7 +25136,7 @@ b0.t1:
 b0.e2:
   br label %b2
 b1:
-  %v13 = add i64 0, 125
+  %v13 = add i64 0, 119
   call void @"rt.panic"(i64 %v13)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -25425,7 +25262,7 @@ b10:
   store i64 %v62, ptr %st16
   br label %b7
 b11:
-  %v45 = add i64 0, 126
+  %v45 = add i64 0, 120
   call void @"rt.panic"(i64 %v45)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -25449,7 +25286,7 @@ b12.t18:
 b12.e19:
   br label %b14
 b13:
-  %v54 = add i64 0, 127
+  %v54 = add i64 0, 121
   call void @"rt.panic"(i64 %v54)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -25464,7 +25301,7 @@ b14:
   store i64 %v51, ptr %st19
   br label %b10
 b15:
-  %v71 = add i64 0, 128
+  %v71 = add i64 0, 122
   call void @"rt.panic"(i64 %v71)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -25586,7 +25423,7 @@ b23:
   store i64 %v146, ptr %st34
   br label %b20
 b24:
-  %v103 = add i64 0, 129
+  %v103 = add i64 0, 123
   call void @"rt.panic"(i64 %v103)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -25610,7 +25447,7 @@ b25.t36:
 b25.e37:
   br label %b27
 b26:
-  %v112 = add i64 0, 130
+  %v112 = add i64 0, 124
   call void @"rt.panic"(i64 %v112)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -25643,7 +25480,7 @@ b27.t39:
 b27.e40:
   br label %b29
 b28:
-  %v129 = add i64 0, 131
+  %v129 = add i64 0, 125
   call void @"rt.panic"(i64 %v129)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -25667,7 +25504,7 @@ b29.t41:
 b29.e42:
   br label %b31
 b30:
-  %v138 = add i64 0, 132
+  %v138 = add i64 0, 126
   call void @"rt.panic"(i64 %v138)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -25682,7 +25519,7 @@ b31:
   store i64 %v135, ptr %st42
   br label %b23
 b32:
-  %v155 = add i64 0, 133
+  %v155 = add i64 0, 127
   call void @"rt.panic"(i64 %v155)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -25810,7 +25647,7 @@ b6:
   store i64 %v87, ptr %st11
   br label %b3
 b7:
-  %v24 = add i64 0, 134
+  %v24 = add i64 0, 128
   call void @"rt.panic"(i64 %v24)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -25854,7 +25691,7 @@ b10.t17:
 b10.e18:
   br label %b14
 b11:
-  %v38 = add i64 0, 135
+  %v38 = add i64 0, 129
   call void @"rt.panic"(i64 %v38)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -25887,7 +25724,7 @@ b13.e20:
 b14:
   br label %b29
 b15:
-  %v51 = add i64 0, 136
+  %v51 = add i64 0, 130
   call void @"rt.panic"(i64 %v51)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -25913,7 +25750,7 @@ b16.t21:
 b16.e22:
   br label %b18
 b17:
-  %v62 = add i64 0, 137
+  %v62 = add i64 0, 131
   call void @"rt.panic"(i64 %v62)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -26240,7 +26077,7 @@ b6:
   store i64 %v198, ptr %st28
   br label %b3
 b7:
-  %v52 = add i64 0, 138
+  %v52 = add i64 0, 132
   call void @"rt.panic"(i64 %v52)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -26264,7 +26101,7 @@ b8.t30:
 b8.e31:
   br label %b10
 b9:
-  %v61 = add i64 0, 139
+  %v61 = add i64 0, 133
   call void @"rt.panic"(i64 %v61)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -26288,7 +26125,7 @@ b10.t32:
 b10.e33:
   br label %b12
 b11:
-  %v70 = add i64 0, 140
+  %v70 = add i64 0, 134
   call void @"rt.panic"(i64 %v70)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -26313,7 +26150,7 @@ b12.t34:
 b12.e35:
   br label %b14
 b13:
-  %v80 = add i64 0, 141
+  %v80 = add i64 0, 135
   call void @"rt.panic"(i64 %v80)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -26428,7 +26265,7 @@ b23:
   store i64 %v195, ptr %st49
   br label %b20
 b24:
-  %v108 = add i64 0, 142
+  %v108 = add i64 0, 136
   call void @"rt.panic"(i64 %v108)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -26452,7 +26289,7 @@ b25.t51:
 b25.e52:
   br label %b27
 b26:
-  %v117 = add i64 0, 143
+  %v117 = add i64 0, 137
   call void @"rt.panic"(i64 %v117)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -26476,7 +26313,7 @@ b27.t53:
 b27.e54:
   br label %b29
 b28:
-  %v126 = add i64 0, 144
+  %v126 = add i64 0, 138
   call void @"rt.panic"(i64 %v126)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -26512,7 +26349,7 @@ b30.e58:
 b31:
   br label %b51
 b32:
-  %v137 = add i64 0, 145
+  %v137 = add i64 0, 139
   call void @"rt.panic"(i64 %v137)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -26624,7 +26461,7 @@ b41.t74:
 b41.e75:
   br label %b39
 b42:
-  %v161 = add i64 0, 146
+  %v161 = add i64 0, 140
   call void @"rt.panic"(i64 %v161)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -26650,7 +26487,7 @@ b43.t76:
 b43.e77:
   br label %b45
 b44:
-  %v170 = add i64 0, 147
+  %v170 = add i64 0, 141
   call void @"rt.panic"(i64 %v170)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -26681,7 +26518,7 @@ b46.e79:
 b47:
   br label %b50
 b48:
-  %v186 = add i64 0, 148
+  %v186 = add i64 0, 142
   call void @"rt.panic"(i64 %v186)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -26904,7 +26741,7 @@ b6:
   store i64 %v130, ptr %st21
   br label %b3
 b7:
-  %v33 = add i64 0, 149
+  %v33 = add i64 0, 143
   call void @"rt.panic"(i64 %v33)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -27004,7 +26841,7 @@ b12.e37:
 b13:
   br label %b18
 b14:
-  %v69 = add i64 0, 150
+  %v69 = add i64 0, 144
   call void @"rt.panic"(i64 %v69)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -27028,7 +26865,7 @@ b15.t38:
 b15.e39:
   br label %b17
 b16:
-  %v78 = add i64 0, 151
+  %v78 = add i64 0, 145
   call void @"rt.panic"(i64 %v78)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -27445,7 +27282,7 @@ b3.t13:
 b3.e14:
   br label %b34
 b4:
-  %v26 = add i64 0, 152
+  %v26 = add i64 0, 146
   call void @"rt.panic"(i64 %v26)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -27471,7 +27308,7 @@ b5.t15:
 b5.e16:
   br label %b7
 b6:
-  %v35 = add i64 0, 153
+  %v35 = add i64 0, 147
   call void @"rt.panic"(i64 %v35)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -27485,7 +27322,7 @@ b7.t17:
 b7.e18:
   br label %b9
 b8:
-  %v37 = add i64 0, 154
+  %v37 = add i64 0, 148
   call void @"rt.panic"(i64 %v37)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -27501,7 +27338,7 @@ b9.t19:
 b9.e20:
   br label %b11
 b10:
-  %v40 = add i64 0, 155
+  %v40 = add i64 0, 149
   call void @"rt.panic"(i64 %v40)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -27777,7 +27614,7 @@ b26.t65:
 b26.e66:
   br label %b28
 b27:
-  %v136 = add i64 0, 156
+  %v136 = add i64 0, 150
   call void @"rt.panic"(i64 %v136)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -27791,7 +27628,7 @@ b28.t67:
 b28.e68:
   br label %b30
 b29:
-  %v138 = add i64 0, 157
+  %v138 = add i64 0, 151
   call void @"rt.panic"(i64 %v138)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -27807,7 +27644,7 @@ b30.t69:
 b30.e70:
   br label %b32
 b31:
-  %v141 = add i64 0, 158
+  %v141 = add i64 0, 152
   call void @"rt.panic"(i64 %v141)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -27838,7 +27675,7 @@ b32:
   store i64 %v153, ptr %st73
   br label %b1
 b33:
-  %v158 = add i64 0, 159
+  %v158 = add i64 0, 153
   call void @"rt.panic"(i64 %v158)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -27852,7 +27689,7 @@ b34.t75:
 b34.e76:
   br label %b36
 b35:
-  %v160 = add i64 0, 160
+  %v160 = add i64 0, 154
   call void @"rt.panic"(i64 %v160)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -27868,7 +27705,7 @@ b36.t77:
 b36.e78:
   br label %b38
 b37:
-  %v163 = add i64 0, 161
+  %v163 = add i64 0, 155
   call void @"rt.panic"(i64 %v163)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -28059,7 +27896,7 @@ b3.t3:
 b3.e4:
   br label %b5
 b4:
-  %v11 = add i64 0, 162
+  %v11 = add i64 0, 156
   call void @"rt.panic"(i64 %v11)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -28379,7 +28216,7 @@ b3.e25:
 b4:
   br label %b11
 b5:
-  %v69 = add i64 0, 163
+  %v69 = add i64 0, 157
   call void @"rt.panic"(i64 %v69)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -28393,7 +28230,7 @@ b6.t26:
 b6.e27:
   br label %b8
 b7:
-  %v71 = add i64 0, 164
+  %v71 = add i64 0, 158
   call void @"rt.panic"(i64 %v71)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -28409,7 +28246,7 @@ b8.t28:
 b8.e29:
   br label %b10
 b9:
-  %v74 = add i64 0, 165
+  %v74 = add i64 0, 159
   call void @"rt.panic"(i64 %v74)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -28662,7 +28499,7 @@ b14.t73:
 b14.e74:
   br label %b20
 b15:
-  %v176 = add i64 0, 166
+  %v176 = add i64 0, 160
   call void @"rt.panic"(i64 %v176)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -28678,7 +28515,7 @@ b16.t75:
 b16.e76:
   br label %b18
 b17:
-  %v179 = add i64 0, 167
+  %v179 = add i64 0, 161
   call void @"rt.panic"(i64 %v179)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -28722,7 +28559,7 @@ b19.e81:
 b20:
   br label %b23
 b21:
-  %v195 = add i64 0, 168
+  %v195 = add i64 0, 162
   call void @"rt.panic"(i64 %v195)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -28764,7 +28601,7 @@ b23.t86:
 b23.e87:
   br label %b25
 b24:
-  %v209 = add i64 0, 169
+  %v209 = add i64 0, 163
   call void @"rt.panic"(i64 %v209)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -28778,7 +28615,7 @@ b25.t88:
 b25.e89:
   br label %b27
 b26:
-  %v211 = add i64 0, 170
+  %v211 = add i64 0, 164
   call void @"rt.panic"(i64 %v211)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -28794,7 +28631,7 @@ b27.t90:
 b27.e91:
   br label %b29
 b28:
-  %v214 = add i64 0, 171
+  %v214 = add i64 0, 165
   call void @"rt.panic"(i64 %v214)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -29070,7 +28907,7 @@ b2:
   call void @"std/builder.pushSlow[byte]"(ptr %v0, i64 %v1)
   br label %b7
 b3:
-  %v15 = add i64 0, 172
+  %v15 = add i64 0, 166
   call void @"rt.panic"(i64 %v15)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -29107,7 +28944,7 @@ b4.t9:
 b4.e10:
   br label %b6
 b5:
-  %v28 = add i64 0, 173
+  %v28 = add i64 0, 167
   call void @"rt.panic"(i64 %v28)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -29455,7 +29292,7 @@ b21.t37:
 b21.e38:
   br label %b23
 b22:
-  %v101 = add i64 0, 174
+  %v101 = add i64 0, 168
   call void @"rt.panic"(i64 %v101)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -29699,7 +29536,7 @@ b39:
   store i64 %v113, ptr %st71
   br label %b24
 b40:
-  %v194 = add i64 0, 175
+  %v194 = add i64 0, 169
   call void @"rt.panic"(i64 %v194)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -29865,7 +29702,7 @@ b4.t10:
 b4.e11:
   br label %b24
 b5:
-  %v23 = add i64 0, 176
+  %v23 = add i64 0, 170
   call void @"rt.panic"(i64 %v23)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -30037,7 +29874,7 @@ b18:
   store i64 %v60, ptr %st35
   br label %b9
 b19:
-  %v69 = add i64 0, 177
+  %v69 = add i64 0, 171
   call void @"rt.panic"(i64 %v69)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -30060,7 +29897,7 @@ b20.t37:
 b20.e38:
   br label %b22
 b21:
-  %v76 = add i64 0, 178
+  %v76 = add i64 0, 172
   call void @"rt.panic"(i64 %v76)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -30246,7 +30083,7 @@ b7.t16:
 b7.e17:
   br label %b11
 b8:
-  %v29 = add i64 0, 179
+  %v29 = add i64 0, 173
   call void @"rt.panic"(i64 %v29)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -30270,7 +30107,7 @@ b9:
   store i64 %v37, ptr %st18
   br label %b31
 b10:
-  %v41 = add i64 0, 180
+  %v41 = add i64 0, 174
   call void @"rt.panic"(i64 %v41)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -30486,7 +30323,7 @@ b26:
   store i64 %v93, ptr %st46
   br label %b17
 b27:
-  %v104 = add i64 0, 181
+  %v104 = add i64 0, 175
   call void @"rt.panic"(i64 %v104)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -30509,7 +30346,7 @@ b28.t48:
 b28.e49:
   br label %b30
 b29:
-  %v111 = add i64 0, 182
+  %v111 = add i64 0, 176
   call void @"rt.panic"(i64 %v111)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -30667,7 +30504,7 @@ b4:
   call void @"std/builder.pushWordSlow"(ptr %v0, i64 %v1, i64 %v2)
   br label %b14
 b5:
-  %v20 = add i64 0, 183
+  %v20 = add i64 0, 177
   call void @"rt.panic"(i64 %v20)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -30757,7 +30594,7 @@ b9:
   store i64 %v62, ptr %st19
   br label %b14
 b10:
-  %v45 = add i64 0, 184
+  %v45 = add i64 0, 178
   call void @"rt.panic"(i64 %v45)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -30773,7 +30610,7 @@ b11.t21:
 b11.e22:
   br label %b13
 b12:
-  %v48 = add i64 0, 185
+  %v48 = add i64 0, 179
   call void @"rt.panic"(i64 %v48)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -30877,7 +30714,7 @@ b3:
   store i64 %v3, ptr %st8
   ret void
 b4:
-  %v22 = add i64 0, 186
+  %v22 = add i64 0, 180
   call void @"rt.panic"(i64 %v22)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -31113,7 +30950,7 @@ b6:
   store i64 %v2, ptr %st20
   ret void
 b7:
-  %v47 = add i64 0, 187
+  %v47 = add i64 0, 181
   call void @"rt.panic"(i64 %v47)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -31415,7 +31252,7 @@ b29:
   store i64 %v131, ptr %st65
   br label %b14
 b30:
-  %v142 = add i64 0, 188
+  %v142 = add i64 0, 182
   call void @"rt.panic"(i64 %v142)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -31612,7 +31449,7 @@ b2:
   call void @"std/builder.pushBetweenSlow[byte]"(ptr %v0, i64 %v1, i64 %v114, i64 %v115, i64 %v116, i64 %v5)
   br label %b25
 b3:
-  %v24 = add i64 0, 189
+  %v24 = add i64 0, 183
   call void @"rt.panic"(i64 %v24)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -31649,7 +31486,7 @@ b4.t15:
 b4.e16:
   br label %b6
 b5:
-  %v37 = add i64 0, 190
+  %v37 = add i64 0, 184
   call void @"rt.panic"(i64 %v37)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -31807,7 +31644,7 @@ b18:
   store i64 %v69, ptr %st38
   br label %b9
 b19:
-  %v78 = add i64 0, 191
+  %v78 = add i64 0, 185
   call void @"rt.panic"(i64 %v78)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -31830,7 +31667,7 @@ b20.t40:
 b20.e41:
   br label %b22
 b21:
-  %v85 = add i64 0, 192
+  %v85 = add i64 0, 186
   call void @"rt.panic"(i64 %v85)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -31850,7 +31687,7 @@ b22:
   store i64 %v91, ptr %st42
   br label %b16
 b23:
-  %v95 = add i64 0, 193
+  %v95 = add i64 0, 187
   call void @"rt.panic"(i64 %v95)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -31966,15 +31803,8 @@ b0:
   store i64 0, ptr %s0.z1
   %s0.z2 = getelementptr i64, ptr %s0, i64 2
   store i64 0, ptr %s0.z2
-  %s1 = alloca [3 x i64], align 8
-  %s1.z0 = getelementptr i64, ptr %s1, i64 0
-  store i64 0, ptr %s1.z0
-  %s1.z1 = getelementptr i64, ptr %s1, i64 1
-  store i64 0, ptr %s1.z1
-  %s1.z2 = getelementptr i64, ptr %s1, i64 2
-  store i64 0, ptr %s1.z2
-  %v87 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v2.p = getelementptr i64, ptr %v87, i64 0
+  %v63 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v2.p = getelementptr i64, ptr %v63, i64 0
   %v2 = load i64, ptr %v2.p
   %v3 = getelementptr i64, ptr @"rt.meta", i64 0
   %v4.p = getelementptr i64, ptr %v3, i64 2572
@@ -31984,212 +31814,150 @@ b0:
   %v6 = zext i1 %v6.c to i64
   %v7 = mul i64 %v6, %v2
   %v8 = add i64 %v4, %v7
-  %v9 = add i64 0, 0
-  %v10 = add i64 0, 0
-  %v11 = add i64 0, 0
-  %v12 = sub i64 %v1, %v10
-  %v13.c = icmp sle i64 %v12, %v9
-  %v13 = zext i1 %v13.c to i64
-  %c.b0 = icmp ne i64 %v13, 0
+  %v9.p = getelementptr i64, ptr %v0, i64 1
+  %v9 = load i64, ptr %v9.p
+  %v10.p = getelementptr i64, ptr %v0, i64 2
+  %v10 = load i64, ptr %v10.p
+  %v13 = add i64 0, 1
+  %v14.c = icmp slt i64 %v1, %v13
+  %v14 = zext i1 %v14.c to i64
+  %c.b0 = icmp ne i64 %v14, 0
   br i1 %c.b0, label %b0.t1, label %b0.e2
 b0.t1:
-  br label %b1
+  br label %b3
 b0.e2:
   br label %b2
 b1:
-  %v88 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st2 = getelementptr i64, ptr %v88, i64 0
-  store i64 %v2, ptr %st2
+  %v11 = phi ptr [ %v16, %b3 ], [ %v20, %b4 ]
+  %v12 = phi i64 [ %v9, %b3 ], [ %v57, %b4 ]
+  %v58 = getelementptr i64, ptr %s0, i64 0
+  %v59 = ptrtoint ptr %v11 to i64
+  %st2 = getelementptr i64, ptr %v58, i64 0
+  store i64 %v59, ptr %st2
+  %st3 = getelementptr i64, ptr %v58, i64 1
+  store i64 %v12, ptr %st3
+  %st4 = getelementptr i64, ptr %v58, i64 2
+  store i64 %v10, ptr %st4
+  %v60.p = getelementptr i64, ptr %v58, i64 0
+  %v60 = load i64, ptr %v60.p
+  %st5 = getelementptr i64, ptr %v0, i64 0
+  store i64 %v60, ptr %st5
+  %v61.p = getelementptr i64, ptr %v58, i64 1
+  %v61 = load i64, ptr %v61.p
+  %st6 = getelementptr i64, ptr %v0, i64 1
+  store i64 %v61, ptr %st6
+  %v62.p = getelementptr i64, ptr %v58, i64 2
+  %v62 = load i64, ptr %v62.p
+  %st7 = getelementptr i64, ptr %v0, i64 2
+  store i64 %v62, ptr %st7
+  %v64 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st8 = getelementptr i64, ptr %v64, i64 0
+  store i64 %v2, ptr %st8
   ret void
 b2:
-  %v14 = getelementptr i64, ptr %s0, i64 0
+  %v17.p = getelementptr i64, ptr %v0, i64 0
+  %v17 = load i64, ptr %v17.p
+  %v18.p = getelementptr i64, ptr %v0, i64 1
+  %v18 = load i64, ptr %v18.p
+  %v19 = add i64 %v17, %v18
+  %v22 = getelementptr i64, ptr @"rt.btip", i64 0
+  %v23 = getelementptr i64, ptr %v22, i64 %v10
+  %v24.p = getelementptr i64, ptr %v23, i64 0
+  %v24 = load i64, ptr %v24.p
+  %v25.c = icmp eq i64 %v24, %v19
+  %v25 = zext i1 %v25.c to i64
+  %c.b2 = icmp ne i64 %v25, 0
+  br i1 %c.b2, label %b2.t10, label %b2.e11
+b2.t10:
+  br label %b7
+b2.e11:
+  br label %b5
+b3:
   %v15.p = getelementptr i64, ptr %v0, i64 0
   %v15 = load i64, ptr %v15.p
-  %st3 = getelementptr i64, ptr %v14, i64 0
-  store i64 %v15, ptr %st3
-  %v16.p = getelementptr i64, ptr %v0, i64 1
-  %v16 = load i64, ptr %v16.p
-  %st4 = getelementptr i64, ptr %v14, i64 1
-  store i64 %v16, ptr %st4
-  %v17.p = getelementptr i64, ptr %v0, i64 2
-  %v17 = load i64, ptr %v17.p
-  %st5 = getelementptr i64, ptr %v14, i64 2
-  store i64 %v17, ptr %st5
-  %v18.p = getelementptr i64, ptr %v14, i64 2
-  %v18 = load i64, ptr %v18.p
-  %v19.p = getelementptr i64, ptr %v14, i64 0
-  %v19 = load i64, ptr %v19.p
-  %v20.p = getelementptr i64, ptr %v14, i64 1
-  %v20 = load i64, ptr %v20.p
-  %v21 = add i64 %v19, %v20
-  %v24 = getelementptr i64, ptr @"rt.btip", i64 0
-  %v25 = getelementptr i64, ptr %v24, i64 %v18
-  %v26.p = getelementptr i64, ptr %v25, i64 0
-  %v26 = load i64, ptr %v26.p
-  %v27.c = icmp eq i64 %v26, %v21
-  %v27 = zext i1 %v27.c to i64
-  %c.b2 = icmp ne i64 %v27, 0
-  br i1 %c.b2, label %b2.t7, label %b2.e8
-b2.t7:
-  br label %b6
-b2.e8:
-  br label %b4
-b3:
-  %v22 = phi ptr [ %v56, %b4 ], [ %v53, %b5 ]
-  %v23 = phi ptr [ %v58, %b4 ], [ %v54, %b5 ]
-  %v59 = add i64 0, 255
-  %v60 = and i64 %v11, %v59
-  %v61 = add i64 0, 72340172838076673
-  %v62 = mul i64 %v60, %v61
-  %v63 = add i64 0, 3
-  %v64.n = and i64 %v63, 63
-  %v64 = ashr i64 %v12, %v64.n
-  %v66 = add i64 0, 0
-  br label %b11
+  %v16 = inttoptr i64 %v15 to ptr
+  br label %b1
 b4:
-  %v55 = add i64 %v20, %v12
-  %v56 = call ptr @"rt.region_alloc8"(i64 %v18, i64 %v55)
-  %v57 = inttoptr i64 %v19 to ptr
-  call void @"rt.copy8"(ptr %v56, ptr %v57, i64 %v20)
-  %v58 = getelementptr i8, ptr %v56, i64 %v20
-  br label %b3
+  %v20 = phi ptr [ %v54, %b5 ], [ %v51, %b6 ]
+  %v21 = phi ptr [ %v56, %b5 ], [ %v52, %b6 ]
+  %v57 = add i64 %v9, %v1
+  br label %b1
 b5:
-  %v53 = inttoptr i64 %v19 to ptr
-  %v54 = getelementptr i8, ptr %v53, i64 %v20
-  br label %b3
+  %v53 = add i64 %v18, %v1
+  %v54 = call ptr @"rt.region_alloc8"(i64 %v10, i64 %v53)
+  %v55 = inttoptr i64 %v17 to ptr
+  call void @"rt.copy8"(ptr %v54, ptr %v55, i64 %v18)
+  %v56 = getelementptr i8, ptr %v54, i64 %v18
+  br label %b4
 b6:
-  %v28 = add i64 0, 7
-  %v29 = add i64 %v21, %v28
-  %v30 = add i64 0, -8
-  %v31 = and i64 %v29, %v30
-  %v32 = add i64 %v21, %v12
-  %v33 = add i64 0, 7
-  %v34 = add i64 %v32, %v33
-  %v35 = add i64 0, -8
-  %v36 = and i64 %v34, %v35
-  %v37 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v38 = getelementptr i64, ptr %v37, i64 %v18
-  %v39.p = getelementptr i64, ptr %v38, i64 1
-  %v39 = load i64, ptr %v39.p
-  %v40.c = icmp sle i64 %v32, %v31
-  %v40 = zext i1 %v40.c to i64
-  %v41.c = icmp eq i64 %v39, %v31
-  %v41 = zext i1 %v41.c to i64
-  %v42 = or i64 %v40, %v41
-  %v43 = add i64 0, 0
-  %v44.c = icmp ne i64 %v42, %v43
-  %v44 = zext i1 %v44.c to i64
-  %c.b6 = icmp ne i64 %v44, 0
-  br i1 %c.b6, label %b6.t9, label %b6.e10
-b6.t9:
-  br label %b7
-b6.e10:
+  %v51 = inttoptr i64 %v17 to ptr
+  %v52 = getelementptr i8, ptr %v51, i64 %v18
   br label %b4
 b7:
-  %v45.c = icmp sgt i64 %v36, %v39
-  %v45 = zext i1 %v45.c to i64
-  %c.b7 = icmp ne i64 %v45, 0
-  br i1 %c.b7, label %b7.t11, label %b7.e12
-b7.t11:
+  %v26 = add i64 0, 7
+  %v27 = add i64 %v19, %v26
+  %v28 = add i64 0, -8
+  %v29 = and i64 %v27, %v28
+  %v30 = add i64 %v19, %v1
+  %v31 = add i64 0, 7
+  %v32 = add i64 %v30, %v31
+  %v33 = add i64 0, -8
+  %v34 = and i64 %v32, %v33
+  %v35 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v36 = getelementptr i64, ptr %v35, i64 %v10
+  %v37.p = getelementptr i64, ptr %v36, i64 1
+  %v37 = load i64, ptr %v37.p
+  %v38.c = icmp sle i64 %v30, %v29
+  %v38 = zext i1 %v38.c to i64
+  %v39.c = icmp eq i64 %v37, %v29
+  %v39 = zext i1 %v39.c to i64
+  %v40 = or i64 %v38, %v39
+  %v41 = add i64 0, 0
+  %v42.c = icmp ne i64 %v40, %v41
+  %v42 = zext i1 %v42.c to i64
+  %c.b7 = icmp ne i64 %v42, 0
+  br i1 %c.b7, label %b7.t12, label %b7.e13
+b7.t12:
   br label %b8
-b7.e12:
-  br label %b9
+b7.e13:
+  br label %b5
 b8:
-  %v46.p = getelementptr i64, ptr %v37, i64 1029
-  %v46 = load i64, ptr %v46.p
-  %v47 = add i64 0, 1
-  %v48 = add i64 %v18, %v47
-  %v49.p = getelementptr i64, ptr %v37, i64 1030
-  %v49 = load i64, ptr %v49.p
-  %v50 = mul i64 %v48, %v49
-  %v51 = add i64 %v46, %v50
-  %v52.c = icmp sgt i64 %v36, %v51
-  %v52 = zext i1 %v52.c to i64
-  %c.b8 = icmp ne i64 %v52, 0
-  br i1 %c.b8, label %b8.t13, label %b8.e14
-b8.t13:
-  br label %b4
-b8.e14:
+  %v43.c = icmp sgt i64 %v34, %v37
+  %v43 = zext i1 %v43.c to i64
+  %c.b8 = icmp ne i64 %v43, 0
+  br i1 %c.b8, label %b8.t14, label %b8.e15
+b8.t14:
+  br label %b9
+b8.e15:
   br label %b10
 b9:
-  %st14 = getelementptr i64, ptr %v25, i64 0
-  store i64 %v32, ptr %st14
+  %v44.p = getelementptr i64, ptr %v35, i64 1029
+  %v44 = load i64, ptr %v44.p
+  %v45 = add i64 0, 1
+  %v46 = add i64 %v10, %v45
+  %v47.p = getelementptr i64, ptr %v35, i64 1030
+  %v47 = load i64, ptr %v47.p
+  %v48 = mul i64 %v46, %v47
+  %v49 = add i64 %v44, %v48
+  %v50.c = icmp sgt i64 %v34, %v49
+  %v50 = zext i1 %v50.c to i64
+  %c.b9 = icmp ne i64 %v50, 0
+  br i1 %c.b9, label %b9.t16, label %b9.e17
+b9.t16:
   br label %b5
-b10:
-  %st15 = getelementptr i64, ptr %v38, i64 1
-  store i64 %v36, ptr %st15
-  br label %b9
-b11:
-  %v65 = phi i64 [ %v66, %b3 ], [ %v72, %b12 ]
-  %v67.c = icmp slt i64 %v65, %v64
-  %v67 = zext i1 %v67.c to i64
-  %c.b11 = icmp ne i64 %v67, 0
-  br i1 %c.b11, label %b11.t17, label %b11.e18
-b11.t17:
-  br label %b12
-b11.e18:
-  br label %b13
-b12:
-  %v68 = add i64 0, 3
-  %v69.n = and i64 %v68, 63
-  %v69 = shl i64 %v65, %v69.n
-  %v70 = getelementptr i8, ptr %v23, i64 %v69
-  %st18 = getelementptr i64, ptr %v70, i64 0
-  store i64 %v62, ptr %st18, align 1
-  %v71 = add i64 0, 1
-  %v72 = add i64 %v65, %v71
+b9.e17:
   br label %b11
-b13:
-  %v74 = add i64 0, 3
-  %v75.n = and i64 %v74, 63
-  %v75 = shl i64 %v64, %v75.n
-  br label %b14
-b14:
-  %v73 = phi i64 [ %v75, %b13 ], [ %v79, %b15 ]
-  %v76.c = icmp slt i64 %v73, %v12
-  %v76 = zext i1 %v76.c to i64
-  %c.b14 = icmp ne i64 %v76, 0
-  br i1 %c.b14, label %b14.t20, label %b14.e21
-b14.t20:
-  br label %b15
-b14.e21:
-  br label %b16
-b15:
-  %v77 = getelementptr i8, ptr %v23, i64 %v73
-  %st21 = getelementptr i8, ptr %v77, i64 0
-  %st21.b = trunc i64 %v11 to i8
-  store i8 %st21.b, ptr %st21
-  %v78 = add i64 0, 1
-  %v79 = add i64 %v73, %v78
-  br label %b14
-b16:
-  %v80.p = getelementptr i64, ptr %v14, i64 1
-  %v80 = load i64, ptr %v80.p
-  %v81 = add i64 %v80, %v12
-  %v82 = getelementptr i64, ptr %s1, i64 0
-  %v83 = ptrtoint ptr %v22 to i64
-  %st22 = getelementptr i64, ptr %v82, i64 0
-  store i64 %v83, ptr %st22
-  %st23 = getelementptr i64, ptr %v82, i64 1
-  store i64 %v81, ptr %st23
-  %st24 = getelementptr i64, ptr %v82, i64 2
-  store i64 %v18, ptr %st24
-  %v84.p = getelementptr i64, ptr %v82, i64 0
-  %v84 = load i64, ptr %v84.p
-  %st25 = getelementptr i64, ptr %v0, i64 0
-  store i64 %v84, ptr %st25
-  %v85.p = getelementptr i64, ptr %v82, i64 1
-  %v85 = load i64, ptr %v85.p
-  %st26 = getelementptr i64, ptr %v0, i64 1
-  store i64 %v85, ptr %st26
-  %v86.p = getelementptr i64, ptr %v82, i64 2
-  %v86 = load i64, ptr %v86.p
-  %st27 = getelementptr i64, ptr %v0, i64 2
-  store i64 %v86, ptr %st27
-  br label %b1
+b10:
+  %st17 = getelementptr i64, ptr %v23, i64 0
+  store i64 %v30, ptr %st17
+  br label %b6
+b11:
+  %st18 = getelementptr i64, ptr %v36, i64 1
+  store i64 %v34, ptr %st18
+  br label %b10
 }
 
-define internal void @"std/internal/jsonw.Word"(ptr %v0, i64 %v1, i64 %v2) #0 {
+define internal void @"std/internal/jsonw.word"(ptr %v0, i64 %v1, i64 %v2) #0 {
 b0:
   %v22 = getelementptr i64, ptr @"rt.meta", i64 0
   %v3.p = getelementptr i64, ptr %v22, i64 0
@@ -32248,10 +32016,10 @@ b5:
   ret void
 }
 
-define internal void @"std/internal/jsonw.Word2"(ptr %v0, i64 %v1, i64 %v2, i64 %v3) #0 {
+define internal i64 @"std/internal/jsonw.Put"(ptr %v0, i64 %v1, i64 %v2, i64 %v3) #0 {
 b0:
-  %v29 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v4.p = getelementptr i64, ptr %v29, i64 0
+  %v24 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v4.p = getelementptr i64, ptr %v24, i64 0
   %v4 = load i64, ptr %v4.p
   %v5 = getelementptr i64, ptr @"rt.meta", i64 0
   %v6.p = getelementptr i64, ptr %v5, i64 2572
@@ -32273,7 +32041,7 @@ b0.e2:
 b1:
   %v14.p = getelementptr i64, ptr %v0, i64 1
   %v14 = load i64, ptr %v14.p
-  %v15 = add i64 0, 16
+  %v15 = add i64 0, 8
   %v16 = sub i64 %v14, %v15
   %v17.c = icmp sgt i64 %v1, %v16
   %v17 = zext i1 %v17.c to i64
@@ -32301,19 +32069,124 @@ b5:
   %st4 = getelementptr i64, ptr %v21, i64 0
   store i64 %v2, ptr %st4, align 1
   %v22 = add i64 0, 0
-  %v23 = add i64 0, 8
-  %v24 = add i64 %v1, %v23
-  %v25.p = getelementptr i64, ptr %v0, i64 0
-  %v25 = load i64, ptr %v25.p
-  %v26 = inttoptr i64 %v25 to ptr
-  %v27 = getelementptr i8, ptr %v26, i64 %v24
-  %st5 = getelementptr i64, ptr %v27, i64 0
+  %v23 = add i64 %v1, %v3
+  %v25 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st5 = getelementptr i64, ptr %v25, i64 0
+  store i64 %v4, ptr %st5
+  ret i64 %v23
+}
+
+define internal i64 @"std/internal/jsonw.Put2"(ptr %v0, i64 %v1, i64 %v2, i64 %v3, i64 %v4) #0 {
+b0:
+  %v31 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v5.p = getelementptr i64, ptr %v31, i64 0
+  %v5 = load i64, ptr %v5.p
+  %v6 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v7.p = getelementptr i64, ptr %v6, i64 2572
+  %v7 = load i64, ptr %v7.p
+  %v8 = add i64 0, 0
+  %v9.c = icmp eq i64 %v7, %v8
+  %v9 = zext i1 %v9.c to i64
+  %v10 = mul i64 %v9, %v5
+  %v11 = add i64 %v7, %v10
+  %v12 = add i64 0, 0
+  %v13.c = icmp slt i64 %v1, %v12
+  %v13 = zext i1 %v13.c to i64
+  %c.b0 = icmp ne i64 %v13, 0
+  br i1 %c.b0, label %b0.t1, label %b0.e2
+b0.t1:
+  br label %b2
+b0.e2:
+  br label %b1
+b1:
+  %v15.p = getelementptr i64, ptr %v0, i64 1
+  %v15 = load i64, ptr %v15.p
+  %v16 = add i64 0, 16
+  %v17 = sub i64 %v15, %v16
+  %v18.c = icmp sgt i64 %v1, %v17
+  %v18 = zext i1 %v18.c to i64
+  br label %b2
+b2:
+  %v14 = phi i64 [ %v13, %b0.t1 ], [ %v18, %b1 ]
+  %c.b2 = icmp ne i64 %v14, 0
+  br i1 %c.b2, label %b2.t3, label %b2.e4
+b2.t3:
+  br label %b3
+b2.e4:
+  br label %b4
+b3:
+  %v19.p = getelementptr i64, ptr %v0, i64 1
+  %v19 = load i64, ptr %v19.p
+  call void @"std/internal/jsonw.overflow"(i64 %v1, i64 %v19)
+  br label %b5
+b4:
+  br label %b5
+b5:
+  %v20.p = getelementptr i64, ptr %v0, i64 0
+  %v20 = load i64, ptr %v20.p
+  %v21 = inttoptr i64 %v20 to ptr
+  %v22 = getelementptr i8, ptr %v21, i64 %v1
+  %st4 = getelementptr i64, ptr %v22, i64 0
+  store i64 %v2, ptr %st4, align 1
+  %v23 = add i64 0, 0
+  %v24 = add i64 0, 8
+  %v25 = add i64 %v1, %v24
+  %v26.p = getelementptr i64, ptr %v0, i64 0
+  %v26 = load i64, ptr %v26.p
+  %v27 = inttoptr i64 %v26 to ptr
+  %v28 = getelementptr i8, ptr %v27, i64 %v25
+  %st5 = getelementptr i64, ptr %v28, i64 0
   store i64 %v3, ptr %st5, align 1
-  %v28 = add i64 0, 0
-  %v30 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st6 = getelementptr i64, ptr %v30, i64 0
-  store i64 %v4, ptr %st6
-  ret void
+  %v29 = add i64 0, 0
+  %v30 = add i64 %v1, %v4
+  %v32 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st6 = getelementptr i64, ptr %v32, i64 0
+  store i64 %v5, ptr %st6
+  ret i64 %v30
+}
+
+define internal i64 @"std/internal/jsonw.Byte"(ptr %v0, i64 %v1, i64 %v2) #0 {
+b0:
+  %v18 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v3.p = getelementptr i64, ptr %v18, i64 0
+  %v3 = load i64, ptr %v3.p
+  %v4 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v5.p = getelementptr i64, ptr %v4, i64 2572
+  %v5 = load i64, ptr %v5.p
+  %v6 = add i64 0, 0
+  %v7.c = icmp eq i64 %v5, %v6
+  %v7 = zext i1 %v7.c to i64
+  %v8 = mul i64 %v7, %v3
+  %v9 = add i64 %v5, %v8
+  %v10.p = getelementptr i64, ptr %v0, i64 1
+  %v10 = load i64, ptr %v10.p
+  %v11.c = icmp uge i64 %v1, %v10
+  %v11 = zext i1 %v11.c to i64
+  %c.b0 = icmp ne i64 %v11, 0
+  br i1 %c.b0, label %b0.t1, label %b0.e2
+b0.t1:
+  br label %b1
+b0.e2:
+  br label %b2
+b1:
+  %v12 = add i64 0, 188
+  call void @"rt.panic"(i64 %v12)
+  call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
+  unreachable
+b2:
+  %v13.p = getelementptr i64, ptr %v0, i64 0
+  %v13 = load i64, ptr %v13.p
+  %v14 = inttoptr i64 %v13 to ptr
+  %v15 = getelementptr i8, ptr %v14, i64 %v1
+  %st2 = getelementptr i8, ptr %v15, i64 0
+  %st2.b = trunc i64 %v2 to i8
+  store i8 %st2.b, ptr %st2
+  %v16 = add i64 0, 1
+  %v17 = add i64 %v1, %v16
+  %v19 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st3 = getelementptr i64, ptr %v19, i64 0
+  store i64 %v3, ptr %st3
+  ret i64 %v17
 }
 
 define internal i64 @"std/internal/jsonw.IntSize"(i64 %v0) #0 {
@@ -32561,7 +32434,7 @@ b0:
   %st31 = getelementptr i64, ptr %v52, i64 2
   store i64 %v51, ptr %st31
   call void @"rt.print_str"(ptr %v52)
-  %v54 = add i64 0, 194
+  %v54 = add i64 0, 189
   call void @"rt.panic"(i64 %v54)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -32778,7 +32651,7 @@ b10:
   %v92 = getelementptr i64, ptr @"rt.meta", i64 0
   %st20 = getelementptr i64, ptr %v92, i64 2572
   store i64 %v9, ptr %st20
-  call void @"std/internal/jsonw.Word"(ptr %v0, i64 %v1, i64 %v91)
+  call void @"std/internal/jsonw.word"(ptr %v0, i64 %v1, i64 %v91)
   %v93.p = getelementptr i64, ptr %v19, i64 0
   %v93 = load i64, ptr %v93.p
   %v94 = add i64 %v1, %v93
@@ -32928,7 +32801,7 @@ b8.t14:
 b8.e15:
   br label %b10
 b9:
-  %v38 = add i64 0, 195
+  %v38 = add i64 0, 190
   call void @"rt.panic"(i64 %v38)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -33087,7 +32960,7 @@ b22:
   store i64 %v70, ptr %st37
   br label %b13
 b23:
-  %v79 = add i64 0, 196
+  %v79 = add i64 0, 191
   call void @"rt.panic"(i64 %v79)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -33110,7 +32983,7 @@ b24.t39:
 b24.e40:
   br label %b26
 b25:
-  %v86 = add i64 0, 197
+  %v86 = add i64 0, 192
   call void @"rt.panic"(i64 %v86)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -33130,7 +33003,7 @@ b26:
   store i64 %v92, ptr %st41
   br label %b20
 b27:
-  %v97 = add i64 0, 198
+  %v97 = add i64 0, 193
   call void @"rt.panic"(i64 %v97)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -33353,7 +33226,7 @@ b17:
   store i64 %v47, ptr %st27
   br label %b8
 b18:
-  %v56 = add i64 0, 199
+  %v56 = add i64 0, 194
   call void @"rt.panic"(i64 %v56)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -33376,7 +33249,7 @@ b19.t29:
 b19.e30:
   br label %b21
 b20:
-  %v63 = add i64 0, 200
+  %v63 = add i64 0, 195
   call void @"rt.panic"(i64 %v63)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -33450,7 +33323,7 @@ b0.t5:
 b0.e6:
   br label %b2
 b1:
-  %v20 = add i64 0, 201
+  %v20 = add i64 0, 196
   call void @"rt.panic"(i64 %v20)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -33464,7 +33337,7 @@ b2.t7:
 b2.e8:
   br label %b4
 b3:
-  %v22 = add i64 0, 202
+  %v22 = add i64 0, 197
   call void @"rt.panic"(i64 %v22)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -33480,7 +33353,7 @@ b4.t9:
 b4.e10:
   br label %b6
 b5:
-  %v25 = add i64 0, 203
+  %v25 = add i64 0, 198
   call void @"rt.panic"(i64 %v25)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -33569,7 +33442,7 @@ b2.t8:
 b2.e9:
   br label %b6
 b3:
-  %v13 = add i64 0, 204
+  %v13 = add i64 0, 199
   call void @"rt.panic"(i64 %v13)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -33602,7 +33475,7 @@ b6:
   store i64 %v7, ptr %st11
   ret i64 %v19
 b7:
-  %v22 = add i64 0, 205
+  %v22 = add i64 0, 200
   call void @"rt.panic"(i64 %v22)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -33650,7 +33523,7 @@ b0.t4:
 b0.e5:
   br label %b2
 b1:
-  %v8 = add i64 0, 206
+  %v8 = add i64 0, 201
   call void @"rt.panic"(i64 %v8)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -34161,7 +34034,7 @@ b10.t23:
 b10.e24:
   br label %b8
 b11:
-  %v35 = add i64 0, 207
+  %v35 = add i64 0, 202
   call void @"rt.panic"(i64 %v35)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -34195,7 +34068,7 @@ b15.t25:
 b15.e26:
   br label %b17
 b16:
-  %v52 = add i64 0, 208
+  %v52 = add i64 0, 203
   call void @"rt.panic"(i64 %v52)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -34271,7 +34144,7 @@ b23.t35:
 b23.e36:
   br label %b27
 b24:
-  %v74 = add i64 0, 209
+  %v74 = add i64 0, 204
   call void @"rt.panic"(i64 %v74)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -34377,7 +34250,7 @@ b36.t48:
 b36.e49:
   br label %b40
 b37:
-  %v106 = add i64 0, 210
+  %v106 = add i64 0, 205
   call void @"rt.panic"(i64 %v106)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -34419,7 +34292,7 @@ b40.t52:
 b40.e53:
   br label %b44
 b41:
-  %v121 = add i64 0, 211
+  %v121 = add i64 0, 206
   call void @"rt.panic"(i64 %v121)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable

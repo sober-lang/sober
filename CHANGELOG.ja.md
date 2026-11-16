@@ -2,6 +2,77 @@
 
 このファイルは公開リリースごとの利用者向けの変更点を記録する。形式は [Keep a Changelog](https://keepachangelog.com/ja/1.1.0/) に倣う。バージョンは [Semantic Versioning](https://semver.org/lang/ja/) に従う（0.x の間は後方互換を約束しない）。
 
+## v0.7.4（2026-11-16）
+
+実行待ちの列を、走れるようになった順に走る形だけにした版。飽和した負荷でのp99が下がる。`maxWait:` を消したので、互換性の無い変更を含む。HTTPサーバの準拠の誤りと、飽和した負荷でプロセスが落ちる不具合を直した。スタックの溢れでないSIGSEGVは、taskの死に変換せずに止める。コンパイラ自身をcheckするときの検査器の命令は28%減り、配布するコンパイラはstage3になった。
+
+### 実行待ちの列の順
+
+- 走れるようになったtaskは、ワーカーごとの実行待ちの列に入り、走れるようになった順に走る。前は新しい側から取るのが基本で、待ちの上限（既定100 ms）を過ぎたtaskだけを古い側から取っていた。新しい側から取る順と、待ちの上限の仕組みは無くなった
+- 互換性の無い変更: `net.Serve` と `tls.Serve` の `maxWait:` を消した。`task.Ledger()` の `aged`・`late`・`maxLate` を消した。`maxWait`（走れるようになってから走るまでの待ちの最大）は残り、すべての取り出しで測る。書き換えは、`maxWait:` の実引数を消すだけでよい
+- 効果: 同じマシンで0.7.2と比べた（16ワーカー・本家の構成に当たる接続数）。飽和した負荷でのp99が下がる
+  - json-comp（1,024接続）: p99が100 msから2.7 ms
+  - json-tls（1,024接続）: p99が98 msから1.1 ms
+  - baseline（1,024接続）: p99が704 µsから539 µs
+- p50は上がる。baselineで67 µsから411 µsになった
+- rps（4つとも1,024接続）は、baselineで+2.4%・json-compで+4.1%・limited-connで−1.1%・jsonで−0.8%
+- 接続の状態がキャッシュに収まらない接続数（ワーカーあたり256接続）では、baselineのrpsが、新しい側から取る順より約7%低い
+- ワーカー1本のspawnは、今までどおり子を先に走らせる
+
+### 破壊的変更
+
+- スタックの溢れでない不正なメモリのアクセス（SIGSEGV）を、taskの死に変換しない。前は、どのSIGSEGVもスタックの溢れとして扱い、罠があればtaskの死（StackExceeded）として巻き戻っていた。今は、落ちた番地がいま走っているスタックのガードに入っているときだけStackExceededになる。それ以外は、番地と命令の位置と、処理系の不具合である旨（版つき）の2行を標準エラーに書き、SIGSEGVで終わる（シェルからは終了状態139・コアダンプが取れる）。言語のpanicの体系（101・102）には入れない
+- `std/math`: NaNは1つの値になった。`math.Bits` は、どのNaNにも0x7ff8000000000000を返す。前は、NaNの符号とpayloadの違いが `math.Bits` で見えた。floatのビット列を読む経路は `math.Bits` だけで、`std/convert` の `FormatFloat`・`FormatFixed` の出力は変わらない
+- `std/http/server`: Hostヘッダを検査する（RFC 9112 3.2）。HTTP/1.1でHostが無い・Hostが2本以上ある・値が `uri-host [":" port]` の形でない（空・userinfo・path・空白・コンマを含む）リクエストは400。HTTP/1.0はHostが無くてよい
+- `std/http/server`: ヘッダの値のNULと制御文字・DELは400（RFC 9110 5.5）。HTAB・表示できるASCII・obs-textだけを受ける
+- `std/http/server`: chunkの拡張を文法どおりに読む（RFC 9112 7.1.1）。文法の外の形は400。拡張の値は今までどおり読み捨てる
+- `std/http/server`: Transfer-Encodingの値を、transfer-codingのリストとして読む（RFC 9112 6.1）。文法の誤り・chunkedが最後に無い・chunkedが2回・HTTP/1.0のTransfer-Encodingは400。文法は正しく、ほかの符号化かパラメータを含むものは501。空の要素は読み飛ばす
+- `std/http/server`: HTTPの版の文字列が `HTTP/DIGIT.DIGIT` の形でなければ400、形は正しく1.0と1.1以外なら505（RFC 9112 2.3）
+- `std/http/server`: ターゲットの途中で頭の上限に達したリクエスト行は414（RFC 9112 3）
+- `std/http/server`: リクエスト行の検査を足した（RFC 9110・9112）
+  - ターゲットにNULと制御文字（0x20未満。HTABを含む）があれば400。DEL・`#`・`\`・0x80以上のバイトは今までどおり受ける
+  - どの行にも一致しないCONNECTは501（サーバーはCONNECTを実装しない）。前は404
+  - asterisk-form（ターゲットが `*`）はOPTIONSだけ受ける。ほかのメソッドは400。前は404。`OPTIONS *` は今までどおり404
+  - 空白の無いまま頭の上限に達したリクエスト行は、長すぎるメソッドとして501。前は431
+- `std/http/server`: chunkedの本文のtrailerの行を、ヘッダの行と同じ文法（名前はtchar・`:` がある・制御文字が無い）で確かめてから読み捨てる。外れたら400。前は確かめずに読み捨てていた
+
+### std
+
+- `std/http/server`: `HeaderList(r Request) []http.Field` を足した。リクエストのヘッダの全部を、受けた順で返す。同じ名前の行は別の要素になる。名前は小文字にする（`std/http/client` の `Response.headers` と同じ規則）。値はコピーしない。認証のヘッダ（Authorization・Proxy-Authorization・Cookie）は含まない（`Header` と同じ）
+- `std/http/server`: ハンドラーの中で `task.Run` のscopeを開き、子を `task.Spawn` して `Join` するサーバーが、飽和した負荷でときどきプロセスごと落ちていた不具合を直した（0.7.3で再現を確認）。入場できずに親のtaskの上でその場で走る子が、親の接続のtaskの状態で動き、親の生きたフレームのある領域を別のtaskが上書きしていた。表示は `panic: StackExceeded{}` だったが、スタックの溢れではなかった
+- `std/tls`: tlsfuzzerで見つかった準拠の誤りを直した
+  - ClientHelloで、legacy_versionが0x0303でないものをprotocol_version、拡張の本体の構文の誤りと必須の拡張の欠けをそれぞれのalertで拒否する
+  - 本体が2^14を超える暗号化していないrecordと、復号した平文が2^14 + 1を超えるrecordをrecord_overflowで拒否する。中身が空のalertのrecordと、長さの違うFinishedも拒否する。handshake中に、どのrecordでもない内容の型を拒否する
+  - 接続の後のrecord層の誤り（長すぎるrecord・途中で切れたrecord）に、alertを送ってから `BadRecord` を返す。前はalertを送らずに `Closed` を返していた
+  - fatalのalertを送った・受けた接続に、close_notifyを送らない。相手のclose_notifyの後は、積み残しを送ってからclose_notifyを返す
+- `std/http/server`: 保存の方針（`cache:`）を書いたルートで、ハンドラが返したSet-Cookieが送られていなかった不具合を直した（0.7.0から0.7.3まで）
+- `std/http/server`: 共有キャッシュに保存されうる方針（`Fresh`・`Shared`・`Unstated`・`Revalidate`）のレスポンスにSet-Cookieがあると、ヘッダを書くときに `panic(http.BadHeader{name: "Set-Cookie"})` にする。checkを通したプログラムでは起きない（下の解析が拒否する）
+
+### コンパイラ
+
+- 共有キャッシュに保存されうる方針のルートでSet-Cookieを返す形を、checkが拒否する。Mountで、その方針の行をSet-Cookieを返しうるmiddlewareの下に入れる形と、レスポンス1件で方針とcookiesを一緒に持つ形も拒否する。Private・NoStoreのルートではそのまま送られる
+- 共有の方針のルートに、受け取ったレスポンスをそのまま返すmiddlewareや、レスポンスを組み直すmiddlewareを付けると、別のルートが認証の値を読んでいるだけでcheckが拒否していた（偽の拒否）。直した
+- std限定のアノテーション `@stored`（unionのvariantの後置）と `@personal`（structの型の後置）を足した
+- 並列のコード生成とcheckの子が予算を超えて死んだとき、`panic: InvariantBroken{}` で止まっていた。親が同じ本体を逐次でやり直す
+- 型の比較に、同じ型どうしの近道を足した。コンパイラ自身をcheckするときの検査器の命令が107.8 Gから77.6 G（−28%）になった。型を多く比べるプログラムほどcheckが軽くなる
+
+### 性能
+
+- 反復のregionを開く点を、本体で最初に確保する点の直前まで遅らせる。確保しないまま終わる周では、regionを開かない。bench/の題材で、命令がroutingで5.43%・jsonapiで1.73%減った。出力・panic・メモリの上限は変わらない。深度の上限（exit 102）に当たる点と、そのときに印字する深度は、浅い方へずれうる
+- `std/compress/flate`（記録つきの符号化。`std/http/server` のgzipのレスポンス）: ブロックごとの一時の列を作業域に移した。出力のバイトは同じ。手元の計測（bench/httparenaのjson-comp・4,096接続・8つのコード配置の中央値）で、リクエスト1件のcycles:uが1.31%減った
+- JSONの書き出し（`json.Encode` と `std/http/server` のJSONのレスポンス）: 書き出しのバッファを伸ばすとき、伸ばした領域をゼロで埋めない。書く前に読まれることが無い形に限った、std内部の操作で行う。手元の計測（jsonの種目・4,096接続・8つのコード配置の中央値）で、リクエスト1件のcycles:uが4.54%減り、rpsが1.17%増えた
+- `std/http/server`: keep-aliveのバッチの最後のレスポンスで、ヘッダと本文をワーカーの送信バッファへ直接書き込んで送る。本文を一度別の列へ書き込むコピーが無くなった。io_uringの経路で、送信バッファに空きがあるときに使う
+- `std/tls`: 送信バッファを、接続ごとの列（16.4 KB）からワーカーの送信バッファの予約へ移した。接続ごとの状態が小さくなる。`tls.Send`・`tls.Put`・`tls.Flush` の約束は変わらない
+- `std/http/server`: リクエスト行の検査（上の破壊的変更）を、改行の検出と1つにまとめた。正常なリクエストの命令は、1件あたり39〜46減った
+
+### 配布
+
+- 配布するコンパイラを、stage3（ブートストラップチェーンでできたstage2が、コンパイラ自身をビルドしたもの）にした。前はstage2を配っていた。stdのL0（各packageのインターフェース）を焼き込む手順は、stage2と同じ。リリースの手順で、stage3が自分自身を同じELFにビルドすること（固定点）を確かめる。イメージ（ghcr.io）は公開したtarballから作るので、同じバイナリになる
+
+### bench/httparena
+
+- `/spec`・`/spec/headers`（HttpArenaの準拠の種目）と `/async-db`（`std/pg` のプールからPostgreSQLに問い合わせる種目）を足した。`/async-db` は本家で総合の点に入らない参考の種目
+
 ## v0.7.3（2026-11-14）
 
 待ってから返すレスポンスの送り方を変えた版。あわせて、値指向の考え方を軸に文書を組み直した。言語の規則は変わっていない。

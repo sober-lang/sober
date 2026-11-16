@@ -1,11 +1,13 @@
-std/http/server/server.sober:314:6: credential std/http/server.Authorization
-std/http/server/server.sober:323:6: credential std/http/server.Cookie
+std/http/server/server.sober:369:6: credential std/http/server.Authorization
+std/http/server/server.sober:378:6: credential std/http/server.Cookie
 std/session/session.sober:191:6: credential std/session.Seal
-std/http/server/server.sober:29:6: credential field Request.head
-std/http/server/server.sober:64:6: shared-field Response.cache response
-std/http/server/server.sober:475:6: shared-field Route.cache route
-std/http/server/server.sober:667:6: shared Cache the shared cache policy 'Fresh'
-std/http/server/server.sober:667:6: shared Cache the shared cache policy 'Shared'
-std/http/server/server.sober:667:6: shared Cache the shared cache policy 'Unstated'
-std/http/server/server.sober:488:6: meet-point std/http/server.Mount
-summary atoms=8 credentials=4 eff-fns=0 shared=3 shared-fields=2 violations=0 walks=2388
+std/http/server/server.sober:33:6: credential field Request.head
+std/http/server/server.sober:68:6: shared-field Response.cache response
+std/http/server/server.sober:530:6: shared-field Route.cache route
+std/http/server/server.sober:734:6: stored Cache the cache policy 'Revalidate'
+std/http/server/server.sober:734:6: shared Cache the shared cache policy 'Fresh'
+std/http/server/server.sober:734:6: shared Cache the shared cache policy 'Shared'
+std/http/server/server.sober:734:6: shared Cache the shared cache policy 'Unstated'
+std/http/server/server.sober:129:6: personal SetCookie
+std/http/server/server.sober:543:6: meet-point std/http/server.Mount
+summary atoms=10 credentials=4 eff-fns=0 shared=3 stored=1 personal=1 shared-fields=2 violations=0 walks=2427

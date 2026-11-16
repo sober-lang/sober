@@ -45,9 +45,27 @@
 #   ⑭ RSS: dest_append_rec（宛先構築の返る列への追記 — loader/dest.soberのフラグ3・report-repr-2）: `ks = append(ks, mk(…))` の再帰で組む深さnのチェーンが
 #      深さの数だけコピーされないこと — 90 → 900レベルで +16 MB以下（深度ごとのregionのページ ≈ 4 KB / レベルだけ。壊れると1.7 → 135 MB）
 #   scripts/iterregion.sh
+#   scripts/iterregion.sh --mut   検査の自己確認（反復のenterを置く位置。lower/rsink.sober）: SOBER_RSINK_MUT=1（敏感な点を越えて沈める）で
+#                                 フェーズごとの検証器（SOBER_VERIFY=each）がInvalidIRで落ち、SOBER_RSINK_MUT=2（同じ沈めすぎ・検証の記録なし）でこの検査がFAILになること
 set -uo pipefail
 cd "$(dirname "$0")/.."
 S2=${STAGE2:-out/stage2/sober2}
+if [ "${1:-}" = --mut ]; then
+    M=$(mktemp -d)
+    mf=0
+    if SOBER_RSINK_MUT=1 SOBER_VERIFY=each "$S2" build examples/iter_region_errcont.sober --emit=elf --passes -o "$M/e" > "$M/err" 2>&1 || true; grep -q 'InvalidIR{after: "llight"' "$M/err"; then
+        echo "mut 1: the verifier rejects the over-sunk loop region enter"
+    else
+        echo "FAIL: mut 1: the verifier accepted the over-sunk loop region enter"; mf=1
+    fi
+    if SOBER_RSINK_MUT=2 "$0" > "$M/out" 2>&1; then
+        echo "FAIL: mut 2: iterregion stayed green with the over-sunk loop region enters"; mf=1
+    else
+        echo "mut 2: iterregion fails with the over-sunk loop region enters ($(grep -c '^FAIL' "$M/out") FAIL lines)"
+    fi
+    rm -rf "$M"
+    exit $mf
+fi
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 fail=0

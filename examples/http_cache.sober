@@ -63,12 +63,12 @@ func main() {
         http.server.Route{method: "GET", path: "/token", handler: token, cache: http.server.Fresh{maxAge: 60}},
         http.server.Route{method: "GET", path: "/logo", handler: logo, cache: http.server.Fresh{maxAge: 86400, immutable: true}},
         http.server.Route{method: "GET", path: "/raw", handler: raw}}
-    reqs := "GET /me HTTP/1.1\r\nCookie: theme=dark; sid=\"s-42\"\r\nAuthorization: Bearer abc\r\n\r\n" +
-        "GET /me HTTP/1.1\r\n\r\n" +
-        "GET /feed HTTP/1.1\r\n\r\n" +
-        "GET /token HTTP/1.1\r\n\r\n" +
-        "GET /logo HTTP/1.1\r\n\r\n" +
-        "GET /none HTTP/1.1\r\n\r\n"
-    e := http.server.ServeWith((k) => give(reqs, "GET /raw HTTP/1.1\r\nConnection: close\r\n\r\n", k), (b) => show(b), (r) => http.server.Dispatch(rs, r))
+    reqs := "GET /me HTTP/1.1\r\nHost: x\r\nCookie: theme=dark; sid=\"s-42\"\r\nAuthorization: Bearer abc\r\n\r\n" +
+        "GET /me HTTP/1.1\r\nHost: x\r\n\r\n" +
+        "GET /feed HTTP/1.1\r\nHost: x\r\n\r\n" +
+        "GET /token HTTP/1.1\r\nHost: x\r\n\r\n" +
+        "GET /logo HTTP/1.1\r\nHost: x\r\n\r\n" +
+        "GET /none HTTP/1.1\r\nHost: x\r\n\r\n"
+    e := http.server.ServeWith((k) => give(reqs, "GET /raw HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n", k), (b) => show(b), (r) => http.server.Dispatch(rs, r))
     println(e == nil)
 }

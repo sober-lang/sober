@@ -428,19 +428,19 @@
                   "op": "+",
                   "lhs": {
                     "k": "strlit",
-                    "value": "GET /hello/ann HTTP/1.1\r\nX-Token: t\r\n\r\n",
+                    "value": "GET /hello/ann HTTP/1.1\r\nHost: x\r\nX-Token: t\r\n\r\n",
                     "tok": 197
                   },
                   "rhs": {
                     "k": "strlit",
-                    "value": "GET /bye/bob HTTP/1.1\r\nX-Token: t\r\n\r\n",
+                    "value": "GET /bye/bob HTTP/1.1\r\nHost: x\r\nX-Token: t\r\n\r\n",
                     "tok": 199
                   },
                   "tok": 198
                 },
                 "rhs": {
                   "k": "strlit",
-                  "value": "GET /hello/eve HTTP/1.1\r\nConnection: close\r\n\r\n",
+                  "value": "GET /hello/eve HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n",
                   "tok": 201
                 },
                 "tok": 200

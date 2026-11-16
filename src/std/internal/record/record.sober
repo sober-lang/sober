@@ -132,18 +132,20 @@ func NeedUpdate(d Dir) bool {
     return d.suite == AesGcm && d.seq >= aesLimit
 }
 
-// 内容の型 ctype の平文 pt を record の列にしたもの（2^14 バイトずつ・各 record の内側の末尾に 0 埋め pad バイト〔0 = 埋めない〕）。
-// 空の pt は中身 0 バイトの record 1 つ（application_data には送らない約束は呼び手 — RFC 9846 5.1）
+// 内容の型ctypeの平文ptをrecordの列にしたもの。各recordの内側の末尾に0埋めをpadバイト足す（0は埋めない。padは2^14未満）。
+// 中身は2^14 - padバイトずつに割り、内側（中身‖内容の型‖0埋め）が2^14 + 1を超えないようにする（RFC 9846 5.4）。
+// 空のptは中身0バイトのrecord 1つ（application_dataには送らない約束は、呼び手が守る。RFC 9846 5.1）
 @effects()
 func Seal(d mut Dir, ctype int, pt []byte, pad int) []byte {
     n := len(pt)
-    if n <= MaxPlain {
+    capa := if pad < MaxPlain { MaxPlain - pad } else { 1 }
+    if n <= capa {
         return sealOne(mut d, ctype, pt, 0, n, pad)
     }
     mut out := mut []byte{}
     mut at := 0
     while at < n {
-        m := if n - at < MaxPlain { n - at } else { MaxPlain }
+        m := if n - at < capa { n - at } else { capa }
         r := sealOne(mut d, ctype, pt, at, m, pad)
         mut j := 0
         while j < len(r) {
@@ -220,7 +222,8 @@ func Plain(r Frame) (int, []byte) {
 }
 
 // 枠 r（外側の内容の型 = application_data）を d の鍵で検証・復号して、内側の内容の型と中身（0 埋めを剥がした平文）を返す。
-// tag の不一致は bad_record_mac・本体が tag より短い / 長すぎるは record_overflow / decode_error・内側が全部 0（内容の型が無い）は unexpected_message
+// tag の不一致は bad_record_mac・本体が tag より短い / 長すぎるは record_overflow / decode_error・内側が全部 0（内容の型が無い）は unexpected_message。
+// 開いた平文（0埋めを含む）が2^14 + 1を超えるrecordもrecord_overflow
 @errors(Alert)
 @bless
 @effects()
@@ -242,12 +245,13 @@ func Open(d mut Dir, r Frame) (int, []byte, error?) {
         return 0, []byte{}, Alert{desc: AlertBadMac}
     }
     d.seq += 1
+    // TLSInnerPlaintext（中身‖内容の型‖0埋め）全体の上限は2^14 + 1（RFC 9846 5.4）
+    if len(p) > MaxPlain + 1 {
+        return 0, []byte{}, Alert{desc: AlertOverflow}
+    }
     ct, n := strip(p)
     if n < 0 {
         return 0, []byte{}, Alert{desc: AlertUnexpected}
-    }
-    if n > MaxPlain {
-        return 0, []byte{}, Alert{desc: AlertOverflow}
     }
     return ct, p[0:n], nil
 }

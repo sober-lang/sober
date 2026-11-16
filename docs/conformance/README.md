@@ -33,7 +33,7 @@ The four statuses:
 | [tls](tls.md) | 18 | 2 | 6 | 5 |
 | [x509](x509.md) | 7 | 1 | 4 | 3 |
 | [crypto](crypto.md) | 7 | 1 | 2 | 2 |
-| [http](http.md) | 20 | 1 | 5 | 7 |
+| [http](http.md) | 21 | 1 | 5 | 7 |
 | [dns](dns.md) | 4 | 1 | 3 | 2 |
 <!-- confsync:end summary -->
 

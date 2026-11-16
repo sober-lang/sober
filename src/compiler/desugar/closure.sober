@@ -65,8 +65,8 @@ func closCoreOfKey(st mut S, pk int, sig NodeRef, key NodeRef, at NodeRef, fuel 
         rt := tyOf(mut st, pk, latN(mut st, rl, i), at, fuel - 1)?
         hsetTy(mut st, int(rs) + 1 + i, retTy(mut st, rt))
     }
-    p := tProd(mut st, envU(mut st, key), tyChain(mut st, ps))
-    return tFn(mut st, p, tyChain(mut st, rs)), nil
+    p := tProd(mut st, envU(mut st, key), tyTree(mut st, ps))
+    return tFn(mut st, p, resTy(mut st, rs)), nil
 }
 
 // 型tが関数型のmut仮引数の型か（mutのrefか、割ったstructのフィールドごとのmutのrefの木 — mutParamTyの形。値の仮引数の型にrefは現れない）
@@ -103,7 +103,7 @@ func brwKey(st mut S, pk int, te NodeRef, at NodeRef, fuel int, af bool) (NodeRe
     for i <- iter.Range(0, lenL(mut st, rl)) {
         hsetTy(mut st, int(rs) + 1 + i, retTy(mut st, tyOf(mut st, pk, latN(mut st, rl, i), at, fuel - 1)?))
     }
-    sig := int(tFn(mut st, tyChain(mut st, ps), tyChain(mut st, rs))) * 2 + b2i(af)
+    sig := int(tFn(mut st, tyTree(mut st, ps), resTy(mut st, rs))) * 2 + b2i(af)
     for i <- iter.Range(0, table.Len(mut st.bkSig)) {
         if table.Get(mut st.bkSig, i) == sig {
             return NodeRef(table.Get(mut st.bkNode, i)), nil
@@ -127,12 +127,18 @@ func shapeList(st mut S, decl NodeRef) []int {
     return freeze(out)
 }
 
-// 形の列 sh の i 番目からの右結合の union（残り 1 つならその形）
+// 形の列 sh の i 番目からの union の木（残り 1 つならその形）
 func unionFrom(st mut S, sh []int, i int) TyRef {
-    if i + 1 == len(sh) {
-        return TyRef(sh[i])
+    return unionShIn(mut st, sh, i, len(sh))
+}
+
+// 形の列 sh の [lo, hi) の union の木（積の木と同じ分け目 — treeMid）
+func unionShIn(st mut S, sh []int, lo int, hi int) TyRef {
+    if hi - lo == 1 {
+        return TyRef(sh[lo])
     }
-    return tUnion(mut st, TyRef(sh[i]), unionFrom(mut st, sh, i + 1))
+    m := treeMid(lo, hi)
+    return tUnion(mut st, unionShIn(mut st, sh, lo, m), unionShIn(mut st, sh, m, hi))
 }
 
 // Fのenvの型U（形が無ければint — 捕捉なしの格納場所）
@@ -143,22 +149,32 @@ func envU(st mut S, decl NodeRef) TyRef {
 
 // env の値 v（形 k）を形の列 sh の i 番目からの union へ包む
 func injectFrom(st mut S, sh []int, k int, i int, v CoreRef) CoreRef {
-    if i + 1 == len(sh) {
+    return injectIn(mut st, sh, k, i, len(sh), v)
+}
+
+func injectIn(st mut S, sh []int, k int, lo int, hi int, v CoreRef) CoreRef {
+    if hi - lo == 1 {
         return v
     }
-    if k == i {
-        return cInl(mut st, unionFrom(mut st, sh, i + 1), v)
+    m := treeMid(lo, hi)
+    if k < m {
+        return cInl(mut st, unionShIn(mut st, sh, m, hi), injectIn(mut st, sh, k, lo, m, v))
     }
-    return cInr(mut st, TyRef(sh[i]), injectFrom(mut st, sh, k, i + 1, v))
+    return cInr(mut st, unionShIn(mut st, sh, lo, m), injectIn(mut st, sh, k, m, hi, v))
 }
 
 // unionの値x（形の列shのi番目から）から形kを取り出す（他の分岐はunreach — 作成点が形とfnrefを組で作るので来ない）
 func extractFrom(st mut S, sh []int, k int, i int, x CoreRef) CoreRef {
-    if i + 1 == len(sh) {
+    return extractIn(mut st, sh, k, i, len(sh), x)
+}
+
+func extractIn(st mut S, sh []int, k int, lo int, hi int, x CoreRef) CoreRef {
+    if hi - lo == 1 {
         return x
     }
-    l := if k == i { cVar(mut st, 0) } else { cUnreach(mut st, TyRef(sh[k])) }
-    r := if k == i { cUnreach(mut st, TyRef(sh[k])) } else { extractFrom(mut st, sh, k, i + 1, cVar(mut st, 0)) }
+    m := treeMid(lo, hi)
+    l := if k < m { extractIn(mut st, sh, k, lo, m, cVar(mut st, 0)) } else { cUnreach(mut st, TyRef(sh[k])) }
+    r := if k < m { cUnreach(mut st, TyRef(sh[k])) } else { extractIn(mut st, sh, k, m, hi, cVar(mut st, 0)) }
     return ce(mut st, CCase, int(x), int(l), int(r), 0)
 }
 
@@ -599,8 +615,8 @@ func liftLambdaCap(st mut S, lam NodeRef, ct TyRef, fdecl NodeRef, outer_b int, 
     cvals := ListRef(listN(mut st, ncap))
     ctys := ListRef(listN(mut st, ncap))
     _ = capFlatFill(mut st, cr, outer_b, outer_f, 0, cbs, cvals, ctys, depth, anc, lam)?
-    envT := if ncap == 0 { st.tInt } else { tyChain(mut st, ctys) }
-    envV0 := if ncap == 0 { cLit(mut st, 0) } else { pairChain(mut st, cvals) }
+    envT := if ncap == 0 { st.tInt } else { tyTree(mut st, ctys) }
+    envV0 := if ncap == 0 { cLit(mut st, 0) } else { treePair(mut st, cvals) }
     // 形の記録とUの中の位置（前走りに無い形 = 本走りと前走りの食い違い — 断片として断る）。mainから届かない関数のクロージャは形を記録せず、
     // 持ち上げた Def が自分の形を直に受け、作成点は unreach（capLive）
     live := capLive(mut st, cr)
@@ -639,17 +655,13 @@ func liftLambdaCap(st mut S, lam NodeRef, ct TyRef, fdecl NodeRef, outer_b int, 
     lps := lA(nodeOf(mut st, lam))
     n := lenL(mut st, lps)
     ptys := ListRef(listN(mut st, n))
-    mut p := pT
     mut i := 0
     while i < n {
-        if i + 1 == n {
-            hsetTy(mut st, int(ptys) + 1 + i, p)
-        } else if tg(mut st, p) == TPr {
-            hsetTy(mut st, int(ptys) + 1 + i, tLeft(mut st, p))
-            p = tRight(mut st, p)
-        } else {
+        pi := treeAt(mut st, pT, i, n)
+        if pi == -1 {
             return 0, diag.Malformed{at: posOf(mut st, at)}
         }
+        hsetTy(mut st, int(ptys) + 1 + i, pi)
         i += 1
     }
     if n == 0 && tg(mut st, pT) != TUnit {
@@ -712,7 +724,7 @@ func liftLambdaCap(st mut S, lam NodeRef, ct TyRef, fdecl NodeRef, outer_b int, 
     exs := ListRef(listN(mut st, ncap + n))
     for j <- iter.Range(0, ncap) {
         ev := c1(mut st, CFst, cVar(mut st, j))
-        hsetCore(mut st, int(exs) + 1 + j, projection(mut st, if len(sh) == 0 { ev } else { extractFrom(mut st, sh, kk, 0, ev) }, j, ncap))
+        hsetCore(mut st, int(exs) + 1 + j, treeProj(mut st, if len(sh) == 0 { ev } else { extractFrom(mut st, sh, kk, 0, ev) }, j, ncap))
     }
     // 捕捉の束縛: 自分の捕捉は本体のチェーンへ、展開待ちの捕捉は実引数のラムダの捕捉だけを見るチェーンでクロージャにまとめ直す（本体の `send(p)` は今どおり展開）
     cb := capFlatBind(mut st, cr, outer_f, cbs, ctys, 0)
@@ -721,7 +733,7 @@ func liftLambdaCap(st mut S, lam NodeRef, ct TyRef, fdecl NodeRef, outer_b int, 
     mut d := 1 + ncap
     i = 0
     while i < n {
-        a := if n == 1 { c1(mut st, CSnd, cVar(mut st, d - 1)) } else { projection(mut st, c1(mut st, CSnd, cVar(mut st, d - 1)), i, n) }
+        a := if n == 1 { c1(mut st, CSnd, cVar(mut st, d - 1)) } else { treeProj(mut st, c1(mut st, CSnd, cVar(mut st, d - 1)), i, n) }
         hsetCore(mut st, int(exs) + 1 + ncap + i, a)
         pm := latI(mut st, pmut, i)
         benv = bind(mut st, benv, sA(nodeOf(mut st, latN(mut st, lps, i))), d, pm != 0, latI(mut st, pdecls, i), latTy(mut st, ptys, i), latI(mut st, pelems, i), 0, -1, pm == 2, SUNK)
@@ -992,19 +1004,15 @@ func callClosure(st mut S, callee NodeRef, ct TyRef, args ListRef, at NodeRef, e
     sig := if dr >= 0 { nC(nodeOf(mut st, hgetN(mut st, dr))) } else { NodeRef(-1) }
     n := lenL(mut st, args)
     vs := ListRef(listN(mut st, n))
-    mut p := closParam(mut st, ct)
+    p := closParam(mut st, ct)
     // 実引数の組 prod U P（U = 呼び先のenv・P = 元の引数チェーン）がmutを持つ（関数型のmut仮引数）ならanchorつきのcallMv
     // （callv は Def の region 0 を呼び手の最内へ固定し、mut の正確一致で落ちる）
     anchor := if tyMutFreeD(mut st, tRight(mut st, ct)) && tyMutFreeD(mut st, p) { -1 } else { closAnchor(mut st, ct, args, eb, ef) }
     mm := calleeMutMask(mut st, callee, sig, eb, ef)
     for i <- iter.Range(0, n) {
-        mut want := p
-        if i + 1 != n {
-            if tg(mut st, p) != TPr {
-                return 0, diag.Malformed{at: posOf(mut st, at)}
-            }
-            want = tLeft(mut st, p)
-            p = tRight(mut st, p)
+        want := treeAt(mut st, p, i, n)
+        if want == -1 {
+            return 0, diag.Malformed{at: posOf(mut st, at)}
         }
         a := latN(mut st, args, i)
         bte := if sig != -1 && i < lenL(mut st, lA(nodeOf(mut st, sig))) { latN(mut st, lA(nodeOf(mut st, sig)), i) } else { NodeRef(-1) }
@@ -1037,9 +1045,9 @@ func callClosure(st mut S, callee NodeRef, ct TyRef, args ListRef, at NodeRef, e
         // imm の実引数・呼び先の env は anchor より深ければ anchor へ形式コピー（M4 (a) — callM の実引数と同じ）
         u := tRight(mut st, ct)
         env := copyAt(mut st, c1(mut st, CSnd, cVar(mut st, 0)), u, u, anchor)
-        return cLet(mut st, f, cCallMv(mut st, anchor, closCallee(mut st, ct, c1(mut st, CFst, fv)), c2(mut st, CPair, env, pairChain(mut st, vs)))), nil
+        return cLet(mut st, f, cCallMv(mut st, anchor, closCallee(mut st, ct, c1(mut st, CFst, fv)), c2(mut st, CPair, env, treePair(mut st, vs)))), nil
     }
-    cv := c2(mut st, CCallv, closCallee(mut st, ct, c1(mut st, CFst, fv)), c2(mut st, CPair, c1(mut st, CSnd, cVar(mut st, 0)), pairChain(mut st, vs)))
+    cv := c2(mut st, CCallv, closCallee(mut st, ct, c1(mut st, CFst, fv)), c2(mut st, CPair, c1(mut st, CSnd, cVar(mut st, 0)), treePair(mut st, vs)))
     return cLet(mut st, f, cv), nil
 }
 

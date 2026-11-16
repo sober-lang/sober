@@ -1,0 +1,120 @@
+package server
+
+// Set-Cookieの書きの検査一式（white-box — 非公開のcookieLine / cookieOk / respHead）: 省いたフィールドの既定（Secure・HttpOnly・SameSite=Lax・Path=/・Domainなし）・
+// 各フィールド・緩めるフィールド・書けない形（名前・値・属性の文字・負のMax-Age・SameSite=Noneと __Host- / __Secure- のSecure抜き・__Host- のPathとDomain）・
+// レスポンスの頭にcookieの行が並ぶ順・圧縮するレスポンスでも書くこと・書いた名前と値をCookieの読みで戻す往復
+
+import "std/compress/gzip"
+import "std/http"
+import "std/iter"
+import "std/strings"
+import "std/testing/cell"
+
+func TestSetCookieDefaults() {
+    assert(cookieLine(SetCookie{name: "sid", value: "abc"}) == "Set-Cookie: sid=abc; Path=/; Secure; HttpOnly; SameSite=Lax\r\n")
+    assert(cookieLine(SetCookie{name: "__Host-sid", value: "x-y_z.0~"}) == "Set-Cookie: __Host-sid=x-y_z.0~; Path=/; Secure; HttpOnly; SameSite=Lax\r\n")
+}
+
+func TestSetCookieFields() {
+    assert(cookieLine(SetCookie{name: "a", value: "1", maxAge: 3600, path: "/app", domain: "example.com", sameSite: SameSiteStrict{}}) ==
+        "Set-Cookie: a=1; Path=/app; Domain=example.com; Max-Age=3600; Secure; HttpOnly; SameSite=Strict\r\n")
+    assert(cookieLine(SetCookie{name: "a", value: "", maxAge: 0}) == "Set-Cookie: a=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Lax\r\n")
+    assert(cookieLine(SetCookie{name: "t", value: "1", sameSite: SameSiteNone{}}) == "Set-Cookie: t=1; Path=/; Secure; HttpOnly; SameSite=None\r\n")
+    assert(cookieLine(SetCookie{name: "dev", value: "1", dangerouslyAllowHttp: true}) == "Set-Cookie: dev=1; Path=/; HttpOnly; SameSite=Lax\r\n")
+    assert(cookieLine(SetCookie{name: "ui", value: "dark", dangerouslyScriptReadable: true}) == "Set-Cookie: ui=dark; Path=/; Secure; SameSite=Lax\r\n")
+}
+
+func TestSetCookieRejects() {
+    bad := []SetCookie{
+        SetCookie{name: "", value: "1"},
+        SetCookie{name: "a b", value: "1"},
+        SetCookie{name: "a;", value: "1"},
+        SetCookie{name: "a", value: "x y"},
+        SetCookie{name: "a", value: "x;y"},
+        SetCookie{name: "a", value: "\"q\""},
+        SetCookie{name: "a", value: "x,y"},
+        SetCookie{name: "a", value: "x\\y"},
+        SetCookie{name: "a", value: "あ"},
+        SetCookie{name: "a", value: "1", path: ""},
+        SetCookie{name: "a", value: "1", path: "/x;Domain=evil"},
+        SetCookie{name: "a", value: "1", domain: "x\r\nSet-Cookie: b=2"},
+        SetCookie{name: "a", value: "1", maxAge: -1},
+        SetCookie{name: "a", value: "1", sameSite: SameSiteNone{}, dangerouslyAllowHttp: true},
+        SetCookie{name: "__Host-a", value: "1", dangerouslyAllowHttp: true},
+        SetCookie{name: "__Secure-a", value: "1", dangerouslyAllowHttp: true},
+        SetCookie{name: "__Host-a", value: "1", path: "/app"},
+        SetCookie{name: "__Host-a", value: "1", domain: "example.com"},
+    }
+    for c <- bad {
+        assert(!cookieOk(c))
+    }
+    assert(cookieOk(SetCookie{name: "__Host-a", value: "1", path: "/"}))
+    assert(cookieOk(SetCookie{name: "__Secure-a", value: "1", domain: "example.com", path: "/app"}))
+}
+
+func TestSetCookieHead() {
+    r := Response{status: http.OK, contentType: "text/plain", body: bytes("hi"), cookies: []SetCookie{SetCookie{name: "a", value: "1"}, SetCookie{name: "b", value: "2", maxAge: 0}}}
+    h := string(respHead(r, true, false, 0)) catch ""
+    assert(strings.Contains(h, "\r\nSet-Cookie: a=1; Path=/; Secure; HttpOnly; SameSite=Lax\r\nSet-Cookie: b=2; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Lax\r\n"))
+    // 生のSet-Cookieは任意ヘッダに書けない（型のフィールドだけ）
+    assert(!fieldOk(http.Field{name: "Set-Cookie", value: "a=1"}))
+    assert(!fieldOk(http.Field{name: "set-cookie", value: "a=1"}))
+    assert(fieldOk(http.Field{name: "X-Request-Id", value: "7"}))
+}
+
+func TestSetCookieRoundTrip() {
+    cs := []SetCookie{SetCookie{name: "sid", value: "AbC-123_x.y~z"}, SetCookie{name: "__Host-t", value: "!#$%&'()*+-./:<=>?@[]^_`{|}~"}}
+    for c <- cs {
+        r := rq("GET / HTTP/1.1\r\nHost: x\r\nCookie: z=0; ${c.name}=${c.value}\r\n\r\n")
+        assert(is(Cookie(r, c.name), c.value))
+    }
+}
+
+// 圧縮するレスポンス（本文 ≥ gzMin・圧縮向きのContent-Type・リクエストがgzipを受ける — 本文のレスポンスと長さ不定のstream）でもSet-Cookieを書く
+// （圧縮の有無でレスポンスの頭は変わらない）
+const GzSent = testing.cell.Cell[string]{}
+
+func gzCookieRoute(r Request) Response {
+    mut big := mut []byte{}
+    for i <- iter.Range(0, 2 * gzMin) {
+        big = append(big, 'a')
+    }
+    b := freeze(big)
+    cs := []SetCookie{SetCookie{name: "sid", value: "abc"}}
+    return if r.path == "/stream" {
+        Response{status: http.OK, contentType: "text/plain", stream: (out, emit) => emit(mut out, b), cookies: cs}
+    } else {
+        Response{status: http.OK, contentType: "text/plain", body: b, cookies: cs}
+    }
+}
+
+// b の頭（空行まで — 無ければ ""）
+func headOf(b []byte) string {
+    mut i := 0
+    while i + 4 <= len(b) {
+        if b[i] == '\r' && b[i + 1] == '\n' && b[i + 2] == '\r' && b[i + 3] == '\n' {
+            return string(b[0:i + 4]) catch ""
+        }
+        i += 1
+    }
+    return ""
+}
+
+func gzRecord(b []byte) error? {
+    testing.cell.Update(GzSent, (l) => l + headOf(b))
+    return nil
+}
+
+func TestSetCookieCompressed() {
+    paths := []string{"/body", "/stream"}
+    for p <- paths {
+        testing.cell.Set(GzSent, "")
+        mut hist := compress.gzip.History{}
+        req := bytes("GET ${p} HTTP/1.1\r\nHost: x\r\nAccept-Encoding: gzip\r\n\r\n")
+        _, _, out, _, e := serveBuf((b) => gzRecord(b), req, gzCookieRoute, 8192, 8192, 6, true, nil, mut hist, false)
+        assert(e == nil)
+        h := testing.cell.Get(GzSent) + headOf(out)
+        assert(strings.Contains(h, "Content-Encoding: gzip\r\n"), h)
+        assert(strings.Contains(h, "Set-Cookie: sid=abc; Path=/; Secure; HttpOnly; SameSite=Lax\r\n"), h)
+    }
+}

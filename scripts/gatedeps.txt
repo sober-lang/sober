@@ -74,6 +74,7 @@ unittest: testdata/crypto testdata/pg testdata/stdtest testdata/tls testdata/wyc
 x86enc: 
 trapprobe: testdata/trapprobe
 seqpar: examples scripts/seqpar.list
+xpar: examples   # 題材 = examplesの大きい例4本（群が2つ以上になる大きさ）
 lparcfg: scripts/lparcfg.ts
 schedvec: examples scripts/schedvec.list scripts/schedvec.ts
 schedfuzz: examples scripts/schedfuzz.list testdata/readyspill bench/spawn
@@ -98,10 +99,12 @@ ringinst: bench/httparena bench/ratchet.txt scripts/reqinst.ts ~src/stage1   # ~
 sortcheck: testdata/sortcheck
 matchlencheck: testdata/matchlen
 jcleancheck: testdata/jclean
+jsonmark: examples testdata/jsonmark testdata/httpcheck   # 題材 = testdata/jsonmark（dataset.jsonを読む）と、json.Encodeを使うexamples
 flatecheck: examples testdata/flatecheck testdata/httpcheck
 ctcheck: testdata/ctcheck testdata/secretdump
 cryptocheck: examples testdata/crypto testdata/wycheproof   # M2（report-1222）が名指し: Sober のプログラムが実行時に読む・import する入力（本文の抽出では見えない）
 tlsfsm: lean lean/.lake/build/bin/sober-gen testdata/tls
+tlsfuzz: examples testdata/crypto testdata/tlsfuzz scripts/tlsfuzz-fetch.sh ~scripts   # ~scripts: 本文のscripts/〈名前〉.pyはtlsfuzzerの中のパス。tlsfuzzerの取得物（out/tlsfuzz）は、取得のスクリプトの固定のcommitと版で決まる
 iterregion: examples
 rflowmeter: bench/httparena   # ゴミ計つきのコンパイラで build する題材（std は stage2 の鍵に入る）
 fitcheck: bench examples src/stage1 testdata
@@ -109,14 +112,16 @@ numpert: bench examples src/stage1
 fnhash: 
 tyhash: 
 iouring: examples testdata/io_par ~testdata   # testdata は監査（report-1222）で読む単位に詰めた — M2 で確認
-httpcheck: scripts/flight.ts testdata/httpcheck examples
+httpcheck: scripts/flight.ts testdata/httpcheck testdata/tlserr examples
 starve: testdata/starve
 tschain: testdata/delaylat
 fusecheck: scripts/flight.ts testdata/httpcheck
 wincheck: testdata/wincheck testdata/httpcheck/dataset.json
 stackcheck: bench/httparena scripts/stackcheck.ts testdata/httpcheck
+segvcheck: testdata/segvcheck
 areacheck: scripts/areacheck.ts testdata/areacheck examples   # examples = net_area_window（区画の窓の答えの黄金照合）
 pincheck: testdata/pin
+laypin: bench/httparena examples scripts/laypin.ts src/stage1
 pid1stop: scripts/pid1stop.ts testdata/pid1stop
 mdwecheck: testdata/mdwe
 vaslot: testdata/vaslot

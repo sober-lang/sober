@@ -56,8 +56,20 @@ function bad(why: string): never {
   process.exit(1);
 }
 
-// 静まった所の所有エリアを読んで保存則を見る → 交換済み（所有エリアが自分の領域でない）チャンクの数
+// サーバーが計測の途中で止まった（変異が検査に捕まった・落ちた）ときの/procの読みの失敗は、理由つきのbadにする。変異の走行では捕まえたに数え、
+// 素の走行と検査だけの走行（91）ではareacheck.shがFAILにする。サーバーが生きているのに読めないのは計測の側の不具合なので、そのまま投げる
+function serverGone(): boolean {
+  try { return /^\d+ \(.*\) Z /.test(fs.readFileSync(`/proc/${pid}/stat`, "utf8")); } catch { return true; }
+}
 function snap(tag: string): number {
+  try { return snapRaw(tag); } catch (e) {
+    if (!serverGone()) throw e;
+    bad(`server stopped during the measurement at ${tag} (${(e as NodeJS.ErrnoException).code ?? e}; exit ${p.exitCode ?? p.signalCode ?? "pending"}): ${err.trim().replace(/\n+/g, " | ").slice(0, 200)}`);
+  }
+}
+
+// 静まった所の所有エリアを読んで保存則を見る → 交換済み（所有エリアが自分の領域でない）チャンクの数
+function snapRaw(tag: string): number {
   const maps = fs.readFileSync(`/proc/${pid}/maps`, "utf8").split("\n").map((l) => /^([0-9a-f]+)-([0-9a-f]+) (\S+)/.exec(l)).filter((m) => m !== null)
     .map((m) => ({ s: parseInt(m![1], 16), e: parseInt(m![2], 16), perm: m![3] }));
   const chunkTops: number[] = [], wkTops: number[] = [], cands: number[] = [];
@@ -214,10 +226,11 @@ async function main() {
   const hr = await hold;
   hr.forEach((x, i) => { if (x !== `200 /hold/400/h${i}x${"y".repeat(40 * i)}`) bad(`/hold answered ${x} (area window content lost while sleeping deep)`); });
   // (g) 予約ページから小さいスロットへ移った深度（大きい本文）は、リクエストの後で空ならシャロースリープする — parkDeepWinが増えない
+  // 本文は送り場のチャンク（16 KiB）を越える大きさにする: 越えない応答は頭と本文が送り場へ直に集まり、本文をoutへ積まないので、outの深度が予約ページから移らない
   const pdw0 = +(/parkDeepWin=(\d+)/.exec((await cs[0].get("/ledger")) ?? "")?.[1] ?? "-1");
   for (let r = 0; r < 5; r++) {
-    const rb = await Promise.all(cs.slice(0, 6).map((c) => c.get("/big/9000")));
-    if (rb.some((x) => x === null || x.length !== 4 + 9000)) bad(`/big/9000 answered ${rb.find((x) => x === null || x.length !== 4 + 9000)?.slice(0, 40)}`);
+    const rb = await Promise.all(cs.slice(0, 6).map((c) => c.get("/big/20000")));
+    if (rb.some((x) => x === null || x.length !== 4 + 20000)) bad(`/big/20000 answered ${rb.find((x) => x === null || x.length !== 4 + 20000)?.slice(0, 40)}`);
   }
   const pdw1 = +(/parkDeepWin=(\d+)/.exec((await cs[0].get("/ledger")) ?? "")?.[1] ?? "-1");
   if (pdw1 !== pdw0) bad(`parkDeepWin ${pdw0} → ${pdw1} over /big — a depth moved out of the area window parked deep while empty`);
@@ -234,6 +247,15 @@ async function main() {
   pr0.forEach((x, i) => { if (x !== `200 /hold/100/p${i}${"z".repeat(30 * i)}`) bad(`a split request answered ${x} (the partial request in the area window was overwritten)`); });
   const led2 = await cs[0].get("/ledger");
   const pdw = +(/parkDeepWin=(\d+)/.exec(led2 ?? "")?.[1] ?? "-1");
+  // (h) 縮退: 入場できない子（scopeの天井より大きい宣言）をhandlerの上でその場で走らせる。子は孫2本をJoinし、深くスリープし、自分のサーバへ繋いで答えを
+  // 受けて待つ。子の待ちは親の接続のtaskの待ち。子の本体の入口がエリアの付け替えをすると、親の枠のあるエリアを交換で渡すか上書きして、答えが壊れるか返らない
+  const inl = Promise.all(cs.slice(0, 8).map((c) => c.get(`/inl/300/${port}`)));
+  await sleep(200);
+  mx = Math.max(mx, snap("inline-wait"));
+  const ir = await inl;
+  if (ir.some((x) => x !== `200 ${300 * 80 + 1}`)) bad(`/inl/300 answered ${ir.find((x) => x !== `200 ${300 * 80 + 1}`)} (a child run in place on a connection task)`);
+  await sleep(200);
+  mx = Math.max(mx, snap("inline-after"));
   // (b) panicで死ぬ（エリアの上のスタックで死んで罠へ戻る）
   const ps = Array.from({ length: 6 }, () => new Conn(port));
   await Promise.all(ps.map((c) => c.get("/ok")));

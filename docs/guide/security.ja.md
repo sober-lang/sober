@@ -382,6 +382,7 @@ Soberの答え: 2つの層で答えます。
 
 - 構造（std/http/server）: 保存の方針は型のフィールド（`Route.cache`・`Response.cache`・Staticの `cache:`）でだけ書き、任意のヘッダとしてCache-Controlを書くAPIはありません。動的なレスポンスの既定は `Cache-Control: private` です。認証の値は専用のAPI `http.server.Authorization` / `http.server.Cookie` でだけ読めます（`http.server.Header` は認証のヘッダにnilを返す）。
 - 解析: 共有キャッシュにも保存させる方針（`http.server.Fresh`・`http.server.Shared`）は、ルートの行でだけ書けます。そのルートのハンドラやmiddlewareが認証のAPIに届きうる形、認証のmiddlewareの下に共有の方針のルートをMountする形を、checkが拒否します。
+- 解析（Set-Cookie）: 共有キャッシュに保存されうる方針（`http.server.Fresh`・`http.server.Shared`・`http.server.Unstated`・`http.server.Revalidate`）のルートでは、ハンドラとmiddlewareがSet-Cookieを返せません。checkが拒否します。キャッシュがSet-Cookieごとレスポンスを保存して、別の利用者にcookieを配る事故を防ぎます。Set-Cookieを返すルートは、方針を `http.server.Private` か `http.server.NoStore` にします。checkを通さずにbuildしたプログラムでは、ヘッダを書くときにpanicします。
 
 公開の資産は共有させ、認証の後ろのAPIはprivateにする形は受理されます。
 
@@ -441,7 +442,7 @@ func main() {
 examples/security_cache_neg.sober:13:35: error: the shared cache policy 'Shared' meets a handler or middleware that reaches a credential source (server.Authorization / server.Cookie / Request.head) in one route — a response that depends on Authorization / Cookie must not be stored by a shared cache — it would be served to other users (language.md 12 節「出所の依存」); use server.Private / server.NoStore for this route, or move the credential read out of it (Analyzer)
 ```
 
-詳しく: [std/http/serverのCache](../std/http-server.ja.md#cache)・[言語仕様12章A-12・A-13](../spec/12-annotations.ja.md)
+詳しく: [std/http/serverのCache](../std/http-server.ja.md#cache)・[言語仕様12章A-12・A-13・A-20](../spec/12-annotations.ja.md)
 
 ## 9. 資源の枯渇（サービス拒否）
 

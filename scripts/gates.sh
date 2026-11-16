@@ -33,6 +33,8 @@
 set -uo pipefail
 # mapのハッシュのシードを固定（既定は乱数 — 探査の長さが揺れて命令・cyclesが揺れる。出力はシードに依らない）
 export SOBER_HASH_SEED=${SOBER_HASH_SEED:-0}
+# 文字の並び順と分類を固定（sort・ugrepの結果がロケールで変わり、ゴールデンを比べるゲートがen_US.UTF-8の環境で落ちる）。外から渡された値も上書きする
+export LC_ALL=C.UTF-8
 cd "$(dirname "$0")/.."
 ROOT=$PWD
 # ゴールデン = ワーカー1（協調形）の観測（段階6 P4-4 — 既定のワーカー数はコア数。M:Nはschedfuzz / seqparがSOBER_WORKERSを明示して掛ける。
@@ -134,6 +136,7 @@ declare -A GTAG=(
     [x86enc]="backend"
     [trapprobe]="lower backend"
     [seqpar]="lower backend"
+    [xpar]="lower backend"
     [lparcfg]="lower"
     [schedvec]="lower backend"
     [schedfuzz]="lower backend"
@@ -158,10 +161,12 @@ declare -A GTAG=(
     [sortcheck]="lower backend"
     [matchlencheck]="lower backend"
     [jcleancheck]="lower backend"
+    [jsonmark]="lower backend load"
     [flatecheck]="lower backend"
     [ctcheck]="lower backend analyzer"
     [cryptocheck]="lower backend"
     [tlsfsm]="lean lower backend"
+    [tlsfuzz]="lower backend"
     [iterregion]="lower backend"
     [rflowmeter]="lower backend"
     [llcheck]="lower backend"
@@ -196,8 +201,10 @@ declare -A GTAG=(
     [fusecheck]="lower backend"
     [wincheck]="lower backend"
     [stackcheck]="lower backend"
+    [segvcheck]="lower backend"
     [areacheck]="lower backend"
     [pincheck]="lower backend"
+    [laypin]="lower backend"
     [selfpar]="check desugar load"
     [gatememo]="all"
     [axes]="all"
@@ -213,7 +220,7 @@ declare -A GTAG=(
 # 長いものから（並列の詰め順 — 2026-10-27にR1の実測の札で並べ直した: selfparの並列化〔R0〕で最長の札がincrbuild / leanbatch / hermeticの群に移った）。フェーズ3のキャッシュの検査4本（incrmut / incrbuild / incrrace / cacheaudit — 3〜4分ずつ）はstagesの直後に置く —
 # 後ろに置くと最後に長い札が重なって --full の wall が伸びる（R3 の 766 s — report-1204 3 節）
 # incrmut は単独で最長の札（冷の --full で 900 s 級）— 13 番目に置くと開始が 5 分近く遅れて臨界路になるので先頭に置く
-ORDER=(incrmut zigtest incrbuild leanbatch hermetic implicitfreeze cachesplit selfhost_check stages nextgen elfeq incrrace iouring selfpar incrcheck_self incrcheck_ex watchcheck testreplay quickfuzz cover mutate guidetest fnpkg modcheck a1oracle memcheck errtrace typerdiff efftrace cachekey streq strix fitcheck numpert sobi obs cacheaudit tyorder selfhost_ll selfhost_e2e selfhost_lower selfhost_fmt selfhost_load toolcheck pkgcheck selfhost_parse io_args passes regionbound checkverdict checksplit checkpos panicmsg optdiff corejson irtext lltext llcheck astjson loaderjson selfhost_lex pool_oracle analyzer_neg secretdump effectsdump fixcheck uniqfreeze sobertest doubles jsonsuite unittest x86enc trapprobe seqpar lparcfg schedvec schedfuzz parbudget cutstat vecchk mapfuse partinl docsync clidoc outline doclead benchsync confsync maprepr ubfstat framestat reqinst ringinst sortcheck matchlencheck jcleancheck flatecheck ctcheck cryptocheck tlsfsm iterregion rflowmeter fnhash tyhash gatememo httpcheck starve tschain fusecheck wincheck stackcheck areacheck pincheck pid1stop mdwecheck vaslot refs stdref rootsync tzsync datadce corevec extract axes obs_zig hermetic_zig ir_roundtrip)
+ORDER=(incrmut zigtest incrbuild leanbatch hermetic implicitfreeze cachesplit selfhost_check stages nextgen elfeq incrrace iouring selfpar xpar incrcheck_self incrcheck_ex watchcheck testreplay quickfuzz cover mutate guidetest fnpkg modcheck a1oracle memcheck errtrace typerdiff efftrace cachekey streq strix fitcheck numpert sobi obs cacheaudit tyorder selfhost_ll selfhost_e2e selfhost_lower selfhost_fmt selfhost_load toolcheck pkgcheck selfhost_parse io_args passes regionbound checkverdict checksplit checkpos panicmsg optdiff corejson irtext lltext llcheck astjson loaderjson selfhost_lex pool_oracle analyzer_neg secretdump effectsdump fixcheck uniqfreeze sobertest doubles jsonsuite unittest x86enc trapprobe seqpar lparcfg schedvec schedfuzz parbudget cutstat vecchk mapfuse partinl docsync clidoc outline doclead benchsync confsync maprepr ubfstat framestat reqinst ringinst sortcheck matchlencheck jcleancheck jsonmark flatecheck ctcheck cryptocheck tlsfsm tlsfuzz iterregion rflowmeter fnhash tyhash gatememo httpcheck starve tschain fusecheck wincheck stackcheck segvcheck areacheck pincheck laypin pid1stop mdwecheck vaslot refs stdref rootsync tzsync datadce corevec extract axes obs_zig hermetic_zig ir_roundtrip)
 
 auto_tags() { # 変更ファイル → タグ（推定できない変更は all）
     local f
@@ -241,7 +248,7 @@ auto_tags() { # 変更ファイル → タグ（推定できない変更は all�
             src/compiler/analyzer/*|scripts/pool_oracle.sh|scripts/errtrace.sh|scripts/analyzer_neg.sh|scripts/secretdump.sh|testdata/secretdump/*|scripts/effectsdump.sh|testdata/effectsdump/*|scripts/efftrace.sh|scripts/efftrace.ts|scripts/fixcheck.sh|testdata/fix/*|testdata/fixgold/*) echo analyzer ;;
             src/compiler/checker/*|src/compiler/tools/checkdump/*|src/compiler/tools/sobercheck/*) echo check ;;
             scripts/selfpar.sh|testdata/selfpar/*|scripts/checkstats.sh) echo check ;;
-            scripts/nextgen.sh) echo lower ;;
+            scripts/nextgen.sh|scripts/xpar.sh) echo lower ;;
             src/compiler/lower/*|src/compiler/tools/lowerdump/*|src/compiler/tools/lldump/*|src/compiler/app/*) echo lower ;;
             src/compiler/x86/*|src/compiler/elf/*|src/compiler/tools/x86encdump/*) echo backend ;;
             src/compiler/iface/*|scripts/sobi.sh|scripts/frozen/sobi_known.txt) echo fmt; echo load ;;
@@ -252,7 +259,7 @@ auto_tags() { # 変更ファイル → タグ（推定できない変更は all�
             scripts/selfhost_desugar.sh|scripts/corejson.sh) echo desugar ;;
             scripts/selfhost_check.sh|scripts/selfhost_e2e.sh|scripts/checkmut.ts|scripts/corevec.sh) echo check ;;
             scripts/obs.sh|scripts/hermetic.sh|scripts/pkgcheck.sh|scripts/io_args.sh|scripts/x86enc.sh|scripts/elfeq.sh|scripts/elfeq.list) echo backend ;;
-            scripts/selfhost_lower.sh|scripts/lparcfg.sh|scripts/lparcfg.ts|scripts/trapprobe.sh|testdata/trapprobe/*|scripts/seqpar.sh|scripts/seqpar.list|scripts/schedvec.sh|scripts/schedvec.ts|scripts/schedvec.list|scripts/schedfuzz.sh|scripts/schedfuzz.list|testdata/readyspill/*|scripts/parbudget.sh|testdata/parbudget/*|scripts/cutstat.sh|scripts/vecchk.sh|scripts/mapfuse.sh|scripts/partinl.sh|scripts/maprepr.sh|scripts/streq.sh|scripts/strix.sh|scripts/sortcheck.sh|scripts/matchlencheck.sh|testdata/matchlen/*|scripts/jcleancheck.sh|testdata/jclean/*|scripts/iterregion.sh|scripts/rflowmeter.sh|testdata/sortcheck/*|scripts/flatecheck.sh|testdata/flatecheck/*|scripts/ctcheck.sh|testdata/ctcheck/*|scripts/cryptocheck.sh|scripts/ubfstat.sh|scripts/ubfstat.list|scripts/framestat.sh|scripts/framestat.list|scripts/reqinst.sh|scripts/reqinst.ts|scripts/ringinst.sh|scripts/fitcheck.sh|scripts/numpert.sh|scripts/tyorder.sh|scripts/cacheaudit.sh|scripts/incrbuild.sh|scripts/incrmut.sh|scripts/incrrace.sh|scripts/iouring.sh|scripts/httpcheck.sh|testdata/httpcheck/*|scripts/pid1stop.*|testdata/pid1stop/*|scripts/mdwecheck.sh|testdata/mdwe/*|scripts/vaslot.sh|testdata/vaslot/*|scripts/starve.sh|testdata/starve/*|scripts/tschain.sh|testdata/delaylat/*|scripts/fusecheck.sh|scripts/wincheck.sh|scripts/stackcheck.*|scripts/areacheck.*|testdata/areacheck/*|scripts/pincheck.sh|testdata/pin/*|testdata/wincheck/*|testdata/cutstat/*|scripts/optdiff.sh|scripts/typerdiff.sh|scripts/irtext.sh|scripts/lltext.sh|scripts/llcheck.sh|scripts/selfhost_ll.sh|scripts/stages.sh|scripts/selfhost_cli.sh|scripts/passes.sh|scripts/regionbound.sh|scripts/memcheck.sh|testdata/memcheck/*) echo lower ;;
+            scripts/selfhost_lower.sh|scripts/lparcfg.sh|scripts/lparcfg.ts|scripts/trapprobe.sh|testdata/trapprobe/*|scripts/seqpar.sh|scripts/seqpar.list|scripts/schedvec.sh|scripts/schedvec.ts|scripts/schedvec.list|scripts/schedfuzz.sh|scripts/schedfuzz.list|testdata/readyspill/*|scripts/parbudget.sh|testdata/parbudget/*|scripts/cutstat.sh|scripts/vecchk.sh|scripts/mapfuse.sh|scripts/partinl.sh|scripts/maprepr.sh|scripts/streq.sh|scripts/strix.sh|scripts/sortcheck.sh|scripts/matchlencheck.sh|testdata/matchlen/*|scripts/jcleancheck.sh|testdata/jclean/*|scripts/jsonmark.sh|testdata/jsonmark/*|scripts/iterregion.sh|scripts/rflowmeter.sh|testdata/sortcheck/*|scripts/flatecheck.sh|testdata/flatecheck/*|scripts/ctcheck.sh|testdata/ctcheck/*|scripts/cryptocheck.sh|scripts/ubfstat.sh|scripts/ubfstat.list|scripts/framestat.sh|scripts/framestat.list|scripts/reqinst.sh|scripts/reqinst.ts|scripts/ringinst.sh|scripts/fitcheck.sh|scripts/numpert.sh|scripts/tyorder.sh|scripts/cacheaudit.sh|scripts/incrbuild.sh|scripts/incrmut.sh|scripts/incrrace.sh|scripts/iouring.sh|scripts/httpcheck.sh|testdata/httpcheck/*|scripts/pid1stop.*|testdata/pid1stop/*|scripts/mdwecheck.sh|testdata/mdwe/*|scripts/vaslot.sh|testdata/vaslot/*|scripts/starve.sh|testdata/starve/*|scripts/tschain.sh|testdata/delaylat/*|scripts/fusecheck.sh|scripts/wincheck.sh|scripts/stackcheck.*|scripts/segvcheck.sh|testdata/segvcheck/*|scripts/areacheck.*|testdata/areacheck/*|scripts/pincheck.sh|testdata/pin/*|scripts/laypin.*|testdata/wincheck/*|testdata/cutstat/*|scripts/optdiff.sh|scripts/typerdiff.sh|scripts/irtext.sh|scripts/lltext.sh|scripts/llcheck.sh|scripts/selfhost_ll.sh|scripts/stages.sh|scripts/selfhost_cli.sh|scripts/passes.sh|scripts/regionbound.sh|scripts/memcheck.sh|testdata/memcheck/*) echo lower ;;
             scripts/checkverdict.sh|testdata/checkverdict/*) echo check; echo docs ;;
             scripts/checkpos.sh|scripts/checkpos.ts|scripts/incrcheck.sh|scripts/watchcheck.sh|testdata/watchcheck/*) echo check ;;
             scripts/refs.sh|scripts/alphacheck.sh|scripts/alphamap.ts|src/compiler/tools/refs/*|testdata/refs/*) echo load ;;
@@ -269,6 +276,7 @@ auto_tags() { # 変更ファイル → タグ（推定できない変更は all�
             scripts/implicitfreeze.sh|scripts/implicitfreeze.ts) echo desugar; echo lower ;;
             lean/Extract/*|lean/ExtractMain.lean|lean/FeatherweightSober/TyVec.lean|scripts/extract.sh|lean/Extract/sober/*) echo lean ;;
             lean/FeatherweightSober/Tls.lean|scripts/tlsfsm.sh|testdata/tls/fsm.golden) echo lean ;;
+            scripts/tlsfuzz.sh|scripts/tlsfuzz-fetch.sh|testdata/tlsfuzz/*) echo lower ;;
             docs/conformance/*|scripts/confsync.*|scripts/confrecord.sh|testdata/conformance/*) echo docs ;;
             docs/guide/*|docs/spec/*|docs/design-notes/fast.md|docs/language.md|README.md|README.ja.md|scripts/docsync.*|bench/README.md|bench/data/*|scripts/benchsync.*|scripts/benchchart.ts|docs/assets/bench-*) echo docs ;;
             docs/*|*.md) ;;

@@ -37,6 +37,7 @@ const xServerName = 0
 const xSupportedGroups = 10
 const xSignatureAlgorithms = 13
 const xAlpn = 16
+const xPreSharedKey = 41
 const xSupportedVersions = 43
 const xKeyShare = 51
 
@@ -52,6 +53,7 @@ const aDecodeError = 50
 const aDecryptError = 51
 const aProtocolVersion = 70
 const aInternal = 80
+const aMissingExtension = 109
 const aNoAlpn = 120
 
 // HelloRetryRequest の random（SHA-256("HelloRetryRequest") — RFC 9846 4.1.3 の値 cf21ad74…8339c）
@@ -245,6 +247,10 @@ func alert(d int) error? {
 @errors(internal.record.Alert)
 func feedPlain(h mut Hs, p Params, f internal.record.Frame, ct int) (Out, error?) {
     _, body := internal.record.Plain(f)
+    // 暗号化していないrecordの本体の上限は2^14（RFC 9846 5.1）
+    if len(body) > internal.record.MaxPlain {
+        return none(), alert(internal.record.AlertOverflow)
+    }
     if ct == internal.record.CtCcs {
         return ccsOnce(mut h, body)
     }
@@ -325,7 +331,11 @@ func onSealedMsg(h mut Hs, m []byte) (Out, error?) {
     t := int(m[0])
     connected := IsConnected(h)
     if !connected && t == tFinished {
-        if len(m) != 4 + 32 || !crypto.Equal(sliceOf(m, 4, 32), h.expFin) {
+        // verify_dataの長さはhashの長さ。違えば構文の誤りでdecode_error、中身の不一致はdecrypt_error（RFC 9846 4.5.3・6）
+        if len(m) != 4 + 32 {
+            return none(), alert(aDecodeError)
+        }
+        if !crypto.Equal(sliceOf(m, 4, 32), h.expFin) {
             return none(), alert(aDecryptError)
         }
         // 鍵の境目: Finished の後ろに handshake のバイトが残っていてはならない
@@ -355,6 +365,10 @@ func onSealedMsg(h mut Hs, m []byte) (Out, error?) {
 // 相手の alert（close_notify なら静かに閉じる・他は相手の誤り — 送り返さずに閉じる）
 @errors(internal.record.Alert)
 func peerAlert(h mut Hs, pt []byte) (Out, error?) {
+    // 中身が空のalertのrecordはunexpected_message（RFC 9846 5.4）
+    if len(pt) == 0 {
+        return none(), alert(aUnexpected)
+    }
     if len(pt) != 2 {
         return none(), alert(aDecodeError)
     }
@@ -366,6 +380,7 @@ func peerAlert(h mut Hs, pt []byte) (Out, error?) {
 
 // ClientHello の読んだ形
 type hello struct {
+    legacy int
     sessid []byte
     suites []int
     compOk bool
@@ -376,13 +391,17 @@ type hello struct {
     sigPss bool
     alpn []string
     hasAlpn bool
+    hasGroups bool
+    hasSigs bool
+    hasPsk bool
 }
 
-// ClientHello の本体（型と長さの 4 バイトの後ろ）を読む（読めなければ decode_error・同じ拡張が 2 つなら illegal_parameter）
+// ClientHello の本体（型と長さの 4 バイトの後ろ）を読む（読めなければ decode_error・同じ拡張が 2 つなら illegal_parameter）。
+// 読む拡張は、本体が構文どおりに尽きることと、リストが下限の長さを満たすことまで見る（空のリストと空の要素は構文の外。RFC 9846 6のdecode_error）
 @errors(internal.record.Alert)
 func parseHello(m []byte) (hello, error?) {
     mut c := cur(4, len(m))
-    _ = u16(m, mut c)
+    legacy := u16(m, mut c)
     _ = take(m, mut c, 32)
     sessid := take(m, mut c, u8(m, mut c))
     mut cs := sub(mut c, u16(m, mut c))
@@ -402,6 +421,10 @@ func parseHello(m []byte) (hello, error?) {
     mut alpn := mut []string{}
     mut hasAlpn := false
     mut dup := false
+    mut hasGroups := false
+    mut hasSigs := false
+    mut hasPsk := false
+    mut xbad := false
     while rest(xs) >= 4 {
         t := u16(m, mut xs)
         mut x := sub(mut xs, u16(m, mut xs))
@@ -411,69 +434,93 @@ func parseHello(m []byte) (hello, error?) {
             }
         }
         seen = append(seen, t)
+        if t == xPreSharedKey {
+            hasPsk = true
+        }
         if t == xSupportedVersions {
             mut l := sub(mut x, u8(m, mut x))
+            xbad = xbad || rest(l) < 2
             while rest(l) >= 2 {
                 if u16(m, mut l) == 0x0304 {
                     v13 = true
                 }
             }
+            xbad = xbad || l.bad || rest(l) != 0 || x.bad || rest(x) != 0
         } else if t == xSupportedGroups {
+            hasGroups = true
             mut l := sub(mut x, u16(m, mut x))
+            xbad = xbad || rest(l) < 2
             while rest(l) >= 2 {
                 if u16(m, mut l) == groupX25519 {
                     groupX = true
                 }
             }
+            xbad = xbad || l.bad || rest(l) != 0 || x.bad || rest(x) != 0
         } else if t == xKeyShare {
             hasShare = true
             mut l := sub(mut x, u16(m, mut x))
-            while rest(l) >= 4 {
+            while rest(l) > 0 && !l.bad {
                 g := u16(m, mut l)
-                k := take(m, mut l, u16(m, mut l))
+                kn := u16(m, mut l)
+                xbad = xbad || kn == 0
+                k := take(m, mut l, kn)
                 if g == groupX25519 && len(share) == 0 {
                     share = k
                 }
             }
+            xbad = xbad || l.bad || x.bad || rest(x) != 0
         } else if t == xSignatureAlgorithms {
+            hasSigs = true
             mut l := sub(mut x, u16(m, mut x))
+            xbad = xbad || rest(l) < 2
             while rest(l) >= 2 {
                 if u16(m, mut l) == sigPssSha256 {
                     sigPss = true
                 }
             }
+            xbad = xbad || l.bad || rest(l) != 0 || x.bad || rest(x) != 0
         } else if t == xAlpn {
             hasAlpn = true
             mut l := sub(mut x, u16(m, mut x))
-            while rest(l) >= 1 {
-                b := take(m, mut l, u8(m, mut l))
+            xbad = xbad || rest(l) < 2
+            while rest(l) > 0 && !l.bad {
+                bn := u8(m, mut l)
+                xbad = xbad || bn == 0
+                b := take(m, mut l, bn)
                 s, e := string(b)
                 if e == nil {
                     alpn = append(alpn, s)
                 }
             }
+            xbad = xbad || l.bad || x.bad || rest(x) != 0
         }
     }
-    if c.bad || cs.bad || cm.bad || xs.bad || rest(xs) != 0 || rest(c) != 0 {
+    if c.bad || cs.bad || cm.bad || xs.bad || rest(xs) != 0 || rest(c) != 0 || xbad {
         return emptyHello(), alert(aDecodeError)
     }
     if dup {
         return emptyHello(), alert(aIllegalParameter)
     }
-    return hello{sessid: sessid, suites: freeze(suites), compOk: compOk, v13: v13, groupX: groupX, share: share, hasShare: hasShare, sigPss: sigPss,
-        alpn: freeze(alpn), hasAlpn: hasAlpn}, nil
+    return hello{legacy: legacy, sessid: sessid, suites: freeze(suites), compOk: compOk, v13: v13, groupX: groupX, share: share, hasShare: hasShare, sigPss: sigPss,
+        alpn: freeze(alpn), hasAlpn: hasAlpn, hasGroups: hasGroups, hasSigs: hasSigs, hasPsk: hasPsk}, nil
 }
 
 func emptyHello() hello {
-    return hello{sessid: []byte{}, suites: []int{}, compOk: false, v13: false, groupX: false, share: []byte{}, hasShare: false, sigPss: false, alpn: []string{}, hasAlpn: false}
+    return hello{legacy: 0, sessid: []byte{}, suites: []int{}, compOk: false, v13: false, groupX: false, share: []byte{}, hasShare: false, sigPss: false, alpn: []string{},
+        hasAlpn: false, hasGroups: false, hasSigs: false, hasPsk: false}
 }
 
 // ClientHello m（型と長さの頭込み）を受けて、サーバの flight（または HelloRetryRequest）を返す
 @errors(internal.record.Alert)
 func onClientHello(h mut Hs, p Params, m []byte) (Out, error?) {
     ch := parseHello(m)?
-    if !ch.v13 {
+    // legacy_versionは0x0303だけ（RFC 9846 4.2.2）
+    if ch.legacy != 0x0303 || !ch.v13 {
         return none(), alert(aProtocolVersion)
+    }
+    // TLS 1.3のClientHelloの必須の拡張。PSKが無ければsignature_algorithmsとsupported_groupsが要り、supported_groupsとkey_shareは対で現れる（RFC 9846 9.2）
+    if (!ch.hasPsk && (!ch.hasSigs || !ch.hasGroups)) || ch.hasGroups != ch.hasShare {
+        return none(), alert(aMissingExtension)
     }
     if !ch.compOk {
         return none(), alert(aIllegalParameter)

@@ -234,7 +234,7 @@ func exprIn(st mut S, e NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
         if isRecDr(mut st, bd) {
             base = cUnfold(mut st, base)
         }
-        return projection(mut st, base, idx, lenL(mut st, fs)), nil
+        return treeProj(mut st, base, idx, lenL(mut st, fs)), nil
     case ast.ELambda:
         return 0, diag.CoreFragment{at: posOf(mut st, at)}
     case ast.EIf:
@@ -1284,7 +1284,7 @@ func composite(st mut S, e NodeRef, eb int, ef int, depth int) (CoreRef, error?)
         }
         st.fvDest = cd
         vs, lets := fieldValuesIn(mut st, hget(mut st, dr + 1), tenv, lA(nodeOf(mut st, nC(nodeOf(mut st, hgetN(mut st, dr))))), elems, at, eb, ef, depth)?
-        mut v := pairChain(mut st, vs)
+        mut v := treePair(mut st, vs)
         // 再帰の組のstructはfoldで包む（中身 = 1レベルの展開の型）
         if isRecDr(mut st, dr) {
             v = recFold(mut st, recDrTy(mut st, declRef(mut st, hget(mut st, dr), hget(mut st, dr + 1), tenv), cd, at)?, v)
@@ -1336,7 +1336,7 @@ func labelIn(st mut S, e NodeRef, decl NodeRef, pk int, idx int, venv int, eb in
         st.fvDest = dest
     }
     vs, lets := fieldValuesIn(mut st, pk, venv, vfields(mut st, v), lB(nodeOf(mut st, e)), at, eb, ef, depth)?
-    payload := pairChain(mut st, vs)
+    payload := treePair(mut st, vs)
     saved := st.tenv
     st.tenv = venv
     defer {
@@ -1363,18 +1363,21 @@ func labelIn(st mut S, e NodeRef, decl NodeRef, pk int, idx int, venv int, eb in
     return letsAround(mut st, lets, r), nil
 }
 
-// encodeVariant の型を union の型 u（右結合の入れ子 — n 個の variant）から取る形
+// encodeVariant の型を union の型 u（union の木 — n 個の variant）から取る形
 func encodeVariantTy(st mut S, u TyRef, n int, idx int, payload CoreRef) CoreRef {
-    if n == 1 {
+    return encodeTyIn(mut st, u, 0, n, idx, payload)
+}
+
+// union の木 u（variant の [lo, hi)）の idx 番目へ payload を包む
+func encodeTyIn(st mut S, u TyRef, lo int, hi int, idx int, payload CoreRef) CoreRef {
+    if hi - lo == 1 {
         return payload
     }
-    if idx == 0 {
-        return cInl(mut st, tRight(mut st, u), payload)
+    m := treeMid(lo, hi)
+    if idx < m {
+        return cInl(mut st, tRight(mut st, u), encodeTyIn(mut st, tLeft(mut st, u), lo, m, idx, payload))
     }
-    if n == 2 {
-        return cInr(mut st, tLeft(mut st, u), payload)
-    }
-    return cInr(mut st, tLeft(mut st, u), encodeVariantTy(mut st, tRight(mut st, u), n - 1, idx - 1, payload))
+    return cInr(mut st, tLeft(mut st, u), encodeTyIn(mut st, tRight(mut st, u), m, hi, idx, payload))
 }
 
 // variant（decl の start 番目からの列の idx 番目）のペイロードを右結合の union の入れ子へ包む
@@ -1386,13 +1389,21 @@ func encodeVariant(st mut S, pk int, decl NodeRef, start int, idx int, payload C
     if n < 2 {
         return 0, diag.CoreFragment{at: posOf(mut st, at)}
     }
-    if idx == 0 {
-        r := if n == 2 { payloadTy(mut st, pk, vat(mut st, decl, start + 1), TYFUEL)? } else { unionTreeTy(mut st, pk, decl, start + 1, at, TYFUEL)? }
-        return cInl(mut st, r, payload), nil
+    return encodeIn(mut st, pk, decl, start, start + n, start + idx, payload)
+}
+
+// variant の列の [lo, hi) の union の木の vi 番目（列の通し番号）へ payload を包む
+func encodeIn(st mut S, pk int, decl NodeRef, lo int, hi int, vi int, payload CoreRef) (CoreRef, error?) {
+    if hi - lo == 1 {
+        return payload, nil
     }
-    l := payloadTy(mut st, pk, vat(mut st, decl, start), TYFUEL)?
-    inner := if n == 2 { payload } else { encodeVariant(mut st, pk, decl, start + 1, idx - 1, payload, at)? }
-    return cInr(mut st, l, inner), nil
+    m := treeMid(lo, hi)
+    if vi < m {
+        r := unionTyIn(mut st, pk, decl, m, hi, TYFUEL)?
+        return cInl(mut st, r, encodeIn(mut st, pk, decl, lo, m, vi, payload)?), nil
+    }
+    l := unionTyIn(mut st, pk, decl, lo, m, TYFUEL)?
+    return cInr(mut st, l, encodeIn(mut st, pk, decl, m, hi, vi, payload)?), nil
 }
 
 // struct リテラルの値の列（フィールド順。名前つきは位置に並べ替え）。フィールドの期待型は宣言側の束縛 fenv で

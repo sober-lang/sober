@@ -20,7 +20,7 @@ func cellCall(st mut S, key int, args ListRef, at NodeRef, eb int, ef int, depth
     }
     h := expr(mut st, h0, eb, ef, depth)?
     if key == CELL_GET {
-        return projection(mut st, h, 1, 2), nil
+        return treeProj(mut st, h, 1, 2), nil
     }
     // 置く値はT（呼び手の最内へコピーした形 — 外のregionの値は部分型で受ける）
     want := if ht0 != -1 && tg(mut st, ht0) == TPr { tyRelocAll(mut st, tRight(mut st, ht0), st.rdepth - 1) } else { TyRef(-1) }
@@ -52,7 +52,7 @@ func cellCall(st mut S, key int, args ListRef, at NodeRef, eb int, ef int, depth
     eb2 := bind(mut st, eb1, sA(nodeOf(mut st, lp)), depth + 1, false, d, want, el, 0, -1, false, sty)
     lbody := nB(nodeOf(mut st, lam))
     body := if kindN(mut st, lbody) == ast.EBlock { scoped(mut st, lA(nodeOf(mut st, lbody)), eb2, ef, depth + 2, false, false, -1)? } else { expr(mut st, lbody, eb2, ef, depth + 2)? }
-    return cLet(mut st, h, cLet(mut st, cAnn(mut st, projection(mut st, cVar(mut st, 0), 1, 2), want), cLet(mut st, cAnn(mut st, body, want), cTriv(mut st)))), nil
+    return cLet(mut st, h, cLet(mut st, cAnn(mut st, treeProj(mut st, cVar(mut st, 0), 1, 2), want), cLet(mut st, cAnn(mut st, body, want), cTriv(mut st)))), nil
 }
 
 // 格納場所に置ける型か: クロージャの捕捉と同じ素のデータ（capTyOk）に、再帰型（μ の本体を見る・再帰の変数は組の成分 = 同じ判定の中）を足したもの

@@ -32,6 +32,9 @@ const SHOW_INSTS = false;
 const median = (xs: number[]) => { const s = [...xs].sort((a, b) => a - b); return s[Math.floor((s.length - 1) / 2)]; };
 const lines = (f: string) => readFileSync(f, "utf8").split("\n").filter((l) => l.trim() !== "" && !l.startsWith("#"));
 const num = (s: string) => (s === "NA" || s === "-" || s === undefined ? NaN : Number(s));
+// raw の task-clock の欄 → ナノ秒。perf 6.x の -x, はナノ秒の整数、7.x はミリ秒の小数（例 253.17）を書く。
+// bench/seqperf.sh と extsort.sh はナノ秒の整数にそろえて書くので、小数点のある値は 7.x で取った旧い raw のミリ秒と読む
+const tcNs = (s: string) => (typeof s === "string" && s.includes(".") ? Math.round(Number(s) * 1e6) : num(s));
 
 function readEnv(f: string): Record<string, string> {
   const env: Record<string, string> = {};
@@ -59,7 +62,7 @@ function importRaw(seq: string, web: string | null, ext: string, date: string, c
   const implOf = (s: string) => ({ sober: "sober", go: "go", rust: "rust", ropt: "rust-opt" } as Record<string, string>)[s];
   for (const [k, rs] of group(lines(seq).map((l) => l.split(/\s+/)), (r) => r[0])) {
     const i = k.lastIndexOf("-");
-    emit("seqperf", k.slice(0, i), implOf(k.slice(i + 1)), rs.map((r) => r.slice(1).map(num)), { w: 0, m: 2, c: 3, i: 4, t: rs[0].length > 7 ? 6 : undefined }, seq);
+    emit("seqperf", k.slice(0, i), implOf(k.slice(i + 1)), rs.map((r) => r.slice(1).map((v, j) => (j === 6 ? tcNs(v) : num(v)))), { w: 0, m: 2, c: 3, i: 4, t: rs[0].length > 7 ? 6 : undefined }, seq);
   }
   // webrust（旧形のみ）: 題材 実装 wall cycles insts task-clock rssKB
   if (web) for (const [k, rs] of group(lines(web).filter((l) => !l.startsWith("MISMATCH")).map((l) => l.split(/\s+/)), (r) => `${r[0]} ${r[1]}`)) {
@@ -69,7 +72,7 @@ function importRaw(seq: string, web: string | null, ext: string, date: string, c
   // extsort: 実装 大きさ wall user rssKB cycles insts task-clock
   for (const [k, rs] of group(lines(ext).map((l) => l.split(/\s+/)), (r) => `${r[0]} ${r[1]}`)) {
     const [im, size] = k.split(" ");
-    emit("extsort", `extsort-${Math.round(Number(size) / 1048576)}m`, im, rs.map((r) => r.slice(2).map(num)), { w: 0, m: 2, c: 3, i: 4, t: 5 }, ext);
+    emit("extsort", `extsort-${Math.round(Number(size) / 1048576)}m`, im, rs.map((r) => r.slice(2).map((v, j) => (j === 5 ? tcNs(v) : num(v)))), { w: 0, m: 2, c: 3, i: 4, t: 5 }, ext);
   }
   const head = ["# ベンチの数字の正（scripts/benchsync.ts が README{,.ja}.md・bench/README.md の印の中を生成する）。作り直しは benchsync.ts --import",
     "# cycles_min = cycles:u の最小・insts = instructions:u（決定的）・wall_med = wall の中央（s）・rss_kb = 最大 RSS・taskclock_med_ns = task-clock の中央・" +

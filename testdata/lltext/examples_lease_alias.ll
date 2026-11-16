@@ -37,7 +37,7 @@ attributes #0 = { nounwind "no-builtins" "frame-pointer"="all" }
 @"str.18" = internal constant [1 x i64] [i64 139141276781]
 @"str.19" = internal constant [1 x i64] [i64 10]
 @"str.20" = internal constant [3 x i64] [i64 7232620951369114994, i64 8674334734093152357, i64 8250]
-@"rt.psites" = internal constant [15 x i64] [i64 6473931561107457, i64 7599831635722241, i64 9570156741132289, i64 3940657223696392, i64 4503607210672129, i64 4785082204160001, i64 7036882152062977, i64 3940651720769800, i64 4785077036777729, i64 3377702320996609, i64 2814752451461384, i64 8444253696950529, i64 6473928960639233, i64 3659179243864321, i64 5629504248611073]
+@"rt.psites" = internal constant [15 x i64] [i64 6473931510775809, i64 7599831585390593, i64 9570156690800641, i64 3940657173364744, i64 4503607160340481, i64 4785082153828353, i64 7036882101731329, i64 3940651720769800, i64 4785077036777729, i64 3377702320996609, i64 2814752451461384, i64 8444253696950529, i64 6473928960639233, i64 3659179243864321, i64 5629504248611073]
 @"str.21" = internal constant [3 x i64] [i64 8462017926321696361, i64 7953763900396085364, i64 25959]
 @"str.22" = internal constant [4 x i64] [i64 8026013105759284339, i64 8391735665840385653, i64 7453001576142499616, i64 101]
 @"str.23" = internal constant [4 x i64] [i64 8462017844986274166, i64 7953763900396085364, i64 7070777237752014183, i64 6648953]
@@ -5902,7 +5902,7 @@ b12.e15:
 b13:
   ret i64 %v8
 b14:
-  %v28 = add i64 0, 3
+  %v28 = add i64 0, 10
   %v29.c = icmp eq i64 %v0, %v28
   %v29 = zext i1 %v29.c to i64
   %c.b14 = icmp ne i64 %v29, 0
@@ -5912,25 +5912,37 @@ b14.t16:
 b14.e17:
   br label %b16
 b15:
-  %st17 = getelementptr i64, ptr %v7, i64 0
-  store i64 %v8, ptr %st17
   ret i64 %v8
 b16:
-  %v30.p = getelementptr i64, ptr %v7, i64 0
-  %v30 = load i64, ptr %v30.p
-  %v31.c = icmp ne i64 %v30, %v8
+  %v30 = add i64 0, 3
+  %v31.c = icmp eq i64 %v0, %v30
   %v31 = zext i1 %v31.c to i64
   %c.b16 = icmp ne i64 %v31, 0
-  br i1 %c.b16, label %b16.t19, label %b16.e20
-b16.t19:
+  br i1 %c.b16, label %b16.t18, label %b16.e19
+b16.t18:
   br label %b17
-b16.e20:
+b16.e19:
   br label %b18
 b17:
+  %st19 = getelementptr i64, ptr %v7, i64 0
+  store i64 %v8, ptr %st19
   ret i64 %v8
 b18:
-  %st20 = getelementptr i64, ptr %v7, i64 0
-  store i64 %v9, ptr %st20
+  %v32.p = getelementptr i64, ptr %v7, i64 0
+  %v32 = load i64, ptr %v32.p
+  %v33.c = icmp ne i64 %v32, %v8
+  %v33 = zext i1 %v33.c to i64
+  %c.b18 = icmp ne i64 %v33, 0
+  br i1 %c.b18, label %b18.t21, label %b18.e22
+b18.t21:
+  br label %b19
+b18.e22:
+  br label %b20
+b19:
+  ret i64 %v8
+b20:
+  %st22 = getelementptr i64, ptr %v7, i64 0
+  store i64 %v9, ptr %st22
   ret i64 %v9
 }
 

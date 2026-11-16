@@ -143,7 +143,7 @@ def targets : List Name :=
 theorem tsubst_nil (t : FS.Ty) : t.tsubst [] = t := by
   induction t <;> simp_all [FS.Ty.tsubst]
 
-def shortcuts : List (Name × Name) := [(``FS.Ty.tsubst, ``Extract.tsubst_nil)]
+def shortcuts : List (Name × Name) := [(``FS.Ty.tsubst, ``Extract.tsubst_nil), (``FS.Ty.sub, ``FS.Ty.sub_refl)]
 
 /-- 構造の等しさ（`deriving DecidableEq`）を生成する inductive と Sober の名前 -/
 def eqTargets : List (Name × String) := [(``FS.Ty, "tyEq")]

@@ -1,0 +1,10 @@
+package password
+
+import "std/internal/pbkdf2"
+
+// PBKDF2-HMAC-SHA256 の先頭 n バイト（核は std/internal/pbkdf2 — std/pg の SCRAM と共有）
+@secret(pw)
+@effects(!io, !block, !nondet)
+func pbkdf2Key(pw []byte, salt []byte, iters int, n int) []byte {
+    return internal.pbkdf2.Key(pw, salt, iters, n)
+}

@@ -1,0 +1,33 @@
+package main
+
+// Set-Cookieを足すmiddlewareは動的なルートだけにMountし、共有の方針のStaticはMergeで外に置く（origin_neg_setcookie_mountの直し方）
+import "std/http/server"
+
+func refresh(r http.server.Request, w http.server.Response) http.server.Response {
+    return http.server.Response{status: w.status, contentType: w.contentType, body: w.body, length: w.length, stream: w.stream, headers: w.headers, coded: w.coded, cookies: []http.server.SetCookie{http.server.SetCookie{name: "sid", value: "s1", maxAge: 3600}}}
+}
+
+func show(b []byte) error? {
+    mut out := mut []byte{}
+    for x <- b {
+        if x != '\r' {
+            out = append(out, x)
+        }
+    }
+    println(string(freeze(out)) catch "?")
+    return nil
+}
+
+func give(a string, k func([]byte)) error? {
+    k(bytes(a))
+    return nil
+}
+
+func main() {
+    app := []http.server.Route{http.server.Route{method: "GET", path: "/", handler: (r) => http.server.Text("hi\n")}}
+    rs := http.server.Merge(
+        http.server.Static("/assets", "/nonexistent", cache: http.server.Fresh{maxAge: 31536000, immutable: true}),
+        http.server.Mount("", app, []http.server.Middleware{http.server.Middleware{after: refresh}}))
+    e := http.server.ServeWith((k) => give("GET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n", k), (b) => show(b), (r) => http.server.Dispatch(rs, r))
+    println(e == nil)
+}

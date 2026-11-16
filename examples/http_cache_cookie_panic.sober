@@ -1,0 +1,36 @@
+package main
+
+// checkを通さずにbuildしたプログラムで、共有キャッシュに保存されうる方針（Fresh）のルートがSet-Cookieを返すと、
+// ヘッダを書くときにpanic(BadHeader{name: "Set-Cookie"})になる（checkはこの形を拒否する。language.md 12節「出所の依存」）。
+// 前のリクエスト（Privateの行のSet-Cookie）は先に送られる。転送路は偽物（行末のCRは外して印字）
+
+import "std/http/server"
+
+func login(r http.server.Request) http.server.Response {
+    return http.server.Response{status: 200, contentType: "text/plain", body: bytes("hi\n"), cookies: []http.server.SetCookie{http.server.SetCookie{name: "sid", value: "s1"}}}
+}
+
+func show(b []byte) error? {
+    mut out := mut []byte{}
+    for x <- b {
+        if x != '\r' {
+            out = append(out, x)
+        }
+    }
+    println(string(freeze(out)) catch "?")
+    return nil
+}
+
+func give(a string, b string, k func([]byte)) error? {
+    k(bytes(a))
+    k(bytes(b))
+    return nil
+}
+
+func main() {
+    rs := []http.server.Route{
+        http.server.Route{method: "GET", path: "/private", handler: login, cache: http.server.Private{maxAge: 30}},
+        http.server.Route{method: "GET", path: "/cached", handler: login, cache: http.server.Fresh{maxAge: 60}}}
+    e := http.server.ServeWith((k) => give("GET /private HTTP/1.1\r\nHost: x\r\n\r\n", "GET /cached HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n", k), (b) => show(b), (r) => http.server.Dispatch(rs, r))
+    println(e == nil)
+}

@@ -4,6 +4,8 @@
 # 踏ませ、相ごとにscripts/areacheck.tsが外から全チャンクのTC_AREAと全ワーカーのWK_AREAを読んで見る:
 #   (1) 所有エリアの多重集合 = チャンクのスタックの領域の全部 ∪ ワーカーのエリアの全部（数 = チャンクの数 + W・重複なし・持ち主のないエリアなし）
 #   (2) チャンクの退避rspは持つエリアの中（自分の領域を持つときだけページ0も）
+#   (3) 切り替えの点で、止まるtaskの今のrspと再開するtaskの退避したrspは、持つエリアか自分のチャンクのページ0の中。rtが照合する（検査のビルド = ミュータント91。
+#       外ならrtが印字して終了コード103）。保存則の主の走行はこのビルドで回す
 #   シャロースリープ（受けでスリープする接続 — 交換せず退避も持たない: TCBのワード0は本体の戻り先）は退避rspの照合から外し、その数（shallow）を数える
 # 交換が起きていること（所有エリアが自分でないチャンク > 0）とarea_far = 0も。遠いパスの1行 = ミュータント60（全関数の枠 +512 B — 本体がページ0に入らず
 # 所有エリアの上の連続の形）で (1)(2) が保たれ交換0・area_far > 0。
@@ -18,6 +20,8 @@
 # Serveの期限でスリープしたままウェイクアップされるパス）・74（ウェイクアップされた本体に誤りを返す — 完了の値が本体に届く証）・78（エリアの予約ページの中身を見ずにシャロースリープする）・
 # 79（中身の判定からフィールドr = 0〔途中のリクエストを持つ深度〕を抜く）・80（ウェイクアップした点で予約ページの深度を付け替えない）・81（予約ページから小さいスロットへ移した深度も予約ページの始まりで空を比べる — 大きい本文の後に毎回ディープスリープする）が落ち、73（ウェイクアップされたをいつも見直し〔2〕に —
 # 本体がもう一度rt.netwaitを呼ぶパス）が保存則と答えを保つことを確認する
+# 縮退の相（/inl）: 入場できない子をhandlerの上でその場で走らせ、子がJoin・ディープスリープ・自分のサーバへの接続の待ちをする。答えの値が正しく、(1)〜(3)が保たれる。
+# ミュータント90（縮退した子の間も親のフラグとAREA_NEARを残す。子の本体の入口がエリアの付け替えをする）と92（90 + (3)の照合）が落ちる。
 # 行の無いパス: 同じrt.netwaitの呼び出しの中でディープスリープした後の再park — 記しつきのparkはAREA_NEARなら必ず浅く、NEARは本体の入口で立ててtaskの間
 # 消えないのでウェイクアップしない（記しつきでディープスリープするのは遠いパスだけで、それは浅くならない）。別のワーカーでの完了 — 走り始めたtaskはTC_WORKERに固定でウェイクアップも持ち主へ
 set -uo pipefail
@@ -26,7 +30,7 @@ S2=${STAGE2:-out/stage2/sober2}
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 SRC=testdata/areacheck/srv.sober
-MS="0 60 62 63 64 65 66 67 68 70 71 72 73 74 78 79 80 81"
+MS="0 60 62 63 64 65 66 67 68 70 71 72 73 74 78 79 80 81 90 91 92"
 for m in $MS; do
     (
         a=(); [ $m != 0 ] && a=(--rt-mutant=$m)
@@ -40,11 +44,11 @@ for m in $MS; do
 done
 run() { AC_SERVE_MS=4000 AC_HOLD_MS=1500 timeout 60 node scripts/areacheck.ts "$W/srv$1" "$W/syms$1" > "$W/r$1" 2>&1; tail -1 "$W/r$1"; }
 fail=0
-r=$(run 0)
+r=$(run 91)
 sw=$(sed -n 's/^areacheck-ok swapped-max \([0-9]*\) shallow-max \([0-9]*\) area_far \([0-9]*\) parkswap \([0-9]*\) awin \([0-9]*\) deepwin \([0-9]*\)$/\1 \2 \3 \4 \5 \6/p' <<< "$r")
 read -r swm shm afm psw awm pdw <<< "$sw"
 if [ -z "$sw" ]; then
-    echo "areacheck: FAIL — $r"; sed 's/^/  /' "$W/r0" | head -12; fail=1
+    echo "areacheck: FAIL ($r)"; sed 's/^/  /' "$W/r91" | head -12; fail=1
 elif [ "$swm" -eq 0 ] || [ "$shm" -eq 0 ] || [ "$psw" -eq 0 ] || [ "$afm" != 0 ] || [ "$awm" -eq 0 ] || [ "$pdw" -eq 0 ]; then
     echo "areacheck: FAIL — swapped-max $swm · shallow-max $shm · parkSwap $psw (all must be > 0) · area_far $afm ≠ 0: the connection tasks did not run in the area form, never slept shallow, never swapped before a shallow park, never used the area window (awin $awm) or never parked deep for a partial request in it (parkDeepWin $pdw)"; fail=1
 fi
@@ -58,7 +62,7 @@ r60=$(run 60)
 if [[ "$r60" =~ ^areacheck-ok\ swapped-max\ 0\ shallow-max\ 0\ area_far\ [1-9] ]]; then :; else
     echo "areacheck: FAIL — the far path (mutant 60) broke conservation or still swapped: $r60"; fail=1
 fi
-for m in 62 63 64 68 70 72 74 78 79 80 81; do
+for m in 62 63 64 68 70 72 74 78 79 80 81 90 92; do
     rm=$(run $m)
     if [[ "$rm" == areacheck-bad* ]]; then echo "areacheck: m$m caught (${rm#areacheck-bad }" | cut -c1-160 | sed 's/$/…)/'; else echo "areacheck: FAIL — mutant $m was not caught ($rm)"; fail=1; fi
 done
@@ -95,5 +99,5 @@ for w in 1 2 4 8; do for s in 0 1 2 3 4; do
     fi
     nawn=$((nawn + 1))
 done; done
-[ $fail = 0 ] && echo "areacheck: PASS (4 paths × 9 phases · swapped-max $swm · shallow-max $shm · parkSwap $psw · area window depths $awm · parkDeepWin $pdw · recheck (m73) · area_far 0 · far path (m60) keeps it with area_far $(sed -n 's/.* area_far \([0-9]*\).*/\1/p' <<< "$r60") · far body = pre-area stack pages: $(sed -n 's/^parked //p' <<< "$fs0") · $NAW × $nawn schedules)"
+[ $fail = 0 ] && echo "areacheck: PASS (5 paths × 11 phases · stack check at every switch (m91) · swapped-max $swm · shallow-max $shm · parkSwap $psw · area window depths $awm · parkDeepWin $pdw · recheck (m73) · area_far 0 · far path (m60) keeps it with area_far $(sed -n 's/.* area_far \([0-9]*\).*/\1/p' <<< "$r60") · far body = pre-area stack pages: $(sed -n 's/^parked //p' <<< "$fs0") · $NAW × $nawn schedules)"
 exit $fail

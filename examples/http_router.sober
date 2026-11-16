@@ -101,16 +101,16 @@ func serve(rs []http.server.Route, reqs string) {
 }
 
 func main() {
-    reqs := "GET /users/42 HTTP/1.1\r\nX-Token: t\r\n\r\n" +
-        "GET /users/me HTTP/1.1\r\nX-Token: t\r\n\r\n" +
-        "GET /users/7 HTTP/1.1\r\n\r\n" +
-        "POST /users/ HTTP/1.1\r\nX-Token: t\r\nContent-Length: 3\r\n\r\nabc" +
-        "GET /static/css/a.css HTTP/1.1\r\n\r\n" +
-        "GET /static HTTP/1.1\r\n\r\n" +
-        "GET /static/a.css HTTP/1.1\r\n\r\n" +
-        "HEAD /health HTTP/1.1\r\n\r\n" +
-        "DELETE /health HTTP/1.1\r\n\r\n" +
-        "GET /nope HTTP/1.1\r\nConnection: close\r\n\r\n"
+    reqs := "GET /users/42 HTTP/1.1\r\nHost: x\r\nX-Token: t\r\n\r\n" +
+        "GET /users/me HTTP/1.1\r\nHost: x\r\nX-Token: t\r\n\r\n" +
+        "GET /users/7 HTTP/1.1\r\nHost: x\r\n\r\n" +
+        "POST /users/ HTTP/1.1\r\nHost: x\r\nX-Token: t\r\nContent-Length: 3\r\n\r\nabc" +
+        "GET /static/css/a.css HTTP/1.1\r\nHost: x\r\n\r\n" +
+        "GET /static HTTP/1.1\r\nHost: x\r\n\r\n" +
+        "GET /static/a.css HTTP/1.1\r\nHost: x\r\n\r\n" +
+        "HEAD /health HTTP/1.1\r\nHost: x\r\n\r\n" +
+        "DELETE /health HTTP/1.1\r\nHost: x\r\n\r\n" +
+        "GET /nope HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n"
     rs := app(false)
     // 表を歩く（introspect — 全ルートが見える）
     for x <- rs {

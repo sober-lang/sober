@@ -1,7 +1,7 @@
 package server
 
 // 認証の源のインターフェースと保存の方針の検査一式（white-box — 非公開のrequest / frameAt / checkField経由の頭）: Cookieの切り出し（RFC 6265 5.4の `; ` 区切り・
-// 前後の空白・`"` の囲み・名前の大文字小文字・`=` の無い組・2 本の Cookie 行）・Header が認証のヘッダを読まない・Authorization・Dispatch がルートの
+// 前後の空白・`"` の囲み・名前の大文字小文字・`=` の無い組・2本のCookie行）・HeaderとHeaderListが認証のヘッダを読まない・HeaderListの順と小文字の名前・Authorization・Dispatchがルートの
 // cacheをcacheの無いレスポンスにだけコピーする
 
 import "std/http"
@@ -38,7 +38,7 @@ func TestCookie() {
     e := rq("GET / HTTP/1.1\r\nHost: x\r\n\r\n")
     assert(Cookie(e, "a") == nil)
     // 空の値・= だけ
-    z := rq("GET / HTTP/1.1\r\nCookie: a=; =b; c=\"\"\r\n\r\n")
+    z := rq("GET / HTTP/1.1\r\nHost: x\r\nCookie: a=; =b; c=\"\"\r\n\r\n")
     assert(is(Cookie(z, "a"), ""))
     assert(is(Cookie(z, "c"), ""))
 }
@@ -52,7 +52,29 @@ func TestCredentialHeaders() {
     assert(is(Header(r, "accept"), "*/*"))
     assert(is(Header(r, "host"), "x"))
     assert(is(Authorization(r), "Bearer t0k"))
-    assert(Authorization(rq("GET / HTTP/1.1\r\n\r\n")) == nil)
+    assert(Authorization(rq("GET / HTTP/1.1\r\nHost: x\r\n\r\n")) == nil)
+}
+
+func TestHeaderList() {
+    r := rq("GET / HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer t0k\r\nX-A: 1\r\ncookie: a=1\r\nx-a:  2 \r\nACCEPT: */*\r\nProxy-Authorization: Basic eA==\r\nx-empty:\r\n\r\n")
+    l := HeaderList(r)
+    assert(len(l) == 5)
+    assert(l[0].name == "host" && l[0].value == "x")
+    assert(l[1].name == "x-a" && l[1].value == "1")
+    assert(l[2].name == "x-a" && l[2].value == "2")
+    assert(l[3].name == "accept" && l[3].value == "*/*")
+    assert(l[4].name == "x-empty" && l[4].value == "")
+    assert(len(HeaderList(rq("GET / HTTP/1.0\r\n\r\n"))) == 0)
+}
+
+// どの行にも一致しないCONNECTは501・asterisk-formはOPTIONSだけ（ほかは400）
+func TestUnroutedMethod() {
+    rs := []Route{Route{method: "GET", path: "/", handler: (r) => Text("ok"), middleware: []Middleware{}}}
+    assert(Dispatch(rs, rq("CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\n")).status == http.NotImplemented)
+    assert(Dispatch(rs, rq("GET * HTTP/1.1\r\nHost: x\r\n\r\n")).status == http.BadRequest)
+    assert(Dispatch(rs, rq("OPTIONS * HTTP/1.1\r\nHost: x\r\n\r\n")).status == http.NotFound)
+    assert(Dispatch(rs, rq("POST / HTTP/1.1\r\nHost: x\r\n\r\n")).status == http.MethodNotAllowed)
+    assert(Dispatch(rs, rq("GET /x HTTP/1.1\r\nHost: x\r\n\r\n")).status == http.NotFound)
 }
 
 func TestCacheDefault() {
@@ -73,14 +95,14 @@ func TestRouteCache() {
         Route{method: "GET", path: "/b", handler: (r) => Response{status: http.OK, contentType: "", body: []byte{}, cache: NoStore{}}, middleware: []Middleware{}, cache: Fresh{maxAge: 60}},
         Route{method: "GET", path: "/c", handler: (r) => Text("c"), middleware: []Middleware{}},
         Route{method: "GET", path: "/d", handler: (r) => Status(http.NotFound), middleware: []Middleware{}, cache: Fresh{maxAge: 60}}}
-    assert(cacheValue(Dispatch(rs, rq("GET /a HTTP/1.1\r\n\r\n")).cache) == "max-age=60")
-    assert(cacheValue(Dispatch(rs, rq("GET /b HTTP/1.1\r\n\r\n")).cache) == "no-store")
-    assert(cacheValue(Dispatch(rs, rq("GET /c HTTP/1.1\r\n\r\n")).cache) == "private")
+    assert(cacheValue(Dispatch(rs, rq("GET /a HTTP/1.1\r\nHost: x\r\n\r\n")).cache) == "max-age=60")
+    assert(cacheValue(Dispatch(rs, rq("GET /b HTTP/1.1\r\nHost: x\r\n\r\n")).cache) == "no-store")
+    assert(cacheValue(Dispatch(rs, rq("GET /c HTTP/1.1\r\nHost: x\r\n\r\n")).cache) == "private")
     // 404には行の方針をコピーしない
-    assert(cacheValue(Dispatch(rs, rq("GET /d HTTP/1.1\r\n\r\n")).cache) == "private")
+    assert(cacheValue(Dispatch(rs, rq("GET /d HTTP/1.1\r\nHost: x\r\n\r\n")).cache) == "private")
     // Mount はルートの cache を保つ
     m := Mount("/p", rs, []Middleware{})
-    assert(cacheValue(Dispatch(m, rq("GET /p/a HTTP/1.1\r\n\r\n")).cache) == "max-age=60")
+    assert(cacheValue(Dispatch(m, rq("GET /p/a HTTP/1.1\r\nHost: x\r\n\r\n")).cache) == "max-age=60")
 }
 
 func TestUnstated() {
@@ -89,12 +111,24 @@ func TestUnstated() {
         Route{method: "GET", path: "/u", handler: (r) => Text("u"), middleware: []Middleware{}, cache: Unstated{}},
         Route{method: "GET", path: "/d", handler: (r) => Text("d"), middleware: []Middleware{}},
     }
-    u := Dispatch(rs, rq("GET /u HTTP/1.1\r\n\r\n"))
+    u := Dispatch(rs, rq("GET /u HTTP/1.1\r\nHost: x\r\n\r\n"))
     assert(cacheLine(u.cache) == "")
     h := string(respHead(u, true, false, 0)) catch ""
     assert(h == "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 1\r\n\r\n")
     g := string(respHead(u, true, false, 2)) catch ""
     assert(!strings.Contains(g, "Cache-Control"))
-    d := Dispatch(rs, rq("GET /d HTTP/1.1\r\n\r\n"))
+    d := Dispatch(rs, rq("GET /d HTTP/1.1\r\nHost: x\r\n\r\n"))
     assert(string(respHead(d, true, false, 0)) catch "" == "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nCache-Control: private\r\nContent-Length: 1\r\n\r\n")
+}
+
+// 実行時にSet-Cookieと組み合わせない方針の集合（storedPolicy）は、`@stored` と `@shared` のvariantと同じ
+// （analyzerが宣言から作る集合はscripts/secretdump.shのstdの表 = testdata/secretdump/origin_std.txtのstored / sharedの行）
+func TestStoredPolicy() {
+    assert(!storedPolicy(nil))
+    assert(storedPolicy(Revalidate{}))
+    assert(storedPolicy(Fresh{maxAge: 60}))
+    assert(storedPolicy(Shared{maxAge: 60}))
+    assert(storedPolicy(Unstated{}))
+    assert(!storedPolicy(Private{}))
+    assert(!storedPolicy(NoStore{}))
 }

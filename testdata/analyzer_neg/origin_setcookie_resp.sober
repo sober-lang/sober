@@ -1,0 +1,9 @@
+package main
+
+import "std/http/server"
+
+// レスポンス1件に、保存されうる方針（Revalidate）とSet-Cookieを一緒に書く
+func main() {
+    rs := []http.server.Route{http.server.Route{method: "GET", path: "/", handler: (r) => http.server.Response{status: 200, contentType: "text/plain", body: bytes("hi"), cache: http.server.Revalidate{}, cookies: []http.server.SetCookie{http.server.SetCookie{name: "sid", value: "s1"}}}}}
+    println(len(rs))
+}

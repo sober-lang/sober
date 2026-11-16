@@ -372,7 +372,7 @@ func parseBits(s []byte) (int, int) {
         if i + 3 != len(s) || i != 0 {
             return 0, 1
         }
-        return 9221120237041090561, 0
+        return 0x7ff8000000000000, 0
     }
     mut ds := mut []int{}
     mut exp10 := 0

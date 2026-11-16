@@ -23,6 +23,8 @@
 # 実行の cwd はリポのルート（io 例が testdata/ を相対 path で読み、out/ に書く）。
 set -uo pipefail
 cd "$(dirname "$0")/.."
+source scripts/gatelib.sh
+gate_env
 
 SOBER=${SOBER:-./bin/sober}   # 主の sober（主役交代 R39）。凍結した Zig 版の列は SOBER=src/stage1/zig-out/bin/sober（gates の obs_zig）
 backend=default

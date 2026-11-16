@@ -423,8 +423,8 @@ func give(a string, k func([]byte)) error? {
 }
 
 func main() {
-    reqs := "GET /events HTTP/1.1\r\nAccept: text/event-stream\r\nAccept-Encoding: gzip\r\n\r\n" +
-        "GET /events HTTP/1.1\r\nLast-Event-ID: 41\r\nConnection: close\r\n\r\n"
+    reqs := "GET /events HTTP/1.1\r\nHost: x\r\nAccept: text/event-stream\r\nAccept-Encoding: gzip\r\n\r\n" +
+        "GET /events HTTP/1.1\r\nHost: x\r\nLast-Event-ID: 41\r\nConnection: close\r\n\r\n"
     e := http.server.ServeWith((k) => give(reqs, k), (b) => show(b), route, compression: http.server.Gzip{})
     println(e == nil)
 }
@@ -1019,7 +1019,6 @@ std/net（したがって `std/http/server` と `std/tls`）を使うプログ�
 | `conns:` | 10000 | 同時の接続の数（`budget × conns` が受け入れの上限 — 超えた接続は閉じる） |
 | `reject:` | なし | 受け入れられなかった接続に1回だけ送るバイト列（省くと送らずに閉じる） |
 | `region:` | 128 MiB | 接続のtaskのregion 1つの上限（超えるとその接続のtaskが死ぬ） |
-| `maxWait:` | 100 ms | 混んでいるときの待ちの上限（この時間を過ぎたtaskから先に走る — 越えた数と量は `task.Ledger()` の `late` / `maxLate`） |
 
 `ServeConn` の `maxHead:` / `maxBody:` を上げるときは、`budget:` も合わせます（目安は `budget ≥ 3 × (maxHead + maxBody) + 16 KiB`）。
 

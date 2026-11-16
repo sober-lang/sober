@@ -110,7 +110,7 @@ func buildPoolNew(st mut St) {
 
 // rt.ledger(k)（std/taskのledgerWord — @intrinsic "par_ledger"・Ledgerの読みのインターフェース）: k = 0プールの数・1根の天井・2計上中のバイト・
 // 3 計上中の task の数・4 縮退・5 天井を超えた入場・6 宣言超過・7 shed・8 ワーカー数・9 wait の待ち・10 待ちの最大（ns — 全ワーカーの WK_MAXW を
-// xchgで0に戻して集める）・11待ちの上限が効いた回数（全ワーカーのWK_AGEDの和 — language.md 11 節「メトリクス」）・12未着手の子・13譲った回数・14 CPUの固定の形・15固定した群の数・16 Dを越えて走った数（全ワーカーのWK_LATEの和）・17越えた量の最大（ns — WK_MAXLをxchgで0に戻して集める）・18 / 19 / 20 / 21シャロースリープ・ディープスリープ・ウィンドウで深くした待ち・シャロースリープの前の交換の数（全ワーカーのWK_PSHAL / WK_PDEEP / WK_PDWIN / WK_PSWAPの和）・22 + 8p + f = プールpの {0天井, 1計上中のバイト, 2 taskの数,
+// xchgで0に戻して集める）・12未着手の子・13譲った回数・14 CPUの固定の形・15固定した群の数・18 / 19 / 20 / 21シャロースリープ・ディープスリープ・ウィンドウで深くした待ち・シャロースリープの前の交換の数（全ワーカーのWK_PSHAL / WK_PDEEP / WK_PDWIN / WK_PSWAPの和）・22 + 8p + f = プールpの {0天井, 1計上中のバイト, 2 taskの数,
 // 3 入場, 4 shed, 5 親の番号 + 1, 6 失敗, 7 死}（範囲の外は 0）・負 = domain の合計の行（-1 待っている数・-2 到着から入るまでの最大・-3 満了・-4 毒）
 func buildLedger(st mut St) {
     begin(mut st, st.rtLedger)
@@ -123,8 +123,7 @@ func buildLedger(st mut St) {
     usedT := bin(mut st, BAdd, load(mut st, mn, MN_TCAP), bin(mut st, BSub, bin(mut st, BAnd, bin(mut st, BSar, led, iconst(mut st, LED_TSHIFT)), iconst(mut st, 2 * LED_TMAX + 1)), iconst(mut st, LED_TMAX)))
     rootV := []int{cnt, load(mut st, mn, MN_CAP), usedB, usedT, load(mut st, mn, MN_LINL), load(mut st, mn, MN_LOVER), load(mut st, mn, MN_LDOVER), load(mut st, mn, MN_LSHED), load(mut st, mn, MN_N), load(mut st, mn, MN_LWAIT)}
     ledgerPick(mut st, k, rootV)
-    ledgerSched(mut st, k, mn, 10, 11, WK_MAXW, WK_AGED)
-    ledgerSched(mut st, k, mn, 17, 16, WK_MAXL, WK_LATE)
+    ledgerMax(mut st, k, mn, 10, WK_MAXW)
     ledgerSum(mut st, k, mn, 18, WK_PSHAL)
     ledgerSum(mut st, k, mn, 19, WK_PDEEP)
     ledgerSum(mut st, k, mn, 20, WK_PDWIN)
@@ -172,14 +171,13 @@ func buildLedger(st mut St) {
 // 台帳のワードの番号でプールの節が始まるところ（それより前は根のワード）
 const POOL_K0 = 22
 
-// k = kMax（ワーカーのワードwMaxの最大 — TSCの数をnsへ・xchgで0に戻す）/ kSum（ワードwSumの和）なら全ワーカーのワードを集めて返す（どちらでもなければ次のブロックへ続く）
-func ledgerSched(st mut St, k int, mn int, kMax int, kSum int, wMax int, wSum int) {
+// k = kMaxなら全ワーカーのワードwMaxの最大を返す（TSCの数をnsへ・xchgで0に戻す。でなければ次のブロックへ続く）
+func ledgerMax(st mut St, k int, mn int, kMax int, wMax int) {
     zero := iconst(mut st, 0)
     bS := newBlock(mut st)
     bN := newBlock(mut st)
-    condbr(mut st, bin(mut st, BOr, cmp(mut st, CEq, k, iconst(mut st, kMax)), cmp(mut st, CEq, k, iconst(mut st, kSum))), bS, -1, bN, -1)
+    condbr(mut st, cmp(mut st, CEq, k, iconst(mut st, kMax)), bS, -1, bN, -1)
     setCur(mut st, bS)
-    isMax := cmp(mut st, CEq, k, iconst(mut st, kMax))
     n := load(mut st, mn, MN_N)
     lp := newBlock(mut st)
     i := param(mut st, lp, TyI64)
@@ -193,28 +191,16 @@ func ledgerSched(st mut St, k int, mn int, kMax int, kSum int, wMax int, wSum in
     // ワーカーが立つ前（rt.mn_startの前 — コンパイラ自身が起動の早いステージでLedger().workersを読む）は番地0: 飛ばす
     wa := load(mut st, gepWord(mut st, mn, i), MN_WK)
     w := itop(mut st, wa)
-    bM := newBlock(mut st)
-    bA := newBlock(mut st)
     bW := newBlock(mut st)
     condbr(mut st, cmp(mut st, CEq, wa, zero), lp, list2(mut st, bin(mut st, BAdd, i, iconst(mut st, 1)), acc), bW, -1)
     setCur(mut st, bW)
-    condbr(mut st, isMax, bM, -1, bA, -1)
-    setCur(mut st, bM)
     v := atomicXchg(mut st, w, wMax, zero)
     br(mut st, lp, list2(mut st, bin(mut st, BAdd, i, iconst(mut st, 1)), bin(mut st, BAdd, acc, bin(mut st, BMul, cmp(mut st, CGt, v, acc), bin(mut st, BSub, v, acc)))))
-    setCur(mut st, bA)
-    br(mut st, lp, list2(mut st, bin(mut st, BAdd, i, iconst(mut st, 1)), bin(mut st, BAdd, acc, load(mut st, w, wSum))))
     setCur(mut st, done)
-    bR := newBlock(mut st)
-    bC := newBlock(mut st)
-    condbr(mut st, isMax, bC, -1, bR, -1)
-    setCur(mut st, bC)
     // TSC の数 → ns（× 65536 ÷ MN_TSCQ — 校正の前は TSCQ_DEF）
     q := load(mut st, mn, MN_TSCQ)
     qe := bin(mut st, BAdd, q, bin(mut st, BMul, cmp(mut st, CEq, q, zero), iconst(mut st, TSCQ_DEF)))
     ret(mut st, bin(mut st, BDiv, bin(mut st, BShl, acc, iconst(mut st, 16)), qe))
-    setCur(mut st, bR)
-    ret(mut st, acc)
     setCur(mut st, bN)
 }
 
@@ -669,12 +655,26 @@ func buildTaskInline(st mut St) {
     fh := if st.rtFdDrain != -1 { load(mut st, me, TC_FDS) } else { zero }
     chh := if chF(mut st, CHF_DRAIN) != -1 { load(mut st, me, TC_CHS) } else { zero }
     lh := if st.rtLeaseDrain != -1 { load(mut st, me, TC_LEASE) } else { zero }
+    // 子は親のスタックの上で走る（今のtaskは親のまま）。親が接続のtaskなら、子の間はフラグ（bit 0）とAREA_NEARを消す: 子の本体の入口のprologueは
+    // 素通りになり（エリアへ付け替えない。入口がページ0にある前提が成り立たない）、子のrt.netwaitは深くスリープする（浅い着地はワーカーのエリアの頂上で、
+    // 親の枠を上書きしうる）。子が止まったときの交換は親の本当の位置（bit 1）で決まる。返った点（死んで罠から戻った点も同じ）で戻す。
+    // ミュータント90 = 消さない（子の本体がエリアの付け替えをして、親の枠のあるエリアを交換で渡すか上書きする。areacheckの縮退の相）・92 = 90 + 切り替えの点の照合
+    mut onw0 := zero
+    if st.areaOn && st.rtMut != 90 && st.rtMut != 92 {
+        ow := load(mut st, me, TC_ONW)
+        onw0 = bin(mut st, BAnd, ow, iconst(mut st, 1 + AREA_NEAR))
+        store(mut st, me, TC_ONW, bin(mut st, BAnd, ow, iconst(mut st, -1 - 1 - AREA_NEAR)))
+    }
     mut r := zero
     if st.rtMut == 8 {
         // ミュータント8（検査の自己検査 — parbudget）: 縮退した子の罠を張らない（子の死が親の死に化ける）
         callIndirect(mut st, 1, list1(mut st, fieldPtr(mut st, frame, FR_RES)), -1)
     } else {
-        r = trapCall(mut st, 1, fieldPtr(mut st, frame, FR_RES))
+        // ミュータント97（rt.segvの検査。segvcheck）: 本体の代わりに不正な番地を読む子を罠の中で呼ぶ
+        r = trapCall(mut st, if st.rtMut == 97 { funcaddr(mut st, st.rtSegvProbe) } else { 1 }, fieldPtr(mut st, frame, FR_RES))
+    }
+    if st.areaOn && st.rtMut != 90 && st.rtMut != 92 {
+        store(mut st, me, TC_ONW, bin(mut st, BOr, load(mut st, me, TC_ONW), onw0))
     }
     if st.domUse {
         // 縮退した子は親の TCB の上で走る — 子の本体で死んだら親の TC_DOM に残る

@@ -1,0 +1,373 @@
+package lower
+
+// 配置の計測のオプション（開発用）。生成するコードは変えず、関数の置き場所だけを変える。
+//   --layout-save=<file>: 関数ごとの番地の表を書く
+//   --layout-pin=<file>: 表にキーがあり、大きさが表のスロットに収まる関数を、表と同じ番地に置く。収まらない関数・新しい関数は、表のコードの終わりの後ろへ置く。
+//     グローバルも、キー・区画（rodata / bss）・大きさが同じなら表と同じ位置に置き、違えば区画の表の終わりの後ろへ置く
+//   --layout-gap=<seed>: 関数のおよそ32本に1本の手前に、0〜4032 B（64 Bの倍数）のパディングを入れる。--layout-pinと組むと、表と同じ番地に置けなかった
+//     関数の全部の手前に入れ、表と同じ番地に置いた関数は動かさない（変えた関数だけをずらす系列）
+// 保存するビルドは、コードの後ろにPL_RESERVE、rodataの後ろに4096 Bの余白を取る。固定するビルドは、表の後ろに置く関数とグローバルがこの余白に
+// 収まる間、rodataとbssの番地が表と同じになり、中身が同じ関数はバイト列まで同じになる。収まらないときは余白を4096の倍数だけ伸ばす
+// （rodataとbssのページの中の位置は変えない）
+// 関数の機械語は、先頭が64 B整列なら絶対番地に依らない（関数をまたぐ参照は固定長の再配置・関数の中の整列とキャッシュラインの跨ぎのパディングは位置のmod 64だけを見る）。
+// なので、出力した後のバイト列をそのまま64 B整列の別の番地へ動かせる。
+// 同じソースを自分の表で固定したビルドは、固定しないビルドとバイト一致する（スロットの間のnopを、整列のnop・配置のずらしのnopと同じ2回に分けて出す）
+
+import "elf"
+import "std/iter"
+import "std/table"
+import "x86"
+
+type Place struct {
+    on bool
+    save bool
+    pinOn bool
+    pin []byte
+    gap int
+}
+
+// 配置の計測のオプションつきのビルドの結果。tab = 保存する番地の表（saveでなければ空）
+type Placed struct {
+    exe []byte
+    tab []byte
+}
+
+func PlaceOff() Place {
+    return Place{on: false, save: false, pinOn: false, pin: []byte{}, gap: 0}
+}
+
+// pin = 番地の表のファイルの中身（pinOnのとき）・gap = パディングの系列の番号（0 = なし）
+func PlaceOf(save bool, pinOn bool, pin []byte, gap int) Place {
+    return Place{on: save || pinOn || gap > 0, save: save, pinOn: pinOn, pin: pin, gap: gap}
+}
+
+// 番地の表のファイルの1行目
+const PlaceHeader = "sober-layout 1"
+
+// 読んだ番地の表: 関数のキー → 行の添字（キーが重複した行は -1。どれも固定しない）・行ごとの番地とスロットの大きさ・コードの終わり（位置はコードの領域の先頭から）。
+// グローバルのキー → 行の添字・行ごとの区画（0 = rodata・1 = bss）と区画の中の位置と大きさ・rodataの長さ・bssの大きさ
+type PlTab struct {
+    idx map[string]int
+    beg []int
+    slot []int
+    end int
+    rend int
+    gidx map[string]int
+    gsec []int
+    goff []int
+    gsz []int
+    rlen int
+    blen int
+    rres int
+}
+
+func plParse(b []byte) PlTab {
+    mut idx := mut map[string]int{}
+    mut beg := mut []int{}
+    mut slot := mut []int{}
+    mut end := 0
+    mut rend := 0
+    mut gidx := mut map[string]int{}
+    mut gsec := mut []int{}
+    mut goff := mut []int{}
+    mut gsz := mut []int{}
+    mut rlen := 0
+    mut blen := 0
+    mut rres := 0
+    n := len(b)
+    mut i := 0
+    while i < n {
+        mut j := i
+        while j < n && b[j] != '\n' {
+            j += 1
+        }
+        if j - i > 2 && b[i + 1] == ' ' {
+            if b[i] == 'c' {
+                v, n1 := plInt(b, i + 2, j)
+                re, _ := plInt(b, n1, j)
+                end = v
+                rend = re
+            } else if b[i] == 'd' {
+                r, n1 := plInt(b, i + 2, j)
+                bl, n2 := plInt(b, n1, j)
+                rr, _ := plInt(b, n2, j)
+                rlen = r
+                blen = bl
+                rres = rr
+            } else if b[i] == 'g' {
+                sc, n1 := plInt(b, i + 2, j)
+                o, n2 := plInt(b, n1, j)
+                z, n3 := plInt(b, n2, j)
+                gidx[string(b[n3:j]) catch ""] = len(gsec)
+                gsec = append(gsec, sc)
+                goff = append(goff, o)
+                gsz = append(gsz, z)
+            } else if b[i] == 'f' {
+                p, n1 := plInt(b, i + 2, j)
+                _, n2 := plInt(b, n1, j)
+                s, n3 := plInt(b, n2, j)
+                key := string(b[n3:j]) catch ""
+                if idx[key] == nil {
+                    idx[key] = len(beg)
+                } else {
+                    idx[key] = -1
+                }
+                beg = append(beg, p)
+                slot = append(slot, s)
+            }
+        }
+        i = j + 1
+    }
+    return PlTab{idx: freeze(idx), beg: freeze(beg), slot: freeze(slot), end: end, rend: rend, gidx: freeze(gidx), gsec: freeze(gsec), goff: freeze(goff), gsz: freeze(gsz), rlen: rlen, blen: blen, rres: rres}
+}
+
+// b[from:to] の頭の10進の整数と、その後ろの空白を飛ばした位置
+func plInt(b []byte, from int, to int) (int, int) {
+    mut v := 0
+    mut i := from
+    while i < to && b[i] >= '0' && b[i] <= '9' {
+        v = v * 10 + int(b[i]) - 48
+        i += 1
+    }
+    while i < to && b[i] == ' ' {
+        i += 1
+    }
+    return v, i
+}
+
+// 保存するビルドのコードの後ろの余白
+const PL_RESERVE = 65536
+
+// 置く順のキーで、表と違う番地に置く関数を固定する関数の後ろへ回す下駄（コードの大きさより十分大きい）
+const PL_TAIL = 1099511627776
+
+// キーの昇順に並べた添字の列（キーは互いに違う。ヒープソート）
+func plOrder(ks []int) []int {
+    n := len(ks)
+    mut a := mut []int{}
+    for i <- iter.Range(0, n) {
+        a = append(a, i)
+    }
+    mut e := n
+    mut r := n / 2
+    while e > 1 {
+        if r > 0 {
+            r -= 1
+        } else {
+            e -= 1
+            t := a[0]
+            a[0] = a[e]
+            a[e] = t
+        }
+        mut p := r
+        mut go := true
+        while go {
+            mut m := p
+            l := 2 * p + 1
+            if l < e && ks[a[l]] > ks[a[m]] {
+                m = l
+            }
+            if l + 1 < e && ks[a[l + 1]] > ks[a[m]] {
+                m = l + 1
+            }
+            if m == p {
+                go = false
+            } else {
+                t := a[p]
+                a[p] = a[m]
+                a[m] = t
+                p = m
+            }
+        }
+    }
+    return freeze(a)
+}
+
+func plCat(out mut []byte, b []byte) {
+    for x <- b {
+        out = append(out, x)
+    }
+}
+
+// 番地の表のテキスト: 1行目 = PlaceHeader・`c <最後の関数の終わり> <余白を含むコードの終わり>`・関数ごとに番地の順で `f <番地> <大きさ> <スロット> <キー>`
+// （スロット = 次の関数の番地 − 番地。最後の関数は最後の関数の終わりまで）・`d <rodataの使った長さ> <bssの大きさ> <余白を含むrodataの長さ>`・
+// グローバルごとに `g <区画> <位置> <大きさ> <キー>`
+func xPlTable(st mut St, fbeg []int, fend []int, end int, rend int, gr0 []int, gord []int, gro []int, goff []int, rlen int, blen int, rres int) []byte {
+    nf := len(fbeg)
+    ord := plOrder(fbeg)
+    mut out := mut []byte{}
+    plCat(mut out, bytes("${PlaceHeader}\nc ${end} ${rend}\n"))
+    for k <- iter.Range(0, nf) {
+        i := ord[k]
+        nx := if k + 1 < nf { fbeg[ord[k + 1]] } else { end }
+        plCat(mut out, bytes("f ${fbeg[i]} ${fend[i] - fbeg[i]} ${nx - fbeg[i]} "))
+        plCat(mut out, st.xPlKeys[i])
+        plCat(mut out, bytes("\n"))
+    }
+    plCat(mut out, bytes("d ${rlen} ${blen} ${rres}\n"))
+    gk := plGKeys(mut st, len(fbeg), gord)
+    for i <- iter.Range(0, len(gr0)) {
+        plCat(mut out, bytes("g ${1 - gro[i]} ${goff[i]} ${8 * xGlobWords(mut st, gr0[i])} ${gk[i]}\n"))
+    }
+    return freeze(out)
+}
+
+// グローバルのキー（同じキーの2つ目以降は `#<出現の番号>` を足す。文字列リテラルは中身のハッシュがキーなので、同じ中身のリテラルが重なる）
+func plGKeys(st mut St, nf int, gord []int) []string {
+    mut seen := mut map[string]int{}
+    mut out := mut []string{}
+    for i <- iter.Range(0, len(gord)) {
+        out = append(out, "")
+    }
+    for gk <- iter.Range(0, len(gord)) {
+        i := gord[gk]
+        k := string(st.xPlKeys[nf + i]) catch ""
+        s0 := seen[k]
+        mut n := 0
+        if s0 != nil {
+            n = s0
+        }
+        seen[k] = n + 1
+        out[i] = if n == 0 { k } else { "${k}#${n}" }
+    }
+    return freeze(out)
+}
+
+// `--layout-pin` のグローバルの位置（goffを埋める）。返り値 = [余白を含むrodataの長さ, bssの大きさ, rodataの使った長さ]
+func plGlobOff(st mut St, nf int, gr0 []int, gord []int, goff mut []int) []int {
+    tb := plParse(st.xPl.pin)
+    gk := plGKeys(mut st, nf, gord)
+    mut used := mut []int{}
+    xFill(mut used, len(tb.gsec), 0)
+    mut at := mut []int{tb.rlen, tb.blen}
+    for q <- iter.Range(0, len(gord)) {
+        i := gord[q]
+        sec := if xGlobInit(mut st, gr0[i]) >= 0 { 0 } else { 1 }
+        sz := 8 * xGlobWords(mut st, gr0[i])
+        k0 := tb.gidx[gk[i]]
+        mut k := -1
+        if k0 != nil {
+            k = k0
+        }
+        if k >= 0 && used[k] == 0 && tb.gsec[k] == sec && tb.gsz[k] == sz {
+            used[k] = 1
+            goff[i] = tb.goff[k]
+        } else {
+            goff[i] = at[sec]
+            at[sec] = at[sec] + sz
+        }
+    }
+    r := at[0]
+    return []int{if r > tb.rres { tb.rres + (r - tb.rres + 4095) / 4096 * 4096 } else { tb.rres }, at[1], r}
+}
+
+// コードの終わりに余白を足す（保存するビルドはPL_RESERVE・固定するビルドは表と同じ終わり。返り値 = 余白の前の終わり）
+func plEnd(st mut St, c mut table.Table[byte]) int {
+    e := x86.Here(mut c)
+    r := if st.xPl.pinOn { plParse(st.xPl.pin).rend } else { (e + 4095) / 4096 * 4096 + PL_RESERVE }
+    x86.Nop(mut c, if e <= r { r - e } else { (4096 - (e - r) % 4096) % 4096 })
+    return e
+}
+
+// 関数iの手前のパディング（all = 系列の対象を全部の関数にする）。関数のキーのハッシュで決めるので、ほかの関数の増減で変わらない
+func plGap(st mut St, i int, all bool) int {
+    if st.xPl.gap <= 0 {
+        return 0
+    }
+    mut h := XFNV_OFF
+    for b <- st.xPlKeys[i] {
+        h = xFnv(h, int(b))
+    }
+    g := ((h & 4294967295) * (st.xPl.gap * 6 + 5) * 2246822519) >> 12
+    return if all || (g & 31) == 0 { ((g >> 5) & 63) * 64 } else { 0 }
+}
+
+// 出力したコードc（_startが [0, st0)・関数iが [fbeg[i], fend[i])）をc2へ置き直す。fxの位置・fstart・fbeg・fendを新しい位置に直す。
+// 置く順: _start → 表と同じ番地に置ける関数（番地の順）→ 表のコードの終わりまでnop → 残りの関数（出力した順・64 B整列 + 配置のずらし + パディング）
+func xPlace(st mut St, c mut table.Table[byte], c2 mut table.Table[byte], fx mut table.Table[int], fstart mut []int, fbeg mut []int, fend mut []int, st0 int, fr []int) {
+    nf := len(fr)
+    tb := plParse(if st.xPl.pinOn { st.xPl.pin } else { []byte{} })
+    mut ob0 := mut []int{}
+    mut oe0 := mut []int{}
+    mut pn0 := mut []int{}
+    mut used := mut []int{}
+    xFill(mut used, len(tb.beg), 0)
+    for i <- iter.Range(0, nf) {
+        ob0 = append(ob0, fbeg[i])
+        oe0 = append(oe0, fend[i])
+        key := string(st.xPlKeys[i]) catch ""
+        k0 := tb.idx[key]
+        mut k := -1
+        if k0 != nil {
+            k = k0
+        }
+        if k >= 0 && used[k] == 0 && fend[i] - fbeg[i] <= tb.slot[k] && tb.beg[k] >= st0 {
+            used[k] = 1
+            pn0 = append(pn0, tb.beg[k])
+        } else {
+            pn0 = append(pn0, -1)
+        }
+    }
+    ob := freeze(ob0)
+    oe := freeze(oe0)
+    pn := freeze(pn0)
+    // 置く順: 固定する関数を番地の順に、その後ろに残りを出力した順に
+    mut ok0 := mut []int{}
+    for i <- iter.Range(0, nf) {
+        ok0 = append(ok0, if pn[i] >= 0 { pn[i] } else { PL_TAIL + ob[i] })
+    }
+    ord := plOrder(freeze(ok0))
+    mut nb := mut []int{}
+    xFill(mut nb, nf, 0)
+    mut lo := 0
+    mut hi := st0
+    mut tail := false
+    for k <- iter.Range(-1, nf) {
+        i := if k < 0 { 0 } else { ord[k] }
+        if k >= 0 {
+            // 残りの関数の前に、表のコードの終わりまでnop
+            pre := if !tail && pn[i] < 0 && st.xPl.pinOn && x86.Here(mut c2) < tb.end { tb.end - x86.Here(mut c2) } else { 0 }
+            tail = tail || pn[i] < 0
+            x86.Nop(mut c2, pre)
+            x86.AlignTo(mut c2, elf.CodeOffset, XA_FN)
+            pad := if pn[i] >= 0 { pn[i] - x86.Here(mut c2) } else { (if st.xLay > 0 { xLayAmt(st.xLay, fr[i]) } else { 0 }) + plGap(mut st, i, st.xPl.pinOn) }
+            if pad < 0 {
+                panic(InvariantBroken{})
+            }
+            x86.Nop(mut c2, pad)
+            nb[i] = x86.Here(mut c2)
+            lo = ob[i]
+            hi = oe[i]
+        }
+        for p <- iter.Range(lo, hi) {
+            table.Push(mut c2, table.Get(mut c, p))
+        }
+    }
+    // 再配置の位置: 関数の中なら関数と同じだけ動かす・_startの中は動かさない（obの順は出力した順）
+    oo := plOrder(ob)
+    for q <- iter.Range(0, table.Len(mut fx) / 3) {
+        at := table.Get(mut fx, 3 * q)
+        if at >= st0 {
+            mut l := 0
+            mut h := nf - 1
+            while l < h {
+                m := (l + h + 1) / 2
+                if ob[oo[m]] <= at {
+                    l = m
+                } else {
+                    h = m - 1
+                }
+            }
+            i := oo[l]
+            if at < ob[i] || at >= oe[i] {
+                panic(InvariantBroken{})
+            }
+            table.Set(mut fx, 3 * q, at + nb[i] - ob[i])
+        }
+    }
+    for i <- iter.Range(0, nf) {
+        fstart[i] = fstart[i] + nb[i] - ob[i]
+        fbeg[i] = nb[i]
+        fend[i] = nb[i] + oe[i] - ob[i]
+    }
+}

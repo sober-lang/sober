@@ -378,7 +378,7 @@ func buildOutDrain(st mut St) {
         call(mut st, st.rtPchar, list1(mut st, iconst(mut st, 32)))
         call(mut st, st.rtPint, list1(mut st, load(mut st, mnD, MN_PTAIL)))
         call(mut st, st.rtPchar, list1(mut st, iconst(mut st, 10)))
-        // 計測ツール（scratch）: ワーカーごとに `#w <k> <計測ツール 16 ワード> <追加の 8 ワード — WK_KX> <深さの 8 ワード — WK_KD> <齢の 8 ワード — WK_KA> <off-CPU の 8 ワード — WK_KO> <期限切れの底の連続の 8 ワード — WK_KR> <待ちの帯ごとの走りの本数 8 ワード・TSC の和 8 ワード — WK_KW>`
+        // 計測ツール（scratch）: ワーカーごとに `#w <k> <計測ツール 16 ワード> <追加の 8 ワード — WK_KX> <深さの 8 ワード — WK_KD> <齢の 8 ワード — WK_KA> <off-CPU の 8 ワード — WK_KO> <待ちの帯ごとの走りの本数 8 ワード・TSC の和 8 ワード — WK_KW>`
         kl := newBlock(mut st)
         kk := param(mut st, kl, TyI64)
         kb := newBlock(mut st)
@@ -411,10 +411,6 @@ func buildOutDrain(st mut St) {
         for j <- iter.Range(0, WK_KON) {
             call(mut st, st.rtPchar, list1(mut st, iconst(mut st, 32)))
             call(mut st, st.rtPint, list1(mut st, load(mut st, kwp, WK_KO + j)))
-        }
-        for j <- iter.Range(0, WK_KRN) {
-            call(mut st, st.rtPchar, list1(mut st, iconst(mut st, 32)))
-            call(mut st, st.rtPint, list1(mut st, load(mut st, kwp, WK_KR + j)))
         }
         for j <- iter.Range(0, 2 * WK_KWN) {
             call(mut st, st.rtPchar, list1(mut st, iconst(mut st, 32)))

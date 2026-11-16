@@ -44,7 +44,16 @@ mkdir -p "$B"
 res=$(realpath -m "$res")
 : > "$res"
 # ev <perf の -x, の出力> <事象>: 値（<not supported> は NA — PMU の無い VM〔GitHub Actions〕で cycles / 命令が取れない・列をずらさない）
-ev() { local v; v=$(grep -m1 ",$2" "$1" | cut -d, -f1); case $v in [0-9]*) echo "$v" ;; *) echo NA ;; esac; }
+# ev <perfの-x,の出力> <事象>: 値。task-clockはperfの版で単位が違う（6.xはナノ秒の整数・7.xはmsecの小数）ので、単位の欄を読んでナノ秒の整数にそろえる
+ev() {
+    awk -F, -v e="$2" '!d && ($3 == e || index($3, e ":") == 1) {
+        d = 1
+        if ($1 !~ /^[0-9]/) { print "NA"; exit }
+        m = $2 == "msec" ? 1e6 : $2 == "usec" ? 1e3 : $2 == "sec" ? 1e9 : 1
+        if (m == 1) print $1; else printf "%.0f\n", $1 * m
+        exit
+    } END { if (!d) print "NA" }' "$1"
+}
 # 実行ファイル（Sober = bin/sober・Go = go build・Rust素 = bench/rust/build.sh の out/rust/release/extsort）
 bin/sober build bench/extsort/main.sober -o "$B/extsort-sober" > /dev/null || { echo "extsort.sh: FAIL build sober" >&2; exit 1; }
 (cd bench && go build -o "$B/extsort-go" ./extsort/go) || { echo "extsort.sh: FAIL build go" >&2; exit 1; }
@@ -73,7 +82,7 @@ if [ "$MH" -gt 0 ]; then
         exit 2
     fi
 fi
-# one <名前> <入力の大きさ>: 一時 dir を作り直して 1 回測り、`名前 大きさ wall user rssKB cycles insts task-clock-ms` を足す
+# one <名前> <入力の大きさ>: 一時 dir を作り直して 1 回測り、`名前 大きさ wall user rssKB cycles insts task-clock(ns)` を足す
 one() {
     local name=$1 n=$2 in=$B/extsort-$2.txt t0 t1
     rm -rf "$TMP"
@@ -118,7 +127,7 @@ END {
         cnt = nt[k]; for (a = 1; a <= cnt; a++) v[a] = tc[k, a]
         for (a = 1; a <= cnt; a++) for (b = a + 1; b <= cnt; b++) if (v[b] < v[a]) { t = v[a]; v[a] = v[b]; v[b] = t }
         med = v[int((cnt + 1) / 2)]
-        printf "| %s | %.3f | %.3f | %.3f | %.2f | %.1f | %.2fx |\n", k, w[k], med / 1000, c[k] / 1e9, i[k] / 1e9, m[k] / 1024, w[k] / w["rust"] }
+        printf "| %s | %.3f | %.3f | %.3f | %.2f | %.1f | %.2fx |\n", k, w[k], med / 1e9, c[k] / 1e9, i[k] / 1e9, m[k] / 1024, w[k] / w["rust"] }
     printf "\nRSS MB（入力の大きさごと — 1 回）\n\n| 実装 |"
     ns = 0; for (s in sz) ss[++ns] = s + 0
     for (a = 1; a <= ns; a++) for (b = a + 1; b <= ns; b++) if (ss[b] < ss[a]) { t = ss[a]; ss[a] = ss[b]; ss[b] = t }

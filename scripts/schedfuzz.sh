@@ -2,8 +2,9 @@
 # schedfuzz（段階6 P4-1 / P4-4・揉みどころ6）: scripts/schedfuzz.listの例をビルドし、既定のスケジュールの観測（stdout・終了コード・
 # `#sched` 以外のstderr）をゴールデンにして、乱択のスケジュール（SOBER_SCHED_SEED = 1..K — rt.sched_pickが列の尽きた後の選択を乱択に・遅延注入のオプションつき）
 # の観測と照合する。ワーカー1 = 切替点の選択の乱択・ワーカー2 / 4 / 8 = 本物の並列（M:N）+ 出来事の点の遅延注入（同じシードのオプション — mn.sober）。
-# ゴールデン = ワーカー1・既定のスケジュールの観測。死ぬ例（ゴールデンのexit ≠ 0）のワーカー2以上はexit + 死因のstderrだけ照合する
-# （決定2026-10-06: 死ぬ実行のstdoutの部分出力はM:Nでは非約束 — language.md 11 節O1）。
+# ゴールデン = ワーカー1・既定のスケジュールの観測。死ぬ例（ゴールデンのexit ≠ 0）は、シードを変えた回をワーカー数に依らずexitと死因のstderrだけで照合する。
+# 死ぬ実行の途中までのstdoutが決定的なのは既定のスケジュールだけ（ワーカー1でも、spawnの点で親を先にすると子が走る前に死にうる）。
+# 既定のスケジュールのstdoutは、gatesのゴールデンが照合する。
 # 2列目splitの例は「割れて当然」（自己検査の証人 — 検査が反応することを確認する。割れなければ失敗 = 器が壊れた）
 #   scripts/schedfuzz.sh [K]（既定 8・SCHEDFUZZ_WORKERS で SOBER_WORKERS の列 — 既定 "1 2 4 8"）
 set -uo pipefail
@@ -30,7 +31,7 @@ deathobs() {
 while read -r e mark; do
     case "$e" in ''|'#'*) continue ;; esac
     n=$((n + 1))
-    # SCHEDFUZZ_FLAGS = 検査のbuildの追加の引数（--rt-mutant=28 = 走れるスタックの環の容量8 — 溢れのパスごと回す・report-1168）
+    # SCHEDFUZZ_FLAGS = 検査のbuildの追加の引数（--rt-mutant=28 = 実行待ちの列の環の容量8。溢れのパスごと回す）
     "$S2" build "$e" --emit=elf ${SCHEDFUZZ_FLAGS:-} -o "$W/bin.$n" > /dev/null 2>&1 || { echo "FAIL: build $e"; fail=$((fail + 1)); continue; }
     chmod +x "$W/bin.$n"
     obs "$W/bin.$n" "$W/base" SOBER_WORKERS=1
@@ -41,7 +42,7 @@ while read -r e mark; do
     for w in $WS; do
         for s in $(seq 1 "$K"); do
             obs "$W/bin.$n" "$W/run" SOBER_SCHED_SEED=$s SOBER_WORKERS=$w
-            if [ $dies = 1 ] && [ "$w" != 1 ]; then
+            if [ $dies = 1 ]; then
                 deathobs "$W/run" > "$W/run.d"
                 same=0; cmp -s "$W/base.d" "$W/run.d" && same=1
             else
@@ -117,7 +118,7 @@ for w in 4 8 4 8 4 8 4 8; do
     SOBER_WORKERS=$w LOT_REAP_LATE=1 timeout 120 "$S2" test --fresh --run TestReapRace std/internal/lot > /dev/null 2>&1 || { caught=1; break; }
 done
 [ $caught = 1 ] || { echo "FAIL: LOT_REAP_LATE (Reap reads the death number after the scan) was not caught by TestReapRace"; fail=$((fail + 1)); }
-# 走れるスタックの溢れのパス（report-1168）: 環の容量8のbuild（--rt-mutant=28）はワーカー1の実行の順が通常のbuildと同じ（溢れの列はLIFOの順を保つ）・
+# 実行待ちの列の溢れのパス（report-1168）: 環の容量8のbuild（--rt-mutant=28）はワーカー1の実行の順が通常のbuildと同じ（溢れの列はFIFOの順を保つ）・
 # 溢れの列の順を崩した build（29）は順が変わること（testdata/readyspill — 20 本を一度に走れるようにして走った順に直書き）
 for v in 0 28 29; do
     "$S2" build testdata/readyspill/main.sober --emit=elf $([ $v = 0 ] || echo --rt-mutant=$v) -o "$W/rs.$v" > /dev/null 2>&1 || { echo "FAIL: build readyspill ($v)"; fail=$((fail + 1)); continue; }

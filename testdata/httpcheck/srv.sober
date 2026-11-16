@@ -233,23 +233,40 @@ func me(r http.server.Request) http.server.Response {
     return http.server.Text("sid=${if s != nil { s } else { "-" }}")
 }
 
-// sharedRoutes は共有キャッシュも保存してよいルート（Static の Shared・動的な Fresh — 認証に届かない: analyzer が受理する）と /me
+// loginはSet-Cookieを返すルート（方針Private。共有キャッシュに保存されうる方針のルートではSet-Cookieを返せない: analyzerが拒否し、実行時はpanic。
+// 出所の動的オラクルのSet-Cookieの側。check.tsのoriginEp）
+func login(r http.server.Request) http.server.Response {
+    return http.server.Response{status: 200, contentType: "text/plain", body: bytes("in"), cookies: []http.server.SetCookie{http.server.SetCookie{name: "sid", value: "s1"}}}
+}
+
+// sharedRoutesは共有キャッシュも保存してよいルート（StaticのShared・動的なFresh。認証に届かないので、analyzerが受理する）と /me・/login
 func sharedRoutes(root string) []http.server.Route {
     pub := []http.server.Route{http.server.Route{method: "GET", path: "/pub", handler: (r) => http.server.Text("pub ${if http.server.Query(r, "x") != nil { "x" } else { "-" }}"), cache: http.server.Fresh{maxAge: 60}},
-        http.server.Route{method: "GET", path: "/me", handler: me}}
+        http.server.Route{method: "GET", path: "/me", handler: me},
+        http.server.Route{method: "GET", path: "/login", handler: login, cache: http.server.Private{maxAge: 30}}}
     return http.server.Merge(http.server.Static("/shared", root, cache: http.server.Shared{maxAge: 60, sMaxAge: 600}), pub)
+}
+
+// リクエストのヘッダの全部（HeaderList）を「名前: 値」の1行ずつ
+func headerLines(r http.server.Request) http.server.Response {
+    mut lines := mut []string{}
+    for f <- http.server.HeaderList(r) {
+        lines = append(lines, "${f.name}: ${f.value}\n")
+    }
+    return http.server.Text(strings.Join(freeze(lines), ""))
 }
 
 func route(ds []Item, st []http.server.Route, sh []http.server.Route, dp string, dl int, r http.server.Request) http.server.Response {
     return switch {
     case strings.HasPrefix(r.path, "/static/"): http.server.Dispatch(st, r)
-    case strings.HasPrefix(r.path, "/shared/") || r.path == "/pub" || r.path == "/me": http.server.Dispatch(sh, r)
+    case strings.HasPrefix(r.path, "/shared/") || r.path == "/pub" || r.path == "/me" || r.path == "/login": http.server.Dispatch(sh, r)
     case r.path == "/file" || strings.HasPrefix(r.path, "/stream/"): stream(dp, dl, r)
     case strings.HasPrefix(r.path, "/chunked/"): chunked(r)
     case r.path == "/chunked-slow": slow(r)
     case r.path == "/sse": sse(r)
     case r.path == "/sse-body": sseFlat(r)
     case r.path == "/pipeline": http.server.Text("ok")
+    case r.path == "/headers": headerLines(r)
     case r.path == "/upload": if r.method == "POST" { upload(r) } else { http.server.Status(405) }
     case r.path == "/echo": if r.method == "POST" { http.server.Response{status: 200, contentType: "application/octet-stream", body: r.body} } else { http.server.Status(405) }
     case r.path == "/baseline11": {
@@ -263,7 +280,8 @@ func route(ds []Item, st []http.server.Route, sh []http.server.Route, dp string,
         http.server.Text(convert.FormatInt(ms))
     }
     case strings.HasPrefix(r.path, "/json/"): items(ds, r)
-    default: http.server.Status(404)
+    // 一致しないリクエストは空の表のDispatchへ（404・CONNECTは501・asterisk-formの誤りは400）
+    default: http.server.Dispatch([]http.server.Route{}, r)
     }
 }
 

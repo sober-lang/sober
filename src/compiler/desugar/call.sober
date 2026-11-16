@@ -44,27 +44,23 @@ func fnRef(st mut S, fi int, at NodeRef) (CoreRef, error?) {
     return cFnref(mut st, d, -1), nil
 }
 
-// 関数値の呼び出し（関数値を先に評価し、引数はpairチェーン）
+// 関数値の呼び出し（関数値を先に評価し、引数は積の木）
 func callValue(st mut S, callee NodeRef, ft TyRef, args ListRef, at NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
     f := expr(mut st, callee, eb, ef, depth)?
     n := lenL(mut st, args)
     vs := ListRef(listN(mut st, n))
-    mut p := tLeft(mut st, ft)
+    p := tLeft(mut st, ft)
     for i <- iter.Range(0, n) {
-        mut want := p
-        if i + 1 != n {
-            if tg(mut st, p) != TPr {
-                return 0, diag.Malformed{at: posOf(mut st, at)}
-            }
-            want = tLeft(mut st, p)
-            p = tRight(mut st, p)
+        want := treeAt(mut st, p, i, n)
+        if want == -1 {
+            return 0, diag.Malformed{at: posOf(mut st, at)}
         }
         hsetCore(mut st, int(vs) + 1 + i, coerceExpr(mut st, latN(mut st, args, i), want, eb, ef, depth, at)?)
     }
     if n == 0 && tg(mut st, p) != TUnit {
         return 0, diag.Malformed{at: posOf(mut st, at)}
     }
-    return c2(mut st, CCallv, f, pairChain(mut st, vs)), nil
+    return c2(mut st, CCallv, f, treePair(mut st, vs)), nil
 }
 
 // letArgs は引数を左から右へ let で評価して捨て、body を返す形（println / io の代役）
@@ -223,6 +219,13 @@ func call(st mut S, callee0 NodeRef, args ListRef, at NodeRef, eb int, ef int, d
                 v1 := expr(mut st, latN(mut st, args, 1), eb, ef, depth)?
                 v2 := expr(mut st, latN(mut st, args, 2), eb, ef, depth + 1)?
                 return c2(mut st, CAppend, subject, cLet(mut st, v1, cLet(mut st, v2, c1(mut st, CToByte, cLit(mut st, 0))))), nil
+            }
+            if sk == loader.IGrowNoZero {
+                // ゼロで初期化しないバッファの拡張（std/internal/jsonwの `b = sysGrowNoZero(b, n)`）: 意味はゼロで初期化する拡張と同じで、コアの近似はbへの
+                // 0のappend（appendwordと同じ。結果はbと同じregionの列）。nは要素の位置で評価して捨てる
+                subject := expr(mut st, latN(mut st, args, 0), eb, ef, depth)?
+                v1 := expr(mut st, latN(mut st, args, 1), eb, ef, depth + 1)?
+                return c2(mut st, CAppend, subject, cLet(mut st, v1, c1(mut st, CToByte, cLit(mut st, 0)))), nil
             }
             mut body := if SysResult(sk) == 'b' { c1(mut st, CFreeze, cMkslice(mut st, 1, tByte(mut st))) } else if SysResult(sk) == 'm' { cMkslice(mut st, 1, st.tInt) } else if SysResult(sk) == 'x' { cMkslice(mut st, 1, tByte(mut st)) } else { cLit(mut st, 0) }
             mut i := na - 1
@@ -419,9 +422,9 @@ func call(st mut S, callee0 NodeRef, args ListRef, at NodeRef, eb int, ef int, d
     }
     if d == DINST {
         d = instDef(mut st, fi, callee0, penv, at)?
-        return cCall(mut st, d, pairChain(mut st, vs), -1, b2i(fnMutDef(mut st, fi))), nil
+        return cCall(mut st, d, treePair(mut st, vs), -1, b2i(fnMutDef(mut st, fi))), nil
     }
-    return cCall(mut st, d, pairChain(mut st, vs), int(ts), b2i(fnMutDef(mut st, fi))), nil
+    return cCall(mut st, d, treePair(mut st, vs), int(ts), b2i(fnMutDef(mut st, fi))), nil
 }
 
 // 関数 fi の呼び出し（実引数 args）を mut の部分を持つ値のために展開するか: 関数のラベルより深い region にいて、
@@ -750,7 +753,7 @@ func inlineCall(st mut S, fi int, cn NodeRef, explicit NodeRef, args ListRef, at
     // 結果の型式は戻りのラベルを作る間だけ（本体の return は展開点のラベルが受ける）
     st.curRes = rs
     st.curResPkg = pk
-    rl := newLabel(mut st, LRet, tyChain(mut st, rtys))
+    rl := newLabel(mut st, LRet, resTy(mut st, rtys))
     st.curRes = saved.curRes
     st.curResPkg = saved.curResPkg
     setLabelRtys(mut st, rl, rtys)
@@ -881,12 +884,9 @@ func closureGenCall(st mut S, src NodeRef, eb int, ef int) bool {
     if n != lenL(mut st, lB(nodeOf(mut st, c))) + 1 || !isTag(mut st, cr.ft, TFn) {
         return false
     }
-    // 最後の仮引数の型（仮引数の組は右へ入れ子の TPr — lambdaCall の読みと同じ）
-    mut pt := tLeft(mut st, cr.ft)
-    for i <- iter.Range(1, n) {
-        pt = if tg(mut st, pt) == TPr { tRight(mut st, pt) } else { pt }
-    }
-    return isTag(mut st, pt, TFn)
+    // 最後の仮引数の型（仮引数の組は積の木 — lambdaCall の読みと同じ）
+    pt := treeAt(mut st, tLeft(mut st, cr.ft), n - 1, n)
+    return pt != -1 && isTag(mut st, pt, TFn)
 }
 
 // 生成元が呼び出し形か（`x <- iter.Range(0, n)` — 名前の付いた関数の呼び出しで、仮引数が実引数より 1 つ多く、
@@ -1092,18 +1092,9 @@ func lambdaCall(st mut S, cl int, args ListRef, at NodeRef, eb int, ef int, dept
         i += 1
     }
     if isTag(mut st, ft, TFn) {
-        mut pt := tLeft(mut st, ft)
-        i = 0
-        while i < n {
-            if i + 1 == n {
-                hsetTy(mut st, int(wants) + 1 + i, pt)
-            } else if tg(mut st, pt) == TPr {
-                hsetTy(mut st, int(wants) + 1 + i, tLeft(mut st, pt))
-                pt = tRight(mut st, pt)
-            } else {
-                i = n
-            }
-            i += 1
+        pt := tLeft(mut st, ft)
+        for j <- iter.Range(0, n) {
+            hsetTy(mut st, int(wants) + 1 + j, treeAt(mut st, pt, j, n))
         }
     }
     vals := ListRef(listN(mut st, n))
@@ -1246,17 +1237,14 @@ func liftLambda(st mut S, lam NodeRef, ft TyRef, outer_b int, outer_f int, at No
     lps := lA(nodeOf(mut st, lam))
     n := lenL(mut st, lps)
     ptys := ListRef(listN(mut st, n))
-    mut p := tLeft(mut st, ft)
+    p := tLeft(mut st, ft)
     mut i := 0
     while i < n {
-        if i + 1 == n {
-            hsetTy(mut st, int(ptys) + 1 + i, p)
-        } else if tg(mut st, p) == TPr {
-            hsetTy(mut st, int(ptys) + 1 + i, tLeft(mut st, p))
-            p = tRight(mut st, p)
-        } else {
+        pi := treeAt(mut st, p, i, n)
+        if pi == -1 {
             return 0, diag.Malformed{at: posOf(mut st, at)}
         }
+        hsetTy(mut st, int(ptys) + 1 + i, pi)
         i += 1
     }
     if n == 0 && tg(mut st, tLeft(mut st, ft)) != TUnit {
@@ -1296,7 +1284,7 @@ func liftLambda(st mut S, lam NodeRef, ft TyRef, outer_b int, outer_f int, at No
         exs = ListRef(listN(mut st, n))
         i = 0
         while i < n {
-            hsetCore(mut st, int(exs) + 1 + i, projection(mut st, cVar(mut st, d - 1), i, n))
+            hsetCore(mut st, int(exs) + 1 + i, treeProj(mut st, cVar(mut st, d - 1), i, n))
             benv = bind(mut st, benv, sA(nodeOf(mut st, latN(mut st, lps, i))), d, false, latI(mut st, pdecls, i), latTy(mut st, ptys, i), latI(mut st, pelems, i), 0, -1, false, SUNK)
             d += 1
             i += 1
@@ -1450,29 +1438,29 @@ func tryExpr(st mut S, e NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
         err_v = cVar(mut st, 0)
     }
     hsetCore(mut st, int(vs) + n, c1(mut st, CSome, err_v))
-    payload0 := pairChain(mut st, vs)
+    payload0 := resChain(mut st, vs)
     // ラベルより深い region（反復の region・式ブロック）からの伝播は ann で締めない（exitJump と同じ — jumpRel が締める）
     payload := if lab(mut st, lb).ann && st.rdepth <= lab(mut st, lb).rdepth { cAnn(mut st, payload0, lab(mut st, lb).t) } else { payload0 }
     setLabelUsed(mut st, lb)
     dv := withDefers(mut st, payload, lab(mut st, lb).scopeDepth, sd)?
     jump := cJump(mut st, lab(mut st, lb).id, st.tUnit, dv)
     // 判定（深さ depth + 1: var 0 = p）
-    err_opt := projection(mut st, cVar(mut st, 0), kr - 1, kr)
+    err_opt := resProj(mut st, cVar(mut st, 0), kr - 1, kr)
     check := c3(mut st, CIfnil, err_opt, cTriv(mut st), jump)
     // 成功値（深さ depth + 2: 判定の匿名束縛の下で var 1 = p）
     mut succ := CoreRef(-1)
     if kr == 1 {
         succ = cTriv(mut st)
     } else if kr == 2 {
-        succ = projection(mut st, cVar(mut st, 1), 0, 2)
+        succ = resProj(mut st, cVar(mut st, 1), 0, 2)
     } else {
         comps := ListRef(listN(mut st, kr - 1))
         i = 0
         while i < kr - 1 {
-            hsetCore(mut st, int(comps) + 1 + i, projection(mut st, cVar(mut st, 1), i, kr))
+            hsetCore(mut st, int(comps) + 1 + i, resProj(mut st, cVar(mut st, 1), i, kr))
             i += 1
         }
-        succ = pairChain(mut st, comps)
+        succ = resChain(mut st, comps)
     }
     return cLet(mut st, p, cLet(mut st, check, succ)), nil
 }

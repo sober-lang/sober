@@ -6,7 +6,7 @@
 
 アノテーション `@名前(引数)` は宣言に付ける。受理されたプログラムの意味を変えず、拒否を起こすか、宣言の形を決めるだけ。コンパイル時の計算（comptime）は無い。
 
-A-1. 言語が知るアノテーションは `@errors`（7章）・`@layout`・`@embed`・`@noinline`・`@exhaustive`・`@secret`・`@bless`・`@credential`・`@shared`・`@effects`・`@const`・`@replaces`・`@doubles`（13章）の閉じた集合（interfaceファイル `.sobi` にだけ書く `@expand` を除く）。知らないアノテーションは拒否する。
+A-1. 言語が知るアノテーションは `@errors`（7章）・`@layout`・`@embed`・`@noinline`・`@exhaustive`・`@secret`・`@bless`・`@credential`・`@shared`・`@stored`・`@personal`・`@effects`・`@const`・`@replaces`・`@doubles`（13章）の閉じた集合（interfaceファイル `.sobi` にだけ書く `@expand` を除く）。知らないアノテーションは拒否する。
 例: [`examples/errval.sober`](../../examples/errval.sober)・[`examples/layout_elf.sober`](../../examples/layout_elf.sober)・[`examples/embed_demo.sober`](../../examples/embed_demo.sober)・[`examples/noinline.sober`](../../examples/noinline.sober)
 拒否: [`examples/annot_neg_unknown.sober`](../../examples/annot_neg_unknown.sober)
 決定: [language.md 10節](../language.md)
@@ -79,14 +79,19 @@ A-11. `@secret(…)` の名前は関数の仮引数の名前。`@bless` はstd�
 拒否: [`examples/secret_neg_name.sober`](../../examples/secret_neg_name.sober)・[`examples/secret_neg_bless.sober`](../../examples/secret_neg_bless.sober)
 決定: [language.md 12節「秘密の値の宣言」](../language.md)
 
-A-12. `@credential` は関数の前置（結果は認証の源）とstructのフィールドの後置（フィールドの読みは認証の源）に、`@shared` はunionのvariantの後置（そのvariantの値は共有キャッシュも保存してよい方針）に、`@bless(origin)` は関数の前置（結果は認証の源に依らない）に書く。3つともstdの宣言のためのアノテーションで、stdの外では書けない。
+A-12. `@credential` は関数の前置（結果は認証の源）とstructのフィールドの後置（フィールドの読みは認証の源）に、`@shared` はunionのvariantの後置（そのvariantの値は共有キャッシュも保存してよい方針）に、`@bless(origin)` は関数の前置（結果は認証の源に依らない）に書く。`@stored` はunionのvariantの後置（そのvariantの値は共有キャッシュに保存されうる方針。`@shared` は `@stored` を含む）に、`@personal` はstructの型の後置（その型の値は利用者ごとの値）に書く。5つともstdの宣言のためのアノテーションで、stdの外では書けない。
 例: [`examples/http_origin.sober`](../../examples/http_origin.sober)
 拒否: [`examples/origin_neg_std.sober`](../../examples/origin_neg_std.sober)
 決定: [language.md 12節「出所の依存」](../language.md)
 
-A-13. 認証の源（`@credential` の関数の結果・stdの外での `@credential` のフィールドの読み）に届きうる関数値（源を呼ぶ・そういう関数を呼ぶ・そういう関数値を呼ぶ関数とラムダ）と、源から導いた値は、`@shared` のvariantの値と1つのstructの値の中で出会ってはならない（structのリテラルとフィールドの書き込み — slice・mapの要素の合併は出会いではない）。std/http/serverでは、共有キャッシュも保存してよい方針（`http.server.Fresh` / `http.server.Shared` / `http.server.Unstated`）を持つルートの行のハンドラ・middlewareが認証の源に届きうる形、`http.server.Mount` で共有の方針の行を源に届きうるmiddlewareの下に入れる形、stdの外でレスポンス1件の `cache` に共有の方針を書く形を拒否する。検査は `sober check` のanalyzerが行う。
+A-13. 認証の源（`@credential` の関数の結果・stdの外での `@credential` のフィールドの読み）に届きうる関数値（源を呼ぶ・そういう関数を呼ぶ・そういう関数値を呼ぶ関数とラムダ）と、源から導いた値は、`@shared` のvariantの値と1つのstructの値の中で出会ってはならない（structのリテラルとフィールドの書き込み。slice・mapの要素の合併は出会いではない）。std/http/serverでは、共有キャッシュも保存してよい方針（`http.server.Fresh` / `http.server.Shared` / `http.server.Unstated`）を持つルートの行のハンドラ・middlewareが認証の源に届きうる形、`http.server.Mount` で共有の方針の行を源に届きうるmiddlewareの下に入れる形、stdの外でレスポンス1件の `cache` に共有の方針を書く形を拒否する。検査は `sober check` のanalyzerが行う。std/http/serverで認証のヘッダ（Authorization・Proxy-Authorization・Cookie）を読めるのは `http.server.Authorization` と `http.server.Cookie` だけで、`http.server.Header` はnilを返し、`http.server.HeaderList` は含まない。
 例: [`examples/http_origin.sober`](../../examples/http_origin.sober)・[`examples/http_cache.sober`](../../examples/http_cache.sober)
 拒否: [`examples/origin_neg_cookie.sober`](../../examples/origin_neg_cookie.sober)・[`examples/origin_neg_helper.sober`](../../examples/origin_neg_helper.sober)・[`examples/origin_neg_fnvalue.sober`](../../examples/origin_neg_fnvalue.sober)・[`examples/origin_neg_before.sober`](../../examples/origin_neg_before.sober)・[`examples/origin_neg_after.sober`](../../examples/origin_neg_after.sober)・[`examples/origin_neg_mount.sober`](../../examples/origin_neg_mount.sober)・[`examples/origin_neg_capture.sober`](../../examples/origin_neg_capture.sober)・[`examples/origin_neg_head.sober`](../../examples/origin_neg_head.sober)・[`examples/origin_neg_resp.sober`](../../examples/origin_neg_resp.sober)
+決定: [language.md 12節「出所の依存」・13節の補3](../language.md)
+
+A-20. `@personal` の型の値と、`@stored` か `@shared` のvariantの値は、1つのstructの値の中で組み合わせてはならない（structのリテラルとフィールドの書き込み）。std/http/serverでは、共有キャッシュに保存されうる方針（`http.server.Revalidate` / `http.server.Fresh` / `http.server.Shared` / `http.server.Unstated`）を持つルートの行のハンドラ・middlewareが `http.server.SetCookie` を返しうる形、`http.server.Mount` で保存されうる方針の行をSet-Cookieを返しうるmiddlewareの下に入れる形、レスポンス1件で保存されうる方針とcookiesを持つ形を拒否する。検査は `sober check` のanalyzerが行う。実行時は、レスポンスのヘッダを書くときに同じ組み合わせを `panic(BadHeader{name: "Set-Cookie"})` にする。
+例: [`examples/origin_fix_mount.sober`](../../examples/origin_fix_mount.sober)・[`examples/http_cache_keep.sober`](../../examples/http_cache_keep.sober)
+拒否: [`testdata/analyzer_neg/origin_setcookie.sober`](../../testdata/analyzer_neg/origin_setcookie.sober)・[`testdata/analyzer_neg/origin_setcookie_mount.sober`](../../testdata/analyzer_neg/origin_setcookie_mount.sober)・[`testdata/analyzer_neg/origin_setcookie_resp.sober`](../../testdata/analyzer_neg/origin_setcookie_resp.sober)
 決定: [language.md 12節「出所の依存」・13節の補3](../language.md)
 
 ## 12.5 関数のエフェクト

@@ -52,8 +52,8 @@ const UR_EFL = 72     // enterのflagsに足すワード（IORING_ENTER_REGISTER
 const UR_RFR = 73     // io_uring_rsrc_update（2ワード — offset = −1で自動・data = fd）
 // 頭の取り込み（D2 の例外）: net の ring は走れる task が尽きたときだけ enter するが、未提出が UR_POKE 本に届いたら
 // mn_nextの頭でスリープせずに提出と取り込み（GETEVENTS・min_complete 0）+ 時計の表の満了。1回のenterで取り込むバッチが作業集合の深さで、バッチが深いと
-// 4096接続でcycles / リクエストが256接続の2.5倍の崖がある — 小刻みにするとL2に収まる。取り込んだtaskは走れるスタックの前（LIFO — 熱いうちに）。
-// 棄てた案: 取り込んだバッチを古いバッチの後ろへ（FIFO — 利得が消える）・受けのウェイクアップだけ後ろへ（1024の尾は戻るがasyncのHWM +50 MB）・閾値を未完了の数に比例（同値）
+// 4096接続でcycles / リクエストが256接続の2.5倍の崖がある。小刻みにするとL2に収まる。取り込んだtaskは実行待ちの列の後ろ（FIFO）。
+// 棄てた案: 閾値を未完了の数に比例（同値）
 const UR_POKE = 8
 const UR_NCQ = 4096
 const UR_NETF = 12296 // IORING_SETUP_CQSIZE | SINGLE_ISSUER | DEFER_TASKRUN
@@ -354,7 +354,7 @@ func urRoom(st mut St, rec int) {
 }
 
 // rt.uio(op, fd, addr, n) → 結果（バイト数 / 負の errno）: op = 22（READ）/ 23（WRITE）。ワーカーに ring があり積んだ io が UR_FLYMAX 本未満なら
-// SQEを積んで今のtaskを待ちに入れ（rt.task_wait — 完了はrt.uring_pollがTC_IORESに書いて走れるスタックへ）、無ければ同期のread(2) / write(2)（op − 22）。
+// SQEを積んで今のtaskを待ちに入れ（rt.task_wait。完了はrt.uring_pollがTC_IORESに書いて実行待ちの列へ）、無ければ同期のread(2) / write(2)（op − 22）。
 // 1 回の長さは 2^30 で切る（短い書き・読みは呼び手が続きをする — 同期と同じ）
 func buildUio(st mut St) {
     begin(mut st, st.rtUio)
@@ -554,7 +554,7 @@ func fuseGate(st mut St, rec int, wait int, fq int, ext int) int {
 }
 
 // rt.uring_poll(wait): 積んだSQEを提出し（waitなら先にeventfdの読みを出し、完了が1つ来るまでスリープする — ringのスリープ）、
-// CQに来た完了を全部取り込む: taskのioはTC_IORESに結果を書いて自分の走れるスタックへ（走り始めたtaskはワーカーに固定 — 提出したワーカーのCQに来る）・
+// CQに来た完了を全部取り込む: taskのioはTC_IORESに結果を書いて自分の実行待ちの列へ（走り始めたtaskはワーカーに固定。提出したワーカーのCQに来る）・
 // eventfdの読みは「出してある」のフラグを消すだけ。提出が中断された分（-EINTR等で返った数が足りない）はSQに残り次の呼び出しで出る
 func buildUpoll(st mut St) {
     begin(mut st, st.rtUpoll)
@@ -625,7 +625,7 @@ func buildUpoll(st mut St) {
     if net {
         frRecP(mut st, FK_ENTER, n, mc, r)
     }
-    // 今を読み直す（スリープしたenter〔mc ≠ 0〕だけ — 読み直さないと、この後で取り込むtaskの時刻がスリープする前の値になり、飽和下の待ちの上限のmaxWaitが
+    // 今を読み直す（スリープしたenter〔mc ≠ 0〕だけ。読み直さないと、この後で取り込むtaskの時刻がスリープする前の値になり、LedgerのmaxWaitが
     // スリープの長さを拾ってしまう。スリープしない頭の取り込みは周の頭の値のまま）
     bNw := branchIf(mut st, cmp(mut st, CNe, mc, zero))
     store(mut st, wk, WK_NOW, tscOp(mut st))
@@ -776,7 +776,7 @@ func buildUpoll(st mut St) {
         // 走れるtaskが無く、スリープするかnetの待ち手がいればepoll。ただしスリープのフェーズでない頭の取り込み（wait = 0）は、自分のdeque・受け箱・共有のスタックが
         // 空のときだけ（毎周の頭で readiness を取り込むと TK_READY が絶えず、mn_next が deque に進まない: 4096 接続で受け入れた
         // 接続の子taskの5〜7割が始まらないまま、接続の開始から一度もレスポンスしなかった。ringのパスも頭の取り込み〔UR_POKE〕で同じ形が出る —
-        // そちらは飽和下の待ちの上限〔スタックの底からの細流しと受け箱の先取り — rt.mn_next・language.md 28 節〕で塞ぐ）。
+        // そちらは実行待ちの列のFIFOと受け箱の先取り〔rt.mn_next〕で塞ぐ）。
         // 棄てた案: 頭では一切取り込まない（c1 — ringと同形。公平になるが、走れるtaskが尽きるたびに盗みの走査 → スリープのフェーズを通り、256接続で
         // cycles / リクエスト7.9K → 9.5K・req/s −15%）
         mnq := globaladdr(mut st, st.mnG)

@@ -70,6 +70,7 @@ type Conn struct {
     c net.Conn
     blk []int
     wr internal.record.Dir
+    wk []int
     seal tlsSeal
 }
 ```
@@ -134,10 +135,10 @@ Parse のファイル版（certPath / keyPath を読む）
 ```sober
 @errors(net.Bad, io.Closed, io.Timeout, io.Expired, io.Denied, io.Other)
 @effects(block, io, panic, nondet, Handler)
-func Serve(addr string, cfg Config, k Handler, region int?, maxWait int?) error?
+func Serve(addr string, cfg Config, k Handler, region int?) error?
 ```
 
-addr で待ち受け、接続ごとに handshake を済ませてから k を走らせる（接続 1 本 = task 1 本 — net.Serve と同じ admission・k の失敗と死は吸収）。handshake の失敗は alert を送って閉じ、k は呼ばない。k が返ったら（error を返しても）close\_notify を送って閉じる。k が死んだときは close\_notify を送らずに閉じるregion = 接続の task の region 1 つの上限（net.Serve の region: へそのまま — 既定 128 MiB）・maxWait = 飽和下の待ちの上限（net.Serve の maxWait: へそのまま — 既定 100 ms）
+addr で待ち受け、接続ごとに handshake を済ませてから k を走らせる（接続 1 本 = task 1 本 — net.Serve と同じ admission・k の失敗と死は吸収）。handshake の失敗は alert を送って閉じ、k は呼ばない。k が返ったら（error を返しても）close\_notify を送って閉じる。k が死んだときは close\_notify を送らずに閉じるregion = 接続のtaskのregion 1つの上限（net.Serveのregion: へそのまま。既定は128 MiB）
 
 失敗のラベル: `net.Bad`・`io.Closed`・`io.Timeout`・`io.Expired`・`io.Denied`・`io.Other`
 
@@ -181,7 +182,7 @@ b を application の record にして c へ送る（空の b は送らない �
 func Put(c Conn, b []byte) error?
 ```
 
-bをapplicationのrecordにしてcの送りのバッチに積む（送らない — Flushか、tls.Recvのkが戻ったときか、バッチに入らない次のPutか、Serveの出口が送る。空のbは積まない）。バッチに入らない（積んだ分と合わせてrecord 1つ分を越える）・鍵を進める前後は、積んだ分を送ってからbのrecordをその場で送る（順序は保つ）
+bをapplicationのrecordにしてcの送信バッファに積む。ここでは送らない。Flushか、tls.Recvのkが戻ったときか、送信バッファに入らない次のPutか、Serveの出口が送る。空のbは積まない。送信バッファに入らないとき（積んだ分と合わせてワーカーの送信バッファのチャンクを越える・チャンクを予約できない）と、鍵を進める前後は、積んだ分を送ってからbのrecordをその場で送る（順序は保つ）
 
 失敗のラベル: [`Closed`](#closed)
 
@@ -193,6 +194,6 @@ bをapplicationのrecordにしてcの送りのバッチに積む（送らない 
 func Flush(c Conn) error?
 ```
 
-cの送りのバッチに積んだrecordを送る（無ければ何もしない）
+cの送信バッファに積んだrecordを送る（無ければ何もしない）
 
 失敗のラベル: [`Closed`](#closed)

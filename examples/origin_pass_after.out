@@ -1,0 +1,9 @@
+HTTP/1.1 200 OK
+Content-Type: text/plain
+Cache-Control: max-age=60
+Content-Length: 5
+Connection: close
+
+home
+
+true

@@ -578,8 +578,14 @@ func typeDecl(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx 
         if fs < 0 || tg(cx, q) != lexer.RBrace {
             return -1, q
         }
-        body = node(mut nb, ast.BStruct, 0, fs, 0, 0, 0, 0, 0)
+        // 後置の `@personal`（BStructのb = 1。その型の値は利用者ごとの値。std限定・language.md 12節「出所の依存」）
+        mut pers := 0
         p = q + 1
+        if tg(cx, p) == lexer.At && textIs(cx, p + 1, "personal") && tg(cx, p + 2) != lexer.LParen {
+            pers = 1
+            p += 2
+        }
+        body = node(mut nb, ast.BStruct, 0, fs, pers, 0, 0, 0, 0)
     } else if t == lexer.KwUnion {
         if tg(cx, p + 1) != lexer.LBrace {
             return -1, p
@@ -594,12 +600,16 @@ func typeDecl(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx 
             if fs < 0 || tg(cx, r) != lexer.RBrace {
                 return -1, r
             }
-            // 後置の `@shared`（KVariant の c = 1 — 共有キャッシュも保存してよい方針の variant: std 限定・language.md 12 節「出所の依存」）
+            // 後置の `@shared`（KVariantのc = 1: 共有キャッシュも保存してよい方針のvariant）と `@stored`（c = 2: 共有キャッシュに
+            // 保存されうるが、共有の宣言ではない方針のvariant）: std限定・language.md 12節「出所の依存」
             vq := q
             mut sh := 0
             q = r + 1
             if tg(cx, q) == lexer.At && textIs(cx, q + 1, "shared") && tg(cx, q + 2) != lexer.LParen {
                 sh = 1
+                q += 2
+            } else if tg(cx, q) == lexer.At && textIs(cx, q + 1, "stored") && tg(cx, q + 2) != lexer.LParen {
+                sh = 2
                 q += 2
             }
             vs = append(vs, node(mut nb, ast.KVariant, tk(cx, vq), name(mut db, cx, vq), fs, sh, 0, 0, 0))

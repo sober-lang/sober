@@ -368,13 +368,13 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`layout.LengthMismatch`](layout.ja.md#lengthmismatch) — 固定長配列の長さ違い: フィールドfieldの長さがwantでなくgot
 - [`layout.Size`](layout.ja.md#size) — Tの静的な大きさ（バイト — フィールドの幅の和）。
 - [`layout.WidthOverflow`](layout.ja.md#widthoverflow) — 書き込みの幅あふれ: フィールドfieldの値valueが幅widthに収まらない
-- [`math.Abs`](math.ja.md#abs) — x の絶対値（符号ビットを落とす — NaN の符号も落ちる・-0 は +0）
-- [`math.Bits`](math.ja.md#bits) — x の IEEE 754 のビット列（i64 で読んだ値 — 変換でなく同じビットの読み替え）
+- [`math.Abs`](math.ja.md#abs) — x の絶対値（符号ビットを落とす・-0 は +0）
+- [`math.Bits`](math.ja.md#bits) — x の IEEE 754 のビット列（i64 で読んだ値で、変換でなく同じビットの読み替え）。
 - [`math.Ceil`](math.ja.md#ceil) — x 以上の最小の整数（-0.5 → -0・±Inf・NaN はそのまま）
 - [`math.Floor`](math.ja.md#floor) — x 以下の最大の整数（-0.5 → -1・-0 → -0・±Inf・NaN はそのまま）
-- [`math.FromBits`](math.ja.md#frombits) — ビット列 b の float（±Inf・NaN もこれで作る）
-- [`math.Max`](math.ja.md#max) — x と y の大きいほう（どちらかが NaN ならその NaN・-0 と +0 では +0）
-- [`math.Min`](math.ja.md#min) — x と y の小さいほう（どちらかが NaN ならその NaN・-0 と +0 では -0）
+- [`math.FromBits`](math.ja.md#frombits) — ビット列 b の float（±Inf・NaN もこれで作る）。
+- [`math.Max`](math.ja.md#max) — x と y の大きいほう（どちらかが NaN なら NaN・-0 と +0 では +0）
+- [`math.Min`](math.ja.md#min) — x と y の小さいほう（どちらかが NaN なら NaN・-0 と +0 では -0）
 - [`math.Sqrt`](math.ja.md#sqrt) — x の平方根（IEEE 754 の sqrt — 正しく丸めた値・負は NaN・-0 は -0）
 - [`math.Trunc`](math.ja.md#trunc) — x の 0 方向への切り捨て（整数部 — 小数部のビットを落とす。
 - [`net.Accept`](net.ja.md#accept) — l の接続を受けるたびに k に渡し、k が返ったら閉じる（列は終わらない — 本体の break か失敗で止まる。
@@ -546,6 +546,7 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`server.Gzip`](http-server.ja.md#gzip) — ServeConnのcompression: の値（レスポンスのgzip — RFC 1952。
 - [`server.Handler`](http-server.ja.md#handler) — リクエスト1件の処理（ルートの表の行が持つ）
 - [`server.Header`](http-server.ja.md#header) — r のヘッダ name の値（名前は大文字小文字を区別しない — 最初の一致。
+- [`server.HeaderList`](http-server.ja.md#headerlist) — rのヘッダの全部（受けた順・同じ名前の行は別の要素）。
 - [`server.Headers`](http-server.ja.md#headers) — 任意ヘッダの列（Responseのフィールドをoptionの包みにしてあるのは、フィールドを持たないレスポンス〔大半〕のパスに空の列の確保とregionの付け替えを積まないため）
 - [`server.Json`](http-server.ja.md#json) — 200・application/jsonのレスポンス（sは組み上がったJSON — std/jsonのPut… / Done）
 - [`server.JsonDoc`](http-server.ja.md#jsondoc) — 本文を JSON として読んだ表（std/json の Doc — 型へは `json.Decode[T](d, json.Root(d))`。
@@ -563,7 +564,7 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`server.SameSite`](http-server.ja.md#samesite) — SameSite 属性（RFC 6265bis 5.4.7 — None は Secure が要る）
 - [`server.ServeConn`](http-server.ja.md#serveconn) — cのリクエストを順にrouteに渡してレスポンスを書く（keep-alive）。
 - [`server.ServeWith`](http-server.ja.md#servewith) — ServeConn の核を転送路の受信コールバック recv（`for chunk <- recv()? { … }` の生成元 — net.Recv / tls.Recv の形）と送信コールバック send に一般化したもの（ServeConn は net の 1 行の包み・TLS の接続は `http.server.ServeWith((k) => tls.Recv(c, k), (b) => tls.Send(c, b), route, put: (b) => tls.Put(c, b))`）。
-- [`server.SetCookie`](http-server.ja.md#setcookie) — Set-Cookieの1本（Response.cookiesの要素 — Set-Cookieを書けるのはこのフィールドだけ。
+- [`server.SetCookie`](http-server.ja.md#setcookie) — Set-Cookieの1本（Response.cookiesの要素。
 - [`server.Static`](http-server.ja.md#static) — prefix の下の GET を root の下のファイルで返すルートの表（1 行 — `GET <prefix>/*path` — Mount / Merge で合成する。
 - [`server.Status`](http-server.ja.md#status) — 本文なしのレスポンス（http.NotFound / http.MethodNotAllowed …）
 - [`server.Stream`](http-server.ja.md#stream) — レスポンスの本文の供給（emitは借り — 呼ぶ・借りの位置へ渡すだけ。
@@ -730,14 +731,14 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`tls.Closed`](tls.ja.md#closed) — 接続が閉じている（相手の切断・相手の alert・転送路の失敗・途中で抜けた後の Recv）
 - [`tls.Config`](tls.ja.md#config) — サーバの設定（Load / Parseが作る — 証明書のチェーン・葉の鍵・受けるALPN）
 - [`tls.Conn`](tls.ja.md#conn) — handshake の済んだ接続（同一性の型 — net.Conn と同じ規則。
-- [`tls.Flush`](tls.ja.md#flush) — cの送りのバッチに積んだrecordを送る（無ければ何もしない）
+- [`tls.Flush`](tls.ja.md#flush) — cの送信バッファに積んだrecordを送る（無ければ何もしない）
 - [`tls.Handler`](tls.ja.md#handler) — handshake の済んだ接続 1 本の処理（名前つきの関数型 — 値として接続の task へ渡る。
 - [`tls.HandshakeFailed`](tls.ja.md#handshakefailed) — handshake が失敗した（alert = 送った alert の番号 — RFC 9846 6）
 - [`tls.Load`](tls.ja.md#load) — Parse のファイル版（certPath / keyPath を読む）
 - [`tls.Overflow`](tls.ja.md#overflow) — 方向のワードの列が席に入らない（stdの内部の約束違反 — panicラベル）
 - [`tls.Parse`](tls.ja.md#parse) — PEMの証明書のチェーン（CERTIFICATEが1つ以上 — 葉が先頭）とPKCS#8のRSAの鍵のConfig（ALPNの既定 = http/1.1 — 変えるならAlpn）
 - [`tls.ParseRoots`](tls.ja.md#parseroots) — PEMの文字列pemのCERTIFICATEのチャンクを全部読んだ信頼の起点（私的PKIのCA — 外部ファイルを読むインターフェースは作らない。
-- [`tls.Put`](tls.ja.md#put) — bをapplicationのrecordにしてcの送りのバッチに積む（送らない — Flushか、tls.Recvのkが戻ったときか、バッチに入らない次のPutか、Serveの出口が送る。
+- [`tls.Put`](tls.ja.md#put) — bをapplicationのrecordにしてcの送信バッファに積む。
 - [`tls.Recv`](tls.ja.md#recv) — c の受けた application の平文を k に順に渡す（呼び出し形の生成元 — `for b <- tls.Recv(c)? { … }`）。
 - [`tls.Roots`](tls.ja.md#roots) — 足す信頼の起点（ParseRoots が作る — 封の型。
 - [`tls.Send`](tls.ja.md#send) — b を application の record にして c へ送る（空の b は送らない — Put + Flush）。

@@ -1,4 +1,4 @@
-# Release: build the compiler from source (full bootstrap) and attach the binary to a GitHub Release.
+# Release: build the compiler from source (full bootstrap, then the compiler built by itself) and attach the binary to a GitHub Release.
 # Triggered by pushing a tag v* (e.g. v0.5.0).
 name: release
 
@@ -31,25 +31,33 @@ jobs:
         run: cd src/stage1 && zig build
 
       - name: Stamp the version
-        # the only place the version is baked in: the `version: "dev", // sober-version` line of src/compiler/app/main.sober
+        # the places the version is baked in (the lines that end in `// sober-version`): `version: "dev",` in src/compiler/app/main.sober
+        # (sober --version) and `const RtVersion = "dev"` in src/compiler/lower/task.sober (the runtime's fatal line in compiled programs)
         run: |
           sed -i 's|version: "dev", // sober-version$|version: "${{ github.ref_name }}", // sober-version|' src/compiler/app/main.sober
           grep -q 'version: "${{ github.ref_name }}", // sober-version$' src/compiler/app/main.sober
+          sed -i 's|^const RtVersion = "dev" // sober-version$|const RtVersion = "${{ github.ref_name }}" // sober-version|' src/compiler/lower/task.sober
+          grep -q '^const RtVersion = "${{ github.ref_name }}" // sober-version$' src/compiler/lower/task.sober
 
       - name: Build stage2 (bootstrap chain)
         run: scripts/stage2.sh
 
+      # The released binary is stage3: stage2 builds the compiler itself (with the std L0 baked in), the same
+      # steps scripts/stages.sh checks. --check rebuilds it with itself and requires the same ELF (fixed point).
+      - name: Build stage3 (the released binary) and check the fixed point
+        run: scripts/stage3.sh --check -o out/stage3/sober
+
       - name: Smoke test
         run: |
-          out/stage2/sober2 build examples/hello.sober -o out/hello   # the default (= --emit=elf --passes) — what a user of the released binary types
+          out/stage3/sober build examples/hello.sober -o out/hello   # the default (= --emit=elf --passes), what a user of the released binary types
           ./out/hello > out/hello.got
           diff examples/hello.out out/hello.got
-          [ "$(out/stage2/sober2 --version)" = "sober ${{ github.ref_name }}" ]
+          [ "$(out/stage3/sober --version)" = "sober ${{ github.ref_name }}" ]
 
       - name: Package
         run: |
           mkdir -p dist/sober-${{ github.ref_name }}-x86_64-linux
-          cp out/stage2/sober2 dist/sober-${{ github.ref_name }}-x86_64-linux/sober
+          cp out/stage3/sober dist/sober-${{ github.ref_name }}-x86_64-linux/sober
           cp README.md LICENSE-MIT LICENSE-APACHE dist/sober-${{ github.ref_name }}-x86_64-linux/
           tar -C dist -czf dist/sober-${{ github.ref_name }}-x86_64-linux.tar.gz sober-${{ github.ref_name }}-x86_64-linux
           (cd dist && sha256sum sober-${{ github.ref_name }}-x86_64-linux.tar.gz > sober-${{ github.ref_name }}-x86_64-linux.tar.gz.sha256)

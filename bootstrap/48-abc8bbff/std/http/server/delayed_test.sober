@@ -1,0 +1,116 @@
+package server
+
+// Delayedの検査一式: 送る前の待ちはそのレスポンスの頭の直前・前のレスポンスは先に送る・後ろのレスポンスは待ちの後・待ちが重なれば順に足される・
+// stream / HEAD / 0以下の待ち。転送路は偽物（recvはリクエストの列を1切片で渡す・sendは送った切片ごとに本文のマークと経過を格納場所へ）
+
+import "std/convert"
+import "std/strings"
+import "std/testing/cell"
+import "std/time"
+
+const Log = testing.cell.Cell[string]{}
+const T0 = testing.cell.Cell[int]{}
+const Ms = testing.cell.Cell[string]{}
+
+func delayRoute(r Request) Response {
+    return if r.path == "/slow" {
+        Delayed(60, Text("SLOW"))
+    } else if r.path == "/slow2" {
+        Delayed(40, Text("TWO"))
+    } else if r.path == "/zero" {
+        Delayed(0, Text("ZERO"))
+    } else if r.path == "/stream" {
+        Delayed(30, Response{status: 200, contentType: "text/plain", length: 3, stream: (out, emit) => emit(mut out, bytes("STR"))})
+    } else {
+        Text(strings.TrimPrefix(r.path, "/"))
+    }
+}
+
+// 送った切片のマーク（含む本文の語 — 表の順）と、始まりからの経過（ms — 下限だけを照合する: 負荷で待ちは延びるだけ）
+func delayRecord(b []byte) error? {
+    s := string(b) catch ""
+    mut tag := ""
+    words := []string{"A1", "SLOW", "TWO", "ZERO", "B2", "STR"}
+    for w <- words {
+        if strings.Contains(s, w) {
+            tag = if tag == "" { w } else { tag + " " + w }
+        }
+    }
+    ms := (time.Mono().ns - testing.cell.Get(T0)) / 1000000
+    testing.cell.Update(Log, (l) => l + "[" + (if tag == "" { "head" } else { tag }) + "]")
+    testing.cell.Update(Ms, (l) => l + "${ms} ")
+    return nil
+}
+
+func delayFeed(s string, k func([]byte)) error? {
+    k(bytes(s))
+    return nil
+}
+
+func delayGet(p string) string {
+    return "GET ${p} HTTP/1.1\r\nHost: x\r\n\r\n"
+}
+
+func delayServe(reqs string) string {
+    testing.cell.Set(Log, "")
+    testing.cell.Set(Ms, "")
+    testing.cell.Set(T0, time.Mono().ns)
+    e := ServeWith((k) => delayFeed(reqs + "GET /end HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n", k), (b) => delayRecord(b), delayRoute)
+    assert(e == nil)
+    return testing.cell.Get(Log)
+}
+
+// 送った切片 i の経過が lo[i] ms 以上か
+func waitedAtLeast(lo []int) bool {
+    mut ok := len(strings.Fields(testing.cell.Get(Ms))) == len(lo)
+    mut i := 0
+    for f <- strings.Fields(testing.cell.Get(Ms)) {
+        v := convert.ParseInt(f) catch -1
+        if i < len(lo) && v < lo[i] {
+            ok = false
+        }
+        i += 1
+    }
+    return ok
+}
+
+// 前のレスポンスは待ちの前に別の切片で出る・Delayedのレスポンスと後ろのレスポンスは待ちの後に1切片で
+func TestDelayedOrder() {
+    l := delayServe(delayGet("/A1") + delayGet("/slow") + delayGet("/B2"))
+    assert(l == "[A1][SLOW B2]", l)
+    assert(waitedAtLeast([]int{0, 60}), testing.cell.Get(Ms))
+}
+
+// 先頭のDelayedは前の送りなしで待つ（後ろのレスポンスも同じ切片）
+func TestDelayedFirst() {
+    l := delayServe(delayGet("/slow") + delayGet("/A1"))
+    assert(l == "[A1 SLOW]", l)
+    assert(waitedAtLeast([]int{60}), testing.cell.Get(Ms))
+}
+
+// 待ちが2つなら順に足される（60 + 40 ms）— 1つ目のレスポンスは2つ目の待ちの前に出る
+func TestDelayedTwo() {
+    l := delayServe(delayGet("/slow") + delayGet("/slow2") + delayGet("/B2"))
+    assert(l == "[SLOW][TWO B2]", l)
+    assert(waitedAtLeast([]int{60, 100}), testing.cell.Get(Ms))
+}
+
+// 0 以下は待たない（切片も割らない）
+func TestDelayedZero() {
+    l := delayServe(delayGet("/A1") + delayGet("/zero") + delayGet("/B2"))
+    assert(l == "[A1 ZERO B2]", l)
+}
+
+// stream: 前のレスポンスを送ってから、頭の前で待つ
+func TestDelayedStream() {
+    l := delayServe(delayGet("/A1") + delayGet("/stream") + delayGet("/B2"))
+    assert(l == "[A1][head][STR][B2]", l)
+    assert(waitedAtLeast([]int{0, 30, 30, 30}), testing.cell.Get(Ms))
+}
+
+// HEAD も同じ点で待つ（本文は書かない）
+func TestDelayedHead() {
+    l := delayServe("HEAD /slow HTTP/1.1\r\nHost: x\r\n\r\n" + delayGet("/A1"))
+    assert(l == "[A1]", l)
+    assert(waitedAtLeast([]int{60}), testing.cell.Get(Ms))
+}

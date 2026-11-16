@@ -1573,7 +1573,7 @@
                               "k": "interp",
                               "tmpl": {
                                 "lits": [
-                                  "POST /login HTTP/1.1\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: ",
+                                  "POST /login HTTP/1.1\r\nHost: x\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: ",
                                   "\r\n\r\n",
                                   ""
                                 ],
@@ -1618,7 +1618,7 @@
                               "k": "interp",
                               "tmpl": {
                                 "lits": [
-                                  "POST /login HTTP/1.1\r\nContent-Type: text/plain\r\nContent-Length: ",
+                                  "POST /login HTTP/1.1\r\nHost: x\r\nContent-Type: text/plain\r\nContent-Length: ",
                                   "\r\n\r\n",
                                   ""
                                 ],
@@ -1665,7 +1665,7 @@
                             "k": "interp",
                             "tmpl": {
                               "lits": [
-                                "POST /users HTTP/1.1\r\nContent-Type: application/json\r\nContent-Length: ",
+                                "POST /users HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: ",
                                 "\r\n\r\n",
                                 ""
                               ],
@@ -1710,35 +1710,35 @@
                         },
                         "rhs": {
                           "k": "strlit",
-                          "value": "POST /users HTTP/1.1\r\nContent-Length: 3\r\n\r\n{x}",
+                          "value": "POST /users HTTP/1.1\r\nHost: x\r\nContent-Length: 3\r\n\r\n{x}",
                           "tok": 558
                         },
                         "tok": 557
                       },
                       "rhs": {
                         "k": "strlit",
-                        "value": "GET /static/http_reqresp.tmp HTTP/1.1\r\n\r\n",
+                        "value": "GET /static/http_reqresp.tmp HTTP/1.1\r\nHost: x\r\n\r\n",
                         "tok": 560
                       },
                       "tok": 559
                     },
                     "rhs": {
                       "k": "strlit",
-                      "value": "GET /static/../secret HTTP/1.1\r\n\r\n",
+                      "value": "GET /static/../secret HTTP/1.1\r\nHost: x\r\n\r\n",
                       "tok": 562
                     },
                     "tok": 561
                   },
                   "rhs": {
                     "k": "strlit",
-                    "value": "GET /static/none.tmp HTTP/1.1\r\n\r\n",
+                    "value": "GET /static/none.tmp HTTP/1.1\r\nHost: x\r\n\r\n",
                     "tok": 564
                   },
                   "tok": 563
                 },
                 "rhs": {
                   "k": "strlit",
-                  "value": "DELETE /users HTTP/1.1\r\nConnection: close\r\n\r\n",
+                  "value": "DELETE /users HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n",
                   "tok": 566
                 },
                 "tok": 565

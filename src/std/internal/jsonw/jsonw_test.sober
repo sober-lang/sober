@@ -1,6 +1,6 @@
 package jsonw
 
-// 部品のテスト: Intの詰めの境（1桁・2桁の偶奇・10^8の前後・負・最小値）・Strのエスケープの −1・Wordの余りを次の書きが上書きする形・上界ちょうど
+// 部品のテスト: Intの桁の境界（1桁・2桁の偶奇・10^8の前後・負・最小値）・Strのエスケープの −1・Putの余りを次の書き込みが上書きする形・上界ちょうど・位置を進める量の検査
 
 import "std/convert"
 import "std/iter"
@@ -27,10 +27,9 @@ func TestWordTail() {
     // ワードの余りの0は次の書きで上書きされる
     mut b := mut []byte{}
     Grow(mut b, 24)
-    Word(mut b, 0, 0x3a226469227b)
-    mut p := Int(mut b, 6, 42)
-    b[p] = '}'
-    p += 1
+    mut p := Put(mut b, 0, 0x3a226469227b, 6)
+    p = Int(mut b, p, 42)
+    p = Byte(mut b, p, '}')
     assert(Finish(freeze(b), p) == "{\"id\":42}")
 }
 
@@ -59,7 +58,7 @@ func TestExact() {
     Grow(mut b, 18)
     p := Int(mut b, 0, 1234567890)
     assert(Finish(freeze(b), p) == "1234567890")
-    // 8 桁以下は Word（8 バイト）を書く — 余白 8 があれば足りる
+    // 8桁以下はワード（8バイト）を書き込む。余白8があれば足りる
     mut c := mut []byte{}
     Grow(mut c, 8)
     q := Int(mut c, 0, 12345678)
@@ -69,12 +68,12 @@ func TestExact() {
 func TestWords() {
     mut b := mut []byte{}
     Grow(mut b, 24)
-    Word2(mut b, 0, 0x3a226469227b, 0)
-    assert(Finish(freeze(b), 6) == "{\"id\":")
+    p := Put2(mut b, 0, 0x3a226469227b, 0, 6)
+    assert(Finish(freeze(b), p) == "{\"id\":")
     mut c := mut []byte{}
     Grow(mut c, 24)
-    Word3(mut c, 0, 0x6867666564636261, 0x706f6e6d6c6b6a69, 0x7877767574737271)
-    assert(Finish(freeze(c), 24) == "abcdefghijklmnopqrstuvwx")
+    q := Put3(mut c, 0, 0x6867666564636261, 0x706f6e6d6c6b6a69, 0x7877767574737271, 24)
+    assert(Finish(freeze(c), q) == "abcdefghijklmnopqrstuvwx")
     assert(IntSize(99999999) == 8)
     assert(IntSize(100000000) == 20)
     assert(IntSize(-1) == 20)

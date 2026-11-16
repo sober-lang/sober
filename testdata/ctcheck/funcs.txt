@@ -114,9 +114,7 @@
 @std/tls.newBlk
 @std/tls.putDir
 @std/tls.Put
-@std/tls.Flush
 @std/tls.sendNow
-@std/tls.sealPut
 @std/tls.flags
 @std/tls.setFlags
 @std/tls.setSeq
@@ -203,6 +201,7 @@
 @std/pg.putConn
 @std/pg.startup
 +@std/crypto/rsa.newMont  秘密の素数の Montgomery の文脈。T に入らない — struct リテラルの欄の仮引数由来の部分が文脈に鈍く、秘密の口で閉じると公開の法の mont まで秘密になる（report-983 3 節）
++@std/tls.sealPut  T の外。送りの方向の鍵を持つDirをSealIntoへ渡すので残す。足した分岐（recordの長さ・seq・ワーカーの番号・予約の結果）が公開の値だけに依ることを照合し続ける
 @main.negEqEarly
 @main.negPrefix
 @main.negSelectIf

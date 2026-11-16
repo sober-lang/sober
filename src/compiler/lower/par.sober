@@ -1037,7 +1037,7 @@ func parSpawn(st mut St, pk int, tt SpawnTy, args desugar.ListRef, at desugar.No
         // 端点の持ち主を子へ（親に残った別名は失効 — 使うと panic）
         store(mut st, ch, chEnd, ptoi(mut st, tcb))
     }
-    // spawnの切替点（rt.task_go — 既定 = 子を先に: 親を走れるスタックに載せて子へ。SOBER_SCHEDで親を先にも選べる）
+    // spawnの切替点（rt.task_go。既定 = 子を先に: 親を実行待ちの列に載せて子へ。SOBER_SCHEDで親を先にも選べる）
     store(mut st, tcb, TC_STARTED, iconst(mut st, 0))
     call(mut st, st.rtTaskGo, list2(mut st, me, tcb))
     br(mut st, bJoin, -1)

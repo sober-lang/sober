@@ -109,6 +109,15 @@ func buildLeaseRt(st mut St) {
     b9 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 9)))
     ret(mut st, if st.taskUse { load(mut st, globaladdr(mut st, st.mnG), MN_LDRAIN) } else { zero })
     setCur(mut st, b9)
+    // op 10: 今のtaskの次のrt.netop 13（b = 1。tls.Recvの中のFlush）を待たない印（std/httpのServeWithが、put:の後に受けが続くときに置く）。TC_FUSEに−2を置く。
+    // rt.netop 1は−2を「送信バッファリングのフラグ無し」と読んで消す。taskの無いプログラムは何もしない
+    b10 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 10)))
+    if st.taskUse {
+        tcm := itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
+        store(mut st, tcm, TC_FUSE, iconst(mut st, -2))
+    }
+    ret(mut st, zero)
+    setCur(mut st, b10)
     // op 3: 返す（フラグを外し、チェーンの頭をエリアのチェーンのワードへ）
     b3 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 3)))
     store(mut st, addr, 0, zero)

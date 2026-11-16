@@ -996,15 +996,206 @@ func buildNetWait(st mut St) {
     ret(mut st, r)
 }
 
+// op 11（rt.netopの本体の中 — 引数 pk = fd | ヘッダの長さ << 24 | 本文の長さ << 44・a = ヘッダの番地・b = 本文の番地）: ヘッダと本文を送り場の1チャンクへ続けてコピーし、
+// SEND（MSG_WAITALL）を1本積んで1を返す（送信バッファリングと同じ — taskはスリープしない・結果は接続の次のAPIが片付ける）。積めないとき（ringのパスでない・送信バッファリングが
+// 切られている・送り場に空きが無い・前の送りが片付いていない・合計が送り場のチャンクを越える・孤児）は何もせずに0を返し、呼び手は今の送りへ倒す。ringのパスでない・
+// 送信バッファリングが切られている・送り場が無い（その接続ではずっと積めない）は −1。状態を残さない
+func sendGather(st mut St, pk int) {
+    zero := iconst(mut st, 0)
+    fd := bin(mut st, BAnd, pk, iconst(mut st, 16777215))
+    lh := bin(mut st, BAnd, bin(mut st, BSar, pk, iconst(mut st, 24)), iconst(mut st, 1048575))
+    lb := bin(mut st, BAnd, bin(mut st, BSar, pk, iconst(mut st, 44)), iconst(mut st, 1048575))
+    tot := bin(mut st, BAdd, lh, lb)
+    rg, nr := nrRing(mut st, fd)
+    bNo := newBlock(mut st)
+    bRg := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, nr, zero), bRg, -1, bNo, -1)
+    setCur(mut st, bNo)
+    ret(mut st, iconst(mut st, -1))
+    setCur(mut st, bRg)
+    rp := itop(mut st, rg)
+    np := itop(mut st, nr)
+    wb := load(mut st, rp, UR_WB)
+    bPm := branchIf(mut st, bin(mut st, BOr, cmp(mut st, CEq, load(mut st, rp, UR_FUSE), zero), cmp(mut st, CEq, wb, zero)))
+    ret(mut st, iconst(mut st, -1))
+    setCur(mut st, bPm)
+    room := bin(mut st, BOr, cmp(mut st, CNe, load(mut st, rp, UR_WBF), zero), cmp(mut st, CLt, load(mut st, rp, UR_WBN), iconst(mut st, WB_NBLK)))
+    ok := bin(mut st, BAnd, bin(mut st, BAnd, room, cmp(mut st, CEq, sstGet(mut st, np), zero)), bin(mut st, BAnd, cmp(mut st, CLe, tot, iconst(mut st, WB_MAX)), cmp(mut st, CGt, lb, zero)))
+    bOk := branchIf(mut st, if st.rtMut == 41 { zero } else { ok })
+    if st.orphOn {
+        me := load(mut st, globaladdr(mut st, st.taskG), TK_CUR)
+        ov := orphEnter(mut st, me, OK_SEND)
+        bOv := branchIf(mut st, cmp(mut st, CEq, ov, zero))
+        blk := wbTake(mut st, rg)
+        wa := bin(mut st, BAdd, wb, bin(mut st, BMul, blk, iconst(mut st, WB_MAX)))
+        gatherPost(mut st, rg, np, fd, wa, blk, lh, lb, tot)
+        orphLeave(mut st, me)
+        ret(mut st, iconst(mut st, 1))
+        setCur(mut st, bOv)
+        br(mut st, bOk, -1)
+    } else {
+        blk := wbTake(mut st, rg)
+        wa := bin(mut st, BAdd, wb, bin(mut st, BMul, blk, iconst(mut st, WB_MAX)))
+        gatherPost(mut st, rg, np, fd, wa, blk, lh, lb, tot)
+        ret(mut st, iconst(mut st, 1))
+    }
+    setCur(mut st, bOk)
+}
+
+func gatherPost(st mut St, rg int, np int, fd int, wa int, blk int, lh int, lb int, tot int) {
+    wk := globaladdr(mut st, st.wkG)
+    call(mut st, st.rtCopy8, list3(mut st, itop(mut st, wa), itop(mut st, 2), lh))
+    call(mut st, st.rtCopy8, list3(mut st, itop(mut st, bin(mut st, BAdd, wa, lh)), itop(mut st, 3), lb))
+    sstSet(mut st, np, sstMake(mut st, iconst(mut st, SS_FLY), tot, blk))
+    sendSqe(mut st, rg, np, fd, wa, tot, iconst(mut st, if st.rtMut == 40 { 16384 + 64 } else { 16384 + 256 }), bin(mut st, BOr, fd, iconst(mut st, TAG_WSEND)))
+    store(mut st, wk, WK_FUSEQ, urAdd(mut st, load(mut st, wk, WK_FUSEQ), 1))
+    store(mut st, wk, WK_IOFLY, urAdd(mut st, load(mut st, wk, WK_IOFLY), 1))
+    frRecP(mut st, FK_POST, fd, tot, iconst(mut st, 1))
+}
+
+// ワーカーの送信バッファのチャンクの予約（std/tlsのPutとFlush）: 接続はチャンクを1つ予約して、そこへrecordを続けて積み、Flushで1本のSENDにする。
+// 予約は接続の記録の送りの状態に置く（種類0・長さ = 積んだバイト数 > 0・チャンクの番号）。予約の間、その接続のrtの送りは来ない。std/tlsは送る前にFlushする。
+// 閉じ（taskの死を含む）は予約のチャンクを送らずに返す
+
+// op 12（rt.netopの本体の中。fd・a = 列の番地・b = 長さ）: 列を接続の予約のチャンクの続きへコピーして1を返す。予約が無ければ空きのチャンクを取って予約する。
+// 積めないとき（予約のチャンクの残りに入らない・送信バッファに空きが無い・前の送りが片付いていない・長さがチャンクを越える）は何もせずに0を返す。
+// 飛行記録のPOSTの結果のフィールド: 2 = 予約の残りに入らない・3 = 送信バッファに空きが無いか長さがチャンクを越える・4 = 前の送りが片付いていない。予約のSENDを積んだPOSTは1。
+// ringのパスでない・送信バッファリングが切られている・送信バッファが無い（その接続ではずっと積めない）は −1。taskはスリープしない
+func sendResv(st mut St, fd int) {
+    zero := iconst(mut st, 0)
+    n := 3
+    rg, nr := nrRing(mut st, fd)
+    bRg := branchIf(mut st, cmp(mut st, CEq, nr, zero))
+    ret(mut st, iconst(mut st, -1))
+    setCur(mut st, bRg)
+    rp := itop(mut st, rg)
+    np := itop(mut st, nr)
+    wb := load(mut st, rp, UR_WB)
+    bPm := branchIf(mut st, bin(mut st, BOr, cmp(mut st, CEq, load(mut st, rp, UR_FUSE), zero), cmp(mut st, CEq, wb, zero)))
+    ret(mut st, iconst(mut st, -1))
+    setCur(mut st, bPm)
+    s := sstGet(mut st, np)
+    fill := sstLen(mut st, s)
+    bHas := newBlock(mut st)
+    bNew := newBlock(mut st)
+    condbr(mut st, bin(mut st, BAnd, cmp(mut st, CEq, bin(mut st, BAnd, s, iconst(mut st, 3)), zero), cmp(mut st, CGt, fill, zero)), bHas, -1, bNew, -1)
+    // 予約がある: 残りに入れば続きへ
+    setCur(mut st, bHas)
+    tot := bin(mut st, BAdd, fill, n)
+    bFit := branchIf(mut st, cmp(mut st, CGt, tot, iconst(mut st, WB_MAX)))
+    frRecP(mut st, FK_POST, fd, n, iconst(mut st, 2))
+    ret(mut st, zero)
+    setCur(mut st, bFit)
+    k := bin(mut st, BSar, s, iconst(mut st, 19))
+    wa := bin(mut st, BAdd, bin(mut st, BAdd, wb, bin(mut st, BMul, k, iconst(mut st, WB_MAX))), fill)
+    call(mut st, st.rtCopy8, list3(mut st, itop(mut st, wa), itop(mut st, 2), n))
+    sstSet(mut st, np, sstMake(mut st, zero, tot, k))
+    ret(mut st, iconst(mut st, 1))
+    // 予約が無い: 送りの状態が空で、空きのチャンクがあり、チャンクに入るなら取って予約する。
+    // ミュータント95（テスト群）: 送信バッファをチャンク2つに見る。意味は変えずに、送信バッファが尽きて同期の送りへ戻る経路を通す
+    setCur(mut st, bNew)
+    room := bin(mut st, BOr, cmp(mut st, CNe, load(mut st, rp, UR_WBF), zero), cmp(mut st, CLt, load(mut st, rp, UR_WBN), iconst(mut st, if st.rtMut == 95 { 2 } else { WB_NBLK })))
+    ok := bin(mut st, BAnd, bin(mut st, BAnd, room, cmp(mut st, CEq, s, zero)), bin(mut st, BAnd, cmp(mut st, CLe, n, iconst(mut st, WB_MAX)), cmp(mut st, CGt, n, zero)))
+    bOk := branchIf(mut st, cmp(mut st, CEq, ok, zero))
+    frRecP(mut st, FK_POST, fd, n, bin(mut st, BAdd, iconst(mut st, 3), cmp(mut st, CNe, s, zero)))
+    ret(mut st, zero)
+    setCur(mut st, bOk)
+    k2 := wbTake(mut st, rg)
+    wa2 := bin(mut st, BAdd, wb, bin(mut st, BMul, k2, iconst(mut st, WB_MAX)))
+    call(mut st, st.rtCopy8, list3(mut st, itop(mut st, wa2), itop(mut st, 2), n))
+    sstSet(mut st, np, sstMake(mut st, zero, n, k2))
+    ret(mut st, iconst(mut st, 1))
+}
+
+// op 13（rt.netopの本体の中。fd・a = 1なら送らずに捨てる・b = 1ならstd/httpの印〔lease_op 10〕があるとき待たない）: 接続の予約のチャンクのSEND（MSG_WAITALL）を積み、
+// 送りの完了を待って1（誤りなら負のerrno）を返す。b = 1で印（TC_FUSE = −2）があれば、印を消して完了を待たずに1を返す。このときは平文の送信バッファリングと同じく、
+// 送りの結果を接続の次のAPIが片付ける。a = 1か孤児なら送らずにチャンクを返す（a = 1は1・孤児はORPH_CODEを返す）。予約が無ければ0
+func sendCommit(st mut St, fd int) {
+    zero := iconst(mut st, 0)
+    rg, nr := nrRing(mut st, fd)
+    bRg := branchIf(mut st, cmp(mut st, CEq, nr, zero))
+    ret(mut st, zero)
+    setCur(mut st, bRg)
+    rp := itop(mut st, rg)
+    np := itop(mut st, nr)
+    s := sstGet(mut st, np)
+    ln := sstLen(mut st, s)
+    bR := branchIf(mut st, bin(mut st, BOr, cmp(mut st, CNe, bin(mut st, BAnd, s, iconst(mut st, 3)), zero), cmp(mut st, CEq, ln, zero)))
+    ret(mut st, zero)
+    setCur(mut st, bR)
+    k := bin(mut st, BSar, s, iconst(mut st, 19))
+    bKeep := branchIf(mut st, cmp(mut st, CNe, 2, zero))
+    sstSet(mut st, np, zero)
+    wbFree(mut st, rg, k)
+    ret(mut st, iconst(mut st, 1))
+    setCur(mut st, bKeep)
+    wa := bin(mut st, BAdd, load(mut st, rp, UR_WB), bin(mut st, BMul, k, iconst(mut st, WB_MAX)))
+    me := load(mut st, globaladdr(mut st, st.taskG), TK_CUR)
+    tp := itop(mut st, me)
+    if st.orphOn {
+        ov := orphEnter(mut st, me, OK_SEND)
+        bOv := branchIf(mut st, cmp(mut st, CNe, ov, zero))
+        sstSet(mut st, np, zero)
+        wbFree(mut st, rg, k)
+        ret(mut st, ov)
+        setCur(mut st, bOv)
+    }
+    commitPost(mut st, rg, np, fd, wa, k, ln)
+    // 印があれば待たない（印は消す）。ミュータント96（テスト群）: 印を見ずにいつも待たない（公開のFlush・Sendの送りの失敗が呼び手に返らない）
+    nwc := if st.rtMut == 96 { iconst(mut st, 1) } else { bin(mut st, BAnd, cmp(mut st, CNe, 3, zero), cmp(mut st, CEq, load(mut st, tp, TC_FUSE), iconst(mut st, -2))) }
+    bWt := branchIf(mut st, nwc)
+    store(mut st, tp, TC_FUSE, zero)
+    if st.orphOn {
+        orphLeave(mut st, me)
+    }
+    ret(mut st, iconst(mut st, 1))
+    setCur(mut st, bWt)
+    // 完了を待つ（op 1の前の送信バッファリングの片付けと同じ。期限・孤児なら取り消してその結果を返す）
+    bDone := newBlock(mut st)
+    r := param(mut st, bDone, TyI64)
+    sl := newBlock(mut st)
+    br(mut st, sl, -1)
+    setCur(mut st, sl)
+    ss := sstGet(mut st, np)
+    sk := bin(mut st, BAnd, ss, iconst(mut st, 3))
+    bSf := branchIf(mut st, cmp(mut st, CEq, sk, iconst(mut st, SS_FLY)))
+    wr := wbWaitFly(mut st, rg, nr, fd, ss)
+    bWo := branchIf(mut st, cmp(mut st, CNe, wr, zero))
+    br(mut st, bDone, list1(mut st, wr))
+    setCur(mut st, bWo)
+    br(mut st, sl, -1)
+    setCur(mut st, bSf)
+    bSe := branchIf(mut st, cmp(mut st, CEq, sk, iconst(mut st, SS_ERR)))
+    sstSet(mut st, np, zero)
+    br(mut st, bDone, list1(mut st, bin(mut st, BSub, zero, sstLen(mut st, ss))))
+    setCur(mut st, bSe)
+    br(mut st, bDone, list1(mut st, iconst(mut st, 1)))
+    setCur(mut st, bDone)
+    if st.orphOn {
+        orphLeave(mut st, me)
+    }
+    ret(mut st, r)
+}
+
+func commitPost(st mut St, rg int, np int, fd int, wa int, k int, ln int) {
+    wk := globaladdr(mut st, st.wkG)
+    sstSet(mut st, np, sstMake(mut st, iconst(mut st, SS_FLY), ln, k))
+    sendSqe(mut st, rg, np, fd, wa, ln, iconst(mut st, 16384 + 256), bin(mut st, BOr, fd, iconst(mut st, TAG_WSEND)))
+    store(mut st, wk, WK_FUSEQ, urAdd(mut st, load(mut st, wk, WK_FUSEQ), 1))
+    store(mut st, wk, WK_IOFLY, urAdd(mut st, load(mut st, wk, WK_IOFLY), 1))
+    frRecP(mut st, FK_POST, fd, ln, iconst(mut st, 1))
+}
+
 // rt.netop(op, fd, a, b): op 1 = 送り（a = 番地・b = 長さ → 送れたバイト数 / 負のerrno —io_uringのパスはSENDの完了待ち・でなければsendto〔EAGAINは呼び手が待つ〕）・
 // op 2 = 閉じ（a = 1はtaskの出口 → 0 / 負のerrno —io_uringのパスはRECV / ACCEPTを止めてスロット〔listenerなら列のfd〕を始末し記録を消してからclose・
 // task の出口なら close も ring へ）・
 // op 3 = accept（fd = listener → 受けたfd / 負のerrno —io_uringのパスは multishot ACCEPT の列から・でなければaccept4〔EAGAINは呼び手が待つ〕）・
-// op 5 = 配置先のフラグ（fd = 行き先 → 0 — 今のtaskの次のspawn 1回を、k ≥ 0なら自分を除いたk番目のワーカーへ・-1なら自分の走れるスタックへ。
+// op 5 = 配置先のフラグ（fd = 行き先 → 0。今のtaskの次のspawn 1回を、k ≥ 0なら自分を除いたk番目のワーカーへ・-1なら自分の実行待ちの列へ。
 // rt.task_go_mn が消費）・
 // op 6 = スロットの大きさのフラグ（fd = バイト → 0 — 今のtaskの次のspawn 1回のスロット。rt.task_new_inが消費）・
 // op 8 = ワーカーの数（→ rt.mn の MN_N・task の無いプログラムは 1 — Serve の listener の数）・
-// op 10 = エリアのフラグ（→ 0 — 今のtaskの次のspawn 1回を接続のtaskのスタックの形に。rt.task_new_inが消費 — area.sober）
+// op 10 = エリアのフラグ（→ 0。今のtaskの次のspawn 1回を接続のtaskのスタックの形にする。rt.task_new_inが消費する。area.sober）・
+// op 12・13 = 送信バッファのチャンクの予約へ積む・予約のSENDを積む（std/tlsのPut・Flush。sendResv・sendCommit）
 func buildNetOp(st mut St) {
     begin(mut st, chF(mut st, NETF_OP))
     op := 0
@@ -1027,6 +1218,36 @@ func buildNetOp(st mut St) {
     }
     ret(mut st, zero)
     setCur(mut st, bN9)
+    bN11 := newBlock(mut st)
+    bGa := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, op, iconst(mut st, 11)), bGa, -1, bN11, -1)
+    setCur(mut st, bGa)
+    if st.taskUse {
+        sendGather(mut st, fd)
+    }
+    ret(mut st, zero)
+    setCur(mut st, bN11)
+    // op 12・13: 送信バッファのチャンクの予約へ積む・予約のSENDを積む（std/tlsのPut・Flush。sendResv・sendCommit）
+    bN12 := newBlock(mut st)
+    bRv := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, op, iconst(mut st, 12)), bRv, -1, bN12, -1)
+    setCur(mut st, bRv)
+    if st.taskUse {
+        sendResv(mut st, fd)
+    } else {
+        ret(mut st, iconst(mut st, -1))
+    }
+    setCur(mut st, bN12)
+    bN13 := newBlock(mut st)
+    bCm := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, op, iconst(mut st, 13)), bCm, -1, bN13, -1)
+    setCur(mut st, bCm)
+    if st.taskUse {
+        sendCommit(mut st, fd)
+    } else {
+        ret(mut st, zero)
+    }
+    setCur(mut st, bN13)
     bNa := newBlock(mut st)
     bPlace := newBlock(mut st)
     condbr(mut st, cmp(mut st, CEq, op, iconst(mut st, 3)), bAcc, -1, bNa, -1)
@@ -1041,19 +1262,6 @@ func buildNetOp(st mut St) {
     }
     ret(mut st, zero)
     setCur(mut st, bNb)
-    // op 7: 次のspawn 1回の待ちの上限Dのフラグ（fdの位置 = ns — 今のtaskのTC_NMAXW。rt.task_new / rt.task_new_inが消費 — net.ServeのmaxWait:）
-    bNc := newBlock(mut st)
-    bMw := newBlock(mut st)
-    condbr(mut st, cmp(mut st, CEq, op, iconst(mut st, 7)), bMw, -1, bNc, -1)
-    setCur(mut st, bMw)
-    if st.taskUse {
-        // 計測用の SOBER_MAXWAIT_US が設定されていればその D を使う（mnInit が起動時に読んだ ns）
-        ovr := load(mut st, globaladdr(mut st, st.mnG), MN_MWOVR)
-        mw := bin(mut st, BAdd, fd, bin(mut st, BMul, cmp(mut st, CNe, ovr, iconst(mut st, 0)), bin(mut st, BSub, ovr, fd)))
-        store(mut st, itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR)), TC_NMAXW, mw)
-    }
-    ret(mut st, zero)
-    setCur(mut st, bNc)
     // op 8: ワーカーの数
     bNd := newBlock(mut st)
     bNw := newBlock(mut st)
@@ -1325,6 +1533,12 @@ func buildNetOp(st mut St) {
         wbWaitFly(mut st, rg, nr, fd, css)
         br(mut st, cl, -1)
         setCur(mut st, bCf)
+        // 送信バッファのチャンクの予約（Flushの前にtaskが死んだ・閉じた）: 送らずにチャンクを返す
+        bCr := branchIf(mut st, bin(mut st, BAnd, cmp(mut st, CEq, bin(mut st, BAnd, css, iconst(mut st, 3)), zero), cmp(mut st, CGt, sstLen(mut st, css), zero)))
+        sstSet(mut st, np, zero)
+        wbFree(mut st, rg, bin(mut st, BSar, css, iconst(mut st, 19)))
+        br(mut st, cl, -1)
+        setCur(mut st, bCr)
         // 時刻つきの送りが満了待ち: 送らないフラグ（長さ0）を付けて満了まで待つ（閉じに着くのは期限・孤児で受けが切れたときだけ — 今の形の
         // os.Sleep の後の Send もそのとき送らない。満了を待つのは、時計の表の要素が閉じた後の同じ番号の fd に当たらないように）。
         // ミュータント86（テスト群）: フラグを付けない（孤児の接続のレスポンスが出る）

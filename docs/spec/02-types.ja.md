@@ -65,8 +65,8 @@ T-10. intとfloatは交わらない — 整数リテラルもfloatの文脈に�
 拒否: [`examples/float_neg_mix.sober`](../../examples/float_neg_mix.sober)
 決定: [language.md 37節](../language.md)
 
-T-11. floatの演算は `+` `-` `*` `/` と単項 `-`（`-0.0` を作る）。`%`・ビット演算・シフトは無い。丸めはIEEE 754の既定（最近接・偶数）で、ゼロ除算はpanicせずIEEEの値（±Inf・NaN）になる。比較はIEEEの比較（NaNは `!=` だけが真・`-0.0 == 0.0`）。最適化は結合の付け替え・FMAの融合をしない（最適化の有無で結果のビットが変わらない）。
-例: [`examples/float_basic.sober`](../../examples/float_basic.sober)
+T-11. floatの演算は `+` `-` `*` `/` と単項 `-`（`-0.0` を作る）。`%`・ビット演算・シフトは無い。丸めはIEEE 754の既定（最近接・偶数）で、ゼロ除算はpanicせずIEEEの値（±Inf・NaN）になる。比較はIEEEの比較（NaNは `!=` だけが真・`-0.0 == 0.0`）。最適化は結合の付け替え・FMAの融合をしない（最適化の有無で結果のビットが変わらない）。NaNは1つの値で、符号とpayloadの違いはプログラムから観測できない（`math.Bits` はどのNaNにも `0x7ff8000000000000` を返す）。
+例: [`examples/float_basic.sober`](../../examples/float_basic.sober)・[`examples/opt_nan.sober`](../../examples/opt_nan.sober)
 決定: [language.md 37節](../language.md)
 
 T-12. floatはmapのキーにできない。floatをsubjectにした定数パターンのswitchも無い。

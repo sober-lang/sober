@@ -14,6 +14,8 @@
 # 規律: 1件で足りる検証（ミューテーション・負例）と全数が要る検証（受理集合の照合）を同じ形で回さない — --mut は前者の形
 set -uo pipefail
 cd "$(dirname "$0")/.."
+source scripts/gatelib.sh
+gate_env
 ROOT=$PWD
 SOBER=${SOBER:-$ROOT/bin/sober}
 SEEDS=20

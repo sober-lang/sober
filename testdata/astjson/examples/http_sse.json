@@ -1116,12 +1116,12 @@
                 "op": "+",
                 "lhs": {
                   "k": "strlit",
-                  "value": "GET /events HTTP/1.1\r\nAccept: text/event-stream\r\nAccept-Encoding: gzip\r\n\r\n",
+                  "value": "GET /events HTTP/1.1\r\nHost: x\r\nAccept: text/event-stream\r\nAccept-Encoding: gzip\r\n\r\n",
                   "tok": 370
                 },
                 "rhs": {
                   "k": "strlit",
-                  "value": "GET /events HTTP/1.1\r\nLast-Event-ID: 41\r\nConnection: close\r\n\r\n",
+                  "value": "GET /events HTTP/1.1\r\nHost: x\r\nLast-Event-ID: 41\r\nConnection: close\r\n\r\n",
                   "tok": 372
                 },
                 "tok": 371

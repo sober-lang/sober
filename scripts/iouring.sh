@@ -136,9 +136,9 @@ if [ "$auto" = uring ]; then
         fi
     done
 fi
-# 期限のチェーンの検査（自己検査）: ミューテーション50（双方向のチェーンの外しが次の節の前を直し忘れる）はepollのパスのnet_serve（W1）が止まる・
+# 期限のチェーンの検査（自己検査）: ミューテーション50（双方向のチェーンの外しが次の節の前を直し忘れる）はnet_orphan_dl（W1）が止まる・
 # ミューテーション51（スタックが最早の期限の下界を下げ忘れる — 走査がチェーンを歩かず短い期限が長い期限まで待つ）はnetのringのnet_deadline_order（W2）が止まる
-for mc in "50 net_serve 1" "51 net_deadline_order 2"; do
+for mc in "50 net_orphan_dl 1" "51 net_deadline_order 2"; do
     set -- $mc
     "$S2" build examples/$2.sober --emit=elf --passes --rt-mutant=$1 -o "$W/m$1" > "$W/buildm.log" 2>&1 || { echo "iouring: FAIL build $2 m$1"; exit 1; }
     ec=0

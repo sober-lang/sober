@@ -1,0 +1,9 @@
+package main
+
+import "std/http/server"
+
+// 共有の方針（Fresh）のルートのハンドラがSet-Cookieを返す
+func main() {
+    rs := []http.server.Route{http.server.Route{method: "GET", path: "/", handler: (r) => http.server.Response{status: 200, contentType: "text/plain", body: bytes("hi"), cookies: []http.server.SetCookie{http.server.SetCookie{name: "sid", value: "s1"}}}, cache: http.server.Fresh{maxAge: 60}}}
+    println(len(rs))
+}

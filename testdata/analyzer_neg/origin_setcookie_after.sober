@@ -1,0 +1,14 @@
+package main
+
+import "std/http/server"
+
+// レスポンスにSet-Cookieを足すafterを、方針Freshのルートに付ける
+func stamp(r http.server.Request, w http.server.Response) http.server.Response {
+    return http.server.Response{status: w.status, contentType: w.contentType, body: w.body, length: w.length, stream: w.stream, headers: w.headers, coded: w.coded, cookies: []http.server.SetCookie{http.server.SetCookie{name: "seen", value: "1"}}}
+}
+
+func main() {
+    mw := http.server.Middleware{after: stamp}
+    rs := []http.server.Route{http.server.Route{method: "GET", path: "/", handler: (r) => http.server.Text("hi"), middleware: []http.server.Middleware{mw}, cache: http.server.Fresh{maxAge: 60}}}
+    println(len(rs))
+}

@@ -1,0 +1,159 @@
+package main
+
+// jsonmark の題材: json.Encode の速いパス（std/internal/jsonw — ゼロで埋めない Grow）の出力を並べる。
+// 乱択の値（int の境・負・大きい値・float・bool・エスケープの要る文字列〔builder のパスへのやり直し〕・UTF-8〔0xA5 を含む ¥〕・
+// 空と長い列・入れ子・nil と非 nil の S?）と、httparena と同じ型の本文（testdata/httpcheck/dataset.json の 0〜50 件）。
+// scripts/jsonmark.sh が、普通のビルドと目印のビルド（--rt-mutant=94）の出力のバイト一致を見る
+
+import "std/convert"
+import "std/io"
+import "std/iter"
+import "std/json"
+
+type S struct {
+    n int
+    t string
+}
+
+type R struct {
+    a int
+    s string
+    f float
+    b bool
+    xs []int
+    ss []string
+    ys []S
+    o S?
+}
+
+type Rating struct {
+    score int
+    count int
+}
+
+type Item struct {
+    id int
+    name string
+    category string
+    price int
+    quantity int
+    active bool
+    tags []string
+    rating Rating
+}
+
+type Processed struct {
+    id int
+    name string
+    category string
+    price int
+    quantity int
+    active bool
+    tags []string
+    rating Rating
+    total int
+}
+
+type Body struct {
+    items []Processed
+    count int
+}
+
+func next(x int) int {
+    mut y := x ^ (x << 13)
+    y = y ^ (y >> 7)
+    return y ^ (y << 17)
+}
+
+func pick(x int, n int) int {
+    v := (x >> 11) % n
+    return if v < 0 { 0 - v } else { v }
+}
+
+func num(x int) int {
+    k := pick(x, 8)
+    return switch k {
+    case 0: pick(x >> 3, 10)
+    case 1: pick(x >> 3, 100000000)
+    case 2: 99999999 + pick(x >> 3, 3)
+    case 3: 0 - pick(x >> 3, 1000)
+    case 4: x
+    case 5: 9223372036854775807
+    case 6: 0 - 9223372036854775807 - 1
+    default: pick(x >> 3, 1000)
+    }
+}
+
+func str(x int) string {
+    parts := []string{"a", "bc", "ID", "héllo", "¥", "日本", " ", "x_y", "0123456789", "\"", "\\", "\n", "long-name-of-a-field-"}
+    n := pick(x, 12)
+    mut s := ""
+    mut y := x
+    for _ <- iter.Range(0, n) {
+        y = next(y)
+        k := pick(y, if pick(y >> 5, 20) == 0 { 13 } else { 9 })
+        s = s + parts[k]
+    }
+    return s
+}
+
+func mkS(x int) S {
+    return S{n: num(x), t: str(next(x))}
+}
+
+func mkR(x0 int) R {
+    mut x := x0
+    mut xs := mut []int{}
+    x = next(x)
+    for _ <- iter.Range(0, pick(x, 6)) {
+        x = next(x)
+        xs = append(xs, num(x))
+    }
+    mut ss := mut []string{}
+    x = next(x)
+    for _ <- iter.Range(0, pick(x, 5)) {
+        x = next(x)
+        ss = append(ss, str(x))
+    }
+    mut ys := mut []S{}
+    x = next(x)
+    for _ <- iter.Range(0, pick(x, 4)) {
+        x = next(x)
+        ys = append(ys, mkS(x))
+    }
+    x = next(x)
+    o := if pick(x, 2) == 0 { mkS(next(x)) } else { nil }
+    x = next(x)
+    f := float(num(x) % 100000) * 0.125
+    x = next(x)
+    return R{a: num(x), s: str(next(x)), f: f, b: pick(x, 2) == 1, xs: freeze(xs), ss: freeze(ss), ys: freeze(ys), o: o}
+}
+
+func load() []Item {
+    b := io.ReadFile("testdata/httpcheck/dataset.json") catch return []Item{}
+    d := json.Parse(b) catch return []Item{}
+    ns := json.Items(d, json.Root(d)) catch return []Item{}
+    mut xs := mut []Item{}
+    for i <- iter.Range(0, len(ns)) {
+        xs = append(xs, json.Decode[Item](d, ns[i]) catch return []Item{})
+    }
+    return freeze(xs)
+}
+
+func main() {
+    mut x := 88172645463325252
+    for _ <- iter.Range(0, 3000) {
+        x = next(x)
+        println(json.Encode[R](mkR(x)))
+    }
+    ds := load()
+    println(convert.FormatInt(len(ds)))
+    for n <- iter.Range(0, if len(ds) < 51 { len(ds) + 1 } else { 51 }) {
+        mut out := mut []Processed{}
+        for i <- iter.Range(0, n) {
+            d := ds[i]
+            out = append(out, Processed{id: d.id, name: d.name, category: d.category, price: d.price, quantity: d.quantity, active: d.active, tags: d.tags, rating: d.rating, total: d.price * d.quantity * (n % 9 + 1)})
+        }
+        println(json.Encode[Body](Body{items: freeze(out), count: n}))
+    }
+}

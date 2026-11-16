@@ -152,7 +152,7 @@ C-14. select（届いているかの観測）は無い。複数の生産者の�
 
 ## 10.5 決定性とキャンセル
 
-C-15. ioの入力を固定すれば、scopeの値は実行のスケジュールとワーカー数に依らない。printlnの標準出力はspawnの木の先行順 — 子の出力全体が親のspawnの位置に入る（ワーカー1で子を先に走らせたときと同じ）。`io.WriteStdout` の直書きはこの順の対象外。死ぬ実行の標準出力の途中までの出力は、ワーカー2以上では約束しない。
+C-15. ioの入力を固定すれば、scopeの値は実行のスケジュールとワーカー数に依らない。printlnの標準出力はspawnの木の先行順で、子の出力全体が親のspawnの位置に入る（ワーカー1で子を先に走らせたときと同じ）。`io.WriteStdout` の直書きはこの順の対象外。死ぬ実行の標準出力の途中までの出力は、ワーカー1の既定のスケジュールでだけ約束する。
 例: [`examples/task_print_order.sober`](../../examples/task_print_order.sober)・[`examples/task_print_nested.sober`](../../examples/task_print_nested.sober)・[`examples/task_print_chan.sober`](../../examples/task_print_chan.sober)・[`examples/task_print_direct.sober`](../../examples/task_print_direct.sober)
 決定: [language.md 11節](../language.md)
 
@@ -167,7 +167,7 @@ C-17. `budget:`（Spawn・Map・Runの末尾の名前つき引数 — `budget: 6
 拒否: [`examples/task_neg_budget.sober`](../../examples/task_neg_budget.sober)
 決定: [language.md 11節](../language.md)
 
-C-18. `task.NewPool(budget:, parent:)` は名前つきの上限の節。`task.SpawnIn(s, pool, g)` だけは逐次にせず、入れなければ `(nil, task.Shed{})` を返す（受けられない、という値）。`task.Ledger()` は上限・計上・逐次化・shed・失敗・死の数と、スケジューラの `maxWait`（走れるようになってから走るまでの待ちの最大 — ns・読むと0に戻る）・`aged`（待ちの上限が効いた回数）・`late`（待ちの上限Dを越えて走ったtaskの数の累計）・`maxLate`（越えた量〔待ち − D〕の最大 — ns・読むと0に戻る）・`backlog`（今の未着手の子の数）・`backlogYield`（未着手の子の上限で譲った回数）・`parkShallow` / `parkDeep` / `parkDeepWin` / `parkSwap`（接続のtaskがシャロースリープした・ワーカーのエリアを保持したままスリープした・シャロースリープできる点でウィンドウに中身があってディープスリープした・シャロースリープの前にエリアを交換した回数の累計）を読むAPIで、`task.MarkFailed(pool)` は境界の失敗を数える。
+C-18. `task.NewPool(budget:, parent:)` は名前つきの上限の節。`task.SpawnIn(s, pool, g)` だけは逐次にせず、入れなければ `(nil, task.Shed{})` を返す（受けられない、という値）。`task.Ledger()` は上限・計上・逐次化・shed・失敗・死の数と、スケジューラの `maxWait`（走れるようになってから走るまでの待ちの最大。すべての取り出しで測る。ns・読むと0に戻る）・`backlog`（今の未着手の子の数）・`backlogYield`（未着手の子の上限で譲った回数）・`parkShallow` / `parkDeep` / `parkDeepWin` / `parkSwap`（接続のtaskがシャロースリープした・ワーカーのエリアを保持したままスリープした・シャロースリープできる点でウィンドウに中身があってディープスリープした・シャロースリープの前にエリアを交換した回数の累計）を読むAPIで、`task.MarkFailed(pool)` は境界の失敗を数える。
 例: [`examples/task_shed.sober`](../../examples/task_shed.sober)・[`examples/task_pool_seq.sober`](../../examples/task_pool_seq.sober)
 決定: [language.md 11節](../language.md)
 

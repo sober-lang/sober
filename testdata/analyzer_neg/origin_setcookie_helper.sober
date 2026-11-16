@@ -1,0 +1,14 @@
+package main
+
+import "std/http/server"
+
+// ヘルパーの関数がSet-Cookieを組み、方針Unstatedのルートのハンドラがそれを返す
+func login(name string) http.server.Response {
+    c := http.server.SetCookie{name: "sid", value: name}
+    return http.server.Response{status: 200, contentType: "text/plain", body: bytes("hi"), cookies: []http.server.SetCookie{c}}
+}
+
+func main() {
+    rs := []http.server.Route{http.server.Route{method: "GET", path: "/", handler: (r) => login("guest"), cache: http.server.Unstated{}}}
+    println(len(rs))
+}

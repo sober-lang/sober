@@ -212,7 +212,8 @@ func checkSwitches(az mut Az) {
             pats := swPats(mut az, at)
             n := desugar.LenL(mut az.d, pats)
             dom := desugar.PmCol{kind: desugar.PmErr, a: S.lo, b: 0, h: S.hi}
-            if !def && desugar.PmUseful1(mut az.d, pk, pats, n, desugar.NodeRef(-1), dom, cz) {
+            hs := desugar.PmHeads1(mut az.d, pk, pats, dom)
+            if !def && desugar.PmUsefulAt(mut az.d, pk, pats, hs, n, dom, cz) {
                 report(mut az, MSwGap, at, desugar.NodeRef(i))
             }
             if !lsIsTop(S) {
@@ -224,12 +225,12 @@ func checkSwitches(az mut Az) {
                             if !exhExempt(mut az, at, table.Get(mut az.swarms, j * 3 + 2)) {
                                 report(mut az, MSwDeadArm, p, desugar.NodeRef(j))
                             }
-                        } else if !desugar.PmUseful1(mut az.d, pk, pats, patIndex(mut az, pats, p), p, dom, cz) {
+                        } else if !armUseful(mut az, pk, pats, hs, p, dom, cz) {
                             report(mut az, MSwDeadCase, p, desugar.NodeRef(j))
                         }
                     }
                 }
-                if def && !desugar.PmUseful1(mut az.d, pk, pats, n, desugar.NodeRef(-1), dom, cz) {
+                if def && !desugar.PmUsefulAt(mut az.d, pk, pats, hs, n, dom, cz) {
                     report(mut az, MSwDeadDefault, at, desugar.NodeRef(i))
                 }
             }
@@ -280,6 +281,12 @@ func patAll(az mut Az, p desugar.NodeRef) bool {
 }
 
 // 分岐のパターンの列patsの中のpの位置
+// 分岐 p が前の分岐に対して新しく覆う値があるか（hs = 分岐の先頭の分類 — desugar.PmHeads1。p が列に無ければ先頭の位置で問う）
+func armUseful(az mut Az, pk int, pats desugar.ListRef, hs desugar.ListRef, p desugar.NodeRef, dom desugar.PmCol, cz desugar.ListRef) bool {
+    i := patIndex(mut az, pats, p)
+    return if i < desugar.LenL(mut az.d, pats) && desugar.LatI(mut az.d, pats, i) == int(p) { desugar.PmUsefulAt(mut az.d, pk, pats, hs, i, dom, cz) } else { desugar.PmUseful1(mut az.d, pk, pats, i, p, dom, cz) }
+}
+
 func patIndex(az mut Az, pats desugar.ListRef, p desugar.NodeRef) int {
     for i <- iter.Range(0, desugar.LenL(mut az.d, pats)) {
         if desugar.LatI(mut az.d, pats, i) == int(p) {

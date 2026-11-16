@@ -369,10 +369,13 @@ type JsonShape error {
 }
 
 // `@intrinsic("鍵")` の宣言（std の本体なしの宣言 — loader/intrinsic.sober）の拒否（kind 1 = std の外・2 = 鍵が閉じた集合に無い・
-// 3 = 署名が鍵の実装と合わない・4 = 同じ package に同じ名前の宣言が 2 つ）
+// 3 = 署名が組み込みの実装と合わない・4 = 同じpackageに同じ名前の宣言が2つ・5 = 宣言してよいpackageが限られた組み込みを、その外で宣言した〔key = 組み込みの名前・pkg = 宣言してよいpackage・why = 限る理由〕）
 type Intrinsic error {
     at Pos
     kind int
+    key string
+    pkg string
+    why string
 }
 
 // structured concurrency（std/task — language.md 11 節）の呼び出し点の拒否（kind 1 = build の経路は未実装・
@@ -707,10 +710,11 @@ func Format(err error?, where string) string {
         case 4: "json.Decode cannot read into a struct with a json.Value field (a union has no zero value, so the early return of `?` has no struct to return) — make the field json.Value? or read it with json.Tree"
         default: "json.Decode / Encode (and DecodeWith / EncodeWith) are called with a type argument: json.Decode[T](doc, node), json.Encode[T](value)"
     })
-    case Intrinsic{at, kind}: loadLine(err, where, switch kind {
+    case Intrinsic{at, kind, key, pkg, why}: loadLine(err, where, switch kind {
         case 1: "@intrinsic is only accepted inside std"
         case 2: "unknown @intrinsic key (the set of keys is closed — see desugar/intrinsic.sober)"
         case 3: "the signature of an @intrinsic declaration does not match its key"
+        case 5: "@intrinsic(\"${key}\") is only accepted in ${pkg} (${why})"
         default: "duplicate @intrinsic declaration in the package"
     })
     case Par{at, kind}: if kind == 1 { "lower error at ${where}: task.Run / Spawn / Join / Try are not lowered yet (build of structured concurrency is 段 6 P3a-2)" } else { loadLine(err, where, switch kind {

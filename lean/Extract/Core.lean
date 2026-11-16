@@ -434,7 +434,7 @@ def extractWith (env : Env) (f : Name) (eqs : Array Name)
       lines := lines ++ ["    }"] ++ (← chain lastAs 1 "    ")
   else
     lines := lines ++ (← chain arms 0 "    ")
-  -- 近道の腕（Config.shortcuts — 定理を先頭の腕に）
+  -- 近道の腕（Config.shortcuts）: 定理を先頭の腕に置く。タグの先読みより前に置く
   let mut pre : List String := []
   for thm in shorts do
     let g := f
@@ -449,12 +449,15 @@ def extractWith (env : Env) (f : Name) (eqs : Array Name)
       for (a, (pn, _)) in args.zip params do
         let (c, b) ← patCode pn a false false
         conds := conds ++ c
-        binds := binds ++ b
+        -- 左辺で同じ変数を2度使う形（`f t t`）は、2度目を番地の等しさの条件にする。等しい番地なら同じ値で、等しくない番地は方程式の腕へ進む
+        for (fv, s) in b do
+          match binds.find? (·.1 == fv) with
+          | some (_, s0) => conds := conds ++ [{ s := s!"{s0} == {s}" }]
+          | none => binds := binds ++ [(fv, s)]
       if conds.isEmpty then throwError "extract: 近道 {thm} が無条件（方程式を全部覆ってしまう）"
       let r ← exprStr { env := env, names := binds } (← instantiateMVars rhs)
-      return [s!"    // 近道 {thm}（定理 — 先に当てても値は同じ）", s!"    if {" && ".intercalate (conds.map (·.s))} \{", s!"        return {r}", "    }"]
+      return [s!"    // 近道 {thm}（定理。先に当てても値は同じ）", s!"    if {" && ".intercalate (conds.map (·.s))} \{", s!"        return {r}", "    }"]
     pre := pre ++ arm
-  lines := pre ++ lines
   -- 記録の仮引数（Option / List でない Ty — 番地は常に有効）の最上段のタグは先頭で 1 回だけ読む（if 連鎖の腕ごとに読み直さない）
   let recs ← forallTelescope (← getConstInfo f).type fun xs _ => xs.toList.mapM fun x => return isRecordTy (← inferType x)
   let mut hoist : List String := []
@@ -465,7 +468,7 @@ def extractWith (env : Env) (f : Name) (eqs : Array Name)
       hoist := hoist ++ [s!"    g_{pn} := {call}"]
       lines := lines.map fun l => (s!"g_{pn}").intercalate (l.splitOn call)
   let ps := (if sig.needsSt then ["st mut S"] else []) ++ params.map fun (n, t) => s!"{n} {t}"
-  return s!"// {f}（方程式 {eqs.size} 本）\nfunc {sig.sober}({", ".intercalate ps}) {sig.ret} \{\n{"\n".intercalate (hoist ++ lines)}\n}\n"
+  return s!"// {f}（方程式 {eqs.size} 本）\nfunc {sig.sober}({", ".intercalate ps}) {sig.ret} \{\n{"\n".intercalate (pre ++ hoist ++ lines)}\n}\n"
 
 def extract (env : Env) (f : Name) : MetaM String := withRef .missing do
   try extract0 env f catch e => throwError "{f}: {e.toMessageData}"

@@ -97,6 +97,16 @@ TLS 1.3（RFC 8446）のサーバ（`std/tls` — `tls.Serve`）とクライア�
 | tamper | 20 bad_record_mac |
 | badfin | 51 decrypt_error |
 | overflow | 22 record_overflow |
+| inner-overflow | 22 record_overflow |
+| plain-overflow | 22 record_overflow |
+| legacy-version | 70 protocol_version |
+| groups-empty | 50 decode_error |
+| sigs-empty | 50 decode_error |
+| share-empty-key | 50 decode_error |
+| alpn-empty-name | 50 decode_error |
+| share-missing | 109 missing_extension |
+| alert-empty | 10 unexpected_message |
+| fin-short | 50 decode_error |
 <!-- confsync:end tls-reject -->
 
 ### record層と鍵の導出

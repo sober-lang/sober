@@ -323,10 +323,19 @@ func RtMutant(p loader.Program, n int, vmode int) ([]byte, error?) {
 // RtMutantに配置のずらしSを足したELF（開発用 `sober build --layout=S` — 同じ形を複数の配置でビルドしてcyclesの分布を取る計測ツール）
 @errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch)
 func RtMutantLay(p loader.Program, n int, lay int, syms bool, vmode int) ([]byte, error?) {
+    o := RtMutantPlace(p, n, lay, syms, vmode, PlaceOff())?
+    return o.exe, nil
+}
+
+// RtMutantLayに配置の計測のオプション（place.sober）を足したELFと、保存する番地の表（pl.saveでなければ空）
+@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch)
+func RtMutantPlace(p loader.Program, n int, lay int, syms bool, vmode int, pl Place) (Placed, error?) {
     mut k := knob(KElf, true, true, syms, false, 0, vmode)
     k.rtMut = n
     k.xLay = lay
-    return lowerWith(p, k)
+    k.pl = pl
+    o := lowerCore(p, k, bcNone(), []loader.PcPut{})?
+    return Placed{exe: o.b, tab: o.pt}, nil
 }
 
 // 今の IR テキスト（--dump-ir）
@@ -384,6 +393,7 @@ type Knob struct {
     trapProbe bool
     rtMut int
     xLay int
+    pl Place
     callStat bool
     csSite bool
     cutStat bool
@@ -394,7 +404,7 @@ type Knob struct {
 
 func knob(out int, passes bool, m2r bool, syms bool, copy bool, stop int, vmode int) Knob {
     return Knob{out: out, passes: passes, m2r: m2r, syms: syms, copy: copy, stop: stop, vmode: vmode, ymode: 0, traceErrs: false, traceEffs: false, xseq: false,
-        mvRound: false, noVec: false, noSpec: false, noRflow: false, ubStat: false, frStat: false, memRep: false, dumpIr: false, trapProbe: false, rtMut: 0, xLay: 0, callStat: false, csSite: false, cutStat: false, fnHash: false, ckEmit: false, bcDir: ""}
+        mvRound: false, noVec: false, noSpec: false, noRflow: false, ubStat: false, frStat: false, memRep: false, dumpIr: false, trapProbe: false, rtMut: 0, xLay: 0, pl: PlaceOff(), callStat: false, csSite: false, cutStat: false, fnHash: false, ckEmit: false, bcDir: ""}
 }
 
 // p を k の形で下ろす
@@ -407,6 +417,7 @@ func lowerWith(p loader.Program, k Knob) ([]byte, error?) {
 type LowOut struct {
     b []byte
     ys []int
+    pt []byte
 }
 
 // lower の全部の入口の本体（build の展開をこの関数 1 本だけが持つ — --passes の無い build は mut st を受ける関数を呼び出し点ごとに
@@ -432,6 +443,7 @@ func lowerCore(p loader.Program, k Knob, bv BcView, ps []loader.PcPut) (LowOut, 
     st.trapProbe = k.trapProbe
     st.rtMut = k.rtMut
     st.xLay = k.xLay
+    st.xPl = k.pl
     if k.out != KTyper {
         st.slotPoison = slotPoisonEnv()
     }
@@ -443,7 +455,7 @@ func lowerCore(p loader.Program, k Knob, bv BcView, ps []loader.PcPut) (LowOut, 
     st.ckEmit = k.ckEmit
     st.ckOn = k.ckEmit || (k.out == KElf && k.passes && k.m2r && !k.copy && k.stop == 0 && (lsEnvInt("SOBER_BUILD_CACHE") == 1 || k.bcDir != ""))
     // 後段の関数キャッシュの格納場所（bcache.sober）: 鍵を計算するパスのうち、mainが世代のディレクトリを渡したbuildだけ（照合の経路・開発用のオプションは使わない）
-    if st.ckOn && !k.ckEmit && k.bcDir != "" && !k.mvRound && !k.xseq && k.xLay == 0 {
+    if st.ckOn && !k.ckEmit && k.bcDir != "" && !k.mvRound && !k.xseq && k.xLay == 0 && !k.pl.on {
         st.bcDir = k.bcDir
         // 検証モード（=1）・扉の監査（=2 — 検証モードを含む・bcache.sober の bcAud*）
         vm := lsEnvInt("SOBER_CACHE_VERIFY")
@@ -481,7 +493,7 @@ func lowerCore(p loader.Program, k Knob, bv BcView, ps []loader.PcPut) (LowOut, 
     if k.out == KTyper {
         mut ys := mut []int{}
         yReport(mut st, mut ys)
-        return LowOut{b: []byte{}, ys: freeze(ys)}, nil
+        return LowOut{b: []byte{}, ys: freeze(ys), pt: []byte{}}, nil
     }
     mut b := []byte{}
     if k.out == KIr {
@@ -494,7 +506,7 @@ func lowerCore(p loader.Program, k Knob, bv BcView, ps []loader.PcPut) (LowOut, 
     } else {
         b = elfOutSt(mut st, k.passes, k.m2r, k.syms, k.copy)?
     }
-    return LowOut{b: b, ys: []int{}}, nil
+    return LowOut{b: b, ys: []int{}, pt: st.xPlOut}, nil
 }
 
 // mut 引数だけが展開の理由の関数を region 透過の実体関数として呼ぶか: raw（--passes なし）も透過が既定
@@ -579,6 +591,10 @@ func elfOutSt(st mut St, passes bool, m2r bool, syms bool, copy bool) ([]byte, e
             return []byte{}, nil
         }
         loopLightModule(mut st, mut dirty)
+        // 反復のenterを動かした関数の検証（rsink.sober）は、動かした直後に行う。後始末の深度の流れが出口のsetdepthを消すと、範囲が読めなくなる
+        if !st.noVfy && !st.vfyLast && table.Len(mut st.rsRecs) > 0 {
+            rsVerifyModule(mut st)
+        }
         // llightの後のIR（`--stop-after=llight --dump-ir` — 反復のregionのenterの残り方の検査・scripts/iterregion.sh）
         if stopHere(mut st, 13) {
             return if st.dumpIr { stDump(mut st) } else { []byte{} }, nil
@@ -1394,7 +1410,7 @@ func relocFloor(st mut St, l int) int {
 // 代入の値がコピーしなくても行き先の深度以下にあると字面で分かるか（格納点のコピーの判定を省く）:
 // ①`x = append(x, …)`（xは mut slice の名前 — 自分のヘッダのregionで伸びる・要素はappendの格納点でコピーした）
 // ②string の連結・補間（右辺の最上段は行き先の深度で直に作る — forceDest。バイトは参照を持たない）
-// ③`x = sysAppendWord(x, …)`（std/binary の鍵 appendword — ①と同じく x のヘッダの region で伸びる）
+// ③`x = sysAppendWord(x, …)`（std/binaryの組み込みappendword。①と同じく、xのヘッダのregionで拡張する）・`x = sysGrowNoZero(x, n)`（std/internal/jsonwの組み込みgrow_nozero。同じ）
 // ④`st = domLoad(d)`（domainの状態の読み直し — 状態は記録のregion〔行き先より浅い〕に住み、鍵の下でその場で書く。コピーすると
 // domExitがコピーのヘッダを箱へ書き戻し、状態が呼び手のregion〔出口で回収〕に移る）
 func relocFree(st mut St, tgt desugar.NodeRef, v desugar.NodeRef, t int) bool {
@@ -1418,6 +1434,9 @@ func relocFree(st mut St, tgt desugar.NodeRef, v desugar.NodeRef, t int) bool {
             return samePlace(mut st, latN(mut st, args, 0), tgt)
         }
         if kindN(mut st, callee) == ast.EIdent && lenL(mut st, args) == 3 && desugar.SysKey(mut st.d, st.curPkg, sA(nodeOf(mut st, callee))) == loader.IAppendWord {
+            return samePlace(mut st, latN(mut st, args, 0), tgt)
+        }
+        if kindN(mut st, callee) == ast.EIdent && lenL(mut st, args) == 2 && desugar.SysKey(mut st.d, st.curPkg, sA(nodeOf(mut st, callee))) == loader.IGrowNoZero {
             return samePlace(mut st, latN(mut st, args, 0), tgt)
         }
     }

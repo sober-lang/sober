@@ -1,0 +1,79 @@
+package main
+
+// rt.segvの判定の検査（scripts/segvcheck.sh）: 引数 "task" = 子のtaskの深い再帰（StackExceededのtaskの死をtask.Tryで見る）・
+// "main" = mainのtaskの深い再帰（panic: StackExceeded{} で102）・引数なし = 子を1本走らせるだけ（ミュータント97のビルドで、罠の中の不正なアクセスに使う）
+
+import "std/os"
+import "std/task"
+
+// 枠の大きい再帰（regionの深さの上限1023より先に機械スタックが尽きるように、1回の枠を数KBにする。値は参照で渡すので枠に残る）
+type B4 struct {
+    a int
+    b int
+    c int
+    d int
+}
+
+type B16 struct {
+    a B4
+    b B4
+    c B4
+    d B4
+}
+
+type B64 struct {
+    a B16
+    b B16
+    c B16
+    d B16
+}
+
+type B256 struct {
+    a B64
+    b B64
+    c B64
+    d B64
+}
+
+type B1024 struct {
+    a B256
+    b B256
+    c B256
+    d B256
+}
+
+func pick(x B1024, n int) int {
+    return x.a.a.a.a.a + x.d.d.d.d.d + n
+}
+
+func deep(n int) int {
+    mut x := B1024{}
+    x.a.a.a.a.a = n
+    x.d.d.d.d.d = n + 1
+    if n < 0 {
+        return pick(x, n)
+    }
+    return deep(n + 1) + pick(x, n)
+}
+
+func main() int {
+    args := os.Args() catch return 2
+    mode := if len(args) >= 2 { args[1] } else { "" }
+    if mode == "main" {
+        println(deep(1))
+        return 0
+    }
+    r, err := task.Run((s task.Scope) => {
+        h := task.Spawn(s, () => if mode == "task" { deep(1) } else { 7 })
+        switch task.Try(h) {
+        case task.Ok{v}: v
+        case task.Failed{}: -1
+        case task.Died{cause}: -2
+        }
+    })
+    if err != nil {
+        println(-3)
+    }
+    println(r)
+    return 0
+}

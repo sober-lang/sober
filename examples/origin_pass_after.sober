@@ -1,0 +1,43 @@
+package main
+
+// 共有の方針のルートに、受け取ったレスポンスをそのまま返すafterと、組み直すafterを付ける。別のルート（方針なし）がCookieの値を本文に載せていても、
+// 共有のルートは認証の源に届かない（afterの値に、他のルートのレスポンスは混ざらない）
+import "std/http/server"
+
+func me(r http.server.Request) http.server.Response {
+    c := http.server.Cookie(r, "sid")
+    return http.server.Text(if c != nil { c } else { "" })
+}
+
+// レスポンスを組み直すafter（方針もコピーする。chainがRouteの値を読んでも、ルートの行の方針はハンドラの結果に混ざらない）
+func rebuild(r http.server.Request, w http.server.Response) http.server.Response {
+    return http.server.Response{status: w.status, contentType: w.contentType, body: w.body, cache: w.cache}
+}
+
+// 名前の関数のafter
+func keep(r http.server.Request, w http.server.Response) http.server.Response {
+    return w
+}
+
+func show(b []byte) error? {
+    println(string(b) catch "?")
+    return nil
+}
+
+func give(a string, k func([]byte)) error? {
+    k(bytes(a))
+    return nil
+}
+
+func main() {
+    pass := http.server.Middleware{after: keep}
+    wait := http.server.Middleware{after: (r, w) => {
+        x := http.server.Delayed(0, w)
+        x
+    }}
+    rs := []http.server.Route{
+        http.server.Route{method: "GET", path: "/me", handler: me},
+        http.server.Route{method: "GET", path: "/", handler: (r) => http.server.Text("home\n"), middleware: []http.server.Middleware{pass, wait, http.server.Middleware{after: rebuild}}, cache: http.server.Fresh{maxAge: 60}}}
+    e := http.server.ServeWith((k) => give("GET / HTTP/1.1\r\nHost: x\r\nCookie: sid=s1\r\nConnection: close\r\n\r\n", k), (b) => show(b), (r) => http.server.Dispatch(rs, r))
+    println(e == nil)
+}

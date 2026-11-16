@@ -38,7 +38,28 @@ func PmSet(st mut S, l ListRef, i int, v int) {
 // 1列の行列（分岐のパターンの列patsの先頭n個 — -1は全域）に対してパターンq（-1は全域）が新しく覆う値があるか。
 // from = パターンの名前を解決する package、dom = subject の領域、cz = ラベル L の cause の領域（[集合, nil] × ラベル数 — -1 なら全ラベル + nil）
 func PmUseful1(st mut S, from int, pats ListRef, n int, q NodeRef, dom PmCol, cz ListRef) bool {
-    return pmUseful(mut st, from, pmRows1(mut st, pats, n, q), pmCols1(mut st, dom), cz, -1)
+    return pmUseful(mut st, from, pmRows1(mut st, pats, n, q), pmCols1(mut st, dom), cz, -1, ListRef(-1))
+}
+
+// 分岐のパターンの列 pats の先頭の分類（pmHeads の1列の形）を、領域 dom の列で1回だけ求める。同じ switch の到達と網羅の問い
+// （PmUsefulAt）が共有する — 問いごとに分岐の名前を解決し直すと、分岐の数の2乗 × 名前の解決（package の宣言の線形の探索）になる
+func PmHeads1(st mut S, from int, pats ListRef, dom PmCol) ListRef {
+    n := lenL(mut st, pats)
+    if n == 0 {
+        return ListRef(listN(mut st, 0))
+    }
+    return pmHeads(mut st, from, pmRows1(mut st, pats, n - 1, latN(mut st, pats, n - 1)), latI(mut st, pmCols1(mut st, dom), 0))
+}
+
+// PmUseful1 の、分岐の先頭の分類 hs（PmHeads1）を使う形: pats の先頭 n 個の行列に対して、行 n（n が分岐の数なら全域）が新しく覆う値があるか
+func PmUsefulAt(st mut S, from int, pats ListRef, hs ListRef, n int, dom PmCol, cz ListRef) bool {
+    q := if n < lenL(mut st, pats) { latN(mut st, pats, n) } else { NodeRef(-1) }
+    heads := ListRef(listN(mut st, n + 1))
+    for i <- iter.Range(0, n) {
+        lput(mut st, heads, i, latI(mut st, hs, i))
+    }
+    lput(mut st, heads, n, if q == -1 { PmHWild } else { latI(mut st, hs, n) })
+    return pmUseful(mut st, from, pmRows1(mut st, pats, n, q), pmCols1(mut st, dom), cz, -1, heads)
 }
 
 // errorのswitch（1列 — 領域domはPmErr）で覆い切れていないラベルの集合（ラベルLの値のうち、どの分岐にも一致しないものがあるL — 2ワード）
@@ -47,7 +68,7 @@ func PmGapLabels(st mut S, from int, pats ListRef, n int, dom PmCol, cz ListRef)
     mut ghi := 0
     for L <- iter.Range(0, pmNLab(mut st)) {
         if pmHas(dom.a, dom.h, L) && (dom.h & PmTop) == 0 {
-            if pmUseful(mut st, from, pmRows1(mut st, pats, n, -1), pmCols1(mut st, dom), cz, L) {
+            if pmUseful(mut st, from, pmRows1(mut st, pats, n, -1), pmCols1(mut st, dom), cz, L, ListRef(-1)) {
                 if L < 64 {
                     glo = glo | (1 << L)
                 } else {
@@ -336,8 +357,8 @@ func pmComplete(st mut S, heads ListRef, nq int, col int) bool {
 }
 
 // 行列m（最後の行が問いq、他が分岐 — 列の領域cols）でqが新しく覆う値があるか。force >= 0なら先頭の列を構築子forceに
-// 限って問う（q の先頭は全域 — PmGapLabels）
-func pmUseful(st mut S, from int, m ListRef, cols ListRef, cz ListRef, force int) bool {
+// 限って問う（q の先頭は全域 — PmGapLabels）。h0 = 先頭の列の分類（-1 なら pmHeads で求める）
+func pmUseful(st mut S, from int, m ListRef, cols ListRef, cz ListRef, force int, h0 ListRef) bool {
     nr := lenL(mut st, m)
     nc := lenL(mut st, cols)
     if nc == 0 {
@@ -345,7 +366,7 @@ func pmUseful(st mut S, from int, m ListRef, cols ListRef, cz ListRef, force int
     }
     col := latI(mut st, cols, 0)
     k := hget(mut st, col + 1)
-    heads := pmHeads(mut st, from, m, col)
+    heads := if h0 != -1 { h0 } else { pmHeads(mut st, from, m, col) }
     qc := latI(mut st, heads, nr - 1)
     // 試す構築子の範囲 [lo, hi)（q の先頭が構築子ならそれだけ・全域で領域が尽くされていれば全部・でなければ既定の行列 = -1 だけ）
     mut lo := -1
@@ -372,7 +393,7 @@ func pmUseful(st mut S, from int, m ListRef, cols ListRef, cz ListRef, force int
     for c <- iter.Range(lo, hi) {
         if !all || k == PmSum || pmColHas(mut st, col, c) {
             rest := pmTail(mut st, cols)
-            if pmUseful(mut st, from, pmSpec(mut st, from, m, heads, col, c), if c == -1 { rest } else { pmSubCols(mut st, col, c, rest, cz) }, cz, -1) {
+            if pmUseful(mut st, from, pmSpec(mut st, from, m, heads, col, c), if c == -1 { rest } else { pmSubCols(mut st, col, c, rest, cz) }, cz, -1, ListRef(-1)) {
                 return true
             }
         }

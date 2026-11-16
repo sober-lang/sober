@@ -307,6 +307,9 @@ func typeDecl(out mut []byte, t ast.Tree, x ast.Node) {
             out = append(out, '\n')
         }
         out = append(out, '}')
+        if body.b == 1 {
+            obuf.Lit(mut out, " @personal")
+        }
     } else if k == ast.BUnion {
         obuf.Lit(mut out, "union {")
         mut i := 0
@@ -321,8 +324,10 @@ func typeDecl(out mut []byte, t ast.Tree, x ast.Node) {
                 fields(mut out, t, v.b, 0, true)
                 obuf.Lit(mut out, " }")
             }
-            if v.c != 0 {
+            if v.c == 1 {
                 obuf.Lit(mut out, " @shared")
+            } else if v.c == 2 {
+                obuf.Lit(mut out, " @stored")
             }
             i += 1
         }

@@ -44,8 +44,8 @@ func main() {
         "--${bd}--\r\n"
     broken := "--${bd}\r\nContent-Disposition: form-data; name=\"title\"\r\n\r\nholiday\r\n"
     ct := "multipart/form-data; boundary=${bd}"
-    reqs := "POST /upload HTTP/1.1\r\nContent-Type: ${ct}\r\nContent-Length: ${len(bytes(body))}\r\n\r\n${body}" +
-        "POST /upload HTTP/1.1\r\nContent-Type: ${ct}\r\nContent-Length: ${len(bytes(broken))}\r\nConnection: close\r\n\r\n${broken}"
+    reqs := "POST /upload HTTP/1.1\r\nHost: x\r\nContent-Type: ${ct}\r\nContent-Length: ${len(bytes(body))}\r\n\r\n${body}" +
+        "POST /upload HTTP/1.1\r\nHost: x\r\nContent-Type: ${ct}\r\nContent-Length: ${len(bytes(broken))}\r\nConnection: close\r\n\r\n${broken}"
     e := http.server.ServeWith((k) => feed(reqs, k), (b) => show(b), (r) => upload(r))
     println(e == nil)
 }

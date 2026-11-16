@@ -2024,9 +2024,10 @@ b0:
   %12 = mul %10, %11
   %13 = add %3, %12
   region.enter
-  %14 = globaladdr @rt.meta
-  store %14[2571], %13
-  call @std/internal/floatfmt.FormatFixed(%0, %1, %2)
+  %14 = call @std/math.Bits(%1)
+  %15 = globaladdr @rt.meta
+  store %15[2571], %13
+  call @std/internal/floatfmt.FormatFixed(%0, %14, %2)
   call @rt.region_relocate8(%0, %3)
   region.setdepth %3
   ret
@@ -2357,6 +2358,22 @@ b11:
 b12:
   region.setdepth %1
   ret
+}
+
+func @std/math.Bits(%0 i64) i64 {
+b0:
+  %1 = region.depth
+  region.enter
+  %2 = fne %0, %0
+  condbr %2, b1, b2
+b1:
+  %3 = const 9221120237041090560
+  br b3(%3)
+b2:
+  br b3(%0)
+b3(%4 i64):
+  region.setdepth %1
+  ret %4
 }
 
 func @std/math.FromBits(%0 i64) i64 {

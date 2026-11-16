@@ -190,18 +190,28 @@ func rjFrames(s []byte, h mut internal.hs.Hs, sent mut int, d mut int) error? {
 
 // 正しい ClientHello の後の、client handshake traffic secret の鍵で封じた Finished（verify_data = vd）
 func rjBadFin(ch []byte) []byte {
+    return rjSealed(ch, internal.record.CtHandshake, rjFin(32), 0)
+}
+
+// verify_dataがnバイトのFinishedのメッセージ（中身は検査用の固定の列）
+func rjFin(n int) []byte {
+    mut m := mut []byte{}
+    rjP8(mut m, 20)
+    rjP8(mut m, 0)
+    rjP16(mut m, n)
+    rjPb(mut m, rjSeq(9, n))
+    return freeze(m)
+}
+
+// 正しいClientHelloの後の、client handshake traffic secretの鍵で封じたrecord 1つ（内容の型ct・中身body・0埋めpadバイト）
+func rjSealed(ch []byte, ct int, body []byte, pad int) []byte {
     mut h := internal.hs.New()
     mut sent := 0
     mut d := 0
     _ = rjFrames(ch, mut h, mut sent, mut d)
     sec, _ := hex.Parse(rjFirstWord(internal.hs.Secrets(h)))
     mut w, _ := internal.record.NewDir(internal.record.AesGcm, sec)
-    mut m := mut []byte{}
-    rjP8(mut m, 20)
-    rjP8(mut m, 0)
-    rjP16(mut m, 32)
-    rjPb(mut m, rjSeq(9, 32))
-    return internal.record.Seal(mut w, internal.record.CtHandshake, freeze(m), 0)
+    return internal.record.Seal(mut w, ct, body, pad)
 }
 
 func rjFirstWord(s string) string {
@@ -212,6 +222,15 @@ func rjFirstWord(s string) string {
     }
     w, _ := string(b[0:i])
     return w
+}
+
+// sのoffバイト目をvに替えたコピー
+func rjPatch(s []byte, off int, v int) []byte {
+    mut o := mut []byte{}
+    for i <- iter.Range(0, len(s)) {
+        o = append(o, if i == off { byte(v) } else { s[i] })
+    }
+    return freeze(o)
 }
 
 // 拒否の場合 1 つ（名前・流すバイト列・期待する alert の番号）
@@ -244,6 +263,16 @@ func TestReject() {
         rjCase{name: "tamper", s: testCat(ok, rjRec(23, rjSeq(3, 40))), want: 20},
         rjCase{name: "badfin", s: testCat(ok, rjBadFin(ok)), want: 51},
         rjCase{name: "overflow", s: []byte{22, 3, 3, byte(0x41), byte(0x01)}, want: 22},
+        rjCase{name: "inner-overflow", s: testCat(ok, rjSealed(ok, internal.record.CtHandshake, rjFin(32), 16587)), want: 22},
+        rjCase{name: "plain-overflow", s: rjRec(22, testZeros(16385)), want: 22},
+        rjCase{name: "legacy-version", s: rjPatch(ok, 10, 1), want: 70},
+        rjCase{name: "groups-empty", s: rjClientHello(rjHello{versions: g.versions, groups: []int{}, shareGroup: g.shareGroup, share: g.share, sigs: g.sigs, alpn: g.alpn, suites: g.suites, comp: g.comp, dup: false}, 0), want: 50},
+        rjCase{name: "sigs-empty", s: rjClientHello(rjHello{versions: g.versions, groups: g.groups, shareGroup: g.shareGroup, share: g.share, sigs: []int{}, alpn: g.alpn, suites: g.suites, comp: g.comp, dup: false}, 0), want: 50},
+        rjCase{name: "share-empty-key", s: rjClientHello(rjHello{versions: g.versions, groups: g.groups, shareGroup: g.shareGroup, share: []byte{}, sigs: g.sigs, alpn: g.alpn, suites: g.suites, comp: g.comp, dup: false}, 0), want: 50},
+        rjCase{name: "alpn-empty-name", s: rjClientHello(rjHello{versions: g.versions, groups: g.groups, shareGroup: g.shareGroup, share: g.share, sigs: g.sigs, alpn: []string{""}, suites: g.suites, comp: g.comp, dup: false}, 0), want: 50},
+        rjCase{name: "share-missing", s: rjClientHello(rjHello{versions: g.versions, groups: g.groups, shareGroup: 0, share: []byte{}, sigs: g.sigs, alpn: g.alpn, suites: g.suites, comp: g.comp, dup: false}, 0), want: 109},
+        rjCase{name: "alert-empty", s: testCat(ok, rjSealed(ok, internal.record.CtAlert, []byte{}, 0)), want: 10},
+        rjCase{name: "fin-short", s: testCat(ok, rjSealed(ok, internal.record.CtHandshake, rjFin(31), 0)), want: 50},
     }
     mut bad := 0
     for c <- cases {
@@ -256,4 +285,14 @@ func TestReject() {
     }
     assert(bad == 0)
     println("conf: tls/reject ${len(cases)}")
+}
+
+// handshakeの受けは、内容の型がTLSのrecordのどれでもない先頭の1バイトで拒否する（頭と本体を待たない）
+func TestFrameType() {
+    assert(frameLen([]byte{0x80}, 0) == 0 - 2)
+    assert(frameLen([]byte{0x80, 0x2e, 1, 3, 4}, 0) == 0 - 2)
+    assert(frameLen([]byte{22}, 0) == 0)
+    assert(frameLen([]byte{22, 3, 3, 0, 1, 7}, 0) == 6)
+    assert(frameLen([]byte{19, 3, 3, 0, 1, 7}, 0) == 0 - 2)
+    assert(frameLen([]byte{24, 3, 3, 0, 1, 7}, 0) == 0 - 2)
 }

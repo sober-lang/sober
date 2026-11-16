@@ -251,23 +251,12 @@ func selectorTy(st mut S, e NodeRef, eb int, ef int) TyRef {
     // 土台の値の型が読めるなら、そのフィールドの成分（値が実際に置かれた座標で読む `{ S{…}.s }` のフィールド読み版）。宣言とregionだけ違う同じ形のときだけ
     bt := computeTy(mut st, nA(nodeOf(mut st, e)), eb, ef)
     if bt != -1 {
-        ct := chainAt(mut st, bt, i, lenL(mut st, fs))
+        ct := treeAt(mut st, bt, i, lenL(mut st, fs))
         if ct != -1 && ct != t && tyEqlLoose(mut st, ct, t) {
             return ct
         }
     }
     return t
-}
-
-// n成分の積のチェーン（tyChainの形 — 右結合）のi番目の成分（形が合わなければ -1）
-func chainAt(st mut S, t TyRef, i int, n int) TyRef {
-    if n == 1 {
-        return if i == 0 { t } else { TyRef(-1) }
-    }
-    if tg(mut st, t) != TPr {
-        return -1
-    }
-    return if i == 0 { tLeft(mut st, t) } else { chainAt(mut st, tRight(mut st, t), i - 1, n - 1) }
 }
 
 // structリテラルeの型（型引数なし）: フィールドごとに宣言の型を、値の式の型がregionだけ違う同じ形で読めるならその型に置き換える
@@ -311,7 +300,7 @@ func litStructTy(st mut S, e NodeRef, pk int, fs ListRef, eb int, ef int) TyRef 
         }
         k += 1
     }
-    return tyChain(mut st, ts)
+    return tyTree(mut st, ts)
 }
 
 // fof（長さneのフィールドの添字の列 — -1なら空）にkがあるか
@@ -941,8 +930,8 @@ func sigTy(st mut S, fi int) (TyRef, error?) {
         rt := tyOf(mut st, pk, latN(mut st, rl, i), at, TYFUEL)?
         hsetTy(mut st, int(rs) + 1 + i, retTy(mut st, rt))
     }
-    p := tyChain(mut st, ps)
-    return tFn(mut st, p, tyChain(mut st, rs)), nil
+    p := tyTree(mut st, ps)
+    return tFn(mut st, p, resTy(mut st, rs)), nil
 }
 
 // callee が関数値（関数型のローカル / フィールド）ならその型（名前付き関数・builtin・ラムダは -1）
@@ -1027,7 +1016,7 @@ func localCallTy(st mut S, callee NodeRef, args ListRef, eb int, ef int, at Node
                 }
                 hsetTy(mut st, int(ts) + 1 + j, cj)
             }
-            return tyChain(mut st, ts)
+            return resTy(mut st, ts)
         }
     }
     return lambdaBodyTy(mut st, lam, lb, cr.envF)

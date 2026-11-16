@@ -214,7 +214,12 @@ self/build inst 98.07
 # 2026-11-12 引き上げ（cb レーン — 標準運用 = 実測 × 1.005・事後追認）: 実測 104.196 G → 線 104.72。内訳: 基線 60972e551 で既に 103.414 G（段 2 の remat — 大域の番地を使う点で作り直す〔2d25ad19d / 60972e551〕の stage3 の分を含む）・
 # slotcolor の門を外す +0.624 G（全関数を彩色する解析の仕事 — 門の崖〔写しが減ってスロットが門の下に落ちると彩色が外れ枠が増える〕を消す値札）・sret の転送 +0.153 G（展開の判定の変化 — desugar.nodeOf ほかが写しの分小さくなり展開される）
 # 2026-11-13 P7（大きな値の参照渡し）とその修正の後の締め直し（コンパイラ自身のコードの値の写しが減った分・標準運用 = 実測 × 1.005）: 実測 102.710 G → 線 103.23（P7 の前 44f46c540 は作業用の worktree で 104.361 G）
-self/build3 inst 103.23
+# 2026-11-15・引き上げ（F-cookie1: `@stored`・`@personal`・原子K・関数値とフィールドの読み出しの修正・実行時の検査。標準運用 = 実測 × 1.005・事後承認）: 実測103.243 G → 線103.76。2×2（scripts/inst・全部の木・SOBER_BUILD_CACHE=0）: main 3d2354040 → 0637c0b58で木の仕事 +0.198 G・コンパイラの遅れ +0.001 G（compiler/ +224行・約0.88 M命令/行）
+# 引き上げ（配置の計測のオプション --layout-save・--layout-pin・--layout-gap。compiler/lower/place.soberと、x86.soberの関数の範囲の記録・グローバルの固定。標準運用 = 実測 × 1.005）: 実測103.760 G → 線104.28。
+# 内訳（stages）: 基線103.243 G → コードの番地の固定103.612 G → グローバルとrodata・bssの固定103.727 G → --layout-gap 103.760 G。2×2（scripts/inst・全部の木・SOBER_BUILD_CACHE=0）: 新stage2 × 旧木 − 旧stage2 × 旧木 = −0.1 G（コンパイラの退行なし）、
+# 木の仕事 +0.5〜0.6 G（足した483行。1行あたり約1.1 M命令）。sort.Orderにラムダを渡す呼び出し3か所を、ラムダを使わないヒープソートに替えて0.18 G減らした。place.soberの関数を1つずつ空にした木では、
+# どの関数も1行あたり0.35〜1.5 M命令（合計約0.25 G）で、展開される呼び出しはほかに見つからなかった
+self/build3 inst 104.28
 # RSS は揺れが小さい（stages ゲートも同じ上限を見る — 段 5 の仕上げ便: 基準 837d0c6 の 506 MB の +30%）
 # 2026-10-05 締め直し（RSS 回収便 — huge page を止め返却の閾値 1 MiB で自己 build 540 → 216 MB・その +35%）
 # 2026-10-12 緩め（展開便 段 1 — 同じ裁定・report-565 / 566）: 290 → 296（stage3 の自己 build 294.9 MB の +1 MB）。値札 = spec の木の伸び +1.6 MB・特化の走り +3.3 MB
@@ -353,7 +358,8 @@ self/build3 rss 573
 # 2026-11-10 errsz（error の 4 語固定・セルの確保の印と失敗の辺の読み — 締め直し・実測 × 1.005）: 実測 14,222,472 B → 線 14.30 MB
 # 2026-11-12 引き上げ（cb レーン — sret の転送で desugar.nodeOf〔ast.Node を return treeNode / synAt で返す〕ほかが展開されるようになった分・門の撤去は −137 KB・実測 × 1.005・事後追認）: 実測 14,329,392 B → 線 14.40 MB
 # 2026-11-12 引き上げ（案 2 の段 0〜2 — 接続の task の区画〔lower/area.sober〕・浅い待ちの入口と着地・Ledger の欄・areacheck の口の分・実測 × 1.005・事後追認）: 実測 14,423,976 B → 線 14.50 MB
-self/elf size 14.50
+# 2026-11-16 引き上げ（segv74: rt.segvの判定と文面・mainStackInit・lowerのその生成元・ミュータント97の分。内訳はコミットの注・実測の1.005倍・事後承認）: 実測14,516,160 B → 線14.59 MB
+self/elf size 14.59
 # wall は参考値（基準 837d0c6 の 5.53 s の +20% — 照合しない）
 self/build wall 6.6 ref
 # 2026-10-07 新設（段 6 P6-6 — 決定の範囲・朝に追認を）: self/check rss = 自己 check（一括・W1）の peak RSS — scripts/selfpar.sh が stage2 で照合（bench.sh も W1 で測る）。
@@ -419,7 +425,9 @@ self/check nodes 5162166
 # 2026-11-13 引き上げ（a3 区画の窓 — 検査される compiler のソースが増えた分〔task.sober の区画の窓・area.sober の付け替え〕・標準運用〔越えたら実測 × 1.005〕・事後追認）: 実測 145.067 G → 線 145.79
 # 2026-11-13 引き上げ（P7 大きな値の参照渡し — 検査器が遅くなったのでなく検査される compiler のソースが増えた分〔lower の参照渡しと修正〕。stage2 は boot が建てるので検査器のコードは変わらない・標準運用〔越えたら実測 × 1.005〕・事後承認）: 実測 145.918 G → 線 146.65
 # 2026-11-13 引き上げ（fq D4 — asyncのDelayedを満了でrtが送る。async以外の道が払う費用 = 時刻つきの送りの確かめ〔送りと受けの口・頭の取り込みの数え〕・std の serveBuf の戻り値と tsend の判定。cycles の A/B では揺れの中・事後承認〔ユーザー決定 2026-10-22〕・report-fq-7 9 節）: 実測 146.810 G × 1.005 — 検査される compiler のソースが増えた分: 146.65 → 147.54
-self/check body 147.54
+# 2026-11-16 引き下げ（ブートストラップのステージ48-abc8bbff。stage2のコードを生成するbootのlowerが11-07の版から今の版になり、その間の最適化がstage2に入った。同じソースをboot47とboot48でビルドして 137.245 G → 107.766 G・揺れ0.001 G。実測 107.767 G × 1.005）: 147.54 → 108.31。この水準は、ステージを足すたびに下がりうる。上限値が実測から離れたら締め直す
+# 2026-11-16 引き下げ（型の比較subに「同じ番地なら真」の近道。自己checkのsubの呼び出しが1億467万回 → 690万回〔計数の版で数えた・2つの引数が同じ番地だった9,824万回の再帰が消えた〕。selfparの実測77.557 G × 1.005）: 108.31→77.95
+self/check body 77.95
 # 2026-10-08 物差しの変更（決定 (a)）: -par の 2 行は bench.sh が W8 + 物理 8 コア taskset で測る形に（selfw.sh と同じ —
 # 既定ワーカー数だと機械のコア数に依存: この機の 24 ワーカーで build-par 841 MB vs W8 628 MB）。check-par の ref も W8 の物差しで読み直すこと
 self/check-par rss 830 ref
@@ -462,7 +470,10 @@ golden/lltext maxfile 17.465
 # 2026-11-09 事後追認待ち（標準運用 × 1.005 — http.server.Delayed〔Response.delay・serveCore の待ちの列と os.Sleep が http の閉包に入った〕: examples_http_servewith_conn.json 23.330 → 23.913 MB）
 # 2026-11-09 事後追認待ち（標準運用 × 1.005 — baseline 4M R0〔frameAt / putHead が呼び手の列へ積む mut の仮引数の形 — check で serveBuf の展開ごとに frameAt 5 回・putHead 6 回の展開が乗る〕: examples_http_servewith_conn.json 23.909 → 25.443 MB）
 # 2026-11-13 事後追認待ち（標準運用 × 1.005 — deflate の pick の lg16 の表〔頻度 0〜255 の 256 項の const の []int〕が記録つきの deflate の道ごとに乗る: examples_http_servewith_conn.json 25.443 → 25.885 MB）
-golden/corejson maxfile 26.02
+# 2026-11-15 事後追認（標準運用 × 1.005 — バッチの最後の応答のヘッダと本文を送り場へ直に集めて送る形で関数が増えた分: examples_http_servewith_conn.json 25.885 → 26.048 MB）
+# 事後追認待ち（標準運用 × 1.005。std/tlsの受けの検査〔ClientHelloの拡張の構文・legacy_version・missing_extension・recordの上限〕とinternal/record.Sealの割り方の分。examples_http_servewith_conn.jsonはstd/http/client経由でinternal/recordを含む: 26.178の上限に対し実測 26.337 MB → 26.469）
+# 事後承認（実測 × 1.005。std/http/serverのHeaderListと、ターゲットの制御文字・CONNECT・asterisk-form・長すぎるメソッド・trailerの検査の分: examples_http_servewith_conn.json 26.469の上限に対し実測26.479 MB）
+golden/corejson maxfile 26.611
 golden/astjson maxfile 5.174
 golden/irtext total 110.1 ref
 golden/lltext total 300.3 ref
@@ -482,17 +493,39 @@ ir/maxfn lines 128577
 # 2026-11-13 締め直し（fq P1a — request の method / path / query を ASCII の区切りの位置で検査せずに切る・同じ余白）: pipeline 3,863.1 / 330・hdr 12,760.5 / 473・asyncdb hot64 1,912・ring pipeline 6,506.0・ring hdr 14,739.1
 # 2026-11-13 締め直し（fq P3 — convert.formatUint を語の詰め + 8 バイトの列に・ParseInt の 18 桁以下の速い道・同じ余白）: hdr 12,689.9 / 465・asyncdb hot64 1,904・ring hdr 14,669.1
 # 2026-11-13 引き上げ（fq D4 — asyncのDelayedを満了でrtが送る。async以外の道が払う費用 = 時刻つきの送りの確かめ〔送りと受けの口・頭の取り込みの数え〕・std の serveBuf の戻り値と tsend の判定。cycles の A/B では揺れの中・事後承認〔ユーザー決定 2026-10-22〕・report-fq-7 9 節）: 実測 + 約 2（× 1.005 では変異 dispatch〔+5 命令 / 要求〕が ireq の線で鳴らない）— ireq pipeline 3,601.7・hdr 12,126.9・hot64 pipeline 312・hdr 422・asyncdb 1,847
-srv/pipeline ireq 3603.7
+# 2026-11-15 引き上げ（バッチの最後の応答のヘッダと本文を送り場へ直に集めて送る形。集めて送れない接続では要求ごとに試さない・要求ごとのregionを開かない。
+# epollの道は集める形を使えず、接続ごとに断りを覚えた後の判定の分が要求ごとに残る。ringの道は約290命令/要求軽くなる〔ring/pipeline 6306.0→6015.0・ring/hdr 14169.3→13878.2〕。
+# 同じ余白〔実測の最大+2〕。3走の最大 — pipeline 3615.2・hdr 12141.1・asyncdb 233204.6。事後承認 2026-11-15）: pipeline 3601.7→3617.2・hdr 12126.9→12143.1・asyncdb 233197.0→233229.6
+# 2026-11-15・再設定（F-cookie1: DispatchのRequestを「mutのコピー + 1フィールドの代入」の形に。リクエストごとに約40命令減る。3回の実行の最大 + 2。ireq pipeline 3579.7・hdr 12106.1・hot64 311 / 421）: pipeline 3617.2→3581.7・hdr 12143.1→12108.1・hot64 314→313 / 424→423
+# 2026-11-15・再設定（F-cookie1の実行時の検査: ヘッダを書くときのSet-Cookieと方針の判定をcookiesのループの中に置いた。putHeadの命令の並びが変わり、3回の実行の最大 + 2。ireq pipeline 3561.3・hdr 12088.6・hot64 307 / 417 / asyncdb 1851）: pipeline 3581.7→3563.3・hdr 12108.1→12090.6・hot64 313→309 / 423→419。asyncdbのhot64だけ1848→1853（+3。並びの変化で熱い64バイトの区間の命令が増えた分。ireqは233221→233197と減った。事後承認）
+# 2026-11-15・再設定（F-cookie1: Set-Cookieの実行時の検査をputHeadの外の関数へ移した。命令は検査なしのビルドと同じ値に戻った。3回の実行の最大 + 2。ireq pipeline 3578.6・hdr 12106.1・hot64 311 / 421）: pipeline 3563.3→3580.6・hdr 12090.6→12108.1・hot64 309→313 / 419→423。前の線はputHeadのループの中に判定を置いた形の並びの値で、その形は接続のtaskのフレームを59 B増やすので採らない
+# 2026-11-16・再設定（HTTPの準拠の直し: ヘッダの値の制御文字の検査・Hostの検査・chunkの拡張の文法。3回の実行の最大 + 2。内訳〔callgrindの関数ごと・リクエスト1件あたり〕= 値の検査はfieldLineのLFとCRの一致の検査を「0x20未満」の1つにまとめて pipeline −2.4・hdr −69.5。Hostの検査は pipeline +212〔hostOk 99・hostCheck 91・request +21〕・hdr +368〔hostCheck 189・hostOk 157・request +21〕。chunkの拡張はふつうの形で比較1つ・題材に入らない。ireq pipeline 3786.7・hdr 12404.1・asyncdb 233412.7・hot64 332 / 441 / 1872。事後承認）: pipeline 3580.6→3788.7・hdr 12108.1→12406.1・asyncdb 233229.6→233437.7・hot64 313→332 / 423→441 / 1853→1872
+# 2026-11-16・再設定（Hostの検査を1つの関数にまとめ、名前を1語で比べる形。3回の実行の最大 + 2）: pipeline 3788.7→3754.7・hdr 12406.1→12386.1・asyncdb 233437.7→233404.2・hot64 332→331 / 441→439 / 1872→1871
+# 2026-11-16・再設定（Transfer-Encoding・版・長すぎるターゲットのstatus。冷たい経路のコードでframeAtのレジスタの割り当てが変わり +3。3回の実行の最大 + 2）: pipeline 3754.7→3757.7・hot64 331→333 / 439→441 / 1871→1873
+# 2026-11-16・再設定（ターゲットの制御文字の検査: リクエスト行の8バイトの読みで、LFとCRの検出を「0x20未満」の検出1つに置き換え、ターゲットの制御文字をcrの印に付けた。CONNECTとasterisk-formはunroutedへ。3回の実行の最大 + 2。ireq pipeline 3718.7・hdr 12331.7・hot64 328 / 438）: pipeline 3757.7→3720.7・hdr 12386.1→12333.7・hot64 333→330 / 441→440
+# 2026-11-16・再設定（パイプラインのレスポンスの列を64 KiBで区切る。serveBufのリクエストのループに、積んだ列の大きさの判定と送りの冷たい枝を足した。冷たい枝で列を空に戻す合流点のために、列の頭とループで生きている値がスタックを往復する。main-new6〔2afc617b9〕の上で3回: pipeline 3735.9・hdr 12349.1・hot64 331 / 441〔3回とも同じ値〕。main-new6からの増分 +17.2 / +17.4・hot64 +3 / +3で、前の測り〔+16〜18 / +17〕と同じ。実測 + 2）: pipeline 3720.7→3737.9・hdr 12333.7→12351.1・hot64 330→333 / 440→443
+srv/pipeline ireq 3737.9
 # 2026-11-12 締め直し + 引き上げ（a2 段 1 の締め — 遠い道で持ち札が自分の領域ならその場で連続にする枝〔本体の prologue の遠い道の側 — 接続ごとに高々 1 回〕で本体の頭の並びがずれた分・ireq は揺れの内〔3,982.6 / 12,960.5 / 242,701.3〕・事後追認）: hot64 pipeline 342 → 339・hdr 486 → 483・asyncdb 1,918 → 1,920
-srv/pipeline hot64 313
-srv/hdr ireq 12128.9
-srv/hdr hot64 423
+srv/pipeline hot64 333
+srv/hdr ireq 12351.1
+srv/hdr hot64 443
 # 2026-11-12 新設（scripts/ringinst.sh — ring の道の要求 1 件の固定費の網。reqinst は W1・epoll の道しか測れない）: ring/<題材> ireq = W2（ring の道）・
 # keep-alive の 1 接続に要求を 1 本ずつ・perf stat の instructions:u の束 1,000 / 21,000 の差 ÷ 20,000。同じ ELF の揺れ ±0.01 → 余白は実測の最大 + 2
 # 起点 = a2（main 5edb124ff + 段 0 の計器）: pipeline 6,480.0・hdr 14,800.0（3 走とも同じ値）
 # 2026-11-13 引き上げ（fq D4 — asyncのDelayedを満了でrtが送る。async以外の道が払う費用 = 時刻つきの送りの確かめ〔送りと受けの口・頭の取り込みの数え〕・std の serveBuf の戻り値と tsend の判定。cycles の A/B では揺れの中・事後承認〔ユーザー決定 2026-10-22〕・report-fq-7 9 節）: 実測 + 2 — pipeline 6,306.0・hdr 14,169.3（+59 / 要求）
-ring/pipeline ireq 6308.0
-ring/hdr ireq 14171.3
+# 2026-11-15 締め直し（応答の頭と本文を送り場へ直に集める形 — 98f81bed8。本文をoutへ積むコピーが無くなった）: 実測 + 2 — pipeline 6,013.0 → 6,015.0・hdr 13,876.2 → 13,878.2
+# （× 1.005 の 6,043.1 ではミュータント61〔6,030.0〕が線の内に入り、自己検査が捕まえない）
+# 2026-11-15・再設定（F-cookie1: 同じ変更。3回の実行ともpipeline 5977.0・hdr 13841.2〜13841.3。実測 + 2。前の上限値6015.0では、ミュータント61〔5994.0〕が検出されなかった）: pipeline 6015.0→5979.0・hdr 13878.2→13843.3
+# 2026-11-15・再設定（F-cookie1の実行時の検査。上と同じ変更。3回の実行ともpipeline 5970.0〜5970.1・hdr 13834.3。実測 + 2）: pipeline 5979.0→5972.1・hdr 13843.3→13836.3
+# 2026-11-15・再設定（同じ変更。3回の実行ともpipeline 5977.0・hdr 13841.2。実測 + 2）: pipeline 5972.1→5979.0・hdr 13836.3→13843.2
+# 2026-11-16・再設定（HTTPの準拠の直し。srv/* と同じ変更。3回の実行とも pipeline 6186.0・hdr 14143.2。実測 + 2）: pipeline 5979.0→6188.0・hdr 13843.2→14145.2
+# 2026-11-16・再設定（同じ変更。3回の実行とも pipeline 6152.0・hdr 14123.2。実測 + 2）: pipeline 6188.0→6154.0・hdr 14145.2→14125.2
+# 2026-11-16・再設定（同じ変更。3回の実行とも pipeline 6155.0。実測 + 2）: pipeline 6154.0→6157.0
+# 2026-11-16・再設定（srv/* と同じ変更。3回の実行とも pipeline 6115.0・hdr 14071.2。実測 + 2。前の上限値6157.0では、ミュータント61〔6132.0〕が検出されなかった）: pipeline 6157.0→6117.0・hdr 14125.2→14073.2
+# 2026-11-16・再設定（パイプラインのレスポンスの列を64 KiBで区切る。srv/* と同じ変更。main-new6の上で3回とも pipeline 6140.0・hdr 14096.2。main-new6〔6115.0・14071.2〕からの増分 +25 / +25で、前の測りと同じ。実測 + 2）: pipeline 6117.0→6142.0・hdr 14073.2→14098.2
+# 2026-11-16・締め直し（実行待ちの列をFIFOだけにし、今から走る1本のTCBの先読みを消した。3回の実行とも pipeline 6108.0・hdr 14064.1。内訳〔slow74bの6140.0から〕= 候補の先読みの直し +2・FIFOだけの形 +3〔rt.mn_nextで、2つ先の先読みの条件が取り出しのたびに評価される〕・今から走る1本の先読みを消して −37。実測 + 2。前の上限値6142.0では、ミュータント61が検出されなかった）: pipeline 6142.0→6110.0・hdr 14098.2→14066.1
+ring/pipeline ireq 6110.0
+ring/hdr ireq 14066.1
 # srv/asyncdb = bench/asyncdb の GET /async-db?min=10&max=50&limit=20（std/pg のプールから 20 行を JSON に・相手は bench/pgstub の代役〔応答の前に 300 µs〕）。
 # 揺れ ±6 命令/要求の出どころは rt の待ちの道（要求ごとに PG の応答を待つ — pipeline / hdr は 16 要求に 1 回 HTTP を待つだけ）なので、余白は ireq = 実測の最大 + 25・hot64 = 実測
 # 締め直し（std/time の時計を @intrinsic("clock") に + sret の転送 — 同じ余白）: asyncdb 245,012.0 / 1,938
@@ -500,5 +533,7 @@ ring/hdr ireq 14171.3
 # 引き直し（scanb の入口の符号の検査 — 健全性の直し・+3 命令 / 呼び出し・要求あたり +150 = 行の UTF-8 の検査の scanb ≈ 50 回。pipeline / hdr は +6.5 で線の内）: asyncdb 243,732.5（3 走の最大）
 # 締め直し（同上 — 同じ余白）: asyncdb 242,696.5 / 1,918
 # 締め直し（P7 大きな値の参照渡し — report-fq-3・契約の × 1.005 では網の変異〔dispatch +5〜7・pgrow ≈ +100・ring の 61 ≈ +17〜24 命令〕が鳴らないので、前の締め直しと同じ実測 + 約 2〔asyncdb は 3 走の最大 + 13〕）: pipeline 3,599.8（3 走の最大）/ 311・hdr 12,123.8 / 421・asyncdb 233,183.9 / 1,842・ring pipeline 6,245.0・ring hdr 14,108.1
-srv/asyncdb ireq 233197.0
-srv/asyncdb hot64 1849
+# 2026-11-15 締め直し（バッチの最後の応答のヘッダと本文を送り場へ直に集めて送る形。asyncdbのhot64は実測1848で1849より下がった。同じ余白〔実測+25〕。
+# 3走の最大233204.6。事後承認2026-11-15）: ireq 233197.0→233229.6・hot64 1849→1848
+srv/asyncdb ireq 233404.2
+srv/asyncdb hot64 1873

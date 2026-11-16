@@ -3274,8 +3274,8 @@ b21:
 
 define internal void @"std/convert.FormatFloat"(ptr %v0, i64 %v1) #0 {
 b0:
-  %v14 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v2.p = getelementptr i64, ptr %v14, i64 0
+  %v15 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v2.p = getelementptr i64, ptr %v15, i64 0
   %v2 = load i64, ptr %v2.p
   %v3 = getelementptr i64, ptr @"rt.meta", i64 0
   %v4.p = getelementptr i64, ptr %v3, i64 2571
@@ -3293,13 +3293,14 @@ b0:
   %v11 = mul i64 %v9, %v10
   %v12 = add i64 %v2, %v11
   call void @"rt.region_enter"()
-  %v13 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st1 = getelementptr i64, ptr %v13, i64 2571
+  %v13 = call i64 @"std/math.Bits"(i64 %v1)
+  %v14 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st1 = getelementptr i64, ptr %v14, i64 2571
   store i64 %v12, ptr %st1
-  call void @"std/internal/floatfmt.Format"(ptr %v0, i64 %v1)
+  call void @"std/internal/floatfmt.Format"(ptr %v0, i64 %v13)
   call void @"rt.region_relocate8"(ptr %v0, i64 %v2)
-  %v15 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st2 = getelementptr i64, ptr %v15, i64 0
+  %v16 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st2 = getelementptr i64, ptr %v16, i64 0
   store i64 %v2, ptr %st2
   ret void
 }
@@ -3904,6 +3905,35 @@ b12:
   %st61 = getelementptr i64, ptr %v101, i64 0
   store i64 %v1, ptr %st61
   ret void
+}
+
+define internal i64 @"std/math.Bits"(i64 %v0) #0 {
+b0:
+  %v5 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v1.p = getelementptr i64, ptr %v5, i64 0
+  %v1 = load i64, ptr %v1.p
+  call void @"rt.region_enter"()
+  %v2.a = bitcast i64 %v0 to double
+  %v2.b = bitcast i64 %v0 to double
+  %v2.c = fcmp une double %v2.a, %v2.b
+  %v2 = zext i1 %v2.c to i64
+  %c.b0 = icmp ne i64 %v2, 0
+  br i1 %c.b0, label %b0.t1, label %b0.e2
+b0.t1:
+  br label %b1
+b0.e2:
+  br label %b2
+b1:
+  %v3 = add i64 0, 9221120237041090560
+  br label %b3
+b2:
+  br label %b3
+b3:
+  %v4 = phi i64 [ %v3, %b1 ], [ %v0, %b2 ]
+  %v6 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st2 = getelementptr i64, ptr %v6, i64 0
+  store i64 %v1, ptr %st2
+  ret i64 %v4
 }
 
 define internal i64 @"std/math.FromBits"(i64 %v0) #0 {

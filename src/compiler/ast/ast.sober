@@ -104,12 +104,12 @@ const TMutP = 48
 const KFile = 50       // a = package（文字列）, b = imports, c = types, d = funcs, e = consts（すべて列）, f = intrinsics（KIntrinsic の列 — 無ければ 0。std だけ）か package 節の前置の注釈 1 つの列（KReplaces / KDoubles）
 const KImport = 51     // a = alias（文字列、-1 可）, b = path（文字列）
 const KTypeDecl = 52   // a = 名前, b = type_params（文字列の列）, c = body, d = span.start, e = span.end, f = 1 なら `@layout`（language.md 36 節）
-const BStruct = 53     // a = fields（列）
+const BStruct = 53     // a = fields（列）, b = 後置の `@personal`（1）
 const BUnion = 54      // a = variants（列）
 const BFunc = 55       // a = params（列）, b = results（列）, c = 仮引数名の列（名前なしは -1 — TFunc と同じ）, d = 後置の `@errors` のラベル名の列 + 1（0 = 無し）, e = その `@` の字句, f = 後置の `@effects` の項の列 + 1（0 = 無し — その `@` の字句は節の tok）
 const BError = 56      // a = fields（列）
 const KField = 57      // a = 名前, b = 型, c = 後置のフラグ（1 = `@secret`・2 = `@credential` — structのフィールドだけ）
-const KVariant = 58    // a = 名前, b = fields（列）, c = 後置の `@shared` のフラグ（1）
+const KVariant = 58    // a = 名前, b = fields（列）, c = 後置の `@shared`（1）/ `@stored`（2）
 const KFuncDecl = 59   // a = 名前, b = type_params, c = params, d = results, e = body（KBlock）, f = 付加（列: bodiless, span.start, span.end, sig_end）
 const KParam = 60      // a = 名前, b = 型, c = mutable
 const KConst = 61      // a = 名前, b = 式, c = span.start, d = span.end, e = `@embed` のパターン, f = フラグ（ビット0 = `@embed`・ビット1 = `@secret`）

@@ -158,18 +158,33 @@ func checkRoundPar(p loader.Program, excl []int, only int, trust bool, stop int,
 }
 
 // 区間ごとの子 task の 1 周（区間の順 — task.Map の添字の順）。子の脱糖の拒否は値（def = R_REJ）にして返す — 親は 1 本の経路で
-// 走らせ直して逐次と同じ最初の拒否を出す（拒否は稀・診断の位置ごと逐次と一致する。子の err を Map で運ぶと @errors が導けない）。子の死は親の死
+// 走らせ直して逐次と同じ最初の拒否を出す（拒否は稀・診断の位置ごと逐次と一致する。子のerrをMapで運ぶと @errorsが導けない）。
+// 子が死んだら、同じ本体を親が区間の順に逐次で呼び直す: 見積もりの外れによるスロットの超過は親では起きず、本当の死は親で同じ死因のまま起きる
 func rangeRounds(p loader.Program, excl []int, only int, trust bool, stop int, rs []desugar.DefRng, bud int) []Round {
-    outs, serr := task.Map(rs, (r) => rangeRound(p, excl, only, trust, stop, r), budget: bud)
-    if serr != nil {
-        return panic(InvariantBroken{})
+    die := ckEnvInt("SOBER_CHECK_DIE") == 1
+    outs, serr := task.Map(rs, (r) => rangeRoundC(p, excl, only, trust, stop, r, die), budget: bud)
+    ckStat("e2s", len(rs), serr != nil)
+    if serr == nil {
+        return outs
     }
-    return outs
+    mut seq := mut []Round{}
+    for k <- iter.Range(0, len(rs)) {
+        seq = append(seq, rangeRound(p, excl, only, trust, stop, rs[k]))
+    }
+    return freeze(seq)
 }
 
 // 脱糖の拒否のマーク（Round.def）: 区間の子の拒否と、checkの関数単位キャッシュのパスの拒否の判定（checkRoundCk）。
 // recs = [帰す先の Def〔関数 i・根 nfn・どれでもない −1〕, 種類, kind, 位置, 2 つ目の位置]（diag.WordsOf・位置は PackPos）
 const R_REJ = -3
+
+// 区間の子の本体（die: 頭で死ぬ。SOBER_CHECK_DIEの検査に使う）
+func rangeRoundC(p loader.Program, excl []int, only int, trust bool, stop int, r desugar.DefRng, die bool) Round {
+    if die {
+        panic(InvariantBroken{})
+    }
+    return rangeRound(p, excl, only, trust, stop, r)
+}
 
 func rangeRound(p loader.Program, excl []int, only int, trust bool, stop int, r desugar.DefRng) Round {
     o, err := checkRound(p, excl, false, only, trust, stop, r)

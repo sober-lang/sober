@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# regen.sh: IR / コア / ASTを変えるコミットのゴールデン5種（astjson・checkverdict・corejson・irtext・lltext）+ stdリファレンス（stdref — docs/std/）+ outline・effectsdump（エフェクトの集計 — 自己の集計はcompilerの関数の数で動く）・cutstat（検査点の間引きの表 — ループの本体のIRの命令数で動く）のゴールデンを並列に作り直す（足回りのタスク）。
-#   scripts/regen.sh            9 種を同時に（各スクリプトの中も entry ごとに並列 — JOBS は nproc / 4・最低 4）
+# regen.sh: IR / コア / ASTを変えるコミットのゴールデン5種（astjson・checkverdict・corejson・irtext・lltext）+ stdリファレンス（stdref — docs/std/）+ outline・effectsdump（エフェクトの集計 — 自己の集計はcompilerの関数の数で動く）・cutstat（検査点の間引きの表 — ループの本体のIRの命令数で動く）・secretdump（秘密の値の流れの表）のゴールデンを並列に作り直す（足回りのタスク）。
+#   scripts/regen.sh            10 種を同時に（各スクリプトの中も entry ごとに並列 — JOBS は nproc / 4・最低 4）
 # 規律は今までどおり: regenはgates緑の木 / 意図した差だけを確認してから（ゴールデンregenはgates緑からだけ）。差は git diff で見る
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -12,12 +12,12 @@ export JOBS=${JOBS:-$J}
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 t0=$(date +%s)
-for g in astjson checkverdict corejson irtext lltext stdref outline effectsdump cutstat; do
+for g in astjson checkverdict corejson irtext lltext stdref outline effectsdump cutstat secretdump; do
     ( s=$(date +%s); scripts/$g.sh --regen > "$W/$g.log" 2>&1; echo "$? $(( $(date +%s) - s ))" > "$W/$g.res" ) &
 done
 wait
 fail=0
-for g in astjson checkverdict corejson irtext lltext stdref outline effectsdump cutstat; do
+for g in astjson checkverdict corejson irtext lltext stdref outline effectsdump cutstat secretdump; do
     read -r ec secs < "$W/$g.res"
     echo "regen: $g ec=$ec ${secs}s — $(tail -n 1 "$W/$g.log")"
     [ "$ec" = 0 ] || { fail=1; cat "$W/$g.log"; }

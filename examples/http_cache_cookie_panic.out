@@ -1,0 +1,8 @@
+HTTP/1.1 200 OK
+Content-Type: text/plain
+Cache-Control: private, max-age=30
+Set-Cookie: sid=s1; Path=/; Secure; HttpOnly; SameSite=Lax
+Content-Length: 3
+
+hi
+

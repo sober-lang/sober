@@ -6,7 +6,7 @@ package lower
 
 const CY_B = 5
 
-// 柵なしの時刻の計数器（rdtsc — rtのスケジューラの粗い時計: 飽和下の待ちの上限〔mn.sober〕。順序は要らない）。x86の正規バックエンドのELFのパスでだけ命令・他の出力では0
+// 柵なしの時刻の計数器（rdtsc。rtのスケジューラの粗い時計で、LedgerのmaxWait〔mn.sober〕が読む。順序は要らない）。x86の正規バックエンドのELFのパスでだけ命令・他の出力では0
 func tscOp(st mut St) int {
     if !st.hwFold {
         return iconst(mut st, 0)

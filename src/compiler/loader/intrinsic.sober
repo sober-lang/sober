@@ -87,6 +87,9 @@ const IMmCpu = 43      // cpumulx() → この機械で多倍長の塊（BMI2 �
 const IMmMul = 44      // montmul(d, a, b, m, m0i, n) → 0（62 bit limb のMontgomeryの積 — 番地dにn + 1ワード・a / b / mはnワードの番地。std/crypto/rsaのmontMulだけ）
 const IMulHi = 41      // mulhi(a, b) → a × b の 128 ビットの積の上位 64 ビット（符号なし — IR の BMulHi・x86 の MUL の rdx。std/crypto の多倍長だけ）
 const ICycles = 45     // cycles() → 時刻の計数器（lfence + rdtscp + lfence — x86の最適化のバックエンドのELFのパス・他の出力は0。std/internal/dudectだけ — 定数時間の統計の検査一式）
+// grow_nozero(b, n) → bをnバイト拡張した列（意味はゼロで初期化する拡張と同じ。拡張した領域は読み出される前に全部書き込まれる、という不変条件を使う側が保つ。
+// ゼロでの初期化を省く。宣言してよいのはkeyPkgの表のpackageだけ〔std/internal/jsonw〕。bは呼び出し側のmutの束縛の値・n < 1ならbのまま）
+const IGrowNoZero = 75
 const IClock = 74      // clock(clk) → clkの時計の今（ns — 0 = CLOCK_REALTIME・1 = CLOCK_MONOTONIC。vDSOの __vdso_clock_gettime・無ければ生のclock_gettime — std/timeだけ。エフェクトはio〔Now / Monoの @effectsの外形〕）
 const IMatchLen = 48    // matchlen(b, i, j, n) → b[i:i+n] と b[j:j+n] の一致の長さ（検査なし — 境界は std/binary の MatchLen が 1 か所で見る・rt.matchlen）
 const IJClean = 49      // jclean(b) → b の中で最初に JSON のエスケープが要るバイト（'"'・'\\'・0x20 未満）の位置・無ければ len(b)（切片が長さを運ぶので検査なし — rt.jclean）
@@ -94,7 +97,7 @@ const ILoad64 = 34      // load64(b, i) → b[i:i+8] の 8 バイトを little-e
 
 // 鍵の綴り → 番号（閉じた集合の外は 0）
 func IntrinsicCode(key string) int {
-    return if key == "fsqrt" { IFSqrt } else if key == "fbits" { IFBits } else if key == "ffrombits" { IFFromBits } else if key == "errno" { IErrno } else if key == "args" { IArgs } else if key == "environ" { IEnviron } else if key == "read_file" { IReadFile } else if key == "read_dir" { IReadDir } else if key == "read_fd" { IReadFd } else if key == "run" { IRun } else if key == "run_fd" { IRunFd } else if key == "run_fd_env" { IRunFdEnv } else if key == "mkdir" { IMkdir } else if key == "syscall" { ISyscall } else if key == "addr" { IAddr } else if key == "wait_fd" { IWaitFd } else if key == "fd_own" { IFdOwn } else if key == "net_op" { INetOp } else if key == "stat" { IStat } else if key == "sleep" { ISleep } else if key == "write_file" { IWriteFile } else if key == "write_fd" { IWriteFd } else if key == "write_mode" { IWriteMode } else if key == "rename" { IRename } else if key == "par_pool" { IParPool } else if key == "par_ledger" { IParLedger } else if key == "par_fail" { IParFail } else if key == "open" { IOpen } else if key == "close" { IClose } else if key == "chunk_open" { IChunkOpen } else if key == "chunk_next" { IChunkNext } else if key == "chunk_close" { IChunkClose } else if key == "deadline" { IDeadline } else if key == "lease_op" { ILeaseOp } else if key == "lease_view" { ILeaseView } else if key == "lease_bytes" { ILeaseBytes } else if key == "load64" { ILoad64 } else if key == "load16" { ILoad16 } else if key == "store16" { IStore16 } else if key == "load32" { ILoad32 } else if key == "store32" { IStore32 } else if key == "appendword" { IAppendWord } else if key == "bload32" { IBLoad32 } else if key == "ctz64" { ICtz64 } else if key == "bstore64" { IBStore64 } else if key == "matchlen" { IMatchLen } else if key == "jclean" { IJClean } else if key == "cpuclmul" { ICpuClmul } else if key == "crcfold" { ICrcFold } else if key == "cpuaes" { IAesCpu } else if key == "aeskey" { IAesKey } else if key == "aesctr" { IAesCtr } else if key == "aesghash" { IAesGhash } else if key == "aestag" { IAesTag } else if key == "aesseal" { IAesSeal } else if key == "aesopen" { IAesOpen } else if key == "mulhi" { IMulHi } else if key == "addrn" { IAddrN } else if key == "cpumulx" { IMmCpu } else if key == "montmul" { IMmMul } else if key == "mmsel" { IMmSel } else if key == "montsqr" { IMmSqr } else if key == "femul" { IFeMul } else if key == "cpusha" { IShaCpu } else if key == "sha256blk" { IShaBlk } else if key == "cycles" { ICycles } else if key == "clock" { IClock } else if key == "cover" { ICover } else if key == "cover_fd" { ICoverFd } else if key == "cover_get" { ICoverGet } else if key == "cover_n" { ICoverN } else if key == "cover_mid" { ICoverMid } else if key == "cover_setmid" { ICoverSetMid } else if key == "cell_reset" { ICellReset } else { 0 }
+    return if key == "fsqrt" { IFSqrt } else if key == "fbits" { IFBits } else if key == "ffrombits" { IFFromBits } else if key == "errno" { IErrno } else if key == "args" { IArgs } else if key == "environ" { IEnviron } else if key == "read_file" { IReadFile } else if key == "read_dir" { IReadDir } else if key == "read_fd" { IReadFd } else if key == "run" { IRun } else if key == "run_fd" { IRunFd } else if key == "run_fd_env" { IRunFdEnv } else if key == "mkdir" { IMkdir } else if key == "syscall" { ISyscall } else if key == "addr" { IAddr } else if key == "wait_fd" { IWaitFd } else if key == "fd_own" { IFdOwn } else if key == "net_op" { INetOp } else if key == "stat" { IStat } else if key == "sleep" { ISleep } else if key == "write_file" { IWriteFile } else if key == "write_fd" { IWriteFd } else if key == "write_mode" { IWriteMode } else if key == "rename" { IRename } else if key == "par_pool" { IParPool } else if key == "par_ledger" { IParLedger } else if key == "par_fail" { IParFail } else if key == "open" { IOpen } else if key == "close" { IClose } else if key == "chunk_open" { IChunkOpen } else if key == "chunk_next" { IChunkNext } else if key == "chunk_close" { IChunkClose } else if key == "deadline" { IDeadline } else if key == "lease_op" { ILeaseOp } else if key == "lease_view" { ILeaseView } else if key == "lease_bytes" { ILeaseBytes } else if key == "load64" { ILoad64 } else if key == "load16" { ILoad16 } else if key == "store16" { IStore16 } else if key == "load32" { ILoad32 } else if key == "store32" { IStore32 } else if key == "appendword" { IAppendWord } else if key == "grow_nozero" { IGrowNoZero } else if key == "bload32" { IBLoad32 } else if key == "ctz64" { ICtz64 } else if key == "bstore64" { IBStore64 } else if key == "matchlen" { IMatchLen } else if key == "jclean" { IJClean } else if key == "cpuclmul" { ICpuClmul } else if key == "crcfold" { ICrcFold } else if key == "cpuaes" { IAesCpu } else if key == "aeskey" { IAesKey } else if key == "aesctr" { IAesCtr } else if key == "aesghash" { IAesGhash } else if key == "aestag" { IAesTag } else if key == "aesseal" { IAesSeal } else if key == "aesopen" { IAesOpen } else if key == "mulhi" { IMulHi } else if key == "addrn" { IAddrN } else if key == "cpumulx" { IMmCpu } else if key == "montmul" { IMmMul } else if key == "mmsel" { IMmSel } else if key == "montsqr" { IMmSqr } else if key == "femul" { IFeMul } else if key == "cpusha" { IShaCpu } else if key == "sha256blk" { IShaBlk } else if key == "cycles" { ICycles } else if key == "clock" { IClock } else if key == "cover" { ICover } else if key == "cover_fd" { ICoverFd } else if key == "cover_get" { ICoverGet } else if key == "cover_n" { ICoverN } else if key == "cover_mid" { ICoverMid } else if key == "cover_setmid" { ICoverSetMid } else if key == "cell_reset" { ICellReset } else { 0 }
 }
 
 // 関数のエフェクトのビット（language.md 12 節の関数のエフェクト — v1の語彙。上位ビットは出所のcredential等、将来の拡張用に予約）
@@ -161,6 +164,7 @@ func IntrinsicSig(code int) string {
     case ILoad16 | ILoad32: "ni>i"
     case IStore16 | IStore32: "nii>i"
     case IAppendWord: "bii>x"
+    case IGrowNoZero: "bi>x"
     case IBLoad32: "bi>i"
     case ICtz64: "i>i"
     case IBStore64: "bii>i"
@@ -230,7 +234,25 @@ func declSig(t ast.Tree, x ast.Node) string {
     return r
 }
 
-// 全ファイルの @intrinsic の宣言を検査する（std の中だけ・閉じた鍵・署名の一致・package の中で名前が重ならない）
+// 宣言してよいpackageが1つに限られる組み込みの表（組み込みの番号 → package・限らない組み込みは ""）。限る理由はkeyWhy
+func keyPkg(code int) string {
+    return switch code {
+    case IFBits: "std/math"
+    case IGrowNoZero: "std/internal/jsonw"
+    default: ""
+    }
+}
+
+// keyPkgで限る理由（診断の文面）
+func keyWhy(code int) string {
+    return switch code {
+    case IFBits: "math.Bits is the one place that reads the bits of a float"
+    case IGrowNoZero: "only the writes of std/internal/jsonw keep the grown bytes written before they are read"
+    default: ""
+    }
+}
+
+// 全ファイルの`@intrinsic`の宣言を検査する（stdの中だけ・閉じた組み込みの集合・宣言してよいpackage・署名の一致・packageの中で名前が重ならない）
 @errors(diag.Intrinsic)
 func intrinsicAll(trees []ast.Tree, fpkg []string, fstd []bool) error? {
     for f <- iter.Range(0, len(trees)) {
@@ -243,17 +265,21 @@ func intrinsicAll(trees []ast.Tree, fpkg []string, fstd []bool) error? {
                 // stdのファイルか、stdのpackageの .sobi（展開される関数の本体が参照する宣言 — compiler/iface。.sobiのファイルはstdのフラグを持たない。
                 // 利用者のpackageは予約prefix `std/` を名乗れないので、受理の基準は同じ）
                 if !fstd[f] && !isStd(fpkg[f]) {
-                    return diag.Intrinsic{at: at, kind: 1}
+                    return diag.Intrinsic{at: at, kind: 1, key: "", pkg: "", why: ""}
                 }
                 code := IntrinsicCode(Name(t, x.b))
                 if code == 0 {
-                    return diag.Intrinsic{at: at, kind: 2}
+                    return diag.Intrinsic{at: at, kind: 2, key: "", pkg: "", why: ""}
+                }
+                kp := keyPkg(code)
+                if kp != "" && fpkg[f] != kp {
+                    return diag.Intrinsic{at: at, kind: 5, key: Name(t, x.b), pkg: kp, why: keyWhy(code)}
                 }
                 if declSig(t, x) != IntrinsicSig(code) {
-                    return diag.Intrinsic{at: at, kind: 3}
+                    return diag.Intrinsic{at: at, kind: 3, key: "", pkg: "", why: ""}
                 }
                 if intrinsicDupBefore(trees, fpkg, f, i, Name(t, x.a)) {
-                    return diag.Intrinsic{at: at, kind: 4}
+                    return diag.Intrinsic{at: at, kind: 4, key: "", pkg: "", why: ""}
                 }
             }
         }

@@ -33,7 +33,7 @@ Soberの唯一の中間表現。`sober build` はAST → IR → 正規バック�
   - iconstの札（2026-10-26 — インクリメンタルのフェーズ2・docs/incremental.md）: 発見順の番号（panic / spawnの点）を運ぶ定数は記録のフィールドbに札を持つ（テキスト形式には出ない — `const n` のまま）。札つきは札なしとGVNで併合されず、正規バックエンドはimm32を後埋めにする
 - メモリ: load・store（ワード、ptr + ワードオフセット）/ load8・store8（[]byte・stringのセルとioのバイトバッファ — byteのフェーズ）/ load16・store16・load32・store32（pool.Scratchの狭いワードのAPI — ptr + バイトの変位・読み込みは0拡張・書きは値の下位だけ。stage1の語彙の外 — gatelibのbeyond_stage1）/ gep（ワード・バイト）/ ptoi・itop / slotaddr / globaladdr / funcaddr
 - 呼び出し: call / call_indirect / syscall
-  - syscallの札のop（x86の正規バックエンドのELFのパスだけ命令 — 他の出力では値0か無発行）: vcall・aesの手書きの本体・montmul・cycles / tsc・`prefetch(%a)`（2026-11-01 — rt専用のprefetcht0。値も副作用も無い・番地が不正でも落ちない — 走れるスタックの次の候補の先読み）
+  - syscallの札のop（x86の正規バックエンドのELFのパスだけ命令。他の出力では値0か無発行）: vcall・aesの手書きの本体・montmul・cycles / tsc・`prefetch(%a)`（rt専用のprefetcht0。値も副作用も無い・番地が不正でも落ちない。実行待ちの列の次の候補の先読みに使う）
 - region: region.enter / depth / setdepth / alloc / bump / relocate
 - 終端: br / condbr / ret / exit(code)
 - taskの罠（フェーズ6 P3a-2a — 下の4.5節）: `%r = trap %callee(%arg)` / `unwind`

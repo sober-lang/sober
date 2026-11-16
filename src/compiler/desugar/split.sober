@@ -70,10 +70,10 @@ func cellsOf(st mut S, v0 CoreRef, dr int) CoreRef {
     n := lenL(mut st, structFields(mut st, dr))
     comps := ListRef(listN(mut st, n))
     for i <- iter.Range(0, n) {
-        p := projection(mut st, v, i, n)
+        p := treeProj(mut st, v, i, n)
         hsetCore(mut st, int(comps) + 1 + i, if fieldSplits(mut st, dr, i) { cellsOf(mut st, p, fieldDecl(mut st, dr, i)) } else { cAlloc(mut st, 1, p) })
     }
-    return pairChain(mut st, comps)
+    return treePair(mut st, comps)
 }
 
 // refの木refs（純粋な式）からstructの値を組み直す（葉をderefしてpairチェーンに）
@@ -81,10 +81,10 @@ func valueOf(st mut S, refs CoreRef, dr int) CoreRef {
     n := lenL(mut st, structFields(mut st, dr))
     comps := ListRef(listN(mut st, n))
     for i <- iter.Range(0, n) {
-        p := projection(mut st, refs, i, n)
+        p := treeProj(mut st, refs, i, n)
         hsetCore(mut st, int(comps) + 1 + i, if fieldSplits(mut st, dr, i) { valueOf(mut st, p, fieldDecl(mut st, dr, i)) } else { c1(mut st, CDeref, p) })
     }
-    v := pairChain(mut st, comps)
+    v := treePair(mut st, comps)
     // 再帰の組の struct は組み直した値を fold で包む
     if isRecDr(mut st, dr) {
         t := recDrTy(mut st, dr, 0, NodeRef(-1)) catch return v
@@ -99,11 +99,11 @@ func assignAll(st mut S, refs CoreRef, v0 CoreRef, dr int) CoreRef {
     n := lenL(mut st, structFields(mut st, dr))
     comps := ListRef(listN(mut st, n))
     for i <- iter.Range(0, n) {
-        p := projection(mut st, refs, i, n)
-        q := projection(mut st, v, i, n)
+        p := treeProj(mut st, refs, i, n)
+        q := treeProj(mut st, v, i, n)
         hsetCore(mut st, int(comps) + 1 + i, if fieldSplits(mut st, dr, i) { assignAll(mut st, p, q, fieldDecl(mut st, dr, i)) } else { c2(mut st, CAssign, p, q) })
     }
-    return pairChain(mut st, comps)
+    return treePair(mut st, comps)
 }
 
 // refの木の型（葉 = ref true r（フィールドの型を束縛点の点座標で読む）、structのフィールド = 入れ子の木）。
@@ -127,7 +127,7 @@ func splitTy(st mut S, dr int, r int, point bool, at NodeRef) (TyRef, error?) {
             hsetTy(mut st, int(ts) + 1 + i, tRefOf(mut st, 1, r, inner))
         }
     }
-    return tyChain(mut st, ts), nil
+    return tyTree(mut st, ts), nil
 }
 
 // ── 場所 ──
@@ -191,7 +191,7 @@ func placeAt(st mut S, root StrRef, names ListRef, from int, eb int, depth int) 
         if idx < 0 {
             return Place{refs: -1, dr: -1, b: b, ok: false}
         }
-        refs = projection(mut st, refs, idx, lenL(mut st, fs))
+        refs = treeProj(mut st, refs, idx, lenL(mut st, fs))
         dr = if fieldSplits(mut st, dr, idx) { fieldDecl(mut st, dr, idx) } else { -1 }
     }
     return Place{refs: refs, dr: dr, b: b, ok: true}

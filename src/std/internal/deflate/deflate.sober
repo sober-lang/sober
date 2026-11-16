@@ -48,7 +48,7 @@ type Work struct {
 // w を最大の入力（窓 32 KiB の鎖・2^15 のハッシュの表・ブロック 1 つの記号）の容量に整える（task.NewLocal の整え方）
 func NewWork(w mut Work) {
     pool.NewScratch(mut w.syms, symWords)
-    pool.NewScratch(mut w.freq, freqWords)
+    pool.NewScratch(mut w.freq, freqCap)
     // 16 ビットの項目 4 つで 1 語: prev = 窓 32768 項目・head = 2^15 項目 + off と高水位の置き場（末尾の 2 語 — Work の head の注釈）
     pool.NewScratch(mut w.prev, 1 << 13)
     pool.NewScratch(mut w.head, (1 << 13) + 2)
@@ -95,12 +95,12 @@ func fit(w mut Work, n int) bool {
     if pool.Cap(mut w.syms) == 0 && pool.Cap(mut w.freq) == 0 && pool.Cap(mut w.prev) == 0 && pool.Cap(mut w.head) == 0 {
         // 表ごとに取り切ってから次へ（2 つを交互に伸ばすと先端が合わず毎回写しになる — language.md 21 節）
         pool.NewScratch(mut w.syms, nsw)
-        pool.NewScratch(mut w.freq, freqWords)
+        pool.NewScratch(mut w.freq, freqCap)
         pool.NewScratch(mut w.prev, npw)
         pool.NewScratch(mut w.head, nhw)
         return true
     }
-    return pool.Cap(mut w.syms) >= nsw && pool.Cap(mut w.freq) >= freqWords && pool.Cap(mut w.prev) >= npw && pool.Cap(mut w.head) >= nhw
+    return pool.Cap(mut w.syms) >= nsw && pool.Cap(mut w.freq) >= freqCap && pool.Cap(mut w.prev) >= npw && pool.Cap(mut w.head) >= nhw
 }
 
 // 容量の足りた w での符号化
@@ -177,6 +177,11 @@ const shiftBy = 32000
 // freq の項目の並び（文字・長さの記号 0〜285 の後に距離の符号 0〜29）と語の数（32 ビットの項目 2 つで 1 語）
 const dfOff = 286
 const freqWords = 158
+// freqの容量: 頭のfreqWordsワードが頻度（ブロックの頭で0に戻すのはここだけ）・後ろのfreqWordsワードはpickの作業の列
+// （頻度が0でない記号の (頻度 << 9) | 記号。32ビットの項目でnzOffから最大316個。pickが書き込んでから読む）。別のフィールドにしないのは、
+// Workがleaseのウィンドウの局所としてフレームに載るため（フィールドを足すとフレームがScratchの頭の分だけ大きくなる）
+const freqCap = 316
+const nzOff = 316
 // syms の語の数（32 ビットの項目 symMax 個 — 2 つで 1 語。task.NewLocal の整えの式は >> を受けないので値で）
 const symWords = 8192
 // 符号の表 ct（setup — 1 本の []byte に束ねて走査に渡す）の区画: 長さ − 3 → 長さの符号・距離 − 1 → 距離の符号・長さの符号 → extra のビット数・距離の符号 → extra のビット数
@@ -342,19 +347,19 @@ func stored(e mut enc, data []byte, s int, t int, last bool) {
 // 溜めた記号をブロックにする（生の範囲 data[s..t)）。動的 Huffman・固定 Huffman・stored の大きさを数えて最小で書く
 // （同じなら固定 → 動的 → stored の順で前を取る。zlib の _tr_flush_block と同じ向き）
 func flush(e mut enc, w mut Work, h mut History, adapt bool, data []byte, s int, t int, last bool) {
-    // 頻度（記録と同時に数えた freq の写し — 文字・長さ 0〜285〔EOB = 256 は 1〕と距離 0〜29）と、どの木でも同じ追加ビット（長さ・距離の extra）
-    lfz := freqs(mut w.freq, 0, dfOff, 256)
-    dfz := freqs(mut w.freq, dfOff, 30, -1)
+    // 頻度はfreqから直接読む（文字・長さ0〜285と距離0〜29。記録はEOBを数えないので256番をここで1に。freqはブロックの頭で0に戻る）。
+    // 記録の木が当たるパスは列にコピーしない。どの木でも同じ追加ビット（長さ・距離のextra）
+    pool.StoreRaw32(mut w.freq, 256, 1)
     mut extra := 0
     for c <- iter.Range(0, 29) {
-        extra = extra + lfz[257 + c] * int(e.ct[lxOff + c])
+        extra = extra + pool.LoadRaw32(mut w.freq, 257 + c) * int(e.ct[lxOff + c])
     }
     for g <- iter.Range(0, 30) {
-        extra = extra + dfz[g] * int(e.ct[dxOff + g])
+        extra = extra + pool.LoadRaw32(mut w.freq, dfOff + g) * int(e.ct[dxOff + g])
     }
     if adapt {
         // 記録の木で書けるなら書く（選びは pick・書きはここ — 積みの深さを外れの道と同じ flush → symbols に保つ）
-        hb, hc, hf := pick(mut h, lfz, dfz, extra)
+        hb, hc, hf := pick(mut h, mut w.freq, extra)
         if hb >= 0 {
             hdyn := 3 + hc + extra
             hn := t - s
@@ -376,6 +381,8 @@ func flush(e mut enc, w mut Work, h mut History, adapt bool, data []byte, s int,
             return
         }
     }
+    lfz := freqs(mut w.freq, 0, dfOff)
+    dfz := freqs(mut w.freq, dfOff, 30)
     // 動的 Huffman の木（文字・長さは 15 ビットまで・距離も 15 ビットまで — 記号ごとに (長さ << 32) | 符号 の 1 語）と、符号の長さの列の RLE（RFC 1951 3.2.7）
     lp := lengths(lfz, 15)
     dp := lengths(dfz, 15)
@@ -457,16 +464,13 @@ func flush(e mut enc, w mut Work, h mut History, adapt bool, data []byte, s int,
     newBlock(mut w)
 }
 
-// freq の項目 a から n 個の写し（eob ≥ 0 ならその添字を 1 に — 記録は EOB を数えない）。0 埋めの列へ添字で書く（1 項ずつの append は
+// freqの項目aからn個のコピー。0で初期化した列へ添字で書き込む（1項ずつのappendは
 // 先端の検査を項ごとに払う）。flush から出すのは flush を展開の呼び手の大きさの線の内側に保つため
-func freqs(freq mut pool.Scratch, a int, n int, eob int) []int {
+func freqs(freq mut pool.Scratch, a int, n int) []int {
     mut t := mut []int{}
     zero(mut t, n)
     for i <- iter.Range(0, n) {
         t[i] = pool.LoadRaw32(mut freq, a + i)
-    }
-    if eob >= 0 {
-        t[eob] = 1
     }
     return freeze(t)
 }
@@ -1097,7 +1101,7 @@ func Begin(s mut Stream, level int, gz bool) {
     s.fp = e.fp
     s.fdp = e.fdp
     pool.NewScratch(mut s.w.syms, symWords)
-    pool.NewScratch(mut s.w.freq, freqWords)
+    pool.NewScratch(mut s.w.freq, freqCap)
     pool.NewScratch(mut s.w.prev, (wmask + 1) >> 2)
     pool.NewScratch(mut s.w.head, (1 << 15) >> 2)
     pool.NewScratch(mut s.win, 8192)
@@ -1334,21 +1338,22 @@ func entropy(f []int) int {
 
 // 記録の木を選ぶ（費用の最小の記録〔同じなら新しい方〕が見積もり × (1 + ε) 以内なら当たり）。結果 = (記録の語の位置〔外れは −1〕, 記録の木での符号のビット数〔extra 抜き〕,
 // 固定 Huffman の大きさ)。当たりは並びの先頭へ寄せて当たりの数を足す
-func pick(h mut History, lfz []int, dfz []int, extra int) (int, int, int) {
+func pick(h mut History, freq mut pool.Scratch, extra int) (int, int, int) {
     if pool.Cap(mut h.t) == 0 {
         return 0 - 1, 0, 0
     }
     // 1 周で: 頻度が 0 でない記号（頻度 << 9 | 記号 — 文字・長さ = 0〜285・距離 = 286 + 0〜29）・Σ f·log2 f・固定 Huffman の大きさ
-    mut nz := mut []int{}
+    mut nn := 0
     mut nl := 0
     mut sl := 0
     mut fix := 3 + extra
     // 表は輪の前で 1 回束ねる（輪の中で lgTab を名指すと読みのたびに表を組み直す）
     lt := lgTab
     for i <- iter.Range(0, 286) {
-        v := lfz[i]
+        v := pool.LoadRaw32(mut freq, i)
         if v > 0 {
-            nz = append(nz, (v << 9) | i)
+            pool.StoreRaw32(mut freq, nzOff + nn, (v << 9) | i)
+            nn += 1
             nl += v
             sl += v * (if v < 256 { lt[v] } else { lg16(v) })
             fix += v * (if i < 144 { 8 } else if i < 256 { 9 } else if i < 280 { 7 } else { 8 })
@@ -1357,9 +1362,10 @@ func pick(h mut History, lfz []int, dfz []int, extra int) (int, int, int) {
     mut nd := 0
     mut sd := 0
     for i <- iter.Range(0, 30) {
-        v := dfz[i]
+        v := pool.LoadRaw32(mut freq, dfOff + i)
         if v > 0 {
-            nz = append(nz, (v << 9) | (286 + i))
+            pool.StoreRaw32(mut freq, nzOff + nn, (v << 9) | (286 + i))
+            nn += 1
             nd += v
             sd += v * (if v < 256 { lt[v] } else { lg16(v) })
             fix += 5 * v
@@ -1376,13 +1382,13 @@ func pick(h mut History, lfz []int, dfz []int, extra int) (int, int, int) {
         b := hBase + ((g >> (8 + 2 * j)) & 3) * hEnt
         mut c := pool.LoadRaw(mut h.t, b + hLenW + hHdrW)
         mut k := 0
-        while k < len(nz) {
-            x := nz[k]
+        while k < nn {
+            x := pool.LoadRaw32(mut freq, nzOff + k)
             sy := x & 511
             l := (pool.LoadRaw(mut h.t, b + (sy >> 4)) >> ((sy & 15) * 4)) & 15
             if l == 0 {
                 c = 0 - 1
-                k = len(nz)
+                k = nn
             } else {
                 c += (x >> 9) * l
                 k += 1

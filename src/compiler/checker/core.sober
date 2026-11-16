@@ -10,7 +10,9 @@ package checker
 // 意味の判定は一切しない（検査は checkAll が JSON 経由と同じ記録の上で行う）
 
 import "desugar"
+import "std/io"
 import "std/iter"
+import "std/os"
 import "std/task"
 import "std/table"
 
@@ -691,13 +693,50 @@ func checkCoreX(c desugar.Core, idx bool, collect bool) CkOut {
     return rt
 }
 
-// 区間ごとに子taskで検査した結果（区間の順 — task.Mapの添字の順）。子の死（逐次なら同じ死 — 変換の溢れは死でなく too deep の値）は
-// Map の err（ChildDied）で来るので、親の死にする。Scope + Gather で書かないのは、Def の本体の task.Gather を check の検査器が def error にするため
-// （main の本体と build は受理 — F 台帳候補）
-func checkRanges(c desugar.Core, srcs []int, collect bool, rs []DefRange, bud int) []CkOut {
-    outs, serr := task.Map(rs, (r) => checkCoreR(c, srcs, true, collect, r.lo, r.hi, false, r.size, false), budget: bud)
-    if serr != nil {
-        return panic(InvariantBroken{})
+// 区間ごとに子taskで検査した結果（区間の順。task.Mapの添字の順）。子が死んだら（Mapのerr = ChildDied）、同じ本体を親が区間の順に
+// 逐次で呼び直す: 見積もりの外れによるスロットの超過は親では起きず、本当の死（変換の溢れは死でなくtoo deepの値）は親で同じ死因のまま起きる。
+// Scope + Gatherで書かないのは、Defの本体のtask.Gatherをcheckの検査器がdef errorにするため（mainの本体とbuildは受理）
+// 区間の子の本体（die: 頭で死ぬ。SOBER_CHECK_DIEの検査に使う）
+func checkCoreC(c desugar.Core, srcs []int, collect bool, r DefRange, die bool) CkOut {
+    if die {
+        panic(InvariantBroken{})
     }
-    return outs
+    return checkCoreR(c, srcs, true, collect, r.lo, r.hi, false, r.size, false)
+}
+
+// 区間の並列の証人（SOBER_PAR_STATS=1のときだけstderrへ1行。retriedは0か区間の数）
+func ckStat(kind string, n int, died bool) {
+    if ckEnvInt("SOBER_PAR_STATS") == 1 {
+        _ = io.WriteStderr(bytes("#check ${kind} ranges=${n} retried=${if died { n } else { 0 }}\n"))
+    }
+}
+
+// 環境変数の数（無ければ -1）
+func ckEnvInt(name string) int {
+    v, err := os.Getenv(name)
+    if err != nil || v == nil {
+        return -1
+    }
+    b := bytes(v)
+    mut n := 0
+    for i <- iter.Range(0, len(b)) {
+        if int(b[i]) >= 48 && int(b[i]) <= 57 {
+            n = n * 10 + int(b[i]) - 48
+        }
+    }
+    return n
+}
+
+func checkRanges(c desugar.Core, srcs []int, collect bool, rs []DefRange, bud int) []CkOut {
+    die := ckEnvInt("SOBER_CHECK_DIE") == 1
+    outs, serr := task.Map(rs, (r) => checkCoreC(c, srcs, collect, r, die), budget: bud)
+    ckStat("core", len(rs), serr != nil)
+    if serr == nil {
+        return outs
+    }
+    mut seq := mut []CkOut{}
+    for k <- iter.Range(0, len(rs)) {
+        seq = append(seq, checkCoreR(c, srcs, true, collect, rs[k].lo, rs[k].hi, false, rs[k].size, false))
+    }
+    return freeze(seq)
 }

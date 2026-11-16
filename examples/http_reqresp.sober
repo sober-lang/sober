@@ -65,14 +65,14 @@ func main() {
         http.server.Route{method: "GET", path: "/static/*rest", handler: static, cache: http.server.Fresh{maxAge: 60}}}
     form := "user=kr&pass=x%21"
     js := "{\"name\":\"ann\",\"age\":7}"
-    reqs := "POST /login HTTP/1.1\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: ${len(bytes(form))}\r\n\r\n${form}" +
-        "POST /login HTTP/1.1\r\nContent-Type: text/plain\r\nContent-Length: ${len(bytes(form))}\r\n\r\n${form}" +
-        "POST /users HTTP/1.1\r\nContent-Type: application/json\r\nContent-Length: ${len(bytes(js))}\r\n\r\n${js}" +
-        "POST /users HTTP/1.1\r\nContent-Length: 3\r\n\r\n{x}" +
-        "GET /static/http_reqresp.tmp HTTP/1.1\r\n\r\n" +
-        "GET /static/../secret HTTP/1.1\r\n\r\n" +
-        "GET /static/none.tmp HTTP/1.1\r\n\r\n" +
-        "DELETE /users HTTP/1.1\r\nConnection: close\r\n\r\n"
+    reqs := "POST /login HTTP/1.1\r\nHost: x\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: ${len(bytes(form))}\r\n\r\n${form}" +
+        "POST /login HTTP/1.1\r\nHost: x\r\nContent-Type: text/plain\r\nContent-Length: ${len(bytes(form))}\r\n\r\n${form}" +
+        "POST /users HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: ${len(bytes(js))}\r\n\r\n${js}" +
+        "POST /users HTTP/1.1\r\nHost: x\r\nContent-Length: 3\r\n\r\n{x}" +
+        "GET /static/http_reqresp.tmp HTTP/1.1\r\nHost: x\r\n\r\n" +
+        "GET /static/../secret HTTP/1.1\r\nHost: x\r\n\r\n" +
+        "GET /static/none.tmp HTTP/1.1\r\nHost: x\r\n\r\n" +
+        "DELETE /users HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n"
     e := http.server.ServeWith((k) => feed(reqs, k), (b) => show(b), (r) => http.server.Dispatch(rs, r))
     println(e == nil)
 }

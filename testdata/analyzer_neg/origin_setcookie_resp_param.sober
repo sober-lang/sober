@@ -1,0 +1,13 @@
+package main
+
+import "std/http/server"
+
+// 方針を仮引数で受けて、Set-Cookieと一緒にレスポンスを組むヘルパーへ、保存されうる方針を渡す
+func withCookie(c http.server.Cache) http.server.Response {
+    return http.server.Response{status: 200, contentType: "text/plain", body: bytes("hi"), cache: c, cookies: []http.server.SetCookie{http.server.SetCookie{name: "sid", value: "s1"}}}
+}
+
+func main() {
+    rs := []http.server.Route{http.server.Route{method: "GET", path: "/", handler: (r) => withCookie(http.server.Revalidate{})}}
+    println(len(rs))
+}

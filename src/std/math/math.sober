@@ -19,19 +19,23 @@ func Sqrt(x float) float {
     return sysFSqrt(x)
 }
 
-// x の絶対値（符号ビットを落とす — NaN の符号も落ちる・-0 は +0）
+// x の絶対値（符号ビットを落とす・-0 は +0）
 @effects()
 func Abs(x float) float {
-    return FromBits(Bits(x) & 9223372036854775807)
+    return FromBits(sysFBits(x) & 9223372036854775807)
 }
 
-// x の IEEE 754 のビット列（i64 で読んだ値 — 変換でなく同じビットの読み替え）
+// NaN の 1 つのビット列（正の quiet NaN・payload は 0）
+const nanBits = 0x7ff8000000000000
+
+// x の IEEE 754 のビット列（i64 で読んだ値で、変換でなく同じビットの読み替え）。NaN はどれも 0x7ff8000000000000（正の quiet NaN・payload は 0）。
+// NaN は 1 つの値で、符号と payload の違いは観測できない。float のビット列を読む組み込みは、この関数だけが呼ぶ（loader が検査する）
 @effects()
 func Bits(x float) int {
-    return sysFBits(x)
+    return if x != x { nanBits } else { sysFBits(x) }
 }
 
-// ビット列 b の float（±Inf・NaN もこれで作る）
+// ビット列 b の float（±Inf・NaN もこれで作る）。NaN のビット列はどれも同じ NaN になり、Bits で読み戻すと 0x7ff8000000000000
 @effects()
 func FromBits(b int) float {
     return sysFFromBits(b)
@@ -40,7 +44,7 @@ func FromBits(b int) float {
 // x の 0 方向への切り捨て（整数部 — 小数部のビットを落とす。±Inf・NaN・|x| ≥ 2^52 はそのまま・|x| < 1 は符号を残した 0）
 @effects()
 func Trunc(x float) float {
-    b := Bits(x)
+    b := sysFBits(x)
     e := ((b >> 52) & 2047) - 1023
     if e >= 52 {
         return x
@@ -65,7 +69,7 @@ func Ceil(x float) float {
     return -Floor(-x)
 }
 
-// x と y の小さいほう（どちらかが NaN ならその NaN・-0 と +0 では -0）
+// x と y の小さいほう（どちらかが NaN なら NaN・-0 と +0 では -0）
 @effects()
 func Min(x float, y float) float {
     if x != x {
@@ -75,12 +79,12 @@ func Min(x float, y float) float {
         return y
     }
     if x == 0.0 && y == 0.0 {
-        return FromBits(Bits(x) | Bits(y))
+        return FromBits(sysFBits(x) | sysFBits(y))
     }
     return if x < y { x } else { y }
 }
 
-// x と y の大きいほう（どちらかが NaN ならその NaN・-0 と +0 では +0）
+// x と y の大きいほう（どちらかが NaN なら NaN・-0 と +0 では +0）
 @effects()
 func Max(x float, y float) float {
     if x != x {
@@ -90,7 +94,7 @@ func Max(x float, y float) float {
         return y
     }
     if x == 0.0 && y == 0.0 {
-        return FromBits(Bits(x) & Bits(y))
+        return FromBits(sysFBits(x) & sysFBits(y))
     }
     return if x > y { x } else { y }
 }

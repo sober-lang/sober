@@ -1,6 +1,11 @@
 package loader
 
-// loader の単体テスト（純関数の小道具）: パスの切り分け・バイト順・@embed のパターン・テスト名の規則
+// loader の単体テスト（純関数の小道具）: パスの切り分け・バイト順・@embed のパターン・テスト名の規則・@intrinsic の宣言の検査
+
+import "ast"
+import "diag"
+import "lexer"
+import "parser"
 
 func TestDirBase() {
     assert(Dirname("a/b/c.sober") == "a/b")
@@ -42,4 +47,33 @@ func TestTestName() {
     assert(isTestName("Test_x"))
     assert(!isTestName("Testify"))
     assert(!isTestName("test"))
+}
+
+// src の 1 ファイルを package pkg の std のファイルとして @intrinsic の検査に掛けた拒否の kind（受理なら 0・読めなければ -1）
+func intrinsicKind(src string, pkg string) int {
+    b := bytes(src)
+    t, ok := parser.Parse(b, lexer.Lex(b))
+    if !ok {
+        return -1
+    }
+    return switch intrinsicAll([]ast.Tree{t}, []string{pkg}, []bool{true}) {
+        case nil: 0
+        case diag.Intrinsic{kind}: kind
+    }
+}
+
+func TestIntrinsicFBitsOnlyInMath() {
+    fbits := "package p\n\n@intrinsic(\"fbits\")\nfunc f(x float) int\n"
+    assert(intrinsicKind(fbits, "std/math") == 0)
+    assert(intrinsicKind(fbits, "std/convert") == 5)
+    assert(intrinsicKind(fbits, "std/internal/floatfmt") == 5)
+    // 逆向きの読み替えはどこでも宣言できる（NaN のビット列を外へ出さない）
+    assert(intrinsicKind("package p\n\n@intrinsic(\"ffrombits\")\nfunc g(b int) float\n", "std/convert") == 0)
+}
+
+func TestIntrinsicGrowNoZeroOnlyInJsonw() {
+    g := "package p\n\n@intrinsic(\"grow_nozero\")\nfunc grow(b []byte, n int) mut []byte\n"
+    assert(intrinsicKind(g, "std/internal/jsonw") == 0)
+    assert(intrinsicKind(g, "std/json") == 5)
+    assert(intrinsicKind(g, "std/math") == 5)
 }

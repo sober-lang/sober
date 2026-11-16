@@ -115,7 +115,7 @@ The following five properties are derived from these two.
 ### Fast
 
 - Straightforward code is fast. This is derived from value orientation (see the section above). The mechanisms for speed live only inside the runtime and the compiler, and the Sober side of the benchmarks is kept to the straightforward form.
-- Runtime speed on par with Rust. Against straightforward Rust using the same algorithms, across 9 sequential benchmarks: 4 wins, 3 ties, 2 losses (the losses are reverse-complement 1.47× and n-body 1.17×). Against Go: 6 wins, 3 ties, no losses. <!-- benchsync:readme-speed-en -->
+- Runtime speed on par with Rust. Against straightforward Rust using the same algorithms, across 9 sequential benchmarks: 6 wins, 2 ties, 1 loss (the loss is n-body 1.17×). Against Go: 6 wins, 3 ties, no losses. <!-- benchsync:readme-speed-en -->
 - A memory footprint on par with Rust. There is no GC. Peak RSS is at or below Rust's in 8 of the 9 benchmarks (the exception is k-nucleotide). <!-- benchsync:readme-rss-en -->
 - Tasks are light. Measured on 2026-10-10, [Skynet](bench/skynet) with 1.11 million tasks ran 5× faster than Go.
 

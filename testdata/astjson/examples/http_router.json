@@ -2258,68 +2258,68 @@
                                 "op": "+",
                                 "lhs": {
                                   "k": "strlit",
-                                  "value": "GET /users/42 HTTP/1.1\r\nX-Token: t\r\n\r\n",
+                                  "value": "GET /users/42 HTTP/1.1\r\nHost: x\r\nX-Token: t\r\n\r\n",
                                   "tok": 856
                                 },
                                 "rhs": {
                                   "k": "strlit",
-                                  "value": "GET /users/me HTTP/1.1\r\nX-Token: t\r\n\r\n",
+                                  "value": "GET /users/me HTTP/1.1\r\nHost: x\r\nX-Token: t\r\n\r\n",
                                   "tok": 858
                                 },
                                 "tok": 857
                               },
                               "rhs": {
                                 "k": "strlit",
-                                "value": "GET /users/7 HTTP/1.1\r\n\r\n",
+                                "value": "GET /users/7 HTTP/1.1\r\nHost: x\r\n\r\n",
                                 "tok": 860
                               },
                               "tok": 859
                             },
                             "rhs": {
                               "k": "strlit",
-                              "value": "POST /users/ HTTP/1.1\r\nX-Token: t\r\nContent-Length: 3\r\n\r\nabc",
+                              "value": "POST /users/ HTTP/1.1\r\nHost: x\r\nX-Token: t\r\nContent-Length: 3\r\n\r\nabc",
                               "tok": 862
                             },
                             "tok": 861
                           },
                           "rhs": {
                             "k": "strlit",
-                            "value": "GET /static/css/a.css HTTP/1.1\r\n\r\n",
+                            "value": "GET /static/css/a.css HTTP/1.1\r\nHost: x\r\n\r\n",
                             "tok": 864
                           },
                           "tok": 863
                         },
                         "rhs": {
                           "k": "strlit",
-                          "value": "GET /static HTTP/1.1\r\n\r\n",
+                          "value": "GET /static HTTP/1.1\r\nHost: x\r\n\r\n",
                           "tok": 866
                         },
                         "tok": 865
                       },
                       "rhs": {
                         "k": "strlit",
-                        "value": "GET /static/a.css HTTP/1.1\r\n\r\n",
+                        "value": "GET /static/a.css HTTP/1.1\r\nHost: x\r\n\r\n",
                         "tok": 868
                       },
                       "tok": 867
                     },
                     "rhs": {
                       "k": "strlit",
-                      "value": "HEAD /health HTTP/1.1\r\n\r\n",
+                      "value": "HEAD /health HTTP/1.1\r\nHost: x\r\n\r\n",
                       "tok": 870
                     },
                     "tok": 869
                   },
                   "rhs": {
                     "k": "strlit",
-                    "value": "DELETE /health HTTP/1.1\r\n\r\n",
+                    "value": "DELETE /health HTTP/1.1\r\nHost: x\r\n\r\n",
                     "tok": 872
                   },
                   "tok": 871
                 },
                 "rhs": {
                   "k": "strlit",
-                  "value": "GET /nope HTTP/1.1\r\nConnection: close\r\n\r\n",
+                  "value": "GET /nope HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n",
                   "tok": 874
                 },
                 "tok": 873

@@ -36,6 +36,7 @@ if [ "${SOBER_STAGE2_ENV:-}" != fixed ]; then
 fi
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 source "$ROOT/scripts/gatelib.sh"
+source "$ROOT/scripts/stagelib.sh"
 
 force=0
 quiet=0
@@ -106,7 +107,9 @@ secs() { awk -v a="$1" -v b="$(date +%s.%N)" 'BEGIN { printf "%.1f", b - a }'; }
 # ── bootのブートストラップチェーン（boot₀ = 1行目のコミットのcompiler/ をstage1で、boot_i = i行目をboot_{i-1} で）──
 bfresh() { [ -x "$1" ] && [ -f "$2" ] && [ "$(cat "$2")" = "$3" ]; }
 prev=$STAGE1
-bk=$(rel_key "$STAGE1")
+# stage1の鍵は中身だけで決める。置き場所（別のworktree・木の外の絶対パス）が違っても、中身が同じなら同じ鍵になる。
+# 値は、木の中の既定の場所（src/stage1/zig-out/bin/sober）に置いたときの rel_key と同じ
+bk=$(printf '%s  %s\n' "$(sha256sum < "$STAGE1" | cut -d' ' -f1)" src/stage1/zig-out/bin/sober | sha256sum | cut -d' ' -f1)
 for i in "${!CHAIN[@]}"; do
     c=${CHAIN[$i]}
     if [ "$i" = 0 ]; then BOOT=$OUT/boot/sober-boot; KF=$OUT/boot/.key; else BOOT=$OUT/boot/sober-boot-$i; KF=$OUT/boot/.key-$i; fi
@@ -152,20 +155,10 @@ if knows_elf_step $((${#CHAIN[@]} - 1)) && [ -z "${SOBER_O1:-}" ]; then S2VIA=el
 key() { echo "$(rel_key "$BOOT" src/compiler src/std) $S2OPT $S2VIA"; }
 fresh() { [ -x "$OUT/sober2" ] && [ -f "$OUT/.key" ] && [ "$(cat "$OUT/.key")" = "$1" ]; }
 
-# l0_bake <仮の stage2>: 仮の stage2（L0 は仮のファイルだけ）に std の全 package（入れ子の std/hash/crc32 等も — .sober のある全ディレクトリ）の .sobi を書かせ、木の l0/std/ に置く
-# （3'' 第2ステージの1.5 — stdのプリビルド焼き込み。同じコードが計算した値を、再ビルドするstage2に @embedで焼き込む）
+# l0_bake <仮のstage2>: 仮のstage2（L0は仮のファイルだけ）にstdの全packageの.sobiを書かせ、木のl0/std/に置く
+# （stdのプリビルド焼き込み。同じコードが計算した値を、再ビルドするstage2に @embedで焼き込む。手順はscripts/stagelib.shのstage_l0で、stage3と同じ）
 l0_bake() {
-    local s2a=$1 e=$W/l0all.sober d
-    { echo "package main"; echo; for d in $(cd "$W/root" && find std -name '*.sober' ! -name '*_test.sober' ! -path 'std/internal/*' ! -path 'std/testing/cell/*' -printf '%h\n' | sort -u); do echo "import \"$d\""; done; echo; echo "func main() {"; echo "}"; } > "$e"
-    # std/internal/… は std の中からだけ import できる（language.md 20 節 — この合成の main は std の外）ので列挙から外す。internal の package は使う std の package を通して読まれる
-    # std/testing/cell もテストの構成のファイルからだけ import できる（41 節）ので外す — テストのビルドがソースから読む
-    # 失敗したら check の出力（拒否の文面 — std のどこが落ちたか）と、def error の位置を引く手順を見せる（stdout を捨てていて理由が出なかった）
-    SOBER_CACHE= SOBER_L0=0 "$s2a" check "$e" --split --l0-out "$W/root/l0" > "$W/l0.out" 2>&1 || {
-        echo "stage2.sh: FAIL L0 bake (std check):" >&2
-        cat "$W/l0.out" >&2
-        SOBER_CACHE= SOBER_L0=0 "$s2a" check "$e" --def-index 2>&1 | tail -3 >&2
-        exit 1
-    }
+    stage_l0 "$1" "$W/root" "$W" || exit 1
 }
 
 k=$(key)

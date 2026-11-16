@@ -804,6 +804,10 @@ func anchorOf(st mut S, a0 int, a1 int) int {
 
 // FS.Ty.sub（方程式 9 本）
 func sub(st mut S, a0 int, a1 int) bool {
+    // 近道 FS.Ty.sub_refl（定理。先に当てても値は同じ）
+    if a0 == a1 {
+        return true
+    }
     g_a0 := tg(mut st, a0)
     g_a1 := tg(mut st, a1)
     // FS.Ty.sub.eq_1
@@ -942,7 +946,7 @@ func tyArgsOk(st mut S, a0 int) bool {
 
 // FS.Ty.tsubst（方程式 19 本）
 func tsubst(st mut S, a0 int, a1 int) int {
-    // 近道 Extract.tsubst_nil（定理 — 先に当てても値は同じ）
+    // 近道 Extract.tsubst_nil（定理。先に当てても値は同じ）
     if a0 < 0 {
         return a1
     }

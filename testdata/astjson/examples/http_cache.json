@@ -1286,40 +1286,40 @@
                         "op": "+",
                         "lhs": {
                           "k": "strlit",
-                          "value": "GET /me HTTP/1.1\r\nCookie: theme=dark; sid=\"s-42\"\r\nAuthorization: Bearer abc\r\n\r\n",
+                          "value": "GET /me HTTP/1.1\r\nHost: x\r\nCookie: theme=dark; sid=\"s-42\"\r\nAuthorization: Bearer abc\r\n\r\n",
                           "tok": 512
                         },
                         "rhs": {
                           "k": "strlit",
-                          "value": "GET /me HTTP/1.1\r\n\r\n",
+                          "value": "GET /me HTTP/1.1\r\nHost: x\r\n\r\n",
                           "tok": 514
                         },
                         "tok": 513
                       },
                       "rhs": {
                         "k": "strlit",
-                        "value": "GET /feed HTTP/1.1\r\n\r\n",
+                        "value": "GET /feed HTTP/1.1\r\nHost: x\r\n\r\n",
                         "tok": 516
                       },
                       "tok": 515
                     },
                     "rhs": {
                       "k": "strlit",
-                      "value": "GET /token HTTP/1.1\r\n\r\n",
+                      "value": "GET /token HTTP/1.1\r\nHost: x\r\n\r\n",
                       "tok": 518
                     },
                     "tok": 517
                   },
                   "rhs": {
                     "k": "strlit",
-                    "value": "GET /logo HTTP/1.1\r\n\r\n",
+                    "value": "GET /logo HTTP/1.1\r\nHost: x\r\n\r\n",
                     "tok": 520
                   },
                   "tok": 519
                 },
                 "rhs": {
                   "k": "strlit",
-                  "value": "GET /none HTTP/1.1\r\n\r\n",
+                  "value": "GET /none HTTP/1.1\r\nHost: x\r\n\r\n",
                   "tok": 522
                 },
                 "tok": 521
@@ -1375,7 +1375,7 @@
                         },
                         {
                           "k": "strlit",
-                          "value": "GET /raw HTTP/1.1\r\nConnection: close\r\n\r\n",
+                          "value": "GET /raw HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n",
                           "tok": 540
                         },
                         {

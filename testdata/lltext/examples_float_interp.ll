@@ -52,7 +52,7 @@ attributes #0 = { nounwind "no-builtins" "frame-pointer"="all" }
 @"str.33" = internal constant [1 x i64] [i64 139141276781]
 @"str.34" = internal constant [1 x i64] [i64 10]
 @"str.35" = internal constant [3 x i64] [i64 7232620951369114994, i64 8674334734093152357, i64 8250]
-@"rt.psites" = internal constant [43 x i64] [i64 8725727767691266, i64 8725727767691266, i64 8725727767691266, i64 5629503141314563, i64 2814753374208001, i64 2814753458094081, i64 7599828129284098, i64 7599828129284098, i64 7599828129284098, i64 11258999806624001, i64 8725725016228099, i64 13510799687418113, i64 10977524897022211, i64 9851625191506179, i64 9851625208283395, i64 9851625241837827, i64 8725725368549635, i64 16044074863689985, i64 9851625376055555, i64 18858824798568705, i64 9851625543827715, i64 4222127687336196, i64 8162777797492993, i64 7881302904668417, i64 6755399894041089, i64 4222125237862913, i64 2814750371086849, i64 4222125523075585, i64 10977524964131329, i64 2814750656299521, i64 5629500675064321, i64 6755400581906948, i64 3940650831577601, i64 7881300740407809, i64 6192451618341377, i64 3659177230598657, i64 5910977044283905, i64 6755401991193089, i64 8725726828167681, i64 4222127385346561, i64 10977526826402305, i64 3940652442190337, i64 3940652492521985]
+@"rt.psites" = internal constant [43 x i64] [i64 8725727734136834, i64 8725727734136834, i64 8725727734136834, i64 5629503107760131, i64 2814753340653569, i64 2814753424539649, i64 7599828095729666, i64 7599828095729666, i64 7599828095729666, i64 11258999806624001, i64 8725725016228099, i64 13510799687418113, i64 10977524897022211, i64 9851625191506179, i64 9851625208283395, i64 9851625241837827, i64 8725725368549635, i64 16044074863689985, i64 9851625376055555, i64 18858824798568705, i64 9851625543827715, i64 4222127687336196, i64 8162777797492993, i64 7881302904668417, i64 6755399894041089, i64 4222125237862913, i64 2814750371086849, i64 4222125523075585, i64 10977524964131329, i64 2814750656299521, i64 5629500675064321, i64 6755400581906948, i64 3940650831577601, i64 7881300740407809, i64 6192451618341377, i64 3659177230598657, i64 5910977044283905, i64 6755401991193089, i64 8725726828167681, i64 4222127385346561, i64 10977526826402305, i64 3940652442190337, i64 3940652492521985]
 @"str.36" = internal constant [1 x i64] [i64 9071397899755888]
 @"str.37" = internal constant [3 x i64] [i64 8462017926321696361, i64 7953763900396085364, i64 25959]
 @"str.38" = internal constant [4 x i64] [i64 8026013105759284339, i64 8391735665840385653, i64 7453001576142499616, i64 101]
@@ -4253,8 +4253,8 @@ b3:
 
 define internal void @"std/convert.FormatFloat"(ptr %v0, i64 %v1) #0 {
 b0:
-  %v14 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v2.p = getelementptr i64, ptr %v14, i64 0
+  %v15 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v2.p = getelementptr i64, ptr %v15, i64 0
   %v2 = load i64, ptr %v2.p
   %v3 = getelementptr i64, ptr @"rt.meta", i64 0
   %v4.p = getelementptr i64, ptr %v3, i64 2571
@@ -4272,13 +4272,14 @@ b0:
   %v11 = mul i64 %v9, %v10
   %v12 = add i64 %v2, %v11
   call void @"rt.region_enter"()
-  %v13 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st1 = getelementptr i64, ptr %v13, i64 2571
+  %v13 = call i64 @"std/math.Bits"(i64 %v1)
+  %v14 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st1 = getelementptr i64, ptr %v14, i64 2571
   store i64 %v12, ptr %st1
-  call void @"std/internal/floatfmt.Format"(ptr %v0, i64 %v1)
+  call void @"std/internal/floatfmt.Format"(ptr %v0, i64 %v13)
   call void @"rt.region_relocate8"(ptr %v0, i64 %v2)
-  %v15 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st2 = getelementptr i64, ptr %v15, i64 0
+  %v16 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st2 = getelementptr i64, ptr %v16, i64 0
   store i64 %v2, ptr %st2
   ret void
 }
@@ -9560,6 +9561,35 @@ b3:
   %st8 = getelementptr i64, ptr %v24, i64 0
   store i64 %v1, ptr %st8
   ret i64 %v18
+}
+
+define internal i64 @"std/math.Bits"(i64 %v0) #0 {
+b0:
+  %v5 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v1.p = getelementptr i64, ptr %v5, i64 0
+  %v1 = load i64, ptr %v1.p
+  call void @"rt.region_enter"()
+  %v2.a = bitcast i64 %v0 to double
+  %v2.b = bitcast i64 %v0 to double
+  %v2.c = fcmp une double %v2.a, %v2.b
+  %v2 = zext i1 %v2.c to i64
+  %c.b0 = icmp ne i64 %v2, 0
+  br i1 %c.b0, label %b0.t1, label %b0.e2
+b0.t1:
+  br label %b1
+b0.e2:
+  br label %b2
+b1:
+  %v3 = add i64 0, 9221120237041090560
+  br label %b3
+b2:
+  br label %b3
+b3:
+  %v4 = phi i64 [ %v3, %b1 ], [ %v0, %b2 ]
+  %v6 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st2 = getelementptr i64, ptr %v6, i64 0
+  store i64 %v1, ptr %st2
+  ret i64 %v4
 }
 
 define internal void @"std/internal/bigint.SetInt"(ptr %v0, i64 %v1) #0 {

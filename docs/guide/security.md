@@ -382,6 +382,7 @@ Sober's answer: two layers.
 
 - Structure (std/http/server): the storage policy is written only in typed fields (`Route.cache`, `Response.cache`, Static's `cache:`); there is no way to write Cache-Control as an arbitrary header. Dynamic responses default to `Cache-Control: private`. Credentials can be read only through the named accessors `http.server.Authorization` / `http.server.Cookie` (`http.server.Header` returns nil for the credential headers).
 - Analysis: policies that let shared caches store the response (`http.server.Fresh`, `http.server.Shared`) can be written only on route rows. check rejects the forms where that route's handler or middleware can reach a credential accessor, and the form that mounts a route with a shared policy under an authenticating middleware.
+- Analysis (Set-Cookie): on a route whose policy lets a shared cache store the response (`http.server.Fresh`, `http.server.Shared`, `http.server.Unstated`, `http.server.Revalidate`), the handler and middleware cannot return Set-Cookie. check rejects it. This prevents a cache from storing the response together with its Set-Cookie and handing the cookie to other users. A route that returns Set-Cookie uses `http.server.Private` or `http.server.NoStore`. A program built without check panics when it writes the headers.
 
 Sharing public assets while keeping the authenticated API private is accepted.
 
@@ -441,7 +442,7 @@ Rejected:
 examples/security_cache_neg.sober:13:35: error: the shared cache policy 'Shared' meets a handler or middleware that reaches a credential source (server.Authorization / server.Cookie / Request.head) in one route — a response that depends on Authorization / Cookie must not be stored by a shared cache — it would be served to other users (language.md 12 節「出所の依存」); use server.Private / server.NoStore for this route, or move the credential read out of it (Analyzer)
 ```
 
-More: [std/http/server Cache](../std/http-server.ja.md#cache) (Japanese) · [language spec 12 A-12, A-13](../spec/12-annotations.ja.md) (Japanese)
+More: [std/http/server Cache](../std/http-server.ja.md#cache) (Japanese) · [language spec 12 A-12, A-13, A-20](../spec/12-annotations.ja.md) (Japanese)
 
 ## 9. Resource exhaustion (denial of service)
 

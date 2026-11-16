@@ -1,0 +1,14 @@
+package main
+
+import "std/http/server"
+
+// セッションを延ばすmiddlewareをアプリ全体にMountし、その下にStatic（方針の既定 = Revalidate）を置く
+func refresh(r http.server.Request, w http.server.Response) http.server.Response {
+    return http.server.Response{status: w.status, contentType: w.contentType, body: w.body, length: w.length, stream: w.stream, headers: w.headers, coded: w.coded, cookies: []http.server.SetCookie{http.server.SetCookie{name: "sid", value: "s1", maxAge: 3600}}}
+}
+
+func main() {
+    app := []http.server.Route{http.server.Route{method: "GET", path: "/", handler: (r) => http.server.Text("hi")}}
+    rs := http.server.Mount("", http.server.Merge(http.server.Static("/assets", "/srv/www"), app), []http.server.Middleware{http.server.Middleware{after: refresh}})
+    println(len(rs))
+}

@@ -16,6 +16,8 @@ The exact rules are in the [language specification](spec/README.ja.md) (in Japan
 
 ## Definition
 
+Programs observe values, not references or storage identities.
+
 This document uses value orientation in the following sense.
 
 - A program names values. There is no way to take out, store, or pass a place (an address, a reference, object identity) as a value. The specification's list of types has no pointer or reference type ([chapter 2](spec/02-types.ja.md), in Japanese)

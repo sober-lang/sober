@@ -22,7 +22,7 @@ sum=
 # 上限はbench/httparenaのentryと同じ値。W8 / W1 — report-848 / 849）。W8の受けは増分消費の環（カーネル6.12以上）が既定 — SOBER_PBUF_INC=0の2構成で固定スロットの環のパスも見る。
 # 平文のkeep-aliveのレスポンスの送りは次の受けの待ちと畳む（rt.netop 9 — 既定）— SOBER_NET_FUSE=0の構成で畳まないパスも見る。
 # TLS の構成（SRV_TLS=1 — srv が tls.Serve + ServeWith の put: で立ち、check.ts --tls が生の送受の群〔パイプライン・stream を挟むパイプライン・誤り・echo〕を TLS の上で掛ける）
-for cfg in "SOBER_WORKERS=8" "SOBER_WORKERS=1" "SOBER_WORKERS=8 SRV_WORK=1" "SOBER_WORKERS=1 SRV_WORK=1" "SOBER_WORKERS=8 SRV_MAXBODY=131072" "SOBER_WORKERS=1 SRV_MAXBODY=131072" "SOBER_WORKERS=8 SOBER_PBUF_INC=0" "SOBER_WORKERS=8 SRV_MAXBODY=131072 SOBER_PBUF_INC=0" "SOBER_WORKERS=8 SRV_MAXBODY=131072 SRV_TLS=1" "SOBER_WORKERS=1 SRV_TLS=1" "SOBER_WORKERS=8 SOBER_NET_FUSE=0" "SOBER_WORKERS=8 SRV_FRESH=1"; do
+for cfg in "SOBER_WORKERS=8" "SOBER_WORKERS=1" "SOBER_WORKERS=8 SRV_WORK=1" "SOBER_WORKERS=1 SRV_WORK=1" "SOBER_WORKERS=8 SRV_MAXBODY=131072" "SOBER_WORKERS=1 SRV_MAXBODY=131072" "SOBER_WORKERS=8 SOBER_PBUF_INC=0" "SOBER_WORKERS=8 SRV_MAXBODY=131072 SOBER_PBUF_INC=0" "SOBER_WORKERS=8 SRV_MAXBODY=131072 SRV_TLS=1" "SOBER_WORKERS=1 SRV_TLS=1" "SOBER_WORKERS=8 SRV_TLS=1" "SOBER_WORKERS=8 SRV_TLS=1 SOBER_NET_FUSE=0" "SOBER_WORKERS=8 SOBER_NET_FUSE=0" "SOBER_WORKERS=8 SRV_FRESH=1"; do
     rm -rf "$W/static" && mkdir -p "$W/static/www"
     rm -f "$W/flight"
     tlsenv=
@@ -96,6 +96,67 @@ for mw in "85 8" "86 8" "87 1"; do
     env SOBER_WORKERS=$2 timeout 30 "$W/cut.m$1" > "$W/cut.m$1.out" 2>&1
     cmp -s "$W/cut.m$1.out" examples/http_delayed_cut.out && { echo "httpcheck: FAIL — mutant $1 was not caught by http_delayed_cut W$2"; fail=1; }
 done
+# TLSのPutの送信バッファの予約（rt.netop 12・13）: ミュータント95のsrvで、TLSの検査一式がW2で通る。ミュータント95は送信バッファをチャンク2つに見る。意味は変えずに、送信バッファが尽きて同期の送りへ戻る経路を通す
+"$S2" build testdata/httpcheck/srv.sober --emit=elf --passes --rt-mutant=95 -o "$W/srv.m95" > "$W/build.m95.log" 2>&1 || { echo "httpcheck: FAIL build srv mutant 95"; fail=1; }
+if [ -f "$W/srv.m95" ]; then
+    tp=$(node -e 'const s=require("net").createServer().listen(0,"127.0.0.1",()=>{console.log(s.address().port);s.close()})')
+    env SOBER_WORKERS=2 SRV_TLS_PORT=$tp DATASET_PATH=testdata/httpcheck/dataset.json STATIC_ROOT="$W/static95/www" "$W/srv.m95" 0 > "$W/srv95.out" 2> /dev/null &
+    SP=$!
+    for i in $(seq 100); do grep -q '^tls-ready' "$W/srv95.out" && (exec 3<>/dev/tcp/127.0.0.1/$tp) 2>/dev/null && break; sleep 0.05; done
+    out=$(timeout 120 node --experimental-strip-types --experimental-eventsource --no-warnings testdata/httpcheck/check.ts "$tp" --frag-random 100 --tls --static "$W/static95" 2>&1) || { echo "httpcheck: FAIL TLS with sink capacity 2 (mutant 95) W2"; echo "$out" | tail -10; fail=1; }
+    kill $SP 2>/dev/null; wait $SP 2>/dev/null; SP=
+    sum="$sum [TLS sink capacity 2 (mutant 95) W2: $(echo "$out" | sed -n 's/^check: \([0-9]* passed, [0-9]* failed\).*/\1/p')]"
+fi
+# 公開のtls.Send / tls.Put / tls.Flushの送りの失敗（testdata/tlserr）: 相手がRSTで切った後の送りの失敗を、その呼び出しが返す（W2・W8）。
+# ミュータント96（op 13がいつも完了を待たない）のsrvでは、handlerの最後のtls.Sendの失敗がhandlerに返らないこと
+tlserr() { # tlserr <srv> <mode> <W> → handlerが書いた行
+    local tp out
+    tp=$(node -e 'const s=require("net").createServer().listen(0,"127.0.0.1",()=>{console.log(s.address().port);s.close()})')
+    out="$W/tlserr.$1.$2.$3"; rm -f "$out"
+    env SOBER_WORKERS=$3 TLSERR_MODE=$2 TLSERR_PORT=$tp TLSERR_OUT="$out" "$W/$1" > "$W/$1.out" 2>&1 &
+    local sp=$!
+    for i in $(seq 100); do grep -q '^tls-ready' "$W/$1.out" && break; sleep 0.05; done
+    timeout 20 node --experimental-strip-types --no-warnings testdata/tlserr/client.ts "$tp" > /dev/null 2>&1
+    for i in $(seq 60); do [ -f "$out" ] && grep -q "send\|flush\|recv" "$out" && break; sleep 0.05; done
+    kill $sp 2>/dev/null; wait $sp 2>/dev/null
+    tr '\n' '|' < "$out" 2>/dev/null
+}
+"$S2" build testdata/tlserr/srv.sober --emit=elf --passes -o "$W/tlserr" > "$W/build.tlserr.log" 2>&1 || { echo "httpcheck: FAIL build tlserr"; fail=1; }
+"$S2" build testdata/tlserr/srv.sober --emit=elf --passes --rt-mutant=96 -o "$W/tlserr96" > "$W/build.tlserr96.log" 2>&1 || { echo "httpcheck: FAIL build tlserr mutant 96"; fail=1; }
+if [ -f "$W/tlserr" ] && [ -f "$W/tlserr96" ]; then
+    for w in 2 8; do
+        for m in "L:L send: closed|" "F:F put: ok flush: closed|" "R:R put: ok|R recv: closed|"; do
+            got=$(tlserr tlserr "${m%%:*}" $w)
+            [ "$got" = "${m#*:}" ] || { echo "httpcheck: FAIL tlserr ${m%%:*} W$w: got '$got' want '${m#*:}'"; fail=1; }
+        done
+    done
+    got=$(tlserr tlserr96 L 2)
+    [ "$got" = "L send: ok|" ] || { echo "httpcheck: FAIL: mutant 96 was not caught by tlserr L W2 (got '$got')"; fail=1; }
+    sum="$sum [tlserr L F R × W2 W8 + mutant 96]"
+fi
+# 読まない相手への常駐（testdata/httpcheck/unread）: 8本の接続でGET /big（256 KiB）を400本ずつパイプラインで送って受けない。サーバーのRSSの増えが64 MiB以下
+# （正しい形で約24 MiB。列に上限が無い形では約270 MiB）
+"$S2" build testdata/httpcheck/unread.sober --emit=elf --passes -o "$W/unread" > "$W/build.unread.log" 2>&1 || { echo "httpcheck: FAIL build unread"; fail=1; }
+if [ -f "$W/unread" ]; then
+    for w in 1 8; do
+        SOBER_WORKERS=$w "$W/unread" > "$W/unread.out" 2>&1 &
+        up=$!
+        p=""
+        for i in $(seq 200); do
+            p=$(sed -n 's/^ready \([0-9]*\)$/\1/p' "$W/unread.out")
+            [ -n "$p" ] && break
+            sleep 0.05
+        done
+        if [ -z "$p" ]; then
+            echo "httpcheck: FAIL unread W$w: server did not start"; fail=1
+        else
+            r=$(timeout 60 node --experimental-strip-types --no-warnings testdata/httpcheck/unread.ts "$p" $up 64 2>&1) || { echo "httpcheck: FAIL unread W$w: $r"; fail=1; }
+        fi
+        kill $up 2>/dev/null
+        wait $up 2>/dev/null
+    done
+    sum="$sum [unread W1 W8]"
+fi
 if [ $fail = 0 ]; then
     echo "httpcheck:$sum + Delayed mutants 84〜87 caught, 88 ok fail=0"
 else

@@ -620,8 +620,8 @@ func retTy(st mut S, t TyRef) TyRef {
     return t
 }
 
-// 型の列（ヒープの列 — 要素はint(TyRef)）→ 右結合のprodチェーン（0はunit、1は素の型）
-func tyChain(st mut S, l ListRef) TyRef {
+// 多値の結果の型の列（ヒープの列 — 要素はint(TyRef)）→ 右結合のprodの連なり（resChain と同じ形。0はunit、1は素の型）
+func resTy(st mut S, l ListRef) TyRef {
     n := lenL(mut st, l)
     if n == 0 {
         return st.tUnit
@@ -633,6 +633,49 @@ func tyChain(st mut S, l ListRef) TyRef {
         i -= 1
     }
     return acc
+}
+
+// 積の成分の型の列 → 釣り合った木（treePair と同じ形。0はunit、1は素の型）
+func tyTree(st mut S, l ListRef) TyRef {
+    n := lenL(mut st, l)
+    if n == 0 {
+        return st.tUnit
+    }
+    return tyTreeIn(mut st, l, 0, n)
+}
+
+func tyTreeIn(st mut S, l ListRef, lo int, hi int) TyRef {
+    if hi - lo == 1 {
+        return latTy(mut st, l, lo)
+    }
+    m := treeMid(lo, hi)
+    return tProd(mut st, tyTreeIn(mut st, l, lo, m), tyTreeIn(mut st, l, m, hi))
+}
+
+// n成分の木（tyTree の形）の i 番目の成分（形が合わなければ -1）
+func treeAt(st mut S, t0 TyRef, i int, n int) TyRef {
+    return treeAtK(mut st, t0, TPr, i, n)
+}
+
+// n個の成分の木（節の型の種類 k — 積 TPr・和 TUn）の i 番目の成分（形が合わなければ -1）
+func treeAtK(st mut S, t0 TyRef, k int, i int, n int) TyRef {
+    mut t := t0
+    mut lo := 0
+    mut hi := n
+    while hi - lo > 1 {
+        if tg(mut st, t) != k {
+            return -1
+        }
+        m := treeMid(lo, hi)
+        if i < m {
+            t = tLeft(mut st, t)
+            hi = m
+        } else {
+            t = tRight(mut st, t)
+            lo = m
+        }
+    }
+    return t
 }
 
 // ゼロ値を持つ型か（language.md 15 節）

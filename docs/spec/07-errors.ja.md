@@ -200,7 +200,7 @@ E-23. 名前付き関数型は結果の後に `@errors(…)` を書ける（`typ
 
 ## 7.7 panic
 
-E-18. panicは2種類だけ — ① 健全性の防衛（続けると言語の保証が破れるもの — 資源の上限〔regionの深さ・容量の溢れ〕は終了コード102）と、② 到達 = プログラムの誤り（範囲外の添字・ゼロ除算・負のシフト量・`byte(n)` / `int(f)` の範囲外・明示の `panic(L{…})`・mainの戻り値の範囲外）— 終了コード101。panicの前に出した出力は失われない。
+E-18. panicは2種類だけ。① 健全性の防衛（続けると言語の保証が破れるもの。資源の上限〔regionの深さ・容量の溢れ・機械スタックの溢れ〕は終了コード102）と、② 到達 = プログラムの誤り（範囲外の添字・ゼロ除算・負のシフト量・`byte(n)` / `int(f)` の範囲外・明示の `panic(L{…})`・mainの戻り値の範囲外）。②は終了コード101。panicの前に出した出力は失われない。機械スタックの溢れ（`StackExceeded{}`）になるのは、不正なメモリのアクセスの番地が、いま走っているtaskのスタックの限界（taskのスタックの下のガードページ・mainのtaskではプロセスのスタックの上限）に入っているときだけ。それ以外の不正なメモリのアクセスはpanicではなく、taskの死にもならない。プロセスは番地と命令の位置を標準エラーに出して、SIGSEGVで終わる。
 例: [`examples/panic_div.sober`](../../examples/panic_div.sober)・[`examples/panic_index.sober`](../../examples/panic_index.sober)・[`examples/panic_depth.sober`](../../examples/panic_depth.sober)
 決定: [language.md 27節](../language.md)
 

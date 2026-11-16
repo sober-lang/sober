@@ -25,9 +25,9 @@ func routes() []http.server.Route {
 }
 
 func main() {
-    reqs := "GET /hello/ann HTTP/1.1\r\nX-Token: t\r\n\r\n" +
-        "GET /bye/bob HTTP/1.1\r\nX-Token: t\r\n\r\n" +
-        "GET /hello/eve HTTP/1.1\r\nConnection: close\r\n\r\n"
+    reqs := "GET /hello/ann HTTP/1.1\r\nHost: x\r\nX-Token: t\r\n\r\n" +
+        "GET /bye/bob HTTP/1.1\r\nHost: x\r\nX-Token: t\r\n\r\n" +
+        "GET /hello/eve HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n"
     rs := routes()
     e := http.server.ServeWith((k) => feed(reqs, k), (b) => show(b), (r) => http.server.Dispatch(rs, r))
     println(e == nil)

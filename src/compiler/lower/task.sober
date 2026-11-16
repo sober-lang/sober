@@ -18,13 +18,13 @@ import "std/iter"
 // @rt.taskの配置（ワード）: [今のtaskのTCB, 空きのチャンクのチェーン]
 const TK_CUR = 0
 const TK_FREE = 1
-const TK_READY = 2   // 走れるtaskの数（環 + 溢れの列 — 空 ⇔ 0。スタックはLIFO: spawnで親を積んで子を先に・子が終わるか待つと最後に積んだtaskが走る）
+const TK_READY = 2   // 走れるtaskの数（環 + 溢れの列。空 ⇔ 0。実行待ちの列はFIFO: 頭へ積み、底から取る）
 const TK_INLE = 3    // 縮退の記帳（admit.sober — rt.task_new が入場できず縮退に回した子の計上量と天井の節の最内。直後の rt.task_inline が入口で読む・同じワーカーの間に切替は無い）
 const TK_INLN = 4
-// 走れるスタックは配列の環（積み・取り出しがTCBのチェーンを触らない）: TK_RQH = 頭（次に積む添字 — 単調）・TK_RQT = 底。
-// 枠 = [task の番地, 積んだ時刻の TSC]（期限 = 積んだ時刻 + D は rt.mn_next が深いときに底の 1 本でだけ計算する — D は底の TC_MAXW。積む口は掛け算を払わない）。
-// 環が満杯（頭 − 底 = 容量）の押し込みは底の1本を溢れの列（旧のTCBのチェーン — TC_NEXT = 1つ新しい側・TC_PREV = 1つ古い側）の最新へ移してから積む。
-// 溢れの列はどれも環のどれより古い — 頭の取り出しは環が空のときだけ溢れの最新から・底の取り出しは溢れが空でなければ溢れの最古から
+// 実行待ちの列は配列の環（積み・取り出しがTCBのチェーンを触らない）: TK_RQH = 頭（次に積む添字。単調）・TK_RQT = 底。
+// 枠 = [taskの番地, 積んだ時刻のTSC]（次に取る候補の冷えの判定が、相手のTCBを読まずに読む）。
+// 環が満杯（頭 − 底 = 容量）の押し込みは底の1本を溢れの列（TCBのチェーン。TC_NEXT = 1つ新しい側・TC_PREV = 1つ古い側）の最新へ移してから積む。
+// 溢れの列はどれも環のどれより古いので、底の取り出しは溢れが空でなければ溢れの最古から取る
 // （WK_DQ の「固定の環 + あふれの逃げ道」と同じ型。容量 RQ_CAP は観測の最大〔async 24000 で ≈2,000 / ワーカー〕の 2 倍 — 溢れは通常は踏まない）
 const TK_RQH = 5
 const TK_RQT = 6
@@ -76,14 +76,10 @@ const TC_WORDS = TC_FLEN + 5
 // 3.6がrt.uring_pollのTC_IORESになる）。TC_SAVEはTC_DL・TC_LEASE（ワード35）・孤児の登録簿のTC_ORG（ワード36 — orphan.sober）・TC_NSLOT（ワード37）より後ろ・TC_END × 8 = 16,816 B < 予約ページの始まり（WIN_OFF = 18,432 — チャンクの末尾の4ページは浅いregionの予約ページ）
 // 次のspawn 1回のスロットの大きさのフラグ（バイト — 0 = フラグなし。rt.netop 6が今のtaskに書き、rt.task_newが親のこのワードを読んで消す — std/netのServeのregion:）
 const TC_NSLOT = 37
-// 飽和下の待ちの上限（language.md 28 節io_uringのパス）: TC_PREV = 溢れの列の1つ古い側（走れるスタックの環から溢れたtaskだけ。
-// netpollの時計のウェイクアップも一時のチェーンに使う）。TC_WAKE = 積んだ時刻（TSC — LedgerのmaxWaitと溢れの列の期限が読む）・TC_MAXW = このtaskのD（ns・0 = 既定MN_WAIT_DEF — 子は親から継ぐ）・TC_NMAXW = 次のspawn 1回のDのフラグ
-// （rt.netop 7 — net.ServeのmaxWait:。rt.task_new_inが消費）。毎回の取り出し・押し込みが触るのでTC_NEXTと同じ先頭のページに（TC_ENDの後ろに置くと
-// taskごとに1ページ増える — async 24000でRSS +100 MBの実測）
+// TC_PREV = 溢れの列の1つ古い側（実行待ちの列の環から溢れたtaskだけ）。TC_WAKE = 積んだ時刻（TSC。LedgerのmaxWaitが読む）。
+// 毎回の取り出し・押し込みが触るのでTC_NEXTと同じ先頭のページに（TC_ENDの後ろに置くとtaskごとに1ページ増える。async 24000でRSS +100 MBを測った）
 const TC_PREV = 38
 const TC_WAKE = 39
-const TC_MAXW = 40
-const TC_NMAXW = 41
 // 未着手の子の上限（language.md 11 節 — 1〜255・0 = 既定DQ_CAP − 1）: このtaskがspawnした子を列に積める本数。子は親から継ぐ・spawnごとに読むので先頭のページに
 const TC_BACKLOG = 42
 // 前回走り出した時刻（TSC — rt.mn_nextが取るたびにWK_NOW・spawnで親のワーカーのWK_NOW）。ミュータント4のoff-CPUの計測ツールが読む（off-CPU = 今 − このワード）
@@ -171,7 +167,7 @@ const SLOT_FREE_CAP = 4096
 const SLOT_WM = 1 + SLOT_FREE_CAP
 const SLOT_CHUNK = 16
 // SOBER_SCHED（決定的な再生）: 切替点ごとの選択の列 `SOBER_SCHED=1,0,2`（spawn = 0 子を先に / 1 親を先に・待つ / 終わる =
-// 走れるtaskのスタックの上から何番目か）。列が尽きた後と選択肢が1つの点は0（既定の方針）。SOBER_SCHED_TRACE=1なら選択肢が2つ以上の点ごとに
+// 実行待ちの列の古い側から何番目か）。列が尽きた後と選択肢が1つの点は0（既定の方針）。SOBER_SCHED_TRACE=1なら選択肢が2つ以上の点ごとに
 // 標準エラーへ `#sched <選択肢の数> <選んだ番号>`（schedvec が全スケジュールを列挙するための足場）。@rt.sched = [列の長さ, 次の位置, trace, 列…]
 const SCHED_CAP = 4096
 const SCHED_SEED = 3 + SCHED_CAP   // @rt.sched の乱択の状態（0 = 使わない）
@@ -187,9 +183,20 @@ const TCB_TOP_ROOM = 3072
 // 機械スタックの大きさ: 1 MiB（NORESERVE — 実メモリは触ったページだけ）。子のregionの深度の上限（1023）まで再帰しても溢れない大きさ —
 // 102（depth_limit）の境目を P3a（親の 8 MB スタックの上で走った）と同じに保つ（64 KiB では深度 1000 程度の再帰で先にスタックが尽きる）
 const TASK_STACK = 1048576
-// SIGSEGVのインターフェース（ガードページに触れた = スタックの溢れ）: 代替スタック64 KiB・@rt.sig = [stack_t 3ワード, sigaction 4ワード]
+// SIGSEGVのインターフェース（ガードページに触れた = スタックの溢れ）: 代替スタック64 KiB・@rt.sig = [stack_t 3ワード, sigaction 4ワード, 空き1ワード,
+// mainのスタックの下端（伸びられる最も低い番地。0 = 判定しない）, mainのスタックの頂上, prlimitの受け皿2ワード, 16進の受け皿2ワード]
 const SIG_ALT = 65536
-const SIG_WORDS = 8
+const SIG_WORDS = 14
+const SIG_MLO = 8
+const SIG_MTOP = 9
+const SIG_RLIM = 10
+const SIG_HEX = 12
+// rt.segvの仮引数の数（ucontextのcr2まで = 28語）
+const SEGV_ARGS = 28
+// カーネルのスタックのガードの幅（stack_guard_gapの既定 = 256ページ）
+const STACK_GAP = 1048576
+// 出力のプログラムに焼き込むコンパイラの版（fatalの行。release.ymlがこの行の "dev" を版に書き換える）
+const RtVersion = "dev" // sober-version
 // rt.panic_mem の種類の続き（スタックの溢れ — 死因の印字は StackExceeded{}）
 const PM_STACK = 4
 
@@ -209,11 +216,19 @@ func needTaskRt(st mut St) {
     st.rtTaskWait = addFunc(mut st, int(strLit(mut st, "rt.task_wait")), desugar.ListRef(list0(mut st)), -1)
     st.rtTaskPop = addFunc(mut st, int(strLit(mut st, "rt.task_pop")), desugar.ListRef(list0(mut st)), TyPtr)
     st.rtRdySpill = addFunc(mut st, int(strLit(mut st, "rt.ready_spill")), desugar.ListRef(list0(mut st)), -1)
-    st.rtRdyUnspill = addFunc(mut st, int(strLit(mut st, "rt.ready_unspill")), desugar.ListRef(list0(mut st)), TyI64)
     st.rtSchedPick = addFunc(mut st, int(strLit(mut st, "rt.sched_pick")), desugar.ListRef(list1(mut st, TyI64)), TyI64)
     st.schedG = addWorkerGlobal(mut st, int(strLit(mut st, "rt.sched")), 5 + SCHED_CAP)
     st.rtDeadlock = addFunc(mut st, int(strLit(mut st, "rt.deadlock")), desugar.ListRef(list0(mut st)), -1)
-    st.rtSegv = addFunc(mut st, int(strLit(mut st, "rt.segv")), desugar.ListRef(list0(mut st)), -1)
+    // rt.segvはシグナルの口（番地を取られる関数なので引数は旧規約 = スタックの[rbp + 16 + 8k]）。カーネルの積むフレーム（rt_sigframe）は
+    // [戻り先 | ucontext | siginfo]なので、仮引数kはucontextのk語目（rsp = 20・rip = 21・cr2 = 27）
+    sa := listN(mut st, SEGV_ARGS)
+    for k <- iter.Range(1, SEGV_ARGS + 1) {
+        desugar.HeapSet(mut st.d, sa + k, TyI64)
+    }
+    st.rtSegv = addFunc(mut st, int(strLit(mut st, "rt.segv")), desugar.ListRef(sa), -1)
+    if st.rtMut == 97 {
+        st.rtSegvProbe = addFunc(mut st, int(strLit(mut st, "rt.segv_probe")), desugar.ListRef(list1(mut st, TyPtr)), TyI64)
+    }
     st.rtSlotGive = addFunc(mut st, int(strLit(mut st, "rt.slot_give")), desugar.ListRef(list2(mut st, TyI64, TyI64)), -1)
     st.rtSlotTrim = addFunc(mut st, int(strLit(mut st, "rt.slot_trim")), desugar.ListRef(list0(mut st)), -1)
     st.rtUnmap = addFunc(mut st, int(strLit(mut st, "rt.unmap")), desugar.ListRef(list2(mut st, TyI64, TyI64)), -1)
@@ -296,12 +311,97 @@ func taskInitMain(st mut St, sp int) {
     store(mut st, sg, 5, h)
     store(mut st, sg, 6, iconst(mut st, 0))
     syscall(mut st, list5(mut st, iconst(mut st, 13), iconst(mut st, 11), ptoi(mut st, gepWord(mut st, sg, iconst(mut st, 3))), iconst(mut st, 0), iconst(mut st, 8)))
+    mainStackInit(mut st, sp, sg)
 }
 
-// rt.segv(): 罠が張られていれば死因（102・種類 PM_STACK）を書いて巻き戻る（task のスタックの溢れ）。張られていなければ
-// `panic: StackExceeded{}` を印字してexit 102（mainのスタックの外のSIGSEGV — std/taskを使うプログラムだけがこのインターフェースを持つ）
+// mainのスタックの範囲（rt.segvの判定）: 頂上 = カーネルがexecで置いたファイル名の文字列（auxvのAT_EXECFN = 31）の終わり + 8
+// （execはスタックの写像の頂上の1語の下にファイル名を置く）。下端 = 頂上 − RLIMIT_STACK（prlimit64）。上限なし・読めない・AT_EXECFNが無いときは0（判定しない）
+func mainStackInit(st mut St, sp int, sg int) {
+    zero := iconst(mut st, 0)
+    argc := load(mut st, sp, 0)
+    // envpの終わり（NULL）の次がauxv（vdsoWalkと同じ歩き方）
+    le := newBlock(mut st)
+    p := param(mut st, le, TyI64)
+    la := newBlock(mut st)
+    q := param(mut st, la, TyI64)
+    done := newBlock(mut st)
+    fnp := param(mut st, done, TyI64)
+    br(mut st, le, list1(mut st, ptoi(mut st, gepWord(mut st, sp, bin(mut st, BAdd, argc, iconst(mut st, 1))))))
+    setCur(mut st, le)
+    p8 := bin(mut st, BAdd, p, iconst(mut st, 8))
+    condbr(mut st, cmp(mut st, CEq, load(mut st, itop(mut st, p8), 0), zero), la, list1(mut st, bin(mut st, BAdd, p8, iconst(mut st, 8))), le, list1(mut st, p8))
+    setCur(mut st, la)
+    t := load(mut st, itop(mut st, q), 0)
+    chk := newBlock(mut st)
+    found := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, t, zero), done, list1(mut st, zero), chk, -1)
+    setCur(mut st, chk)
+    condbr(mut st, cmp(mut st, CEq, t, iconst(mut st, 31)), found, -1, la, list1(mut st, bin(mut st, BAdd, q, iconst(mut st, 16))))
+    setCur(mut st, found)
+    br(mut st, done, list1(mut st, load(mut st, itop(mut st, q), 1)))
+    setCur(mut st, done)
+    // 文字列の長さ
+    ls := newBlock(mut st)
+    i := param(mut st, ls, TyI64)
+    lb := newBlock(mut st)
+    le2 := newBlock(mut st)
+    have := newBlock(mut st)
+    fin := newBlock(mut st)
+    lo := param(mut st, fin, TyI64)
+    mtop := param(mut st, fin, TyI64)
+    condbr(mut st, cmp(mut st, CEq, fnp, zero), fin, list2(mut st, zero, zero), ls, list1(mut st, zero))
+    setCur(mut st, ls)
+    condbr(mut st, cmp(mut st, CEq, load8(mut st, gepByte(mut st, itop(mut st, fnp), i), 0), zero), le2, -1, lb, -1)
+    setCur(mut st, lb)
+    br(mut st, ls, list1(mut st, bin(mut st, BAdd, i, iconst(mut st, 1))))
+    setCur(mut st, le2)
+    tp := bin(mut st, BAdd, bin(mut st, BAdd, fnp, i), iconst(mut st, 9))
+    // prlimit64(0, RLIMIT_STACK, NULL, &old)
+    rc := syscall(mut st, list5(mut st, iconst(mut st, 302), zero, iconst(mut st, 3), zero, ptoi(mut st, gepWord(mut st, sg, iconst(mut st, SIG_RLIM)))))
+    rlim := load(mut st, sg, SIG_RLIM)
+    // 失敗・上限なし（RLIM_INFINITY = −1）・頂上より大きい上限は判定しない
+    ok := bin(mut st, BAnd, bin(mut st, BAnd, cmp(mut st, CEq, rc, zero), cmp(mut st, CNe, rlim, iconst(mut st, -1))), cmp(mut st, CUlt, rlim, tp))
+    condbr(mut st, cmp(mut st, CNe, ok, zero), have, -1, fin, list2(mut st, zero, zero))
+    setCur(mut st, have)
+    br(mut st, fin, list2(mut st, bin(mut st, BSub, tp, rlim), tp))
+    setCur(mut st, fin)
+    store(mut st, sg, SIG_MLO, lo)
+    store(mut st, sg, SIG_MTOP, mtop)
+}
+
+// rt.segv（SIGSEGVの口）: 落ちた番地（cr2）が、いま走っているスタックの限界に入っていればスタックの溢れ。罠が張られていれば死因（102・種類PM_STACK）を
+// 書いて巻き戻る（taskのスタックの溢れ）。張られていなければ `panic: StackExceeded{}` を印字してexit 102。
+// スタックの限界 = taskのチャンク・taskの所有エリア・ワーカーのエリアのガード（どれも[ガード | スタック]の並びで、頂上 − K − GからGバイト）と、
+// mainのスタックの下端の近く（下端より下のカーネルのガードの幅と、下端の上の1ページ。rspもmainのスタックの範囲にあるとき）。
+// それ以外の不正なアクセスは言語のpanicではない（処理系の不具合）: 番地と命令の位置を標準エラーに2行書き、SIGSEGVを既定の動作に戻して
+// 同じ信号を自分へ送る（コアダンプつきの終了）。ハンドラーの中では生のsyscallだけを使う（ほかのワーカーのスレッドが走っている）
 func buildSegv(st mut St) {
     begin(mut st, st.rtSegv)
+    zero := iconst(mut st, 0)
+    // 仮引数の値（%k = ucontextのk語目）
+    cr2 := 27
+    rsp := 20
+    pc := 21
+    sg := globaladdr(mut st, st.sigG)
+    t := load(mut st, globaladdr(mut st, st.taskG), TK_CUR)
+    // taskのチャンクのガード: 頂上 = TCB − R
+    mut ov := segvGuard(mut st, cr2, bin(mut st, BSub, t, iconst(mut st, TCB_TOP_ROOM)))
+    ov = bin(mut st, BAnd, ov, cmp(mut st, CNe, t, zero))
+    if st.areaOn {
+        ov = bin(mut st, BOr, ov, segvGuard(mut st, cr2, load(mut st, itop(mut st, t), TC_AREA)))
+        ov = bin(mut st, BOr, ov, segvGuard(mut st, cr2, load(mut st, globaladdr(mut st, st.wkG), WK_AREA)))
+    }
+    // mainのスタック: 下端lo（0 = 判定しない）・頂上top。rspが[lo − GAP, top) にあり、cr2が[lo − GAP, lo + 4096) にあるとき
+    lo := load(mut st, sg, SIG_MLO)
+    mtop := load(mut st, sg, SIG_MTOP)
+    lg := bin(mut st, BSub, lo, iconst(mut st, STACK_GAP))
+    inM := bin(mut st, BAnd, cmp(mut st, CUge, rsp, lg), cmp(mut st, CUlt, rsp, mtop))
+    nearLo := bin(mut st, BAnd, cmp(mut st, CUge, cr2, lg), cmp(mut st, CUlt, cr2, bin(mut st, BAdd, lo, iconst(mut st, 4096))))
+    ov = bin(mut st, BOr, ov, bin(mut st, BAnd, cmp(mut st, CNe, lo, zero), bin(mut st, BAnd, inM, nearLo)))
+    bOv := newBlock(mut st)
+    bBad := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, ov, zero), bOv, -1, bBad, -1)
+    setCur(mut st, bOv)
     trapDie(mut st, PANIC_MEM, iconst(mut st, PM_STACK))
     meta := globaladdr(mut st, st.meta)
     toStderr(mut st, meta)
@@ -311,6 +411,54 @@ func buildSegv(st mut St) {
         coverDump(mut st)
     }
     exit(mut st, PANIC_MEM)
+    setCur(mut st, bBad)
+    segvWrite(mut st, "fatal: invalid memory access at 0x")
+    segvHex(mut st, sg, cr2)
+    segvWrite(mut st, " (pc 0x")
+    segvHex(mut st, sg, pc)
+    segvWrite(mut st, ")\nfatal: this is a bug in the Sober compiler or runtime, not in the program (sober ${RtVersion}); please report it with the program that caused it\n")
+    // rt_sigaction(SIGSEGV, {SIG_DFL}, NULL, 8) → tgkill(getpid(), gettid(), SIGSEGV)
+    store(mut st, sg, 3, zero)
+    store(mut st, sg, 4, zero)
+    store(mut st, sg, 5, zero)
+    store(mut st, sg, 6, zero)
+    syscall(mut st, list5(mut st, iconst(mut st, 13), iconst(mut st, 11), ptoi(mut st, gepWord(mut st, sg, iconst(mut st, 3))), zero, iconst(mut st, 8)))
+    pid := syscall(mut st, list1(mut st, iconst(mut st, 39)))
+    tid := syscall(mut st, list1(mut st, iconst(mut st, 186)))
+    syscall(mut st, list4(mut st, iconst(mut st, 234), pid, tid, iconst(mut st, 11)))
+    // 届かない（既定の動作で終わる）
+    exit(mut st, 139)
+}
+
+// cr2が頂上stopのスタック[ガードG | スタックK]のガードに入るか（値は0 / 1。stop = 0なら0）
+func segvGuard(st mut St, cr2 int, stop int) int {
+    g := bin(mut st, BSub, stop, iconst(mut st, TASK_STACK + TASK_GUARD))
+    inG := bin(mut st, BAnd, cmp(mut st, CUge, cr2, g), cmp(mut st, CUlt, cr2, bin(mut st, BAdd, g, iconst(mut st, TASK_GUARD))))
+    return bin(mut st, BAnd, inG, cmp(mut st, CNe, stop, iconst(mut st, 0)))
+}
+
+// 文字列の定数を標準エラーへ（生のwrite。rodataの綴りを直に指し、ヘッダを作らない）
+func segvWrite(st mut St, w string) {
+    r := strLit(mut st, w)
+    ga := globaladdr(mut st, strGlobal(mut st, r))
+    syscall(mut st, list4(mut st, iconst(mut st, 1), iconst(mut st, 2), ptoi(mut st, ga), iconst(mut st, slen(mut st, r))))
+}
+
+// vを16桁の16進で標準エラーへ（受け皿は @rt.sigのSIG_HEXの2語）
+func segvHex(st mut St, sg int, v int) {
+    b := gepWord(mut st, sg, iconst(mut st, SIG_HEX))
+    for k <- iter.Range(0, 16) {
+        n := bin(mut st, BAnd, bin(mut st, BSar, v, iconst(mut st, 60 - 4 * k)), iconst(mut st, 15))
+        c := bin(mut st, BAdd, bin(mut st, BAdd, n, iconst(mut st, 48)), bin(mut st, BMul, cmp(mut st, CGt, n, iconst(mut st, 9)), iconst(mut st, 39)))
+        store8(mut st, gepByte(mut st, b, iconst(mut st, k)), 0, c)
+    }
+    syscall(mut st, list4(mut st, iconst(mut st, 1), iconst(mut st, 2), ptoi(mut st, b), iconst(mut st, 16)))
+}
+
+// 計測用のミュータント97の子: 不正な番地（8）を読む（rt.task_startが罠を張って、本体の代わりに呼ぶ）
+func buildSegvProbe(st mut St) {
+    begin(mut st, st.rtSegvProbe)
+    ret(mut st, load(mut st, itop(mut st, iconst(mut st, 8)), 0))
 }
 
 func buildTaskRt(st mut St) {
@@ -323,6 +471,9 @@ func buildTaskRt(st mut St) {
     }
     buildTaskStart(mut st)
     buildSegv(mut st)
+    if st.rtMut == 97 {
+        buildSegvProbe(mut st)
+    }
     buildSlotNew(mut st)
     buildSlotGive(mut st)
     buildSlotTrim(mut st)
@@ -347,7 +498,7 @@ func buildTaskRt(st mut St) {
     buildAdmitRt(mut st)
 }
 
-// 走れるスタックの環の容量（開発用 --rt-mutant=28 / 29は8 — 溢れのパスを毎回通す検査のbuild・29は溢れの順も崩す）
+// 実行待ちの列の環の容量（開発用の--rt-mutant=28 / 29は8。溢れのパスを毎回通す検査のbuildで、29は溢れの順も崩す）
 func rqCap(st mut St) int {
     return if st.rtMut == 28 || st.rtMut == 29 { 8 } else { RQ_CAP }
 }
@@ -357,16 +508,7 @@ func rqSlot(st mut St, tk int, i int) int {
     return gepWord(mut st, tk, bin(mut st, BAdd, bin(mut st, BShl, bin(mut st, BAnd, i, iconst(mut st, rqCap(mut st) - 1)), iconst(mut st, 1)), iconst(mut st, TK_RQ)))
 }
 
-// task tp の期限（TSC）= 積んだ時刻 + D（D = TC_MAXW の ns〔0 = 既定〕を TSC の数へ: × MN_TSCQ ÷ 65536 — 校正の前は TSCQ_DEF = 4 GHz と仮定）
-func readyDl(st mut St, tp int, wake int) int {
-    mw := load(mut st, tp, TC_MAXW)
-    dns := bin(mut st, BAdd, mw, bin(mut st, BMul, cmp(mut st, CEq, mw, iconst(mut st, 0)), iconst(mut st, MN_WAIT_DEF)))
-    tq := load(mut st, globaladdr(mut st, st.mnG), MN_TSCQ)
-    qe := bin(mut st, BAdd, tq, bin(mut st, BMul, cmp(mut st, CEq, tq, iconst(mut st, 0)), iconst(mut st, TSCQ_DEF)))
-    return bin(mut st, BAdd, wake, bin(mut st, BSar, bin(mut st, BMul, dns, qe), iconst(mut st, 16)))
-}
-
-// task t（番地のint）を走れるスタックの頭へ。TC_WAKE = 今（ワーカーのWK_NOW — mn_nextが周ごとに1回読むTSC — touch.tsの齢と溢れの列の期限が読む）・枠にも同じ時刻
+// task t（番地のint）を実行待ちの列の頭へ。TC_WAKE = 今（ワーカーのWK_NOW。mn_nextが周ごとに1回読むTSCで、touch.tsの齢とLedgerのmaxWaitが読む）・枠にも同じ時刻
 func readyPush(st mut St, tk int, t int) {
     tp := itop(mut st, t)
     now := load(mut st, globaladdr(mut st, st.wkG), WK_NOW)
@@ -387,7 +529,7 @@ func readyPush(st mut St, tk int, t int) {
 }
 
 // 環の底の1本を溢れの列の最新へ移す（環が満杯の押し込み — 低速パス）。ミュータント29（開発用 --rt-mutant — 検査の自己検査）は最古の側へ繋ぐ
-// （溢れの列の古い順が崩れる — 底の取り出しが新しい task を先に取り、期限の拾いと LIFO の意味が壊れる）
+// （溢れの列の古い順が崩れる。底の取り出しが新しいtaskを先に取り、FIFOの順が壊れる）
 func readySpill(st mut St, tk int) {
     tl := load(mut st, tk, TK_RQT)
     q := load(mut st, rqSlot(mut st, tk, tl), 0)
@@ -426,38 +568,37 @@ func readySpill(st mut St, tk int) {
     store(mut st, tk, TK_SPN, q)
 }
 
-// 頭の1本を外して返す（番地のint — 呼び手はTK_READY ≠ 0を確認してから）。環が空なら溢れの列の最新
-func readyPopHead(st mut St, tk int) int {
-    store(mut st, tk, TK_READY, bin(mut st, BSub, load(mut st, tk, TK_READY), iconst(mut st, 1)))
-    h := load(mut st, tk, TK_RQH)
-    bR := newBlock(mut st)
-    bS := newBlock(mut st)
+// task t（番地のint）を実行待ちの列の次に取る位置へ（溢れの列の最古の側。取り出しは溢れの列の最古から先に取る）。協調形のspawnの親だけが使う:
+// 子を先に走らせ、親は子が待つか終わったら次に走る（spawnの木を深さ優先に保つ）
+func readyPushNext(st mut St, tk int, t int) {
+    tp := itop(mut st, t)
+    now := load(mut st, globaladdr(mut st, st.wkG), WK_NOW)
+    store(mut st, tp, TC_WAKE, now)
+    store(mut st, tk, TK_READY, bin(mut st, BAdd, load(mut st, tk, TK_READY), iconst(mut st, 1)))
+    o := load(mut st, tk, TK_SPO)
+    zero := iconst(mut st, 0)
+    store(mut st, tp, TC_PREV, zero)
+    store(mut st, tp, TC_NEXT, o)
+    bE := newBlock(mut st)
+    bL := newBlock(mut st)
     bJ := newBlock(mut st)
-    v := param(mut st, bJ, TyI64)
-    condbr(mut st, cmp(mut st, CNe, h, load(mut st, tk, TK_RQT)), bR, -1, bS, -1)
-    setCur(mut st, bR)
-    h1 := bin(mut st, BSub, h, iconst(mut st, 1))
-    store(mut st, tk, TK_RQH, h1)
-    br(mut st, bJ, list1(mut st, load(mut st, rqSlot(mut st, tk, h1), 0)))
-    setCur(mut st, bS)
-    br(mut st, bJ, list1(mut st, call(mut st, st.rtRdyUnspill, list0(mut st))))
+    condbr(mut st, cmp(mut st, CEq, o, zero), bE, -1, bL, -1)
+    setCur(mut st, bE)
+    store(mut st, tk, TK_SPN, t)
+    br(mut st, bJ, -1)
+    setCur(mut st, bL)
+    store(mut st, itop(mut st, o), TC_PREV, t)
+    br(mut st, bJ, -1)
     setCur(mut st, bJ)
-    return v
+    store(mut st, tk, TK_SPO, t)
 }
 
-// 溢れの低速パスのrtの本体（押し込みのインターフェース・頭の取り出しのインターフェースごとに展開しない — 自己buildのELFの上限値）:
-// rt.ready_spill() = 環の底の 1 本を溢れの列の最新へ・rt.ready_unspill() = 溢れの列の最新を外して返す（環が空のときの頭の取り出し）
+// 溢れの低速パスのrtの本体（押し込みのインターフェースごとに展開しない。自己buildのELFの上限値のため）:
+// rt.ready_spill() = 環の底の1本を溢れの列の最新へ
 func buildReadySpill(st mut St) {
     begin(mut st, st.rtRdySpill)
     readySpill(mut st, globaladdr(mut st, st.taskG))
     ret(mut st, -1)
-    begin(mut st, st.rtRdyUnspill)
-    tk := globaladdr(mut st, st.taskG)
-    p := load(mut st, tk, TK_SPN)
-    np := load(mut st, itop(mut st, p), TC_PREV)
-    store(mut st, tk, TK_SPN, np)
-    spillFix(mut st, tk, np, TK_SPO, TC_NEXT)
-    ret(mut st, p)
 }
 
 // 底の1本を外して返す（呼び手はTK_READY ≠ 0を確認してから）。溢れの列が空でなければその最古
@@ -497,25 +638,7 @@ func spillFix(st mut St, tk int, x int, other int, w int) {
     setCur(mut st, bJ)
 }
 
-// 底の期限（溢れの列が空でなければその最古・でなければ環の底の枠の時刻 + D〔底の TC_MAXW〕）
-func readyTailDl(st mut St, tk int) int {
-    o := load(mut st, tk, TK_SPO)
-    bR := newBlock(mut st)
-    bS := newBlock(mut st)
-    bJ := newBlock(mut st)
-    v := param(mut st, bJ, TyI64)
-    condbr(mut st, cmp(mut st, CNe, o, iconst(mut st, 0)), bS, -1, bR, -1)
-    setCur(mut st, bS)
-    op := itop(mut st, o)
-    br(mut st, bJ, list1(mut st, readyDl(mut st, op, load(mut st, op, TC_WAKE))))
-    setCur(mut st, bR)
-    sl := rqSlot(mut st, tk, load(mut st, tk, TK_RQT))
-    br(mut st, bJ, list1(mut st, readyDl(mut st, itop(mut st, load(mut st, sl, 0)), load(mut st, sl, 1))))
-    setCur(mut st, bJ)
-    return v
-}
-
-// task t を走れるスタックに載せる（切り替えない — 今のtaskが待つか終わったときに走る）
+// task tを実行待ちの列に載せる（切り替えない。今のtaskが待つか終わったときに走る）
 func taskWake(st mut St, t int) {
     tk := globaladdr(mut st, st.taskG)
     readyPush(mut st, tk, ptoi(mut st, t))
@@ -536,9 +659,9 @@ func taskWakeAny(st mut St, t int) {
     setCur(mut st, bE)
 }
 
-// 走れるスタックから次のtaskを取る（無ければrt.deadlock — 全taskが待っている = デッドロック。Kahnにより有無はスケジュールに依らない）
+// 実行待ちの列から次のtaskを取る（無ければrt.deadlock。全taskが待っている = デッドロック。Kahnにより有無はスケジュールに依らない）
 func taskNext(st mut St) int {
-    // 高速パス（段階6 P4-6）: 選択の器を使わず走れるスタックが空でなければ、一番上をその場で外す（rt.task_popを呼ばない — 全レジスタの退避を踏まない）
+    // 高速パス: 選択の器を使わず実行待ちの列が空でなければ、いちばん古い1本をその場で外す（rt.task_popを呼ばない。全レジスタの退避を踏まない）
     tk := globaladdr(mut st, st.taskG)
     // netの待ち手がいればスリープしてから取り直す（netpoll.sober — 協調形の眠りの席）
     retry := if netOn(mut st) { newBlock(mut st) } else { BlkRef(-1) }
@@ -554,7 +677,7 @@ func taskNext(st mut St) int {
     fast := bin(mut st, BAnd, cmp(mut st, CEq, load(mut st, globaladdr(mut st, st.schedG), SCHED_ACT), iconst(mut st, 0)), cmp(mut st, CNe, head, iconst(mut st, 0)))
     condbr(mut st, fast, bFast, -1, bSlow, -1)
     setCur(mut st, bFast)
-    br(mut st, bGot, list1(mut st, itop(mut st, readyPopHead(mut st, tk))))
+    br(mut st, bGot, list1(mut st, itop(mut st, readyPopTail(mut st, tk))))
     setCur(mut st, bSlow)
     br(mut st, bGot, list1(mut st, call(mut st, st.rtTaskPop, list0(mut st))))
     setCur(mut st, bGot)
@@ -2155,10 +2278,7 @@ func buildTaskNew(st mut St) {
 // rt.task_new（inPool = false）と rt.task_new_in（inPool = true — task.SpawnIn の入場: 第 3 実引数 = プールの節・節であふれたら 0 = shed）の本体
 func buildTaskNewFn(st mut St, fnr FnRef, inPool bool) {
     begin(mut st, fnr)
-    // 親（今のtask）の次のspawn 1回のDのフラグを読んで消す（rt.netop 7 — SpawnでもSpawnInでも。入場でshedしても消す）
     parT := itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
-    mw := load(mut st, parT, TC_NMAXW)
-    store(mut st, parT, TC_NMAXW, iconst(mut st, 0))
     // SpawnIn: 親の次のspawn 1回のスロットの大きさのフラグを読んで消す（入場でshedしても消す — rt.netop 6）。
     // コピーしたスロットのVAがVA_SHEDを越えていれば入場の前にshed（va_exhaustedの死の代わり）
     mut mk := -1
@@ -2283,9 +2403,6 @@ func buildTaskNewFn(st mut St, fnr FnRef, inPool bool) {
     store(mut st, got, TC_CNODE, adm.node)
     store(mut st, got, TC_DECL, 1)
     store(mut st, got, TC_SITE, bin(mut st, BSar, 0, iconst(mut st, 2)))
-    // 待ちの上限D（TC_MAXW）: フラグ（net.ServeのmaxWait: — rt.netop 7）があればそれ・無ければ親から継ぐ
-    pmw := load(mut st, itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR)), TC_MAXW)
-    store(mut st, got, TC_MAXW, bin(mut st, BAdd, pmw, bin(mut st, BMul, cmp(mut st, CNe, mw, iconst(mut st, 0)), bin(mut st, BSub, mw, pmw))))
     // 未着手の子の上限は親から継ぐ
     store(mut st, got, TC_BACKLOG, load(mut st, itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR)), TC_BACKLOG))
     if inPool {
@@ -2606,7 +2723,8 @@ func buildTaskGo(st mut St) {
     parB := newBlock(mut st)
     condbr(mut st, cmp(mut st, CEq, c, iconst(mut st, 0)), kid, -1, parB, -1)
     setCur(mut st, kid)
-    taskWake(mut st, 0)
+    // 子を先に: 親は実行待ちの列の次に取る位置へ（列の後ろへ積むと、葉が終わるたびにいちばん古い親が再開して木が幅優先に走る）
+    readyPushNext(mut st, globaladdr(mut st, st.taskG), ptoi(mut st, 0))
     parkRelease(mut st, 0, false, false)
     call(mut st, st.rtTaskSwitch, list2(mut st, 0, 1))
     ret(mut st, -1)
@@ -2627,6 +2745,9 @@ func buildTaskSwitch(st mut St) {
         areaSwap(mut st, 0)
     }
     taskHandover(mut st, 0, 1)
+    if st.areaOn {
+        areaSpCheck(mut st, 0, 1)
+    }
     fresh := newBlock(mut st)
     resume := newBlock(mut st)
     done := newBlock(mut st)
@@ -2799,12 +2920,12 @@ func buildSchedPick(st mut St) {
     ret(mut st, v)
 }
 
-// rt.task_pop() ptr: 走れるスタックから1つ外す（スタックの上からrt.sched_pick(長さ) 番目 — 既定は一番上）。空なら0
+// rt.task_pop() ptr: 実行待ちの列から1つ外す（古い側からrt.sched_pick(長さ) 番目。既定はいちばん古い1本）。空なら0
 func buildTaskPop(st mut St) {
     begin(mut st, st.rtTaskPop)
     tk := globaladdr(mut st, st.taskG)
     nn := load(mut st, tk, TK_READY)
-    // 選択の器を使わない（既定のスケジュール）: 一番上を外すだけ（段階6 P4-4）
+    // 選択の器を使わない（既定のスケジュール）: いちばん古い1本を外すだけ
     bAct := newBlock(mut st)
     bTop := newBlock(mut st)
     condbr(mut st, cmp(mut st, CNe, load(mut st, globaladdr(mut st, st.schedG), SCHED_ACT), iconst(mut st, 0)), bAct, -1, bTop, -1)
@@ -2815,7 +2936,7 @@ func buildTaskPop(st mut St) {
     setCur(mut st, bNone)
     ret(mut st, itop(mut st, iconst(mut st, 0)))
     setCur(mut st, bHead)
-    ret(mut st, itop(mut st, readyPopHead(mut st, tk)))
+    ret(mut st, itop(mut st, readyPopTail(mut st, tk)))
     setCur(mut st, bAct)
     empty := newBlock(mut st)
     some := newBlock(mut st)
@@ -2824,15 +2945,17 @@ func buildTaskPop(st mut St) {
     ret(mut st, itop(mut st, iconst(mut st, 0)))
     setCur(mut st, some)
     k := call(mut st, st.rtSchedPick, list1(mut st, nn))
-    // k番目（上から — 0 = 頭）を外す（選択の器のパス = schedfuzzの試験だけ・O(n)）。環の中なら上の枠を1つずつ下へずらす・溢れの列の中ならチェーンから外す
+    // k番目（古い側から数える。0 = 底）を外す（選択の器のパス = schedfuzzの試験だけ・O(n)）。溢れの列（どれも環より古い）の中ならチェーンから外す・
+    // 環の中なら上の枠を1つずつ下へずらす
     h := load(mut st, tk, TK_RQH)
     nr := bin(mut st, BSub, h, load(mut st, tk, TK_RQT))
+    ns := bin(mut st, BSub, nn, nr)
     store(mut st, tk, TK_READY, bin(mut st, BSub, nn, iconst(mut st, 1)))
     bRing := newBlock(mut st)
     bSp := newBlock(mut st)
-    condbr(mut st, cmp(mut st, CLt, k, nr), bRing, -1, bSp, -1)
+    condbr(mut st, cmp(mut st, CGe, k, ns), bRing, -1, bSp, -1)
     setCur(mut st, bRing)
-    at := bin(mut st, BSub, bin(mut st, BSub, h, iconst(mut st, 1)), k)
+    at := bin(mut st, BAdd, load(mut st, tk, TK_RQT), bin(mut st, BSub, k, ns))
     got := load(mut st, rqSlot(mut st, tk, at), 0)
     sl := newBlock(mut st)
     j := param(mut st, sl, TyI64)
@@ -2850,18 +2973,18 @@ func buildTaskPop(st mut St) {
     setCur(mut st, sd)
     store(mut st, tk, TK_RQH, bin(mut st, BSub, h, iconst(mut st, 1)))
     ret(mut st, itop(mut st, got))
-    // 溢れの列: 最新から TC_PREV で k − nr 歩
+    // 溢れの列: 最古からTC_NEXTでk歩
     setCur(mut st, bSp)
     wl := newBlock(mut st)
     q := param(mut st, wl, TyI64)
     i := param(mut st, wl, TyI64)
     wb := newBlock(mut st)
     found := newBlock(mut st)
-    br(mut st, wl, list2(mut st, load(mut st, tk, TK_SPN), nr))
+    br(mut st, wl, list2(mut st, load(mut st, tk, TK_SPO), iconst(mut st, 0)))
     setCur(mut st, wl)
     condbr(mut st, cmp(mut st, CEq, i, k), found, -1, wb, -1)
     setCur(mut st, wb)
-    br(mut st, wl, list2(mut st, load(mut st, itop(mut st, q), TC_PREV), bin(mut st, BAdd, i, iconst(mut st, 1))))
+    br(mut st, wl, list2(mut st, load(mut st, itop(mut st, q), TC_NEXT), bin(mut st, BAdd, i, iconst(mut st, 1))))
     setCur(mut st, found)
     qp := itop(mut st, q)
     older := load(mut st, qp, TC_PREV)
@@ -2891,7 +3014,9 @@ func spillLink(st mut St, tk int, x int, w int, v int, end int) {
 func buildTaskStart(st mut St) {
     begin(mut st, st.rtTaskStart)
     frame := itop(mut st, load(mut st, 0, TC_FRAME))
-    r := trapCall(mut st, load(mut st, 0, TC_KID), fieldPtr(mut st, frame, FR_RES))
+    // ミュータント97: 本体の代わりに、不正な番地を読む子を罠の中で呼ぶ（rt.segvが巻き戻さずにプロセスを止めることの検査）
+    kid := if st.rtMut == 97 { funcaddr(mut st, st.rtSegvProbe) } else { load(mut st, 0, TC_KID) }
+    r := trapCall(mut st, kid, fieldPtr(mut st, frame, FR_RES))
     if st.domUse {
         domDiedIn(mut st, 0)
     }

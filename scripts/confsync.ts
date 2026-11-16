@@ -234,7 +234,7 @@ function claimTable(block: string, statuses: string[], lang: Lang): string[] {
 // ── 生成のチャンク
 const ALERTS: Record<string, string> = {
   "10": "unexpected_message", "20": "bad_record_mac", "22": "record_overflow", "40": "handshake_failure", "47": "illegal_parameter",
-  "50": "decode_error", "51": "decrypt_error", "70": "protocol_version", "120": "no_application_protocol",
+  "50": "decode_error", "51": "decrypt_error", "70": "protocol_version", "109": "missing_extension", "120": "no_application_protocol",
 };
 
 type Row = [string, string, string, string]; // 規格 / 出所 / 鍵 / 備考の鍵（無ければ ""）

@@ -833,8 +833,8 @@ func tyOf(st mut S, pk int, te NodeRef, at NodeRef, fuel int) (TyRef, error?) {
             rt := tyOf(mut st, pk, latN(mut st, rl, i), at, fuel - 1)?
             hsetTy(mut st, int(rs) + 1 + i, retTy(mut st, rt))
         }
-        p := tyChain(mut st, ps)
-        return tFn(mut st, p, tyChain(mut st, rs)), nil
+        p := tyTree(mut st, ps)
+        return tFn(mut st, p, resTy(mut st, rs)), nil
     case ast.TOpt:
         x := tyOf(mut st, pk, nA(nodeOf(mut st, te)), at, fuel - 1)?
         return tOpt(mut st, x), nil
@@ -856,7 +856,7 @@ func tyOf(st mut S, pk int, te NodeRef, at NodeRef, fuel int) (TyRef, error?) {
         for i <- iter.Range(0, n) {
             hsetTy(mut st, int(ts) + 1 + i, tyOf(mut st, pk, latN(mut st, l, i), at, fuel - 1)?)
         }
-        return tyChain(mut st, ts), nil
+        return resTy(mut st, ts), nil
     }
     return 0, diag.CoreFragment{at: posOf(mut st, at)}
 }
@@ -916,7 +916,7 @@ func fieldsTy(st mut S, pk int, fs ListRef, at NodeRef, fuel int) (TyRef, error?
     for i <- iter.Range(0, n) {
         hsetTy(mut st, int(ts) + 1 + i, tyOf(mut st, pk, nB(nodeOf(mut st, latN(mut st, fs, i))), at, fuel)?)
     }
-    return tyChain(mut st, ts), nil
+    return tyTree(mut st, ts), nil
 }
 
 // variant のペイロード型
@@ -929,7 +929,7 @@ func isErrors(decl int, start int) bool {
     return decl == ERRS && start == 0
 }
 
-// variant の列（decl の start 番目から）→ 右結合の union の入れ子
+// variant の列（decl の start 番目から）→ union の木（積の木と同じ分け目 — treeMid）
 func unionTreeTy(st mut S, pk int, decl NodeRef, start int, at NodeRef, fuel int) (TyRef, error?) {
     n := vcount(mut st, decl) - start
     if isErrors(int(decl), start) {
@@ -947,8 +947,17 @@ func unionTreeTy(st mut S, pk int, decl NodeRef, start int, at NodeRef, fuel int
     if n < 2 {
         return 0, diag.CoreFragment{at: posOf(mut st, at)}
     }
-    l := payloadTy(mut st, pk, vat(mut st, decl, start), fuel)?
-    r := if n == 2 { payloadTy(mut st, pk, vat(mut st, decl, start + 1), fuel)? } else { unionTreeTy(mut st, pk, decl, start + 1, at, fuel)? }
+    return unionTyIn(mut st, pk, decl, start, start + n, fuel)
+}
+
+// variant の列の [lo, hi) の union の木
+func unionTyIn(st mut S, pk int, decl NodeRef, lo int, hi int, fuel int) (TyRef, error?) {
+    if hi - lo == 1 {
+        return payloadTy(mut st, pk, vat(mut st, decl, lo), fuel)
+    }
+    m := treeMid(lo, hi)
+    l := unionTyIn(mut st, pk, decl, lo, m, fuel)?
+    r := unionTyIn(mut st, pk, decl, m, hi, fuel)?
     return tUnion(mut st, l, r), nil
 }
 

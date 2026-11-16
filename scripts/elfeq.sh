@@ -10,6 +10,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$PWD
 source scripts/gatelib.sh
+gate_env
 STAGE1=${STAGE1:-$ROOT/src/stage1/zig-out/bin/sober}
 STAGE1=$STAGE1 scripts/stage2.sh --quiet || exit 1
 S2=$ROOT/out/stage2/sober2

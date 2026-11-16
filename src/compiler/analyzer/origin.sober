@@ -7,7 +7,9 @@ package analyzer
 // SH = `@shared` のvariantのリテラル・C = 呼ぶと源に届きうる関数値（Eff[f] — 源のAPIを呼ぶ・Effの呼び先を呼ぶ・Cを持つ関数値を呼ぶ）。
 // 拒否 = 出会い: stdの外のstructの構築（リテラル・フィールドの書き込み）でSHのフィールド（`@shared` のvariantを持つunionの型のフィールド）の値と他のフィールドの値の
 // O / Cが出会う・利用者がレスポンス1件の方針のフィールド（std/http/serverのResponse.cache）へSHを書く・std/http/serverのMount（明示の出会いのAPI）のroutesのSHとmwのO / C。
-// 仮引数由来の値はPinで文脈に鈍く具体化して照合する（違反の明示は構築の位置）
+// 仮引数由来の値はPinで文脈に鈍く具体化して照合する（違反の明示は構築の位置）。
+// Set-Cookieの側: 原子K = `@personal` の型の値（std/http/server.SetCookie）。共有キャッシュに保存されうる方針（`@shared` と `@stored` の
+// variant）とKが、stdの外のstructの構築とMountで組み合わされたら拒否する（保存したSet-Cookieが別の利用者に配られる）
 
 import "ast"
 import "desugar"
@@ -23,6 +25,8 @@ const MOrgStd = 43   // stdの外の `@credential` / `@shared` / `@bless(origin)
 const OgRoute = 0  // 共有の方針のフィールドと、源に届くフィールドが1つのstructの値で出会う
 const OgResp = 1   // レスポンス1件の方針のフィールドへSH
 const OgMount = 2  // Mount の routes の SH と mw の O / C
+const OgCookie = 3 // 保存されうる方針のフィールドと、Kを持つフィールドが1つのstructの値で組み合わされる
+const OgCookieMount = 4 // Mountのroutesの保存されうる方針とmwのK
 
 // ── 準備（svInit から） ──
 
@@ -62,20 +66,36 @@ func ogInitField(az mut Az, td desugar.NodeRef, ty desugar.NodeRef, f int, cred 
 func ogInitUnion(az mut Az, td desugar.NodeRef, body desugar.NodeRef, f int) {
     vs := desugar.ListRef(node(mut az, body).a)
     for i <- iter.Range(0, desugar.LenL(mut az.d, vs)) {
-        if node(mut az, nat(mut az, vs, i)).c != 0 {
+        c := node(mut az, nat(mut az, vs, i)).c
+        if c != 0 {
             table.Push(mut az.sv.shv, int(td))
             table.Push(mut az.sv.shv, i)
             table.Push(mut az.sv.shv, az.sv.natom)
-            az.sv.shMask = az.sv.shMask | (1 << az.sv.natom)
+            table.Push(mut az.sv.shv, c)
+            if c == 1 {
+                az.sv.shMask = az.sv.shMask | (1 << az.sv.natom)
+            }
+            az.sv.stMask = az.sv.stMask | (1 << az.sv.natom)
             svPushAtom(mut az, 4, int(td), i)
             if !desugar.IsStdPkg(mut az.d, desugar.FilePkg(mut az.d, f)) {
-                report(mut az, MOrgStd, td, desugar.NodeRef(2))
+                report(mut az, MOrgStd, td, desugar.NodeRef(if c == 1 { 2 } else { 4 }))
             }
         }
     }
 }
 
-// 原子Cとフィールドの項ごとのSHのフィールドのマーク（源が1本以上あるときだけ）
+// `@personal` のstructの型宣言tdの原子K
+func ogInitPersonal(az mut Az, td desugar.NodeRef, f int) {
+    table.Push(mut az.sv.pers, int(td))
+    table.Push(mut az.sv.pers, az.sv.natom)
+    az.sv.kMask = az.sv.kMask | (1 << az.sv.natom)
+    svPushAtom(mut az, 6, int(td), 0)
+    if !desugar.IsStdPkg(mut az.d, desugar.FilePkg(mut az.d, f)) {
+        report(mut az, MOrgStd, td, desugar.NodeRef(5))
+    }
+}
+
+// 原子Cとフィールドの項ごとのSHのフィールドのマーク（源か `@personal` の型が1つ以上あるときだけ）
 func ogInitRest(az mut Az) {
     az.sv.catom = az.sv.natom
     az.sv.oMask = az.sv.oMask | (1 << az.sv.natom)
@@ -108,8 +128,8 @@ func ogSharedType(az mut Az, tn desugar.NodeRef, pk int) bool {
     if r.kind != desugar.TopType {
         return false
     }
-    for i <- iter.Range(0, table.Len(mut az.sv.shv) / 3) {
-        if table.Get(mut az.sv.shv, i * 3) == r.idx {
+    for i <- iter.Range(0, table.Len(mut az.sv.shv) / 4) {
+        if table.Get(mut az.sv.shv, i * 4) == r.idx {
             return true
         }
     }
@@ -142,6 +162,8 @@ func ogCall(az mut Az, e desugar.NodeRef, fi int, fv []LSet) {
         b := svConcrete(mut az, fv[2])
         if (a.lo & az.sv.shMask) != 0 && (b.lo & az.sv.oMask) != 0 {
             ogViol(mut az, e, OgMount, a, b)
+        } else if (a.lo & az.sv.stMask) != 0 && (b.lo & az.sv.kMask) != 0 {
+            ogViolK(mut az, e, OgCookieMount, a, b)
         }
     }
 }
@@ -162,6 +184,35 @@ func ogFieldRead(az mut Az, base desugar.NodeRef, name desugar.StrRef) LSet {
     return svAtom(a)
 }
 
+// フィールドの読み出しbase.nameの値（出所のモードは値が丸ごとなので、基底の値）。ただし方針の原子（`@shared`・`@stored` のvariant）は、
+// 型 × 名前のスロット（そのフィールドへ書いた値の合併。ogSlotWriteが書く）にあるものだけを残す。実際のフィールドの値は基底の値にもスロットにも
+// 含まれるので健全。方針の原子はvariantのリテラルでしか生まれず、structに入るのはリテラルかフィールドの書き込みだけなので、
+// スロットが取りこぼさない（他の原子はlayout.Decodeのようなリテラルを経ない値もあるので、絞らない）。
+// stdのchainがRouteの値から `x.handler` を読むとき、ルートの行の方針がハンドラの結果に混ざらない。取り除く原子があるときだけ
+// 基底の値をPinで具体化する（無ければ仮引数のビットを保つ）
+func ogFieldVal(az mut Az, base desugar.NodeRef, name desugar.StrRef) LSet {
+    w := sv(mut az, base)
+    q := svField(mut az, desugar.ExprDecl(mut az.d, base), name)
+    if q == -1 {
+        return w
+    }
+    c := svConcrete(mut az, w)
+    sl := readSlot(mut az, az.sv.flBase + q)
+    pol := az.sv.stMask
+    if (c.hi & TOPH) != 0 || (sl.hi & TOPH) != 0 || (c.lo & pol & ^sl.lo) == 0 {
+        return w
+    }
+    return LSet{lo: c.lo & ^(pol & ^sl.lo), hi: c.hi & TOPH}
+}
+
+// フィールドの書き込みbase.name = mの値を型 × 名前のスロットへ（ogFieldValが読む）
+func ogSlotWrite(az mut Az, base desugar.NodeRef, name desugar.StrRef, m LSet) {
+    q := svField(mut az, desugar.ExprDecl(mut az.d, base), name)
+    if q != -1 {
+        addSlot(mut az, az.sv.flBase + q, svConcrete(mut az, m))
+    }
+}
+
 // フィールドの書き込みt（base.name = m）の出会い（stdの外だけ）
 func ogFieldWrite(az mut Az, t desugar.NodeRef, base desugar.NodeRef, name desugar.StrRef, m LSet) {
     if desugar.IsStdPkg(mut az.d, az.pk) {
@@ -174,16 +225,22 @@ func ogFieldWrite(az mut Az, t desugar.NodeRef, base desugar.NodeRef, name desug
     }
     flag := table.Get(mut az.sv.shf, q)
     mc := svConcrete(mut az, m)
-    if flag == 2 {
-        if (mc.lo & az.sv.shMask) != 0 {
-            ogViol(mut az, t, OgResp, mc, lsNone())
-        }
-        return
+    if flag == 2 && (mc.lo & az.sv.shMask) != 0 {
+        ogViol(mut az, t, OgResp, mc, lsNone())
     }
-    if !ogMeetDecl(mut az, d) {
+    if !ogPolicyDecl(mut az, d, 2) {
         return
     }
     whole := svConcrete(mut az, sv(mut az, base))
+    // 保存されうる方針とK（Set-Cookie）: 方針のフィールドへ書く値と残りの値・他のフィールドへ書く値と方針を含む残りの値
+    if flag != 0 && (mc.lo & az.sv.stMask) != 0 && (whole.lo & az.sv.kMask) != 0 {
+        ogViolK(mut az, t, OgCookie, mc, whole)
+    } else if flag == 0 && (mc.lo & az.sv.kMask) != 0 && (whole.lo & az.sv.stMask) != 0 {
+        ogViolK(mut az, t, OgCookie, whole, mc)
+    }
+    if flag == 2 || !ogPolicyDecl(mut az, d, 1) {
+        return
+    }
     if flag == 1 && (mc.lo & az.sv.shMask) != 0 && (whole.lo & az.sv.oMask) != 0 {
         ogViol(mut az, t, OgRoute, mc, whole)
     } else if flag == 0 && (mc.lo & az.sv.oMask) != 0 && (whole.lo & az.sv.shMask) != 0 {
@@ -191,8 +248,8 @@ func ogFieldWrite(az mut Az, t desugar.NodeRef, base desugar.NodeRef, name desug
     }
 }
 
-// 型宣言dがSHのフィールド（マーク1）を持つか
-func ogMeetDecl(az mut Az, d desugar.NodeRef) bool {
+// 型宣言dが方針のフィールド（マーク1 = ルートの行 / 2 = レスポンス1件。mx = 2なら両方・1ならマーク1だけ）を持つか
+func ogPolicyDecl(az mut Az, d desugar.NodeRef, mx int) bool {
     if d == -1 {
         return false
     }
@@ -202,7 +259,8 @@ func ogMeetDecl(az mut Az, d desugar.NodeRef) bool {
     }
     first := table.Get(mut az.sv.hk, i * 3 + 1)
     for k <- iter.Range(0, table.Get(mut az.sv.hk, i * 3 + 2)) {
-        if table.Get(mut az.sv.shf, first + k) == 1 {
+        fg := table.Get(mut az.sv.shf, first + k)
+        if fg != 0 && fg <= mx {
             return true
         }
     }
@@ -219,6 +277,7 @@ func ogComposite(az mut Az, e desugar.NodeRef, x ast.Node) LSet {
     user := !desugar.IsStdPkg(mut az.d, az.pk)
     mut v := lsNone()
     mut shV := lsNone()
+    mut stV := lsNone()
     mut rest := lsNone()
     for i <- iter.Range(0, desugar.LenL(mut az.d, els)) {
         el := node(mut az, nat(mut az, els, i))
@@ -226,7 +285,13 @@ func ogComposite(az mut Az, e desugar.NodeRef, x ast.Node) LSet {
         v = lsOr(v, m)
         fname := if el.a == -1 && st && i < desugar.LenL(mut az.d, fs) { desugar.StrRef(node(mut az, nat(mut az, fs, i)).a) } else { desugar.StrRef(el.a) }
         q := if st && fname != -1 { svField(mut az, desugar.NodeRef(r.idx), fname) } else { -1 }
+        if q != -1 {
+            addSlot(mut az, az.sv.flBase + q, svConcrete(mut az, m))
+        }
         flag := if q != -1 { table.Get(mut az.sv.shf, q) } else { 0 }
+        if flag != 0 {
+            stV = lsOr(stV, m)
+        }
         if flag == 1 {
             shV = lsOr(shV, m)
         } else if flag == 2 {
@@ -241,19 +306,31 @@ func ogComposite(az mut Az, e desugar.NodeRef, x ast.Node) LSet {
     if !st {
         vr := desugar.ResolveVariant(mut az.d, az.pk, desugar.StrRef(x.a))
         if vr.kind == desugar.TopVariant {
-            for i <- iter.Range(0, table.Len(mut az.sv.shv) / 3) {
-                if table.Get(mut az.sv.shv, i * 3) == vr.idx && table.Get(mut az.sv.shv, i * 3 + 1) == vr.sub {
-                    v = lsOr(v, svAtom(table.Get(mut az.sv.shv, i * 3 + 2)))
+            for i <- iter.Range(0, table.Len(mut az.sv.shv) / 4) {
+                if table.Get(mut az.sv.shv, i * 4) == vr.idx && table.Get(mut az.sv.shv, i * 4 + 1) == vr.sub {
+                    v = lsOr(v, svAtom(table.Get(mut az.sv.shv, i * 4 + 2)))
                 }
             }
         }
         return v
+    }
+    // `@personal` の型のリテラルは原子K
+    for i <- iter.Range(0, table.Len(mut az.sv.pers) / 2) {
+        if table.Get(mut az.sv.pers, i * 2) == r.idx {
+            ka := table.Get(mut az.sv.pers, i * 2 + 1)
+            v = lsOr(v, svAtom(ka))
+            ogWitness(mut az, ka)
+        }
     }
     if user {
         a := svConcrete(mut az, shV)
         b := svConcrete(mut az, rest)
         if (a.lo & az.sv.shMask) != 0 && (b.lo & az.sv.oMask) != 0 {
             ogViol(mut az, e, OgRoute, a, b)
+        }
+        c := svConcrete(mut az, stV)
+        if (c.lo & az.sv.stMask) != 0 && (b.lo & az.sv.kMask) != 0 {
+            ogViolK(mut az, e, OgCookie, c, b)
         }
     }
     return v
@@ -273,6 +350,36 @@ func ogViol(az mut Az, at desugar.NodeRef, k int, sh LSet, o LSet) {
     table.Push(mut az.sv.ov, k)
     table.Push(mut az.sv.ov, ogFirst(sh.lo & az.sv.shMask))
     table.Push(mut az.sv.ov, ogFirst(o.lo & (az.sv.oMask - (1 << az.sv.catom))))
+}
+
+// 保存されうる方針とKの組み合わせの違反を記録する（st = 方針の側の値・k = Kの側の値）
+func ogViolK(az mut Az, at desugar.NodeRef, k int, st LSet, kv LSet) {
+    if !az.sv.rec {
+        return
+    }
+    for i <- iter.Range(0, table.Len(mut az.sv.ov) / 4) {
+        if table.Get(mut az.sv.ov, i * 4) == int(at) {
+            return
+        }
+    }
+    table.Push(mut az.sv.ov, int(at))
+    table.Push(mut az.sv.ov, k)
+    table.Push(mut az.sv.ov, ogFirst(st.lo & az.sv.stMask))
+    table.Push(mut az.sv.ov, ogFirst(kv.lo & az.sv.kMask))
+}
+
+// 原子Kの値をstdの外の関数が作った最初の位置を覚える（最後の1周）
+func ogWitness(az mut Az, ka int) {
+    if !az.sv.rec || desugar.IsStdPkg(mut az.d, az.pk) {
+        return
+    }
+    for i <- iter.Range(0, table.Len(mut az.sv.kwit) / 2) {
+        if table.Get(mut az.sv.kwit, i * 2) == ka {
+            return
+        }
+    }
+    table.Push(mut az.sv.kwit, ka)
+    table.Push(mut az.sv.kwit, az.cur)
 }
 
 // lo のビットの最小の原子（無ければ -1）
@@ -313,9 +420,45 @@ func ogSrcName(az mut Az, a int) string {
     return "the credential field '${str(mut az, desugar.StrRef(td.a))}.${str(mut az, desugar.StrRef(table.Get(mut az.sv.fl, x * 3 + 1)))}'"
 }
 
+// 方針の原子aのvariantの名前（-1 = 分からない）
+func ogPolicyName(az mut Az, a int) string {
+    if a < 0 {
+        return "a stored cache policy"
+    }
+    td := desugar.NodeRef(table.Get(mut az.sv.atoms, a * 3 + 1))
+    sub := table.Get(mut az.sv.atoms, a * 3 + 2)
+    body := desugar.NodeRef(node(mut az, td).c)
+    v := node(mut az, nat(mut az, desugar.ListRef(node(mut az, body).a), sub))
+    return "the cache policy '${str(mut az, desugar.StrRef(v.a))}'"
+}
+
+// Kの原子aの値の説明（型の名前と、stdの外で最初に作った関数）
+func ogCookieName(az mut Az, a int) string {
+    if a < 0 {
+        return "Set-Cookie"
+    }
+    td := node(mut az, desugar.NodeRef(table.Get(mut az.sv.atoms, a * 3 + 1)))
+    mut w := ""
+    for i <- iter.Range(0, table.Len(mut az.sv.kwit) / 2) {
+        if table.Get(mut az.sv.kwit, i * 2) == a {
+            w = ", built in ${fnName(mut az, table.Get(mut az.sv.kwit, i * 2 + 1))}"
+        }
+    }
+    return "Set-Cookie (a server.${str(mut az, desugar.StrRef(td.a))} value${w})"
+}
+
 // 出所の違反の記録 i の本文
 func ogMessage(az mut Az, i int) string {
     k := table.Get(mut az.sv.ov, i * 4 + 1)
+    if k == OgCookie || k == OgCookieMount {
+        pol := ogPolicyName(mut az, table.Get(mut az.sv.ov, i * 4 + 2))
+        ck := ogCookieName(mut az, table.Get(mut az.sv.ov, i * 4 + 3))
+        leak := "A shared cache would store the cookie with the response and give it to other users (language.md 12 節「出所の依存」)."
+        if k == OgCookieMount {
+            return "Mount puts routes with ${pol} under middleware that can return ${ck}. ${leak} Mount the middleware only on routes without a stored cache policy"
+        }
+        return "${pol} lets a shared cache store the response, and ${ck} is in the same route or response. ${leak} Use server.Private / server.NoStore here, or return the cookie from a route without a stored cache policy"
+    }
     sh := ogShName(mut az, table.Get(mut az.sv.ov, i * 4 + 2))
     src := ogSrcName(mut az, table.Get(mut az.sv.ov, i * 4 + 3))
     why := "a response that depends on Authorization / Cookie must not be stored by a shared cache — it would be served to other users (language.md 12 節「出所の依存」)"
@@ -334,9 +477,11 @@ func ogStdMessage(x int) string {
     case 0: "@credential (a function)"
     case 1: "@credential (a field)"
     case 2: "@shared"
+    case 4: "@stored"
+    case 5: "@personal"
     case _: "@bless(origin)"
     }
-    return "${w} is for std only (credential sources, shared cache policies and their blessings are declared by the standard library — language.md 12 節「出所の依存」)"
+    return "${w} is for std only (credential sources, cache policies, per-user values and their blessings are declared by the standard library. language.md 12 節「出所の依存」)"
 }
 
 // 出所の導出（開発用 `check --origin-dump`）: 源のAPI（`@credential` の関数とフィールド）・`@shared` のvariant・SHのフィールド（route = ルートの行 /
@@ -345,7 +490,7 @@ func ogStdMessage(x int) string {
 func OriginDump(p loader.Program) []Finding {
     mut az := Az{d: desugar.S{}, pk: 0, out: table.Table[int]{}, ok: table.Table[int]{}, nfn: 0, nerr: 0, er: Eng{sets: table.Table[int]{}, rhead: table.Table[int]{}, rnode: table.Table[int]{}, work: table.Table[int]{}, inq: table.Table[int]{}, env: table.Table[int]{}, envN: 0, envChanged: false},
         pbase: table.Table[int]{}, errfn: table.Table[int]{},
-        ffield: table.Table[int]{}, cur: 0, rec: false, sw: table.Table[int]{}, unknown: 0, walks: 0, declared: table.Table[int]{}, swpk: table.Table[int]{}, swarms: table.Table[int]{}, lit: table.Table[int]{}, wins: table.Table[int]{}, winN: 0, winBase: 0, flowBase: 0, cand: table.Table[int]{}, dflow: table.Table[int]{}, exsw: table.Table[int]{}, trySink: 0, lamf: table.Table[int]{}, lamFN: 0, lamBase: 0, lamCand: 0, lamck: table.Table[int]{}, sv: Sv{on: false, rec: false, natom: 0, atoms: table.Table[int]{}, resBase: 0, sinkBase: 0, pbase: table.Table[int]{}, npar: 0, pinBase: 0, secp: table.Table[int]{}, rpos: table.Table[int]{}, nres: 0, mres: table.Table[int]{}, mresN: 0, sinkAt: table.Table[int]{}, sinkK: table.Table[int]{}, fl: table.Table[int]{}, flBase: 0, hk: table.Table[int]{}, cons: table.Table[int]{}, lamIn: LSet{lo: 0, hi: 0}, viol: table.Table[int]{}, walks: 0, touch: table.Table[int]{}, pe: table.Table[int]{}, peN: 0, al: table.Table[int]{}, alN: 0, fmh: table.Table[int]{}, fm: table.Table[int]{}, fbn: table.Table[int]{}, mal: table.Table[int]{}, malN: 0, nodump: false, bind: false, og: true, effBase: 0, effHit: false, catom: -1, shMask: 0, oMask: 0, mountFn: -1, shv: table.Table[int]{}, shf: table.Table[int]{}, ftn: table.Table[int]{}, ov: table.Table[int]{}, credf: table.Table[int]{}}, ef: Ef{n: 0, nk: table.Table[int]{}, nref: table.Table[int]{}, bits: table.Table[int]{}, e: table.Table[int]{}, fnodes: table.Table[int]{}, fn: 0, cur: 0, lp: table.Table[int]{}, lpN: 0, lb: table.Table[int]{}, lbN: 0, addr: table.Table[int]{}, flam: table.Table[int]{}, viol: table.Table[int]{}, anyCalls: 0, ek: table.Table[int]{}, own: table.Table[int]{}, tm: table.Table[int]{}, tdecl: table.Table[int]{}, te: table.Table[int]{}, ekind: 0, tst: table.Table[int]{}}}
+        ffield: table.Table[int]{}, cur: 0, rec: false, sw: table.Table[int]{}, unknown: 0, walks: 0, declared: table.Table[int]{}, swpk: table.Table[int]{}, swarms: table.Table[int]{}, lit: table.Table[int]{}, wins: table.Table[int]{}, winN: 0, winBase: 0, flowBase: 0, cand: table.Table[int]{}, dflow: table.Table[int]{}, exsw: table.Table[int]{}, trySink: 0, lamf: table.Table[int]{}, lamFN: 0, lamBase: 0, lamCand: 0, lamck: table.Table[int]{}, sv: Sv{on: false, rec: false, natom: 0, atoms: table.Table[int]{}, resBase: 0, sinkBase: 0, pbase: table.Table[int]{}, npar: 0, pinBase: 0, secp: table.Table[int]{}, rpos: table.Table[int]{}, nres: 0, mres: table.Table[int]{}, mresN: 0, sinkAt: table.Table[int]{}, sinkK: table.Table[int]{}, fl: table.Table[int]{}, flBase: 0, hk: table.Table[int]{}, cons: table.Table[int]{}, lamIn: LSet{lo: 0, hi: 0}, viol: table.Table[int]{}, walks: 0, touch: table.Table[int]{}, pe: table.Table[int]{}, peN: 0, al: table.Table[int]{}, alN: 0, fmh: table.Table[int]{}, fm: table.Table[int]{}, fbn: table.Table[int]{}, mal: table.Table[int]{}, malN: 0, nodump: false, bind: false, og: true, effBase: 0, effHit: false, catom: -1, shMask: 0, oMask: 0, mountFn: -1, shv: table.Table[int]{}, shf: table.Table[int]{}, ftn: table.Table[int]{}, ov: table.Table[int]{}, credf: table.Table[int]{}, stMask: 0, kMask: 0, pers: table.Table[int]{}, kwit: table.Table[int]{}}, ef: Ef{n: 0, nk: table.Table[int]{}, nref: table.Table[int]{}, bits: table.Table[int]{}, e: table.Table[int]{}, fnodes: table.Table[int]{}, fn: 0, cur: 0, lp: table.Table[int]{}, lpN: 0, lb: table.Table[int]{}, lbN: 0, addr: table.Table[int]{}, flam: table.Table[int]{}, viol: table.Table[int]{}, anyCalls: 0, ek: table.Table[int]{}, own: table.Table[int]{}, tm: table.Table[int]{}, tdecl: table.Table[int]{}, te: table.Table[int]{}, ekind: 0, tst: table.Table[int]{}}}
     desugar.Typed(mut az.d, p)
     errInit(mut az)
     errSolve(mut az)
@@ -366,6 +511,7 @@ func OriginDump(p loader.Program) []Finding {
         }
     }
     mut nsf := 0
+    mut nsh := 0
     for q <- iter.Range(0, if on { table.Len(mut az.sv.fl) / 3 } else { 0 }) {
         nm := desugar.StrRef(table.Get(mut az.sv.fl, q * 3 + 1))
         td := desugar.NodeRef(table.Get(mut az.sv.fl, q * 3))
@@ -379,10 +525,21 @@ func OriginDump(p loader.Program) []Finding {
             fs = append(fs, Finding{warn: false, at: desugar.PosOf(mut az.d, td), what: "shared-field ${str(mut az, desugar.StrRef(node(mut az, td).a))}.${str(mut az, nm)} ${if f == 2 { "response" } else { "route" }}"})
         }
     }
-    for i <- iter.Range(0, if on { table.Len(mut az.sv.shv) / 3 } else { 0 }) {
-        a := table.Get(mut az.sv.shv, i * 3 + 2)
-        td := desugar.NodeRef(table.Get(mut az.sv.shv, i * 3))
-        fs = append(fs, Finding{warn: false, at: desugar.PosOf(mut az.d, td), what: "shared ${str(mut az, desugar.StrRef(node(mut az, td).a))} ${ogShName(mut az, a)}"})
+    mut nst := 0
+    for i <- iter.Range(0, if on { table.Len(mut az.sv.shv) / 4 } else { 0 }) {
+        a := table.Get(mut az.sv.shv, i * 4 + 2)
+        td := desugar.NodeRef(table.Get(mut az.sv.shv, i * 4))
+        if table.Get(mut az.sv.shv, i * 4 + 3) == 1 {
+            nsh += 1
+            fs = append(fs, Finding{warn: false, at: desugar.PosOf(mut az.d, td), what: "shared ${str(mut az, desugar.StrRef(node(mut az, td).a))} ${ogShName(mut az, a)}"})
+        } else {
+            nst += 1
+            fs = append(fs, Finding{warn: false, at: desugar.PosOf(mut az.d, td), what: "stored ${str(mut az, desugar.StrRef(node(mut az, td).a))} ${ogPolicyName(mut az, a)}"})
+        }
+    }
+    for i <- iter.Range(0, if on { table.Len(mut az.sv.pers) / 2 } else { 0 }) {
+        td := desugar.NodeRef(table.Get(mut az.sv.pers, i * 2))
+        fs = append(fs, Finding{warn: false, at: desugar.PosOf(mut az.d, td), what: "personal ${str(mut az, desugar.StrRef(node(mut az, td).a))}"})
     }
     if on && az.sv.mountFn != -1 {
         fs = append(fs, Finding{warn: false, at: desugar.PosOf(mut az.d, desugar.FnAt(mut az.d, az.sv.mountFn).node), what: "meet-point ${fnName(mut az, az.sv.mountFn)}"})
@@ -400,6 +557,6 @@ func OriginDump(p loader.Program) []Finding {
             fs = append(fs, Finding{warn: false, at: desugar.PosOf(mut az.d, at), what: "violation ${ogStdMessage(x)}"})
         }
     }
-    fs = append(fs, Finding{warn: false, at: diag.None(), what: "summary atoms=${az.sv.natom} credentials=${nc} eff-fns=${ne} shared=${table.Len(mut az.sv.shv) / 3} shared-fields=${nsf} violations=${nv} walks=${az.sv.walks}"})
+    fs = append(fs, Finding{warn: false, at: diag.None(), what: "summary atoms=${az.sv.natom} credentials=${nc} eff-fns=${ne} shared=${nsh} stored=${nst} personal=${table.Len(mut az.sv.pers) / 2} shared-fields=${nsf} violations=${nv} walks=${az.sv.walks}"})
     return freeze(fs)
 }

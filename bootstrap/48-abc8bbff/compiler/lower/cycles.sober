@@ -1,0 +1,34 @@
+package lower
+
+// 計時の組み込み（定数時間の統計の検査dudect）: cycles() = 時刻の計数器（rdtscp）。IRはOpSyscallのb = CY_B
+// （引数なし — エフェクトの扱いはsyscallと同じ不透明なopで、前後の計算と並べ替えない）。x86の最適化のバックエンドのELFのパスでだけ命令になり
+// （x86.sober xCycles — lfence + rdtscp + lfence・rax / rcx / rdx は作業のレジスタ）、他の出力では 0（std/internal/dudect の計時が 0 を返すだけ）
+
+const CY_B = 5
+
+// 柵なしの時刻の計数器（rdtsc — rtのスケジューラの粗い時計: 飽和下の待ちの上限〔mn.sober〕。順序は要らない）。x86の正規バックエンドのELFのパスでだけ命令・他の出力では0
+func tscOp(st mut St) int {
+    if !st.hwFold {
+        return iconst(mut st, 0)
+    }
+    return push(mut st, true, OpSyscall, list0(mut st), CY_B, 1)
+}
+
+// cycles() の値
+func cyclesOp(st mut St) int {
+    if !st.hwFold {
+        return iconst(mut st, 0)
+    }
+    return push(mut st, true, OpSyscall, list0(mut st), CY_B, 0)
+}
+
+// 先読みの指示（prefetcht0 — 番地の線をL1へ。値もエフェクトも持たない: 結果は0）。rtの取り出しのパスが、次に走るtaskの冷えた線を
+// 前もって取りに行かせるAPI（ミスを今のtaskの走りに重ねる）。番地は不正でもよい（prefetchは落ちない）。x86の正規バックエンドのELFのパスでだけ命令・他の出力では何もしない
+const PF_B = 6
+
+func prefetchOp(st mut St, addr int) {
+    if !st.hwFold {
+        return
+    }
+    _ = push(mut st, true, OpSyscall, list1(mut st, addr), PF_B, 0)
+}

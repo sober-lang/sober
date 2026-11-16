@@ -1,0 +1,947 @@
+package server
+
+// リクエストの枠と頭の読み（frameAt / request）の照合の検査一式: 同じ規則を1バイトずつの素直な形で書いたframeAt / requestと補助の関数をRefの名前で
+// 置いて基準（オラクル）にし、手で組んだリクエストのシード（CRLF / LF・先頭の空行・HTTP/1.0・Content-Length / chunked・食い違うContent-Length・
+// 非chunkedのTransfer-Encoding・Connectionのtoken・obs-fold・裸のCR・ヘッダの値の制御文字・Host・505・パイプライン・未完）に1バイトの置き換え・削除・重複と全部の切り詰めを掛け、
+// mh / mbの境目（431 / 413）も含めて、frameAtの枠（st・s・he・end・chunked・keep・v10）と、揃ったリクエストのrequestの結果
+// （誤りか・method・path・query・head・headers・body）が基準と一致することを照合する
+
+import "std/iter"
+import "std/utf8"
+
+type frameRef struct {
+    // st: 0 = 足りない・1 = 揃った・他 = 誤りの status
+    st int
+    // s = リクエストの始め（先頭の空行の後）・he = 頭の終わり（本文の始め）・end = リクエストの終わり
+    s int
+    he int
+    end int
+    chunked bool
+    // keep = レスポンスの後も保つ・v10 = HTTP/1.0
+    keep bool
+    v10 bool
+}
+
+func frameAtRef(b []byte, at int, mh int, mb int) frameRef {
+    n := len(b)
+    // リクエストの前の空行は読み飛ばす（RFC 9112 2.2）
+    mut s := at
+    while s < n && (b[s] == '\r' || b[s] == '\n') {
+        s += 1
+    }
+    // 頭の終わり = 空行（LF LF か LF CR LF）の直後
+    mut he := -1
+    mut i := s
+    lim := if n < s + mh { n } else { s + mh }
+    while he < 0 && i < lim {
+        if b[i] == '\n' {
+            if i + 1 < n && b[i + 1] == '\n' {
+                he = i + 2
+            } else if i + 2 < n && b[i + 1] == '\r' && b[i + 2] == '\n' {
+                he = i + 3
+            }
+        }
+        i += 1
+    }
+    if he < 0 {
+        if n - s < mh {
+            return frRef(0, s)
+        }
+        // リクエスト行の改行が上限の内に無く、空白が上限の内に1つだけなら414
+        l0 := lineEndRef(b, s)
+        if l0 < 0 || l0 >= lim {
+            end := if l0 < 0 { n } else { l0 }
+            a1 := indexInRef(b, s, end, ' ')
+            a2 := if a1 < 0 { -1 } else { indexInRef(b, a1 + 1, end, ' ') }
+            if a1 >= 0 && a1 < lim && (a2 < 0 || a2 >= lim) {
+                return frRef(414, s)
+            }
+        }
+        return frRef(431, s)
+    }
+    // リクエスト行: method SP target SP version
+    le := lineEndRef(b, s)
+    ce := contentEndRef(b, s, le)
+    if bareCRRef(b, s, ce) {
+        return frRef(400, s)
+    }
+    sp1 := indexInRef(b, s, ce, ' ')
+    sp2 := if sp1 < 0 { -1 } else { indexInRef(b, sp1 + 1, ce, ' ') }
+    if sp1 <= s || sp2 <= sp1 + 1 || indexInRef(b, sp2 + 1, ce, ' ') >= 0 {
+        return frRef(400, s)
+    }
+    v11 := isLitRef(b, sp2 + 1, ce, "HTTP/1.1")
+    v10 := isLitRef(b, sp2 + 1, ce, "HTTP/1.0")
+    if !v11 && !v10 {
+        // 形がHTTP/d.dなら対応しない版（505）・形の誤りは400
+        vl := ce - sp2 - 1
+        d1 := if vl == 8 { b[sp2 + 6] } else { byte(0) }
+        d2 := if vl == 8 { b[sp2 + 8] } else { byte(0) }
+        ok := vl == 8 && isLitRef(b, sp2 + 1, sp2 + 6, "HTTP/") && b[sp2 + 7] == '.' && d1 >= '0' && d1 <= '9' && d2 >= '0' && d2 <= '9'
+        return frRef(if ok { 505 } else { 400 }, s)
+    }
+    // ヘッダ
+    mut cl := -1
+    // Transfer-Encodingの行の値を ',' でつないだもの
+    mut tev := mut []byte{}
+    mut teSeen := false
+    mut closeTok := false
+    mut kaTok := false
+    mut ls := le + 1
+    while ls < he {
+        e := lineEndRef(b, ls)
+        c := contentEndRef(b, ls, e)
+        if c > ls {
+            if b[ls] == ' ' || b[ls] == '\t' || ctlRef(b, ls, c) {
+                return frRef(400, s)
+            }
+            colon := indexInRef(b, ls, c, ':')
+            if colon <= ls || !tokenRunRef(b, ls, colon) {
+                return frRef(400, s)
+            }
+            vs := skipOWSRef(b, colon + 1, c)
+            ve := trimOWSRef(b, vs, c)
+            if eqFoldRef(b, ls, colon, bytes("content-length")) {
+                v := digitsRef(b, vs, ve)
+                if v < 0 || (cl >= 0 && cl != v) {
+                    return frRef(400, s)
+                }
+                cl = v
+            } else if eqFoldRef(b, ls, colon, bytes("transfer-encoding")) {
+                if teSeen {
+                    tev = append(tev, ',')
+                }
+                teSeen = true
+                mut k := vs
+                while k < ve {
+                    tev = append(tev, b[k])
+                    k += 1
+                }
+            } else if eqFoldRef(b, ls, colon, bytes("connection")) {
+                closeTok = closeTok || hasTokenRef(b, vs, ve, bytes("close"))
+                kaTok = kaTok || hasTokenRef(b, vs, ve, bytes("keep-alive"))
+            }
+        }
+        ls = e + 1
+    }
+    if teSeen && v10 {
+        return frRef(400, s)
+    }
+    if teSeen {
+        st := teRef(freeze(tev))
+        if st != 0 {
+            return frRef(st, s)
+        }
+    }
+    chunked := teSeen
+    if chunked && cl >= 0 {
+        return frRef(400, s)
+    }
+    keep := !closeTok && (v11 || kaTok)
+    mut end := he
+    if chunked {
+        end = chunkedEndRef(b, he, mb)
+        if end < 0 && end != -1 {
+            return frRef(0 - end, s)
+        }
+    } else if cl > mb {
+        return frRef(413, s)
+    } else if cl > 0 {
+        end = if he + cl <= n { he + cl } else { -1 }
+    }
+    if end == -1 {
+        return frRef(0, s)
+    }
+    return frameRef{st: 1, s: s, he: he, end: end, chunked: chunked, keep: keep, v10: v10}
+}
+
+func chunkedEndRef(b []byte, he int, mb int) int {
+    mut p := he
+    mut total := 0
+    while true {
+        // 生のバイト数の上限（小さい chunk の量産で持ち越しの列を溢れさせない）
+        if p - he > 2 * mb + 64 {
+            return -413
+        }
+        e := lineEndRef(b, p)
+        if e < 0 {
+            return if len(b) - p > 1024 { -400 } else { -1 }
+        }
+        c := contentEndRef(b, p, e)
+        mut q := p
+        mut size := 0
+        while q < c && hexValRef(b[q]) >= 0 {
+            size = size * 16 + hexValRef(b[q])
+            if size > mb {
+                return -413
+            }
+            q += 1
+        }
+        if q == p || !chunkExtRef(b, q, c) {
+            return -400
+        }
+        p = e + 1
+        if size == 0 {
+            // trailer: 空行まで読み捨て
+            mut t := p
+            while true {
+                te := lineEndRef(b, t)
+                if te < 0 {
+                    return -1
+                }
+                if contentEndRef(b, t, te) == t {
+                    return te + 1
+                }
+                t = te + 1
+            }
+        }
+        total += size
+        if total > mb {
+            return -413
+        }
+        if p + size >= len(b) {
+            return -1
+        }
+        d := p + size
+        if b[d] == '\n' {
+            p = d + 1
+        } else if b[d] == '\r' {
+            if d + 1 >= len(b) {
+                return -1
+            }
+            if b[d + 1] != '\n' {
+                return -400
+            }
+            p = d + 2
+        } else {
+            return -400
+        }
+    }
+    return -1
+}
+
+// chunk-extを1字ずつの状態で読む: 0 = ';' を待つ（前の空白可）・1 = 名前を待つ（前の空白可）・2 = 名前の中・3 = 名前の後（空白・'='・';' を待つ）・
+// 4 = 値を待つ（前の空白可）・5 = tokenの値の中・6 = quoted-stringの中・7 = quoted-pairの2字目・8 = 値の後の空白の中（';' を待つ）・9 = 閉じたquoted-stringの直後。
+// 終われるのは2・5・9と空の拡張だけ（空白で終われるのは ';' か '=' の前だけ）
+func chunkExtRef(b []byte, q0 int, c int) bool {
+    mut st := 0
+    mut i := q0
+    while i < c {
+        x := b[i]
+        sp := x == ' ' || x == '\t'
+        tc := (x >= 'a' && x <= 'z') || (x >= 'A' && x <= 'Z') || (x >= '0' && x <= '9') || x == '!' || x == '#' || x == '$' || x == '%' || x == '&' ||
+            x == '\'' || x == '*' || x == '+' || x == '-' || x == '.' || x == '^' || x == '_' || x == '`' || x == '|' || x == '~'
+        vis := x == '\t' || (x >= 32 && x != 127)
+        if st == 0 {
+            st = if x == ';' { 1 } else if sp { 0 } else { -1 }
+        } else if st == 1 {
+            st = if tc { 2 } else if sp { 1 } else { -1 }
+        } else if st == 2 || st == 3 {
+            st = if tc && st == 2 { 2 } else if sp { 3 } else if x == '=' { 4 } else if x == ';' { 1 } else { -1 }
+        } else if st == 4 {
+            st = if tc { 5 } else if x == '"' { 6 } else if sp { 4 } else { -1 }
+        } else if st == 5 || st == 8 {
+            st = if tc && st == 5 { 5 } else if sp { 8 } else if x == ';' { 1 } else { -1 }
+        } else if st == 6 {
+            st = if x == '"' { 9 } else if x == '\\' { 7 } else if vis { 6 } else { -1 }
+        } else if st == 9 {
+            st = if sp { 8 } else if x == ';' { 1 } else { -1 }
+        } else if st == 7 {
+            st = if vis { 6 } else { -1 }
+        }
+        if st < 0 {
+            return false
+        }
+        i += 1
+    }
+    return st == 2 || st == 5 || st == 9 || i == q0
+}
+
+func lineEndRef(b []byte, i int) int {
+    mut j := i
+    while j < len(b) && b[j] != '\n' {
+        j += 1
+    }
+    return if j < len(b) { j } else { -1 }
+}
+
+func contentEndRef(b []byte, ls int, le int) int {
+    return if le > ls && b[le - 1] == '\r' { le - 1 } else { le }
+}
+
+func bareCRRef(b []byte, ls int, ce int) bool {
+    mut i := ls
+    while i < ce {
+        if b[i] == '\r' {
+            return true
+        }
+        i += 1
+    }
+    return false
+}
+
+// Hostの値: host [":" 数字*]。host = "[" (reg-nameの字 | ':')+ "]" か、(reg-nameの字 | "%" 16進16進)+
+func hostOkRef(b []byte, s int, e int) bool {
+    mut i := s
+    if i < e && b[i] == '[' {
+        mut j := i + 1
+        while j < e && (b[j] == ':' || regRef(b[j])) {
+            j += 1
+        }
+        if j == i + 1 || j >= e || b[j] != ']' {
+            return false
+        }
+        i = j + 1
+    } else {
+        mut j := i
+        mut ok := true
+        while ok && j < e && b[j] != ':' {
+            if regRef(b[j]) {
+                j += 1
+            } else if b[j] == '%' && j + 2 < e && hexValRef(b[j + 1]) >= 0 && hexValRef(b[j + 2]) >= 0 {
+                j += 3
+            } else {
+                ok = false
+            }
+        }
+        if !ok || j == i {
+            return false
+        }
+        i = j
+    }
+    if i == e {
+        return true
+    }
+    if b[i] != ':' {
+        return false
+    }
+    mut k := i + 1
+    while k < e {
+        if b[k] < '0' || b[k] > '9' {
+            return false
+        }
+        k += 1
+    }
+    return true
+}
+
+func regRef(c byte) bool {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '.' || c == '_' || c == '~' ||
+        c == '!' || c == '$' || c == '&' || c == '\'' || c == '(' || c == ')' || c == '*' || c == '+' || c == ';' || c == '='
+}
+
+// Transfer-Encodingのリストvの誤りのstatus（0 = 正しくchunkedが最後に1回）。字句（token・quoted-string・',' ・';'・'='・空白は読み飛ばす）に分けてから
+// 文法list = [ elem ] *( "," [ elem ] )（空の要素は読み飛ばす。RFC 9110 5.6.1）・elem = token *( ";" token "=" ( token / quoted-string ) ) を当てる
+func teRef(v []byte) int {
+    // 字句の列: 種類（1 = token・2 = quoted-string・それ以外 = その字）と、tokenなら始めと終わり
+    mut kinds := mut []int{}
+    mut ss := mut []int{}
+    mut es := mut []int{}
+    mut i := 0
+    while i < len(v) {
+        c := v[i]
+        if c == ' ' || c == '\t' {
+            i += 1
+        } else if c == ',' || c == ';' || c == '=' {
+            kinds = append(kinds, int(c))
+            ss = append(ss, i)
+            es = append(es, i + 1)
+            i += 1
+        } else if c == '"' {
+            mut j := i + 1
+            mut closed := false
+            while j < len(v) && !closed {
+                if v[j] == '"' {
+                    closed = true
+                } else if v[j] == '\\' && j + 1 < len(v) && (v[j + 1] == '\t' || (v[j + 1] >= 32 && v[j + 1] != 127)) {
+                    j += 1
+                } else if !(v[j] == '\t' || (v[j] >= 32 && v[j] != 127)) || v[j] == '\\' {
+                    return 400
+                }
+                j += 1
+            }
+            if !closed {
+                return 400
+            }
+            kinds = append(kinds, 2)
+            ss = append(ss, i)
+            es = append(es, j)
+            i = j
+        } else if tokenRunRef(v, i, i + 1) {
+            mut j := i
+            while j < len(v) && tokenRunRef(v, j, j + 1) {
+                j += 1
+            }
+            kinds = append(kinds, 1)
+            ss = append(ss, i)
+            es = append(es, j)
+            i = j
+        } else {
+            return 400
+        }
+    }
+    // 文法
+    mut n := 0
+    mut last := false
+    mut other := false
+    mut k := 0
+    mut want := true
+    while want {
+        // 空の要素は読み飛ばす
+        while k < len(kinds) && kinds[k] == int(',') {
+            k += 1
+        }
+        if k >= len(kinds) {
+            return if n != 1 || !last { 400 } else if other { 501 } else { 0 }
+        }
+        if kinds[k] != 1 {
+            return 400
+        }
+        isChunked := eqFoldRef(v, ss[k], es[k], bytes("chunked"))
+        k += 1
+        while k < len(kinds) && kinds[k] == int(';') {
+            other = true
+            if k + 3 >= len(kinds) || kinds[k + 1] != 1 || kinds[k + 2] != int('=') || (kinds[k + 3] != 1 && kinds[k + 3] != 2) {
+                return 400
+            }
+            k += 4
+        }
+        if isChunked {
+            n += 1
+            last = true
+        } else {
+            other = true
+            last = false
+        }
+        if k == len(kinds) {
+            want = false
+        } else if kinds[k] == int(',') {
+            k += 1
+        } else {
+            return 400
+        }
+    }
+    return if n != 1 || !last { 400 } else if other { 501 } else { 0 }
+}
+
+// ヘッダの行 [ls, ce) にCR・HTAB以外の制御文字・DELがあるか
+func ctlRef(b []byte, ls int, ce int) bool {
+    mut i := ls
+    while i < ce {
+        if (b[i] < 32 && b[i] != '\t') || b[i] == 127 {
+            return true
+        }
+        i += 1
+    }
+    return false
+}
+
+func indexInRef(b []byte, s int, e int, c byte) int {
+    mut i := s
+    while i < e {
+        if b[i] == c {
+            return i
+        }
+        i += 1
+    }
+    return -1
+}
+
+func isLitRef(b []byte, s int, e int, lit string) bool {
+    lb := bytes(lit)
+    if e - s != len(lb) {
+        return false
+    }
+    mut i := 0
+    while i < len(lb) {
+        if b[s + i] != lb[i] {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+func lowerRef(c byte) byte {
+    return if c >= 'A' && c <= 'Z' { byte(int(c) + 32) } else { c }
+}
+
+func eqFoldRef(b []byte, s int, e int, name []byte) bool {
+    if e - s != len(name) {
+        return false
+    }
+    mut i := 0
+    while i < len(name) {
+        if lowerRef(b[s + i]) != lowerRef(name[i]) {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+func hasTokenRef(b []byte, s int, e int, tok []byte) bool {
+    mut i := s
+    while i < e {
+        j := {
+            k := indexInRef(b, i, e, ',')
+            if k < 0 { e } else { k }
+        }
+        ts := skipOWSRef(b, i, j)
+        if eqFoldRef(b, ts, trimOWSRef(b, ts, j), tok) {
+            return true
+        }
+        i = j + 1
+    }
+    return false
+}
+
+func tokenRunRef(b []byte, s int, e int) bool {
+    mut i := s
+    while i < e {
+        c := b[i]
+        if c <= ' ' || c >= 127 || c == '(' || c == ')' || c == ',' || c == '/' || c == ':' || c == ';' || c == '<' || c == '=' || c == '>' || c == '?' || c == '@' || c == '[' || c == '\\' || c == ']' || c == '{' || c == '}' || c == '"' {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+func skipOWSRef(b []byte, s int, e int) int {
+    mut i := s
+    while i < e && (b[i] == ' ' || b[i] == '\t') {
+        i += 1
+    }
+    return i
+}
+
+func trimOWSRef(b []byte, s int, e int) int {
+    mut i := e
+    while i > s && (b[i - 1] == ' ' || b[i - 1] == '\t') {
+        i -= 1
+    }
+    return i
+}
+
+func digitsRef(b []byte, s int, e int) int {
+    if e <= s || e - s > 15 {
+        return -1
+    }
+    mut v := 0
+    mut i := s
+    while i < e {
+        if b[i] < '0' || b[i] > '9' {
+            return -1
+        }
+        v = v * 10 + int(b[i]) - 48
+        i += 1
+    }
+    return v
+}
+
+func hexValRef(c byte) int {
+    return if c >= '0' && c <= '9' {
+        int(c) - 48
+    } else if c >= 'a' && c <= 'f' {
+        int(c) - 87
+    } else if c >= 'A' && c <= 'F' {
+        int(c) - 55
+    } else {
+        -1
+    }
+}
+
+func frRef(st int, s int) frameRef {
+    return frameRef{st: st, s: s, he: 0, end: 0, chunked: false, keep: false, v10: false}
+}
+
+func requestRef(b []byte, f frameRef) (Request, error?) {
+    v := utf8.Check(b[f.s:f.he])?
+    hb := utf8.Bytes(v)
+    hn := len(hb)
+    le := lineEndRef(hb, 0)
+    ce := contentEndRef(hb, 0, le)
+    sp1 := indexInRef(hb, 0, ce, ' ')
+    sp2 := indexInRef(hb, sp1 + 1, ce, ' ')
+    q := indexInRef(hb, sp1 + 1, sp2, '?')
+    method := utf8.Str(v, 0, sp1)?
+    path := utf8.Str(v, sp1 + 1, if q >= 0 { q } else { sp2 })?
+    query := if q >= 0 { utf8.Str(v, q + 1, sp2)? } else { "" }
+    mut hs := mut []int{}
+    mut nhost := 0
+    mut hostBad := false
+    mut ls := le + 1
+    while ls < hn {
+        e := lineEndRef(hb, ls)
+        c := contentEndRef(hb, ls, e)
+        if c > ls {
+            colon := indexInRef(hb, ls, c, ':')
+            vs := skipOWSRef(hb, colon + 1, c)
+            // Host（RFC 9112 3.2）: 1本だけ・値はhostOkRefの形・HTTP/1.1では必須
+            if eqFoldRef(hb, ls, colon, bytes("host")) {
+                nhost += 1
+                hostBad = hostBad || !hostOkRef(hb, vs, trimOWSRef(hb, vs, c))
+            }
+            hs = append(hs, ls)
+            hs = append(hs, colon)
+            hs = append(hs, vs)
+            hs = append(hs, trimOWSRef(hb, vs, c))
+        }
+        ls = e + 1
+    }
+    if nhost > 1 || hostBad || (nhost == 0 && !f.v10) {
+        return Request{method: "", path: "", query: "", head: v, headers: []int{}, body: []byte{}, pattern: ""}, badHost{}
+    }
+    body := if f.chunked { unchunkRef(b, f.he) } else { b[f.he:f.end] }
+    return Request{method: method, path: path, query: query, head: v, headers: freeze(hs), body: body, pattern: ""}, nil
+}
+
+func unchunkRef(b []byte, he int) []byte {
+    mut out := mut []byte{}
+    mut p := he
+    mut size := 1
+    while size > 0 {
+        e := lineEndRef(b, p)
+        mut q := p
+        size = 0
+        while hexValRef(b[q]) >= 0 {
+            size = size * 16 + hexValRef(b[q])
+            q += 1
+        }
+        p = e + 1
+        mut k := 0
+        while k < size {
+            out = append(out, b[p + k])
+            k += 1
+        }
+        p += size
+        if size > 0 {
+            p += if b[p] == '\r' { 2 } else { 1 }
+        }
+    }
+    return freeze(out)
+}
+
+func sameBytes(a []byte, b []byte) bool {
+    if len(a) != len(b) {
+        return false
+    }
+    for i <- iter.Range(0, len(a)) {
+        if a[i] != b[i] {
+            return false
+        }
+    }
+    return true
+}
+
+func sameInts(a []int, b []int) bool {
+    if len(a) != len(b) {
+        return false
+    }
+    for i <- iter.Range(0, len(a)) {
+        if a[i] != b[i] {
+            return false
+        }
+    }
+    return true
+}
+
+// 1本2ワードの位置の表（Request.headers）を基準の1本4ワード [名前の始め, 終わり, 値の始め, 終わり] に開く
+func unpack(h []int) []int {
+    mut out := mut []int{}
+    for x <- h {
+        out = append(out, lo32(x))
+        out = append(out, hi32(x))
+    }
+    return freeze(out)
+}
+
+// bのatからの枠とリクエストが基準と一致するか（違えば1行出して偽）
+func agree(b []byte, at int, mh int, mb int) bool {
+    o := frameAtRef(b, at, mh, mb)
+    mut hs := mut []int{}
+    f := frameAt(b, at, mh, mb, mut hs)
+    if o.st != f.st || o.s != f.s || o.he != f.he || o.end != f.end || o.chunked != f.chunked || o.keep != f.keep || o.v10 != f.v10 {
+        println("frame differs: ${string(b) catch "<bytes>"} at ${at} mh ${mh} mb ${mb}: ref st ${o.st} s ${o.s} he ${o.he} end ${o.end} / new st ${f.st} s ${f.s} he ${f.he} end ${f.end}")
+        return false
+    }
+    if o.st != 1 {
+        return true
+    }
+    ro, eo := requestRef(b, o)
+    rn, en := request(b, f, freeze(hs))
+    if (eo == nil) != (en == nil) {
+        println("request error differs: ${string(b) catch "<bytes>"}")
+        return false
+    }
+    if eo != nil {
+        return true
+    }
+    if ro.method != rn.method || ro.path != rn.path || ro.query != rn.query || !sameBytes(utf8.Bytes(ro.head), utf8.Bytes(rn.head)) || !sameInts(ro.headers, unpack(rn.headers)) || !sameBytes(ro.body, rn.body) {
+        println("request differs: ${string(b) catch "<bytes>"}")
+        return false
+    }
+    return true
+}
+
+// リクエストのシード（"|" で区切った1本の文字列 — シードの中に | は使わない）
+func seeds() []string {
+    return []string{
+        "GET /baseline11?a=1&b=2 HTTP/1.1\r\nHost: localhost:8080\r\nUser-Agent: zrk\r\nConnection: keep-alive\r\n\r\n",
+        "GET / HTTP/1.1\r\nHost: x\r\n\r\n",
+        "GET /p?q HTTP/1.0\nHost: x\n\n",
+        "\r\n\r\nGET /a HTTP/1.1\r\nHost: x\r\n\r\n",
+        "POST /e HTTP/1.1\r\nHost: x\r\nContent-Length: 5\r\n\r\nhello",
+        "POST /e HTTP/1.1\r\nHost: x\r\nContent-Length: 3\r\nContent-Length: 3\r\n\r\nabcGET / HTTP/1.1\r\nHost: x\r\n\r\n",
+        "POST /e HTTP/1.1\r\nHost: x\r\nContent-Length: 3\r\nContent-Length: 4\r\n\r\nabcd",
+        "POST /c HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n3;x=1\r\nabc\r\n0\r\nT: v\r\n\r\n",
+        "POST /c HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: gzip\r\n\r\n",
+        "POST /c HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\nContent-Length: 2\r\n\r\n0\r\n\r\n",
+        "GET / HTTP/1.1\r\nConnection: close\r\n\r\n",
+        "GET / HTTP/1.0\r\nConnection: Keep-Alive\r\n\r\n",
+        "GET / HTTP/1.0\r\nConnection: foo, keep-alive , bar\r\nConnection: close\r\n\r\n",
+        "GET / HTTP/1.1\r\nHost: x\r\nConnection:CLOSE\r\n\r\n",
+        "GET / HTTP/1.1\r\n Host: x\r\n\r\n",
+        "GET / HTTP/1.1\r\nHo st: x\r\n\r\n",
+        "GET / HTTP/1.1\r\nHost: a\rb\r\n\r\n",
+        "GET / HTTP/2.0\r\n\r\n",
+        "GET / HTTX/1.1\r\n\r\n",
+        "GET  / HTTP/1.1\r\nHost: x\r\n\r\n",
+        "GET / HTTP/1.1 x\r\n\r\n",
+        "GET /a HTTP/1.1\r\nHost: x\r\nX-Empty:\r\nX-Sp:   v  \t\r\n\r\nGET /b HTTP/1.1\r\nHost: x\r\n\r\n",
+        "GET / HTTP/1.1\r\nHost: x\r\n",
+        "GET / HTTP/1.1\r\nHost: x\r\n\r\r\n\r\n",
+        "GET / HTTP/1.1\nHost: x\n\r\n",
+        "PUT /u HTTP/1.1\r\nHost: x\r\ncontent-length: 012\r\n\r\n123456789012",
+        "GET /é HTTP/1.1\r\nHost: x\r\nX: é\r\n\r\n",
+        // 区切り（SP・'?'）の直前・直後がマルチバイトの字（request はそこで検査せずに切る）
+        "GET /パス?キー=値 HTTP/1.1\r\nHost: x\r\n\r\n",
+        "GETé /é?é HTTP/1.1\r\nHost: x\r\n\r\n",
+        // 8 バイトずつの読みの罠: 探す字の直後に「字 ^ 1」（SP → '!'・':' → ';'）が来る形と、境目をまたぐ字（CR → 0x0c・LF → 0x0b は muts の置き換えで）
+        "GET /!a !b HTTP/1.1\r\nHost: x\r\nX:;y\r\n\r\n",
+        "GET /abcd HTTP/1.1\r\nHost: x\r\nAbcdefg:;;;;;;;:v\r\n\r\n",
+        "GET /a\r b HTTP/1.1\r\nHost: x\r\nX-Abcde: a\r\r\n\r\n",
+        "GET /abcdefghijkl HTTP/1.1\nHost: x\nX: y\n\n",
+        "OPTIONS /abcdefg HTTP/1.0\r\nAbcdefghijklmn:\r\nAbcdefghijklmno: x:y\r\n\r\n",
+        // ヘッダの値の字: HTABとobs-textは通す・NULは誤り（ほかの制御文字とDELはmutsの置き換えで全位置に）
+        "GET / HTTP/1.1\r\nHost: x\r\nX-Tab: a\tb\r\nX-Obs: é\r\n\r\n",
+        "GET / HTTP/1.1\r\nHost: x\r\nX-Test: val\0ue\r\n\r\n",
+        // chunk-ext: 正しい形（tokenの値・quoted-stringとquoted-pair・';' と '=' の前後の空白・名前だけ・2つ）と誤りの形（桁の後の空白で終わる・名前が無い・
+        // tokenの外の字・'=' の後が空・名前の中の空白・quoted-stringの外の '"'・閉じないquoted-string）
+        "POST /c HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n5;a=b\r\nhello\r\n3 ; n = \"x\\\"y\" ;m\r\nabc\r\n0;z\r\n\r\n",
+        "POST /c HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n5 \r\nhello\r\n0\r\n\r\n",
+        "POST /c HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n5;\r\nhello\r\n0\r\n\r\n",
+        "POST /c HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n5;bad[=x\r\nhello\r\n0\r\n\r\n",
+        "POST /c HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n5;a=\r\nhello\r\n0\r\n\r\n",
+        "POST /c HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n5;a b\r\nhello\r\n0\r\n\r\n",
+        "POST /c HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n5;\"x\"\r\nhello\r\n0\r\n\r\n",
+        "POST /c HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n5;a=\"x\r\nhello\r\n0\r\n\r\n",
+        "POST /c HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n5;a\0ext\r\nhello\r\n0\r\n\r\n",
+        // Transfer-Encodingのリスト: 2回のchunked・最後でないchunked・ほかの符号化の後のchunked・chunkedが無い・空・空の要素・パラメータ・2本の行
+        "POST /c HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked, chunked\r\n\r\n0\r\n\r\n",
+        "POST /c HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked, gzip\r\n\r\n0\r\n\r\n",
+        "POST /c HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: gzip , chunked\r\n\r\n0\r\n\r\n",
+        "POST /c HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: gzip\r\n\r\n0\r\n\r\n",
+        "POST /c HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: \r\n\r\n0\r\n\r\n",
+        "POST /c HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: , chunked\r\n\r\n0\r\n\r\n",
+        "POST /c HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked,\r\n\r\n0\r\n\r\n",
+        "POST /c HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked;a=b\r\n\r\n0\r\n\r\n",
+        "POST /c HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: gzip; q = \"x,;\\\"y\" ,chunked\r\n\r\n0\r\n\r\n",
+        "POST /c HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\nTransfer-Encoding: identity\r\n\r\n0\r\n\r\n",
+        "POST /c HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: gzip\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n",
+        // 版の文字列: 形の誤り（400）と対応しない版（505）
+        "GET / HTTP/1\r\nHost: x\r\n\r\n",
+        "GET / HTTP/01.1\r\nHost: x\r\n\r\n",
+        "GET / HTTP/1.2\r\nHost: x\r\n\r\n",
+        "GET / http/1.1\r\nHost: x\r\n\r\n",
+        // Host: 無い（HTTP/1.1は誤り・HTTP/1.0は可）・2本・userinfo・path・コンマ・空・portだけ・IP-literal・%XX
+        "GET / HTTP/1.0\r\n\r\n",
+        "GET / HTTP/1.1\r\nHost: a\r\nHost: a\r\n\r\n",
+        "GET / HTTP/1.1\r\nHost: a\r\nHost: b\r\n\r\n",
+        "GET / HTTP/1.0\r\nHost: a\r\nHost: b\r\n\r\n",
+        "GET / HTTP/1.1\r\nHost: user@h:80\r\n\r\n",
+        "GET / HTTP/1.1\r\nHost: h:80/path\r\n\r\n",
+        "GET / HTTP/1.1\r\nHost: h:80, other.example.com\r\n\r\n",
+        "GET / HTTP/1.1\r\nHost: \r\n\r\n",
+        "GET / HTTP/1.1\r\nHost: :8080\r\n\r\n",
+        "GET / HTTP/1.1\r\nHost: [::1]:8080\r\n\r\n",
+        "GET / HTTP/1.1\r\nHost: [v1.x]\r\n\r\n",
+        "GET / HTTP/1.1\r\nHost: a%41b.example:\r\n\r\n",
+        "GET / HTTP/1.1\r\nHOST: Sub-1_~.Example.COM:65535\r\n\r\n",
+    }
+}
+
+// 置き換えに使うバイト
+func muts() []byte {
+    return []byte{'\r', '\n', ' ', '\t', ':', ',', 'a', 'K', '0', '(', '/', '!', ';', byte(0x0b), byte(0x0c), byte(0), byte(0x01), byte(0x7f), byte(0x80), byte(0xff), '@', '[', ']', '%', '=', '"', '\\'}
+}
+
+// シードsのどの位置でも置き換え・削除・重複した列と、全部の切り詰めをkに渡す
+func each(s string, k func([]byte) bool) bool {
+    b := bytes(s)
+    mut ok := true
+    for n <- iter.Range(0, len(b) + 1) {
+        ok = k(b[0:n]) && ok
+    }
+    ms := muts()
+    for i <- iter.Range(0, len(b)) {
+        for m <- ms {
+            mut x := mut []byte{}
+            for j <- iter.Range(0, len(b)) {
+                x = append(x, if j == i { m } else { b[j] })
+            }
+            ok = k(freeze(x)) && ok
+        }
+        mut d := mut []byte{}
+        mut u := mut []byte{}
+        for j <- iter.Range(0, len(b)) {
+            if j != i {
+                d = append(d, b[j])
+            }
+            u = append(u, b[j])
+            if j == i {
+                u = append(u, b[j])
+            }
+        }
+        ok = k(freeze(d)) && ok
+        ok = k(freeze(u)) && ok
+    }
+    return ok
+}
+
+func TestFrameAgrees() {
+    mut ok := true
+    for s <- seeds() {
+        ok = each(s, (b []byte) => agree(b, 0, 8192, 8192)) && ok
+    }
+    assert(ok)
+}
+
+// 上限の境目（mh: 頭の長さ・mb: 本文の長さ）と途中からの読み（パイプラインの 2 件目の at）
+func TestFrameLimits() {
+    mut ok := true
+    for s <- seeds() {
+        b := bytes(s)
+        for mh <- iter.Range(1, len(b) + 2) {
+            ok = agree(b, 0, mh, 8192) && ok
+        }
+        for mb <- iter.Range(0, 16) {
+            ok = agree(b, 0, 8192, mb) && ok
+        }
+        for at <- iter.Range(0, len(b) + 1) {
+            ok = agree(b, at, 8192, 8192) && ok
+        }
+    }
+    assert(ok)
+}
+
+// マルチバイトの字が区切りに接するリクエスト行のmethod / path / query（frameAtの区切りの位置でちょうど切れていること）
+func TestRequestCutsAtDelimiters() {
+    b := bytes("GETé /пу́ть?ключ=值 HTTP/1.1\r\nHost: x\r\n\r\n")
+    mut hs := mut []int{}
+    f := frameAt(b, 0, 8192, 8192, mut hs)
+    assert(f.st == 1)
+    r, e := request(b, f, freeze(hs))
+    assert(e == nil)
+    assert(r.method == "GETé")
+    assert(r.path == "/пу́ть")
+    assert(r.query == "ключ=值")
+}
+
+// リクエストbの結果のstatus（枠の誤りならそのstatus・requestの誤りなら400・通れば200）
+func statusOf(b []byte) int {
+    mut hs := mut []int{}
+    f := frameAt(b, 0, 8192, 8192, mut hs)
+    if f.st != 1 {
+        return f.st
+    }
+    _, e := request(b, f, freeze(hs))
+    return if e != nil { 400 } else { 200 }
+}
+
+// sの最初の '#' をバイトxに置き換えた列（文字列のリテラルに書けない制御文字を置く）
+func withByte(s string, x byte) []byte {
+    b := bytes(s)
+    mut out := mut []byte{}
+    mut done := false
+    for c <- b {
+        if c == '#' && !done {
+            out = append(out, x)
+            done = true
+        } else {
+            out = append(out, c)
+        }
+    }
+    return freeze(out)
+}
+
+// 準拠の検査（Http11Probe）が送る形と、その近くの通るべき形
+func TestProbeCases() {
+    h := "Host: localhost:8080\r\n"
+    te := "POST / HTTP/1.1\r\n${h}Transfer-Encoding: chunked\r\n\r\n"
+    // Host（RFC 9112 3.2）
+    assert(statusOf(bytes("GET / HTTP/1.1\r\n\r\n")) == 400)
+    assert(statusOf(bytes("GET / HTTP/1.1\r\n${h}Host: other.example.com\r\n\r\n")) == 400)
+    assert(statusOf(bytes("GET / HTTP/1.1\r\n${h}${h}\r\n")) == 400)
+    assert(statusOf(bytes("GET / HTTP/1.1\r\nHost: user@localhost:8080\r\n\r\n")) == 400)
+    assert(statusOf(bytes("GET / HTTP/1.1\r\nHost: localhost:8080/path\r\n\r\n")) == 400)
+    assert(statusOf(bytes("GET / HTTP/1.1\r\nHost: \r\n\r\n")) == 400)
+    assert(statusOf(bytes("GET / HTTP/1.1\r\nHost: localhost:8080, other.example.com\r\n\r\n")) == 400)
+    assert(statusOf(bytes("GET / HTTP/1.0\r\n\r\n")) == 200)
+    assert(statusOf(bytes("GET / HTTP/1.0\r\nHost: a\r\nHost: a\r\n\r\n")) == 400)
+    assert(statusOf(bytes("GET / HTTP/1.1\r\n${h}\r\n")) == 200)
+    assert(statusOf(bytes("GET / HTTP/1.1\r\nHost: [::1]:8080\r\n\r\n")) == 200)
+    assert(statusOf(bytes("GET / HTTP/1.1\r\nHost: xn--bcher-kva.example%2D:\r\n\r\n")) == 200)
+    assert(statusOf(bytes("GET / HTTP/1.1\r\nHost: Long-Host-Name.Example.COM:443\r\n\r\n")) == 200)
+    // chunk-ext（RFC 9112 7.1.1）
+    assert(statusOf(bytes("${te}5 \r\nhello\r\n0\r\n\r\n")) == 400)
+    assert(statusOf(bytes("${te}5;\r\nhello\r\n0\r\n\r\n")) == 400)
+    assert(statusOf(bytes("${te}5;bad[=x\r\nhello\r\n0\r\n\r\n")) == 400)
+    assert(statusOf(withByte("${te}5;#ext\r\nhello\r\n0\r\n\r\n", byte(0))) == 400)
+    assert(statusOf(withByte("${te}5;a#X\r\nhello\r\n0\r\n\r\n", byte(13))) == 400)
+    assert(statusOf(bytes("${te}5;ext=value\r\nhello\r\n0\r\n\r\n")) == 200)
+    assert(statusOf(bytes("${te}5 ; a = \"q\\\"s\" ; b\r\nhello\r\n0\r\n\r\n")) == 200)
+    // Transfer-Encoding（RFC 9112 6.1）: 文法の誤りと、chunkedが1回だけ最後に無い形は400・文法は正しくほかの符号化を含む形は501
+    tp := "POST / HTTP/1.1\r\n${h}Transfer-Encoding: "
+    assert(statusOf(bytes("${tp}chunked, chunked\r\nContent-Length: 5\r\n\r\nhello")) == 400)
+    assert(statusOf(bytes("${tp}chunked, gzip\r\n\r\n0\r\n\r\n")) == 400)
+    assert(statusOf(bytes("${tp}\r\nContent-Length: 5\r\n\r\nhello")) == 400)
+    assert(statusOf(bytes("${tp}, chunked\r\nContent-Length: 5\r\n\r\nhello")) == 400)
+    assert(statusOf(bytes("${tp}chunked,\r\nContent-Length: 5\r\n\r\nhello")) == 400)
+    // 空の要素は読み飛ばす（RFC 9110 5.6.1）・要素が無いリストはchunkedが無いので400
+    assert(statusOf(bytes("${tp}, chunked\r\n\r\n0\r\n\r\n")) == 200)
+    assert(statusOf(bytes("${tp}chunked, ,\r\n\r\n0\r\n\r\n")) == 200)
+    assert(statusOf(bytes("${tp} , \r\n\r\n0\r\n\r\n")) == 400)
+    assert(statusOf(bytes("${tp}chunked\r\nTransfer-Encoding: identity\r\nContent-Length: 5\r\n\r\nhello")) == 400)
+    assert(statusOf(bytes("${tp}\r\n chunked\r\nContent-Length: 5\r\n\r\nhello")) == 400)
+    assert(statusOf(withByte("${tp}#chunked\r\nContent-Length: 5\r\n\r\nhello", byte(11))) == 400)
+    assert(statusOf(withByte("${tp}#chunked\r\nContent-Length: 5\r\n\r\nhello", byte(12))) == 400)
+    assert(statusOf(withByte("${tp}chunked#\r\nContent-Length: 5\r\n\r\nhello", byte(0))) == 400)
+    assert(statusOf(bytes("${tp}gzip\r\n\r\n")) == 400)
+    assert(statusOf(bytes("${tp}gzip, chunked\r\n\r\n0\r\n\r\n")) == 501)
+    assert(statusOf(bytes("${tp}chunked;ext=val\r\n\r\n0\r\n\r\n")) == 501)
+    assert(statusOf(bytes("${tp}Chunked\r\n\r\n0\r\n\r\n")) == 200)
+    // 長すぎるターゲット（RFC 9112 3）: リクエスト行の途中で頭の上限に達し、空白が1つだけなら414
+    mut long := mut []byte{}
+    for c <- bytes("GET /") {
+        long = append(long, c)
+    }
+    for _ <- iter.Range(0, 9000) {
+        long = append(long, 'a')
+    }
+    assert(statusOf(freeze(long)) == 414)
+    // HTTP/1.0のTransfer-Encodingは枠の誤り（RFC 9112 6.1）
+    assert(statusOf(bytes("POST / HTTP/1.0\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n")) == 400)
+    // 版（RFC 9112 2.3）: 形の誤りは400・対応しない版は505
+    assert(statusOf(bytes("GET / HTTP/1\r\n${h}\r\n")) == 400)
+    assert(statusOf(bytes("GET / HTTP/01.01\r\n${h}\r\n")) == 400)
+    assert(statusOf(bytes("GET / HTTP/1.2\r\n${h}\r\n")) == 505)
+    assert(statusOf(bytes("GET / HTTP/9.9\r\n${h}\r\n")) == 505)
+    // ヘッダの値の字（RFC 9110 5.5）
+    assert(statusOf(bytes("GET / HTTP/1.1\r\n${h}X-Test: val\0ue\r\n\r\n")) == 400)
+    assert(statusOf(withByte("GET / HTTP/1.1\r\n${h}X-Test: abc#def\r\n\r\n", byte(7))) == 400)
+    assert(statusOf(withByte("GET / HTTP/1.1\r\n${h}X-Test: abc#def\r\n\r\n", byte(11))) == 400)
+    assert(statusOf(withByte("GET / HTTP/1.1\r\n${h}X-Test: abc#def\r\n\r\n", byte(127))) == 400)
+    assert(statusOf(bytes("GET / HTTP/1.1\r\n${h}X-Test: a\tb é\r\n\r\n")) == 200)
+}

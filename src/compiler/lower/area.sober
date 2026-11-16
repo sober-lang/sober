@@ -223,3 +223,43 @@ func awinRebase(st mut St, t int) {
     br(mut st, bGo, -1)
     setCur(mut st, bGo)
 }
+
+// 切り替えの点の照合（検査のビルドだけ: ミュータント91・92〔+ 90〕。areacheck）: 止まるtask fromの今のスタックの番地（rt.task_switchの枠。退避するrspの近く）と、
+// 再開するtask toの退避したrspが、そのtaskの持つエリアか自分のチャンクのページ0の余白の中にある。外なら印字して終了コード103。
+// 浅くスリープする形（退避しない。着地はワーカーのエリアの頂上）と、走り始めていないto・自分自身へ切り替えるto（退避はこの切り替えで書く）・
+// 所有エリアを持たないtask（エリアの形をとらないプログラムのmain）は見ない
+func areaSpCheck(st mut St, from int, to int) {
+    if st.rtMut != 91 && st.rtMut != 92 {
+        return
+    }
+    spark := iconst(mut st, AREA_SPARK)
+    bF := branchIf(mut st, cmp(mut st, CEq, bin(mut st, BAnd, load(mut st, from, TC_ONW), spark), iconst(mut st, 0)))
+    areaSpIn(mut st, from, ptoi(mut st, newSlotAddr(mut st, 1)))
+    br(mut st, bF, -1)
+    setCur(mut st, bF)
+    run := bin(mut st, BAnd, cmp(mut st, CNe, load(mut st, to, TC_STARTED), iconst(mut st, 0)), cmp(mut st, CEq, bin(mut st, BAnd, load(mut st, to, TC_ONW), spark), iconst(mut st, 0)))
+    bT := branchIf(mut st, bin(mut st, BAnd, run, cmp(mut st, CNe, ptoi(mut st, to), ptoi(mut st, from))))
+    areaSpIn(mut st, to, load(mut st, to, TC_CTX))
+    br(mut st, bT, -1)
+    setCur(mut st, bT)
+}
+
+func areaSpIn(st mut St, t int, sp int) {
+    a := load(mut st, t, TC_AREA)
+    tc := ptoi(mut st, t)
+    inA := bin(mut st, BAnd, cmp(mut st, CUge, sp, bin(mut st, BSub, a, iconst(mut st, TASK_STACK))), cmp(mut st, CUlt, sp, a))
+    inP := bin(mut st, BAnd, cmp(mut st, CUge, sp, bin(mut st, BSub, tc, iconst(mut st, TCB_TOP_ROOM))), cmp(mut st, CUlt, sp, tc))
+    bad := bin(mut st, BAnd, cmp(mut st, CNe, a, iconst(mut st, 0)), cmp(mut st, CEq, bin(mut st, BOr, inA, inP), iconst(mut st, 0)))
+    bJ := branchIf(mut st, bad)
+    toStderr(mut st, globaladdr(mut st, st.meta))
+    printLit(mut st, "area-check: task ")
+    call(mut st, st.rtPint, list1(mut st, tc))
+    printLit(mut st, " stack ")
+    call(mut st, st.rtPint, list1(mut st, sp))
+    printLit(mut st, " outside the area it holds ")
+    call(mut st, st.rtPint, list1(mut st, a))
+    printLit(mut st, " and its page 0\n")
+    call(mut st, st.rtFlush, list0(mut st))
+    exit(mut st, 103)
+    setCur(mut st, bJ)
+}

@@ -2,6 +2,77 @@
 
 This file records user-facing changes per public release. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow [Semantic Versioning](https://semver.org/) (no backward-compatibility promise while on 0.x).
 
+## v0.7.4 (2026-11-16)
+
+This release runs the run queue only in the order tasks became ready. p99 under a saturated load goes down. It includes an incompatible change, because `maxWait:` is removed. It fixes conformance errors of the HTTP server, and a bug that crashed the process under a saturated load. A SIGSEGV that is not a stack overflow now stops the process instead of being turned into the death of a task. When the compiler checks itself, the checker runs 28% fewer instructions, and the released compiler is now stage3.
+
+### Order of the run queue
+
+- A task that becomes ready enters the run queue of its worker and runs in the order it became ready. Before, the newest task was taken first, and only a task past the wait bound (100 ms by default) was taken from the oldest side. Taking the newest first and the wait bound are gone
+- Incompatible change: `maxWait:` is removed from `net.Serve` and `tls.Serve`. `aged`, `late` and `maxLate` are removed from `task.Ledger()`. `maxWait` (the longest wait from becoming ready to running) stays, and is measured on every take. To migrate, delete the `maxWait:` argument
+- Effect: compared with 0.7.2 on the same machine (16 workers, connection counts that match the upstream setup). p99 under a saturated load goes down
+  - json-comp (1,024 connections): p99 from 100 ms to 2.7 ms
+  - json-tls (1,024 connections): p99 from 98 ms to 1.1 ms
+  - baseline (1,024 connections): p99 from 704 µs to 539 µs
+- p50 goes up. For baseline it went from 67 µs to 411 µs
+- rps (all four at 1,024 connections): baseline +2.4%, json-comp +4.1%, limited-conn −1.1%, json −0.8%
+- At connection counts where the connection state does not fit in the cache (256 connections per worker), baseline rps is about 7% lower than with the newest-first order
+- With one worker, spawn still runs the child first
+
+### Breaking changes
+
+- An invalid memory access (SIGSEGV) that is not a stack overflow is no longer turned into the death of a task. Before, every SIGSEGV was treated as a stack overflow, and with a trap in place it unwound as the death of a task (StackExceeded). Now it is StackExceeded only when the faulting address is in the guard of the stack that is running. Otherwise the process writes two lines to standard error (the address, the instruction position, and a note that this is a bug in the compiler or runtime, with the version) and ends with SIGSEGV (exit status 139 from a shell, with a core dump). It is not part of the panic exit codes of the language (101, 102)
+- `std/math`: NaN is now a single value. `math.Bits` returns 0x7ff8000000000000 for every NaN. Before, the sign and payload of a NaN were visible through `math.Bits`. `math.Bits` is the only way to read the bits of a float, and the output of `FormatFloat` and `FormatFixed` in `std/convert` is unchanged
+- `std/http/server`: the Host header is checked (RFC 9112 3.2). A request is a 400 when it is HTTP/1.1 without Host, has two or more Host lines, or has a value not of the form `uri-host [":" port]` (empty, or containing userinfo, a path, a space or a comma). HTTP/1.0 may omit Host
+- `std/http/server`: a NUL, other control character or DEL in a header value is a 400 (RFC 9110 5.5). Only HTAB, visible ASCII and obs-text are accepted
+- `std/http/server`: chunk extensions are read by their grammar (RFC 9112 7.1.1). A form outside the grammar is a 400. The values of extensions are still discarded
+- `std/http/server`: the Transfer-Encoding value is read as a list of transfer-codings (RFC 9112 6.1). A grammar error, chunked not last, chunked twice, or Transfer-Encoding on HTTP/1.0 is a 400. A well-formed list with another coding or a parameter is a 501. Empty elements are skipped
+- `std/http/server`: an HTTP version string not of the form `HTTP/DIGIT.DIGIT` is a 400, and a well-formed version other than 1.0 and 1.1 is a 505 (RFC 9112 2.3)
+- `std/http/server`: a request line that reaches the head limit inside the target is a 414 (RFC 9112 3)
+- `std/http/server`: added checks of the request line (RFC 9110, 9112)
+  - A NUL or control character (below 0x20, including HTAB) in the target is a 400. DEL, `#`, `\` and bytes 0x80 and above are accepted as before
+  - A CONNECT that matches no route is a 501 (the server does not implement CONNECT). Before, it was a 404
+  - The asterisk-form (a target of `*`) is accepted only for OPTIONS. Other methods get a 400. Before, they got a 404. `OPTIONS *` is still a 404
+  - A request line that reaches the head limit without a space is a 501 as a method that is too long. Before, it was a 431
+- `std/http/server`: the trailer lines of a chunked body are checked with the same grammar as header lines (a tchar name, a `:`, no control characters) before they are discarded. A line that fails is a 400. Before, they were discarded without a check
+
+### std
+
+- `std/http/server`: added `HeaderList(r Request) []http.Field`. It returns all the headers of a request in the order received. Lines with the same name are separate elements. Names are lowercased (the same rule as `Response.headers` in `std/http/client`). Values are not copied. The credential headers (Authorization, Proxy-Authorization, Cookie) are left out (the same as `Header`)
+- `std/http/server`: fixed a bug where a server whose handler opens a `task.Run` scope, spawns children with `task.Spawn` and joins them could crash the whole process under a saturated load (reproduced on 0.7.3). A child that could not be admitted ran in place on the parent task with the state of the parent's connection task, and another task overwrote the region that held the parent's live frames. It was reported as `panic: StackExceeded{}`, but it was not a stack overflow
+- `std/tls`: fixed conformance errors found with tlsfuzzer
+  - A ClientHello whose legacy_version is not 0x0303 is rejected with protocol_version, and one with malformed extension bodies or missing mandatory extensions with the matching alerts
+  - An unencrypted record whose body exceeds 2^14 and a record whose decrypted plaintext exceeds 2^14 + 1 are rejected with record_overflow. An empty alert record and a Finished of the wrong length are rejected too. During the handshake, a content type that is not a record type is rejected
+  - A record-layer error after the handshake (a record that is too long or cut short) sends an alert and then returns `BadRecord`. Before, it returned `Closed` without an alert
+  - A connection that sent or received a fatal alert does not send close_notify. After the peer's close_notify, pending data is sent before close_notify is returned
+- `std/http/server`: fixed a bug where a route with a storage policy (`cache:`) did not send the Set-Cookie returned by its handler (0.7.0 through 0.7.3)
+- `std/http/server`: a response whose policy lets a shared cache store it (`Fresh`, `Shared`, `Unstated`, `Revalidate`) and that has Set-Cookie panics with `http.BadHeader{name: "Set-Cookie"}` when its headers are written. This does not happen in a program that passed check (the analysis below rejects it)
+
+### Compiler
+
+- check rejects a route whose policy lets a shared cache store the response when it can return Set-Cookie. It also rejects mounting such a route under middleware that can return Set-Cookie, and a single response that has both such a policy and cookies. Routes with Private or NoStore send cookies as before
+- check rejected a route with a shared policy whose middleware returns the response it receives, or rebuilds it, when another route read a credential (a false rejection). Fixed
+- Added the std-only annotations `@stored` (after a union variant) and `@personal` (after a struct type)
+- When a child of parallel code generation or of check died from its budget, the compiler stopped with `panic: InvariantBroken{}`. The parent now redoes the same body sequentially
+- Type comparison has a shortcut for a type compared with itself. When the compiler checks itself, the checker runs 77.6 G instructions instead of 107.8 G (−28%). The more types a program compares, the lighter its check
+
+### Performance
+
+- The region of an iteration is opened just before the first allocation in the body. An iteration that ends without allocating does not open it. On the subjects in bench/, instructions dropped by 5.43% for routing and 1.73% for jsonapi. Output, panics and memory limits are unchanged. The point where the depth limit (exit 102) is hit, and the depth printed then, can move to the shallower side
+- `std/compress/flate` (encoding with history, used by the gzip responses of `std/http/server`): the temporary arrays of each block moved to the work area. The output bytes are the same. On the local benchmark (json-comp of bench/httparena, 4,096 connections, median of 8 code layouts), user-side cycles per request dropped by 1.31%
+- JSON output (`json.Encode` and the JSON responses of `std/http/server`): growing the output buffer no longer fills the grown space with zeros. This uses an operation internal to std, limited to writes that are never read before they are written. On the local benchmark (the json test, 4,096 connections, median of 8 code layouts), user-side cycles per request dropped by 4.54% and rps rose by 1.17%
+- `std/http/server`: for the last response of a keep-alive batch, the headers and body are written straight into the worker's send buffer and sent. The copy of the body into a separate array is gone. This is used on the io_uring path when the send buffer has room
+- `std/tls`: the send buffer moved from a per-connection array (16.4 KB) to a reservation in the worker's send buffer. The per-connection state is smaller. The promises of `tls.Send`, `tls.Put` and `tls.Flush` are unchanged
+- `std/http/server`: the request-line checks (in the breaking changes above) share one detection with the line-break check. A normal request takes 39 to 46 fewer instructions
+
+### Distribution
+
+- The released compiler is now stage3 (the compiler built by the stage2 that comes out of the bootstrap chain). Before, stage2 was released. The std L0 (the interface of each package) is baked in with the same steps as stage2. The release checks that stage3 builds itself to the same ELF (fixed point). The image (ghcr.io) is built from the published tarball, so it is the same binary
+
+### bench/httparena
+
+- Added `/spec` and `/spec/headers` (the compliance tests of HttpArena) and `/async-db` (a test that queries PostgreSQL through a `std/pg` pool). Upstream, `/async-db` is a reference test that does not count toward the composite score
+
 ## v0.7.3 (2026-11-14)
 
 This release changes how a delayed response is sent. It also reorganizes the documents around value orientation. The rules of the language have not changed.

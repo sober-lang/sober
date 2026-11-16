@@ -60,7 +60,7 @@ func epCtl(st mut St, rec int, op int, fd int, ev int, ud int) int {
     return urSys(mut st, 233, []int{load(mut st, rp, EP_FD), iconst(mut st, op), fd, a})
 }
 
-// 待ち手tをresでウェイクアップする（走れるスタックへ・待ち手の数 − 1）
+// 待ち手tをresでウェイクアップする（実行待ちの列へ・待ち手の数 − 1）
 func epWake(st mut St, t int, res int) {
     tk := globaladdr(mut st, st.taskG)
     wk := globaladdr(mut st, st.wkG)
@@ -503,7 +503,7 @@ func vdsoLazy(st mut St, zero int) int {
 // 要素iはワード2 + 2i。持ち主のワーカーだけが読み書きする（sleepするtaskは走り始めたtask — 盗まれない・TC_WORKERに固定）。取り消しは無い
 // （sleepの待ちを外から終わらせるパスが無い — 期限は目標に畳む・孤児の登録に入らない）ので削除・decrease-keyは持たない。
 // 満了はスリープの関門（uring.sober urNetGate — enterの前）とenterの後でrt.tmr_fireがウェイクアップする（-62 = -ETIME と同じ値 — sleepRingの読みは共通）。
-// ウェイクアップする順は目標の順（取り出した順にTC_PREVで繋ぎ、尾から走れるスタックへ押し込む — 同じ回に満ちた分は早い目標から走る）
+// ウェイクアップする順は目標の順（取り出した順に実行待ちの列へ積む。同じ回に満ちた分は早い目標から走る）
 const WK_TMR = 23
 const TS_BATCH = 8      // 時計の表の満了 1 回に積む時刻つきの送りの SEND の上限（頭の取り込みの UR_POKE と同じ — 送りと task の走りを交互に）
 const TMR_CAP = 1048576 // 表の容量（ワーカーごと — 16 MiBのVA。溢れたsleepはIORING_OP_TIMEOUTのパス）
@@ -588,10 +588,8 @@ func buildTmr(st mut St) {
     ret(mut st, iconst(mut st, -1))
     setCur(mut st, bHz)
     now := sleepClock(mut st)
-    // 取り出しのループ（f / l = ウェイクアップした待ち手の列の頭と尾 — 目標の順）
+    // 取り出しのループ
     bP := newBlock(mut st)
-    f := param(mut st, bP, TyI64)
-    l := param(mut st, bP, TyI64)
     // 時刻つきの送りの SEND を積んだ数（1 回に TS_BATCH まで — 残りは表に残して次の取り込みへ: 積んだ SEND は次の enter が提出の中で
     // 1 本ずつ送るので、一度に多く積むとその enter が長く、起きた task が待つ）
     ns := param(mut st, bP, TyI64)
@@ -600,7 +598,7 @@ func buildTmr(st mut St) {
     bNe := newBlock(mut st)
     bNb := newBlock(mut st)
     bPop := newBlock(mut st)
-    br(mut st, bP, list3(mut st, z, z, z))
+    br(mut st, bP, list1(mut st, z))
     setCur(mut st, bP)
     nn := load(mut st, h, 0)
     condbr(mut st, cmp(mut st, CEq, nn, z), bDone, list1(mut st, iconst(mut st, -1)), bNe, -1)
@@ -687,29 +685,15 @@ func buildTmr(st mut St) {
         nrWake(mut st, nrt)
         br(mut st, bNw, -1)
         setCur(mut st, bNw)
-        br(mut st, bP, list3(mut st, f, l, urAdd(mut st, ns, 1)))
+        br(mut st, bP, list1(mut st, urAdd(mut st, ns, 1)))
         setCur(mut st, bTw)
     }
-    // ウェイクアップする: 結果 = -62（sleepRingの読みはOP_TIMEOUTの -ETIME と共通）・列の尾に繋ぐ（TC_PREV = 1つ前にウェイクアップした待ち手）・WK_NETW − 1
-    tp := itop(mut st, t)
-    store(mut st, tp, TC_IORES, iconst(mut st, -62))
-    store(mut st, tp, TC_PREV, l)
+    // ウェイクアップする: 結果 = -62（sleepRingの読みはOP_TIMEOUTの-ETIMEと共通）・実行待ちの列へ積む・WK_NETW − 1
+    store(mut st, itop(mut st, t), TC_IORES, iconst(mut st, -62))
+    readyPush(mut st, tk, t)
     store(mut st, wf, WK_NETW, urAdd(mut st, load(mut st, wf, WK_NETW), -1))
     tmrPrefetch(mut st, t)
-    br(mut st, bP, list3(mut st, f, t, ns))
-    // ウェイクアップした列を尾（遅い目標）から走れるスタックへ押し込む — 最後に積む頭が早い目標
+    br(mut st, bP, list1(mut st, ns))
     setCur(mut st, bDone)
-    bW := newBlock(mut st)
-    q := param(mut st, bW, TyI64)
-    bWb := newBlock(mut st)
-    bS := newBlock(mut st)
-    br(mut st, bW, list1(mut st, l))
-    setCur(mut st, bW)
-    condbr(mut st, cmp(mut st, CEq, q, z), bS, -1, bWb, -1)
-    setCur(mut st, bWb)
-    nq := load(mut st, itop(mut st, q), TC_PREV)
-    readyPush(mut st, tk, q)
-    br(mut st, bW, list1(mut st, nq))
-    setCur(mut st, bS)
     ret(mut st, dres)
 }

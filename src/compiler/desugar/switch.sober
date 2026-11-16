@@ -148,7 +148,7 @@ func constSwitch(st mut S, sw NodeRef, eb int, ef int, depth int) (CoreRef, erro
             mut i := 0
             while i < kk {
                 rt := tyOf(mut st, fnPkg(mut st, fi), latN(mut st, rs, i), at, TYFUEL)?
-                pj := projection(mut st, cVar(mut st, i), i, kk)
+                pj := resProj(mut st, cVar(mut st, i), i, kk)
                 subjects = append(subjects, if tg(mut st, rt) == TByte { c1(mut st, CToInt, pj) } else { pj })
                 sbool = append(sbool, tg(mut st, rt) == TBool)
                 sbyte = append(sbyte, tg(mut st, rt) == TByte)
@@ -322,13 +322,14 @@ func unionSwitch(st mut S, sw NodeRef, eb int, ef int, depth int) (CoreRef, erro
     for r <- iter.Range(0, nrow) {
         PmSet(mut st, pats, r, hget(mut st, arms + 1 + r * 3))
     }
+    hs := PmHeads1(mut st, st.curPkg, pats, sdom)
     for r <- iter.Range(0, nrow) {
         p := hgetN(mut st, arms + 1 + r * 3)
-        if p != -1 && !PmUseful1(mut st, st.curPkg, pats, r, p, sdom, ListRef(-1)) {
+        if p != -1 && !PmUsefulAt(mut st, st.curPkg, pats, hs, r, sdom, ListRef(-1)) {
             return 0, diag.Malformed{at: posOf(mut st, p)}
         }
     }
-    if decl != NodeRef(ERRS) && PmUseful1(mut st, st.curPkg, pats, nrow, NodeRef(-1), sdom, ListRef(-1)) {
+    if decl != NodeRef(ERRS) && PmUsefulAt(mut st, st.curPkg, pats, hs, nrow, sdom, ListRef(-1)) {
         mut ps := mut []int{}
         for r <- iter.Range(0, nrow) {
             p := hgetN(mut st, arms + 1 + r * 3)
@@ -422,7 +423,7 @@ func unionTree(st mut S, subject CoreRef, s0 NodeRef, dpk int, decl NodeRef, arm
     return caseTree(mut st, subject, dpk, decl, 0, arms, eb, ef, depth)
 }
 
-// 右結合の union の入れ子に沿った case の入れ子（variant の列は decl の start 番目から）
+// union の木に沿った case の入れ子（variant の列は decl の start 番目から）
 func caseTree(st mut S, subject0 CoreRef, pk int, decl NodeRef, start int, arms int, eb int, ef int, depth int) (CoreRef, error?) {
     // 再帰の組の union の値は 1 段開いてから分岐する
     subject := if start == 0 && isRecDecl(mut st, decl) { cUnfold(mut st, subject0) } else { subject0 }
@@ -431,8 +432,15 @@ func caseTree(st mut S, subject0 CoreRef, pk int, decl NodeRef, start int, arms 
         a := caseArm(mut st, arms, start, pk, vat(mut st, decl, start), eb, ef, depth)?
         return cLet(mut st, subject, a), nil
     }
-    l := caseArm(mut st, arms, start, pk, vat(mut st, decl, start), eb, ef, depth)?
-    r := if n == 2 { caseArm(mut st, arms, start + 1, pk, vat(mut st, decl, start + 1), eb, ef, depth)? } else { caseTree(mut st, cVar(mut st, 0), pk, decl, start + 1, arms, eb, ef, depth + 1)? }
+    return caseIn(mut st, subject, pk, decl, start, start + n, arms, eb, ef, depth)
+}
+
+// variant の [lo, hi)（2 個以上）の union の値 subject の case の木。部分木が 1 個なら腕（case が束縛したペイロード）、
+// 2 個以上なら case が束縛した値（var 0）をさらに分ける
+func caseIn(st mut S, subject CoreRef, pk int, decl NodeRef, lo int, hi int, arms int, eb int, ef int, depth int) (CoreRef, error?) {
+    m := treeMid(lo, hi)
+    l := if m - lo == 1 { caseArm(mut st, arms, lo, pk, vat(mut st, decl, lo), eb, ef, depth)? } else { caseIn(mut st, cVar(mut st, 0), pk, decl, lo, m, arms, eb, ef, depth + 1)? }
+    r := if hi - m == 1 { caseArm(mut st, arms, m, pk, vat(mut st, decl, m), eb, ef, depth)? } else { caseIn(mut st, cVar(mut st, 0), pk, decl, m, hi, arms, eb, ef, depth + 1)? }
     return c3(mut st, CCase, subject, l, r), nil
 }
 
@@ -522,7 +530,7 @@ func armGen(st mut S, c ArmCont, ef int, d0 int) (CoreRef, error?) {
                 continue
             }
             payload := cVar(mut st, d - 1 - c.pl)
-            exs = append(exs, projection(mut st, payload, idx, nf))
+            exs = append(exs, treeProj(mut st, payload, idx, nf))
             dd := declOfTypeExpr(mut st, pk, ft)
             eb2 = bind(mut st, eb2, bname, d, false, dd, fty, -1, 0, -1, false, SurfaceOf(mut st, pk, ft))
             d += 1
@@ -548,38 +556,13 @@ func subjFieldTy(st mut S, v NodeRef, vi int, idx int, nf int) TyRef {
     if decl == -1 || decl == NodeRef(ERRS) || vat(mut st, decl, vi) != v {
         return -1
     }
-    mut t := if isRecDecl(mut st, decl) { tyUnfold(mut st, t0) } else { t0 }
-    n := vcount(mut st, decl)
-    mut j := 0
-    while j < vi {
-        if tg(mut st, t) != TUn {
-            return -1
-        }
-        t = tRight(mut st, t)
-        j += 1
+    t0u := if isRecDecl(mut st, decl) { tyUnfold(mut st, t0) } else { t0 }
+    t := treeAtK(mut st, t0u, TUn, vi, vcount(mut st, decl))
+    if t == -1 {
+        return -1
     }
-    if vi < n - 1 {
-        if tg(mut st, t) != TUn {
-            return -1
-        }
-        t = tLeft(mut st, t)
-    }
-    // ペイロード（フィールドの右結合の組）のidx番目
-    mut k := 0
-    while k < idx {
-        if tg(mut st, t) != TPr {
-            return -1
-        }
-        t = tRight(mut st, t)
-        k += 1
-    }
-    if idx < nf - 1 {
-        if tg(mut st, t) != TPr {
-            return -1
-        }
-        t = tLeft(mut st, t)
-    }
-    return t
+    // ペイロード（フィールドの木）のidx番目
+    return treeAt(mut st, t, idx, nf)
 }
 
 // error値（先頭 + チェーン — レベルlv）のcause（今の深さdの式）: チェーンが空ならnil、でなければ (チェーンの末尾, チェーンの残り)
@@ -758,7 +741,7 @@ func patGen(st mut S, i int, hi int, eb2 int, ef int, d int, blk NodeRef, c ArmC
         return patGen(mut st, i + 1, hi, eb3, ef, d, blk, c)
     }
     lv := table.Get(mut st.pslots, s.src)
-    val := if s.nf == 1 { cVar(mut st, d - 1 - lv) } else { projection(mut st, cVar(mut st, d - 1 - lv), s.idx, s.nf) }
+    val := if s.nf == 1 { cVar(mut st, d - 1 - lv) } else { treeProj(mut st, cVar(mut st, d - 1 - lv), s.idx, s.nf) }
     if s.k == 1 {
         return patTree(mut st, val, i, hi, s.decl, 0, eb2, ef, d, blk, c)
     }
@@ -773,7 +756,7 @@ func patGen(st mut S, i int, hi int, eb2 int, ef int, d int, blk NodeRef, c ArmC
     return cLet(mut st, val, body), nil
 }
 
-// 手 i（照合）の case の木（caseTree と同じ右結合の入れ子 — variant の列は decl の start 番目から）
+// 手 i（照合）の case の木（caseTree と同じ union の木 — variant の列は decl の start 番目から）
 func patTree(st mut S, subject0 CoreRef, i int, hi int, decl NodeRef, start int, eb2 int, ef int, d int, blk NodeRef, c ArmCont) (CoreRef, error?) {
     subject := if start == 0 && isRecDecl(mut st, decl) { cUnfold(mut st, subject0) } else { subject0 }
     n := vcount(mut st, decl) - start
@@ -781,8 +764,14 @@ func patTree(st mut S, subject0 CoreRef, i int, hi int, decl NodeRef, start int,
         a := patArm(mut st, i, hi, start, eb2, ef, d, blk, c)?
         return cLet(mut st, subject, a), nil
     }
-    l := patArm(mut st, i, hi, start, eb2, ef, d, blk, c)?
-    r := if n == 2 { patArm(mut st, i, hi, start + 1, eb2, ef, d, blk, c)? } else { patTree(mut st, cVar(mut st, 0), i, hi, decl, start + 1, eb2, ef, d + 1, blk, c)? }
+    return patIn(mut st, subject, i, hi, start, start + n, eb2, ef, d, blk, c)
+}
+
+// variant の [lo, hi)（2 個以上）の patTree の case の木（caseIn と同じ形）
+func patIn(st mut S, subject CoreRef, i int, hi int, lo int, vhi int, eb2 int, ef int, d int, blk NodeRef, c ArmCont) (CoreRef, error?) {
+    m := treeMid(lo, vhi)
+    l := if m - lo == 1 { patArm(mut st, i, hi, lo, eb2, ef, d, blk, c)? } else { patIn(mut st, cVar(mut st, 0), i, hi, lo, m, eb2, ef, d + 1, blk, c)? }
+    r := if vhi - m == 1 { patArm(mut st, i, hi, m, eb2, ef, d, blk, c)? } else { patIn(mut st, cVar(mut st, 0), i, hi, m, vhi, eb2, ef, d + 1, blk, c)? }
     return c3(mut st, CCase, subject, l, r), nil
 }
 

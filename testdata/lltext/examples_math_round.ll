@@ -32,7 +32,7 @@ attributes #0 = { nounwind "no-builtins" "frame-pointer"="all" }
 @"str.13" = internal constant [1 x i64] [i64 139141276781]
 @"str.14" = internal constant [1 x i64] [i64 10]
 @"str.15" = internal constant [3 x i64] [i64 7232620951369114994, i64 8674334734093152357, i64 8250]
-@"rt.psites" = internal constant [38 x i64] [i64 3659174948897025, i64 5348024909824001, i64 6473924850221057, i64 4503600483009028, i64 11258999806624513, i64 8725725016228611, i64 13510799687418625, i64 10977524897022723, i64 9851625191506691, i64 9851625208283907, i64 9851625241838339, i64 8725725368550147, i64 16044074863690497, i64 9851625376056067, i64 18858824798569217, i64 9851625543828227, i64 4222127687336708, i64 8162777797493505, i64 7881302904668929, i64 6755399894041601, i64 4222125237863425, i64 2814750371087361, i64 4222125523076097, i64 10977524964131841, i64 2814750656300033, i64 5629500675064833, i64 6755400581907460, i64 3940650831578113, i64 7881300740408321, i64 6192451618341889, i64 3659177230599169, i64 5910977044284417, i64 6755401991193601, i64 8725726828168193, i64 4222127385347073, i64 10977526826402817, i64 3940652442190849, i64 3940652492522497]
+@"rt.psites" = internal constant [38 x i64] [i64 3659174948897025, i64 5348024909824001, i64 6473924850221057, i64 4503600550117892, i64 11258999806624513, i64 8725725016228611, i64 13510799687418625, i64 10977524897022723, i64 9851625191506691, i64 9851625208283907, i64 9851625241838339, i64 8725725368550147, i64 16044074863690497, i64 9851625376056067, i64 18858824798569217, i64 9851625543828227, i64 4222127687336708, i64 8162777797493505, i64 7881302904668929, i64 6755399894041601, i64 4222125237863425, i64 2814750371087361, i64 4222125523076097, i64 10977524964131841, i64 2814750656300033, i64 5629500675064833, i64 6755400581907460, i64 3940650831578113, i64 7881300740408321, i64 6192451618341889, i64 3659177230599169, i64 5910977044284417, i64 6755401991193601, i64 8725726828168193, i64 4222127385347073, i64 10977526826402817, i64 3940652442190849, i64 3940652492522497]
 @"str.16" = internal constant [1 x i64] [i64 9071397899755888]
 @"str.17" = internal constant [3 x i64] [i64 8462017926321696361, i64 7953763900396085364, i64 25959]
 @"str.18" = internal constant [4 x i64] [i64 8026013105759284339, i64 8391735665840385653, i64 7453001576142499616, i64 101]
@@ -3772,14 +3772,31 @@ b36:
 
 define internal i64 @"std/math.Bits"(i64 %v0) #0 {
 b0:
-  %v2 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v1.p = getelementptr i64, ptr %v2, i64 0
+  %v5 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v1.p = getelementptr i64, ptr %v5, i64 0
   %v1 = load i64, ptr %v1.p
   call void @"rt.region_enter"()
-  %v3 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st0 = getelementptr i64, ptr %v3, i64 0
-  store i64 %v1, ptr %st0
-  ret i64 %v0
+  %v2.a = bitcast i64 %v0 to double
+  %v2.b = bitcast i64 %v0 to double
+  %v2.c = fcmp une double %v2.a, %v2.b
+  %v2 = zext i1 %v2.c to i64
+  %c.b0 = icmp ne i64 %v2, 0
+  br i1 %c.b0, label %b0.t1, label %b0.e2
+b0.t1:
+  br label %b1
+b0.e2:
+  br label %b2
+b1:
+  %v3 = add i64 0, 9221120237041090560
+  br label %b3
+b2:
+  br label %b3
+b3:
+  %v4 = phi i64 [ %v3, %b1 ], [ %v0, %b2 ]
+  %v6 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st2 = getelementptr i64, ptr %v6, i64 0
+  store i64 %v1, ptr %st2
+  ret i64 %v4
 }
 
 define internal i64 @"std/math.FromBits"(i64 %v0) #0 {
@@ -3796,103 +3813,102 @@ b0:
 
 define internal i64 @"std/math.Trunc"(i64 %v0) #0 {
 b0:
-  %v36 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v1.p = getelementptr i64, ptr %v36, i64 0
+  %v35 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v1.p = getelementptr i64, ptr %v35, i64 0
   %v1 = load i64, ptr %v1.p
   call void @"rt.region_enter"()
-  %v2 = call i64 @"std/math.Bits"(i64 %v0)
-  %v3 = add i64 0, 52
-  %v4.n = and i64 %v3, 63
-  %v4 = ashr i64 %v2, %v4.n
-  %v5 = add i64 0, 2047
-  %v6 = and i64 %v4, %v5
-  %v7 = add i64 0, 1023
-  %v8 = sub i64 %v6, %v7
-  %v9 = add i64 0, 52
-  %v10.c = icmp sge i64 %v8, %v9
-  %v10 = zext i1 %v10.c to i64
-  %c.b0 = icmp ne i64 %v10, 0
+  %v2 = add i64 0, 52
+  %v3.n = and i64 %v2, 63
+  %v3 = ashr i64 %v0, %v3.n
+  %v4 = add i64 0, 2047
+  %v5 = and i64 %v3, %v4
+  %v6 = add i64 0, 1023
+  %v7 = sub i64 %v5, %v6
+  %v8 = add i64 0, 52
+  %v9.c = icmp sge i64 %v7, %v8
+  %v9 = zext i1 %v9.c to i64
+  %c.b0 = icmp ne i64 %v9, 0
   br i1 %c.b0, label %b0.t1, label %b0.e2
 b0.t1:
   br label %b1
 b0.e2:
   br label %b2
 b1:
-  %v37 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st2 = getelementptr i64, ptr %v37, i64 0
+  %v36 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st2 = getelementptr i64, ptr %v36, i64 0
   store i64 %v1, ptr %st2
   ret i64 %v0
 b2:
   br label %b3
 b3:
-  %v11 = add i64 0, 0
-  %v12.c = icmp slt i64 %v8, %v11
-  %v12 = zext i1 %v12.c to i64
-  %c.b3 = icmp ne i64 %v12, 0
+  %v10 = add i64 0, 0
+  %v11.c = icmp slt i64 %v7, %v10
+  %v11 = zext i1 %v11.c to i64
+  %c.b3 = icmp ne i64 %v11, 0
   br i1 %c.b3, label %b3.t4, label %b3.e5
 b3.t4:
   br label %b4
 b3.e5:
   br label %b5
 b4:
-  %v13 = add i64 0, 0
-  %v14 = add i64 0, 9223372036854775807
-  %v15 = sub i64 %v13, %v14
-  %v16 = add i64 0, 1
-  %v17 = sub i64 %v15, %v16
-  %v18 = and i64 %v2, %v17
-  %v19 = call i64 @"std/math.FromBits"(i64 %v18)
-  %v38 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st5 = getelementptr i64, ptr %v38, i64 0
+  %v12 = add i64 0, 0
+  %v13 = add i64 0, 9223372036854775807
+  %v14 = sub i64 %v12, %v13
+  %v15 = add i64 0, 1
+  %v16 = sub i64 %v14, %v15
+  %v17 = and i64 %v0, %v16
+  %v18 = call i64 @"std/math.FromBits"(i64 %v17)
+  %v37 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st5 = getelementptr i64, ptr %v37, i64 0
   store i64 %v1, ptr %st5
-  ret i64 %v19
+  ret i64 %v18
 b5:
   br label %b6
 b6:
-  %v20 = add i64 0, 1
-  %v21 = add i64 0, 52
-  %v22 = sub i64 %v21, %v8
-  %v24 = add i64 0, 64
-  %v25.c = icmp uge i64 %v22, %v24
-  %v25 = zext i1 %v25.c to i64
-  %c.b6 = icmp ne i64 %v25, 0
+  %v19 = add i64 0, 1
+  %v20 = add i64 0, 52
+  %v21 = sub i64 %v20, %v7
+  %v23 = add i64 0, 64
+  %v24.c = icmp uge i64 %v21, %v23
+  %v24 = zext i1 %v24.c to i64
+  %c.b6 = icmp ne i64 %v24, 0
   br i1 %c.b6, label %b6.t7, label %b6.e8
 b6.t7:
   br label %b7
 b6.e8:
   br label %b8
 b7:
-  %v26 = add i64 0, 0
-  %v27.c = icmp slt i64 %v22, %v26
-  %v27 = zext i1 %v27.c to i64
-  %c.b7 = icmp ne i64 %v27, 0
+  %v25 = add i64 0, 0
+  %v26.c = icmp slt i64 %v21, %v25
+  %v26 = zext i1 %v26.c to i64
+  %c.b7 = icmp ne i64 %v26, 0
   br i1 %c.b7, label %b7.t9, label %b7.e10
 b7.t9:
   br label %b10
 b7.e10:
   br label %b11
 b8:
-  %v30.n = and i64 %v22, 63
-  %v30 = shl i64 %v20, %v30.n
+  %v29.n = and i64 %v21, 63
+  %v29 = shl i64 %v19, %v29.n
   br label %b9
 b9:
-  %v23 = phi i64 [ %v30, %b8 ], [ %v29, %b11 ]
-  %v31 = add i64 0, 1
-  %v32 = sub i64 %v23, %v31
-  %v33 = and i64 %v2, %v32
-  %v34 = sub i64 %v2, %v33
-  %v35 = call i64 @"std/math.FromBits"(i64 %v34)
-  %v39 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st10 = getelementptr i64, ptr %v39, i64 0
+  %v22 = phi i64 [ %v29, %b8 ], [ %v28, %b11 ]
+  %v30 = add i64 0, 1
+  %v31 = sub i64 %v22, %v30
+  %v32 = and i64 %v0, %v31
+  %v33 = sub i64 %v0, %v32
+  %v34 = call i64 @"std/math.FromBits"(i64 %v33)
+  %v38 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st10 = getelementptr i64, ptr %v38, i64 0
   store i64 %v1, ptr %st10
-  ret i64 %v35
+  ret i64 %v34
 b10:
-  %v28 = add i64 0, 3
-  call void @"rt.panic"(i64 %v28)
+  %v27 = add i64 0, 3
+  call void @"rt.panic"(i64 %v27)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
 b11:
-  %v29 = add i64 0, 0
+  %v28 = add i64 0, 0
   br label %b9
 }
 
@@ -3964,8 +3980,8 @@ b0:
 
 define internal i64 @"std/math.Min"(i64 %v0, i64 %v1) #0 {
 b0:
-  %v16 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v2.p = getelementptr i64, ptr %v16, i64 0
+  %v14 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v2.p = getelementptr i64, ptr %v14, i64 0
   %v2 = load i64, ptr %v2.p
   call void @"rt.region_enter"()
   %v3.a = bitcast i64 %v0 to double
@@ -3979,8 +3995,8 @@ b0.t1:
 b0.e2:
   br label %b2
 b1:
-  %v17 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st2 = getelementptr i64, ptr %v17, i64 0
+  %v15 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st2 = getelementptr i64, ptr %v15, i64 0
   store i64 %v2, ptr %st2
   ret i64 %v0
 b2:
@@ -3997,8 +4013,8 @@ b3.t4:
 b3.e5:
   br label %b5
 b4:
-  %v18 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st5 = getelementptr i64, ptr %v18, i64 0
+  %v16 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st5 = getelementptr i64, ptr %v16, i64 0
   store i64 %v2, ptr %st5
   ret i64 %v1
 b5:
@@ -4031,22 +4047,20 @@ b8.t9:
 b8.e10:
   br label %b10
 b9:
-  %v10 = call i64 @"std/math.Bits"(i64 %v0)
-  %v11 = call i64 @"std/math.Bits"(i64 %v1)
-  %v12 = or i64 %v10, %v11
-  %v13 = call i64 @"std/math.FromBits"(i64 %v12)
-  %v19 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st10 = getelementptr i64, ptr %v19, i64 0
+  %v10 = or i64 %v0, %v1
+  %v11 = call i64 @"std/math.FromBits"(i64 %v10)
+  %v17 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st10 = getelementptr i64, ptr %v17, i64 0
   store i64 %v2, ptr %st10
-  ret i64 %v13
+  ret i64 %v11
 b10:
   br label %b11
 b11:
-  %v14.a = bitcast i64 %v0 to double
-  %v14.b = bitcast i64 %v1 to double
-  %v14.c = fcmp olt double %v14.a, %v14.b
-  %v14 = zext i1 %v14.c to i64
-  %c.b11 = icmp ne i64 %v14, 0
+  %v12.a = bitcast i64 %v0 to double
+  %v12.b = bitcast i64 %v1 to double
+  %v12.c = fcmp olt double %v12.a, %v12.b
+  %v12 = zext i1 %v12.c to i64
+  %c.b11 = icmp ne i64 %v12, 0
   br i1 %c.b11, label %b11.t12, label %b11.e13
 b11.t12:
   br label %b12
@@ -4057,17 +4071,17 @@ b12:
 b13:
   br label %b14
 b14:
-  %v15 = phi i64 [ %v0, %b12 ], [ %v1, %b13 ]
-  %v20 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st13 = getelementptr i64, ptr %v20, i64 0
+  %v13 = phi i64 [ %v0, %b12 ], [ %v1, %b13 ]
+  %v18 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st13 = getelementptr i64, ptr %v18, i64 0
   store i64 %v2, ptr %st13
-  ret i64 %v15
+  ret i64 %v13
 }
 
 define internal i64 @"std/math.Max"(i64 %v0, i64 %v1) #0 {
 b0:
-  %v16 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v2.p = getelementptr i64, ptr %v16, i64 0
+  %v14 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v2.p = getelementptr i64, ptr %v14, i64 0
   %v2 = load i64, ptr %v2.p
   call void @"rt.region_enter"()
   %v3.a = bitcast i64 %v0 to double
@@ -4081,8 +4095,8 @@ b0.t1:
 b0.e2:
   br label %b2
 b1:
-  %v17 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st2 = getelementptr i64, ptr %v17, i64 0
+  %v15 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st2 = getelementptr i64, ptr %v15, i64 0
   store i64 %v2, ptr %st2
   ret i64 %v0
 b2:
@@ -4099,8 +4113,8 @@ b3.t4:
 b3.e5:
   br label %b5
 b4:
-  %v18 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st5 = getelementptr i64, ptr %v18, i64 0
+  %v16 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st5 = getelementptr i64, ptr %v16, i64 0
   store i64 %v2, ptr %st5
   ret i64 %v1
 b5:
@@ -4133,22 +4147,20 @@ b8.t9:
 b8.e10:
   br label %b10
 b9:
-  %v10 = call i64 @"std/math.Bits"(i64 %v0)
-  %v11 = call i64 @"std/math.Bits"(i64 %v1)
-  %v12 = and i64 %v10, %v11
-  %v13 = call i64 @"std/math.FromBits"(i64 %v12)
-  %v19 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st10 = getelementptr i64, ptr %v19, i64 0
+  %v10 = and i64 %v0, %v1
+  %v11 = call i64 @"std/math.FromBits"(i64 %v10)
+  %v17 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st10 = getelementptr i64, ptr %v17, i64 0
   store i64 %v2, ptr %st10
-  ret i64 %v13
+  ret i64 %v11
 b10:
   br label %b11
 b11:
-  %v14.a = bitcast i64 %v0 to double
-  %v14.b = bitcast i64 %v1 to double
-  %v14.c = fcmp ogt double %v14.a, %v14.b
-  %v14 = zext i1 %v14.c to i64
-  %c.b11 = icmp ne i64 %v14, 0
+  %v12.a = bitcast i64 %v0 to double
+  %v12.b = bitcast i64 %v1 to double
+  %v12.c = fcmp ogt double %v12.a, %v12.b
+  %v12 = zext i1 %v12.c to i64
+  %c.b11 = icmp ne i64 %v12, 0
   br i1 %c.b11, label %b11.t12, label %b11.e13
 b11.t12:
   br label %b12
@@ -4159,11 +4171,11 @@ b12:
 b13:
   br label %b14
 b14:
-  %v15 = phi i64 [ %v0, %b12 ], [ %v1, %b13 ]
-  %v20 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st13 = getelementptr i64, ptr %v20, i64 0
+  %v13 = phi i64 [ %v0, %b12 ], [ %v1, %b13 ]
+  %v18 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st13 = getelementptr i64, ptr %v18, i64 0
   store i64 %v2, ptr %st13
-  ret i64 %v15
+  ret i64 %v13
 }
 
 define internal void @"std/internal/floatfmt.Format"(ptr %v0, i64 %v1) #0 {

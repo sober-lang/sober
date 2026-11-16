@@ -233,7 +233,7 @@ func stmtsIn(st mut S, l ListRef, eb0 int, ef0 int, depth0 int, ra bool, dis boo
                 mut j := 0
                 while j < nn {
                     tuple := cVar(mut st, bd - (depth + 1))
-                    mut v := projection(mut st, tuple, j, nn)
+                    mut v := resProj(mut st, tuple, j, nn)
                     has := rtys != -1 && j < lenL(mut st, rtys)
                     svv := if j == 0 && whole != -1 { scopeValue(mut st, v0e, ebv) } else { NodeRef(-1) }
                     d := if svv != -1 { declOfExpr(mut st, svv, ebv, ef) } else if has && rgen { genericResDecl(mut st, v0e, ebv, ef, j, at, false) } else if has { declOfTypeExpr(mut st, rpk, latN(mut st, rtys, j)) } else { -1 }
@@ -334,7 +334,7 @@ func stmtsIn(st mut S, l ListRef, eb0 int, ef0 int, depth0 int, ra bool, dis boo
                     hsetCore(mut st, int(vs) + 1 + j, if nr == nv { retValue(mut st, ve, latTy(mut st, st.curRtys, j), eb, ef, depth, at)? } else { expr(mut st, ve, eb, ef, depth)? })
                     j += 1
                 }
-                v := pairChain(mut st, vs)
+                v := resChain(mut st, vs)
                 if dis {
                     term = finish(mut st, cLet(mut st, v, cTriv(mut st)), depth)?
                 } else {
@@ -353,7 +353,7 @@ func stmtsIn(st mut S, l ListRef, eb0 int, ef0 int, depth0 int, ra bool, dis boo
                 hsetCore(mut st, int(vs) + 1 + j, if nr == nv { retValue(mut st, ve, latTy(mut st, rtys, j), eb, ef, depth, at)? } else { expr(mut st, ve, eb, ef, depth)? })
                 j += 1
             }
-            payload := if nv == 0 { cTriv(mut st) } else { pairChain(mut st, vs) }
+            payload := if nv == 0 { cTriv(mut st) } else { resChain(mut st, vs) }
             w := exitWant(mut st, last, dis, want, at)?
             jv := exitJump(mut st, st.retTarget, payload, depth, w)?
             if last {
@@ -1002,7 +1002,7 @@ func rebuildPath(st mut S, cur CoreRef, decl int, path ListRef, p int, nv CoreRe
     n := lenL(mut st, fs)
     comps := ListRef(listN(mut st, n))
     for i <- iter.Range(0, n) {
-        proj := projection(mut st, cur, i, n)
+        proj := treeProj(mut st, cur, i, n)
         if i == idx {
             fd := declOfTypeExpr(mut st, hget(mut st, decl + 1), nB(nodeOf(mut st, latN(mut st, fs, i))))
             hsetCore(mut st, int(comps) + 1 + i, rebuildPath(mut st, proj, fd, path, p + 1, nv, at)?)
@@ -1010,7 +1010,7 @@ func rebuildPath(st mut S, cur CoreRef, decl int, path ListRef, p int, nv CoreRe
             hsetCore(mut st, int(comps) + 1 + i, proj)
         }
     }
-    return pairChain(mut st, comps), nil
+    return treePair(mut st, comps), nil
 }
 
 // 代入先が全部 `_` か

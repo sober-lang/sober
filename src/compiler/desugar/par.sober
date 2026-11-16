@@ -204,7 +204,7 @@ func parKidTy(st mut S, lam NodeRef, t TyRef, eb int) TyRef {
             }
             hsetTy(mut st, int(tl) + 1 + j, t1)
         }
-        return tyChain(mut st, tl)
+        return resTy(mut st, tl)
     }
     if t == -1 {
         return t
@@ -359,7 +359,7 @@ func parScope(st mut S, fi int, arg NodeRef, at NodeRef, eb int, ef int, depth i
         hsetTy(mut st, int(rtys) + 1, tb)
         hsetTy(mut st, int(rtys) + 2, tOpt(mut st, etIn))
         st.curRes = -1
-        rl = newLabel(mut st, LRet, tyChain(mut st, rtys))
+        rl = newLabel(mut st, LRet, resTy(mut st, rtys))
         setLabelRtys(mut st, rl, rtys)
         setLabelAnn(mut st, rl, true)
         st.retTarget = pushLabel(mut st, rl)
@@ -488,7 +488,7 @@ func parSpawn(st mut S, sc CoreRef, arg NodeRef, at NodeRef, eb int, ef int, dep
         et := parErrTy(mut st, at)?
         c2(mut st, CPair, kid0, zeroOf(mut st, tOpt(mut st, et), at)?)
     }
-    return cSpawn(mut st, sc, pairChain(mut st, vs), kid), nil
+    return cSpawn(mut st, sc, treePair(mut st, vs), kid), nil
 }
 
 // domainのインターフェース（language.md 11 節「domain」）: NewDomain = dnew（家 = 札のregion・状態の型 = 初期値の型をregion 0へ締めた形 — 梱包して持つ。
@@ -903,7 +903,7 @@ func coreCapture(st mut S, e CoreRef, k int, fv []int) CoreRef {
         }
         for m <- iter.Range(0, len(fv)) {
             if fv[m] == x.a - k {
-                return projection(mut st, cVar(mut st, k), m, len(fv))
+                return treeProj(mut st, cVar(mut st, k), m, len(fv))
             }
         }
         return e

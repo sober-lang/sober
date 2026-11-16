@@ -382,8 +382,9 @@ func cJump(st mut S, id int, t TyRef, e CoreRef) CoreRef {
     return ce(mut st, CJump, id, int(t), int(e), 0)
 }
 
-// 値の列 → 右結合のpairチェーン（0はtriv、1は素の値）
-func pairChain(st mut S, l ListRef) CoreRef {
+// 多値の結果の値の列 → 右結合のpairの連なり（0はtriv、1は素の値）。多値の結果だけは木にしない: クロージャの呼び出しの `f(x)?` が
+// 結果の数を核の型から読む（最後の成分 error? までの右の背骨を数える）ので、数が型から一意に決まる形にしておく
+func resChain(st mut S, l ListRef) CoreRef {
     n := lenL(mut st, l)
     if n == 0 {
         return cTriv(mut st)
@@ -397,8 +398,8 @@ func pairChain(st mut S, l ListRef) CoreRef {
     return acc
 }
 
-// n フィールドの i 番目の射影（i < n-1 は fst(snd^i)、i = n-1 は snd^(n-1)）
-func projection(st mut S, base CoreRef, i int, n int) CoreRef {
+// n 個の多値の結果（resChain の形）の i 番目の射影（i < n-1 は fst(snd^i)、i = n-1 は snd^(n-1)）
+func resProj(st mut S, base CoreRef, i int, n int) CoreRef {
     mut cur := base
     for k <- iter.Range(0, i) {
         cur = c1(mut st, CSnd, cur)
@@ -407,6 +408,47 @@ func projection(st mut S, base CoreRef, i int, n int) CoreRef {
         cur = c1(mut st, CFst, cur)
     }
     return cur
+}
+
+// 積の成分の列（structのフィールド・関数の引数・クロージャのenvなど — 多値の結果のほかの全部）→ 釣り合った木
+// （左の部分木 = 先頭のfloor(n/2)個。0はtriv、1は素の値。n ≤ 3は右結合の連なりと同じ形）。欄の読みの射影が欄の数の対数の深さで済む
+func treePair(st mut S, l ListRef) CoreRef {
+    n := lenL(mut st, l)
+    if n == 0 {
+        return cTriv(mut st)
+    }
+    return treePairIn(mut st, l, 0, n)
+}
+
+func treePairIn(st mut S, l ListRef, lo int, hi int) CoreRef {
+    if hi - lo == 1 {
+        return latCore(mut st, l, lo)
+    }
+    m := treeMid(lo, hi)
+    return c2(mut st, CPair, treePairIn(mut st, l, lo, m), treePairIn(mut st, l, m, hi))
+}
+
+// n 成分の木（treePair の形）の i 番目の射影
+func treeProj(st mut S, base CoreRef, i int, n int) CoreRef {
+    mut cur := base
+    mut lo := 0
+    mut hi := n
+    while hi - lo > 1 {
+        m := treeMid(lo, hi)
+        if i < m {
+            cur = c1(mut st, CFst, cur)
+            hi = m
+        } else {
+            cur = c1(mut st, CSnd, cur)
+            lo = m
+        }
+    }
+    return cur
+}
+
+// 積・和の木の [lo, hi) の分け目（左の部分木 = 先頭の floor(n/2) 個。n ≤ 3 は右結合の連なりと同じ形）
+func treeMid(lo int, hi int) int {
+    return lo + (hi - lo) / 2
 }
 
 // e の列を外側から let で被せる（列の先頭が最外）
