@@ -1,0 +1,241 @@
+package desugar
+
+// build の経路の型引数の kind の検査（lower が使う）: 表層型検査器の型引数をコアの型へ写す。
+// コアの型は check の脱糖器が同じ型引数に付ける型と同じ形（region は 0・named scalar は下地・値化可能な named fn type はクロージャの組）。
+// kindOk の判定は region の有無だけを見るので、region の番号は 0 に揃えてよい
+
+import "ast"
+import "diag"
+import "std/iter"
+import "std/table"
+
+// 表層型 y のコアの型。写せない成分（型パラメータ・不明・多値・匿名の関数型・std/task の handle と端点）を含めば -1
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch)
+func YCoreTy(st mut S, y int, at NodeRef) (TyRef, error?) {
+    if y < 0 {
+        return -1, nil
+    }
+    x := YAt(mut st, y)
+    switch x.k {
+    case YInt:
+        return st.tInt, nil
+    case YBool:
+        return st.tBool, nil
+    case YByte:
+        return tByte(mut st), nil
+    case YFloat:
+        return tFloat(mut st), nil
+    case YString:
+        return tString(mut st), nil
+    case YErr:
+        return errTy(mut st, st.curPkg, at, TYFUEL)
+    case YOpt:
+        a := YCoreTy(mut st, x.a, at)?
+        if int(a) < 0 {
+            return -1, nil
+        }
+        return tOpt(mut st, a), nil
+    case YSlice:
+        e := YCoreTy(mut st, x.a, at)?
+        if int(e) < 0 {
+            return -1, nil
+        }
+        return tSlice(mut st, x.b == 1, 0, e, false), nil
+    case YMap:
+        k0 := YCoreTy(mut st, x.a, at)?
+        v := YCoreTy(mut st, x.b, at)?
+        if int(k0) < 0 || int(v) < 0 {
+            return -1, nil
+        }
+        k := mapKeyTy(mut st, k0, at)?
+        return tMap(mut st, x.c == 1, 0, k, v), nil
+    case YFn:
+        if x.c <= 0 {
+            return -1, nil
+        }
+        decl := NodeRef(x.c - 1)
+        return yClosTy(mut st, FilePkg(mut st, refFile(int(decl))), decl, at)
+    case YDecl:
+        return yDeclCoreTy(mut st, x, at)
+    }
+    return -1, nil
+}
+
+// 値化可能な named fn type の値の型（クロージャの組 — env の型 U は SetShapes で積んだ形の union）
+func yClosTy(st mut S, pk int, decl NodeRef, at NodeRef) (TyRef, error?) {
+    if !fnValDeclNode(mut st, decl) {
+        return -1, nil
+    }
+    return closTyOf(mut st, pk, decl, at, TYFUEL)
+}
+
+func yDeclCoreTy(st mut S, x YT, at NodeRef) (TyRef, error?) {
+    decl := yNa(x)
+    pk := x.b
+    bk := kindN(mut st, nC(nodeOf(mut st, decl)))
+    if bk == ast.BDefined {
+        u := namedUnder(mut st, decl)
+        return if u == 0 { st.tInt } else if u == 1 { st.tBool } else { TyRef(-1) }, nil
+    }
+    if bk == ast.BFunc {
+        return yClosTy(mut st, pk, decl, at)
+    }
+    if bk != ast.BStruct && bk != ast.BUnion {
+        return -1, nil
+    }
+    if strIs(mut st, PkgPath(mut st, pk), "std/task") {
+        nm := sA(nodeOf(mut st, decl))
+        if strIs(mut st, nm, "Domain") {
+            // 関数の仮引数・struct のフィールドの `task.Domain[S]` と同じ（tyOf — 家の region 0・状態の型）
+            if yLc(x) == -1 || lenL(mut st, yLc(x)) != 1 {
+                return -1, nil
+            }
+            s0 := YCoreTy(mut st, latI(mut st, yLc(x), 0), at)?
+            if int(s0) < 0 {
+                return -1, nil
+            }
+            return tOwnDom(mut st, 0, s0), nil
+        }
+        if strIs(mut st, nm, "Handle") {
+            return -1, nil
+        }
+    }
+    mut env := -1
+    if yLc(x) != -1 {
+        tps := lB(nodeOf(mut st, decl))
+        n := lenL(mut st, yLc(x))
+        if n != lenL(mut st, tps) {
+            return -1, nil
+        }
+        env = listN(mut st, n * 3)
+        for i <- iter.Range(0, n) {
+            t := YCoreTy(mut st, latI(mut st, yLc(x), i), at)?
+            if int(t) < 0 {
+                return -1, nil
+            }
+            hset(mut st, env + 1 + i * 3, latI(mut st, tps, i))
+            hsetTy(mut st, env + 2 + i * 3, t)
+            hset(mut st, env + 3 + i * 3, -1)
+        }
+        hset(mut st, env, n)
+    }
+    if isRecDecl(mut st, decl) {
+        return recTy(mut st, pk, decl, env, at, TYFUEL)
+    }
+    saved := st.tenv
+    st.tenv = env
+    defer {
+        st.tenv = saved
+    }
+    if bk == ast.BUnion {
+        u := unionTreeTy(mut st, pk, decl, 0, at, TYFUEL - 1)?
+        return u, nil
+    }
+    t := fieldsTy(mut st, pk, lA(nodeOf(mut st, nC(nodeOf(mut st, decl)))), at, TYFUEL - 1)?
+    return t, nil
+}
+
+// named fn type decl の env の形を積む（ts = 形ごとの捕捉の型の列の列 — 捕捉なしの形は空の列 = int）。
+// 積んだ後の yClosTy は check の脱糖器の前走りの形と同じ union を作る（形の並びの順は kindOk の判定に効かない）
+func SetShapes(st mut S, decl NodeRef, ts ListRef) {
+    for i <- iter.Range(0, lenL(mut st, ts)) {
+        sh := ListRef(latI(mut st, ts, i))
+        t := if lenL(mut st, sh) == 0 { st.tInt } else { tyTree(mut st, sh) }
+        table.Push(mut st.shDecl, int(decl))
+        table.Push(mut st.shTy, int(t))
+    }
+}
+
+// decl の形を積んだか
+func HasShapes(st mut S, decl NodeRef) bool {
+    for i <- iter.Range(0, table.Len(mut st.shDecl)) {
+        if table.Get(mut st.shDecl, i) == int(decl) {
+            return true
+        }
+    }
+    return false
+}
+
+// 根 roots（コアの型の参照）から届く型だけを写した小さな型の表と、根の新しい参照（kind の検査器へ渡す — Core.Types と同じ形）
+func TySub(st mut S, roots []int) ([]Ty, []int) {
+    // 届く型を幅優先で集める（olds[i] = 新しい表の i 番の元の参照）
+    mut olds := mut []int{}
+    for r <- roots {
+        if tySubIdx(olds, r) < 0 {
+            olds = append(olds, r)
+        }
+    }
+    mut q := 0
+    while q < len(olds) {
+        x := tyAt(mut st, TyRef(olds[q]))
+        kids := []int{x.a, x.b, x.c, x.d}
+        for f <- iter.Range(0, 4) {
+            if tySubKid(x.tag, f) && tySubIdx(olds, kids[f]) < 0 {
+                olds = append(olds, kids[f])
+            }
+        }
+        q += 1
+    }
+    // 子の参照を新しい表の参照へ付け替える
+    mut ts := mut []Ty{}
+    for i <- iter.Range(0, len(olds)) {
+        x := tyAt(mut st, TyRef(olds[i]))
+        ts = append(ts, Ty{tag: x.tag, a: tySubRef(x.tag, 0, x.a, olds), b: tySubRef(x.tag, 1, x.b, olds), c: tySubRef(x.tag, 2, x.c, olds), d: tySubRef(x.tag, 3, x.d, olds)})
+    }
+    mut out := mut []int{}
+    for r <- roots {
+        out = append(out, TBASE + tySubIdx(olds, r))
+    }
+    return freeze(ts), freeze(out)
+}
+
+func tySubIdx(olds []int, t int) int {
+    for i <- iter.Range(0, len(olds)) {
+        if olds[i] == t {
+            return i
+        }
+    }
+    return 0 - 1
+}
+
+// 型 tag のフィールド f（0..3 = a..d）が型の参照か（ctyOf0 が子として読むフィールド）
+func tySubKid(tag int, f int) bool {
+    return switch tag {
+    case TOpt: f == 0
+    case TUn | TPr | TFn: f == 0 || f == 1
+    case TSl | TRef | TOwn | TMuS: f == 2
+    case TMp: f == 2 || f == 3
+    case TChan: f == 1
+    case TMuRs: f == 3
+    default: false
+    }
+}
+
+func tySubRef(tag int, f int, v int, olds []int) int {
+    return if tySubKid(tag, f) { TBASE + tySubIdx(olds, v) } else { v }
+}
+
+// 本体を読まない総称関数 fi の kind の列（loader.Program の fn_kinds — 型パラメータの順。無ければ空）
+func GivenKinds(st mut S, fi int) []int {
+    mut q := 0
+    while q + 1 < len(st.givenK) {
+        n := st.givenK[q + 1]
+        if st.givenK[q] == fi {
+            mut out := mut []int{}
+            for i <- iter.Range(0, n) {
+                out = append(out, st.givenK[q + 2 + i])
+            }
+            return freeze(out)
+        }
+        q += 2 + n
+    }
+    return []int{}
+}
+
+// 関数 fi が .sobi の `@expand` の印を持つか（loader.ExpandMarked と同じ判定 — check はこの関数を展開し、抽象の kind を持たない）
+func FnExpandMarked(st mut S, fi int) bool {
+    n := int(fnNode(mut st, fi))
+    t := st.trees[refFile(n)]
+    x := t.nodes[refIdx(n)]
+    return x.f >= 0 && t.data[x.f] >= 8 && t.data[x.f + 8] != 0
+}

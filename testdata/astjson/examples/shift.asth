@@ -1,0 +1,7 @@
+@@full	1efec04f65550c3c	597	14048
+@head	f8802cba5eefdec2	0	31
+const K	8b6f801d37369b9e	3	100
+const M	5161f014ba8e1c1b	4	134
+func main	faac532e50bd0040	75	2160
+func shl	dbff1fdab5e1047b	7	350
+func shr	7ce7d107e87a1d6a	7	350

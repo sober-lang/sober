@@ -1,0 +1,37 @@
+package main
+
+// 展開される関数の関数型の仮引数で、結果が値化可能なnamed fn typeなら、渡すラムダの本体がブロックでも、末尾の式は値の位置。
+// 展開される仮引数の仮引数（結果がHの関数型）へ渡すラムダも同じ
+
+type H func(x int) int
+
+func incr(x int) int {
+    return x + 1
+}
+
+func adder(s string) H {
+    return (x int) => x + len(bytes(s))
+}
+
+func apply(p func(n int) H) int {
+    return p(3)(1)
+}
+
+func maybe(p func(n int) H?) int {
+    h := p(3)
+    if h == nil {
+        return 0
+    }
+    return h(1)
+}
+
+func outer(r func(q func(n int) H) int) int {
+    return r((n int) => incr) + r((n int) => { m := n * 10; (x int) => x + m }) + r((n int) => adder("ab"))
+}
+
+func main() {
+    k := 4
+    println(apply((n int) => { println(n); incr }), apply((n int) => { m := n * 2; (x int) => x + m + k }), apply((n int) => { adder("abc") }))
+    println(maybe((n int) => { println(n); incr }), maybe((n int) => { nil }))
+    println(outer((q func(n int) H) => q(3)(1)))
+}

@@ -1,0 +1,67 @@
+package main
+
+// 関数値を置く位置（return・フィールド・実引数・sliceの要素・渡すラムダの本体）では、
+// ブロックの値は末尾の式が、if式の値は分岐の末尾の式が、同じ位置に置かれる
+
+type H func(x int) int
+
+func incr(x int) int {
+    return x + 1
+}
+
+func decr(x int) int {
+    return x - 1
+}
+
+func adder(s string) H {
+    return (x int) => x + len(bytes(s))
+}
+
+func pick(n int) H {
+    return if n > 0 { incr } else if n < 0 { decr } else { adder("ab") }
+}
+
+func scaled(n int) H {
+    return {
+        m := n * 2
+        (x int) => x * m
+    }
+}
+
+func suffixed(s string, n int) H {
+    return if n > 0 {
+        t := s + "!"
+        (x int) => x + len(bytes(t))
+    } else {
+        (x int) => x
+    }
+}
+
+func maybe(n int) H? {
+    return if n > 0 { incr } else if n < 0 { nil } else { (x int) => x * 2 }
+}
+
+type R struct {
+    h H
+}
+
+func use(h H) int {
+    return h(10)
+}
+
+func apply(n int, p func(n int) H) int {
+    return p(n)(1)
+}
+
+func main() {
+    println(pick(3)(1), pick(-1)(1), pick(0)(1))
+    println(scaled(3)(2), suffixed("ab", 1)(0), suffixed("ab", 0)(7))
+    m := maybe(0)
+    println(if m != nil { m(5) } else { 0 }, maybe(-1) == nil)
+    n := 3
+    r := R{h: if n > 5 { incr } else { decr }}
+    hs := []H{if n > 0 { incr } else { (x int) => x - n }, if n > 5 { incr } else { (x int) => x * n }}
+    println(r.h(1), hs[0](1), hs[1](2))
+    println(use(if n > 5 { incr } else { s := "abc"; (x int) => x + len(bytes(s)) }), use({ incr }))
+    println(apply(3, (k int) => if k > 0 { incr } else { decr }), apply(3, (k int) => { q := k; { (x int) => x + q } }))
+}

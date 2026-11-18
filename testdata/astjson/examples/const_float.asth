@@ -1,0 +1,12 @@
+@@full	c9980a294762d0cb	537	12214
+@head	14f92bbc2a00a420	0	149
+const Bodies	e0528b6ee0f16d30	10	518
+const DaysPerYear	e740b2930356d1be	1	86
+const HalfNeg	3735fc629139a042	4	174
+const Pi	404e360d898afa0a	1	88
+const SolarMass	772e6700db951c67	5	205
+const Sum	4451df08de7817fa	3	165
+const Sun	b2af0aff0c06e760	3	196
+const TwoPi	e9d0b6a2e16f8c87	3	139
+func main	e1fdbf33abc22241	40	1364
+type Body	a8e08355683271fd	3	165

@@ -171,7 +171,7 @@ func writesN(st mut S, n NodeRef, nm StrRef) bool {
     if k == ast.EMutArg {
         return mutRootIs(mut st, sA(x), nm)
     }
-    if k == ast.EIdent || k == ast.EInt || k == ast.ENil || k == ast.EFloat || k == ast.EStrlit || k == ast.EUtf8Ref || k == ast.ELambda || k == ast.SBreak || k == ast.SContinue {
+    if k == ast.EIdent || k == ast.EInt || k == ast.ENil || k == ast.EFloat || k == ast.EStrlit || k == ast.EEmbed || k == ast.EUtf8Ref || k == ast.ELambda || k == ast.SBreak || k == ast.SContinue {
         return false
     }
     if k == ast.SAssign {

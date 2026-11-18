@@ -1,0 +1,23 @@
+package main
+
+// 総称関数の版。reclen.m.sober が型引数を手で代入した単相の版
+
+type List[T] union {
+    Nil {}
+    Cons { h T; t []List[T] }
+}
+
+func length[T](l List[T]) int {
+    return switch l {
+    case Cons{h, t}: if len(t) > 0 { 1 + length(t[0]) } else { 1 }
+    default: 0
+    }
+}
+
+func two(a string, b string) List[string] {
+    return Cons[string]{h: a, t: []List[string]{Cons[string]{h: b, t: []List[string]{}}}}
+}
+
+func main() {
+    println(length(two("a", "b")))
+}

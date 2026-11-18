@@ -51,16 +51,16 @@ func cellCall(st mut St, key int, args desugar.ListRef, at desugar.NodeRef) (int
         x2 := coerce(mut st, x.t, x.v, t, at)?
         vbox := newAgg(mut st, t)
         storeVal(mut st, vbox, 0, t, x2.v)
-        cellLock(mut st, tb)
+        me := cellEnter(mut st, tb)
         cellStore(mut st, cellFind(mut st, tb, hk, true, at), t, vbox)
-        cellUnlock(mut st, tb)
+        cellLeave(mut st, tb, me)
         return list0(mut st), nil
     }
-    cellLock(mut st, tb)
+    me := cellEnter(mut st, tb)
     e := cellFind(mut st, tb, hk, key == desugar.CELL_UPDATE, at)
     cv := cellRead(mut st, e, t, hinit)
     if key == desugar.CELL_GET {
-        cellUnlock(mut st, tb)
+        cellLeave(mut st, tb, me)
         return parOne(mut st, t, loadVal(mut st, cv, 0, t)), nil
     }
     lam := latN(mut st, args, 1)
@@ -76,23 +76,48 @@ func cellCall(st mut St, key int, args desugar.ListRef, at desugar.NodeRef) (int
     vbox := newAgg(mut st, t)
     storeVal(mut st, vbox, 0, t, y2.v)
     cellStore(mut st, e, t, vbox)
-    cellUnlock(mut st, tb)
+    cellLeave(mut st, tb, me)
     return list0(mut st), nil
 }
 
-// ロックを取る（xchgで0 → 1を取れるまで回る — 持ち手は待ちに入らない: Updateの本体はエフェクトなし）
-func cellLock(st mut St, tb int) {
-    loop := newBlock(mut st)
-    got := newBlock(mut st)
-    br(mut st, loop, -1)
-    setCur(mut st, loop)
-    o := atomicXchg(mut st, tb, CELL_LOCK, iconst(mut st, 1))
-    condbr(mut st, cmp(mut st, CEq, o, iconst(mut st, 0)), got, -1, loop, -1)
-    setCur(mut st, got)
+// 呼び出し点の鍵: 取ってTC_CELLに表を記録する（鍵の中で死ぬ道 = Updateの本体・表が満杯・regionの超過。taskの終わりのcellDiedInが鍵を返す）。今のtaskのTCBを返す
+func cellEnter(st mut St, tb int) int {
+    me := itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
+    cellLock(mut st, tb)
+    store(mut st, me, TC_CELL, ptoi(mut st, tb))
+    return me
 }
 
+func cellLeave(st mut St, tb int, me int) {
+    store(mut st, me, TC_CELL, iconst(mut st, 0))
+    cellUnlock(mut st, tb)
+}
+
+// 開発用 --rt-mutant: taskの終わりで格納場所の鍵を返さない（検査 doubles の celldie が止まることを確かめる）
+const CELL_MUT_KEEP = 106
+
+// taskの終わり（罠から戻った後）: 格納場所の鍵を持ったまま死んだ（TC_CELL ≠ 0）なら鍵を返す。毒は立てない: 値を書くのは鍵を返す直前の
+// 1回だけなので、鍵の中で死んでも表は前の値のまま（domainは本体がその場で状態を書くので毒にする）
+func cellDiedIn(st mut St, tcb int) {
+    if !st.cellUse || st.rtMut == CELL_MUT_KEEP {
+        return
+    }
+    c := load(mut st, tcb, TC_CELL)
+    bD := branchIf(mut st, cmp(mut st, CNe, c, iconst(mut st, 0)))
+    store(mut st, tcb, TC_CELL, iconst(mut st, 0))
+    cellUnlock(mut st, itop(mut st, c))
+    br(mut st, bD, -1)
+    setCur(mut st, bD)
+}
+
+// 表の鍵（lock.sober の部品）。持ち手は鍵を持ったまま待ちに入らない（Updateの本体はエフェクトなし）
+func cellLock(st mut St, tb int) {
+    lockTake(mut st, tb, CELL_LOCK)
+}
+
+// 柵は要らない: 返した後に相手が書くフラグを読まない（domainのAwaitの待ち手はTC_IORESのCASで手渡され、先のウェイクアップはtask_waitが吸う）
 func cellUnlock(st mut St, tb int) {
-    atomicXchg(mut st, tb, CELL_LOCK, iconst(mut st, 0))
+    lockGiveFence(mut st, tb, CELL_LOCK)
 }
 
 // 鍵 hk の項の番地（ロックの中で）。無ければ insert なら新しい項（値の箱 0 = まだ Set していない）を足し、でなければ 0
@@ -184,9 +209,11 @@ func cellStore(st mut St, e int, t int, vbox int) {
     bp := gepWord(mut st, meta, z)
     oldS := load(mut st, sp, 0)
     oldB := load(mut st, bp, W_BUMP)
+    // アリーナはプールのスロット（既定の大きさ）: 上限を「アリーナ + 既定」にする（大きさのワードは替えない — 替えると他の深度の計上済みの上限がずれる）。
+    // 差し替えの間は低速パスが上限を上げない（溢れは死102 — task.sober wmSwap）
     oldZ := load(mut st, meta, W_SLOT_SIZE)
-    store(mut st, meta, W_SLOT_SIZE, load(mut st, meta, W_SLOT_DEF))
-    store(mut st, sp, 0, a)
+    wmSwap(mut st, true)
+    store(mut st, sp, 0, bin(mut st, BSub, bin(mut st, BAdd, a, load(mut st, meta, W_SLOT_DEF)), oldZ))
     store(mut st, bp, W_BUMP, a)
     tw := tWords(mut st, t)
     vp := regionAlloc(mut st, z, iconst(mut st, if tw < 1 { 1 } else { tw }))
@@ -204,7 +231,7 @@ func cellStore(st mut St, e int, t int, vbox int) {
     store(mut st, e, 3, ptoi(mut st, vp))
     store(mut st, sp, 0, oldS)
     store(mut st, bp, W_BUMP, oldB)
-    store(mut st, meta, W_SLOT_SIZE, oldZ)
+    wmSwap(mut st, false)
 }
 
 // 表の全部の項を空にする（std/quickの試行の頭 — シュリンクと再生がシードと番号で決まるように）。アリーナはプールへ返す

@@ -1,0 +1,12 @@
+@@full	dd511e0ca7ef43d6	4108	126183
+@head	336c2bbf1b7ae9f0	0	266
+func TestBadBodyless	37d939b40f766767	143	4331
+func TestBadEncoding	2d2af65823997519	66	2988
+func TestBadHeaders	a42750e16dec0d64	288	8875
+func TestBadStatus	fc374b169f7bc482	111	3325
+func avByteIn	e785aefb028460fb	48	1691
+func avFd	09c12de8f6f6f1e6	7	456
+func avHdrs	6d9f7f639e941794	12	702
+func avPlain	4a37d60f521bcfcc	11	599
+func avWithBody	95b3ca0421e3a4f9	12	615
+func avWithStream	7f62167284672a41	16	795

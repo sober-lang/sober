@@ -1,0 +1,44 @@
+package main
+
+// Read byte ranges of a file by offset (io.ReadAt — language.md 28 節「位置を指定する読み」). The read is pread-shaped: the file's own
+// position does not move. A range past the end gives the bytes that are there (a short slice, not an error), so the caller checks the length.
+// io.ChunksAt streams from an offset to the end; io.ReadAt takes one bounded range as one slice. Run from the repository root.
+import "std/io"
+
+// same reports whether b is whole[lo:lo + len(b)]
+func same(whole []byte, lo int, b []byte) bool {
+    mut i := 0
+    while i < len(b) {
+        if b[i] != whole[lo + i] {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+func main() int {
+    p := "testdata/io_par/access-3.log"
+    whole := io.ReadFile(p) catch return 1
+    n := len(whole)
+    f := io.Open(p) catch return 1
+    defer io.Close(f)
+    head := io.ReadAt(f, 0, 16) catch return 1
+    println("head: ${len(head)} bytes, same as ReadFile: ${same(whole, 0, head)}")
+    mid := io.ReadAt(f, 40000, 100) catch return 1
+    println("middle: ${len(mid)} bytes, same as ReadFile: ${same(whole, 40000, mid)}")
+    tail := io.ReadAt(f, n - 10, 64) catch return 1
+    println("past the end: asked 64, got ${len(tail)} bytes")
+    gone := io.ReadAt(f, n + 1, 8) catch return 1
+    println("after the end: ${len(gone)} bytes")
+    rest := io.ReadAll(f) catch return 1
+    println("ReadAll after the ReadAt calls: ${len(rest)} of ${n} bytes")
+    _, e := io.ReadAt(f, -1, 8)
+    if e != nil {
+        println(switch e {
+        case io.Other{errno}: "negative offset: errno ${errno}"
+        default: "negative offset: ?"
+        })
+    }
+    return 0
+}

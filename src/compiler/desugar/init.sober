@@ -12,6 +12,7 @@ import "std/table"
 func desc(k int) int {
     return switch k {
     case ast.EIdent | ast.EStrlit | ast.EMutArg | ast.TName: d6(2, 0, 0, 0, 0, 0)
+    case ast.EEmbed: d6(2, 0, 2, 0, 0, 0)
     case ast.EFloat: d6(0, 2, 0, 0, 0, 0)
     case ast.EBinary: d6(0, 1, 1, 0, 0, 0)
     case ast.EUnary: d6(0, 1, 0, 0, 0, 0)
@@ -23,6 +24,7 @@ func desc(k int) int {
     case ast.ESlicelit: d6(1, 3, 0, 0, 0, 0)
     case ast.EMaplit: d6(1, 1, 3, 0, 0, 0)
     case ast.EComposite: d6(2, 3, 3, 0, 0, 0)
+    case ast.EFieldTy: d6(2, 2, 3, 0, 0, 0)
     case ast.ESelector: d6(1, 2, 0, 0, 0, 0)
     case ast.ELambda | ast.KCase: d6(3, 1, 0, 0, 0, 0)
     case ast.ESwitch: d6(3, 3, 1, 0, 0, 0)
@@ -52,6 +54,7 @@ func initState(st mut S, p loader.Program) {
     // 表層AST（astref.sober）: loaderの木をimmのまま持ち、コピーしない（節 = ABASE + ファイル × FW + 添字）
     checkTrees(p.trees)
     st.trees = p.trees
+    st.givenK = p.fn_kinds
     // 値の位置の判定のインターフェースと捕捉の表（closure.sober）
     st.fvcx = loader.ProgCx(p)
     st.recGroups = loader.RecGroups(st.fvcx)
@@ -273,7 +276,7 @@ func expandFunc(st mut S, k int) {
         hset(mut st, nps + 1 + i, int(q))
     }
     rs := fnResults(mut st, k)
-    nrs := if lenL(mut st, rs) == 1 && valFTE(mut st, pk, latN(mut st, rs, 0)) { rs } else { expandList(mut st, pk, rs, EXPANDFUEL) }
+    nrs := expandValList(mut st, pk, rs, EXPANDFUEL)
     if !changed && nrs == rs {
         return
     }
@@ -309,7 +312,7 @@ func valFTE1(st mut S, pk int, te NodeRef) bool {
     return fnValDeclNode(mut st, LookupTypeDecl(mut st, pk, sA(nodeOf(mut st, n))))
 }
 
-// フィールドの列fsの型式を展開する（変わらなければfs、変われば作り直したKFieldの列）。val = structのフィールド（値化可能な
+// フィールドの列fsの型式を展開する（変わらなければfs、変われば作り直したKFieldの列）。val = structとunionのvariantのフィールド（値化可能な
 // named fn type とその option は値の位置なので展開しない）
 func expandFieldList(st mut S, pk int, fs ListRef, val bool) ListRef {
     n := lenL(mut st, fs)
@@ -349,7 +352,7 @@ func expandBody(st mut S, pk int, body NodeRef) NodeRef {
         for v <- iter.Range(0, n) {
             vr := latN(mut st, vs, v)
             fs := lB(nodeOf(mut st, vr))
-            nfs := expandFieldList(mut st, pk, fs, false)
+            nfs := expandFieldList(mut st, pk, fs, true)
             mut q := vr
             if nfs != fs {
                 x := ast.WithB(nodeOf(mut st, vr), int(nfs))
@@ -412,7 +415,7 @@ func NamedFnTE(st mut S, pk int, te NodeRef) NodeRef {
     return r
 }
 
-// 名前付き関数型の展開（expandTE / expandList）の燃料 = 入れ子の深さの上限
+// 名前付き関数型の展開（expandTE / expandValList）の燃料 = 入れ子の深さの上限
 const EXPANDFUEL = 16
 
 // newListはヒープの列lと同じ長さの列を作り、要素をfで変換する — 変換の本体は呼び手（expandTE / substTE）が埋める
@@ -433,26 +436,25 @@ func expandTE(st mut S, pk int, te NodeRef, fuel int) NodeRef {
         return r
     case ast.TGeneric:
         args0 := lB(nodeOf(mut st, te))
-        n := lenL(mut st, args0)
-        args := ListRef(listN(mut st, n))
-        mut changed := false
-        for i <- iter.Range(0, n) {
-            a := expandTE(mut st, pk, latN(mut st, args0, i), fuel - 1)
-            lput(mut st, args, i, int(a))
-            if a != latN(mut st, args0, i) {
-                changed = true
-            }
-        }
         td := LookupTypeDecl(mut st, pk, sA(nodeOf(mut st, te)))
         if td == -1 || kindN(mut st, nC(nodeOf(mut st, td))) != ast.BFunc {
-            return if changed { NodeRef(rec8(mut st, ast.TGeneric, te, nodeOf(mut st, te).a, int(args), 0, 0, 0, 0)) } else { te }
+            // structとunionの型引数はフィールドに入るので、値化可能なnamed fn typeは値の位置のまま残す（フィールドに直に書いた形と同じ読み）
+            args := expandValList(mut st, pk, args0, fuel - 1)
+            return if args != args0 { NodeRef(rec8(mut st, ast.TGeneric, te, nodeOf(mut st, te).a, int(args), 0, 0, 0, 0)) } else { te }
+        }
+        n := lenL(mut st, args0)
+        args := ListRef(listN(mut st, n))
+        for i <- iter.Range(0, n) {
+            lput(mut st, args, i, int(expandTE(mut st, pk, latN(mut st, args0, i), fuel - 1)))
         }
         r := expandTE(mut st, pk, substFunc(mut st, td, args, te, declPkg(mut st, pk, sA(nodeOf(mut st, te)))), fuel - 1)
         noteNamedFn(mut st, int(r), int(td))
         return r
     case ast.TFunc:
-        ps := expandList(mut st, pk, lA(nodeOf(mut st, te)), fuel - 1)
-        rs := expandList(mut st, pk, lB(nodeOf(mut st, te)), fuel - 1)
+        // 関数型の仮引数と結果の値化可能なnamed fn type（とそのoption・slice・mapの要素）は値の位置なので展開しない（宣言した関数の仮引数と同じ読み。
+        // 渡したラムダの仮引数の型と同じクロージャの組になる）
+        ps := expandValList(mut st, pk, lA(nodeOf(mut st, te)), fuel - 1)
+        rs := expandValList(mut st, pk, lB(nodeOf(mut st, te)), fuel - 1)
         if ps == lA(nodeOf(mut st, te)) && rs == lB(nodeOf(mut st, te)) {
             return te
         }
@@ -474,15 +476,16 @@ func expandTE(st mut S, pk int, te NodeRef, fuel int) NodeRef {
     return te
 }
 
-// 型の列の各要素を展開する（変わらなければ元の列を返す）
-func expandList(st mut S, pk int, l ListRef, fuel int) ListRef {
+// 型の列の各要素を展開する。値化可能なnamed fn type（valFTE）の要素は展開しない（変わらなければ元の列を返す）
+func expandValList(st mut S, pk int, l ListRef, fuel int) ListRef {
     n := lenL(mut st, l)
     out := ListRef(listN(mut st, n))
     mut changed := false
     for i <- iter.Range(0, n) {
-        x := expandTE(mut st, pk, latN(mut st, l, i), fuel)
+        e := latN(mut st, l, i)
+        x := if valFTE(mut st, pk, e) { e } else { expandTE(mut st, pk, e, fuel) }
         lput(mut st, out, i, int(x))
-        if x != latN(mut st, l, i) {
+        if x != e {
             changed = true
         }
     }

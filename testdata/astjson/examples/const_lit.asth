@@ -1,0 +1,17 @@
+@@full	7bfc42d585039aaf	1094	25695
+@head	c485eb7090fc6036	0	116
+const Base	734378ea9fe837a0	1	45
+const Below	1f47ff49373619ab	2	110
+const Flags	06f96219323548e2	6	264
+const Greeting	5c5921ebcf358114	1	57
+const Grid	91dd978ba364e2d1	10	340
+const Hello	7c885858ca7c6bda	1	55
+const NoOpt	e72778af9fa79ee9	5	288
+const Out	a58dd61efa2306d5	4	250
+const Pi	c17dca6214ef5ce6	1	75
+const Primes	261ce72c34efada6	8	248
+const Verbose	7b8187d824c1de88	1	54
+const Words	12e30ae8371fcda9	4	161
+func main	e15fb2bd226fa0eb	111	3359
+func orNone	b8a982a4b2b8446c	13	466
+type Flag	e9c3ad39f9a33e0a	6	288

@@ -80,13 +80,13 @@ func lctxCons(st mut S, t int, k int, l int) int {
     return at
 }
 
-// Δ[fn]? の記録 [param, ret, body, tparams, mask]（無ければ -1）
+// Δ[fn]? の記録 [param, ret, body, kinds, mask]（無ければ -1）
 func defGet(st mut S, fn int) int {
     ds := st.defs
     return if fn < table.Get(mut st.h, ds) { table.Get(mut st.h, ds + 1 + fn) } else { -1 }
 }
 
-// defParam / defRet は (dfn.inst ts).param / .ret・defTps は dfn.tparams（tsLen は ty.sober）
+// defParam / defRet は (dfn.inst ts).param / .ret・defTps は dfn.kinds.length・defKinds は dfn.kinds（tsLen は ty.sober — kinds の列も同じ形）
 func defParam(st mut S, df int, ts int) int {
     return tsubst(mut st, ts, table.Get(mut st.h, df))
 }
@@ -96,10 +96,83 @@ func defRet(st mut S, df int, ts int) int {
 }
 
 func defTps(st mut S, df int) int {
+    return tsLen(mut st, table.Get(mut st.h, df + 3))
+}
+
+func defKinds(st mut S, df int) int {
     return table.Get(mut st.h, df + 3)
 }
 
-// 式の節 [kind, nc, a, b, c] の読み出し（Config.lean の nodeTable が使う）
+// Expr.tvWf ks e（Typing.lean）: 1 段の当てはめ exprTvWfNode（抽出物）が子の節を walkPush で積み、ここで順に取り出す
+// （再帰の代わりの明示のスタック — 入れ子の深い式でも本体のスタックを使い切らない。結果は全部の節の && なので順は問わない）
+func exprTvWf(st mut S, ks int, e0 int) bool {
+    st.wsp = 0
+    walkPush(mut st, e0)
+    while st.wsp > 0 {
+        st.wsp -= 1
+        if !exprTvWfNode(mut st, ks, table.Get(mut st.wstk, st.wsp)) {
+            return false
+        }
+    }
+    return true
+}
+
+func walkPush(st mut S, e int) bool {
+    if st.wsp < table.Len(mut st.wstk) {
+        table.Set(mut st.wstk, st.wsp, e)
+    } else {
+        table.Push(mut st.wstk, e)
+    }
+    st.wsp += 1
+    return true
+}
+
+// Def.tvOk（Typing.lean）: シグネチャと本体の型注釈の型変数の旗が kinds 以下
+func defTvOk(st mut S, df int) bool {
+    ks := defKinds(mut st, df)
+    return tvWf(mut st, ks, table.Get(mut st.h, df)) && tvWf(mut st, ks, table.Get(mut st.h, df + 1)) && exprTvWf(mut st, ks, table.Get(mut st.h, df + 2))
+}
+
+// Expr.raisedOk ks e（Typing.lean）: exprTvWf と同じ駆動（1 段の当てはめ exprRaisedOkNode は抽出物）
+func exprRaisedOk(st mut S, ks int, e0 int) bool {
+    st.wsp = 0
+    walkPush(mut st, e0)
+    while st.wsp > 0 {
+        st.wsp -= 1
+        if !exprRaisedOkNode(mut st, ks, table.Get(mut st.wstk, st.wsp)) {
+            return false
+        }
+    }
+    return true
+}
+
+// Def.raisedOk（Typing.lean）: 型変数の出現が宣言の kind と同じ旗を持ち、置き直し先が正規化されている（宣言の kind で置き直しても変わらない）。
+// 型付けの規則ではなく kind の推論の定理の前提。脱糖器の出力がこの形でないのはコンパイラの不具合
+func defRaisedOk(st mut S, df int) bool {
+    ks := defKinds(mut st, df)
+    return raisedOk(mut st, ks, table.Get(mut st.h, df)) && raisedOk(mut st, ks, table.Get(mut st.h, df + 1)) && exprRaisedOk(mut st, ks, table.Get(mut st.h, df + 2))
+}
+
+// Def の行 j の型に型変数が無い（変換のときの記録）
+func noTvAt(st mut S, j int) bool {
+    return j < table.Len(mut st.noTv) && table.Get(mut st.noTv, j) == 1
+}
+
+// 形の検査を通らない最初の Def の添字（-1 = 全部通る）。判定の JSON とは別の結果（checkdump の照合）
+func ShapeFail(st mut S) int {
+    ds := st.defs
+    n := table.Get(mut st.h, ds)
+    mut j := 0
+    while j < n {
+        if !noTvAt(mut st, j) && !defRaisedOk(mut st, table.Get(mut st.h, ds + 1 + j)) {
+            return j
+        }
+        j += 1
+    }
+    return -1
+}
+
+// 式の節 [kind, nc, a, b, c]（call は [kind, nc, a, b, c, d]）の読み出し（Config.lean の nodeTable が使う）
 func nK(st mut S, e int) int {
     return table.Get(mut st.h, e)
 }
@@ -114,6 +187,11 @@ func nB(st mut S, e int) int {
 
 func nC(st mut S, e int) int {
     return table.Get(mut st.h, e + 4)
+}
+
+// 6 ワードの節（call）の 4 つ目の欄
+func nD(st mut S, e int) int {
+    return table.Get(mut st.h, e + 5)
 }
 
 // Act（遷移の結果）: actSub は子と文脈を st に置いて 1・actRet は結果を st に置いて 0
@@ -200,14 +278,19 @@ func checkAll(st mut S, root int) int {
             }
             p := table.Get(mut st.h, df)
             rt := table.Get(mut st.h, df + 1)
-            tp := table.Get(mut st.h, df + 3)
+            tp := defTps(mut st, df)
             e0 = table.Get(mut st.h, df + 2)
-            if !(paramOk(mut st, p) && retOk(mut st, rt) && nc(mut st, e0) == 0 && tvarsBelow(mut st, tp, p) && tvarsBelow(mut st, tp, rt)) {
+            ntv := noTvAt(mut st, j)
+            if !ntv && !defRaisedOk(mut st, df) {
+                return panic(InvariantBroken{})
+            }
+            if !(paramOk(mut st, p) && retOk(mut st, rt) && nc(mut st, e0) == 0 && tvarsBelow(mut st, tp, p) && tvarsBelow(mut st, tp, rt) && (ntv || defTvOk(mut st, df))) {
                 if st.perDef {
                     fposPush(mut st, j, e0)
                 }
                 if st.failE == 0 {
                     st.failE = e0
+                    st.failWhy = 1
                 }
                 st.defFail = j
                 if !st.collect {
@@ -246,6 +329,7 @@ func checkAll(st mut S, root int) int {
             if r < 0 || !tyEq(mut st, r, table.Get(mut st.h, df + 1)) {
                 if st.failE == 0 {
                     st.failE = e0
+                    st.failWhy = 2
                 }
                 st.defFail = j
                 if !st.collect {

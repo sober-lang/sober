@@ -1,0 +1,15 @@
+@@full	b1bad9f7edafd937	4900	142089
+@head	d1fb9e2b4821b1c9	0	306
+func TestAsciiCase	1c39ee6b1f7cc10f	121	3912
+func TestAsciiSpace	f34245ec9873a0d8	146	4646
+func TestCount	32f6fcc5c489aac4	30	997
+func TestFormatInt	b782ec584fdb2b19	51	1717
+func TestIndex	c921855ba25b0acd	58	2486
+func TestIndexByte	228b602eac421564	34	1153
+func TestJoin	b7fbd9c8ffc299fe	63	2070
+func TestParseBool	3ea55486a8c980b4	148	4778
+func TestPrefixSuffix	328af156c520e444	59	1941
+func TestSplitEdges	5f0b5f1b468c84c7	146	4432
+func badBool	bd8eb45988d1d92c	11	472
+func sp	3c831393b19e9664	10	420
+type IndexCase	14b194a93a7f5e55	4	219

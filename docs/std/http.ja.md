@@ -177,4 +177,4 @@ type BadHeader panic {
 }
 ```
 
-Response の headers の 1 本が書けない（名前が空か tchar でない・値に CR / LF / NUL・std/http/server が書く名前 — 呼び手の契約違反。panic ラベル）
+レスポンスの頭がアプリの値のままでは書けない（呼び手の契約違反。panic ラベル）。nameは書けない欄の名前: headersの1本（名前が空か tchar でない・値がfield-valueでない・std/http/server が書く名前・1行だけの欄の2本目）・"Content-Encoding"（Codedのencodingがtokenでない）・"status"（200〜999の外。1xxは最終のレスポンスにならない・204 / 205 / 304に本文）

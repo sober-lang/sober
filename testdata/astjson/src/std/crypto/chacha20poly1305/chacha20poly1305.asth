@@ -1,0 +1,16 @@
+@@full	bb5f9504feb07920	3158	81092
+@head	752319c4cdd13594	0	234
+const KeySize	100b86d5ef905ac6	1	48
+const NonceSize	c818f8d4966074d1	1	50
+const Overhead	11f7e67e5cb5e1c0	1	49
+func Open	641ab4dcc8acb86b	28	1084
+func OpenAt	c55a40cd278eaa16	88	3103
+func Prepare	4179825dc8df3511	21	881
+func Seal	f4ad80491e5ebd9d	28	1114
+func SealInto	aadc350b6f0af6e1	84	2939
+func SealTo	42414b7ebadc792c	141	4822
+func ctTail	e6e24d22ee8910dc	84	2993
+func polyKey	3ace9d6db4147edb	37	1365
+type Auth	b6aa9187acc6f12a	1	65
+type BadSize	707547808861de14	1	68
+type Key	112f07b8da5d0e39	3	149

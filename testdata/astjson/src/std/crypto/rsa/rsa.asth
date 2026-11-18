@@ -1,0 +1,15 @@
+@@full	6a024740cfab4f01	6182	177590
+@head	984e00cad3a5ff57	0	183
+func Public	712dd3e6a55831c8	5	280
+func SignPSS	c13c471c4f4c8811	250	8084
+func Size	2135f9aef7c8a636	5	273
+func VerifyPSS	3908f9b429c8d8a8	133	4466
+func mgf1	3b1339447554cd9f	102	3428
+func pssEncode	56d612df03559e4c	205	6649
+func pssVerify	ec299f7b5bc7234d	288	9290
+func sameTail	8f2ad2f5184b41e8	63	2110
+type BadKey	966dc7f4fce41fcf	1	67
+type BadSize	707547808861de14	1	68
+type Fault	c41213d17cef7065	1	66
+type PrivateKey	03a74f8ddfb6d8d6	12	572
+type PublicKey	c575e4a12d6a4e98	8	377

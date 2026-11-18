@@ -35,6 +35,7 @@ the Sober compiler
 | `SOBER_WATCH_BUILD` | 0 stops watch from warming the build cache |
 | `SOBER_WATCH_TEST` | 0 stops watch from running the tests of the watched packages in the background (to replay their results) |
 | `SOBER_LOWER_SPLIT` | 0 turns the parallel lowering off |
+| `SOBER_TASK_REGION_MB` | the region slot of a child task in MiB (default 512) — raise it when a parallel child of the compiler dies and the work is redone sequentially |
 | `SOBER_CHECK_CACHE` | 0 turns the check cache off (default on) |
 
 ## sober build
@@ -57,9 +58,12 @@ flags:
   --passes       run the IR passes on --emit=ll / ir
 
 environment:
-  SOBER_BUILD_CACHE  0 turns the build cache off (default on)
-  SOBER_CACHE        the cache directory (default $XDG_CACHE_HOME/sober)
-  SOBER_LOWER_SPLIT  0 turns the parallel lowering off
+  SOBER_BUILD_CACHE     0 turns the build cache off (default on)
+  SOBER_CACHE           the cache directory (default $XDG_CACHE_HOME/sober)
+  SOBER_LOWER_SPLIT     0 turns the parallel lowering off
+  SOBER_TASK_REGION_MB  the region slot of a child task in MiB (default 512) —
+                        raise it when a parallel child of the compiler dies and
+                        the work is redone sequentially
 
 run 'sober build --help=dev' for the development flags
 ```

@@ -31,3 +31,11 @@ func TestLayoutPrint() {
     assert(roundTrip("package main\n\ntype H struct {\n    xs []int\n}\n"))
     assert(!roundTrip("package main\n\ntype H struct {\n    xs  []int\n}\n"))
 }
+
+// .sobiの `@kind` はfmtで落とさず、ほかの注釈の前に書く
+func TestKindPrint() {
+    src := "package p\n\n@kind(K: mutfree, V: any)\n@effects()\nfunc Get[K, V](k K, v V) V\n"
+    b := bytes(src)
+    t, ok := parser.ParseIface(b, lexer.Lex(b))
+    assert(ok && sameBytes(Print(t), b))
+}

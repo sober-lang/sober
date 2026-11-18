@@ -1,0 +1,18 @@
+@@full	fc669faa2ff400c4	2413	60451
+@head	92750d10099ef828	0	138
+func drain	dba9083ca3dbb5a3	25	1041
+func inner	870486edac8efdac	12	527
+func main	77942cccf38713d4	206	7146
+func outer	361628de44a408c6	24	837
+func tally	aaefb783b228785d	6	358
+func three	9f29bc42e20dd499	20	723
+func twice	5a33c6ece1d671f6	20	733
+func update	78d6ad6281c46a19	13	712
+type Acc	dd01576dfe57e488	3	158
+type App	5a73a2ada1a932c6	4	198
+type Handler	0fdabf34156d0e18	4	182
+type Msg	dc848ef0dc36f467	2	167
+type Mw	8d2c93c99093b42e	7	252
+type Source	a97f5ee56f0e7c6e	7	296
+type Step	aeb17b57c78e4758	5	225
+type Update	f053d080f4a805c3	4	181

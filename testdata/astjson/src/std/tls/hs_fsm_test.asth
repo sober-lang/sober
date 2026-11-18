@@ -1,0 +1,23 @@
+@@full	68199e57df74cc34	9159	281677
+@head	2d8a2316b0f10ee6	0	584
+const fmGolden	0c71be1a97d91d3f	3	138
+func TestFsm	2542c17ed0bf0872	53	2039
+func TestFsmNonce	053c3633519f7bb3	15	570
+func fmBases	f555586dae1634ad	217	7982
+func fmBit	e3aeeb3089dfbefa	10	381
+func fmClientSecret	fd568ab270b024fd	48	1692
+func fmErrOf	4b6726ea2c9acd04	14	651
+func fmEvents	936d72d6e2895373	19	715
+func fmFed	c4a9bc0b64e2af51	30	1159
+func fmFeed	e0900fc77c379028	13	624
+func fmFrames	4d47dd61ab49d1ee	76	2591
+func fmKeyOf	981b2944dd522a73	96	3298
+func fmMsg	409a2a4cf94f0768	62	2088
+func fmNonces	9663db288df1a853	234	7779
+func fmPlainRec	f3394c863f0077a5	70	2334
+func fmRecOf	023ab072c02e088e	353	11368
+func fmRow	5e3ebbc5294fd20f	81	2843
+func fmSealRec	d1527cae761c9538	24	1020
+func fmShow	04816f2f3f5ff316	43	1675
+func fmUsed	8a941c5762de85ff	56	2065
+type fmBase	c0c12fbac777bd38	4	234

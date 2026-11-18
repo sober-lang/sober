@@ -1,0 +1,9 @@
+@@full	47d28e4192c2a40a	1888	53821
+@head	4fe8cc8c5062e1a1	0	99
+func dot	b52d97f45761ca48	40	1396
+func drain	7f368f060994956e	80	2675
+func grow	690ecb756a3367ac	37	1280
+func main	582768d74d01a4d0	116	3474
+func sum	785dd9b090048e91	26	917
+func swapped	8fa3bce14dfa1c51	14	552
+type Pair	eea1409bf1a2f8ec	5	227

@@ -1,0 +1,18 @@
+@@full	ae3c19f81b237534	6410	204499
+@head	e20a1b257a1f8794	0	372
+const oracle	3e07a228d2a4ac23	3	136
+const updateAfter	e5fbf8fb56469001	1	51
+func TestOracle	f9b17aa65defedec	430	13531
+func embedded	03de39c00c198fbf	18	697
+func errName	77fb1e9e505f5c0a	20	868
+func feed	c28674eee0857c83	100	3342
+func firstN	656ee4a67896d51e	28	1039
+func flip	92483d40f2c94e7d	46	1544
+func gen	78c7c21c02d18160	44	1607
+func openAll	0c78b179609db0aa	37	1410
+func plan	2d3cd97c1cd6d6b2	32	871
+func replay	91e273ad97bc1a11	158	5213
+func roundtrip	48797becebdef23e	64	2334
+func stream	e456a7524c2f0dc5	80	2672
+func zeroInner	bf72d027a2d232d8	21	775
+type Cut	7c03ed1c0bbf4a58	1	64

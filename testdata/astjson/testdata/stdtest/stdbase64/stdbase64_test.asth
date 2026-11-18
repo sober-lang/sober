@@ -1,0 +1,10 @@
+@@full	e35c3ca2bfb9391e	2328	71708
+@head	0bdd8f0c9c84ccbc	0	255
+func TestAlphabetTail	23bb917f5dd42327	48	1678
+func TestDecodeRejects	464d0a090b77a8e7	36	1228
+func TestDecodeUrlRejects	1ec8b69fef12ad7e	30	1038
+func TestRfc4648Vectors	7d6b7b8e2ae3d4b7	121	4644
+func TestRoundTrip	8360f106f243a7b4	120	3899
+func bad	f21a4a8568bc6185	11	464
+func badUrl	753adc6bd366c129	11	470
+type Vec	a09f4cd3b2f3e478	4	219

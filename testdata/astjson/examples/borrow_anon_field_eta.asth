@@ -1,0 +1,7 @@
+@@full	d2d12ccece9bcbcf	511	12652
+@head	7aaa9b710c68c96c	0	72
+func main	955164cb50bf4f08	32	1174
+func pump	194f87e64c03383c	9	410
+func two	74fc387706428e6b	20	708
+type Sink	04fa88b43df9bd27	6	253
+type Stream	c2916e309abee3c3	8	313

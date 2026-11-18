@@ -86,18 +86,21 @@ HTTP/1.1 200 OK
 Content-Type: text/plain
 Cache-Control: private
 Content-Length: 11
+Date: Sun, 06 Nov 1994 08:49:37 GMT
 
 hello, ann
 HTTP/1.1 200 OK
 Content-Type: text/plain
 Cache-Control: private
 Content-Length: 13
+Date: Sun, 06 Nov 1994 08:49:37 GMT
 
 see you, bob
 HTTP/1.1 401 Unauthorized
 Cache-Control: private
 Content-Length: 0
 Connection: close
+Date: Sun, 06 Nov 1994 08:49:37 GMT
 
 
 true
@@ -105,7 +108,7 @@ true
 
 - `greeter` is a function that returns an `http.server.Handler`. The closure it returns captures `word`, and the `return` line shows what it captured. `greeter("hello")` and `greeter("see you")` are two handlers of the same shape.
 - `Auth` is the shape of section 2 (a struct with function fields): it gives `before` only and leaves `after` out.
-- To print the responses, the requests come from a string instead of the network (`feed` / `show`). A real server passes the same `Dispatch` to `http.server.Serve`.
+- To print the responses, the requests come from a string instead of the network (`feed` / `show`). A real server passes the same `Dispatch` to `http.server.ServeConn` in the handler of `net.Serve` (section 1 of [Web server](web-server.md)).
 
 ## 2. A group of functions — a struct with function fields (a dictionary)
 

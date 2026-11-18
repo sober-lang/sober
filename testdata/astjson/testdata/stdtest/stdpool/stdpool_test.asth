@@ -1,0 +1,7 @@
+@@full	18dd47332e0ce210	2835	82273
+@head	1903eeef3bdf9ec7	0	219
+func TestScratchRange	9cfdf37bd711cec1	111	3366
+func TestScratchRaw	a0e0b6857936a23d	121	3673
+func TestScratchRenew	b7cec218b6bfcb98	103	3265
+func TestScratchWrap	8f3dfa614ccd0224	149	4458
+func TestScratchZero	d4f8a6eecb31f9ab	44	1477

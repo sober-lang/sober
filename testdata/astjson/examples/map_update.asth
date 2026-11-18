@@ -1,0 +1,10 @@
+@@full	d852553a2e856339	1661	43430
+@head	20e69509dfebf8f5	0	66
+func gi	40f9765f99dc1aeb	20	720
+func gs	fcfdcb5bbc582bfb	20	726
+func gv	47a8c7bfc90892ae	19	704
+func main	0c97715ee67bebb6	111	3384
+func updCat	525b50eeb676c058	28	1009
+func updInt	aafdbfc81ac08409	28	994
+func updStr	9b6764eeccdba959	28	1000
+func updVal	4490e9ec7db3b0c8	26	948

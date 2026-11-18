@@ -83,11 +83,14 @@ expect_exit 1 check no/such/file.sober
 expect_exit 1 check testdata/checkneg/add_bool.sober
 expect_exit 0 check examples/fib.sober
 expect_exit 0 build testdata/minic/app --emit=ll -o "$W/minic.ll"
-cmp -s "$W/minic.ll" testdata/lltext/testdata_minic_app.ll || { echo "FAIL edge: directory entry differs"; fail=$((fail + 1)); }
+# 比べる相手 = lltextの表の1行目（全文のハッシュ — scripts/goldtab.ts）
+fullhash() { sha256sum | cut -c1-16; }
+goldfull() { head -n 1 "$1" | cut -f2; }
+[ "$(fullhash < "$W/minic.ll")" = "$(goldfull testdata/lltext/testdata_minic_app.llh)" ] || { echo "FAIL edge: directory entry differs"; fail=$((fail + 1)); }
 # 標準出力への書き出しは追記先を切り詰めない（WriteStdout — F-20）
 echo "before" > "$W/app.txt"
 "$STAGE2" build examples/fib.sober --emit=ll >> "$W/app.txt"
-{ echo "before"; cat testdata/lltext/examples_fib.ll; } | cmp -s - "$W/app.txt" || { echo "FAIL edge: stdout append"; fail=$((fail + 1)); }
+[ "$(head -n 1 "$W/app.txt")" = before ] && [ "$(tail -n +2 "$W/app.txt" | fullhash)" = "$(goldfull testdata/lltext/examples_fib.llh)" ] || { echo "FAIL edge: stdout append"; fail=$((fail + 1)); }
 edge=$((edge + 2))
 # --emit の無い既定 = bin/sober の既定と同じ ELF（--emit=elf --passes）・-o が無ければ a.out（2026-10-10 — Release の単体バイナリの入口）
 mkdir -p "$W/defout"

@@ -203,7 +203,7 @@ func cutRtPure(st mut St, g FnRef) bool {
     return g == st.rtAlloc8 || g == st.rtCat8 || g == st.rtCopy || g == st.rtCopy8 || g == st.rtExtend8 || g == st.rtGrow || g == st.rtGrow8 || g == st.rtGrowTry ||
         g == st.rtKidKeep || g == st.rtMapGrow || isMapRt(mut st, g) || g == st.rtMaphash || g == st.rtPanic || g == st.rtPanicMem || g == st.rtRalloc || g == st.rtReloc ||
         g == st.rtReloc8 || g == st.rtErrReloc || g == st.rtRenter || g == st.rtRenterL || g == st.rtRenterLL || g == st.rtSlotNew || g == st.rtDpGive || g == st.rtDpTake || g == st.rtSlotTake || g == st.rtSlotGive || g == st.rtSlotTrim || g == st.rtStreq || g == st.rtMatchLen || g == st.rtJClean ||
-        g == st.rtTaskGo || g == st.rtTaskNew || g == st.rtTaskInline || g == st.rtTaskWait || g == st.rtTaskWaitK || g == st.rtTip8 || g == st.rtTipN8 || g == st.rtUnmap || g == st.rtTaskRerun || g == st.rtCancel || g == st.rtCutWalk || g == st.rtCutEnd || g == st.rtMnDelay
+        g == st.rtTaskGo || g == st.rtTaskNew || g == st.rtTaskInline || g == st.rtTaskWait || g == st.rtTaskWaitK || g == st.rtTip8 || g == st.rtTipN8 || g == st.rtUnmap || g == st.rtTaskRerun || g == st.rtCancel || g == st.rtCutWalk || g == st.rtCutEnd || g == st.rtMnDelay || g == st.rtLockWait
 }
 
 // spawnの格納場所の定数を書く（純な子 = 1・純でないがstdoutに書かない子 = 2）: 純でない関数 = チャネルに触る・syscall / 間接呼び出し /
@@ -443,6 +443,7 @@ func cutCallees(st mut St, f FnRef, out mut []int) {
 // 検査点を置く（最適化の後・バックエンドの前）: 純な子から届く利用者の関数のループの後ろの辺の手前と、再帰する関数の入口のブロックの末尾
 func cutInsert(st mut St) {
     mut inR := mut map[int]int{}
+    mut dirty := mut map[int]int{}
     mut work := mut []int{}
     mut k := st.cutSites
     while k != -1 {
@@ -475,10 +476,12 @@ func cutInsert(st mut St) {
                 table.Push(mut st.bcCutD, if rec { 1 } else { 0 })
             } else {
                 cutFunc(mut st, f, rec)
+                dirty[int(f)] = 1
             }
         }
         f = irFnNext(mut st, f)
     }
+    st.vfyDirty = freeze(dirty)
 }
 
 // f が自分へ戻る呼び出しの路を持つか（届く関数の集合 inR の中で）
@@ -687,7 +690,7 @@ func cutThinN(st mut St, f FnRef, s BlkRef, mb mut []int, ms mut []int, rs mut [
 
 // 間引きの表（開発用 `sober build --cut-stat` — 検査scripts/cutstat.sh）: 検査点を置いた利用者のループの頭ごとに1行
 // 「関数b<頭> B=<本体の重み> N=<間引き> <形>」（形 = count〔カウンタ〕/ every〔毎反復〕・Bの負は間引けない理由 — cutThinN）
-@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch)
+@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.KindArg, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch, diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.FieldType, diag.FnCap)
 func CutStat(p loader.Program, n int, vmode int) ([]byte, error?) {
     mut k := knob(KElf, true, true, false, false, 0, vmode)
     k.rtMut = n

@@ -1,0 +1,8 @@
+@@full	615301f3e2371f15	649	15230
+@head	f8802cba5eefdec2	0	31
+func bump	2ab70e00a741ee6d	20	760
+func direct	6a91eeaea40b96df	30	1091
+func main	b1f4772d366f504a	18	696
+func viaCall	9ac843756b6c1521	21	791
+type C	fbd9971b4838d7ba	3	148
+type W	92933c2b19cfe266	5	239

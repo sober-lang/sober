@@ -1,0 +1,206 @@
+package loader
+
+// finishの検査だけのフェーズの並列: 木を返さない検査（多値の型の配置先・ファイルごとのimport・名前・式文・節の規則のバッチ）を
+// ファイルごとの子task（task.Map）で回し、最初の拒否は親が「フェーズの順 → ファイルの順」で選ぶ（逐次の early return と同じ選び方）。
+// - 子は (cx, 表, f) をimmで受ける関数 — parの捕捉の規則（immだけ）が「子は同じフェーズの他のファイルの結果を読まない」を言語で強制する。
+//   どのフェーズも入力は同じcx（前のフェーズの変換後の木）なので、フェーズを1つの子にまとめても逐次と同じ木を読む（まとめるのは木を変換しないフェーズだけ）
+// - 子が返すのは当たりの字句だけ（無ければ -1）。拒否の値は親が組む — 名前の検査（拒否の種類が多い）は当たりのファイルを親が逐次に検査し直す
+// - 逐次は早いフェーズで拒否すると後のフェーズを走らせないが、子は全フェーズを走らせる — 検査は純なので答えは同じ。子の死（task.Mapのerr）は直のパスで検査し直す
+// - ワーカー1・ファイル1つは直のパス（前読みと同じ — task.Mapの費用をW1の上限値に乗せない）。証人 = SOBER_PAR_STATS=1で `#finish checks=N fallback=none|died`
+//   （stderr・出力不変）。SOBER_FINISH_DIE=1 = 子が頭で死ぬ（子の死 → 直のパスの検査 — selfpar）
+
+import "ast"
+import "diag"
+import "std/io"
+import "std/iter"
+import "std/os"
+import "std/task"
+
+// 検査のバッチの子の結果（ファイル1つ — 当たりの字句・無ければ -1。nm = 名前の検査に当たりがある）
+type FinB struct {
+    tup int
+    afr int
+    ni int
+    nm bool
+    es int
+}
+
+// 節の規則のバッチの子の結果（lhs = catchの左辺の字句・hit = 規則0〜4の最初の位置〔noteHitの3ワードずつ〕）
+type FinR struct {
+    lhs int
+    hit []int
+}
+
+// 環境変数の数（無ければ -1）
+func finEnv(name string) int {
+    v, err := os.Getenv(name)
+    if err != nil || v == nil {
+        return 0 - 1
+    }
+    b := bytes(v)
+    mut n := 0
+    for i <- iter.Range(0, len(b)) {
+        if int(b[i]) >= 48 && int(b[i]) <= 57 {
+            n = n * 10 + int(b[i]) - 48
+        }
+    }
+    return n
+}
+
+// ファイルn個の検査を子に配るか（ワーカー1・ファイル1つは直のパス）
+func finParOn(n int) bool {
+    return n >= 2 && task.Ledger().workers > 1
+}
+
+// 証人（SOBER_PAR_STATS=1 のときだけ stderr へ 1 行）
+func finStat(what string, n int, why string) {
+    if finEnv("SOBER_PAR_STATS") == 1 {
+        _ = io.WriteStderr(bytes("#finish ${what}=${n} fallback=${why}\n"))
+    }
+}
+
+// ファイルの添字の列 0..n
+func finFiles(n int) []int {
+    mut fs := mut []int{}
+    for f <- iter.Range(0, n) {
+        fs = append(fs, f)
+    }
+    return freeze(fs)
+}
+
+// 検査のバッチ（多値の型の配置先 → ファイルごとのimport → 名前 → 式文 — finishのフェーズの順）の最初の違反（無ければfile = -1）
+func checksB(cx Cx, pnames []string) NameHit {
+    if finParOn(len(cx.trees)) {
+        h, ok := checksPar(cx, pnames)
+        if ok {
+            return h
+        }
+    }
+    return checksSeq(cx, pnames)
+}
+
+// 検査のバッチの直のパス（フェーズごとに全ファイル — 拒否はその場で返す）
+func checksSeq(cx Cx, pnames []string) NameHit {
+    tup := tupleTypeAt(cx)
+    if tup.file >= 0 {
+        return NameHit{tup.file, tup.tok, diag.Par{at: tup, kind: PAR_TUPLE}}
+    }
+    for f <- iter.Range(0, len(cx.trees)) {
+        a := anonFnResultIn(cx, f)
+        if a >= 0 {
+            return NameHit{f, a, diag.FnOpt{at: diag.Pos{file: f, tok: a}, kind: FO_ANON_RESULT}}
+        }
+    }
+    ni := notImportedHit(cx)
+    if ni.file >= 0 {
+        return ni
+    }
+    nh := namesHit(cx)
+    if nh.file >= 0 {
+        return nh
+    }
+    return exprStmtHit(cx, pnames)
+}
+
+// 検査のバッチの子のパス（ok = falseは子の死 — 呼び手が直のパスで検査し直す）
+func checksPar(cx Cx, pnames []string) (NameHit, bool) {
+    pp := pkgOf(cx, "std/task")
+    mut ixb := mut []NameIx{}
+    for pk <- iter.Range(0, len(cx.pkg_path)) {
+        ixb = append(ixb, pkgNames(cx, pk))
+    }
+    ixs := freeze(ixb)
+    die := finEnv("SOBER_FINISH_DIE") == 1
+    n := len(cx.trees)
+    rs, cerr := task.Map(finFiles(n), (f) => checksOne(cx, pp, ixs, pnames, f, die))
+    if cerr != nil {
+        finStat("checks", n, "died")
+        return noHit(), false
+    }
+    finStat("checks", n, "none")
+    for f <- iter.Range(0, n) {
+        if rs[f].tup >= 0 {
+            at := diag.Pos{file: f, tok: rs[f].tup}
+            return NameHit{f, rs[f].tup, diag.Par{at: at, kind: PAR_TUPLE}}, true
+        }
+    }
+    for f <- iter.Range(0, n) {
+        if rs[f].afr >= 0 {
+            return NameHit{f, rs[f].afr, diag.FnOpt{at: diag.Pos{file: f, tok: rs[f].afr}, kind: FO_ANON_RESULT}}, true
+        }
+    }
+    for f <- iter.Range(0, n) {
+        if rs[f].ni >= 0 {
+            return NameHit{f, rs[f].ni, diag.NotImported{at: diag.Pos{f, rs[f].ni}}}, true
+        }
+    }
+    for f <- iter.Range(0, n) {
+        if rs[f].nm {
+            return namesIn(cx, ixs[cx.file_pkg[f]], f), true
+        }
+    }
+    for f <- iter.Range(0, n) {
+        if rs[f].es >= 0 {
+            return NameHit{f, rs[f].es / 2, diag.PureExprStmt{at: diag.Pos{f, rs[f].es / 2}, kind: rs[f].es % 2}}, true
+        }
+    }
+    return noHit(), true
+}
+
+// 検査のバッチの子の本体（ファイルfの全フェーズ）
+func checksOne(cx Cx, pp int, ixs []NameIx, pnames []string, f int, die bool) FinB {
+    if die {
+        panic(InvariantBroken{})
+    }
+    return FinB{tupleTypeIn(cx, pp, f), anonFnResultIn(cx, f), notImportedIn(cx, f), namesIn(cx, ixs[cx.file_pkg[f]], f).file >= 0, exprStmtIn(cx, pnames, f)}
+}
+
+// 節の規則のバッチの子のパス（ok = falseは子の死 — 呼び手が直のパスで検査し直す）。holdは不動点の後の表（子は読むだけ — コピーを渡す）
+@errors(diag.CatchLhs, diag.MultiBind, diag.ForFallible, diag.Sealed, diag.Identity, diag.MutAlias)
+func rulesPar(cx Cx, ft FnTab, sl []int, es []int, nm []string, hold []int) (error?, bool) {
+    die := finEnv("SOBER_FINISH_DIE") == 1
+    n := len(cx.trees)
+    rs, err := task.Map(finFiles(n), (f) => rulesOne(cx, ft, sl, es, nm, hold, f, die))
+    if err != nil {
+        finStat("rules", n, "died")
+        return nil, false
+    }
+    finStat("rules", n, "none")
+    for f <- iter.Range(0, n) {
+        if rs[f].lhs >= 0 {
+            return diag.CatchLhs{at: diag.Pos{file: f, tok: rs[f].lhs}}, true
+        }
+    }
+    // 規則ごとに最初のファイルの位置（逐次は hit にまだ無い規則だけ書く — ファイルの順に最初のもの）
+    mut hit := mut []int{}
+    for r <- iter.Range(0, 15) {
+        hit = append(hit, 0)
+    }
+    for f <- iter.Range(0, n) {
+        for r <- iter.Range(0, 5) {
+            if hit[r * 3] == 0 && rs[f].hit[r * 3] > 0 {
+                hit[r * 3] = rs[f].hit[r * 3]
+                hit[r * 3 + 1] = rs[f].hit[r * 3 + 1]
+                hit[r * 3 + 2] = rs[f].hit[r * 3 + 2]
+            }
+        }
+    }
+    return nrPick(freeze(hit)), true
+}
+
+// 節の規則のバッチの子の本体（ファイルf — 空のhitとholdのコピーで逐次と同じ走査）
+func rulesOne(cx Cx, ft FnTab, sl []int, es []int, nm []string, hold []int, f int, die bool) FinR {
+    if die {
+        panic(InvariantBroken{})
+    }
+    mut h := mut []int{}
+    for i <- iter.Range(0, len(hold)) {
+        h = append(h, hold[i])
+    }
+    mut hit := mut []int{}
+    for r <- iter.Range(0, 15) {
+        hit = append(hit, 0)
+    }
+    c := nodeRulesIn(cx, ft, sl, es, nm, mut h, f, mut hit)
+    return FinR{c, freeze(hit)}
+}

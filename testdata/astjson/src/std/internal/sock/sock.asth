@@ -1,0 +1,12 @@
+@@full	36a4858de6982b63	2322	63032
+@head	20429930151e693c	25	1775
+const evIn	fcb94c623e3303a2	1	44
+const evOut	f2e9227ea46ee614	1	45
+const plainRead	55744121fb9fc354	3	131
+func Close	c1a34ea3694dbf54	9	383
+func Dial	0769cef7332ca093	51	1617
+func Poll	0f0e4c149140a1c6	95	3053
+func Send	9da8204bd14ecfc3	76	2493
+func again	95a85d1c614ac4b3	37	1279
+func errOf	944d5a4b4ea4dfcb	54	1974
+func waitErr	37eb47fb78e28225	17	655

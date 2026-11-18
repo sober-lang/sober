@@ -222,6 +222,62 @@ func csrN(src []int, dst []int, n int) RefGraph {
     return RefGraph{head: freeze(head), adj: freeze(adj)}
 }
 
+// kind の推論の前段（st.genOnly — 型パラメータを持つ Def の本体だけを脱糖する）の表層型検査の対象のフラグ: rangeReach の区間の代わりに、
+// 本体を脱糖する総称関数をシードにする（constの初期化式の参照先もシード。stdはL0の信頼が無いときだけシード）。
+// 辿る辺は、本体がシードのDefの中へコピーされうる呼び先（総称関数〔インスタンス〕・展開される関数・逃げの集合）への辺だけ。
+// 他の呼び先はDefとして呼ぶので署名だけで足り、フラグ（YInstNeeded）は型パラメータを含む型引数の呼び出し（総称関数どうし）でしか伝わらない
+func genReach(st mut S) ListRef {
+    mark := ListRef(listN(mut st, st.nfn))
+    mut work := mut []int{}
+    for i <- iter.Range(0, st.nfn) {
+        gen := lenL(mut st, fnTParams(mut st, i)) > 0 && !outsideOnly(mut st, i) && !(st.trustStd && IsStdPkg(mut st, fnPkg(mut st, i)))
+        // L0 の std（署名だけ — kind は焼き込みの `@kind`）はシードにしない（総称関数の本体が参照する std の関数は辺で届く）
+        if gen || (!st.trustStd && IsStdPkg(mut st, fnPkg(mut st, i))) {
+            lput(mut st, mark, i, 1)
+            work = append(work, i)
+        }
+    }
+    return reachCloseIf(mut st, mark, work, true)
+}
+
+// mark・work（シード）から参照の辺（st.refs）を辿って閉じる（constの初期化式の参照先もシード）
+func reachClose(st mut S, mark ListRef, work0 []int) ListRef {
+    return reachCloseIf(mut st, mark, work0, false)
+}
+
+// 本体がDefの中へコピーされうる関数か（総称関数・展開される関数・逃げの集合）
+func copiedIn(st mut S, i int) bool {
+    return lenL(mut st, fnTParams(mut st, i)) > 0 || fnExpands(mut st, i) || e2sExcluded(st.e2sExcl, i)
+}
+
+// reachCloseの辺を、copiedならcopiedInの呼び先だけに限ったもの（constの初期化式の参照先はシードなので限らない）
+func reachCloseIf(st mut S, mark ListRef, work0 []int, copied bool) ListRef {
+    mut work := mut []int{}
+    for g <- work0 {
+        work = append(work, g)
+    }
+    head := st.refs.head
+    adj := st.refs.adj
+    for e <- iter.Range(head[0], head[1]) {
+        if latI(mut st, mark, adj[e]) == 0 {
+            lput(mut st, mark, adj[e], 1)
+            work = append(work, adj[e])
+        }
+    }
+    mut h := 0
+    while h < len(work) {
+        g := work[h]
+        h += 1
+        for e <- iter.Range(head[g + 1], head[g + 2]) {
+            if latI(mut st, mark, adj[e]) == 0 && (!copied || copiedIn(mut st, adj[e])) {
+                lput(mut st, mark, adj[e], 1)
+                work = append(work, adj[e])
+            }
+        }
+    }
+    return mark
+}
+
 // Defの区間の子（st.rangeSet）の表層型検査の対象のフラグ: 区間の中で本体を脱糖しうる関数（部分検査の視点の外・L0のstdを除く）・
 // 根の区間ならmain・stdの関数・constの初期化式が参照する関数をシードに、参照の辺（st.refs — 親のrefGraph）を辿って閉じる。参照は呼び出しに限らない
 // （関数値として渡す形 — 区間の本体のfnrefが指す関数のフラグ〔YInstNeeded〕も全体と同じにする。yReachより保守的）。

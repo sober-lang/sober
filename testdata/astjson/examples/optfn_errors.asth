@@ -1,0 +1,6 @@
+@@full	0a1dc451886ebe9b	687	19570
+@head	7aaa9b710c68c96c	0	72
+func Deliver	ff6e6671781a04f8	37	1270
+func main	3bfac070ed88c2ca	66	2286
+type Busy	63fa7b8cffa69923	1	65
+type Full	8d58b1d780f24868	2	110

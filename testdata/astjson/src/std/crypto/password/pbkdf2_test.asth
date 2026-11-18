@@ -1,0 +1,7 @@
+@@full	5390f634d064931b	1308	37906
+@head	90425f48b9cf5a3b	0	326
+const pbkdf2Grid	02b972a295f1b35d	3	140
+func TestPbkdf2Grid	d0c01af31331f36d	100	3379
+func TestPbkdf2Rfc7914	20cc2bef5fdc0113	52	2035
+func embedded	03de39c00c198fbf	18	697
+func pat	415f660e8577c8ef	37	1303

@@ -1,0 +1,9 @@
+@@full	2d13a942c3cab0c3	765	20297
+@head	7f9e2aadcdb7b4d6	0	173
+func handle	e65518d3388e865b	11	549
+func main	3a144b4638f587e5	4	224
+func run	cdeed3f89b3274b5	32	1079
+func sendBody	a2acda70fe93ba43	26	959
+func serve	764b402376611283	25	912
+type Resp	4a056ffe0cb63afb	4	189
+type Stream	c2916e309abee3c3	8	313

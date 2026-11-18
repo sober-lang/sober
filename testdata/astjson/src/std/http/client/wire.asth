@@ -1,0 +1,34 @@
+@@full	31c892506982d3ab	11138	343837
+@head	1088260e12382a87	0	212
+const mChunked	f757c44a89eb69bf	1	48
+const mClose	220a57093122cf2a	1	46
+const mLength	acf2cdb08969519c	1	47
+const mNone	2152287537a195cf	1	45
+const mUnknown	68b23ea770e5d9e9	1	48
+const maxHead	e18b6c184b433019	1	51
+func bodyOf	eac5a15e305a2d55	132	4370
+func chunks	eb98cd8fbbff7f0e	176	5814
+func colon	6d8cd438a3f2c9d9	37	1299
+func crlf2	af1a57d5c3da783e	52	1778
+func digits	1ef394447adfa937	58	1975
+func endsChunked	08cc3ccd864fcbd3	46	1611
+func fieldOk	e93777634ba4b5ad	59	2068
+func fieldsOf	d1beabf9cda92a48	123	4172
+func fold	98a9a879a945dc86	48	1674
+func headOf	3e1ee545030b8266	279	9232
+func hexDigit	520b3295df179ffe	49	1618
+func hexOf	db82fa863bc52311	52	1774
+func hexOf2	9a3be4f7f7b5a763	37	1332
+func lineEnd	6a0c40cca074659f	35	1256
+func lineEnd2	67f157544187449c	35	1259
+func lit	eeafad9ceef8ff5e	34	1219
+func newScan	cb261b1ce02dbad6	16	796
+func requestBytes	cec09824d70b0f0e	171	6184
+func scan	72909a0d72afa9b0	194	6528
+func settled	879576ab699b12eb	13	531
+func skipWs	a69a6924ff56c791	28	1058
+func tchar	f09289ab911b7ce2	86	2985
+func textOf	f960456d8982dba2	30	1138
+func tokenOk	1bab79d817e7340a	26	904
+func trimWs	e875f2dc350e4f44	32	1174
+type scanSt	ea6c3d8b654460c4	12	608

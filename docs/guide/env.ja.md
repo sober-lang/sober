@@ -16,8 +16,8 @@
 | --- | --- |
 | `SOBER_WORKERS` | ワーカーの数（既定はコア数）。変えても標準出力は同じバイトになる |
 | `SOBER_PIN` | ワーカーのCPUの固定（2 = 強制でCPU 1つへ・1 = 強制でL3キャッシュを共有するCPUのグループへ・0 = 切る。既定はServeの形のプログラムで許可数が足りるときだけCPU 1つへ） |
-| `SOBER_REGION_MB` | mainのregionの大きさの上限（MiB・既定4096） |
-| `SOBER_TASK_REGION_MB` | taskのregionの大きさの上限（MiB — mainより大きくはならない） |
+| `SOBER_REGION_MB` | mainのregionの大きさの上限（MiB・既定4096。2の冪に切り上げる） |
+| `SOBER_TASK_REGION_MB` | taskのregionの大きさの上限（MiB。2の冪に切り上げる。mainより大きくはならない） |
 | `SOBER_MADV_MB` | 捨てたregionのページをOSへ返すときに、先頭から触れたまま残す量（MiB・0 = 全部返す） |
 | `SOBER_COVER` | カバレッジの計装つき（`sober build --cover`）の実行ファイルが、終わりに、実行された箇所のフラグを書くファイル（無ければ書かない） |
 | `SOBER_BUDGET_MB` | メモリの上限を固定する（試験用 — 既定はcgroupのmemory.maxと搭載量から決める） |
@@ -25,6 +25,8 @@
 | `SOBER_IO` | ioのパスを選ぶ（1 / 2でio_uringを使わない同期のread — 照合用） |
 | `SOBER_NET` | 1でネットワークをepollのパスに固定する（照合用） |
 | `SOBER_NET_FUSE` | 0で、keep-aliveのHTTP（平文）のレスポンスの送信を、完了を待たずに次のリクエストの受信へ進む形にしない（問題の切り分け用・既定は有効） |
+| `SOBER_NET_FIXED` | 0で、io_uringに固定のファイル表を登録せず、接続を素のfdで扱う（問題の切り分け用・既定は有効） |
+| `SOBER_PBUF_INC` | 0で、受けのバッファの環を増分消費（`IOU_PBUF_RING_INC`・Linux 6.12以上）で登録せず、固定スロットの環にする（問題の切り分け用・既定は有効） |
 | `SOBER_TASK_WIN` | 0で、接続のtaskの浅いregionを、taskの領域の末尾のページから始める形にしない（問題の切り分け用・既定は有効） |
 | `SOBER_MDWE` | 0で、起動時に実行可能メモリを放棄する保護（`PR_SET_MDWE`・Linux 6.6以上）を切る。動的計装（valgrindなど）と同居させるときに使う（既定は有効） |
 | `SOBER_MDWE_REPORT` | 0以外で、mainの正常終了のときに、上の保護の状態を標準エラーへ（試験用） |
@@ -37,7 +39,8 @@
 | `SOBER_CHAOS_SEED` | ネットワークの送り・受け・acceptへの失敗注入のシード（試験用・0 = 注入しない） |
 | `SOBER_PAR_STATS` | 1でtaskごとの使用量を数えて標準エラーへ |
 | `SOBER_DEPTH_REPORT` | 真ならmainの正常終了でregionの深さの計測を標準エラーへ |
-| `SOBER_NOAES` / `SOBER_NOCLMUL` / `SOBER_NOMULX` | 1でCPUのAES-NI / PCLMULQDQ / MULXを使わないパスにフォールバックする（照合用） |
+| `SOBER_NOAES` / `SOBER_NOCLMUL` / `SOBER_NOMULX` / `SOBER_NOSHA` | 1でCPUのAES-NI / PCLMULQDQ / MULX / SHA-NIを使わないパスにフォールバックする（照合用） |
+| `SOBER_DATE_SEC` | HTTPのレスポンスのDateの行の時計を、この値（エポック秒）に固定する（試験用。ガイドの例の出力のDateは、784111777で固定した値） |
 
 ## 標準ライブラリが読むもの
 

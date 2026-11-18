@@ -1,0 +1,12 @@
+@@full	da3d5726297e8482	4839	193484
+@head	034d5d7ce368c077	0	246
+const slots	22bb0d6780312633	1	45
+func TestCas	ba7470b77199de22	61	1869
+func TestChurn	cadf43214b06ceeb	111	3629
+func TestReapDead	ebf728145ef302a3	139	4394
+func TestReapRace	1f057f4d20396aa6	276	8764
+func churn	6b0f90e6a67d1a5f	69	2255
+func envSet	e1ba90debbec7deb	19	709
+func fill	a008bb35a3bbf581	39	1256
+func reapLate	a6187c7351bdf789	125	3893
+type Boom	5e108cae5425e7b4	1	65

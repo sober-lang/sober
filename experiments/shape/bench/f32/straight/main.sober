@@ -1,0 +1,126 @@
+package main
+
+// 実験3（shape-m0）の題材 f32・形 straight。gen.ts の生成物
+
+import "std/builder"
+import "std/iter"
+import "std/json"
+
+type R struct {
+    a0 int
+    a1 string
+    a2 int
+    a3 string
+    a4 int
+    a5 string
+    a6 int
+    a7 string
+    a8 int
+    a9 string
+    a10 int
+    a11 string
+    a12 int
+    a13 string
+    a14 int
+    a15 string
+    a16 int
+    a17 string
+    a18 int
+    a19 string
+    a20 int
+    a21 string
+    a22 int
+    a23 string
+    a24 int
+    a25 string
+    a26 int
+    a27 string
+    a28 int
+    a29 string
+    a30 int
+    a31 string
+}
+
+func mk(i int) R {
+    return R{a0: i + 10, a1: "s11_${i % 100}", a2: i + 12, a3: "s13_${i % 100}", a4: i + 14, a5: "s15_${i % 100}", a6: i + 16, a7: "s17_${i % 100}", a8: i + 18, a9: "s19_${i % 100}", a10: i + 20, a11: "s21_${i % 100}", a12: i + 22, a13: "s23_${i % 100}", a14: i + 24, a15: "s25_${i % 100}", a16: i + 26, a17: "s27_${i % 100}", a18: i + 28, a19: "s29_${i % 100}", a20: i + 30, a21: "s31_${i % 100}", a22: i + 32, a23: "s33_${i % 100}", a24: i + 34, a25: "s35_${i % 100}", a26: i + 36, a27: "s37_${i % 100}", a28: i + 38, a29: "s39_${i % 100}", a30: i + 40, a31: "s41_${i % 100}"}
+}
+
+func enc(v R) string {
+    mut o := builder.Builder[byte]{}
+    builder.Push(mut o, '{')
+    json.PutKey(mut o, "a0", true)
+    json.PutInt(mut o, v.a0)
+    json.PutKey(mut o, "a1", false)
+    json.PutString(mut o, v.a1)
+    json.PutKey(mut o, "a2", false)
+    json.PutInt(mut o, v.a2)
+    json.PutKey(mut o, "a3", false)
+    json.PutString(mut o, v.a3)
+    json.PutKey(mut o, "a4", false)
+    json.PutInt(mut o, v.a4)
+    json.PutKey(mut o, "a5", false)
+    json.PutString(mut o, v.a5)
+    json.PutKey(mut o, "a6", false)
+    json.PutInt(mut o, v.a6)
+    json.PutKey(mut o, "a7", false)
+    json.PutString(mut o, v.a7)
+    json.PutKey(mut o, "a8", false)
+    json.PutInt(mut o, v.a8)
+    json.PutKey(mut o, "a9", false)
+    json.PutString(mut o, v.a9)
+    json.PutKey(mut o, "a10", false)
+    json.PutInt(mut o, v.a10)
+    json.PutKey(mut o, "a11", false)
+    json.PutString(mut o, v.a11)
+    json.PutKey(mut o, "a12", false)
+    json.PutInt(mut o, v.a12)
+    json.PutKey(mut o, "a13", false)
+    json.PutString(mut o, v.a13)
+    json.PutKey(mut o, "a14", false)
+    json.PutInt(mut o, v.a14)
+    json.PutKey(mut o, "a15", false)
+    json.PutString(mut o, v.a15)
+    json.PutKey(mut o, "a16", false)
+    json.PutInt(mut o, v.a16)
+    json.PutKey(mut o, "a17", false)
+    json.PutString(mut o, v.a17)
+    json.PutKey(mut o, "a18", false)
+    json.PutInt(mut o, v.a18)
+    json.PutKey(mut o, "a19", false)
+    json.PutString(mut o, v.a19)
+    json.PutKey(mut o, "a20", false)
+    json.PutInt(mut o, v.a20)
+    json.PutKey(mut o, "a21", false)
+    json.PutString(mut o, v.a21)
+    json.PutKey(mut o, "a22", false)
+    json.PutInt(mut o, v.a22)
+    json.PutKey(mut o, "a23", false)
+    json.PutString(mut o, v.a23)
+    json.PutKey(mut o, "a24", false)
+    json.PutInt(mut o, v.a24)
+    json.PutKey(mut o, "a25", false)
+    json.PutString(mut o, v.a25)
+    json.PutKey(mut o, "a26", false)
+    json.PutInt(mut o, v.a26)
+    json.PutKey(mut o, "a27", false)
+    json.PutString(mut o, v.a27)
+    json.PutKey(mut o, "a28", false)
+    json.PutInt(mut o, v.a28)
+    json.PutKey(mut o, "a29", false)
+    json.PutString(mut o, v.a29)
+    json.PutKey(mut o, "a30", false)
+    json.PutInt(mut o, v.a30)
+    json.PutKey(mut o, "a31", false)
+    json.PutString(mut o, v.a31)
+    builder.Push(mut o, '}')
+    return json.Done(mut o)
+}
+
+func main() {
+    println(enc(mk(7)))
+    mut total := 0
+    for i <- iter.Range(0, 200000) {
+        total += len(bytes(enc(mk(i))))
+    }
+    println(total)
+}

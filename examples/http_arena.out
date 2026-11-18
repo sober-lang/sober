@@ -3,6 +3,7 @@ Content-Type: text/plain
 Cache-Control: private
 Content-Length: 2
 Connection: close
+Date: Sun, 06 Nov 1994 08:49:37 GMT
 
 55
 --
@@ -11,6 +12,7 @@ Content-Type: text/plain
 Cache-Control: private
 Content-Length: 2
 Connection: close
+Date: Sun, 06 Nov 1994 08:49:37 GMT
 
 75
 --
@@ -19,6 +21,7 @@ Content-Type: text/plain
 Cache-Control: private
 Content-Length: 2
 Connection: close
+Date: Sun, 06 Nov 1994 08:49:37 GMT
 
 10
 --
@@ -27,6 +30,7 @@ Content-Type: text/plain
 Cache-Control: private
 Content-Length: 3
 Connection: close
+Date: Sun, 06 Nov 1994 08:49:37 GMT
 
 123
 --
@@ -36,12 +40,14 @@ HTTP/1.1 200 OK
 Content-Type: text/plain
 Cache-Control: private
 Content-Length: 1
+Date: Sun, 06 Nov 1994 08:49:37 GMT
 
 2HTTP/1.1 200 OK
 Content-Type: text/plain
 Cache-Control: private
 Content-Length: 2
 Connection: close
+Date: Sun, 06 Nov 1994 08:49:37 GMT
 
 
 --
@@ -49,6 +55,7 @@ HTTP/1.1 400 Bad Request
 Cache-Control: private
 Content-Length: 0
 Connection: close
+Date: Sun, 06 Nov 1994 08:49:37 GMT
 
 
 --
@@ -56,6 +63,7 @@ HTTP/1.1 505 HTTP Version Not Supported
 Cache-Control: private
 Content-Length: 0
 Connection: close
+Date: Sun, 06 Nov 1994 08:49:37 GMT
 
 
 --
@@ -63,6 +71,7 @@ HTTP/1.1 431 Request Header Fields Too Large
 Cache-Control: private
 Content-Length: 0
 Connection: close
+Date: Sun, 06 Nov 1994 08:49:37 GMT
 
 
 --
@@ -71,6 +80,7 @@ Content-Type: text/plain
 Cache-Control: private
 Content-Length: 2
 Connection: close
+Date: Sun, 06 Nov 1994 08:49:37 GMT
 
 30
 --
@@ -78,5 +88,6 @@ HTTP/1.1 404 Not Found
 Cache-Control: private
 Content-Length: 0
 Connection: close
+Date: Sun, 06 Nov 1994 08:49:37 GMT
 
 

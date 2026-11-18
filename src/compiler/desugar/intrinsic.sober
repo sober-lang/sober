@@ -88,7 +88,7 @@ func ParRtUse(st mut S, fi int) bool {
         return false
     }
     n := fnName(mut st, fi)
-    return strIs(mut st, n, "NewPool") || strIs(mut st, n, "Ledger") || strIs(mut st, n, "MarkFailed")
+    return strIs(mut st, n, "NewPool") || strIs(mut st, n, "Ledger") || strIs(mut st, n, "MarkFailed") || strIs(mut st, n, "Fixed")
 }
 
 // std/testing/cellの呼び出し点の変換（language.md 41 節「状態を貯めるfake」— 配置先はrtの表・値は梱包とコピー。総称のDefにしない）

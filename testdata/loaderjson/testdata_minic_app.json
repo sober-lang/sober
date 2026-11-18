@@ -291,6 +291,22 @@
           ]
         },
         {
+          "name": "ReadAt",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "byte",
+            "errOf",
+            "freeze",
+            "len",
+            "sysAddr",
+            "sysCall",
+            "sysDeadline"
+          ]
+        },
+        {
           "name": "chunksFrom",
           "expands": true,
           "mut_def": false,

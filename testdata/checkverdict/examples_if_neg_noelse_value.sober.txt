@@ -1,3 +1,4 @@
-sober: type error at examples/if_neg_noelse_value.sober:7:5
+sober: type error at examples/if_neg_noelse_value.sober:7:12
+  the value of the body does not have the result type of f
 {"errors":[{"msg":"def error"}],"ok":false}
 exit=1

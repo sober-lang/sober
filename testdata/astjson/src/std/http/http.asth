@@ -1,0 +1,23 @@
+@@full	29be6b4a97fa0bb6	509	8918
+@head	6c9189114ad45e38	0	31
+const BadRequest	0376d0a361169dc8	3	117
+const ContentTooLarge	de0f4b9d5bb0defa	3	122
+const Created	69d1c903d29692a3	3	114
+const Forbidden	22ca573d107584ec	3	116
+const Found	ac010258bfdc7c88	3	112
+const HTTPVersionNotSupported	ef23691ae21ba720	3	130
+const InternalServerError	81875da9b94e45d2	3	126
+const MethodNotAllowed	53502199f6a18df6	3	123
+const MovedPermanently	54271c42e2b4848f	3	123
+const NoContent	41192a1b184799ce	3	116
+const NotFound	a87e7c4f71123665	3	115
+const NotImplemented	7b2b1cb58fb79525	3	121
+const NotModified	16e167b859e67946	3	118
+const OK	568789806ae6c6d9	3	109
+const PreconditionFailed	e37c1c4fd86a3e89	3	125
+const RequestHeaderFieldsTooLarge	d44e65734fa0036a	3	134
+const ServiceUnavailable	420ac341f68cefa4	3	125
+const Unauthorized	5d3bdf4df9c43778	3	119
+type BadHeader	b9882d2d8b4d5053	2	121
+type Field	28247f4ec71b2d1d	3	171
+type StatusCode	7c8bc54ad66c5cc0	2	94

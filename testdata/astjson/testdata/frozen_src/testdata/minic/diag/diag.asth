@@ -1,0 +1,12 @@
+@@full	1f9d2f4afcd3c397	1163	30760
+@head	16c9c86e517bd530	0	72
+func LineCol	089802352ad2678d	46	1608
+func Pos	b811903b23ca1c70	24	1249
+func Render	496f054e44bab9f6	20	826
+func Why	50c1940dec352a88	25	1380
+func wantName	1a06d53473eaedeb	17	683
+type DivByZero	b1410f08c93842d5	2	117
+type Expected	33165c6ad5e8aad2	3	165
+type Unbalanced	209b83003a9bef01	2	118
+type UnexpectedChar	df87540c6b499b30	2	122
+type UnexpectedEnd	f2edbc7360c7aa3c	2	121

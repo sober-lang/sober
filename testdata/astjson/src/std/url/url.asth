@@ -1,0 +1,11 @@
+@@full	c095c502dea1d6ec	3073	102410
+@head	d80af0b834f2841d	0	143
+func Escape	a44a7ded94f5b922	80	2650
+func FormatQuery	43003a55dd91cff4	76	2535
+func ParseQuery	e49ac05e71e7cf43	132	4493
+func Unescape	d57464cd83f3bd7b	30	1085
+func nib	1a7394a0b8c3307f	43	1366
+func unescape	4ad5be4075f3992f	112	3652
+func unreserved	c548de35867cab0f	42	1394
+type Bad	c46bc68f4fa91a27	1	64
+type Pair	d3f32f7052f80af4	3	169

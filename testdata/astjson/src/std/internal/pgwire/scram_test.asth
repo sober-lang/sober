@@ -1,0 +1,15 @@
+@@full	f486e0ac66bffb10	4287	120466
+@head	5cf03cc80888aed6	0	297
+const scramVectors	6085ff3c477fd765	3	142
+func TestScramBadServerFinal	88ea4efbd3a9b622	132	4442
+func TestScramBadServerFirst	e99aeb0efa2146f8	69	2722
+func TestScramMechanismChoice	c79cd7955fefd35f	89	3049
+func TestScramVectors	1709b09836b1cfcc	92	3191
+func errName	37eae3d0133da2e3	16	759
+func rep	ef9746934bda2b94	29	1046
+func runCase	89671b2a8ade0987	127	4331
+func testContinueBad	8ee60a1e0912cd54	36	1423
+func testNoMech	27b619db984c7f8b	29	1155
+func unb64	ea907c0946388c3d	10	453
+func unhexs	dc4915c52bca6079	10	450
+func vec	7c444cc9e96b92a8	68	2421

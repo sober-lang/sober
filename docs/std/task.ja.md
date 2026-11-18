@@ -260,6 +260,15 @@ type PoolLimit panic
 
 プールのノードの表が尽きた（NewPool を POOL\_MAX 回より多く呼んだ）
 
+## Fixed
+
+```sober
+@effects(nondet)
+func Fixed() int
+```
+
+taskの固定費（バイト）: 入場でtaskごとに宣言や見積もりへ足す量。チャンクの頭のページとスタックの1ページで、ランタイムの配置から決まる。プールの天井を「入れたいtaskの数 × 1本の宣言」で決めるときは、宣言にこの値を足して掛ける（net.Serveの天井 = conns × (budget + Fixed())）
+
 ## MarkFailed
 
 ```sober
@@ -291,6 +300,11 @@ type PoolView struct {
     shed int
     fail int
     died int
+    timeout int
+    evicted int
+    conns int
+    cut int
+    borrowed int
 }
 ```
 
@@ -300,6 +314,11 @@ type PoolView struct {
 
 - `fail` — MarkFailed で記帳した失敗の数（net.Serve — handler が error を返した接続）
 - `died` — このプールで入場した task の死の数（net.Serve — handler が死んだ接続）
+- `timeout` — このプールで入場したtaskのうち、Serveの期限で待ちを切られた数（net.Serveでは、相手が送り終えない・受け終えない接続。taskごとに1回。handlerがio.Timeoutを返せばfailにも数えられる）
+- `evicted` — このプールで入場したtaskのうち、入場を待つ接続があるときに枠を取り戻すために切られた数（net.Serve — 前の走査から受けていない・受けの遅い接続から順に。timeoutには数えない。handlerがio.Timeoutを返せばfailにも数えられる）
+- `conns` — taskの数の天井（0 = 無し）。net.Serve の節は conns: を書いたときだけ持つ（入場はバイトの天井で決まる）。parent が -1 の行は Serve の全部の親で、天井は無い（0）
+- `cut` — このプールで入場したtaskのうち、予約を越えて伸びようとしてプールか根の天井を越え、死んだ数（RegionExceeded{cause: budget}。diedの内数）
+- `borrowed` — このプールとその下の節で入場したtaskが、今、予約を越えて借りている量の和（used・tasks と同じく下の節を含む。全部の行を足すと親の分が重なる）（バイト — usedの外。天井が数えるのは used + borrowed）
 
 ## DomainView
 
@@ -332,6 +351,8 @@ type LedgerView struct {
     inline int
     over int
     declOver int
+    borrowOver int
+    borrowOverScope int
     shed int
     waits int
     maxWait int
@@ -352,6 +373,8 @@ type LedgerView struct {
 
 フィールド:
 
+- `borrowOver` — 計上済みの上限が入場の量を越えて節から借りたとき、プールの節か根の天井を越えて死んだtaskの数の累計（RegionExceeded{cause: budget} — [language.md 11 節](../language.md)「予算と admission」）
+- `borrowOverScope` — 同じく、scopeのbudget:の節の天井だけを越えたtaskの数の累計（記帳だけ — 死なない）
 - `waits` — wait の scope で入場を待った回数（[language.md 11 節](../language.md)「wait」）
 - `maxWait` — 走れるようになってから走るまでの待ちの最大（ns・全ワーカー。読むと0に戻る。実行待ちの列はFIFOなので、飽和した閉ループでは列の1周の時間の程度）
 - `backlog` — 今の未着手の子の数（全ワーカーの列の和 — ワーカーあたり 255 まで。[language.md 11 節](../language.md)「未着手の子の上限」）
@@ -371,7 +394,7 @@ type LedgerView struct {
 func Ledger() LedgerView
 ```
 
-台帳の今の値（ioのエフェクト — 読んだ値は時刻に依る: 時計と同じ扱い）
+台帳の今の値（nondetのエフェクト — 読んだ値はスケジュールと時刻に依る）
 
 ## SpawnIn
 
@@ -420,42 +443,6 @@ func Lease[U](lp Local, body func() U) U
 ```
 
 lpの今のワーカーのストレージをウィンドウbodyに貸す: `z := task.Lease(gzw, (w mut flate.Work) => flate.EncodeWith(mut w, b, 6))`。意味は「ウィンドウのたびに新しい値」— `{ mut w := T{}; 整え(mut w); body(mut w) }` と観測上同じ（スカラーは0・Scratchは全部0・容量はNewLocalの整えのまま）。ストレージが使用中（ウィンドウの中で譲ったtaskが持っている）なら新しい割り当てに倒れる（遅いだけ）。呼び出し点はloaderが変換する
-
-## LocalNew
-
-```sober
-@effects()
-func LocalNew(fp int, caps []int) Local
-```
-
-task.NewLocal / task.Leaseの変換先（loaderが組む — 利用者の直の呼び出しはloaderが拒否）: Tの指紋fpとScratchのフィールドの容量の列capsからストレージを作る（ワーカーの数だけのエリアを今のregionに先取り — 全部0）
-
-## LeaseTake
-
-```sober
-@effects(panic)
-func LeaseTake(lp Local, fp int) int
-```
-
-task.NewLocal / task.Leaseの変換先（loaderが組む — 利用者の直の呼び出しはloaderが拒否）: Tの指紋fpを照合し、今のワーカーのエリアの位置を返す（使用中なら −1 = 倒れ）
-
-## LeaseGive
-
-```sober
-@effects()
-func LeaseGive(lp Local, at int)
-```
-
-task.NewLocal / task.Leaseの変換先（loaderが組む — 利用者の直の呼び出しはloaderが拒否）: LeaseTakeで取ったエリアatを返す（−1なら何もしない）
-
-## LeaseBlock
-
-```sober
-@effects()
-func LeaseBlock(lp Local) []int
-```
-
-task.NewLocal / task.Leaseの変換先（loaderが組む — 利用者の直の呼び出しはloaderが拒否）: ストレージの列（pool.LeaseAttachへ渡す）
 
 ## Domain
 

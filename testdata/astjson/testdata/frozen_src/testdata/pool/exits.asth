@@ -1,0 +1,9 @@
+@@full	d046fcc93b0ba72b	1081	26157
+@head	cc4ba014a3200992	0	63
+func check	9ba5236e64e7e431	16	592
+func early	56fc413a74dac72a	26	992
+func loop	44cb4cfddff47d78	44	1536
+func main	bb88fdc3cf6bff5c	49	1574
+func prop	1414cded4c300f5d	29	1078
+type Bad	aca5a6c08e93e671	2	110
+type Buf	2288410e5bdeaee5	2	110

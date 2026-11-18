@@ -14,7 +14,7 @@
 # 計測ツール = callgrind（W1・SOBER_IO=2〔epollのパス — ringはcallgrindで測れない〕・SOBER_HASH_SEED=0）。バッチ20と220（× 16リクエスト）の2本の差 ÷ 3,200 =
 # 起動・接続・終了を除いたリクエスト1件の命令。同じELFの揺れ = ireq ±0.8・hot64 0。perf statのinstructions:uは揺れ（±数命令/リクエスト — 起動と終了が混ざる）と
 # 権限（perf_event_paranoid）が要り、足跡（番地ごとの回数）も取れない。
-# valgrindはVALGRIND → PATH → /nix/storeの順に探す。無ければSKIP（緑 — GHA・利用者の実行環境）。題材の足し方 = scripts/reqinst.tsの冒頭
+# valgrindはVALGRIND → PATH → /nix/storeの順に探す。valgrindかCPUの数が足りなければFAIL（SOBER_GATES_ALLOW_SKIPにvalgrind・cpusを書いたときだけSKIP。gatelib.shのcant）。題材の足し方 = scripts/reqinst.tsの冒頭
 set -uo pipefail
 export SOBER_HASH_SEED=0
 cd "$(dirname "$0")/.."
@@ -25,17 +25,16 @@ S2=${STAGE2:-out/stage2/sober2}
 case "$S2" in /*) ;; *) S2=$R/$S2 ;; esac
 mut=0
 [ "${1:-}" = --mut ] && mut=1
-VG=${VALGRIND:-$(command -v valgrind || ls -d /nix/store/*-valgrind-[0-9]*/bin/valgrind 2> /dev/null | sort -V | tail -n 1)}
-if [ -z "$VG" ] || ! "$VG" --version > /dev/null 2>&1; then
-    echo "SKIP reqinst — valgrind が無い（VALGRIND で valgrind の実行ファイルを指す）: 要求 1 件の命令数と足跡は照合していない"
-    exit 0
-fi
-# 客とサーバを別のCPUに1つずつ固定する（affinityの最後の2つ・asyncdbの代役は最後から3つ目 — 3つ無ければasyncdbだけSKIP）— 固定しないと1バッチあたりの空読みの周回が客との競り合いで変わり ±2.5%揺れる
+source scripts/gatelib.sh
+need_valgrind reqinst "the per-request instruction counts"; vc=$?
+[ $vc = 2 ] && exit 1
+[ $vc = 1 ] && exit 0
+# 客とサーバを別のCPUに1つずつ固定する（affinityの最後の2つ・asyncdbの代役は最後から3つ目。3つ無ければasyncdbはcpusの条件）。固定しないと、1バッチあたりの空読みの周回が客との競り合いで変わり、±2.5%揺れる
 # （同じCPUに置く形は空きCPUでは決定的〔−97命令/リクエストの別の値〕だが、他のプロセスとCPUを分け合うと揺れる）
 mapfile -t cpus < <(taskset -pc $$ | sed 's/.*: //' | tr ',' '\n' | awk -F- '{ if (NF == 2) for (i = $1; i <= $2; i++) print i; else print $1 }')
 if [ "${#cpus[@]}" -lt 2 ]; then
-    echo "SKIP reqinst — 使える CPU が 2 つ未満（客とサーバを別の CPU に固定する計器）: 要求 1 件の命令数と足跡は照合していない"
-    exit 0
+    cant reqinst cpus "the per-request instruction counts (fewer than 2 CPUs to pin the client and the server apart)" && exit 0
+    exit 1
 fi
 CS=${cpus[${#cpus[@]} - 1]}
 CC=${cpus[${#cpus[@]} - 2]}
@@ -115,7 +114,7 @@ run_all() {
         s=$(date +%s)
         if [ "$subj" = asyncdb ]; then
             if [ -z "$PGP" ]; then
-                echo "SKIP srv/asyncdb — 使える CPU が 3 つ未満（客・サーバ・代役の PG を別の CPU に固定する）: async-db の要求 1 件は照合していない"
+                cant reqinst cpus "srv/asyncdb (fewer than 3 CPUs to pin the client, the server and the PG stand-in apart)" || fail=$((fail + 1))
                 continue
             fi
             # プールは 10 本（DATABASE_MAX_CONN 16 − 6）: 既定の 250 本は callgrind の下で起動時に RegionExceeded（slot_capacity）になる。測るのは 1 接続なので本数は数えに効かない
@@ -152,7 +151,8 @@ if [ $mut = 1 ]; then
     if [ $fail -gt 0 ]; then echo "reqinst --mut: caught dispatch — $fail / $n lines red"; else echo "reqinst --mut: FAIL — 変異 dispatch（Dispatch に要求ごとの写し）が鳴らない"; bad=1; fi
     # pgrow: rowOf（DataRowの受け）で列の数をmutの局所にコピーして読み戻し、分岐する（行ごとに数命令 — asyncdbの20行で約 +100命令/リクエスト）
     if [ -z "$PGP" ]; then
-        echo "SKIP reqinst --mut pgrow — asyncdb を測れない（CPU が 3 つ未満か ratchet に srv/asyncdb が無い）"
+        if [ $has_db = 0 ]; then echo "reqinst --mut: FAIL: 変異pgrowを当てるsrv/asyncdbの行がbench/ratchet.txtに無い"; bad=1
+        else cant reqinst cpus "mutant pgrow (fewer than 3 CPUs)" || bad=1; fi
     else
         mkmut pgrow pg/pg.sober '/^func rowOf(body \[\]byte, cols \[\]int, fmts \[\]int) (Row, error?) {$/,/^}$/ s|^    nc := internal.pgwire.RowLen(body)$|&\n    // reqinst mutant\n    mut mutw := nc\n    mutw = mutw * 3 + len(cols)\n    if mutw == 9999991 {\n        return emptyRow(), internal.pgwire.Protocol{}\n    }|' || exit 1
         fail=0; n=0

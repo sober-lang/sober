@@ -1,0 +1,8 @@
+@@full	89e4bb56938026d9	836	23133
+@head	0bae42038376bd8a	0	105
+func fast	0fe3ed8f2080cee5	7	316
+func main	caa684f86e50e394	41	1424
+func report	d6de0f284315c221	31	1248
+func slow	b3ac161776fd7a77	18	646
+func spin	1099d5bbc17728c3	20	754
+type Bad	a53642bb7d1a19de	2	112

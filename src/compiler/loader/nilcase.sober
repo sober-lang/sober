@@ -24,26 +24,32 @@ import "diag"
 func nilCasesAll(ts []ast.Tree) ([]ast.Tree, error?) {
     mut out := mut []ast.Tree{}
     for i <- iter.Range(0, len(ts)) {
-        t := ts[i]
-        for n <- iter.Range(0, len(t.nodes)) {
-            x := t.nodes[n]
-            if x.kind == ast.ESwitch {
-                kind, tok := nilCaseBad(t, x)
-                if kind != 0 {
-                    return []ast.Tree{}, diag.NilCase{at: diag.Pos{file: i, tok: tok}, kind: kind}
-                }
-                if mvApplies(t, x) {
-                    mk, mt := mvBad(t, x)
-                    if mk != 0 {
-                        return []ast.Tree{}, diag.NilCase{at: diag.Pos{file: i, tok: mt}, kind: mk}
-                    }
+        t := nilCaseFile(ts[i], i)?
+        out = append(out, t)
+    }
+    return freeze(out), nil
+}
+
+// ファイルf（木t）の検査と変換（1ファイル分 — ftpar.soberの子も呼ぶ）
+@errors(diag.NilCase)
+func nilCaseFile(t ast.Tree, f int) (ast.Tree, error?) {
+    for n <- iter.Range(0, len(t.nodes)) {
+        x := t.nodes[n]
+        if x.kind == ast.ESwitch {
+            kind, tok := nilCaseBad(t, x)
+            if kind != 0 {
+                return t, diag.NilCase{at: diag.Pos{file: f, tok: tok}, kind: kind}
+            }
+            if mvApplies(t, x) {
+                mk, mt := mvBad(t, x)
+                if mk != 0 {
+                    return t, diag.NilCase{at: diag.Pos{file: f, tok: mt}, kind: mk}
                 }
             }
         }
-        // 単値の `case nil:`（このファイル）→ 2位置の `case P, nil:`（mvcase.sober）の順に変換する
-        out = append(out, mvCases(nilCases(t)))
     }
-    return freeze(out), nil
+    // 単値の `case nil:`（このファイル）→ 2位置の `case P, nil:`（mvcase.sober）の順に変換する
+    return mvCases(nilCases(t)), nil
 }
 
 // switch節xがパターン2つ以上の分岐を持つか（多値のsubject — `case v, nil:`（13 節）。nilは単値のnilの分岐ではない）

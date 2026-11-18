@@ -1,0 +1,6 @@
+head: 16 bytes, same as ReadFile: true
+middle: 100 bytes, same as ReadFile: true
+past the end: asked 64, got 10 bytes
+after the end: 0 bytes
+ReadAll after the ReadAt calls: 75810 of 75810 bytes
+negative offset: errno 22

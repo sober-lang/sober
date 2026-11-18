@@ -1,0 +1,6 @@
+@@full	dbae5a1ae6e6a4a1	310	8151
+@head	f8802cba5eefdec2	0	31
+func main	204ccac9fbda5740	23	941
+func parse	85467b79ba22963d	15	553
+type Empty	33cfd2a1cbeaa695	1	66
+type TooLong	f5828ac210475c9f	2	113

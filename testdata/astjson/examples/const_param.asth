@@ -1,0 +1,8 @@
+@@full	44d6cdf521dd97b1	451	10660
+@head	7aaa9b710c68c96c	0	72
+const ByName	d89a1fba071e586f	1	83
+const ByPrice	ddd7f194781bcf8f	1	85
+func describe	1a86958937da514a	7	388
+func main	1a9ce8f4ec6a595d	19	635
+func order	2c622f8acd869877	17	689
+func twice	640f258c647ab799	16	596

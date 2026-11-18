@@ -1,0 +1,37 @@
+@@full	7171b13151e085e7	15390	488361
+@head	aa59370541bd67ee	0	272
+const leftMax	d8c50ea2478c9a72	1	48
+const width	6e67ca04e54c3d3f	1	46
+func Format	1b3143feef176b45	188	7221
+func Spec	fb2a8855e88df2b9	132	4124
+func Usage	7016cafe4a4e62f8	29	1073
+func appUsage	f06f10366c3c4c5b	215	7229
+func argAt	050cf651eef8b1df	19	710
+func argOr	698a69d561d6ec1e	13	532
+func blank	ec40c8f0823d1671	8	387
+func byKey	c9a58ef845e48c0e	41	1477
+func choiceText	474fd419781cd8e2	72	2470
+func cmdUsage	df8d7ed6ba18feb8	182	6091
+func defMark	71e5fdd4b999b6fe	25	905
+func devChoices	26ebb6764c51fd4d	37	1288
+func envRows	9dc3dc1e7a63df8f	34	1360
+func flagHead	c5d4c27605b94078	106	3530
+func flagLeft	42789e4f12a0b646	36	1316
+func flagRows	70a333b33dbea242	297	10266
+func hidden	eb18c0fbb9d3fea0	36	1217
+func less	440b6ddfa53721e5	53	1759
+func nearLine	fe9f8b108586b6d2	16	599
+func para	4fa8b067ed911364	15	601
+func posLeft	c2b50b8b9fc3bc90	21	770
+func posSpell	1864da5f31452ddc	40	1433
+func progOf	af50c9c2f1390632	19	732
+func putCmd	e3421c6c58e3688d	599	18438
+func putEnv	92f28385f32488f3	97	3037
+func putOptInt	14a5201d5c1902e9	30	1068
+func putOptStr	09239542cb1c0003	30	1074
+func putStrs	28948ba0eaf6c7ee	45	1513
+func quote	6f866e66e9267abe	12	460
+func request	7bbae4d9c9cb7d96	39	1421
+func section	5dbb44949b2f19f1	117	3857
+func wrap	c137e23e4bd2240e	105	3611
+type row	8193c5d36c8841ec	4	219

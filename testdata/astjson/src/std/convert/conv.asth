@@ -1,0 +1,17 @@
+@@full	826581e7744d976d	5612	169788
+@head	fcf070dfcb68ece5	7	643
+func FormatBool	d92cf2051f95d36f	10	406
+func FormatFixed	0ca4f410fe2ab30e	13	582
+func FormatFloat	d64a963edbdfd18f	11	484
+func FormatInt	193d38cff6bc6bb5	28	974
+func ParseBool	7524ec35291b95c7	63	2077
+func ParseFloat	e5736120cfb0a6b7	54	2053
+func ParseInt	0d2d7e67186729ff	177	5689
+func decWord	217a1cbf3c5f04e9	105	3438
+func fastFloat	6c4734fb998041be	367	11534
+func formatUint	a2308a25725bc5c4	121	3749
+type BadBool	054a4e4237727ca5	1	68
+type BadFloat	c146c515566dee3f	1	69
+type BadInt	0e5ac504465d1513	1	67
+type FloatOutOfRange	505db7a760f9ada3	1	76
+type IntOutOfRange	c977f88775ba467b	1	74

@@ -68,20 +68,20 @@ func setScope(st mut St, s int, names int, defers int) {
 
 // Program p の IR テキスト（Zig 版 `sober build --emit=ir` と同じバイト列 — スロットの宣言と番号を除く）。拒否なら diag のラベル
 // （差分オラクルは拒否の有無だけを比べる）
-@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch)
+@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.KindArg, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch, diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.FieldType, diag.FnCap)
 func Ir(p loader.Program) ([]byte, error?) {
     return irText(p, false)
 }
 
 // 設計整合パス（opt.sober）を掛けた IR テキスト（`sober build --passes`）
-@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch)
+@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.KindArg, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch, diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.FieldType, diag.FnCap)
 func IrPasses(p loader.Program) ([]byte, error?) {
     return irText(p, true)
 }
 
 // 開発用の計装つき IR テキスト（`sober build --emit=ir --trace-errors` — error 網羅 analyzer の動的オラクル）:
 // error を返して出る関数の出口ごとに `#errtrace <関数の表の添字> <ラベルのタグ>` を標準出力へ（traceErr）
-@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch)
+@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.KindArg, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch, diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.FieldType, diag.FnCap)
 func IrTraceErrors(p loader.Program, passes bool) ([]byte, error?) {
     mut k := knob(KIr, passes, passes, false, false, 0, VfyLast)
     k.traceErrs = true
@@ -90,7 +90,7 @@ func IrTraceErrors(p loader.Program, passes bool) ([]byte, error?) {
 
 // IrTraceErrors と同じ計装の実行ファイル（`sober build --emit=elf --trace-errors` — errtrace の自己適用。
 // stage1のIRの語彙を越えるcompiler/ をstage1を通さずにビルドする）
-@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch)
+@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.KindArg, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch, diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.FieldType, diag.FnCap)
 func ElfTraceErrors(p loader.Program, passes bool) ([]byte, error?) {
     mut k := knob(KElf, passes, true, false, false, 0, VfyLast)
     k.traceErrs = true
@@ -100,7 +100,7 @@ func ElfTraceErrors(p loader.Program, passes bool) ([]byte, error?) {
 // 関数のエフェクトの動的オラクルの計装つき実行ファイル（`sober build --emit=elf --trace-effects` — scripts/efftrace.sh）:
 // 関数の入口と出口に `#effin <関数の表の添字>` / `#effout <添字>`・葉（エフェクトの鍵の @intrinsic・println・panic・std/taskの待つインターフェース）に `#effleaf <ビット>` を標準出力へ
 // （traceEff — 持ち上げたラムダ・インスタンス〔fn = -1〕と展開した関数は入口 / 出口を出さない: 葉は呼び手の枠に数える）
-@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch)
+@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.KindArg, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch, diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.FieldType, diag.FnCap)
 func ElfTraceEffects(p loader.Program, passes bool) ([]byte, error?) {
     mut k := knob(KElf, passes, true, false, false, 0, VfyLast)
     k.traceEffs = true
@@ -123,32 +123,32 @@ func irBody(st mut St, passes bool) ([]byte, error?) {
 }
 
 // Program p の LLVM テキスト（Zig 版 `sober build --emit=ll` と同じバイト列 — rtlower → .ll の印字。IR パスは掛けない）
-@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch)
+@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.KindArg, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch, diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.FieldType, diag.FnCap)
 func Ll(p loader.Program) ([]byte, error?) {
     return llText(p, false)
 }
 
 // 設計整合パスを掛けてから rtlower → .ll（`sober build --passes`）
-@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch)
+@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.KindArg, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch, diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.FieldType, diag.FnCap)
 func LlPasses(p loader.Program) ([]byte, error?) {
     return llText(p, true)
 }
 
 // Program p の実行ファイル（mem2reg → rtlower → 正規バックエンド x86.sober。設計整合パスは掛けない —
 // stage1 の既定の `build x.ir`（IR パス = mem2reg）とバイト一致: elfeq）
-@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch)
+@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.KindArg, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch, diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.FieldType, diag.FnCap)
 func Elf(p loader.Program) ([]byte, error?) {
     return elfOut(p, false, true, false, false)
 }
 
 // 設計整合パスを掛けてから mem2reg → rtlower → 正規バックエンド（`sober build --emit=elf --passes` — bin/sober の既定の形）
-@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch)
+@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.KindArg, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch, diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.FieldType, diag.FnCap)
 func ElfPasses(p loader.Program) ([]byte, error?) {
     return elfOut(p, true, true, false, false)
 }
 
 // ElfPasses のバックエンドの関数の並列（x86.sober の xParEmit）を外した形（1 本の経路 — 照合用: SOBER_BUILD_PAR=0）
-@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch)
+@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.KindArg, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch, diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.FieldType, diag.FnCap)
 func ElfPassesSeq(p loader.Program, vmode int) ([]byte, error?) {
     mut k := knob(KElf, true, true, false, false, 0, vmode)
     k.xseq = true
@@ -157,7 +157,7 @@ func ElfPassesSeq(p loader.Program, vmode int) ([]byte, error?) {
 
 // ElfPassesのバッチ（optimizeSsa・展開の後のcfgClean〜cmpDup）の前ごとに全関数の本体を詰めて積み直す形
 // （move.soberの移し器の検査: SOBER_BUILD_PAR=roundtrip。ELF ≡ ElfPasses）
-@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch)
+@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.KindArg, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch, diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.FieldType, diag.FnCap)
 func ElfPassesRoundtrip(p loader.Program, vmode int) ([]byte, error?) {
     mut k := knob(KElf, true, true, false, false, 0, vmode)
     k.mvRound = true
@@ -165,7 +165,7 @@ func ElfPassesRoundtrip(p loader.Program, vmode int) ([]byte, error?) {
 }
 
 // ElfPassesからベクトル化（vec.sober）だけを外した形（`--no-vec` — 検査のvectorized ≟ scalar）
-@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch)
+@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.KindArg, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch, diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.FieldType, diag.FnCap)
 func ElfPassesNoVec(p loader.Program) ([]byte, error?) {
     mut k := knob(KElf, true, true, false, false, 0, VfyLast)
     k.noVec = true
@@ -173,7 +173,7 @@ func ElfPassesNoVec(p loader.Program) ([]byte, error?) {
 }
 
 // ElfPassesから戻り値へ流れる関数のregionの省略（C1 — rflow.sober）だけを外した形（`--no-rflow` — 検査の 省略 ≟ なし）
-@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch)
+@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.KindArg, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch, diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.FieldType, diag.FnCap)
 func ElfPassesNoRflow(p loader.Program) ([]byte, error?) {
     mut k := knob(KElf, true, true, false, false, 0, VfyLast)
     k.noRflow = true
@@ -181,7 +181,7 @@ func ElfPassesNoRflow(p loader.Program) ([]byte, error?) {
 }
 
 // ElfPassesから定数引数の特化（spec.sober）だけを外した形（`--no-spec` — 検査の 特化 ≟ なし）
-@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch)
+@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.KindArg, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch, diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.FieldType, diag.FnCap)
 func ElfPassesNoSpec(p loader.Program) ([]byte, error?) {
     mut k := knob(KElf, true, true, false, false, 0, VfyLast)
     k.noSpec = true
@@ -190,7 +190,7 @@ func ElfPassesNoSpec(p loader.Program) ([]byte, error?) {
 
 // ElfPassesを1本の経路でビルドし、UTF-8の境界の畳み（ubf.sober）が畳めた判定の数を関数ごとに `ubf <関数> <数>` でstdoutへ印字する
 // （`--ubf-stat` — 開発用のオプション。scripts/ubfstat.shが題材の畳めた数が0でないことを照合する — catchの脱糖の形が変わったときの黙った退行の検査）
-@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch)
+@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.KindArg, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch, diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.FieldType, diag.FnCap)
 func UbfStat(p loader.Program) ([]byte, error?) {
     mut k := knob(KElf, true, true, false, false, 0, VfyLast)
     k.xseq = true
@@ -200,7 +200,7 @@ func UbfStat(p loader.Program) ([]byte, error?) {
 
 // ElfPassesと同じ形の実行ファイル（1本の経路）をビルドし、関数ごとのフレームの内訳を `frame …` でstdoutへ印字する
 // （開発用のオプション `sober build --frame-stat` — x86.sober xFrameStat・scripts/framestat.sh）。mutant > 0ならミュータントつき（検査の自己点検）
-@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch)
+@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.KindArg, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch, diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.FieldType, diag.FnCap)
 func FrameStat(p loader.Program, mutant int) ([]byte, error?) {
     mut k := knob(KElf, true, true, false, false, 0, VfyLast)
     k.xseq = true
@@ -211,7 +211,7 @@ func FrameStat(p loader.Program, mutant int) ([]byte, error?) {
 
 // ElfPasses と同じ最適化の後（rtlower の手前）の IR から、関数ごとのメモリの上界を `mem …` で stdout へ印字する（出力は空）
 // （開発用のオプション `sober build --mem-report` — memrep.sober）
-@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch)
+@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.KindArg, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch, diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.FieldType, diag.FnCap)
 func MemReport(p loader.Program, dump bool) ([]byte, error?) {
     mut k := knob(KElf, true, true, false, false, 0, VfyLast)
     k.xseq = true
@@ -221,20 +221,20 @@ func MemReport(p loader.Program, dump bool) ([]byte, error?) {
 }
 
 // IR パスを何も掛けない実行ファイル（`--emit=elf --no-opt` — stage1 の `build x.ir --no-opt` とバイト一致）
-@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch)
+@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.KindArg, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch, diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.FieldType, diag.FnCap)
 func ElfRaw(p loader.Program) ([]byte, error?) {
     return elfOut(p, false, false, false, false)
 }
 
 // ElfPassesと同じ形でビルドした実行ファイルの関数の先頭番地の表（`sober build --emit=syms` — プロファイル用のインターフェース。x86.soberのxModule）
-@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch)
+@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.KindArg, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch, diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.FieldType, diag.FnCap)
 func ElfSyms(p loader.Program) ([]byte, error?) {
     return elfOut(p, true, true, true, false)
 }
 
 // ElfPassesと同じ形でビルドした実行ファイルの関数ごとの成果物のハッシュ（`sober build --emit=fnhash` — fnhashの検査。x86.soberのxFnHash:
 // 1行 `<安定な鍵> <ハッシュ>` — 機械語〔後埋めのフィールド = 0〕‖ 後埋めの列〔位置, 種類, 相手の安定な鍵〕。scripts/rebuildbench.shのstrayの判定が読む）
-@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch)
+@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.KindArg, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch, diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.FieldType, diag.FnCap)
 func ElfFnHash(p loader.Program) ([]byte, error?) {
     mut k := knob(KElf, true, true, false, false, 0, VfyLast)
     k.fnHash = true
@@ -243,7 +243,7 @@ func ElfFnHash(p loader.Program) ([]byte, error?) {
 
 // ElfPassesと同じ形で、後段の関数キャッシュの格納場所（世代のディレクトリdir — bcache.sober）を引いて書くbuild。
 // v = appがparseの前に読んだ格納場所の表（BcOpen — parseのキャッシュと同じ表）・ps = parseのキャッシュの読みの結果（外れの値を書きのバッチへ）
-@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch)
+@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.KindArg, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch, diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.FieldType, diag.FnCap)
 func ElfPassesCache(p loader.Program, dir string, v BcView, ps []loader.PcPut) ([]byte, error?) {
     mut k := knob(KElf, true, true, false, false, 0, VfyLast)
     k.bcDir = dir
@@ -253,7 +253,7 @@ func ElfPassesCache(p loader.Program, dir string, v BcView, ps []loader.PcPut) (
 
 // ElfPassesと同じ形でビルドしたときの関数ごとの後段のキャッシュの鍵（`sober build --emit=cachekeys` — ckey.sober:
 // 1 行 `<安定な鍵> a=<α の鍵> b=<β の鍵>`）
-@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch)
+@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.KindArg, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch, diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.FieldType, diag.FnCap)
 func ElfCacheKeys(p loader.Program) ([]byte, error?) {
     mut k := knob(KElf, true, true, false, false, 0, VfyLast)
     k.ckEmit = true
@@ -262,7 +262,7 @@ func ElfCacheKeys(p loader.Program) ([]byte, error?) {
 
 // コピーのバックエンド（`--backend=copy` — x86.soberの命令選択・配置をsrc/stage1のコピーのまま）でビルドした実行ファイル（passes / m2rはElfPasses / Elf / ElfRawと同じ組）。
 // stage1が同じIRテキストからビルドしたELFとのバイト一致（elfeq・stagesのcross）はこの形で見る（決定済みの両持ち）
-@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch)
+@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.KindArg, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch, diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.FieldType, diag.FnCap)
 func ElfCopy(p loader.Program, passes bool, m2r bool) ([]byte, error?) {
     return elfOut(p, passes, m2r, false, true)
 }
@@ -286,7 +286,7 @@ const VfyNone = 2
 
 // ElfPassesの計測と検証の形（`--stop-after=<段>` でフェーズstopの後に止めて空の出力・vmode = VfyEach〔SOBER_VERIFY=each〕/ VfyNone〔--no-verify〕・
 // noSpec / noRflow = `--no-spec` / `--no-rflow` — フェーズの区間の切り分けに効かせる）
-@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch)
+@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.KindArg, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch, diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.FieldType, diag.FnCap)
 func ElfStats(p loader.Program, stop int, vmode int, noSpec bool, noRflow bool) ([]byte, error?) {
     mut k := knob(KElf, true, true, false, false, stop, vmode)
     k.noSpec = noSpec
@@ -296,7 +296,7 @@ func ElfStats(p loader.Program, stop int, vmode int, noSpec bool, noRflow bool) 
 
 // ElfStatsの止めたフェーズのIRテキスト（`--stop-after=<段> --dump-ir` — rtlowerの後のフェーズ〔inline = cfgclean込み〕のIRを見る開発用のオプション。
 // rtlower の後の IR は stage1 の IR パーサの語彙を越えうる〔ベクトルの op〕ので照合には使わない）
-@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch)
+@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.KindArg, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch, diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.FieldType, diag.FnCap)
 func ElfStatsIr(p loader.Program, stop int, vmode int, noSpec bool, noRflow bool) ([]byte, error?) {
     mut k := knob(KElf, true, true, false, false, stop, vmode)
     k.dumpIr = true
@@ -307,7 +307,7 @@ func ElfStatsIr(p loader.Program, stop int, vmode int, noSpec bool, noRflow bool
 
 // 罠の単体の例（trap.sober の buildTrapProbe: 入口が main の代わりに trap.probe を呼ぶ）。ir = IR テキスト（lower 直後）・
 // でなければELF（passes = 既定の最適化の経路 / 掛けない経路 — optdiffの流儀で両方を検査が回す・vmode = 検証器の掛け方）。開発用（`sober build --trap-probe`）
-@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch)
+@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.KindArg, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch, diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.FieldType, diag.FnCap)
 func TrapProbe(p loader.Program, passes bool, ir bool, vmode int) ([]byte, error?) {
     mut k := knob(if ir { KTrapIr } else { KElf }, passes, passes, false, false, 0, vmode)
     k.trapProbe = true
@@ -315,20 +315,20 @@ func TrapProbe(p loader.Program, passes bool, ir bool, vmode int) ([]byte, error
 }
 
 // M:Nのrtのミュータントを入れたELF（schedfuzzの自己検査: 検査が割れを捕まえることの確認。開発用 `sober build --rt-mutant=N`）
-@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch)
+@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.KindArg, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch, diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.FieldType, diag.FnCap)
 func RtMutant(p loader.Program, n int, vmode int) ([]byte, error?) {
     return RtMutantLay(p, n, 0, false, vmode)
 }
 
 // RtMutantに配置のずらしSを足したELF（開発用 `sober build --layout=S` — 同じ形を複数の配置でビルドしてcyclesの分布を取る計測ツール）
-@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch)
+@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.KindArg, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch, diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.FieldType, diag.FnCap)
 func RtMutantLay(p loader.Program, n int, lay int, syms bool, vmode int) ([]byte, error?) {
     o := RtMutantPlace(p, n, lay, syms, vmode, PlaceOff())?
     return o.exe, nil
 }
 
 // RtMutantLayに配置の計測のオプション（place.sober）を足したELFと、保存する番地の表（pl.saveでなければ空）
-@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch)
+@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.KindArg, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch, diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.FieldType, diag.FnCap)
 func RtMutantPlace(p loader.Program, n int, lay int, syms bool, vmode int, pl Place) (Placed, error?) {
     mut k := knob(KElf, true, true, syms, false, 0, vmode)
     k.rtMut = n
@@ -630,6 +630,10 @@ func elfOutSt(st mut St, passes bool, m2r bool, syms bool, copy bool) ([]byte, e
         loader.Stage("inline")
         // 戻らない呼び出しの終端化（noret.sober。バッチの前に親で: 呼び先の本体が要る）。検証はcfgCleanの後（届かないブロックを外してから）
         noretModule(mut st)
+        // ミュータント107（開発用）: B2の前にIRを壊す（最後の検証がB2の子の中でも逐次と同じ1件で落ちることの検査 — scripts/selfpar.sh）
+        if st.rtMut == 107 {
+            vfyMutant(mut st)
+        }
         // 死んだ仮引数の除去と直列のブロックの併合（cfgclean.sober）
         if st.stopAt == 0 && lParBatch(mut st, true) {
             if st.bcv.on {
@@ -700,6 +704,7 @@ func elfOutSt(st mut St, passes bool, m2r bool, syms bool, copy bool) ([]byte, e
     }
     if st.callStat {
         callStatInsert(mut st)
+        st.vfyPreOn = false
         vfyModule(mut st, "callstat")
     }
     // 全展開した直線の長さの検査はフェーズごとの検証の最後のフェーズだけ（unroll.soberのurRunMsgが読む）
@@ -788,13 +793,13 @@ func llText(p loader.Program, passes bool) ([]byte, error?) {
 }
 
 // LlPasses に表層型検査器を影で足したもの（`sober build --passes --typer` — 費用の計測。出力は LlPasses と同じ）
-@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch)
+@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.KindArg, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch, diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.FieldType, diag.FnCap)
 func LlTyper(p loader.Program) ([]byte, error?) {
     return llTextY(p, true, 1)
 }
 
 // 表層型検査器の表と lower の式の型の突き合わせの報告（`sober build --typer-diff`）
-@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch)
+@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.KindArg, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch, diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.FieldType, diag.FnCap)
 func TyperDiff(p loader.Program) ([]int, error?) {
     mut k := knob(KTyper, false, false, false, false, 0, VfyLast)
     k.ymode = 2
@@ -822,9 +827,11 @@ func llBody(st mut St, passes bool) ([]byte, error?) {
 }
 
 // Program p を IR のモジュールへ下ろす（st はモジュールを持ったまま返る）。拒否なら diag のラベル
-func build(st mut St, p loader.Program) error? {
-    buildPre(mut st, p)?
+func build(st mut St, p0 loader.Program) error? {
+    buildPre(mut st, p0)?
     loader.Stage("buildpre")
+    p := typedKinds(mut st, p0)?
+    loader.Stage("kinds")
     // 規則順の鍵の境（buildPre までに作った記録は番地の順 — ruleord.sober）
     preF := int(st.ftail)
     preG := st.gtail
@@ -1091,6 +1098,7 @@ func programRt(st mut St) {
     buildChunkRt(mut st)
     buildNetRt(mut st)
     buildNetRing(mut st)
+    buildRdlRt(mut st)
     buildOrphRt(mut st)
     if st.taskUse {
         buildWorkerInit(mut st)
@@ -1410,7 +1418,7 @@ func relocFloor(st mut St, l int) int {
 // 代入の値がコピーしなくても行き先の深度以下にあると字面で分かるか（格納点のコピーの判定を省く）:
 // ①`x = append(x, …)`（xは mut slice の名前 — 自分のヘッダのregionで伸びる・要素はappendの格納点でコピーした）
 // ②string の連結・補間（右辺の最上段は行き先の深度で直に作る — forceDest。バイトは参照を持たない）
-// ③`x = sysAppendWord(x, …)`（std/binaryの組み込みappendword。①と同じく、xのヘッダのregionで拡張する）・`x = sysGrowNoZero(x, n)`（std/internal/jsonwの組み込みgrow_nozero。同じ）
+// ③`x = sysAppendWord(x, …)`（std/binaryの組み込みappendword。①と同じく、xのヘッダのregionで拡張する）・`x = sysGrowNoZero(x, n)`（std/internal/jsonwの組み込みgrow_nozero。同じ）・`x = sysAppendDate(x)`（std/http/serverの組み込みappend_date。同じ）
 // ④`st = domLoad(d)`（domainの状態の読み直し — 状態は記録のregion〔行き先より浅い〕に住み、鍵の下でその場で書く。コピーすると
 // domExitがコピーのヘッダを箱へ書き戻し、状態が呼び手のregion〔出口で回収〕に移る）
 func relocFree(st mut St, tgt desugar.NodeRef, v desugar.NodeRef, t int) bool {
@@ -1437,6 +1445,9 @@ func relocFree(st mut St, tgt desugar.NodeRef, v desugar.NodeRef, t int) bool {
             return samePlace(mut st, latN(mut st, args, 0), tgt)
         }
         if kindN(mut st, callee) == ast.EIdent && lenL(mut st, args) == 2 && desugar.SysKey(mut st.d, st.curPkg, sA(nodeOf(mut st, callee))) == loader.IGrowNoZero {
+            return samePlace(mut st, latN(mut st, args, 0), tgt)
+        }
+        if kindN(mut st, callee) == ast.EIdent && lenL(mut st, args) == 1 && desugar.SysKey(mut st.d, st.curPkg, sA(nodeOf(mut st, callee))) == loader.IAppendDate {
             return samePlace(mut st, latN(mut st, args, 0), tgt)
         }
     }

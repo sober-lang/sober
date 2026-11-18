@@ -1,8 +1,11 @@
 package checker
 
 // 生成物 — 手で直さない（lean/Extract が Lean の定義の方程式から作る。作り直し = scripts/extract.sh --regen・照合 = scripts/extract.sh --check）。
-// 元: lean/FeatherweightSober/TcStep.lean（typecheck の 1 フレームの遷移 tcStep — 定理 typecheck_eq_evalRule で typecheck と結ぶ）・設定 = lean/Extract/Config.lean。
-// 駆動部（tcRun）と読み口（ctxGet / actSub …）は手書き = check.sober
+// 元: lean/FeatherweightSober/TcStep.lean（typecheck の 1 フレームの遷移 tcStep — 定理 typecheck_eq_evalRule で typecheck と結ぶ）・Typing.lean（Expr.tvWf・Expr.raisedOk）・設定 = lean/Extract/Config.lean。
+// 駆動部（tcRun・exprTvWf・exprRaisedOk）と読み口（ctxGet / actSub …）は手書き = check.sober
+
+import "std/iter"
+import "std/table"
 
 // FS.FConvOp.dom（方程式 6 本）
 func dom(st mut S, a0 int) int {
@@ -209,42 +212,16 @@ func sCase2(st mut S, a0 int, a1 int, a2 int, a3 int, a4 int, a5 int) int {
 }
 
 // FS.kCall（方程式 2 本）
-func kCall(st mut S, a0 int, a1 int, a2 int, a3 int, a4 int) int {
+func kCall(st mut S, a0 int, a1 int, a2 int, a3 int, a4 int, a5 int) int {
     // FS.kCall.eq_1
-    if a0 >= 0 && a2 >= 0 && a4 >= 1 {
-        v_dfn := a0
-        v_x := a1
-        v_d_p := (a4 - 1)
-        return if ((((tsLen(mut st, v_x) == defTps(mut st, v_dfn)) && tyArgsOk(mut st, v_x)) && sub(mut st, a2, shiftR(mut st, v_d_p, defParam(mut st, v_dfn, v_x)))) && (a3 <= v_d_p)) { relocR(mut st, v_d_p, defRet(mut st, v_dfn, v_x)) } else { -1 }
+    if a1 >= 0 && a3 >= 0 && a5 >= 1 {
+        v_x := a0
+        v_dfn := a1
+        v_x_2 := a2
+        v_d_p := (a5 - 1)
+        return if (((((tsLen(mut st, v_x_2) == defTps(mut st, v_dfn)) && kindsArgsOk(mut st, defKinds(mut st, v_dfn), v_x_2)) && sub(mut st, a3, renR(mut st, v_x, v_d_p, defParam(mut st, v_dfn, v_x_2)))) && (a4 <= v_x)) && (v_x <= v_d_p)) { relocA(mut st, v_x, v_d_p, defRet(mut st, v_dfn, v_x_2)) } else { -1 }
     }
     // FS.kCall.eq_2
-    return -1
-}
-
-// FS.kCallM2（方程式 2 本）
-func kCallM2(st mut S, a0 int, a1 int, a2 int, a3 int, a4 int, a5 int) int {
-    // FS.kCallM2.eq_1
-    if a0 >= 0 {
-        v_a := a0
-        v_x := a1
-        v_x_2 := a2
-        v_x_5 := a5
-        return if (((((tsLen(mut st, v_x_2) == defTps(mut st, v_x)) && tyArgsOk(mut st, v_x_2)) && sub(mut st, a3, renR(mut st, v_a, v_x_5, defParam(mut st, v_x, v_x_2)))) && (a4 <= v_a)) && (v_a <= v_x_5)) { relocA(mut st, v_a, v_x_5, defRet(mut st, v_x, v_x_2)) } else { -1 }
-    }
-    // FS.kCallM2.eq_2（最後の腕 — 先行の腕が外れれば当たる: a0 < 0）
-    return -1
-}
-
-// FS.kCallM（方程式 2 本）
-func kCallM(st mut S, a0 int, a1 int, a2 int, a3 int, a4 int) int {
-    // FS.kCallM.eq_1
-    if a0 >= 0 && a2 >= 0 && a4 >= 1 {
-        v_dfn := a0
-        v_x := a1
-        v_t := a2
-        return kCallM2(mut st, anchorOf(mut st, defParam(mut st, v_dfn, v_x), v_t), v_dfn, v_x, v_t, a3, ((a4 - 1)))
-    }
-    // FS.kCallM.eq_2
     return -1
 }
 
@@ -254,7 +231,7 @@ func kFnref(st mut S, a0 int, a1 int) int {
     if a0 >= 0 {
         v_dfn := a0
         v_x := a1
-        return if ((tsLen(mut st, v_x) == defTps(mut st, v_dfn)) && tyArgsOk(mut st, v_x)) { mk(mut st, TFn, defParam(mut st, v_dfn, v_x), defRet(mut st, v_dfn, v_x), 0) } else { -1 }
+        return if ((tsLen(mut st, v_x) == defTps(mut st, v_dfn)) && kindsArgsOk(mut st, defKinds(mut st, v_dfn), v_x)) { mk(mut st, TFn, defParam(mut st, v_dfn, v_x), defRet(mut st, v_dfn, v_x), 0) } else { -1 }
     }
     // FS.kFnref.eq_2（最後の腕 — 先行の腕が外れれば当たる: a0 < 0）
     return -1
@@ -282,25 +259,15 @@ func sCallv1(st mut S, a0 int, a1 int, a2 int, a3 int, a4 int, a5 int) int {
 }
 
 // FS.kCallv（方程式 2 本）
-func kCallv(st mut S, a0 int, a1 int, a2 int, a3 int) int {
+func kCallv(st mut S, a0 int, a1 int, a2 int, a3 int, a4 int) int {
     // FS.kCallv.eq_1
-    if a0 >= 0 && tg(mut st, a0) == TFn && a1 >= 0 && a3 >= 1 {
-        v_d_p := (a3 - 1)
-        return if (sub(mut st, a1, shiftR(mut st, v_d_p, (tA(mut st, a0)))) && (a2 <= v_d_p)) { relocR(mut st, v_d_p, (tB(mut st, a0))) } else { -1 }
-    }
-    // FS.kCallv.eq_2
-    return -1
-}
-
-// FS.kCallMv（方程式 2 本）
-func kCallMv(st mut S, a0 int, a1 int, a2 int, a3 int, a4 int) int {
-    // FS.kCallMv.eq_1
     if a1 >= 0 && tg(mut st, a1) == TFn && a2 >= 0 && a4 >= 1 {
         v_x := a0
+        v_r := tB(mut st, a1)
         v_d_p := (a4 - 1)
-        return if ((sub(mut st, a2, renR(mut st, v_x, v_d_p, (tA(mut st, a1)))) && (a3 <= v_x)) && (v_x <= v_d_p)) { relocA(mut st, v_x, v_d_p, (tB(mut st, a1))) } else { -1 }
+        return if (((sub(mut st, a2, renR(mut st, v_x, v_d_p, (tA(mut st, a1)))) && (a3 <= v_x)) && (v_x <= v_d_p)) && retOk(mut st, v_r)) { relocA(mut st, v_x, v_d_p, v_r) } else { -1 }
     }
-    // FS.kCallMv.eq_2
+    // FS.kCallv.eq_2
     return -1
 }
 
@@ -469,11 +436,14 @@ func kMksliceAt(st mut S, a0 int, a1 int, a2 bool, a3 int, a4 int) int {
 
 // FS.kMkmapAt（方程式 2 本）
 func kMkmapAt(st mut S, a0 int, a1 int, a2 bool, a3 int, a4 int) int {
-    // FS.kMkmapAt.eq_1
-    if tg(mut st, a3) == TPr && tg(mut st, tB(mut st, a3)) == TOpt {
-        v_x_2 := a2
-        v_x_5 := a4
-        return if (((((keyOk(mut st, (tA(mut st, a3))) && regionsBelow(mut st, (v_x_5 + 1), a3)) && (a0 <= v_x_5)) && (v_x_5 < a1)) && (v_x_2 || mutFree(mut st, a3))) && chanFree(mut st, a3)) { mk(mut st, TMp, b2i(v_x_2), v_x_5, a3) } else { -1 }
+    switch tg(mut st, a3) {
+    case TPr:
+        // FS.kMkmapAt.eq_1
+        if tg(mut st, tB(mut st, a3)) == TOpt {
+            v_x_2 := a2
+            v_x_5 := a4
+            return if (((((keyOk(mut st, (tA(mut st, a3))) && regionsBelow(mut st, (v_x_5 + 1), a3)) && (a0 <= v_x_5)) && (v_x_5 < a1)) && (v_x_2 || mutFree(mut st, a3))) && chanFree(mut st, a3)) { mk(mut st, TMp, b2i(v_x_2), v_x_5, a3) } else { -1 }
+        }
     }
     // FS.kMkmapAt.eq_2
     return -1
@@ -872,7 +842,7 @@ func kDexit(st mut S, a0 int, a1 int) int {
     return -1
 }
 
-// FS.tcStep（方程式 183 本）
+// FS.tcStep（方程式 178 本）
 func tcStep(st mut S, a0 int, a1 int, a2 int, a3 int, a4 int, a5 int, a6 int, a7 int, a8 int, a9 int) int {
     switch nK(mut st, a8) {
     case W_LIT:
@@ -1048,191 +1018,191 @@ func tcStep(st mut S, a0 int, a1 int, a2 int, a3 int, a4 int, a5 int, a6 int, a7
             return actSub(mut st, (nC(mut st, a8)), a1, a2, a3, a4)
         }
         // FS.tcStep.eq_49（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
-        return actRet(mut st, kCall(mut st, defGet(mut st, (nA(mut st, a8))), (nB(mut st, a8)), a5, a1, a2))
-    case W_CALLM:
-        // FS.tcStep.eq_50
-        if a9 == 0 {
-            return actSub(mut st, (nC(mut st, a8)), a1, a2, a3, a4)
-        }
-        // FS.tcStep.eq_51（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
-        return actRet(mut st, kCallM(mut st, defGet(mut st, (nA(mut st, a8))), (nB(mut st, a8)), a5, a1, a2))
+        return actRet(mut st, kCall(mut st, (nD(mut st, a8)), defGet(mut st, (nA(mut st, a8))), (nB(mut st, a8)), a5, a1, a2))
     case W_FNREF:
-        // FS.tcStep.eq_52
+        // FS.tcStep.eq_50
         return actRet(mut st, kFnref(mut st, defGet(mut st, (nA(mut st, a8))), (nB(mut st, a8))))
     case W_ANN:
+        // FS.tcStep.eq_51
+        if a9 == 0 {
+            return actSub(mut st, (nA(mut st, a8)), a1, a2, a3, a4)
+        }
+        // FS.tcStep.eq_52（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
+        return actRet(mut st, kAnn(mut st, a5, (nB(mut st, a8))))
+    case W_CALLV:
         // FS.tcStep.eq_53
         if a9 == 0 {
             return actSub(mut st, (nA(mut st, a8)), a1, a2, a3, a4)
         }
-        // FS.tcStep.eq_54（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
-        return actRet(mut st, kAnn(mut st, a5, (nB(mut st, a8))))
-    case W_CALLV:
-        // FS.tcStep.eq_55
-        if a9 == 0 {
-            return actSub(mut st, (nA(mut st, a8)), a1, a2, a3, a4)
-        }
-        // FS.tcStep.eq_56
+        // FS.tcStep.eq_54
         if a9 == 1 {
             return sCallv1(mut st, a5, (nB(mut st, a8)), a1, a2, a3, a4)
         }
-        // FS.tcStep.eq_57（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1 && (a9 - 1) >= 1）
-        return actRet(mut st, kCallv(mut st, a5, a6, a1, a2))
-    case W_CALLMV:
-        // FS.tcStep.eq_58
-        if a9 == 0 {
-            return actSub(mut st, (nA(mut st, a8)), a1, a2, a3, a4)
-        }
-        // FS.tcStep.eq_59
-        if a9 == 1 {
-            return sCallv1(mut st, a5, (nB(mut st, a8)), a1, a2, a3, a4)
-        }
-        // FS.tcStep.eq_60（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1 && (a9 - 1) >= 1）
-        return actRet(mut st, kCallMv(mut st, (nC(mut st, a8)), a5, a6, a1, a2))
+        // FS.tcStep.eq_55（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1 && (a9 - 1) >= 1）
+        return actRet(mut st, kCallv(mut st, (nC(mut st, a8)), a5, a6, a1, a2))
     case W_LABEL:
-        // FS.tcStep.eq_61
+        // FS.tcStep.eq_56
         if a9 == 0 {
             v_d := a2
             return actSub(mut st, (nB(mut st, a8)), a1, v_d, a3, lctxCons(mut st, (nA(mut st, a8)), natSub(v_d, 1), a4))
         }
-        // FS.tcStep.eq_62（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
+        // FS.tcStep.eq_57（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
         return actRet(mut st, kLabel(mut st, a5, (nA(mut st, a8)), a2))
     case W_UNREACH:
-        // FS.tcStep.eq_63
+        // FS.tcStep.eq_58
         return actRet(mut st, (nA(mut st, a8)))
     case W_JUMP:
-        // FS.tcStep.eq_64
+        // FS.tcStep.eq_59
         if a9 == 0 {
             return actSub(mut st, (nC(mut st, a8)), a1, a2, a3, a4)
         }
-        // FS.tcStep.eq_65（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
+        // FS.tcStep.eq_60（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
         v_lam := a4
         v_n := nA(mut st, a8)
         return actRet(mut st, kJump(mut st, lctxTy(mut st, v_lam, v_n), lctxK(mut st, v_lam, v_n), a5, a1, (nB(mut st, a8))))
     case W_BLOCK:
-        // FS.tcStep.eq_66
+        // FS.tcStep.eq_61
         if a9 == 0 {
             return actSub(mut st, (nA(mut st, a8)), a1, (a2 + 1), a3, a4)
         }
-        // FS.tcStep.eq_67（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
+        // FS.tcStep.eq_62（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
         return actRet(mut st, kBlock(mut st, a5, a2))
     case K_BLOCKR:
-        // FS.tcStep.eq_68
+        // FS.tcStep.eq_63
         if a9 == 0 {
             return actSub(mut st, (nA(mut st, a8)), a1, (a2 + 1), a3, a4)
         }
-        // FS.tcStep.eq_69（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
+        // FS.tcStep.eq_64（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
         return actRet(mut st, kBlockR(mut st, a5, a1, a2, (nB(mut st, a8))))
     case W_COPYTO:
-        // FS.tcStep.eq_70
+        // FS.tcStep.eq_65
         if a9 == 0 {
             return actSub(mut st, (nA(mut st, a8)), a1, a2, a3, a4)
         }
-        // FS.tcStep.eq_71（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
+        // FS.tcStep.eq_66（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
         return actRet(mut st, kCopyTo(mut st, a5, a1, a2, (nC(mut st, a8)), (nB(mut st, a8))))
     case W_ALLOC:
-        // FS.tcStep.eq_72
+        // FS.tcStep.eq_67
         if a9 == 0 {
             return actSub(mut st, (nB(mut st, a8)), a1, a2, a3, a4)
         }
-        // FS.tcStep.eq_73（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
+        // FS.tcStep.eq_68（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
         return actRet(mut st, kAlloc(mut st, a5, a1, a2, (nA(mut st, a8) != 0)))
     case W_DEREF:
+        // FS.tcStep.eq_69
+        if a9 == 0 {
+            return actSub(mut st, (nA(mut st, a8)), a1, a2, a3, a4)
+        }
+        // FS.tcStep.eq_70（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
+        return actRet(mut st, kDeref(mut st, a5))
+    case W_ASSIGN:
+        // FS.tcStep.eq_71
+        if a9 == 0 {
+            return actSub(mut st, (nA(mut st, a8)), a1, a2, a3, a4)
+        }
+        // FS.tcStep.eq_72
+        if a9 == 1 {
+            return actSub(mut st, (nB(mut st, a8)), a1, a2, a3, a4)
+        }
+        // FS.tcStep.eq_73（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1 && (a9 - 1) >= 1）
+        return actRet(mut st, kAssign(mut st, a5, a6))
+    case W_WHILE:
         // FS.tcStep.eq_74
         if a9 == 0 {
             return actSub(mut st, (nA(mut st, a8)), a1, a2, a3, a4)
         }
-        // FS.tcStep.eq_75（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
-        return actRet(mut st, kDeref(mut st, a5))
-    case W_ASSIGN:
-        // FS.tcStep.eq_76
-        if a9 == 0 {
-            return actSub(mut st, (nA(mut st, a8)), a1, a2, a3, a4)
-        }
-        // FS.tcStep.eq_77
+        // FS.tcStep.eq_75
         if a9 == 1 {
             return actSub(mut st, (nB(mut st, a8)), a1, a2, a3, a4)
         }
-        // FS.tcStep.eq_78（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1 && (a9 - 1) >= 1）
-        return actRet(mut st, kAssign(mut st, a5, a6))
-    case W_WHILE:
-        // FS.tcStep.eq_79
-        if a9 == 0 {
-            return actSub(mut st, (nA(mut st, a8)), a1, a2, a3, a4)
-        }
-        // FS.tcStep.eq_80
-        if a9 == 1 {
-            return actSub(mut st, (nB(mut st, a8)), a1, a2, a3, a4)
-        }
-        // FS.tcStep.eq_81（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1 && (a9 - 1) >= 1）
+        // FS.tcStep.eq_76（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1 && (a9 - 1) >= 1）
         return actRet(mut st, kWhile(mut st, a5, a6))
     case W_FREEZE:
-        // FS.tcStep.eq_82
+        // FS.tcStep.eq_77
         if a9 == 0 {
             return actSub(mut st, (nA(mut st, a8)), a1, a2, a3, a4)
         }
-        // FS.tcStep.eq_83（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
+        // FS.tcStep.eq_78（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
         return actRet(mut st, kFreeze(mut st, a5))
     case W_MKSLICE:
-        // FS.tcStep.eq_84
+        // FS.tcStep.eq_79
         if nC(mut st, a8) == 0 {
             return actRet(mut st, kMkslice(mut st, a1, a2, (nA(mut st, a8) != 0), (nB(mut st, a8))))
         }
-        // FS.tcStep.eq_86（最後の腕 — 先行の腕が外れれば当たる: nC(mut st, a8) > 0）
+        // FS.tcStep.eq_81（最後の腕 — 先行の腕が外れれば当たる: nC(mut st, a8) > 0）
         return actRet(mut st, kMksliceAt(mut st, a1, a2, (nA(mut st, a8) != 0), (nB(mut st, a8)), ((nC(mut st, a8) - 1))))
     case W_STRLIT:
-        // FS.tcStep.eq_85
+        // FS.tcStep.eq_80
         return actRet(mut st, kStrlit(mut st, a1, a2, (nA(mut st, a8))))
     case W_MKMAP:
-        // FS.tcStep.eq_87
+        // FS.tcStep.eq_82
         if nC(mut st, a8) > 0 {
             return actRet(mut st, kMkmapAt(mut st, a1, a2, (nA(mut st, a8) != 0), (nB(mut st, a8)), ((nC(mut st, a8) - 1))))
         }
-        // FS.tcStep.eq_123（最後の腕 — 先行の腕が外れれば当たる: nC(mut st, a8) == 0）
+        // FS.tcStep.eq_118（最後の腕 — 先行の腕が外れれば当たる: nC(mut st, a8) == 0）
         return actRet(mut st, kMkmap(mut st, a1, a2, (nA(mut st, a8) != 0), (nB(mut st, a8))))
     case W_INDEX:
+        // FS.tcStep.eq_83
+        if a9 == 0 {
+            return actSub(mut st, (nA(mut st, a8)), a1, a2, a3, a4)
+        }
+        // FS.tcStep.eq_84
+        if a9 == 1 {
+            return actSub(mut st, (nB(mut st, a8)), a1, a2, a3, a4)
+        }
+        // FS.tcStep.eq_85（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1 && (a9 - 1) >= 1）
+        return actRet(mut st, kIndex(mut st, a5, a6, (nC(mut st, a8))))
+    case W_LEN:
+        // FS.tcStep.eq_86
+        if a9 == 0 {
+            return actSub(mut st, (nA(mut st, a8)), a1, a2, a3, a4)
+        }
+        // FS.tcStep.eq_87（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
+        return actRet(mut st, kLen(mut st, a5))
+    case W_TOBYTE:
         // FS.tcStep.eq_88
         if a9 == 0 {
             return actSub(mut st, (nA(mut st, a8)), a1, a2, a3, a4)
         }
-        // FS.tcStep.eq_89
+        // FS.tcStep.eq_89（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
+        return actRet(mut st, kTobyte(mut st, a5))
+    case W_TOINT:
+        // FS.tcStep.eq_90
+        if a9 == 0 {
+            return actSub(mut st, (nA(mut st, a8)), a1, a2, a3, a4)
+        }
+        // FS.tcStep.eq_91（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
+        return actRet(mut st, kToint(mut st, a5))
+    case W_FADD | W_FSUB | W_FMUL | W_FDIV:
+        // FS.tcStep.eq_92
+        if a9 == 0 {
+            return actSub(mut st, (nA(mut st, a8)), a1, a2, a3, a4)
+        }
+        // FS.tcStep.eq_93
         if a9 == 1 {
             return actSub(mut st, (nB(mut st, a8)), a1, a2, a3, a4)
         }
-        // FS.tcStep.eq_90（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1 && (a9 - 1) >= 1）
-        return actRet(mut st, kIndex(mut st, a5, a6, (nC(mut st, a8))))
-    case W_LEN:
-        // FS.tcStep.eq_91
-        if a9 == 0 {
-            return actSub(mut st, (nA(mut st, a8)), a1, a2, a3, a4)
-        }
-        // FS.tcStep.eq_92（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
-        return actRet(mut st, kLen(mut st, a5))
-    case W_TOBYTE:
-        // FS.tcStep.eq_93
-        if a9 == 0 {
-            return actSub(mut st, (nA(mut st, a8)), a1, a2, a3, a4)
-        }
-        // FS.tcStep.eq_94（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
-        return actRet(mut st, kTobyte(mut st, a5))
-    case W_TOINT:
+        // FS.tcStep.eq_94（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1 && (a9 - 1) >= 1）
+        return actRet(mut st, kFF(mut st, a5, a6, st.tF64))
+    case W_FEQ | W_FNE | W_FLT | W_FLE | W_FGT | W_FGE:
         // FS.tcStep.eq_95
         if a9 == 0 {
             return actSub(mut st, (nA(mut st, a8)), a1, a2, a3, a4)
         }
-        // FS.tcStep.eq_96（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
-        return actRet(mut st, kToint(mut st, a5))
-    case W_FADD | W_FSUB | W_FMUL | W_FDIV:
-        // FS.tcStep.eq_97
-        if a9 == 0 {
-            return actSub(mut st, (nA(mut st, a8)), a1, a2, a3, a4)
-        }
-        // FS.tcStep.eq_98
+        // FS.tcStep.eq_96
         if a9 == 1 {
             return actSub(mut st, (nB(mut st, a8)), a1, a2, a3, a4)
         }
-        // FS.tcStep.eq_99（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1 && (a9 - 1) >= 1）
-        return actRet(mut st, kFF(mut st, a5, a6, st.tF64))
-    case W_FEQ | W_FNE | W_FLT | W_FLE | W_FGT | W_FGE:
+        // FS.tcStep.eq_97（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1 && (a9 - 1) >= 1）
+        return actRet(mut st, kFF(mut st, a5, a6, st.tBool))
+    case W_FNEG | W_FSQRT | W_TOFLOAT | W_FTOINT | W_FBITS | W_FFROMBITS:
+        // FS.tcStep.eq_98
+        if a9 == 0 {
+            return actSub(mut st, (nA(mut st, a8)), a1, a2, a3, a4)
+        }
+        // FS.tcStep.eq_99（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
+        return actRet(mut st, kFconv(mut st, a5, (nK(mut st, a8))))
+    case W_APPEND:
         // FS.tcStep.eq_100
         if a9 == 0 {
             return actSub(mut st, (nA(mut st, a8)), a1, a2, a3, a4)
@@ -1242,269 +1212,725 @@ func tcStep(st mut S, a0 int, a1 int, a2 int, a3 int, a4 int, a5 int, a6 int, a7
             return actSub(mut st, (nB(mut st, a8)), a1, a2, a3, a4)
         }
         // FS.tcStep.eq_102（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1 && (a9 - 1) >= 1）
-        return actRet(mut st, kFF(mut st, a5, a6, st.tBool))
-    case W_FNEG | W_FSQRT | W_TOFLOAT | W_FTOINT | W_FBITS | W_FFROMBITS:
+        return actRet(mut st, kAppend(mut st, a5, a6, a1, a2))
+    case W_SETIDX:
         // FS.tcStep.eq_103
         if a9 == 0 {
             return actSub(mut st, (nA(mut st, a8)), a1, a2, a3, a4)
         }
-        // FS.tcStep.eq_104（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
-        return actRet(mut st, kFconv(mut st, a5, (nK(mut st, a8))))
-    case W_APPEND:
+        // FS.tcStep.eq_104
+        if a9 == 1 {
+            return actSub(mut st, (nB(mut st, a8)), a1, a2, a3, a4)
+        }
         // FS.tcStep.eq_105
-        if a9 == 0 {
-            return actSub(mut st, (nA(mut st, a8)), a1, a2, a3, a4)
-        }
-        // FS.tcStep.eq_106
-        if a9 == 1 {
-            return actSub(mut st, (nB(mut st, a8)), a1, a2, a3, a4)
-        }
-        // FS.tcStep.eq_107（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1 && (a9 - 1) >= 1）
-        return actRet(mut st, kAppend(mut st, a5, a6, a1, a2))
-    case W_SETIDX:
-        // FS.tcStep.eq_108
-        if a9 == 0 {
-            return actSub(mut st, (nA(mut st, a8)), a1, a2, a3, a4)
-        }
-        // FS.tcStep.eq_109
-        if a9 == 1 {
-            return actSub(mut st, (nB(mut st, a8)), a1, a2, a3, a4)
-        }
-        // FS.tcStep.eq_110
         if a9 == 2 {
             return actSub(mut st, (nC(mut st, a8)), a1, a2, a3, a4)
         }
-        // FS.tcStep.eq_111（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1 && (a9 - 1) >= 1 && ((a9 - 1) - 1) >= 1）
+        // FS.tcStep.eq_106（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1 && (a9 - 1) >= 1 && ((a9 - 1) - 1) >= 1）
         return actRet(mut st, kSetidx(mut st, a5, a6, a7))
     case W_SUBSLICE:
-        // FS.tcStep.eq_112
+        // FS.tcStep.eq_107
         if a9 == 0 {
             return actSub(mut st, (nA(mut st, a8)), a1, a2, a3, a4)
         }
-        // FS.tcStep.eq_113
+        // FS.tcStep.eq_108
         if a9 == 1 {
             return actSub(mut st, (nB(mut st, a8)), a1, a2, a3, a4)
         }
-        // FS.tcStep.eq_114
+        // FS.tcStep.eq_109
         if a9 == 2 {
             return actSub(mut st, (nC(mut st, a8)), a1, a2, a3, a4)
         }
-        // FS.tcStep.eq_115（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1 && (a9 - 1) >= 1 && ((a9 - 1) - 1) >= 1）
+        // FS.tcStep.eq_110（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1 && (a9 - 1) >= 1 && ((a9 - 1) - 1) >= 1）
         return actRet(mut st, kSubslice(mut st, a5, a6, a7))
     case W_EQS:
-        // FS.tcStep.eq_116
+        // FS.tcStep.eq_111
         if a9 == 0 {
             return actSub(mut st, (nA(mut st, a8)), a1, a2, a3, a4)
         }
-        // FS.tcStep.eq_117
+        // FS.tcStep.eq_112
         if a9 == 1 {
             return actSub(mut st, (nB(mut st, a8)), a1, a2, a3, a4)
         }
-        // FS.tcStep.eq_118（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1 && (a9 - 1) >= 1）
+        // FS.tcStep.eq_113（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1 && (a9 - 1) >= 1）
         return actRet(mut st, kEqs(mut st, a5, a6))
     case W_CONCAT:
-        // FS.tcStep.eq_119
+        // FS.tcStep.eq_114
         if a9 == 0 {
             return actSub(mut st, (nA(mut st, a8)), a1, a2, a3, a4)
+        }
+        // FS.tcStep.eq_115
+        if a9 == 1 {
+            return actSub(mut st, (nB(mut st, a8)), a1, a2, a3, a4)
+        }
+        // FS.tcStep.eq_116（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1 && (a9 - 1) >= 1）
+        return actRet(mut st, kConcat(mut st, a5, a6, a1, a2))
+    case W_GETM:
+        // FS.tcStep.eq_119
+        if a9 == 0 {
+            return actSub(mut st, (nB(mut st, a8)), a1, a2, a3, a4)
         }
         // FS.tcStep.eq_120
         if a9 == 1 {
-            return actSub(mut st, (nB(mut st, a8)), a1, a2, a3, a4)
-        }
-        // FS.tcStep.eq_121（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1 && (a9 - 1) >= 1）
-        return actRet(mut st, kConcat(mut st, a5, a6, a1, a2))
-    case W_GETM:
-        // FS.tcStep.eq_124
-        if a9 == 0 {
-            return actSub(mut st, (nB(mut st, a8)), a1, a2, a3, a4)
-        }
-        // FS.tcStep.eq_125
-        if a9 == 1 {
             return actSub(mut st, (nC(mut st, a8)), a1, a2, a3, a4)
         }
-        // FS.tcStep.eq_126（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1 && (a9 - 1) >= 1）
+        // FS.tcStep.eq_121（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1 && (a9 - 1) >= 1）
         return actRet(mut st, kGetm(mut st, a5, a6, (nA(mut st, a8))))
     case W_SETM:
-        // FS.tcStep.eq_127
+        // FS.tcStep.eq_122
         if a9 == 0 {
             return actSub(mut st, (nA(mut st, a8)), a1, a2, a3, a4)
         }
-        // FS.tcStep.eq_128
+        // FS.tcStep.eq_123
         if a9 == 1 {
             return actSub(mut st, (nB(mut st, a8)), a1, a2, a3, a4)
         }
-        // FS.tcStep.eq_129
+        // FS.tcStep.eq_124
         if a9 == 2 {
             return actSub(mut st, (nC(mut st, a8)), a1, a2, a3, a4)
         }
-        // FS.tcStep.eq_130（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1 && (a9 - 1) >= 1 && ((a9 - 1) - 1) >= 1）
+        // FS.tcStep.eq_125（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1 && (a9 - 1) >= 1 && ((a9 - 1) - 1) >= 1）
         return actRet(mut st, kSetm(mut st, a5, a6, a7))
     case W_DELM:
-        // FS.tcStep.eq_131
+        // FS.tcStep.eq_126
         if a9 == 0 {
             return actSub(mut st, (nB(mut st, a8)), a1, a2, a3, a4)
         }
-        // FS.tcStep.eq_132
+        // FS.tcStep.eq_127
         if a9 == 1 {
             return actSub(mut st, (nC(mut st, a8)), a1, a2, a3, a4)
         }
-        // FS.tcStep.eq_133（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1 && (a9 - 1) >= 1）
+        // FS.tcStep.eq_128（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1 && (a9 - 1) >= 1）
         return actRet(mut st, kDelm(mut st, a5, a6, (nA(mut st, a8))))
     case W_LENM:
-        // FS.tcStep.eq_134
+        // FS.tcStep.eq_129
         if a9 == 0 {
             return actSub(mut st, (nA(mut st, a8)), a1, a2, a3, a4)
         }
-        // FS.tcStep.eq_135（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
+        // FS.tcStep.eq_130（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
         return actRet(mut st, kLenm(mut st, a5))
     case W_KEYSM:
-        // FS.tcStep.eq_136
+        // FS.tcStep.eq_131
         if a9 == 0 {
             return actSub(mut st, (nA(mut st, a8)), a1, a2, a3, a4)
         }
-        // FS.tcStep.eq_137（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
+        // FS.tcStep.eq_132（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
         return actRet(mut st, kKeysm(mut st, a5, a1, a2))
     case W_CLONE:
-        // FS.tcStep.eq_138
+        // FS.tcStep.eq_133
         if a9 == 0 {
             return actSub(mut st, (nA(mut st, a8)), a1, a2, a3, a4)
         }
-        // FS.tcStep.eq_139（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
+        // FS.tcStep.eq_134（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
         return actRet(mut st, kClone(mut st, a5, (nB(mut st, a8)), a1, a2))
     case W_PAR:
-        // FS.tcStep.eq_141
+        // FS.tcStep.eq_136
         if a9 == 0 {
             v_d := a2
             return actSub(mut st, (nA(mut st, a8)), v_d, v_d, a3, -1)
         }
-        // FS.tcStep.eq_142
+        // FS.tcStep.eq_137
         if a9 == 1 {
             v_d := a2
             return actSub(mut st, (nB(mut st, a8)), v_d, v_d, a3, -1)
         }
-        // FS.tcStep.eq_143（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1 && (a9 - 1) >= 1）
+        // FS.tcStep.eq_138（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1 && (a9 - 1) >= 1）
         return actRet(mut st, kPar(mut st, a5, a6, ctxAllMutFree(mut st, a3)))
     case W_PARCH:
-        // FS.tcStep.eq_144
+        // FS.tcStep.eq_139
         if a9 == 0 {
             v_d := a2
             return actSub(mut st, (nB(mut st, a8)), v_d, v_d, ctxCons(mut st, mk(mut st, TChan, v_d, (nA(mut st, a8)), 0), a3), -1)
         }
-        // FS.tcStep.eq_145
+        // FS.tcStep.eq_140
         if a9 == 1 {
             v_d := a2
             return actSub(mut st, (nC(mut st, a8)), v_d, v_d, ctxCons(mut st, mk(mut st, TChan, v_d, (nA(mut st, a8)), 0), a3), -1)
         }
-        // FS.tcStep.eq_146（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1 && (a9 - 1) >= 1）
+        // FS.tcStep.eq_141（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1 && (a9 - 1) >= 1）
         return actRet(mut st, kParch(mut st, a5, a6, ctxAllMutFree(mut st, a3), a2, (nA(mut st, a8))))
     case W_NEWCHAN:
-        // FS.tcStep.eq_147
+        // FS.tcStep.eq_142
         return actRet(mut st, kNewchan(mut st, a0, (nA(mut st, a8)), (nB(mut st, a8))))
     case W_SEND:
+        // FS.tcStep.eq_143
+        if a9 == 0 {
+            return actSub(mut st, (nA(mut st, a8)), a1, a2, a3, a4)
+        }
+        // FS.tcStep.eq_144
+        if a9 == 1 {
+            return actSub(mut st, (nB(mut st, a8)), a1, a2, a3, a4)
+        }
+        // FS.tcStep.eq_145（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1 && (a9 - 1) >= 1）
+        return actRet(mut st, kSend(mut st, a5, a6))
+    case W_RECV:
+        // FS.tcStep.eq_146
+        if a9 == 0 {
+            return actSub(mut st, (nA(mut st, a8)), a1, a2, a3, a4)
+        }
+        // FS.tcStep.eq_147（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
+        return actRet(mut st, kRecv(mut st, a2, a5))
+    case W_CLOSE:
         // FS.tcStep.eq_148
         if a9 == 0 {
             return actSub(mut st, (nA(mut st, a8)), a1, a2, a3, a4)
         }
-        // FS.tcStep.eq_149
-        if a9 == 1 {
-            return actSub(mut st, (nB(mut st, a8)), a1, a2, a3, a4)
-        }
-        // FS.tcStep.eq_150（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1 && (a9 - 1) >= 1）
-        return actRet(mut st, kSend(mut st, a5, a6))
-    case W_RECV:
-        // FS.tcStep.eq_151
-        if a9 == 0 {
-            return actSub(mut st, (nA(mut st, a8)), a1, a2, a3, a4)
-        }
-        // FS.tcStep.eq_152（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
-        return actRet(mut st, kRecv(mut st, a2, a5))
-    case W_CLOSE:
-        // FS.tcStep.eq_153
-        if a9 == 0 {
-            return actSub(mut st, (nA(mut st, a8)), a1, a2, a3, a4)
-        }
-        // FS.tcStep.eq_154（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
+        // FS.tcStep.eq_149（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
         return actRet(mut st, kClose(mut st, a5))
     case W_FOLD:
-        // FS.tcStep.eq_155
+        // FS.tcStep.eq_150
         if a9 == 0 {
             return actSub(mut st, (nB(mut st, a8)), a1, a2, a3, a4)
         }
-        // FS.tcStep.eq_156（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
+        // FS.tcStep.eq_151（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
         return actRet(mut st, kFold(mut st, a5, (nA(mut st, a8))))
     case W_UNFOLD:
-        // FS.tcStep.eq_157
+        // FS.tcStep.eq_152
         if a9 == 0 {
             return actSub(mut st, (nA(mut st, a8)), a1, a2, a3, a4)
         }
-        // FS.tcStep.eq_158（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
+        // FS.tcStep.eq_153（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
         return actRet(mut st, kUnfold(mut st, a5))
     case W_SCOPE:
-        // FS.tcStep.eq_162
+        // FS.tcStep.eq_157
         if a9 == 0 {
             v_d := a2
             return actSub(mut st, (nB(mut st, a8)), a1, (v_d + 1), ctxCons(mut st, mk(mut st, TOwn, 0, v_d, (nC(mut st, a8))), a3), -1)
         }
-        // FS.tcStep.eq_163（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
+        // FS.tcStep.eq_158（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
         return actRet(mut st, kScope(mut st, a5, a1, a2, (nA(mut st, a8)), (nC(mut st, a8))))
     case W_SPAWN:
-        // FS.tcStep.eq_164
+        // FS.tcStep.eq_159
         if a9 == 0 {
             return actSub(mut st, (nA(mut st, a8)), a1, a2, a3, a4)
         }
-        // FS.tcStep.eq_165
+        // FS.tcStep.eq_160
         if a9 == 1 {
             return actSub(mut st, (nB(mut st, a8)), a1, a2, a3, a4)
         }
-        // FS.tcStep.eq_166
+        // FS.tcStep.eq_161
         if a9 == 2 {
             return sSpawn2(mut st, a5, a6, (nC(mut st, a8)), a2)
         }
-        // FS.tcStep.eq_167（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1 && (a9 - 1) >= 1 && ((a9 - 1) - 1) >= 1）
+        // FS.tcStep.eq_162（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1 && (a9 - 1) >= 1 && ((a9 - 1) - 1) >= 1）
         return actRet(mut st, kSpawn(mut st, a5, a6, a7))
     case W_NEWCH:
-        // FS.tcStep.eq_168
+        // FS.tcStep.eq_163
         return actRet(mut st, kNewch(mut st, a1, a2, (nA(mut st, a8)), (nB(mut st, a8)), (nC(mut st, a8))))
     case W_JOIN:
-        // FS.tcStep.eq_170
+        // FS.tcStep.eq_165
         if a9 == 0 {
             return actSub(mut st, (nB(mut st, a8)), a1, a2, a3, a4)
         }
-        // FS.tcStep.eq_171（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
+        // FS.tcStep.eq_166（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
         return actRet(mut st, kJoin(mut st, a5, (nA(mut st, a8))))
     case W_TRY:
-        // FS.tcStep.eq_172
+        // FS.tcStep.eq_167
         if a9 == 0 {
             return actSub(mut st, (nB(mut st, a8)), a1, a2, a3, a4)
         }
-        // FS.tcStep.eq_173（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
+        // FS.tcStep.eq_168（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
         return actRet(mut st, kTry(mut st, a5, (nA(mut st, a8))))
     case W_DNEW:
-        // FS.tcStep.eq_176
+        // FS.tcStep.eq_171
         if a9 == 0 {
             return actSub(mut st, (nB(mut st, a8)), a1, a2, a3, a4)
         }
-        // FS.tcStep.eq_177（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
+        // FS.tcStep.eq_172（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
         return actRet(mut st, kDnew(mut st, a1, a2, (nA(mut st, a8)), (nC(mut st, a8)), a5))
     case W_DENTER:
-        // FS.tcStep.eq_179
+        // FS.tcStep.eq_174
         if a9 == 0 {
             return actSub(mut st, (nB(mut st, a8)), a1, a2, a3, a4)
         }
-        // FS.tcStep.eq_180（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
+        // FS.tcStep.eq_175（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1）
         return actRet(mut st, kDenter(mut st, a1, a2, (nA(mut st, a8)), a5))
     case W_DEXIT:
-        // FS.tcStep.eq_181
+        // FS.tcStep.eq_176
         if a9 == 0 {
             return actSub(mut st, (nA(mut st, a8)), a1, a2, a3, a4)
         }
-        // FS.tcStep.eq_182
+        // FS.tcStep.eq_177
         if a9 == 1 {
             return actSub(mut st, (nB(mut st, a8)), a1, a2, a3, a4)
         }
-        // FS.tcStep.eq_183（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1 && (a9 - 1) >= 1）
+        // FS.tcStep.eq_178（最後の腕 — 先行の腕が外れれば当たる: a9 >= 1 && (a9 - 1) >= 1）
         return actRet(mut st, kDexit(mut st, a5, a6))
     }
     return actRet(mut st, 0 - 1)
+}
+
+// FS.Expr.tvWf（方程式 70 本）
+func exprTvWfNode(st mut S, a0 int, a1 int) bool {
+    switch nK(mut st, a1) {
+    case W_LET:
+        // FS.Expr.tvWf.eq_1
+        return (walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_ADD:
+        // FS.Expr.tvWf.eq_2
+        return (walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_LT:
+        // FS.Expr.tvWf.eq_3
+        return (walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_SUB | W_MUL | W_DIV | W_MOD | W_AND | W_OR | W_XOR | W_SHL | W_SHR:
+        // FS.Expr.tvWf.eq_4
+        return (walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_FADD | W_FSUB | W_FMUL | W_FDIV:
+        // FS.Expr.tvWf.eq_5
+        return (walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_FEQ | W_FNE | W_FLT | W_FLE | W_FGT | W_FGE:
+        // FS.Expr.tvWf.eq_6
+        return (walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_EQ | W_NE | W_LE | W_GT | W_GE:
+        // FS.Expr.tvWf.eq_7
+        return (walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_PAIR:
+        // FS.Expr.tvWf.eq_8
+        return (walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_CALLV:
+        // FS.Expr.tvWf.eq_9
+        return (walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_ASSIGN:
+        // FS.Expr.tvWf.eq_10
+        return (walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_WHILE:
+        // FS.Expr.tvWf.eq_11
+        return (walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_APPEND:
+        // FS.Expr.tvWf.eq_12
+        return (walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_EQS:
+        // FS.Expr.tvWf.eq_13
+        return (walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_CONCAT:
+        // FS.Expr.tvWf.eq_14
+        return (walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_PAR:
+        // FS.Expr.tvWf.eq_15
+        return (walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_SEND:
+        // FS.Expr.tvWf.eq_16
+        return (walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_DEXIT:
+        // FS.Expr.tvWf.eq_17
+        return (walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_IF:
+        // FS.Expr.tvWf.eq_18
+        return ((walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1)))) && walkPush(mut st, (nC(mut st, a1))))
+    case W_IFNIL:
+        // FS.Expr.tvWf.eq_19
+        return ((walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1)))) && walkPush(mut st, (nC(mut st, a1))))
+    case W_CASE:
+        // FS.Expr.tvWf.eq_20
+        return ((walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1)))) && walkPush(mut st, (nC(mut st, a1))))
+    case W_SETIDX:
+        // FS.Expr.tvWf.eq_21
+        return ((walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1)))) && walkPush(mut st, (nC(mut st, a1))))
+    case W_SUBSLICE:
+        // FS.Expr.tvWf.eq_22
+        return ((walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1)))) && walkPush(mut st, (nC(mut st, a1))))
+    case W_SETM:
+        // FS.Expr.tvWf.eq_23
+        return ((walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1)))) && walkPush(mut st, (nC(mut st, a1))))
+    case W_SPAWN:
+        // FS.Expr.tvWf.eq_24
+        return ((walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1)))) && walkPush(mut st, (nC(mut st, a1))))
+    case W_NIL:
+        // FS.Expr.tvWf.eq_25
+        return tvWf(mut st, a0, (nA(mut st, a1)))
+    case W_UNREACH:
+        // FS.Expr.tvWf.eq_26
+        return tvWf(mut st, a0, (nA(mut st, a1)))
+    case W_MKSLICE:
+        // FS.Expr.tvWf.eq_27
+        if nC(mut st, a1) == 0 {
+            return tvWf(mut st, a0, (nB(mut st, a1)))
+        }
+        // FS.Expr.tvWf.eq_28
+        if nC(mut st, a1) > 0 {
+            return tvWf(mut st, a0, (nB(mut st, a1)))
+        }
+    case W_MKMAP:
+        // FS.Expr.tvWf.eq_29
+        if nC(mut st, a1) > 0 {
+            return tvWf(mut st, a0, (nB(mut st, a1)))
+        }
+        // FS.Expr.tvWf.eq_30
+        if nC(mut st, a1) == 0 {
+            return tvWf(mut st, a0, (nB(mut st, a1)))
+        }
+    case W_NEWCHAN:
+        // FS.Expr.tvWf.eq_31
+        return tvWf(mut st, a0, (nB(mut st, a1)))
+    case W_NEWCH:
+        // FS.Expr.tvWf.eq_33
+        return tvWf(mut st, a0, (nC(mut st, a1)))
+    case W_SOME:
+        // FS.Expr.tvWf.eq_34
+        return walkPush(mut st, (nA(mut st, a1)))
+    case W_FST:
+        // FS.Expr.tvWf.eq_35
+        return walkPush(mut st, (nA(mut st, a1)))
+    case W_SND:
+        // FS.Expr.tvWf.eq_36
+        return walkPush(mut st, (nA(mut st, a1)))
+    case W_BLOCK:
+        // FS.Expr.tvWf.eq_37
+        return walkPush(mut st, (nA(mut st, a1)))
+    case W_ALLOC:
+        // FS.Expr.tvWf.eq_38
+        return walkPush(mut st, (nB(mut st, a1)))
+    case W_DEREF:
+        // FS.Expr.tvWf.eq_39
+        return walkPush(mut st, (nA(mut st, a1)))
+    case W_FREEZE:
+        // FS.Expr.tvWf.eq_40
+        return walkPush(mut st, (nA(mut st, a1)))
+    case W_LEN:
+        // FS.Expr.tvWf.eq_41
+        return walkPush(mut st, (nA(mut st, a1)))
+    case W_TOBYTE:
+        // FS.Expr.tvWf.eq_42
+        return walkPush(mut st, (nA(mut st, a1)))
+    case W_FNEG | W_FSQRT | W_TOFLOAT | W_FTOINT | W_FBITS | W_FFROMBITS:
+        // FS.Expr.tvWf.eq_43
+        return walkPush(mut st, (nA(mut st, a1)))
+    case W_TOINT:
+        // FS.Expr.tvWf.eq_44
+        return walkPush(mut st, (nA(mut st, a1)))
+    case W_LENM:
+        // FS.Expr.tvWf.eq_45
+        return walkPush(mut st, (nA(mut st, a1)))
+    case W_KEYSM:
+        // FS.Expr.tvWf.eq_46
+        return walkPush(mut st, (nA(mut st, a1)))
+    case W_RECV:
+        // FS.Expr.tvWf.eq_47
+        return walkPush(mut st, (nA(mut st, a1)))
+    case W_CLOSE:
+        // FS.Expr.tvWf.eq_48
+        return walkPush(mut st, (nA(mut st, a1)))
+    case W_UNFOLD:
+        // FS.Expr.tvWf.eq_49
+        return walkPush(mut st, (nA(mut st, a1)))
+    case W_INL:
+        // FS.Expr.tvWf.eq_50
+        return (tvWf(mut st, a0, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_INR:
+        // FS.Expr.tvWf.eq_51
+        return (tvWf(mut st, a0, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_ANN:
+        // FS.Expr.tvWf.eq_52
+        return (tvWf(mut st, a0, (nB(mut st, a1))) && walkPush(mut st, (nA(mut st, a1))))
+    case K_BLOCKR:
+        // FS.Expr.tvWf.eq_53
+        return (tvWf(mut st, a0, (nB(mut st, a1))) && walkPush(mut st, (nA(mut st, a1))))
+    case W_COPYTO:
+        // FS.Expr.tvWf.eq_54
+        return (tvWf(mut st, a0, (nB(mut st, a1))) && walkPush(mut st, (nA(mut st, a1))))
+    case W_LABEL:
+        // FS.Expr.tvWf.eq_55
+        return (tvWf(mut st, a0, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_JUMP:
+        // FS.Expr.tvWf.eq_56
+        return (tvWf(mut st, a0, (nB(mut st, a1))) && walkPush(mut st, (nC(mut st, a1))))
+    case W_FOLD:
+        // FS.Expr.tvWf.eq_57
+        return (tvWf(mut st, a0, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_DNEW:
+        // FS.Expr.tvWf.eq_58
+        return (tvWf(mut st, a0, (nC(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_DENTER:
+        // FS.Expr.tvWf.eq_59
+        return (tvWf(mut st, a0, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_JOIN:
+        // FS.Expr.tvWf.eq_60
+        return (tvWf(mut st, a0, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_TRY:
+        // FS.Expr.tvWf.eq_61
+        return (tvWf(mut st, a0, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_CALL:
+        // FS.Expr.tvWf.eq_62
+        return (tcall_tvWf(mut st, (nB(mut st, a1)), a0) && walkPush(mut st, (nC(mut st, a1))))
+    case W_FNREF:
+        // FS.Expr.tvWf.eq_63
+        return tcall_tvWf(mut st, (nB(mut st, a1)), a0)
+    case W_INDEX:
+        // FS.Expr.tvWf.eq_64
+        return ((walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1)))) && tcoall_tvWf(mut st, (nC(mut st, a1)), a0))
+    case W_CLONE:
+        // FS.Expr.tvWf.eq_65
+        return (tcoall_tvWf(mut st, (nB(mut st, a1)), a0) && walkPush(mut st, (nA(mut st, a1))))
+    case W_GETM:
+        // FS.Expr.tvWf.eq_66
+        return ((tvWf(mut st, a0, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1)))) && walkPush(mut st, (nC(mut st, a1))))
+    case W_DELM:
+        // FS.Expr.tvWf.eq_67
+        return ((tvWf(mut st, a0, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1)))) && walkPush(mut st, (nC(mut st, a1))))
+    case W_PARCH:
+        // FS.Expr.tvWf.eq_68
+        return ((tvWf(mut st, a0, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1)))) && walkPush(mut st, (nC(mut st, a1))))
+    case W_SCOPE:
+        // FS.Expr.tvWf.eq_69
+        v_ks := a0
+        return ((tvWf(mut st, v_ks, (nA(mut st, a1))) && tvWf(mut st, v_ks, (nC(mut st, a1)))) && walkPush(mut st, (nB(mut st, a1))))
+    }
+    // FS.Expr.tvWf.eq_70
+    return true
+}
+
+// FS.Expr.raisedOk（方程式 70 本）
+func exprRaisedOkNode(st mut S, a0 int, a1 int) bool {
+    switch nK(mut st, a1) {
+    case W_LET:
+        // FS.Expr.raisedOk.eq_1
+        return (walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_ADD:
+        // FS.Expr.raisedOk.eq_2
+        return (walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_LT:
+        // FS.Expr.raisedOk.eq_3
+        return (walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_SUB | W_MUL | W_DIV | W_MOD | W_AND | W_OR | W_XOR | W_SHL | W_SHR:
+        // FS.Expr.raisedOk.eq_4
+        return (walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_FADD | W_FSUB | W_FMUL | W_FDIV:
+        // FS.Expr.raisedOk.eq_5
+        return (walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_FEQ | W_FNE | W_FLT | W_FLE | W_FGT | W_FGE:
+        // FS.Expr.raisedOk.eq_6
+        return (walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_EQ | W_NE | W_LE | W_GT | W_GE:
+        // FS.Expr.raisedOk.eq_7
+        return (walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_PAIR:
+        // FS.Expr.raisedOk.eq_8
+        return (walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_CALLV:
+        // FS.Expr.raisedOk.eq_9
+        return (walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_ASSIGN:
+        // FS.Expr.raisedOk.eq_10
+        return (walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_WHILE:
+        // FS.Expr.raisedOk.eq_11
+        return (walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_APPEND:
+        // FS.Expr.raisedOk.eq_12
+        return (walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_EQS:
+        // FS.Expr.raisedOk.eq_13
+        return (walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_CONCAT:
+        // FS.Expr.raisedOk.eq_14
+        return (walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_PAR:
+        // FS.Expr.raisedOk.eq_15
+        return (walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_SEND:
+        // FS.Expr.raisedOk.eq_16
+        return (walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_DEXIT:
+        // FS.Expr.raisedOk.eq_17
+        return (walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_IF:
+        // FS.Expr.raisedOk.eq_18
+        return ((walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1)))) && walkPush(mut st, (nC(mut st, a1))))
+    case W_IFNIL:
+        // FS.Expr.raisedOk.eq_19
+        return ((walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1)))) && walkPush(mut st, (nC(mut st, a1))))
+    case W_CASE:
+        // FS.Expr.raisedOk.eq_20
+        return ((walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1)))) && walkPush(mut st, (nC(mut st, a1))))
+    case W_SETIDX:
+        // FS.Expr.raisedOk.eq_21
+        return ((walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1)))) && walkPush(mut st, (nC(mut st, a1))))
+    case W_SUBSLICE:
+        // FS.Expr.raisedOk.eq_22
+        return ((walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1)))) && walkPush(mut st, (nC(mut st, a1))))
+    case W_SETM:
+        // FS.Expr.raisedOk.eq_23
+        return ((walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1)))) && walkPush(mut st, (nC(mut st, a1))))
+    case W_SPAWN:
+        // FS.Expr.raisedOk.eq_24
+        return ((walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1)))) && walkPush(mut st, (nC(mut st, a1))))
+    case W_NIL:
+        // FS.Expr.raisedOk.eq_25
+        return raisedOk(mut st, a0, (nA(mut st, a1)))
+    case W_UNREACH:
+        // FS.Expr.raisedOk.eq_26
+        return raisedOk(mut st, a0, (nA(mut st, a1)))
+    case W_MKSLICE:
+        // FS.Expr.raisedOk.eq_27
+        if nC(mut st, a1) == 0 {
+            return raisedOk(mut st, a0, (nB(mut st, a1)))
+        }
+        // FS.Expr.raisedOk.eq_28
+        if nC(mut st, a1) > 0 {
+            return raisedOk(mut st, a0, (nB(mut st, a1)))
+        }
+    case W_MKMAP:
+        // FS.Expr.raisedOk.eq_29
+        if nC(mut st, a1) > 0 {
+            return raisedOk(mut st, a0, (nB(mut st, a1)))
+        }
+        // FS.Expr.raisedOk.eq_30
+        if nC(mut st, a1) == 0 {
+            return raisedOk(mut st, a0, (nB(mut st, a1)))
+        }
+    case W_NEWCHAN:
+        // FS.Expr.raisedOk.eq_31
+        return raisedOk(mut st, a0, (nB(mut st, a1)))
+    case W_NEWCH:
+        // FS.Expr.raisedOk.eq_33
+        return raisedOk(mut st, a0, (nC(mut st, a1)))
+    case W_SOME:
+        // FS.Expr.raisedOk.eq_34
+        return walkPush(mut st, (nA(mut st, a1)))
+    case W_FST:
+        // FS.Expr.raisedOk.eq_35
+        return walkPush(mut st, (nA(mut st, a1)))
+    case W_SND:
+        // FS.Expr.raisedOk.eq_36
+        return walkPush(mut st, (nA(mut st, a1)))
+    case W_BLOCK:
+        // FS.Expr.raisedOk.eq_37
+        return walkPush(mut st, (nA(mut st, a1)))
+    case W_ALLOC:
+        // FS.Expr.raisedOk.eq_38
+        return walkPush(mut st, (nB(mut st, a1)))
+    case W_DEREF:
+        // FS.Expr.raisedOk.eq_39
+        return walkPush(mut st, (nA(mut st, a1)))
+    case W_FREEZE:
+        // FS.Expr.raisedOk.eq_40
+        return walkPush(mut st, (nA(mut st, a1)))
+    case W_LEN:
+        // FS.Expr.raisedOk.eq_41
+        return walkPush(mut st, (nA(mut st, a1)))
+    case W_TOBYTE:
+        // FS.Expr.raisedOk.eq_42
+        return walkPush(mut st, (nA(mut st, a1)))
+    case W_FNEG | W_FSQRT | W_TOFLOAT | W_FTOINT | W_FBITS | W_FFROMBITS:
+        // FS.Expr.raisedOk.eq_43
+        return walkPush(mut st, (nA(mut st, a1)))
+    case W_TOINT:
+        // FS.Expr.raisedOk.eq_44
+        return walkPush(mut st, (nA(mut st, a1)))
+    case W_LENM:
+        // FS.Expr.raisedOk.eq_45
+        return walkPush(mut st, (nA(mut st, a1)))
+    case W_KEYSM:
+        // FS.Expr.raisedOk.eq_46
+        return walkPush(mut st, (nA(mut st, a1)))
+    case W_RECV:
+        // FS.Expr.raisedOk.eq_47
+        return walkPush(mut st, (nA(mut st, a1)))
+    case W_CLOSE:
+        // FS.Expr.raisedOk.eq_48
+        return walkPush(mut st, (nA(mut st, a1)))
+    case W_UNFOLD:
+        // FS.Expr.raisedOk.eq_49
+        return walkPush(mut st, (nA(mut st, a1)))
+    case W_INL:
+        // FS.Expr.raisedOk.eq_50
+        return (raisedOk(mut st, a0, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_INR:
+        // FS.Expr.raisedOk.eq_51
+        return (raisedOk(mut st, a0, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_ANN:
+        // FS.Expr.raisedOk.eq_52
+        return (raisedOk(mut st, a0, (nB(mut st, a1))) && walkPush(mut st, (nA(mut st, a1))))
+    case K_BLOCKR:
+        // FS.Expr.raisedOk.eq_53
+        return (raisedOk(mut st, a0, (nB(mut st, a1))) && walkPush(mut st, (nA(mut st, a1))))
+    case W_COPYTO:
+        // FS.Expr.raisedOk.eq_54
+        return (raisedOk(mut st, a0, (nB(mut st, a1))) && walkPush(mut st, (nA(mut st, a1))))
+    case W_LABEL:
+        // FS.Expr.raisedOk.eq_55
+        return (raisedOk(mut st, a0, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_JUMP:
+        // FS.Expr.raisedOk.eq_56
+        return (raisedOk(mut st, a0, (nB(mut st, a1))) && walkPush(mut st, (nC(mut st, a1))))
+    case W_FOLD:
+        // FS.Expr.raisedOk.eq_57
+        return (raisedOk(mut st, a0, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_DNEW:
+        // FS.Expr.raisedOk.eq_58
+        return (raisedOk(mut st, a0, (nC(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_DENTER:
+        // FS.Expr.raisedOk.eq_59
+        return (raisedOk(mut st, a0, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_JOIN:
+        // FS.Expr.raisedOk.eq_60
+        return (raisedOk(mut st, a0, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_TRY:
+        // FS.Expr.raisedOk.eq_61
+        return (raisedOk(mut st, a0, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1))))
+    case W_CALL:
+        // FS.Expr.raisedOk.eq_62
+        return (tcall_raisedOk(mut st, (nB(mut st, a1)), a0) && walkPush(mut st, (nC(mut st, a1))))
+    case W_FNREF:
+        // FS.Expr.raisedOk.eq_63
+        return tcall_raisedOk(mut st, (nB(mut st, a1)), a0)
+    case W_INDEX:
+        // FS.Expr.raisedOk.eq_64
+        return ((walkPush(mut st, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1)))) && tcoall_raisedOk(mut st, (nC(mut st, a1)), a0))
+    case W_CLONE:
+        // FS.Expr.raisedOk.eq_65
+        return (tcoall_raisedOk(mut st, (nB(mut st, a1)), a0) && walkPush(mut st, (nA(mut st, a1))))
+    case W_GETM:
+        // FS.Expr.raisedOk.eq_66
+        return ((raisedOk(mut st, a0, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1)))) && walkPush(mut st, (nC(mut st, a1))))
+    case W_DELM:
+        // FS.Expr.raisedOk.eq_67
+        return ((raisedOk(mut st, a0, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1)))) && walkPush(mut st, (nC(mut st, a1))))
+    case W_PARCH:
+        // FS.Expr.raisedOk.eq_68
+        return ((raisedOk(mut st, a0, (nA(mut st, a1))) && walkPush(mut st, (nB(mut st, a1)))) && walkPush(mut st, (nC(mut st, a1))))
+    case W_SCOPE:
+        // FS.Expr.raisedOk.eq_69
+        v_ks := a0
+        return ((raisedOk(mut st, v_ks, (nA(mut st, a1))) && raisedOk(mut st, v_ks, (nC(mut st, a1)))) && walkPush(mut st, (nB(mut st, a1))))
+    }
+    // FS.Expr.raisedOk.eq_70
+    return true
+}
+
+// List.all の特殊化（tvWf）
+func tcall_tvWf(st mut S, ts int, x0 int) bool {
+    if ts < 0 {
+        return true
+    }
+    for i <- iter.Range(0, table.Get(mut st.h, ts)) {
+        if !tvWf(mut st, x0, table.Get(mut st.h, ts + 1 + i)) {
+            return false
+        }
+    }
+    return true
+}
+
+// Option.all の特殊化（tvWf）
+func tcoall_tvWf(st mut S, o int, x0 int) bool {
+    return o < 0 || tvWf(mut st, x0, o)
+}
+
+// List.all の特殊化（raisedOk）
+func tcall_raisedOk(st mut S, ts int, x0 int) bool {
+    if ts < 0 {
+        return true
+    }
+    for i <- iter.Range(0, table.Get(mut st.h, ts)) {
+        if !raisedOk(mut st, x0, table.Get(mut st.h, ts + 1 + i)) {
+            return false
+        }
+    }
+    return true
+}
+
+// Option.all の特殊化（raisedOk）
+func tcoall_raisedOk(st mut S, o int, x0 int) bool {
+    return o < 0 || raisedOk(mut st, x0, o)
 }
 

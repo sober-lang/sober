@@ -63,6 +63,29 @@ func emitFrag(out mut []byte, c int) {
     }
 }
 
+// 印字中の Def の型パラメータ i の kind（推論した kind の列が無ければ記録の kind k）
+func jKind(st mut S, i int, k int) int {
+    if st.jkAt < 0 || st.jkAt >= len(st.jks) || i >= st.jks[st.jkAt] {
+        return k
+    }
+    return st.jks[st.jkAt + 1 + i]
+}
+
+// kind（旗を詰めた int）を {"rf":B,"mf":B,"cf":B,"cov":B,"kf":B} で印字する
+func kindJson(out mut []byte, k int) {
+    obuf.Lit(mut out, "{\"rf\":")
+    obuf.Bool(mut out, k & 1 != 0)
+    obuf.Lit(mut out, ",\"mf\":")
+    obuf.Bool(mut out, k & 2 != 0)
+    obuf.Lit(mut out, ",\"cf\":")
+    obuf.Bool(mut out, k & 4 != 0)
+    obuf.Lit(mut out, ",\"cov\":")
+    obuf.Bool(mut out, k & 8 != 0)
+    obuf.Lit(mut out, ",\"kf\":")
+    obuf.Bool(mut out, k & 16 != 0)
+    out = append(out, '}')
+}
+
 // 型 t を印字する
 func tyJson(st mut S, out mut []byte, t TyRef) {
     k := tg(mut st, t)
@@ -71,6 +94,12 @@ func tyJson(st mut S, out mut []byte, t TyRef) {
     } else if k == TVar {
         obuf.Lit(mut out, "{\"k\":\"tvar\",\"i\":")
         obuf.Int(mut out, tVarIdx(mut st, t))
+        // kind は印字中の Def の推論した kind、置き直し先は Kind.place（rf なら 0 — 検査器へ写すときと同じ）
+        kd := jKind(mut st, tVarIdx(mut st, t), tyAt(mut st, t).c)
+        obuf.Lit(mut out, ",\"r\":")
+        obuf.Int(mut out, if kd & 1 != 0 { 0 } else { tyAt(mut st, t).b })
+        obuf.Lit(mut out, ",\"kd\":")
+        kindJson(mut out, kd)
         out = append(out, '}')
     } else if k == TBool {
         obuf.Lit(mut out, "{\"k\":\"bool\"}")
@@ -285,7 +314,7 @@ func exprJson(st mut S, out mut []byte, e0 CoreRef) {
             obuf.Lit(mut out, "{\"k\":\"var\",\"i\":")
             obuf.Int(mut out, a)
             out = append(out, '}')
-        } else if k == CLet || k == CAdd || k == CLt || k == CPair || k == CAssign || k == CWhile || k == CAppend || k == CEqs || k == CConcat || k == CCallv {
+        } else if k == CLet || k == CAdd || k == CLt || k == CPair || k == CAssign || k == CWhile || k == CAppend || k == CEqs || k == CConcat {
             // node2
             if k == CLet {
                 obuf.Lit(mut out, "{\"k\":\"let\",\"e\":")
@@ -303,12 +332,10 @@ func exprJson(st mut S, out mut []byte, e0 CoreRef) {
                 obuf.Lit(mut out, "{\"k\":\"append\",\"e\":")
             } else if k == CEqs {
                 obuf.Lit(mut out, "{\"k\":\"eqs\",\"a\":")
-            } else if k == CConcat {
-                obuf.Lit(mut out, "{\"k\":\"concat\",\"a\":")
             } else {
-                obuf.Lit(mut out, "{\"k\":\"callv\",\"f\":")
+                obuf.Lit(mut out, "{\"k\":\"concat\",\"a\":")
             }
-            f2 := if k == CLet { J_BODY } else if k == CAssign || k == CCallv { J_E } else if k == CWhile { J_BODY } else if k == CAppend { J_V } else { J_B }
+            f2 := if k == CLet { J_BODY } else if k == CAssign { J_E } else if k == CWhile { J_BODY } else if k == CAppend { J_V } else { J_B }
             sp = spush(mut st, sp, OS, J_CLOSE)
             sp = spush(mut st, sp, OE, b)
             sp = spush(mut st, sp, OS, f2)
@@ -457,9 +484,9 @@ func exprJson(st mut S, out mut []byte, e0 CoreRef) {
             sp = spush(mut st, sp, OE, b)
             sp = spush(mut st, sp, OS, J_A)
             sp = spush(mut st, sp, OE, a)
-        } else if k == CCallMv {
-            // {"k":"callmv","r":a,"f":F,"e":E}（a = f, b = e, c = anchor）
-            obuf.Lit(mut out, "{\"k\":\"callmv\",\"r\":")
+        } else if k == CCallv {
+            // {"k":"callv","r":c,"f":F,"e":E}（a = f, b = e, c = anchor）
+            obuf.Lit(mut out, "{\"k\":\"callv\",\"r\":")
             obuf.Int(mut out, cx.c)
             obuf.Lit(mut out, ",\"f\":")
             sp = spush(mut st, sp, OS, J_CLOSE)
@@ -492,7 +519,9 @@ func exprJson(st mut S, out mut []byte, e0 CoreRef) {
             sp = spush(mut st, sp, OS, J_CLOSE)
             sp = spush(mut st, sp, OE, b)
         } else if k == CCall {
-            obuf.Lit(mut out, if d != 0 { "{\"k\":\"callm\",\"f\":" } else { "{\"k\":\"call\",\"f\":" })
+            obuf.Lit(mut out, "{\"k\":\"call\",\"r\":")
+            obuf.Int(mut out, d)
+            obuf.Lit(mut out, ",\"f\":")
             obuf.Int(mut out, a)
             tsJson(mut st, mut out, c)
             obuf.Lit(mut out, ",\"e\":")
@@ -511,8 +540,18 @@ func exprJson(st mut S, out mut []byte, e0 CoreRef) {
             sp = spush(mut st, sp, OE, b)
         } else if k == CStrlit {
             obuf.Lit(mut out, "{\"k\":\"strlit\",\"bs\":[")
+            if a < 0 {
+                // @embed の []byte（expr.sober — a = −(節 + 2)）: 中身はファイルから
+                eb := EmbedBytes(mut st, NodeRef(0 - a - 2))
+                for i <- iter.Range(0, len(eb)) {
+                    if i > 0 {
+                        out = append(out, ',')
+                    }
+                    obuf.Int(mut out, int(eb[i]))
+                }
+            }
             mut i := 0
-            while i < dat(mut st, a) {
+            while a >= 0 && i < dat(mut st, a) {
                 if i > 0 {
                     out = append(out, ',')
                 }
@@ -611,16 +650,22 @@ func exprJson(st mut S, out mut []byte, e0 CoreRef) {
     }
 }
 
-// Def 1つ（[param, ret, body, tparams]）を印字する（trust = stdの信頼のインターフェースのDef — trustDefs）
+// Def 1つ（[param, ret, body, kinds]。kinds = [n, kind…] か -1）を印字する（trust = stdの信頼のインターフェースのDef — trustDefs）
 func defJson(st mut S, out mut []byte, d int, trust bool) {
     out = append(out, '{')
     if trust {
         obuf.Lit(mut out, "\"trust\":true,")
     }
-    if hget(mut st, d + 3) > 0 {
-        obuf.Lit(mut out, "\"tparams\":")
-        obuf.Int(mut out, hget(mut st, d + 3))
-        out = append(out, ',')
+    ks := hget(mut st, d + 3)
+    if ks >= 0 && hget(mut st, ks) > 0 {
+        obuf.Lit(mut out, "\"kinds\":[")
+        for i <- iter.Range(0, hget(mut st, ks)) {
+            if i > 0 {
+                out = append(out, ',')
+            }
+            kindJson(mut out, jKind(mut st, i, hget(mut st, ks + 1 + i)))
+        }
+        obuf.Lit(mut out, "],")
     }
     obuf.Lit(mut out, "\"param\":")
     tyJson(mut st, mut out, hgetTy(mut st, d))

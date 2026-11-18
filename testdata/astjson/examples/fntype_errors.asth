@@ -1,0 +1,8 @@
+@@full	96e4fef380259c32	458	11834
+@head	20e69509dfebf8f5	0	66
+func Run	9790f75b6f46f7d5	14	540
+func main	4e0e6cebbc82e640	26	946
+func mk	cf5daa7a8c3fc733	14	607
+type Bad	c46bc68f4fa91a27	1	64
+type Box	a1ae1402fc29ff19	2	108
+type F	38aa0f250bcdfb41	4	165

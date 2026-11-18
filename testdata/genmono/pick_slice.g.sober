@@ -1,0 +1,13 @@
+package main
+
+// 総称関数の版。pick_slice.m.sober が型引数を手で代入した単相の版
+
+func pick[T](a T, b T, first bool) T {
+    return if first { a } else { b }
+}
+
+func main() {
+    s := pick([]int{1, 2, 3}, []int{4}, true)
+    t := pick("left", "right", false)
+    println(len(s), t)
+}

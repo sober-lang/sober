@@ -1,0 +1,31 @@
+@@full	bb11293b637cab04	7319	212384
+@head	44a637abaaf09be7	0	287
+const tApp	87329cc26894a4cf	11	496
+const tArgs	0d0aaa20d68f97c7	5	316
+const tBuild	3d9f4afa6950dbcd	26	1126
+const tCopy	5d2dec7e18c945c2	6	324
+const tEmit	a53aae6999e178eb	11	533
+const tEntry	1ab461d37c966e5c	3	204
+const tGc	ddd112caf0bd10c2	3	202
+const tInc	f0d7e30382377fac	4	251
+const tInfo	296ced4aca936f1b	3	203
+const tJobs	e253d6d500875180	7	377
+const tMore	33005e61f5fa7bbc	5	309
+const tMut	6ebab2028a7a684d	13	527
+const tNeed	d80ff92cce76642d	3	206
+const tNeedy	a08787ab43a5c9a6	6	335
+const tOut	2ba249454c816047	5	308
+const tQuiet	3b3d5a6120785e26	3	197
+const tRun	d7669f1def796268	11	538
+const tTag	099bab281198fbaa	4	243
+const tVerbose	19199822a2f95883	4	256
+func TestDist	a07fc9e1510e2a58	106	3256
+func TestFormat	ace2ba169624fbcd	60	2460
+func TestParseTable	9cc8e6af1562b5df	254	12085
+func TestUsage	580bdb23f1075d24	172	5909
+func TestValues	66dddfefe4a6b394	296	8800
+func argv	d23d69c7e8b8c4bc	10	436
+func formatOf	1ff8854b451aaff1	22	773
+func optS	6ed18cb79ace7f05	13	461
+func verdict	d22653b687850ecd	102	4469
+type pcase	74122162e8a23087	4	206

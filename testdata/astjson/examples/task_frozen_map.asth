@@ -1,0 +1,14 @@
+@@full	048cfc303dd932c0	3157	99059
+@head	1547ba98570dd65d	0	174
+func chan	9bace04aa30e524e	66	2230
+func direct	eb83df64f5a42181	45	1595
+func elems	e261529ae8a0df31	57	1942
+func fields	1210a0d4e4d317ec	37	1349
+func look	1d9203e732ac150a	29	1055
+func main	a609320847e31198	63	1844
+func mapped	a17ef699f95302f6	41	1404
+func mk	11fa4b1136b7140d	27	970
+func nested	1b8551f1cbdfcb1e	69	2290
+func strs	ab460b8ccefca241	68	2355
+type V	0a4f9829f646b6ba	8	336
+type W	ee8b16423f0ee790	4	175

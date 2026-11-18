@@ -1,3 +1,4 @@
 sober: type error at examples/mut_init_composite_mutfield.sober:25:13
+  in main: the argument must have the parameter type of the called function (core rule: call)
 {"errors":[{"msg":"type error"}],"ok":false}
 exit=1

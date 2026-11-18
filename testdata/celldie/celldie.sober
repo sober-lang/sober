@@ -1,0 +1,5 @@
+package celldie
+
+func Pick(xs []int, i int) int {
+    return xs[i]
+}

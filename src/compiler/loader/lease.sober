@@ -27,6 +27,8 @@ const PAR_LEASE_FORM = 24
 const PAR_LEASE_SHAPE = 26
 const PAR_LEASE_PREP = 27
 const PAR_LEASE_RESERVED = 28
+// std/net の Serve のプール task.ServePool を std の外から呼んだ
+const PAR_SERVEPOOL_RESERVED = 38
 
 // ウィンドウのTの形: Scratchのフィールドの名前（宣言の順）
 type LShape struct {
@@ -57,7 +59,7 @@ func leaseAll(cx Cx) ([]ast.Tree, error?) {
                     if b.kind == ast.EIdent {
                         pk := fileImportOf(cx, f, Name(t, b.a))
                         if pk >= 0 && (pk == ppar || pk == ppool) {
-                            return []ast.Tree{}, diag.Par{at: diag.Pos{file: f, tok: x.tok}, kind: PAR_LEASE_RESERVED}
+                            return []ast.Tree{}, diag.Par{at: diag.Pos{file: f, tok: x.tok}, kind: if StrIs(t, x.b, "ServePool") { PAR_SERVEPOOL_RESERVED } else { PAR_LEASE_RESERVED }}
                         }
                     }
                 }
@@ -85,9 +87,15 @@ func leaseAll(cx Cx) ([]ast.Tree, error?) {
     return freeze(out), nil
 }
 
-// フィールドの名前sが変換先の名前か
+// stdの中だけが呼べる std/task の関数の名前か（task.NewLocal / task.Leaseの変換先と、std/netのServeのプール ServePool）。
+// docs/std の生成（tools/docgen）もこの表で外す
+func StdOnlyName(s string) bool {
+    return s == "LocalNew" || s == "LeaseTake" || s == "LeaseGive" || s == "LeaseBlock" || s == "LeaseAttach" || s == "ServePool"
+}
+
+// フィールドの名前sがstdの中だけが呼べる名前か（StdOnlyName と同じ表）
 func leaseReserved(t ast.Tree, s int) bool {
-    return StrIs(t, s, "LocalNew") || StrIs(t, s, "LeaseTake") || StrIs(t, s, "LeaseGive") || StrIs(t, s, "LeaseBlock") || StrIs(t, s, "LeaseAttach")
+    return StrIs(t, s, "LocalNew") || StrIs(t, s, "LeaseTake") || StrIs(t, s, "LeaseGive") || StrIs(t, s, "LeaseBlock") || StrIs(t, s, "LeaseAttach") || StrIs(t, s, "ServePool")
 }
 
 // 節 x が std/task の NewLocal（1）/ Lease（2）の呼び出しか（違えば 0）。`task.NewLocal[T](…)` の型引数の形も

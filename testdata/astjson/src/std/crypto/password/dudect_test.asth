@@ -1,0 +1,7 @@
+@@full	1441ac11eae60720	1246	35678
+@head	38c251be5a20084c	0	180
+func TestExpArgon2id	30805dcdb8026847	42	1478
+func TestExpBcrypt	0b2084451611ebc0	35	1257
+func TestPasswordVerify	3fdacf6c9627b640	34	1336
+func TestPbkdf2Key	459502b21581392d	36	1277
+func dsec	38267cf91a5c56af	56	1895

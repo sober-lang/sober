@@ -4,7 +4,8 @@
 #   ② std/tls の TestFsm（hs_fsm_test.sober — 抽象の状態ごとの具体の Hs に抽象の事象ごとの具体の record を 1 枚通した行）≡ testdata/tls/fsm.golden
 #      （テストがゴールデンを @embedして照合する — 2026-10-20にexamples/tls_fsmから移した: hsはstdの内側の実装で、stdの外の例からはimportできない）
 #   ③ TestFsmNonce = nonce の動的の証人（KeyUpdate を挟んだ送りの (鍵の指紋, seq) に重なりなし — dup=0）
-# h1 の状態は AES-128-GCM の記録（HRR）を流すので、塊の無い機械では ② を飛ばす（テストが skipped の行を印字して通る — ここで SKIP を印字）
+# h1の状態はAES-128-GCMの記録（HRR）を流すので、塊の無い機械では ② の遷移の行を照合できない（テストがskippedの行を印字して通る）。
+# そのときはFAIL。SOBER_GATES_ALLOW_SKIPにaesを書いたときだけSKIP（gatelib.shのcant）
 #   scripts/tlsfsm.sh            照合
 #   scripts/tlsfsm.sh --regen    ゴールデンをLeanの表から作り直す（モデルを意図して変えたときだけ — 差分を見てからコミット）
 set -uo pipefail
@@ -15,6 +16,7 @@ G=testdata/tls/fsm.golden
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 export SOBER_WORKERS=1
+source scripts/gatelib.sh
 # sober-gen: gatesの下（GATES_LEANTOOLS=1）は共有のビルドのステージがビルドした — ここでビルドすると、並走するextractの lake build と競合してETXTBSYになる。
 # 単発の実行ではビルドする（Leanのソースが変わった後に古い道具で照合しない）
 if [ "${GATES_LEANTOOLS:-}" != 1 ]; then
@@ -27,7 +29,9 @@ if ! cmp -s "$W/lean.txt" "$G"; then echo "FAIL: the Lean table (sober-gen --tls
 mkdir -p "$W/work"
 "$S2" test std/tls --run TestFsm --work "$W/work" > "$W/out" 2>&1 || { cat "$W/out"; echo "FAIL: sober test std/tls --run TestFsm"; fail=1; }
 grep -q '^ok   std/tls.TestFsm$' "$W/out" || { echo "FAIL: TestFsm did not pass"; fail=1; }
-grep -q 'transition rows skipped' "$W/out" && echo "SKIP: transition rows (no AES-NI / PCLMULQDQ / SSSE3 — the h1 states replay an AES-128-GCM trace)"
+if grep -q 'transition rows skipped' "$W/out"; then
+    cant tlsfsm aes "the transition rows (no AES-NI / PCLMULQDQ / SSSE3; the h1 states replay an AES-128-GCM trace)" || fail=1
+fi
 nl=$(grep '^nonce ' "$W/out")
 case "$nl" in
     *" dup=0") ;;

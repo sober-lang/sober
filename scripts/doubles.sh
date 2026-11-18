@@ -8,13 +8,16 @@
 #   ⑥ 本物の宣言の変更でテストの結果の再生が外れる（契約の検査が読んだ本物のファイルが照合に入る）
 #   ⑦ 状態を貯める fake（std/testing/cell — 41 節）: logger の spy で greet のテストが走り（出力 ≡ greet.expect）・check --test と check <double> が受理・
 #      配置先の読み書き / 並行のUpdate / quickの試行ごとの空（testdata/cells — 出力 ≡ cells.expect・check --test が受理）・
-#      拒否（neg/c0* は ④ の表・Updateのラムダのエフェクト = analyzer・置けない型・Set / Updateの値の型の食い違い = checkとbuildの両方）
+#      拒否（neg/c0* は ④ の表・Updateのラムダのエフェクト = analyzer・置けない型・Set / Updateの値の型の食い違い = checkとbuildの両方）・
+#      鍵の中で死んだtaskは鍵を返す（testdata/celldie — Updateの本体で死んだ子の後に親のGetが前の値を返す。変異106 = 返さない形はGetで止まる）。
+#      格納場所を使うプログラムのServeの接続のtask（期限の配列に入る）が、Updateをしたリクエストとしないリクエストの後に終わる（鍵の記録と期限の添字のワードが重なると落ちる）
 #   ⑧ 配線の印字（test --wiring）・--cover-pkg がdoubleのファイルに計装を打たない・doubleの中のpanicの位置がdoubleの実パスで出る（crashed）
 #   ⑨ キャッシュ: 同じ配置先で本物のbuild（app）とdoubleつきのテスト（handler）を交互にビルドし、検証モード（SOBER_CACHE_VERIFY=1 / 2）でstaleが出ない
 #      （差し替えに固有の鍵の成分は無い — 中身で別の項目になることの確認。再生の鍵のミューテーションの検査 = scripts/doublesmut.sh）
 set -uo pipefail
 cd "$(dirname "$0")/.."
 SOBER=${SOBER:-./bin/sober}
+S2=${STAGE2:-out/stage2/sober2}
 case $SOBER in /*) SA=$SOBER ;; *) SA=$PWD/$SOBER ;; esac
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
@@ -42,6 +45,9 @@ diff "$W/g" testdata/doubles/greet.expect > /dev/null || { echo "FAIL: greet out
 "$SOBER" test testdata/cells > "$W/c" 2>&1 || { echo "FAIL: sober test cells"; cat "$W/c"; fail=1; }
 diff "$W/c" testdata/cells.expect > /dev/null || { echo "FAIL: cells output"; diff "$W/c" testdata/cells.expect | head -5; fail=1; }
 "$SOBER" check testdata/cells --test > /dev/null || { echo "FAIL: check --test cells"; fail=1; }
+"$SOBER" test testdata/celldie > "$W/cd" 2>&1 && grep -qxF "err=true get=5" "$W/cd" && grep -qxF "serve ok=20 n=10" "$W/cd" || { echo "FAIL: celldie"; cat "$W/cd"; fail=1; }
+"$S2" build testdata/celldie --test --emit=elf --rt-mutant=106 -o "$W/cd106" > "$W/cdb" 2>&1 || { echo "FAIL: build celldie (mutant 106)"; head -3 "$W/cdb"; fail=1; }
+timeout 5 "$W/cd106" TestDieInUpdate > /dev/null 2>&1; [ $? = 124 ] || { echo "FAIL: celldie mutant 106 did not stop at Get"; fail=1; }
 # 脱糖の拒否diag.Cellの文面はcheckキャッシュのパス（外れ → 当たり）でも切ったパスと同じ（diag.Words — 化けるとCoreFragmentのtoken 0）
 for m in 0 1 1; do SOBER_CHECK_CACHE=$m "$SOBER" check testdata/cellneg --test 2>&1 | tail -1; done > "$W/cn"
 [ "$(sort -u "$W/cn" | wc -l)" = 1 ] && grep -q '(Cell): a cell holds plain data' "$W/cn" || { echo "FAIL: cellneg verdict differs on the check cache path"; cat "$W/cn"; fail=1; }

@@ -43,9 +43,9 @@ slice（`[]T`）とmap（`map[K]V`）は言語の組み込みです（`append`�
 
 | package | 用途 | 主なもの |
 |---|---|---|
-| [`std/task`](../std/task.ja.md) | structured concurrency | `Map`・`Run`（scopeを開く — 本体は札 `Scope` を受ける）+ `Spawn` + `Join` / `Gather` / `Try`・チャネル `NewChannel` / `Send` / `Recv` / `Close`・`Pool`（`NewPool` / `SpawnIn`）・多くのtaskから1つの状態への直列の更新 `Domain`（`NewDomain` / `Update` / `Read` / `Await` — [並行](concurrency.ja.md) 5節） |
+| [`std/task`](../std/task.ja.md) | structured concurrency | `Map`・`Run`（scopeを開く — 本体は札 `Scope` を受ける）+ `Spawn` + `Join` / `Gather` / `Try`・チャネル `NewChannel` / `Send` / `Recv` / `Close`・`Pool`（`NewPool` / `SpawnIn`）・多くのtaskから1つの状態への直列の更新 `Domain`（`NewDomain` / `Update` / `Read` / `Await` — [並行](concurrency.ja.md) 5節）・taskの固定費のバイト `Fixed`（プールの天井は、本数 ×（宣言 + `task.Fixed()`）で数える） |
 
-子のtaskに渡せるのは不変の値とチャネルだけです。出力はワーカー数に依らず同じです（[言語ツアー7節](tour.ja.md#7-並列--structured-concurrencyチャネル)）。
+子のtaskに渡せるのは不変の値・チャネル・domainだけです。出力はワーカー数に依らず同じです（[言語ツアー7節](tour.ja.md#7-並列--structured-concurrencyチャネル)）。
 
 ## 数と乱数
 
@@ -69,7 +69,7 @@ slice（`[]T`）とmap（`map[K]V`）は言語の組み込みです（`append`�
 
 | package | 用途 | 主なもの |
 |---|---|---|
-| [`std/net`](../std/net.ja.md) | TCP | `for l <- net.Listen(addr)?`・`for c <- net.Accept(l)?`・`for c <- net.Dial(addr)?`（本体を抜けたら閉じる）・`for chunk <- net.Recv(c)?`・`Send`・接続1本 = task 1本で走らせる `Serve` |
+| [`std/net`](../std/net.ja.md) | TCP | `for l <- net.Listen(addr)?`・`for c <- net.Accept(l)?`・`for c <- net.Dial(addr)?`（本体を抜けたら閉じる）・`for chunk <- net.Recv(c)?`・`Send`・接続1本 = task 1本で走らせる `Serve`・このプロセスのServeが待たせている接続の数と待ち行列の大きさの和を返す `Waiting` |
 | [`std/http`](../std/http.ja.md) | サーバとクライアントが共に使うHTTPの語彙 | `Field`（ヘッダの1本）・`StatusCode` と型つきのconst（`http.OK` …）・`BadHeader` |
 | [`std/http/server`](../std/http-server.ja.md) | HTTP/1.1のサーバ | `ServeConn`（netの接続に）/ `ServeWith`（受けと送りの関数に — TLSの接続など。省略可の `put:` にレスポンスを送らずに積む関数を渡すと受けの側が送る — tls.Putの形）・`SetCookie`（Response.cookies — Secure / HttpOnly / SameSite=Laxが既定）・`Request` / `Response`・`Text` / `Json` / `Status`・`Header` / `Query` / `Form` / `Multipart`（ファイルのアップロード）/ `JsonDoc`・ルーター `Route` + `Mount` / `Merge` / `Dispatch` / `Param`・`Middleware`（`Before` / `After`）・レスポンスのgzipとstream |
 | [`std/http/client`](../std/http-client.ja.md) | HTTP/1.1のクライアント（TLSは常に検証 — 既定は1.3だけ） | 状態を持たない。リクエストごとの `Request(url, method:, headers:, body:, cookies:, policy:)`・方針のデータ `Policy`（ゼロ値が安全な既定: 本文の上限8 MiB・期限30秒・redirect 10回・`extraRoots`〔私的PKI — `tls.ParseRoots`〕・`proxy`〔`ParseProxy`〕/ `proxyAuth`・`dangerouslyAllowTls12`）・cookieは値（`CookieValue` で取り出し `cookies:` に載せる）・本文を切片で受ける `for part <- http.client.Stream(url)?`・keep-aliveのセッション `Open` の中の `Send`（Sessionは同一性の型）。誤りは `Dns`・`Tls`・`Timeout`・`TooManyRedirects`・`InsecureRedirect`・`BodyTooLarge`・`Closed`・`BadUrl`・`BadResponse`・`ProxyRefused`・`BadProxy`（ParseProxy） |

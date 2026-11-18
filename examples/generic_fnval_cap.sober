@@ -1,0 +1,28 @@
+package main
+
+// 関数値を経る: pick の本体は T の値を switch の分岐の束縛からそのまま返す。T は region を上げて読めればよいので、
+// string の s を捕捉したクロージャ（mk が作る F の値）も型引数に渡せる
+
+type Opt[T] union {
+    Some { v T }
+    None {}
+}
+
+type F func(x int) int
+
+func pick[T](o Opt[T], d T) T {
+    return switch o {
+    case Some{v}: v
+    default: d
+    }
+}
+
+func mk(s string) F {
+    return (x int) => x + len(bytes(s))
+}
+
+func main() {
+    g := mk("ab")
+    f := pick(Some[F]{v: g}, g)
+    println(f(1))
+}

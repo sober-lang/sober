@@ -1,0 +1,8 @@
+@@full	cb24a7fdb61ce2ef	1565	50168
+@head	0bae42038376bd8a	0	105
+func crash	0571fbc817925f0e	14	511
+func load	93eccb7f8e94d82a	19	708
+func main	6b09617c9a41d96a	149	4971
+func report	ea78871b91db03be	35	1408
+func show	69e26a284d25e319	16	881
+type Bad	021f567c8fa1c2c3	2	114

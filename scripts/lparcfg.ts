@@ -10,8 +10,8 @@
 import { readFileSync, readdirSync } from "fs";
 
 const DIR = new URL("../src/compiler/lower/", import.meta.url).pathname;
-// 関数ごとの入口（群の子の束の列 lB1Func / lB2Func — move.sober — と、〜Module が関数ごとに呼ぶもの）
-const ENTRIES = ["optFunc", "lB1Func", "lB2Func", "sroaFunc", "m2rFunc", "gvnFunc", "hdrFunc", "bceFunc", "licmFunc", "depthFlowFunc", "cfgCleanFunc", "mfFunc", "vecFunc", "slpFunc", "cmpDupFunc"];
+// 関数ごとの入口（群の子の束の列 lB1Func / lB2Func — move.sober — と、〜Module が関数ごとに呼ぶもの・B2の子の最後の検証 vfyFunc）
+const ENTRIES = ["optFunc", "lB1Func", "lB2Func", "sroaFunc", "m2rFunc", "gvnFunc", "hdrFunc", "bceFunc", "licmFunc", "depthFlowFunc", "cfgCleanFunc", "mfFunc", "vecFunc", "slpFunc", "cmpDupFunc", "vfyFunc"];
 // 子のStにコピーしてよいフィールド（読みの種類: cfg = 親の値をコピーする・work = 子では空から〔作業域〕・fn = 子では渡した関数・tbl = kindsInitが組む・
 // ro = 子では既定〔偽 / 空〕のまま — x86の読みインターフェースxgはxroが偽ならヒープst.d.hを読む）
 const ALLOW: Record<string, string> = {
@@ -31,6 +31,7 @@ const ALLOW: Record<string, string> = {
   rtMatchLen: "cfg", rtJClean: "cfg",   // 展開後のフィールドの読みの巻き上げ（ldhoist.sober — ループの中で許す読むだけのrt）・lParCfgの15 / 16番
   rtStreq: "cfg",   // コピーの転送（cpfwd.sober — 読むだけのrt.str_eq）   // 展開後の上限の巻き上げ（rlim.sober — 種の番地 @rt.meta）   // ヘッダのループ昇格（hloop.sober — 許すrtの呼び出し・確保の根）   // UTF-8の境界の畳み（ubf.sober — Checkの呼び出しの点・boundaryのコピーのフラグの有無）
   lkid: "kid", lret: "kid",   // 群の子のフラグと呼び先の戻りの型の表（lFnRet — move.sober）
+  lpty: "kid", vfyLast: "kid",   // B2の子の最後の検証（vfyFunc）: 呼び先の仮引数の型の表（lPtys）と、検証の形（子では常に最後の1回の形）
   bcAud: "ro",   // 扉の監査のフラグ（子では既定の偽 — 監査は束を回さない: lParOn）
 };
 // 扉の監査の記録の関数（`if st.bcAud {` の下だけで呼ぶ — 下の照合。閉包はここで止める）
@@ -79,6 +80,10 @@ for (const n of seen) {
 const FNREAD = new Set<string>([
   // m2r / gvn / 検証器の値の型: 呼び出しの結果の型を呼び先の F_RET から読む — 群の子は親の表 st.lret から（lFnRet の !st.lkid の枝だけがヒープを読む）
   "lFnRet: irFnRet(g)",
+  // 最後の検証の呼び出しの照合（B2の子の中でも走る — vfyFunc）: 呼び先の仮引数と戻りの型 — 群の子は親の表 st.lpty / st.lret から（!st.lkid の枝だけがヒープを読む）
+  "vfyInst: irFnRet(FnRef(a)",
+  "vfyCalleeNP: irFnPtys(g)",
+  "vfyCalleePty: irFnPtys(g)",
 ]);
 const fnReads: string[] = [];
 for (const n of seen) {
@@ -127,8 +132,11 @@ for (const [k, users] of [...fields].sort()) {
     if (hits.length && n !== "xg") { console.log(`FAIL heap-touch after the freeze ${fns.get(n)!.file}:${n}: ${[...new Set(hits)].join(" ")}`); heapFail += 1; }
     // 読みインターフェースxgは凍結の前の分岐でdesugar.HeapGet(mut st.d, …) を呼ぶ（フィールドの私有 — language.md 20 節。分岐はst.hfOnで凍結の後には通らない）
     // loader.Stage（ステージのフラグ — report-1184）は環境変数を読んで標準エラーへ書くだけでヒープに触らないので許す・loader.Varints（格納場所の値の
-    // 符号化のインターフェース — 段階3' R1・report-1236）はワードの列を受けてバイト列を返す純関数（Stもヒープも受けない）なので許す
-    const ext = n === "xg" ? [] : [...b.matchAll(/\b(desugar|loader|ast)\.[A-Za-z_]+\(/g)].map(m => m[0]).filter(c => c !== "loader.Stage(" && c !== "loader.Varints(");
+    // 符号化のインターフェース — 段階3' R1・report-1236）はワードの列を受けてバイト列を返す純関数（Stもヒープも受けない）なので許す・
+    // loader.ParFellBack（子の死を逐次で作り直した警告 — report-cold-4）はloader.Stageと同じく環境変数を読んで標準エラーへ書くだけなので許す
+    // loader.EmbedReload（@embedの[]byteの中身の読み直し — lower/embed.sober）は、引数がパスと長さと指紋（文字列と整数）だけでStもヒープも受けず、
+    // 返すバイト列は書き手がrodataのバッファへ写すだけ（凍結した表を読みも書きもしない）なので許す。照合に外れればEmbedChangedで止まる
+    const ext = n === "xg" ? [] : [...b.matchAll(/\b(desugar|loader|ast)\.[A-Za-z_]+\(/g)].map(m => m[0]).filter(c => c !== "loader.Stage(" && c !== "loader.Varints(" && c !== "loader.ParFellBack(" && c !== "loader.EmbedReload(");
     if (ext.length) { console.log(`FAIL ext-call after the freeze ${fns.get(n)!.file}:${n}: ${[...new Set(ext)].join(" ")}`); heapFail += 1; }
   }
   if (verbose) console.log(`xModuleFrozen closure: ${xs.size} functions`);
@@ -190,7 +198,7 @@ let x86Fields = 0;
       if (!ok || verbose) console.log(`${ok ? "ok  " : "FAIL"} x86 group st.${m[1]} = ${rhs} (${ks.length ? "cfg" : DOOR[m[1]] ? "door" : "not from xParCfg or a door"})`);
     }
     const xsrc = readFileSync(DIR + "x86.sober", "utf8");
-    for (const need of ["cfg := xParCfg(mut st)", "ckTab(mut st, xParCfg(mut st))"]) {
+    for (const need of ["cfg := xParCfg(mut st)", "ckTab(mut st, xParCfg(mut st), true)"]) {
       if (!xsrc.includes(need)) { console.log(`FAIL: x86.sober lost \`${need}\` (the x86 group cfg must be the keyed list)`); fail += 1; }
     }
   }

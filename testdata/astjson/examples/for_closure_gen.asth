@@ -1,0 +1,14 @@
+@@full	29014b80def401c7	2150	57646
+@head	4cb1e368e1e4a834	0	108
+func count	f929f6305f3b5aae	16	651
+func first	6cb2e25717c74eea	7	314
+func gen	f4968da40dd201be	33	1210
+func heads	622be0741f8f6fb2	21	817
+func main	2e5d93f08f92a294	121	3742
+func pieces	ecf5026ea46b8e15	15	559
+func relay	aa474c4deb0f97f6	51	1717
+func sendv	3f8d897a1be80948	19	755
+func show	c427bbb78595d168	25	1034
+func sum	a4d653f5ae9a488e	19	776
+type Gone	cd42f0d9dbaa5d47	2	111
+type Short	4d945dc86ef67953	2	111

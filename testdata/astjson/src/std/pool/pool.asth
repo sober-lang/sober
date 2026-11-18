@@ -1,0 +1,28 @@
+@@full	99425aff1c9684d0	4175	106832
+@head	5a4a7a2264232f88	30	1934
+func Acquire	f522d39ed23f712d	80	2778
+func Cap	a394e6e518229670	7	327
+func Get	d897831d06ad8c08	20	725
+func LeaseAttach	37d10e9d65f55b90	111	3702
+func Len	c13c0cb6badd2aa2	6	303
+func Load	f84413eb7271f65c	23	836
+func LoadRaw	cff0171e7ef04e38	8	387
+func LoadRaw16	a7c6d35ae6a4d0ab	17	671
+func LoadRaw32	4deec5eabdca66ac	17	671
+func NewScratch	b72e10360e33a945	23	896
+func Release	15ecadeeebfcf76a	63	2197
+func Renew	0c5a599670e8554e	50	1717
+func RenewDense	ca716b9537625ffe	17	707
+func Set	672acafda3db6069	22	853
+func Store	c6766bd0e846ae33	23	893
+func StoreRaw	1e754c15ab3cac3a	9	474
+func StoreRaw16	cb2e21bfca8cde28	19	784
+func StoreRaw32	e93fafe40c82c99b	19	784
+func badScratch	149df6bb112e4e7d	6	353
+func live	a85fd4952eb1dad1	26	978
+func zeros	df72f54012463223	17	686
+type BadScratch	3151e24423737070	2	116
+type Handle	87c5ccc006af8e9a	3	163
+type Pool	1176f329f6a585d8	9	417
+type Scratch	50981e3925ba6345	7	334
+type ScratchSized	334500cd62cc7c5b	1	73

@@ -1,0 +1,8 @@
+@@full	4b4f511d168a6879	2416	65047
+@head	418c5c4c43e5b149	0	135
+func fill	7fa26d5f36132f0d	29	1073
+func main	e0057303897d3d9a	326	9572
+func mkRec	a7dafb7cd55763d4	9	442
+func nested	6ca6fb150d07d527	28	985
+func sum	b7a70a8b8921ca79	26	916
+type Rec	7af218632ff10c93	4	198

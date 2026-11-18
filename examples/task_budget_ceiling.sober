@@ -1,0 +1,54 @@
+package main
+
+// 天井で死ぬ（language.md 11 節「予算と admission」）: 予約（budget: + task.Fixed()）を越えて伸びるtaskは、越えた分を節から借りて続く。
+// プールの節か根の天井が埋まったときだけ、伸びようとしたtaskが死ぬ（RegionExceeded{cause: budget}）。scopeのbudget:の節は記帳だけ
+
+import "std/iter"
+import "std/task"
+
+// n個のintの作業域を作って畳む
+func work(n int) int {
+    mut b := mut []int{}
+    for i <- iter.Range(0, n) {
+        b = append(b, i % 7)
+    }
+    mut s := 0
+    for v <- b {
+        s += v
+    }
+    return s
+}
+
+// プールpで宣言64 KiBの子がn個のintを積む: 値か、死んだら -1（死はscopeの出口のChildDied）
+func inPool(p task.Pool, n int) int {
+    r, e := task.Run((s task.Scope) => {
+        h, _ := task.SpawnIn(s, p, () => work(n), budget: 64 * task.KB)
+        if h == nil {
+            -2
+        } else {
+            switch task.Try(h) {
+            case task.Ok{v}: v
+            case task.Failed{}: -3
+            case task.Died{}: -1
+            }
+        }
+    })
+    return if e != nil { -1 } else { r }
+}
+
+func main() {
+    p := task.NewPool(1 * task.MB, nil)
+    // 約500 KiBを積む子: 予約を越えた分を借りる。天井1 MiBの内なので生きる（借りは終わりで返る — 2回目も生きる）
+    println(inPool(p, 40000))
+    println(inPool(p, 40000))
+    // 約2 MiBを積む子: 天井を越えて死ぬ
+    println(inPool(p, 262144))
+    v := task.Ledger().pools[0]
+    println("died=${v.died} cut=${v.cut}")
+    // scopeのbudget:（64 KiB）は記帳だけ: 宣言16 KiBの子が約2 MiBを積んでも死なない
+    r, e := task.Run((s task.Scope) => {
+        task.Join(task.Spawn(s, () => work(262144), budget: 16 * task.KB))
+    }, budget: 64 * task.KB)
+    println(r)
+    println(e == nil)
+}

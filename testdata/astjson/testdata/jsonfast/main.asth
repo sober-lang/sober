@@ -1,0 +1,19 @@
+@@full	b223f43fde7f5e97	3502	102025
+@head	43aeecc5e629fad0	0	345
+func clean	ae9bd5d77df5fa84	14	551
+func deep	84df558dac0aab8e	19	779
+func dirty	8c8bd24577831025	32	1123
+func flt	3172a015ce522d26	23	892
+func hasEsc	e1d7ff5a02957e4e	17	645
+func inner	a39b81451e39c87f	14	629
+func main	7b452214399610e2	94	3168
+func num	23e4ea7c72ad3faf	80	2578
+func odeep	dabd238b0d3e3d36	15	544
+func oinner	e887e8a3d1205415	15	547
+func onum	a48c714f96cd6856	15	541
+func ostr	38d5e80c427d9007	15	544
+func rec	aed8163f5efbef82	107	3699
+func str	a26afcdf165f5188	53	1798
+type Deep	ac4493d8732a9598	6	268
+type Inner	9b87ca5d0d05d6bf	4	208
+type Rec	3adf18a36afebdda	30	1268

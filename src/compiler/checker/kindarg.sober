@@ -1,0 +1,25 @@
+package checker
+
+// build の経路の型引数の kind の検査（lower が使う）: 脱糖器の型の表の上で、Lean の kindOk をそのまま引く
+
+import "desugar"
+import "std/iter"
+import "std/table"
+
+// 型の表 tys（desugar.TySub の写し）の上で、組 [kind, 型]… を kindOk で見る。最初に偽になる組の [番号, 欠けた性質（kindMiss）]（全部真なら空）
+func KindArgsBad(tys []desugar.Ty, items []int) []int {
+    mut st := S{}
+    table.Push(mut st.h, 0)
+    st.tInt = mk(mut st, TInt, 0, 0, 0)
+    st.tBool = mk(mut st, TBool, 0, 0, 0)
+    st.tUnit = mk(mut st, TUnit, 0, 0, 0)
+    st.tByte = mk(mut st, TByte, 0, 0, 0)
+    st.tF64 = mk(mut st, TF64, 0, 0, 0)
+    for i <- iter.Range(0, len(items) / 2) {
+        t := ctyOf0(mut st, tys, items[i * 2 + 1])
+        if !kindOk(mut st, items[i * 2], t) {
+            return []int{i, kindMiss(mut st, items[i * 2], t)}
+        }
+    }
+    return []int{}
+}

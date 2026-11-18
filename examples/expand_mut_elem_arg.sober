@@ -1,0 +1,36 @@
+package main
+
+// mutのコンテナを持つ要素を、展開される関数の関数型の仮引数へ渡す。名前の関数を呼ぶ形と同じく受理する
+// （仮引数への束縛は、mutの部分を持つ値をregionの読み替えで包まない）
+
+type Buf struct {
+    data mut []int
+}
+
+func total(xs mut []Buf, size func(Buf) int) int {
+    mut s := 0
+    mut i := 0
+    while i < len(xs) {
+        s += size(xs[i])
+        i += 1
+    }
+    return s
+}
+
+func totalBound(xs mut []Buf, size func(Buf) int) int {
+    mut s := 0
+    mut i := 0
+    while i < len(xs) {
+        b := xs[i]
+        s += size(b)
+        i += 1
+    }
+    return s
+}
+
+func main() {
+    mut bs := mut []Buf{Buf{data: mut []int{1, 2}}, Buf{data: mut []int{3}}}
+    println(total(mut bs, (b Buf) => len(b.data)))
+    bs[1].data = append(bs[1].data, 4)
+    println(totalBound(mut bs, (b Buf) => len(b.data) * 10))
+}

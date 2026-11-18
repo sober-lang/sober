@@ -48,16 +48,16 @@ TLS 1.3（RFC 8446）のサーバ（`std/tls` — `tls.Serve`）とクライア�
 | 項目 | 状態 | 証拠 |
 |---|---|---|
 | TLS 1.2以前・SSL（サーバは1.3だけ — 降格・再交渉・CBCの面を構造的に持たない。1.2の客はLB / プロキシで受ける） | 意図して非対応 | tls/reject: tls12 |
-| 0-RTT（early data — 再送の攻撃面を持たない） | 意図して非対応 | — |
+| 0-RTT（early data — 再送の攻撃面を持たない） | 意図して非対応 | なし |
 | 圧縮（CRIMEの形） | 意図して非対応 | tls/reject: comp |
-| PSK・session resumption・クライアント証明書（mTLS）・SNIごとの証明書の切り替え（実需が出るまで持たない） | 意図して非対応 | — |
+| PSK・session resumption・クライアント証明書（mTLS）・SNIごとの証明書の切り替え（実需が出るまで持たない） | 意図して非対応 | なし |
 <!-- confsync:end claims tls-server intentional -->
 
 <!-- confsync:begin claims tls-client intentional -->
 | 項目 | 状態 | 証拠 |
 |---|---|---|
-| TLS 1.2のCBC・RSA鍵交換・静的DHのsuite・TLS 1.1以前 | 意図して非対応 | — |
-| session resumption・0-RTT（NewSessionTicketは読み捨てる） | 意図して非対応 | — |
+| TLS 1.2のCBC・RSA鍵交換・静的DHのsuite・TLS 1.1以前 | 意図して非対応 | なし |
+| session resumption・0-RTT（NewSessionTicketは読み捨てる） | 意図して非対応 | なし |
 <!-- confsync:end claims tls-client intentional -->
 
 ## 未実装
@@ -68,8 +68,8 @@ TLS 1.3（RFC 8446）のサーバ（`std/tls` — `tls.Serve`）とクライア�
 | TLS_AES_256_GCM_SHA384 | 0.8圏 | tls/reject: nosuite |
 | 鍵交換secp256r1（P-256） | 0.8圏 | tls/reject: nogroup |
 | 証明書ECDSA P-256（署名はRFC 6979） | 0.8圏 | tls/reject: nosig |
-| OCSP stapling | 0.8圏 | — |
-| HTTP/2のALPN（h2） | 0.8圏 | — |
+| OCSP stapling | 0.8圏 | なし |
+| HTTP/2のALPN（h2） | 0.8圏 | なし |
 <!-- confsync:end claims tls-server planned -->
 
 ## 証拠

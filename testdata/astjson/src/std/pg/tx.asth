@@ -1,0 +1,13 @@
+@@full	83ad8c96a5d0e067	1462	36383
+@head	f0489ca4afe14bab	0	101
+const ReadCommitted	cd44ad53a9f071dd	3	117
+const RepeatableRead	19f67c794802be4d	3	118
+const Serializable	8bb9e7a89a2aa294	3	116
+func Tx	b5648de1ff2846db	43	1549
+func beginText	6330acb9d7d3b8ce	39	1558
+func txAbort	cbe3fe4aed022dc8	24	914
+func txCommit	4605b41df28748a5	43	1484
+func txOpen	c58b530986521da4	39	1356
+func undo	1f3e8693052566d1	28	1063
+type Aborted	0862fbd3b15acc08	1	68
+type Isolation	c0adf883a9505215	2	93

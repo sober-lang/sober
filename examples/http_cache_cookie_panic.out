@@ -3,6 +3,7 @@ Content-Type: text/plain
 Cache-Control: private, max-age=30
 Set-Cookie: sid=s1; Path=/; Secure; HttpOnly; SameSite=Lax
 Content-Length: 3
+Date: Sun, 06 Nov 1994 08:49:37 GMT
 
 hi
 

@@ -74,7 +74,7 @@ func frameAtRef(b []byte, at int, mh int, mb int) frameRef {
     if sp1 <= s || sp2 <= sp1 + 1 || indexInRef(b, sp2 + 1, ce, ' ') >= 0 {
         return frRef(400, s)
     }
-    // ターゲットのNULと制御文字（0x20未満。HTABを含む）は400
+    // ターゲットのNULと制御文字（0x20未満。HTABを含む）と0x80以上のバイトは400
     if lowRef(b, sp1 + 1, sp2) {
         return frRef(400, s)
     }
@@ -158,7 +158,7 @@ func frameAtRef(b []byte, at int, mh int, mb int) frameRef {
         end = if he + cl <= n { he + cl } else { -1 }
     }
     if end == -1 {
-        return frRef(0, s)
+        return frameRef{st: 0, s: s, he: he, end: 0, chunked: false, keep: false, v10: false}
     }
     return frameRef{st: 1, s: s, he: he, end: end, chunked: chunked, keep: keep, v10: v10}
 }
@@ -167,10 +167,6 @@ func chunkedEndRef(b []byte, he int, mb int) int {
     mut p := he
     mut total := 0
     while true {
-        // 生のバイト数の上限（小さい chunk の量産で持ち越しの列を溢れさせない）
-        if p - he > 2 * mb + 64 {
-            return -413
-        }
         e := lineEndRef(b, p)
         if e < 0 {
             return if len(b) - p > 1024 { -400 } else { -1 }
@@ -179,14 +175,17 @@ func chunkedEndRef(b []byte, he int, mb int) int {
         mut q := p
         mut size := 0
         while q < c && hexValRef(b[q]) >= 0 {
-            size = size * 16 + hexValRef(b[q])
-            if size > mb {
-                return -413
+            if size >= 576460752303423488 {
+                return -400
             }
+            size = size * 16 + hexValRef(b[q])
             q += 1
         }
         if q == p || !chunkExtRef(b, q, c) {
             return -400
+        }
+        if size > mb {
+            return -413
         }
         p = e + 1
         if size == 0 {
@@ -413,7 +412,6 @@ func teRef(v []byte) int {
         isChunked := eqFoldRef(v, ss[k], es[k], bytes("chunked"))
         k += 1
         while k < len(kinds) && kinds[k] == int(';') {
-            other = true
             if k + 3 >= len(kinds) || kinds[k + 1] != 1 || kinds[k + 2] != int('=') || (kinds[k + 3] != 1 && kinds[k + 3] != 2) {
                 return 400
             }
@@ -438,11 +436,11 @@ func teRef(v []byte) int {
 }
 
 // ヘッダの行 [ls, ce) にCR・HTAB以外の制御文字・DELがあるか
-// b[s:e) に0x20未満のバイトがあるか
+// b[s:e) に0x20未満か0x80以上のバイトがあるか
 func lowRef(b []byte, s int, e int) bool {
     mut i := s
     while i < e {
-        if b[i] < 32 {
+        if b[i] < 32 || b[i] >= 128 {
             return true
         }
         i += 1
@@ -619,6 +617,35 @@ func requestRef(b []byte, f frameRef) (Request, error?) {
         return Request{method: "", path: "", query: "", head: v, headers: []int{}, body: []byte{}, pattern: ""}, badHost{}
     }
     body := if f.chunked { unchunkRef(b, f.he) } else { b[f.he:f.end] }
+    // origin-formでない形: "*" とCONNECTはターゲットをそのままpathに。absolute-form（http / https）はauthorityの後をpath（空なら "/"）にし、
+    // Hostの値の位置をauthorityに置き換える。ほかは400
+    if hb[sp1 + 1] != '/' && !(sp2 - sp1 == 2 && hb[sp1 + 1] == '*') && method != "CONNECT" {
+        t := sp1 + 1
+        a := if sp2 - t > 7 && eqFoldRef(hb, t, t + 7, bytes("http://")) { t + 7 } else if sp2 - t > 8 && eqFoldRef(hb, t, t + 8, bytes("https://")) { t + 8 } else { -1 }
+        if a < 0 {
+            return Request{method: "", path: "", query: "", head: v, headers: []int{}, body: []byte{}, pattern: ""}, badTarget{}
+        }
+        mut ae := a
+        while ae < sp2 && hb[ae] != '/' && hb[ae] != '?' {
+            ae += 1
+        }
+        if ae == a || !hostOkRef(hb, a, ae) {
+            return Request{method: "", path: "", query: "", head: v, headers: []int{}, body: []byte{}, pattern: ""}, badTarget{}
+        }
+        q2 := indexInRef(hb, ae, sp2, '?')
+        pe := if q2 >= 0 { q2 } else { sp2 }
+        p2 := if pe == ae { "/" } else { utf8.Str(v, ae, pe)? }
+        q3 := if q2 >= 0 { utf8.Str(v, q2 + 1, sp2)? } else { "" }
+        mut k := 0
+        while k < len(hs) {
+            if eqFoldRef(hb, hs[k], hs[k + 1], bytes("host")) {
+                hs[k + 2] = a
+                hs[k + 3] = ae
+            }
+            k += 4
+        }
+        return Request{method: method, path: p2, query: q3, head: v, headers: freeze(hs), body: body, pattern: ""}, nil
+    }
     return Request{method: method, path: path, query: query, head: v, headers: freeze(hs), body: body, pattern: ""}, nil
 }
 
@@ -694,6 +721,12 @@ func agree(b []byte, at int, mh int, mb int) bool {
     if o.st != 1 {
         return true
     }
+    // 揃った枠では、bodyHead（持ち越しの頭を読み直す）が同じ頭の終わり・本文の長さ・chunkedを返す
+    he, cl, ch, _ := bodyHead(b[at:len(b)])
+    if he != f.he - at || ch != f.chunked || (!ch && cl != f.end - f.he && !(cl <= 0 && f.end == f.he)) {
+        println("bodyHead differs: ${string(b) catch "<bytes>"} at ${at}: he ${he} cl ${cl} chunked ${ch} / frame he ${f.he} end ${f.end}")
+        return false
+    }
     ro, eo := requestRef(b, o)
     rn, en := request(b, f, freeze(hs))
     if (eo == nil) != (en == nil) {
@@ -718,6 +751,9 @@ func seeds() []string {
         "GET /p?q HTTP/1.0\nHost: x\n\n",
         "\r\n\r\nGET /a HTTP/1.1\r\nHost: x\r\n\r\n",
         "POST /e HTTP/1.1\r\nHost: x\r\nContent-Length: 5\r\n\r\nhello",
+        "POST /c HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\nFFFFFFFFFFFFFFFFF\r\nhello\r\n0\r\n\r\n",
+        "POST /c HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n7fffffffffffffff\r\nhello\r\n0\r\n\r\n",
+        "POST /c HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n0000000000000000000005\r\nhello\r\n0\r\n\r\n",
         "POST /e HTTP/1.1\r\nHost: x\r\nContent-Length: 3\r\nContent-Length: 3\r\n\r\nabcGET / HTTP/1.1\r\nHost: x\r\n\r\n",
         "POST /e HTTP/1.1\r\nHost: x\r\nContent-Length: 3\r\nContent-Length: 4\r\n\r\nabcd",
         "POST /c HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n3;x=1\r\nabc\r\n0\r\nT: v\r\n\r\n",
@@ -843,6 +879,106 @@ func TestFrameAgrees() {
     assert(ok)
 }
 
+// chunkedの本文bを、pieceバイトずつの切片に分けてunchunkFeedで解いた結果が、1回で読んだchunkedEnd・unchunkと同じか（終わりの位置・誤り・解いた本文）
+func feedAgree(b []byte, mb int, piece int) bool {
+    want := chunkedEnd(b, 0, mb)
+    mut u := carry{pn: 0, wait: 0, need: 0, ph: 0, ecode: 0, st: 0, rem: 0, total: 0, ln: 0, tb: 0}
+    mut line := mut []byte{}
+    mut pend := mut []byte{}
+    mut pn := 0
+    mut got := -1
+    mut i := 0
+    while got == -1 && i < len(b) {
+        k := imin(piece, len(b) - i)
+        r, n2 := unchunkFeed(mut u, mut line, mut pend, pn, b[i:i + k], 1 << 20, mb)
+        pn = n2
+        got = if r >= 0 { i + r } else { r }
+        i += k
+    }
+    if got != want {
+        println("unchunkFeed differs: ${string(b) catch "<bytes>"} mb ${mb} piece ${piece}: chunkedEnd ${want} / feed ${got}")
+        return false
+    }
+    if want >= 0 {
+        d := unchunk(b, 0)
+        mut same := pn == len(d)
+        mut j := 0
+        while same && j < pn {
+            same = pend[j] == d[j]
+            j += 1
+        }
+        if !same {
+            println("unchunkFeed body differs: ${string(b) catch "<bytes>"} piece ${piece}")
+            return false
+        }
+    }
+    return true
+}
+
+// 種のうちchunkedの本文（頭の後ろ）に置き換え・削除・重複と切り詰めを掛け、切片の大きさを変えて解く
+func TestUnchunkFeedAgrees() {
+    mut ok := true
+    for s <- seeds() {
+        b := bytes(s)
+        mut he := -1
+        mut i := 3
+        while he < 0 && i < len(b) {
+            if b[i] == '\n' && b[i - 1] == '\r' && b[i - 2] == '\n' && b[i - 3] == '\r' {
+                he = i + 1
+            }
+            i += 1
+        }
+        if he > 0 && he < len(b) && isLit(b, 0, 4, "POST") {
+            bs := string(b[he:len(b)]) catch ""
+            for piece <- iter.Range(1, 9) {
+                ok = each(bs, (x []byte) => feedAgree(x, 8192, piece) && feedAgree(x, 4, piece)) && ok
+            }
+        }
+    }
+    // 大きさの行の持ち越しの上限（1024バイト）と、細かいchunkの量産
+    mut ext := mut []byte{}
+    for c <- bytes("5;a=") {
+        ext = append(ext, c)
+    }
+    for _ <- iter.Range(0, 2000) {
+        ext = append(ext, 'x')
+    }
+    for c <- bytes("\r\nhello\r\n0\r\n\r\n") {
+        ext = append(ext, c)
+    }
+    long := freeze(ext)
+    // 行の全体が1つの切片に入れば1回で読んだのと同じ。1024バイトを越えて行が切れたら400（1回で読む側も、その切れ目で持ち越せば同じ400）
+    ok = feedAgree(long, 8192, 3000) && ok
+    for piece <- iter.Range(1, 8) {
+        mut u := carry{pn: 0, wait: 0, need: 0, ph: 0, ecode: 0, st: 0, rem: 0, total: 0, ln: 0, tb: 0}
+        mut line := mut []byte{}
+        mut pend := mut []byte{}
+        mut got := -1
+        mut i := 0
+        while got == -1 && i < len(long) {
+            k := imin(piece * 128, len(long) - i)
+            r, _ := unchunkFeed(mut u, mut line, mut pend, 0, long[i:i + k], 1 << 20, 8192)
+            got = r
+            i += k
+        }
+        ok = got == -400 && ok
+    }
+    mut tiny := mut []byte{}
+    for _ <- iter.Range(0, 3000) {
+        for c <- bytes("1\r\nz\r\n") {
+            tiny = append(tiny, c)
+        }
+    }
+    for c <- bytes("0\r\n\r\n") {
+        tiny = append(tiny, c)
+    }
+    tb := freeze(tiny)
+    for piece <- iter.Range(1, 8) {
+        ok = feedAgree(tb, 8192, piece) && feedAgree(tb, 2999, piece) && feedAgree(tb, 3000, piece) && ok
+    }
+    assert(ok)
+}
+
 // 上限の境目（mh: 頭の長さ・mb: 本文の長さ）と途中からの読み（パイプラインの 2 件目の at）
 func TestFrameLimits() {
     mut ok := true
@@ -861,17 +997,20 @@ func TestFrameLimits() {
     assert(ok)
 }
 
-// マルチバイトの字が区切りに接するリクエスト行のmethod / path / query（frameAtの区切りの位置でちょうど切れていること）
+// マルチバイトの字が区切りに接するリクエスト行のmethod / path / query（frameAtの区切りの位置でちょうど切れていること）。
+// ターゲットの0x80以上のバイトは400なので、マルチバイトの字はメソッドの側に置く
 func TestRequestCutsAtDelimiters() {
-    b := bytes("GETé /пу́ть?ключ=值 HTTP/1.1\r\nHost: x\r\n\r\n")
+    b := bytes("GETé /p?k=v HTTP/1.1\r\nHost: x\r\n\r\n")
     mut hs := mut []int{}
     f := frameAt(b, 0, 8192, 8192, mut hs)
     assert(f.st == 1)
     r, e := request(b, f, freeze(hs))
     assert(e == nil)
     assert(r.method == "GETé")
-    assert(r.path == "/пу́ть")
-    assert(r.query == "ключ=值")
+    assert(r.path == "/p")
+    assert(r.query == "k=v")
+    mut hs2 := mut []int{}
+    assert(frameAt(bytes("GET /пу́ть?ключ=值 HTTP/1.1\r\nHost: x\r\n\r\n"), 0, 8192, 8192, mut hs2).st == 400)
 }
 
 // リクエストbの結果のstatus（枠の誤りならそのstatus・requestの誤りなら400・通れば200）
@@ -945,7 +1084,10 @@ func TestProbeCases() {
     assert(statusOf(withByte("${tp}chunked#\r\nContent-Length: 5\r\n\r\nhello", byte(0))) == 400)
     assert(statusOf(bytes("${tp}gzip\r\n\r\n")) == 400)
     assert(statusOf(bytes("${tp}gzip, chunked\r\n\r\n0\r\n\r\n")) == 501)
-    assert(statusOf(bytes("${tp}chunked;ext=val\r\n\r\n0\r\n\r\n")) == 501)
+    // chunkedのパラメータは読み捨てる（chunkedは最後の符号化。RFC 9112 6.3の4）。Content-Lengthとの併記は400
+    assert(statusOf(bytes("${tp}chunked;ext=val\r\n\r\n0\r\n\r\n")) == 200)
+    assert(statusOf(bytes("${tp}chunked;ext=val\r\nContent-Length: 5\r\n\r\nhello")) == 400)
+    assert(statusOf(bytes("${tp}gzip;q=1, chunked\r\n\r\n0\r\n\r\n")) == 501)
     assert(statusOf(bytes("${tp}Chunked\r\n\r\n0\r\n\r\n")) == 200)
     // 長すぎるターゲット（RFC 9112 3）: リクエスト行の途中で頭の上限に達し、空白が1つだけなら414
     mut long := mut []byte{}
@@ -975,7 +1117,7 @@ func TestProbeCases() {
         longm = append(longm, 'G')
     }
     assert(statusOf(freeze(longm)) == 501)
-    // ターゲットのNULと制御文字（RFC 9112 3.2）は400。DEL・'#'・'\\'・0x80以上のバイトは受ける
+    // ターゲットのNULと制御文字（RFC 9112 3.2）と0x80以上のバイトは400。DEL・'#'・'\\'は受ける
     assert(statusOf(withByte("GET /a#b HTTP/1.1\r\n${h}\r\n", byte(0))) == 400)
     assert(statusOf(withByte("GET /a#b HTTP/1.1\r\n${h}\r\n", byte(1))) == 400)
     assert(statusOf(withByte("GET /a#b HTTP/1.1\r\n${h}\r\n", byte(9))) == 400)
@@ -985,14 +1127,257 @@ func TestProbeCases() {
     assert(statusOf(bytes("GET /a\\b HTTP/1.1\r\n${h}\r\n")) == 200)
     // メソッドの制御文字はターゲットの外（今のまま受ける）
     assert(statusOf(withByte("G#T / HTTP/1.1\r\n${h}\r\n", byte(1))) == 200)
-    assert(statusOf(bytes("GET /" + "パス" + " HTTP/1.1\r\n${h}\r\n")) == 200)
+    assert(statusOf(bytes("GET /" + "パス" + " HTTP/1.1\r\n${h}\r\n")) == 400)
+    assert(statusOf(withByte("GET /a#b HTTP/1.1\r\n${h}\r\n", byte(0x80))) == 400)
+    assert(statusOf(withByte("GET /a#b HTTP/1.1\r\n${h}\r\n", byte(0xff))) == 400)
+    assert(statusOf(withByte("GET /a?q=#b HTTP/1.1\r\n${h}\r\n", byte(0xc3))) == 400)
     assert(statusOf(bytes("GET /%23 HTTP/1.1\r\n${h}\r\n")) == 200)
     // メソッドの '#' はtcharの字（ターゲットの外）
     assert(statusOf(bytes("G#T / HTTP/1.1\r\n${h}\r\n")) == 200)
     // trailer（RFC 9112 7.1.2）: ヘッダの行と同じ文法
     assert(statusOf(bytes("${te}5\r\nhello\r\n0\r\nX-T: 1\r\n\r\n")) == 200)
+    // chunkの大きさ: intに収まらない数は400・収まって本文の上限を越えるなら413・先頭の0は数に入れない
+    assert(statusOf(bytes("${te}FFFFFFFFFFFFFFFFF\r\nhello\r\n0\r\n\r\n")) == 400)
+    assert(statusOf(bytes("${te}10000000000000000\r\nhello\r\n0\r\n\r\n")) == 400)
+    assert(statusOf(bytes("${te}8000000000000000\r\nhello\r\n0\r\n\r\n")) == 400)
+    assert(statusOf(bytes("${te}7fffffffffffffff\r\nhello\r\n0\r\n\r\n")) == 413)
+    assert(statusOf(bytes("${te}0000000000000000000005\r\nhello\r\n0\r\n\r\n")) == 200)
     assert(statusOf(bytes("${te}5\r\nhello\r\n0\r\nno colon\r\n\r\n")) == 400)
     assert(statusOf(bytes("${te}5\r\nhello\r\n0\r\nBad Name: 1\r\n\r\n")) == 400)
     assert(statusOf(bytes("${te}5\r\nhello\r\n0\r\n folded: 1\r\n\r\n")) == 400)
     assert(statusOf(withByte("${te}5\r\nhello\r\n0\r\nX-T: a#b\r\n\r\n", byte(0))) == 400)
+}
+
+// 揃った1件のリクエストのRequest（枠と頭の誤りは検査の失敗）
+func reqOf(s string) Request {
+    b := bytes(s)
+    mut hs := mut []int{}
+    f := frameAt(b, 0, 8192, 8192, mut hs)
+    assert(f.st == 1)
+    r, e := request(b, f, freeze(hs))
+    assert(e == nil)
+    return r
+}
+
+// absolute-form（RFC 9112 3.2.2）: pathはauthorityの後（空なら "/"）・Hostはターゲットの側（受けたHostは無視する）。
+// schemeはhttp / https・authorityはHostの値の形で、外れたら400。Hostのヘッダが無いHTTP/1.1は400のまま
+func TestAbsoluteForm() {
+    r1 := reqOf("GET http://example.com/a/b?x=1 HTTP/1.1\r\nHost: other.test\r\n\r\n")
+    assert(r1.path == "/a/b")
+    assert(r1.query == "x=1")
+    hr1 := Header(r1, "host")
+    assert(hr1 != nil && hr1 == "example.com")
+    r2 := reqOf("GET HTTP://Example.com HTTP/1.1\r\nHost: x\r\n\r\n")
+    assert(r2.path == "/")
+    hr2 := Header(r2, "Host")
+    assert(hr2 != nil && hr2 == "Example.com")
+    r3 := reqOf("POST https://h:8443?q HTTP/1.1\r\nHost: x\r\nContent-Length: 0\r\n\r\n")
+    assert(r3.path == "/")
+    assert(r3.query == "q")
+    hr3 := Header(r3, "host")
+    assert(hr3 != nil && hr3 == "h:8443")
+    r4 := reqOf("OPTIONS * HTTP/1.1\r\nHost: x\r\n\r\n")
+    assert(r4.path == "*")
+    r5 := reqOf("GET http://h/p HTTP/1.0\r\n\r\n")
+    assert(r5.path == "/p")
+    assert(statusOf(bytes("GET ftp://h/p HTTP/1.1\r\nHost: x\r\n\r\n")) == 400)
+    assert(statusOf(bytes("GET http://u@h/p HTTP/1.1\r\nHost: x\r\n\r\n")) == 400)
+    assert(statusOf(bytes("GET http:///p HTTP/1.1\r\nHost: x\r\n\r\n")) == 400)
+    assert(statusOf(bytes("GET p HTTP/1.1\r\nHost: x\r\n\r\n")) == 400)
+    assert(statusOf(bytes("GET http://h/p HTTP/1.1\r\n\r\n")) == 400)
+    assert(statusOf(bytes("GET http://h/p HTTP/1.1\r\nHost: a\r\nHost: b\r\n\r\n")) == 400)
+}
+
+// 速い道を入れる前の unchunkFeed の写し（速い道の照合の参照 — 今の道）
+func unchunkFeedRef(u mut carry, line mut []byte, pend mut []byte, pn0 int, p []byte, mh int, mb int) (int, int) {
+    mut pn := pn0
+    mut i := 0
+    n := len(p)
+    while i < n {
+        if u.st == 1 {
+            k := imin(u.rem, n - i)
+            pn = putAt(mut pend, pn, p[i:i + k])
+            u.rem -= k
+            i += k
+            if u.rem == 0 {
+                u.st = 2
+            }
+        } else if u.st == 2 || u.st == 3 {
+            c := p[i]
+            if c == '\n' {
+                u.st = 0
+            } else if c == '\r' && u.st == 2 {
+                u.st = 3
+            } else {
+                return -400, pn
+            }
+            i += 1
+        } else {
+            e := lineEnd(p, i)
+            if e < 0 {
+                u.ln = putAt(mut line, u.ln, p[i:n])
+                if u.st == 0 && u.ln > 1024 {
+                    return -400, pn
+                }
+                if u.st == 4 && u.tb + u.ln > mh {
+                    return -431, pn
+                }
+                return -1, pn
+            }
+            // 行（LFまで）: 持ち越しがあれば繋いだコピーで読む
+            l := if u.ln == 0 { p[i:e + 1] } else { joined(mut line, u.ln, p[i:e + 1]) }
+            u.ln = 0
+            i = e + 1
+            le := len(l) - 1
+            if u.st == 0 {
+                c := contentEnd(l, 0, le)
+                mut q := 0
+                mut size := 0
+                while q < c && hexVal(l[q]) >= 0 {
+                    // intに収まらない大きさ（2^63以上）は数として読めない行で400。収まって本文の上限を越えるなら413
+                    if size >= 576460752303423488 {
+                        return -400, pn
+                    }
+                    size = size * 16 + hexVal(l[q])
+                    q += 1
+                }
+                if q == 0 || (q < c && !chunkExt(l, q, c)) {
+                    return -400, pn
+                }
+                if size > mb {
+                    return -413, pn
+                }
+                if size == 0 {
+                    u.st = 4
+                } else {
+                    u.total += size
+                    if u.total > mb {
+                        return -413, pn
+                    }
+                    u.rem = size
+                    u.st = 1
+                }
+            } else {
+                if contentEnd(l, 0, le) == 0 {
+                    return i, pn
+                }
+                u.tb += len(l)
+                if u.tb > mh {
+                    return -431, pn
+                }
+                te, colon, bad := fieldLine(l, 0)
+                if te != le || !fieldLineOk(l, 0, te, colon, bad) {
+                    return -400, pn
+                }
+            }
+        }
+    }
+    return -1, pn
+}
+
+// 照合の乱数（線形合同 — 31 ビット）
+func lcg(s int) int {
+    return (s * 1103515245 + 12345) % 2147483648
+}
+
+// 乱数の種 seed から chunked の本文を作る: 1桁の chunk（小文字・大文字・データに CR / LF を含む）を主に、複数桁・先頭の0・拡張・裸の LF を混ぜ、
+// 終わりの chunk と trailer（とその後ろの次のリクエストのバイト）で閉じる。bad > 0 なら1バイトを壊す・切り詰める
+func genChunked(seed int, n int, bad int) []byte {
+    mut s := lcg(seed + 7)
+    mut o := mut []byte{}
+    hx := bytes("0123456789abcdefABCDEF")
+    data := bytes("az\r\nZ09;:")
+    for _ <- iter.Range(0, n) {
+        s = lcg(s)
+        k := s % 16
+        s = lcg(s)
+        if k < 11 {
+            h := 1 + s % 15
+            o = append(o, if h >= 10 && s % 3 == 0 { hx[h + 6] } else { hx[h] })
+            o = append(o, '\r')
+            o = append(o, '\n')
+            for d <- iter.Range(0, h) {
+                o = append(o, data[(s / 16 + d * 7) % len(data)])
+            }
+            o = append(o, '\r')
+            o = append(o, '\n')
+        } else {
+            for c <- bytes(if k == 11 { "1A\r\nabcdefghijklmnopqrstuvwxyz\r\n" } else if k == 12 { "3;x=y\r\nabc\r\n" } else if k == 13 { "2\nab\n" } else if k == 14 { "01\r\nZ\r\n" } else { "10\r\n0123456789abcdef\r\n" }) {
+                o = append(o, c)
+            }
+        }
+    }
+    s = lcg(s)
+    for c <- bytes(if s % 3 == 0 { "0\r\n\r\n" } else if s % 3 == 1 { "0\r\nX-T: 1\r\n\r\nGET / HTTP/1.1\r\n" } else { "0;e=1\r\n\r\nP" }) {
+        o = append(o, c)
+    }
+    if bad > 0 {
+        s = lcg(s)
+        at := s % len(o)
+        s = lcg(s)
+        if bad == 1 {
+            o[at] = bytes("\r\n0aZ;:x ")[s % 9]
+        } else {
+            f := freeze(o)
+            return f[0:at]
+        }
+    }
+    return freeze(o)
+}
+
+// b を piece バイトずつの切片で unchunkFeed と unchunkFeedRef に渡し、切片ごとの戻り値・持ち越しの状態・解いた本文が同じか
+func fastAgree(b []byte, mb int, piece int) bool {
+    mut u1 := carry{pn: 0, wait: 0, need: 0, ph: 0, ecode: 0, st: 0, rem: 0, total: 0, ln: 0, tb: 0}
+    mut u2 := carry{pn: 0, wait: 0, need: 0, ph: 0, ecode: 0, st: 0, rem: 0, total: 0, ln: 0, tb: 0}
+    mut l1 := mut []byte{}
+    mut l2 := mut []byte{}
+    mut p1 := mut []byte{}
+    mut p2 := mut []byte{}
+    mut n1 := 0
+    mut n2 := 0
+    mut i := 0
+    while i < len(b) {
+        k := imin(piece, len(b) - i)
+        r1, m1 := unchunkFeed(mut u1, mut l1, mut p1, n1, b[i:i + k], 64, mb)
+        r2, m2 := unchunkFeedRef(mut u2, mut l2, mut p2, n2, b[i:i + k], 64, mb)
+        n1 = m1
+        n2 = m2
+        mut same := r1 == r2 && n1 == n2 && u1.st == u2.st && u1.rem == u2.rem && u1.total == u2.total && u1.ln == u2.ln && u1.tb == u2.tb
+        mut j := 0
+        while same && j < n1 {
+            same = p1[j] == p2[j]
+            j += 1
+        }
+        j = 0
+        while same && j < u1.ln {
+            same = l1[j] == l2[j]
+            j += 1
+        }
+        if !same {
+            println("unchunkFeed fast path differs: ${string(b) catch "<bytes>"} mb ${mb} piece ${piece} at ${i}: r ${r1} / ${r2} pn ${n1} / ${n2} st ${u1.st} / ${u2.st}")
+            return false
+        }
+        if r1 != -1 {
+            return true
+        }
+        i += k
+    }
+    return true
+}
+
+// 速い道（1桁の大きさの行が続く間をまとめて解く）が今の道と同じ結果を返すこと: 正しい形・1バイトを壊した形・切り詰めた形を、
+// 切片の大きさと本文の上限（413 になる点の前後）を変えて
+func TestUnchunkFastAgrees() {
+    mut ok := true
+    mbs := []int{1 << 20, 4, 15, 16, 17, 100, 255}
+    for seed <- iter.Range(0, 240) {
+        b := genChunked(seed, 1 + seed % 40, seed % 3)
+        pieces := []int{1, 2, 3, 5, 7, 16, 64, len(b)}
+        for piece <- pieces {
+            for mb <- mbs {
+                ok = fastAgree(b, mb, piece) && ok
+            }
+        }
+    }
+    assert(ok)
 }

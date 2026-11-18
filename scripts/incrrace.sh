@@ -94,13 +94,16 @@ b "$W/c4" "$A" app 8 "$W/r4w.elf"; same r4-after-kill "$W/offA.elf" "$W/r4w.elf"
 g=$(gen "$W/c4")
 [ -n "$g" ] || { echo "incrrace: FAIL r4 no generation directory"; exit 1; }
 pk1=$(ls "$g"*.pack | head -1)
+# kill -9 の時刻がパックの書きの最中に当たると、殺した書き手の一時ファイルも残る（負荷で書きの時刻がずれると増える）。その数を数えてから置く
+k0=$(find "$g" -maxdepth 1 -name '*.tmp' | wc -l)
 printf 'half-written' > "$g/1-deadbeef.pack.tmp"
 head -c 4000 "$pk1" > "$g/2-truncated.pack"
 b "$W/c4" "$A" app 1 "$W/r4t.elf"; same r4-with-junk "$W/offA.elf" "$W/r4t.elf" $?
 fsck r4 "$W/c4" 1
 # r4 の続き（④ — 掃除が書きかけの一時ファイルを拾う）: 置いたばかりの一時ファイルは残す（走っている書き手のものかもしれない）・10 分より古くすると消える
-grep -q 'tmp=1$' "$W/fsck.err" || { echo "incrrace: FAIL r4 a fresh tmp was removed (or not counted)"; bad=1; }
-touch -d '1 hour ago' "$g/1-deadbeef.pack.tmp"
+grep -q "tmp=$((k0 + 1))\$" "$W/fsck.err" || { echo "incrrace: FAIL r4 a fresh tmp was removed (or not counted — want tmp=$((k0 + 1)): $k0 left by the killed writers + 1 placed)"; bad=1; }
+# 一時ファイルを全部古くする（置いたものと、殺した書き手が残したもの）— 掃除の後は0
+find "$g" -maxdepth 1 -name '*.tmp' -exec touch -d '1 hour ago' {} +
 b "$W/c4" "$A" app 8 "$W/r4s.elf"; same r4-sweep "$W/offA.elf" "$W/r4s.elf" $?
 [ -e "$g/1-deadbeef.pack.tmp" ] && { echo "incrrace: FAIL r4 the stale tmp was not swept"; bad=1; }
 fsck r4-swept "$W/c4" 1

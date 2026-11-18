@@ -1,0 +1,9 @@
+@@full	c19b374e1d5b93db	1707	55387
+@head	0e9edd44ad212051	0	248
+const Files	c1d96cd15f0cea7f	3	135
+func file	828688f7a93c3986	18	693
+func main	804ecf27910a3a9f	227	7657
+func unhex	e7aa976ed6d8366f	10	449
+type AeadFile	501b5a38ea6811de	3	166
+type AeadGroup	d4d41d7d1a55cf63	5	264
+type AeadTest	7c1990077ac87f94	9	476

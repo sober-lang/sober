@@ -1,0 +1,8 @@
+@@full	a30fcafe7dcbc6f7	1382	40804
+@head	26f2a4af5d5ae2e4	0	268
+func main	660d5fa6334b4976	160	5401
+func nap	42ceff33b48d3303	9	371
+func sum	b71be0820914aaae	28	977
+func waitVia	b5a6687d7527f088	17	699
+type Waiter	9fd2ebf68d667dd9	3	150
+type Work	9f58e6261fcb601f	3	168

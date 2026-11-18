@@ -1,0 +1,15 @@
+@@full	d683f5eac4c9ae98	2403	72179
+@head	dfbd492c7e5907ad	0	203
+const Add	41628f77178e81b0	1	43
+const Div	3550b53c613502e3	1	43
+const Lit	9a855d64d3bff0cc	1	43
+const Mul	9bd7134005c69503	1	43
+const Neg	1e69b18828f9c45e	1	43
+const Sub	dbed47013d777f80	1	43
+func Parse	203ed8629a45cd6e	65	2396
+func expr	685e339acc33f9f8	75	2665
+func node	ad1e8ea8c3a64bd1	17	676
+func peek	afdb0bd626f055fb	9	416
+func term	cf657d81ec5b3298	75	2667
+func unary	f291328c579ef3db	127	4625
+type Node	3d377279061fce92	6	302

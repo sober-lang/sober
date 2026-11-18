@@ -109,17 +109,17 @@ std/pg/transport.sober:337:6: secret std/pg.putConn
 std/session/session.sober:141:6: secret std/session.KeyFrom
 std/session/session.sober:153:6: secret std/session.Mint
 std/session/session.sober:200:6: secret std/session.Open
-std/tls/tls.sober:175:6: secret std/tls.accept
-std/tls/tls.sober:259:6: secret std/tls.newBlk
-std/tls/tls.sober:281:6: secret std/tls.putDir
-std/tls/tls.sober:399:6: secret std/tls.Put
-std/tls/tls.sober:441:6: secret std/tls.sendNow
-std/tls/tls.sober:500:6: secret std/tls.flags
-std/tls/tls.sober:504:6: secret std/tls.setFlags
-std/tls/tls.sober:509:6: secret std/tls.setSeq
-std/tls/tls.sober:514:6: secret std/tls.putWr
-std/tls/tls.sober:524:6: secret std/tls.view
-std/tls/tls.sober:530:6: secret std/tls.leftBytes
+std/tls/tls.sober:196:6: secret std/tls.accept
+std/tls/tls.sober:288:6: secret std/tls.newBlk
+std/tls/tls.sober:310:6: secret std/tls.putDir
+std/tls/tls.sober:428:6: secret std/tls.Put
+std/tls/tls.sober:471:6: secret std/tls.sendNow
+std/tls/tls.sober:538:6: secret std/tls.flags
+std/tls/tls.sober:542:6: secret std/tls.setFlags
+std/tls/tls.sober:547:6: secret std/tls.setSeq
+std/tls/tls.sober:552:6: secret std/tls.putWr
+std/tls/tls.sober:562:6: secret std/tls.view
+std/tls/tls.sober:568:6: secret std/tls.leftBytes
 std/internal/pbkdf2/pbkdf2.sober:11:6: secret std/internal/pbkdf2.macPad
 std/internal/pbkdf2/pbkdf2.sober:25:6: secret std/internal/pbkdf2.mac
 std/internal/pbkdf2/pbkdf2.sober:39:6: secret std/internal/pbkdf2.Key
@@ -231,4 +231,4 @@ std/internal/p256/p256.sober:35:6: field fe.l0 from the @secret parameter 'd' of
 std/internal/p256/p256.sober:35:6: field fe.l1 from the @secret parameter 'd' of 'std/internal/p256.PublicKey'
 std/internal/p256/p256.sober:35:6: field fe.l2 from the @secret parameter 'd' of 'std/internal/p256.PublicKey'
 std/internal/p256/p256.sober:35:6: field fe.l3 from the @secret parameter 'd' of 'std/internal/p256.PublicKey'
-summary atoms=62 secret-fns=198 secret-fields=35 violations=0 walks=3432
+summary atoms=62 secret-fns=198 secret-fields=35 violations=0 walks=3476

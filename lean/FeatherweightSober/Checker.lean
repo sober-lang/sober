@@ -92,8 +92,8 @@ def typecheck (Δ : Defs) (Ξ : ChanTy) (Ψ : StoreTy) (f : Nat) : Nat → Nat �
       match typecheck Δ Ξ Ψ f b d Γ Λ e with
       | some (.prod _ r) => some r
       | _ => none
-  | b, d, Γ, Λ, .call fn ts e =>
-      -- round4: 呼び手深さ d = d' + 1、ρ = d'。引数は浅い imm 共変で param.shiftR d' へ
+  | b, d, Γ, Λ, .call a fn ts e =>
+      -- 呼び手深さ d = d' + 1。anchor a は構文の注釈で、region 0 を a へ写す。引数は浅い imm 共変で param.renR a d' へ
       match d with
       | 0 => none
       | d' + 1 =>
@@ -101,34 +101,16 @@ def typecheck (Δ : Defs) (Ξ : ChanTy) (Ψ : StoreTy) (f : Nat) : Nat → Nat �
           | some dfn =>
               match typecheck Δ Ξ Ψ f b (d' + 1) Γ Λ e with
               | some t =>
-                  if decide (ts.length = dfn.tparams) && Ty.tyArgsOk ts &&
-                      Ty.sub t ((dfn.inst ts).param.shiftR d') && decide (b ≤ d') then
-                    some ((dfn.inst ts).ret.relocR d')
+                  if decide (ts.length = dfn.kinds.length) && kindsArgsOk dfn.kinds ts &&
+                      Ty.sub t ((dfn.inst ts).param.renR a d') && decide (b ≤ a) && decide (a ≤ d') then
+                    some ((dfn.inst ts).ret.relocA a d')
                   else none
-              | none => none
-          | none => none
-  | b, d, Γ, Λ, .callM fn ts e =>
-      -- R2: call と同じ形。anchor a は引数の型の mut 位置から読み、region 0 を a へ写す
-      match d with
-      | 0 => none
-      | d' + 1 =>
-          match Δ[fn]? with
-          | some dfn =>
-              match typecheck Δ Ξ Ψ f b (d' + 1) Γ Λ e with
-              | some t =>
-                  match Ty.anchorOf (dfn.inst ts).param t with
-                  | some a =>
-                      if decide (ts.length = dfn.tparams) && Ty.tyArgsOk ts &&
-                          Ty.sub t ((dfn.inst ts).param.renR a d') && decide (b ≤ a) && decide (a ≤ d') then
-                        some ((dfn.inst ts).ret.relocA a d')
-                      else none
-                  | none => none
               | none => none
           | none => none
   | _, _, _, _, .fnref fn ts =>
       match Δ[fn]? with
       | some dfn =>
-          if decide (ts.length = dfn.tparams) && Ty.tyArgsOk ts then
+          if decide (ts.length = dfn.kinds.length) && kindsArgsOk dfn.kinds ts then
             some (.fn (dfn.inst ts).param (dfn.inst ts).ret)
           else none
       | none => none
@@ -136,8 +118,8 @@ def typecheck (Δ : Defs) (Ξ : ChanTy) (Ψ : StoreTy) (f : Nat) : Nat → Nat �
       match typecheck Δ Ξ Ψ f b d Γ Λ e with
       | some ta => if Ty.sub ta t then some t else none
       | none => none
-  | b, d, Γ, Λ, .callv ef e =>
-      -- call と同じ形。シグネチャは関数値の型（base 座標の型スキーム）から取る
+  | b, d, Γ, Λ, .callv a ef e =>
+      -- 関数値の呼び出し: 前提は call と同じ形で、シグネチャを関数値の型から取る
       match d with
       | 0 => none
       | d' + 1 =>
@@ -145,21 +127,7 @@ def typecheck (Δ : Defs) (Ξ : ChanTy) (Ψ : StoreTy) (f : Nat) : Nat → Nat �
           | some (.fn p r) =>
               match typecheck Δ Ξ Ψ f b (d' + 1) Γ Λ e with
               | some t =>
-                  if Ty.sub t (p.shiftR d') && decide (b ≤ d') then
-                    some (r.relocR d')
-                  else none
-              | none => none
-          | _ => none
-  | b, d, Γ, Λ, .callMv a ef e =>
-      -- callv の anchor 版（L1）: anchor a は構文の注釈。前提は callM と同じ形でシグネチャを関数値の型から取る
-      match d with
-      | 0 => none
-      | d' + 1 =>
-          match typecheck Δ Ξ Ψ f b (d' + 1) Γ Λ ef with
-          | some (.fn p r) =>
-              match typecheck Δ Ξ Ψ f b (d' + 1) Γ Λ e with
-              | some t =>
-                  if Ty.sub t (p.renR a d') && decide (b ≤ a) && decide (a ≤ d') then
+                  if Ty.sub t (p.renR a d') && decide (b ≤ a) && decide (a ≤ d') && r.retOk then
                     some (r.relocA a d')
                   else none
               | none => none
@@ -527,7 +495,7 @@ theorem typecheck_sound {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f : Nat} :
     simp only [typecheck] at h
     split at h <;> cases h
     exact .snd (ih ‹_›)
-  | call fn ts e ih =>
+  | call a fn ts e ih =>
     intro b d Γ Λ t h
     simp only [typecheck] at h
     split at h <;> try cases h
@@ -536,20 +504,8 @@ theorem typecheck_sound {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f : Nat} :
     split at h <;> cases h
     rename_i hcond
     simp only [Bool.and_eq_true, decide_eq_true_eq, and_assoc] at hcond
-    obtain ⟨h1, h2, h3, h4⟩ := hcond
-    exact .call ‹_› h1 h2 (ih ‹_›) h3 h4
-  | callM fn ts e ih =>
-    intro b d Γ Λ t h
-    simp only [typecheck] at h
-    split at h <;> try cases h
-    split at h <;> try cases h
-    split at h <;> try cases h
-    split at h <;> try cases h
-    split at h <;> cases h
-    rename_i hanc hcond
-    simp only [Bool.and_eq_true, decide_eq_true_eq, and_assoc] at hcond
     obtain ⟨h1, h2, h3, h4, h5⟩ := hcond
-    exact .callM ‹_› h1 h2 (ih ‹_›) hanc h3 h4 h5
+    exact .call ‹_› h1 h2 (ih ‹_›) h3 h4 h5
   | fnref fn ts =>
     intro b d Γ Λ t h
     simp only [typecheck] at h
@@ -564,7 +520,7 @@ theorem typecheck_sound {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f : Nat} :
     split at h <;> try cases h
     split at h <;> cases h
     exact .ann (ih ‹_›) ‹_›
-  | callv ef e ihf ihe =>
+  | callv a ef e ihf ihe =>
     intro b d Γ Λ t h
     simp only [typecheck] at h
     split at h <;> try cases h
@@ -573,17 +529,7 @@ theorem typecheck_sound {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f : Nat} :
     split at h <;> cases h
     rename_i hcond
     simp only [Bool.and_eq_true, decide_eq_true_eq] at hcond
-    exact .callv (ihf ‹_›) (ihe ‹_›) hcond.1 hcond.2
-  | callMv a ef e ihf ihe =>
-    intro b d Γ Λ t h
-    simp only [typecheck] at h
-    split at h <;> try cases h
-    split at h <;> try cases h
-    split at h <;> try cases h
-    split at h <;> cases h
-    rename_i hcond
-    simp only [Bool.and_eq_true, decide_eq_true_eq] at hcond
-    exact .callMv (ihf ‹_›) (ihe ‹_›) hcond.1.1 hcond.1.2 hcond.2
+    exact .callv (ihf ‹_›) (ihe ‹_›) hcond.1.1.1 hcond.1.1.2 hcond.1.2 hcond.2
   | label t₀ e ih =>
     intro b d Γ Λ t h
     simp only [typecheck] at h
@@ -1125,27 +1071,19 @@ theorem typecheck_complete {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f : Nat} :
     intro hs
     simp only [Expr.src] at hs
     simp [typecheck, ih hs]
-  | call hfn hlen hargs harg hsub hbd ih =>
+  | call hfn hlen hargs harg hsub hbd had ih =>
     intro hs
     simp only [Expr.src] at hs
-    simp [typecheck, hfn, ih hs, hsub, hbd, hlen, hargs]
-  | callM hfn hlen hargs harg hanc hsub hbd had ih =>
-    intro hs
-    simp only [Expr.src] at hs
-    simp [typecheck, hfn, ih hs, hanc, hsub, hbd, had, hlen, hargs]
+    simp [typecheck, hfn, ih hs, hsub, hbd, had, hlen, hargs]
   | fnref hfn hlen hargs => intro _; simp [typecheck, hfn, hlen, hargs]
   | ann h1 hs ih =>
     intro hsrc
     simp only [Expr.src] at hsrc
     simp [typecheck, ih hsrc, hs]
-  | callv hf harg hsub hbd ihf ihe =>
+  | callv hf harg hsub hbd had hro ihf ihe =>
     intro hs
     simp only [Expr.src, Bool.and_eq_true] at hs
-    simp [typecheck, ihf hs.1, ihe hs.2, hsub, hbd]
-  | callMv hf harg hsub hbd had ihf ihe =>
-    intro hs
-    simp only [Expr.src, Bool.and_eq_true] at hs
-    simp [typecheck, ihf hs.1, ihe hs.2, hsub, hbd, had]
+    simp [typecheck, ihf hs.1, ihe hs.2, hsub, hbd, had, hro]
   | label h1 hrb ih =>
     intro hs
     simp only [Expr.src] at hs
@@ -1411,7 +1349,7 @@ theorem hasType_iff_typecheck {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f b d : 
 def checkDefs (Δ : Defs) : Bool :=
   Δ.all fun dfn => Ty.paramOk dfn.param && Ty.retOk dfn.ret &&
     dfn.body.noNewchan &&
-    dfn.param.tvarsBelow dfn.tparams && dfn.ret.tvarsBelow dfn.tparams && dfn.body.src &&
+    dfn.param.tvarsBelow dfn.kinds.length && dfn.ret.tvarsBelow dfn.kinds.length && dfn.body.src && dfn.tvOk &&
     (typecheck Δ ∅ [] 1 0 2 [dfn.param] [] dfn.body == some dfn.ret)
 
 /-- checkDefs が受理すれば DefsOk（typecheck_sound 経由。ソース制約は不要 — sound は全項） -/
@@ -1422,8 +1360,8 @@ theorem defsOk_of_check {Δ : Defs} (h : checkDefs Δ = true) : DefsOk Δ := by
     exact heq ▸ Δ.getElem_mem hlt
   have := List.all_eq_true.mp h dfn hmem
   simp only [Bool.and_eq_true, beq_iff_eq, and_assoc] at this
-  obtain ⟨h1, h2, h3, h4, h5, h6, h7⟩ := this
-  exact ⟨h1, h2, h3, h4, h5, h6, typecheck_sound h7⟩
+  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8⟩ := this
+  exact ⟨h1, h2, h3, h4, h5, h6, h7, typecheck_sound h8⟩
 
 /-- ソース項の型は一意 -/
 theorem hasType_unique {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f b d : Nat} {Γ : Ctx}

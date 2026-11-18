@@ -24,18 +24,24 @@ import "diag"
 func assertsAll(ts []ast.Tree, paths []string) ([]ast.Tree, error?) {
     mut out := mut []ast.Tree{}
     for i <- iter.Range(0, len(ts)) {
-        t := ts[i]
-        test := strings.HasSuffix(paths[i], "_test.sober")
-        if !test {
-            for n <- iter.Range(0, len(t.nodes)) {
-                if isAssert(t, t.nodes[n]) {
-                    return []ast.Tree{}, diag.AssertOutsideTest{at: diag.Pos{file: i, tok: t.nodes[t.nodes[n].a].tok}}
-                }
-            }
-        }
-        out = append(out, if test { asserts(t) } else { t })
+        t := assertFile(ts[i], paths[i], i)?
+        out = append(out, t)
     }
     return freeze(out), nil
+}
+
+// ファイルf（木t・パスpath）の検査と変換（1ファイル分 — ftpar.soberの子も呼ぶ）
+@errors(diag.AssertOutsideTest)
+func assertFile(t ast.Tree, path string, f int) (ast.Tree, error?) {
+    test := strings.HasSuffix(path, "_test.sober")
+    if !test {
+        for n <- iter.Range(0, len(t.nodes)) {
+            if isAssert(t, t.nodes[n]) {
+                return t, diag.AssertOutsideTest{at: diag.Pos{file: f, tok: t.nodes[t.nodes[n].a].tok}}
+            }
+        }
+    }
+    return if test { asserts(t) } else { t }, nil
 }
 
 // 節xが `assert(e)` か `$qassert(g, e)`（quickx.soberの変換 — 偽でgが真のときだけ落ち、eの真偽を値にする）か

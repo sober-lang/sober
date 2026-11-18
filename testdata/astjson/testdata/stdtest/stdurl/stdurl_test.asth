@@ -1,0 +1,12 @@
+@@full	78b146460c7e7679	2493	74499
+@head	2377d14d3619eb19	0	217
+func TestEscape	dc02f260bb328653	62	2672
+func TestFormatQuery	22281f4c9f2bd296	88	3285
+func TestParseQuery	9cbc1b8bc4738401	65	2988
+func TestParseQueryRejects	b4479ac02fb87855	25	899
+func TestUnescape	eccce952095c843b	48	2079
+func TestUnescapeRejects	5dbad1aaea3cd2b9	30	1038
+func badQuery	86eb39665b377d9f	11	470
+func badUnescape	5f099ad2adbd4316	11	471
+func show	d7dcb02353f5ea06	36	1254
+type Case	209947a1a6e091db	3	167

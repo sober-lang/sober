@@ -1,0 +1,11 @@
+@@full	e932fc3a91df097a	1313	34412
+@head	7aaa9b710c68c96c	0	72
+func inner	61c84080b204508f	26	961
+func main	86b6666ed3f181e6	70	2248
+func outer	442af0faf18e493c	19	752
+func put	db1a0e9bb2347493	28	995
+func putN	55131161f6335e6e	18	702
+func quiet	37cb285ccadf896c	13	493
+func show	db45ae651acff518	21	842
+type Bad	318a6f706b105fe2	2	109
+type Sink	b00eeb327ecf4c2a	8	291

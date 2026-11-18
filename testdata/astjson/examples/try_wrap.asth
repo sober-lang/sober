@@ -1,0 +1,9 @@
+@@full	d96eea67023d99f2	956	25254
+@head	f8802cba5eefdec2	0	31
+func code	33e9dd56279efb06	26	1042
+func digit	25625a8777b03b2b	23	841
+func main	c8d6f84526f3b2f8	37	1213
+func number	faaf991b4017d8f7	43	1542
+func trace	6e4d2aaf2a3c2ce9	8	335
+type BadDigit	e2ed81a1adee5385	2	115
+type BadLine	ac8a1d96ee040521	3	164

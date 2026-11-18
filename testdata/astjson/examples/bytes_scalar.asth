@@ -1,0 +1,11 @@
+@@full	8565c47a4e9e5c28	2380	61709
+@head	e959061a153a18dc	0	169
+const Quote	aebea471da6a4150	1	46
+func classify	f37de75956460bf8	33	1160
+func findSep	4f3d8979a65b3717	16	546
+func isDigit	26621981d5d31b25	10	438
+func main	6dfeaaab72d27bc6	296	9167
+func orZero	c474eb7f7e0b9291	13	454
+func pick	f659cb4933aedf87	11	455
+func upper	17b67d49a9f09a1e	21	755
+type Tok	ee908304e537b392	3	157

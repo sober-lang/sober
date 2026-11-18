@@ -117,13 +117,15 @@ func TestReapRace() {
     l := New(1024, 1)
     // 回ごとの終わりのマーク（枠rのワード0 — 死に役のscopeが決着したら1。Reap役はそれまで回り続ける）
     ctl := New(rounds, 0)
-    // LOT_REAP_LATE=1: テストの自己検査（scripts/schedfuzz.sh）— 番号を走査の後で読むコピーで回し、この試験が落ちること
+    // LOT_REAP_LATE=1: テストの自己検査（scripts/schedfuzz.sh）— 番号を走査の後で読むコピーで回し、この試験が落ちること。
+    // 取りこぼしをタイミングに依らず起こすため、この形だけ Reap 役を1本にし、死に役を50 msずつずらして死なせる（reapLate は走査の後に次の死を待つ —
+    // 回の最後の死は、走査が通り過ぎた後に来て、番号だけが見たことにされる）
     late := envSet("LOT_REAP_LATE")
     mut reaped := 0
     for r <- iter.Range(0, rounds) {
         got, e := task.Run((s task.Scope) => {
             mut hs := mut []task.Handle[int]{}
-            for _ <- iter.Range(0, 3) {
+            for _ <- iter.Range(0, if late { 1 } else { 3 }) {
                 hs = append(hs, task.Spawn(s, () => {
                     mut n := 0
                     while leaseOp(4, ctl.blk, hHead + r * wHead, 0) == 0 {
@@ -141,7 +143,7 @@ func TestReapRace() {
                             if i >= 0 {
                                 Fresh(l, i, -1 - i)
                                 Hold(l, i)
-                                os.Sleep(0)
+                                os.Sleep(if late { 50 * (k + 1) } else { 0 })
                                 panic(Boom{})
                             }
                             k
@@ -173,6 +175,7 @@ func reapLate(l Lot) int {
     if leaseOp(9, l.blk, 0, 0) == leaseOp(4, l.blk, hSeen, 0) {
         return 0
     }
+    s0 := leaseOp(9, l.blk, 0, 0)
     n := size(l)
     mut lost := 0
     mut i := 0
@@ -183,6 +186,12 @@ func reapLate(l Lot) int {
             lost += 1
         }
         i += 1
+    }
+    // 走査の後に次の死が来るのを待ってから番号を読む（最長2秒。来なければ、その時の番号）
+    mut t := 0
+    while leaseOp(9, l.blk, 0, 0) == s0 && t < 2000 {
+        os.Sleep(1)
+        t += 1
     }
     _ = leaseOp(5, l.blk, hSeen, leaseOp(9, l.blk, 0, 0))
     return lost

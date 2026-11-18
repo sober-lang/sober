@@ -1,0 +1,12 @@
+@@full	c1434a248338fdc4	1383	38131
+@head	f8802cba5eefdec2	0	31
+func apply	93ce9d41ee6e7b78	10	415
+func forward	501d6c74b787ec2c	14	540
+func less	b7adf3f11f81d0a2	7	304
+func main	18781c76e0fddf8b	117	3699
+func merge	a662d578d029af4d	10	445
+func pipe	101f8f88d4b4d0eb	8	362
+func run	25bb43997a4429f9	40	1401
+type Fetch	cf294cef010bf907	7	260
+type Less	33a9c67a04bc3e3a	4	154
+type Merge	a7cd563b06a31d80	4	178

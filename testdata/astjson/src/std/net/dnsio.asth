@@ -1,0 +1,9 @@
+@@full	a2ae6c6899083520	3509	111974
+@head	077eef15b7940e8e	0	237
+func ask	c2fdc3a75d7f7e5b	73	2553
+func cat2	947f0421fa072455	33	1215
+func resolveIn	d2bc10bad64da2f5	140	4936
+func resolveSys	d1b0d0080c71670c	35	1301
+func tcpAsk	f3f8bd2fb56c270c	126	4154
+func txid	33d6acca09fabb93	63	1986
+func udpAsk	e2a4a51554ec347b	127	4079

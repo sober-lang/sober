@@ -12,6 +12,14 @@ import FeatherweightSober.MachineTy
 import FeatherweightSober.Substitution
 import FeatherweightSober.Shift
 import FeatherweightSober.TSubst
+import FeatherweightSober.Mono
+import FeatherweightSober.KindInfer
+import FeatherweightSober.KindAnti
+import FeatherweightSober.KindMeet
+import FeatherweightSober.KindMeetTy
+import FeatherweightSober.KindDef
+import FeatherweightSober.KindComp
+import FeatherweightSober.KindInferTc
 import FeatherweightSober.Soundness
 import FeatherweightSober.Split
 import FeatherweightSober.Examples

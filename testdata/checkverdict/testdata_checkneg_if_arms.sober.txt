@@ -1,3 +1,4 @@
 sober: type error at testdata/checkneg/if_arms.sober:5:10
+  in main: the condition must be a bool and both branches must have the same type (core rule: if)
 {"errors":[{"msg":"type error"}],"ok":false}
 exit=1

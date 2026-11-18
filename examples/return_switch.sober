@@ -1,0 +1,33 @@
+package main
+
+// switch の分岐の束縛をそのまま返す: 束縛は仮引数の region にあり、戻り値の region へ上げて読む
+
+type OptS union {
+    SomeS { v string }
+    NoneS {}
+}
+
+type OptL union {
+    SomeL { v []int }
+    NoneL {}
+}
+
+func orElseS(o OptS, d string) string {
+    return switch o {
+    case SomeS{v}: v
+    default: d
+    }
+}
+
+func orElseL(o OptL, d []int) []int {
+    return switch o {
+    case SomeL{v}: v
+    default: d
+    }
+}
+
+func main() {
+    println(orElseS(SomeS{v: "ab"}, "cd"))
+    println(orElseS(NoneS{}, "cd"))
+    println(len(orElseL(SomeL{v: []int{1, 2, 3}}, []int{})))
+}

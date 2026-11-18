@@ -1,0 +1,16 @@
+package main
+
+// 関数値を経る: 型引数 T = string の値を、関数値の実引数と戻り値に通す
+
+func apply[T](x T, f func(T) T) T {
+    return f(x)
+}
+
+func twice[T](x T, f func(T) T) T {
+    return apply(apply(x, f), f)
+}
+
+func main() {
+    println(twice("ab", (s string) => s + s))
+    println(len(twice([]int{1}, (xs []int) => append(xs, 0))))
+}

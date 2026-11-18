@@ -35,21 +35,25 @@ run() {
     tail -n +2 "$tmp/o" | grep ' y=-' >> "$tmp/absat" || true
 }
 # check の経路（desugar の exprSty × 表）: `sober check --typer-diff` の合計。loss（exprSty だけ分かる）と mismatch は位置つきで
-csame=0; cgain=0; closs=0; cmis=0; cskip=0; ctsame=0; ctdiff=0
+csame=0; cgain=0; closs=0; cmis=0; cskip=0; ctsame=0; ctdiff=0; ctunb=0
 : > "$tmp/cmis"
+: > "$tmp/unb"
 runc() {
     local e=$1 dir=$2
     if ! (cd "$dir" && ulimit -s unlimited && "$SOBER" check "$e" --typer-diff) > "$tmp/o" 2> "$tmp/err"; then
         [ $verbose = 1 ] && echo "$dir/$e: check rejected: $(head -n 1 "$tmp/err")"
         return 0
     fi
-    read -r a b c d f g h < <(head -n 1 "$tmp/o" | tr '=' ' ' | awk '{print $3, $5, $7, $9, $11, $13, $15}')
+    read -r a b c d f g h u < <(head -n 1 "$tmp/o" | tr '=' ' ' | awk '{print $3, $5, $7, $9, $11, $13, $15, $17}')
     csame=$((csame + a)); cgain=$((cgain + b)); closs=$((closs + c)); cmis=$((cmis + d)); cskip=$((cskip + f))
-    ctsame=$((ctsame + g)); ctdiff=$((ctdiff + h))
+    ctsame=$((ctsame + g)); ctdiff=$((ctdiff + h)); ctunb=$((ctunb + u))
+    [ "$u" = 0 ] || { if [ "$dir" = "$root" ]; then echo "$e: $u"; else echo "self ($e): $u"; fi; } >> "$tmp/unb"
     tail -n +2 "$tmp/o" >> "$tmp/cmis"
 }
 root=$(pwd)
 SOBER=$(realpath "$SOBER")
+# 型引数の突き合わせから外した下見の数の期待値（全 entry と自己適用の和）
+TARGS_UNBOUND_WANT=5
 # check の経路（runc — 型引数の照合を含む）から外す entry（FLEDGER F-dom1 — task.Run の本体の総称ラムダの捕獲で inferTs の下見が外の変数を見失う既存の穴。
 # domain_handoff は形 2〔本体の末尾の総称呼び出し task.Read が本体の局所を引く〕・直したら外す）・domain_arg も形 2〔Run の本体の末尾の task.Read〕・domain_requeue も形 2（domain_handoff と同じ形）
 TARGS_SKIP=" examples/domain_neg_nested.sober examples/domain_neg_effect.sober examples/domain_handoff.sober examples/domain_arg.sober examples/domain_scope_place.sober examples/iter_region_domain_mut.sober examples/domain_slots.sober examples/domain_mutarg.sober examples/domain_requeue.sober "
@@ -69,7 +73,7 @@ cp -r src/std "$w/compiler/std"
 run app "$w/compiler"
 runc app "$w/compiler"
 echo "typer total: match=$tm mismatch=$tx absent=$ta skip=$ts"
-echo "typer-sty total: same=$csame gain=$cgain loss=$closs mismatch=$cmis skip=$cskip targs-same=$ctsame targs-diff=$ctdiff"
+echo "typer-sty total: same=$csame gain=$cgain loss=$closs mismatch=$cmis skip=$cskip targs-same=$ctsame targs-diff=$ctdiff targs-unbound=$ctunb"
 if [ $verbose = 1 ] && [ -s "$tmp/cmis" ]; then
     echo "check-side loss / mismatch (先頭 80):"
     head -n 80 "$tmp/cmis"
@@ -82,6 +86,13 @@ if [ $verbose = 1 ]; then
 fi
 # 1 件も突き合わせられなければ道具の故障（フラグの受け渡し・全 entry の拒否）
 [ "$tm" -gt 0 ] && [ "$csame" -gt 0 ] && [ "$ctsame" -gt 0 ] || { echo "error: no expression was compared"; exit 1; }
+# 型引数の突き合わせから外した下見（実引数の名前が環境に無い読み — switch の分岐の束縛の無い外の環境で読む型）の数は固定の期待値と照合する
+# （外す数が増えても減っても赤。入力の追加・変更で正当に動いたら、題材ごとの内訳を見て値を直す）
+if [ "$ctunb" != "$TARGS_UNBOUND_WANT" ]; then
+    echo "FAIL: targs-unbound=$ctunb (want $TARGS_UNBOUND_WANT — scripts/typerdiff.sh の TARGS_UNBOUND_WANT)"
+    cat "$tmp/unb"
+    exit 1
+fi
 # check の経路: 表が exprSty の分かることを全部分かって（loss 0）、食い違わない（mismatch 0）
 # 型引数（inferTs × 表の YTArgsOf — C1 B3-3 の持ち越しの間の常設の照合）: 決まる / 決まらないと region を持たない型引数のコア型が一致
 if [ "$closs" -gt 0 ] || [ "$cmis" -gt 0 ] || [ "$ctdiff" -gt 0 ]; then

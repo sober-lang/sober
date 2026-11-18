@@ -1,3 +1,4 @@
 sober: type error at testdata/checkneg/add_bool.sober:5:15
+  in main: both operands must be ints (core rule: add)
 {"errors":[{"msg":"type error"}],"ok":false}
 exit=1

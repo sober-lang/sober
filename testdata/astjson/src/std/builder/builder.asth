@@ -1,0 +1,18 @@
+@@full	ab9997a356cbbcdb	4609	137100
+@head	bc03dae8209f2975	0	34
+const maxChunk	952943c6b33a2a1c	1	51
+const minBase	e7383c1c9f3bfdbb	1	50
+const seeds	c15d5a3b76d0e3bb	1	46
+func Build	d5810aa72f666dce	82	2742
+func Get	a327f7a0ed569c48	90	3014
+func Len	40c6dfa5feff9eb1	6	304
+func Push	0029f0114059eee1	42	1499
+func PushAll	81ee499530b9f0d4	70	2427
+func PushBetween	ab4ab91c217bf675	89	3068
+func PushString	5f6590b79f292851	10	461
+func PushWord	5ab8a98b859f0fec	73	2534
+func pushAllSlow	455270ea5d77c423	108	3597
+func pushBetweenSlow	c7e920de64ccf4d5	21	835
+func pushSlow	1b96f8ade15f3d2c	132	4407
+func pushWordSlow	e74f02dc8193eea4	29	1108
+type Builder	24cbd6ab2f52bff8	10	463

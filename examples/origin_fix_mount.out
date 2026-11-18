@@ -4,6 +4,7 @@ Cache-Control: private
 Set-Cookie: sid=s1; Path=/; Max-Age=3600; Secure; HttpOnly; SameSite=Lax
 Content-Length: 3
 Connection: close
+Date: Sun, 06 Nov 1994 08:49:37 GMT
 
 hi
 

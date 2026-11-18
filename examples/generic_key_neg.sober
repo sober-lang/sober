@@ -1,0 +1,15 @@
+package main
+
+// 負例: tally の本体は K を map のキーに置くので、K は mapのキーにできる型（int か string）に限る。bool は渡せない
+
+func tally[K](ks []K) int {
+    mut m := mut map[K]int{}
+    for k <- ks {
+        m[k] = 1
+    }
+    return len(m)
+}
+
+func main() {
+    println(tally([]bool{true, false}))
+}

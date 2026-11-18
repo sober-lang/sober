@@ -1,0 +1,6 @@
+    mut r := d
+    for x <- xs {
+        r = x
+        break
+    }
+    return r

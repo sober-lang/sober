@@ -1,0 +1,58 @@
+package main
+
+// 実験3（shape-m0）の題材 f32・形 json。gen.ts の生成物
+
+import "std/iter"
+import "std/json"
+
+type R struct {
+    a0 int
+    a1 string
+    a2 int
+    a3 string
+    a4 int
+    a5 string
+    a6 int
+    a7 string
+    a8 int
+    a9 string
+    a10 int
+    a11 string
+    a12 int
+    a13 string
+    a14 int
+    a15 string
+    a16 int
+    a17 string
+    a18 int
+    a19 string
+    a20 int
+    a21 string
+    a22 int
+    a23 string
+    a24 int
+    a25 string
+    a26 int
+    a27 string
+    a28 int
+    a29 string
+    a30 int
+    a31 string
+}
+
+func mk(i int) R {
+    return R{a0: i + 10, a1: "s11_${i % 100}", a2: i + 12, a3: "s13_${i % 100}", a4: i + 14, a5: "s15_${i % 100}", a6: i + 16, a7: "s17_${i % 100}", a8: i + 18, a9: "s19_${i % 100}", a10: i + 20, a11: "s21_${i % 100}", a12: i + 22, a13: "s23_${i % 100}", a14: i + 24, a15: "s25_${i % 100}", a16: i + 26, a17: "s27_${i % 100}", a18: i + 28, a19: "s29_${i % 100}", a20: i + 30, a21: "s31_${i % 100}", a22: i + 32, a23: "s33_${i % 100}", a24: i + 34, a25: "s35_${i % 100}", a26: i + 36, a27: "s37_${i % 100}", a28: i + 38, a29: "s39_${i % 100}", a30: i + 40, a31: "s41_${i % 100}"}
+}
+
+func enc(v R) string {
+    return json.Encode[R](v)
+}
+
+func main() {
+    println(enc(mk(7)))
+    mut total := 0
+    for i <- iter.Range(0, 200000) {
+        total += len(bytes(enc(mk(i))))
+    }
+    println(total)
+}

@@ -1,3 +1,4 @@
 sober: type error at examples/narrow_reassign_loop_neg.sober:15:23
+  in main: both operands must be ints (core rule: add)
 {"errors":[{"msg":"type error"}],"ok":false}
 exit=1

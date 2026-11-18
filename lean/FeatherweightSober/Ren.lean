@@ -39,7 +39,7 @@ theorem rmap_le {ρ0 δ r n : Nat} (h0 : ρ0 ≤ δ) (h : r ≤ n) : rmap ρ0 δ
 /-- 保存拡大: anchor = δ（呼び手最内）なら一様シフト -/
 theorem Ty.renR_top (δ : Nat) : ∀ t : Ty, t.renR δ δ = t.shiftR δ
   | .int => rfl
-  | .tvar _ => rfl
+  | .tvar _ r kd => by cases hrf : kd.rf <;> cases him : kd.imm <;> cases r <;> simp_all [Ty.renR, Ty.shiftR, Ty.relocR, Ty.relocA, Ty.regionsBelow, Ty.mutFree, Ty.chanFree, Kind.imm, rmap] <;> omega
   | .bool => rfl
   | .byte => rfl
   | .f64 => rfl
@@ -61,7 +61,7 @@ theorem Ty.renR_top (δ : Nat) : ∀ t : Ty, t.renR δ δ = t.shiftR δ
 /-- 深さ ρ ≥ 1 のシフトは写像と合成して ρ + δ のシフトになる（本体の中の call の instantiate） -/
 theorem Ty.shiftR_renR {ρ0 δ ρ : Nat} (hρ : 1 ≤ ρ) : ∀ t : Ty, (t.shiftR ρ).renR ρ0 δ = t.shiftR (ρ + δ)
   | .int => rfl
-  | .tvar _ => rfl
+  | .tvar _ r kd => by obtain ⟨j, rfl⟩ : ∃ j, ρ = j + 1 := ⟨ρ - 1, by omega⟩; rcases kd with ⟨rf, mf, cf, cov⟩; cases rf <;> cases mf <;> cases cf <;> cases r <;> simp_all [Ty.renR, Ty.shiftR, Ty.relocR, Ty.relocA, Ty.clampR, Ty.noClamp, Ty.regionsBelow, Ty.mutFree, Ty.chanFree, Ty.retOk, Ty.annFree, Kind.imm, rmap] <;> omega
   | .bool => rfl
   | .byte => rfl
   | .f64 => rfl
@@ -91,7 +91,7 @@ theorem Ty.shiftR_renR {ρ0 δ ρ : Nat} (hρ : 1 ≤ ρ) : ∀ t : Ty, (t.shift
 theorem Ty.renR_relocR_mf {ρ0 δ k : Nat} : ∀ {t : Ty}, t.mutFree = true → t.chanFree = true →
     (t.relocR k).renR ρ0 δ = (t.renR ρ0 δ).relocR (rmap ρ0 δ k)
   | .int, _, _ => rfl
-  | .tvar _, _, _ => rfl
+  | .tvar _ r kd, a0, a1 => by cases hrf : kd.rf <;> cases him : kd.imm <;> cases r <;> simp_all [Ty.renR, Ty.shiftR, Ty.relocR, Ty.relocA, Ty.regionsBelow, Ty.mutFree, Ty.chanFree, Kind.imm, rmap] <;> omega
   | .bool, _, _ => rfl
   | .byte, _, _ => rfl
   | .f64, _, _ => rfl
@@ -129,7 +129,7 @@ theorem Ty.renR_relocR_mf {ρ0 δ k : Nat} : ∀ {t : Ty}, t.mutFree = true → 
 theorem Ty.relocR_renR_left {ρ0 δ k : Nat} : ∀ {t : Ty}, t.mutFree = true → t.chanFree = true →
     (t.renR ρ0 δ).relocR k = t.relocR k
   | .int, _, _ => rfl
-  | .tvar _, _, _ => rfl
+  | .tvar _ r kd, a0, a1 => by cases hrf : kd.rf <;> cases him : kd.imm <;> cases r <;> simp_all [Ty.renR, Ty.shiftR, Ty.relocR, Ty.relocA, Ty.regionsBelow, Ty.mutFree, Ty.chanFree, Kind.imm, rmap] <;> omega
   | .bool, _, _ => rfl
   | .byte, _, _ => rfl
   | .f64, _, _ => rfl
@@ -166,7 +166,7 @@ theorem Ty.relocR_renR_left {ρ0 δ k : Nat} : ∀ {t : Ty}, t.mutFree = true �
 /-- relocR（深さ ρ ≥ 1 の call 結果）も同じく合成する -/
 theorem Ty.relocR_renR {ρ0 δ ρ : Nat} (hρ : 1 ≤ ρ) : ∀ t : Ty, (t.relocR ρ).renR ρ0 δ = t.relocR (ρ + δ)
   | .int => rfl
-  | .tvar _ => rfl
+  | .tvar _ r kd => by obtain ⟨j, rfl⟩ : ∃ j, ρ = j + 1 := ⟨ρ - 1, by omega⟩; rcases kd with ⟨rf, mf, cf, cov⟩; cases rf <;> cases mf <;> cases cf <;> cases r <;> simp_all [Ty.renR, Ty.shiftR, Ty.relocR, Ty.relocA, Ty.clampR, Ty.noClamp, Ty.regionsBelow, Ty.mutFree, Ty.chanFree, Ty.retOk, Ty.annFree, Kind.imm, rmap] <;> omega
   | .bool => rfl
   | .byte => rfl
   | .f64 => rfl
@@ -203,7 +203,7 @@ theorem Ty.renR_regionsBelow_succ {ρ0 δ : Nat} (h0 : ρ0 ≤ δ) :
     ∀ {t : Ty} {k : Nat}, t.chanFree = true → t.regionsBelow (k + 1) = true →
       (t.renR ρ0 δ).regionsBelow (rmap ρ0 δ k + 1) = true
   | .int, _, _, _ => rfl
-  | .tvar _, _, _, _ => rfl
+  | .tvar _ r kd, a0, a1, a2 => by rcases kd with ⟨rf, mf, cf, cov⟩; cases rf <;> cases mf <;> cases cf <;> cases r <;> cases a0 <;> simp_all [Ty.renR, Ty.shiftR, Ty.relocR, Ty.relocA, Ty.clampR, Ty.noClamp, Ty.regionsBelow, Ty.mutFree, Ty.chanFree, Ty.retOk, Ty.annFree, Kind.imm, rmap] <;> omega
   | .bool, _, _, _ => rfl
   | .byte, _, _, _ => rfl
   | .f64, _, _, _ => rfl
@@ -246,7 +246,7 @@ theorem Ty.renR_regionsBelow_succ {ρ0 δ : Nat} (h0 : ρ0 ≤ δ) :
 theorem Ty.renR_regionsBelow {ρ0 δ : Nat} (h0 : ρ0 ≤ δ) :
     ∀ {t : Ty} {n : Nat}, t.regionsBelow n = true → (t.renR ρ0 δ).regionsBelow (rmap ρ0 δ n) = true
   | .int, _, _ => rfl
-  | .tvar _, _, _ => rfl
+  | .tvar _ r kd, a0, a1 => by rcases kd with ⟨rf, mf, cf, cov⟩; cases rf <;> cases mf <;> cases cf <;> cases r <;> cases a0 <;> simp_all [Ty.renR, Ty.shiftR, Ty.relocR, Ty.relocA, Ty.clampR, Ty.noClamp, Ty.regionsBelow, Ty.mutFree, Ty.chanFree, Ty.retOk, Ty.annFree, Kind.imm, rmap] <;> omega
   | .bool, _, _ => rfl
   | .byte, _, _ => rfl
   | .f64, _, _ => rfl
@@ -297,7 +297,7 @@ theorem Ty.renR_regionsBelow {ρ0 δ : Nat} (h0 : ρ0 ≤ δ) :
 
 theorem Ty.renR_mutFree {ρ0 δ : Nat} : ∀ t : Ty, (t.renR ρ0 δ).mutFree = t.mutFree
   | .int => rfl
-  | .tvar _ => rfl
+  | .tvar _ r kd => by cases hrf : kd.rf <;> cases him : kd.imm <;> cases r <;> simp_all [Ty.renR, Ty.shiftR, Ty.relocR, Ty.relocA, Ty.regionsBelow, Ty.mutFree, Ty.chanFree, Kind.imm, rmap] <;> omega
   | .bool => rfl
   | .byte => rfl
   | .f64 => rfl
@@ -328,7 +328,7 @@ theorem Ty.keyCompat_renR (ρ0 δ : Nat) {a b : Ty} (h : a.keyCompat b = true) :
 /-- 部分型（imm 上界の緩め）の保存（単調性から） -/
 theorem Ty.annFree_renR {ρ0 δ : Nat} : ∀ t : Ty, (t.renR ρ0 δ).annFree = t.annFree
   | .int => rfl
-  | .tvar _ => rfl
+  | .tvar _ r kd => by rcases kd with ⟨rf, mf, cf, cov⟩; cases rf <;> cases mf <;> cases cf <;> simp_all [Ty.renR, Ty.shiftR, Ty.relocR, Ty.relocA, Ty.clampR, Ty.noClamp, Ty.regionsBelow, Ty.mutFree, Ty.chanFree, Ty.retOk, Ty.annFree, Kind.imm, rmap]
   | .bool => rfl
   | .byte => rfl
   | .f64 => rfl
@@ -377,9 +377,16 @@ theorem Ty.sub_renR {ρ0 δ : Nat} (h0 : ρ0 ≤ δ) :
   | .int, tb, hs => by
     obtain rfl := Ty.sub_int_inv hs
     exact Ty.sub_refl _
-  | .tvar i, tb, hs => by
-    obtain rfl := Ty.sub_tvar_inv hs
-    exact Ty.sub_refl _
+  | .tvar i ρ kd, tb, hs => by
+    obtain ⟨ρ', rfl, h⟩ := Ty.sub_tvar_inv hs
+    cases hrf : kd.rf
+    · simp only [Ty.renR, hrf, Bool.false_eq_true, if_false, Ty.sub, decide_true, Bool.true_and, Bool.or_eq_true,
+        Bool.and_eq_true, decide_eq_true_eq, or_false]
+      rcases h with rfl | h | ⟨hc, h⟩
+      · exact .inl rfl
+      · simp [hrf] at h
+      · exact .inr ⟨hc, rmap_le h0 h⟩
+    · simp [Ty.renR, hrf, Ty.sub]
   | .bool, tb, hs => by
     obtain rfl := Ty.sub_bool_inv hs
     exact Ty.sub_refl _
@@ -434,23 +441,8 @@ theorem Ty.mutTop_renR (ρ0 δ : Nat) : ∀ ta : Ty, (ta.renR ρ0 δ).mutTop = t
   | .ref m r _ => by cases m <;> simp [Ty.mutTop, Ty.renR]
   | .slice m r _ => by cases m <;> simp [Ty.mutTop, Ty.renR]
   | .map m r _ => by cases m <;> simp [Ty.mutTop, Ty.renR]
-  | .int | .tvar _ | .bool | .byte | .f64 | .unit | .opt _ | .union _ _ | .prod _ _ | .chan _ _ | .dom _ _ | .fn _ _ | .own _ _ _ | .rvar _ | .mus _ _ _ | .muRs _ _ _ _ => by
+  | .int | .tvar _ _ _ | .bool | .byte | .f64 | .unit | .opt _ | .union _ _ | .prod _ _ | .chan _ _ | .dom _ _ | .fn _ _ | .own _ _ _ | .rvar _ | .mus _ _ _ | .muRs _ _ _ _ => by
     simp [Ty.mutTop, Ty.renR]
-
-theorem Ty.anchorOf_renR (ρ0 δ : Nat) :
-    ∀ (p ta : Ty), Ty.anchorOf p (ta.renR ρ0 δ) = (Ty.anchorOf p ta).map (rmap ρ0 δ) := by
-  intro p
-  induction p with
-  | prod l r ihl ihr =>
-    intro ta
-    cases ta <;> simp only [Ty.anchorOf, Ty.renR, Option.map_none]
-    rename_i l' r'
-    rw [ihl, ihr]
-    cases Ty.anchorOf l l' <;> simp
-  | _ =>
-    intro ta
-    simp only [Ty.anchorOf]
-    split <;> simp [Ty.mutTop_renR]
 
 /-- 入れ子の anchor つき call の写像の合成（本体の深さ d' ≥ 1） -/
 theorem rmap_comp {ρ0 δ a d' : Nat} (hd' : 1 ≤ d') (r : Nat) :
@@ -464,7 +456,7 @@ theorem rmap_comp {ρ0 δ a d' : Nat} (hd' : 1 ≤ d') (r : Nat) :
 theorem Ty.renR_renR {ρ0 δ a d' : Nat} (hd' : 1 ≤ d') :
     ∀ t : Ty, (t.renR a d').renR ρ0 δ = t.renR (rmap ρ0 δ a) (d' + δ)
   | .int => rfl
-  | .tvar _ => rfl
+  | .tvar _ r kd => by obtain ⟨j, rfl⟩ : ∃ j, d' = j + 1 := ⟨d' - 1, by omega⟩; rcases kd with ⟨rf, mf, cf, cov⟩; cases rf <;> cases mf <;> cases cf <;> cases r <;> simp_all [Ty.renR, Ty.shiftR, Ty.relocR, Ty.relocA, Ty.clampR, Ty.noClamp, Ty.regionsBelow, Ty.mutFree, Ty.chanFree, Ty.retOk, Ty.annFree, Kind.imm, rmap] <;> omega
   | .bool => rfl
   | .byte => rfl
   | .f64 => rfl
@@ -486,7 +478,7 @@ theorem Ty.renR_renR {ρ0 δ a d' : Nat} (hd' : 1 ≤ d') :
 theorem Ty.relocA_renR {ρ0 δ a d' : Nat} (hd' : 1 ≤ d') :
     ∀ t : Ty, (t.relocA a d').renR ρ0 δ = t.relocA (rmap ρ0 δ a) (d' + δ)
   | .int => rfl
-  | .tvar _ => rfl
+  | .tvar _ r kd => by obtain ⟨j, rfl⟩ : ∃ j, d' = j + 1 := ⟨d' - 1, by omega⟩; rcases kd with ⟨rf, mf, cf, cov⟩; cases rf <;> cases mf <;> cases cf <;> cases r <;> simp_all [Ty.renR, Ty.shiftR, Ty.relocR, Ty.relocA, Ty.clampR, Ty.noClamp, Ty.regionsBelow, Ty.mutFree, Ty.chanFree, Ty.retOk, Ty.annFree, Kind.imm, rmap] <;> omega
   | .bool => rfl
   | .byte => rfl
   | .f64 => rfl
@@ -526,7 +518,7 @@ theorem rmap_le_iff {ρ0 δ r n : Nat} (h0 : ρ0 ≤ δ) : rmap ρ0 δ r ≤ rma
 theorem Ty.renR_regionsBelow_refl {ρ0 δ : Nat} (h0 : ρ0 ≤ δ) :
     ∀ {t : Ty} {n : Nat}, (t.renR ρ0 δ).regionsBelow (rmap ρ0 δ n) = true → t.regionsBelow n = true
   | .int, _, _ => rfl
-  | .tvar _, _, _ => rfl
+  | .tvar _ r kd, a0, a1 => by rcases kd with ⟨rf, mf, cf, cov⟩; cases rf <;> cases mf <;> cases cf <;> cases r <;> cases a0 <;> simp_all [Ty.renR, Ty.shiftR, Ty.relocR, Ty.relocA, Ty.clampR, Ty.noClamp, Ty.regionsBelow, Ty.mutFree, Ty.chanFree, Ty.retOk, Ty.annFree, Kind.imm, rmap] <;> omega
   | .bool, _, _ => rfl
   | .byte, _, _ => rfl
   | .f64, _, _ => rfl
@@ -578,7 +570,7 @@ theorem Ty.renR_regionsBelow_refl {ρ0 δ : Nat} (h0 : ρ0 ≤ δ) :
 /-- 中身が region 0（呼び手空間）だけなら、深い締めは写像そのもの（フレーム外のコンテナの中身の型） -/
 theorem Ty.relocA_of_below1 {ρ0 δ : Nat} : ∀ {t : Ty}, t.regionsBelow 1 = true → t.relocA ρ0 δ = t.renR ρ0 δ
   | .int, _ => rfl
-  | .tvar _, _ => rfl
+  | .tvar _ r kd, a0 => by cases hrf : kd.rf <;> cases him : kd.imm <;> cases r <;> simp_all [Ty.renR, Ty.shiftR, Ty.relocR, Ty.relocA, Ty.regionsBelow, Ty.mutFree, Ty.chanFree, Kind.imm, rmap] <;> omega
   | .bool, _ => rfl
   | .byte, _ => rfl
   | .f64, _ => rfl
@@ -626,7 +618,7 @@ theorem Ty.relocA_of_below1 {ρ0 δ : Nat} : ∀ {t : Ty}, t.regionsBelow 1 = tr
 theorem Ty.relocA_regionsBelow {ρ0 δ : Nat} (h0 : ρ0 ≤ δ) :
     ∀ {t : Ty}, t.retOk = true → (t.relocA ρ0 δ).regionsBelow (δ + 1) = true
   | .int, _ => rfl
-  | .tvar _, _ => rfl
+  | .tvar _ r kd, a0 => by rcases kd with ⟨rf, mf, cf, cov⟩; cases rf <;> cases mf <;> cases cf <;> cases r <;> simp_all [Ty.renR, Ty.shiftR, Ty.relocR, Ty.relocA, Ty.clampR, Ty.noClamp, Ty.regionsBelow, Ty.mutFree, Ty.chanFree, Ty.retOk, Ty.annFree, Kind.imm, rmap] <;> omega
   | .bool, _ => rfl
   | .byte, _ => rfl
   | .f64, _ => rfl
@@ -676,7 +668,7 @@ theorem Ty.relocA_regionsBelow {ρ0 δ : Nat} (h0 : ρ0 ≤ δ) :
 
 theorem Ty.relocA_mutFree {ρ0 δ : Nat} : ∀ {t : Ty}, t.retOk = true → (t.relocA ρ0 δ).mutFree = true
   | .int, _ => rfl
-  | .tvar _, _ => rfl
+  | .tvar _ r kd, a0 => by rcases kd with ⟨rf, mf, cf, cov⟩; cases rf <;> cases mf <;> cases cf <;> simp_all [Ty.renR, Ty.shiftR, Ty.relocR, Ty.relocA, Ty.clampR, Ty.noClamp, Ty.regionsBelow, Ty.mutFree, Ty.chanFree, Ty.retOk, Ty.annFree, Kind.imm, rmap]
   | .bool, _ => rfl
   | .byte, _ => rfl
   | .f64, _ => rfl
@@ -733,7 +725,7 @@ theorem rmap_min {ρ0 δ r k : Nat} (h0 : ρ0 ≤ δ) : min (rmap ρ0 δ r) (rma
 theorem Ty.clampR_renR {ρ0 δ k : Nat} (h0 : ρ0 ≤ δ) :
     ∀ t : Ty, (t.renR ρ0 δ).clampR (rmap ρ0 δ k) = (t.clampR k).renR ρ0 δ
   | .int => rfl
-  | .tvar _ => rfl
+  | .tvar _ r kd => by rcases kd with ⟨rf, mf, cf, cov⟩; cases rf <;> cases mf <;> cases cf <;> cases r <;> cases k <;> simp_all [Ty.renR, Ty.shiftR, Ty.relocR, Ty.relocA, Ty.clampR, Ty.noClamp, Ty.regionsBelow, Ty.mutFree, Ty.chanFree, Ty.retOk, Ty.annFree, Kind.imm, rmap] <;> omega
   | .bool => rfl
   | .byte => rfl
   | .f64 => rfl
@@ -755,7 +747,7 @@ theorem Ty.clampR_renR {ρ0 δ k : Nat} (h0 : ρ0 ≤ δ) :
 theorem Ty.noClamp_renR {ρ0 δ k : Nat} (h0 : ρ0 ≤ δ) :
     ∀ t : Ty, (t.renR ρ0 δ).noClamp (rmap ρ0 δ k) = t.noClamp k
   | .int => rfl
-  | .tvar _ => rfl
+  | .tvar _ r kd => by rcases kd with ⟨rf, mf, cf, cov⟩; cases rf <;> cases mf <;> cases cf <;> cases r <;> cases k <;> simp_all [Ty.renR, Ty.shiftR, Ty.relocR, Ty.relocA, Ty.clampR, Ty.noClamp, Ty.regionsBelow, Ty.mutFree, Ty.chanFree, Ty.retOk, Ty.annFree, Kind.imm, rmap] <;> omega
   | .bool => rfl
   | .byte => rfl
   | .f64 => rfl
@@ -776,7 +768,7 @@ theorem Ty.noClamp_renR {ρ0 δ k : Nat} (h0 : ρ0 ≤ δ) :
 
 theorem Ty.chanFree_renR {ρ0 δ : Nat} : ∀ t : Ty, (t.renR ρ0 δ).chanFree = t.chanFree
   | .int => rfl
-  | .tvar _ => rfl
+  | .tvar _ r kd => by cases hrf : kd.rf <;> cases him : kd.imm <;> cases r <;> simp_all [Ty.renR, Ty.shiftR, Ty.relocR, Ty.relocA, Ty.regionsBelow, Ty.mutFree, Ty.chanFree, Kind.imm, rmap] <;> omega
   | .bool => rfl
   | .byte => rfl
   | .f64 => rfl
@@ -804,13 +796,36 @@ theorem Ty.payOk_renR {ρ0 δ : Nat} {te t : Ty} (h : Ty.payOk te t = true) :
     by rw [Ty.renR_mutFree]; exact h3⟩, by rw [Ty.chanFree_renR]; exact h4⟩, ?_⟩
   rw [Ty.relocR_renR_left h1 h2, Ty.relocR_renR_left h3 h4, h5]
 
+theorem Ty.clampOk_renR {ρ0 δ b k : Nat} (h0 : ρ0 ≤ δ) :
+    ∀ t : Ty, (t.renR ρ0 δ).clampOk (rmap ρ0 δ b) (rmap ρ0 δ k) = t.clampOk b k
+  | .int => rfl
+  | .tvar _ r kd => by
+    rcases kd with ⟨rf, mf, cf, cov⟩
+    cases rf <;> cases mf <;> cases cf <;> simp [Ty.renR, Ty.clampOk, Kind.imm, rmap_le_iff h0]
+  | .bool => rfl
+  | .byte => rfl
+  | .f64 => rfl
+  | .unit => rfl
+  | .opt t => by simp [Ty.renR, Ty.clampOk, Ty.clampOk_renR h0 t]
+  | .union l r => by simp [Ty.renR, Ty.clampOk, Ty.clampOk_renR h0 l, Ty.clampOk_renR h0 r]
+  | .prod l r => by simp [Ty.renR, Ty.clampOk, Ty.clampOk_renR h0 l, Ty.clampOk_renR h0 r]
+  | .ref m r t => by cases m <;> simp [Ty.renR, Ty.clampOk, Ty.chanFree_renR, rmap_le_iff h0]
+  | .slice m r t => by cases m <;> simp [Ty.renR, Ty.clampOk, Ty.chanFree_renR, rmap_le_iff h0]
+  | .map m r t => by cases m <;> simp [Ty.renR, Ty.clampOk, Ty.chanFree_renR, rmap_le_iff h0]
+  | .chan _ _ => rfl
+  | .dom _ _ => rfl
+  | .own _ _ _ => rfl
+  | .fn _ _ => rfl
+  | .mus _ _ _ => rfl
+  | .rvar _ => rfl
+  | .muRs r _ _ b => by simp [Ty.renR, Ty.clampOk, rmap_le_iff h0]
+
 theorem Ty.jumpRel_renR {ρ0 δ b k : Nat} (h0 : ρ0 ≤ δ) {tJ tL : Ty} (h : Ty.jumpRel b k tJ tL = true) :
     Ty.jumpRel (rmap ρ0 δ b) (rmap ρ0 δ k) (tJ.renR ρ0 δ) (tL.renR ρ0 δ) = true := by
   simp only [Ty.jumpRel, Bool.and_eq_true, Bool.or_eq_true, decide_eq_true_eq] at h ⊢
   refine ⟨?_, ?_⟩
   · rw [Ty.clampR_renR h0]; exact Ty.sub_renR h0 h.1
-  · rw [Ty.noClamp_renR h0, Ty.chanFree_renR]
-    exact h.2.elim .inl (fun h2 => .inr ⟨rmap_le h0 h2.1, h2.2⟩)
+  · rw [Ty.clampOk_renR h0]; exact h.2
 
 theorem Ty.readAs_renR {ρ0 δ : Nat} (h0 : ρ0 ≤ δ) {m : Bool} {ot : Option Ty} {t' t : Ty}
     (h : Ty.readAs m ot t' = some t) :
@@ -877,6 +892,97 @@ theorem Ty.rehome_renR {ρ0 δ d : Nat} :
   | prod l r ihl ihr => simp [Ty.renR, Ty.rehome, ihl, ihr]
   | own k r t _ => cases k <;> rfl
   | _ => rfl
+
+/-- 写像の後に置き直しても、置き直しだけと同じ（置き直しは写像が触る位置を全部上書きする） -/
+theorem Ty.atR_renR {ρ0 δ : Nat} (k : Nat) : ∀ t : Ty, (t.renR ρ0 δ).atR k = t.atR k := by
+  intro t
+  induction t with
+  | tvar i r kd => cases h : kd.rf <;> simp [Ty.renR, Ty.atR, h]
+  | _ => simp_all [Ty.renR, Ty.atR]
+
+/-- 代入は型引数を置き直してから入れるので、置き直しの像が同じ型引数の列は同じ代入になる -/
+theorem Ty.tsubst_congr {ts ts' : List Ty} (h : ∀ (i ρ : Nat), ts[i]?.map (fun s : Ty => s.atR ρ) = ts'[i]?.map (fun s : Ty => s.atR ρ)) :
+    ∀ t : Ty, t.tsubst ts = t.tsubst ts' := by
+  intro t
+  induction t with
+  | tvar i ρ k =>
+    have hi := h i ρ
+    simp only [Ty.tsubst]
+    cases h1 : ts[i]? <;> cases h2 : ts'[i]? <;> simp_all
+  | _ => simp_all [Ty.tsubst]
+
+theorem Expr.tsubstTy_congr {ts ts' : List Ty} (h : ∀ (i ρ : Nat), ts[i]?.map (fun s : Ty => s.atR ρ) = ts'[i]?.map (fun s : Ty => s.atR ρ)) :
+    ∀ e : Expr, e.tsubstTy ts = e.tsubstTy ts' := by
+  have hf : Ty.tsubst ts = Ty.tsubst ts' := funext (Ty.tsubst_congr h)
+  intro e
+  induction e <;> simp_all [Expr.tsubstTy]
+
+theorem map_renR_atR_eq {ρ0 δ : Nat} (ts : List Ty) :
+    ∀ (i ρ : Nat), (ts.map (Ty.renR ρ0 δ))[i]?.map (fun s : Ty => s.atR ρ) = ts[i]?.map (fun s : Ty => s.atR ρ) := by
+  intro i ρ
+  cases h : ts[i]? <;> simp [h, Ty.atR_renR]
+
+/-- 実体化は型引数の region を読まない: 型引数を写像しても同じ実体 -/
+theorem Def.inst_map_renR {ρ0 δ : Nat} (dfn : Def) (ts : List Ty) :
+    dfn.inst (ts.map (Ty.renR ρ0 δ)) = dfn.inst ts := by
+  simp only [Def.inst, Ty.tsubst_congr (map_renR_atR_eq ts), Expr.tsubstTy_congr (map_renR_atR_eq ts)]
+
+theorem Ty.argFree_renR {ρ0 δ : Nat} : ∀ t : Ty, (t.renR ρ0 δ).argFree = t.argFree := by
+  intro t
+  induction t with
+  | tvar i r kd => cases h : kd.rf <;> simp [Ty.renR, Ty.argFree, h]
+  | _ => simp_all [Ty.renR, Ty.argFree, Ty.chanFree_renR]
+
+theorem Ty.rfree_renR {ρ0 δ : Nat} (n : Nat) : ∀ t : Ty, (t.renR ρ0 δ).rfree n = t.rfree n := by
+  intro t
+  induction t generalizing n with
+  | tvar i r kd => cases h : kd.rf <;> simp [Ty.renR, Ty.rfree, h]
+  | _ => simp_all [Ty.renR, Ty.rfree]
+
+theorem Ty.recOk_renR {ρ0 δ : Nat} : ∀ t : Ty, (t.renR ρ0 δ).recOk = t.recOk := by
+  intro t
+  induction t with
+  | tvar i r kd => cases h : kd.rf <;> simp [Ty.renR, Ty.recOk, h]
+  | _ => simp_all [Ty.renR, Ty.recOk]
+
+theorem Ty.covOk_renR {ρ0 δ : Nat} : ∀ t : Ty, t.covOk = true → (t.renR ρ0 δ).covOk = true := by
+  intro t
+  induction t with
+  | tvar i r kd => cases h : kd.rf <;> simp [Ty.renR, Ty.covOk, h]
+  | ref m r t _ =>
+    cases m <;> simp only [Ty.covOk, Ty.renR, Bool.and_eq_true]
+    · intro h; rw [Ty.renR_of_lf h.1.1 h.1.2]; exact h
+    · simp
+  | slice m r t ih => cases m <;> simp_all [Ty.renR, Ty.covOk]
+  | map m r t ih => cases m <;> simp_all [Ty.renR, Ty.covOk]
+  | _ => simp_all [Ty.renR, Ty.covOk]
+
+theorem kindOk_renR {ρ0 δ : Nat} {k : Kind} {s : Ty} (h : kindOk k s = true) : kindOk k (s.renR ρ0 δ) = true := by
+  have hrf : k.rf = true → s.renR ρ0 δ = s := fun hr => by
+    have := (kindOk_parts h); simp only [kindOk, Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true'] at h
+    rcases h with ⟨⟨⟨⟨⟨⟨⟨_, _⟩, _⟩, h4⟩, _⟩, _⟩, _⟩, _⟩
+    rcases h4 with h4 | h4
+    · simp [hr] at h4
+    · exact Ty.renR_of_lf h4.1 h4.2
+  cases hr : k.rf
+  · simp only [kindOk, Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true', hr] at h ⊢
+    simp only [Ty.argFree_renR, Ty.rfree_renR, Ty.recOk_renR, Ty.renR_mutFree, Ty.chanFree_renR]
+    refine ⟨⟨⟨⟨⟨⟨⟨h.1.1.1.1.1.1.1, h.1.1.1.1.1.1.2⟩, h.1.1.1.1.1.2⟩, by simp⟩, h.1.1.1.2⟩, h.1.1.2⟩, ?_⟩, ?_⟩
+    · rcases h.1.2 with h2 | h2
+      · exact Or.inl h2
+      · exact Or.inr ⟨⟨Ty.covOk_renR _ h2.1.1, h2.1.2⟩, h2.2⟩
+    · rcases h.2 with h2 | h2
+      · exact Or.inl h2
+      · exact Or.inr (Ty.keyOk_renR _ _ h2)
+  · rw [hrf hr]; exact h
+
+theorem kindsArgsOk_map_renR {ρ0 δ : Nat} : ∀ {ks : List Kind} {ts : List Ty},
+    kindsArgsOk ks ts = true → kindsArgsOk ks (ts.map (Ty.renR ρ0 δ)) = true
+  | [], _, _ => by simp [kindsArgsOk]
+  | _ :: _, [], _ => by simp [kindsArgsOk]
+  | k :: ks, s :: ts, h => by
+    simp only [kindsArgsOk, List.zip_cons_cons, List.all_cons, Bool.and_eq_true, List.map_cons] at h ⊢
+    exact ⟨kindOk_renR h.1, kindsArgsOk_map_renR (ks := ks) (ts := ts) (by simpa [kindsArgsOk] using h.2)⟩
 
 namespace HasType
 
@@ -977,26 +1083,14 @@ theorem ren_typing {ρ0 δ : Nat} (h0 : ρ0 ≤ δ) {e : Expr} {Δ : Defs} {f b 
   | fnref fn ts =>
     cases he with
     | fnref h hl ha =>
-      simp only [Expr.renTy, Ty.renR, Ty.map_renR_of_argsOk ha]
-      exact .fnref h hl ha
-  | callv ef e ihf ihe =>
+      rename_i dfn
+      simp only [Expr.renTy, Ty.renR]
+      rw [← Def.inst_map_renR (ρ0 := ρ0) (δ := δ) dfn ts]
+      exact .fnref h (by simp [hl]) (kindsArgsOk_map_renR ha)
+  | callv a ef e ihf ihe =>
     simp only [Expr.src, Bool.and_eq_true] at hs
     cases he with
-    | callv hf harg hsub hbd =>
-      rename_i d' p r ta
-      have hd1 : 1 ≤ d' := by omega
-      have hdd : d' + 1 + δ = (d' + δ) + 1 := by omega
-      rw [hdd, Ty.relocR_renR hd1]
-      have hsub' := Ty.sub_renR h0 hsub
-      rw [Ty.shiftR_renR hd1] at hsub'
-      have hf' := ihf hf hd hs.1
-      simp only [Ty.renR] at hf'
-      exact .callv (by rw [← hdd]; exact hf') (by rw [← hdd]; exact ihe harg hd hs.2) hsub'
-        (by have := rmap_le (ρ0 := ρ0) (δ := δ) h0 hbd; rw [rmap_pos hd1] at this; exact this)
-  | callMv a ef e ihf ihe =>
-    simp only [Expr.src, Bool.and_eq_true] at hs
-    cases he with
-    | callMv hf harg hsub hbd had =>
+    | callv hf harg hsub hbd had hro =>
       rename_i d' p r ta
       have hd1 : 1 ≤ d' := by omega
       simp only [Expr.renTy]
@@ -1006,35 +1100,21 @@ theorem ren_typing {ρ0 δ : Nat} (h0 : ρ0 ≤ δ) {e : Expr} {Δ : Defs} {f b 
       rw [Ty.renR_renR hd1] at hsub'
       have hf' := ihf hf hd hs.1
       simp only [Ty.renR] at hf'
-      exact .callMv (by rw [← hdd]; exact hf') (by rw [← hdd]; exact ihe harg hd hs.2) hsub' (rmap_le h0 hbd)
-        (by have := rmap_le (ρ0 := ρ0) (δ := δ) h0 had; rw [rmap_pos hd1] at this; exact this)
-  | call fn ts e ihe =>
+      exact .callv (by rw [← hdd]; exact hf') (by rw [← hdd]; exact ihe harg hd hs.2) hsub' (rmap_le h0 hbd)
+        (by have := rmap_le (ρ0 := ρ0) (δ := δ) h0 had; rw [rmap_pos hd1] at this; exact this) hro
+  | call a fn ts e ihe =>
     simp only [Expr.src] at hs
     cases he with
-    | call hfn hlen hargs harg hsub hbd =>
+    | call hfn hlen hargs harg hsub hbd had =>
       rename_i d' dfn ta
       have hd1 : 1 ≤ d' := by omega
-      simp only [Expr.renTy, Ty.map_renR_of_argsOk hargs]
+      have hI := Def.inst_map_renR (ρ0 := ρ0) (δ := δ) dfn ts
+      simp only [Expr.renTy]
       have hdd : d' + 1 + δ = (d' + δ) + 1 := by omega
-      rw [hdd, Ty.relocR_renR hd1]
+      rw [hdd, Ty.relocA_renR hd1, ← hI]
       have hsub' := Ty.sub_renR h0 hsub
-      rw [Ty.shiftR_renR hd1] at hsub'
-      exact .call hfn hlen hargs (by rw [← hdd]; exact ihe harg hd hs) hsub'
-        (by have := rmap_le (ρ0 := ρ0) (δ := δ) h0 hbd; rw [rmap_pos hd1] at this; exact this)
-  | callM fn ts e ihe =>
-    simp only [Expr.src] at hs
-    cases he with
-    | callM hfn hlen hargs harg hanc hsub hbd had =>
-      rename_i d' dfn ta a
-      have hd1 : 1 ≤ d' := by omega
-      simp only [Expr.renTy, Ty.map_renR_of_argsOk hargs]
-      have hdd : d' + 1 + δ = (d' + δ) + 1 := by omega
-      rw [hdd, Ty.relocA_renR hd1]
-      have hsub' := Ty.sub_renR h0 hsub
-      rw [Ty.renR_renR hd1] at hsub'
-      have hanc' : Ty.anchorOf (dfn.inst ts).param (ta.renR ρ0 δ) = Option.some (rmap ρ0 δ a) := by
-        rw [Ty.anchorOf_renR, hanc]; rfl
-      exact .callM hfn hlen hargs (by rw [← hdd]; exact ihe harg hd hs) hanc' hsub' (rmap_le h0 hbd)
+      rw [Ty.renR_renR hd1, ← hI] at hsub'
+      exact .call hfn (by simp [hlen]) (kindsArgsOk_map_renR hargs) (by rw [← hdd]; exact ihe harg hd hs) hsub' (rmap_le h0 hbd)
         (by have := rmap_le (ρ0 := ρ0) (δ := δ) h0 had; rw [rmap_pos hd1] at this; exact this)
   | block e ihe =>
     simp only [Expr.src] at hs

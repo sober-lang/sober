@@ -1,0 +1,8 @@
+@@full	44ad4d0a4ed24c22	647	16127
+@head	f8802cba5eefdec2	0	31
+func call	43add3bd851c6a5a	31	1153
+func logMw	78f9cb1ba6ea761b	10	441
+func main	7c1549e629a39090	35	1316
+func plusMw	1d68d20f2e8a4c29	10	440
+type Mw	ee84bafd901c5ecc	4	179
+type Next	712f5bccfa91a1c2	4	194

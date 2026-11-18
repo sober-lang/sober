@@ -1,0 +1,22 @@
+@@full	0645e998586799d9	8990	276283
+@head	a3ce97dd46638050	0	102
+const Bad	19a1b1699607556e	1	43
+const Large	3ea44fb451e091e9	1	45
+const Ok	36f36ef5e93ff6b1	1	42
+const fastBits	54b9691a9755363b	1	48
+const maxBits	519bb18bd8e0df9a	1	48
+func At	d8432137c6669064	102	3443
+func bits	2212b124bf63e83d	47	1623
+func build	4db139ac11ac6ca1	246	8032
+func codes	93f85b055ebd19ff	168	5500
+func dynamicBlock	c4eca37f5d22bed1	335	10519
+func fill	8cab2eecc966c240	18	750
+func fixedBlock	118dc783b319e682	85	2833
+func refill	e3f7ab4b66d12d7b	38	1354
+func rev	032467184046ef9a	32	1168
+func room	b21030f3393c24e4	27	991
+func storedBlock	b3519cbc19a9096c	134	4420
+func sym	c515e19f3542aea6	148	4897
+func tables	6334bfdedbdaa8d6	139	3573
+type dec	7bce665f3fc7c08f	21	963
+type huff	a36f48a215ed5f07	7	323

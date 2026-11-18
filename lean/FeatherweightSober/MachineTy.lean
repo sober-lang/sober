@@ -126,52 +126,25 @@ inductive StackTy (Δ : Defs) (Ξ : ChanTy) (Ψ : StoreTy) (b : Nat) : Stack →
       StackTy Δ Ξ Ψ b (.sendR c :: S) Λ d t tf
   | recvK {S d rc t tf} :
       StackTy Δ Ξ Ψ b S Λ d t tf → StackTy Δ Ξ Ψ b (.recvK :: S) Λ d (.chan rc t) tf
-  /-- call の引数評価（round4: 同世界化）。値（sub で param.shiftR d に収まる ta）が
-  戻ると region を push してシフト済み本体を評価し、戻り値 ret.relocR d が S へ来る
-  （round5: fretK の relocate が上界を呼び手最内 d に締める） -/
-  | callK {S d fn ts dfn ta tf} :
-      Δ[fn]? = some dfn → ts.length = dfn.tparams → Ty.tyArgsOk ts = true →
-      Ty.sub ta ((dfn.inst ts).param.shiftR d) = true → b ≤ d →
-      StackTy Δ Ξ Ψ b S Λ (d + 1) ((dfn.inst ts).ret.relocR d) tf →
-      StackTy Δ Ξ Ψ b (.callK fn ts :: S) Λ (d + 1) ta tf
-  /-- anchor つき呼び出し（R2）の引数評価中: 前提は callM 規則と同じ（anchor は引数の型から読む） -/
-  | callMK {S d fn ts dfn ta a tf} :
-      Δ[fn]? = some dfn → ts.length = dfn.tparams → Ty.tyArgsOk ts = true →
-      Ty.anchorOf (dfn.inst ts).param ta = some a →
-      Ty.sub ta ((dfn.inst ts).param.renR a d) = true → b ≤ a → a ≤ d →
-      StackTy Δ Ξ Ψ b S Λ (d + 1) ((dfn.inst ts).ret.relocA a d) tf →
-      StackTy Δ Ξ Ψ b (.callMK fn ts :: S) Λ (d + 1) ta tf
-  /-- 関数値呼び出しの関数側評価中（V3-1）: 関数値 fn p r が戻ったら引数 e を評価する。
-  前提は callK と同じ形（シグネチャを関数値の型から取る） -/
-  | callvL {S d e p r ta tf} :
+  /-- 関数値呼び出しの関数側評価中: 関数値 fn p r が戻ったら引数 e を評価する。前提は callv の規則と同じ（anchor は注釈） -/
+  | callvL {S d a e p r ta tf} :
       HasType Δ Ξ (Ψ.take (d + 1)) b b (d + 1) [] Λ e ta →
-      Ty.sub ta (p.shiftR d) = true → b ≤ d →
-      StackTy Δ Ξ Ψ b S Λ (d + 1) (r.relocR d) tf →
-      StackTy Δ Ξ Ψ b (.callvL e :: S) Λ (d + 1) (.fn p r) tf
+      Ty.sub ta (p.renR a d) = true → b ≤ a → a ≤ d →
+      StackTy Δ Ξ Ψ b S Λ (d + 1) (r.relocA a d) tf →
+      StackTy Δ Ξ Ψ b (.callvL a e :: S) Λ (d + 1) (.fn p r) tf
   /-- 関数値呼び出しの引数評価中: 評価済みの関数値 fv を保持。引数値が戻ると callK へ渡し直す -/
-  | callvR {S d fv p r ta tf} :
-      Value fv → HasType Δ Ξ (Ψ.take (d + 1)) b b (d + 1) [] Λ fv (.fn p r) →
-      Ty.sub ta (p.shiftR d) = true → b ≤ d →
-      StackTy Δ Ξ Ψ b S Λ (d + 1) (r.relocR d) tf →
-      StackTy Δ Ξ Ψ b (.callvR fv :: S) Λ (d + 1) ta tf
-  /-- anchor つきの関数値呼び出し（L1）の関数側評価中: 前提は callMv の規則と同じ（anchor は注釈） -/
-  | callMvL {S d a e p r ta tf} :
-      HasType Δ Ξ (Ψ.take (d + 1)) b b (d + 1) [] Λ e ta →
-      Ty.sub ta (p.renR a d) = true → b ≤ a → a ≤ d →
-      StackTy Δ Ξ Ψ b S Λ (d + 1) (r.relocA a d) tf →
-      StackTy Δ Ξ Ψ b (.callMvL a e :: S) Λ (d + 1) (.fn p r) tf
-  /-- anchor つきの関数値呼び出しの引数評価中: 引数値が戻ると callMKa へ渡し直す -/
-  | callMvR {S d a fv p r ta tf} :
+  | callvR {S d a fv p r ta tf} :
       Value fv → HasType Δ Ξ (Ψ.take (d + 1)) b b (d + 1) [] Λ fv (.fn p r) →
       Ty.sub ta (p.renR a d) = true → b ≤ a → a ≤ d →
       StackTy Δ Ξ Ψ b S Λ (d + 1) (r.relocA a d) tf →
-      StackTy Δ Ξ Ψ b (.callMvR a fv :: S) Λ (d + 1) ta tf
-  /-- anchor を注釈で持つ callMK（callMv の委譲先）: callMK の前提から anchorOf を抜いたもの -/
-  | callMKa {S d a fn ts dfn ta tf} :
-      Δ[fn]? = some dfn → ts.length = dfn.tparams → Ty.tyArgsOk ts = true →
+      StackTy Δ Ξ Ψ b (.callvR a fv :: S) Λ (d + 1) ta tf
+  /-- 呼び出し（call と callv が共有する継続）の引数評価中: 前提は call の規則と同じ（anchor は注釈）。値が戻ると region を push して
+  写した本体を評価し、戻り値 ret.relocA a d が S へ来る -/
+  | callK {S d a fn ts dfn ta tf} :
+      Δ[fn]? = some dfn → ts.length = dfn.kinds.length → kindsArgsOk dfn.kinds ts = true →
       Ty.sub ta ((dfn.inst ts).param.renR a d) = true → b ≤ a → a ≤ d →
       StackTy Δ Ξ Ψ b S Λ (d + 1) ((dfn.inst ts).ret.relocA a d) tf →
-      StackTy Δ Ξ Ψ b (.callMKa a fn ts :: S) Λ (d + 1) ta tf
+      StackTy Δ Ξ Ψ b (.callK a fn ts :: S) Λ (d + 1) ta tf
   /-- 関数の返り境界（round4）: 深さ d + 2（呼び手 d + 1 + フレーム region d... 実行時は
   最内 = d + 1）で ret.shiftR d の値を受け、relocate（境界コピー）+ region pop で
   呼び手の深さ d + 1 へ返す。t0 は base の戻り値型（retOk が relocate の床）。
@@ -746,21 +719,13 @@ theorem StackTy.mono {Δ : Defs} {Ξ : ChanTy} {Ψ Ψ' : StoreTy} {b : Nat} {S d
     exact .sendR hv (h1.store_mono (hle _ (Nat.le_refl _)) (storePre_of_take_eq (take_pre_take hpre hS.le_depth)))
       (ih hle)
   | recvK _ ih => exact .recvK (ih hle)
-  | callK hfn hlen hargs hsub hbd hS ih => exact .callK hfn hlen hargs hsub hbd (ih hle)
-  | callMK hfn hlen hargs hanc hsub hbd had hS ih => exact .callMK hfn hlen hargs hanc hsub hbd had (ih hle)
-  | callvL h1 hsub hbd hS ih =>
+  | callvL h1 hsub hbd had hS ih =>
     exact .callvL (h1.store_mono (hle _ (Nat.le_refl _)) (storePre_of_take_eq (take_pre_take hpre hS.le_depth)))
-      hsub hbd (ih hle)
-  | callvR hv h1 hsub hbd hS ih =>
+      hsub hbd had (ih hle)
+  | callvR hv h1 hsub hbd had hS ih =>
     exact .callvR hv (h1.store_mono (hle _ (Nat.le_refl _)) (storePre_of_take_eq (take_pre_take hpre hS.le_depth)))
-      hsub hbd (ih hle)
-  | callMvL h1 hsub hbd had hS ih =>
-    exact .callMvL (h1.store_mono (hle _ (Nat.le_refl _)) (storePre_of_take_eq (take_pre_take hpre hS.le_depth)))
       hsub hbd had (ih hle)
-  | callMvR hv h1 hsub hbd had hS ih =>
-    exact .callMvR hv (h1.store_mono (hle _ (Nat.le_refl _)) (storePre_of_take_eq (take_pre_take hpre hS.le_depth)))
-      hsub hbd had (ih hle)
-  | callMKa hfn hlen hargs hsub hbd had hS ih => exact .callMKa hfn hlen hargs hsub hbd had (ih hle)
+  | callK hfn hlen hargs hsub hbd had hS ih => exact .callK hfn hlen hargs hsub hbd had (ih hle)
   | fretK hro hbd _ ih =>
     exact .fretK hro hbd (ih fun d' hd' => hle d' (Nat.le_succ_of_le hd'))
   | fretKA hro hbd had _ ih =>
@@ -916,13 +881,9 @@ theorem StackTy.chan_mono {Δ : Defs} {Ξ Ξ' : ChanTy} {Ψ : StoreTy} {b : Nat}
   | sendL h1 _ ih => exact .sendL (h1.chan_mono hle) ih
   | sendR hv h1 _ ih => exact .sendR hv (h1.chan_mono hle) ih
   | recvK _ ih => exact .recvK ih
-  | callK hfn hlen hargs hsub hbd _ ih => exact .callK hfn hlen hargs hsub hbd ih
-  | callMK hfn hlen hargs hanc hsub hbd had _ ih => exact .callMK hfn hlen hargs hanc hsub hbd had ih
-  | callvL h1 hsub hbd _ ih => exact .callvL (h1.chan_mono hle) hsub hbd ih
-  | callvR hv h1 hsub hbd _ ih => exact .callvR hv (h1.chan_mono hle) hsub hbd ih
-  | callMvL h1 hsub hbd had _ ih => exact .callMvL (h1.chan_mono hle) hsub hbd had ih
-  | callMvR hv h1 hsub hbd had _ ih => exact .callMvR hv (h1.chan_mono hle) hsub hbd had ih
-  | callMKa hfn hlen hargs hsub hbd had _ ih => exact .callMKa hfn hlen hargs hsub hbd had ih
+  | callvL h1 hsub hbd had _ ih => exact .callvL (h1.chan_mono hle) hsub hbd had ih
+  | callvR hv h1 hsub hbd had _ ih => exact .callvR hv (h1.chan_mono hle) hsub hbd had ih
+  | callK hfn hlen hargs hsub hbd had _ ih => exact .callK hfn hlen hargs hsub hbd had ih
   | fretK hro hbd _ ih => exact .fretK hro hbd ih
   | fretKA hro hbd had _ ih => exact .fretKA hro hbd had ih
   | freezeKs hmf _ ih => exact .freezeKs hmf ih

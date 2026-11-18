@@ -19,11 +19,12 @@ type Closure struct {
     ft TyRef       // 関数型（-1 = 不明）
     retTarget int
     inlrec int     // 定義時の展開中の関数のチェーン
+    inlining int   // 定義時のst.inlining（returnの行き先が展開した関数のラベルか。retValueが読む）
 }
 
 func closure(st mut S, lam NodeRef, eb int, ef int, ft TyRef) int {
     at := table.Len(mut st.closures)
-    table.Push(mut st.closures, Closure{lambda: lam, envB: eb, envF: ef, pkg: st.curPkg, tenv: st.tenv, ft: ft, retTarget: st.retTarget, inlrec: st.inlrec})
+    table.Push(mut st.closures, Closure{lambda: lam, envB: eb, envF: ef, pkg: st.curPkg, tenv: st.tenv, ft: ft, retTarget: st.retTarget, inlrec: st.inlrec, inlining: st.inlining})
     return at
 }
 
@@ -60,11 +61,14 @@ func callValue(st mut S, callee NodeRef, ft TyRef, args ListRef, at NodeRef, eb 
     if n == 0 && tg(mut st, p) != TUnit {
         return 0, diag.Malformed{at: posOf(mut st, at)}
     }
-    return c2(mut st, CCallv, f, treePair(mut st, vs)), nil
+    return cCallv(mut st, st.rdepth - 1, f, treePair(mut st, vs)), nil
 }
 
 // letArgs は引数を左から右へ let で評価して捨て、body を返す形（println / io の代役）
 func call(st mut S, callee0 NodeRef, args ListRef, at NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
+    if kindN(mut st, callee0) == ast.EFieldTy {
+        return fieldConvExpr(mut st, callee0, args, at, eb, ef, depth)
+    }
     ec := explicitCallee(mut st, callee0, eb)
     callee := ec.callee
     explicit := ec.explicit
@@ -220,6 +224,11 @@ func call(st mut S, callee0 NodeRef, args ListRef, at NodeRef, eb int, ef int, d
                 v2 := expr(mut st, latN(mut st, args, 2), eb, ef, depth + 1)?
                 return c2(mut st, CAppend, subject, cLet(mut st, v1, cLet(mut st, v2, c1(mut st, CToByte, cLit(mut st, 0))))), nil
             }
+            if sk == loader.IAppendDate {
+                // HTTPのDateの行の追記（std/http/serverの `b = sysAppendDate(b)`）: コアの近似はbへの0のappend（appendwordと同じ。結果はbと同じregionの列）
+                subject := expr(mut st, latN(mut st, args, 0), eb, ef, depth)?
+                return c2(mut st, CAppend, subject, c1(mut st, CToByte, cLit(mut st, 0))), nil
+            }
             if sk == loader.IGrowNoZero {
                 // ゼロで初期化しないバッファの拡張（std/internal/jsonwの `b = sysGrowNoZero(b, n)`）: 意味はゼロで初期化する拡張と同じで、コアの近似はbへの
                 // 0のappend（appendwordと同じ。結果はbと同じregionの列）。nは要素の位置で評価して捨てる
@@ -295,11 +304,12 @@ func call(st mut S, callee0 NodeRef, args ListRef, at NodeRef, eb int, ef int, d
             st0 := computeTy(mut st, a0, eb, ef)
             v0 := if isTag(mut st, st0, TSl) && isTag(mut st, tElem(mut st, st0), TByte) { coerceExpr(mut st, latN(mut st, args, 1), tElem(mut st, st0), eb, ef, depth, at)? } else { expr(mut st, latN(mut st, args, 1), eb, ef, depth)? }
             v := appendValueAnn(mut st, a0, latN(mut st, args, 1), v0, eb, ef)
-            return c2(mut st, CAppend, subject, v), nil
+            rt := appendRaiseTy(mut st, a0, latN(mut st, args, 1), eb, ef)
+            return c2(mut st, CAppend, if rt != -1 { cAnn(mut st, subject, rt) } else { subject }, v), nil
         }
         cl := lookupF(mut st, ef, name)
         if cl >= 0 {
-            return lambdaCall(mut st, cl, args, at, eb, ef, depth)
+            return lambdaCall(mut st, cl, lookupFRec(mut st, ef, name), args, at, eb, ef, depth)
         }
     }
     fi := findFn(mut st, callee, eb)
@@ -308,6 +318,10 @@ func call(st mut S, callee0 NodeRef, args ListRef, at NodeRef, eb int, ef int, d
         fcv := if na == 1 { fnConvDr(mut st, callee, eb) } else { -1 }
         if fcv >= 0 {
             return fnConvExpr(mut st, fcv, args, at, eb, ef, depth)
+        }
+        // 呼ぶ値の型が読めない。呼ぶ値の式そのものが拒否されるなら、その診断を出す（型引数が匿名の関数型になる `id(f)(1)` など）
+        if kindN(mut st, callee) != ast.EIdent {
+            expr(mut st, callee, eb, ef, depth)?
         }
         return 0, diag.CoreFragment{at: posOf(mut st, at)}
     }
@@ -357,6 +371,7 @@ func call(st mut S, callee0 NodeRef, args ListRef, at NodeRef, eb int, ef int, d
         return 0, diag.Malformed{at: posOf(mut st, at)}
     }
     penv := paramEnv(mut st, tps, ts, nt)
+    fnValTArg(mut st, penv, explicit, nt)
     vs := ListRef(listN(mut st, na))
     // callM の anchor（mut の実引数の根の束縛の region — 最も外）。今の最内がそれより深ければ（反復の region・式ブロックの中）、
     // immの実引数をanchorへ形式コピーする（1 slotの規則はimmの仮引数もanchorへコピーする。immは同一性が観測不能なので
@@ -420,11 +435,13 @@ func call(st mut S, callee0 NodeRef, args ListRef, at NodeRef, eb int, ef int, d
         }
         i += 1
     }
+    // mut の実引数が無ければ anchor は呼び手の最内
+    ca := if anchor >= 0 { anchor } else { st.rdepth - 1 }
     if d == DINST {
         d = instDef(mut st, fi, callee0, penv, at)?
-        return cCall(mut st, d, treePair(mut st, vs), -1, b2i(fnMutDef(mut st, fi))), nil
+        return cCall(mut st, d, treePair(mut st, vs), -1, ca), nil
     }
-    return cCall(mut st, d, treePair(mut st, vs), int(ts), b2i(fnMutDef(mut st, fi))), nil
+    return cCall(mut st, d, treePair(mut st, vs), int(ts), ca), nil
 }
 
 // 関数 fi の呼び出し（実引数 args）を mut の部分を持つ値のために展開するか: 関数のラベルより深い region にいて、
@@ -466,6 +483,18 @@ func explicitCallee(st mut S, callee0 NodeRef, eb int) Callee {
 }
 
 // 型パラメータtps（nt個）を型引数tsにまとめた型環境（[n, (名前, 型, -1) × n]）
+// 明示の型引数が値化可能なnamed fn type 1つ（`id[H](…)`）なら、型パラメータの束縛にその型宣言を置く。型パラメータの型の仮引数が
+// 値の位置になる。loaderは同じ位置の実引数を、ηと値の位置のラムダとして数える（fvTArgTy）
+func fnValTArg(st mut S, penv int, explicit NodeRef, nt int) {
+    if explicit == -1 || nt != 1 || kindN(mut st, explicit) != ast.EIdent {
+        return
+    }
+    dr := lookupType(mut st, st.curPkg, sA(nodeOf(mut st, explicit)))
+    if dr >= 0 && fnValDr(mut st, dr) {
+        hset(mut st, penv + 3, dr)
+    }
+}
+
 func paramEnv(st mut S, tps ListRef, ts ListRef, nt int) int {
     penv := listN(mut st, nt * 3)
     hset(mut st, penv, nt)
@@ -542,7 +571,7 @@ func instDef(st mut S, fi int, cn NodeRef, penv int, at NodeRef) (int, error?) {
         dkRead(mut st, st.nfn + fi)
     }
     idx := st.ndef + st.nlifted
-    def := rec5(mut st, 0, 0, 0, 0, -1)
+    def := rec5(mut st, 0, 0, 0, -1, -1)
     if st.liftedTail >= 0 {
         hset(mut st, st.liftedTail + 4, def)
     } else {
@@ -1075,7 +1104,7 @@ func isClosureArg(st mut S, arg NodeRef, eb int, ef int) bool {
 }
 
 // ラムダの呼び出し点展開。本体から見えるのは定義時の env + 引数
-func lambdaCall(st mut S, cl int, args ListRef, at NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
+func lambdaCall(st mut S, cl int, fb int, args ListRef, at NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
     cr := clo(mut st, cl)
     lam := cr.lambda
     lps := lA(nodeOf(mut st, lam))
@@ -1128,12 +1157,26 @@ func lambdaCall(st mut S, cl int, args ListRef, at NodeRef, eb int, ef int, dept
             pe := mutArgExpr(mut st, arg)
             benv = bind(mut st, benv, sA(nodeOf(mut st, lp)), level, true, declOfExpr(mut st, pe, eb, ef), computeTy(mut st, pe, eb, ef), elemDeclOfExpr(mut st, pe, eb, ef), bnd(mut st, pb).region, -1, split, bindSty(mut st, pe, eb, ef))
             level += 1
+            i += 1
+            continue
+        }
+        // 値化可能なnamed fn type（とそのoption）の仮引数へのラムダは値の位置のクロージャ（宣言した関数の展開の仮引数と同じ。
+        // 名前付き関数はloaderがη済みでラムダとして来る）。他の実引数は下の値の束縛と同じ
+        pt0 := nB(nodeOf(mut st, lp))
+        vfdr := if ft != -1 && pt0 != -1 && kindN(mut st, arg) == ast.ELambda && valFTE1(mut st, cpk, pt0) { fieldFnValDecl(mut st, cpk, cr.tenv, pt0)? } else { -1 }
+        if vfdr >= 0 {
+            hsetCore(mut st, int(vals) + 1 + nv, closureValue(mut st, arg, want, vfdr, eb, ef, level, at)?)
+            nv += 1
+            benv = bind(mut st, benv, sA(nodeOf(mut st, lp)), level, false, declOfTypeExpr(mut st, cpk, pt0), want, elemDeclOfTypeExpr(mut st, cpk, pt0), 0, -1, false, SurfaceOf(mut st, cpk, pt0))
+            level += 1
         } else if isClosureArg(mut st, arg, eb, ef) {
             c := closureArg(mut st, arg, want, eb, ef, at)?
-            fenv = bindF(mut st, fenv, nodeOf(mut st, lp).a, c, SUNK)
+            // 仮引数の型式も記録する（呼ぶときに、結果の値の位置を型式から引く — lamResFnValDecl）
+            fenv = bindFT(mut st, fenv, nodeOf(mut st, lp).a, c, SUNK, pt0, cpk, cr.tenv)
         } else {
             aty := computeTy(mut st, arg, eb, ef)
-            ann_t := if want != -1 { inlineArgTy(mut st, arg, want, eb) } else { TyRef(-1) }
+            // mut の部分を持つ値は ann しない（宣言した関数の展開の仮引数と同じ。展開点の最内の座標へ合わせると、外の region の mut の部分〔不変〕と食い違う）
+            ann_t := if want != -1 && tyMutFreeD(mut st, want) { inlineArgTy(mut st, arg, want, eb) } else { TyRef(-1) }
             v := if ann_t != -1 {
                 cv := coerceExpr(mut st, arg, want, eb, ef, level, at)?
                 cAnn(mut st, cv, ann_t)
@@ -1156,6 +1199,9 @@ func lambdaCall(st mut S, cl int, args ListRef, at NodeRef, eb int, ef int, dept
     st.retTarget = cr.retTarget
     st.loopFloor = st.nlab
     st.inlrec = cr.inlrec
+    // 本体のreturnの行き先は定義時のもの（forの本体なら、展開したイテレータの中でも利用者の関数のラベル）
+    saved_inl := st.inlining
+    st.inlining = cr.inlining
     // 文形 for の本体（節の c = 文形 for の brk のラベルスタックの位置 + 1）: 床の上に brk を積み直し、展開ごとに cont を新設して本体を包む
     // （break → for 全体の外、continue → 本体の末尾。本体の値は捨てる）
     loop := nodeOf(mut st, lam).c
@@ -1170,8 +1216,17 @@ func lambdaCall(st mut S, cl int, args ListRef, at NodeRef, eb int, ef int, dept
     rw := if loop == 0 && isTag(mut st, ft, TFn) && tg(mut st, tRight(mut st, ft)) == TOpt { pointTy(mut st, tRight(mut st, ft)) } else { TyRef(-1) }
     // 結果が byte なら本体の末尾の型なしの定数を byte に（language.md 33 節 — `(x) => { g(); 9 }`）
     bw := if loop == 0 && isTag(mut st, ft, TFn) && tg(mut st, tRight(mut st, ft)) == TByte { tRight(mut st, ft) } else { TyRef(-1) }
+    // 仮引数の関数型の結果が値化可能なnamed fn typeなら、本体の式はその値の位置（名前付き関数はloaderがη済みでラムダとして来る）
+    // （ブロックなら末尾の式）
+    vr := if loop == 0 && isTag(mut st, ft, TFn) { lamResFnValDecl(mut st, fb)? } else { -1 }
     mut body := CoreRef(-1)
-    if kindN(mut st, lbody) == ast.EBlock && rw != -1 {
+    // 期待型は下の本体のannと同じ座標（呼び出し点）。仮引数の座標のままだと、regionを持つenvのnilが呼び出し点の型へ寄らない
+    if vr >= 0 && kindN(mut st, lbody) == ast.EBlock {
+        st.tailVal = vr + 1
+        body = scoped(mut st, lA(nodeOf(mut st, lbody)), benv, fenv, level, false, false, pointTy(mut st, tRight(mut st, ft)))?
+    } else if vr >= 0 {
+        body = closureValue(mut st, lbody, pointTy(mut st, tRight(mut st, ft)), vr, benv, fenv, level, lbody)?
+    } else if kindN(mut st, lbody) == ast.EBlock && rw != -1 {
         body = coerceArm(mut st, lA(nodeOf(mut st, lbody)), rw, benv, fenv, level, lbody)?
     } else if kindN(mut st, lbody) == ast.EBlock && bw != -1 {
         body = scoped(mut st, lA(nodeOf(mut st, lbody)), benv, fenv, level, false, false, bw)?
@@ -1192,12 +1247,31 @@ func lambdaCall(st mut S, cl int, args ListRef, at NodeRef, eb int, ef int, dept
         body = cAnn(mut st, body, pointTy(mut st, tRight(mut st, ft)))
     }
     setFnCtx(mut st, saved)
+    st.inlining = saved_inl
     mut k := nv - 1
     while k >= 0 {
         body = cLet(mut st, latCore(mut st, vals, k), body)
         k -= 1
     }
     return body, nil
+}
+
+// クロージャの束縛の記録fb（bindFT）の型式が匿名の関数型で、結果が1つの値化可能なnamed fn type（かそのoption）なら、その値の位置の記録
+// （fieldFnValDecl）。他は -1
+func lamResFnValDecl(st mut S, fb int) (int, error?) {
+    if fb < 0 {
+        return -1, nil
+    }
+    te := NodeRef(hget(mut st, fb + 4))
+    if te == -1 || kindN(mut st, te) != ast.TFunc || lenL(mut st, lB(nodeOf(mut st, te))) != 1 {
+        return -1, nil
+    }
+    pk := hget(mut st, fb + 5)
+    rte := latN(mut st, lB(nodeOf(mut st, te)), 0)
+    if !valFTE1(mut st, pk, rte) {
+        return -1, nil
+    }
+    return fieldFnValDecl(mut st, pk, hget(mut st, fb + 6), rte)
 }
 
 // 辞書 const のラムダ lam を持ち上げた Def の添字（まだなら -1）。記録は [lam, idx, next]
@@ -1310,7 +1384,7 @@ func liftLambda(st mut S, lam NodeRef, ft TyRef, outer_b int, outer_f int, at No
         luClose(mut st, lo, st.nlifted)
     }
     idx := st.ndef + st.nlifted
-    def := rec5(mut st, int(tLeft(mut st, ft)), int(tRight(mut st, ft)), int(body), st.curTparams, -1)
+    def := rec5(mut st, int(tLeft(mut st, ft)), int(tRight(mut st, ft)), int(body), kindsList(mut st, st.curTparams), -1)
     if st.liftedTail >= 0 {
         hset(mut st, st.liftedTail + 4, def)
     } else {

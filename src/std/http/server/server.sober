@@ -10,11 +10,12 @@ package server
 // 長さ不定はchunked〔HTTP/1.0は閉じで区切る〕）・SSEのイベントの組み立て（FormatEvent）。誤りのレスポンスの後は閉じる。誤りのstatusはRFC 9110・9112に合わせる:
 // 400 = 形の誤り（Hostが無いHTTP/1.1のリクエスト・2本以上のHost・形の誤ったHostの値・ヘッダの値の制御文字・chunkの拡張の文法の誤り・chunkedが最後に1回でない
 // Transfer-Encoding・HTTP/1.0のTransfer-Encoding・版の文字列の文法の誤りを含む。Transfer-Encodingの空の要素は読み飛ばす）・414 = リクエスト行のターゲットの途中で
-// 頭の上限・431 = それ以外の頭の上限・413 = 本文の上限・501 = chunkedが最後に1回あり、ほかの符号化かパラメータを含むTransfer-Encoding・505 = 形は正しく1.0と1.1
-// 以外の版。入れないもの: HTTP/2・TLS・br・レスポンスのtrailer・Expect: 100-continue（無視して本文を待つ）・URLのデコード・Date / Serverヘッダ。
+// 頭の上限・431 = それ以外の頭の上限・413 = 本文の上限・501 = chunkedが最後に1回あり、ほかの符号化を含むTransfer-Encoding（chunkedのパラメータは読み捨てる）・505 = 形は正しく1.0と1.1
+// 以外の版。入れないもの: HTTP/2・TLS・br・レスポンスのtrailer・URLのデコード・Serverヘッダ。Expect: 100-continueは、頭が揃い本文が未着のときに100を送る（本文が上限を越えるなら頭の時点で413）。
 // リクエストの頭はUTF-8で検査する（0x80以上のobs-textは400）
-// 切片をまたぐリクエスト: 残りを接続ごとの持ち越しの列（大きさは頭の上限 + 本文の上限の2倍 + 128で固定・初めてまたいだときに1回だけ確保）へコピーし、
-// 次の切片と繋いだコピーを反復のregionに作って読み直す — 持ち越しは接続の寿命のregionでも伸びない（張り直さない）
+// 切片をまたぐリクエスト: 残りを接続ごとの持ち越しの列へコピーし、次の切片と繋いだコピーを反復のregionに作って読み直す。頭が揃って本文を待つリクエストは、
+// 本文が揃うまで読み直さない: Content-Lengthの本文は持ち越しの列へ足し、chunkedの本文は届いた分から解いて、解いた本文だけを持ち越しの列へ積む（生のバイトは
+// 途中で切れた1行だけ）。持ち越しの列は、頭の上限 + 本文の上限 + 18バイトまで伸びる
 
 import "std/binary"
 import "std/compress/flate"
@@ -69,12 +70,14 @@ type Response struct {
     status http.StatusCode
     contentType string
     body []byte
-    // streamの本文の長さ（Content-Length — nil = 長さ不定 = chunked）。bodyのレスポンスでは読まない
+    // streamの本文の長さ（Content-Length — nil = 長さ不定 = chunked）。bodyのレスポンスでは読まない。304では、compression: のVaryを200と同じ条件で
+    // 決めるための200の本文の長さ（contentTypeと組で。304はContent-Typeを書かない）
     length int?
     stream Stream?
-    // 任意ヘッダ（書いた順に Cache-Control の後へ）。std/http/server が書く名前（Content-Type・Content-Length・Content-Encoding・
+    // 任意ヘッダ（書いた順に Cache-Control の後へ）。std/http/server が書く名前（Date・Content-Type・Content-Length・Content-Encoding・
     // Transfer-Encoding・Connection・Vary）・保存の方針と検証子の名前（Cache-Control・CDN-Cache-Control・Surrogate-Control・ETag・Last-Modified —
-    // 書くのは型のフィールドcache / validatorsだけ）とCR / LF / NULを含む名前・値はpanic(BadHeader) — レスポンスの分割の封:
+    // 書くのは型のフィールドcache / validatorsだけ）・tokenでない名前・field-valueでない値（制御文字・前後の空白）・1行だけの欄（Locationなど。singleFieldの表）の2本目は
+    // panic(BadHeader)。表に無い欄（リストの欄・アプリが定めた欄）は同じ名前で何本でも書ける。レスポンスの分割の封:
     //
     //     http.server.Response{status: 200, contentType: "text/plain", body: b, headers: http.server.Headers{list: []http.Field{http.Field{name: "X-Request-Id", value: id}}}}
     headers Headers?
@@ -571,7 +574,8 @@ func Merge(a []Route, b []Route) []Route {
 // routes から r に一致する行を選んで middleware とハンドラを走らせる。一致は path のパターンと method（大文字小文字を区別する）。
 // 優先順は表の並びに依らない: 一致した行どうしは、先頭から見て最初に種類が違うセグメントで 静的 > :name > *name の方が勝つ（同じ具体さなら表の先の行）。
 // HEADのリクエストはHEADの行が無ければGETの行へ（本文はServeConnが落とす）。pathが一致する行があってmethodが合わなければ405・無ければ404。
-// パスはデコードしない・末尾の "/" は区別する（リダイレクトしない）
+// パスはデコードしない・末尾の "/" は区別する（リダイレクトしない）。どの行にも一致しないCONNECTは501、ターゲットが "*" のリクエストは
+// OPTIONSなら204（本文とAllowなし。RFC 9110 9.3.7）、ほかのメソッドは400。absolute-form（http://host/path）のリクエストはpathの部分で照合する
 @effects(Handler, Before, After)
 func Dispatch(routes []Route, r Request) Response {
     pb := bytes(r.path)
@@ -630,13 +634,14 @@ func policed(w Response, rc Cache?) Response {
 
 // 一致する行の無いリクエストのレスポンス（405 + Allowか404）。Dispatchの外に置くのは、レスポンスの組み立ての枠をハンドラを呼ぶパスのスタックに載せないため
 // どの行にも一致しないCONNECTは501（サーバーはCONNECTを実装しない。RFC 9110 9.1）・asterisk-form（ターゲットが "*"）はOPTIONSだけで、
-// ほかのメソッドは400（RFC 9112 3.2）。行のパターンは '/' で始まるので "*" と一致する行は無い
+// ほかのメソッドは400（RFC 9112 3.2）。OPTIONS * はサーバー全体への問いで、204（本文なし）を返す（RFC 9110 9.3.7。Allowは付けない:
+// 表の外のハンドラ〔ServeConnのrouteで表の前に分ける経路〕があるので、表から全体のメソッドを列挙できない）。行のパターンは '/' で始まるので "*" と一致する行は無い
 func unrouted(routes []Route, method string, pb []byte) Response {
     if method == "CONNECT" {
         return Status(http.NotImplemented)
     }
-    if len(pb) == 1 && pb[0] == '*' && method != "OPTIONS" {
-        return Status(http.BadRequest)
+    if len(pb) == 1 && pb[0] == '*' {
+        return Status(if method == "OPTIONS" { http.NoContent } else { http.BadRequest })
     }
     allow := allowOf(routes, pb)
     return if allow == "" { Status(http.NotFound) } else { Response{status: http.MethodNotAllowed, contentType: "", body: []byte{}, headers: Headers{list: []http.Field{http.Field{name: "Allow", value: allow}}}} }
@@ -838,7 +843,11 @@ func staticGet(root string, pc bool, r Request) Response {
 func staticOf(r Request, root string, file string, st io.FileInfo, ct string, enc string, coded bool) Response {
     tag := etagOf(st, enc)
     mt := st.modTime
-    c := condOf(r, tag, mt)
+    // Last-ModifiedはDateの秒より後にしない（未来の更新時刻のファイル。RFC 9110 8.8.2.1）。条件の比較も同じ秒で行う。
+    // Dateの行の無い接続は抑えず、RFC 850の年の窓は更新時刻の年から決める
+    now := nowSec()
+    lm := if mt <= 0 { 0 } else if now < 0 { mt / 1000000000 } else { imin(mt / 1000000000, now) }
+    c := condOf(r, tag, lm, yearOf(if now < 0 { lm } else { now }))
     if c == 412 {
         return Status(http.PreconditionFailed)
     }
@@ -847,9 +856,10 @@ func staticOf(r Request, root string, file string, st io.FileInfo, ct string, en
         if coded {
             return Response{status: http.NotModified, contentType: "", body: []byte{}, coded: Coded{encoding: ""}, validators: vs}
         }
-        return Response{status: http.NotModified, contentType: "", body: []byte{}, validators: vs}
+        // 200と同じVary（compression: の圧縮の対象か）をserveConnが決められるよう、200のContent-Typeと長さを持たせる（304はContent-Typeを書かない）
+        return Response{status: http.NotModified, contentType: ct, length: st.size, body: []byte{}, validators: vs}
     }
-    vs := Validators{etag: tag, modified: if mt > 0 { mt / 1000000000 } else { 0 }, seal: validSeal{}}
+    vs := Validators{etag: tag, modified: lm, seal: validSeal{}}
     n := st.size
     if coded {
         return Response{status: http.OK, contentType: ct, length: n, stream: (out, emit) => sendUnder(root, file, n, mt, mut out, emit), coded: Coded{encoding: enc}, validators: vs}
@@ -936,10 +946,10 @@ func hexOf(n int) string {
     return string(freeze(out)) catch ""
 }
 
-// リクエストrの前提条件（RFC 9110 13.2.2の順）をETag tag・更新時刻mt（ns — 0以下は「無い」）の表現に対して評価する: 0 = 続ける・412・304。
+// リクエストrの前提条件（RFC 9110 13.2.2の順）をETag tag・Last-Modifiedの秒lm（0以下は「無い」）・今の年cy（RFC 850の2桁の年の読み）の表現に対して評価する: 0 = 続ける・412・304。
 // If-Match（強い比較）→ 無ければ If-Unmodified-Since（≤）→ If-None-Match（弱い比較）→ 無ければ If-Modified-Since（ちょうど等しい — 13.1.3 の exact）。
 // 日付が読めない・If-Modified-Since / If-Unmodified-Since が 2 行以上あるものは無視する（13.1.3 / 13.1.4）。If-Range は Range を持たないので無視（13.1.5）
-func condOf(r Request, tag string, mt int) int {
+func condOf(r Request, tag string, lm int, cy int) int {
     hb := utf8.Bytes(r.head)
     tb := bytes(tag)
     mut im := 0
@@ -971,23 +981,22 @@ func condOf(r Request, tag string, mt int) int {
         }
         i += 2
     }
-    sec := mt / 1000000000
     if im > 0 {
         if !imHit {
             return 412
         }
-    } else if ius == 1 && mt > 0 {
-        d, ok := parseDate(hb, lo32(r.headers[iusAt + 1]), hi32(r.headers[iusAt + 1]))
-        if ok && sec > d {
+    } else if ius == 1 && lm > 0 {
+        d, ok := parseDate(hb, lo32(r.headers[iusAt + 1]), hi32(r.headers[iusAt + 1]), cy)
+        if ok && lm > d {
             return 412
         }
     }
     if inm > 0 {
         return if inmHit { 304 } else { 0 }
     }
-    if ims == 1 && mt > 0 {
-        d, ok := parseDate(hb, lo32(r.headers[imsAt + 1]), hi32(r.headers[imsAt + 1]))
-        if ok && sec == d {
+    if ims == 1 && lm > 0 {
+        d, ok := parseDate(hb, lo32(r.headers[imsAt + 1]), hi32(r.headers[imsAt + 1]), cy)
+        if ok && lm == d {
             return 304
         }
     }
@@ -1086,8 +1095,8 @@ func daysOf(y int, m int, d int) int {
 }
 
 // b[s:e)（前後の空白は除く）の HTTP-date のエポックからの秒（RFC 9110 5.6.7 の 3 形 — IMF-fixdate・RFC 850・asctime。大小は区別する・
-// 曜日の名前は検査するが日付との一致は見ない・RFC 850 の 2 桁の年は 69〜99 を 19xx・00〜68 を 20xx と読む〔時計を見ない固定の読み〕）。読めなければ (0, false)
-func parseDate(b []byte, s0 int, e0 int) (int, bool) {
+// 曜日の名前は検査するが日付との一致は見ない・RFC 850 の 2 桁の年はyear850で今の年cyから読む）。読めなければ (0, false)
+func parseDate(b []byte, s0 int, e0 int, cy int) (int, bool) {
     s := skipOWS(b, s0, e0)
     e := trimOWS(b, s, e0)
     c := indexIn(b, s, e, ',')
@@ -1111,7 +1120,31 @@ func parseDate(b []byte, s0 int, e0 int) (int, bool) {
         return 0, false
     }
     yy := digits(b, c + 9, c + 11)
-    return dateOf(if yy < 0 { -1 } else if yy < 69 { 2000 + yy } else { 1900 + yy }, monthOf(b, c + 5), digits(b, c + 2, c + 4), b, c + 12)
+    return dateOf(if yy < 0 { -1 } else { year850(yy, cy) }, monthOf(b, c + 5), digits(b, c + 2, c + 4), b, c + 12)
+}
+
+// RFC 850の2桁の年yy（0〜99）の西暦: 今の年cyと同じ世紀に置き、50年より先になるなら100年前の年（RFC 9110 5.6.7。年の単位で比べる）
+func year850(yy int, cy int) int {
+    y := cy - cy % 100 + yy
+    return if y > cy + 50 { y - 100 } else { y }
+}
+
+// 今の秒: 送るDateの行の秒（Dateより後の時刻を書かないため）。Dateの行の無い接続（rtの行が無い・単体テスト）は -1
+func nowSec() int {
+    da := sysNetOp(17, 0, 0, 0)
+    if da != 0 {
+        s1 := sysNetOp(18, da, 0, 0)
+        if s1 > 0 {
+            return s1 - 1
+        }
+    }
+    return -1
+}
+
+// エポックからの秒secの年
+func yearOf(sec int) int {
+    y, _, _ := civilOf(sec / 86400)
+    return y
 }
 
 // 年月日（負 = 読めなかった）と b[t:t+8)（`hh:mm:ss`）のエポックからの秒（日が月の日数を越える・時刻の範囲の外なら (0, false) — 秒は 60〔閏秒〕まで）
@@ -1327,8 +1360,11 @@ func moreSpecific(a []byte, b []byte) bool {
 
 // cのリクエストを順にrouteに渡してレスポンスを書く（keep-alive）。相手が閉じる（FIN）・Connection: close・HTTP/1.0の既定・誤りのレスポンスの後で返る
 // （閉じるのは呼び手 — net.Serveの接続のtaskの出口）。maxHead = リクエストの頭の上限（既定8 KiB — 超えたら431）・maxBody = 本文の上限
-// （既定 16 KiB — 超えたら 413）。本文と持ち越しは接続の task の region に載るので、上限は net.Serve の budget（既定 64 KiB）に収まる大きさで
-// （目安: budget ≥ 3 × (maxHead + maxBody) + 16 KiB〔受けの切片〕）。compression: はレスポンスのgzip（上のGzip — 省略 = 圧縮しない）。
+// （既定16 KiB。超えたら413。chunkの大きさの行の数がintに収まらなければ400）。ターゲットに0x80以上のバイトがあれば400（非ASCIIは%エンコードして送る）。
+// absolute-formのターゲット（RFC 9112 3.2.2）は受け、Hostはターゲットのauthorityを使う（受けたHostは無視する）。Transfer-Encodingのchunkedに付いた
+// パラメータは読み捨てる（Content-Lengthとの併記は400）。レスポンスの頭にはDate（IMF-fixdate。ワーカーごとに秒が変わったときだけ作り直す値で、
+// 最大で約0.3秒古い）を書く。本文と持ち越しは接続のtaskのregionに載る。net.Serveのbudget（既定64 KiB）は接続1本の予約で、maxBodyがそれを越えても
+// よい（予約を越える本文は天井の空きから借りて受け、天井が埋まっていればその接続が死ぬ）。budgetを上げるのは、借りずに済ませたいときだけ。compression: はレスポンスのgzip（上のGzip — 省略 = 圧縮しない）。
 // work: はcompression: の符号器の作業域のストレージ（ワーカー局所のlease — region-domain-pool.md 4d節）: 省略するとリクエストごとに作業域を取る（接続のtaskの
 // regionにページとして残る — 接続の数に比例）。渡すと同じワーカーのストレージを借りる（作業域は ≈ 200 KB × ワーカーの数で接続の数に依らない・結果は同じバイト列）:
 //
@@ -1336,12 +1372,18 @@ func moreSpecific(a []byte, b []byte) bool {
 //     net.Serve(l, (c net.Conn) => http.server.ServeConn(c, route, compression: http.server.Gzip{}, work: gzw))
 //
 // work: は compression: と組みで（compression: なしの work: は panic(WorkNoCompress{}) — 呼び手の契約違反）。1 つのストレージを全部の接続で共有してよい（中はワーカーごとに分かれている）
+//
+// 期限（相手が送り終える・受け終えるのを待つ時間の上限。単位はtask.MS・0以下は開いた時点で期限切れ・期限なしは書けない）:
+// headWait = リクエストの頭が揃うまで（既定30秒。数え始めはServeConnに入った時刻と、前のリクエストのレスポンスを送り終えた時刻。keep-aliveの待ちを含む）・
+// bodyWait = 頭が揃ってから本文を受け終えるまで（既定60秒）・sendWait = 送りが1バイトも進まない間隔（既定60秒）。routeの実行中は効かない。
+// 期限が来たら、待っていた受け・送りがio.Timeoutで戻り、ServeConnはio.Timeoutを返す（相手には何も送らずに閉じる）。net.ServeのLedgerの
+// プールの節のtimeoutが1増える。期限は最大で約2秒遅れて効く（早くは効かない）。scopeの期限（task.Runのdeadline:）とは別のもので、どちらも効く
 @errors(io.NotFound, io.Closed, io.Timeout, io.Expired, io.Denied, io.Other)
 @effects(block, io, panic, nondet, Stream)
-func ServeConn(c net.Conn, route func(Request) Response, maxHead int?, maxBody int?, compression Gzip?, work task.Local?) error? {
+func ServeConn(c net.Conn, route func(Request) Response, maxHead int?, maxBody int?, headWait int?, bodyWait int?, sendWait int?, compression Gzip?, work task.Local?) error? {
     // 集めて送る形が恒常的に使えない接続（ringのパスでない・送信バッファリングが切られている — sendGatherが負）では、以後試さない
     mut gp := true
-    return serveCore((k) => net.Recv(c, k), (b) => net.Send(c, b), route, maxHead: maxHead, maxBody: maxBody, compression: compression, work: work, fsend: (b) => sendFused(c, b), tsend: (b, ms) => sendTimed(c, b, ms), gsend: (h, b) => {
+    return serveCore((k) => net.Recv(c, k), (b) => net.Send(c, b), route, c.fd, maxHead: maxHead, maxBody: maxBody, headWait: headWait, bodyWait: bodyWait, sendWait: sendWait, compression: compression, work: work, fsend: (b) => sendFused(c, b), tsend: (b, ms) => sendTimed(c, b, ms), gsend: (h, b) => {
         mut sent := false
         if gp {
             r := sendGather(c, h, b)
@@ -1352,7 +1394,9 @@ func ServeConn(c net.Conn, route func(Request) Response, maxHead int?, maxBody i
     })
 }
 
-// rtのnetのインターフェース（std/netのsysNetOpと同じ組み込み — ここではop 9だけ: 今のtaskの次の送り1回を送信バッファリングにするフラグ・fdの位置 = 送る前の待ち〔ms〕）
+// rtのnetのインターフェース（std/netのsysNetOpと同じ組み込み）。ここで使うのはop 9（今のtaskの次の送り1回を送信バッファリングにするフラグ・fdの位置 = 送る前の待ち〔ms〕）・
+// op 11（まとめて送信する。sendGather）・op 14（今のtaskの受けと送りの期限のワードを置く）・op 15（ワーカーの粗い時刻）・op 16（今のtaskをワーカーの期限の列へ入れる。fdの位置 = 接続の番号・負ならなし）・
+// op 17（ワーカーのDateの行の番地。0 = 無し）・op 18（fdの位置の番地の1ワード）
 @intrinsic("net_op")
 func sysNetOp(op int, fd int, a int, b int) int
 
@@ -1376,6 +1420,12 @@ func sendGather(c net.Conn, h []byte, b []byte) int {
 @intrinsic("addr")
 func sysAddr(b []byte) int
 
+// bの後ろにDateの行と頭の終わり（`Date: <IMF-fixdate>\r\n\r\n`）を足した列。Dateの行はrtがワーカーごとに、秒が変わったときだけ作り直す。
+// rtの行が無い（単体テスト・期限の列に入っていない）なら `\r\n` だけを足す。bはmutの束縛の値（`b = sysAppendDate(b)`の形）
+@intrinsic("append_date")
+func sysAppendDate(b []byte) mut []byte
+
+
 // rtのleaseのインターフェース（std/taskと同じ組み込み）。ここで使うのはop 10だけ: 今のtaskの次のtls.Recvの中のFlushを待たない印
 @intrinsic("lease_op")
 func leaseOp(op int, blk []int, off int, v int) int
@@ -1398,16 +1448,17 @@ func sendTimed(c net.Conn, b []byte, ms int) error? {
 // 平文のページを抱えない）。streamのレスポンス（前のレスポンスと頭・emitごと — emitの間隔のまま相手へ届く）はputがあってもsendで送る。putを渡さない呼び出し点の
 // コードは put の無い形と同じ（`if put != nil` は呼び出し点ごとに畳まれる）
 // 誤りのレスポンスの後の読み捨て（linger）もrecvの続きを読む — tls.Recvは2度目をClosedで返すので読み捨てずに閉じる（TLSのclose_notifyは呼び手のServeが送る）
+// headWait / bodyWait / sendWaitはServeConnと同じ。送りの間隔は、tls.Serveの接続のように接続の番号が分かれば送りの進みで数え、分からなければ送り1回の待ちの上限
 @errors(recv, send, put, io.NotFound, io.Denied, io.Timeout, io.Expired, io.Other)
-@effects(block, panic, Stream)
-func ServeWith(recv func(k func([]byte)) error?, send func(b []byte) error?, route func(Request) Response, maxHead int?, maxBody int?, compression Gzip?, work task.Local?, put (func(b []byte) error?)?) error? {
-    return serveCore(recv, send, route, maxHead: maxHead, maxBody: maxBody, compression: compression, work: work, put: put)
+@effects(block, io, panic, Stream)
+func ServeWith(recv func(k func([]byte)) error?, send func(b []byte) error?, route func(Request) Response, maxHead int?, maxBody int?, headWait int?, bodyWait int?, sendWait int?, compression Gzip?, work task.Local?, put (func(b []byte) error?)?) error? {
+    return serveCore(recv, send, route, -1, maxHead: maxHead, maxBody: maxBody, headWait: headWait, bodyWait: bodyWait, sendWait: sendWait, compression: compression, work: work, put: put)
 }
 
 // ServeWithの本体。fsend（省略可）= 次に受けを待つレスポンスの送り（ServeConnの平文のkeep-aliveのループ — sendFused）: putが無く、閉じないレスポンスの列の送りだけがこれを使う。
 // tsend（省略可 — fsendと組み）= 待ってから送るレスポンスの送り（sendTimed）: ループの末尾のDelayedの待ちをserveBufが返したときに使う
 // gsend（省略可 — fsendと組み・putとは組まない）= バッチの最後のレスポンスの頭と本文を、繋がずに1回で送る（sendGather）。断られたら（false）serveBufは本文をoutへ積み、fsendで送る
-func serveCore(recv func(k func([]byte)) error?, send func(b []byte) error?, route func(Request) Response, maxHead int?, maxBody int?, compression Gzip?, work task.Local?, put (func(b []byte) error?)?, fsend (func(b []byte) error?)?, tsend (func(b []byte, ms int) error?)?, gsend (func(h []byte, b []byte) bool)?) error? {
+func serveCore(recv func(k func([]byte)) error?, send func(b []byte) error?, route func(Request) Response, fd int, maxHead int?, maxBody int?, headWait int?, bodyWait int?, sendWait int?, compression Gzip?, work task.Local?, put (func(b []byte) error?)?, fsend (func(b []byte) error?)?, tsend (func(b []byte, ms int) error?)?, gsend (func(h []byte, b []byte) bool)?) error? {
     mh := if maxHead != nil { maxHead } else { 8192 }
     mb := if maxBody != nil { maxBody } else { 16384 }
     gz := if compression != nil { gzLevel(compression) } else { 0 }
@@ -1415,33 +1466,78 @@ func serveCore(recv func(k func([]byte)) error?, send func(b []byte) error?, rou
     if work != nil && gz == 0 {
         return panic(WorkNoCompress{})
     }
-    // 持ち越しの列（未完のリクエストの長さまで伸ばす — appendの倍々で再確保は対数回・接続のregionに残るのは最長の持ち越しの2倍以内。
-    // 上限〔maxHead + 2 × maxBody〕で一括に取ると、1 回でも分割受信した接続がその大きさで常駐する）
+    // 持ち越し（未完のリクエスト）の状態とその列。持ち越しが無い受け（切片1つでリクエストが揃うふつうの往復）は、比較2つ（受けの直後のcs.pnと、
+    // serveBufの後の残り）だけを通る。持ち越しの処理は別の関数（carryIn・展開しないcarryOut）に置く。持ち越しの列は未完のリクエストの長さまで伸ばす
+    // （appendの倍々で再確保は対数回・接続のregionに残るのは最長の持ち越しの2倍以内）
+    mut cs := carry{pn: 0, wait: 0, need: 0, ph: 0, ecode: 0, st: 0, rem: 0, total: 0, ln: 0, tb: 0, cont: false}
     mut pend := mut []byte{}
-    mut pn := 0
+    mut line := mut []byte{}
     // レスポンスのgzipの動的の木の記録（接続ごと — 出力は接続のリクエストの列の決定的な関数。最初に圧縮したレスポンスで確保 — 接続あたりページ1枚 = 4 KB・圧縮しない接続は0 B）
     mut hist := compress.gzip.History{}
+    // 受けと送りの期限（粗い時刻の単位。waitUnits）。dl = 次の受けの期限・body = 持ち越しのリクエストの頭が揃い本文を待っている
+    hu := waitUnits(if headWait != nil { headWait } else { 30000 * task.MS })
+    bu := waitUnits(if bodyWait != nil { bodyWait } else { 60000 * task.MS })
+    su := imin(waitUnits(if sendWait != nil { sendWait } else { 60000 * task.MS }), 65535)
+    _ = sysNetOp(16, fd, 0, 0)
+    mut dl := sysNetOp(15, 0, 0, 0) + hu
+    mut body := false
+    _ = sysNetOp(14, dl, 0, 0)
     for chunk <- recv()? {
-        // 持ち越しがあれば繋いだコピー（反復のregion）を読む・無ければ切片をそのまま
-        in := if pn == 0 { chunk } else { joined(mut pend, pn, chunk) }
-        used, shut, out, tms, se := serveBuf(send, in, route, mh, mb, gz, fresh, work, mut hist, tsend != nil && put == nil, gsend: gsend)
+        // routeの実行中は期限を外す（受けの待ちの直前に置き直す）
+        _ = sysNetOp(14, 0, 0, 0)
+        // 持ち越しがあれば、carryInが繋いだコピー（反復のregion）を返す。本文がまだ揃わない・本文の誤りなら空の列（serveBufは何もしない）
+        in := if cs.pn == 0 { chunk } else { carryIn(mut cs, mut pend, mut line, chunk, mh, mb) }
+        used, shut0, out0, tms, hw, se := serveBuf(send, in, route, mh, mb, gz, fresh, work, mut hist, tsend != nil && put == nil, su, gsend: gsend)
         if se != nil {
             return se
         }
+        mut shut := shut0
+        mut out := out0
+        // 残り（未完のリクエスト）か持ち越しがあれば、carryOutが持ち越す。頭が揃ったら本文の期限を今から数え（頭を少しずつ送る相手は張り直さない）、
+        // 本文の誤りはそのstatusのレスポンスを下の送りと読み捨ての経路で送る
+        rest := len(in) - used
+        if rest + cs.pn != 0 {
+            if carryOut(mut cs, mut pend, mut line, in, used, shut, hw, mh, mb) && !body {
+                dl = sysNetOp(15, 0, 0, 0) + bu
+                body = true
+            }
+            if cs.ecode != 0 {
+                out = respHead(Status(http.StatusCode(cs.ecode)), false, false, 0)
+                shut = 2
+            } else if cs.cont {
+                // 本文を待つ前に100を送る（RFC 9110 10.1.1。頭が揃って本文を待つ形へ移るのはリクエストごとに1回なので、100も1回）。
+                // 同じ切片で済んだリクエストのレスポンスの後ろに置く
+                out = withContinue(out)
+            }
+            cs.cont = false
+        }
         if tms > 0 && tsend != nil {
+            // 時刻つきの送り（epollのパスではrtの中でms眠ってから送る）: 送りの間隔の期限は待ちの分だけ後ろへ
+            _ = sysNetOp(14, sysNetOp(15, 0, 0, 0) + su + waitUnits(tms * task.MS) + su * 4294967296, 0, 0)
             tsend(out, tms)?
         } else if len(out) > 0 {
             if put != nil {
+                armSend(su)
                 // 次にするのが受けなら、受けの前の送り（tls.Recvの中のFlush）は完了を待たなくてよい印を置く。送りの結果は次の受けが返す（平文のsendFusedと同じ）
                 if shut == 0 {
                     _ = leaseOp(10, []int{}, 0, 0)
                 }
                 put(out)?
             } else if fsend != nil && shut == 0 {
+                // 送信バッファリングの送り（送信バッファに積んで待たない）: 期限の値は受けの期限 dl のまま（keep-aliveのリクエストごとの送りに時刻の読みを足さない）、
+                // 送りの間隔のビットを足す。送り場に入らずに今の送りへ倒れて待つと、dl を過ぎた後は送りの進み（相手が受け取ったバイト）を見て張り直す —
+                // 読み続ける遅い相手を切らない（dl はリクエストの前から数えるので、大きいレスポンスでは送りの途中で過ぎうる）。進まなければ送りの間隔で切る
+                _ = sysNetOp(14, dl + su * 4294967296, 0, 0)
                 fsend(out)?
             } else {
+                armSend(su)
                 send(out)?
             }
+        }
+        if shut != 0 {
+            // 閉じる前の後始末（linger・閉じの送りの片付け）も相手の待ちで止まらないように、頭の期限をもう1回分だけ置く。送りの間隔のビットも足す —
+            // 閉じは送信バッファリングの送りの残りの完了を待つので、読み続ける相手は送りの進みで張り直す（読まない相手は送りの間隔で切る）
+            _ = sysNetOp(14, sysNetOp(15, 0, 0, 0) + hu + su * 4294967296, 0, 0)
         }
         if shut == 2 {
             linger(recv)
@@ -1449,19 +1545,51 @@ func serveCore(recv func(k func([]byte)) error?, send func(b []byte) error?, rou
         if shut != 0 {
             return nil
         }
-        // 残り（未完のリクエスト）を持ち越す — 大きさはserveBufの上限の検査でmaxHead + 2 × maxBody + 128未満
-        rest := len(in) - used
-        while len(pend) < rest {
-            pend = append(pend, 0)
+        // 次の受けの期限: この切片でリクエストが1件以上済んだら、次のリクエストの頭を今から数える（Delayedの送りを積んだら満了の後から）。
+        // 済んでいなければ前の期限のまま（本文の期限は上のcarryOutの後で置いた）
+        if used > 0 {
+            dl = sysNetOp(15, 0, 0, 0) + hu + (if tms > 0 { waitUnits(tms * task.MS) } else { 0 })
+            body = false
         }
-        mut j := 0
-        while j < rest {
-            pend[j] = in[used + j]
-            j += 1
-        }
-        pn = rest
+        _ = sysNetOp(14, dl, 0, 0)
     }
+    // 相手が送りを閉じた（受けが終わった）: 閉じの後始末の期限（上の shut ≠ 0 と同じ形 — 送信バッファリングの送りの残りを、読み続ける相手には送り切る）
+    _ = sysNetOp(14, sysNetOp(15, 0, 0, 0) + hu + su * 4294967296, 0, 0)
     return nil
+}
+
+// 待ちの時間（ns。task.MSの倍数）→ rtの粗い時刻の単位の数（2^29 nsで、切り上げ + 2: 置いた時点の粗い時刻は本当の時刻より最大1単位古く、走査は単位の境で数えるので、
+// 期限が早く来ないための余り。lower/rdl.sober）。0以下は0（開いた時点で期限切れ）・上限は2^30単位
+func waitUnits(ns int) int {
+    if ns <= 0 {
+        return 0
+    }
+    if ns >= 1 << 59 {
+        return 1 << 30
+    }
+    return ((ns + 536870911) >> 29) + 2
+}
+
+func imin(a int, b int) int {
+    return if a < b { a } else { b }
+}
+
+// 送りの間隔の期限を置く（rtの期限のワード: 下位32ビット = 粗い時刻 + 間隔・32ビットから = 間隔。送りが進めばrtが張り直す）
+func armSend(su int) {
+    _ = sysNetOp(14, sysNetOp(15, 0, 0, 0) + su + su * 4294967296, 0, 0)
+}
+
+// 送りの期限を外す（routeとstreamの利用者のコードは期限の外で走る）
+func rdlOff() {
+    _ = sysNetOp(14, 0, 0, 0)
+}
+
+// serveBufの中の送り（streamの前のレスポンスと頭・溢れた列・streamの終端）: 送りの間隔の期限の中で送り、送り終えたら外す
+func sendArmed(send func(b []byte) error?, b []byte, su int) error? {
+    armSend(su)
+    e := send(b)
+    rdlOff()
+    return e
 }
 
 // Gzip の level（0 = 既定の 6・1〜9 の外は panic）
@@ -1470,6 +1598,322 @@ func gzLevel(g Gzip) int {
         return panic(BadLevel{level: g.level})
     }
     return if g.level == 0 { 6 } else { g.level }
+}
+
+// pend[n:]へpを書く（pendの長さを越える分は伸ばす）→ 書いた後の長さ
+func putAt(pend mut []byte, n int, p []byte) int {
+    // 長さの内は添字で書く（lowerが一括のコピーにする形）・越える分はappendで伸ばす
+    m := imin(len(p), len(pend) - n)
+    mut i := 0
+    while i < m {
+        pend[n + i] = p[i]
+        i += 1
+    }
+    for x <- p[i:len(p)] {
+        pend = append(pend, x)
+    }
+    return n + len(p)
+}
+
+// 持ち越しの状態。pn = 持ち越しの列（pend）の長さ。wait = 持ち越しの先頭の、頭が揃い本文を待っているリクエストの形: 0 = なし（または未確認）・
+// 1 = Content-Lengthの本文を、pnがneedになるまでpendへ足す・2 = chunkedの本文を受けた切片から解き、pendへ「頭・大きさの行の場所（phからchunkHoleバイト）・
+// 解いた本文」の形で積む（生のバイトは途中で切れた1行だけをlineに持つ）。どちらも揃うまでserveBufへ渡さない（受けるたびに持ち越しを読み直さない）。
+// ecode = 本文の誤りのstatus（0 = なし）。
+// chunkedを解く状態: st: 0 = 大きさの行・1 = データ・2 = データの後の行末・3 = データの後のCRの後・4 = trailerの行。rem = 今のchunkのデータの残り・
+// total = 解いた本文の合計・ln = 途中で切れた行（line）のバイト数・tb = 読み終えたtrailerの行のバイト数
+type carry struct {
+    pn int
+    wait int
+    need int
+    ph int
+    ecode int
+    st int
+    rem int
+    total int
+    ln int
+    tb int
+    // 頭が揃ったリクエストがExpect: 100-continueのHTTP/1.1（carryOutが立て、serveCoreが100を送って下ろす）
+    cont bool
+}
+
+// 持ち越しのある受け（cs.pn > 0）の、serveBufへ渡す列: 持ち越しと切片を繋いだコピー（反復のregion）。本文を待っているリクエストは、揃うまで空の列を返す
+// （Content-Lengthの本文は持ち越しへ足し、chunkedの本文は解いて積む）。本文の誤りはcs.ecodeに置いて空の列を返す
+func carryIn(cs mut carry, pend mut []byte, line mut []byte, chunk []byte, mh int, mb int) []byte {
+    mut at := 0
+    if cs.wait == 1 {
+        if cs.pn + len(chunk) < cs.need {
+            cs.pn = putAt(mut pend, cs.pn, chunk)
+            return []byte{}
+        }
+    } else if cs.wait == 2 {
+        r, n2 := unchunkFeed(mut cs, mut line, mut pend, cs.pn, chunk, mh, mb)
+        cs.pn = n2
+        if r == -1 {
+            return []byte{}
+        }
+        if r < -1 {
+            cs.ecode = 0 - r
+            return []byte{}
+        }
+        cs.pn = chunkDone(mut pend, cs.pn, cs.ph, cs.total)
+        at = r
+    }
+    in := joined(mut pend, cs.pn, chunk[at:len(chunk)])
+    cs.pn = 0
+    cs.wait = 0
+    return in
+}
+
+// serveBufの後の持ち越し（残りか持ち越しがあるとき）→ 頭が揃って本文を待つ形へ移ったか。本文を待っている・誤り・閉じるときは何もしない。
+// 残り（in[used:]）を持ち越しの列へ移す。残りの頭が揃っていれば本文を待つ形へ移り、chunkedの本文はここから解く
+// （hw = serveBufが見た残りの頭が揃っている。済んだリクエストの後ろの残りも移す: Expect: 100-continueの相手は、100を受けるまで次を送らない）
+@noinline
+func carryOut(cs mut carry, pend mut []byte, line mut []byte, in []byte, used int, shut int, hw bool, mh int, mb int) bool {
+    if cs.pn != 0 || cs.ecode != 0 || shut != 0 {
+        return false
+    }
+    if used > 0 && !hw {
+        cs.pn = putAt(mut pend, 0, in[used:len(in)])
+        return false
+    }
+    rs := if used > 0 { in[used:len(in)] } else { in }
+    he, cl, chunked, cont := bodyHead(rs)
+    cs.cont = cont
+    if he > 0 && chunked {
+        cs.ph = he
+        cs.pn = putAt(mut pend, 0, rs[0:he])
+        cs.pn = putAt(mut pend, cs.pn, bytes(chunkHole))
+        cs.st = 0
+        cs.rem = 0
+        cs.total = 0
+        cs.ln = 0
+        cs.tb = 0
+        r, n2 := unchunkFeed(mut cs, mut line, mut pend, cs.pn, rs[he:len(rs)], mh, mb)
+        cs.pn = n2
+        cs.wait = 2
+        // frameAtが足りないとした本文は、同じ文法で解いても終わらない（終わったなら2つの解き方の食い違いで、400で閉じる）
+        if r != -1 {
+            cs.ecode = if r < -1 { 0 - r } else { 400 }
+        }
+        return true
+    }
+    if he > 0 {
+        cs.wait = 1
+        cs.need = he + cl
+    }
+    cs.pn = putAt(mut pend, 0, rs)
+    return he > 0
+}
+
+// frameAtが足りないとした未完のリクエストbの頭が揃っていれば → (頭の終わり, Content-Lengthの値, chunkedか)。揃っていなければ頭の終わりは0。
+// 頭の検査はframeAtが済ませている（揃った頭に誤りがあれば、frameAtは足りないではなく誤りを返す）ので、本文の長さを決めるヘッダだけを読む。
+// 第4の値 = HTTP/1.1のリクエストにExpect: 100-continueがある（HTTP/1.0のExpectは無視する。RFC 9110 10.1.1）
+func bodyHead(b []byte) (int, int, bool, bool) {
+    n := len(b)
+    mut p := 0
+    while p < n && (b[p] == '\r' || b[p] == '\n') {
+        p += 1
+    }
+    // 頭の終わり（空行）を行の終わりだけで探す。揃っていなければヘッダを読まずに戻る（頭を少しずつ送る相手の受けごとの作業を小さく保つ）
+    rl := lineEnd(b, p)
+    if rl < 0 {
+        return 0, 0, false, false
+    }
+    mut he := 0
+    mut q := rl + 1
+    while he == 0 {
+        if q < n && b[q] == '\n' {
+            he = q + 1
+        } else if q + 1 < n && b[q] == '\r' && b[q + 1] == '\n' {
+            he = q + 2
+        } else {
+            e := lineEnd(b, q)
+            if e < 0 {
+                return 0, 0, false, false
+            }
+            q = e + 1
+        }
+    }
+    mut cl := 0
+    mut chunked := false
+    mut cont := false
+    rc := contentEnd(b, p, rl)
+    v11 := rc - p >= 8 && isLit(b, rc - 8, rc, "HTTP/1.1")
+    q = rl + 1
+    while q < he - 2 {
+        e := lineEnd(b, q)
+        c := contentEnd(b, q, e)
+        colon := indexIn(b, q, c, ':')
+        nl := colon - q
+        if nl == 14 && eqFold(b, q, colon, bytes("content-length")) {
+            cl = digits(b, skipOWS(b, colon + 1, c), trimOWS(b, skipOWS(b, colon + 1, c), c))
+        } else if nl == 17 && eqFold(b, q, colon, bytes("transfer-encoding")) {
+            chunked = true
+        } else if nl == 6 && v11 && eqFold(b, q, colon, bytes("expect")) {
+            vs := skipOWS(b, colon + 1, c)
+            cont = eqFold(b, vs, trimOWS(b, vs, c), bytes("100-continue"))
+        }
+        q = e + 1
+    }
+    return he, cl, chunked, cont
+}
+
+// 100 Continueの中間のレスポンス
+const continueLine = "HTTP/1.1 100 Continue\r\n\r\n"
+
+// outの後ろにcontinueLineを足した列
+func withContinue(out []byte) []byte {
+    mut o := mut []byte{}
+    for x <- out {
+        o = append(o, x)
+    }
+    for x <- bytes(continueLine) {
+        o = append(o, x)
+    }
+    return freeze(o)
+}
+
+// 頭の後ろに置く大きさの行の場所（16桁の16進 + CRLF）。本文が揃ったらchunkDoneが合計で埋め、頭 + chunk 1つの本文としてserveBufへ渡す
+const chunkHole = "0000000000000000\r\n"
+
+// pからchunkedの本文を解き、データをpend[pn:]へ足す → (pの中の本文の終わりの直後〔trailerの空行の後〕・-1 = 足りない・-400 / -413 / -431 = 誤り, 足した後のpendの長さ)。
+// 文法と誤りはchunkedEndと同じ。途中で切れた行はlineへ持ち越す: 大きさの行は1024バイトを越えたら400・trailerは行の合計がmhを越えたら431
+func unchunkFeed(u mut carry, line mut []byte, pend mut []byte, pn0 int, p []byte, mh int, mb int) (int, int) {
+    mut pn := pn0
+    mut i := 0
+    n := len(p)
+    while i < n {
+        if u.st == 1 {
+            k := imin(u.rem, n - i)
+            pn = putAt(mut pend, pn, p[i:i + k])
+            u.rem -= k
+            i += k
+            if u.rem == 0 {
+                u.st = 2
+            }
+        } else if u.st == 2 || u.st == 3 {
+            c := p[i]
+            if c == '\n' {
+                u.st = 0
+            } else if c == '\r' && u.st == 2 {
+                u.st = 3
+            } else {
+                return -400, pn
+            }
+            i += 1
+        } else {
+            // 速い道: 大きさの行が1桁（拡張なし・CRLF）で、データと後ろのCRLFまでが切片にあるchunkが続く間は、行の走査と状態の遷移を通らずに詰める
+            // （1バイトのchunkの列を、今の道より少ない命令で解く。結果と誤りは今の道と同じ — frame_test の TestUnchunkFastAgrees）
+            mut j := i
+            if u.st == 0 && u.ln == 0 {
+                mut t := u.total
+                while j + 4 < n {
+                    c := p[j]
+                    // 1桁の16進（0は終わりのchunkなので今の道へ）
+                    h := if c >= '1' && c <= '9' { int(c) - 48 } else if c >= 'a' && c <= 'f' { int(c) - 87 } else if c >= 'A' && c <= 'F' { int(c) - 55 } else { 0 }
+                    e := j + 3 + h
+                    if h == 0 || e + 1 >= n || p[j + 1] != '\r' || p[j + 2] != '\n' || p[e] != '\r' || p[e + 1] != '\n' {
+                        break
+                    }
+                    if h > mb {
+                        u.total = t
+                        return -413, pn
+                    }
+                    t += h
+                    if t > mb {
+                        u.total = t
+                        return -413, pn
+                    }
+                    mut d := j + 3
+                    while d < e {
+                        if pn < len(pend) {
+                            pend[pn] = p[d]
+                        } else {
+                            pend = append(pend, p[d])
+                        }
+                        pn += 1
+                        d += 1
+                    }
+                    j = e + 2
+                }
+                u.total = t
+            }
+            if j > i {
+                i = j
+            } else {
+                e := lineEnd(p, i)
+                if e < 0 {
+                    u.ln = putAt(mut line, u.ln, p[i:n])
+                    if u.st == 0 && u.ln > 1024 {
+                        return -400, pn
+                    }
+                    if u.st == 4 && u.tb + u.ln > mh {
+                        return -431, pn
+                    }
+                    return -1, pn
+                }
+                // 行（LFまで）: 持ち越しがあれば繋いだコピーで読む
+                l := if u.ln == 0 { p[i:e + 1] } else { joined(mut line, u.ln, p[i:e + 1]) }
+                u.ln = 0
+                i = e + 1
+                le := len(l) - 1
+                if u.st == 0 {
+                    c := contentEnd(l, 0, le)
+                    mut q := 0
+                    mut size := 0
+                    while q < c && hexVal(l[q]) >= 0 {
+                        // intに収まらない大きさ（2^63以上）は数として読めない行で400。収まって本文の上限を越えるなら413
+                        if size >= 576460752303423488 {
+                            return -400, pn
+                        }
+                        size = size * 16 + hexVal(l[q])
+                        q += 1
+                    }
+                    if q == 0 || (q < c && !chunkExt(l, q, c)) {
+                        return -400, pn
+                    }
+                    if size > mb {
+                        return -413, pn
+                    }
+                    if size == 0 {
+                        u.st = 4
+                    } else {
+                        u.total += size
+                        if u.total > mb {
+                            return -413, pn
+                        }
+                        u.rem = size
+                        u.st = 1
+                    }
+                } else {
+                    if contentEnd(l, 0, le) == 0 {
+                        return i, pn
+                    }
+                    u.tb += len(l)
+                    if u.tb > mh {
+                        return -431, pn
+                    }
+                    te, colon, bad := fieldLine(l, 0)
+                    if te != le || !fieldLineOk(l, 0, te, colon, bad) {
+                        return -400, pn
+                    }
+                }
+            }
+        }
+    }
+    return -1, pn
+}
+
+// 解き終えたchunkedの本文: 大きさの行の場所（pend[ph:]）を合計で埋め、終わりのchunk（合計が0なら大きさの行がそれ）とtrailerの空行を足す → pendの長さ
+func chunkDone(pend mut []byte, pn int, ph int, total int) int {
+    mut v := total
+    mut k := 15
+    while k >= 0 {
+        pend[ph + k] = bytes("0123456789abcdef")[v & 15]
+        v = v >> 4
+        k -= 1
+    }
+    return putAt(mut pend, pn, if total == 0 { bytes("\r\n") } else { bytes("\r\n0\r\n\r\n") })
 }
 
 // pendの先頭pnバイトとbを繋いだコピー
@@ -1506,20 +1950,22 @@ func drain(recv func(k func([]byte)) error?) error? {
     return nil
 }
 
-// bの頭から揃ったリクエストを順に処理する → (使ったバイト数, 0 = 続ける・1 = 閉じる・2 = 残りを読み捨ててから閉じる, レスポンスを繋いだ列, 送りの誤り)。
+// bの頭から揃ったリクエストを順に処理する → (使ったバイト数, 0 = 続ける・1 = 閉じる・2 = 残りを読み捨ててから閉じる, レスポンスを繋いだ列, 時刻つきの送りの待ち,
+// 残りのリクエストの頭が揃い本文を待っているか, 送りの誤り)。
 // 未完のリクエストの手前で止まる。streamのレスポンスはここで前のレスポンスと頭をcへ送ってからstreamを呼び、残りのリクエストへ進む（パイプラインの順序を保つ）。
 // streamの失敗（送りの失敗・ファイルの読みの失敗）は頭を送った後なのでレスポンスを直せない — 誤りを返して閉じる（相手はContent-Lengthに足りない本文で切れを知る）。
 // stream の誤りのラベルは Stream の @errors（emit の失敗 + io の 5 つ — language.md 12 節の面「高階」）。
 // streamを呼ぶパスをServeConnの側の反復に置くと、streamの無いリクエストのパスが1件 ≈ 200命令・cycles +10%を払う（だからここに置く）。
 // レスポンスの列は1本のmutの列へ一括のコピーで積む（for x <- S { out = append(out, x) } — lowerの一括化。
 // 切片ごとのbuilder〔24本のシード + chunkの成長〕と片ごとのPushStringで積む形はレスポンス1件 ≈ 4.5K命令と遅い）
-func serveBuf(send func(b []byte) error?, b []byte, route func(Request) Response, mh int, mb int, gz int, fresh bool, wk task.Local?, hist mut compress.gzip.History, tsOk bool, gsend (func(h []byte, b []byte) bool)?) (int, int, []byte, int, error?) {
+func serveBuf(send func(b []byte) error?, b []byte, route func(Request) Response, mh int, mb int, gz int, fresh bool, wk task.Local?, hist mut compress.gzip.History, tsOk bool, su int, gsend (func(h []byte, b []byte) bool)?) (int, int, []byte, int, bool, error?) {
     mut out := mut []byte{}
     mut at := 0
     mut shut := 0
     // outの先頭のレスポンスの前の待ち（ミリ秒 — Delayed。ループを出てから待つ）
     mut dl := 0
     mut more := true
+    mut hw := false
     // outをgsendで送り終えた（バッチの最後の応答 — 以後outを使わない）
     mut gone := false
     while more && shut == 0 {
@@ -1528,6 +1974,7 @@ func serveBuf(send func(b []byte) error?, b []byte, route func(Request) Response
         if f.st == 0 {
             // 足りない: 先頭の空行だけは捨ててよい
             at = f.s
+            hw = f.he > 0
             more = false
         } else if f.st != 1 {
             for x <- respHead(Status(http.StatusCode(f.st)), false, false, 0) {
@@ -1561,9 +2008,9 @@ func serveBuf(send func(b []byte) error?, b []byte, route func(Request) Response
                         dl = 0
                     }
                     if len(out) > 0 {
-                        e3 := send(freeze(out))
+                        e3 := sendArmed(send, freeze(out), su)
                         if e3 != nil {
-                            return at, 1, []byte{}, 0, e3
+                            return at, 1, []byte{}, 0, false, e3
                         }
                         out = mut []byte{}
                     }
@@ -1586,15 +2033,17 @@ func serveBuf(send func(b []byte) error?, b []byte, route func(Request) Response
                     out = append(out, c)
                 }
                 putHead(put, put1, resp, kp, f.v10, enc, bl)
+                // 頭の終わりにDateの行と空行
+                out = sysAppendDate(out)
                 at = f.end
                 shut = if kp { 0 } else if at < len(b) { 2 } else { 1 }
                 more = at < len(b)
                 if req.method != "HEAD" {
                     if st != nil {
                         // 前のレスポンスと頭を送ってからstreamを呼ぶ
-                        e2 := send(freeze(out))
+                        e2 := sendArmed(send, freeze(out), su)
                         if e2 != nil {
-                            return at, 1, []byte{}, 0, e2
+                            return at, 1, []byte{}, 0, false, e2
                         }
                         out = mut []byte{}
                         // 送りの状態（stream の 4 つの形で 1 つ — 枠に Out を 1 つだけ置く）。lim は長さ既知の形だけが読む
@@ -1604,25 +2053,45 @@ func serveBuf(send func(b []byte) error?, b []byte, route func(Request) Response
                             // 終端。長さ既知なら非圧縮の合計を数え、length でなければ最後を書かずに閉じる（符号器と合計は送りの状態 so — stream が emit に渡し回す）
                             v10 := f.v10
                             internal.deflate.Begin(mut so.s, gz, true)
-                            st(mut so, (o, p) => gzFeed(mut o, p, (q) => if v10 { send(q) } else { send(chunkOf(q)) }))?
+                            st(mut so, (o, p) => gzFeed(mut o, p, (q) => {
+                                armSend(su)
+                                emr := if v10 { send(q) } else { send(chunkOf(q)) }
+                                rdlOff()
+                                emr
+                            }))?
                             short := if ln != nil { so.n != ln } else { false }
                             if so.over || short {
-                                return at, 1, []byte{}, 0, nil
+                                return at, 1, []byte{}, 0, false, nil
                             }
                             tl := internal.deflate.End(mut so.s)
-                            send(if v10 { tl } else { chunkEnd(tl) })?
+                            sendArmed(send, if v10 { tl } else { chunkEnd(tl) }, su)?
                         } else if ul && !f.v10 {
                             // chunked: emit 1 回 = chunk 1 つ・返ったら終端（誤りなら終端を書かずに閉じる）
-                            st(mut so, (o, p) => if len(p) == 0 { nil } else { send(chunkOf(p)) })?
-                            send(bytes("0\r\n\r\n"))?
+                            st(mut so, (o, p) => if len(p) == 0 { nil } else {
+                                armSend(su)
+                                emr := send(chunkOf(p))
+                                rdlOff()
+                                emr
+                            })?
+                            sendArmed(send, bytes("0\r\n\r\n"), su)?
                         } else if ln != nil {
                             // 長さ既知: 合計を数え、超えた emit は送らない・返った時点で length でなければ閉じる（相手は本文の切れで知る）
-                            st(mut so, (o, p) => sendCounted(mut o, p, (q) => send(q)))?
+                            st(mut so, (o, p) => sendCounted(mut o, p, (q) => {
+                                armSend(su)
+                                emr := send(q)
+                                rdlOff()
+                                emr
+                            }))?
                             if so.over || so.n != ln {
-                                return at, 1, []byte{}, 0, nil
+                                return at, 1, []byte{}, 0, false, nil
                             }
                         } else {
-                            st(mut so, (o, p) => send(p))?
+                            st(mut so, (o, p) => {
+                                armSend(su)
+                                emr := send(p)
+                                rdlOff()
+                                emr
+                            })?
                         }
                     } else {
                         // バッチの最後の本文: 頭（out）と本文を送り場へ直に集めて送れたら（本文をoutへ積むコピーを省く）、ループはここで終わり、呼び手へは空の列を返す
@@ -1640,9 +2109,9 @@ func serveBuf(send func(b []byte) error?, b []byte, route func(Request) Response
                 // 読まない相手に向けて、切片1つ分のリクエストのレスポンスを全部つないで抱えないため（積んだ列はoutCap + レスポンス1件まで）。
                 // Delayedの待ちが残っている間は送らない（待ちはoutの先頭のレスポンスの前に置く）。送るバイト列は変わらない
                 if len(out) >= outCap && more && shut == 0 && dl == 0 {
-                    e4 := send(freeze(out))
+                    e4 := sendArmed(send, freeze(out), su)
                     if e4 != nil {
-                        return at, 1, []byte{}, 0, e4
+                        return at, 1, []byte{}, 0, false, e4
                     }
                     out = mut []byte{}
                 }
@@ -1653,14 +2122,14 @@ func serveBuf(send func(b []byte) error?, b []byte, route func(Request) Response
     // ループの末尾（閉じない・切片を使い切った）で時刻つきの送りが使えれば、待たずに待ちのmsを返す（呼び手がtsendで送る）
     if dl > 0 {
         if tsOk && shut == 0 && at == len(b) {
-            return at, shut, freeze(out), dl, nil
+            return at, shut, freeze(out), dl, hw, nil
         }
         os.Sleep(dl)
     }
     if gone {
-        return at, shut, []byte{}, 0, nil
+        return at, shut, []byte{}, 0, hw, nil
     }
-    return at, shut, freeze(out), 0, nil
+    return at, shut, freeze(out), 0, hw, nil
 }
 
 // serveBufが同じ切片の続きのリクエストを処理する前に、積んだレスポンスを送る大きさ
@@ -1808,9 +2277,9 @@ func frameAt(b []byte, at int, mh int, mb int, hs mut []int) frame {
     // 頭の終わり = 空行（LF LF か LF CR LF）の直後 — 空行の前の LF は s + mh より前
     lim := if n < s + mh { n } else { s + mh }
     short := if n - s >= mh { 431 } else { 0 }
-    // リクエスト行: method SP target SP version（空白は2つちょうど・空のフィールドなし・中のCRは誤り）。「0x20未満」とSPを同じ8バイトの読みで探す
+    // リクエスト行: method SP target SP version（空白は2つちょうど・空のフィールドなし・中のCRは誤り）。「0x20未満か0x80以上」とSPを同じ8バイトの読みで探す
     // （LFとCRは0x20未満に含まれる。行は1回なめるだけで、立ったマークは読み直したバイトで確認するので、借りの偽のマーク〔最初の一致より上〕は数えない）。
-    // ターゲットの中のNULと制御文字（0x20未満。HTABを含む）は400（RFC 9112 3.2）
+    // ターゲットの中のNULと制御文字（0x20未満。HTABを含む）と0x80以上のバイトは400（RFC 9112 3.2・RFC 3986 2。非ASCIIは%エンコードしてから送る）
     mut le := -1
     mut sp1 := -1
     mut sp2 := -1
@@ -1820,7 +2289,7 @@ func frameAt(b []byte, at int, mh int, mb int, hs mut []int) frame {
     while le < 0 && j + 8 <= n {
         x := binary.Load64(b, j)
         y1 := x ^ swSP
-        mut u := ((((x - swSP) & (x ^ -1)) | ((y1 - swOne) & (y1 ^ -1))) >> 7) & swOne
+        mut u := ((((x - swSP) | x) | ((y1 - swOne) & (y1 ^ -1))) >> 7) & swOne
         while u != 0 && le < 0 {
             // 最下位の立ったバイトの番号（u & −u = 1 << 8k を掛けると最上位のバイトが k）
             p := j + (((u & (0 - u)) * swIdx) >> 56)
@@ -1838,7 +2307,7 @@ func frameAt(b []byte, at int, mh int, mb int, hs mut []int) frame {
                 if cr < 0 {
                     cr = p
                 }
-            } else if c < 32 && cr < 0 && sp1 >= 0 && sp2 < 0 {
+            } else if (c < 32 || c >= 128) && cr < 0 && sp1 >= 0 && sp2 < 0 {
                 cr = p
             }
             u = u & (u - 1)
@@ -1860,7 +2329,7 @@ func frameAt(b []byte, at int, mh int, mb int, hs mut []int) frame {
             if cr < 0 {
                 cr = j
             }
-        } else if c < 32 && cr < 0 && sp1 >= 0 && sp2 < 0 {
+        } else if (c < 32 || c >= 128) && cr < 0 && sp1 >= 0 && sp2 < 0 {
             cr = j
         }
         j += 1
@@ -1977,7 +2446,8 @@ func frameAt(b []byte, at int, mh int, mb int, hs mut []int) frame {
         end = if he + cl <= n { he + cl } else { -1 }
     }
     if end == -1 {
-        return fr(0, s)
+        // 本文が足りない: 頭の終わりを返す（持ち越しが頭を読み直すかを決める）
+        return frame{st: 0, s: s, he: he, end: 0, chunked: false, keep: false, v10: false, sp1: 0, sp2: 0}
     }
     return frame{st: 1, s: s, he: he, end: end, chunked: chunked, keep: keep, v10: v10, sp1: sp1, sp2: sp2}
 }
@@ -2001,10 +2471,6 @@ func chunkedEnd(b []byte, he int, mb int) int {
     mut p := he
     mut total := 0
     while true {
-        // 生のバイト数の上限（小さい chunk の量産で持ち越しの列を溢れさせない）
-        if p - he > 2 * mb + 64 {
-            return -413
-        }
         e := lineEnd(b, p)
         if e < 0 {
             return if len(b) - p > 1024 { -400 } else { -1 }
@@ -2013,15 +2479,19 @@ func chunkedEnd(b []byte, he int, mb int) int {
         mut q := p
         mut size := 0
         while q < c && hexVal(b[q]) >= 0 {
-            size = size * 16 + hexVal(b[q])
-            if size > mb {
-                return -413
+            // intに収まらない大きさ（2^63以上）は数として読めない行で400。収まって本文の上限を越えるなら413
+            if size >= 576460752303423488 {
+                return -400
             }
+            size = size * 16 + hexVal(b[q])
             q += 1
         }
         // chunk-ext（; …）は文法だけ確かめて読み捨てる
         if q == p || (q < c && !chunkExt(b, q, c)) {
             return -400
+        }
+        if size > mb {
+            return -413
         }
         p = e + 1
         if size == 0 {
@@ -2076,7 +2546,7 @@ func versionErr(b []byte, s int, e int) int {
 
 // Transfer-Encodingの行b[vs:ve] を、それまでの行の状態teに足した状態。値はtransfer-codingのリスト（RFC 9112 6.1・RFC 9110 5.6.1・10.1.4）:
 // transfer-coding = token *( OWS ";" OWS token BWS "=" BWS ( token / quoted-string ) )。状態の1語のビット = chunkedの数（0〜2）・4 = 最後の要素がchunked・
-// 8 = chunked以外の符号化かパラメータ・16 = 文法の誤り・32 = 行がある
+// 8 = chunked以外の符号化・16 = 文法の誤り・32 = 行がある
 func teAdd(te0 int, b []byte, vs int, ve int) int {
     // ふつうの形（行が1本で値がchunkedちょうど）
     if te0 == 0 && eqFold(b, vs, ve, bytes("chunked")) {
@@ -2101,12 +2571,11 @@ func teAdd(te0 int, b []byte, vs int, ve int) int {
         if q == k {
             return te | 16
         }
-        // chunkedはパラメータが付いていても最後の符号化として数える（本文の長さはchunkedで決まる）。パラメータは対応しないので501の側
+        // chunkedはパラメータが付いていても最後の符号化として数える（本文の長さはchunkedで決まる。RFC 9112 6.3の4）。chunkedに定義された
+        // パラメータは無く、符号化は理解できるものなので、パラメータは文法を確かめて読み捨てる（501にしない。Content-Lengthとの併記は400）
         isChunked := eqFold(b, k, q, bytes("chunked"))
-        mut param := false
         mut p := skipOWS(b, q, ve)
         while p < ve && b[p] == ';' {
-            param = true
             p = skipOWS(b, p + 1, ve)
             n0 := p
             while p < ve && tchar(b[p]) {
@@ -2138,7 +2607,7 @@ func teAdd(te0 int, b []byte, vs int, ve int) int {
         }
         if isChunked {
             te = if te & 3 < 2 { te + 1 } else { te }
-            te = te | 4 | (if param { 8 } else { 0 })
+            te = te | 4
         } else {
             te = (te | 8) & (4 ^ -1)
         }
@@ -2322,8 +2791,12 @@ func quotedEnd(b []byte, q0 int, c int) int {
     return -1
 }
 
-// 揃った枠 f の Request（頭が UTF-8 でなければ誤り・hs = frameAt が積んだヘッダの位置の表）
+// 揃った枠fのRequest（頭がUTF-8でなければ誤り・hs = frameAtが積んだヘッダの位置の表）。origin-form（ターゲットが '/' で始まる）でなければ
+// 冷たいotherFormへ（absolute-form・asterisk-form・CONNECT。引数だけが生きている入口で分け、ふつうの形の割り当てを変えない）
 func request(b []byte, f frame, hs []int) (Request, error?) {
+    if b[f.sp1 + 1] != '/' {
+        return otherForm(b, f, hs)
+    }
     if !hostCheck(b, f.s, f.v10, hs) {
         return Request{method: "", path: "", query: "", head: utf8.View{}, headers: []int{}, body: []byte{}, pattern: ""}, badHost{}
     }
@@ -2343,6 +2816,59 @@ func request(b []byte, f frame, hs []int) (Request, error?) {
     return Request{method: method, path: path, query: query, head: v, headers: hs, body: body, pattern: ""}, nil
 }
 
+// origin-formでないリクエストのRequest（requestの冷たい側。呼び手のserveBufがターゲットの1字目で分ける。Hostと頭のUTF-8の検査はrequestと同じ）。
+// absolute-form（RFC 9112 3.2.2）: サーバーは受けなければならず、オリジンサーバーは受けたHostを無視してターゲットのhostを使う。
+// schemeはhttpかhttps（大文字小文字を区別しない）・authorityはHostの値と同じ形（userinfoは誤り）で、どちらも外れたら400。
+// pathはauthorityの後（空なら "/"）。Hostのヘッダの値の位置をターゲットのauthorityに置き換える（Header(r, "host") がターゲットの側を返す）。
+// Hostのヘッダが無い（HTTP/1.0）ときは足さない
+func otherForm(b []byte, f frame, hs []int) (Request, error?) {
+    if !hostCheck(b, f.s, f.v10, hs) {
+        return Request{method: "", path: "", query: "", head: utf8.View{}, headers: []int{}, body: []byte{}, pattern: ""}, badHost{}
+    }
+    v := utf8.Check(b[f.s:f.he])?
+    hb := utf8.Bytes(v)
+    sp1 := f.sp1 - f.s
+    sp2 := f.sp2 - f.s
+    method := bytesToString(hb[0:sp1])
+    body := if f.chunked { unchunk(b, f.he) } else { b[f.he:f.end] }
+    // asterisk-form（"*"）とCONNECTのauthority-formは、ターゲットをそのままpathにしてunroutedに任せる（OPTIONS * は204・ほかの "*" は400・CONNECTは501）
+    if (sp2 - sp1 == 2 && hb[sp1 + 1] == '*') || method == "CONNECT" {
+        return Request{method: method, path: bytesToString(hb[sp1 + 1:sp2]), query: "", head: v, headers: hs, body: body, pattern: ""}, nil
+    }
+    t := sp1 + 1
+    a := if sp2 - t > 7 && eqFold(hb, t, t + 7, bytes("http://")) { t + 7 } else if sp2 - t > 8 && eqFold(hb, t, t + 8, bytes("https://")) { t + 8 } else { -1 }
+    if a < 0 {
+        return Request{method: "", path: "", query: "", head: utf8.View{}, headers: []int{}, body: []byte{}, pattern: ""}, badTarget{}
+    }
+    mut ae := a
+    while ae < sp2 && hb[ae] != '/' && hb[ae] != '?' {
+        ae += 1
+    }
+    if !hostFull(hb, a, ae) {
+        return Request{method: "", path: "", query: "", head: utf8.View{}, headers: []int{}, body: []byte{}, pattern: ""}, badTarget{}
+    }
+    q := indexIn(hb, ae, sp2, '?')
+    pe := if q >= 0 { q } else { sp2 }
+    path := if pe == ae { "/" } else { bytesToString(hb[ae:pe]) }
+    query := if q >= 0 { bytesToString(hb[q + 1:sp2]) } else { "" }
+    mut nh := mut []int{}
+    for w <- hs {
+        nh = append(nh, w)
+    }
+    mut k := 0
+    while k < len(nh) {
+        w := nh[k]
+        if (w >> 32) - (w & 0xffffffff) == 4 && eqFold(hb, w & 0xffffffff, w >> 32, bytes("host")) {
+            nh[k + 1] = a | (ae << 32)
+        }
+        k += 2
+    }
+    return Request{method: method, path: path, query: query, head: v, headers: freeze(nh), body: body, pattern: ""}, nil
+}
+
+// absolute-formのターゲットの誤り（schemeがhttp / httpsでない・authorityの形）。レスポンスは400
+type badTarget error
+
 // heからの（検査済みの）chunkedの本文を繋いだコピー
 func unchunk(b []byte, he int) []byte {
     mut out := mut []byte{}
@@ -2357,10 +2883,8 @@ func unchunk(b []byte, he int) []byte {
             q += 1
         }
         p = e + 1
-        mut k := 0
-        while k < size {
-            out = append(out, b[p + k])
-            k += 1
+        for x <- b[p:p + size] {
+            out = append(out, x)
         }
         p += size
         if size > 0 {
@@ -2399,7 +2923,14 @@ func wire(r Response, gz int, fresh bool, ae bool, wk task.Local?, hist mut comp
         }
         return if ae { 2 } else { 1 }, []byte{}
     }
-    if gz == 0 || len(r.body) < gzMin || !compressible(r.contentType) {
+    if gz == 0 {
+        return 0, r.body
+    }
+    if r.status == http.NotModified {
+        // 304には、同じリクエストの200（stream）が持つVaryを付ける（RFC 9110 15.4.5）。Content-Encodingは付けない
+        return if gzSize(true, r.length, 0) && compressible(r.contentType) { 1 } else { 0 }, []byte{}
+    }
+    if len(r.body) < gzMin || !compressible(r.contentType) {
         return 0, r.body
     }
     if !ae {
@@ -2578,8 +3109,11 @@ func zeroQ(b []byte, s int, e int) bool {
 }
 
 // レスポンスrの頭をput（チャンク）・put1（1バイト）で積む（状態行・Content-Type・encが2ならContent-Encoding: gzip・3ならr.codedのContent-Encoding〔空なら書かない〕・
-// 1〜3 なら Vary: Accept-Encoding・Content-Length〔1xx・204・304 は書かない〕・
-// 閉じるなら Connection: close・HTTP/1.0 の keep-alive は明示・空行）。n = Content-Length に書く長さ（送る本文の長さ — -1 = 長さ不定の stream: chunked か閉じの区切り）
+// 1〜3 なら Vary: Accept-Encoding・Content-Length〔204・304 は書かない〕・
+// 閉じるなら Connection: close・HTTP/1.0 の keep-alive は明示。Dateの行と頭の終わりの空行は書かない — 呼び手がsysAppendDateで足す）。n = Content-Length に書く長さ（送る本文の長さ — -1 = 長さ不定の stream: chunked か閉じの区切り）。
+// 304にはContent-Typeを書かない（Staticの304はVaryを決めるためにContent-Typeを持つ）。
+// アプリの値が書けなければpanic(BadHeader): statusが200〜999の外（1xxは最終のレスポンスにならない）・204 / 205 / 304に本文・
+// Coded.encodingがtokenでない・任意ヘッダ（checkFields）
 func putHead(put func(p []byte), put1 func(c byte), r Response, keep bool, v10 bool, enc int, n int) {
     // 早道: 頭の飾りの無い200の本文のレスポンス（validators・cache・headers・enc・streamなし）は定型の列を
     // 3つのチャンクで書く（状態行 + Content-Typeの名前・既定のCache-Control + Content-Lengthの名前 — 下の一般のパスと同じバイト列）
@@ -2595,12 +3129,16 @@ func putHead(put func(p []byte), put1 func(c byte), r Response, keep bool, v10 b
             put1(byte(48 + n / p % 10))
             p = p / 10
         }
-        tl := if !keep { "\r\nConnection: close\r\n\r\n" } else if v10 { "\r\nConnection: keep-alive\r\n\r\n" } else { "\r\n\r\n" }
+        tl := if !keep { "\r\nConnection: close\r\n" } else if v10 { "\r\nConnection: keep-alive\r\n" } else { "\r\n" }
         put(bytes(tl))
         return
     }
+    bad := badField(r, enc)
+    if bad != "" {
+        panic(http.BadHeader{name: bad})
+    }
     put(bytes(statusLine(r.status)))
-    if r.contentType != "" {
+    if r.contentType != "" && r.status != http.NotModified {
         put(bytes("Content-Type: "))
         put(bytes(r.contentType))
         put(bytes("\r\n"))
@@ -2616,7 +3154,6 @@ func putHead(put func(p []byte), put1 func(c byte), r Response, keep bool, v10 b
     fs := r.headers
     if fs != nil {
         for f <- fs.list {
-            checkField(f)
             put(bytes(f.name))
             put(bytes(": "))
             put(bytes(f.value))
@@ -2638,16 +3175,19 @@ func putHead(put func(p []byte), put1 func(c byte), r Response, keep bool, v10 b
     if enc > 0 {
         put(bytes("Vary: Accept-Encoding\r\n"))
     }
-    // 1xx・204・304 には Content-Length を書かない（RFC 9110 8.6 — 1xx / 204 は MUST NOT・304 は 200 の長さと等しいときだけ書ける — 書かない側に倒す。
-    // どれも本文を持たない）
-    if int(r.status) < 200 || r.status == http.NoContent || r.status == http.NotModified {
-        tail := if !keep { "Connection: close\r\n\r\n" } else if v10 { "Connection: keep-alive\r\n\r\n" } else { "\r\n" }
-        put(bytes(tail))
+    // 204・304 には Content-Length を書かない（RFC 9110 8.6 — 204 は MUST NOT・304 は 200 の長さと等しいときだけ書ける — 書かない側に倒す）。
+    // 204・205・304は本文を持たない（RFC 9110 15.3.5・15.3.6・15.4.5）。205はContent-Length: 0を書く
+    if r.status == http.NoContent || r.status == http.NotModified {
+        if !keep {
+            put(bytes("Connection: close\r\n"))
+        } else if v10 {
+            put(bytes("Connection: keep-alive\r\n"))
+        }
         return
     }
     if n < 0 {
         // 長さ不定の stream: HTTP/1.1 は chunked・HTTP/1.0 は閉じで区切る（呼び手が keep を外してある — Connection: close だけ）
-        te := if v10 { "Connection: close\r\n\r\n" } else if !keep { "Transfer-Encoding: chunked\r\nConnection: close\r\n\r\n" } else { "Transfer-Encoding: chunked\r\n\r\n" }
+        te := if v10 { "Connection: close\r\n" } else if !keep { "Transfer-Encoding: chunked\r\nConnection: close\r\n" } else { "Transfer-Encoding: chunked\r\n" }
         put(bytes(te))
         return
     }
@@ -2661,11 +3201,11 @@ func putHead(put func(p []byte), put1 func(c byte), r Response, keep bool, v10 b
         put1(byte(48 + n / p % 10))
         p = p / 10
     }
-    tail := if !keep { "\r\nConnection: close\r\n\r\n" } else if v10 { "\r\nConnection: keep-alive\r\n\r\n" } else { "\r\n\r\n" }
+    tail := if !keep { "\r\nConnection: close\r\n" } else if v10 { "\r\nConnection: keep-alive\r\n" } else { "\r\n" }
     put(bytes(tail))
 }
 
-// レスポンスrの頭のコピー（putHeadを新しい列に）
+// レスポンスrの頭のコピー（putHeadを新しい列に。終わりにDateの行と空行）
 func respHead(r Response, keep bool, v10 bool, enc int) []byte {
     mut h := mut []byte{}
     put := (p []byte) => {
@@ -2678,10 +3218,11 @@ func respHead(r Response, keep bool, v10 bool, enc int) []byte {
     }
     ln := r.length
     putHead(put, put1, r, keep, v10, enc, if r.stream == nil { len(r.body) } else if ln != nil { ln } else { -1 })
+    h = sysAppendDate(h)
     return freeze(h)
 }
 
-// 任意ヘッダ f が書けるか（名前は tchar の 1 文字以上・値に CR / LF / NUL が無い・std/http/server が書く名前でも保存の方針と検証子の名前でも Set-Cookie でもない
+// 任意ヘッダ f が書けるか（名前は tchar の 1 文字以上・値がfield-value〔valueOk〕・std/http/server が書く名前〔Dateを含む〕でも保存の方針と検証子の名前でも Set-Cookie でもない
 // — でなければpanic(BadHeader)。保存の方針は型のフィールドcacheだけで書く: 共有キャッシュへの宣言を文字列に書けるとanalyzerが方針を値として見られない。
 // Set-Cookieは型のフィールドcookiesだけで書く: 文字列で書けるとSecure / HttpOnly / SameSiteの既定を迂回できる）
 func checkField(f http.Field) {
@@ -2690,14 +3231,82 @@ func checkField(f http.Field) {
     }
 }
 
+// putHeadの一般のパスで、アプリの値のままでは書けない欄の名前（BadHeaderのname。書けるなら空）:
+// "status" = 200〜999の外（1xxは最終のレスポンスにならない。RFC 9110 15.2・2.2）か、204 / 205 / 304に本文（15.3.5・15.3.6・15.4.5）・
+// "Content-Encoding" = Codedのencodingがtokenでない（enc 3で書くとき）・
+// 任意ヘッダの名前 = checkFieldの外か、1行だけの欄（singleField）の同じ名前（大小を無視）の2本目。
+// 表に無い欄は2本目も書ける（RFC 9110 5.3が2行を禁じるのは、リストでない欄だけ）
+func badField(r Response, enc int) string {
+    code := int(r.status)
+    if code < 200 || code > 999 {
+        return "status"
+    }
+    if (code == 204 || code == 205 || code == 304) && (len(r.body) > 0 || r.stream != nil) {
+        return "status"
+    }
+    cd := r.coded
+    if enc == 3 && cd != nil && cd.encoding != "" && !tokenRun(bytes(cd.encoding), 0, len(bytes(cd.encoding))) {
+        return "Content-Encoding"
+    }
+    fs := r.headers
+    if fs != nil {
+        list := fs.list
+        mut i := 0
+        while i < len(list) {
+            if !fieldOk(list[i]) {
+                return list[i].name
+            }
+            nb := bytes(list[i].name)
+            mut j := if singleField(nb) { 0 } else { i }
+            while j < i {
+                if eqFold(nb, 0, len(nb), bytes(list[j].name)) {
+                    return list[i].name
+                }
+                j += 1
+            }
+            i += 1
+        }
+    }
+    return ""
+}
+
+// nameが、仕様が1行だけと定めた欄（ABNFがリストでない）の名前か（大小を無視）。ライブラリが書く欄（Date・Content-Type・Content-Length・ETag・
+// Last-Modifiedなど）はfieldOkが名前ごと拒否するので、ここには載せない。根拠の節は準拠の文書の表
+func singleField(name []byte) bool {
+    names := []string{"location", "content-location", "content-range", "retry-after", "server", "age", "expires", "content-disposition", "strict-transport-security", "x-frame-options"}
+    for n <- names {
+        if eqFold(name, 0, len(name), bytes(n)) {
+            return true
+        }
+    }
+    return false
+}
+
+// cがfield-valueに置ける字か（VCHAR・obs-text・SP・HTAB）
+func fieldByte(c byte) bool {
+    x := int(c)
+    return x >= 0x20 && x != 0x7f || x == 0x09
+}
+
+// bがfield-valueか（RFC 9110 5.5: field-vchar・SP・HTABの列で、前後に空白が無い。空はよい）
+func valueOk(b []byte) bool {
+    n := len(b)
+    if n > 0 && (b[0] == ' ' || b[0] == '\t' || b[n - 1] == ' ' || b[n - 1] == '\t') {
+        return false
+    }
+    for x <- b {
+        if !fieldByte(x) {
+            return false
+        }
+    }
+    return true
+}
+
 func fieldOk(f http.Field) bool {
     nb := bytes(f.name)
     vb := bytes(f.value)
-    mut bad := len(nb) == 0 || !tokenRun(nb, 0, len(nb))
-    for x <- vb {
-        bad = bad || x == '\r' || x == '\n' || x == 0
-    }
-    names := []string{"content-type", "content-length", "content-encoding", "transfer-encoding", "connection", "vary", "cache-control", "cdn-cache-control", "surrogate-control", "etag", "last-modified", "set-cookie"}
+    mut bad := len(nb) == 0 || !tokenRun(nb, 0, len(nb)) || !valueOk(vb)
+    names := []string{"date", "content-type", "content-length", "content-encoding", "transfer-encoding", "connection", "vary", "cache-control", "cdn-cache-control", "surrogate-control", "etag", "last-modified", "set-cookie"}
     for n <- names {
         bad = bad || eqFold(nb, 0, len(nb), bytes(n))
     }

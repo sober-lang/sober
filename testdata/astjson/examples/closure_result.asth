@@ -1,0 +1,8 @@
+@@full	69238355039388d5	408	8925
+@head	f8802cba5eefdec2	0	31
+func adder	a5310afdc823618a	15	616
+func genOf	40a668beba851198	5	267
+func main	42477664c3a1ba4a	23	776
+func wrap	c72824152902a910	5	312
+type Gen	a25196da1ac830db	3	146
+type Resp	37417c81fdac3977	2	113

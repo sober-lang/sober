@@ -6,7 +6,7 @@ import FeatherweightSober.Syntax
 実行できる述語（証明の対象ではない — Checker の外）。コア AST の上の抽象解釈で、次のどれかが起こりうるなら偽:
 
 - 凍結した buffer への書き（setidx / setm / delm — freeze の後の書き。古い別名・欄・ループの次の周回を含む）
-- 凍結した buffer に届く mut のセルを callM へ渡す（呼び先が書きうる）。関数値の呼び出し（callv / callMv）は呼び先が静的に
+- 凍結した buffer に届く mut のセルを call へ渡す（呼び先が書きうる）。関数値の呼び出し（callv）は呼び先が静的に
   分からないので、実引数の届くセル全部を書きうるとみなす
 - Def の中で、仮引数（呼び手の持ち物）の buffer を freeze する（U1 の仮引数）
 - Def の mut の仮引数の buffer が戻り値で呼び出しを越えて逃げる（U3 の戻り値の側 — 別の仮引数への逃げはコアで仮引数の境目が
@@ -79,7 +79,7 @@ def mutCont : Ty → Bool
   | .prod l r => mutCont l || mutCont r
   | _ => false
 
-/-- callM の実引数のうち、呼び先が中身を書きうるセル（仮引数の型が `ref mut <mut のコンテナ>` の位置） -/
+/-- call の実引数のうち、呼び先が中身を書きうるセル（仮引数の型が `ref mut <mut のコンテナ>` の位置） -/
 def mutCells : Ty → AV → List Nat
   | .prod l r, .pair a b => union (mutCells l a) (mutCells r b)
   | .ref m _ inner, v => if m && mutCont inner then v.allRefs else []
@@ -99,11 +99,11 @@ structure St where
   params : List (Nat × Nat) := []
   /-- Def の mut の仮引数から届く buffer の印（freeze したら U1 違反） -/
   mutIds : List Nat := []
-  /-- 関数表（callM の呼び先の仮引数の型 — mut のコンテナのセルだけを見る） -/
+  /-- 関数表（call の呼び先の仮引数の型 — mut のコンテナのセルだけを見る） -/
   defs : List Def := []
   /-- std の信頼の口の Def（コア JSON の `"trust":true` — std/table.Freeze・std/strings.Clone。U1 の仮引数・U3 を見ない — language.md 17 節） -/
   trusted : Bool := false
-  /-- 呼び先が std の信頼の口か（呼び手の側の要約 — callM） -/
+  /-- 呼び先が std の信頼の口か（呼び手の側の要約 — call） -/
   trustF : Nat → Bool := fun _ => false
   deriving Inhabited
 
@@ -225,32 +225,17 @@ partial def ev (env : List AV) (e : Expr) (s : St) : AV × St :=
     (.pair va vb, s)
   | .fst a => let (v, s) := ev env a s; (v.fst, s)
   | .snd a => let (v, s) := ev env a s; (v.snd, s)
-  | .call _ _ a =>
-    -- 実引数は loc-free（呼び先は mut を書けない）— 結果は実引数の届き先か新しい buffer
-    let (v, s) := ev env a s
-    let (b, s) := s.fresh
-    (.bufs (union (D s v) [b]), s)
-  | .callv f a =>
-    -- 関数値の型の仮引数は mut を持ちうる（fn は loc-free — `fn (ref true 0 T) R` も整形で、callv はそれを型付ける）。
-    -- 呼び先は静的に分からないので、callMv と同じく実引数の届くセル全部を書きうるとみなす
+  | .callv _ f a =>
+    -- 関数値の呼び出し: 関数値の型の仮引数は mut を持ちうる（`fn (ref true 0 T) R` も整形）。閉包の env の mut のセル（借りの mut の捕捉）も
+    -- 呼び先が書きうる。呼び先の Def は静的に分からないので、実引数の届くセル全部を書きうるとみなす（call の保守側）
     let (_, s) := ev env f s
     let (v, s) := ev env a s
     let s := if (D s (.refs v.allRefs)).any (fun b => s.frozen.contains b) then
       s.fail "callv: a mut argument reaches a frozen buffer" else s
     let s := v.allRefs.foldl (fun s c => let (b, s) := s.fresh; s.setCell c ((s.cell c).join (.bufs [b]))) s
     let (b, s) := s.fresh
-    (.bufs (union (D s v) [b]), s)
-  | .callMv _ f a =>
-    -- anchor つきの関数値の呼び出し（L1）: 閉包の env の mut のセル（借りの mut の捕捉）を呼び先が書きうる — 呼び先の Def は
-    -- 静的に分からないので、実引数の届くセル全部を書きうるとみなす（callM の保守側）
-    let (_, s) := ev env f s
-    let (v, s) := ev env a s
-    let s := if (D s (.refs v.allRefs)).any (fun b => s.frozen.contains b) then
-      s.fail "callMv: a captured mut reaches a frozen buffer" else s
-    let s := v.allRefs.foldl (fun s c => let (b, s) := s.fresh; s.setCell c ((s.cell c).join (.bufs [b]))) s
-    let (b, s) := s.fresh
     (.bufs (union (deep s 4 v.allBufs) [b]), s)
-  | .callM fn _ a =>
+  | .call _ fn _ a =>
     let (v, s) := ev env a s
     -- 呼び先は mut の実引数のセル（仮引数の型が mut のコンテナの位置）を書きうる: 凍結した buffer に届くなら拒否（U2 の mut 渡し）。
     -- imm の欄（string のゼロ値 = 凍結した空の slice 等）から届く凍結は書かれない
@@ -258,7 +243,7 @@ partial def ev (env : List AV) (e : Expr) (s : St) : AV × St :=
       | some d => mutCells d.param v
       | none => v.allRefs
     let s := if (D s (.refs wc)).any (fun b => s.frozen.contains b) then
-      s.fail "callM: a mut argument reaches a frozen buffer" else s
+      s.fail "call: a mut argument reaches a frozen buffer" else s
     if s.trustF fn then
       -- 信頼の口（U1・U3 を免除した呼び先）の呼び手の側の要約 = 取り出し形: mut の実引数から届く buffer（ヘッダと中身）は凍って結果へ移り、
       -- 実引数のセルは新しい値に戻る。呼び手の手元に残った同じ buffer の別名からの後の書きは U2 で拒否される（外からの構築で別名を
@@ -441,17 +426,17 @@ def check (Δ : Defs) (mask : Nat → Bool) (e : Option Expr) (trust : Nat → B
       let (_, s) := ev [] e { defs := Δ, trustF := trust }
       s.err.map (fun m => (m, -1))
 
-/-- 関数値の呼び出しが mut の仮引数で凍結した buffer へ書く形（コアは同じ深さの callv で型付ける — mut 仮引数の Def の fnref は
-`fn (ref true 0 …) …`）。callM で呼んだ同じ形と同じく偽 -/
+/-- 関数値の呼び出しが mut の仮引数で凍結した buffer へ書く形（mut 仮引数の Def の fnref は
+`fn (ref true 0 …) …`）。call で呼んだ同じ形と同じく偽 -/
 private def wDefs : Defs :=
   [ { param := .ref true 0 (.slice true 0 .int), ret := .int,
       body := .letE (.setidx (.deref (.var 0)) (.lit 0) (.lit 1)) (.lit 0) } ]
 private def wMain (call : Expr → Expr) : Expr :=
   .block (.letE (.alloc true (.mkslice true .int)) (.letE (.freeze (.deref (.var 0))) (call (.var 1))))
-example : check wDefs (fun _ => true) (some (wMain (.callv (.fnref 0 [])))) =
+example : check wDefs (fun _ => true) (some (wMain (.callv 0 (.fnref 0 [])))) =
     some ("callv: a mut argument reaches a frozen buffer", -1) := by native_decide
-example : check wDefs (fun _ => true) (some (wMain (.callM 0 []))) =
-    some ("callM: a mut argument reaches a frozen buffer", -1) := by native_decide
+example : check wDefs (fun _ => true) (some (wMain (.call 0 0 []))) =
+    some ("call: a mut argument reaches a frozen buffer", -1) := by native_decide
 
 /-- 信頼の口の呼び手の側の要約（取り出し形）: 信頼の口 Def 0 が mut の仮引数の中身を凍らせて返す。呼び手が同じ buffer の別名を手元に
 残して呼ぶと、後の別名からの書きは U2（外からの構築で Table / Arena に別名を与えた形の述語の側 — 表層は language.md 20 節が拒否）。
@@ -463,12 +448,12 @@ private def tTrust : Nat → Bool := fun i => i == 0
 -- セル m（中身 b）の別名 x = deref m を残して信頼の口へ渡し、x に書く
 private def tAlias : Expr :=
   .block (.letE (.alloc true (.mkslice true .int)) (.letE (.deref (.var 0))
-    (.letE (.callM 0 [] (.var 1)) (.setidx (.var 1) (.lit 0) (.lit 1)))))
+    (.letE (.call 0 0 [] (.var 1)) (.setidx (.var 1) (.lit 0) (.lit 1)))))
 -- 別名なし: 呼んだ後に同じセルの中身へ書き、もう一度信頼の口へ渡す
 private def tReuse : Expr :=
   .block (.letE (.alloc true (.mkslice true .int))
-    (.letE (.callM 0 [] (.var 0))
-      (.letE (.setidx (.deref (.var 1)) (.lit 0) (.lit 1)) (.callM 0 [] (.var 2)))))
+    (.letE (.call 0 0 [] (.var 0))
+      (.letE (.setidx (.deref (.var 1)) (.lit 0) (.lit 1)) (.call 0 0 [] (.var 2)))))
 example : check tDefs (fun _ => true) (some tAlias) tTrust = some ("U2: write (setidx) to a frozen buffer", -1) := by native_decide
 example : check tDefs (fun _ => true) (some tReuse) tTrust = none := by native_decide
 -- 信頼の口でない呼び先（U3 で中身は返らない読み）では同じ形は通る — 要約は信頼の口だけに掛かる

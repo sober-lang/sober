@@ -5,17 +5,24 @@
 # （Serveの時間 × 往復した客の数 ÷ 往復の和）。
 # 判定: maxWait ≤ STARVE_FLOOR_MS + STARVE_K × 1周の時間（既定60 ms + 100 × 1周）。maxWaitは起動の山（512本のspawn・dial・acceptの集中）を含み、
 # FIFOでも1周の数十倍になる。床は、その山とOSの奪い（gatesの並列）の数十msの揺れを偽赤にしないため。的は1周の数百倍以上待つtaskが出るクラス。
-# 往復が0（客が走らなかった）はFAIL。
+# 往復が0（客が走らなかった）はFAIL。客のtaskは未着手の子の列を通るので、1回以上往復した客がCLIENTS本に満たなければ赤
+# （飽和の間も未着手の子がN周に1回走る保証。language.md 28節「実行待ちの列の順」）。
 #   scripts/starve.sh            網（ROUNDS回。既定1）
 #   scripts/starve.sh --mutants  検出率の確認: 変異93（新しい側から取る）・98（新しい側から取り、1024周に1回だけ底から取る。待ちは有界だが
-#                                1周の定数倍で抑えられない）・29（溢れの列の順を崩す・環の容量8）が赤になること。28（環の容量8で溢れのパスを毎回通す）は緑のまま
+#                                1周の定数倍で抑えられない）・29（溢れの列の順を崩す・環の容量8）・99（未着手の子の列をN周に1回取らない。
+#                                客が走り始めない）が赤になること。28（環の容量8で溢れのパスを毎回通す）は緑のまま
 set -uo pipefail
 cd "$(dirname "$0")/.."
 S2=${STAGE2:-out/stage2/sober2}
+source scripts/gatelib.sh
+need_nofile starve 8192; rc=$?
+[ $rc = 2 ] && exit 1
+[ $rc = 1 ] && exit 0
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 FLOOR=${STARVE_FLOOR_MS:-60}
 K=${STARVE_K:-100}
+CLIENTS=512   # testdata/starve/starve.soberのCLIENTS
 # run <tag> [buildの引数…] → 0 = 緑・1 = 赤（各回の行を出す）
 run() {
     local tag=$1; shift
@@ -31,6 +38,7 @@ run() {
     sm=$(echo "$line" | sed -n 's/^maxWait_us=[0-9]* rounds=[0-9]* active=[0-9]* serve_ms=\([0-9]*\)$/\1/p')
     if [ "$ec" != 0 ] || [ -z "$mw" ]; then echo "starve: FAIL $tag — exit $ec ($(head -c 200 "$W/$tag.err"))"; return 1; fi
     if [ "$rd" = 0 ]; then echo "starve: FAIL $tag: no round trip (not saturated)"; return 1; fi
+    if [ "$ac" -lt "$CLIENTS" ]; then echo "starve: RED $tag: only ${ac} of ${CLIENTS} clients made a round trip (unstarted children starve)"; return 1; fi
     # 1周（µs）と上限（µs）
     local cyc lim
     cyc=$((sm * 1000 * ac / rd))
@@ -40,7 +48,7 @@ run() {
 }
 if [ "${1:-}" = "--mutants" ]; then
     fail=0
-    for m in 93 98 29; do
+    for m in 93 98 29 99; do
         for r in $(seq ${ROUNDS:-3}); do
             run m$m-$r --rt-mutant=$m; ec=$?
             [ $ec = 1 ] || { echo "starve: mutant $m not detected (round $r)"; fail=1; }

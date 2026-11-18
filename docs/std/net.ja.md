@@ -129,6 +129,31 @@ b を全部 c へ送る（同期 — 短い書きは続きから・MSG\_NOSIGNAL
 func Serve(l Listener, h func(Conn) error?, budget int?, conns int?, reject string?, region int?, backlog int?) error?
 ```
 
-lの接続を受けるたびに接続1本 = task 1本でhを走らせる（acceptのループはstdが持つ — ワーカーごとに1本・lと同じ番地にSO\_REUSEPORTで足したlistenerで受ける）。hは `func(c net.Conn) error?`（名前つき関数をそのまま — `net.Serve(l, echo, …)`。η 展開 — [language.md 25 節](../language.md)）。h の失敗は Serve が吸収する（接続を閉じて続ける — 数えるのは Serve のプールの Ledger の fail・死は died）。admission は名前つきプールのノード 1 つ（天井 = conns × budget バイト — 省略時は budget = 64 \* task.KB・conns = 10000）+ 接続ごとの SpawnIn（budget = 接続 1 本の上界）: 入れなければ reject の定数のバイト列を 1 回送って閉じる（既定は送らずに閉じる・利用者のコードは走らせない）。h の死は Serve の scope が吸収して Serve は続く。受けた Conn はServe が閉じる（接続の task の登録簿 — 死んでも出口で閉じる）。Serve が返るのは listener の失敗か、Serve を包む scope の期限（accept の待ちが切れる）— 走っている接続の決着を待ってから。listenerの失敗は1つでも全部のループを止める（残りのlistenerをshutdown — 受けていないlistenerに接続が振られて残らないように）: 以後lはlistenしていない。Serve が足した listener は Serve が閉じる・l は Listen が閉じる。region = 接続の task の region 1 つの上限（既定 128 \* task.MB・2 の冪に切り上げ・1 MiB 未満は 1 MiB・子の task の既定〔512 MiB〕より大きくはならない）: 超えるとその接続の task の死（RegionExceeded{cause: slot\_capacity} — Serve が吸収し Ledger の died が数える）。小さいスロットは既定のスロットを割って深度ごとに 1 本（接続数 × 深度ぶんの VA を減らす — [language.md 11 節](../language.md)「接続の task の小さいスロット」）。backlog = 接続の task とその子が列に積んでおける未着手の子の本数（1〜255・既定 255 — task.Run の backlog: と同じ。観測は task.Ledger() の backlog / backlogYield）
+lの接続を受けるたびに接続1本 = task 1本でhを走らせる（acceptのループはstdが持つ — ワーカーごとに1本・lと同じ番地にSO\_REUSEPORTで足したlistenerで受ける）。hは `func(c net.Conn) error?`（名前つき関数をそのまま — `net.Serve(l, echo, …)`。η 展開 — [language.md 25 節](../language.md)）。h の失敗は Serve が吸収する（接続を閉じて続ける — 数えるのは Serve のプールの Ledger の fail・死は died）。admission は名前つきプールのノード 1 つ（天井 = バイト + ワーカー数 × ワーカーごとの作業の分 — 作業の分 = ワーカーで走っているtaskが予約を越えて借りる分）+ 接続ごとの SpawnIn（budget = 接続 1 本の上界・省略時は 64 \* task.KB）。天井のバイトは、conns があれば conns × (budget + task.Fixed())（task.Fixed() = taskの固定費。本数の天井も conns）、無ければ根の天井の残りからlistener の待ち行列とランタイムの列の分を引いた量（本数の天井なし — 入場はバイトの天井で決まる）。入れなければ reject の定数のバイト列を 1 回送って閉じる（利用者のコードは走らせない）。reject を省けば、受けた接続を listener ごとのランタイムの列で待たせ、空きができたら列のいちばん新しい接続から入れる。列が上限に達したら、いちばん長く待った接続を閉じる（shed に数える）。入場を待つ接続があるときは、受けの無い・遅い入場済みの接続から切って枠を取り戻す（Ledger の evicted）。io\_uring の経路でない構成は、カーネルの待ち行列で到着順に待つ。listener の backlog は根の天井の残りから導いた値に置き直す。task.Ledger() の pools には、このプロセスの Serve の全部（tls.Serve も）の親の節が1行ある（parent が -1・conns = 0）。h の死は Serve の scope が吸収してServe が閉じる（接続の task の登録簿 — 死んでも出口で閉じる）。Serve が返るのは listener の失敗か、Serve を包む scope の期限（accept の待ちが切れる）— 走っている接続の決着を待ってから。listenerの失敗は1つでも全部のループを止める（残りのlistenerをshutdown — 受けていないlistenerに接続が振られて残らないように）: 以後lはlistenしていない。Serve が足した listener は Serve が閉じる・l は Listen が閉じる。region = 接続の task の region 1 つの上限（既定 128 \* task.MB・2 の冪に切り上げ・1 MiB 未満は 1 MiB・子の task の既定〔512 MiB〕より大きくはならない）: 超えるとその接続の task の死（RegionExceeded{cause: slot\_capacity} — Serve が吸収し Ledger の died が数える）。小さいスロットは既定のスロットを割って深度ごとに 1 本（接続数 × 深度ぶんの VA を減らす — [language.md 11 節](../language.md)「接続の task の小さいスロット」）。backlog = 接続の task とその子が列に積んでおける未着手の子の本数（1〜255・既定 255 — task.Run の backlog: と同じ。観測は task.Ledger() の backlog / backlogYield）
 
 失敗のラベル: `io.Closed`・`io.Timeout`・`io.Expired`・`io.Denied`・`io.Other`
+
+## WaitView
+
+```sober
+type WaitView struct {
+    waiting int
+    limit int
+}
+```
+
+受け付けを待っている接続の数（読んだ時点の値）と、その上限
+
+フィールド:
+
+- `waiting` — このプロセスの net.Serve・tls.Serve の全 listener の、受け付けの待ち行列の長さと、受けて入場していないランタイムの列の本数と、入場を待って受け付けのループが手に持っている接続の数の和
+- `limit` — 全 listener の待ち行列の大きさの和（waiting がこれに張り付いていれば、新しい接続はカーネルが落として相手の SYN の再送で待つ）
+
+## Waiting
+
+```sober
+@effects(nondet)
+func Waiting() WaitView
+```
+
+このプロセスの Serve が受け付けを待たせている接続の数（task.Ledger と同じく読んだ時点の値 — 入場が埋まると増える。スケールアウトの判断に読む）。listener ごとに TCP\_INFO（listener では tcpi\_unacked = 待ち行列の長さ・tcpi\_sacked = 大きさ）を 1 回読む。断った接続は task.Ledger() の shed

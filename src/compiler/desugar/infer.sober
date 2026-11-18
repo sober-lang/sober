@@ -146,6 +146,9 @@ func computeTy0(st mut S, e NodeRef, eb int, ef int) TyRef {
         // リテラルはコアの strlit と同じ点の最内 region（expr.sober の cStrlit と同じ座標）で読む — 宣言の座標（tString = r0）で読むと
         // ブロックの出口の付け替え（R5）が「region が上にない」と見て発火しない。Def 呼び出しの実引数の位置は call.sober が別に扱う
         return tSlice(mut st, false, st.rdepth - 1, tByte(mut st), true)
+    case ast.EEmbed:
+        // @embed の []byte: strlit と同じ点の最内 region の imm []byte（string の印なし）
+        return tSlice(mut st, false, st.rdepth - 1, tByte(mut st), false)
     case ast.EIndex:
         bt := computeTy(mut st, nA(nodeOf(mut st, e)), eb, ef)
         if bt == -1 {
@@ -353,6 +356,16 @@ func compositeTy(st mut S, e NodeRef, eb int, ef int) TyRef {
         venv := if lenL(mut st, targs) > 0 { genericEnv(mut st, st.curPkg, vdr, targs, at) catch return -1 } else { st.tenv }
         return recDrTy(mut st, declRef(mut st, int(vr.decl), vr.pkg, venv), 0, at) catch TyRef(-1)
     }
+    // 総称のunionのvariantの型引数（`Ok[int]{…}`）はunionの型の環境に束ねて引く（再帰の分岐と同じ。無いと型引数の推論の材料にならない）
+    targs := lC(nodeOf(mut st, e))
+    if lenL(mut st, targs) > 0 {
+        genv := genericEnv(mut st, st.curPkg, declRef(mut st, int(vr.decl), vr.pkg, -1), targs, at) catch return -1
+        saved := st.tenv
+        st.tenv = genv
+        t := unionTreeTy(mut st, vr.pkg, vr.decl, 0, at, TYFUEL) catch TyRef(-1)
+        st.tenv = saved
+        return t
+    }
     return unionTreeTy(mut st, vr.pkg, vr.decl, 0, at, TYFUEL) catch TyRef(-1)
 }
 
@@ -458,6 +471,9 @@ func callTy(st mut S, e NodeRef, eb int, ef int) TyRef {
     fi := findFn(mut st, callee, eb)
     if fi < 0 {
         // 名前付き関数型への変換 `W(e)` の型はWのクロージャの型（関数でなかったときだけ見る — 名前は関数と型で衝突しない）
+        if kindN(mut st, callee0) == ast.EFieldTy {
+            return if skip == 0 && na == 1 { fieldConvTy(mut st, callee0, e) } else { TyRef(-1) }
+        }
         fcd := if skip == 0 && na == 1 { fnConvDr(mut st, callee0, eb) } else { -1 }
         return if fcd >= 0 { fnConvTy(mut st, fcd, e) } else { TyRef(-1) }
     }
@@ -548,6 +564,9 @@ func declOfExpr(st mut S, e NodeRef, eb int, ef int) int {
         fi := findFn(mut st, callee, eb)
         if fi < 0 {
             // 変換 `W(e)` の値の宣言はW（値化可能な named fn type — クロージャの値の束縛として呼べる）
+            if kindN(mut st, callee) == ast.EFieldTy {
+                return if skip == 0 { fieldConvDecl(mut st, callee, e) } else { -1 }
+            }
             fcd := if skip == 0 && explicit == -1 && lenL(mut st, lB(nodeOf(mut st, e))) == 1 { fnConvDr(mut st, callee, eb) } else { -1 }
             if fcd >= 0 {
                 return fcd
@@ -859,14 +878,17 @@ func targetTy(st mut S, target NodeRef, eb int, ef int) TyRef {
     return -1
 }
 
-// call 結果の imm slice / map を呼び手座標（最内 region）で読む（mut を含むものは -1）
+// call 結果の imm slice / map / 型変数を呼び手座標（最内 region）で読む（mut を含むものは -1）
 func callResultTop(st mut S, rt TyRef) TyRef {
-    if tyArgOk(mut st, rt) {
+    if regionFree(mut st, rt) && !wrapsVar(mut st, rt) {
         return rt
     }
     r := st.rdepth - 1
     k := tg(mut st, rt)
     switch k {
+    case TVar:
+        // 型変数の値も imm の器と同じく呼び手の最内へ（Lean の tsubst の atR と relocA。kind が rf なら検査器へ写すところで 0 に揃う）
+        return tVarAt(mut st, rt, r)
     case TSl:
         if tMutBit(mut st, rt) != 0 {
             return -1
@@ -1068,9 +1090,18 @@ func typeNameOf(st mut S, e NodeRef) NodeRef {
 func inferTs(st mut S, fi int, cn NodeRef, explicit NodeRef, args ListRef, eb int, ef int, at NodeRef, inl bool) (ListRef, error?) {
     ts, err := inferTs0(mut st, fi, explicit, args, eb, ef, at, inl)
     if st.ydiff != 0 {
-        yCompareTArgs(mut st, cn, ts, err == nil)
+        yCompareTArgs(mut st, cn, ts, err == nil, args, eb, ef)
     }
-    return ts, err
+    if err != nil {
+        return 0, err
+    }
+    // 匿名の関数型は借りで、格納も返却もしない（spec F-20）ので型引数にならない。値として渡す関数は名前付き関数型で書く
+    for i <- iter.Range(0, lenL(mut st, ts)) {
+        if tg(mut st, latTy(mut st, ts, i)) == TFn {
+            return 0, diag.TypeMismatch{at: posOf(mut st, at), kind: 11}
+        }
+    }
+    return ts, nil
 }
 
 func inferTs0(st mut S, fi int, explicit NodeRef, args ListRef, eb int, ef int, at NodeRef, inl bool) (ListRef, error?) {
@@ -1117,18 +1148,35 @@ func inferTs0(st mut S, fi int, explicit NodeRef, args ListRef, eb int, ef int, 
     for i <- iter.Range(0, n) {
         t := latTy(mut st, binds, i)
         if t == -1 {
+            if anonFnTArg(mut st, fi, ps, args, ef, i) {
+                return 0, diag.TypeMismatch{at: posOf(mut st, at), kind: 11}
+            }
             return 0, diag.CoreFragment{at: posOf(mut st, at)}
         }
-        if inl {
-            if !tyArgValueOk(mut st, t) {
-                return 0, diag.CoreFragment{at: posOf(mut st, at)}
-            }
-        } else if !tyArgOk(mut st, t) {
-            // Def として呼ぶジェネリックの型引数は region もチャネルも持てない（language.md 31 節 R1 — 撤去は R3 として積み）
-            return 0, diag.TypeMismatch{at: posOf(mut st, at), kind: 5}
+        // Def として呼ぶジェネリックの型引数の条件は検査器の kindsArgsOk（呼び出しの規則）だけが見る
+        if inl && !tyArgValueOk(mut st, t) {
+            return 0, diag.CoreFragment{at: posOf(mut st, at)}
         }
     }
     return binds, nil
+}
+
+// i番目の型パラメータが、型がちょうどその型パラメータ（かそのoption）の仮引数へ置いたラムダか展開の位置の関数値（匿名の関数型の値）
+// からだけ決まる呼び出しか。型引数は匿名の関数型になる
+func anonFnTArg(st mut S, fi int, ps ListRef, args ListRef, ef int, i int) bool {
+    tp := StrRef(latI(mut st, fnTParams(mut st, fi), i))
+    for k <- iter.Range(0, lenL(mut st, ps)) {
+        pt0 := nB(nodeOf(mut st, latN(mut st, ps, k)))
+        pt := if pt0 != -1 && kindN(mut st, pt0) == ast.TOpt { nA(nodeOf(mut st, pt0)) } else { pt0 }
+        if pt == -1 || kindN(mut st, pt) != ast.TName || !strEq(mut st, sA(nodeOf(mut st, pt)), tp) {
+            continue
+        }
+        a := latN(mut st, args, k)
+        if kindN(mut st, a) == ast.ELambda || (kindN(mut st, a) == ast.EIdent && lookupF(mut st, ef, sA(nodeOf(mut st, a))) >= 0) {
+            return true
+        }
+    }
+    return false
 }
 
 // 実引数の型を仮引数の型の型（型変数は ph）へ単一化して binds を埋める（skipConst なら型なしの定数の実引数は見ない）
@@ -1982,8 +2030,12 @@ func retExprTy(st mut S, e NodeRef, eb int, ef int) TyRef {
             if se == -1 {
                 return computeTy(mut st, e, eb, ef)
             }
+            // 分岐の束縛（`case Some{v}: v`）はswitchの外の環境で引けないので、型が求まらない分岐はswitchの式全体の型で読む
             ti := retExprTy(mut st, se, eb, ef)
-            if ti == -1 || (t != -1 && !tyEql(mut st, t, ti)) {
+            if ti == -1 {
+                return computeTy(mut st, e, eb, ef)
+            }
+            if t != -1 && !tyEql(mut st, t, ti) {
                 return -1
             }
             t = ti

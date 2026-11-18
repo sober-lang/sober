@@ -1,0 +1,15 @@
+@@full	05540e2f6a1a8986	2429	67156
+@head	ba9738254f9efdf4	0	168
+const ASCII_FAST_MAX	1f1a68ff068f1d43	1	56
+const CHECK_GRAIN	7b8987d056142164	1	57
+const CHECK_PAR_MIN	5e55c5252557dfb9	1	59
+func Bytes	af86578117d0a2ad	6	302
+func Check	058958e8c9f5f5fb	80	2718
+func Str	d88fba03cfd03ed8	39	1450
+func asciiPrefix	81082ba0de606a97	22	799
+func boundary	c24b2807cad27f0b	36	1238
+func chunkInvalid	7be8ca277659d790	26	982
+func indexInvalidFrom	df4d5f979aefa110	27	976
+func indexInvalidPar	36145cde138fb5d8	154	4996
+type View	f26f3d57a0a50f37	4	200
+type sealed	2260f4f780104936	1	68

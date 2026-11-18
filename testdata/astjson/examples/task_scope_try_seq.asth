@@ -1,0 +1,16 @@
+@@full	efddc634cb3a85f3	2006	49340
+@head	7b6f34d1a1ab8d6d	0	141
+func case1	17a113987276bdae	23	761
+func case2	537a1fc683d2fe8a	11	367
+func case3	cd97aa2b2b6f6c88	25	808
+func case4	09ed6bfe7b685130	23	729
+func case5	b01cc48a87996271	13	520
+func case6	84496eb7b8b7eeae	24	798
+func case7	e006bd3d617c0b43	16	547
+func get	a4f2b433b7a57f21	20	708
+func inner7	b03e270f288a5038	10	343
+func main	c16620165a0f8e23	90	2819
+func name	f7390630b1a5c3ae	19	707
+func show	eb3ea6937a028637	39	1513
+type Bad	a53642bb7d1a19de	2	112
+type Wrap	9072e1d237b41623	1	65

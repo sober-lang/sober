@@ -10,6 +10,7 @@ package checker
 // 意味の判定は一切しない（検査は checkAll が JSON 経由と同じ記録の上で行う）
 
 import "desugar"
+import "loader"
 import "std/io"
 import "std/iter"
 import "std/os"
@@ -29,8 +30,13 @@ func ctyOf(st mut S, tys []desugar.Ty, t int) int {
         if m != 0 {
             return m
         }
+        saw := st.sawTv
+        st.sawTv = false
         r := ctyOf0(mut st, tys, t)
-        table.Set(mut st.cty, t - desugar.TBASE, r)
+        if !st.sawTv {
+            table.Set(mut st.cty, t - desugar.TBASE, r)
+        }
+        st.sawTv = st.sawTv || saw
         return r
     }
     return ctyOf0(mut st, tys, t)
@@ -51,7 +57,11 @@ func ctyOf0(st mut S, tys []desugar.Ty, t int) int {
     case desugar.TUnit:
         return st.tUnit
     case desugar.TVar:
-        return mk(mut st, TVar, x.a, 0, 0)
+        // a = 添字・b = 置き直し先の region（出現の位置で決まる）・c = kind（旗を詰めた int — 検査器と同じ詰め方）。
+        // 変換中の Def の kind の列があればその kind で読み、置き直し先は Kind.place（rf なら 0）
+        st.sawTv = true
+        kd := if st.tvKs > 0 && x.a < table.Get(mut st.h, st.tvKs) { table.Get(mut st.h, st.tvKs + 1 + x.a) } else { x.c }
+        return mk(mut st, TVar, x.a, kPlace(kd, x.b), kd)
     case desugar.TOpt:
         y := ctyOf(mut st, tys, x.a)
         return mk(mut st, TOpt, y, 0, 0)
@@ -105,6 +115,20 @@ func ctsOf(st mut S, h []int, tys []desugar.Ty, l int) int {
     return at
 }
 
+// 脱糖器の kind の列 l（脱糖器のヒープの [n, k…]・-1 = 無し）をこの検査器のヒープへ写す（空は -1）
+func cksOf(st mut S, h []int, l int) int {
+    if l < 0 || h[l] == 0 {
+        return -1
+    }
+    n := h[l]
+    at := block(mut st, n + 1)
+    table.Set(mut st.h, at, n)
+    for i <- iter.Range(0, n) {
+        table.Set(mut st.h, at + 1 + i, h[l + 1 + i])
+    }
+    return at
+}
+
 // arith / cmp の種類（desugar の B*）を語の番号へ
 func binWord(b int) int {
     return switch b {
@@ -128,7 +152,7 @@ func binWord(b int) int {
 // 変換し終えてから組む前に要る子の数（葉は0）
 func kids(k int) int {
     return switch k {
-    case desugar.CLet | desugar.CAdd | desugar.CLt | desugar.CPair | desugar.CAssign | desugar.CWhile | desugar.CAppend | desugar.CEqs | desugar.CConcat | desugar.CCallv | desugar.CCallMv | desugar.CBin | desugar.CFBin | desugar.CIndex | desugar.CGetm | desugar.CDelm | desugar.CSend | desugar.CDexit: 2
+    case desugar.CLet | desugar.CAdd | desugar.CLt | desugar.CPair | desugar.CAssign | desugar.CWhile | desugar.CAppend | desugar.CEqs | desugar.CConcat | desugar.CCallv | desugar.CBin | desugar.CFBin | desugar.CIndex | desugar.CGetm | desugar.CDelm | desugar.CSend | desugar.CDexit: 2
     case desugar.CIte | desugar.CIfnil | desugar.CCase | desugar.CSetidx | desugar.CSubslice | desugar.CSetm | desugar.CSpawn: 3
     case desugar.CScope | desugar.CTry | desugar.CJoin | desugar.CRecv | desugar.CClose: 1
     case desugar.CSome | desugar.CFst | desugar.CSnd | desugar.CBlock | desugar.CDeref | desugar.CFreeze | desugar.CLen | desugar.CLenm | desugar.CKeysm | desugar.CClone | desugar.CToByte | desugar.CToInt | desugar.CFConv | desugar.CAnn | desugar.CBlockR | desugar.CCopyTo | desugar.CInl | desugar.CInr | desugar.CCall | desugar.CAlloc | desugar.CLabel | desugar.CJump | desugar.CFold | desugar.CUnfold | desugar.CDnew | desugar.CDenter: 1
@@ -232,8 +256,8 @@ func convExpr(st mut S, h []int, labs []desugar.Label, tys []desugar.Ty, cs []de
         if k == desugar.CVar {
             r = node(mut st, W_VAR, 0, a, 0, 0)
         }
-        if k == desugar.CLet || k == desugar.CAdd || k == desugar.CLt || k == desugar.CPair || k == desugar.CAssign || k == desugar.CWhile || k == desugar.CAppend || k == desugar.CEqs || k == desugar.CConcat || k == desugar.CCallv {
-            w := if k == desugar.CLet { W_LET } else if k == desugar.CAdd { W_ADD } else if k == desugar.CLt { W_LT } else if k == desugar.CPair { W_PAIR } else if k == desugar.CAssign { W_ASSIGN } else if k == desugar.CWhile { W_WHILE } else if k == desugar.CAppend { W_APPEND } else if k == desugar.CEqs { W_EQS } else if k == desugar.CConcat { W_CONCAT } else { W_CALLV }
+        if k == desugar.CLet || k == desugar.CAdd || k == desugar.CLt || k == desugar.CPair || k == desugar.CAssign || k == desugar.CWhile || k == desugar.CAppend || k == desugar.CEqs || k == desugar.CConcat {
+            w := if k == desugar.CLet { W_LET } else if k == desugar.CAdd { W_ADD } else if k == desugar.CLt { W_LT } else if k == desugar.CPair { W_PAIR } else if k == desugar.CAssign { W_ASSIGN } else if k == desugar.CWhile { W_WHILE } else if k == desugar.CAppend { W_APPEND } else if k == desugar.CEqs { W_EQS } else { W_CONCAT }
             r = node(mut st, w, 0, v0, v1, 0)
         }
         if k == desugar.CBin {
@@ -276,8 +300,8 @@ func convExpr(st mut S, h []int, labs []desugar.Label, tys []desugar.Ty, cs []de
             t := ctyOf(mut st, tys, a)
             r = node(mut st, K_BLOCKR, 0, v0, t, 0)
         }
-        if k == desugar.CCallMv {
-            r = node(mut st, W_CALLMV, 0, v0, v1, c)
+        if k == desugar.CCallv {
+            r = node(mut st, W_CALLV, 0, v0, v1, c)
         }
         if k == desugar.CCopyTo {
             t := ctyOf(mut st, tys, a)
@@ -295,8 +319,16 @@ func convExpr(st mut S, h []int, labs []desugar.Label, tys []desugar.Ty, cs []de
             r = node(mut st, if k == desugar.CInl { W_INL } else { W_INR }, 0, t, v0, 0)
         }
         if k == desugar.CCall {
+            saw := st.sawTv
+            st.sawTv = false
             ts := ctsOf(mut st, h, tys, c)
-            r = node(mut st, if d != 0 { W_CALLM } else { W_CALL }, 0, a, ts, v0)
+            if st.kRec && !st.sawTv {
+                table.Push(mut st.kcalls, a)
+                table.Push(mut st.kcalls, ts)
+            }
+            st.sawTv = st.sawTv || saw
+            // d = anchor
+            r = node6(mut st, W_CALL, 0, a, ts, v0, d)
         }
         if k == desugar.CFnref {
             ts := ctsOf(mut st, h, tys, b)
@@ -436,6 +468,10 @@ type CkOut struct {
     fails []int
     at int    // 最初に落ちた節の位置（PackPos — 0 = 無し・追跡なし）
     fpos []int // 落ちた Def ごとの [Def, PackPos]（perDef のとき）
+    kinds []int // 推論した kind の列（Def の順に [n, k…] — 型パラメータの無い Def は [0]）
+    kbad []int  // 型引数（型変数を含まない）が呼び先の kind を満たさない呼び出しの呼び先の Def（重複なし）
+    ka []int    // 最初に落ちた節が kind を満たさない呼び出しなら kindArgOf の組（でなければ空）
+    why []int   // 落ち方 [failWhy, 落ちた節の種類（W_*）, 本体の末尾の式の位置（failWhy = 2 のとき。PackPos・0 = 無し）]（落ちていなければ空）
 }
 
 // cのDefのうち [lo, hi) の本体と（withRootなら）根の式だけを変換して検査する（区間の外のDefは署名だけ — 部分検査の視点の外と
@@ -456,47 +492,128 @@ func checkCoreR(c desugar.Core, srcs []int, idx bool, collect bool, lo int, hi i
     }
     // 作業域はコアの大きさで決まる上界まで（毎回 XSTK × 4 + XLAB ≈ 106 万語を 0 埋めすると、小さい視点の検査では固定費が大半を占める）。
     // 枠と値の段数は「子への辺の総数」（子は高々 3 — kids）+ 根を越えないので、min(XSTK, 3 × 式の数 + 2) で溢れの判定は変わらない
-    cap := minI(XSTK, 3 * size + 2)
+    // 区間の外で変換する型パラメータを持つ Def の本体（kind の推論用）も作業域に収める
+    mut sz := size
+    for j <- iter.Range(0, len(srcs)) {
+        if (j < lo || j >= hi) && len(c.Kinds) == 0 && h[srcs[j] + 3] >= 0 && h[h[srcs[j] + 3]] > 0 {
+            b := bodySize(c.Exprs, h[srcs[j] + 2])
+            if b > sz {
+                sz = b
+            }
+        }
+    }
+    cap := minI(XSTK, 3 * sz + 2)
     fs := block(mut st, cap * 2)
     vs := block(mut st, cap * 2)
-    ls := block(mut st, minI(XLAB, size + 1))
+    ls := block(mut st, minI(XLAB, sz + 1))
     st.xcap = cap
-    st.lcap = minI(XLAB, size + 1)
+    st.lcap = minI(XLAB, sz + 1)
     // 関数表: 名前付き関数（宣言順）→ 持ち上げたラムダ（持ち上げ順）— defJson の順
     nd := len(srcs)
     ds := block(mut st, nd + 1)
     table.Set(mut st.h, ds, nd)
     st.defs = ds
     // 変換する仕事: 0..nd-1 = Defの本体、nd = 根の式（呼び出し点を1つにする — convExprは展開される）
+    // 親が推論した名前付きの Def の kind（c.Kinds — Def の順に [n, k…]）: その Def は推論せず、行をその kind で作る
+    mut kat := mut []int{}
+    mut fixed := mut []bool{}
+    mut kq := 0
+    for j0 <- iter.Range(0, nd) {
+        if kq < len(c.Kinds) {
+            kat = append(kat, kq)
+            fixed = append(fixed, c.Kinds[kq] > 0)
+            kq += 1 + c.Kinds[kq]
+        } else {
+            kat = append(kat, -1)
+            fixed = append(fixed, false)
+        }
+    }
     mut root := -1
     mut j := 0
+    st.kRec = true
     while j <= nd {
         src := if j < nd { srcs[j] } else { -1 }
-        e0 := if j < nd { if j >= lo && j < hi { h[src + 2] } else { -1 } } else { if withRoot { c.Root } else { -1 } }
+        inR := j < nd && j >= lo && j < hi
+        // 区間の外でも、型パラメータを持つ Def の本体は変換する（kind の推論が使う — 本番の検査は mask 0 で飛ばす）
+        e0 := if j < nd { if inR || (!fixed[j] && h[src + 3] >= 0 && h[h[src + 3]] > 0) { h[src + 2] } else { -1 } } else { if withRoot { c.Root } else { -1 } }
+        st.tvKs = if j < nd && fixed[j] { cksOf(mut st, c.Kinds, kat[j]) } else if j < nd { cksOf(mut st, h, h[src + 3]) } else { 0 }
+        if st.tvKs < 0 {
+            st.tvKs = 0
+        }
         // 本体の無いDef（部分検査の視点の外 — 署名だけ・mask 0）と根の式の無いCore（main以外のpackageの部分検査）は変換しない
+        st.sawTv = false
         r := if e0 < 0 { node(mut st, W_TRIV, 0, 0, 0, 0) } else { convExpr(mut st, h, c.Labels, c.Types, c.Exprs, e0, fs, vs, ls) }
         if r < 0 {
-            return CkOut{bytes("checker: too deep\n"), -2, []int{}, 0, []int{}}
+            return CkOut{bytes("checker: too deep\n"), -2, []int{}, 0, []int{}, []int{}, []int{}, []int{}, []int{}}
         }
         if j < nd {
             p := ctyOf(mut st, tys, h[src])
             rt := ctyOf(mut st, tys, h[src + 1])
-            table.Set(mut st.h, ds + 1 + j, rec5(mut st, p, rt, r, h[src + 3], if e0 < 0 { 0 } else { 1 }))
+            table.Push(mut st.noTv, if st.sawTv { 0 } else { 1 })
+            table.Set(mut st.h, ds + 1 + j, rec5(mut st, p, rt, r, if st.tvKs > 0 { st.tvKs } else { -1 }, if e0 < 0 || !inR { 0 } else { 1 }))
         } else {
             root = if e0 < 0 { -1 } else { r }
         }
         j += 1
     }
+    st.tvKs = 0
+    st.kRec = false
     st.cstk = block(mut st, (st.maxDepth + 4) * CF)
+    kx := KCx{c: c, srcs: srcs, fs: fs, vs: vs, ls: ls, fixed: freeze(fixed)}
+    if !inferKinds(mut st, kx) {
+        return CkOut{bytes("checker: too deep\n"), -2, []int{}, 0, []int{}, []int{}, []int{}, []int{}, []int{}}
+    }
     st.collect = collect
     st.defFail = -1
     st.perDef = pd
+    kb := kindBad(mut st)
     if idx {
         r := checkAll(mut st, root)
-        return CkOut{[]byte{}, if r == R_DEF { st.defFail } else { -1 }, failsOf(mut st), failPos(mut st), fposOut(mut st)}
+        return CkOut{[]byte{}, if r == R_DEF { st.defFail } else { -1 }, failsOf(mut st), failPos(mut st), fposOut(mut st), kindsOut(mut st), kb, kindArgOf(mut st, kx), failWhyOut(mut st)}
     }
     out := verdict(mut st, root)
-    return CkOut{out, st.defFail, failsOf(mut st), failPos(mut st), fposOut(mut st)}
+    return CkOut{out, st.defFail, failsOf(mut st), failPos(mut st), fposOut(mut st), kindsOut(mut st), kb, kindArgOf(mut st, kx), failWhyOut(mut st)}
+}
+
+// kRec の間に積んだ呼び出しのうち、型引数が呼び先の（推論した）kind を満たさないものの呼び先の Def
+func kindBad(st mut S) []int {
+    mut out := mut []int{}
+    mut q := 0
+    while q + 1 < table.Len(mut st.kcalls) {
+        a := table.Get(mut st.kcalls, q)
+        df := defGet(mut st, a)
+        if df >= 0 && !kindsArgsOk(mut st, defKinds(mut st, df), table.Get(mut st.kcalls, q + 1)) && !hasInt(mut out, a) {
+            out = append(out, a)
+        }
+        q += 2
+    }
+    return freeze(out)
+}
+
+// 関数表の行の kind の列（Def の順に [n, k…]）
+func kindsOut(st mut S) []int {
+    mut out := mut []int{}
+    n := table.Get(mut st.h, st.defs)
+    for j <- iter.Range(0, n) {
+        ks := table.Get(mut st.h, table.Get(mut st.h, st.defs + 1 + j) + 3)
+        m := if ks > 0 { table.Get(mut st.h, ks) } else { 0 }
+        out = append(out, m)
+        for i <- iter.Range(0, m) {
+            out = append(out, table.Get(mut st.h, ks + 1 + i))
+        }
+    }
+    return freeze(out)
+}
+
+// c の Kinds を ks（Def の順に [n, k…]）にしたもの
+func withKinds(c desugar.Core, ks []int) desugar.Core {
+    return desugar.Core{c.H, c.Labels, c.Types, c.Exprs, c.Defs, c.Lifted, c.Root, c.Orig, c.Use, c.DefFn, c.Aud, ks, c.Caps}
+}
+
+// c の型パラメータを持つ Def の kind を推論した結果（kindsOut の形。Def の本体は検査しない）
+func KindsCore(c desugar.Core) []int {
+    srcs := defSrcs(c)
+    return checkCoreR(c, srcs, true, false, 0, 0, false, 0, false).kinds
 }
 
 // 落ちた Def j の落ちた節 e の出所を積む（perDef）
@@ -539,6 +656,39 @@ func failPos(st mut S) int {
         i += 2
     }
     return 0
+}
+
+// 落ち方（CkOut.why）
+func failWhyOut(st mut S) []int {
+    if st.failE == 0 {
+        return []int{}
+    }
+    return []int{st.failWhy, nK(mut st, st.failE), if st.failWhy == 2 { tailPos(mut st, st.failE) } else { 0 }}
+}
+
+// 本体 e の末尾の式（関数の結果になる値）の出所: let の続き・ラベルと block の中身・ann と copyTo の値・jump の値を辿り、
+// 出所のある最も深い節の位置（PackPos。どれにも無ければ e の出所）
+func tailPos(st mut S, e int) int {
+    mut at := posOfNode(mut st, e)
+    mut x := e
+    mut fuel := 100000
+    while x > 0 && fuel > 0 {
+        k := nK(mut st, x)
+        x = switch k {
+        case W_LET | W_LABEL: nB(mut st, x)
+        case W_BLOCK | K_BLOCKR | W_ANN | W_COPYTO: nA(mut st, x)
+        case W_JUMP: nC(mut st, x)
+        default: 0
+        }
+        if x > 0 {
+            q := posOfNode(mut st, x)
+            if q != 0 {
+                at = q
+            }
+        }
+        fuel -= 1
+    }
+    return at
 }
 
 func failsOf(st mut S) []int {
@@ -647,6 +797,11 @@ func checkCoreX(c desugar.Core, idx bool, collect bool) CkOut {
     if len(rs) <= 1 {
         return checkCoreR(c, srcs, idx, collect, 0, len(srcs), true, len(c.Exprs), false)
     }
+    // kind は親が 1 回推論して区間の子へ渡す（子は推論せず、区間の外の本体も変換しない）
+    return checkCoreRs(withKinds(c, KindsCore(c)), srcs, rs, idx, collect)
+}
+
+func checkCoreRs(c desugar.Core, srcs []int, rs []DefRange, idx bool, collect bool) CkOut {
     mut most := 0
     for k <- iter.Range(0, len(rs)) {
         if rs[k].size > most {
@@ -675,7 +830,7 @@ func checkCoreX(c desugar.Core, idx bool, collect bool) CkOut {
         }
     }
     if deep {
-        return CkOut{bytes("checker: too deep\n"), -2, []int{}, 0, []int{}}
+        return CkOut{bytes("checker: too deep\n"), -2, []int{}, 0, []int{}, []int{}, []int{}, []int{}, []int{}}
     }
     if collect && len(fails) > 0 {
         def = fails[len(fails) - 1]
@@ -688,9 +843,34 @@ func checkCoreX(c desugar.Core, idx bool, collect bool) CkOut {
                 at = outs[k].at
             }
         }
-        return CkOut{if idx { []byte{} } else { defErrorOut() }, def, freeze(fails), at, []int{}}
+        return CkOut{if idx { []byte{} } else { defErrorOut() }, def, freeze(fails), at, []int{}, rt.kinds, kbadAll(outs, rt), []int{}, []int{}}
     }
-    return rt
+    return CkOut{rt.out, rt.def, rt.fails, rt.at, rt.fpos, rt.kinds, kbadAll(outs, rt), rt.ka, rt.why}
+}
+
+func hasInt(xs mut []int, x int) bool {
+    for i <- iter.Range(0, len(xs)) {
+        if xs[i] == x {
+            return true
+        }
+    }
+    return false
+}
+
+// 区間の子と根の kbad の和（Def の添字は区間で共通 — 同じ Core）
+func kbadAll(outs []CkOut, rt CkOut) []int {
+    mut out := mut []int{}
+    for a <- rt.kbad {
+        out = append(out, a)
+    }
+    for o <- outs {
+        for a <- o.kbad {
+            if !hasInt(mut out, a) {
+                out = append(out, a)
+            }
+        }
+    }
+    return freeze(out)
 }
 
 // 区間ごとに子taskで検査した結果（区間の順。task.Mapの添字の順）。子が死んだら（Mapのerr = ChildDied）、同じ本体を親が区間の順に
@@ -731,6 +911,9 @@ func checkRanges(c desugar.Core, srcs []int, collect bool, rs []DefRange, bud in
     die := ckEnvInt("SOBER_CHECK_DIE") == 1
     outs, serr := task.Map(rs, (r) => checkCoreC(c, srcs, collect, r, die), budget: bud)
     ckStat("core", len(rs), serr != nil)
+    if serr != nil {
+        loader.ParFellBack("check core", len(rs), "by the parent range by range", "")
+    }
     if serr == nil {
         return outs
     }

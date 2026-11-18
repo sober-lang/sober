@@ -1,0 +1,11 @@
+package main
+
+// 総称関数の版（apply_fn.g.sober）の型引数を手で代入した単相の版。関数の対応（単相 = 総称の単相コピーの名前）
+
+func apply(x string, f func(string) string) string {
+    return f(x)
+}
+
+func main() {
+    println(apply("ab", (s string) => s + s))
+}

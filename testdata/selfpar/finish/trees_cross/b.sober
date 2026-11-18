@@ -1,0 +1,10 @@
+package main
+
+func g(n int) int {
+    x := if n > 0 { 5 } else { nil }
+    switch x {
+    case nil:
+        return 0
+    }
+    return n
+}

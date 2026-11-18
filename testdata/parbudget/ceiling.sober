@@ -1,0 +1,85 @@
+package main
+
+// parbudgetの天井の約束の検査（language.md 11 節「予算と admission」）: 予約（宣言 + 固定費）を越えて伸びるtaskは節から借り、
+// プールの節か根の天井を越えたら死ぬ（RegionExceeded{cause: budget}）。scopeのbudget:の節は記帳だけ。縮退した子は親の上界の内で走る
+//   pool   — 天井1 MiBのプールに宣言64 KiBの子: 2 MiBを積む子は死に、40 KiBの子は生きる。約500 KiBを借りる子は2回とも生きる（借りは終わりで返る）。Ledgerのdied = cut = 1
+//   scope  — scopeの天井64 KiBの中で宣言16 KiBの子が2 MiBを積む: 死なない（borrowOverScope = 1）
+//   inline — 天井1 MiBのプールで宣言64 KiBの親が、天井1のscopeで縮退した子に2 MiBを積ませる: 親が死ぬ（子の使用量は親の計上）。天井8 MiBなら生きる
+
+import "std/iter"
+import "std/os"
+import "std/task"
+
+// n個のintの作業域を作って畳む
+func work(n int) int {
+    mut b := mut []int{}
+    for i <- iter.Range(0, n) {
+        b = append(b, i % 7)
+    }
+    mut s := 0
+    for v <- b {
+        s += v
+    }
+    return s
+}
+
+func outcome(o task.Outcome[int]) int {
+    return switch o {
+    case task.Ok{v}: v
+    case task.Failed{}: -1
+    case task.Died{}: -2
+    }
+}
+
+// プールpで宣言64 KiBの子がn個のintを積む
+func inPool(p task.Pool, n int) int {
+    r, _ := task.Run((s task.Scope) => {
+        h, e := task.SpawnIn(s, p, () => work(n), budget: 64 * task.KB)
+        if e != nil || h == nil { -3 } else { outcome(task.Try(h)) }
+    })
+    return r
+}
+
+// プールpで宣言64 KiBの親の下で、天井1のscopeの子（縮退する）がn個のintを積む
+func inlineIn(p task.Pool, n int) int {
+    r, _ := task.Run((s task.Scope) => {
+        h, e := task.SpawnIn(s, p, () => {
+            v, _ := task.Run((t task.Scope) => {
+                task.Join(task.Spawn(t, () => work(n), budget: 16 * task.KB))
+            }, budget: 1)
+            v
+        }, budget: 64 * task.KB)
+        if e != nil || h == nil { -3 } else { outcome(task.Try(h)) }
+    })
+    return r
+}
+
+func main() int {
+    args := os.Args() catch return 2
+    mode := if len(args) > 1 { args[1] } else { "pool" }
+    big := 262144
+    if mode == "pool" {
+        p := task.NewPool(1 * task.MB, nil)
+        println(inPool(p, big))
+        println(inPool(p, 5000))
+        // 借りて返す子を2回（返さなければ2回目で天井を越える）
+        println(inPool(p, 40000))
+        println(inPool(p, 40000))
+        v := task.Ledger().pools[0]
+        println(v.died)
+        println(v.cut)
+    } else if mode == "scope" {
+        r, e := task.Run((s task.Scope) => {
+            task.Join(task.Spawn(s, () => work(big), budget: 16 * task.KB))
+        }, budget: 64 * task.KB)
+        println(r)
+        println(if e != nil { 1 } else { 0 })
+        println(task.Ledger().borrowOverScope)
+    } else if mode == "inline" {
+        println(inlineIn(task.NewPool(1 * task.MB, nil), big))
+        println(inlineIn(task.NewPool(8 * task.MB, nil), big))
+        println(task.Ledger().pools[0].cut)
+        println(task.Ledger().pools[1].cut)
+    }
+    return 0
+}

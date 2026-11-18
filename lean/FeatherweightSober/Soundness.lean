@@ -26,6 +26,11 @@ theorem canonical_int {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f b d : Nat} {Γ
   cases hv <;> cases ht
   exact ⟨_, rfl⟩
 
+/-- 型変数の型を持つ値は無い（実行は型引数で代入した本体だけを走らせる） -/
+theorem canonical_tvar {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f b d : Nat} {Γ : Ctx} {v : Expr} {i ρ : Nat} {k : Kind}
+    (hv : Value v) (ht : HasType Δ Ξ Ψ f b d Γ Λ v (.tvar i ρ k)) : False := by
+  cases hv <;> cases ht
+
 /-- byte の値は範囲内の blit（byte の段 — []byte のセルを 1 バイトに詰める健全性の前提） -/
 theorem canonical_byte {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f b d : Nat} {Γ : Ctx} {v : Expr}
     (hv : Value v) (ht : HasType Δ Ξ Ψ f b d Γ Λ v .byte) : ∃ n, v = .blit n ∧ 0 ≤ n ∧ n < 256 := by
@@ -195,8 +200,8 @@ theorem canonical_dom {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f b d : Nat} {Γ
 /-- fn の canonical form（V3-1）: 値は fnref で、関数表のシグネチャが型と一致する -/
 theorem canonical_fn {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f b d : Nat} {Γ : Ctx} {v : Expr}
     {p r : Ty} (hv : Value v) (ht : HasType Δ Ξ Ψ f b d Γ Λ v (.fn p r)) :
-    ∃ fn ts dfn, v = .fnref fn ts ∧ Δ[fn]? = some dfn ∧ ts.length = dfn.tparams ∧
-      Ty.tyArgsOk ts = true ∧ (dfn.inst ts).param = p ∧ (dfn.inst ts).ret = r := by
+    ∃ fn ts dfn, v = .fnref fn ts ∧ Δ[fn]? = some dfn ∧ ts.length = dfn.kinds.length ∧
+      kindsArgsOk dfn.kinds ts = true ∧ (dfn.inst ts).param = p ∧ (dfn.inst ts).ret = r := by
   cases hv <;> cases ht
   exact ⟨_, _, _, rfl, by assumption, by assumption, by assumption, rfl, rfl⟩
 
@@ -252,7 +257,7 @@ theorem Expr.coerceTo_annFree : ∀ {b : Ty} (v : Expr), b.annFree = true → Ex
   | .opt _, _, h => by simp [Ty.annFree] at h
   | .union _ _, _, h => by simp [Ty.annFree] at h
   | .int, v, _ => by cases v <;> rfl
-  | .tvar _, v, _ => by cases v <;> rfl
+  | .tvar _ _ _, v, _ => by cases v <;> rfl
   | .bool, v, _ => by cases v <;> rfl
   | .byte, v, _ => by cases v <;> rfl
   | .f64, v, _ => by cases v <;> rfl
@@ -407,7 +412,7 @@ theorem RelocOut.trans {Δ : Defs} {Ξ : ChanTy} {b d : Nat} {Ψ Ψ1 Ψ2 : Store
 /-- relocA の保存拡大: anchor = d なら relocR d -/
 theorem Ty.relocA_top (d : Nat) : ∀ t : Ty, t.relocA d d = t.relocR d
   | .int => rfl
-  | .tvar _ => rfl
+  | .tvar _ r kd => by cases hr : kd.rf <;> cases hi : kd.imm <;> cases r <;> simp [Ty.relocA, Ty.relocR, hr, hi, rmap] <;> omega
   | .bool => rfl
   | .byte => rfl
   | .f64 => rfl
@@ -541,42 +546,33 @@ theorem Ty.sub_mut_invR {ta p : Ty} (hp : p.isMut0 = true) {a d : Nat}
   cases p <;> simp [Ty.isMut0] at hp
   all_goals (obtain ⟨rfl, rfl⟩ := hp; cases ta <;> simp_all [Ty.sub, Ty.renR])
 
-/-- 実行時の anchor（値の mut 位置の region）は型の anchor と一致する（mut は正確 region） -/
-theorem anchorV_eq {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f b D : Nat} {Γ : Ctx} {a d : Nat} :
-    ∀ (p : Ty) {v : Expr} {ta : Ty}, Value v → HasType Δ Ξ Ψ f b D Γ Λ v ta →
-      Ty.sub ta (p.renR a d) = true → Expr.anchorV p v = Ty.anchorOf p ta := by
+/-- 誤った anchor の注釈は call / callv の規則で拒否される: 仮引数の型が mut の位置を持ち、実引数の型の
+その位置の region が r なら、規則の部分型（mut は正確一致）を満たす注釈は r だけ。mut の位置が無い仮引数では
+注釈は b ≤ a ≤ d の範囲で自由で、どれを選んでも健全（region 0 由来の値の上界になるだけ） -/
+theorem Ty.anchor_unique {a d r : Nat} : ∀ {p ta : Ty}, Ty.anchorOf p ta = some r →
+    Ty.sub ta (p.renR a d) = true → r = a := by
   intro p
   induction p with
-  | prod l r ihl ihr =>
-    intro v ta hv he hs
+  | prod l rr ihl ihr =>
+    intro ta h hs
     simp only [Ty.renR] at hs
     obtain ⟨l', r', rfl, hsl, hsr⟩ := Ty.sub_prod_invR hs
-    obtain ⟨x, y, rfl, hvx, hvy, htx, hty⟩ := canonical_prod hv he
-    simp only [Expr.anchorV, Ty.anchorOf, ihl hvx htx hsl, ihr hvy hty hsr]
+    simp only [Ty.anchorOf] at h
+    cases hl : Ty.anchorOf l l' with
+    | some x => rw [hl] at h; simp at h; subst h; exact ihl hl hsl
+    | none => rw [hl] at h; simp at h; exact ihr h hsr
   | _ =>
-    intro v ta hv he hs
-    simp only [Expr.anchorV, Ty.anchorOf]
-    split
+    intro ta h hs
+    simp only [Ty.anchorOf] at h
+    split at h
     · rename_i hm
-      have hta := Ty.sub_mut_invR hm hs
-      subst hta
+      rw [Ty.sub_mut_invR hm hs] at h
       first
         | (simp [Ty.isMut0] at hm; done)
         | (simp only [Ty.isMut0, Bool.and_eq_true, beq_iff_eq] at hm
            obtain ⟨rfl, rfl⟩ := hm
-           first
-             | (obtain ⟨r, x, σ, m', rfl, -, -, -, -, hmut, -⟩ := canonical_ref hv he
-                have h := (hmut rfl).1; simp only [rmap] at h
-                simp [Expr.mutTopV, Ty.mutTop, Ty.renR, rmap]; omega)
-             | (obtain ⟨mt, r, base, len, rfl, -, -, -, -, hmut, -, -⟩ := canonical_slice hv he
-                have h := (hmut rfl).1; simp only [rmap] at h
-                simp [Expr.mutTopV, Ty.mutTop, Ty.renR, rmap]; omega)
-             | (obtain ⟨mt, r, base, len, rfl, -, -, -, -, hmut, -, -⟩ := canonical_map hv he
-                have h := (hmut rfl).1; simp only [rmap] at h
-                simp [Expr.mutTopV, Ty.mutTop, Ty.renR, rmap]; omega))
-    · rfl
-
-/-! ## 脱出の境界コピー（R4b α — jump の巻き戻しで捨てる region からの survivor コピー） -/
+           simp [Ty.renR, Ty.mutTop, rmap] at h; omega)
+    · cases h
 
 theorem heapOk_take {Δ : Defs} {Ξ : ChanTy} {b : Nat} {Ψ : StoreTy} {H : Heap} (n : Nat)
     (hH : HeapOk Δ Ξ b Ψ H) : HeapOk Δ Ξ b (Ψ.take n) (H.take n) := by
@@ -601,7 +597,7 @@ theorem heapOk_take {Δ : Defs} {Ξ : ChanTy} {b : Nat} {Ψ : StoreTy} {H : Heap
 
 theorem Ty.clampR_of_regionsBelow {k : Nat} : ∀ {t : Ty}, t.regionsBelow (k + 1) = true → t.clampR k = t
   | .int, _ => rfl
-  | .tvar _, _ => rfl
+  | .tvar _ r kd, h => by simp [Ty.regionsBelow] at h; cases hr : kd.rf <;> cases hi : kd.imm <;> simp_all [Ty.clampR] <;> omega
   | .bool, _ => rfl
   | .byte, _ => rfl
   | .f64, _ => rfl
@@ -642,7 +638,7 @@ theorem Ty.clampR_of_regionsBelow {k : Nat} : ∀ {t : Ty}, t.regionsBelow (k + 
 
 theorem Ty.clampR_mutFree {k : Nat} : ∀ {t : Ty}, t.mutFree = true → (t.clampR k).mutFree = true
   | .int, _ => rfl
-  | .tvar _, _ => rfl
+  | .tvar _ _ kd, a0 => by cases hr : kd.rf <;> cases hi : kd.imm <;> simp_all [Ty.clampR, Ty.relocR, Ty.relocA, Ty.regionsBelow, Ty.mutFree, Ty.chanFree, Ty.retOk, Ty.sub, Kind.imm]
   | .bool, _ => rfl
   | .byte, _ => rfl
   | .f64, _ => rfl
@@ -678,11 +674,33 @@ theorem Ty.clampR_mutFree {k : Nat} : ∀ {t : Ty}, t.mutFree = true → (t.clam
   | .rvar _, _ => rfl
   | .muRs r _ _ b, h => by cases hm : b.mutFree <;> simp_all [Ty.clampR, Ty.mutFree]
 
-/-- 締めた型の sub の逆向き: 葉（コンテナ / 直積 / opt / union 以外、または mut）は締めで変わらない -/
+/-- 締めた型が型変数の部分型なら、締める前も型変数 -/
+theorem Ty.clampR_tvar_inv {k i ρ' : Nat} {κ : Kind} {T : Ty} (hs : Ty.sub (T.clampR k) (.tvar i ρ' κ) = true) :
+    ∃ ρ, T = .tvar i ρ κ := by
+  cases T with
+  | tvar j ρ κ' => cases hr : κ'.rf <;> cases hi : κ'.imm <;> simp_all [Ty.clampR, Ty.sub]
+  | ref m r t => cases m <;> simp [Ty.clampR, Ty.sub] at hs
+  | slice m r t => cases m <;> simp [Ty.clampR, Ty.sub] at hs
+  | map m r t => cases m <;> simp [Ty.clampR, Ty.sub] at hs
+  | muRs r n i t => cases hm' : t.mutFree <;> simp [Ty.clampR, Ty.sub, hm'] at hs
+  | _ => simp [Ty.clampR, Ty.sub] at hs
+
+/-- 写した型が型変数の部分型なら、写す前も型変数 -/
+theorem Ty.relocR_tvar_inv {k i ρ' : Nat} {κ : Kind} {T : Ty} (hs : Ty.sub (T.relocR k) (.tvar i ρ' κ) = true) :
+    ∃ ρ, T = .tvar i ρ κ := by
+  cases T with
+  | tvar j ρ κ' => cases hr : κ'.rf <;> cases hi : κ'.imm <;> simp_all [Ty.relocR, Ty.sub]
+  | ref m r t => cases m <;> simp [Ty.relocR, Ty.sub] at hs
+  | slice m r t => cases m <;> simp [Ty.relocR, Ty.sub] at hs
+  | map m r t => cases m <;> simp [Ty.relocR, Ty.sub] at hs
+  | muRs r n i t => cases hm' : t.mutFree <;> simp [Ty.relocR, Ty.sub, hm'] at hs
+  | _ => simp [Ty.relocR, Ty.sub] at hs
+
+/-- 締めた型の sub の逆向き: 葉（コンテナ / 直積 / opt / union 以外、または mut）は締めで変わらない（型変数は除く — 型変数の値は無い） -/
 theorem Ty.clampR_sub_leaf {k : Nat} {T W : Ty}
     (hW : ∀ o, W ≠ .opt o) (hU : ∀ l r, W ≠ .union l r) (hP : ∀ l r, W ≠ .prod l r)
     (hR : ∀ r t, W ≠ .ref false r t) (hS : ∀ r t, W ≠ .slice false r t) (hM : ∀ r t, W ≠ .map false r t)
-    (hMuRs : ∀ r n i t, W ≠ .muRs r n i t) (hDom : ∀ r t, W ≠ .dom r t)
+    (hMuRs : ∀ r n i t, W ≠ .muRs r n i t) (hDom : ∀ r t, W ≠ .dom r t) (hTv : ∀ i ρ κ, W ≠ .tvar i ρ κ)
     (hs : Ty.sub (T.clampR k) W = true) : T = W := by
   cases T with
   | opt t => cases W <;> simp_all [Ty.clampR, Ty.sub]
@@ -693,6 +711,10 @@ theorem Ty.clampR_sub_leaf {k : Nat} {T W : Ty}
   | map m r t => cases m <;> cases W <;> simp_all [Ty.clampR, Ty.sub]
   | muRs r n i t =>
     cases hm' : t.mutFree <;> cases W <;> simp_all [Ty.clampR, Ty.sub] <;> exact (hMuRs _ _ _ _ rfl rfl rfl rfl).elim
+  | tvar _ _ kd =>
+    cases W with
+    | tvar => exact absurd rfl (hTv _ _ _)
+    | _ => cases hr : kd.rf <;> cases hi : kd.imm <;> simp [Ty.clampR, Ty.sub, hr, hi] at hs
   | _ => cases W <;> simp_all [Ty.clampR, Ty.sub]
 
 theorem Ty.clampR_sub_opt {k : Nat} {T W : Ty} (hs : Ty.sub (T.clampR k) (.opt W) = true) :
@@ -703,6 +725,7 @@ theorem Ty.clampR_sub_opt {k : Nat} {T W : Ty} (hs : Ty.sub (T.clampR k) (.opt W
   | slice m r t => cases m <;> simp [Ty.clampR, Ty.sub] at hs
   | map m r t => cases m <;> simp [Ty.clampR, Ty.sub] at hs
   | muRs r n i t => cases hm' : t.mutFree <;> simp [Ty.clampR, Ty.sub, hm'] at hs
+  | tvar _ _ kd => cases hr : kd.rf <;> cases hi : kd.imm <;> simp [Ty.clampR, Ty.sub, hr, hi] at hs
   | _ => simp [Ty.clampR, Ty.sub] at hs
 
 theorem Ty.clampR_sub_union {k : Nat} {T l r : Ty} (hs : Ty.sub (T.clampR k) (.union l r) = true) :
@@ -713,6 +736,7 @@ theorem Ty.clampR_sub_union {k : Nat} {T l r : Ty} (hs : Ty.sub (T.clampR k) (.u
   | slice m r t => cases m <;> simp [Ty.clampR, Ty.sub] at hs
   | map m r t => cases m <;> simp [Ty.clampR, Ty.sub] at hs
   | muRs r n i t => cases hm' : t.mutFree <;> simp [Ty.clampR, Ty.sub, hm'] at hs
+  | tvar _ _ kd => cases hr : kd.rf <;> cases hi : kd.imm <;> simp [Ty.clampR, Ty.sub, hr, hi] at hs
   | _ => simp [Ty.clampR, Ty.sub] at hs
 
 theorem Ty.clampR_sub_prod {k : Nat} {T l r : Ty} (hs : Ty.sub (T.clampR k) (.prod l r) = true) :
@@ -723,6 +747,7 @@ theorem Ty.clampR_sub_prod {k : Nat} {T l r : Ty} (hs : Ty.sub (T.clampR k) (.pr
   | slice m r t => cases m <;> simp [Ty.clampR, Ty.sub] at hs
   | map m r t => cases m <;> simp [Ty.clampR, Ty.sub] at hs
   | muRs r n i t => cases hm' : t.mutFree <;> simp [Ty.clampR, Ty.sub, hm'] at hs
+  | tvar _ _ kd => cases hr : kd.rf <;> cases hi : kd.imm <;> simp [Ty.clampR, Ty.sub, hr, hi] at hs
   | _ => simp [Ty.clampR, Ty.sub] at hs
 
 theorem Ty.clampR_sub_ref {k rW : Nat} {T W : Ty} (hs : Ty.sub (T.clampR k) (.ref false rW W) = true) :
@@ -735,6 +760,7 @@ theorem Ty.clampR_sub_ref {k rW : Nat} {T W : Ty} (hs : Ty.sub (T.clampR k) (.re
   | slice m r t => cases m <;> simp [Ty.clampR, Ty.sub] at hs
   | map m r t => cases m <;> simp [Ty.clampR, Ty.sub] at hs
   | muRs r n i t => cases hm' : t.mutFree <;> simp [Ty.clampR, Ty.sub, hm'] at hs
+  | tvar _ _ kd => cases hr : kd.rf <;> cases hi : kd.imm <;> simp [Ty.clampR, Ty.sub, hr, hi] at hs
   | _ => simp [Ty.clampR, Ty.sub] at hs
 
 theorem Ty.clampR_sub_slice {k rW : Nat} {T W : Ty} (hs : Ty.sub (T.clampR k) (.slice false rW W) = true) :
@@ -747,6 +773,7 @@ theorem Ty.clampR_sub_slice {k rW : Nat} {T W : Ty} (hs : Ty.sub (T.clampR k) (.
   | ref m r t => cases m <;> simp [Ty.clampR, Ty.sub] at hs
   | map m r t => cases m <;> simp [Ty.clampR, Ty.sub] at hs
   | muRs r n i t => cases hm' : t.mutFree <;> simp [Ty.clampR, Ty.sub, hm'] at hs
+  | tvar _ _ kd => cases hr : kd.rf <;> cases hi : kd.imm <;> simp [Ty.clampR, Ty.sub, hr, hi] at hs
   | _ => simp [Ty.clampR, Ty.sub] at hs
 
 theorem Ty.clampR_sub_map {k rW : Nat} {T W : Ty} (hs : Ty.sub (T.clampR k) (.map false rW W) = true) :
@@ -759,12 +786,15 @@ theorem Ty.clampR_sub_map {k rW : Nat} {T W : Ty} (hs : Ty.sub (T.clampR k) (.ma
   | ref m r t => cases m <;> simp [Ty.clampR, Ty.sub] at hs
   | slice m r t => cases m <;> simp [Ty.clampR, Ty.sub] at hs
   | muRs r n i t => cases hm' : t.mutFree <;> simp [Ty.clampR, Ty.sub, hm'] at hs
+  | tvar _ _ kd => cases hr : kd.rf <;> cases hi : kd.imm <;> simp [Ty.clampR, Ty.sub, hr, hi] at hs
   | _ => simp [Ty.clampR, Ty.sub] at hs
 
 /-- 締めは sub を保つ（深い共変のセル型 ≤ 要素型を、締めた後も比べられる） -/
 theorem Ty.clampR_mono {k : Nat} : ∀ {a b : Ty}, Ty.sub a b = true → Ty.sub (a.clampR k) (b.clampR k) = true
   | .int, _, h => by obtain rfl := Ty.sub_int_inv h; exact Ty.sub_refl _
-  | .tvar _, _, h => by obtain rfl := Ty.sub_tvar_inv h; exact Ty.sub_refl _
+  | .tvar _ ρ kd, _, h => by
+    obtain ⟨ρ', rfl, h'⟩ := Ty.sub_tvar_inv h
+    cases hr : kd.rf <;> cases hi : kd.imm <;> simp [Ty.clampR, Ty.sub, hr, hi] <;> rcases h' with rfl | h' | ⟨hc, h'⟩ <;> simp_all <;> omega
   | .bool, _, h => by obtain rfl := Ty.sub_bool_inv h; exact Ty.sub_refl _
   | .byte, _, h => by obtain rfl := Ty.sub_byte_inv h; exact Ty.sub_refl _
   | .f64, _, h => by obtain rfl := Ty.sub_f64_inv h; exact Ty.sub_refl _
@@ -813,7 +843,7 @@ theorem Ty.clampR_mono {k : Nat} : ∀ {a b : Ty}, Ty.sub a b = true → Ty.sub 
 /-- sub は chan の有無を変えない（chan は正確一致） -/
 theorem Ty.sub_chanFree : ∀ {a b : Ty}, Ty.sub a b = true → a.chanFree = b.chanFree
   | .int, _, h => by obtain rfl := Ty.sub_int_inv h; rfl
-  | .tvar _, _, h => by obtain rfl := Ty.sub_tvar_inv h; rfl
+  | .tvar _ ρ kd, _, h => by obtain ⟨ρ', rfl, _⟩ := Ty.sub_tvar_inv h; rfl
   | .bool, _, h => by obtain rfl := Ty.sub_bool_inv h; rfl
   | .byte, _, h => by obtain rfl := Ty.sub_byte_inv h; rfl
   | .f64, _, h => by obtain rfl := Ty.sub_f64_inv h; rfl
@@ -883,6 +913,7 @@ theorem Ty.clampR_sub_muRs {k r n i : Nat} {T b : Ty} (hs : Ty.sub (T.clampR k) 
   | ref m r t => cases m <;> simp [Ty.clampR, Ty.sub] at hs
   | slice m r t => cases m <;> simp [Ty.clampR, Ty.sub] at hs
   | map m r t => cases m <;> simp [Ty.clampR, Ty.sub] at hs
+  | tvar _ _ kd => cases hr : kd.rf <;> cases hi : kd.imm <;> simp [Ty.clampR, Ty.sub, hr, hi] at hs
   | _ => simp [Ty.clampR, Ty.sub] at hs
 
 theorem Ty.relocR_sub_muRs {k r n i : Nat} {T b : Ty} (hs : Ty.sub (T.relocR k) (.muRs r n i b) = true) : ∃ r', T = .muRs r' n i b := by
@@ -892,6 +923,7 @@ theorem Ty.relocR_sub_muRs {k r n i : Nat} {T b : Ty} (hs : Ty.sub (T.relocR k) 
   | ref m r t => cases m <;> simp [Ty.relocR, Ty.sub] at hs
   | slice m r t => cases m <;> simp [Ty.relocR, Ty.sub] at hs
   | map m r t => cases m <;> simp [Ty.relocR, Ty.sub] at hs
+  | tvar _ _ kd => cases hr : kd.rf <;> cases hi : kd.imm <;> simp [Ty.relocR, Ty.sub, hr, hi] at hs
   | _ => simp [Ty.relocR, Ty.sub] at hs
 
 /-! ### 燃料の十分性: 写しが開く μ の数（値の fold の節）は「値の大きさ + 辿りうる凍結セルの値の大きさの和」を越えない -/
@@ -1108,7 +1140,7 @@ def RelocIH (Δ : Defs) (Ξ : ChanTy) (b k : Nat) (f : Ty → Heap → Expr → 
   ∀ {T : Ty} {v : Expr} {Ψ : StoreTy} {H : Heap} {D0 : Nat},
     HeapOk Δ Ξ b Ψ H → D0 ≤ Ψ.length → (k + 1 ≤ D0 ∨ D0 = Ψ.length) → Value v →
     HasType Δ Ξ (Ψ.take D0) b b D0 [] [] v T → W.regionsBelow (k + 1) = true →
-    Ty.sub (T.clampR k) W = true → (T.noClamp k = true ∨ (b ≤ k ∧ T.chanFree = true)) →
+    Ty.sub (T.clampR k) W = true → T.clampOk b k = true →
     RelocRes Δ Ξ b k Ψ H W (P W H v) (f W H v)
 
 /-- セル列を順に写す（各セルは自分の型 T を持ち、締めると W 以下） -/
@@ -1117,7 +1149,7 @@ theorem relocListJ_ok {Δ : Defs} {Ξ : ChanTy} {b k : Nat} {W : Ty} {D0 : Nat}
     (hWb : W.regionsBelow (k + 1) = true) :
     ∀ (cs : List (Bool × Expr)) {Ψ : StoreTy} {H : Heap}, HeapOk Δ Ξ b Ψ H → D0 ≤ Ψ.length → k + 1 ≤ D0 →
       (∀ c ∈ cs, c.1 = false ∧ Value c.2 ∧ ∃ T, HasType Δ Ξ (Ψ.take D0) b b D0 [] [] c.2 T ∧
-        Ty.sub (T.clampR k) W = true ∧ (T.noClamp k = true ∨ (b ≤ k ∧ T.chanFree = true))) →
+        Ty.sub (T.clampR k) W = true ∧ T.clampOk b k = true) →
       ((∃ H'' Ψ'' c, c ∈ cs ∧ RelocJ Δ Ξ b k Ψ H Ψ'' H'' ∧ P W H'' c.2) ∧ relocList (f W) H cs = none) ∨
       ∃ H' Ψ' cs', relocList (f W) H cs = some (H', cs') ∧ RelocJ Δ Ξ b k Ψ H Ψ' H' ∧
         cs'.length = cs.length ∧
@@ -1175,7 +1207,7 @@ theorem reloc_cellsJ {Δ : Defs} {Ξ : ChanTy} {b k : Nat} {W : Ty} {f : Ty → 
     · rw [List.length_take, List.length_drop]; omega
   have hcs : ∀ c ∈ (ρs.drop base).take len, c.1 = false ∧ Value c.2 ∧ ∃ T,
       HasType Δ Ξ (Ψ.take (r + 1)) b b (r + 1) [] [] c.2 T ∧ Ty.sub (T.clampR k) W = true ∧
-      (T.noClamp k = true ∨ (b ≤ k ∧ T.chanFree = true)) := by
+      T.clampOk b k = true := by
     intro c hc
     obtain ⟨j, hj, hcj⟩ := List.getElem_of_mem hc
     have hjl : j < len := by rw [hcl] at hj; exact hj
@@ -1187,7 +1219,7 @@ theorem reloc_cellsJ {Δ : Defs} {Ξ : ChanTy} {b k : Nat} {W : Ty} {f : Ty → 
     have htag := hH.tags r ρs σs (base + j) mc w false _ hρs hσs hρj hσk
     subst htag
     obtain ⟨hwv, hwt⟩ := hH.typed r ρs σs (base + j) false w false _ hρs hσs hρj hσk (.inl rfl)
-    exact ⟨rfl, hwv, tc, hwt, hsc, .inr ⟨hbk, hcf⟩⟩
+    exact ⟨rfl, hwv, tc, hwt, hsc, Ty.clampOk_of_chanFree hbk _ hcf⟩
   rcases relocListJ_ok (D0 := r + 1) ih hW _ hH (by omega) (by omega) hcs with
     ⟨⟨H'', Ψ'', c, hcm, hJ, hPc⟩, hn⟩ | ⟨H1, Ψ1, cs, hrel, ⟨hH1, hlen1, hle1, htb1, htH1, htk1, htkH1, hfr1⟩, hcsl, hcs'⟩
   · obtain ⟨j, hj, hcj⟩ := List.getElem_of_mem hcm
@@ -1245,31 +1277,31 @@ theorem relocW_ok {Δ : Defs} {Ξ : ChanTy} {b k : Nat} {rec : Ty → Heap → E
   induction W with
   | int =>
     intro T v Ψ H D0 hH hD hDk hv he hW hs hc
-    obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
+    obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
     exact leaf hH hDk hv he hW (by cases v <;> rfl)
   | tvar i =>
     intro T v Ψ H D0 hH hD hDk hv he hW hs hc
-    obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
-    exact leaf hH hDk hv he hW (by cases v <;> rfl)
+    obtain ⟨_, rfl⟩ := Ty.clampR_tvar_inv hs
+    exact (canonical_tvar hv he).elim
   | bool =>
     intro T v Ψ H D0 hH hD hDk hv he hW hs hc
-    obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
+    obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
     exact leaf hH hDk hv he hW (by cases v <;> rfl)
   | byte =>
     intro T v Ψ H D0 hH hD hDk hv he hW hs hc
-    obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
+    obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
     exact leaf hH hDk hv he hW (by cases v <;> rfl)
   | f64 =>
     intro T v Ψ H D0 hH hD hDk hv he hW hs hc
-    obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
+    obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
     exact leaf hH hDk hv he hW (by cases v <;> rfl)
   | unit =>
     intro T v Ψ H D0 hH hD hDk hv he hW hs hc
-    obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
+    obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
     exact leaf hH hDk hv he hW (by cases v <;> rfl)
   | chan rc t ih =>
     intro T v Ψ H D0 hH hD hDk hv he hW hs hc
-    obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
+    obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
     exact leaf hH hDk hv he hW (by cases v <;> rfl)
   | dom rc t ih =>
     intro T v Ψ H D0 hH hD hDk hv he hW hs hc
@@ -1280,24 +1312,25 @@ theorem relocW_ok {Δ : Defs} {Ξ : ChanTy} {b k : Nat} {rec : Ty → Heap → E
       | slice m _ _ => cases m <;> simp_all [Ty.clampR, Ty.sub]
       | map m _ _ => cases m <;> simp_all [Ty.clampR, Ty.sub]
       | muRs _ _ _ tb => cases hm' : tb.mutFree <;> simp_all [Ty.clampR, Ty.sub]
+      | tvar _ _ kd => cases hr : kd.rf <;> cases hi : kd.imm <;> simp [Ty.clampR, Ty.sub, hr, hi] at hs
       | _ => simp_all [Ty.clampR, Ty.sub]
     obtain ⟨p', k', r0, rfl, hle0, hlt, hlk⟩ := canonical_dom hv he
     exact leaf hH hDk hv (.domVT hlt (Nat.le_trans hle0 hr1) hlk) hW rfl
   | own _ r t ih =>
     intro T v Ψ H D0 hH hD hDk hv he hW hs hc
-    obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
+    obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
     exact leaf hH hDk hv he hW (by cases v <;> rfl)
   | fn p r ihp ihr =>
     intro T v Ψ H D0 hH hD hDk hv he hW hs hc
-    obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
+    obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
     exact leaf hH hDk hv he hW (by cases v <;> rfl)
   | mus nW iW p ihp =>
     intro T v Ψ H D0 hH hD hDk hv he hW hs hc
-    obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
+    obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
     exact leaf hH hDk hv he hW (by cases v <;> rfl)
   | rvar p =>
     intro T v Ψ H D0 hH hD hDk hv he hW hs hc
-    obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
+    obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
     exact leaf hH hDk hv he hW (by cases v <;> rfl)
   | muRs rW nW iW bW _ =>
     intro T v Ψ H D0 hH hD hDk hv he hW hs hc
@@ -1307,14 +1340,14 @@ theorem relocW_ok {Δ : Defs} {Ξ : ChanTy} {b k : Nat} {rec : Ty → Heap → E
     have hWu : (Ty.muRs rW nW iW bW).unfold.regionsBelow (k + 1) = true := Ty.unfold_rb_muRs hokW hW
     simp only [Ty.regionsBelow, decide_eq_true_eq] at hW
     have key : Ty.sub ((Ty.muRs r' nW iW bW).unfold.clampR k) (Ty.muRs rW nW iW bW).unfold = true ∧
-        ((Ty.muRs r' nW iW bW).unfold.noClamp k = true ∨ (b ≤ k ∧ (Ty.muRs r' nW iW bW).unfold.chanFree = true)) := by
+        (Ty.muRs r' nW iW bW).unfold.clampOk b k = true := by
       by_cases hrk : r' ≤ k
       · have hcT : (Ty.muRs r' nW iW bW).clampR k = .muRs r' nW iW bW := by
           cases hm : bW.mutFree <;> simp [Ty.clampR, hm, Nat.min_eq_left hrk]
         rw [hcT] at hs
         have hcu : (Ty.muRs r' nW iW bW).unfold.clampR k = (Ty.muRs r' nW iW bW).unfold :=
           Ty.clampR_of_regionsBelow (Ty.unfold_rb_muRs hok (by simp [Ty.regionsBelow]; omega))
-        exact ⟨by rw [hcu]; exact Ty.sub_unfold_muRs hok hs, .inl (Ty.unfold_noClamp_muRs hok hrk)⟩
+        exact ⟨by rw [hcu]; exact Ty.sub_unfold_muRs hok hs, Ty.clampOk_of_noClamp _ (Ty.unfold_noClamp_muRs hok hrk)⟩
       · have hmf : bW.mutFree = true := by
           cases hm : bW.mutFree
           · simp only [Ty.clampR, hm, Bool.false_eq_true, if_false] at hs
@@ -1324,18 +1357,19 @@ theorem relocW_ok {Δ : Defs} {Ξ : ChanTy} {b k : Nat} {rec : Ty → Heap → E
             · omega
             · rw [Ty.mutFree_of_covOk h] at hm; cases hm
           · rfl
+        simp only [Ty.clampOk, Bool.or_eq_true, Bool.and_eq_true, decide_eq_true_eq] at hc
         have hcf : bW.chanFree = true := by
           rcases hc with h | h
-          · simp only [Ty.noClamp, decide_eq_true_eq] at h; omega
-          · simpa [Ty.chanFree] using h.2
+          · omega
+          · exact h.2
         have hbk : b ≤ k := by
           rcases hc with h | h
-          · simp only [Ty.noClamp, decide_eq_true_eq] at h; omega
+          · omega
           · exact h.1
         have hcT : (Ty.muRs r' nW iW bW).clampR k = .muRs (min r' k) nW iW bW := by simp [Ty.clampR, hmf]
         rw [hcT] at hs
         rw [Ty.unfold_clampR_muRs hok hmf hcf]
-        exact ⟨Ty.sub_unfold_muRs (Ty.muRsOk_r hok) hs, .inr ⟨hbk, Ty.unfold_cf_muRs hcf⟩⟩
+        exact ⟨Ty.sub_unfold_muRs (Ty.muRsOk_r hok) hs, Ty.clampOk_of_chanFree hbk _ (Ty.unfold_cf_muRs hcf)⟩
     rcases hrec _ hH hD hDk hw hwt hWu key.1 key.2 with ⟨hq, hn⟩ | ⟨H', Ψ', w', hr, hw', hout, ht'⟩
     · exact .inl ⟨⟨rfl, fun hrk => hQ _ _ _ _ hq hrk⟩, by simp [relocW, hn]⟩
     · exact .inr ⟨H', Ψ', .fold (.muRs rW nW iW bW) w', by simp [relocW, hr], .fold _ hw', hout, .foldRs hokW ht'⟩
@@ -1343,7 +1377,7 @@ theorem relocW_ok {Δ : Defs} {Ξ : ChanTy} {b k : Nat} {rec : Ty → Heap → E
     intro T v Ψ H D0 hH hD hDk hv he hW hs hc
     obtain ⟨T', rfl, hs'⟩ := Ty.clampR_sub_opt hs
     simp only [Ty.regionsBelow] at hW
-    simp only [Ty.noClamp, Ty.chanFree] at hc
+    simp only [Ty.clampOk] at hc
     rcases canonical_opt hv he with rfl | ⟨w, rfl, hw⟩
     · exact .inr ⟨H, Ψ, .nil _, rfl, .nil _, RelocJ.refl hH, .nil⟩
     · cases he with
@@ -1355,30 +1389,30 @@ theorem relocW_ok {Δ : Defs} {Ξ : ChanTy} {b k : Nat} {rec : Ty → Heap → E
     intro T v Ψ H D0 hH hD hDk hv he hW hs hc
     obtain ⟨l', r', rfl, hsl, hsr⟩ := Ty.clampR_sub_union hs
     simp only [Ty.regionsBelow, Bool.and_eq_true] at hW
-    simp only [Ty.noClamp, Ty.chanFree, Bool.and_eq_true] at hc
+    simp only [Ty.clampOk, Bool.and_eq_true] at hc
     rcases canonical_union hv he with ⟨w, rfl, hw⟩ | ⟨w, rfl, hw⟩
     · cases he with
       | inl hwt =>
-        rcases ihl hH hD hDk hw hwt hW.1 hsl (hc.imp (fun h => h.1) (fun h => ⟨h.1, h.2.1⟩)) with ⟨hP, hn⟩ | ⟨H', Ψ', w', hrel, hv', hout, ht'⟩
+        rcases ihl hH hD hDk hw hwt hW.1 hsl hc.1 with ⟨hP, hn⟩ | ⟨H', Ψ', w', hrel, hv', hout, ht'⟩
         · exact .inl ⟨⟨by simp [Ty.hasMuR, hP.1], fun hrk => Nat.lt_of_lt_of_le (hP.2 hrk) (need_mono (by simp [Expr.vsize]) (fun q hq => by simpa [Expr.refs] using hq))⟩, by simp [relocW, hn]⟩
         exact .inr ⟨H', Ψ', .inl _ w', by simp [relocW, hrel], .inl _ hv', hout, .inl ht'⟩
     · cases he with
       | inr hwt =>
-        rcases ihr hH hD hDk hw hwt hW.2 hsr (hc.imp (fun h => h.2) (fun h => ⟨h.1, h.2.2⟩)) with ⟨hP, hn⟩ | ⟨H', Ψ', w', hrel, hv', hout, ht'⟩
+        rcases ihr hH hD hDk hw hwt hW.2 hsr hc.2 with ⟨hP, hn⟩ | ⟨H', Ψ', w', hrel, hv', hout, ht'⟩
         · exact .inl ⟨⟨by simp [Ty.hasMuR, hP.1], fun hrk => Nat.lt_of_lt_of_le (hP.2 hrk) (need_mono (by simp [Expr.vsize]) (fun q hq => by simpa [Expr.refs] using hq))⟩, by simp [relocW, hn]⟩
         exact .inr ⟨H', Ψ', .inr _ w', by simp [relocW, hrel], .inr _ hv', hout, .inr ht'⟩
   | prod l r ihl ihr =>
     intro T v Ψ H D0 hH hD hDk hv he hW hs hc
     obtain ⟨l', r', rfl, hsl, hsr⟩ := Ty.clampR_sub_prod hs
     simp only [Ty.regionsBelow, Bool.and_eq_true] at hW
-    simp only [Ty.noClamp, Ty.chanFree, Bool.and_eq_true] at hc
+    simp only [Ty.clampOk, Bool.and_eq_true] at hc
     obtain ⟨a, c, rfl, hva, hvc, hta, htc⟩ := canonical_prod hv he
-    rcases ihl hH hD hDk hva hta hW.1 hsl (hc.imp (fun h => h.1) (fun h => ⟨h.1, h.2.1⟩)) with
+    rcases ihl hH hD hDk hva hta hW.1 hsl hc.1 with
       ⟨hP, hn⟩ | ⟨H1, Ψ1, a', hrel1, hva', hout1, hta'⟩
     · exact .inl ⟨⟨by simp [Ty.hasMuR, hP.1], fun hrk => Nat.lt_of_lt_of_le (hP.2 hrk) (need_mono (by simp [Expr.vsize]; omega) (fun q hq => by simp [Expr.refs, hq]))⟩, by simp [relocW, hn]⟩
     have hl1 := hout1.2.1
     rcases ihr hout1.1 (by omega) (by omega) hvc (relocJ_carry hout1.2.2.1 hout1.2.2.2.1 htc) hW.2 hsr
-        (hc.imp (fun h => h.2) (fun h => ⟨h.1, h.2.2⟩)) with
+        hc.2 with
       ⟨hP, hn⟩ | ⟨H2, Ψ2, c', hrel2, hvc', hout2, htc'⟩
     · refine .inl ⟨⟨by simp [Ty.hasMuR, hP.1], fun hrk => ?_⟩, by simp [relocW, hrel1, hn]⟩
       have hag : ∀ i, k + 1 ≤ i → H1[i]? = H[i]? := fun i hi => hout1.2.2.2.2.2.2.2 i (by omega)
@@ -1393,7 +1427,7 @@ theorem relocW_ok {Δ : Defs} {Ξ : ChanTy} {b k : Nat} {rec : Ty → Heap → E
     intro T v Ψ H D0 hH hD hDk hv he hW hs hc
     cases m with
     | true =>
-      obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
+      obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
       exact leaf hH hDk hv he hW (by cases v <;> rfl)
     | false =>
       obtain ⟨r, e, rfl, hmin, rfl⟩ := Ty.clampR_sub_ref hs
@@ -1406,9 +1440,10 @@ theorem relocW_ok {Δ : Defs} {Ξ : ChanTy} {b k : Nat} {rec : Ty → Heap → E
       have hbt : e.regionsBelow (r' + 1) = true := hH.tyBelow r' σs x false _ hσs hcell
       by_cases hkr : k < r'
       · have hc' : b ≤ k ∧ e.chanFree = true := by
+          simp only [Ty.clampOk, Bool.or_eq_true, Bool.and_eq_true, decide_eq_true_eq] at hc
           rcases hc with h | h
-          · simp only [Ty.noClamp, Bool.and_eq_true, decide_eq_true_eq] at h; omega
-          · simpa [Ty.chanFree] using h
+          · omega
+          · exact h
         have hmfe : e.mutFree = true := hH.immMutFree r' σs x e hσs hcell
         obtain ⟨ρs, hρs⟩ : ∃ ρs, H[r']? = some ρs := ⟨_, List.getElem?_eq_getElem (by omega)⟩
         rcases reloc_cellsJ (f := relocW k rec) (P := PN (k + 1) rank N) (base := x) (len := 1) hc'.1 hW.2 (Ty.clampR_mutFree hmfe) ih
@@ -1435,7 +1470,7 @@ theorem relocW_ok {Δ : Defs} {Ξ : ChanTy} {b k : Nat} {rec : Ty → Heap → E
     intro T v Ψ H D0 hH hD hDk hv he hW hs hc
     cases m with
     | true =>
-      obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
+      obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
       exact leaf hH hDk hv he hW (by cases v <;> rfl)
     | false =>
       obtain ⟨r, e, rfl, hmin, hse⟩ := Ty.clampR_sub_slice hs
@@ -1453,9 +1488,10 @@ theorem relocW_ok {Δ : Defs} {Ξ : ChanTy} {b k : Nat} {rec : Ty → Heap → E
         exact ⟨σ', tc, (getElem?_take_some hσ').2, hc, hsc⟩
       by_cases hkr : k < r'
       · have hc' : b ≤ k ∧ e.chanFree = true := by
+          simp only [Ty.clampOk, Bool.or_eq_true, Bool.and_eq_true, decide_eq_true_eq] at hc
           rcases hc with h | h
-          · simp only [Ty.noClamp, Bool.and_eq_true, decide_eq_true_eq] at h; omega
-          · simpa [Ty.chanFree] using h
+          · omega
+          · exact h
         obtain ⟨ρs, hρs⟩ : ∃ ρs, H[r']? = some ρs := ⟨_, List.getElem?_eq_getElem (by omega)⟩
         obtain ⟨σs, hσs⟩ : ∃ σs, Ψ[r']? = some σs := ⟨_, List.getElem?_eq_getElem (by omega)⟩
         rcases reloc_cellsJ (f := relocW k rec) (P := PN (k + 1) rank N) (base := base) (len := len) hc'.1 hW.2 hmfW ih
@@ -1491,7 +1527,7 @@ theorem relocW_ok {Δ : Defs} {Ξ : ChanTy} {b k : Nat} {rec : Ty → Heap → E
     intro T v Ψ H D0 hH hD hDk hv he hW hs hc
     cases m with
     | true =>
-      obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
+      obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
       exact leaf hH hDk hv he hW (by cases v <;> rfl)
     | false =>
       obtain ⟨r, e, rfl, hmin, hse⟩ := Ty.clampR_sub_map hs
@@ -1509,9 +1545,10 @@ theorem relocW_ok {Δ : Defs} {Ξ : ChanTy} {b k : Nat} {rec : Ty → Heap → E
         exact ⟨σ', tc, (getElem?_take_some hσ').2, hc, hsc⟩
       by_cases hkr : k < r'
       · have hc' : b ≤ k ∧ e.chanFree = true := by
+          simp only [Ty.clampOk, Bool.or_eq_true, Bool.and_eq_true, decide_eq_true_eq] at hc
           rcases hc with h | h
-          · simp only [Ty.noClamp, Bool.and_eq_true, decide_eq_true_eq] at h; omega
-          · simpa [Ty.chanFree] using h
+          · omega
+          · exact h
         obtain ⟨ρs, hρs⟩ : ∃ ρs, H[r']? = some ρs := ⟨_, List.getElem?_eq_getElem (by omega)⟩
         obtain ⟨σs, hσs⟩ : ∃ σs, Ψ[r']? = some σs := ⟨_, List.getElem?_eq_getElem (by omega)⟩
         rcases reloc_cellsJ (f := relocW k rec) (P := PN (k + 1) rank N) (base := base) (len := len) hc'.1 hW.2 hmfW ih
@@ -1562,7 +1599,7 @@ theorem relocN_ok {Δ : Defs} {Ξ : ChanTy} {b k : Nat} (rank : Nat → Nat → 
 theorem relocTo_ok {Δ : Defs} {Ξ : ChanTy} {b k : Nat} {W T : Ty} {v : Expr} {Ψ : StoreTy} {H : Heap} {D0 : Nat}
     (hH : HeapOk Δ Ξ b Ψ H) (hD : D0 ≤ Ψ.length) (hDk : k + 1 ≤ D0 ∨ D0 = Ψ.length) (hv : Value v)
     (he : HasType Δ Ξ (Ψ.take D0) b b D0 [] [] v T) (hW : W.regionsBelow (k + 1) = true)
-    (hs : Ty.sub (T.clampR k) W = true) (hc : T.noClamp k = true ∨ (b ≤ k ∧ T.chanFree = true)) :
+    (hs : Ty.sub (T.clampR k) W = true) (hc : T.clampOk b k = true) :
     RelocRes Δ Ξ b k Ψ H W False (relocTo k W H v) := by
   obtain ⟨rank, hrk⟩ := RankOK.of_acyc hH.acyc (k + 1)
   rcases relocN_ok rank (relocFuel H v) hH hD hDk hv he hW hs hc with ⟨⟨-, hP⟩, -⟩ | h
@@ -1573,7 +1610,7 @@ theorem relocTo_ok {Δ : Defs} {Ξ : ChanTy} {b k : Nat} {W T : Ty} {v : Expr} {
 
 theorem Ty.relocR_mutFree_of {k : Nat} : ∀ {t : Ty}, t.mutFree = true → (t.relocR k).mutFree = true
   | .int, _ => rfl
-  | .tvar _, _ => rfl
+  | .tvar _ _ kd, a0 => by cases hr : kd.rf <;> cases hi : kd.imm <;> simp_all [Ty.clampR, Ty.relocR, Ty.relocA, Ty.regionsBelow, Ty.mutFree, Ty.chanFree, Ty.retOk, Ty.sub, Kind.imm]
   | .bool, _ => rfl
   | .byte, _ => rfl
   | .f64, _ => rfl
@@ -1613,7 +1650,7 @@ theorem Ty.relocR_mutFree_of {k : Nat} : ∀ {t : Ty}, t.mutFree = true → (t.r
 theorem Ty.relocR_chanFree_of {k : Nat} : ∀ {t : Ty}, t.mutFree = true → t.chanFree = true →
     (t.relocR k).chanFree = true
   | .int, _, _ => rfl
-  | .tvar _, _, _ => rfl
+  | .tvar _ _ kd, a0, a1 => by cases hr : kd.rf <;> cases hi : kd.imm <;> simp_all [Ty.clampR, Ty.relocR, Ty.relocA, Ty.regionsBelow, Ty.mutFree, Ty.chanFree, Ty.retOk, Ty.sub, Kind.imm]
   | .bool, _, _ => rfl
   | .byte, _, _ => rfl
   | .f64, _, _ => rfl
@@ -1654,7 +1691,7 @@ theorem Ty.relocR_chanFree_of {k : Nat} : ∀ {t : Ty}, t.mutFree = true → t.c
 theorem Ty.relocR_regionsBelow_of {k : Nat} : ∀ {t : Ty}, t.mutFree = true → t.chanFree = true →
     (t.relocR k).regionsBelow (k + 1) = true
   | .int, _, _ => rfl
-  | .tvar _, _, _ => rfl
+  | .tvar _ _ kd, a0, a1 => by cases hr : kd.rf <;> cases hi : kd.imm <;> simp_all [Ty.clampR, Ty.relocR, Ty.relocA, Ty.regionsBelow, Ty.mutFree, Ty.chanFree, Ty.retOk, Ty.sub, Kind.imm]
   | .bool, _, _ => rfl
   | .byte, _, _ => rfl
   | .f64, _, _ => rfl
@@ -1694,7 +1731,9 @@ theorem Ty.relocR_regionsBelow_of {k : Nat} : ∀ {t : Ty}, t.mutFree = true →
 /-- relocR は imm の sub を保つ（全部の region を k へ — セル型 ≤ 要素型を写した後も比べられる） -/
 theorem Ty.relocR_mono_mf {k : Nat} : ∀ {a b : Ty}, Ty.sub a b = true → Ty.sub (a.relocR k) (b.relocR k) = true
   | .int, _, h => by obtain rfl := Ty.sub_int_inv h; exact Ty.sub_refl _
-  | .tvar _, _, h => by obtain rfl := Ty.sub_tvar_inv h; exact Ty.sub_refl _
+  | .tvar _ ρ kd, _, h => by
+    obtain ⟨ρ', rfl, h'⟩ := Ty.sub_tvar_inv h
+    cases hr : kd.rf <;> cases hi : kd.imm <;> simp [Ty.relocR, Ty.sub, hr, hi] <;> rcases h' with rfl | h' | ⟨hc, h'⟩ <;> simp_all <;> omega
   | .bool, _, h => by obtain rfl := Ty.sub_bool_inv h; exact Ty.sub_refl _
   | .byte, _, h => by obtain rfl := Ty.sub_byte_inv h; exact Ty.sub_refl _
   | .f64, _, h => by obtain rfl := Ty.sub_f64_inv h; exact Ty.sub_refl _
@@ -1741,7 +1780,7 @@ theorem Ty.relocR_mono_mf {k : Nat} : ∀ {a b : Ty}, Ty.sub a b = true → Ty.s
 theorem Ty.relocR_sub_leaf {k : Nat} {T W : Ty}
     (hW : ∀ o, W ≠ .opt o) (hU : ∀ l r, W ≠ .union l r) (hP : ∀ l r, W ≠ .prod l r)
     (hR : ∀ r t, W ≠ .ref false r t) (hS : ∀ r t, W ≠ .slice false r t) (hM : ∀ r t, W ≠ .map false r t)
-    (hMuRs : ∀ r n i t, W ≠ .muRs r n i t)
+    (hMuRs : ∀ r n i t, W ≠ .muRs r n i t) (hTv : ∀ i ρ κ, W ≠ .tvar i ρ κ)
     (hm : T.mutFree = true) (hc : T.chanFree = true)
     (hs : Ty.sub (T.relocR k) W = true) : T = W := by
   cases T with
@@ -1756,6 +1795,10 @@ theorem Ty.relocR_sub_leaf {k : Nat} {T W : Ty}
   | own _ _ _ => simp [Ty.mutFree] at hm
   | muRs r n i t =>
     cases hm' : t.mutFree <;> cases W <;> simp_all [Ty.relocR, Ty.sub] <;> exact (hMuRs _ _ _ _ rfl rfl rfl rfl).elim
+  | tvar _ _ kd =>
+    cases W with
+    | tvar => exact absurd rfl (hTv _ _ _)
+    | _ => cases hr : kd.rf <;> cases hi : kd.imm <;> simp [Ty.relocR, Ty.sub, hr, hi] at hs
   | _ => cases W <;> simp_all [Ty.relocR, Ty.sub]
 
 theorem Ty.relocR_sub_opt {k : Nat} {T W : Ty} (hs : Ty.sub (T.relocR k) (.opt W) = true) :
@@ -1766,6 +1809,7 @@ theorem Ty.relocR_sub_opt {k : Nat} {T W : Ty} (hs : Ty.sub (T.relocR k) (.opt W
   | slice m r t => cases m <;> simp [Ty.relocR, Ty.sub] at hs
   | map m r t => cases m <;> simp [Ty.relocR, Ty.sub] at hs
   | muRs r n i t => cases hm' : t.mutFree <;> simp [Ty.relocR, Ty.sub, hm'] at hs
+  | tvar _ _ kd => cases hr : kd.rf <;> cases hi : kd.imm <;> simp [Ty.relocR, Ty.sub, hr, hi] at hs
   | _ => simp [Ty.relocR, Ty.sub] at hs
 
 theorem Ty.relocR_sub_union {k : Nat} {T l r : Ty} (hs : Ty.sub (T.relocR k) (.union l r) = true) :
@@ -1776,6 +1820,7 @@ theorem Ty.relocR_sub_union {k : Nat} {T l r : Ty} (hs : Ty.sub (T.relocR k) (.u
   | slice m r t => cases m <;> simp [Ty.relocR, Ty.sub] at hs
   | map m r t => cases m <;> simp [Ty.relocR, Ty.sub] at hs
   | muRs r n i t => cases hm' : t.mutFree <;> simp [Ty.relocR, Ty.sub, hm'] at hs
+  | tvar _ _ kd => cases hr : kd.rf <;> cases hi : kd.imm <;> simp [Ty.relocR, Ty.sub, hr, hi] at hs
   | _ => simp [Ty.relocR, Ty.sub] at hs
 
 theorem Ty.relocR_sub_prod {k : Nat} {T l r : Ty} (hs : Ty.sub (T.relocR k) (.prod l r) = true) :
@@ -1786,6 +1831,7 @@ theorem Ty.relocR_sub_prod {k : Nat} {T l r : Ty} (hs : Ty.sub (T.relocR k) (.pr
   | slice m r t => cases m <;> simp [Ty.relocR, Ty.sub] at hs
   | map m r t => cases m <;> simp [Ty.relocR, Ty.sub] at hs
   | muRs r n i t => cases hm' : t.mutFree <;> simp [Ty.relocR, Ty.sub, hm'] at hs
+  | tvar _ _ kd => cases hr : kd.rf <;> cases hi : kd.imm <;> simp [Ty.relocR, Ty.sub, hr, hi] at hs
   | _ => simp [Ty.relocR, Ty.sub] at hs
 
 theorem Ty.relocR_sub_ref {k rW : Nat} {T W : Ty} (hs : Ty.sub (T.relocR k) (.ref false rW W) = true) :
@@ -1798,6 +1844,7 @@ theorem Ty.relocR_sub_ref {k rW : Nat} {T W : Ty} (hs : Ty.sub (T.relocR k) (.re
   | slice m r t => cases m <;> simp [Ty.relocR, Ty.sub] at hs
   | map m r t => cases m <;> simp [Ty.relocR, Ty.sub] at hs
   | muRs r n i t => cases hm' : t.mutFree <;> simp [Ty.relocR, Ty.sub, hm'] at hs
+  | tvar _ _ kd => cases hr : kd.rf <;> cases hi : kd.imm <;> simp [Ty.relocR, Ty.sub, hr, hi] at hs
   | _ => simp [Ty.relocR, Ty.sub] at hs
 
 theorem Ty.relocR_sub_slice {k rW : Nat} {T W : Ty} (hs : Ty.sub (T.relocR k) (.slice false rW W) = true) :
@@ -1810,6 +1857,7 @@ theorem Ty.relocR_sub_slice {k rW : Nat} {T W : Ty} (hs : Ty.sub (T.relocR k) (.
   | ref m r t => cases m <;> simp [Ty.relocR, Ty.sub] at hs
   | map m r t => cases m <;> simp [Ty.relocR, Ty.sub] at hs
   | muRs r n i t => cases hm' : t.mutFree <;> simp [Ty.relocR, Ty.sub, hm'] at hs
+  | tvar _ _ kd => cases hr : kd.rf <;> cases hi : kd.imm <;> simp [Ty.relocR, Ty.sub, hr, hi] at hs
   | _ => simp [Ty.relocR, Ty.sub] at hs
 
 theorem Ty.relocR_sub_map {k rW : Nat} {T W : Ty} (hs : Ty.sub (T.relocR k) (.map false rW W) = true) :
@@ -1822,6 +1870,7 @@ theorem Ty.relocR_sub_map {k rW : Nat} {T W : Ty} (hs : Ty.sub (T.relocR k) (.ma
   | ref m r t => cases m <;> simp [Ty.relocR, Ty.sub] at hs
   | slice m r t => cases m <;> simp [Ty.relocR, Ty.sub] at hs
   | muRs r n i t => cases hm' : t.mutFree <;> simp [Ty.relocR, Ty.sub, hm'] at hs
+  | tvar _ _ kd => cases hr : kd.rf <;> cases hi : kd.imm <;> simp [Ty.relocR, Ty.sub, hr, hi] at hs
   | _ => simp [Ty.relocR, Ty.sub] at hs
 
 /-- 写しの帰納法の仮定（P3b-4 — 写す元は子のヒープ Hs〔世界 Ξs / 床 bs / Ψs〕で固定、写す先は親のヒープ H の region k）。
@@ -1963,39 +2012,39 @@ theorem xferW_ok {Δ : Defs} {Ξs : ChanTy} {bs : Nat} {Ψs : StoreTy} {Hs : Hea
   induction W with
   | int =>
     intro T v Ψ H D0 hH hk hD hv he hW hs hm hc
-    obtain rfl := Ty.relocR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hm hc hs
+    obtain rfl := Ty.relocR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hm hc hs
     exact leaf hH hv he rfl rfl rfl (by cases v <;> rfl)
   | tvar i =>
     intro T v Ψ H D0 hH hk hD hv he hW hs hm hc
-    obtain rfl := Ty.relocR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hm hc hs
-    exact leaf hH hv he rfl rfl rfl (by cases v <;> rfl)
+    obtain ⟨_, rfl⟩ := Ty.relocR_tvar_inv hs
+    exact (canonical_tvar hv he).elim
   | bool =>
     intro T v Ψ H D0 hH hk hD hv he hW hs hm hc
-    obtain rfl := Ty.relocR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hm hc hs
+    obtain rfl := Ty.relocR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hm hc hs
     exact leaf hH hv he rfl rfl rfl (by cases v <;> rfl)
   | byte =>
     intro T v Ψ H D0 hH hk hD hv he hW hs hm hc
-    obtain rfl := Ty.relocR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hm hc hs
+    obtain rfl := Ty.relocR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hm hc hs
     exact leaf hH hv he rfl rfl rfl (by cases v <;> rfl)
   | f64 =>
     intro T v Ψ H D0 hH hk hD hv he hW hs hm hc
-    obtain rfl := Ty.relocR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hm hc hs
+    obtain rfl := Ty.relocR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hm hc hs
     exact leaf hH hv he rfl rfl rfl (by cases v <;> rfl)
   | unit =>
     intro T v Ψ H D0 hH hk hD hv he hW hs hm hc
-    obtain rfl := Ty.relocR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hm hc hs
+    obtain rfl := Ty.relocR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hm hc hs
     exact leaf hH hv he rfl rfl rfl (by cases v <;> rfl)
   | fn p r ihp ihr =>
     intro T v Ψ H D0 hH hk hD hv he hW hs hm hc
-    obtain rfl := Ty.relocR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hm hc hs
+    obtain rfl := Ty.relocR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hm hc hs
     exact leaf hH hv he rfl rfl rfl (by cases v <;> rfl)
   | mus nW iW p ihp =>
     intro T v Ψ H D0 hH hk hD hv he hW hs hm hc
-    obtain rfl := Ty.relocR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hm hc hs
+    obtain rfl := Ty.relocR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hm hc hs
     exact leaf hH hv he rfl rfl rfl (by cases v <;> rfl)
   | rvar p =>
     intro T v Ψ H D0 hH hk hD hv he hW hs hm hc
-    obtain rfl := Ty.relocR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hm hc hs
+    obtain rfl := Ty.relocR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hm hc hs
     exact leaf hH hv he rfl rfl rfl (by cases v <;> rfl)
   | muRs rW nW iW bW _ =>
     intro T v Ψ H D0 hH hk hD hv he hW hs hm hc
@@ -2014,15 +2063,15 @@ theorem xferW_ok {Δ : Defs} {Ξs : ChanTy} {bs : Nat} {Ψs : StoreTy} {Hs : Hea
     · exact .inr ⟨H', Ψ', .fold (.muRs rW nW iW bW) w', by simp [xferW, hr], .fold _ hw', hout, .foldRs hokW ht'⟩
   | chan rc t ih =>
     intro T v Ψ H D0 hH hk hD hv he hW hs hm hc
-    obtain rfl := Ty.relocR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hm hc hs
+    obtain rfl := Ty.relocR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hm hc hs
     simp [Ty.chanFree] at hc
   | dom rc t ih =>
     intro T v Ψ H D0 hH hk hD hv he hW hs hm hc
-    obtain rfl := Ty.relocR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hm hc hs
+    obtain rfl := Ty.relocR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hm hc hs
     simp [Ty.chanFree] at hc
   | own _ r t ih =>
     intro T v Ψ H D0 hH hk hD hv he hW hs hm hc
-    obtain rfl := Ty.relocR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hm hc hs
+    obtain rfl := Ty.relocR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hm hc hs
     simp [Ty.mutFree] at hm
   | opt W' ih =>
     intro T v Ψ H D0 hH hk hD hv he hW hs hm hc
@@ -2070,7 +2119,7 @@ theorem xferW_ok {Δ : Defs} {Ξs : ChanTy} {bs : Nat} {Ψs : StoreTy} {Hs : Hea
     intro T v Ψ H D0 hH hk hD hv he hW hs hm hc
     cases m with
     | true =>
-      obtain rfl := Ty.relocR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hm hc hs
+      obtain rfl := Ty.relocR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hm hc hs
       simp [Ty.mutFree] at hm
     | false =>
       obtain ⟨r, e, rfl, hkr, rfl⟩ := Ty.relocR_sub_ref hs
@@ -2095,7 +2144,7 @@ theorem xferW_ok {Δ : Defs} {Ξs : ChanTy} {bs : Nat} {Ψs : StoreTy} {Hs : Hea
     intro T v Ψ H D0 hH hk hD hv he hW hs hm hc
     cases m with
     | true =>
-      obtain rfl := Ty.relocR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hm hc hs
+      obtain rfl := Ty.relocR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hm hc hs
       simp [Ty.mutFree] at hm
     | false =>
       obtain ⟨r, e, rfl, hkr, hse⟩ := Ty.relocR_sub_slice hs
@@ -2131,7 +2180,7 @@ theorem xferW_ok {Δ : Defs} {Ξs : ChanTy} {bs : Nat} {Ψs : StoreTy} {Hs : Hea
     intro T v Ψ H D0 hH hk hD hv he hW hs hm hc
     cases m with
     | true =>
-      obtain rfl := Ty.relocR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hm hc hs
+      obtain rfl := Ty.relocR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hm hc hs
       simp [Ty.mutFree] at hm
     | false =>
       obtain ⟨r, e, rfl, hkr, hse⟩ := Ty.relocR_sub_map hs
@@ -2193,7 +2242,7 @@ theorem xfer_ok {Δ : Defs} {Ξs : ChanTy} {bs : Nat} {Ψs : StoreTy} {Hs : Heap
 theorem relocTo_ne_none {Δ : Defs} {Ξ : ChanTy} {b k : Nat} {W T : Ty} {v : Expr} {Ψ : StoreTy} {H : Heap} {D0 : Nat}
     (hH : HeapOk Δ Ξ b Ψ H) (hD : D0 ≤ Ψ.length) (hDk : k + 1 ≤ D0 ∨ D0 = Ψ.length) (hv : Value v)
     (he : HasType Δ Ξ (Ψ.take D0) b b D0 [] [] v T) (hW : W.regionsBelow (k + 1) = true)
-    (hs : Ty.sub (T.clampR k) W = true) (hc : T.noClamp k = true ∨ (b ≤ k ∧ T.chanFree = true)) :
+    (hs : Ty.sub (T.clampR k) W = true) (hc : T.clampOk b k = true) :
     relocTo k W H v ≠ none := by
   rcases relocTo_ok hH hD hDk hv he hW hs hc with ⟨h, -⟩ | ⟨_, _, _, h, -⟩
   · exact h.elim
@@ -2211,7 +2260,7 @@ theorem xfer_ne_none {Δ : Defs} {Ξs : ChanTy} {bs : Nat} {Ψs : StoreTy} {Hs :
 
 theorem Ty.retOk_chanFree : ∀ {t : Ty}, t.retOk = true → t.chanFree = true
   | .int, _ => rfl
-  | .tvar _, _ => rfl
+  | .tvar _ _ kd, a0 => by cases hr : kd.rf <;> cases hi : kd.imm <;> simp_all [Ty.clampR, Ty.relocR, Ty.relocA, Ty.regionsBelow, Ty.mutFree, Ty.chanFree, Ty.retOk, Ty.sub, Kind.imm]
   | .bool, _ => rfl
   | .byte, _ => rfl
   | .f64, _ => rfl
@@ -2246,7 +2295,7 @@ theorem Ty.retOk_chanFree : ∀ {t : Ty}, t.retOk = true → t.chanFree = true
 theorem Ty.relocA_eq_clampR {ρ0 d : Nat} (h0 : ρ0 ≤ d) :
     ∀ {t : Ty}, t.retOk = true → t.relocA ρ0 d = (t.renR ρ0 d).clampR d
   | .int, _ => rfl
-  | .tvar _, _ => rfl
+  | .tvar _ r kd, h => by simp [Ty.retOk] at h; cases hr : kd.rf <;> cases hi : kd.imm <;> cases r <;> simp_all [Ty.relocA, Ty.renR, Ty.clampR, rmap, Kind.imm] <;> omega
   | .bool, _ => rfl
   | .byte, _ => rfl
   | .f64, _ => rfl
@@ -2316,7 +2365,7 @@ theorem relocRet_ok {Δ : Defs} {Ξ : ChanTy} {b d ρ0 : Nat} (h0 : ρ0 ≤ d) (
     rw [h2]; exact he
   have hcl := Ty.relocA_eq_clampR h0 hro
   rcases relocTo_ok (k := d) hH (by omega) (.inr hlen.symm) hv he0 (Ty.relocA_regionsBelow h0 hro)
-      (by rw [hcl]; exact Ty.sub_refl _) (.inr ⟨hb, by rw [Ty.chanFree_renR]; exact Ty.retOk_chanFree hro⟩) with
+      (by rw [hcl]; exact Ty.sub_refl _) (Ty.clampOk_of_chanFree hb _ (by rw [Ty.chanFree_renR]; exact Ty.retOk_chanFree hro)) with
     ⟨-, hn⟩ | ⟨H', Ψ', v', hrel, hv', ⟨hH', hl', hle, -, -, htk, htkH, -⟩, ht'⟩
   · exact .inl hn
   exact .inr ⟨H', Ψ', v', hrel, hv', ⟨hH', by omega, hle, htk, htkH⟩, ht'⟩
@@ -2543,7 +2592,7 @@ theorem fail_exit {Δ : Defs} {Ξ : ChanTy} {b : Nat} {Ψ : StoreTy} {H : Heap} 
 theorem Ty.relocR_relocR_mf {a k : Nat} : ∀ {t : Ty}, t.mutFree = true → t.chanFree = true →
     (t.relocR a).relocR k = t.relocR k
   | .int, _, _ => rfl
-  | .tvar _, _, _ => rfl
+  | .tvar _ _ kd, a0, a1 => by cases hr : kd.rf <;> cases hi : kd.imm <;> simp_all [Ty.clampR, Ty.relocR, Ty.relocA, Ty.regionsBelow, Ty.mutFree, Ty.chanFree, Ty.retOk, Ty.sub, Kind.imm]
   | .bool, _, _ => rfl
   | .byte, _, _ => rfl
   | .f64, _, _ => rfl
@@ -3259,26 +3308,16 @@ theorem preservation_eval {Δ : Defs} {Ξ : ChanTy} {Λ : LCtx} {b : Nat} {Ψ : 
       simp only [step] at hs; cases hs
       cases he with
       | fnref hfn hl ha => exact ⟨Ξ, .refl Ξ, .ret' hD (.fnref fn ts) (.fnref hfn hl ha) hS hH, hC⟩
-    | callv ef e =>
+    | callv a ef e =>
       simp only [step] at hs; cases hs
       cases he with
-      | callv hf harg hsub hbd =>
-        exact ⟨Ξ, .refl Ξ, .eval' hD hf (.callvL (harg.to_take_full hD) hsub hbd hS) hH, hC⟩
-    | callMv a ef e =>
+      | callv hf harg hsub hbd had =>
+        exact ⟨Ξ, .refl Ξ, .eval' hD hf (.callvL (harg.to_take_full hD) hsub hbd had hS) hH, hC⟩
+    | call a fn ts e =>
       simp only [step] at hs; cases hs
       cases he with
-      | callMv hf harg hsub hbd had =>
-        exact ⟨Ξ, .refl Ξ, .eval' hD hf (.callMvL (harg.to_take_full hD) hsub hbd had hS) hH, hC⟩
-    | call fn ts e =>
-      simp only [step] at hs; cases hs
-      cases he with
-      | call hfn hlen hargs harg hsub hbd =>
-        exact ⟨Ξ, .refl Ξ, .eval' hD harg (.callK hfn hlen hargs hsub hbd hS) hH, hC⟩
-    | callM fn ts e =>
-      simp only [step] at hs; cases hs
-      cases he with
-      | callM hfn hlen hargs harg hanc hsub hbd had =>
-        exact ⟨Ξ, .refl Ξ, .eval' hD harg (.callMK hfn hlen hargs hanc hsub hbd had hS) hH, hC⟩
+      | call hfn hlen hargs harg hsub hbd had =>
+        exact ⟨Ξ, .refl Ξ, .eval' hD harg (.callK hfn hlen hargs hsub hbd had hS) hH, hC⟩
     | ite c th el =>
       simp only [step] at hs; cases hs
       cases he with
@@ -4714,97 +4753,15 @@ theorem preservation_ret {Δ : Defs} {Ξ : ChanTy} {Λ : LCtx} {b : Nat} {Ψ : S
       · have hle2 : StoreLE Ψ (Ψ.set rr (σi ++ (cloneCells ot ρ base len).map
             (fun _ => (true, t)))) := storeLE_set_concat_many hσi _
         exact hS'.mono (fun d' _ => hle2.take_take d') (take_set_of_le hb _)
-    | callvL hb hsub hbd hS' =>
+    | callvL hb hsub hbd had hS' =>
       simp only [step] at hs; cases hs
-      exact ⟨Ξ, .refl Ξ, .eval' hD (hb.of_take_full hD) (.callvR hv (he.to_take_full hD) hsub hbd hS') hH, hC⟩
-    | callvR hva hb hsub hbd hS' =>
+      exact ⟨Ξ, .refl Ξ, .eval' hD (hb.of_take_full hD) (.callvR hv (he.to_take_full hD) hsub hbd had hS') hH, hC⟩
+    | callvR hva hb hsub hbd had hS' =>
       obtain ⟨fn, ts, dfn, rfl, hfn, hl, ha, rfl, rfl⟩ := canonical_fn hva (hb.of_take_full hD)
       simp only [step] at hs; cases hs
-      exact ⟨Ξ, .refl Ξ, .ret' hD hv he (.callK hfn hl ha hsub hbd hS') hH, hC⟩
-    | callMvL hb hsub hbd had hS' =>
-      simp only [step] at hs; cases hs
-      exact ⟨Ξ, .refl Ξ, .eval' hD (hb.of_take_full hD) (.callMvR hv (he.to_take_full hD) hsub hbd had hS') hH, hC⟩
-    | callMvR hva hb hsub hbd had hS' =>
-      obtain ⟨fn, ts, dfn, rfl, hfn, hl, ha, rfl, rfl⟩ := canonical_fn hva (hb.of_take_full hD)
-      simp only [step] at hs; cases hs
-      exact ⟨Ξ, .refl Ξ, .ret' hD hv he (.callMKa hfn hl ha hsub hbd had hS') hH, hC⟩
-    | @callK _ S' d fn ts dfn ta _ hfn hlen hargs hsub hbd hS' =>
-      -- round4: region を push し、coerce した引数をシフト済み本体へ代入して同世界で評価
-      simp only [step] at hs
-      rw [hfn] at hs
-      cases hs
-      have hHl : H.length = d + 1 := by rw [hH.len, hD]
-      have hρ : H.length - 1 = d := by omega
-      rw [hρ]
-      obtain ⟨hp, hro, hnc, hsrc, hbody⟩ := defsOk_inst hΔ hfn hargs
-      obtain ⟨hva', hta'⟩ := HasType.value_coerce hv he hsub
-      have hbΨ : b ≤ Ψ.length := by rw [hD]; omega
-      have harg1 : HasType Δ Ξ (Ψ ++ [[]]) b b (d + 1) [] Λ
-          (Expr.coerceTo ((dfn.inst ts).param.shiftR d) v) ((dfn.inst ts).param.shiftR d) :=
-        hta'.store_mono (storeLE_append Ψ [[]])
-          (storePre_of_take_eq (take_append_left_of_le hbΨ [[]]))
-      have harg2 := HasType.value_depth_weaken hva' harg1 (Nat.le_succ (d + 1))
-      -- 本体を base からシフトして現在世界へ（写像定理の anchor = d の系）、b / f を実行時のタスク境界へ下げる
-      have hsh := HasType.ren_typing (ρ0 := d) (δ := d) (Nat.le_refl d) hbody (Nat.le_refl 2) hsrc
-      simp only [List.map_cons, List.map_nil, Ty.renR_top, Expr.renTy_top] at hsh
-      have hsh1 := hsh.chan_mono (chanLE_nil Ξ)
-      have hsh2 : HasType Δ Ξ (Ψ ++ [[]]) (rmap d d 1) (rmap d d 0) (2 + d)
-          [(dfn.inst ts).param.shiftR d] [] ((dfn.inst ts).body.shiftTy d) ((dfn.inst ts).ret.shiftR d) :=
-        hsh1.store_mono (storeLE_nil _) (fun n _ hl => by
-          have hn0 : n = 0 := Nat.le_zero.mp (by simpa using hl)
-          subst hn0
-          rfl)
-      have hsh3 := HasType.b_lower (b' := b) (by simp only [rmap]; omega) hsh2
-      have hsh4 := HasType.f_lower (f' := b) (Expr.noNewchan_shiftTy hnc) hsh3
-      have h2d : 2 + d = d + 2 := by omega
-      rw [h2d] at hsh4
-      have hsub0 := HasType.subst0 hsh4 hva' (HasType.value_ctx hva' harg2)
-      have hSf : StackTy Δ Ξ (Ψ ++ [[]]) b (.fretK ((dfn.inst ts).ret.relocR d) :: S') _ (d + 2) ((dfn.inst ts).ret.shiftR d) tf :=
-        .fretK hro hbd (hS'.mono (fun d' _ => (storeLE_append Ψ [[]]).take_take d')
-          (take_append_left_of_le hbΨ [[]]))
-      exact ⟨Ξ, .refl Ξ, .eval' (Ψ := Ψ ++ [[]]) (D := d + 2) (by simp [hD])
-        hsub0 hSf (heapOk_push hH), hC⟩
-    | @callMK _ S' d fn ts dfn ta a _ hfn hlen hargs hanc hsub hbd had hS' =>
-      -- R2: region を push し、anchor a（引数値の mut 位置の region = 型の anchor）で本体を写して同世界で評価
-      have hav : Expr.anchorV (dfn.inst ts).param v = Option.some a := by
-        rw [anchorV_eq _ hv he hsub, hanc]
-      simp only [step] at hs
-      rw [hfn] at hs
-      simp only [hav, Option.getD_some] at hs
-      cases hs
-      have hHl : H.length = d + 1 := by rw [hH.len, hD]
-      have hρ : H.length - 1 = d := by omega
-      rw [hρ]
-      obtain ⟨hp, hro, hnc, hsrc, hbody⟩ := defsOk_inst hΔ hfn hargs
-      obtain ⟨hva', hta'⟩ := HasType.value_coerce hv he hsub
-      have hbΨ : b ≤ Ψ.length := by rw [hD]; omega
-      have harg1 : HasType Δ Ξ (Ψ ++ [[]]) b b (d + 1) [] Λ
-          (Expr.coerceTo ((dfn.inst ts).param.renR a d) v) ((dfn.inst ts).param.renR a d) :=
-        hta'.store_mono (storeLE_append Ψ [[]])
-          (storePre_of_take_eq (take_append_left_of_le hbΨ [[]]))
-      have harg2 := HasType.value_depth_weaken hva' harg1 (Nat.le_succ (d + 1))
-      -- 本体を base から写して（region 0 ↦ a、それ以外 +d）現在世界へ、b / f を実行時のタスク境界へ下げる
-      have hsh := HasType.ren_typing (ρ0 := a) (δ := d) had hbody (Nat.le_refl 2) hsrc
-      have hsh1 := hsh.chan_mono (chanLE_nil Ξ)
-      have hsh2 : HasType Δ Ξ (Ψ ++ [[]]) (rmap a d 1) (rmap a d 0) (2 + d)
-          [(dfn.inst ts).param.renR a d] [] ((dfn.inst ts).body.renTy a d) ((dfn.inst ts).ret.renR a d) :=
-        hsh1.store_mono (storeLE_nil _) (fun n _ hl => by
-          have hn0 : n = 0 := Nat.le_zero.mp (by simpa using hl)
-          subst hn0
-          rfl)
-      have hsh3 := HasType.b_lower (b' := b) (by simp only [rmap]; omega) hsh2
-      have hsh4 := HasType.f_lower (f' := b) (Expr.noNewchan_renTy hnc) hsh3
-      have h2d : 2 + d = d + 2 := by omega
-      rw [h2d] at hsh4
-      have hsub0 := HasType.subst0 hsh4 hva' (HasType.value_ctx hva' harg2)
-      have hSf : StackTy Δ Ξ (Ψ ++ [[]]) b (.fretK ((dfn.inst ts).ret.relocA a d) :: S') _ (d + 2)
-          ((dfn.inst ts).ret.renR a d) tf :=
-        .fretKA hro hbd had (hS'.mono (fun d' _ => (storeLE_append Ψ [[]]).take_take d')
-          (take_append_left_of_le hbΨ [[]]))
-      exact ⟨Ξ, .refl Ξ, .eval' (Ψ := Ψ ++ [[]]) (D := d + 2) (by simp [hD])
-        hsub0 hSf (heapOk_push hH), hC⟩
-    | @callMKa _ S' d a fn ts dfn ta _ hfn hlen hargs hsub hbd had hS' =>
-      -- L1: callMv の委譲先 — anchor a は注釈（値から読まない）。callMK の腕と同じく region を push して本体を写す
+      exact ⟨Ξ, .refl Ξ, .ret' hD hv he (.callK hfn hl ha hsub hbd had hS') hH, hC⟩
+    | @callK _ S' d a fn ts dfn ta _ hfn hlen hargs hsub hbd had hS' =>
+      -- R2・L1: call と callv が共有する腕。anchor a は注釈。region を push して本体を写す
       simp only [step] at hs
       rw [hfn] at hs
       cases hs
@@ -5214,7 +5171,7 @@ theorem Ty.rehome_of_mutFree {d : Nat} : ∀ {t : Ty}, t.mutFree = true → t.re
   | .prod l r, h => by
     simp only [Ty.mutFree, Bool.and_eq_true] at h
     simp [Ty.rehome, Ty.rehome_of_mutFree h.1, Ty.rehome_of_mutFree h.2]
-  | .int, _ => rfl | .tvar _, _ => rfl | .bool, _ => rfl | .byte, _ => rfl | .f64, _ => rfl | .unit, _ => rfl
+  | .int, _ => rfl | .tvar _ _ _, _ => rfl | .bool, _ => rfl | .byte, _ => rfl | .f64, _ => rfl | .unit, _ => rfl
   | .opt _, _ => rfl | .union _ _, _ => rfl | .ref _ _ _, _ => rfl | .slice _ _ _, _ => rfl
   | .map _ _ _, _ => rfl | .chan _ _, _ => rfl | .dom _ _, _ => rfl | .fn _ _, _ => rfl | .rvar _, _ => rfl
   | .mus _ _ _, _ => rfl | .muRs _ _ _ _, _ => rfl
@@ -6344,29 +6301,15 @@ theorem progress {Δ : Defs} {Ξ : ChanTy} {b : Nat} {s : State} {tf : Ty} {K : 
       exact ⟨[], .ret (H.set (H.length - 1) (ρi ++ cloneCells ot ρ base len)) S'
           (.mapv true (H.length - 1) ρi.length (cloneCells ot ρ base len).length), K,
         by simp only [step, hρ, hρi]⟩
-    | callvL hb hsub hbd hS' => exact .inr (.inr (.inr ⟨[], _, _, rfl⟩))
-    | callvR hva hb hsub hbd hS' =>
+    | callvL hb hsub hbd had hS' => exact .inr (.inr (.inr ⟨[], _, _, rfl⟩))
+    | callvR hva hb hsub hbd had hS' =>
       obtain ⟨fn, ts, dfn, rfl, -, -, -, -, -⟩ := canonical_fn hva (hb.of_take_full hD)
       exact .inr (.inr (.inr ⟨[], _, _, rfl⟩))
-    | callMvL hb hsub hbd had hS' => exact .inr (.inr (.inr ⟨[], _, _, rfl⟩))
-    | callMvR hva hb hsub hbd had hS' =>
-      obtain ⟨fn, ts, dfn, rfl, -, -, -, -, -⟩ := canonical_fn hva (hb.of_take_full hD)
-      exact .inr (.inr (.inr ⟨[], _, _, rfl⟩))
-    | @callMKa _ S' d a fn ts dfn ta _ hfn hlen hargs hsub hbd had hS' =>
+    | @callK _ S' d a fn ts dfn ta _ hfn hlen hargs hsub hbd had hS' =>
       exact .inr (.inr (.inr ⟨[], .eval (H ++ [[]])
         (.fretK ((dfn.inst ts).ret.relocA a (H.length - 1)) :: S')
         (Expr.subst 0 (Expr.coerceTo ((dfn.inst ts).param.renR a (H.length - 1)) v)
           ((dfn.inst ts).body.renTy a (H.length - 1))), K,
-        by simp only [step, hfn]⟩))
-    | @callK _ S' d fn ts dfn ta _ hfn hlen hargs hsub hbd hS' =>
-      exact .inr (.inr (.inr ⟨[], .eval (H ++ [[]]) (.fretK ((dfn.inst ts).ret.relocR (H.length - 1)) :: S')
-        (Expr.subst 0 (Expr.coerceTo ((dfn.inst ts).param.shiftR (H.length - 1)) v)
-          ((dfn.inst ts).body.shiftTy (H.length - 1))), K, by simp only [step, hfn]⟩))
-    | @callMK _ S' d fn ts dfn ta a _ hfn hlen hargs hanc hsub hbd had hS' =>
-      exact .inr (.inr (.inr ⟨[], .eval (H ++ [[]])
-        (.fretK ((dfn.inst ts).ret.relocA ((Expr.anchorV (dfn.inst ts).param v).getD (H.length - 1)) (H.length - 1)) :: S')
-        (Expr.subst 0 (Expr.coerceTo ((dfn.inst ts).param.renR ((Expr.anchorV (dfn.inst ts).param v).getD (H.length - 1)) (H.length - 1)) v)
-          ((dfn.inst ts).body.renTy ((Expr.anchorV (dfn.inst ts).param v).getD (H.length - 1)) (H.length - 1))), K,
         by simp only [step, hfn]⟩))
     | @fretK _ S' d t0 _ hro hbd hS' =>
       right; right; right
@@ -6982,10 +6925,8 @@ theorem step_shared_stable_leaf {Δ : Defs} {Ξ : ChanTy} {b : Nat} {s : State} 
     | denter _ _ => simp only [step] at hs; cases hs; rfl
     | dexit _ _ => simp only [step] at hs; cases hs; rfl
     | fnref fn ts => simp only [step] at hs; cases hs; rfl
-    | callv ef e => simp only [step] at hs; cases hs; rfl
-    | callMv a ef e => simp only [step] at hs; cases hs; rfl
-    | call fn ts e => simp only [step] at hs; cases hs; rfl
-    | callM fn ts e => simp only [step] at hs; cases hs; rfl
+    | callv a ef e => simp only [step] at hs; cases hs; rfl
+    | call a fn ts e => simp only [step] at hs; cases hs; rfl
     | mkslice m t₀ =>
       simp only [step] at hs
       split at hs
@@ -7235,22 +7176,11 @@ theorem step_shared_stable_leaf {Δ : Defs} {Ξ : ChanTy} {b : Nat} {s : State} 
     | dexitRE hvc hc _ hS' =>
       obtain ⟨p, k, _, rfl, -⟩ := canonical_dom hvc (hc.of_take_full hD)
       simp only [step] at hs; cases hs; rfl
-    | callvL hb hsub hbd hS' => simp only [step] at hs; cases hs; rfl
-    | callvR hva hb hsub hbd hS' =>
+    | callvL hb hsub hbd had hS' => simp only [step] at hs; cases hs; rfl
+    | callvR hva hb hsub hbd had hS' =>
       obtain ⟨fn, ts, dfn, rfl, -, -, -, -, -⟩ := canonical_fn hva (hb.of_take_full hD)
       simp only [step] at hs; cases hs; rfl
-    | callMvL hb hsub hbd had hS' => simp only [step] at hs; cases hs; rfl
-    | callMvR hva hb hsub hbd had hS' =>
-      obtain ⟨fn, ts, dfn, rfl, -, -, -, -, -⟩ := canonical_fn hva (hb.of_take_full hD)
-      simp only [step] at hs; cases hs; rfl
-    | @callMKa _ S' d a fn ts dfn ta _ hfn hlen hargs hsub hbd had hS' =>
-      simp only [step] at hs
-      rw [hfn] at hs
-      cases hs
-      have hbH : b ≤ H.length := by rw [hH.len, hD]; omega
-      simp only [State.heap]
-      exact take_append_left_of_le hbH [[]]
-    | @callK _ S' d fn ts dfn ta _ hfn hlen hargs hsub hbd hS' =>
+    | @callK _ S' d a fn ts dfn ta _ hfn hlen hargs hsub hbd had hS' =>
       simp only [step] at hs
       rw [hfn] at hs
       cases hs
@@ -7271,13 +7201,6 @@ theorem step_shared_stable_leaf {Δ : Defs} {Ξ : ChanTy} {b : Nat} {s : State} 
       have h2 : H.take b = (H.take d).take b := by
         rw [List.take_take, Nat.min_eq_left (by omega)]
       rw [h1, h2, htkH]
-    | @callMK _ S' d fn ts dfn ta a _ hfn hlen hargs hanc hsub hbd had hS' =>
-      simp only [step] at hs
-      rw [hfn] at hs
-      cases hs
-      have hbH : b ≤ H.length := by rw [hH.len, hD]; omega
-      simp only [State.heap]
-      exact take_append_left_of_le hbH [[]]
     | @fretKA _ S' d ρ0 t0 _ hro hbd had hS' =>
       rcases relocRet_ok had (by omega) hH hD hv (HasType.value_ctx hv he) hro with hn | ⟨H', Ψ', v', hrel, -, ⟨hH', hlen', -, -, htkH⟩, -⟩
       · simp only [step, hn] at hs; cases hs; rfl

@@ -1,0 +1,13 @@
+@@full	ac0428419daa4b9d	2881	86635
+@head	1a1615c826193844	0	294
+const baseVectors	b35b9cbe526a85fb	3	141
+const wycheproof	ce2d3efd2119fc14	3	140
+func TestAgreement	5a774135732a4572	67	2419
+func TestBasePoint	4cca1d17d8f33f7c	74	2397
+func TestRejects	c3c454b146b60ef6	108	3485
+func TestWycheproof	6d30b2efb88b2b65	143	4752
+func scalar32	a87aa4656903301f	61	2043
+func unhex	e7aa976ed6d8366f	10	449
+type WFile	7d6e7704c885999b	3	160
+type WGroup	27b1406a91850490	3	155
+type WTest	2e6383d66f1ecfc9	6	332

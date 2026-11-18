@@ -5,7 +5,7 @@
 # 判定: 既定 ≤ 1.4かつFUSE=0 ≥ 1.6（基準が効いていること）・全レスポンスが揃うこと（8本の接続を並べた回も）。
 # 遅い読み手（testdata/httpcheck/slowread.py）: 受けのウィンドウの小さい相手がリクエストを1本ずつ送りながら作りより遅く読むkeep-aliveの接続1本（送りのバッファが満ちたまま
 # 送信バッファリングが短くなる）。送り残しの後のスリープが保険のtimeoutまで滞ると1本ごとに ≈100 ms伸びる — 30秒以内に全レスポンスを読み切ること。
-# 記録の詰め: NR_QS（頭の読んだバイト数と送りの状態）を素で読み書きするのは qoff* / sst* の 4 関数だけ。
+# 記録の詰め: NR_QS（接続の記録では頭の読んだバイト数と送りの状態・listener の記録では列の本数と上限）を素で読み書きするのは qoff* / sst* / lq* の 6 関数だけ。
 # 留める相手を混ぜた溢れ（testdata/httpcheck/hold.py — 受けのウィンドウ2 KBで ≈8 KBのレスポンスのリクエストを900本送り一切読まない接続4本 → 満ちた後の送信バッファリングが未完で留まる）:
 # その間にkeep-aliveの接続2本でN × 10本を送り、送り場に入らなかった送信バッファリング（飛行記録のPOSTのb = 0・長さ ≤ 16384）が0であること
 # --mutants: ミュータント40（送信バッファリングのMSG_WAITALLを落とす — 短い完了が誤りになり接続が切れる）・41（フラグを消費しても送信バッファリングしない）・42（チャンクを空きへ返さない）でビルドしたsrvに
@@ -63,8 +63,8 @@ judge() {
 "$S2" build testdata/httpcheck/srv.sober --emit=elf --passes -o "$W/srv" > "$W/b.log" 2>&1 || { echo "fusecheck: FAIL build ($(head -c 200 "$W/b.log"))"; exit 1; }
 bad=0
 # 記録の詰めの検査: NR_QSの素の読み書きがqoff* / sst* の外に無いこと
-raw=$(awk '/^func /{f=$2} /NR_QS/ && !/^const NR_QS/ && f !~ /^(qoffGet|qoffSet|sstGet|sstSet)\(/' src/compiler/lower/netring.sober | grep -v '^ *//')
-[ -n "$raw" ] && { echo "fusecheck: FAIL — raw NR_QS access outside qoff*/sst*: $raw"; bad=1; }
+raw=$(awk '/^func /{f=$2} /NR_QS/ && !/^const NR_QS/ && f !~ /^(qoffGet|qoffSet|sstGet|sstSet|lqGet|lqSet)\(/' src/compiler/lower/netring.sober | grep -v '^ *//')
+[ -n "$raw" ] && { echo "fusecheck: FAIL — raw NR_QS access outside qoff*/sst*/lq*: $raw"; bad=1; }
 judge base "$W/srv" || { echo "fusecheck: FAIL — the posted send is not taken or loses responses"; bad=1; }
 # slow <名前> <srv> → 0 = 遅い読み手の接続で全レスポンスを30秒以内に読み切る
 slow() {

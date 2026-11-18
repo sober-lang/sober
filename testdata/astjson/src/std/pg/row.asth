@@ -1,0 +1,24 @@
+@@full	3ed0013f91d581f5	5510	159822
+@head	9e748f7eb24c3bb1	0	180
+const maxInt	99141d69749407c1	1	64
+func Col	5c772e99cd7ad124	29	1058
+func ColBool	cd09472d67883b4a	52	1687
+func ColBytes	a77cb0fbeba076bd	34	1149
+func ColCivil	28cd14927a5774a5	29	1056
+func ColFloat	eb4597d7f03b488d	21	822
+func ColInt	06169d5ac25ae868	67	2192
+func ColJson	f3d7433393881eab	79	2564
+func ColJsonText	770d9ae97e4d11b6	79	2554
+func ColNumeric	0f7905b87f3d9455	21	827
+func ColString	55f1a447c6eadb18	57	1866
+func ColTime	2e1ce0d63733a1d2	25	930
+func ColUuid	6f55e5f8d8952a98	23	941
+func IsNull	fad384786d42e9b9	14	558
+func Scaled	1cdca060a1f16713	35	1519
+func Width	56b79102edbbd39c	7	325
+func binOf	769130c4597bc9fb	19	686
+func cell	a06b82e1ae50b81d	37	1265
+func iterN	16f0da85b398b596	25	929
+func miss	d48eb19f301cd573	21	875
+func scaleDigits	2e4348bf47f959e3	193	6386
+func scaleInt	9def2a6c5c1ac671	38	1338

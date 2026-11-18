@@ -86,18 +86,21 @@ HTTP/1.1 200 OK
 Content-Type: text/plain
 Cache-Control: private
 Content-Length: 11
+Date: Sun, 06 Nov 1994 08:49:37 GMT
 
 hello, ann
 HTTP/1.1 200 OK
 Content-Type: text/plain
 Cache-Control: private
 Content-Length: 13
+Date: Sun, 06 Nov 1994 08:49:37 GMT
 
 see you, bob
 HTTP/1.1 401 Unauthorized
 Cache-Control: private
 Content-Length: 0
 Connection: close
+Date: Sun, 06 Nov 1994 08:49:37 GMT
 
 
 true
@@ -105,7 +108,7 @@ true
 
 - `greeter` は `http.server.Handler` を返す関数です。返すクロージャが `word` を捕まえていて、何を捕まえたかは `return` の行を見れば分かります。`greeter("hello")` と `greeter("see you")` は、同じ形の別のハンドラです。
 - `Auth` は2節の形（関数のフィールドを持つstruct）で、`before` だけを書いて `after` を省いています。
-- レスポンスを印字するために、ネットワークの代わりにリクエストを文字列から流しています（`feed` / `show`）。実際のサーバーでは `http.server.Serve` に同じ `Dispatch` を渡します。
+- レスポンスを印字するために、ネットワークの代わりにリクエストを文字列から流しています（`feed` / `show`）。実際のサーバーでは、`net.Serve` のhandlerで `http.server.ServeConn` に同じ `Dispatch` を渡します（[Webサーバ](web-server.ja.md) の1節）。
 
 ## 2. 関数の組 — 関数のフィールドを持つstruct（辞書）
 

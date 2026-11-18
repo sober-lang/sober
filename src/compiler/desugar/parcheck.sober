@@ -47,6 +47,13 @@ func ParCheck(p loader.Program) error? {
 @errors(diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind)
 func ParCheckTyped(st mut S, p loader.Program) error? {
     par, file := pcImports(p)
+    // 関数の区間ごとの子で歩く形（pcpar.sober）
+    if (par || file || len(p.cap_lo) > 0) && pcParOn(mut st) {
+        k := pcPar(mut st, p, file || len(p.cap_lo) > 0, par)
+        if k.ok {
+            return pcPickErr(k)
+        }
+    }
     if file || len(p.cap_lo) > 0 {
         // io.File の使い方と借りの関数値の使い方（filecheck.sober — 同じ層・同じ表層型。借りは値の位置のラムダがあるときだけ — (α-L0)）
         fileCheck(mut st)?
@@ -1200,13 +1207,22 @@ const PC_MEMO = 8192
 func pcMemoInit(st mut S) {
     // 末尾の1ワード（PC_MEMO * 2）= deadline: を書いたScopeがあるマーク（Sのフィールドを足さない: フィールド1つで自己checkの核の節が数百 × 呼び出し点）・
     // 末尾の2ワード目 = domainの脱出の検査を掛ける関数のマークのチェーンの頭（domesc.soberのdeMark）・その後ろ = domesc.soberのメモの表（deMemo）
-    for i <- iter.Range(0, PC_MEMO * 2 + 2 + DE_MEMO * 2) {
+    // その後ろ = deadline: のマークを付けたpackage（npkgワード — 関数の区間の子が親へ返す・pcpar.sober）
+    if table.Len(mut st.pcMemo) > 0 {
+        return
+    }
+    for i <- iter.Range(0, PCDL_BASE + st.npkg) {
         table.Push(mut st.pcMemo, 0)
     }
 }
 
+const PCDL_BASE = PC_MEMO * 2 + 2 + DE_MEMO * 2
+
 func pcDeadlineMark(st mut S) {
     table.Set(mut st.pcMemo, PC_MEMO * 2, 1)
+    if st.curPkg >= 0 && st.curPkg < st.npkg && table.Len(mut st.pcMemo) >= PCDL_BASE + st.npkg {
+        table.Set(mut st.pcMemo, PCDL_BASE + st.curPkg, 1)
+    }
     gcDlMark(mut st, st.curPkg)
 }
 

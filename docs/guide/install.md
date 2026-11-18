@@ -60,6 +60,10 @@ Run as a container's init (PID 1), a Sober program still stops on SIGTERM / SIGI
 ## For developers: running the verification net
 
 When you work on the compiler itself, `scripts/gates.sh --full` runs every check. A check whose inputs are the same as when it last passed reuses that record (`--no-cache` runs everything). The net additionally needs:
-[Lean 4](https://lean-lang.org/) (the version in `lean/lean-toolchain` — `cd lean && lake build`), Go (independent oracles and the benchmark twins), Rust (the benchmark twins), Node.js (some tools), `perf` (benchmarks), and GNU as (checking the instruction encoder).
+[Lean 4](https://lean-lang.org/) (the version in `lean/lean-toolchain`, built with `cd lean && lake build`), Go (independent oracles and the benchmark twins), Rust (the benchmark twins), Node.js (some tools), `perf` (instruction ratchets and benchmarks), valgrind (per-request instruction counts), python3, clang or zig (checking the .ll output), and GNU as (checking the instruction encoder).
+
+A check that cannot run because a tool, a permission, a CPU feature or enough CPUs is missing fails. It is never skipped silently.
+To skip it, list the condition names in `SOBER_GATES_ALLOW_SKIP`, separated by spaces (for example `SOBER_GATES_ALLOW_SKIP="perf cpus" scripts/gates.sh --full`).
+The failing line names the condition to list. A run with skipped checks ends with `PASS with N skipped` instead of `ALL PASS`, and names the skipped checks and their conditions.
 
 Next: [Your first program](first-program.md)

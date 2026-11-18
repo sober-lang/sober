@@ -10,6 +10,8 @@ package iface
 // - std の `@intrinsic` の宣言 = 載せた範囲（展開される関数の本体）が参照したものだけ（std/io の Chunks — 本体から鍵を呼ぶ展開される関数。stage1 の .sobi には無い — std だけ）
 // - 畳めるconst = 畳んだ値だけ（`const step = 4` — `@secret` のマークは残す）・他のconst（辞書・@embed）は原文の宣言のまま
 // - E2-S の逃げ（callM の Def として型付かなかった関数 — checker.ExclE2）は宣言の前に `@expand`（呼び出し点ごとに展開する — 判定 D'）
+// - 総称関数は宣言の前に `@kind(T: 性質…, …)`（型パラメータごとの推論した kind の正規形の全部の性質 — 綴りは ast.KindWord。性質が無ければ any）。
+//   check --pkg の視点の外では本体を検査しないので、依存する側はこれを読む
 // 載せる範囲 = 根（公開の項目 + errorラベル全部）からのリンク可視の閉包: 載せた範囲の識別子（フィールドの選択 `x.f` のfと文字列リテラルを除く）が
 // package のトップレベル名（union の variant 名はその union）なら足す。import は載せた範囲が参照したものだけ（暗黙の import は落とす）。
 // 並びは印字器の file と同じ: 型 → const → 関数（種類の中はファイル順 × 宣言順 — 関数表・error のタグの順は種類の中の順だけを使う）
@@ -33,7 +35,8 @@ type Item struct {
 // @layoutのフィールドの幅の型・@embedの受け皿・catchを原文のまま書くため。loaderの変換は節を末尾に足すか同じ添字で差し替えるだけなので、宣言の節の添字は
 // p の表〔fn_node / c_node〕とそろう）。読み直せないファイル（loader が合成した `$layout/…` — file = -1）は載せない（依存する側の loader が自分の
 // 呼び出しのぶんを合成し直す）
-func Emit(p loader.Program, pk int, excl []int, raw []ast.Tree) []byte {
+// ks = 推論した kind（関数表の添字で [関数, n, k…] の並び — checker.KindsGen）。無い関数は .sobi から読んだ `@kind` のまま
+func Emit(p loader.Program, pk int, excl []int, raw []ast.Tree, ks []int) []byte {
     q := loader.WithTrees(p, raw)
     items := pkgItems(q, pk)
     names := nameIndex(q, items)
@@ -101,6 +104,7 @@ func Emit(p loader.Program, pk int, excl []int, raw []ast.Tree) []byte {
         if inc[i] && items[i].kind == 1 {
             fi := fnIndex(q, items[i])
             out = append(out, '\n')
+            kindLine(mut out, q.trees[items[i].file], items[i].node, fi, ks)
             appendB(mut out, printer.FuncDeclText(q.trees[items[i].file], items[i].node, !wholeFn(q, items[i], fi), contains(excl, fi)))
             out = append(out, '\n')
         }
@@ -419,4 +423,44 @@ func Sigs(p loader.Program) []byte {
         out = append(out, '\n')
     }
     return freeze(out)
+}
+
+// 総称関数（関数表の添字 fi・宣言の節 n）の `@kind` の行。kind は ks（推論した kind）から、無ければ木の `@kind` から。どちらも無ければ書かない
+func kindLine(out mut []byte, t ast.Tree, n int, fi int, ks []int) {
+    tps := t.nodes[n].b
+    np := if tps >= 0 { ast.ListLen(t, tps) } else { 0 }
+    if np == 0 {
+        return
+    }
+    mut kinds := mut []int{}
+    mut q := 0
+    while q + 1 < len(ks) {
+        if ks[q] == fi && ks[q + 1] == np {
+            for i <- iter.Range(0, np) {
+                kinds = append(kinds, ks[q + 2 + i])
+            }
+        }
+        q += 2 + ks[q + 1]
+    }
+    if len(kinds) == 0 {
+        kl := ast.FuncKinds(t, n)
+        if kl >= 0 && t.data[kl] == np {
+            for i <- iter.Range(0, np) {
+                kinds = append(kinds, t.data[kl + 1 + i])
+            }
+        }
+    }
+    if len(kinds) != np {
+        return
+    }
+    obuf.Lit(mut out, "@kind(")
+    for i <- iter.Range(0, np) {
+        if i > 0 {
+            obuf.Lit(mut out, ", ")
+        }
+        obuf.Lit(mut out, loader.Name(t, ast.ListAt(t, tps, i)))
+        obuf.Lit(mut out, ": ")
+        obuf.Lit(mut out, ast.KindText(kinds[i]))
+    }
+    obuf.Lit(mut out, ")\n")
 }

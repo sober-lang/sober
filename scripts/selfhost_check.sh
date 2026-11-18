@@ -8,13 +8,14 @@
 #   scripts/selfhost_check.sh FILE.json... 指定のコア AST JSON だけ
 #
 # (i)   testdata/corevec.jsonl（seed 42・1000本 — 型指向 + 近傍のミューテーション + chaos）の各 "e" + testdata/corevec_byte/*.json・corevec_float/*.json・corevec_copyto/*.json・corevec_par/*.json・corevec_narrow/*.json（手書き — Genが作らないop / 作りにくいreject）
-# (ii)  第3ゴールデンtestdata/corejson/*.json（71本）+ compiler/tools/*（Sober製コンパイラ自身のコアAST。cwd = compiler/）。
+# (ii)  第3ゴールデンの全文 out/gold/core/*.json（scripts/corejson.sh --gen が作る — 表は testdata/corejson）+ compiler/tools/*（Sober製コンパイラ自身のコアAST。cwd = compiler/）。
 #       7本全部（desugardump・checkdump・sobercheckはコアASTが9.6〜10.6MB — 旧64MBスロットでは1バイト1ワードの入力が溢れたので
 #    外していた。region 予約の拡大 = で解除）。
 #       この 3 本は直結の e2e（scripts/selfhost_e2e.sh — JSON を経ない）が検査する
 # (iii) (ii) の第3ゴールデンの各本にscripts/checkmut.tsの置換を1か所ずつ当てたミュータント（多くはLeanが拒否する）
 # (iv)  testdata/checkneg/*.sober（脱糖は通って Lean が拒否する型エラーの例）の --core-json
 # (v)   部分検査の封筒（"parts":true）— 下の (v) の注記
+# 各本で、判定と別に形の検査（Def.raisedOk — Lean の --shape-batch と checkdump の形の結果）も比べる
 #
 # 比べるのはstdoutのバイト列。parse errorだけは文言を比べない（LeanのJson.parse / fromJsonの文言はコピーしていない —
 # 仮決め R11-2）。前提: zig build 済み・lean で lake build 済み（$SOBER / $STAGE1 / $SOBER_CHECK / $SOBER_GEN で差し替え可）
@@ -54,6 +55,22 @@ one() { # $1 = コア AST JSON のファイル、$2 = 表示名
         return
     fi
     norm < "$w/s.raw" > "$w/s.out"
+    # 形の検査（Def.raisedOk）: Sober は通らない Def があれば判定の代わりに形の結果を出す。Lean の形の結果と比べる
+    if [ -n "${LEANSHAPE:-}" ] && [ -f "$LEANSHAPE/$(lean_key "$1").out" ]; then
+        cp "$LEANSHAPE/$(lean_key "$1").out" "$w/ls.out"
+    else
+        { tr '\n' ' ' < "$1"; echo; } | "$CHECK" --shape-batch > "$w/ls.out" || true
+    fi
+    # 読めない入力（Lean は {"raised":null}）は形の結果が無いので、判定の parse error だけを比べる
+    if grep -q '"raised":false' "$w/s.out" || grep -q '"raised":false' "$w/ls.out"; then
+        if cmp -s "$w/ls.out" "$w/s.out"; then
+            echo "@@ shape"
+        else
+            echo "FAIL: $2: shape: Lean $(head -c 120 "$w/ls.out") / Sober $(head -c 120 "$w/s.out")"
+            echo "@@ fail"
+        fi
+        return
+    fi
     if ! cmp -s "$w/l.out" "$w/s.out"; then
         echo "FAIL: $2: Lean $(head -c 120 "$w/l.out") / Sober $(head -c 120 "$w/s.out")"
         echo "@@ fail"
@@ -68,7 +85,9 @@ section() { # $1 = 名前。直前の区切りからの集計を出す（並列�
     par_wait > "$tmp/all"
     grep -v '^@@ ' "$tmp/all" || true
     acc=$(par_count acc "$tmp/all"); rej=$(par_count rej "$tmp/all"); fail=$((fail + $(par_count fail "$tmp/all")))
-    echo "selfhost_check: $1: accepted=$acc, rejected=$rej, fail=$fail"
+    local shp
+    shp=$(par_count shape "$tmp/all")
+    echo "selfhost_check: $1: accepted=$acc, rejected=$rej, shape=$shp, fail=$fail"
     tot_fail=$((tot_fail + fail))
     fail=0; acc=0; rej=0
 }
@@ -77,10 +96,13 @@ par_init "$tmp"
 
 # prefetch は並列の組の前に、その組の入力を Lean のバッチに流しておく（one は結果を $LEANOUT から読む。単体実行 = ファイル指定のときは使わない）
 LEANOUT=
+LEANSHAPE=
 prefetch() { # 引数 = 入力ファイル
     printf '%s\n' "$@" > "$tmp/pf.list"
     LEANOUT=$tmp/lean
     SOBER_CHECK=$CHECK lean_batch "$tmp/pf.list" "$LEANOUT"
+    LEANSHAPE=$tmp/leanshape
+    LEAN_MODE=--shape-batch SOBER_CHECK=$CHECK lean_batch "$tmp/pf.list" "$LEANSHAPE"
 }
 
 # oneneg は負例: 判定が一致した上で Lean が拒否していること
@@ -134,6 +156,11 @@ section "(i''''') corevec_par"
 prefetch testdata/corevec_narrow/*.json
 for f in testdata/corevec_narrow/*.json; do par_run one "$f" "$f"; done
 section "(i'''''') corevec_narrow"
+# 形の検査（Def.raisedOk）: 型変数の出現の旗が宣言の kind と違う・rf の型変数の置き直し先が 0 でない・宣言の無い型変数（neg_*）は
+# 2 つの検査器が同じく形の不一致を答える。Gen はこの形を作らない
+prefetch testdata/corevec_shape/*.json
+for f in testdata/corevec_shape/*.json; do par_run one "$f" "$f"; done
+section "(i') corevec_shape"
 # (i') 追加シード（golden に焼かない乱択 — corevec v2）: --more N で seed 1..N × 1000 本。gates --all（GATES_ALL=1）では常設で seed 1..2（3 本で +90 s を計測 — +1 分の目安に合わせて 2）
 more=0
 if [ "${1:-}" = "--more" ]; then more=${2:-1}
@@ -156,8 +183,10 @@ for t in $TOOLS; do
     (cd src/compiler && "$SOBER" check "tools/$t/main.sober" --core-json > "$tmp/tools/$t.json" 2> /dev/null || rm -f "$tmp/tools/$t.json") &
 done
 wait
-prefetch testdata/corejson/*.json "$tmp"/tools/*.json
-for f in testdata/corejson/*.json; do par_run one "$f" "$f"; done
+scripts/corejson.sh --gen > /dev/null || { echo "FAIL: scripts/corejson.sh --gen"; exit 1; }
+gold_rlock core
+prefetch out/gold/core/*.json "$tmp"/tools/*.json
+for f in out/gold/core/*.json; do par_run one "$f" "$f"; done
 for t in $TOOLS; do
     [ -f "$tmp/tools/$t.json" ] || { echo "FAIL: --core-json src/compiler/tools/$t"; fail=$((fail + 1)); continue; }
     par_run one "$tmp/tools/$t.json" "src/compiler/tools/$t"
@@ -167,9 +196,9 @@ section "(ii) corpus"
 # (iii) ミュータント
 mkdir -p "$tmp/mut"
 if [ "$fast" = 1 ]; then
-    mapfile -t mins < <(ls testdata/corejson/*.json | awk 'NR % 4 == 1')
+    mapfile -t mins < <(ls out/gold/core/*.json | awk 'NR % 4 == 1')
 else
-    mins=(testdata/corejson/*.json)
+    mins=(out/gold/core/*.json)
 fi
 node scripts/checkmut.ts "$tmp/mut" "${mins[@]}" > /dev/null
 prefetch "$tmp/mut"/*.json
@@ -210,6 +239,10 @@ for t in $ptargets; do par_run partsgen "$t"; done
 par_wait > "$tmp/all"
 grep -v '^@@ ' "$tmp/all" || true
 fail=$((fail + $(par_count fail "$tmp/all")))
+# stage1は呼び出しのanchor "r" を書かないので、Leanの入口と同じ補い（sober-check --fill-anchors）を当てた形をLeanとSoberの両方へ渡す
+for f in "$tmp/parts"/*.json; do
+    "$CHECK" --fill-anchors < "$f" > "$f.fill" && mv "$f.fill" "$f"
+done
 prefetch "$tmp/parts"/*.json
 for f in "$tmp/parts"/*.json; do
     grep -q '"parts":true' "$f" || { echo "FAIL: $f: not a parts envelope"; fail=$((fail + 1)); continue; }

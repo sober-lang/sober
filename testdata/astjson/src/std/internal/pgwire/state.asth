@@ -1,0 +1,7 @@
+@@full	389af2f5eeaafe91	1362	40529
+@head	5113cd0e12c6f638	0	33
+func Absorb	08d5e66f72379003	59	2430
+func NewSess	8e6e4b642eb9160a	13	699
+func Param	0cea9cb2f114bc33	31	1090
+func setParam	f08fe1e36f0e9570	91	3165
+type Sess	e96d73c7a645a7df	11	528

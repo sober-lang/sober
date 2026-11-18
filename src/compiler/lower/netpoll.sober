@@ -297,6 +297,8 @@ func buildEpPoll(st mut St) {
     bLv := newBlock(mut st)
     condbr(mut st, cmp(mut st, CEq, ud, iconst(mut st, UD_RING)), en, -1, bLv, -1)
     setCur(mut st, bLv)
+    // Serveの期限の走査のタイマー（rdl.sober。timerfd・data = UD_RDL）
+    rdlEpReap(mut st, ud, en)
     frRec(mut st, FK_READY, ud, cmp(mut st, CEq, load(mut st, itop(mut st, ud), TC_IORES), pend))
     // 期限でウェイクアップした後に届いたreadinessは捨てる（待ち手は登録を外しに行く途中）
     condbr(mut st, cmp(mut st, CEq, load(mut st, itop(mut st, ud), TC_IORES), pend), bTk, -1, en, -1)

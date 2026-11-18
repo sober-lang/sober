@@ -1,0 +1,19 @@
+@@full	2181c8efecb4f7c9	1610	47311
+@head	73913c90b689cd29	0	111
+const End	85a872561930564c	1	43
+const LParen	ac12241dbedc37e5	1	46
+const Minus	8e3f57f9dd4330c8	1	45
+const Num	63189acb771f6a3b	1	43
+const Plus	518a250718b64410	1	44
+const RParen	e1a13695aad75327	1	46
+const Slash	971f7b2ac7159370	1	45
+const Star	fad324063fc34368	1	44
+const step	902ba5ad3e5d38f1	1	44
+func Lex	f7e844ab1eca6f3d	121	4299
+func Next	1ca1f8e5771cf4f6	29	1045
+func Start	11a1ac57600dd26a	7	398
+func clamp	05505e0ea42117a1	15	567
+func isDigit	b916d41c069251e6	10	413
+func punct	532569421ee36be6	35	1237
+type Cursor	04aed8767d02f19d	4	198
+type Token	1d311883f3af0fdc	4	211

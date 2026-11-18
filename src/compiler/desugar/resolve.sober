@@ -861,9 +861,9 @@ func tyOf(st mut S, pk int, te NodeRef, at NodeRef, fuel int) (TyRef, error?) {
     return 0, diag.CoreFragment{at: posOf(mut st, at)}
 }
 
-// map のキー型（int | string）
+// map のキー型（int | string | 型変数 — 型変数のキーは kind の key の性質を要求する。検査器の規則）
 func mapKeyTy(st mut S, k TyRef, at NodeRef) (TyRef, error?) {
-    if tg(mut st, k) == TInt || isStringTy(mut st, k) {
+    if tg(mut st, k) == TInt || isStringTy(mut st, k) || tg(mut st, k) == TVar {
         return k, nil
     }
     // float のキーは不可（language.md 37 節 — NaN ≠ NaN で引けない・+0 / -0 が同じキー）: 位置つきの型エラー
@@ -883,6 +883,9 @@ func genericEnv(st mut S, pk int, dr int, args ListRef, at NodeRef) (int, error?
     env := listN(mut st, n * 3)
     for i <- iter.Range(0, n) {
         t := tyOf(mut st, pk, latN(mut st, args, i), at, TYFUEL)?
+        if tg(mut st, t) == TFn {
+            return 0, diag.TypeMismatch{at: posOf(mut st, at), kind: 11}
+        }
         if !tyArgValueOk(mut st, t) {
             return 0, diag.CoreFragment{at: posOf(mut st, at)}
         }

@@ -8,10 +8,10 @@ package desugar
 //      別の region から来ると callM の規則が落ちる。保守的に「2 つ以上」で外す）
 // 上げる判定は関数の署名と本体だけで決まる（packageの中で閉じる・判定D'）。呼び出し点の形に依る2つは、関数のフラグでなく呼び出し点ごとに選ぶ
 // （e2sSiteInline — 形が合わない呼び出し点だけ展開する。展開は inline の許容性の論証の向き〔callM で型付く ⇒ 展開でも型付く〕に倒すだけ）:
-//   3. 型引数が region を持つ（tyArgOk でない）呼び出し点
 //   4. フィールドの経路のmut実引数（`mut x.f`）を渡す呼び出し点
-// 本体が Def として型付かなかった関数は、呼び手（checker の CheckE2 等）が検査器の判定で集めて e2sExcl に入れて脱糖し直す（逃げ — 展開へ戻すのは
-// 型付けを緩めるだけなので単調に収束）。lower の経路（Init）は触らない — build は今どおり δ。
+// 本体が Def として型付かなかった関数と、型引数が関数の kind を満たさない呼び出し点を持つ関数（条件3 — kind は検査器が推論した後にしか
+// 分からないので、呼び出し点ごとではなく関数ごとに戻す）は、呼び手（checker の CheckE2 等）が検査器の判定で集めて e2sExcl に入れて
+// 脱糖し直す（逃げ — 展開へ戻すのは型付けを緩めるだけなので単調に収束）。lower の経路（Init）は触らない — build は今どおり δ。
 
 import "ast"
 import "std/iter"
@@ -182,7 +182,7 @@ func fnPromoted(st mut S, i int) bool {
     return x.closed && x.mutDef
 }
 
-// 上げた関数 fi の呼び出し点が callM で出せない形か（条件 3・4 — 呼び出し点ごとの選択。真ならその呼び出し点だけ展開する）
+// 上げた関数 fi の呼び出し点が callM で出せない形か（条件 4 — 呼び出し点ごとの選択。真ならその呼び出し点だけ展開する）
 func e2sSiteInline(st mut S, fi int, explicit NodeRef, args ListRef, eb int, ef int, at NodeRef) bool {
     if !fnPromoted(mut st, fi) {
         return false
@@ -190,19 +190,6 @@ func e2sSiteInline(st mut S, fi int, explicit NodeRef, args ListRef, eb int, ef 
     for q <- iter.Range(0, lenL(mut st, args)) {
         a := latN(mut st, args, q)
         if a != -1 && kindN(mut st, a) == ast.EMutArg && isDotted(mut st, a) {
-            return true
-        }
-    }
-    if lenL(mut st, fnTParams(mut st, fi)) == 0 {
-        return false
-    }
-    // 型引数は展開の許す範囲で推論して（推論の失敗は callM の経路の inferTs が診断する）、Def の型引数の門を見る
-    ts, err := inferTs0(mut st, fi, explicit, args, eb, ef, at, true)
-    if err != nil {
-        return false
-    }
-    for i <- iter.Range(0, lenL(mut st, ts)) {
-        if !tyArgOk(mut st, latTy(mut st, ts, i)) {
             return true
         }
     }

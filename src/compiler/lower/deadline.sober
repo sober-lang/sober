@@ -33,6 +33,11 @@ func dlFn(x int) FnRef {
 // CLOCK_MONOTONIC の今の時刻（ns — clock_gettime(1, &ts)）。deadline: を書くプログラムは vDSO の __vdso_clock_gettime（起動で引いた番地 —
 // metaのW_VDSO・見つからなければ0で生のsyscallへ）を呼ぶ（期限の検査はioのAPIごと — 期限つきのechoでclock_gettime 2 / 往復のsyscallだった）
 func clockNs(st mut St) int {
+    return clockNsOf(mut st, 1)
+}
+
+// clockNsの時計を選ぶ形（clk = 0 = CLOCK_REALTIME・1 = CLOCK_MONOTONIC。定数）
+func clockNsOf(st mut St, clk int) int {
     ts := newSlotAddr(mut st, 2)
     if dlFn(st.rtD3) != 0 {
         fp := load(mut st, globaladdr(mut st, st.meta), W_VDSO)
@@ -41,14 +46,14 @@ func clockNs(st mut St) int {
         bGo := newBlock(mut st)
         condbr(mut st, cmp(mut st, CNe, fp, iconst(mut st, 0)), bV, -1, bSys, -1)
         setCur(mut st, bV)
-        vdsoCall(mut st, list3(mut st, fp, iconst(mut st, 1), ptoi(mut st, ts)))
+        vdsoCall(mut st, list3(mut st, fp, iconst(mut st, clk), ptoi(mut st, ts)))
         br(mut st, bGo, -1)
         setCur(mut st, bSys)
-        syscall(mut st, list3(mut st, iconst(mut st, 228), iconst(mut st, 1), ptoi(mut st, ts)))
+        syscall(mut st, list3(mut st, iconst(mut st, 228), iconst(mut st, clk), ptoi(mut st, ts)))
         br(mut st, bGo, -1)
         setCur(mut st, bGo)
     } else {
-        syscall(mut st, list3(mut st, iconst(mut st, 228), iconst(mut st, 1), ptoi(mut st, ts)))
+        syscall(mut st, list3(mut st, iconst(mut st, 228), iconst(mut st, clk), ptoi(mut st, ts)))
     }
     return bin(mut st, BAdd, bin(mut st, BMul, load(mut st, ts, 0), iconst(mut st, 1000000000)), load(mut st, ts, 1))
 }

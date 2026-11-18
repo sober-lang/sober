@@ -281,6 +281,13 @@ func newPool(budget int, parent int) int
 @intrinsic("par_ledger")
 func ledgerWord(k int) int
 
+// taskの固定費（バイト）: 入場でtaskごとに宣言や見積もりへ足す量。チャンクの頭のページとスタックの1ページで、ランタイムの配置から決まる。
+// プールの天井を「入れたいtaskの数 × 1本の宣言」で決めるときは、宣言にこの値を足して掛ける（net.Serveの天井 = conns × (budget + Fixed())）
+@effects(nondet)
+func Fixed() int {
+    return ledgerWord(11)
+}
+
 // プールのノードwの失敗の数を1足す（MarkFailedのインターフェース）
 @intrinsic("par_fail")
 func poolFail(w int) int
@@ -290,6 +297,26 @@ func poolFail(w int) int
 func MarkFailed(p Pool) {
     _ = poolFail(p.seal.w)
 }
+
+// std/net の Serve の接続のプール: 天井 budget バイト・taskの数の天井 conns（0 = 無し）・親の節 = Serve の全部の親（rt.netop 29 が返す節の番地）。
+// conns > 0 なら入場は本数で決まる（バイトの天井は budget × conns 以上）。0 なら入場はバイトの天井で決まる。
+// std の外からは呼べない（loader が拒否する — 本数の天井を持つ節は std/net だけが作る）
+@effects(block, io, panic)
+func ServePool(budget int, conns int, parent int) Pool {
+    w := newPool(budget, parent)
+    if w < 0 {
+        return panic(PoolLimit{})
+    }
+    // 本数の天井は conns > 0 のときだけ置く（0 = 天井なし — 入場はバイトの天井で決まる）
+    if conns > 0 {
+        _ = poolNetOp(30, w, conns, 0)
+    }
+    return Pool{seal: sealed{w: w}}
+}
+
+// rt.netop（op 30 = プールの節の taskの数の天井 — ServePool だけが使う）
+@intrinsic("net_op")
+func poolNetOp(op int, fd int, a int, b int) int
 
 // 天井 budget バイトのプール（parent があればその下のノード — 入場は自分のノードから根のノードまで全部の天井を見る）
 @effects(panic)
@@ -313,6 +340,11 @@ type PoolView struct {
     shed int
     fail int // MarkFailed で記帳した失敗の数（net.Serve — handler が error を返した接続）
     died int // このプールで入場した task の死の数（net.Serve — handler が死んだ接続）
+    timeout int // このプールで入場したtaskのうち、Serveの期限で待ちを切られた数（net.Serveでは、相手が送り終えない・受け終えない接続。taskごとに1回。handlerがio.Timeoutを返せばfailにも数えられる）
+    evicted int // このプールで入場したtaskのうち、入場を待つ接続があるときに枠を取り戻すために切られた数（net.Serve — 前の走査から受けていない・受けの遅い接続から順に。timeoutには数えない。handlerがio.Timeoutを返せばfailにも数えられる）
+    conns int // taskの数の天井（0 = 無し）。net.Serve の節は conns: を書いたときだけ持つ（入場はバイトの天井で決まる）。parent が -1 の行は Serve の全部の親で、天井は無い（0）
+    cut int // このプールで入場したtaskのうち、予約を越えて伸びようとしてプールか根の天井を越え、死んだ数（RegionExceeded{cause: budget}。diedの内数）
+    borrowed int // このプールとその下の節で入場したtaskが、今、予約を越えて借りている量の和（used・tasks と同じく下の節を含む。全部の行を足すと親の分が重なる）（バイト — usedの外。天井が数えるのは used + borrowed）
 }
 
 // domainの合計の行（Ledger().domains — language.md 11 節「domain」の観測のインターフェース）: 全domainをまとめた1行
@@ -333,6 +365,8 @@ type LedgerView struct {
     inline int
     over int
     declOver int
+    borrowOver int // 計上済みの上限が入場の量を越えて節から借りたとき、プールの節か根の天井を越えて死んだtaskの数の累計（RegionExceeded{cause: budget} — language.md 11 節「予算と admission」）
+    borrowOverScope int // 同じく、scopeのbudget:の節の天井だけを越えたtaskの数の累計（記帳だけ — 死なない）
     shed int
     waits int // wait の scope で入場を待った回数（language.md 11 節「wait」）
     maxWait int // 走れるようになってから走るまでの待ちの最大（ns・全ワーカー。読むと0に戻る。実行待ちの列はFIFOなので、飽和した閉ループでは列の1周の時間の程度）
@@ -348,18 +382,21 @@ type LedgerView struct {
     domains DomainView // domain の合計の行
 }
 
-// 台帳の今の値（ioのエフェクト — 読んだ値は時刻に依る: 時計と同じ扱い）
+// 台帳の語の番号のうち、プールの節の行の起点（行 p は ledgerPoolRow + 16p から — lower/admit.sober の POOL_K0 と同じ値）
+const ledgerPoolRow = 23
+
+// 台帳の今の値（nondetのエフェクト — 読んだ値はスケジュールと時刻に依る）
 @effects(nondet)
 func Ledger() LedgerView {
     np := ledgerWord(0)
     mut ps := mut []PoolView{}
     mut i := 0
     while i < np {
-        b := 22 + i * 8
-        ps = append(ps, PoolView{id: i, parent: ledgerWord(b + 5) - 1, cap: ledgerWord(b), used: ledgerWord(b + 1), tasks: ledgerWord(b + 2), admit: ledgerWord(b + 3), shed: ledgerWord(b + 4), fail: ledgerWord(b + 6), died: ledgerWord(b + 7)})
+        b := ledgerPoolRow + i * 16
+        ps = append(ps, PoolView{id: i, parent: ledgerWord(b + 5) - 1, cap: ledgerWord(b), used: ledgerWord(b + 1), tasks: ledgerWord(b + 2), admit: ledgerWord(b + 3), shed: ledgerWord(b + 4), fail: ledgerWord(b + 6), died: ledgerWord(b + 7), timeout: ledgerWord(b + 8), cut: ledgerWord(b + 9), borrowed: ledgerWord(b + 10), conns: ledgerWord(b + 11), evicted: ledgerWord(b + 12)})
         i += 1
     }
-    return LedgerView{workers: ledgerWord(8), cap: ledgerWord(1), used: ledgerWord(2), tasks: ledgerWord(3), inline: ledgerWord(4), over: ledgerWord(5), declOver: ledgerWord(6), shed: ledgerWord(7), waits: ledgerWord(9), maxWait: ledgerWord(10), backlog: ledgerWord(12), backlogYield: ledgerWord(13), pin: ledgerWord(14), pinGroups: ledgerWord(15), parkShallow: ledgerWord(18), parkDeep: ledgerWord(19), parkDeepWin: ledgerWord(20), parkSwap: ledgerWord(21), pools: freeze(ps), domains: DomainView{waiting: ledgerWord(-1), maxWait: ledgerWord(-2), expired: ledgerWord(-3), poisoned: ledgerWord(-4)}}
+    return LedgerView{workers: ledgerWord(8), cap: ledgerWord(1), used: ledgerWord(2), tasks: ledgerWord(3), inline: ledgerWord(4), over: ledgerWord(5), declOver: ledgerWord(6), borrowOver: ledgerWord(16), borrowOverScope: ledgerWord(17), shed: ledgerWord(7), waits: ledgerWord(9), maxWait: ledgerWord(10), backlog: ledgerWord(12), backlogYield: ledgerWord(13), pin: ledgerWord(14), pinGroups: ledgerWord(15), parkShallow: ledgerWord(18), parkDeep: ledgerWord(19), parkDeepWin: ledgerWord(20), parkSwap: ledgerWord(21), pools: freeze(ps), domains: DomainView{waiting: ledgerWord(-1), maxWait: ledgerWord(-2), expired: ledgerWord(-3), poisoned: ledgerWord(-4)}}
 }
 
 // プール pool の天井に入れれば子の task を生む（handle, nil）・入れなければ (nil, Shed{})（縮退しない — shed を望む境界の API ・

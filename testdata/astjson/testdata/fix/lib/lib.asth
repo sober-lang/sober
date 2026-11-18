@@ -1,0 +1,11 @@
+@@full	5cc1edd4fb577ab8	575	12555
+@head	b8319b63f6e49418	0	60
+func Check	878f8276181daae1	24	797
+func Nap	61a70cb915b2e7a9	6	297
+func Pure	6fc2a16ade9bb947	6	285
+func Quiet	d6c8d4ddef41bb77	6	286
+func Strict	76f5b051fc2ab31d	24	798
+func Wide	7305508ac9674b48	5	261
+func helper	0955d1fbc602b899	4	229
+type Bad	318a6f706b105fe2	2	109
+type Gone	f0c2f1d9bf3d06d6	1	65

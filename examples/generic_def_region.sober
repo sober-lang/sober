@@ -1,0 +1,17 @@
+package main
+
+// region を持つ型を、Def として呼ぶジェネリック（mut も関数型の仮引数も無い）の型引数にする: get の本体は b.n を読むだけなので、
+// T に string を渡せる
+
+type Bx[T] struct {
+    v T
+    n int
+}
+
+func get[T](b Bx[T]) int {
+    return b.n
+}
+
+func main() {
+    println(get[string](Bx[string]{v: "x", n: 1}))
+}

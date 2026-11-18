@@ -1,0 +1,7 @@
+@@full	11fce5f0c9a112b9	1199	33457
+@head	80fcb15233d6c702	0	302
+const bcryptGrid	c736f04adec40e03	3	140
+func TestBcryptBase64	1503a300cda48d9d	57	1920
+func TestBcryptGrid	028badca19c670db	73	2481
+func TestBcryptKnown	3f428c6fbb3fa343	16	672
+func bcryptMatches	9c9889bccb443d67	43	1580

@@ -1,0 +1,16 @@
+package main
+
+// 負例: keep の本体は T の値を imm の slice に入れるので、T は mutの器を持たない型に限る。mut の slice を持つ Buf は渡せない
+
+type Buf struct {
+    data mut []int
+}
+
+func keep[T](x T) int {
+    xs := []T{x}
+    return len(xs)
+}
+
+func main() {
+    println(keep(Buf{data: mut []int{1}}))
+}

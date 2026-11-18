@@ -1,3 +1,4 @@
 serve: expired
 big: [] / small: small
-pool 0: admit 2 died 1
+pool 0 (all Serves): admit 0 died 0
+pool 1: admit 2 died 1

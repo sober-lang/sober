@@ -721,7 +721,7 @@ func growN8(st mut St, h int, d int, n int) (int, int) {
     condbr(mut st, cmp(mut st, CGt, ngrain, bump), more, -1, set_b, -1)
     setCur(mut st, more)
     okb := newBlock(mut st)
-    // 伸ばすとスロット（予約ページ）を越える: コピーのパスへ（本当の超過ならコピーの確保が死102）
+    // 伸ばすと上限（計上済みの上限・予約ページ・スロット）を越える: コピーのパスへ（本当の超過ならコピーの確保が死102）
     condbr(mut st, cmp(mut st, CGt, ngrain, slotLimit(mut st, meta, d)), copy_b, -1, okb, -1)
     setCur(mut st, okb)
     store(mut st, bp, W_BUMP, ngrain)

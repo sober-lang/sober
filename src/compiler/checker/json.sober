@@ -45,7 +45,7 @@ const W_P = 24
 const W_DEFS = 25
 const W_PARAM = 26
 const W_RET = 27
-const W_TPARAMS = 28
+const W_KINDS = 28
 const W_PARTS = 29
 const W_LIT = 30
 const W_TRUE = 31
@@ -78,7 +78,8 @@ const W_PAIR = 57
 const W_FST = 58
 const W_SND = 59
 const W_CALL = 60
-const W_CALLM = 61
+// 型変数の kind のフィールド "kd"（旗の object — K は {"rf","mf","cf","cov","kf"}。Def の "kinds" は K の配列）
+const W_KD = 61
 const W_FNREF = 62
 const W_CALLV = 63
 const W_ANN = 64
@@ -172,8 +173,8 @@ const W_CLOSE = 142
 const W_EPS = 143
 // cloneのフェーズで足した語（Leanのclone — 読み出しの注釈 "t" は省略可）
 const W_CLONE = 144
-// L1 で足した語（Lean の callMv — anchor つきの関数値の呼び出し。記録は [callmv, nc, f, e, a]）
-const W_CALLMV = 145
+// kind の旗のフィールド（K = {"rf":B,"mf":B,"cf":B,"cov":B,"kf":B}）
+const W_RF = 145
 // 再帰型で足した語（Lean の fold / unfold の式・rvar / mus / muRs の型 — iso）。fold の記録は [fold, nc, t, e]・unfold は [unfold, nc, e]
 const W_FOLD = 146
 const W_UNFOLD = 147
@@ -187,9 +188,13 @@ const W_DENTER = 152
 const W_DEXIT = 153
 const W_DOM = 154
 const W_D = 155
-const NW = 156
+const W_MF = 156
+const W_CF = 157
+const W_COV = 158
+const W_KF = 159
+const NW = 160
 // 注釈つき block（Lean の blockR）の式の kind。綴りは持たない（JSON では "block" + "t"）
-const K_BLOCKR = 156
+const K_BLOCKR = 160
 
 // 綴りの表はswitch（if式のチェーンはF-22の形 — 入れ子が深くなる）
 func wordStr(c int) string {
@@ -221,7 +226,7 @@ func wordStr(c int) string {
     case W_DEFS: "defs"
     case W_PARAM: "param"
     case W_RET: "ret"
-    case W_TPARAMS: "tparams"
+    case W_KINDS: "kinds"
     case W_PARTS: "parts"
     case W_LIT: "lit"
     case W_TRUE: "true"
@@ -254,7 +259,7 @@ func wordStr(c int) string {
     case W_FST: "fst"
     case W_SND: "snd"
     case W_CALL: "call"
-    case W_CALLM: "callm"
+    case W_KD: "kd"
     case W_FNREF: "fnref"
     case W_CALLV: "callv"
     case W_ANN: "ann"
@@ -335,7 +340,7 @@ func wordStr(c int) string {
     case W_TX: "tx"
     case W_RX: "rx"
     case W_CLOSE: "close"
-    case W_CALLMV: "callmv"
+    case W_RF: "rf"
     case W_EPS: "eps"
     case W_CLONE: "clone"
     case W_FOLD: "fold"
@@ -348,12 +353,16 @@ func wordStr(c int) string {
     case W_DEXIT: "dexit"
     case W_DOM: "dom"
     case W_D: "d"
+    case W_MF: "mf"
+    case W_CF: "cf"
+    case W_COV: "cov"
+    case W_KF: "kf"
     default: "byte" // W_BYTE
     }
 }
 
 func isExprKind(c int) bool {
-    return c == W_NIL || c == W_SOME || (c >= W_LIT && c <= W_RECV) || c == W_STRLIT || c == W_COPYTO || c == W_KEYSM || c == W_CLONE || c == W_UNREACH || c == W_TOBYTE || c == W_TOINT || (c >= W_FLIT && c <= W_FFROMBITS) || (c >= W_SCOPE && c <= W_NEWCH) || c == W_CLOSE || c == W_CALLMV || c == W_FOLD || c == W_UNFOLD || (c >= W_DNEW && c <= W_DEXIT)
+    return c == W_NIL || c == W_SOME || (c >= W_LIT && c <= W_RECV) || c == W_STRLIT || c == W_COPYTO || c == W_KEYSM || c == W_CLONE || c == W_UNREACH || c == W_TOBYTE || c == W_TOINT || (c >= W_FLIT && c <= W_FFROMBITS) || (c >= W_SCOPE && c <= W_NEWCH) || c == W_CLOSE || c == W_FOLD || c == W_UNFOLD || (c >= W_DNEW && c <= W_DEXIT)
 }
 
 func isTyKind(c int) bool {
@@ -477,6 +486,22 @@ func fB(st mut S, fb int, w int) int {
     return if t == V_TRUE { 1 } else if t == V_FALSE { 0 } else { -1 }
 }
 
+// kind のフィールド（k の無い object — 閉じた時点で旗を詰めた int にした値。読めなければ -1）
+func fK(st mut S, fb int, w int) int {
+    return if sTag(mut st, fb, w) == V_OBJ { sVal(mut st, fb, w) } else { -1 }
+}
+
+// k の無い object の値: 旗 5 つ（rf・mf・cf・cov・kf）が全部 Bool なら詰めた int（rf = 1・mf = 2・cf = 4・cov = 8・kf = 16 —
+// Extract/Config.lean の packedTypes）、そうでなければ -1。Lean の kindFromJson と同じく他のフィールドは見ない
+func kindOf(st mut S, fb int) int {
+    rf := fB(mut st, fb, W_RF)
+    mf := fB(mut st, fb, W_MF)
+    cf := fB(mut st, fb, W_CF)
+    cv := fB(mut st, fb, W_COV)
+    kf := fB(mut st, fb, W_KF)
+    return if rf < 0 || mf < 0 || cf < 0 || cv < 0 || kf < 0 { -1 } else { rf + 2 * mf + 4 * cf + 8 * cv + 16 * kf }
+}
+
 // 綴りのフィールドの語の番号（綴りでなければ -1。語の表に無い綴りは0）
 func fW(st mut S, fb int, w int) int {
     return if sTag(mut st, fb, w) == V_STR { sVal(mut st, fb, w) } else { -1 }
@@ -494,6 +519,13 @@ func nc(st mut S, e int) int {
 // 式の記録 [kind, nc, a, b, c]
 func node(st mut S, k int, n int, a int, b int, c int) int {
     return rec5(mut st, k, n, a, b, c)
+}
+
+// 欄が 4 つの式の記録 [kind, nc, a, b, c, d]（call — d = anchor）
+func node6(st mut S, k int, n int, a int, b int, c int, d int) int {
+    at := rec5(mut st, k, n, a, b, c)
+    put(mut st, d)
+    return at
 }
 
 // "ts" のフィールド（省略 = -1、空の配列も -1）。要素が型でなければ -2（parse error）
@@ -541,8 +573,11 @@ func buildTy(st mut S, fb int, c int) int {
     case W_UNIT:
         return st.tUnit
     case W_TVAR:
+        // 記録は TVar (i, ρ, kind)。kind は旗を詰めた int（fK）
         i := fN(mut st, fb, W_I)
-        return if i < 0 { -1 } else { mk(mut st, TVar, i, 0, 0) }
+        r := fN(mut st, fb, W_R)
+        k := fK(mut st, fb, W_KD)
+        return if i < 0 || r < 0 || k < 0 { -1 } else { mk(mut st, TVar, i, r, k) }
     case W_OPT:
         t := fT(mut st, fb, W_T)
         return if t < 0 { -1 } else { mk(mut st, TOpt, t, 0, 0) }
@@ -620,9 +655,9 @@ func buildExpr(st mut S, fb int, c int) int {
         return if i < 0 { -1 } else { node(mut st, c, 0, i, 0, 0) }
     }
     // 式2つ（フィールドの語w1, w2）
-    if c == W_LET || c == W_ADD || c == W_LT || (c >= W_SUB && c <= W_GE) || (c >= W_FADD && c <= W_FGE) || c == W_PAIR || c == W_CALLV || c == W_ASSIGN || c == W_WHILE || c == W_APPEND || c == W_EQS || c == W_CONCAT || c == W_PAR || c == W_SEND {
-        w1 := if c == W_LET { W_E } else if c == W_CALLV { W_F } else if c == W_ASSIGN { W_L } else if c == W_WHILE { W_C } else if c == W_APPEND { W_E } else if c == W_PAR { W_E1 } else if c == W_SEND { W_C } else { W_A }
-        w2 := if c == W_LET || c == W_WHILE { W_BODY } else if c == W_CALLV || c == W_ASSIGN || c == W_SEND { W_E } else if c == W_APPEND { W_V } else if c == W_PAR { W_E2 } else { W_B }
+    if c == W_LET || c == W_ADD || c == W_LT || (c >= W_SUB && c <= W_GE) || (c >= W_FADD && c <= W_FGE) || c == W_PAIR || c == W_ASSIGN || c == W_WHILE || c == W_APPEND || c == W_EQS || c == W_CONCAT || c == W_PAR || c == W_SEND {
+        w1 := if c == W_LET { W_E } else if c == W_ASSIGN { W_L } else if c == W_WHILE { W_C } else if c == W_APPEND { W_E } else if c == W_PAR { W_E1 } else if c == W_SEND { W_C } else { W_A }
+        w2 := if c == W_LET || c == W_WHILE { W_BODY } else if c == W_ASSIGN || c == W_SEND { W_E } else if c == W_APPEND { W_V } else if c == W_PAR { W_E2 } else { W_B }
         a := fE(mut st, fb, w1)
         b := fE(mut st, fb, w2)
         if a < 0 || b < 0 {
@@ -659,7 +694,8 @@ func buildExpr(st mut S, fb int, c int) int {
             return -1
         }
         return if c == W_ANN { node(mut st, c, nc(mut st, e), e, t, 0) } else { node(mut st, c, nc(mut st, e), t, e, 0) }
-    case W_CALL | W_CALLM | W_FNREF:
+    case W_CALL | W_FNREF:
+        // call は {"k":"call","r":a,"f":fn,"ts"?:[T…],"e":E} — 記録は 6 語 [call, nc, fn, ts, e, a]（node6）
         f := fN(mut st, fb, W_F)
         ts := tsOf(mut st, fb)
         if f < 0 || ts == -2 {
@@ -668,8 +704,9 @@ func buildExpr(st mut S, fb int, c int) int {
         if c == W_FNREF {
             return node(mut st, c, 0, f, ts, 0)
         }
+        a := fN(mut st, fb, W_R)
         e := fE(mut st, fb, W_E)
-        return if e < 0 { -1 } else { node(mut st, c, nc(mut st, e), f, ts, e) }
+        return if a < 0 || e < 0 { -1 } else { node6(mut st, c, nc(mut st, e), f, ts, e, a) }
     case W_STRLIT:
         // Lean: bs は int の配列（getArr? >>= mapM getInt?）、r は Nat。検査はバイトを読まないので記録には r だけ持つ
         r := fN(mut st, fb, W_R)
@@ -695,8 +732,8 @@ func buildExpr(st mut S, fb int, c int) int {
             return if t < 0 { -1 } else { node(mut st, K_BLOCKR, nc(mut st, e), e, t, 0) }
         }
         return node(mut st, c, nc(mut st, e), e, 0, 0)
-    case W_CALLMV:
-        // {"k":"callmv","r":a,"f":F,"e":E} — 記録は [callmv, nc, f, e, a]
+    case W_CALLV:
+        // {"k":"callv","r":a,"f":F,"e":E} — 記録は [callv, nc, f, e, a]
         k := fN(mut st, fb, W_R)
         f := fE(mut st, fb, W_F)
         e := fE(mut st, fb, W_E)
@@ -1164,7 +1201,7 @@ func parseJson(st mut S, src []byte) Parsed {
             kt := sTag(mut st, fb, W_K)
             if kt == 0 {
                 vt = V_OBJ
-                vv = 0
+                vv = kindOf(mut st, fb)
             } else if kt != V_STR {
                 vt = V_ERR
                 vv = 0

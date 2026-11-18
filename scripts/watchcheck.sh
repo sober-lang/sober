@@ -14,6 +14,8 @@ trap 'kill $P 2>/dev/null; rm -rf "$W"' EXIT
 P=""
 unset SOBER_CHECK_CACHE SOBER_CACHE_VERIFY SOBER_SELF_KEY SOBER_VERIFY SOBER_CHECK_REPLAY
 export SOBER_BUILD_CACHE=0
+# 見張りの標準エラーのファイルは起動の前に作る（子のリダイレクトより先に親が数えると、grep -c が空を返して待ちを素通りする）
+: > "$W/w.err"; : > "$W/w2.err"; : > "$W/w3.err"
 cat > "$W/main.sober" <<'SRC'
 package main
 
@@ -34,7 +36,7 @@ P=$!
 # waitn <n>: `watch:` の行が n 本になるまで待つ（60 秒で打ち切り — 単独では 1 回 0.1〜0.15 s・負荷の窓の余裕）
 waitn() {
     local i=0
-    while [ "$(grep -c '^watch:' "$W/w.err")" -lt "$1" ]; do
+    while [ "$(grep -c '^watch:' "$W/w.err" 2> /dev/null || true)" -lt "$1" ]; do
         i=$((i + 1))
         if [ $i -gt 1200 ] || ! kill -0 $P 2>/dev/null; then echo "watchcheck: FAIL no round $1"; cat "$W/w.err"; exit 1; fi
         sleep 0.05
@@ -137,10 +139,11 @@ G=$(ls -d "$W"/c3/sober-build-1/*/ | head -1)
 i=0
 until wp=$(cat "$G"/watch/*.pid 2> /dev/null) && [ -n "$wp" ] && grep -qx "done $wp" "$G"/watch/*.warm 2> /dev/null; do i=$((i + 1)); [ $i -gt 2400 ] && { echo "watchcheck: FAIL test files: the warm tests did not finish"; exit 1; }; sleep 0.05; done
 grep -qx "test 0" "$G"/watch/*.warm || { echo "watchcheck: FAIL test files: the warm tests failed"; cat "$G"/watch/*.warm; exit 1; }
-# 親が進みを読んで見張りに足すまでの余裕（ポーリング 20 ms の数周）
-sleep 0.5
+# 親が進みを読んで見張りに足すまで待つ（足した後に状態ファイル〔watch/<id>.json〕の warm.test を done に書き直す — 時間ではなくこの書き直しで待つ）
+i=0
+until grep -q '"test":"done"' "$G"/watch/*.json 2> /dev/null; do i=$((i + 1)); [ $i -gt 1200 ] && { echo "watchcheck: FAIL test files: watch did not record the finished warm tests"; cat "$G"/watch/*.json; exit 1; }; sleep 0.05; done
 echo '// edited' >> "$W/dep/fake/fake_double.sober"
 i=0
-while [ "$(grep -c '^watch:' "$W/w3.err")" -lt 2 ]; do i=$((i + 1)); [ $i -gt 400 ] && { echo "watchcheck: FAIL test files: editing a double the warm tests read did not start a round"; cat "$W/w3.err"; exit 1; }; sleep 0.05; done
+while [ "$(grep -c '^watch:' "$W/w3.err")" -lt 2 ]; do i=$((i + 1)); [ $i -gt 1200 ] && { echo "watchcheck: FAIL test files: editing a double the warm tests read did not start a round"; cat "$W/w3.err"; exit 1; }; sleep 0.05; done
 kill $P 2> /dev/null
 echo "watchcheck: $n rounds match testdata/watchcheck/expect.txt, last 2 rounds hit · the query replays the watch's answer · build replays and watch warms it · editing a double the warm tests read starts a round"

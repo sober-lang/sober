@@ -21,19 +21,24 @@ import "diag"
 func quicksAll(ts []ast.Tree, paths []string) ([]ast.Tree, error?) {
     mut out := mut []ast.Tree{}
     for i <- iter.Range(0, len(ts)) {
-        t := ts[i]
-        al := if strings.HasSuffix(paths[i], "_test.sober") { qkAlias(t) } else { "" }
-        if al == "" {
-            out = append(out, t)
-            continue
-        }
-        bad := qkAssertIn(t, al)
-        if bad >= 0 {
-            return []ast.Tree{}, diag.AssertOutsideTest{at: diag.Pos{file: i, tok: t.nodes[t.nodes[bad].a].tok}, kind: 1}
-        }
-        out = append(out, quicks(t, al))
+        t := quickFile(ts[i], paths[i], i)?
+        out = append(out, t)
     }
     return freeze(out), nil
+}
+
+// ファイルf（木t・パスpath）の変換（1ファイル分 — ftpar.soberの子も呼ぶ）
+@errors(diag.AssertOutsideTest)
+func quickFile(t ast.Tree, path string, f int) (ast.Tree, error?) {
+    al := if strings.HasSuffix(path, "_test.sober") { qkAlias(t) } else { "" }
+    if al == "" {
+        return t, nil
+    }
+    bad := qkAssertIn(t, al)
+    if bad >= 0 {
+        return t, diag.AssertOutsideTest{at: diag.Pos{file: f, tok: t.nodes[t.nodes[bad].a].tok}, kind: 1}
+    }
+    return quicks(t, al), nil
 }
 
 // std/quick の参照名（import していなければ ""）

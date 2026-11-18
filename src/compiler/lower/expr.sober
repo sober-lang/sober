@@ -23,7 +23,9 @@ func evalMulti(st mut St, e desugar.NodeRef) (int, error?) {
             if lenL(mut st, args) != 1 {
                 return 0, diag.Mismatch{at: posOf(mut st, e)}
             }
-            wt := yType(mut st, e)?
+            callee := nA(nodeOf(mut st, e))
+            // 変換 `R.f(e)`（ast.EFieldTy）の型はstructの配置のフィールドの型（匿名の関数型のフィールドはクロージャの形で決まる）
+            wt := if kindN(mut st, callee) == ast.EFieldTy { fieldConvW(mut st, callee)? } else { yType(mut st, e)? }
             x := exprExpecting(mut st, latN(mut st, args, 0), wt, e)?
             r := list2(mut st, x.t, x.v)
             desugar.HeapSet(mut st.d, r, 1)
@@ -464,7 +466,7 @@ func noWriteExpr(st mut St, e desugar.NodeRef, fuel int) bool {
         return false
     }
     k := kindN(mut st, e)
-    if k == ast.EIdent || k == ast.EInt || k == ast.EFloat || k == ast.EStrlit || k == ast.ENil {
+    if k == ast.EIdent || k == ast.EInt || k == ast.EFloat || k == ast.EStrlit || k == ast.ENil || k == ast.EEmbed {
         return true
     }
     if k == ast.ESelector {
@@ -782,6 +784,22 @@ func exprExpecting(st mut St, e desugar.NodeRef, w int, at desugar.NodeRef) (Val
         }
         return Val{}, diag.Unsupported{at: posOf(mut st, at)}
     }
+    // 関数値の値の位置: ブロックとif式（elseあり）は、末尾の式を同じ値の位置として作る（脱糖器のclosureValueと同じ辿り方）
+    if fnValW(mut st, w) && k == ast.EBlock {
+        st.tailW = w + 1
+        x := blockValue(mut st, lA(nodeOf(mut st, e)), at)?
+        if cur(mut st) == -1 || isTag(mut st, x.t, TNever) {
+            return Val{t: tNever(mut st), v: 0}, nil
+        }
+        return coerce(mut st, x.t, x.v, w, at)
+    }
+    if fnValW(mut st, w) && k == ast.EIf && nodeOf(mut st, e).c >= 0 {
+        x := ifExpr(mut st, e, w)?
+        if cur(mut st) == -1 || isTag(mut st, x.t, TNever) {
+            return Val{t: tNever(mut st), v: 0}, nil
+        }
+        return coerce(mut st, x.t, x.v, w, at)
+    }
     // 型なしの定数は期待型の named scalar（か T? の中身の named）に割り当てる（language.md 32 節）
     nt := if takesConst(mut st, w) { w } else if isTag(mut st, w, TOpt) && takesConst(mut st, desugar.HeapGet(mut st.d, w + 1)) { desugar.HeapGet(mut st.d, w + 1) } else { -1 }
     // if式は分岐ごとに期待型へ合わせる（T? の期待・型なしの定数の分岐を named scalar / byteの期待へ）
@@ -803,6 +821,15 @@ func exprExpecting(st mut St, e desugar.NodeRef, w int, at desugar.NodeRef) (Val
         return coerce(mut st, nt, r.v, w, at)
     }
     return coerce(mut st, r.t, r.v, w, at)
+}
+
+// wが関数値の値の位置の型（named fn type・クロージャの型・そのoption）か
+func fnValW(st mut St, w int) bool {
+    if w < 0 {
+        return false
+    }
+    pw := if isTag(mut st, w, TOpt) { desugar.HeapGet(mut st.d, w + 1) } else { w }
+    return isTag(mut st, pw, TFnv) || isClosT(mut st, pw)
 }
 
 // 型tの値が値の位置の型w（かそのoption）へ入れられない素の関数値か（フラグも名前も無い関数値 → フラグか名前のある関数値）
@@ -851,6 +878,13 @@ func untypedConst(st mut St, e desugar.NodeRef) bool {
         return false
     }
     return desugar.IsUntypedConst(mut st.d, e, st.curPkg)
+}
+
+// 変換の呼び先 `R.f`（ast.EFieldTy）のフィールドの型
+func fieldConvW(st mut St, callee desugar.NodeRef) (int, error?) {
+    sty := yType(mut st, callee)?
+    f := fieldOf(mut st, sty, sB(nodeOf(mut st, callee)), callee)?
+    return desugar.HeapGet(mut st.d, f + 1), nil
 }
 
 // 呼び出し e が変換（`X(e)` / `int(x)` / `bool(x)`）なら行き先（desugar.ConvTarget — でなければ CONV_NONE）
@@ -997,6 +1031,8 @@ func expr0(st mut St, e desugar.NodeRef) (Val, error?) {
         return blockValue(mut st, lA(nodeOf(mut st, e)), at)
     case ast.EStrlit:
         return Val{t: mkString(mut st), v: strlit(mut st, sA(nodeOf(mut st, e)))}, nil
+    case ast.EEmbed:
+        return embedLit(mut st, e), nil
     case ast.ESlicelit:
         return slicelit(mut st, e)
     case ast.EMaplit:
@@ -1806,6 +1842,9 @@ func ifExpr(st mut St, e desugar.NodeRef, w int) (Val, error?) {
                 vt = x1.t
                 vv = x1.v
             } else {
+                if fnValW(mut st, w) {
+                    st.tailW = w + 1
+                }
                 av := armValue(mut st, ss)?
                 vt = av.t
                 vv = av.v
@@ -1830,6 +1869,9 @@ func ifExpr(st mut St, e desugar.NodeRef, w int) (Val, error?) {
                 vt = x5.t
                 vv = x5.v
             } else {
+                if fnValW(mut st, w) {
+                    st.tailW = w + 1
+                }
                 x6 := armValue(mut st, lA(nodeOf(mut st, el)))?
                 vt = x6.t
                 vv = x6.v

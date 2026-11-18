@@ -1347,7 +1347,18 @@ func printModule(st mut St, out mut []byte) {
         num(mut out, desugar.HeapGet(mut st.d, g + G_WORDS))
         out = append(out, ']')
         init := desugar.HeapGet(mut st.d, g + G_INIT)
-        if init >= 0 {
+        eb, emb := embBytesOf(mut st, g)
+        if emb {
+            // @embed の []byte: 中身の語（embed.sober — 文字列のrodataと同じ詰め方）
+            obuf.Lit(mut out, " = {")
+            for i <- iter.Range(0, desugar.HeapGet(mut st.d, g + G_WORDS)) {
+                if i > 0 {
+                    obuf.Lit(mut out, ", ")
+                }
+                num(mut out, embWord(eb, i))
+            }
+            out = append(out, '}')
+        } else if init >= 0 {
             obuf.Lit(mut out, " = {")
             mut i := 0
             while i < desugar.HeapGet(mut st.d, init) {

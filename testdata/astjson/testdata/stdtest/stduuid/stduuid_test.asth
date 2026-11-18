@@ -1,0 +1,10 @@
+@@full	63f0d74132abc7e8	3040	93315
+@head	5fd02cb284be154f	0	254
+func TestNewV4	b47580694a88a0a4	116	3618
+func TestNewV7	7e7cb91cd4d8e3c1	94	2975
+func TestParseRejects	d17ccf807de193d7	42	1743
+func TestRandIntn	123ff9898cf5e3ed	91	2832
+func TestRfcExample	af01fd250794764f	81	2792
+func bytesToStringOf	581d6ba1b9075a95	28	1083
+func hexDigit	86fe58e782c9cacf	35	1104
+func lessHex	bf587826abb2a83d	40	1371

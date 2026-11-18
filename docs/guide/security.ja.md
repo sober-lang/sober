@@ -450,11 +450,15 @@ examples/security_cache_neg.sober:13:35: error: the shared cache policy 'Shared'
 
 Soberの答え: サーバ（`net.Serve`）は3つの層で資源に上限を持ちます。
 
-- 受け入れ（admission）: `conns:` は同時の接続の数の上限です（既定10000）。上限を超えた接続には、利用者のコードを走らせずに `reject:` のバイト列を送って閉じます。
-- 予算（`budget:`）: 接続1本が使うメモリの上界の宣言です（既定64 KiB）。受け入れの上限は `conns × budget` のバイト数で数えます。task一般でも、`task.Spawn` などに `budget:` を書くと、上限に入らない子は並列にせず逐次に走ります（値と出力は変わりません）。
+- 受け入れ（admission）: 入場はバイトの天井で決まります。`conns:` を書けば、天井は `(budget + task.Fixed()) × conns` のバイト数で、同時の接続の数も `conns:` までです。`conns:` は書かなくてよく、書かなければ本数の上限はありません。そのときの天井は、根の天井（プロセスのメモリの天井。cgroupのmemory.max、無ければ物理メモリから決まる）の残りから、待っている接続の分を引いた量です。天井に達したとき、`reject:` を書いていれば、利用者のコードを走らせずにそのバイト列を送って閉じます。書いていなければ、受け付けは止めずに、受けた接続をlistenerごとのランタイムの列で待たせます。空きができたら、列のいちばん新しい接続から入れます。列が上限を越えたら、いちばん長く待った接続を閉じます（`task.Ledger()` のプールの `shed` に数えます）。待っている接続の数は `net.Waiting()` で読めます。io_uringを使えない構成（epollの経路）には列が無く、接続はカーネルの待ち行列で到着順に待ちます。
+- 予算（`budget:`）: 接続1本の予約です（既定64 KiB）。入場は、予約にtaskの固定費（`task.Fixed()`）を足した量で数えます。予約を越えて伸びる接続は、越えた分を64 KiB単位で天井の空きから借りて続けます。借りでプールか根の天井を越えたら、伸びようとした接続のtaskだけが `RegionExceeded{cause: budget}` で死に、Serveは何も送らずにその接続を閉じます。予約の内で済む接続は死にません。task一般でも、`task.Spawn` などに `budget:` を書くと、上限に入らない子は並列にせず逐次に走ります（値と出力は変わりません）。
 - regionの上限（`region:`）: 接続のtaskのregion 1つの上限です（既定128 MiB）。超えたらその接続のtaskだけが死に、Serveは吸収して他の接続を続けます。
 
-HTTPの層では、リクエストの頭と本文に上限があります（`http.server.ServeConn` の `maxHead:` 既定8 KiBを超えたら431・`maxBody:` 既定16 KiBを超えたら413 — ハンドラは走りません）。待ちには期限を付けられます（`task.Run(…, deadline:)` — 期限の後のioは `io.Expired` を返し、netの待ちは期限で切れる）。
+HTTPの層では、リクエストの頭と本文に上限があります（`http.server.ServeConn` の `maxHead:` 既定8 KiBを超えたら431・`maxBody:` 既定16 KiBを超えたら413 — ハンドラは走りません）。
+
+相手を待つ時間にも、既定で上限があります（Serveの期限）。`http.server.ServeConn` の `headWait:`（既定30秒。頭が揃うまでで、keep-aliveの待ちを含む）・`bodyWait:`（既定60秒。本文を受け終えるまで）・`sendWait:`（既定60秒。送りが1バイトも進まない間隔）と、`tls.Serve` の `headWait:`（既定30秒。handshakeが済むまで）です。期限が来た接続は、何も送らずに閉じます（プールの `timeout` に数えます）。scopeの期限（`task.Run(…, deadline:)`）は自分の仕事にかける時間の上限で、Serveの期限とは別に効きます。
+
+満杯で入場を待つ接続があるときは、入場済みの接続を切って枠を取り戻します。前の走査（約0.27秒ごと）から1バイトも受けていない接続（待機中のkeep-aliveと、止まった相手）を古い順に切り、次に受けの遅い接続から切ります。切った数はプールの `evicted` に数えます。満杯でないときは、遅い相手も切りません。epollの経路には、この取り戻しもありません。
 
 ```sober
 // examples/security_limits.sober
@@ -479,7 +483,8 @@ func app(c net.Conn) error? {
 func run() error? {
     for l <- net.Listen("0.0.0.0:8080")? {
         // at most 2,000 connections at once (the 2,001st gets the reject bytes and is closed without running app);
-        // each connection may use up to 256 KiB, and a connection whose region passes 32 MiB dies alone
+        // each connection reserves 256 KiB (beyond that it borrows from the free part of the ceiling, and dies if the ceiling is full);
+        // a connection whose region passes 32 MiB dies alone
         net.Serve(l, app, budget: 256 * task.KB, conns: 2000, reject: "HTTP/1.1 503 Service Unavailable\r\ncontent-length: 0\r\n\r\n", region: 32 * task.MB)?
     }
     return nil

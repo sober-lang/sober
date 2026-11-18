@@ -1,0 +1,8 @@
+@@full	a98c6c6201de8bc5	434	10745
+@head	744524e1c32dafc8	0	33
+func TestBroken	9a865caa5dec8bec	10	364
+func TestClampLow	16d12c3337d117ea	11	399
+func TestDeep	bf8b831d23c4f7b1	8	321
+func TestRect	939ace418c932660	10	360
+func TestSquare	0d03dd9c509eccc9	10	362
+func must	a2e5084db00fdc20	14	573

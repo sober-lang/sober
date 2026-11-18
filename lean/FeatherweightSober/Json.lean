@@ -16,7 +16,7 @@ Zig 側はこの形を吐く。スキーマ（"k" が種別タグ）:
   `{"k":"prod","l":T,"r":T}` /
   `{"k":"ref","m":Bool,"r":Nat,"t":T}` / `{"k":"slice","m":Bool,"r":Nat,"t":T}` /
   `{"k":"map","m":Bool,"r":Nat,"key":K,"t":V}`（セル型 prod K (opt V)。他のセル型は "cell"） / `{"k":"chan","rc":Nat,"t":T}` / `{"k":"own","o":"scope"|"task"|"tx"|"rx","r":Nat,"t":T}`（段 6 P1） /
-  `{"k":"fn","p":T,"r":T}`（V3-1。p / r は Def の base 座標） / `{"k":"tvar","i":Nat}`（V3-2） /
+  `{"k":"fn","p":T,"r":T}`（V3-1。p / r は Def の base 座標） / `{"k":"tvar","i":Nat,"r":Nat,"kd":K}`（型変数 T@r。i = 型パラメータの番号・r = 置き直し先の region・kd = 旗） /
   `{"k":"rvar","i":Nat}` / `{"k":"mus","n":Nat,"i":Nat,"b":T}` / `{"k":"muRs","r":Nat,"n":Nat,"i":Nat,"b":T}`
   （再帰型 — iso の同時の μ・組 b の i 番目・成分 n 個。muRs = D の μ・座標 r つき。自己再帰は n = 1）
 - Expr: `{"k":"lit","n":Int}` / `{"k":"flit","n":Int}`（float の値 — ビット列を i64 の 2 の補数で読んだ値）/
@@ -32,9 +32,9 @@ Zig 側はこの形を吐く。スキーマ（"k" が種別タグ）:
   `{"k":"alloc","mut":Bool,"e":E}` / `{"k":"deref","e":E}` / `{"k":"assign","l":E,"e":E}` /
   `{"k":"while","c":E,"body":E}` / `{"k":"freeze","e":E}` / `{"k":"par","e1":E,"e2":E}` /
   `{"k":"strlit","bs":[Int...],"r":Nat}`（string リテラル — region r の imm int セル列。strlit の段） /
-  `{"k":"call","f":Nat,"e":E}` / `{"k":"callm","f":Nat,"e":E}`（R2 の anchor つき呼び出し） /
-  `{"k":"fnref","f":Nat}`（型引数があれば `"ts":[T...]`。
-  無いときは省略 = 単相の呼び出し。V3-2） / `{"k":"callv","f":E,"e":E}` / `{"k":"callmv","r":N,"f":E,"e":E}`（L1 — anchor つきの関数値の呼び出し）/
+  `{"k":"call","r":Nat,"f":Nat,"e":E}`（呼び出し。r = anchor。ふつうの呼び出しは呼び手の最内 = 深さ - 1）/
+  `{"k":"fnref","f":Nat}`（call と fnref は、型引数があれば `"ts":[T...]`。
+  無いときは省略 = 単相の呼び出し） / `{"k":"callv","r":Nat,"f":E,"e":E}`（関数値の呼び出し。r = anchor）/
   `{"k":"ann","e":E,"t":T}`（V3-5 の型注釈） /
   `{"k":"label","t":T,"e":E}` / `{"k":"jump","n":Nat,"t":T,"e":E}`（V4 の脱出。jump の t は結果型の注釈） /
   `{"k":"unreach","t":T}`（A5 — 到達しない。t は結果型の注釈） /
@@ -46,6 +46,9 @@ Zig 側はこの形を吐く。スキーマ（"k" が種別タグ）:
   `{"k":"mkmap","m":Bool,"key":K,"t":V}` / `{"k":"getm","t":T,"e":E,"key":E}` /
   `{"k":"setm","e":E,"key":E,"v":E}` / `{"k":"delm","t":T,"e":E,"key":E}` /
   `{"k":"lenm","e":E}` / `{"k":"keysm","e":E}` / `{"k":"clone","t":T?,"e":E}`
+
+- Kind: `{"rf":Bool,"mf":Bool,"cf":Bool,"cov":Bool,"kf":Bool}`（5 つとも必須）
+- Def: `{"param":T,"ret":T,"body":E}`。型パラメータがあれば `"kinds":[K...]`（無いときは省略）
 
 fromJson は燃料つき再帰（Json の入れ子への構造的再帰が書けないため）。
 燃料は JSON のノード数で必ず足りる値を呼び手が渡す（parseExpr は入力長を使う）。
@@ -69,10 +72,22 @@ def ownKFromStr : String → Except String OwnK
   | "rx" => .ok .rx
   | o => .error s!"ownK: unknown {o}"
 
+/-- Kind → JSON: 5 つの旗をそのまま書く -/
+def kindToJson (k : Kind) : Json :=
+  Json.mkObj [("rf", k.rf), ("mf", k.mf), ("cf", k.cf), ("cov", k.cov), ("kf", k.kf)]
+
+def kindFromJson (j : Json) : Except String Kind := do
+  let rf ← j.getObjValAs? Bool "rf"
+  let mf ← j.getObjValAs? Bool "mf"
+  let cf ← j.getObjValAs? Bool "cf"
+  let cov ← j.getObjValAs? Bool "cov"
+  let kf ← j.getObjValAs? Bool "kf"
+  pure { rf := rf, mf := mf, cf := cf, cov := cov, kf := kf }
+
 /-- Ty → JSON（スキーマの正） -/
 def tyToJson : Ty → Json
   | .int => Json.mkObj [("k", "int")]
-  | .tvar i => Json.mkObj [("k", "tvar"), ("i", (i : Nat))]
+  | .tvar i ρ k => Json.mkObj [("k", "tvar"), ("i", (i : Nat)), ("r", (ρ : Nat)), ("kd", kindToJson k)]
   | .bool => Json.mkObj [("k", "bool")]
   | .byte => Json.mkObj [("k", "byte")]
   | .f64 => Json.mkObj [("k", "f64")]
@@ -132,19 +147,14 @@ def exprToJson : Expr → Json
   | .pair a b => Json.mkObj [("k", "pair"), ("a", exprToJson a), ("b", exprToJson b)]
   | .fst e => Json.mkObj [("k", "fst"), ("e", exprToJson e)]
   | .snd e => Json.mkObj [("k", "snd"), ("e", exprToJson e)]
-  | .call fn ts e =>
-      if ts.isEmpty then Json.mkObj [("k", "call"), ("f", (fn : Nat)), ("e", exprToJson e)]
-      else Json.mkObj [("k", "call"), ("f", (fn : Nat)),
-        ("ts", Json.arr (ts.map tyToJson).toArray), ("e", exprToJson e)]
-  | .callM fn ts e =>
-      if ts.isEmpty then Json.mkObj [("k", "callm"), ("f", (fn : Nat)), ("e", exprToJson e)]
-      else Json.mkObj [("k", "callm"), ("f", (fn : Nat)),
+  | .call a fn ts e =>
+      if ts.isEmpty then Json.mkObj [("k", "call"), ("r", (a : Nat)), ("f", (fn : Nat)), ("e", exprToJson e)]
+      else Json.mkObj [("k", "call"), ("r", (a : Nat)), ("f", (fn : Nat)),
         ("ts", Json.arr (ts.map tyToJson).toArray), ("e", exprToJson e)]
   | .fnref fn ts =>
       if ts.isEmpty then Json.mkObj [("k", "fnref"), ("f", (fn : Nat))]
       else Json.mkObj [("k", "fnref"), ("f", (fn : Nat)), ("ts", Json.arr (ts.map tyToJson).toArray)]
-  | .callv f e => Json.mkObj [("k", "callv"), ("f", exprToJson f), ("e", exprToJson e)]
-  | .callMv a f e => Json.mkObj [("k", "callmv"), ("r", (a : Nat)), ("f", exprToJson f), ("e", exprToJson e)]
+  | .callv a f e => Json.mkObj [("k", "callv"), ("r", (a : Nat)), ("f", exprToJson f), ("e", exprToJson e)]
   | .ann e t => Json.mkObj [("k", "ann"), ("e", exprToJson e), ("t", tyToJson t)]
   | .block e => Json.mkObj [("k", "block"), ("e", exprToJson e)]
   | .blockR t e => Json.mkObj [("k", "block"), ("e", exprToJson e), ("t", tyToJson t)]
@@ -245,7 +255,9 @@ def tyFromJson : Nat → Json → Except String Ty
     | "int" => pure .int
     | "tvar" => do
         let i ← j.getObjVal? "i" >>= Json.getNat?
-        pure (.tvar i)
+        let ρ ← j.getObjVal? "r" >>= Json.getNat?
+        let k ← j.getObjVal? "kd" >>= kindFromJson
+        pure (.tvar i ρ k)
     | "bool" => pure .bool
     | "byte" => pure .byte
     | "f64" => pure .f64
@@ -446,28 +458,20 @@ def exprFromJson : Nat → Json → Except String Expr
         let e ← j.getObjVal? "e" >>= exprFromJson fuel
         pure (.snd e)
     | "call" => do
+        let a ← j.getObjVal? "r" >>= Json.getNat?
         let fn ← j.getObjVal? "f" >>= Json.getNat?
         let ts ← tysFromJson fuel j
         let e ← j.getObjVal? "e" >>= exprFromJson fuel
-        pure (.call fn ts e)
-    | "callm" => do
-        let fn ← j.getObjVal? "f" >>= Json.getNat?
-        let ts ← tysFromJson fuel j
-        let e ← j.getObjVal? "e" >>= exprFromJson fuel
-        pure (.callM fn ts e)
+        pure (.call a fn ts e)
     | "fnref" => do
         let fn ← j.getObjVal? "f" >>= Json.getNat?
         let ts ← tysFromJson fuel j
         pure (.fnref fn ts)
     | "callv" => do
+        let a ← j.getObjVal? "r" >>= Json.getNat?
         let f ← j.getObjVal? "f" >>= exprFromJson fuel
         let e ← j.getObjVal? "e" >>= exprFromJson fuel
-        pure (.callv f e)
-    | "callmv" => do
-        let a ← j.getObjValAs? Nat "r"
-        let f ← j.getObjVal? "f" >>= exprFromJson fuel
-        let e ← j.getObjVal? "e" >>= exprFromJson fuel
-        pure (.callMv a f e)
+        pure (.callv a f e)
     | "ann" => do
         let e ← j.getObjVal? "e" >>= exprFromJson fuel
         let t ← j.getObjVal? "t" >>= tyFromJson fuel
@@ -698,20 +702,61 @@ def parseExpr (input : String) : Except String Expr := do
   let j ← Json.parse input
   exprFromJson (input.length + 1) j
 
-/-- 関数定義 → JSON: `{"param":T,"ret":T,"body":E}` -/
+/-- 関数定義 → JSON: `{"param":T,"ret":T,"body":E}`。型パラメータがあれば `"kinds":[K...]` -/
 def defToJson (d : Def) : Json :=
-  if d.tparams = 0 then
+  if d.kinds.isEmpty then
     Json.mkObj [("param", tyToJson d.param), ("ret", tyToJson d.ret), ("body", exprToJson d.body)]
   else
-    Json.mkObj [("tparams", (d.tparams : Nat)), ("param", tyToJson d.param), ("ret", tyToJson d.ret),
-      ("body", exprToJson d.body)]
+    Json.mkObj [("kinds", Json.arr (d.kinds.map kindToJson).toArray), ("param", tyToJson d.param),
+      ("ret", tyToJson d.ret), ("body", exprToJson d.body)]
+
+/-- `"kinds"` の読み取り。無いときは空（単相の Def） -/
+def kindsFromJson (j : Json) : Except String (List Kind) :=
+  match j.getObjVal? "kinds" with
+  | .ok jk => do
+      let arr ← jk.getArr?
+      arr.toList.mapM kindFromJson
+  | .error _ => pure []
+
+/-- `"r"` の無いcall・callvに、anchor = 深さ - 1を書き足す（凍結したstage1の脱糖器が出す、anchorを持たない形を読むため）。
+dはその位置の型付けの深さ。本体が1つ深いのは、block（blockRも "block"）・scope・spawnの "e"。
+anchor = d - 1のcallM・callMvは、anchorの無い呼び出しの規則と同じ（Ty.renR_top・Ty.relocA_top）。
+d = 0ではどちらの規則でも型が付かないので、書き足す値は判定に影響しない。callmは省略を受けない -/
+def fillAnchors : Nat → Nat → Json → Json
+  | 0, _, j => j
+  | fuel + 1, d, j =>
+    match j with
+    | .arr xs => .arr (xs.map (fillAnchors fuel d))
+    | .obj kvs =>
+      let k := (j.getObjValAs? String "k").toOption
+      let deeper := k == some "block" || k == some "scope" || k == some "spawn"
+      let j' := Json.obj (kvs.foldl (fun acc key v => acc.insert key (fillAnchors fuel (if deeper && key == "e" then d + 1 else d) v)) kvs)
+      if (k == some "call" || k == some "callv") && (j.getObjVal? "r").toOption.isNone then
+        j'.setObjVal! "r" (d - 1 : Nat)
+      else j'
+    | _ => j
+
+/-- 検査の入力（全体と部分検査の封筒・素の式）にfillAnchorsを当てる。Defの本体は深さ2（checkDefs・checkDefsAtのtypecheck）、
+根の式は深さ0（checkToJson・checkPartsToJsonのtypecheck）から歩く -/
+def fillProgramAnchors (fuel : Nat) (j : Json) : Json :=
+  match j.getObjVal? "defs" with
+  | .ok (.arr ds) =>
+    let ds' := ds.map fun dj =>
+      match dj.getObjVal? "body" with
+      | .ok b => dj.setObjVal! "body" (fillAnchors fuel 2 b)
+      | .error _ => dj
+    let j' := j.setObjVal! "defs" (.arr ds')
+    match j.getObjVal? "e" with
+    | .ok e => j'.setObjVal! "e" (fillAnchors fuel 0 e)
+    | .error _ => j'
+  | _ => fillAnchors fuel 0 j
 
 def defFromJson (fuel : Nat) (j : Json) : Except String Def := do
   let param ← j.getObjVal? "param" >>= tyFromJson fuel
   let ret ← j.getObjVal? "ret" >>= tyFromJson fuel
   let body ← j.getObjVal? "body" >>= exprFromJson fuel
-  let tparams := (j.getObjValAs? Nat "tparams").toOption.getD 0
-  pure { param := param, ret := ret, body := body, tparams := tparams }
+  let kinds ← kindsFromJson j
+  pure { param := param, ret := ret, body := body, kinds := kinds }
 
 /-- プログラム → JSON: `{"defs":[D...],"e":E}`。素の式（defs なし）も受ける（後方互換） -/
 def programToJson (Δ : Defs) (e : Expr) : Json :=
@@ -749,12 +794,12 @@ def checkToJson (Δ : Defs) (e : Expr) : Json :=
 def defPartFromJson (fuel : Nat) (j : Json) : Except String (Def × Bool) := do
   let param ← j.getObjVal? "param" >>= tyFromJson fuel
   let ret ← j.getObjVal? "ret" >>= tyFromJson fuel
-  let tparams := (j.getObjValAs? Nat "tparams").toOption.getD 0
+  let kinds ← kindsFromJson j
   match j.getObjVal? "body" with
   | .ok jb => do
       let body ← exprFromJson fuel jb
-      pure ({ param := param, ret := ret, body := body, tparams := tparams }, true)
-  | .error _ => pure ({ param := param, ret := ret, body := .triv, tparams := tparams }, false)
+      pure ({ param := param, ret := ret, body := body, kinds := kinds }, true)
+  | .error _ => pure ({ param := param, ret := ret, body := .triv, kinds := kinds }, false)
 
 /-- 部分検査の封筒: `{"parts":true,"defs":[D...],"e":E}`。e は省略できる（main 以外の package — 根の式が無い） -/
 def partsFromJson (fuel : Nat) (j : Json) : Except String (Defs × List Bool × Option Expr) := do
@@ -786,7 +831,8 @@ def checkInput (input : String) : Json :=
       ("errors", Json.arr #[Json.mkObj [("msg", s!"parse error: {msg}")]])]
   match Json.parse input with
   | .error msg => parseErr msg
-  | .ok j =>
+  | .ok j0 =>
+    let j := fillProgramAnchors (input.length + 1) j0
     match j.getObjValAs? Bool "parts" with
     | .ok true =>
       match partsFromJson (input.length + 1) j with

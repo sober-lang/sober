@@ -1,0 +1,14 @@
+@@full	44fabc53e6b88316	1998	53917
+@head	f028e8525eb6e58c	0	279
+const Ca	22211a65bc150129	4	272
+const Password	dc930a8440280c75	4	271
+const Url	62f3256625f8d5c7	3	242
+const Vars	ba8f5e8f7dbef6b2	6	276
+func add	e83d1f484dc32067	25	1191
+func duplicate	25e4443a4e7c3148	41	1742
+func list	b40abccdf0012fe5	42	1540
+func main	c3b12871e5a7d1a1	51	1664
+func policyOf	494c51598d79c120	38	1363
+func rootsOf	36884f53ddf65a98	23	795
+func setup	cfdf3477706f8b75	36	1143
+func shop	68a1f5fcc63731cb	33	1121

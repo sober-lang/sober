@@ -30,11 +30,11 @@ instance : NegC Ty := ⟨fun _ => true⟩
 
 def negClass (t : Ty) : Bool := NegC.f t
 
-/-- 右辺の match（計算結果への match — matcher の補助関数が右辺に残る） -/
+/-- 右辺の Option 以外の match（Option の some / none の match は if 式に写す — それ以外の matcher は写さない） -/
 def negMatchRhs (t : Ty) : Bool :=
-  match t.mutTop with
-  | some _ => true
-  | none => false
+  match t.unfold with
+  | .int => true
+  | _ => false
 
 /-- 仮定が先行の方程式の否定に対応しない人工的な方程式: 先行は `bool` の腕なのに、2 本目の仮定は `int` でない、と言う。
 定義の本物の方程式の代わりに、この定理の列を方程式として渡す -/

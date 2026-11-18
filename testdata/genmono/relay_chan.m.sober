@@ -1,0 +1,41 @@
+package main
+
+// 総称関数の版（relay_chan.g.sober）の型引数を手で代入した単相の版。関数の対応（単相 = 総称の単相コピーの名前）
+// genmono: relayS = relay[[]byte]
+// genmono: relayR = relay[main.Row]
+
+import "std/task"
+
+type Row struct {
+    xs []int
+    tag string
+}
+
+func relayS(x string) string? {
+    tx, rx := task.NewChannel[string](cap: 1)
+    task.Send(tx, x)
+    return task.Recv(rx)
+}
+
+func relayR(x Row) Row? {
+    tx, rx := task.NewChannel[Row](cap: 1)
+    task.Send(tx, x)
+    return task.Recv(rx)
+}
+
+func main() {
+    r, e := task.Run((s task.Scope) => {
+        a := relayS("abc")
+        b := relayR(Row{xs: []int{4}, tag: "t"})
+        mut n := 0
+        if a != nil {
+            n += len(bytes(a))
+        }
+        if b != nil {
+            n += len(b.xs) + len(bytes(b.tag))
+        }
+        n
+    })
+    _ = e
+    println(r)
+}

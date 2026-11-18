@@ -43,8 +43,14 @@ func handle(c net.Conn) error? {
 
 func main() {
     println(run() catch "listen failed")
-    for pv <- task.Ledger().pools {
-        println("pool ${pv.id}: admit ${pv.admit} died ${pv.died}")
+    ps := task.Ledger().pools
+    for pv <- ps {
+        // ほかの行の親になっている行は Serve の全部の親の節。接続の task はその子の節で入場する
+        mut top := false
+        for q <- ps {
+            top = top || q.parent == pv.id
+        }
+        println("pool ${pv.id}${if top { " (all Serves)" } else { "" }}: admit ${pv.admit} died ${pv.died}")
     }
 }
 

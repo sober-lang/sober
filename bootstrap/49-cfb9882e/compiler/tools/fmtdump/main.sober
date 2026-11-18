@@ -1,0 +1,23 @@
+package main
+
+// fmtdump: 標準入力のソースを parse して、AST から整形したソースを標準出力に書く（compiler/printer）。
+// selfhost の自己不動点オラクル（scripts/selfhost_fmt.sh）の印字側
+
+import "std/io"
+import "lexer"
+import "parser"
+import "printer"
+
+func main() {
+    src, err := io.ReadFile("/dev/stdin")
+    if err != nil {
+        println("fmtdump: cannot read /dev/stdin")
+        return
+    }
+    t, ok := parser.Parse(src, lexer.Lex(src))
+    if !ok {
+        println("fmtdump: parse error")
+        return
+    }
+    _ = io.WriteFile("/dev/stdout", printer.Print(t))
+}

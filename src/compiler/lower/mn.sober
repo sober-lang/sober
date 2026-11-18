@@ -5,7 +5,7 @@ package lower
 //   ワーカー1〜N-1は最初のM:Nのspawnで起動する（rt.mn_start — std/taskを使ってspawnしないプログラムはスレッドを持たない）
 // - 走り始めた task はワーカーに固定（TC_WORKER）。spawn = 子を自分の列の底へ（ワーカーごとの両端の列 — THE 規約・持ち主は鍵なし。あふれは
 //   共有のスタック〔スピンロック + LIFO〕へ）— 親は先へ進む（help-first）。暇なワーカーは他の列の頭から未着手の子だけを盗む（Skynet回収 (a)）
-// - 待ち = 自分の実行待ちの列（FIFO）→ 受け箱（他のワーカーからのウェイクアップ。TreiberのCAS）→ 自分の列の底 → 共有のスタック → 盗み → 回る → スリープする
+// - 待ち = 自分の実行待ちの列（FIFO。MN_BACKLOG_EVERY周に1回は自分の列の底を先に）→ 受け箱（他のワーカーからのウェイクアップ。TreiberのCAS）→ 自分の列の底 → 共有のスタック → 盗み → 回る → スリープする
 //   （futex — スリープのワードそのものがfutexのワード）
 // - ウェイクアップ = 持ち主のワーカーが自分なら実行待ちの列・他なら受け箱 + スリープしていればウェイクアップする（スリープのワードを1 → 0にCASした側が暇の数を減らす）
 // - 暇の数 = N（全ワーカーがスリープの手前）で全受け箱と共有のスタックと全ワーカーの列が空・暇の数を読み直してもNならデッドロック（定義された死 — Kahnにより有無はスケジュールに依らない）
@@ -31,7 +31,7 @@ const MN_CPUQ = 7     // cgroup の cpu.max から出るワーカーの上限（
 const MN_AFFC = 8     // sched_getaffinity のコア数（MN_N を決める前の値 — 計測の表示）
 const MN_PIN = 13     // ワーカーの CPU の固定（rt.mn_pin・mnInit が決める）: 0 = なし・1 = 自分の CPU の L3 の群 ∩ 許可・2 = 自分の CPU 1 つ
 const MN_TCAP = 9     // 生きている task の数の天井（VA の上界 — admit.sober: VA_BUDGET ÷ スロットの大きさ ÷ 2）
-const MN_PLOCK = 16
+const MN_RCV64 = 16   // 65536（4バイトの整数 — 受けた接続に置く SO_RCVBUF の setsockopt の値の番地。netring.sober の rcvClamp）
 const MN_PHEAD = 17
 const MN_PTAIL = 18   // （使わない — pull列をスタックにした。カウンタ〔ミュータント4〕が別ワーカーへのウェイクアップの数に借りる）
 const MN_IDLE = 32
@@ -47,6 +47,13 @@ const MN_DQB = 56
 const MN_RLOCK = 64   // 共有の予備（チャンク・スロット）の鍵
 const MN_RTCB = 65    // 共有の予備のチャンクのチェーン（TC_NEXT）
 const MN_RTCBA = 66   // 共有の予備の、所有エリアが自分でないチャンクのチェーン（area.sober）
+// MN_RTCBAの冷えた分（rt.tcb_trimがページを返したバッチのチェーン — TCBのページは残す。取りはMN_RTCBAが空のときだけ）
+const MN_RTCBAC = 67
+// 空きのチャンクの冷えた分を最後に刈った時刻（TSC — rt.tcb_trim。鍵MN_RLOCKの行と分ける）
+const MN_TTRIM = 72
+// 前の刈りで共有の予備（MN_RTCB / MN_RTCBA）の先頭からK個目だったバッチ（印 — 0 = 無し）。次の刈りは印がまだ予備に居るときだけ、印より下を刈る（rt.tcb_trim）
+const MN_TMARK = 73
+const MN_TMARKA = 74
 const MN_TID = 80     // task の通し番号（trace）
 const MN_EV = 81      // 出来事の通し番号（trace）
 const MN_CNT_CROSS = 96   // カウンタ（ミュータント4）: spawnしたtaskと別のワーカーで走り始めた数
@@ -69,6 +76,8 @@ const MN_ALOCK = MN_LED + 10
 const MN_AGEN = MN_LED + 11         // 台帳の返しの通し番号（待ち手の取りこぼし防止 — 返し手は足してからチェーンを見る・待ち手は積んでから番号を見る）
 const MN_SLOTVA = MN_LED + 12      // コピーしたスロットのVA（バイト — 名前つきプールを使うプログラムだけ数える。SpawnInの入場はVA_SHEDを越えたらshed）
 const MN_LYIELD = MN_LED + 13      // 列があふれて子を先に走らせた（親が譲った）回数（Ledger の 13）
+const MN_LBORD = MN_LED + 14       // 借りでプールの節か根があふれて死んだtaskの数（admit.sober borrowIn — RegionExceeded{cause: budget}。Ledger の 16）
+const MN_LBORS = MN_LED + 15       // 借りでscopeのbudget:の節だけがあふれた回数（記帳だけ。Ledger の 17）
 // TSCの周波数の校正（LedgerのmaxWaitをnsへ換算する）: MN_TSCQ = TSCの数 / ns × 65536（0 = まだ。TSCQ_DEFと仮定）。
 // 最初に2本以上の実行待ちを見たワーカーがMN_TSC0 / MN_NS0に1点目を置き、TSCが2^25（≈ 10 ms）進んだらCLOCK_MONOTONICと2点目で割る（MN_TSC0 = -1で済み）。
 // 台帳のワード（MN_LED〜。spawnのたびに書く）と同じ行に置かない（実行待ちが2本以上の周ごとにMN_TSC0を、周ごとにMN_PFを読む）
@@ -88,7 +97,21 @@ const MN_DEXP = MN_LED + 26
 const MN_DPOIS = MN_LED + 27
 // leaseの死の通し番号（rt.lease_drainがフラグを1つ以上外したら +1 — lease_op 9が読む。std/internal/lotのReapが変わったときだけ走査する）
 const MN_LDRAIN = MN_LED + 28
-const MN_WORDS = MN_LED + 30
+const MN_LDOVERHW = MN_LED + 29     // 計上済みの上限の和の高水位で宣言を越えたtaskの数（task.sober wmRaiseTo）
+const MN_LBSUM = MN_LED + 30       // 根の下で今借りている量の和（バイト — 借りは節のチェーンに足さず、あふれの判定だけに使う。admit.sober ledBorrowAdd）
+// net.Serve の listener の登録簿（net.Waiting の読み — netring.sober の op 21〜23）: 鍵・本数・fd の列（LSN_CAP 本まで。越えた分は登録しない）
+const MN_LSNL = MN_LED + 31
+const MN_LSNN = MN_LED + 32
+const MN_LSNF = MN_LED + 33
+const LSN_CAP = 256
+// TCP_INFO の作業域（op 25 — 32 ワード = 256 バイト）と、その長さの語
+const MN_LSNTI = MN_LSNF + LSN_CAP
+const MN_LSNTL = MN_LSNTI + 32
+// 待つ入場で受け付けのループが手に持っている接続の数（op 26 で足し引き・op 27 で読む）
+const MN_LSNH = MN_LSNTL + 1
+// net.Serve の全部の親の節の番地（0 = まだ無い — netring.sober の op 29 が鍵 MN_LSNL の下で作る）
+const MN_SPAR = MN_LSNH + 1
+const MN_WORDS = MN_SPAR + 1
 // rt.mn_llc の作業域（経路 LLC_PATH・読んだ中身 LLC_DATA から LLC_CAP バイト）
 const LLC_PATH = 0
 const LLC_DATA = 128
@@ -97,6 +120,8 @@ const LLC_WORDS = 48
 const TSCQ_DEF = 262144        // 校正の前の仮定（4 GHz）
 // 受け箱の先読み（実行待ちの列が空でなくても受け箱を先に取り込む）はMN_INBOX_EVERY周に1回。受け箱の未着手の延びは高々この周の数。2の冪
 const MN_INBOX_EVERY = 256
+// 未着手の子の列の底から先に取るのはMN_BACKLOG_EVERY周に1回（2の冪・MN_INBOX_EVERY以下。受け箱の周は間引きの周の中で見る）。実行待ちの列の待ちはN ÷ (N − 1) 倍に延び、未着手の子はN本の走りごとに1本走る
+const MN_BACKLOG_EVERY = 8
 // @rt.sres（共有の予備のスロット — [数, 基底…]）。上限はrt.sdp（深度ごとの共有の列 — 32列 × SRES_CAPワードのbss・触った分だけ常駐）と合わせての本数。
 // 65536 = 同時にスリープするtaskの数 × parkで返す深度の数（L1-R — 32000接続 × 数本）を溢れない大きさ（4096ではasyncの16000接続で溢れて
 // munmapとコピー足しが往復した）
@@ -116,7 +141,7 @@ const WK_SS = 8       // 代替スタックのstack_t（3ワード）
 const WK_CUT = 11     // 1 = 今のtaskは打ち切りのフラグを見直す（検査点の速いパスが読む — フラグを立てたら全ワーカーに・切替で「フラグが1度でも立ったか」）
 // ワーカーごとの両端の列（Skynet 回収 (a): Cilk-5 の THE 規約）: spawn された未着手の子だけが入る・添字 H ≤ T は単調・
 // 環の位置 = 添字 & (DQ_CAP − 1)。持ち主は底（T）で積む / 取る（鍵なし）・暇なワーカーは頭（H）から盗む（盗み手どうしは WK_DLOCK で直列化）。
-// ワードの配置は行を分ける（T = 持ち主だけが書く・鍵とH = 盗み手が書く）。あふれ（T − H ≥ DQ_CAP − 1）は共有のスタック（MN_PHEAD）へ
+// ワードの配置は行を分ける（T = 持ち主だけが書く・鍵とH = 盗み手が書く）。あふれ（T − H ≥ DQ_CAP − 1）は子をその場で走らせる（spawnのあふれの節）
 const WK_DT = 16
 // 配置のフラグ（持ち主だけが書く行に同居）: PLOWN = フラグを置いたtask（そのtaskの次のspawn 1回が消費）・PLTO = 行き先
 // （k ≥ 0 = 自分を除いたk番目のワーカー・-1 = 自分の実行待ちの列）
@@ -206,10 +231,11 @@ const TC_KT0 = TC_END // spawnの時刻（ミュータント4だけ — 子の�
 // 6 予備へ出した数・7 予備から移した数・8 give の Σ min(used, W_MADV)（プールへ持ち込む常駐）・9 give の Σ used・10 生きている子の数・
 // 11予備の数（コピーの時点 — 単体 + 深度ごとのチェーン）・12前回のコピーの時刻・13 slot_take（チャネルの小アリーナ）・14 spawnの和・15既定より大きいスロットのmmap・
 // 16 popで受け継いだ常駐のページの和（スロットの先頭1 MiBをmincore — 前の持ち主たちが触って返さなかったページ）・17そのpopの数・
-// 18 深度ごとのプールへ返した数・19 深度ごとのプールから取った数。
+// 18 深度ごとのプールへ返した数・19 深度ごとのプールから取った数・20 rt.lock_waitに入った数（鍵の競合）・21 その中のsched_yieldの数・
+// 22 / 23 MN_OLOCK / MN_RLOCKでrt.lock_waitに入った数・24 / 25 その中のsched_yieldの数。
 // コピー = mn_nextが256回ごとに時刻を見て100 ms経っていれば16ワードをwrite(2) で生のまま出す（bench/httparena/tools/slotts.tsが読む）
 const MK0 = MN_WORDS
-const MK_N = 20
+const MK_N = 26
 const MK_MAGIC = 6074321610230353747 // "SOBERSLT"
 
 // スロットのカウンタのワードkにvを足す（ミュータント4だけ — vを作る命令は呼び手がミュータント4の中で作る）
@@ -390,6 +416,10 @@ func kRunEnd(st mut St) {
 }
 
 const TCB_KEEP = 16
+// 冷えた予備のチャンク（@rt.tcbc = [数, TCBの番地…] — 鍵MN_RLOCK）の上限の本数。越えた分はmunmap
+const TCBC_CAP = 262144
+// rt.tcb_trimの間隔（TSCの刻み — 4 GHzで約0.27秒）
+const TTRIM_TSC = 1073741824
 const KEEP_SMALL = 256 // 預かりの小さなチャンクの大きさ（使った量がこれ以下の子の結果はチャンクに — 1ページずつのmmapを避ける）
 const KEEP_SLAB = 65536 // チャンクの補充の単位（mmap 1回）
 const MN_SPIN = 20000  // スリープする前に回る回数（読み2つ × 2万 ≈ 数十 µs）
@@ -410,15 +440,17 @@ func needMnRt(st mut St) {
     st.rtMnWake = addFunc(mut st, int(strLit(mut st, "rt.mn_wake")), desugar.ListRef(list1(mut st, TyPtr)), -1)
     st.rtMnKick = addFunc(mut st, int(strLit(mut st, "rt.mn_kick")), desugar.ListRef(list0(mut st)), -1)
     st.rtMnDelay = addFunc(mut st, int(strLit(mut st, "rt.mn_delay")), desugar.ListRef(list0(mut st)), -1)
+    st.rtLockWait = addFunc(mut st, int(strLit(mut st, "rt.lock_wait")), desugar.ListRef(list1(mut st, TyPtr)), -1)
     st.rtSresTake = addFunc(mut st, int(strLit(mut st, "rt.sres_take")), desugar.ListRef(list0(mut st)), TyI64)
     st.rtDpGive = addFunc(mut st, int(strLit(mut st, "rt.dp_give")), desugar.ListRef(list3(mut st, TyI64, TyI64, TyI64)), -1)
     st.rtDpTake = addFunc(mut st, int(strLit(mut st, "rt.dp_take")), desugar.ListRef(list1(mut st, TyI64)), TyI64)
-    st.rtMnPullPop = addFunc(mut st, int(strLit(mut st, "rt.mn_pull_pop")), desugar.ListRef(list0(mut st)), TyPtr)
     st.rtMnSteal = addFunc(mut st, int(strLit(mut st, "rt.mn_steal")), desugar.ListRef(list0(mut st)), TyPtr)
     st.rtMnAnyDq = addFunc(mut st, int(strLit(mut st, "rt.mn_anydq")), desugar.ListRef(list0(mut st)), TyI64)
     st.rtMnAnyDqAll = addFunc(mut st, int(strLit(mut st, "rt.mn_anydq_all")), desugar.ListRef(list0(mut st)), TyI64)
     st.rtMnTrace = addFunc(mut st, int(strLit(mut st, "rt.mn_trace")), desugar.ListRef(list2(mut st, TyI64, TyI64)), -1)
     st.rtTcbFree = addFunc(mut st, int(strLit(mut st, "rt.tcb_free")), desugar.ListRef(list1(mut st, TyPtr)), -1)
+    st.tcbcG = addGlobalInit(mut st, int(strLit(mut st, "rt.tcbc")), 1 + TCBC_CAP, -1)
+    st.rtTcbTrim = addFunc(mut st, int(strLit(mut st, "rt.tcb_trim")), desugar.ListRef(list1(mut st, TyI64)), -1)
     st.rtMnPin = addFunc(mut st, int(strLit(mut st, "rt.mn_pin")), desugar.ListRef(list1(mut st, TyI64)), -1)
     st.rtMnLlc = addFunc(mut st, int(strLit(mut st, "rt.mn_llc")), desugar.ListRef(list2(mut st, TyI64, TyI64)), TyI64)
     needUringRt(mut st)
@@ -432,15 +464,16 @@ func buildMnRt(st mut St) {
     buildMnWake(mut st)
     buildMnKick(mut st)
     buildMnDelay(mut st)
+    buildLockWait(mut st)
     buildSresTake(mut st)
     buildDpGive(mut st)
     buildDpTake(mut st)
-    buildMnPullPop(mut st)
     buildMnSteal(mut st)
     buildMnAnyDq(mut st)
     buildMnAnyDqAll(mut st)
     buildMnTrace(mut st)
     buildTcbFree(mut st)
+    buildTcbTrim(mut st)
     buildMnPin(mut st)
     buildMnLlc(mut st)
     buildUringInit(mut st)
@@ -453,19 +486,9 @@ func mnOn(st mut St) int {
     return cmp(mut st, CGt, load(mut st, globaladdr(mut st, st.mnG), MN_N), iconst(mut st, 1))
 }
 
-// p[off] の鍵を取る（xchg で 1 を置き、取れなければ 0 になるまで読んで待つ）
+// p[off] の鍵を取る（lock.sober の lockTake — 鍵の部品は1つ）
 func spinLock(st mut St, p int, off int) {
-    lk := newBlock(mut st)
-    spin := newBlock(mut st)
-    got := newBlock(mut st)
-    br(mut st, lk, -1)
-    setCur(mut st, lk)
-    o := atomicXchg(mut st, p, off, iconst(mut st, 1))
-    condbr(mut st, cmp(mut st, CEq, o, iconst(mut st, 0)), got, -1, spin, -1)
-    setCur(mut st, spin)
-    atomicPause(mut st)
-    condbr(mut st, cmp(mut st, CNe, load(mut st, p, off), iconst(mut st, 0)), spin, -1, lk, -1)
-    setCur(mut st, got)
+    lockTake(mut st, p, off)
 }
 
 // 遅延注入のオプション（ワーカーの乱択の状態が0でなければrt.mn_delay — schedfuzz）
@@ -489,6 +512,7 @@ func mnInit(st mut St, sp int) {
     n0 := envMb(mut st, sp, "SOBER_WORKERS=", 0, false)
     // 台帳の器: 計測のマークと、プロセスの天井（cgroupのcpu.max / memory.max・MemTotal・入口のRSS — rt.pcap_init）
     store(mut st, mn, MN_STATS, envMb(mut st, sp, "SOBER_PAR_STATS=", 0, true))
+    store(mut st, mn, MN_RCV64, iconst(mut st, 65536))
     call(mut st, st.rtPcapInit, list1(mut st, envMb(mut st, sp, "SOBER_BUDGET_MB=", -1, true)))
     // io_uringのprobeのインターフェース（uring.sober）
     store(mut st, mn, MN_IOMODE, envMb(mut st, sp, "SOBER_IO=", 0, true))
@@ -539,6 +563,11 @@ func mnInit(st mut St, sp int) {
     st.mnExtra = int(irBlkITail(mut st, st.cur))
     n := n0w
     store(mut st, mn, MN_N, n)
+    // 返した小さいスロットに残す常駐（ワーカーごとにRES_CAPまで — task.sober smallPush）は、taskの計上の外にある。根の計上に起動時の定数として入れる
+    // （プールの節の天井には数えない — 常駐はワーカーごとの量で、プールをまたいで共有される）
+    if st.poolOn {
+        atomicXadd(mut st, mn, MN_LED, bin(mut st, BMul, n, iconst(mut st, RES_CAP)))
+    }
     // ワーカーの CPU の固定: 既定は CPU 1 つ（走れるワーカーが同じ CPU に重なって時間片〔≈ 3 ms〕を待つ形と、群・ソケットを越える移動を無くす）。
     // L3の群（∩ 許可）へ広げる形はSOBER_PIN=1のオプションとして残す（マシンによって低い負荷の尾が大きく崩れた — 既定にはしない）。
     // 既定はServeのプログラム（配置のフラグ = ex）で、ワーカー数をaffinityから決めたとき（SOBER_WORKERSなし）— マシンを占有するサーバの形。
@@ -959,7 +988,7 @@ func buildTaskGoMn(st mut St) {
     setCur(mut st, bOf)
     spinLock(mut st, mn, MN_OLOCK)
     outFork(mut st, 0, 1)
-    store(mut st, mn, MN_OLOCK, iconst(mut st, 0))
+    lockGive(mut st, mn, MN_OLOCK)
     br(mut st, bOf2, -1)
     setCur(mut st, bOf2)
     store(mut st, 1, TC_SEG, bin(mut st, BMul, load(mut st, 1, TC_SEG), cmp(mut st, CEq, outNoSeg(mut st, 0, 1), iconst(mut st, 0))))
@@ -1074,30 +1103,6 @@ func buildTaskGoMn(st mut St) {
     ret(mut st, -1)
 }
 
-// rt.mn_pull_pop() ptr: pull 列の頭（空なら 0）
-func buildMnPullPop(st mut St) {
-    begin(mut st, st.rtMnPullPop)
-    mn := globaladdr(mut st, st.mnG)
-    spinLock(mut st, mn, MN_PLOCK)
-    h := load(mut st, mn, MN_PHEAD)
-    bT := newBlock(mut st)
-    bT2 := newBlock(mut st)
-    bE := newBlock(mut st)
-    bU := newBlock(mut st)
-    condbr(mut st, cmp(mut st, CNe, h, iconst(mut st, 0)), bT, -1, bU, -1)
-    setCur(mut st, bT)
-    nx := load(mut st, itop(mut st, h), TC_NEXT)
-    store(mut st, mn, MN_PHEAD, nx)
-    br(mut st, bT2, -1)
-    setCur(mut st, bT2)
-    br(mut st, bE, -1)
-    setCur(mut st, bE)
-    br(mut st, bU, -1)
-    setCur(mut st, bU)
-    store(mut st, mn, MN_PLOCK, iconst(mut st, 0))
-    ret(mut st, itop(mut st, h))
-}
-
 // rt.mn_steal() ptr（暇なワーカーから — Skynet 回収 (a)）: MN_DQB の立ったワーカーを自分の次の番号から一巡し、列が空でない被害者の頭から
 // 未着手の子を 1 つ盗む（無ければ 0）。被害者の鍵の中で h = H・T > h を見て、H = h + 1 を xchg（柵）して T を読み直す: T ≤ h なら持ち主が底から取った（衝突）—
 // H = h に戻して退く。取れたら q[h] をその後で読む（前に読むと、持ち主が h を底から取って同じ h に積み直す間に古い子を掴む — 子が 2 回走り、
@@ -1156,12 +1161,12 @@ func buildMnSteal(st mut St) {
     store(mut st, wp, WK_DH, h)
     br(mut st, bFail, -1)
     setCur(mut st, bFail)
-    store(mut st, wp, WK_DLOCK, zero)
+    lockGive(mut st, wp, WK_DLOCK)
     br(mut st, next, list2(mut st, x2, rest))
     // 取れた: q[h] は確認の後・鍵の中で読む（持ち主は添字 h へ底から届けば衝突で鍵を待つ — それまで h の位置は動かない）
     setCur(mut st, bOk)
     t := load(mut st, gepWord(mut st, wp, bin(mut st, BAdd, bin(mut st, BAnd, h, iconst(mut st, DQ_CAP - 1)), iconst(mut st, WK_DQ))), 0)
-    store(mut st, wp, WK_DLOCK, zero)
+    lockGive(mut st, wp, WK_DLOCK)
     ret(mut st, itop(mut st, t))
     setCur(mut st, next)
     br(mut st, loop, list2(mut st, nx, nrest))
@@ -1255,7 +1260,42 @@ func tscCalibrate(st mut St, mn int, now int) {
     setCur(mut st, bE)
 }
 
-// rt.mn_next() ptr: 次に走らせるtask（自分の実行待ちの列 → 受け箱 → 自分の列の底 → 共有のスタック → 盗み → 回る → スリープする）。全ワーカーがスリープの手前で仕事が無ければデッドロック
+// 自分の未着手の子の列の底から1本取る（THE規約の持ち主の取り）: T − H ≤ 0なら空（盗み手が最後の1つを取り中でも空で正しい）。
+// でなければT = b（= T − 1）をxchg（柵）してからHを読む: H ≤ bならq[b] は持ち主のもの（盗み手はHを進めてからTを読み、H > Tで退く）。
+// H > bなら衝突。自分の列の鍵を取って確定したHで決める（H ≤ bなら取る・でなければT = Hに戻して空）。
+// 取れたらbGot（[task, 種類1]）へ、空ならbFailへ
+func ownPop(st mut St, wk int, bGot BlkRef, bFail BlkRef) {
+    zero := iconst(mut st, 0)
+    bOwn := newBlock(mut st)
+    bOwnC := newBlock(mut st)
+    bOwnL := newBlock(mut st)
+    bOwnE := newBlock(mut st)
+    ot := load(mut st, wk, WK_DT)
+    condbr(mut st, cmp(mut st, CGt, ot, load(mut st, wk, WK_DH)), bOwn, -1, bFail, -1)
+    setCur(mut st, bOwn)
+    ob := bin(mut st, BSub, ot, iconst(mut st, 1))
+    atomicXchg(mut st, wk, WK_DT, ob)
+    mnDelayPoint(mut st)
+    oslot := gepWord(mut st, wk, bin(mut st, BAdd, bin(mut st, BAnd, ob, iconst(mut st, DQ_CAP - 1)), iconst(mut st, WK_DQ)))
+    condbr(mut st, cmp(mut st, CLe, load(mut st, wk, WK_DH), ob), bOwnC, -1, bOwnL, -1)
+    setCur(mut st, bOwnC)
+    br(mut st, bGot, list2(mut st, itop(mut st, load(mut st, oslot, 0)), iconst(mut st, 1)))
+    setCur(mut st, bOwnL)
+    spinLock(mut st, wk, WK_DLOCK)
+    oh := load(mut st, wk, WK_DH)
+    bOwnLT := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CLe, oh, ob), bOwnLT, -1, bOwnE, -1)
+    setCur(mut st, bOwnLT)
+    op := load(mut st, oslot, 0)
+    lockGive(mut st, wk, WK_DLOCK)
+    br(mut st, bGot, list2(mut st, itop(mut st, op), iconst(mut st, 1)))
+    setCur(mut st, bOwnE)
+    store(mut st, wk, WK_DT, oh)
+    lockGive(mut st, wk, WK_DLOCK)
+    br(mut st, bFail, -1)
+}
+
+// rt.mn_next() ptr: 次に走らせるtask（自分の実行待ちの列〔MN_BACKLOG_EVERY周に1回は自分の列の底を先に〕→ 受け箱 → 自分の列の底 → 共有のスタック → 盗み → 回る → スリープする）。全ワーカーがスリープの手前で仕事が無ければデッドロック
 func buildMnNext(st mut St) {
     begin(mut st, st.rtMnNext)
     mn := globaladdr(mut st, st.mnG)
@@ -1286,13 +1326,32 @@ func buildMnNext(st mut St) {
     bI := newBlock(mut st)
     bRc := newBlock(mut st)
     condbr(mut st, cmp(mut st, CNe, r, zero), bRc, -1, bI, -1)
+    // 走り始めるtaskの合流点（自分の列・共有のスタック・盗み・下のN周に1回の取り）
+    bGot := newBlock(mut st)
+    gp := param(mut st, bGot, TyPtr)
+    gkind := param(mut st, bGot, TyI64)
     setCur(mut st, bRc)
-    // 受け箱が空でなければ実行待ちの列が空でなくても先に取り込む（Serveのacceptのループ・他のワーカーからのウェイクアップの待ちを、列の長さと
-    // MN_INBOX_EVERY周の和で抑える）。見るのはMN_INBOX_EVERY周に1回（受け箱のワードは他のワーカーが書く。毎周の読みとxchgの値段を払わない）
+    // 間引きの周（周の数の下位ビットがMN_BACKLOG_EVERY − 1の周）だけ、受け箱と未着手の子の列を見る。ほかの周は比較1回で実行待ちの列へ
+    // （受け箱の周と未着手の子の周は同じ比較の中にあり、位相が結び付く。どちらも定数の周期）。
+    // 受け箱: MN_INBOX_EVERY周に1回、空でなければ実行待ちの列が空でなくても先に取り込む（Serveのacceptのループ・他のワーカーからのウェイクアップの待ちを、
+    // 列の長さとMN_INBOX_EVERY周の和で抑える。受け箱のワードは他のワーカーが書くので、毎周の読みとxchgの値段を払わない）。
+    // 未着手の子: MN_BACKLOG_EVERY周に1回、実行待ちの列より先に自分の未着手の子の列の底から1本取る。実行待ちの列が空にならない飽和の間も、
+    // 未着手の子がN本の走りごとに1本ずつ走る。底（いちばん新しい子）から取るので木は深さ優先のまま。列が空なら実行待ちの列へ。
+    // ミュータント99（検査の自己検査）: 未着手の子を取らない（実行待ちの列が尽きたときだけ。starveの客が走り始めない）
+    bThin := newBlock(mut st)
     bIb := newBlock(mut st)
-    condbr(mut st, cmp(mut st, CEq, bin(mut st, BAnd, pick, iconst(mut st, MN_INBOX_EVERY - 1)), zero), bIb, -1, bR, -1)
+    bBk := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, bin(mut st, BAnd, pick, iconst(mut st, MN_BACKLOG_EVERY - 1)), iconst(mut st, MN_BACKLOG_EVERY - 1)), bThin, -1, bR, -1)
+    setCur(mut st, bThin)
+    condbr(mut st, cmp(mut st, CEq, bin(mut st, BAnd, pick, iconst(mut st, MN_INBOX_EVERY - 1)), iconst(mut st, MN_INBOX_EVERY - 1)), bIb, -1, bBk, -1)
     setCur(mut st, bIb)
-    condbr(mut st, cmp(mut st, CEq, load(mut st, wk, WK_INBOX), zero), bR, -1, bI, -1)
+    condbr(mut st, cmp(mut st, CEq, load(mut st, wk, WK_INBOX), zero), bBk, -1, bI, -1)
+    setCur(mut st, bBk)
+    if st.rtMut != 99 {
+        ownPop(mut st, wk, bGot, bR)
+    } else {
+        br(mut st, bR, -1)
+    }
     setCur(mut st, bR)
     // 実行待ちの列はFIFO: いつも底（いちばん古い）から取る
     // TSC の校正（2 本以上積まれた最初の頃だけ — MN_TSC0 = -1 で済み）
@@ -1367,51 +1426,19 @@ func buildMnNext(st mut St) {
     nq := load(mut st, qp, TC_INEXT)
     readyPush(mut st, tk, q)
     br(mut st, ml, list1(mut st, nq))
-    // 自分の列の底（Skynet 回収 (a) — THE 規約の持ち主の取る）: T − H ≤ 0 なら空（盗み手が最後の 1 つを取り中でも空で正しい）。
-    // でなければ T = b（= T − 1）を xchg（柵）してから H を読む: H ≤ b なら q[b] は持ち主のもの（盗み手は H を進めてから T を読み、H > T で退く）。
-    // H > b なら衝突 — 自分の列の鍵を取って確定した H で決める（H ≤ b なら取る・でなければ T = H に戻して空）
+    // 自分の列の底（Skynetの回収 (a)）
     setCur(mut st, bP)
-    bGot := newBlock(mut st)
-    gp := param(mut st, bGot, TyPtr)
-    gkind := param(mut st, bGot, TyI64)
     bSleep := newBlock(mut st)
     bSpin := newBlock(mut st)
-    bOwn := newBlock(mut st)
-    bOwnC := newBlock(mut st)
-    bOwnL := newBlock(mut st)
-    bOwnE := newBlock(mut st)
     bShared := newBlock(mut st)
     bStl := newBlock(mut st)
-    ot := load(mut st, wk, WK_DT)
-    condbr(mut st, cmp(mut st, CGt, ot, load(mut st, wk, WK_DH)), bOwn, -1, bShared, -1)
-    setCur(mut st, bOwn)
-    ob := bin(mut st, BSub, ot, iconst(mut st, 1))
-    atomicXchg(mut st, wk, WK_DT, ob)
-    mnDelayPoint(mut st)
-    oslot := gepWord(mut st, wk, bin(mut st, BAdd, bin(mut st, BAnd, ob, iconst(mut st, DQ_CAP - 1)), iconst(mut st, WK_DQ)))
-    condbr(mut st, cmp(mut st, CLe, load(mut st, wk, WK_DH), ob), bOwnC, -1, bOwnL, -1)
-    setCur(mut st, bOwnC)
-    br(mut st, bGot, list2(mut st, itop(mut st, load(mut st, oslot, 0)), iconst(mut st, 1)))
-    setCur(mut st, bOwnL)
-    spinLock(mut st, wk, WK_DLOCK)
-    oh := load(mut st, wk, WK_DH)
-    bOwnLT := newBlock(mut st)
-    condbr(mut st, cmp(mut st, CLe, oh, ob), bOwnLT, -1, bOwnE, -1)
-    setCur(mut st, bOwnLT)
-    op := load(mut st, oslot, 0)
-    store(mut st, wk, WK_DLOCK, zero)
-    br(mut st, bGot, list2(mut st, itop(mut st, op), iconst(mut st, 1)))
-    setCur(mut st, bOwnE)
-    store(mut st, wk, WK_DT, oh)
-    store(mut st, wk, WK_DLOCK, zero)
-    br(mut st, bShared, -1)
-    // 共有のスタック（あふれ）
+    ownPop(mut st, wk, bGot, bShared)
+    // 自分の列が空なら盗みへ
     setCur(mut st, bShared)
     bChain := newBlock(mut st)
     cp := param(mut st, bChain, TyPtr)
     ckind := param(mut st, bChain, TyI64)
-    p := call(mut st, st.rtMnPullPop, list0(mut st))
-    condbr(mut st, cmp(mut st, CNe, ptoi(mut st, p), zero), bChain, list2(mut st, p, iconst(mut st, 1)), bStl, -1)
+    br(mut st, bStl, -1)
     // 盗む（他のワーカーの列の頭 — 未着手の子だけ）
     setCur(mut st, bStl)
     sp := call(mut st, st.rtMnSteal, list0(mut st))
@@ -1424,7 +1451,7 @@ func buildMnNext(st mut St) {
     quiet := bin(mut st, BAnd, cmp(mut st, CGt, load(mut st, mn, MN_IDLE), zero), cmp(mut st, CEq, load(mut st, mn, MN_SPINN), zero))
     condbr(mut st, quiet, bKc, -1, bGot, list2(mut st, cp, ckind))
     setCur(mut st, bKc)
-    more := bin(mut st, BOr, cmp(mut st, CNe, load(mut st, mn, MN_PHEAD), zero), call(mut st, st.rtMnAnyDq, list0(mut st)))
+    more := call(mut st, st.rtMnAnyDq, list0(mut st))
     condbr(mut st, more, bKc2, -1, bGot, list2(mut st, cp, ckind))
     setCur(mut st, bKc2)
     call(mut st, st.rtMnKick, list0(mut st))
@@ -1455,7 +1482,7 @@ func buildMnNext(st mut St) {
     setCur(mut st, spl)
     condbr(mut st, cmp(mut st, CLt, spi, iconst(mut st, MN_SPIN)), spb, -1, spOut, -1)
     setCur(mut st, spb)
-    seen0 := bin(mut st, BOr, cmp(mut st, CNe, load(mut st, wk, WK_INBOX), zero), cmp(mut st, CNe, load(mut st, mn, MN_PHEAD), zero))
+    seen0 := cmp(mut st, CNe, load(mut st, wk, WK_INBOX), zero)
     // 回る間の見直しは全部の列を読む版（rt.mn_anydq_all — 回る回数MN_SPINは1周の重さ込みでスリープまでの時間を決める: 要約の版にすると周が軽くなって
     // 早くスリープし、spawn → Joinの往復の重い形でスリープとウェイクアップが増える。ringにioのあるワーカーはここを通らない）
     seen := bin(mut st, BOr, seen0, call(mut st, st.rtMnAnyDqAll, list0(mut st)))
@@ -1483,6 +1510,15 @@ func buildMnNext(st mut St) {
     ret(mut st, gp)
     // スリープする: スリープのワード = 1・暇の数 + 1 → 見直し
     setCur(mut st, bSleep)
+    // 空きのチャンクの冷えた分を返す（粗い間隔で1回まで — rt.tcb_trim）。間隔の比較はここで行い、刻みに達したときだけ呼ぶ
+    // （呼ぶと入口と出口でレジスタの退避が約20命令かかり、スリープの往復ごとに乗る）
+    bTt := newBlock(mut st)
+    bTt2 := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CGe, bin(mut st, BSub, now, load(mut st, globaladdr(mut st, st.mnG), MN_TTRIM)), iconst(mut st, TTRIM_TSC)), bTt, -1, bTt2, -1)
+    setCur(mut st, bTt)
+    call(mut st, st.rtTcbTrim, list1(mut st, now))
+    br(mut st, bTt2, -1)
+    setCur(mut st, bTt2)
     // スリープする前にMN_DQBの自分のビットを倒す（ここへ来たのは自分の列を空と見た周 — 回っている間は積まない）。立っていれば自分の列の鍵の中でTとHを
     // 読み直して空なら倒す。鍵の外の読みは信用しない: 引き返す盗み手は鍵を持ったまま H を一瞬 T と同じにしてから戻すので、その瞬間の「空」で倒すと
     // H が戻った後に子が残ってビットが 0 になる。鍵の中なら H は動かず、積めるのは自分だけなので、倒した後に空でない列のビットが 0 になることはない。
@@ -1501,7 +1537,7 @@ func buildMnNext(st mut St) {
     atomicXadd(mut st, mn, MN_DQB, bin(mut st, BSub, iconst(mut st, 0), dbit))
     br(mut st, bDqcU, -1)
     setCur(mut st, bDqcU)
-    store(mut st, wk, WK_DLOCK, zero)
+    lockGive(mut st, wk, WK_DLOCK)
     br(mut st, bDqc2, -1)
     setCur(mut st, bDqc2)
     bRing := newBlock(mut st)
@@ -1514,7 +1550,7 @@ func buildMnNext(st mut St) {
     rUn := newBlock(mut st)
     rl := newBlock(mut st)
     rb := newBlock(mut st)
-    rwork0 := bin(mut st, BOr, cmp(mut st, CNe, load(mut st, wk, WK_INBOX), zero), cmp(mut st, CNe, load(mut st, mn, MN_PHEAD), zero))
+    rwork0 := cmp(mut st, CNe, load(mut st, wk, WK_INBOX), zero)
     condbr(mut st, bin(mut st, BOr, rwork0, call(mut st, st.rtMnAnyDq, list0(mut st))), rUn, -1, rl, -1)
     // 起きて走れるtaskが無い: まだringに完了を待つioがあればringでスリープし直す。無ければ（最後の接続のCLOSEの完了を取り込んだ等）スリープのワードを戻して
     // 回り直す — 次のスリープはfutexの側（暇の数に入る = spawnのウェイクアップが届く）。ringでスリープし直すと、来る完了が無く暇の数にも入らないので誰にもウェイクアップされず、
@@ -1537,7 +1573,7 @@ func buildMnNext(st mut St) {
     n := bin(mut st, BAdd, atomicXadd(mut st, mn, MN_IDLE, iconst(mut st, 1)), iconst(mut st, 1))
     unsleep := newBlock(mut st)
     bChk := newBlock(mut st)
-    work0 := bin(mut st, BOr, cmp(mut st, CNe, load(mut st, wk, WK_INBOX), zero), cmp(mut st, CNe, load(mut st, mn, MN_PHEAD), zero))
+    work0 := cmp(mut st, CNe, load(mut st, wk, WK_INBOX), zero)
     work := bin(mut st, BOr, work0, call(mut st, st.rtMnAnyDq, list0(mut st)))
     condbr(mut st, work, unsleep, -1, bChk, -1)
     setCur(mut st, bChk)
@@ -1561,7 +1597,7 @@ func buildMnNext(st mut St) {
     br(mut st, sl, list1(mut st, bin(mut st, BAdd, sk, iconst(mut st, 1))))
     setCur(mut st, sd)
     bDl := newBlock(mut st)
-    still0 := bin(mut st, BAnd, cmp(mut st, CEq, load(mut st, mn, MN_PHEAD), zero), cmp(mut st, CEq, load(mut st, mn, MN_IDLE), load(mut st, mn, MN_N)))
+    still0 := cmp(mut st, CEq, load(mut st, mn, MN_IDLE), load(mut st, mn, MN_N))
     still := bin(mut st, BAnd, still0, cmp(mut st, CEq, call(mut st, st.rtMnAnyDqAll, list0(mut st)), zero))
     condbr(mut st, still, bDl, -1, unsleep, -1)
     setCur(mut st, bDl)
@@ -1752,11 +1788,11 @@ func buildDpGive(st mut St) {
     store(mut st, gepWord(mut st, sd, bin(mut st, BAdd, bin(mut st, BAdd, bin(mut st, BMul, 2, iconst(mut st, SRES_CAP)), n), iconst(mut st, SDP_S))), 0, 0)
     store(mut st, np, 0, bin(mut st, BAdd, n, iconst(mut st, 1)))
     store(mut st, sd, 0, bin(mut st, BAdd, tot, iconst(mut st, 1)))
-    store(mut st, mn, MN_RLOCK, iconst(mut st, 0))
+    lockGive(mut st, mn, MN_RLOCK)
     mInc(mut st, 6)
     ret(mut st, -1)
     setCur(mut st, bFull)
-    store(mut st, mn, MN_RLOCK, iconst(mut st, 0))
+    lockGive(mut st, mn, MN_RLOCK)
     mInc(mut st, 5)
     syscall(mut st, list3(mut st, iconst(mut st, 11), 0, load(mut st, meta, W_SLOT_DEF)))
     if st.poolOn {
@@ -1787,7 +1823,7 @@ func buildDpTake(st mut St) {
     bHit := newBlock(mut st)
     condbr(mut st, cmp(mut st, CNe, n, zero), bHit, -1, bMiss, -1)
     setCur(mut st, bMiss)
-    store(mut st, mn, MN_RLOCK, zero)
+    lockGive(mut st, mn, MN_RLOCK)
     ret(mut st, zero)
     setCur(mut st, bHit)
     // m = min(n, DP_CAP) 本を取る: 末尾の 1 本を返し、残りの m − 1 本を手元の列へ（手元は空 — 呼び手が空を見て呼ぶ）
@@ -1809,7 +1845,7 @@ func buildDpTake(st mut St) {
     store(mut st, gepWord(mut st, wk, bin(mut st, BAdd, 0, iconst(mut st, WK_DPC))), 0, bin(mut st, BSub, m, one))
     store(mut st, np, 0, bin(mut st, BSub, n, m))
     store(mut st, sd, 0, bin(mut st, BSub, load(mut st, sd, 0), m))
-    store(mut st, mn, MN_RLOCK, zero)
+    lockGive(mut st, mn, MN_RLOCK)
     ret(mut st, res)
 }
 
@@ -1835,7 +1871,7 @@ func buildSresTake(st mut St) {
     setCur(mut st, done)
     store(mut st, rs, 0, bin(mut st, BSub, c, m))
     store(mut st, fg, 0, m)
-    store(mut st, mn, MN_RLOCK, iconst(mut st, 0))
+    lockGive(mut st, mn, MN_RLOCK)
     ret(mut st, m)
 }
 
@@ -1898,8 +1934,183 @@ func tcbFreeTo(st mut St, tkOff int, mnOff int) {
     spinLock(mut st, mn, MN_RLOCK)
     store(mut st, 0, TC_INEXT, load(mut st, mn, mnOff))
     store(mut st, mn, mnOff, ptoi(mut st, 0))
-    store(mut st, mn, MN_RLOCK, iconst(mut st, 0))
+    lockGive(mut st, mn, MN_RLOCK)
     ret(mut st, -1)
+}
+
+// rt.tcb_trim(now): 共有の予備の空きのチャンクのうち、しばらく取られていない分（前の刈りから先頭のワーカー数 × 2 個のバッチより下に居続けた分 — trimDetach）を
+// 切り離し、チャンクのページを全部返して冷えた予備（@rt.tcbc）へ移す。呼ぶのはワーカーがスリープに入る手前で、全ワーカーでTTRIM_TSCの刻みに1回まで
+// （MN_TTRIMをCASで取った者だけ）。返したチャンクは新しくmmapしたチャンクと同じ中身（全部0）で、取りはrt.task_newの新しいチャンクのパスがmmapの手前で引き、
+// 作ったときの語を書き直す。返す間は鍵を持たない（切り離した分は刈る者だけが持つ）。冷えた予備が満杯ならmunmap
+func buildTcbTrim(st mut St) {
+    begin(mut st, st.rtTcbTrim)
+    zero := iconst(mut st, 0)
+    one := iconst(mut st, 1)
+    mn := globaladdr(mut st, st.mnG)
+    tc := globaladdr(mut st, st.tcbcG)
+    last := load(mut st, mn, MN_TTRIM)
+    bTry := newBlock(mut st)
+    bOut := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CGe, bin(mut st, BSub, 0, last), iconst(mut st, TTRIM_TSC)), bTry, -1, bOut, -1)
+    setCur(mut st, bOut)
+    ret(mut st, -1)
+    setCur(mut st, bTry)
+    bWon := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, atomicCas(mut st, mn, MN_TTRIM, last, 0), last), bWon, -1, bOut, -1)
+    setCur(mut st, bWon)
+    k := bin(mut st, BMul, load(mut st, mn, MN_N), iconst(mut st, 2))
+    rest := trimDetach(mut st, MN_RTCB, MN_TMARK, k)
+    // 切り離したバッチを順に（バッチの頭 = チャンク・チャンクはTC_NEXTで繋がる）。次の番地はページを返す前に読む
+    size := TASK_GUARD + TASK_STACK + 4096 + TASK_HEAD
+    tcbOff := TASK_GUARD + TASK_STACK + TCB_TOP_ROOM
+    bl := newBlock(mut st)
+    bh := param(mut st, bl, TyI64)
+    bb := newBlock(mut st)
+    bEnd := newBlock(mut st)
+    br(mut st, bl, list1(mut st, rest))
+    setCur(mut st, bl)
+    condbr(mut st, cmp(mut st, CNe, bh, zero), bb, -1, bEnd, -1)
+    setCur(mut st, bb)
+    nb := load(mut st, itop(mut st, bh), TC_INEXT)
+    cl := newBlock(mut st)
+    c := param(mut st, cl, TyI64)
+    cb := newBlock(mut st)
+    cd := newBlock(mut st)
+    br(mut st, cl, list1(mut st, bh))
+    setCur(mut st, cl)
+    condbr(mut st, cmp(mut st, CNe, c, zero), cb, -1, cd, -1)
+    setCur(mut st, cb)
+    nc := load(mut st, itop(mut st, c), TC_NEXT)
+    base := bin(mut st, BSub, c, iconst(mut st, tcbOff))
+    syscall(mut st, list4(mut st, iconst(mut st, 28), bin(mut st, BAdd, base, iconst(mut st, TASK_GUARD)), iconst(mut st, size - TASK_GUARD), iconst(mut st, 4)))
+    spinLock(mut st, mn, MN_RLOCK)
+    n := load(mut st, tc, 0)
+    bPut := newBlock(mut st)
+    bUnm := newBlock(mut st)
+    bNx := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CLt, n, iconst(mut st, TCBC_CAP)), bPut, -1, bUnm, -1)
+    setCur(mut st, bPut)
+    n1 := bin(mut st, BAdd, n, one)
+    store(mut st, gepWord(mut st, tc, n1), 0, c)
+    store(mut st, tc, 0, n1)
+    lockGive(mut st, mn, MN_RLOCK)
+    br(mut st, bNx, -1)
+    setCur(mut st, bUnm)
+    lockGive(mut st, mn, MN_RLOCK)
+    syscall(mut st, list3(mut st, iconst(mut st, 11), base, iconst(mut st, size)))
+    br(mut st, bNx, -1)
+    setCur(mut st, bNx)
+    br(mut st, cl, list1(mut st, nc))
+    setCur(mut st, cd)
+    br(mut st, bl, list1(mut st, nb))
+    setCur(mut st, bEnd)
+    if st.areaOn {
+        tcbTrimA(mut st, k)
+    }
+    ret(mut st, -1)
+}
+
+// 共有の予備のチェーンheadOffの、しばらく取られていないバッチを切り離して返す（無ければ0）。鍵の中で先頭からk個目のバッチpを数え、前の刈りの印
+// （markOff）をpから下へ4k個まで探す。見つかれば、印は前の刈りから今までずっとk個目より下に居た（LIFO — 取りも積みも先頭だけ）ので、印より下を切り離す。
+// 印はpに置き直す（pが無ければ0）。spawnが盛んで予備が先頭から取られ続ける間は印が取られて見つからず、刈らない
+func trimDetach(st mut St, headOff int, markOff int, k int) int {
+    zero := iconst(mut st, 0)
+    one := iconst(mut st, 1)
+    mn := globaladdr(mut st, st.mnG)
+    bRet := newBlock(mut st)
+    rv := param(mut st, bRet, TyI64)
+    spinLock(mut st, mn, MN_RLOCK)
+    mk := load(mut st, mn, markOff)
+    wl := newBlock(mut st)
+    wp := param(mut st, wl, TyI64)
+    wi := param(mut st, wl, TyI64)
+    wb := newBlock(mut st)
+    wd := newBlock(mut st)
+    br(mut st, wl, list2(mut st, load(mut st, mn, headOff), one))
+    setCur(mut st, wl)
+    condbr(mut st, bin(mut st, BAnd, cmp(mut st, CLt, wi, k), cmp(mut st, CNe, wp, zero)), wb, -1, wd, -1)
+    setCur(mut st, wb)
+    br(mut st, wl, list2(mut st, load(mut st, itop(mut st, wp), TC_INEXT), bin(mut st, BAdd, wi, one)))
+    setCur(mut st, wd)
+    bSet := newBlock(mut st)
+    rs := param(mut st, bSet, TyI64)
+    bHave := newBlock(mut st)
+    condbr(mut st, bin(mut st, BAnd, cmp(mut st, CNe, wp, zero), cmp(mut st, CNe, mk, zero)), bHave, -1, bSet, list1(mut st, zero))
+    setCur(mut st, bHave)
+    sl := newBlock(mut st)
+    m := param(mut st, sl, TyI64)
+    j := param(mut st, sl, TyI64)
+    sb := newBlock(mut st)
+    sd := newBlock(mut st)
+    br(mut st, sl, list2(mut st, wp, zero))
+    setCur(mut st, sl)
+    condbr(mut st, bin(mut st, BAnd, bin(mut st, BAnd, cmp(mut st, CNe, m, zero), cmp(mut st, CNe, m, mk)), cmp(mut st, CLt, j, bin(mut st, BMul, k, iconst(mut st, 4)))), sb, -1, sd, -1)
+    setCur(mut st, sb)
+    br(mut st, sl, list2(mut st, load(mut st, itop(mut st, m), TC_INEXT), bin(mut st, BAdd, j, one)))
+    setCur(mut st, sd)
+    bF := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, m, mk), bF, -1, bSet, list1(mut st, zero))
+    setCur(mut st, bF)
+    r := load(mut st, itop(mut st, m), TC_INEXT)
+    store(mut st, itop(mut st, m), TC_INEXT, zero)
+    br(mut st, bSet, list1(mut st, r))
+    setCur(mut st, bSet)
+    store(mut st, mn, markOff, wp)
+    lockGive(mut st, mn, MN_RLOCK)
+    br(mut st, bRet, list1(mut st, rs))
+    setCur(mut st, bRet)
+    return rv
+}
+
+// rt.tcb_trimの2つ目: 所有エリアが自分でないチャンクの予備（MN_RTCBA）の、先頭からk個のバッチより下を切り離し、ページを返して冷えたチェーン
+// MN_RTCBACの頭へつなぐ。返すのは、持っているエリア（TC_AREAの頂上）のスタックとエリアの予約ページ、自分の頭のTCBのページより後でエリアの予約ページの
+// 手前まで（退避の列の続きとtaskの予約ページ — 空きの間は死んでいる）。触らないもの: TCBのページ（チェーンの語・TC_AREA・TC_WSP — どれも語66より前）・
+// チャンク自身のスタックとエリアの予約ページ（自分のエリアは他の持ち主が持っている）・エリアの頂上のページ（そのエリアの持ち主のチャンクのTCBのページ）
+func tcbTrimA(st mut St, k int) {
+    zero := iconst(mut st, 0)
+    one := iconst(mut st, 1)
+    mn := globaladdr(mut st, st.mnG)
+    bDone := newBlock(mut st)
+    rest := trimDetach(mut st, MN_RTCBA, MN_TMARKA, k)
+    bl := newBlock(mut st)
+    bh := param(mut st, bl, TyI64)
+    blast := param(mut st, bl, TyI64)
+    bb := newBlock(mut st)
+    bEnd := newBlock(mut st)
+    br(mut st, bl, list2(mut st, rest, zero))
+    setCur(mut st, bl)
+    condbr(mut st, cmp(mut st, CNe, bh, zero), bb, -1, bEnd, -1)
+    setCur(mut st, bb)
+    cl := newBlock(mut st)
+    c := param(mut st, cl, TyI64)
+    cb := newBlock(mut st)
+    cd := newBlock(mut st)
+    br(mut st, cl, list1(mut st, bh))
+    setCur(mut st, cl)
+    condbr(mut st, cmp(mut st, CNe, c, zero), cb, -1, cd, -1)
+    setCur(mut st, cb)
+    cp := itop(mut st, c)
+    at := load(mut st, cp, TC_AREA)
+    // 持っているエリア: スタックと、エリアの予約ページ（頂上 + AWIN_OFF から頭の終わりまで）
+    syscall(mut st, list4(mut st, iconst(mut st, 28), bin(mut st, BSub, at, iconst(mut st, TASK_STACK)), iconst(mut st, TASK_STACK), iconst(mut st, 4)))
+    syscall(mut st, list4(mut st, iconst(mut st, 28), bin(mut st, BAdd, at, iconst(mut st, AWIN_OFF)), iconst(mut st, 4096 + TASK_HEAD - AWIN_OFF), iconst(mut st, 4)))
+    // 自分の頭: TCBのページの後からエリアの予約ページの手前まで（退避の列の続きとtaskの予約ページ。後ろのエリアの予約ページは自分のエリアの持ち主の物）
+    pg := bin(mut st, BSub, c, iconst(mut st, TCB_TOP_ROOM))
+    syscall(mut st, list4(mut st, iconst(mut st, 28), bin(mut st, BAdd, pg, iconst(mut st, 4096)), iconst(mut st, AWIN_OFF - 4096), iconst(mut st, 4)))
+    br(mut st, cl, list1(mut st, load(mut st, cp, TC_NEXT)))
+    setCur(mut st, cd)
+    br(mut st, bl, list2(mut st, load(mut st, itop(mut st, bh), TC_INEXT), bh))
+    // 切り離した分（頭rest・最後のバッチblast）を冷えたチェーンの頭へ
+    setCur(mut st, bEnd)
+    bJoin := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, blast, zero), bJoin, -1, bDone, -1)
+    setCur(mut st, bJoin)
+    spinLock(mut st, mn, MN_RLOCK)
+    store(mut st, itop(mut st, blast), TC_INEXT, load(mut st, mn, MN_RTCBAC))
+    store(mut st, mn, MN_RTCBAC, rest)
+    lockGive(mut st, mn, MN_RLOCK)
+    br(mut st, bDone, -1)
+    setCur(mut st, bDone)
 }
 
 // 共有の予備のバッチを1つ取り、頭を返して残りを手元のチェーンにする（無ければ0 — rt.task_newの新しいチャンクのパスの手前・手元が尽きたとき
@@ -1920,7 +2131,7 @@ func mnTcbReserveAt(st mut St, tkOff int, mnOff int) int {
     store(mut st, mn, mnOff, load(mut st, itop(mut st, h), TC_INEXT))
     br(mut st, bE, -1)
     setCur(mut st, bE)
-    store(mut st, mn, MN_RLOCK, iconst(mut st, 0))
+    lockGive(mut st, mn, MN_RLOCK)
     bR := newBlock(mut st)
     bX := newBlock(mut st)
     condbr(mut st, cmp(mut st, CNe, h, iconst(mut st, 0)), bR, -1, bX, -1)
@@ -1978,6 +2189,7 @@ func buildTaskStartMn(st mut St) {
     if st.domUse {
         domDiedIn(mut st, 0)
     }
+    cellDiedIn(mut st, 0)
     frRec(mut st, FK_END, ptoi(mut st, 0), r)
     fdDrainCall(mut st)
     orphEnd(mut st, 0)
@@ -2012,7 +2224,7 @@ func buildTaskStartMn(st mut St) {
     setCur(mut st, bOc)
     spinLock(mut st, mn, MN_OLOCK)
     outClose(mut st, 0)
-    store(mut st, mn, MN_OLOCK, iconst(mut st, 0))
+    lockGive(mut st, mn, MN_OLOCK)
     br(mut st, bOc2, -1)
     setCur(mut st, bOc2)
     // 入場で足した量を台帳へ返す（起こした scope の出口より先に）
@@ -2080,7 +2292,7 @@ func slotReleaseMn(st mut St, tcb int) int {
     setCur(mut st, loop)
     condbr(mut st, cmp(mut st, CLe, k, hi), body, -1, done, list1(mut st, acc))
     setCur(mut st, body)
-    s := load(mut st, gepWord(mut st, sg, k), 0)
+    s := slotReal(mut st, meta, load(mut st, gepWord(mut st, sg, k), 0), ptoi(mut st, tcb))
     bp := gepWord(mut st, meta, k)
     used := winUsed(mut st, meta, s, bin(mut st, BSub, load(mut st, bp, W_BUMP), s), ptoi(mut st, tcb))
     // 既定より大きいスロット（自前の mmap — slot_new）はプールへ返さず munmap

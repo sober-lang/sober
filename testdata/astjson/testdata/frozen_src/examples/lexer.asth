@@ -1,0 +1,8 @@
+@@full	9dbead1dbff9f64f	1291	42160
+@head	f8802cba5eefdec2	0	31
+func isAlpha	50d642bfebd3eda8	16	565
+func isDigit	eefbb8b444d36d37	16	564
+func lex	9cc5c80096e4640a	131	4512
+func main	f510b737c94036f0	27	934
+func printToken	a05bae1e4e931607	10	436
+type Token	182cbb69a8ccc1fa	4	213

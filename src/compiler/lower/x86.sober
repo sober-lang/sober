@@ -13,7 +13,7 @@ package lower
 // 5 本目以降を今までどおり後ろから push（呼ばれ側は [rbp + 16 + 8(k − 4)]）。番地を取られる関数（task の入口・par の子・罠の行き先・比較関数・
 // シグナルの口）と間接のパス（OpCallI・罠・開始・cloneの子）は旧規約。関数の番地の即値を作るのはOpFuncaddrだけ（xAbs kind 1）なので、
 // 間接に呼ばれうる関数は必ずマークを持つ。手書きの呼び手を持つsober_entry（_startが初期のrspをpush）もマークあり。並びにrdiを入れないのは、入口のスロットのゼロ初期化（rep stosq）がrdiを壊すため（逃がしのmovが要らない）。
-// 冷たい呼び出し（xColdCall — 成長の rt への呼び出し）は跨ぎの集合に入れない: それだけを跨ぐ区間は 10 本ぜんぶ（callee-saved を先に）
+// 冷たい呼び出し（xColdCall — 成長の rt と鍵の待ち〔rt.lock_wait〕への呼び出し）は跨ぎの集合に入れない: それだけを跨ぐ区間は 10 本ぜんぶ（callee-saved を先に）
 // に置け、呼び手がその呼び出しの前後で跨ぐcaller-savedを退避・復元する（xColdSave / xColdLoad — 熱いパスの命令は増えない）。
 // 写しのバックエンドは旧規約のまま（elfeq の照合と optdiff の参照）。
 // フレーム: push rbp; mov rbp, rsp; sub rsp, F。[rbp - …] に IR スロット（入口で rep stosq のゼロ初期化）→ 退避域 → spill の順。
@@ -302,7 +302,7 @@ func xModule(st mut St, syms bool) []byte {
         st.xPlKeys = fk
     }
     // 段階3の β の鍵の表（凍結の前 — 名前を読む。x86のcfgの正準形つき）
-    ckt := if st.ckOn { ckTab(mut st, xParCfg(mut st)) } else { ckNone() }
+    ckt := if st.ckOn { ckTab(mut st, xParCfg(mut st), true) } else { ckNone() }
     if st.ckOn {
         st.ckRt = ckRtFns(mut st)
     }
@@ -384,8 +384,10 @@ func xModuleFrozen(st mut St, syms bool, entryRec int, names [][]byte, ckt CkTab
             goff[i] = o
             gro[i] = 1
             n := xLen(mut st, init)
+            // @embed の []byte: 中身はファイルから rodata へ直に（embed.sober）
+            eb, emb := embBytesX(mut st, gr)
             for k <- iter.Range(0, words) {
-                w := if k < n { xAt(mut st, init, k) } else { 0 }
+                w := if emb { embWord(eb, k) } else if k < n { xAt(mut st, init, k) } else { 0 }
                 for j <- iter.Range(0, 8) {
                     if pin {
                         rodata[o + 8 * k + j] = byte(w >> (8 * j) & 255)
@@ -636,7 +638,7 @@ type XGroup struct {
 func xParCfg(st mut St) []int {
     // 末尾のワード = SOBER_XDBGの値の長さ。値のバイト列はその後ろへ（xdbgCfg — 鍵にも入るので値を変えればキャッシュに当たらない）
     return xdbgCfg([]int{int(st.rtCopy), int(st.rtCopy8), int(st.rtGrow), int(st.rtGrow8), int(st.rtGrowTry), int(st.rtMapGrow), int(st.rtReloc), int(st.rtReloc8),
-        st.trapG, if st.trapUse { 1 } else { 0 }, if st.taskUse { 1 } else { 0 }, if st.xcopy { 1 } else { 0 }, st.xLay, int(st.rtPanic), int(st.rtPanicMem), if st.slotPoison { 1 } else { 0 }, if st.frStat { 1 } else { 0 }, int(st.rtMatchLen), st.rtMut, int(st.rtJClean), int(st.rtErrReloc), if st.memRep { 1 } else { 0 }, int(st.rtWinRalloc), st.taskG, st.wkG, st.pstatG, int(st.xNWait), len(st.xdbgPat)}, st.xdbgPat)
+        st.trapG, if st.trapUse { 1 } else { 0 }, if st.taskUse { 1 } else { 0 }, if st.xcopy { 1 } else { 0 }, st.xLay, int(st.rtPanic), int(st.rtPanicMem), if st.slotPoison { 1 } else { 0 }, if st.frStat { 1 } else { 0 }, int(st.rtMatchLen), st.rtMut, int(st.rtJClean), int(st.rtErrReloc), if st.memRep { 1 } else { 0 }, int(st.rtWinRalloc), st.taskG, st.wkG, st.pstatG, int(st.xNWait), int(st.rtWmAlloc), int(st.rtWmRaise), int(st.rtWmAllocS), int(st.rtWmRaiseS), st.keepG, int(st.rtLockWait), len(st.xdbgPat)}, st.xdbgPat)
 }
 
 // 整列（配置の土台）: 関数の先頭とループの頭を XA_* バイトの境界へ nop で詰める（最適化のバックエンドだけ — 写しのバックエンドは
@@ -728,6 +730,9 @@ func xParEmit(st mut St, c mut table.Table[byte], fx mut table.Table[int], fstar
     outs0, serr := task.Map(gz, (g) => xParGroup(g, hf, cfg, addr, fr, gr, die), budget: bud)
     // 子が死んだら、同じ本体を親が群の順に逐次で呼び直す。死因は読めないが、呼び直しが見分ける: 見積もりの外れによるスロットの超過は
     // 親の大きいスロットでは起きず、コードの不変条件の破れは決定的なので親で同じ死因と位置のまま起きる（子の中だけの破れも同じ関数なので隠れない）
+    if serr != nil {
+        loader.ParFellBack("code generation", len(gz), "by the parent group by group", "")
+    }
     outs := if serr != nil { xParRetry(gz, hf, cfg, addr, fr, gr) } else { outs0 }
     if lsEnvInt("SOBER_PAR_STATS") == 1 {
         _ = io.WriteStderr(bytes("#x86 par groups=${len(gz)} retried=${if serr != nil { len(gz) } else { 0 }}\n"))
@@ -845,7 +850,15 @@ func xParGroup(g XGroup, hf table.Frozen[int], cfg []int, addr []int, fr []int, 
     st.pstatG = cfg[25]
     // シャロースリープの点（xShallowFn / xShCall — rt.netwait）
     st.xNWait = FnRef(cfg[26])
-    st.xdbgPat = xdbgPatOf(cfg, cfg[27])
+    // 計上済みの上限の低速パス（xColdCall・xSlowRt — rt.wm_allocは写したrt.region_allocの冷たい道・rt.wm_raiseは先端で伸ばすパスの冷たい道）
+    st.rtWmAlloc = FnRef(cfg[27])
+    st.rtWmRaise = FnRef(cfg[28])
+    // 全レジスタを保つ中継（xKeepAll・xKeepAllBody）
+    st.rtWmAllocS = FnRef(cfg[29])
+    st.rtWmRaiseS = FnRef(cfg[30])
+    st.keepG = cfg[31]
+    st.rtLockWait = FnRef(cfg[32])
+    st.xdbgPat = xdbgPatOf(cfg, cfg[33])
     // 段階3の例外のマーク（xRegCc）
     st.xAddr = addr
     st.xXmm = 0
@@ -1236,6 +1249,47 @@ func xCopy8Body(c mut table.Table[byte]) int {
     return entry
 }
 
+// 最適化のバックエンドの全レジスタを保つ中継（rt.wm_alloc_s / rt.wm_raise_s — xKeepAll）の本体: rax / rdx = 実引数（呼び手）→ rax = 本体（frecsの添字gi — 実引数2本）の答え。
+// 本体は普通の規約（段階3 — 実引数は rsi / r8・caller-saved を壊す）なので、割り当てに使う caller-saved（rsi・rdi・r8〜r11 — xAllocReg の後ろ6本）を
+// ワーカーの記録の退避の場所（rt.keep — 大域の表kgi）へ置き、戻す。スタックには何も積まない（接続のtaskの常駐のページを増やさない — areacheck）:
+// 戻り番地も退避の場所へ移し、本体を「呼び手が本体を直に呼んだのと同じrsp」で呼ぶ（呼び手が枠を省いていてrspが16に揃わないときだけ8下げる）。
+// 中継の中にtaskの切替と中継の再入は無い（本体は中継を呼ばない）ので、退避の場所はワーカーごとに1組で足りる。callee-saved（rbx・r12〜r15・割り当ての
+// xmm〔xmm2〜15〕）は本体が守る。xmm0 / xmm1 は作業用で、呼び手の跨ぐ値は載らない。本体からの罠（死102）は罠の記録が rsp と callee-saved を戻すので、
+// 退避の場所に残った値は捨てられるだけ（跨ぐ値は caller-saved に載らない — 罠は xIsCallOp）。
+// mut = 開発用 --rt-mutant（103 = rsi を退避しない — scripts/keepcheck.sh が鳴ることの確認用）
+func xKeepAllBody(c mut table.Table[byte], fx mut table.Table[int], gi int, kgi int, mut0 int) int {
+    entry := x86.Here(mut c)
+    regs := []int{x86.Rsi, x86.Rdi, x86.R8, x86.R9, x86.R10, x86.R11}
+    x86.MovRegFs(mut c, x86.Rcx, 0)
+    xFixAdd(mut fx, x86.Here(mut c) - 4, 5, kgi)
+    for k <- iter.Range(0, 6) {
+        if !(k == 0 && mut0 == 103) {
+            x86.MovMemReg(mut c, x86.Rcx, 8 * k, regs[k])
+        }
+    }
+    // 戻り番地と入口のrsp
+    x86.MovRegMem(mut c, x86.R8, x86.Rsp, 0)
+    x86.MovMemReg(mut c, x86.Rcx, 48, x86.R8)
+    x86.MovMemReg(mut c, x86.Rcx, 56, x86.Rsp)
+    x86.MovRegReg(mut c, x86.Rsi, x86.Rax)
+    x86.MovRegReg(mut c, x86.R8, x86.Rdx)
+    x86.AddRegImm(mut c, x86.Rsp, 8)
+    x86.AndRegImm(mut c, x86.Rsp, -16)
+    xFixAdd(mut fx, x86.CallRel32(mut c), 0, gi)
+    x86.MovRegFs(mut c, x86.Rcx, 0)
+    xFixAdd(mut fx, x86.Here(mut c) - 4, 5, kgi)
+    x86.MovRegMem(mut c, x86.Rsp, x86.Rcx, 56)
+    x86.MovRegMem(mut c, x86.Rdx, x86.Rcx, 48)
+    x86.MovMemReg(mut c, x86.Rsp, 0, x86.Rdx)
+    for k <- iter.Range(0, 6) {
+        if !(k == 0 && mut0 == 103) {
+            x86.MovRegMem(mut c, regs[k], x86.Rcx, 8 * k)
+        }
+    }
+    x86.Ret(mut c)
+    return entry
+}
+
 // 最適化のバックエンドの rt.matchlen の本体: rax = p・rdx = q・rcx = n（呼び手 — xInst）→ rax = p[0:n] と
 // q[0:n] の一致の長さ。意味は IR の本体（rt8.sober の buildMatchLen — 1 バイトずつ前から比べる）と同じ。区間の外を読まない: n ≥ 16 は 16 バイトずつ
 // （pcmpeqb / pmovmskb — マーク + 1の最下位の立ったビットが最初の食い違い）・端数は区間の終わりに揃えた16バイトの重ねた読み（重なった分は比べ済みで等しい）・
@@ -1505,6 +1559,10 @@ func xFunc(st mut St, c mut table.Table[byte], fx mut table.Table[int], wb mut t
     }
     if !st.xcopy && f == st.rtJClean {
         return if draft { 0 } else { xJCleanBody(mut c, st.rtMut) }
+    }
+    if !st.xcopy && xKeepAll(mut st, f) {
+        g := if f == st.rtWmRaiseS { st.rtWmRaise } else { st.rtWmAlloc }
+        return if draft { 0 } else { xKeepAllBody(mut c, mut fx, xIndex(frecs, int(g)), xIndex(grecs, st.keepG), st.rtMut) }
     }
     mut e := xF{f: f, nv: xfNVal(mut st, f), np: xFnNParam(mut st, f), nb: xfNBlk(mut st, f), blk: mut []int{}, order: mut []int{}, norder: 0, bpos: mut []int{},
         ivS: mut []int{}, ivE: mut []int{}, loc: mut []int{}, pnx: mut []int{}, pv: mut []int{}, npc: 0, spd: mut []int{}, lpR: mut []int{}, cuts: mut []int{}, sv: mut []int{}, pwt: mut []int{}, ldep: mut []int{}, pfix: mut []int{}, aL: mut []int{}, aB: mut []int{}, aC: mut []int{}, aN: mut []int{}, ev: mut []int{}, slotDisp: mut []int{}, isConst: mut []int{}, constV: mut []int{}, tg: mut []int{}, saveReg: mut []int{}, saveDisp: mut []int{},
@@ -3003,7 +3061,7 @@ func xIsCallOp(st mut St, i InsRef) bool {
     op := xiOp(mut st, i)
     if op == OpCall {
         g := FnRef(xiA(mut st, i))
-        return g != st.rtCopy && g != st.rtCopy8 && g != st.rtMatchLen && g != st.rtJClean && g != st.rtPanic && g != st.rtPanicMem
+        return g != st.rtCopy && g != st.rtCopy8 && g != st.rtMatchLen && g != st.rtJClean && g != st.rtPanic && g != st.rtPanicMem && !xKeepAll(mut st, g)
     }
     return op == OpCallI || op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpClone
 }
@@ -3019,7 +3077,22 @@ func xColdCall(st mut St, i InsRef) bool {
         return false
     }
     g := FnRef(xiA(mut st, i))
-    return g == st.rtGrow || g == st.rtGrow8 || g == st.rtGrowTry || g == st.rtMapGrow || g == st.rtWinRalloc
+    return g == st.rtGrow || g == st.rtGrow8 || g == st.rtGrowTry || g == st.rtMapGrow || g == st.rtWinRalloc || g == st.rtWmAlloc || g == st.rtWmRaise || g == st.rtLockWait
+}
+
+// 全レジスタを保つ中継の実引数vをdstへ: 札の無い非負の32ビットの定数は mov r32, imm32（上位はゼロ拡張 — 2バイト短い。確保の点ごとに乗る）
+func xKeepArg(e mut xF, c mut table.Table[byte], v int, dst int) {
+    if e.remat[v] == 1 && e.tg[v] == 0 && e.constV[v] >= 0 && e.constV[v] < 2147483648 {
+        x86.MovReg32Imm32(mut c, dst, e.constV[v])
+        return
+    }
+    xGetInto(mut e, mut c, v, dst)
+}
+
+// gが全レジスタを保つ中継（rt.wm_alloc_s / rt.wm_raise_s — 計上済みの上限の低速パス）か。最適化のバックエンドは手書きの本体（xKeepAllBody）を吐き、
+// 呼び出しを「rax（結果）・rcx・rdx・フラグだけを壊す命令」として扱う（xIsCallOpの外 — 確保の点が跨ぎの集合と冷たい呼び出しの退避を作らない）
+func xKeepAll(st mut St, g FnRef) bool {
+    return g == st.rtWmAllocS || g == st.rtWmRaiseS
 }
 
 // 部分区間 v が冷たい呼び出しを跨ぐか（xCrossCall と同じ判定 — 列は cpc）
@@ -3090,7 +3163,7 @@ func xNoCall(st mut St, e mut xF) bool {
             op := xiOp(mut st, i)
             if op == OpCall {
                 g := FnRef(xiA(mut st, i))
-                if g != st.rtCopy && g != st.rtCopy8 && g != st.rtMatchLen && g != st.rtJClean && g != st.rtPanic && g != st.rtPanicMem {
+                if g != st.rtCopy && g != st.rtCopy8 && g != st.rtMatchLen && g != st.rtJClean && g != st.rtPanic && g != st.rtPanicMem && !xKeepAll(mut st, g) {
                     return false
                 }
             } else if op == OpCallI || op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpClone {
@@ -4442,7 +4515,7 @@ func xColdMark(st mut St, e mut xF, kOf mut []int, npred mut []int, cold mut []i
 
 // 遅いパスのrtか（冷たい領域のシード — xColdBlocks）
 func xSlowRt(st mut St, f int) bool {
-    return f >= 0 && (f == int(st.rtGrow) || f == int(st.rtGrow8) || f == int(st.rtGrowTry) || f == int(st.rtMapGrow) || f == int(st.rtReloc) || f == int(st.rtReloc8) || f == int(st.rtErrReloc) || f == int(st.rtWinRalloc))
+    return f >= 0 && (f == int(st.rtGrow) || f == int(st.rtGrow8) || f == int(st.rtGrowTry) || f == int(st.rtMapGrow) || f == int(st.rtReloc) || f == int(st.rtReloc8) || f == int(st.rtErrReloc) || f == int(st.rtWinRalloc) || f == int(st.rtWmAlloc) || f == int(st.rtWmRaise) || f == int(st.rtWmAllocS) || f == int(st.rtWmRaiseS))
 }
 
 // spill の費用（M5）: 重み ÷ 区間の長さ（長く生きて使われの疎な値ほど安い）。長さは 256 で頭打ち — 区間を割らない linear scan では、
@@ -6124,6 +6197,12 @@ func xInst(st mut St, e mut xF, c mut table.Table[byte], fx mut table.Table[int]
         xGetInto(mut e, mut c, xAt(mut st, b, 0), x86.Rax)
         xGetInto(mut e, mut c, xAt(mut st, b, 1), x86.Rdx)
         xGetInto(mut e, mut c, xAt(mut st, b, 2), x86.Rcx)
+        xFixAdd(mut fx, x86.CallRel32(mut c), 0, xIndex(frecs, a))
+        xPut(mut e, mut c, res, x86.Rax)
+    } else if op == OpCall && e.opt && xKeepAll(mut st, FnRef(a)) {
+        // 全レジスタを保つ中継（xKeepAllBody）への call: 実引数は rax / rdx・結果は rax。壊すのは rax / rcx / rdx / フラグだけ（xIsCallOp の外）
+        xKeepArg(mut e, mut c, xAt(mut st, b, 0), x86.Rax)
+        xKeepArg(mut e, mut c, xAt(mut st, b, 1), x86.Rdx)
         xFixAdd(mut fx, x86.CallRel32(mut c), 0, xIndex(frecs, a))
         xPut(mut e, mut c, res, x86.Rax)
     } else if op == OpCall && e.opt && FnRef(a) == st.rtJClean {

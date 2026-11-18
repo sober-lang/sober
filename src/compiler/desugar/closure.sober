@@ -421,6 +421,72 @@ func fnConvDr(st mut S, callee NodeRef, eb int) int {
     return dr
 }
 
+// 変換の呼び先 `R.f`（ast.EFieldTy。loaderの関数値の代入が作る）のフィールドの型式: (package, 型環境, 型式の節)。引けなければ型式は -1
+func fieldConvAt(st mut S, callee NodeRef, at NodeRef) (int, int, NodeRef, error?) {
+    nd := nodeOf(mut st, callee)
+    dr := lookupType(mut st, st.curPkg, sA(nd))
+    if dr < 0 || declKind(mut st, hgetN(mut st, dr)) != ast.BStruct {
+        return 0, -1, -1, nil
+    }
+    targs := lC(nd)
+    mut tenv := -1
+    if lenL(mut st, targs) > 0 {
+        tenv = genericEnv(mut st, st.curPkg, dr, targs, at)?
+    }
+    fs := lA(nodeOf(mut st, nC(nodeOf(mut st, hgetN(mut st, dr)))))
+    i := fieldIndex(mut st, fs, sB(nd))
+    if i < 0 {
+        return 0, -1, -1, nil
+    }
+    return hget(mut st, dr + 1), tenv, nB(nodeOf(mut st, latN(mut st, fs, i))), nil
+}
+
+// 変換 `R.f(e)` の結果の型（フィールドfの型。引けなければ -1）
+func fieldConvTy(st mut S, callee NodeRef, at NodeRef) TyRef {
+    pk, fenv, ftype, err := fieldConvAt(mut st, callee, at)
+    if err != nil || ftype == -1 {
+        return -1
+    }
+    return tyIn(mut st, pk, fenv, ftype, at) catch TyRef(-1)
+}
+
+// 変換 `R.f(e)` の値の宣言（フィールドfの型が名前付き関数型ならその宣言。でなければ -1）
+func fieldConvDecl(st mut S, callee NodeRef, at NodeRef) int {
+    pk, fenv, ftype, err := fieldConvAt(mut st, callee, at)
+    if err != nil || ftype == -1 {
+        return -1
+    }
+    saved := st.tenv
+    st.tenv = fenv
+    d := declOfTypeExpr(mut st, pk, ftype)
+    st.tenv = saved
+    return d
+}
+
+// 変換 `R.f(e)`: eをフィールドfの値の位置に置いたもの。compositeのフィールドの値（fieldValuesIn）と同じ期待型・値の位置の記録で脱糖する
+func fieldConvExpr(st mut S, callee NodeRef, args ListRef, at NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
+    if lenL(mut st, args) != 1 {
+        return 0, diag.Malformed{at: posOf(mut st, at)}
+    }
+    pk, fenv, ftype := fieldConvAt(mut st, callee, at)?
+    if ftype == -1 {
+        return 0, diag.CoreFragment{at: posOf(mut st, at)}
+    }
+    w := tyIn(mut st, pk, fenv, ftype, at)?
+    st.liftHint = -1
+    if kindN(mut st, ftype) == ast.TFunc {
+        st.liftHint = rec5(mut st, pk, fenv, int(ftype), 0, 0)
+    }
+    vp := fieldFnValDecl(mut st, pk, fenv, ftype)?
+    if vp < 0 {
+        st.liftHint = -1
+        return 0, diag.CoreFragment{at: posOf(mut st, at)}
+    }
+    r, err := closureValue(mut st, latN(mut st, args, 0), w, vp, eb, ef, depth, at)
+    st.liftHint = -1
+    return r, err
+}
+
 // 変換 `W(e)` の結果の型（Wのクロージャの型 — 値化できないWは -1）
 func fnConvTy(st mut S, dr int, at NodeRef) TyRef {
     decl := hgetN(mut st, dr)
@@ -445,9 +511,37 @@ func fnConvExpr(st mut S, dr int, args ListRef, at NodeRef, eb int, ef int, dept
 }
 
 // 値の位置（期待型want = クロージャの型かそのoption・値の位置の記録vp — fieldFnValDecl）の値eの脱糖: ラムダは持ち上げてクロージャの組に、nilはnil、
+// ブロックとif式は末尾の式ごとに同じ値の位置、
 // それ以外（クロージャの値の束縛・フィールドの読み — 関数の名前はloaderが η 展開済みで来ない）は素通し
 func closureValue(st mut S, e NodeRef, want TyRef, dr int, eb int, ef int, depth int, at NodeRef) (CoreRef, error?) {
     k := kindN(mut st, e)
+    // ブロックの値は末尾の式が、if 式（else あり）の値は分岐の末尾の式が、同じ値の位置
+    if k == ast.EBlock {
+        st.tailVal = dr + 1
+        st.tailWant = want
+        return expr(mut st, e, eb, ef, depth)
+    }
+    if k == ast.EIf && nC(nodeOf(mut st, e)) != -1 {
+        cond0 := nA(nodeOf(mut st, e))
+        nt, _ := nilTest(mut st, cond0, eb)
+        if nt == -1 {
+            notNamed(mut st, cond0, eb, ef)?
+            notByte(mut st, cond0, eb, ef)?
+            cond := expr(mut st, cond0, eb, ef, depth)?
+            st.tailVal = dr + 1
+            t := scoped(mut st, lA(nodeOf(mut st, nB(nodeOf(mut st, e)))), eb, ef, depth, false, false, want)?
+            els := nC(nodeOf(mut st, e))
+            mut o := CoreRef(-1)
+            if kindN(mut st, els) == ast.EBlock {
+                st.tailVal = dr + 1
+                o = scoped(mut st, lA(nodeOf(mut st, els)), eb, ef, depth, false, false, want)?
+            } else {
+                o = closureValue(mut st, els, want, dr, eb, ef, depth, at)?
+            }
+            // 分岐の型はregionだけ違うことがある（捕捉のstringと呼び出しの結果）: 両方を期待型へ寄せる
+            return cIte(mut st, cond, cAnn(mut st, t, want), cAnn(mut st, o, want)), nil
+        }
+    }
     if tg(mut st, want) == TOpt {
         if k == ast.ENil {
             return cNil(mut st, tInner(mut st, want)), nil
@@ -614,6 +708,7 @@ func liftLambdaCap(st mut S, lam NodeRef, ct TyRef, fdecl NodeRef, outer_b int, 
     cbs := ListRef(listN(mut st, ncap))
     cvals := ListRef(listN(mut st, ncap))
     ctys := ListRef(listN(mut st, ncap))
+    j0 := table.Len(mut st.capJs)
     _ = capFlatFill(mut st, cr, outer_b, outer_f, 0, cbs, cvals, ctys, depth, anc, lam)?
     envT := if ncap == 0 { st.tInt } else { tyTree(mut st, ctys) }
     envV0 := if ncap == 0 { cLit(mut st, 0) } else { treePair(mut st, cvals) }
@@ -622,6 +717,9 @@ func liftLambdaCap(st mut S, lam NodeRef, ct TyRef, fdecl NodeRef, outer_b int, 
     live := capLive(mut st, cr)
     if live {
         shapeRec(mut st, fdecl, envT)
+        if st.track && !st.preRun {
+            capDiagRec(mut st, lam, fdecl, envT, ctys, j0)
+        }
     }
     sh := if live { shapeList(mut st, fdecl) } else { []int{} }
     mut kk := 0 - 1
@@ -680,9 +778,15 @@ func liftLambdaCap(st mut S, lam NodeRef, ct TyRef, fdecl NodeRef, outer_b int, 
         lput(mut st, pmut, i, 0)
         i += 1
     }
+    // 結果が1つで値化可能なnamed fn type（かそのoption）なら、本体の末尾の式はその値の位置（値の位置の記録 — fieldFnValDecl）
+    mut vr := -1
     if st.liftHint >= 0 {
         h := st.liftHint
         st.liftHint = -1
+        hrs := lB(nodeOf(mut st, hgetN(mut st, h + 2)))
+        if lenL(mut st, hrs) == 1 {
+            vr = fieldFnValDecl(mut st, hget(mut st, h), hget(mut st, h + 1), latN(mut st, hrs, 0))?
+        }
         hps := lA(nodeOf(mut st, hgetN(mut st, h + 2)))
         if lenL(mut st, hps) == n {
             saved := st.tenv
@@ -752,7 +856,13 @@ func liftLambdaCap(st mut S, lam NodeRef, ct TyRef, fdecl NodeRef, outer_b int, 
     st.loopFloor = st.nlab
     lbody := nB(nodeOf(mut st, lam))
     mut body := CoreRef(-1)
-    if kindN(mut st, lbody) == ast.EBlock {
+    if vr >= 0 && kindN(mut st, lbody) == ast.EBlock {
+        // 本体の `{ }` はスコープだけ（regionは開かない — 下の非値の位置のブロックと同じ）
+        st.tailVal = vr + 1
+        body = scoped(mut st, lA(nodeOf(mut st, lbody)), benv, fenv, d, false, false, rT)?
+    } else if vr >= 0 {
+        body = closureValue(mut st, lbody, rT, vr, benv, fenv, d, at)?
+    } else if kindN(mut st, lbody) == ast.EBlock {
         // 末尾の式の型が取れない（`{ n += len(b); nil }` の nil）なら末尾の期待型（結果 R）を渡す
         bl := lA(nodeOf(mut st, lbody))
         nb := lenL(mut st, bl)
@@ -761,13 +871,18 @@ func liftLambdaCap(st mut S, lam NodeRef, ct TyRef, fdecl NodeRef, outer_b int, 
     } else {
         body = coerceExpr(mut st, lbody, rT, benv, fenv, d, at)?
     }
+    // 結果の値の位置の値は、宣言した関数のreturn（retValue）と同じく結果の型へ寄せる（作成点のUの注釈は本体の座標のregionで組まれる）
+    rk := tg(mut st, rT)
+    if vr >= 0 && (rk == TOpt || rk == TUn || rk == TPr) && (wrapsContainer(mut st, rT) || wrapsVar(mut st, rT)) {
+        body = retAnn(mut st, body, rT)
+    }
     setFnCtx(mut st, saved)
     body = wrapLets(mut st, exs, body)
     if st.luOn {
         luClose(mut st, lo, st.nlifted)
     }
     idx := st.ndef + st.nlifted
-    def := rec5(mut st, int(tProd(mut st, uT, pT)), int(rT), int(body), st.curTparams, -1)
+    def := rec5(mut st, int(tProd(mut st, uT, pT)), int(rT), int(body), kindsList(mut st, st.curTparams), -1)
     if st.liftedTail >= 0 {
         hset(mut st, st.liftedTail + 4, def)
     } else {
@@ -846,6 +961,9 @@ func capFlatFill(st mut S, row int, eb int, ef int, k0 int, cbs ListRef, cvals L
             b := lookup(mut st, eb, nm)
             x := bnd(mut st, b)
             lput(mut st, cbs, k, b)
+            if st.track {
+                table.Push(mut st.capJs, j)
+            }
             v := cVar(mut st, depth - 1 - x.level)
             mut cv := v
             if anc >= 0 {
@@ -864,6 +982,19 @@ func capFlatFill(st mut S, row int, eb int, ef int, k0 int, cbs ListRef, cvals L
         }
     }
     return k, nil
+}
+
+// 捕捉の記録 [ラムダの位置, named fn type の宣言の位置, env の型, 捕捉の数 n, (名前の添字, 捕捉の型) × n]（PackPos・型はコアの型の参照）
+func capDiagRec(st mut S, lam NodeRef, fdecl NodeRef, envT TyRef, ctys ListRef, j0 int) {
+    n := lenL(mut st, ctys)
+    table.Push(mut st.capDiag, PackPos(posOf(mut st, lam)))
+    table.Push(mut st.capDiag, PackPos(posOf(mut st, fdecl)))
+    table.Push(mut st.capDiag, int(envT))
+    table.Push(mut st.capDiag, n)
+    for i <- iter.Range(0, n) {
+        table.Push(mut st.capDiag, table.Get(mut st.capJs, j0 + i))
+        table.Push(mut st.capDiag, latI(mut st, ctys, i))
+    }
 }
 
 // envの形の列sh（Defの座標 — region 0）を region a の座標へコピーした列（anchorつきの呼び出しの作成点のunionの注釈）
@@ -916,7 +1047,7 @@ func capFlatBind(st mut S, row int, src int, cbs ListRef, ctys ListRef, k0 int) 
         if capPkAt(mut st, j) >= 0 {
             c := clo(mut st, lookupF(mut st, src, nm))
             sub := capFlatBind(mut st, capEntry(mut st, c.lambda), c.envF, cbs, ctys, k)
-            table.Push(mut st.closures, Closure{lambda: c.lambda, envB: sub.eb, envF: sub.ef, pkg: c.pkg, tenv: c.tenv, ft: c.ft, retTarget: -1, inlrec: c.inlrec})
+            table.Push(mut st.closures, Closure{lambda: c.lambda, envB: sub.eb, envF: sub.ef, pkg: c.pkg, tenv: c.tenv, ft: c.ft, retTarget: -1, inlrec: c.inlrec, inlining: c.inlining})
             ef = bindF(mut st, ef, int(nm), table.Len(mut st.closures) - 1, SUNK)
             k = sub.k
         } else {
@@ -1045,9 +1176,9 @@ func callClosure(st mut S, callee NodeRef, ct TyRef, args ListRef, at NodeRef, e
         // imm の実引数・呼び先の env は anchor より深ければ anchor へ形式コピー（M4 (a) — callM の実引数と同じ）
         u := tRight(mut st, ct)
         env := copyAt(mut st, c1(mut st, CSnd, cVar(mut st, 0)), u, u, anchor)
-        return cLet(mut st, f, cCallMv(mut st, anchor, closCallee(mut st, ct, c1(mut st, CFst, fv)), c2(mut st, CPair, env, treePair(mut st, vs)))), nil
+        return cLet(mut st, f, cCallv(mut st, anchor, closCallee(mut st, ct, c1(mut st, CFst, fv)), c2(mut st, CPair, env, treePair(mut st, vs)))), nil
     }
-    cv := c2(mut st, CCallv, closCallee(mut st, ct, c1(mut st, CFst, fv)), c2(mut st, CPair, c1(mut st, CSnd, cVar(mut st, 0)), treePair(mut st, vs)))
+    cv := cCallv(mut st, st.rdepth - 1, closCallee(mut st, ct, c1(mut st, CFst, fv)), c2(mut st, CPair, c1(mut st, CSnd, cVar(mut st, 0)), treePair(mut st, vs)))
     return cLet(mut st, f, cv), nil
 }
 

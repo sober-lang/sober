@@ -1,0 +1,12 @@
+@@full	8011d4cb747616ec	3633	104961
+@head	392b234ebc2153ef	0	103
+const mask32	e242771aea0b4720	1	66
+func Block	1ecd556d0c0c94b1	65	2240
+func XorKeyStream	383f8e4e98f5e31b	20	848
+func XorKeyStreamAt	6b4358eba3d1e392	123	4251
+func initState	8e54f9a7167076de	74	2530
+func le32	1dfd23a8bbeb398b	40	1302
+func put32	7e16afb4a3a3efdd	49	1701
+func qr	adbb049167e2439e	114	3536
+func rotl	9d44e69440884067	15	599
+func rounds	a82183135aced682	129	3671

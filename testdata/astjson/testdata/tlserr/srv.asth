@@ -1,0 +1,10 @@
+@@full	933a7218f110223b	1862	49772
+@head	f1bc3121fe40af5b	0	171
+func first	315f00dffdfb0397	14	511
+func inRecv	26cbb955eeac0f52	44	1472
+func last	87093e20aab64d9f	52	1692
+func main	1ffc050d52434d7b	39	1217
+func putFlush	2776f4852c56ff5e	60	1970
+func run	f49ea8e65e6aa7df	50	1831
+func say	c8ce1de6aa6d38b4	23	858
+func show	61e5c1f1f62f4a28	16	720

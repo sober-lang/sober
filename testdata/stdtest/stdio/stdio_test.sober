@@ -1,0 +1,79 @@
+package stdio
+
+// std/io の ReadAt の black-box のテスト（`bin/sober test testdata/stdtest/stdio` — cwd = ルート）。題材のファイルを ReadFile で読んだ全体と、
+// 範囲ごとに ReadAt で読んだ列を比べる。std/io の中に置けないのは、std/testing → std/io の import の循環のため
+
+import "std/io"
+
+const path = "testdata/io_par/access-3.log"
+
+// whole[lo:hi] と b が同じか
+func same(whole []byte, lo int, hi int, b []byte) bool {
+    if len(b) != hi - lo {
+        return false
+    }
+    mut i := 0
+    while i < len(b) {
+        if b[i] != whole[lo + i] {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+// 誤りが io.Other{errno: 22}（EINVAL）か
+func einval(e error?) bool {
+    if e == nil {
+        return false
+    }
+    return switch e {
+    case io.Other{errno}: errno == 22
+    default: false
+    }
+}
+
+func TestRanges() {
+    whole, we := io.ReadFile(path)
+    assert(we == nil)
+    n := len(whole)
+    assert(n > 70000)
+    f := io.Open(path) catch {
+        assert(false)
+        return
+    }
+    defer io.Close(f)
+    // 先頭・途中・64 KiB を越える範囲
+    a, ae := io.ReadAt(f, 0, 10)
+    assert(ae == nil && same(whole, 0, 10, a))
+    b, be := io.ReadAt(f, 12345, 678)
+    assert(be == nil && same(whole, 12345, 13023, b))
+    c, ce := io.ReadAt(f, 1, n - 2)
+    assert(ce == nil && same(whole, 1, n - 1, c))
+    // EOF を越える読みは、読めた分の短い列（エラーにしない）
+    d, de := io.ReadAt(f, n - 5, 100)
+    assert(de == nil && same(whole, n - 5, n, d))
+    // EOF ちょうどと EOF の先は空の列
+    e1, ee1 := io.ReadAt(f, n, 10)
+    assert(ee1 == nil && len(e1) == 0)
+    e2, ee2 := io.ReadAt(f, n + 1000, 10)
+    assert(ee2 == nil && len(e2) == 0)
+    // n = 0 は空の列
+    z, ze := io.ReadAt(f, 7, 0)
+    assert(ze == nil && len(z) == 0)
+    // ファイルの位置は動かない（後の ReadAll は先頭から全部）
+    rest, re := io.ReadAll(f)
+    assert(re == nil && same(whole, 0, n, rest))
+}
+
+func TestInvalid() {
+    f := io.Open(path) catch {
+        assert(false)
+        return
+    }
+    defer io.Close(f)
+    _, e1 := io.ReadAt(f, 0 - 1, 10)
+    assert(einval(e1))
+    _, e2 := io.ReadAt(f, 0, 0 - 1)
+    assert(einval(e2))
+}

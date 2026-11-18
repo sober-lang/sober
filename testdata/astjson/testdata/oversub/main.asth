@@ -1,0 +1,22 @@
+@@full	9d9d2d2ae94fb9dd	3976	174242
+@head	d9a5f5d0cb00fd63	0	278
+const nBorrow	63552d9b66a87c20	1	50
+const nConns	5a9fc9f6e6a9ce42	1	47
+const nMsg	9ebe52c6659acd17	1	48
+const nPairs	4ec3b95bf3b79741	1	46
+const nPool	5cd0eeb86a9748ef	1	45
+const nReq	b0d62aeb3fcfe1bd	1	46
+const nTasks	ec2f9479007db79a	1	47
+const nUpd	52964de98ff6d85b	1	49
+func ask	fb1eca0830adfbea	49	1627
+func borrows	f9a92fba9ff09d12	111	3772
+func client	daf1f6de48eee8cf	9	401
+func echo	d7c7906f73643e51	37	1301
+func main	475cbb938d9f30b1	7	297
+func pair	0a3d0d22c4dba961	64	2135
+func pipes	44cb55d1fb47a5e1	48	1695
+func run	c25ef9fdd612af4d	177	6000
+func tree	f6c7ee0a25e7f80e	50	1700
+func updates	6f2a15a1bbeb442a	78	2646
+type Ctr	c435401cc6e778a3	2	110
+type Pool	3667b314819b98a4	3	163

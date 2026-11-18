@@ -1,4 +1,4 @@
-@main.skynet b93 B=6 N=32 count
+@main.skynet b90 B=6 N=32 count
 @main.skynet b6 B=-2 N=1 every
 @main.skynet b12 B=-2 N=1 every
 @main.skynet b23 B=-1 N=1 every

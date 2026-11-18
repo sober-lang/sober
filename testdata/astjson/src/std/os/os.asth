@@ -1,0 +1,28 @@
+@@full	c900607017346b90	7808	216397
+@head	469ab55c8efae0fd	42	2975
+func Alarm	4f3bd73cf95d24fe	81	2574
+func AppendFile	b2b21d1b3e899f9e	125	3949
+func Args	7dcbc5449bfc5e06	55	1851
+func Getenv	695241730ce706a6	66	2128
+func Mkdir	616fe0baec41b84c	18	648
+func ModTime	524b40f37f6845c7	23	779
+func Monotonic	8c975f531f1e503c	43	1370
+func Remove	9a2a718cfd159b87	45	1515
+func RemoveDir	49f060094355dd30	45	1518
+func Rename	2c0a6404e73dbbf2	20	742
+func Run	fd9f202474ed732a	64	2175
+func RunTo	a9683f63f9e9214b	47	1699
+func RunToEnv	da255cac4fecb172	61	2206
+func Sleep	76dd9831784d43b0	6	321
+func SleepExpired	21cf3f4428ace636	16	576
+func WriteMode	e450e4b866240860	20	749
+func argvz	ffac85fae8741bc7	44	1553
+func argz	0940badf8ea0dd34	43	1456
+func envName	0b8e2f0f828be0c4	30	1127
+func envz	25660969bbc2b460	116	3731
+func errOf	0549cd91b1d65d2d	31	1176
+func keyIs	e8677e62563cbecd	55	1889
+func openOut	e43f108f62d30cf9	63	1970
+func openTrunc	a50b4221225b0c8c	31	1065
+func ranTo	1033fd7d4fa5f9f4	48	1501
+func word	bf702144813d5a06	31	1101

@@ -1,0 +1,8 @@
+@@full	937f8ddc7dd4f1aa	4362	131745
+@head	c6e3bdeb0816b11f	0	103
+func b2compress	05e0e54135c696b3	331	9722
+func b2g	f7a2ae9ea840de9a	112	3529
+func b2iv	47d85037b676c682	16	756
+func b2sigma	4650a1bcd5cfc517	165	3832
+func blake2b	9ffda7d9c85e9439	161	5227
+func rotr64	b5f9defaea0bfbbd	21	772

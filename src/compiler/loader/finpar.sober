@@ -19,6 +19,7 @@ import "std/task"
 // 検査のバッチの子の結果（ファイル1つ — 当たりの字句・無ければ -1。nm = 名前の検査に当たりがある）
 type FinB struct {
     tup int
+    afr int
     ni int
     nm bool
     es int
@@ -84,6 +85,12 @@ func checksSeq(cx Cx, pnames []string) NameHit {
     if tup.file >= 0 {
         return NameHit{tup.file, tup.tok, diag.Par{at: tup, kind: PAR_TUPLE}}
     }
+    for f <- iter.Range(0, len(cx.trees)) {
+        a := anonFnResultIn(cx, f)
+        if a >= 0 {
+            return NameHit{f, a, diag.FnOpt{at: diag.Pos{file: f, tok: a}, kind: FO_ANON_RESULT}}
+        }
+    }
     ni := notImportedHit(cx)
     if ni.file >= 0 {
         return ni
@@ -108,6 +115,7 @@ func checksPar(cx Cx, pnames []string) (NameHit, bool) {
     rs, cerr := task.Map(finFiles(n), (f) => checksOne(cx, pp, ixs, pnames, f, die))
     if cerr != nil {
         finStat("checks", n, "died")
+        ParFellBack("finish checks", n, "on the direct path", "")
         return noHit(), false
     }
     finStat("checks", n, "none")
@@ -115,6 +123,11 @@ func checksPar(cx Cx, pnames []string) (NameHit, bool) {
         if rs[f].tup >= 0 {
             at := diag.Pos{file: f, tok: rs[f].tup}
             return NameHit{f, rs[f].tup, diag.Par{at: at, kind: PAR_TUPLE}}, true
+        }
+    }
+    for f <- iter.Range(0, n) {
+        if rs[f].afr >= 0 {
+            return NameHit{f, rs[f].afr, diag.FnOpt{at: diag.Pos{file: f, tok: rs[f].afr}, kind: FO_ANON_RESULT}}, true
         }
     }
     for f <- iter.Range(0, n) {
@@ -140,7 +153,7 @@ func checksOne(cx Cx, pp int, ixs []NameIx, pnames []string, f int, die bool) Fi
     if die {
         panic(InvariantBroken{})
     }
-    return FinB{tupleTypeIn(cx, pp, f), notImportedIn(cx, f), namesIn(cx, ixs[cx.file_pkg[f]], f).file >= 0, exprStmtIn(cx, pnames, f)}
+    return FinB{tupleTypeIn(cx, pp, f), anonFnResultIn(cx, f), notImportedIn(cx, f), namesIn(cx, ixs[cx.file_pkg[f]], f).file >= 0, exprStmtIn(cx, pnames, f)}
 }
 
 // 節の規則のバッチの子のパス（ok = falseは子の死 — 呼び手が直のパスで検査し直す）。holdは不動点の後の表（子は読むだけ — コピーを渡す）
@@ -151,6 +164,7 @@ func rulesPar(cx Cx, ft FnTab, sl []int, es []int, nm []string, hold []int) (err
     rs, err := task.Map(finFiles(n), (f) => rulesOne(cx, ft, sl, es, nm, hold, f, die))
     if err != nil {
         finStat("rules", n, "died")
+        ParFellBack("finish rules", n, "on the direct path", "")
         return nil, false
     }
     finStat("rules", n, "none")

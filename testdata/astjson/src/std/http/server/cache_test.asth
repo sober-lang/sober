@@ -1,0 +1,12 @@
+@@full	15c9705e33bb1ce8	4630	135824
+@head	24e5b0b9d42514b4	0	230
+func TestCacheDefault	2b5197dd7c4eabd0	90	3526
+func TestCookie	0c230b0f301f4e1c	118	3631
+func TestCredentialHeaders	6fde71d9d71ffdc7	79	2540
+func TestHeaderList	220c3e3f4cd571fa	108	3520
+func TestRouteCache	c84cc89a63caa174	127	5350
+func TestStoredPolicy	0c81137847a785b6	47	1743
+func TestUnroutedMethod	0ecdeb0e7bf84fb5	89	3294
+func TestUnstated	590bb6b22b81bd80	100	3833
+func is	735e71101c1b8015	15	570
+func rq	c849ef8fa06e84d6	33	1150

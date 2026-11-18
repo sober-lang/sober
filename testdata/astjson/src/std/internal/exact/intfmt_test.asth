@@ -1,0 +1,8 @@
+@@full	4fead5dea8a2f7d1	2724	76876
+@head	c65a49e6e5b00902	0	196
+func TestFormatIntBoundaries	16d274f768618b7b	110	3639
+func TestFormatIntRandom	6c277b381d321f35	39	1420
+func TestParseIntEdges	6bd426103f873a0f	150	4717
+func intAgrees	05e05cfd83a713db	41	1435
+func intErrKind	80914f4277db514f	20	798
+func intFormatRef	07ef0489c58399e6	109	3585

@@ -1,0 +1,7 @@
+@@full	29b4905941693f9f	1811	47551
+@head	6b43381148aafbdc	0	146
+const path	54a12c5347ed231c	1	76
+func TestInvalid	1c58ab37e4b6c8b4	47	1508
+func TestRanges	10d697aa03c4e4aa	203	6129
+func einval	ed9c8055a1392277	20	783
+func same	01e04e8f33d82782	44	1558

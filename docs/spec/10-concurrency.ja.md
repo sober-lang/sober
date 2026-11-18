@@ -4,7 +4,7 @@
 
 [目次](README.ja.md)
 
-並行はstd/taskの関数で書く（新しい構文は無い）。taskの寿命はレキシカルなスコープに閉じ（structured concurrency）、子はscopeの出口までに必ず終わる。データ競合は形で書けない — 子へ渡せるのは不変の値とチャネルの端点だけ。ioの入力を固定すれば、結果と標準出力はスケジュールにもワーカー数にも依らない。
+並行はstd/taskの関数で書く（新しい構文は無い）。taskの寿命はレキシカルなスコープに閉じ（structured concurrency）、子はscopeの出口までに必ず終わる。データ競合は形で書けない。子へ渡せるのは不変の値・チャネルの端点・domain（10.8）だけ。ioの入力を固定すれば、結果と標準出力はスケジュールにもワーカー数にも依らない。
 
 ```sober
 // examples/tour_07_parallel.sober
@@ -84,12 +84,12 @@ C-1. `task.Run((s task.Scope) => 本体)` はscopeを開いて本体の値を `(
 例: [`examples/tour_07_parallel.sober`](../../examples/tour_07_parallel.sober)・[`examples/task_capture.sober`](../../examples/task_capture.sober)・[`examples/task_def.sober`](../../examples/task_def.sober)
 決定: [language.md 11節](../language.md)
 
-C-2. `task.Spawn`（と `task.SpawnIn`）のgは字面のラムダ。gが捕獲できるのはimmのデータだけ — mutの束縛（とそのimmの別名）・札 `Scope`・handle・チャネルの端点（渡すのはC-11の `give:`）・展開される関数型の仮引数は捕獲できない（structのフィールドに包んでも同じ）。札とhandleは関数の実引数にもscopeの値にもできない。
+C-2. `task.Spawn`（と `task.SpawnIn`）のgは字面のラムダ。gが捕獲できるのはimmのデータとdomain（C-21）だけ。mutの束縛（とそのimmの別名）・札 `Scope`・handle・チャネルの端点（渡すのはC-11の `give:`）・展開される関数型の仮引数は捕獲できない（structのフィールドに包んでも同じ）。札とhandleは関数の実引数にもscopeの値にもできない。
 例: [`examples/task_capture.sober`](../../examples/task_capture.sober)
 拒否: [`examples/task_neg_lambda.sober`](../../examples/task_neg_lambda.sober)・[`examples/task_neg_mut.sober`](../../examples/task_neg_mut.sober)・[`examples/task_neg_mutalias.sober`](../../examples/task_neg_mutalias.sober)・[`examples/task_neg_token.sober`](../../examples/task_neg_token.sober)・[`examples/task_neg_handle.sober`](../../examples/task_neg_handle.sober)・[`examples/task_neg_fnparam.sober`](../../examples/task_neg_fnparam.sober)・[`examples/task_neg_wrap_token.sober`](../../examples/task_neg_wrap_token.sober)・[`examples/task_neg_wrap_handle.sober`](../../examples/task_neg_wrap_handle.sober)・[`examples/task_neg_cross.sober`](../../examples/task_neg_cross.sober)・[`examples/task_neg_scope_result.sober`](../../examples/task_neg_scope_result.sober)・[`examples/task_neg_spawnin.sober`](../../examples/task_neg_spawnin.sober)
 決定: [language.md 11節](../language.md)
 
-C-3. taskの結果はimmのデータなら何でもよい（string・slice・map・error・それらのstruct）— 子のregionからscopeのregionへコピーされる。関数値・札・handle・端点は結果にできない。scopeの値も出口で外へコピーされる。
+C-3. taskの結果はimmのデータなら何でもよい（string・slice・map・error・それらのstruct）— 子のregionからscopeのregionへコピーされる。関数値・札・handle・端点・domainは結果にできない。scopeの値も出口で外へコピーされる。
 例: [`examples/task_result_string.sober`](../../examples/task_result_string.sober)・[`examples/task_scope_value.sober`](../../examples/task_scope_value.sober)
 拒否: [`examples/task_neg_result.sober`](../../examples/task_neg_result.sober)
 決定: [language.md 11節](../language.md)
@@ -125,7 +125,7 @@ C-9. `task.Map(xs, f)`（`xs |> task.Map(f)`）は要素ごとに1 taskを生み
 例: [`examples/task_map.sober`](../../examples/task_map.sober)・[`examples/task_cancel_map.sober`](../../examples/task_cancel_map.sober)
 決定: [language.md 11節](../language.md)
 
-C-10. handleを捨てた子（`_ = task.Spawn(…)`）の格納場所は子の寿命で、子の終わりで返る — 終わらないscope（接続を受け続けるループ）で子を生み続けてもscopeのregionは伸びない。未着手の子はワーカーあたり255本までで、越えると生んだtaskが譲って子をその場で先に走らせる（値・死因・出力は変わらない）— 生む速さが掃く速さを上回っても、未着手の子の数は有界。`task.Run(…, backlog: K)` / `net.Serve(…, backlog: K)` は書いたscopeの中の上限をK（1〜255に丸める）にし、子のtaskは継ぐ。値はbudget: と同じ形の整数式。
+C-10. handleを捨てた子（`_ = task.Spawn(…)`）の格納場所は子の寿命で、子の終わりで返る。終わらないscope（接続を受け続けるループ）で子を生み続けてもscopeのregionは伸びない。未着手の子はワーカーあたり255本までで、越えると生んだtaskが譲って子をその場で先に走らせる（値・死因・出力は変わらない）。生む速さが掃く速さを上回っても、未着手の子の数は有界。複数ワーカーでは、各ワーカーが一定の周ごとに自分の未着手の子を1本走らせるので、子を生むのをやめたtaskの未着手の子は、実行待ちの列が空にならなくても走り始める。`task.Run(…, backlog: K)` / `net.Serve(…, backlog: K)` は書いたscopeの中の上限をK（1〜255に丸める）にし、子のtaskは継ぐ。値はbudget: と同じ形の整数式。
 例: [`examples/task_spawn_discard.sober`](../../examples/task_spawn_discard.sober)・[`examples/task_spawn_discard_die.sober`](../../examples/task_spawn_discard_die.sober)・[`examples/task_backlog.sober`](../../examples/task_backlog.sober)
 拒否: [`examples/task_neg_backlog.sober`](../../examples/task_neg_backlog.sober)
 決定: [language.md 11節](../language.md)
@@ -141,7 +141,7 @@ C-12. `task.Send(tx, v)` は満杯なら待つ。`task.Recv(rx)` は `T?` — �
 例: [`examples/task_chan_close.sober`](../../examples/task_chan_close.sober)・[`examples/task_close_send.sober`](../../examples/task_close_send.sober)・[`examples/task_close_twice.sober`](../../examples/task_close_twice.sober)
 決定: [language.md 11節](../language.md)
 
-C-13. 送る値はimmのデータ。regionを持つ値（string・slice・map・それらのstruct）は送りでコピーされ、送り手のregionが先に閉じても受け手が読める。端点とhandleは送れない。
+C-13. 送る値はimmのデータ。regionを持つ値（string・slice・map・それらのstruct）は送りでコピーされ、送り手のregionが先に閉じても受け手が読める。端点・handle・domainは送れない。
 例: [`examples/task_chan_string.sober`](../../examples/task_chan_string.sober)・[`examples/task_chan_down.sober`](../../examples/task_chan_down.sober)
 拒否: [`examples/task_neg_chan_endpoint.sober`](../../examples/task_neg_chan_endpoint.sober)・[`examples/task_neg_chan_handle.sober`](../../examples/task_neg_chan_handle.sober)
 決定: [language.md 11節・18節](../language.md)
@@ -162,13 +162,13 @@ C-16. 子が死ぬと、scopeは後ろの純な子（ioもチャネルも持た�
 
 ## 10.6 予算・プール・期限
 
-C-17. `budget:`（Spawn・Map・Runの末尾の名前つき引数 — `budget: 64 * task.MB`）は、そのtaskを逐次に走らせたときの使用量の上界の宣言。値は呼び出しと割り算を含まない整数式。並列度は「上限 ÷ 上界」でrtが決め、入れない子は親の上でその場に逐次に走る（値・死因・出力は変わらない）。`task.Run(…, wait: true)` の直接の子は、入れなければ逐次にせず入れるまで待つ。
+C-17. `budget:`（Spawn・Map・Runの末尾の名前つき引数 — `budget: 64 * task.MB`）は、そのtaskを逐次に走らせたときの使用量の上界の宣言。値は呼び出しと割り算を含まない整数式。並列度は「上限 ÷（上界 + `task.Fixed()`）」でrtが決め、入れない子は親の上でその場に逐次に走る（値・死因・出力は変わらない）。`task.Run(…, wait: true)` の直接の子は、入れなければ逐次にせず入れるまで待つ。
 例: [`examples/task_budget.sober`](../../examples/task_budget.sober)
 拒否: [`examples/task_neg_budget.sober`](../../examples/task_neg_budget.sober)
 決定: [language.md 11節](../language.md)
 
-C-18. `task.NewPool(budget:, parent:)` は名前つきの上限の節。`task.SpawnIn(s, pool, g)` だけは逐次にせず、入れなければ `(nil, task.Shed{})` を返す（受けられない、という値）。`task.Ledger()` は上限・計上・逐次化・shed・失敗・死の数と、スケジューラの `maxWait`（走れるようになってから走るまでの待ちの最大。すべての取り出しで測る。ns・読むと0に戻る）・`backlog`（今の未着手の子の数）・`backlogYield`（未着手の子の上限で譲った回数）・`parkShallow` / `parkDeep` / `parkDeepWin` / `parkSwap`（接続のtaskがシャロースリープした・ワーカーのエリアを保持したままスリープした・シャロースリープできる点でウィンドウに中身があってディープスリープした・シャロースリープの前にエリアを交換した回数の累計）を読むAPIで、`task.MarkFailed(pool)` は境界の失敗を数える。
-例: [`examples/task_shed.sober`](../../examples/task_shed.sober)・[`examples/task_pool_seq.sober`](../../examples/task_pool_seq.sober)
+C-18. `task.NewPool(budget:, parent:)` は名前つきの上限の節。`task.SpawnIn(s, pool, g)` だけは逐次にせず、入れなければ `(nil, task.Shed{})` を返す（受けられない、という値）。`task.Ledger()` は上限・計上・逐次化・shed・失敗・死・Serveの期限で切った数（プールの節の `timeout`。11章I-17）・入場を待つ接続の枠を空けるために切った数（プールの節の `evicted`。11章I-11。`timeout` には数えない）と、スケジューラの `maxWait`（走れるようになってから走るまでの待ちの最大。すべての取り出しで測る。ns・読むと0に戻る）・`backlog`（今の未着手の子の数）・`backlogYield`（未着手の子の上限で譲った回数）・`parkShallow` / `parkDeep` / `parkDeepWin` / `parkSwap`（接続のtaskがシャロースリープした・ワーカーのエリアを保持したままスリープした・シャロースリープできる点でウィンドウに中身があってディープスリープした・シャロースリープの前にエリアを交換した回数の累計）を読むAPIで、`task.MarkFailed(pool)` は境界の失敗を数える。プールの節の `conns` はtaskの数の天井（0 = 無し）で、0でないのは `net.Serve` の節（stdの中だけが作る — 11章I-11）だけ。親の無い行がServeの全部の親（このプロセスのServeの全部の入場の上限）で、各Serveの節はその子。節の天井が数えるのは、taskの予約（入場の量 = 宣言か見積もり + `task.Fixed()`）と、そのtaskの使用量の計上が予約を越えて借りた分。借りるのは入場したtaskだけ（mainは数えない）。借りでプールの節か根の天井を越えたら、伸びようとしたtaskが `RegionExceeded{cause: budget}` で死ぬ（Ledgerの `borrowOver`・プールの節の `cut`）。`budget:` のscopeの節は越えても死なない（`borrowOverScope` を数える）。入場の判定は予約だけで決める。根の計上には、返したスロットに残す常駐の上限（ワーカー数 × スロット1本ぶん）を起動時の定数として含める。プールの節の `used`・`tasks`・`borrowed` はその節と下の節の和で、`cut`・`died` はその節で入場したtaskだけを数える。
+例: [`examples/task_shed.sober`](../../examples/task_shed.sober)・[`examples/task_budget_ceiling.sober`](../../examples/task_budget_ceiling.sober)・[`examples/task_pool_seq.sober`](../../examples/task_pool_seq.sober)・[`examples/http_wait.sober`](../../examples/http_wait.sober)
 決定: [language.md 11節](../language.md)
 
 C-19. `task.Run(body, deadline: 500 * task.MS)` はscopeの期限（相対・単調時計）。子孫のtaskも期限を継ぎ、入れ子は早い方。期限は待ちの上限であって実行時間の上限ではない — 期限の後に呼んだioの関数が `io.Expired` を返し（netの待ちは期限で切れる — 11章）、`os.Sleep` は早く返る。走っている計算は止めない。値はbudget: と同じ形の整数式。

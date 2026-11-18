@@ -1,0 +1,12 @@
+@@full	5dd7cb833c6618cf	2701	75694
+@head	ccc23ef7d3fdff92	0	97
+const eHash	029777e5616110b4	1	45
+const eLen	1f1e77d4839f4cc5	1	44
+const eMeta	cf2f2174803bbc8b	1	45
+const eSql	cd5d0f1d5401ee2f	1	44
+func cacheAdd	84707cded010dd05	181	5668
+func cacheFind	e44edf1371d243a3	70	2357
+func cacheMeta	a07c0c6a2882244d	61	2043
+func cacheSlot	12c4e9344b2d85ba	53	1880
+func hashOf	98a101f7b91b2c16	20	776
+func sameWords	ee79aed09fd9348d	76	2536

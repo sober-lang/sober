@@ -48,16 +48,16 @@ The TLS 1.3 (RFC 8446) server (`std/tls` — `tls.Serve`) and client (under http
 | Item | Status | Evidence |
 |---|---|---|
 | TLS 1.2 and older, SSL (the server is 1.3-only — no downgrade, renegotiation or CBC surface by construction; 1.2 clients go through an LB or proxy) | Not supported (by design) | tls/reject: tls12 |
-| 0-RTT (early data — no replay surface) | Not supported (by design) | — |
+| 0-RTT (early data — no replay surface) | Not supported (by design) | none |
 | Compression (the CRIME shape) | Not supported (by design) | tls/reject: comp |
-| PSK, session resumption, client certificates (mTLS), per-SNI certificates (not until there is a demand) | Not supported (by design) | — |
+| PSK, session resumption, client certificates (mTLS), per-SNI certificates (not until there is a demand) | Not supported (by design) | none |
 <!-- confsync:end claims tls-server intentional -->
 
 <!-- confsync:begin claims tls-client intentional -->
 | Item | Status | Evidence |
 |---|---|---|
-| TLS 1.2 CBC, RSA key exchange and static DH suites; TLS 1.1 and older | Not supported (by design) | — |
-| Session resumption, 0-RTT (NewSessionTicket is discarded) | Not supported (by design) | — |
+| TLS 1.2 CBC, RSA key exchange and static DH suites; TLS 1.1 and older | Not supported (by design) | none |
+| Session resumption, 0-RTT (NewSessionTicket is discarded) | Not supported (by design) | none |
 <!-- confsync:end claims tls-client intentional -->
 
 ## Not yet
@@ -68,8 +68,8 @@ The TLS 1.3 (RFC 8446) server (`std/tls` — `tls.Serve`) and client (under http
 | TLS_AES_256_GCM_SHA384 | 0.8 | tls/reject: nosuite |
 | Key exchange secp256r1 (P-256) | 0.8 | tls/reject: nogroup |
 | ECDSA P-256 certificates (signatures per RFC 6979) | 0.8 | tls/reject: nosig |
-| OCSP stapling | 0.8 | — |
-| ALPN for HTTP/2 (h2) | 0.8 | — |
+| OCSP stapling | 0.8 | none |
+| ALPN for HTTP/2 (h2) | 0.8 | none |
 <!-- confsync:end claims tls-server planned -->
 
 ## Evidence

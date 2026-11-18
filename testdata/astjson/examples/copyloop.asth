@@ -1,0 +1,8 @@
+@@full	944e435778c5ee1d	1709	42951
+@head	7fdc38e2c3fcfb54	0	144
+func appendCopy	a481be9546b8f612	29	1131
+func bytesCopy	38713bbca9d61b40	34	1268
+func fill	4e10fd969769f08a	24	929
+func indexCopy	199a56065170adfa	40	1413
+func main	299e9ba6b67fa16e	122	3635
+func show	f5aca9120593a9b7	30	1038

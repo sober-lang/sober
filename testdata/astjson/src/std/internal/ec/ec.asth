@@ -1,0 +1,18 @@
+@@full	6b3d15ace4332322	7778	216321
+@head	cf8fefaef1e3cab8	0	61
+func P256	db5256fcd7052a16	19	1089
+func P384	8d5cf1a706af38a2	19	1249
+func Verify	abcb8a2253cdb056	80	2721
+func VerifyFixed	742b751c995ee51a	39	1414
+func VerifyRS	0298a1a83326c988	329	10587
+func add	b1bc40bda9eb3617	212	6746
+func dbl	4ebb598f3882b738	161	5193
+func derInt	74e6b08a36c5a35e	108	3375
+func derLen	bd6157325566ff6b	73	2264
+func hv	19ef9007fdee60d5	16	561
+func hx	cd7ee8dfbe56214e	64	2079
+func inf	78fd03f924869c4b	23	925
+func onCurve	cfb2c9b44374efb2	63	2154
+func pubPoint	70516dd2a32f82f0	106	3448
+type Curve	a57fc6027b8a69e7	12	527
+type pt	f554e5dd2887deca	7	309

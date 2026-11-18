@@ -7,7 +7,7 @@ import "obuf"
 // 型の関数（Syntax.lean / Typing.leanのregionsBelow・sub・relocR … とtyEq）は抽出器の生成物ty_gen.sober（抽出器E2 — 手書きのコピーは退役）
 
 const TInt = 1
-const TVar = 2   // a = 添字
+const TVar = 2   // a = 添字, b = 置き直し先の region ρ, c = kind（旗を詰めた int — rf = 1・mf = 2・cf = 4・cov = 8）
 const TBool = 3
 const TUnit = 4
 const TOpt = 5   // a = 中身
@@ -90,9 +90,24 @@ func isCont(k int) bool {
 
 // Lean の Ty にない補助（check.sober / tc_gen.sober が使う）
 
-// tsLen: ts は型の列 [n, t…]（-1 = 空）の長さ
+// tsLen: ts は型の列 [n, t…]（-1 = 空）の長さ。kind の列 [n, k…] も同じ形
 func tsLen(st mut S, ts int) int {
     return if ts < 0 { 0 } else { table.Get(mut st.h, ts) }
+}
+
+// kindsArgsOk ks ts（Syntax.lean）= (ks.zip ts).all (kindOk ·.1 ·.2)。zip は短い方の長さ
+func kindsArgsOk(st mut S, ks int, ts int) bool {
+    nk := tsLen(mut st, ks)
+    nt := tsLen(mut st, ts)
+    n := if nk < nt { nk } else { nt }
+    mut i := 0
+    while i < n {
+        if !kindOk(mut st, table.Get(mut st.h, ks + 1 + i), table.Get(mut st.h, ts + 1 + i)) {
+            return false
+        }
+        i += 1
+    }
+    return true
 }
 
 // ── 型の印字（Json.lean の tyToJson + Lean の Json.compress — object のキーは辞書順）──
@@ -102,9 +117,22 @@ func tyJson(st mut S, out mut []byte, t int) {
     if k == TInt {
         obuf.Lit(mut out, "{\"k\":\"int\"}")
     } else if k == TVar {
+        kd := tC(mut st, t)
         obuf.Lit(mut out, "{\"i\":")
         obuf.Int(mut out, tA(mut st, t))
-        obuf.Lit(mut out, ",\"k\":\"tvar\"}")
+        obuf.Lit(mut out, ",\"k\":\"tvar\",\"kd\":{\"cf\":")
+        obuf.Lit(mut out, if kCf(kd) { "true" } else { "false" })
+        obuf.Lit(mut out, ",\"cov\":")
+        obuf.Lit(mut out, if kCov(kd) { "true" } else { "false" })
+        obuf.Lit(mut out, ",\"kf\":")
+        obuf.Lit(mut out, if kKf(kd) { "true" } else { "false" })
+        obuf.Lit(mut out, ",\"mf\":")
+        obuf.Lit(mut out, if kMf(kd) { "true" } else { "false" })
+        obuf.Lit(mut out, ",\"rf\":")
+        obuf.Lit(mut out, if kRf(kd) { "true" } else { "false" })
+        obuf.Lit(mut out, "},\"r\":")
+        obuf.Int(mut out, tB(mut st, t))
+        out = append(out, '}')
     } else if k == TBool {
         obuf.Lit(mut out, "{\"k\":\"bool\"}")
     } else if k == TF64 {

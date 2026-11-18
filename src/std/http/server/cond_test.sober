@@ -8,7 +8,7 @@ import "std/io"
 // s 全体の parseDate（読めなければ -999）
 func pd(s string) int {
     b := bytes(s)
-    v, ok := parseDate(b, 0, len(b))
+    v, ok := parseDate(b, 0, len(b), 2026)
     return if ok { v } else { -999 }
 }
 
@@ -43,12 +43,13 @@ func TestParseDate() {
     // 前後の空白は除く・曜日と日付の一致は見ない
     assert(pd("  Sun, 06 Nov 1994 08:49:37 GMT ") == 784111777)
     assert(pd("Mon, 06 Nov 1994 08:49:37 GMT") == 784111777)
-    // 1970 より前・閏秒・RFC 850 の 2 桁の年（69〜99 = 19xx・00〜68 = 20xx）
+    // 1970 より前・閏秒・RFC 850 の 2 桁の年（pdの今の年2026から: 00〜76 = 20xx・77〜99 = 19xx）
     assert(pd("Wed, 31 Dec 1969 23:59:59 GMT") == -1)
     assert(pd("Wed, 01 Mar 1600 00:00:00 GMT") == -11670912000)
     assert(pd("Sun, 06 Nov 1994 08:49:60 GMT") == 784111800)
     assert(pd("Sunday, 01-Jan-68 00:00:00 GMT") == 3092601600)
-    assert(pd("Wednesday, 31-Dec-69 23:59:59 GMT") == -1)
+    assert(pd("Wednesday, 31-Dec-69 23:59:59 GMT") == 3155759999)
+    assert(pd("Saturday, 31-Dec-77 23:59:59 GMT") == 252460799)
     // 壊れた形（大小・月の日数・2100 は閏年でない・時刻の範囲・字数・後ろの余り・曜日の名前・空）
     assert(pd("Sun, 06 Nov 1994 08:49:37 gmt") == -999)
     assert(pd("sun, 06 Nov 1994 08:49:37 GMT") == -999)
@@ -128,4 +129,17 @@ func isStale(x error?) bool {
     case io.Other{errno}: errno == 116
     default: false
     }
+}
+
+// RFC 850の2桁の年の窓（RFC 9110 5.6.7: 50年より先に見える年は、下2桁が同じ直近の過去の年）
+func TestYear850() {
+    assert(year850(69, 2026) == 2069)
+    assert(year850(76, 2026) == 2076)
+    assert(year850(77, 2026) == 1977)
+    assert(year850(94, 2026) == 1994)
+    assert(year850(0, 2026) == 2000)
+    assert(year850(26, 2026) == 2026)
+    assert(year850(99, 2049) == 2099)
+    assert(year850(99, 2048) == 1999)
+    assert(year850(0, 2051) == 2000)
 }

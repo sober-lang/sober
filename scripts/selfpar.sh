@@ -14,10 +14,19 @@
 #   6. lower の頭の関数単位化（席 A — compiler/lower/split.sober）: 自己 build の ELF が群の子で下ろして LIFO を模擬した形（SOBER_LOWER_SPLIT=3・
 #      子が受け持ちを逆順に下ろすSOBER_LOWER_REV=1）≡ 1本の経路 + 文字列のrodataの事象を抜くと割れるミューテーション。W8 + SOBER_LOWER_SPLIT=8は
 #      群の子（task.Map — A-2）で下ろす形・SOBER_LOWER_SPLIT=1 は直の道を強制する形 — どちらも 1 本の経路と同じ ELF（W>1 の既定は分割の道 —
-#      オプションを外したW8で証人groups=8 fallback=none。gatesのSOBER_LOWER_SPLIT=1の固定はj_buildが外す）。子の死（SOBER_LOWER_DIE=1）→ 直のパスも同じELF（証人 #lower split … fallback=died）+ 死を見ずに模擬へ進むと割れるミューテーション
+#      オプションを外したW8で証人groups=8 fallback=none。gatesのSOBER_LOWER_SPLIT=1の固定はj_buildが外す）。子の死（SOBER_LOWER_DIE=1）→ 直のパスも同じELF（証人 #lower split … fallback=died・標準エラーに死の1行 — loader.ParFellBack）+ 死を見ずに模擬へ進むと割れるミューテーション
 #   7. finishの検査だけのフェーズの並列（席DのD-2 — compiler/loader/finpar.sober）: 自己buildのW8は子のパス（証人 #finish … fallback=none）・
 #      子の死（SOBER_FINISH_DIE=1）→ 直のパスも同じELF。拒否を2ファイルに置いた例（testdata/selfpar/finish — 同じフェーズ / フェーズをまたぐ / catchの左辺）の
 #      出力がW1（直のパス）≡ W2 ≡ W8 ≡ W12 ≡ W8 + 子の死。ミューテーション11〜13: 後のファイルの当たりを選ぶ・規則の位置を後のファイルで上書きする・子の死を見ない
+#   9. ParCheckの歩きの並列（compiler/desugar/pcpar.sober）: 自己buildのW8は関数の区間の子のパス（証人 #parcheck … fallback=none）・子の死
+#      （SOBER_PARCHECK_DIE=1）→ 逐次の歩きも同じELF。拒否を関数の表の離れた2か所に置いた例（testdata/selfpar/parcheck — 同じ歩き / 歩きをまたぐ）の
+#      check と build の出力がW1（逐次）≡ W2 ≡ W8 ≡ W12 ≡ W8 + 子の死。ミューテーション16・17: 後の区間の当たりを選ぶ・子の死を見ない
+#  10. finishの木の変換の並列（compiler/loader/ftpar.sober）: 自己buildのW8は子のパス（証人 #finish trees=… fallback=none）・子の死 → 逐次も同じELF。
+#      拒否をフェーズとファイルをまたいで置いた例（testdata/selfpar/finish/trees_cross）の build の出力がW1 ≡ W8（証人 fallback=rejected — 逐次でやり直す）≡ W8 + 子の死。
+#      ミューテーション18: 子の拒否を見ない
+#  11. 最後の検証（vfyFinal）をB2の子の中で（compiler/lower/move.soberのlParBatch・verify.soberのvfyRun）: 既定の検証（SOBER_VERIFYなし）の自己buildのW8は
+#      子の結果を使う（証人 #vfyfinal kid=… parent=0）・ELFは1本の経路と同じ。B2の前にIRを壊すミュータント107（--rt-mutant=107）の診断が W1 ≡ W2 ≡ W8 ≡ W12（同じ1件）。
+#      ミューテーション19: 親が子の検証の文面を見ない
 #   8. irinl の並びに依らない展開（report-1185）: 自己 build の ELF が処理の入力の並びの撹拌（SOBER_IRINL_ORDER=1 逆順 / 7 乱順）≡ 1 本の経路 +
 #      入力の並びのまま処理するミューテーション14（撹拌で割れること）
 #   並列（ゲートの高速化タスクR0 — report-1220）: 各回の実行とミューテーションの1本ずつをgatelibのpar_runの仕事にして $JOBS本ずつ並べる（単体の既定4）。
@@ -29,6 +38,8 @@ export SOBER_CHECK_REPLAY=0
 cd "$(dirname "$0")/.."
 ROOT=$PWD
 source scripts/gatelib.sh
+# 自己 check（W1）の peak RSS は1つのCPUに縛って測る（pin1 — 縛らないとカーネルのRSSの計数の近似で数 MB 揺れる）
+read -ra PIN1 <<< "$(pin1)"
 S2=${STAGE2:-out/stage2/sober2}
 S2=$(cd "$(dirname "$S2")" && pwd)/$(basename "$S2")
 G=$ROOT/testdata/selfpar
@@ -36,12 +47,11 @@ W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 JOBS=${JOBS:-4}
 # 検査器の本体の命令数（下のself/check bodyの上限値）: W1の自己checkと、Defの脱糖で止めたcheck（SOBER_CHECK_STOP=defs）を perf stat で包み、差を取る。
-# perfが無い・使えない環境ではこの上限値だけ飛ばす
-PERF=${PERF:-$(command -v perf || ls -d /nix/store/*perf-linux*/bin/perf 2> /dev/null | head -n 1)}
+# perfが使えなければFAIL。SOBER_GATES_ALLOW_SKIPにperfがあるときだけこの上限値を飛ばす
 INSTP=()
-if [ -n "$PERF" ] && "$PERF" stat -x, -e instructions:u -o /dev/null true > /dev/null 2>&1; then
-    INSTP=("$PERF" stat -x, -e instructions:u -o)
-fi
+need_perf selfpar "the checker body instruction ratchet"; pc=$?
+[ $pc = 2 ] && exit 1
+[ $pc = 0 ] && INSTP=("$PERF" stat -x, -e instructions:u -o)
 par_init "$W"
 fail=0
 gen() { # gen <関数の数> <行の数> <def error の関数の番号（空白区切り）>
@@ -84,19 +94,35 @@ anchor() { # anchor <ファイル（コピーの木の中）> <grepの式> <FAIL
 }
 
 # 1. 自己 check（判定 JSON と iface — 照合は全部の仕事の後）
+# 子の死を逐次で作り直した警告の1行（loader.ParFellBack — 既定の出力）。比べる出力からは除き、$PAR_W/warns（j_selfは $W/<名前>.warns）へ積む。
+# 子を殺す設定（SOBER_*_DIE）は、そこに段の警告が出たことを warned で数える（消すための設定は作らない — 出るべき警告なので）
+WARN_RE='^sober: [^:]+: a parallel child died '
+dewarn() { # stdin → stdout（警告の行を除く）・警告は $1 へ追記
+    local t
+    t=$(mktemp "$W/dw.XXXXXX")
+    cat > "$t"
+    grep -E "$WARN_RE" "$t" >> "$1"
+    grep -Ev "$WARN_RE" "$t"
+    rm -f "$t"
+    return 0
+}
+warned() { # warned <ファイル> <段の正規表現> <説明> — 段の警告が1行以上あること
+    grep -Eq "^sober: $2: a parallel child died " "$1" 2> /dev/null || echo "FAIL: $3 did not warn on stderr that the $2 children died"
+}
 j_self() { # j_self <名前> <env…>
     local v=$1
     shift
     if [ "$v" = self1 ]; then
         if [ "${#INSTP[@]}" -gt 0 ]; then
-            (cd "$W/tree" && env "$@" "${INSTP[@]}" "$W/self1.inst" /usr/bin/time -f %M -o "$W/self1.rss" "$S2" check app > "$W/$v" 2>&1)
+            (cd "$W/tree" && env "$@" "${INSTP[@]}" "$W/self1.inst" /usr/bin/time -f %M -o "$W/self1.rss" "${PIN1[@]}" "$S2" check app > "$W/$v" 2>&1)
         else
-            (cd "$W/tree" && env "$@" /usr/bin/time -f %M -o "$W/self1.rss" "$S2" check app > "$W/$v" 2>&1)
+            (cd "$W/tree" && env "$@" /usr/bin/time -f %M -o "$W/self1.rss" "${PIN1[@]}" "$S2" check app > "$W/$v" 2>&1)
         fi
     elif [ "$v" = defs1 ]; then
         [ "${#INSTP[@]}" -gt 0 ] && (cd "$W/tree" && env "$@" "${INSTP[@]}" "$W/defs1.inst" "$S2" check app > "$W/$v" 2>&1)
     else
-        (cd "$W/tree" && env "$@" "$S2" check app > "$W/$v" 2>&1)
+        : > "$W/$v.warns"
+        (cd "$W/tree" && env "$@" "$S2" check app 2>&1 | dewarn "$W/$v.warns" > "$W/$v")
     fi
     return 0
 }
@@ -109,7 +135,7 @@ j_iface() { # j_iface <名前> <env…>
 # 2. 合成例
 chk() { # chk <検査器> <例> <W> [天井] → 判定と --def-index を stdout に（SOBER_PAR_STATS の stderr は $PAR_W/stats）
     local s=$1 e=$2 w=$3 b=${4:-}
-    (cd "$W/syn" && { env SOBER_WORKERS="$w" ${b:+SOBER_BUDGET_MB=$b} SOBER_PAR_STATS=1 "$s" check "$e.sober" 2> "$PAR_W/stats"; env SOBER_WORKERS="$w" ${b:+SOBER_BUDGET_MB=$b} "$s" check "$e.sober" --def-index 2>&1; })
+    (cd "$W/syn" && { env SOBER_WORKERS="$w" ${b:+SOBER_BUDGET_MB=$b} SOBER_PAR_STATS=1 "$s" check "$e.sober" 2> "$PAR_W/stats"; env SOBER_WORKERS="$w" ${b:+SOBER_BUDGET_MB=$b} "$s" check "$e.sober" --def-index 2>&1; }) | dewarn "$PAR_W/warns"
 }
 n=9
 j_syn() {
@@ -131,7 +157,10 @@ j_syn() {
         # 区間の子が全部死んだ形（SOBER_CHECK_DIE=1）: 親が同じ本体を区間の順に呼び直し、判定と --def-indexは逐次と同じ。
         # 脱糖 + 検査の区間（e2s）と、脱糖を割らないときのDefの区間（core・SOBER_DESUGAR_PAR=0）の両方
         for k in e2s core; do
+            : > "$PAR_W/warns"
             if [ $k = e2s ]; then SOBER_CHECK_DIE=1 chk "$S2" $e 8 > "$PAR_W/out"; else SOBER_CHECK_DIE=1 SOBER_DESUGAR_PAR=0 chk "$S2" $e 8 > "$PAR_W/out"; fi
+            grep -E "$WARN_RE" "$PAR_W/stats" >> "$PAR_W/warns"
+            warned "$PAR_W/warns" "check $k" "$e (W=8, SOBER_CHECK_DIE=1)"
             if ! cmp -s "$G/$e.expected" "$PAR_W/out"; then
                 echo "FAIL: $e (W=8, all $k range children died) differs from the golden"
                 diff "$G/$e.expected" "$PAR_W/out" | head -6
@@ -218,10 +247,17 @@ j_mut3() {
 #    移し器の往復（段階4 後半 ラウンド 9 — compiler/lower/move.sober: SOBER_BUILD_PAR=roundtripでバッチの前ごとに全関数の本体を詰め、旧い本体を毒で
 #    潰して積み直す）も同じELF。ミューテーション: 積み直しでブロックの命令の尾（B_ITAIL）を付け替えないと割れること。
 #    W8はlowerのバッチ（B1 / B2）も群の子で回す（ラウンド10 — lParBatch）: 1本の経路はそれも外す。ミューテーション: 子のB1の列からlicmを抜くと割れること
-BCFGS=("SOBER_WORKERS=1" "SOBER_WORKERS=8 SOBER_PAR_STATS=1" "SOBER_WORKERS=8 SOBER_BUDGET_MB=0" "SOBER_WORKERS=8 SOBER_BUILD_PAR=roundtrip" "SOBER_WORKERS=8 SOBER_LOWER_SPLIT=3 SOBER_LOWER_REV=1 SOBER_PAR_STATS=1" "SOBER_WORKERS=8 SOBER_LOWER_SPLIT=1" "SOBER_WORKERS=8 SOBER_LOWER_SPLIT=8 SOBER_PAR_STATS=1" "SOBER_WORKERS=8 SOBER_LOWER_SPLIT=8 SOBER_LOWER_DIE=1 SOBER_PAR_STATS=1" "SOBER_WORKERS=8 SOBER_FINISH_DIE=1 SOBER_PAR_STATS=1" "SOBER_WORKERS=8 SOBER_IRINL_ORDER=1" "SOBER_WORKERS=8 SOBER_IRINL_ORDER=7" "SOBER_WORKERS=8 SOBER_XPAR_DIE=1 SOBER_PAR_STATS=1")
+BCFGS=("SOBER_WORKERS=1" "SOBER_WORKERS=8 SOBER_PAR_STATS=1" "SOBER_WORKERS=8 SOBER_BUDGET_MB=0" "SOBER_WORKERS=8 SOBER_BUILD_PAR=roundtrip" "SOBER_WORKERS=8 SOBER_LOWER_SPLIT=3 SOBER_LOWER_REV=1 SOBER_PAR_STATS=1" "SOBER_WORKERS=8 SOBER_LOWER_SPLIT=1" "SOBER_WORKERS=8 SOBER_LOWER_SPLIT=8 SOBER_PAR_STATS=1" "SOBER_WORKERS=8 SOBER_LOWER_SPLIT=8 SOBER_LOWER_DIE=1 SOBER_PAR_STATS=1" "SOBER_WORKERS=8 SOBER_FINISH_DIE=1 SOBER_PAR_STATS=1" "SOBER_WORKERS=8 SOBER_IRINL_ORDER=1" "SOBER_WORKERS=8 SOBER_IRINL_ORDER=7" "SOBER_WORKERS=8 SOBER_XPAR_DIE=1 SOBER_PAR_STATS=1" "SOBER_WORKERS=8 SOBER_PARCHECK_DIE=1 SOBER_PAR_STATS=1")
 j_bseq() {
     (cd "$W/tree" && SOBER_BUILD_PAR=0 SOBER_LOWER_SPLIT=1 SOBER_WORKERS=8 "$S2" build app --emit=elf --passes -o "$W/bseq" > "$PAR_W/blog" 2>&1) || echo "FAIL: self build (1-path): $(head -c 200 "$PAR_W/blog")"
     return 0
+}
+# 子を殺す設定（SOBER_*_DIE）の自己buildの標準エラー: 子の死を逐次で作り直したことの警告の1行（loader.ParFellBack — 段stage）が出て、
+# それ以外（# の証人を除く）は出ないこと。警告は黙って遅くならないための既定の出力なので、消さずにここで数える
+die_warn() {
+    local cfg=$1 stage=$2
+    grep -Eq "^sober: ${stage}: a parallel child died \([0-9]+ children\); redone " "$PAR_W/blog" || echo "FAIL: self build ($cfg) did not warn about the child death of ${stage} on stderr"
+    if grep -v '^#' "$PAR_W/blog" | grep -Eqv '^sober: [^:]+: a parallel child died '; then echo "FAIL: self build ($cfg) printed on stderr: $(grep -v '^#' "$PAR_W/blog" | head -c 200)"; fi
 }
 j_build() { # j_build <番号> — BCFGS の 1 本。ELF は $W/bpar<番号>（bseq との照合は後）・証人の行はここで見る
     local i=$1 cfg=${BCFGS[$1]} ended
@@ -232,19 +268,27 @@ j_build() { # j_build <番号> — BCFGS の 1 本。ELF は $W/bpar<番号>（b
         [ "${ended:-0}" -gt 1 ] || echo "FAIL: self build (W=8) ran no group task (ended=${ended:-?})"
     fi
     # 席Aの証人（A-2）: W8の既定は分割のパス（群の数 = ワーカー数・最後まで子のパス）・オプションSPLIT=8は分割のパスを最後まで通る（fallback=none）・SOBER_LOWER_DIEは
-    # 子の死 → 直の道（fallback=died）で、捕まった死は印字されない
+    # 子の死 → 直の道（fallback=died）で、標準エラーに死の1行だけを出す（loader.ParFellBack — 黙って遅くならないように。die_warn）
     # 名前付き関数型のコピー（desugar/namedval.sober — 席DのD-1）: 自己buildにはコピーする呼び出しが無い（loaderのコピーの後に宙に浮いたKNamedArgの節は
     # 数えない）ので表層型検査器を走らせない（typed=0 — 全体の TypeAll の 2 回目を走らせない）
     if [[ $cfg == "SOBER_WORKERS=8 SOBER_PAR_STATS=1" ]]; then
         grep -qx '#namedval typed=0' "$PAR_W/blog" || echo "FAIL: self build (W=8) ran the surface typer for named value args: $(grep '^#namedval' "$PAR_W/blog")"
     fi
-    # finishの検査だけのフェーズ（loader/finpar.sober — 席DのD-2）: W8は子のパスを最後まで通る・SOBER_FINISH_DIEは子の死 → 直のパス（捕まった死は印字されない）
+    # finishの検査だけのフェーズ（loader/finpar.sober — 席DのD-2）: W8は子のパスを最後まで通る・SOBER_FINISH_DIEは子の死 → 直のパス（標準エラーには死の1行だけ — die_warn）
     if [[ $cfg == "SOBER_WORKERS=8 SOBER_PAR_STATS=1" ]]; then
-        [ "$(grep -c '^#finish \(checks\|rules\)=[0-9]* fallback=none$' "$PAR_W/blog")" = 2 ] || echo "FAIL: self build (W=8) did not take the finish child path: $(grep '^#finish' "$PAR_W/blog")"
+        [ "$(grep -c '^#finish \(checks\|rules\|trees\)=[0-9]* fallback=none$' "$PAR_W/blog")" = 3 ] || echo "FAIL: self build (W=8) did not take the finish child path: $(grep '^#finish' "$PAR_W/blog")"
     fi
     if [[ $cfg == *FINISH_DIE* ]]; then
-        [ "$(grep -c '^#finish \(checks\|rules\)=[0-9]* fallback=died$' "$PAR_W/blog")" = 2 ] || echo "FAIL: self build ($cfg) did not fall back on the finish child death: $(grep '^#finish' "$PAR_W/blog")"
-        if grep -qv '^#' "$PAR_W/blog"; then echo "FAIL: self build ($cfg) printed on stderr: $(grep -v '^#' "$PAR_W/blog" | head -c 200)"; fi
+        [ "$(grep -c '^#finish \(checks\|rules\|trees\)=[0-9]* fallback=died$' "$PAR_W/blog")" = 3 ] || echo "FAIL: self build ($cfg) did not fall back on the finish child death: $(grep '^#finish' "$PAR_W/blog")"
+        die_warn "$cfg" 'finish (trees|checks|rules)'
+    fi
+    # ParCheckの歩き（desugar/pcpar.sober）: W8は関数の区間の子のパスを最後まで通る・SOBER_PARCHECK_DIEは子の死 → 逐次の歩き（標準エラーには死の1行だけ — die_warn）
+    if [[ $cfg == "SOBER_WORKERS=8 SOBER_PAR_STATS=1" ]]; then
+        grep -q '^#parcheck groups=[0-9]* fallback=none$' "$PAR_W/blog" || echo "FAIL: self build (W=8) did not take the parcheck child path: $(grep '^#parcheck' "$PAR_W/blog")"
+    fi
+    if [[ $cfg == *PARCHECK_DIE* ]]; then
+        grep -q '^#parcheck groups=[0-9]* fallback=died$' "$PAR_W/blog" || echo "FAIL: self build ($cfg) did not fall back on the parcheck child death: $(grep '^#parcheck' "$PAR_W/blog")"
+        die_warn "$cfg" 'parcheck'
     fi
     if [[ $cfg == "SOBER_WORKERS=8 SOBER_PAR_STATS=1" ]]; then
         grep -qx '#lower split groups=8 fallback=none' "$PAR_W/blog" || echo "FAIL: self build (W=8, no knob) did not take the default lower split path: $(grep '^#lower' "$PAR_W/blog")"
@@ -257,17 +301,17 @@ j_build() { # j_build <番号> — BCFGS の 1 本。ELF は $W/bpar<番号>（b
         grep -qx '#lower split groups=3 fallback=none' "$PAR_W/blog" || echo "FAIL: self build ($cfg) did not take the lower split path: $(grep '^#lower' "$PAR_W/blog")"
     fi
     # バックエンドの関数の並列（x86.soberのxParEmit）: W8の既定は群の子で最後まで吐く（retried=0）・SOBER_XPAR_DIEは全部の群の子が死に、
-    # 親が同じ本体で吐き直す（retried = 群の数。捕まった死は印字されない）
+    # 親が同じ本体で吐き直す（retried = 群の数。標準エラーには死の1行だけ — die_warn）
     if [[ $cfg == "SOBER_WORKERS=8 SOBER_PAR_STATS=1" ]]; then
         grep -q '^#x86 par groups=[0-9]* retried=0$' "$PAR_W/blog" || echo "FAIL: self build (W=8) did not take the code generation children without retry: $(grep '^#x86' "$PAR_W/blog")"
     fi
     if [[ $cfg == *XPAR_DIE* ]]; then
         grep -q '^#x86 par groups=\([0-9]*\) retried=\1$' "$PAR_W/blog" || echo "FAIL: self build ($cfg) did not retry every code generation group: $(grep '^#x86' "$PAR_W/blog")"
-        if grep -qv '^#' "$PAR_W/blog"; then echo "FAIL: self build ($cfg) printed on stderr: $(grep -v '^#' "$PAR_W/blog" | head -c 200)"; fi
+        die_warn "$cfg" 'code generation'
     fi
     if [[ $cfg == *LOWER_DIE* ]]; then
         grep -qx '#lower split groups=8 fallback=died' "$PAR_W/blog" || echo "FAIL: self build ($cfg) did not fall back on the child death: $(grep '^#lower' "$PAR_W/blog")"
-        if grep -qv '^#' "$PAR_W/blog"; then echo "FAIL: self build ($cfg) printed on stderr: $(grep -v '^#' "$PAR_W/blog" | head -c 200)"; fi
+        die_warn "$cfg" 'lower split \([0-9]* nodes\)'
     fi
     return 0
 }
@@ -377,7 +421,7 @@ j_mut10() {
 fin() { # fin <検査器> <例> [env…] → 出力と rc
     local s=$1 e=$2
     shift 2
-    (cd "$ROOT" && env "$@" "$s" check "testdata/selfpar/finish/$e" 2>&1; echo "rc=$?")
+    (cd "$ROOT" && env "$@" "$s" check "testdata/selfpar/finish/$e" 2>&1; echo "rc=$?") | dewarn "$PAR_W/warns"
 }
 FINS="names_same names_cross rules_same rules_cross rules_catch"
 nfin=20
@@ -388,7 +432,9 @@ j_fin() {
         grep -q '^rc=1$' "$PAR_W/fin1" || echo "FAIL: finish $e (W1) was not rejected"
         for cfg in "SOBER_WORKERS=2" "SOBER_WORKERS=8" "SOBER_WORKERS=12" "SOBER_WORKERS=8 SOBER_FINISH_DIE=1"; do
             # shellcheck disable=SC2086
+            : > "$PAR_W/warns"
             fin "$S2" $e $cfg > "$PAR_W/finp"
+            [[ $cfg == *FINISH_DIE* ]] && warned "$PAR_W/warns" "finish (checks|rules)" "finish $e ($cfg)"
             cmp -s "$PAR_W/fin1" "$PAR_W/finp" || { echo "FAIL: finish $e ($cfg) differs from W1"; diff "$PAR_W/fin1" "$PAR_W/finp" | head -4; }
         done
     done
@@ -408,6 +454,113 @@ j_finmut() { # j_finmut <番号> <説明> <sedの式> <ターゲットの例…>
         cmp -s "$PAR_W/fin1" "$PAR_W/finp" || caught=1
     done
     [ $caught = 1 ] || echo "FAIL: mutant $k ($what) was not caught"
+    return 0
+}
+# 9. ParCheckの歩きの並列（desugar/pcpar.sober）: 拒否を関数の表の離れた2か所に置いた例の check と build の出力（stderr + 終了コード）がW1（逐次）≡ 子のパス
+pcx() { # pcx <コンパイラ> <check|build> <例> [env…] → 出力と rc
+    local s=$1 c=$2 e=$3
+    shift 3
+    if [ "$c" = build ]; then
+        (cd "$ROOT" && env "$@" "$s" build "testdata/selfpar/parcheck/$e" -o "$PAR_W/pcelf" 2>&1; echo "rc=$?") | dewarn "$PAR_W/warns"
+    else
+        (cd "$ROOT" && env "$@" "$s" check "testdata/selfpar/parcheck/$e" 2>&1; echo "rc=$?") | dewarn "$PAR_W/warns"
+    fi
+}
+PCS="walk_cross file_late walk_late de_cross"
+npc=32
+j_pc() {
+    local e c cfg
+    for e in $PCS; do
+        for c in check build; do
+            pcx "$S2" $c $e SOBER_WORKERS=1 > "$PAR_W/pc1"
+            grep -q '^rc=1$' "$PAR_W/pc1" || echo "FAIL: parcheck $e $c (W1) was not rejected"
+            for cfg in "SOBER_WORKERS=2" "SOBER_WORKERS=8" "SOBER_WORKERS=12" "SOBER_WORKERS=8 SOBER_PARCHECK_DIE=1"; do
+                : > "$PAR_W/warns"
+                # shellcheck disable=SC2086
+                pcx "$S2" $c $e $cfg > "$PAR_W/pcp"
+                [[ $cfg == *PARCHECK_DIE* ]] && warned "$PAR_W/warns" "parcheck" "parcheck $e $c ($cfg)"
+                cmp -s "$PAR_W/pc1" "$PAR_W/pcp" || { echo "FAIL: parcheck $e $c ($cfg) differs from W1"; diff "$PAR_W/pc1" "$PAR_W/pcp" | head -4; }
+            done
+        done
+    done
+    return 0
+}
+# ミューテーション16・17（desugar/pcpar.sober）: ミュータントの検査器のW8の check の出力がW1（逐次）と割れること
+j_pcmut() { # j_pcmut <番号> <説明> <sedの式> <ターゲットの例…>
+    local k=$1 what=$2 expr=$3 e caught=0
+    shift 3
+    mytree
+    sed -i "$expr" "$PAR_W/tree/desugar/pcpar.sober"
+    if cmp -s "$W/tree/desugar/pcpar.sober" "$PAR_W/tree/desugar/pcpar.sober"; then echo "FAIL: mutant $k: the anchor was not found in desugar/pcpar.sober"; return 0; fi
+    mutbuild "$k" "$k " || return 0
+    for e in "$@"; do
+        pcx "$S2" check $e SOBER_WORKERS=1 > "$PAR_W/pc1"
+        pcx "$W/mut$k" check $e SOBER_WORKERS=8 SOBER_PARCHECK_DIE=$([ "$k" = 17 ] && echo 1 || echo 0) > "$PAR_W/pcp"
+        cmp -s "$PAR_W/pc1" "$PAR_W/pcp" || caught=1
+    done
+    [ $caught = 1 ] || echo "FAIL: mutant $k ($what) was not caught"
+    return 0
+}
+# 10. finishの木の変換の並列（loader/ftpar.sober）: 拒否を置いた例の build の出力がW1（逐次）≡ 子のパス（拒否 → 逐次でやり直す）
+ftb() { # ftb <コンパイラ> [env…] → 出力と rc（証人の行は除く）
+    local s=$1
+    shift
+    (cd "$ROOT" && env "$@" SOBER_PAR_STATS=1 "$s" build testdata/selfpar/finish/trees_cross -o "$PAR_W/ftelf" 2>&1 | grep -v '^#par '; echo "rc=${PIPESTATUS[0]}") | dewarn "$PAR_W/warns"
+}
+j_ft() {
+    local cfg
+    ftb "$S2" SOBER_WORKERS=1 > "$PAR_W/ft1"
+    grep -q '^rc=1$' "$PAR_W/ft1" || echo "FAIL: trees_cross (W1) was not rejected"
+    for cfg in "SOBER_WORKERS=8" "SOBER_WORKERS=8 SOBER_FINISH_DIE=1"; do
+        : > "$PAR_W/warns"
+        # shellcheck disable=SC2086
+        ftb "$S2" $cfg > "$PAR_W/ftp"
+        [[ $cfg == *FINISH_DIE* ]] && warned "$PAR_W/warns" "finish trees" "trees_cross ($cfg)"
+        if [ "$cfg" = SOBER_WORKERS=8 ]; then
+            grep -q '^#finish trees=[0-9]* fallback=rejected$' "$PAR_W/ftp" || echo "FAIL: trees_cross (W8) did not fall back on the rejection: $(grep '^#finish' "$PAR_W/ftp")"
+        fi
+        cmp -s <(grep -v '^#' "$PAR_W/ft1") <(grep -v '^#' "$PAR_W/ftp") || { echo "FAIL: trees_cross ($cfg) differs from W1"; diff "$PAR_W/ft1" "$PAR_W/ftp" | head -4; }
+    done
+    return 0
+}
+# ミューテーション18（loader/ftpar.sober）: 子の拒否を見ずに変換の後の木を使うと、W8の出力がW1と割れること
+j_mut18() {
+    mytree
+    anchor loader/ftpar.sober '^        if !pre\[f\]\.ok {$' "mutant 18: the rejection check was not found in loader/ftpar.sober"
+    sed -i 's/^        if !pre\[f\]\.ok {$/        if !pre[f].ok \&\& f < 0 {/' "$PAR_W/tree/loader/ftpar.sober"
+    mutbuild 18 "18 " || return 0
+    ftb "$S2" SOBER_WORKERS=1 > "$PAR_W/ft1"
+    ftb "$W/mut18" SOBER_WORKERS=8 > "$PAR_W/ftp"
+    if cmp -s <(grep -v '^#' "$PAR_W/ft1") <(grep -v '^#' "$PAR_W/ftp"); then echo "FAIL: mutant 18 (the merge ignores a rejected file) was not caught"; fi
+    return 0
+}
+# 11. 最後の検証をB2の子の中で: 既定の検証の自己buildのW8（ELFは$W/bvfy — bseqとの照合は後）と、ミュータント107の診断の照合
+vfyb() { # vfyb <コンパイラ> <出力> <env…> — 既定の検証（SOBER_VERIFYなし）でミュータント107つきの自己buildを走らせ、標準エラーを<出力>に
+    local c=$1 o=$2
+    shift 2
+    (cd "$W/tree" && env -u SOBER_VERIFY "$@" "$c" build app --emit=elf --passes --rt-mutant=107 -o "$PAR_W/bm107" > "$o" 2>&1) && echo "FAIL: self build with mutant 107 ($*) was not rejected"
+    return 0
+}
+j_vfy() {
+    local w
+    (cd "$W/tree" && env -u SOBER_VERIFY SOBER_WORKERS=8 SOBER_PAR_STATS=1 "$S2" build app --emit=elf --passes -o "$W/bvfy" > "$PAR_W/vlog" 2>&1) || echo "FAIL: self build (W8, final verification): $(head -c 200 "$PAR_W/vlog")"
+    grep -q '^#vfyfinal kid=[1-9][0-9]* parent=0$' "$PAR_W/vlog" || echo "FAIL: self build (W8) did not use the final verification of the group children: $(grep '^#vfyfinal' "$PAR_W/vlog")"
+    for w in 1 2 8 12; do vfyb "$S2" "$PAR_W/vm$w" SOBER_WORKERS=$w; done
+    grep -q '^panic: lower.InvalidIR{after: "the passes' "$PAR_W/vm1" || echo "FAIL: mutant 107 (W1) did not fail the final verification: $(head -c 200 "$PAR_W/vm1")"
+    for w in 2 8 12; do
+        cmp -s "$PAR_W/vm1" "$PAR_W/vm$w" || { echo "FAIL: mutant 107 — the final verification (W$w) differs from W1"; diff "$PAR_W/vm1" "$PAR_W/vm$w" | head -4; }
+    done
+    return 0
+}
+# ミューテーション19（lower/verify.sober）: 親が子の検証の文面を見ないと、ミュータント107のW8の診断がW1と割れること
+j_mut19() {
+    mytree
+    anchor lower/verify.sober ' } else { st.vfyMsg\[pre\] }$' "mutant 19: the use of the child verdict was not found in lower/verify.sober"
+    sed -i 's/ } else { st.vfyMsg\[pre\] }$/ } else { "" }/' "$PAR_W/tree/lower/verify.sober"
+    mutbuild 19 "19 " || return 0
+    vfyb "$S2" "$PAR_W/vm1" SOBER_WORKERS=1
+    (cd "$W/tree" && env -u SOBER_VERIFY SOBER_WORKERS=8 "$W/mut19" build app --emit=elf --passes --rt-mutant=107 -o "$PAR_W/bm107" > "$PAR_W/vm8" 2>&1)
+    if cmp -s "$PAR_W/vm1" "$PAR_W/vm8"; then echo "FAIL: mutant 19 (the parent ignores the child verdicts) was not caught"; fi
     return 0
 }
 # ミューテーション14（irinlの並びに依らない展開 — report-1185）: 呼び出しグラフの順をやめて処理の入力の並びのまま処理すると、撹拌（SOBER_IRINL_ORDER=1）で
@@ -436,6 +589,8 @@ for k in 1 2 3 10 15; do par_run "j_mut$k"; done
 par_run j_finmut 11 "pick the last file with a names hit" 's/^        if rs\[f\]\.nm {$/        if rs[f].nm \&\& f == n - 1 {/' names_same
 par_run j_finmut 12 "later files overwrite the rule positions" 's/^            if hit\[r \* 3\] == 0 \&\& rs\[f\]\.hit\[r \* 3\] > 0 {$/            if rs[f].hit[r * 3] > 0 {/' rules_same
 par_run j_finmut 13 "the merge ignores a dead child" 's/^    if cerr != nil {$/    if cerr != nil \&\& n < 0 {/' names_same rules_same
+par_run j_pcmut 16 "pick the last range with a walk hit" 's/^        if outs\[g\]\.w\.kind != 0 {$/        if outs[g].w.kind != 0 \&\& g == len(outs) - 1 {/' walk_cross de_cross
+par_run j_pcmut 17 "the merge ignores a dead child" 's/^    if err != nil {$/    if err != nil \&\& len(rs) < 0 {/' walk_cross
 par_run j_self selfseq SOBER_DESUGAR_PAR=0 SOBER_WORKERS=8
 par_run j_self self1 SOBER_WORKERS=1
 par_run j_self defs1 SOBER_WORKERS=1 SOBER_CHECK_STOP=defs
@@ -447,6 +602,11 @@ par_run j_iface if8 SOBER_WORKERS=8
 par_run j_syn
 par_run j_front
 par_run j_fin
+par_run j_pc
+par_run j_ft
+par_run j_mut18
+par_run j_vfy
+par_run j_mut19
 par_wait > "$W/jobs.out"
 cat "$W/jobs.out"
 fail=$(grep -c '^FAIL' "$W/jobs.out")
@@ -463,7 +623,7 @@ fi
 # 同じ節の数のまま検査器の時間が3倍になった形〔別のregionのmut実引数2つを取る再帰の関数1つ〕はRSSの上限値にたまたま掛かっただけだった）
 blim=$(awk '$1 == "self/check" && $2 == "body" { print $3 }' "$ROOT/bench/ratchet.txt")
 if [ "${#INSTP[@]}" = 0 ]; then
-    echo "SKIP check body ratchet — perf が無いか使えない（PERF で perf の実行ファイルを指す）: 検査器の本体の命令数は照合していない"
+    :
 elif [ -n "$blim" ]; then
     body=$(awk -F, '/instructions/ { v[FILENAME] = $1 } END { printf "%.3f", (v[ARGV[1]] - v[ARGV[2]]) / 1e9 }' "$W/self1.inst" "$W/defs1.inst")
     if awk -v v="$body" -v l="$blim" 'BEGIN { exit !(v > l) }'; then
@@ -475,8 +635,11 @@ fi
 for v in selfseq self8 self0 selfdie; do
     cmp -s "$W/self1" "$W/$v" || { echo "FAIL: self check $v differs from W1"; diff "$W/self1" "$W/$v" | head -4; fail=$((fail + 1)); }
 done
+r=$(warned "$W/selfdie.warns" "check (e2s|core)" "self check selfdie (SOBER_CHECK_DIE=1)")
+[ -z "$r" ] || { echo "$r"; fail=$((fail + 1)); }
 grep -q '^== link.txt' "$W/ifseq" || { echo "FAIL: self iface (1-path) failed: $(head -c 200 "$W/ifseq")"; fail=$((fail + 1)); }
 cmp -s "$W/ifseq" "$W/if8" || { echo "FAIL: self iface W8 differs from the 1-path"; diff "$W/ifseq" "$W/if8" | head -4; fail=$((fail + 1)); }
+cmp -s "$W/bseq" "$W/bvfy" || { echo "FAIL: self build (W8, final verification in the group children) differs from the 1-path"; fail=$((fail + 1)); }
 cmp -s "$W/bseq" "$W/bcache" || { echo "FAIL: self build (cache warm, lower split with the reversed child) differs from the 1-path"; fail=$((fail + 1)); }
 for i in "${!BCFGS[@]}"; do
     cmp -s "$W/bseq" "$W/bpar$i" || { echo "FAIL: self build (${BCFGS[$i]}) differs from the 1-path"; fail=$((fail + 1)); }
@@ -488,5 +651,5 @@ for k in 4 5 6 7 8 9; do
         fail=$((fail + 1))
     fi
 done
-echo "selfpar: self check {1-path (W1 rss ${rss} MB ≤ ${rlim} MB), W 1, 8, 8 + budget 0, 8 + range child death} + self iface + $n synthetic runs + $nf layered runs + self build {1-path, W 1, 8, 8 + budget 0, 8 + roundtrip, 8 + lower split 3 rev, 8 + lower direct, 8 + lower split 8, 8 + lower split 8 child death, 8 + finish child death, 8 + irinl order rev, 8 + irinl order seed 7, strwords 1-path ≡ split cold ≡ warm} + $nfin finish runs + 15 mutants, fail=$fail"
+echo "selfpar: self check {1-path (W1 rss ${rss} MB ≤ ${rlim} MB), W 1, 8, 8 + budget 0, 8 + range child death} + self iface + $n synthetic runs + $nf layered runs + self build {1-path, W 1, 8, 8 + budget 0, 8 + roundtrip, 8 + lower split 3 rev, 8 + lower direct, 8 + lower split 8, 8 + lower split 8 child death, 8 + finish child death, 8 + parcheck child death, 8 + irinl order rev, 8 + irinl order seed 7, strwords 1-path ≡ split cold ≡ warm} + $nfin finish runs + $npc parcheck runs + 3 trees runs + final verification {W8 children, mutant 107 W 1 ≡ 2 ≡ 8 ≡ 12} + 19 mutants, fail=$fail$([ "${#INSTP[@]}" = 0 ] && echo " (SKIP[perf] check body ratchet)")"
 [ $fail = 0 ]

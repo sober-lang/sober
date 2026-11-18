@@ -1,0 +1,7 @@
+@@full	4c31dda3d44a6965	1302	40052
+@head	48a6215294149168	0	291
+func main	96439a63ca7644b1	93	3535
+func show	0b3f6fd9d2d5d733	71	2420
+func showOrigin	bd188397469f6d88	15	594
+type Point	5e8db4896d7ecbec	3	158
+type Shape	e2d6723db10f584b	12	542

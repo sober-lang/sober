@@ -85,6 +85,41 @@ grep -v '^@@ ' "$W/list" || true
 n=$(( $(par_count ok "$W/list") + $(par_count fail "$W/list") ))
 fail=0
 [ "$(par_count fail "$W/list")" = 0 ] && [ "$(par_count skip "$W/list")" = 0 ] || fail=1
+# @embed の []byte（map[string][]byte の受け皿）: 書き手はファイルを読み直して load の時点の長さと指紋で照合する。load の後にファイルが
+# 変わった形（SOBER_EMBED_SKEW=1 — 指紋を1ビットずらす）では、ELF・.ll・IR・コアJSONのどれも出さずに EmbedChanged で止まること
+if [ "${1:-}" = "--stage2" ]; then
+    for em in "--emit=elf --passes" "--emit=ll" "--emit=ir"; do
+        rm -f "$W/skew.out"
+        ec=0
+        SOBER_EMBED_SKEW=1 SOBER_BUILD_CACHE=0 "$SOBER" build examples/embed_bytes.sober $em -o "$W/skew.out" > "$W/skew.err" 2>&1 || ec=$?
+        if [ "$ec" = 0 ] || [ -e "$W/skew.out" ] || ! grep -q "EmbedChanged" "$W/skew.err"; then
+            echo "EMBED REREAD NOT CHECKED ($em): exit=$ec $(head -c 200 "$W/skew.err")"; fail=1
+        fi
+    done
+    ec=0
+    SOBER_EMBED_SKEW=1 SOBER_CHECK_CACHE=0 "$SOBER" check examples/embed_bytes.sober --core-json > "$W/skew.json" 2> "$W/skew.err" || ec=$?
+    if [ "$ec" = 0 ] || ! grep -q "EmbedChanged" "$W/skew.err"; then
+        echo "EMBED REREAD NOT CHECKED (--core-json): exit=$ec $(head -c 200 "$W/skew.err")"; fail=1
+    fi
+    # 鍵の材料は load の読みから: load の後にファイルが変わった答え（試しの口で load の中身をずらす）は、答えの再生（check・build）に
+    # 覚えない。覚えなければ、次の素のビルドは外れ（0/1）で、その次から当たる（1/1）。runの格納場所は load の木の要約が鍵なので別の項目になる
+    for ex in embed_bytes embed_demo; do
+        for cmd in check build; do
+            rm -rf "$W/skewcache"
+            mkdir -p "$W/skewcache"
+            o=()
+            [ "$cmd" = build ] && o=(-o "$W/skew.exe")
+            # gates.sh はキャッシュと答えの再生を切り、検証器を毎段に掛けて export する（buildの答えの再生は SOBER_VERIFY=each で通らない）— ここだけ明示で外す
+            cc=(env -u SOBER_VERIFY -u SOBER_BUILD_PAR SOBER_BUILD_CACHE=1 SOBER_CHECK_CACHE=1 SOBER_CHECK_REPLAY=1 SOBER_CACHE="$W/skewcache" SOBER_CACHE_STAT=1)
+            got=$( { "${cc[@]}" SOBER_EMBED_SKEW=1 "$SOBER" $cmd examples/$ex.sober "${o[@]}" > /dev/null 2>&1 || true
+                     "${cc[@]}" "$SOBER" $cmd examples/$ex.sober "${o[@]}" 2>&1 > /dev/null
+                     "${cc[@]}" "$SOBER" $cmd examples/$ex.sober "${o[@]}" 2>&1 > /dev/null; } | grep -oE "$cmd-replay [01]/1" | tr '\n' ' ')
+            if [ "$got" != "$cmd-replay 0/1 $cmd-replay 1/1 " ]; then
+                echo "EMBED KEY FROM A REREAD ($cmd $ex): $got"; fail=1
+            fi
+        done
+    done
+fi
 rm -r "$W"
 echo "hermetic: $n targets, fail=$fail"
 exit $fail

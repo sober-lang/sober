@@ -1,0 +1,15 @@
+// unionが値を持つかを返す（型引数を返さない）
+type Opt$TP union {
+    Some { v $T }
+    None {}
+}
+
+func has$TP(o Opt$U) bool {
+@BODY@
+}
+
+func main() {
+    _ = incr
+    _ = mkH
+    println(has(Some$A{v: $V}))
+}

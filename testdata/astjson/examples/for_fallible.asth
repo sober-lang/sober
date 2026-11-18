@@ -1,0 +1,10 @@
+@@full	d2270c5e9d7470b8	1467	38357
+@head	4cb1e368e1e4a834	0	108
+func digits	009d9a01bf4995fd	52	1768
+func lined	4f5943afdbda3351	21	843
+func main	b5f56ce1dac0ac2e	58	1847
+func odd	df9279d4686d42a6	44	1369
+func show	6261d0d8a9847aad	27	1165
+func sum	e9a90e2a6a5a3ede	19	681
+type BadDigit	e2ed81a1adee5385	2	115
+type BadLine	65f1c85b7118e58b	2	116

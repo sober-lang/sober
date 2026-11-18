@@ -1,0 +1,1 @@
+{"defs":[{"param":{"k":"int"},"ret":{"k":"int"},"body":{"k":"ann","e":{"k":"var","i":0},"t":{"k":"tvar","i":0,"r":0,"kd":{"rf":false,"mf":true,"cf":true,"cov":true,"kf":false}}}}],"e":{"k":"call","r":0,"f":0,"e":{"k":"lit","n":3}}}

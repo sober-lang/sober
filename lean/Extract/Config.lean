@@ -14,7 +14,7 @@ open Lean
 
 /-- 構成子 → Sober のタグ定数と、欄ごとの読み出し関数（欄の順 = 構成子の引数の順） -/
 def ctorTable : List (Name × String × List String) :=
-  [ (``FS.Ty.int, "TInt", []), (``FS.Ty.tvar, "TVar", ["tA"]), (``FS.Ty.bool, "TBool", []),
+  [ (``FS.Ty.int, "TInt", []), (``FS.Ty.tvar, "TVar", ["tA", "tB", "tC"]), (``FS.Ty.bool, "TBool", []),
     (``FS.Ty.byte, "TByte", []), (``FS.Ty.f64, "TF64", []), (``FS.Ty.unit, "TUnit", []),
     (``FS.Ty.opt, "TOpt", ["tA"]), (``FS.Ty.union, "TUn", ["tA", "tB"]), (``FS.Ty.prod, "TPr", ["tA", "tB"]),
     (``FS.Ty.ref, "TRef", ["tA", "tB", "tC"]), (``FS.Ty.slice, "TSl", ["tA", "tB", "tC"]),
@@ -34,6 +34,14 @@ def enumTable : List (Name × String) :=
 /-- 列挙の inductive（Sober では int） -/
 def enumTypes : List Name := [``FS.OwnK, ``FS.FConvOp]
 
+/-- Bool の欄だけの構造体（Sober では欄をビットに詰めた int。等しさは int の ==）と、欄の読み出しの関数（前奏）。
+Kind の旗: rf = 1・mf = 2・cf = 4・cov = 8・kf = 16 -/
+def packedTypes : List (Name × List (Name × String)) :=
+  [ (``FS.Kind, [(``FS.Kind.rf, "kRf"), (``FS.Kind.mf, "kMf"), (``FS.Kind.cf, "kCf"), (``FS.Kind.cov, "kCov"), (``FS.Kind.kf, "kKf")]) ]
+
+/-- Sober の名前を最後の成分から変える定義（最後の成分が短すぎて衝突しやすいもの） -/
+def renames : List (Name × String) := [(``FS.Kind.imm, "kImm"), (``FS.Kind.le, "kLe"), (``FS.Kind.isNorm, "kIsNorm"), (``FS.Kind.place, "kPlace"), (``FS.Expr.tvWf, "exprTvWfNode"), (``FS.Expr.raisedOk, "exprRaisedOkNode")]
+
 /-! ## typecheck の 1 フレームの遷移（段 6 P2b — tc_gen.sober）
 
 式（Expr）は記録でなく **節**: st.h の 5 語 [kind, nc, a, b, c]（json.sober — kind = 語の番号）。構成子ごとに
@@ -48,6 +56,7 @@ def nodeTable : List (Name × String × Option String × List String) :=
   let a := "nA(mut st, @)"
   let b := "nB(mut st, @)"
   let c := "nC(mut st, @)"
+  let d := "nD(mut st, @)"
   let is (w : String) := s!"{k} == {w}"
   let one (n : Name) (w : String) (fs : List String) := (n, is w, some w, fs)
   let rng (n : Name) (lo hi : String) (ws : List String) (fs : List String) :=
@@ -61,8 +70,8 @@ def nodeTable : List (Name × String × Option String × List String) :=
     one ``FS.Expr.ite "W_IF" [a, b, c], one ``FS.Expr.nil "W_NIL" [a], one ``FS.Expr.some "W_SOME" [a],
     one ``FS.Expr.ifnil "W_IFNIL" [a, b, c], one ``FS.Expr.inl "W_INL" [a, b], one ``FS.Expr.inr "W_INR" [a, b],
     one ``FS.Expr.case "W_CASE" [a, b, c], one ``FS.Expr.pair "W_PAIR" [a, b], one ``FS.Expr.fst "W_FST" [a],
-    one ``FS.Expr.snd "W_SND" [a], one ``FS.Expr.call "W_CALL" [a, b, c], one ``FS.Expr.callM "W_CALLM" [a, b, c],
-    one ``FS.Expr.fnref "W_FNREF" [a, b], one ``FS.Expr.callv "W_CALLV" [a, b], one ``FS.Expr.callMv "W_CALLMV" [c, a, b],
+    one ``FS.Expr.snd "W_SND" [a], one ``FS.Expr.call "W_CALL" [d, a, b, c],
+    one ``FS.Expr.fnref "W_FNREF" [a, b], one ``FS.Expr.callv "W_CALLV" [c, a, b],
     one ``FS.Expr.ann "W_ANN" [a, b],
     one ``FS.Expr.block "W_BLOCK" [a], one ``FS.Expr.blockR "K_BLOCKR" [b, a], one ``FS.Expr.copyTo "W_COPYTO" [c, b, a],
     one ``FS.Expr.label "W_LABEL" [a, b], one ``FS.Expr.jump "W_JUMP" [a, b, c], one ``FS.Expr.unreach "W_UNREACH" [a],
@@ -91,6 +100,12 @@ def nodeTable : List (Name × String × Option String × List String) :=
     one ``FS.Expr.dnew "W_DNEW" [a, b, c], rt ``FS.Expr.domV 3, one ``FS.Expr.denter "W_DENTER" [a, b],
     one ``FS.Expr.dexit "W_DEXIT" [a, b] ]
 
+/-- 節を辿る関数（tc_gen.sober に出す）。自分自身への再帰（子の節）は呼び出しでなく `walkPush` で作業のスタックへ積む。
+駆動部（積んだ節を順に取り出して 1 段ずつ当てる）は手書き = check.sober。入れ子が深い式でもスタックを使い切らない -/
+def walkTargets : List Name := [``FS.Expr.tvWf, ``FS.Expr.raisedOk]
+
+def walkPush : String := "walkPush"
+
 /-- 節の switch の外れ（札の無い構成子 = 実行時だけの形・未知の kind）の戻り値 -/
 def nodeDefault : String := "actRet(mut st, 0 - 1)"
 
@@ -104,14 +119,14 @@ def droppedTypes : List Name := [``FS.Defs]
 def shimTable : List (Name × String) :=
   [ (``FS.ctxGet, "ctxGet"), (``FS.ctxCons, "ctxCons"), (``FS.ctxAllMutFree, "ctxAllMutFree"), (``FS.lctxTy, "lctxTy"),
     (``FS.lctxK, "lctxK"), (``FS.lctxCons, "lctxCons"), (``FS.defGet, "defGet"), (``FS.defParam, "defParam"),
-    (``FS.defRet, "defRet"), (``FS.defTps, "defTps"), (``FS.tsLen, "tsLen"), (``FS.Act.sub, "actSub"), (``FS.Act.ret, "actRet") ]
+    (``FS.defRet, "defRet"), (``FS.defTps, "defTps"), (``FS.Def.kinds, "defKinds"), (``FS.kindsArgsOk, "kindsArgsOk"), (``FS.tsLen, "tsLen"), (``FS.Act.sub, "actSub"), (``FS.Act.ret, "actRet") ]
 
 /-- tc_gen.sober に出す定義（この順） -/
 def tcTargets : List Name :=
   [ ``FS.FConvOp.dom, ``FS.FConvOp.cod,
     ``FS.kII, ``FS.kFF, ``FS.kIte, ``FS.kEq2, ``FS.kSome, ``FS.kInl, ``FS.kInr, ``FS.kPair, ``FS.kFst, ``FS.kSnd,
-    ``FS.sLet, ``FS.sIfnil1, ``FS.sIfnil2, ``FS.sCase1, ``FS.sCase2, ``FS.kCall, ``FS.kCallM2, ``FS.kCallM, ``FS.kFnref,
-    ``FS.kAnn, ``FS.sCallv1, ``FS.kCallv, ``FS.kCallMv, ``FS.kLabel, ``FS.kJump, ``FS.kBlock, ``FS.kBlockR, ``FS.kScope, ``FS.kCopyTo, ``FS.kAlloc,
+    ``FS.sLet, ``FS.sIfnil1, ``FS.sIfnil2, ``FS.sCase1, ``FS.sCase2, ``FS.kCall, ``FS.kFnref,
+    ``FS.kAnn, ``FS.sCallv1, ``FS.kCallv, ``FS.kLabel, ``FS.kJump, ``FS.kBlock, ``FS.kBlockR, ``FS.kScope, ``FS.kCopyTo, ``FS.kAlloc,
     ``FS.kDeref, ``FS.kAssign, ``FS.kWhile, ``FS.kFreeze, ``FS.kMkslice, ``FS.kStrlit, ``FS.kMksliceAt, ``FS.kMkmapAt,
     ``FS.kIndex, ``FS.kLen, ``FS.kTobyte, ``FS.kToint, ``FS.kFconv, ``FS.kAppend, ``FS.kSetidx, ``FS.kSubslice,
     ``FS.kEqs, ``FS.kConcat, ``FS.kMkmap, ``FS.kGetm, ``FS.kSetm, ``FS.kDelm, ``FS.kLenm, ``FS.kKeysm, ``FS.kCloneR, ``FS.kClone, ``FS.kPar,
@@ -130,8 +145,8 @@ def recordTypes : List Name := [``FS.Ty]
 def targets : List Name :=
   [ ``FS.Ty.regionsBelow, ``FS.Ty.mutFree, ``FS.Ty.keyOk, ``FS.Ty.keyCompat, ``FS.Ty.shiftR, ``FS.Ty.relocR,
     ``FS.rmap, ``FS.Ty.renR, ``FS.Ty.relocA, ``FS.Ty.clampR, ``FS.Ty.noClamp, ``FS.Ty.annFree,
-    ``FS.Ty.isMut0, ``FS.Ty.mutTop, ``FS.Ty.anchorOf, ``FS.Ty.sub, ``FS.Ty.chanFree, ``FS.Ty.jumpRel,
-    ``FS.Ty.readAs, ``FS.Ty.tyArgOk, ``FS.Ty.tyArgsOk, ``FS.Ty.tsubst, ``FS.Ty.tvarsBelow,
+    ``FS.Ty.isMut0, ``FS.Ty.mutTop, ``FS.Ty.anchorOf, ``FS.Ty.sub, ``FS.Ty.chanFree, ``FS.Ty.clampOk, ``FS.Ty.jumpRel,
+    ``FS.Ty.readAs, ``FS.Kind.imm, ``FS.Kind.le, ``FS.Kind.isNorm, ``FS.Kind.place, ``FS.Ty.atR, ``FS.kindOk, ``FS.Ty.tvWf, ``FS.Ty.raisedOk, ``FS.Ty.tsubst, ``FS.Ty.tvarsBelow,
     ``FS.Ty.argFree, ``FS.Ty.paramOk, ``FS.Ty.retOk, ``FS.Ty.givable, ``FS.Ty.rehome, ``FS.Ty.payOk,
     ``FS.Ty.rsubst, ``FS.Ty.rfree, ``FS.Ty.isFn, ``FS.Ty.unfold,
     ``FS.Ty.covOk, ``FS.Ty.comp, ``FS.Ty.isChain, ``FS.Ty.chainFn, ``FS.Ty.rguardN, ``FS.Ty.uoccAny, ``FS.Ty.sinkPick,
@@ -174,6 +189,27 @@ func b2i(b bool) int {
     return if b { 1 } else { 0 }
 }
 
+// Kind（packedTypes — 旗を詰めた int）の欄
+func kRf(k int) bool {
+    return (k & 1) != 0
+}
+
+func kMf(k int) bool {
+    return (k & 2) != 0
+}
+
+func kCf(k int) bool {
+    return (k & 4) != 0
+}
+
+func kCov(k int) bool {
+    return (k & 8) != 0
+}
+
+func kKf(k int) bool {
+    return (k & 16) != 0
+}
+
 // List Ty（st.h の [n, t…]、-1 = 空）の添字（範囲外 = -1）
 func listGet(st mut S, ts int, i int) int {
     return if ts < 0 || i < 0 || i >= table.Get(mut st.h, ts) { 0 - 1 } else { table.Get(mut st.h, ts + 1 + i) }
@@ -192,17 +228,24 @@ func mkLike4(st mut S, old int, k int, a int, b int, c int, d int) int {
 }
 "
 
-/-- `List.all ts f`（f = 捕捉のない関数参照）の特殊化の雛形。`@F` を関数の呼び出しに置き換える -/
-def listAllTemplate : String := "func @NAME(st mut S, ts int) bool {
+/-- `List.all ts (f x…)`（f = 関数の参照・x… = 先に渡す実引数）の特殊化の雛形。`@F` を関数の名前に、
+`@PS` を先に渡す実引数の仮引数に、`@AS` をその実引数に置き換える -/
+def listAllTemplate : String := "func @NAME(st mut S, ts int@PS) bool {
     if ts < 0 {
         return true
     }
     for i <- iter.Range(0, table.Get(mut st.h, ts)) {
-        if !@F(mut st, table.Get(mut st.h, ts + 1 + i)) {
+        if !@F(mut st@AS, table.Get(mut st.h, ts + 1 + i)) {
             return false
         }
     }
     return true
+}
+"
+
+/-- `Option.all o (f x…)` の特殊化の雛形（-1 = none） -/
+def optAllTemplate : String := "func @NAME(st mut S, o int@PS) bool {
+    return o < 0 || @F(mut st@AS, o)
 }
 "
 

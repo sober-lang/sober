@@ -1,0 +1,11 @@
+package main
+
+// selfparの木の変換の並列のテスト群（ftpar.sober）: 後のフェーズ（assert）の拒否を前のファイル（a）・前のフェーズ（nilcase）の拒否を後のファイル（b）に置く — フェーズの順でbの拒否が出る
+func f(n int) int {
+    assert(n > 0)
+    return n
+}
+
+func main() {
+    println(f(1) + g(2))
+}

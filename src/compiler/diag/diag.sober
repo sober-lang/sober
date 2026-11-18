@@ -41,12 +41,21 @@ type Malformed error {
 
 // 型の違反。kind 0 = 型宣言の区別の違反（language.md 32 節 — 表層型の照合）・1 = string の値の switch（15 節 — 単値の subject は
 // int / union / error / T?）・2 = T? と値の == / !=（絞り込んでから比べる — 15 節）・3 = string を for の生成元に直に置いた（7 節）・
-// 4 = 関数値のoption（`F?` のフィールド・束縛・mapの読み）を絞らずに呼んだ・5 = Defとして呼ぶジェネリックにregionを持つ型引数（31 節R1）・
+// 4 = 関数値のoption（`F?` のフィールド・束縛・mapの読み）を絞らずに呼んだ・5 = 欠番（Defとして呼ぶジェネリックにregionを持つ型引数 — R3で撤去）・
 // 6 = 局所に束縛した名前付き関数を値の位置に置いた（spec F-11）・7 = ゼロ値の無い型（関数値・union）のフィールドをリテラルで省いた・
 // 8 = 値化できない名前付き関数型（型引数つき）への変換 `Gen[T](f)`・9 = 別の名前付き関数型の値の変換（nominal）
 type TypeMismatch error {
     at Pos
     kind int
+}
+
+// 型引数が総称関数 callee（関数表の添字）の型パラメータ tp の kind を満たさない（build の lower の検査）。miss = 欠けた性質（rf 1・kf 16・mf 2・
+// cf 4・cov 8 の和 — 0 は chan と端点）。文面は app が名前と本体の位置を添えて組む（check と同じ行）
+type KindArg error {
+    at Pos
+    callee int
+    tp int
+    miss int
 }
 
 // println の実引数が印字できない型（int・byte・bool・string 以外 — `T?`・struct・多値等）
@@ -155,6 +164,15 @@ type EmbedRead error {
 
 type EmbedFileUtf8 error {
     at Pos
+}
+
+// @embed の中身が、@embed を書いたファイルの木の大きさの上限（loader.TREE_WORDS 語 — 1バイト1語）を越える。path = 越えたファイル・size = その大きさ・
+// room = そのファイルの前までで残っていた語の数
+type EmbedTooLarge error {
+    at Pos
+    path string
+    size int
+    room int
 }
 
 type PkgName error {
@@ -441,6 +459,22 @@ type Mod error {
     kind int
 }
 
+// err が KindArg ならその欄（ok = false なら KindArg でない）
+type KindArgW struct {
+    ok bool
+    callee int
+    tp int
+    miss int
+}
+
+func KindArgWords(err error?) KindArgW {
+    return switch err {
+    case nil: KindArgW{ok: false, callee: -1, tp: 0, miss: 0}
+    case KindArg{callee, tp, miss}: KindArgW{ok: true, callee: callee, tp: tp, miss: miss}
+    default: KindArgW{ok: false, callee: -1, tp: 0, miss: 0}
+    }
+}
+
 // 拒否 err の位置（ここのラベルでなければ None）
 func At(err error?) Pos {
     return switch err {
@@ -449,6 +483,7 @@ func At(err error?) Pos {
     case UnknownName{at}: at
     case Malformed{at}: at
     case TypeMismatch{at}: at
+    case KindArg{at}: at
     case PrintArg{at}: at
     case LenString{at}: at
     case UntypedNil{at}: at
@@ -473,6 +508,7 @@ func At(err error?) Pos {
     case EmbedPathUtf8{at}: at
     case EmbedRead{at}: at
     case EmbedFileUtf8{at}: at
+    case EmbedTooLarge{at}: at
     case PkgName{at}: at
     case RefCollide{at}: at
     case NotImported{at}: at
@@ -530,6 +566,7 @@ func Format(err error?, where string) string {
     case CoreFragment{at}: "desugar error at ${where} (CoreFragment)"
     case UnknownName{at}: "desugar error at ${where} (UnknownName)"
     case Malformed{at, kind}: if kind == 1 { "desugar error at ${where} (Malformed): the number of arguments does not match the function's parameters" } else { "desugar error at ${where} (Malformed)" }
+    case KindArg{at}: "type error at ${where} (KindArg)"
     case TypeMismatch{at, kind}: switch kind {
         case 1: "desugar error at ${where} (TypeMismatch): switch on a string value is not in the language — the subject of a value switch is an int (with default), a union, an error or a T?; compare strings with if / else if"
         case 2: "desugar error at ${where} (TypeMismatch): cannot compare a T? with a value — narrow it first (`if x != nil { … }`, `x != nil && …`, or switch with case nil)"
@@ -540,7 +577,7 @@ func Format(err error?, where string) string {
         case 8: "desugar error at ${where} (TypeMismatch): a generic named function type is not a value type — it can only be a parameter's type (pass a lambda or a function there)"
         case 9: "desugar error at ${where} (TypeMismatch): a value of another named function type cannot be converted — named function types are distinct even with the same signature"
         case 10: "desugar error at ${where} (TypeMismatch): a mut slice / map that is not a local path cannot be stored in an imm field — only `x`, `x.f` or `x[i]` is frozen implicitly there: bind the value first (`v := …`) and store `v`, or build the field's value as imm"
-        case 5: "desugar error at ${where} (TypeMismatch): a generic func called as a function (not expanded) takes type arguments without regions — string / slice / map / channel types are not allowed here (a func with a mut or function-typed parameter is expanded and takes them)"
+        case 11: "desugar error at ${where} (TypeMismatch): a type argument cannot be an anonymous function type, because a value of anonymous function type is only a parameter, a struct or variant field or a local binding, never a result, a slice or map element or a type argument (spec F-20); pass a value of a named function type (`H(f)`) or write the type argument (`f[H](…)`)"
         default: "desugar error at ${where} (TypeMismatch)"
     }
     case PrintArg{at}: "desugar error at ${where} (PrintArg): println prints int, byte, bool and string values"
@@ -561,12 +598,13 @@ func Format(err error?, where string) string {
     case NoPkgDir{at}: loadLine(err, where, "cannot open package directory")
     case NoStd{at}: loadLine(err, where, "no such std package")
     case ImportPath{at}: loadLine(err, where, "every segment of an import path is a lowercase identifier (a-z, 0-9, _ — not starting with a digit) that is not a keyword — the path is also the qualifier (std/http/server → http.server)")
-    case EmbedReceiver{at}: loadLine(err, where, "@embed needs the receiver `map[string]string{}` (empty, imm)")
+    case EmbedReceiver{at}: loadLine(err, where, "@embed needs the receiver `map[string]string{}` or `map[string][]byte{}` (empty, imm)")
     case EmbedPattern{at}: loadLine(err, where, "invalid @embed pattern")
     case EmbedNoMatch{at}: loadLine(err, where, "@embed pattern matches no file")
     case EmbedPathUtf8{at}: loadLine(err, where, "@embed path is not valid UTF-8")
     case EmbedRead{at}: loadLine(err, where, "@embed cannot read file")
     case EmbedFileUtf8{at}: loadLine(err, where, "@embed file is not valid UTF-8")
+    case EmbedTooLarge{at, path, size, room}: loadLine(err, where, "@embed file ${path} (${size} bytes) does not fit: the source file holding this @embed and all its embedded files share a limit of 16,777,216 words (one word per byte), and only ${room} were left before this file — split the files over several @embed in different source files, or use the receiver `map[string][]byte{}` (its contents stay out of the tree)")
     case PkgName{at}: loadLine(err, where, "package name must match the directory name")
     case RefCollide{at}: loadLine(err, where, "import reference name collides (use an alias)")
     case NotImported{at}: loadLine(err, where, "this file does not import the package it names (imports are per file — add the import to this file)")
@@ -659,6 +697,7 @@ func Format(err error?, where string) string {
         case 2: "an optional anonymous function type `(func(…) R)?` is only allowed for a parameter of a func declaration (inside a named function type, a struct field, a result or a lambda parameter, declare a named function type and use `F?`)"
         case 3: "the argument for an optional function parameter is nil, a lambda, a function name, or an optional function parameter of the enclosing function"
         case 4: "an optional function parameter can only be used inside `if p != nil { … }` (or the else of `if p == nil`) — outside it the parameter may be absent"
+        case 6: "a function result cannot be of an anonymous function type, because a value of anonymous function type is only a parameter, a struct or variant field or a local binding, never a result, a slice or map element or a type argument (spec F-20); declare a named function type (`type H func(…) …`) and return a value of it"
         default: "an optional function parameter can only be called, passed on to another call, or compared with nil — not bound, stored or returned"
     })
     case FnCap{at, kind}: loadLine(err, where, switch kind {
@@ -742,6 +781,7 @@ func Format(err error?, where string) string {
         case 26: "a worker-local place holds a struct with only scalar fields (int, byte, bool, float) and pool.Scratch fields, without type parameters"
         case 27: "the setup of task.NewLocal sizes each pool.Scratch field exactly once — pool.NewScratch(mut w.f, n) with n a constant (a literal, a const name, + - * <<) — and does nothing else"
         case 28: "LocalNew / LeaseTake / LeaseGive / LeaseBlock / LeaseAttach are what task.NewLocal / task.Lease are rewritten into — call task.NewLocal / task.Lease instead"
+        case 38: "task.ServePool is the pool of net.Serve — only std/net calls it; use task.NewPool"
         case 11: "a spawned task cannot capture a function-typed parameter (it is a closure inlined at the call — call it in the scope body and spawn with the value)"
         case 31: "task.Update / task.Read / task.Await take lambda literals written at the call with one parameter — (st mut S) => … for the body, (st S) => … for task.Read and when:"
         case 32: "the body of a domain call (and when:) captures only imm data — not a mut binding or mut contents, task.Scope, task.Handle, a channel endpoint or a function-typed parameter (the body may run on another task)"

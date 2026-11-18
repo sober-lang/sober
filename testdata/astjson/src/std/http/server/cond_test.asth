@@ -1,0 +1,12 @@
+@@full	cdab4c9eb18f1883	4158	112266
+@head	5f91c22d81814d0a	0	147
+func TestCacheValue	6aecea739d1fd874	54	2061
+func TestEtag	678d4f014b606b73	49	1761
+func TestHttpDate	3566495aea4488b8	61	2083
+func TestParseDate	7798c5f5b884c5b4	232	7545
+func TestSendUnderStale	afbf1b35784252ca	82	2905
+func TestTagIn	a397c04be68cee64	130	3874
+func TestYear850	b4212bc66248f414	81	2375
+func isStale	9e16a7941482c129	20	785
+func pd	99dfe11c35dc46cd	24	836
+func ti	efb86176d4fa0c3a	20	787

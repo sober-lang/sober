@@ -54,6 +54,7 @@ func preParse(m Manifest, fsm bool, sm map[string]string, pending []string, seen
     }
     ts, err := task.Map(freeze(jobs), (jb) => preOne(m, fsm, sm, jb, pc))
     if err != nil {
+        ParFellBack("pre-parse", len(jobs), "by the sequential parse", "")
         return PRound{true, freeze(fss), []PTree{}}
     }
     return PRound{true, freeze(fss), ts}

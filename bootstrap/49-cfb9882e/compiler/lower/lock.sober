@@ -1,0 +1,82 @@
+package lower
+
+// rtの鍵の部品（1つだけ）: ワードp[off]が0 = 空き・1 = 取られている。持ち手は鍵を持ったままtaskの待ちに入らない（区間は短い）が、
+// 持ち手のワーカーがOSに横取りされることはある（ワーカーの数がCPUより多い形・同じCPUに別のプロセスが乗る形）。だから待ち手は
+// 回り続けずに譲る: 呼び出し点はxchgを1回だけ試し、取れなければrt.lock_waitで読んでpauseで回り、LOCK_SPIN回を越えたらsched_yieldする。
+// 返すのは素のstore（lockGive）か、全順序の柵を兼ねるxchg（lockGiveFence）
+
+// 譲るまでに読んで回る回数
+const LOCK_SPIN = 64
+// 開発用 --rt-mutant: 譲らずに回り続ける元の鍵（検査 oversub が落ちることを確かめる）
+const LOCK_MUT_SPIN = 105
+
+// p[off]の鍵を取る
+func lockTake(st mut St, p int, off int) {
+    if st.rtMut == LOCK_MUT_SPIN {
+        loop := newBlock(mut st)
+        got := newBlock(mut st)
+        br(mut st, loop, -1)
+        setCur(mut st, loop)
+        atomicPause(mut st)
+        o := atomicXchg(mut st, p, off, iconst(mut st, 1))
+        condbr(mut st, cmp(mut st, CEq, o, iconst(mut st, 0)), got, -1, loop, -1)
+        setCur(mut st, got)
+        return
+    }
+    slow := newBlock(mut st)
+    got := newBlock(mut st)
+    o := atomicXchg(mut st, p, off, iconst(mut st, 1))
+    condbr(mut st, cmp(mut st, CEq, o, iconst(mut st, 0)), got, -1, slow, -1)
+    setCur(mut st, slow)
+    call(mut st, st.rtLockWait, list1(mut st, gepWord(mut st, p, iconst(mut st, off))))
+    br(mut st, got, -1)
+    setCur(mut st, got)
+}
+
+// p[off]の鍵を返す（x86-TSOでは素のstoreが解放の順序を守る。aarch64ではここをSTLRにする。ir.md 4.7）
+func lockGive(st mut St, p int, off int) {
+    store(mut st, p, off, iconst(mut st, 0))
+}
+
+// p[off]の鍵を返し、全順序の柵も兼ねる（xchg）: もとがxchgだった箇所（domainとcellの鍵・入場待ちの鍵・死因の記録の鍵）。
+// どの箇所も、返した後に相手が書くフラグを読まないか、読みがlock接頭辞つきのopなので、x86では柵は要らない（箇所ごとの理由は呼び出し点と ir.md 4.7）
+func lockGiveFence(st mut St, p int, off int) {
+    _ = atomicXchg(mut st, p, off, iconst(mut st, 0))
+}
+
+// rt.lock_wait(p): p[0]が空くまで読んでpauseで回り（test-and-test-and-set）、空いたらxchgで取る。LOCK_SPIN回読んでも取れなければ
+// sched_yieldでCPUを譲って回り直す（横取りされた持ち手が走れるように）。戻ったときは鍵を持っている
+func buildLockWait(st mut St) {
+    begin(mut st, st.rtLockWait)
+    p := 0 // 引数0（鍵のワードの番地）
+    zero := iconst(mut st, 0)
+    // ミュータント4の数え（mn.sober MK0の20〜25）: 入った数と、どの鍵か（MN_OLOCK / MN_RLOCK）
+    isO := if st.rtMut == 4 { cmp(mut st, CEq, ptoi(mut st, p), ptoi(mut st, gepWord(mut st, globaladdr(mut st, st.mnG), iconst(mut st, MN_OLOCK)))) } else { 0 }
+    isR := if st.rtMut == 4 { cmp(mut st, CEq, ptoi(mut st, p), ptoi(mut st, gepWord(mut st, globaladdr(mut st, st.mnG), iconst(mut st, MN_RLOCK)))) } else { 0 }
+    mInc(mut st, 20)
+    mAdd(mut st, 22, isO)
+    mAdd(mut st, 23, isR)
+    spin := newBlock(mut st)
+    i := param(mut st, spin, TyI64)
+    try := newBlock(mut st)
+    more := newBlock(mut st)
+    yld := newBlock(mut st)
+    got := newBlock(mut st)
+    br(mut st, spin, list1(mut st, zero))
+    setCur(mut st, spin)
+    atomicPause(mut st)
+    condbr(mut st, cmp(mut st, CEq, load(mut st, p, 0), zero), try, -1, more, -1)
+    setCur(mut st, try)
+    o := atomicXchg(mut st, p, 0, iconst(mut st, 1))
+    condbr(mut st, cmp(mut st, CEq, o, zero), got, -1, more, -1)
+    setCur(mut st, more)
+    condbr(mut st, cmp(mut st, CLt, i, iconst(mut st, LOCK_SPIN)), spin, list1(mut st, bin(mut st, BAdd, i, iconst(mut st, 1))), yld, -1)
+    setCur(mut st, yld)
+    mInc(mut st, 21)
+    mAdd(mut st, 24, isO)
+    mAdd(mut st, 25, isR)
+    _ = syscall(mut st, list1(mut st, iconst(mut st, 24)))
+    br(mut st, spin, list1(mut st, zero))
+    setCur(mut st, got)
+    ret(mut st, -1)
+}

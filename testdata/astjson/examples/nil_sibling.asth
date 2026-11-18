@@ -1,0 +1,10 @@
+@@full	6e4567f1c9accc4f	1569	43890
+@head	4fe8cc8c5062e1a1	0	99
+func a0	7979440396ab2109	4	180
+func describe	9b0ad7e06477ba51	13	469
+func lookup	5d959431cf6ea1dc	16	603
+func main	2c8e5658b0a660ea	201	6070
+func side	2015f26661758d55	14	677
+type Missing	5dba227335b80b1a	2	118
+type Point	5e8db4896d7ecbec	3	158
+type Shape	27bc06510675286a	3	209

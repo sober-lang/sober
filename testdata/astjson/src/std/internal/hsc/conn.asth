@@ -1,0 +1,11 @@
+@@full	2a59d8c4963dbca1	2755	76061
+@head	fdcc175bedfb217c	0	151
+const ConnW	5696e80dca6e134d	1	47
+const dirW	94c4c67178bfba6f	1	45
+const hbufMax	32a8f3aba7eee00a	1	50
+func PackConn	1946d2733cb96ea7	149	4602
+func UnpackConn	8ee9d1a82c6562ec	137	5303
+func getWords	046da905cba60dff	59	1990
+func putDir	a431262825dd03f7	47	1711
+func putWords	32977c666c40718f	61	2091
+type ConnTooLarge	03b5baac1f398659	1	73

@@ -1,0 +1,11 @@
+@@full	76d88d3fbe1db77a	1107	28284
+@head	7aaa9b710c68c96c	0	72
+func bools	f89bbf553c69b758	26	874
+func field	489571d015b6f88d	23	852
+func ints	71b638790fb140f1	27	953
+func main	8fb6affaa06441e6	47	1500
+func strs	532e4ec1058eca08	24	836
+func viaAnon	573fc9c032111bbc	8	365
+func viaNamed	6f4c5e8fb4c2e04c	6	282
+type K	58a0de3df2161a00	3	144
+type R	a6fe6c8cbcd257fc	3	125

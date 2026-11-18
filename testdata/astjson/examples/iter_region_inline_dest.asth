@@ -1,0 +1,9 @@
+@@full	4ab0b0023b10985b	1227	30460
+@head	66507e1507ef1996	0	139
+func build	9697f3295cf90364	36	1297
+func count	c6be498ec0702daf	40	1307
+func each	1e9b0f19bddfeeec	20	731
+func loopFor	0873fb2464a075fa	28	959
+func loopWhile	f7b2b494d60a2476	27	980
+func main	7cf1a40bab928d26	27	939
+func twice	0abf0615dfbbed40	6	286

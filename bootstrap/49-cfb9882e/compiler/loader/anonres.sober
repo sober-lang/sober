@@ -1,0 +1,28 @@
+package loader
+
+// 関数の結果に匿名の関数型は置けない（spec F-20）。匿名の関数型の値は仮引数（借り）・structとunionのvariantのフィールド・局所の束縛にだけ置ける。
+// 呼ばれるかどうかに依らず宣言で拒否する（checkは全部の関数を検査し、buildはmainから届く関数だけを下ろすので、本体の検査では食い違う）
+
+import "ast"
+import "std/iter"
+
+const FO_ANON_RESULT = 6
+
+// ファイルfで、結果が匿名の関数型の関数の宣言の最初の、その結果の型の字句（無ければ -1。finpar.soberの子も同じ関数を呼ぶ）。
+// 省略可の匿名の関数型 `(func(…) R)?` の結果は、optfn.soberが別の診断（FnOpt kind 2）で拒否する
+func anonFnResultIn(cx Cx, f int) int {
+    t := cx.trees[f]
+    for i <- iter.Range(0, len(t.nodes)) {
+        x := t.nodes[i]
+        if x.kind == ast.KFuncDecl && x.d >= 0 {
+            for j <- iter.Range(0, ast.ListLen(t, x.d)) {
+                p := ast.ListAt(t, x.d, j)
+                r := if p >= 0 && t.nodes[p].kind == ast.KParam { t.nodes[p].b } else { p }
+                if r >= 0 && t.nodes[r].kind == ast.TFunc {
+                    return t.nodes[r].tok
+                }
+            }
+        }
+    }
+    return 0 - 1
+}

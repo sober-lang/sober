@@ -1,0 +1,57 @@
+package main
+
+// 天井の検査（scripts/httpcheck.sh・language.md 11 節「予算と admission」）: Serveのconns: 256（天井 = 256 × (64 KiB + 固定費) ≈ 18 MiB）・既定のbudget（64 KiB）・maxBody 131072。
+// /grow は32 MiBを積む（予約を越えて借り、プールの天井を越えて死ぬ — 何も送らずに閉じる）。/ledger はServeのプールの died・cut・used・borrowed と根の計上（root）を返す。
+// それ以外は本文の長さを返す。"ready <port>" を出してから受ける
+
+import "std/convert"
+import "std/http/server"
+import "std/net"
+import "std/task"
+
+func grow() int {
+    mut b := mut []int{}
+    mut i := 0
+    while i < 4194304 {
+        b = append(b, i % 7)
+        i += 1
+    }
+    mut s := 0
+    for v <- b {
+        s += v
+    }
+    return s
+}
+
+func route(r http.server.Request) http.server.Response {
+    if r.path == "/grow" {
+        return http.server.Text(convert.FormatInt(grow()))
+    }
+    if r.path == "/ledger" {
+        // Serveの節（pools[0]はServeの全部の親の行 — parent が -1）
+        mut p := task.Ledger().pools[0]
+        for q <- task.Ledger().pools {
+            if q.parent >= 0 {
+                p = q
+            }
+        }
+        return http.server.Text("died=${p.died} cut=${p.cut} used=${p.used} borrowed=${p.borrowed} root=${task.Ledger().used}")
+    }
+    return http.server.Text(convert.FormatInt(len(r.body)))
+}
+
+func app(c net.Conn) error? {
+    return http.server.ServeConn(c, route, maxBody: 131072)
+}
+
+func serve() error? {
+    for l <- net.Listen("127.0.0.1:0")? {
+        println("ready ${net.Port(l)}")
+        net.Serve(l, app, conns: 256)?
+    }
+    return nil
+}
+
+func main() int {
+    return if serve() == nil { 0 } else { 1 }
+}

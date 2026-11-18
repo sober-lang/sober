@@ -1,0 +1,15 @@
+@@full	4876f8517f42c82e	2151	54977
+@head	478b4e53b3bd3340	0	80
+const mask32	e242771aea0b4720	1	66
+func Bool	9b773decb9eb7f17	10	406
+func Float	455786b02a06ef12	12	520
+func Int62	ea44715481b48d71	18	692
+func Intn	32e7e511a05253d9	40	1450
+func New	76f8cfc47efae75d	80	2917
+func Next	eb4a894596a52569	70	2398
+func Split	6fa5c1ea73b850a6	14	530
+func fmix32	08db053a0e9a58b3	30	1070
+func mul32	cce69f6eb0c459f8	37	1386
+func rotl32	30c286e74a38e81d	15	601
+type NonPositiveBound	9eb600dfc1843cd7	2	122
+type Rand	de00187e4fb6ec02	5	253

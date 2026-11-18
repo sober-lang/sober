@@ -1,0 +1,17 @@
+package main
+
+// 総称関数の版。pick_struct.m.sober が型引数を手で代入した単相の版
+
+type Pair struct {
+    name string
+    xs []int
+}
+
+func pick[T](a T, b T, first bool) T {
+    return if first { a } else { b }
+}
+
+func main() {
+    p := pick(Pair{name: "a", xs: []int{1}}, Pair{name: "b", xs: []int{2, 3}}, false)
+    println(p.name, len(p.xs))
+}

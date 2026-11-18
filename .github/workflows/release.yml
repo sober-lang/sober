@@ -47,6 +47,19 @@ jobs:
       - name: Build stage3 (the released binary) and check the fixed point
         run: scripts/stage3.sh --check -o out/stage3/sober
 
+      # The release-only gates: checks taken out of the per-merge gate run (scripts/gates.sh --release has them
+      # too). Run here, before anything is published, so a release cannot skip them. They read the stage2 built
+      # above and the corpus in examples/ and testdata/ (no Lean, no external downloads).
+      - name: Release-only gates (split-check cache and its keys)
+        env:
+          JOBS: 4
+          SOBER_WORKERS: 1
+          SOBER_HASH_SEED: 0
+          LC_ALL: C.UTF-8
+        run: |
+          scripts/splitcache.sh
+          scripts/cachekey.sh
+
       - name: Smoke test
         run: |
           out/stage3/sober build examples/hello.sober -o out/hello   # the default (= --emit=elf --passes), what a user of the released binary types

@@ -1,0 +1,10 @@
+@@full	eddfaff74dfc4954	696	16214
+@head	7d1b6ea8977fd4ff	0	76
+func Encode	2e3a0456cbb90309	13	612
+func EncodeHistory	e5ae5320d4bae3d7	15	718
+func EncodeWith	c76eb4f3cb386ca1	28	1129
+func EncodeWithHistory	ae9204a0fc739845	30	1231
+func NewWork	c7ec52bb07a2f03b	7	351
+type BadLevel	f3e91e77184fc85c	2	118
+type History	b57a860c3df94d1d	2	110
+type Work	3f51d091848f5b0a	2	104

@@ -1,0 +1,15 @@
+@@full	1d5f0aaca2968738	6526	203987
+@head	72dcb57d9b90c03d	0	270
+func TestAssume	f58809f7acaac8dd	122	3707
+func TestDeterministic	452c80d537e8e6bf	101	3211
+func TestFloat	c186be9d1d1a49ac	210	6815
+func TestShrinkStops	f52946f090c6566e	86	2651
+func TestShrinkSum	59f6b94528cdcd28	58	1845
+func TestShrinkTowardZero	1236ec5a8628983b	85	2633
+func TestTooWide	b601b54a5a72c0d2	85	2513
+func TestTowardZero	51fee3f1c82916e9	73	2099
+func TestTrueProperties	e18a00f20644b180	198	6073
+func minimal	c3f25e3c4e67664f	60	2013
+func rev	a2e2a36403d14e51	32	1143
+func same	9560cffe90ddabc6	42	1415
+func sum	a47b6d4a3e8b66a7	16	628

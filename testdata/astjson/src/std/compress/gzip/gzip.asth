@@ -1,0 +1,13 @@
+@@full	ba2ba3d928e09d4b	3963	116701
+@head	2af50914b39f8a03	0	226
+func Decode	c2e5d3f9472aa737	164	5537
+func Encode	401f9e5005ff1cd9	13	627
+func EncodeHistory	3ef84b7364c791a6	15	733
+func EncodeWith	8f34b2628a63bb7b	18	778
+func EncodeWithHistory	8a1929a295ee8faa	20	884
+func header	364c75a1730dbc4f	209	6427
+func le32	c3604845f3731c4d	40	1317
+func member	b48200602759ab28	166	5394
+func zeroEnd	11386c80c2e90c49	32	1120
+type Bad	c46bc68f4fa91a27	1	64
+type History	3d655bcb9d59ed4b	2	108

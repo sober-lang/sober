@@ -1,0 +1,10 @@
+@@full	f7f6a006695670b6	1093	28841
+@head	f8802cba5eefdec2	0	31
+func first	fe9187fd2ed3c54e	14	513
+func incr	9971a2c49fa627b5	6	285
+func main	da7d376417328090	116	3602
+func or	523bb27e30d94e02	13	664
+func pick	4c5bfffc45ecd771	6	323
+func second	8c0d1b28fd2811f3	5	288
+type H	c1de6fc843331749	3	144
+type Opt	284b51d3c823eb4d	2	167

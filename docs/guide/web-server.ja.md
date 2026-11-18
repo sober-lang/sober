@@ -82,6 +82,7 @@ GET /nope -> 404
 - `route` は `http.server.Request` を受けて `http.server.Response` を返すだけの関数です。`http.server.Text` / `http.server.Json` / `http.server.Status` が短いレスポンスを作ります
 - 接続1本 = task 1本です。handlerが失敗を返しても、panicで死んでも、`net.Serve` はその接続を閉じて受け続けます。数は `task.Ledger()` のpoolの行（`fail` / `died`）で見られます
 - `ServeConn` はkeep-aliveとパイプライン（1回の受けに入った複数のリクエスト）を扱います。頭が上限（`maxHead:` 既定8 KiB）を超えたら431、本文が上限（`maxBody:` 既定16 KiB）を超えたら413を返して閉じます
+- 相手を待つ時間にも既定で上限があります。頭が揃うまで（keep-aliveの待ちを含む）は `headWait:` 既定30秒、本文を受け終えるまでは `bodyWait:` 既定60秒、送りが進まない間隔は `sendWait:` 既定60秒です。期限が来たら、何も送らずに閉じます
 - `Request` の値（`path`・`body` など）はリクエスト1件の間だけ生きます。`route` が返ったら消えるので、リクエストをまたいで残すならコピーします
 - 例は検査の都合で `net.Serve` を2秒の期限で包んで止めています。本番では包まずに走らせ続け、止めるのはSIGTERMです（10・11節）
 
@@ -345,17 +346,20 @@ HTTP/1.1 200 OK
 Content-Type: text/plain
 Cache-Control: private
 Content-Length: 37
+Date: Sun, 06 Nov 1994 08:49:37 GMT
 
 HTTP/1.1 200 OK
 Content-Type: text/plain
 Cache-Control: private
 Content-Length: 37
+Date: Sun, 06 Nov 1994 08:49:37 GMT
 
 streamed from a file, chunk by chunk
 HTTP/1.1 404 Not Found
 Cache-Control: private
 Content-Length: 0
 Connection: close
+Date: Sun, 06 Nov 1994 08:49:37 GMT
 
 ```
 
@@ -437,6 +441,7 @@ func main() {
 Content-Type: text/event-stream
 Cache-Control: no-store
 Transfer-Encoding: chunked
+Date: Sun, 06 Nov 1994 08:49:37 GMT
 
 
 -- 30
@@ -482,6 +487,7 @@ Content-Type: text/event-stream
 Cache-Control: no-store
 Transfer-Encoding: chunked
 Connection: close
+Date: Sun, 06 Nov 1994 08:49:37 GMT
 
 
 -- 35
@@ -1015,12 +1021,14 @@ std/net（したがって `std/http/server` と `std/tls`）を使うプログ�
 
 | 引数 | 既定 | 意味 |
 |---|---|---|
-| `budget:` | 64 KiB | 接続1本が使ってよいメモリ |
-| `conns:` | 10000 | 同時の接続の数（`budget × conns` が受け入れの上限 — 超えた接続は閉じる） |
-| `reject:` | なし | 受け入れられなかった接続に1回だけ送るバイト列（省くと送らずに閉じる） |
+| `budget:` | 64 KiB | 接続1本の予約（入場はこれに `task.Fixed()` を足した量で数える。越えた分は天井の空きから借り、天井が埋まっていればその接続のtaskが死ぬ） |
+| `conns:` | なし | 同時の接続の数の上限（書けば `(budget + task.Fixed()) × conns` が受け入れの天井。省くと本数の上限は無く、根の天井の残りから導いたバイトの天井で入場を決める） |
+| `reject:` | なし | 天井に達したときに、受け付けた接続に1回だけ送って閉じるバイト列（省くと、受けた接続をランタイムの列で待たせ、入場済みの接続のうち受けの無い接続と遅い接続から切って枠を空ける） |
 | `region:` | 128 MiB | 接続のtaskのregion 1つの上限（超えるとその接続のtaskが死ぬ） |
 
-`ServeConn` の `maxHead:` / `maxBody:` を上げるときは、`budget:` も合わせます（目安は `budget ≥ 3 × (maxHead + maxBody) + 16 KiB`）。
+根の天井は、プロセスのメモリの天井です（cgroupのmemory.max、無ければ物理メモリから決まる）。入場を待っている接続の数は `net.Waiting()` で読めます。io_uringを使えない構成（epollの経路）には、ランタイムの列と枠の取り戻しがありません。満杯のときは、カーネルの待ち行列で到着順に待ちます。詳しくは [安全性ガイド](security.ja.md#9-資源の枯渇サービス拒否) の9節にあります。
+
+`ServeConn` の `maxBody:` は、`budget:` を越えてもかまいません。予約を越える本文は、天井の空きから借りて受けます。天井が埋まっていれば、その接続のtaskが `RegionExceeded{cause: budget}` で死にます（413ではありません）。`budget:` を上げるのは、借りずに済ませたいときだけです。
 
 ## 11. 交代の境界 — バイナリを入れ替える
 
@@ -1033,7 +1041,7 @@ std/net（したがって `std/http/server` と `std/tls`）を使うプログ�
 
 ## 12. 何を守っているか
 
-- リクエストの頭と本文には既定で上限がある（431 / 413）・接続ごとのメモリと同時の接続の数にも上限がある
+- リクエストの頭と本文には既定で上限がある（431 / 413）・相手を待つ時間にも既定で上限がある（`headWait:` / `bodyWait:` / `sendWait:`）・接続ごとの予約と、受け入れのメモリの合計にも上限がある
 - `Set-Cookie` は型のフィールドでだけ書け、省いたフィールドは安全な側（`Secure`・`HttpOnly`・`SameSite=Lax`・host-only）。緩めるフィールドは `dangerously` の綴りでgrepで拾える
 - レスポンスの頭にCR / LFを混ぜられない（レスポンスの分割はpanic）・stdが書く頭（`Content-Length` など）は書けない
 - 保存の方針の既定は `Cache-Control: private`（共有キャッシュに認証つきのレスポンスを置かせない）

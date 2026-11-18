@@ -1,0 +1,13 @@
+@@full	132424fc170ec6f8	989	24135
+@head	20e69509dfebf8f5	0	66
+const Build	b72e97283dc090e2	7	346
+const Out	232707f37f2ae561	3	197
+const Quiet	5e84885dc01c0e2b	3	192
+const Tool	f9e6ec07c7c4da80	11	575
+const Twice	4570ce486bc8978c	9	429
+func build	41a67b6332440eda	6	288
+func find	a2312cce7c374147	30	1088
+func main	8c6765930a27c95d	59	1903
+type App	bf918b13740c913a	5	264
+type Command	1a59ee52153a70f5	7	317
+type Flag	9ccdc9ccba0ad849	3	169

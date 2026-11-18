@@ -1,0 +1,8 @@
+@@full	31c74ec6e5d6a1a9	1752	58065
+@head	4fe8cc8c5062e1a1	0	99
+func isAlpha	ef96c96d856a900f	16	589
+func isDigit	6a7ee5782600b8e8	16	588
+func lex	6b1c3fa51ef9f050	137	4695
+func main	6ba8b5fadff01a44	100	3432
+func printToken	a05bae1e4e931607	10	436
+type Token	182cbb69a8ccc1fa	4	213

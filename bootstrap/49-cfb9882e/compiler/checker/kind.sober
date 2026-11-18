@@ -1,0 +1,589 @@
+package checker
+
+// kind の推論（lean/FeatherweightSober/KindComp.lean の inferK と同じ手順）。型パラメータを持ち本体のある Def の kind の列を、
+// 呼び出しのグラフの強連結成分ごと（呼ばれる側の成分から）に決める。成分の中は、シグネチャの条件の最小（sigMin）から始め、
+// 「呼び先の行を前の回の割り当てにした関数表の下で、各行を旗の全部から貪欲に外す」回を、変わらなくなるまで繰り返す。
+// 判定は検査器そのもの（defAccepts）。候補の kind の列 a の Def は、脱糖器の記録を a の下で変換し直して作る（型変数の出現は
+// tvar i (Kind.place a[i] ρ) a[i] — Def.raise と同じ形）。整合な割り当てが無い成分は、旗が全部立った kind（KALL）の行に戻す
+// （本番の検査が、いまと同じ形で落とす）
+
+import "desugar"
+import "diag"
+import "loader"
+import "std/iter"
+import "std/table"
+
+// 旗を外す1歩（Kind.drop — 旗と、その旗を含意する旗をまとめて外す）の消す桁。順は Flag.order（rf・kf → cov → mf・cf）
+const KM_RF = 1
+const KM_KF = 16
+const KM_COV = 25
+const KM_MF = 27
+const KM_CF = 29
+const K_TOP = 31
+
+func kDropMask(i int) int {
+    return switch i {
+    case 0: KM_RF
+    case 1: KM_KF
+    case 2: KM_COV
+    case 3: KM_MF
+    default: KM_CF
+    }
+}
+
+// 長さ n で全部 k の kind の列（st.h の [n, k…]）
+func ksFill(st mut S, n int, k int) int {
+    at := block(mut st, n + 1)
+    table.Set(mut st.h, at, n)
+    for i <- iter.Range(0, n) {
+        table.Set(mut st.h, at + 1 + i, k)
+    }
+    return at
+}
+
+// 列 ks の添字 j を k にした写し
+func ksWith(st mut S, ks int, j int, k int) int {
+    n := table.Get(mut st.h, ks)
+    at := block(mut st, n + 1)
+    table.Set(mut st.h, at, n)
+    for i <- iter.Range(0, n) {
+        table.Set(mut st.h, at + 1 + i, if i == j { k } else { table.Get(mut st.h, ks + 1 + i) })
+    }
+    return at
+}
+
+func ksEq(st mut S, a int, b int) bool {
+    n := table.Get(mut st.h, a)
+    if n != table.Get(mut st.h, b) {
+        return false
+    }
+    for i <- iter.Range(0, n) {
+        if table.Get(mut st.h, a + 1 + i) != table.Get(mut st.h, b + 1 + i) {
+            return false
+        }
+    }
+    return true
+}
+
+// 推論の作業域: 変換の作業域（convExpr）と、脱糖器の記録の眺め
+type KCx struct {
+    c desugar.Core
+    srcs []int
+    fs int
+    vs int
+    ls int
+    fixed []bool // 親が推論した kind を使う Def（推論しない — 成分の外の確定した行と同じ扱い）
+}
+
+// 脱糖器の型 t を kind の列 ks の下で変換する
+func ctyUnder(st mut S, x KCx, ks int, t int) int {
+    saved := st.tvKs
+    st.tvKs = ks
+    r := ctyOf(mut st, x.c.Types, t)
+    st.tvKs = saved
+    return r
+}
+
+// Def j の本体を kind の列 ks の下で変換する（-1 = 深すぎる）
+func bodyUnder(st mut S, x KCx, ks int, j int) int {
+    saved := st.tvKs
+    st.tvKs = ks
+    r := convExpr(mut st, x.c.H, x.c.Labels, x.c.Types, x.c.Exprs, x.c.H[x.srcs[j] + 2], x.fs, x.vs, x.ls)
+    st.tvKs = saved
+    return r
+}
+
+// 関数表の行 j の param・ret・kinds を ks の下のものに置き換える（body も置き換えるなら withBody）
+func setRow(st mut S, x KCx, j int, ks int, withBody bool) bool {
+    df := table.Get(mut st.h, st.defs + 1 + j)
+    src := x.srcs[j]
+    table.Set(mut st.h, df, ctyUnder(mut st, x, ks, x.c.H[src]))
+    table.Set(mut st.h, df + 1, ctyUnder(mut st, x, ks, x.c.H[src + 1]))
+    table.Set(mut st.h, df + 3, ks)
+    if withBody {
+        b := bodyUnder(mut st, x, ks, j)
+        if b < 0 {
+            return false
+        }
+        table.Set(mut st.h, df + 2, b)
+    }
+    return true
+}
+
+// DefOk（checkAll の Def の条件と同じ）: いまの関数表の下で、シグネチャ p・rt・本体 e0・kind の列 ks の Def が型付くか
+func defAccepts(st mut S, p int, rt int, e0 int, ks int) bool {
+    tp := tsLen(mut st, ks)
+    if !(paramOk(mut st, p) && retOk(mut st, rt) && nc(mut st, e0) == 0 && tvarsBelow(mut st, tp, p) && tvarsBelow(mut st, tp, rt) && tvWf(mut st, ks, p) && tvWf(mut st, ks, rt) && exprTvWf(mut st, ks, e0)) {
+        return false
+    }
+    sf := st.f
+    se := st.failE
+    st.f = 1
+    r := tcRun(mut st, e0, 0, 2, cons(mut st, p, -1), -1)
+    st.f = sf
+    st.failE = se
+    return r >= 0 && tyEq(mut st, r, rt)
+}
+
+// accK: 行 j を kind の列 a で置き直した Def が、いまの関数表の下で型付くか（深すぎる変換は型付かない扱い）
+func accK(st mut S, x KCx, j int, a int) bool {
+    src := x.srcs[j]
+    b := bodyUnder(mut st, x, a, j)
+    if b < 0 {
+        return false
+    }
+    return defAccepts(mut st, ctyUnder(mut st, x, a, x.c.H[src]), ctyUnder(mut st, x, a, x.c.H[src + 1]), b, a)
+}
+
+// sigA: kind の列 a で置き直した戻りの型が retOk か（長さと正規形は作り方で保つ）
+func sigA(st mut S, x KCx, j int, a int) bool {
+    return retOk(mut st, ctyUnder(mut st, x, a, x.c.H[x.srcs[j] + 1]))
+}
+
+// greedy: 旗の全部から、添字ごとに Flag.order の順に、外して判定に入れば外したままにする（sig = シグネチャの条件・でなければ accK）
+func greedy(st mut S, x KCx, j int, n int, sig bool) int {
+    mut m := ksFill(mut st, n, K_TOP)
+    for i <- iter.Range(0, n) {
+        for s <- iter.Range(0, 5) {
+            k := table.Get(mut st.h, m + 1 + i)
+            mask := kDropMask(s)
+            if k & mask != 0 {
+                cand := ksWith(mut st, m, i, k - (k & mask))
+                good := if sig { sigA(mut st, x, j, cand) } else { accK(mut st, x, j, cand) }
+                if good {
+                    m = cand
+                }
+            }
+        }
+    }
+    return m
+}
+
+// 成分 cmp0 の kind を決める（成功なら行は推論した kind・失敗なら KALL の行）。いまの関数表の成分の外の行は確定済み
+func inferComp(st mut S, x KCx, cmp0 []int) bool {
+    nc0 := len(cmp0)
+    mut ns := mut []int{}
+    for f <- cmp0 {
+        ns = append(ns, x.c.H[x.c.H[x.srcs[f] + 3]])
+    }
+    mut ok := true
+    for i <- iter.Range(0, nc0) {
+        if ok && !sigA(mut st, x, cmp0[i], ksFill(mut st, ns[i], K_TOP)) {
+            ok = false
+        }
+    }
+    mut ks := mut []int{}
+    mut fuel := 1
+    for i <- iter.Range(0, nc0) {
+        ks = append(ks, if ok { greedy(mut st, x, cmp0[i], ns[i], true) } else { -1 })
+        fuel += 5 * ns[i]
+    }
+    mut done := false
+    while ok && !done {
+        if fuel == 0 {
+            ok = false
+        } else {
+            fuel -= 1
+            for i <- iter.Range(0, nc0) {
+                setRow(mut st, x, cmp0[i], ks[i], false)
+            }
+            for i <- iter.Range(0, nc0) {
+                if ok && !accK(mut st, x, cmp0[i], ksFill(mut st, ns[i], K_TOP)) {
+                    ok = false
+                }
+            }
+            if ok {
+                mut nk := mut []int{}
+                mut same := true
+                for i <- iter.Range(0, nc0) {
+                    g := greedy(mut st, x, cmp0[i], ns[i], false)
+                    nk = append(nk, g)
+                    if !ksEq(mut st, g, ks[i]) {
+                        same = false
+                    }
+                }
+                if same {
+                    done = true
+                } else {
+                    for i <- iter.Range(0, nc0) {
+                        ks[i] = nk[i]
+                    }
+                }
+            }
+        }
+    }
+    for i <- iter.Range(0, nc0) {
+        k := if ok { ks[i] } else { ksFill(mut st, ns[i], desugar.KALL) }
+        if !setRow(mut st, x, cmp0[i], k, true) {
+            return false
+        }
+    }
+    return true
+}
+
+// Def j の本体が呼ぶ（call・fnref）推論の対象の Def の添字
+func calleesOf(x KCx, j int, gen []bool) []int {
+    cs := x.c.Exprs
+    e0 := x.c.H[x.srcs[j] + 2]
+    mut out := mut []int{}
+    mut stk := mut []int{}
+    stk = append(stk, e0)
+    mut sp := 1
+    while sp > 0 {
+        sp -= 1
+        e := stk[sp]
+        ex := cs[e - desugar.CBASE]
+        if (ex.tag == desugar.CCall || ex.tag == desugar.CFnref) && ex.a >= 0 && ex.a < len(gen) && gen[ex.a] {
+            out = append(out, ex.a)
+        }
+        m := kids(ex.tag)
+        for i <- iter.Range(0, m) {
+            y := kidAt(cs, e, i)
+            if y >= 0 {
+                if sp < len(stk) {
+                    stk[sp] = y
+                } else {
+                    stk = append(stk, y)
+                }
+                sp += 1
+            }
+        }
+    }
+    return freeze(out)
+}
+
+// 推論の対象の Def（型パラメータを持ち、本体がある）の kind を全部決める。変換が深すぎれば false
+func inferKinds(st mut S, x KCx) bool {
+    h := x.c.H
+    nd := len(x.srcs)
+    mut gen := mut []bool{}
+    mut any := false
+    for j <- iter.Range(0, nd) {
+        src := x.srcs[j]
+        g := h[src + 3] >= 0 && h[h[src + 3]] > 0 && h[src + 2] >= 0 && !(j < len(x.fixed) && x.fixed[j])
+        gen = append(gen, g)
+        any = any || g
+    }
+    if !any {
+        return true
+    }
+    gn := freeze(gen)
+    // 辺（CSR）: Def j の辺は adj[at[j]..at[j + 1])
+    mut at := mut []int{}
+    mut adj := mut []int{}
+    for j <- iter.Range(0, nd) {
+        at = append(at, len(adj))
+        if gn[j] {
+            for g <- calleesOf(x, j, gn) {
+                adj = append(adj, g)
+            }
+        }
+    }
+    at = append(at, len(adj))
+    // Tarjan（反復）: 成分は呼ばれる側から順に下ろされる
+    mut num := mut []int{}
+    mut low := mut []int{}
+    mut onst := mut []bool{}
+    for _ <- iter.Range(0, nd) {
+        num = append(num, -1)
+        low = append(low, 0)
+        onst = append(onst, false)
+    }
+    mut tst := mut []int{}
+    mut ts := 0
+    mut fr := mut []int{}   // 2 語ずつ: Def・次の辺
+    mut sp := 0
+    mut next := 0
+    for s <- iter.Range(0, nd) {
+        if gn[s] && num[s] == -1 {
+            num[s] = next
+            low[s] = next
+            next += 1
+            ts = kpush(mut tst, ts, s)
+            onst[s] = true
+            sp = kpush(mut fr, sp, s)
+            sp = kpush(mut fr, sp, at[s])
+            while sp > 0 {
+                top := sp - 2
+                g := fr[top]
+                e := fr[top + 1]
+                if e < at[g + 1] {
+                    fr[top + 1] = e + 1
+                    w := adj[e]
+                    if num[w] == -1 {
+                        num[w] = next
+                        low[w] = next
+                        next += 1
+                        ts = kpush(mut tst, ts, w)
+                        onst[w] = true
+                        sp = kpush(mut fr, sp, w)
+                        sp = kpush(mut fr, sp, at[w])
+                    } else if onst[w] && num[w] < low[g] {
+                        low[g] = num[w]
+                    }
+                } else {
+                    sp = top
+                    if top > 0 {
+                        p := fr[top - 2]
+                        if low[g] < low[p] {
+                            low[p] = low[g]
+                        }
+                    }
+                    if low[g] == num[g] {
+                        mut k := ts - 1
+                        while tst[k] != g {
+                            k -= 1
+                        }
+                        mut cmp0 := mut []int{}
+                        for i <- iter.Range(k, ts) {
+                            onst[tst[i]] = false
+                            cmp0 = append(cmp0, tst[i])
+                        }
+                        ts = k
+                        if !inferComp(mut st, x, freeze(cmp0)) {
+                            return false
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return true
+}
+
+// 作業のスタック xs の sp 段目に v を積む（xs が足りなければ伸ばす）。積んだ後の段数
+func kpush(xs mut []int, sp int, v int) int {
+    if sp < len(xs) {
+        xs[sp] = v
+    } else {
+        xs = append(xs, v)
+    }
+    return sp + 1
+}
+
+// 親の前段（区間の並列の check）: 型パラメータを持つ Def の本体だけを脱糖して推論した、名前付きの Def の kind
+// （関数表の添字で [関数, n, k…] の並び — desugar.DefRng.kinds の形）
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnArg, diag.FnCap, diag.Cell)
+func KindsGen(p loader.Program, excl []int, only int, trust bool) ([]int, error?) {
+    return KindsGenP(p, excl, only, trust, desugar.EmptyPlan())
+}
+
+// KindsGen の、親の計画 plan の参照の辺で表層型検査を総称関数から届く関数に絞る版（区間の並列の check の親）
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnArg, diag.FnCap, diag.Cell)
+func KindsGenP(p loader.Program, excl []int, only int, trust bool, plan desugar.DefPlan) ([]int, error?) {
+    return kindsGenR(p, excl, only, trust, desugar.GenRng(plan), KG_FN)
+}
+
+// KindsGen の、呼び手（build の lower）が同じ Program で型付けた店 fz を受け取る版（表層型検査器を走らせない）
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnArg, diag.FnCap, diag.Cell)
+func KindsGenT(p loader.Program, excl []int, trust bool, fz desugar.TyFrozen) ([]int, error?) {
+    return kindsGenR(p, excl, -1, trust, desugar.WithAdopt(desugar.GenRng(desugar.EmptyPlan()), fz), KG_FN)
+}
+
+// 結果の形（kindsGenR の mode）: 関数表の添字の並びの kind・KindsCore の形（Def の順）・診断 diag.KindArg のやり直し（kindFailOf の形）
+const KG_FN = 0
+const KG_DEF = 1
+const KG_FAIL = 2
+const KG_WHY = 3
+
+// 結果が []int の脱糖と検査の本体。WithCoreOpt は呼び出し点ごとに展開されるので、呼び出し点はここの 1 か所にする
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnArg, diag.FnCap, diag.Cell)
+func kindsGenR(p loader.Program, excl []int, only int, trust bool, rng desugar.DefRng, mode int) ([]int, error?) {
+    return desugar.WithCoreOpt(p, excl, only, trust, 0, rng, (d) => []int{}, (c, m) => switch mode {
+        case KG_FAIL: kindFailOf(c)
+        case KG_WHY: failWhyOf(c)
+        case KG_DEF: KindsCore(c)
+        default: fnKinds(c, KindsCore(c))
+    })
+}
+
+// kindsOut の形（Def の順）の ks を、名前付きの Def について関数表の添字の並びにする
+func fnKinds(c desugar.Core, ks []int) []int {
+    mut out := mut []int{}
+    mut q := 0
+    for j <- iter.Range(0, len(c.DefFn)) {
+        if q >= len(ks) {
+            return freeze(out)
+        }
+        n := ks[q]
+        if n > 0 && c.DefFn[j] >= 0 {
+            out = append(out, c.DefFn[j])
+            for i <- iter.Range(0, n + 1) {
+                out = append(out, ks[q + i])
+            }
+        }
+        q += 1 + n
+    }
+    return freeze(out)
+}
+
+// ── 診断 diag.KindArg: 最初に落ちた節が、型引数が呼び先の kind を満たさない呼び出し（call・fnref）か ──
+
+// 旗ごとの「その旗だけの正規形」（rf と kf は mf・cf・cov を含む）。順は診断に並べる順（rf・kf・mf・cf・cov）
+func kSingle(i int) int {
+    return switch i {
+    case 0: 15
+    case 1: 30
+    case 2: 2
+    case 3: 4
+    default: 8
+    }
+}
+
+func kBit(i int) int {
+    return switch i {
+    case 0: 1
+    case 1: 16
+    case 2: 2
+    case 3: 4
+    default: 8
+    }
+}
+
+// 旗 i を外す 1 歩（Kind.drop）の消す桁
+func kWhyMask(i int) int {
+    return switch i {
+    case 0: KM_RF
+    case 1: KM_KF
+    case 2: KM_MF
+    case 3: KM_CF
+    default: KM_COV
+    }
+}
+
+// 最初に落ちた節が kind を満たさない呼び出しなら [呼び先の Def, 型パラメータの添字, 欠けた旗（kBit の和・0 = 旗では説明できない —
+// chan と端点）, 旗ごとの本体の位置（rf・kf・mf・cf・cov の順に 5 つ — PackPos・0 = 無し）,
+// 旗ごとの関数値の捕捉（同じ順に 3 語ずつ — kindCapOf。kf は捕捉に依らないので見ない）]。でなければ空
+func kindArgOf(st mut S, x KCx) []int {
+    e := st.failE
+    if e == 0 || (nK(mut st, e) != W_CALL && nK(mut st, e) != W_FNREF) {
+        return []int{}
+    }
+    a := nA(mut st, e)
+    ts := nB(mut st, e)
+    df := defGet(mut st, a)
+    if df < 0 {
+        return []int{}
+    }
+    ks := defKinds(mut st, df)
+    if tsLen(mut st, ts) != defTps(mut st, df) || kindsArgsOk(mut st, ks, ts) {
+        return []int{}
+    }
+    mut i := 0
+    while kindOk(mut st, table.Get(mut st.h, ks + 1 + i), table.Get(mut st.h, ts + 1 + i)) {
+        i += 1
+    }
+    k := table.Get(mut st.h, ks + 1 + i)
+    t := table.Get(mut st.h, ts + 1 + i)
+    miss := kindMiss(mut st, k, t)
+    mut out := mut []int{a, i, miss}
+    for f <- iter.Range(0, 5) {
+        out = append(out, if (miss & kBit(f)) != 0 { kindWhy(mut st, x, a, ks, i, kWhyMask(f)) } else { 0 })
+    }
+    for f <- iter.Range(0, 5) {
+        c := if f != 1 && (miss & kBit(f)) != 0 { kindCapOf(mut st, x, t, kSingle(f)) } else { []int{0, 0, 0} }
+        for v <- c {
+            out = append(out, v)
+        }
+    }
+    return freeze(out)
+}
+
+// 型 t の中の関数値の成分で、性質 k を欠く最初の捕捉 [ラムダの位置, named fn type の宣言の位置, 名前の添字 + 1]（無ければ 0 を 3 つ）。
+// 捕捉の記録（Core.Caps）を出現の順に見て、env の型が t の中に現れる記録の捕捉を順に kindOk で見る
+func kindCapOf(st mut S, x KCx, t int, k int) []int {
+    cs := x.c.Caps
+    mut q := 0
+    while q + 3 < len(cs) {
+        n := cs[q + 3]
+        if tyOccurs(mut st, ctyOf(mut st, x.c.Types, cs[q + 2]), t, 64) {
+            for i <- iter.Range(0, n) {
+                if !kindOk(mut st, k, ctyOf(mut st, x.c.Types, cs[q + 5 + 2 * i])) {
+                    return []int{cs[q], cs[q + 1], cs[q + 4 + 2 * i] + 1}
+                }
+            }
+        }
+        q += 4 + 2 * n
+    }
+    return []int{0, 0, 0}
+}
+
+// 型 e が t の部分の型として（region と mut の違いを除いて）現れるか
+func tyOccurs(st mut S, e int, t int, fuel int) bool {
+    if fuel == 0 {
+        return false
+    }
+    if tyLike(mut st, e, t) {
+        return true
+    }
+    return switch tg(mut st, t) {
+    case TOpt: tyOccurs(mut st, e, tA(mut st, t), fuel - 1)
+    case TUn | TPr | TFn: tyOccurs(mut st, e, tA(mut st, t), fuel - 1) || tyOccurs(mut st, e, tB(mut st, t), fuel - 1)
+    case TRef | TSl | TMp | TOwn | TMuS: tyOccurs(mut st, e, tC(mut st, t), fuel - 1)
+    case TChan | TDom: tyOccurs(mut st, e, tB(mut st, t), fuel - 1)
+    case TMuRs: tyOccurs(mut st, e, tD(mut st, t), fuel - 1)
+    default: false
+    }
+}
+
+// 構造の等しさから region と mut のフィールドを除いたもの（env の型は作成点の座標へ写されて region が変わる）
+func tyLike(st mut S, a int, b int) bool {
+    if a == b {
+        return true
+    }
+    k := tg(mut st, a)
+    if k != tg(mut st, b) {
+        return false
+    }
+    return switch k {
+    case TVar: tA(mut st, a) == tA(mut st, b)
+    case TOpt: tyLike(mut st, tA(mut st, a), tA(mut st, b))
+    case TUn | TPr | TFn: tyLike(mut st, tA(mut st, a), tA(mut st, b)) && tyLike(mut st, tB(mut st, a), tB(mut st, b))
+    case TRef | TSl | TMp | TOwn: tyLike(mut st, tC(mut st, a), tC(mut st, b))
+    case TMuS: tA(mut st, a) == tA(mut st, b) && tB(mut st, a) == tB(mut st, b) && tyLike(mut st, tC(mut st, a), tC(mut st, b))
+    case TChan | TDom: tyLike(mut st, tB(mut st, a), tB(mut st, b))
+    case TMuRs: tB(mut st, a) == tB(mut st, b) && tC(mut st, a) == tC(mut st, b) && tyLike(mut st, tD(mut st, a), tD(mut st, b))
+    case TRVar: tA(mut st, a) == tA(mut st, b)
+    default: tyEq(mut st, a, b)
+    }
+}
+
+// kind k の旗のうち、型 t が持たない性質（kBit の和）。covariant は他の性質が欠けないときだけ挙げる（表層の型では他の性質から導ける —
+// 文書と診断は covariant を見せない）。0 なら旗では説明できない（chan と端点 — argFree）
+func kindMiss(st mut S, k int, t int) int {
+    mut miss := 0
+    for f <- iter.Range(0, 4) {
+        if (k & kBit(f)) != 0 && !kindOk(mut st, kSingle(f), t) {
+            miss = miss | kBit(f)
+        }
+    }
+    if miss == 0 && (k & 8) != 0 && !kindOk(mut st, 8, t) {
+        miss = 8
+    }
+    return miss
+}
+
+// Def j の kind の列 ks から添字 i の旗を mask の分だけ外した列で本体を検査し直したときに、最初に落ちた節の出所（PackPos・0 = 無し —
+// 本体が無い・落ちない）。いまの failE は保つ
+func kindWhy(st mut S, x KCx, j int, ks int, i int, mask int) int {
+    if j >= len(x.srcs) || x.c.H[x.srcs[j] + 2] < 0 {
+        return 0
+    }
+    k := table.Get(mut st.h, ks + 1 + i)
+    a := ksWith(mut st, ks, i, k - (k & mask))
+    b := bodyUnder(mut st, x, a, j)
+    if b < 0 {
+        return 0
+    }
+    p := ctyUnder(mut st, x, a, x.c.H[x.srcs[j]])
+    sf := st.f
+    se := st.failE
+    st.failE = 0
+    st.f = 1
+    r := tcRun(mut st, b, 0, 2, cons(mut st, p, -1), -1)
+    st.f = sf
+    // 本体が型付いて戻り値の型と違うなら、本体の根（関数の宣言の位置）ではなく末尾の式を指す
+    at := if r < 0 && st.failE != 0 { posOfNode(mut st, st.failE) } else if r >= 0 { tailPos(mut st, b) } else { posOfNode(mut st, b) }
+    st.failE = se
+    return at
+}

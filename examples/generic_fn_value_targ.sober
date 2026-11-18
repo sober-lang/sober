@@ -1,0 +1,37 @@
+package main
+
+// 総称関数を明示の型引数で呼ぶ（`id[H](…)`）と、型パラメータの型の仮引数は値の位置: 宣言した関数の名前とラムダを、
+// Hの値（クロージャ）として渡せる。単相の関数へ渡す形と同じ読み
+
+type H func(x int) int
+
+type Box[T] struct { v T }
+
+func incr(x int) int {
+    return x + 1
+}
+
+func adder(s string) H {
+    return (x int) => x + len(bytes(s))
+}
+
+func id[T](x T) T {
+    return x
+}
+
+func pick[T](c bool, a T, b T) T {
+    return if c { a } else { b }
+}
+
+func wrap[T](x T) Box[T] {
+    return Box[T]{v: x}
+}
+
+func main() {
+    k := 7
+    println(id[H](incr)(1), id[H]((x int) => x * 2)(5), id[H](adder("abc"))(0))
+    println(pick[H](true, incr, (x int) => x * k)(3), pick[H](false, incr, (x int) => x * k)(3))
+    println(wrap[H]((x int) => x - k).v(10), wrap[H](incr).v(1))
+    hs := []H{id[H](incr), id[H]((x int) => x + k)}
+    println(hs[0](1) + hs[1](1))
+}

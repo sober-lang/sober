@@ -1,0 +1,10 @@
+@@full	b37b3e3f58f651c9	1028	25711
+@head	f8802cba5eefdec2	0	31
+func Leak	47d7c0255918ecd8	15	638
+func Missing	d8b863780a546a56	10	413
+func Stale	e507a6ab7052113c	15	630
+func Wrap	cb0b1a79112fe4f5	15	629
+func main	f90317420a4a8beb	65	2384
+func put	1847cd5bc1a837b1	21	770
+type Bad	c46bc68f4fa91a27	1	64
+type Short	69e71e44c1c791f7	2	111

@@ -1,0 +1,8 @@
+@@full	66a62ffd5efc4c62	1198	30302
+@head	f2094e0d08126b29	16	1020
+func AppendWord	fa9737533c9b022e	42	1452
+func Load64	ced04ed95933c363	29	1001
+func MatchLen	4fac2426f4097fc7	57	1883
+func appendBytes	5b76f021152fb09d	30	1163
+func outOfRange	a14ce1039ff7ed5e	8	460
+type OutOfRange	f5055fddb771a264	3	162

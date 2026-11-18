@@ -1,0 +1,5 @@
+    r := switch o {
+    case Some{v}: true
+    default: false
+    }
+    return r

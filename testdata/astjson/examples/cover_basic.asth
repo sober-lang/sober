@@ -1,0 +1,9 @@
+@@full	bcf38f9aacf74891	997	24428
+@head	889b51929126c954	0	102
+func apply	ec8878178dc946ec	7	355
+func kind	7fa5110b25680b0c	23	811
+func main	c94f43ffab9a9cd3	58	1703
+func parse	d9fda0bed1652660	10	415
+func sign	91f3ba57c8bf4544	19	660
+func sum	57cc26651a308b4a	32	1135
+func unused	212796d5880d61c5	6	287

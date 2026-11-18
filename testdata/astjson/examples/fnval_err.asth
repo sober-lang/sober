@@ -1,0 +1,15 @@
+@@full	bfa7ff7c5715a51d	2112	58001
+@head	07b8ec3ac4653223	0	141
+func app	30a1e7d2b91be186	11	464
+func dbl	639e6101a0af7b17	6	284
+func each	94b421dd7cf79d37	19	678
+func first	d2d3a06bb56055ec	11	450
+func half	dafd2ca79d13ca63	20	706
+func join	02b96021ec6fbfd6	25	933
+func main	9ff10a62ad0fd408	167	5103
+func show	7ff6c2141b0b22e9	18	844
+func small	5b1625c2e77efaa3	13	522
+func sq	01a25617e0d6b47a	6	286
+func sumE	d203fa694f7c9ae2	25	883
+type Odd	9c082ec2fff11efb	2	109
+type TooBig	0d639d0ba73e0aa2	2	112

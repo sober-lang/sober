@@ -1,0 +1,36 @@
+package main
+
+// 全レジスタを保つ中継（rt.wm_alloc_s — 計上済みの上限の低速パス）の検査（scripts/keepcheck.sh）の題材: taskの中で列を伸ばし続け、
+// 確保の溢れの低速パスを何度も踏む。scripts/keepcheck.sh はこれを自己buildしたコンパイラでビルドして走らせる
+
+import "std/task"
+
+type P struct {
+    a, b, c int
+}
+
+func mk(n int, k int) int {
+    mut xs := []P{}
+    mut i := 0
+    mut s := 0
+    while i < n {
+        p := P{i * k, i + k, i ^ k}
+        xs = append(xs, p)
+        s += xs[i].a + xs[i].b * 3 + xs[i].c * 7
+        i += 1
+    }
+    return s
+}
+
+func main() {
+    r, _ := task.Run((s task.Scope) => {
+        mut j := 0
+        while j < 4 {
+            k := j
+            _ = task.Spawn(s, () => mk(200000, k + 1))
+            j += 1
+        }
+        mk(300000, 9)
+    })
+    println("n ${r}")
+}

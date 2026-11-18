@@ -256,6 +256,13 @@ func headerLines(r http.server.Request) http.server.Response {
     return http.server.Text(strings.Join(freeze(lines), ""))
 }
 
+// dupは同じ名前の欄を2本書くレスポンス（/dup/<名前>。Locationのような1行だけの欄はpanic(BadHeader)、リストの欄と独自の欄は2本とも送る）
+func dup(r http.server.Request) http.server.Response {
+    name := strings.TrimPrefix(r.path, "/dup/")
+    hs := []http.Field{http.Field{name: name, value: "<a>"}, http.Field{name: name, value: "<b>"}}
+    return http.server.Response{status: 200, contentType: "text/plain", body: bytes("dup"), headers: http.server.Headers{list: hs}}
+}
+
 func route(ds []Item, st []http.server.Route, sh []http.server.Route, dp string, dl int, r http.server.Request) http.server.Response {
     return switch {
     case strings.HasPrefix(r.path, "/static/"): http.server.Dispatch(st, r)
@@ -267,6 +274,7 @@ func route(ds []Item, st []http.server.Route, sh []http.server.Route, dp string,
     case r.path == "/sse-body": sseFlat(r)
     case r.path == "/pipeline": http.server.Text("ok")
     case r.path == "/headers": headerLines(r)
+    case strings.HasPrefix(r.path, "/dup/"): dup(r)
     case r.path == "/upload": if r.method == "POST" { upload(r) } else { http.server.Status(405) }
     case r.path == "/echo": if r.method == "POST" { http.server.Response{status: 200, contentType: "application/octet-stream", body: r.body} } else { http.server.Status(405) }
     case r.path == "/baseline11": {

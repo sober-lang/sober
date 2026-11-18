@@ -1,0 +1,9 @@
+@@full	870c9a8b03b943e7	1560	42728
+@head	1fbaaa5299575822	11	848
+func Equal	8544ba3b96e58928	47	1572
+func NonZero	a79bd5ea1a277908	9	384
+func Rand	f85b05b9bef204bb	74	2465
+func RandIntn	573b82b0103eedae	66	2237
+func Select	768423db9824119a	13	569
+func Wipe	02b577684c21ecc0	19	704
+type NoEntropy	ce77625e721f7520	2	119

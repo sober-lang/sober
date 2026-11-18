@@ -159,26 +159,55 @@ func emptyConfig() Config {
 
 // addr で待ち受け、接続ごとに handshake を済ませてから k を走らせる（接続 1 本 = task 1 本 — net.Serve と同じ admission・k の失敗と死は吸収）。
 // handshake の失敗は alert を送って閉じ、k は呼ばない。k が返ったら（error を返しても）close_notify を送って閉じる。k が死んだときは close_notify を送らずに閉じる
-// region = 接続のtaskのregion 1つの上限（net.Serveのregion: へそのまま。既定は128 MiB）
+// conns・reject・regionはnet.Serveへそのまま（意味も既定もnet.Serveと同じ）。budgetは接続1本の宣言（既定 64 KiB）にwaitStackを足してnet.Serveへ渡す。
+// headWait = 接続を受けてからhandshakeが済むまでの上限（task.MS・既定30秒・0以下は開いた時点で期限切れ）。期限が来たら何も送らずに閉じ、kは呼ばない。
+// kの中のhttp.server.ServeWithは、入った時刻から自分のheadWait: を数える（handshakeの分は数えない）
 @errors(net.Bad, io.Closed, io.Timeout, io.Expired, io.Denied, io.Other)
 @effects(block, io, panic, nondet, Handler)
-func Serve(addr string, cfg Config, k Handler, region int?) error? {
+func Serve(addr string, cfg Config, k Handler, budget int?, conns int?, reject string?, region int?, headWait int?) error? {
     wk := workNew()
+    hu := waitUnits(if headWait != nil { headWait } else { 30000 * 1000000 })
+    // 閉じの送りの期限の送りの間隔のビット（headWaitと同じ単位の数。上限は16ビット）。分岐は accept（定数時間の検査の対象 — ctcheck）の外で
+    hiv := (if hu < 65535 { hu } else { 65535 }) * 4294967296
     for l <- net.Listen(addr)? {
-        net.Serve(l, (c) => accept(c, cfg, k, wk), region: if region != nil { region } else { 128 * 1048576 })?
+        net.Serve(l, (c) => accept(c, cfg, k, wk, hu, hiv), budget: (if budget != nil { budget } else { 64 * 1024 }) + waitStack, conns: conns, reject: reject, region: if region != nil { region } else { 128 * 1048576 })?
     }
     return nil
 }
 
+// TLSの接続のtaskが、taskの固定費（task.Fixed() = TCBのページとスタックの1ページ）の外で常駐させるスタックの量。平文の接続は受けの待ちが本体の中にあり、
+// 待つ間はエリアを持たない。TLSの接続は握手とkの中（関数の値なので本体に展開されない）で待つので、エリアを持ったまま待ち、触ったスタックのページが残る。
+// 値 = 接続のtaskの最深のスタック（stackcheckのTLSの経路のstack_hw）が TCB_TOP_ROOM + 1ページ を越える分をページに切り上げた量。stackcheckが照合する
+const waitStack = 8192
+
+// 待ちの時間（ns。task.MSの倍数）→ rtの粗い時刻の単位の数（std/http/serverのwaitUnitsと同じ。lower/rdl.sober）
+func waitUnits(ns int) int {
+    if ns <= 0 {
+        return 0
+    }
+    if ns >= 1 << 59 {
+        return 1 << 30
+    }
+    return ((ns + 536870911) >> 29) + 2
+}
+
 // 1接続のhandshake（handshake）の後にkを呼ぶ。handshakeの作業域（受けのバッファ・Hs・署名の作業）はhandshakeのregionに置き、
 // kを呼ぶ前に返す — 接続の寿命いっぱい（kの間）抱えない（格納場所の列だけが外へコピーされる）
-func accept(nc net.Conn, cfg Config, k Handler, wk []int) error? {
+func accept(nc net.Conn, cfg Config, k Handler, wk []int, hu int, hiv int) error? {
+    // handshakeの期限（rtの期限の列へ入れて、受けの期限を置く。op 16 / 14 / 15）。handshakeが済んだら外す
+    // 送りの間隔のビットは足さない: headWaitはhandshakeの全体に掛かる期限で、送りの進みで延ばすとhandshakeを引き延ばす相手を切れない
+    _ = sysNetOp(16, nc.fd, 0, 0)
+    _ = sysNetOp(14, sysNetOp(15, 0, 0, 0) + hu, 0, 0)
     blk := handshake(nc, cfg)?
+    _ = sysNetOp(14, 0, 0, 0)
     // handshakeの深い作業（署名・鍵の導出 — 1回きり）のページを返す: スロットのページはtaskの寿命いっぱい残るので、リクエストのパスより深い高水位が接続の常駐になる
     _ = leaseOp(6, []int{}, 0, 0)
     // 送りの方向はhandshakeの鍵のまま展開して持つ（Sendのたびに格納場所の列から鍵の素材をコピーし直さない — 変わるのはseqのワードだけ）
     c := Conn{c: nc, blk: blk, wr: internal.record.Unpack(freeze(leaseView(blk, fWr, dirW)), 0), wk: wk, seal: tlsSeal{}}
     ke := k(c)
+    // 閉じの送りも相手の待ちで止まらないように、期限をもう1回分だけ置く。送りの間隔のビット hiv（Serve が headWait から組む）も足す — 積み残しの Flush と
+    // close_notify の送りは、読み続ける相手には送りの進みで張り直して送り切る（読まない相手は間隔で切る）
+    _ = sysNetOp(14, sysNetOp(15, 0, 0, 0) + hu + hiv, 0, 0)
     // 積み残し（Put の後に Flush しないで k が返った）を送ってから close_notify。
     // fatalのalertを送った・受けた接続には、その後に何も送らない（RFC 9846 6.2）。相手のclose_notifyの後は、積み残しを送ってからclose_notifyを返す（6.1）
     if (flags(c) & bFatal) == 0 {
@@ -437,7 +466,8 @@ func flushMode(c Conn, nw int) error? {
     return Closed{}
 }
 
-// bのrecordをこの関数のregionに作ってその場で送る（送信バッファに入らないb・鍵を進める前後）
+// bのrecordをその場で送る（送信バッファに入らないb・鍵を進める前後）。平文をnowPieceずつ封じて送る。切片ごとのrecordは反復のregionに作って捨てるので、
+// 大きいbでも暗号文の全体を抱えない（読まない相手へ送る間も、抱えるのは切片1つ分）。nowPieceはMaxPlainの倍数なので、recordの切れ目はb全体を封じたときと同じ
 func sendNow(c Conn, b []byte, fl int) error? {
     mut wr := if (fl & bRekey) != 0 { internal.record.Unpack(view(c, fWr, dirW), 0) } else { internal.record.WithSeq(c.wr, leaseOp(4, c.blk, fWr + 1, 0)) }
     mut pre := []byte{}
@@ -447,11 +477,19 @@ func sendNow(c Conn, b []byte, fl int) error? {
         setFlags(c, (fl & ^bUpdate) | bRekey)
         putWr(c, internal.record.Pack(wr))
     }
-    r := internal.record.Seal(mut wr, internal.record.CtApp, b, 0)
-    setSeq(c, internal.record.Seq(wr))
-    net.Send(c.c, if len(pre) == 0 { r } else { cat(pre, r) })? Closed{}
+    mut at := 0
+    while at < len(b) {
+        m := if len(b) - at < nowPiece { len(b) - at } else { nowPiece }
+        r := internal.record.Seal(mut wr, internal.record.CtApp, b[at:at + m], 0)
+        setSeq(c, internal.record.Seq(wr))
+        net.Send(c.c, if at == 0 && len(pre) > 0 { cat(pre, r) } else { r })? Closed{}
+        at += m
+    }
     return nil
 }
+
+// sendNowが1回に封じて送る平文の大きさ（record 4つ）
+const nowPiece = 4 * internal.record.MaxPlain
 
 // bのrecord（番号seq）をワーカーの作業の列へSealし、rtに予約のチャンクの続きへコピーさせる（net_op 12）。1 = 積んだ。0以下 = 積めない。積めないのは、
 // recordがチャンクを越える・鍵の使用上限の手前・予約のチャンクに入らない・予約できないとき。積めなければ呼び手はseqを進めない。作業の列（頭・nonce・AEADのrecordの状態）は
@@ -561,7 +599,8 @@ func rest(a []byte, at int) []byte {
     return freeze(o)
 }
 
-// rtのnetのインターフェース（std/netのsysNetOpと同じ組み込み）。ここで使うのはop 12・13だけ: 送信バッファのチャンクの予約へ積む・予約のSENDを積む
+// rtのnetのインターフェース（std/netのsysNetOpと同じ組み込み）。ここで使うのはop 12・13（送信バッファのチャンクの予約へ積む・予約のSENDを積む）と
+// op 14〜16（受けと送りの期限。期限のワードを置く・ワーカーの粗い時刻・ワーカーの期限の列へ入れる）
 @intrinsic("net_op")
 func sysNetOp(op int, fd int, a int, b int) int
 

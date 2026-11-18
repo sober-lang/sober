@@ -1,0 +1,20 @@
+@@full	4b170218b462dce1	7158	209809
+@head	02038099153c9c33	0	367
+const Fields	70e0bea31ff7f5f5	3	136
+const GoCerts	1927c6929ac75b74	3	137
+const Pkits	fb81707e76fdd3d6	3	135
+func TestAgainstGo	666327962ddc6ca0	244	8321
+func TestCabLeaf	768a3b6f45275b0d	145	4836
+func TestDerHeads	d9d2fd2e578d321d	202	6528
+func TestOidText	aa31f52cdea0bff1	40	1346
+func TestTime	57f5e1bbd5a90235	125	3926
+func get	a030a3c561ac0ce5	18	692
+func h8	e0e2ad4dd766cbf4	15	583
+func ipText	a249bf9be7fc720e	37	1191
+func joinSorted	31a955e9d13f8815	81	2614
+func less	992bddf6daeaa9c5	55	1810
+func line	e4997e8ddb65e17e	108	3733
+func opt	19eb0afead4fd07e	18	642
+func pubName	5179beb1876f7299	42	1479
+func sigName	622af3f538f952ec	43	1685
+func tm	463efcc9713c51ba	27	1064

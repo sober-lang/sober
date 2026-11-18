@@ -1,0 +1,4 @@
+    if q != nil {
+        return q
+    }
+    return d

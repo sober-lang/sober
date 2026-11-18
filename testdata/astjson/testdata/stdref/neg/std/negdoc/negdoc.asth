@@ -1,0 +1,25 @@
+@@full	922343ed0a52686e	679	11875
+@head	cb7098cff8c7b900	0	33
+const GroupA	15634a77c0dc1945	1	46
+const GroupB	92eb5b25f16c9123	1	46
+const GroupC	49c6a9985957beaa	1	46
+const GroupD	07729c5a6019b26b	1	46
+func BadName	72d5b8624b625db1	3	166
+func Bare	b7055e23124df87a	3	164
+func Bin	82d115335afaa41f	3	162
+func Bold	f3b136631c35ee63	3	164
+func CodeStar	372c63897a93a090	3	168
+func Dan	1323c97f88f00fab	3	162
+func Date	48e6a5cbcd300755	3	163
+func Example	81588d4c88e3bd2f	3	167
+func Good	6e560158cf8c189a	3	163
+func NoDoc	6e068e97959903f8	3	164
+func NotBare	d849e5bc1ddeec82	3	167
+func Pair	488348b2d7f54d37	4	225
+func Phase	cdcd19bbbbf29417	3	165
+func Report	24e0ef79998f6b3d	3	165
+func Section	33cd999281fe6eec	3	166
+func SectionOk	7df06210231f9c3f	3	168
+func Stale	f829d0f14c89e91d	3	165
+type Fail	b8000b82a4f2b510	1	65
+type Rec	361d7d8863515107	4	202

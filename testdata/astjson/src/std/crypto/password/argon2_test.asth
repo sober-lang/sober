@@ -1,0 +1,9 @@
+@@full	48295cd303490bb1	1825	54393
+@head	90425f48b9cf5a3b	0	326
+const argon2idGrid	e1c0b6a9fd88412c	3	142
+const blake2bGrid	d8f816e04a703b81	3	141
+func TestArgon2idGrid	ac9080e65c1c6c8f	120	4049
+func TestArgon2idRfc9106	de8ae196a8d6c76a	40	1341
+func TestBlake2bGrid	77f2421b016d9da8	81	2761
+func TestBlake2bRfc7693	6adb8b1e248949a8	24	1010
+func rep	e8dcde8047e9402b	27	1006

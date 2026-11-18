@@ -323,7 +323,9 @@ func pushDecls(out mut []Decl, p loader.Program, fi int, s Src, k int, l int, ki
     }
     for j <- iter.Range(0, ast.ListLen(t, l)) {
         n := ast.ListAt(t, l, j)
-        if isPublic(loader.Name(t, t.nodes[n].a)) {
+        nm := loader.Name(t, t.nodes[n].a)
+        // stdの中だけが呼べる std/task の関数（loader が std の外の呼び出しを拒否する）は、利用者向けのリファレンスに載せない
+        if isPublic(nm) && !(strings.HasPrefix(s.path, "std/task/") && loader.StdOnlyName(nm)) {
             out = append(out, mkDecl(p, fi, s, k, n, kind))
         }
     }

@@ -1,0 +1,134 @@
+package main
+
+// 関数値を置く場所（名前つき関数型の束縛・sliceとmapの要素、structの関数型のフィールド）への代入では、
+// 右辺が値の位置になる。ラムダ・名前つきの関数・ブロックとif式の末尾がクロージャの値になる。
+// フィールドの型は名前つき関数型でも匿名の関数型でもよい
+
+import "std/iter"
+
+type H func(x int) int
+
+type R struct {
+    h H
+    opt H?
+}
+
+type Q struct {
+    r R
+}
+
+type A struct {
+    f func(x int) int
+}
+
+type Ord[T] struct {
+    less func(a T, b T) bool
+}
+
+func lt(a int, b int) bool {
+    return a < b
+}
+
+func flip(o mut Ord[int], k int) {
+    o.less = (a int, b int) => a > b + k
+}
+
+func incr(x int) int {
+    return x + 1
+}
+
+func decr(x int) int {
+    return x - 1
+}
+
+func scale(r mut R, n int) {
+    r.h = (x int) => x * n
+}
+
+func pick(n int) H {
+    mut h := H(incr)
+    if n > 0 {
+        h = (x int) => x * n
+    } else if n < 0 {
+        h = decr
+    }
+    return h
+}
+
+func main() {
+    n := 3
+    mut h := H(incr)
+    h = decr
+    a := h(5)
+    h = (x int) => x * n
+    b := h(5)
+    h = {
+        m := n + 1
+        (x int) => x * m
+    }
+    println("${a} ${b} ${h(5)}")
+
+    mut r := R{h: incr, opt: nil}
+    r.h = if n > 2 { (x int) => x + n } else { decr }
+    c := r.h(5)
+    r.opt = if n > 5 { incr } else { nil }
+    d := r.opt == nil
+    r.opt = (x int) => x - n
+    o := r.opt
+    e := if o != nil { o(5) } else { 0 }
+    println("${c} ${d} ${e}")
+
+    scale(mut r, 4)
+    mut q := Q{r: R{h: incr, opt: nil}}
+    q.r.h = decr
+    println("${r.h(5)} ${q.r.h(5)} ${pick(2)(5)} ${pick(-1)(5)} ${pick(0)(5)}")
+
+    mut hs := mut []H{incr, incr}
+    hs[1] = (x int) => x * n
+    mut rs := mut []R{R{h: incr, opt: nil}}
+    rs[0].h = decr
+    mut m := mut map[string]H{"a": incr}
+    m["b"] = (x int) => x * 10
+    f := m["b"]
+    fv := if f != nil { f(5) } else { 0 }
+    // 添字の読みの関数値の呼び出しの結果も、束縛して補間に置ける
+    h0 := hs[0](5)
+    h1 := hs[1](5)
+    println("${h0} ${h1} ${rs[0].h(5)} ${fv}")
+
+    mut g := H(incr)
+    mut k := H(incr)
+    g, k = decr, (x int) => x * n
+    mut acc := H(incr)
+    for i <- iter.Range(0, 3) {
+        acc = (x int) => x * i
+    }
+    println("${g(5)} ${k(5)} ${acc(5)}")
+
+    // 束縛の型は右辺の呼び出しの結果・フィールドの読み・別の束縛から
+    mut p := pick(1)
+    p = (x int) => x + 100
+    mut fr := r.h
+    fr = incr
+    mut al := p
+    al = decr
+    println("${p(5)} ${fr(5)} ${al(5)}")
+
+    // 匿名の関数型のフィールド
+    mut an := A{f: incr}
+    an.f = decr
+    a1 := an.f(5)
+    an.f = (x int) => x * n
+    a2 := an.f(5)
+    an.f = if n > 1 { { dn := n * 2; (x int) => x + dn } } else { incr }
+    mut ag := an.f
+    ag = (x int) => x - n
+    println("${a1} ${a2} ${an.f(5)} ${ag(5)}")
+    mut as := mut []A{A{f: incr}}
+    as[0].f = (x int) => x * 100
+    mut od := Ord[int]{less: lt}
+    od.less = (x int, y int) => x + n < y
+    o1 := od.less(1, 5)
+    flip(mut od, 1)
+    println("${as[0].f(5)} ${o1} ${od.less(5, 2)}")
+}

@@ -1,0 +1,9 @@
+@@full	9a464a8e33446616	1093	27113
+@head	7edd57c7c84a6261	0	66
+func bump	3462b5567f58d381	4	248
+func main	068e9c2d703829b0	95	3153
+func movePt	6e7c2e1dafcdefbd	15	638
+func snapshot	2beb7a0b3384a719	11	459
+func walk	abaa3a6cfe8fdd91	39	1297
+type Pt	73871ecf2b25bbaa	3	155
+type St	39028ba7aeb16223	8	388

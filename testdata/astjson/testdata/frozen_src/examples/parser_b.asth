@@ -1,0 +1,11 @@
+@@full	9f1507ad79147410	2111	65364
+@head	7edd57c7c84a6261	0	66
+func eval	3730a2de75f31243	39	1404
+func isDigit	eefbb8b444d36d37	16	564
+func lex	816264b9af10e5ee	86	3030
+func main	3e5bbf92ee5413f9	18	700
+func numValue	4347a05b05b37ad8	33	1227
+func parse	a4c87c63cd1673ef	130	4672
+type Node	8a7ca4b1b9d3ecc6	4	206
+type Pair	b0f2b86b66ae6110	3	161
+type Token	182cbb69a8ccc1fa	4	213

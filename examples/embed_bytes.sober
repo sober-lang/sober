@@ -1,0 +1,52 @@
+package main
+
+// @embed のバイト列の受け皿（language.md 20 節）: 受け皿 map[string][]byte{} の値はファイルの中身の imm []byte で、
+// UTF-8 でなくてよい（受け皿が map[string]string のときだけ UTF-8 を検査する）。リポジトリのルートを cwd にしてビルドする
+
+import "std/iter"
+
+@embed("testdata/embed_bytes/**/*.bin")
+const Blobs = map[string][]byte{}
+
+func hex(b []byte) string {
+    digits := bytes("0123456789abcdef")
+    mut out := mut []byte{}
+    for i <- iter.Range(0, len(b)) {
+        out = append(out, digits[int(b[i]) / 16])
+        out = append(out, digits[int(b[i]) % 16])
+    }
+    return string(freeze(out)) catch ""
+}
+
+// 関数の戻りで外へ持ち出す
+func pick(p string) []byte {
+    v := Blobs[p]
+    if v != nil {
+        return v
+    }
+    return []byte{}
+}
+
+func main() {
+    bs := Blobs
+    println("${len(bs)} files")
+    ps := []string{"testdata/embed_bytes/a.bin", "testdata/embed_bytes/empty.bin", "testdata/embed_bytes/sub/t.bin"}
+    for i <- iter.Range(0, len(ps)) {
+        p := ps[i]
+        b := pick(p)
+        println("${p}: ${len(b)} bytes: ${hex(b)}")
+    }
+    a := pick("testdata/embed_bytes/a.bin")
+    // UTF-8 でない中身は string にできない
+    s := string(a) catch "(not UTF-8)"
+    println(s)
+    // 写して足す（元は変わらない）
+    mut c := mut []byte{}
+    for i <- iter.Range(0, len(a)) {
+        c = append(c, a[i])
+    }
+    c = append(c, 'Z')
+    println("${len(c)} ${len(a)} ${hex(a[2:5])}")
+    t := string(pick("testdata/embed_bytes/sub/t.bin")) catch "?"
+    println(t)
+}

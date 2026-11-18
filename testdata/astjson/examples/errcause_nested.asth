@@ -1,0 +1,13 @@
+@@full	d2219d78aef57b0c	1872	61664
+@head	7b6f34d1a1ab8d6d	0	141
+func inner	3dfc28f4f22d32da	32	1405
+func inner2	b36f204cea3a780a	28	1159
+func load	30a0816a6288a2cc	11	459
+func main	46b193ca1776b18e	44	1325
+func open	522d227c93403df2	21	803
+func show	281afd923531cd4e	63	2973
+func show2	2f94f2a174a96a24	33	1389
+func twice	df5d5de49e17267e	11	458
+type Denied	ffdbb5c2980515ec	2	114
+type NotFound	3d6a6822da92c13b	2	114
+type Wrapped	a9cb59e3f6e2ca46	2	116

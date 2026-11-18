@@ -1,0 +1,8 @@
+@@full	8b1906dcd0e61f0a	963	33211
+@head	58aee61af0e6ab14	0	177
+func handle	1fac694e70380d99	14	583
+func main	dac85e5b85e862dd	90	3184
+func record	eb0fb0df8ed261cd	23	927
+func serve	d5bba2a51383e8d8	7	379
+type App	0adb622d0e04561f	4	214
+type Stats	8b189d7de1db72da	3	165

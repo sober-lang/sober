@@ -13,7 +13,10 @@ source scripts/gatelib.sh
 ROOT=$(pwd)
 SOBER=${SOBER:-./bin/sober}
 case "$SOBER" in /*) ;; *) SOBER=$ROOT/$SOBER ;; esac
-W=$(mktemp -d)
+# 作業の木は作業木と同じファイルシステムに置く（例題の比較はハードリンクのコピー〔cp -al〕で木を作る。/tmp が別のファイルシステム
+# 〔tmpfs〕だとリンクが張れない）。out/ はリポジトリの管理の外
+mkdir -p "$ROOT/out/tmp"
+W=$(mktemp -d "$ROOT/out/tmp/implicitfreeze.XXXXXX")
 trap 'rm -rf "$W"' EXIT
 fail=0; n=0; nsites=0
 
@@ -61,7 +64,7 @@ exone() {
     local s=$1 sf=$2 f
     grep -qE ':[0-9]+:[0-9]+$' "$sf" || return 0
     mkdir -p "$PAR_W/root"
-    cp -al "$ROOT/examples" "$ROOT/bench" "$ROOT/testdata" "$PAR_W/root/"
+    cp -al "$ROOT/examples" "$ROOT/bench" "$ROOT/testdata" "$PAR_W/root/" || { echo "FAIL $s: cp -al (hard-link copy of the tree) failed"; echo "@@ fail"; rm -rf "$PAR_W/root"; return 0; }
     grep -E ':[0-9]+:[0-9]+$' "$sf" | while IFS= read -r l; do f=${l%:*:*}; rm -f "$PAR_W/root/$f"; cp "$ROOT/$f" "$PAR_W/root/$f"; done
     one "$ROOT" "$PAR_W/root" "$s" "$PAR_W" "$sf"
     rm -rf "$PAR_W/root"

@@ -310,7 +310,7 @@ func mutBinary(t ast.Tree, reach []bool, nb mut builder.Builder[ast.Node], db mu
     ls := mutBinSite(t, reach, x.b)
     rs := !logic && mutBinSite(t, reach, x.c)
     lk := t.nodes[unparen(t, x.b)].kind
-    bindL := ls || (rs && lk != ast.EInt && lk != ast.EFloat && lk != ast.EStrlit && lk != ast.ENil)
+    bindL := ls || (rs && lk != ast.EInt && lk != ast.EFloat && lk != ast.EStrlit && lk != ast.EEmbed && lk != ast.ENil)
     mut stmts := mut []int{}
     mut y := x
     if bindL {

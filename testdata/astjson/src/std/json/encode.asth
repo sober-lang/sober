@@ -1,0 +1,13 @@
+@@full	0218d1d74ac46b35	3182	102079
+@head	c59ef3066322f841	0	264
+func Done	a5f285e60d4d0078	10	452
+func KeyOf	3f7493da6f75a1e0	27	981
+func Put	b31a455527526439	9	447
+func PutBool	00bcc3a2371cf7b0	14	569
+func PutFloat	8523f29de256490d	28	1131
+func PutInt	6ab91f0a1018e84d	217	6858
+func PutKey	0b776ffeca2040b0	27	1031
+func PutString	4559a1b0e51112ba	10	466
+func PutValue	33d1d1a61e27c7f5	135	4635
+func putDigits	d4a4a6f7f08cb0cc	48	1743
+type NotFinite	d8ff92d008ef46fc	2	122

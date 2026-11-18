@@ -26,8 +26,8 @@ The public primitives in `std/crypto` and the implementations inside std (under 
 <!-- confsync:begin claims crypto-prims intentional -->
 | Item | Status | Evidence |
 |---|---|---|
-| Software AES (NoHardware on machines without AES-NI — TLS falls back to ChaCha20-Poly1305) | Not supported (by design) | — |
-| scrypt, MD5 / SHA-1 hashes | Not supported (by design) | — |
+| Software AES (NoHardware on machines without AES-NI — TLS falls back to ChaCha20-Poly1305) | Not supported (by design) | none |
+| scrypt, MD5 / SHA-1 hashes | Not supported (by design) | none |
 <!-- confsync:end claims crypto-prims intentional -->
 
 ## Not yet
@@ -35,8 +35,8 @@ The public primitives in `std/crypto` and the implementations inside std (under 
 <!-- confsync:begin claims crypto-prims planned -->
 | Item | Planned | Evidence of today's behavior |
 |---|---|---|
-| AES-256-GCM | 0.8 | — |
-| ECDSA signing (RFC 6979) | 0.8 | — |
+| AES-256-GCM | 0.8 | none |
+| ECDSA signing (RFC 6979) | 0.8 | none |
 <!-- confsync:end claims crypto-prims planned -->
 
 ## Evidence — passing vectors

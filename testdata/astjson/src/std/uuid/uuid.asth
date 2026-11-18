@@ -1,0 +1,10 @@
+@@full	3cf684e248e3a033	2501	80790
+@head	01f845b2951fb9b8	0	167
+func Equal	e32d6190ec6b88ef	15	627
+func Format	c21ddb7eefe7877a	88	2831
+func NewV4	747c90aa00a51a74	67	2264
+func NewV7	c27792adb8715a38	11	421
+func Parse	6a9da326ab55b04d	149	4966
+func v7	5edcc7ae6089608f	82	2820
+type Bad	c46bc68f4fa91a27	1	64
+type UUID	3bef5a607121d051	3	159

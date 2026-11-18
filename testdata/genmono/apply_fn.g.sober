@@ -1,0 +1,11 @@
+package main
+
+// 総称関数の版。apply_fn.m.sober が型引数を手で代入した単相の版
+
+func apply[T](x T, f func(T) T) T {
+    return f(x)
+}
+
+func main() {
+    println(apply("ab", (s string) => s + s))
+}

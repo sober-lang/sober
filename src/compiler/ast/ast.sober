@@ -76,6 +76,13 @@ const EParen = 23      // a = 中身（括弧 — 出力では透過。パター
 const EFloat = 26      // a = 値（IEEE 754 binary64 のビット列を i64 の 2 の補数で読んだ値 — language.md 37 節）, b = 綴り（データの文字列 — printer と AST JSON が保つ）
 const ECatch = 25      // a = 可謬の呼び出し（ECall）, b = 右辺（式、または `return …` のSRet）— loaderのcatchx.soberが変換して消す（以降の層は見ない）
 const EUtf8Ref = 24    // `string(b)` の書き換え先の `$utf8`（出力は ident "$utf8"）
+// 変換の呼び先 `R.f`: structの型Rのフィールドfの型への変換。ソースには書けず、loader/assignconv.soberの関数値の代入だけが作る。
+// `R.f(u)` はuをフィールドfの値の位置に置いたもの（名前付き関数型への変換 `W(u)` と同じ読み）。a = structの名前（文字列。書いたファイルの綴り）,
+// b = フィールドの名前（文字列）, c = 型引数（型式の列。総称のstructだけ）
+const EFieldTy = 27
+// `map[string][]byte` の受け皿の @embed の値（imm `[]byte`）。中身は木に入れない: a = パス（文字列。ルート相対）, b = 長さ（バイト）, c = 中身の指紋
+// （中身の SHA-256 の32バイトの文字列）。ソースには書けず、loader/embed.soberだけが作る。lowerの書き手がrodataを書くときにファイルを読み直し、長さと指紋で照合する
+const EEmbed = 28
 
 // ── 文 ──
 const SBind = 30       // a = names（文字列の列）, b = mutable, c = values（列）

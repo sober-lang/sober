@@ -1,0 +1,24 @@
+@@full	d4e9ca0f428ab72d	3958	110822
+@head	119ade2bb3129c76	0	325
+const Hits	00fab5d641a47170	2	123
+const Index	bc5613611ee87604	5	233
+const Lines	0ee3b3048a8abab2	3	163
+const N	22708c10c9fe79df	3	164
+const Rows	2f939fdee2b6f0fc	3	159
+const S	c44ce655ebb6025f	3	172
+const Seen	4ce5a86f205d1d96	3	162
+const Sum	8f9bb29fb3d833aa	2	122
+const Views	bfc37f61838cf011	2	126
+func TestCopiesLeaveTheSourceIntact	4e71d0307f6253c6	116	3768
+func TestGetSetUpdate	dd09295b21ab213b	133	4235
+func TestParallelUpdates	8c396a1dbcc2c2b0	91	3019
+func TestQuickTrialsStartEmpty	f27e9cda6c7ad730	37	1296
+func TestViewsLeaveTheSourceIntact	174642efe8480a6c	112	3708
+func add	6196e1715281fc39	18	796
+func indexed	eeaaa45f69dbb08a	24	850
+func lastLine	7f6cab248c4962b8	15	566
+func viewParts	0aa7815537a386ed	40	1456
+func viewsLine	f4a112985fb5ac30	19	718
+func work	af3f64fb58214d77	38	1328
+type Parts	261cfe3d75ae5d9f	4	206
+type Row	6f00ca794aa2ea21	3	162

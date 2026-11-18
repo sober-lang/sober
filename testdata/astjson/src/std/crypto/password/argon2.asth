@@ -1,0 +1,14 @@
+@@full	8ba5efdaa844c5b2	8459	297372
+@head	9e0cff5003dd8fa4	0	146
+const m32	342143b07af5524f	1	63
+func argon2idKey	67303792a94aec00	651	20671
+func blamka	5e98351d03d34c10	30	1011
+func cat2	dfb3211fded8b8bb	49	1677
+func fillBlock	f13d9d85068e5d0b	87	2964
+func gb	1e0ebe17459ad559	162	4922
+func hprime	0cfaf7e6c743ab43	115	3747
+func le32	9650143f55366404	32	1111
+func lenPrefixed	39fe2ca9c33a999a	13	509
+func nextAddresses	c001ca0bce493de7	98	3155
+func pround	aaf33ace2f866a8b	224	6567
+func putBlock	1f6155411a88edda	49	1713

@@ -1,0 +1,6 @@
+@@full	7e8040d7c7cc3a8d	2561	111930
+@head	20076869c3b376a1	0	219
+func TestCheckAsciiFast	d2fef1fd5b4eac0e	116	3770
+func TestCheckContinue	28ebc3b5f74efbd6	216	7124
+func agrees	2c2f0b6e0c8b48b0	30	1158
+func probe	8d814f45bd547c02	63	2174

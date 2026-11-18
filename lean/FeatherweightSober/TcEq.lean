@@ -7,7 +7,7 @@ import FeatherweightSober.TcStep
 namespace FS
 
 /-- typecheck と tcStep の補助関数・読み口を全部開く -/
-macro "tc_unf" : tactic => `(tactic| simp only [typecheck, ctxAllMutFree, ctxCons, ctxGet, defGet, defParam, defRet, defTps, kAlloc, kAnn, kAppend, kAssign, kBlock, kBlockR, kScope, kClose, kCall, kCallM, kCallM2, kCallv, kConcat, kCopyTo, kDelm, kDeref, kDexit, kDnew, kDenter, kEq2, kEqs, kFF, kFconv, kFnref, kFreeze, kFst, kGetm, kII, kIndex, kInl, kInr, kIte, kJoin, kJump, kKeysm, kLabel, kLen, kLenm, kMkmap, kMkmapAt, kMkslice, kMksliceAt, kNewch, kNewchan, kPair, kPar, kParch, kRecv, kSend, kSetidx, kSetm, kSnd, kSome, kSpawn, kStrlit, kSubslice, kTobyte, kToint, kTry, kWhile, lctxCons, lctxK, lctxTy, sCallv1, sCase1, sCase2, sIfnil1, sIfnil2, sLet, sSpawn2, tsLen])
+macro "tc_unf" : tactic => `(tactic| simp only [typecheck, ctxAllMutFree, ctxCons, ctxGet, defGet, defParam, defRet, defTps, kAlloc, kAnn, kAppend, kAssign, kBlock, kBlockR, kScope, kClose, kCall, kConcat, kCopyTo, kDelm, kDeref, kDexit, kDnew, kDenter, kEq2, kEqs, kFF, kFconv, kFnref, kFreeze, kFst, kGetm, kII, kIndex, kInl, kInr, kIte, kJoin, kJump, kKeysm, kLabel, kLen, kLenm, kMkmap, kMkmapAt, kMkslice, kMksliceAt, kNewch, kNewchan, kPair, kPar, kParch, kRecv, kSend, kSetidx, kSetm, kSnd, kSome, kSpawn, kStrlit, kSubslice, kTobyte, kToint, kTry, kWhile, lctxCons, lctxK, lctxTy, sCallv1, sCase1, sCase2, sIfnil1, sIfnil2, sLet, sSpawn2, tsLen])
 
 set_option hygiene false in
 /-- 腕の締め: 部分項の結果を書き換えた後、両辺の match を割って照らし合わせる（d の場合分けが要る腕は d を割ってから） -/
@@ -223,8 +223,8 @@ theorem tcEq_snd (x0 : Expr) (ih_x0 : ∀ n b d Γ Λ, sizeOf x0 < n → evalRul
     simp only [evalRule, tcStep, ihx0]
     tc_fin
 
-theorem tcEq_call (x0 : Nat) (x1 : List Ty) (x2 : Expr) (ih_x2 : ∀ n b d Γ Λ, sizeOf x2 < n → evalRule Δ f n b d Γ Λ x2 = typecheck Δ Ξ Ψ f b d Γ Λ x2) :
-    ∀ n b d Γ Λ, sizeOf (Expr.call x0 x1 x2) < n → evalRule Δ f n b d Γ Λ (Expr.call x0 x1 x2) = typecheck Δ Ξ Ψ f b d Γ Λ (Expr.call x0 x1 x2) := by
+theorem tcEq_call (xa x0 : Nat) (x1 : List Ty) (x2 : Expr) (ih_x2 : ∀ n b d Γ Λ, sizeOf x2 < n → evalRule Δ f n b d Γ Λ x2 = typecheck Δ Ξ Ψ f b d Γ Λ x2) :
+    ∀ n b d Γ Λ, sizeOf (Expr.call xa x0 x1 x2) < n → evalRule Δ f n b d Γ Λ (Expr.call xa x0 x1 x2) = typecheck Δ Ξ Ψ f b d Γ Λ (Expr.call xa x0 x1 x2) := by
   intro n b d Γ Λ h; cases n with
   | zero => omega
   | succ n =>
@@ -238,23 +238,6 @@ theorem tcEq_call (x0 : Nat) (x1 : List Ty) (x2 : Expr) (ih_x2 : ∀ n b d Γ Λ
       cases hT : typecheck Δ Ξ Ψ f b (d' + 1) Γ Λ x2 <;> cases hD : Δ[x0]? <;>
         simp only [kCall, typecheck, defParam, defRet, defTps, tsLen, hT, hD] <;> rfl
 
-theorem tcEq_callM (x0 : Nat) (x1 : List Ty) (x2 : Expr) (ih_x2 : ∀ n b d Γ Λ, sizeOf x2 < n → evalRule Δ f n b d Γ Λ x2 = typecheck Δ Ξ Ψ f b d Γ Λ x2) :
-    ∀ n b d Γ Λ, sizeOf (Expr.callM x0 x1 x2) < n → evalRule Δ f n b d Γ Λ (Expr.callM x0 x1 x2) = typecheck Δ Ξ Ψ f b d Γ Λ (Expr.callM x0 x1 x2) := by
-  intro n b d Γ Λ h; cases n with
-  | zero => omega
-  | succ n =>
-    simp only [Expr.callM.sizeOf_spec] at h
-    have ihx2 := fun b d Γ Λ => ih_x2 n b d Γ Λ (by omega)
-    simp only [evalRule, tcStep, ihx2]
-    cases d with
-    | zero => cases defGet Δ x0 <;> cases typecheck Δ Ξ Ψ f b 0 Γ Λ x2 <;> simp only [kCallM, typecheck]
-    | succ d' =>
-      simp only [defGet] at *
-      cases hT : typecheck Δ Ξ Ψ f b (d' + 1) Γ Λ x2 <;> cases hD : Δ[x0]? <;>
-        simp only [kCallM, typecheck, defParam, defRet, defTps, tsLen, hT, hD]
-      rename_i t dfn
-      cases hA : Ty.anchorOf (dfn.inst x1).param t <;> simp only [kCallM2, hA, defParam, defRet, defTps, tsLen] <;> rfl
-
 theorem tcEq_fnref (x0 : Nat) (x1 : List Ty)  :
     ∀ n b d Γ Λ, sizeOf (Expr.fnref x0 x1) < n → evalRule Δ f n b d Γ Λ (Expr.fnref x0 x1) = typecheck Δ Ξ Ψ f b d Γ Λ (Expr.fnref x0 x1) := by
   intro n b d Γ Λ h; cases n with
@@ -263,8 +246,8 @@ theorem tcEq_fnref (x0 : Nat) (x1 : List Ty)  :
     simp only [evalRule, tcStep]
     tc_fin
 
-theorem tcEq_callv (x0 : Expr) (x1 : Expr) (ih_x0 : ∀ n b d Γ Λ, sizeOf x0 < n → evalRule Δ f n b d Γ Λ x0 = typecheck Δ Ξ Ψ f b d Γ Λ x0) (ih_x1 : ∀ n b d Γ Λ, sizeOf x1 < n → evalRule Δ f n b d Γ Λ x1 = typecheck Δ Ξ Ψ f b d Γ Λ x1) :
-    ∀ n b d Γ Λ, sizeOf (Expr.callv x0 x1) < n → evalRule Δ f n b d Γ Λ (Expr.callv x0 x1) = typecheck Δ Ξ Ψ f b d Γ Λ (Expr.callv x0 x1) := by
+theorem tcEq_callv (xa : Nat) (x0 : Expr) (x1 : Expr) (ih_x0 : ∀ n b d Γ Λ, sizeOf x0 < n → evalRule Δ f n b d Γ Λ x0 = typecheck Δ Ξ Ψ f b d Γ Λ x0) (ih_x1 : ∀ n b d Γ Λ, sizeOf x1 < n → evalRule Δ f n b d Γ Λ x1 = typecheck Δ Ξ Ψ f b d Γ Λ x1) :
+    ∀ n b d Γ Λ, sizeOf (Expr.callv xa x0 x1) < n → evalRule Δ f n b d Γ Λ (Expr.callv xa x0 x1) = typecheck Δ Ξ Ψ f b d Γ Λ (Expr.callv xa x0 x1) := by
   intro n b d Γ Λ h; cases n with
   | zero => omega
   | succ n =>
@@ -279,23 +262,6 @@ theorem tcEq_callv (x0 : Expr) (x1 : Expr) (ih_x0 : ∀ n b d Γ Λ, sizeOf x0 <
       | zero => cases t <;> cases hy : typecheck Δ Ξ Ψ f b 0 Γ Λ x1 <;> simp [sCallv1, kCallv, typecheck, hx, hy, ihx1]
       | succ d' =>
         cases t <;> cases hy : typecheck Δ Ξ Ψ f b (d' + 1) Γ Λ x1 <;> simp [sCallv1, kCallv, typecheck, hx, hy, ihx1]
-
-theorem tcEq_callMv (xa : Nat) (x0 : Expr) (x1 : Expr) (ih_x0 : ∀ n b d Γ Λ, sizeOf x0 < n → evalRule Δ f n b d Γ Λ x0 = typecheck Δ Ξ Ψ f b d Γ Λ x0) (ih_x1 : ∀ n b d Γ Λ, sizeOf x1 < n → evalRule Δ f n b d Γ Λ x1 = typecheck Δ Ξ Ψ f b d Γ Λ x1) :
-    ∀ n b d Γ Λ, sizeOf (Expr.callMv xa x0 x1) < n → evalRule Δ f n b d Γ Λ (Expr.callMv xa x0 x1) = typecheck Δ Ξ Ψ f b d Γ Λ (Expr.callMv xa x0 x1) := by
-  intro n b d Γ Λ h; cases n with
-  | zero => omega
-  | succ n =>
-    simp only [Expr.callMv.sizeOf_spec] at h
-    have ihx0 := fun b d Γ Λ => ih_x0 n b d Γ Λ (by omega)
-    have ihx1 := fun b d Γ Λ => ih_x1 n b d Γ Λ (by omega)
-    simp only [evalRule, tcStep, ihx0]
-    cases hx : typecheck Δ Ξ Ψ f b d Γ Λ x0 with
-    | none => cases d <;> simp [sCallv1, typecheck, hx]
-    | some t =>
-      cases d with
-      | zero => cases t <;> cases hy : typecheck Δ Ξ Ψ f b 0 Γ Λ x1 <;> simp [sCallv1, kCallMv, typecheck, hx, hy, ihx1]
-      | succ d' =>
-        cases t <;> cases hy : typecheck Δ Ξ Ψ f b (d' + 1) Γ Λ x1 <;> simp [sCallv1, kCallMv, typecheck, hx, hy, ihx1]
 
 theorem tcEq_ann (x0 : Expr) (x1 : Ty) (ih_x0 : ∀ n b d Γ Λ, sizeOf x0 < n → evalRule Δ f n b d Γ Λ x0 = typecheck Δ Ξ Ψ f b d Γ Λ x0) :
     ∀ n b d Γ Λ, sizeOf (Expr.ann x0 x1) < n → evalRule Δ f n b d Γ Λ (Expr.ann x0 x1) = typecheck Δ Ξ Ψ f b d Γ Λ (Expr.ann x0 x1) := by
@@ -963,11 +929,9 @@ theorem evalRule_eq_typecheck :
   | pair x0 x1 ih_x0 ih_x1 => exact tcEq_pair x0 x1 ih_x0 ih_x1
   | fst x0 ih_x0 => exact tcEq_fst x0 ih_x0
   | snd x0 ih_x0 => exact tcEq_snd x0 ih_x0
-  | call x0 x1 x2 ih_x2 => exact tcEq_call x0 x1 x2 ih_x2
-  | callM x0 x1 x2 ih_x2 => exact tcEq_callM x0 x1 x2 ih_x2
+  | call xa x0 x1 x2 ih_x2 => exact tcEq_call xa x0 x1 x2 ih_x2
   | fnref x0 x1 => exact tcEq_fnref x0 x1
-  | callv x0 x1 ih_x0 ih_x1 => exact tcEq_callv x0 x1 ih_x0 ih_x1
-  | callMv xa x0 x1 ih_x0 ih_x1 => exact tcEq_callMv xa x0 x1 ih_x0 ih_x1
+  | callv xa x0 x1 ih_x0 ih_x1 => exact tcEq_callv xa x0 x1 ih_x0 ih_x1
   | ann x0 x1 ih_x0 => exact tcEq_ann x0 x1 ih_x0
   | block x0 ih_x0 => exact tcEq_block x0 ih_x0
   | blockR x0 x1 ih_x1 => exact tcEq_blockR x0 x1 ih_x1

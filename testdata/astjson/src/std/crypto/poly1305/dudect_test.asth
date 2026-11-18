@@ -1,0 +1,7 @@
+@@full	9c85fe7f0f65742e	1143	34303
+@head	5c6559832ec1921a	0	147
+func TestExpPolyAbsorb	e8eda8aead71f160	60	2004
+func TestExpPolyFinish	fd13fb24260294f9	31	1109
+func TestExpPolyStart	8e8297b3fe08471c	45	1572
+func dpat	745980b039200ac4	37	1315
+func ff	f71b56a71dd41e90	17	617

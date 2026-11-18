@@ -1,0 +1,23 @@
+package main
+
+// mutの器を持つ型を型引数にする: swap の本体は T の値を mut の slice の中で入れ替えるだけで、imm の器に入れも返しもしないので、
+// T に mut の slice を持つ struct を渡せる
+
+type Buf struct {
+    data mut []int
+}
+
+func swap[T](xs mut []T, i int, j int) {
+    t := xs[i]
+    xs[i] = xs[j]
+    xs[j] = t
+}
+
+func main() {
+    mut bs := mut []Buf{Buf{data: mut []int{1, 2}}, Buf{data: mut []int{3}}}
+    swap(mut bs, 0, 1)
+    println(len(bs[0].data), len(bs[1].data))
+    mut ss := mut []string{"a", "b"}
+    swap(mut ss, 0, 1)
+    println(ss[0], ss[1])
+}

@@ -9,6 +9,7 @@
   "0 stops watch from warming the build cache": "0 で watch のビルドキャッシュの温めを止める",
   "0 stops watch from running the tests of the watched packages in the background (to replay their results)": "0 で watch が見張っている package のテストを裏で走らせるのを止める（結果の再生のため）",
   "0 turns the parallel lowering off": "0 で lower の並列を切る",
+  "the region slot of a child task in MiB (default 512) — raise it when a parallel child of the compiler dies and the work is redone sequentially": "子 task の region のスロット（MiB・既定 512）。コンパイラの並列の子が死んで逐次で作り直されたときに上げる",
   "0 turns the check cache off (default on)": "0 で check のキャッシュを切る（既定は入り）",
   "build an executable": "実行ファイルをビルドする",
   "build and run": "ビルドして実行する",

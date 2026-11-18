@@ -1,0 +1,48 @@
+package main
+
+// unionのvariantのフィールドも値の位置: 名前つき関数型（とそのoption）のフィールドに、捕捉するラムダ・名前の関数・関数値を置き、
+// switchで取り出して呼ぶ。structのフィールドと同じ扱い
+
+type H func(x int) int
+
+type OptH union {
+    SomeH { v H }
+    NoneH {}
+}
+
+type Hook union {
+    On { f H? }
+    Off {}
+}
+
+func incr(x int) int {
+    return x + 1
+}
+
+func mkH(p string) H {
+    return (x int) => x + len(bytes(p))
+}
+
+func orElseH(o OptH, d H) H {
+    return switch o {
+    case SomeH{v}: v
+    default: d
+    }
+}
+
+func run(h Hook) int {
+    return switch h {
+    case On{f}: if f != nil { f(10) } else { -1 }
+    default: 0
+    }
+}
+
+func main() {
+    k := 5
+    c := SomeH{v: (x int) => x + k}
+    println(orElseH(c, incr)(1))
+    s := SomeH{v: incr}
+    println(orElseH(s, mkH("ab"))(1))
+    println(orElseH(NoneH{}, mkH("ab"))(1))
+    println(run(On{f: mkH("abc")}), run(On{f: nil}), run(Off{}))
+}

@@ -1,0 +1,11 @@
+@@full	6a86be4b4c97c9e8	4034	133492
+@head	c88fec56a0016cbb	0	426
+func TestFold	2aabe5d80cf1c567	139	5400
+func TestPropArith	28b88e8f9df68d35	56	1855
+func TestPropFormat	830b7883dfce4921	52	1821
+func TestPropInt	692fdaf0e153a8db	86	2894
+func TestPropParse	caeaab292ec28f49	115	3852
+func TestPropParseTie	05bd10989250903e	37	1313
+func TestPropSqrt	a0c3a91509e5b5d0	27	977
+func decimalDigits	77ffe5edc3b6cf01	71	2449
+func tieOK	44c403fdedb85a90	107	3621

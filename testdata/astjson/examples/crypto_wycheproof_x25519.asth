@@ -1,0 +1,9 @@
+@@full	771d6e88387e5a16	1135	33250
+@head	522857d2f7bde5cb	0	283
+const Files	c1d96cd15f0cea7f	3	135
+func file	828688f7a93c3986	18	693
+func main	ef75d0ae6412f413	131	4493
+func unhex	e7aa976ed6d8366f	10	449
+type XFile	9066a002281d1056	3	160
+type XGroup	dfd48e5f5fd17bb4	3	155
+type XTest	08a6e10aca518e49	6	332

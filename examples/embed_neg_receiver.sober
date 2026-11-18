@@ -1,0 +1,10 @@
+package main
+
+// 負例: @embed の受け皿は map[string]string{} と map[string][]byte{} の2つだけ（ほかの値の型は拒否 — language.md 20 節）
+
+@embed("testdata/embed_bytes/*.bin")
+const Files = map[string][]int{}
+
+func main() {
+    println(len(Files))
+}

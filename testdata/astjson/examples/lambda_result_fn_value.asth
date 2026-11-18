@@ -1,0 +1,11 @@
+@@full	6f5a961bbef8c5f9	1125	29702
+@head	f8802cba5eefdec2	0	31
+func adder	0e40313a91fe9321	12	487
+func apply	febd58413cd7ad3b	10	414
+func both	86fb0aa23cb8a3a0	19	722
+func boxed	981140afd324ea8d	9	442
+func incr	9971a2c49fa627b5	6	285
+func main	a2d1ec45d9b96403	99	3274
+func pick	f6c54282bf68bc1f	8	358
+type Box	e43da3f889fee13f	2	108
+type H	c1de6fc843331749	3	144

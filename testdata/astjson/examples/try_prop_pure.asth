@@ -1,0 +1,13 @@
+@@full	0ad45f4bfa2a6dc1	2030	53008
+@head	f8802cba5eefdec2	0	31
+func apply	5e4af9100d04d321	17	634
+func check	404e5d886ee36f39	26	939
+func code	c253d919e907a3bb	26	1026
+func digits	f4c894e128633a89	40	1368
+func guarded	a298df806a344e4e	24	817
+func main	5fcc231803753b5a	137	4474
+func mustSmall	4d2348efde570d59	10	373
+func split	12332238d5eff5f6	18	623
+func viaLambda	7928ac685d9eca32	21	745
+type Big	dfdc67ffaeda15e6	3	157
+type Neg	64fe2ab094a7bb5e	2	109

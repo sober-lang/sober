@@ -1,0 +1,10 @@
+@@full	4279adfa21094763	1020	26707
+@head	f8802cba5eefdec2	0	31
+func adder	0e40313a91fe9321	12	487
+func id	d16066604a43c54f	4	224
+func incr	9971a2c49fa627b5	6	285
+func main	ccab66add69ed0f9	115	3455
+func pick	7c94af6471d01099	12	507
+func wrap	6fd21fada5aaf0a4	7	368
+type Box	cd7fa3508f11d943	2	111
+type H	c1de6fc843331749	3	144

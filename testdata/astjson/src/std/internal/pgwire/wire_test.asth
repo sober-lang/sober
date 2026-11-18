@@ -1,0 +1,30 @@
+@@full	83957809ba825d70	13099	475992
+@head	e21b9ec7dfb2b50f	0	265
+const testTraces	148ba6d8f075b9bc	3	140
+const testVersions	8f61879e16b9a3cb	1	61
+func TestContent	64353029ac69d304	474	15574
+func TestCstrOk	3c60d3ae93e7883d	26	860
+func TestDecodeAll	e84aee4c7ddb4a54	72	2506
+func TestEncodeFrames	c36729ef83b66564	51	1747
+func TestEncodeMatchesCapture	3c5d466c9da2e7be	58	2018
+func TestMalformed	a32f29fb012b61c1	413	12629
+func TestSplitAnywhere	4aa4bb56974a4599	104	3501
+func bin	8344d69aff3895f2	8	446
+func cat3	eb94500d868e646a	16	665
+func orBytes	b313e0cf1cbcd9af	16	592
+func orStr	0553fa49bfe802b2	13	461
+func testAbsorbed	52e66d73e72b9a07	33	1227
+func testCols	489990a3e5bea5d1	29	1142
+func testDecodeBad	7910c89246b47f0f	13	565
+func testErrCode	ed4b6f9717268831	27	1064
+func testErrField	36888e07fd316657	28	1124
+func testI4	eca6751a4f244acb	15	585
+func testI8	a5d259447f258729	24	844
+func testLine	31d6bad0ec5cdde2	84	3052
+func testMsgs	950fdcf0055efdc8	73	2447
+func testReady	d4e92b7f59106f3b	31	1205
+func testRow	1d415e17b2070e2c	29	1141
+func testScenes	c6a39491a1dfbf9c	42	1569
+func testTag	eab0fdc1a9ac4d46	74	4317
+func testTags	287b570f87097067	26	973
+func testWant	002268cb88e184fe	425	14067

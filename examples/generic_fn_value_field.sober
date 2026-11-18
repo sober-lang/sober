@@ -1,0 +1,48 @@
+package main
+
+// 総称のstructとunionの型引数に値化可能な名前付き関数型を置くと、型パラメータの型のフィールドは値の位置: 宣言した関数とラムダを
+// Hの値（クロージャ）として置ける。フィールドへの代入も同じ。`Box[H]`・`Opt[H]` は単相の関数の仮引数と結果にも書ける
+
+type H func(x int) int
+
+type Box[T] struct {
+    v T
+    n int
+}
+
+type Opt[T] union {
+    Some { v T }
+    None {}
+}
+
+func incr(x int) int {
+    return x + 1
+}
+
+func decr(x int) int {
+    return x - 1
+}
+
+func run(o Opt[H], d int) int {
+    return switch o {
+    case Some{v}: v(d)
+    case None{}: 0
+    }
+}
+
+func wrap(h H) Box[H] {
+    return Box[H]{v: h, n: 1}
+}
+
+func main() {
+    k := 3
+    mut b := Box[H]{v: incr, n: 1}
+    println(b.v(5))
+    b.v = decr
+    println(b.v(5))
+    b.v = (x int) => x * k
+    println(b.v(5), wrap(incr).v(1))
+    println(run(Some[H]{v: incr}, 10), run(Some[H]{v: (x int) => x - k}, 10), run(None[H]{}, 10))
+    bs := []Box[H]{Box[H]{v: incr, n: 0}, Box[H]{v: if k > 0 { decr } else { incr }, n: 1}}
+    println(bs[0].v(1), bs[1].v(1))
+}

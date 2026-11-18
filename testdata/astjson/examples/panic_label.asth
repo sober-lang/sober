@@ -1,0 +1,10 @@
+@@full	aeaf87b28444969e	602	14278
+@head	f8802cba5eefdec2	0	31
+func digit	a33d8ec022fbf1da	17	698
+func find	d7195ec6febff0a2	13	491
+func finish	e9180764f6172e62	9	433
+func main	af2b673735fed7ac	27	1016
+func trace	ff7af9769c85807c	9	366
+type BadNode	0bce25cdca1e1ddf	5	267
+type Done	d4eb26693412e799	1	65
+type Missing	4aa1bdf41bfd87b2	1	68

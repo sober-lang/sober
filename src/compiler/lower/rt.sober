@@ -124,7 +124,8 @@ func buildEntry(st mut St, main_fn FnRef, main_int bool) {
         call(mut st, st.rtWorkerInit, list0(mut st))
     }
     meta := globaladdr(mut st, st.meta)
-    mb := envMb(mut st, sp, "SOBER_REGION_MB=", DEFAULT_SLOT_MB, false)
+    // 大きさは2の冪へ切り上げる（スロットの基底を大きさに揃える — ずらした基底から本物の先頭を切り上げで出す。task.sober slotReal）
+    mb := ceilPow2(mut st, envMb(mut st, sp, "SOBER_REGION_MB=", DEFAULT_SLOT_MB, false))
     // reserve(mb): mmap(NULL, mb MiB * MAX_DEPTH, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0)
     reserve := newBlock(mut st)
     c := param(mut st, reserve, TyI64)
@@ -144,19 +145,23 @@ func buildEntry(st mut St, main_fn FnRef, main_int bool) {
     args := listN(mut st, 7)
     desugar.HeapSet(mut st.d, args + 1, a0)
     desugar.HeapSet(mut st.d, args + 2, a1)
-    desugar.HeapSet(mut st.d, args + 3, a2)
+    desugar.HeapSet(mut st.d, args + 3, bin(mut st, BAdd, a2, slot))
     desugar.HeapSet(mut st.d, args + 4, a3)
     desugar.HeapSet(mut st.d, args + 5, a4)
     desugar.HeapSet(mut st.d, args + 6, a5)
     desugar.HeapSet(mut st.d, args + 7, a6)
-    bs := syscall(mut st, args)
+    bs0 := syscall(mut st, args)
     // 失敗は -4095..-1（符号なしで最上位の 4095 個）
-    condbr(mut st, cmp(mut st, CUge, bs, iconst(mut st, -4095)), shrink, -1, ok, -1)
+    condbr(mut st, cmp(mut st, CUge, bs0, iconst(mut st, -4095)), shrink, -1, ok, -1)
     setCur(mut st, shrink)
     condbr(mut st, cmp(mut st, CGt, c, iconst(mut st, 1)), reserve, list1(mut st, bin(mut st, BSar, c, iconst(mut st, 1))), fail, -1)
     setCur(mut st, fail)
     exit(mut st, PANIC_MEM)
     setCur(mut st, ok)
+    // アリーナをスロットの大きさに揃える（1スロット分多く取り、揃えた先頭の前と後ろを返す）
+    bs := bin(mut st, BAnd, bin(mut st, BAdd, bs0, bin(mut st, BSub, slot, iconst(mut st, 1))), bin(mut st, BSub, iconst(mut st, 0), slot))
+    syscall(mut st, list3(mut st, iconst(mut st, 11), bs0, bin(mut st, BSub, bs, bs0)))
+    syscall(mut st, list3(mut st, iconst(mut st, 11), bin(mut st, BAdd, bs, a2), bin(mut st, BSub, slot, bin(mut st, BSub, bs, bs0))))
     // madvise(アリーナ, スロット × MAX_DEPTH, MADV_NOHUGEPAGE): 透過的 huge page だと深度のスロットに 1 バイト触るだけで 2 MB が
     // RSS に乗る（小さいプログラムでも 4〜6 MB・触った深度ごとに 2 MB）。題材の cycles は揺れの範囲だった。失敗は無視
     syscall(mut st, list4(mut st, iconst(mut st, 28), bs, a2, iconst(mut st, 15)))
@@ -258,6 +263,11 @@ func prctl5(st mut St, op int, a int) int {
 // 環境変数 key（`NAME=` の形）の値（MiB の 10 進 — 無い・空・数字以外・MAX_SLOT_MB 超なら既定 dflt。0 は zeroOk のときだけ採る）。
 // 戻ると cur は値が決まったブロック
 func envMb(st mut St, sp int, keyS string, dflt0 int, zeroOk bool) int {
+    return envNum(mut st, sp, keyS, dflt0, zeroOk, MAX_SLOT_MB)
+}
+
+// envMbの上限を選ぶ形（値がmaxを越えたら既定）
+func envNum(st mut St, sp int, keyS string, dflt0 int, zeroOk bool, max int) int {
     argc := load(mut st, sp, 0)
     envp := gepWord(mut st, sp, bin(mut st, BAdd, argc, iconst(mut st, 2)))
     scan := newBlock(mut st)
@@ -313,7 +323,7 @@ func envMb(st mut St, sp int, keyS string, dflt0 int, zeroOk bool) int {
     setCur(mut st, acc)
     n2 := bin(mut st, BAdd, bin(mut st, BMul, n, iconst(mut st, 10)), bin(mut st, BSub, ch, iconst(mut st, 48)))
     more := newBlock(mut st)
-    condbr(mut st, cmp(mut st, CGt, n2, iconst(mut st, MAX_SLOT_MB)), done, list1(mut st, dflt), more, -1)
+    condbr(mut st, cmp(mut st, CGt, n2, iconst(mut st, max)), done, list1(mut st, dflt), more, -1)
     setCur(mut st, more)
     br(mut st, vb, list2(mut st, n2, bin(mut st, BAdd, iv, iconst(mut st, 1))))
     setCur(mut st, done)
@@ -444,8 +454,33 @@ func buildRegionEnter(st mut St) {
     store(mut st, meta, W_DEPTH, d)
     bs := load(mut st, meta, W_SLOTS)
     size := load(mut st, meta, W_SLOT_SIZE)
-    keep := load(mut st, meta, W_MADV)
     maxd := load(mut st, meta, W_MAXD)
+    if st.taskUse {
+        // 前の命の高水位が先頭 + W_MADVを越えうるのは、計上済みの上限をそこまで上げた深度（印TC_WBIG = その最大 — task.sober wmRaiseTo）だけ:
+        // 入る深度が印以下のときだけ返すループ（rt.madv_dead）を呼ぶ（返す候補は入る深度以上）
+        bM := newBlock(mut st)
+        bM2 := newBlock(mut st)
+        condbr(mut st, cmp(mut st, CLe, d, load(mut st, itop(mut st, curTcb(mut st)), TC_WBIG)), bM, -1, bM2, -1)
+        setCur(mut st, bM)
+        call(mut st, st.rtMadvDead, list2(mut st, d, maxd))
+        br(mut st, bM2, -1)
+        setCur(mut st, bM2)
+    } else {
+        madvRange(mut st, meta, d, maxd, bs, size)
+    }
+    store(mut st, meta, W_MAXD, d)
+    bump := if st.taskUse { slotEnter(mut st, meta, d) } else { bin(mut st, BAdd, bs, bin(mut st, BMul, d, size)) }
+    dp := gepWord(mut st, meta, d)
+    store(mut st, dp, W_BUMP, bump)
+    genBump(mut st, d)
+    ret(mut st, -1)
+}
+
+// 深度 lo〜hi のスロットの前の命の高水位が先頭 + W_MADVを越えていれば、越えた範囲をmadvise（region_enter・rt.madv_dead・parkの返し）
+func madvRange(st mut St, meta int, lo int, hi int, bs int, size int) {
+    keep := load(mut st, meta, W_MADV)
+    maxd := hi
+    d := lo
     loop := newBlock(mut st)
     k := param(mut st, loop, TyI64)
     body := newBlock(mut st)
@@ -456,7 +491,9 @@ func buildRegionEnter(st mut St) {
     setCur(mut st, loop)
     condbr(mut st, cmp(mut st, CLe, k, maxd), body, -1, done, -1)
     setCur(mut st, body)
-    start := if st.taskUse { slotBase(mut st, meta, k) } else { bin(mut st, BAdd, bs, bin(mut st, BMul, k, size)) }
+    raw := if st.taskUse { slotBase(mut st, meta, k) } else { iconst(mut st, 0) }
+    // ミュータント43は予約ページのずらした基底のまま数える（下の守りを外した形が予約ページの下を返す）
+    start := if st.taskUse { if st.rtMut == 43 { raw } else { alignUp(mut st, raw, size) } } else { bin(mut st, BAdd, bs, bin(mut st, BMul, k, size)) }
     used := bin(mut st, BSub, load(mut st, gepWord(mut st, meta, k), W_BUMP), start)
     condbr(mut st, cmp(mut st, CGt, used, keep), rel, -1, nxt, -1)
     setCur(mut st, rel)
@@ -464,7 +501,7 @@ func buildRegionEnter(st mut St) {
     // ミュータント43（wincheckの検査）: 予約ページの守りを外す — 偽の基底から数えて予約ページの下のチャンクを返す
     if winArm(mut st) && st.rtMut != 43 {
         relW := newBlock(mut st)
-        condbr(mut st, call(mut st, st.rtWinIs, list1(mut st, start)), nxt, -1, relW, -1)
+        condbr(mut st, call(mut st, st.rtWinIs, list1(mut st, raw)), nxt, -1, relW, -1)
         setCur(mut st, relW)
     }
     // madvise(start + keep, used - keep, MADV_DONTNEED = 4)。失敗は無視（返せなくても意味は変わらない）
@@ -473,24 +510,28 @@ func buildRegionEnter(st mut St) {
     setCur(mut st, nxt)
     br(mut st, loop, list1(mut st, bin(mut st, BAdd, k, iconst(mut st, 1))))
     setCur(mut st, done)
-    store(mut st, meta, W_MAXD, d)
-    bump := if st.taskUse { slotEnter(mut st, meta, d) } else { bin(mut st, BAdd, bs, bin(mut st, BMul, d, size)) }
-    dp := gepWord(mut st, meta, d)
-    store(mut st, dp, W_BUMP, bump)
-    genBump(mut st, d)
+}
+
+// rt.madv_dead(lo, hi): madvRangeの本体（taskのあるプログラム）
+func buildMadvDead(st mut St) {
+    begin(mut st, st.rtMadvDead)
+    meta := globaladdr(mut st, st.meta)
+    madvRange(mut st, meta, 0, 1, iconst(mut st, 0), load(mut st, meta, W_SLOT_SIZE))
     ret(mut st, -1)
 }
 
-// 確保の溢れ: 予約ページを組むプログラムはrt.win_ralloc（深度dが予約ページなら移して確保し直す — 低速パス・高速パスは今の形のまま）の答えを返す。他は死102
-// （mode 0 = nワード・1 = nバイトのbyteの列 — btip = 先頭 + nはここで置く）
-func slotOver(st mut St, d int, n int, mode int) {
-    // ミュータント42（wincheckの検査）: 予約ページを移さない — 予約ページの溢れで死102
-    if winArm(mut st) && st.rtMut != 42 {
-        r := call(mut st, st.rtWinRalloc, list3(mut st, d, n, iconst(mut st, mode)))
-        if mode == 1 {
-            store(mut st, gepWord(mut st, globaladdr(mut st, st.btip), d), 0, bin(mut st, BAdd, ptoi(mut st, r), n))
-        }
-        ret(mut st, r)
+// 深度dの確保の上限の検査（bumpのold → 終わり old + adv）: 越えなければok（仮引数 = 確保の先頭。okがbumpを進める）へ。越えたら、taskのあるプログラムは
+// 全レジスタを保つ中継 rt.wm_alloc_s（計上済みの上限を上げる・予約ページなら移す — 低速パス）の答え（移した後の先頭）からokへ戻る。他は死102。
+// 低速パスがokへ戻るので、確保の後ろの合流の移動は1か所だけ
+func slotCheck(st mut St, d int, old int, adv int, limit int, ok BlkRef) {
+    over := newBlock(mut st)
+    nw := bin(mut st, BAdd, old, adv)
+    condbr(mut st, cmp(mut st, CGt, nw, limit), over, -1, ok, list1(mut st, old))
+    setCur(mut st, over)
+    // taskのあるプログラム: 計上済みの上限を上げる低速パス（rt.wm_alloc — 予約ページの溢れもここ。ミュータント42はその中）
+    if st.taskUse {
+        o2 := call(mut st, st.rtWmAllocS, list2(mut st, d, adv))
+        br(mut st, ok, list1(mut st, o2))
         return
     }
     memPanic(mut st, PM_SLOT)
@@ -504,16 +545,14 @@ func buildRegionAlloc(st mut St) {
     meta := globaladdr(mut st, st.meta)
     bp := gepWord(mut st, meta, d)
     old := load(mut st, bp, W_BUMP)
-    nw := bin(mut st, BAdd, old, bin(mut st, BMul, n, iconst(mut st, 8)))
     limit := if st.taskUse { bin(mut st, BAdd, slotBase(mut st, meta, d), load(mut st, meta, W_SLOT_SIZE)) } else { bin(mut st, BAdd, load(mut st, meta, W_SLOTS), bin(mut st, BMul, bin(mut st, BAdd, d, iconst(mut st, 1)), load(mut st, meta, W_SLOT_SIZE))) }
-    over := newBlock(mut st)
     ok := newBlock(mut st)
-    condbr(mut st, cmp(mut st, CGt, nw, limit), over, -1, ok, -1)
-    setCur(mut st, over)
-    slotOver(mut st, d, n, 0)
+    o := param(mut st, ok, TyI64)
+    adv := bin(mut st, BMul, n, iconst(mut st, 8))
+    slotCheck(mut st, d, old, adv, limit, ok)
     setCur(mut st, ok)
-    store(mut st, bp, W_BUMP, nw)
-    ret(mut st, itop(mut st, old))
+    store(mut st, bp, W_BUMP, bin(mut st, BAdd, o, adv))
+    ret(mut st, itop(mut st, o))
 }
 
 func buildCopy(st mut St) {

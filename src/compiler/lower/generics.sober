@@ -37,17 +37,6 @@ func bindsOf(st mut St, names desugar.ListRef, targs desugar.ListRef) int {
     return env
 }
 
-// Def として呼ぶジェネリックの型引数として許される型（region を持たない）
-func tyArgOk(st mut St, t int) bool {
-    k := desugar.HeapGet(mut st.d, t)
-    return switch k {
-    case TInt | TBool | TFnv | TNamed | TByte | TFloat: true
-    case TOpt: tyArgOk(mut st, desugar.HeapGet(mut st.d, t + 1))
-    case TStruct | TUnion: tyArgFields(mut st, t, false)
-    default: false
-    }
-}
-
 // 展開されるジェネリック・ジェネリック struct の型引数（値を持つ型なら string / slice / map を含んでよい）
 func tyArgValueOk(st mut St, t int) bool {
     k := desugar.HeapGet(mut st.d, t)
@@ -55,16 +44,16 @@ func tyArgValueOk(st mut St, t int) bool {
     case TInt | TBool | TFnv | TNamed | TByte | TFloat: true
     case TSlice | TOpt: tyArgValueOk(mut st, desugar.HeapGet(mut st.d, t + 1))
     case TMap: tyArgValueOk(mut st, desugar.HeapGet(mut st.d, t + 1)) && tyArgValueOk(mut st, desugar.HeapGet(mut st.d, t + 2))
-    case TStruct | TUnion: tyArgFields(mut st, t, true)
+    case TStruct | TUnion: tyArgFields(mut st, t)
     default: false
     }
 }
 
 // struct / union のフィールドがすべて型引数として許されるか
-func tyArgFields(st mut St, t int, value bool) bool {
+func tyArgFields(st mut St, t int) bool {
     info := desugar.HeapGet(mut st.d, t + 1)
     // 再帰型（slice / map を通って自分を含む）: 歩いている途中の struct / union に戻ったら、その成分の判定は歩いている側に任せる
-    key := info * 2 + if value { 1 } else { 0 }
+    key := info
     for i <- iter.Range(0, st.taN) {
         if table.Get(mut st.taStack, i) == key {
             return true
@@ -76,18 +65,17 @@ func tyArgFields(st mut St, t int, value bool) bool {
         table.Set(mut st.taStack, st.taN, key)
     }
     st.taN += 1
-    ok := tyArgFieldsIn(mut st, t, info, value)
+    ok := tyArgFieldsIn(mut st, t, info)
     st.taN -= 1
     return ok
 }
 
-func tyArgFieldsIn(st mut St, t int, info int, value bool) bool {
+func tyArgFieldsIn(st mut St, t int, info int) bool {
     fs := hgetL(mut st, info + SI_FIELDS)
     if desugar.HeapGet(mut st.d, t) == TStruct {
         for i <- iter.Range(0, lenL(mut st, fs)) {
             ft := desugar.HeapGet(mut st.d, latI(mut st, fs, i) + 1)
-            ok := if value { tyArgValueOk(mut st, ft) } else { tyArgOk(mut st, ft) }
-            if !ok {
+            if !tyArgValueOk(mut st, ft) {
                 return false
             }
         }
@@ -97,8 +85,7 @@ func tyArgFieldsIn(st mut St, t int, info int, value bool) bool {
         vfs := hgetL(mut st, latI(mut st, fs, v) + 2)
         for i <- iter.Range(0, lenL(mut st, vfs)) {
             ft := desugar.HeapGet(mut st.d, latI(mut st, vfs, i) + 1)
-            ok := if value { tyArgValueOk(mut st, ft) } else { tyArgOk(mut st, ft) }
-            if !ok {
+            if !tyArgValueOk(mut st, ft) {
                 return false
             }
         }
@@ -288,8 +275,9 @@ func sigIn(st mut St, decl desugar.NodeRef, pk int, env int) (Sig, error?) {
 }
 
 // 呼び出し（callee の節 cn）の型引数: 表層型検査器の表（desugar/typer.sober の YTArgsOf — 明示の型引数・実引数との
-// 単一化・型なしの定数の扱いは検査器の規則が正）をlowerの型へコピーする。決まらないものがあるか、型引数に置けない型なら拒否（C1 B2）
-func tableTArgs(st mut St, cn desugar.NodeRef, at desugar.NodeRef, value_ok bool) (desugar.ListRef, error?) {
+// 単一化・型なしの定数の扱いは検査器の規則が正）をlowerの型へコピーする。決まらないものがあるか、展開と同じ制約（参照・チャネルを持たない）に
+// 合わない型なら拒否。Def として呼ぶ総称関数の kind の検査は kindArgsCheck
+func tableTArgs(st mut St, cn desugar.NodeRef, at desugar.NodeRef) (desugar.ListRef, error?) {
     yl := desugar.YTArgsOf(mut st.d, desugar.NodeRef(cn))
     if yl == -1 {
         return 0, diag.Mismatch{at: posOf(mut st, at)}
@@ -300,8 +288,7 @@ func tableTArgs(st mut St, cn desugar.NodeRef, at desugar.NodeRef, value_ok bool
     }
     for i <- iter.Range(0, lenL(mut st, targs)) {
         t := latI(mut st, targs, i)
-        ok := if value_ok { tyArgValueOk(mut st, t) } else { tyArgOk(mut st, t) }
-        if !ok {
+        if !tyArgValueOk(mut st, t) {
             return 0, diag.Mismatch{at: posOf(mut st, at)}
         }
     }
@@ -390,7 +377,7 @@ func genericCall(st mut St, fidx int, args desugar.ListRef, at desugar.NodeRef, 
             mutArgCell(mut st, a, at, false)?
             lput(mut st, vsrcs, i, int(a))
         } else {
-            x := expr(mut st, a)?
+            x := if kindN(mut st, a) == ast.ELambda { genericLamArg(mut st, decl, pk, cn, i, a, at)? } else { expr(mut st, a)? }
             if isTag(mut st, x.t, TNever) {
                 return -1, nil
             }
@@ -399,11 +386,20 @@ func genericCall(st mut St, fidx int, args desugar.ListRef, at desugar.NodeRef, 
             lput(mut st, vsrcs, i, node(mut st, EVal, at, x.t, v, 0, 0))
         }
     }
-    // region 透過の実体関数の型引数は展開と同じ制約（値を持つ型なら string / slice / map を含んでよい）
-    targs := tableTArgs(mut st, cn, at, transp)?
+    targs := tableTArgs(mut st, cn, at)?
+    if !transp {
+        kindArgsCheck(mut st, fidx, cn, at)?
+    }
     fi := instFunc(mut st, fidx, targs)?
     retagConsts(mut st, cts, vsrcs, desugar.ListRef(infoAt(mut st, fi).params))
     return emitCall(mut st, infoAt(mut st, fi).ir, -1, desugar.ListRef(infoAt(mut st, fi).params), desugar.ListRef(infoAt(mut st, fi).results), vsrcs, at, decl, 0)
+}
+
+// 型引数で値の位置の型になる仮引数iへのラムダa（`id[H]((x int) => …)`）: 型引数を代入した仮引数の型の値として作る
+func genericLamArg(st mut St, decl desugar.NodeRef, pk int, cn desugar.NodeRef, i int, a desugar.NodeRef, at desugar.NodeRef) (Val, error?) {
+    targs := tableTArgs(mut st, cn, at)?
+    sig := sigIn(mut st, decl, pk, bindsOf(mut st, lB(nodeOf(mut st, decl)), targs))?
+    return exprExpecting(mut st, a, latI(mut st, sig.ps, i), at)
 }
 
 // ジェネリックかつ関数型 / mutの仮引数を持つ関数: 値の引数を先に評価し、クロージャは型引数（表層型検査器の表）が決まってから作る。
@@ -436,7 +432,7 @@ func genericInline(st mut St, fidx int, args desugar.ListRef, at desugar.NodeRef
             noteConstArg(mut st, int(cts), i, a, x.t)
         }
     }
-    targs := tableTArgs(mut st, cn, at, true)?
+    targs := tableTArgs(mut st, cn, at)?
     env := bindsOf(mut st, lB(nodeOf(mut st, decl)), targs)
     sig := sigIn(mut st, decl, pk, env)?
     retagConsts(mut st, cts, outs, desugar.ListRef(sig.ps))

@@ -35,7 +35,7 @@ func cmdIfaceView(entry string, pkg string, dir string) int {
     for k <- iter.Range(0, len(p.pkg_path)) {
         if p.pkg_path[k] != pkg {
             appendBytes(mut out, bytes("== ${p.pkg_path[k]}.sobi\n"))
-            appendBytes(mut out, iface.Emit(p, k, []int{}, raws))
+            appendBytes(mut out, iface.Emit(p, k, []int{}, raws, []int{}))
         }
     }
     return writeStdout(freeze(out))
@@ -76,16 +76,25 @@ func cmdIface(cl cli.Parsed) int {
         }
         excl = x
     }
+    // --no-expand（stage1 の .sobi との照合）は `@kind` も書かない（stage1 は kind を知らない）
+    mut ks := []int{}
+    if !noexp {
+        k1, kerr := checker.KindsGen(p, excl, -1, false)
+        if kerr != nil {
+            return fail(errDiag(p, std, kerr))
+        }
+        ks = k1
+    }
     raws := rawTrees(p, std)
     mut out := mut []byte{}
     for k <- iter.Range(0, len(p.pkg_path)) {
         if pkgOnly {
             if p.pkg_path[k] == pkg {
-                return writeStdout(iface.Emit(p, k, excl, rawTrees(p, std)))
+                return writeStdout(iface.Emit(p, k, excl, rawTrees(p, std), ks))
             }
         } else {
             appendBytes(mut out, bytes("== ${p.pkg_path[k]}.sobi\n"))
-            appendBytes(mut out, iface.Emit(p, k, excl, raws))
+            appendBytes(mut out, iface.Emit(p, k, excl, raws, ks))
         }
     }
     if pkgOnly {

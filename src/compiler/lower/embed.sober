@@ -1,0 +1,145 @@
+package lower
+
+// @embed の []byte の値（ast.EEmbed）: 中身はヒープにも IR にも持たない。グローバルの名前が中身を特定し（emb:<長さ>:<SHA-256の16進>:<パス>）、
+// 初期値は空の列（rodata の側・中身の語の数は G_WORDS）。中身は書き手（x86 の rodata・IR と .ll のテキスト）がファイルから読み直し、
+// load の時点の長さと指紋で照合する。同じ名前のグローバルは 1 つ
+
+import "desugar"
+import "loader"
+import "std/iter"
+
+const EMB_PFX = "emb:"
+
+// 節 e（ast.EEmbed）の値: rodata を指す imm []byte（string リテラルと同じヘッダの形 — d = 0）
+func embedLit(st mut St, e desugar.NodeRef) Val {
+    x := nodeOf(mut st, e)
+    g := embGlobal(mut st, embName(mut st, desugar.StrRef(x.a), x.b, desugar.StrRef(x.c)), x.b)
+    ga := globaladdr(mut st, g)
+    return Val{t: mkSlice(mut st, tByte(mut st), false), v: newHeader(mut st, mkSlice(mut st, tByte(mut st), false), ga, iconst(mut st, x.b), iconst(mut st, 0))}
+}
+
+// グローバルの名前 emb:<長さ>:<指紋の16進>:<パス>（sum = 指紋の文字列 — SHA-256 の32バイト）
+func embName(st mut St, path desugar.StrRef, size int, sum desugar.StrRef) desugar.StrRef {
+    digits := bytes("0123456789abcdef")
+    mut hx := mut []byte{}
+    for i <- iter.Range(0, slen(mut st, sum)) {
+        c := sat(mut st, sum, i)
+        hx = append(hx, digits[c / 16])
+        hx = append(hx, digits[c % 16])
+    }
+    head := strCat(mut st, strCat(mut st, strLit(mut st, EMB_PFX), decimal(mut st, size)), strLit(mut st, ":"))
+    mid := strCat(mut st, strCat(mut st, head, strLit(mut st, string(freeze(hx)) catch "")), strLit(mut st, ":"))
+    return strCat(mut st, mid, path)
+}
+
+// 名前 nm の @embed のグローバル（無ければ足す — 席Aの子は事象 EV_EMB で親に同じものを足させる）
+func embGlobal(st mut St, nm desugar.StrRef, size int) int {
+    mut g := st.ghead
+    while g >= 0 {
+        if strEq(mut st, desugar.StrRef(desugar.HeapGet(mut st.d, g + G_NAME)), nm) {
+            lsEv(mut st, EV_EMB, g, 0, 0, 0)
+            return g
+        }
+        g = desugar.HeapGet(mut st.d, g + G_NEXT)
+    }
+    ng := addGlobalInit(mut st, int(nm), (size + 7) / 8, listN(mut st, 0))
+    lsEv(mut st, EV_EMB, ng, 0, 0, 0)
+    return ng
+}
+
+// 16進の1桁の値
+func hexVal(c byte) int {
+    return if c >= 'a' { int(c) - 'a' + 10 } else { int(c) - '0' }
+}
+
+// 名前のバイト列 nm が @embed のグローバルなら (パス, 長さ, 指紋, true)
+func embParse(nm []byte) (string, int, []byte, bool) {
+    p := bytes(EMB_PFX)
+    if len(nm) < len(p) {
+        return "", 0, []byte{}, false
+    }
+    for i <- iter.Range(0, len(p)) {
+        if nm[i] != p[i] {
+            return "", 0, []byte{}, false
+        }
+    }
+    mut i := len(p)
+    mut size := 0
+    while i < len(nm) && nm[i] != ':' {
+        size = size * 10 + int(nm[i]) - '0'
+        i += 1
+    }
+    i += 1
+    mut sum := mut []byte{}
+    while i + 1 < len(nm) && nm[i] != ':' {
+        sum = append(sum, byte(hexVal(nm[i]) * 16 + hexVal(nm[i + 1])))
+        i += 2
+    }
+    i += 1
+    if i > len(nm) {
+        return "", 0, []byte{}, false
+    }
+    path := string(nm[i:len(nm)]) catch return "", 0, []byte{}, false
+    return path, size, freeze(sum), true
+}
+
+// グローバル g の名前のバイト列（ヒープの文字列）
+func globNameBytes(st mut St, g int) []byte {
+    return globNameBytes0(mut st, desugar.StrRef(desugar.HeapGet(mut st.d, g + G_NAME)))
+}
+
+func globNameBytes0(st mut St, s desugar.StrRef) []byte {
+    mut o := mut []byte{}
+    for i <- iter.Range(0, slen(mut st, s)) {
+        o = append(o, byte(sat(mut st, s, i)))
+    }
+    return freeze(o)
+}
+
+// グローバル g が @embed のものなら、ファイルから読み直した中身（長さと指紋が load の時点と違えば panic — ビルドの途中でファイルが変わった）。
+// 名前はヒープの文字列（embName が strCat で組む）。x86 の段はヒープの凍結の後なので xg で読む（embBytesX）
+func embBytesOf(st mut St, g int) ([]byte, bool) {
+    s := desugar.HeapGet(mut st.d, g + G_NAME)
+    if !(desugar.HeapGet(mut st.d, s) > 4 && desugar.HeapGet(mut st.d, s + 1) == 'e' && desugar.HeapGet(mut st.d, s + 2) == 'm' && desugar.HeapGet(mut st.d, s + 3) == 'b' && desugar.HeapGet(mut st.d, s + 4) == ':') {
+        return []byte{}, false
+    }
+    mut nb := mut []byte{}
+    for i <- iter.Range(0, desugar.HeapGet(mut st.d, s)) {
+        nb = append(nb, byte(desugar.HeapGet(mut st.d, s + 1 + i)))
+    }
+    return embReload(freeze(nb))
+}
+
+func embBytesX(st mut St, g int) ([]byte, bool) {
+    s := xg(mut st, g + G_NAME)
+    if !(xg(mut st, s) > 4 && xg(mut st, s + 1) == 'e' && xg(mut st, s + 2) == 'm' && xg(mut st, s + 3) == 'b' && xg(mut st, s + 4) == ':') {
+        return []byte{}, false
+    }
+    mut nb := mut []byte{}
+    for i <- iter.Range(0, xg(mut st, s)) {
+        nb = append(nb, byte(xg(mut st, s + 1 + i)))
+    }
+    return embReload(freeze(nb))
+}
+
+func embReload(nm []byte) ([]byte, bool) {
+    path, size, sum, ok := embParse(nm)
+    if !ok {
+        return []byte{}, false
+    }
+    // 凍結の後の x86 の書き手からも呼ぶ: EmbedReload はパス・長さ・指紋だけを受け、St にもヒープにも触らない（読んだバイト列は rodata の
+    // バッファへ写すだけ）。照合に外れれば loader.EmbedChanged で止まり、ELF を書かない
+    return loader.EmbedReload(path, size, sum), true
+}
+
+// 中身 b の i 番目の語（リトルエンディアン・はみ出しは 0）
+func embWord(b []byte, i int) int {
+    mut v := 0
+    mut k := 7
+    while k >= 0 {
+        j := i * 8 + k
+        v = (v << 8) | (if j < len(b) { int(b[j]) } else { 0 })
+        k -= 1
+    }
+    return v
+}

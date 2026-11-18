@@ -1,0 +1,6 @@
+    for x <- xs {
+        if p(x) {
+            return Some$U{v: x}
+        }
+    }
+    return None$U{}

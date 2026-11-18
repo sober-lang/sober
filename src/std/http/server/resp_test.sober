@@ -148,7 +148,7 @@ func shapeOf(k int, n int) Response {
     case 3: Response{status: http.OK, contentType: "application/json", body: filler(n), cache: NoStore{}}
     case 4: Response{status: http.OK, contentType: "text/plain", body: filler(n), validators: Validators{etag: "\"e\"", modified: 0}}
     case 5: Response{status: http.OK, contentType: "text/plain", body: filler(n), headers: Headers{list: []http.Field{http.Field{name: "X-A", value: "b"}}}}
-    case 6: Response{status: http.NoContent, contentType: "text/plain", body: filler(n)}
+    case 6: Response{status: http.NoContent, contentType: "text/plain", body: []byte{}}
     default: Response{status: http.OK, contentType: "text/plain", body: filler(n), coded: Coded{encoding: "br"}}
     }
 }

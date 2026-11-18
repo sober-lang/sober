@@ -1,0 +1,20 @@
+@@full	a51d87e13dc26c94	6365	183672
+@head	cee2760dddae56a7	0	476
+const cookieName	eb7758be152be2cb	1	64
+const ttlSec	f56d4422b094d27b	1	49
+func changePassword	61c48730bcddbf9c	112	4075
+func field	49e71ce51fcc8af5	37	1290
+func issue	4d6b7fe8a09eb770	35	1670
+func logIn	d83612450c81efee	70	2496
+func logout	a1d0223ecbcab093	16	893
+func main	db494cb5294d784a	56	1981
+func pairs	3c4e9428696aff2d	38	1401
+func route	8a3e6d02093113f6	110	3779
+func send	302f7d30490f1dde	81	3381
+func serve	4ace23952a1a0a8c	48	1705
+func signup	6f8e0ba52ba66948	75	2767
+func tour	35d391fd27a24460	250	8594
+func unauthorized	8a5aafa03023fee7	9	535
+func whoami	101380a565626f73	84	3111
+type Reply	158127a8cdb05d20	4	191
+type User	8d95b401c1c468b7	3	165

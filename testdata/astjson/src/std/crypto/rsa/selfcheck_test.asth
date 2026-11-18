@@ -1,0 +1,7 @@
+@@full	9b0eee10f82ea4cb	3852	154952
+@head	5d6b5ab5c92f0aaa	0	232
+func TestMontSelfCheck	237d16f733a638f5	20	659
+func TestSelKeepsXmm	5659ed5a19661c10	124	4672
+func TestSelSelfCheck	cdb8fde8be66cd8d	9	357
+func montSelfCheck	6a78dfdda33792a9	364	11185
+func selSelfCheck	8a75f86089b586ae	162	5091

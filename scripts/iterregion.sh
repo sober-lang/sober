@@ -67,6 +67,9 @@ if [ "${1:-}" = --mut ]; then
     exit $mf
 fi
 W=$(mktemp -d)
+# peak RSS は、ワーカーの数と同じ数のCPUに縛って測る（gatelib.sh の pinn — 縛らないとカーネルのRSSの計数の近似で数 MB 揺れ、1 MB の余白を越えうる）
+source scripts/gatelib.sh
+read -ra PIN1 <<< "$(pin1)"
 trap 'rm -rf "$W"' EXIT
 fail=0
 for want in iter_region_inner:2 iter_region_outer_assign:2 iter_region_nonret:1 iter_region_writer:2 iter_region_errcont:2; do
@@ -89,40 +92,40 @@ if [ "$got" != "0" ]; then
     fail=$((fail + 1))
 fi
 "$S2" build examples/iter_region_inner.sober -o "$W/inner" > /dev/null 2>&1 || { echo "FAIL: build iter_region_inner"; exit 1; }
-/usr/bin/time -f %M -o "$W/r1" "$W/inner" 20000 > /dev/null || fail=$((fail + 1))
-/usr/bin/time -f %M -o "$W/r2" "$W/inner" 200000 > /dev/null || fail=$((fail + 1))
+/usr/bin/time -f %M -o "$W/r1" "${PIN1[@]}" "$W/inner" 20000 > /dev/null || fail=$((fail + 1))
+/usr/bin/time -f %M -o "$W/r2" "${PIN1[@]}" "$W/inner" 200000 > /dev/null || fail=$((fail + 1))
 r1=$(cat "$W/r1"); r2=$(cat "$W/r2")
 if [ "$r2" -gt $((r1 + 1024)) ]; then
     echo "FAIL: iter_region_inner: RSS grows with the iterations ($r1 KB at 20000 → $r2 KB at 200000)"
     fail=$((fail + 1))
 fi
 "$S2" build examples/iter_region_rcell.sober -o "$W/rcell" > /dev/null 2>&1 || { echo "FAIL: build iter_region_rcell"; exit 1; }
-/usr/bin/time -f %M -o "$W/c1" "$W/rcell" 20000 > /dev/null || fail=$((fail + 1))
-/usr/bin/time -f %M -o "$W/c2" "$W/rcell" 200000 > /dev/null || fail=$((fail + 1))
+/usr/bin/time -f %M -o "$W/c1" "${PIN1[@]}" "$W/rcell" 20000 > /dev/null || fail=$((fail + 1))
+/usr/bin/time -f %M -o "$W/c2" "${PIN1[@]}" "$W/rcell" 200000 > /dev/null || fail=$((fail + 1))
 c1=$(cat "$W/c1"); c2=$(cat "$W/c2")
 if [ "$c2" -gt $((c1 + 1024)) ]; then
     echo "FAIL: iter_region_rcell: RSS grows with the iterations ($c1 KB at 20000 → $c2 KB at 200000 — the region cell must go to the iteration's region)"
     fail=$((fail + 1))
 fi
 "$S2" build examples/iter_region_inline_dest.sober -o "$W/idest" > /dev/null 2>&1 || { echo "FAIL: build iter_region_inline_dest"; exit 1; }
-/usr/bin/time -f %M -o "$W/d1" "$W/idest" 2000 > /dev/null || fail=$((fail + 1))
-/usr/bin/time -f %M -o "$W/d2" "$W/idest" 20000 > /dev/null || fail=$((fail + 1))
+/usr/bin/time -f %M -o "$W/d1" "${PIN1[@]}" "$W/idest" 2000 > /dev/null || fail=$((fail + 1))
+/usr/bin/time -f %M -o "$W/d2" "${PIN1[@]}" "$W/idest" 20000 > /dev/null || fail=$((fail + 1))
 d1=$(cat "$W/d1"); d2=$(cat "$W/d2")
 if [ "$d2" -gt $((d1 + 1024)) ]; then
     echo "FAIL: iter_region_inline_dest: RSS grows with the iterations ($d1 KB at 2000 → $d2 KB at 20000)"
     fail=$((fail + 1))
 fi
 "$S2" build examples/iter_region_dest_reg.sober -o "$W/dreg" > /dev/null 2>&1 || { echo "FAIL: build iter_region_dest_reg"; exit 1; }
-/usr/bin/time -f %M -o "$W/g1" "$W/dreg" 2000 > /dev/null || fail=$((fail + 1))
-/usr/bin/time -f %M -o "$W/g2" "$W/dreg" 20000 > /dev/null || fail=$((fail + 1))
+/usr/bin/time -f %M -o "$W/g1" "${PIN1[@]}" "$W/dreg" 2000 > /dev/null || fail=$((fail + 1))
+/usr/bin/time -f %M -o "$W/g2" "${PIN1[@]}" "$W/dreg" 20000 > /dev/null || fail=$((fail + 1))
 g1=$(cat "$W/g1"); g2=$(cat "$W/g2")
 if [ "$g2" -gt $((g1 + 1024)) ]; then
     echo "FAIL: iter_region_dest_reg: RSS grows with the iterations ($g1 KB at 2000 → $g2 KB at 20000)"
     fail=$((fail + 1))
 fi
 "$S2" build examples/iter_region_fnval_dest.sober --emit=elf --passes -o "$W/fvd" > /dev/null 2>&1 || { echo "FAIL: build iter_region_fnval_dest"; exit 1; }
-/usr/bin/time -f %M -o "$W/v1" "$W/fvd" 2000 > /dev/null || fail=$((fail + 1))
-/usr/bin/time -f %M -o "$W/v2" "$W/fvd" 20000 > /dev/null || fail=$((fail + 1))
+/usr/bin/time -f %M -o "$W/v1" "${PIN1[@]}" "$W/fvd" 2000 > /dev/null || fail=$((fail + 1))
+/usr/bin/time -f %M -o "$W/v2" "${PIN1[@]}" "$W/fvd" 20000 > /dev/null || fail=$((fail + 1))
 v1=$(cat "$W/v1"); v2=$(cat "$W/v2")
 if [ "$v2" -gt $((v1 + 1024)) ]; then
     echo "FAIL: iter_region_fnval_dest: RSS grows with the iterations ($v1 KB at 2000 → $v2 KB at 20000)"
@@ -141,24 +144,24 @@ if [ "$nr" != "0" ]; then
     fail=$((fail + 1))
 fi
 "$S2" build examples/iter_region_errcont.sober -o "$W/errcont" > /dev/null 2>&1 || { echo "FAIL: build iter_region_errcont"; exit 1; }
-/usr/bin/time -f %M -o "$W/e1" "$W/errcont" 20000 > /dev/null || fail=$((fail + 1))
-/usr/bin/time -f %M -o "$W/e2" "$W/errcont" 200000 > /dev/null || fail=$((fail + 1))
+/usr/bin/time -f %M -o "$W/e1" "${PIN1[@]}" "$W/errcont" 20000 > /dev/null || fail=$((fail + 1))
+/usr/bin/time -f %M -o "$W/e2" "${PIN1[@]}" "$W/errcont" 200000 > /dev/null || fail=$((fail + 1))
 e1=$(cat "$W/e1"); e2=$(cat "$W/e2")
 if [ "$e2" -gt $((e1 + 1024)) ]; then
     echo "FAIL: iter_region_errcont: RSS grows with the caught failures ($e1 KB at 20000 → $e2 KB at 200000 — the error cells must go to the iteration's region)"
     fail=$((fail + 1))
 fi
 "$S2" build examples/iter_region_nonret.sober -o "$W/nonret" > /dev/null 2>&1 || { echo "FAIL: build iter_region_nonret"; exit 1; }
-/usr/bin/time -f %M -o "$W/n1" "$W/nonret" 20000 > /dev/null || fail=$((fail + 1))
-/usr/bin/time -f %M -o "$W/n2" "$W/nonret" 200000 > /dev/null || fail=$((fail + 1))
+/usr/bin/time -f %M -o "$W/n1" "${PIN1[@]}" "$W/nonret" 20000 > /dev/null || fail=$((fail + 1))
+/usr/bin/time -f %M -o "$W/n2" "${PIN1[@]}" "$W/nonret" 200000 > /dev/null || fail=$((fail + 1))
 n1=$(cat "$W/n1"); n2=$(cat "$W/n2")
 if [ "$n2" -gt $((n1 + 1024)) ]; then
     echo "FAIL: iter_region_nonret: RSS grows with the iterations ($n1 KB at 20000 → $n2 KB at 200000)"
     fail=$((fail + 1))
 fi
 "$S2" build examples/iter_region_writer.sober -o "$W/writer" > /dev/null 2>&1 || { echo "FAIL: build iter_region_writer"; exit 1; }
-/usr/bin/time -f %M -o "$W/w1" "$W/writer" 20000 > /dev/null || fail=$((fail + 1))
-/usr/bin/time -f %M -o "$W/w2" "$W/writer" 200000 > /dev/null || fail=$((fail + 1))
+/usr/bin/time -f %M -o "$W/w1" "${PIN1[@]}" "$W/writer" 20000 > /dev/null || fail=$((fail + 1))
+/usr/bin/time -f %M -o "$W/w2" "${PIN1[@]}" "$W/writer" 200000 > /dev/null || fail=$((fail + 1))
 w1=$(cat "$W/w1"); w2=$(cat "$W/w2")
 if [ "$w2" -gt $((w1 + 1024)) ]; then
     echo "FAIL: iter_region_writer: RSS grows with the iterations ($w1 KB at 20000 → $w2 KB at 200000)"
@@ -176,8 +179,8 @@ for fn in build counts; do
     fi
 done
 "$S2" build examples/map_dest.sober -o "$W/mdest" > /dev/null 2>&1 || { echo "FAIL: build map_dest"; exit 1; }
-/usr/bin/time -f %M -o "$W/m1" "$W/mdest" 2000 > /dev/null || fail=$((fail + 1))
-/usr/bin/time -f %M -o "$W/m2" "$W/mdest" 20000 > /dev/null || fail=$((fail + 1))
+/usr/bin/time -f %M -o "$W/m1" "${PIN1[@]}" "$W/mdest" 2000 > /dev/null || fail=$((fail + 1))
+/usr/bin/time -f %M -o "$W/m2" "${PIN1[@]}" "$W/mdest" 20000 > /dev/null || fail=$((fail + 1))
 m1=$(cat "$W/m1"); m2=$(cat "$W/m2")
 if [ "$m2" -gt $((m1 + 1024)) ]; then
     echo "FAIL: map_dest: RSS grows with the caller's iterations ($m1 KB at 2000 → $m2 KB at 20000)"
@@ -190,8 +193,8 @@ resid() { local m; m=$(sed -n 's/^maxTasks //p' "$1.out"); echo $(( $(cat "$1") 
 "$S2" build examples/task_spawn_discard.sober -o "$W/psd" > /dev/null 2>&1 || { echo "FAIL: build task_spawn_discard"; exit 1; }
 for wm in 1:1024 4:4096; do
     w=${wm%%:*}; slack=${wm#*:}
-    SOBER_WORKERS=$w /usr/bin/time -f %M -o "$W/p1" "$W/psd" 20000 ledger > "$W/p1.out" || fail=$((fail + 1))
-    SOBER_WORKERS=$w /usr/bin/time -f %M -o "$W/p2" "$W/psd" 200000 ledger > "$W/p2.out" || fail=$((fail + 1))
+    SOBER_WORKERS=$w /usr/bin/time -f %M -o "$W/p1" $(pinn $w) "$W/psd" 20000 ledger > "$W/p1.out" || fail=$((fail + 1))
+    SOBER_WORKERS=$w /usr/bin/time -f %M -o "$W/p2" $(pinn $w) "$W/psd" 200000 ledger > "$W/p2.out" || fail=$((fail + 1))
     p1=$(resid "$W/p1"); p2=$(resid "$W/p2")
     mt=$(sed -n 's/^maxTasks //p' "$W/p2.out")
     if [ "${mt:-0}" -gt $((w * 256 + 64)) ]; then
@@ -207,8 +210,8 @@ done
 "$S2" build examples/task_spawn_discard_die.sober -o "$W/psdd" > /dev/null 2>&1 || { echo "FAIL: build task_spawn_discard_die"; exit 1; }
 for wm in 1:1024 4:4096; do
     w=${wm%%:*}; slack=${wm#*:}
-    SOBER_WORKERS=$w /usr/bin/time -f %M -o "$W/q1" "$W/psdd" 20000 ledger > "$W/q1.out" || fail=$((fail + 1))
-    SOBER_WORKERS=$w /usr/bin/time -f %M -o "$W/q2" "$W/psdd" 200000 ledger > "$W/q2.out" || fail=$((fail + 1))
+    SOBER_WORKERS=$w /usr/bin/time -f %M -o "$W/q1" $(pinn $w) "$W/psdd" 20000 ledger > "$W/q1.out" || fail=$((fail + 1))
+    SOBER_WORKERS=$w /usr/bin/time -f %M -o "$W/q2" $(pinn $w) "$W/psdd" 200000 ledger > "$W/q2.out" || fail=$((fail + 1))
     q1=$(resid "$W/q1"); q2=$(resid "$W/q2")
     mt=$(sed -n 's/^maxTasks //p' "$W/q2.out")
     if [ "${mt:-0}" -gt $((w * 256 + 64)) ]; then
@@ -222,8 +225,8 @@ for wm in 1:1024 4:4096; do
     eval "pe$w=\"$q1 → $q2\""
 done
 "$S2" build examples/iter_region_reccons.sober -o "$W/rcons" > /dev/null 2>&1 || { echo "FAIL: build iter_region_reccons"; exit 1; }
-/usr/bin/time -f %M -o "$W/k1" "$W/rcons" 20000 > /dev/null || fail=$((fail + 1))
-/usr/bin/time -f %M -o "$W/k2" "$W/rcons" 200000 > /dev/null || fail=$((fail + 1))
+/usr/bin/time -f %M -o "$W/k1" "${PIN1[@]}" "$W/rcons" 20000 > /dev/null || fail=$((fail + 1))
+/usr/bin/time -f %M -o "$W/k2" "${PIN1[@]}" "$W/rcons" 200000 > /dev/null || fail=$((fail + 1))
 k1=$(cat "$W/k1"); k2=$(cat "$W/k2")
 # 増分は節点の数に比例する（チェーンは保持する値）— 節点あたり128 B以下（180,000 節点 = 22,500 KB）
 if [ "$k2" -gt $((k1 + 22500)) ]; then
@@ -231,8 +234,8 @@ if [ "$k2" -gt $((k1 + 22500)) ]; then
     fail=$((fail + 1))
 fi
 "$S2" build examples/iter_region_optcons.sober -o "$W/ocons" > /dev/null 2>&1 || { echo "FAIL: build iter_region_optcons"; exit 1; }
-/usr/bin/time -f %M -o "$W/o1" "$W/ocons" 20000 > /dev/null || fail=$((fail + 1))
-/usr/bin/time -f %M -o "$W/o2" "$W/ocons" 200000 > /dev/null || fail=$((fail + 1))
+/usr/bin/time -f %M -o "$W/o1" "${PIN1[@]}" "$W/ocons" 20000 > /dev/null || fail=$((fail + 1))
+/usr/bin/time -f %M -o "$W/o2" "${PIN1[@]}" "$W/ocons" 200000 > /dev/null || fail=$((fail + 1))
 o1=$(cat "$W/o1"); o2=$(cat "$W/o2")
 # ⑮ 箱のフィールド（next L?）のチェーンも ⑬ と同じ基準 — 節点あたり128 B以下
 if [ "$o2" -gt $((o1 + 22500)) ]; then
@@ -240,8 +243,8 @@ if [ "$o2" -gt $((o1 + 22500)) ]; then
     fail=$((fail + 1))
 fi
 "$S2" build examples/dest_append_rec.sober -o "$W/darec" > /dev/null 2>&1 || { echo "FAIL: build dest_append_rec"; exit 1; }
-/usr/bin/time -f %M -o "$W/a1" "$W/darec" 90 > /dev/null || fail=$((fail + 1))
-/usr/bin/time -f %M -o "$W/a2" "$W/darec" 900 > /dev/null || fail=$((fail + 1))
+/usr/bin/time -f %M -o "$W/a1" "${PIN1[@]}" "$W/darec" 90 > /dev/null || fail=$((fail + 1))
+/usr/bin/time -f %M -o "$W/a2" "${PIN1[@]}" "$W/darec" 900 > /dev/null || fail=$((fail + 1))
 a1=$(cat "$W/a1"); a2=$(cat "$W/a2")
 # 深さに比例するのは深度ごとのregionのページだけ（≈ 4 KB / レベル）— 部分木を深さの数だけコピーすると2乗（90 → 900で +130 MB）
 if [ "$a2" -gt $((a1 + 16384)) ]; then
@@ -249,8 +252,8 @@ if [ "$a2" -gt $((a1 + 16384)) ]; then
     fail=$((fail + 1))
 fi
 "$S2" build examples/iter_region_domain_mut.sober -o "$W/dmut" > /dev/null 2>&1 || { echo "FAIL: build iter_region_domain_mut"; exit 1; }
-/usr/bin/time -f %M -o "$W/q1" "$W/dmut" 20000 > /dev/null || fail=$((fail + 1))
-/usr/bin/time -f %M -o "$W/q2" "$W/dmut" 200000 > /dev/null || fail=$((fail + 1))
+/usr/bin/time -f %M -o "$W/q1" "${PIN1[@]}" "$W/dmut" 20000 > /dev/null || fail=$((fail + 1))
+/usr/bin/time -f %M -o "$W/q2" "${PIN1[@]}" "$W/dmut" 200000 > /dev/null || fail=$((fail + 1))
 q1=$(cat "$W/q1"); q2=$(cat "$W/q2")
 # ⑯ domain の状態の mut の器（その場で書く）は呼び出しごとに region を伸ばさない
 if [ "$q2" -gt $((q1 + 1024)) ]; then
@@ -259,8 +262,8 @@ if [ "$q2" -gt $((q1 + 1024)) ]; then
 fi
 "$S2" build examples/lease_iter.sober -o "$W/lsi" > /dev/null 2>&1 || { echo "FAIL: build lease_iter"; exit 1; }
 for w in 1 4; do
-    SOBER_WORKERS=$w /usr/bin/time -f %M -o "$W/l1" "$W/lsi" 2000 > /dev/null || fail=$((fail + 1))
-    SOBER_WORKERS=$w /usr/bin/time -f %M -o "$W/l2" "$W/lsi" 20000 > /dev/null || fail=$((fail + 1))
+    SOBER_WORKERS=$w /usr/bin/time -f %M -o "$W/l1" $(pinn $w) "$W/lsi" 2000 > /dev/null || fail=$((fail + 1))
+    SOBER_WORKERS=$w /usr/bin/time -f %M -o "$W/l2" $(pinn $w) "$W/lsi" 20000 > /dev/null || fail=$((fail + 1))
     l1=$(cat "$W/l1"); l2=$(cat "$W/l2")
     if [ "$l2" -gt $((l1 + 1024)) ]; then
         echo "FAIL: lease_iter (W$w): RSS grows with the leases ($l1 KB at 2000 → $l2 KB at 20000)"

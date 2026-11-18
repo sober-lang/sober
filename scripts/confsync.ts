@@ -163,7 +163,7 @@ for (const [i, l] of fs.readFileSync(path.join(ROOT, "testdata/conformance/claim
     continue;
   }
   const c = { block: f[0], status: f[1], when: f[2], ja: f[3], en: f[4], ev: f[5] === "-" ? [] : f[5].split(" ") };
-  if (!["yes", "partial", "intentional", "planned"].includes(c.status)) fail(`claims.tsv ${i + 1}: 状態 ${c.status}`);
+  if (!["yes", "partial", "intentional", "planned", "no", "na"].includes(c.status)) fail(`claims.tsv ${i + 1}: 状態 ${c.status}`);
   if ((c.status === "yes" || c.status === "partial") && c.ev.length === 0) fail(`claims.tsv ${i + 1}: 対応の主張に証拠が無い — ${c.ja}`);
   if (c.status === "planned" && !/^\d+\.\d+$/.test(c.when)) fail(`claims.tsv ${i + 1}: 未実装の主張に時期が無い — ${c.ja}`);
   if (c.status !== "planned" && c.when !== "-") fail(`claims.tsv ${i + 1}: 時期は未実装の主張だけ — ${c.ja}`);
@@ -210,6 +210,8 @@ function statusText(c: Claim, lang: Lang): string {
     case "yes": return L(lang, "対応", "Supported");
     case "partial": return L(lang, "一部", "Partial");
     case "intentional": return L(lang, "意図して非対応", "Not supported (by design)");
+    case "no": return L(lang, "非対応", "Not supported");
+    case "na": return L(lang, "対象外", "Not applicable");
     default: return L(lang, `未実装（${c.when} 圏）`, `Not yet (planned: ${c.when})`);
   }
 }
@@ -225,7 +227,7 @@ function claimTable(block: string, statuses: string[], lang: Lang): string[] {
   for (const [c, i] of cs) {
     const k = `${lang}\t${i}`;
     rendered.set(k, (rendered.get(k) ?? 0) + 1);
-    const ev = c.ev.map((e) => evidence(e, lang)).join("<br>") || "—";
+    const ev = c.ev.map((e) => evidence(e, lang)).join("<br>") || L(lang, "なし", "none");
     o.push(`| ${lang === "ja" ? c.ja : c.en} | ${planned ? L(lang, `${c.when} 圏`, c.when) : statusText(c, lang)} | ${ev} |`);
   }
   return o;
@@ -353,11 +355,20 @@ const BLOCKS: Record<string, (lang: Lang) => string[]> = {
       `Last run: ${m?.date} (tree ${m?.commit} — scripts/dnsinterop.sh; fake DNS server, ${num("interop/dns")} cases: CNAME chain, TC → TCP, spoofed txid, search, NXDOMAIN, timeout)`)];
   },
   summary: (lang) => {
-    const o = [L(lang, "| 章 | 対応 | 一部 | 意図して非対応 | 未実装 |", "| Chapter | Supported | Partial | By design | Not yet |"), "|---|---:|---:|---:|---:|"];
-    for (const ch of ["tls", "x509", "crypto", "http", "dns"]) {
-      const cs = claims.filter((c) => c.block.startsWith(ch + "-"));
+    const o = [L(lang, "| 章 | 対応 | 一部 | 意図して非対応 | 未実装 | 非対応 | 対象外 |", "| Chapter | Supported | Partial | By design | Not yet | Not supported | Not applicable |"), "|---|---:|---:|---:|---:|---:|---:|"];
+    // RFCのMUSTの行（塊http-must）は機能の行と混ぜず、httpの章を2行に分けて数える
+    const rows: [string, string, (b: string) => boolean][] = [
+      ["tls", "tls", (b) => b.startsWith("tls-")],
+      ["x509", "x509", (b) => b.startsWith("x509-")],
+      ["crypto", "crypto", (b) => b.startsWith("crypto-")],
+      ["http", L(lang, "http（機能）", "http (features)"), (b) => b.startsWith("http-") && b !== "http-must"],
+      ["http", L(lang, "http（RFCのMUST）", "http (RFC MUSTs)"), (b) => b === "http-must"],
+      ["dns", "dns", (b) => b.startsWith("dns-")],
+    ];
+    for (const [ch, label, inBlock] of rows) {
+      const cs = claims.filter((c) => inBlock(c.block));
       const n = (s: string) => cs.filter((c) => c.status === s).length;
-      o.push(`| [${ch}](${ch}${lang === "ja" ? ".ja" : ""}.md) | ${n("yes")} | ${n("partial")} | ${n("intentional")} | ${n("planned")} |`);
+      o.push(`| [${label}](${ch}${lang === "ja" ? ".ja" : ""}.md) | ${n("yes")} | ${n("partial")} | ${n("intentional")} | ${n("planned")} | ${n("no")} | ${n("na")} |`);
     }
     return o;
   },

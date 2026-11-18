@@ -1,0 +1,16 @@
+@@full	0c47be35f06fa0cf	2775	90400
+@head	16340509dc0533ff	0	275
+const hour	c6df0f0dd498466a	4	151
+const req	2dd092f773504ed9	1	107
+func acceptReply	ea2a386aa8d74ada	29	953
+func client2	172418d2041eeaed	17	647
+func label	af467abfc157d7fe	29	1379
+func main	475cbb938d9f30b1	7	297
+func orphan	ab48af53304e4cbb	44	1516
+func recvAll	3e1b49a6b8d16eae	19	724
+func reply	9dddc1b80e845330	34	1214
+func route	f388177cbfdb8b05	13	571
+func run	5c2b129073a7bacb	139	4590
+func send2	dc958963726aa352	44	1395
+func serveDeadline	d3866b4557f189f5	37	1288
+func serveOne	817bfaa28fd0d6aa	22	790

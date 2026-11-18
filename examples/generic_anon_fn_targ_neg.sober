@@ -1,0 +1,19 @@
+package main
+
+// 負例: 型引数は匿名の関数型にならない。名前の関数だけから推論すると、型引数は匿名の関数型になるので拒否する。
+// 値として渡すなら名前付き関数型で書く（`id(H(incr))`・`id[H](incr)`）
+
+type H func(x int) int
+
+func incr(x int) int {
+    return x + 1
+}
+
+func id[T](x T) T {
+    return x
+}
+
+func main() {
+    h := id(incr)
+    println(1)
+}

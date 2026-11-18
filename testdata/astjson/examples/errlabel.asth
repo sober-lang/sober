@@ -1,0 +1,12 @@
+@@full	d84f552e11182720	1370	36408
+@head	7aaa9b710c68c96c	0	72
+func backup	fc2c36cfbafec701	10	456
+func codeOf	adf890195f4436ea	16	594
+func collect	f94a4d314c417a96	36	1266
+func main	0fb2e7e61e5cb263	50	1660
+func open	2174fb3fbdd9de2e	19	725
+func openBoth	a074fedec6f92385	22	808
+func show	23d637330ca061b6	42	1654
+type Bad	a53642bb7d1a19de	2	112
+type Many	0344d148552d2599	3	149
+type NotFound	01dae4d47592bd72	2	120

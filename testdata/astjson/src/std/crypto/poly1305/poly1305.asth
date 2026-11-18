@@ -1,0 +1,13 @@
+@@full	010f2953357619eb	5887	164954
+@head	f878801fad4dded4	0	103
+const mask26	0fd9f873a07c2444	1	64
+const mask32	e242771aea0b4720	1	66
+func Sum	4a1376e04a3dc12b	25	902
+func SumAead	3cc3a4d377b30365	86	2785
+func absorb	80f4ad62d415576b	368	12156
+func finish	7e1efcb33632a999	332	10894
+func le32	1dfd23a8bbeb398b	40	1302
+func put32	7e16afb4a3a3efdd	49	1701
+func start	4c6745e569e23a3e	48	1779
+func tail	265d5670b4aa7e63	53	1833
+type acc	97f32d9a347bcb51	11	534

@@ -126,7 +126,7 @@ T-22. 封の型（フィールドの型に、宣言したpackageの非公開の�
 拒否: [`examples/utf8_view_neg.sober`](../../examples/utf8_view_neg.sober)・[`examples/json_doc_forge.sober`](../../examples/json_doc_forge.sober)
 決定: [language.md 15節](../language.md)
 
-T-23. 同一性の型（std/taskの `Scope`・`Handle`・`Sender`・`Receiver`・`Pool`・`Local`、std/ioの `File`・`Root`、std/netの `Listener`・`Conn`、std/tlsの `Conn` — 作る関数だけが本物を作る型）のゼロ値はstdの外で作れない。型そのもののリテラル `T{}` と、同一性の型を（フィールド・型引数を通して推移的に）持つフィールドを省いたリテラルを拒否する。`T?` のフィールド・slice / mapのフィールドは省ける。
+T-23. 同一性の型（std/taskの `Scope`・`Handle`・`Sender`・`Receiver`・`Pool`・`Local`、std/ioの `File`・`Root`、std/netの `Listener`・`Conn`、std/tlsの `Conn`、std/http/clientの `Session` — 作る関数だけが本物を作る型）のゼロ値はstdの外で作れない。型そのもののリテラル `T{}` と、同一性の型を（フィールド・型引数を通して推移的に）持つフィールドを省いたリテラルを拒否する。`T?` のフィールド・slice / mapのフィールドは省ける。
 拒否: [`examples/identity_neg_tx.sober`](../../examples/identity_neg_tx.sober)・[`examples/identity_neg_field.sober`](../../examples/identity_neg_field.sober)・[`examples/identity_neg_nested.sober`](../../examples/identity_neg_nested.sober)・[`examples/identity_neg_generic.sober`](../../examples/identity_neg_generic.sober)・[`examples/identity_neg_root.sober`](../../examples/identity_neg_root.sober)・[`examples/identity_neg_conn.sober`](../../examples/identity_neg_conn.sober)・[`examples/identity_neg_listener.sober`](../../examples/identity_neg_listener.sober)・[`examples/identity_neg_tls_field.sober`](../../examples/identity_neg_tls_field.sober)
 決定: [language.md 15節](../language.md)
 

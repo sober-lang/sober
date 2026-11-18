@@ -1,0 +1,10 @@
+@@full	420d5c141725bc28	855	22064
+@head	f8802cba5eefdec2	0	31
+func incr	9971a2c49fa627b5	6	285
+func main	7d4ffbcc84b36bcc	59	2118
+func mkH	2ea2e3cfa313a9ee	12	485
+func orElseH	7133b5b1d69490e6	11	551
+func run	3ab1df100e8b5b51	21	774
+type H	c1de6fc843331749	3	144
+type Hook	d04af42d3c39231a	3	181
+type OptH	2aa85d953e2762a6	2	167

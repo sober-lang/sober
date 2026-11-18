@@ -20,7 +20,7 @@ a1oracle: examples testdata/a1   # 題材 = examples の type_recursive* 5 本 +
 memcheck: examples testdata/memcheck testdata/alias testdata/specpkg   # 題材 = .out を持つ examples（上界の黄金は testdata/memcheck/expect.txt）+ 手組み・alias / specpkg = 題材の import 先
 guidetest: examples testdata/guide ~testdata   # 本文の testdata/fuzz は写しの中の題材のコーパス（木の testdata は読まない）
 testreplay: src/stage1 ~testdata   # 本文の testdata は一時の package の中の名前（木の testdata は読まない）
-incrbuild: bench examples fuzz/progen src/stage1 scripts/omit/incrbuild.list testdata/checkverdict   # fuzz/progen = 鎖の題材の生成器（抽出が拾わない — 手で足す）
+incrbuild: bench examples fuzz/progen src/stage1 scripts/omit/incrbuild.list testdata   # fuzz/progen = 鎖の題材の生成器（抽出が拾わない — 手で足す）
 incrrace: examples src/stage1
 cacheaudit: bench examples src/stage1
 tyorder: bench examples src/stage1
@@ -28,9 +28,9 @@ selfpar: bench/ratchet.txt testdata/selfpar ~scripts/checkstats.sh ~src/stage1  
 nextgen: 
 selfhost_ll: examples src/stage1 testdata/checkneg testdata/errpkg testdata/frozen_src testdata/iface testdata/loader_neg testdata/pkgdemo testdata/selfhost_fmt testdata/selfhost_lex
 selfhost_e2e: examples lean src/stage1 testdata/checkneg testdata/errpkg testdata/frozen_src testdata/iface testdata/loader_neg testdata/pkgdemo testdata/selfhost_fmt testdata/selfhost_lex
-leanbatch: lean scripts/checkmut.ts scripts/leanbatch_skip.txt scripts/selfhost_check_tools.txt testdata/corejson testdata/corevec.jsonl
+leanbatch: examples lean scripts/checkmut.ts scripts/corejson.sh scripts/leanbatch_skip.txt scripts/selfhost_check_tools.txt testdata testdata/corevec.jsonl   # コアの全文（out/gold/core）を corejson.sh --gen で作ってから読む
 sobi: examples lean src/stage1 testdata
-selfhost_check: lean lean/.lake/build/bin/sober-gen scripts/checkmut.ts scripts/selfhost_check_tools.txt src/stage1 testdata/checkneg testdata/corejson testdata/corevec.jsonl testdata/corevec_byte testdata/corevec_copyto testdata/corevec_float testdata/corevec_par testdata/corevec_narrow testdata/errpkg testdata/frozen_src testdata/iface testdata/pkgdemo
+selfhost_check: examples lean lean/.lake/build/bin/sober-gen scripts/checkmut.ts scripts/corejson.sh scripts/selfhost_check_tools.txt src/stage1 testdata testdata/checkneg testdata/corejson testdata/corevec.jsonl testdata/corevec_byte testdata/corevec_copyto testdata/corevec_float testdata/corevec_par testdata/corevec_narrow testdata/corevec_shape testdata/errpkg testdata/frozen_src testdata/iface testdata/pkgdemo
 selfhost_lower: examples src/stage1 testdata/checkneg testdata/errpkg testdata/frozen_src testdata/iface testdata/loader_neg testdata/pkgdemo testdata/selfhost_fmt testdata/selfhost_lex
 selfhost_fmt: README.ja.md README.md bench docs examples lean scripts src/stage1 testdata/checkneg testdata/errpkg testdata/frozen_src testdata/iface testdata/loader_neg testdata/pkgdemo testdata/selfhost_fmt ~testdata   # testdata は監査（report-1222）で読む単位に詰めた — M2 で確認
 selfhost_load: README.ja.md README.md bench docs examples lean scripts src/stage1 testdata
@@ -48,15 +48,16 @@ checkverdict: examples scripts/irtext.sh testdata
 checksplit: examples scripts/irtext.sh testdata
 checkpos: examples scripts/checkpos.ts testdata   # 変異の題材の生成（node）と黄金の検査器の拒否の entry
 cachesplit: examples scripts/checkverdict.sh scripts/irtext.sh testdata
+splitcache: examples scripts/checkverdict.sh scripts/irtext.sh testdata   # リリースの組（gates.sh --release）— cachesplit のキャッシュの冷・温・検証の部分
 cachekey: examples testdata scripts/omit/cachekey.list scripts/omit/cachekey-gh.list
 panicmsg: examples testdata
 optdiff: bench examples fuzz/progen src/stage1 testdata scripts/noopt-excluded.list   # fuzz/progen = 乱択の母集団の生成器（抽出が拾わない — 手で足す）
 typerdiff: examples scripts/irtext.sh src/stage1 testdata
-corejson: examples testdata testdata/golden_skip.txt
-irtext: examples testdata testdata/golden_skip.txt
-lltext: examples testdata testdata/golden_skip.txt
-llcheck: testdata/lltext
-astjson: examples testdata
+corejson: examples scripts/goldtab.ts testdata testdata/golden_skip.txt
+irtext: examples scripts/goldtab.ts testdata testdata/golden_skip.txt
+lltext: examples scripts/goldtab.ts testdata testdata/golden_skip.txt
+llcheck: examples testdata testdata/golden_skip.txt scripts/lltext.sh   # 全文（out/gold/ll）を lltext.sh --gen で作ってから読む
+astjson: examples scripts/goldtab.ts testdata
 loaderjson: examples scripts/loaderjson.list testdata/embed testdata/errpkg testdata/iface testdata/loaderjson testdata/minic testdata/minic_rd testdata/pkgdemo testdata/pool ~testdata   # testdata は監査（report-1222）で読む単位に詰めた — M2 で確認
 selfhost_lex: README.ja.md README.md bench docs examples lean scripts src/stage1 testdata/checkneg testdata/errpkg testdata/frozen_src testdata/iface testdata/loader_neg testdata/pkgdemo testdata/selfhost_lex ~testdata   # testdata は監査（report-1222）で読む単位に詰めた — M2 で確認
 pool_oracle: lean src/stage1 testdata
@@ -68,7 +69,7 @@ fixcheck: src/stage1 testdata/fix testdata/fixgold ~testdata   # testdata は監
 uniqfreeze: bench examples lean scripts/uniqfreeze.list testdata/analyzer_neg testdata/implicitfreeze scripts/omit/uniqfreeze.list testdata/checkverdict
 implicitfreeze: bench examples scripts/implicitfreeze.ts testdata scripts/omit/implicitfreeze.list
 sobertest: testdata/sobertest ~testdata
-doubles: testdata/cells testdata/cells.expect testdata/cellneg testdata/doubles ~testdata   # 本文の testdata は一時の場所に写した木の中の名前（木の testdata は doubles の下だけ読む）   # 本文の propsfuzz/testdata は一時の場所に写した package の中の名前（木の testdata は読まない）
+doubles: testdata/cells testdata/cells.expect testdata/celldie testdata/cellneg testdata/doubles ~testdata   # 本文の testdata は一時の場所に写した木の中の名前（木の testdata は doubles の下だけ読む）   # 本文の propsfuzz/testdata は一時の場所に写した package の中の名前（木の testdata は読まない）
 jsonsuite: scripts/oracles testdata/jsonfast testdata/jsonpkg testdata/jsontestsuite
 unittest: testdata/crypto testdata/pg testdata/stdtest testdata/tls testdata/wycheproof testdata/x509   # M2（report-1222）が名指し: Sober のプログラムが実行時に読む・import する入力（本文の抽出では見えない）
 x86enc: 
@@ -98,6 +99,7 @@ reqinst: bench/httparena bench/asyncdb bench/pgstub bench/ratchet.txt scripts/re
 ringinst: bench/httparena bench/ratchet.txt scripts/reqinst.ts ~src/stage1   # ~src/stage1 = 冒頭で呼ぶ scripts/stage2.sh の言及（stage1は全ゲートに共通の成分）
 sortcheck: testdata/sortcheck
 matchlencheck: testdata/matchlen
+keepcheck: testdata/keepcheck scripts/stagelib.sh   # 変異103を焼いたコンパイラを木（stagelibのstage_tree — compiler/ + std/ は共通の成分）から建てる
 jcleancheck: testdata/jclean
 jsonmark: examples testdata/jsonmark testdata/httpcheck   # 題材 = testdata/jsonmark（dataset.jsonを読む）と、json.Encodeを使うexamples
 flatecheck: examples testdata/flatecheck testdata/httpcheck
@@ -113,14 +115,16 @@ fnhash:
 tyhash: 
 iouring: examples testdata/io_par ~testdata   # testdata は監査（report-1222）で読む単位に詰めた — M2 で確認
 httpcheck: scripts/flight.ts testdata/httpcheck testdata/tlserr examples
+slowcheck: testdata/slowcheck testdata/crypto   # 題材 = testdata/slowcheck（TLSの構成はtestdata/cryptoの証明書）
 starve: testdata/starve
 tschain: testdata/delaylat
 fusecheck: scripts/flight.ts testdata/httpcheck
 wincheck: testdata/wincheck testdata/httpcheck/dataset.json
-stackcheck: bench/httparena scripts/stackcheck.ts testdata/httpcheck
+stackcheck: bench/httparena scripts/stackcheck.ts testdata/httpcheck testdata/crypto
 segvcheck: testdata/segvcheck
 areacheck: scripts/areacheck.ts testdata/areacheck examples   # examples = net_area_window（区画の窓の答えの黄金照合）
 pincheck: testdata/pin
+oversub: testdata/oversub
 laypin: bench/httparena examples scripts/laypin.ts src/stage1
 pid1stop: scripts/pid1stop.ts testdata/pid1stop
 mdwecheck: testdata/mdwe
@@ -131,12 +135,19 @@ tzsync: scripts/tzstore.sh scripts/tzgen.ts testdata/tz src/std/time/zones.sober
 datadce: testdata/datadce examples   # 題材（目印は std の生成物から — std は共通の成分）
 stdref: docs/language.md docs/std examples scripts/stdref/head.ja.md testdata/stdref   # M2（report-1222）が名指し: Sober のプログラムが実行時に読む・import する入力（本文の抽出では見えない）
 corevec: lean lean/.lake/build/bin/sober-gen scripts/corevec_cov.ts testdata/corevec.jsonl
+kindwit: examples lean lean/.lake/build/bin/sober-check   # 推論した kind の行ごとの最小の立会い（旗を 1 つ外したコアを Lean が拒否する）
+kindbuild: examples   # build と check が同じ kind を使い、同じ型引数を拒否する
+kindexpand: examples lean lean/.lake/build/bin/sober-check testdata/kindexpand   # 総称の呼び出しと、型引数を代入した単相の Def の判定の照合
+writeform: scripts/writeform.ts testdata/writeform   # 同じ意味の書き方（総称と単相を含む）で判定が揃うことの検査
+kindinfer: examples lean lean/.lake/build/bin/sober-check   # コンパイラの kind の推論と、Lean の推論の手順（inferTc）の照合
+genmono: testdata/genmono scripts/genmono.ts   # lower の単相コピーと、型引数を手で代入した単相の関数の IR と実行の照合
 extract: lean lean/.lake/build/bin/sober-extract lean/.lake/build/bin/sober-gen   # 道具のファイルは中身で数える（宣言の lean は .lake の下を数えない — ソースが同じで道具だけ古い / 無い木で HIT しないように）
 obs_zig: examples src/stage1 testdata
 hermetic_zig: examples src/stage1 testdata
 ir_roundtrip: examples src/stage1
 gatememo: scripts   # 本体は全部の宣言のパスと本文を読む — @always で毎回走る
+gateenv: scripts   # lintはORDERの全部のゲートのスクリプトを読む。1秒なので@alwaysで毎回走らせる
 
-@nondet: stages selfpar incrrace seqpar schedvec schedfuzz parbudget iouring httpcheck starve tschain fusecheck wincheck stackcheck areacheck pincheck pid1stop
-@always: gatememo refs   # refs は .git を読むので M2 の写し（.git なし）で確かめられない — 毎回走らせる（29 s）。 M1 と lint は全部の宣言と本文を読む（数秒）— 記録せず毎回走らせる
+@nondet: stages selfpar incrrace seqpar schedvec schedfuzz parbudget iouring httpcheck slowcheck starve tschain fusecheck wincheck stackcheck areacheck pincheck oversub pid1stop
+@always: gatememo refs gateenv   # refsは .gitを読むのでM2の写し（.gitなし）で確かめられないので、毎回走らせる（29 s）。M1とlintは全部の宣言と本文を読む（数秒）ので、記録せず毎回走らせる
 @local: stages selfpar reqinst ringinst axes   # 実行時の命令数・RSS を bench/ratchet.txt の上限値と比べる — パスの長さで値が動くので、記録を木の間で共有しない（キーに木のルートを入れる）

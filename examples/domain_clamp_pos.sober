@@ -1,0 +1,42 @@
+package main
+
+// ブロックから値を出すときの条件は位置ごと: 同じ値に、写す imm のコンテナ（name）と domain（stats）が入っていても、
+// domain の位置は写さないので、ブロックの外へ出せる
+
+import (
+    "std/convert"
+    "std/task"
+)
+
+type Stats struct {
+    hits int
+}
+
+type App struct {
+    stats task.Domain[Stats]
+    name string
+}
+
+func record(stats task.Domain[Stats], n int) int {
+    return task.Update(stats, (st mut Stats) => {
+        st.hits += n
+        st.hits
+    })
+}
+
+func mk(app App, n int) int {
+    p := {
+        nm := "x" + convert.FormatInt(n)
+        App{stats: app.stats, name: nm}
+    }
+    return record(p.stats, len(bytes(p.name)))
+}
+
+func main() {
+    out, e := task.Run((s task.Scope) => {
+        app := App{stats: task.NewDomain(s, Stats{hits: 0}), name: "demo"}
+        mk(app, 3)
+    })
+    println(out)
+    _ = e
+}

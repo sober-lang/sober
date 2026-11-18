@@ -1,0 +1,5 @@
+    mut i := 0
+    while i < len(xs) {
+        return xs[i]
+    }
+    return d

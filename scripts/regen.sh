@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 # regen.sh: IR / コア / ASTを変えるコミットのゴールデン5種（astjson・checkverdict・corejson・irtext・lltext）+ stdリファレンス（stdref — docs/std/）+ outline・effectsdump（エフェクトの集計 — 自己の集計はcompilerの関数の数で動く）・cutstat（検査点の間引きの表 — ループの本体のIRの命令数で動く）・secretdump（秘密の値の流れの表）のゴールデンを並列に作り直す（足回りのタスク）。
+# irtext・lltextは表（全文は out/gold/ — docs/golden.md）。
 #   scripts/regen.sh            10 種を同時に（各スクリプトの中も entry ごとに並列 — JOBS は nproc / 4・最低 4）
 # 規律は今までどおり: regenはgates緑の木 / 意図した差だけを確認してから（ゴールデンregenはgates緑からだけ）。差は git diff で見る
 set -uo pipefail
 cd "$(dirname "$0")/.."
 scripts/stage2.sh --quiet > /dev/null || exit 1
 export SOBER_STAGE2_CHECKED=1
+# HTTPのDateの時計を固定（gates.shと同じ値）
+export SOBER_DATE_SEC=${SOBER_DATE_SEC:-784111777}
 J=$(( $(nproc) / 4 ))
 [ "$J" -ge 4 ] || J=4
 export JOBS=${JOBS:-$J}

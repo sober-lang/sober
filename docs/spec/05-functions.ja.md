@@ -46,8 +46,8 @@ F-8. トップレベルのconstに辞書を置ける（`const IntOrd = Ord[int]{
 拒否: [`examples/const_neg_call.sober`](../../examples/const_neg_call.sober)
 決定: [language.md 25節](../language.md)
 
-F-9. 値の位置 — 名前つき関数型の仮引数・結果、structの関数型のフィールド、そのoption（`F?`）のフィールド、`[]F`・`map[K]F` の要素（slice / mapのリテラルの要素）— に置いたラムダはクロージャになる。値にできる名前つき関数型は、仮引数・結果に値にできる名前つき関数型を値の位置で持ってよい（自分自身も — `type State func(n int) State`）。ジェネリックな名前つき関数型と匿名の関数型のsliceの要素は値の位置でない。匿名の関数型のフィールドのクロージャを値の呼び出しの借りの実引数へそのまま渡すと、ラムダ `(…) => x.f(…)` に変換して渡す。クロージャは作成点のimmの値をコピーして捕捉する（後で元の変数が変わっても見えない）。クロージャは仮引数・結果・フィールドとして関数の境界を越えられる。
-例: [`examples/closure_field_capture.sober`](../../examples/closure_field_capture.sober)・[`examples/closure_param.sober`](../../examples/closure_param.sober)・[`examples/closure_result.sober`](../../examples/closure_result.sober)・[`examples/closure_field_opt.sober`](../../examples/closure_field_opt.sober)・[`examples/closure_def_capture.sober`](../../examples/closure_def_capture.sober)・[`examples/closure_anon_field.sober`](../../examples/closure_anon_field.sober)・[`examples/borrow_anon_field_eta.sober`](../../examples/borrow_anon_field_eta.sober)・[`examples/fnval_slice.sober`](../../examples/fnval_slice.sober)・[`examples/type_recursive_state.sober`](../../examples/type_recursive_state.sober)
+F-9. 値の位置に置いたラムダはクロージャになる。値の位置は次のとおり。名前つき関数型の仮引数・結果（多値の結果の各位置も）。structとunionのvariantの関数型のフィールドと、そのoption（`F?`）のフィールド（総称のstructとunionは型引数を代入した型で見る）。`[]F`・`map[K]F` の要素（slice / mapのリテラルの要素）。総称関数の型パラメータの型（TとT?）の仮引数で、型引数を明示したとき（`id[H](incr)`）か、他の実引数から型引数が名前つき関数型と決まるとき。名前つき関数型が現れる位置は、匿名の関数型の仮引数と結果の中でも値の位置（展開される関数の仮引数 `p func(h H) int` への `p(incr)` のincr、`p func(n int) H` へ渡すラムダの本体）。匿名の関数型の仮引数そのものは値の位置でない（F-4の展開）。値にできる名前つき関数型は、仮引数・結果に値にできる名前つき関数型を値の位置で持ってよい（自分自身も。`type State func(n int) State`）。ジェネリックな名前つき関数型と匿名の関数型のsliceの要素は値の位置でない。匿名の関数型のフィールドのクロージャを値の呼び出しの借りの実引数へそのまま渡すと、ラムダ `(…) => x.f(…)` に変換して渡す。クロージャは作成点のimmの値をコピーして捕捉する（後で元の変数が変わっても見えない）。値の位置のラムダの中の値の位置のラムダは、外側のラムダの仮引数と束縛も捕捉でき、外側はそのクロージャを作るのに要る値を捕捉する。クロージャは仮引数・結果・フィールドとして関数の境界を越えられる。
+例: [`examples/closure_field_capture.sober`](../../examples/closure_field_capture.sober)・[`examples/closure_param.sober`](../../examples/closure_param.sober)・[`examples/closure_result.sober`](../../examples/closure_result.sober)・[`examples/closure_field_opt.sober`](../../examples/closure_field_opt.sober)・[`examples/closure_def_capture.sober`](../../examples/closure_def_capture.sober)・[`examples/closure_anon_field.sober`](../../examples/closure_anon_field.sober)・[`examples/borrow_anon_field_eta.sober`](../../examples/borrow_anon_field_eta.sober)・[`examples/fnval_slice.sober`](../../examples/fnval_slice.sober)・[`examples/type_recursive_state.sober`](../../examples/type_recursive_state.sober)・[`examples/fn_value_multi_result.sober`](../../examples/fn_value_multi_result.sober)・[`examples/fn_value_nested_capture.sober`](../../examples/fn_value_nested_capture.sober)・[`examples/union_anon_fn_field.sober`](../../examples/union_anon_fn_field.sober)・[`examples/generic_fn_value_field.sober`](../../examples/generic_fn_value_field.sober)・[`examples/generic_fn_value_targ.sober`](../../examples/generic_fn_value_targ.sober)・[`examples/generic_fn_value_infer.sober`](../../examples/generic_fn_value_infer.sober)・[`examples/fn_value_lambda_region.sober`](../../examples/fn_value_lambda_region.sober)・[`examples/fn_value_lambda_body.sober`](../../examples/fn_value_lambda_body.sober)
 拒否: [`examples/fnval_slice_neg_anon.sober`](../../examples/fnval_slice_neg_anon.sober)・[`examples/fnval_slice_neg_generic.sober`](../../examples/fnval_slice_neg_generic.sober)
 決定: [language.md 25節](../language.md)
 
@@ -60,7 +60,7 @@ F-11. 値の位置に置けるのは、ラムダ・名前つきの関数・同�
 拒否: [`examples/closure_bound_named_fn.sober`](../../examples/closure_bound_named_fn.sober)・[`examples/closure_bound_named_fn_nocap.sober`](../../examples/closure_bound_named_fn_nocap.sober)・[`examples/closure_anon_field_bound.sober`](../../examples/closure_anon_field_bound.sober)・[`examples/fn_local_value_neg.sober`](../../examples/fn_local_value_neg.sober)
 決定: [language.md 25節](../language.md)
 
-F-24. 名前つき関数型への変換 `W(e)`（`p.W(e)` も）は、eをWの値の位置に置いたもの — eはラムダ・名前つきの関数・Wの値で、結果はWの値。値の呼び出しの実引数（呼び先が束縛・フィールド・添字・呼び出しの結果）に置いた名前つきの関数も同じく値になる。値にできない名前つき関数型（型パラメータを持つ）への変換と、別の名前つき関数型の値の変換（F-12）は拒否する。
+F-24. 名前つき関数型への変換 `W(e)`（`p.W(e)` も）は、eをWの値の位置に置いたもの。eはラムダ・名前つきの関数・Wの値で、結果はWの値。値の位置（型がWかW?の束縛・sliceとmapの要素、structの関数型のフィールド）への代入 `x = e` では、eの末尾（ブロックの末尾の式・if式の分岐の末尾）のラムダと名前つきの関数を、その場所の値の位置に置く（Wの場所は `W(…)` と同じ。フィールドは匿名の関数型でもよい）。値の呼び出しの実引数（呼び先が束縛・フィールド・添字・呼び出しの結果）に置いた名前つきの関数も同じく値になる。値にできない名前つき関数型（型パラメータを持つ）への変換と、別の名前つき関数型の値の変換（F-12）は拒否する。
 例: [`examples/fn_type_conv.sober`](../../examples/fn_type_conv.sober)
 拒否: [`examples/fn_type_conv_neg.sober`](../../examples/fn_type_conv_neg.sober)・[`examples/fn_type_conv_generic_neg.sober`](../../examples/fn_type_conv_generic_neg.sober)
 決定: [language.md 25節](../language.md)
@@ -108,6 +108,13 @@ F-17. 関数と型は型パラメータを持てる — `func f[T](…)`・`type
 拒否: [`examples/generic_union_arity.sober`](../../examples/generic_union_arity.sober)・[`examples/generic_union_noargs.sober`](../../examples/generic_union_noargs.sober)
 決定: [language.md 3節・25節](../language.md)
 
+F-25. 型引数には、チャネルと端点を持たず匿名の関数型でない、どの型も置ける（string・slice・map・struct、mutのコンテナを持つ型、名前つき関数型も）。関数の本体が型パラメータの値について次の性質を使うと、その性質を持たない型引数は拒否する。性質は本体から決まり、書かない。展開される関数とそうでない関数で、置ける型引数は同じ。性質と、それを求める本体の書き方は次の4つ。(1) mapのキーにできる（int・string・named int。2章T-27）: Tをmapのキーの型に置く。(2) mutのコンテナを持たない: Tの値をimmのslice・map・structに入れる、Tを要素に持つコンテナをfreezeする、Tの値を子のtaskに渡す・チャネルで送る・domainの状態に入れる、Tを返す。(3) domainを持たない: Tの値を子のtaskに渡す・チャネルで送る・domainの状態に入れる、Tを返す、Tの値を外側のregionへ写す、Tを再帰型に置く。(4) regionを上げて読める: 仮引数のTを戻り値のTとして返す。
+mapのキーにできる型は、mutのコンテナとdomainを持たず、regionを上げて読める。regionを上げて読める型は、mutのコンテナとdomainを持たない。判定は本体の書き方に依らない。同じ意味の本体は、同じ性質を使う。公開の総称関数の性質は.sobiの `@kind` に記録する（12章A-1）。
+名前の関数・ラムダ・匿名の関数型の仮引数だけから型引数を推論すると匿名の関数型になるので、拒否する。値として渡す関数は名前つき関数型で書く（`id[H](incr)`・`id(H(incr))`）。
+例: [`examples/generic_region_arg.sober`](../../examples/generic_region_arg.sober)・[`examples/generic_mut_arg.sober`](../../examples/generic_mut_arg.sober)・[`examples/generic_map_key.sober`](../../examples/generic_map_key.sober)
+拒否: [`examples/generic_kind_neg.sober`](../../examples/generic_kind_neg.sober)・[`examples/generic_key_neg.sober`](../../examples/generic_key_neg.sober)・[`examples/generic_anon_fn_targ_neg.sober`](../../examples/generic_anon_fn_targ_neg.sober)・[`examples/generic_anon_fn_targ_lambda_neg.sober`](../../examples/generic_anon_fn_targ_lambda_neg.sober)
+決定: [language.md 25節](../language.md)
+
 ## 5.5 名前つき引数
 
 F-18. 呼び出しに名前つき引数を書ける（`f(x, sep: ",")`）— 位置の実引数が先・名前つきが後で、名前つきどうしは仮引数の宣言の順。省略できるのは型が `T?` の仮引数（省略可の匿名関数型 `(func(…) R)?` を含む — F-22）だけで、省略は `nil`。パイプの左辺の位置は穴 `_` で書く。名前つき引数を書けるのはfunc宣言の直接の呼び出しと、仮引数名を持つ名前つき関数型の値の呼び出しだけ（辞書のフィールドの関数値・ラムダの値は位置だけ）。
@@ -121,8 +128,9 @@ F-19. 関数型の仮引数の名前は、全部つけるか全部つけない�
 
 ## 5.6 公開の境界
 
-F-20. 匿名の関数型の仮引数は、公開の関数でも書ける — 匿名の関数型の仮引数は借り（呼び出しの間だけ使い、格納も持ち出しもされない）なので契約を書く場所が要らない。値として格納・返却する関数は名前つき関数型で宣言する（契約 — `@errors` など — はその宣言に集まる）。
+F-20. 匿名の関数型の仮引数は、公開の関数でも書ける。匿名の関数型の仮引数は借り（呼び出しの間だけ使い、格納も持ち出しもされない）なので、契約を書く場所が要らない。値として格納・返却する関数は名前つき関数型で宣言する。契約（`@errors` など）はその宣言に集まる。匿名の関数型の値は、仮引数（借り）・structとunionのvariantのフィールド・局所の束縛にだけ置ける。関数の結果・sliceとmapの要素・型引数には置けない。関数の結果に匿名の関数型を書いた宣言は、呼ばれなくても拒否する。
 例: [`examples/errors_param.sober`](../../examples/errors_param.sober)・[`examples/borrow_stream.sober`](../../examples/borrow_stream.sober)・[`examples/io_chunks.sober`](../../examples/io_chunks.sober)
+拒否: [`examples/fn_anon_result_neg.sober`](../../examples/fn_anon_result_neg.sober)・[`examples/generic_anon_fn_targ_neg.sober`](../../examples/generic_anon_fn_targ_neg.sober)
 決定: [language.md 14節・25節](../language.md)
 
 F-21. mutの仮引数も関数型の仮引数も持たない関数は、結果の型にmutの中身（mutのslice / map — structのフィールド・`T?` の中も、型引数を代入した後で）を持てない。mutの値は呼び手がゼロ値リテラルで作り、mutの実引数で渡す。checkとbuildの両方が拒否する。

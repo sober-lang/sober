@@ -1,0 +1,22 @@
+@@full	95bc4cb5f33c15aa	9059	258387
+@head	65884f471ed5fa1e	0	304
+func TestBitFlips	0551f01b3f51e5b5	95	3157
+func TestGzipWrapper	f8369dcbd4aac4f4	196	5794
+func TestHandMade	45ac772d6705ba66	404	11542
+func TestMaxSize	d2e047b40f51ca7d	189	6553
+func TestTrailing	41aae41f6ca896f2	65	2051
+func TestTruncated	42fcab986633cc82	80	2621
+func at	c45dd278ba2a4f13	41	1434
+func badFlate	8649fc95a6a67fa8	22	973
+func badGzip	a9c7a13e8a4ed7de	13	543
+func code	69afe539d5485137	24	903
+func cut	ceeb27f0fa35d5f1	10	441
+func done	52e65e0dcbef68b6	45	1506
+func flipped	d3e65a97b343725c	52	1724
+func gzipLabel	9db8ffcfa444dfcb	25	1148
+func lensBlock	3c552d1392b0eda4	123	3460
+func lit	0f0a67c8f3f374e6	52	1648
+func plus	9a34ffb65e5364fd	49	1677
+func put	58749d0c5a897d3a	46	1679
+func text	8014f168aea4ba53	61	2066
+type bw	3450447196108847	5	241

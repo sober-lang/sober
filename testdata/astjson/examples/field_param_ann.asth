@@ -1,0 +1,9 @@
+@@full	eea72944b67090bb	758	17507
+@head	f8802cba5eefdec2	0	31
+func failed	b74a7fa42afb8d34	12	553
+func main	3fd74281334f5a59	57	1849
+func nest	e4af87c33c0c2c68	16	686
+func wrap	10738e4de4e55c1c	17	703
+type Box	c762de0ac8ce10ee	4	193
+type Outer	33706b68a1e48cd4	3	162
+type Result	f855c81af2d79780	4	201

@@ -11,7 +11,7 @@ import "std/iter"
 import "std/table"
 import "obuf"
 
-// 展開されない関数 fi → コアの Def（[param, ret, body, tparams, next]）。ienv = インスタンスの型環境（型引数を代入したもの —
+// 展開されない関数 fi → コアの Def（[param, ret, body, kinds, next]）。ienv = インスタンスの型環境（型引数を代入したもの —
 // 型パラメータを持たない Def になる。call.sober の instDef）か -1（抽象の型変数）
 func defOf(st mut S, fi int, ienv int) (int, error?) {
     saved_rd := st.rdepth
@@ -71,7 +71,7 @@ func defOf(st mut S, fi int, ienv int) (int, error?) {
         // 部分検査の視点の外の Def は署名だけ（本体 -1 — 検査器は検査しない。stage1 の sig_only）
         setFnCtx(mut st, saved)
         st.rdepth = saved_rd
-        return rec5(mut st, int(param), int(ret), -1, ntp, -1), nil
+        return rec5(mut st, int(param), int(ret), -1, fnKinds(mut st, fi, ntp), -1), nil
     }
     mut eb := -1
     mut d := 1
@@ -107,7 +107,59 @@ func defOf(st mut S, fi int, ienv int) (int, error?) {
     body = wrapLets(mut st, exs, body)
     setFnCtx(mut st, saved)
     st.rdepth = saved_rd
-    return rec5(mut st, int(param), int(ret), int(body), ntp, -1), nil
+    return rec5(mut st, int(param), int(ret), int(body), fnKinds(mut st, fi, ntp), -1), nil
+}
+
+// 次の Def の kind の列の位置を jkAt に置き、その次の位置を返す（推論した kind の列が無ければ jkAt = -1）
+func jkNext(st mut S, kc int) int {
+    if kc >= len(st.jks) {
+        st.jkAt = -1
+        return kc
+    }
+    st.jkAt = kc
+    return kc + 1 + st.jks[kc]
+}
+
+// 関数 fi の Def の kind の列: .sobi の `@kind`（依存の package の check が推論した kind — 付加の列の 16 番）があればそれ、
+// 無ければ kindsList（本体のある Def は検査器が推論し直す）
+func fnKinds(st mut S, fi int, n int) int {
+    // L0 の信頼の経路: 焼き込みの .sobi の `@kind`（loader.WithFnKinds — 関数表の添字で [関数, n, k…]）
+    mut q := 0
+    while q + 1 < len(st.givenK) {
+        if st.givenK[q] == fi && st.givenK[q + 1] == n {
+            l := listN(mut st, n)
+            for i <- iter.Range(0, n) {
+                hset(mut st, l + 1 + i, st.givenK[q + 2 + i])
+            }
+            return l
+        }
+        q += 2 + st.givenK[q + 1]
+    }
+    nd := int(fnNode(mut st, fi))
+    if n > 0 && isTreeNode(nd) {
+        t := st.trees[refFile(nd)]
+        kl := ast.FuncKinds(t, refIdx(nd))
+        if kl >= 0 && t.data[kl] == n {
+            l := listN(mut st, n)
+            for i <- iter.Range(0, n) {
+                hset(mut st, l + 1 + i, t.data[kl + 1 + i])
+            }
+            return l
+        }
+    }
+    return kindsList(mut st, n)
+}
+
+// 型パラメータ n 個の kind の列 [n, kind…]（n = 0 は -1）。型引数はどれも旗が全部立った kind
+func kindsList(st mut S, n int) int {
+    if n == 0 {
+        return -1
+    }
+    l := listN(mut st, n)
+    for i <- iter.Range(0, n) {
+        hset(mut st, l + 1 + i, KALL)
+    }
+    return l
 }
 
 // 関数 i が部分検査の視点の外か（check --pkg — st.only の package 以外）
@@ -175,8 +227,10 @@ func prefix(st mut S) error? {
         }
         return nil
     }
-    // 表層型検査器（関数本体ごとに 1 回 — exprSty が表を読む）
-    TypeAll(mut st)
+    // 表層型検査器（関数本体ごとに 1 回 — exprSty が表を読む）。店を受け取ったときは走らせない
+    if !st.adopted {
+        TypeAll(mut st)
+    }
     loader.Stage("ds-typeall")
     TyRejectAt(mut st)?
     if st.stopAt == 7 {
@@ -241,7 +295,8 @@ func run(st mut S) (ListRef, CoreRef, error?) {
     lazy := st.rangeSet && (!st.rangeRoot || st.lazyRoot)
     while i < st.nfn {
         dx := fnDef(mut st, i)
-        if dx >= 0 && lazy && (i < st.rlo || i >= st.rhi || (len(st.rskip) > 0 && st.rskip[i])) {
+        if dx >= 0 && ((lazy && (i < st.rlo || i >= st.rhi || (len(st.rskip) > 0 && st.rskip[i]))) || (st.genOnly && lenL(mut st, fnTParams(mut st, i)) == 0)) {
+            // kind の推論の前段（genOnly）も、型パラメータの無い Def の署名は後回し（総称関数の本体が呼ぶものだけ lazySigs で作る）
             lput(mut st, defs, dx, -1)
         } else if dx >= 0 {
             expBegin(mut st)
@@ -263,11 +318,11 @@ func run(st mut S) (ListRef, CoreRef, error?) {
     }
     st.rejDef = -1
     // 根の区間の後回し（check の関数単位キャッシュ — lazyRoot）は根の本体の脱糖の後に（根が呼ぶ署名を拾う）
-    if lazy && !st.rangeRoot {
+    if (lazy && !st.rangeRoot) || st.genOnly {
         lazySigs(mut st, defs)?
     }
     loader.Stage("ds-defs")
-    if (st.onlySet && st.only != st.mainPkg) || (st.rangeSet && !st.rangeRoot) {
+    if (st.onlySet && st.only != st.mainPkg) || (st.rangeSet && !st.rangeRoot) || st.genOnly {
         // 部分検査（main 以外の package）・根を持たない Def の区間: 根の式なし
         return defs, CoreRef(-1), nil
     }
@@ -355,7 +410,15 @@ func trustDefs(st mut S) []int {
 // Program p のコア AST の JSON（失敗なら拒否 — diag のラベル）
 @errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap, diag.Cell, diag.FnArg)
 func Json(p loader.Program, e2s bool, excl []int) ([]byte, error?) {
+    return JsonK(p, e2s, excl, []int{})
+}
+
+// Json の、型パラメータを持つ Def の kind を ks（検査器が推論した kind の列 — Def の順に [n, k…]）で印字する版
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap, diag.Cell, diag.FnArg)
+func JsonK(p loader.Program, e2s bool, excl []int, ks []int) ([]byte, error?) {
     mut st := S{}
+    st.jks = ks
+    st.jkAt = -1
     initState(mut st, p)
     st.e2s = e2s
     st.e2sExcl = excl
@@ -372,10 +435,12 @@ func Json(p loader.Program, e2s bool, excl []int) ([]byte, error?) {
         obuf.Lit(mut out, "{\"defs\":[")
         tr := trustDefs(mut st)
         mut i := 0
+        mut kc := 0
         while i < st.ndef {
             if i > 0 {
                 out = append(out, 44)
             }
+            kc = jkNext(mut st, kc)
             defJson(mut st, mut out, latI(mut st, defs, i), tr[i] == 1)
             i += 1
         }
@@ -384,10 +449,12 @@ func Json(p loader.Program, e2s bool, excl []int) ([]byte, error?) {
             if i > 0 {
                 out = append(out, 44)
             }
+            kc = jkNext(mut st, kc)
             defJson(mut st, mut out, d, false)
             i += 1
             d = hget(mut st, d + 4)
         }
+        st.jkAt = -1
         obuf.Lit(mut out, "],\"e\":")
         exprJson(mut st, mut out, root)
         out = append(out, 125)
@@ -397,7 +464,7 @@ func Json(p loader.Program, e2s bool, excl []int) ([]byte, error?) {
 }
 
 // check の経路の差分オラクル（`sober check --typer-diff`）: 表層型検査器を走らせてから脱糖し、exprSty との突き合わせの数を返す
-// [一致, 表だけ分かる, exprSty だけ分かる, 食い違い, 比べない, 型引数の一致, 型引数の食い違い, 記録の数 n,
+// [一致, 表だけ分かる, exprSty だけ分かる, 食い違い, 比べない, 型引数の一致, 型引数の食い違い, 型引数の比べなかった下見, 記録の数 n,
 //  (ファイル, 字句, 種類 0 = exprSty だけ / 1 = 食い違い / 2 = 型引数, 表層型の種類（型引数なら inferTs が決まったか 1 / 0）) × n]
 @errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap, diag.Cell, diag.FnArg)
 func TyperDiff(p loader.Program) ([]int, error?) {
@@ -414,6 +481,7 @@ func TyperDiff(p loader.Program) ([]int, error?) {
     out = append(out, st.ydskip)
     out = append(out, st.ydtsame)
     out = append(out, st.ydtdiff)
+    out = append(out, st.ydtunb)
     n := table.Len(mut st.ydlog) / 4
     out = append(out, n)
     for i <- iter.Range(0, n * 4) {
@@ -472,6 +540,11 @@ func DefAt(p loader.Program, excl []int, j int) (diag.Pos, error?) {
 func Init(st mut S, p loader.Program) {
     initState(mut st, p)
     st.ty.h0 = hlen(mut st)
+}
+
+// 本体を読まない総称関数の kind を差し替える（build が型付けの後に推論した kind — 関数表の添字で [関数, n, k…]）
+func SetGivenK(st mut S, ks []int) {
+    st.givenK = ks
 }
 
 // Init と表層型検査器（TypeAll）を済ませた表（lower の build は ParCheck と同じ表を使う — TypeAll は 1 回が重い）

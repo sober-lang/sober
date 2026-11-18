@@ -44,6 +44,7 @@ const EV_SITEN = 9   // spawn の点の番号を 1 つ進めた
 const EV_SITE = 10   // a = spawn の点の即値の命令（番号 × 4 + 下 2 ビット）
 const EV_CHAN = 11   // 下ろし中の関数がチャネルに触る
 const EV_CUT = 12    // a = 打ち切りのマークの即値の命令, b = 子の関数の子の記録
+const EV_EMB = 13    // a = 子の @embed のグローバル（名前が中身を特定する — embed.sober）
 const EVW = 5
 
 const NEED_ADMIT = 1
@@ -87,6 +88,7 @@ const NEED_COVERMID = 38
 const NEED_ERRALLOC = 39
 const NEED_VDSO = 40
 const NEED_NWAIT = 41
+const NEED_RDL = 42
 
 // 安定な鍵の材料: 発見順の番号で名前が付く関数・番号を、持ち主（下ろしていた関数の記録）と持ち主の中の序数で
 // 引けるようにst.skへ積む（[種類, 語数, 中身…]）。直のパスはlsEvの鉤（事象と同じ点）・模擬のパスはlsReplayの1周目（持ち主 = 積み戻す記録）・
@@ -352,11 +354,27 @@ func lsProgram(st mut St, p loader.Program) (bool, error?) {
             plan = append(plan, i)
         }
     }
+    nodes := lsPlanNodes(p, freeze(plan))
+    if lsEnvInt("SOBER_PAR_STATS") == 1 {
+        _ = io.WriteStderr(bytes("#lower plan fns=${len(plan)} nodes=${nodes}\n"))
+    }
     mut k := lsGroups(mut st)
+    // 子がスロットに収まる数まで分ける（SOBER_LOWER_SPLITの明示はそのまま）
+    if lsEnvInt("SOBER_LOWER_SPLIT") < 0 {
+        kf := lsFitGroups(nodes, lsSlotMb())
+        if kf > k {
+            k = kf
+        }
+    }
     if k > len(plan) {
         k = len(plan)
     }
     if k <= 1 {
+        return false, nil
+    }
+    // 小さいプログラムは分けない（分割の固定費が下ろす仕事の短縮より大きい）。SOBER_LOWER_SPLITの明示はこの判断より優先する
+    if nodes < LS_MIN_NODES && lsEnvInt("SOBER_LOWER_SPLIT") < 0 {
+        lsStat(k, "small")
         return false, nil
     }
     cfg := lsCfg(mut st)
@@ -388,6 +406,7 @@ func lsProgram(st mut St, p loader.Program) (bool, error?) {
     outs, serr := task.Map(freeze(ins), (x) => LsOut{es: lsChild(p, fz, dl, par, cfg, x.role, x.own, rev, x.die)}, budget: bud)
     if serr != nil {
         lsStat(k, "died")
+        loader.ParFellBack("lower split (${nodes} nodes)", k, "on the sequential path", " or split into more groups with SOBER_LOWER_SPLIT=<n>")
         return false, nil
     }
     for g <- iter.Range(0, len(outs)) {
@@ -400,6 +419,43 @@ func lsProgram(st mut St, p loader.Program) (bool, error?) {
     loader.Stage("lsjoin")
     lsReplay(mut st, outs)?
     return true, nil
+}
+
+// 分割する計画の大きさの下限（自分の節の数の和）。W8の実測で、分割の固定費は約29 ms、下ろす仕事の短縮は約1.3倍（例題・benchの87,123節までは全部損・
+// 自己buildの883,722節で670 → 539 ms）。損得の分かれ目は下ろす仕事が約120 ms（約16万節）
+const LS_MIN_NODES = 160000
+
+// 子の高水位の見積もり（バイト）= LS_FIX_B × 計画の全部の節 + LS_OWN_B × 子の受け持つ節。100万行の題材（計画 1,112万節・W8）で、
+// 子16で433 MB・子32で321 MBの実測から（全部の節の分は子が親の店の写しを持つ分）
+const LS_FIX_B = 19
+const LS_OWN_B = 323
+
+// 子のregionのスロット（MiB — 子の既定のスロット 512 か SOBER_TASK_REGION_MB）
+func lsSlotMb() int {
+    v := lsEnvInt("SOBER_TASK_REGION_MB")
+    return if v > 0 { v } else { 512 }
+}
+
+// 子の高水位がスロットの3/4以下になる群の最小の数（全部の節の分だけでスロットの3/4を越えるなら1 — 分けても収まらない。死んだら lsWarnDied）
+func lsFitGroups(nodes int, slotMb int) int {
+    room := slotMb * 1048576 * 3 / 4 - LS_FIX_B * nodes
+    if room <= 0 {
+        return 1
+    }
+    own := LS_OWN_B * nodes
+    return (own + room - 1) / room
+}
+
+// 計画の関数の自分の節の数の和（木は後置順に積むので、同じファイルの前の関数の宣言の節との添字の差 — desugar.PlanDefsと同じ代理）
+func lsPlanNodes(p loader.Program, plan []int) int {
+    mut n := 0
+    for i <- plan {
+        fl := p.fn_file[i]
+        prev := if i > 0 && p.fn_file[i - 1] == fl { p.fn_node[i - 1] } else { 0 }
+        c := p.fn_node[i] - prev
+        n += if c > 0 { c } else { 1 }
+    }
+    return n
 }
 
 // 分割のパスの証人（SOBER_PAR_STATS=1のときだけstderrへ1行 — #parの行と同じ扱い・ELFに出ない）
@@ -557,6 +613,12 @@ func lsReplay(st mut St, outs []LsOut) error? {
                 // コピーすると模擬の命令が大きく増える。棄てた案: 子を跨いだ重複もコピーする前に親の索引で引く — 効きなし〔残りは親に無い綴りのコピー〕）
                 if gmap[c * LS_C + a] == nil {
                     gmap[c * LS_C + a] = strGlobal(mut st, desugar.StrRef(lsStrOf(mut st, sy, symF, c, a, 1)))
+                }
+            case EV_EMB:
+                if gmap[c * LS_C + a] == nil {
+                    nm := desugar.StrRef(lsStrOf(mut st, sy, symF, c, a, 1))
+                    _, size, _, _ := embParse(globNameBytes0(mut st, nm))
+                    gmap[c * LS_C + a] = embGlobal(mut st, nm, size)
                 }
             case EV_PSITE:
                 skAdd(mut st, SK_PSITE, prec, 0)
@@ -798,5 +860,6 @@ func lsReplayNeed(st mut St, id int, arg int) {
     case NEED_ERRALLOC: _ = needErrAlloc(mut st)
     case NEED_VDSO: needVdso(mut st)
     case NEED_NWAIT: _ = needNetWait(mut st)
+    case NEED_RDL: needRdl(mut st)
     }
 }

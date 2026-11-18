@@ -186,6 +186,7 @@ type TestTally struct {
     envs []string  // テストのコードが読む環境変数の名前（リテラル — 静的に集めた）
     envOk bool     // 読む環境変数を全部リテラルで集められたか（偽なら結果を覚えない）
     cover CovData  // --cover の点と踏んだか（計装なしなら空）
+    esums []string // files と同じ並びの @embed の入力の要約（load の木から — CheckRes の esums と同じ）
 }
 
 // package pkg のテストをビルドして走らせる（ビルドできなければFAIL 1件として数える）。テストのビルドはbuildと同じ後段の関数キャッシュのパス
@@ -255,7 +256,7 @@ func testPkg(pkg string, std map[string]string, work string, prefix string, log 
     }
     fs := userFiles(p)
     ev := testEnvNames(realFiles(fs))
-    return TestTally{pass: pass, fail: failn, files: fs, envs: ev.names, envOk: ev.ok, cover: cd}
+    return TestTally{pass: pass, fail: failn, files: fs, envs: ev.names, envOk: ev.ok, cover: cd, esums: userEmbeds(p)}
 }
 
 // テストのビルドを読む（cv.onなら計装つき — 既定の対象 = package pkg）
@@ -289,11 +290,12 @@ func rerunQuick(bin string, name string, corpus string, m []byte, work string) b
 }
 
 func failTally() TestTally {
-    return TestTally{pass: 0, fail: 1, files: []string{}, envs: []string{}, envOk: false, cover: noCover()}
+    return TestTally{pass: 0, fail: 1, files: []string{}, envs: []string{}, envOk: false, cover: noCover(), esums: []string{}}
 }
 
 // テストのビルドのELF（格納場所bdがあれば後段の関数キャッシュのパス）
-func testExe(p loader.Program, bd string, bv lower.BcView, pcs []loader.PcPut) ([]byte, error?) {
+func testExe(p0 loader.Program, bd string, bv lower.BcView, pcs []loader.PcPut) ([]byte, error?) {
+    p := buildKinds(p0)?
     // SOBER_TEST_RT_MUTANT = n: rtのミュータントnを入れたテストのビルド（stdの検査一式が壊れたrtを捕まえるかの自己検査 — 関数キャッシュは通さない。
     // 環境変数は結果の再生の鍵に入るので、ミュータントの結果が素の結果として再生されることはない）
     m := envNat("SOBER_TEST_RT_MUTANT")
@@ -348,7 +350,7 @@ func testReplayed(pkg string, std map[string]string, work string, prefix string,
         replayStatOf("test", "1/1")
         replayLog(hit.log)
         appendBytes(mut all, hit.log)
-        return TestTally{pass: hit.pass, fail: 0, files: hit.files, envs: []string{}, envOk: true, cover: hit.cover}
+        return TestTally{pass: hit.pass, fail: 0, files: hit.files, envs: []string{}, envOk: true, cover: hit.cover, esums: []string{}}
     }
     r := testRun(pkg, std, work, prefix, mut log, cv)
     appendBytes(mut all, freeze(log))
@@ -572,9 +574,15 @@ func testReplayPut(dir string, key string, pkg string, r TestTally, log []byte) 
             replayStatOf("test", "skip (cannot read ${fs[i]})")
             return
         }
+        // @embed の入力は load の読みの要約と照合する（違えば load の後にファイルが変わった — 覚えない）
+        es := embedSum(fs[i], b)
+        if es != sumAt(r.files, r.esums, fs[i]) {
+            replayStatOf("test", "skip (@embed input of ${fs[i]} changed after the load)")
+            return
+        }
         lenPut(mut v, bytes(fs[i]))
         lenPut(mut v, bytes(hex.Format(hash.Sha256(b))))
-        lenPut(mut v, bytes(embedSum(fs[i], b)))
+        lenPut(mut v, bytes(es))
     }
     lenPut(mut v, bytes("${len(ds)}"))
     for i <- iter.Range(0, len(ds)) {

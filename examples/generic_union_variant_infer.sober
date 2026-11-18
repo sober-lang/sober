@@ -1,0 +1,47 @@
+package main
+
+// 総称のunionのvariantのリテラル（`Ok[int]{…}`）だけから、総称関数の型引数を推論する。関数型のフィールドのラムダは、型引数を代入したフィールドの型で読む
+
+type Res[T] union {
+    Ok { v T }
+    Err { msg string }
+}
+
+type Lazy[T] union {
+    Ready { v T }
+    Pending { f func() T }
+}
+
+func get[T](r Res[T], d T) T {
+    return switch r {
+    case Ok{v}: v
+    case Err{msg}: d
+    }
+}
+
+func force[T](l Lazy[T]) T {
+    return switch l {
+    case Ready{v}: v
+    case Pending{f}: f()
+    }
+}
+
+func wrap[T](x T) Res[T] {
+    return Ok[T]{v: x}
+}
+
+func main() {
+    n := 4
+    println(force(Pending[int]{f: () => n + 3}))
+    xs := []string{"a", "b"}
+    println(len(get(Ok[[]string]{v: xs}, []string{})))
+    println(get(Err[string]{msg: "no"}, "dflt"))
+    r := Ok[[]int]{v: []int{1, 2, 3}}
+    println(len(get(r, []int{})))
+    println(get(wrap(5), 0))
+    mut c := 0
+    l := Pending[[]string]{f: () => []string{"p", "q"}}
+    c = c + len(force(l))
+    println(c)
+    println(force(Ready[Res[int]]{v: Ok[int]{v: 8}}) |> get(_, 0))
+}

@@ -1,0 +1,9 @@
+@@full	1c20f850871ac35b	511	12189
+@head	125798311426cd15	0	151
+func Denying	6d93e0bc52055a2d	6	354
+func Get	4ec79ca2d197025a	32	1108
+func Put	fd8c5650353c7076	13	586
+func With	c0d42b0371f405f6	7	407
+type Conn	62bba98cd0a78d93	4	200
+type Denied	323d5dc740feeac4	1	67
+type Row	6f00ca794aa2ea21	3	162

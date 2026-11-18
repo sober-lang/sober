@@ -67,12 +67,13 @@ func TestHeaderList() {
     assert(len(HeaderList(rq("GET / HTTP/1.0\r\n\r\n"))) == 0)
 }
 
-// どの行にも一致しないCONNECTは501・asterisk-formはOPTIONSだけ（ほかは400）
+// どの行にも一致しないCONNECTは501・asterisk-formはOPTIONSだけ（204。ほかは400）
 func TestUnroutedMethod() {
     rs := []Route{Route{method: "GET", path: "/", handler: (r) => Text("ok"), middleware: []Middleware{}}}
     assert(Dispatch(rs, rq("CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\n")).status == http.NotImplemented)
     assert(Dispatch(rs, rq("GET * HTTP/1.1\r\nHost: x\r\n\r\n")).status == http.BadRequest)
-    assert(Dispatch(rs, rq("OPTIONS * HTTP/1.1\r\nHost: x\r\n\r\n")).status == http.NotFound)
+    assert(Dispatch(rs, rq("OPTIONS * HTTP/1.1\r\nHost: x\r\n\r\n")).status == http.NoContent)
+    assert(Dispatch(rs, rq("OPTIONS * HTTP/1.1\r\nHost: x\r\n\r\n")).headers == nil)
     assert(Dispatch(rs, rq("POST / HTTP/1.1\r\nHost: x\r\n\r\n")).status == http.MethodNotAllowed)
     assert(Dispatch(rs, rq("GET /x HTTP/1.1\r\nHost: x\r\n\r\n")).status == http.NotFound)
 }

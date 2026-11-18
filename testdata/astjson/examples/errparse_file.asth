@@ -1,0 +1,21 @@
+@@full	3a23528df778d15b	4661	139394
+@head	92a46b152dff7b3c	0	136
+func col	9bed506a9904a2bf	20	985
+func expr	72a34398db361f61	64	2102
+func factor	f17501c2b7965f31	100	3279
+func isDigit	04da63a908fb155b	10	437
+func lex	f683b00e72aebc06	118	4077
+func lines	6f10c0236b9c5a82	67	2271
+func main	92d4b9cee4814d70	16	603
+func punct	1020f4b2f5f780e9	49	1570
+func report	4920a388a2332f19	79	2585
+func run	f3a891ce1b1aeb63	35	1224
+func showSum	4c697a47b59fdbdc	25	924
+func sumFile	cffa4eeacc09bf56	52	1804
+func term	fc76b25e56beb04d	44	1523
+func why	7512b4c5f6c24988	35	1942
+type BadLine	65f1c85b7118e58b	2	116
+type Expected	33165c6ad5e8aad2	3	165
+type Token	1d311883f3af0fdc	4	211
+type UnexpectedChar	df87540c6b499b30	2	122
+type UnexpectedEnd	f2edbc7360c7aa3c	2	121

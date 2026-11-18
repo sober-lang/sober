@@ -1,0 +1,13 @@
+@@full	f153765cff7e2136	9482	425685
+@head	c9e8aedccc3235a4	0	99
+const base	62d1fc25e9f910cd	1	45
+const ninther	3e2c950ae301d5a9	1	49
+const partialLimit	62356053d282ff76	1	52
+const small	47da0f4b3dad5fd2	1	46
+func Order	59ab737f2e4d93a1	593	18828
+func OrderUnstable	23abec7ea4bd30e8	662	20903
+func breakPattern	286b06cf4fbc6315	85	2697
+func heapsort	1da5d11b25109edd	152	4948
+func insertion	68eedba14ad4e70f	82	2807
+func swapAt	5da0a7a0f2895ba3	20	800
+func triple	8fa22baf996d7d7f	51	1775

@@ -23,12 +23,15 @@ type Round struct {
     puts []loader.PcPut
     cnt []int
     stale []int
+    // kb = 型引数が kind を満たさない呼び出しを持つ上げた関数（E2-S の条件3 — 展開へ戻す。この周回のキャッシュの値は書かない:
+    // 呼び手の値が、呼び先を展開へ戻す前の判定で残るため）
+    kb []int
 }
 
 func roundOf(c desugar.Core, m []int, idx bool, stop int, rng desugar.DefRng) Round {
     // 計測用のインターフェース（SOBER_CHECK_STOP=desugar）: 脱糖して検査器へ渡すところで止める（判定は空・周回は1回で終わる）
     if stop != 0 {
-        return Round{[]byte{}, -1, []int{}, []int{}, 0, []int{}, []loader.PcPut{}, []int{}, []int{}}
+        return Round{[]byte{}, -1, []int{}, []int{}, 0, []int{}, []loader.PcPut{}, []int{}, []int{}, []int{}}
     }
     // Def の区間の子: 子が脱糖した Core の本体のある Def 全部（区間の Def + 子の中の持ち上げ）と、根の区間なら根の式を検査する
     // （区間の外の Def は脱糖器が署名だけにしている）。判定は根の区間だけが使う（他は idx の形 — 判定 JSON を作らない）
@@ -47,11 +50,17 @@ func roundOf(c desugar.Core, m []int, idx bool, stop int, rng desugar.DefRng) Ro
         }
     }
     recs := if lu { childRecs(c, m, r.fpos, desugar.PlanNfn(desugar.RngPlan(rng)), len(defSrcs(c))) } else { []int{} }
-    return Round{r.out, r.def, freeze(back), r.fails, r.at, recs, []loader.PcPut{}, []int{}, []int{}}
+    mut kb := mut []int{}
+    for j <- r.kbad {
+        if j >= 0 && j < len(m) && m[j] >= 0 {
+            kb = append(kb, m[j])
+        }
+    }
+    return Round{r.out, r.def, freeze(back), r.fails, r.at, recs, []loader.PcPut{}, []int{}, []int{}, freeze(kb)}
 }
 
 func checkRound(p loader.Program, excl []int, idx bool, only int, trust bool, stop int, rng desugar.DefRng) (Round, error?) {
-    return desugar.WithCoreOpt(p, excl, only, trust, stop, desugar.Tracked(rng), (d) => Round{[]byte{}, -1, []int{}, []int{}, 0, []int{d}, []loader.PcPut{}, []int{}, []int{}}, (c, m) => roundOf(c, m, idx, stop, rng))
+    return desugar.WithCoreOpt(p, excl, only, trust, stop, desugar.Tracked(rng), (d) => Round{[]byte{}, -1, []int{}, []int{}, 0, []int{d}, []loader.PcPut{}, []int{}, []int{}, []int{}}, (c, m) => roundOf(c, m, idx, stop, rng))
 }
 
 // ── 脱糖 + 検査の Def の区間の並列 ──
@@ -120,7 +129,7 @@ func checkRoundPar(p loader.Program, excl []int, only int, trust bool, stop int,
     outs := rangeRounds(p, excl, only, trust, stop, rs, bud)
     loader.Stage("ck-ranges")
     if stop != 0 {
-        return Round{[]byte{}, -1, []int{}, []int{}, 0, []int{}, []loader.PcPut{}, []int{}, []int{}}, nil
+        return Round{[]byte{}, -1, []int{}, []int{}, 0, []int{}, []loader.PcPut{}, []int{}, []int{}, []int{}}, nil
     }
     for k <- iter.Range(0, len(outs)) {
         if outs[k].def == R_REJ {
@@ -128,6 +137,7 @@ func checkRoundPar(p loader.Program, excl []int, only int, trust bool, stop int,
         }
     }
     mut back := mut []int{}
+    mut kb := mut []int{}
     mut deep := false
     mut failed := false
     mut at := 0
@@ -146,13 +156,16 @@ func checkRoundPar(p loader.Program, excl []int, only int, trust bool, stop int,
         for i <- iter.Range(0, len(o.back)) {
             back = append(back, o.back[i])
         }
+        for x <- o.kb {
+            kb = append(kb, x)
+        }
     }
     if deep {
-        return Round{bytes("checker: too deep\n"), -2, []int{}, []int{}, 0, []int{}, []loader.PcPut{}, []int{}, []int{}}, nil
+        return Round{bytes("checker: too deep\n"), -2, []int{}, []int{}, 0, []int{}, []loader.PcPut{}, []int{}, []int{}, []int{}}, nil
     }
     if failed {
         // def / all は子の番号（持ち上げは子ごと）なので外へ出さない（idx の経路 — --def-index — は 1 本の経路）
-        return Round{defErrorOut(), -1, freeze(back), []int{}, at, []int{}, []loader.PcPut{}, []int{}, []int{}}, nil
+        return Round{defErrorOut(), -1, freeze(back), []int{}, at, []int{}, []loader.PcPut{}, []int{}, []int{}, freeze(kb)}, nil
     }
     return outs[0], nil
 }
@@ -161,15 +174,32 @@ func checkRoundPar(p loader.Program, excl []int, only int, trust bool, stop int,
 // 走らせ直して逐次と同じ最初の拒否を出す（拒否は稀・診断の位置ごと逐次と一致する。子のerrをMapで運ぶと @errorsが導けない）。
 // 子が死んだら、同じ本体を親が区間の順に逐次で呼び直す: 見積もりの外れによるスロットの超過は親では起きず、本当の死は親で同じ死因のまま起きる
 func rangeRounds(p loader.Program, excl []int, only int, trust bool, stop int, rs []desugar.DefRng, bud int) []Round {
+    // 名前付きのジェネリックの kind は親が 1 回推論して子へ渡す（子は区間の外の本体を持たない。区間の中の持ち上げは子が推論する）。
+    // 前段の脱糖が拒否したら渡さない（子が自分で推論し、拒否は子の値で親へ帰る）
+    mut rk := mut []desugar.DefRng{}
+    if stop == 0 && len(rs) > 0 {
+        ks, kerr := KindsGenP(p, excl, only, trust, desugar.RngPlanOf(rs[0]))
+        for r <- rs {
+            rk = append(rk, if kerr == nil { desugar.WithKinds(r, ks) } else { r })
+        }
+    } else {
+        for r <- rs {
+            rk = append(rk, r)
+        }
+    }
+    rf := freeze(rk)
     die := ckEnvInt("SOBER_CHECK_DIE") == 1
-    outs, serr := task.Map(rs, (r) => rangeRoundC(p, excl, only, trust, stop, r, die), budget: bud)
+    outs, serr := task.Map(rf, (r) => rangeRoundC(p, excl, only, trust, stop, r, die), budget: bud)
     ckStat("e2s", len(rs), serr != nil)
+    if serr != nil {
+        loader.ParFellBack("check e2s", len(rs), "by the parent range by range", "")
+    }
     if serr == nil {
         return outs
     }
     mut seq := mut []Round{}
-    for k <- iter.Range(0, len(rs)) {
-        seq = append(seq, rangeRound(p, excl, only, trust, stop, rs[k]))
+    for k <- iter.Range(0, len(rf)) {
+        seq = append(seq, rangeRound(p, excl, only, trust, stop, rf[k]))
     }
     return freeze(seq)
 }
@@ -195,7 +225,7 @@ func rangeRound(p loader.Program, excl []int, only int, trust bool, stop int, r 
 }
 
 func rejRound(rd int, w diag.Words, puts []loader.PcPut, cnt []int, stale []int) Round {
-    return Round{[]byte{}, R_REJ, []int{}, []int{}, 0, []int{rd, diag.WTag(w), diag.WKind(w), desugar.PackPos(diag.WAt(w)), desugar.PackPos(diag.WMissing(w))}, puts, cnt, stale}
+    return Round{[]byte{}, R_REJ, []int{}, []int{}, 0, []int{rd, diag.WTag(w), diag.WKind(w), desugar.PackPos(diag.WAt(w)), desugar.PackPos(diag.WMissing(w))}, puts, cnt, stale, []int{}}
 }
 
 // 周回の最後の結果と逃げの集合
@@ -206,6 +236,8 @@ type E2Out struct {
     puts []loader.PcPut // check の関数単位キャッシュの書く値（全周回）・cnt = [当たり, 外れ, 区間の子]（全周回の和）・stale = 検証の食い違い
     cnt []int
     stale []int
+    only int   // 周回の部分検査の package（-1 = 全体）と L0 の信頼の有無（KindFail がやり直すため）
+    trust bool
 }
 
 func runE2(p loader.Program, idx bool, dpar bool) (E2Out, error?) {
@@ -234,7 +266,7 @@ func runE2C(p loader.Program, idx bool, only int, trust bool, excl0 []int, stop 
         excl = append(excl, marked[k])
     }
     mut going := true
-    mut last := Round{[]byte{}, -1, []int{}, []int{}, 0, []int{}, []loader.PcPut{}, []int{}, []int{}}
+    mut last := Round{[]byte{}, -1, []int{}, []int{}, 0, []int{}, []loader.PcPut{}, []int{}, []int{}, []int{}}
     mut n := 0
     mut puts := mut []loader.PcPut{}
     mut cnt := mut []int{0, 0, 0}
@@ -242,8 +274,10 @@ func runE2C(p loader.Program, idx bool, only int, trust bool, excl0 []int, stop 
     while going {
         n += 1
         r := if dpar && !idx && stop != 3 { checkRoundPar(p, freeze(excl), only, trust, stop, cc)? } else { checkRound(p, freeze(excl), idx, only, trust, stop, desugar.WholeRng())? }
-        for x <- r.puts {
-            puts = append(puts, x)
+        if len(r.kb) == 0 {
+            for x <- r.puts {
+                puts = append(puts, x)
+            }
         }
         for k <- iter.Range(0, len(r.cnt)) {
             cnt[k] = cnt[k] + r.cnt[k]
@@ -254,11 +288,14 @@ func runE2C(p loader.Program, idx bool, only int, trust bool, excl0 []int, stop 
         for k <- iter.Range(0, len(r.back)) {
             excl = append(excl, r.back[k])
         }
-        going = len(r.back) > 0
+        for x <- r.kb {
+            excl = append(excl, x)
+        }
+        going = len(r.back) > 0 || len(r.kb) > 0
         last = r
         loader.Stage("ck-round")
     }
-    return E2Out{last, freeze(excl), n, freeze(puts), freeze(cnt), freeze(stale)}, nil
+    return E2Out{last, freeze(excl), n, freeze(puts), freeze(cnt), freeze(stale), only, trust}, nil
 }
 
 // p を（E2-S の逃げの周回込みで）脱糖して検査した判定 JSON（`sober check`）
@@ -316,6 +353,64 @@ func ExclE2(p loader.Program, dpar bool) ([]int, error?) {
 }
 
 // E2Out の確定した周回の拒否の位置（最初に落ちた節の出所 — desugar.UnpackPos で位置に戻す・0 = 無し）
+// 逃げの集合 excl を決めた後のコアで推論した kind の列（KindsCore の形 — コアの JSON の印字が使う）
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnArg, diag.FnCap, diag.Cell)
+func KindsE2(p loader.Program, excl []int) ([]int, error?) {
+    return kindsGenR(p, excl, -1, false, desugar.WholeRng(), KG_DEF)
+}
+
+// E2-S で上げない形（開発用 `check --core-json-expanded`）の、Def の順の kind の列
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnArg, diag.FnCap, diag.Cell)
+func KindsFlat(p loader.Program) ([]int, error?) {
+    return kindsGenR(p, []int{}, -1, false, desugar.FlatRng(), KG_DEF)
+}
+
+// E2Out の周回が L0 の信頼の経路か
+func Trust(r E2Out) bool {
+    return r.trust
+}
+
+// 拒否の診断 diag.KindArg（拒否のときだけ）: 確定した周回と同じ逃げの集合・部分検査・信頼で、1 本の経路の脱糖と検査をやり直す
+// （判定の経路は区間の並列や関数単位キャッシュで、落ちた節の型引数を持ち帰らない）。最初に落ちた節が kind を満たさない呼び出しなら
+// [呼び先の関数表の添字（-1 = 名前の無い持ち上げ）, 型パラメータの添字, 欠けた旗, 旗ごとの本体の位置 ×5, 旗ごとの関数値の捕捉 ×5（3 語ずつ — kindCapOf）]、でなければ空。
+// p は周回に渡した Program（L0 の信頼なら kind の行を足したもの）
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap, diag.Cell, diag.FnArg)
+func KindFail(p loader.Program, r E2Out) ([]int, error?) {
+    return kindsGenR(p, r.excl, r.only, r.trust, desugar.DiagRng(), KG_FAIL)
+}
+
+func kindFailOf(c desugar.Core) []int {
+    srcs := defSrcs(c)
+    o := checkCoreR(c, srcs, false, true, 0, len(srcs), true, len(c.Exprs), false)
+    if len(o.ka) == 0 {
+        return []int{}
+    }
+    mut out := mut []int{if o.ka[0] < len(c.DefFn) { c.DefFn[o.ka[0]] } else { -1 }}
+    for i <- iter.Range(1, len(o.ka)) {
+        out = append(out, o.ka[i])
+    }
+    return freeze(out)
+}
+
+// 検査器の拒否の落ち方（拒否のときだけ。KindFail と同じやり直し）: [落ちた Def の関数表の添字（-1 = 根の式・-2 = 持ち上げたラムダ）,
+// failWhy（0 = 節の規則・1 = 署名・2 = 本体の型が戻り値の型と違う）, 落ちた節の種類, 本体の末尾の式の位置（PackPos）]。落ちていなければ空
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap, diag.Cell, diag.FnArg)
+func FailWhy(p loader.Program, r E2Out) ([]int, error?) {
+    return kindsGenR(p, r.excl, r.only, r.trust, desugar.DiagRng(), KG_WHY)
+}
+
+func failWhyOf(c desugar.Core) []int {
+    srcs := defSrcs(c)
+    o := checkCoreR(c, srcs, false, true, 0, len(srcs), true, len(c.Exprs), false)
+    if len(o.why) == 0 {
+        return []int{}
+    }
+    // failE は最初に落ちた Def の節（collect の def は最後に落ちた Def なので、落ちた Def の列の先頭を見る）
+    j := if len(o.fails) > 0 { o.fails[0] } else { -1 }
+    fn := if j >= 0 && j < len(c.DefFn) { c.DefFn[j] } else if j >= 0 { -2 } else { -1 }
+    return []int{fn, o.why[0], o.why[1], o.why[2]}
+}
+
 func At(r E2Out) int {
     return r.round.at
 }
@@ -373,4 +468,33 @@ func Excl(r E2Out) []int {
 // E2Out の周回の数（開発用 — `--def-index` が印字する）
 func Rounds(r E2Out) int {
     return r.rounds
+}
+
+// 落ちた節の規則（FailWhy の節の種類）が求めることの文（診断の 2 行目。英語）。規則の名前（コアの構成子）を添える
+func RuleLine(k int) string {
+    w := switch k {
+    case W_CASE: "the branches of this switch must have the same type"
+    case W_IF: "the condition must be a bool and both branches must have the same type"
+    case W_IFNIL: "both branches of this nil test must have the same type"
+    case W_CALL: "the argument must have the parameter type of the called function"
+    case W_CALLV: "the argument must have the parameter type of the function value"
+    case W_ANN: "the value must be readable as the expected type"
+    case W_LABEL: "every value leaving this block must have the type of the block and must not refer to a region that ends here"
+    case W_JUMP: "the value of this return or break must have the type of its destination"
+    case W_BLOCK | K_BLOCKR | W_COPYTO: "the value must not refer to a region that ends here"
+    case W_ASSIGN: "the assigned value must have the type of the variable"
+    case W_APPEND | W_SETIDX: "the element must have the element type of the slice"
+    case W_SETM: "the key and the value must have the types of the map"
+    case W_FREEZE: "only a mut container without mut parts inside can be frozen"
+    case W_CONCAT: "both sides must be imm slices with the same element type"
+    case W_EQS: "both sides must be strings"
+    case W_INDEX: "only a slice can be indexed, and the index must be an int"
+    case W_SUBSLICE: "only an imm slice can be sliced, and the bounds must be ints"
+    case W_LEN: "the value must be a slice"
+    case W_WHILE: "the condition must be a bool"
+    case W_ADD | W_LT | W_SUB | W_MUL | W_DIV | W_MOD | W_AND | W_OR | W_XOR | W_SHL | W_SHR | W_EQ | W_NE | W_LE | W_GT | W_GE: "both operands must be ints"
+    default: "the types do not fit the rule for this expression"
+    }
+    n := if k == K_BLOCKR { "block" } else { wordStr(k) }
+    return "${w} (core rule: ${n})"
 }

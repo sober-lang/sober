@@ -217,6 +217,7 @@ Output:
 
 - A union (sum type) is a collection of named variants. You take it apart with `switch`, and a missing variant is a compile error.
 - The type argument of a generic like `min[T](…)` is normally inferred from the arguments.
+- A type parameter has no written constraint. The compiler infers from the body the properties that the body uses of a T value (returning it, using it as a map key, and so on), and rejects a call whose type argument lacks one of them. Strings, slices, maps and structs can be type arguments too.
 - Instead of interfaces, you explicitly pass a struct whose fields are function values (a dictionary). There is no implicit resolution of implementations — which implementation is used is written at the call site.
 
 Differences from Go: there is neither `interface` nor implicit satisfaction. Instead of making a type that satisfies `sort.Interface`, pass an `Ord[T]{less: …}`.
@@ -418,7 +419,7 @@ Output:
 
 - `task.Map` creates a task per element, and the results come back in input order.
 - Children spawned with `task.Spawn` inside a `task.Run` always join before the scope ends (there are no abandoned goroutines).
-- Only immutable values or channels can be passed to a child. Data races cannot be written.
+- Only immutable values, channels or domains can be passed to a child. Data races cannot be written.
 - The output is deterministic: changing the number of workers (`SOBER_WORKERS`) leaves standard output byte-for-byte the same.
 - A channel is made with `task.NewChannel`, and the sending end is handed to a child with `give:`. `for v <- task.Recv(rx)` receives until the channel is closed.
 

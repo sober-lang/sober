@@ -75,9 +75,13 @@ func urAdd(st mut St, x int, k int) int {
     return bin(mut st, BAdd, x, iconst(mut st, k))
 }
 
-// 番地 x + k（バイト）の 32 ビット（符号なし）
+// 番地x + k（バイト）の32ビット（符号なし）。4バイトだけ読む（フィールドが確保した領域の最後の4バイトにあっても、領域の外を読まない。
+// 例: 固定ファイルの表の最後の枠の世代）。ミュータント102（scripts/iouring.sh）は8バイトを読んで下位32ビットを取る前の形
 func urLd32(st mut St, x int, k int) int {
-    return bin(mut st, BAnd, load(mut st, itop(mut st, urAdd(mut st, x, k)), 0), iconst(mut st, 4294967295))
+    if st.rtMut == 102 {
+        return bin(mut st, BAnd, load(mut st, itop(mut st, urAdd(mut st, x, k)), 0), iconst(mut st, 4294967295))
+    }
+    return loadN(mut st, 4, itop(mut st, urAdd(mut st, x, k)), 0)
 }
 
 // 番地 a に v の下位 32 ビットを書く（1 バイトずつ）
@@ -711,7 +715,7 @@ func buildUpoll(st mut St) {
             condbr(mut st, cmp(mut st, CEq, hi, iconst(mut st, 3)), bAc, -1, bNa, -1)
             setCur(mut st, bAc)
             kInc(mut st, 8)
-            urReapAcc(mut st, ud, res, bin(mut st, BAnd, bin(mut st, BSar, load(mut st, cqe, 1), iconst(mut st, 32)), iconst(mut st, 4294967295)), hn)
+            urReapAcc(mut st, rec, ud, res, bin(mut st, BAnd, bin(mut st, BSar, load(mut st, cqe, 1), iconst(mut st, 32)), iconst(mut st, 4294967295)), hn)
             setCur(mut st, bNa)
             // 固定のファイル表（TAG_FUP — 登録の失敗だけ・TAG_FMSG — 持ち主でない閉じからの依頼）— netring.sober
             bFx := newBlock(mut st)
@@ -722,6 +726,8 @@ func buildUpoll(st mut St) {
             br(mut st, hn, -1)
             setCur(mut st, bNf)
         }
+        // Serveの期限の走査のタイマー（rdl.sober。UD_RDL）
+        rdlReap(mut st, ud, hn)
         condbr(mut st, cmp(mut st, CNe, bin(mut st, BAnd, ud, iconst(mut st, UDT_POLL)), zero), bPl, -1, bNp, -1)
         setCur(mut st, bPl)
         v := bin(mut st, BMul, res, cmp(mut st, CLe, res, zero))
@@ -779,8 +785,7 @@ func buildUpoll(st mut St) {
         // そちらは実行待ちの列のFIFOと受け箱の先取り〔rt.mn_next〕で塞ぐ）。
         // 棄てた案: 頭では一切取り込まない（c1 — ringと同形。公平になるが、走れるtaskが尽きるたびに盗みの走査 → スリープのフェーズを通り、256接続で
         // cycles / リクエスト7.9K → 9.5K・req/s −15%）
-        mnq := globaladdr(mut st, st.mnG)
-        noNew := bin(mut st, BAnd, bin(mut st, BAnd, cmp(mut st, CLe, load(mut st, wk, WK_DT), load(mut st, wk, WK_DH)), cmp(mut st, CEq, load(mut st, wk, WK_INBOX), zero)), cmp(mut st, CEq, load(mut st, mnq, MN_PHEAD), zero))
+        noNew := bin(mut st, BAnd, cmp(mut st, CLe, load(mut st, wk, WK_DT), load(mut st, wk, WK_DH)), cmp(mut st, CEq, load(mut st, wk, WK_INBOX), zero))
         go := bin(mut st, BAnd, bin(mut st, BAnd, cmp(mut st, CNe, ep, zero), cmp(mut st, CEq, load(mut st, tk, TK_READY), zero)), bin(mut st, BOr, 0, bin(mut st, BAnd, noNew, cmp(mut st, CNe, load(mut st, wk, WK_NETW), zero))))
         bG := branchIf(mut st, go)
         call(mut st, chF(mut st, NETF_POLL), list1(mut st, 0))

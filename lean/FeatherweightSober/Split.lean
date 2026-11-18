@@ -7,7 +7,7 @@ import FeatherweightSober.Checker
 読んだ**署名だけ**しか無い。これが全体の検査（DefsOk）と同じ結論を出すことの中身は 2 つ:
 
 1. **型付けは関数表の署名しか見ない**（`hasType_sigEq`）: HasType が Δ を読むのは call / fnref の
-   `Δ[fn]?` だけで、そこでも param / ret / tparams しか使わない。したがって署名の一致する表の間で型付けは移る
+   `Δ[fn]?` だけで、そこでも param / ret / kinds しか使わない。したがって署名の一致する表の間で型付けは移る
 2. **合成**（`defsOk_of_parts`）: 関数表の添字を部分に割り、各部分を「自分の Def は本物・他は署名が同じ任意の Def」の
    表の下で checkDefsAt が受理すれば、全体の DefsOk が成り立つ
 
@@ -26,7 +26,7 @@ theorem SigEq.symm {Δ Δ' : Defs} (h : SigEq Δ Δ') : SigEq Δ' Δ := Eq.symm 
 
 theorem SigEq.lookup {Δ Δ' : Defs} (h : SigEq Δ Δ') {fn : Nat} {dfn : Def} (hf : Δ[fn]? = some dfn) :
     ∃ dfn', Δ'[fn]? = some dfn' ∧ dfn'.param = dfn.param ∧ dfn'.ret = dfn.ret ∧
-      dfn'.tparams = dfn.tparams := by
+      dfn'.kinds = dfn.kinds := by
   have hc := congrArg (fun l : List Def => l[fn]?) h
   simp only [List.getElem?_map, hf, Option.map_some] at hc
   cases hd : Δ'[fn]? with
@@ -36,7 +36,7 @@ theorem SigEq.lookup {Δ Δ' : Defs} (h : SigEq Δ Δ') {fn : Nat} {dfn : Def} (
     refine ⟨dfn', rfl, ?_, ?_, ?_⟩
     · exact (congrArg Def.param hc).symm
     · exact (congrArg Def.ret hc).symm
-    · exact (congrArg Def.tparams hc).symm
+    · exact (congrArg Def.kinds hc).symm
 
 theorem Def.inst_param_congr {d d' : Def} (h : d'.param = d.param) (ts : List Ty) :
     (d'.inst ts).param = (d.inst ts).param := by simp [Def.inst, h]
@@ -48,20 +48,15 @@ theorem Def.inst_ret_congr {d d' : Def} (h : d'.ret = d.ret) (ts : List Ty) :
 theorem hasType_sigEq {Δ Δ' : Defs} (hs : SigEq Δ Δ') {Ξ Ψ f b d Γ Λ e t}
     (h : HasType Δ Ξ Ψ f b d Γ Λ e t) : HasType Δ' Ξ Ψ f b d Γ Λ e t := by
   induction h
-  case call hf hlen hok _ hsub hbd ih =>
+  case call hf hlen hok _ hsub hbd had ih =>
     obtain ⟨dfn', hf', hp, hr, htp⟩ := hs.lookup hf
     rw [← Def.inst_ret_congr hr]
     rw [← Def.inst_param_congr hp] at hsub
-    exact HasType.call hf' (htp ▸ hlen) hok ih hsub hbd
-  case callM hf hlen hok _ hanc hsub hbd had ih =>
-    obtain ⟨dfn', hf', hp, hr, htp⟩ := hs.lookup hf
-    rw [← Def.inst_ret_congr hr]
-    rw [← Def.inst_param_congr hp] at hsub hanc
-    exact HasType.callM hf' (htp ▸ hlen) hok ih hanc hsub hbd had
+    exact HasType.call hf' (htp ▸ hlen) (htp ▸ hok) ih hsub hbd had
   case fnref hf hlen hok =>
     obtain ⟨dfn', hf', hp, hr, htp⟩ := hs.lookup hf
     rw [← Def.inst_ret_congr hr, ← Def.inst_param_congr hp]
-    exact HasType.fnref hf' (htp ▸ hlen) hok
+    exact HasType.fnref hf' (htp ▸ hlen) (htp ▸ hok)
   case sendE hp ih1 ih2 => exact .sendE ih1 ih2 hp
   case recvE hm hc ih => exact .recvE ih hm hc
   case closeE ih => exact .closeE ih
@@ -96,11 +91,9 @@ def renameFn (ρ : Nat → Nat) : Expr → Expr
   | pair a b => pair (renameFn ρ a) (renameFn ρ b)
   | fst e => fst (renameFn ρ e)
   | snd e => snd (renameFn ρ e)
-  | call fn ts' e => call (ρ fn) ts' (renameFn ρ e)
-  | callM fn ts' e => callM (ρ fn) ts' (renameFn ρ e)
+  | call a fn ts' e => call a (ρ fn) ts' (renameFn ρ e)
   | fnref fn ts' => fnref (ρ fn) ts'
-  | callv f e => callv (renameFn ρ f) (renameFn ρ e)
-  | callMv a f e => callMv a (renameFn ρ f) (renameFn ρ e)
+  | callv a f e => callv a (renameFn ρ f) (renameFn ρ e)
   | ann e t => ann (renameFn ρ e) t
   | block e => block (renameFn ρ e)
   | blockR t e => blockR t (renameFn ρ e)
@@ -165,6 +158,9 @@ theorem Expr.noNewchan_renameFn (ρ : Nat → Nat) (e : Expr) :
     (e.renameFn ρ).noNewchan = e.noNewchan := by
   induction e <;> simp_all [Expr.renameFn, Expr.noNewchan]
 
+theorem Expr.tvWf_renameFn {ks : List Kind} {ρ : Nat → Nat} : ∀ {e : Expr}, (e.renameFn ρ).tvWf ks = e.tvWf ks := by
+  intro e; induction e <;> simp_all [Expr.renameFn, Expr.tvWf]
+
 theorem Expr.src_renameFn (ρ : Nat → Nat) (e : Expr) :
     (e.renameFn ρ).src = e.src := by
   induction e <;> simp_all [Expr.renameFn, Expr.src]
@@ -172,27 +168,22 @@ theorem Expr.src_renameFn (ρ : Nat → Nat) (e : Expr) :
 /-- 視点の表 Δv の添字 i を全体の表 Δ の添字 ρ i へ写したとき署名が保たれる -/
 def SigMap (Δv Δ : Defs) (ρ : Nat → Nat) : Prop :=
   ∀ (i : Nat) (dv : Def), Δv[i]? = some dv →
-    ∃ d, Δ[ρ i]? = some d ∧ d.param = dv.param ∧ d.ret = dv.ret ∧ d.tparams = dv.tparams
+    ∃ d, Δ[ρ i]? = some d ∧ d.param = dv.param ∧ d.ret = dv.ret ∧ d.kinds = dv.kinds
 
 /-- 型付けは添字の付け替えで移る（署名が保たれる限り）— hasType_sigEq の一般化 -/
 theorem hasType_rename {Δv Δ : Defs} {ρ : Nat → Nat} (hm : SigMap Δv Δ ρ) {Ξ Ψ f b d Γ Λ e t}
     (h : HasType Δv Ξ Ψ f b d Γ Λ e t) : HasType Δ Ξ Ψ f b d Γ Λ (e.renameFn ρ) t := by
   induction h
-  case call hf hlen hok _ hsub hbd ih =>
+  case call hf hlen hok _ hsub hbd had ih =>
     obtain ⟨dfn', hf', hp, hr, htp⟩ := hm _ _ hf
     rw [← Def.inst_ret_congr hr]
     rw [← Def.inst_param_congr hp] at hsub
-    exact HasType.call hf' (htp ▸ hlen) hok ih hsub hbd
-  case callM hf hlen hok _ hanc hsub hbd had ih =>
-    obtain ⟨dfn', hf', hp, hr, htp⟩ := hm _ _ hf
-    rw [← Def.inst_ret_congr hr]
-    rw [← Def.inst_param_congr hp] at hsub hanc
-    exact HasType.callM hf' (htp ▸ hlen) hok ih hanc hsub hbd had
+    exact HasType.call hf' (htp ▸ hlen) (htp ▸ hok) ih hsub hbd had
   case fnref hf hlen hok =>
     obtain ⟨dfn', hf', hp, hr, htp⟩ := hm _ _ hf
     simp only [Expr.renameFn]
     rw [← Def.inst_ret_congr hr, ← Def.inst_param_congr hp]
-    exact HasType.fnref hf' (htp ▸ hlen) hok
+    exact HasType.fnref hf' (htp ▸ hlen) (htp ▸ hok)
   case sendE hp ih1 ih2 => simp only [Expr.renameFn]; exact .sendE ih1 ih2 hp
   case recvE hm hc ih => simp only [Expr.renameFn]; exact .recvE ih hm hc
   case closeE ih => simp only [Expr.renameFn]; exact .closeE ih
@@ -204,7 +195,7 @@ def checkDefsAt (Δ : Defs) (S : Nat → Bool) : Bool :=
     !S i || match Δ[i]? with
       | some dfn => Ty.paramOk dfn.param && Ty.retOk dfn.ret &&
           dfn.body.noNewchan &&
-          dfn.param.tvarsBelow dfn.tparams && dfn.ret.tvarsBelow dfn.tparams && dfn.body.src &&
+          dfn.param.tvarsBelow dfn.kinds.length && dfn.ret.tvarsBelow dfn.kinds.length && dfn.body.src && dfn.tvOk &&
           (typecheck Δ ∅ [] 1 0 2 [dfn.param] [] dfn.body == some dfn.ret)
       | none => true
 
@@ -212,13 +203,13 @@ def checkDefsAt (Δ : Defs) (S : Nat → Bool) : Bool :=
 theorem defOk_of_checkAt {Δv Δ : Defs} {S : Nat → Bool} (hc : checkDefsAt Δv S = true)
     (hs : SigEq Δv Δ) {fn : Nat} (hS : S fn = true) {dfn : Def} (hv : Δv[fn]? = some dfn) :
     dfn.param.paramOk = true ∧ dfn.ret.retOk = true ∧ dfn.body.noNewchan = true ∧
-      dfn.param.tvarsBelow dfn.tparams = true ∧ dfn.ret.tvarsBelow dfn.tparams = true ∧
-      dfn.body.src = true ∧ HasType Δ ∅ [] 1 0 2 [dfn.param] [] dfn.body dfn.ret := by
+      dfn.param.tvarsBelow dfn.kinds.length = true ∧ dfn.ret.tvarsBelow dfn.kinds.length = true ∧
+      dfn.body.src = true ∧ dfn.tvOk = true ∧ HasType Δ ∅ [] 1 0 2 [dfn.param] [] dfn.body dfn.ret := by
   have hlt : fn < Δv.length := (List.getElem?_eq_some_iff.mp hv).1
   have := List.all_eq_true.mp hc fn (List.mem_range.mpr hlt)
   simp only [hS, Bool.not_true, Bool.false_or, hv, Bool.and_eq_true, beq_iff_eq] at this
-  obtain ⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩ := this
-  exact ⟨h1, h2, h3, h4, h5, h6, hasType_sigEq hs (typecheck_sound h7)⟩
+  obtain ⟨⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩, h8⟩ := this
+  exact ⟨h1, h2, h3, h4, h5, h6, h7, hasType_sigEq hs (typecheck_sound h8)⟩
 
 /-- **合成**: 関数表 Δ の添字を部分に割る。各部分 k について、視点の表 Δv（自分の添字では Δ と同じ Def・
 他は署名が同じ任意の Def）を部分検査が受理すれば、全体の DefsOk が成り立つ。
@@ -245,11 +236,12 @@ theorem defsOk_of_linked {Δ : Defs} {K : Nat} (views : Fin K → Defs) (ρ : Fi
     DefsOk Δ := by
   intro fn dfn hfn
   obtain ⟨k, i, dv, hS, hv, rfl⟩ := hcover fn dfn hfn
-  obtain ⟨h1, h2, h3, h4, h5, h6, h7⟩ :=
+  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8⟩ :=
     defOk_of_checkAt (Δ := views k) (hchk k) (show SigEq (views k) (views k) from rfl) hS hv
-  refine ⟨h1, h2, ?_, h4, h5, ?_, hasType_rename (hmap k) h7⟩
+  refine ⟨h1, h2, ?_, h4, h5, ?_, ?_, hasType_rename (hmap k) h8⟩
   · simpa [Expr.noNewchan_renameFn] using h3
   · simpa [Expr.src_renameFn] using h6
+  · simpa [Def.tvOk, Expr.tvWf_renameFn] using h7
 
 /-- 1 部分なら checkDefs と同じ（健全性の確認用の系） -/
 theorem defsOk_of_checkAt_all {Δ : Defs} (h : checkDefsAt Δ (fun _ => true) = true) : DefsOk Δ :=

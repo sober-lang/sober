@@ -1,0 +1,10 @@
+@@full	f67d85787a85cf8c	1299	43544
+@head	1ee0a446dc6aef01	0	206
+const OpAdd	d088ae381958a262	1	45
+const OpDiv	7dfde8226d32b7a7	1	45
+const OpMul	0283284faeb407fc	1	45
+const OpNeg	dd0ef703915df0c0	1	45
+const OpPush	edd63e291cba4b22	1	46
+const OpSub	bf8cb227cc021e7d	1	45
+func Compile	57474f9916e26cbb	62	2165
+func Run	578f2b211c0ce85e	143	4628

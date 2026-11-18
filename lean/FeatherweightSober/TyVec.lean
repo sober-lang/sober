@@ -7,8 +7,8 @@ import FeatherweightSober.Gen
 （Syntax.lean / Typing.lean の定義をそのまま走らせる）。Sober 側（lean/Extract/sober/tyvecdump.sober）が同じ引数で
 抽出物（または移行期の手書きの写し）を計算して同じ形で印字し、scripts/extract.sh がバイト比較する。
 
-字句: 型は前順のトークン（i / v n / b / y / f / u / o T / U T T / P T T / R m r T / S m r T / M m r T / C rc T / F T T / W k r T / Q T〔μ〕/ X n〔再帰の変数〕/ Z r T〔D の μ〕）・
-Nat は 10 進・Bool は 0 / 1・Option Nat は 10 進（none = -1）・Option Ty は N / J T・List Ty は L n T…
+字句: 型は前順のトークン（i / v n ρ K / b / y / f / u / o T / U T T / P T T / R m r T / S m r T / M m r T / C rc T / F T T / W k r T / Q T〔μ〕/ X n〔再帰の変数〕/ Z r T〔D の μ〕）・
+K（kind）は旗 rf mf cf cov kf を 0 / 1 で 5 つ・List Kind は K n K…・Nat は 10 進・Bool は 0 / 1・Option Nat は 10 進（none = -1）・Option Ty は N / J T・List Ty は L n T…
 -/
 
 namespace FS.TyVec
@@ -23,9 +23,15 @@ def ownKTok : OwnK → Nat
   | .tx => 2
   | .rx => 3
 
+/-- kind は 5 つの旗（rf mf cf cov kf）を 0 / 1 で並べる -/
+def kindTok (k : Kind) : String := s!"{bTok k.rf} {bTok k.mf} {bTok k.cf} {bTok k.cov} {bTok k.kf}"
+
+def kindsTok (ks : List Kind) : String :=
+  s!"K {ks.length}" ++ String.join (ks.map (" " ++ kindTok ·))
+
 def tyTok : Ty → String
   | .int => "i"
-  | .tvar n => s!"v {n}"
+  | .tvar n ρ k => s!"v {n} {ρ} {kindTok k}"
   | .bool => "b"
   | .byte => "y"
   | .f64 => "f"
@@ -157,6 +163,12 @@ def genMu : Rand Ty := do
   | 6 => return .muR1 (← rnd 2) (← genChaosTy 2)
   | _ => genT
 
+def genKinds (n : Nat) : Rand (List Kind) := do
+  let mut ks : List Kind := []
+  for _ in [0:n] do
+    ks := ks ++ [← genKind]
+  return ks
+
 def genTs : Rand (List Ty) := do
   let n ← rnd 2
   let mut ts : List Ty := []
@@ -189,8 +201,8 @@ def vec (k : Nat) : Rand String := do
   | 18 => let m := (← rnd 1) = 0; let t ← genT
           let ot ← (do if (← rnd 1) = 0 then return none else return some (← genT2 t))
           return s!"readAs {bTok m} {optTyTok ot} {tyTok t} = {optTyTok (Ty.readAs m ot t)}"
-  | 19 => let t ← genT; return s!"tyArgOk {tyTok t} = {bTok t.tyArgOk}"
-  | 20 => let ts ← genTs; return s!"tyArgsOk {listTok ts} = {bTok (Ty.tyArgsOk ts)}"
+  | 19 => let k ← genKind; let t ← genT; return s!"kindOk {kindTok k} {tyTok t} = {bTok (kindOk k t)}"
+  | 20 => let ts ← genTs; let ks ← genKinds ts.length; return s!"kindsArgsOk {kindsTok ks} {listTok ts} = {bTok (kindsArgsOk ks ts)}"
   | 21 => let ts ← genTs; let t ← genT; return s!"tsubst {listTok ts} {tyTok t} = {tyTok (t.tsubst ts)}"
   | 22 => let n ← rnd 2; let t ← genT; return s!"tvarsBelow {n} {tyTok t} = {bTok (t.tvarsBelow n)}"
   | 23 => let t ← genT; return s!"paramOk {tyTok t} = {bTok t.paramOk}"

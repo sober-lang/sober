@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # mdwecheck（rtの入口のPR_SET_MDWE — docs/guide/securityの「実行可能メモリの放棄」）: testdata/mdweの題材をビルドし、SOBER_MDWE_REPORTの
 # `mdwe <PR_GET_MDWE>` を照合する。Linux 6.6+（PR_MDWE_NO_INHERIT がある）では 3（REFUSE_EXEC_GAIN | NO_INHERIT）・それより古いカーネルでは
-# 掛けない（3 でない）。os.Run の子は引き継がない（0 — python3 が無ければその照合だけ SKIP）。SOBER_MDWE=0 では掛けない（0）
+# 掛けない（3でない）。os.Runの子は引き継がない（0。python3が無ければFAIL。SOBER_GATES_ALLOW_SKIPにpython3を書いたときだけその照合をSKIP）。SOBER_MDWE=0では掛けない（0）
 #   scripts/mdwecheck.sh
 set -uo pipefail
 cd "$(dirname "$0")/.."
 S2=${STAGE2:-out/stage2/sober2}
+source scripts/gatelib.sh
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 IFS=. read -r kmaj kmin _ <<< "$(uname -r)"
@@ -23,7 +24,7 @@ for p in seq task child; do
             c=$(sed -n 's/^child //p' <<< "$out")
             [ "$c" = 0 ] || { echo "FAIL child: child mdwe=$c (want 0 — NO_INHERIT)"; fail=1; }
         else
-            echo "note: python3 missing — child check skipped"
+            cant mdwecheck python3 "the child mdwe (os.Run of python3)" || fail=1
         fi
     fi
     # SOBER_MDWE=0の走り（valgrind等の動的計装の入口）は掛けない（0）

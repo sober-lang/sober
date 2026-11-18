@@ -1,0 +1,13 @@
+@@full	87604057581a57d0	3062	90850
+@head	6cf593b682524757	0	141
+func content	127bc562fce17633	12	521
+func elAt	f15fbfc3bb37d02f	168	5544
+func firstChild	8f68da6e899c44ad	13	540
+func hexBytes	2fac37829d284c12	55	1831
+func hexv	34186a8f19d252b3	16	563
+func nextEl	6790c6f179261c5c	13	565
+func noEl	06dc8e791fec0707	8	406
+func oidIs	ace3bd21d0d9376c	53	1840
+func oidText	d6996407b8aad308	144	4775
+func whole	2aef3c5dc364efd0	12	519
+type El	e01dac846d908a31	5	252

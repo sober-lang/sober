@@ -24,8 +24,8 @@ Name resolution in `std/net` (a stub resolver — used when `net.Dial` gets a ho
 | Item | Status | Evidence |
 |---|---|---|
 | Non-ASCII host names (IDN belongs to the URL layer — rejected by name) | Not supported (by design) | `std/net.TestNameCheck` |
-| DNSSEC validation (a stub trusts its upstream resolver) | Not supported (by design) | — |
-| DoH / DoT, caching (the job of the OS or the upstream) | Not supported (by design) | — |
+| DNSSEC validation (a stub trusts its upstream resolver) | Not supported (by design) | none |
+| DoH / DoT, caching (the job of the OS or the upstream) | Not supported (by design) | none |
 <!-- confsync:end claims dns-resolver intentional -->
 
 ## Not yet
@@ -33,8 +33,8 @@ Name resolution in `std/net` (a stub resolver — used when `net.Dial` gets a ho
 <!-- confsync:begin claims dns-resolver planned -->
 | Item | Planned | Evidence of today's behavior |
 |---|---|---|
-| EDNS0 (today answers over 512 bytes fall back to TCP) | 0.8 | — |
-| IPv6 nameservers and dialing IPv6 | 0.8 | — |
+| EDNS0 (today answers over 512 bytes fall back to TCP) | 0.8 | none |
+| IPv6 nameservers and dialing IPv6 | 0.8 | none |
 <!-- confsync:end claims dns-resolver planned -->
 
 ## Evidence — interop

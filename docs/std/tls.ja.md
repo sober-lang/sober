@@ -135,10 +135,10 @@ Parse のファイル版（certPath / keyPath を読む）
 ```sober
 @errors(net.Bad, io.Closed, io.Timeout, io.Expired, io.Denied, io.Other)
 @effects(block, io, panic, nondet, Handler)
-func Serve(addr string, cfg Config, k Handler, region int?) error?
+func Serve(addr string, cfg Config, k Handler, budget int?, conns int?, reject string?, region int?, headWait int?) error?
 ```
 
-addr で待ち受け、接続ごとに handshake を済ませてから k を走らせる（接続 1 本 = task 1 本 — net.Serve と同じ admission・k の失敗と死は吸収）。handshake の失敗は alert を送って閉じ、k は呼ばない。k が返ったら（error を返しても）close\_notify を送って閉じる。k が死んだときは close\_notify を送らずに閉じるregion = 接続のtaskのregion 1つの上限（net.Serveのregion: へそのまま。既定は128 MiB）
+addr で待ち受け、接続ごとに handshake を済ませてから k を走らせる（接続 1 本 = task 1 本 — net.Serve と同じ admission・k の失敗と死は吸収）。handshake の失敗は alert を送って閉じ、k は呼ばない。k が返ったら（error を返しても）close\_notify を送って閉じる。k が死んだときは close\_notify を送らずに閉じるconns・reject・regionはnet.Serveへそのまま（意味も既定もnet.Serveと同じ）。budgetは接続1本の宣言（既定 64 KiB）にwaitStackを足してnet.Serveへ渡す。headWait = 接続を受けてからhandshakeが済むまでの上限（task.MS・既定30秒・0以下は開いた時点で期限切れ）。期限が来たら何も送らずに閉じ、kは呼ばない。kの中のhttp.server.ServeWithは、入った時刻から自分のheadWait: を数える（handshakeの分は数えない）
 
 失敗のラベル: `net.Bad`・`io.Closed`・`io.Timeout`・`io.Expired`・`io.Denied`・`io.Other`
 

@@ -1,0 +1,2 @@
+    r := if q != nil { q } else { d }
+    return r

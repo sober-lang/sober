@@ -1,0 +1,25 @@
+@@full	6d0a0f399193a341	9740	311626
+@head	092f072aca2e191f	0	463
+func TestFrameType	641b2e8d8b715b66	93	2714
+func TestReject	e263ff3eeb83e250	592	25229
+func rjBadFin	535da4735187a6a5	15	594
+func rjClientHello	7f697e118bd794b4	301	9113
+func rjDesc	00b2f0f07d27bc97	17	777
+func rjExt	a0ccf3d58d51fc35	22	813
+func rjFeed	3f6b951f87a2743e	13	511
+func rjFin	46830513c51af260	33	1054
+func rjFirstWord	309ee1ba824845fc	33	1181
+func rjFrames	c129f66b0e46acc9	51	1847
+func rjGood	dda8f100c32ecd78	32	1410
+func rjP16	8e699811e203eb72	25	937
+func rjP8	b3aef1f2bc040c0c	13	564
+func rjParams	11cfc58b17b1c43e	55	2089
+func rjPatch	495acf81da35ec4d	41	1443
+func rjPb	29571943666ac465	14	602
+func rjRec	af87702bd3aa5d13	34	1156
+func rjRun	389225a550c1f0b9	39	1389
+func rjSealed	6cadbaae88abce2d	54	2085
+func rjSeq	b1066f86138eb5bf	31	1146
+func rjU16list	64faf5dee2269ff8	43	1432
+type rjCase	f234ee90f714dec6	5	251
+type rjHello	32af545b3afbab97	17	780

@@ -7,6 +7,10 @@
 #   m4 = 番地を取られる bit を落とす（ckBeta — 自分と呼び先）
 #   m5 = 番号の定数の点の鍵から序数を落とす（ckTab — 持ち主の中の点が全部同じ鍵）
 #   m6 = コンパイラの鍵（世代）を落とす（app の buildCacheGen — 定数の世代）
+# cfg のうち全関数の鍵に混ぜないワード（ckDrop。必要になったときだけ宣言する rt の記録。本体が参照すれば正準形に入る）:
+#   m24 = ckCfg が外すワードも混ぜる（std の関数の鍵がプログラムごとに変わる形へ戻る）: 検証 =2 の `cache: key depends on a cfg word left out`
+#   m25 = 印のついた読み（UB_MARK）のある関数の鍵に std/utf8.boundary の有無を入れない: 検証 =2 の感度の検査（kind 43）
+#   m26 = 印の無い関数の鍵にも std/utf8.boundary の有無を入れる: 同（kind 44。依らない関数が外れる）
 # 切り口 γ（TypeAllのpackageの区画 — 段階5 R3・report-1228 4.5の5本 + 1）:
 #   m7 = 鍵K1から推移的に依存する宣言の要約を落とす（tyK1）           — 鳴らす編集dep-decl（依存の宣言の相の記録の序数がずれる）
 #   m8 = 鍵 K1 からソースの要約（tcSrc）を落とす（tyK1）        — listat-sem（本体の編集）・optfn-site（ソースの変わらない package の脱糖後の木）
@@ -54,7 +58,7 @@ ulimit -s unlimited
 # gatesのSOBER_VERIFY=each（ステージごとのIRの検証器）はキャッシュのパスに入らない — 検査はキャッシュのパスそのものを見るので外す
 unset SOBER_SELF_KEY SOBER_VERIFY
 MS=("$@")
-[ "${#MS[@]}" = 0 ] && MS=(m1 m2 m3 m4 m5 m6 m7 m8 m10 m11 m12 m13 m14 m15 m17 m18 m19 m20 m21 m23)
+[ "${#MS[@]}" = 0 ] && MS=(m1 m2 m3 m4 m5 m6 m24 m25 m26 m7 m8 m10 m11 m12 m13 m14 m15 m17 m18 m19 m20 m21 m23)
 fail=0
 # ミュータントを当てる（$1 = ミュータント・$2 = 木のcompiler/）。当たらなければ1
 mutate() {
@@ -65,6 +69,9 @@ mutate() {
         m3) f=$T/lower/ckey.sober; sed -i 's|^            cb := ckIdx(cuts, fr\[k\]) + 1$|            cb := 0|' "$f" ;;
         m4) f=$T/lower/ckey.sober; sed -i 's|, cb), st.xAddr\[k\]), r|, cb), 0), r|; s|^                bit := st.xAddr\[xIndex(fr, table.Get(mut st.ckk, j))\]$|                bit := 0|' "$f" ;;
         m5) f=$T/lower/ckey.sober; sed -i 's|, pass), xs\[k + 1\]))$|, pass), 0))|' "$f" ;;
+        m24) f=$T/lower/ckey.sober; sed -i 's|^        if drop\[k\] {$|        if false \&\& drop[k] {|' "$f" ;;
+        m25) f=$T/lower/ckey.sober; sed -i 's|^    if stage == 1 \&\& ubm {$|    if false \&\& ubm {|' "$f" ;;
+        m26) f=$T/lower/ckey.sober; sed -i 's|^    if stage == 1 \&\& ubm {$|    if stage == 1 {|' "$f" ;;
         m6) f=$T/app/main.sober; sed -i 's|^    gen := string(k\[0:16\]) catch return ""$|    gen := "0000000000000000"|' "$f" ;;
         m7) f=$T/desugar/tycanon.sober; sed -i '/^func tyK1(/,/^}$/{s|^            tcW(mut st, hget(mut st, dl + 1 + d \* 2))$|            tcW(mut st, 0)|; s|^            tcW(mut st, hget(mut st, dl + 2 + d \* 2))$|            tcW(mut st, 0)|}' "$f" ;;
         m8) f=$T/desugar/tycanon.sober; sed -i '/^func tyK1(/,/^}$/{s|^    tcW(mut st, s1)$|    tcW(mut st, 0)|; s|^    tcW(mut st, s2)$|    tcW(mut st, 0)|}' "$f" ;;
@@ -103,6 +110,18 @@ one() {
             n=$(grep -c 'cache: insensitive key' "$D/r.err")
             if [ "$ec" != 0 ] && [ "$n" != 0 ]; then echo "incrmut: $m caught — $(grep -m1 'cache: insensitive key' "$D/r.err") (+$((n - 1)) more lines)"
             else echo "incrmut: FAIL $m was not caught (exit $ec, insensitive lines $n)"; return 1; fi
+            ;;
+        m24|m25|m26)
+            # 例題 utf8_bound（印のついた読みを畳む関数がある）を検証 =2 で。x86 の読み出しの計装は無いので終了コードは見ない（特定の行だけを見る）
+            local want
+            case "$m" in
+                m24) want='cache: key depends on a cfg word left out' ;;
+                m25) want='does not change the key of a function with marked reads' ;;
+                m26) want='changes the key of a function without marked reads' ;;
+            esac
+            SOBER_CACHE=$D/c SOBER_BUILD_CACHE=1 SOBER_CACHE_VERIFY=2 SOBER_WORKERS=1 SOBER_HASH_SEED=0 "$D/$m" build examples/utf8_bound.sober -o "$D/o.elf" > /dev/null 2> "$D/r.err"
+            if grep -q "$want" "$D/r.err"; then echo "incrmut: $m caught: $(grep -m1 "$want" "$D/r.err")"
+            else echo "incrmut: FAIL $m was not caught: $(head -c 300 "$D/r.err")"; return 1; fi
             ;;
         m23)
             rm -rf "$D/c"

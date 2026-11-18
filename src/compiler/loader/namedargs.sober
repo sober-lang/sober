@@ -33,6 +33,8 @@ const FN_FPARAM = 2
 const FN_VALP = 4
 // FN_OPTF = 省略可の匿名関数型 `(func(…) R)?` の仮引数を持つ（optfn.sober — 呼び出し点ごとの有無で写し分ける関数）
 const FN_OPTF = 8
+// FN_GEN = 型パラメータを持つ（assignconv.soberのacGenArgs。総称でない呼び先は名前の照合で外し、importを引かない）
+const FN_GEN = 16
 
 // 全ファイルの木の名前付き実引数と省略を写す（写せない形は拒否）。η 展開（eta.sober）は finish が省略可の関数型の写し
 // （optfn.sober — 省略を nil にした後の木を読む）の後に掛ける。
@@ -97,6 +99,9 @@ func fnTab(cx Cx) FnTab {
                     q = np
                 }
                 q += 1
+            }
+            if t.nodes[d].b >= 0 && ast.ListLen(t, t.nodes[d].b) > 0 {
+                fl = fl | FN_GEN
             }
             builder.Push(mut flags, fl)
         }

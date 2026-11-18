@@ -1,0 +1,9 @@
+@@full	be075c9991d12398	1577	43813
+@head	c9d8d2fb806a8653	0	249
+const Certs	e5e1400ec76f696e	3	135
+func echo	a2b43adab9f1bed3	20	691
+func file	73e474c5e72f1c93	16	576
+func main	29334fccd8a4511e	139	4690
+func once	7452865930b8ce23	35	1207
+func recvShow	6cb75925aabdd18f	16	725
+func show	fb55864b7c3dc6c0	16	726

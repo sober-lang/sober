@@ -129,6 +129,8 @@ func cmdBuild(cl cli.Parsed) int {
     ckeys := e == "cachekeys"
     // package の区画の正準形のハッシュ / 鍵（desugar.TyEmit — scripts/rebuildbench.sh --tyhash）・tykeys0 = 型付けの前の鍵（desugar.TyEmitK0）
     tyEmit := if e == "tyhash" { 1 } else if e == "tykeys" { 2 } else if e == "tykeys0" { 3 } else { 0 }
+    // build が使う総称関数の kind（L0 の @kind と lower が型付けの後に推論した分 — `check --emit=kinds` と同じ綴り。scripts/kindbuild.sh の照合）
+    kemit := e == "kinds"
     // 計測のAPI（scripts/passstats.sh）: --emit=elf --passes の経路をパスの後で止める（出力は空）
     sa := cli.StrOpt(cl, StopAfter)
     stopAt := if sa == nil { 0 } else { lower.StageCode("--stop-after=" + sa) }
@@ -212,10 +214,15 @@ func cmdBuild(cl cli.Parsed) int {
             return writeExe(op, hit.res.out)
         }
     }
-    p, pcs, lerr := loadBuild(entry, test, std, if bv.on { lower.BcParseView(bv) } else { loader.PcOff() }, cover, mutB)
+    p0, pcs, lerr := loadBuild(entry, test, std, if bv.on { lower.BcParseView(bv) } else { loader.PcOff() }, cover, mutB)
     loader.Stage("nva")
     if lerr != nil {
-        return fail(loadDiag(p, std, lerr))
+        return fail(loadDiag(p0, std, lerr))
+    }
+    p, kerr := buildKinds(p0)
+    loader.Stage("kinds")
+    if kerr != nil {
+        return fail(errDiag(p0, std, kerr))
     }
     if cover && op != "" {
         werr := io.WriteFile("${op}.pts", coverPts(p, std))
@@ -286,6 +293,10 @@ func cmdBuild(cl cli.Parsed) int {
         out, berr := lower.ElfSyms(p)
         return emit(p, std, op, out, berr)
     }
+    if kemit {
+        bks, bkerr := lower.BuildKinds(p)
+        return emit(p, std, op, kindsText(p, bks), bkerr)
+    }
     if tyEmit > 0 {
         return emit(p, std, op, if tyEmit == 3 { desugar.TyEmitK0(p, lower.BcExeKey()) } else { desugar.TyEmit(p, tyEmit == 2, lower.BcExeKey()) }, nil)
     }
@@ -343,7 +354,7 @@ func cmdBuild(cl cli.Parsed) int {
             out, berr := lower.ElfPassesCache(p, bd, bv, pcs)
             loader.Stage("lowered")
             if rk != "" && berr == nil {
-                replayPut(bd, rk, CheckRes{0, out, []string{}, userFiles(p)})
+                replayPut(bd, rk, CheckRes{0, out, []string{}, userFiles(p), userEmbeds(p)})
             }
             return emitExe(p, std, op, out, berr)
         }
@@ -369,6 +380,16 @@ func cmdBuild(cl cli.Parsed) int {
     }
     out, berr := lower.Ll(p)
     return emit(p, std, op, out, berr)
+}
+
+// 総称関数の kind（lower の型引数の検査が読む — check と同じ kindOk）: L0 の信頼の経路なら std は焼き込みの `@kind`。
+// 残りの kind は lower が型付けの後に推論する（lower/kindarg.sober の typedKinds）
+func buildKinds(p loader.Program) (loader.Program, error?) {
+    l0 := L0
+    if l0On() && l0Complete(p, l0) {
+        return loader.WithFnKinds(p, l0Kinds(p, l0)), nil
+    }
+    return p, nil
 }
 
 // build の entry を読む（mutation testing の schemata — loader.LoadFsMutate）

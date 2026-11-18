@@ -1,0 +1,4 @@
+    if len(xs) > 0 {
+        return xs[0]
+    }
+    return d

@@ -1,0 +1,8 @@
+    mut i := 0
+    while i < len(xs) {
+        if p(xs[i]) {
+            return Some$U{v: xs[i]}
+        }
+        i += 1
+    }
+    return None$U{}

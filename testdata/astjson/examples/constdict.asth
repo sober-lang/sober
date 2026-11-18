@@ -1,0 +1,14 @@
+@@full	28aa8f47c4dd40f5	1533	40462
+@head	f8802cba5eefdec2	0	31
+const Base	734378ea9fe837a0	1	45
+const Digits	b522d7ba553ed93c	4	231
+const IntOrd	3e92e501deff3d03	6	302
+const TokOrd	c74629398e33d68c	3	164
+func byStart	e0ff5a47a662df9f	9	434
+func inRange	aa11c84e1c729aec	20	780
+func main	0d6ea12931d0f55a	95	2933
+func smaller	aa831bd5e0ea32b5	15	575
+func sort	bb58c52e2188490c	77	2540
+type Ord	23aea2c604ee83a7	5	201
+type Range	c5ae57a643ca3791	5	246
+type Tok	acfde7611389a5e7	3	163

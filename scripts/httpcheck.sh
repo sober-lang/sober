@@ -8,6 +8,8 @@
 #   scripts/httpcheck.sh
 set -uo pipefail
 cd "$(dirname "$0")/.."
+# Dateは実の時計で見る（check.tsのdateHdrが今の時刻 ±5秒を見る。gates.shの固定の値を外す）
+unset SOBER_DATE_SEC
 S2=${STAGE2:-out/stage2/sober2}
 W=$(mktemp -d)
 SP=
@@ -156,6 +158,33 @@ if [ -f "$W/unread" ]; then
         wait $up 2>/dev/null
     done
     sum="$sum [unread W1 W8]"
+fi
+# 天井で死ぬ形（testdata/httpcheck/ceiling — language.md 11 節「予算と admission」）: conns: 256のServeで、① 予約を越えて32 MiBを積む接続は何も送らずに閉じられ
+# ② 120,000バイトの本文を1回受けてアイドルになった接続を8本と40本の2点にして（使い捨ての32本で温めた後）、RSSの傾き ≤ Ledgerの傾き（予約 + 借り = 固定費 + 計上済みの上限の和）≤ 1.5 × RSSの傾き（W1だけ — W8の傾きはワーカーの間の配り方で揺れる）
+# ③ アイドルの接続40本を残したまま、新しい接続16本が全部応答し ④ プールのdied = cut = 1 ⑤ アイドルの接続を閉じた後、温めた後からのRSSの増え ≤ 根の計上（W1だけ）。W1 / W8。
+# ミュータント109（借りた分を返さない — 死んだ接続の借りが残り、後の接続が天井で死ぬ）のsrvはW1で落ちる
+"$S2" build testdata/httpcheck/ceiling.sober --emit=elf --passes -o "$W/ceil" > "$W/build.ceil.log" 2>&1 || { echo "httpcheck: FAIL build ceiling"; fail=1; }
+"$S2" build testdata/httpcheck/ceiling.sober --emit=elf --passes --rt-mutant=109 -o "$W/ceil.m109" > "$W/build.ceil109.log" 2>&1 || { echo "httpcheck: FAIL build ceiling mutant 109"; fail=1; }
+ceilrun() {   # ceilrun <bin> <ワーカー数> [slope] → 相手の終了コード（出力は $W/ceil.log）
+    SOBER_WORKERS=$2 "$1" > "$W/ceil.out" 2>&1 &
+    local cp=$! p="" rc=0 i
+    for i in $(seq 200); do
+        p=$(sed -n "s/^ready \([0-9]*\)$/\1/p" "$W/ceil.out")
+        [ -n "$p" ] && break
+        sleep 0.05
+    done
+    if [ -z "$p" ]; then echo "server did not start" > "$W/ceil.log"; rc=1
+    else timeout 60 node --experimental-strip-types --no-warnings testdata/httpcheck/ceiling.ts "$p" $cp ${3:-} > "$W/ceil.log" 2>&1 || rc=$?; fi
+    kill $cp 2>/dev/null
+    wait $cp 2>/dev/null
+    return $rc
+}
+if [ -f "$W/ceil" ] && [ -f "$W/ceil.m109" ]; then
+    for w in 1 8; do
+        ceilrun "$W/ceil" $w $([ $w = 1 ] && echo slope) || { echo "httpcheck: FAIL ceiling W$w: $(head -c 300 "$W/ceil.log")"; fail=1; }
+    done
+    ceilrun "$W/ceil.m109" 1 && { echo "httpcheck: FAIL: mutant 109 (borrow never returned) was not caught by ceiling W1"; fail=1; }
+    sum="$sum [ceiling W1 W8 + mutant 109]"
 fi
 if [ $fail = 0 ]; then
     echo "httpcheck:$sum + Delayed mutants 84〜87 caught, 88 ok fail=0"

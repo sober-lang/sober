@@ -1,0 +1,8 @@
+@@full	c99d67552c1fde56	1921	70827
+@head	f726201ae9b08098	0	246
+const CAP	8d90da61b1ce6bff	1	46
+func drain	8e146be71ac12841	116	4040
+func main	bbffd0f02f2d0f1c	122	4089
+func put	385a5216079ea1ec	58	2009
+type Buf	be1d6d8f90192d8e	5	244
+type Got	156a573df4bb1f33	6	291

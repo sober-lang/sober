@@ -1,0 +1,6 @@
+@@full	fb3b2a13653e6e13	349	7568
+@head	f8802cba5eefdec2	0	31
+func add	524a5fabb455e475	7	349
+func divmod	975dfe31483987af	11	464
+func main	103fe04947531db2	23	821
+func twice	114c733e7f5099ba	6	286

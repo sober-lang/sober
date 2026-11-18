@@ -10,13 +10,14 @@ package desugar
 // 読みは基底で分かれる（nodeOf / kindN / tokN / lenL / latI / dat — state.sober）。取り違えは範囲外の添字で panic する（TBASE / CBASE と同じく音を立てる）
 
 import "ast"
+import "loader"
 import "std/iter"
 
 const ABASE = 4398046511104    // 2^42
 const SBASE = 8796093022208    // 2^43
 const LBASE = 17592186044416   // 2^44
 const LK = 1099511627776       // 2^40（列の要素の種類の桁）
-const FW = 16777216            // 2^24（ファイル内の添字の幅）
+const FW = loader.TREE_WORDS   // 2^24（ファイル内の添字の幅 — loaderの@embedが上限の前に診断する）
 const MAXFILES = 65536         // 2^16（file × FW が LK に届かない）
 
 // 節の参照（木の節 ABASE / 合成の節 SBASE — language.md 32 節の named scalar）。ListRef は列の参照（木の列 LBASE / ヒープの列）。

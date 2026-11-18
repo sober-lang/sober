@@ -179,6 +179,8 @@ func stmts(st mut S, l ListRef, eb0 int, ef int, depth0 int, ra bool, dis bool, 
 }
 
 func stmtsIn(st mut S, l ListRef, eb0 int, ef0 int, depth0 int, ra bool, dis bool, want TyRef) (CoreRef, error?) {
+    tv := st.tailVal
+    st.tailVal = 0
     mut lets := mut []CoreRef{}
     mut eb := eb0
     mut ef := ef0
@@ -331,7 +333,7 @@ func stmtsIn(st mut S, l ListRef, eb0 int, ef0 int, depth0 int, ra bool, dis boo
                 while j < nv {
                     ve := latN(mut st, vals, j)
                     wantAssignable(mut st, retSty(mut st, j, nv), ve, eb, ef)?
-                    hsetCore(mut st, int(vs) + 1 + j, if nr == nv { retValue(mut st, ve, latTy(mut st, st.curRtys, j), eb, ef, depth, at)? } else { expr(mut st, ve, eb, ef, depth)? })
+                    hsetCore(mut st, int(vs) + 1 + j, if nr == nv { retValue(mut st, ve, j, latTy(mut st, st.curRtys, j), eb, ef, depth, at)? } else { expr(mut st, ve, eb, ef, depth)? })
                     j += 1
                 }
                 v := resChain(mut st, vs)
@@ -350,7 +352,7 @@ func stmtsIn(st mut S, l ListRef, eb0 int, ef0 int, depth0 int, ra bool, dis boo
             while j < nv {
                 ve := latN(mut st, vals, j)
                 wantAssignable(mut st, retSty(mut st, j, nv), ve, eb, ef)?
-                hsetCore(mut st, int(vs) + 1 + j, if nr == nv { retValue(mut st, ve, latTy(mut st, rtys, j), eb, ef, depth, at)? } else { expr(mut st, ve, eb, ef, depth)? })
+                hsetCore(mut st, int(vs) + 1 + j, if nr == nv { retValue(mut st, ve, j, latTy(mut st, rtys, j), eb, ef, depth, at)? } else { expr(mut st, ve, eb, ef, depth)? })
                 j += 1
             }
             payload := if nv == 0 { cTriv(mut st) } else { resChain(mut st, vs) }
@@ -383,6 +385,10 @@ func stmtsIn(st mut S, l ListRef, eb0 int, ef0 int, depth0 int, ra bool, dis boo
                     break
                 }
                 sv = fv
+            } else if last && !dis && tv > 0 {
+                v := closureValue(mut st, e, want, tv - 1, eb, ef, depth, e)?
+                term = finish(mut st, v, depth)?
+                break
             } else if last && !dis {
                 st.tailWant = want
                 v := expr(mut st, e, eb, ef, depth)?
@@ -617,7 +623,10 @@ func mutDestAhead(st mut S, s NodeRef, x StrRef, eb int) int {
     pk := FilePkg(mut st, f)
     mut best := -1
     // 走査は関数の節の範囲だけ（木の節は後順 — 関数の節は直前の関数の宣言の節の後から自分の宣言の節まで）
-    di := int(fnNode(mut st, g)) - ABASE - f * FW
+    di := declIdx(mut st, g, f, t)
+    if di < 0 {
+        return -1
+    }
     mut lo := di - 1
     while lo > 0 && t.nodes[lo].kind != ast.KFuncDecl {
         lo -= 1
@@ -682,6 +691,24 @@ func mutDestAhead(st mut S, s NodeRef, x StrRef, eb int) int {
         }
     }
     return best
+}
+
+// 関数gの宣言の節のファイルfの木tでの添字（無ければ -1）。仮引数や結果の型式を展開した関数は、関数表の節が合成の節に
+// 差し替わっているので、木に残っている本体の節から後ろへ最初の関数宣言の節を探す（木の節は後順で、宣言の節は本体の後に来る）
+func declIdx(st mut S, g int, f int, t ast.Tree) int {
+    d := int(fnNode(mut st, g))
+    if isTreeNode(d) {
+        return if refFile(d) == f { refIdx(d) } else { -1 }
+    }
+    b := int(fnBody(mut st, g))
+    if !isTreeNode(b) || refFile(b) != f {
+        return -1
+    }
+    mut i := refIdx(b)
+    while i < len(t.nodes) && t.nodes[i].kind != ast.KFuncDecl {
+        i += 1
+    }
+    return if i < len(t.nodes) { i } else { -1 }
 }
 
 // ── 代入 ──

@@ -1,0 +1,1 @@
+{"defs":[{"kinds":[{"rf":true,"mf":true,"cf":true,"cov":true,"kf":false}],"param":{"k":"tvar","i":0,"r":0,"kd":{"rf":true,"mf":true,"cf":true,"cov":true,"kf":false}},"ret":{"k":"tvar","i":0,"r":0,"kd":{"rf":true,"mf":true,"cf":true,"cov":true,"kf":false}},"body":{"k":"var","i":0}}],"e":{"k":"call","r":0,"f":0,"ts":[{"k":"int"}],"e":{"k":"lit","n":3}}}

@@ -1,0 +1,12 @@
+@@full	e350244ba628c886	3441	104058
+@head	96a45f33642eb501	0	483
+const defaultPoolSize	07ae429f5e48f18b	1	56
+const defaultPoolWait	e82b3c74ce4f435e	6	218
+func OpenPool	b683c3c666645d47	161	5677
+func With	d7a4fa3352d09b11	235	7840
+func abandon	d49a00b6e8c0264e	20	794
+func dialInto	ac3d4eb750407f92	70	2527
+func giveBack	499ee336822aa1b3	28	1066
+func reusable	52435d6cde168700	46	1540
+type Pool	caf7f8190e954430	6	331
+type poolSt	09657617d73cebb5	4	213

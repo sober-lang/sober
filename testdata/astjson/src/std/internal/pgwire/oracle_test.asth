@@ -1,0 +1,10 @@
+@@full	af4c2d233b683023	5841	212653
+@head	802d861bdd51f89c	0	522
+func TestOracle	947e860c2305252f	271	8984
+func authOn	7779ac6a5cec850f	364	12323
+func authOnce	013033ba6245af9b	46	1891
+func chunkOf	3306b68990dfd9f1	18	673
+func chunkOr	975c948b1e3b5876	27	963
+func nextMsg	cae1be398260ede8	220	7041
+func sendMsg	9f014240cc2c0a9c	37	1409
+type link	323c465c2dce1218	6	284

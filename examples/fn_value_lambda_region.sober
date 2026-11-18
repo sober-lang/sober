@@ -1,0 +1,38 @@
+package main
+
+// 値の位置のラムダ（結果がH）の本体に置いたHの値は、Hのクロージャの捕捉がstringを持っていても、宣言した関数のreturnと同じく結果の型の値になる
+
+type H func(x int) int
+
+type P func(n int) H
+
+func incr(x int) int {
+    return x + 1
+}
+
+func withLen(s string) H {
+    return (x int) => x + len(bytes(s))
+}
+
+func named() P {
+    return (n int) => incr
+}
+
+func conv() P {
+    return (n int) => H(incr)
+}
+
+func pick(s string) P {
+    return (n int) => if n > 0 { withLen(s) } else { (x int) => x * n }
+}
+
+func block() P {
+    return (n int) => {
+        m := n * 2
+        (x int) => x + m
+    }
+}
+
+func main() {
+    println(named()(0)(5), conv()(0)(5), pick("abc")(1)(1), pick("abc")(-2)(3), block()(4)(1), withLen("xy")(1))
+}

@@ -1,0 +1,16 @@
+@@full	afc6d9148ae15090	3394	92258
+@head	73bf2b8c6f3079c6	13	917
+func Byte	495d547d5e406f19	14	594
+func Finish	1d49ca24e5a2ef20	11	478
+func Float	7319b33ca893c8aa	31	1122
+func Grow	3463874aeaa48ebe	9	441
+func Int	ade0edc7e730d802	134	4364
+func IntSize	4fc22ea8eadfb712	16	570
+func Put	526ff8df18d65525	37	1302
+func Put2	51b22d1a2be1fd86	47	1640
+func Put3	6e8f430f7d029b52	57	1975
+func Str	3e2b2c425c2cb9b7	86	2826
+func overflow	a0ef73e13aed3e1c	8	457
+func raw	533fc82ee34ad57e	52	1766
+func word	b665a305f50790ea	31	1107
+type Overflow	14b6600150f79044	3	161

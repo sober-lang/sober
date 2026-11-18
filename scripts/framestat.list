@@ -19,11 +19,18 @@
 # 下がる方向の再設定 = 実測 × 1.0）: しきい値serveTlsConn 7159 → 5392・kid#2 2247 → 2112・@sum 118679 → 115312・@zero 2545 → 1912・@self @sum 1447731 → 1386320
 # 2026-11-11 hx段階2（レスポンスの頭をoutへ直に — putHead〔枠416 B〕が局所のラムダを受けてserveBufの展開先に入る・hdの確保とコピーが消える・接続taskのスタックの最深5672 → 5912 B〔stackcheckの予算7104〕・実測 × 1.01・標準運用の再設定 — 事後承認）: serveTlsConn 5392 → 5721・kid#2 2112 → 2376・@zero 1912 → 1955
 # 2026-11-13 P7大きな値の参照渡し（K = 8ワードを超えるimmの集成値を番地1ワードで渡す — 番地を渡す値はスロットに残り〔SSAへ昇格できない〕、全ワードが書かれたと示せないパスがあれば入口の零初期化の対象になる・命令 −484 / リクエスト・report-fq-3 (B)・実測 × 1.01・標準運用の再設定 — 事後承認）: serveTlsConn 5872（上限値5721を越えた）→ 5930
-bench/httparena/main.sober main.serveTlsConn 5673
+# 2026-11-16 Serveの期限（std/httpのserveCoreの展開先で、期限の値と段階の長さがループで生きる分のスロット）: serveTlsConn 5856・kid#2 2192・@zero 2680。再設定 = 実測 × 1.01（事後承認）
+# 2026-11-16 F-rs2（std/httpのserveCoreに持ち越しの状態〔carry〕と冷たい関数の呼び出し・実測 × 1.01・事後承認）: serveTlsConn 5936 → 5995・kid#2 2272 → 2295・@sum 207088 → 209159
+# 2026-11-17 HTTPのDate（serveBufのレスポンスの場所で頭の始めの9ワードを組む・実測 × 1.01・事後承認）: serveTlsConn 6224 → 6287・kid#2 2400 → 2424・@zero 2712 → 2740
+# 2026-11-17 conf75c（RFCのMUSTの直し・1行だけの欄の表〔badFieldのループの分岐〕をmain-new14にmergeした形・実測 × 1.01・事後承認）: serveTlsConn 6304 → 6368
+# 2026-11-17 conf75d（Dateの行を組み込みappend_dateで足す形。serveBufとputHeadのdh / daの仮引数が消えた・main-new15の上・実測 × 1.01・事後承認）: serveTlsConn 6368 → 6190
+bench/httparena/main.sober main.serveTlsConn 6190
 # 2026-11-09タスクC R1b（std/http/serverのDelayed — Responseにdelayのフィールド8 B・待ちの呼び出しをserveCoreの浅い点に1つ。崖〔スタックのページの際〕はR1のTCB_TOP_ROOM 3 KiBで退きstackcheckが縛る・report-c-2・実測 × 1.01・標準運用の再設定 — 事後承認）: kid#2 2192 → 2224・Dispatch 1072 → 1088
 # 2026-11-13 P7の修正の後の再設定（分割のパスでF_REFPを運ぶ — 参照で渡す実引数のスロットが逃げの扱いでなくなり枠が縮んだ・実測 × 1.01）: kid#2 2400 → 2069（実測2048）
 # 2026-11-13引き上げ（fq D4 — asyncのDelayedを満了でrtが送る。async以外のパスが払う費用 = 時刻つきの送りの検証〔送りと受けのインターフェース・頭の取り込みの数え〕・stdのserveBufの戻り値とtsendの判定。cyclesのA/Bでは揺れの中・事後承認〔ユーザー決定2026-10-22〕・report-fq-7 9 節）: serveCoreの仮引数tsendとserveBufの5つ目の戻り値・実測 × 1.01 — kid#2 2,080 → 2101・@zero 2,312 → 2335
-bench/httparena/main.sober kid#2 2101
+# 2026-11-17 conf75c（同じ変更・実測 × 1.01・事後承認）: kid#2 2464 → 2489
+# 2026-11-17 conf75d（同じ変更・実測 × 1.01・事後承認）: kid#2 2489 → 2392
+bench/httparena/main.sober kid#2 2392
 # 接続のtaskの本体の枠がチャンクのページ0の余白（TCB_TOP_ROOM）に収まるしきい値（本体 + 入口 + 88 B ≤ 余白 — 本体の枠だけページ0・下はワーカーのエリアで走る形の前提）
 bench/httparena/main.sober @room kid#2 rt.task_start_mn
 bench/httparena/main.sober @shallow kid#2 2
@@ -39,20 +46,25 @@ bench/httparena/main.sober std/http/server.Dispatch 1018
 # 2026-11-11 gzipのパスのSet-Cookie（wireが圧縮のパスで組み直すレスポンスにcookiesをコピーする — wireの枠976 → 1296）: @sum 115312 → 116789（実測115632 × 1.01・事後承認の標準運用）
 # 2026-11-12接続のtaskのシャロースリープ（a2段階2 — 本体が受けのrt.netwaitを直に呼び、跨いで生きるcallee-savedを枠の底の5ワードへ置く）: kid#2 2376 → 2400（実測 = しきい値・事後承認）・@shallow kid#2 ≥ 2を足す
 # 2026-11-16 entry74（bench/httparenaに/async-dbを足した: std/pgのプール・行の読み・std/netの接続の関数が題材に入る。std/http/serverの変更だけの題材では @sum 101264・@zero 2008で前の上限値の内。実測204672 B・2544 B × 1.01・標準運用の再設定で、事後承認）: bench/httparena @sum 101501→206719・@zero 2029→2570
-bench/httparena/main.sober @sum 206719
+# 2026-11-17 conf75d（同じ変更・実測 × 1.01・事後承認）: @sum 209159 → 199318
+# 2026-11-18 rs76（entryにPOST /parseを足した: json.Parse・url.ParseQuery・http.server.Multipart・gzip / flateの復号の関数が題材に入る・実測204016 B × 1.01・事後承認）: @sum 199318 → 206056
+bench/httparena/main.sober @sum 206056
 # 2026-10-25 P3（飽和下の待ちの上限D — rt.mn_next / rt.task_newのワードが増えた・report-1142 / 1143・実測 × 1.01・標準運用の再設定 — ユーザーへは事後承認）: bench/httparena @zero 2008（しきい値1996を越えた）→ 2029
 # 2026-10-26飛行記録（rt.netopのACCEPTのgetpeernameの受け皿・clockNsの時計の受け皿 — onのエリアの中の枠・report-1176・実測 × 1.01・標準運用の再設定 — ユーザーへは事後承認）: bench/httparena @zero 2088（しきい値2029を越えた）→ 2109
 # 2026-11-09 baseline 4M R0（std/http/server — frameAt / putHead / wireが呼び手の列へ積む透過の形に・serveBufの周回の束縛hs / hd・report-bl4m-5・実測2136 B × 1.01・標準運用の再設定 — 事後承認）: bench/httparena @zero 2136（しきい値2133を越えた）→ 2157
 # 2026-11-09ワーカーのCPUの固定をL3の群へ（rt.mn_llcの作業域 — 経路と読んだcpulistの384 B・ワーカーの入口で1回だけ走る関数の零初期化・report-ccx-0・実測2520 B × 1.01・標準運用の再設定 — 事後承認）: bench/httparena @zero 2157 → 2545
 # 2026-11-13 P7大きな値の参照渡し（K = 8ワードを超えるimmの集成値を番地1ワードで渡す — 番地を渡す値はスロットに残り〔SSAへ昇格できない〕、全ワードが書かれたと示せないパスがあれば入口の零初期化の対象になる・命令 −484 / リクエスト・report-fq-3 (B)・実測 × 1.01・標準運用の再設定 — 事後承認）: httparena @zero 2264（上限値1955を越えた — Requestの21ワードのスロット2つが要零に）→ 2286
-bench/httparena/main.sober @zero 2570
+bench/httparena/main.sober @zero 2740
 # 2026-10-25 Z レーン ラウンド 2（finishにoptEtaAllの結果〔OzStep〕— namedargs・optfn・η を1つの関数へ寄せた後の残り +48 B・report-1157・実測 × 1.01・標準運用の再設定 — ユーザーへは事後承認）: @self loader.finish 2016（HEAD 1968）→ 2036
 # 2026-10-27凍ったmapの封（finishのfreezeの点に封の鍵のスロット4ワード + 32 B — 関数ごとに1本・report-1209・実測 × 1.01・標準運用の再設定 — ユーザーへは事後承認）: @self loader.finish 2048（しきい値2036を越えた）→ 2068
 # 2026-10-31カバレッジの計装（finishにcoverAllの結果〔CoverOut — 点の列と鍵がProgramまで生きる〕・report-cov-2・実測 × 1.01・標準運用の再設定 — 事後承認）: @self loader.finish 2144（しきい値2068を越えた）→ 2166
 # 2026-10-31 mutation testing（finishのコピーの分岐にmutAllの結果・report-mut-3・実測 × 1.01・標準運用の再設定 — 事後承認）: @self loader.finish 2288（しきい値2166を越えた）→ 2311
 # 2026-10-31ビルド時DI R1（Programのフィールドcontract_filesの1ワードの分・report-di-3・実測 × 1.01・標準運用の再設定 — 事後承認）: @self loader.finish 2320（しきい値2311を越えた）→ 2343
 # 2026-11-13 P7大きな値の参照渡し（K = 8ワードを超えるimmの集成値を番地1ワードで渡す — 番地を渡す値はスロットに残り〔SSAへ昇格できない〕、全ワードが書かれたと示せないパスがあれば入口の零初期化の対象になる・命令 −484 / リクエスト・report-fq-3 (B)・実測 × 1.01・標準運用の再設定 — 事後承認）: @self loader.finish 2512（上限値2343を越えた — スロット +448 B・spill −256 B）→ 2537
-@self loader.finish 2537
+# 2026-11-16 R3cとmain da13a748cの取り込みの後（実測 × 1.01）: 同じmainのstage2で mainの木 2512・r3の木 2544（コンパイラの分0・木の分 +32 = loader/fnval.soberの変更）: 2537 → 2570
+# 2026-11-17 再設定（工程1の計上済みの上限と全レジスタを保つ中継〔bud75〕。費用の内訳 = report-bud-5・ユーザーの決定 2026-11-17〔budgetを実際のバイトに効かせる費用として受け入れる〕。基点 = main-new13〔0a1c7cd48〕の同じ箱: 実測 2656 B〔上限値2570を越えた〕・実測 × 1.01・事後承認）: 2570→2683
+# 2026-11-17（main-new14〔budgetの工程1〕とpar76〔ローダーの木の変換の子 — finishに逐次の経路を残す・ParCheckの区間の子〕を合わせた木。実測 × 1.01・事後承認）: @self loader.finish 2816（上限値2683を越えた）→ 2845
+@self loader.finish 2845
 # 2026-10-23 effect のマイルストーン 段階5a-1（analyzer/effects.soberの歩きと解き — report-1084・実測 × 1.01の標準運用）: @self @sum 861456
 # 2026-10-23 effect のマイルストーン 段階5a-2 / 5a-3（traceの計装・sober fix — report-1084・実測 × 1.01の標準運用）: @self @sum 876496
 # 2026-10-25 Sレーン（tlsの送信のバッチ — Put / Flush・pumpの受けの反復ごとのFlush・http.ServeFlushedの展開・report-1128〜1131・実測 × 1.01・標準運用の再設定 — ユーザーへは事後承認）: bench/httparena @sum 103632（しきい値103198を越えた）→ 104668
@@ -96,4 +108,9 @@ bench/httparena/main.sober @zero 2570
 # 2026-11-10 awt + errszのmerge（domain Awaitの待ち手のまとめ〔domain.soberのwhen鍵・版〕の新しい関数の枠がerrszの下げた上限値に乗る・実測 × 1.005・標準運用の再設定 — 事後承認）: @self @sum 1386752（上限値1386320を越えた）→ 1393686
 # 2026-11-13 P7大きな値の参照渡し（K = 8ワードを超えるimmの集成値を番地1ワードで渡す — 番地を渡す値はスロットに残り〔SSAへ昇格できない〕、全ワードが書かれたと示せないパスがあれば入口の零初期化の対象になる・命令 −484 / リクエスト・report-fq-3 (B)・実測 × 1.01・標準運用の再設定 — 事後承認）: @self @sum 1203344（上限値1198280を越えた）→ 1215377
 # 2026-11-16 layのmerge（配置を固定する計測用のオプション。lowerの新しい関数〔RtMutantPlace 1184・xPlace 832・plParse 736・plGlobOff 640・plGKeys 400ほか〕と、配置の引数が増えたElf系の入口の関数〔各 +400〕。同じstage2でmainの木が1208816・integ2の木が1223312〔+14496〕。httpspecはコンパイラに触れない。実測 × 1.01・事後承認）: @self @sum 1215377 → 1235545
-@self @sum 1235545
+# 2026-11-16 R3cとmain da13a748cの取り込みの後（実測 × 1.01）: 同じmainのstage2で mainの木 1228048・r3の木 1327904（コンパイラの分0・木の分 +99,856 B。主な関数 = lower.BuildKinds +17,632・checker.kindsGenR +8,320・desugar.JsonK +7,072〔Json −6,848の置き換え〕・main.rejLines +6,032・main.buildKindArg +4,640）: 1235545 → 1341183
+# 2026-11-17 再設定（工程1の計上済みの上限と全レジスタを保つ中継〔bud75〕。費用の内訳 = report-bud-5・ユーザーの決定 2026-11-17〔budgetを実際のバイトに効かせる費用として受け入れる〕。基点 = main-new13〔0a1c7cd48〕の同じ箱: 実測 1352848 B〔上限値1341183を越えた〕・実測 × 1.01・事後承認）: 1341183→1366377
+# 2026-11-17 par76（ParCheckの歩きの区間の子〔desugar/pcpar.sober〕・finishの木の変換の子〔loader/ftpar.sober〕・buildPanicの字句解析の子の新しい関数の枠。同じstage2で base 01a84a1ff の上限値の内 → 1352736・実測 × 1.01・標準運用の再設定 — 事後承認）: 1341183 → 1366263
+# 2026-11-17（main-new14〔budgetの工程1〕とpar76〔ローダーの木の変換の子 — finishに逐次の経路を残す・ParCheckの区間の子〕を合わせた木。実測 × 1.01・事後承認）: @self @sum 1368160（上限値1366377を越えた）→ 1381842
+# 2026-11-18（bud77 に main-new29〜34 を merge した木。同じ stage2 の作りで、基点 main-new35〔98821ad18〕1381280 → 1382336〔+1056 B — bud77 の lower の関数〔借りの計上・天井・予備のチャンクの刈り〕と、予備のスロットの採り・rt.tcb_trim の呼び出しの直し〕。実測 × 1.01・事後承認）: @self @sum 1382336（上限値1381842を越えた）→ 1396159
+@self @sum 1396159

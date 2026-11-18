@@ -12,7 +12,8 @@
 #           （名前が文字列に入る形 — json のキー・panic の文面。report-885）。拒否される entry は終了コード + 診断を V2 の形で
 #       V2: build --emit=ir の旧に旧名 → 新名の写像（語境界・一部可）を当てて新と一致（scripts/alphamap.ts — 位置の列は伏せる・文字列の定数は復号して長さは伏せる）
 #       V3: ELF がバイト一致。違えば両方を走らせ（10 s・標準入力なし）標準出力 + 標準エラー + 終了コードの写像一致
-#       V4: ゴールデンのregen（scripts/regen.shの5種 + loaderjson）の後、変わったゴールデン f ごとに 写像(indexのf) == f（足された・消えたゴールデンは赤）
+#       V4: ゴールデンのregen（scripts/regen.shの5種 + loaderjson）の後、変わったゴールデン f ごとに 写像(indexのf) == f（足された・消えたゴールデンは赤）。
+#           irtext・lltext・corejson・astjsonは表なので、書き換えの前の全文（out/gold/ の写し）と regen の後の全文を比べる
 #       ⑤ 既定は戻す: 新名 → 旧名の改名（同じ道具）+ ゴールデンのregen → 触ったファイルとゴールデンがindexとバイト一致（A→B→Aの往復）。--keepなら戻さない
 # compiler-known の改名: ALPHA_POST="<コマンド>" が書き換えの直後（後の測りの前）に手の追従を当てる（loader の合成コードの文字列等）。
 # 往復（--keep なし）では逆の ALPHA_POST_BACK も要る
@@ -105,6 +106,13 @@ measure "$W/before"
 okb=$(grep -l 'exit=0$' "$W"/before/*.core 2> /dev/null | wc -l) # check の JSON は末尾に改行が無い — exit= は同じ行に付く
 [ "$okb" -gt 0 ] || { echo "alphacheck: 書き換えの前の check が 1 つも通らない — 基準が壊れている"; exit 1; }
 echo "alphacheck: 書き換えの前に check が通る entry $okb"
+# V4の旧の側: irtext・lltext・corejson・astjsonの全文（表はgitにあるが全文は out/gold/ にしか無い）。② で木 ≡ index を確かめたので、ここで作る全文は index の全文
+if [ $v4 -eq 1 ]; then
+    scripts/irtext.sh --gen > /dev/null && scripts/lltext.sh --gen > /dev/null && scripts/corejson.sh --gen > /dev/null && scripts/astjson.sh --gen > /dev/null || { echo "alphacheck: 書き換えの前の全文（irtext / lltext / corejson / astjson --gen）が作れない"; exit 1; }
+    GF=$(mktemp -d "$ROOT/out/gold/.alpha.XXXXXX")
+    trap 'rm -rf "$W" "$GF"' EXIT
+    cp -al "$ROOT/out/gold/ir" "$ROOT/out/gold/ll" "$ROOT/out/gold/core" "$ROOT/out/gold/ast" "$GF/"
+fi
 # ④ 書き換え（書き換えの赤も最終の判定に入れる — ミューテーションでない走りで道具の検査が赤ならRED）
 red=0
 if [ $pkgmode = 1 ]; then scripts/refs.sh --pkgrename "$sym" "$new" > "$W/applied"; else scripts/refs.sh --rename "$sym" "$new" > "$W/applied"; fi
@@ -170,10 +178,20 @@ if [ $v4 -eq 1 ]; then
         if [ "$st" != M ]; then
             echo "V4 RED: 黄金が足された / 消えた（$st $f）"; red=1; v4bad=$((v4bad + 1)); continue
         fi
-        git show ":$src" > "$W/gold.old"
+        case "$f" in
+            *.irh|*.llh|*.coreh|*.asth)
+                # 表の差は全文の差で照合する（旧 = 書き換えの前の写し・新 = regen が作った out/gold/）。astjson の題材は入れ子のパス
+                gk=${f##*.}; gk=${gk%h}
+                ge=$gk; case "$gk" in core|ast) ge=json ;; esac
+                b=${f#testdata/*/}; b=${b%.*}.$ge
+                sb=${src#testdata/*/}; sb=${sb%.*}.$ge
+                cp "$GF/$gk/$sb" "$W/gold.old" 2> /dev/null || { echo "V4 RED: $f — 書き換えの前の全文が無い"; red=1; v4bad=$((v4bad + 1)); continue; }
+                f=out/gold/$gk/$b ;;
+            *) git show ":$src" > "$W/gold.old" ;;
+        esac
         # ゴールデンの種類ごとの照合の形（文字列の定数の復号 — 名前やパスがpanicの位置・文面の文字列に入る）
         gf=(--cols)
-        case "$f" in *.ir) gf+=(--ir) ;; *.ll) gf+=(--ll) ;; testdata/corejson/*) gf+=(--core) ;; esac
+        case "$f" in *.ir) gf+=(--ir) ;; *.ll) gf+=(--ll) ;; testdata/corejson/*|out/gold/core/*) gf+=(--core) ;; esac
         if ! map "${gf[@]}" "${MAPARGS[@]}" "$W/gold.old" "$f" > "$W/m" 2>&1; then
             echo "V4 RED: $f"; head -5 "$W/m"; red=1; v4bad=$((v4bad + 1))
         fi

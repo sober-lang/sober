@@ -366,13 +366,18 @@ func lFnRet(st mut St, g FnRef) int {
         }
         return irFnRet(mut st, g)
     }
+    return st.lret[lFnIx(mut st, g) * 2 + 1]
+}
+
+// 関数 g の st.lret の中の位置（二分探索）
+func lFnIx(st mut St, g FnRef) int {
     mut lo := 0
     mut hi := len(st.lret) / 2 - 1
     while lo <= hi {
         m := (lo + hi) / 2
         a := st.lret[m * 2]
         if a == int(g) {
-            return st.lret[m * 2 + 1]
+            return m
         }
         if a < int(g) {
             lo = m + 1
@@ -381,6 +386,23 @@ func lFnRet(st mut St, g FnRef) int {
         }
     }
     panic(Unreachable{})
+}
+
+// 呼び先の仮引数の型の表（lRetsと同じ順。先頭の関数の数だけの位置の後に [数, 型…]）— B2の子の検証器（vfyCalleeNP）が読む
+func lPtys(st mut St) []int {
+    ids := fnIds(mut st)
+    mut out := mut []int{}
+    xFill(mut out, len(ids), 0)
+    for k <- iter.Range(0, len(ids)) {
+        out[k] = len(out)
+        pt := irFnPtys(mut st, FnRef(ids[k]))
+        n := desugar.HeapGet(mut st.d, pt)
+        out = append(out, n)
+        for q <- iter.Range(0, n) {
+            out = append(out, desugar.HeapGet(mut st.d, pt + 1 + q))
+        }
+    }
+    return freeze(out)
 }
 
 // バッチを群の子で回す形か（ワーカー1・1本の経路・roundtripでない）
@@ -393,17 +415,60 @@ func lParBatch(st mut St, b2 bool) bool {
     if !lParOn(mut st) {
         return false
     }
+    stage := if b2 { 1 } else { 0 }
+    cfg := lParCfg(mut st, b2)
+    ckt := if st.ckOn { ckTab(mut st, cfg, false) } else { ckNone() }
+    // 親が後で読む表も同じもの（格納場所の β1の書き / 読み戻し — bcB1Collect）
+    if st.ckOn {
+        st.ckt = ckt
+    }
+    // 格納場所を使うbuild（検証モードを除く）: 親で鍵を引き、当たりは親で処理して群に入れない（x86の群と同じ形 — 子に送るのは外れだけ）。
+    // 外れが群1つ以下なら子を立てずに親で回す（当たりの多いbuildで分割と詰め直しの固定費を払わない）。出力は経路に依らない。
+    // 当たりの見込みが無いとき（B1 = 格納場所が空・B2 = このbuildの α が1つも当たっていない）は親で鍵を引かない（親の鍵の計算が冷えたbuildの臨界路に乗る）
+    pre := st.bcv.on && !st.bcv.vfy && st.ckOn && (if b2 { table.Get(mut st.bcCnt, 2 * BC_A) > 0 } else { st.optInB1 && len(st.bcv.ek2) > 0 })
+    mut mk := mut []int{}   // 外れの鍵（関数ごとに [h1, h2, n, 呼び先…] — frの順）
     mut fr := mut []int{}
     mut cut := mut []int{0}   // 群の境（fr の添字）
     mut acc := 0
+    // 親で引くとき: 先に全部の関数の鍵を組み、候補の項目の値をまとめて読む（bcPrefetch）。鍵は本体の当否に依らない（W1のckAllと同じ）
+    mut pk := mut [][]int{}
+    if pre {
+        mut es := mut []int{}
+        mut g := st.fhead
+        while g != -1 {
+            if irFnBHead(mut st, g) != -1 {
+                k := ckFn(mut st, g, stage)
+                pk = append(pk, k)
+                es = append(es, bcFind(st.bcv, if b2 { BC_B1 } else { BC_A }, k[0], k[1]))
+            }
+            g = irFnNext(mut st, g)
+        }
+        bcPrefetch(mut st, freeze(es))
+    }
+    mut pi := 0
     mut f := st.fhead
     while f != -1 {
         if irFnBHead(mut st, f) != -1 {
-            fr = append(fr, int(f))
-            acc += xFnCost(mut st, f)
-            if acc >= LG_COST {
-                cut = append(cut, len(fr))
-                acc = 0
+            mut hit := false
+            if pre {
+                k := pk[pi]
+                pi += 1
+                hit = lPreHit(mut st, f, stage, k)
+                if hit {
+                    _ = ckPush(mut st, stage, int(f), k, 0)
+                } else {
+                    for x <- k {
+                        mk = append(mk, x)
+                    }
+                }
+            }
+            if !hit {
+                fr = append(fr, int(f))
+                acc += xFnCost(mut st, f)
+                if acc >= LG_COST {
+                    cut = append(cut, len(fr))
+                    acc = 0
+                }
             }
         }
         f = irFnNext(mut st, f)
@@ -412,28 +477,59 @@ func lParBatch(st mut St, b2 bool) bool {
         cut = append(cut, len(fr))
     }
     if len(cut) <= 2 {
-        return false
+        if !pre {
+            return false
+        }
+        lPreMiss(mut st, freeze(fr), freeze(mk), stage)
+        return true
     }
     lret := lRets(mut st)
-    cfg := lParCfg(mut st, b2)
-    ckt := if st.ckOn { ckTab(mut st, cfg) } else { ckNone() }
-    // 親が後で読む表も同じもの（格納場所の β1の書き / 読み戻し — bcB1Collect）
-    if st.ckOn {
-        st.ckt = ckt
-    }
     frz := freeze(fr)
     ct := freeze(cut)
+    // 最後の検証（vfyFinal）をB2の子の中で: 子は詰め直した本体を検証して文面を返す（親はその後に書き換えた関数だけを検証し直す — vfyRun）
+    vk := if b2 && st.vfyLast && !st.noVfy { lPtys(mut st) } else { []int{} }
+    st.vfyPreOn = len(vk) > 0
     // 流し込み: 群ごとに詰めて、チャネルを作り give: で子を起こしてから送る — 親の詰めが先に起こした子の走りに重なる。
     // 積み戻しは起こした順（= 群の順 — 終わった順でなく）に Join して 1 群ずつ — 尻の子の走りに重なる。群の割り方と積み戻しの順は全部を詰めてから
     // task.Map で回していた形と同じなので出力は変わらない（ワーカー数に依らない）
-    if !lStream(mut st, frz, ct, cfg, lret, ckt, st.bcv) {
+    if !lStream(mut st, frz, ct, cfg, lret, ckt, st.bcv, vk) {
         return panic(InvariantBroken{})
     }
     return true
 }
 
+// 親で引いた鍵kの当たり（stage 0 = α — 値を読み戻して本体に・1 = β1 — B2を飛ばす印）。当たれば数えて真
+func lPreHit(st mut St, f FnRef, stage int, k []int) bool {
+    if stage == 0 {
+        return bcAlphaHit(mut st, f, k[0], k[1])
+    }
+    e := bcFindS(mut st, BC_B1, k[0], k[1])
+    if e < 0 {
+        return false
+    }
+    table.Push(mut st.bcSkL, int(f))
+    table.Push(mut st.bcSkL, e)
+    bcCount(mut st, BC_B1, true)
+    return true
+}
+
+// 子を立てない形の外れ（fr の順・mk = 親で引いた鍵）: バッチを回さないパス（bcAlphaW1 / bcB2W1）と同じ列を親で
+func lPreMiss(st mut St, fr []int, mk []int, stage int) {
+    mut at := 0
+    for f <- fr {
+        q := table.Len(mut st.ckk)
+        at = ckPush(mut st, stage, f, mk, at)
+        if stage == 0 {
+            bcAlphaMiss(mut st, FnRef(f), q, []int{})
+        } else {
+            bcCount(mut st, BC_B1, false)
+            lB2Func(mut st, FnRef(f))
+        }
+    }
+}
+
 // 流し込みの scope（切り出し — lParBatch の本体を展開の重複から離す）。子が死ねば false
-func lStream(st mut St, frz []int, ct []int, cfg []int, lret []int, ckt CkTab, bv BcView) bool {
+func lStream(st mut St, frz []int, ct []int, cfg []int, lret []int, ckt CkTab, bv BcView, vk []int) bool {
     _, serr := task.Run((s task.Scope) => {
         mut hs := mut []task.Handle[LOut]{}
         mut k := 0
@@ -444,17 +540,23 @@ func lStream(st mut St, frz []int, ct []int, cfg []int, lret []int, ckt CkTab, b
             tx, rx := task.NewChannel[LGroup](cap: 1)
             h := task.Spawn(s, (inp) => {
                 gi := task.Recv(inp)
-                if gi != nil { lParGroup(gi, cfg, lret, ckt, bv) } else { LOut{bodies: [][]int{}, ks: []int{}, hit: []int{}, av: []byte{}, al: []int{}} }
+                if gi != nil { lParGroup(gi, cfg, lret, ckt, bv, vk) } else { LOut{bodies: [][]int{}, ks: []int{}, hit: []int{}, av: []byte{}, al: []int{}, vm: []string{}, vok: []int{}} }
             }, give: rx, budget: bud)
             hs = append(hs, h)
             task.Send(tx, g)
             k += 1
         }
+        mut vp := mut map[int]int{}
+        mut vm := mut []string{}
         mut j := 0
         while j < len(hs) {
             o := task.Join(hs[j])
-            lUnpack(mut st, frz, ct[j], o, if cfg[6] == 1 { 1 } else { 0 })
+            lUnpack(mut st, frz, ct[j], o, if cfg[6] == 1 { 1 } else { 0 }, mut vp, mut vm)
             j += 1
+        }
+        if len(vk) > 0 {
+            st.vfyPre = freeze(vp)
+            st.vfyMsg = freeze(vm)
         }
         0
     })
@@ -468,11 +570,13 @@ type LOut struct {
     hit []int  // 段階3の格納場所（R2）: 関数ごとの当たりの項目（-1 = 外れ）・α の値の並び・関数ごとの α の値の長さ（格納場所を使わないパスは空）
     av []byte
     al []int
+    vm []string  // 最後の検証の文面（関数ごと — 子が検証しなかった関数は空でvokが0。検証しないバッチは空）
+    vok []int
 }
 
 // 群の子の結果o（frの添字loから続く関数の詰めた本体）を積み戻す（scopeの本体でJoinの結果のフィールドを直に読む形はcheckの
 // コアの範囲の外 — struct ごと渡す）
-func lUnpack(st mut St, fr []int, lo int, o LOut, stage int) {
+func lUnpack(st mut St, fr []int, lo int, o LOut, stage int, vp mut map[int]int, vm mut []string) {
     for q <- iter.Range(0, len(o.bodies)) {
         mvUnpack(mut st, FnRef(fr[lo + q]), o.bodies[q])
     }
@@ -482,6 +586,17 @@ func lUnpack(st mut St, fr []int, lo int, o LOut, stage int) {
     }
     if len(o.hit) > 0 {
         bcKidPut(mut st, fr, lo, o, stage)
+    }
+    for q <- iter.Range(0, len(o.vok)) {
+        if o.vok[q] == 1 {
+            // 違反の無い関数は -1（文面の列には違反だけを積む — mut引数のsliceへのappendは伸ばすたびに丸ごとコピーされる）
+            if o.vm[q] == "" {
+                vp[fr[lo + q]] = -1
+            } else {
+                vp[fr[lo + q]] = len(vm)
+                vm = append(vm, o.vm[q])
+            }
+        }
     }
 }
 
@@ -520,7 +635,7 @@ func lWords(g LGroup) int {
 }
 
 // 子の本体: 自前のStのヒープに群の関数を積み、バッチのパスを関数ごとに掛けて詰め直す
-func lParGroup(g LGroup, cfg []int, lret []int, ckt CkTab, bv BcView) LOut {
+func lParGroup(g LGroup, cfg []int, lret []int, ckt CkTab, bv BcView, vk []int) LOut {
     mut st := St{}
     kindsInit(mut st)
     st.rtPanic = FnRef(cfg[0])
@@ -535,6 +650,8 @@ func lParGroup(g LGroup, cfg []int, lret []int, ckt CkTab, bv BcView) LOut {
     st.areaOn = cfg[5] & 8 == 8
     st.lkid = true
     st.lret = lret
+    st.lpty = vk
+    st.vfyLast = true
     desugar.HeapPush(mut st.d, 0)
     st.ubCheck = FnRef(cfg[7])
     st.ubBound = FnRef(cfg[8])
@@ -557,6 +674,8 @@ func lParGroup(g LGroup, cfg []int, lret []int, ckt CkTab, bv BcView) LOut {
     mut hit := mut []int{}
     mut av := table.Table[byte]{}
     mut al := mut []int{}
+    mut vm := mut []string{}
+    mut vok := mut []int{}
     stage := if cfg[6] == 1 { 1 } else { 0 }
     for j <- iter.Range(0, len(g.fns)) {
         cf := FnRef(recN(mut st, FSZ))
@@ -603,6 +722,11 @@ func lParGroup(g LGroup, cfg []int, lret []int, ckt CkTab, bv BcView) LOut {
                 }
                 lB1Func(mut st, cf)
             }
+            // 検証は詰める前に（詰めると旧い本体の記録が転送先の符号で潰れる）
+            if len(vk) > 0 {
+                vm = append(vm, vfyFunc(mut st, cf, 0))
+                vok = append(vok, 1)
+            }
             p := mvPack(mut st, cf, false)
             out = append(out, p)
             if bv.on && stage == 0 {
@@ -614,9 +738,13 @@ func lParGroup(g LGroup, cfg []int, lret []int, ckt CkTab, bv BcView) LOut {
             }
         } else {
             al = append(al, 0)
+            if len(vk) > 0 {
+                vm = append(vm, "")
+                vok = append(vok, 0)
+            }
         }
     }
-    return LOut{bodies: freeze(out), ks: freeze(ks), hit: freeze(hit), av: bcCat(table.Freeze(mut av)), al: freeze(al)}
+    return LOut{bodies: freeze(out), ks: freeze(ks), hit: freeze(hit), av: bcCat(table.Freeze(mut av)), al: freeze(al), vm: freeze(vm), vok: freeze(vok)}
 }
 
 // B1（optimizeSsa）の関数ごとのパスの列

@@ -43,9 +43,9 @@ Slices (`[]T`) and maps (`map[K]V`) are built into the language (`append`, `len`
 
 | Package | Purpose | Main items |
 |---|---|---|
-| [`std/task`](../std/task.ja.md) | Structured concurrency | `Map`, `Run` (opens a scope — the body receives a `Scope` token) + `Spawn` + `Join` / `Gather` / `Try`, channels `NewChannel` / `Send` / `Recv` / `Close`, `Pool` (`NewPool` / `SpawnIn`), serialized updates from many tasks to one state with `Domain` (`NewDomain` / `Update` / `Read` / `Await` — section 5 of [Concurrency](concurrency.md)) |
+| [`std/task`](../std/task.ja.md) | Structured concurrency | `Map`, `Run` (opens a scope — the body receives a `Scope` token) + `Spawn` + `Join` / `Gather` / `Try`, channels `NewChannel` / `Send` / `Recv` / `Close`, `Pool` (`NewPool` / `SpawnIn`), serialized updates from many tasks to one state with `Domain` (`NewDomain` / `Update` / `Read` / `Await` — section 5 of [Concurrency](concurrency.md)), and `Fixed`, the fixed cost of a task in bytes (pool ceilings are counted as count × (declaration + `task.Fixed()`)) |
 
-Only immutable values and channels can be passed to a child task. The output is the same regardless of the number of workers ([language tour, section 7](tour.md#7-parallelism--structured-concurrency-channels)).
+Only immutable values, channels and domains can be passed to a child task. The output is the same regardless of the number of workers ([language tour, section 7](tour.md#7-parallelism--structured-concurrency-channels)).
 
 ## Numbers and randomness
 
@@ -69,7 +69,7 @@ Only immutable values and channels can be passed to a child task. The output is 
 
 | Package | Purpose | Main items |
 |---|---|---|
-| [`std/net`](../std/net.ja.md) | TCP | `for l <- net.Listen(addr)?`, `for c <- net.Accept(l)?`, `for c <- net.Dial(addr)?` (closed when the body exits), `for chunk <- net.Recv(c)?`, `Send`, and `Serve` (one task per connection) |
+| [`std/net`](../std/net.ja.md) | TCP | `for l <- net.Listen(addr)?`, `for c <- net.Accept(l)?`, `for c <- net.Dial(addr)?` (closed when the body exits), `for chunk <- net.Recv(c)?`, `Send`, `Serve` (one task per connection), and `Waiting` (the number of connections the Serves of this process keep waiting, and the sum of the queue sizes) |
 | [`std/http`](../std/http.ja.md) | HTTP vocabulary shared by the server and the client | `Field` (one header), `StatusCode` and its typed consts (`http.OK` …), `BadHeader` |
 | [`std/http/server`](../std/http-server.ja.md) | HTTP/1.1 server | `ServeConn` (on a net connection) / `ServeWith` (on receive and send functions — e.g. a TLS connection; the optional `put:` takes responses without sending them, flushed by the receive side, as `tls.Put`), `SetCookie` (Response.cookies — Secure / HttpOnly / SameSite=Lax by default), `Request` / `Response`, `Text` / `Json` / `Status`, `Header` / `Query` / `Form` / `Multipart` (file uploads) / `JsonDoc`, a router `Route` + `Mount` / `Merge` / `Dispatch` / `Param`, `Middleware` (`Before` / `After`), gzip and streamed responses |
 | [`std/http/client`](../std/http-client.ja.md) | HTTP/1.1 client (TLS is always verified — 1.3 only by default) | Holds no state. `Request(url, method:, headers:, body:, cookies:, policy:)` per request; `Policy`, a plain data value (the zero values are the safe defaults: an 8 MiB body limit, a 30 s deadline, 10 redirects; `extraRoots` for a private PKI via `tls.ParseRoots`, `proxy` via `ParseProxy` / `proxyAuth`, `dangerouslyAllowTls12`); cookies are values (read with `CookieValue`, sent with `cookies:`); `for part <- http.client.Stream(url)?` to receive the body in pieces, and `Send` inside a keep-alive `Open` (Session is an identity type). Errors are `Dns`, `Tls`, `Timeout`, `TooManyRedirects`, `InsecureRedirect`, `BodyTooLarge`, `Closed`, `BadUrl`, `BadResponse`, `ProxyRefused`, `BadProxy` (from ParseProxy) |

@@ -1,0 +1,4 @@
+sober: type error at examples/generic_kind_neg.sober:15:17 (KindArg): the type argument for T of keep lacks a property that the body of keep uses
+  T must contain no mut container: the body of keep relies on it (required at examples/generic_kind_neg.sober:10:11)
+{"errors":[{"msg":"type error"}],"ok":false}
+exit=1

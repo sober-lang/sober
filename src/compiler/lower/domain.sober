@@ -8,7 +8,7 @@ package lower
 import "desugar"
 import "std/iter"
 
-const DM_LOCK = 0    // 鍵（cellLock と同じ xchg — 本体は待たないので持ち手は待ちに入らない）
+const DM_LOCK = 0    // 鍵（lock.sober の部品。本体は待たないので持ち手はtaskの待ちに入らないが、OSの横取りはありうる）
 const DM_POISON = 1  // 1 = 本体が死んだ（以後の呼び出しは呼び手を死なせる）
 const DM_BOX = 2     // 状態の箱の番地
 const DM_D = 3       // Await の待ちの上限（ns）

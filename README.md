@@ -98,7 +98,7 @@ In Sober, value orientation means the following two promises (see [What value or
 The following five properties are derived from these two.
 
 - Escaping references cannot be written. A reference never becomes a value, so there is no way to form something that points into freed memory. A value's lifetime is decided by its block, and a value leaving a block is copied. Every block is a region ([rules](docs/spec/09-memory.ja.md), in Japanese). No GC and no borrow checker are needed.
-- Data races cannot be written. A mutable value never crosses a task boundary. Only immutable values and channels can be passed into a parallel scope ([rules](docs/spec/10-concurrency.ja.md), in Japanese).
+- Data races cannot be written. A mutable value never crosses a task boundary. Only immutable values, channels and domains can be passed into a parallel scope ([rules](docs/spec/10-concurrency.ja.md), in Japanese).
 - There are no lifetime annotations and no borrowing rules. With no references, there is nothing to annotate. The only thing to learn is what you cannot write. The forms that cannot be written (shared mutable state outside a domain, escaping references) are compile errors.
 - There is no etiquette for writing fast code. Whether a value is passed by reference or by copy, and where it is placed, is chosen by the implementation. It is not the programmer's choice, so straightforward code is the fastest form.
 - Parallelism does not change the output. Tasks share no mutable state, so the output is the same bytes for any number of workers.
@@ -131,7 +131,7 @@ The following five properties are derived from these two.
 ### Minimal
 
 - A single binary with zero dependencies. The compiler is one static ELF that depends on neither libc nor LLVM, and the executables it produces are static ELFs as well.
-- The compiler is about 140,000 lines (excluding the development tools in `src/compiler/tools/`), plus about 34,000 for the standard library (non-test source, comments and blank lines included).
+- The compiler is about 160,000 lines (excluding the development tools in `src/compiler/tools/`), plus about 36,000 for the standard library (non-test source, comments and blank lines included).
 - Fully bootstrapped from Zig and source alone. Starting from stage1, a frozen compiler written in Zig, the source snapshots in `bootstrap/` are built in order until they produce the current compiler ([the full chain](bootstrap/chain.txt)). There is no seed binary.
 
 → [Why minimal](docs/design-notes/minimal.md) (in Japanese)
@@ -227,11 +227,11 @@ How it goes about solving these (the design moves):
 Everything below is a real artifact in this tree:
 
 - An HTTP/1.1 + TLS 1.3 server — the `std/http/server` entry sits alongside C / Rust / V implementations on the public [HttpArena](https://github.com/MDA2AV/HttpArena) leaderboard (`bench/httparena/`)
-- This compiler itself — ~140K lines of self-hosted Sober, from lexing to x86-64 machine code and ELF emission, with no libc (`src/compiler/`)
+- This compiler itself — ~160K lines of self-hosted Sober, from lexing to x86-64 machine code and ELF emission, with no libc (`src/compiler/`)
 - The standard library — JSON, gzip/deflate, TLS 1.3, an HTTP client (with certificate-chain verification), crypto (AES-GCM / SHA-256 / RSA / x25519 / password hashing), session tokens, a PostgreSQL client and the io_uring M:N runtime (`src/std/`)
 - Developer tooling — the test runner, property-based testing, fuzzing, coverage, mutation testing and watch (the whole `sober test` stack is itself written in Sober as part of the compiler)
 - Data-processing subjects — 1BRC and benchmarks-game problems, output-identical to their Go / Rust twins (`bench/`)
-- ~980 small examples (including negative examples that the checker rejects) — the guide's kvstore and more (`examples/` — all output-checked by gates)
+- ~1,040 small examples (including negative examples that the checker rejects) — the guide's kvstore and more (`examples/` — all output-checked by gates)
 
 ## What is already there
 

@@ -6,7 +6,7 @@
 
 アノテーション `@名前(引数)` は宣言に付ける。受理されたプログラムの意味を変えず、拒否を起こすか、宣言の形を決めるだけ。コンパイル時の計算（comptime）は無い。
 
-A-1. 言語が知るアノテーションは `@errors`（7章）・`@layout`・`@embed`・`@noinline`・`@exhaustive`・`@secret`・`@bless`・`@credential`・`@shared`・`@stored`・`@personal`・`@effects`・`@const`・`@replaces`・`@doubles`（13章）の閉じた集合（interfaceファイル `.sobi` にだけ書く `@expand` を除く）。知らないアノテーションは拒否する。
+A-1. 言語が知るアノテーションは `@errors`（7章）・`@layout`・`@embed`・`@noinline`・`@exhaustive`・`@secret`・`@bless`・`@credential`・`@shared`・`@stored`・`@personal`・`@effects`・`@const`・`@replaces`・`@doubles`（13章）の閉じた集合（interfaceファイル `.sobi` にだけ書く `@expand` と `@kind` を除く。`@kind` は総称関数の型引数の性質で、5章F-25）。知らないアノテーションは拒否する。
 例: [`examples/errval.sober`](../../examples/errval.sober)・[`examples/layout_elf.sober`](../../examples/layout_elf.sober)・[`examples/embed_demo.sober`](../../examples/embed_demo.sober)・[`examples/noinline.sober`](../../examples/noinline.sober)
 拒否: [`examples/annot_neg_unknown.sober`](../../examples/annot_neg_unknown.sober)
 決定: [language.md 10節](../language.md)
@@ -18,9 +18,9 @@ A-2. `@noinline` はmut仮引数を持ち関数型の仮引数を持たない関
 
 ## 12.1 @embed
 
-A-3. `@embed("パターン") const Name = map[string]string{}` は、パターンに合うファイルの中身をビルドの時点で「パス → 内容」のconstにする。パターンはルート相対で `**`（0個以上のディレクトリ）・`*`・`?` を使え、並びはパスのバイト順。受け皿は空の `map[string]string{}` のconstだけ。中身はUTF-8でなければならない。合うファイルが無ければ拒否する。
-例: [`examples/embed_demo.sober`](../../examples/embed_demo.sober)
-拒否: [`examples/embed_neg_nomatch.sober`](../../examples/embed_neg_nomatch.sober)
+A-3. `@embed("パターン") const Name = map[string]string{}` は、パターンに合うファイルの中身をビルドの時点で「パス → 内容」のconstにする。パターンはルート相対で `**`（0個以上のディレクトリ）・`*`・`?` を使え、並びはパスのバイト順。受け皿は空の `map[string]string{}` か `map[string][]byte{}` のconstだけ。`map[string]string` の受け皿では中身はUTF-8でなければならない。`map[string][]byte` の受け皿の値は最外regionのimmの `[]byte` で（文字列のリテラルと同じ扱い）、中身はUTF-8でなくてよい。焼き込みの値は、台帳の使用量に数えない。合うファイルが無ければ拒否する。`map[string]string` の受け皿では、@embedを書いたソースのファイルとその焼き込みの合計は、1ファイルの木の大きさの上限（16,777,216語 — 中身は1バイト1語）に収まらなければならず、越えるファイルの名前と大きさを言って拒否する。
+例: [`examples/embed_demo.sober`](../../examples/embed_demo.sober)・[`examples/embed_bytes.sober`](../../examples/embed_bytes.sober)
+拒否: [`examples/embed_neg_nomatch.sober`](../../examples/embed_neg_nomatch.sober)・[`examples/embed_neg_receiver.sober`](../../examples/embed_neg_receiver.sober)
 決定: [language.md 20節](../language.md)
 
 ## 12.2 @layout
@@ -101,7 +101,7 @@ A-14. `@effects(…)` は関数の前置と、名前付き関数型の後置（`
 拒否: [`examples/effects_neg_mixed.sober`](../../examples/effects_neg_mixed.sober)・[`examples/effects_neg_word.sober`](../../examples/effects_neg_word.sober)・[`examples/effects_neg_negtype.sober`](../../examples/effects_neg_negtype.sober)・[`examples/effects_neg_target.sober`](../../examples/effects_neg_target.sober)
 決定: [language.md 12節「関数のエフェクトの宣言」](../language.md)
 
-A-15. 関数のエフェクトは導出する: `block` = std/taskの待つ関数（Run・Join・Try・Send・Recv）と待つio、`io` = プロセスの外との入出力（`println` を含む）、`panic` = `panic(L{…})`、`nondet` = 時刻の読み。呼んだ関数のエフェクトは呼び手のエフェクト。匿名の関数型の仮引数の呼び出しは透過で、渡した実引数（ラムダ・関数）のエフェクトを呼び手が持つ。名前付き関数型の値の呼び出しは、その型の契約か、契約が無ければその型の値になりうる全部の関数・ラムダのエフェクトの合併。匿名の関数型のフィールド・局所の値の呼び出しは、プログラムの全部の関数値のエフェクトの合併。
+A-15. 関数のエフェクトは導出する: `block` = std/taskの待つ関数（Run・Join・Try・Send・Recv）と待つio、`io` = プロセスの外との入出力（`println` を含む）、`panic` = `panic(L{…})`、`nondet` = ioの入力を固定しても値が揺れる読み（時刻・domainの呼び出し・ランタイムの観測〔`task.Ledger()`・`task.Fixed()`・`net.Waiting()`〕）。呼んだ関数のエフェクトは呼び手のエフェクト。匿名の関数型の仮引数の呼び出しは透過で、渡した実引数（ラムダ・関数）のエフェクトを呼び手が持つ。名前付き関数型の値の呼び出しは、その型の契約か、契約が無ければその型の値になりうる全部の関数・ラムダのエフェクトの合併。匿名の関数型のフィールド・局所の値の呼び出しは、プログラムの全部の関数値のエフェクトの合併。
 例: [`examples/effects_annot.sober`](../../examples/effects_annot.sober)
 拒否: [`examples/effects_neg_transparent.sober`](../../examples/effects_neg_transparent.sober)・[`examples/effects_neg_union.sober`](../../examples/effects_neg_union.sober)・[`examples/effects_neg_any.sober`](../../examples/effects_neg_any.sober)
 決定: [language.md 12節「関数のエフェクトの宣言」](../language.md)

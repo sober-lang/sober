@@ -1,0 +1,43 @@
+package main
+
+// 展開される仮引数（匿名の関数型）の仮引数が名前つき関数型（H・H?）なら、そこへ渡すラムダや宣言した関数は値の位置:
+// 束縛してから渡す形と同じく、クロージャの値として読む
+
+type H func(x int) int
+
+func incr(x int) int {
+    return x + 1
+}
+
+func adder(s string) H {
+    return (x int) => x + len(bytes(s))
+}
+
+func run(q func(h H) int) int {
+    return q(incr) + q(adder("abc")) + q((x int) => x * 2)
+}
+
+func runOpt(q func(h H?) int) int {
+    return q(nil) + q(incr) + q((x int) => x * 3)
+}
+
+func nested(p func(q func(h H) int) int) int {
+    return p((h H) => h(2))
+}
+
+func each(xs []int, f func(h H) int) int {
+    mut s := 0
+    for x <- xs {
+        s = s + f((y int) => y + x)
+    }
+    return s
+}
+
+func main() {
+    k := 5
+    println(run((h H) => h(10)))
+    println(runOpt((h H?) => if h != nil { h(2) + 1 } else { 100 }))
+    println(nested((q func(h H) int) => q((x int) => x + k)))
+    println(nested((q func(h H) int) => q(incr)))
+    println(each([]int{1, 2, 3}, (h H) => h(10)))
+}

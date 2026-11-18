@@ -1,0 +1,9 @@
+@@full	8db53742693fcc11	1465	37675
+@head	4cb1e368e1e4a834	0	108
+func digits	2b83a37b3407c603	64	2145
+func evens	5cedac0ed3ed037a	45	1523
+func main	59da7d824ca398fd	56	1922
+func show	7b3eaa4012089d28	16	753
+func sum	d5b3e17dd248a740	23	833
+func sumAll	e7b2a3aca7cfed8c	19	684
+type BadDigit	e2ed81a1adee5385	2	115

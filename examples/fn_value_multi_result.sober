@@ -1,0 +1,109 @@
+package main
+
+// 多値の結果に置いた名前つき関数型は、単一の結果と同じく値の位置になる。
+// returnの値は位置ごとに読み、ラムダ・名前つきの関数・ブロックとif式の末尾がクロージャの値になる。
+// forの本体の中のreturnも同じ
+
+import "std/iter"
+
+type H func(x int) int
+
+type Empty error
+
+type R struct {
+    h H
+}
+
+func incr(x int) int {
+    return x + 1
+}
+
+func viaBind() (H, int) {
+    h := H(incr)
+    return h, 2
+}
+
+func eta() (H, int) {
+    return incr, 3
+}
+
+func lam(n int) (H, int) {
+    return (x int) => x * n, 4
+}
+
+func tail(n int, c bool) (H, int) {
+    return if c { incr } else { (x int) => x - n }, 5
+}
+
+func blk(n int) (H, int) {
+    return { m := n * 2; (x int) => x + m }, 6
+}
+
+func early(n int, c bool) (H, int) {
+    if c {
+        return (x int) => x * n, 1
+    }
+    for i <- iter.Range(1, 4) {
+        if i == n {
+            return incr, i
+        }
+    }
+    return { k := n + 100; (x int) => x + k }, 0
+}
+
+func firstOver(n int) H {
+    for i <- iter.Range(0, 10) {
+        if i > n {
+            return (x int) => x * i
+        }
+    }
+    return incr
+}
+
+func two(n int) (H, H) {
+    return incr, (x int) => x - n
+}
+
+func opt(n int) (H?, int) {
+    if n == 0 {
+        return nil, 0
+    }
+    return (x int) => x + n, n
+}
+
+func fwd(n int) (H, int) {
+    return early(n, false)
+}
+
+@errors(Empty)
+func pick(n int) (H, error?) {
+    if n < 0 {
+        return incr, Empty{}
+    }
+    return (x int) => x * n, nil
+}
+
+func main() {
+    a, ka := viaBind()
+    b, kb := eta()
+    c, kc := lam(3)
+    d, kd := tail(7, false)
+    e, ke := blk(5)
+    println("${a(ka)} ${b(kb)} ${c(kc)} ${d(kd)} ${e(ke)}")
+    f, kf := early(4, true)
+    g, kg := early(2, false)
+    h, kh := early(9, false)
+    println("${f(kf)} ${g(kg)} ${h(kh)} ${firstOver(3)(2)} ${firstOver(20)(2)}")
+    p, q := two(10)
+    o, ko := opt(5)
+    z, _ := opt(0)
+    w, kw := fwd(2)
+    r := R{h: p}
+    ov := if o != nil { o(ko) } else { -1 }
+    zv := if z != nil { 1 } else { 0 }
+    println("${p(1)} ${q(1)} ${ov} ${zv} ${w(kw)} ${r.h(2)}")
+    m, err := pick(4)
+    mv := if err == nil { m(2) } else { -1 }
+    _, err2 := pick(-1)
+    println("${mv} ${err2 != nil}")
+}

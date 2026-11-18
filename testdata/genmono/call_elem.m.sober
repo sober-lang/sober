@@ -1,0 +1,26 @@
+package main
+
+// 総称関数の版（call_elem.g.sober）の型引数を手で代入した単相の版。関数の対応（単相 = 総称の単相コピーの名前）
+// genmono: mkS = mk[[]byte]
+// genmono: firstS = first[[]byte]
+// genmono: innerS = inner[[]byte]
+
+func mkS(x string) []string {
+    return []string{x, x}
+}
+
+func firstS(x string) string {
+    return mkS(x)[0]
+}
+
+func innerS(x string) string {
+    y := {
+        z := mkS(x)
+        z[1]
+    }
+    return y
+}
+
+func main() {
+    println(firstS("a"), innerS("b"))
+}

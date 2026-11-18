@@ -187,7 +187,21 @@ if [ "${INCR_SELF_ONLY:-0}" != 1 ] && [ "$MODE" != self ]; then
     # cold = 冷で書く（扉の監査 =2 — 例題の全数で外れの Def の読み ∈ 鍵の届く集合・report-1271 / 1272）・warm = 検証 =1（当たりも作り直して比較）・replay = 当たりをそのまま使う（脱糖の拒否の値の再生 — R3）
     # gamma = 題材ごとに格納場所へbuildしてからcheck（analyzerの全部の型付けがbuildの書いた γ を読む — タスク2 R4。buildが通る負例〔analyzer
     # だけが拒否〕で当たりのpackageの指摘が出るか。検証 =1の γ の照合は自己のチェーンのlistat-sem / optfn-site / noneが見る）
+    # gamma は再生の後の配置先（$W/cv）をそのまま読む（冷・温・再生が書いたパックの併合の後の形）。後ろの既定のパスの相（配置先 $W/cvd）と
+    # domkeep（$D/c）は $W/cv を読まないので、gamma を背景で起動して並べる（gamma の入力は前と同じ）
+    GP=
     for ph in cold warm replay gamma; do
+        if [ $ph = gamma ]; then
+            ( if CV_BUILD=1 SOBER_BUILD_CACHE=1 STAGE2=$C SOBER_CACHE=$W/cv SOBER_CHECK_CACHE=1 SOBER_CACHE_VERIFY=0 scripts/checkverdict.sh > "$W/cvg.log" 2>&1; then
+                  echo "incrcheck examples gamma: $(tail -1 "$W/cvg.log")"
+              else
+                  echo "incrcheck examples gamma: FAIL"
+                  grep -m5 '^FAIL' "$W/cvg.log"
+                  touch "$W/cvg.fail"
+              fi ) > "$W/cvg.out" &
+            GP=$!
+            continue
+        fi
         v=0
         [ $ph = cold ] && v=2
         [ $ph = warm ] && v=1
@@ -216,6 +230,9 @@ if [ "${INCR_SELF_ONLY:-0}" != 1 ] && [ "$MODE" != self ]; then
             echo "incrcheck examples default-cold: FAIL the check cache is not on by default (nothing written to SOBER_CACHE)"
         fi
     done
+    wait "$GP"
+    cat "$W/cvg.out"
+    [ -e "$W/cvg.fail" ] && bad=$((bad + 1))
     # domain の脱出の被覆（diag.Par kind 39 — 健全性の規則が増分のキャッシュの当たり外れに依らないこと）: 作る側（main — pg.OpenPool の k）は
     # γ の当たりのまま、受け取る側の package（keep）だけを規則 2 を破る本体に編集して温の build と check — 冷の check と同じ拒否であること
     D=$W/domkeep

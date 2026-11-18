@@ -1,0 +1,23 @@
+@@full	974bb819b48a2c27	10734	382508
+@head	7a68464e78ab09f7	0	422
+func TestOracle	352cf5d80c07feb3	365	12762
+func backendOf	75a1c1734fd26737	26	945
+func breakAt	2413564891d319f6	27	958
+func checkTypes	f889b73bd4b23abc	39	1474
+func hintOf	8fa1989b696d0bab	22	1018
+func idle	236c500152a86382	20	739
+func jsonText	6554a32377bb5dec	23	883
+func leave	df6b2a05af919a04	17	666
+func msgOf	042f2c0d5fd77ea7	22	1020
+func poolCases	2b3901dbbea806db	344	11592
+func qdyn	eabaae4734739a1c	39	1412
+func scalar	2efa8d6dea3bef93	33	1148
+func session	19f27bcacceade29	195	6535
+func setting	30958ef230fe7c86	24	955
+func show	c94dc04452311dcb	83	3811
+func skew	fdaa326a93563a91	50	1829
+func stateOf	f017d08fdde8f1c6	21	1013
+func txCases	c9d3307e278d5c2b	271	9190
+func txFail	0876b2bbc5622561	26	927
+func typeCases	aabde01bbd192d1e	36	2050
+func typeOf	1db4bfaf8a7fdab9	31	1143

@@ -1,0 +1,2 @@
+sober: load error at examples/embed_neg_receiver.sober:6:7: @embed needs the receiver `map[string]string{}` or `map[string][]byte{}` (empty, imm)
+exit=1

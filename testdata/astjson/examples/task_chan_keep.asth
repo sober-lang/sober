@@ -1,0 +1,9 @@
+@@full	aa366d7e56781efb	1498	52648
+@head	07b8ec3ac4653223	0	141
+func main	b31fc4ca9097d607	101	3370
+func make	143f8e7fbbc08531	43	1919
+func show	6d48914dd845944b	40	1316
+func sum	418c8d05e30e5eb5	26	1049
+type Bad	6aaa31b261e49d27	2	114
+type Msg	fdffa42c9fab3065	10	431
+type Node	6429cf118194190a	4	250

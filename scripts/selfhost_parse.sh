@@ -39,7 +39,7 @@ fi
 all=0
 if [ "${1:-}" = "--all" ]; then
     all=1
-    mapfile -t files < <(find "$GOLDEN" -name '*.json' | LC_ALL=C sort | sed "s|^$GOLDEN/||; s|\.json\$|.sober|")
+    mapfile -t files < <(find "$GOLDEN" -name '*.asth' | LC_ALL=C sort | sed "s|^$GOLDEN/||; s|\.asth\$|.sober|")
 elif [ $# -gt 0 ]; then
     files=("$@")
 else

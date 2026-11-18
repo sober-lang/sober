@@ -8,6 +8,7 @@ package lower
 //   φ の前任を先に知るため、ラベルの採番（fresh）だけをなぞる前走査で入り辺を集めてから印字する（Zig版はブロックごとの本文をバッファリングして後から φ を前に付ける）
 
 import "desugar"
+import "std/iter"
 import "obuf"
 
 const W_BUMP_OFF = 1
@@ -1016,7 +1017,19 @@ func llModule(st mut St, out mut []byte) {
             obuf.Lit(mut out, " = internal constant [")
             num(mut out, desugar.HeapGet(mut st.d, g + G_WORDS))
             obuf.Lit(mut out, " x i64] ")
-            if desugar.HeapGet(mut st.d, init) == 0 {
+            eb, emb := embBytesOf(mut st, g)
+            if emb && desugar.HeapGet(mut st.d, g + G_WORDS) > 0 {
+                // @embed の []byte: 中身の語（embed.sober）
+                out = append(out, '[')
+                for i <- iter.Range(0, desugar.HeapGet(mut st.d, g + G_WORDS)) {
+                    if i > 0 {
+                        obuf.Lit(mut out, ", ")
+                    }
+                    obuf.Lit(mut out, "i64 ")
+                    num(mut out, embWord(eb, i))
+                }
+                out = append(out, ']')
+            } else if desugar.HeapGet(mut st.d, init) == 0 {
                 obuf.Lit(mut out, "zeroinitializer")
             } else {
                 out = append(out, '[')

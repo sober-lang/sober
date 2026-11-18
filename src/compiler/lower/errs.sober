@@ -197,9 +197,10 @@ func buildErrAlloc(st mut St) {
 
 // rt.err_alloc の呼び出しを rt.region_alloc に置き換える（llight の後）
 func errAllocLower(st mut St) {
-    if st.rtErrAlloc == -1 {
+    if st.rtErrAlloc == -1 || st.errAllocDone {
         return
     }
+    st.errAllocDone = true
     mut f := st.fhead
     while f != -1 {
         mut b := irFnBHead(mut st, f)

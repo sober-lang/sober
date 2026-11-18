@@ -1,0 +1,14 @@
+@@full	50c7744203283889	5687	166623
+@head	cf01ecb3c4b443fe	0	313
+func TestCandidates	489b6a7b6dad704e	61	2071
+func TestDialLocalhost	89c9bc7a3ee53fdb	56	2041
+func TestHosts	0160649ec09f7a16	44	1474
+func TestNameCheck	c07cf062913f46d9	40	1290
+func TestParseAnswer	970a221f4d998b96	321	9976
+func TestResolvConf	608f22a3da6d7188	85	2985
+func TestResolveFake	f42d1f344de604a0	110	3748
+func firstOctets	00779058f92945a8	59	1959
+func look	f82ff310506fb59c	16	693
+func resp	8ebfa8861b48c535	68	2478
+func rr	6cd98a49c3c1f1b3	77	2591
+func wire	7fbbf20e96a983c4	50	1713

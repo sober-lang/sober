@@ -1,0 +1,7 @@
+@@full	6c1ad32dab63795e	186	3309
+@head	721e54f682f5ff3d	0	83
+func New	b6e578ef5cddd24c	4	245
+func Plain	206506a55b26b96d	4	228
+func Show	bf6f67412eba9e37	5	290
+type Bad	c46bc68f4fa91a27	1	64
+type Conn	ea86e2628812dc31	2	111

@@ -1,0 +1,28 @@
+@@full	09a76261a9c5fc15	12300	347328
+@head	5c32d49c4c95c470	0	227
+const infBits	be79a9d4d7b528a1	1	76
+const magMask	6e83ab5ceab9d04d	1	76
+func CheckAdd	101eb47d537af0d7	19	769
+func CheckDecimal	c98bdd6447f46d7d	112	3733
+func CheckDiv	b6cff76bc2e2e8de	143	4624
+func CheckFormat	cd5e95c7724780b4	168	5348
+func CheckFromInt	eb8d76e5a3cd263a	46	1585
+func CheckMul	ee4ead77d0dc9dea	141	4670
+func CheckSqrt	33ababc89a20e3e4	155	5083
+func CheckSub	177eda2b1646b0b8	20	802
+func CheckToInt	ebee1622c0d32225	95	3172
+func absInt	5e171016e861380f	44	1475
+func addCheck	a969bb128619aa21	198	6397
+func cmpUnits	a29277f4aaebf3ab	65	2324
+func dec	02782e3392ee09a0	101	3328
+func digitsTo	4b7ae49b859ff535	44	1558
+func inc	5821c404da50d8c8	87	2880
+func isDigit	26621981d5d31b25	10	438
+func isNaN	fac5051c2f96ef88	8	363
+func midPair	e5f2ccb167583332	39	1379
+func mids	8f67a43798b8fda0	34	1183
+func nearer	3174954ab1c540c2	177	5832
+func readDecimal	5f180864d8b4f9d1	280	8916
+func rounds	cb41f4f03c840ef1	112	3750
+func signed	378bca14bb28c9eb	17	652
+func units	367268aedabe9364	47	1655

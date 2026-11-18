@@ -193,17 +193,24 @@ rm -f pkg/slow
 # 状態ファイル（watch/<id>.json — pid と cwd を除いて照合）: 受理で温め済み → 拒否（診断の行・温めは skipped）→ 直して温め済み。
 # `sober cache info` が同じ状態を 1 行で出し、watch が終わると (stale)
 sj() { sed 's/"pid":[0-9]*,"cwd":"[^"]*",//' "$(find "$W/cache" -path '*/watch/*.json' | head -1)" 2> /dev/null; }
-swait() {
+# sjr: 回の番号を伏せた状態（前の相の編集〔pkg/slow の削除でディレクトリの更新時刻も動く〕の回が、いつ始まるかは負荷で変わる —
+# 番号を固定で期待するのは、自分の編集だけが起こす回に限る）
+sjr() { sj | sed 's/"round":[0-9]*/"round":_/'; }
+swait() { # swait <名前> <期待> [sj|sjr]
     n=$((n + 1))
-    for _ in $(seq 1 1200); do [ "$(sj)" = "$2" ] && return 0; sleep 0.05; done
+    for _ in $(seq 1 1200); do [ "$(${3:-sj})" = "$2" ] && return 0; sleep 0.05; done
     echo "FAIL $1: status"; echo "  got:  $(sj)"; echo "  want: $2"; fail=1
 }
-R0=$(sj | sed 's/.*"round":\([0-9]*\).*/\1/')
-swait status-ok "$(sj | sed 's/"warm":{.*/"warm":{"build":"done","test":"done"}}/')"
+rnd() { sj | sed 's/.*"round":\([0-9]*\).*/\1/'; }
+R0=$(rnd)
+swait status-ok '{"version":1,"entry":"app","round":_,"phase":"idle","verdict":"ok","diags":[],"warm":{"build":"done","test":"done"}}' sjr
 cp pkg/pkg.sober "$W/pkg.keep"
 echo 'func Bad() int { return "x" }' >> pkg/pkg.sober
-R1=$((R0 + 1))
-swait status-rejected '{"version":1,"entry":"app","round":'$R1',"phase":"idle","verdict":"rejected","diags":["sober: type error at pkg/pkg.sober:'$(wc -l < pkg/pkg.sober)':25","check: {\"errors\":[{\"msg\":\"def error\"}],\"ok\":false}"],"warm":{"build":"skipped","test":"skipped"}}'
+# 拒否の回: 前の相の回が残っていれば、その後に来る（番号は R0 より大きいことだけ見る）。拒否の回は Bad の編集の後の時刻を採るので、
+# それより前の変化はここで全部吸い込まれる — 次の直しの回は、ちょうど1つ後
+swait status-rejected '{"version":1,"entry":"app","round":_,"phase":"idle","verdict":"rejected","diags":["sober: type error at pkg/pkg.sober:'$(wc -l < pkg/pkg.sober)':25","  the value of the body does not have the result type of Bad","check: {\"errors\":[{\"msg\":\"def error\"}],\"ok\":false}"],"warm":{"build":"skipped","test":"skipped"}}' sjr
+R1=$(rnd)
+[ "$R1" -gt "$R0" ] 2> /dev/null || { echo "FAIL status-rejected: round $R1 is not after $R0"; fail=1; }
 cp "$W/pkg.keep" pkg/pkg.sober
 R2=$((R1 + 1))
 swait status-fixed '{"version":1,"entry":"app","round":'$R2',"phase":"idle","verdict":"ok","diags":[],"warm":{"build":"done","test":"done"}}'

@@ -1,0 +1,21 @@
+package main
+
+// mapのキーに型変数を置く: K は mapのキーにできる型（int か string）に限る
+
+func tally[K](ks []K) map[K]int {
+    mut m := mut map[K]int{}
+    for k <- ks {
+        c := m[k]
+        m[k] = if c != nil { c + 1 } else { 1 }
+    }
+    return freeze(m)
+}
+
+func main() {
+    m := tally([]string{"a", "b", "a"})
+    a := m["a"]
+    println(if a != nil { a } else { 0 })
+    n := tally([]int{7, 7, 7})
+    s := n[7]
+    println(if s != nil { s } else { 0 })
+}

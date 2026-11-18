@@ -3,7 +3,7 @@ package main
 // starve（gate: 実行待ちの列のFIFOの保証の検査）: 同じプロセスにechoのnet.Serveと閉ループの客512本を立て、少ないワーカー
 // （検査はSOBER_WORKERS=2）で実行待ちの列を深くして飽和させる。Serveの期限（3秒）の後に、task.Ledger() のmaxWait（µs）と、
 // 往復の数の和・1回以上往復した客の数を出す。1周の時間（往復1回の平均 = 期限 × 往復した客の数 ÷ 往復の和）と待ちの最大を比べる
-// 判定はscripts/starve.sh。M:Nでは、列が空にならない間は未着手の客が走り始めないので、往復しない客が残る（往復した客の数で割る理由）
+// 判定はscripts/starve.sh。客は未着手の子の列を通る。列が空にならない飽和の間も、未着手の子はN周に1回走るので、客は全部往復する
 
 import "std/net"
 import "std/task"

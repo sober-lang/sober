@@ -2,6 +2,7 @@
 Content-Type: text/event-stream
 Cache-Control: no-store
 Transfer-Encoding: chunked
+Date: Sun, 06 Nov 1994 08:49:37 GMT
 
 
 -- 30
@@ -47,6 +48,7 @@ Content-Type: text/event-stream
 Cache-Control: no-store
 Transfer-Encoding: chunked
 Connection: close
+Date: Sun, 06 Nov 1994 08:49:37 GMT
 
 
 -- 35

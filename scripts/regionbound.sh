@@ -22,10 +22,10 @@ one() {
     # ループ本体の反復の region（宛先構築レーン M4 / M5）は両側から除く — 総称関数の単相化で IR 側だけループが複製されるので数が合わない。
     # コア = while の本体の block・IR = ラベルの直後の region.enter（式ブロックと関数の入口の enter は必ず直前に region.depth がある）
     # 段階6 P3a: コアのscopeはblockと同じくregionを1レベル開く（lower = task.Runのenter）。spawnの子のregionは子の関数の入口（lower/task.soberのkid#N）
-    # 数えるのは main の式から呼び出し（call / callm / fnref の f）で届く Def だけ — lower は届く関数しか下ろさない。読み込んだ std の届かない Def
+    # 数えるのは main の式から呼び出し（call / fnref の f）で届く Def だけ — lower は届く関数しか下ろさない。読み込んだ std の届かない Def
     # （std/utf8の内側のparのScope等 — 全プログラムに暗黙で読み込まれる）はIRに現れない（並列1.0× のタスク）
     cb=$(jq '
-        def calls: [.. | objects | select(.k == "call" or .k == "callm" or .k == "fnref") | .f] | unique;
+        def calls: [.. | objects | select(.k == "call" or .k == "fnref") | .f] | unique;
         def reach($defs; $set): ($set | map($defs[.] | calls) | add // []) as $new | (($set + $new) | unique) as $s2
             | if ($s2 | length) == ($set | length) then $set else reach($defs; $s2) end;
         (.defs // []) as $defs | del(.defs) as $root | ([$root] + (reach($defs; ($root | calls)) | map($defs[.]))) as $live

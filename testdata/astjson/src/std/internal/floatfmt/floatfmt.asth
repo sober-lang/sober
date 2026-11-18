@@ -1,0 +1,16 @@
+@@full	7e9b842853a35dae	12612	410026
+@head	10173cceaa28ea75	0	147
+const HIDDEN	e690a3a6b3748372	1	61
+const NoFast	5bfac267fd42d78d	2	84
+func Format	c0402850e8d9e63b	353	11216
+func FormatFixed	cbf15399eb04d9a3	301	9877
+func ParseBits	642fe0ed55a38ba1	28	1018
+func bitLen	c6d90872cc9be373	20	758
+func bnDivScaled	9de9dab58234cd13	100	3403
+func decimalBits	5f209b6746ee74d0	260	8396
+func exactShort	7df8b6cf2b702b9f	166	5476
+func parseBits	d6bf9adfee4e8863	356	11151
+func shortest	48c5d33f15a3bf44	595	18846
+func wordAt	11de095c2531737f	69	2306
+type InvalidSyntax	7aef7d2442ecf1ef	1	74
+type OutOfRange	20736c32de090fc0	1	71

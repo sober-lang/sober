@@ -1,0 +1,16 @@
+@@full	902ad71e4d739f1c	3625	110028
+@head	a91ba988a0c817dd	0	32
+const CHUNK	40f3e1688222681f	1	48
+const CHUNK_BITS	f97056317b89715e	1	51
+const DIR0	7672ec89ed5bbc73	1	45
+func At	028c78fced916c3d	35	1201
+func Freeze	66e0bc4198a0b1f8	66	2401
+func FrozenLen	dded76b80dc15f94	6	310
+func Get	031b6be3268451f0	35	1200
+func Len	42de7647359730d8	6	302
+func Push	d2ac588b6c433292	106	3593
+func PushAll	7b08fde897f85637	180	5954
+func Read	78e091ef27db3fa5	112	3759
+func Set	d8909c5476e2dba1	36	1286
+type Frozen	5a7334942afea0d4	5	237
+type Table	9d8a8beedd990cb9	7	316

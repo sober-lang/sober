@@ -1,0 +1,13 @@
+type H func(x int) int
+
+type Box struct { h H }
+
+type Rt struct { path string; tags []string }
+
+func mkH(prefix string) H {
+    return (x int) => x + len(bytes(prefix))
+}
+
+func incr(x int) int {
+    return x + 1
+}

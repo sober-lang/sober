@@ -142,22 +142,12 @@ inductive Frame : Type where
   | dexitL (v : Expr)
   /-- dexit の新しい状態の評価中（評価済みの domain の値 d を保持） -/
   | dexitR (d : Expr)
-  /-- 呼び出しの引数評価中。値が戻ったら region を push し、シフト + coerce した
-  本体に代入して同世界で評価する（round4） -/
-  | callK (fn : Nat) (ts : List Ty)
-  /-- anchor つき呼び出し（R2）の引数評価中。値が戻ったら anchor（mut 位置の値の region）を読み、
-  region 0 をそこへ写した本体を同世界で評価する -/
-  | callMK (fn : Nat) (ts : List Ty)
-  /-- 関数値呼び出しの関数側評価中（引数 e を保持） -/
-  | callvL (e : Expr)
+  /-- 関数値呼び出しの関数側評価中（anchor a と引数 e を保持） -/
+  | callvL (a : Nat) (e : Expr)
   /-- 関数値呼び出しの引数評価中（評価済みの関数値 fv を保持） -/
-  | callvR (fv : Expr)
-  /-- anchor つきの関数値呼び出し（L1）の関数側評価中（anchor a と引数 e を保持） -/
-  | callMvL (a : Nat) (e : Expr)
-  /-- anchor つきの関数値呼び出しの引数評価中（評価済みの関数値 fv を保持） -/
-  | callMvR (a : Nat) (fv : Expr)
-  /-- anchor を注釈で持つ callMK（callMv の委譲先）: 値が戻ったら region 0 を a へ写した本体を同世界で評価する -/
-  | callMKa (a : Nat) (fn : Nat) (ts : List Ty)
+  | callvR (a : Nat) (fv : Expr)
+  /-- 呼び出し（call と callv が共有する継続）の引数評価中: 値が戻ったら region を push し、region 0 を注釈の a へ写した本体を同世界で評価する -/
+  | callK (a : Nat) (fn : Nat) (ts : List Ty)
   /-- 関数の返り境界。値が戻ったら relocate（境界コピー）して region を pop し、
   結果型 t（呼び手座標の relocR）へ coerceTo で注釈を書き換える（R0: opt / union の中の
   コンテナが締まるので、nil / inl / inr の注釈も締めた型に揃える。codegen では恒等） -/
@@ -947,11 +937,9 @@ def step (Δ : Defs) (π : List Bool) : State → ChanSt → Option (State × Ch
   | .eval H S (fst e), K => some (.eval H (.fstK :: S) e, K)
   | .eval H S (ann e t), K => some (.eval H (.annK t :: S) e, K)
   | .eval H S (snd e), K => some (.eval H (.sndK :: S) e, K)
-  | .eval H S (call fn ts e), K => some (.eval H (.callK fn ts :: S) e, K)
-  | .eval H S (callM fn ts e), K => some (.eval H (.callMK fn ts :: S) e, K)
+  | .eval H S (call a fn ts e), K => some (.eval H (.callK a fn ts :: S) e, K)
   | .eval H S (fnref fn ts), K => some (.ret H S (fnref fn ts), K)
-  | .eval H S (callv f e), K => some (.eval H (.callvL e :: S) f, K)
-  | .eval H S (callMv a f e), K => some (.eval H (.callMvL a e :: S) f, K)
+  | .eval H S (callv a f e), K => some (.eval H (.callvL a e :: S) f, K)
   | .eval H S (block e), K => some (.eval (H ++ [[]]) (.regionK :: S) e, K)
   | .eval H S (blockR t e), K => some (.eval (H ++ [[]]) (.regionKR t :: S) e, K)
   | .eval H S (copyTo k t e), K => some (.eval H (.copyK k t :: S) e, K)
@@ -1081,11 +1069,9 @@ def step (Δ : Defs) (π : List Bool) : State → ChanSt → Option (State × Ch
   | .ret H (.caseK l _ :: S) (inl _ v), K => some (.eval H S (subst 0 v l), K)
   | .ret H (.caseK _ r :: S) (inr _ v), K => some (.eval H S (subst 0 v r), K)
   | .ret H (.pairL b :: S) v, K => some (.eval H (.pairR v :: S) b, K)
-  | .ret H (.callvL e :: S) v, K => some (.eval H (.callvR v :: S) e, K)
-  -- 関数値呼び出し: 関数値が fnref なら、引数値を callK に渡し直して call に委譲する
-  | .ret H (.callvR (fnref fn ts) :: S) v, K => some (.ret H (.callK fn ts :: S) v, K)
-  | .ret H (.callMvL a e :: S) v, K => some (.eval H (.callMvR a v :: S) e, K)
-  | .ret H (.callMvR a (fnref fn ts) :: S) v, K => some (.ret H (.callMKa a fn ts :: S) v, K)
+  -- 関数値呼び出し: 関数値が fnref なら、引数値を callK に渡し直して呼び出しに委譲する
+  | .ret H (.callvL a e :: S) v, K => some (.eval H (.callvR a v :: S) e, K)
+  | .ret H (.callvR a (fnref fn ts) :: S) v, K => some (.ret H (.callK a fn ts :: S) v, K)
   | .ret H (.pairR a :: S) v, K => some (.ret H S (pair a v), K)
   | .ret H (.fstK :: S) (pair a _), K => some (.ret H S a, K)
   | .ret H (.annK t :: S) v, K => some (.ret H S (Expr.coerceTo t v), K)
@@ -1342,29 +1328,9 @@ def step (Δ : Defs) (π : List Bool) : State → ChanSt → Option (State × Ch
       | Option.none => none
   -- recv: dequeue。空キューなら none（blocked） — 待機であって故障ではない。
   -- progress の言明の第 3 の口（Blocked）
-  -- call: 引数（loc-free 値）を本体に代入し、空ヒープ・空スタックの入れ子世界を開く
-  -- call（round4: 同世界化）: region を push し、シフト + coerce した本体に代入して
-  -- 同じ世界で評価する。ρ = 呼び手深さ - 1（base のフレーム region 1 ↦ 押した region）
-  -- V3-2: 型引数 ts で代入した仮想 Def（dfn.inst ts）をインスタンス化する
-  | .ret H (.callK fn ts :: S) v, K =>
-      match Δ[fn]? with
-      | Option.some dfn =>
-          some (.eval (H ++ [[]]) (.fretK ((dfn.inst ts).ret.relocR (H.length - 1)) :: S)
-            (Expr.subst 0 (Expr.coerceTo ((dfn.inst ts).param.shiftR (H.length - 1)) v)
-              ((dfn.inst ts).body.shiftTy (H.length - 1))), K)
-      | Option.none => none
-  -- anchor つき call（R2）: anchor a = 引数値の mut 位置の region（型付き状態では Ty.anchorOf と一致。
-  -- 見つからなければ呼び手最内 = call と同じ）。本体は region 0 を a、それ以外を +d へ写す
-  | .ret H (.callMK fn ts :: S) v, K =>
-      match Δ[fn]? with
-      | Option.some dfn =>
-          let a := (Expr.anchorV (dfn.inst ts).param v).getD (H.length - 1)
-          some (.eval (H ++ [[]]) (.fretK ((dfn.inst ts).ret.relocA a (H.length - 1)) :: S)
-            (Expr.subst 0 (Expr.coerceTo ((dfn.inst ts).param.renR a (H.length - 1)) v)
-              ((dfn.inst ts).body.renTy a (H.length - 1))), K)
-      | Option.none => none
-  -- anchor を注釈で持つ callMK（callMv の委譲先 — L1）: anchor は値から読まず a を使う
-  | .ret H (.callMKa a fn ts :: S) v, K =>
+  -- 呼び出し（call と callv が共有する腕）: region を push し、型引数 ts で代入した Def（dfn.inst ts）の本体を、
+  -- region 0 を注釈の a、それ以外を +d（d = 呼び手深さ - 1）へ写して、coerce した引数を代入して同じ世界で評価する
+  | .ret H (.callK a fn ts :: S) v, K =>
       match Δ[fn]? with
       | Option.some dfn =>
           some (.eval (H ++ [[]]) (.fretK ((dfn.inst ts).ret.relocA a (H.length - 1)) :: S)

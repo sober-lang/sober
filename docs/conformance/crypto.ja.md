@@ -26,8 +26,8 @@
 <!-- confsync:begin claims crypto-prims intentional -->
 | 項目 | 状態 | 証拠 |
 |---|---|---|
-| ソフトウェアのAES（AES-NIの無い機械ではNoHardware — TLSはChaCha20-Poly1305へフォールバックする） | 意図して非対応 | — |
-| scrypt・MD5 / SHA-1のハッシュ | 意図して非対応 | — |
+| ソフトウェアのAES（AES-NIの無い機械ではNoHardware — TLSはChaCha20-Poly1305へフォールバックする） | 意図して非対応 | なし |
+| scrypt・MD5 / SHA-1のハッシュ | 意図して非対応 | なし |
 <!-- confsync:end claims crypto-prims intentional -->
 
 ## 未実装
@@ -35,8 +35,8 @@
 <!-- confsync:begin claims crypto-prims planned -->
 | 項目 | 時期 | 今の挙動の証拠 |
 |---|---|---|
-| AES-256-GCM | 0.8圏 | — |
-| ECDSAの署名（RFC 6979） | 0.8圏 | — |
+| AES-256-GCM | 0.8圏 | なし |
+| ECDSAの署名（RFC 6979） | 0.8圏 | なし |
 <!-- confsync:end claims crypto-prims planned -->
 
 ## 証拠 — 通ったベクタ

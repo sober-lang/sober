@@ -1,0 +1,17 @@
+@@full	0e0268df1e570244	2416	67909
+@head	d42f2040e303eda7	0	149
+const tDebug	5ef554e3addf0527	3	199
+const tHome	8a2ed0d80931f9f3	4	252
+const tJobs	d6909966ade6954e	5	289
+const tNeed	52764de3adfbeed0	3	207
+const tPort	a2db67e5f9ffc380	6	336
+const tTable	181abcb38fcdf0a2	13	557
+const tTok	ddb386896c065fb1	4	248
+func TestFormat	246261679ada2d0a	20	946
+func TestParseTable	d9256f7ca653af90	97	4332
+func TestSpec	1abd7de796de2e85	34	1632
+func TestValues	002c5e8b590721e9	111	3355
+func intIs	a39f6ee51b053207	15	567
+func strIs	436b8967f36473f3	15	573
+func verdict	b809f87fd1029dcd	37	1538
+type ecase	fa76a3a9a95b0562	4	207

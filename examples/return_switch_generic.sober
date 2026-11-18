@@ -1,0 +1,29 @@
+package main
+
+// 総称関数で switch の分岐の束縛をそのまま返す: T は region を上げて読めればよい（region を持たない型に限らない）
+
+type Opt[T] union {
+    Some { v T }
+    None {}
+}
+
+type F func(x int) int
+
+func orElse[T](o Opt[T], d T) T {
+    return switch o {
+    case Some{v}: v
+    default: d
+    }
+}
+
+func mk(s string) F {
+    return (x int) => x + len(bytes(s))
+}
+
+func main() {
+    println(orElse(Some[string]{v: "ab"}, "cd"))
+    println(len(orElse(None[[]int]{}, []int{1, 2})))
+    g := mk("abc")
+    f := orElse(Some[F]{v: g}, g)
+    println(f(1))
+}

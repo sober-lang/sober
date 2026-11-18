@@ -1,0 +1,4 @@
+    return switch q {
+    case nil: d
+    default: q
+    }

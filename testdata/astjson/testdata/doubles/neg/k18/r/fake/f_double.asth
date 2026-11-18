@@ -1,0 +1,6 @@
+@@full	e0877fa5fc1dad36	152	2732
+@head	a403af22d7fb9052	0	83
+func New	b6e578ef5cddd24c	4	245
+func Show	bf6f67412eba9e37	5	290
+type Bad	c46bc68f4fa91a27	1	64
+type Conn	6a085348e579b15d	3	159

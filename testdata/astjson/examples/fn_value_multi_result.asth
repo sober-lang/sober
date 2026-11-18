@@ -1,0 +1,18 @@
+@@full	c0264fd1cb17343a	2351	59230
+@head	7b6f34d1a1ab8d6d	0	141
+func blk	ef885ab702a08a2f	16	593
+func early	cdc789588a43799c	43	1445
+func eta	4544d142616253d7	5	214
+func firstOver	d72171b306278d50	23	826
+func fwd	e6c044ecf0e69e0f	8	339
+func incr	9971a2c49fa627b5	6	285
+func lam	14e57b2e34a0fc67	10	412
+func main	bafc39ecf8241d80	167	5367
+func opt	51bf2f01a8c4f6bc	19	644
+func pick	245cb786b7fe53d8	19	691
+func tail	9b1aeccc20e2cee1	17	637
+func two	4d40edd929e72fe2	10	416
+func viaBind	bc1b157861f5d4af	9	353
+type Empty	33cfd2a1cbeaa695	1	66
+type H	c1de6fc843331749	3	144
+type R	ed564b07639ff6c3	2	106

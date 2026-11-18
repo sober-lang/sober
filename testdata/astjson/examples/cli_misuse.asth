@@ -1,0 +1,12 @@
+@@full	ee143468e14221ee	1909	52416
+@head	a8d71f2084d52622	0	140
+const Build	1e9f579457911aab	18	876
+const Clean	1b1279202542d120	3	216
+const Jobs	e6fdb3dde3368104	7	390
+const Mode	e47a1666e6fcabe4	8	424
+const Out	94e914fee0f63703	4	258
+const Src	699557722db028ab	3	209
+const Tool	70d4d5de0ac0641a	8	424
+const Verbose	0d01f605a6df9a9f	4	259
+func main	3f5f56cdd65811a3	143	4476
+func try	2d2665bd37c1b92f	85	3939

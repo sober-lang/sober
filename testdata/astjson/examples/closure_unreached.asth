@@ -1,0 +1,9 @@
+@@full	dccb761eecf4fe0d	518	11928
+@head	f8802cba5eefdec2	0	31
+func apply	e73b3c402539385e	14	597
+func main	b18a69e4ee77f2b1	18	620
+func unused	00dc171b9a13e8b6	12	550
+func used	eb7abbb728a32ac0	8	427
+func viaValue	867ef0fddb0afc4b	8	431
+type Box	38e05c14d7928ecf	2	108
+type K	58a0de3df2161a00	3	144

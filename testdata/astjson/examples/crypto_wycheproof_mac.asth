@@ -1,0 +1,16 @@
+@@full	2a31312b0ffce60e	2297	68024
+@head	389271329a882b15	0	321
+const Files	c1d96cd15f0cea7f	3	135
+func file	828688f7a93c3986	18	693
+func kdfs	4522c8fbdab0aa7c	118	3984
+func macs	35d4f794dde0a030	110	3724
+func main	e85134a6d23800bb	16	639
+func prefix	dd18403a9ea25005	28	1047
+func report	ab134f7ee4e7f6af	30	1150
+func unhex	e7aa976ed6d8366f	10	449
+type KdfFile	1c290554947a5ebf	3	164
+type KdfGroup	516f8721eea60226	3	159
+type KdfTest	55c44e2301409bff	8	426
+type MacFile	be9a72060c24c3a0	3	164
+type MacGroup	3874370d8e94727f	4	211
+type MacTest	c7e3e82baadeeb63	6	324

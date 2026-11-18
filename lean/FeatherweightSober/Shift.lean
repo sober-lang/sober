@@ -31,36 +31,8 @@ theorem Ty.mutTop_shiftR (ρ : Nat) : ∀ ta : Ty, (ta.shiftR ρ).mutTop = ta.mu
   | .ref m r _ => by cases m <;> simp [Ty.mutTop, Ty.shiftR]
   | .slice m r _ => by cases m <;> simp [Ty.mutTop, Ty.shiftR]
   | .map m r _ => by cases m <;> simp [Ty.mutTop, Ty.shiftR]
-  | .int | .tvar _ | .bool | .byte | .f64 | .unit | .opt _ | .union _ _ | .prod _ _ | .chan _ _ | .dom _ _ | .fn _ _ | .own _ _ _ | .rvar _ | .mus _ _ _ | .muRs _ _ _ _ => by
+  | .int | .tvar _ _ _ | .bool | .byte | .f64 | .unit | .opt _ | .union _ _ | .prod _ _ | .chan _ _ | .dom _ _ | .fn _ _ | .own _ _ _ | .rvar _ | .mus _ _ _ | .muRs _ _ _ _ => by
     simp [Ty.mutTop, Ty.shiftR]
-
-/-- anchor の読み取りはシフトと可換（実引数の型の mut 位置の region が +ρ ずれるだけ） -/
-theorem Ty.anchorOf_shiftR (ρ : Nat) : ∀ (p ta : Ty), Ty.anchorOf p (ta.shiftR ρ) = (Ty.anchorOf p ta).map (· + ρ) := by
-  intro p
-  induction p with
-  | prod l r ihl ihr =>
-    intro ta
-    cases ta <;> simp only [Ty.anchorOf, Ty.shiftR, Option.map_none]
-    rename_i l' r'
-    rw [ihl, ihr]
-    cases Ty.anchorOf l l' <;> simp
-  | _ =>
-    intro ta
-    simp only [Ty.anchorOf]
-    split <;> simp [Ty.mutTop_shiftR]
-
-/-- 型引数（loc-free・chan-free）は写像で不動 -/
-theorem Ty.renR_of_argOk {ρ0 δ : Nat} {t : Ty} (h : t.tyArgOk = true) : t.renR ρ0 δ = t := by
-  simp only [Ty.tyArgOk, Bool.and_eq_true] at h
-  exact Ty.renR_of_lf h.1 h.2.1
-
-theorem Ty.map_renR_of_argsOk {ts : List Ty} {ρ0 δ : Nat} (h : Ty.tyArgsOk ts = true) :
-    ts.map (Ty.renR ρ0 δ) = ts := by
-  conv => rhs; rw [← List.map_id ts]
-  apply List.map_congr_left
-  intro τ hτ
-  simp only [Ty.tyArgsOk, List.all_eq_true] at h
-  exact Ty.renR_of_argOk (h τ hτ)
 
 /-- 写像の後のシフト = anchor と深さを +ρ した写像 -/
 theorem rmap_shift (a d ρ r : Nat) : rmap a d r + ρ = rmap (a + ρ) (d + ρ) r := by
@@ -68,7 +40,7 @@ theorem rmap_shift (a d ρ r : Nat) : rmap a d r + ρ = rmap (a + ρ) (d + ρ) r
 
 theorem Ty.renR_shiftR (a d ρ : Nat) : ∀ t : Ty, (t.renR a d).shiftR ρ = t.renR (a + ρ) (d + ρ)
   | .int => rfl
-  | .tvar _ => rfl
+  | .tvar _ r k => by cases h : k.rf <;> simp [Ty.renR, Ty.shiftR, h, rmap_shift]
   | .bool => rfl
   | .byte => rfl
   | .f64 => rfl
@@ -89,7 +61,7 @@ theorem Ty.renR_shiftR (a d ρ : Nat) : ∀ t : Ty, (t.renR a d).shiftR ρ = t.r
 
 theorem Ty.relocA_shiftR (a d ρ : Nat) : ∀ t : Ty, (t.relocA a d).shiftR ρ = t.relocA (a + ρ) (d + ρ)
   | .int => rfl
-  | .tvar _ => rfl
+  | .tvar _ r k => by cases h : k.rf <;> cases h' : k.imm <;> simp [Ty.relocA, Ty.shiftR, h, h', rmap_shift] <;> split <;> rfl
   | .bool => rfl
   | .byte => rfl
   | .f64 => rfl

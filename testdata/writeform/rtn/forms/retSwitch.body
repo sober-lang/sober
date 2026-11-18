@@ -1,0 +1,4 @@
+    return switch o {
+    case Some{v}: v
+    default: d
+    }

@@ -66,7 +66,9 @@ func ty(st mut S, p mut P) int {
     case 'i':
         return mk(mut st, TInt, 0, 0, 0)
     case 'v':
-        return mk(mut st, TVar, num(mut p), 0, 0)
+        i := num(mut p)
+        r := num(mut p)
+        return mk(mut st, TVar, i, r, kindTok(mut p))
     case 'b':
         return mk(mut st, TBool, 0, 0, 0)
     case 'y':
@@ -112,6 +114,39 @@ func ty(st mut S, p mut P) int {
 func optTy(st mut S, p mut P) int {
     c := tag(mut p)
     return if c == 'N' { 0 - 1 } else { ty(mut st, mut p) }
+}
+
+// kindTok は旗 5 つ（rf mf cf cov kf — 0 / 1）を詰めた int（rf = 1・mf = 2・cf = 4・cov = 8・kf = 16）
+func kindTok(p mut P) int {
+    rf := num(mut p)
+    mf := num(mut p)
+    cf := num(mut p)
+    cv := num(mut p)
+    kf := num(mut p)
+    return rf + 2 * mf + 4 * cf + 8 * cv + 16 * kf
+}
+
+// kindsTok は List Kind（K n K… → st.h の [n, k…]、空は -1）
+func kindsTok(st mut S, p mut P) int {
+    _ = tag(mut p)
+    n := num(mut p)
+    if n == 0 {
+        return 0 - 1
+    }
+    mut ks := mut []int{}
+    mut i := 0
+    while i < n {
+        ks = append(ks, kindTok(mut p))
+        i += 1
+    }
+    at := table.Len(mut st.h)
+    table.Push(mut st.h, n)
+    mut j := 0
+    while j < len(ks) {
+        table.Push(mut st.h, ks[j])
+        j += 1
+    }
+    return at
 }
 
 // list は List Ty（L n T… → st.h の [n, t…]、空は -1）
@@ -170,8 +205,21 @@ func putTy(st mut S, out mut []byte, t int) {
         put(mut out, "i")
         return
     case TVar:
+        kd := tC(mut st, t)
         put(mut out, "v ")
         putNum(mut out, tA(mut st, t))
+        put(mut out, " ")
+        putNum(mut out, tB(mut st, t))
+        put(mut out, " ")
+        putB(mut out, kRf(kd))
+        put(mut out, " ")
+        putB(mut out, kMf(kd))
+        put(mut out, " ")
+        putB(mut out, kCf(kd))
+        put(mut out, " ")
+        putB(mut out, kCov(kd))
+        put(mut out, " ")
+        putB(mut out, kKf(kd))
         return
     case TBool:
         put(mut out, "b")
@@ -324,10 +372,12 @@ func line(st mut S, p mut P, out mut []byte) {
         ot := optTy(mut st, mut p)
         rn = readAsB(mut st, m, ot, ty(mut st, mut p))
         kind = 3
-    } else if fname == "tyArgOk" {
-        rb = tyArgOk(mut st, ty(mut st, mut p))
-    } else if fname == "tyArgsOk" {
-        rb = tyArgsOk(mut st, list(mut st, mut p))
+    } else if fname == "kindOk" {
+        k := kindTok(mut p)
+        rb = kindOk(mut st, k, ty(mut st, mut p))
+    } else if fname == "kindsArgsOk" {
+        ks := kindsTok(mut st, mut p)
+        rb = kindsArgsOk(mut st, ks, list(mut st, mut p))
     } else if fname == "tsubst" {
         ts := list(mut st, mut p)
         rn = tsubst(mut st, ts, ty(mut st, mut p))

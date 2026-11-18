@@ -1,0 +1,26 @@
+@@full	2c0cd469cd7eb8b7	10494	313787
+@head	cbff8d2452d7c3f5	0	135
+func AbbrAt	fc677cc695747acc	11	507
+func DstAt	3e579c87e6f4df7d	11	504
+func FromCivilIn	8cc08a034724e5b7	116	3951
+func LoadZone	89adfd280a78a4ee	65	2258
+func OffsetAt	02de8ab44125bb7f	11	506
+func ToCivilIn	4d4dbd09367f2826	11	473
+func UTC	df50909b045d6f3d	20	957
+func ZoneName	4eb24e21ead34608	5	274
+func base36	4351c19a0a9892c5	70	2228
+func lookup	69478d1d024631de	164	5149
+func noRule	b37376b1b6a25000	18	935
+func num	5b46fc860dcb66be	55	1814
+func parseRule	d9224e296b4b0264	190	6266
+func parseZone	8d25785d62a58e52	193	6727
+func ruleAt	5648d61fef5ffc90	91	3057
+func ruleDate	d9070424ac2e6a94	240	7682
+func ruleName	2cb6117d2124ca98	117	3693
+func ruleOffset	83c7b05624056066	195	6100
+func signedDec	b562be2a2e794409	58	1875
+func switchAt	645bd5eaa03429af	108	3556
+type Rule	f1445f1e5ff9c9f9	8	437
+type RuleDate	d240e5cf2378408d	7	351
+type UnknownZone	995dd8869f084b9f	1	72
+type Zone	feac8a8f71ed871f	14	650

@@ -1,0 +1,16 @@
+package main
+
+// 負例: 関数の結果に匿名の関数型は置けない。呼ばない関数でも、宣言で拒否する。
+// 値として返す関数は名前付き関数型で書く（`type H func(x int) int` と `func pick() H`）
+
+func incr(x int) int {
+    return x + 1
+}
+
+func pick() func(x int) int {
+    return incr
+}
+
+func main() {
+    println(incr(1))
+}

@@ -117,8 +117,8 @@ func sendFile(path string, out mut http.server.Out, emit func(out mut http.serve
 
 フィールド:
 
-- `length` — streamの本文の長さ（Content-Length — nil = 長さ不定 = chunked）。bodyのレスポンスでは読まない
-- `headers` — 任意ヘッダ（書いた順に Cache-Control の後へ）。std/http/server が書く名前（Content-Type・Content-Length・Content-Encoding・Transfer-Encoding・Connection・Vary）・保存の方針と検証子の名前（Cache-Control・CDN-Cache-Control・Surrogate-Control・ETag・Last-Modified — 書くのは型のフィールドcache / validatorsだけ）とCR / LF / NULを含む名前・値はpanic(BadHeader) — レスポンスの分割の封:     http.server.Response{status: 200, contentType: "text/plain", body: b, headers: http.server.Headers{list: []http.Field{http.Field{name: "X-Request-Id", value: id}}}}
+- `length` — streamの本文の長さ（Content-Length — nil = 長さ不定 = chunked）。bodyのレスポンスでは読まない。304では、compression: のVaryを200と同じ条件で決めるための200の本文の長さ（contentTypeと組で。304はContent-Typeを書かない）
+- `headers` — 任意ヘッダ（書いた順に Cache-Control の後へ）。std/http/server が書く名前（Date・Content-Type・Content-Length・Content-Encoding・Transfer-Encoding・Connection・Vary）・保存の方針と検証子の名前（Cache-Control・CDN-Cache-Control・Surrogate-Control・ETag・Last-Modified — 書くのは型のフィールドcache / validatorsだけ）・tokenでない名前・field-valueでない値（制御文字・前後の空白）・1行だけの欄（Locationなど。singleFieldの表）の2本目はpanic(BadHeader)。表に無い欄（リストの欄・アプリが定めた欄）は同じ名前で何本でも書ける。レスポンスの分割の封:     http.server.Response{status: 200, contentType: "text/plain", body: b, headers: http.server.Headers{list: []http.Field{http.Field{name: "X-Request-Id", value: id}}}}
 - `coded` — 本文の符号化を選んだレスポンス（Staticのprecompressed — 下のCoded）。あればServeConnはVary: Accept-Encodingを書き、encodingが空でなければContent-Encoding を書き、compression: を掛けない
 - `cache` — 保存の方針（Cache-Control）。レスポンス1件で書くのはPrivate / NoStore — 共有キャッシュも保存してよい方針（Fresh）はルートの行（Route.cache・Staticのcache:）で書き、Dispatchがこのフィールドの無いレスポンスにコピーする〔stdの外でレスポンス1件にFresh / Sharedを書くとanalyzerが拒否する〕）。どこにも無ければ `Cache-Control: private`（利用者のブラウザだけが保存してよい — 認証つきのリクエストのレスポンスをCDNの規則が拾う形〔web cache deception〕の入口を狭める既定）    http.server.Response{status: 200, contentType: "text/plain", body: b, cache: http.server.NoStore{}}
 - `validators` — 検証子（ETag・Last-Modified — 作れるのはstd/http/serverだけ: 封の型。同じ検証子を別の利用者の中身に付けると、検証しに来たキャッシュへの304で他人の版が出る — 検証子は中身から std が作る）
@@ -494,7 +494,7 @@ a と b を繋いだ表
 func Dispatch(routes []Route, r Request) Response
 ```
 
-routes から r に一致する行を選んで middleware とハンドラを走らせる。一致は path のパターンと method（大文字小文字を区別する）。優先順は表の並びに依らない: 一致した行どうしは、先頭から見て最初に種類が違うセグメントで 静的 > :name > \*name の方が勝つ（同じ具体さなら表の先の行）。HEADのリクエストはHEADの行が無ければGETの行へ（本文はServeConnが落とす）。pathが一致する行があってmethodが合わなければ405・無ければ404。パスはデコードしない・末尾の "/" は区別する（リダイレクトしない）
+routes から r に一致する行を選んで middleware とハンドラを走らせる。一致は path のパターンと method（大文字小文字を区別する）。優先順は表の並びに依らない: 一致した行どうしは、先頭から見て最初に種類が違うセグメントで 静的 > :name > \*name の方が勝つ（同じ具体さなら表の先の行）。HEADのリクエストはHEADの行が無ければGETの行へ（本文はServeConnが落とす）。pathが一致する行があってmethodが合わなければ405・無ければ404。パスはデコードしない・末尾の "/" は区別する（リダイレクトしない）。どの行にも一致しないCONNECTは501、ターゲットが "\*" のリクエストはOPTIONSなら204（本文とAllowなし。RFC 9110 9.3.7）、ほかのメソッドは400。absolute-form（http://host/path）のリクエストはpathの部分で照合する
 
 ## Static
 
@@ -550,10 +550,10 @@ rのパターンの :key / \*keyの値（Dispatchが一致させたパターン�
 ```sober
 @errors(io.NotFound, io.Closed, io.Timeout, io.Expired, io.Denied, io.Other)
 @effects(block, io, panic, nondet, Stream)
-func ServeConn(c net.Conn, route func(Request) Response, maxHead int?, maxBody int?, compression Gzip?, work task.Local?) error?
+func ServeConn(c net.Conn, route func(Request) Response, maxHead int?, maxBody int?, headWait int?, bodyWait int?, sendWait int?, compression Gzip?, work task.Local?) error?
 ```
 
-cのリクエストを順にrouteに渡してレスポンスを書く（keep-alive）。相手が閉じる（FIN）・Connection: close・HTTP/1.0の既定・誤りのレスポンスの後で返る（閉じるのは呼び手 — net.Serveの接続のtaskの出口）。maxHead = リクエストの頭の上限（既定8 KiB — 超えたら431）・maxBody = 本文の上限（既定 16 KiB — 超えたら 413）。本文と持ち越しは接続の task の region に載るので、上限は net.Serve の budget（既定 64 KiB）に収まる大きさで（目安: budget ≥ 3 × (maxHead + maxBody) + 16 KiB〔受けの切片〕）。compression: はレスポンスのgzip（上のGzip — 省略 = 圧縮しない）。work: はcompression: の符号器の作業域のストレージ（ワーカー局所のlease — region-domain-pool.md 4d節）: 省略するとリクエストごとに作業域を取る（接続のtaskのregionにページとして残る — 接続の数に比例）。渡すと同じワーカーのストレージを借りる（作業域は ≈ 200 KB × ワーカーの数で接続の数に依らない・結果は同じバイト列）:
+cのリクエストを順にrouteに渡してレスポンスを書く（keep-alive）。相手が閉じる（FIN）・Connection: close・HTTP/1.0の既定・誤りのレスポンスの後で返る（閉じるのは呼び手 — net.Serveの接続のtaskの出口）。maxHead = リクエストの頭の上限（既定8 KiB — 超えたら431）・maxBody = 本文の上限（既定16 KiB。超えたら413。chunkの大きさの行の数がintに収まらなければ400）。ターゲットに0x80以上のバイトがあれば400（非ASCIIは%エンコードして送る）。absolute-formのターゲット（RFC 9112 3.2.2）は受け、Hostはターゲットのauthorityを使う（受けたHostは無視する）。Transfer-Encodingのchunkedに付いたパラメータは読み捨てる（Content-Lengthとの併記は400）。レスポンスの頭にはDate（IMF-fixdate。ワーカーごとに秒が変わったときだけ作り直す値で、最大で約0.3秒古い）を書く。本文と持ち越しは接続のtaskのregionに載る。net.Serveのbudget（既定64 KiB）は接続1本の予約で、maxBodyがそれを越えてもよい（予約を越える本文は天井の空きから借りて受け、天井が埋まっていればその接続が死ぬ）。budgetを上げるのは、借りずに済ませたいときだけ。compression: はレスポンスのgzip（上のGzip — 省略 = 圧縮しない）。work: はcompression: の符号器の作業域のストレージ（ワーカー局所のlease — region-domain-pool.md 4d節）: 省略するとリクエストごとに作業域を取る（接続のtaskのregionにページとして残る — 接続の数に比例）。渡すと同じワーカーのストレージを借りる（作業域は ≈ 200 KB × ワーカーの数で接続の数に依らない・結果は同じバイト列）:
 
 ```sober
 gzw := task.NewLocal((w mut compress.flate.Work) => compress.flate.NewWork(mut w))   // Serve の前に 1 回
@@ -562,16 +562,18 @@ net.Serve(l, (c net.Conn) => http.server.ServeConn(c, route, compression: http.s
 
 work: は compression: と組みで（compression: なしの work: は panic(WorkNoCompress{}) — 呼び手の契約違反）。1 つのストレージを全部の接続で共有してよい（中はワーカーごとに分かれている）
 
+期限（相手が送り終える・受け終えるのを待つ時間の上限。単位はtask.MS・0以下は開いた時点で期限切れ・期限なしは書けない）: headWait = リクエストの頭が揃うまで（既定30秒。数え始めはServeConnに入った時刻と、前のリクエストのレスポンスを送り終えた時刻。keep-aliveの待ちを含む）・bodyWait = 頭が揃ってから本文を受け終えるまで（既定60秒）・sendWait = 送りが1バイトも進まない間隔（既定60秒）。routeの実行中は効かない。期限が来たら、待っていた受け・送りがio.Timeoutで戻り、ServeConnはio.Timeoutを返す（相手には何も送らずに閉じる）。net.ServeのLedgerのプールの節のtimeoutが1増える。期限は最大で約2秒遅れて効く（早くは効かない）。scopeの期限（task.Runのdeadline:）とは別のもので、どちらも効く
+
 失敗のラベル: `io.NotFound`・`io.Closed`・`io.Timeout`・`io.Expired`・`io.Denied`・`io.Other`
 
 ## ServeWith
 
 ```sober
 @errors(recv, send, put, io.NotFound, io.Denied, io.Timeout, io.Expired, io.Other)
-@effects(block, panic, Stream)
-func ServeWith(recv func(k func([]byte)) error?, send func(b []byte) error?, route func(Request) Response, maxHead int?, maxBody int?, compression Gzip?, work task.Local?, put (func(b []byte) error?)?) error?
+@effects(block, io, panic, Stream)
+func ServeWith(recv func(k func([]byte)) error?, send func(b []byte) error?, route func(Request) Response, maxHead int?, maxBody int?, headWait int?, bodyWait int?, sendWait int?, compression Gzip?, work task.Local?, put (func(b []byte) error?)?) error?
 ```
 
-ServeConn の核を転送路の受信コールバック recv（`for chunk <- recv()? { … }` の生成元 — net.Recv / tls.Recv の形）と送信コールバック send に一般化したもの（ServeConn は net の 1 行の包み・TLS の接続は `http.server.ServeWith((k) => tls.Recv(c, k), (b) => tls.Send(c, b), route, put: (b) => tls.Put(c, b))`）。失敗は recv / send / put が返すもの（仮引数の名前の @errors — [language.md 13 節](../language.md): 呼び手は渡したコールバックのラベルで switch を網羅する）。put（省略可 — [language.md 25 節](../language.md)Z）を渡すと送りを2フェーズにする: 受けた切片1つ分のレスポンスの列をputで積み（送らない）、積んだ分はrecvが次の受けを待つ前に送る約束（tls.Recvは切片1つを配り終えるたびにtls.Flushする — 送りの完了待ちがレスポンスの作業のregion〔受けの反復〕の閉じた後になり、待ちの間にレスポンスの平文のページを抱えない）。streamのレスポンス（前のレスポンスと頭・emitごと — emitの間隔のまま相手へ届く）はputがあってもsendで送る。putを渡さない呼び出し点のコードは put の無い形と同じ（`if put != nil` は呼び出し点ごとに畳まれる）誤りのレスポンスの後の読み捨て（linger）もrecvの続きを読む — tls.Recvは2度目をClosedで返すので読み捨てずに閉じる（TLSのclose\_notifyは呼び手のServeが送る）
+ServeConn の核を転送路の受信コールバック recv（`for chunk <- recv()? { … }` の生成元 — net.Recv / tls.Recv の形）と送信コールバック send に一般化したもの（ServeConn は net の 1 行の包み・TLS の接続は `http.server.ServeWith((k) => tls.Recv(c, k), (b) => tls.Send(c, b), route, put: (b) => tls.Put(c, b))`）。失敗は recv / send / put が返すもの（仮引数の名前の @errors — [language.md 13 節](../language.md): 呼び手は渡したコールバックのラベルで switch を網羅する）。put（省略可 — [language.md 25 節](../language.md)Z）を渡すと送りを2フェーズにする: 受けた切片1つ分のレスポンスの列をputで積み（送らない）、積んだ分はrecvが次の受けを待つ前に送る約束（tls.Recvは切片1つを配り終えるたびにtls.Flushする — 送りの完了待ちがレスポンスの作業のregion〔受けの反復〕の閉じた後になり、待ちの間にレスポンスの平文のページを抱えない）。streamのレスポンス（前のレスポンスと頭・emitごと — emitの間隔のまま相手へ届く）はputがあってもsendで送る。putを渡さない呼び出し点のコードは put の無い形と同じ（`if put != nil` は呼び出し点ごとに畳まれる）誤りのレスポンスの後の読み捨て（linger）もrecvの続きを読む — tls.Recvは2度目をClosedで返すので読み捨てずに閉じる（TLSのclose\_notifyは呼び手のServeが送る）headWait / bodyWait / sendWaitはServeConnと同じ。送りの間隔は、tls.Serveの接続のように接続の番号が分かれば送りの進みで数え、分からなければ送り1回の待ちの上限
 
 失敗のラベル: `recv`・`send`・`put`・`io.NotFound`・`io.Denied`・`io.Timeout`・`io.Expired`・`io.Other`

@@ -1,0 +1,9 @@
+@@full	a3760fd5fd725329	3846	108673
+@head	7b75b01f29d63f52	0	348
+func Open	10d56e2c50f46aec	113	3957
+func Send	d7ea434c06265e5c	314	10835
+func classifyTrip	78896a6418b883ab	45	1670
+func openOn	d2a1317e3462f706	79	3085
+func sameOrigin	196cdd405acc0fd5	81	2843
+type Session	afdae5a4993d2788	9	483
+type sessionSeal	c1de29a85b66aa4d	1	73

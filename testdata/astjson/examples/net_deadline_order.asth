@@ -1,0 +1,12 @@
+@@full	6ce4890fd5c0bee7	1589	46914
+@head	652aaf8bba128acd	0	280
+const hour	c6df0f0dd498466a	4	151
+const kids	b354d4c65460b517	1	45
+func child	11f8c3577a9503d9	20	797
+func main	475cbb938d9f30b1	7	297
+func probe	91584765bbbb4a9f	24	933
+func recv1	4549af9fe3465cd8	33	1143
+func recvFrom	ce739e402a24ccda	18	652
+func run	06abb67d87f955fb	72	2393
+func short	5fdf7539cb31e4f4	49	1624
+func show	0ac0c67492d97b9d	15	626

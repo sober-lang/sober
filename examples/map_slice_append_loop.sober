@@ -1,0 +1,52 @@
+package main
+
+// ループの本体でmapから読んだ不変のsliceに、ループの本体で作った値を追記して、mapへ戻す。
+// 値は内のregionにあるので、追記の結果は内のregionのsliceになり、mapへ置くときに写す
+
+func groupByLen(xs []string) map[string][]string {
+    mut m := mut map[string][]string{}
+    for x <- xs {
+        k := if len(bytes(x)) > 1 { "long" } else { "short" }
+        cur := m[k]
+        m[k] = if cur != nil { append(cur, x) } else { []string{x} }
+    }
+    return freeze(m)
+}
+
+func groupBy(xs []string, key func(string) string) map[string][]string {
+    mut m := mut map[string][]string{}
+    for x <- xs {
+        k := key(x)
+        cur := m[k]
+        if cur != nil { m[k] = append(cur, x) } else { m[k] = []string{x} }
+    }
+    return freeze(m)
+}
+
+func tagAll(xs []string) int {
+    mut m := mut map[string][]string{}
+    m["k"] = []string{"z"}
+    for x <- xs {
+        cur := m["k"]
+        m["k"] = switch cur { case nil: []string{x}; default: append(cur, x + "!") }
+    }
+    v := m["k"]
+    return if v != nil { len(v) } else { 0 }
+}
+
+func show(m map[string][]string, k string) {
+    v := m[k]
+    if v != nil {
+        for s <- v { println(k + ": " + s) }
+    }
+}
+
+func main() {
+    a := groupByLen([]string{"a", "bb", "c", "dd", "e"})
+    show(a, "short")
+    show(a, "long")
+    b := groupBy([]string{"x", "yy", "z"}, (s string) => if s == "yy" { "two" } else { "one" })
+    show(b, "one")
+    show(b, "two")
+    println(tagAll([]string{"p", "q", "r"}))
+}

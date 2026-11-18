@@ -1,0 +1,11 @@
+@@full	4540f554040b7066	8292	286193
+@head	a0166593625b7bb1	0	144
+func basicConstraints	baf519451386be96	182	5988
+func decodeExt	d2b8873e72298aff	190	6113
+func dnsSyntax	fac316e461ab006e	147	4829
+func extKeyUsage	ddbc60d530eb18c1	97	3304
+func keyUsage	220abecd9cea7b1c	115	3737
+func nameConstraints	cca43f3b819ec96d	283	9504
+func parseExts	8ec46e874d633c3a	233	7797
+func same	c78af3db5a17c237	39	1313
+func subjectAltName	0aef7c48ea94983d	163	5426

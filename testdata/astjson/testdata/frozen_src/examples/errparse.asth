@@ -1,0 +1,20 @@
+@@full	d30cbf978cb82113	4197	123002
+@head	7aaa9b710c68c96c	0	72
+func errPos	4541c408bf4d5d40	17	975
+func expr	72a34398db361f61	64	2102
+func factor	f17501c2b7965f31	100	3279
+func isDigit	b916d41c069251e6	10	413
+func lex	e72d61c839de4abd	117	4051
+func lineCol	7accf3654a0bc675	41	1471
+func main	d2301ab67e056a59	38	1172
+func punct	a4a376b8a6b58994	49	1510
+func run	2db6788e1f98b516	34	1192
+func show	4501c8eccf348144	54	2277
+func showSum	ac98ffb3618c4526	42	1845
+func sum2	23acd2524acfae9c	22	927
+func term	fc76b25e56beb04d	44	1523
+type BadInput	7d319467e8022385	2	118
+type Expected	33165c6ad5e8aad2	3	165
+type Token	1d311883f3af0fdc	4	211
+type UnexpectedChar	df87540c6b499b30	2	122
+type UnexpectedEnd	f2edbc7360c7aa3c	2	121

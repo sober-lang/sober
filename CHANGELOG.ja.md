@@ -2,6 +2,69 @@
 
 このファイルは公開リリースごとの利用者向けの変更点を記録する。形式は [Keep a Changelog](https://keepachangelog.com/ja/1.1.0/) に倣う。バージョンは [Semantic Versioning](https://semver.org/lang/ja/) に従う（0.x の間は後方互換を約束しない）。
 
+## v0.7.5（2026-11-18）
+
+攻撃への耐性を上げた版。httparenaの攻撃への耐性（Resilience）の検査27個が、全部survivedになった（これらの変更を入れる前の木では25個で、tiny-chunk-floodとjson-bignumがメモリの上限で落ちた）。満杯のときに新しい接続を受け付け続け、居座る接続から枠を取り戻し、入場をバイトの天井で決める。HTTPサーバに、受けと送りの待ちの上限（期限）を入れた。総称関数の型パラメータの性質（kind）を推論し、regionやmutを持つ型を型引数にできるようになった。`@embed` でバイト列を受けられる。互換性の無い変更を含む。
+
+### 攻撃への耐性
+
+- `net.Serve`・`tls.Serve` は、入場の上限に達しても受け付けを止めない（`reject:` を書かない場合）。受けた接続はlistenerごとのランタイムの列で待ち、入場の空きができたら、列のいちばん新しい接続から入る。列が上限を越えたら、いちばん長く待った接続を閉じる（`task.Ledger()` のプールの `shed` に数える）。前は受け付けを止め、新しく来た接続のSYNがカーネルで捨てられていた。`reject:` を書けば、今までどおり列を持たずにすぐ断る
+- 入場を待つ接続があるときだけ、入場済みの接続のうち、前の走査（約0.27秒ごと）から1バイトも受けていない接続（待機中のkeep-aliveと、止まった相手）を古い順に、次に受けの遅い順に切って枠を空ける。満杯でないときは切らない。切った数は、プールの新しい欄 `evicted` に出る（期限で切った `timeout` とは別）
+- 入場の上限は、本数ではなくバイトの天井で決まる。プールの天井は、`conns:` を書けば (`budget:` + `task.Fixed()`) × `conns:`、書かなければ根の天井（プロセスのメモリの天井。cgroupのmemory.max、無ければ物理メモリから決まる）の残りから、待ち行列の分を引いた量。本数の天井は `conns:` を書いたときだけ置く。listenerのbacklogは、根の天井の残りから導いた値に置き直す
+- `net.Waiting()` を足した。このプロセスのServeが受け付けを待たせている接続の数（`waiting`）と、待ち行列の大きさの和（`limit`）を返す
+- 受け付けた接続の受信バッファは、読んだ量の累計が32 KiBを越えた時点（epollの経路では受け付けた時点）で64 KiBに固定する
+- 予約（`budget:` + 固定費）を越えて伸びるtaskは、越えた分を借りとして数え、プールか根の天井を越えたら `RegionExceeded{cause: budget}` で死ぬ。`net.Serve` の接続では、何も送らずに閉じる。scopeの `budget:` の天井だけを越えた場合は、記帳だけで死なない
+- io_uringを使えない構成（epollの経路）には、ランタイムの列と枠の取り戻しが無い。満杯のときは、カーネルの待ち行列で到着順に待つ
+
+### 破壊的変更
+
+- 予約を越えて天井を越えたtaskが死ぬ（上の「攻撃への耐性」）。前は記帳だけだった
+- `std/http/server`: アプリがResponseに入れた値を検査し、書けなければ `panic(http.BadHeader{...})` にする。対象は、200〜999の外のstatus・204と304の本文・tokenでない `Coded.encoding`・field-valueでない任意ヘッダの値・任意ヘッダのDate。仕様が1行だけと定めた欄（Location・Content-Location・Content-Range・Retry-After・Server・Age・Expires・Content-Disposition・Strict-Transport-Security・X-Frame-Options）の2本目もpanic。そのほかの欄は2本書ける
+- `std/http/server`: リクエストのターゲットの0x80以上のバイトは400。前は受けていた
+- `std/http/server`: どの行にも一致しない `OPTIONS *` は204（本文とAllowなし。RFC 9110 9.3.7）。前は404
+- 匿名の関数型を結果に持つ関数の宣言を拒否する。前は、呼べばcheckとbuildが拒否し、呼ばなければ受理していた。匿名の関数型の値を置けるのは、仮引数・structとunionのvariantのフィールド・局所の束縛だけ
+
+### HTTPサーバ
+
+- 受けと送りの待ちの上限を足した。`http.server.ServeConn`・`ServeWith` の `headWait:`（既定30秒。頭が揃うまでで、keep-aliveの待ちを含む）・`bodyWait:`（既定60秒。頭が揃ってから本文を受け終えるまで）・`sendWait:`（既定60秒。送りが1バイトも進まない間隔）と、`tls.Serve` の `headWait:`（既定30秒。handshakeが済むまで）。期限が来たら待ちが `io.Timeout` で戻り、相手には何も送らずに閉じる。プールの新しい欄 `timeout` に数える
+- `tls.Serve` に `budget:`・`conns:`・`reject:` を足した（`net.Serve` と同じ意味）
+- レスポンスの頭にDate（IMF-fixdate）を付ける
+- absolute-formのターゲットを受ける（RFC 9112 3.2.2）。Hostとの食い違いは、ターゲットの側を使う
+- Transfer-Encodingのchunkedのパラメータは、文法を確かめて読み捨てる。前は501
+- chunkの大きさがintに収まらなければ400
+- Expect: 100-continueのHTTP/1.1のリクエストに、本文を待つ前に `100 Continue` を送る
+- Staticの304に、同じリクエストの200と同じ `Vary: Accept-Encoding` を付ける
+- Staticの更新時刻が未来なら、Last-Modifiedを今の秒（Dateの行の秒）で抑える。RFC 850の2桁の年は、今の年から50年の窓で読む
+- multipartのboundaryのquoted-stringで、quoted-pairをいつも外す
+- contentTypeの値の、実行時の文法の検査を外した（要求1件あたり約440命令だった）
+
+### 言語とコンパイラ
+
+- 総称関数の型パラメータの性質（kind）を、本体から推論する。型パラメータに制約は書かない。regionを持つ型（`[]int`・`string`・それを持つstruct）、mutのsliceを持つ型、関数値、総称の再帰型を型引数にできる。mapのキーに型変数を置ける。型引数が本体の求める性質を満たさなければ、`diag.KindArg` で拒否する。`.sobi` に `@kind` を記録する
+- 名前付き関数型の値を置ける位置を広げた。型引数を書かない総称関数の呼び出しで、型パラメータの仮引数に置いた関数の名前とラムダ・総称のstructとunionのフィールド・多値の結果・ブロックとif式の末尾・代入の右辺
+- 総称のunionのvariantのリテラルから、総称関数の型引数を推論する（`isSome(Some[int]{v: 3})`）
+- checkの型の拒否の2行目に、落ちた規則を英語の1文で出す（例: `the branches of this switch must have the same type (core rule: case)`）。本体の型が戻り値の型と違う拒否は、本体の末尾の式の位置を出す
+- `@embed` の受け皿に `map[string][]byte` を書ける。値はimmの `[]byte` で、中身はUTF-8でなくてよい（UTF-8の検査は `map[string]string` の受け皿だけ）
+- `@embed` の中身が1ファイルの木の上限（16,777,216語）を越えたら、ファイルの名前と大きさを言うload errorにする。前は内部の不整合のpanicだった。ビルドの途中で `@embed` のファイルが書き換わったら、`loader.EmbedChanged`（パスつき）で止まり、出力を書かない
+- 並列のコード生成やcheckの子が死んで逐次で作り直したら、標準エラーに1行出す（段の名前・出力は変わらないこと・上げる設定の名前）。前は黙って遅くなっていた
+
+### std
+
+- `std/io`: `ReadAt(f File, off int, n int) ([]byte, error?)` を足した。fの位置を動かさずに、off バイト目からnバイトを読む
+- `std/task`: `Fixed()`（taskの固定費のバイト）を足した。`task.Ledger()` のプールに `timeout`・`evicted`・`conns`・`cut`・`borrowed`、全体に `borrowOver`・`borrowOverScope` を足した
+- `std/tls`: 送信バッファに入らない大きい送りは、平文を64 KiBずつ封じて送る。前は暗号文の全体を1本の列に作ってから送っていた
+- `std/tls`: TLSの接続の宣言に、待つ間に常駐するスタックの分（8 KiB）を足す
+
+### 性能
+
+- `std/http/server`: chunkedの本文で、1桁の大きさの行が続く間をまとめて詰める速い道を置いた。1バイトのchunk 1つの解析が、498命令から93命令になった
+- `std/http/server`: 本文を待つリクエストを、揃うまで読み直さない。chunkedの本文は、届いた分から解く
+- 0.7.4と比べた手元の計測（9種目・16ワーカー・2つのCPUの配置で交互に8回の中央値）で、pipelinedのrpsが6.2〜6.3%下がった（リクエスト1件のcyclesが6.5〜6.7%増えた）。主な分はHTTPの準拠の変更（レスポンスごとのDateの行など）で、攻撃への耐性の変更の分は小さい。ほかの7種目は±2%以内
+
+### bench/httparena
+
+- `POST /parse`（本文の解析器を攻撃する種目を受ける口）を足した
+
 ## v0.7.4（2026-11-16）
 
 実行待ちの列を、走れるようになった順に走る形だけにした版。飽和した負荷でのp99が下がる。`maxWait:` を消したので、互換性の無い変更を含む。HTTPサーバの準拠の誤りと、飽和した負荷でプロセスが落ちる不具合を直した。スタックの溢れでないSIGSEGVは、taskの死に変換せずに止める。コンパイラ自身をcheckするときの検査器の命令は28%減り、配布するコンパイラはstage3になった。

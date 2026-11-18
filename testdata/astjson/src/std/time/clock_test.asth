@@ -1,0 +1,6 @@
+@@full	b88f4e2b7c58fa92	1174	29672
+@head	78fe304858cab5f5	11	828
+func TestMonoIsClockMonotonic	c6cd908973f66fd5	22	828
+func TestMonoIsMonotonic	7fd9118b4b2d5453	35	1240
+func TestNowIsClockRealtime	8639d72d268d5357	41	1442
+func rawNs	5dd80018a488bb72	77	2354

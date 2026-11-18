@@ -1,0 +1,35 @@
+package main
+
+// 呼び出しの結果をその場で呼ぶ形（`pick(B{v: incr})(1)`）で、実引数のcompositeのフィールドに置いた関数（名前の関数・ラムダ）を、
+// 捕捉するクロージャと同じ型の値として扱う
+
+type H func(x int) int
+
+type B struct { v H }
+
+type U union {
+    Some { v H }
+    None {}
+}
+
+func incr(x int) int {
+    return x + 1
+}
+
+func adder(s string) H {
+    return (x int) => x + len(bytes(s))
+}
+
+func pick(o B) H {
+    return o.v
+}
+
+func pickOr(u U, d H) H {
+    return switch u { case Some{v}: v; default: d }
+}
+
+func main() {
+    h := adder("abc")
+    println(pick(B{v: incr})(1), pick(B{v: (x int) => x * 10})(2), h(1))
+    println(pickOr(Some{v: incr}, h)(5), pickOr(None{}, h)(5), pickOr(Some{v: (x int) => x - 1}, incr)(5))
+}

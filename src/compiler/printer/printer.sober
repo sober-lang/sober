@@ -406,6 +406,21 @@ func constLine(out mut []byte, t ast.Tree, c ast.Node) {
 }
 
 func funcDecl(out mut []byte, t ast.Tree, x ast.Node) {
+    // .sobiの `@kind(T: …)`（付加の列の16番）。綴りと位置はifaceのkindLineと同じ。
+    // 宣言1つの綴り（FuncDeclText）には書かない。署名表とキャッシュの鍵はkindを含まず、.sobiの書き出しはifaceが推論したkindから書く
+    if t.data[x.f] >= 17 && t.data[x.f + 17] >= 0 {
+        kl := t.data[x.f + 17]
+        obuf.Lit(mut out, "@kind(")
+        for i <- iter.Range(0, t.data[kl]) {
+            if i > 0 {
+                obuf.Lit(mut out, ", ")
+            }
+            raw(mut out, t, t.data[x.b + 1 + i])
+            obuf.Lit(mut out, ": ")
+            obuf.Lit(mut out, ast.KindText(t.data[kl + 1 + i]))
+        }
+        obuf.Lit(mut out, ")\n")
+    }
     funcDeclX(mut out, t, x, false, false)
 }
 

@@ -1,0 +1,12 @@
+@@full	49c017d9f4e01f25	1089	25752
+@head	f8802cba5eefdec2	0	31
+func byKey	3c02e26f67fcc74e	12	512
+func count	cd8fe43ecb4cd0e5	11	470
+func ints	0f4558ca8df90b16	7	335
+func keyed	64220fac193e494c	10	447
+func local	d7a2b0b63fe6d235	9	407
+func main	cc7857c404208645	94	2801
+func nested	d5ab174ecf9724a9	13	539
+func one	bb604edd151c7d71	7	343
+func wrap	47694b49f31e5d57	5	307
+type S	f8246d5732cc7107	2	111

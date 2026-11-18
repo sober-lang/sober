@@ -1,0 +1,13 @@
+@@full	2d291310dff01c1f	598	13512
+@head	45b551943d3c7faa	0	30
+const AreaMetric	30a8f988a467880f	3	195
+const ByWeight	ffa9d52292e7e078	17	667
+const Scale	7d764021efb81ebb	1	45
+func Area	faf15443ca48f1a9	15	697
+func Double	fa87dbe0c6103ae6	6	290
+func Sum	3214fbaf4d2bd607	8	361
+func hidden	7ef4f9cd1b973982	6	287
+type Cmp	2471257575bbad1b	5	206
+type Metric	c47087c362a500de	5	229
+type Point	5e8db4896d7ecbec	3	158
+type Shape	a01b0077c7abcb48	2	171

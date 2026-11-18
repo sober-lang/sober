@@ -404,6 +404,18 @@ func checkRoundCk(p loader.Program, excl []int, trust bool, plan desugar.DefPlan
             }
         }
     }
+    mut kb := mut []int{}
+    for o <- outs {
+        if o.def != R_REJ && o.def != -2 {
+            for x <- o.kb {
+                kb = append(kb, x)
+            }
+        }
+    }
+    if len(kb) > 0 && first < 0 && rootRej < 0 && !deep {
+        // 条件3で展開へ戻す周回: 判定は次の周回のもの。値は書かない（Round.kb）
+        return Round{defErrorOut(), -1, []int{}, []int{}, 0, []int{}, []loader.PcPut{}, []int{nhit, nmiss, len(rs)}, []int{}, freeze(kb)}, nil
+    }
     mut puts := mut []loader.PcPut{}
     mut stale := mut []int{}
     for x <- door {
@@ -425,14 +437,14 @@ func checkRoundCk(p loader.Program, excl []int, trust bool, plan desugar.DefPlan
     }
     cnt := []int{nhit, nmiss, len(rs)}
     if first >= 0 {
-        return Round{[]byte{}, R_REJ, []int{}, []int{}, 0, []int{first, rt[first], rk[first], np[first], lp[first]}, freeze(puts), cnt, freeze(stale)}, nil
+        return Round{[]byte{}, R_REJ, []int{}, []int{}, 0, []int{first, rt[first], rk[first], np[first], lp[first]}, freeze(puts), cnt, freeze(stale), []int{}}, nil
     }
     if rootRej >= 0 {
         r := outs[rootRej].recs
-        return Round{[]byte{}, R_REJ, []int{}, []int{}, 0, []int{r[0], r[1], r[2], r[3], r[4]}, freeze(puts), cnt, freeze(stale)}, nil
+        return Round{[]byte{}, R_REJ, []int{}, []int{}, 0, []int{r[0], r[1], r[2], r[3], r[4]}, freeze(puts), cnt, freeze(stale), []int{}}, nil
     }
     if deep {
-        return Round{bytes("checker: too deep\n"), -2, []int{}, []int{}, 0, []int{}, freeze(puts), cnt, freeze(stale)}, nil
+        return Round{bytes("checker: too deep\n"), -2, []int{}, []int{}, 0, []int{}, freeze(puts), cnt, freeze(stale), []int{}}, nil
     }
     mut at := 0
     mut failed := rootFl != 0
@@ -468,8 +480,8 @@ func checkRoundCk(p loader.Program, excl []int, trust bool, plan desugar.DefPlan
                 back = append(back, i)
             }
         }
-        return Round{defErrorOut(), -1, freeze(back), []int{}, at, []int{}, freeze(puts), cnt, freeze(stale)}, nil
+        return Round{defErrorOut(), -1, freeze(back), []int{}, at, []int{}, freeze(puts), cnt, freeze(stale), []int{}}, nil
     }
     r := outs[0]
-    return Round{r.out, r.def, r.back, r.all, r.at, []int{}, freeze(puts), cnt, freeze(stale)}, nil
+    return Round{r.out, r.def, r.back, r.all, r.at, []int{}, freeze(puts), cnt, freeze(stale), []int{}}, nil
 }

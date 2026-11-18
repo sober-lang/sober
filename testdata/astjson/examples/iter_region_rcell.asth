@@ -1,0 +1,12 @@
+@@full	bcee3b2e46639d09	1754	43228
+@head	71443dd17fe19d21	0	97
+func add	4f516644515dd71e	23	968
+func feed	b322ffb106e6d342	27	995
+func iters	348e1f24c6b06f8e	40	1307
+func main	d46e2c20e8cfc68e	41	1340
+func run	4345fd7b3028d553	50	1851
+func sum	b2e38bf6654374ac	25	932
+func three	1b44d0dd7049c49c	33	1100
+type Big	ff313c5f1e487374	11	515
+type Q	69193ee3b044d248	9	430
+type Stream	a66e0841ed2bea06	12	423

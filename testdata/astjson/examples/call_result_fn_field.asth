@@ -1,0 +1,10 @@
+@@full	5ceeb35585ab63b5	706	17915
+@head	f8802cba5eefdec2	0	31
+func adder	0e40313a91fe9321	12	487
+func incr	9971a2c49fa627b5	6	285
+func main	09b8cf16670eff56	53	1888
+func pick	838d343810202f52	5	259
+func pickOr	270558eda202b7fb	11	546
+type B	3aa7dd25ba619bf0	2	106
+type H	c1de6fc843331749	3	144
+type U	e48c2fa607745c1f	2	162

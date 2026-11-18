@@ -1,0 +1,14 @@
+@@full	48f5b0c205141cb0	527	11022
+@head	f413d747a62ac819	0	73
+func Feed	f5e1d8c1b7437dca	10	468
+func Last	d9a9c886c4ea000d	5	266
+func Mean	a0d43fcae974e9c9	9	406
+func NewAcc	50824fdb9b89b2d6	5	313
+func Twice	c8dc3f578a877ad5	9	403
+func Value	93c11cb79cee3a05	11	536
+type Acc	3d607bc9526a61f8	2	85
+type Res	cfd736ff25a85aa4	2	104
+type Step	38e1607647c362d3	2	106
+type W2	274201f38a2607d4	2	85
+type Work	b2903625a86a8234	2	106
+type acc	c9618a7e280fbf7d	2	113

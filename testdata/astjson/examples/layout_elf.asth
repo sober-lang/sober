@@ -1,0 +1,7 @@
+@@full	711958f75c3f8193	2435	80303
+@head	44b10cbaa8080654	0	170
+func elfIdent	b9c7b28e06dc7c5d	66	2114
+func main	ae583db972b96c1a	312	10304
+func segment	e194c8fd6fb47784	28	1157
+type Elf64Header	22ca725ea677120c	16	859
+type Elf64Phdr	e993515e0fa3ae49	9	501

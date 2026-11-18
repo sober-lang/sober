@@ -1,0 +1,9 @@
+@@full	01e59525e659170f	2101	55574
+@head	c7b2b03e3a01fcf6	0	270
+func TestExact	41defea654990d94	50	1639
+func TestFloat	878d3a7aef32bc78	25	889
+func TestInt	182384f8852f3317	76	2423
+func TestStr	0a746f8b300bcc50	66	2055
+func TestWordTail	370484c50645fd0e	40	1335
+func TestWords	7b8ad7bfee0d1774	80	2584
+func put	ff31f0db36ef3c67	23	817

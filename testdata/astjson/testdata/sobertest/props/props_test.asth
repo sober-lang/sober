@@ -1,0 +1,6 @@
+@@full	5e0323de80185323	884	29392
+@head	7a7f3f25d2141328	0	149
+func TestDivMod	3165940b489f7ba6	47	1572
+func TestRevIsSame	e46202518d65b59b	38	1256
+func TestRevRev	6c2b19df76d851f8	34	1146
+func TestSumSmall	680c9c2eb3388ef6	30	1028

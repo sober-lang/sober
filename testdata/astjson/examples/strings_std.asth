@@ -1,0 +1,7 @@
+@@full	7e65f365b5aae85d	5893	156250
+@head	9aba97a95abb1bbe	0	66
+func main	ef7e26dcdbb54c77	1092	33056
+func showCut	81dfe7a27769fd1d	14	600
+func showCutLast	06756b78b410211c	14	608
+func showFields	7aedcbe16121f226	17	666
+func showSplit	faa842fc894445d9	19	758

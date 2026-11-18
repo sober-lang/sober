@@ -1659,10 +1659,12 @@ func chanSendCopy(st mut St, chp int, slot int, t int, idx int) {
     bp := gepWord(mut st, meta, rd)
     oldS := load(mut st, sp, 0)
     oldB := load(mut st, bp, W_BUMP)
-    // アリーナはプールのスロット（既定の大きさ）— コピーする間は上限を既定に（送り手のmain〔4 GiB〕・宣言の大きい子の大きさで隣のスロットへ溢れない）
+    // （送り手のmain〔4 GiB〕・宣言の大きい子の大きさで隣のスロットへ溢れない）
+    // アリーナはプールのスロット（既定の大きさ）: 上限を「アリーナ + 既定」にする（大きさのワードは替えない — 替えると他の深度の計上済みの上限がずれる）。
+    // 差し替えの間は低速パスが上限を上げない（溢れは死102 — task.sober wmSwap）
     oldZ := load(mut st, meta, W_SLOT_SIZE)
-    store(mut st, meta, W_SLOT_SIZE, load(mut st, meta, W_SLOT_DEF))
-    store(mut st, sp, 0, a)
+    wmSwap(mut st, true)
+    store(mut st, sp, 0, bin(mut st, BSub, bin(mut st, BAdd, a, load(mut st, meta, W_SLOT_DEF)), oldZ))
     store(mut st, bp, W_BUMP, a)
     store(mut st, wk, WK_RLAB, iconst(mut st, MAX_DEPTH))
     // 送り手の値はこの後も読まれ、アリーナは受け手がコピーした後に使い回す — 元のセルを書き換えないコピー
@@ -1673,7 +1675,7 @@ func chanSendCopy(st mut St, chp int, slot int, t int, idx int) {
     store(mut st, ar, 1, bin(mut st, BSub, load(mut st, bp, W_BUMP), a))
     store(mut st, sp, 0, oldS)
     store(mut st, bp, W_BUMP, oldB)
-    store(mut st, meta, W_SLOT_SIZE, oldZ)
+    wmSwap(mut st, false)
 }
 
 // 受けた値v（枠idxのアリーナを指す部分はマークMAX_DEPTH）を受け手の最内のregionへコピーする（Leanのrecvの型 = 受け手の最内）

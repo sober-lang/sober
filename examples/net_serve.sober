@@ -41,8 +41,14 @@ func echo(c net.Conn) error? {
 func main() {
     println(run() catch "listen failed")
     // Serve のプールの台帳: 何も送らない接続の handler は期限で切れた Recv の error を返す（fail 1）・"die" の handler は死ぬ（died 1）
-    for pv <- task.Ledger().pools {
-        println("pool ${pv.id}: admit ${pv.admit} fail ${pv.fail} died ${pv.died}")
+    ps := task.Ledger().pools
+    for pv <- ps {
+        // ほかの行の親になっている行は Serve の全部の親の節。接続の task はその子の節で入場する
+        mut top := false
+        for q <- ps {
+            top = top || q.parent == pv.id
+        }
+        println("pool ${pv.id}${if top { " (all Serves)" } else { "" }}: admit ${pv.admit} fail ${pv.fail} died ${pv.died}")
     }
 }
 

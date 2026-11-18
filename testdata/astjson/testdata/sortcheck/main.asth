@@ -1,0 +1,12 @@
+@@full	d00aa56c1e2634a7	4110	145583
+@head	0087b4e4ce279aa4	0	132
+func brokenS	27e9b0dc1344c9eb	23	904
+func brokenU	4333e3efda2cf2c4	23	912
+func check	eedc067849a98a94	128	4022
+func gen	68fef28d9bf40adf	133	4154
+func main	3b94815987a26d3b	237	7203
+func next	2bb9c9dd1f6360dc	27	958
+func perm	2619b2721d9e0019	68	2229
+func same	4c475ebe03eab925	39	1311
+func stableOf	de28bfc19ec9e6b5	19	733
+func unstableOf	58d38f4f41d7d222	19	743

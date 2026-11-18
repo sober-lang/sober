@@ -6,6 +6,10 @@
 # 判定 = 自己 build（W1）と例題 + bench の題材で、はみ出し 0（`cache: undeclared read …` が出ない）・`heap=on`（差し込みが効いた）・ELF が同じ
 # コンパイラのキャッシュなしとバイト一致。
 # 母集団: 自己 build + examples（既定は 4 本に 1 本 — 並びの添字 mod 4 = 0・`--every` で全数）+ bench の題材（全部）
+# プログラムをまたぐ相: 題材の数本（CROSS_ES）を、stage2で1つの格納場所へ順に検証モード（=1）でビルドする。後の題材は、前の題材が書いた
+# std・rtの関数の値に当たり、検証モードが当たりを作り直してバイトで比べる。判定 = staleが無い・ELFがキャッシュ無効と一致・
+# 通常のモードで、別のプログラム（web_server_route）で温めた格納場所からweb_server_helloをビルドするとβ2（機械語）が当たる。
+# 例題の全部を1つの格納場所へ通す形は scripts/cachecross.sh（ゲートの外。鍵を変える変更のときに手で回す）
 # 使い方: scripts/cacheaudit.sh [--every]
 set -uo pipefail
 # 答えの再生は切る（この検査は関数単位キャッシュの当否を見る）
@@ -71,5 +75,23 @@ for f in examples/*.sober bench/*/main.sober; do
     [ "$r" = 0 ] || bad=1
     n=$((n + 1))
 done
-echo "cacheaudit: self + $n entries, fail=$bad"
+# プログラムをまたぐ相（stage2そのもの。監査用のコンパイラは使わない）
+CROSS_ES=(web_server_route web_server_hello http_arena utf8_bound json_encode)
+rm -rf "$W/c"
+for e in "${CROSS_ES[@]}"; do
+    SOBER_BUILD_CACHE=0 timeout 120 "$S2" build "examples/$e.sober" -o "$W/off.elf" > /dev/null 2> "$W/x.err" || { echo "cacheaudit: FAIL cross $e — no build without the cache: $(grep -m1 . "$W/x.err")"; bad=1; continue; }
+    SOBER_CACHE=$W/c SOBER_BUILD_CACHE=1 SOBER_CACHE_VERIFY=1 timeout 300 "$S2" build "examples/$e.sober" -o "$W/on.elf" > /dev/null 2> "$W/x.err"
+    ec=$?
+    if grep -q 'cache: stale entry' "$W/x.err"; then echo "cacheaudit: FAIL cross $e — $(grep -m1 'cache: stale entry' "$W/x.err")"; bad=1; continue; fi
+    [ "$ec" = 0 ] || { echo "cacheaudit: FAIL cross $e — exit $ec: $(grep -m1 . "$W/x.err")"; bad=1; continue; }
+    cmp -s "$W/off.elf" "$W/on.elf" || { echo "cacheaudit: FAIL cross $e — ELF differs from the build without the cache"; bad=1; }
+done
+rm -rf "$W/c"
+for e in web_server_route web_server_hello; do
+    SOBER_CACHE=$W/c SOBER_BUILD_CACHE=1 "$S2" build "examples/$e.sober" -o "$W/on.elf" > /dev/null 2> "$W/x.err" || { echo "cacheaudit: FAIL cross warm $e: $(grep -m1 . "$W/x.err")"; bad=1; }
+done
+cross=$(awk '/^cache: alpha/ { for (i = 2; i <= NF; i++) if ($i == "beta2") print $(i + 1) }' "$W/x.err")
+cross=${cross:-0/0}
+[ "${cross%/*}" -gt 0 ] || { echo "cacheaudit: FAIL cross — no beta2 hit from a store warmed by another program"; bad=1; }
+echo "cacheaudit: self + $n entries, cross ${#CROSS_ES[@]} entries (beta2 $cross), fail=$bad"
 exit $bad

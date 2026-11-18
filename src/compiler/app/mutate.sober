@@ -66,7 +66,7 @@ func mutatePkg(pkg string, std map[string]string, work string, prefix string, lo
         if one < n {
             mutLine(mut log, MutRes{at: covAt(pts[one]), desc: loader.MutKindText(pts[one].kind), res: res, by: by, reach: []string{}})
         }
-        return TestTally{pass: 0, fail: 0, files: fs, envs: ev.names, envOk: false, cover: noCover()}
+        return TestTally{pass: 0, fail: 0, files: fs, envs: ev.names, envOk: false, cover: noCover(), esums: userEmbeds(p)}
     }
     // 基線: 各テストを1回ずつ（届いたミュータントのフラグと時間）
     mut pass := 0
@@ -96,7 +96,7 @@ func mutatePkg(pkg string, std map[string]string, work string, prefix string, lo
     }
     if failn > 0 {
         say(mut log, 1, bytes("mutate: ${pkg} not run — the tests fail without mutations\n"))
-        return TestTally{pass: pass, fail: failn, files: fs, envs: ev.names, envOk: ev.ok, cover: noCover()}
+        return TestTally{pass: pass, fail: failn, files: fs, envs: ev.names, envOk: ev.ok, cover: noCover(), esums: userEmbeds(p)}
     }
     reach := freeze(reach0)
     hang := freeze(hang0)
@@ -153,7 +153,7 @@ func mutatePkg(pkg string, std map[string]string, work string, prefix string, lo
             say(mut log, 1, bytes("mutate: ${pkg}/testdata/mutate.ignore: no mutant at ${strings.Replace(ign[i], "\t", " ", -1)}\n"))
         }
     }
-    return TestTally{pass: pass, fail: failn, files: fs, envs: ev.names, envOk: ev.ok, cover: noCover()}
+    return TestTally{pass: pass, fail: failn, files: fs, envs: ev.names, envOk: ev.ok, cover: noCover(), esums: userEmbeds(p)}
 }
 
 // ミュータントkを、kに届いたテストで名前の順に走らせる（最初に落ちたところで打ち切り）。結果 = `<結果>\t<殺したテスト>`

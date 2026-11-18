@@ -1,0 +1,7 @@
+@@full	d85d329ffa55a0fa	1008	33866
+@head	20e69509dfebf8f5	0	66
+func eval	ffea9e4bd9f3b7cf	51	1851
+func exec	9e7c6d8155404c4c	28	1115
+func main	468e8a1dd064fa56	43	2001
+type Expr	69e7699c60faa511	8	445
+type Stmt	7ae4b0655305482c	5	289

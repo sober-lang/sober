@@ -1,0 +1,10 @@
+@@full	4ccf1eb8671e89b2	1024	24129
+@head	f8802cba5eefdec2	0	31
+func Push	8149ead540df0533	18	750
+func PushTwice	c14fd505d677ee36	13	521
+func bump	eeba4032277ce5a3	16	686
+func main	c26abef186889f47	67	2090
+func push	9abd247a87fdd7c3	9	436
+func sum	92ac1ac28045d3d4	28	1056
+type Counter	a0bb6d4c2bfc1939	3	164
+type Stack	4aeaa876676427be	4	201

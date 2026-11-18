@@ -1,0 +1,10 @@
+@@full	65f8ab9d536f2fd9	1203	29328
+@head	650e5dd06f87d7e1	0	172
+func counts	3df0725758fdad12	25	913
+func label	9ea14f3f76027586	8	369
+func main	8ebcdf7b4664197e	74	2332
+func outer	72b05bdb1ef1e076	7	326
+func outerLabel	4675195e1326d8e2	6	296
+func pair	62e3bec1cf09ef3c	26	1071
+func squares	be1b296e72193092	28	1033
+type Pair	fab6ce0d24cc353f	4	199

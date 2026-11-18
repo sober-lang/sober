@@ -1,0 +1,7 @@
+@@full	81935d68912539ff	873	23599
+@head	7aaa9b710c68c96c	0	72
+func main	4ca4a4d1557bc3c8	53	1814
+func parse	928bf0a767186f8d	59	1969
+func sum2	63ccca56cd93420d	22	817
+type BadDigit	e2ed81a1adee5385	2	115
+type Empty	33cfd2a1cbeaa695	1	66

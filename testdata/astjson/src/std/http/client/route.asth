@@ -1,0 +1,15 @@
+@@full	4be83032291961f2	2831	81673
+@head	ced244740d44a83a	0	291
+func ParseProxy	c133aa0663b64c41	28	1243
+func firstHop	8951699fc4a5bb26	15	602
+func linkTrip	27d6ad010de079bf	109	3825
+func requestTarget	f1a77f430e20f21d	26	1123
+func setupLink	8ae378185325836e	167	5871
+func tailOf	f7b518f605715559	31	1144
+func viaOf	414c7a9218354dae	11	597
+func withProxyAuth	48ea6aaaa16c600f	47	1826
+type BadProxy	4a62391afe338dda	1	69
+type Proxy	d6ae9b170c0266f3	3	170
+type ProxyRefused	87b3c2fcacbb7cdf	2	123
+type proxySeal	0b30bc01fa44c33d	1	71
+type via	eec26d9f693ef0b6	4	219

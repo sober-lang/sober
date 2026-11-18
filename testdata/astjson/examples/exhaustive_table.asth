@@ -1,0 +1,15 @@
+@@full	215984842771aecf	985	24182
+@head	f8802cba5eefdec2	0	31
+const Gone	1404f4e460d95017	3	107
+const NotFound	c5e36057b2068a95	3	111
+const OK	7fab2ff2bfab485e	3	105
+func fail	c7eabefe8bd29d6d	19	718
+func label	9d85d9c24a3a0671	19	852
+func main	c72941544b5e2f67	44	1442
+func reason	7d71c257f8f62847	19	752
+func shapeName	ca9679033a74e28b	14	706
+type Broken	57a4a16c0a27fc99	1	67
+type Denied	323d5dc740feeac4	1	67
+type Missing	4aa1bdf41bfd87b2	1	68
+type Shape	2af2259a976fbc4f	4	288
+type Status	fb2bae69d205e2cd	2	90

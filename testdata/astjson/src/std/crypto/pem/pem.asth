@@ -1,0 +1,10 @@
+@@full	6aed2ffa0594a51e	3763	123803
+@head	25465911d8660aaa	0	140
+func Parse	532aa9524688de8b	143	4918
+func base64	9f30518bcd581fac	163	5219
+func between	0eb583ec028920a2	112	3568
+func sixBits	e0ea41b3bf764198	55	1713
+func splitLines	39b06caa04417745	66	2227
+func trim	6381cee471cca8a7	105	3329
+type Bad	c46bc68f4fa91a27	1	64
+type Block	cf1cb1974fefea4e	4	204

@@ -1,0 +1,8 @@
+@@full	d59198911171d34f	1441	58816
+@head	da29b34c6600b128	0	173
+const CLIENTS	04358f9a2aadf898	1	49
+const SERVE_MS	4b98f698194eb5dd	1	51
+func echo	f3d2e691e2d256d4	20	699
+func main	d9f69dae367993a3	130	4526
+func talk	c3ef35f5c09f10b0	15	621
+func talkOn	d943f95b6645b791	61	2063

@@ -1,0 +1,32 @@
+@@full	26e809a4e665e5c1	3523	95211
+@head	e7d3886ed6338364	0	360
+const headLen	2ba8575c1cd79d12	1	48
+const keyLen	25a169dbba7355b4	1	47
+const maxInt	4fe0edcf59eb6bc8	1	75
+const nonceLen	20e8f68e3e415120	1	49
+const tagLen	6d179ef6d7486d88	1	47
+const version	621ea5be232f2a3b	1	47
+func Check	82ed8b59dadca91b	39	1743
+func KeyFrom	2130c9dba293658b	40	1605
+func KeyNew	39682563a743e738	8	443
+func Mint	72c158d481f4ee41	186	6428
+func Of	ed733d0d7c73ac29	30	1134
+func Open	53a9e4c7e4fa96ca	124	4576
+func Seal	3a1eb84b00a498a1	5	268
+func Subject	16f308faa11af6b9	5	281
+func Who	03ec2812be3be531	18	665
+func get64	365680adeb293385	29	1041
+type Bad	c46bc68f4fa91a27	1	64
+type BadTtl	46daba434a6e8314	2	117
+type Claims	67c7e6f8ce9b0f75	4	189
+type Expired	95a26085e164fb18	1	68
+type Info	f7ae695bfc313b31	6	333
+type Key	97e2bd65f207856e	4	200
+type Stale	7d55678cca325e51	1	66
+type Token	3a8391fd72f6bb1e	3	170
+type Unchecked	94ac5527d8eab6f4	7	385
+type WeakSecret	839884fb7263a539	2	116
+type claimsSeal	5c8c16dfe8d9467b	1	72
+type keySeal	271d06f5c85289c1	1	69
+type tokenSeal	3b04d93a8d3141f8	1	71
+type uncheckedSeal	bd64d597abece5c4	1	75

@@ -1,0 +1,5 @@
+@@full	78586a4791cf7880	370	9185
+@head	3dc8a03843f4441f	0	76
+func Decode	1cbfbef08a275c7f	58	2069
+type Bad	c46bc68f4fa91a27	1	64
+type TooLarge	fe3992598112b6ca	1	69

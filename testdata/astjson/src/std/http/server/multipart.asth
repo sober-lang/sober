@@ -1,0 +1,15 @@
+@@full	f9dbbdb68e920c57	7300	260925
+@head	1f0a6207f2ae2a86	0	77
+const multipartMaxHead	df8986c41b420cd6	1	59
+const multipartMaxParts	238201d666e1eec0	1	60
+func Multipart	c3a3e4694229b852	25	942
+func boundaryOk	5a2e18a262ddf34b	127	4254
+func crlfAt	1149fd46457cbfeb	50	1705
+func delimAt	b9412e3ff1329adc	51	1741
+func lineClean	fe61f15431715d86	37	1325
+func multipartOf	d0c13803428da62e	552	18686
+func paramOf	3c4e662cb8ae81c5	291	9431
+func startsDash	b3496b873a388d86	63	2096
+func tspecial	b5e65006abb7c1e4	62	2181
+type BadMultipart	ce5ccb3a9682fe4f	1	73
+type Part	02a02eb770e569b9	7	337

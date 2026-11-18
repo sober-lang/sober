@@ -1,0 +1,6 @@
+@@full	7320d6bc4a6a10a8	267	5772
+@head	cb7a676d3ff76748	0	68
+func FailLength	0f4030ba76398ea6	10	601
+func FailWidth	908d4877b6b8c73e	10	603
+type LengthMismatch	53382dd24b109951	4	224
+type WidthOverflow	79e49f2121f1aff1	4	229

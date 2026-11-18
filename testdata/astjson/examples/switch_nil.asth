@@ -1,0 +1,8 @@
+@@full	1c3c152d90c0b20c	1109	34308
+@head	7b6f34d1a1ab8d6d	0	141
+func age	cf0715c4a378671c	15	507
+func describe	364820d93858aaf7	17	786
+func find	ae9ec219abcdc74f	20	761
+func main	9e1ebda42bd2331d	110	3545
+type Bad	aca5a6c08e93e671	2	110
+type NotFound	9540ebf43cf7031c	1	69

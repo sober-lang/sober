@@ -5,6 +5,8 @@
 set -euo pipefail
 src=$1; tag=$2
 R=$(cd "$(dirname "$0")/../.." && pwd)
+source "$R/scripts/gatelib.sh"
+source "$R/scripts/stagelib.sh"
 D=${INST_WORK:-$R/out/inst}
 N=$(grep -v '^#' "$R/bootstrap/chain.txt" | awk 'NF' | wc -l)
 BOOT=$R/out/stage2/boot/sober-boot-$((N - 1))
@@ -24,9 +26,7 @@ W=$(mktemp -d)
 cp -r "$T/." "$W/"
 cd "$W"
 "$BOOT" build app --emit=elf --passes -o "$W/s2a" && chmod +x "$W/s2a"
-e=$W/l0all.sober
-{ echo "package main"; echo; for d in $(find std -name '*.sober' ! -name '*_test.sober' ! -path 'std/internal/*' ! -path 'std/testing/cell/*' -printf '%h\n' | sort -u); do echo "import \"$d\""; done; echo; echo "func main() {"; echo "}"; } > "$e"
-SOBER_CACHE= SOBER_L0=0 "$W/s2a" check "$e" --split --l0-out "$W/l0" > "$W/l0.out" 2>&1 || { cat "$W/l0.out"; exit 1; }
+stage_l0 "$W/s2a" "$W" "$W" || exit 1
 "$BOOT" build app --emit=elf --passes -o "$D/s2/$tag" && chmod +x "$D/s2/$tag"
 cd /; rm -rf "$W"
 echo "built $tag ($src)"

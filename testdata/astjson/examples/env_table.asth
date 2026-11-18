@@ -1,0 +1,10 @@
+@@full	a2c661ed8003dddd	1018	26483
+@head	a0ec5242622b9be3	0	135
+const Debug	b4002a007f1785be	3	231
+const Home	6338486e30d8d510	4	288
+const Port	0c9e605805ffeb3d	6	364
+const Token	4158dd1edb98b4a6	4	275
+const Vars	0b75c25b23f0f0ad	11	511
+func main	4bd1c239f7918d3e	56	1924
+func show	ac689d992af221e6	43	1496
+func try	ed4590f8aa5ccb0f	29	1045

@@ -1,0 +1,7 @@
+@@full	200b954c0ae451bd	320	6984
+@head	7aaa9b710c68c96c	0	72
+func audit	ebc865a5582867c2	5	269
+func charge	67739e224fb291bd	11	518
+func fee	84740b14d0860f4c	8	355
+func main	a823deaaab808c79	13	474
+type Rule	0d992b2663868a87	3	152

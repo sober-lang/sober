@@ -1,0 +1,6 @@
+@@full	52a147d3c1aad668	144	2566
+@head	ea191e185ba3d7e2	0	83
+func New	b6e578ef5cddd24c	4	245
+func Show	bf6f67412eba9e37	5	290
+type Bad	c46bc68f4fa91a27	1	64
+type Conn	ea86e2628812dc31	2	111

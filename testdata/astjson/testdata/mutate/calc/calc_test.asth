@@ -1,0 +1,6 @@
+@@full	738fbd1c83aa84da	372	9016
+@head	73ea1fdb4a3fec70	0	114
+func TestBoth	9488423fdc8ac56e	22	720
+func TestMix	9444dd3fc12feada	9	339
+func TestSign	3e9e9664a5f172e7	18	605
+func TestSum	7f1a9f9fd667ed98	8	316

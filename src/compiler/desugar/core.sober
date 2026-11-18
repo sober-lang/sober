@@ -24,9 +24,8 @@ const CCase = 16     // a = e, b = l, c = r
 const CPair = 17     // a, b
 const CFst = 18      // a
 const CSnd = 19      // a
-const CCall = 20     // a = 関数の添字, b = e, c = 型引数の列（-1 = 無し）, d = callm
+const CCall = 20     // a = 関数の添字, b = e, c = 型引数の列（-1 = 無し）, d = anchor の region
 const CFnref = 21    // a = 関数の添字, b = 型引数の列（-1 = 無し）
-const CCallv = 22    // a = f, b = e
 const CAnn = 23      // a = e, b = 型
 const CBlock = 24    // a
 const CBlockR = 25   // a = 型, b = e
@@ -69,7 +68,7 @@ const CSend = 60     // a = 送り端, b = 値
 const CRecv = 61     // a = 受け端（型は T? — 閉じて空なら nil）
 const CClose = 62    // a = 送り端（P3b-4 ③ — 閉じる）
 const CClone = 63    // a = e, b = 読み出しの注釈の型（-1 = 注釈なし — CIndexと同じ）（cloneの段階 — slice / mapの浅いコピーを最内regionのmutへ）
-const CCallMv = 64   // a = f, b = e, c = anchorのregion（anchorつきの関数値の呼び出し — LeanのcallMv・関数型のmut仮引数）
+const CCallv = 64   // a = f, b = e, c = anchor の region（関数値の呼び出し。ふつうは呼び手の最内）
 // 再帰型（iso — Leanのfold / unfold）: CFoldのa = 型（μ）, b = e（中身は1レベルの展開の型）/ CUnfoldのa = e
 const CFold = 65
 const CUnfold = 66
@@ -225,9 +224,9 @@ func cBin(st mut S, k int, a CoreRef, b CoreRef) CoreRef {
     return ce(mut st, CBin, k, int(a), int(b), 0)
 }
 
-// cCall の fi は関数の添字、ts は型引数の列（-1 = 無し）、m は callm（0 / 1）
-func cCall(st mut S, fi int, e CoreRef, ts int, m int) CoreRef {
-    return ce(mut st, CCall, fi, int(e), ts, m)
+// cCall の fi は関数の添字、ts は型引数の列（-1 = 無し）、a は anchor の region（ふつうの呼び出しは呼び手の最内）
+func cCall(st mut S, fi int, e CoreRef, ts int, a int) CoreRef {
+    return ce(mut st, CCall, fi, int(e), ts, a)
 }
 
 // cFnref の fi は関数の添字、ts は型引数の列（-1 = 無し）
@@ -326,9 +325,9 @@ func cClose(st mut S, c CoreRef) CoreRef {
     return ce(mut st, CClose, int(c), 0, 0, 0)
 }
 
-// anchorつきの関数値の呼び出し（anchor = region a — envか引数にmutの束縛を持つクロージャの呼び出し）
-func cCallMv(st mut S, a int, f CoreRef, e CoreRef) CoreRef {
-    return ce(mut st, CCallMv, int(f), int(e), a, 0)
+// 関数値の呼び出し。anchor a は、envか引数にmutの束縛を持つクロージャではその束縛の region、ほかは呼び手の最内
+func cCallv(st mut S, a int, f CoreRef, e CoreRef) CoreRef {
+    return ce(mut st, CCallv, int(f), int(e), a, 0)
 }
 
 // eを外側の region k へコピーする境界コピー式（型tはk以下しか指さない）

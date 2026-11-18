@@ -1,3 +1,4 @@
 sober: type error at testdata/checkneg/freeze_mut_subslice.sober:7:15
+  in main: only an imm slice can be sliced, and the bounds must be ints (core rule: subslice)
 {"errors":[{"msg":"type error"}],"ok":false}
 exit=1

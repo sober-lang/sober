@@ -1,0 +1,23 @@
+@@full	dc600cfe9eea4ae2	7298	245970
+@head	eef79cc2094b76cd	0	315
+const cData	cd6c5d5432ed2ec9	1	45
+const cDataCr	68e235d4e3ff88c0	1	47
+const cDataLf	8c91076351146166	1	47
+const cExt	46948fcbb4ff6354	1	44
+const cSize	82c3c51dd96a16d4	1	45
+const cSizeLf	6c416f794cf26f0e	1	47
+const cTrailer	3a5bf94109ac3d52	1	48
+const cTrailerLf	4ca51595a8527b53	1	50
+func Stream	609ebf310d5e5b68	178	6490
+func headOf2	8f24014f39a7f053	20	920
+func isRedirect	d3a798a0ca818026	32	1118
+func location	d4adae6a33f01ca7	17	621
+func newBody	37cfd47a33639b71	28	1216
+func readBody	58ae546bed76d0da	207	6838
+func slicePiece	901f7cdf8d829a1a	30	1152
+func step	a7620a0f7f30f9ef	248	8579
+func streamLink	44404ec8ff273e5e	189	6772
+func streamOnce	834f8554c3d227f3	239	8380
+type Part	73ce1c0b56987ae6	4	206
+type bodySt	726fca61da6ed5cd	10	507
+type streamSt	852f2117acdfc887	6	321

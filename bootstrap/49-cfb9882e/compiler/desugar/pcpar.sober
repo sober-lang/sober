@@ -1,0 +1,242 @@
+package desugar
+
+// ParCheckの歩き（fileCheck・pcWalk・deCheck）の並列: 関数の添字の区間ごとの子task（task.Map）が、親の凍らせた店を受け取って区間の関数を歩き、
+// 区間の中の最初の当たりを返す。親は「fileCheckの最小の関数 → pcWalkの最小の関数 → deCheckの最小の関数」の順に選ぶ（逐次の early return と同じ選び方）。
+// - 子が返すのは当たり（種類と診断の位置）と deadline: のマーク（全体のフラグとpackageの集合）だけ。子が店に足した記録は捨てる
+// - 区間の数はワーカーの数（子の前段の費用を区間の数だけ払う）。選ぶのは最小の関数なので、切り方に依らず逐次と同じ
+// - 子は区間の中で当たりを見つけたら、その歩きの残りと後の歩きをやめる（後の当たりは選ばれない）
+// - ワーカー1・関数が少ないプログラム・γ の監査（証人の数を子から集めない）は逐次。子の死（task.Mapのerr）は逐次で歩き直す
+// 証人 = SOBER_PAR_STATS=1で `#parcheck groups=N fallback=none|died`（stderr・出力不変）。SOBER_PARCHECK_DIE=1 = 子が頭で死ぬ（selfpar）
+
+import "diag"
+import "loader"
+import "std/io"
+import "std/iter"
+import "std/os"
+import "std/table"
+import "std/task"
+
+// 1区間の関数の数の下限（区間の数 = ワーカーの数。関数が少なければ減らす）
+const PCPAR_MIN = 256
+
+// 当たり1つ（kind 0 = 無し・file / tok = 診断の位置）
+type PcAt struct {
+    kind int
+    file int
+    tok int
+}
+
+// 子の結果（f = fileCheck・w = pcWalk・d = deCheck の区間の最初の当たり・dl = deadline: のマーク・dlp = マークしたpackage）
+type PcPart struct {
+    f PcAt
+    w PcAt
+    d PcAt
+    dl bool
+    dlp []int
+}
+
+// 関数の添字の区間 [lo, hi)
+type PcRange struct {
+    lo int
+    hi int
+}
+
+func pcAtNone() PcAt {
+    return PcAt{kind: 0, file: 0, tok: 0}
+}
+
+func pcAtOf(st mut S, h PcHit) PcAt {
+    if h.kind == 0 {
+        return pcAtNone()
+    }
+    at := posOf(mut st, h.at)
+    return PcAt{kind: h.kind, file: at.file, tok: at.tok}
+}
+
+func pcEnv(name string) bool {
+    v, err := os.Getenv(name)
+    return err == nil && v != nil && v == "1"
+}
+
+// 子に配るか（ワーカー1・関数が少ない・γ の監査のpackageがあるときは逐次）
+func pcParOn(st mut S) bool {
+    if task.Ledger().workers <= 1 || st.nfn < PCPAR_MIN * 2 {
+        return false
+    }
+    if st.ty.kst != 0 {
+        for k <- iter.Range(0, st.npkg) {
+            if ksAt(mut st, KSGC, k) & GC_AUD != 0 {
+                return false
+            }
+        }
+    }
+    return true
+}
+
+// 関数の区間の列（関数の数だけで決まる）
+func pcRanges(n int) []PcRange {
+    mut g := task.Ledger().workers
+    while g > 1 && n / g < PCPAR_MIN {
+        g -= 1
+    }
+    mut rs := mut []PcRange{}
+    for i <- iter.Range(0, g) {
+        rs = append(rs, PcRange{lo: n * i / g, hi: n * (i + 1) / g})
+    }
+    return freeze(rs)
+}
+
+// 子の本体: Initの上に親の店を載せ、区間の関数を逐次と同じ順の歩きで検査する
+func pcChild(p loader.Program, fz TyFrozen, skip []bool, fc bool, par bool, r PcRange, die bool) PcPart {
+    if die {
+        panic(InvariantBroken{})
+    }
+    mut st := S{}
+    Init(mut st, p)
+    TyAdopt(mut st, fz)
+    mut f := pcAtNone()
+    mut w := pcAtNone()
+    mut d := pcAtNone()
+    if fc {
+        mut fi := r.lo
+        while fi < r.hi && f.kind == 0 {
+            body := fnBody(mut st, fi)
+            if body != -1 && !fcOwner(mut st, PkgPath(mut st, fnPkg(mut st, fi))) {
+                st.curPkg = fnPkg(mut st, fi)
+                f = pcAtOf(mut st, fcWalk(mut st, body))
+            }
+            fi += 1
+        }
+    }
+    if par && f.kind == 0 {
+        pcMemoInit(mut st)
+        mut fi := r.lo
+        while fi < r.hi && w.kind == 0 {
+            if pcWalkable(mut st, skip, fi) {
+                st.curPkg = fnPkg(mut st, fi)
+                w = pcAtOf(mut st, pcWalk(mut st, fi, fnBody(mut st, fi)))
+            }
+            fi += 1
+        }
+        if w.kind == 0 {
+            hd := deEnvNew(mut st)
+            mut fj := r.lo
+            while fj < r.hi && d.kind == 0 {
+                if pcWalkable(mut st, skip, fj) {
+                    st.curPkg = fnPkg(mut st, fj)
+                    if deNeeds(mut st, fj) {
+                        d = pcAtOf(mut st, deCheckFn(mut st, fj, hd))
+                    }
+                }
+                fj += 1
+            }
+        }
+    }
+    return PcPart{f: f, w: w, d: d, dl: DeadlineUse(mut st), dlp: pcDlPkgs(mut st)}
+}
+
+// pcWalk / deCheck が関数fiを歩くか（逐次の歩きと同じ条件 — skipは親の CheckSkip）
+func pcWalkable(st mut S, skip []bool, fi int) bool {
+    pk := fnPkg(mut st, fi)
+    return fnBody(mut st, fi) != -1 && !strIs(mut st, PkgPath(mut st, pk), "std/task") && !(pk >= 0 && pk < len(skip) && skip[pk])
+}
+
+// 歩きが deadline: のマークを付けたpackage（pcMemoの後ろのpackageごとのワード）
+func pcDlPkgs(st mut S) []int {
+    mut o := mut []int{}
+    if table.Len(mut st.pcMemo) >= PCDL_BASE + st.npkg {
+        for k <- iter.Range(0, st.npkg) {
+            if table.Get(mut st.pcMemo, PCDL_BASE + k) == 1 {
+                o = append(o, k)
+            }
+        }
+    }
+    return freeze(o)
+}
+
+// 子のパスの選んだ当たり（ok = false は子の死 — 呼び手が逐次の歩きで検査し直す。step = 0 無し・1 fileCheck・2 pcWalk・3 deCheck）
+type PcPick struct {
+    ok bool
+    step int
+    h PcAt
+}
+
+func pcPick(ok bool, step int, h PcAt) PcPick {
+    return PcPick{ok: ok, step: step, h: h}
+}
+
+func pcPar(st mut S, p loader.Program, fc bool, par bool) PcPick {
+    mut skip := mut []bool{}
+    for k <- iter.Range(0, st.npkg) {
+        skip = append(skip, CheckSkip(mut st, k))
+    }
+    sk := freeze(skip)
+    rs := pcRanges(st.nfn)
+    fz := TyFreeze(mut st)
+    die := pcEnv("SOBER_PARCHECK_DIE")
+    outs, err := task.Map(rs, (r) => pcChild(p, fz, sk, fc, par, r, die))
+    if err != nil {
+        pcStat(len(rs), "died")
+        return pcPick(false, 0, pcAtNone())
+    }
+    pcStat(len(rs), "none")
+    for g <- iter.Range(0, len(outs)) {
+        if outs[g].f.kind != 0 {
+            return pcPick(true, 1, outs[g].f)
+        }
+    }
+    if !par {
+        return pcPick(true, 0, pcAtNone())
+    }
+    pcMemoInit(mut st)
+    if gcDlAny(mut st) {
+        table.Set(mut st.pcMemo, PC_MEMO * 2, 1)
+    }
+    for g <- iter.Range(0, len(outs)) {
+        if outs[g].w.kind != 0 {
+            return pcPick(true, 2, outs[g].w)
+        }
+    }
+    for g <- iter.Range(0, len(outs)) {
+        if outs[g].d.kind != 0 {
+            return pcPick(true, 3, outs[g].d)
+        }
+    }
+    // deadline: のマークの合流（逐次の歩きが付けるのと同じフラグ — 全体の1ワードとpackageごとの値の検査のワード）
+    for g <- iter.Range(0, len(outs)) {
+        if outs[g].dl {
+            table.Set(mut st.pcMemo, PC_MEMO * 2, 1)
+        }
+        for j <- iter.Range(0, len(outs[g].dlp)) {
+            gcDlMark(mut st, outs[g].dlp[j])
+        }
+    }
+    gcAudit(mut st)
+    return pcPick(true, 0, pcAtNone())
+}
+
+// 選んだ当たりの診断（逐次の歩きと同じ値 — step 0 は受理）
+@errors(diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind)
+func pcPickErr(k PcPick) error? {
+    at := diag.Pos{file: k.h.file, tok: k.h.tok}
+    if k.step == 1 {
+        return diag.FileUse{at: at, kind: k.h.kind}
+    }
+    if k.step == 2 && k.h.kind == PC_CATCHLHS {
+        return diag.CatchLhs{at: at}
+    }
+    if k.step == 2 && k.h.kind == PC_MULTIBIND {
+        return diag.MultiBind{at: at, kind: 0}
+    }
+    if k.step == 2 || k.step == 3 {
+        return diag.Par{at: at, kind: k.h.kind}
+    }
+    return nil
+}
+
+// 証人（SOBER_PAR_STATS=1のときだけ）
+func pcStat(n int, why string) {
+    if pcEnv("SOBER_PAR_STATS") {
+        _ = io.WriteStderr(bytes("#parcheck groups=${n} fallback=${why}\n"))
+    }
+}

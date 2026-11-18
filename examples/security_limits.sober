@@ -19,7 +19,8 @@ func app(c net.Conn) error? {
 func run() error? {
     for l <- net.Listen("0.0.0.0:8080")? {
         // at most 2,000 connections at once (the 2,001st gets the reject bytes and is closed without running app);
-        // each connection may use up to 256 KiB, and a connection whose region passes 32 MiB dies alone
+        // each connection reserves 256 KiB (beyond that it borrows from the free part of the ceiling, and dies if the ceiling is full);
+        // a connection whose region passes 32 MiB dies alone
         net.Serve(l, app, budget: 256 * task.KB, conns: 2000, reject: "HTTP/1.1 503 Service Unavailable\r\ncontent-length: 0\r\n\r\n", region: 32 * task.MB)?
     }
     return nil

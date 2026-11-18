@@ -1,0 +1,34 @@
+@@full	813c017926f238f1	8782	250454
+@head	78e0f9dbd62425aa	17	1199
+const fA	a01a8dd62f8a11e5	1	43
+const fAA	54cc9a808f0195c2	1	44
+const fB	92e7c34a4db85e4d	1	43
+const fBB	82e837f8f0599245	1	44
+const fC	0d064e8c80f276f1	1	43
+const fCB	ce2526d11e91b399	1	44
+const fD	8084071f3c4c46fb	1	43
+const fDA	07f842b877af13dc	1	44
+const fE	21c4d63d8fdfaa04	1	43
+const fK	716f99dca58b8972	1	43
+const fR	7562bd32340b071a	1	43
+const fT	22b7f355b90deec2	1	43
+const fWords	14c9a90355e4c305	1	47
+const fX1	fcd4f2a837423652	1	43
+const fX2	d138b58d67e7171c	1	43
+const fX3	34211f6ddd59cf17	1	44
+const fZ2	747757b920ada5fa	1	44
+const fZ3	53e3d894313c49ff	1	44
+const mask51	f5b0b0e1ebd63382	1	72
+const mask52	68bf44c57aa8606c	1	72
+func Base	6522439779fab581	31	1096
+func Shared	5a34bfc14f29d9bf	342	10024
+func carry	f58eed942b22e42c	99	3545
+func cswap	f36a920137bc7f90	53	1819
+func fadd	b0e1aeba2b8c3154	61	1920
+func fmul	68716055257bbd71	39	1401
+func fmulS	df6371b2fb9971dd	454	14405
+func fsub	173c40b8d86628ad	71	2340
+func invert	2b63e51d363db1d7	70	2309
+func make0	c529dd87a33d5fd6	24	890
+func pack	ebdc1eb4472b0b55	200	6362
+func unpack	50b0de738388f30e	63	2122

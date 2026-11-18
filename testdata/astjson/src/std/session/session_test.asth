@@ -1,0 +1,20 @@
+@@full	5aaf0dbc971cac61	7676	244005
+@head	adaf44f6e6ac7fb5	0	404
+func TestAlphabet	5549f55d29dbee93	66	2222
+func TestExpiry	55de431eb9917161	115	3441
+func TestKeyFromDeterministic	a9c6b2280871719f	84	2800
+func TestMalformed	25c07a2f7ca47b89	139	4638
+func TestNonce	b42903d424d0fb3b	85	2686
+func TestRoundTrip	faaf5edeb50fca41	145	4761
+func TestStale	803189da54f8b94d	65	1966
+func TestTamper	4354e3d36c56eb96	170	5280
+func TestTtlSaturates	e6e7d0c086f80422	45	1578
+func TestTwoStep	48b5e76b97af2d19	131	4143
+func TestUnknownVersion	9fe8864e60f7af8d	133	4358
+func TestWrongKey	4fbbc0823a53eafe	41	1325
+func TestZeroClaims	02ac2baf6ad796a1	34	1245
+func check	c44f6167e92e94ef	16	713
+func key1	aceebe8791b92cdd	7	321
+func kind	485b3b2d9974d5d2	19	805
+func t0	41194fd43496a238	7	304
+func verify	15791c24433684e8	19	787

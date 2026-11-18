@@ -1,0 +1,18 @@
+@@full	c64a91db964839d2	2881	102934
+@head	0c04cc5e2bbca578	0	197
+const Add	41628f77178e81b0	1	43
+const Div	3550b53c613502e3	1	43
+const Lit	9a855d64d3bff0cc	1	43
+const Mul	9bd7134005c69503	1	43
+const Neg	1e69b18828f9c45e	1	43
+const Sub	dbed47013d777f80	1	43
+const paren	a0c56f9f452d9f8d	3	103
+func Parse	f9bb4f32a1886b0d	281	9753
+func binop	2b143772bda2bf84	27	967
+func pop	1a787ba7a73144e1	15	579
+func prec	a52bbabffea8eb1f	21	769
+func push	8f0a5962b68454a2	34	1229
+func reduce	1c68cf06379698c4	52	1984
+func top	813b5e11138c3125	10	410
+type Node	3d377279061fce92	6	302
+type Stack	aa4da4e04f9c696b	4	194

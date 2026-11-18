@@ -1,0 +1,62 @@
+package celldie
+
+import "std/http/client"
+import "std/http/server"
+import "std/iter"
+import "std/net"
+import "std/task"
+import "std/testing/cell"
+
+const N = testing.cell.Cell[int]{init: 0}
+
+// Updateの本体が添字の外れで死んだ後に、同じ格納場所をGetできるか（鍵が戻っていなければ、Getで止まる）。値は前のまま
+func TestDieInUpdate() {
+    xs := []int{1, 2, 3}
+    testing.cell.Set(N, 5)
+    _, e := task.Run((s task.Scope) => {
+        h := task.Spawn(s, () => {
+            testing.cell.Update(N, (v int) => v + Pick(xs, 7))
+            0
+        })
+        task.Try(h)
+        0
+    })
+    println("err=${e != nil} get=${testing.cell.Get(N)}")
+    assert(testing.cell.Get(N) == 5)
+}
+
+func route(r http.server.Request) http.server.Response {
+    if r.path == "/u" {
+        testing.cell.Update(N, (v int) => v + 1)
+    }
+    return http.server.Text("hi")
+}
+
+func app(c net.Conn) error? {
+    return http.server.ServeConn(c, route)
+}
+
+// 格納場所を使うプログラムの接続のtask（Serveの期限の配列に入る — TC_RIDX）が、Updateの後に終わる。鍵の記録TC_CELLと期限の添字TC_RIDXが
+// 同じワードだと、Updateが添字を消して配列に古い項が残るか、終わりで添字を鍵の番地と読む
+func TestServeDeadline() {
+    testing.cell.Set(N, 0)
+    e := net.Listen("127.0.0.1:0", (l) => {
+        base := "http://127.0.0.1:${net.Port(l)}"
+        _, _ = task.Run((s) => {
+            h := task.Spawn(s, () => {
+                mut ok := 0
+                for i <- iter.Range(0, 20) {
+                    r, re := http.client.Request(if i % 2 == 0 { "${base}/u" } else { "${base}/" })
+                    if re == nil && r.status == 200 {
+                        ok += 1
+                    }
+                }
+                ok
+            })
+            _, _ = task.Run((s2) => net.Serve(l, app), deadline: 1500 * task.MS)
+            println("serve ok=${task.Join(h)} n=${testing.cell.Get(N)}")
+            0
+        })
+    })
+    assert(e == nil)
+}

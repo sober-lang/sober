@@ -1,0 +1,19 @@
+@@full	4db352b09ace38ae	5350	156945
+@head	46648dc5cd637d45	0	467
+const rsaKeys	7b0c4941391340fa	3	137
+func TestAesgcmOpenAt	93b95305fddf3ec7	82	2772
+func TestAesgcmOpenAt256	785443a1321e2eb0	82	2781
+func TestAesgcmSealTo	9e2ea48c748541a3	71	2430
+func TestAesgcmSealTo256	b319f79fc057ab05	67	2326
+func TestChachaOpenAt	9c0ac1f9ba6a5d60	76	2585
+func TestChachaSealTo	4860bb0997c7e0d3	65	2233
+func TestHmacSum256	d25d72d4e892b061	37	1304
+func TestNonZero	503791b6d578f2e0	58	1846
+func TestPoly1305SumOtk	58293cbfac71ef7e	46	1567
+func TestRsaSignPSS	a8febba904b2d332	68	2356
+func TestSelect	afb9a80ea4582674	40	1364
+func TestX25519Shared	248f9a63135e587d	42	1471
+func pat	90ce967372fe1d3f	37	1314
+func rnd	5fd6e5c6f7541bc4	40	1431
+func sec	c518ab0b73b04e11	21	767
+func smallR4	e148cb5c447881ce	47	1562

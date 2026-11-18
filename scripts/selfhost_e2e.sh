@@ -73,7 +73,9 @@ one() { # $1 = cwd, $2 = entry
         return
     fi
     (cd "$dir" && "$STAGE1" check "$e" --core-json) > "$w/c.json"
-    timeout 120 "$tmp/checkdump" < "$w/c.json" > "$w/d.out" 2> /dev/null || true
+    # stage1は呼び出しのanchor "r" を書かないので、Leanの入口と同じ補い（sober-check --fill-anchors）を当ててからSoberの読み手へ渡す
+    "$SOBER_CHECK" --fill-anchors < "$w/c.json" > "$w/cf.json"
+    timeout 120 "$tmp/checkdump" < "$w/cf.json" > "$w/d.out" 2> /dev/null || true
     if ! cmp -s "$w/d.out" "$w/s.out"; then
         echo "FAIL: $e: checkdump $(head -c 120 "$w/d.out") / sobercheck $(head -c 120 "$w/s.out")"
         echo "@@ fail"
@@ -96,7 +98,8 @@ onea() { # 段A（並列）: $1 = cwd, $2 = entry, $3 = 結果の格納場所
     (cd "$dir" && timeout 120 "$tmp/sobercheck" < "$r/m.txt" > "$r/s.out" 2> "$r/s.err") || ec=$?
     echo "$ec" > "$r/s.ec"
     if [ -s "$r/c.json" ]; then
-        timeout 120 "$tmp/checkdump" < "$r/c.json" > "$r/d.out" 2> /dev/null || true
+        "$SOBER_CHECK" --fill-anchors < "$r/c.json" > "$r/cf.json"   # oneと同じ補い
+        timeout 120 "$tmp/checkdump" < "$r/cf.json" > "$r/d.out" 2> /dev/null || true
     fi
     echo "@@ a"
 }
@@ -144,7 +147,7 @@ else
     for t in "$bsrc"/compiler/tools/*/; do
         t=$(basename "$t")
         check_retired "compiler/tools/$t" && continue   # S5 で退役（起点の木は旧い言語 — scripts/frozen/check-retired.list の末尾の節）
-        case " ${SELFHOST_E2E_SKIP:-} " in *" $t "*) echo "skip: tools/$t"; continue;; esac
+        case " ${SELFHOST_E2E_SKIP:-} " in *" $t "*) echo "SKIP[SELFHOST_E2E_SKIP] selfhost_e2e: tools/$t"; continue;; esac
         a "$bsrc/compiler" "tools/$t/main.sober"
     done
     par_wait > /dev/null

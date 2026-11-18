@@ -1,0 +1,32 @@
+@@full	497c565727b4cf93	17172	534084
+@head	5d82de5f00cbcd56	0	425
+const aBadCertificate	cecc780a3ccff0d1	1	56
+const aCertificateExpired	f002b47f2bdcc107	1	60
+const aUnknownCa	a506b41e05cfc7a4	1	51
+const aUnsupportedCertificate	264f685e9b44c8aa	1	64
+const tNewSessionTicket	f2cb3e5d496a3630	1	57
+const xCookie	21151d8094d159e3	1	48
+func ClientAlert	a762eef6168a031f	79	2806
+func ClientAlpn	194436bd93645bc1	5	274
+func ClientConnected	b93cbfa5daa541e3	11	526
+func ClientLeaf	60fdd1b5bc36f631	5	286
+func ClientSeal	6b0bc10cc646200c	129	4286
+func FeedClient	7a6e06c9018bc57d	24	962
+func NewCParams	4bfe1ae70dd5a9b6	17	983
+func StartClient	f7d9b0fd12907ebc	104	4378
+func WithTls12	03d581325a059e13	10	463
+func cfeed	8234ee66b851643a	485	16306
+func clientHello	d72300b8f70219b8	471	14062
+func crnd	b364460ef415fd0e	34	1235
+func eeAlpn	6b163d6b3cfcc0a6	113	3681
+func isIPLit	800c3611ef21e6f2	41	1452
+func noLeaf	f74b3d9e224ea8e2	10	457
+func onCertificate	ae7213d946bd4b4c	150	4950
+func onClientSealed	df9957dd7d1407c2	453	15308
+func onServerHello	f41f0bd4bef56487	561	18693
+func same	c78af3db5a17c237	39	1313
+func verifyCV	064b0ff90c6099d5	183	6147
+type CParams	0f76c2bd1b23e564	10	499
+type CPhase	5ff2aff1eb156d75	1	443
+type CertFailed	e4aeb279fc20ef8a	1	71
+type Ch	d74b403e6b18360e	48	2258

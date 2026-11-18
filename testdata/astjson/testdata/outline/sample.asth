@@ -1,0 +1,13 @@
+@@full	d093ca33418f989d	562	11538
+@head	38c1b79a6c9cf9ba	0	98
+const Limit	89a60a8177c7334f	1	46
+const Name	e8958daf3cac8115	1	54
+func Read	972dc1fc6a78bff3	15	560
+func first	3e8409261219bc7c	17	638
+func main	1165cdef5f9e0f76	13	500
+func trim	a1d31f523eaba9a9	7	333
+type Bad	94fb54366972a41f	2	115
+type Box	cd7fa3508f11d943	2	111
+type Point	5e8db4896d7ecbec	3	158
+type Scale	0c7db415e43c556e	3	128
+type Shape	71073f82ef06dcc6	4	264

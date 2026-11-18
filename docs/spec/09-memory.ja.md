@@ -33,7 +33,7 @@ M-5. 部分列 `xs[a:b]` は同じセル列を指す新しいヘッダ（コピ�
 
 ## 9.3 上限
 
-M-6. regionの資源が尽きるとpanic（終了コード102 — `RegionExceeded{cause, depth}`）: region 1つの容量（mainのtaskは既定4 GiB・環境変数 `SOBER_REGION_MB` で変えられる）を超える・入れ子の深さが上限に届く・予約が取れない。関数の呼び出しとブロックは深さを1レベル使うので、無限の再帰は102で止まる。
+M-6. regionの資源が尽きるとpanic（終了コード102 — `RegionExceeded{cause, depth}`）: region 1つの容量（mainのtaskは既定4 GiB・環境変数 `SOBER_REGION_MB` で変えられる。子のtaskは `budget:` が無ければ既定512 MiB、あれば宣言以上の2の冪）を超える・入れ子の深さが上限に届く・予約が取れない・入場したtaskが予約を越えて借り、プールの節か根の天井を越える（`cause: budget`。mainは数えない。10章C-18）。子のtaskの死は終了コードにならず、親が受ける（10章C-5）。関数の呼び出しとブロックは深さを1レベル使うので、無限の再帰は102で止まる。
 例: [`examples/panic_depth.sober`](../../examples/panic_depth.sober)・[`examples/task_depth.sober`](../../examples/task_depth.sober)
 決定: [language.md 27節](../language.md)
 

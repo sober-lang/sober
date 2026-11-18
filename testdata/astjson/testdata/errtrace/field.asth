@@ -1,0 +1,13 @@
+@@full	6539e833e1782571	997	24603
+@head	7aaa9b710c68c96c	0	72
+func assigned	ccd50f311c0b358c	17	743
+func keyed	ffe9c478a36588f4	16	744
+func lift	672de2f910b2ceb3	18	611
+func main	dfddb52c36ae6061	25	778
+func name	36fa20074f60fd81	15	752
+func positional	6f2b49e80f16554d	16	722
+func show	fc1d4c28cb894042	21	740
+type A	12a16b07a8a73696	2	107
+type B	e61b6ddb6dd2249c	1	62
+type C	ba46ace75d06e29d	1	62
+type Hit	30e91586ff920257	4	179

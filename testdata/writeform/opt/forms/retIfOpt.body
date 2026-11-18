@@ -1,0 +1,1 @@
+    return if q != nil { q } else { d }

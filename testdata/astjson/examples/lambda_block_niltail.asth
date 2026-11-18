@@ -1,0 +1,7 @@
+@@full	23c3af6f511a75a7	733	19215
+@head	f8802cba5eefdec2	0	31
+func main	066ffa9569c148b5	67	2136
+func one	f731faf61a6fae4d	13	512
+func run	0b03ff52bcc84d14	13	513
+func serveBuf	ca1c6f7a413b9857	17	693
+type Stream	c2916e309abee3c3	8	313

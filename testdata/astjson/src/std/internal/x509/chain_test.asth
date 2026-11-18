@@ -1,0 +1,28 @@
+@@full	77290251fcaf589d	10739	343697
+@head	8f29d128d5762f90	0	326
+const Limbo	84fb0f558595b5d1	3	135
+const Vectors	a236eb31e4a5e3ec	3	137
+const pkNow	d997eafd38da31bf	1	54
+func TestDistrustAfter	ccd636e6633a5553	76	2768
+func TestGoVerify	bb25333a1bfa50dd	311	14770
+func TestLimbo	54d6d5fd03ba30e3	293	9788
+func TestNames	af038583562942ba	180	5458
+func TestPkits	c05a3b0807bff9a6	289	9518
+func TestRoots	a9763757a6daacef	68	2317
+func TestRootsFromPEM	2201102de21db00b	54	1921
+func derOf	afd4541227535fe9	21	808
+func errName	0c5b868845868631	34	1656
+func goDer	824ddaef79a30080	18	738
+func limboKnown	5e9d129b17a8f4eb	89	4974
+func limboWhy	b94dfcc301c743da	25	2522
+func pemDer	ecd73aac77eff776	28	1004
+func pkOut	65b33ffceee24978	93	5195
+func pkOutClass	ff5e63e9276fa253	32	1161
+func pkWhy	4242c1c64dff91f9	17	1217
+func pkitsDer	e5db9ad65ac3a7cc	46	1634
+type GoCase	cbca4f23d337df33	10	502
+type LCase	d3d7e8af909f8b85	11	558
+type LFile	ff96022cdb745c00	3	154
+type LWhy	7febcfa5de60ba35	4	219
+type PkRule	3a5949a79e10eb68	4	223
+type PkVec	3c489b415e6b7ced	5	270

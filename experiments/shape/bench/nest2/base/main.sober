@@ -1,0 +1,43 @@
+package main
+
+// 実験3（shape-m0）の題材 nest2・形 base。gen.ts の生成物
+
+import "std/iter"
+
+type Leaf struct {
+    z0 int
+    z1 string
+    z2 int
+    z3 string
+}
+
+type Mid struct {
+    y0 int
+    y1 string
+    y2 Leaf
+    y3 int
+}
+
+type R struct {
+    x0 int
+    x1 string
+    x2 Mid
+    x3 string
+}
+
+func mk(i int) R {
+    return R{x0: i + 10, x1: "s11_${i % 100}", x2: Mid{y0: i + 120, y1: "s121_${i % 100}", y2: Leaf{z0: i + 1220, z1: "s1221_${i % 100}", z2: i + 1222, z3: "s1223_${i % 100}"}, y3: i + 123}, x3: "s13_${i % 100}"}
+}
+
+func enc(v R) string {
+    return v.x1
+}
+
+func main() {
+    println(enc(mk(7)))
+    mut total := 0
+    for i <- iter.Range(0, 200000) {
+        total += len(bytes(enc(mk(i))))
+    }
+    println(total)
+}

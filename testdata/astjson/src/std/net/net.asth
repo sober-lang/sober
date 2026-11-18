@@ -1,0 +1,37 @@
+@@full	619fd6cf0bcf1a2f	13604	457022
+@head	03b947f151adfcb0	34	2526
+const evIn	fcb94c623e3303a2	1	44
+const evOut	f2e9227ea46ee614	1	45
+const fdCap	ca8de185161f3c20	1	49
+const slabConn	66d5b9a550737f6b	3	110
+func Accept	050817e33e5fbb6c	62	2042
+func Dial	2570a9f323b1d8a0	109	3704
+func Listen	3ff44065e378f394	53	1929
+func Port	eff973b9ffddca3c	32	1057
+func Recv	a1f3b2d383ec6d66	99	3145
+func Send	1eb66f9306f04a21	78	2565
+func Serve	5169787056e49e65	415	13387
+func Waiting	5809802eed95c056	61	1992
+func again	95a85d1c614ac4b3	37	1279
+func boundAddr	8383ff84bec6b8f6	56	1697
+func boxAvail	cb54eed65d0d4d0b	11	466
+func boxSplit	23fcda684ce4a98c	66	2258
+func closeFd	59738ec546558f31	9	385
+func dialSa	cfbe5cc327b10fe0	151	4472
+func errOf	944d5a4b4ea4dfcb	54	1974
+func giveConn	77b17e32e27f7689	13	642
+func ipSa	b7a56cf3e419488f	30	1033
+func kernelConn	b2c5e547da3403f4	122	3770
+func listenFd	6d9a67acfa84f8f7	137	3989
+func lsnCount	2d215b0171464815	25	809
+func peerGone	2877d83b9c9cef9e	28	965
+func serveOn	2ff06be53d743383	329	10480
+func slotBytes	b85bac4d1a1d2e17	22	811
+func sockaddr	da462ee2defc30d4	164	5318
+func somaxconn	10e28a04a15562a1	62	1989
+func waitErr	3ba066c49968e345	26	958
+type Bad	c46bc68f4fa91a27	1	64
+type Conn	5184cef5533a78b3	3	165
+type Listener	fdf1946beded3413	3	169
+type WaitView	9a20971b91f2a4b8	3	171
+type netSeal	4475c92572fa033c	1	69

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # cryptocheck（AES-GCMのチャンクのパスの格子 — report-796）: std/crypto/aesgcmの例を {既定のbuild（--passes）, --no-opt} × {SOBER_NOAES無し, =1} と
 # コピーのバックエンド（チャンクを持たない — cpuaes = 0）で走らせる。チャンクのパスは .out（比較用のGoの実装の値）と一致・倒れ先（NOAES=1 / コピー）はNoHardwareの印字だけ
-# （ソフトのAESは無い — 倒れ先はTLSのsuiteの選択でChaCha20-Poly1305 — ユーザー決定2）。チャンクの無い機械ではチャンクのパスの照合を飛ばす（SKIPを印字）
+# （ソフトのAESは無い。倒れ先はTLSのsuiteの選択でChaCha20-Poly1305。ユーザー決定2）。チャンクの無い機械ではFAIL（SOBER_GATES_ALLOW_SKIPにaes・bmi2を書いたときだけ、チャンクのパスの照合を飛ばす。gatelib.shのcant）
 #   scripts/cryptocheck.sh
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -9,9 +9,11 @@ S2=${STAGE2:-out/stage2/sober2}
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 export SOBER_WORKERS=1
+source scripts/gatelib.sh
 fail=0; n=0
 hw=1
 grep -qw aes /proc/cpuinfo && grep -qw pclmulqdq /proc/cpuinfo && grep -qw ssse3 /proc/cpuinfo || hw=0
+[ $hw = 1 ] || cant cryptocheck aes "the AES-GCM hardware paths (no AES-NI / PCLMULQDQ / SSSE3)" || fail=$((fail + 1))
 for ex in crypto_aesgcm crypto_wycheproof_aesgcm; do
     src=examples/$ex.sober
     "$S2" build "$src" --emit=elf --passes -o "$W/$ex.p" > /dev/null || { echo "FAIL build $ex"; fail=$((fail + 1)); continue; }
@@ -23,8 +25,6 @@ for ex in crypto_aesgcm crypto_wycheproof_aesgcm; do
             n=$((n + 1))
             timeout 60 "$W/$ex.$v" > "$W/out" 2>&1; e=$?
             if [ $e != 0 ] || ! cmp -s "$W/out" examples/$ex.out; then echo "FAIL $ex [$v] hw path differs from .out (exit $e)"; fail=$((fail + 1)); fi
-        else
-            echo "SKIP $ex [$v] hw path (no AES-NI / PCLMULQDQ / SSSE3)"
         fi
         n=$((n + 1))
         SOBER_NOAES=1 timeout 60 "$W/$ex.$v" > "$W/out" 2>&1; e=$?
@@ -39,6 +39,7 @@ done
 # （x25519の例2本は倒れ先も .outと同じ値）。SHA-256のチャンク（SHA-NI — 倒れ先はSOBER_NOSHA=1で同じ格子のNOMULX=1の列に相乗り）: crypto_hmac_hkdfは倒れ先も .outと同じ値
 mx=1
 grep -qw bmi2 /proc/cpuinfo || mx=0
+[ $mx = 1 ] || cant cryptocheck bmi2 "the MULX paths (no BMI2)" || fail=$((fail + 1))
 for ex in crypto_rsa crypto_wycheproof_pss crypto_x25519 crypto_wycheproof_x25519 crypto_hmac_hkdf; do
     src=examples/$ex.sober
     "$S2" build "$src" --emit=elf --passes -o "$W/$ex.p" > /dev/null || { echo "FAIL build $ex"; fail=$((fail + 1)); continue; }
@@ -47,7 +48,7 @@ for ex in crypto_rsa crypto_wycheproof_pss crypto_x25519 crypto_wycheproof_x2551
     chmod +x "$W/$ex.p" "$W/$ex.n" "$W/$ex.c"
     for v in p n c; do
         for nm in 0 1; do
-            if [ $nm = 0 ] && [ $v = p ] && [ $mx = 0 ]; then echo "SKIP $ex [$v] MULX path (no BMI2)"; continue; fi
+            if [ $nm = 0 ] && [ $v = p ] && [ $mx = 0 ]; then continue; fi
             n=$((n + 1))
             if [ $nm = 1 ]; then SOBER_NOMULX=1 SOBER_NOSHA=1 timeout 120 "$W/$ex.$v" > "$W/out" 2>&1; else timeout 120 "$W/$ex.$v" > "$W/out" 2>&1; fi; e=$?
             if [ $e != 0 ] || ! cmp -s "$W/out" examples/$ex.out; then echo "FAIL $ex [$v NOMULX=$nm] differs from .out (exit $e)"; fail=$((fail + 1)); fi
@@ -56,7 +57,7 @@ for ex in crypto_rsa crypto_wycheproof_pss crypto_x25519 crypto_wycheproof_x2551
 done
 # チャンク ≡ Soberの乱数照合（white-boxの _test — rsaのmontMul / selとxmmの退避・x25519のfemul・sha256のSHA-NI）を倒れ先の有無の両方で
 for nm in 0 1; do
-    if [ $nm = 0 ] && [ $mx = 0 ]; then echo "SKIP selfcheck MULX path (no BMI2)"; continue; fi
+    if [ $nm = 0 ] && [ $mx = 0 ]; then continue; fi
     n=$((n + 1))
     mkdir -p "$W/t$nm"
     if [ $nm = 1 ]; then SOBER_NOMULX=1 SOBER_NOSHA=1 "$S2" test --fresh --work "$W/t$nm" std/crypto/rsa std/crypto/x25519 std/crypto/sha256 > "$W/out" 2>&1

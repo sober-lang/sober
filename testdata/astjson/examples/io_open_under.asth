@@ -1,0 +1,12 @@
+@@full	6298e010dd4b9cda	2435	62882
+@head	e4dd247103c72e26	0	179
+func exists	f07c9884d1f51d70	12	569
+func fds	e27008e1f8a89526	14	519
+func main	581186df8d7d0b63	65	2212
+func mkdir	4edf3167ef79c1bd	21	729
+func probe	908ca28b8072dcb1	70	2463
+func rootOnFile	aba8a7f51c95ef7b	18	671
+func run	754b3c8f60a22032	68	2042
+func setup	6f593e34798adbaa	85	2726
+func show	36639942cd4cdf06	25	929
+func why	80a57844c7780bfd	17	860

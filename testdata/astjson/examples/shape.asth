@@ -1,0 +1,8 @@
+@@full	583fca08e64fc2c1	948	26748
+@head	f8802cba5eefdec2	0	31
+func area	87cf46c3c6685aa5	20	931
+func describe	1ecff9902d1925a8	33	1232
+func main	cefe3fcdc1372fdf	53	2145
+func pick	5b3b8ab406ab8672	13	568
+type Shape	78bcd519c76a3878	4	290
+type Tagged	5f46f230ca6fd13d	3	162

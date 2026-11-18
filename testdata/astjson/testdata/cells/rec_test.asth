@@ -1,0 +1,10 @@
+@@full	058da038305a6070	1020	29961
+@head	d907a8a34e9e6115	0	192
+const Fails	e9b72c596dc5db30	3	161
+const Tree	468d5a7e57a9de68	5	303
+func TestErrorField	71e7a4dc5f46591f	34	1287
+func TestRecursiveValue	9a166fffdd07dfe2	70	2647
+func leaves	86804a5c2011ff5b	26	1081
+type Bad	6aaa31b261e49d27	2	114
+type Fail	cf605ac7c1111d9b	4	185
+type Node	8d86bdc85c4a56d4	4	253

@@ -37,14 +37,19 @@ const NR_W = 8
 const NR_ARMED = 0   // 1 = multishot RECV が張ってある
 const NR_WAIT = 1    // 待っている task（0 = 無し）
 const NR_QH = 2      // 届いたスロットの列の頭（bid + 1 — 0 = 空）
-const NR_QT = 3
-// 下位16ビット = 頭のスロットの読んだバイト数・上位 = 送りの状態（送信バッファリング — 記録を1行に保つための詰め。読み書きはqoff* / sst* だけ）。
+const NR_QT = 3      // 列に積まれた受けたfdの記録では、前（1つ古い）のfd + 1（0 = 頭）。列の末尾から取るための後ろ向きの鎖
+// 下位16ビット = 頭のスロットの読んだバイト数・上位 = 送りの状態（送信バッファリング — 記録を1行に保つための詰め。読み書きはqoff* / sst* だけ — listener の記録の詰めは lq*）。
 // 送りの状態: 0〜1 = 種類（SS_*）・2 = 待ちのフラグ（片付けを待つ待ち手がいる — 全部送れた完了でもウェイクアップする）・3〜18 = 長さ（誤りならerrno）・19〜 = 送り場のチャンクの番号
 const NR_QS = 4
-const NR_FIN = 5     // 1 = 相手が閉じた（FIN）
+// listener の記録では NR_QS = 列の本数（下位32ビット）| 列の上限 << 32（0 = 上限なし — op 28 で置く）
+const NR_FIN = 5     // 符号のビット: 1 = 相手が閉じた（FIN — NR_FINB）・下位: 読んだ量の累計（RCV_TH で飽和 — rcvCount）
+const NR_FINB = -9223372036854775807 - 1
 const NR_ERR = 6     // 負の errno（0 = 無し）
 const NR_LNK = 7     // 下位32ビット: listenerの記録ではフラグ（1 = listener — 列は受けたfd + 1）・列に積まれた受けたfdの記録では次のfd + 1（0 = 末尾）。
                      // 上位（接続）: 32〜47 = 固定の枠 + 1（0 = 無し）・48〜62 = 枠の持ち主のワーカー（WK_ID）
+// 読んだ量の累計がこれを越えた時点で、接続に SO_RCVBUF 64 KiB を1回置く（受信の自動調整を止めて1本のカーネルの分を約132 KBに保つ —
+// 小さいリクエストの往復だけでも累計32〜64 KiBで広がり始め、広がったまま縮まない）
+const RCV_TH = 32768
 const NT_CAP = 65536 // 表の大きさ（rtの登録簿のFD_CAPと同じ — 越えるfdは今のパス）
 
 // ringの記録のワード（PBUF_RING）
@@ -352,6 +357,7 @@ func urReapRecv(st mut St, rec int, ud int, res int, fl int, hn BlkRef) {
     bJ := newBlock(mut st)
     condbr(mut st, cmp(mut st, CGt, res, zero), bD, -1, bN, -1)
     setCur(mut st, bD)
+    rcvCount(mut st, np, ud, res, true)
     bLeg := branchIf(mut st, cmp(mut st, CNe, load(mut st, rp, UR_PBI), zero))
     reapInc(mut st, rec, np, res, fl)
     br(mut st, bJ, -1)
@@ -385,7 +391,7 @@ func urReapRecv(st mut St, rec int, ud int, res int, fl int, hn BlkRef) {
     bX := newBlock(mut st)
     condbr(mut st, cmp(mut st, CEq, res, zero), bF, -1, bX, -1)
     setCur(mut st, bF)
-    store(mut st, np, NR_FIN, iconst(mut st, 1))
+    store(mut st, np, NR_FIN, bin(mut st, BOr, load(mut st, np, NR_FIN), iconst(mut st, NR_FINB)))
     br(mut st, bJ, -1)
     setCur(mut st, bX)
     if st.rtMut == 4 {
@@ -403,6 +409,186 @@ func urReapRecv(st mut St, rec int, ud int, res int, fl int, hn BlkRef) {
     setCur(mut st, bM)
     nrWake(mut st, nr)
     br(mut st, hn, -1)
+}
+
+// rt.netop の op 21〜24（buildNetOp の注記）: 登録簿は鍵 MN_LSNL の下で読み書きする（足す・外すは Serve の開始と終わりだけ）
+func lsnOp(st mut St, op int, fd int, a int) {
+    mn := globaladdr(mut st, st.mnG)
+    zero := iconst(mut st, 0)
+    one := iconst(mut st, 1)
+    b29 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 29)))
+    if st.poolOn {
+        // 鍵の下で、無ければ作ってから天井を置く（節を作る前に語を取りに行く順 — 同時に始まった Serve が節を余らせない）
+        spinLock(mut st, mn, MN_LSNL)
+        w0 := load(mut st, mn, MN_SPAR)
+        bHave := newBlock(mut st)
+        pw := param(mut st, bHave, TyI64)
+        bMk := newBlock(mut st)
+        condbr(mut st, cmp(mut st, CEq, w0, zero), bMk, -1, bHave, list1(mut st, w0))
+        setCur(mut st, bMk)
+        wn := call(mut st, st.rtPoolNew, list2(mut st, iconst(mut st, LED_BMAX), zero))
+        bOkp := newBlock(mut st)
+        bBad := newBlock(mut st)
+        condbr(mut st, cmp(mut st, CLt, wn, zero), bBad, -1, bOkp, -1)
+        setCur(mut st, bBad)
+        lockGive(mut st, mn, MN_LSNL)
+        ret(mut st, wn)
+        setCur(mut st, bOkp)
+        store(mut st, mn, MN_SPAR, wn)
+        br(mut st, bHave, list1(mut st, wn))
+        setCur(mut st, bHave)
+        // 天井 0 は置かない（本数の天井なし — std/net の Serve は入場をバイトの天井で決める）
+        bTs := branchIf(mut st, cmp(mut st, CGt, fd, zero))
+        poolTcapSet(mut st, pw, fd)
+        br(mut st, bTs, -1)
+        setCur(mut st, bTs)
+        lockGive(mut st, mn, MN_LSNL)
+        ret(mut st, pw)
+    } else {
+        ret(mut st, bin(mut st, BSub, zero, one))
+    }
+    setCur(mut st, b29)
+    b30 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 30)))
+    if st.poolOn {
+        // 節は作った task だけが置く（ServePool の作った直後 — 入場の前）
+        poolTcapSet(mut st, fd, a)
+    }
+    ret(mut st, zero)
+    setCur(mut st, b30)
+    b28 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 28)))
+    rg8, nr8 := nrRing(mut st, fd)
+    _ = rg8
+    b8 := branchIf(mut st, cmp(mut st, CNe, nr8, zero))
+    np8 := itop(mut st, nr8)
+    lqSet(mut st, np8, bin(mut st, BOr, bin(mut st, BAnd, lqGet(mut st, np8), iconst(mut st, 4294967295)), bin(mut st, BShl, bin(mut st, BAnd, a, iconst(mut st, 1073741823)), iconst(mut st, 32))))
+    br(mut st, b8, -1)
+    setCur(mut st, b8)
+    ret(mut st, zero)
+    setCur(mut st, b28)
+    b26 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 26)))
+    atomicXadd(mut st, mn, MN_LSNH, fd)
+    ret(mut st, zero)
+    setCur(mut st, b26)
+    b27 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 27)))
+    ret(mut st, load(mut st, mn, MN_LSNH))
+    setCur(mut st, b27)
+    b25 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 25)))
+    // TCP_INFO を作業域へ（鍵の下 — 作業域はプロセスで1つ）
+    spinLock(mut st, mn, MN_LSNL)
+    store(mut st, mn, MN_LSNTL, iconst(mut st, 256))
+    ti := ptoi(mut st, gepWord(mut st, mn, iconst(mut st, MN_LSNTI)))
+    r := urSys(mut st, 55, []int{fd, iconst(mut st, 6), iconst(mut st, 11), ti, ptoi(mut st, gepWord(mut st, mn, iconst(mut st, MN_LSNTL)))})
+    // a = 2 番目の仮引数: 0 → ワード3の下位32ビット（オフセット24）・1 → 上位（オフセット28）
+    w3 := load(mut st, mn, MN_LSNTI + 3)
+    v := bin(mut st, BAnd, bin(mut st, BSar, w3, bin(mut st, BMul, bin(mut st, BAnd, a, one), iconst(mut st, 32))), iconst(mut st, 4294967295))
+    lockGive(mut st, mn, MN_LSNL)
+    ret(mut st, bin(mut st, BMul, v, cmp(mut st, CEq, r, zero)))
+    setCur(mut st, b25)
+    b24 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 24)))
+    // 列の本数: listener の記録の NR_QH から NR_LNK のチェーンを数える
+    rg, nr := nrRing(mut st, fd)
+    _ = rg
+    bR := branchIf(mut st, cmp(mut st, CEq, nr, zero))
+    ret(mut st, zero)
+    setCur(mut st, bR)
+    tab := load(mut st, mn, MN_NTAB)
+    cl := newBlock(mut st)
+    cq := param(mut st, cl, TyI64)
+    ck := param(mut st, cl, TyI64)
+    cb := newBlock(mut st)
+    cd := newBlock(mut st)
+    // 鍵は取らない: 列は listener のワーカーが書く（読みは観測の値 — 途中の付け替えを読んでも表の中を最大 NT_CAP 歩で止まる）
+    br(mut st, cl, list2(mut st, load(mut st, itop(mut st, nr), NR_QH), zero))
+    setCur(mut st, cl)
+    condbr(mut st, bin(mut st, BAnd, cmp(mut st, CNe, cq, zero), cmp(mut st, CLt, ck, iconst(mut st, NT_CAP))), cb, -1, cd, -1)
+    setCur(mut st, cb)
+    nx := bin(mut st, BAnd, load(mut st, itop(mut st, nrAt(mut st, tab, urAdd(mut st, cq, -1))), NR_LNK), iconst(mut st, 4294967295))
+    br(mut st, cl, list2(mut st, nx, urAdd(mut st, ck, 1)))
+    setCur(mut st, cd)
+    ret(mut st, ck)
+    setCur(mut st, b24)
+    spinLock(mut st, mn, MN_LSNL)
+    n := load(mut st, mn, MN_LSNN)
+    fp := gepWord(mut st, mn, iconst(mut st, MN_LSNF))
+    b21 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 21)))
+    bFull := branchIf(mut st, cmp(mut st, CLt, n, iconst(mut st, LSN_CAP)))
+    store(mut st, gepWord(mut st, fp, n), 0, fd)
+    store(mut st, mn, MN_LSNN, urAdd(mut st, n, 1))
+    br(mut st, bFull, -1)
+    setCur(mut st, bFull)
+    lockGive(mut st, mn, MN_LSNL)
+    ret(mut st, zero)
+    setCur(mut st, b21)
+    b22 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 22)))
+    // 外す: fd の位置に末尾を移す
+    fl := newBlock(mut st)
+    fi := param(mut st, fl, TyI64)
+    fb := newBlock(mut st)
+    fh := newBlock(mut st)
+    fn := newBlock(mut st)
+    fdone := newBlock(mut st)
+    br(mut st, fl, list1(mut st, zero))
+    setCur(mut st, fl)
+    condbr(mut st, cmp(mut st, CLt, fi, n), fb, -1, fdone, -1)
+    setCur(mut st, fb)
+    condbr(mut st, cmp(mut st, CEq, load(mut st, gepWord(mut st, fp, fi), 0), fd), fh, -1, fn, -1)
+    setCur(mut st, fn)
+    br(mut st, fl, list1(mut st, urAdd(mut st, fi, 1)))
+    setCur(mut st, fh)
+    n1 := urAdd(mut st, n, -1)
+    store(mut st, gepWord(mut st, fp, fi), 0, load(mut st, gepWord(mut st, fp, n1), 0))
+    store(mut st, mn, MN_LSNN, n1)
+    br(mut st, fdone, -1)
+    setCur(mut st, fdone)
+    lockGive(mut st, mn, MN_LSNL)
+    ret(mut st, zero)
+    setCur(mut st, b22)
+    // op 23: fd 番目（範囲の外は -1）
+    bIn := newBlock(mut st)
+    bOut := newBlock(mut st)
+    condbr(mut st, bin(mut st, BAnd, cmp(mut st, CGe, fd, zero), cmp(mut st, CLt, fd, n)), bIn, -1, bOut, -1)
+    setCur(mut st, bIn)
+    fv := load(mut st, gepWord(mut st, fp, fd), 0)
+    lockGive(mut st, mn, MN_LSNL)
+    ret(mut st, fv)
+    setCur(mut st, bOut)
+    lockGive(mut st, mn, MN_LSNL)
+    ret(mut st, bin(mut st, BSub, zero, one))
+}
+
+// 記録 np の相手が閉じたか（NR_FIN の符号のビット — 比較の値）
+func nrFin(st mut St, np int) int {
+    return cmp(mut st, CLt, load(mut st, np, NR_FIN), iconst(mut st, 0))
+}
+
+// 接続 fd（記録 np）が n バイト読んだ: 累計を RCV_TH で飽和させて NR_FIN の下位へ。越えた1回だけ rcvClamp。
+// fdu の下位16ビットが fd（受けの完了の user_data をそのまま渡せる）。pos = n > 0 が呼び手で分かっている（偽なら n ≤ 0 を数えない）。
+// リクエストごとの道は、飽和の後は比較1回で抜ける（FIN の後は符号のビットで遅い道へ入るが、累計が飽和していれば何もしない）
+func rcvCount(st mut St, np int, fdu int, n int, pos bool) {
+    w := load(mut st, np, NR_FIN)
+    mut go := cmp(mut st, CLt, w, iconst(mut st, RCV_TH))
+    if !pos {
+        go = bin(mut st, BAnd, go, cmp(mut st, CGt, n, iconst(mut st, 0)))
+    }
+    bGo := branchIf(mut st, go)
+    c0 := bin(mut st, BAnd, w, iconst(mut st, -1 - NR_FINB))
+    bLo := branchIf(mut st, cmp(mut st, CLt, c0, iconst(mut st, RCV_TH)))
+    c1 := imin(mut st, bin(mut st, BAdd, c0, n), iconst(mut st, RCV_TH))
+    store(mut st, np, NR_FIN, bin(mut st, BOr, bin(mut st, BAnd, w, iconst(mut st, NR_FINB)), c1))
+    bX := branchIf(mut st, cmp(mut st, CEq, c1, iconst(mut st, RCV_TH)))
+    rcvClamp(mut st, bin(mut st, BAnd, fdu, iconst(mut st, 65535)))
+    br(mut st, bX, -1)
+    setCur(mut st, bX)
+    br(mut st, bLo, -1)
+    setCur(mut st, bLo)
+    br(mut st, bGo, -1)
+    setCur(mut st, bGo)
+}
+
+// fd に SO_RCVBUF 64 KiB を置く（setsockopt — 失敗は見ない。値は rt.mn の MN_RCV64 の4バイト）
+func rcvClamp(st mut St, fd int) {
+    v := ptoi(mut st, gepWord(mut st, globaladdr(mut st, st.mnG), iconst(mut st, MN_RCV64)))
+    _ = urSys(mut st, 54, []int{fd, iconst(mut st, 1), iconst(mut st, 8), v, iconst(mut st, 4)})
 }
 
 // 増分消費の環の受けの完了（res > 0）: バッファ bid の書いた位置から res バイトの区間を作って記録 np の列の末尾へ。
@@ -443,7 +629,7 @@ func reapInc(st mut St, rec int, np int, res int, fl int) {
 
 // accept の完了（user_data = listener の fd | TAG_ACC）を listener の記録へ: 受けた fd は列の末尾へ・負は errno（次の accept が 1 回返す）。
 // F_MOREが無ければ張ってないフラグ。待ち手をウェイクアップする（curは取り込みの分岐 — hnへ）
-func urReapAcc(st mut St, ud int, res int, fl int, hn BlkRef) {
+func urReapAcc(st mut St, rec int, ud int, res int, fl int, hn BlkRef) {
     zero := iconst(mut st, 0)
     tab := load(mut st, globaladdr(mut st, st.mnG), MN_NTAB)
     nr := nrAt(mut st, tab, bin(mut st, BAnd, ud, iconst(mut st, 65535)))
@@ -469,9 +655,33 @@ func urReapAcc(st mut St, ud int, res int, fl int, hn BlkRef) {
     br(mut st, bQ, -1)
     setCur(mut st, bQ)
     store(mut st, np, NR_QT, k)
+    store(mut st, itop(mut st, nrAt(mut st, tab, res)), NR_QT, qt)
+    // 列の本数を数え、上限を越えたら列の頭（いちばん長く待った fd）を閉じて shed に数える（受け付けは止めない — カーネルの待ち行列を空け続け、
+    // 新しく来た接続の SYN を捨てない。入場は列の末尾〔いちばん新しい fd〕から — op 3）
+    qs := urAdd(mut st, lqGet(mut st, np), 1)
+    lqSet(mut st, np, qs)
+    lcap := bin(mut st, BAnd, bin(mut st, BSar, qs, iconst(mut st, 32)), iconst(mut st, 1073741823))
+    bOv := branchIf(mut st, bin(mut st, BAnd, cmp(mut st, CNe, lcap, zero), cmp(mut st, CGt, bin(mut st, BAnd, qs, iconst(mut st, 4294967295)), lcap)))
+    // 上限 ≥ 1 なので、越えた時点の列は2本以上（頭の次がある）
+    oh := load(mut st, np, NR_QH)
+    ohp := itop(mut st, nrAt(mut st, tab, urAdd(mut st, oh, -1)))
+    ohn := load(mut st, ohp, NR_LNK)
+    store(mut st, ohp, NR_LNK, zero)
+    store(mut st, ohp, NR_QT, zero)
+    store(mut st, np, NR_QH, ohn)
+    store(mut st, itop(mut st, nrAt(mut st, tab, urAdd(mut st, ohn, -1))), NR_QT, zero)
+    lqSet(mut st, np, urAdd(mut st, qs, -1))
+    urSys(mut st, 3, []int{urAdd(mut st, oh, -1)})
+    atomicXadd(mut st, globaladdr(mut st, st.mnG), MN_LSHED, iconst(mut st, 1))
+    br(mut st, bOv, -1)
+    setCur(mut st, bOv)
     br(mut st, bJ, -1)
     setCur(mut st, bN)
+    // -125（ECANCELED）は閉じの取り消しの終わり — 誤りにしない
+    bCn := branchIf(mut st, cmp(mut st, CNe, res, iconst(mut st, -125)))
     store(mut st, np, NR_ERR, res)
+    br(mut st, bCn, -1)
+    setCur(mut st, bCn)
     br(mut st, bJ, -1)
     setCur(mut st, bJ)
     bM := branchIf(mut st, cmp(mut st, CEq, bin(mut st, BAnd, fl, iconst(mut st, 2)), zero))
@@ -530,6 +740,16 @@ func qoffGet(st mut St, np int) int {
 
 func qoffSet(st mut St, np int, v int) {
     store(mut st, np, NR_QS, bin(mut st, BOr, bin(mut st, BAnd, load(mut st, np, NR_QS), iconst(mut st, -65536)), v))
+}
+
+// listener の記録の NR_QS（列の本数・上限 — NR_QS の注記）。接続の記録の qoff* / sst* とは同じワードの別の詰めなので、
+// listener の記録へは qoff* / sst* を使わない（閉じの入口で消してから送りの片付けへ入る）
+func lqGet(st mut St, np int) int {
+    return load(mut st, np, NR_QS)
+}
+
+func lqSet(st mut St, np int, v int) {
+    store(mut st, np, NR_QS, v)
 }
 
 // 記録npの送りの状態（SS_* の種類・待ちのフラグ・長さ・送り場のチャンクの番号 — NR_QSの注記）
@@ -833,7 +1053,7 @@ func buildNetRecv(st mut St) {
         s0 := sstGet(mut st, np)
         bTq := branchIf(mut st, cmp(mut st, CEq, bin(mut st, BAnd, s0, iconst(mut st, 3)), iconst(mut st, SS_TPEND)))
         have := bin(mut st, BOr, bin(mut st, BOr, cmp(mut st, CNe, load(mut st, np, NR_QH), zero), cmp(mut st, CNe, load(mut st, np, NR_ERR), zero)),
-            bin(mut st, BOr, cmp(mut st, CNe, load(mut st, np, NR_FIN), zero),
+            bin(mut st, BOr, nrFin(mut st, np),
                 bin(mut st, BAnd, cmp(mut st, CEq, load(mut st, np, NR_ARMED), zero), bin(mut st, BOr, cmp(mut st, CEq, load(mut st, rp, UR_PB), zero), cmp(mut st, CEq, load(mut st, rp, UR_PBF), zero)))))
         bTh := branchIf(mut st, have)
         tpWait(mut st, rg, nr)
@@ -917,7 +1137,7 @@ func buildNetRecv(st mut St) {
     bE := branchIf(mut st, cmp(mut st, CNe, er, zero))
     ret(mut st, er)
     setCur(mut st, bE)
-    bF := branchIf(mut st, cmp(mut st, CNe, load(mut st, np, NR_FIN), zero))
+    bF := branchIf(mut st, nrFin(mut st, np))
     ret(mut st, zero)
     setCur(mut st, bF)
     bArm := newBlock(mut st)
@@ -927,6 +1147,7 @@ func buildNetRecv(st mut St) {
     bDry := branchIf(mut st, bin(mut st, BOr, cmp(mut st, CEq, load(mut st, rp, UR_PB), zero), cmp(mut st, CEq, load(mut st, rp, UR_PBF), zero)))
     kxAdd(mut st, 5, iconst(mut st, 1))
     rr := syscall(mut st, list4(mut st, zero, fd, dst, c))
+    rcvCount(mut st, np, fd, rr, false)
     if st.rtMut == 4 {
         kxAdd(mut st, 7, cmp(mut st, CEq, rr, iconst(mut st, -11)))
     }
@@ -972,7 +1193,7 @@ func buildNetWait(st mut St) {
     br(mut st, l, list1(mut st, zero))
     setCur(mut st, l)
     ready := bin(mut st, BOr, cmp(mut st, CEq, bin(mut st, BAnd, sstGet(mut st, np), iconst(mut st, 3)), iconst(mut st, SS_ERR)), cmp(mut st, CNe, load(mut st, np, NR_QH), zero))
-    ready2 := bin(mut st, BOr, ready, bin(mut st, BOr, cmp(mut st, CNe, load(mut st, np, NR_ERR), zero), cmp(mut st, CNe, load(mut st, np, NR_FIN), zero)))
+    ready2 := bin(mut st, BOr, ready, bin(mut st, BOr, cmp(mut st, CNe, load(mut st, np, NR_ERR), zero), nrFin(mut st, np)))
     bEmpty := branchIf(mut st, ready2)
     ret(mut st, waited)
     setCur(mut st, bEmpty)
@@ -1195,11 +1416,20 @@ func commitPost(st mut St, rg int, np int, fd int, wa int, k int, ln int) {
 // op 6 = スロットの大きさのフラグ（fd = バイト → 0 — 今のtaskの次のspawn 1回のスロット。rt.task_new_inが消費）・
 // op 8 = ワーカーの数（→ rt.mn の MN_N・task の無いプログラムは 1 — Serve の listener の数）・
 // op 10 = エリアのフラグ（→ 0。今のtaskの次のspawn 1回を接続のtaskのスタックの形にする。rt.task_new_inが消費する。area.sober）・
-// op 12・13 = 送信バッファのチャンクの予約へ積む・予約のSENDを積む（std/tlsのPut・Flush。sendResv・sendCommit）
+// op 12・13 = 送信バッファのチャンクの予約へ積む・予約のSENDを積む（std/tlsのPut・Flush。sendResv・sendCommit）・
+// op 20 = 次の SpawnIn 1回の入場のフラグ（fd = 1 待つ・2 shed に数えない → 0 — admit.sober の poolWait）・
+// op 21 / 22 = listener fd を net.Serve の登録簿に足す / 外す（→ 0 — rt.mn の MN_LSN*）・op 23 = 登録簿の fd 番目の fd（範囲の外は -1）・
+// op 24 = listener fd のランタイムの列（受けて accept が取っていない fd）の本数（io_uringのパスでなければ 0）・
+// op 25 = listener fd の TCP_INFO の a = 0: tcpi_unacked（listener では待ち行列の長さ）・1: tcpi_sacked（その大きさ）。読めなければ 0・
+// op 26 = 待つ入場で手に持つ接続の数に fd を足す（→ 0）・op 27 = その数。23〜25・27 は net_peek（nondet）から・
+// op 28 = listener fd のランタイムの列の上限を a にする（→ 0 — io_uringのパスだけ。列が上限に達したら ACCEPT を取り消す — urReapAcc）・
+// op 29 = net.Serve の全部の親の節（taskの数の天井 fd〔0 = 置かない〕 — 無ければ作り、fd > 0 なら天井を置き直す → 節の番地 / -1）・
+// op 30 = プールの節 fd の taskの数の天井を a にする（→ 0 — std/task の ServePool: Serve の節の入場を本数で判定する）
 func buildNetOp(st mut St) {
     begin(mut st, chF(mut st, NETF_OP))
     op := 0
     fd := 1
+    argA := 2
     zero := iconst(mut st, 0)
     bSend := newBlock(mut st)
     bNs := newBlock(mut st)
@@ -1248,6 +1478,30 @@ func buildNetOp(st mut St) {
         ret(mut st, zero)
     }
     setCur(mut st, bN13)
+    // op 20: 次の SpawnIn 1回の入場のフラグ（fd の位置 = 1: プールの節があふれたら shed せずに待つ・2: 入れなくても shed に数えない — std/net の Serve の reject: なしの
+    // 受け付けのループ。今の task の TC_NSLOT の下位2ビット。
+    // rt.task_new_in が消費 — admit.sober の poolWait。op 6 の後に置く。14〜18 は Serve の期限〔rdl.sober — その場で組む〕）
+    bOpN20 := newBlock(mut st)
+    bOp20 := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, op, iconst(mut st, 20)), bOp20, -1, bOpN20, -1)
+    setCur(mut st, bOp20)
+    if st.taskUse {
+        tw := itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
+        store(mut st, tw, TC_NSLOT, bin(mut st, BOr, load(mut st, tw, TC_NSLOT), bin(mut st, BAnd, fd, iconst(mut st, 3))))
+    }
+    ret(mut st, zero)
+    setCur(mut st, bOpN20)
+    // op 21〜24: net.Serve の listener の登録簿と、列の本数（net.Waiting — 読んだときだけ。リクエストの経路には入らない）
+    bOpN21 := newBlock(mut st)
+    bOp21 := newBlock(mut st)
+    condbr(mut st, bin(mut st, BAnd, cmp(mut st, CGe, op, iconst(mut st, 21)), cmp(mut st, CLe, op, iconst(mut st, 30))), bOp21, -1, bOpN21, -1)
+    setCur(mut st, bOp21)
+    if st.taskUse {
+        lsnOp(mut st, op, fd, argA)
+    } else {
+        ret(mut st, bin(mut st, BSub, zero, cmp(mut st, CEq, op, iconst(mut st, 23))))
+    }
+    setCur(mut st, bOpN21)
     bNa := newBlock(mut st)
     bPlace := newBlock(mut st)
     condbr(mut st, cmp(mut st, CEq, op, iconst(mut st, 3)), bAcc, -1, bNa, -1)
@@ -1303,18 +1557,27 @@ func buildNetOp(st mut St) {
         l := newBlock(mut st)
         br(mut st, l, -1)
         setCur(mut st, l)
-        // 列の頭の fd を外して返す
-        qh := load(mut st, np, NR_QH)
-        bNone := branchIf(mut st, cmp(mut st, CNe, qh, zero))
-        a := urAdd(mut st, qh, -1)
+        // 列の末尾（いちばん新しい fd）を外して返す（入場は新しい順 — 待ちすぎた接続は urReapAcc が頭から閉じる）
+        qt0 := load(mut st, np, NR_QT)
+        bNone := branchIf(mut st, cmp(mut st, CNe, qt0, zero))
+        a := urAdd(mut st, qt0, -1)
         ap := itop(mut st, nrAt(mut st, tab, a))
-        nx := load(mut st, ap, NR_LNK)
+        pv := load(mut st, ap, NR_QT)
+        store(mut st, ap, NR_QT, zero)
         store(mut st, ap, NR_LNK, zero)
-        store(mut st, np, NR_QH, nx)
-        bKt := branchIf(mut st, cmp(mut st, CEq, nx, zero))
-        store(mut st, np, NR_QT, zero)
-        br(mut st, bKt, -1)
-        setCur(mut st, bKt)
+        store(mut st, np, NR_QT, pv)
+        lqSet(mut st, np, urAdd(mut st, lqGet(mut st, np), -1))
+        bE1 := newBlock(mut st)
+        bP1 := newBlock(mut st)
+        bJ1 := newBlock(mut st)
+        condbr(mut st, cmp(mut st, CEq, pv, zero), bE1, -1, bP1, -1)
+        setCur(mut st, bE1)
+        store(mut st, np, NR_QH, zero)
+        br(mut st, bJ1, -1)
+        setCur(mut st, bP1)
+        store(mut st, itop(mut st, nrAt(mut st, tab, urAdd(mut st, pv, -1))), NR_LNK, zero)
+        br(mut st, bJ1, -1)
+        setCur(mut st, bJ1)
         frAccept(mut st, fd, a)
         ret(mut st, a)
         setCur(mut st, bNone)
@@ -1341,6 +1604,14 @@ func buildNetOp(st mut St) {
         _ = chIo(mut st, zero)
     }
     acc := urSys(mut st, 288, []int{fd, zero, zero, iconst(mut st, 526336)})
+    if st.taskUse {
+        // epollのパス（ringが無い）: 累計を数える記録が無いので、受けた時点で SO_RCVBUF 64 KiB を1回（受けた後なのでウィンドウのスケールは保たれる）
+        // 自動調整は受け手のRTT 1回の間に読んだ量で広げるので、loopback（RTT 数十µs）ではこのパスの読み方では広がらないが、RTTがmsの網では広がる
+        bNo := branchIf(mut st, cmp(mut st, CGe, acc, zero))
+        rcvClamp(mut st, acc)
+        br(mut st, bNo, -1)
+        setCur(mut st, bNo)
+    }
     frAccept(mut st, fd, acc)
     ret(mut st, acc)
     setCur(mut st, bSend)
@@ -1523,6 +1794,11 @@ func buildNetOp(st mut St) {
         bR := branchIf(mut st, cmp(mut st, CNe, nr, zero))
         rp := itop(mut st, rg)
         np := itop(mut st, nr)
+        // listener: 列の本数・上限は送りの状態ではない。下の sstGet が上限の下位ビットを送りの長さと読んで、無いチャンクを返さないように消す
+        bLq := branchIf(mut st, cmp(mut st, CNe, bin(mut st, BAnd, load(mut st, np, NR_LNK), iconst(mut st, 4294967295)), iconst(mut st, 0)))
+        lqSet(mut st, np, iconst(mut st, 0))
+        br(mut st, bLq, -1)
+        setCur(mut st, bLq)
         // 送信バッファリングの片付け: 未完は完了を待つ（積んだSENDが閉じた後の同じ番号のfdへ出ない — 記録を消す前に完了を取り込む。
         // 期限・孤児なら取り消す — 相手が読まない接続でも閉じは有界）・誤りは捨てる
         cl := newBlock(mut st)
@@ -1578,6 +1854,7 @@ func buildNetOp(st mut St) {
         ap := itop(mut st, nrAt(mut st, tab, af))
         anx := load(mut st, ap, NR_LNK)
         store(mut st, ap, NR_LNK, zero)
+        store(mut st, ap, NR_QT, zero)
         urSys(mut st, 3, []int{af})
         br(mut st, al, list1(mut st, anx))
         setCur(mut st, bLs)
@@ -1663,9 +1940,16 @@ func fxInit(st mut St, rec int) {
     store(mut st, rp, UR_FXR + 3, zero)
     r := urSys(mut st, 427, []int{load(mut st, rp, 0), iconst(mut st, 13), urAdd(mut st, rec, UR_FXR * 8), iconst(mut st, 32)})
     bOk := branchIf(mut st, cmp(mut st, CEq, r, zero))
-    store(mut st, rp, UR_FXS, sysMmap(mut st, iconst(mut st, FX_N * 16)))
+    // ミュータント101 / 102（検査の自己検査。scripts/iouring.sh）: 表の直後のページをPROT_NONEで塞ぎ、最初の接続に最後の枠（FX_N − 1）を使わせる
+    // （表の終わりを越える読み書きがその場で落ちる形。102はさらに4バイトのフィールドを8バイトで読む前の形。uring.soberのurLd32）
+    fxGuard := st.rtMut == 101 || st.rtMut == 102
+    fxm := sysMmap(mut st, iconst(mut st, FX_N * 16 + (if fxGuard { 4096 } else { 0 })))
+    store(mut st, rp, UR_FXS, fxm)
+    if fxGuard {
+        urSys(mut st, 10, []int{urAdd(mut st, fxm, FX_N * 16), iconst(mut st, 4096), zero})
+    }
     store(mut st, rp, UR_FXF, zero)
-    store(mut st, rp, UR_FXN, zero)
+    store(mut st, rp, UR_FXN, if fxGuard { iconst(mut st, FX_N - 1) } else { zero })
     store(mut st, rp, UR_FX, iconst(mut st, FX_N))
     br(mut st, bOk, -1)
     setCur(mut st, bOk)

@@ -1,0 +1,11 @@
+// T? の値を、nilでなければそのまま返す（単相で書けない型引数〔T?がsliceのT?になるもの〕は単相を作らない）
+func f$TP(q $T?, d $T) $T {
+@BODY@
+}
+
+func main() {
+    _ = incr
+    _ = mkH
+    r := f($V, $W)
+    println($S(r))
+}

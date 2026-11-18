@@ -82,6 +82,7 @@ GET /nope -> 404
 - `route` is just a function from `http.server.Request` to `http.server.Response`. `http.server.Text` / `http.server.Json` / `http.server.Status` build short responses
 - One connection is one task. Whether the handler returns an error or dies with a panic, `net.Serve` closes that connection and keeps accepting. The counts are in the pool rows of `task.Ledger()` (`fail` / `died`)
 - `ServeConn` handles keep-alive and pipelining (several requests in one read). A head over the limit (`maxHead:`, 8 KiB by default) gets 431, a body over the limit (`maxBody:`, 16 KiB by default) gets 413, and the connection is closed
+- The time spent waiting for the peer is also bounded by default: `headWait:` (30 s by default) until the head is complete, including the keep-alive wait; `bodyWait:` (60 s by default) until the body is received; `sendWait:` (60 s by default) for the longest interval in which sending makes no progress. When a deadline passes, the connection is closed without sending anything
 - The values of a `Request` (`path`, `body` and so on) live only for that one request. They are gone when `route` returns, so copy them if they must outlive it
 - For the checks, the example stops `net.Serve` by wrapping it in a 2-second deadline. In production, run it unwrapped and stop it with SIGTERM (sections 10 and 11)
 
@@ -345,17 +346,20 @@ HTTP/1.1 200 OK
 Content-Type: text/plain
 Cache-Control: private
 Content-Length: 37
+Date: Sun, 06 Nov 1994 08:49:37 GMT
 
 HTTP/1.1 200 OK
 Content-Type: text/plain
 Cache-Control: private
 Content-Length: 37
+Date: Sun, 06 Nov 1994 08:49:37 GMT
 
 streamed from a file, chunk by chunk
 HTTP/1.1 404 Not Found
 Cache-Control: private
 Content-Length: 0
 Connection: close
+Date: Sun, 06 Nov 1994 08:49:37 GMT
 
 ```
 
@@ -437,6 +441,7 @@ Output:
 Content-Type: text/event-stream
 Cache-Control: no-store
 Transfer-Encoding: chunked
+Date: Sun, 06 Nov 1994 08:49:37 GMT
 
 
 -- 30
@@ -482,6 +487,7 @@ Content-Type: text/event-stream
 Cache-Control: no-store
 Transfer-Encoding: chunked
 Connection: close
+Date: Sun, 06 Nov 1994 08:49:37 GMT
 
 
 -- 35
@@ -1015,12 +1021,14 @@ The fields of `net.Serve` set the limits on accepting connections.
 
 | Field | Default | Meaning |
 |---|---|---|
-| `budget:` | 64 KiB | memory one connection may use |
-| `conns:` | 10000 | number of simultaneous connections (`budget × conns` is the ceiling for accepting — connections beyond it are closed) |
-| `reject:` | none | bytes sent once to a connection that was not accepted (left out, it is closed without sending) |
+| `budget:` | 64 KiB | the reservation of one connection (admission counts it plus `task.Fixed()`; the excess is borrowed from the free part of the ceiling, and if the ceiling is full, that connection's task dies) |
+| `conns:` | none | cap on simultaneous connections (when written, `(budget + task.Fixed()) × conns` is the ceiling for accepting; left out, there is no cap on the count, and a byte ceiling derived from what remains of the root ceiling decides admission) |
+| `reject:` | none | at the ceiling, bytes sent once to a new connection before closing it (left out, accepted connections wait in a runtime queue, and admitted connections that receive nothing or receive slowly are cut first to free slots) |
 | `region:` | 128 MiB | limit on one region of a connection's task (beyond it, that connection's task dies) |
 
-When you raise `ServeConn`'s `maxHead:` / `maxBody:`, raise `budget:` with them (a rule of thumb: `budget ≥ 3 × (maxHead + maxBody) + 16 KiB`).
+The root ceiling is the memory ceiling of the process (from the cgroup memory.max, or else physical memory). `net.Waiting()` reports the number of connections waiting for admission. Setups that cannot use io_uring (the epoll path) have neither the runtime queue nor the taking back of slots. When full, connections wait in the kernel's queue in arrival order. The details are in section 9 of the [security guide](security.md#9-resource-exhaustion-denial-of-service).
+
+`ServeConn`'s `maxBody:` may exceed `budget:`. A body beyond the reservation is received by borrowing from the free part of the ceiling. If the ceiling is full, that connection's task dies with `RegionExceeded{cause: budget}` (not 413). Raise `budget:` only when you want to avoid borrowing.
 
 ## 11. The boundary of a handover — replacing the binary
 
@@ -1033,7 +1041,7 @@ Not there yet: there is no way to signal the old version from outside to "stop a
 
 ## 12. What this protects
 
-- The request head and body have limits by default (431 / 413); so do the memory per connection and the number of simultaneous connections
+- The request head and body have limits by default (431 / 413); so does the time spent waiting for the peer (`headWait:` / `bodyWait:` / `sendWait:`), and so do the reservation per connection and the total memory for accepting
 - `Set-Cookie` can be written only through typed fields, and left-out fields are on the safe side (`Secure`, `HttpOnly`, `SameSite=Lax`, host-only). Loosening fields are spelled `dangerously…`, so grep finds them
 - CR / LF cannot be smuggled into response headers (response splitting is a panic), and the headers the standard library writes (`Content-Length` and so on) cannot be written by hand
 - The default storage policy is `Cache-Control: private` (shared caches are not allowed to keep authenticated responses)

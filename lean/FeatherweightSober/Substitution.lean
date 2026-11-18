@@ -127,12 +127,9 @@ theorem store_mono {e : Expr} {Δ : Defs} {Ξ : ChanTy} {Ψ Ψ' : StoreTy} {f b 
   | ann e t ihe => cases he with | ann h hs => exact .ann (ihe h) hs
   | snd e ihe => cases he with | snd h => exact .snd (ihe h)
   | fnref fn ts => cases he with | fnref h hl ha => exact .fnref h hl ha
-  | callv ef e ihf ihe =>
-    cases he with | callv hf h hsub hbd => exact .callv (ihf hf) (ihe h) hsub hbd
-  | callMv a ef e ihf ihe =>
-    cases he with | callMv hf h hsub hbd had => exact .callMv (ihf hf) (ihe h) hsub hbd had
-  | call fn ts e ihe => cases he with | call hfn hlen hargs h hsub hbd => exact .call hfn hlen hargs (ihe h) hsub hbd
-  | callM fn ts e ihe => cases he with | callM hfn hlen hargs h hanc hsub hbd had => exact .callM hfn hlen hargs (ihe h) hanc hsub hbd had
+  | callv a ef e ihf ihe =>
+    cases he with | callv hf h hsub hbd had hro => exact .callv (ihf hf) (ihe h) hsub hbd had hro
+  | call a fn ts e ihe => cases he with | call hfn hlen hargs h hsub hbd had => exact .call hfn hlen hargs (ihe h) hsub hbd had
   | ifnil e n s ihe ihn ihs =>
     cases he with | ifnil h1 h2 h3 => exact .ifnil (ihe h1) (ihn h2) (ihs h3)
   | inl r e ihe => cases he with | inl h => exact .inl (ihe h)
@@ -281,12 +278,9 @@ theorem chan_mono {e : Expr} {Ξ Ξ' : ChanTy} {Ψ : StoreTy} {f b d : Nat} {Γ 
   | ann e t ihe => cases he with | ann h hs => exact .ann (ihe h) hs
   | snd e ihe => cases he with | snd h => exact .snd (ihe h)
   | fnref fn ts => cases he with | fnref h hl ha => exact .fnref h hl ha
-  | callv ef e ihf ihe =>
-    cases he with | callv hf h hsub hbd => exact .callv (ihf hf) (ihe h) hsub hbd
-  | callMv a ef e ihf ihe =>
-    cases he with | callMv hf h hsub hbd had => exact .callMv (ihf hf) (ihe h) hsub hbd had
-  | call fn ts e ihe => cases he with | call hfn hlen hargs h hsub hbd => exact .call hfn hlen hargs (ihe h) hsub hbd
-  | callM fn ts e ihe => cases he with | callM hfn hlen hargs h hanc hsub hbd had => exact .callM hfn hlen hargs (ihe h) hanc hsub hbd had
+  | callv a ef e ihf ihe =>
+    cases he with | callv hf h hsub hbd had hro => exact .callv (ihf hf) (ihe h) hsub hbd had hro
+  | call a fn ts e ihe => cases he with | call hfn hlen hargs h hsub hbd had => exact .call hfn hlen hargs (ihe h) hsub hbd had
   | ifnil e n s ihe ihn ihs =>
     cases he with | ifnil h1 h2 h3 => exact .ifnil (ihe h1) (ihn h2) (ihs h3)
   | inl r e ihe => cases he with | inl h => exact .inl (ihe h)
@@ -416,12 +410,9 @@ theorem f_mono {e : Expr} {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f f' b d : N
   | ann e t ihe => cases he with | ann h hs => exact .ann (ihe h) hs
   | snd e ihe => cases he with | snd h => exact .snd (ihe h)
   | fnref fn ts => cases he with | fnref h hl ha => exact .fnref h hl ha
-  | callv ef e ihf ihe =>
-    cases he with | callv hf h hsub hbd => exact .callv (ihf hf) (ihe h) hsub hbd
-  | callMv a ef e ihf ihe =>
-    cases he with | callMv hf h hsub hbd had => exact .callMv (ihf hf) (ihe h) hsub hbd had
-  | call fn ts e ihe => cases he with | call hfn hlen hargs h hsub hbd => exact .call hfn hlen hargs (ihe h) hsub hbd
-  | callM fn ts e ihe => cases he with | callM hfn hlen hargs h hanc hsub hbd had => exact .callM hfn hlen hargs (ihe h) hanc hsub hbd had
+  | callv a ef e ihf ihe =>
+    cases he with | callv hf h hsub hbd had hro => exact .callv (ihf hf) (ihe h) hsub hbd had hro
+  | call a fn ts e ihe => cases he with | call hfn hlen hargs h hsub hbd had => exact .call hfn hlen hargs (ihe h) hsub hbd had
   | ifnil e n s ihe ihn ihs =>
     cases he with | ifnil h1 h2 h3 => exact .ifnil (ihe h1) (ihn h2) (ihs h3)
   | inl r e ihe => cases he with | inl h => exact .inl (ihe h)
@@ -949,12 +940,9 @@ theorem subst_preserve {e : Expr} {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f b 
   | ann e t ihe => cases he with | ann h hs => exact .ann (ihe h hvv hv) hs
   | snd e ihe => cases he with | snd h => exact .snd (ihe h hvv hv)
   | fnref fn ts => cases he with | fnref h hl ha => exact .fnref h hl ha
-  | callv ef e ihf ihe =>
-    cases he with | callv hf h hsub hbd => exact .callv (ihf hf hvv hv) (ihe h hvv hv) hsub hbd
-  | callMv a ef e ihf ihe =>
-    cases he with | callMv hf h hsub hbd had => exact .callMv (ihf hf hvv hv) (ihe h hvv hv) hsub hbd had
-  | call fn ts e ihe => cases he with | call hfn hlen hargs h hsub hbd => exact .call hfn hlen hargs (ihe h hvv hv) hsub hbd
-  | callM fn ts e ihe => cases he with | callM hfn hlen hargs h hanc hsub hbd had => exact .callM hfn hlen hargs (ihe h hvv hv) hanc hsub hbd had
+  | callv a ef e ihf ihe =>
+    cases he with | callv hf h hsub hbd had hro => exact .callv (ihf hf hvv hv) (ihe h hvv hv) hsub hbd had hro
+  | call a fn ts e ihe => cases he with | call hfn hlen hargs h hsub hbd had => exact .call hfn hlen hargs (ihe h hvv hv) hsub hbd had
   | ite c th el ihc iht ihe =>
     cases he with
     | ite h1 h2 h3 => exact .ite (ihc h1 hvv hv) (iht h2 hvv hv) (ihe h3 hvv hv)
@@ -1220,18 +1208,12 @@ theorem b_lower {e : Expr} {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f b b' d : 
   | ann e t ihe => cases he with | ann h hs => exact .ann (ihe hb h) hs
   | snd e ihe => cases he with | snd h => exact .snd (ihe hb h)
   | fnref fn ts => cases he with | fnref h hl ha => exact .fnref h hl ha
-  | callv ef e ihf ihe =>
+  | callv a ef e ihf ihe =>
     cases he with
-    | callv hf h hsub hbd => exact .callv (ihf hb hf) (ihe hb h) hsub (by omega)
-  | callMv a ef e ihf ihe =>
+    | callv hf h hsub hbd had hro => exact .callv (ihf hb hf) (ihe hb h) hsub (by omega) had hro
+  | call a fn ts e ihe =>
     cases he with
-    | callMv hf h hsub hbd had => exact .callMv (ihf hb hf) (ihe hb h) hsub (by omega) had
-  | call fn ts e ihe =>
-    cases he with
-    | call hfn hlen hargs h hsub hbd => exact .call hfn hlen hargs (ihe hb h) hsub (by omega)
-  | callM fn ts e ihe =>
-    cases he with
-    | callM hfn hlen hargs h hanc hsub hbd had => exact .callM hfn hlen hargs (ihe hb h) hanc hsub (by omega) had
+    | call hfn hlen hargs h hsub hbd had => exact .call hfn hlen hargs (ihe hb h) hsub (by omega) had
   | block e ihe => cases he with | block h hrb => exact .block (ihe hb h) hrb
   | blockR t e ihe => cases he with | blockR h hr hrb => exact .blockR (ihe hb h) (Ty.jumpRel_lower hb hr) hrb
   | copyTo k t e ihe => cases he with | copyTo h hk hr hrb hc => exact .copyTo (ihe hb h) hk (Ty.jumpRel_lower hb hr) hrb hc
@@ -1409,22 +1391,14 @@ theorem f_lower {e : Expr} {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f f' b d : 
     simp only [Expr.noNewchan] at hnc
     cases he with | snd h => exact .snd (ihe hnc h)
   | fnref fn ts => cases he with | fnref h hl ha => exact .fnref h hl ha
-  | callv ef e ihf ihe =>
+  | callv a ef e ihf ihe =>
     simp only [Expr.noNewchan, Bool.and_eq_true] at hnc
     cases he with
-    | callv hf h hsub hbd => exact .callv (ihf hnc.1 hf) (ihe hnc.2 h) hsub hbd
-  | callMv a ef e ihf ihe =>
-    simp only [Expr.noNewchan, Bool.and_eq_true] at hnc
-    cases he with
-    | callMv hf h hsub hbd had => exact .callMv (ihf hnc.1 hf) (ihe hnc.2 h) hsub hbd had
-  | call fn ts e ihe =>
+    | callv hf h hsub hbd had hro => exact .callv (ihf hnc.1 hf) (ihe hnc.2 h) hsub hbd had hro
+  | call a fn ts e ihe =>
     simp only [Expr.noNewchan] at hnc
     cases he with
-    | call hfn hlen hargs h hsub hbd => exact .call hfn hlen hargs (ihe hnc h) hsub hbd
-  | callM fn ts e ihe =>
-    simp only [Expr.noNewchan] at hnc
-    cases he with
-    | callM hfn hlen hargs h hanc hsub hbd had => exact .callM hfn hlen hargs (ihe hnc h) hanc hsub hbd had
+    | call hfn hlen hargs h hsub hbd had => exact .call hfn hlen hargs (ihe hnc h) hsub hbd had
   | block e ihe =>
     simp only [Expr.noNewchan] at hnc
     cases he with | block h hrb => exact .block (ihe hnc h) hrb

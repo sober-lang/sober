@@ -1,0 +1,7 @@
+@@full	d43f166843cf9e95	442	10146
+@head	8e3d5fb88ed65b8a	0	107
+func Get	30a79bf3ec43934c	26	943
+func Open	edc2bfcee3a6d626	5	319
+func Put	815f9ef3262cd19a	27	1027
+type Conn	06d46ff316732140	2	116
+type Denied	323d5dc740feeac4	1	67

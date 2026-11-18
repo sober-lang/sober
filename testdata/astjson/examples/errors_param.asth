@@ -1,0 +1,11 @@
+@@full	7959379a3ddbfb0d	1159	28939
+@head	f8802cba5eefdec2	0	31
+func Frame	05cd52221cff5b23	24	929
+func Pump	c3b6f302faed001d	38	1377
+func feed	e116dbca6e54e942	14	488
+func gone	170e0d17717e40c9	13	491
+func main	e4c3f83dd786c943	65	2323
+func put	a37fdc8ceab3d354	13	517
+type Bad	c46bc68f4fa91a27	1	64
+type Gone	f0c2f1d9bf3d06d6	1	65
+type Short	69e71e44c1c791f7	2	111

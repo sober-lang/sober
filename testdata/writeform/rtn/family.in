@@ -1,0 +1,18 @@
+// 型引数の値を返す: 引数のslice・union・structのどれかから取り出す
+type Opt$TP union {
+    Some { v $T }
+    None {}
+}
+
+type Pr$TP struct { a $T; b $T }
+
+func f$TP(xs []$T, o Opt$U, p Pr$U, d $T) $T {
+@BODY@
+}
+
+func main() {
+    _ = incr
+    _ = mkH
+    r := f([]$C{$V}, Some$A{v: $V}, Pr$A{a: $V, b: $W}, $W)
+    println($S(r))
+}

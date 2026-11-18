@@ -1,0 +1,21 @@
+package main
+
+// regionを持つ型を型引数にする: pick の本体は T の値を返すだけなので、T は mutの器とdomainを持たない型ならどれでもよい（[]int・string・struct）
+
+type Pair struct {
+    name string
+    xs []int
+}
+
+func pick[T](a T, b T, first bool) T {
+    return if first { a } else { b }
+}
+
+func main() {
+    s := pick([]int{1, 2, 3}, []int{4}, true)
+    println(len(s))
+    t := pick("left", "right", false)
+    println(t)
+    p := pick(Pair{name: "a", xs: []int{1}}, Pair{name: "b", xs: []int{2, 3}}, false)
+    println(p.name, len(p.xs))
+}

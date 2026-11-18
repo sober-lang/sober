@@ -864,7 +864,7 @@ func builtin(st mut St, name desugar.StrRef, args desugar.ListRef, at desugar.No
 // 組み込みでなければ -2
 func ioBuiltin(st mut St, sk int, args desugar.ListRef, at desugar.NodeRef) (int, error?) {
     // 鍵の番号 → 実装の種類 k（下の switch — rt の呼び出し）。引数の数は鍵の署名から
-    k := if sk == loader.IReadFile { 1 } else if sk == loader.IWriteFile { 2 } else if sk == loader.IErrno { 3 } else if sk == loader.IArgs { 4 } else if sk == loader.IReadDir { 5 } else if sk == loader.IWriteFd { 6 } else if sk == loader.IRun { 7 } else if sk == loader.IWriteMode { 8 } else if sk == loader.IMkdir { 9 } else if sk == loader.IRename { 10 } else if sk == loader.IEnviron { 11 } else if sk == loader.IStat { 12 } else if sk == loader.ISleep { 13 } else if sk == loader.IReadFd { 14 } else if sk == loader.IParPool { 15 } else if sk == loader.IParLedger { 16 } else if sk == loader.IOpen { 17 } else if sk == loader.IClose { 18 } else if sk == loader.IChunkOpen { 19 } else if sk == loader.IChunkNext { 20 } else if sk == loader.IChunkClose { 21 } else if sk == loader.IDeadline { 22 } else if sk == loader.ISyscall { 23 } else if sk == loader.IAddr { 24 } else if sk == loader.IWaitFd { 25 } else if sk == loader.IFdOwn { 26 } else if sk == loader.IParFail { 27 } else if sk == loader.INetOp { 28 } else if sk == loader.ILeaseOp { 29 } else if sk == loader.ILeaseView { 30 } else if sk == loader.ILoad64 { 31 } else if sk == loader.ICpuClmul { 32 } else if sk == loader.ICrcFold { 33 } else if sk == loader.IAesCpu { 34 } else if sk == loader.IAesKey { 35 } else if sk == loader.IAesCtr { 36 } else if sk == loader.IAesGhash { 37 } else if sk == loader.IMulHi { 38 } else if sk == loader.IAddrN { 39 } else if sk == loader.IMmCpu { 40 } else if sk == loader.IMmMul { 41 } else if sk == loader.ICycles { 42 } else if sk == loader.IAesTag { 43 } else if sk == loader.ILeaseBytes { 44 } else if sk == loader.IMatchLen { 45 } else if sk == loader.IJClean { 46 } else if sk == loader.IRunFd { 47 } else if sk == loader.IRunFdEnv { 48 } else if sk == loader.ICover { 49 } else if sk == loader.ICoverFd { 50 } else if sk == loader.ICoverGet { 51 } else if sk == loader.ICoverN { 52 } else if sk == loader.ICoverMid { 53 } else if sk == loader.ICoverSetMid { 54 } else if sk == loader.ICellReset { 55 } else if sk == loader.IMmSel { 56 } else if sk == loader.IMmSqr { 57 } else if sk == loader.IFeMul { 58 } else if sk == loader.IShaCpu { 59 } else if sk == loader.IShaBlk { 60 } else if sk == loader.IAesSeal { 61 } else if sk == loader.IAesOpen { 62 } else if sk == loader.ILoad16 { 63 } else if sk == loader.IStore16 { 64 } else if sk == loader.ILoad32 { 65 } else if sk == loader.IStore32 { 66 } else if sk == loader.IAppendWord { 67 } else if sk == loader.IBLoad32 { 68 } else if sk == loader.ICtz64 { 69 } else if sk == loader.IBStore64 { 70 } else if sk == loader.IClock { 71 } else if sk == loader.IGrowNoZero { 72 } else { 0 }
+    k := if sk == loader.IReadFile { 1 } else if sk == loader.IWriteFile { 2 } else if sk == loader.IErrno { 3 } else if sk == loader.IArgs { 4 } else if sk == loader.IReadDir { 5 } else if sk == loader.IWriteFd { 6 } else if sk == loader.IRun { 7 } else if sk == loader.IWriteMode { 8 } else if sk == loader.IMkdir { 9 } else if sk == loader.IRename { 10 } else if sk == loader.IEnviron { 11 } else if sk == loader.IStat { 12 } else if sk == loader.ISleep { 13 } else if sk == loader.IReadFd { 14 } else if sk == loader.IParPool { 15 } else if sk == loader.IParLedger { 16 } else if sk == loader.IOpen { 17 } else if sk == loader.IClose { 18 } else if sk == loader.IChunkOpen { 19 } else if sk == loader.IChunkNext { 20 } else if sk == loader.IChunkClose { 21 } else if sk == loader.IDeadline { 22 } else if sk == loader.ISyscall { 23 } else if sk == loader.IAddr { 24 } else if sk == loader.IWaitFd { 25 } else if sk == loader.IFdOwn { 26 } else if sk == loader.IParFail { 27 } else if sk == loader.INetOp { 28 } else if sk == loader.ILeaseOp { 29 } else if sk == loader.ILeaseView { 30 } else if sk == loader.ILoad64 { 31 } else if sk == loader.ICpuClmul { 32 } else if sk == loader.ICrcFold { 33 } else if sk == loader.IAesCpu { 34 } else if sk == loader.IAesKey { 35 } else if sk == loader.IAesCtr { 36 } else if sk == loader.IAesGhash { 37 } else if sk == loader.IMulHi { 38 } else if sk == loader.IAddrN { 39 } else if sk == loader.IMmCpu { 40 } else if sk == loader.IMmMul { 41 } else if sk == loader.ICycles { 42 } else if sk == loader.IAesTag { 43 } else if sk == loader.ILeaseBytes { 44 } else if sk == loader.IMatchLen { 45 } else if sk == loader.IJClean { 46 } else if sk == loader.IRunFd { 47 } else if sk == loader.IRunFdEnv { 48 } else if sk == loader.ICover { 49 } else if sk == loader.ICoverFd { 50 } else if sk == loader.ICoverGet { 51 } else if sk == loader.ICoverN { 52 } else if sk == loader.ICoverMid { 53 } else if sk == loader.ICoverSetMid { 54 } else if sk == loader.ICellReset { 55 } else if sk == loader.IMmSel { 56 } else if sk == loader.IMmSqr { 57 } else if sk == loader.IFeMul { 58 } else if sk == loader.IShaCpu { 59 } else if sk == loader.IShaBlk { 60 } else if sk == loader.IAesSeal { 61 } else if sk == loader.IAesOpen { 62 } else if sk == loader.ILoad16 { 63 } else if sk == loader.IStore16 { 64 } else if sk == loader.ILoad32 { 65 } else if sk == loader.IStore32 { 66 } else if sk == loader.IAppendWord { 67 } else if sk == loader.IBLoad32 { 68 } else if sk == loader.ICtz64 { 69 } else if sk == loader.IBStore64 { 70 } else if sk == loader.IClock { 71 } else if sk == loader.IGrowNoZero { 72 } else if sk == loader.IAppendDate { 73 } else if sk == loader.INetPeek { 28 } else { 0 }
     arity := if k == 0 { 0 } else { desugar.SysArity(sk) }
     if k == 0 {
         return -2, nil
@@ -887,6 +887,8 @@ func ioBuiltin(st mut St, sk int, args desugar.ListRef, at desugar.NodeRef) (int
         // 引数が全部intのAPI（+ AES-GCMのチャンク — aes.sober）: std/taskの名前つきプールの節（admit.sober）・std専用の生のsyscall（28 節の囲い:
         // rt を通らずその場で syscall）・fd の readiness の待ち（netpoll.sober）・fd の登録
         vs := listN(mut st, arity)
+        // net_opのopが定数か（14〜16 = Serveの期限。rdl.soberがその場で組む）
+        mut op0 := -1
         mut i := 0
         while i < arity {
             v := expr(mut st, latN(mut st, args, i))?
@@ -896,8 +898,14 @@ func ioBuiltin(st mut St, sk int, args desugar.ListRef, at desugar.NodeRef) (int
             if !isTag(mut st, v.t, TInt) {
                 return 0, diag.Mismatch{at: posOf(mut st, at)}
             }
+            if i == 0 && k == 28 && st.lastConstV == v.v {
+                op0 = st.lastConstN
+            }
             desugar.HeapSet(mut st.d, vs + 1 + i, v.v)
             i += 1
+        }
+        if k == 28 && op0 >= 14 && op0 <= 18 {
+            return one1(mut st, tInt(mut st), rdlOp(mut st, op0, desugar.HeapGet(mut st.d, vs + 2))), nil
         }
         if k == 53 || k == 54 {
             // 選ばれたミュータントの番号の読み / 置き（cover.sober — mutation testing のschemata）
@@ -1157,6 +1165,42 @@ func ioBuiltin(st mut St, sk int, args desugar.ListRef, at desugar.NodeRef) (int
             fillBytes(mut st, d8, iconst(mut st, 165), nx.v)
         }
         br(mut st, join, list2(mut st, p8, bin(mut st, BAdd, ln, nx.v)))
+        setCur(mut st, join)
+        t := mkSlice(mut st, tByte(mut st), true)
+        return one1(mut st, t, newHeader(mut st, t, np, nl, d)), nil
+    case 73:
+        // bの後ろに、ワーカーのrtの行のDate（`Date: <IMF-fixdate>\r\n\r\n` の39バイト）を足す（std/http/serverの `b = sysAppendDate(b)`）。rtの行が無ければ `\r\n`。
+        // 拡張の仕方はgrow_nozeroと同じ（growN8）。行の5ワードを読んでコピーするだけで、rtのメモリへの別名は作らない。
+        // 書きは8バイト4本と、31バイト目からの8バイト1本（4本目と重ねる。伸ばした39バイトの外へは書かない）
+        b := expr(mut st, latN(mut st, args, 0))?
+        if isTag(mut st, b.t, TNever) {
+            return -1, nil
+        }
+        if !isBytes(mut st, b.t) || isString(mut st, b.t) {
+            return 0, diag.Mismatch{at: posOf(mut st, at)}
+        }
+        ln := load(mut st, b.v, 1)
+        d := load(mut st, b.v, 2)
+        arr := load(mut st, globaladdr(mut st, st.wkG), WK_RARR)
+        join := newBlock(mut st)
+        np := param(mut st, join, TyPtr)
+        nl := param(mut st, join, TyI64)
+        bD := newBlock(mut st)
+        bN := newBlock(mut st)
+        condbr(mut st, cmp(mut st, CNe, arr, iconst(mut st, 0)), bD, -1, bN, -1)
+        setCur(mut st, bD)
+        p8, d8 := growN8(mut st, b.v, d, iconst(mut st, RDL_DLEN))
+        tx := gepWord(mut st, itop(mut st, arr), iconst(mut st, RDL_DTXT))
+        for w <- iter.Range(0, 4) {
+            store(mut st, d8, w, load(mut st, tx, w))
+        }
+        store(mut st, gepByte(mut st, d8, iconst(mut st, RDL_DLEN - 8)), 0, load(mut st, gepByte(mut st, tx, iconst(mut st, RDL_DLEN - 8)), 0))
+        br(mut st, join, list2(mut st, p8, bin(mut st, BAdd, ln, iconst(mut st, RDL_DLEN))))
+        setCur(mut st, bN)
+        p2, d2 := growN8(mut st, b.v, d, iconst(mut st, 2))
+        store8(mut st, d2, 0, iconst(mut st, 13))
+        store8(mut st, gepByte(mut st, d2, iconst(mut st, 1)), 0, iconst(mut st, 10))
+        br(mut st, join, list2(mut st, p2, bin(mut st, BAdd, ln, iconst(mut st, 2))))
         setCur(mut st, join)
         t := mkSlice(mut st, tByte(mut st), true)
         return one1(mut st, t, newHeader(mut st, t, np, nl, d)), nil

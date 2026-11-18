@@ -1,0 +1,7 @@
+@@full	90bb8e8566a1fd0d	1823	52170
+@head	10a55ed7e50184cc	0	205
+func add	561c312098c5d41a	78	2698
+func main	1b4dddbf1d00d80f	130	4625
+func readBytes	97c27a3390b105da	37	1304
+func summarize	31ec06ff60344c18	40	1461
+type Tally	4cd45e5286f29bfa	4	219

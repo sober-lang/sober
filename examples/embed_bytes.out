@@ -1,0 +1,8 @@
+3 files
+testdata/embed_bytes/a.bin: 11 bytes: 0001fffe80616263c3287f
+testdata/embed_bytes/empty.bin: 0 bytes: 
+testdata/embed_bytes/sub/t.bin: 22 bytes: 706c61696e2061736369692c20382b2062797465730a
+(not UTF-8)
+12 11 fffe80
+plain ascii, 8+ bytes
+

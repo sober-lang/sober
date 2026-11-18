@@ -1,0 +1,89 @@
+package main
+
+// 長い区間（MN_OLOCKの中のwriteとmunmap・MN_RLOCKの中のslot_trimのmadvise）の害を測る題材。
+// mainのtaskは nRound 回のscopeを回し、各scopeで nKids 本の子が領域を確保して触り（スロットを汚す）、全員がそろうまでdomainで待ってから
+// 出力を持って終わる。同時に生きる子がワーカーの手元のスロットの上限を越えるので、返したスロットは共有の予備へ溢れ、scopeの出口ごとの
+// rt.slot_trimが予備を刈る。頭でない子の行は区間のバッファに積まれ、頭が進むときにまとめてwriteされる。同時に nBg 本の裏のtaskが
+// 小さい子のspawnとJoinを回し続ける。印字の数は決まっている（stdoutは捨てて読む）。
+// 鍵の待ちの数え: --rt-mutant=4 で建てると、stderrのカウンタ（mn.sober MK0の20〜25）にrt.lock_waitに入った数とsched_yieldの数が出る
+
+import "std/iter"
+import "std/task"
+
+type Ctr struct {
+    n int
+}
+
+const nRound = 200
+const nKids = 64
+const nWords = 32768
+const nLines = 4
+const nBg = 8
+const nBgIter = 3000
+
+func main() {
+    r, e := task.Run((s task.Scope) => {
+        mut bgs := mut []task.Handle[int]{}
+        for b <- iter.Range(0, nBg) {
+            bgs = append(bgs, task.Spawn(s, () => churn(b)))
+        }
+        mut t := 0
+        for i <- iter.Range(0, nRound) {
+            t += round(i)
+        }
+        for v <- task.Gather(bgs) {
+            t += v
+        }
+        t
+    }, deadline: 600000 * task.MS)
+    println(if e == nil { "total ${r}" } else { "died" })
+}
+
+func round(i int) int {
+    r, e := task.Run((s task.Scope) => {
+        gate := task.NewDomain(s, Ctr{n: 0})
+        mut hs := mut []task.Handle[int]{}
+        for k <- iter.Range(0, nKids) {
+            hs = append(hs, task.Spawn(s, () => kid(i, k, gate)))
+        }
+        mut t := 0
+        for v <- task.Gather(hs) {
+            t += v
+        }
+        t
+    })
+    return if e == nil { r } else { 0 }
+}
+
+func kid(i int, k int, gate task.Domain[Ctr]) int {
+    mut xs := mut []int{}
+    for j <- iter.Range(0, nWords) {
+        xs = append(xs, j + k)
+    }
+    task.Update(gate, (st mut Ctr) => {
+        st.n = st.n + 1
+        0
+    })
+    _, _ = task.Await(gate, (st mut Ctr) => 0, when: (st Ctr) => st.n >= nKids)
+    mut sum := 0
+    for x <- xs {
+        sum += x
+    }
+    for l <- iter.Range(0, nLines) {
+        println("round ${i} kid ${k} line ${l} sum ${sum} ................................................................................................")
+    }
+    return 1
+}
+
+func churn(b int) int {
+    mut n := 0
+    for i <- iter.Range(0, nBgIter) {
+        r, _ := task.Run((s task.Scope) => {
+            h1 := task.Spawn(s, () => b + i)
+            h2 := task.Spawn(s, () => b * i)
+            task.Join(h1) + task.Join(h2)
+        })
+        n += if r >= 0 { 1 } else { 0 }
+    }
+    return n
+}

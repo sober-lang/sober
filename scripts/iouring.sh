@@ -10,6 +10,10 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 S2=${STAGE2:-out/stage2/sober2}
+source scripts/gatelib.sh
+need_nofile iouring 8192; rc=$?
+[ $rc = 2 ] && exit 1
+[ $rc = 1 ] && exit 0
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 fail=0
@@ -148,8 +152,20 @@ for mc in "50 net_orphan_dl 1" "51 net_deadline_order 2"; do
     if [ "$1" = 51 ] && [ "$auto" != uring ]; then continue; fi
     if cmp -s "$W/$2.want" "$W/m$1.got"; then echo "iouring: FAIL — mutant $1 was not caught by $2 W$3"; fail=1; fi
 done
+# 固定ファイルの表の最後の枠の検査: ミューテーション101は表の直後のページを塞いで最初の接続に最後の枠を使わせる（4バイトのフィールドを4バイトで読む今の形は
+# net_serve（W2・ringのパス）が期待値どおりに通る）。102は同じ形で4バイトのフィールドを8バイトで読む前の形に戻す（表の終わりを越えて落ちるので、検出される）
+if [ "$auto" = uring ]; then
+    for m in 101 102; do
+        "$S2" build examples/net_serve.sober --emit=elf --passes --rt-mutant=$m -o "$W/m$m" > "$W/buildm.log" 2>&1 || { echo "iouring: FAIL build net_serve m$m"; exit 1; }
+        ec=0
+        env SOBER_WORKERS=2 timeout 10 "$W/m$m" < /dev/null > "$W/m$m.got" 2> /dev/null || ec=$?
+        n=$((n + 1))
+        if [ $m = 101 ] && { [ $ec != 0 ] || ! cmp -s examples/net_serve.out "$W/m$m.got"; }; then echo "iouring: FAIL: mutant 101 (guard after the fixed-file table, last slot) exit=$ec"; fail=1; fi
+        if [ $m = 102 ] && [ $ec = 0 ] && cmp -s examples/net_serve.out "$W/m$m.got"; then echo "iouring: FAIL: mutant 102 (8-byte read of the last slot) was not caught"; fail=1; fi
+    done
+fi
 if [ $fail = 0 ]; then
-    echo "iouring: $n runs — observation ≡ W1 for SOBER_IO ∈ {auto(${auto}), 1, 2} × W ∈ {1, 2, 8} (collatz_par + io_par + io_par_stdin + io_chunks_par + io_chunks_par_die + io_chunks_at_par + net_echo + net_multi + net_deadline + net_deadline_spawn + net_deadline_order + net_orphan + net_orphan_dl + net_closed + net_serve + net_reject + net_region + net_region_mix〔SOBER_TASK_REGION_MB ∈ {既定, 4} も〕 + net_accept_break + http_arena + task_sleep_deadline + task_sleep_many — net / http の例は SOBER_NET ∈ {auto, 1} も), one probe line per worker, net ring selection, deadline-chain mutants 50/51 caught, fail=0"
+    echo "iouring: $n runs: observation ≡ W1 for SOBER_IO ∈ {auto(${auto}), 1, 2} × W ∈ {1, 2, 8} (collatz_par + io_par + io_par_stdin + io_chunks_par + io_chunks_par_die + io_chunks_at_par + net_echo + net_multi + net_deadline + net_deadline_spawn + net_deadline_order + net_orphan + net_orphan_dl + net_closed + net_serve + net_reject + net_region + net_region_mix〔SOBER_TASK_REGION_MB ∈ {既定, 4} も〕 + net_accept_break + http_arena + task_sleep_deadline + task_sleep_many。net・httpの例はSOBER_NET ∈ {auto, 1}も), one probe line per worker, net ring selection, deadline-chain mutants 50/51 caught, fixed-file guard mutants 101/102, fail=0"
 else
     echo "iouring: FAIL"
 fi

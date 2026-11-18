@@ -1,0 +1,14 @@
+@@full	f591686b5c8ee452	1384	39136
+@head	f8802cba5eefdec2	0	31
+func covered	bda93b12f2d52482	27	1132
+func dead	222a839a182c30cf	32	1456
+func gap	e7cd278dd3023c08	22	917
+func leaf	8e90d328f6eb3b4d	21	789
+func main	6ac423f95be444f3	18	611
+func nilGap	645aad3661f9d3eb	22	920
+func wrapV	0d98f2090cc4f437	19	725
+func wrapW	1061841ffa4d5beb	11	451
+type A	12a16b07a8a73696	2	107
+type B	eb535fe04e92c6ce	2	107
+type V	25f4aebfcc9a3711	2	107
+type W	7ca13f0ef0f4f3ca	2	107

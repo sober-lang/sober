@@ -1,0 +1,8 @@
+@@full	9104e0df0edbe482	761	19315
+@head	4cb1e368e1e4a834	0	108
+func check	6e8301ab2ca12d65	26	912
+func collect	344491530a2fe9bc	45	1582
+func main	06c2e75dd4dc9c14	20	720
+func wrap	b574943432de7e77	21	706
+type Neg	5c14fffe0bf26089	1	64
+type TooBig	0d639d0ba73e0aa2	2	112

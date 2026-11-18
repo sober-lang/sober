@@ -1,0 +1,30 @@
+package main
+
+// 総称関数の版（mut_swap.g.sober）の型引数を手で代入した単相の版。関数の対応（単相 = 総称の単相コピーの名前）
+// genmono: swapB = swap[main.Buf]
+// genmono: swapS = swap[[]byte]
+
+type Buf struct {
+    data mut []int
+}
+
+func swapB(xs mut []Buf, i int, j int) {
+    t := xs[i]
+    xs[i] = xs[j]
+    xs[j] = t
+}
+
+func swapS(xs mut []string, i int, j int) {
+    t := xs[i]
+    xs[i] = xs[j]
+    xs[j] = t
+}
+
+func main() {
+    mut bs := mut []Buf{Buf{data: mut []int{1, 2}}, Buf{data: mut []int{3}}}
+    swapB(mut bs, 0, 1)
+    println(len(bs[0].data), len(bs[1].data))
+    mut ss := mut []string{"a", "b"}
+    swapS(mut ss, 0, 1)
+    println(ss[0], ss[1])
+}

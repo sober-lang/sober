@@ -1,0 +1,7 @@
+@@full	bb05df647906b4de	189	3482
+@head	ddfc384215b64c09	0	133
+const M	785e0be857cc535b	6	243
+func New	b6e578ef5cddd24c	4	245
+func Show	bf6f67412eba9e37	5	290
+type Bad	c46bc68f4fa91a27	1	64
+type Conn	ea86e2628812dc31	2	111

@@ -43,6 +43,15 @@ func buildByteRt(st mut St) {
     buildExtend8(mut st)
 }
 
+// 先端で伸ばすパスの上限の検査を越えた（終わりnw）: taskのあるプログラムは計上済みの上限を上げてokへ（rt.wm_raise — 予約ページか本物の終わりを越えるならno）。他はno
+func wmOver(st mut St, d int, nw int, ok BlkRef, no BlkRef) {
+    if st.taskUse {
+        condbr(mut st, cmp(mut st, CNe, call(mut st, st.rtWmRaiseS, list2(mut st, d, nw)), iconst(mut st, 0)), ok, -1, no, -1)
+    } else {
+        br(mut st, no, -1)
+    }
+}
+
 // 深度 d のスロットの末尾（バイト番地）
 func slotLimit(st mut St, meta int, d int) int {
     return if st.taskUse { bin(mut st, BAdd, slotBase(mut st, meta, d), load(mut st, meta, W_SLOT_SIZE)) } else { bin(mut st, BAdd, load(mut st, meta, W_SLOTS), bin(mut st, BMul, bin(mut st, BAdd, d, iconst(mut st, 1)), load(mut st, meta, W_SLOT_SIZE))) }
@@ -56,16 +65,14 @@ func buildAlloc8(st mut St) {
     meta := globaladdr(mut st, st.meta)
     bp := gepWord(mut st, meta, d)
     old := load(mut st, bp, W_BUMP)
-    nw := bin(mut st, BAdd, old, bin(mut st, BAnd, bin(mut st, BAdd, n, iconst(mut st, 7)), iconst(mut st, -8)))
-    over := newBlock(mut st)
     ok := newBlock(mut st)
-    condbr(mut st, cmp(mut st, CGt, nw, slotLimit(mut st, meta, d)), over, -1, ok, -1)
-    setCur(mut st, over)
-    slotOver(mut st, d, n, 1)
+    o := param(mut st, ok, TyI64)
+    adv := bin(mut st, BAnd, bin(mut st, BAdd, n, iconst(mut st, 7)), iconst(mut st, -8))
+    slotCheck(mut st, d, old, adv, slotLimit(mut st, meta, d), ok)
     setCur(mut st, ok)
-    store(mut st, bp, W_BUMP, nw)
-    store(mut st, gepWord(mut st, globaladdr(mut st, st.btip), d), 0, bin(mut st, BAdd, old, n))
-    ret(mut st, itop(mut st, old))
+    store(mut st, bp, W_BUMP, bin(mut st, BAdd, o, adv))
+    store(mut st, gepWord(mut st, globaladdr(mut st, st.btip), d), 0, bin(mut st, BAdd, o, n))
+    ret(mut st, itop(mut st, o))
 }
 
 // tip8(d, end): 終わりが end の byte の列を深度 d でその場に 1 バイト伸ばせれば伸ばして 1（btip を進める）、でなければ 0
@@ -100,7 +107,7 @@ func buildTip8(st mut St) {
     over := newBlock(mut st)
     ok := newBlock(mut st)
     condbr(mut st, cmp(mut st, CGt, nw, slotLimit(mut st, meta, d)), over, -1, ok, -1)
-    // 伸ばすとスロット（予約ページ）を越える: その場では伸ばさない（呼び手は確保してコピーする — 本当の超過ならその確保が死102）
+    // 伸ばすと上限（計上済みの上限・予約ページ・スロット）を越える: その場では伸ばさない（呼び手は確保してコピーする — 本当の超過ならその確保が死102）
     setCur(mut st, over)
     ret(mut st, iconst(mut st, 0))
     setCur(mut st, ok)
@@ -146,7 +153,7 @@ func buildTipN8(st mut St) {
     over := newBlock(mut st)
     ok := newBlock(mut st)
     condbr(mut st, cmp(mut st, CGt, nw, slotLimit(mut st, meta, d)), over, -1, ok, -1)
-    // 伸ばすとスロット（予約ページ）を越える: その場では伸ばさない（呼び手は確保してコピーする — 本当の超過ならその確保が死102）
+    // 伸ばすと上限（計上済みの上限・予約ページ・スロット）を越える: その場では伸ばさない（呼び手は確保してコピーする — 本当の超過ならその確保が死102）
     setCur(mut st, over)
     ret(mut st, iconst(mut st, 0))
     setCur(mut st, ok)
@@ -304,6 +311,9 @@ func buildExtend8(st mut St) {
     ok := newBlock(mut st)
     condbr(mut st, cmp(mut st, CGt, nw, slotLimit(mut st, meta, d)), over, -1, ok, -1)
     setCur(mut st, over)
+    noW := newBlock(mut st)
+    wmOver(mut st, d, nw, ok, noW)
+    setCur(mut st, noW)
     memPanic(mut st, PM_SLOT)
     setCur(mut st, ok)
     store(mut st, bp, W_BUMP, nw)

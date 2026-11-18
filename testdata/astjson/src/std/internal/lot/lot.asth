@@ -1,0 +1,34 @@
+@@full	6038258fdca47fd1	3749	94923
+@head	7223d7266ec4f95f	12	879
+const hHead	ded193185c3468ac	1	45
+const hN	f61954cc403913dd	1	42
+const hSeen	43b8195c93dc0e26	1	45
+const hW	55c74c11a6591406	1	42
+const sBusy	9dd4428b77a034b6	1	45
+const sClaim	a7b191ac5af4d4fa	1	46
+const sFree	820b7e75b95aa9c9	1	45
+const sIdle	5fa0f915e27b1cf4	1	45
+const sReap	b2f67a3d9be131b0	1	45
+const wFd	9d705f8950dc8c92	1	43
+const wHead	0e2951fa3184137f	1	45
+const wMark	9a1d22a484731abd	1	45
+const wState	17e6cadd3ff74104	1	46
+func Close	6cb4d7cc8cff1987	42	1449
+func Drop	e6ec587963276ef7	34	1182
+func Fd	4fb61cd95781be48	16	603
+func Fresh	9487e3c13ab913f9	48	1669
+func Hold	6378314d36800749	29	1049
+func New	535f890509b3147a	49	1750
+func Park	6a4ab91041f4fbdb	40	1389
+func Place	fa819c61dde58405	24	858
+func Reap	bdacefba9533cf27	89	2839
+func Release	472c3b658f14f3bd	7	351
+func TakeFree	bad30831b59fed88	7	319
+func TakeIdle	98708d2c08f88ae0	7	319
+func base	204d891b4cb277e9	17	650
+func cas	659f3ba53b497cc0	24	928
+func release	23fe8f7a690f9e6c	50	1703
+func size	e26c575f763a96d0	10	397
+func state	9ad560ee332fdd8b	16	609
+func take	523fdde609adb83c	36	1251
+type Lot	d8f9ea49c26e62fc	3	148

@@ -1,0 +1,10 @@
+@@full	3ed1ee03436dfe23	998	26025
+@head	f8802cba5eefdec2	0	31
+func flag	5c99ee51a3072b18	17	676
+func getInt	362127ff96ba0ca5	13	671
+func main	a93ac7d5928540bc	60	2202
+func pick	ef642fe201928db5	12	585
+func side	f7c7f5742508145c	19	808
+type Box	1ab6b130004c3f72	4	194
+type Opt	284b51d3c823eb4d	2	167
+type Pair	b8dcf6ff9656e13a	3	209

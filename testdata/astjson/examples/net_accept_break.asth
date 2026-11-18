@@ -1,0 +1,9 @@
+@@full	9ebadf0570fe7fa2	1965	61054
+@head	905c6a9937d901b5	0	235
+func client	5bb1aaa99b1832d0	40	1327
+func freePort	70d963f49d4e1495	22	768
+func listenServe	2e07009d657964d7	44	1456
+func main	b073c641160a1666	110	3686
+func recvN	890ac7934216839b	22	787
+func talk	ad85d7946bae0ea6	33	1196
+func timedOut	cc5a04dfc236d5f0	34	1593

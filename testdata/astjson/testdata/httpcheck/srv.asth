@@ -1,0 +1,33 @@
+@@full	6d9fa3d8e3913e49	11048	345990
+@head	e4f59f3dad8aa813	0	638
+func chunked	f3e4b83ae137ce2b	134	4713
+func dpath	f73e2675fd904859	16	590
+func dup	8abc889e98cd157d	27	1428
+func genBytes	529f84a170f26b1c	69	2328
+func genChunks	8088b91e43bf1b13	94	3237
+func headerLines	1be1a7b877183808	35	1357
+func items	df1312918ac3071a	111	4071
+func load	41738d0f111c1a66	76	2546
+func login	31709984a07b59ef	14	839
+func main	feeadad1a2ad1ff5	33	1038
+func me	ca5af851bf54f50c	24	908
+func num	ee114ef3835d5aff	25	828
+func plain	085eb9507587a930	80	3019
+func route	c94629839bd1842d	323	11159
+func run	f81fc0841363457d	152	5008
+func sendFile	37b571074ad560c5	41	1456
+func serveTls	b2ee8ca4c21a1d36	27	1180
+func serveTlsConn	c8b3815470f0af47	60	2378
+func sharedRoutes	79c71e5bcde73826	57	2621
+func slow	61c5166d0b858849	11	661
+func slowBody	d371dc499e1a8477	33	1122
+func sse	1c921ce6c3179d2f	42	1741
+func sseBody	c22b2d963e117aee	76	2820
+func sseFlat	aef7f12d91189131	47	1900
+func stream	68f754573c39dca9	51	2212
+func upload	33160b4f391c04ce	101	3491
+func workOf	7ad069f7fc107966	18	652
+type Body	63a7a9c59d5909e0	4	207
+type Item	e937abd2c8e31cbc	10	517
+type Processed	ad6bbaed370fba43	11	572
+type Rating	532018623df87266	3	167

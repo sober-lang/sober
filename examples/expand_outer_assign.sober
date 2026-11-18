@@ -1,0 +1,23 @@
+package main
+
+// 仮引数の型式が展開される関数（値化できない名前つき関数型の仮引数）の中で、ループの本体で組んだ値をループの外のmutの変数へ代入する
+
+type G[T] func(x T) bool
+
+type Opt union { Some { v []int }; None {} }
+
+func find(xs []int, p G[int]) Opt {
+    mut r := None{}
+    for x <- xs {
+        if p(x) {
+            mut ys := mut []int{x}
+            r = Some{v: ys}
+        }
+    }
+    return r
+}
+
+func main() {
+    r := find([]int{1, 4, 9}, (n int) => n > 3)
+    println(switch r { case Some{v}: v[0]; default: 0 })
+}

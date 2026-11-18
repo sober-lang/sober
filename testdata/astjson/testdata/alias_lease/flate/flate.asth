@@ -1,0 +1,7 @@
+@@full	7eaa08f14d3ebe58	292	6140
+@head	ffc3b420dfd691cb	0	84
+func Encode	08e64f7be28d4392	9	437
+func EncodeWith	97c4906c9810891a	11	518
+func NewWork	70d7312fdb832372	8	397
+func Ready	b6cecd97f21d97e8	5	264
+type Work	ee31fe2423c6a6ee	2	116

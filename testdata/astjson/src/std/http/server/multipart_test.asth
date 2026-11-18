@@ -1,0 +1,15 @@
+@@full	5e342c6b6e1a824c	6902	197680
+@head	4b8d8b8e5ab6a412	0	230
+func TestMultipartBrowsers	73a51d53d83138b8	247	8737
+func TestMultipartLimits	c81ec7fdfdeb3bfc	106	3631
+func TestMultipartRejects	3e058bc66730358e	411	13802
+func TestMultipartRequest	f968b024b0a78d96	53	2195
+func TestMultipartRfc	9f24d93dadcc6827	62	2480
+func TestMultipartShapes	0ced18d206ab19d5	113	4276
+func TestMultipartTruncated	b1f4fb590ab16e93	46	1804
+func mpBad	9e0f5869339e772f	14	582
+func mpByte	e7d65d5f843a71ab	27	1037
+func mpCat	b4cd47638551a860	49	1690
+func mpIs	25f101894b447326	47	1788
+func mpOf	cbdd20d40d18da73	19	725
+func mpRep	a0e9bbe727f57b27	45	1577

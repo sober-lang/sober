@@ -17,6 +17,7 @@ import "checker"
 import "iface"
 import "analyzer"
 import "diag"
+import "ast"
 
 // p を脱糖して検査する（判定 JSON は checker.Out・拒否の位置は checker.At。脱糖の拒否なら diag のラベル）。関数に割るのは脱糖器のヒープの region を分けるため（sobercheck と同じ）
 func check(p loader.Program) (checker.E2Out, error?) {
@@ -47,11 +48,13 @@ func checkWC(p loader.Program, wc bool, cc CkCache) (checker.E2Out, error?) {
     l0 := L0
     trust := l0On() && l0Complete(p, l0)
     dir := checkCacheDir(wc)
+    // L0 の信頼の経路: std の総称関数の kind は焼き込みの .sobi の `@kind`（本体を検査しないので推論しない）
+    q := if trust { loader.WithFnKinds(p, l0Kinds(p, l0)) } else { p }
     if dir != "" {
-        return checkCached(p, trust, if trust { l0Excl(p, l0) } else { []int{} }, dir, if cc.ok { cc } else { CkCache{ok: true, v: lower.BcOpen(dir), pcs: []loader.PcPut{}} })
+        return checkCached(q, trust, if trust { l0Excl(p, l0) } else { []int{} }, dir, if cc.ok { cc } else { CkCache{ok: true, v: lower.BcOpen(dir), pcs: []loader.PcPut{}} })
     }
     if trust {
-        return checker.RunE2(p, true, l0Excl(p, l0), desugarPar())
+        return checker.RunE2(q, true, l0Excl(p, l0), desugarPar())
     }
     return checker.RunE2(p, false, []int{}, desugarPar())
 }
@@ -117,20 +120,51 @@ func rejLines(p loader.Program, std map[string]string, r checker.E2Out) []string
         return []string{}
     }
     at := desugar.UnpackPos(checker.At(r))
+    // kind を満たさない型引数の拒否なら diag.KindArg の行（拒否のときだけ 1 本の経路でやり直す）
+    if at.file >= 0 && at.file < len(p.file_path) {
+        ka, kerr := checker.KindFail(if checker.Trust(r) { loader.WithFnKinds(p, l0Kinds(p, L0)) } else { p }, r)
+        if kerr == nil && len(ka) > 0 {
+            ls := kindArgLines(p, std, at, ka)
+            mut kl := mut []string{"sober: ${ls[0]}"}
+            for i <- iter.Range(1, len(ls)) {
+                kl = append(kl, ls[i])
+            }
+            return freeze(kl)
+        }
+    }
     // 位置の無い拒否（合成の関数の中など — 検査一式checkposが数える）も行は出す（検査器の拒否は必ずstderrに1行）
     if at.file < 0 || at.file >= len(p.file_path) {
         return []string{"sober: type error (no source position)"}
     }
     // 合成のファイル（`$json/…` など — 型の宣言から生成したコード）はソースが無いので、生成コードの中だと明示する
     fp := p.file_path[at.file]
-    return if strings.HasPrefix(fp, "$") { []string{"sober: type error in generated code ${fp}"} } else { []string{"sober: type error at ${where(p, std, at)}"} }
+    if strings.HasPrefix(fp, "$") {
+        return []string{"sober: type error in generated code ${fp}"}
+    }
+    // 2 行目: 落ちた規則（拒否のときだけ 1 本の経路でやり直す）。本体の型が戻り値の型と違うときは、宣言ではなく本体の末尾の式を指す
+    wy, werr := checker.FailWhy(if checker.Trust(r) { loader.WithFnKinds(p, l0Kinds(p, L0)) } else { p }, r)
+    if werr != nil || len(wy) < 4 {
+        return []string{"sober: type error at ${where(p, std, at)}"}
+    }
+    name := if wy[0] >= 0 { kaFnLabel(p, wy[0], at) } else if wy[0] == -2 { "a function literal" } else { "main" }
+    return switch wy[1] {
+    case 1: []string{"sober: type error at ${where(p, std, at)}", "  the signature of ${name} breaks a condition on functions (the parameter and result types, the type parameters, or a channel created in the body)"}
+    case 2: []string{"sober: type error at ${where(p, std, tailAt(at, wy[3]))}", "  the value of the body does not have the result type of ${name}"}
+    default: []string{"sober: type error at ${where(p, std, at)}", "  in ${name}: ${checker.RuleLine(wy[2])}"}
+    }
+}
+
+// 本体の末尾の式の位置（無い・別のファイルなら宣言の位置 at のまま）
+func tailAt(at diag.Pos, packed int) diag.Pos {
+    t := desugar.UnpackPos(packed)
+    return if packed != 0 && t.file == at.file { t } else { at }
 }
 
 // checkと同じ経路（L0の信頼の有無）を脱糖まで走らせて止める（計測用のインターフェース — checkStopの3）
 func checkStopAll(p loader.Program, lvl int) ([]byte, error?) {
     l0 := L0
     if l0On() && l0Complete(p, l0) {
-        return checker.CheckStop(p, -1, true, l0Excl(p, l0), lvl, desugarPar())
+        return checker.CheckStop(loader.WithFnKinds(p, l0Kinds(p, l0)), -1, true, l0Excl(p, l0), lvl, desugarPar())
     }
     return checker.CheckStop(p, -1, false, []int{}, lvl, desugarPar())
 }
@@ -203,6 +237,118 @@ func l0Excl(p loader.Program, l0 map[string]string) []int {
         }
     }
     return freeze(out)
+}
+
+// 焼き込みの std の .sobi の `@kind`（総称関数の推論した kind）を、p の関数表の添字で [関数, n, k…] の並びにする
+func l0Kinds(p loader.Program, l0 map[string]string) []int {
+    mut out := mut []int{}
+    for k <- iter.Range(0, len(p.fn_node)) {
+        path := p.pkg_path[p.file_pkg[p.fn_file[k]]]
+        if strings.HasPrefix(path, "std/") {
+            src, ok := l0Get(l0, path)
+            if ok {
+                ks := kindNamed(src, fnNameOf(p, k))
+                if len(ks) > 0 {
+                    out = append(out, k)
+                    out = append(out, len(ks))
+                    for x <- ks {
+                        out = append(out, x)
+                    }
+                }
+            }
+        }
+    }
+    return freeze(out)
+}
+
+// .sobi src の総称関数 name の `@kind(…)` の旗の列（型パラメータの順・無ければ空）。宣言 `func name[` の直前の注釈の行から探す
+func kindNamed(src []byte, name string) []int {
+    w := bytes("\nfunc ${name}[")
+    mut i := findBytes(src, w, 0)
+    if i < 0 {
+        return []int{}
+    }
+    // 宣言の前の注釈の行（`@` で始まる行）を遡る
+    mut e := i
+    while e > 0 {
+        mut s := e - 1
+        while s > 0 && src[s - 1] != '\n' {
+            s -= 1
+        }
+        if src[s] != '@' {
+            return []int{}
+        }
+        if e - s > 6 && src[s + 1] == 'k' && src[s + 2] == 'i' && src[s + 3] == 'n' && src[s + 4] == 'd' && src[s + 5] == '(' {
+            return kindArgsText(src, s + 6, e)
+        }
+        e = s - 1
+    }
+    return []int{}
+}
+
+// `T: 性質…, U: …)` の旗の列（綴りは ast.KindWord・any）
+func kindArgsText(src []byte, lo int, hi int) []int {
+    mut out := mut []int{}
+    mut k := 0
+    mut i := lo
+    mut w0 := -1
+    mut afterColon := false
+    while i < hi {
+        c := src[i]
+        letter := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_'
+        if letter && w0 < 0 {
+            w0 = i
+        }
+        if !letter && w0 >= 0 {
+            if afterColon {
+                for j <- iter.Range(0, 5) {
+                    if spanIs(src, w0, i, bytes(ast.KindWord(j))) {
+                        k = k | ast.KindBit(j)
+                    }
+                }
+            }
+            w0 = -1
+        }
+        if c == ':' {
+            afterColon = true
+        }
+        if c == ',' || c == ')' {
+            out = append(out, k)
+            k = 0
+            afterColon = false
+        }
+        i += 1
+    }
+    return freeze(out)
+}
+
+// src[lo:hi] が w と同じ綴りか
+func spanIs(src []byte, lo int, hi int, w []byte) bool {
+    if hi - lo != len(w) {
+        return false
+    }
+    for j <- iter.Range(0, len(w)) {
+        if src[lo + j] != w[j] {
+            return false
+        }
+    }
+    return true
+}
+
+// src の pos 以降で w が最初に現れる位置（無ければ -1）
+func findBytes(src []byte, w []byte, pos int) int {
+    mut i := pos
+    while i + len(w) <= len(src) {
+        mut j := 0
+        while j < len(w) && src[i + j] == w[j] {
+            j += 1
+        }
+        if j == len(w) {
+            return i
+        }
+        i += 1
+    }
+    return 0 - 1
 }
 
 // p の関数 k の名前
@@ -284,13 +430,124 @@ func defFail(p loader.Program) (checker.E2Out, error?) {
 // 判定と同じコア（E2-S の逃げの集合を検査器で決めてから）を出す — Lean の照合（selfhost_check --lean・leanbatch）の入力
 func coreJson(p loader.Program) ([]byte, error?) {
     excl := checker.ExclE2(p, desugarPar())?
-    out, err := desugar.Json(p, true, excl)
+    ks := checker.KindsE2(p, excl)?
+    out, err := desugar.JsonK(p, true, excl, ks)
     return out, err
 }
 
-// E2-S で上げない（全部展開の）コアの JSON（開発用 `--core-json-expanded`）
+// 旗 s（rf・kf・cov・mf・cf の順）を外すときに一緒に外す旗の集合（Kind.drop — 含意する旗も外す）
+func kDropBits(s int) int {
+    return switch s {
+    case 0: 1
+    case 1: 16
+    case 2: 25
+    case 3: 27
+    default: 29
+    }
+}
+
+// 旗 s そのもののビット
+func kFlagBit(s int) int {
+    return switch s {
+    case 0: 1
+    case 1: 16
+    case 2: 8
+    case 3: 2
+    default: 4
+    }
+}
+
+func kFlagName(s int) string {
+    return switch s {
+    case 0: "rf"
+    case 1: "kf"
+    case 2: "cov"
+    case 3: "mf"
+    default: "cf"
+    }
+}
+
+// 開発用 `--emit=kinddrops`: coreJson と同じ kind の列から、型パラメータごと・立っている旗ごとに 1 つ外した列でコアの JSON を作り直す
+func kindDrops(p loader.Program, all bool) ([]byte, error?) {
+    excl := checker.ExclE2(p, desugarPar())?
+    ks := checker.KindsE2(p, excl)?
+    // 名前は関数表の順の kind（[関数, n, k…]）から引く。Def の順の n > 0 の行と同じ順に並ぶ（名前の無い持ち上げは関数表に無い）。
+    // 数が合わなければ名前は "?" にして全部の Def を出す
+    fk := checker.KindsGen(p, excl, -1, false)?
+    mut nf := 0
+    mut fq := 0
+    while fq + 1 < len(fk) {
+        nf += 1
+        fq += 2 + fk[fq + 1]
+    }
+    mut ng := 0
+    mut gq := 0
+    while gq < len(ks) {
+        ng += if ks[gq] > 0 { 1 } else { 0 }
+        gq += 1 + ks[gq]
+    }
+    named := nf == ng
+    mut out := mut []byte{}
+    mut q := 0
+    mut d := 0
+    fq = 0
+    while q < len(ks) {
+        n := ks[q]
+        mut name := "?"
+        mut isStd := false
+        if named && n > 0 {
+            fi := fk[fq]
+            t := p.trees[p.fn_file[fi]]
+            pp := p.pkg_path[p.file_pkg[p.fn_file[fi]]]
+            name = "${pp}.${loader.Name(t, t.nodes[p.fn_node[fi]].a)}"
+            isStd = strings.HasPrefix(pp, "std/")
+            fq += 2 + fk[fq + 1]
+        }
+        for i <- iter.Range(0, if all || !isStd { n } else { 0 }) {
+            k := ks[q + 1 + i]
+            for s <- iter.Range(0, 5) {
+                b := kDropBits(s)
+                if k & kFlagBit(s) != 0 {
+                    mut ks2 := mut []int{}
+                    for j <- iter.Range(0, len(ks)) {
+                        ks2 = append(ks2, if j == q + 1 + i { k - (k & b) } else { ks[j] })
+                    }
+                    js := desugar.JsonK(p, true, excl, freeze(ks2))?
+                    appendBytes(mut out, bytes("${d} ${i} ${kFlagName(s)} ${name} "))
+                    appendBytes(mut out, js)
+                    out = append(out, 10)
+                }
+            }
+        }
+        q += 1 + n
+        d += 1
+    }
+    return freeze(out), nil
+}
+
+// 開発用 `--emit=kindshape`: coreJson と同じ Def の順と型パラメータの数で、kind を全部「旗なし」にしたコアの JSON。
+// 旗なしの型変数は置き直し先の region を位置のまま残す（rf の旗は 0 に潰す）ので、Lean の推論（sober-check --infer-batch）の入力の形になる
+func kindShape(p loader.Program) ([]byte, error?) {
+    excl := checker.ExclE2(p, desugarPar())?
+    ks := checker.KindsE2(p, excl)?
+    mut ks2 := mut []int{}
+    mut q := 0
+    while q < len(ks) {
+        n := ks[q]
+        ks2 = append(ks2, n)
+        for _ <- iter.Range(0, n) {
+            ks2 = append(ks2, 0)
+        }
+        q += 1 + n
+    }
+    return desugar.JsonK(p, true, excl, freeze(ks2))
+}
+
+// E2-S で上げない（全部展開の）コアの JSON（開発用 `--core-json-expanded`）。総称関数と持ち上げたラムダは Def のまま残るので、
+// 同じ形で推論した kind を渡す（渡さないと旗が全部立った kind で出て、region を持つ型引数の呼び出しを Lean が拒否する）
 func coreJsonExpanded(p loader.Program) ([]byte, error?) {
-    out, err := desugar.Json(p, false, []int{})
+    ks := checker.KindsFlat(p)?
+    out, err := desugar.JsonK(p, false, []int{}, ks)
     return out, err
 }
 
@@ -379,6 +636,9 @@ type CheckRes struct {
     out []byte
     msgs []string
     files []string
+    // files と同じ並びの @embed の入力の要約（load の木から — embedSumOf。"" = @embed なし・load の木が無い）。答えを覚えるときの鍵は、
+    // ファイルを読み直した値がこれと同じときだけ覚える（load の読みと鍵の読みの間にファイルが変わった答えを覚えない）
+    esums []string
 }
 
 // CheckRes を `sober check --split` の形で出す（診断は標準エラー・判定は標準出力）
@@ -395,7 +655,7 @@ func emitRes(r CheckRes) int {
 }
 
 func failRes(msg string, files []string) CheckRes {
-    return CheckRes{1, []byte{}, []string{"sober: ${msg}"}, files}
+    return CheckRes{1, []byte{}, []string{"sober: ${msg}"}, files, []string{}}
 }
 
 // 小分けの check の本体（self = コンパイラの鍵）
@@ -408,7 +668,7 @@ func checkSplitR(entry string, trace bool, l0out string, self []byte) CheckRes {
     pl := splitPlan(entry, std, use)
     fs := pl.files
     if pl.code >= 0 {
-        return CheckRes{pl.code, []byte{}, pl.msgs, fs}
+        return CheckRes{pl.code, []byte{}, pl.msgs, fs, []string{}}
     }
     verify := use && envOn("SOBER_CACHE_VERIFY")
     mut sobis := mut []loader.Sobi{}
@@ -417,11 +677,11 @@ func checkSplitR(entry string, trace bool, l0out string, self []byte) CheckRes {
         // L0（stdの焼き込み — 鍵は要らない・L1より先）→ L1（格納場所）
         lk := lookupL0(l0on, l0, path, lookup(use, dir, self, path, pl, i, freeze(sobis)))
         if trace && traceLine(path, lk.key, lk.hit) != 0 {
-            return CheckRes{1, []byte{}, []string{}, fs}
+            return CheckRes{1, []byte{}, []string{}, fs, []string{}}
         }
         if lk.hit && !verify {
             if path == "main" {
-                return CheckRes{0, lk.val, pl.msgs, fs}
+                return CheckRes{0, lk.val, pl.msgs, fs, []string{}}
             }
             sobis = append(sobis, loader.MakeSobi(path, lk.val))
         } else {
@@ -433,7 +693,7 @@ func checkSplitR(entry string, trace bool, l0out string, self []byte) CheckRes {
                 if r.code == 2 {
                     return failRes(r.msg, fs)
                 }
-                return CheckRes{r.code, r.out, if r.msg != "" { []string{r.msg} } else { []string{} }, fs}
+                return CheckRes{r.code, r.out, if r.msg != "" { []string{r.msg} } else { []string{} }, fs, []string{}}
             }
             val := if r.code == 0 { r.out } else { r.sobi }
             if lk.hit && !bytesEq(lk.val, val) {
@@ -451,7 +711,7 @@ func checkSplitR(entry string, trace bool, l0out string, self []byte) CheckRes {
                 }
             }
             if r.code == 0 {
-                return CheckRes{0, val, pl.msgs, fs}
+                return CheckRes{0, val, pl.msgs, fs, []string{}}
             }
             sobis = append(sobis, loader.MakeSobi(path, val))
         }
@@ -527,6 +787,25 @@ func splitPlan(entry string, std map[string]string, trace bool) SplitPlan {
 }
 
 // p の利用者のファイル（std を除く）のパス
+// userFiles と同じ並びの @embed の入力の要約（load の木から — ファイルを読み直さない）
+func userEmbeds(p loader.Program) []string {
+    mut out := mut []string{}
+    for f <- iter.Range(0, len(p.file_path)) {
+        if f < len(p.file_std) && !p.file_std[f] {
+            out = append(out, if f < len(p.trees) { embedSumOf(loader.EmbedDigest(p.trees[f])) } else { "" })
+        }
+    }
+    for i <- iter.Range(0, len(p.contract_files)) {
+        out = append(out, "")
+    }
+    return freeze(out)
+}
+
+// CheckRes に load の木の @embed の要約を付ける
+func withEmbeds(r CheckRes, es []string) CheckRes {
+    return CheckRes{r.code, r.out, r.msgs, r.files, es}
+}
+
 func userFiles(p loader.Program) []string {
     mut out := mut []string{}
     for f <- iter.Range(0, len(p.file_path)) {
@@ -565,14 +844,18 @@ func splitOne(entry string, pkg string, link []string, sobis []loader.Sobi, std 
     }
     out := checker.Out(r)
     if !verdictOk(out) {
-        rl := rejLines(p, std, r)
-        return SplitOne{1, out, if len(rl) > 0 { rl[0] } else { "" }, []byte{}}
+        // 一括のcheckと同じ行の全部（位置の行・落ちた規則の行・kindの拒否の行）
+        return SplitOne{1, out, strings.Join(rejLines(p, std, r), "\n"), []byte{}}
     }
     if pkg == "main" {
         return SplitOne{0, out, "", []byte{}}
     }
     // 生の木は視点の読み込みが parse したもの（ソースを読み直さない）
-    return SplitOne{0 - 1, []byte{}, "", iface.Emit(p, k, checker.Excl(r), raw)}
+    ks, kerr := checker.KindsGen(p, checker.Excl(r), k, false)
+    if kerr != nil {
+        return SplitOne{2, []byte{}, errDiag(p, std, kerr), []byte{}}
+    }
+    return SplitOne{0 - 1, []byte{}, "", iface.Emit(p, k, checker.Excl(r), raw, ks)}
 }
 
 func pkgIndex(p loader.Program, pkg string) int {
@@ -612,7 +895,21 @@ func cmdCheck(cl cli.Parsed) int {
     dcost := cli.Bool(cl, DefCost)
     // 開発用: 検査する Def ごとの鍵 K-D（関数単位の check キャッシュ — desugar/defkey.sober）・--def-graph は項目と辺も
     dgraph := cli.Bool(cl, DefGraph)
-    dkeys := cli.ChoiceOpt(cl, CEmit) != nil || dgraph
+    emitV := cli.ChoiceOpt(cl, CEmit)
+    // 開発用（--emit=kinds）: 総称関数ごとの推論した kind（.sobi の @kind と同じ綴り — 一括と --split・区間の並列の照合用）
+    // --emit=kinds0 は E2-S の逃げの集合を使わない（周回なし — build の経路で推論するときの形）
+    // --emit=kindsl0 は kinds0 を L0 の信頼の経路で（std の総称関数は焼き込みの @kind — build の経路の形）
+    kemit := emitV != nil && (emitV == "kinds" || emitV == "kinds0" || emitV == "kindsl0")
+    kl0 := emitV != nil && emitV == "kindsl0"
+    kexcl := emitV != nil && emitV == "kinds"
+    // --emit=kinddrops は、推論した kind の旗を 1 つ外した（含意する旗も外す — Kind.drop）コアの JSON を 1 行ずつ出す。
+    // 行の形 = 「<Def の添字> <型パラメータの添字> <旗> <package.名前> <JSON>」。Lean の検査器がどれも拒否すれば、推論した kind は行ごとに最小。
+    // std の Def は --emit=kinddropsall のときだけ（例ごとに同じ Def を繰り返さない）
+    kdrops := emitV != nil && (emitV == "kinddrops" || emitV == "kinddropsall")
+    kdall := emitV != nil && emitV == "kinddropsall"
+    // --emit=kindshape は、kind を全部旗なしにしたコアの JSON（Lean の推論の照合の入力）
+    kshape := emitV != nil && emitV == "kindshape"
+    dkeys := (emitV != nil && !kemit && !kdrops && !kshape) || dgraph
     // 開発用: 外すと同じ点で暗黙の freeze になる明示の freeze の位置（暗黙 ≡ 明示のオラクル scripts/implicitfreeze.sh）
     fsites := cli.Bool(cl, FreezeSites)
     // 開発用: 暗黙の freeze の点の位置（std を含む — typer の表）
@@ -620,7 +917,7 @@ func cmdCheck(cl cli.Parsed) int {
     // テストのビルド（entry = package のディレクトリ — 合成の main と _test.sober ごと検査する。T12）
     tst := cli.Bool(cl, CTest)
     withPkg := pk != nil || id != nil
-    modes := []bool{withPkg, split, sigs && !withPkg, core, corex, tdiff, nall, didx, edump, sdump, odump, fdump, xrep, dcost, dkeys, fsites, ipts, tst}
+    modes := []bool{withPkg, split, sigs && !withPkg, core, corex, tdiff, nall, didx, edump, sdump, odump, fdump, xrep, dcost, dkeys, kemit, kdrops, kshape, fsites, ipts, tst}
     mut nmode := 0
     for m <- modes {
         nmode += if m { 1 } else { 0 }
@@ -677,6 +974,24 @@ func cmdCheck(cl cli.Parsed) int {
             return fail(errDiag(p, std, xerr))
         }
         return writeStdout(r)
+    }
+    if kemit {
+        // std も本体から推論する（L0 の信頼を使わない — 焼き込みの @kind との照合にも使える）
+        mut excl := loader.ExpandMarked(p)
+        if kexcl {
+            x, xerr := checker.ExclE2(p, desugarPar())
+            if xerr != nil {
+                return fail(errDiag(p, std, xerr))
+            }
+            excl = x
+        }
+        l0 := L0
+        trust := kl0 && l0On() && l0Complete(p, l0)
+        ks, kerr := checker.KindsGen(if trust { loader.WithFnKinds(p, l0Kinds(p, l0)) } else { p }, excl, -1, trust)
+        if kerr != nil {
+            return fail(errDiag(p, std, kerr))
+        }
+        return writeStdout(kindsText(p, ks))
     }
     if dkeys {
         l0 := L0
@@ -770,9 +1085,9 @@ func cmdCheck(cl cli.Parsed) int {
         if derr != nil {
             return fail(errDiag(p, std, derr))
         }
-        mut msg := "typer-sty same=${r[0]} gain=${r[1]} loss=${r[2]} mismatch=${r[3]} skip=${r[4]} targs-same=${r[5]} targs-diff=${r[6]}\n"
-        for i <- iter.Range(0, r[7]) {
-            b := 8 + i * 4
+        mut msg := "typer-sty same=${r[0]} gain=${r[1]} loss=${r[2]} mismatch=${r[3]} skip=${r[4]} targs-same=${r[5]} targs-diff=${r[6]} targs-unbound=${r[7]}\n"
+        for i <- iter.Range(0, r[8]) {
+            b := 9 + i * 4
             if r[b + 2] == 2 {
                 msg = msg + "  ${srcPos(p, std, r[b], r[b + 1])} targs inferTs-ok=${r[b + 3] == 1}\n"
             } else {
@@ -780,6 +1095,20 @@ func cmdCheck(cl cli.Parsed) int {
             }
         }
         return writeStdout(bytes(msg))
+    }
+    if kshape {
+        ksh, serr := kindShape(p)
+        if serr != nil {
+            return fail(errDiag(p, std, serr))
+        }
+        return writeStdout(ksh)
+    }
+    if kdrops {
+        kd, derr := kindDrops(p, kdall)
+        if derr != nil {
+            return fail(errDiag(p, std, derr))
+        }
+        return writeStdout(kd)
     }
     if corex {
         cx, xerr := coreJsonExpanded(p)
@@ -922,7 +1251,7 @@ type Replay struct {
 }
 
 func noReplay() Replay {
-    return Replay{false, CheckRes{0, []byte{}, []string{}, []string{}}}
+    return Replay{false, CheckRes{0, []byte{}, []string{}, []string{}, []string{}}}
 }
 
 // 読んだファイルのうちディスクにあるもの（loader が `@layout` から合成する `$layout/…` は元のソースが決めるので外す）
@@ -960,13 +1289,34 @@ func dirSum(d string) string {
     return hex.Format(hash.Sha256(freeze(b)))
 }
 
-// @embed を持つファイルの埋め込みの入力のハッシュ（持たなければ ""・parse できなければ "!"）
+// @embed を持つファイルの埋め込みの入力のハッシュ（持たなければ ""・parse できなければ "!"）。中身が同じなら load の木の
+// embedSumOf(loader.EmbedDigest(…)) と同じ値
 func embedSum(path string, b []byte) string {
     if !hasBytes(b, bytes("@embed(")) {
         return ""
     }
     t, ok := parseFile(path, b)
-    return if ok { hex.Format(hash.Sha256(loader.EmbedInputs(t))) } else { "!" }
+    return if ok { embedSumOf(loader.EmbedInputs(t)) } else { "!" }
+}
+
+// 埋め込みの入力の要約 m のハッシュ（空 = @embed なし → ""）
+func embedSumOf(m []byte) string {
+    return if len(m) == 0 { "" } else { hex.Format(hash.Sha256(m)) }
+}
+
+// 答え r の load の木の @embed の要約のうち、ファイル path の分（無ければ "" — load の木が無い答えは @embed を持つファイルを覚えない）
+func loadedSum(r CheckRes, path string) string {
+    return sumAt(r.files, r.esums, path)
+}
+
+// files と同じ並びの要約 es のうち path の分（無ければ ""）
+func sumAt(files []string, es []string, path string) string {
+    for i <- iter.Range(0, len(files)) {
+        if files[i] == path && i < len(es) {
+            return es[i]
+        }
+    }
+    return ""
 }
 
 // 答え r を覚える（受理でも拒否でも — 使い方の誤り〔2〕・読んだファイルが無い・読めないときは覚えない）
@@ -984,9 +1334,15 @@ func replayPut(dir string, key string, r CheckRes) {
             replayStat("skip (cannot read ${fs[i]})")
             return
         }
+        // @embed の入力は load の読みの要約と照合する（違えば load の後にファイルが変わった — 覚えない）
+        es := embedSum(fs[i], b)
+        if es != loadedSum(r, fs[i]) {
+            replayStat("skip (@embed input of ${fs[i]} changed after the load)")
+            return
+        }
         lenPut(mut v, bytes(fs[i]))
         lenPut(mut v, bytes(hex.Format(hash.Sha256(b))))
-        lenPut(mut v, bytes(embedSum(fs[i], b)))
+        lenPut(mut v, bytes(es))
     }
     lenPut(mut v, bytes("${len(ds)}"))
     for i <- iter.Range(0, len(ds)) {
@@ -1102,7 +1458,7 @@ func replayGet(dir string, key string) Replay {
         msgs = append(msgs, string(xs[q]) catch return noReplay())
         q += 1
     }
-    return Replay{true, CheckRes{code, out, freeze(msgs), freeze(files)}}
+    return Replay{true, CheckRes{code, out, freeze(msgs), freeze(files), []string{}}}
 }
 
 // 2 つの答えが同じか（終了コード・標準出力・診断の行）
@@ -1127,13 +1483,14 @@ func checkFrontR(entry string, tst bool, std map[string]string, wc bool) CheckRe
     cc := CkCache{ok: true, v: cv, pcs: pcs}
     loader.Stage("ck-load")
     if lerr != nil {
-        return failRes(loadDiag(p0, std, lerr), userFiles(p0))
+        return withEmbeds(failRes(loadDiag(p0, std, lerr), userFiles(p0)), userEmbeds(p0))
     }
     p, nerr := desugar.NamedValueArgs(p0)
     loader.Stage("ck-nva")
     fs := userFiles(p)
+    es := userEmbeds(p)
     if nerr != nil {
-        return failRes(loadDiag(p, std, nerr), fs)
+        return withEmbeds(failRes(loadDiag(p, std, nerr), fs), es)
     }
     n := nodeCount(p)
     bpc := n * 64 + 4 * task.MB
@@ -1161,9 +1518,10 @@ func checkFrontR(entry string, tst bool, std map[string]string, wc bool) CheckRe
         frontMerge(pm, al, ck)
     })
     if serr != nil {
-        return checkSeqR(p, std, wc, fs, cc)
+        loader.ParFellBack("check", 3, "on the sequential path", "")
+        return withEmbeds(checkSeqR(p, std, wc, fs, cc), es)
     }
-    return frontRes(r, fs)
+    return withEmbeds(frontRes(r, fs), es)
 }
 
 // 3 つの子の結果を逐次の優先順で 1 つに
@@ -1195,9 +1553,9 @@ func frontRes(r FrontRes, fs []string) CheckRes {
         return failRes(r.msgs[0], fs)
     }
     if r.kind == 2 {
-        return CheckRes{1, []byte{}, r.msgs, fs}
+        return CheckRes{1, []byte{}, r.msgs, fs, []string{}}
     }
-    return CheckRes{if verdictOk(r.out) { 0 } else { 1 }, r.out, r.msgs, fs}
+    return CheckRes{if verdictOk(r.out) { 0 } else { 1 }, r.out, r.msgs, fs, []string{}}
 }
 
 // checkFrontの逐次の経路（子が死んだときの走らせ直し — ParCheck → analyzer → checkの順。名前付き実引数の変換の後のpから）
@@ -1214,7 +1572,7 @@ func checkSeqAt(p loader.Program, std map[string]string, wc bool, fs []string, c
     }
     az := analyzeAllC(p, std, if cc.v.on { lower.BcGammaCache(cc.v, checkCacheDir(wc)) } else { desugar.TyCacheOff() })
     if len(az.errs) > 0 {
-        return CheckRes{1, []byte{}, az.errs, fs}, az.at
+        return CheckRes{1, []byte{}, az.errs, fs, []string{}}, az.at
     }
     r, cerr := checkWC(p, wc, cc)
     if cerr != nil {
@@ -1229,7 +1587,7 @@ func checkSeqAt(p loader.Program, std map[string]string, wc bool, fs []string, c
         ms = append(ms, x)
     }
     ok := verdictOk(out)
-    return CheckRes{if ok { 0 } else { 1 }, out, freeze(ms), fs}, if ok { diag.None() } else { desugar.UnpackPos(checker.At(r)) }
+    return CheckRes{if ok { 0 } else { 1 }, out, freeze(ms), fs, []string{}}, if ok { diag.None() } else { desugar.UnpackPos(checker.At(r)) }
 }
 
 // ParCheck の拒否の診断（"" = 受理）
@@ -1392,4 +1750,27 @@ func bytesEq(a []byte, b []byte) bool {
 func traceLine(path string, key string, hit bool) int {
     werr := io.WriteStderr(bytes("cache: ${path} ${key} ${if hit { "hit" } else { "miss" }}\n"))
     return if werr != nil { 1 } else { 0 }
+}
+
+// 推論した kind の並び ks（関数表の添字で [関数, n, k…]）を `package.関数: @kind(T: 性質…, …)` の行にする
+func kindsText(p loader.Program, ks []int) []byte {
+    mut out := mut []byte{}
+    mut q := 0
+    while q + 1 < len(ks) {
+        fi := ks[q]
+        n := ks[q + 1]
+        t := p.trees[p.fn_file[fi]]
+        x := t.nodes[p.fn_node[fi]]
+        appendBytes(mut out, bytes("${p.pkg_path[p.file_pkg[p.fn_file[fi]]]}.${loader.Name(t, x.a)}: @kind("))
+        for i <- iter.Range(0, n) {
+            if i > 0 {
+                appendBytes(mut out, bytes(", "))
+            }
+            nm := if x.b >= 0 && i < ast.ListLen(t, x.b) { loader.Name(t, ast.ListAt(t, x.b, i)) } else { "?" }
+            appendBytes(mut out, bytes("${nm}: ${ast.KindText(ks[q + 2 + i])}"))
+        }
+        appendBytes(mut out, bytes(")\n"))
+        q += 2 + n
+    }
+    return freeze(out)
 }

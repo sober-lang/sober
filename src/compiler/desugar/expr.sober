@@ -72,6 +72,10 @@ func exprIn(st mut S, e NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
         // 文字列リテラル: コアの strlit（既定の region は書かれた点の最内 — 旧テンプレート freeze(append 連鎖) と同じ型。
         // Def 呼び出しの実引数の位置だけ region 0 — call.sober。src/stage1/desugar.zig の .strlit と同じ）
         return cStrlit(mut st, nodeOf(mut st, e).a, st.rdepth - 1), nil
+    case ast.EEmbed:
+        // @embed の []byte: コアは strlit（Lean の strlit は byte のセル列 — string と []byte の区別は表層だけ）。中身はヒープに積まず、
+        // a = −(節 + 2)（JSON の書き手が節のパスからファイルを読む — json.sober）
+        return cStrlit(mut st, 0 - (int(e) + 2), st.rdepth - 1), nil
     case ast.ESlicelit:
         elem := tyOf(mut st, st.curPkg, nA(nodeOf(mut st, e)), at, TYFUEL)?
         // 外の mut 場所へ流れ込む mut のリテラルは行き先の region に作る（mksliceAt）。型は行き先の点座標
@@ -881,17 +885,18 @@ func coerceArm(st mut S, l ListRef, want TyRef, eb int, ef int, depth int, at No
 }
 
 // return の値: coerceExpr に加え、region だけが結果型と違う値を結果型で ann する
-func retValue(st mut S, e NodeRef, want TyRef, eb int, ef int, depth int, at NodeRef) (CoreRef, error?) {
-    // 結果が値化可能な named fn type の関数（Def）が返すラムダは値の位置（loaderのRetFnValと同じ方針）
-    // （結果のregionへのannは普通の値と同じ下のパス — 捕捉のstringは仮引数の座標のまま組まれる）
-    fdr := if kindN(mut st, e) == ast.ELambda && st.inlining < 0 && st.curRes != -1 && lenL(mut st, st.curRes) == 1 {
-        fieldFnValDecl(mut st, st.curResPkg, st.tenv, latN(mut st, st.curRes, 0))?
+func retValue(st mut S, e NodeRef, j int, want TyRef, eb int, ef int, depth int, at NodeRef) (CoreRef, error?) {
+    // j番目の結果が値化可能なnamed fn typeの関数（Def）が返すラムダ・ブロック・if式は値の位置（loaderのRetFnValと同じ方針。多値の結果では位置ごと）
+    // （結果のregionへのannは普通の値と同じ下のパス。捕捉のstringは仮引数の座標のまま組まれる）
+    ek := kindN(mut st, e)
+    fdr := if (ek == ast.ELambda || ek == ast.EIf || ek == ast.EBlock) && st.inlining < 0 && st.curRes != -1 && j < lenL(mut st, st.curRes) {
+        fieldFnValDecl(mut st, st.curResPkg, st.tenv, latN(mut st, st.curRes, j))?
     } else {
         -1
     }
     core := if fdr >= 0 { closureValue(mut st, e, want, fdr, eb, ef, depth, at)? } else { coerceExpr(mut st, e, want, eb, ef, depth, at)? }
     wk := tg(mut st, want)
-    if (wk == TOpt || wk == TUn || wk == TPr) && wrapsContainer(mut st, want) {
+    if (wk == TOpt || wk == TUn || wk == TPr) && (wrapsContainer(mut st, want) || wrapsVar(mut st, want)) {
         return retAnn(mut st, core, want), nil
     }
     if wk == TOpt {
@@ -989,7 +994,7 @@ func appendValueAnn(st mut S, subject NodeRef, value NodeRef, core CoreRef, eb i
             return core
         }
         iet := tElem(mut st, it)
-        ivt := computeTy(mut st, value, eb, ef)
+        ivt := exactTy(mut st, value, eb, ef)
         if ivt == -1 || !hasRegion(mut st, iet) || tyEql(mut st, ivt, iet) || !tyLooser(mut st, ivt, iet) {
             return core
         }
@@ -1018,6 +1023,39 @@ func appendValueAnn(st mut S, subject NodeRef, value NodeRef, core CoreRef, eb i
         return core
     }
     return cAnn(mut st, core, et)
+}
+
+// 値の式の正確な型: 名前ならコア上の束縛の型（展開の仮引数・ループの変数のannの型）を優先する。宣言型は素の座標で、内のregionの値を外の座標に読む
+func exactTy(st mut S, value NodeRef, eb int, ef int) TyRef {
+    if kindN(mut st, value) == ast.EIdent {
+        b := lookup(mut st, eb, sA(nodeOf(mut st, value)))
+        if b >= 0 && !bnd(mut st, b).mutable && bnd(mut st, b).core != -1 {
+            return bnd(mut st, b).core
+        }
+    }
+    return computeTy(mut st, value, eb, ef)
+}
+
+// 不変のsliceの束縛subjectへの追記で、値（正確な型）が要素の型へ緩められない（値が内のregionにある）とき、sliceを最内へ上げて読む型（でなければ -1）。
+// 追記の結果は最内のsliceになり、外の場所へは呼び手の写しが運ぶ（作ってから写す）
+func appendRaiseTy(st mut S, subject NodeRef, value NodeRef, eb int, ef int) TyRef {
+    if kindN(mut st, subject) != ast.EIdent {
+        return TyRef(-1)
+    }
+    b := lookup(mut st, eb, sA(nodeOf(mut st, subject)))
+    if b < 0 || bnd(mut st, b).mutable {
+        return TyRef(-1)
+    }
+    it := if bnd(mut st, b).core != -1 { bnd(mut st, b).core } else { bnd(mut st, b).ty }
+    if !isTag(mut st, it, TSl) || tMutBit(mut st, it) != 0 || !hasRegion(mut st, tElem(mut st, it)) {
+        return TyRef(-1)
+    }
+    vt := exactTy(mut st, value, eb, ef)
+    if vt == -1 || tyLooser(mut st, vt, tElem(mut st, it)) {
+        return TyRef(-1)
+    }
+    rt := tyRelocAll(mut st, it, st.rdepth - 1)
+    return if tyLooser(mut st, vt, tElem(mut st, rt)) && tyLooser(mut st, it, rt) { rt } else { TyRef(-1) }
 }
 
 // mut束縛のstructのフィールドへの代入の値を、フィールドの宣言型を束縛点の点座標にコピーした型へ緩めるann
@@ -1074,7 +1112,7 @@ func mutInitAnn(st mut S, value NodeRef, core CoreRef, eb int, ef int) CoreRef {
     } else {
         t = computeTy(mut st, value, eb, ef)
     }
-    if t == -1 || (!hasRegion(mut st, t) && !wrapsContainer(mut st, t)) {
+    if t == -1 || (!hasRegion(mut st, t) && !wrapsContainer(mut st, t) && !wrapsVar(mut st, t)) {
         return core
     }
     pt := pointTy(mut st, t)
@@ -1350,9 +1388,10 @@ func labelIn(st mut S, e NodeRef, decl NodeRef, pk int, idx int, venv int, eb in
         t := recDrTy(mut st, declRef(mut st, int(decl), pk, renv), dest, at)?
         return letsAround(mut st, lets, recFold(mut st, t, encodeVariantTy(mut st, tyUnfold(mut st, t), vcount(mut st, decl), idx, payload))), nil
     }
-    // 兄弟の型注釈は宣言の形（region 0）なので、行き先の region へ締める（関数の本体では点が region 0 でなく、slice の要素などの
-    // 期待型〔今の点の region〕と食い違う）
-    k := if dest > 0 { dest - 1 } else { st.rdepth - 1 }
+    // 兄弟の型注釈は宣言の形（region 0）なので、ペイロードを作ったregion（最内）へ締める（関数の本体では点がregion 0でなく、sliceの要素などの
+    // 期待型〔今の点のregion〕と食い違う）。行き先が外のregionでも、再帰でないunionのペイロードは最内に作るので注釈も最内で組み、
+    // 行き先へは呼び手の写しが運ぶ（structのリテラルと同じ「作ってから写す」形）
+    k := st.rdepth - 1
     r := coreRelocAnn(mut st, encodeVariant(mut st, pk, decl, 0, idx, payload, at)?, k)
     // region を持つペイロードの値は外の region から来ることがある（仮引数の string 等）— inl / inr の型はペイロードの実の型を運ぶので、
     // union の型を行き先の座標で組んだ型へ緩める（struct のリテラルの要素の ann と同じ緩め）

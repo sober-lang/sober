@@ -1,0 +1,65 @@
+package main
+
+// 匿名の関数型の仮引数と結果の中の名前つき関数型（H）も値の位置: 渡したラムダや名前の関数の仮引数のHと同じ、クロージャの値として読む
+
+type H func(x int) int
+
+type B struct { v H }
+
+type W func(f func(h H) int) int
+
+func incr(x int) int {
+    return x + 1
+}
+
+func adder(s string) H {
+    return (x int) => x + len(bytes(s))
+}
+
+func yes(h H) bool {
+    return h(1) == 2
+}
+
+func test(x H, p func(H) bool) bool {
+    return p(x)
+}
+
+func find(xs []H, p func(h H) bool) B {
+    for x <- xs {
+        if p(x) {
+            return B{v: x}
+        }
+    }
+    return B{v: incr}
+}
+
+func nested(p func(q func(h H) int) int) int {
+    return p((h H) => h(2))
+}
+
+func run(w W) int {
+    return w((h H) => h(1))
+}
+
+func sum(p func(hs []H) int) int {
+    return p([]H{incr, adder("x")})
+}
+
+func each(xs []H, f func(h H)) {
+    for x <- xs {
+        f(x)
+    }
+}
+
+func main() {
+    println(test(incr, (x H) => true), test(incr, yes), test(adder("abc"), yes))
+    println(find([]H{adder("ab"), incr}, (h H) => h(0) == 2).v(10))
+    a := adder("abc")
+    println(nested((q func(h H) int) => q(a)), run((f func(h H) int) => f(a)))
+    println(sum((hs []H) => hs[0](1) + hs[1](1)))
+    mut s := 0
+    each([]H{incr, adder("ab")}, (h H) => {
+        s = s + h(1)
+    })
+    println(s)
+}

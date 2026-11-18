@@ -1,0 +1,43 @@
+package main
+
+// 型引数を推論する呼び出しで、型パラメータの型の仮引数に宣言した関数やラムダを直に置ける。型引数は他の実引数（`[]H{…}`・`Some[H]{…}`・
+// Hの値）から値化可能な名前付き関数型Hに決まり、その仮引数（TとT?）はHの値の位置になる（明示の型引数 `pick[H](…)` と同じ）
+
+type H func(x int) int
+
+type Opt[T] union {
+    Some { v T }
+    None {}
+}
+
+func incr(x int) int {
+    return x + 1
+}
+
+func pick[T](xs []T, d T) T {
+    return d
+}
+
+func or[T](o Opt[T], d T) T {
+    return switch o {
+    case Some{v}: v
+    case None{}: d
+    }
+}
+
+func second[T](a T, b T) T {
+    return b
+}
+
+func first[T](q T?, d T) T {
+    return if q != nil { q } else { d }
+}
+
+func main() {
+    k := 4
+    h := H(incr)
+    println(pick([]H{incr}, incr)(1), pick([]H{h}, (x int) => x * k)(2))
+    println(or(None[H]{}, incr)(1), or(Some[H]{v: incr}, (x int) => x - k)(1), or(None[H]{}, (x int) => x - k)(1))
+    println(second(h, incr)(1), second(h, if k > 0 { incr } else { (x int) => x + k })(1))
+    println(first(incr, h)(1), first(nil, h)(1), first[H](incr, (x int) => x + k)(1))
+}

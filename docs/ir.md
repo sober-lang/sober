@@ -76,6 +76,17 @@ Soberの唯一の中間表現。`sober build` はAST → IR → 正規バック�
 
 - `atomic.xadd %p[off], %v` → 旧値・`atomic.cas %p[off], %old, %new` → 旧値（一致したら書く）・`atomic.xchg %p[off], %v` → 旧値・`fence`（全順序の障壁）: x86では `lock xadd` / `lock cmpxchg` / `xchg` / `mfence`。
   x86-TSOの上なので公開（release）と取得（acquire）は素のstore / loadで足り、原子のopは数え上げ・待ち手の格納場所・受信箱・pull列・プールの補充だけに使う（6節の表）
+- rtの鍵は部品1つ（compiler/lower/lock.sober。2026-11-16）: 取るのは呼び出し点の `xchg` 1回で、取れなければ `rt.lock_wait`（読んでpauseで回り、64回を越えたらsched_yieldで譲る）。返すのは素のstore（lockGive）か `xchg`（lockGiveFence。もとがxchgだった箇所）。
+  持ち手は鍵を持ったままtaskの待ちに入らないが、持ち手のワーカーがOSに横取りされることはある（ワーカーの数がCPUより多い形・同じCPUに別のプロセスが乗る形）ので、待ち手は回り続けずに譲る。
+  lockGiveFenceの箇所で、返しの後に相手のフラグを読むか（x86で柵が要るか）: どの箇所も返しの柵は要らない。aarch64へ移すときはlockGiveと同じ解放のstore（STLR）で足りる見込み。
+  - domainとcellの鍵（cellUnlock）: 返した後に相手が書くフラグを読まない。Awaitの待ち手は返した後に自分のワーカーのpollerの期限のチェーンへ積んでtask_waitするが、手渡しはTC_IORESのCAS（鍵の中）で、先に来たウェイクアップはtask_waitが吸う
+  - MN_ALOCKの待ちのチェーンへの登録（admit.sober）: 返した後にMN_AGENを読む（返し手の「番号を進める → チェーンを見る」と対になる読み）。ただしその読みはxadd（lock接頭辞つき）なので、柵はそこで足りている
+  - MN_ALOCKの外し・rt.admit_wake: 返した後は入場の試し直しかtask_waitか、取ったチェーンを歩くだけ（相手のフラグを読まない）
+  - SR_DLOCK（死因の記録）: 返した後に読まない。2ワードの組の公開は、その後の生きている子の数の減算（xadd）が順序を保つ
+  検査 = scripts/oversub.sh（64ワーカーを4 CPU。譲らない鍵〔--rt-mutant=105〕はCPUが10倍を越えて落ちる）。棄てた案: 3状態の鍵とfutex（返す側の判定で速い道の命令が増える。async-dbでは譲る形と差が分けられなかった。report-adb-1。測り直し〔report-adb-6〕では、64ワーカーを4 CPUのbench/locksegでwallが3〜10倍・sysが20倍以上、async-dbのCPU / リクエストが1.5〜3倍に悪化した。眠りと起こしのsyscallの往復が、横取りされた持ち手を待つ間のyieldより高い）
+  長い区間のsyscall（MN_OLOCKの中のwrite・munmap・mmap、MN_RLOCKの中のslot_trimのmadvise）は鍵の中に残す（2026-11-17・report-adb-5）。bench/lockseg（64ワーカーを4 CPU）で、
+  MN_OLOCKの競合は4,900〜17,300回で、周ごとの揺れがstdoutの行き先（/dev/null・tmpfsのファイル・パイプ）の差より大きく、wallも行き先に依らない（1.35〜1.66秒）。writeの長さではなく、取る回数と持ち手の横取りで決まる。MN_RLOCKは共有の予備を使う形でも競合が16回以下。
+  writeは出力の正準順を鍵で守っているので動かさない
 - `fsaddr @表` → 今のワーカーのそのrtの表の番地。ワーカーの記録 = 表の番地の列で、表kの番地は `fs:[8k]`（機械語は0x64のセグメント接頭辞つきのload 1つ — `globaladdr` の `mov r, imm32` と同じ1命令）。記録は入口（ワーカーのスレッドの最初）でarch_prctl(ARCH_SET_FS) が置く（ワーカー0 = mainのスレッド — `rt.worker_init` が各表の大域の番地を並べる。P4-4のワーカーは自分の表を確保して同じ形の記録を作る）。
   std/taskを使うプログラムのrtの表（@rt.meta・@rt.trap・@rt.task・@rt.slots・@rt.sched・@rt.iobuf / iobuf2 / statbuf・@rt.rgen / gcache / btip）は `globaladdr` の代わりに `fsaddr` で引く。std/taskを使わないプログラムのIRは不変（taskUseの前例）。値はスレッドの中で変わらない（taskはワーカーに固定）ので、最適化器からは `globaladdr` と同じ純粋な値（CSE・巻き上げ可）。
   棄てた案: `fsaddr off` = %fsの基底 + off（記録に表を連続で置く — 基底の読み込み + 加算の2命令。spawnのラチェットの余裕が3命令しか無く、表ごとに1命令増えると越える — P4-3の実測）
@@ -186,7 +197,7 @@ Soberの唯一の中間表現。`sober build` はAST → IR → 正規バック�
 
 - ir_rt.zig・ir_rt_io.zig: 入口 `sober_entry(sp)`（アリーナのmmap予約・深度0）、regionのenter / alloc / relocate、行バッファの印字、mapの探索・文字列比較、io（cstr / read_file / write_file / write_all / read_args / read_dir / write_fd — 2026-09-28のioの器、language.md 28節）、`--mem-trace`（深度ごとの割り当て総量をexit時にstderrへ）
 - 両バックエンドが普通の関数として下ろす
-- アリーナのスロット（2026-09-28）: 大きさは実行時の値で、メタ領域のSLOT_SIZEに置く（enter / alloc / memtraceはそこから読む）。既定4GiB × 1024深度 = 4TiBのMAP_NORESERVE予約、環境変数 `SOBER_REGION_MB`（MiBの10進、1〜65536。それ以外は無視）で上書き、予約が断られたら半分にして1MiBまで再試行（language.md 27節）
+- アリーナのスロット（2026-09-28）: 大きさは実行時の値で、メタ領域のSLOT_SIZEに置く（enter / alloc / memtraceはそこから読む）。既定4GiB × 1024深度 = 4TiBのMAP_NORESERVE予約、環境変数 `SOBER_REGION_MB`（MiBの10進、1〜65536。それ以外は無視。2の冪に切り上げる）で上書き、予約が断られたら半分にして1MiBまで再試行（language.md 27節）
 - 実行可能メモリの放棄（2026-11-07）: 入口がアリーナのmadviseの直後に `prctl(PR_SET_MDWE, PR_MDWE_REFUSE_EXEC_GAIN | PR_MDWE_NO_INHERIT)` を1回（結果は見ない）。Linux 6.6+ でW+Xのページと実行の昇格を恒久に禁じ、forkの子には引き継がない（os.Runの子のJITを壊さない）。NO_INHERITを知らないカーネル（6.3〜6.5）・MDWEの無いカーネルはEINVALで何も掛からない（継承する形では掛けない）。`SOBER_MDWE=0`（起動時の環境変数）のときだけ掛けない（valgrind等の動的計装のため — 起動前にenvを操れる者は別のバイナリを走らせられるので脅威モデルは削れない）。確認のオプション = `SOBER_MDWE_REPORT`（mainの正常終了でrt.depth_reportが `mdwe <PR_GET_MDWE>` をstderrへ — 旗はW_DREPのビットDREP_MDWE）・検査 = scripts/mdwecheck.sh
 - huge pageを使わない（2026-10-05、RSS回収のタスク）: 入口が予約したアリーナにmadvise(MADV_NOHUGEPAGE) を掛ける（失敗は無視）。透過的huge pageでは深度のスロットに1バイト触るだけで2 MBがRSSに乗り、小さいプログラムでも4〜6 MB・コンパイラ自身の自己buildで540 MBだった（→ 226 MB）。代価 = TLBの利得（自己buildのcycles +1.5〜3%・題材は揺れの範囲）
 - sliceの幾何成長（2026-10-05、データ構造のタスク — src/compiler/lower/rtgrow.sober）: appendが先端でないときはrt.slice_grow / rt.slice_grow8（ヘッダの値を受け取り新しい列の先頭を返す）。初回の全コピーは長さちょうど（先端に戻る）・rtの側の表（rt.gcache — 直接写像64項 × [番地, 深度, 世代, 水位, 容量の終わり]）に載った列がもう一度全コピーになるとき（2本が先端を奪い合う）は余剰容量つき（2 × (長さ + 1)）。表の項の番地・深度・世代が一致しヘッダの終わり == 水位で容量に空きがあればその場で水位を進める — 同じ割り当てを共有するヘッダのうち伸ばせるのは先に伸ばした方だけ（先端の判定と同じ排他）なので値の意味論は不変（容量・水位は観測不能 — Lean無変更）。世代（rt.rgen — 深度ごと）はfullのenterとループの反復の軽いenter（rt.region_enter_lloop）が進める（関数の入口の軽いenterは自分の深度に確保しないので進めない）
@@ -205,6 +216,13 @@ Soberの唯一の中間表現。`sober build` はAST → IR → 正規バック�
   rt.jclean(p, n) はp[0:n] の中で最初にJSONのエスケープが要るバイト（`"`・`\`・0x20未満）の位置かn — 区間の外を読まない（n ≥ 16は16バイトずつ +
   終わりに揃えた重ねた読み込み・8〜15は始めと終わりの8バイト〔movq × 2〕・4〜7は始めと終わりの4バイト〔movd × 2〕・3以下は1バイトずつ）。--rt-mutant=25 / 26 / 27
   （`\` の判定の省略・端数の重ねた読み込みの省略・8〜15の後ろのワードの位置の誤り）— testdata/jclean（scripts/jcleancheck.sh）が鳴ることの確認用
+- 全レジスタを保つ中継（2026-11-17・工程1の案V）: 計上済みの上限の低速パス（rt.wm_alloc・rt.wm_raise）は、確保の点から中継 rt.wm_alloc_s / rt.wm_raise_s（実引数2本・答えはi64）を経て呼ぶ。IRの中継の本体は本体を呼んで答えを返すだけで、LLVMと写しのバックエンドはそのまま下ろす。x86の最適化のバックエンドは手書きの本体（x86.soberのxKeepAllBody）を吐く。
+  - 中継の本体: 割り当てに使うcaller-saved（rsi・rdi・r8〜r11）と戻り番地と入口のrspを、ワーカーの記録の退避の場所（rt.keep）へ置き、呼び手が本体を直に呼んだのと同じrspで本体を呼んで戻す。スタックには何も積まない（接続のtaskの常駐のページを増やさない）。中継の中にtaskの切替と再入は無いので、退避の場所はワーカーごとに1組で足りる。callee-savedと割り当てのxmm（xmm2〜15）は本体が守る
+  - 呼び手: 呼び出しを「rax（結果）・rcx・rdx・フラグだけを壊す命令」として扱う（xIsCallOpの外）。確保の点が跨ぎの集合と冷たい呼び出しの退避を作らず、枠を省いた関数のままでいられる
+  - 確保の形: 低速パスは移した後の確保の先頭を返し、確保の速いパスの続き（bumpを進めるブロック）へ戻る（rt.soberのslotCheck）。確保の後ろの合流は1か所のまま
+  - 罠: 本体からの罠（死102）は罠の記録がrspとcallee-savedを戻すので、退避の場所に残った値は捨てられるだけ
+  - 開発用 --rt-mutant=103: 中継がrsiを積まない（scripts/keepcheck.shが鳴ることの確認用）
+  - 棄てた案: 冷たい呼び出し（xColdCall — 呼び手が跨ぐcaller-savedを枠へ退避）のまま。確保の点ごとに退避の場所と生存区間が増え、自己build +1.28%・自己buildのELF +4.6%だった。中継に確保の終わりを渡す形は、終わりの生存区間が低速パスまで延びてELF +1.6%
 - 手書きのSIMDのコード（scanb・UTF-8の検査器・数え上げ・crcfold — x86.soberのxScanB / xUtf8Pre / xCountB / xCrcFold）のウィンドウの検査（2026-11-12）: 開発用
   `sober build --vec-check`（= --rt-mutant=56）は16バイトずつの読み込みのたびに、ウィンドウが列の内側（[p + 0, p + 上限) かcrcfoldの [p, p + 残り)）にあることを確認し、
   外ならexit 103で止まる（既定のbuildには何も足さない）。57 / 58 = 検査 + scanb / UTF-8の検査器の端数のウィンドウを1後ろ・59 = 検査 + scanbの入口の符号の検査を外す —

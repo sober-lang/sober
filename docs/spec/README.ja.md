@@ -26,14 +26,14 @@ Soberの言語仕様です。何が受理され、何が拒否され、受理さ
 7. [エラーとpanic](07-errors.ja.md) — error型・`?`・`catch`・`@errors`・網羅・panicの範囲
 8. [package](08-packages.ja.md) — import・可視性・フィールドの書き・std/internal
 9. [メモリ](09-memory.ja.md) — region・境界のコピー・appendと部分列・上限・Pool
-10. [並行](10-concurrency.ja.md) — scopeとtask・Join / Try・チャネル・決定性・予算と期限・lease
+10. [並行](10-concurrency.ja.md) — scopeとtask・Join / Try・チャネル・決定性・予算と期限・lease・domain
 11. [io](11-io.ja.md) — 読み書き・開いた資源・ストリーム・ネットワーク・期限と壊れ方
 12. [アノテーション](12-annotations.ja.md) — 知られた注釈・@embed・@layout・analyzerの規則・秘密の値
 13. [テスト](13-testing.ja.md) — `sober test`・assert
 
 ## 用語
 
-- 受理 / 拒否 — コンパイラ（`sober check` / `sober build`）がプログラムを通すか、診断を出して止めるか。拒否はコンパイル時に起きる。checkの型の誤りは `type error at <path>:<行>:<列>` の位置つきの1行で出る。buildの拒否のうちcheckも同じトップレベル宣言の中で拒否するものはcheckと同じ行で出る（[language.md 38節](../language.md)）
+- 受理 / 拒否 — コンパイラ（`sober check` / `sober build`）がプログラムを通すか、診断を出して止めるか。拒否はコンパイル時に起きる。checkの型の誤りは2行で出る。1行目は `type error at <path>:<行>:<列>` の位置。2行目は落ちた規則で、例は `in f: the branches of this switch must have the same type (core rule: case)`。buildの拒否のうちcheckも同じトップレベル宣言の中で拒否するものはcheckと同じ行で出る（[language.md 38節](../language.md)）
 - check / build — `sober check` は型検査・脱糖・analyzer（ラベル集合の導出・網羅・`@errors` の照合など）まで走らせて判定する。`sober build` は実行ファイルを作り、analyzerを走らせない。仕様の「拒否」はcheckの拒否を指す
 - panic — 実行時の死。終了コード101（到達 = バグ）か102（資源の上限）で終わる（[7章](07-errors.ja.md)）
 - ゼロ値 — `T{}` が作る値（[2章](02-types.ja.md)）。ゼロ値を持たない型もある

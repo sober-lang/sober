@@ -77,3 +77,28 @@ func TestIntrinsicGrowNoZeroOnlyInJsonw() {
     assert(intrinsicKind(g, "std/json") == 5)
     assert(intrinsicKind(g, "std/math") == 5)
 }
+
+func TestIntrinsicAppendDateOnlyInHttpServer() {
+    g := "package p\n\n@intrinsic(\"append_date\")\nfunc d(b []byte) mut []byte\n"
+    assert(intrinsicKind(g, "std/http/server") == 0)
+    assert(intrinsicKind(g, "std/http") == 5)
+    assert(intrinsicKind(g, "std/time") == 5)
+}
+
+func TestEmbedFit() {
+    // 小さいファイルは収まる
+    k0, _ := embedFit(1000, 100, []int{10, 10}, []int{100, 200})
+    assert(k0 == -1)
+    // 2つ目で上限を越える: 添字1と、その前までに残っていた語の数
+    k1, r1 := embedFit(1000, 100, []int{10, 10}, []int{100, TREE_WORDS})
+    assert(k1 == 1)
+    assert(r1 == TREE_WORDS - (1000 + 1 + 2 + 2 + 10 + 100))
+    // 1つ目でちょうど越える（上限は >= で拒否）
+    k2, _ := embedFit(0, 0, []int{0}, []int{TREE_WORDS - 4})
+    assert(k2 == 0)
+    k3, _ := embedFit(0, 0, []int{0}, []int{TREE_WORDS - 5})
+    assert(k3 == -1)
+    // 節の列で越える（ファイルの数が多い）
+    k4, _ := embedFit(0, TREE_WORDS - 10, []int{1, 1, 1, 1}, []int{1, 1, 1, 1})
+    assert(k4 == 2)
+}

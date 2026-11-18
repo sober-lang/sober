@@ -20,7 +20,7 @@ mkdir -p "$R"
 copy() { # copy <格納場所> — コピーの木（ゲートの実行に要るビルドの出力out/stage2・道具・zig-out・Leanのsober-checkは含める）
     mkdir -p "$1"
     rsync -a --delete --exclude /.git --exclude /.pair --exclude /out/bench --exclude /out/inst --exclude /out/rust --exclude /out/skym \
-        --exclude /scripts/.gatecache/logs --exclude /scripts/.gatecache/memo "$ROOT/" "$1/"
+        --exclude /scripts/.gatecache/logs --exclude /scripts/.gatecache/memo --exclude /scripts/.gatecache/failed "$ROOT/" "$1/"
 }
 one() {
     local g=$1 c=$S/t-$1 st

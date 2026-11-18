@@ -1,0 +1,7 @@
+@@full	52992ed633117e45	470	11859
+@head	f8802cba5eefdec2	0	31
+func main	7b599729844ccb57	30	1108
+func orElseL	5944ece982a93c99	13	627
+func orElseS	17ace90417d60405	11	561
+type OptL	6cf70a87a2769bea	3	205
+type OptS	16ecc05d4878417a	2	172

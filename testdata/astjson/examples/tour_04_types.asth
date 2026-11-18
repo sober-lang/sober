@@ -1,0 +1,9 @@
+@@full	0e872d002afb8df1	740	18127
+@head	f8802cba5eefdec2	0	31
+const ByX	f936d0baf98dd176	8	373
+func area	ce8a39062a0ad44f	17	800
+func main	5fe7912f588549d6	44	1650
+func min	8dbd91be13dab164	17	665
+type Ord	23aea2c604ee83a7	5	201
+type Point	5e8db4896d7ecbec	3	158
+type Shape	a1db1ad3ba19ca20	4	261

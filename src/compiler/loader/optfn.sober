@@ -537,6 +537,7 @@ func ozDesc(x ast.Node) int {
     k := x.kind
     return switch k {
     case ast.EIdent | ast.EStrlit | ast.EMutArg | ast.TName: 2
+    case ast.EEmbed: 2 + 2 * 64
     case ast.EFloat: 2 * 8
     case ast.EBinary: 8 + 64
     case ast.EUnary: 8

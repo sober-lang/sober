@@ -255,6 +255,18 @@ f の off バイト目から EOF まで切片ずつ k へ渡す（Chunks と同�
 
 失敗のラベル: [`NotFound`](#notfound)・[`Denied`](#denied)・[`Other`](#other)・[`Timeout`](#timeout)・[`Expired`](#expired)
 
+## ReadAt
+
+```sober
+@errors(NotFound, Denied, Other, Timeout, Expired)
+@effects(io, nondet)
+func ReadAt(f File, off int, n int) ([]byte, error?)
+```
+
+f の off バイト目から n バイトを読む（pread — f の位置を動かさない）。EOF までに n バイト無ければ、読めた分の短い列を返す（エラーにしない。ReadAll と同じ向き — 長さは呼び手が見る）。off が EOF 以上なら空の列・n = 0 は空の列・off \< 0 か n \< 0 は Other{errno: 22}。ChunksAt は off から EOF まで切片ずつ流す形で、ReadAt は範囲を指定して1つの列で受け取る形
+
+失敗のラベル: [`NotFound`](#notfound)・[`Denied`](#denied)・[`Other`](#other)・[`Timeout`](#timeout)・[`Expired`](#expired)
+
 ## Lines
 
 ```sober

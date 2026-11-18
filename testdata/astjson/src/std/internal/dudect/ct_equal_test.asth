@@ -1,0 +1,7 @@
+@@full	73ca2e0819693829	1119	29823
+@head	0ff4e80a055689fa	0	169
+func TestCtEqual	3debcb0244735e7e	29	1076
+func TestNegEqEarly	40fd020fa542d6a0	28	1044
+func eqEarly	49490440bd8157dc	39	1316
+func input	1b74187b6ce99a6b	48	1665
+func ref	6364716c9b462852	31	1070

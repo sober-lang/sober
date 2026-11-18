@@ -1,0 +1,10 @@
+@@full	205ad7919df00447	1178	29423
+@head	d1e437883c5528b3	0	64
+const NONE	87f8a839f6d8b850	2	77
+func isNone	489d1addb8a070fb	6	299
+func main	234293ff01169399	155	4830
+func next	68e8480b175cf294	10	413
+func pick	145f1482e1a3d275	14	581
+type Flag	a4d2501945fb0e3c	2	89
+type Node	af17e05cf0e2d632	3	165
+type NodeRef	eba815968c19cd3f	2	91

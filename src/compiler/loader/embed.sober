@@ -3,9 +3,11 @@ package loader
 // `@embed("glob")`（language.md 20 節 — go:embedの意味論。src/stage1/embed.zigとsrc/stage1/loader.zigのembedConstのコピー）。
 // パターンはルート（= cwd）相対の `/` 区切り。`**` はセグメントまるごとで 0 個以上のディレクトリ、`*` は `/` を含まない任意の列、
 // `?` は 1 バイト。最後のセグメントは通常ファイルにだけ、途中はディレクトリにだけ当たる（symlink は当たらない）。
-// 受け皿 `map[string]string{}` を「パス → 内容」の map リテラル（パスのバイト辞書順）に置き換えた木を作り直す
+// 受け皿 `map[string]string{}` を「パス → 内容」の map リテラル（パスのバイト辞書順）に置き換えた木を作り直す。受け皿 `map[string][]byte{}` の
+// 値は中身を木に入れない EEmbed（パス・長さ・指紋 — 中身は lower の書き手がファイルから rodata へ書く）
 
 import "std/builder"
+import "std/hash"
 import "std/io"
 import "std/iter"
 import "std/strings"
@@ -180,9 +182,76 @@ func isStringName(t ast.Tree, ty int) bool {
     return n.kind == ast.TName && StrIs(t, n.a, "string")
 }
 
-// parse した生の木 t の @embed が読む入力の列（const ごとに パターン・一致したパスと中身 — 長さの前置きで連結）。
-// キャッシュの鍵の材料（load の時点で読むファイルとパターンの一致の集合は package のソースの外の入力）。
-// 不正なパターン・読めないファイルはフラグだけ積む（loadがどうせ拒否する — 鍵は違うだけでよい）
+// 型の節 ty が imm の `[]byte` か
+func isBytesSlice(t ast.Tree, ty int) bool {
+    n := t.nodes[ty]
+    return n.kind == ast.TSlice && n.b == 0 && t.nodes[n.a].kind == ast.TName && StrIs(t, t.nodes[n.a].a, "byte")
+}
+
+
+// load の後にファイルが変わった（書き手の読み直しの長さか指紋が load の時点と違う）— 出力を作らずに止める
+type EmbedChanged panic {
+    path string
+}
+
+// EEmbed の中身をファイルから読み直す。load の時点の長さと指紋（SHA-256）に合わなければ EmbedChanged で止める（ビルドの途中で
+// ファイルが変わると、鍵〔load の時点の中身〕と出力の中身が食い違う）。引数はパス・長さ・指紋だけで、呼び手の状態（lower の St・ヒープ）を受けない
+func EmbedReload(path string, size int, sum []byte) []byte {
+    b, ok := readPath(path)
+    if !ok || len(b) != size || !bytesSame(hash.Sha256(b), sum) {
+        panic(EmbedChanged{path: path})
+    }
+    return b
+}
+
+func bytesSame(a []byte, b []byte) bool {
+    if len(a) != len(b) {
+        return false
+    }
+    for i <- iter.Range(0, len(a)) {
+        if a[i] != b[i] {
+            return false
+        }
+    }
+    return true
+}
+
+// load した木 t（@embed の const を畳んだ後）の @embed の入力の要約（const ごとに パターン・パスと中身の SHA-256 — 長さの前置きで連結）。
+// キャッシュの鍵の材料。load の1回の読みから作る（ファイルを読み直さない — 鍵と、木に入った中身・指紋が同じ読みになる）。
+// map[string]string の受け皿は木の文字列の中身の SHA-256、map[string][]byte の受け皿は EEmbed の指紋。@embed が無ければ空
+func EmbedDigest(t ast.Tree) []byte {
+    mut out := mut []byte{}
+    if t.file < 0 {
+        return freeze(out)
+    }
+    cl := t.nodes[t.file].e
+    for k <- iter.Range(0, ast.ListLen(t, cl)) {
+        x := t.nodes[ast.ListAt(t, cl, k)]
+        if (x.f & 1) != 0 {
+            lenBytes(mut out, bytes(Name(t, x.e)))
+            m := t.nodes[x.b]
+            for i <- iter.Range(0, ast.ListLen(t, m.c)) {
+                en := t.nodes[ast.ListAt(t, m.c, i)]
+                lenBytes(mut out, strBytes(t, t.nodes[en.a].a))
+                v := t.nodes[en.b]
+                lenBytes(mut out, if v.kind == ast.EEmbed { strBytes(t, v.c) } else { hash.Sha256(strBytes(t, v.a)) })
+            }
+        }
+    }
+    return freeze(out)
+}
+
+// 木の文字列 s（[n, バイト…]）のバイト列
+func strBytes(t ast.Tree, s int) []byte {
+    mut o := mut []byte{}
+    for i <- iter.Range(0, t.data[s]) {
+        o = append(o, byte(t.data[s + 1 + i]))
+    }
+    return freeze(o)
+}
+
+// parse した生の木 t の @embed が読む入力の要約（EmbedDigest と同じ形 — 中身が同じなら同じバイト列）。load の前に答えの再生の鍵を
+// 引く側が使う（覚える側は load の木の EmbedDigest — 読み直さない）。不正なパターン・読めないファイルはフラグだけ積む（loadがどうせ拒否する）
 func EmbedInputs(t ast.Tree) []byte {
     mut out := mut []byte{}
     if t.file < 0 {
@@ -201,7 +270,7 @@ func EmbedInputs(t ast.Tree) []byte {
                 for i <- iter.Range(0, len(ps)) {
                     lenBytes(mut out, bytes(ps[i]))
                     b, ok := readPath(ps[i])
-                    lenBytes(mut out, if ok { b } else { bytes("!read") })
+                    lenBytes(mut out, if ok { hash.Sha256(b) } else { bytes("!read") })
                 }
             }
         }
@@ -244,7 +313,12 @@ func embedConst(t ast.Tree, c int, f int) (ast.Tree, error?) {
     x := t.nodes[c]
     at := diag.Pos{file: f, tok: x.tok}
     recv := t.nodes[x.b]
-    if recv.kind != ast.EMaplit || recv.d != 0 || ast.ListLen(t, recv.c) != 0 || !isStringName(t, recv.a) || !isStringName(t, recv.b) {
+    if recv.kind != ast.EMaplit || recv.d != 0 || ast.ListLen(t, recv.c) != 0 || !isStringName(t, recv.a) {
+        return t, diag.EmbedReceiver{at: at}
+    }
+    // 値の型: string（中身は UTF-8・木の語の列に入れる）か imm の []byte（中身は木の外 — EEmbed）
+    raw := isBytesSlice(t, recv.b)
+    if !raw && !isStringName(t, recv.b) {
         return t, diag.EmbedReceiver{at: at}
     }
     // パターンの UTF-8 の検査はここ（UTF-8 でないパターンは不正なパターン）
@@ -256,19 +330,44 @@ func embedConst(t ast.Tree, c int, f int) (ast.Tree, error?) {
     if len(ps) == 0 {
         return t, diag.EmbedNoMatch{at: at}
     }
-    // 中身を先に全部読む（検査が通ってから木を組む）
+    // 中身を先に全部読む（検査が通ってから木を組む）。[]byte の受け皿は長さと指紋だけを残す（木の語の列に積むのは長さ 0 の扱い）
     mut bodies := mut [][]byte{}
+    mut sizes := mut []int{}
+    mut sums := mut [][]byte{}
+    // SOBER_EMBED_SKEW=1: load の読みの後にファイルが変わった形の試し（scripts/hermetic.sh）。[]byte の受け皿は指紋の1ビット・
+    // string の受け皿は中身の末尾に改行を足す（木の中身と、ファイルの今の中身が違う状態を作る）
+    skew := Flag("SOBER_EMBED_SKEW")
     for i <- iter.Range(0, len(ps)) {
         b, ok := readPath(ps[i])
         if !ok {
             return t, diag.EmbedRead{at: at}
         }
-        if !strings.Valid(b) {
-            return t, diag.EmbedFileUtf8{at: at}
+        if raw {
+            sizes = append(sizes, len(b))
+            sums = append(sums, if skew { flip1(hash.Sha256(b)) } else { hash.Sha256(b) })
+            bodies = append(bodies, []byte{})
+        } else {
+            if !strings.Valid(b) {
+                return t, diag.EmbedFileUtf8{at: at}
+            }
+            sizes = append(sizes, len(b))
+            bodies = append(bodies, if skew { plusNl(b) } else { b })
+            sums = append(sums, []byte{})
         }
-        bodies = append(bodies, b)
     }
     bs := freeze(bodies)
+    sz := freeze(sizes)
+    hs := freeze(sums)
+    mut pl := mut []int{}
+    mut bl := mut []int{}
+    for i <- iter.Range(0, len(ps)) {
+        pl = append(pl, len(bytes(ps[i])))
+        bl = append(bl, if raw { len(hs[i]) } else { len(bs[i]) })
+    }
+    k, room := embedFit(len(t.data), len(t.nodes), freeze(pl), freeze(bl))
+    if k >= 0 {
+        return t, diag.EmbedTooLarge{at: at, path: ps[k], size: sz[k], room: room}
+    }
     n0 := len(t.nodes)
     n := len(ps)
     mut nb := builder.Builder[ast.Node]{}
@@ -284,7 +383,11 @@ func embedConst(t ast.Tree, c int, f int) (ast.Tree, error?) {
     for i <- iter.Range(0, n) {
         pb := bytes(ps[i])
         strs = append(strs, ast.PutBytes(mut db, pb, 0, len(pb)))
-        strs = append(strs, ast.PutBytes(mut db, bs[i], 0, len(bs[i])))
+        if raw {
+            strs = append(strs, ast.PutBytes(mut db, hs[i], 0, len(hs[i])))
+        } else {
+            strs = append(strs, ast.PutBytes(mut db, bs[i], 0, len(bs[i])))
+        }
         ents = append(ents, n0 + 3 * i + 2)
     }
     el := ast.PutList(mut db, freeze(ents))
@@ -299,11 +402,52 @@ func embedConst(t ast.Tree, c int, f int) (ast.Tree, error?) {
     }
     for i <- iter.Range(0, n) {
         builder.Push(mut nb, ast.Node{ast.EStrlit, recv.tok, strs[2 * i], 0, 0, 0, 0, 0})
-        builder.Push(mut nb, ast.Node{ast.EStrlit, recv.tok, strs[2 * i + 1], 0, 0, 0, 0, 0})
+        if raw {
+            // パスの文字列はキーと同じ語を指す
+            builder.Push(mut nb, ast.Node{ast.EEmbed, recv.tok, strs[2 * i], sz[i], strs[2 * i + 1], 0, 0, 0})
+        } else {
+            builder.Push(mut nb, ast.Node{ast.EStrlit, recv.tok, strs[2 * i + 1], 0, 0, 0, 0, 0})
+        }
         builder.Push(mut nb, ast.Node{ast.KEntry, recv.tok, n0 + 3 * i, n0 + 3 * i + 1, 0, 0, 0, 0})
     }
     builder.Push(mut nb, ast.Node{ast.EMaplit, recv.tok, recv.a, recv.b, el, 0, 0, 0})
     return ast.Tree{builder.Build(mut nb), builder.Build(mut db), t.file}, nil
+}
+
+// 木の大きさの上限（TREE_WORDS — 節の列と語の列のそれぞれ）に、@embed で足す節と語が収まるか。語の列は、文字列1つあたり長さの1語 + 1バイト1語
+// （キーのパスと中身）+ 項目の列。収まらなければ、越えるファイルの添字と、その前までに残っていた語の数。収まれば (-1, 0)
+func embedFit(data int, nodes int, pathLens []int, sizes []int) (int, int) {
+    mut used := data + 1 + len(sizes)
+    for i <- iter.Range(0, len(sizes)) {
+        need := 2 + pathLens[i] + sizes[i]
+        if used + need >= TREE_WORDS || nodes + 3 * (i + 1) + 1 >= TREE_WORDS {
+            return i, if TREE_WORDS > used { TREE_WORDS - used } else { 0 }
+        }
+        used += need
+    }
+    return -1, 0
+}
+
+// 1ファイルの木の大きさの上限（節の列・語の列のそれぞれの語の数 — desugar の参照の幅 FW と同じ値）
+const TREE_WORDS = 16777216
+
+// b の先頭の1ビットを反転した写し（SOBER_EMBED_SKEW の試し）
+func flip1(b []byte) []byte {
+    mut o := mut []byte{}
+    for i <- iter.Range(0, len(b)) {
+        o = append(o, if i == 0 { byte(int(b[i]) ^ 1) } else { b[i] })
+    }
+    return freeze(o)
+}
+
+// b の末尾に改行を足した写し（SOBER_EMBED_SKEW の試し）
+func plusNl(b []byte) []byte {
+    mut o := mut []byte{}
+    for i <- iter.Range(0, len(b)) {
+        o = append(o, b[i])
+    }
+    o = append(o, '\n')
+    return freeze(o)
 }
 
 // 全ファイルの @embed を畳む

@@ -1,0 +1,8 @@
+@@full	b92a829f910ad4fb	593	13092
+@head	282dab22db2c36a7	0	31
+func Count	67b414a137a30075	15	598
+func Each	f3fd36b1758e304a	8	394
+func Range	77da50b9e5641131	17	720
+func Slice	4cfeae5c33b37683	21	799
+func Sum	fca652a77027d0b1	15	598
+type Iter	c03722b0ebca7549	3	140

@@ -2,7 +2,7 @@ package desugar
 
 // 脱糖の結果をプロセス内で渡すインターフェース（Sober版 `sober check` の直結 — compiler/tools/sobercheck。JSONを経ない）。
 // 意味はJsonと同じ: runの結果（関数表・持ち上げたラムダのチェーン・根の式）を、ヒープの読み出し専用の眺めとして受け手kに渡す。
-// 記録の形（Def の [param, ret, body, tparams, next]）は json.sober の印字が読む形そのまま。ラベルは Labels（CLabel の a = 添字）、型は Types（参照 − TBASE = 添字）、コア式は Exprs（参照 − CBASE = 添字）
+// 記録の形（Def の [param, ret, body, kinds, next]）は json.sober の印字が読む形そのまま。ラベルは Labels（CLabel の a = 添字）、型は Types（参照 − TBASE = 添字）、コア式は Exprs（参照 − CBASE = 添字）
 
 import "loader"
 import "std/iter"
@@ -22,6 +22,8 @@ type Core struct {
     Use []int    // 持ち上げの使いの辺 [ctx, 持ち上げ k]…（check の関数単位キャッシュの区間の子 — defcache.sober の luOut。でなければ空）
     DefFn []int  // 名前付きの Def の添字 → 関数表の添字（同じく — でなければ空）
     Aud []int    // 扉の監査の対 [関数, 読んだ項目]…（検証 =2 の区間の子 — でなければ空）
+    Kinds []int  // 親が推論した名前付きの Def の kind（Def の順に [n, k…] — 検査器は推論せずこれを使う。空 = 全部推論する）
+    Caps []int   // 値の位置のクロージャの捕捉の記録（追跡のとき — capDiagRec の形の並び。でなければ空）
 }
 
 // p を脱糖して k に結果を渡す（失敗なら k を呼ばず拒否を返す — diag のラベル）。
@@ -49,6 +51,12 @@ func WithCorePkg[T](p loader.Program, excl []int, only int, z T, k func(Core, []
 func WithCoreOpt[T](p loader.Program, excl []int, only int, trust bool, stopAt int, rng DefRng, zr func(int) T, k func(Core, []int) T) (T, error?) {
     mut st := S{}
     initState(mut st, p)
+    if len(rng.fz) > 0 {
+        // 店のヒープの尾は Init の終わりの長さに積む（lower の Init と同じ — TyAdopt が照合する）
+        st.ty.h0 = hlen(mut st)
+        TyAdopt(mut st, rng.fz[0])
+        st.adopted = true
+    }
     st.stopAt = stopAt
     st.rangeSet = rng.set
     st.rlo = rng.lo
@@ -64,13 +72,14 @@ func WithCoreOpt[T](p loader.Program, excl []int, only int, trust bool, stopAt i
         capReachFrom(mut st, rng.plan.rok, rng.plan.reach)
     }
     st.planBad = rng.plan.bad
-    st.e2s = true
+    st.genOnly = rng.gen
+    st.e2s = !rng.flat
     st.e2sExcl = excl
     st.only = only
     st.onlySet = only >= 0
     st.trustStd = trust
     // env の形の前走り（工程 4 B1）は区間なし — 区間の子どうしで U が揃う（子ごとに同じ前走りを走らせ直す — 決定的）
-    loadShapes(mut st, shapesFor(p, true, excl, only, trust))
+    loadShapes(mut st, shapesFor(p, !rng.flat, excl, only, trust))
     defs, root, err := run(mut st)
     if err != nil {
         return zr(st.rejDef), err
@@ -115,7 +124,7 @@ func WithCoreOpt[T](p loader.Program, excl []int, only int, trust bool, stopAt i
         orig = append(orig, table.Get(mut st.corig, i))
         i += 1
     }
-    return k(Core{h, freeze(ls), freeze(ts), freeze(es), int(defs), lifted, int(root), freeze(orig), if st.luOn { luOut(mut st) } else { []int{} }, if st.luOn { defFns(mut st) } else { []int{} }, if rng.aud { dkPairs(mut st) } else { []int{} }}, E2Map(mut st)), nil
+    return k(Core{h, freeze(ls), freeze(ts), freeze(es), int(defs), lifted, int(root), freeze(orig), if st.luOn { luOut(mut st) } else { []int{} }, if st.luOn || rng.gen { defFns(mut st) } else { []int{} }, if rng.aud { dkPairs(mut st) } else { []int{} }, kindsByDef(mut st, rng.kinds), if st.track { tyInts(mut st.capDiag) } else { []int{} }}, E2Map(mut st)), nil
 }
 
 // ── Def の区間 ──
@@ -136,6 +145,20 @@ type DefRng struct {
     lazy bool    // aud = 扉の監査の対を Core.Aud へ（検証 =2）
     lu bool
     aud bool
+    // kind の推論: gen = 型パラメータを持つ Def の本体だけを脱糖する（親が子へ渡す kind を推論する前段 — 根なし）・
+    // kinds = 親が推論した名前付きの Def の kind（関数表の添字で [関数, n, k…] の並び — 子の Def の添字は子ごとに変わりうる）
+    gen bool
+    kinds []int
+    // fz（空でなければ 1 つ）= 呼び手（build の lower）が同じ Program で型付けた店。表層型検査器を走らせず、Init の直後に載せる。
+    // 店は大きな値なので列で持つ（区間を作り直す点ごとに値を写さない）
+    fz []TyFrozen
+    // flat = E2-S で上げない形（開発用 `check --core-json-expanded` の kind の推論 — 同じ形の Def の順で kind を出す）
+    flat bool
+}
+
+// 拒否の診断のやり直し: 区間を使わず、出所を追跡し、名前付きの Def の関数表の添字（Core.DefFn）を出す
+func DiagRng() DefRng {
+    return DefRng{set: false, lo: 0, hi: 0, root: true, plan: emptyPlan(), track: true, skip: []bool{}, lazy: false, lu: true, aud: false}
 }
 
 // 区間を使わない（全部の Def と根）
@@ -143,9 +166,65 @@ func WholeRng() DefRng {
     return DefRng{set: false, lo: 0, hi: 0, root: true, plan: emptyPlan(), skip: []bool{}, lazy: false, lu: false, aud: false}
 }
 
+// 区間を使わず、E2-S で上げない形
+func FlatRng() DefRng {
+    return DefRng{set: false, lo: 0, hi: 0, root: true, plan: emptyPlan(), skip: []bool{}, lazy: false, lu: false, aud: false, flat: true}
+}
+
 // r に出所の追跡を立てた区間
 func Tracked(r DefRng) DefRng {
-    return DefRng{set: r.set, lo: r.lo, hi: r.hi, root: r.root, plan: r.plan, track: true, skip: r.skip, lazy: r.lazy, lu: r.lu, aud: r.aud}
+    return DefRng{set: r.set, lo: r.lo, hi: r.hi, root: r.root, plan: r.plan, track: true, skip: r.skip, lazy: r.lazy, lu: r.lu, aud: r.aud, gen: r.gen, kinds: r.kinds}
+}
+
+// r に親が推論した kind（関数表の添字の並び）を持たせた区間
+func WithKinds(r DefRng, ks []int) DefRng {
+    return DefRng{set: r.set, lo: r.lo, hi: r.hi, root: r.root, plan: r.plan, track: r.track, skip: r.skip, lazy: r.lazy, lu: r.lu, aud: r.aud, gen: r.gen, kinds: ks}
+}
+
+// 型パラメータを持つ Def の本体だけを脱糖する（区間なし・根なし）。d = 親の計画（参照の辺があれば、表層型検査を総称関数から届く関数に絞る）
+func GenRng(d DefPlan) DefRng {
+    return DefRng{set: false, lo: 0, hi: 0, root: false, plan: d, skip: []bool{}, lazy: false, lu: false, aud: false, gen: true, kinds: []int{}}
+}
+
+// r に、呼び手が同じ Program で型付けた店を載せる区間（表層型検査器を飛ばす）
+func WithAdopt(r DefRng, fz TyFrozen) DefRng {
+    return DefRng{set: r.set, lo: r.lo, hi: r.hi, root: r.root, plan: r.plan, track: r.track, skip: r.skip, lazy: r.lazy, lu: r.lu, aud: r.aud, gen: r.gen, kinds: r.kinds, fz: []TyFrozen{fz}}
+}
+
+// 区間 r の計画
+func RngPlanOf(r DefRng) DefPlan {
+    return r.plan
+}
+
+// 親が推論した kind（関数表の添字の並び ks）を、名前付きの Def の添字の順の [n, k…] の並びにする（kind の無い Def は [0]）
+func kindsByDef(st mut S, ks []int) []int {
+    if len(ks) == 0 {
+        return []int{}
+    }
+    mut at := mut []int{}
+    for j <- iter.Range(0, st.ndef) {
+        at = append(at, -1)
+    }
+    mut q := 0
+    while q < len(ks) {
+        dx := fnDef(mut st, ks[q])
+        if dx >= 0 && dx < st.ndef {
+            at[dx] = q + 1
+        }
+        q += 2 + ks[q + 1]
+    }
+    mut out := mut []int{}
+    for j <- iter.Range(0, st.ndef) {
+        if at[j] < 0 {
+            out = append(out, 0)
+        } else {
+            n := ks[at[j]]
+            for i <- iter.Range(0, n + 1) {
+                out = append(out, ks[at[j] + i])
+            }
+        }
+    }
+    return freeze(out)
 }
 
 // 区間の切り方の材料（PlanDefs — 親が前段を 1 回走らせて出す）: cost = 関数表の添字ごとの費用の代理（本体を脱糖する Def だけ — 他は 0）・
@@ -158,6 +237,10 @@ type DefPlan struct {
     ck DefCk     // check の関数単位キャッシュの鍵の計画（PlanDefs の self が空でなく前走りの要らないプログラムのとき）
     rok int      // 届くクロージャのフラグ（capLive）: 0 = 渡さない（子が遅延で作る）・1 = mainが無い（全部届く扱い）・2 = reach（関数の添字ごとの0 / 1）
     reach []int
+}
+
+func EmptyPlan() DefPlan {
+    return emptyPlan()
 }
 
 func emptyPlan() DefPlan {

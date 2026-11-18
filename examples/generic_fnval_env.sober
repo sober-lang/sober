@@ -1,0 +1,27 @@
+package main
+
+// 関数値の成分を持つ型を型引数にする: id の本体は T の値を返すだけなので、Box（named fn type F のフィールドを持つ）を渡せる。
+// other の中で F のクロージャが slice を捕捉していても、id は region を持たない型を要求しないので受理する
+
+type F func(x int) int
+
+type Box struct {
+    f F
+}
+
+func id[T](x T) T {
+    return x
+}
+
+func other() int {
+    xs := []int{1, 2, 3}
+    b := Box{f: (x int) => x + len(xs)}
+    return b.f(1)
+}
+
+func main() {
+    b := Box{f: (x int) => x + 7}
+    g := id(b)
+    println(g.f(1))
+    println(other())
+}

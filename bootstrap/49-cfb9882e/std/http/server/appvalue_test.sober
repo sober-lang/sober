@@ -1,0 +1,103 @@
+package server
+
+// アプリがResponseに入れた値の検査一式（white-box — 非公開のbadField / valueOk / fieldOk）: statusの範囲と1xx・204 / 205 / 304の本文・
+// Codedのencoding・任意ヘッダの値の文法と1行だけの欄の重複とDate（RFC 9110 2.2・5.3・5.5・15.2・15.3.5・15.3.6・15.4.5、RFC 9112 2.2・5.2）
+
+import "std/http"
+import "std/strings"
+
+func avPlain(code int) Response {
+    return Response{status: http.StatusCode(code), contentType: "text/plain", body: []byte{}}
+}
+
+func avWithBody(code int) Response {
+    return Response{status: http.StatusCode(code), contentType: "text/plain", body: bytes("x")}
+}
+
+func avWithStream(code int) Response {
+    return Response{status: http.StatusCode(code), contentType: "text/plain", stream: (out, emit) => emit(mut out, bytes("x"))}
+}
+
+func avHdrs(fs []http.Field) Response {
+    return Response{status: http.OK, contentType: "", body: []byte{}, headers: Headers{list: fs}}
+}
+
+func avFd(name string, value string) http.Field {
+    return http.Field{name: name, value: value}
+}
+
+func TestBadStatus() {
+    assert(badField(avPlain(200), 0) == "")
+    assert(badField(avPlain(418), 0) == "")
+    assert(badField(avPlain(999), 0) == "")
+    // 1xxは最終のレスポンスにならない（HTTP/1.0のリクエストにも送らない）・3桁の外
+    assert(badField(avPlain(100), 0) == "status")
+    assert(badField(avPlain(101), 0) == "status")
+    assert(badField(avPlain(199), 0) == "status")
+    assert(badField(avPlain(99), 0) == "status")
+    assert(badField(avPlain(0), 0) == "status")
+    assert(badField(avPlain(1000), 0) == "status")
+    assert(badField(avPlain(-200), 0) == "status")
+}
+
+func TestBadBodyless() {
+    // 204・205・304は本文を持たない（空の本文はよい）
+    assert(badField(avPlain(204), 0) == "")
+    assert(badField(avPlain(205), 0) == "")
+    assert(badField(avPlain(304), 0) == "")
+    assert(badField(avWithBody(204), 0) == "status")
+    assert(badField(avWithBody(205), 0) == "status")
+    assert(badField(avWithBody(304), 0) == "status")
+    assert(badField(avWithStream(204), 0) == "status")
+    assert(badField(avWithStream(205), 0) == "status")
+    assert(badField(avWithStream(304), 0) == "status")
+    assert(badField(avWithBody(200), 0) == "")
+    assert(badField(avWithStream(200), 0) == "")
+    // 205は空の本文でContent-Length: 0を書く
+    h := string(respHead(avPlain(205), true, false, 0, headNoDate())) catch ""
+    assert(strings.Contains(h, "\r\nContent-Length: 0\r\n"))
+}
+
+func TestBadEncoding() {
+    r := Response{status: http.OK, contentType: "text/plain", body: []byte{}, coded: Coded{encoding: "gzip"}}
+    assert(badField(r, 3) == "")
+    assert(badField(Response{status: http.OK, contentType: "text/plain", body: []byte{}, coded: Coded{encoding: ""}}, 3) == "")
+    assert(badField(Response{status: http.OK, contentType: "text/plain", body: []byte{}, coded: Coded{encoding: "gzip\r\nX: 1"}}, 3) == "Content-Encoding")
+    assert(badField(Response{status: http.OK, contentType: "text/plain", body: []byte{}, coded: Coded{encoding: "g zip"}}, 3) == "Content-Encoding")
+}
+
+func TestBadHeaders() {
+    assert(badField(avHdrs([]http.Field{avFd("X-A", "b"), avFd("X-B", "c d\te")}), 0) == "")
+    assert(badField(avHdrs([]http.Field{avFd("X-A", "")}), 0) == "")
+    assert(badField(avHdrs([]http.Field{avFd("X-A", "é")}), 0) == "")
+    // 値の文法: 制御文字・DEL・前後の空白
+    assert(badField(avHdrs([]http.Field{avFd("X-A", avByteIn("a", 1, "b"))}), 0) == "X-A")
+    assert(badField(avHdrs([]http.Field{avFd("X-A", avByteIn("a", 127, "b"))}), 0) == "X-A")
+    assert(badField(avHdrs([]http.Field{avFd("X-A", " b")}), 0) == "X-A")
+    assert(badField(avHdrs([]http.Field{avFd("X-A", "b\t")}), 0) == "X-A")
+    assert(badField(avHdrs([]http.Field{avFd("X-A", "a\rb")}), 0) == "X-A")
+    // Dateはstd/http/serverが書く
+    assert(badField(avHdrs([]http.Field{avFd("Date", "Sun, 06 Nov 1994 08:49:37 GMT")}), 0) == "Date")
+    // 1行だけの欄の2本目（大小を無視）
+    assert(badField(avHdrs([]http.Field{avFd("Location", "/a"), avFd("X-B", "1"), avFd("LOCATION", "/b")}), 0) == "LOCATION")
+    assert(badField(avHdrs([]http.Field{avFd("Retry-After", "1"), avFd("retry-after", "2")}), 0) == "retry-after")
+    assert(badField(avHdrs([]http.Field{avFd("Location", "/a"), avFd("Content-Location", "/b")}), 0) == "")
+    // リストの欄とアプリが定めた欄は2本書ける
+    assert(badField(avHdrs([]http.Field{avFd("Link", "<a>"), avFd("X-B", "1"), avFd("LINK", "<b>")}), 0) == "")
+    assert(badField(avHdrs([]http.Field{avFd("X-A", "1"), avFd("x-a", "2"), avFd("X-A", "3")}), 0) == "")
+    // 2本目が書けても、1本ごとの文法は検査する
+    assert(badField(avHdrs([]http.Field{avFd("X-A", "1"), avFd("X-A", " 2")}), 0) == "X-A")
+}
+
+// aとbの間にバイトcを挟んだ文字列
+func avByteIn(a string, c int, b string) string {
+    mut x := mut []byte{}
+    for y <- bytes(a) {
+        x = append(x, y)
+    }
+    x = append(x, byte(c))
+    for y <- bytes(b) {
+        x = append(x, y)
+    }
+    return string(freeze(x)) catch ""
+}

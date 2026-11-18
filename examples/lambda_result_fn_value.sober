@@ -1,0 +1,41 @@
+package main
+
+// 展開される関数の関数型の仮引数で、結果が値化可能なnamed fn typeなら、渡すラムダの本体は値の位置: 宣言した関数の名前とラムダを、
+// Hの値（クロージャ）として返せる。宣言した関数の結果の位置の `return incr` と同じ読み
+
+type H func(x int) int
+
+type Box struct { v H }
+
+func incr(x int) int {
+    return x + 1
+}
+
+func adder(s string) H {
+    return (x int) => x + len(bytes(s))
+}
+
+func apply(p func(n int) H) int {
+    return p(3)(1)
+}
+
+func pick(p func(n int) H) H {
+    return p(5)
+}
+
+func boxed(p func(n int) H) Box {
+    return Box{v: p(2)}
+}
+
+func both(p func(n int) H, q func(n int) H) int {
+    return p(3)(1) + q(5)(2)
+}
+
+func main() {
+    k := 4
+    s := "abc"
+    println(apply((n int) => incr), apply((n int) => adder("ab")), apply((n int) => (x int) => x * n + k))
+    println(pick((n int) => incr)(10), pick((n int) => (x int) => x * n)(10))
+    println(boxed((n int) => incr).v(10), boxed((n int) => (x int) => x + n + k).v(10))
+    println(both((n int) => adder(s), (n int) => (x int) => x + n + len(bytes(s))))
+}

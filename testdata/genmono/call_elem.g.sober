@@ -1,0 +1,24 @@
+package main
+
+// 総称関数の版。call_elem.m.sober が型引数を手で代入した単相の版。
+// 総称の呼び出しの結果（sliceの要素）を、ブロックの外へ出す形と、そのまま返す形
+
+func mk[T](x T) []T {
+    return []T{x, x}
+}
+
+func first[T](x T) T {
+    return mk(x)[0]
+}
+
+func inner[T](x T) T {
+    y := {
+        z := mk(x)
+        z[1]
+    }
+    return y
+}
+
+func main() {
+    println(first("a"), inner("b"))
+}

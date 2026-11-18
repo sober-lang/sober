@@ -1,0 +1,11 @@
+@@full	f3c982327145c014	595	12396
+@head	278e516a560c3e4f	0	34
+func Apply	b51e9e7c412f2e04	9	410
+func Double	b841c05c260d2c40	6	287
+func Even	67579c549ec22328	8	345
+func Inc	ce5fe103ca17bf66	11	439
+func Name	fada7d88a6250d6b	12	456
+func Opt	a83100e79623f3e6	5	251
+func Parse	a72b574339680fe8	15	551
+func Twice	c0109f058157307e	12	450
+type Bad	c46bc68f4fa91a27	1	64

@@ -24,8 +24,8 @@
 | 項目 | 状態 | 証拠 |
 |---|---|---|
 | 非ASCIIのホスト名（IDNはURLの層の仕事 — 専用の診断で拒否） | 意図して非対応 | `std/net.TestNameCheck` |
-| DNSSECの検証（スタブは上流のリゾルバを信頼する） | 意図して非対応 | — |
-| DoH / DoT・キャッシュ（OSや上流の役） | 意図して非対応 | — |
+| DNSSECの検証（スタブは上流のリゾルバを信頼する） | 意図して非対応 | なし |
+| DoH / DoT・キャッシュ（OSや上流の役） | 意図して非対応 | なし |
 <!-- confsync:end claims dns-resolver intentional -->
 
 ## 未実装
@@ -33,8 +33,8 @@
 <!-- confsync:begin claims dns-resolver planned -->
 | 項目 | 時期 | 今の挙動の証拠 |
 |---|---|---|
-| EDNS0（今は512バイトを超えるレスポンスがTCPへフォールバックする） | 0.8圏 | — |
-| IPv6のnameserverとIPv6へのDial | 0.8圏 | — |
+| EDNS0（今は512バイトを超えるレスポンスがTCPへフォールバックする） | 0.8圏 | なし |
+| IPv6のnameserverとIPv6へのDial | 0.8圏 | なし |
 <!-- confsync:end claims dns-resolver planned -->
 
 ## 証拠 — 相互接続

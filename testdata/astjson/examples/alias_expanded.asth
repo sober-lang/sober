@@ -1,0 +1,14 @@
+@@full	b43560246a617517	1230	30730
+@head	f8802cba5eefdec2	0	31
+const Limit	32cf8a97037b9da0	3	107
+func apply	11ca9e6d0145d7be	7	348
+func area	be2769956f1f6ab1	21	941
+func bump	305c678154342218	5	286
+func len2	cd54ccab2dcaeedc	14	556
+func main	0599ccf9bdb8f478	104	3739
+type Box	cd7fa3508f11d943	2	111
+type Meters	71f57ffab09dd708	2	90
+type Pair	dc593af7f5f8948d	4	210
+type Point	5e8db4896d7ecbec	3	158
+type Scale	0c7db415e43c556e	3	128
+type Shape	71073f82ef06dcc6	4	264

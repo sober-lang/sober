@@ -5,10 +5,13 @@
 # （死ぬ例のワーカー2以上はexit + 死因のstderrだけ — schedfuzzと同じ決定）。SOBER_PAR_STATS=1の `#par admit` の行で
 #   ① 計上の高水位 peak_bytes ≤ 天井（超過〔over — give: の子は常に入場〕が 0 の実行だけ）② 終わりの計上 held_bytes = held_tasks = 0（返し漏れ — 名前つきプールの節の
 #   `#par pool` のused / tasksも — 段階6 P5-4）
+#   天井で死んだ実行（死因 RegionExceeded{cause: budget} — language.md 11 節「天井で死ぬ」）は照合から外し、数だけ出す
 #   ③ 天井0の実行の縮退の数の和 > 0（検査が縮退のパスを踏んだ証人）④〜⑥ inlineの約束（縮退分の記帳 — 下のtestdata/parbudget/inline.soberの節）
 #   ⑦〜⑪ waitの約束（宣言 = 本当の上限・待ちの決定性・上界 > 天井を明示するpanic — testdata/parbudget/wait{,_over}.soberの節）
 #   ⑫ wait × deadline（期限は待ちを切らない・子は期限を継ぐ — testdata/parbudget/wait_deadline.sober の節）
 # ミューテーションの自己検査: 7 = 終わりで台帳へ返さない（② で鳴る）・8 = 縮退した子の罠を張らない（子の死が親の死に化ける — 死因の照合で鳴る）
+#   ・109 = 借りた分を返さない（⑬）・108 = scopeの節でも死ぬ（⑭）
+#   ⑬〜⑮ 天井の約束（testdata/parbudget/ceiling.soberの節）
 #   scripts/parbudget.sh
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -18,6 +21,7 @@ trap 'rm -rf "$W"' EXIT
 fail=0
 n=0
 inl0=0
+cut=0
 ARGS=""
 obs() {   # obs <bin> <out> [env…] — 観測 + `#par` の行を <out>.par へ
     local b=$1 o=$2 ec=0
@@ -41,6 +45,10 @@ check() {   # check <name> <bin>（実引数は ARGS）
         for w in 1 2 8; do
             obs "$bin" "$W/run" SOBER_WORKERS=$w SOBER_PAR_STATS=1 ${b:+SOBER_BUDGET_MB=$b} "$@"
             local same=0
+            # 天井で死んだ実行（予約を越えて借りようとしてプールか根の天井を越えた — 小さい天井では正しい結果）は照合から外して数える
+            if grep -q "RegionExceeded{cause: budget}" "$W/run" && ! grep -q "RegionExceeded{cause: budget}" "$W/base"; then
+                cut=$((cut + 1)); continue
+            fi
             if [ $dies = 1 ] && [ "$w" != 1 ]; then
                 deathobs "$W/run" > "$W/run.d"; cmp -s "$W/base.d" "$W/run.d" && same=1
             else
@@ -147,6 +155,31 @@ for w in 1 2 8; do
     dwaits=$(( dwaits + $(field "$W/wd.par" waits) ))
 done
 [ "$dwaits" -gt 0 ] || { echo "FAIL: wait_deadline — no spawn waited"; fail=$((fail + 1)); }
+# 天井の約束（language.md 11 節「予算と admission」— 工程2の順序4）: testdata/parbudget/ceiling.sober をW 1 / 8。
+# ⑬ プールの天井を越えて伸びる子は死に、Ledgerのdied = cut = 1・借りて返す子は2回とも生きる ⑭ scopeのbudget:の節は記帳だけ（死なない・borrowOverScope = 1）
+# ⑮ 縮退した子の使用量は親の計上 — 天井1 MiBのプールでは親が死に、8 MiBでは生きる。ミュータント109（借りた分を返さない — ⑬の2回目が死ぬ）・108（scopeの節でも死ぬ — ⑭）
+"$S2" build testdata/parbudget/ceiling.sober --emit=elf -o "$W/ceil" > /dev/null 2>&1 || { echo "FAIL: build testdata/parbudget/ceiling.sober"; fail=$((fail + 1)); }
+chmod +x "$W/ceil"
+ceilx() {   # ceilx <mode> → 期待する出力（1行に）
+    case "$1" in
+    pool) echo "0 14995 119995 119995 1 1" ;;
+    scope) echo "786429 0 1" ;;
+    inline) echo "0 786429 1 0" ;;
+    esac
+}
+for w in 1 8; do
+    for m in pool scope inline; do
+        got=$(SOBER_WORKERS=$w timeout 60 "$W/ceil" $m 2>&1 | tr "\n" " " | sed "s/ $//")
+        [ "$got" = "$(ceilx $m)" ] || { echo "FAIL: ceiling $m W$w — got [$got] want [$(ceilx $m)]"; fail=$((fail + 1)); }
+    done
+done
+for m in "109 pool" "108 scope"; do
+    set -- $m
+    "$S2" build testdata/parbudget/ceiling.sober --emit=elf --rt-mutant=$1 -o "$W/ceil.m$1" > /dev/null 2>&1 || { echo "FAIL: build ceiling mutant $1"; fail=$((fail + 1)); continue; }
+    chmod +x "$W/ceil.m$1"
+    got=$(SOBER_WORKERS=1 timeout 60 "$W/ceil.m$1" $2 2>&1 | tr "\n" " " | sed "s/ $//")
+    [ "$got" != "$(ceilx $2)" ] || { echo "FAIL: mutant $1 (ceiling $2) was not caught"; fail=$((fail + 1)); }
+done
 # ミューテーションの自己検査（1件で足りる — 最初の割れで打ち切り）
 for m in "7 examples/task_steal.sober" "8 examples/task_die.sober"; do
     set -- $m
@@ -178,5 +211,16 @@ done
 if [ -z "${tm[0]}" ] || [ -z "${tm[1]}" ] || [ "${tm[1]}" -gt $(( 4 * ${tm[0]} )) ]; then
     echo "FAIL: task blocks are not reused — tcb_mmaps ${tm[0]:-?} (10^4 tasks) → ${tm[1]:-?} (10^6 tasks)"; fail=$((fail + 1))
 fi
-echo "parbudget: $n programs × budget {0, 2 MiB, default} × workers {1, 2, 8} + 2 mutants + inline promise (inlined $inlw) + wait promise (waits $waits) + wait × deadline (waits $dwaits), inlined under budget 0 = $inl0, tcb_mmaps ${tm[0]:-?} → ${tm[1]:-?}, fail=$fail"
+# 協調形（ワーカー1）のspawnの木が深さ優先に走ること: Skynet（葉10万・深さ5）をW1で走らせ、生きているtaskの数の最大（#par tasksのlive_peak）が
+# 各段10本 × 深さ × 2 = 100以下（深さ優先なら深さの桁で5。幅優先に崩れると葉の桁になる）。ミュータント100（親を実行待ちの列の後ろへ積む）で7,000本を越える
+skylive() {   # skylive <bin> → live_peak
+    SOBER_WORKERS=1 SOBER_PAR_STATS=1 timeout 60 "$1" 100000 2>&1 > /dev/null | grep '^#par tasks' | tr ' ' '\n' | sed -n 's/^live_peak=//p'
+}
+lp=$(skylive "$W/sky2")
+if [ -z "$lp" ] || [ "$lp" -gt 100 ]; then echo "FAIL: skynet W1 live_peak ${lp:-?} > 100: the cooperative spawn tree is not depth-first"; fail=$((fail + 1)); fi
+"$S2" build bench/skynet/main.sober --emit=elf --rt-mutant=100 -o "$W/sky.m100" > /dev/null 2>&1 || { echo "FAIL: build skynet mutant 100"; fail=$((fail + 1)); }
+chmod +x "$W/sky.m100"
+lpm=$(skylive "$W/sky.m100")
+if [ -z "$lpm" ] || [ "$lpm" -le 100 ]; then echo "FAIL: mutant 100 (breadth-first cooperative spawn) was not caught: live_peak ${lpm:-?}"; fail=$((fail + 1)); fi
+echo "parbudget: $n programs × budget {0, 2 MiB, default} × workers {1, 2, 8} + 4 mutants + ceiling promise + inline promise (inlined $inlw) + wait promise (waits $waits) + wait × deadline (waits $dwaits), inlined under budget 0 = $inl0, runs cut at the ceiling = $cut, tcb_mmaps ${tm[0]:-?} → ${tm[1]:-?}, skynet W1 live_peak $lp (mutant 100: $lpm), fail=$fail"
 [ $fail = 0 ]

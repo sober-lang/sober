@@ -1,0 +1,10 @@
+@@full	c90616855f815167	499	11194
+@head	f8802cba5eefdec2	0	31
+func decr	255aaa4cb2354b47	6	285
+func g	7959a5612f9a3f6f	8	328
+func incr	9971a2c49fa627b5	6	285
+func main	272adcd7f85981b8	23	745
+func mk	70eba321a473916e	5	244
+func mkIf	1ab623c8923ddb7a	13	465
+type H	c1de6fc843331749	3	144
+type P	44e93e7e522c7eaf	3	142

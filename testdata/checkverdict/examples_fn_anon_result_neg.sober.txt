@@ -1,0 +1,2 @@
+sober: load error at examples/fn_anon_result_neg.sober:10:13: a function result cannot be of an anonymous function type, because a value of anonymous function type is only a parameter, a struct or variant field or a local binding, never a result, a slice or map element or a type argument (spec F-20); declare a named function type (`type H func(…) …`) and return a value of it
+exit=1

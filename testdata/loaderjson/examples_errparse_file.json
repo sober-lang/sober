@@ -330,6 +330,22 @@
           ]
         },
         {
+          "name": "ReadAt",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "byte",
+            "errOf",
+            "freeze",
+            "len",
+            "sysAddr",
+            "sysCall",
+            "sysDeadline"
+          ]
+        },
+        {
           "name": "chunksFrom",
           "expands": true,
           "mut_def": false,
@@ -1469,12 +1485,32 @@
           ]
         },
         {
+          "name": "Fixed",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "ledgerWord"
+          ]
+        },
+        {
           "name": "MarkFailed",
           "expands": false,
           "mut_def": false,
           "has_try": false,
           "callees": [
             "poolFail"
+          ]
+        },
+        {
+          "name": "ServePool",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "newPool",
+            "panic",
+            "poolNetOp"
           ]
         },
         {
@@ -1701,6 +1737,11 @@
         {
           "name": "MS",
           "value": 1000000,
+          "dict": false
+        },
+        {
+          "name": "ledgerPoolRow",
+          "value": 23,
           "dict": false
         }
       ]

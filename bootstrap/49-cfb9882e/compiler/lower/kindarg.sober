@@ -1,0 +1,156 @@
+package lower
+
+// Def として呼ぶ総称関数の型引数の kind の検査。定義は check と同じ検査器の kindOk（Lean の抽出）で、
+// 型引数は表層型検査器の型引数を脱糖器のコアの型へ写して渡す（lower の型の上に述語を持たない）
+
+import "diag"
+import "desugar"
+import "checker"
+import "loader"
+import "ast"
+import "std/iter"
+import "std/strings"
+
+// 総称関数 fidx の呼び出し（callee の節 cn）の型引数が、呼び先の kind を満たすか。
+// 型引数が型パラメータを含む呼び出し（総称関数の本体の中）は見ない: 外側の呼び出しが kind を満たせば、本体が kind の下で型付くので内側も満たす
+func kindArgsCheck(st mut St, fidx int, cn desugar.NodeRef, at desugar.NodeRef) error? {
+    yl := desugar.YTArgsOf(mut st.d, cn)
+    if yl == -1 {
+        return diag.Mismatch{at: posOf(mut st, at)}
+    }
+    kaInit(mut st)?
+    // 本体に型パラメータ型の補間の穴がある総称関数は、check でも型引数ごとのインスタンスの Def になる（抽象の kind を持たない）
+    if desugar.YInstNeeded(mut st.d, fidx) {
+        return nil
+    }
+    // .sobi の `@expand` の印を持つ関数（E2-S の逃げ）は check では展開される（抽象の kind を持たない）
+    if desugar.FnExpandMarked(mut st.d, fidx) {
+        return nil
+    }
+    n := lenL(mut st, yl)
+    for i <- iter.Range(0, n) {
+        if desugar.YHasVar(mut st.d, latI(mut st, yl, i)) {
+            return nil
+        }
+    }
+    ks := desugar.GivenKinds(mut st.d, fidx)
+    if len(ks) != n {
+        return diag.Unsupported{at: posOf(mut st, at)}
+    }
+    mut roots := mut []int{}
+    for i <- iter.Range(0, n) {
+        t := kaCoreTy(mut st, latI(mut st, yl, i), at)
+        if t < 0 {
+            return diag.Mismatch{at: posOf(mut st, at)}
+        }
+        roots = append(roots, int(t))
+    }
+    tys, rs := desugar.TySub(mut st.d, freeze(roots))
+    mut items := mut []int{}
+    for i <- iter.Range(0, n) {
+        items = append(items, ks[i])
+        items = append(items, rs[i])
+    }
+    bad := checker.KindArgsBad(tys, freeze(items))
+    if len(bad) > 0 {
+        return diag.KindArg{at: posOf(mut st, at), callee: fidx, tp: bad[0], miss: bad[1]}
+    }
+    return nil
+}
+
+// 最初の検査の前に1回: インスタンスの印を呼び手へ伝え（脱糖器の renumberDefs と同じ）、値化可能な named fn type の env の形を脱糖器へ積む
+// （行の選び方は closPrep と同じ — 値の位置・流れでない・main から届く）
+func kaInit(st mut St) error? {
+    if st.kaInit {
+        return nil
+    }
+    st.kaInit = true
+    desugar.YPropagate(mut st.d)
+    for i <- iter.Range(0, desugar.CapCount(mut st.d)) {
+        if desugar.CapBorrowArg(mut st.d, i) || desugar.CapFlow(mut st.d, i) || !desugar.CapLive(mut st.d, i) {
+            continue
+        }
+        k := desugar.LamKey(mut st.d, desugar.CapLam(mut st.d, i))
+        if k < 0 {
+            continue
+        }
+        desugar.SetShapes(mut st.d, desugar.NodeRef(k), closShapes(mut st, i, 8, true)?)
+    }
+    return nil
+}
+
+// 表層型 y のコアの型（写せない・型の解決が断るなら -1 — 呼び手が型引数の不一致として断る）
+func kaCoreTy(st mut St, y int, at desugar.NodeRef) int {
+    t, err := desugar.YCoreTy(mut st.d, y, at)
+    if err != nil {
+        return -1
+    }
+    return int(t)
+}
+
+// 総称関数の kind を、buildPre が型付けた店の上で推論して足す（check の推論の前段と同じ手順 — 表層型検査器だけを親の店で済ませる）。
+// kind の無い、Def として呼ばれうる総称関数が残るときだけ走る。std の総称関数の kind が全部与えられていれば（L0 の焼き込み）、
+// std の Def は署名だけで読む（本体を読まずに kind が決まる）。返す Program は kind を足したもの（席 A の子が Init で読む）
+func typedKinds(st mut St, p loader.Program) (loader.Program, error?) {
+    has := kindRows(p)
+    if !needKinds(p, has, false) {
+        return p, nil
+    }
+    fz := desugar.TyFreeze(mut st.d)
+    ks := checker.KindsGenT(p, loader.ExpandMarked(p), !needKinds(p, has, true), fz)?
+    mut all := mut []int{}
+    for x <- p.fn_kinds {
+        all = append(all, x)
+    }
+    for x <- ks {
+        all = append(all, x)
+    }
+    q := loader.WithFnKinds(p, freeze(all))
+    desugar.SetGivenK(mut st.d, q.fn_kinds)
+    return q, nil
+}
+
+// 開発用（`build --emit=kinds`）: build が使う kind の列（関数表の添字で [関数, n, k…]）。lower の本体の前段（buildPre と typedKinds）だけを走らせる
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.MultiBind, diag.CatchLhs, diag.FileUse, diag.FnArg, diag.FnCap, diag.Par, diag.Frozen, diag.Cell)
+func BuildKinds(p loader.Program) ([]int, error?) {
+    mut st := St{}
+    st.transparent = transpOf(false)
+    buildPre(mut st, p)?
+    q := typedKinds(mut st, p)?
+    return q.fn_kinds, nil
+}
+
+// 関数表の添字ごとに、kind の行（または @expand の印）を持つか
+func kindRows(p loader.Program) []bool {
+    mut has := mut []bool{}
+    for k <- iter.Range(0, len(p.fn_node)) {
+        has = append(has, false)
+    }
+    mut q := 0
+    while q + 1 < len(p.fn_kinds) {
+        has[p.fn_kinds[q]] = true
+        q += 2 + p.fn_kinds[q + 1]
+    }
+    for k <- loader.ExpandMarked(p) {
+        has[k] = true
+    }
+    return freeze(has)
+}
+
+// Def として呼ばれうる（型パラメータを持ち、展開されない）関数で、kind の行が無いものがあるか（stdOnly = std の package の関数だけを見る）
+func needKinds(p loader.Program, has []bool, stdOnly bool) bool {
+    cx := loader.ProgCx(p)
+    for k <- iter.Range(0, len(p.fn_node)) {
+        if has[k] || (stdOnly && !strings.HasPrefix(p.pkg_path[p.file_pkg[p.fn_file[k]]], "std/")) {
+            continue
+        }
+        t := p.trees[p.fn_file[k]]
+        tps := t.nodes[p.fn_node[k]].b
+        // 展開される関数は Def にならない（脱糖器の初期化と同じ判定）
+        exp := p.fn_expands[k] && !loader.ValFOnly(cx, p.fn_file[k], p.fn_node[k])
+        if !exp && tps >= 0 && ast.ListLen(t, tps) > 0 {
+            return true
+        }
+    }
+    return false
+}

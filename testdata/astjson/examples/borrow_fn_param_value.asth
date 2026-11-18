@@ -1,0 +1,10 @@
+@@full	58ebfd7501cd09e6	1165	31070
+@head	20e69509dfebf8f5	0	66
+func adder	0e40313a91fe9321	12	487
+func each	653e061b0b624abd	25	967
+func incr	9971a2c49fa627b5	6	285
+func main	5b3045383688401c	76	2390
+func nested	09ab706191a3c773	14	577
+func run	afce0871373ba1ca	22	800
+func runOpt	026b0d44fece7bae	21	745
+type H	c1de6fc843331749	3	144

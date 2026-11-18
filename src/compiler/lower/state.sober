@@ -120,10 +120,10 @@ type St struct {
     rtMnWake FnRef
     rtMnKick FnRef
     rtMnDelay FnRef
+    rtLockWait FnRef
     rtSresTake FnRef
     rtDpGive FnRef
     rtDpTake FnRef
-    rtMnPullPop FnRef
     rtPstatSpawn FnRef
     rtPstatEnd FnRef
     rtPstatDump FnRef
@@ -157,6 +157,13 @@ type St struct {
     winG int           // 予約ページの有効のマーク（rt.win — 0 = 未読・1 = SOBER_TASK_WIN=0・2 = 有効）と予約ページのrt（task.soberの予約ページの注記）
     rtWinSpill FnRef
     rtWinRalloc FnRef
+    rtWmAlloc FnRef     // rt.wm_alloc（確保の低速パス — 計上済みの上限を上げる。task.sober）
+    rtWmRaise FnRef     // rt.wm_raise（先端で伸ばすパスの低速パス）
+    rtWmAllocS FnRef    // rt.wm_alloc_s / rt.wm_raise_s（全レジスタを保つ中継 — 確保の点はこちらを呼ぶ。最適化のバックエンドは手書きの本体 xKeepAllBody）
+    rtWmRaiseS FnRef
+    keepG int           // rt.keep（中継の退避の場所 — ワーカーごとに KEEP_WORDS ワード。x86のxKeepAllBody）
+    rtBorGive FnRef     // rt.bor_give（parkで縮めた後に借りた量を節へ返す — admit.sober）
+    rtMadvDead FnRef    // rt.madv_dead（死んだ深度のページを返す — 印のあるtaskだけ。rt.sober）
     rtWinPark FnRef
     rtWinCol FnRef
     rtWinStart FnRef
@@ -175,6 +182,8 @@ type St struct {
     rtUio FnRef         // rt.uio（ringに出して待つioのインターフェース）
     rtUpoll FnRef       // rt.uring_poll（同 — 提出と完了の取り込み）
     rtTcbFree FnRef
+    rtTcbTrim FnRef
+    tcbcG int
     rtMnPin FnRef
     rtMnLlc FnRef
     rtSlotTake FnRef
@@ -306,6 +315,7 @@ type St struct {
     rtRecRehash FnRef
     rtErrReloc FnRef  // rt.err_relocate（組み込み error の境界コピー — cont.sober の needErrReloc・-1 = 無し）
     rtErrAlloc FnRef  // rt.err_alloc（return 文の error ラベルのセルの確保 — errs.sober の needErrAlloc・-1 = 無し）
+    errAllocDone bool // errAllocLower が済んだ（以後 rt.err_alloc を呼ぶ命令は作られない — 2回目の歩きを飛ばす）
     rtVdso FnRef      // rt.vdso_get（rt.vdsoの初回の引き — 歩きをホットパスの外に置く・deadline.sober needVdso・-1 = 無し）
     rtJClean FnRef    // rt.jclean（JSON のエスケープの要らない区間の長さ — rt8.sober の needJClean・-1 = 無し）
     rtMapfind FnRef   // 最初にビルドしたmapの引き（有無のマーク — 系統はmapFinds）
@@ -406,7 +416,9 @@ type St struct {
     bcCutD table.Table[int] // 飛ばした関数に置くはずだった検査点 [関数の記録, 自分へ戻る路つき]…（β2 が外れたら遅れて cutFunc）
     bcHx []int           // x86 の関数の添字 → 読み戻した β2 の bcDo の添字（-1 = 外れ）
     bcBk []int           // x86 の関数の添字ごとの β2 の鍵 [h1, h2]…（[0, 0] = 鍵なし）
-    bcDp table.Table[int]  // 読み戻した β2の機械語のパック（配置先のfsの添字 — 機械語はコピーせずパックの中身を指す。bcDoと同じ添字）
+    bcLzE []int          // 先に読んだα・β1・β2の値の位置（項目 → bcLzVの添字・-1 = 読んでいない・-2 = 読めない / 壊れている — bcPrefetch）
+    bcLzV [][]byte
+    bcDp table.Table[int]  // 読み戻した β2の項目（bcVal で値を引く。bcDoと同じ添字）
     bcDf table.Table[int]  // 読み戻した β2 の後埋め [関数の頭からの位置, 種類, 相手の番号]…
     bcDo table.Table[int]  // 読み戻した β2 の [機械語のパックの中の位置, 長さ, 後埋めの位置, 数, xmm]…
     bcDf0 table.Table[int] // 読み戻した β2 の入口の位置（吐き始めから — bcDo と同じ添字）
@@ -424,6 +436,7 @@ type St struct {
     bcAh int             // β2 のヒープの読みを記録したか（1 — 監査用のコンパイラの xg の差し込み）
     bcNames [][]byte     // 関数のチェーンの順の名前（検証モードのstaleの特定 — bcNamesOf）
     fnvBusy int // 署名を引いている途中の named fn type のスタック（closure.sober fnvPush — 0 = 空）
+    kaInit bool // 型引数の kind の検査の前の準備をしたか（kindarg.sober）
     closKs int // クロージャの値形（closure.sober）: Kごとのenvの形のチェーンの頭 + 1（0 = 無し）
     closFns int // 持ち上げたクロージャの関数の捕捉の記録のチェーンの頭 + 1（0 = 無し）
     liftBrw int // 次の liftClosure が借りの実引数のラムダか（1 — emitCall の間接呼び出しの実引数が立て、liftClosure が入口で消費する）
@@ -497,6 +510,11 @@ type St struct {
     rtOpen FnRef   // rt.open / rt.close / rt.fd_drain（std/io の sysOpen / sysClose。fd_drain は std/task のプログラムの task の死の出口）
     rtClose FnRef
     rtFdDrain FnRef
+    // Serveの期限（rdl.sober。net_op 14〜16を使うstd/taskのプログラムだけ）: rdlOn = 組む・rt.rdl_join / rt.rdl_leave / rt.rdl_sweep
+    rdlOn bool
+    rtRdlJoin FnRef
+    rtRdlLeave FnRef
+    rtRdlSweep FnRef
     // ワーカー局所の lease の rt（lease.sober — lease_op を使うプログラムだけ）
     rtLeaseOp FnRef
     rtLeaseDrain FnRef
@@ -536,6 +554,11 @@ type St struct {
     tmk []int
     lkid bool    // バッチの群の子（move.soberのlParGroup — 呼び先の戻りの型はlretから）
     lret []int   // 呼び先の戻りの型の表 [関数の記録, F_RET]…（記録の番地の昇順 — lFnRet）
+    lpty []int   // 呼び先の仮引数の型の表（lretと同じ順の位置の列の後に [数, 型…] — B2の子の検証器が呼び出しを照合する。lPtys）
+    vfyPreOn bool          // B2の子の検証の結果を最後の検証で使う（vfyRun）
+    vfyPre map[int]int     // B2の子が検証した関数 → vfyMsgの位置（-1 = 違反なし）
+    vfyMsg []string        // 子の検証で見つけた違反の文面
+    vfyDirty map[int]int   // 子の検証の後に親が書き換えた関数（cutInsert — 最後の検証で検証し直す）
     mvRound bool // バッチの前ごとに全関数の本体を詰めて積み直す（move.soberの検査 — SOBER_BUILD_PAR=roundtrip）
     ls LSplit    // 席 A（split.sober）: lower の頭の関数単位化 — 子の事象の記録
 }
@@ -569,6 +592,14 @@ func initScalars(st mut St) {
     st.rtErrReloc = -1
     st.rtErrAlloc = -1
     st.rtWinRalloc = -1
+    st.rtWmAlloc = -1
+    st.rtWmRaise = -1
+    st.rtWmAllocS = -1
+    st.rtWmRaiseS = -1
+    st.keepG = -1
+    st.rtBorGive = -1
+    st.rtMadvDead = -1
+    st.rtLockWait = -1
     st.rtWinStart = -1
     st.rtWinIs = -1
     st.recRels = -1
@@ -630,6 +661,9 @@ func initScalars(st mut St) {
     st.rtOpen = -1
     st.rtClose = -1
     st.rtFdDrain = -1
+    st.rtRdlJoin = -1
+    st.rtRdlLeave = -1
+    st.rtRdlSweep = -1
     st.rtLeaseOp = -1
     st.rtLeaseDrain = -1
     st.rtFrameNew = -1

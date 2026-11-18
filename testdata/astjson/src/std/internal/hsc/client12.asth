@@ -1,0 +1,27 @@
+@@full	e05ed01b25c3806b	12088	372031
+@head	4fc2ea1e96c27bf0	0	480
+const aNoRenegotiation	95414e26d60cd8d0	1	58
+const s12EcdsaChaCha	6f153530ef029419	1	69
+const s12EcdsaGcm	ebc991f8b03ed2e5	1	66
+const s12RsaChaCha	978bf13a4b4121c9	1	67
+const s12RsaGcm	50ee21449824f9c5	1	64
+const tCertificateRequest	2c223eb709b1138f	1	60
+const tClientKeyExchange	5f321cbf27b00703	1	59
+const tHelloRequest	31d513f5313ec589	1	53
+const tServerHelloDone	b40dba6ae5ad74a3	1	57
+const tServerKeyExchange	482567c1d1da87aa	1	59
+func cert12	a2d615ce990cf9be	131	4359
+func feed12	ede71d3c3dca4691	325	11019
+func flight12	de167e3b65efb0f3	249	8293
+func isEcdsa12	3470e9c701035f7b	10	442
+func isGcm12	d36fc3a16fc210ec	10	435
+func nonce12	755533e08302eda8	63	2115
+func on12	0989198495ff3f09	291	9948
+func onServerHello12	defeb5db027dfa1f	264	8662
+func open12	faf5eb7d2d3d91ef	183	6048
+func prf	0ddf1a89db657966	68	2451
+func seal12	37a6ac7d419a577e	124	4060
+func seal12App	66ea08d077a051b9	60	2093
+func seq8	e8cbcc7e7afabf0d	34	1192
+func skx12	5182aaf923a22857	256	8361
+func suites12	57b7f5961fdae44a	21	796

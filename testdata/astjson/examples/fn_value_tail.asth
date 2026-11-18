@@ -1,0 +1,14 @@
+@@full	a8cdd3d0ea98f020	1912	53054
+@head	f8802cba5eefdec2	0	31
+func adder	0e40313a91fe9321	12	487
+func apply	6dac699e98befa73	11	479
+func decr	255aaa4cb2354b47	6	285
+func incr	9971a2c49fa627b5	6	285
+func main	c9c1b6f07216c7a9	184	5463
+func maybe	d64df38aecf9c060	23	760
+func pick	63f7ee6260293df8	20	682
+func scaled	19346ce7e8f79d6a	14	548
+func suffixed	8bb83c7f46e8176c	27	989
+func use	f746c1e72692dde6	6	278
+type H	c1de6fc843331749	3	144
+type R	ed564b07639ff6c3	2	106

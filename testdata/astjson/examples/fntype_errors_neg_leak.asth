@@ -1,0 +1,9 @@
+@@full	d54cf5d67c315b17	428	10742
+@head	f8802cba5eefdec2	0	31
+func Run	261d5049e6e876b2	13	475
+func main	f37eeff2647f3af8	16	618
+func mk	1fb721bc25d2524b	20	817
+type Bad	c46bc68f4fa91a27	1	64
+type Box	a1ae1402fc29ff19	2	108
+type F	38aa0f250bcdfb41	4	165
+type Gone	f0c2f1d9bf3d06d6	1	65

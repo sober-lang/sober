@@ -1,0 +1,475 @@
+package lower
+
+// Serveの期限（language.md 28節のhttpの項。std/http/serverのheadWait: / bodyWait: / sendWait: とstd/tlsのServeのheadWait:）:
+// 相手が送り終える・受け終えるのを待つ時間の上限。scopeの期限（TC_DL。deadline.sober）とは別のワードで、std/httpとstd/tlsが受けと送りの待ちの前後でだけ置く。
+// - 期限のワードTC_RDL（0 = 無し）: 下位32ビット = 期限（粗い時刻の単位。CLOCK_MONOTONICのnsをRDL_SHIFTビット右へずらした値）・
+//   32〜47ビット = 送りの間隔（単位の数。0 = 受けの期限）。stdがnet_op 14で書き、net_op 15でワーカーの粗い時刻WK_REPOCHを読む（どちらもその場のload / store）
+// - 期限を張りうるtaskはワーカーごとの配列@WK_RARR（[数, task…]。走り始めたtaskはワーカーに固定なので、入れたワーカーが出るまで持つ）に入る
+//   （net_op 16 = rt.rdl_join・taskの出口のrt.rdl_leave）。TC_RIDX = 配列の添字 | (fd + 1) << 32 | 数えた印RDL_COUNTED
+// - 走査rt.rdl_sweep: ワーカーごとの走査のタイマー（約RDL_PERIOD_NSごと。ringのパスはIORING_OP_TIMEOUT〔user_data = UD_RDL〕・epollのパスはtimerfd〔data = UD_RDL〕）の満了で呼ぶ。
+//   時刻を1回読んでWK_REPOCHを進め、配列を歩いて期限の過ぎたnetの待ちを切る（ringの受けの待ちは -110でウェイクアップ・送りとPOLL_ADDはASYNC_CANCEL・
+//   epollの待ちは -110でウェイクアップ。今の期限のチェーンの走査と同じ動作）。stdは -110を、scopeの期限が過ぎていなければio.Timeoutに読む。
+//   送りの間隔の期限は、切る前にTCP_INFOのtcpi_bytes_ackedを前に見た値と比べ、進んでいれば張り直す（1バイトも進まない間隔の上限）。
+//   配列が空でなければタイマーを張り直す（期限が過ぎたのに待っていないtaskを見たら、短い間隔RDL_SHORT_NSで見直す）。空なら張らない（rt.rdl_joinが張る）
+// - 期限は早くは効かない: stdは期限 = 粗い時刻 + 待ちの単位数（切り上げ）+ 2で置く（粗い時刻の古さは走査の間隔 ≤ 1単位）。遅れは最大で約3単位 + 走査の間隔
+// rtの待ち（受け・送り・閉じ）にもスケジューラの周にも何も足さない。熱いパスに乗るのはstdのload / storeと、完了の振り分けの比較1つだけ
+import "desugar"
+import "std/iter"
+
+const TC_RDL = 40
+const TC_RACK = 41
+const TC_RIDX = 59
+// 1 = 走査のタイマーを張ってある（持ち主のワーカーだけが読み書き）
+const WK_RTMR = WK_HOT + 1
+const WK_REPOCH = WK_HOT + 8
+const WK_RARR = WK_HOT + 9
+// 粗い時刻の単位 = 2^29 ns（約0.54秒）・走査の間隔 = 2^28 ns（1単位の半分。粗い時刻の古さが1単位を越えない）・見直しの間隔 = 1 ms
+const RDL_SHIFT = 29
+const RDL_PERIOD_NS = 268435456
+const RDL_SHORT_NS = 1000000
+// 走査のタイマーの完了の印（ringのuser_data・epollのdata。uring.soberのUD_* の続き。UDT_POLL〔2〕と読みのスロットの印〔1〕のビットを持たない）
+const UD_RDL = 8
+// 配列の大きさ（[数, task × fdの上限]。NORESERVE。触った分だけ常駐）
+const RDL_ARR = 532480
+const RDL_CAP = 65536
+// 配列の後ろのワード: 走査の間隔と見直しの間隔のtimespec（ringのTIMEOUTが指す。2ワードずつ）・timerfdのitimerspec（4ワード）・timerfd + 1・読みの受け皿
+const RDL_TS = 65538
+const RDL_TS2 = 65540
+const RDL_IT = 65542
+const RDL_TFD = 65546
+const RDL_TBUF = 65547
+// HTTPのDateの行（std/http/serverがレスポンスの頭へコピーする）: RDL_DSEC = 行の秒 + 1（0 = まだ作っていない）・RDL_DFIX = SOBER_DATE_SEC + 1
+// （0 = 壁時計を読む。例と検査の出力を固定する開発用）・RDL_DTXT = 200の頭の始め `HTTP/1.1 200 OK\r\nDate: <IMF-fixdate>\r\nContent-Type: ` の68バイト
+// （9ワード。std/http/serverが速いパスでそのまま、ほかの頭では17〜53バイト目のDateの行を書く）・RDL_DNAM = 曜日と月の名前の表
+// （"SunMon…Sat" の21バイト + "JanFeb…Dec" の36バイト）。走査と、列が空から始まるrt.rdl_joinで、秒が変わっていれば作り直す（約0.27秒ごと・熱いパスでは時計を読まない）
+const RDL_DSEC = 65548
+const RDL_DFIX = 65549
+const RDL_DTXT = 65550
+const RDL_DNAM = 65559
+const RDL_LOW = 4294967295
+const RDL_COUNTED = 4611686018427387904
+// プールの節の期限で切った数（admit.soberのPL_* の続き。Ledgerのtimeout）
+const PL_TOUT = SR_LED + 8
+
+// rt.rdl_join / rt.rdl_leave / rt.rdl_sweepを（初出なら）宣言する（std/taskのプログラムでnet_op 14〜16を使うプログラムだけ）
+func needRdl(st mut St) {
+    lsNeed(mut st, NEED_RDL, 0)
+    if st.rdlOn || !st.taskUse {
+        return
+    }
+    st.rdlOn = true
+    st.rtRdlJoin = addFunc(mut st, int(strLit(mut st, "rt.rdl_join")), desugar.ListRef(list1(mut st, TyI64)), TyI64)
+    st.rtRdlLeave = addFunc(mut st, int(strLit(mut st, "rt.rdl_leave")), desugar.ListRef(list1(mut st, TyPtr)), -1)
+    st.rtRdlSweep = addFunc(mut st, int(strLit(mut st, "rt.rdl_sweep")), desugar.ListRef(list0(mut st)), -1)
+}
+
+// net_opのop 14（期限のワードをaにする）・15（ワーカーの粗い時刻）・16（今のtaskをワーカーの期限の列へ入れる。a = fd・負ならfdなし）・
+// 17（ワーカーの200の頭の始め〔Dateつき〕の番地。期限の列の配列が無ければ0。入れた後のtaskはワーカーに固定なので、番地は出るまで変わらない）・18（番地aの1ワード。17の行を読む）。
+// opは定数のときだけここへ来る
+func rdlOp(st mut St, op int, a int) int {
+    if !st.taskUse {
+        return iconst(mut st, 0)
+    }
+    needRdl(mut st)
+    if op == 14 {
+        me := itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
+        store(mut st, me, TC_RDL, a)
+        return iconst(mut st, 0)
+    }
+    if op == 15 {
+        return load(mut st, globaladdr(mut st, st.wkG), WK_REPOCH)
+    }
+    if op == 17 {
+        arr := load(mut st, globaladdr(mut st, st.wkG), WK_RARR)
+        return bin(mut st, BMul, cmp(mut st, CNe, arr, iconst(mut st, 0)), bin(mut st, BAdd, arr, iconst(mut st, RDL_DTXT * 8)))
+    }
+    if op == 18 {
+        return load(mut st, itop(mut st, a), 0)
+    }
+    return call(mut st, st.rtRdlJoin, list1(mut st, a))
+}
+
+// taskの出口（fdDrainCallの前）: 期限の列に居れば外す（valueのtcbは出口の関数の仮引数）
+func rdlExitCall(st mut St, tcb int) {
+    if !st.rdlOn {
+        return
+    }
+    bN := branchIf(mut st, cmp(mut st, CNe, load(mut st, tcb, TC_RIDX), iconst(mut st, 0)))
+    call(mut st, st.rtRdlLeave, list1(mut st, tcb))
+    br(mut st, bN, -1)
+    setCur(mut st, bN)
+}
+
+// ringの完了の振り分け（uring.soberの取り込み。他の印の後・POLL_ADDの前）: 走査のタイマーの満了なら走査して、次の完了へ（hn）
+func rdlReap(st mut St, ud int, hn BlkRef) {
+    if !st.rdlOn {
+        return
+    }
+    bR := branchIf(mut st, cmp(mut st, CEq, ud, iconst(mut st, UD_RDL)))
+    call(mut st, st.rtRdlSweep, list0(mut st))
+    br(mut st, hn, -1)
+    setCur(mut st, bR)
+}
+
+// epollの事象の振り分け（ep_poll。eventfdとringのfdの後）: 走査のtimerfdなら読んで空にして走査し、次の事象へ（en）
+func rdlEpReap(st mut St, ud int, en BlkRef) {
+    if !st.rdlOn {
+        return
+    }
+    bR := branchIf(mut st, cmp(mut st, CEq, ud, iconst(mut st, UD_RDL)))
+    ap := itop(mut st, load(mut st, globaladdr(mut st, st.wkG), WK_RARR))
+    urSys(mut st, 0, []int{urAdd(mut st, load(mut st, ap, RDL_TFD), -1), ptoi(mut st, gepWord(mut st, ap, iconst(mut st, RDL_TBUF))), iconst(mut st, 8)})
+    call(mut st, st.rtRdlSweep, list0(mut st))
+    br(mut st, en, -1)
+    setCur(mut st, bR)
+}
+
+// 走査のタイマーを張る（ts = RDL_TSかRDL_TS2で、配列の後ろのtimespecの位置。apは配列）: ringのパスはTIMEOUT 1本、epollのパスはtimerfd（初回に作ってepollへ入れる）
+func rdlArm(st mut St, wk int, ap int, ts int) {
+    zero := iconst(mut st, 0)
+    store(mut st, wk, WK_RTMR, iconst(mut st, 1))
+    bDone := newBlock(mut st)
+    bEp := newBlock(mut st)
+    if chF(mut st, NETF_RECV) != -1 {
+        rec := load(mut st, wk, WK_RING)
+        bCk := newBlock(mut st)
+        bRg := newBlock(mut st)
+        condbr(mut st, cmp(mut st, CNe, rec, zero), bCk, -1, bEp, -1)
+        setCur(mut st, bCk)
+        condbr(mut st, cmp(mut st, CNe, load(mut st, itop(mut st, rec), UR_NET), zero), bRg, -1, bEp, -1)
+        setCur(mut st, bRg)
+        // IORING_OP_TIMEOUT（11）: 相対・count 0 = 純な時計
+        urSqe(mut st, rec, iconst(mut st, 11), ptoi(mut st, gepWord(mut st, ap, iconst(mut st, ts))), iconst(mut st, 1), iconst(mut st, UD_RDL), zero)
+        br(mut st, bDone, -1)
+    } else {
+        br(mut st, bEp, -1)
+    }
+    setCur(mut st, bEp)
+    rec2 := epRec(mut st, wk)
+    t0 := load(mut st, ap, RDL_TFD)
+    bMk := newBlock(mut st)
+    bSet := newBlock(mut st)
+    tf := param(mut st, bSet, TyI64)
+    condbr(mut st, cmp(mut st, CEq, t0, zero), bMk, -1, bSet, list1(mut st, urAdd(mut st, t0, -1)))
+    setCur(mut st, bMk)
+    // timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC)・epollへ（EPOLLIN・レベル。読んで空にする）
+    nf := urSys(mut st, 283, []int{iconst(mut st, 1), iconst(mut st, 526336)})
+    epCtl(mut st, rec2, 1, nf, iconst(mut st, 1), iconst(mut st, UD_RDL))
+    store(mut st, ap, RDL_TFD, urAdd(mut st, nf, 1))
+    br(mut st, bSet, list1(mut st, nf))
+    setCur(mut st, bSet)
+    // itimerspec = {interval 0, value = tsのtimespec}・timerfd_settime(fd, 0, &it, NULL)
+    store(mut st, ap, RDL_IT, zero)
+    store(mut st, ap, RDL_IT + 1, zero)
+    store(mut st, ap, RDL_IT + 2, zero)
+    store(mut st, ap, RDL_IT + 3, load(mut st, ap, ts + 1))
+    urSys(mut st, 286, []int{tf, zero, ptoi(mut st, gepWord(mut st, ap, iconst(mut st, RDL_IT))), zero})
+    br(mut st, bDone, -1)
+    setCur(mut st, bDone)
+}
+
+// 新しい期限の列の配列apに、Dateの固定の秒（SOBER_DATE_SEC）と名前の表を置く
+func rdlDateInit(st mut St, ap int) {
+    store(mut st, ap, RDL_DFIX, urAdd(mut st, envNum(mut st, itop(mut st, load(mut st, globaladdr(mut st, st.meta), W_ARGV)), "SOBER_DATE_SEC=", -1, true, 1 << 40), 1))
+    nm := bytes("SunMonTueWedThuFriSatJanFebMarAprMayJunJulAugSepOctNovDec")
+    for k <- iter.Range(0, 8) {
+        store(mut st, ap, RDL_DNAM + k, iconst(mut st, leWord(nm, k * 8)))
+    }
+}
+
+// bのiバイト目からの8バイト（足りない分は0）のlittle-endianのワード
+func leWord(b []byte, i int) int {
+    mut v := 0
+    mut j := 7
+    while j >= 0 {
+        v = v << 8
+        if i + j < len(b) {
+            v = v | int(b[i + j])
+        }
+        j -= 1
+    }
+    return v
+}
+
+// 秒が変わっていれば、apの頭の始めのDateを作り直す（秒 = SOBER_DATE_SECか、CLOCK_REALTIMEの秒）。形 = RFC 9110 5.6.7のIMF-fixdate
+// （"Date: Sun, 06 Nov 1994 08:49:37 GMT\r\n"。頭の始めの17バイト目から）。日付はH. Hinnantのcivil_from_days（std/http/serverのcivilOfと同じ式。秒は0以上）
+func rdlDate(st mut St, ap int) {
+    zero := iconst(mut st, 0)
+    fix := load(mut st, ap, RDL_DFIX)
+    bF := newBlock(mut st)
+    bC := newBlock(mut st)
+    bS := newBlock(mut st)
+    s := param(mut st, bS, TyI64)
+    condbr(mut st, cmp(mut st, CNe, fix, zero), bF, -1, bC, -1)
+    setCur(mut st, bF)
+    br(mut st, bS, list1(mut st, urAdd(mut st, fix, -1)))
+    setCur(mut st, bC)
+    br(mut st, bS, list1(mut st, bin(mut st, BDiv, clockNsOf(mut st, 0), iconst(mut st, 1000000000))))
+    setCur(mut st, bS)
+    s1 := urAdd(mut st, s, 1)
+    bSame := branchIf(mut st, cmp(mut st, CNe, s1, load(mut st, ap, RDL_DSEC)))
+    store(mut st, ap, RDL_DSEC, s1)
+    days := bin(mut st, BDiv, s, iconst(mut st, 86400))
+    t := bin(mut st, BRem, s, iconst(mut st, 86400))
+    wd := bin(mut st, BRem, urAdd(mut st, days, 4), iconst(mut st, 7))
+    z := urAdd(mut st, days, 719468)
+    era := bin(mut st, BDiv, z, iconst(mut st, 146097))
+    doe := bin(mut st, BSub, z, bin(mut st, BMul, era, iconst(mut st, 146097)))
+    yoe := bin(mut st, BDiv, bin(mut st, BSub, bin(mut st, BAdd, bin(mut st, BSub, doe, bin(mut st, BDiv, doe, iconst(mut st, 1460))), bin(mut st, BDiv, doe, iconst(mut st, 36524))), bin(mut st, BDiv, doe, iconst(mut st, 146096))), iconst(mut st, 365))
+    doy := bin(mut st, BSub, doe, bin(mut st, BSub, bin(mut st, BAdd, bin(mut st, BMul, yoe, iconst(mut st, 365)), bin(mut st, BDiv, yoe, iconst(mut st, 4))), bin(mut st, BDiv, yoe, iconst(mut st, 100))))
+    mp := bin(mut st, BDiv, urAdd(mut st, bin(mut st, BMul, doy, iconst(mut st, 5)), 2), iconst(mut st, 153))
+    d := urAdd(mut st, bin(mut st, BSub, doy, bin(mut st, BDiv, urAdd(mut st, bin(mut st, BMul, mp, iconst(mut st, 153)), 2), iconst(mut st, 5))), 1)
+    // 月（0 = 1月）= mp + 2（mp < 10）・mp − 10（mp ≥ 10）
+    m0 := bin(mut st, BSub, urAdd(mut st, mp, 2), bin(mut st, BMul, cmp(mut st, CGe, mp, iconst(mut st, 10)), iconst(mut st, 12)))
+    y := bin(mut st, BAdd, bin(mut st, BAdd, yoe, bin(mut st, BMul, era, iconst(mut st, 400))), cmp(mut st, CLe, m0, iconst(mut st, 1)))
+    tx := gepWord(mut st, ap, iconst(mut st, RDL_DTXT))
+    tpl := bytes("HTTP/1.1 200 OK\r\nDate: XXX, 00 XXX 0000 00:00:00 GMT\r\nContent-Type: ")
+    for w <- iter.Range(0, 9) {
+        store(mut st, tx, w, iconst(mut st, leWord(tpl, w * 8)))
+    }
+    nm := gepWord(mut st, ap, iconst(mut st, RDL_DNAM))
+    for j <- iter.Range(0, 3) {
+        store8(mut st, gepByte(mut st, tx, iconst(mut st, 23 + j)), 0, load8(mut st, gepByte(mut st, nm, urAdd(mut st, bin(mut st, BMul, wd, iconst(mut st, 3)), j)), 0))
+        store8(mut st, gepByte(mut st, tx, iconst(mut st, 31 + j)), 0, load8(mut st, gepByte(mut st, nm, urAdd(mut st, bin(mut st, BMul, m0, iconst(mut st, 3)), 21 + j)), 0))
+    }
+    rdlDigits(mut st, tx, 28, d, 2)
+    rdlDigits(mut st, tx, 35, y, 4)
+    rdlDigits(mut st, tx, 40, bin(mut st, BDiv, t, iconst(mut st, 3600)), 2)
+    rdlDigits(mut st, tx, 43, bin(mut st, BRem, bin(mut st, BDiv, t, iconst(mut st, 60)), iconst(mut st, 60)), 2)
+    rdlDigits(mut st, tx, 46, bin(mut st, BRem, t, iconst(mut st, 60)), 2)
+    br(mut st, bSame, -1)
+    setCur(mut st, bSame)
+}
+
+// vの10進の下位n桁をtxのoffバイト目から
+func rdlDigits(st mut St, tx int, off int, v int, n int) {
+    mut p := 1
+    mut i := n - 1
+    while i >= 0 {
+        q := bin(mut st, BRem, bin(mut st, BDiv, v, iconst(mut st, p)), iconst(mut st, 10))
+        store8(mut st, gepByte(mut st, tx, iconst(mut st, off + i)), 0, urAdd(mut st, q, 48))
+        p = p * 10
+        i -= 1
+    }
+}
+
+func buildRdlRt(st mut St) {
+    if !st.rdlOn {
+        return
+    }
+    buildRdlJoin(mut st)
+    buildRdlLeave(mut st)
+    buildRdlSweep(mut st)
+}
+
+// rt.rdl_join(fd) → 0: 今のtaskをワーカーの期限の列へ（入っていればfdを足すだけ。tls.Serveが入れた後のServeWith）。列が空から始まるなら粗い時刻と走査の時刻を置く
+func buildRdlJoin(st mut St) {
+    begin(mut st, st.rtRdlJoin)
+    fd := 0
+    zero := iconst(mut st, 0)
+    wk := globaladdr(mut st, st.wkG)
+    me := load(mut st, globaladdr(mut st, st.taskG), TK_CUR)
+    tp := itop(mut st, me)
+    ri := load(mut st, tp, TC_RIDX)
+    fdw := bin(mut st, BShl, bin(mut st, BMul, urAdd(mut st, fd, 1), cmp(mut st, CGe, fd, zero)), iconst(mut st, 32))
+    bNew := newBlock(mut st)
+    bHave := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, ri, zero), bNew, -1, bHave, -1)
+    setCur(mut st, bHave)
+    // 入っている: fdが無ければ足す
+    noFd := cmp(mut st, CEq, bin(mut st, BAnd, bin(mut st, BSar, ri, iconst(mut st, 32)), iconst(mut st, 1073741823)), zero)
+    store(mut st, tp, TC_RIDX, bin(mut st, BOr, ri, bin(mut st, BMul, noFd, fdw)))
+    ret(mut st, zero)
+    setCur(mut st, bNew)
+    a0 := load(mut st, wk, WK_RARR)
+    bMk := newBlock(mut st)
+    bA := newBlock(mut st)
+    arr := param(mut st, bA, TyI64)
+    condbr(mut st, cmp(mut st, CEq, a0, zero), bMk, -1, bA, list1(mut st, a0))
+    setCur(mut st, bMk)
+    m := sysMmap(mut st, iconst(mut st, RDL_ARR))
+    store(mut st, wk, WK_RARR, m)
+    store(mut st, itop(mut st, m), RDL_TS + 1, iconst(mut st, RDL_PERIOD_NS))
+    store(mut st, itop(mut st, m), RDL_TS2 + 1, iconst(mut st, RDL_SHORT_NS))
+    rdlDateInit(mut st, itop(mut st, m))
+    br(mut st, bA, list1(mut st, m))
+    setCur(mut st, bA)
+    ap := itop(mut st, arr)
+    n := load(mut st, ap, 0)
+    bFull := branchIf(mut st, cmp(mut st, CGe, n, iconst(mut st, RDL_CAP)))
+    ret(mut st, zero)
+    setCur(mut st, bFull)
+    // 列が空から始まる: 粗い時刻を今に（走査が止まっていた間に古くなっている）・タイマーが張られていなければ張る
+    bFirst := branchIf(mut st, cmp(mut st, CEq, n, zero))
+    store(mut st, wk, WK_REPOCH, bin(mut st, BSar, clockNs(mut st), iconst(mut st, RDL_SHIFT)))
+    rdlDate(mut st, ap)
+    bArm := branchIf(mut st, cmp(mut st, CEq, load(mut st, wk, WK_RTMR), zero))
+    rdlArm(mut st, wk, ap, RDL_TS)
+    br(mut st, bArm, -1)
+    setCur(mut st, bArm)
+    br(mut st, bFirst, -1)
+    setCur(mut st, bFirst)
+    n2 := urAdd(mut st, n, 1)
+    store(mut st, gepWord(mut st, ap, n2), 0, me)
+    store(mut st, ap, 0, n2)
+    store(mut st, tp, TC_RIDX, bin(mut st, BOr, n2, fdw))
+    store(mut st, tp, TC_RACK, zero)
+    ret(mut st, zero)
+}
+
+// rt.rdl_leave(tcb): ワーカーの期限の列から外す（最後の要素を空いた位置へ移す）・期限のワードを消す
+func buildRdlLeave(st mut St) {
+    begin(mut st, st.rtRdlLeave)
+    tcb := 0
+    zero := iconst(mut st, 0)
+    wk := globaladdr(mut st, st.wkG)
+    ri := load(mut st, tcb, TC_RIDX)
+    idx := bin(mut st, BAnd, ri, iconst(mut st, RDL_LOW))
+    arr := load(mut st, wk, WK_RARR)
+    bGo := branchIf(mut st, bin(mut st, BOr, cmp(mut st, CEq, idx, zero), cmp(mut st, CEq, arr, zero)))
+    ret(mut st, -1)
+    setCur(mut st, bGo)
+    ap := itop(mut st, arr)
+    n := load(mut st, ap, 0)
+    last := load(mut st, gepWord(mut st, ap, n), 0)
+    store(mut st, gepWord(mut st, ap, idx), 0, last)
+    lp := itop(mut st, last)
+    store(mut st, lp, TC_RIDX, bin(mut st, BOr, bin(mut st, BAnd, load(mut st, lp, TC_RIDX), iconst(mut st, -1 - RDL_LOW)), idx))
+    store(mut st, ap, 0, urAdd(mut st, n, -1))
+    store(mut st, tcb, TC_RIDX, zero)
+    store(mut st, tcb, TC_RDL, zero)
+    ret(mut st, -1)
+}
+
+// rt.rdl_sweep(): 粗い時刻を進め、期限の列を歩いて期限の過ぎたnetの待ちを切る（今のワーカーのtaskだけなので鍵なし）
+func buildRdlSweep(st mut St) {
+    begin(mut st, st.rtRdlSweep)
+    zero := iconst(mut st, 0)
+    wk := globaladdr(mut st, st.wkG)
+    // タイマーが満了した（張り直すまで張っていない）
+    store(mut st, wk, WK_RTMR, zero)
+    arr := load(mut st, wk, WK_RARR)
+    ap := itop(mut st, arr)
+    n := load(mut st, ap, 0)
+    bRun := branchIf(mut st, cmp(mut st, CEq, n, zero))
+    ret(mut st, -1)
+    setCur(mut st, bRun)
+    e := bin(mut st, BSar, clockNs(mut st), iconst(mut st, RDL_SHIFT))
+    store(mut st, wk, WK_REPOCH, e)
+    rdlDate(mut st, ap)
+    // ringのパスか（netのringのコードを組むプログラムで、今のワーカーがnetのringを持つ）
+    ringCode := chF(mut st, NETF_RECV) != -1
+    rec := if ringCode { load(mut st, wk, WK_RING) } else { zero }
+    // TCP_INFOの受け皿（tcp_infoのtcpi_bytes_acked = 120バイト目まで。16ワード）と長さ
+    info := newSlotAddr(mut st, 17)
+    lenp := newSlotAddr(mut st, 1)
+    // 期限が過ぎたのに待っていないtask（起こされて実行待ちの列にいる）を見たか。見たら短い間隔で見直す
+    again := newSlotAddr(mut st, 1)
+    store(mut st, again, 0, zero)
+    sl := newBlock(mut st)
+    i := param(mut st, sl, TyI64)
+    sb := newBlock(mut st)
+    se := newBlock(mut st)
+    sn := newBlock(mut st)
+    br(mut st, sl, list1(mut st, iconst(mut st, 1)))
+    setCur(mut st, sl)
+    condbr(mut st, cmp(mut st, CLe, i, n), sb, -1, se, -1)
+    setCur(mut st, sb)
+    t := load(mut st, gepWord(mut st, ap, i), 0)
+    tp := itop(mut st, t)
+    r := load(mut st, tp, TC_RDL)
+    due := bin(mut st, BAnd, cmp(mut st, CNe, r, zero), cmp(mut st, CLe, bin(mut st, BAnd, r, iconst(mut st, RDL_LOW)), e))
+    ior := load(mut st, tp, TC_IORES)
+    pr := cmp(mut st, CEq, ior, iconst(mut st, PEND_RT))
+    ps := cmp(mut st, CEq, ior, iconst(mut st, PEND_SEND))
+    pp := cmp(mut st, CEq, ior, iconst(mut st, IO_PENDING))
+    waiting := bin(mut st, BOr, bin(mut st, BOr, pr, ps), pp)
+    bDue := newBlock(mut st)
+    bNw := newBlock(mut st)
+    condbr(mut st, bin(mut st, BAnd, due, waiting), bDue, -1, bNw, -1)
+    setCur(mut st, bNw)
+    store(mut st, again, 0, bin(mut st, BOr, load(mut st, again, 0), due))
+    br(mut st, sn, -1)
+    setCur(mut st, bDue)
+    // 送りの間隔の期限: 送りが進んでいれば（tcpi_bytes_ackedが前に見た値と違えば）張り直す
+    iv := bin(mut st, BAnd, bin(mut st, BSar, r, iconst(mut st, 32)), iconst(mut st, 65535))
+    ri := load(mut st, tp, TC_RIDX)
+    fd1 := bin(mut st, BAnd, bin(mut st, BSar, ri, iconst(mut st, 32)), iconst(mut st, 1073741823))
+    bFire := newBlock(mut st)
+    bAck := newBlock(mut st)
+    condbr(mut st, bin(mut st, BAnd, cmp(mut st, CNe, iv, zero), cmp(mut st, CNe, fd1, zero)), bAck, -1, bFire, -1)
+    setCur(mut st, bAck)
+    store(mut st, lenp, 0, iconst(mut st, 128))
+    g := urSys(mut st, 55, []int{urAdd(mut st, fd1, -1), iconst(mut st, 6), iconst(mut st, 11), ptoi(mut st, info), ptoi(mut st, lenp)})
+    ack := load(mut st, info, 15)
+    moved := bin(mut st, BAnd, bin(mut st, BAnd, cmp(mut st, CEq, g, zero), cmp(mut st, CGe, load(mut st, lenp, 0), iconst(mut st, 128))), cmp(mut st, CNe, ack, load(mut st, tp, TC_RACK)))
+    bRe := newBlock(mut st)
+    condbr(mut st, moved, bRe, -1, bFire, -1)
+    setCur(mut st, bRe)
+    store(mut st, tp, TC_RACK, ack)
+    store(mut st, tp, TC_RDL, bin(mut st, BOr, bin(mut st, BAdd, e, iv), bin(mut st, BShl, iv, iconst(mut st, 32))))
+    br(mut st, sn, -1)
+    setCur(mut st, bFire)
+    // 数える（taskごとに1回。プールの節のtimeout。名前つきプールで入場したtaskだけ: poolDiedと同じ範囲の検査）
+    bCnt := branchIf(mut st, cmp(mut st, CEq, bin(mut st, BAnd, ri, iconst(mut st, RDL_COUNTED)), zero))
+    store(mut st, tp, TC_RIDX, bin(mut st, BOr, ri, iconst(mut st, RDL_COUNTED)))
+    if st.poolOn {
+        n0 := load(mut st, tp, TC_NODE)
+        lo := bin(mut st, BSub, bin(mut st, BAdd, ptoi(mut st, globaladdr(mut st, st.poolG)), iconst(mut st, 8)), iconst(mut st, SR_LED * 8))
+        off := bin(mut st, BSub, n0, lo)
+        bIn := branchIf(mut st, bin(mut st, BAnd, cmp(mut st, CGe, off, zero), cmp(mut st, CLt, off, iconst(mut st, POOL_MAX * POOL_W * 8))))
+        atomicXadd(mut st, itop(mut st, n0), PL_TOUT, iconst(mut st, 1))
+        br(mut st, bIn, -1)
+        setCur(mut st, bIn)
+    }
+    br(mut st, bCnt, -1)
+    setCur(mut st, bCnt)
+    // scopeの期限の待ちのチェーンにも居れば外す（今の走査が同じ待ちを2度ウェイクアップしない）
+    if dlFn(st.rtD3) != 0 {
+        dlUnlink(mut st, t, load(mut st, tp, TC_DL))
+    }
+    // 受けの待ち（rtが直にウェイクアップする待ち）は -110でウェイクアップ
+    bNr := newBlock(mut st)
+    bOt := newBlock(mut st)
+    condbr(mut st, pr, bNr, -1, bOt, -1)
+    setCur(mut st, bNr)
+    epWake(mut st, t, iconst(mut st, -110))
+    br(mut st, sn, -1)
+    setCur(mut st, bOt)
+    if ringCode {
+        // ringのパス（今のワーカーがnetのringを持つ）: 送りとPOLL_ADDは取り消す（完了で -110としてウェイクアップする）
+        bCk := newBlock(mut st)
+        bRg := newBlock(mut st)
+        bEp := newBlock(mut st)
+        condbr(mut st, cmp(mut st, CNe, rec, zero), bCk, -1, bEp, -1)
+        setCur(mut st, bCk)
+        condbr(mut st, cmp(mut st, CNe, load(mut st, itop(mut st, rec), UR_NET), zero), bRg, -1, bEp, -1)
+        setCur(mut st, bRg)
+        tag := bin(mut st, BAdd, iconst(mut st, UDT_POLL), bin(mut st, BMul, ps, iconst(mut st, TAG_SEND - UDT_POLL)))
+        urSqe(mut st, rec, iconst(mut st, 14), bin(mut st, BOr, t, tag), zero, iconst(mut st, UD_CANCEL), zero)
+        br(mut st, sn, -1)
+        setCur(mut st, bEp)
+    }
+    // epollのパス: epollの待ち（IO_PENDING）は -110でウェイクアップ（待ち手が登録を外す）
+    bW := newBlock(mut st)
+    condbr(mut st, pp, bW, -1, sn, -1)
+    setCur(mut st, bW)
+    epWake(mut st, t, iconst(mut st, -110))
+    br(mut st, sn, -1)
+    setCur(mut st, sn)
+    br(mut st, sl, list1(mut st, urAdd(mut st, i, 1)))
+    setCur(mut st, se)
+    bAg := newBlock(mut st)
+    bPd := newBlock(mut st)
+    bEnd := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, load(mut st, again, 0), zero), bAg, -1, bPd, -1)
+    setCur(mut st, bAg)
+    rdlArm(mut st, wk, ap, RDL_TS2)
+    br(mut st, bEnd, -1)
+    setCur(mut st, bPd)
+    rdlArm(mut st, wk, ap, RDL_TS)
+    br(mut st, bEnd, -1)
+    setCur(mut st, bEnd)
+    ret(mut st, -1)
+}
+

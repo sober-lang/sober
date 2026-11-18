@@ -1,0 +1,8 @@
+@@full	af598974c72a8b23	785	23069
+@head	20e69509dfebf8f5	0	66
+func eval	7ae10b5b005420f9	33	1325
+func lit	1bc374a041519d31	5	308
+func main	2023dd833fd1439c	36	1132
+func neg	27f5c5104687711f	9	463
+func sum	bf4e516d1591f2a5	18	674
+type Expr	652ffe9a47fca30a	6	359

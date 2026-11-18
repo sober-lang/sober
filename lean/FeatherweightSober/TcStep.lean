@@ -11,7 +11,7 @@ import FeatherweightSober.Checker
 書き方の規律（抽出器の受け口）:
 - `tcStep` 自身のパターンは (式の構成子, 段) だけ（段は 0 / 1 / 2 / n+k — 重なりなし）。結果の型の入れ子のパターンは全部、
   1 腕 1 つの小さな関数（`k…` = 結果を組む・`s…` = 結果に依存して次の子と文脈を決める）の**引数のパターン**に置く
-- 右辺に計算への match を書かない（`Δ[fn]?`・`Λ[n]?`・`Ty.anchorOf …` は補助関数の引数に持ち上げる）
+- 右辺に計算への match を書かない（`Δ[fn]?`・`Λ[n]?` は補助関数の引数に持ち上げる）
 - 文脈・関数表の読み口は小さな定義（`ctxGet` / `ctxCons` / `lctxTy` / `lctxK` / `lctxCons` / `defGet` / `defParam` / `defRet` / `defTps` /
   `tsLen` / `ctxAllMutFree`）— Sober 側は表現に合わせた手書きの shim（compiler/checker/check.sober）
 
@@ -40,7 +40,7 @@ def lctxCons (t : Ty) (k : Nat) (Λ : LCtx) : LCtx := (t, k) :: Λ
 def defGet (Δ : Defs) (fn : Nat) : Option Def := Δ[fn]?
 def defParam (dfn : Def) (ts : List Ty) : Ty := (dfn.inst ts).param
 def defRet (dfn : Def) (ts : List Ty) : Ty := (dfn.inst ts).ret
-def defTps (dfn : Def) : Nat := dfn.tparams
+def defTps (dfn : Def) : Nat := dfn.kinds.length
 def tsLen (ts : List Ty) : Nat := ts.length
 
 /-! ## 結果を組む関数（k…）と、結果で次の子を決める関数（s…） -/
@@ -107,31 +107,18 @@ def sCase2 : Option Ty → Expr → Nat → Nat → Ctx → LCtx → Act
   | some (.union _ r), br, b, d, Γ, Λ => .sub br b d (ctxCons r Γ) Λ
   | _, _, _, _, _, _ => .ret none
 
-/-- call: 呼び手深さ d = d' + 1、ρ = d'。引数は浅い imm 共変で param.shiftR d' へ -/
-def kCall : Option Def → List Ty → Option Ty → Nat → Nat → Option Ty
-  | some dfn, ts, some t, b, d' + 1 =>
-      if decide (tsLen ts = defTps dfn) && Ty.tyArgsOk ts &&
-          Ty.sub t ((defParam dfn ts).shiftR d') && decide (b ≤ d') then
-        some ((defRet dfn ts).relocR d')
-      else none
-  | _, _, _, _, _ => none
-
-def kCallM2 : Option Nat → Def → List Ty → Ty → Nat → Nat → Option Ty
-  | some a, dfn, ts, t, b, d' =>
-      if decide (tsLen ts = defTps dfn) && Ty.tyArgsOk ts &&
+/-- call: 呼び手深さ d = d' + 1。anchor a は構文の注釈で、引数は浅い imm 共変で param.renR a d' へ -/
+def kCall : Nat → Option Def → List Ty → Option Ty → Nat → Nat → Option Ty
+  | a, some dfn, ts, some t, b, d' + 1 =>
+      if decide (tsLen ts = defTps dfn) && kindsArgsOk dfn.kinds ts &&
           Ty.sub t ((defParam dfn ts).renR a d') && decide (b ≤ a) && decide (a ≤ d') then
         some ((defRet dfn ts).relocA a d')
       else none
-  | none, _, _, _, _, _ => none
-
-/-- callM: call と同じ形。anchor a は引数の型の mut 位置から読む -/
-def kCallM : Option Def → List Ty → Option Ty → Nat → Nat → Option Ty
-  | some dfn, ts, some t, b, d' + 1 => kCallM2 (Ty.anchorOf (defParam dfn ts) t) dfn ts t b d'
-  | _, _, _, _, _ => none
+  | _, _, _, _, _, _ => none
 
 def kFnref : Option Def → List Ty → Option Ty
   | some dfn, ts =>
-      if decide (tsLen ts = defTps dfn) && Ty.tyArgsOk ts then
+      if decide (tsLen ts = defTps dfn) && kindsArgsOk dfn.kinds ts then
         some (.fn (defParam dfn ts) (defRet dfn ts))
       else none
   | none, _ => none
@@ -144,15 +131,10 @@ def sCallv1 : Option Ty → Expr → Nat → Nat → Ctx → LCtx → Act
   | some (.fn _ _), e, b, d, Γ, Λ => .sub e b d Γ Λ
   | _, _, _, _, _, _ => .ret none
 
-def kCallv : Option Ty → Option Ty → Nat → Nat → Option Ty
-  | some (.fn p r), some t, b, d' + 1 =>
-      if Ty.sub t (p.shiftR d') && decide (b ≤ d') then some (r.relocR d') else none
-  | _, _, _, _ => none
-
-/-- callMv（L1）: callv の anchor 版 — anchor a は構文の注釈 -/
-def kCallMv : Nat → Option Ty → Option Ty → Nat → Nat → Option Ty
+/-- callv: 関数値の呼び出し。前提は call と同じ形で、シグネチャを関数値の型から取る -/
+def kCallv : Nat → Option Ty → Option Ty → Nat → Nat → Option Ty
   | a, some (.fn p r), some t, b, d' + 1 =>
-      if Ty.sub t (p.renR a d') && decide (b ≤ a) && decide (a ≤ d') then some (r.relocA a d') else none
+      if Ty.sub t (p.renR a d') && decide (b ≤ a) && decide (a ≤ d') && r.retOk then some (r.relocA a d') else none
   | _, _, _, _, _ => none
 
 def kLabel : Option Ty → Ty → Nat → Option Ty
@@ -434,19 +416,14 @@ def tcStep (Δ : Defs) (f b d : Nat) (Γ : Ctx) (Λ : LCtx) (r1 r2 r3 : Option T
   | .fst _, _ + 1 => .ret (kFst r1)
   | .snd e, 0 => .sub e b d Γ Λ
   | .snd _, _ + 1 => .ret (kSnd r1)
-  | .call _ _ e, 0 => .sub e b d Γ Λ
-  | .call fn ts _, _ + 1 => .ret (kCall (defGet Δ fn) ts r1 b d)
-  | .callM _ _ e, 0 => .sub e b d Γ Λ
-  | .callM fn ts _, _ + 1 => .ret (kCallM (defGet Δ fn) ts r1 b d)
+  | .call _ _ _ e, 0 => .sub e b d Γ Λ
+  | .call a fn ts _, _ + 1 => .ret (kCall a (defGet Δ fn) ts r1 b d)
   | .fnref fn ts, _ => .ret (kFnref (defGet Δ fn) ts)
   | .ann e _, 0 => .sub e b d Γ Λ
   | .ann _ t, _ + 1 => .ret (kAnn r1 t)
-  | .callv ef _, 0 => .sub ef b d Γ Λ
-  | .callv _ e, 1 => sCallv1 r1 e b d Γ Λ
-  | .callv _ _, _ + 2 => .ret (kCallv r1 r2 b d)
-  | .callMv _ ef _, 0 => .sub ef b d Γ Λ
-  | .callMv _ _ e, 1 => sCallv1 r1 e b d Γ Λ
-  | .callMv a _ _, _ + 2 => .ret (kCallMv a r1 r2 b d)
+  | .callv _ ef _, 0 => .sub ef b d Γ Λ
+  | .callv _ _ e, 1 => sCallv1 r1 e b d Γ Λ
+  | .callv a _ _, _ + 2 => .ret (kCallv a r1 r2 b d)
   | .label t e, 0 => .sub e b d Γ (lctxCons t (d - 1) Λ)
   | .label t _, _ + 1 => .ret (kLabel r1 t d)
   | .unreach t, _ => .ret (some t)

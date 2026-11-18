@@ -1,0 +1,42 @@
+package main
+
+// 実験3（shape-m0）の題材 f4・形 straight。gen.ts の生成物
+
+import "std/builder"
+import "std/iter"
+import "std/json"
+
+type R struct {
+    a0 int
+    a1 string
+    a2 int
+    a3 string
+}
+
+func mk(i int) R {
+    return R{a0: i + 10, a1: "s11_${i % 100}", a2: i + 12, a3: "s13_${i % 100}"}
+}
+
+func enc(v R) string {
+    mut o := builder.Builder[byte]{}
+    builder.Push(mut o, '{')
+    json.PutKey(mut o, "a0", true)
+    json.PutInt(mut o, v.a0)
+    json.PutKey(mut o, "a1", false)
+    json.PutString(mut o, v.a1)
+    json.PutKey(mut o, "a2", false)
+    json.PutInt(mut o, v.a2)
+    json.PutKey(mut o, "a3", false)
+    json.PutString(mut o, v.a3)
+    builder.Push(mut o, '}')
+    return json.Done(mut o)
+}
+
+func main() {
+    println(enc(mk(7)))
+    mut total := 0
+    for i <- iter.Range(0, 200000) {
+        total += len(bytes(enc(mk(i))))
+    }
+    println(total)
+}

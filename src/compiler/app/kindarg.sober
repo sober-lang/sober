@@ -1,0 +1,133 @@
+package main
+
+// 診断 diag.KindArg の文面: 型引数が呼び先の総称関数の kind（本体が型パラメータに仮定した性質）を満たさない呼び出し。
+// check（検査器の拒否のやり直し — checker.KindFail）と build（lower の kindArgsCheck）が同じ組から同じ行を出す
+
+import "loader"
+import "diag"
+import "desugar"
+import "ast"
+import "std/iter"
+import "std/strings"
+import "checker"
+import "lexer"
+
+// 行の先頭に `sober: ` は付けない（呼び手が付ける）。組 ka = [呼び先の関数表の添字（-1 = 名前の無い持ち上げ）, 型パラメータの添字, 欠けた旗, 旗ごとの本体の位置 ×5（PackPos）,
+// 旗ごとの関数値の捕捉 ×5（[ラムダの位置, named fn type の宣言の位置, 捕捉の名前の添字 + 1] — 0 = 無し）]、at = 呼び出しの位置
+func kindArgLines(p loader.Program, std map[string]string, at diag.Pos, ka []int) []string {
+    fn := ka[0]
+    miss := ka[2]
+    name := if fn >= 0 { kaFnLabel(p, fn, at) } else { "the function" }
+    tpn := if fn >= 0 { kaTParam(p, fn, ka[1]) } else { "T" }
+    mut out := mut []string{"type error at ${where(p, std, at)} (KindArg): the type argument for ${tpn} of ${name} lacks a property that the body of ${name} uses"}
+    if miss == 0 {
+        out = append(out, "  a type argument cannot contain a channel or a task endpoint")
+    }
+    for f <- iter.Range(0, 5) {
+        if (miss & kaBit(f)) != 0 {
+            b := desugar.UnpackPos(ka[3 + f])
+            src := if b.file >= 0 { " (required at ${where(p, std, b)})" } else { "" }
+            out = append(out, "  ${tpn} must ${kaWords(f)}: the body of ${name} relies on it${src}")
+            if len(ka) >= 23 && ka[10 + 3 * f] > 0 {
+                out = append(out, kaCapLine(p, std, ka[8 + 3 * f], ka[9 + 3 * f], ka[10 + 3 * f] - 1, f))
+            }
+        }
+    }
+    if fn >= 0 && strings.HasSuffix(p.file_path[p.fn_file[fn]], ".sobi") {
+        pk := p.pkg_path[p.file_pkg[p.fn_file[fn]]]
+        out = append(out, "  the properties of ${tpn} come from the body of ${name} (recorded as @kind in the .sobi of ${pk}); a different version of ${pk} may require different properties")
+    }
+    return freeze(out)
+}
+
+// 関数値の成分が原因のときの行: 型引数の中の named fn type の値は、プログラムのどこかで作ったクロージャでありうる（渡した値に限らない）
+func kaCapLine(p loader.Program, std map[string]string, lam int, decl int, j int, f int) string {
+    fp := desugar.UnpackPos(decl)
+    fname := kaTokText(p, std, fp)
+    nm := if j >= 0 && j < len(p.cap_names) { p.cap_names[j] } else { "a name" }
+    return "    a value of function type ${fname} may be the closure at ${where(p, std, desugar.UnpackPos(lam))}, which captures ${nm}: ${kaCapWords(f)}"
+}
+
+// 位置 at の字句の綴り（読めなければ "a named function type"）
+func kaTokText(p loader.Program, std map[string]string, at diag.Pos) string {
+    if at.file >= 0 {
+        src, ok := loader.SourceFs(p, at.file, std)
+        if ok {
+            toks := lexer.Lex(src)
+            if at.tok >= 0 && at.tok < len(toks) {
+                t := toks[at.tok]
+                return string(src[t.start:t.end]) catch return "a named function type"
+            }
+        }
+    }
+    return "a named function type"
+}
+
+func kaCapWords(f int) string {
+    return switch f {
+    case 0: "the captured value holds a slice, string or map"
+    case 2: "the captured value holds a mut container"
+    case 3: "the captured value holds a domain"
+    default: "the captured value is not readable at a wider region"
+    }
+}
+
+// 旗の順（rf・kf・mf・cf・cov — checker の kindArgOf と同じ）の桁と言葉
+func kaBit(f int) int {
+    return switch f {
+    case 0: 1
+    case 1: 16
+    case 2: 2
+    case 3: 4
+    default: 8
+    }
+}
+
+func kaWords(f int) string {
+    return switch f {
+    case 0: "have no regions (no slice, string or map inside)"
+    case 1: "be usable as a map key (int or string)"
+    case 2: "contain no mut container"
+    case 3: "contain no domain"
+    default: "be readable at a wider region (covariant)"
+    }
+}
+
+// 呼び先の名前（呼び出しの位置と別の package なら package の名前で修飾する）
+func kaFnLabel(p loader.Program, fn int, at diag.Pos) string {
+    t := p.trees[p.fn_file[fn]]
+    n := loader.Name(t, t.nodes[p.fn_node[fn]].a)
+    fp := p.file_pkg[p.fn_file[fn]]
+    if at.file >= 0 && at.file < len(p.file_pkg) && p.file_pkg[at.file] == fp {
+        return n
+    }
+    _, base, cut := strings.CutLast(p.pkg_path[fp], "/")
+    return "${if cut { base } else { p.pkg_path[fp] }}.${n}"
+}
+
+// 呼び先の型パラメータ i の名前
+func kaTParam(p loader.Program, fn int, i int) string {
+    t := p.trees[p.fn_file[fn]]
+    tps := t.nodes[p.fn_node[fn]].b
+    if tps < 0 || i >= ast.ListLen(t, tps) {
+        return "T"
+    }
+    return loader.Name(t, ast.ListAt(t, tps, i))
+}
+
+// build の lower が拒否した型引数の組。本体の位置は check の経路の検査器から引く（同じ呼び先と型パラメータで落ちるとき — 拒否のときだけ
+// check をやり直す）。引けなければ位置なし
+func buildKindArg(p loader.Program, fn int, tp int, miss int) []int {
+    r, cerr := check(p)
+    if cerr == nil {
+        ka, kerr := checker.KindFail(if checker.Trust(r) { loader.WithFnKinds(p, l0Kinds(p, L0)) } else { p }, r)
+        if kerr == nil && len(ka) == 23 && ka[0] == fn && ka[1] == tp {
+            return ka
+        }
+    }
+    mut out := mut []int{fn, tp, miss}
+    for i <- iter.Range(3, 23) {
+        out = append(out, 0)
+    }
+    return freeze(out)
+}

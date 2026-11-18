@@ -46,12 +46,12 @@ func setup(w string) error? {
     io.WriteFile(w + "/www/sub/data.bin", bytes("01"))?
     io.WriteFile(w + "/outside.txt", bytes("secret"))?
     _ = os.Run("/bin/ln", []string{"-sfn", "../outside.txt", w + "/www/esc"})?
-    touch(w + "/www/index.html", "@1700000000.5")?
-    touch(w + "/www/app.js", "@1700000001")?
-    touch(w + "/www/app.js.gz", "@1700000002")?
-    touch(w + "/www/app.js.br", "@1700000003")?
-    touch(w + "/www/.hidden", "@1700000000")?
-    touch(w + "/www/sub/data.bin", "@1700000000")?
+    touch(w + "/www/index.html", "@700000000.5")?
+    touch(w + "/www/app.js", "@700000001")?
+    touch(w + "/www/app.js.gz", "@700000002")?
+    touch(w + "/www/app.js.br", "@700000003")?
+    touch(w + "/www/.hidden", "@700000000")?
+    touch(w + "/www/sub/data.bin", "@700000000")?
     return nil
 }
 
@@ -66,31 +66,31 @@ func req(method string, path string, ae string) string {
     return "${method} ${path} HTTP/1.1\r\nHost: x\r\n${ae}\r\n"
 }
 
-// 条件付きGETのリクエスト（index.htmlのETag = W/"17979cfe53f76500-9"・更新時刻の秒 = Tue, 14 Nov 2023 22:13:20 GMT・
-// app.js = W/"17979cfe71c4ca00-8"・app.js.br = W/"17979cfee8fa5e00-4-br"）
+// 条件付きGETのリクエスト（index.htmlのETag = W/"9b6e64aac936500-9"・更新時刻の秒 = Sat, 07 Mar 1992 20:26:40 GMT・
+// app.js = W/"9b6e64aca60ca00-8"・app.js.br = W/"9b6e64b41965e00-4-br"）
 func conds() string {
-    ix := "W/\"17979cfe53f76500-9\""
-    lm := "Tue, 14 Nov 2023 22:13:20 GMT"
+    ix := "W/\"9b6e64aac936500-9\""
+    lm := "Sat, 07 Mar 1992 20:26:40 GMT"
     return req("GET", "/s/index.html", "If-None-Match: ${ix}\r\n") +
         req("GET", "/s/index.html", "If-None-Match: \"x\", W/\"y\" ,${ix}\r\n") +
-        req("GET", "/s/index.html", "If-None-Match: \"17979cfe53f76500-9\"\r\n") +
+        req("GET", "/s/index.html", "If-None-Match: \"9b6e64aac936500-9\"\r\n") +
         req("GET", "/s/index.html", "If-None-Match: *\r\n") +
         req("HEAD", "/s/index.html", "If-None-Match: ${ix}\r\n") +
         req("GET", "/s/index.html", "If-None-Match: W/\"nope\"\r\nIf-Modified-Since: ${lm}\r\n") +
         req("GET", "/s/index.html", "If-Modified-Since: ${lm}\r\n") +
-        req("GET", "/s/index.html", "If-Modified-Since: Tuesday, 14-Nov-23 22:13:20 GMT\r\n") +
-        req("GET", "/s/index.html", "If-Modified-Since: Tue Nov 14 22:13:20 2023\r\n") +
-        req("GET", "/s/index.html", "If-Modified-Since: Tue, 14 Nov 2023 22:13:21 GMT\r\n") +
-        req("GET", "/s/index.html", "If-Modified-Since: Tue, 14 Nov 2023 22:13:19 GMT\r\n") +
+        req("GET", "/s/index.html", "If-Modified-Since: Saturday, 07-Mar-92 20:26:40 GMT\r\n") +
+        req("GET", "/s/index.html", "If-Modified-Since: Sat Mar  7 20:26:40 1992\r\n") +
+        req("GET", "/s/index.html", "If-Modified-Since: Sat, 07 Mar 1992 20:26:41 GMT\r\n") +
+        req("GET", "/s/index.html", "If-Modified-Since: Sat, 07 Mar 1992 20:26:39 GMT\r\n") +
         req("GET", "/s/index.html", "If-Modified-Since: yesterday\r\n") +
         req("GET", "/s/index.html", "If-Modified-Since: ${lm}\r\nIf-Modified-Since: ${lm}\r\n") +
         req("GET", "/s/index.html", "If-Match: ${ix}\r\n") +
         req("GET", "/s/index.html", "If-Match: *\r\n") +
-        req("GET", "/s/index.html", "If-Unmodified-Since: Tue, 14 Nov 2023 22:13:19 GMT\r\n") +
+        req("GET", "/s/index.html", "If-Unmodified-Since: Sat, 07 Mar 1992 20:26:39 GMT\r\n") +
         req("GET", "/s/index.html", "If-Unmodified-Since: ${lm}\r\n") +
-        req("GET", "/s/app.js", "Accept-Encoding: br\r\nIf-None-Match: W/\"17979cfe71c4ca00-8\"\r\n") +
-        req("GET", "/s/app.js", "Accept-Encoding: br\r\nIf-None-Match: W/\"17979cfee8fa5e00-4-br\"\r\n") +
-        req("GET", "/f/app.js", "If-None-Match: W/\"17979cfe71c4ca00-8\"\r\n") +
+        req("GET", "/s/app.js", "Accept-Encoding: br\r\nIf-None-Match: W/\"9b6e64aca60ca00-8\"\r\n") +
+        req("GET", "/s/app.js", "Accept-Encoding: br\r\nIf-None-Match: W/\"9b6e64b41965e00-4-br\"\r\n") +
+        req("GET", "/f/app.js", "If-None-Match: W/\"9b6e64aca60ca00-8\"\r\n") +
         req("GET", "/f/app.js", "") +
         req("GET", "/n/sub/data.bin", "") +
         req("GET", "/none", "")

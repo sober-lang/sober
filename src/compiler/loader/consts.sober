@@ -303,7 +303,7 @@ func dictElem(cx Cx, fs Funcs, f int, e0 int, fuel int, field bool) (int, int) {
             i += 1
         }
         return 0 - 1, 0
-    case ast.ELambda | ast.EStrlit | ast.EFloat:
+    case ast.ELambda | ast.EStrlit | ast.EFloat | ast.EEmbed:
         return 0 - 1, 0
     case ast.ENil:
         return if field { 0 - 1 } else { e }, if field { 0 } else { CE_NIL }
@@ -389,7 +389,7 @@ func opBad(cx Cx, f int, e0 int) (int, int) {
     switch k {
     case ast.ECall:
         return e, CE_CALL
-    case ast.EStrlit | ast.EFloat | ast.EInterp:
+    case ast.EStrlit | ast.EFloat | ast.EInterp | ast.EEmbed:
         return e, CE_OP
     case ast.EIdent | ast.ESelector:
         if k == ast.EIdent && boolLit(t, e) {

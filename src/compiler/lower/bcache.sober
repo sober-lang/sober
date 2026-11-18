@@ -47,11 +47,12 @@ type BcView struct {
     eo []int
     el []int
     eh []int
-    fs [][]byte
+    fp []string    // パックのパス（efの添字 — α・β1・β2の値は当たったときにここから読む）
+    vs [][]byte    // 項目ごとの値（γ・P・Dは読み込みで読んだ値・α・β1・β2は空 — bcVal）
 }
 
 func bcNone() BcView {
-    return BcView{on: false, vfy: false, am: []int{}, bm: []int{}, cm: []int{}, gm: []int{}, pm: []int{}, pe: []int{}, ge: []int{}, de: []int{}, ek2: []int{}, ef: []int{}, eo: []int{}, el: []int{}, eh: []int{}, fs: [][]byte{}}
+    return BcView{on: false, vfy: false, am: []int{}, bm: []int{}, cm: []int{}, gm: []int{}, pm: []int{}, pe: []int{}, ge: []int{}, de: []int{}, ek2: []int{}, ef: []int{}, eo: []int{}, el: []int{}, eh: []int{}, fp: []string{}, vs: [][]byte{}}
 }
 
 // バイト列 b の [lo, hi) の検査和（語単位の混ぜ — 64 bit）
@@ -720,21 +721,21 @@ func bcLoad(dir string, vfy bool) BcView {
     mut eo := mut []int{}
     mut el := mut []int{}
     mut eh := mut []int{}
-    mut fs := mut [][]byte{}
+    mut fp := mut []string{}
+    mut vs := mut [][]byte{}
     es := io.ReadDir(dir) catch []io.DirEntry{}
     for e <- es {
         nb := bytes(e.Name)
         n0 := len(nb)
         if n0 > 5 && nb[n0 - 5] == '.' && nb[n0 - 4] == 'p' && nb[n0 - 3] == 'a' && nb[n0 - 2] == 'c' && nb[n0 - 1] == 'k' {
-            b := io.ReadFile("${dir}/${e.Name}") catch []byte{}
-            nb2 := len(b)
-            il := if nb2 >= 24 && binary.Load64(b, nb2 - 24) == BC_MAGIC { binary.Load64(b, nb2 - 16) } else { -1 }
-            if il >= 0 && il <= nb2 - 24 && bcSum(b, nb2 - 24 - il, nb2 - 24) == binary.Load64(b, nb2 - 8) {
-                fi := len(fs)
-                fs = append(fs, b)
-                base := 0
-                vend := nb2 - 24 - il
-                mut r := BcRd{b: b, at: vend, end: nb2 - 24, bad: false}
+            path := "${dir}/${e.Name}"
+            ix := bcIndexOf(path)
+            if len(ix) > 0 {
+                fi := len(fp)
+                fp = append(fp, path)
+                vend := binary.Load64(ix, len(ix) - 8)
+                mut r := BcRd{b: ix, at: 0, end: len(ix) - 8, bad: false}
+                mut eager := mut []int{}   // このパックの読み込みで読む項目（γ・P・D）
                 while r.at < r.end && !r.bad {
                     cut := bcGet(mut r)
                     k1 := bcGet(mut r)
@@ -743,7 +744,7 @@ func bcLoad(dir string, vfy bool) BcView {
                     n := bcGet(mut r)
                     h := bcGet(mut r)
                     seen := if cut == BC_A { am[k1] != nil } else if cut == BC_B1 { bm[k1] != nil } else if cut == BC_G { gm[k1] != nil } else if cut == BC_P { pm[k1] != nil } else if cut == BC_D { dm[k1] != nil } else { cm[k1] != nil }
-                    if !r.bad && !seen && cut >= BC_A && cut <= BC_D && off >= 0 && n >= 0 && base + off + n <= vend {
+                    if !r.bad && !seen && cut >= BC_A && cut <= BC_D && off >= 0 && n >= 0 && off + n <= vend {
                         ei := len(ek2)
                         if cut == BC_A {
                             am[k1] = ei
@@ -751,34 +752,114 @@ func bcLoad(dir string, vfy bool) BcView {
                             bm[k1] = ei
                         } else if cut == BC_G {
                             gm[k1] = ei
-                            ge = append(ge, ei)
-                            ge = append(ge, k1)
                         } else if cut == BC_P {
                             pm[k1] = ei
-                            pe = append(pe, ei)
-                            pe = append(pe, k1)
                         } else if cut == BC_D {
                             dm[k1] = ei
-                            de = append(de, ei)
-                            de = append(de, k1)
                         } else {
                             cm[k1] = ei
+                        }
+                        if cut == BC_G || cut == BC_P || cut == BC_D {
+                            eager = append(eager, ei)
                         }
                         ec = append(ec, cut)
                         ek1 = append(ek1, k1)
                         ek2 = append(ek2, k2)
                         ef = append(ef, fi)
-                        eo = append(eo, base + off)
+                        eo = append(eo, off)
                         el = append(el, n)
                         eh = append(eh, h)
+                        vs = append(vs, []byte{})
                     }
                 }
+                // γ・P・Dの値は今読む（loader・desugarへ表で渡す）。近い項目はまとめて1回の読みに
+                bcReadEager(path, freeze(eager), freeze(eo), freeze(el), mut vs)
+            }
+        }
+    }
+    // γ・P・Dの列（検査和の合う値だけ — 合わない項目は表から外す）
+    for ei <- iter.Range(0, len(ek2)) {
+        cut := ec[ei]
+        if cut == BC_G || cut == BC_P || cut == BC_D {
+            v := vs[ei]
+            ok := len(v) == el[ei] && bcSum(v, 0, len(v)) == eh[ei]
+            if !ok {
+                ec[ei] = -1
+            } else if cut == BC_G {
+                ge = append(ge, ei)
+                ge = append(ge, ek1[ei])
+            } else if cut == BC_P {
+                pe = append(pe, ei)
+                pe = append(pe, ek1[ei])
+            } else {
+                de = append(de, ei)
+                de = append(de, ek1[ei])
             }
         }
     }
     fc := freeze(ec)
     fk := freeze(ek1)
-    return BcView{on: true, vfy: vfy, am: bcProbe(fc, fk, BC_A), bm: bcProbe(fc, fk, BC_B1), cm: bcProbe(fc, fk, BC_B2), gm: bcProbe(fc, fk, BC_G), pm: bcProbe(fc, fk, BC_P), pe: freeze(pe), ge: freeze(ge), de: freeze(de), ek2: freeze(ek2), ef: freeze(ef), eo: freeze(eo), el: freeze(el), eh: freeze(eh), fs: freeze(fs)}
+    return BcView{on: true, vfy: vfy, am: bcProbe(fc, fk, BC_A), bm: bcProbe(fc, fk, BC_B1), cm: bcProbe(fc, fk, BC_B2), gm: bcProbe(fc, fk, BC_G), pm: bcProbe(fc, fk, BC_P), pe: freeze(pe), ge: freeze(ge), de: freeze(de), ek2: freeze(ek2), ef: freeze(ef), eo: freeze(eo), el: freeze(el), eh: freeze(eh), fp: freeze(fp), vs: freeze(vs)}
+}
+
+// パック path の索引（尾の検査を通ったもの）と、その後ろに値の終わりの位置（8 バイト）。読めない・壊れたパックは空
+func bcIndexOf(path string) []byte {
+    f := io.Open(path) catch return []byte{}
+    defer io.Close(f)
+    fi := io.Stat(f) catch return []byte{}
+    nb := fi.size
+    if nb < 24 {
+        return []byte{}
+    }
+    tail := io.ReadAt(f, nb - 24, 24) catch return []byte{}
+    if len(tail) != 24 || binary.Load64(tail, 0) != BC_MAGIC {
+        return []byte{}
+    }
+    il := binary.Load64(tail, 8)
+    if il < 0 || il > nb - 24 {
+        return []byte{}
+    }
+    vend := nb - 24 - il
+    ix := io.ReadAt(f, vend, il) catch return []byte{}
+    if len(ix) != il || bcSum(ix, 0, il) != binary.Load64(tail, 16) {
+        return []byte{}
+    }
+    mut out := mut []byte{}
+    for b <- ix {
+        out = append(out, b)
+    }
+    bcLe(mut out, vend)
+    return freeze(out)
+}
+
+// パック path の項目 es（位置の昇順でなくてよい）の値を vs へ読む。位置の近い項目（間が BC_GAP 以下）はまとめて1回の読みにする。読めなければ空のまま
+const BC_GAP = 4096
+
+func bcReadEager(path string, es []int, eo []int, el []int, vs mut [][]byte) {
+    if len(es) == 0 {
+        return
+    }
+    f := io.Open(path) catch return
+    defer io.Close(f)
+    mut k := 0
+    while k < len(es) {
+        lo := eo[es[k]]
+        mut hi := lo + el[es[k]]
+        mut j := k + 1
+        while j < len(es) && eo[es[j]] >= hi && eo[es[j]] <= hi + BC_GAP {
+            hi = eo[es[j]] + el[es[j]]
+            j += 1
+        }
+        b := io.ReadAt(f, lo, hi - lo) catch []byte{}
+        for q <- iter.Range(k, j) {
+            e := es[q]
+            o := eo[e] - lo
+            if o + el[e] <= len(b) {
+                vs[e] = b[o:o + el[e]]
+            }
+        }
+        k = j
+    }
 }
 
 // 切り口 cut の鍵 [k1, k2] の項目（無い・検査和が合わない = -1）
@@ -791,15 +872,131 @@ func bcFind(v BcView, cut int, k1 int, k2 int) int {
     if e < 0 || v.ek2[e] != k2 {
         return -1
     }
-    if bcSum(v.fs[v.ef[e]], v.eo[e], v.eo[e] + v.el[e]) != v.eh[e] {
+    return e
+}
+
+// 親の引き（bcFind + 値を読んで検査和を確かめる — α・β1・β2の値は当たったときにだけ読む）
+func bcFindS(st mut St, cut int, k1 int, k2 int) int {
+    e := bcFind(st.bcv, cut, k1, k2)
+    if e < 0 {
         return -1
     }
-    return e
+    _, ok := bcVal(mut st, e)
+    return if ok { e } else { -1 }
+}
+
+// 項目 e の値（γ・P・Dは読み込みで読んだ値・α・β1・β2はパックから読んで検査和を確かめ、st.bcLzに覚える）。読めない・壊れていれば偽
+func bcVal(st mut St, e int) ([]byte, bool) {
+    v := st.bcv
+    if len(v.vs[e]) > 0 {
+        return v.vs[e], true
+    }
+    w := if len(st.bcLzE) > e { st.bcLzE[e] } else { -1 }
+    if w >= 0 {
+        return st.bcLzV[w], true
+    }
+    if w == -2 {
+        return []byte{}, false
+    }
+    // 先に読んでいない項目（検証モードの比べなど）はその場で読む
+    b := bcReadOne(v.fp[v.ef[e]], v.eo[e], v.el[e])
+    ok := len(b) == v.el[e] && bcSum(b, 0, len(b)) == v.eh[e]
+    return b, ok
+}
+
+// 項目 es（α・β1・β2の候補 — 鍵の索引が一致した項目）の値をまとめて読み、検査和を確かめて st.bcLzE / bcLzV に覚える。
+// 項目の番号の順に、同じパックで位置の近い項目（間が BC_GAP 以下）を1回の読みにする
+func bcPrefetch(st mut St, es []int) {
+    v := st.bcv
+    n := len(v.ek2)
+    mut wnt := mut []bool{}
+    mut ix := mut []int{}
+    for e <- iter.Range(0, n) {
+        wnt = append(wnt, false)
+        ix = append(ix, if len(st.bcLzE) > e { st.bcLzE[e] } else { -1 })
+    }
+    mut any := false
+    for e <- es {
+        if e >= 0 && e < n && len(v.vs[e]) == 0 && ix[e] == -1 {
+            wnt[e] = true
+            any = true
+        }
+    }
+    if !any {
+        return
+    }
+    mut lzv := mut [][]byte{}
+    for x <- st.bcLzV {
+        lzv = append(lzv, x)
+    }
+    mut e := 0
+    while e < n {
+        if !wnt[e] {
+            e += 1
+            continue
+        }
+        fi := v.ef[e]
+        lo := v.eo[e]
+        mut hi := lo + v.el[e]
+        mut j := e + 1
+        mut grp := mut []int{e}
+        while j < n && (!wnt[j] || (v.ef[j] == fi && v.eo[j] >= hi && v.eo[j] <= hi + BC_GAP)) {
+            if wnt[j] {
+                hi = v.eo[j] + v.el[j]
+                grp = append(grp, j)
+            }
+            j += 1
+        }
+        b := bcReadOne(v.fp[fi], lo, hi - lo)
+        for q <- grp {
+            o := v.eo[q] - lo
+            if o + v.el[q] <= len(b) && bcSum(b, o, o + v.el[q]) == v.eh[q] {
+                ix[q] = len(lzv)
+                lzv = append(lzv, b[o:o + v.el[q]])
+            } else {
+                ix[q] = -2
+            }
+        }
+        e = j
+    }
+    st.bcLzE = freeze(ix)
+    st.bcLzV = freeze(lzv)
+}
+
+// 鍵の表（st.ckk のフェーズ stage）の関数の候補の項目を先に読む（bcAlphaW1 / bcB2W1 の前）
+func bcPrefetchStage(st mut St, stage int) {
+    cut := if stage == 1 { BC_B1 } else { BC_A }
+    mut es := mut []int{}
+    m := table.Len(mut st.ckk)
+    mut q := 0
+    while q < m {
+        if table.Get(mut st.ckk, q) == stage {
+            e := bcFind(st.bcv, cut, table.Get(mut st.ckk, q + 2), table.Get(mut st.ckk, q + 3))
+            if e >= 0 {
+                es = append(es, e)
+            }
+        }
+        q += 5 + table.Get(mut st.ckk, q + 4)
+    }
+    bcPrefetch(mut st, freeze(es))
+}
+
+// パック path の [off, off + n) を読む（読めなければ空）
+func bcReadOne(path string, off int, n int) []byte {
+    f := io.Open(path) catch return []byte{}
+    defer io.Close(f)
+    return io.ReadAt(f, off, n) catch []byte{}
+}
+
+// 親の項目 e の値の読み手（bcFindSが当たりを返した項目）
+func bcRdS(st mut St, e int) BcRd {
+    b, _ := bcVal(mut st, e)
+    return BcRd{b: b, at: 0, end: len(b), bad: false}
 }
 
 // 項目 e の値の読み手
 func bcRdOf(v BcView, e int) BcRd {
-    return BcRd{b: v.fs[v.ef[e]], at: v.eo[e], end: v.eo[e] + v.el[e], bad: false}
+    return BcRd{b: v.vs[e], at: 0, end: len(v.vs[e]), bad: false}
 }
 
 // 項目 e の値が b（作り直した値）とバイトで同じか（検証モード）
@@ -807,23 +1004,22 @@ func bcSame(v BcView, e int, b []byte) bool {
     if v.el[e] != len(b) {
         return false
     }
-    f := v.fs[v.ef[e]]
-    o := v.eo[e]
-    for k <- iter.Range(0, len(b)) {
-        if f[o + k] != b[k] {
-            return false
-        }
-    }
-    return true
+    return bcEq(v.vs[e], b)
+}
+
+// 親の項目 e の値が b とバイトで同じか（α・β1・β2も — 検証モード）
+func bcSameS(st mut St, e int, b []byte) bool {
+    v, ok := bcVal(mut st, e)
+    return ok && bcEq(v, b)
 }
 
 // ── 格納場所の書き ──
 
 // 作った値vb（切り口cut・鍵 [k1, k2]）を書きのバッチへ。格納場所に同じ鍵があれば書かない — 検証モードではそこで比べる（違えばstaleに積む）
 func bcAdd(st mut St, cut int, k1 int, k2 int, vb []byte) {
-    e := bcFind(st.bcv, cut, k1, k2)
+    e := if st.bcv.vfy { bcFindS(mut st, cut, k1, k2) } else { bcFind(st.bcv, cut, k1, k2) }
     if e >= 0 {
-        if st.bcv.vfy && !bcSame(st.bcv, e, vb) {
+        if st.bcv.vfy && !bcSameS(mut st, e, vb) {
             table.Push(mut st.bcStale, cut)
             table.Push(mut st.bcStale, k1)
             table.Push(mut st.bcStale, k2)
@@ -1023,18 +1219,9 @@ func BcGammaCache(v BcView, dir string) desugar.TyCache {
     mut vs := mut [][]byte{}
     for gi <- iter.Range(0, len(v.ge) / 2) {
         e := v.ge[2 * gi]
-        f := v.fs[v.ef[e]]
-        o := v.eo[e]
-        n := v.el[e]
-        if bcSum(f, o, o + n) == v.eh[e] {
-            mut b := mut []byte{}
-            for q <- iter.Range(0, n) {
-                b = append(b, f[o + q])
-            }
-            k1 = append(k1, v.ge[2 * gi + 1])
-            k2 = append(k2, v.ek2[e])
-            vs = append(vs, freeze(b))
-        }
+        k1 = append(k1, v.ge[2 * gi + 1])
+        k2 = append(k2, v.ek2[e])
+        vs = append(vs, v.vs[e])
     }
     _, gen := bcSplit(dir)
     vm := lsEnvInt("SOBER_CACHE_VERIFY")
@@ -1082,15 +1269,13 @@ func BcParseView(v BcView) loader.PCache {
     mut el := mut []int{}
     for pi <- iter.Range(0, len(v.pe) / 2) {
         e := v.pe[2 * pi]
-        if bcSum(v.fs[v.ef[e]], v.eo[e], v.eo[e] + v.el[e]) == v.eh[e] {
-            k1 = append(k1, v.pe[2 * pi + 1])
-            k2 = append(k2, v.ek2[e])
-            ef = append(ef, v.ef[e])
-            eo = append(eo, v.eo[e])
-            el = append(el, v.el[e])
-        }
+        k1 = append(k1, v.pe[2 * pi + 1])
+        k2 = append(k2, v.ek2[e])
+        ef = append(ef, e)
+        eo = append(eo, 0)
+        el = append(el, v.el[e])
     }
-    return loader.PCache{on: v.on, vfy: v.vfy, pt: loader.PcTable(freeze(k1)), k2: freeze(k2), ef: freeze(ef), eo: freeze(eo), el: freeze(el), fs: v.fs}
+    return loader.PCache{on: v.on, vfy: v.vfy, pt: loader.PcTable(freeze(k1)), k2: freeze(k2), ef: freeze(ef), eo: freeze(eo), el: freeze(el), fs: v.vs}
 }
 
 // loaderの読みの結果を書きのバッチへ（外れと検証モードの値 — bcAdd・格納場所に同じ鍵があれば検証モードで比べる）・当否の数（bcCnt 11 / 12）・
@@ -1128,15 +1313,13 @@ func BcCheckView(v BcView) loader.PCache {
     mut el := mut []int{}
     for di <- iter.Range(0, len(v.de) / 2) {
         e := v.de[2 * di]
-        if bcSum(v.fs[v.ef[e]], v.eo[e], v.eo[e] + v.el[e]) == v.eh[e] {
-            k1 = append(k1, v.de[2 * di + 1])
-            k2 = append(k2, v.ek2[e])
-            ef = append(ef, v.ef[e])
-            eo = append(eo, v.eo[e])
-            el = append(el, v.el[e])
-        }
+        k1 = append(k1, v.de[2 * di + 1])
+        k2 = append(k2, v.ek2[e])
+        ef = append(ef, e)
+        eo = append(eo, 0)
+        el = append(el, v.el[e])
     }
-    return loader.PCache{on: v.on, vfy: v.vfy, pt: loader.PcTable(freeze(k1)), k2: freeze(k2), ef: freeze(ef), eo: freeze(eo), el: freeze(el), fs: v.fs}
+    return loader.PCache{on: v.on, vfy: v.vfy, pt: loader.PcTable(freeze(k1)), k2: freeze(k2), ef: freeze(ef), eo: freeze(eo), el: freeze(el), fs: v.vs}
 }
 
 // checkのパスのparseの読みの結果ps（loaderのPcPut）から格納場所へ書く項目（外れ・検証モードで格納場所に無いもの）を選ぶ。
@@ -1211,8 +1394,11 @@ func BcWriteD(dir string, ps []loader.PcPut, pps []loader.PcPut, cold bool) {
 // バッチを回さないパス（W1）のB1: 関数ごとに α の鍵を引き、当たりは値を読み戻して積み、外れはoptFunc + lB1Func（バッチの子と同じ列）を掛けて
 // 値を書く（詰めて積み戻す — 詰めた形が値の素）。ckAll(0) の後に呼ぶ
 func bcAlphaW1(st mut St) {
+    if !st.bcv.vfy {
+        bcPrefetchStage(mut st, 0)
+    }
     a0 := ckStage(mut st, 0)
-    ab := if st.bcAud { bcAudBase(st.ckt, lParCfg(mut st, false), 1) } else { []int{} }
+    ab := if st.bcAud { bcAudBase(st.ckt, lParCfg(mut st, false), 1, 0) } else { []int{} }
     mut f := st.fhead
     while f != -1 {
         if irFnBHead(mut st, f) != -1 {
@@ -1226,16 +1412,32 @@ func bcAlphaW1(st mut St) {
 func bcAlphaFn(st mut St, f FnRef, q int, ab []int) {
     k1 := table.Get(mut st.ckk, q + 2)
     k2 := table.Get(mut st.ckk, q + 3)
-    e := if st.bcv.vfy { -1 } else { bcFind(st.bcv, BC_A, k1, k2) }
-    if e >= 0 {
-        mut r := bcRdOf(st.bcv, e)
-        p := bcAlphaDec(mut r, st.opk, st.tmk, st.ckt)
-        if !r.bad && r.at == r.end {
-            mvUnpack(mut st, f, p)
-            bcCount(mut st, BC_A, true)
-            return
-        }
+    if !st.bcv.vfy && bcAlphaHit(mut st, f, k1, k2) {
+        return
     }
+    bcAlphaMiss(mut st, f, q, ab)
+}
+
+// α の鍵 [k1, k2] が当たれば値を読み戻してfの本体にし、当たりを数えて真（外れと壊れた値は何もせず偽）
+func bcAlphaHit(st mut St, f FnRef, k1 int, k2 int) bool {
+    e := bcFindS(mut st, BC_A, k1, k2)
+    if e < 0 {
+        return false
+    }
+    mut r := bcRdS(mut st, e)
+    p := bcAlphaDec(mut r, st.opk, st.tmk, st.ckt)
+    if r.bad || r.at != r.end {
+        return false
+    }
+    mvUnpack(mut st, f, p)
+    bcCount(mut st, BC_A, true)
+    return true
+}
+
+// α の外れの1関数: optFunc + lB1Func（バッチの子と同じ列）を掛けて値を書く（q = st.ckk の f の鍵の位置）
+func bcAlphaMiss(st mut St, f FnRef, q int, ab []int) {
+    k1 := table.Get(mut st.ckk, q + 2)
+    k2 := table.Get(mut st.ckk, q + 3)
     bcCount(mut st, BC_A, false)
     if st.bcAud {
         bcAudBegin(mut st, BC_A, int(f), q, ab)
@@ -1262,9 +1464,9 @@ func bcAlphaFn(st mut St, f FnRef, q int, ab []int) {
     bcAdd(mut st, BC_A, k1, k2, vp)
 }
 
-// バッチの子の1関数の格納場所のフェーズ（stage 0 = α・1 = B2の入力 — β1）: 当たりの項目（-1 = 外れ・検証モードは常に外れ）
+// バッチの子の1関数の格納場所のフェーズ: 子は格納場所を引かない（常に外れ）。当たりは親が引いて群に入れない（lParBatch）— 値は親だけが読む
 func bcKid(bv BcView, stage int, k1 int, k2 int) int {
-    return if bv.vfy { -1 } else { bcFind(bv, if stage == 1 { BC_B1 } else { BC_A }, k1, k2) }
+    return -1
 }
 
 // バッチの子が積み戻した結果oの格納場所の分を親へ（α の値の書き / 比べ・β1の当たりの関数のフラグ）。fr[lo..] がoの関数の順
@@ -1301,13 +1503,16 @@ func bcKidPut(st mut St, fr []int, lo int, o LOut, stage int) {
 // バッチを回さないパス（W1）のB2: 関数ごとに β1の鍵（B2の入力の鍵）を引き、当たりはB2を飛ばし（本体は入力のまま — β2が外れたら
 // bcPreX86が遅れて掛ける）、外れはlB2Func（バッチの子と同じ列）。ckAll(1) の後に呼ぶ
 func bcB2W1(st mut St) {
+    if !st.bcv.vfy {
+        bcPrefetchStage(mut st, 1)
+    }
     b1 := ckStage(mut st, 1)
-    ab := if st.bcAud { bcAudBase(st.ckt, lParCfg(mut st, true), 1) } else { []int{} }
+    ab := if st.bcAud { bcAudBase(st.ckt, lParCfg(mut st, true), 1, 0) } else { []int{} }
     mut f := st.fhead
     while f != -1 {
         if irFnBHead(mut st, f) != -1 {
             q := ckIdx(b1, int(f))
-            e := if st.bcv.vfy { -1 } else { bcFind(st.bcv, BC_B1, table.Get(mut st.ckk, q + 2), table.Get(mut st.ckk, q + 3)) }
+            e := if st.bcv.vfy { -1 } else { bcFindS(mut st, BC_B1, table.Get(mut st.ckk, q + 2), table.Get(mut st.ckk, q + 3)) }
             if e >= 0 {
                 table.Push(mut st.bcSkL, int(f))
                 table.Push(mut st.bcSkL, e)
@@ -1360,7 +1565,7 @@ func bcB1Collect(st mut St) {
     n := table.Len(mut st.bcSkL) / 2
     for k <- iter.Range(0, n) {
         f := table.Get(mut st.bcSkL, 2 * k)
-        mut r := bcRdOf(st.bcv, table.Get(mut st.bcSkL, 2 * k + 1))
+        mut r := bcRdS(mut st, table.Get(mut st.bcSkL, 2 * k + 1))
         m := bcGet(mut r)
         at := table.Len(mut inf)
         table.Push(mut inf, m)
@@ -1491,11 +1696,20 @@ func bcPreX86(st mut St, entryRec int, t CkTab) {
     for k <- iter.Range(0, table.Len(mut st.bcCutD) / 2) {
         cd[table.Get(mut st.bcCutD, 2 * k)] = table.Get(mut st.bcCutD, 2 * k + 1)
     }
+    if !st.bcv.vfy {
+        mut es := mut []int{}
+        for i <- iter.Range(0, len(fr)) {
+            if beta[2 * i] != 0 || beta[2 * i + 1] != 0 {
+                es = append(es, bcFind(st.bcv, BC_B2, beta[2 * i], beta[2 * i + 1]))
+            }
+        }
+        bcPrefetch(mut st, freeze(es))
+    }
     mut hx := mut []int{}
     for i <- iter.Range(0, len(fr)) {
         mut e := -1
         if !st.bcv.vfy && (beta[2 * i] != 0 || beta[2 * i + 1] != 0) {
-            e = bcFind(st.bcv, BC_B2, beta[2 * i], beta[2 * i + 1])
+            e = bcFindS(mut st, BC_B2, beta[2 * i], beta[2 * i + 1])
         }
         if e >= 0 && !bcDecB2(mut st, e, t, fr, gr) {
             e = -1
@@ -1539,7 +1753,7 @@ func bcLate(st mut St, f FnRef, c int?) {
 // β2の項目eを読み戻してbcDp（機械語のパック — コピーせずに指す）/ bcDf（後埋め [関数の頭からの位置, 種類, 相手の番号]…）/ bcDo（[機械語のパックの中の位置, 長さ,
 // 後埋めの位置, 数, xmm]）に積む。読み戻せなければ何も積まずに false
 func bcDecB2(st mut St, e int, t CkTab, fr []int, gr []int) bool {
-    mut r := bcRdOf(st.bcv, e)
+    mut r := bcRdS(mut st, e)
     n := bcGet(mut r)
     if r.bad || n < 0 || n > r.end - r.at {
         return false
@@ -1574,7 +1788,7 @@ func bcDecB2(st mut St, e int, t CkTab, fr []int, gr []int) bool {
         return false
     }
     table.Push(mut st.bcDf0, en)
-    table.Push(mut st.bcDp, st.bcv.ef[e])
+    table.Push(mut st.bcDp, e)
     table.Push(mut st.bcDo, cAt)
     table.Push(mut st.bcDo, n)
     table.Push(mut st.bcDo, table.Len(mut st.bcDf))
@@ -1602,7 +1816,7 @@ func bcSplice(st mut St, c mut table.Table[byte], fx mut table.Table[int], i int
         fo := table.Get(mut st.bcDo, 5 * h + 2)
         m := table.Get(mut st.bcDo, 5 * h + 3)
         // 機械語はパックの中身から一括で（1 バイトずつの Get / Push を挟まない）
-        pb := st.bcv.fs[table.Get(mut st.bcDp, h)]
+        pb, _ := bcVal(mut st, table.Get(mut st.bcDp, h))
         table.PushAll(mut c, pb[co:co + n])
         for j <- iter.Range(fo, fo + 3 * m) {
             if (j - fo) % 3 == 0 {
@@ -1737,11 +1951,14 @@ const BA_NONE = 20  // 持ち主の無いワード
 const BA_GREC = 30  // 大域の記録のフィールド
 const BA_GINIT = 31 // 大域の初期値の列
 
-// cfgの列の関数の記録 [記録, 値]…（値1 = 戻りの型と番地取りのフラグ・2 = 番地取りのフラグだけ）
-func bcAudBase(t CkTab, cfg []int, v int) []int {
+// cfgの列の関数の記録 [記録, 値]…（値1 = 戻りの型と番地取りのフラグ・2 = 番地取りのフラグだけ）。mode = 鍵に混ぜないワードの表（0 = lParCfg・
+// 1 = xParCfg。ckDrop の表。外したワードの記録は、本体が参照したときだけ呼び先の列から許す・2 = 全部許す）
+func bcAudBase(t CkTab, cfg []int, v int, mode int) []int {
     mut out := mut []int{}
-    for w <- cfg {
-        if ckIsFn(t, w) {
+    drop := if mode == 2 { ckDrop([]int{}, false) } else { ckDrop(cfg, mode == 1) }
+    for k <- iter.Range(0, len(cfg)) {
+        w := cfg[k]
+        if (mode == 2 || !drop[k]) && ckIsFn(t, w) {
             out = append(out, w)
             out = append(out, v)
         }
@@ -1894,7 +2111,7 @@ func bcOwnList(st mut St, l int, v int) {
 // 命令と終端の値の列 — mvPack が詰める範囲）= 4g + 1・引数の型の列 = 4g + 2・大域 gr の記録 = -(2 + 2gr)・初期値の列 = -(3 + 2gr)・他 = -1。
 // β2の鍵に入れたcfgの相手（B2のcfg + x86のcfg + rtの関数の番地取りのフラグ — ckBeta）もst.bcXabに
 func bcAudOwn(st mut St, ckt CkTab) {
-    st.bcXab = bcAudJoin(bcAudJoin(bcAudBase(ckt, lParCfg(mut st, true), 1), bcAudBase(ckt, xParCfg(mut st), 1)), bcAudBase(ckt, st.ckRt, 2))
+    st.bcXab = bcAudJoin(bcAudJoin(bcAudBase(ckt, lParCfg(mut st, true), 1, 0), bcAudBase(ckt, xParCfg(mut st), 1, 1)), bcAudBase(ckt, st.ckRt, 2, 2))
     n := desugar.HeapLen(mut st.d)
     st.bcOwn = table.Table[int]{}
     for k <- iter.Range(0, n) {
@@ -1984,7 +2201,7 @@ func bcAudReport(st mut St) {
                     msg = append(msg, x)
                 }
                 printName(mut st, mut msg, irFnName(mut st, FnRef(f)))
-                for x <- bytes(if kind == 40 { " (record facts of the callees do not change the key)\n" } else { " (the cfg does not change the key)\n" }) {
+                for x <- bytes(if kind == 40 { " (record facts of the callees do not change the key)\n" } else if kind == 43 { " (std/utf8.boundary does not change the key of a function with marked reads)\n" } else if kind == 44 { " (std/utf8.boundary changes the key of a function without marked reads)\n" } else { " (the cfg does not change the key)\n" }) {
                     msg = append(msg, x)
                 }
             }

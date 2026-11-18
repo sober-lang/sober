@@ -1,0 +1,18 @@
+@@full	efc5a94c370ed489	4000	123543
+@head	21faa5b9740c1a4d	0	635
+const testCerts	2bc083e15ab822ed	3	139
+const testTraceGolden	d0ed8a8e3bc882ab	3	145
+const testTraces	148ba6d8f075b9bc	3	140
+func TestTrace	ace7d6de54b2d644	71	2597
+func TestTraceLive	bb531c263461c491	18	663
+func testCat	770014db5c5f83dc	33	1218
+func testFile	fa74ad8af2e9f049	18	697
+func testParams	075e99c4a344ab5c	74	2803
+func testZeros	ea2eda47b14ae061	26	947
+func trAlertDesc	da1a2f07c1751d12	14	631
+func trFeed	595cfe657906c0cd	64	2157
+func trLive	de789727507c797e	60	2033
+func trLoop	0aa58dc3b16d0971	152	5269
+func trPut	32e7cfc288900704	14	568
+func trReplay	5840f7cd159c4a59	47	1840
+func trServe	2a00ff5cb72043c0	33	1278

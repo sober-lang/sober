@@ -69,7 +69,7 @@ func closPrep(st mut St) error? {
             }
             ft = desugar.HeapGet(mut st.d, yt + 1)
         }
-        shs := closShapes(mut st, i, 8)?
+        shs := closShapes(mut st, i, 8, false)?
         r := closKOf(mut st, k, ft)
         for s <- iter.Range(0, lenL(mut st, shs)) {
             closAddShape(mut st, r, desugar.ListRef(latI(mut st, shs, s)))
@@ -100,8 +100,9 @@ func closPrune(st mut St) {
     st.closKs = keep
 }
 
-// 行iのenvの形の列（展開待ちの捕捉は、ターゲットへ流れる行ごとの平たい形の積 — 作成点が展開ごとに1つを選ぶ）
-func closShapes(st mut St, i int, fuel int) (desugar.ListRef, error?) {
+// 行iのenvの形の列（展開待ちの捕捉は、ターゲットへ流れる行ごとの平たい形の積 — 作成点が展開ごとに1つを選ぶ）。
+// core なら捕捉の型は脱糖器のコアの型（型引数の kind の検査 — kindarg.sober）、でなければ lower の型
+func closShapes(st mut St, i int, fuel int, core bool) (desugar.ListRef, error?) {
     lam := desugar.CapLam(mut st.d, i)
     if fuel == 0 {
         return desugar.ListRef(-1), diag.Unsupported{at: posOf(mut st, lam)}
@@ -117,10 +118,14 @@ func closShapes(st mut St, i int, fuel int) (desugar.ListRef, error?) {
         // 1 つ前までの形 × この捕捉の選択肢（普通の捕捉は型 1 つ・展開待ちは流れる行ごとの平たい形）
         mut alts := desugar.ListRef(list0(mut st))
         if q < 0 {
-            alts = desugar.ListRef(list1(mut st, list1(mut st, yType(mut st, id)?)))
+            t := if core { kaCoreTy(mut st, desugar.YTypeOf(mut st.d, id), id) } else { yType(mut st, id)? }
+            if t < 0 {
+                return desugar.ListRef(-1), diag.Mismatch{at: posOf(mut st, id)}
+            }
+            alts = desugar.ListRef(list1(mut st, list1(mut st, t)))
         } else {
             for r <- iter.Range(0, desugar.PendN(mut st.d, q)) {
-                alts = listCat(mut st, alts, closShapes(mut st, desugar.PendRow(mut st.d, q, r), fuel - 1)?)
+                alts = listCat(mut st, alts, closShapes(mut st, desugar.PendRow(mut st.d, q, r), fuel - 1, core)?)
             }
         }
         nx := desugar.ListRef(listN(mut st, lenL(mut st, acc) * lenL(mut st, alts)))

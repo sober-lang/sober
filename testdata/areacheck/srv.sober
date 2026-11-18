@@ -101,7 +101,9 @@ func ledgerText() http.server.Response {
     return http.server.Text("maxWait=${l.maxWait} backlog=${l.backlog} shed=${l.shed} parkShallow=${l.parkShallow} parkDeep=${l.parkDeep} parkSwap=${l.parkSwap} parkDeepWin=${l.parkDeepWin}")
 }
 
-// 本体の枠の太り（farの題材の前提 — 本体の枠がチャンクのページ0の余白〔TCB_TOP_ROOM〕に入らないこと）: ServeConnの呼び出しをまたいで生きる64ワードの値。
+// 本体の枠の太り（farの題材の前提 — 本体の枠がチャンクのページ0の余白〔TCB_TOP_ROOM〕に入らないこと）: ServeConnの呼び出しをまたいで生きる72ワードの値。
+// 大きさは、通常の形と参照の形（--rt-mutant=66）で、深く眠る接続が触れるスタックのページの型が揃う値に選ぶ。一時的に深く潜る接続が
+// 1枚下のページに触れるかどうかは、境の近くでは深さの十数バイトの差で変わる（64ワードでは参照の形だけが触れなかった）。
 // ServeConnの側の枠だけに頼ると、コンパイラの改善で枠が縮んだとき題材が近いパスへ移る（far bodyの行が近いパスの値で赤になる）
 type P8 struct {
     a int
@@ -123,6 +125,7 @@ type Pad struct {
     f P8
     g P8
     h P8
+    i P8
 }
 
 func p8(x int) P8 {
@@ -130,7 +133,7 @@ func p8(x int) P8 {
 }
 
 func pad(x int) Pad {
-    return Pad{a: p8(x), b: p8(x + 8), c: p8(x + 16), d: p8(x + 24), e: p8(x + 32), f: p8(x + 40), g: p8(x + 48), h: p8(x + 56)}
+    return Pad{a: p8(x), b: p8(x + 8), c: p8(x + 16), d: p8(x + 24), e: p8(x + 32), f: p8(x + 40), g: p8(x + 48), h: p8(x + 56), i: p8(x + 64)}
 }
 
 func p8Sum(q P8) int {
@@ -138,7 +141,7 @@ func p8Sum(q P8) int {
 }
 
 func padSum(p Pad) int {
-    return p8Sum(p.a) + p8Sum(p.b) + p8Sum(p.c) + p8Sum(p.d) + p8Sum(p.e) + p8Sum(p.f) + p8Sum(p.g) + p8Sum(p.h)
+    return p8Sum(p.a) + p8Sum(p.b) + p8Sum(p.c) + p8Sum(p.d) + p8Sum(p.e) + p8Sum(p.f) + p8Sum(p.g) + p8Sum(p.h) + p8Sum(p.i)
 }
 
 func serve(serveMs int, far bool) error? {

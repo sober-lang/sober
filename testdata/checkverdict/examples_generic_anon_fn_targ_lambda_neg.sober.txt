@@ -1,0 +1,2 @@
+sober: desugar error at examples/generic_anon_fn_targ_lambda_neg.sober:14:15 (TypeMismatch): a type argument cannot be an anonymous function type, because a value of anonymous function type is only a parameter, a struct or variant field or a local binding, never a result, a slice or map element or a type argument (spec F-20); pass a value of a named function type (`H(f)`) or write the type argument (`f[H](…)`)
+exit=1

@@ -1,0 +1,17 @@
+@@full	e635dbcfeef02e72	2952	85318
+@head	8b03e8f67f449412	0	343
+const Log	27353ed3177a1b02	2	125
+const Ms	2b8a5e25b65706a1	2	124
+const T0	685f10a897583d70	2	121
+func TestDelayedFirst	f9cf2b11a8fce78a	30	1058
+func TestDelayedHead	673ee144c2e9d5f0	28	1022
+func TestDelayedOrder	6c98be0201326708	35	1212
+func TestDelayedStream	b421a712ab9487ea	37	1267
+func TestDelayedTwo	8c03b57da9ee3a36	35	1216
+func TestDelayedZero	213943156f25980b	21	779
+func delayFeed	a14bc99677146256	14	540
+func delayGet	ebe3aa4c793feceb	5	318
+func delayRecord	f26cb6123effa755	96	3231
+func delayRoute	40138d0a9885d280	69	2428
+func delayServe	89acafd593bbb139	53	1877
+func waitedAtLeast	bca0fe9c206af24b	60	2075

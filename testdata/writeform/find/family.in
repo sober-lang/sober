@@ -1,0 +1,20 @@
+// 関数型の仮引数を持つ（呼び出し点で展開される）: 条件に合う最初の要素
+type Opt$TP union {
+    Some { v $T }
+    None {}
+}
+
+func find$TP(xs []$T, p func($T) bool) Opt$U {
+@BODY@
+}
+
+func main() {
+    _ = incr
+    _ = mkH
+    r := find([]$C{$V, $W}, (x $C) => true)
+    n := switch r {
+    case Some{v}: 1
+    default: 0
+    }
+    println(n)
+}

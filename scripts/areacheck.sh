@@ -67,22 +67,31 @@ for m in 62 63 64 68 70 72 74 78 79 80 81 90 92; do
     if [[ "$rm" == areacheck-bad* ]]; then echo "areacheck: m$m caught (${rm#areacheck-bad }" | cut -c1-160 | sed 's/$/…)/'; else echo "areacheck: FAIL — mutant $m was not caught ($rm)"; fail=1; fi
 done
 # 遠いパスの題材: 署名が段1の前（ミュータント66）と一致・ミュータント65で違う
-# 相ごとの「常駐のページ」の型の集合（スタックのページ — ページ0から下だけ。頭のページ〔チャンクの予約ページ・エリアの予約ページ〕はエリアの予約ページの段で変わるので見ない。スタックの深さと数は見ない: 受けの待ちは本体のrt.netwaitの点でスリープするのでエリアを使わない形〔read_fdの中でスリープする〕より浅く、
+# 相ごとの「常駐のページ」の型ごとのチャンクの数（スタックのページ — ページ0から下だけ。頭のページ〔チャンクの予約ページ・エリアの予約ページ〕はエリアの予約ページの段で変わるので見ない。スタックの深さは見ない: 受けの待ちは本体のrt.netwaitの点でスリープするのでエリアを使わない形〔read_fdの中でスリープする〕より浅く、
 # 各ワーカーが最後に走らせたtask〔そのスタックの上で次を待つ〕のワード0はシャロースリープの記しの戻り先のことがある）
+# 比べ方: 片方にしか無い型が、その相のチャンクの 1/4 以上を占めれば違い。まれな道で1本の接続だけが深いページを触って残る型（1/12 前後）は数えない
 sigs() { AC_FAR=1 AC_REF=${2:-0} AC_SERVE_MS=4000 AC_HOLD_MS=1500 timeout 60 node scripts/areacheck.ts "$W/srv$1" "$W/syms$1" > "$W/f$1" 2>&1
-    grep -E '^sig (parked|deep-wait|after-deep-wait) ' "$W/f$1" | while read -r _ ph rest; do echo "$ph $(tr ' ' '\n' <<< "$rest" | sed 's/^[0-9]*×\[[0-9]*:/[/; s/,[1-9][0-9]*//g' | sort -u | tr '\n' ' ')"; done; }
+    awk '/^sig (parked|deep-wait|after-deep-wait) / { delete c; for (i = 3; i <= NF; i++) { split($i, p, "×"); t = p[2]; sub(/^\[[0-9]+:/, "[", t); gsub(/,[1-9][0-9]*/, "", t); c[t] += p[1] }
+        for (t in c) print $2, t "=" c[t] }' "$W/f$1" | sort; }
+# 片方にしか無い型が占める割合の、相と向きについての最大
+farshare() { { sed 's/^/1 /' <<< "$1"; sed 's/^/2 /' <<< "$2"; } | awk 'NF == 3 { split($3, kv, "="); c[$1, $2, kv[1]] = kv[2]; tot[$1, $2] += kv[2] }
+    END { m = 0; for (k in c) { split(k, q, SUBSEP); if (!((3 - q[1], q[2], q[3]) in c) && c[k] / tot[q[1], q[2]] > m) m = c[k] / tot[q[1], q[2]] } printf "%.3f\n", m }'; }
+differs() { awk -v s="$1" 'BEGIN { exit !(s >= 0.25) }'; }
+parked() { awk '$1 == "parked" { printf "%s ", $2 }' <<< "$1"; }
 fs0=$(sigs 0); fr=$(tail -1 "$W/f0")
 fs66=$(sigs 66 1)
 fs65=$(sigs 65)
+sh66=$(farshare "$fs0" "$fs66"); sh65=$(farshare "$fs65" "$fs66")
+echo "gatenoise: areacheck far m66=$sh66 m65=$sh65"
 if [[ "$fr" != areacheck-ok\ swapped-max\ 0\ shallow-max\ 0\ area_far\ [1-9]* ]]; then
     echo "areacheck: FAIL — far body: $fr"; fail=1
-elif [ -z "$fs0" ] || [ "$fs0" != "$fs66" ]; then
-    echo "areacheck: FAIL — far body: the sleeping connections' resident stack pages differs from the pre-area form (mutant 66)"; diff <(echo "$fs66") <(echo "$fs0") | sed 's/^/  /'; fail=1
+elif [ -z "$fs0" ] || differs "$sh66"; then
+    echo "areacheck: FAIL — far body: the sleeping connections' resident stack pages differs from the pre-area form (mutant 66 · one-sided share $sh66)"; diff <(echo "$fs66") <(echo "$fs0") | sed 's/^/  /'; fail=1
 fi
 # ミュータント71 = AREA_NEARを見ない（遠いパスの本体もシャロースリープして、所有エリアの上にあった本体の枠を失う）
 r71=$(AC_FAR=1 run 71)
 if [[ "$r71" == areacheck-bad* ]]; then echo "areacheck: m71 caught (far body: ${r71#areacheck-bad }" | cut -c1-160 | sed 's/$/…)/'; else echo "areacheck: FAIL — mutant 71 was not caught ($r71)"; fail=1; fi
-if [ -n "$fs65" ] && [ "$fs65" != "$fs66" ]; then echo "areacheck: m65 caught (far body: $(sed -n 's/^parked //p' <<< "$fs65") vs $(sed -n 's/^parked //p' <<< "$fs66"))"; else echo "areacheck: FAIL — mutant 65 was not caught"; fail=1; fi
+if [ -n "$fs65" ] && differs "$sh65"; then echo "areacheck: m65 caught (far body: $(parked "$fs65")vs $(parked "$fs66")· one-sided share $sh65)"; else echo "areacheck: FAIL — mutant 65 was not caught"; fail=1; fi
 # エリアの予約ページの答え（examples/net_area_window — シャロースリープする /ok・ディープスリープしてpathを返す /hold・途中のリクエストを持って待つ接続が同じワーカーで混ざる）を
 # ワーカー {1, 2, 4, 8} × 乱択のスケジュール（SOBER_SCHED_SEED — schedfuzzと同じインターフェース）でゴールデンと照合する。schedfuzz.listに置かないのはparbudgetが
 # 同じ列を予算の天井の下で回すため: 天井の下では client の spawn が親の上へ縮退し、Serve の前に答えを待ち続ける（題材の性質 — 接続の向こうの相手は子孫でない）
@@ -99,5 +108,5 @@ for w in 1 2 4 8; do for s in 0 1 2 3 4; do
     fi
     nawn=$((nawn + 1))
 done; done
-[ $fail = 0 ] && echo "areacheck: PASS (5 paths × 11 phases · stack check at every switch (m91) · swapped-max $swm · shallow-max $shm · parkSwap $psw · area window depths $awm · parkDeepWin $pdw · recheck (m73) · area_far 0 · far path (m60) keeps it with area_far $(sed -n 's/.* area_far \([0-9]*\).*/\1/p' <<< "$r60") · far body = pre-area stack pages: $(sed -n 's/^parked //p' <<< "$fs0") · $NAW × $nawn schedules)"
+[ $fail = 0 ] && echo "areacheck: PASS (5 paths × 11 phases · stack check at every switch (m91) · swapped-max $swm · shallow-max $shm · parkSwap $psw · area window depths $awm · parkDeepWin $pdw · recheck (m73) · area_far 0 · far path (m60) keeps it with area_far $(sed -n 's/.* area_far \([0-9]*\).*/\1/p' <<< "$r60") · far body = pre-area stack pages: $(parked "$fs0")(one-sided share $sh66) · $NAW × $nawn schedules)"
 exit $fail

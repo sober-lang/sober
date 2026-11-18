@@ -13,12 +13,66 @@
 
 # 5. ゲートの環境（gate_env）: gates.shがexportする既定を、まだ値の無い変数にだけ入れる（LC_ALLだけは、gates.shと同じく上書きする）。W1を前提にするスクリプト（obs・optdiff・elfeq）を
 #    単独で呼んでも、gates.sh経由と同じ結果にする。値はgates.shの冒頭とSOBER_VERIFYの行に合わせる。ワーカー数を自分で掛けるスクリプトは呼ばない
+# 6. 照合できない条件（cant・need_perf・need_valgrind・need_nofile）: 道具・権限・CPUの機能・CPUの数が足りず照合できないゲートは、明示して外さない限りFAIL。
+#    外すのはSOBER_GATES_ALLOW_SKIP（条件の名前を空白区切り。例: "perf cpus"）。外した照合は `SKIP[条件] ゲート: 照合しなかったもの` の行を出し、
+#    gates.shの要約はALL PASSではなくPASS with N skippedと、外したゲートと条件の名前を出す。条件の名前の一覧はgateenv.shのCONDS
 
 GATELIB_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+
+# 照合できない条件 $2の扱いを決める（$1 = ゲート名・$3 = 照合しなかったもの〔英語の短い句〕）。SOBER_GATES_ALLOW_SKIPに $2があれば
+# SKIPの行を出して0（呼び手はその照合を飛ばす）。無ければFAILの行を出して1（呼び手はFAILにする）
+cant() {
+    case " ${SOBER_GATES_ALLOW_SKIP:-} " in
+        *" $2 "*) echo "SKIP[$2] $1: $3"; return 0 ;;
+    esac
+    echo "$1: FAIL: $2 is not available, so $3 cannot be checked (set SOBER_GATES_ALLOW_SKIP=$2 to skip it explicitly)"
+    return 1
+}
+
+# perfを探してPERFに入れる（PERF → PATH → /nix/store）。0 = 使える・1 = 外した（SKIPの行を出した）・2 = 使えない（FAILの行を出した）
+need_perf() { # $1 = ゲート名・$2 = 照合しなかったもの（省略時the instruction ratchets）
+    PERF=${PERF:-$(command -v perf || ls -d /nix/store/*-perf-linux-*/bin/perf 2> /dev/null | sort -V | tail -n 1)}
+    if [ -n "$PERF" ] && "$PERF" stat -x, -e instructions:u -o /dev/null -- true > /dev/null 2>&1; then
+        return 0
+    fi
+    cant "$1" perf "${2:-the instruction ratchets}" && return 1
+    return 2
+}
+
+# valgrindを探してVGに入れる（VALGRIND → PATH → /nix/store）。戻り値はneed_perfと同じ
+need_valgrind() { # $1 = ゲート名・$2 = 照合しなかったもの
+    VG=${VALGRIND:-$(command -v valgrind || ls -d /nix/store/*-valgrind-[0-9]*/bin/valgrind 2> /dev/null | sort -V | tail -n 1)}
+    if [ -n "$VG" ] && "$VG" --version > /dev/null 2>&1; then
+        return 0
+    fi
+    cant "$1" valgrind "${2:-the instruction ratchets}" && return 1
+    return 2
+}
+
+# 開けるfdの数（RLIMIT_NOFILE）のsoftの値を、$2以上にする（hardの範囲で上げる）。戻り値はneed_perfと同じ（条件の名前はnofile）。
+# 足りないと、io_uringの固定ファイルの表（4096枠）の登録が失敗して表を使わない経路に落ち、多数の接続を張る題材はdialが失敗する。どちらも黙って結果が変わる
+pinn() { # $1 = CPUの数。peak RSS を測るコマンドの前置き（taskset -c <許されたCPUの最初のn個>）。カーネルのRSSの計数はCPUごとに差分を持ち、
+    # peak（ru_maxrss）はその近似の読みで記録される — CPUの間を移ると、触ったCPUの数に比例して数 MB 低めに揺れる。1つのCPUに縛れば、
+    # 同じ仕事の peak は毎回同じ値になる（W1）。n個に縛れば、揺れは n個の分（1つあたり 256 KB）までに収まる
+    echo "taskset -c $(taskset -pc $$ | sed 's/.*: //' | tr ',' '\n' | awk -F- '{ if (NF == 2) for (i = $1; i <= $2; i++) print i; else print $1 }' | head -n "$1" | paste -sd,)"
+}
+pin1() { pinn 1; }
+need_nofile() { # $1 = ゲート名・$2 = 要る数
+    local cur hard
+    cur=$(ulimit -Sn); hard=$(ulimit -Hn)
+    [ "$cur" = unlimited ] && return 0
+    [ "$cur" -ge "$2" ] && return 0
+    if [ "$hard" = unlimited ] || [ "$hard" -ge "$2" ]; then
+        ulimit -Sn "$2" && return 0
+    fi
+    cant "$1" nofile "the gate (RLIMIT_NOFILE soft=$cur hard=$hard < $2)" && return 1
+    return 2
+}
 
 gate_env() {
     export LC_ALL=C.UTF-8
     export SOBER_HASH_SEED=${SOBER_HASH_SEED:-0}
+    export SOBER_DATE_SEC=${SOBER_DATE_SEC:-784111777}
     export SOBER_WORKERS=${SOBER_WORKERS:-1}
     export SOBER_BUILD_CACHE=${SOBER_BUILD_CACHE:-0}
     export SOBER_CHECK_CACHE=${SOBER_CHECK_CACHE:-0}
@@ -136,7 +190,8 @@ lean_big() { # $1 = 入力ファイル。LEAN_BIG を超えれば 0
     [ "$(stat -c %s "$1")" -gt "${LEAN_BIG:-67108864}" ]
 }
 
-lean_batch() { # $1 = 入力ファイルの一覧（1行1パス）、$2 = 出力の格納場所。各入力の判定を $2/<lean_key>.outへ（1件ずつのstdoutと同じ形）
+lean_batch() { # $1 = 入力ファイルの一覧（1行1パス）、$2 = 出力の格納場所。各入力の判定を $2/<lean_key>.outへ（1件ずつのstdoutと同じ形）。
+    # LEAN_MODE（既定 --batch）でバッチのモードを替える（--shape-batch = 形の検査）
     local list=$1 out=$2 k=${JOBS:-1} c f chk=${SOBER_CHECK:-$GATELIB_ROOT/lean/.lake/build/bin/sober-check}
     mkdir -p "$out/.chunk"
     : > "$out/.chunk/big.list"
@@ -158,7 +213,7 @@ lean_batch() { # $1 = 入力ファイルの一覧（1行1パス）、$2 = 出力
     fi
     for c in "${chunks[@]}"; do
         (
-            while IFS= read -r f; do tr '\n' ' ' < "$f"; echo; done < "$out/.chunk/$c.list" | "$chk" --batch > "$out/.chunk/$c.res"
+            while IFS= read -r f; do tr '\n' ' ' < "$f"; echo; done < "$out/.chunk/$c.list" | "$chk" "${LEAN_MODE:---batch}" > "$out/.chunk/$c.res"
         ) &
     done
     wait
@@ -192,6 +247,136 @@ lean_stub() { # $1 = 格納場所。`sober check` に渡すSOBER_CHECKの差し�
 stage2_key() { # stage2を新しくして（古ければ作り直す）、その入力ハッシュのファイルのパスを出す（ゴールデンの差分スキップの鍵に混ぜる）
     "$GATELIB_ROOT/scripts/stage2.sh" --quiet >&2 || return 1
     echo "$GATELIB_ROOT/out/stage2/.key"
+}
+
+# ── テキストのゴールデン（irtext・lltext・corejson — docs/golden.md）: 表は testdata/<ゲート>/、全文は out/gold/<ir|ll|core>/（gitの外） ──
+# 表 = scripts/goldtab.ts（題材ごとに関数の名前・ハッシュ・行数・バイト数。1行目は全文のハッシュ）。全文を入力に読むゲート（llcheck・leanbatchなど）は
+# `scripts/<ゲート>.sh --gen` で全文を最新にしてから gold_rlock を取って out/gold/<種類>/ を読む。全文の鍵が合っていれば作り直さない
+
+gold_key() { # $1 = 生成のスクリプト。全文の鍵 = stage2・bin/sober・スクリプト・入力の木（ゴールデンの表を除く）・出力に効く環境
+    local s2
+    s2=$(stage2_key) || return 1
+    {
+        cat "$s2"
+        sha256sum "$GATELIB_ROOT/bin/sober" "$1" | cut -d' ' -f1
+        (cd "$GATELIB_ROOT" && find examples testdata src/std -type f -not -path 'testdata/irtext/*' -not -path 'testdata/lltext/*' \
+            -not -path 'testdata/corejson/*' -not -path 'testdata/astjson/*' | LC_ALL=C sort | xargs -d '\n' sha256sum)
+        env | grep -E '^SOBER_(DATE_SEC|HASH_SEED)=' | LC_ALL=C sort
+    } | sha256sum | cut -d' ' -f1
+}
+
+gold_rlock() { # $1 = ir / ll / core。全文を読む間、置き換えを待たせる（fd 8 の共有ロック — 呼び手のプロセスが終われば外れる）
+    mkdir -p "$GATELIB_ROOT/out/gold"
+    exec 8> "$GATELIB_ROOT/out/gold/.$1.lock"
+    flock -s 8
+}
+
+gold_publish() { # $1 = ir / ll / core、$2 = 生成した全文のdir（out/gold の下）、$3 = 鍵。原子的に置き換える
+    local d=$GATELIB_ROOT/out/gold/$1
+    echo "$3" > "$2/.key"
+    (
+        flock 9
+        rm -rf "$d.old"
+        [ -e "$d" ] && mv "$d" "$d.old"
+        mv "$2" "$d"
+        rm -rf "$d.old"
+    ) 9> "$GATELIB_ROOT/out/gold/.$1.lock"
+}
+
+# gold_text_main <ir|ll|core> <ゲートの名前> <スクリプト> [--regen|--list|--gen]: irtext.sh・lltext.sh・corejson.sh の本体
+#   引数なし = 全題材を2回生成して決定性を確かめ、全文を out/gold/ に置き、表を testdata/<ゲート> と比べる
+#   --regen = 同じく生成して、表を testdata/<ゲート> に書く・--gen = 全文が古ければ作り直すだけ（読み手のゲートが呼ぶ）
+# 呼び手が定義する関数: gold_emit <entry> <出力> = 1題材の全文を書く（必須）。gold_job_check <entry> <全文> = 題材ごとの追加の検査（FAIL: の行を出す）・
+# gold_post <全文のdir> = 全題材の後の追加の検査（失敗で非0）。後の2つは無くてよく、--gen では呼ばない
+gold_text_main() {
+    local kind=$1 gate=$2 self=$3 mode=${4:-}
+    local GOLDEN=testdata/$gate ext=$1
+    [ "$kind" = core ] && ext=json
+    gold_entries() {
+        ls examples/*.sober
+        for d in testdata/*/app; do echo "$d"; done
+        ls testdata/pool/*.sober
+    }
+    if [ "$mode" = --list ]; then
+        gold_entries
+        return 0
+    fi
+    [ -x "$SOBER" ] || { echo "error: $SOBER not found"; return 1; }
+    if [ -z "$mode" ] && cache_hit "$gate" "$SOBER" "$(stage2_key)" "$self" examples testdata src/std; then
+        echo "SKIP: inputs unchanged since the last pass (scripts/.gatecache/$gate.key)"
+        return 0
+    fi
+    local key full tmp lk
+    key=$(gold_key "$self") || return 1
+    mkdir -p "$GATELIB_ROOT/out/gold"
+    if [ "$mode" = --gen ]; then
+        # 生成の間は排他（並んで呼ばれても1回だけ作る）。取った後にもう一度鍵を見る
+        exec 7> "$GATELIB_ROOT/out/gold/.$kind.gen"
+        flock 7
+        if [ -f "$GATELIB_ROOT/out/gold/$kind/.key" ] && [ "$(cat "$GATELIB_ROOT/out/gold/$kind/.key")" = "$key" ]; then
+            exec 7>&-
+            return 0
+        fi
+    fi
+    full=$(mktemp -d "$GATELIB_ROOT/out/gold/.$kind.XXXXXX")
+    tmp=$(mktemp -d)
+    # shellcheck disable=SC2064
+    trap "rm -rf '$tmp' '$full'" EXIT
+    : > "$full/EXCLUDED.txt"
+    local fail=0 n
+    JOBS=${JOBS:-$(nproc)}
+    par_init "$tmp"
+    gold_job() { # $1 = entry
+        local e=$1 k
+        k=$(echo "$e" | tr '/' '_')
+        k=${k%.sober}
+        if ! gold_emit "$e" "$full/$k.$ext" 2> "$PAR_W/err"; then
+            rm -f "$full/$k.$ext"
+            echo "@@ excl $e: $(head -n 1 "$PAR_W/err")"
+            return 0
+        fi
+        if [ "$mode" != --gen ]; then
+            gold_emit "$e" "$PAR_W/again"
+            cmp -s "$full/$k.$ext" "$PAR_W/again" || echo "FAIL: $e: output is not deterministic"
+            if declare -F gold_job_check > /dev/null; then gold_job_check "$e" "$full/$k.$ext"; fi
+        fi
+        echo "@@ ok"
+    }
+    # testdata/golden_skip.txtのentryはゴールデンを作らない（--listは絞らない — 他のゲートが全entryを読む）
+    while IFS= read -r e; do par_run gold_job "$e"; done < <(gold_entries | grep -vxF -f <(grep -v "^#" testdata/golden_skip.txt))
+    par_wait > "$tmp/res"
+    grep '^@@ excl ' "$tmp/res" | sed 's/^@@ excl //' > "$full/EXCLUDED.txt" || true
+    if grep '^FAIL' "$tmp/res"; then fail=1; fi
+    n=$(grep -c '^@@ ok' "$tmp/res" || true)
+    # 除外の理由の列はゴールデンの文面を保つ（生成元の診断文 — excluded_keep）
+    excluded_keep "$full/EXCLUDED.txt" "$GOLDEN/EXCLUDED.txt" ": "
+    mkdir -p "$tmp/tab"
+    # 表は題材を分けて並列に作る（コアJSONは1プロセスで約90秒）
+    (cd "$full" && ls | grep "\.$ext\$") | xargs -r -n 40 -P "$JOBS" node "$GATELIB_ROOT/scripts/goldtab.ts" tab "$kind" "$full" "$tmp/tab" > /dev/null || fail=1
+    cp "$full/EXCLUDED.txt" "$tmp/tab/"
+    if [ "$mode" != --gen ] && declare -F gold_post > /dev/null; then gold_post "$full" || fail=1; fi
+    [ "$fail" = 0 ] || return 1
+    gold_publish "$kind" "$full" "$key"
+    if [ "$mode" = --gen ]; then
+        exec 7>&-
+        return 0
+    fi
+    if [ "$mode" = --regen ]; then
+        rm -rf "$GOLDEN"
+        mkdir -p "$GOLDEN"
+        cp -r "$tmp/tab/." "$GOLDEN/"
+        echo "regenerated $GOLDEN ($n entries, $(wc -l < "$GOLDEN/EXCLUDED.txt") excluded; full text in out/gold/$kind)"
+        return 0
+    fi
+    [ -d "$GOLDEN" ] || { echo "error: $GOLDEN not found (--regen)"; return 1; }
+    if ! diff -r "$GOLDEN" "$tmp/tab" > "$tmp/diff"; then
+        echo "FAIL: $kind text differs from $GOLDEN（表の差の題材 $(grep -c '^diff -r\|^Only in' "$tmp/diff")）"
+        echo "  (生成元のどこかが変わった。意図した変更なら --regen。変わった関数の全文の差分 = scripts/golddiff.sh HEAD $kind <題材>)"
+        head -n 40 "$tmp/diff"
+        return 1
+    fi
+    [ -z "$mode" ] && cache_store
+    echo "OK: $n entries match $GOLDEN (deterministic, $(wc -l < "$GOLDEN/EXCLUDED.txt") excluded)"
 }
 
 frozen_list() { # $1 = scripts/frozen/<name>.list の name。コメントと空行を除き、消えたパスの行を飛ばして出す（飛ばした数は stderr へ）。

@@ -1,0 +1,33 @@
+package main
+
+// 総称関数の版。relay_chan.m.sober が型引数を手で代入した単相の版
+
+import "std/task"
+
+type Row struct {
+    xs []int
+    tag string
+}
+
+func relay[T](x T) T? {
+    tx, rx := task.NewChannel[T](cap: 1)
+    task.Send(tx, x)
+    return task.Recv(rx)
+}
+
+func main() {
+    r, e := task.Run((s task.Scope) => {
+        a := relay("abc")
+        b := relay(Row{xs: []int{4}, tag: "t"})
+        mut n := 0
+        if a != nil {
+            n += len(bytes(a))
+        }
+        if b != nil {
+            n += len(b.xs) + len(bytes(b.tag))
+        }
+        n
+    })
+    _ = e
+    println(r)
+}

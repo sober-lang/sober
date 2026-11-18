@@ -179,10 +179,10 @@ func outRoute(st mut St, meta int) {
     setCur(mut st, bKeepM)
     call(mut st, st.rtOutAppend, list3(mut st, itop(mut st, svM), gepByte(mut st, meta, iconst(mut st, W_LINE * 8)), lnM))
     store(mut st, meta, W_LINE_LEN, iconst(mut st, 0))
-    store(mut st, mn, MN_OLOCK, iconst(mut st, 0))
+    lockGive(mut st, mn, MN_OLOCK)
     ret(mut st, -1)
     setCur(mut st, bGoM)
-    store(mut st, mn, MN_OLOCK, iconst(mut st, 0))
+    lockGive(mut st, mn, MN_OLOCK)
     bGoAll := newBlock(mut st)
     br(mut st, bGoAll, -1)
     setCur(mut st, bCo)
@@ -247,6 +247,26 @@ func sysMmap(st mut St, size int) int {
     setCur(mut st, good)
     syscall(mut st, list4(mut st, iconst(mut st, 28), a, size, iconst(mut st, 15)))
     return a
+}
+
+// sysMmapのalign（2の冪）に揃えた形: size + alignを取り、揃えた先頭の前と後ろを返す（長さ0のmunmapはEINVALで、無害）。
+// スロットの写像はこれで取る: スロットの基底は大きさに揃い、ずらした基底から本物の先頭が切り上げで出る（slotReal）
+func sysMmapAligned(st mut St, size int, align int) int {
+    a := sysMmap(mut st, bin(mut st, BAdd, size, align))
+    b := bin(mut st, BAnd, bin(mut st, BAdd, a, bin(mut st, BSub, align, iconst(mut st, 1))), bin(mut st, BSub, iconst(mut st, 0), align))
+    h := bin(mut st, BSub, b, a)
+    syscall(mut st, list3(mut st, iconst(mut st, 11), a, h))
+    syscall(mut st, list3(mut st, iconst(mut st, 11), bin(mut st, BAdd, b, size), bin(mut st, BSub, align, h)))
+    return b
+}
+
+// v以上の最小の2の冪（v ≥ 1）
+func ceilPow2(st mut St, v int) int {
+    mut x := bin(mut st, BSub, v, iconst(mut st, 1))
+    for i <- iter.Range(0, 6) {
+        x = bin(mut st, BOr, x, bin(mut st, BSar, x, iconst(mut st, 1 << i)))
+    }
+    return bin(mut st, BAdd, x, iconst(mut st, 1))
 }
 
 // 区間sのバッファを出して長さを0に

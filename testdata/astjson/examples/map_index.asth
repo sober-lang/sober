@@ -1,0 +1,9 @@
+@@full	c244ba5c92383140	2050	51691
+@head	7b6f34d1a1ab8d6d	0	141
+func fill	f3f5431aa91d34b7	25	911
+func get	a94abe9f7719c6ab	19	713
+func geti	24953158ff161204	19	708
+func getm	9160b45b70bccfce	19	712
+func main	87b016c16eefae26	233	7158
+func names	0abbcc203fa55542	23	888
+type Box	eb9c3ad64999ec46	4	180

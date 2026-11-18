@@ -1,0 +1,8 @@
+@@full	874e6880fc9a586b	570	15237
+@head	f8802cba5eefdec2	0	31
+func area	87cf46c3c6685aa5	20	931
+func describe	80665bcbec7fba50	28	1141
+func main	a19372c7f002439f	12	547
+type NotFound	a3cd236e42ad7ea3	2	115
+type Shape	78bcd519c76a3878	4	290
+type Timeout	034b90453440269d	1	68

@@ -962,7 +962,7 @@ func fzExpr0(z mut Fz, d mut desugar.S, e desugar.NodeRef) {
     }
     // 葉は種類だけ見て返す（節の全部のフィールドの読み〔desugar.NodeOf〕は重い — 自己buildのオーバーヘッドの大半だった）
     k := desugar.KindN(mut d, e)
-    if k == ast.EIdent || k == ast.EInt || k == ast.EStrlit || k == ast.ENil || k == ast.EFloat || k == ast.EMutArg {
+    if k == ast.EIdent || k == ast.EInt || k == ast.EStrlit || k == ast.EEmbed || k == ast.ENil || k == ast.EFloat || k == ast.EMutArg {
         return
     }
     x := desugar.NodeOf(mut d, e)

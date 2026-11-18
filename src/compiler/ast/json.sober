@@ -478,6 +478,11 @@ func emitExpr(out mut []byte, t Tree, e int, x Node) {
         tag(mut out, e, "ident")
         kStr(mut out, t, e, false, "name", x.a)
         kTok(mut out, e, x)
+    } else if k == EFieldTy {
+        tag(mut out, e, "fieldty")
+        kStr(mut out, t, e, false, "type", x.a)
+        kStr(mut out, t, e, false, "field", x.b)
+        kTok(mut out, e, x)
     } else if k == EUtf8Ref {
         tag(mut out, e, "ident")
         kLit(mut out, e, false, "name", "$utf8")
@@ -518,6 +523,19 @@ func emitExpr(out mut []byte, t Tree, e int, x Node) {
     } else if k == EStrlit {
         tag(mut out, e, "strlit")
         kStr(mut out, t, e, false, "value", x.a)
+        kTok(mut out, e, x)
+    } else if k == EEmbed {
+        tag(mut out, e, "embed")
+        kStr(mut out, t, e, false, "path", x.a)
+        kInt(mut out, e, "size", x.b)
+        // 指紋（SHA-256 の32バイト）は16進で
+        digits := bytes("0123456789abcdef")
+        mut hx := mut []byte{}
+        for i <- iter.Range(0, t.data[x.c]) {
+            hx = append(hx, digits[t.data[x.c + 1 + i] / 16])
+            hx = append(hx, digits[t.data[x.c + 1 + i] % 16])
+        }
+        kLit(mut out, e, false, "sum", string(freeze(hx)) catch "")
         kTok(mut out, e, x)
     } else if k == EInterp {
         tag(mut out, e, "interp")

@@ -1,0 +1,22 @@
+package main
+
+// 総称関数の版。mut_swap.m.sober が型引数を手で代入した単相の版
+
+type Buf struct {
+    data mut []int
+}
+
+func swap[T](xs mut []T, i int, j int) {
+    t := xs[i]
+    xs[i] = xs[j]
+    xs[j] = t
+}
+
+func main() {
+    mut bs := mut []Buf{Buf{data: mut []int{1, 2}}, Buf{data: mut []int{3}}}
+    swap(mut bs, 0, 1)
+    println(len(bs[0].data), len(bs[1].data))
+    mut ss := mut []string{"a", "b"}
+    swap(mut ss, 0, 1)
+    println(ss[0], ss[1])
+}

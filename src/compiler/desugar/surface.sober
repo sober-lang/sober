@@ -375,7 +375,7 @@ func exprSty0(st mut S, e NodeRef, eb int, ef int) int {
     switch k {
     case ast.EInt:
         return SUNTYPED
-    case ast.EBinary | ast.EStrlit | ast.EInterp | ast.EFloat:
+    case ast.EBinary | ast.EStrlit | ast.EInterp | ast.EFloat | ast.EEmbed:
         return SFREE
     case ast.EUnary:
         return if isUntypedConst(mut st, e, eb, st.curPkg) { SUNTYPED } else { SFREE }
@@ -470,6 +470,11 @@ func convTarget(st mut S, callee NodeRef, eb int, pk int) int {
     st.lastFnConv = -1
     mut name := StrRef(-1)
     k := kindN(mut st, callee)
+    if k == ast.EFieldTy {
+        // 変換 `R.f(e)` もWの変換と同じく値を変えない（LastFnConvは変換であることだけを伝える。型は表層型の表から引く）
+        st.lastFnConv = callee
+        return CONV_NONE
+    }
     if k == ast.EIdent {
         name = sA(nodeOf(mut st, callee))
         if lookup(mut st, eb, name) >= 0 {

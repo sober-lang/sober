@@ -378,8 +378,15 @@ function crossTree(d: Deps): number {
     };
     try {
         const c = path.join(t, "tree");
-        execFileSync("rsync", ["-a", `--link-dest=${ROOT}/`, "--exclude", "/.git", "--exclude", "/.pair", "--exclude", "/out/bench", "--exclude", "/out/inst",
-            "--exclude", "/out/rust", "--exclude", "/out/skym", "--exclude", "/scripts/.gatecache", `${ROOT}/`, `${c}/`]);
+        // out/gold（テキストのゴールデンの全文 — 生成物で鍵の入力ではない）は写さない: 並んで走る irtext・lltext・corejson・astjson が
+        // out/gold/.<種類>.XXXXXX に一時ディレクトリを作って消すので、写しの途中で消える。ほかの実行の残り（例が out/・examples/out に作って消すファイル）も
+        // 写しの途中で消えうる — rsync の終了コード24（写しの途中で消えた元のファイル）は許す。消えたのが鍵の入力なら、写しの鍵が元と違って下の比べで落ちる
+        try {
+            execFileSync("rsync", ["-a", `--link-dest=${ROOT}/`, "--exclude", "/.git", "--exclude", "/.pair", "--exclude", "/out/bench", "--exclude", "/out/inst",
+                "--exclude", "/out/rust", "--exclude", "/out/skym", "--exclude", "/out/gold", "--exclude", "/scripts/.gatecache", `${ROOT}/`, `${c}/`], { stdio: ["ignore", "ignore", "pipe"] });
+        } catch (e: any) {
+            if (e?.status !== 24) throw e;
+        }
         // 無くてもよい生成物（宣言の ?<パス>）は、有るか無いかでキーが変わる。元の木に有るものはコピーにも置き、同じ中身の木として比べる
         for (const p of d.optional) {
             const src = path.join(ROOT, p), dst = path.join(c, p);

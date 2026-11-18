@@ -60,6 +60,10 @@ std/net（したがってstd/http/serverとstd/tls）を使うプログラムは
 ## 開発者向け: 検査一式を回す
 
 コンパイラ自身に手を入れるときは、`scripts/gates.sh --full` が全部の検査を回します。入力が前回PASSしたときと同じ検査は、その記録を再利用します（`--no-cache` を付けると全部を走らせます）。検査一式には追加で次が要ります:
-[Lean 4](https://lean-lang.org/)（`lean/lean-toolchain` の版 — `cd lean && lake build`）、Go（独立のオラクルとbenchの比較用の実装）、Rust（benchの比較用の実装）、Node.js（一部の道具）、`perf`（bench）、GNU as（命令のエンコーダの照合）。
+[Lean 4](https://lean-lang.org/)（`lean/lean-toolchain` の版。`cd lean && lake build` でビルドする）、Go（独立のオラクルとbenchの比較用の実装）、Rust（benchの比較用の実装）、Node.js（一部の道具）、`perf`（命令数の上限値とbench）、valgrind（リクエスト1件の命令数）、python3、clangかzig（.llの検査）、GNU as（命令のエンコーダの照合）。
+
+道具・権限・CPUの機能・CPUの数が足りずに照合できない検査は、FAILになります。黙ってSKIPにはしません。
+その照合を外すときは、`SOBER_GATES_ALLOW_SKIP` に条件の名前を空白区切りで書きます（例: `SOBER_GATES_ALLOW_SKIP="perf cpus" scripts/gates.sh --full`）。
+FAILの行に、外すときの条件の名前が出ます。外した回の結果は `ALL PASS` ではなく `PASS with N skipped` になり、外した検査と条件の名前が出ます。
 
 次へ: [最初のプログラム](first-program.ja.md)

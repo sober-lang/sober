@@ -1,0 +1,43 @@
+package main
+
+// ループの本体で組んだunionの値を、ループの外のmutの変数へ代入する。ペイロードはループの本体のregionに作り、
+// 代入が外の変数のregionへ写す（structのリテラルと同じ形）
+
+type Opt union {
+    Some { v string }
+    None {}
+}
+
+type Pair union {
+    Two { a string; b []int }
+    Zero {}
+}
+
+func last(xs []string) Opt {
+    mut r := None{}
+    for x <- xs {
+        r = Some{v: x + "!"}
+    }
+    return r
+}
+
+func longest(xs []string) Pair {
+    mut r := Zero{}
+    for x <- xs {
+        if switch r { case Two{a}: len(bytes(x)) > len(bytes(a)); default: true } {
+            r = Two{a: x, b: []int{len(bytes(x)), 0}}
+        }
+    }
+    return r
+}
+
+func show(o Opt) string {
+    return switch o { case Some{v}: v; default: "none" }
+}
+
+func main() {
+    println(show(last([]string{"a", "bc"})))
+    println(show(last([]string{})))
+    p := longest([]string{"ab", "xyz", "q"})
+    println(switch p { case Two{a}: a; default: "zero" }, switch p { case Two{b}: b[0]; default: -1 })
+}

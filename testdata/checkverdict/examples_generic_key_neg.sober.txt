@@ -1,0 +1,4 @@
+sober: type error at examples/generic_key_neg.sober:14:18 (KindArg): the type argument for K of tally lacks a property that the body of tally uses
+  K must be usable as a map key (int or string): the body of tally relies on it (required at examples/generic_key_neg.sober:6:18)
+{"errors":[{"msg":"type error"}],"ok":false}
+exit=1

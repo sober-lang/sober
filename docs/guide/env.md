@@ -16,8 +16,8 @@ Declare the variables your own program reads in a [std/env](../std/env.ja.md) ta
 | --- | --- |
 | `SOBER_WORKERS` | the number of workers (default the number of cores). Standard output stays byte-for-byte the same when it changes |
 | `SOBER_PIN` | pin the workers (2 forces one CPU per worker, 1 forces each worker onto the CPUs that share its L3 cache, 0 turns pinning off; by default only Serve-shaped programs with enough allowed CPUs are pinned, one CPU per worker) |
-| `SOBER_REGION_MB` | the size limit of the main region (MiB, default 4096) |
-| `SOBER_TASK_REGION_MB` | the size limit of a task's region (MiB — never above main's) |
+| `SOBER_REGION_MB` | the size limit of the main region (MiB, default 4096; rounded up to a power of two) |
+| `SOBER_TASK_REGION_MB` | the size limit of a task's region (MiB, rounded up to a power of two; never above main's) |
 | `SOBER_MADV_MB` | when returning the pages of a dropped region to the OS, the amount kept touched from the start (MiB, 0 = return all) |
 | `SOBER_COVER` | the file a coverage-instrumented executable (`sober build --cover`) writes its marks to when it ends (nothing is written without it) |
 | `SOBER_BUDGET_MB` | fix the memory ceiling (for tests — by default from the cgroup's memory.max and the installed memory) |
@@ -25,6 +25,8 @@ Declare the variables your own program reads in a [std/env](../std/env.ja.md) ta
 | `SOBER_IO` | choose the io path (1 / 2 read synchronously without io_uring — for comparison) |
 | `SOBER_NET` | 1 fixes the network to the epoll path (for comparison) |
 | `SOBER_NET_FUSE` | 0 turns off sending a keep-alive HTTP (plaintext) response without waiting for its completion before moving on to receive the next request (for isolating problems; on by default) |
+| `SOBER_NET_FIXED` | 0 turns off registering a fixed file table with io_uring, so connections use plain fds (for isolating problems; on by default) |
+| `SOBER_PBUF_INC` | 0 turns off registering the receive buffer ring for incremental consumption (`IOU_PBUF_RING_INC`, Linux 6.12 or later), so the ring uses fixed slots (for isolating problems; on by default) |
 | `SOBER_TASK_WIN` | 0 turns off starting a connection task's shallow regions from the last pages of the task's area (for isolating problems; on by default) |
 | `SOBER_MDWE` | 0 turns off the protection that gives up executable memory at startup (`PR_SET_MDWE`, Linux 6.6 and later). Use it when running under dynamic instrumentation such as valgrind (on by default) |
 | `SOBER_MDWE_REPORT` | Non-zero prints the state of the protection above to standard error when main exits normally (for testing) |
@@ -37,7 +39,8 @@ Declare the variables your own program reads in a [std/env](../std/env.ja.md) ta
 | `SOBER_CHAOS_SEED` | the seed of the failures injected into network sends, receives and accepts (for tests, 0 = none) |
 | `SOBER_PAR_STATS` | 1 counts the usage of each task and prints it to standard error |
 | `SOBER_DEPTH_REPORT` | when true, print the region depth measurement to standard error at main's normal exit |
-| `SOBER_NOAES` / `SOBER_NOCLMUL` / `SOBER_NOMULX` | 1 falls back from the CPU's AES-NI / PCLMULQDQ / MULX (for comparison) |
+| `SOBER_NOAES` / `SOBER_NOCLMUL` / `SOBER_NOMULX` / `SOBER_NOSHA` | 1 falls back from the CPU's AES-NI / PCLMULQDQ / MULX / SHA-NI (for comparison) |
+| `SOBER_DATE_SEC` | fixes the clock of the Date line of HTTP responses at this value (epoch seconds; for tests. The Date in the guide's example outputs is fixed at 784111777) |
 
 ## Read by the standard library
 

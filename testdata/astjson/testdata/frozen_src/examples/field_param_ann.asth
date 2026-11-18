@@ -1,0 +1,9 @@
+@@full	5b65cffa84f8ff0e	758	17503
+@head	f8802cba5eefdec2	0	31
+func failed	b74a7fa42afb8d34	12	553
+func main	3fd74281334f5a59	57	1849
+func nest	fe4a38c589db59f0	16	685
+func wrap	41c21e1f535291da	17	702
+type Box	61f04c8dc3bd6961	4	192
+type Outer	33706b68a1e48cd4	3	162
+type Result	64de9de7c684dcf5	4	200

@@ -505,7 +505,9 @@ func lambdaCall0(st mut St, c int, args desugar.ListRef, at desugar.NodeRef) (in
         st.nloop = st.nloop + 1
     }
     // 結果がT? 1つ（`func(c Conn) error?` — 28 節netのhandler）: 本体の値を期待型で寄せる（ラベル・nil・ifの分岐。脱糖器のlambdaCallと同じ方針）
-    rw := if loop == 0 && !loc && lenL(mut st, frs) == 1 && (isTag(mut st, latI(mut st, frs, 0), TOpt) || takesConst(mut st, latI(mut st, frs, 0))) { latI(mut st, frs, 0) } else { -1 }
+    // 本体のラムダ（ブロック・if式なら末尾の式）は、結果が関数値（値化可能なnamed fn type）なら値の位置（脱糖器のlambdaCallと同じ。名前付き関数はloaderがη済み）
+    rt1 := if lenL(mut st, frs) == 1 { latI(mut st, frs, 0) } else { -1 }
+    rw := if loop == 0 && !loc && rt1 != -1 && (isTag(mut st, rt1, TOpt) || takesConst(mut st, rt1) || (bk == ast.ELambda || bk == ast.EBlock || bk == ast.EIf) && (isTag(mut st, rt1, TFnv) || isClosT(mut st, rt1))) { rt1 } else { -1 }
     // 本体が呼び出し / パイプなら値なしも許す
     if rw >= 0 && bk != ast.EBlock {
         x1 := exprExpecting(mut st, body, rw, body)?

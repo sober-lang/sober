@@ -1,3 +1,4 @@
 serve: expired
 alpha / (closed) / charlie / (closed)
-pool 0: admit 4 fail 1 died 1
+pool 0 (all Serves): admit 0 fail 0 died 0
+pool 1: admit 4 fail 1 died 1

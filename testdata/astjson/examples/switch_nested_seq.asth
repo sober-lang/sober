@@ -1,0 +1,11 @@
+@@full	8a4594ac7d7f4c45	1402	41734
+@head	4cb1e368e1e4a834	0	108
+func f	a85174cc7e79b82d	33	1587
+func g	7d8eb4fef4b80820	14	692
+func h	fb24ee4bd1618907	26	1243
+func leaf	7680135c417ec5fc	18	830
+func main	eed590baadcc8514	37	1684
+func mid	1b0f3d486fb4d14c	19	853
+type Leaf	330af57b898ae65c	3	208
+type Mid	b4e47e40e3cfa338	3	208
+type Top	dbe342bb996ad5ec	4	253

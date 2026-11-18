@@ -73,6 +73,10 @@ func funcDecl(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx 
         tps = l
         p = q
     }
+    // `@kind` は型パラメータごとに 1 つ（数が合わなければ文法の外）
+    if an.kind >= 0 && builder.Get(mut db, an.kind) != builder.Get(mut db, tps) {
+        return -1, p
+    }
     params, q1 := parameters(mut nb, mut db, cx, p, 0)
     if params < 0 {
         return -1, p
@@ -90,13 +94,13 @@ func funcDecl(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx 
     if body < 0 || tg(cx, q2) != lexer.Semicolon {
         return -1, q2
     }
-    ext := if an.sec >= 0 || an.bless != 0 || an.cred != 0 || an.effs >= 0 || an.cst >= 0 || exh != 0 { funcExt(mut db, []int{0, start, q2 + 1, sig_end, noinl, errs, errsTok, expand}, an) } else if expand != 0 { ast.PutList(mut db, []int{0, start, q2 + 1, sig_end, noinl, errs, errsTok, expand}) } else { ast.PutList(mut db, []int{0, start, q2 + 1, sig_end, noinl, errs, errsTok}) }
+    ext := if an.sec >= 0 || an.bless != 0 || an.cred != 0 || an.effs >= 0 || an.cst >= 0 || an.kind >= 0 || exh != 0 { funcExt(mut db, []int{0, start, q2 + 1, sig_end, noinl, errs, errsTok, expand}, an) } else if expand != 0 { ast.PutList(mut db, []int{0, start, q2 + 1, sig_end, noinl, errs, errsTok, expand}) } else { ast.PutList(mut db, []int{0, start, q2 + 1, sig_end, noinl, errs, errsTok}) }
     return node(mut nb, ast.KFuncDecl, tk(cx, p0 + 1), fname, tps, params, results, body, ext), q2 + 1
 }
 
 // 付加の列head（8個 — 番号0〜7）に注釈のフィールドを足した列: `@secret` / `@bless` / `@credential` があれば12個・`@effects` があれば14個
 // （12・13 番 = 項の列・`@` の字句）・`@const` があれば 16 個（14・15 番 = 名前の列・`@` の字句 — `@effects` が無ければ 12・13 番は -1 / 0）・
-// `@exhaustive` だけなら 9 個（どれも無ければ head のまま）
+// `@exhaustive` だけなら 9 個（どれも無ければ head のまま）。`@kind`（.sobi だけ）があれば 17 個（16 番 = 旗の列 — 前の欄は無しの値で埋める）
 func funcExt(db mut builder.Builder[int], head []int, an Annot) int {
     mut l := mut []int{}
     mut i := 0
@@ -104,18 +108,21 @@ func funcExt(db mut builder.Builder[int], head []int, an Annot) int {
         l = append(l, head[i])
         i += 1
     }
-    if an.sec >= 0 || an.bless != 0 || an.cred != 0 || an.effs >= 0 || an.cst >= 0 {
+    if an.sec >= 0 || an.bless != 0 || an.cred != 0 || an.effs >= 0 || an.cst >= 0 || an.kind >= 0 {
         l = append(l, an.exh)
         l = append(l, an.sec)
         l = append(l, an.secTok)
         l = append(l, an.bless + an.cred * 4)
-        if an.effs >= 0 || an.cst >= 0 {
+        if an.effs >= 0 || an.cst >= 0 || an.kind >= 0 {
             l = append(l, an.effs)
             l = append(l, an.effsTok)
         }
-        if an.cst >= 0 {
+        if an.cst >= 0 || an.kind >= 0 {
             l = append(l, an.cst)
             l = append(l, an.cstTok)
+        }
+        if an.kind >= 0 {
+            l = append(l, an.kind)
         }
     } else if an.exh != 0 {
         l = append(l, an.exh)

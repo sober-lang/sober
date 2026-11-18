@@ -1,0 +1,14 @@
+@@full	d3197efb2b583364	1522	43207
+@head	7b6f34d1a1ab8d6d	0	141
+func g	e2c0e624873e52c5	8	328
+func incr	9971a2c49fa627b5	6	285
+func local	93af7d9046c20560	18	687
+func loop	bcbe3b199b65b783	29	1053
+func main	cf7c546e72001841	105	3341
+func mk2	3ceefa1bf121ead7	12	504
+func pick	6dc41fd1abaa97cc	18	666
+func three	dbc65db6480bd409	20	765
+type H	c1de6fc843331749	3	144
+type P	44e93e7e522c7eaf	3	142
+type Q	1900932b55110ca1	3	142
+type R	98cbded21f54ca6a	2	106

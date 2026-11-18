@@ -28,7 +28,7 @@ done
 scripts/stage2.sh --quiet || exit 1
 C=${INCR_COMPILER:-$ROOT/out/stage2/sober2}
 W=$(mktemp -d)
-trap 'rm -rf "$W"' EXIT
+trap '[ -n "${EXP:-}" ] && kill "$EXP" 2> /dev/null; rm -rf "$W"' EXIT
 # gatesのSOBER_VERIFY=each（ステージごとのIRの検証器）はキャッシュのパスに入らない — 検査はキャッシュのパスそのものを見るので外す
 unset SOBER_SELF_KEY SOBER_CACHE_VERIFY SOBER_BUILD_CACHE SOBER_VERIFY
 # 基準（off）のbuildは切のパス（キャッシュは既定on — 配置先のbuildはSOBER_BUILD_CACHE=1を明示する）
@@ -203,6 +203,15 @@ refk() { # $1 = 名前（FAILの表示）・$2 = ステージの番号
         ref "$C" "$1"
     fi
 }
+# 例題 + bench（exone — 配置先 $W/cx・ファイル $W/x0.elf / x1.elf / x.err は自己のチェーンと別）は、自己のチェーンと並べて背景で回す。
+# 結果（数と失敗）はファイルで受け取る（背景のシェルの変数は戻らない）
+EXP=
+if [ "${INCR_SELF_ONLY:-0}" != 1 ]; then
+    : > "$W/omitted"
+    exlist > "$W/tried"
+    ( n=0; bad=0; for f in $(cat "$W/tried"); do exone "$f"; done; echo "$n $bad" > "$W/ex.res" ) > "$W/ex.out" 2>&1 &
+    EXP=$!
+fi
 refk base 0
 warm base "$C" "$k" 0
 for e in "${EDITS[@]}"; do
@@ -273,13 +282,11 @@ for s in $(seq 1 "$K"); do
 done
 echo "incrbuild progen: $pg programs into one cache"
 [ "$pg" = "$K" ] || bad=1
-# 例題 + bench（配置先は全題材で1つ）
-n=0
-: > "$W/omitted"
-exlist > "$W/tried"
-for f in $(cat "$W/tried"); do
-    exone "$f"
-done
+# 例題 + bench（配置先は全題材で1つ — 自己のチェーンと並べて背景で回した分の終わりを待つ）
+wait "$EXP"
+cat "$W/ex.out"
+read -r n exbad < "$W/ex.res" 2> /dev/null || { echo "incrbuild: FAIL examples + bench: no result"; n=0; exbad=1; }
+[ "$exbad" = 0 ] || bad=1
 # 基準（キャッシュなし・W8）の build が失敗した題材（build が拒否する例など）は、失敗してよい一覧と照合する — 件数の減少に失敗が隠れない
 omit_judge incrbuild scripts/omit/incrbuild.list "$W/tried" "$W/omitted" || bad=1
 echo "incrbuild: self chain ${#EDITS[@]} edits + ${#REJECTS[@]} rejects + compiler-swap, progen $pg, $n entries, fail=$bad"

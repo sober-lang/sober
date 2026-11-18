@@ -1,0 +1,17 @@
+@@full	83888e16228d92f3	3696	101506
+@head	f5124a456fcad29e	0	466
+const maxIterations	2676066437f82d27	1	59
+const mechPlain	b9b198f5f262e347	1	66
+const mechPlus	c0c3811a358874e0	1	70
+func NoScram	af1d2a422147bd9b	13	707
+func ScramContinue	0b0bb0d0d93b9ec6	263	9112
+func ScramFinal	9ff3e5135ebea160	87	3152
+func ScramMech	b37493f1efd1a5fd	5	276
+func ScramStart	af07c40007e3c4c1	129	4997
+func has	9e7a79ecdee61d22	17	675
+func saslName	7f0e1d0f096450cd	18	667
+func xorBytes	871ef6ec68958722	42	1468
+type BadServer	6f12313113d1d3c8	1	70
+type NoMechanism	621ee587496bb7f9	1	72
+type Scram	24673e6695578d22	11	561
+type ServerRejected	d5e40af9e376e457	2	128

@@ -251,7 +251,7 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`hkdf.Extract`](crypto-hkdf.ja.md#extract) — PRK = HMAC-SHA256(salt, ikm)（salt が空なら 32 バイトの 0 — RFC 5869 2.2）
 - [`hkdf.TooLong`](crypto-hkdf.ja.md#toolong) — Expand の長さが RFC の上限（255 × 32 バイト）を超えた（または負）
 - [`hmac.Sum256`](crypto-hmac.ja.md#sum256) — key で msg の HMAC-SHA256（32 バイト）。
-- [`http.BadHeader`](http.ja.md#badheader) — Response の headers の 1 本が書けない（名前が空か tchar でない・値に CR / LF / NUL・std/http/server が書く名前 — 呼び手の契約違反。
+- [`http.BadHeader`](http.ja.md#badheader) — レスポンスの頭がアプリの値のままでは書けない（呼び手の契約違反。
 - [`http.BadRequest`](http.ja.md#badrequest) — 400 Bad Request（リクエストの頭が読めない）
 - [`http.ContentTooLarge`](http.ja.md#contenttoolarge) — 413 Content Too Large（本文が上限を超える）
 - [`http.Created`](http.ja.md#created) — 201 Created
@@ -293,6 +293,7 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`io.Other`](io.ja.md#other) — 上のラベルに当たらない errno の開いたバケツ（[language.md 13 節](../language.md)「正直な宣言」）。
 - [`io.Raw`](io.ja.md#raw) — v のバイト列（読むだけ — 同じ反復の中の View）
 - [`io.ReadAll`](io.ja.md#readall) — f を今の位置から EOF まで全部読む（ReadFile の開いた File 版）。
+- [`io.ReadAt`](io.ja.md#readat) — f の off バイト目から n バイトを読む（pread — f の位置を動かさない）。
 - [`io.ReadDir`](io.ja.md#readdir) — path の項目を名前のバイト順で返す（`.` / `..` は含めない — Go の os.ReadDir と同じ）。
 - [`io.ReadFile`](io.ja.md#readfile) — path のファイルを全部読む
 - [`io.ReadStdin`](io.ja.md#readstdin) — 標準入力（fd 0）を EOF まで全部読む（同期 — Unix フィルタの入口。
@@ -389,6 +390,8 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`net.Recv`](net.ja.md#recv) — c の受信を切片ずつ k へ渡す（失敗しうる生成元 — `for chunk <- net.Recv(c)? { … }`）。
 - [`net.Send`](net.ja.md#send) — b を全部 c へ送る（同期 — 短い書きは続きから・MSG\_NOSIGNAL で相手が閉じた後の書きは io.Closed）
 - [`net.Serve`](net.ja.md#serve) — lの接続を受けるたびに接続1本 = task 1本でhを走らせる（acceptのループはstdが持つ — ワーカーごとに1本・lと同じ番地にSO\_REUSEPORTで足したlistenerで受ける）。
+- [`net.WaitView`](net.ja.md#waitview) — 受け付けを待っている接続の数（読んだ時点の値）と、その上限
+- [`net.Waiting`](net.ja.md#waiting) — このプロセスの Serve が受け付けを待たせている接続の数（task.Ledger と同じく読んだ時点の値 — 入場が埋まると増える。
 - [`os.Alarm`](os.ja.md#alarm) — ms ミリ秒後に SIGALRM でプロセスを終わらせる（既定の動作のまま — 親から見た終了コードは 128 + 14 = 142。
 - [`os.AppendFile`](os.ja.md#appendfile) — path の末尾に b を書き足す（open(2) の O\_WRONLY | O\_CREAT | O\_APPEND | O\_CLOEXEC — 無ければ 0644 で作る）。
 - [`os.Args`](os.ja.md#args) — プログラムの引数（0番 = プログラム名 — Goのos.Argsと同じ並び）。
@@ -643,19 +646,16 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`task.Close`](task.ja.md#close) — 送り端を閉じる（以後の Send は panic・二度目の Close も panic。
 - [`task.Domain`](task.ja.md#domain) — domain — 直列化された共有状態（[language.md 11 節](../language.md)「domain」）: 状態 S を 1 つ持ち、Update / Read / Await の本体を 1 つずつ当てる。
 - [`task.DomainView`](task.ja.md#domainview) — domainの合計の行（Ledger().domains — [language.md 11 節](../language.md)「domain」の観測のインターフェース）: 全domainをまとめた1行
+- [`task.Fixed`](task.ja.md#fixed) — taskの固定費（バイト）: 入場でtaskごとに宣言や見積もりへ足す量。
 - [`task.GB`](task.ja.md#gb) — 予算の単位（バイト — `budget: 64 * MB`）
 - [`task.Gather`](task.ja.md#gather) — handle の列を生んだ順（正準順）で待って結果を集める fan-in（死んだ子があれば呼び手も死ぬ: Join と同じ）。
 - [`task.Handle`](task.ja.md#handle) — 子の task の handle（task.Spawn が返す）
 - [`task.Join`](task.ja.md#join) — 子の結果（死んでいたら呼び手も死ぬ — この子の死は私の死）
 - [`task.KB`](task.ja.md#kb) — 予算の単位（バイト — `budget: 64 * MB`）
 - [`task.Lease`](task.ja.md#lease) — lpの今のワーカーのストレージをウィンドウbodyに貸す: `z := task.Lease(gzw, (w mut flate.Work) => flate.EncodeWith(mut w, b, 6))`。
-- [`task.LeaseBlock`](task.ja.md#leaseblock) — task.NewLocal / task.Leaseの変換先（loaderが組む — 利用者の直の呼び出しはloaderが拒否）: ストレージの列（pool.LeaseAttachへ渡す）
-- [`task.LeaseGive`](task.ja.md#leasegive) — task.NewLocal / task.Leaseの変換先（loaderが組む — 利用者の直の呼び出しはloaderが拒否）: LeaseTakeで取ったエリアatを返す（−1なら何もしない）
-- [`task.LeaseTake`](task.ja.md#leasetake) — task.NewLocal / task.Leaseの変換先（loaderが組む — 利用者の直の呼び出しはloaderが拒否）: Tの指紋fpを照合し、今のワーカーのエリアの位置を返す（使用中なら −1 = 倒れ）
-- [`task.Ledger`](task.ja.md#ledger) — 台帳の今の値（ioのエフェクト — 読んだ値は時刻に依る: 時計と同じ扱い）
+- [`task.Ledger`](task.ja.md#ledger) — 台帳の今の値（nondetのエフェクト — 読んだ値はスケジュールと時刻に依る）
 - [`task.LedgerView`](task.ja.md#ledgerview) — 台帳の read-only のビュー（[language.md 11 節](../language.md)「メトリクス」）: 根 = プロセスの天井と計上中の量・縮退 / 天井を超えた入場 /宣言超過 / shed の数・ワーカー数、と名前つきプールのノード（作った順）
 - [`task.Local`](task.ja.md#local) — ワーカーローカルストレージのハンドル（region-domain-pool.md 4d節 — task.NewLocalが作る）: ワーカーごとにTを1つ持ち、task.Leaseのウィンドウに貸す。
-- [`task.LocalNew`](task.ja.md#localnew) — task.NewLocal / task.Leaseの変換先（loaderが組む — 利用者の直の呼び出しはloaderが拒否）: Tの指紋fpとScratchのフィールドの容量の列capsからストレージを作る（ワーカーの数だけのエリアを今のregionに先取り — 全部0）
 - [`task.LocalType`](task.ja.md#localtype) — NewLocalと違うTのウィンドウでLeaseした（ストレージのTの指紋が合わない）
 - [`task.MB`](task.ja.md#mb) — 予算の単位（バイト — `budget: 64 * MB`）
 - [`task.MS`](task.ja.md#ms) — 期限の単位（1 ミリ秒 — `deadline: 500 * MS`。

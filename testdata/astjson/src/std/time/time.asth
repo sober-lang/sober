@@ -1,0 +1,31 @@
+@@full	17a7224184498d84	3416	87020
+@head	30d8a82a2c7bd1f8	2	192
+const Hour	1b6642fbd5fc2580	1	56
+const Microsecond	ef5cec949dff95e1	1	54
+const Millisecond	141032db553b021e	1	57
+const Minute	f16931171398e438	1	56
+const Nanosecond	de044c5b7995b88f	1	50
+const Second	5b7230880e948cfd	1	55
+func Add	d38e7f151f212364	18	705
+func Before	e0804fea97e18c5a	21	832
+func Elapsed	d21d3d675551cb1f	9	435
+func Equal	9f8bb934ad37ddf9	15	633
+func FromCivil	6b915df90d2318d3	33	1205
+func Mono	e429db1abac8ed1a	6	315
+func Nano	88faa5a667f9107c	5	267
+func Now	0cdc8da2d7ac5afc	13	571
+func Since	3478abe6a2693542	9	410
+func Sub	8661dd4384548969	17	693
+func ToCivil	a5aa27a4b3e0b19f	47	1863
+func Unix	a86d3bb5160f8ecc	28	1134
+func UnixSec	59f30df9a9d6d612	5	269
+func civilOf	75c5f1012c85a429	103	3348
+func daysOf	35d40c630749f1a1	75	2512
+func floorDiv	50903f7bff6ee7aa	29	1009
+func floorMod	70cd53f9accfaa5d	12	503
+func isLeap	add2fdedc0ed7605	20	709
+func monthDays	3ca4d890b7bee6f6	40	1287
+type Bad	c46bc68f4fa91a27	1	64
+type Civil	bb9e312ab791cdf4	9	465
+type Instant	e710ae7c20b59f1b	2	115
+type Time	3810dabe62a1ac7f	3	162

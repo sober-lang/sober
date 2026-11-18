@@ -2,6 +2,69 @@
 
 This file records user-facing changes per public release. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow [Semantic Versioning](https://semver.org/) (no backward-compatibility promise while on 0.x).
 
+## v0.7.5 (2026-11-18)
+
+This release raises resilience to attacks. All 27 checks of httparena's resilience suite now end as survived (25 on the tree before these changes, where tiny-chunk-flood and json-bignum hit the memory limit). When full, the server keeps accepting new connections, takes slots back from connections that sit idle, and decides admission by a byte ceiling. The HTTP server gets bounds on how long it waits to receive and send (deadlines). The property (kind) of a type parameter of a generic function is now inferred, and types that hold a region or mut can be type arguments. `@embed` can receive byte strings. It includes incompatible changes.
+
+### Resilience to attacks
+
+- `net.Serve` and `tls.Serve` keep accepting when admission reaches its limit (when `reject:` is not written). An accepted connection waits in a runtime queue per listener, and when a slot frees, the newest connection in the queue enters. When the queue goes over its limit, the connection that waited longest is closed (counted in the pool's `shed` of `task.Ledger()`). Before, accepting stopped, and the kernel dropped the SYN of new connections. With `reject:`, the server refuses at once without a queue, as before
+- Only while connections are waiting for admission, the server cuts admitted connections to free slots: first those that received no byte since the previous sweep (about every 0.27 s; idle keep-alive connections and stalled peers), oldest first, then the slowest receivers. It does not cut anything when not full. The count goes to the new pool field `evicted` (separate from `timeout`, which counts deadlines)
+- Admission is decided by a byte ceiling, not by a count. The pool ceiling is (`budget:` + `task.Fixed()`) × `conns:` when `conns:` is written, and otherwise what remains of the root ceiling (the memory ceiling of the process, from cgroup memory.max or else physical memory) minus the share of the waiting queues. A count ceiling exists only when `conns:` is written. The listener backlog is reset to a value derived from what remains of the root ceiling
+- Added `net.Waiting()`. It returns the number of connections that the Serves of this process keep waiting (`waiting`) and the sum of the queue sizes (`limit`)
+- The receive buffer of an accepted connection is fixed at 64 KiB once it has read more than 32 KiB in total (on the epoll path, when it is accepted)
+- A task that grows past its reservation (`budget:` + the fixed cost) counts the excess as a borrow, and dies with `RegionExceeded{cause: budget}` when it goes over the ceiling of its pool or of the root. A `net.Serve` connection is closed without sending anything. Going over only the ceiling of a scope's `budget:` is recorded and does not kill the task
+- Setups that cannot use io_uring (the epoll path) have neither the runtime queue nor the taking back of slots. When full, connections wait in the kernel's queue in arrival order
+
+### Breaking changes
+
+- A task that goes over a ceiling past its reservation dies (see "Resilience to attacks" above). Before, it was only recorded
+- `std/http/server`: values that the application puts in a Response are checked, and `panic(http.BadHeader{...})` is raised when they cannot be written. This covers a status outside 200 to 999, a body on 204 and 304, a `Coded.encoding` that is not a token, an arbitrary header value that is not a field-value, and an arbitrary Date header. A second line of a field that the spec allows only once (Location, Content-Location, Content-Range, Retry-After, Server, Age, Expires, Content-Disposition, Strict-Transport-Security, X-Frame-Options) also panics. Other fields can be written twice
+- `std/http/server`: a byte at or above 0x80 in the request target is a 400. Before, it was accepted
+- `std/http/server`: an `OPTIONS *` that matches no route is a 204 (no body and no Allow; RFC 9110 9.3.7). Before, it was a 404
+- A function declaration whose result is an anonymous function type is rejected. Before, check and build rejected a call to it, and accepted it when it was not called. An anonymous function value can be placed only in a parameter, a field of a struct or a union variant, or a local binding
+
+### HTTP server
+
+- Added bounds on waiting: `headWait:` (default 30 s; until the head is complete, including the keep-alive wait), `bodyWait:` (default 60 s; from the complete head until the body is received) and `sendWait:` (default 60 s; the longest interval in which sending makes no progress) of `http.server.ServeConn` and `ServeWith`, and `headWait:` of `tls.Serve` (default 30 s; until the handshake is done). When a deadline passes, the wait returns `io.Timeout`, and the connection is closed without sending anything. It is counted in the new pool field `timeout`
+- Added `budget:`, `conns:` and `reject:` to `tls.Serve` (same meaning as in `net.Serve`)
+- The response head carries a Date header (IMF-fixdate)
+- The absolute-form target is accepted (RFC 9112 3.2.2). When it disagrees with Host, the target wins
+- Parameters of chunked in Transfer-Encoding are checked against the grammar and ignored. Before, they were a 501
+- A chunk size that does not fit in an int is a 400
+- An HTTP/1.1 request with Expect: 100-continue gets `100 Continue` before the server waits for the body
+- A 304 from Static carries the same `Vary: Accept-Encoding` as the 200 for the same request
+- When a Static file's modification time is in the future, Last-Modified is capped at the current second (the second of the Date header). A two-digit year of RFC 850 is read in a 50-year window from the current year
+- In a quoted-string boundary of multipart, a quoted-pair is always unescaped
+- The runtime grammar check of contentType is removed (it cost about 440 instructions per request)
+
+### Language and compiler
+
+- The property (kind) of a type parameter of a generic function is inferred from the body. Type parameters carry no constraints. Types that hold a region (`[]int`, `string`, a struct that holds them), types that hold a mut slice, function values and generic recursive types can be type arguments. A type variable can be a map key. A type argument that does not meet what the body needs is rejected with `diag.KindArg`. `.sobi` files record `@kind`
+- More positions read a value of a named function type: a function name or lambda given for a type-parameter parameter of a generic call without explicit type arguments, fields of generic structs and unions, multiple results, the tail of a block or an if expression, and the right side of an assignment
+- The type arguments of a generic function are inferred from a variant literal of a generic union (`isSome(Some[int]{v: 3})`)
+- A type rejection by check has a second line that states the failed rule in one English sentence (for example `the branches of this switch must have the same type (core rule: case)`). When the type of the body differs from the result type, the position is the tail expression of the body
+- `@embed` can be received into `map[string][]byte`. The values are imm `[]byte`, and the contents need not be UTF-8 (UTF-8 is checked only for a `map[string]string` receiver)
+- When the contents of `@embed` exceed the tree limit of one file (16,777,216 words), load fails with an error that names the file and its size. Before, it was a panic on an internal inconsistency. When an `@embed` file changes during a build, the build stops with `loader.EmbedChanged` (with the path) and writes no output
+- When a parallel child of code generation or check dies and the work is redone sequentially, one line goes to standard error (the stage, that the output does not change, and the setting to raise). Before, it only became slower
+
+### std
+
+- `std/io`: added `ReadAt(f File, off int, n int) ([]byte, error?)`. It reads n bytes from byte off without moving the position of f
+- `std/task`: added `Fixed()` (the fixed cost of a task in bytes). Added `timeout`, `evicted`, `conns`, `cut` and `borrowed` to the pools of `task.Ledger()`, and `borrowOver` and `borrowOverScope` to the whole
+- `std/tls`: a large send that does not fit in the send buffer seals and sends the plaintext 64 KiB at a time. Before, it built the whole ciphertext in one buffer before sending
+- `std/tls`: the declaration of a TLS connection includes the stack that stays resident while it waits (8 KiB)
+
+### Performance
+
+- `std/http/server`: a fast path packs a run of chunks whose size line is one digit in a chunked body. Parsing one 1-byte chunk went from 498 to 93 instructions
+- `std/http/server`: a request waiting for its body is not reread until it is complete. A chunked body is decoded as it arrives
+- In a local measurement against 0.7.4 (9 benchmarks, 16 workers, median of 8 alternating runs in two CPU placements), pipelined rps went down by 6.2 to 6.3% (cycles per request up by 6.5 to 6.7%). Most of it comes from the HTTP conformance changes (such as the Date header on every response). The resilience changes account for little of it. The other 7 benchmarks are within ±2%
+
+### bench/httparena
+
+- Added `POST /parse` (the endpoint for the attacks on body parsers)
+
 ## v0.7.4 (2026-11-16)
 
 This release runs the run queue only in the order tasks became ready. p99 under a saturated load goes down. It includes an incompatible change, because `maxWait:` is removed. It fixes conformance errors of the HTTP server, and a bug that crashed the process under a saturated load. A SIGSEGV that is not a stack overflow now stops the process instead of being turned into the death of a task. When the compiler checks itself, the checker runs 28% fewer instructions, and the released compiler is now stage3.

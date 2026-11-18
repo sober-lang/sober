@@ -1,0 +1,10 @@
+@@full	3cc66c38d3bc0fe1	1031	24863
+@head	f8802cba5eefdec2	0	31
+func counts	59386fa0c1ced59a	7	322
+func direct	5304bcc8990f073d	9	366
+func lookup	48c1cf4211959ed8	29	1077
+func main	0ce7d17dc376edf5	68	2064
+func mk	d2818baa411c79d8	23	869
+func named	e0ba592c59dd166c	11	444
+func pair	fef3714faa97020e	16	546
+type Bad	aca5a6c08e93e671	2	110

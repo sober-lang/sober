@@ -1,0 +1,5 @@
+@@full	68ec5b9b53237d73	1452	45483
+@head	b6e895ab36e859be	0	185
+func TestAppendWordMixed	878e81f620691010	148	4665
+func TestAppendWordSmall	3af7615dad592673	77	2321
+func ref	073557aa197cdd3a	29	1111

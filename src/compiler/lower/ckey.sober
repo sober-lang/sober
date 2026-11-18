@@ -3,6 +3,7 @@ package lower
 import "std/iter"
 import "std/table"
 import "desugar"
+import "std/io"
 
 // ── 後段の関数キャッシュの鍵 ──
 //
@@ -15,7 +16,7 @@ const CK_M1 = -7046029254386353131 // 0x9E3779B97F4A7C15
 const CK_M2 = -4417276706812531889 // 0xC2B2AE3D27D4EB4F
 const CK_S1 = 1609587929392839161
 const CK_S2 = -8796714831421723037
-const CK_VER = 2      // 鍵の形の版（形を変えたら上げる — 2 = 記録の事実にmut仮引数のフラグとワーカーの大域のフラグを追加・扉の監査が使う）
+const CK_VER = 3      // 鍵の形の版（形を変えたら上げる — 2 = 記録の事実にmut仮引数のフラグとワーカーの大域のフラグを追加・扉の監査が使う・3 = 必要なときだけ宣言するrtの記録は本体の参照で鍵に入れる）
 const CK_REF = 1993   // 外を指すワードのフラグ（安定な鍵の前に混ぜる）
 const CK_NUM = 1997   // 番号の定数のフラグ
 
@@ -68,7 +69,7 @@ func ckBytesTo(out mut []int, b []byte) {
 // 鍵の表（cfg = バッチの子へ配るcfg — 正準形のハッシュをc1 / c2に）。安定な鍵の綴りはxFnKey / xGlobKey（fnhashと同じ材料）。
 // build の中で 2 回目からは前の表（st.ckt）にある記録のハッシュを使い回し、増えた記録（spec の複製・後から足した大域）だけ綴りを作る。
 // panic / spawn の点のハッシュは持ち主のハッシュ ‖ 種類 ‖ 持ち主の中の序数（綴り `<持ち主>#p<序数>` と同じ材料）
-func ckTab(st mut St, cfg []int) CkTab {
+func ckTab(st mut St, cfg []int, x bool) CkTab {
     ix := xSkIndex(mut st)
     old := st.ckt
     mut m := mut map[int]int{}
@@ -154,7 +155,11 @@ func ckTab(st mut St, cfg []int) CkTab {
         rt := if ckIsFn(t0, w) { t0.rs[ckIdx(t0.ix, w)] } else { 0 }
         rets = append(rets, rt)
     }
-    h := ckCfg(t0, cfg, freeze(rets))
+    drop := ckDrop(cfg, x)
+    h := ckCfg(t0, cfg, freeze(rets), drop)
+    if st.bcAud {
+        ckDropCheck(t0, cfg, freeze(rets), drop, h, x)
+    }
     return CkTab{on: true, ix: t0.ix, hs: t0.hs, rs: t0.rs, ps: t0.ps, ss: t0.ss, off: t0.off, c1: h[0], c2: h[1], rec: t0.rec, rv: t0.rv, pv: t0.pv, sv: t0.sv}
 }
 
@@ -173,13 +178,43 @@ func ckIsFn(t CkTab, w int) bool {
     return w >= 64 && t.ix[w] != nil
 }
 
-// cfgの正準形のハッシュ（記録の番地は安定な鍵 + 戻りの型へ・他のワードは値のまま）
-func ckCfg(t CkTab, cfg []int, rets []int) []int {
+// cfgのうち全関数の鍵に混ぜないワード（1 = 外す）: 必要になったときだけ宣言するrtの関数の記録。関数の下ろしと機械語は、これらを
+// 本体の中の参照との一致（g == st.rtX）でしか読まない。呼び出しを足すのは本体がそのrtを参照するときだけで、そのとき記録は必ずあり、
+// 参照は本体の正準形（安定な鍵 + 記録の事実）として鍵に入る。参照しない関数の機械語は、記録の有無で変わらない。
+// 例外のubBound（B2のubfFuncが印のついた読みを畳む）は、印のある関数だけckFnが鍵に入れる。
+// x = xParCfg（x86）・他 = lParCfg（B1・B2。17番目からはmfCfgの [数, 引きの関数…]）
+func ckDrop(cfg []int, x bool) []bool {
+    mut d := mut []bool{}
+    for k <- iter.Range(0, len(cfg)) {
+        d = append(d, false)
+    }
+    ks := if x { []int{13, 14, 17, 19, 20, 22, 26} } else { []int{0, 1, 2, 3, 4, 7, 8, 15, 16} }
+    for k <- ks {
+        if k < len(cfg) {
+            d[k] = true
+        }
+    }
+    if !x && len(cfg) > 17 {
+        n := cfg[17]
+        for k <- iter.Range(17, 18 + n) {
+            if k < len(cfg) {
+                d[k] = true
+            }
+        }
+    }
+    return freeze(d)
+}
+
+// cfgの正準形のハッシュ（記録の番地は安定な鍵 + 戻りの型へ・他のワードは値のまま・dropのワードは混ぜない）
+func ckCfg(t CkTab, cfg []int, rets []int, drop []bool) []int {
     mut a := ckM1(CK_S1, CK_VER)
     mut c := ckM2(CK_S2, CK_VER)
     for k <- iter.Range(0, len(cfg)) {
         w := cfg[k]
-        if ckIsFn(t, w) {
+        if drop[k] {
+            a = ckM1(a, -3)
+            c = ckM2(c, -3)
+        } else if ckIsFn(t, w) {
             i := ckIdx(t.ix, w)
             a = ckM1(ckM1(ckM1(a, CK_REF), t.hs[2 * i]), rets[k])
             c = ckM2(ckM2(ckM2(c, CK_REF), t.hs[2 * i + 1]), rets[k])
@@ -189,6 +224,44 @@ func ckCfg(t CkTab, cfg []int, rets []int) []int {
         }
     }
     return []int{a, c}
+}
+
+// 扉の監査（SOBER_CACHE_VERIFY=2）: 鍵に混ぜないワード（ckDrop）を揺らしても cfg の正準形が変わらないこと（そのワードを参照しない
+// 関数は、記録の有無に依らず当たる）。lParCfg の mfCfg の数のワード（17）は並びの形なので揺らさない
+func ckDropCheck(t CkTab, cfg []int, rets []int, drop []bool, h []int, x bool) {
+    mut cf := mut []int{}
+    mut rs := mut []int{}
+    for k <- iter.Range(0, len(cfg)) {
+        w := cfg[k]
+        if drop[k] && !(!x && k == 17) {
+            cf = append(cf, if ckIsFn(t, w) { -1 } else { w ^ 85 })
+            rs = append(rs, 0)
+        } else {
+            cf = append(cf, w)
+            rs = append(rs, rets[k])
+        }
+    }
+    h2 := ckCfg(t, freeze(cf), freeze(rs), drop)
+    if h2[0] != h[0] || h2[1] != h[1] {
+        _ = io.WriteStderr(bytes("cache: key depends on a cfg word left out of the key (ckDrop)\n"))
+        panic(InvariantBroken{})
+    }
+}
+
+// 関数fの本体に印のついた読み（UB_MARK。B2のubfFuncが畳む）があるか
+func ckUbMarked(st mut St, f FnRef) bool {
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            if ubMarked(mut st, i) {
+                return true
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return false
 }
 
 // 索引 m の k（無ければ -1）
@@ -291,6 +364,7 @@ func ckFn(st mut St, f FnRef, stage int) []int {
         c = ckM2(c, ri[4])
         s = ri[0]
     }
+    mut ubm := false
     mut b := irFnBHead(mut st, f)
     while int(b) != -1 {
         desugar.HeapRead(mut st.d, int(b), BSZ, mut rb)
@@ -309,6 +383,9 @@ func ckFn(st mut St, f FnRef, stage int) []int {
         while i != -1 {
             desugar.HeapRead(mut st.d, i, ISZ, mut ri)
             op := ri[I_OP]
+            if op == OpLoad8 && ri[I_C] == UB_MARK {
+                ubm = true
+            }
             a = (a ^ ri[I_RES]) * CK_M1
             c = (c + op) * CK_M2
             tag := if op == OpConst { ri[I_B] } else { 0 }
@@ -357,6 +434,12 @@ func ckFn(st mut St, f FnRef, stage int) []int {
         }
         b = BlkRef(rb[B_NEXT])
     }
+    // B2のubfFuncは、印のついた読み（UB_MARK）がある関数だけubBound（std/utf8.boundary）の有無を読む
+    if stage == 1 && ubm {
+        ckOpnd(mut st, K_GLOB, int(st.ubBound))
+        a = ckM1(ckM1(a, CK_REF), st.ckLa)
+        c = ckM2(ckM2(c, CK_REF), st.ckLc)
+    }
     if st.ckBad {
         panic(InvariantBroken{})
     }
@@ -376,7 +459,7 @@ func ckFn(st mut St, f FnRef, stage int) []int {
 // 全体のパス（バッチを回さない形）でフェーズstage（0 = α・1 = B2）の鍵を全関数ぶんst.ckkに積む（cfgはバッチの子に配るのと同じlParCfg）
 func ckAll(st mut St, stage int) {
     cfg := lParCfg(mut st, stage == 1)
-    st.ckt = ckTab(mut st, cfg)
+    st.ckt = ckTab(mut st, cfg, false)
     mut f := st.fhead
     while f != -1 {
         if irFnBHead(mut st, f) != -1 {
@@ -405,7 +488,7 @@ func ckSens(st mut St, stage int, cfg []int) {
         cf = append(cf, w)
     }
     cf = append(cf, 1)
-    tc := ckTab(mut st, freeze(cf))
+    tc := ckTab(mut st, freeze(cf), false)
     mut f := st.fhead
     while f != -1 {
         if irFnBHead(mut st, f) != -1 {
@@ -420,6 +503,21 @@ func ckSens(st mut St, stage int, cfg []int) {
             }
             if k0[0] == kc[0] && k0[1] == kc[1] {
                 ckSensRec(mut st, stage, int(f), 41)
+            }
+            // B2: std/utf8.boundary（ubBound）を揺らすと、印のある関数の鍵だけが変わる
+            if stage == 1 {
+                st.ckt = t0
+                u := st.ubBound
+                st.ubBound = if int(u) == -1 { f } else { FnRef(-1) }
+                ku := ckFn(mut st, f, stage)
+                st.ubBound = u
+                mk := ckUbMarked(mut st, f)
+                if mk && k0[0] == ku[0] && k0[1] == ku[1] {
+                    ckSensRec(mut st, stage, int(f), 43)
+                }
+                if !mk && (k0[0] != ku[0] || k0[1] != ku[1]) {
+                    ckSensRec(mut st, stage, int(f), 44)
+                }
             }
         }
         f = irFnNext(mut st, f)
@@ -505,18 +603,21 @@ func ckRtFns(st mut St) []int {
 }
 
 // β の鍵（凍結の後）: B2の入力の鍵 ‖ cutInsertのフラグ ‖ 自分の番地を取られるフラグ ‖ B2の歩きで集めた呼び先ごとの番地を取られるフラグ ‖
-// rtの関数の番地を取られるフラグの和 ‖ x86のcfgの正準形（t.c1 / c2）。frの添字ごとに2ワード（B2の鍵が無い関数は [0, 0]）。
+// 番地を取られるrtの関数の集合 ‖ x86のcfgの正準形（t.c1 / c2）。frの添字ごとに2ワード（B2の鍵が無い関数は [0, 0]）。
 // IR を歩き直さない: B2 の子が呼べるのは本体の関数の参照と cfg（rt）だけで、cut が足すのも rt だけ — この約束は `--emit=cachekeys` のときだけ
 // ckBetaCheck が最後の本体の全部の関数の参照で照合する（はみ出せば落ちる）
 func ckBeta(st mut St, t CkTab, fr []int) []int {
     b2 := ckStage(mut st, 1)
     cuts := ckCutBits(mut st)
+    // rtの関数のうち番地を取られるものの集合（安定な鍵のハッシュの和。チェーンの順と、番地を取られないrtの関数の数に依らない）
     mut ra := CK_S1
     mut rc := CK_S2
     for r <- st.ckRt {
-        bit := st.xAddr[xIndex(fr, r)]
-        ra = ckM1(ra, bit)
-        rc = ckM2(rc, bit)
+        if st.xAddr[xIndex(fr, r)] != 0 {
+            i := ckIdx(t.ix, r)
+            ra += ckM1(t.hs[2 * i], 7)
+            rc += ckM2(t.hs[2 * i + 1], 7)
+        }
     }
     mut out := mut []int{}
     for k <- iter.Range(0, len(fr)) {

@@ -1,0 +1,9 @@
+@@full	4f754b2593793a48	2052	59270
+@head	7b6f34d1a1ab8d6d	0	141
+func buf	6237e27f8db59673	38	1360
+func main	35b66f1d094bf51e	171	5376
+func scanAscii	d8c5653281014c0c	23	864
+func scanLower	8dcccf0c24f2268f	29	1063
+func scanSemi	e9c5b3e3f62e21c0	17	694
+func scanTwo	f608ca45c4a904e7	29	1060
+func scanUntil	05d02f3133e45f95	22	880

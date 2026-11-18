@@ -111,7 +111,7 @@ func TestSetCookieCompressed() {
         testing.cell.Set(GzSent, "")
         mut hist := compress.gzip.History{}
         req := bytes("GET ${p} HTTP/1.1\r\nHost: x\r\nAccept-Encoding: gzip\r\n\r\n")
-        _, _, out, _, e := serveBuf((b) => gzRecord(b), req, gzCookieRoute, 8192, 8192, 6, true, nil, mut hist, false)
+        _, _, out, _, _, e := serveBuf((b) => gzRecord(b), req, gzCookieRoute, 8192, 8192, 6, true, nil, mut hist, false, 0, nil)
         assert(e == nil)
         h := testing.cell.Get(GzSent) + headOf(out)
         assert(strings.Contains(h, "Content-Encoding: gzip\r\n"), h)

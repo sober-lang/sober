@@ -5,11 +5,13 @@ package main
 
 import "std/task"
 
+type F func(x int) int
+
 func inc(x int) int {
     return x + 1
 }
 
-func pick() func(int) int {
+func pick() F {
     return inc
 }
 

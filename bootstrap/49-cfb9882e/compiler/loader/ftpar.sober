@@ -1,0 +1,100 @@
+package loader
+
+// finishの木の変換の並列: ファイルごとに閉じた変換の列（embed → nilcase → flow → quick → assert）を1つのファイルごとの子task（task.Map）で、
+// dest（全ファイルの関数表を逐次に組んだ後のファイルごとの変換）をもう1つの子taskで回す。
+// - 子は (木の列, パス, f) をimmで受ける関数 — 子は他のファイルの変換の結果を読まない。返すのは変換した木と、拒否が無かったか
+// - 拒否（どれかのファイルの子が拒否に当たった）と子の死は、変換の列を逐次でやり直して同じ診断を返す（拒否の選び方を子で組み直さない）
+// - 計装のbuild（cover・mutate — 点の番号がファイルをまたいで通る）・ワーカー1・ファイル1つは逐次
+// 証人 = SOBER_PAR_STATS=1で `#finish trees=N fallback=none|rejected|died`（stderr・出力不変）。SOBER_FINISH_DIE=1 = 子が頭で死ぬ（selfpar）
+
+import "ast"
+import "std/iter"
+import "std/task"
+
+// 木の変換の結果（ファイル1つ — ok = 拒否が無かった）
+type FinT struct {
+    t ast.Tree
+    ok bool
+}
+
+// 子の経路の変換の後の木の列（ok = false は通さなかったか拒否か子の死）
+type FinTreesR struct {
+    trees []ast.Tree
+    ok bool
+}
+
+// 子の経路を通すか（計装の無いbuild・ワーカー2以上・ファイル2つ以上）。通さないなら空の結果（ok = false — 呼び手が逐次の経路）
+func finTreesTry(lay LOut, covOn bool, mutate int) FinTreesR {
+    if !covOn && mutate == 0 && finParOn(len(lay.trees)) {
+        return finTreesPar(lay)
+    }
+    return finTreesNo()
+}
+
+func finTreesNo() FinTreesR {
+    return FinTreesR{[]ast.Tree{}, false}
+}
+
+// 子の経路（ok = false は拒否か子の死 — 呼び手が逐次の経路でやり直す）
+func finTreesPar(lay LOut) FinTreesR {
+    n := len(lay.trees)
+    ts := lay.trees
+    paths := lay.path
+    die := finEnv("SOBER_FINISH_DIE") == 1
+    pre, perr := task.Map(finFiles(n), (f) => finPre(ts, paths, f, die))
+    if perr != nil {
+        finStat("trees", n, "died")
+        return finTreesNo()
+    }
+    mut mid := mut []ast.Tree{}
+    for f <- iter.Range(0, n) {
+        if !pre[f].ok {
+            finStat("trees", n, "rejected")
+            return finTreesNo()
+        }
+        mid = append(mid, pre[f].t)
+    }
+    ts2 := freeze(mid)
+    // destの全体の表（逐次 — destMarksAllと同じ表と基底）
+    vf := valueFns(ts2)
+    rf, mas := appendTargets(ts2)
+    mut bs := mut []int{}
+    mut base := 0
+    for i <- iter.Range(0, n) {
+        bs = append(bs, base)
+        base += ast.ListLen(ts2[i], ts2[i].nodes[ts2[i].file].d)
+    }
+    bases := freeze(bs)
+    out, derr := task.Map(finFiles(n), (f) => destFile(ts2[f], vf, rf, mas, bases[f]))
+    if derr != nil {
+        finStat("trees", n, "died")
+        return finTreesNo()
+    }
+    finStat("trees", n, "none")
+    return FinTreesR{out, true}
+}
+
+// 子の本体: ファイルfに embed → nilcase → flow → quick → assert を掛ける（逐次の経路の各変換の1ファイル分）
+func finPre(ts []ast.Tree, paths []string, f int, die bool) FinT {
+    if die {
+        panic(InvariantBroken{})
+    }
+    t1, e1 := embedTree(ts[f], f)
+    if e1 != nil {
+        return FinT{ts[f], false}
+    }
+    t2, e2 := nilCaseFile(t1, f)
+    if e2 != nil {
+        return FinT{ts[f], false}
+    }
+    t3 := flowFix(t2)
+    t4, e4 := quickFile(t3, paths[f], f)
+    if e4 != nil {
+        return FinT{ts[f], false}
+    }
+    t5, e5 := assertFile(t4, paths[f], f)
+    if e5 != nil {
+        return FinT{ts[f], false}
+    }
+    return FinT{t5, true}
+}

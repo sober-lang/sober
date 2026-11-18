@@ -1,0 +1,8 @@
+@@full	8774b63e007101ee	590	15067
+@head	f8802cba5eefdec2	0	31
+func main	b444d120907a2533	48	1755
+func run	fd0fa856a5740127	21	736
+type G	30d95c210d0867ea	3	144
+type H	8958460b29a99c86	5	226
+type Stream	c2916e309abee3c3	8	313
+type W	ebe1c490a23e0ae5	2	106

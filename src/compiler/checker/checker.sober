@@ -6,18 +6,27 @@ import "obuf"
 // 入口: コア AST JSON のバイト列 → 判定 JSON のバイト列（sober-check の stdout と同じ — Json.lean の checkInput + IO.println）。
 // parse error の文言だけはコピーしない（LeanのJson.parse / fromJsonの文言 — 差分オラクルは "parse error" までで比べる。仮決めR11-2）
 
-// Def の記録 [param, ret, body, tparams, mask] を 1 つ組む（g = defs の要素の汎用の記録）。
+// Def の記録 [param, ret, body, kinds, mask] を 1 つ組む（g = defs の要素の汎用の記録）。kinds は旗を詰めた int の列 [n, k…]（-1 = 空）。
 // parts = 部分検査の封筒（body の無い Def は署名だけ — 本体 triv・mask 0）。組めなければ -1
 func defRec(st mut S, g int, parts bool, triv int) int {
     fp := gField(mut st, g, W_PARAM)
     fr := gField(mut st, g, W_RET)
     fb := gField(mut st, g, W_BODY)
-    ft := gField(mut st, g, W_TPARAMS)
+    fk := gField(mut st, g, W_KINDS)
     if fp < 0 || fr < 0 || table.Get(mut st.h, fp) != V_TY || table.Get(mut st.h, fr) != V_TY {
         return -1
     }
-    // tparams は getObjValAs? Nat の失敗を 0 に読む（toOption.getD 0）
-    tp := if ft >= 0 && table.Get(mut st.h, ft) == V_NUM && table.Get(mut st.h, ft + 1) >= 0 { table.Get(mut st.h, ft + 1) } else { 0 }
+    // "kinds" は無ければ空・あれば kind の配列（Lean の kindsFromJson — 要素が kind でなければ失敗）
+    mut ks := -1
+    if fk >= 0 {
+        if table.Get(mut st.h, fk) != V_ARR {
+            return -1
+        }
+        ks = kindsOf(mut st, table.Get(mut st.h, fk + 1))
+        if ks == -2 {
+            return -1
+        }
+    }
     mut body := triv
     mut mask := 1
     if fb < 0 {
@@ -30,7 +39,30 @@ func defRec(st mut S, g int, parts bool, triv int) int {
     } else {
         body = table.Get(mut st.h, fb + 1)
     }
-    return rec5(mut st, table.Get(mut st.h, fp + 1), table.Get(mut st.h, fr + 1), body, tp, mask)
+    return rec5(mut st, table.Get(mut st.h, fp + 1), table.Get(mut st.h, fr + 1), body, ks, mask)
+}
+
+// 配列の値 hd（[n, 先頭の cell]）の要素を kind の列 [n, k…] にする（空 = -1。kind でない要素があれば -2）
+func kindsOf(st mut S, hd int) int {
+    n := table.Get(mut st.h, hd)
+    if n == 0 {
+        return -1
+    }
+    mut c := table.Get(mut st.h, hd + 1)
+    while c >= 0 {
+        if table.Get(mut st.h, c) != V_OBJ || table.Get(mut st.h, c + 1) < 0 {
+            return -2
+        }
+        c = table.Get(mut st.h, c + 3)
+    }
+    at := table.Len(mut st.h)
+    put(mut st, n)
+    c = table.Get(mut st.h, hd + 1)
+    while c >= 0 {
+        put(mut st, table.Get(mut st.h, c + 1))
+        c = table.Get(mut st.h, c + 3)
+    }
+    return at
 }
 
 // 根の値から関数表（st.defs）を組み、根の式を返す。-1 = 根の式なし（部分検査）、-2 = parse error
@@ -99,6 +131,11 @@ func Check(src []byte) []byte {
     root := if p.ok { program(mut st, p) } else { -2 }
     if root == -2 {
         return bytes("{\"errors\":[{\"msg\":\"parse error\"}],\"ok\":false}\n")
+    }
+    // 形の検査（Def.raisedOk）は判定とは別の結果。通らない Def があれば判定の代わりに形の結果を返す（checkAll は不変条件の違反で止まる）
+    sf := ShapeFail(mut st)
+    if sf >= 0 {
+        return bytes("{\"def\":${sf},\"raised\":false}\n")
     }
     return verdict(mut st, root)
 }

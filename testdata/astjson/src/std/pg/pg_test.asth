@@ -1,0 +1,17 @@
+@@full	b8db85448c5f8fea	6330	178041
+@head	23ff3a59a5992b61	0	264
+func TestCountOf	7b5bf372e5dbbaf4	24	814
+func TestDecode	f56941a9c02d66ca	142	4534
+func TestEncode	5173108e9cf678a9	125	4398
+func TestNumericText	8e22c8362250b9b3	137	4111
+func TestParseUrl	858d9e76f645d383	84	2945
+func TestRowJsonText	45e8ca8a486202ed	165	5083
+func TestRowUtf8	58e96eedaa2ab2b3	172	5420
+func TestScaled	90ce0d2857cd94f4	109	3747
+func badUrls	bbf9ef44465805ac	15	708
+func civilDay	860aee311fb7b4f4	23	896
+func floatIs	182b6cbdebe06343	15	668
+func isInt	ca857c4df0a296da	15	662
+func jsonLen	c5b3f93f43af0225	15	624
+func timeIs	3e5a85ea0913cc3a	26	1059
+func unknownIs	148a41c2573ddf79	13	662

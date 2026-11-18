@@ -1,0 +1,4 @@
+serve: expired
+keep-alive: response read, then closed by the server
+idle: closed by the server after 0 bytes
+timeout: 2

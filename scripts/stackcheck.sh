@@ -3,6 +3,7 @@
 # 1リクエストの最深のスタックが「TCB_TOP_ROOM + 下の1ページ」を越えると接続ごとにスタックのページが1枚増える（常駐 +4 KB/接続 — 命令の検査にも
 # RSSの傾きの1点にも鳴りにくい崖）。bench/httparena/main.soberのコピー（mainだけを期限つきでrunに差し替え — パスは本物）に
 # keep-aliveのbaselineの3形を流し、終わりの #par tasksのstack_hw（taskのスタックの最深 — rt.pstat_endの走査）が予算 − 64 B以下かを見る。
+# TLSの経路（同じ本体をtls.Serveで — 握手から）は、予算にstd/tlsのwaitStack（TLSの接続の宣言に足す量）を足した上限で見る。
 # --mutants: ミューテーション47（新しいチャンクのスタックの頂上を1 KiB下げる = パスが1 KiB深くなったのと同じ）で落ちることを検証する
 #   scripts/stackcheck.sh [--mutants]
 set -uo pipefail
@@ -12,14 +13,18 @@ MUT=0
 [ "${1:-}" = --mutants ] && MUT=1
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
+wst=$(sed -n 's/^const waitStack = \([0-9]*\).*/\1/p' src/std/tls/tls.sober)
+[ -n "$wst" ] || { echo "stackcheck: FAIL — waitStack not found in src/std/tls/tls.sober"; exit 1; }
 room=$(sed -n 's/^const TCB_TOP_ROOM = \([0-9]*\).*/\1/p' src/compiler/lower/task.sober)
 [ -n "$room" ] || { echo "stackcheck: FAIL — TCB_TOP_ROOM not found in src/compiler/lower/task.sober"; exit 1; }
 lim=$((room + 4096 - 64))
+limt=$((room + 4096 + wst - 64))
 sed 's/^func main() int {/func arenaMain() int {/' bench/httparena/main.sober > "$W/arena.sober"
 cat >> "$W/arena.sober" <<'SRC'
 
 func main() int {
-    _, _ = task.Run((s task.Scope) => run("0", "0"), deadline: 2500 * task.MS)
+    tp := os.Getenv("STACKCHECK_TLS_PORT") catch nil
+    _, _ = task.Run((s task.Scope) => run("0", if tp == nil { "0" } else { tp }), deadline: 2500 * task.MS)
     return 0
 }
 SRC
@@ -36,6 +41,18 @@ measure() {
 }
 "$S2" build "$W/arena.sober" -o "$W/srv" > "$W/b.log" 2>&1 || { echo "stackcheck: FAIL build ($(head -c 200 "$W/b.log"))"; exit 1; }
 hw=$(measure "$W/srv")
+# TLSの経路（tls.Serveの接続 — 握手とkの中で待ち、エリアを持ったまま待つ）: 最深のスタック ≤ TCB_TOP_ROOM + 1ページ + waitStack（std/tls — 接続の宣言に足す量）
+measureTls() {
+    local x=$1 tp
+    tp=$(node -e 'const s=require("net").createServer().listen(0,"127.0.0.1",()=>{console.log(s.address().port);s.close()})')
+    env SOBER_PAR_STATS=1 SOBER_WORKERS=2 STACKCHECK_TLS_PORT=$tp TLS_CERT=testdata/crypto/httparena-server.crt TLS_KEY=testdata/crypto/httparena-server.key DATASET_PATH=testdata/httpcheck/dataset.json "$x" > "$W/out" 2> "$W/err" &
+    local pid=$!
+    for _ in $(seq 100); do grep -q '^tls-ready' "$W/out" 2> /dev/null && (exec 3<>/dev/tcp/127.0.0.1/$tp) 2> /dev/null && break; sleep 0.05; done
+    node --experimental-strip-types --no-warnings scripts/stackcheck.ts "$tp" 16 300 --tls > "$W/tclient" 2>&1
+    wait $pid
+    grep -o 'stack_hw=[0-9]*' "$W/err" | cut -d= -f2
+}
+hwt=$(measureTls "$W/srv")
 # 接続のtaskがエリアの形（本体の枠はページ0の余白・下はワーカーのエリア）で走ったか: 入らなかった数area_farが0（framestatの @roomの予測と実際の照合）
 af=$(grep -o 'area_far=[0-9]*' "$W/err" | cut -d= -f2)
 fail=0
@@ -55,5 +72,10 @@ if [ $MUT = 1 ]; then
     a60=$(grep -o 'area_far=[0-9]*' "$W/err" | cut -d= -f2)
     if [ -n "$a60" ] && [ "$a60" -gt 0 ] && grep -q '^ok 4800$' "$W/client"; then echo "stackcheck: m60 caught (area_far $a60)"; else echo "stackcheck: FAIL — mutant 60 was not caught (area_far ${a60:-none} · client $(head -c 120 "$W/client"))"; fail=1; fi
 fi
-[ $fail = 0 ] && echo "stackcheck: PASS (stack_hw $hw ≤ $lim B · area_far 0)"
+if [ -z "$hwt" ] || ! grep -q '^ok 4800$' "$W/tclient"; then
+    echo "stackcheck: FAIL — TLS: no stack_hw or the client did not get 4800 responses ($(head -c 100 "$W/tclient"))"; fail=1
+elif [ "$hwt" -gt "$limt" ]; then
+    echo "stackcheck: FAIL — the TLS connection task's deepest stack is $hwt B > $limt B (TCB_TOP_ROOM $room + one page + waitStack $wst − 64): a waiting TLS connection holds more stack pages than its declaration counts"; fail=1
+fi
+[ $fail = 0 ] && echo "stackcheck: PASS (stack_hw $hw ≤ $lim B · area_far 0 · TLS stack_hw $hwt ≤ $limt B)"
 exit $fail

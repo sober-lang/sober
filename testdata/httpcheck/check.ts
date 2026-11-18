@@ -188,6 +188,48 @@ async function baseline() {
     await one("HTTP/1.0 closes", `GET /pipeline HTTP/1.0\r\n${H}\r\n`, 200, "ok", { closed: true });
 }
 
+// ── Date（RFC 9110 6.6.1。2xx・4xx・5xx の全部に IMF-fixdate。値は今の時刻 ±5 秒〔httpcheck.sh は SOBER_DATE_SEC を外して走らせる〕）
+const imfRe = /^(Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d\d (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{4} \d\d:\d\d:\d\d GMT$/;
+function dateOk(x: Resp | undefined): string {
+    const d = x?.headers.get("date");
+    if (d === undefined) return "no Date";
+    if (!imfRe.test(d)) return `bad form ${JSON.stringify(d)}`;
+    const ms = Date.parse(d);
+    if (Math.abs(ms - Date.now()) > 5000) return `off by ${ms - Date.now()} ms (${d})`;
+    if (new Date(ms).toUTCString() !== d) return `not canonical ${d} vs ${new Date(ms).toUTCString()}`;
+    return "";
+}
+const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
+async function dateHdr() {
+    const cases: [string, string, number][] = [
+        ["200", `GET /baseline11?a=1&b=2 HTTP/1.1\r\n${H}Connection: close\r\n\r\n`, 1],
+        ["404", `GET /nope HTTP/1.1\r\n${H}Connection: close\r\n\r\n`, 1],
+        ["400", "GET  / HTTP/1.1\r\n\r\n", 1],
+        ["413", `POST / HTTP/1.1\r\n${H}Content-Length: 99999999\r\n\r\n`, 1],
+        ["204 OPTIONS *", `OPTIONS * HTTP/1.1\r\n${H}Connection: close\r\n\r\n`, 1],
+        ["pipeline x3", `GET /pipeline HTTP/1.1\r\n${H}\r\nGET /json/3 HTTP/1.1\r\n${H}\r\nGET /baseline11?a=1&b=2 HTTP/1.1\r\n${H}Connection: close\r\n\r\n`, 3],
+    ];
+    for (const [n, req, k] of cases) {
+        const r = await exchange([req], k);
+        const why = r.resps.length === k ? r.resps.map(dateOk).filter((w) => w !== "").join("; ") : `${r.resps.length} resps`;
+        ok(`Date ${n}`, why === "", why);
+    }
+    // 1 本の接続の中で秒が進む（ワーカーの文字列が約 0.27 秒ごとに作り直される）
+    const c = dial();
+    await new Promise((res) => c.once(CONNECT, res));
+    const seen: string[] = [];
+    let buf = Buffer.alloc(0);
+    c.on("data", (b) => { buf = Buffer.concat([buf, b]); });
+    for (let i = 0; i < 3; i++) {
+        c.write(`GET /pipeline HTTP/1.1\r\n${H}\r\n`);
+        await pause(1100);
+    }
+    c.end();
+    await pause(100);
+    for (const x of parseAll(buf).resps) seen.push(x.headers.get("date") ?? "");
+    ok("Date advances on a keep-alive connection", seen.length === 3 && new Set(seen).size >= 2 && seen.every((d) => imfRe.test(d)), JSON.stringify(seen));
+}
+
 // ── 断片化（validate-frag.py の 9 通りの形 — 代表点 + 乱数の位置）
 function shapes(): [string, string, string][] {
     const RA = rnd(100, 999), RB = rnd(100, 999), RBODY = rnd(10, 99);
@@ -321,6 +363,16 @@ async function errors() {
     // Transfer-Encoding（RFC 9112 6.1）: chunked が 1 回だけ最後に無い形と文法の誤りは 400・文法は正しくほかの符号化を含む形は 501
     await e("TE gzip", `POST / HTTP/1.1\r\n${H}Transfer-Encoding: gzip\r\n\r\n`, 400);
     await e("TE gzip, chunked", `POST / HTTP/1.1\r\n${H}Transfer-Encoding: gzip, chunked\r\n\r\n0\r\n\r\n`, 501);
+    // chunked のパラメータは読み捨てる（chunked は最後の符号化。RFC 9112 6.3 の 4）。Content-Length との併記は 400（RFC 9112 6.1 の MAY reject）で閉じる
+    await one("TE chunked with params", `POST /pipeline HTTP/1.1\r\n${H}Transfer-Encoding: chunked;ext=val\r\nConnection: close\r\n\r\n0\r\n\r\n`, 200, "ok");
+    await e("TE chunked with params + CL", `POST /pipeline HTTP/1.1\r\n${H}Transfer-Encoding: chunked;ext=val\r\nContent-Length: 5\r\n\r\nhello`, 400);
+    // absolute-form（RFC 9112 3.2.2）: 受けて、受けた Host を無視しターゲットの host を使う。scheme は http / https・authority は Host の値の形（外れたら 400）
+    await one("absolute-form", `GET http://localhost/pipeline HTTP/1.1\r\n${H}Connection: close\r\n\r\n`, 200, "ok");
+    await one("absolute-form Host mismatch uses the target", `GET http://example.test/headers HTTP/1.1\r\n${H}Connection: close\r\n\r\n`, 200, "host: example.test\nconnection: close\n");
+    await one("absolute-form empty path", `GET HTTP://localhost HTTP/1.1\r\n${H}Connection: close\r\n\r\n`, 404, null);
+    await e("absolute-form other scheme", `GET ftp://localhost/pipeline HTTP/1.1\r\n${H}\r\n`, 400);
+    await e("absolute-form userinfo", `GET http://u@localhost/pipeline HTTP/1.1\r\n${H}\r\n`, 400);
+    await e("absolute-form without Host", "GET http://localhost/pipeline HTTP/1.1\r\n\r\n", 400);
     await e("TE chunked, chunked", `POST / HTTP/1.1\r\n${H}Transfer-Encoding: chunked, chunked\r\nContent-Length: 5\r\n\r\nhello`, 400);
     await e("TE chunked not final", `POST / HTTP/1.1\r\n${H}Transfer-Encoding: chunked, gzip\r\n\r\n0\r\n\r\n`, 400);
     await e("TE empty", `POST / HTTP/1.1\r\n${H}Transfer-Encoding: \r\nContent-Length: 5\r\n\r\nhello`, 400);
@@ -336,17 +388,28 @@ async function errors() {
     await e("invalid UTF-8 path", Buffer.concat([Buffer.from(`GET /\xff HTTP/1.1\r\n${H}`, "latin1"), Buffer.from("\r\n")]), 400);
     await e("CL > 16 KiB", `POST / HTTP/1.1\r\n${H}Content-Length: 16385\r\n\r\n`, 413);
     await e("chunked > 16 KiB", `POST / HTTP/1.1\r\n${H}Transfer-Encoding: chunked\r\n\r\n4001\r\n`, 413);
+    // chunk の大きさが int に収まらない（2^63 以上）= 400（数として読めない行）。収まって上限を越えるなら 413
+    await e("chunk size overflow", `POST / HTTP/1.1\r\n${H}Transfer-Encoding: chunked\r\n\r\nFFFFFFFFFFFFFFFFFFFF\r\nhello\r\n0\r\n\r\n`, 400);
+    await e("chunk size 2^64", `POST / HTTP/1.1\r\n${H}Transfer-Encoding: chunked\r\n\r\n10000000000000000\r\nhello\r\n0\r\n\r\n`, 400);
+    await e("chunk size 2^63 - 1", `POST / HTTP/1.1\r\n${H}Transfer-Encoding: chunked\r\n\r\n7fffffffffffffff\r\nhello\r\n0\r\n\r\n`, 413);
+    await one("chunk size leading zeros", `POST /pipeline HTTP/1.1\r\n${H}Transfer-Encoding: chunked\r\nConnection: close\r\n\r\n00000000000000000000002\r\nok\r\n0\r\n\r\n`, 200, "ok");
     // 空白の無い長すぎるメソッド = 501（RFC 9112 3）
     await e("method > 8 KiB", "G".repeat(9000), 501);
-    // どのルートにも一致しない CONNECT = 501（RFC 9110 9.1）・asterisk-form は OPTIONS 以外は 400（RFC 9112 3.2）・OPTIONS * は 404
+    // どのルートにも一致しない CONNECT = 501（RFC 9110 9.1）・asterisk-form は OPTIONS 以外は 400（RFC 9112 3.2）・OPTIONS * は 204（RFC 9110 9.3.7。本文と Allow なし）
     await one("CONNECT", `CONNECT localhost:443 HTTP/1.1\r\n${H}Connection: close\r\n\r\n`, 501, null);
     await one("GET *", `GET * HTTP/1.1\r\n${H}Connection: close\r\n\r\n`, 400, null);
-    await one("OPTIONS *", `OPTIONS * HTTP/1.1\r\n${H}Connection: close\r\n\r\n`, 404, null);
-    // ターゲットの NUL と制御文字（RFC 9112 3.2）= 400。0x80 以上のバイトは UTF-8 として受ける
+    await one("OPTIONS *", `OPTIONS * HTTP/1.1\r\n${H}Connection: close\r\n\r\n`, 204, "");
+    const os = await exchange([`OPTIONS * HTTP/1.1\r\n${H}\r\nGET /pipeline HTTP/1.1\r\n${H}Connection: close\r\n\r\n`], 2);
+    ok("OPTIONS * keep-alive, no Allow / Content-Length", os.resps.length === 2 && os.resps[0].status === 204 && !os.resps[0].headers.has("allow") &&
+        !os.resps[0].headers.has("content-length") && os.resps[1].body === "ok", JSON.stringify(os.resps.map((x) => [x.status, [...x.headers.keys()]])));
+    // ターゲットの NUL と制御文字（RFC 9112 3.2）と 0x80 以上のバイト = 400（非ASCIIは%エンコードして送る。RFC 3986 2）
     await e("target NUL", `GET /a\0b HTTP/1.1\r\n${H}\r\n`, 400);
     await e("target control", `GET /a\x01b HTTP/1.1\r\n${H}\r\n`, 400);
     await e("target tab", `GET /a\tb HTTP/1.1\r\n${H}\r\n`, 400);
-    await one("target raw UTF-8", Buffer.from(`GET /パス HTTP/1.1\r\n${H}Connection: close\r\n\r\n`, "utf8"), 404, null);
+    await e("target raw UTF-8", Buffer.from(`GET /パス HTTP/1.1\r\n${H}\r\n`, "utf8"), 400);
+    await e("target 0x80", Buffer.concat([Buffer.from("GET /a"), Buffer.from([0x80]), Buffer.from(`b HTTP/1.1\r\n${H}\r\n`)]), 400);
+    await e("query raw UTF-8", Buffer.from(`GET /pipeline?q=é HTTP/1.1\r\n${H}\r\n`, "utf8"), 400);
+    await one("target percent-encoded", `GET /%E3%83%91 HTTP/1.1\r\n${H}Connection: close\r\n\r\n`, 404, null);
     // trailer（RFC 9112 7.1.2）: ヘッダの行と同じ文法
     await one("trailer ok", `POST /pipeline HTTP/1.1\r\n${H}Transfer-Encoding: chunked\r\nConnection: close\r\n\r\n0\r\nX-T: 1\r\n\r\n`, 200, "ok");
     await e("trailer no colon", `POST /pipeline HTTP/1.1\r\n${H}Transfer-Encoding: chunked\r\n\r\n0\r\nno colon\r\n\r\n`, 400);
@@ -1153,6 +1216,67 @@ if (echoBig) {
     for (const f of fails.slice(0, 30)) console.log("  FAIL " + f);
     process.exit(fail ? 1 : 0);
 }
+// ── Expect: 100-continue（RFC 9110 10.1.1: 頭が揃い本文が未着なら、本文を待つ前に100を1回送る。HTTP/1.0のExpectは無視・本文が上限を越えるなら100を送らずに413）
+// expectTwoは頭を書いてwait ms待った受けのバイト列（first）と、本文を書いて相手が閉じるまでの全部（all）を返す
+function expectTwo(head: string, body: string, wait: number): Promise<{ first: string; all: string }> {
+    return new Promise((resolve) => {
+        const s = dial();
+        s.setNoDelay(true);
+        let buf = Buffer.alloc(0);
+        let first = "";
+        let done = false;
+        const finish = () => {
+            if (done) return;
+            done = true;
+            clearTimeout(t);
+            s.destroy();
+            resolve({ first, all: buf.toString("latin1") });
+        };
+        const t = setTimeout(finish, wait + 5000);
+        s.on("data", (d) => { buf = Buffer.concat([buf, d]); });
+        s.on("end", finish);
+        s.on("close", finish);
+        s.on("error", finish);
+        s.on(CONNECT, () => {
+            s.write(head);
+            setTimeout(() => {
+                first = buf.toString("latin1");
+                if (!s.destroyed && body !== "") s.write(body);
+            }, wait);
+        });
+    });
+}
+
+async function expect100() {
+    const C = "HTTP/1.1 100 Continue\r\n\r\n";
+    const count = (x: string) => x.split(C).length - 1;
+    const a = await expectTwo(`POST /echo HTTP/1.1\r\n${H}Expect: 100-continue\r\nContent-Length: 5\r\nConnection: close\r\n\r\n`, "hello", 500);
+    ok("expect 100-continue", a.first === C && count(a.all) === 1 && /^HTTP\/1\.1 100 Continue\r\n\r\nHTTP\/1\.1 200 /.test(a.all) && a.all.endsWith("\r\n\r\nhello"), JSON.stringify(a.all.slice(0, 120)));
+    const b = await expectTwo(`POST /echo HTTP/1.1\r\n${H}Expect: 100-Continue\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n`, "5\r\nhello\r\n0\r\n\r\n", 500);
+    ok("expect 100-continue chunked", b.first === C && count(b.all) === 1 && b.all.endsWith("\r\n\r\nhello"), JSON.stringify(b.all.slice(0, 120)));
+    const c = await expectTwo(`GET /pipeline HTTP/1.1\r\n${H}\r\nPOST /echo HTTP/1.1\r\n${H}Expect: 100-continue\r\nContent-Length: 5\r\nConnection: close\r\n\r\n`, "hello", 500);
+    ok("expect 100-continue after a pipelined request", /^HTTP\/1\.1 200 [^]*\r\n\r\nokHTTP\/1\.1 100 Continue\r\n\r\n$/.test(c.first) && count(c.all) === 1 && c.all.endsWith("\r\n\r\nhello"), JSON.stringify(c.first.slice(0, 200)));
+    const d = await expectTwo(`POST /echo HTTP/1.0\r\n${H}Expect: 100-continue\r\nContent-Length: 5\r\n\r\n`, "hello", 500);
+    ok("expect 100-continue HTTP/1.0 ignored", d.first === "" && count(d.all) === 0 && d.all.endsWith("\r\n\r\nhello"), JSON.stringify(d.all.slice(0, 120)));
+    const e = await expectTwo(`POST /echo HTTP/1.1\r\n${H}Expect: 100-continue\r\nContent-Length: 16385\r\nConnection: close\r\n\r\n`, "", 500);
+    ok("expect 100-continue CL > max 413", /^HTTP\/1\.1 413 /.test(e.all) && count(e.all) === 0, JSON.stringify(e.all.slice(0, 120)));
+    const g = await expectTwo(`POST /echo HTTP/1.1\r\n${H}Content-Length: 5\r\nConnection: close\r\n\r\n`, "hello", 300);
+    ok("no Expect no 100", g.first === "" && count(g.all) === 0 && g.all.endsWith("\r\n\r\nhello"), JSON.stringify(g.all.slice(0, 120)));
+}
+
+// ── 同じ名前の欄の2本（RFC 9110 5.3: 2行を禁じるのはリストでない欄だけ。Linkと独自の欄は2行とも届き、Locationの2本目はpanic(BadHeader)で応答が出ない）
+async function dupFields() {
+    for (const [name, label] of [["Link", "dup Link two lines"], ["X-Dup", "dup custom field two lines"]]) {
+        const r = await exchange([`GET /dup/${name} HTTP/1.1\r\n${H}Connection: close\r\n\r\n`], 1);
+        const raw = r.raw.toString("latin1");
+        const head = raw.slice(0, raw.indexOf("\r\n\r\n"));
+        ok(label,r.resps[0]?.status === 200 && head.includes(`\r\n${name}: <a>\r\n${name}: <b>`), JSON.stringify(head.slice(0, 300)));
+    }
+    const l = await exchange([`GET /dup/Location HTTP/1.1\r\n${H}Connection: close\r\n\r\n`], 1);
+    const lr = l.raw.toString("latin1");
+    ok("dup Location panic", l.resps[0]?.status !== 200 && !lr.includes("Location: <b>"), JSON.stringify(lr.slice(0, 200)));
+}
+
 // ── static（http.Static — report-956: GET /static/*path を STATIC_ROOT〔= --static の dir — ここで中身を作る〕の下から・precompressed・根の外は 404・
 // 毎リクエストディスクを読む〔キャッシュなし〕・compression: の外）
 async function staticEp() {
@@ -1290,6 +1414,24 @@ async function staticEp() {
     const pp = await exchange([`GET /baseline11?a=1&b=2 HTTP/1.1\r\n${H}\r\nGET /static/big.bin HTTP/1.1\r\n${H}\r\nGET /static/nope HTTP/1.1\r\n${H}\r\nGET /static/index.html HTTP/1.1\r\n${H}Connection: close\r\n\r\n`], 4);
     ok("static pipeline", pp.resps.length === 4 && pp.resps[0].body === "3" && pp.resps[1].body === big.toString("latin1") && pp.resps[2].status === 404 && pp.resps[3].body === "<p>hi</p>",
         `n=${pp.resps.length}`);
+    // 304のVary（RFC 9110 15.4.5）: precompressed: false のStatic（/shared）で、compression: の圧縮の対象の大きさと型のファイルは、200にも304にもVary: Accept-Encoding。
+    // 圧縮の下限より小さいファイルは、どちらにも付かない
+    writeFileSync(`${staticDir}/www/vary.css`, "a{b:c}\n".repeat(600));
+    writeFileSync(`${staticDir}/www/tiny.css`, "a{b:c}");
+    for (const [name, file, vary] of [["static 304 vary vary.css", "vary.css", "Accept-Encoding"], ["static 304 vary tiny.css", "tiny.css", null]] as [string, string, string | null][]) {
+        const v2 = await get(`/shared/${file}`);
+        const v3 = await get(`/shared/${file}`, `If-None-Match: ${tagOf(file)}\r\n`);
+        ok(name, v2?.status === 200 && v3?.status === 304 && (v2.headers.get("vary") ?? null) === vary && (v3.headers.get("vary") ?? null) === vary &&
+            !v3.headers.has("content-type") && !v3.headers.has("content-encoding") && !v3.headers.has("content-length"), `200 ${show(v2)} / 304 ${show(v3)}`);
+    }
+    // 未来の更新時刻のファイル（RFC 9110 8.8.2.1）: Last-ModifiedはDateより後にしない
+    writeFileSync(`${staticDir}/www/future.txt`, "f");
+    const fut = Math.floor(Date.now() / 1000) + 86400 * 365;
+    utimesSync(`${staticDir}/www/future.txt`, fut, fut);
+    const fu = await get("/static/future.txt");
+    const fdate = Date.parse(fu?.headers.get("date") ?? "");
+    const flm = Date.parse(fu?.headers.get("last-modified") ?? "");
+    ok("static future last-modified", fu?.status === 200 && Number.isFinite(fdate) && Number.isFinite(flm) && flm <= fdate, show(fu));
 }
 
 // ── 出所の動的オラクル（effectのマイルストーンの段階4c — language.md 12 節「出所の依存」）: 共有キャッシュも保存してよいと宣言したレスポンス（Cache-Controlにpublicか
@@ -1307,7 +1449,8 @@ async function originEp() {
         for (const c of creds) {
             rs.push((await exchange([`GET ${p} HTTP/1.1\r\n${H}${c}Connection: close\r\n\r\n`], 1)).resps[0]);
         }
-        const key = (x: Resp | undefined) => `${x?.status} ${JSON.stringify([...(x?.headers ?? new Map())])} ${x?.body}`;
+        // Dateは秒の境目で変わりうるので比べない
+        const key = (x: Resp | undefined) => `${x?.status} ${JSON.stringify([...(x?.headers ?? new Map())].filter(([k]) => k !== "date"))} ${x?.body}`;
         if (rs.some((x) => shared(x))) {
             ok(`origin shared ${p} independent of credentials`, rs.every((x) => key(x) === key(rs[0])), rs.map((x) => `${x?.status}:${x?.body?.slice(0, 20)}`).join(" | "));
         }
@@ -1337,6 +1480,7 @@ if (process.argv.includes("--delayed-only")) {
     process.exit(fail ? 1 : 0);
 }
 await baseline();
+await dateHdr();
 const nfrag = await frag();
 await pipeline();
 await errors();
@@ -1351,6 +1495,8 @@ if (!useTls) {
     await sseEp();
 }
 await staticEp();
+await dupFields();
+await expect100();
 await originEp();
 await uploadEp();
 await echoEp([0, 1, 1024, 10240, 16384], 5000);

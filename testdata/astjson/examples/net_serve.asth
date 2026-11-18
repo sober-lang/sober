@@ -1,0 +1,9 @@
+@@full	89ed122ddf93d40e	2213	78025
+@head	b2e83902e559875a	0	285
+func client	adfafb85bc15148c	28	1020
+func echo	86b33d9578f98d76	34	1156
+func main	ace7bd33b0a07dea	50	1773
+func run	011d475bdc84c074	124	4199
+func show	8e4eba49c64dd674	38	1825
+func talk	0d9ccbc29efb006e	75	2556
+type Boom	5e108cae5425e7b4	1	65

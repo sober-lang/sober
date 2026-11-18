@@ -1,0 +1,9 @@
+@@full	cc4cf0dc748e82f7	1702	63338
+@head	07b8ec3ac4653223	0	141
+func main	f99ae9fb31f2e43c	33	1120
+func pack	fb52f6c3ed0332ab	20	824
+func stream	98356223e5e79cd1	114	3815
+func sums	aba9f5ce810ba511	80	2715
+func work	fa6df8d999fda5e9	21	755
+type Job	6d8023a295e82002	4	195
+type St	a2f64c934401419e	4	192

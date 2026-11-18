@@ -1,0 +1,9 @@
+@@full	f2c5ec9c5be955de	1836	47567
+@head	4fe8cc8c5062e1a1	0	99
+func at	e36c590dc4ac6e98	8	375
+func build	764bba0bfa7017c6	24	893
+func fill	5e097bce796b3250	27	1026
+func main	4c83ee41b57b7813	207	6844
+func sum	7367cd8237c51fa1	14	568
+type Nodes	2aa633fd36185df0	6	277
+type Snap	8de134f9f69930db	4	196

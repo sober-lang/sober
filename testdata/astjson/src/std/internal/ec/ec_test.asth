@@ -1,0 +1,17 @@
+@@full	813d6b029ffdab21	2954	90271
+@head	f8baced12d9b12b9	0	368
+const Files	c1d96cd15f0cea7f	3	135
+const SigVer	f7a9f76ef076f6d0	3	136
+func TestCavpSigVer	140ad25f76ae310c	142	4549
+func TestP256Der	3452645fd9d6700a	11	445
+func TestP256P1363	f34101c3ac816310	11	452
+func TestP384Der	c3a49b0a3e0815ac	11	445
+func TestP384P1363	2b992667173ae694	11	452
+func bytesCat	7b47767a68cddec7	49	1681
+func pad	3495645c194b812a	48	1646
+func run	68ca764c4f0f68f6	168	5603
+func unhex	e7aa976ed6d8366f	10	449
+type WFile	7d6e7704c885999b	3	160
+type WGroup	cc43165c3f8bd12a	4	210
+type WKey	cd7df0c97e3bf152	2	125
+type WTest	22b51d6ef8317746	5	271

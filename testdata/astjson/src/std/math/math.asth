@@ -1,0 +1,12 @@
+@@full	0b5da5a1305debc0	1422	35429
+@head	3a64fc3222e84fea	6	546
+const nanBits	43bd98aad7f8c266	1	76
+func Abs	d68207d333a5cc00	10	432
+func Bits	5879e41f3676d1a5	14	518
+func Ceil	a48864c54376da8b	8	357
+func Floor	ca11231ccd70851e	22	815
+func FromBits	653e1c4abde83f22	6	300
+func Max	450b1cd71b6d5338	46	1521
+func Min	8620c90f9a3a37ff	46	1521
+func Sqrt	62ab9558a55b3461	6	294
+func Trunc	1f666585318980d4	52	1738

@@ -1,0 +1,9 @@
+@@full	4de2e99cd39cfeb1	2116	56779
+@head	be19c6d693c3ba7d	0	221
+func checkUtf8	59571c81d883eddd	23	829
+func countQuote	5c250ef504be02c8	39	1371
+func crc	b6fdaa477f9caa42	16	646
+func main	a5a9777cee13d5cb	200	6973
+func scanAscii	d2f96656dc57f8c6	27	970
+func scanTwo	7b882f85b418e9d6	33	1166
+type Blk	41fc5ce6669d2894	4	183

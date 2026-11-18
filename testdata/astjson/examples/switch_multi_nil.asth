@@ -1,0 +1,11 @@
+@@full	4f21d44aa98e7260	1821	50318
+@head	7b6f34d1a1ab8d6d	0	141
+func call	084cb34385c2357f	18	647
+func describe	9c433c63fa89fe08	27	1085
+func fallback	a292dc766da13806	20	740
+func half	ce4c4ea9397f0a0c	28	965
+func main	e10f9c325b53ab27	139	4291
+func orZero	813e24ab56a4ea69	17	631
+func use	44a3000456a16460	27	904
+type Bad	318a6f706b105fe2	2	109
+type Odd	89b1ea25cbe75de7	1	64

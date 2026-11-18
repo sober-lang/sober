@@ -1,0 +1,11 @@
+@@full	9ee5e360b47cdd9e	779	19445
+@head	20e69509dfebf8f5	0	66
+func Serve	817c5958e92232b9	25	887
+func gen	2382964cbc8bddc4	21	771
+func main	39f98c6cf5d3f63a	27	1030
+func route	3a9e3e43901dc39d	10	508
+func send	9504c402c32cea0c	13	489
+type Bad	c46bc68f4fa91a27	1	64
+type Gone	f0c2f1d9bf3d06d6	1	65
+type Resp	8ee5fc01ca9afdb9	4	179
+type S	8d06474d52ce1bab	7	271

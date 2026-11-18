@@ -1,0 +1,28 @@
+@@full	7b6ceeb21a46f549	19341	646053
+@head	aeac157070aace28	0	336
+func TestCodeTables	c0fb23a42f8edd83	402	11519
+func TestHistory	e42ee1aad16b9b35	202	6647
+func TestLengthsRef	a981d3908035ddcf	179	5770
+func TestLg16	1939106159ba3766	80	2531
+func TestLgTab	b6702504cf07eb71	26	861
+func TestRev	55a3923fba73b4b0	53	1744
+func TestStreamBench	7fc5cc34b9b9a750	176	5599
+func TestStreamDeterministic	f661143baee790d2	38	1218
+func TestStreamDump	4c1c35ecf6f0e1ac	134	4380
+func TestStreamEmpty	3fda7d992085c8c6	54	1777
+func TestStreamLarge	f56fcc9e77765549	116	3494
+func TestStreamSizes	b9b52dabd20121da	165	5117
+func TestStreamSmall	4e1037320c1140ac	71	2186
+func TestTableWidth	9d03c9554048868c	286	9125
+func check	de237f8b2bee258f	35	1273
+func cuts	8e8ae58b78d33ef4	138	4530
+func le32	ae153a919e455ef8	40	1302
+func lengthsRef	52d37c9db9ca9210	654	20549
+func part	bc676cfb99ba407c	29	1102
+func plus	9a34ffb65e5364fd	49	1677
+func raw	f3478efa7cda6430	34	1195
+func run	e11fcd5f76217179	132	4377
+func same	c78af3db5a17c237	39	1313
+func shapeFreq	277dbf47b96605a8	83	2659
+func text	2c97d5b0fc47316b	64	2224
+func unzip	d16d67b5b45d3a04	101	3217

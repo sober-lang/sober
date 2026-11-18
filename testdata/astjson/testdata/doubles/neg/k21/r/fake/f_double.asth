@@ -1,0 +1,7 @@
+@@full	28bbcb9b1f9bce59	196	3495
+@head	17ed8ff5b59d34d3	0	83
+func New	b6e578ef5cddd24c	4	245
+func Put	5418642bdf64bc78	6	300
+func Show	bf6f67412eba9e37	5	290
+type Bad	c46bc68f4fa91a27	1	64
+type Conn	ea86e2628812dc31	2	111

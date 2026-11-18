@@ -18,7 +18,7 @@ const only: number[] = process.argv[3] ? process.argv[3].split(",").map(Number) 
 const bad: number[] = [];
 for (const i of only) {
   const defs = j.defs.map((d: any, k: number) =>
-    k === i ? d : { ...(d.tparams ? { tparams: d.tparams } : {}), param: d.param, ret: d.ret });
+    k === i ? d : { ...(d.kinds ? { kinds: d.kinds } : {}), param: d.param, ret: d.ret });
   const p = join(dir, `${i}.json`);
   writeFileSync(p, JSON.stringify({ parts: true, defs }));
   const out = spawnSync(chk, [], { input: readFileSync(p), encoding: "utf8" }).stdout.trim();

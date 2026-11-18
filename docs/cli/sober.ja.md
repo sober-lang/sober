@@ -35,6 +35,7 @@ Sober のコンパイラ
 | `SOBER_WATCH_BUILD` | 0 で watch のビルドキャッシュの温めを止める |
 | `SOBER_WATCH_TEST` | 0 で watch が見張っている package のテストを裏で走らせるのを止める（結果の再生のため） |
 | `SOBER_LOWER_SPLIT` | 0 で lower の並列を切る |
+| `SOBER_TASK_REGION_MB` | 子 task の region のスロット（MiB・既定 512）。コンパイラの並列の子が死んで逐次で作り直されたときに上げる |
 | `SOBER_CHECK_CACHE` | 0 で check のキャッシュを切る（既定は入り） |
 
 ## sober build
@@ -57,9 +58,12 @@ flags:
   --passes       run the IR passes on --emit=ll / ir
 
 environment:
-  SOBER_BUILD_CACHE  0 turns the build cache off (default on)
-  SOBER_CACHE        the cache directory (default $XDG_CACHE_HOME/sober)
-  SOBER_LOWER_SPLIT  0 turns the parallel lowering off
+  SOBER_BUILD_CACHE     0 turns the build cache off (default on)
+  SOBER_CACHE           the cache directory (default $XDG_CACHE_HOME/sober)
+  SOBER_LOWER_SPLIT     0 turns the parallel lowering off
+  SOBER_TASK_REGION_MB  the region slot of a child task in MiB (default 512) —
+                        raise it when a parallel child of the compiler dies and
+                        the work is redone sequentially
 
 run 'sober build --help=dev' for the development flags
 ```

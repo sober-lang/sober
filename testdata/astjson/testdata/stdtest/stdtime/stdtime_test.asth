@@ -1,0 +1,9 @@
+@@full	33081ef086c1cd0b	3592	109933
+@head	91b61be4dbb149a8	0	219
+func TestArith	71aa7da9dbce8039	104	3343
+func TestCivilAndFormats	f0f8ad7eacdf789a	220	9252
+func TestClocks	7e04791e9ddbbc6d	43	1489
+func TestHTTPForms	b230ed303c8dfb92	55	1947
+func TestOffsetsAndFraction	a4008963d53d8b74	110	3710
+func TestRejects	7735613d615abc7b	51	2017
+type Row	6248de94f35fc84f	8	401

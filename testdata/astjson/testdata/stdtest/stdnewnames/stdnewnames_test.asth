@@ -1,0 +1,6 @@
+@@full	dccbc05883cd7d86	1468	43499
+@head	8adf23822a876a62	0	294
+func TestConvertFormatInt	ff03771057b35a8b	49	1692
+func TestHexFormatParse	00b0ce7eed848c70	62	2046
+func TestStringsIndexInvalid	2cdc41594ca2ac5b	127	4673
+type Case	d3fdcbb0b9a359b8	4	195

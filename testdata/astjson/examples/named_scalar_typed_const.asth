@@ -1,0 +1,8 @@
+@@full	f1213d7b0d8be038	404	8716
+@head	f8802cba5eefdec2	0	31
+const NotFound	99a8b99a4941e589	5	169
+const OK	7fab2ff2bfab485e	3	105
+const Plain	a10d2041692de0ca	1	45
+func code	3aba5dc529c3ec52	6	288
+func main	a0e31b9babce6cac	45	1428
+type Status	fb2bae69d205e2cd	2	90

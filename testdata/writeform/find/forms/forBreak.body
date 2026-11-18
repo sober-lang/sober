@@ -1,0 +1,8 @@
+    mut r := None$U{}
+    for x <- xs {
+        if p(x) {
+            r = Some$U{v: x}
+            break
+        }
+    }
+    return r

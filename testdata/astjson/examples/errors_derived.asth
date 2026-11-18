@@ -1,0 +1,9 @@
+@@full	dee36a7b60cfbebc	1086	30109
+@head	9bf5466d7e943b5b	0	61
+func code	d23e001c75b70971	29	1126
+func main	81ef5af5c466bd7c	47	1485
+func parse	928bf0a767186f8d	59	1969
+func show	866e5a6377c498fa	30	1174
+type BadDigit	e2ed81a1adee5385	2	115
+type Empty	33cfd2a1cbeaa695	1	66
+type Unused	3f46061a2cc05520	1	67

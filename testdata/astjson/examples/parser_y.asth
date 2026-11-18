@@ -1,0 +1,13 @@
+@@full	26363f0838991d69	2414	72307
+@head	f8802cba5eefdec2	0	31
+func buildKids	1e0dd94a36df9c5f	62	2219
+func buildNodes	2f70d1ee1e8fa491	77	2875
+func eval	3730a2de75f31243	39	1404
+func isDigit	6a7ee5782600b8e8	16	588
+func lex	e49ff68efb2726c4	88	3097
+func main	3e5bbf92ee5413f9	18	700
+func numValue	f0059c3e42c312c2	35	1285
+func parse	c7000dffa1ee4ec8	27	1005
+type Node	8a7ca4b1b9d3ecc6	4	206
+type Pair	b0f2b86b66ae6110	3	161
+type Token	182cbb69a8ccc1fa	4	213

@@ -53,9 +53,12 @@ type S struct {
     lpend table.Table[int]   // 待ちの番号 → 持ち上げ k（作ったら埋める）
     rejDef int       // 脱糖中の Def（拒否を帰す先: 関数 i・根の本体 nfn・どれでもない〔前段・後回しの署名〕−1 — run が立てる）
     planOnly bool    // 区間の計画だけ（PlanDefs — 前段の型付けを飛ばす）
+    genOnly bool     // 型パラメータを持つ Def の本体だけを脱糖する（kind の推論の前段 — DefRng.gen）
+    givenK []int     // 本体を読まない総称関数の kind（loader.Program の fn_kinds — 関数表の添字で [関数, n, k…]）
     refs RefGraph    // 区間の子: 親の計画が作った参照の辺（rangeReach）
     planBad []int    // 区間の子: 親の計画が決めたE2-Sの上げないフラグ（e2sScanCallsの結果 — 子は走査しない。空 = 自分で走査）
     stopAt int       // 計測のオプション（core_out.soberのWithCoreOptのstopAt）
+    adopted bool     // 店を呼び手から受け取った（表層型検査器を走らせない — core_out.sober の WithAdopt）
     trustStd bool    // std の Def を署名だけにする（L0 の受理印 — core_out.sober の WithCoreOpt の trust）
     hbuckets int     // 型の intern・表層型の表のハッシュの頭の数（init.sober の bucketsFor — 0 = 既定の TBUCKETS）
     trees []ast.Tree            // loader の木（imm のまま — 参照は astref.sober）
@@ -73,6 +76,9 @@ type S struct {
     track bool
     opos int
     corig table.Table[int]
+    // 追跡のときだけ: 値の位置のクロージャの捕捉の記録（Core.Caps の形 — diag.KindArg の捕捉の行）と、capFlatFill が平たく数えた捕捉の名前の添字
+    capDiag table.Table[int]
+    capJs table.Table[int]
     tyNext table.Table[int]
     tyBucket table.Table[int]
     tyMemo table.Table[TyMemo]   // 名前付き型の解決の memo（resolve.sober の tyOf — 型環境なしの参照だけ）
@@ -146,6 +152,8 @@ type S struct {
     stmtIf int
     loopFloor int
     tailWant TyRef
+    // 末尾の式を値の位置のクロージャとして組む記録（fieldFnValDecl）+ 1。0 = 無し。次のstmtsInが入口で受け取り、入れ子のブロックへ漏らさない
+    tailVal int
     // T? を期待する位置（coerceExpr）のnil判定のif式の節（-1 = 無し）: ifnilExprが分岐をcoerceArmで期待型へ寄せる（someに包む）
     coerceIfnil NodeRef
     // 今絞っているmutの名前（narrowkill.sober — 絞った分岐を読む間だけ積む。代入の文の後ろで外の束縛へ戻す）
@@ -178,6 +186,7 @@ type S struct {
     yyield int                // 検査中の for の yield の型（-3 = まだ yield が無い・-1 = 揃わない）
     ydtsame int               // 型引数の突き合わせ（inferTs × YTArgsOf）: 一致・食い違い
     ydtdiff int
+    ydtunb int                // 型引数の突き合わせのうち、実引数の名前が環境に無い下見で決まらず比べなかった数（ydskip にも数える）
     ydiff int                 // 差分オラクル（check --typer-diff）: exprSty を表層型検査器の表と突き合わせる（0 / 1）
     ydsame int                // 突き合わせの数: 一致・表だけ分かる・exprSty だけ分かる・食い違い・比べない（型なしの定数・合成の節）
     ydgain int
@@ -221,6 +230,10 @@ type S struct {
     insts int
     jstk int
     jlab int
+    // コアの JSON の kind（JsonK）: jks = 推論した kind の列（Def の順に [n, k…]・空 = 脱糖器の kind のまま）・jkAt = 印字中の Def の
+    // kind の列の位置（-1 = 型変数の kind は記録のまま）
+    jks []int
+    jkAt int
     // 再帰展開の検査に使う展開中の関数のチェーン（inliningと同じ形）。ラムダの本体を展開する間は、クロージャが定義時に持ったチェーンへ差し替える
     // （本体は字句的に callee の外 — `iter.Slice` の中のラムダが `iter.Slice` を呼ぶのは再帰でない。lower の CL_INL と同じ方式）
     inlrec int
@@ -1131,3 +1144,21 @@ func d6(a int, b int, c int, d int, e int, f int) int {
     return a + b * 8 + c * 64 + d * 512 + e * 4096 + f * 32768
 }
 
+
+// @embed の []byte の節 e（ast.EEmbed — パス・長さ・指紋）の中身。ファイルを読み直し、load の時点の長さと指紋に合わなければ
+// loader.EmbedChanged で止める（ビルドの途中でファイルが変わった — 出力を作らない）
+func EmbedBytes(st mut S, e NodeRef) []byte {
+    x := nodeOf(mut st, e)
+    p := StrRef(x.a)
+    mut pb := mut []byte{}
+    for i <- iter.Range(0, slen(mut st, p)) {
+        pb = append(pb, byte(sat(mut st, p, i)))
+    }
+    path := string(freeze(pb)) catch ""
+    d := StrRef(x.c)
+    mut db := mut []byte{}
+    for i <- iter.Range(0, slen(mut st, d)) {
+        db = append(db, byte(sat(mut st, d, i)))
+    }
+    return loader.EmbedReload(path, x.b, freeze(db))
+}

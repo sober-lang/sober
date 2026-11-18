@@ -450,11 +450,15 @@ Threat: many connections, large requests, or memory-hungry requests stop the who
 
 Sober's answer: the server (`net.Serve`) has ceilings on resources in three layers.
 
-- Admission: `conns:` is the ceiling on simultaneous connections (default 10000). A connection over the ceiling is sent the `reject:` bytes and closed without running user code.
-- Budget (`budget:`): the declared upper bound of the memory one connection uses (default 64 KiB). The admission ceiling is counted in bytes, `conns × budget`. For tasks in general, writing `budget:` on `task.Spawn` and friends makes the children that do not fit under the ceiling run sequentially instead of in parallel (values and output do not change).
+- Admission: admission is decided by a byte ceiling. With `conns:`, the ceiling is `(budget + task.Fixed()) × conns` bytes, and simultaneous connections are also capped at `conns:`. `conns:` may be left out, and then there is no cap on the count. The ceiling is then what remains of the root ceiling (the memory ceiling of the process, from the cgroup memory.max or else physical memory) minus the share of the waiting connections. At the ceiling, if `reject:` is given, a new connection is sent those bytes and closed without running user code. Without it, Serve keeps accepting, and accepted connections wait in a runtime queue per listener. When a slot frees, the newest connection in the queue enters. When the queue goes over its limit, the connection that waited longest is closed (counted in the pool's `shed` of `task.Ledger()`). `net.Waiting()` reports the number of waiting connections. Setups that cannot use io_uring (the epoll path) have no queue, and connections wait in the kernel's queue in arrival order.
+- Budget (`budget:`): the reservation of one connection (default 64 KiB). Admission counts the reservation plus the fixed cost of a task (`task.Fixed()`). A connection that grows past its reservation borrows the excess from the free part of the ceiling in 64 KiB units and carries on. When a borrow goes over the ceiling of the pool or of the root, only the task of the connection that tried to grow dies with `RegionExceeded{cause: budget}`, and Serve closes that connection without sending anything. Connections that stay within their reservation do not die. For tasks in general, writing `budget:` on `task.Spawn` and friends makes the children that do not fit under the ceiling run sequentially instead of in parallel (values and output do not change).
 - Region cap (`region:`): the cap on one region of a connection's task (default 128 MiB). Going over kills only that connection's task; Serve absorbs it and carries on with the other connections.
 
-At the HTTP layer, the request head and body have limits (`http.server.ServeConn`'s `maxHead:`, default 8 KiB, gives 431 when exceeded; `maxBody:`, default 16 KiB, gives 413 — the handler does not run). Waits can be given a deadline (`task.Run(…, deadline:)` — io after the deadline returns `io.Expired`, and net waits are cut at the deadline).
+At the HTTP layer, the request head and body have limits (`http.server.ServeConn`'s `maxHead:`, default 8 KiB, gives 431 when exceeded; `maxBody:`, default 16 KiB, gives 413 — the handler does not run).
+
+The time spent waiting for the peer is also bounded by default (Serve's deadlines). These are `headWait:` (default 30 s; until the head is complete, including the keep-alive wait), `bodyWait:` (default 60 s; until the body is received) and `sendWait:` (default 60 s; the longest interval in which sending makes no progress) of `http.server.ServeConn`, and `headWait:` of `tls.Serve` (default 30 s; until the handshake is done). A connection whose deadline passes is closed without sending anything (counted in the pool's `timeout`). A scope's deadline (`task.Run(…, deadline:)`) bounds the time spent on your own work, and it applies separately from Serve's deadlines.
+
+While connections are waiting for admission, the server cuts admitted connections to take slots back. It first cuts those that received no byte since the previous sweep (about every 0.27 s; idle keep-alive connections and stalled peers), oldest first, then the slowest receivers. The count goes to the pool's `evicted`. When not full, it does not cut even slow peers. The epoll path does not take slots back either.
 
 ```sober
 // examples/security_limits.sober
@@ -479,7 +483,8 @@ func app(c net.Conn) error? {
 func run() error? {
     for l <- net.Listen("0.0.0.0:8080")? {
         // at most 2,000 connections at once (the 2,001st gets the reject bytes and is closed without running app);
-        // each connection may use up to 256 KiB, and a connection whose region passes 32 MiB dies alone
+        // each connection reserves 256 KiB (beyond that it borrows from the free part of the ceiling, and dies if the ceiling is full);
+        // a connection whose region passes 32 MiB dies alone
         net.Serve(l, app, budget: 256 * task.KB, conns: 2000, reject: "HTTP/1.1 503 Service Unavailable\r\ncontent-length: 0\r\n\r\n", region: 32 * task.MB)?
     }
     return nil

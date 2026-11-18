@@ -1,0 +1,9 @@
+@@full	f3afc3d95e5cbdd9	847	21307
+@head	f8802cba5eefdec2	0	31
+func count	b5ba34682a515dd9	27	924
+func inner	023c511ea4ebb795	20	806
+func main	d8ffd5ba7f608951	44	1496
+func outer	a51e5063e36ea9d6	14	576
+func viaCount	bf60e72b06a0eb1e	18	717
+type Long	33ae282ba79c0f4b	1	65
+type Sink	b00eeb327ecf4c2a	8	291

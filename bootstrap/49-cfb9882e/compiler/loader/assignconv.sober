@@ -1,0 +1,584 @@
+package loader
+
+// 関数値の代入（language.md 25節）: 代入先が関数値の値の位置なら、右辺の末尾（valTails）のラムダと名前付き関数uを変換で包んだものと
+// 同じに読む。代入先の型が値化可能なnamed fn type W（かそのoption）なら `W(u)`、structのフィールド（named fn type・その
+// option・値の位置の匿名の関数型）なら内部の変換 `R.f(u)`（ast.EFieldTy。フィールドfの型への変換。匿名の関数型には綴りが無いので
+// ソースには書けない）。変換はuをその型の値の位置に置いたものなので、以降の層（η・捕捉の数え上げ・脱糖器・typer・lower）は変換の
+// 既存の経路で読む。末尾ごとに包むので、W?の場所の `x = if c { (…) => … } else { nil }` は `if c { W(…) } else { nil }` になる。
+// 代入先の型は構文から引く: 根の名前の束縛から、フィールド・添字を辿る。束縛の型は、`:=` の右辺（変換・宣言した関数と値の呼び出しの結果・
+// 名前とフィールドと添字の読み・ブロックとif式の末尾・リテラル）、型を書いた仮引数、sliceを辿るforの名前から引く。
+// 引けない形は書き換えない（`W(e)` と書けば通る形の範囲）
+
+import "std/builder"
+import "std/iter"
+import "std/strings"
+import "ast"
+import "lexer"
+
+const ACUnknown = 0
+const ACFn = 1
+const ACStruct = 2
+const ACSlice = 3
+const ACMap = 4
+const ACField = 5
+const ACFunc = 6
+
+// 型の形。k = 種類: ACFn = named fn type（f = 宣言のファイル, n = 宣言の節）・ACStruct = struct（f, n = 型宣言・g = 型引数の列〔書き換える木の列。
+// 総称のstructだけ。無ければ -1〕）・ACSlice / ACMap（f = ファイル, n = 要素 / 値の型式）・ACField = structのフィールドの値の位置
+// （f, n, g = structのACStructと同じ・q = フィールドの節）・ACFunc = 匿名の関数型（f = ファイル, n = 型式の節。呼んだ結果の型を引くだけ）
+type AC struct {
+    k int
+    f int
+    n int
+    g int
+    q int
+}
+
+func acNone() AC {
+    return AC{k: ACUnknown, f: 0, n: 0, g: 0 - 1, q: 0 - 1}
+}
+
+// 全ファイルの代入を書き換えた木（書き換えが無いファイルは元の木）
+func assignConvAll(cx Cx, ft FnTab) []ast.Tree {
+    mut out := mut []ast.Tree{}
+    for f <- iter.Range(0, len(cx.trees)) {
+        out = append(out, assignConvFile(cx, ft, f))
+    }
+    return freeze(out)
+}
+
+func assignConvFile(cx Cx, ft FnTab, f int) ast.Tree {
+    t := cx.trees[f]
+    // [末尾の節, 種類, ファイル, 節, 型引数の列, フィールドの節] の6ワードずつ
+    mut hits := mut []int{}
+    for i <- iter.Range(0, len(t.nodes)) {
+        x := t.nodes[i]
+        if x.kind == ast.SAssign && x.b == lexer.Equal && ast.ListLen(t, x.a) == ast.ListLen(t, x.c) {
+            for j <- iter.Range(0, ast.ListLen(t, x.a)) {
+                v := ast.ListAt(t, x.c, j)
+                // 列の要素のフィールドへの代入（elemassign.sober）は右辺を先に `$eaKv := V` へ束ねている: その束縛の右辺を読む
+                sb := if v >= 0 && t.nodes[v].kind == ast.EIdent { acEaBind(t, Name(t, t.nodes[v].a)) } else { 0 - 1 }
+                rv := if sb >= 0 { ast.ListAt(t, t.nodes[sb].c, 0) } else { v }
+                tails := if rv >= 0 { acFnTails(cx, ft, f, t, rv) } else { []int{} }
+                if len(tails) > 0 {
+                    a := acTarget(cx, ft, f, t, ast.ListAt(t, x.a, j), x.tok)
+                    if a.k == ACFn || a.k == ACField {
+                        for u <- tails {
+                            hits = append(hits, u)
+                            hits = append(hits, a.k)
+                            hits = append(hits, a.f)
+                            hits = append(hits, a.n)
+                            hits = append(hits, a.g)
+                            hits = append(hits, a.q)
+                        }
+                    }
+                }
+            }
+        }
+        if x.kind == ast.ECall {
+            acGenArgs(cx, ft, f, t, i, mut hits)
+        }
+    }
+    if len(hits) == 0 {
+        return t
+    }
+    mut ns := mut []ast.Node{}
+    for x <- t.nodes {
+        ns = append(ns, x)
+    }
+    mut db := builder.Builder[int]{}
+    for w <- t.data {
+        builder.Push(mut db, w)
+    }
+    // 末尾の節をその場で変換の呼び出しに差し替える（元の節は新しい節へコピーする）。同じ節を2つの文が指すとき（elemassign.soberが
+    // 列から外した元の代入）は1回だけ
+    mut done := mut []int{}
+    mut h := 0
+    while h < len(hits) {
+        v := hits[h]
+        tf := hits[h + 2]
+        dt := cx.trees[tf]
+        nm := Name(dt, dt.nodes[hits[h + 3]].a)
+        ref := if cx.file_pkg[tf] == cx.file_pkg[f] { "" } else { acImportRef(cx, f, cx.file_pkg[tf]) }
+        mut seen := false
+        for d <- done {
+            seen = seen || d == v
+        }
+        if !seen && ref != "-" {
+            done = append(done, v)
+            tok := ns[v].tok
+            orig := len(ns)
+            ns = append(ns, ns[v])
+            qn := if ref == "" { nm } else { "${ref}.${nm}" }
+            mut callee := len(ns)
+            if hits[h + 1] == ACField {
+                g := hits[h + 4]
+                ns = append(ns, ast.Node{ast.EFieldTy, tok, ast.PutLit(mut db, qn), ast.PutLit(mut db, Name(dt, dt.nodes[hits[h + 5]].a)), if g >= 0 { g } else { ast.PutList(mut db, []int{}) }, 0, 0, 0})
+            } else {
+                ns = append(ns, ast.Node{ast.EIdent, tok, ast.PutLit(mut db, if ref == "" { nm } else { ref }), 0, 0, 0, 0, 0})
+                if ref != "" {
+                    sel := len(ns)
+                    ns = append(ns, ast.Node{ast.ESelector, tok, callee, ast.PutLit(mut db, nm), 0, 0, 0, 0})
+                    callee = sel
+                }
+            }
+            ns[v] = ast.Node{ast.ECall, tok, callee, ast.PutList(mut db, []int{orig}), 0, 0, 0, 0}
+        }
+        h += 6
+    }
+    return ast.Tree{freeze(ns), builder.Build(mut db), t.file}
+}
+
+// 総称関数の呼び出し節n（型引数を書かない形）で、型がちょうど型パラメータPかP?の仮引数へ置いたラムダと名前付き関数を、Pの値の位置に置く。
+// Pが他の実引数の構文から値化可能なnamed fn type Wと分かるとき、その実引数の末尾を `W(u)` と同じに読む（明示の型引数 `f[W](u)` と同じ）。
+// hitsに代入と同じ6ワードの形で積む
+func acGenArgs(cx Cx, ft FnTab, f int, t ast.Tree, n int, hits mut []int) {
+    x := t.nodes[n]
+    if t.nodes[x.a].kind == ast.EIndex {
+        return
+    }
+    gi := calleeFn(cx, ft, f, x.a, FN_GEN)
+    if gi < 0 {
+        return
+    }
+    dt := cx.trees[ft.file[gi]]
+    fd := dt.nodes[ft.node[gi]]
+    if ast.ListLen(dt, fd.c) != ast.ListLen(t, x.b) {
+        return
+    }
+    for i <- iter.Range(0, ast.ListLen(t, x.b)) {
+        pt0 := acParamTE(dt, dt.nodes[ast.ListAt(dt, fd.c, i)].b)
+        // Pの場所とP?の場所（W?の場所へも `W(u)` は置ける）
+        pt := if pt0 >= 0 && dt.nodes[pt0].kind == ast.TOpt { dt.nodes[pt0].a } else { pt0 }
+        if pt < 0 || dt.nodes[pt].kind != ast.TName || !acIsTParam(dt, fd.b, dt.nodes[pt].a) {
+            continue
+        }
+        tails := acFnTails(cx, ft, f, t, ast.ListAt(t, x.b, i))
+        if len(tails) == 0 {
+            continue
+        }
+        a := acTParamFrom(cx, ft, f, t, dt, fd.c, x.b, Name(dt, dt.nodes[pt].a), i, x.tok)
+        if a.k == ACFn {
+            for u <- tails {
+                hits = append(hits, u)
+                hits = append(hits, a.k)
+                hits = append(hits, a.f)
+                hits = append(hits, a.n)
+                hits = append(hits, a.g)
+                hits = append(hits, a.q)
+            }
+        }
+    }
+}
+
+// 名前s（宣言の木dtの文字列）が型パラメータの列tpsにあるか
+func acIsTParam(dt ast.Tree, tps int, s int) bool {
+    for q <- iter.Range(0, ast.ListLen(dt, tps)) {
+        if StrIs(dt, s, Name(dt, ast.ListAt(dt, tps, q))) {
+            return true
+        }
+    }
+    return false
+}
+
+// 型パラメータtpの形を、仮引数の列ps（宣言の木dt）のうちskip番目以外の実引数（列args）から構文で引く。見る仮引数の型は、
+// `tp`・`[]tp`・`map[K]tp`・総称の型 `G[…, tp, …]`
+func acTParamFrom(cx Cx, ft FnTab, f int, t ast.Tree, dt ast.Tree, ps int, args int, tp string, skip int, use int) AC {
+    for q <- iter.Range(0, ast.ListLen(dt, ps)) {
+        if q == skip {
+            continue
+        }
+        a := acTParamIn(cx, ft, f, t, dt, acParamTE(dt, dt.nodes[ast.ListAt(dt, ps, q)].b), ast.ListAt(t, args, q), tp, use)
+        if a.k != ACUnknown {
+            return a
+        }
+    }
+    return acNone()
+}
+
+// 型式pt（宣言の木dt）の中のtpの位置の形を、その型の値v（ファイルfの木t）から引く
+func acTParamIn(cx Cx, ft FnTab, f int, t ast.Tree, dt ast.Tree, pt int, v int, tp string, use int) AC {
+    if pt < 0 || v < 0 {
+        return acNone()
+    }
+    p := dt.nodes[pt]
+    if p.kind == ast.TName {
+        return if StrIs(dt, p.a, tp) { acValue(cx, ft, f, t, v, use, 0) } else { acNone() }
+    }
+    if p.kind == ast.TSlice || p.kind == ast.TMap {
+        e := if p.kind == ast.TSlice { p.a } else { p.b }
+        if e < 0 || dt.nodes[e].kind != ast.TName || !StrIs(dt, dt.nodes[e].a, tp) {
+            return acNone()
+        }
+        a := acValue(cx, ft, f, t, v, use, 0)
+        return if a.k == ACSlice && p.kind == ast.TSlice || a.k == ACMap && p.kind == ast.TMap { acTE(cx, f, a.f, a.n) } else { acNone() }
+    }
+    if p.kind == ast.TGeneric {
+        for m <- iter.Range(0, ast.ListLen(dt, p.b)) {
+            e := ast.ListAt(dt, p.b, m)
+            if dt.nodes[e].kind == ast.TName && StrIs(dt, dt.nodes[e].a, tp) {
+                // structとunionのvariantのリテラルは型引数を書く（`Box[W]{…}`・`Some[W]{…}`）
+                x := t.nodes[v]
+                if x.kind == ast.EComposite && m < ast.ListLen(t, x.c) {
+                    return acTE(cx, f, f, ast.ListAt(t, x.c, m))
+                }
+                a := acValue(cx, ft, f, t, v, use, 0)
+                if a.k == ACStruct && a.g >= 0 && m < ast.ListLen(t, a.g) {
+                    return acTE(cx, f, f, ast.ListAt(t, a.g, m))
+                }
+                return acNone()
+            }
+        }
+    }
+    return acNone()
+}
+
+// 値vの末尾（valTails）のうちラムダか名前付き関数の節
+func acFnTails(cx Cx, ft FnTab, f int, t ast.Tree, v int) []int {
+    mut vs := mut []int{}
+    valTails(t, v, mut vs)
+    mut out := mut []int{}
+    for u <- vs {
+        k := t.nodes[u].kind
+        if k == ast.ELambda || (k == ast.EIdent || k == ast.ESelector) && calleeFn(cx, ft, f, u, 0) >= 0 {
+            out = append(out, u)
+        }
+    }
+    return freeze(out)
+}
+
+// ファイルfからpackage pkを指すimportの参照名（無ければ "-"）
+func acImportRef(cx Cx, f int, pk int) string {
+    t := cx.trees[f]
+    imps := t.nodes[t.file].b
+    for k <- iter.Range(0, ast.ListLen(t, imps)) {
+        im := t.nodes[ast.ListAt(t, imps, k)]
+        r := if im.a >= 0 { Name(t, im.a) } else { QualOf(Name(t, im.b)) }
+        if importOf(cx, cx.file_pkg[f], r) == pk {
+            return r
+        }
+    }
+    return "-"
+}
+
+// 型式te（ファイルdf）の形。総称のstructの型引数は書き換える木（ファイルf）の列だけを持てる（別のファイルの型式は引けない形）
+func acTE(cx Cx, f int, df int, te int) AC {
+    if te < 0 {
+        return acNone()
+    }
+    t := cx.trees[df]
+    x := t.nodes[te]
+    if x.kind == ast.TOpt {
+        // optionはnamed fn typeのときだけ読む（`W?` の場所へも `W(e)` は代入できる）
+        a := acTE(cx, f, df, x.a)
+        return if a.k == ACFn { a } else { acNone() }
+    }
+    if x.kind == ast.TSlice {
+        return AC{k: ACSlice, f: df, n: x.a, g: 0 - 1, q: 0 - 1}
+    }
+    if x.kind == ast.TMap {
+        return AC{k: ACMap, f: df, n: x.b, g: 0 - 1, q: 0 - 1}
+    }
+    if x.kind == ast.TGeneric && df == f {
+        return acNamed(cx, df, Name(t, x.a), x.b)
+    }
+    if x.kind != ast.TName {
+        return acNone()
+    }
+    return acNamed(cx, df, Name(t, x.a), 0 - 1)
+}
+
+// 型の名前n（ファイルfの文脈・型引数の列g〔ファイルfの木の列・無ければ -1〕）の形
+func acNamed(cx Cx, f int, n string, g int) AC {
+    tf, tn := typeDeclAt(cx, f, n)
+    if tf < 0 {
+        return acNone()
+    }
+    if FnValDecl(cx, tf, tn) && g < 0 {
+        return AC{k: ACFn, f: tf, n: tn, g: 0 - 1, q: 0 - 1}
+    }
+    dt := cx.trees[tf]
+    body := dt.nodes[dt.nodes[tn].c]
+    ntp := ast.ListLen(dt, dt.nodes[tn].b)
+    if body.kind == ast.BStruct && (ntp == 0 && g < 0 || ntp > 0 && g >= 0 && ast.ListLen(cx.trees[f], g) == ntp) {
+        return AC{k: ACStruct, f: tf, n: tn, g: g, q: 0 - 1}
+    }
+    return acNone()
+}
+
+// 代入先の節n（ファイルfの木t・代入の字句use）の型の形
+func acTarget(cx Cx, ft FnTab, f int, t ast.Tree, n int, use int) AC {
+    if n < 0 {
+        return acNone()
+    }
+    x := t.nodes[n]
+    if x.kind == ast.EParen {
+        return acTarget(cx, ft, f, t, x.a, use)
+    }
+    if x.kind == ast.EIdent {
+        return acBinding(cx, ft, f, t, Name(t, x.a), use)
+    }
+    if x.kind == ast.ESelector {
+        b := acTarget(cx, ft, f, t, x.a, use)
+        if b.k != ACStruct {
+            return acNone()
+        }
+        dt := cx.trees[b.f]
+        fs := dt.nodes[dt.nodes[b.n].c].a
+        for i <- iter.Range(0, ast.ListLen(dt, fs)) {
+            fn := ast.ListAt(dt, fs, i)
+            fd := dt.nodes[fn]
+            if Name(dt, fd.a) == Name(t, x.b) {
+                tf, _ := fnValFieldTy(cx, b.f, fd.b)
+                if tf >= 0 || fnValBorrowTE(cx, b.f, fd.b) {
+                    return AC{k: ACField, f: b.f, n: b.n, g: b.g, q: fn}
+                }
+                // 総称のstructの、型パラメータそのものの型のフィールドは、型引数の型式の形（`Box[H]` のフィールド `v T` はHの場所）
+                if b.g >= 0 && fd.b >= 0 && dt.nodes[fd.b].kind == ast.TName {
+                    tps := dt.nodes[b.n].b
+                    for j <- iter.Range(0, ast.ListLen(dt, tps)) {
+                        if Name(dt, ast.ListAt(dt, tps, j)) == Name(dt, dt.nodes[fd.b].a) {
+                            return acTE(cx, f, f, ast.ListAt(t, b.g, j))
+                        }
+                    }
+                }
+                return acTE(cx, f, b.f, fd.b)
+            }
+        }
+        return acNone()
+    }
+    if x.kind == ast.EIndex {
+        b := acTarget(cx, ft, f, t, x.a, use)
+        if b.k != ACSlice && b.k != ACMap {
+            return acNone()
+        }
+        return acTE(cx, f, b.f, b.n)
+    }
+    return acNone()
+}
+
+// 名前nmの束縛（字句useより前で最も近いもの）の型の形。局所の束縛どうしはシャドーイングできない（localnames.sober）ので、
+// useで見えている束縛は、囲む最上位の宣言の中でuseより前に最後に現れた同じ名前の束縛
+func acBinding(cx Cx, ft FnTab, f int, t ast.Tree, nm string, use int) AC {
+    root := t.nodes[t.file]
+    mut lo := 0 - 1
+    ls := []int{root.c, root.d, root.e}
+    for l <- ls {
+        for k <- iter.Range(0, ast.ListLen(t, l)) {
+            d := t.nodes[ast.ListAt(t, l, k)].tok
+            if d < use && d > lo {
+                lo = d
+            }
+        }
+    }
+    internal := strings.HasPrefix(nm, "$")
+    mut best := 0 - 1
+    mut r := acNone()
+    // 囲む関数の仮引数（仮引数の節は字句を持たない — 関数の宣言の位置で束ねたものとして読む）
+    for k <- iter.Range(0, ast.ListLen(t, root.d)) {
+        fd := t.nodes[ast.ListAt(t, root.d, k)]
+        if fd.tok == lo {
+            for q <- iter.Range(0, ast.ListLen(t, fd.c)) {
+                p := t.nodes[ast.ListAt(t, fd.c, q)]
+                if Name(t, p.a) == nm {
+                    best = lo + 1
+                    r = acTE(cx, f, f, acParamTE(t, p.b))
+                }
+            }
+        }
+    }
+    for i <- iter.Range(0, len(t.nodes)) {
+        x := t.nodes[i]
+        // 変換が足した束縛（`$` で始まる名前 — ファイルの中で一意）は、使う文と同じ字句を持つ
+        if x.tok <= lo || x.tok > use || x.tok == use && !internal || x.tok < best {
+            continue
+        }
+        switch x.kind {
+        case ast.SBind:
+            for j <- iter.Range(0, ast.ListLen(t, x.a)) {
+                if Name(t, ast.ListAt(t, x.a, j)) == nm {
+                    best = x.tok
+                    r = acNone()
+                    nv := ast.ListLen(t, x.c)
+                    if nv == ast.ListLen(t, x.a) || nv == 1 {
+                        // `a, b := f()` は呼び出しの j 番目の結果
+                        r = acValue(cx, ft, f, t, ast.ListAt(t, x.c, if nv == 1 { 0 } else { j }), x.tok, if nv == 1 { j } else { 0 })
+                    }
+                }
+            }
+        case ast.ELambda:
+            // ラムダの仮引数（節は字句を持たない — ラムダの位置で束ねたものとして読む）
+            for q <- iter.Range(0, ast.ListLen(t, x.a)) {
+                p := t.nodes[ast.ListAt(t, x.a, q)]
+                if Name(t, p.a) == nm {
+                    best = x.tok
+                    r = acTE(cx, f, f, acParamTE(t, p.b))
+                }
+            }
+        case ast.KGen:
+            for j <- iter.Range(0, ast.ListLen(t, x.a)) {
+                if Name(t, ast.ListAt(t, x.a, j)) == nm {
+                    best = x.tok
+                    r = acNone()
+                    if ast.ListLen(t, x.a) == 1 {
+                        // sliceを辿る `for v <- xs` の名前は要素
+                        s := acValue(cx, ft, f, t, x.b, x.tok, 0)
+                        if s.k == ACSlice {
+                            r = acTE(cx, f, s.f, s.n)
+                        }
+                    }
+                }
+            }
+        case ast.KPType | ast.KFieldPat:
+            if (x.kind == ast.KPType && x.a >= 0 || x.kind == ast.KFieldPat && x.b < 0) && Name(t, x.a) == nm {
+                best = x.tok
+                r = acNone()
+            }
+        default: {}
+        }
+    }
+    return r
+}
+
+// 束縛の右辺vの型の形（多値の呼び出しは j 番目の結果）: 変換 `W(e)`・宣言した関数と値の呼び出しの結果・名前とフィールドと添字の読み・
+// ブロックとif式の末尾・composite・sliceとmapのリテラル
+func acValue(cx Cx, ft FnTab, f int, t ast.Tree, v int, use int, j int) AC {
+    if v < 0 {
+        return acNone()
+    }
+    x := t.nodes[v]
+    if x.kind == ast.EParen || x.kind == ast.ETry {
+        return acValue(cx, ft, f, t, x.a, use, j)
+    }
+    if x.kind == ast.ECall {
+        gi := calleeFn(cx, ft, f, x.a, 0)
+        if gi >= 0 {
+            df := ft.file[gi]
+            dt := cx.trees[df]
+            fd := dt.nodes[ft.node[gi]]
+            if j < ast.ListLen(dt, fd.d) {
+                // 結果が型パラメータTなら、仮引数の型がちょうどTの実引数の形
+                rt := dt.nodes[ast.ListAt(dt, fd.d, j)]
+                if rt.kind == ast.TName {
+                    for q <- iter.Range(0, ast.ListLen(dt, fd.b)) {
+                        if StrIs(dt, rt.a, Name(dt, ast.ListAt(dt, fd.b, q))) {
+                            return acTyArg(cx, ft, f, t, dt, fd.c, x.b, Name(dt, rt.a), use)
+                        }
+                    }
+                }
+            }
+            return acResult(cx, f, df, fd.d, j)
+        }
+        c := t.nodes[x.a]
+        if j == 0 && ast.ListLen(t, x.b) == 1 && c.kind == ast.EIdent {
+            a := acNamedFn(cx, f, Name(t, c.a))
+            if a.k == ACFn {
+                return a
+            }
+        }
+        if j == 0 && ast.ListLen(t, x.b) == 1 && c.kind == ast.ESelector && t.nodes[c.a].kind == ast.EIdent && fileImportOf(cx, f, Name(t, t.nodes[c.a].a)) >= 0 {
+            return acNamedFn(cx, f, "${Name(t, t.nodes[c.a].a)}.${Name(t, c.b)}")
+        }
+        // 値の呼び出し（呼び先がnamed fn typeの値かフィールドの関数値）の結果
+        b0 := acTarget(cx, ft, f, t, x.a, use)
+        b := if b0.k == ACField { acFieldFn(cx, f, b0) } else { b0 }
+        if b.k == ACFn {
+            dt := cx.trees[b.f]
+            return acResult(cx, f, b.f, dt.nodes[dt.nodes[b.n].c].b, j)
+        }
+        if b.k == ACFunc {
+            return acResult(cx, f, b.f, cx.trees[b.f].nodes[b.n].b, j)
+        }
+        return acNone()
+    }
+    if j != 0 {
+        return acNone()
+    }
+    if x.kind == ast.EIdent || x.kind == ast.ESelector || x.kind == ast.EIndex {
+        // 読み（elemassign.soberの `mut $eaKt := B[$eaKi]` を含む）
+        return acTarget(cx, ft, f, t, v, use)
+    }
+    if x.kind == ast.EIf || x.kind == ast.EBlock {
+        mut vs := mut []int{}
+        valTails(t, v, mut vs)
+        for u <- vs {
+            if u != v {
+                a := acValue(cx, ft, f, t, u, use, 0)
+                if a.k != ACUnknown {
+                    return a
+                }
+            }
+        }
+        return acNone()
+    }
+    if x.kind == ast.EComposite {
+        return acNamed(cx, f, Name(t, x.a), if ast.ListLen(t, x.c) > 0 { x.c } else { 0 - 1 })
+    }
+    if x.kind == ast.ESlicelit {
+        return AC{k: ACSlice, f: f, n: x.a, g: 0 - 1, q: 0 - 1}
+    }
+    if x.kind == ast.EMaplit {
+        return AC{k: ACMap, f: f, n: x.b, g: 0 - 1, q: 0 - 1}
+    }
+    return acNone()
+}
+
+// フィールドの値の位置の形bの関数型: named fn type（かそのoption）ならACFn、匿名の関数型ならACFunc
+func acFieldFn(cx Cx, f int, b AC) AC {
+    dt := cx.trees[b.f]
+    fte := dt.nodes[b.q].b
+    tf, tn := fnValFieldTy(cx, b.f, fte)
+    if tf >= 0 {
+        return AC{k: ACFn, f: tf, n: tn, g: 0 - 1, q: 0 - 1}
+    }
+    return AC{k: ACFunc, f: b.f, n: fte, g: 0 - 1, q: 0 - 1}
+}
+
+// 型パラメータtpの値の形: 仮引数の列ps（宣言の木dt）のうち型がちょうどtpの仮引数へ渡した実引数（実引数の列args）の形
+func acTyArg(cx Cx, ft FnTab, f int, t ast.Tree, dt ast.Tree, ps int, args int, tp string, use int) AC {
+    for q <- iter.Range(0, ast.ListLen(dt, ps)) {
+        p := dt.nodes[ast.ListAt(dt, ps, q)]
+        pt := acParamTE(dt, p.b)
+        if q < ast.ListLen(t, args) && pt >= 0 && dt.nodes[pt].kind == ast.TName && StrIs(dt, dt.nodes[pt].a, tp) {
+            a := acValue(cx, ft, f, t, ast.ListAt(t, args, q), use, 0)
+            if a.k != ACUnknown {
+                return a
+            }
+        }
+    }
+    return acNone()
+}
+
+// 結果の型式の列rl（ファイルdf）の j 番目の形
+func acResult(cx Cx, f int, df int, rl int, j int) AC {
+    dt := cx.trees[df]
+    if j >= ast.ListLen(dt, rl) {
+        return acNone()
+    }
+    return acTE(cx, f, df, ast.ListAt(dt, rl, j))
+}
+
+// 変換の呼び出し先の名前n: 値化可能なnamed fn typeならその形（関数の名前・他の型は不明）
+func acNamedFn(cx Cx, f int, n string) AC {
+    a := acNamed(cx, f, n, 0 - 1)
+    return if a.k == ACFn { a } else { acNone() }
+}
+
+// elemassign.soberが右辺を束ねた `$eaKv := V` の束縛の節（名前nmがその形でなければ -1）
+func acEaBind(t ast.Tree, nm string) int {
+    if !strings.HasPrefix(nm, "$ea") || !strings.HasSuffix(nm, "v") {
+        return 0 - 1
+    }
+    for i <- iter.Range(0, len(t.nodes)) {
+        x := t.nodes[i]
+        if x.kind == ast.SBind && ast.ListLen(t, x.a) == 1 && ast.ListLen(t, x.c) == 1 && Name(t, ast.ListAt(t, x.a, 0)) == nm {
+            return i
+        }
+    }
+    return 0 - 1
+}
+
+// 仮引数の型式（`mut T` の形は中身）
+func acParamTE(t ast.Tree, te int) int {
+    return if te >= 0 && t.nodes[te].kind == ast.TMutP { t.nodes[te].a } else { te }
+}

@@ -197,7 +197,7 @@ func leaseTrim(st mut St) {
     setCur(mut st, loop)
     condbr(mut st, cmp(mut st, CLe, k, hi), body, -1, done, -1)
     setCur(mut st, body)
-    s0 := load(mut st, gepWord(mut st, sg, k), 0)
+    s0 := slotReal(mut st, meta, load(mut st, gepWord(mut st, sg, k), 0), curTcb(mut st))
     // 予約ページ（移す前）は飛ばす。予約ページから移したスロットは普通のスロット
     s := s0
     used := bin(mut st, BSub, load(mut st, gepWord(mut st, meta, k), W_BUMP), s)

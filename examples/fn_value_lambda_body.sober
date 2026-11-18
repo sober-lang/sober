@@ -1,0 +1,31 @@
+package main
+
+// 値として持つラムダの結果が値化可能なnamed fn typeなら、本体の式もその値の位置（名前付き関数・ブロック・if式）
+
+type H func(x int) int
+
+type P func(n int) H
+
+func incr(x int) int {
+    return x + 1
+}
+
+func decr(x int) int {
+    return x - 1
+}
+
+func mk() P {
+    return (n int) => incr
+}
+
+func mkIf() P {
+    return (n int) => if n > 0 { incr } else { decr }
+}
+
+func g(p P) int {
+    return p(3)(1)
+}
+
+func main() {
+    println(mk()(3)(1), mkIf()(-1)(1), g((n int) => { incr }))
+}

@@ -1,0 +1,12 @@
+@@full	610c0d436c3705b7	1150	30475
+@head	7aaa9b710c68c96c	0	72
+func load	1a7a7b636b69e1ab	16	674
+func main	fc4172df96fabd88	33	1127
+func open	a3074ffcd7f10714	18	670
+func outer	26d51916dab5fc2f	16	625
+func passThrough	e153018dc423d7c1	12	460
+func plain	fe99cb5c99578aae	16	593
+func show	71162e091307b8d7	45	1802
+type Bad	a53642bb7d1a19de	2	112
+type NotFound	01dae4d47592bd72	2	120
+type Wrapped	a9cb59e3f6e2ca46	2	116

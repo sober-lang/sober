@@ -115,7 +115,7 @@ def genBase (t : Ty) : Rand Expr := do
   | .dom _ _ => return .triv
   | .own _ _ _ => return .triv
   | .fn _ _ => return .triv
-  | .tvar _ => return .triv
+  | .tvar _ _ _ => return .triv
   | .mus _ _ _ => return .triv
   | .rvar _ => return .triv
   | .muRs _ _ _ _ => return .triv
@@ -140,19 +140,28 @@ def tAB (r i : Nat) : Ty := .muRs r 2 i tABs
 def abBuild (me other i : Nat) : Expr :=
   .ite (.lt (.var 0) (.lit 1))
     (.fold (tAB 1 i) (.pair (.mkslice false (tAB 1 i)) (.mkslice false (tAB 1 (1 - i)))))
-    (.fold (tAB 1 i) (.pair (.append (.mkslice false (tAB 1 i)) (.call me [] (.add (.var 0) (.lit (-1)))))
-      (.append (.mkslice false (tAB 1 (1 - i))) (.call other [] (.add (.var 0) (.lit (-1)))))))
+    (.fold (tAB 1 i) (.pair (.append (.mkslice false (tAB 1 i)) (.call 1 me [] (.add (.var 0) (.lit (-1)))))
+      (.append (.mkslice false (tAB 1 (1 - i))) (.call 1 other [] (.add (.var 0) (.lit (-1)))))))
 def abCount (cMe cOther : Nat) : Expr :=
-  .add (.lit 1) (.add (.call cMe [] (.pair (.fst (.unfold (.var 0))) (.lit 0)))
-    (.call cOther [] (.pair (.snd (.unfold (.var 0))) (.lit 0))))
+  .add (.lit 1) (.add (.call 1 cMe [] (.pair (.fst (.unfold (.var 0))) (.lit 0)))
+    (.call 1 cOther [] (.pair (.snd (.unfold (.var 0))) (.lit 0))))
 def abCnt (i counter self : Nat) : Expr :=
   .ite (.lt (.snd (.var 0)) (.lenE (.fst (.var 0))))
-    (.add (.call counter [] (.index (.fst (.var 0)) (.snd (.var 0)) (some (tAB 0 i))))
-      (.call self [] (.pair (.fst (.var 0)) (.add (.snd (.var 0)) (.lit 1)))))
+    (.add (.call 1 counter [] (.index (.fst (.var 0)) (.snd (.var 0)) (some (tAB 0 i))))
+      (.call 1 self [] (.pair (.fst (.var 0)) (.add (.snd (.var 0)) (.lit 1)))))
     (.lit 0)
 /-- 値の I 族（opt を通る再帰 — 実装は 1 セルの箱）: cons の鎖 `L { v int; next L? }` -/
 def tCons (r : Nat) : Ty := .muR1 r (.prod .int (.opt (.rvar 0)))
 def tVal (r : Nat) : Ty := .muR1 r (.union .int (.union (.slice false 0 (.rvar 0)) (.map false 0 (.prod .int (.opt (.rvar 0))))))
+
+/-- 生成器の Def の型パラメータの kind: mut と端点を持たず、region を上げると部分型（id の戻りを T@1 に置ける） -/
+def kImm : Kind := { rf := false, mf := true, cf := true, cov := true, kf := false }
+
+/-- 型パラメータの kind の性質ごとに 1 形（32〜35）: 何も要求しない・端点を持たないだけ・region を持たない（imm 込み）・mapのキー -/
+def kAny : Kind := { rf := false, mf := false, cf := false, cov := false, kf := false }
+def kC : Kind := { rf := false, mf := false, cf := true, cov := false, kf := false }
+def kR : Kind := { rf := true, mf := true, cf := true, cov := true, kf := false }
+def kK : Kind := { rf := false, mf := true, cf := true, cov := true, kf := true }
 
 /-- ベクタ共通の関数表（V3-1: 閉じた関数値を踏むため）。本体は base の世界
 （Γ = [param]、d = 2、f = 1、b = 0）で型付く。2 番は関数値を受けて callv する高階 Def -/
@@ -160,9 +169,9 @@ def genDefs : Defs :=
   [ { param := .int, ret := .int, body := .add (.var 0) (.lit 1) }
   , { param := .int, ret := .bool, body := .cmp .gt (.var 0) (.lit 0) }
   , { param := .prod (.fn .int .int) .int, ret := .int,
-      body := .callv (.fst (.var 0)) (.snd (.var 0)) }
+      body := .callv 1 (.fst (.var 0)) (.snd (.var 0)) }
   -- 3 = id[T]（V3-2: 型パラメータ。ターゲット型はすべて loc-free なので型引数になれる）
-  , { tparams := 1, param := .tvar 0, ret := .tvar 0, body := .var 0 }
+  , { kinds := [kImm], param := .tvar 0 0 kImm, ret := .tvar 0 1 kImm, body := .ann (.var 0) (.tvar 0 1 kImm) }
   -- 4〜6（R0）: 自フレームで作った slice を opt / union に包んで返す Def と、それを imm 引数に取る Def。
   -- call 結果の値ラッパの中のコンテナが呼び手最内へ締まり、別の Def の imm 引数へ渡せる
   , { param := .int, ret := .opt (.slice false 1 .int),
@@ -172,11 +181,11 @@ def genDefs : Defs :=
   , { param := .int, ret := .union (.slice false 1 .int) .int,
       body := .ite (.cmp .gt (.var 0) (.lit 0)) (.inl .int (.append (.mkslice false .int) (.var 0)))
         (.inr (.slice false 1 .int) (.var 0)) }
-  -- 7（R2）: mut 引数で再帰する Def（callM = anchor つき呼び出し）
+  -- 7（R2）: mut 引数で再帰する Def（call = anchor つき呼び出し）
   , { param := .prod (.ref true 0 .int) .int, ret := .unit
       body := .ite (.cmp .gt (.snd (.var 0)) (.lit 0))
         (.letE (.assign (.fst (.var 0)) (.add (.deref (.fst (.var 0))) (.snd (.var 0))))
-          (.callM 7 [] (.pair (.fst (.var 1)) (.arith .sub (.snd (.var 1)) (.lit 1)))))
+          (.call 0 7 [] (.pair (.fst (.var 1)) (.arith .sub (.snd (.var 1)) (.lit 1)))))
         .triv }
   -- 8〜14（Gen 総追いつき段 A）: string / float / 宛先構築 / 境界コピー / 総称の slice / mut の slice・map の anchor
   -- 8: string 仮引数（eqs と region 1 の strlit・lenE）
@@ -190,13 +199,13 @@ def genDefs : Defs :=
   -- 11: 自フレームで連結した string を境界コピーで呼び手空間へ
   , { param := tString 0, ret := tString 0,
       body := .copyTo 0 (tString 0) (.concat (.var 0) (.strlit [33] 1)) }
-  -- 12: 総称の slice（tparams = 1）
-  , { tparams := 1, param := .slice false 0 (.tvar 0), ret := .int, body := .lenE (.var 0) }
-  -- 13: mut slice の anchor（callM）— append と setidx
+  -- 12: 総称の slice（型パラメータ 1 つ）
+  , { kinds := [kImm], param := .slice false 0 (.tvar 0 0 kImm), ret := .int, body := .lenE (.var 0) }
+  -- 13: mut slice の anchor（call）— append と setidx
   , { param := .prod (.slice true 0 .int) .int, ret := .unit,
       body := .letE (.append (.fst (.var 0)) (.snd (.var 0)))
         (.setidx (.fst (.var 1)) (.lit 0) (.snd (.var 1))) }
-  -- 14: mut map の anchor（callM）— setm
+  -- 14: mut map の anchor（call）— setm
   , { param := .prod (.map true 0 (.prod .int (.opt .int))) .int, ret := .unit,
       body := .letE (.setm (.fst (.var 0)) (.snd (.var 0)) (.snd (.var 0))) .triv }
   -- 15〜16（段 6 P3a — Def の本体の par の解禁）: 関数の中で scope を開き、仮引数を子へ渡す（join / 死んだ子を try）
@@ -212,20 +221,20 @@ def genDefs : Defs :=
         (.letE (.ifnil (.recv (.snd (.var 1))) (.lit 0) (.var 0)) (.letE (.join (ktI .unit) (.var 1)) (.var 1))))) }
   -- 18〜20（再帰型 — iso の S）: 18 = 自己適用（μ を開いて自分に自分を渡す）・19 = 状態関数（自分を fold して返す）・
   -- 20 = next 形（自分の slice を受けて長さを返す）。関数値の型は unfold の展開と一致する
-  , { param := tMuS, ret := .int, body := .callv (.unfold (.var 0)) (.var 0) }
+  , { param := tMuS, ret := .int, body := .callv 1 (.unfold (.var 0)) (.var 0) }
   , { param := .int, ret := tMuN, body := .fold tMuN (.fnref 19 []) }
   , { param := .prod .int (.slice false 0 tMw), ret := .int, body := .add (.fst (.var 0)) (.lenE (.snd (.var 0))) }
   -- 21〜23（再帰型 — D）: 21 = 深さ n の完全二分木を自フレームで組んで返す（返り境界の写しが μ を開く）・
   -- 22 = 節の数（unfold して子の slice を 23 へ）・23 = 子を順に数えて足す
   , { param := .int, ret := tTree 1,
       body := .ite (.lt (.var 0) (.lit 1)) (.fold (tTree 1) (.mkslice false (tTree 1)))
-        (.fold (tTree 1) (.append (.append (.mkslice false (tTree 1)) (.call 21 [] (.add (.var 0) (.lit (-1)))))
-          (.call 21 [] (.add (.var 0) (.lit (-1)))))) }
-  , { param := tTree 0, ret := .int, body := .add (.lit 1) (.call 23 [] (.pair (.unfold (.var 0)) (.lit 0))) }
+        (.fold (tTree 1) (.append (.append (.mkslice false (tTree 1)) (.call 1 21 [] (.add (.var 0) (.lit (-1)))))
+          (.call 1 21 [] (.add (.var 0) (.lit (-1)))))) }
+  , { param := tTree 0, ret := .int, body := .add (.lit 1) (.call 1 23 [] (.pair (.unfold (.var 0)) (.lit 0))) }
   , { param := .prod (.slice false 0 (tTree 0)) .int, ret := .int,
       body := .ite (.lt (.snd (.var 0)) (.lenE (.fst (.var 0))))
-        (.add (.call 22 [] (.index (.fst (.var 0)) (.snd (.var 0)) (some (tTree 0))))
-          (.call 23 [] (.pair (.fst (.var 0)) (.add (.snd (.var 0)) (.lit 1)))))
+        (.add (.call 1 22 [] (.index (.fst (.var 0)) (.snd (.var 0)) (some (tTree 0))))
+          (.call 1 23 [] (.pair (.fst (.var 0)) (.add (.snd (.var 0)) (.lit 1)))))
         (.lit 0) }
   -- 24〜29（同時の μ — 相互再帰の組 A ↔ B）: 24 / 25 = buildA / buildB（深さ n — 返り境界の写しが組の μ を開く）・
   -- 26 / 27 = countA / countB（unfold して両方の子の slice を 28 / 29 へ）・28 / 29 = 子の slice を順に数える
@@ -238,9 +247,22 @@ def genDefs : Defs :=
   -- 30 / 31（opt を通る再帰 — 値の I 族）: 30 = 長さ n + 1 の cons の鎖を組む（返り境界の写しが μ と opt を開く）・31 = 値の和
   , { param := .int, ret := tCons 1,
       body := .ite (.lt (.var 0) (.lit 1)) (.fold (tCons 1) (.pair (.var 0) (.nil (tCons 1))))
-        (.fold (tCons 1) (.pair (.var 0) (.some (.call 30 [] (.add (.var 0) (.lit (-1))))))) }
+        (.fold (tCons 1) (.pair (.var 0) (.some (.call 1 30 [] (.add (.var 0) (.lit (-1))))))) }
   , { param := tCons 0, ret := .int,
-      body := .add (.fst (.unfold (.var 0))) (.ifnil (.snd (.unfold (.var 0))) (.lit 0) (.call 31 [] (.var 0))) } ]
+      body := .add (.fst (.unfold (.var 0))) (.ifnil (.snd (.unfold (.var 0))) (.lit 0) (.call 1 31 [] (.var 0))) }
+  -- 32〜35（型引数の kind）: 32 = 値を使わない（kind は何も要求しない — mut や region を持つ型も渡せる）・
+  -- 33 = mut の slice の中で入れ替える（端点を持たないことだけ）・34 = union の腕の束縛をそのまま返す（region を持たない）・
+  -- 35 = 要素を map のキーに置く（キーにできる型）
+  , { kinds := [kAny], param := .tvar 0 0 kAny, ret := .int, body := .lit 0 }
+  , { kinds := [kC], param := .prod (.slice true 0 (.tvar 0 0 kC)) .int, ret := .unit,
+      body := .setidx (.fst (.var 0)) (.snd (.var 0)) (.copyTo 0 (.tvar 0 0 kC) (.index (.fst (.var 0)) (.lit 0) none)) }
+  , { kinds := [kR], param := .prod (.union (.tvar 0 0 kR) .unit) (.tvar 0 0 kR), ret := .tvar 0 0 kR,
+      body := .letE (.fst (.var 0)) (.letE (.snd (.var 1)) (.case (.var 1) (.var 0) (.var 1))) }
+  , { kinds := [kK], param := .slice false 0 (.tvar 0 0 kK), ret := .int,
+      body := .ite (.lt (.lit 0) (.lenE (.var 0)))
+        (.lenm (.setm (.mkmap true (.prod (.tvar 0 1 kK) (.opt .int)))
+          (.copyTo 1 (.tvar 0 1 kK) (.index (.var 0) (.lit 0) (some (.tvar 0 0 kK)))) (.lit 1)))
+        (.lit 0) } ]
 
 /-- Γ にある ref true の (index, region, ペイロード型) -/
 def mutRefsOf (Γ : Ctx) : List (Nat × Nat × Ty) :=
@@ -310,8 +332,8 @@ def genSmall (t : Ty) (Γ : Ctx) : Rand Expr := do
 
 /-- コンテナの腕の op -/
 inductive COp where
-  | len | index | setidx | append | subslice | concat | eqs | freeze | callG | callM13 | callStr
-  | lenm | getm | setm | delm | keysm | freezem | callM14 | cloneS | cloneM
+  | len | index | setidx | append | subslice | concat | eqs | freeze | callG | call13 | callStr
+  | lenm | getm | setm | delm | keysm | freezem | call14 | cloneS | cloneM
   deriving Inhabited, BEq
 
 /-- Γ の i 番の slice（mut m・region r・要素 s）を 1 回使う項と、その結果型 -/
@@ -330,7 +352,7 @@ def useSlice (Γ : Ctx) (b d i : Nat) (m : Bool) (r : Nat) (s : Ty) : Rand (Expr
     , (if isStr then 2 else 0, .eqs)
     , (if m then 2 else 0, .freeze)
     , (if !m && canW && lf then 2 else 0, .callG)
-    , (if m && s == .int && decide (b ≤ r) && decide (r + 1 ≤ d) then 2 else 0, .callM13)
+    , (if m && s == .int && decide (b ≤ r) && decide (r + 1 ≤ d) then 2 else 0, .call13)
     , (if isStr && canW then 2 else 0, .callStr)
     , (if canW && s.regionsBelow d then 2 else 0, .cloneS) ]
   let xs := Expr.var i
@@ -353,14 +375,14 @@ def useSlice (Γ : Ctx) (b d i : Nat) (m : Bool) (r : Nat) (s : Ty) : Rand (Expr
       | none => return xs)
     return (.eqs xs other, .bool)
   | .freeze => return (.freeze xs, .slice false r s)
-  | .callG => return (.call 12 [s] xs, .int)
-  | .callM13 => return (.callM 13 [] (.pair xs (← genSmall .int Γ)), .unit)
+  | .callG => return (.call (d - 1) 12 [s] xs, .int)
+  | .call13 => return (.call r 13 [] (.pair xs (← genSmall .int Γ)), .unit)
   | .cloneS =>
     -- 注釈なしは mut か annFree の要素に限る（readAs — index と同じ）
     let ot : Option Ty := if (m || s.annFree) && (← rnd 1) = 0 then none else some s
     return (.clone ot xs, .slice true (d - 1) s)
   | _ => -- callStr
-    if (← rnd 1) = 0 then return (.call 8 [] xs, .int) else return (.lenE (.call 11 [] xs), .int)
+    if (← rnd 1) = 0 then return (.call (d - 1) 8 [] xs, .int) else return (.lenE (.call (d - 1) 11 [] xs), .int)
 
 /-- Γ の i 番の map（mut m・region r・キー k・値 v）を 1 回使う項と、その結果型 -/
 def useMap (Γ : Ctx) (b d i : Nat) (m : Bool) (r : Nat) (k v : Ty) : Rand (Expr × Ty) := do
@@ -385,7 +407,7 @@ def useMap (Γ : Ctx) (b d i : Nat) (m : Bool) (r : Nat) (k v : Ty) : Rand (Expr
     , (if m && key.isSome then 3 else 0, .delm)
     , (if canW then 2 else 0, .keysm)
     , (if m then 2 else 0, .freezem)
-    , (if m && k == .int && v == .int && decide (b ≤ r) && decide (r + 1 ≤ d) then 2 else 0, .callM14)
+    , (if m && k == .int && v == .int && decide (b ≤ r) && decide (r + 1 ≤ d) then 2 else 0, .call14)
     , (if canW && (Ty.prod k (.opt v)).regionsBelow d then 2 else 0, .cloneM) ]
   let mx := Expr.var i
   match op with
@@ -394,7 +416,7 @@ def useMap (Γ : Ctx) (b d i : Nat) (m : Bool) (r : Nat) (k v : Ty) : Rand (Expr
   | .delm => return (.delm v mx (key.getD (.lit 0)), .unit)
   | .keysm => return (.keysm mx, .slice false (d - 1) k)
   | .freezem => return (.freeze mx, .map false r (.prod k (.opt v)))
-  | .callM14 => return (.callM 14 [] (.pair mx (← genSmall .int Γ)), .unit)
+  | .call14 => return (.call r 14 [] (.pair mx (← genSmall .int Γ)), .unit)
   | .cloneM =>
     -- map のセル型は opt を含む（annFree でない）ので imm の写しは注釈つき
     let ot : Option Ty := if m && (← rnd 1) = 0 then none else some (.prod k (.opt v))
@@ -409,7 +431,7 @@ def useRef (Γ : Ctx) (b d i r : Nat) (s : Ty) : Rand (Expr × Ty) := do
   | 2 =>
     -- R2: mut int ref を anchor にして再帰する Def 7 へ（b ≤ anchor ≤ 呼び手最内）
     if s == .int && decide (b ≤ r) && decide (r + 1 ≤ d) then
-      return (.callM 7 [] (.pair (.var i) (← genSmall .int Γ)), .unit)
+      return (.call r 7 [] (.pair (.var i) (← genSmall .int Γ)), .unit)
     else return (.deref (.var i), s)
   | _ => return (.deref (.var i), s)
 
@@ -424,7 +446,7 @@ def useAt (Γ : Ctx) (b d i : Nat) : Rand (Option (Expr × Ty)) := do
 /-- 型指向の腕 -/
 inductive Arm where
   | base | letE | ite | case | ifnil | block | alloc | mutop | allocDeref | whileE | chan | pair
-  | op | fn | callM | label | par | unreach | mkc | usec | task | recD
+  | op | fn | call | label | par | unreach | mkc | usec | task | recD | targ
   deriving Inhabited, BEq
 
 /-- 型 t の well-typed な項を生成する。f = 0 / Ξ = Ψ = [] 前提（sober-check と同じ土俵）。
@@ -453,27 +475,63 @@ def genTyped (t : Ty) (Γ : Ctx) (b d : Nat) : Nat → Rand Expr
       , (3, .whileE), (3, .chan), (4, .pair)
       , (if scalar then 7 else 0, .op)
       , (4, .fn)
-      , (if canW && t == .int then 2 else 0, .callM)
+      , (if canW && t == .int then 2 else 0, .call)
       , (3, .label)
       , (if Γ.all Ty.mutFree then 2 else 0, .par)
       , (1, .unreach)
       , (if canW then 6 else 0, .mkc)
       , (if sls.isEmpty && mps.isEmpty then 0 else 18, .usec)
       , (if t.regionsBelow 0 && t.chanFree && decide (b < d) then 3 else 0, .task)
-      , (if canW && t == .int then 2 else 0, .recD) ]
+      , (if canW && t == .int then 2 else 0, .recD)
+      , (if canW && t == .int then 3 else 0, .targ) ]
     match arm with
     | .base => genTyped t Γ b d 0
     -- 再帰型（D）: 木を組んで数える（境界コピーが μ を開く）・呼び出しの結果の木を開いて子の数・その場で fold した葉を数える
     | .recD => do
       match ← rnd 6 with
-      | 5 => return .call 31 [] (.call 30 [] (← pickD [.lit 0, .lit 1, .lit 3, ← genTyped .int Γ b d fuel]))
-      | 0 => return .call 22 [] (.call 21 [] (← pickD [.lit 0, .lit 1, .lit 2, ← genTyped .int Γ b d fuel]))
-      | 1 => return .lenE (.unfold (.call 21 [] (.lit (Int.ofNat (← rnd 2)))))
-      | 2 => return .call 22 [] (.fold (tTree (d - 1)) (.mkslice false (tTree (d - 1))))
+      | 5 => return .call (d - 1) 31 [] (.call (d - 1) 30 [] (← pickD [.lit 0, .lit 1, .lit 3, ← genTyped .int Γ b d fuel]))
+      | 0 => return .call (d - 1) 22 [] (.call (d - 1) 21 [] (← pickD [.lit 0, .lit 1, .lit 2, ← genTyped .int Γ b d fuel]))
+      | 1 => return .lenE (.unfold (.call (d - 1) 21 [] (.lit (Int.ofNat (← rnd 2)))))
+      | 2 => return .call (d - 1) 22 [] (.fold (tTree (d - 1)) (.mkslice false (tTree (d - 1))))
       -- 同時の μ: 組んで数える・A の子の B を B の数え手へ（組の成分の型が文脈で変わらない）
-      | 3 => return .call 26 [] (.call 24 [] (← pickD [.lit 0, .lit 1, .lit 2, ← genTyped .int Γ b d fuel]))
-      | 4 => return .call 28 [] (.pair (.snd (.unfold (.call 25 [] (.lit (Int.ofNat (← rnd 2)))))) (.lit 0))
-      | _ => return .call 27 [] (.fold (tAB (d - 1) 1) (.pair (.mkslice false (tAB (d - 1) 1)) (.mkslice false (tAB (d - 1) 0))))
+      | 3 => return .call (d - 1) 26 [] (.call (d - 1) 24 [] (← pickD [.lit 0, .lit 1, .lit 2, ← genTyped .int Γ b d fuel]))
+      | 4 => return .call (d - 1) 28 [] (.pair (.snd (.unfold (.call (d - 1) 25 [] (.lit (Int.ofNat (← rnd 2)))))) (.lit 0))
+      | _ => return .call (d - 1) 27 [] (.fold (tAB (d - 1) 1) (.pair (.mkslice false (tAB (d - 1) 1)) (.mkslice false (tAB (d - 1) 0))))
+    -- 型引数の kind（32〜35・3・12）: region や mut を持つ型を型引数にする
+    | .targ => do
+      let a := d - 1
+      let sA := tString a
+      let mI := Ty.slice true a .int
+      match ← rnd 8 with
+      | 0 => -- 32: Γ の変数をそのまま型引数に（mut の器は anchor = その region）
+        let cs := (List.range Γ.length).filterMap fun i =>
+          match Γ[i]? with
+          | some ty =>
+            if !(ty.argFree && ty.recOk) then none
+            else if ty.mutFree then some (i, ty, a)
+            else match ty with
+              | .slice true r _ | .map true r _ | .ref true r _ => if decide (b ≤ r) then some (i, ty, r) else none
+              | _ => none
+          | none => none
+        -- region か mut を持つ変数を先に選ぶ（loc-free の型引数は 3 番の呼び出しが覆う）
+        let cs' := cs.filter fun (_, ty, _) => !(ty.regionsBelow 0 && ty.mutFree)
+        if cs.isEmpty then return .call a 32 [mI] (.mkslice true .int)
+        let (i, ty, an) ← pickD (if cs'.isEmpty then cs else cs')
+        return .call an 32 [ty] (.var i)
+      | 1 => -- 33: mut の slice を持つ型を、mut の slice の中で入れ替える
+        let xs := Expr.append (.append (.mkslice true mI) (.append (.mkslice true .int) (← genTyped .int Γ b d fuel))) (.mkslice true .int)
+        return .letE xs (.letE (.call a 33 [mI] (.pair (.var 0) (.lit 1))) (.lenE (.index (.var 1) (.lit 0) none)))
+      | 2 => -- 33: string
+        let xs := Expr.append (.append (.mkslice true sA) (.strlit (← genBytes) a)) (.strlit (← genBytes) a)
+        return .letE xs (.letE (.call a 33 [sA] (.pair (.var 0) (.lit 0))) (.lenE (.index (.var 1) (.lit 1) none)))
+      | 3 => return .call a 34 [.int] (.pair (.inl .unit (← genTyped .int Γ b d fuel)) (← genTyped .int Γ b d fuel))
+      | 4 => -- 34: 関数値を型引数に
+        let fT := Ty.fn .int .int
+        return .callv a (.call a 34 [fT] (.pair (.inr fT .triv) (.fnref 0 []))) (← genTyped .int Γ b d fuel)
+      | 5 => return .call a 35 [.int] (.freeze (.append (.mkslice true .int) (← genTyped .int Γ b d fuel)))
+      | 6 => return .call a 35 [sA] (.freeze (.append (.mkslice true sA) (.strlit (← genBytes) a)))
+      | 7 => return .lenE (.call a 3 [sA] (.strlit (← genBytes) a))
+      | _ => return .call a 12 [sA] (.freeze (.append (.mkslice true sA) (.strlit (← genBytes) a)))
     | .letE => do
       let s ← genTy 1
       let e ← genTyped s Γ b d fuel
@@ -504,7 +562,7 @@ def genTyped (t : Ty) (Γ : Ctx) (b d : Nat) : Nat → Rand Expr
       else return .letE (.alloc m e) (← genTyped t Γ' b d fuel)
     | .allocDeref =>
       return .deref (.alloc true (← genTyped t Γ b d fuel))
-    | .mutop => do -- assign / freeze / deref / callM（Γ の mut ref を使う — useRef）
+    | .mutop => do -- assign / freeze / deref / call（Γ の mut ref を使う — useRef）
       let (i, _, _) ← pickD muts
       match ← useAt Γ b d i with
       | some (e, ty) => return .letE e (← genTyped t (ty :: Γ) b d fuel)
@@ -569,65 +627,65 @@ def genTyped (t : Ty) (Γ : Ctx) (b d : Nat) : Nat → Rand Expr
           let op ← pickD [FArithOp.add, .sub, .mul, .div]
           return .farith op (← genTyped .f64 Γ b d fuel) (← genTyped .f64 Γ b d fuel)
     | .fn => do -- 関数値（genDefs を参照）: callv / 関数値を束縛して callv / 高階 Def に渡す
-      -- callv / call は深さ D = d' + 1 で b ≤ d' が要る（call と同じ）
+      -- 呼び出しは深さ D = d' + 1 で b ≤ anchor ≤ d' が要る。ふつうの呼び出しの anchor は d'
       if !canW then return .block (← genTyped t Γ b (d + 1) fuel)
       else if (← rnd 1) = 0 then
         -- ジェネリック Def を任意のターゲット型で呼ぶ（直接 / 型適用つき関数値）
         let arg ← genTyped t Γ b d fuel
-        if (← rnd 1) = 0 then return .call 3 [t] arg
-        else return .callv (.fnref 3 [t]) arg
+        if (← rnd 1) = 0 then return .call (d - 1) 3 [t] arg
+        else return .callv (d - 1) (.fnref 3 [t]) arg
       else
         match t with
         | .int => do
           match ← rnd 11 with
-          | 0 => return .callv (.fnref 0 []) (← genTyped .int Γ b d fuel)
+          | 0 => return .callv (d - 1) (.fnref 0 []) (← genTyped .int Γ b d fuel)
           -- 再帰型（S）: fold した関数値を unfold して呼ぶ・自己適用の Def・状態関数の結果を開く・next 形に自分の slice を渡す
           | 9 | 10 | 11 => do
             let fS := Expr.fold tMuS (.fnref 18 [])
             let fW := Expr.fold tMw (.fnref 20 [])
             match ← rnd 3 with
-            | 0 => return .call 18 [] fS
-            | 1 => return .callv (.unfold fS) fS
+            | 0 => return .call (d - 1) 18 [] fS
+            | 1 => return .callv (d - 1) (.unfold fS) fS
             | 2 =>
-              return .letE (.callv (.unfold (.call 19 [] (← genTyped .int Γ b d fuel))) (← genTyped .int Γ b d fuel))
+              return .letE (.callv (d - 1) (.unfold (.call (d - 1) 19 [] (← genTyped .int Γ b d fuel))) (← genTyped .int Γ b d fuel))
                 (← genTyped .int (tMuN :: Γ) b d fuel)
             | _ =>
-              return .callv (.unfold fW) (.pair (← genTyped .int Γ b d fuel) (.append (.mkslice false tMw) fW))
+              return .callv (d - 1) (.unfold fW) (.pair (← genTyped .int Γ b d fuel) (.append (.mkslice false tMw) fW))
           -- L1: anchor つきの関数値の呼び出し（mut を持たない仮引数でも anchor は b〜d - 1 のどこでも型が付く）
           | 6 => do
             let a := if (← rnd 1) = 0 then b else d - 1
-            return .callMv a (.fnref 0 []) (← genTyped .int Γ b d fuel)
-          | 1 => return .letE (.fnref 0 []) (.callv (.var 0) (← genTyped .int (.fn .int .int :: Γ) b d fuel))
-          | 2 => return .call 2 [] (.pair (.fnref 0 []) (← genTyped .int Γ b d fuel))
+            return .callv a (.fnref 0 []) (← genTyped .int Γ b d fuel)
+          | 1 => return .letE (.fnref 0 []) (.callv (d - 1) (.var 0) (← genTyped .int (.fn .int .int :: Γ) b d fuel))
+          | 2 => return .call (d - 1) 2 [] (.pair (.fnref 0 []) (← genTyped .int Γ b d fuel))
           -- R0: opt / union の中の slice を別の Def へ転送（中身は呼び手最内 d - 1 に締まる）
-          | 3 => return .ifnil (.call 4 [] (← genTyped .int Γ b d fuel)) (← genTyped .int Γ b d fuel) (.call 5 [] (.var 0))
-          | 4 => return .case (.call 6 [] (← genTyped .int Γ b d fuel)) (.call 5 [] (.var 0)) (.var 0)
+          | 3 => return .ifnil (.call (d - 1) 4 [] (← genTyped .int Γ b d fuel)) (← genTyped .int Γ b d fuel) (.call (d - 1) 5 [] (.var 0))
+          | 4 => return .case (.call (d - 1) 6 [] (← genTyped .int Γ b d fuel)) (.call (d - 1) 5 [] (.var 0)) (.var 0)
           -- 段 6 P3a: 本体で scope を開く Def（15 = join・16 = 死んだ子を try — scope の値は union）
           | 5 =>
             match ← rnd 2 with
-            | 0 => return .case (.call 15 [] (← genTyped .int Γ b d fuel)) (.var 0) (.lit 0)
-            | 1 => return .case (.call 17 [] (← genTyped .int Γ b d fuel)) (.var 0) (.lit 3)
+            | 0 => return .case (.call (d - 1) 15 [] (← genTyped .int Γ b d fuel)) (.var 0) (.lit 0)
+            | 1 => return .case (.call (d - 1) 17 [] (← genTyped .int Γ b d fuel)) (.var 0) (.lit 3)
             | _ =>
-              return .case (.call 16 [] (← genTyped .int Γ b d fuel)) (.ifnil (.var 0) (.lit 1) (.var 0)) (.lit 2)
+              return .case (.call (d - 1) 16 [] (← genTyped .int Γ b d fuel)) (.ifnil (.var 0) (.lit 1) (.var 0)) (.lit 2)
           -- string の Def（8 / 10 / 11）
           | _ =>
             match ← genStrAny Γ b d 1 with
             | some s =>
               match ← rnd 2 with
-              | 0 => return .call 8 [] s
-              | 1 => return .lenE (.call 11 [] s)
-              | _ => return .call 8 [] (.call 10 [] (← genTyped .int Γ b d fuel))
-            | none => return .lenE (.call 10 [] (← genTyped .int Γ b d fuel))
+              | 0 => return .call (d - 1) 8 [] s
+              | 1 => return .lenE (.call (d - 1) 11 [] s)
+              | _ => return .call (d - 1) 8 [] (.call (d - 1) 10 [] (← genTyped .int Γ b d fuel))
+            | none => return .lenE (.call (d - 1) 10 [] (← genTyped .int Γ b d fuel))
         | .bool => do
-          if (← rnd 1) = 0 then return .callv (.fnref 1 []) (← genTyped .int Γ b d fuel)
-          else return .callMv (if (← rnd 1) = 0 then b else d - 1) (.fnref 1 []) (← genTyped .int Γ b d fuel)
-        | .f64 => return .call 9 [] (← genTyped .f64 Γ b d fuel)
-        | .byte => return .index (.call 10 [] (← genTyped .int Γ b d fuel)) (.lit 0)
+          if (← rnd 1) = 0 then return .callv (d - 1) (.fnref 1 []) (← genTyped .int Γ b d fuel)
+          else return .callv (if (← rnd 1) = 0 then b else d - 1) (.fnref 1 []) (← genTyped .int Γ b d fuel)
+        | .f64 => return .call (d - 1) 9 [] (← genTyped .f64 Γ b d fuel)
+        | .byte => return .index (.call (d - 1) 10 [] (← genTyped .int Γ b d fuel)) (.lit 0)
         | _ => genTyped t Γ b d fuel
-    | .callM => do
+    | .call => do
       -- R2: mut ローカルを作り、1 段深い block から anchor つきで再帰する Def に渡す（anchor < 呼び手最内）
       let arg ← genTyped .int Γ b d fuel
-      return .letE (.alloc true arg) (.letE (.block (.callM 7 [] (.pair (.var 0) (.lit 3)))) (.deref (.var 1)))
+      return .letE (.alloc true arg) (.letE (.block (.call (d - 1) 7 [] (.pair (.var 0) (.lit 3)))) (.deref (.var 1)))
     | .label => do -- label / jump（V4）: 途中脱出・block 越えの脱出・入れ子の外側への脱出
       let c ← genTyped .bool Γ b d fuel
       match ← rnd 2 with
@@ -769,6 +827,10 @@ def genTyped (t : Ty) (Γ : Ctx) (b d : Nat) : Nat → Rand Expr
 -- chaos 生成器（reject 側。語彙全体・注釈も index もでたらめ）
 -- ────────────────────────────────────────────────────────────────
 
+/-- ランダムな kind（5 つの旗） -/
+def genKind : Rand Kind := do
+  return { rf := (← rnd 1) = 0, mf := (← rnd 1) = 0, cf := (← rnd 1) = 0, cov := (← rnd 1) = 0, kf := (← rnd 1) = 0 }
+
 /-- ref / chan / slice / map / tvar 込みのランダム型 -/
 def genChaosTy : Nat → Rand Ty
   | 0 => genScalarTy
@@ -789,7 +851,7 @@ def genChaosTy : Nat → Rand Ty
     | 12 => return .map ((← rnd 1) = 0) (← rnd 2) (.prod (← genChaosTy 0) (.opt (← genChaosTy fuel)))
     | 13 => pickD [tMuS, tMuN, tMw, .mu1 (← genChaosTy fuel), tNode (← rnd 2), tVal (← rnd 2), tCons (← rnd 2), .muR1 (← rnd 2) (← genChaosTy fuel), tAB (← rnd 2) (← rnd 1)]
     | 14 => return .rvar (← rnd 1)
-    | _ => return .tvar (← rnd 1)
+    | _ => return .tvar (← rnd 1) (← rnd 2) (← genKind)
 
 def genChaos : Nat → Rand Expr
   | 0 => do
@@ -833,15 +895,15 @@ def genChaos : Nat → Rand Expr
     | 24 => return .snd (← genChaos fuel)
     | 25 => do
       let ts ← (do if (← rnd 1) = 0 then return [] else return [← genChaosTy 1])
-      return .call (← rnd 14) ts (← genChaos fuel)
+      return .call (← rnd 2) (← rnd 14) ts (← genChaos fuel)
     | 26 => do
       let ts ← (do if (← rnd 1) = 0 then return [] else return [← genChaosTy 1])
       return .fnref (← rnd 14) ts
-    | 27 => return .callv (← genChaos fuel) (← genChaos fuel)
+    | 27 => return .callv (← rnd 2) (← genChaos fuel) (← genChaos fuel)
     | 28 => return .ann (← genChaos fuel) (← genChaosTy fuel)
     | 29 => return .label (← genChaosTy fuel) (← genChaos fuel)
     | 30 => return .jump (← rnd 2) (← genChaosTy fuel) (← genChaos fuel)
-    | 31 => return .callM (← rnd 14) [] (← genChaos fuel)
+    | 31 => return .call (← rnd 2) (← rnd 14) [] (← genChaos fuel)
     | 32 => return .blockR (← genChaosTy fuel) (← genChaos fuel)
     | 33 => return .copyTo (← rnd 2) (← genChaosTy fuel) (← genChaos fuel)
     | 34 => return .unreach (← genChaosTy fuel)
@@ -884,7 +946,7 @@ def genChaos : Nat → Rand Expr
     | 63 => do
       let ot : Option Ty ← (do if (← rnd 1) = 0 then return none else return some (← genChaosTy fuel))
       return .clone ot (← genChaos fuel)
-    | 64 => return .callMv (← rnd 2) (← genChaos fuel) (← genChaos fuel)
+    | 64 => return .callv (← rnd 2) (← genChaos fuel) (← genChaos fuel)
     | 65 => return .fold (← genChaosTy fuel) (← genChaos fuel)
     | 66 => return .unfold (← genChaos fuel)
     | 67 => return .dnew (← rnd 2) (← genChaos fuel) (← genChaosTy fuel)
@@ -911,9 +973,8 @@ def kids : Expr → List Expr
   | .ifnil e n s => [e, n, s]
   | .case e l r => [e, l, r]
   | .pair a b => [a, b]
-  | .call _ _ e | .callM _ _ e => [e]
-  | .callv f e => [f, e]
-  | .callMv _ f e => [f, e]
+  | .call _ _ _ e => [e]
+  | .callv _ f e => [f, e]
   | .ann e _ | .block e | .blockR _ e | .copyTo _ _ e | .label _ e | .jump _ _ e => [e]
   | .alloc _ e | .deref e | .freeze e => [e]
   | .assign l e => [l, e]
@@ -951,10 +1012,8 @@ def setKids (x : Expr) (cs : List Expr) : Expr :=
   | .ifnil _ _ _, [e, n, s] => .ifnil e n s
   | .case _ _ _, [e, l, r] => .case e l r
   | .pair _ _, [a, b] => .pair a b
-  | .call fn ts _, [e] => .call fn ts e
-  | .callM fn ts _, [e] => .callM fn ts e
-  | .callv _ _, [f, e] => .callv f e
-  | .callMv a _ _, [f, e] => .callMv a f e
+  | .call a fn ts _, [e] => .call a fn ts e
+  | .callv a _ _, [f, e] => .callv a f e
   | .ann _ t, [e] => .ann e t
   | .block _, [e] => .block e
   | .blockR t _, [e] => .blockR t e
@@ -1015,6 +1074,16 @@ def replF (newE : Expr) : Nat → Int → Expr → Expr × Int
         (acc.1 ++ [c'], k'')) ([], k - 1)
       (setKids e cs, k')
 
+/-- 型引数の kind の変異を当てられる呼び出し: 差し替えた後も結果の型が周りと合う形だけ（3 は string を、34 は int を返す所） -/
+def targAt (fn : Nat) (ts : List Ty) : Bool :=
+  match fn, ts with
+  | 3, [.slice false _ .byte] | 34, [.int] => true
+  | 12, [_] | 33, [_] | 35, [_] => true
+  | _, _ => false
+
+/-- 端点を持つ型（chan）を、端点を持たないことだけを要求する 33 番に渡す（結果は unit） -/
+def targCf (a : Nat) : Expr := .call a 33 [.chan a .int] (.pair (.mkslice true (.chan a .int)) (.lit 0))
+
 /-- 変異の種別: その節に当てられるもの（1 か所だけ・1 規則だけ破る狙い） -/
 def mutKinds : Expr → List String
   | .alloc _ _ | .mkslice _ _ => ["flag"]
@@ -1025,11 +1094,12 @@ def mutKinds : Expr → List String
   | .scope _ _ _ | .tryJ _ _ | .join _ _ => ["annty"]
   | .copyTo _ _ _ | .dnew _ _ _ => ["region", "annty"]
   | .denter _ _ => ["annty"]
-  | .callMv _ _ _ => ["region"]
+  | .callv _ _ _ => ["region"]
+  | .call _ fn ts _ => if targAt fn ts then ["fn", "region", "targ"] else ["fn", "region"]
   | .var _ => ["var"]
   | .ann _ _ | .nil _ | .inl _ _ | .inr _ _ | .label _ _ | .unreach _ | .getm _ _ _ | .delm _ _ _ => ["annty"]
   | .jump _ _ _ => ["jump", "annty"]
-  | .call _ _ _ | .callM _ _ _ | .fnref _ _ => ["fn"]
+  | .fnref _ _ => ["fn"]
   | .lit _ | .tt | .ff | .tobyte _ | .toint _ | .eqs _ _ | .add _ _ | .lenE _ | .lenm _
   | .arith _ _ _ | .farith _ _ _ => ["op"]
   | .index _ _ _ => ["idx"]
@@ -1062,7 +1132,8 @@ def applyMut (kind : String) (e : Expr) : Rand Expr := do
   | "region", .dnew r i t => return .dnew (← bumpR r) i t
   | "annty", .dnew r i t => return .dnew r i (← otherTy t)
   | "annty", .denter t x => return .denter (← otherTy t) x
-  | "region", .callMv a f x => return .callMv (← bumpR a) f x
+  | "region", .callv a f x => return .callv (← bumpR a) f x
+  | "region", .call a fn ts x => return .call (← bumpR a) fn ts x
   | "key", .mkmap m (.prod _ v) => return .mkmap m (.prod (← pickD [Ty.bool, .f64, .opt .int]) v)
   | "key", .mkmapAt m (.prod _ v) r => return .mkmapAt m (.prod (← pickD [Ty.bool, .f64, .opt .int]) v) r
   | "var", .var i => return .var (← bumpR i)
@@ -1080,10 +1151,19 @@ def applyMut (kind : String) (e : Expr) : Rand Expr := do
   | "annty", .tryJ t x => return .tryJ (← otherTy t) x
   | "annty", .join t x => return .join (← otherTy t) x
   | "jump", .jump n t x => return .jump (← bumpR n) t x
-  | "fn", .call fn ts x =>
-    if (← rnd 1) = 0 then return .call (← rnd 14) ts x
-    else return .call fn (if ts.isEmpty then [.int] else []) x
-  | "fn", .callM fn ts x => return .callM (← rnd 14) ts x
+  -- 型引数を kind に反する型へ（実引数もその型で作り直す。結果の型が周りと合う所だけ — targAt）
+  -- int を返す所（12・34・35）は、欠ける性質（mf・cf・rf・kf）を乱択する
+  | "targ", .call a 3 _ _ => return .call a 3 [.slice true a .byte] (.mkslice true .byte)
+  | "targ", .call a 33 _ _ => return targCf a
+  | "targ", .call a _ _ _ =>
+    match ← rnd 3 with
+    | 0 => return .call a 12 [.slice true a .int] (.mkslice false (.slice true a .int))
+    | 1 => return .letE (targCf a) (.lit 0)
+    | 2 => return .lenE (.call a 34 [tString a] (.pair (.inr (tString a) .triv) (.strlit [97] a)))
+    | _ => return .call a 35 [.bool] (.freeze (.append (.mkslice true .bool) .tt))
+  | "fn", .call a fn ts x =>
+    if (← rnd 1) = 0 then return .call a (← rnd 14) ts x
+    else return .call a fn (if ts.isEmpty then [.int] else []) x
   | "fn", .fnref fn ts =>
     if (← rnd 1) = 0 then return .fnref (← rnd 14) ts
     else return .fnref fn (if ts.isEmpty then [.int] else [])
@@ -1110,10 +1190,11 @@ def mutFuel : Nat := 1000
 def mutate (e : Expr) : Rand (Expr × String) := do
   let ns := nodesF mutFuel e
   -- 種別を先に一様に選び（lit の多さで op に偏らないように）、その種別を当てられる節から 1 つ
-  let kinds := ["flag", "region", "key", "var", "annty", "jump", "fn", "op", "idx"].filter fun k =>
+  let kinds := ["flag", "region", "key", "var", "annty", "jump", "fn", "op", "idx", "targ"].filter fun k =>
     ns.any fun n => (mutKinds n).contains k
   if kinds.isEmpty then return (e, "mut:none")
-  let kind ← pickD kinds
+  -- targ は当てられる呼び出しが少ないので、選ばれる重みを 4 倍にする
+  let kind ← pickD (kinds.flatMap fun k => if k = "targ" then [k, k, k, k] else [k])
   let cands := (List.range ns.length).filter fun j => (mutKinds ns[j]!).contains kind
   let j ← pickD cands
   let x' ← applyMut kind ns[j]!

@@ -1,0 +1,6 @@
+@@full	8350d8a7b7cf0184	1945	66416
+@head	5c653d61b52c1c1e	0	143
+const pbkdf2Chunk	1f079e8320704833	1	54
+func Key	d27abfbd4d6a27fe	229	7567
+func mac	bcdd3a17a4ed7c6a	34	1328
+func macPad	2936ed63fcc97d4e	66	2261

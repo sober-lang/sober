@@ -1,0 +1,12 @@
+@@full	5a1f4ce1984629e3	11027	344941
+@head	9e0cff5003dd8fa4	0	146
+const bfWords	b6f16542cd3b76ec	1	50
+func b64char	9b5e2e3a650bf85d	34	1087
+func bcryptDecode	11cd873313ba7ad2	178	5582
+func bcryptEncode	ec64a0de16e82f80	117	3713
+func bcryptHash	57fcfe5de647fcb6	218	7124
+func bfEncrypt	8179570ff41f4715	62	2062
+func bfExpand	5ac0a1b16e31e5ea	99	3275
+func bfInit	e6072ca7cbd058fe	1047	43769
+func bfWord	fa2a55f749809b86	52	1685
+func bff	491fe709a202818d	60	2112

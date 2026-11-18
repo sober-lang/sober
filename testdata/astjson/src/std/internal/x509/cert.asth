@@ -1,0 +1,27 @@
+@@full	1177b61a094e2359	6634	182371
+@head	59db4cde159964b6	0	63
+const PubP256	c00890a4023da9f5	1	47
+const PubP384	1fe457f0932ce68d	1	47
+const PubRsa	c2fc21899ec0444d	1	46
+const PubUnknown	7e881e6857968b8a	1	50
+const SigDsaSha1	8dcebcc91957f7ce	1	50
+const SigEcdsaSha256	79a01d445f6fe6cf	1	54
+const SigEcdsaSha384	fdaf88ae14f6cde8	1	54
+const SigEcdsaSha512	e2698565e928c7c9	1	54
+const SigRsaPss	8bb6ca4c5fe5d1c2	1	49
+const SigRsaSha1	cf64cc902a2e258b	1	50
+const SigRsaSha256	a8ea34ec7b00d7d0	1	52
+const SigRsaSha384	72cb8f53f82939dc	1	52
+const SigRsaSha512	74568d4d7bf3615b	1	52
+const SigUnknown	77b131d168525e0b	1	50
+func BitLen	4786c805daf92463	67	2172
+func Parse	f80d73feed6e75c2	136	4581
+func RsaKey	904cde7372fa2b7a	88	2966
+func bitStr	10f49ec03649daf9	43	1485
+func bitStrPad	f7de8fa410bf179b	83	2698
+func noCert	7668755a73db6d90	57	2830
+func parseSpki	e56081035cfbbda9	112	3869
+func parseTbs	168c3ef58b98cfa4	364	12101
+func sigAlgOf	6bd488da213773aa	98	3224
+type Cert	a2ac0139894fe9f5	54	2484
+type Ext	cc23634dd4f6c3fd	6	290

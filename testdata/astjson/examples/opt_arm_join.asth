@@ -1,0 +1,8 @@
+@@full	6944c0da53f6b540	1043	26199
+@head	f8802cba5eefdec2	0	31
+func get	ed85b463f4a2cf73	12	432
+func getS	e6582f7897e1b758	4	175
+func main	43b902e084bfd81f	128	3987
+func pick	1948e8ecc1fce50f	3	202
+func show	6dd4ccb223914eb6	17	579
+type Op	0b48fcb5a7885146	2	191

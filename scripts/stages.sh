@@ -146,12 +146,11 @@ fi
 # 揺れていた — 段階6 P6-4。同じソースのステージごとの検証はstage3のbuild〔stage2 → stage3〕が掛けている）
 # 同じ build を perf stat で包んで命令数（instructions:u — 決定的）も取る: 下の inst のラチェット（report-780 / 781 — inst は検問の外で
 # 734 以降 20 本強のコミットの間 +4.3 G 超過したまま誰も見ていなかった）。ワーカー 1・種 0 を明示（gates の export と同じ — 単体で回しても同じ値）。
-# perf が無い・使えない環境では命令数だけ飛ばす（RSS は従来どおり）
-PERF=${PERF:-$(command -v perf || ls -d /nix/store/*perf-linux*/bin/perf 2> /dev/null | head -n 1)}
+# perfが使えなければFAIL。SOBER_GATES_ALLOW_SKIPにperfがあるときだけ命令数を飛ばす（RSSは従来どおり）
 INSTP=()
-if [ -n "$PERF" ] && "$PERF" stat -x, -e instructions:u -o /dev/null true > /dev/null 2>&1; then
-    INSTP=("$PERF" stat -x, -e instructions:u -o "$W/stage4.inst")
-fi
+need_perf stages "the self build instruction ratchet"; pc=$?
+[ $pc = 2 ] && exit 1
+[ $pc = 0 ] && INSTP=("$PERF" stat -x, -e instructions:u -o "$W/stage4.inst")
 t=$(now)
 (unset SOBER_VERIFY; export SOBER_WORKERS=1 SOBER_HASH_SEED=0; stage_build "$W/stage3" "$B" "$W/stage4") || { echo "stages: FAIL stage3 build of src/compiler/app"; exit 1; }
 t1=$(now)
@@ -170,7 +169,15 @@ for p in $( (cd "$B" && "$W/stage3" parse --loader-json app) | grep -o '"path": 
     mkdir -p "$M/$p" && find "$B/$p" -maxdepth 1 -type f -exec cp {} "$M/$p/" \;
 done
 [ -d "$M/std" ] || { echo "stages: FAIL meas tree (no std package in the import closure)"; exit 1; }
-(cd "$M" && env -u SOBER_VERIFY SOBER_WORKERS=1 SOBER_HASH_SEED=0 /usr/bin/time -f %M -o "$W/stage4.rss" "${INSTP[@]}" "$W/stage3" build app --emit=elf --passes -o "$W/stage4m") || { echo "stages: FAIL stage3 build of the meas tree"; exit 1; }
+# L0 も推移的に依存する std の package の分だけ残す（ELF の大きさの上限値が、推移的な依存の外の std の .sobi の焼き込みで鳴らないように。
+# 依存する package が全部 L0 にあれば信頼の経路に入る）
+rm -rf "$M/l0/std"
+for p in $(cd "$M" && find std -name '*.sober' -printf '%h\n' | sort -u); do
+    [ -f "$B/l0/$p.sobi" ] && mkdir -p "$(dirname "$M/l0/$p")" && cp "$B/l0/$p.sobi" "$M/l0/$p.sobi"
+done
+# peak RSS は1つのCPUに縛って測る（gatelib.sh の pin1 — 縛らないとカーネルのRSSの計数の近似で数 MB 揺れる）
+read -ra PIN1 <<< "$(pin1)"
+(cd "$M" && env -u SOBER_VERIFY SOBER_WORKERS=1 SOBER_HASH_SEED=0 /usr/bin/time -f %M -o "$W/stage4.rss" "${PIN1[@]}" "${INSTP[@]}" "$W/stage3" build app --emit=elf --passes -o "$W/stage4m") || { echo "stages: FAIL stage3 build of the meas tree"; exit 1; }
 echo "time: meas tree + stage3 build of it $(dt "$t" "$(now)")s"
 echo "meas: $(cd "$M" && find std -name '*.sober' | wc -l) std files in the import closure ($(cd "$B" && find std -name '*.sober' | wc -l) in the tree)"
 
@@ -187,7 +194,7 @@ fi
 # out/stage2〔bootがビルドしたもの〕の基準で約0.8 G多い — 2本立てで残し、照合はこちら。鳴ったらscripts/inst/ の2×2で木の仕事と退行を分ける）
 ilim=$(awk '$1 == "self/build3" && $2 == "inst" { print $3 }' "$ROOT/bench/ratchet.txt")
 if [ "${#INSTP[@]}" = 0 ]; then
-    echo "SKIP inst ratchet — perf が無いか使えない（PERF で perf の実行ファイルを指す）: 自己 build の命令数は照合していない"
+    :
 elif [ -n "$ilim" ]; then
     inst=$(awk -F, '/instructions/ { printf "%.3f", $1 / 1e9 }' "$W/stage4.inst")
     if awk -v v="$inst" -v l="$ilim" 'BEGIN { exit !(v > l) }'; then
@@ -286,5 +293,6 @@ if [ "$cli" = 1 ] && [ "$fail" = 0 ]; then
     STAGE2="$W/stage2" scripts/selfhost_cli.sh || fail=1
     echo "time: selfhost_cli $(dt "$t" "$(now)")s"
 fi
-[ "$fail" = 0 ] && echo "stages: ok" || echo "stages: FAIL"
+skip=$([ "${#INSTP[@]}" = 0 ] && echo " (SKIP[perf] inst ratchet)")
+[ "$fail" = 0 ] && echo "stages: ok$skip" || echo "stages: FAIL$skip"
 exit $fail

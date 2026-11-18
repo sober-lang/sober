@@ -9,7 +9,7 @@ import "std/table"
 // 型の参照 = TyRef（TBASE + 添字。ヒープの番地と取り違えて hget すると範囲外で panic する — 音を立てる）。無しは -1（`!= -1` で見る）
 
 const TInt = 1
-const TVar = 2   // a = 添字
+const TVar = 2   // a = 添字, b = ρ（置き直し先の region）, c = kind（旗を詰めた int: rf 1・mf 2・cf 4・cov 8）
 const TBool = 3
 const TUnit = 4
 const TOpt = 5   // a = 中身
@@ -175,6 +175,7 @@ func tyShiftR(st mut S, t TyRef, r int) TyRef {
     case TMp: mkTy(mut st, TMp, x.a, x.b + r, int(tyShiftR(mut st, TyRef(x.c), r)), int(tyShiftR(mut st, TyRef(x.d), r)))
     case TChan: mkTy(mut st, TChan, x.a + r, int(tyShiftR(mut st, TyRef(x.b), r)), 0, 0)
     case TMuRs: tMuRsAt(mut st, t, x.a + r)
+    case TVar: tVarAt(mut st, t, x.b + r)
     default: t
     }
 }
@@ -255,8 +256,31 @@ func tOwn(st mut S, k int, r int, t TyRef) TyRef {
     return mkTy(mut st, TOwn, k, r, int(t), 0)
 }
 
+// いまの型引数の制限に当たる kind（rf・mf・cf・cov）。型引数は region も mut も端点も持たない。
+// kf（map のキーにできる）は立てない: 立てると型引数を int と string に限ってしまう
+const KALL = 15
+
+// 型変数の ρ は一律 0。kind が rf なので、ρ は写像で動かず、部分型の判定にも効かない
 func tVar(st mut S, i int) TyRef {
-    return mkTy(mut st, TVar, i, 0, 0, 0)
+    return mkTy(mut st, TVar, i, 0, KALL, 0)
+}
+
+// 型変数 t の置き直し先を r にした型（出現の位置の region — 同じ位置の具体の器が持つ region と同じ規則で決める。
+// kind が rf なら、検査器へ写すところで 0 に揃える〔Kind.place〕）
+func tVarAt(st mut S, t TyRef, r int) TyRef {
+    x := tyAt(mut st, t)
+    return mkTy(mut st, TVar, x.a, r, x.c, 0)
+}
+
+// 値ラッパ越しに最上段の型変数を持つか（戻りの型の置き直し先を付ける位置）
+func wrapsVar(st mut S, t TyRef) bool {
+    k := tg(mut st, t)
+    return switch k {
+    case TVar: true
+    case TOpt: wrapsVar(mut st, tInner(mut st, t))
+    case TUn | TPr: wrapsVar(mut st, tLeft(mut st, t)) || wrapsVar(mut st, tRight(mut st, t))
+    default: false
+    }
 }
 
 // byte の型（language.md 33 節 — intern なので作るたびに同じ参照）
@@ -369,7 +393,7 @@ func tyEql(st mut S, a TyRef, b TyRef) bool {
     case TInt | TBool | TUnit | TByte | TFloat:
         return true
     case TVar:
-        return tVarIdx(mut st, a) == tVarIdx(mut st, b)
+        return tVarIdx(mut st, a) == tVarIdx(mut st, b) && tRegion(mut st, a) == tRegion(mut st, b)
     case TOpt:
         return tyEql(mut st, tInner(mut st, a), tInner(mut st, b))
     case TRVar | TMuS | TMuRs:
@@ -400,6 +424,8 @@ func tyLooser(st mut S, a TyRef, b TyRef) bool {
         return false
     }
     return switch k {
+    // 型変数: 置き直し先の region は上界に読める（imm の器と同じ位置の規則。読めるかは kind の cov で検査器が決める）
+    case TVar: tVarIdx(mut st, a) == tVarIdx(mut st, b) && tRegion(mut st, a) <= tRegion(mut st, b)
     case TOpt: tyLooser(mut st, tInner(mut st, a), tInner(mut st, b))
     case TUn | TPr: tyLooser(mut st, tLeft(mut st, a), tLeft(mut st, b)) && tyLooser(mut st, tRight(mut st, a), tRight(mut st, b))
     case TSl: if tMutBit(mut st, a) != 0 || tMutBit(mut st, b) != 0 { tyEql(mut st, a, b) } else { tRegion(mut st, a) <= tRegion(mut st, b) && tyLooser(mut st, tElem(mut st, a), tElem(mut st, b)) }
@@ -462,6 +488,8 @@ func pointTy(st mut S, t TyRef) TyRef {
         return tRefOf(mut st, tMutBit(mut st, t), r, pointTy(mut st, tElem(mut st, t)))
     case TMuRs:
         return tMuRsAt(mut st, t, r)
+    case TVar:
+        return tVarAt(mut st, t, r)
     case TOwn:
         // domain（関数の仮引数・フィールドの型 — 家のregion 0は呼び手空間の上界）: 点の最内へ
         if tyAt(mut st, t).a == OWN_DOM {
@@ -500,6 +528,8 @@ func tyRelocAll(st mut S, t TyRef, k int) TyRef {
         return tRefOf(mut st, 0, k, tyRelocAll(mut st, tElem(mut st, t), k))
     case TMuRs:
         return if tyMutFreeD(mut st, muRsBody(mut st, t)) { tMuRsAt(mut st, t, k) } else { t }
+    case TVar:
+        return tVarAt(mut st, t, k)
     }
     return t
 }
@@ -584,6 +614,8 @@ func tyClamp(st mut S, t TyRef, k int) TyRef {
         return tRefOf(mut st, 0, minI(tRegion(mut st, t), k), tyClamp(mut st, tElem(mut st, t), k))
     case TMuRs:
         return if tyMutFreeD(mut st, muRsBody(mut st, t)) { tMuRsAt(mut st, t, minI(tyAt(mut st, t).a, k)) } else { t }
+    case TVar:
+        return tVarAt(mut st, t, minI(tRegion(mut st, t), k))
     }
     return t
 }
@@ -607,7 +639,10 @@ func retTy(st mut S, t TyRef) TyRef {
     if k == TMuRs {
         return tMuRsAt(mut st, t, 1)
     }
-    if !wrapsContainer(mut st, t) {
+    if k == TVar {
+        return tVarAt(mut st, t, 1)
+    }
+    if !wrapsContainer(mut st, t) && !wrapsVar(mut st, t) {
         return t
     }
     if k == TOpt {
@@ -733,12 +768,16 @@ func upRegion(st mut S, t TyRef, r int) TyRef {
     if k == TMuRs && tyMutFreeD(mut st, muRsBody(mut st, t)) && tyAt(mut st, t).a < r {
         return tMuRsAt(mut st, t, r)
     }
+    if k == TVar && tRegion(mut st, t) < r {
+        return tVarAt(mut st, t, r)
+    }
     return t
 }
 
 func hasRegion(st mut S, t TyRef) bool {
     k := tg(mut st, t)
-    if k == TSl || k == TMp || k == TMuRs {
+    // 型変数は region を持つ型と同じ扱い（型引数が region を持ちうる — 持たなければ kind の rf で検査器が ρ を 0 に揃える）
+    if k == TSl || k == TMp || k == TMuRs || k == TVar {
         return true
     }
     if k == TPr {
@@ -769,6 +808,7 @@ func tyRegionAbove(st mut S, t TyRef, k int) bool {
     case TSl | TRef: tRegion(mut st, t) > k || tyRegionAbove(mut st, tElem(mut st, t), k)
     case TMp: tRegion(mut st, t) > k || tyRegionAbove(mut st, tKey(mut st, t), k) || tyRegionAbove(mut st, tVal(mut st, t), k)
     case TMuRs: tyAt(mut st, t).a > k
+    case TVar: tRegion(mut st, t) > k
     default: false
     }
 }
@@ -816,13 +856,13 @@ func tyArgValueOk(st mut S, t TyRef) bool {
     }
 }
 
-// Def として呼ぶジェネリックの型引数（region もチャネルも持たない）
-func tyArgOk(st mut S, t TyRef) bool {
+// region もチャネルも持たない型（呼び手の座標へ写さずに読める）
+func regionFree(st mut S, t TyRef) bool {
     k := tg(mut st, t)
     return switch k {
     case TSl | TMp | TRef | TChan | TMuRs: false
-    case TOpt: tyArgOk(mut st, tInner(mut st, t))
-    case TUn | TPr: tyArgOk(mut st, tLeft(mut st, t)) && tyArgOk(mut st, tRight(mut st, t))
+    case TOpt: regionFree(mut st, tInner(mut st, t))
+    case TUn | TPr: regionFree(mut st, tLeft(mut st, t)) && regionFree(mut st, tRight(mut st, t))
     default: true
     }
 }

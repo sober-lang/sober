@@ -1,0 +1,19 @@
+@@full	9f37f7e390239be9	7764	274779
+@head	dde0098520968b4c	0	240
+const qtA	3c23d741ebfef0e8	1	43
+const qtAaaa	12796604fbf8aa26	1	47
+const qtCname	1c408758c8310113	1	47
+func badAnswer	bdf92bf81a20ae11	9	499
+func candidates	8708aeeee1cb847f	74	2615
+func decimal	f00797bcb321e11d	53	1755
+func dnsQuery	15da90331e88ca8d	112	3605
+func hostsLookup	7cb296506880245b	92	3182
+func nameCheck	bf5b214c2aa440d2	80	2552
+func parseAnswer	592bf58f7fde28cd	424	14177
+func parseResolvConf	ca9b021f8d377feb	250	8272
+func readName	9c8e2841e6efffa9	175	5606
+func sliceBytes	daff7a2400978f1e	29	1108
+type NoHost	b431f4a65e85a872	1	67
+type NonASCIIHost	fce927bd3e8306aa	1	73
+type dnsAnswer	8eb2a004e36c8d8c	7	339
+type dnsConf	9306ddda3ac713a9	8	404

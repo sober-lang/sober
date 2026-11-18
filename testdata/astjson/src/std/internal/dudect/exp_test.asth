@@ -1,0 +1,11 @@
+@@full	10eecf7eee6aecef	3765	113763
+@head	0e92644ba0ccf16f	0	145
+func TestExpImulChain	ee1b07e649c61701	32	1109
+func TestExpPolyAa	6fdb00101ea105b3	36	1278
+func TestExpPolyFf	418d3dfde973d46f	44	1489
+func TestExpPolyFixed	074c1a310d626bb9	37	1309
+func TestExpPolyOnes	c1b44f4fee6f82c5	47	1580
+func TestExpPolyZero	5d136f0fb3d79897	47	1578
+func chain	6e65f38ac30601dd	327	10898
+func fill	1c3cc78c8e38c6a8	27	1007
+func lw	a35cb21d498fe239	40	1300

@@ -1,0 +1,74 @@
+package main
+
+// 実験3（shape-m0）の題材 nest2・形 straight。gen.ts の生成物
+
+import "std/builder"
+import "std/iter"
+import "std/json"
+
+type Leaf struct {
+    z0 int
+    z1 string
+    z2 int
+    z3 string
+}
+
+type Mid struct {
+    y0 int
+    y1 string
+    y2 Leaf
+    y3 int
+}
+
+type R struct {
+    x0 int
+    x1 string
+    x2 Mid
+    x3 string
+}
+
+func mk(i int) R {
+    return R{x0: i + 10, x1: "s11_${i % 100}", x2: Mid{y0: i + 120, y1: "s121_${i % 100}", y2: Leaf{z0: i + 1220, z1: "s1221_${i % 100}", z2: i + 1222, z3: "s1223_${i % 100}"}, y3: i + 123}, x3: "s13_${i % 100}"}
+}
+
+func enc(v R) string {
+    mut o := builder.Builder[byte]{}
+    builder.Push(mut o, '{')
+    json.PutKey(mut o, "x0", true)
+    json.PutInt(mut o, v.x0)
+    json.PutKey(mut o, "x1", false)
+    json.PutString(mut o, v.x1)
+    json.PutKey(mut o, "x2", false)
+    builder.Push(mut o, '{')
+    json.PutKey(mut o, "y0", true)
+    json.PutInt(mut o, v.x2.y0)
+    json.PutKey(mut o, "y1", false)
+    json.PutString(mut o, v.x2.y1)
+    json.PutKey(mut o, "y2", false)
+    builder.Push(mut o, '{')
+    json.PutKey(mut o, "z0", true)
+    json.PutInt(mut o, v.x2.y2.z0)
+    json.PutKey(mut o, "z1", false)
+    json.PutString(mut o, v.x2.y2.z1)
+    json.PutKey(mut o, "z2", false)
+    json.PutInt(mut o, v.x2.y2.z2)
+    json.PutKey(mut o, "z3", false)
+    json.PutString(mut o, v.x2.y2.z3)
+    builder.Push(mut o, '}')
+    json.PutKey(mut o, "y3", false)
+    json.PutInt(mut o, v.x2.y3)
+    builder.Push(mut o, '}')
+    json.PutKey(mut o, "x3", false)
+    json.PutString(mut o, v.x3)
+    builder.Push(mut o, '}')
+    return json.Done(mut o)
+}
+
+func main() {
+    println(enc(mk(7)))
+    mut total := 0
+    for i <- iter.Range(0, 200000) {
+        total += len(bytes(enc(mk(i))))
+    }
+    println(total)
+}

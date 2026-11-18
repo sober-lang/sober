@@ -1,0 +1,12 @@
+@@full	015b34d90c91ff82	3242	100976
+@head	d8777c18d9933016	0	382
+const GzSent	04f7fbbb001da652	2	128
+func TestSetCookieCompressed	4f90c54156729504	75	2711
+func TestSetCookieDefaults	2957c5d3f99db275	20	1022
+func TestSetCookieFields	d3747c9962fe50f2	58	2881
+func TestSetCookieHead	df69bdc55933b41b	63	2756
+func TestSetCookieRejects	6165dd9c7164f7e1	98	5131
+func TestSetCookieRoundTrip	0efaf527778e6ceb	33	1456
+func gzCookieRoute	02b7d999301af844	56	2370
+func gzRecord	40e3c6255326137f	18	673
+func headOf	24f76b9fbb1915b9	61	1968

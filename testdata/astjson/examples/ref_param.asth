@@ -1,0 +1,23 @@
+@@full	c8e67fcba1827b14	3501	86511
+@head	5047be4932448be2	0	213
+func bump	56ff9b3fc6bc7681	18	724
+func capt	5e03325437a0c0f6	10	432
+func elem	9ce4211b62e0ceb1	18	788
+func id	ddffa4e5cbb2cf1a	4	221
+func keep	354ae645e52183bf	9	432
+func main	eedb369ffcc04ac7	294	9414
+func mk	05e8ad3a9a5c3565	11	546
+func opt	db8f61d5eb037524	14	500
+func outer	2b013801c9820172	6	288
+func peek	8680324c40df143b	9	427
+func pick	13a221f9777f568f	12	515
+func show	0e4c3771379bbd1f	14	573
+func sumW	a6401298d8dcadf9	32	1134
+func touch	8c35e1aa37bb4898	8	363
+func viaFn	222fa64907053acf	14	592
+func viaHook	1b1d157364e4002f	14	603
+func withMap	3389fb5aa4822f69	21	753
+type Hook	ab67db45b76f4eee	5	216
+type M	684967cbcb487596	5	224
+type R	691aae9273f3c8c7	6	301
+type W	623a29ca3a298a90	11	522

@@ -1,0 +1,8 @@
+@@full	44c47ef1e318c6e9	582	13779
+@head	f8802cba5eefdec2	0	31
+func main	58768bbb2ed2a54e	28	1218
+func rename	072124f4448c1e55	14	623
+func retag	6977006282774755	15	677
+func swap	93689adbe4805bbf	12	547
+type Inner	98a1b39afe3d7eda	2	117
+type Item	338d4ff73493d8b5	4	215

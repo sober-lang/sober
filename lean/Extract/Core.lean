@@ -27,16 +27,24 @@ inductive Pat where
 
 def isRecordTy (t : Expr) : Bool := recordTypes.any t.isConstOf
 
-/-- 型が記録の番地を含むか（Ty・Option Ty・List Ty） -/
+/-- 欄を int に詰める構造体（Config.packedTypes） -/
+def isPackedTy (t : Expr) : Bool := packedTypes.any (t.isConstOf ·.1)
+
+/-- 欄の読み出しの関数（Config.packedTypes）の Sober の名前 -/
+def projFn (c : Name) : Option String :=
+  packedTypes.findSome? fun (_, fs) => (fs.find? (·.1 == c)).map (·.2)
+
+/-- 型が st を要るか: 記録の番地（Ty・Option Ty・List Ty）か、st.h に置く列（List）を含む -/
 partial def mentionsRecord (t : Expr) : Bool :=
-  isRecordTy t || t.getAppArgs.any mentionsRecord
+  isRecordTy t || t.isAppOf ``List || t.getAppArgs.any mentionsRecord
 
 /-- Sober の値の型（bool / int）。写せない型は止まる -/
 def isNodeTy (t : Expr) : Bool := nodeTypes.any t.isConstOf
 
 /-- int で持つ型（Nat・記録・節・番地・列挙） -/
 def isIntTy (t : Expr) : Bool :=
-  t.isConstOf ``Nat || isRecordTy t || isNodeTy t || handleTypes.any t.isConstOf || enumTypes.any t.isConstOf
+  t.isConstOf ``Nat || isRecordTy t || isNodeTy t || handleTypes.any t.isConstOf || enumTypes.any t.isConstOf ||
+    isPackedTy t
 
 def isDroppedTy (t : Expr) : Bool := droppedTypes.any t.isConstOf
 
@@ -48,7 +56,7 @@ def soberTy (t : Expr) : MetaM String := do
   if t.isConstOf ``FS.Ctx || t.isConstOf ``FS.LCtx then return "int"
   match t.getAppFnArgs with
   | (``Option, #[a]) => if isIntTy a then return "int" else throwError "extract: 写せない型 {t}"
-  | (``List, #[a]) => if isRecordTy a then return "int" else throwError "extract: 写せない型 {t}"
+  | (``List, #[a]) => if isRecordTy a || isPackedTy a then return "int" else throwError "extract: 写せない型 {t}"
   | _ => throwError "extract: 写せない型 {t}"
 
 /-- 抽出する関数の署名 -/
@@ -62,6 +70,7 @@ structure FnSig where
   keep : List Bool := []
 
 def fnSig (f : Name) (sober : Option String := none) : MetaM FnSig := do
+  let rn := (renames.find? (·.1 == f)).map (·.2)
   let ci ← getConstInfo f
   forallTelescope ci.type fun xs r => do
     let tys ← xs.toList.mapM inferType
@@ -69,7 +78,7 @@ def fnSig (f : Name) (sober : Option String := none) : MetaM FnSig := do
     let ps ← (tys.filter (!isDroppedTy ·)).mapM soberTy
     let rt ← soberTy r
     let st := sober.isSome || tys.any mentionsRecord || mentionsRecord r || tys.any (fun t => isNodeTy t || isDroppedTy t)
-    return { name := f, sober := sober.getD f.getString!, params := ps, ret := rt, needsSt := st, keep := keep }
+    return { name := f, sober := sober.getD (rn.getD f.getString!), params := ps, ret := rt, needsSt := st, keep := keep }
 
 /-- 手書きの読み口の署名（shimTable — 構成子は欄の型から） -/
 def shimSig (f : Name) (s : String) : MetaM FnSig := do
@@ -80,10 +89,21 @@ def shimSig (f : Name) (s : String) : MetaM FnSig := do
     let keep := tys.map (!isDroppedTy ·)
     return { name := f, sober := s, params := [], ret := "int", needsSt := true, keep := keep }
 
+/-- List.all / Option.all の特殊化 1 つ: 関数の Sober 名・Option か・先に渡す実引数の数 -/
+structure AllSpec where
+  fn : String
+  opt : Bool
+  extra : Nat
+  deriving BEq
+
+def AllSpec.name (a : AllSpec) (pre : String) : String := s!"{pre}{if a.opt then "oall" else "all"}_{a.fn}"
+
 structure Env where
   sigs : List FnSig
-  /-- 使った List.all の特殊化（関数の Sober 名） -/
-  alls : IO.Ref (List String)
+  /-- 使った List.all / Option.all の特殊化 -/
+  alls : IO.Ref (List AllSpec)
+  /-- 特殊化の名前の頭（生成物のファイルごとに分ける — 同じ package に入るので） -/
+  allPre : String := ""
 
 def Env.call (env : Env) (c : Name) (args : List String) : MetaM String := do
   match env.sigs.find? (·.name == c) with
@@ -194,6 +214,9 @@ structure Ctx where
   新しい記録を作らずに仮引数をそのまま返す（記録は作ったら変えない・等しさは構造で見る — 観測等価。
   手書きの写しが葉の型で引数を共有していたのと同じ形 — E2） -/
   shares : List (Expr × String) := []
+  /-- 節を辿る関数（Config.walkTargets）の抽出中: (自分の名前, 左辺の実引数, 節の仮引数の位置)。
+  自分への再帰は、節以外の実引数が左辺と同じときだけ `walkPush` にする -/
+  walk : Option (Name × List Expr × Nat) := none
 
 def Ctx.nameOf (cx : Ctx) (fv : FVarId) : MetaM String := do
   match cx.names.find? (·.1 == fv) with
@@ -217,7 +240,7 @@ partial def propStr (cx : Ctx) (p : Expr) : MetaM String := do
       | none => throwError "extract: 等しさを生成しない型 {ty}"
     else if ty.isConstOf ``Bool && b.isConstOf ``Bool.true then exprStr cx a
     else if ty.isConstOf ``Bool && b.isConstOf ``Bool.false then return s!"!{← exprStr cx a}"
-    else if ty.isConstOf ``Nat || ty.isConstOf ``Bool then return s!"{← exprStr cx a} == {← exprStr cx b}"
+    else if ty.isConstOf ``Nat || ty.isConstOf ``Bool || isPackedTy ty then return s!"{← exprStr cx a} == {← exprStr cx b}"
     else throwError "extract: 写せない等式 {p}"
   | (``Not, #[q]) => return s!"!({← propStr cx q})"
   | _ => throwError "extract: 命題を写せない {p}"
@@ -230,6 +253,13 @@ partial def exprStr (cx : Ctx) (e : Expr) : MetaM String := do
   if let some n := e.rawNatLit? then return toString n
   if let some n := e.nat? then return toString n
   if let some (_, n) := enumTable.find? (e.isConstOf ·.1) then return toString n
+  -- 右辺の `match o with | some x => a | none => b`（o : Option _）は if 式に（x は o の値の字句 — 読み出しは純粋）
+  if let some m ← matchMatcherApp? e then
+    return ← optMatch cx e m
+  if let .proj sn i x := e then
+    let some f := (getStructureFields (← getEnv) sn)[i]? | throwError "extract: 欄の読み出し {e}"
+    let some fn := projFn (sn ++ f) | throwError "extract: 写せない欄の読み出し {e}"
+    return s!"{fn}({← exprStr cx x})"
   match e.getAppFnArgs with
   | (``and, #[a, b]) => return s!"({← exprStr cx a} && {← exprStr cx b})"
   | (``or, #[a, b]) => return s!"({← exprStr cx a} || {← exprStr cx b})"
@@ -258,14 +288,19 @@ partial def exprStr (cx : Ctx) (e : Expr) : MetaM String := do
   | (``BEq.beq, #[t, _, a, b]) =>
     unless t.isConstOf ``Nat || t.isConstOf ``Bool do throwError "extract: 写せない == {e}"
     return s!"({← exprStr cx a} == {← exprStr cx b})"
-  | (``List.all, #[_, xs, f]) =>
-    let f ← etaReduceFn f
-    let .const g _ := f | throwError "extract: List.all の関数が捕捉のない参照でない {f}"
-    let some s := cx.env.sigs.find? (·.name == g) | throwError "extract: 対象外の関数の呼び出し {g}"
-    let nm := s!"all_{s.sober}"
-    cx.env.alls.modify fun l => if l.contains s.sober then l else l ++ [s.sober]
-    return s!"{nm}(mut st, {← exprStr cx xs})"
+  | (``List.all, #[_, xs, f]) => allCall cx false xs f
+  | (``Option.all, #[_, f, o]) => allCall cx true o f
   | (c, args) =>
+    if let some fn := projFn c then
+      unless args.size == 1 do throwError "extract: 欄の読み出しの実引数の数 {e}"
+      return s!"{fn}({← exprStr cx args[0]!})"
+    if let some (g, lhs, ni) := cx.walk then
+      if c == g then
+        let as := args.toList
+        unless as.length == lhs.length do throwError "extract: 節を辿る関数の再帰の実引数の数 {e}"
+        for i in List.range as.length do
+          if i != ni && as[i]! != lhs[i]! then throwError "extract: 節を辿る関数の再帰で節以外の実引数が変わる {e}"
+        return s!"{walkPush}(mut st, {← exprStr cx as[ni]!})"
     if let some (_, tag, _) := ctorTable.find? (·.1 == c) then
       if let some (_, v) := cx.shares.find? (·.1 == e) then return v
       if let some (_, v) := constCtors.find? (·.1 == c) then return v
@@ -291,6 +326,35 @@ where
     match f with
     | .lam _ _ (.app g (.bvar 0)) _ => if g.hasLooseBVars then return f else return g
     | _ => return f
+  optMatch (cx : Ctx) (e : Expr) (m : MatcherApp) : MetaM String := do
+    unless m.discrs.size == 1 && m.alts.size == 2 && m.remaining.isEmpty do
+      throwError "extract: 写せない match {e}"
+    let d := m.discrs[0]!
+    unless (← whnfR (← inferType d)).isAppOf ``Option do throwError "extract: Option 以外の match {e}"
+    let ds ← exprStr cx d
+    let mut someB : Option String := none
+    let mut noneB : Option String := none
+    for alt in m.alts do
+      let r ← lambdaBoundedTelescope alt 1 fun xs b => do
+        unless xs.size == 1 do throwError "extract: 写せない match の腕 {alt}"
+        let x := xs[0]!
+        if (← inferType x).isConstOf ``Unit then return (false, ← exprStr cx b)
+        let cx' := { cx with names := (x.fvarId!, s!"({ds})") :: cx.names }
+        return (true, ← exprStr cx' b)
+      if r.1 then someB := some r.2 else noneB := some r.2
+    let (some sb, some nb) := (someB, noneB) | throwError "extract: some と none の腕でない match {e}"
+    return s!"if {ds} >= 0 \{ {sb} } else \{ {nb} }"
+  /-- `List.all xs (g x…)` / `Option.all o (g x…)`（g = 関数の参照・x… = 先に渡す実引数）を特殊化の呼び出しに -/
+  allCall (cx : Ctx) (opt : Bool) (xs f : Expr) : MetaM String := do
+    let f ← etaReduceFn (← instantiateMVars f)
+    let .const g _ := f.getAppFn | throwError "extract: all の関数が関数の参照でない {f}"
+    let extra := f.getAppArgs.toList
+    if extra.any (·.hasLooseBVars) then throwError "extract: all の関数が束縛変数を捕捉する {f}"
+    let some s := cx.env.sigs.find? (·.name == g) | throwError "extract: 対象外の関数の呼び出し {g}"
+    let spec : AllSpec := { fn := s.sober, opt := opt, extra := extra.length }
+    cx.env.alls.modify fun l => if l.contains spec then l else l ++ [spec]
+    let es ← extra.mapM (exprStr cx)
+    return s!"{spec.name cx.env.allPre}(mut st, {", ".intercalate ((← exprStr cx xs) :: es)})"
 end
 
 /-- 腕 1 本 -/
@@ -304,7 +368,7 @@ structure Arm where
 
 /-- 方程式の列から関数 1 本（eqns を外から渡せる — 負例の人工的な方程式のため） -/
 def extractWith (env : Env) (f : Name) (eqs : Array Name)
-    (shorts : List Name := (shortcuts.filter (·.1 == f)).map (·.2)) : MetaM String := do
+    (shorts : List Name := (shortcuts.filter (·.1 == f)).map (·.2)) (walk : Bool := false) : MetaM String := do
   let sig ← fnSig f
   let params := sig.params.zipIdx.map fun (t, i) => (s!"a{i}", t)
   let mut pats : List (List Pat) := []
@@ -354,7 +418,14 @@ def extractWith (env : Env) (f : Name) (eqs : Array Name)
       let shares := (← (args.zip params).filterMapM fun (a, (pn, _)) => do
         let a ← instantiateMVars a
         return if ctorTable.any (·.1 == a.getAppFn.constName) then some (a, pn) else none)
-      let cx : Ctx := { env := env, names := names, shares := shares }
+      let mut wk : Option (Name × List Expr × Nat) := none
+      if walk then
+        let mut nio : Option Nat := none
+        for (a, i) in args0.zipIdx do
+          if isNodeTy (← inferType a) then nio := some i
+        let some ni := nio | throwError "extract: 節を辿る関数 {f} に節の仮引数が無い"
+        wk := some (f, args0, ni)
+      let cx : Ctx := { env := env, names := names, shares := shares, walk := wk }
       -- 右辺の最上段の `Option.or a b` は文で短絡させる（a が some なら b を計算しない — 前奏の optOr は両方を先に計算する）。
       -- 字句の後始末を a と b に一緒に掛けるため、区切り文字 \x01 で 1 本の字句にしてから分ける
       let orTop := match rhs.getAppFnArgs with
@@ -400,34 +471,45 @@ def extractWith (env : Env) (f : Name) (eqs : Array Name)
   let tagOf (a : Arm) : Option (String × String) := a.conds.head?.bind (·.tag)
   let isNode := arms.any fun a => a.conds.head?.any (·.node)
   let tagArg : Option String := (arms.head?.bind tagOf).map (·.1)
-  let useSwitch := arms.length ≥ 2 && tagArg.isSome && arms.all (!·.hyps) &&
-    arms.all fun a => (tagOf a).map (·.1) == tagArg
+  -- 最後の腕だけが仮定つきの無条件の腕（`_ => …` — 先行の腕の否定）なら、switch の外れをその腕にする
+  let wild := arms.length ≥ 2 && arms.getLast!.hyps && arms.getLast!.conds.isEmpty &&
+    arms.dropLast.all (!·.hyps)
+  let cased := if wild then arms.dropLast else arms
+  let useSwitch := arms.length ≥ 2 && tagArg.isSome && (wild || arms.all (!·.hyps)) &&
+    cased.all fun a => (tagOf a).map (·.1) == tagArg
   let body (a : Arm) (ind : String) : List String := (a.lets ++ [s!"return {a.ret}"]).map (ind ++ ·)
   let dropped (cs : List Cond) : String :=
     if cs.isEmpty then "" else s!"（最後の腕 — 先行の腕が外れれば当たる: {" && ".intercalate (cs.map (·.s))}）"
-  -- 腕の列を if 連鎖に（skip = 先頭から捨てる条件の数 — switch のタグ検査の分）
-  let chain (as : List Arm) (skip : Nat) (ind : String) : MetaM (List String) := do
+  -- 腕の列を if 連鎖に（skip = 先頭から捨てる条件の数 — switch のタグ検査の分）。
+  -- open = 腕が網羅的でない（外れは switch の後へ抜ける）: 最後の腕の条件も残す
+  let chain (as : List Arm) (skip : Nat) (ind : String) (open_ : Bool := false) : MetaM (List String) := do
     let mut out : List String := []
     for a in as.dropLast do
       let cs := a.conds.drop skip
       if cs.isEmpty then throwError "extract: {f} の最後でない腕が無条件"
       out := out ++ [s!"{ind}{a.header}", s!"{ind}if {" && ".intercalate (cs.map (·.s))} \{"] ++ body a (ind ++ "    ") ++ [s!"{ind}}"]
     let l := as.getLast!
-    return out ++ [s!"{ind}{l.header}{dropped (l.conds.drop skip)}"] ++ body l ind
+    let cs := l.conds.drop skip
+    if open_ && !cs.isEmpty then
+      return out ++ [s!"{ind}{l.header}", s!"{ind}if {" && ".intercalate (cs.map (·.s))} \{"] ++ body l (ind ++ "    ") ++ [s!"{ind}}"]
+    return out ++ [s!"{ind}{l.header}{dropped cs}"] ++ body l ind
   let mut lines : List String := []
   if useSwitch then
     let mut groups : List (String × List Arm) := []
-    for a in arms do
+    for a in cased do
       let t := (tagOf a).get!.2
       groups := match groups.find? (·.1 == t) with
         | some _ => groups.map fun (t', as) => if t' == t then (t', as ++ [a]) else (t', as)
         | none => groups ++ [(t, [a])]
     lines := lines ++ [s!"    switch {tagArg.get!} \{"]
     -- 節の switch は全部の札を case に置き、外れ（実行時だけの形・未知の kind）は nodeDefault
-    let inner := if isNode then groups else groups.dropLast
+    let inner := if isNode || wild then groups else groups.dropLast
     for (t, as) in inner do
-      lines := lines ++ [s!"    case {t}:"] ++ (← chain as 1 "        ")
-    if isNode then
+      lines := lines ++ [s!"    case {t}:"] ++ (← chain as 1 "        " wild)
+    if wild then
+      let l := arms.getLast!
+      lines := lines ++ ["    }", s!"    {l.header}"] ++ body l "    "
+    else if isNode then
       lines := lines ++ ["    }", s!"    return {nodeDefault}"]
     else
       let (_, lastAs) := groups.getLast!
@@ -470,15 +552,28 @@ def extractWith (env : Env) (f : Name) (eqs : Array Name)
   let ps := (if sig.needsSt then ["st mut S"] else []) ++ params.map fun (n, t) => s!"{n} {t}"
   return s!"// {f}（方程式 {eqs.size} 本）\nfunc {sig.sober}({", ".intercalate ps}) {sig.ret} \{\n{"\n".intercalate (pre ++ hoist ++ lines)}\n}\n"
 
-def extract (env : Env) (f : Name) : MetaM String := withRef .missing do
+def extract (env : Env) (f : Name) (walk : Bool := false) : MetaM String := withRef .missing do
   try extract0 env f catch e => throwError "{f}: {e.toMessageData}"
 where extract0 (env : Env) (f : Name) : MetaM String := do
-  if let some eqs ← getEqnsFor? f then return ← extractWith env f eqs
+  if let some eqs ← getEqnsFor? f then return ← extractWith env f eqs (walk := walk)
   -- 場合分けの無い定義（非再帰・パターンなし）は展開の等式 1 本を腕 1 本に
   let ci ← getConstInfo f
   unless ci matches .defnInfo _ do throwError "extract: {f} に方程式が無い（partial / unsafe / 定義でない）"
   let some eq ← getUnfoldEqnFor? f (nonRec := true) | throwError "extract: {f} に方程式が無い（partial / unsafe / 定義でない）"
-  extractWith env f #[eq]
+  extractWith env f #[eq] (walk := walk)
+
+/-- List.all / Option.all の特殊化の定義 -/
+def allDefs (env : Env) : IO String := do
+  let mut out := ""
+  for a in ← env.alls.get do
+    let xs := (List.range a.extra).map (s!"x{·}")
+    let ps := String.join (xs.map (s!", {·} int"))
+    let as := String.join (xs.map (s!", {·}"))
+    let tmpl := if a.opt then optAllTemplate else listAllTemplate
+    let what := if a.opt then "Option.all" else "List.all"
+    out := out ++ s!"// {what} の特殊化（{a.fn}）\n" ++
+      ((((tmpl.replace "@NAME" (a.name env.allPre)).replace "@F" a.fn).replace "@PS" ps).replace "@AS" as) ++ "\n"
+  return out
 
 /-- 構造の等しさ（deriving DecidableEq の写し）を inductive の定義から -/
 def genEq (ind : Name) (fname : String) : MetaM String := do
@@ -513,14 +608,13 @@ def genFile : MetaM String := do
     out := out ++ (← genEq ind fname) ++ "\n"
   for f in targets do
     out := out ++ (← extract env f) ++ "\n"
-  for g in ← env.alls.get do
-    out := out ++ s!"// List.all の特殊化（{g}）\n" ++ ((listAllTemplate.replace "@NAME" s!"all_{g}").replace "@F" g) ++ "\n"
+  out := out ++ (← allDefs env)
   return out
 
 /-- tc_gen.sober（typecheck の 1 フレームの遷移 — 段 6 P2b）。Ty 層（ty_gen.sober）の関数と手書きの読み口（check.sober）を呼ぶ -/
 def genTcFile : MetaM String := do
   let tySigs ← targets.mapM (fnSig ·)
-  let tcSigs ← tcTargets.mapM (fnSig ·)
+  let tcSigs ← (tcTargets ++ walkTargets).mapM (fnSig ·)
   let shims ← shimTable.mapM fun (n, s) => shimSig n s
   let sigs := tySigs ++ tcSigs ++ shims
   for s in sigs do
@@ -530,11 +624,16 @@ def genTcFile : MetaM String := do
     let .inductInfo iv ← getConstInfo ind | throwError "extract: {ind} が inductive でない"
     for c in iv.ctors do
       unless (nodeTable.find? (·.1 == c)).isSome do throwError "extract: 節の構成子 {c} の対応表が無い（Config.lean の nodeTable に足す）"
-  let env : Env := { sigs := sigs, alls := ← IO.mkRef [] }
-  let mut out := "package checker\n\n// 生成物 — 手で直さない（lean/Extract が Lean の定義の方程式から作る。作り直し = scripts/extract.sh --regen・照合 = scripts/extract.sh --check）。\n// 元: lean/FeatherweightSober/TcStep.lean（typecheck の 1 フレームの遷移 tcStep — 定理 typecheck_eq_evalRule で typecheck と結ぶ）・設定 = lean/Extract/Config.lean。\n// 駆動部（tcRun）と読み口（ctxGet / actSub …）は手書き = check.sober\n\n"
+  let env : Env := { sigs := sigs, alls := ← IO.mkRef [], allPre := "tc" }
+  let mut out := "package checker\n\n// 生成物 — 手で直さない（lean/Extract が Lean の定義の方程式から作る。作り直し = scripts/extract.sh --regen・照合 = scripts/extract.sh --check）。\n// 元: lean/FeatherweightSober/TcStep.lean（typecheck の 1 フレームの遷移 tcStep — 定理 typecheck_eq_evalRule で typecheck と結ぶ）・Typing.lean（Expr.tvWf・Expr.raisedOk）・設定 = lean/Extract/Config.lean。\n// 駆動部（tcRun・exprTvWf・exprRaisedOk）と読み口（ctxGet / actSub …）は手書き = check.sober\n\n"
   for f in tcTargets do
     out := out ++ (← extract env f) ++ "\n"
-  unless (← env.alls.get).isEmpty do throwError "extract: tc_gen に List.all の特殊化は出さない（読み口に置く）"
+  for f in walkTargets do
+    out := out ++ (← extract env f (walk := true)) ++ "\n"
+  let alls ← allDefs env
+  unless alls.isEmpty do
+    -- 特殊化（List.all の for）が std/iter・std/table を使う。import は見出しのコメントの後
+    out := out.replace "check.sober\n\n" "check.sober\n\nimport \"std/iter\"\nimport \"std/table\"\n\n" ++ alls
   return out
 
 end Extract

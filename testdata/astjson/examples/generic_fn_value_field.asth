@@ -1,0 +1,10 @@
+@@full	f75b1b28f83938d1	1025	26101
+@head	f8802cba5eefdec2	0	31
+func decr	255aaa4cb2354b47	6	285
+func incr	9971a2c49fa627b5	6	285
+func main	f7aaeb53aeaf2b12	105	3523
+func run	0fbdd7b6b6680e12	15	719
+func wrap	4852617b3c38dfc4	8	407
+type Box	a78d3b9bd82ba0a5	3	157
+type H	c1de6fc843331749	3	144
+type Opt	284b51d3c823eb4d	2	167

@@ -1,0 +1,12 @@
+@@full	b1cd0c1911f25130	670	13907
+@head	9bf5466d7e943b5b	0	61
+func Exact	fb715fb5e0b75f2c	20	762
+func Leaky	35f9884c8534078f	16	593
+func Missing	1f80bade16f39120	8	337
+func Stale	665b58b92f999458	8	335
+func inner	5dd16108c5b0163e	16	588
+func loose	3078fcf5180d0ac0	8	335
+func main	476b277ee7061c93	4	197
+func tight	2722d317cc02b067	8	335
+type A	12a16b07a8a73696	2	107
+type B	e61b6ddb6dd2249c	1	62

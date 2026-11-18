@@ -1,0 +1,41 @@
+package main
+
+// unionのvariantの匿名の関数型のフィールドも値の位置: 捕捉するラムダ・名前の関数を置き、switchで取り出して呼ぶ。
+// structの匿名の関数型のフィールドと同じ扱い
+
+type Op union {
+    Unary { f func(x int) int }
+    Binary { g func(x int, y int) int; name string }
+    Nop {}
+}
+
+func incr(x int) int {
+    return x + 1
+}
+
+func add(x int, y int) int {
+    return x + y
+}
+
+func scale(k int) Op {
+    return Unary{f: (x int) => x * k}
+}
+
+func apply(o Op, x int) int {
+    return switch o {
+    case Unary{f}: f(x)
+    case Binary{g}: g(x, x)
+    default: x
+    }
+}
+
+func main() {
+    k := 5
+    ops := []Op{Unary{f: (x int) => x + k}, Unary{f: incr}, scale(3), Binary{g: add, name: "add"}, Binary{g: (x int, y int) => x * y - k, name: "mul"}, Nop{}}
+    mut s := 0
+    for o <- ops {
+        s = s + apply(o, 2)
+        println(apply(o, 2))
+    }
+    println(s)
+}

@@ -12,18 +12,35 @@ const [srv, symf] = process.argv.slice(2);
 const W = +(process.env.AC_WORKERS ?? "2");
 // AC_FAR=1: 本体の太い形（srvのargv[3] = far — 遠いパス）。AC_REF=1: エリアを使わないELF（ミュータント66 — 段1の前のスタックの形）— 保存則は見ず署名だけ
 const FAR = process.env.AC_FAR === "1", REF = process.env.AC_REF === "1";
-const src = ["task", "mn", "ir"].map((f) => fs.readFileSync(`src/compiler/lower/${f}.sober`, "utf8")).join("\n");
+const LDIR = "src/compiler/lower";
+const src = fs.readdirSync(LDIR).filter((f) => f.endsWith(".sober") && !f.endsWith("_test.sober")).map((f) => fs.readFileSync(`${LDIR}/${f}`, "utf8")).join("\n");
 const cache = new Map<string, number>();
 function cval(name: string): number {
   if (cache.has(name)) return cache.get(name)!;
   const m = new RegExp(`^const ${name} = ([^/\\n]+)`, "m").exec(src);
   if (!m) throw new Error(`const ${name} not found`);
-  const v = m[1].trim().split(/\s*\+\s*/).reduce((a, t) => a + (/^\d+$/.test(t) ? +t : cval(t)), 0);
+  const e = m[1].trim().replace(/[A-Z][A-Z0-9_]*/g, (n) => String(cval(n)));
+  if (!/^[0-9+\-*/() ]+$/.test(e)) throw new Error(`const ${name}: cannot evaluate ${m[1].trim()}`);
+  const v = Function(`return (${e})`)() as number;
   cache.set(name, v);
   return v;
 }
+// TCBのワードの定数（lowerの全ファイルの const TC_…）が重ならないこと: 範囲の印（TC_WORDS = 記録の語数・TC_SAVE〜TC_END = 退避の列）を除いた
+// ワードは互いに違い、退避の列に入らない（2つのbranchが同じ空きのワードを取ると、片方の値がもう片方を上書きする — 定数の値だけでは見えない）
+{
+  const marks = new Set(["TC_WORDS", "TC_SAVE", "TC_END"]);
+  const names = [...src.matchAll(/^const (TC_[A-Z0-9_]+) = /gm)].map((m) => m[1]).filter((n) => !marks.has(n));
+  const at = new Map<number, string[]>();
+  for (const n of names) { const v = cval(n); at.set(v, [...(at.get(v) ?? []), n]); }
+  const lo = cval("TC_SAVE"), hi = cval("TC_END");
+  const clash = [...at.entries()].filter(([v, ns]) => ns.length > 1 || (v >= lo && v < hi)).map(([v, ns]) => `word ${v}: ${ns.join(" · ")}`);
+  if (clash.length) { console.log(`areacheck-bad TCB word constants overlap [${clash.join(" / ")}] (save array ${lo}..${hi - 1})`); process.exit(1); }
+}
 const TC_AREA = cval("TC_AREA"), TC_ONW = cval("TC_ONW"), SPARK = cval("AREA_SPARK"), ROOM = cval("TCB_TOP_ROOM"), STACK = cval("TASK_STACK"), GUARD = cval("TASK_GUARD");
 const HEAD = cval("TASK_HEAD"), TC_ENTRY = cval("TC_ENTRY");
+// TCBの記録の末尾のページ（ページ0の次からTC_ENDまで — 深い深度の退避の列）: 浅い深度だけを使う接続のtaskでは常駐しない。spawnごとに書くワードを
+// 退避の列の後ろに置くと、接続ごとにここが1ページ常駐する（接続あたりの常駐の退行 — 命令数のゲートには出ない）
+const TAIL = Math.floor((ROOM + 8 * (cval("TC_SAVE") + 2 * (cval("MAX_DEPTH") + 1)) - 1) / 4096);
 // エリアの予約ページ（task.sober）: フィールドrのWSP_AREA・深度BASE + 1 + rの退避の対（TC_SAVE + 2k = 表の基底〔予約ページの偽の基底〕・+1 = bump）
 const TC_WSP = cval("TC_WSP"), TC_SAVE = cval("TC_SAVE"), TC_BASE = cval("TC_BASE"), TC_SLOTSZ = cval("TC_SLOTSZ");
 const WSP_AREA = cval("WSP_AREA"), WIN_N = cval("WIN_N"), WIN_SZ = cval("WIN_SZ");
@@ -49,6 +66,24 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 async function until(f: () => boolean, ms: number, what: string) {
   for (let t = 0; t < ms; t += 20) { if (f()) return; await sleep(20); }
   bad(`timeout waiting for ${what}`);
+}
+// サーバーのスレッドが全部スリープ（S）しているか（ワーカーが走らせるtaskが無い — 接続のtaskは全部止まっている）
+function idle(): boolean {
+  try {
+    return fs.readdirSync(`/proc/${pid}/task`).every((t) => / S /.test(fs.readFileSync(`/proc/${pid}/task/${t}/stat`, "utf8").replace(/^\d+ \(.*\)/, "")));
+  } catch { return false; }
+}
+// 署名を読む前に、サーバーが静まるのを待つ（時間ではなく、全スレッドがスリープしたまま3回続けて見えること。負荷の下では、決めた時間の後でも
+// 接続のtaskが止まる途中・終わる途中のことがあり、その途中のスタックのページが署名に入る）
+async function quiet(what: string) {
+  let n = 0;
+  for (let t = 0; t < 20000; t += 10) { n = idle() ? n + 1 : 0; if (n >= 3) return; await sleep(10); }
+  bad(`timeout waiting for the server to settle (${what})`);
+}
+// サーバーが開いているソケットの数（接続のtaskの出口がfdを閉じる — 客が閉じた接続のtaskが終わったことの目印）
+function socks(): number {
+  try { return fs.readdirSync(`/proc/${pid}/fd`).filter((f) => { try { return fs.readlinkSync(`/proc/${pid}/fd/${f}`).startsWith("socket:"); } catch { return false; } }).length; }
+  catch { return -1; }
 }
 function bad(why: string): never {
   console.log(`areacheck-bad ${why}`);
@@ -93,6 +128,7 @@ function snapRaw(tag: string): number {
   let swapped = 0;
   let shallow = 0;
   const strays: string[] = [];
+  let tailRes = 0;
   const awBad: string[] = [];
   let awSeen = 0;
   for (const h of chunkTops) {
@@ -100,6 +136,7 @@ function snapRaw(tag: string): number {
     // 退避rsp（TCBのワード0 — 止まった / 終わったtaskが最後にスタックを離れた点）は持つエリアの中。自分の領域を持つときだけページ0も
     // （連続の形 — ページ0から下へ続く）。本体の後に持つエリアへ戻らない終わりのパスは、交換で他人の持ち物になったページ0で止まる
     if (word(h + ROOM + 8 * TC_ONW) & SPARK) shallow++;
+    { const b = Buffer.alloc(8 * TAIL); fs.readSync(pm, b, 0, b.length, (h / 4096 + 1) * 8); for (let i = 0; i < TAIL; i++) if (b.readBigUInt64LE(i * 8) >> 63n) { tailRes++; break; } }
     const w0 = word(h + ROOM);
     const rsp = w0 <= codeHi ? 0 : w0;
     const inArea = rsp >= a - STACK && rsp < a, onPage0 = a === h && rsp >= h && rsp < h + ROOM;
@@ -119,9 +156,10 @@ function snapRaw(tag: string): number {
   fs.closeSync(mem); fs.closeSync(pm);
   console.log(`sig ${tag} ${[...sig.entries()].sort((x, y) => (x[0] < y[0] ? -1 : 1)).map(([k, c]) => `${c}×[${k}]`).join(" ")}`);
   if (REF) return 0;
-  const line = `${tag}: chunks ${chunkTops.length} workers ${n} worker-areas ${wkTops.length} swapped ${swapped} shallow ${shallow} left-off-area ${strays.length}`;
+  const line = `${tag}: chunks ${chunkTops.length} workers ${n} worker-areas ${wkTops.length} swapped ${swapped} shallow ${shallow} left-off-area ${strays.length} tcb-tail ${tailRes}`;
   console.log(line);
   if (n !== W || wkTops.length !== W) bad(`${line} — expected ${W} workers with one area each`);
+  if (tailRes) bad(`${tag}: ${tailRes} chunks hold a resident page of the TCB record past page 0 (pages 1..${TAIL}) — a word written per spawn sits behind the save array`);
   if (strays.length) bad(`${tag}: a chunk left its stack outside the area it holds [${strays.slice(0, 3).join(" · ")}]`);
   if (awBad.length) bad(`${tag}: area window invariant broken [${awBad.slice(0, 3).join(" · ")}]`);
   awMax = Math.max(awMax, awSeen);
@@ -191,20 +229,26 @@ async function main() {
     if (rs.some((x) => x !== "200 ok")) bad(`/ok answered ${rs.find((x) => x !== "200 ok")}`);
   }
   await sleep(200);
+  await quiet("parked");
   let mx = snap("parked");
-  // 客が閉じた接続は handler が普通に返って task が終わる
+  // 客が閉じた接続は handler が普通に返って task が終わる（終わってfdが閉じるまで待つ — 終わる途中のtaskが後の相の署名に残らない）
+  const s0 = socks();
   for (const c of cs.splice(12)) c.s.destroy();
+  await until(() => socks() === s0 - 4, 20000, "the tasks of the 4 closed connections to end");
   await sleep(200);
+  await quiet("returned");
   mx = Math.max(mx, snap("returned"));
   // (d) ディープスリープの後に返る（待ちの最中と後）
   const sl = Promise.all(cs.slice(0, 8).map((c) => c.get("/sleep/800")));
   await sleep(300);
+  await quiet("deep-wait");
   mx = Math.max(mx, snap("deep-wait"));
   const rs = await sl;
   if (rs.some((x) => x !== "200 800")) bad(`/sleep/800 answered ${rs.find((x) => x !== "200 800")}`);
   const r2 = await Promise.all(cs.map((c) => c.get("/ok")));
   if (r2.some((x) => x !== "200 ok")) bad(`/ok after the sleep answered ${r2.find((x) => x !== "200 ok")}`);
   await sleep(200);
+  await quiet("after-deep-wait");
   mx = Math.max(mx, snap("after-deep-wait"));
   // ディープスリープの後の受けは所有エリアとワーカーのエリアを交換してからシャロースリープする（LedgerのparkSwap）
   const led = await cs[0].get("/ledger");

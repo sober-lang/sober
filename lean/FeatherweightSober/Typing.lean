@@ -99,48 +99,31 @@ inductive HasType (Δ : Defs) : ChanTy → StoreTy → Nat → Nat → Nat → C
       HasType Δ Ξ Ψ f b d Γ Λ e (.prod l r) → HasType Δ Ξ Ψ f b d Γ Λ (.fst e) l
   | snd {Ξ Ψ f b d Γ Λ} {e : Expr} {l r : Ty} :
       HasType Δ Ξ Ψ f b d Γ Λ e (.prod l r) → HasType Δ Ξ Ψ f b d Γ Λ (.snd e) r
-  /-- 一階関数の呼び出し（round4: 同世界化）。Def は base（region 0 = 圧縮された
-  呼び手空間、1 = 自フレーム）で一度だけ型付けされ（DefsOk）、呼び出しが一様シフト
-  +d で instantiate する（呼び手深さ = d + 1、フレーム region = d）。
-  引数は浅い imm 共変（Ty.sub）で param.shiftR d に合わせる — 機械は coerceTo で
-  注釈を書き換えて渡す。戻り値は ret.relocR d（round5: fretK の relocate が最上段を
-  呼び手最内 = region d へ写すので、上界も d に締める — 結果の再転送が型を通る）。
-  `b ≤ d`: 戻りの relocate が呼び手フレーム（region d）に書くので、共有 region の
-  直上では呼べない — タスクは自分の block を開いてから call（alloc と同型の制約） -/
-  | call {Ξ Ψ f b d Γ Λ} {fn : Nat} {ts : List Ty} {e : Expr} {dfn : Def} {ta : Ty} :
-      Δ[fn]? = some dfn → ts.length = dfn.tparams → Ty.tyArgsOk ts = true →
+  /-- 一階関数の呼び出し。Def は base（region 0 = 圧縮された呼び手空間、1 = 自フレーム）で一度だけ型付けされ（DefsOk）、
+  呼び出しが写像 rmap a d（0 ↦ a、k + 1 ↦ k + 1 + d）で instantiate する（呼び手深さ = d + 1、フレーム region = d）。
+  anchor a は項の注釈（脱糖器が書く）。ふつうの呼び出しは a = d（呼び手の最内。renR d d = shiftR d・relocA d d = relocR d）。
+  mut の実引数を持つ呼び出しは、その束縛の region。mut は正確一致（Ty.sub は mut を動かさない）なので、
+  mut の実引数の region が呼び手の束縛の region そのものになる。imm の実引数は anchor 以下（region 0 の上界）。
+  引数は浅い imm 共変（Ty.sub）で param.renR a d に合わせる。機械は coerceTo で注釈を書き換えて渡す。
+  戻り値は relocA a d（region 0 由来の最上段は a、自フレーム由来は d）。
+  `b ≤ a`: 共有 region へは書けない。タスクは自分の block を開いてから呼ぶ（alloc と同型の制約） -/
+  | call {Ξ Ψ f b d Γ Λ} {fn : Nat} {ts : List Ty} {e : Expr} {dfn : Def} {ta : Ty} {a : Nat} :
+      Δ[fn]? = some dfn → ts.length = dfn.kinds.length → kindsArgsOk dfn.kinds ts = true →
       HasType Δ Ξ Ψ f b (d + 1) Γ Λ e ta →
-      Ty.sub ta ((dfn.inst ts).param.shiftR d) = true → b ≤ d →
-      HasType Δ Ξ Ψ f b (d + 1) Γ Λ (.call fn ts e) ((dfn.inst ts).ret.relocR d)
-  /-- anchor つき呼び出し（R2 = region 多相の裁定 Q、anchor 1 slot）: call の一般化。Def の region 0
-  （圧縮された呼び手空間 — 暗黙の region 変数）を、引数の mut 位置の region a（anchor — 型から読む）で
-  instantiate する（写像 rmap a d: 0 ↦ a、k + 1 ↦ k + 1 + d）。mut は正確一致（Ty.sub は mut を動かさない）
-  なので、mut 実引数の region が呼び手の束縛の region そのものになる — mut 引数の関数を展開せず、
-  再帰に持ち込める。imm 引数は anchor 以下（region 0 の上界）。`b ≤ a`: 共有 region へは書けない。
-  戻り値は relocA a d（region 0 由来の最上段は a、自フレーム由来は d）。a = d のとき call と同じ -/
-  | callM {Ξ Ψ f b d Γ Λ} {fn : Nat} {ts : List Ty} {e : Expr} {dfn : Def} {ta : Ty} {a : Nat} :
-      Δ[fn]? = some dfn → ts.length = dfn.tparams → Ty.tyArgsOk ts = true →
-      HasType Δ Ξ Ψ f b (d + 1) Γ Λ e ta →
-      Ty.anchorOf (dfn.inst ts).param ta = some a →
       Ty.sub ta ((dfn.inst ts).param.renR a d) = true → b ≤ a → a ≤ d →
-      HasType Δ Ξ Ψ f b (d + 1) Γ Λ (.callM fn ts e) ((dfn.inst ts).ret.relocA a d)
+      HasType Δ Ξ Ψ f b (d + 1) Γ Λ (.call a fn ts e) ((dfn.inst ts).ret.relocA a d)
   /-- 閉じた関数値（V3-1）: Def 参照の型は Def のシグネチャ（base 座標の型スキーム）。
   環境を持たないので深さ・世界に依らず型が付く -/
   | fnref {Ξ Ψ f b d Γ Λ} {fn : Nat} {ts : List Ty} {dfn : Def} :
-      Δ[fn]? = some dfn → ts.length = dfn.tparams → Ty.tyArgsOk ts = true →
+      Δ[fn]? = some dfn → ts.length = dfn.kinds.length → kindsArgsOk dfn.kinds ts = true →
       HasType Δ Ξ Ψ f b d Γ Λ (.fnref fn ts) (.fn (dfn.inst ts).param (dfn.inst ts).ret)
-  /-- 関数値の呼び出し: call と同じ形（シグネチャを関数値の型から取る）。
-  機械は `callv (fnref i) v ⟶ call i v` で call に委譲する -/
-  | callv {Ξ Ψ f b d Γ Λ} {ef e : Expr} {p r ta : Ty} :
+  /-- 関数値の呼び出し: call の規則からシグネチャを関数値の型へ置き換えたもの。anchor a は構文の注釈。
+  戻りは retOk（関数値は fnref からしか作られず、その戻りは DefsOk の retOk。型変数を含む戻りの写しが代入と可換になる条件でもある）。
+  機械は `callv a (fnref i) v ⟶ call の入口（anchor = a）` -/
+  | callv {Ξ Ψ f b d Γ Λ} {a : Nat} {ef e : Expr} {p r ta : Ty} :
       HasType Δ Ξ Ψ f b (d + 1) Γ Λ ef (.fn p r) → HasType Δ Ξ Ψ f b (d + 1) Γ Λ e ta →
-      Ty.sub ta (p.shiftR d) = true → b ≤ d →
-      HasType Δ Ξ Ψ f b (d + 1) Γ Λ (.callv ef e) (r.relocR d)
-  /-- anchor つきの関数値の呼び出し（L1 — 借りの閉包の mut 捕捉）: callv の anchor 版。anchor a は構文の注釈で、
-  前提は callM の規則からシグネチャを関数値の型へ置き換えたもの。機械は `callMv a (fnref i) v ⟶ callM の入口（anchor = a）` -/
-  | callMv {Ξ Ψ f b d Γ Λ} {a : Nat} {ef e : Expr} {p r ta : Ty} :
-      HasType Δ Ξ Ψ f b (d + 1) Γ Λ ef (.fn p r) → HasType Δ Ξ Ψ f b (d + 1) Γ Λ e ta →
-      Ty.sub ta (p.renR a d) = true → b ≤ a → a ≤ d →
-      HasType Δ Ξ Ψ f b (d + 1) Γ Λ (.callMv a ef e) (r.relocA a d)
+      Ty.sub ta (p.renR a d) = true → b ≤ a → a ≤ d → r.retOk = true →
+      HasType Δ Ξ Ψ f b (d + 1) Γ Λ (.callv a ef e) (r.relocA a d)
   /-- 型注釈（V3-5）: 部分型へ緩める。値は変えない（imm 上界の slack と注釈値の coerceTo） -/
   | ann {Ξ Ψ f b d Γ Λ} {e : Expr} {ta t : Ty} :
       HasType Δ Ξ Ψ f b d Γ Λ e ta → Ty.sub ta t = true → HasType Δ Ξ Ψ f b d Γ Λ (.ann e t) t
@@ -203,7 +186,7 @@ inductive HasType (Δ : Defs) : ChanTy → StoreTy → Nat → Nat → Nat → C
       t.regionsBelow (d + 1) → b ≤ d → (m = false → t.mutFree) →
       HasType Δ Ξ Ψ f b (d + 1) Γ Λ (.mkslice m t) (.slice m d t)
   /-- string リテラル（strlit の段）: region r の imm byte セル列（byte の段 C — string = imm byte slice）。`b ≤ r`: region r へ書く（appendM と同じ — 共有 region には作れない）。
-  `r < d`: region r が今の世界にある。r は注釈なので、Def 本体の r = 0（呼び手空間）は call / callM の写像で呼び手側へ写る -/
+  `r < d`: region r が今の世界にある。r は注釈なので、Def 本体の r = 0（呼び手空間）は call の写像で呼び手側へ写る -/
   | strlit {Ξ Ψ f b d Γ Λ} {bs : List Int} {r : Nat} :
       b ≤ r → r < d →
       HasType Δ Ξ Ψ f b d Γ Λ (.strlit bs r) (.slice false r .byte)
@@ -504,39 +487,103 @@ inductive HasType (Δ : Defs) : ChanTy → StoreTy → Nat → Nat → Nat → C
       HasType Δ Ξ Ψ f b d Γ Λ (.unfold e) (Ty.muRs r n i t).unfold
 
 /-- 引数境界の条件（round4 V1、R2 で mut を解禁）: 呼び手空間（region 0）への参照までを許す。
-imm は上界、mut は正確（callM の anchor が呼び手の束縛の region を与える。call なら呼び手最内 d）。
+imm は上界、mut は正確（call の anchor が呼び手の束縛の region を与える。ふつうの呼び出しは呼び手最内 d）。
 chan は rc が正確（スナップショット長）でシフト・sub に馴染まないため断片外。domain は家の region が上界（Ty.sub の dom の腕）なので
 実引数に置ける（2026-11-10 — 戻り値は retOk が禁じたまま） -/
 def Ty.paramOk (t : Ty) : Bool := t.regionsBelow 1 && t.argFree
 
-/-- 戻り値の条件（round4 V1、R4a で深く）: imm のコンテナ / 参照は、どの深さでも自フレーム（region < 2）まで
-（中身も自フレーム可 — fretK の境界コピーが中身まで再帰して写す = 深い relocate）。mut は正確 region が relocation で壊れ、chan は rc が正確なので
-どちらも境界を渡れない -/
-def Ty.retOk : Ty → Bool
-  | .int => true
-  | .tvar _ => true
-  | .bool => true
-  | .byte => true
-  | .f64 => true
-  | .unit => true
-  | .opt t => t.retOk
-  | .union l r => l.retOk && r.retOk
-  | .prod l r => l.retOk && r.retOk
-  | .ref false r t => decide (r < 2) && t.retOk
-  | .slice false r t => decide (r < 2) && t.retOk
-  | .map false r t => decide (r < 2) && t.retOk
-  | .ref true _ _ => false
-  | .slice true _ _ => false
-  | .map true _ _ => false
-  | .chan _ _ => false
-  | .dom _ _ => false
-  -- 関数値は loc-free・閉じているので境界を渡れる
-  | .fn _ _ => true
-  | .mus _ _ _ => true
-  | .rvar _ => true
-  -- D の μ は imm のコンテナと同じ（中身の局所 region は自分の座標）
-  | .muRs r _ _ b => b.mutFree && decide (r < 2) && b.retOk
-  | .own _ _ _ => false
+/-- 型変数の出現の旗 k が宣言の kind k' 以下（出現が仮定する性質は、宣言が型引数に求める性質に含まれる） -/
+def Kind.le (k k' : Kind) : Bool := (!k.rf || k'.rf) && (!k.mf || k'.mf) && (!k.cf || k'.cf) && (!k.cov || k'.cov) && (!k.kf || k'.kf)
+
+/-- 型変数の出現の整形（Def の kinds ks の下）: 出現 tvar i ρ k は i が範囲内で k ≤ ks[i] -/
+def Ty.tvWf (ks : List Kind) : Ty → Bool
+  | .tvar i _ k => match ks[i]? with
+    | some k' => k.le k'
+    | none => false
+  | .opt t => t.tvWf ks
+  | .union l r => l.tvWf ks && r.tvWf ks
+  | .prod l r => l.tvWf ks && r.tvWf ks
+  | .ref _ _ t => t.tvWf ks
+  | .slice _ _ t => t.tvWf ks
+  | .map _ _ t => t.tvWf ks
+  | .chan _ t => t.tvWf ks
+  | .dom _ t => t.tvWf ks
+  | .fn p r => p.tvWf ks && r.tvWf ks
+  | .mus _ _ b => b.tvWf ks
+  | .own _ _ t => t.tvWf ks
+  | .muRs _ _ _ b => b.tvWf ks
+  | _ => true
+
+/-- 項の型注釈（呼び出しの型引数を含む）の型変数の出現の整形 -/
+def Expr.tvWf (ks : List Kind) : Expr → Bool
+  | .letE e b | .add e b | .lt e b | .arith _ e b | .farith _ e b | .fcmp _ e b | .cmp _ e b | .pair e b
+  | .callv _ e b | .assign e b | .whileE e b | .append e b | .eqs e b | .concat e b
+  | .par e b | .send e b | .dexit e b => e.tvWf ks && b.tvWf ks
+  | .ite c t e | .ifnil c t e | .case c t e | .setidx c t e | .subslice c t e | .setm c t e | .spawn c t e =>
+    c.tvWf ks && t.tvWf ks && e.tvWf ks
+  | .nil t | .unreach t | .mkslice _ t | .mksliceAt _ t _ | .mkmapAt _ t _ | .mkmap _ t | .newchan _ t
+  | .scopeV _ t | .newch _ _ t => t.tvWf ks
+  | .some e | .fst e | .snd e | .block e | .alloc _ e | .deref e | .freeze e | .lenE e | .tobyte e
+  | .fconv _ e | .toint e | .lenm e | .keysm e | .recv e | .close e | .unfold e => e.tvWf ks
+  | .inl t e | .inr t e | .ann e t | .blockR t e | .copyTo _ t e | .label t e | .jump _ t e | .fold t e
+  | .dnew _ e t | .denter t e | .join t e | .tryJ t e => t.tvWf ks && e.tvWf ks
+  | .call _ _ ts e => ts.all (Ty.tvWf ks) && e.tvWf ks
+  | .fnref _ ts => ts.all (Ty.tvWf ks)
+  | .index e i ot => e.tvWf ks && i.tvWf ks && (ot.all (Ty.tvWf ks))
+  | .clone ot e => (ot.all (Ty.tvWf ks)) && e.tvWf ks
+  | .getm t e k | .delm t e k => t.tvWf ks && e.tvWf ks && k.tvWf ks
+  | .parch t e1 e2 => t.tvWf ks && e1.tvWf ks && e2.tvWf ks
+  | .scope t ε e => t.tvWf ks && ε.tvWf ks && e.tvWf ks
+  | _ => true
+
+/-- Def の型変数の出現の整形: シグネチャと本体の型注釈の型変数の旗が kinds 以下 -/
+def Def.tvOk (dfn : Def) : Bool := dfn.param.tvWf dfn.kinds && dfn.ret.tvWf dfn.kinds && dfn.body.tvWf dfn.kinds
+
+/-- 型変数の出現 tvar i ρ k が、宣言の kind ks[i] と同じ旗を持ち、置き直し先が Kind.place で正規化されている（rf なら 0）。
+旗を宣言の kind で置き直しても変わらない形（`Def.raise_self`）。型付けの規則ではなく、脱糖器の出力の形の検査 -/
+def Ty.raisedOk (ks : List Kind) : Ty → Bool
+  | .tvar i ρ k => match ks[i]? with
+    | some k' => k.le k' && k'.le k && ρ == k.place ρ
+    | none => false
+  | .opt t => t.raisedOk ks
+  | .union l r => l.raisedOk ks && r.raisedOk ks
+  | .prod l r => l.raisedOk ks && r.raisedOk ks
+  | .ref _ _ t => t.raisedOk ks
+  | .slice _ _ t => t.raisedOk ks
+  | .map _ _ t => t.raisedOk ks
+  | .chan _ t => t.raisedOk ks
+  | .dom _ t => t.raisedOk ks
+  | .fn p r => p.raisedOk ks && r.raisedOk ks
+  | .mus _ _ b => b.raisedOk ks
+  | .own _ _ t => t.raisedOk ks
+  | .muRs _ _ _ b => b.raisedOk ks
+  | _ => true
+
+/-- 項の型注釈（呼び出しの型引数を含む）の型変数の出現の形（Ty.raisedOk） -/
+def Expr.raisedOk (ks : List Kind) : Expr → Bool
+  | .letE e b | .add e b | .lt e b | .arith _ e b | .farith _ e b | .fcmp _ e b | .cmp _ e b | .pair e b
+  | .callv _ e b | .assign e b | .whileE e b | .append e b | .eqs e b | .concat e b
+  | .par e b | .send e b | .dexit e b => e.raisedOk ks && b.raisedOk ks
+  | .ite c t e | .ifnil c t e | .case c t e | .setidx c t e | .subslice c t e | .setm c t e | .spawn c t e =>
+    c.raisedOk ks && t.raisedOk ks && e.raisedOk ks
+  | .nil t | .unreach t | .mkslice _ t | .mksliceAt _ t _ | .mkmapAt _ t _ | .mkmap _ t | .newchan _ t
+  | .scopeV _ t | .newch _ _ t => t.raisedOk ks
+  | .some e | .fst e | .snd e | .block e | .alloc _ e | .deref e | .freeze e | .lenE e | .tobyte e
+  | .fconv _ e | .toint e | .lenm e | .keysm e | .recv e | .close e | .unfold e => e.raisedOk ks
+  | .inl t e | .inr t e | .ann e t | .blockR t e | .copyTo _ t e | .label t e | .jump _ t e | .fold t e
+  | .dnew _ e t | .denter t e | .join t e | .tryJ t e => t.raisedOk ks && e.raisedOk ks
+  | .call _ _ ts e => ts.all (Ty.raisedOk ks) && e.raisedOk ks
+  | .fnref _ ts => ts.all (Ty.raisedOk ks)
+  | .index e i ot => e.raisedOk ks && i.raisedOk ks && (ot.all (Ty.raisedOk ks))
+  | .clone ot e => (ot.all (Ty.raisedOk ks)) && e.raisedOk ks
+  | .getm t e k | .delm t e k => t.raisedOk ks && e.raisedOk ks && k.raisedOk ks
+  | .parch t e1 e2 => t.raisedOk ks && e1.raisedOk ks && e2.raisedOk ks
+  | .scope t ε e => t.raisedOk ks && ε.raisedOk ks && e.raisedOk ks
+  | _ => true
+
+/-- Def の型変数の出現の形: シグネチャと本体の型注釈の型変数が、宣言の kind で置き直しても変わらない -/
+def Def.raisedOk (dfn : Def) : Bool :=
+  dfn.param.raisedOk dfn.kinds && dfn.ret.raisedOk dfn.kinds && dfn.body.raisedOk dfn.kinds
 
 /-- 関数表の整合（round4: 同世界化）: 各本体は base の世界
 （Ξ = Ψ = []、f = 1、b = 0、d = 2 — region 0 = 圧縮された呼び手空間、1 = 自フレーム。R2 で b を 0 に:
@@ -546,8 +593,8 @@ def DefsOk (Δ : Defs) : Prop :=
   ∀ (fn : Nat) (dfn : Def), Δ[fn]? = some dfn →
     dfn.param.paramOk = true ∧ dfn.ret.retOk = true ∧
     dfn.body.noNewchan = true ∧
-    dfn.param.tvarsBelow dfn.tparams = true ∧ dfn.ret.tvarsBelow dfn.tparams = true ∧
-    dfn.body.src = true ∧
+    dfn.param.tvarsBelow dfn.kinds.length = true ∧ dfn.ret.tvarsBelow dfn.kinds.length = true ∧
+    dfn.body.src = true ∧ dfn.tvOk = true ∧
     HasType Δ ∅ [] 1 0 2 [dfn.param] [] dfn.body dfn.ret
 
 end FS

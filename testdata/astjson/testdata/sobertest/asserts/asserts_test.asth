@@ -1,0 +1,17 @@
+@@full	7fd1113e6f1c3435	1438	35840
+@head	231a2766321f4785	0	186
+func TestBoolFails	c336b216ce55f1ac	10	405
+func TestCallFails	f5d611a39a210954	10	383
+func TestCatchFails	94ac6f361a01296b	12	436
+func TestCompareFails	dc6f07f66d34feec	12	468
+func TestFnArgCompareFails	c9cea7f1d852ae77	5	257
+func TestFnArgFails	4140406b78f5437d	7	329
+func TestLabelFails	48228e7e9b34126a	32	1124
+func TestLabelLazy	971492008848ecb9	20	705
+func TestMutArgFails	7852a781d212c815	8	345
+func TestPass	7dea43b96dfb879b	43	1325
+func TestStringFails	4e67569c65947cf4	8	332
+func TestUnprintableSkipped	5cf18b85700e8985	23	919
+func applyFails	0fb55ea913f72a1c	10	411
+func twiceFails	ce5f9e7e57cd3f76	10	423
+type Pair	38a517c968d1eb5b	3	157

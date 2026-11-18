@@ -1,0 +1,18 @@
+@@full	c349259483154526	2041	50183
+@head	7aaa9b710c68c96c	0	72
+func bump	1a37ec3efaa53a8e	25	927
+func early	ddfd676b03ff88b7	14	531
+func label	1aa5edb141f7e1cd	17	650
+func list	3374763e5fa5ab04	25	1049
+func main	e94fc19cdb7a7977	87	2600
+func must	db5940570f5f9b66	10	444
+func name	f291d5fb66236123	8	344
+func orZero	4937d4bf98fe744b	10	417
+func parse	d2cbe76eae4b2bd8	20	716
+func step	0aeb58ada258bfea	16	640
+func sum	25443130fff476e7	20	718
+func total	7746337c08e15a26	42	1454
+func width	737996c138a8e80b	12	457
+type Bad	a53642bb7d1a19de	2	112
+type Counter	db469dd4430cbf47	2	114
+type Entry	8aabc75a0793f627	3	167

@@ -1,0 +1,8 @@
+@@full	03c17de01fb775fe	618	14366
+@head	7b6f34d1a1ab8d6d	0	141
+func after	fa4d95951aec3798	11	491
+func done	7f8ff5ac87af1b17	10	399
+func main	e0fb9dd84a4ffd54	34	1197
+func step	3c7eb5f3bb025682	25	929
+type Machine	5943ac0dc6648fd4	2	116
+type State	2fad0bbea6e6db0a	3	150

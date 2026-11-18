@@ -4,7 +4,7 @@
 #   scripts/leanbatch.sh          第3ゴールデン・corevec・compiler/tools・端の入力（約400本）
 #   scripts/leanbatch.sh --all    加えてミュータント（約1,000本 — 拒否の経路を厚く）
 #
-# 入力: 第3ゴールデンtestdata/corejson/*.json・corevec 300本・compiler/tools/* のコアAST（大きい入力）・scripts/checkmut.tsのミュータント（拒否の多い入力）・
+# 入力: 第3ゴールデンの全文 out/gold/core/*.json（scripts/corejson.sh --gen が作る — 表は testdata/corejson）・corevec 300本・compiler/tools/* のコアAST（大きい入力）・scripts/checkmut.tsのミュータント（拒否の多い入力）・
 # 端の入力（空・壊れた JSON・改行を含む整形済みの JSON・受理しない kind）。バッチは gatelib.sh の lean_batch（ゲートが使う経路そのもの）で流す。
 # 前提: lean で lake build 済み（$SOBER_CHECK で差し替え可）・zig build 済み
 set -euo pipefail
@@ -19,7 +19,9 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/in"
 
-cp testdata/corejson/*.json "$tmp/in/"
+scripts/corejson.sh --gen > /dev/null || { echo "FAIL: scripts/corejson.sh --gen"; exit 1; }
+gold_rlock core
+cp out/gold/core/*.json "$tmp/in/"
 python3 - testdata/corevec.jsonl "$tmp/in/corevec" <<'EOF'
 import json, sys
 for n, line in enumerate(open(sys.argv[1])):
@@ -66,7 +68,7 @@ for r in "${reps[@]}"; do
 done
 if [ "${1:-}" = "--all" ]; then
     mkdir -p "$tmp/mut"
-    node scripts/checkmut.ts "$tmp/mut" testdata/corejson/*.json > /dev/null
+    node scripts/checkmut.ts "$tmp/mut" out/gold/core/*.json > /dev/null
     cp "$tmp/mut"/*.json "$tmp/in/"
 fi
 # 端の入力
@@ -74,7 +76,7 @@ fi
 printf '{"k":"lit","n":' > "$tmp/in/edge_truncated.json"
 printf 'not json at all' > "$tmp/in/edge_garbage.json"
 printf '{"k":"ref","m":true}\n' > "$tmp/in/edge_unknown_kind.json"
-jq . testdata/corejson/examples_fib.json > "$tmp/in/edge_pretty_fib.json"
+jq . out/gold/core/examples_fib.json > "$tmp/in/edge_pretty_fib.json"
 printf '{\n  "k": "lit",\n  "n": 1\n' > "$tmp/in/edge_pretty_truncated.json"
 printf '{"k":"lit","n":1} {"k":"triv"}' > "$tmp/in/edge_two_values.json"
 
