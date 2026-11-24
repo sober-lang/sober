@@ -43,7 +43,9 @@ cur=
 start() {
     [ "$cur" = "$1" ] && [ -n "$SPID" ] && return 0
     if [ -n "$SPID" ]; then kill "$SPID" 2>/dev/null; wait "$SPID" 2>/dev/null; fi
-    SOBER_WORKERS=2 "$W/$1" live "$PORT" > "$W/server-$1.log" 2>&1 &
+    # half = examples/tls_serveのlive-half（相手のclose_notifyの後に送る）
+    case "$1" in half) SOBER_WORKERS=2 "$W/echo" live-half "$PORT" > "$W/server-$1.log" 2>&1 & ;;
+        *) SOBER_WORKERS=2 "$W/$1" live "$PORT" > "$W/server-$1.log" 2>&1 & ;; esac
     SPID=$!
     cur=$1
     for _ in $(seq 100); do

@@ -55,6 +55,7 @@ B=$W/root
 stage_tree "$B"
 
 fail=0
+lfail=0
 # stage2: 共有の stage2（scripts/stage2.sh — 唯一の作り手。compiler/ + std/ + stage1 のハッシュが同じなら作り直さない — 主役交代 R39）
 t=$(now)
 S2=$(STAGE1=$STAGE1 scripts/stage2.sh) || { echo "stages: FAIL scripts/stage2.sh"; exit 1; }
@@ -183,35 +184,35 @@ echo "meas: $(cd "$M" && find std -name '*.sober' | wc -l) std files in the impo
 
 # RSSのラチェット（bench/ratchet.txtのself/build3 rss — 推移的に依存するstdだけの木の自己buildのpeak RSS〔上の基準〕。stage3 = 今のソースを今の最適化でビルドしたコンパイラ。
 # self/build rssはbench.shの基準〔stage2 × 全部の木 — stdの焼き込みを含む〕で、stagesは照合しない）
-rlim=$(awk '$1 == "self/build3" && $2 == "rss" { print $3 }' "$ROOT/bench/ratchet.txt")
+# 線との比較の赤は lfail に数える（fail = 線のほかの検査。本体の緑の印 meas_body_ok は fail だけで決める — gatelib.sh の ratchet_cmp）
 rss=$(( $(cat "$W/stage4.rss") / 1024 ))
-if [ -n "$rlim" ] && [ "$rss" -gt "$rlim" ]; then
-    echo "FAIL: ratchet — stage3 の自己 build の peak RSS ${rss} MB > ${rlim} MB（bench/ratchet.txt）"; fail=1
-else
-    echo "ratchet: stage3 の自己 build の peak RSS ${rss} MB ≤ ${rlim} MB"
-fi
+ratchet_cmp bench/ratchet.txt self/build3 rss "$rss"
+case $? in
+    0) echo "ratchet: stage3 の自己 build の peak RSS ${rss} MB ≤ ${RATCHET_LIM} MB" ;;
+    1) echo "FAIL: ratchet — stage3 の自己 build の peak RSS ${rss} MB > ${RATCHET_LIM} MB（bench/ratchet.txt）"; lfail=1 ;;
+    *) echo "FAIL: ratchet — bench/ratchet.txt に self/build3 rss の行が無い"; lfail=1 ;;
+esac
 # 命令数のラチェット（bench/ratchet.txt の self/build3 inst — stage3 の自己 build の instructions:u・G。bench.sh の self/build inst は
 # out/stage2〔bootがビルドしたもの〕の基準で約0.8 G多い — 2本立てで残し、照合はこちら。鳴ったらscripts/inst/ の2×2で木の仕事と退行を分ける）
-ilim=$(awk '$1 == "self/build3" && $2 == "inst" { print $3 }' "$ROOT/bench/ratchet.txt")
-if [ "${#INSTP[@]}" = 0 ]; then
-    :
-elif [ -n "$ilim" ]; then
+if [ "${#INSTP[@]}" != 0 ]; then
     inst=$(awk -F, '/instructions/ { printf "%.3f", $1 / 1e9 }' "$W/stage4.inst")
-    if awk -v v="$inst" -v l="$ilim" 'BEGIN { exit !(v > l) }'; then
-        echo "FAIL: ratchet — stage3 の自己 build の命令 ${inst} G > ${ilim} G（bench/ratchet.txt — scripts/inst/README.md の 2×2 で切り分け）"; fail=1
-    else
-        echo "ratchet: stage3 の自己 build の命令 ${inst} G ≤ ${ilim} G"
-    fi
+    ratchet_cmp bench/ratchet.txt self/build3 inst "$inst"
+    case $? in
+        0) echo "ratchet: stage3 の自己 build の命令 ${inst} G ≤ ${RATCHET_LIM} G" ;;
+        1) echo "FAIL: ratchet — stage3 の自己 build の命令 ${inst} G > ${RATCHET_LIM} G（bench/ratchet.txt — scripts/inst/README.md の 2×2 で切り分け）"; lfail=1 ;;
+        *) echo "FAIL: ratchet — bench/ratchet.txt に self/build3 inst の行が無い"; lfail=1 ;;
+    esac
 fi
 # ELFの大きさのラチェット（bench/ratchet.txtのself/elf size — 推移的に依存するstdだけの木の自己buildのELF〔stage4m — 上の命令 / RSSと同じ基準。
 # 推移的な依存の外のstdの焼き込みは鳴らない — report-827〕・MB = 10^6バイト。展開の膨張の検査 — report-465）
-elim=$(awk '$1 == "self/elf" && $2 == "size" { print $3 }' "$ROOT/bench/ratchet.txt")
 esz=$(stat -c %s "$W/stage4m")
-if [ -n "$elim" ] && awk -v v="$esz" -v l="$elim" 'BEGIN { exit !(v > l * 1000000) }'; then
-    echo "FAIL: ratchet — 閉包の木の自己 build の ELF ${esz} バイト > ${elim} MB（bench/ratchet.txt）"; fail=1
-else
-    echo "ratchet: 閉包の木の自己 build の ELF ${esz} バイト ≤ ${elim} MB（全部の木の stage3 = $(stat -c %s "$W/stage3") バイト — 参考）"
-fi
+emb=$(awk -v v="$esz" 'BEGIN { printf "%.6f", v / 1000000 }')
+ratchet_cmp bench/ratchet.txt self/elf size "$emb"
+case $? in
+    0) echo "ratchet: 閉包の木の自己 build の ELF ${esz} バイト ≤ ${RATCHET_LIM} MB（全部の木の stage3 = $(stat -c %s "$W/stage3") バイト — 参考）" ;;
+    1) echo "FAIL: ratchet — 閉包の木の自己 build の ELF ${esz} バイト > ${RATCHET_LIM} MB（bench/ratchet.txt）"; lfail=1 ;;
+    *) echo "FAIL: ratchet — bench/ratchet.txt に self/elf size の行が無い"; lfail=1 ;;
+esac
 if cmp -s "$W/stage3" "$W/stage4"; then
     echo "fixed point (binary): stage3 の ELF ≡ stage4 の ELF ($(stat -c %s "$W/stage3") bytes)"
 else
@@ -294,5 +295,8 @@ if [ "$cli" = 1 ] && [ "$fail" = 0 ]; then
     echo "time: selfhost_cli $(dt "$t" "$(now)")s"
 fi
 skip=$([ "${#INSTP[@]}" = 0 ] && echo " (SKIP[perf] inst ratchet)")
-[ "$fail" = 0 ] && echo "stages: ok$skip" || echo "stages: FAIL$skip"
-exit $fail
+[ "$fail" = 0 ] && meas_body_ok
+if [ "$fail" = 0 ] && [ "$lfail" = 0 ]; then echo "stages: ok$skip"
+elif [ "$fail" = 0 ]; then echo "stages: FAIL (ratchet only)$skip"
+else echo "stages: FAIL$skip"; fi
+[ "$fail" = 0 ] && [ "$lfail" = 0 ]

@@ -7,6 +7,8 @@
 #     testdata/cover/shapes.expect・--cover-out のテキストが shapes.txt・--cover-pkg で下の package まで広げた LCOV が shapes.lcov と一致。ワーカー 1 と 8 で同じ
 #   scripts/cover.sh            照合
 #   scripts/cover.sh --regen    ゴールデンを作り直す（差分を見てからコミット）
+# ゴールデンの並びを呼び手のロケールに依らせない
+export LC_ALL=C.UTF-8
 set -uo pipefail
 cd "$(dirname "$0")/.."
 SOBER=${SOBER:-./bin/sober}

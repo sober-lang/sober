@@ -345,6 +345,16 @@ theorem tcEq_alloc (x0 : Bool) (x1 : Expr) (ih_x1 : ∀ n b d Γ Λ, sizeOf x1 <
     simp only [evalRule, tcStep, ihx1]
     cases hT : typecheck Δ Ξ Ψ f b d Γ Λ x1 <;> cases d <;> simp [kAlloc, typecheck, hT]
 
+theorem tcEq_allocAt (x0 : Bool) (x1 : Nat) (x2 : Expr) (ih_x2 : ∀ n b d Γ Λ, sizeOf x2 < n → evalRule Δ f n b d Γ Λ x2 = typecheck Δ Ξ Ψ f b d Γ Λ x2) :
+    ∀ n b d Γ Λ, sizeOf (Expr.allocAt x0 x1 x2) < n → evalRule Δ f n b d Γ Λ (Expr.allocAt x0 x1 x2) = typecheck Δ Ξ Ψ f b d Γ Λ (Expr.allocAt x0 x1 x2) := by
+  intro n b d Γ Λ h; cases n with
+  | zero => omega
+  | succ n =>
+    simp only [Expr.allocAt.sizeOf_spec] at h
+    have ihx2 := fun b d Γ Λ => ih_x2 n b d Γ Λ (by omega)
+    simp only [evalRule, tcStep, ihx2]
+    cases hT : typecheck Δ Ξ Ψ f b d Γ Λ x2 <;> simp [kAllocAt, typecheck, hT]
+
 theorem tcEq_deref (x0 : Expr) (ih_x0 : ∀ n b d Γ Λ, sizeOf x0 < n → evalRule Δ f n b d Γ Λ x0 = typecheck Δ Ξ Ψ f b d Γ Λ x0) :
     ∀ n b d Γ Λ, sizeOf (Expr.deref x0) < n → evalRule Δ f n b d Γ Λ (Expr.deref x0) = typecheck Δ Ξ Ψ f b d Γ Λ (Expr.deref x0) := by
   intro n b d Γ Λ h; cases n with
@@ -940,6 +950,7 @@ theorem evalRule_eq_typecheck :
   | jump x0 x1 x2 ih_x2 => exact tcEq_jump x0 x1 x2 ih_x2
   | unreach x0 => exact tcEq_unreach x0
   | alloc x0 x1 ih_x1 => exact tcEq_alloc x0 x1 ih_x1
+  | allocAt x0 x1 x2 ih_x2 => exact tcEq_allocAt x0 x1 x2 ih_x2
   | deref x0 ih_x0 => exact tcEq_deref x0 ih_x0
   | assign x0 x1 ih_x0 ih_x1 => exact tcEq_assign x0 x1 ih_x0 ih_x1
   | whileE x0 x1 ih_x0 ih_x1 => exact tcEq_whileE x0 x1 ih_x0 ih_x1

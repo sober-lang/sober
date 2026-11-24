@@ -3,6 +3,7 @@ package main
 // 共有の方針のルートに、受け取ったレスポンスをそのまま返すafterと、組み直すafterを付ける。別のルート（方針なし）がCookieの値を本文に載せていても、
 // 共有のルートは認証の源に届かない（afterの値に、他のルートのレスポンスは混ざらない）
 import "std/http/server"
+import "std/net"
 
 func me(r http.server.Request) http.server.Response {
     c := http.server.Cookie(r, "sid")
@@ -24,11 +25,6 @@ func show(b []byte) error? {
     return nil
 }
 
-func give(a string, k func([]byte)) error? {
-    k(bytes(a))
-    return nil
-}
-
 func main() {
     pass := http.server.Middleware{after: keep}
     wait := http.server.Middleware{after: (r, w) => {
@@ -38,6 +34,20 @@ func main() {
     rs := []http.server.Route{
         http.server.Route{method: "GET", path: "/me", handler: me},
         http.server.Route{method: "GET", path: "/", handler: (r) => http.server.Text("home\n"), middleware: []http.server.Middleware{pass, wait, http.server.Middleware{after: rebuild}}, cache: http.server.Fresh{maxAge: 60}}}
-    e := http.server.ServeWith((k) => give("GET / HTTP/1.1\r\nHost: x\r\nCookie: sid=s1\r\nConnection: close\r\n\r\n", k), (b) => show(b), (r) => http.server.Dispatch(rs, r))
+    e := net.Pair((c) => http.server.ServeConn(c, (r) => http.server.Dispatch(rs, r)), (c) => {
+        _ = net.Send(c, bytes("GET / HTTP/1.1\r\nHost: x\r\nCookie: sid=s1\r\nConnection: close\r\n\r\n"))
+        _ = show(readAll(c))
+    })
     println(e == nil)
+}
+
+// 相手が閉じるまで受けたバイト列（最後の要求はConnection: close — サーバーが応答の後に閉じる）
+func readAll(c net.Conn) []byte {
+    mut got := mut []byte{}
+    _ = net.Recv(c, (x) => {
+        for y <- x {
+            got = append(got, y)
+        }
+    })
+    return freeze(got)
 }

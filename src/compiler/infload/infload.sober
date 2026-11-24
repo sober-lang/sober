@@ -1,0 +1,58 @@
+package infload
+
+// 型引数の字面の無い print.Log(rec)・json.Encode(v)・json.EncodeWith(v, rename) の型引数の推論（language.md 42 節・16 節）。
+// loaderは型を推論しないので、1回目の読み込みは呼び出しを保留にする（loader/infer.sober）。ここで表層型から根の型を読み
+// （desugar.InferRoots）、根の型の表をつけて同じ読み込みをやり直す（loader.LoadReq）。合成は字面の型引数と同じ経路を通る。
+// check・build・test・analyzerの読み込みは全部ここを通るので、推論と拒否は同じ判定になる。保留の無いプログラムは何もしない。
+// desugarがloaderをimportしているので、両方より上に置く
+
+import "ast"
+import "desugar"
+import "diag"
+import "loader"
+import "std/iter"
+
+// 要求rで読んだpの保留の呼び出しの型引数を推論して読み込みをやり直し（保留が無ければpのまま）、名前付き関数型を通した
+// 名前付き実引数を変換したProgram（desugar.NamedValueArgs — どちらも型を知る層の変換）。
+// 2つ目の戻り = やり直した読み込みの生の木（loader.ReqViewMemだけ — 他と、やり直さなかったときは空）。
+// 推論の拒否は位置を引けるようにpを返す（診断のファイルの添字はpの並び）
+@errors(diag.ReadFail, diag.NoPkgDir, diag.ImportPath, diag.NoStd, diag.LeadingZero, diag.LitRange, diag.TestSignature, diag.Double, diag.GrammarMismatch, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.EmbedTooLarge, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.TopDup, diag.VariantDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.MultiBind, diag.MutAlias, diag.CatchLhs, diag.Sealed, diag.Identity, diag.FnArg, diag.FnOpt, diag.FnCap, diag.ForFallible, diag.AssertOutsideTest, diag.TypeDecl, diag.Layout, diag.JsonShape, diag.Intrinsic, diag.Par, diag.PanicLabel, diag.Logs, diag.Cell, diag.Mod)
+func Infer(p loader.Program, r loader.Req, sm map[string]string) (loader.Program, []ast.Tree, error?) {
+    n := loader.InfPending(p)
+    if n == 0 {
+        q, err := desugar.NamedValueArgs(p)
+        return q, []ast.Tree{}, err
+    }
+    rs := desugar.InferRoots(p)
+    loader.Stage("inf-typed")
+    mut tab := mut []string{}
+    for i <- iter.Range(0, n) {
+        f, nd, api := loader.InfAt(p, i)
+        x := rs[i]
+        if x.kind != desugar.InfOk {
+            return p, []ast.Tree{}, diag.JsonShape{at: diag.Pos{file: f, tok: loader.CallTok(p, f, nd)}, kind: shapeKind(x.kind, api)}
+        }
+        tab = append(tab, p.file_path[f])
+        tab = append(tab, "${nd}")
+        tab = append(tab, x.pkg)
+        tab = append(tab, x.name)
+    }
+    q0, raw, err := loader.LoadReq(r, sm, freeze(tab))
+    loader.Stage("inf-reload")
+    if err != nil {
+        return q0, raw, err
+    }
+    q, nerr := desugar.NamedValueArgs(q0)
+    return q, raw, nerr
+}
+
+// 根の型の読みの結果kとAPIの診断の種類（diag.JsonShape）
+func shapeKind(k int, api int) int {
+    if k == desugar.InfTParam {
+        return if api == loader.InfLog { 8 } else { 9 }
+    }
+    if k == desugar.InfUnknown {
+        return 10
+    }
+    return if api == loader.InfLog { 5 } else { 1 }
+}

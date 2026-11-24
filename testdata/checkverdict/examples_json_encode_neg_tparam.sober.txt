@@ -1,0 +1,2 @@
+sober: load error at examples/json_encode_neg_tparam.sober:12:17: json.Encode needs a concrete type, but the value's type here contains a type parameter: the encoder is generated per type, so call json.Encode where the type is known
+exit=1

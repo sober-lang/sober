@@ -1,11 +1,13 @@
 package main
 
-// TLS 1.3 のサーバ（std/tls — language.md 28 節の tls）: tls.Serve が handshake を済ませた接続だけを k に渡し、k は tls.Recv / tls.Send で
-// net.Connと同じ顔に読み書きする（ここではecho）。既定の走りは設定の検査（Parseの成功・ALPNの替え・壊れたPEM・鍵でないチャンク — switchはラベルを網羅）。
-// `tls_serve live <port>` は127.0.0.1:<port> で待ち受ける（`live-once` はbreakの後のRecvを見るonce）（openssl s_clientでHRR・ChaCha20・KeyUpdateの受けを検証する入口）
+// TLS 1.3 のサーバ（std/tls — language.md 28 節の tls）: tls.Serve が handshake を済ませた接続だけを k に渡し、k は TLS の状態を持つ net.Conn を
+// net.Recv / net.Send で平文の接続と同じに読み書きする（ここではecho）。既定の走りは設定の検査（Parseの成功・ALPNの替え・壊れたPEM・鍵でないチャンク — switchはラベルを網羅）。
+// `tls_serve live <port>` は127.0.0.1:<port> で待ち受ける（`live-once` はbreakの後のnet.Recvが続きを読むonce・`live-half` は相手のclose_notifyの後に送るhalf）（openssl s_clientでHRR・ChaCha20・KeyUpdateの受けを検証する入口）
 
 import "std/crypto/pem"
 import "std/crypto/rsa"
+import "std/io"
+import "std/net"
 import "std/os"
 import "std/tls"
 
@@ -17,27 +19,41 @@ func file(p string) string {
     return if v != nil { v } else { "" }
 }
 
-func echo(c tls.Conn) error? {
-    for b <- tls.Recv(c)? {
-        tls.Send(c, b)?
+func echo(c net.Conn) error? {
+    for b <- net.Recv(c)? {
+        net.Send(c, b)?
     }
     return nil
 }
 
-// 1 回だけ echo して break し、2 度目の tls.Recv の返しを送る（break で抜けた後の読みは終わり — Closed。net.Conn と顔が違う唯一の点）
-func once(c tls.Conn) error? {
-    for b <- tls.Recv(c)? {
-        tls.Send(c, b)?
+// 1 回だけ echo して break し、2 度目の net.Recv の返しを送る（break で抜けた後も、次の net.Recv が続きを読む — 平文の接続と同じ）
+func once(c net.Conn) error? {
+    for b <- net.Recv(c)? {
+        net.Send(c, b)?
         break
     }
-    return tls.Send(c, bytes("second recv: ${recvShow(tls.Recv(c, (b) => { }))}\n"))
+    mut n := 0
+    e := net.Recv(c, (b) => {
+        n += len(b)
+    })
+    return net.Send(c, bytes("second recv: ${recvShow(e)} ${n}\n"))
+}
+
+// 相手のclose_notifyまで読み、その後に送る（相手のclose_notifyは相手の書く側だけを閉じる。こちらの書く側は開いたまま — RFC 9846 6.1）
+func half(c net.Conn) error? {
+    for b <- net.Recv(c)? {
+    }
+    return net.Send(c, bytes("sent after close_notify\n"))
 }
 
 func recvShow(e error?) string {
     return switch e {
         case nil: "nil"
-        case tls.Closed{}: "closed"
-        case tls.BadRecord{}: "bad record"
+        case io.Closed{}: "closed"
+        case io.Timeout{}: "timeout"
+        case io.Expired{}: "expired"
+        case io.Denied{}: "denied"
+        case io.Other{errno}: "other ${errno}"
     }
 }
 
@@ -64,6 +80,10 @@ func main() int {
     if len(args) >= 3 && args[1] == "live" {
         e5 := tls.Serve("127.0.0.1:${args[2]}", tls.Alpn(cfg, []string{"http/1.1"}), echo)
         return if e5 == nil { 0 } else { 1 }
+    }
+    if len(args) >= 3 && args[1] == "live-half" {
+        e7 := tls.Serve("127.0.0.1:${args[2]}", cfg, half)
+        return if e7 == nil { 0 } else { 1 }
     }
     if len(args) >= 3 && args[1] == "live-once" {
         e6 := tls.Serve("127.0.0.1:${args[2]}", cfg, once)

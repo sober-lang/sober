@@ -1,4 +1,4 @@
-@@full	aeac21f81e2aaa38	12484	392557
+@@full	c1f6aa6a05553478	12472	392167
 @globals	827b17db28a2fddf	70	1996
 main.main	d9ef370c548662f2	721	26195
 main.pattern	1f93728e9fe307aa	244	8047
@@ -41,7 +41,7 @@ std/crypto/sha256.New	ee892a3145adb07f	217	7732
 std/crypto/sha256.Sum	fcab915647e759aa	1118	37601
 std/crypto/sha256.Sum256	85a3fc189e379c32	135	5014
 std/crypto/sha256.Write	1cec67a22d7c1b45	163	5594
-std/crypto/sha256.cat	4bc79249ec32da68	794	25713
+std/crypto/sha256.cat	31e660d902319afa	782	25323
 std/crypto/sha256.compress	68a0afbb7e187871	1156	37501
 std/crypto/sha256.kPacked	b4f55f561e0eaaeb	184	6366
 std/crypto/sha256.load	20f9c85d489cd176	238	7429

@@ -1,0 +1,22 @@
+@@full	97d92cce163d3503	5616	168351
+@head	616e9ab03cd4778c	0	182
+const n0	74fb0416854f004b	2	92
+const n0inv	c7bac195be02157e	2	96
+const n1	f0154ca655e4419e	2	93
+const n2	868ed9c101a09ace	2	75
+const n3	b6461d8d8a481760	2	84
+func Sign	53a59bd661c7480d	57	1972
+func cat	7b6beddde5197ffa	26	976
+func fill	3c27bd0b0854b2b4	26	943
+func inRange	ee2d2ce7e277d0ce	16	614
+func limb	acfa45fe325a4956	29	999
+func mac	623e7685d3a47667	38	1395
+func nadd	53ee7b42bf73ab98	13	540
+func newScalarField	2c953dc4f90ba641	33	1239
+func nfe	17235983ae18ab64	7	387
+func ninv	5528c4064bf660a9	53	1866
+func nmul	c056206930524ce6	186	5828
+func nreduce	a1b8f4c0dd5af908	21	778
+func putDerInt	2045fec3de5a1cec	73	2378
+func signRS	7bdfcd61fc190fe2	327	11065
+type scalarField	a0484ccc4b681168	3	165

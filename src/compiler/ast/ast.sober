@@ -108,7 +108,7 @@ const TTuple = 47      // a = 要素の型の列（2 つ以上）— `(T, error?
 const TMutP = 48
 
 // ── 宣言・その他 ──
-const KFile = 50       // a = package（文字列）, b = imports, c = types, d = funcs, e = consts（すべて列）, f = intrinsics（KIntrinsic の列 — 無ければ 0。std だけ）か package 節の前置の注釈 1 つの列（KReplaces / KDoubles）
+const KFile = 50       // a = package（文字列）, b = imports, c = types, d = funcs, e = consts（すべて列）, f = intrinsics（KIntrinsic の列 — 無ければ 0。std だけ）か package 節の前置の注釈 1 つの列（KReplaces / KDoubles / KLogs）
 const KImport = 51     // a = alias（文字列、-1 可）, b = path（文字列）
 const KTypeDecl = 52   // a = 名前, b = type_params（文字列の列）, c = body, d = span.start, e = span.end, f = 1 なら `@layout`（language.md 36 節）
 const BStruct = 53     // a = fields（列）, b = 後置の `@personal`（1）
@@ -148,6 +148,9 @@ const KReplaces = 76
 // package 節の前置の `@doubles("path", …)`（テストの構成の差し替えの表 — language.md 41 節）: a = パスの列（EStrlit の節の列）, b = package 名の字句の番号。
 // KFile の f の列にだけ現れる。loader が読んで木から外す
 const KDoubles = 77
+// package 節の前置の `@logs(stdout)`（ログの行き先。language.md 42 節）: a = 語（文字列。loader が stdout / stderr かを検査する）, b = package 名の字句の番号。
+// KFile の f の列にだけ現れる。loader が読んで木から外す
+const KLogs = 78
 // lower が合成する評価済みの値の節（木には現れない — pipe の左辺を引数へ渡す。Zig の ArgSrc.val）: a = 型, b = 値。
 // 番号は木の種類と重ならないように離して置く（desugarのdescTableは木の節のフィールドの付け替えにだけ使い、EValは引かない）
 const EVal = 90

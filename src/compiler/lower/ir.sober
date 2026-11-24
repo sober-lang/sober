@@ -281,6 +281,8 @@ const AREA_SPARK = 16
 const AREA_NEAR = 32
 // bit 6 = エリアの予約ページの深度に中身がある（rt.task_wait_kが切り替えの前に置く — task.soberエリアの予約ページ。立っていればシャロースリープしない）
 const AREA_FULL = 64
+// bit 7 = ディープスリープの間に持っているエリアの死んだページを返した（rdl.sober rdlTrim。待ち1回に1回で、ディープスリープするたびにareaParkが消す）
+const AREA_TRIM = 128
 const OpUnwind = 26    // 罠が張られていれば最内の罠へ巻き戻る（戻らない）。張られていなければ何もしない（続く exit 101 / 102 がプロセスを終える）
 
 // ── フィールドの種別の表: opごとの [A, B, C]・終端ごとの [X1〜X5] が何を持つか。被演算子の走査（optのinsOperands /

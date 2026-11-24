@@ -9,6 +9,7 @@
 #   scripts/axes.sh [--warn]   --warn = 越えても終了 0（regen.sh の末尾の照合 — 行は WARN で出す）
 set -uo pipefail
 cd "$(dirname "$0")/.."
+. scripts/gatelib.sh
 R=bench/ratchet.txt
 warn=0
 [ "${1:-}" = "--warn" ] && warn=1
@@ -23,6 +24,8 @@ sizes() {
     fi
 }
 bad() { if [ $warn = 1 ]; then echo "WARN: $1"; else echo "FAIL: $1"; fail=1; fi; }
+lfail=0
+lbad() { if [ $warn = 1 ]; then echo "WARN: $1"; else echo "FAIL: $1"; lfail=1; fi; }   # 線との比較の赤（ratchet_cmp — 線の値の変更は記録の実測で再判定される）
 while read -r item field lim ref; do
     case "$item" in golden/*) ;; *) continue ;; esac
     k=${item#golden/}
@@ -32,17 +35,17 @@ while read -r item field lim ref; do
             read -r sz f < <(sizes "$k" | sort -n | tail -1)
             mb=$(awk -v s="$sz" 'BEGIN { printf "%.3f", s / 1e6 }')
             n=$((n + 1))
-            if awk -v a="$mb" -v b="$lim" 'BEGIN { exit !(a > b) }'; then bad "$item maxfile ${mb} MB > ${lim} MB ($f — bench/ratchet.txt)"; else echo "ok: $item maxfile ${mb} MB ≤ ${lim} MB ($f)"; fi ;;
+            if ratchet_cmp "$R" "$item" maxfile "$mb"; then echo "ok: $item maxfile ${mb} MB ≤ ${RATCHET_LIM} MB ($f)"; else lbad "$item maxfile ${mb} MB > ${RATCHET_LIM} MB ($f — bench/ratchet.txt)"; fi ;;
         total)
             mb=$(sizes "$k" | awk '{ t += $1 } END { printf "%.1f", t / 1e6 }')
             echo "ref: $item total ${mb} MB (記録 ${lim} MB)" ;;
     esac
 done < <(grep -v '^#' "$R")
-lim=$(awk '$1 == "ir/maxfn" && $2 == "lines" { print $3 }' "$R")
-if [ -n "$lim" ]; then
+if grep -q '^ir/maxfn lines ' "$R"; then
     read -r m fn f < <(awk -F"\t" 'FNR > 1 && $1 != "@globals" && $3 > m { m = $3; mn = $1; mf = FILENAME } END { print m + 0, mn, mf }' testdata/irtext/*.irh)
     n=$((n + 1))
-    if [ "$m" -gt "$lim" ]; then bad "ir/maxfn $m lines > $lim ($fn in $f — bench/ratchet.txt)"; else echo "ok: ir/maxfn $m lines ≤ $lim ($fn in $f)"; fi
+    if ratchet_cmp "$R" ir/maxfn lines "$m"; then echo "ok: ir/maxfn $m lines ≤ $RATCHET_LIM ($fn in $f)"; else lbad "ir/maxfn $m lines > $RATCHET_LIM ($fn in $f — bench/ratchet.txt)"; fi
 fi
-echo "axes: $n lines in bench/ratchet.txt (golden maxfile / ir maxfn), fail=$fail"
-[ "$fail" = 0 ]
+echo "axes: $n lines in bench/ratchet.txt (golden maxfile / ir maxfn), fail=$fail, ratchet fail=$lfail"
+[ "$fail" = 0 ] && meas_body_ok
+[ "$fail" = 0 ] && [ "$lfail" = 0 ]

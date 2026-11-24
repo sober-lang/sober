@@ -241,10 +241,29 @@ func TestNames() {
     assert(dnsUnder("x", ""))
     assert(ipUnder([]byte{10, 1, 2, 3}, []byte{10, 0, 0, 0, 255, 0, 0, 0}))
     assert(!ipUnder([]byte{11, 1, 2, 3}, []byte{10, 0, 0, 0, 255, 0, 0, 0}))
-    assert(len(parseIP("1.2.3.4")) == 4)
-    assert(len(parseIP("1.2.3")) == 0)
-    assert(len(parseIP("01.2.3.4")) == 0)
-    assert(len(parseIP("256.2.3.4")) == 0)
+    v6 := []byte{0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}
+    mapped := []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, 192, 0, 2, 1}
+    c := ipCert([][]byte{[]byte{1, 2, 3, 4}, v6, mapped})
+    assert(hostOk(c, "1.2.3.4"))
+    assert(hostOk(c, "1.2.3.4."))
+    assert(!hostOk(c, "1.2.3"))
+    assert(!hostOk(c, "01.2.3.4"))
+    assert(!hostOk(c, "256.2.3.4"))
+    assert(!hostOk(c, "1.2.3.5"))
+    assert(hostOk(c, "2001:db8::1"))
+    assert(hostOk(c, "2001:DB8:0:0::1"))
+    assert(hostOk(c, "[2001:db8::1]"))
+    assert(!hostOk(c, "2001:db8::2"))
+    // RFC 4291 2.2の3つ目の形（末尾のIPv4）
+    assert(hostOk(c, "::ffff:192.0.2.1"))
+    assert(hostOk(c, "::FFFF:C000:201"))
+}
+
+// SANのiPAddressだけを持つ証明書（名前の照合の検査用）
+func ipCert(ips [][]byte) Cert {
+    return Cert{raw: []byte{}, tbs: []byte{}, version: 0, serial: []byte{}, sigAlg: 0, sig: []byte{}, sigPad: 0, issuer: []byte{}, subject: []byte{}, notBefore: 0, notAfter: 0,
+        spki: []byte{}, pubAlg: 0, pubKey: []byte{}, exts: []Ext{}, bcValid: false, isCA: false, pathLen: -1, keyUsage: 0, eku: []string{}, dns: []string{}, ips: ips, ski: []byte{}, aki: []byte{},
+        ncPresent: false, ncPermDNS: []string{}, ncExclDNS: []string{}, ncPermIP: [][]byte{}, ncExclIP: [][]byte{}, ncOther: false, distrustAfter: 0, baked: false}
 }
 
 // 焼き込みの信頼ストア: 全部読めて、自己署名の署名が合う（distrust-after の付いた起点が少なくとも 1 本ある）

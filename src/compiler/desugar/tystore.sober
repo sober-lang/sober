@@ -244,7 +244,6 @@ type TyFrozen struct {
     yfmh []int
     yfm []int
     sc []int   // 店のワード（TyFreezeが積む並び — TyAdoptが同じ並びで戻す）
-    heap []int // Init の後のヒープの尾（γ の当たりがあった build だけ — 読み戻しが型変数の名前を strOf でヒープへ積む。子は Init の後の同じ番地へ積み直す）
 }
 
 func tyInts(t mut table.Table[int]) []int {
@@ -292,13 +291,8 @@ func TyFreeze(st mut S) TyFrozen {
     sc = append(sc, st.ty.late)
     sc = append(sc, st.nimpl)
     sc = append(sc, st.ty.h0)
-    mut hp := mut []int{}
-    if gcAnyHit(mut st) {
-        for i <- iter.Range(st.ty.h0, hlen(mut st)) {
-            hp = append(hp, hget(mut st, i))
-        }
-    }
-    return TyFrozen{heap: freeze(hp), tys: ftys, yl: fyl, ents: fents, bucket: tyInts(mut st.ty.ybucket), fnres: tyInts(mut st.ty.yfnres), fnsig: tyInts(mut st.ty.yfnsig), conty: tyInts(mut st.ty.yconty), lamN: tyInts(mut st.ty.ylamN), lamK: tyInts(mut st.ty.ylamK), lamY: tyInts(mut st.ty.ylamY), yfmh: tyInts(mut st.ty.yfmh), yfm: tyInts(mut st.ty.yfm), sc: freeze(sc)}
+    // ヒープは写さない: 店がヒープを指すのは γ の読み戻しの文字列だけで、それは店の列（yl）に積む（trStr）
+    return TyFrozen{tys: ftys, yl: fyl, ents: fents, bucket: tyInts(mut st.ty.ybucket), fnres: tyInts(mut st.ty.yfnres), fnsig: tyInts(mut st.ty.yfnsig), conty: tyInts(mut st.ty.yconty), lamN: tyInts(mut st.ty.ylamN), lamK: tyInts(mut st.ty.ylamK), lamY: tyInts(mut st.ty.ylamY), yfmh: tyInts(mut st.ty.yfmh), yfm: tyInts(mut st.ty.yfm), sc: freeze(sc)}
 }
 
 // 子が Init の後で親の店を受け取る（TypeAll の代わり — 型付けの結果は親の店のまま）
@@ -338,17 +332,9 @@ func TyAdopt(st mut S, f TyFrozen) {
     // 店の外の型付けの結果のワード: 暗黙のfreezeの点の数（IsImplicitの門 — 点そのものは節 → 型の表の別キー〔IMPLKEY〕で店の中。
     // 点の列 ypts は analyzer の Freeze だけが読む — 子は検査しないので渡さない）
     st.nimpl = f.sc[10]
-    // γ の読み戻しの文字列（ヒープの尾 — Init の終わりの長さが親と同じことが前提: Init は決定的）
-    if len(f.heap) > 0 {
-        if hlen(mut st) != f.sc[11] {
-            panic(InvariantBroken{})
-        }
-        for w <- f.heap {
-            hpush(mut st, w)
-        }
-    }
     // TypeAllの頭が立てるSのワード（型付けの作業の状態 — 終わった後の値と同じ）
     st.yfi = -1
     st.instEnvs = -1
     st.insts = -1
+    st.shares = -1
 }

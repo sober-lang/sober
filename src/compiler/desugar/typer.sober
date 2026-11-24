@@ -625,6 +625,7 @@ func TypeAllC(st mut S, c0 TyCache) TyPut {
     st.yfi = -1
     st.instEnvs = -1
     st.insts = -1
+    st.shares = -1
     st.ty.yedges = -1
     st.ty.ydk = -1
     st.ty.ycur = st.npkg
@@ -1612,6 +1613,7 @@ func yCallee(st mut S, callee0 NodeRef, an ListRef, at ListRef) int {
         if kindN(mut st, base) == ast.EIdent && yLookup(mut st, sA(nodeOf(mut st, base))) == -2 && importRef(mut st, st.ypk, sA(nodeOf(mut st, base))) {
             fi := ResolveSelFn(mut st, st.ypk, sA(nodeOf(mut st, base)), sB(nodeOf(mut st, callee)))
             if fi >= 0 {
+                yDangerCall(mut st, fi, sB(nodeOf(mut st, callee)), callee0)
                 return yNamedCall(mut st, fi, an, at, ex, callee0)
             }
             c := yConvCall(mut st, callee0, an)

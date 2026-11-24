@@ -1,0 +1,26 @@
+package main
+
+// スカラーのmut局所（入れ子のブロック）と外のmutのstructを、再帰する関数へ一緒に渡す
+type S struct {
+    n int
+}
+
+func walk(st mut S, c mut int, i int) {
+    if i > 0 {
+        st.n += 1
+        c += i
+        walk(mut st, mut c, i - 1)
+    }
+}
+
+func main() {
+    mut st := S{n: 0}
+    mut k := 0
+    while k < 2 {
+        mut c := k * 10
+        walk(mut st, mut c, 3)
+        println(c)
+        k += 1
+    }
+    println(st.n)
+}

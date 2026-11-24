@@ -1,5 +1,7 @@
-@@full	5591d692bf5f0bed	412	9274
-@head	984055b6febc30dd	0	110
+@@full	275adfa369a6cf5a	549	12289
+@head	0bde2fa8a6d7199e	0	142
 func main	f2ad4789c64662c8	42	2135
 func pick	614a3fc9ca5dfac6	4	229
+func relax	cb39e2c2da6e0824	7	360
+func strict	a8e1988fe02e6d6b	10	453
 type Mine	48971bde8ffcc2be	2	126

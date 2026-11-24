@@ -223,9 +223,11 @@ func stmtsIn(st mut S, l ListRef, eb0 int, ef0 int, depth0 int, ra bool, dis boo
                 // 多値呼び出しの分解 `x, y := g(...)`: call を匿名束縛し、射影で名前を付ける
                 v0e := latN(mut st, vals, 0)
                 v0 := expr(mut st, v0e, eb, ef, depth)?
-                cr := calleeRes(mut st, v0e, eb)
+                // if・switchの式は、分岐の末尾の呼び出しで結果の型式を読み、型は式全体の組（分岐の合流）を成分に割る（infer の bindsOf と同じ）
+                rarm := multiArm(mut st, v0e)
+                cr := calleeRes(mut st, rarm, eb)
                 // `r, err := task.Run(…)`: 総称の多値なので結果の型式からは読めない — 呼び出しの型（parTy の組 (T, error?)）を成分に割る（infer の bindsOf と同じ）
-                whole := if nn == 2 && isParScope(mut st, v0e, eb) { computeTy(mut st, v0e, eb, ef) } else { TyRef(-1) }
+                whole := if (nn == 2 && isParScope(mut st, v0e, eb)) || rarm != v0e { computeTy(mut st, v0e, eb, ef) } else { TyRef(-1) }
                 rtys := cr.rtys
                 rpk := cr.pk
                 rgen := cr.generic
@@ -238,7 +240,7 @@ func stmtsIn(st mut S, l ListRef, eb0 int, ef0 int, depth0 int, ra bool, dis boo
                     mut v := resProj(mut st, tuple, j, nn)
                     has := rtys != -1 && j < lenL(mut st, rtys)
                     svv := if j == 0 && whole != -1 { scopeValue(mut st, v0e, ebv) } else { NodeRef(-1) }
-                    d := if svv != -1 { declOfExpr(mut st, svv, ebv, ef) } else if has && rgen { genericResDecl(mut st, v0e, ebv, ef, j, at, false) } else if has { declOfTypeExpr(mut st, rpk, latN(mut st, rtys, j)) } else { -1 }
+                    d := if svv != -1 { declOfExpr(mut st, svv, ebv, ef) } else if has && rgen { genericResDecl(mut st, rarm, ebv, ef, j, at, false) } else if has { declOfTypeExpr(mut st, rpk, latN(mut st, rtys, j)) } else { -1 }
                     split := mutable && has && !rgen && teSplits(mut st, rpk, -1, latN(mut st, rtys, j))
                     if split {
                         v = cLet(mut st, v, cellsOf(mut st, cVar(mut st, 0), d))
@@ -246,14 +248,16 @@ func stmtsIn(st mut S, l ListRef, eb0 int, ef0 int, depth0 int, ra bool, dis boo
                         v = cAlloc(mut st, 1, v)
                     }
                     lets = append(lets, v)
-                    el := if svv != -1 { elemDeclOfExpr(mut st, svv, ebv, ef) } else if has && rgen { genericResDecl(mut st, v0e, ebv, ef, j, at, true) } else if has { elemDeclOfTypeExpr(mut st, rpk, latN(mut st, rtys, j)) } else { -1 }
-                    ty := if has && !rgen {
+                    el := if svv != -1 { elemDeclOfExpr(mut st, svv, ebv, ef) } else if has && rgen { genericResDecl(mut st, rarm, ebv, ef, j, at, true) } else if has { elemDeclOfTypeExpr(mut st, rpk, latN(mut st, rtys, j)) } else { -1 }
+                    ty := if rarm != v0e && whole != -1 && tg(mut st, whole) == TPr {
+                        prodAt(mut st, whole, j, nn)
+                    } else if has && !rgen {
                         rt := tyOf(mut st, rpk, latN(mut st, rtys, j), at, TYFUEL)?
                         callResultTop(mut st, rt)
                     } else if whole != -1 && tg(mut st, whole) == TPr {
                         if j == 0 { tLeft(mut st, whole) } else { tRight(mut st, whole) }
                     } else if has && rgen {
-                        genericResTy(mut st, v0e, ebv, ef, j, at)
+                        genericResTy(mut st, rarm, ebv, ef, j, at)
                     } else {
                         TyRef(-1)
                     }
@@ -276,34 +280,51 @@ func stmtsIn(st mut S, l ListRef, eb0 int, ef0 int, depth0 int, ra bool, dis boo
                 // 後で外の mut 束縛へ出ていく mut のリテラルは行き先に作る（M4 — mutDestAhead）
                 vk := kindN(mut st, ve)
                 mut destR := -1
+                mut dr := -1
                 if mutable && ((vk == ast.ESlicelit && nodeOf(mut st, ve).c != 0) || (vk == ast.EMaplit && nodeOf(mut st, ve).d != 0) || vk == ast.EComposite) {
-                    dr := mutDestAhead(mut st, s, latS(mut st, names, j), env0)
+                    dr = mutDestAhead(mut st, s, latS(mut st, names, j), env0)
                     if dr >= 0 {
                         st.mutDest = dr + 1
                         destR = if vk == ast.EComposite { -1 } else { dr }
                     }
                 }
+                // 展開しない mut 関数へ外の mut と一緒に渡す束縛は、セルも外の束縛の region に作る（allocAt）。
+                // 中身の行き先（dr）が別の region になる形は今どおり最内のセル（その呼び出しは anchor に揃わない）
+                mut cellR := if mutable { mutCellAhead(mut st, s, latS(mut st, names, j), env0) } else { -1 }
+                if cellR >= 0 && dr >= 0 && dr != cellR {
+                    cellR = -1
+                }
                 mut v := expr(mut st, ve, env0, ef, depth + j)?
                 st.mutDest = 0
                 d := declOfExpr(mut st, ve, env0, ef)
                 split := mutable && structFields(mut st, d) != -1 && !isOptValue(mut st, ve, env0, ef)
-                if split {
-                    // mut struct の束縛はフィールドごとのセルに割る（F-17案2α）: `let t = v in CELLS(t)`
-                    v = cLet(mut st, mutInitAnn(mut st, ve, v, env0, ef), cellsOf(mut st, cVar(mut st, 0), d))
-                } else if mutable {
-                    ann := mutInitAnn(mut st, ve, v, env0, ef)
-                    v = cAlloc(mut st, 1, ann)
-                }
-                lets = append(lets, v)
-                // 行き先に作ったslice / mapのリテラルのセルは行き先のregionの座標（キー・要素のコピーの基準 — 最内で読むと深い値がコピーされない）
+                // 行き先に作ったslice / mapのリテラルのセルは行き先のregionの座標（キー・要素のコピーの基準 — 最内で読むと深い値がコピーされない）。
+                // 外に作るセルも同じ（セルの中身は外の region の座標）
                 rsaved := st.rdepth
-                if destR >= 0 {
+                mut vt := TyRef(-1)
+                if cellR >= 0 {
+                    vt = computeTy(mut st, ve, env0, ef)
+                    if !tyChanFree(mut st, vt) {
+                        cellR = -1
+                    }
+                }
+                if cellR >= 0 {
+                    st.rdepth = cellR + 1
+                } else if destR >= 0 {
                     st.rdepth = destR + 1
                 }
                 ty := computeTy(mut st, ve, env0, ef)
                 st.rdepth = rsaved
+                if split {
+                    // mut struct の束縛はフィールドごとのセルに割る（F-17案2α）: `let t = v in CELLS(t)`
+                    v = cLet(mut st, cellInit(mut st, mutInitAnn(mut st, ve, v, env0, ef), vt, ty, cellR), cellsOfAt(mut st, cVar(mut st, 0), d, cellR))
+                } else if mutable {
+                    ann := mutInitAnn(mut st, ve, v, env0, ef)
+                    v = if cellR >= 0 { cAllocAt(mut st, 1, cellR, cellInit(mut st, ann, vt, ty, cellR)) } else { cAlloc(mut st, 1, ann) }
+                }
+                lets = append(lets, v)
                 el := elemDeclOfExpr(mut st, ve, env0, ef)
-                reg := if destR >= 0 { destR } else { aliasRegion(mut st, mutable, ve, ty, env0) }
+                reg := if cellR >= 0 { cellR } else if destR >= 0 { destR } else { aliasRegion(mut st, mutable, ve, ty, env0) }
                 eb = bind(mut st, eb, latS(mut st, names, j), depth + j, mutable, d, ty, el, reg, -1, split, bindSty(mut st, ve, env0, ef))
                 if !mutable && isTag(mut st, ty, TFn) {
                     // imm の関数値は結果の型式の列を持ち回る（後置 `?` の形 — tryExpr）。mut は別の関数を代入できるので持たない
@@ -451,6 +472,79 @@ func stmtsIn(st mut S, l ListRef, eb0 int, ef0 int, depth0 int, ra bool, dis boo
         j -= 1
     }
     return out, nil
+}
+
+// 多値の分解の右辺v0eがif・switchの式なら、分岐の末尾で最初に見つかる多値の呼び出し（呼び出し・pipe・`f()?`）。見つからなければ・他の式ならv0e自身
+func multiArm(st mut S, v0e NodeRef) NodeRef {
+    k := kindN(mut st, v0e)
+    if k == ast.EParen {
+        r := multiArm(mut st, nA(nodeOf(mut st, v0e)))
+        return if r == nA(nodeOf(mut st, v0e)) { v0e } else { r }
+    }
+    if k == ast.EIf {
+        t := armCall(mut st, lA(nodeOf(mut st, nB(nodeOf(mut st, v0e)))))
+        if t != -1 {
+            return t
+        }
+        el := nC(nodeOf(mut st, v0e))
+        if el != -1 {
+            t2 := if kindN(mut st, el) == ast.EBlock { armCall(mut st, lA(nodeOf(mut st, el))) } else { callOrNone(mut st, multiArm(mut st, el)) }
+            if t2 != -1 {
+                return t2
+            }
+        }
+        return v0e
+    }
+    if k == ast.ESwitch {
+        cs := lB(nodeOf(mut st, v0e))
+        for i <- iter.Range(0, lenL(mut st, cs)) {
+            t := armCall(mut st, lA(nodeOf(mut st, nB(nodeOf(mut st, latN(mut st, cs, i))))))
+            if t != -1 {
+                return t
+            }
+        }
+        d := nC(nodeOf(mut st, v0e))
+        if d != -1 {
+            t := armCall(mut st, lA(nodeOf(mut st, d)))
+            if t != -1 {
+                return t
+            }
+        }
+    }
+    return v0e
+}
+
+// 分岐の文の列lの末尾の式の多値の呼び出し（multiArm でif・switchを辿る）。無ければ -1
+func armCall(st mut S, l ListRef) NodeRef {
+    n := lenL(mut st, l)
+    if n == 0 || kindN(mut st, latN(mut st, l, n - 1)) != ast.SExpr {
+        return -1
+    }
+    return callOrNone(mut st, multiArm(mut st, nA(nodeOf(mut st, latN(mut st, l, n - 1)))))
+}
+
+// eが呼び出し・pipe・`f()?` ならe、でなければ -1
+func callOrNone(st mut S, e NodeRef) NodeRef {
+    k := kindN(mut st, e)
+    return if k == ast.ECall || k == ast.EPipe || k == ast.ETry { e } else { -1 }
+}
+
+// 多値の組の型wholeのj番目の成分（n個の右結合の組 — resProjと同じ割り方。組でなければ -1）
+func prodAt(st mut S, whole TyRef, j int, n int) TyRef {
+    mut cur := whole
+    for k <- iter.Range(0, j) {
+        if tg(mut st, cur) != TPr {
+            return -1
+        }
+        cur = tRight(mut st, cur)
+    }
+    if n >= 2 && j < n - 1 {
+        if tg(mut st, cur) != TPr {
+            return -1
+        }
+        cur = tLeft(mut st, cur)
+    }
+    return cur
 }
 
 // 多値の分解の右辺の呼び出し先の結果の型式（rtys — 分からなければ -1）・その package・ジェネリックか
@@ -605,6 +699,110 @@ func aliasRegion(st mut S, mutable bool, ve NodeRef, ty TyRef, eb int) int {
 // （callM の 1 slot — mut の実引数は全部同じ anchor の region。この形だけ x は反復を越えて外の region に積もる — language.md のループのスコープの但し書き）。
 // 名前の遮蔽は見ない（保守側 — 余分に外へ作っても寿命が延びるだけ）。候補が複数なら最も外（region が最小）
 func mutDestAhead(st mut S, s NodeRef, x StrRef, eb int) int {
+    return mutDestScan(mut st, s, x, eb, false)
+}
+
+// `mut x := …`（文 s）の x を、同じ関数の後ろで展開しない mut 関数へ外の mut 束縛と一緒に `mut x` で渡すなら、その外の束縛の region
+// （無ければ -1）。x のセルをその region に作る（allocAt）— mut の実引数のセルの region は anchor と正確一致なので、
+// セルが内側にあると anchor 1 つに揃わない。初期値の種類に依らない（スカラーも同じ）
+func mutCellAhead(st mut S, s NodeRef, x StrRef, eb int) int {
+    if !isTreeNode(int(s)) {
+        return -1
+    }
+    // ファイルごとに一度だけ「mut 実引数を 2 つ以上渡す呼び出し」の最後の字句の位置を求め、それより前の宣言だけを走査する
+    // （呼び出しの無いファイル・後ろに呼び出しの無い宣言は即座に外す）。絞り込みは構文だけで、呼び先は引かない —
+    // 呼び先の判定は関数の中の走査（mutDestScan）だけが行う（増分checkの扉: Def が読む関数は自分の呼び先に限る）
+    f := fileOf(mut st, s)
+    if st.cellLast == 0 || f < 0 || f >= hget(mut st, st.cellLast - 1) {
+        return -1
+    }
+    l := ListRef(st.cellLast - 1)
+    if latI(mut st, l, f) == 0 {
+        lput(mut st, l, f, multiMutCallLast(mut st, f) + 2)
+    }
+    tok := nodeOf(mut st, s).tok
+    if latI(mut st, l, f) - 2 <= tok {
+        return -1
+    }
+    // 関数ごとに一度だけ、展開しない mut 関数へ mut 実引数を 2 つ以上渡す呼び出しの最後の字句の位置を求める（呼び先は自分の関数の中だけ引く）
+    g := e2sEnclosing(mut st, f, refIdx(int(s)))
+    if g < 0 || nodeOf(mut st, fnNode(mut st, g)).f < 0 {
+        return -1
+    }
+    if st.cellFnLast != 0 && g < hget(mut st, st.cellFnLast - 1) {
+        lg := ListRef(st.cellFnLast - 1)
+        if latI(mut st, lg, g) == 0 {
+            lput(mut st, lg, g, fnMultiMutCallLast(mut st, f, g) + 2)
+        }
+        if latI(mut st, lg, g) - 2 <= tok {
+            return -1
+        }
+    }
+    return mutDestScan(mut st, s, x, eb, true)
+}
+
+// ファイル f の関数 g の本体の、展開しない mut 関数へ mut 実引数を 2 つ以上渡す呼び出しの最後の字句の位置（無ければ -1）
+func fnMultiMutCallLast(st mut S, f int, g int) int {
+    t := st.trees[f]
+    hi := latI(mut st, ListRef(nodeOf(mut st, fnNode(mut st, g)).f), 2)
+    di := declIdx(mut st, g, f, t)
+    if di < 0 {
+        return -1
+    }
+    mut lo := di - 1
+    while lo > 0 && t.nodes[lo].kind != ast.KFuncDecl {
+        lo -= 1
+    }
+    pk := FilePkg(mut st, f)
+    mut last := -1
+    for n <- iter.Range(lo, di) {
+        nt := t.nodes[n].tok
+        if t.nodes[n].kind == ast.ECall && nt < hi && nt > last {
+            nd := nodeOf(mut st, NodeRef(ABASE + f * FW + n))
+            args := ListRef(nd.b)
+            mut nm := 0
+            for q <- iter.Range(0, lenL(mut st, args)) {
+                a := latN(mut st, args, q)
+                if a != -1 && kindN(mut st, a) == ast.EMutArg {
+                    nm += 1
+                }
+            }
+            if nm >= 2 {
+                ci := e2sCallee(mut st, pk, NodeRef(nd.a))
+                if ci >= 0 && !fnExpands(mut st, ci) {
+                    last = nt
+                }
+            }
+        }
+    }
+    return last
+}
+
+// ファイル f の、mut 実引数を 2 つ以上渡す呼び出しの最後の字句の位置（無ければ -1）
+func multiMutCallLast(st mut S, f int) int {
+    t := st.trees[f]
+    mut last := -1
+    for n <- iter.Range(0, len(t.nodes)) {
+        if t.nodes[n].kind == ast.ECall {
+            nd := nodeOf(mut st, NodeRef(ABASE + f * FW + n))
+            args := ListRef(nd.b)
+            mut nm := 0
+            for q <- iter.Range(0, lenL(mut st, args)) {
+                a := latN(mut st, args, q)
+                if a != -1 && kindN(mut st, a) == ast.EMutArg {
+                    nm += 1
+                }
+            }
+            if nm >= 2 && t.nodes[n].tok > last {
+                last = t.nodes[n].tok
+            }
+        }
+    }
+    return last
+}
+
+// callOnly = 展開しない mut 関数への呼び出しの形（②）だけを拾う
+func mutDestScan(st mut S, s NodeRef, x StrRef, eb int, callOnly bool) int {
     if !isTreeNode(int(s)) {
         return -1
     }
@@ -641,7 +839,7 @@ func mutDestAhead(st mut S, s NodeRef, x StrRef, eb int) int {
                 // `y = x`・`y.f = x`・`y[i] = x`（根の名前が y）
                 ts := lA(nd)
                 vs := lC(nd)
-                if nd.b == lexer.Equal && lenL(mut st, ts) == 1 && lenL(mut st, vs) == 1 && kindN(mut st, latN(mut st, vs, 0)) == ast.EIdent && !IsImplicit(mut st, latN(mut st, vs, 0)) && strEq(mut st, sA(nodeOf(mut st, latN(mut st, vs, 0))), x) {
+                if !callOnly && nd.b == lexer.Equal && lenL(mut st, ts) == 1 && lenL(mut st, vs) == 1 && kindN(mut st, latN(mut st, vs, 0)) == ast.EIdent && !IsImplicit(mut st, latN(mut st, vs, 0)) && strEq(mut st, sA(nodeOf(mut st, latN(mut st, vs, 0))), x) {
                     mut r := latN(mut st, ts, 0)
                     while kindN(mut st, r) == ast.ESelector || kindN(mut st, r) == ast.EIndex {
                         r = nA(nodeOf(mut st, r))
@@ -654,7 +852,7 @@ func mutDestAhead(st mut S, s NodeRef, x StrRef, eb int) int {
                 args := ListRef(nd.b)
                 ci := e2sCallee(mut st, pk, NodeRef(nd.a))
                 // `append(y, x)`（外の y へ x を積む — 根の名前が y）
-                if kindN(mut st, NodeRef(nd.a)) == ast.EIdent && strIs(mut st, sA(nodeOf(mut st, NodeRef(nd.a))), "append") && lenL(mut st, args) == 2 && kindN(mut st, latN(mut st, args, 1)) == ast.EIdent && !IsImplicit(mut st, latN(mut st, args, 1)) && strEq(mut st, sA(nodeOf(mut st, latN(mut st, args, 1))), x) {
+                if !callOnly && kindN(mut st, NodeRef(nd.a)) == ast.EIdent && strIs(mut st, sA(nodeOf(mut st, NodeRef(nd.a))), "append") && lenL(mut st, args) == 2 && kindN(mut st, latN(mut st, args, 1)) == ast.EIdent && !IsImplicit(mut st, latN(mut st, args, 1)) && strEq(mut st, sA(nodeOf(mut st, latN(mut st, args, 1))), x) {
                     mut r := latN(mut st, args, 0)
                     while kindN(mut st, r) == ast.ESelector || kindN(mut st, r) == ast.EIndex {
                         r = nA(nodeOf(mut st, r))
@@ -665,30 +863,49 @@ func mutDestAhead(st mut S, s NodeRef, x StrRef, eb int) int {
                 }
                 if ci >= 0 && !fnExpands(mut st, ci) {
                     mut hasX := false
-                    mut other := StrRef(-1)
                     for q <- iter.Range(0, lenL(mut st, args)) {
                         a := latN(mut st, args, q)
-                        if a != -1 && kindN(mut st, a) == ast.EMutArg {
-                            r := latS(mut st, DotParts(mut st, nodeOf(mut st, a).a), 0)
-                            if strEq(mut st, r, x) {
-                                hasX = true
-                            } else {
-                                other = r
-                            }
+                        if a != -1 && kindN(mut st, a) == ast.EMutArg && strEq(mut st, latS(mut st, DotParts(mut st, nodeOf(mut st, a).a), 0), x) {
+                            hasX = true
                         }
                     }
+                    // 候補は x 以外の mut 実引数の根の束縛の全部（最も外を取る）
                     if hasX {
-                        y = other
+                        for q <- iter.Range(0, lenL(mut st, args)) {
+                            a := latN(mut st, args, q)
+                            if a != -1 && kindN(mut st, a) == ast.EMutArg {
+                                r := latS(mut st, DotParts(mut st, nodeOf(mut st, a).a), 0)
+                                if !strEq(mut st, r, x) {
+                                    best = outerMutBinding(mut st, eb, r, best)
+                                }
+                            }
+                        }
                     }
                 }
             }
             if y != -1 {
-                b := lookup(mut st, eb, y)
-                if b >= 0 && bnd(mut st, b).mutable && bnd(mut st, b).region < st.rdepth - 1 && (best < 0 || bnd(mut st, b).region < best) {
-                    best = bnd(mut st, b).region
-                }
+                best = outerMutBinding(mut st, eb, y, best)
             }
         }
+    }
+    return best
+}
+
+// 外の region k に作るセルの初期値: 最内で作った imm の値は k へコピーする（storeCopy — mut のコンテナは行き先に作ってある・
+// コピーできない値はそのまま。k より深い region を指せば allocAt の検査が拒否する）
+func cellInit(st mut S, core CoreRef, vt TyRef, et TyRef, k int) CoreRef {
+    if k < 0 || et == -1 {
+        return core
+    }
+    c := storeCopy(mut st, core, vt, et, k)
+    return if c != -1 { c } else { core }
+}
+
+// 名前 y の mut 束縛が今の最内より外にあれば、その region と best の外側の方（best = -1 は候補なし）
+func outerMutBinding(st mut S, eb int, y StrRef, best int) int {
+    b := lookup(mut st, eb, y)
+    if b >= 0 && bnd(mut st, b).mutable && bnd(mut st, b).region < st.rdepth - 1 && (best < 0 || bnd(mut st, b).region < best) {
+        return bnd(mut st, b).region
     }
     return best
 }

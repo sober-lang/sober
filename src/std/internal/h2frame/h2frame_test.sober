@@ -1,0 +1,175 @@
+package h2frame
+
+// フレームの頭の読み書きの往復・フレームごとの形の検査（RFC 9113 4.2・6節）・埋め草と優先度の欄・SETTINGSの値の範囲
+
+import "std/iter"
+
+func eqb(a []byte, b []byte) bool {
+    if len(a) != len(b) {
+        return false
+    }
+    for i <- iter.Range(0, len(a)) {
+        if a[i] != b[i] {
+            return false
+        }
+    }
+    return true
+}
+
+func frame(n int, typ int, flags int, sid int) Frame {
+    return Frame{len: n, typ: typ, flags: flags, sid: sid}
+}
+
+func TestHeadRoundtrip() {
+    mut x := 88172645463325252
+    for i <- iter.Range(0, 2000) {
+        x = x ^ (x << 13)
+        x = x ^ (x >> 7)
+        x = x ^ (x << 17)
+        n := x & 0xffffff
+        t := (x >> 24) & 0xff
+        fl := (x >> 32) & 0xff
+        sid := (x >> 33) & 0x7fffffff
+        mut b := mut []byte{}
+        b = append(b, byte(7))
+        PutHead(mut b, n, t, fl, sid)
+        assert(len(b) == 1 + HeadLen)
+        f := Head(b, 1)
+        assert(Len(f) == n && Type(f) == t && Flags(f) == fl && Sid(f) == sid)
+    }
+    // 予約のビットは読みで落とす
+    f := Head(freeze(mut []byte{0, 0, 0, 0, 0, 0x80, 0, 0, 3}), 0)
+    assert(Sid(f) == 3)
+}
+
+func TestPreface() {
+    p := bytes(Preface)
+    assert(len(p) == 24 && IsPreface(p, 0))
+    mut q := mut []byte{byte(0x41)}
+    for i <- iter.Range(0, 24) {
+        q = append(q, p[i])
+    }
+    assert(IsPreface(q, 1) && !IsPreface(q, 0))
+    assert(!IsPreface(p[0:23], 0))
+    assert(!IsPreface(bytes("GET / HTTP/1.1\r\nHost: a\r\n\r\n"), 0))
+}
+
+// フレームごとの頭の検査（h2specの4.2・6.x節の形）
+func TestCheck() {
+    m := DefaultMaxFrame
+    assert(Check(frame(16384, Data, 0, 1), m) == 0)
+    assert(Check(frame(16385, Data, 0, 1), m) == FrameSizeError)
+    assert(Check(frame(16385, 0xee, 0, 1), m) == FrameSizeError)
+    assert(Check(frame(1, Data, 0, 0), m) == ProtocolError)
+    assert(Check(frame(1, Headers, 0, 0), m) == ProtocolError)
+    assert(Check(frame(1, Continuation, 0, 0), m) == ProtocolError)
+    assert(Check(frame(5, Priority, 0, 0), m) == ProtocolError)
+    assert(Check(frame(4, Priority, 0, 1), m) == FrameSizeError + StreamScope)
+    assert(Check(frame(5, Priority, 0, 1), m) == 0)
+    assert(Check(frame(4, RstStream, 0, 0), m) == ProtocolError)
+    assert(Check(frame(3, RstStream, 0, 1), m) == FrameSizeError)
+    assert(Check(frame(4, RstStream, 0, 1), m) == 0)
+    assert(Check(frame(6, Settings, 0, 1), m) == ProtocolError)
+    assert(Check(frame(1, Settings, Ack, 0), m) == FrameSizeError)
+    assert(Check(frame(7, Settings, 0, 0), m) == FrameSizeError)
+    assert(Check(frame(12, Settings, 0, 0), m) == 0)
+    assert(Check(frame(0, Settings, Ack, 0), m) == 0)
+    assert(Check(frame(4, PushPromise, 0, 1), m) == ProtocolError)
+    assert(Check(frame(8, Ping, 0, 1), m) == ProtocolError)
+    assert(Check(frame(7, Ping, 0, 0), m) == FrameSizeError)
+    assert(Check(frame(8, Ping, 0, 0), m) == 0)
+    assert(Check(frame(8, Goaway, 0, 1), m) == ProtocolError)
+    assert(Check(frame(7, Goaway, 0, 0), m) == FrameSizeError)
+    assert(Check(frame(20, Goaway, 0, 0), m) == 0)
+    assert(Check(frame(3, WindowUpdate, 0, 0), m) == FrameSizeError)
+    assert(Check(frame(4, WindowUpdate, 0, 0), m) == 0)
+    assert(Check(frame(4, WindowUpdate, 0, 5), m) == 0)
+    // 知らない種類は読み捨てる
+    assert(Check(frame(100, 0x20, 0xff, 0), m) == 0)
+}
+
+// 埋め草と優先度の欄
+func TestBody() {
+    // 埋め草2・中身 "ab"
+    p := freeze(mut []byte{2, 0x61, 0x62, 0, 0})
+    s, e, err := Body(frame(5, Data, Padded, 1), p, 0)
+    assert(err == 0 && s == 1 && e == 3)
+    // 埋め草が中身を越える
+    _, _, err2 := Body(frame(3, Data, Padded, 1), freeze(mut []byte{3, 0, 0}), 0)
+    assert(err2 == ProtocolError)
+    // 埋め草の長さのバイトも無い
+    _, _, err3 := Body(frame(0, Data, Padded, 1), freeze(mut []byte{}), 0)
+    assert(err3 == FrameSizeError)
+    // 埋め草が残り全部（中身0）
+    s4, e4, err4 := Body(frame(3, Headers, Padded, 1), freeze(mut []byte{2, 0, 0}), 0)
+    assert(err4 == 0 && s4 == 1 && e4 == 1)
+    // 優先度の欄（依存5・重み16）と埋め草1・中身 "x"
+    h := freeze(mut []byte{1, 0, 0, 0, 5, 16, 0x78, 0})
+    s5, e5, err5 := Body(frame(8, Headers, Padded + PriorityFlag + EndHeaders, 3), h, 0)
+    assert(err5 == 0 && s5 == 6 && e5 == 7)
+    // 自分への依存
+    _, _, err6 := Body(frame(8, Headers, Padded + PriorityFlag, 5), h, 0)
+    assert(err6 == ProtocolError + StreamScope)
+    // 優先度の欄が足りない
+    _, _, err7 := Body(frame(3, Headers, PriorityFlag, 3), freeze(mut []byte{0, 0, 0}), 0)
+    assert(err7 == FrameSizeError)
+    // DATAの優先度のフラグは意味を持たない
+    s8, e8, err8 := Body(frame(2, Data, PriorityFlag, 3), freeze(mut []byte{0x61, 0x62}), 0)
+    assert(err8 == 0 && s8 == 0 && e8 == 2)
+    assert(CheckPriority(frame(5, Priority, 0, 7), freeze(mut []byte{0x80, 0, 0, 7, 1}), 0) == ProtocolError + StreamScope)
+    assert(CheckPriority(frame(5, Priority, 0, 7), freeze(mut []byte{0, 0, 0, 1, 1}), 0) == 0)
+}
+
+func TestSettings() {
+    mut b := mut []byte{}
+    PutSettings(mut b, []int{MaxConcurrentStreams, InitialWindowSize, EnablePush, 0x99}, []int{100, 16384, 0, 7})
+    f := Head(b, 0)
+    assert(Type(f) == Settings && Len(f) == 24 && Check(f, DefaultMaxFrame) == 0)
+    assert(CheckSettings(b, HeadLen, 24) == 0)
+    id, v := Setting(b, HeadLen, 1)
+    assert(id == InitialWindowSize && v == 16384)
+    id2, v2 := Setting(b, HeadLen, 3)
+    assert(id2 == 0x99 && v2 == 7)
+    mut bad1 := mut []byte{}
+    PutSettings(mut bad1, []int{EnablePush}, []int{2})
+    assert(CheckSettings(bad1, HeadLen, 6) == ProtocolError)
+    mut bad2 := mut []byte{}
+    PutSettings(mut bad2, []int{InitialWindowSize}, []int{MaxWindow + 1})
+    assert(CheckSettings(bad2, HeadLen, 6) == FlowControlError)
+    mut ok3 := mut []byte{}
+    PutSettings(mut ok3, []int{InitialWindowSize}, []int{MaxWindow})
+    assert(CheckSettings(ok3, HeadLen, 6) == 0)
+    mut bad4 := mut []byte{}
+    PutSettings(mut bad4, []int{MaxFrameSize}, []int{16383})
+    assert(CheckSettings(bad4, HeadLen, 6) == ProtocolError)
+    mut bad5 := mut []byte{}
+    PutSettings(mut bad5, []int{MaxFrameSize}, []int{16777216})
+    assert(CheckSettings(bad5, HeadLen, 6) == ProtocolError)
+    mut ok6 := mut []byte{}
+    PutSettings(mut ok6, []int{MaxFrameSize}, []int{16777215})
+    assert(CheckSettings(ok6, HeadLen, 6) == 0)
+    mut ack := mut []byte{}
+    PutSettingsAck(mut ack)
+    assert(eqb(ack, freeze(mut []byte{0, 0, 0, 4, 1, 0, 0, 0, 0})))
+}
+
+// 制御のフレームの組み立て（バイト列で照合）と読み
+func TestControl() {
+    mut p := mut []byte{}
+    PutPing(mut p, true, freeze(mut []byte{1, 2, 3, 4, 5, 6, 7, 8}))
+    assert(eqb(p, freeze(mut []byte{0, 0, 8, 6, 1, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8})))
+    mut g := mut []byte{}
+    PutGoaway(mut g, 7, EnhanceYourCalm)
+    assert(eqb(g, freeze(mut []byte{0, 0, 8, 7, 0, 0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 11})))
+    last, code := GoawayInfo(g, HeadLen)
+    assert(last == 7 && code == EnhanceYourCalm)
+    mut r := mut []byte{}
+    PutRst(mut r, 3, RefusedStream)
+    assert(eqb(r, freeze(mut []byte{0, 0, 4, 3, 0, 0, 0, 0, 3, 0, 0, 0, 7})))
+    assert(RstCode(r, HeadLen) == RefusedStream)
+    mut w := mut []byte{}
+    PutWindowUpdate(mut w, 0, MaxWindow)
+    assert(eqb(w, freeze(mut []byte{0, 0, 4, 8, 0, 0, 0, 0, 0, 0x7f, 0xff, 0xff, 0xff})))
+    assert(Increment(freeze(mut []byte{0xff, 0xff, 0xff, 0xff}), 0) == MaxWindow)
+    assert(Increment(freeze(mut []byte{0x80, 0, 0, 0}), 0) == 0)
+}

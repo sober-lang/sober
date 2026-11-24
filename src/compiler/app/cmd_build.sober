@@ -2,6 +2,7 @@ package main
 
 // `sober build` のhandlerとbuildだけが使うパス（lower・出力の書き分け・ビルドキャッシュの格納場所）
 
+import "infload"
 import "std/io"
 import "std/iter"
 import "std/os"
@@ -77,8 +78,10 @@ func emitExe(p loader.Program, std map[string]string, path string, out []byte, e
     return writeExe(path, out)
 }
 
-// 配置の計測のオプションつきのbuild（save / pin = 番地の表のファイル・空 = 使わない・gap = パディングの系列の番号・0 = なし）
-func buildPlaced(p loader.Program, std map[string]string, op string, mutant int, lay int, syms bool, save string, pin string, gap int) int {
+// 配置の計測のオプションつきのbuild（save / pin = 番地の表のファイル・空 = 使わない・gap = パディングの系列の番号・0 = なし）。
+// 熱さのプロファイル（lower/profile.sober）: prof = プロファイルのファイルのパス（空 = 使わない）・pt = その中身（loadProfileが検査した）・
+// coldEmit・blkMap = 検証と取りのオプション
+func buildPlaced(p loader.Program, std map[string]string, op string, mutant int, lay int, syms bool, save string, pin string, gap int, prof string, pt []byte, coldEmit bool, blkMap bool) int {
     mut pb := []byte{}
     if pin != "" {
         pb = io.ReadFile(pin) catch return fail("cannot read ${pin}")
@@ -87,11 +90,34 @@ func buildPlaced(p loader.Program, std map[string]string, op string, mutant int,
             return fail("${pin}: not a layout table (written by --layout-save)")
         }
     }
-    o, berr := lower.RtMutantPlace(p, mutant, lay, syms, if verifyEach() { lower.VfyEach } else { lower.VfyLast }, lower.PlaceOf(save != "", pin != "", pb, gap))
+    o, berr := lower.RtMutantProf(p, mutant, lay, syms, if verifyEach() { lower.VfyEach } else { lower.VfyLast }, lower.PlaceOf(save != "", pin != "", pb, gap), lower.ProfOf(if prof != "" { pt } else { []byte{} }, coldEmit, blkMap))
     if berr == nil && save != "" && io.WriteFile(save, o.tab) != nil {
         return fail("cannot write ${save}")
     }
+    if berr == nil && prof != "" {
+        profWarn(prof, o)
+    }
     return if syms { emit(p, std, op, o.exe, berr) } else { emitExe(p, std, op, o.exe, berr) }
+}
+
+// 熱さのプロファイルのファイルの中身と、使えない理由の1文（使えれば ""）
+func loadProfile(path string) ([]byte, string) {
+    pt := io.ReadFile(path) catch return []byte{}, "cannot read the profile ${path}"
+    bad := lower.ProfBadLine(pt)
+    if bad == 1 {
+        return []byte{}, "${path}: not a profile, because the first line is not `${lower.ProfHeader}` (scripts/profgen.sh writes profiles)"
+    }
+    if bad > 1 {
+        return []byte{}, "${path}:${bad}: not a profile line, which is `f <fingerprint> <fingerprint> <count> <block>... <function key>`"
+    }
+    return pt, ""
+}
+
+// プロファイルの行があるのに、指紋の合った関数が1つも無い（ソースかコンパイラが変わった後の古いプロファイル）: 1文の警告。ビルドは続ける
+func profWarn(path string, o lower.Placed) {
+    if o.pfRows > 0 && o.pfHit == 0 {
+        _ = io.WriteStderr(bytes("sober: warning: ${path}: no function of this build matches a fingerprint in the profile, so it changed nothing (regenerate it with scripts/profgen.sh)\n"))
+    }
 }
 
 // 実行ファイルを書く（実行の bit つき・tmp + rename。path が空なら標準出力）
@@ -182,9 +208,22 @@ func cmdBuild(cl cli.Parsed) int {
     lpn := cli.StrOpt(cl, LayoutPin)
     lgp := cli.IntOpt(cl, LayoutGap)
     place := lsv != nil || lpn != nil || lgp != nil
+    // 熱さのプロファイル（lower/profile.sober）: プロファイルのファイル・静的に冷たいループの中のブロックを寄せる検証・ブロックの番地の表（後の2つは開発用）。
+    // プロファイルは、使わない出力の形（--emit=ll / ir・--no-opt）でも読んで形を検査する（パスや中身の誤りを黙って通さない）
+    pfp := cli.StrOpt(cl, Profile)
+    coldEmit := cli.Bool(cl, ColdEmit)
+    blkMap := cli.Bool(cl, BlkMap)
+    mut pt := []byte{}
+    if pfp != nil {
+        t, why := loadProfile(pfp)
+        if why != "" {
+            return fail(why)
+        }
+        pt = t
+    }
     o := cli.StrOpt(cl, Out)
     mut op := if o == nil { "" } else { o }
-    devFlag := typer > 0 || trace || traceEff || probe || cutStat || callStat || ubfStat || frStat || memRep || mutant > 0 || lay != 0 || place || stopAt > 0 || dumpIr || copyBe || noVec || noSpec || noRflow || noVfy
+    devFlag := typer > 0 || trace || traceEff || probe || cutStat || callStat || ubfStat || frStat || memRep || mutant > 0 || lay != 0 || place || coldEmit || blkMap || stopAt > 0 || dumpIr || copyBe || noVec || noSpec || noRflow || noVfy
     if !emitSet && !devFlag {
         // 既定 = bin/sober の既定と同じ形（--emit=elf + --no-opt でなければ --passes）。-o が無ければ a.out へ（ELF を標準出力へ流さない）
         if op == "" {
@@ -193,6 +232,9 @@ func cmdBuild(cl cli.Parsed) int {
         elfOut = true
         passes = passes || !noOpt
     }
+    // プロファイルが効くのはx86の吐く順だけ: 最適化つきのELFと、その関数の番地の表（--emit=syms）
+    pfUse := if pfp != nil && ((elfOut && passes) || syms) { pfp } else { "" }
+    prof := pfUse != "" || coldEmit || blkMap
     // 焼き込んだ表は参照点で展開される辞書 const なので、一度束縛して渡す（参照ごとに組み直さない）
     std := Std
     loader.Stage("start")
@@ -203,7 +245,7 @@ func cmdBuild(cl cli.Parsed) int {
     // 答えの再生（既定のbuildのELFを丸ごと覚える — 照合はcheckの再生と同じ）。検証モードと開発のパスは通さない
     entry := cli.Pos(cl, Entry)
     rk := if bd != "" && elfOut && passes && !devFlag && !buildRoundtrip() && buildPar() && !verifyEach() && !envIs("SOBER_CHECK_REPLAY", "0") && !envIs("SOBER_CACHE_VERIFY", "1") && !envIs("SOBER_CACHE_VERIFY", "2") {
-        replayKeyOf("build-replay 1", entry, test)
+        replayKeyOf(if pfUse != "" { "build-replay 1 profile=${pfUse}" } else { "build-replay 1" }, entry, test)
     } else {
         ""
     }
@@ -251,8 +293,21 @@ func cmdBuild(cl cli.Parsed) int {
         out, berr := lower.CallStat(p, callSite, if verifyEach() { lower.VfyEach } else { lower.VfyLast })
         return emitExe(p, std, op, out, berr)
     }
-    if place {
-        return buildPlaced(p, std, op, mutant, lay, syms, if lsv == nil { "" } else { lsv }, if lpn == nil { "" } else { lpn }, if lgp == nil { 0 } else { lgp })
+    // プロファイルだけのビルドは、既定のビルドと同じ後段の関数キャッシュを使う（プロファイルの切片はβ2の鍵へ — lower/profile.sober の pfKey）
+    // 答えの再生は、プロファイルのファイルも読んだ入力として覚える（中身が変われば外れる）。合う関数の無い警告のビルドは覚えない（再生で警告が消える）
+    if pfUse != "" && !coldEmit && !blkMap && !place && lay == 0 && mutant == 0 && !syms && elfOut && passes && bd != "" {
+        o2, berr := lower.ElfProfileCache(p, bd, bv, pcs, lower.ProfOf(pt, false, false))
+        loader.Stage("lowered")
+        if berr == nil {
+            profWarn(pfUse, o2)
+            if rk != "" && (o2.pfHit > 0 || o2.pfRows == 0) {
+                replayPut(bd, rk, CheckRes{0, o2.exe, []string{}, append(userFiles(p), pfUse), append(userEmbeds(p), "")})
+            }
+        }
+        return emitExe(p, std, op, o2.exe, berr)
+    }
+    if place || prof {
+        return buildPlaced(p, std, op, mutant, lay, syms, if lsv == nil { "" } else { lsv }, if lpn == nil { "" } else { lpn }, if lgp == nil { 0 } else { lgp }, pfUse, pt, coldEmit, blkMap)
     }
     if mutant > 0 || lay != 0 {
         // --emit=syms と組めば、ミュータント / 配置つきの関数の先頭番地の表（配置ごとのプロファイルのAPI）
@@ -398,11 +453,14 @@ func loadMutate(entry string, std map[string]string) (loader.Program, []loader.P
     if lerr != nil {
         return p, []loader.PcPut{}, lerr
     }
-    q, nerr := desugar.NamedValueArgs(p)
+    q, _, nerr := infload.Infer(p, loader.ReqOf(loader.ReqFsMutate, entry, false), std)
     return q, []loader.PcPut{}, nerr
 }
 
-// buildのentryを読む（mutateなら mutation testing のschemata — loadMutate・coverならカバレッジの計装つき — loadCover）
+// entryを読む（名前付き実引数の変換まで。mutateなら mutation testing のschemata — loadMutate・coverならカバレッジの計装つき — loadCover）。
+// std/taskの呼び出し点の形の検査〔ParCheck〕はlowerのbuildが自分の表の上で掛ける（TypeAllは1回が重い）。pc = parseのキャッシュの読みの表
+// （buildの格納場所を使うパスだけ — 他はloader.PcOff()）・2つ目の戻り = ファイルごとの読みの結果（lowerが書きのバッチへ）。積み先sinkはここで持つ:
+// 読みはmut引数のチェーンでregion透過になるので、持ち主を build の頭（cmdBuild）に置くと読みの作業域が build の間ずっと残る
 func loadBuild(entry string, test bool, std map[string]string, pc loader.PCache, cover bool, mutate bool) (loader.Program, []loader.PcPut, error?) {
     if mutate {
         return loadMutate(entry, std)
@@ -410,5 +468,13 @@ func loadBuild(entry string, test bool, std map[string]string, pc loader.PCache,
     if cover {
         return loadCover(entry, std)
     }
-    return loadNamed(entry, test, std, pc)
+    // 読みを関数1段で終える（関数をもう1段通すと、戻りで読んだ全部の木をもう1回写す）
+    mut sink := loader.PcSink{}
+    p, lerr := loader.LoadFsC(entry, std, pc, test, mut sink)
+    loader.Stage("loadraw")
+    if lerr != nil {
+        return p, []loader.PcPut{}, lerr
+    }
+    q, _, nerr := infload.Infer(p, loader.ReqOf(loader.ReqFs, entry, test), std)
+    return q, loader.PcList(mut sink), nerr
 }

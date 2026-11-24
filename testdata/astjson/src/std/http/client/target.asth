@@ -1,13 +1,14 @@
-@@full	4e3527da1a3791d1	3160	85498
-@head	9d57e7705a17382e	0	179
+@@full	224c275399846600	3865	108454
+@head	6e30e4ab232ba401	0	219
 func badTarget	639c8b68d2092668	7	407
-func dialAddr	6a9f9f170e69acbd	8	393
-func hostHeader	b83574008c245ab5	30	1086
+func dialAddr	c5aabdc63d4b04c8	10	455
+func hostHeader	45491591b6b71538	33	1188
 func lower	0520f64af691887a	22	770
-func origin	69998288c5f9345f	18	718
-func parseTarget	c30873ae8dea8190	208	6943
+func origin	5995b88f6abf6a60	42	1510
+func parseTarget	4c6f6828e044f7d0	285	9524
 func portOf	ac5f0c84e642ff9c	59	1905
 func prefixFold	da721bc03228a3a4	44	1487
 func resolveLocation	985de9ed76d9a63f	75	2681
 func sub	8b5a3ad3a37114fe	31	1179
+func uriHost	d86b9567c772d079	15	589
 type target	7f7f9005139b2ab8	5	269

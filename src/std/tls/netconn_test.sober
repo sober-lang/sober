@@ -1,0 +1,187 @@
+package tls
+
+// TLSの状態を持つnet.Conn（tls.Serveの接続）: net.Recv / net.Put / net.Sendで読み書きする。相手はFinishedと最初のrecordを同じ送りで送り
+// （handshakeの残り = 最初の持ち越し）、recordを切片の途中で割り、サーバはrecordの途中が持ち越しに残った所でbreakする。
+// 次のnet.Recvが続きを読むこと・1回の受けに揃った複数のrecordの平文が1つの切片になること・相手のclose_notifyで列が終わること・tls.Protocol
+
+import "std/io"
+import "std/net"
+import "std/os"
+import "std/task"
+import "std/time"
+import "std/internal/hsc"
+import "std/internal/record"
+
+// 相手の受け: recordを揃えて復号し、平文がwant バイト揃うまで読む。holdなら、handshakeの最後の送り（Finished）を送らずに返す
+func ncRead(c net.Conn, ch mut internal.hsc.Ch, p internal.hsc.CParams, l mut rmLink, want int, hold bool) ([]byte, []byte) {
+    mut app := []byte{}
+    mut held := []byte{}
+    while (want == 0 && !internal.hsc.ClientConnected(ch)) || (want > 0 && len(app) < want) {
+        r := l.rec
+        rn := if len(r) >= 5 && len(r) >= 5 + (int(r[3]) << 8 | int(r[4])) { 5 + (int(r[3]) << 8 | int(r[4])) } else { 0 }
+        if rn == 0 {
+            more := rmChunk(c)
+            if len(more) == 0 {
+                return app, held
+            }
+            l.rec = rmCat(r, more)
+        } else {
+            o, e := internal.hsc.FeedClient(mut ch, p, internal.record.At(r, 0, rn))
+            if e != nil {
+                return app, held
+            }
+            if len(o.send) > 0 {
+                if hold && internal.hsc.ClientConnected(ch) {
+                    held = o.send
+                } else {
+                    _ = net.Send(c, o.send)
+                }
+            }
+            app = rmCat(app, o.app)
+            l.rec = rmCat([]byte{}, r[rn:len(r)])
+        }
+    }
+    return app, held
+}
+
+// 3000バイトの平文（recordの後半がhandshakeの残りの列に入らず、持ち越しの席を確保させる）
+func ncBig() string {
+    mut b := mut []byte{}
+    while len(b) < 3000 {
+        b = append(b, 'q')
+    }
+    return string(freeze(b)) catch ""
+}
+
+// 8バイトを越える平文は長さで
+func ncShort(b []byte) string {
+    return if len(b) > 8 { "#${len(b)}" } else { string(b) catch "?" }
+}
+
+func ncSeal(ch mut internal.hsc.Ch, s string) []byte {
+    return internal.hsc.ClientSeal(mut ch, bytes(s)) catch []byte{}
+}
+
+func ncPeer(port int) string {
+    roots := ParseRoots(testFile(testCerts, "testdata/crypto/httparena-server.crt")) catch return "roots"
+    p := internal.hsc.NewCParams("localhost", []string{"http/1.1"}, roots.certs, time.UnixSec(time.Now()), []byte{})
+    mut res := "dial"
+    _ = net.Dial("127.0.0.1:${port}", (c) => {
+        h0, first := internal.hsc.StartClient(p)
+        mut ch := h0
+        mut l := rmLink{rec: []byte{}}
+        _ = net.Send(c, first)
+        _, fin := ncRead(c, mut ch, p, mut l, 0, true)
+        if !internal.hsc.ClientConnected(ch) {
+            res = "hs"
+        } else {
+            // Finishedと最初のrecordを1回の送りで
+            _ = net.Send(c, rmCat(fin, ncSeal(mut ch, "hello")))
+            a, _ := ncRead(c, mut ch, p, mut l, 5, false)
+            // recordを1つと、次のrecordの前半を1回の送りで。間をあけて後半
+            r1 := ncSeal(mut ch, "abc")
+            r2 := ncSeal(mut ch, ncBig())
+            half := len(r2) / 2
+            _ = net.Send(c, rmCat(r1, r2[0:half]))
+            b, _ := ncRead(c, mut ch, p, mut l, 3, false)
+            os.Sleep(60)
+            _ = net.Send(c, r2[half:len(r2)])
+            d, _ := ncRead(c, mut ch, p, mut l, 3000, false)
+            // 2つのrecordを1回の送りで
+            _ = net.Send(c, rmCat(ncSeal(mut ch, "xy"), ncSeal(mut ch, "z")))
+            x, _ := ncRead(c, mut ch, p, mut l, 3, false)
+            // KeyUpdate（update_requested）を2つのrecordに割り、間をあけて送る（組み立て中のhandshakeのバイト列が受けをまたぐ）。
+            // 後半と同じ送りで、進めた鍵の "k" と close_notify。サーバは受けの鍵を進め、"k" を返す前に自分のKeyUpdateを送る
+            mut w := ch.wr
+            _ = net.Send(c, internal.record.Seal(mut w, internal.record.CtHandshake, []byte{24, 0, 0}, 0))
+            os.Sleep(60)
+            ku := internal.record.Seal(mut w, internal.record.CtHandshake, []byte{1, 1}, 0)
+            _ = internal.record.Update(mut w)
+            _ = net.Send(c, rmCat(ku, internal.record.Seal(mut w, internal.record.CtApp, bytes("k"), 0)))
+            y, _ := ncRead(c, mut ch, p, mut l, 1, false)
+            _ = net.Send(c, internal.record.Seal(mut w, internal.record.CtAlert, []byte{1, 0}, 0))
+            res = "${string(a) catch "?"}|${string(b) catch "?"}|${ncShort(d)}|${string(x) catch "?"}|${string(y) catch "?"}"
+        }
+    })
+    return res
+}
+
+func ncAccept(l net.Listener, cfg Config) (string, error?) {
+    mut v := "none"
+    for nc <- net.Accept(l)? {
+        // acceptNetの本体と同じ（handshake → 状態 → net.Secure → 積み残しとclose_notify）
+        blk := handshake(nc, cfg)?
+        s := stateOf(blk, workNew())
+        _ = leaseOp(5, s.st.blk, fSeat + 1, leaseOp(11, []int{}, 0, 0))
+        _ = net.Secure(nc, s, (c) => {
+            v = ncServe(c)
+            nil
+        })
+        _ = flushMode(s.st, nc.fd, 0)
+        _ = net.Send(nc, closeRecord(s.st))
+        break
+    }
+    return v, nil
+}
+
+// 1回の受け: 平文の切片を "," で繋ぎ、Putで返す。stopなら最初の切片でbreak
+func ncRound(c net.Conn, stop bool) (string, error?) {
+    mut seen := ""
+    for b <- net.Recv(c)? {
+        seen = if seen == "" { ncShort(b) } else { "${seen},${ncShort(b)}" }
+        net.Put(c, b)?
+        if stop {
+            break
+        }
+    }
+    return seen, nil
+}
+
+func ncShow(c net.Conn, stop bool) string {
+    r, e := ncRound(c, stop)
+    return switch e {
+        case nil: r
+        case io.Closed{}: "closed"
+        case io.Other{errno}: "other${errno}"
+        case io.Expired{}: "expired"
+        case io.Timeout{}: "timeout"
+        case io.Denied{}: "denied"
+    }
+}
+
+// 入れ子のregionにnバイトずつ0xffを書く（深さn）
+func ncScribble(n int) int {
+    mut b := mut []byte{}
+    while len(b) < 20000 {
+        b = append(b, 0xff)
+    }
+    return if n == 0 { len(b) } else { ncScribble(n - 1) + int(b[0]) }
+}
+
+// 1回目（"hello"でbreak）・2回目（最初の切片でbreak — 次のrecordの前半が持ち越しに残る）・3回目（相手のclose_notifyまで）
+func ncServe(c net.Conn) string {
+    a := ncShow(c, true)
+    b := ncShow(c, true)
+    // 2回目の後: 持ち越し（3000バイトのrecordの前半）は席にある。受けの関数が使った深度のregionを書き潰してから続きを読む
+    // （席が格納場所の深度でなく受けの深度にあれば、ここで壊れる — ミュータント112）
+    seated := leaseOp(4, c.sec[0].st.blk, fSeat, 0) != 0
+    ncScribble(24)
+    d := ncShow(c, false)
+    return "${Protocol(c)}/${a}/${b}/${if seated { "seat" } else { "noseat" }}/${d}"
+}
+
+func TestNetConn() {
+    mut peer := ""
+    e := net.Listen("127.0.0.1:0", (l) => {
+        port := net.Port(l)
+        cfg := Alpn(rmCfg(), []string{"h2", "http/1.1"})
+        r, _ := task.Run((s task.Scope) => {
+            h := task.Spawn(s, () => ncPeer(port))
+            v := ncAccept(l, cfg) catch "acc"
+            "${v}//${task.Join(h)}"
+        }, deadline: 10000 * task.MS)
+        peer = r
+    })
+    assert(e == nil)
+    assert(peer == "http/1.1/hello/abc/seat/#3000,xyz,k//hello|abc|#3000|xyz|k")
+}

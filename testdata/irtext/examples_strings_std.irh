@@ -1,4 +1,4 @@
-@@full	ac47fead5c114434	11749	250735
+@@full	c8724f5e748df153	11729	250300
 @globals	9d79292f36a1b381	74	1255
 main.main	b4a7c3186f476454	4434	112421
 main.showCut	31fb2c4cc9593882	77	1570
@@ -49,9 +49,9 @@ std/strings.HasPrefix	496b5e1c70286c46	48	1003
 std/strings.HasSuffix	8b74a6b5b16389ba	50	1055
 std/strings.Index	cf02f2e373dadd97	25	545
 std/strings.IndexByte	569f9047a42d0c4c	80	1381
-std/strings.Join	43997b6f1efd0a54	489	9859
+std/strings.Join	6488ff3cddf6168e	481	9685
 std/strings.LastIndex	70c3f142c8ac614b	24	532
-std/strings.Replace	11b80658a05e1286	797	16467
+std/strings.Replace	5ee9e6912ed5dea7	785	16206
 std/strings.Split	2bcb0b21db9136c9	493	10156
 std/strings.ToLower	b01a7bf858152653	33	705
 std/strings.ToUpper	84fbd1418585df26	35	743

@@ -28,6 +28,7 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 | [std/compress/gzip](compress-gzip.ja.md) | gzip（RFC 1952）の符号化と復号（中身は std/compress/flate） |
 | [std/convert](convert.ja.md) | 数値と文字列の変換（[language.md 37 節](../language.md)・[language.md 34 節](../language.md)の Format… / Parse…）。 |
 | [std/crypto](crypto.ja.md) | 暗号プリミティブの集約パッケージ。 |
+| [std/crypto/aescbc](crypto-aescbc.ja.md) | AES-128-CBC（NIST SP 800-38A 6.2 — 鍵 16 バイト・IV 16 バイト・長さは 16 の倍数。 |
 | [std/crypto/aesgcm](crypto-aesgcm.ja.md) | AES-128-GCM（NIST SP 800-38D — 鍵 16 バイト・nonce 12 バイト・tag 16 バイト）。 |
 | [std/crypto/chacha20](crypto-chacha20.ja.md) | ChaCha20（RFC 8439 2.3〜2.4 — 鍵32バイト・nonce 12バイト・32 bitのブロック番号）。 |
 | [std/crypto/chacha20poly1305](crypto-chacha20poly1305.ja.md) | AEAD\_CHACHA20\_POLY1305（RFC 8439 2.8 — 鍵 32 バイト・nonce 12 バイト・tag 16 バイト）。 |
@@ -36,7 +37,7 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 | [std/crypto/password](crypto-password.ja.md) | パスワードの保存用のハッシュ（Argon2id・bcrypt・PBKDF2-HMAC-SHA256）と照合。 |
 | [std/crypto/pem](crypto-pem.ja.md) | PEM（RFC 7468 — "-----BEGIN \<label>-----" 〜 "-----END \<label>-----" の間のbase64）の読み。 |
 | [std/crypto/poly1305](crypto-poly1305.ja.md) | Poly1305 の一回の MAC（RFC 8439 2.5 — 鍵 32 バイト = r ‖ s・tag 16 バイト）。 |
-| [std/crypto/rsa](crypto-rsa.ja.md) | RSA の秘密鍵の読み（PKCS#8 の DER）と RSASSA-PSS（RFC 8017 8.1 — SHA-256・MGF1-SHA256）の署名と検証。 |
+| [std/crypto/rsa](crypto-rsa.ja.md) | RSASSA-PKCS1-v1\_5 の署名（RFC 8017 8.2 — TLS 1.2 の ServerKeyExchange の rsa\_pkcs1\_sha1 / sha256 / sha384）と、TLS 1.2 の RSA 鍵交換の premaster の復号（RFC 5246 7.4.7.1 — Bleichenbacher / ROBOT の対策: 形の検査を分岐なしで畳み、外れたら呼び手が渡した乱数に定数時間で差し替える。 |
 | [std/crypto/sha256](crypto-sha256.ja.md) | SHA-256（FIPS 180-4）のインクリメンタル API。 |
 | [std/crypto/x25519](crypto-x25519.ja.md) | X25519（RFC 7748 5 節 — Curve25519 の Montgomery ladder）。 |
 | [std/env](env.ja.md) | 環境変数の宣言の表: プログラムが読む環境変数を const の表で宣言し（StrVar・IntVar・BoolVar・Table）、Load が入場で 1 回だけ全部を読んで検査し、凍った値の表（Values）を返す。 |
@@ -51,10 +52,11 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 | [std/json](json.ja.md) | JSON（RFC 8259）の読みと決定的な印字（[language.md 16 節](../language.md)）。 |
 | [std/layout](layout.ja.md) | @layout（[language.md 36 節](../language.md)）の裏方: 利用者は `layout.Decode[T](b, off)`・`layout.DecodeAt[T](b, off, i)`・`layout.Encode[T](mut out, v)`・`layout.Size[T]` を書き、loaderの固定テンプレート（compiler/loader/layout.sober）が @layoutのstructごとの変換の関数（普通のSober）を合成し、呼び出しをその関数の呼び出しに変換する。 |
 | [std/math](math.ja.md) | float の数学（[language.md 37 節](../language.md)）: 基本演算で書けないものだけを組み込みで（sqrtsd・ビット列の読み替え）。 |
-| [std/net](net.ja.md) | 名前の解決（スタブリゾルバ — libc の getaddrinfo を使わない）: Dial が IPv4 の綴りでないホストを受けたときに、/etc/hosts → /etc/resolv.conf の nameserver（最大3本を順に・1回の問い合わせは期限つき）へAを問う。 |
+| [std/net](net.ja.md) | 名前の解決（スタブリゾルバ — libc の getaddrinfo を使わない）: Dial が IPv4 の綴りでないホストを受けたときに、/etc/hosts → /etc/resolv.conf の nameserver（IPv4かIPv6・最大3本を順に・1回の問い合わせは期限つき）へAとAAAAを1つのUDPのsocketから同時に問う。 |
 | [std/os](os.ja.md) | プロセスとOSのAPI: 引数（Args）・子プロセス（Run・RunTo・RunToEnv）・環境変数（Getenv）・ファイルの属性と名前（WriteMode・Mkdir・Rename・Remove・RemoveDir・ModTime）・スリープ（Sleep）・期限（Alarm）・単調時計（Monotonic） |
 | [std/pg](pg.ja.md) | PostgreSQL のクライアント（wire protocol 3.0・extended query・TLS 1.3 + SCRAM-SHA-256-PLUS が既定）。 |
 | [std/pool](pool.ja.md) | スロットを使い回す資源のプール Pool[T]（region-domain-pool.md 2・4 節の最小形）。 |
+| [std/print](print.ja.md) | 結果・デバッグ出力・ログのAPI（[language.md 42 節](../language.md)）。 |
 | [std/quick](quick.ja.md) | プロパティベーステスト: 選択の源 Src から値を引き（Int・Bool・Pick・Elem・Bytes・String・Runes・Slice）、Check がプロパティを試行ごとに呼ぶ。 |
 | [std/rand](rand.ja.md) | シードを明示する決定的な擬似乱数 Rand（暗号用途には使わない — 鍵は crypto.Rand） |
 | [std/session](session.ja.md) | 世代つきのセッショントークン（HMAC-SHA256 で署名した claims — サーバ側にセッションの表を持たない）。 |
@@ -72,6 +74,16 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 
 ## 索引
 
+- [`aescbc.Available`](crypto-aescbc.ja.md#available) — この機械で CBC が使えるか
+- [`aescbc.BadSize`](crypto-aescbc.ja.md#badsize) — 鍵・IV の長さが違う・本文の長さが 16 の倍数でない・切片の外を指す
+- [`aescbc.BlockSize`](crypto-aescbc.ja.md#blocksize) — 長さの定数（バイト）
+- [`aescbc.Decrypt`](crypto-aescbc.ja.md#decrypt) — Encrypt の逆（ct と同じ長さの平文 — 埋め草はそのまま返す）
+- [`aescbc.DecryptAt`](crypto-aescbc.ja.md#decryptat) — b[off, off + n) を iv から連鎖して復号したもの（record の受けの列から写さずに読む形）
+- [`aescbc.Encrypt`](crypto-aescbc.ja.md#encrypt) — pt（16 の倍数）を iv から連鎖して暗号化したもの（pt と同じ長さ）
+- [`aescbc.Key`](crypto-aescbc.ja.md#key) — 展開した鍵（暗号化の鍵 11 ラウンドと復号の鍵 11 ラウンド。
+- [`aescbc.KeySize`](crypto-aescbc.ja.md#keysize) — 長さの定数（バイト）
+- [`aescbc.NoHardware`](crypto-aescbc.ja.md#nohardware) — この機械で AES の専用命令の実装を使えない（AES-NI が無い・SOBER\_NOAES=1・x86 の最適化のバックエンド以外の出力）
+- [`aescbc.Prepare`](crypto-aescbc.ja.md#prepare) — key を展開した Key（専用命令の有無と鍵の長さはここで見る）
 - [`aesgcm.Auth`](crypto-aesgcm.ja.md#auth) — tag が合わない
 - [`aesgcm.Available`](crypto-aesgcm.ja.md#available) — この機械で Seal / Open が使えるか
 - [`aesgcm.BadSize`](crypto-aesgcm.ja.md#badsize) — 鍵・nonce の長さが違う・暗号文が tag より短い・切片の外を指す
@@ -164,7 +176,7 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`cli.Usage`](cli.ja.md#usage) — name のコマンド（空なら App の全体・語の途中ならその下のサブコマンドの一覧）の使い方。
 - [`client.BadProxy`](http-client.ja.md#badproxy) — ParseProxy の文字列が http / https の URL（path なし・userinfo なし）でない
 - [`client.BadResponse`](http-client.ja.md#badresponse) — レスポンスの形の誤り（状態行・頭・chunkedの形・頭の上限64 KiB超え）
-- [`client.BadUrl`](http-client.ja.md#badurl) — URL の形の誤り（scheme が http / https でない・userinfo・IPv6 の番地・空白や制御文字）
+- [`client.BadUrl`](http-client.ja.md#badurl) — URL の形の誤り（scheme が http / https でない・userinfo・角括弧の中が IPv6 の番地でない・IPv6 の zone〔RFC 6874〕・空白や制御文字）
 - [`client.BodyTooLarge`](http-client.ja.md#bodytoolarge) — 本文が上限（Policy の maxBody）を超えた
 - [`client.Closed`](http-client.ja.md#closed) — 相手が接続を拒んだ・レスポンスの途中で閉じた
 - [`client.Cookie`](http-client.ja.md#cookie) — リクエストに載せるcookie 1本（Cookieの頭に `name=value` を `; ` で繋いで載せる。
@@ -379,16 +391,20 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`math.Sqrt`](math.ja.md#sqrt) — x の平方根（IEEE 754 の sqrt — 正しく丸めた値・負は NaN・-0 は -0）
 - [`math.Trunc`](math.ja.md#trunc) — x の 0 方向への切り捨て（整数部 — 小数部のビットを落とす。
 - [`net.Accept`](net.ja.md#accept) — l の接続を受けるたびに k に渡し、k が返ったら閉じる（列は終わらない — 本体の break か失敗で止まる。
-- [`net.Bad`](net.ja.md#bad) — addr の形の誤り（"a.b.c.d:port" — IPv4 の 4 つ組と 0〜65535 の port）
+- [`net.Bad`](net.ja.md#bad) — addr の形の誤り。
 - [`net.Conn`](net.ja.md#conn) — 接続（同一性の型 — Listener と同じ規則。
-- [`net.Dial`](net.ja.md#dial) — addr（"a.b.c.d:port" か "ホスト名:port"）へ接続した Conn を 1 回だけ k に渡し、k が返ったら閉じる。
-- [`net.Listen`](net.ja.md#listen) — addr で listen した Listener を 1 回だけ k に渡し（SO\_REUSEADDR・SO\_REUSEPORT・TCP\_NODELAY・backlog 65535 — somaxconn へ詰める・Go と同じ）、k が返ったら閉じる。
+- [`net.Dial`](net.ja.md#dial) — addr（"a.b.c.d:port"・"[IPv6]:port"・"ホスト名:port"）へ接続した Conn を 1 回だけ k に渡し、k が返ったら閉じる。
+- [`net.Flush`](net.ja.md#flush) — cの送信バッファに積んだ分を送る（無ければ何もしない。
+- [`net.Listen`](net.ja.md#listen) — addr で listen した Listener を 1 回だけ k に渡し（addr の "0.0.0.0:port" は IPv4 だけ・"[::]:port" は IPv6 だけ・ホストを省いた ":port" は両方。
 - [`net.Listener`](net.ja.md#listener) — listenしているsocket（同一性の型 — コピーできない・外へ出せない・give: で渡せない。
 - [`net.NoHost`](net.ja.md#nohost) — ホストの名前が引けない（NXDOMAIN・どの候補にも答えが無い・hosts にも無い）
 - [`net.NonASCIIHost`](net.ja.md#nonasciihost) — ホストの名前に非 ASCII の字がある（IDN は punycode〔xn--〕で渡す — 名前の解決の層は扱わない）
+- [`net.Pair`](net.ja.md#pair) — 繋がった接続の組（一方へ送ったバイトが他方の受けに届く — カーネルのsocketpair・AF\_UNIXのstream・非ブロック）の一方をserverへ子のtaskで、他方をclientへ呼び手のtaskで渡す。
 - [`net.Port`](net.ja.md#port) — l が bind している port（"…:0" で listen したときの割り当ての読み — getsockname）
+- [`net.Put`](net.ja.md#put) — bをcの送信バッファに積む（送りの2段階の1段目）。
 - [`net.Recv`](net.ja.md#recv) — c の受信を切片ずつ k へ渡す（失敗しうる生成元 — `for chunk <- net.Recv(c)? { … }`）。
-- [`net.Send`](net.ja.md#send) — b を全部 c へ送る（同期 — 短い書きは続きから・MSG\_NOSIGNAL で相手が閉じた後の書きは io.Closed）
+- [`net.Secure`](net.ja.md#secure) — cと同じ接続に、TLSの状態sを持たせてkへ渡し、kの結果を返す（std/tlsのServeがhandshakeの後に呼ぶ。
+- [`net.Send`](net.ja.md#send) — b を全部 c へ送る（同期 — 短い書きは続きから・MSG\_NOSIGNAL で相手が閉じた後の書きは io.Closed）。
 - [`net.Serve`](net.ja.md#serve) — lの接続を受けるたびに接続1本 = task 1本でhを走らせる（acceptのループはstdが持つ — ワーカーごとに1本・lと同じ番地にSO\_REUSEPORTで足したlistenerで受ける）。
 - [`net.WaitView`](net.ja.md#waitview) — 受け付けを待っている接続の数（読んだ時点の値）と、その上限
 - [`net.Waiting`](net.ja.md#waiting) — このプロセスの Serve が受け付けを待たせている接続の数（task.Ledger と同じく読んだ時点の値 — 入場が埋まると増える。
@@ -490,6 +506,7 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`pool.StoreRaw`](pool.ja.md#storeraw) — s の i 番目を v にする（生のアクセサ — 世代に触れず、値の範囲の制限も無い。
 - [`pool.StoreRaw16`](pool.ja.md#storeraw16) — s の 16 ビットの i 番目に v の下位 16 ビットを書く（生のアクセサ — LoadRaw16 の対）
 - [`pool.StoreRaw32`](pool.ja.md#storeraw32) — s の 32 ビットの i 番目に v の下位 32 ビットを書く（LoadRaw32 の対）
+- [`print.Log`](print.ja.md#log) — recを1行のJSON Lines（`{"ts":"<時刻>","<Tの型の名前>":<recのフィールド>}`）にして、ログの行き先（`@logs`・既定は標準エラー）へ書く。
 - [`quick.Assume`](quick.ja.md#assume) — 試行を捨てる条件: cond が偽ならこの試行は不成立（失敗とは数えない）。
 - [`quick.BadArg`](quick.ja.md#badarg) — `quick:` の指示の引数の形が違う
 - [`quick.BadEnv`](quick.ja.md#badenv) — SOBER\_QUICK\_SEED / SOBER\_QUICK\_TRIALS の値が整数でない（trials は 1 以上）
@@ -523,12 +540,17 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`rand.Split`](rand.ja.md#split) — r から独立した列の Rand を作る（r も 1 歩進む — ジェネレータの部分木に別のシードを配る用途）
 - [`rsa.BadKey`](crypto-rsa.ja.md#badkey) — 鍵の DER の形が違う（PKCS#8 の RSA でない・長さが合わない）
 - [`rsa.BadSize`](crypto-rsa.ja.md#badsize) — salt の長さや鍵の大きさが PSS に足りない
+- [`rsa.DecryptPremaster`](crypto-rsa.ja.md#decryptpremaster) — TLS 1.2 の RSA 鍵交換の premaster（48 バイト）。
 - [`rsa.Fault`](crypto-rsa.ja.md#fault) — 署名の自己検証が合わなかった（計算の故障 — 署名を捨てた）
+- [`rsa.HashSha1`](crypto-rsa.ja.md#hashsha1) — 署名のハッシュの種類（DigestInfo の前置き — RFC 8017 9.2 の注 1）
+- [`rsa.HashSha256`](crypto-rsa.ja.md#hashsha256) — 署名のハッシュの種類（DigestInfo の前置き — RFC 8017 9.2 の注 1）
+- [`rsa.HashSha384`](crypto-rsa.ja.md#hashsha384) — 署名のハッシュの種類（DigestInfo の前置き — RFC 8017 9.2 の注 1）
 - [`rsa.NewPublic`](crypto-rsa.ja.md#newpublic) — 大きい端のバイト列のnとeの公開鍵（検証に使うAPI）
 - [`rsa.ParsePKCS8`](crypto-rsa.ja.md#parsepkcs8) — PKCS#8 の DER（PEM の中身を base64 で戻したもの）の RSA の秘密鍵
 - [`rsa.PrivateKey`](crypto-rsa.ja.md#privatekey) — RSAPrivateKey の成分（RFC 8017 A.1.2 — d は使わない・CRT の p, q〔の Montgomery の文脈 mp, mq〕, dp, dq, qinv）
 - [`rsa.Public`](crypto-rsa.ja.md#public) — k の公開鍵
 - [`rsa.PublicKey`](crypto-rsa.ja.md#publickey) — 法 n と公開の指数 e（limb の列）・k = n のバイト長・bits = n のビット長・mt = n の Montgomery の文脈（鍵を読むときに 1 回）
+- [`rsa.SignPKCS1v15`](crypto-rsa.ja.md#signpkcs1v15) — digest（hash の値 — SHA-1 は 20・SHA-256 は 32・SHA-384 は 48 バイト）の RSASSA-PKCS1-v1\_5 の署名（k バイト）
 - [`rsa.SignPSS`](crypto-rsa.ja.md#signpss) — msg の RSASSA-PSS の署名（k バイト）。
 - [`rsa.Size`](crypto-rsa.ja.md#size) — pub の法のバイト長（署名の長さ）
 - [`rsa.VerifyPSS`](crypto-rsa.ja.md#verifypss) — sig が pub で msg の RSASSA-PSS の署名（salt 長 sLen）か
@@ -538,6 +560,7 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`server.BadLevel`](http-server.ja.md#badlevel) — Gzip の level が 0〜9 の外（呼び手の契約違反 — panic ラベル。
 - [`server.BadMultipart`](http-server.ja.md#badmultipart) — Multipart が読めない本文（Content-Type が multipart/form-data でない・boundary が無いか形が違う・境界の行や部分の頭の形の誤り・閉じの境界が無い・部分の数か部分の頭の大きさが上限を超える）。
 - [`server.Before`](http-server.ja.md#before) — ハンドラの前に走るコールバック（nil = 続ける・レスポンスを返すとshort-circuit — 内側のmiddlewareとハンドラは走らない）
+- [`server.Both`](http-server.ja.md#both) — 両方: 最初の24バイトが接続の前置きならHTTP/2、でなければHTTP/1.1。
 - [`server.Cache`](http-server.ja.md#cache) — 保存の方針（Cache-Controlの値）。
 - [`server.Coded`](http-server.ja.md#coded) — レスポンスの本文がリクエストのAccept-Encodingで選ばれたこと（encoding = 選んだ符号化〔"br" / "gzip"〕・"" = 候補を見たが元のまま）。
 - [`server.Cookie`](http-server.ja.md#cookie) — r の Cookie ヘッダの name の値（認証の源 — RFC 6265 5.4 の `name=value; name2=value2` を `;` で切り、前後の空白を除いて名前がちょうど等しい〔大文字小文字を区別する〕最初の組の値。
@@ -547,6 +570,8 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`server.Form`](http-server.ja.md#form) — 本文（Content-Type が application/x-www-form-urlencoded のとき）の key の値（Query と同じ切り方 — `k=v&…` の最初の一致・デコードしない。
 - [`server.FormatEvent`](http-server.ja.md#formatevent) — e の text/event-stream の 1 イベント（`event:`・`id:`・`retry:`・`data:` の行と、終わりの空行）。
 - [`server.Gzip`](http-server.ja.md#gzip) — ServeConnのcompression: の値（レスポンスのgzip — RFC 1952。
+- [`server.H1`](http-server.ja.md#h1) — HTTP/1.1だけ（既定）
+- [`server.H2`](http-server.ja.md#h2) — HTTP/2（h2c — 事前知識）だけ: 最初のバイトが接続の前置きでなければ、GOAWAY（PROTOCOL\_ERROR）を送って閉じる
 - [`server.Handler`](http-server.ja.md#handler) — リクエスト1件の処理（ルートの表の行が持つ）
 - [`server.Header`](http-server.ja.md#header) — r のヘッダ name の値（名前は大文字小文字を区別しない — 最初の一致。
 - [`server.HeaderList`](http-server.ja.md#headerlist) — rのヘッダの全部（受けた順・同じ名前の行は別の要素）。
@@ -560,13 +585,13 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`server.Out`](http-server.ja.md#out) — stream の送りの状態（圧縮する stream の符号器・送った合計・長さ既知なら length・超えたか）。
 - [`server.Param`](http-server.ja.md#param) — rのパターンの :key / \*keyの値（Dispatchが一致させたパターンとpathを並べて歩く — パターンにkeyが無い・ルーターを通らないリクエストはnil）
 - [`server.Part`](http-server.ja.md#part) — multipart/form-data の部分 1 つ（Multipart の結果 — 本文の順）
+- [`server.Proto`](http-server.ja.md#proto) — ServeConnが応じるプロトコル（proto:）
 - [`server.Query`](http-server.ja.md#query) — r の query の key の値（`k=v&…` の最初の一致・= の無い項目は値 ""・デコードしない。
 - [`server.Request`](http-server.ja.md#request) — リクエスト1件（この反復のregion — routeが返ったら消える。
 - [`server.Response`](http-server.ja.md#response) — レスポンス（status・Content-Type〔"" なら書かない〕・本文）。
 - [`server.Route`](http-server.ja.md#route) — ルートの表の 1 行（method + path のパターン → ハンドラ・ルート単位の middleware）。
 - [`server.SameSite`](http-server.ja.md#samesite) — SameSite 属性（RFC 6265bis 5.4.7 — None は Secure が要る）
 - [`server.ServeConn`](http-server.ja.md#serveconn) — cのリクエストを順にrouteに渡してレスポンスを書く（keep-alive）。
-- [`server.ServeWith`](http-server.ja.md#servewith) — ServeConn の核を転送路の受信コールバック recv（`for chunk <- recv()? { … }` の生成元 — net.Recv / tls.Recv の形）と送信コールバック send に一般化したもの（ServeConn は net の 1 行の包み・TLS の接続は `http.server.ServeWith((k) => tls.Recv(c, k), (b) => tls.Send(c, b), route, put: (b) => tls.Put(c, b))`）。
 - [`server.SetCookie`](http-server.ja.md#setcookie) — Set-Cookieの1本（Response.cookiesの要素。
 - [`server.Static`](http-server.ja.md#static) — prefix の下の GET を root の下のファイルで返すルートの表（1 行 — `GET <prefix>/*path` — Mount / Merge で合成する。
 - [`server.Status`](http-server.ja.md#status) — 本文なしのレスポンス（http.NotFound / http.MethodNotAllowed …）
@@ -657,6 +682,7 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`task.LedgerView`](task.ja.md#ledgerview) — 台帳の read-only のビュー（[language.md 11 節](../language.md)「メトリクス」）: 根 = プロセスの天井と計上中の量・縮退 / 天井を超えた入場 /宣言超過 / shed の数・ワーカー数、と名前つきプールのノード（作った順）
 - [`task.Local`](task.ja.md#local) — ワーカーローカルストレージのハンドル（region-domain-pool.md 4d節 — task.NewLocalが作る）: ワーカーごとにTを1つ持ち、task.Leaseのウィンドウに貸す。
 - [`task.LocalType`](task.ja.md#localtype) — NewLocalと違うTのウィンドウでLeaseした（ストレージのTの指紋が合わない）
+- [`task.LogView`](task.ja.md#logview) — ログのsinkの観測（Ledger().logs — [language.md 42 節](../language.md)）: 全ワーカーの合計。
 - [`task.MB`](task.ja.md#mb) — 予算の単位（バイト — `budget: 64 * MB`）
 - [`task.MS`](task.ja.md#ms) — 期限の単位（1 ミリ秒 — `deadline: 500 * MS`。
 - [`task.Map`](task.ja.md#map) — xs の各要素に f を並列に（要素ごとに 1 task）適用し、結果を添字の順に返す（[language.md 11 節](../language.md): `([]U, error?)`。
@@ -726,22 +752,18 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`time.Zone`](time.ja.md#zone) — 地域の時刻の規則
 - [`time.ZoneName`](time.ja.md#zonename) — ゾーンの名前（IANA の名前 — 別名で読んだら正の名前）
 - [`tls.Alpn`](tls.ja.md#alpn) — 受ける ALPN をサーバの好みの順 alpn に替えた Config（空 = ALPN を使わない。
-- [`tls.BadRecord`](tls.ja.md#badrecord) — 受けた record が壊れている（改竄・形の誤り・想定外のメッセージ — 相手へ alert を送って閉じた）
 - [`tls.BadRoots`](tls.ja.md#badroots) — ParseRootsのPEMが読めない（CERTIFICATEのチャンクが無い・チャンクのDERが証明書の形でない）
-- [`tls.Closed`](tls.ja.md#closed) — 接続が閉じている（相手の切断・相手の alert・転送路の失敗・途中で抜けた後の Recv）
+- [`tls.Closed`](tls.ja.md#closed) — handshakeの途中で接続が閉じた（相手の切断・転送路の失敗）
 - [`tls.Config`](tls.ja.md#config) — サーバの設定（Load / Parseが作る — 証明書のチェーン・葉の鍵・受けるALPN）
-- [`tls.Conn`](tls.ja.md#conn) — handshake の済んだ接続（同一性の型 — net.Conn と同じ規則。
-- [`tls.Flush`](tls.ja.md#flush) — cの送信バッファに積んだrecordを送る（無ければ何もしない）
+- [`tls.DangerouslyAllowTls12`](tls.ja.md#dangerouslyallowtls12) — TLS 1.2 のクライアントも受ける Config（既定は 1.3 だけ）。
 - [`tls.Handler`](tls.ja.md#handler) — handshake の済んだ接続 1 本の処理（名前つきの関数型 — 値として接続の task へ渡る。
 - [`tls.HandshakeFailed`](tls.ja.md#handshakefailed) — handshake が失敗した（alert = 送った alert の番号 — RFC 9846 6）
 - [`tls.Load`](tls.ja.md#load) — Parse のファイル版（certPath / keyPath を読む）
 - [`tls.Overflow`](tls.ja.md#overflow) — 方向のワードの列が席に入らない（stdの内部の約束違反 — panicラベル）
-- [`tls.Parse`](tls.ja.md#parse) — PEMの証明書のチェーン（CERTIFICATEが1つ以上 — 葉が先頭）とPKCS#8のRSAの鍵のConfig（ALPNの既定 = http/1.1 — 変えるならAlpn）
+- [`tls.Parse`](tls.ja.md#parse) — PEMの証明書のチェーン（CERTIFICATEが1つ以上 — 葉が先頭）とPKCS#8の鍵のConfig（ALPNの既定 = http/1.1 — 変えるならAlpn）。
 - [`tls.ParseRoots`](tls.ja.md#parseroots) — PEMの文字列pemのCERTIFICATEのチャンクを全部読んだ信頼の起点（私的PKIのCA — 外部ファイルを読むインターフェースは作らない。
-- [`tls.Put`](tls.ja.md#put) — bをapplicationのrecordにしてcの送信バッファに積む。
-- [`tls.Recv`](tls.ja.md#recv) — c の受けた application の平文を k に順に渡す（呼び出し形の生成元 — `for b <- tls.Recv(c)? { … }`）。
+- [`tls.Protocol`](tls.ja.md#protocol) — cのALPNで決まったプロトコル（"h2"・"http/1.1"。
 - [`tls.Roots`](tls.ja.md#roots) — 足す信頼の起点（ParseRoots が作る — 封の型。
-- [`tls.Send`](tls.ja.md#send) — b を application の record にして c へ送る（空の b は送らない — Put + Flush）。
 - [`tls.Serve`](tls.ja.md#serve) — addr で待ち受け、接続ごとに handshake を済ませてから k を走らせる（接続 1 本 = task 1 本 — net.Serve と同じ admission・k の失敗と死は吸収）。
 - [`url.Bad`](url.ja.md#bad) — Unescape / ParseQuery の入力が読めない（'%' の後が 16 進の 2 桁でない・復号したバイト列が UTF-8 でない）
 - [`url.Escape`](url.ja.md#escape) — s の percent-encoding（RFC 3986 2.3 の unreserved = 英数字と '-' '.' '\_' '~' はそのまま・他のバイトは "%XX" — 16 進は大文字 2.1。

@@ -347,6 +347,33 @@ theorem Ty.annFree_renR {ρ0 δ : Nat} : ∀ t : Ty, (t.renR ρ0 δ).annFree = t
   | .rvar _ => rfl
   | .muRs r _ _ b => by simp [Ty.renR, Ty.annFree]
 
+/-- relocR 0 は写像の前の relocR 0 を吸収する（domain の状態の型を形で比べる Ty.sub の腕が、写像で崩れない） -/
+theorem Ty.relocR0_renR_abs {ρ0 δ : Nat} : ∀ t : Ty, ((t.relocR 0).renR ρ0 δ).relocR 0 = (t.renR ρ0 δ).relocR 0
+  | .int => rfl
+  | .tvar i r k => by cases h1 : k.rf <;> cases h2 : k.imm <;> simp [Ty.relocR, Ty.renR, h1, h2]
+  | .bool => rfl
+  | .byte => rfl
+  | .f64 => rfl
+  | .unit => rfl
+  | .opt t => by simp [Ty.relocR, Ty.renR, Ty.relocR0_renR_abs t]
+  | .union l r => by simp [Ty.relocR, Ty.renR, Ty.relocR0_renR_abs l, Ty.relocR0_renR_abs r]
+  | .prod l r => by simp [Ty.relocR, Ty.renR, Ty.relocR0_renR_abs l, Ty.relocR0_renR_abs r]
+  | .ref m r t => by cases m <;> simp [Ty.relocR, Ty.renR, Ty.shiftR_zero, Ty.relocR0_renR_abs t]
+  | .slice m r t => by cases m <;> simp [Ty.relocR, Ty.renR, Ty.shiftR_zero, Ty.relocR0_renR_abs t]
+  | .map m r t => by cases m <;> simp [Ty.relocR, Ty.renR, Ty.shiftR_zero, Ty.relocR0_renR_abs t]
+  | .chan rc t => by simp [Ty.relocR, Ty.renR, Ty.shiftR_zero]
+  | .dom rc t => by simp [Ty.relocR, Ty.renR, Ty.shiftR_zero]
+  | .own k r t => by simp [Ty.relocR, Ty.renR, Ty.shiftR_zero]
+  | .fn p r => rfl
+  | .mus _ _ _ => rfl
+  | .rvar _ => rfl
+  | .muRs r n i b => by cases h : b.mutFree <;> simp [Ty.relocR, Ty.renR, h]
+
+/-- relocR 0 の一致は写像の後も保たれる -/
+theorem Ty.relocR_congr_renR {ρ0 δ : Nat} {a b : Ty} (h : a.relocR 0 = b.relocR 0) :
+    (a.renR ρ0 δ).relocR 0 = (b.renR ρ0 δ).relocR 0 := by
+  rw [← Ty.relocR0_renR_abs a, ← Ty.relocR0_renR_abs b, h]
+
 theorem Ty.sub_renR {ρ0 δ : Nat} (h0 : ρ0 ≤ δ) :
     ∀ {ta tb : Ty}, Ty.sub ta tb = true → Ty.sub (ta.renR ρ0 δ) (tb.renR ρ0 δ) = true
   | .opt t, .opt t', hs => by
@@ -403,9 +430,9 @@ theorem Ty.sub_renR {ρ0 δ : Nat} (h0 : ρ0 ≤ δ) :
     obtain rfl := Ty.sub_chan_inv hs
     exact Ty.sub_refl _
   | .dom rc t, tb, hs => by
-    obtain ⟨r', rfl, hle⟩ := Ty.sub_dom_inv hs
+    obtain ⟨r', t', rfl, hle, hst, he⟩ := Ty.sub_dom_inv hs
     simp only [Ty.renR, Ty.sub, Bool.and_eq_true, decide_eq_true_eq]
-    exact ⟨rmap_le h0 hle, trivial⟩
+    exact ⟨⟨rmap_le h0 hle, Ty.sub_renR h0 hst⟩, Ty.relocR_congr_renR he⟩
   | .own k r t, tb, hs => by
     obtain rfl := Ty.sub_own_inv hs
     exact Ty.sub_refl _
@@ -1175,6 +1202,16 @@ theorem ren_typing {ρ0 δ : Nat} (h0 : ρ0 ≤ δ) {e : Expr} {Δ : Defs} {f b 
       · intro hm
         rw [Ty.renR_mutFree]
         exact hmf hm
+  | allocAt m r e ihe =>
+    simp only [Expr.src] at hs
+    cases he with
+    | allocAt h hrb hbr hrd hmf hcf =>
+      refine .allocAt (ihe h hd hs) (Ty.renR_regionsBelow_succ h0 hcf hrb) (rmap_le h0 hbr) ?_ ?_
+        (by rw [Ty.chanFree_renR]; exact hcf)
+      · rcases r with _ | r
+        · simp only [rmap]; omega
+        · rw [rmap_pos (by omega)]; omega
+      · intro hm; rw [Ty.renR_mutFree]; exact hmf hm
   | deref e ihe =>
     simp only [Expr.src] at hs
     cases he with | deref h => exact .deref (ihe h hd hs)

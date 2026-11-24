@@ -16,7 +16,8 @@ The public primitives in `std/crypto` and the implementations inside std (under 
 | Key exchange X25519 | Supported | wycheproof/x25519 = 518 |
 | Key exchange P-256 (ECDH, constant-time — TLS secp256r1) | Supported | wycheproof/ecdh_secp256r1 = 355 |
 | Signature verification ECDSA P-256 / P-384, RSA-PSS, RSA PKCS#1 v1.5 | Supported | cavp/ecdsa-sigver = 30<br>wycheproof/rsa-pss-2048-sha256-mgf1-32 = 108 |
-| Signing (RSA-PSS only — the TLS server's CertificateVerify) | Partial | `std/tls.TestTrace` |
+| ECDSA signing P-256 / SHA-256 (deterministic nonces per RFC 6979; constant time, checked with dudect) | Supported | `std/internal/p256.TestSignRfc6979`<br>`std/internal/p256.TestSignVectors`<br>`std/internal/p256.TestSignVerify` |
+| Signing (RSA-PSS — the TLS 1.3 CertificateVerify; RSASSA-PKCS1-v1_5 — the TLS 1.2 ServerKeyExchange) | Supported | `std/tls.TestTrace`<br>`std/crypto/rsa.TestSignPKCS1v15` |
 | Constant time for functions that touch secrets (static gate ctcheck — per-function conditional branches checked against a golden) | Supported | `testdata/ctcheck/expect.txt`: aesgcm |
 | Password hashing: Argon2id (recommended), bcrypt, PBKDF2-HMAC-SHA256, Verify of PHC strings | Supported | xcrypto/argon2id = 19<br>xcrypto/bcrypt = 18<br>go/pbkdf2-sha256 = 432 |
 <!-- confsync:end claims crypto-prims yes,partial -->
@@ -36,7 +37,6 @@ The public primitives in `std/crypto` and the implementations inside std (under 
 | Item | Planned | Evidence of today's behavior |
 |---|---|---|
 | AES-256-GCM | 0.8 | none |
-| ECDSA signing (RFC 6979) | 0.8 | none |
 <!-- confsync:end claims crypto-prims planned -->
 
 ## Evidence — passing vectors

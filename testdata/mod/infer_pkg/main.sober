@@ -1,0 +1,11 @@
+package main
+
+import "rec"
+import "std/json"
+
+func main() {
+    println(json.Encode(rec.MakePub()))
+    h := rec.MakeHidden()
+    println(json.Encode(h))
+    println(json.EncodeWith(h, map[string]string{"Kind": "kind"}))
+}

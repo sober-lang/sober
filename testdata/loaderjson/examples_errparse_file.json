@@ -168,6 +168,10 @@
           "path": "std/internal/utf8"
         },
         {
+          "ref": "iter",
+          "path": "std/iter"
+        },
+        {
           "ref": "iter#",
           "path": "std/iter"
         },
@@ -336,10 +340,9 @@
           "has_try": false,
           "callees": [
             "append",
-            "byte",
             "errOf",
             "freeze",
-            "len",
+            "iter.Range",
             "sysAddr",
             "sysCall",
             "sysDeadline"
@@ -865,6 +868,60 @@
       "consts": []
     },
     {
+      "path": "std/iter",
+      "name": "iter",
+      "imports": [],
+      "funcs": [
+        {
+          "name": "Slice",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "k",
+            "len"
+          ]
+        },
+        {
+          "name": "Range",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "k"
+          ]
+        },
+        {
+          "name": "Each",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "it"
+          ]
+        },
+        {
+          "name": "Count",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "it"
+          ]
+        },
+        {
+          "name": "Sum",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "it"
+          ]
+        }
+      ],
+      "consts": []
+    },
+    {
       "path": "std/strings",
       "name": "strings",
       "imports": [],
@@ -1244,60 +1301,6 @@
       "consts": []
     },
     {
-      "path": "std/iter",
-      "name": "iter",
-      "imports": [],
-      "funcs": [
-        {
-          "name": "Slice",
-          "expands": true,
-          "mut_def": false,
-          "has_try": false,
-          "callees": [
-            "k",
-            "len"
-          ]
-        },
-        {
-          "name": "Range",
-          "expands": true,
-          "mut_def": false,
-          "has_try": false,
-          "callees": [
-            "k"
-          ]
-        },
-        {
-          "name": "Each",
-          "expands": true,
-          "mut_def": false,
-          "has_try": false,
-          "callees": [
-            "it"
-          ]
-        },
-        {
-          "name": "Count",
-          "expands": true,
-          "mut_def": false,
-          "has_try": false,
-          "callees": [
-            "it"
-          ]
-        },
-        {
-          "name": "Sum",
-          "expands": true,
-          "mut_def": false,
-          "has_try": false,
-          "callees": [
-            "it"
-          ]
-        }
-      ],
-      "consts": []
-    },
-    {
       "path": "std/internal/utf8",
       "name": "utf8",
       "imports": [
@@ -1510,6 +1513,15 @@
           "callees": [
             "newPool",
             "panic",
+            "poolNetOp"
+          ]
+        },
+        {
+          "name": "ServeAcceptRetry",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
             "poolNetOp"
           ]
         },

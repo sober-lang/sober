@@ -17,6 +17,8 @@ import "std/crypto"
 import "std/crypto/aesgcm"
 import "std/crypto/chacha20poly1305"
 import "std/crypto/hkdf"
+import "std/crypto/aescbc"
+import "std/internal/cbcrec"
 import "std/iter"
 
 // cipher suite の番号（RFC 9846 B.4 — v1 は 2 つ・どちらも SHA-256）
@@ -31,8 +33,16 @@ const CtApp = 23         // application_data
 
 // record の大きさ（RFC 9846 5.1 / 5.2）
 const MaxPlain = 16384           // TLSInnerPlaintext の中身の上限
-const MaxCipher = 16384 + 256    // TLSCiphertext の本体の上限
+const MaxCipher = 16384 + 256    // TLSCiphertext の本体の上限（1.3）
+const MaxFrame = 16384 + 2048    // TLSCiphertext の本体の上限（1.2 — RFC 5246 6.2.3。std/tls の切り出しが 1.2 の鍵のときに使う）
 const HeadSize = 5              // record の頭のバイト数
+
+// TLS 1.2 の記録の種類（Dir.suite — 1.3 の suite の番号と重ならない内部の番号。Etm は CBC の種類に足す旗 — encrypt_then_mac）
+const Gcm12 = 0x1f01          // AES-128-GCM（RFC 5288 — 明示の nonce 8 バイト）
+const ChaCha12 = 0x1f02       // ChaCha20-Poly1305（RFC 7905）
+const CbcSha1 = 0x1f03        // AES-128-CBC + HMAC-SHA1
+const CbcSha256 = 0x1f04      // AES-128-CBC + HMAC-SHA256
+const Etm = 0x10
 
 // AES-GCM の 1 つの鍵で守る record の上限（RFC 9846 5.5 — 2^24.5 ≈ 23,726,566。手前で KeyUpdate）
 const aesLimit = 23726566
@@ -60,6 +70,7 @@ type Dir struct {
     cc crypto.chacha20poly1305.Key
     iv []byte
     seq int
+    raw []byte
 }
 
 // 受けたrecordの枠1つ = b[off, off + n)（頭5バイト込み）。bは受けの切片か、切片をまたいだrecordを繋いだコピー（反復の間だけ生きる）
@@ -104,17 +115,64 @@ func NewDir(suite int, secret []byte) (Dir, error?) {
         if e != nil {
             return emptyDir(), Alert{desc: AlertInternal}
         }
-        return Dir{suite: suite, secret: secret, aes: k, cc: crypto.chacha20poly1305.Key{key: []byte{}}, iv: iv, seq: 0}, nil
+        return Dir{suite: suite, secret: secret, aes: k, cc: crypto.chacha20poly1305.Key{key: []byte{}}, iv: iv, seq: 0, raw: []byte{}}, nil
     }
     k, e := crypto.chacha20poly1305.Prepare(ExpandLabel(secret, "key", []byte{}, 32))
     if e != nil {
         return emptyDir(), Alert{desc: AlertInternal}
     }
-    return Dir{suite: suite, secret: secret, aes: crypto.aesgcm.Key{ctx: []byte{}}, cc: k, iv: iv, seq: 0}, nil
+    return Dir{suite: suite, secret: secret, aes: crypto.aesgcm.Key{ctx: []byte{}}, cc: k, iv: iv, seq: 0, raw: []byte{}}, nil
 }
 
 func emptyDir() Dir {
-    return Dir{suite: 0, secret: []byte{}, aes: crypto.aesgcm.Key{ctx: []byte{}}, cc: crypto.chacha20poly1305.Key{key: []byte{}}, iv: []byte{}, seq: 0}
+    return Dir{suite: 0, secret: []byte{}, aes: crypto.aesgcm.Key{ctx: []byte{}}, cc: crypto.chacha20poly1305.Key{key: []byte{}}, iv: []byte{}, seq: 0, raw: []byte{}}
+}
+
+// TLS 1.2 の 1 方向の Dir（kind = Gcm12 / ChaCha12 / CbcSha1 / CbcSha256〔| Etm〕）。key = 書く鍵（AES-128 は 16・ChaCha20 は 32 バイト）・
+// iv = AEAD の固定の IV（GCM は 4・ChaCha20 は 12 バイト）か、CBC の明示の IV を作る鍵 ivKey（16 バイト — 送りの方向だけが使う）・mac = CBC の MAC の鍵
+@errors(Alert)
+@effects()
+func NewDir12(kind int, key []byte, iv []byte, mac []byte) (Dir, error?) {
+    if kind == Gcm12 {
+        k, e := crypto.aesgcm.Prepare(key)
+        if e != nil || len(iv) != 4 {
+            return emptyDir(), Alert{desc: AlertInternal}
+        }
+        return Dir{suite: kind, secret: []byte{}, aes: k, cc: crypto.chacha20poly1305.Key{key: []byte{}}, iv: iv, seq: 0, raw: []byte{}}, nil
+    }
+    if kind == ChaCha12 {
+        k, e := crypto.chacha20poly1305.Prepare(key)
+        if e != nil || len(iv) != 12 {
+            return emptyDir(), Alert{desc: AlertInternal}
+        }
+        return Dir{suite: kind, secret: []byte{}, aes: crypto.aesgcm.Key{ctx: []byte{}}, cc: k, iv: iv, seq: 0, raw: []byte{}}, nil
+    }
+    b := kind & ^Etm
+    if (b != CbcSha1 && b != CbcSha256) || len(key) != 16 || len(iv) != 16 || len(mac) != internal.cbcrec.MacSize(macAlg(kind)) || !crypto.aescbc.Available() {
+        return emptyDir(), Alert{desc: AlertInternal}
+    }
+    return Dir{suite: kind, secret: mac, aes: crypto.aesgcm.Key{ctx: []byte{}}, cc: crypto.chacha20poly1305.Key{key: []byte{}}, iv: iv, seq: 0, raw: key}, nil
+}
+
+// d が TLS 1.2 の記録か
+@effects()
+func Is12(d Dir) bool {
+    return (d.suite & 0xff00) == 0x1f00
+}
+
+// 記録の種類 suite の本文の長さの上限（1.2 = MaxFrame・それ以外 = MaxCipher）
+@effects()
+func BodyMax(suite int) int {
+    return if (suite & 0xff00) == 0x1f00 { MaxFrame } else { MaxCipher }
+}
+
+func isCbc(suite int) bool {
+    b := suite & ^Etm
+    return b == CbcSha1 || b == CbcSha256
+}
+
+func macAlg(kind int) int {
+    return if (kind & ^Etm) == CbcSha1 { internal.cbcrec.MacSha1 } else { internal.cbcrec.MacSha256 }
 }
 
 // KeyUpdate（secret' = ExpandLabel(secret, "traffic upd", "", 32) — RFC 9846 7.2・key / iv を作り直して seq を 0 に）
@@ -138,7 +196,7 @@ func NeedUpdate(d Dir) bool {
 @effects()
 func Seal(d mut Dir, ctype int, pt []byte, pad int) []byte {
     n := len(pt)
-    capa := if pad < MaxPlain { MaxPlain - pad } else { 1 }
+    capa := if Is12(d) { MaxPlain } else if pad < MaxPlain { MaxPlain - pad } else { 1 }
     if n <= capa {
         return sealOne(mut d, ctype, pt, 0, n, pad)
     }
@@ -165,6 +223,9 @@ func SealInto(d Dir, ctype int, pt []byte, dst mut []byte, at int) int {
     if m > MaxPlain {
         return 0 - 1
     }
+    if Is12(d) {
+        return sealInto12(d, ctype, pt, mut dst, at)
+    }
     tail := []byte{byte(ctype)}
     hd := head(m + 1 + 16)
     nonce := nonceOf(d.iv, d.seq)
@@ -177,6 +238,11 @@ func SealInto(d Dir, ctype int, pt []byte, dst mut []byte, at int) int {
 // pt[at, at + m) を1 recordに（内側 = 中身 ‖ ctype ‖ 0 × pad・頭 = 23 / 0x0303 / 内側 + tagの長さ）。中身はコピーせず切り出しで渡し、
 // ctypeと詰め物はSealToのtailで後ろに繋ぐ（コピーはSealToの宛先への1回だけ）
 func sealOne(d mut Dir, ctype int, pt []byte, at int, m int, pad int) []byte {
+    if Is12(d) {
+        r := seal12(d, ctype, pt[at:at + m])
+        d.seq += 1
+        return r
+    }
     mut tl := mut []byte{}
     tl = append(tl, byte(ctype))
     mut z := 0
@@ -228,6 +294,11 @@ func Plain(r Frame) (int, []byte) {
 @bless
 @effects()
 func Open(d mut Dir, r Frame) (int, []byte, error?) {
+    if Is12(d) {
+        ct, p := open12(d, r)?
+        d.seq += 1
+        return ct, p, nil
+    }
     if int(r.b[r.off]) != CtApp {
         return 0, []byte{}, Alert{desc: AlertUnexpected}
     }
@@ -318,7 +389,9 @@ func stripTail(p []byte, lo int, m int) (int, int) {
 // 転送路の受信コールバック recv から record の枠を順に k へ渡す（呼び出し形の生成元 — `for r <- internal.record.Frames(recv)? { … }`）。
 // 枠の本体の長さがMaxCipherを超えればrecord_overflow（バッファしない）。recordが受けの切片に丸ごと入っていれば切片のまま渡し、切片をまたぐ
 // recordは持ち越しの列（最初にまたいだときに頭 + MaxCipherバイトを1回確保）にバッファして、揃ったら繋いだコピーを渡す。recvが閉じたときに
-// 半端な record が残っていれば decode_error。recv の失敗は Transport に包み替える
+// 半端な record が残っていれば decode_error。recv の失敗は Transport に包み替える。
+// recvの空の切片は合図（std/tlsのRecvMuxが混ぜる）で、長さ0の枠を1つ渡す。合図は持ち越しに混ぜない。
+// kを呼ぶ所は1つだけ（呼び手のループの本体を何か所にも展開させない）
 @errors(Alert, Transport)
 @effects()
 func Frames(recv func(k func([]byte)) error?, k func(Frame)) error? {
@@ -326,59 +399,79 @@ func Frames(recv func(k func([]byte)) error?, k func(Frame)) error? {
     mut pend := mut []byte{}
     mut pn := 0
     for chunk <- (recv()? Transport{}) {
-        mut at := 0
         n := len(chunk)
-        // 持ち越しがあれば、まず 1 record を揃える
-        if pn > 0 {
-            // 頭（5バイト）を揃えてから本体を揃える — どちらも添字のコピーの形（copyloop (B) — 一括のコピーに下りる）
-            if pn < HeadSize {
-                m := if HeadSize - pn < n - at { HeadSize - pn } else { n - at }
-                carry(mut pend, pn, chunk, at, m)
-                pn += m
-                at += m
-                if pn == HeadSize && (int(pend[3]) << 8 | int(pend[4])) > MaxCipher {
-                    return Alert{desc: AlertOverflow}
+        mut at := 0
+        mut sig := n == 0
+        mut go := true
+        while go {
+            // 次に渡す枠（fl < 0 = 無し）
+            mut fb := chunk
+            mut fo := 0
+            mut fl := 0 - 1
+            if sig {
+                sig = false
+                fl = 0
+            } else if pn > 0 {
+                // 持ち越しがあれば、まず 1 record を揃える。頭（5バイト）を揃えてから本体を揃える — どちらも添字のコピーの形（copyloop (B) — 一括のコピーに下りる）
+                if pn < HeadSize {
+                    m := if HeadSize - pn < n - at { HeadSize - pn } else { n - at }
+                    carry(mut pend, pn, chunk, at, m)
+                    pn += m
+                    at += m
+                    if pn == HeadSize && (int(pend[3]) << 8 | int(pend[4])) > MaxCipher {
+                        return Alert{desc: AlertOverflow}
+                    }
                 }
-            }
-            if pn >= HeadSize {
-                want := HeadSize + (int(pend[3]) << 8 | int(pend[4]))
-                m := if want - pn < n - at { want - pn } else { n - at }
-                carry(mut pend, pn, chunk, at, m)
-                pn += m
-                at += m
-                if pn == want {
-                    k(Frame{b: joined(mut pend, pn), off: 0, n: pn})
-                    pn = 0
+                if pn >= HeadSize {
+                    want := HeadSize + (int(pend[3]) << 8 | int(pend[4]))
+                    m := if want - pn < n - at { want - pn } else { n - at }
+                    carry(mut pend, pn, chunk, at, m)
+                    pn += m
+                    at += m
+                    if pn == want {
+                        fb = joined(mut pend, pn)
+                        fl = pn
+                        pn = 0
+                    }
                 }
-            }
-        }
-        // 丸ごと入っている record は切片のまま
-        mut more := pn == 0
-        while more && n - at >= HeadSize {
-            body := int(chunk[at + 3]) << 8 | int(chunk[at + 4])
-            if body > MaxCipher {
-                return Alert{desc: AlertOverflow}
-            }
-            if n - at >= HeadSize + body {
-                k(Frame{b: chunk, off: at, n: HeadSize + body})
-                at += HeadSize + body
+                // 揃わなければ切片を使い切っている
+                go = fl >= 0
             } else {
-                more = false
-            }
-        }
-        // 残り（半端な record の頭）を持ち越す
-        if at < n {
-            if len(pend) == 0 {
-                mut z := 0
-                while z < capa {
-                    pend = append(pend, 0)
-                    z += 1
+                // 丸ごと入っている record は切片のまま
+                mut whole := false
+                if n - at >= HeadSize {
+                    body := int(chunk[at + 3]) << 8 | int(chunk[at + 4])
+                    if body > MaxCipher {
+                        return Alert{desc: AlertOverflow}
+                    }
+                    whole = n - at >= HeadSize + body
+                    if whole {
+                        fo = at
+                        fl = HeadSize + body
+                        at += fl
+                    }
+                }
+                if !whole {
+                    // 残り（半端な record の頭）を持ち越す
+                    if at < n {
+                        if len(pend) == 0 {
+                            mut z := 0
+                            while z < capa {
+                                pend = append(pend, 0)
+                                z += 1
+                            }
+                        }
+                        m := n - at
+                        carry(mut pend, pn, chunk, at, m)
+                        pn += m
+                        at += m
+                    }
+                    go = false
                 }
             }
-            m := n - at
-            carry(mut pend, pn, chunk, at, m)
-            pn += m
-            at += m
+            if fl >= 0 {
+                k(Frame{b: fb, off: fo, n: fl})
+            }
         }
     }
     if pn > 0 {
@@ -424,7 +517,7 @@ func Pack(d Dir) []int {
     w = append(w, d.seq)
     packBytes(mut w, d.secret)
     packBytes(mut w, d.iv)
-    packBytes(mut w, if d.suite == AesGcm { d.aes.ctx } else { d.cc.key })
+    packBytes(mut w, if d.suite == AesGcm || d.suite == Gcm12 { d.aes.ctx } else if isCbc(d.suite) { d.raw } else { d.cc.key })
     return freeze(w)
 }
 
@@ -436,16 +529,44 @@ func Unpack(w []int, at int) Dir {
     secret, a1 := unpackBytes(w, at + 2)
     iv, a2 := unpackBytes(w, a1)
     km, _ := unpackBytes(w, a2)
-    if suite == AesGcm {
-        return Dir{suite: suite, secret: secret, aes: crypto.aesgcm.Key{ctx: km}, cc: crypto.chacha20poly1305.Key{key: []byte{}}, iv: iv, seq: seq}
+    if suite == AesGcm || suite == Gcm12 {
+        return Dir{suite: suite, secret: secret, aes: crypto.aesgcm.Key{ctx: km}, cc: crypto.chacha20poly1305.Key{key: []byte{}}, iv: iv, seq: seq, raw: []byte{}}
     }
-    return Dir{suite: suite, secret: secret, aes: crypto.aesgcm.Key{ctx: []byte{}}, cc: crypto.chacha20poly1305.Key{key: km}, iv: iv, seq: seq}
+    if isCbc(suite) {
+        return Dir{suite: suite, secret: secret, aes: crypto.aesgcm.Key{ctx: []byte{}}, cc: crypto.chacha20poly1305.Key{key: []byte{}}, iv: iv, seq: seq, raw: km}
+    }
+    return Dir{suite: suite, secret: secret, aes: crypto.aesgcm.Key{ctx: []byte{}}, cc: crypto.chacha20poly1305.Key{key: km}, iv: iv, seq: seq, raw: []byte{}}
+}
+
+// Unpack と同じで、鍵の素材（secret・iv・鍵の文脈）を写さずに bv の切片で持つ。bv は w と同じ語の列の byte の view
+// （std/tls の格納場所 — 受けの1回ごとに方向を作り直すので、写すと record ごとの固定費になる）。返した Dir は bv の格納場所が書き換わるまで有効
+@effects()
+func UnpackView(w []int, bv []byte, at int) Dir {
+    suite := w[at]
+    seq := w[at + 1]
+    secret, a1 := viewBytes(w, bv, at + 2)
+    iv, a2 := viewBytes(w, bv, a1)
+    km, _ := viewBytes(w, bv, a2)
+    if suite == AesGcm || suite == Gcm12 {
+        return Dir{suite: suite, secret: secret, aes: crypto.aesgcm.Key{ctx: km}, cc: crypto.chacha20poly1305.Key{key: []byte{}}, iv: iv, seq: seq, raw: []byte{}}
+    }
+    if isCbc(suite) {
+        return Dir{suite: suite, secret: secret, aes: crypto.aesgcm.Key{ctx: []byte{}}, cc: crypto.chacha20poly1305.Key{key: []byte{}}, iv: iv, seq: seq, raw: km}
+    }
+    return Dir{suite: suite, secret: secret, aes: crypto.aesgcm.Key{ctx: []byte{}}, cc: crypto.chacha20poly1305.Key{key: km}, iv: iv, seq: seq, raw: []byte{}}
+}
+
+// packBytes で書いた w[at] の列を、bv（w と同じ語の列の byte の view）の切片として → (切片, 次の位置)
+func viewBytes(w []int, bv []byte, at int) ([]byte, int) {
+    n := w[at]
+    b := (at + 1) * 8
+    return bv[b:b + n], at + 1 + (n + 7) / 8
 }
 
 // dのseqをseqに差し替えたDir（鍵の素材はdと共有 — std/tlsが展開済みの送りの方向に格納場所のseqのワードを当てる）
 @effects()
 func WithSeq(d Dir, seq int) Dir {
-    return Dir{suite: d.suite, secret: d.secret, aes: d.aes, cc: d.cc, iv: d.iv, seq: seq}
+    return Dir{suite: d.suite, secret: d.secret, aes: d.aes, cc: d.cc, iv: d.iv, seq: seq, raw: d.raw}
 }
 
 // dのseq（std/tlsがストレージのseqのワードだけを書き戻す）

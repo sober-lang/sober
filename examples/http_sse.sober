@@ -3,13 +3,14 @@ package main
 // Server-Sent Events（language.md 28 節の「SSE」）: レスポンスの stream で text/event-stream を送る。長さ不定の stream なので chunked で、
 // emit 1 回 = chunk 1 つ = 送り 1 回（std は emit をまたいでバッファリングしない — イベントは組んだ順にすぐ届く）。イベントの行は http.server.FormatEvent で組む
 // （data の改行は行ごとの `data:` に割る・event / id の改行は panic(BadEvent) — examples/http_sse_bad）。保存させない（cache: NoStore）。
-// text/event-stream は compression: の対象外（ServeWith に compression: を渡しても圧縮しない — 頭に Content-Encoding も Vary も無い）。
+// text/event-stream は compression: の対象外（ServeConn に compression: を渡しても圧縮しない — 頭に Content-Encoding も Vary も無い）。
 // 繋ぎ直した受け手は最後に受けた id を Last-Event-ID で返す（http.server.Header で読む — ここではその続きから送る）。
 // 長命の接続は scope の deadline の外に置く（ServeConn を deadline つきの task.Run で包むと流れが切れる）。
 // ネットの代わりに recv が決まったリクエストの列を渡し、send が送りの 1 回ずつを印字する（行末の CR は外す・送りの区切りに `--`）
 
 import "std/convert"
 import "std/http/server"
+import "std/net"
 
 func show(b []byte) error? {
     mut out := mut []byte{}
@@ -45,14 +46,23 @@ func route(r http.server.Request) http.server.Response {
     return http.server.Response{status: 200, contentType: "text/event-stream", cache: http.server.NoStore{}, stream: (out, emit) => events(from, mut out, emit)}
 }
 
-func give(a string, k func([]byte)) error? {
-    k(bytes(a))
-    return nil
-}
-
 func main() {
     reqs := "GET /events HTTP/1.1\r\nHost: x\r\nAccept: text/event-stream\r\nAccept-Encoding: gzip\r\n\r\n" +
         "GET /events HTTP/1.1\r\nHost: x\r\nLast-Event-ID: 41\r\nConnection: close\r\n\r\n"
-    e := http.server.ServeWith((k) => give(reqs, k), (b) => show(b), route, compression: http.server.Gzip{})
+    e := net.Pair((c) => http.server.ServeConn(c, route, compression: http.server.Gzip{}), (c) => {
+        _ = net.Send(c, bytes(reqs))
+        _ = show(readAll(c))
+    })
     println(e == nil)
+}
+
+// 相手が閉じるまで受けたバイト列（最後の要求はConnection: close — サーバーが応答の後に閉じる）
+func readAll(c net.Conn) []byte {
+    mut got := mut []byte{}
+    _ = net.Recv(c, (x) => {
+        for y <- x {
+            got = append(got, y)
+        }
+    })
+    return freeze(got)
 }

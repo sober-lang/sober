@@ -1,0 +1,155 @@
+package sha1
+
+// SHA-1（FIPS 180-4）。std/tlsの内側の部品: TLS 1.2のCBCのスイートのHMAC-SHA1と、署名のrsa_pkcs1_sha1（dangerouslyAllowTls12の道だけ）。
+// 衝突の耐性は破れているので、新しい用途に使わない（HMACとTLS 1.2の古い署名の検証・作成だけ）。
+// Blockはブロック単位の圧縮関数（CBCの記録のMACを、長さに依らない回数で畳む定数時間の計算が直に使う）
+
+import "std/iter"
+
+const Size = 20 // 値の長さ
+const BlockSize = 64 // 1 ブロックの長さ
+
+// 途中の状態（h = 5ワードの連鎖値・tail = まだ畳んでいない64バイト未満の端・n = これまでに書いた長さ）
+type State struct {
+    h []int
+    tail []byte
+    n int
+}
+
+// 空の入力の状態
+@effects()
+func New() State {
+    return State{h: Init(), tail: []byte{}, n: 0}
+}
+
+// 連鎖値の初期値
+func Init() []int {
+    return []int{0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476, 0xc3d2e1f0}
+}
+
+// data を続けて書く（64 バイトのブロックが揃った分だけ畳み、端は tail に残す）
+@effects()
+func Write(s mut State, data []byte) {
+    n := len(data)
+    t := len(s.tail)
+    if t + n < 64 {
+        s.tail = cat(s.tail, data, 0, n)
+        s.n = s.n + n
+        return
+    }
+    mut h := mut []int{}
+    for i <- iter.Range(0, 5) {
+        h = append(h, s.h[i])
+    }
+    mut w := mut []int{}
+    for i <- iter.Range(0, 80) {
+        w = append(w, 0)
+    }
+    mut off := 0
+    if t > 0 {
+        off = 64 - t
+        compress(mut h, mut w, cat(s.tail, data, 0, off), 0)
+    }
+    while off + 64 <= n {
+        compress(mut h, mut w, data, off)
+        off = off + 64
+    }
+    s.h = freeze(h)
+    s.tail = cat([]byte{}, data, off, n)
+    s.n = s.n + n
+}
+
+// sに書いた全体の値（20バイト）。sは変えない（末尾の詰め = 端 + 0x80 + 0埋め + ビット長〔64 bit big endian〕）
+@effects()
+func Sum(s State) []byte {
+    rest := len(s.tail)
+    tlen := if rest < 56 { 64 } else { 128 }
+    mut t := mut []byte{}
+    for i <- iter.Range(0, rest) {
+        t = append(t, s.tail[i])
+    }
+    t = append(t, byte(0x80))
+    for i <- iter.Range(rest + 1, tlen - 8) {
+        t = append(t, byte(0))
+    }
+    bits := s.n * 8
+    for i <- iter.Range(0, 8) {
+        t = append(t, byte((bits >> (56 - 8 * i)) & 0xff))
+    }
+    mut f := s
+    f.tail = []byte{}
+    Write(mut f, freeze(t))
+    return Bytes(f.h)
+}
+
+// data の SHA-1 の値（ワンショット）
+@effects()
+func Sum1(data []byte) []byte {
+    mut s := New()
+    Write(mut s, data)
+    return Sum(s)
+}
+
+// 連鎖値hの20バイト（big endian）
+func Bytes(h []int) []byte {
+    mut out := mut []byte{}
+    for i <- iter.Range(0, 5) {
+        for j <- iter.Range(0, 4) {
+            out = append(out, byte((h[i] >> (24 - 8 * j)) & 0xff))
+        }
+    }
+    return freeze(out)
+}
+
+// 連鎖値hへ、src[off..off+64) の1ブロックを畳む（wは80ワードの作業域）。分岐はブロックの中身に依らない
+func Block(h mut []int, w mut []int, src []byte, off int) {
+    compress(mut h, mut w, src, off)
+}
+
+// a ++ b[from:to]（新しい切片）
+func cat(a []byte, b []byte, from int, to int) []byte {
+    mut out := mut []byte{}
+    for i <- iter.Range(0, len(a)) {
+        out = append(out, a[i])
+    }
+    for i <- iter.Range(from, to) {
+        out = append(out, b[i])
+    }
+    return freeze(out)
+}
+
+const mask32 = 0xffffffff
+
+func rotl(x int, k int) int {
+    return ((x << k) | (x >> (32 - k))) & mask32
+}
+
+func compress(h mut []int, w mut []int, src []byte, off int) {
+    for i <- iter.Range(0, 16) {
+        p := off + 4 * i
+        w[i] = (int(src[p]) << 24) | (int(src[p + 1]) << 16) | (int(src[p + 2]) << 8) | int(src[p + 3])
+    }
+    for i <- iter.Range(16, 80) {
+        w[i] = rotl(w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16], 1)
+    }
+    mut a := h[0]
+    mut b := h[1]
+    mut c := h[2]
+    mut d := h[3]
+    mut e := h[4]
+    for i <- iter.Range(0, 80) {
+        f := if i < 20 { (b & c) | ((b ^ mask32) & d) } else if i < 40 { b ^ c ^ d } else if i < 60 { (b & c) | (b & d) | (c & d) } else { b ^ c ^ d }
+        k := if i < 20 { 0x5a827999 } else if i < 40 { 0x6ed9eba1 } else if i < 60 { 0x8f1bbcdc } else { 0xca62c1d6 }
+        tmp := (rotl(a, 5) + f + e + k + w[i]) & mask32
+        e = d
+        d = c
+        c = rotl(b, 30)
+        b = a
+        a = tmp
+    }
+    h[0] = (h[0] + a) & mask32
+    h[1] = (h[1] + b) & mask32
+    h[2] = (h[2] + c) & mask32
+    h[3] = (h[3] + d) & mask32
+    h[4] = (h[4] + e) & mask32
+}

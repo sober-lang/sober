@@ -177,10 +177,16 @@ func resolveIn(st mut S, from int, name StrRef) (int, int) {
         return k, dot + 1
     }
     pk := ImportOf(mut st, from, name, 0, dot)
-    if pk < 0 || !exported(mut st, int(name), dot + 1) {
+    if pk < 0 || !(exported(mut st, int(name), dot + 1) || synthTyRef(mut st, int(name))) {
         return -1, 0
     }
     return pk, dot + 1
+}
+
+// 文字列 s が合成ファイルの型のimportの参照名 `$jt<i>` で始まるか（loaderのjson・print.Logの合成 — ソースには書けない）。
+// 合成の変換の関数は推論した根の型を綴るので、他packageの非公開のstructも名前で引く（フィールドの読みと同じく、可視性は呼び出しの側で済んでいる）
+func synthTyRef(st mut S, s int) bool {
+    return dat(mut st, s) > 3 && dat(mut st, s + 1) == '$' && dat(mut st, s + 2) == 'j' && dat(mut st, s + 3) == 't'
 }
 
 // 文字列 s のバイト lo からの名前が公開（大文字始まり）か
@@ -246,7 +252,7 @@ func ResolveSel(st mut S, from int, ref StrRef, n StrRef, want int) TopRef {
 // 選択子 `ref.N` の行き先 package（ref が import の参照名で N が公開のとき — でなければ -1）
 func selIn(st mut S, from int, ref StrRef, n int) int {
     pk := ImportOf(mut st, from, ref, 0, slen(mut st, ref))
-    return if pk >= 0 && exported(mut st, n, 0) { pk } else { -1 }
+    return if pk >= 0 && (exported(mut st, n, 0) || synthTyRef(mut st, int(ref))) { pk } else { -1 }
 }
 
 // 参照名 name（"N" か "ref.N"）の関数の表の添字（無ければ -1）

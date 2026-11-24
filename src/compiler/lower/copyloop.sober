@@ -704,22 +704,21 @@ func growN8(st mut St, h int, d int, n int) (int, int) {
     bt := gepWord(mut st, globaladdr(mut st, st.btip), d)
     condbr(mut st, cmp(mut st, CEq, load(mut st, bt, 0), end), chk, -1, copy_b, -1)
     setCur(mut st, chk)
-    // 粒の終わり（end を 8 に切り上げ）と伸ばした終わりの粒の終わり
+    // 粒の終わり（end を 8 に切り上げ）。伸ばした終わりが今の粒に収まれば、btip だけを進める
     grain := bin(mut st, BAnd, bin(mut st, BAdd, end, iconst(mut st, 7)), iconst(mut st, -8))
     nend := bin(mut st, BAdd, end, n)
-    ngrain := bin(mut st, BAnd, bin(mut st, BAdd, nend, iconst(mut st, 7)), iconst(mut st, -8))
+    set_b := newBlock(mut st)
+    over := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CLe, nend, grain), set_b, -1, over, -1)
+    setCur(mut st, over)
+    // 粒を越える: 今の粒の後ろに誰も確保していない（bump が粒の終わり）ときだけその場で伸ばす。このとき伸ばした終わりの粒は必ず bump を越える
     meta := globaladdr(mut st, st.meta)
     bp := gepWord(mut st, meta, d)
     bump := load(mut st, bp, W_BUMP)
-    // その場で伸ばせる = 伸ばした終わりが今の粒に収まるか、今の粒の後ろに誰も確保していない（bump が粒の終わり）
-    inplace := bin(mut st, BOr, cmp(mut st, CLe, nend, grain), cmp(mut st, CEq, bump, grain))
-    grow_b := newBlock(mut st)
-    condbr(mut st, cmp(mut st, CNe, inplace, iconst(mut st, 0)), grow_b, -1, copy_b, -1)
-    setCur(mut st, grow_b)
     more := newBlock(mut st)
-    set_b := newBlock(mut st)
-    condbr(mut st, cmp(mut st, CGt, ngrain, bump), more, -1, set_b, -1)
+    condbr(mut st, cmp(mut st, CEq, bump, grain), more, -1, copy_b, -1)
     setCur(mut st, more)
+    ngrain := bin(mut st, BAnd, bin(mut st, BAdd, nend, iconst(mut st, 7)), iconst(mut st, -8))
     okb := newBlock(mut st)
     // 伸ばすと上限（計上済みの上限・予約ページ・スロット）を越える: コピーのパスへ（本当の超過ならコピーの確保が死102）
     condbr(mut st, cmp(mut st, CGt, ngrain, slotLimit(mut st, meta, d)), copy_b, -1, okb, -1)

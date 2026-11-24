@@ -1,0 +1,37 @@
+package main
+
+// 待っている接続の予約の縮め（R2）の題材: 平文の HTTP を 127.0.0.1 の空きのポートで受け、"ready <port>" を出した後、200 ms ごとに Ledger の根の
+// 計上中のバイトと task の数を "ledger <used> <tasks>" で出して、止められるまで走る（scripts/parkres.sh が接続を張って閉じ、used の増えと戻りを見る）
+
+import "std/http/server"
+import "std/io"
+import "std/net"
+import "std/os"
+import "std/task"
+
+func route(r http.server.Request) http.server.Response {
+    return http.server.Text("t")
+}
+
+func report() int {
+    while true {
+        l := task.Ledger()
+        _ = io.WriteStdout(bytes("ledger ${l.used} ${l.tasks}\n"))
+        os.Sleep(200)
+    }
+    return 0
+}
+
+func main() {
+    _, _ = task.Run((s task.Scope) => {
+        _ = task.Spawn(s, () => report())
+        e := net.Listen("127.0.0.1:0", (l) => {
+            _ = io.WriteStdout(bytes("ready ${net.Port(l)}\n"))
+            _ = net.Serve(l, (c net.Conn) => http.server.ServeConn(c, route), conns: 100000)
+        })
+        if e != nil {
+            println("listen failed")
+        }
+        0
+    })
+}

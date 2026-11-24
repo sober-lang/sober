@@ -1,0 +1,22 @@
+package main
+
+// logcheckの題材: 4 KiBを越える記録（1行で出る）・32 KiBを越える記録（落ちて印の行）・小さい記録
+import "std/print"
+
+type Blob struct {
+    s string
+}
+
+func rep(c string, n int) string {
+    mut s := c
+    while len(bytes(s)) < n {
+        s = s + s
+    }
+    return s
+}
+
+func main() {
+    print.Log[Blob](Blob{s: rep("a", 5000)})
+    print.Log[Blob](Blob{s: rep("b", 40000)})
+    print.Log[Blob](Blob{s: "small"})
+}

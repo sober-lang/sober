@@ -1,0 +1,18 @@
+package main
+
+// 利用者の総称の型・関数をstringと[]byteの両方で使う（Box[string]とBox[[]byte]は別の実体 — t.vはstringなので文字列の連結ができる）
+
+type Box[T] struct {
+    v T
+}
+
+func id[T](x T) T {
+    return x
+}
+
+func main() {
+    b := Box[[]byte]{v: id([]byte{65})}
+    t := Box[string]{v: id("text")}
+    s := t.v + "!"
+    println(len(b.v), s)
+}

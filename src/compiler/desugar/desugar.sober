@@ -216,11 +216,11 @@ func prefix(st mut S) error? {
     if st.stopAt == 6 {
         return nil
     }
-    if st.e2s {
-        e2sPrepare(mut st)
-    }
+    // mutCellAhead のファイルごとの覚え（中身は使う時に埋める）
+    st.cellLast = listN(mut st, len(st.trees)) + 1
+    st.cellFnLast = listN(mut st, st.nfn) + 1
     // 区間の計画（PlanDefs）は型付けしない: 区間は関数表の添字で切り、費用は E2-S の上げの後の展開の有無だけで決まる
-    // （上げの判定は型付けを読まない — e2sScanCallsと署名）。Defの添字の振り直し（フラグを読む）もしない
+    // （上げの判定は型付けを読まない — 署名）。Defの添字の振り直し（フラグを読む）もしない
     if st.planOnly {
         if st.e2s {
             e2sPromote(mut st)
@@ -408,13 +408,13 @@ func trustDefs(st mut S) []int {
 }
 
 // Program p のコア AST の JSON（失敗なら拒否 — diag のラベル）
-@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap, diag.Cell, diag.FnArg)
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap, diag.Cell, diag.FnArg, diag.Par)
 func Json(p loader.Program, e2s bool, excl []int) ([]byte, error?) {
     return JsonK(p, e2s, excl, []int{})
 }
 
 // Json の、型パラメータを持つ Def の kind を ks（検査器が推論した kind の列 — Def の順に [n, k…]）で印字する版
-@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap, diag.Cell, diag.FnArg)
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap, diag.Cell, diag.FnArg, diag.Par)
 func JsonK(p loader.Program, e2s bool, excl []int, ks []int) ([]byte, error?) {
     mut st := S{}
     st.jks = ks
@@ -466,7 +466,7 @@ func JsonK(p loader.Program, e2s bool, excl []int, ks []int) ([]byte, error?) {
 // check の経路の差分オラクル（`sober check --typer-diff`）: 表層型検査器を走らせてから脱糖し、exprSty との突き合わせの数を返す
 // [一致, 表だけ分かる, exprSty だけ分かる, 食い違い, 比べない, 型引数の一致, 型引数の食い違い, 型引数の比べなかった下見, 記録の数 n,
 //  (ファイル, 字句, 種類 0 = exprSty だけ / 1 = 食い違い / 2 = 型引数, 表層型の種類（型引数なら inferTs が決まったか 1 / 0）) × n]
-@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap, diag.Cell, diag.FnArg)
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap, diag.Cell, diag.FnArg, diag.Par)
 func TyperDiff(p loader.Program) ([]int, error?) {
     mut st := S{}
     initState(mut st, p)
@@ -492,7 +492,7 @@ func TyperDiff(p loader.Program) ([]int, error?) {
 
 // 開発用（`sober check --nominal-all`）: 表層型の照合の拒否を止めずに全部集めて返す [ファイル, 字句の位置] × n
 // （他の拒否は diag のラベル）
-@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap, diag.Cell, diag.FnArg)
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap, diag.Cell, diag.FnArg, diag.Par)
 func NominalAll(p loader.Program) ([]int, error?) {
     mut st := S{}
     initState(mut st, p)
@@ -508,7 +508,7 @@ func NominalAll(p loader.Program) ([]int, error?) {
 
 // 開発用（`sober check --def-index`）: 脱糖し直して、検査器の Def の列の j 番目（名前付き関数 → 持ち上げた Def の順 — defJson と同じ）
 // の出所の位置（名前付き関数・インスタンスは関数宣言、持ち上げたラムダはラムダの節）
-@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap, diag.Cell, diag.FnArg)
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap, diag.Cell, diag.FnArg, diag.Par)
 func DefAt(p loader.Program, excl []int, j int) (diag.Pos, error?) {
     mut st := S{}
     initState(mut st, p)

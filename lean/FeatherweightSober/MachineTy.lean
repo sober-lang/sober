@@ -88,6 +88,9 @@ inductive StackTy (Δ : Defs) (Ξ : ChanTy) (Ψ : StoreTy) (b : Nat) : Stack →
   | allocK {S d m t tf} :
       t.regionsBelow (d + 1) → b ≤ d → (m = false → t.mutFree) →
       StackTy Δ Ξ Ψ b S Λ (d + 1) (.ref m d t) tf → StackTy Δ Ξ Ψ b (.allocK m :: S) Λ (d + 1) t tf
+  | allocAtK {S d m r t tf} :
+      t.regionsBelow (r + 1) → b ≤ r → r < d → (m = false → t.mutFree) →
+      StackTy Δ Ξ Ψ b S Λ d (.ref m r t) tf → StackTy Δ Ξ Ψ b (.allocAtK m r :: S) Λ d t tf
   | derefK {S d m r t tf} :
       StackTy Δ Ξ Ψ b S Λ d t tf → StackTy Δ Ξ Ψ b (.derefK :: S) Λ d (.ref m r t) tf
   /-- freeze: mut 参照を受け取り immutable 参照を返す。t.mutFree は immutable セルの
@@ -693,6 +696,7 @@ theorem StackTy.mono {Δ : Defs} {Ξ : ChanTy} {Ψ Ψ' : StoreTy} {b : Nat} {S d
     exact .caseK (h1.store_mono (hle _ (Nat.le_refl _)) (storePre_of_take_eq (take_pre_take hpre hS.le_depth)))
       (h2.store_mono (hle _ (Nat.le_refl _)) (storePre_of_take_eq (take_pre_take hpre hS.le_depth))) (ih hle)
   | allocK hb hbd hmf _ ih => exact .allocK hb hbd hmf (ih hle)
+  | allocAtK hb hbr hrd hmf _ ih => exact .allocAtK hb hbr hrd hmf (ih hle)
   | derefK _ ih => exact .derefK (ih hle)
   | freezeK hmf _ ih => exact .freezeK hmf (ih hle)
   | assignL h1 hS ih =>
@@ -869,6 +873,7 @@ theorem StackTy.chan_mono {Δ : Defs} {Ξ Ξ' : ChanTy} {Ψ : StoreTy} {b : Nat}
   | inrK _ ih => exact .inrK ih
   | caseK h1 h2 _ ih => exact .caseK (h1.chan_mono hle) (h2.chan_mono hle) ih
   | allocK hb hbd hmf _ ih => exact .allocK hb hbd hmf ih
+  | allocAtK hb hbr hrd hmf _ ih => exact .allocAtK hb hbr hrd hmf ih
   | derefK _ ih => exact .derefK ih
   | freezeK hmf _ ih => exact .freezeK hmf ih
   | assignL h1 _ ih => exact .assignL (h1.chan_mono hle) ih

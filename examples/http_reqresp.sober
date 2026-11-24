@@ -1,13 +1,15 @@
 package main
 
 // httpのリクエストとレスポンスの補完: Form（application/x-www-form-urlencodedの本文）・JsonDoc（JSONの本文 → std/jsonのDoc → Decode）・
-// 任意ヘッダ（Response の headers）・ルートの行の保存の方針（Route.cache）・405 の Allow・static の *rest（".." を拒んでファイルを返す — 書き込み先は out/ の下・リポジトリのルートを cwd にして実行）。
+// 任意ヘッダ（Response の headers）・ルートの行の保存の方針（Route.cache）・405 の Allow・static の *rest（".." を拒んでファイルを返す — 書き込み先は実行ごとの out/http_reqresp.<n> の下・リポジトリのルートを cwd にして実行）。
 // ネットの代わりにrecvが決まったリクエストの列を1切片で渡し、sendがレスポンスを印字する（examples/http_routerの形 — 行末のCRは外して印字）
 
 import "std/http"
 import "std/http/server"
 import "std/io"
 import "std/json"
+import "std/net"
+import "std/os"
 import "std/strings"
 
 type User struct {
@@ -29,12 +31,13 @@ func create(r http.server.Request) http.server.Response {
     return http.server.Response{status: 201, contentType: "application/json", body: bytes(json.Encode[User](u)), headers: http.server.Headers{list: []http.Field{http.Field{name: "Location", value: "/users/${u.name}"}}}}
 }
 
-func static(r http.server.Request) http.server.Response {
+// dの下のファイルを返す
+func static(d string, r http.server.Request) http.server.Response {
     rest := or(http.server.Param(r, "rest"))
     if strings.Contains(rest, "..") {
         return http.server.Status(403)
     }
-    b := io.ReadFile("out/${rest}") catch return http.server.Status(404)
+    b := io.ReadFile("${d}/${rest}") catch return http.server.Status(404)
     return http.server.Response{status: 200, contentType: "text/plain", body: b, headers: http.server.Headers{list: []http.Field{http.Field{name: "X-Source", value: "out"}}}}
 }
 
@@ -49,20 +52,17 @@ func show(b []byte) error? {
     return nil
 }
 
-func feed(s string, k func([]byte)) error? {
-    k(bytes(s))
-    return nil
-}
-
 func main() {
-    we := io.WriteFile("out/http_reqresp.tmp", bytes("static body\n"))
+    d := runDir("http_reqresp")
+    defer removeAll(d)
+    we := io.WriteFile(d + "/http_reqresp.tmp", bytes("static body\n"))
     if we != nil {
         println("cannot write")
     }
     rs := []http.server.Route{
         http.server.Route{method: "POST", path: "/login", handler: login},
         http.server.Route{method: "POST", path: "/users", handler: create},
-        http.server.Route{method: "GET", path: "/static/*rest", handler: static, cache: http.server.Fresh{maxAge: 60}}}
+        http.server.Route{method: "GET", path: "/static/*rest", handler: (r) => static(d, r), cache: http.server.Fresh{maxAge: 60}}}
     form := "user=kr&pass=x%21"
     js := "{\"name\":\"ann\",\"age\":7}"
     reqs := "POST /login HTTP/1.1\r\nHost: x\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: ${len(bytes(form))}\r\n\r\n${form}" +
@@ -73,6 +73,42 @@ func main() {
         "GET /static/../secret HTTP/1.1\r\nHost: x\r\n\r\n" +
         "GET /static/none.tmp HTTP/1.1\r\nHost: x\r\n\r\n" +
         "DELETE /users HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n"
-    e := http.server.ServeWith((k) => feed(reqs, k), (b) => show(b), (r) => http.server.Dispatch(rs, r))
+    e := net.Pair((c) => http.server.ServeConn(c, (r) => http.server.Dispatch(rs, r)), (c) => {
+        _ = net.Send(c, bytes(reqs))
+        _ = show(readAll(c))
+    })
     println(e == nil)
+}
+
+// 相手が閉じるまで受けたバイト列（最後の要求はConnection: close — サーバーが応答の後に閉じる）
+func readAll(c net.Conn) []byte {
+    mut got := mut []byte{}
+    _ = net.Recv(c, (x) => {
+        for y <- x {
+            got = append(got, y)
+        }
+    })
+    return freeze(got)
+}
+
+// 実行ごとの置き場 out/<name>.<単調時計の値>（同じ作業ディレクトリで同時に走る実行どうしが上書きし合わない）。
+// mkdirは既にあれば失敗するので、作れた名前がこの実行のもの。作れない状態で回り続けないよう、試す回数に上限を置く（作れなければ ""）
+func runDir(name string) string {
+    _ = os.Mkdir("out")
+    mut n := 0
+    while n < 100 {
+        c := "out/${name}.${os.Monotonic()}"
+        if os.Mkdir(c) == nil {
+            return c
+        }
+        n = n + 1
+    }
+    return ""
+}
+
+// 置き場を中身ごと消す
+func removeAll(d string) {
+    if d != "" {
+        _ = os.Run("/bin/rm", []string{"-rf", d}) catch 0
+    }
 }

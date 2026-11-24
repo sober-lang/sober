@@ -6,6 +6,8 @@
 #   scripts/rootstore.sh --regen [TAG]   NSS の TAG（省略 = 最新の RTM タグ）の certdata.txt を取って置き、roots.sober を作り直す（ネットに出る）
 #   scripts/rootstore.sh --latest        NSS の最新の RTM タグを印字（.github/workflows/rootstore.yml が銘のタグと比べる）
 #   scripts/rootstore.sh --pinned        銘のタグを印字
+# ゴールデンの並びを呼び手のロケールに依らせない
+export LC_ALL=C.UTF-8
 set -uo pipefail
 cd "$(dirname "$0")/.."
 D=testdata/x509/nss

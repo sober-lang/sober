@@ -128,13 +128,13 @@ examples/generic_anon_fn_targ_lambda_neg.sober: sober: desugar error at examples
 examples/generic_anon_fn_targ_neg.sober: sober: desugar error at examples/generic_anon_fn_targ_neg.sober:17:12 (TypeMismatch): a type argument cannot be an anonymous function type, because a value of anonymous function type is only a parameter, a struct or variant field or a local binding, never a result, a slice or map element or a type argument (spec F-20); pass a value of a named function type (`H(f)`) or write the type argument (`f[H](…)`)
 examples/generic_union_arity.sober: sober: desugar error at examples/generic_union_arity.sober:11:10 (Malformed)
 examples/generic_union_noargs.sober: sober: desugar error at examples/generic_union_noargs.sober:18:17 (CoreFragment)
+examples/http_serve_mut_neg.sober: sober: load error at examples/http_serve_mut_neg.sober:12:13: this handler runs on a task of its own (each connection of net.Serve, each HTTP/2 stream of http.server.ServeConn), so it cannot capture a mut binding or mut contents. Rewrite: keep the shared state in a task.Domain made in the scope that calls Serve (task.NewDomain), capture the domain, and read or write it in the handler with task.Read / task.Update
 examples/identity_neg_conn.sober: sober: load error at examples/identity_neg_conn.sober:8:10: `net.Conn` has identity: only net.Accept or net.Dial (the parameter of its function) makes one — a zero value would refer to nothing
 examples/identity_neg_field.sober: sober: load error at examples/identity_neg_field.sober:14:10: this literal leaves a field at its zero value that holds a `par.Rx`, which has identity: only par.NewChan makes one — set the field, or declare it `T?`
 examples/identity_neg_generic.sober: sober: load error at examples/identity_neg_generic.sober:13:10: this literal leaves a field at its zero value that holds a `par.Tx`, which has identity: only par.NewChan makes one — set the field, or declare it `T?`
 examples/identity_neg_listener.sober: sober: load error at examples/identity_neg_listener.sober:12:10: this literal leaves a field at its zero value that holds a `net.Listener`, which has identity: only net.Listen (the parameter of its function) makes one — set the field, or declare it `T?`
 examples/identity_neg_nested.sober: sober: load error at examples/identity_neg_nested.sober:17:10: this literal leaves a field at its zero value that holds a `par.Pool`, which has identity: only par.NewPool makes one — set the field, or declare it `T?`
 examples/identity_neg_root.sober: sober: load error at examples/identity_neg_root.sober:9:10: `io.Root` has identity: only io.OpenRoot makes one — a zero value would refer to nothing
-examples/identity_neg_tls_field.sober: sober: load error at examples/identity_neg_tls_field.sober:13:10: this literal leaves a field at its zero value that holds a `tls.Conn`, which has identity: only tls.Serve (the handler's parameter) makes one — set the field, or declare it `T?`
 examples/identity_neg_tx.sober: sober: load error at examples/identity_neg_tx.sober:10:11: `par.Tx` has identity: only par.NewChan makes one — a zero value would refer to nothing
 examples/imm_write.sober: sober: error at examples/imm_write.sober:8:5 (ImmWrite): cannot write into an imm map / slice — create it writable (`mut m := mut map[K]V{}`, `mut xs := mut []T{}`)
 examples/import_neg_badpath.sober: sober: load error at examples/import_neg_badpath.sober:5:8: every segment of an import path is a lowercase identifier (a-z, 0-9, _ — not starting with a digit) that is not a keyword — the path is also the qualifier (std/http/server → http.server)
@@ -163,8 +163,10 @@ examples/io_root_neg_unclosed.sober: sober: load error at examples/io_root_neg_u
 examples/io_under_neg_unclosed.sober: sober: load error at examples/io_under_neg_unclosed.sober:10:22: the file opened here must be closed by the next statement: insert `defer io.Close(f)` (with the name bound here — `defer io.CloseRoot(r)` for io.OpenRoot) right after this line
 examples/json_decode_neg_field.sober: sober: load error at examples/json_decode_neg_field.sober:9:9: json.Decode supports struct fields of int, float, bool, string, nested structs, []T and T? (generic structs, unions, maps and named scalars come later)
 examples/json_decode_neg_type.sober: sober: load error at examples/json_decode_neg_type.sober:12:28: the type argument of json.Decode must be a struct type without type parameters
+examples/json_decode_neg_typearg.sober: sober: load error at examples/json_decode_neg_typearg.sober:16:21: json.Decode / DecodeWith need the type argument because the type appears only in the result, json.Decode[T](doc, node); json.Encode / EncodeWith are only called directly, json.Encode(value)
 examples/json_decode_neg_value.sober: sober: load error at examples/json_decode_neg_value.sober:10:10: json.Decode cannot read into a struct with a json.Value field (a union has no zero value, so the early return of `?` has no struct to return) — make the field json.Value? or read it with json.Tree
 examples/json_doc_forge.sober: sober: desugar error at examples/json_doc_forge.sober:9:10 (Malformed)
+examples/json_encode_neg_tparam.sober: sober: load error at examples/json_encode_neg_tparam.sober:12:17: json.Encode needs a concrete type, but the value's type here contains a type parameter: the encoder is generated per type, so call json.Encode where the type is known
 examples/json_view_nonexh.sober: sober: desugar error at examples/json_view_nonexh.sober:12:5 (Malformed)
 examples/layout_neg_array.sober: sober: load error at examples/layout_neg_array.sober:6:11: a fixed-length array field ([N]T) is only allowed in a @layout struct
 examples/layout_neg_empty.sober: sober: load error at examples/layout_neg_empty.sober:6:6: a @layout struct needs at least one field and no type parameters
@@ -194,12 +196,14 @@ examples/localname_const.sober: sober: load error at examples/localname_const.so
 examples/localname_import.sober: sober: load error at examples/localname_import.sober:8:5: a local binding cannot reuse an import reference name
 examples/localname_named.sober: sober: load error at examples/localname_named.sober:12:5: a local binding cannot reuse a top-level name (const, func or type)
 examples/localname_tparam.sober: sober: load error at examples/localname_tparam.sober:9:6: a type parameter cannot reuse a top-level type name
+examples/logs_neg_word.sober: sober: load error at examples/logs_neg_word.sober:1:1: @logs takes stdout or stderr: `@logs(stdout)` sends the log to standard output (standard error when @logs is not written)
 examples/multi_assign.sober: sober: load error at examples/multi_assign.sober:13:5: a multi-value result cannot be assigned to existing names (spec X-6): bind it with `:=` (`a2, b2 := f()`) and copy the values, or discard it whole with `_, _ = f()`
 examples/multibind.sober: sober: load error at examples/multibind.sober:9:5: this call returns several values: bind them all (`v, err := f()`), or handle the error with `?` or `catch` (`v := f()?`)
 examples/mutarg_decl_mismatch.sober: sober: desugar error
 examples/mutarg_neg_alias.sober: sober: load error at examples/mutarg_neg_alias.sober:13:21: mut arguments overlap: this mut argument names the same place as an earlier one in the call (the same name, or a field of it) — mut arguments are exclusive for the duration of the call
 examples/mutarg_neg_const.sober: sober: desugar error at examples/mutarg_neg_const.sober:11:14 (CoreFragment)
 examples/mutarg_neg_mark.sober: sober: desugar error at examples/mutarg_neg_mark.sober:11:10 (CoreFragment)
+examples/mutcell_neg_alias.sober: sober: load error at examples/mutcell_neg_alias.sober:22:26: mut arguments overlap: this mut argument names the same place as an earlier one in the call (the same name, or a field of it) — mut arguments are exclusive for the duration of the call
 examples/named_args_missing.sober: sober: load error at examples/named_args_missing.sober:14:17: a parameter that is not optional (T?) is missing — only T? parameters can be left out
 examples/named_args_nonfunc.sober: sober: load error at examples/named_args_nonfunc.sober:15:15: named arguments can only be passed in a direct call of a func declaration
 examples/named_args_order.sober: sober: load error at examples/named_args_order.sober:14:37: named arguments must follow the order of the parameters
@@ -225,6 +229,7 @@ examples/named_scalar_typed_const_neg_int.sober: sober: desugar error at example
 examples/named_scalar_under.sober: sober: desugar error at examples/named_scalar_under.sober:8:14 (TypeMismatch)
 examples/net_neg_capture.sober: sober: load error at examples/net_neg_capture.sober:16:46: a closure cannot capture an io.File, net.Conn, net.Listener or tls.Conn — pass it as an argument (only the body of par.Scope may capture it)
 examples/net_neg_copy.sober: sober: load error at examples/net_neg_copy.sober:13:14: an io.File, net.Conn, net.Listener or tls.Conn cannot be copied to another binding (it has identity — keep using the name bound by io.Open or by the for)
+examples/net_pair_mut_neg.sober: sober: load error at examples/net_pair_mut_neg.sober:10:9: this handler runs on a task of its own (each connection of net.Serve, each HTTP/2 stream of http.server.ServeConn, the server of net.Pair), so it cannot capture a mut binding or mut contents. Rewrite: keep the shared state in a task.Domain made in the scope that calls Serve (task.NewDomain), capture the domain, and read or write it in the handler with task.Read / task.Update
 examples/nil_untyped.sober: sober: desugar error at examples/nil_untyped.sober:7:31 (UntypedNil): nil has no type here — use it where a T? is expected (a typed parameter, field or result)
 examples/no_main.sober: sober: desugar error at examples/no_main.sober:1:1 (Malformed)
 examples/noinline_neg_target.sober: sober: load error at examples/noinline_neg_target.sober:6:6: @noinline applies to a function with mut parameters and no function-typed parameters
@@ -263,6 +268,9 @@ examples/pkg_neg_missing.sober: sober: load error at examples/pkg_neg_missing.so
 examples/pkg_neg_name.sober: sober: load error at testdata/specpkg/badname/badname.sober:1:9: package name must match the directory name
 examples/pkg_neg_private.sober: sober: desugar error at examples/pkg_neg_private.sober:8:25 (CoreFragment)
 examples/pkg_neg_unimported.sober: sober: desugar error at examples/pkg_neg_unimported.sober:6:20 (CoreFragment)
+examples/print_log_neg_record.sober: sober: load error at examples/print_log_neg_record.sober:9:11: print.Log writes a record of a struct type: the record's type (the type argument, written or inferred from the record) must be a struct type without type parameters (its name becomes the key of the record)
+examples/print_log_neg_shape.sober: sober: load error at examples/print_log_neg_shape.sober:8:12: print.Log writes struct fields of int, float, bool, string, nested structs, []T and T? (json.Value, generic structs, unions, maps and named scalars are not written)
+examples/print_log_neg_tparam.sober: sober: load error at examples/print_log_neg_tparam.sober:12:11: print.Log needs a concrete struct type, but the record's type here contains a type parameter: the writer is generated per type, so call print.Log where the type is known
 examples/println_opt.sober: sober: desugar error at examples/println_opt.sober:8:14 (PrintArg): println prints int, byte, bool and string values
 examples/scope.sober: examples/scope.sober:10:13: error: primary expression kind (Unsupported)
 examples/secret_neg_empty.sober: sober: load error: source does not match the grammar
@@ -309,6 +317,7 @@ examples/task_neg_give_struct.sober: sober: load error at examples/task_neg_give
 examples/task_neg_handle.sober: sober: load error at examples/task_neg_handle.sober:10:49: a spawned task cannot capture a task handle (task.Handle), also inside a struct field or T? — join it in the scope body
 examples/task_neg_handles.sober: sober: load error at examples/task_neg_handles.sober:9:19: handles (task.Handle) go in a mut slice: mut hs := mut []task.Handle[T]{} (an imm slice copies its elements, and a handle is not copied)
 examples/task_neg_handles_err.sober: sober: load error at examples/task_neg_handles_err.sober:15:35: an error-returning task's handle goes in a slice of task.Handle[(T, error?)] (the element type says the task can fail — Join gives two values)
+examples/task_neg_iter_capture.sober: sober: load error at examples/task_neg_iter_capture.sober:27:53: the spawned task lives until the scope exits, but it captures a value made inside a loop iteration or a block of the scope body, which is freed when that ends — make the value in the scope body before the loop, or inside the task
 examples/task_neg_lambda.sober: sober: desugar error at examples/task_neg_lambda.sober:8:13 (CoreFragment)
 examples/task_neg_mut.sober: sober: load error at examples/task_neg_mut.sober:9:70: a spawned task cannot capture a mut binding (the child sees only imm values — pass a copy: v := x before the Spawn)
 examples/task_neg_mutalias.sober: sober: load error at examples/task_neg_mutalias.sober:12:34: a spawned task cannot capture mut contents (this value is a mut slice / map or holds one — freeze it before the Spawn: v := freeze(x))
@@ -322,8 +331,6 @@ examples/task_neg_wrap_endpoint.sober: panic: index out of range at std/table/ta
 examples/task_neg_wrap_handle.sober: sober: load error at examples/task_neg_wrap_handle.sober:19:44: a spawned task cannot capture a task handle (task.Handle), also inside a struct field or T? — join it in the scope body
 examples/task_neg_wrap_token.sober: panic: index out of range at std/table/table.sober:117:20
 examples/task_spawn_try.sober: sober: desugar error at examples/task_spawn_try.sober:17:24 (CoreFragment)
-examples/tls_neg_copy.sober: sober: load error at examples/tls_neg_copy.sober:8:10: an io.File, net.Conn, net.Listener or tls.Conn cannot be copied to another binding (it has identity — keep using the name bound by io.Open or by the for)
-examples/tls_neg_field.sober: sober: load error at examples/tls_neg_field.sober:14:10: an io.File, net.Conn, net.Listener or tls.Conn cannot be put in a struct, slice, map or channel, or appended (it has identity — keep it in the binding made by io.Open)
 examples/top_dup.sober: sober: load error at examples/top_dup.sober:6:6: a top-level name is declared more than once in the package
 examples/top_dup_kinds.sober: sober: load error at examples/top_dup_kinds.sober:7:6: a top-level name is declared more than once in the package
 examples/try.sober: examples/try.sober:7:6: error: type outside the core fragment (CoreFragment)

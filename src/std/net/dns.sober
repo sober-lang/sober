@@ -1,10 +1,12 @@
 package net
 
 // 名前の解決（スタブリゾルバ — libc の getaddrinfo を使わない）: Dial が IPv4 の綴りでないホストを受けたときに、/etc/hosts → /etc/resolv.conf の nameserver
-// （最大3本を順に・1回の問い合わせは期限つき）へAを問う。search / ndotsの候補の順（resolv.conf(5)）・レスポンスの切り詰め（TC）はTCPで問い直す・
-// レスポンスのCNAMEのチェーンを追う（answer節の中だけ・8レベルまで）・txidはgetrandom・レスポンスはtxidと問いの名前と型の一致を確認する。AAAAも読めるが、DialはIPv4だけ。
+// （IPv4かIPv6・最大3本を順に・1回の問い合わせは期限つき）へAとAAAAを1つのUDPのsocketから同時に問う。search / ndotsの候補の順（resolv.conf(5)）・レスポンスの切り詰め（TC）はTCPで問い直す・
+// レスポンスのCNAMEのチェーンを追う（answer節の中だけ・8レベルまで）・txidはgetrandom・レスポンスはtxidと問いの名前と型の一致を確認する。
+// /etc/hostsはIPv4とIPv6の行をファイルの順で返す。DNSの答えはIPv6とIPv4の交互（IPv6が先）に並べる（Dialが順に試す）。
 // 非ASCIIのホスト名（IDN）は専用の診断で拒否する（punycodeはURLの層の仕事）。DNSSEC・DoH / DoT・キャッシュは持たない
 
+import "std/internal/ip"
 import "std/io"
 import "std/iter"
 import "std/strings"
@@ -20,7 +22,7 @@ const qtA = 1
 const qtCname = 5
 const qtAaaa = 28
 
-// resolv.conf の設定（servers = IPv4 の nameserver 最大 3 本・search = 探す domain の列・ndots・timeout = 1 回の問い合わせの期限〔ns〕・attempts = 一巡の回数）
+// resolv.conf の設定（servers = IPv4 か IPv6 の nameserver 最大 3 本・search = 探す domain の列・ndots・timeout = 1 回の問い合わせの期限〔ns〕・attempts = 一巡の回数）
 type dnsConf struct {
     servers []string
     search []string
@@ -29,7 +31,7 @@ type dnsConf struct {
     attempts int
 }
 
-// resolv.conf の本文を読む（無い項目は既定 — nameserver 無し = 127.0.0.1・ndots 1・timeout 5 秒・attempts 2。IPv6 の nameserver は飛ばす — 接続は IPv4 だけ）
+// resolv.conf の本文を読む（無い項目は既定 — nameserver 無し = 127.0.0.1・ndots 1・timeout 5 秒・attempts 2。nameserver は IPv4 か IPv6 の番地だけを受ける〔zone つきは飛ばす〕）
 func parseResolvConf(text string) dnsConf {
     mut servers := mut []string{}
     mut search := mut []string{}
@@ -40,7 +42,7 @@ func parseResolvConf(text string) dnsConf {
         l1, _, _ := strings.Cut(l0, "#")
         l, _, _ := strings.Cut(l1, ";")
         f := strings.Fields(l)
-        if len(f) >= 2 && f[0] == "nameserver" && len(servers) < 3 && len(sockaddr("${f[1]}:53")) == 16 {
+        if len(f) >= 2 && f[0] == "nameserver" && len(servers) < 3 && (len(internal.ip.Parse4(f[1])) == 4 || len(internal.ip.Parse6(f[1])) == 16) {
             servers = append(servers, f[1])
         } else if len(f) >= 2 && (f[0] == "search" || f[0] == "domain") {
             search = mut []string{}
@@ -82,7 +84,7 @@ func decimal(s string) int {
     return v
 }
 
-// hosts の本文から name の IPv4 の番地（大文字小文字を区別しない・コメントは # から）
+// hosts の本文から name の番地（IPv4 は 4 バイト・IPv6 は 16 バイト。ファイルの順・大文字小文字を区別しない・コメントは # から・zone つきの行は飛ばす）
 func hostsLookup(text string, name string) [][]byte {
     want := strings.ToLower(strings.TrimSuffix(name, "."))
     mut out := mut [][]byte{}
@@ -90,11 +92,12 @@ func hostsLookup(text string, name string) [][]byte {
         l, _, _ := strings.Cut(l0, "#")
         f := strings.Fields(l)
         if len(f) >= 2 {
-            sa := sockaddr("${f[0]}:0")
-            if len(sa) == 16 {
+            a4 := internal.ip.Parse4(f[0])
+            a := if len(a4) == 4 { a4 } else { internal.ip.Parse6(f[0]) }
+            if len(a) > 0 {
                 for i <- iter.Range(1, len(f)) {
                     if strings.ToLower(f[i]) == want {
-                        out = append(out, sliceBytes(sa, 4, 8))
+                        out = append(out, a)
                     }
                 }
             }

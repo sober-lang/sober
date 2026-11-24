@@ -49,6 +49,8 @@ const ENTRY: Record<string, string[]> = {
     tyhash: ["scripts/rebuildbench.sh"],
     incrcheck_self: ["scripts/incrcheck.sh"],
     incrcheck_ex: ["scripts/incrcheck.sh"],
+    incrbuild_self: ["scripts/incrbuild.sh"],
+    incrbuild_ex: ["scripts/incrbuild.sh"],
 };
 const entryOf = (g: string): string[] => ENTRY[g] ?? [`scripts/${g}.sh`];
 
@@ -73,8 +75,55 @@ function writeAtomic(f: string, s: string) {
 }
 const sha = (b: Buffer | string) => createHash("sha256").update(b).digest("hex");
 
+// ── 線（上限値の表）──
+// 線のファイルは鍵では「形」で数える: コメントと空行を除き、3列目が数ならそれを * に置いた行の並び。線の値とコメントだけの変更（取り直し）では
+// どのゲートの鍵も変わらない（行の足し引き・項目の名前は測る対象を決めるので鍵に残る）。線との比較は @lines のゲートが scripts/gatelib.sh の
+// ratchet_cmp で行い、その実測を記録に残す。鍵が当たったときは、記録の実測をいまの線で判定し直す（checkOne — 再実行しない）
+const LINES = ["bench/ratchet.txt", "scripts/framestat.list"];
+const NUM = /^-?\d+(\.\d+)?$/;
+function lineRows(txt: string): string[][] {
+    return txt.split("\n").map((l) => l.trim()).filter((l) => l && !l.startsWith("#")).map((l) => l.split(/\s+/));
+}
+const lineShape = (txt: string) => lineRows(txt).map((r) => r.map((x, i) => (i === 2 && NUM.test(x) ? "*" : x)).join(" ")).join("\n");
+function lineText(rel: string, override?: Map<string, Buffer>): string {
+    const o = override?.get(rel);
+    if (o) return o.toString("utf8");
+    try { return fs.readFileSync(path.join(ROOT, rel), "utf8"); } catch { return ""; }
+}
+// 線の値: 「ファイル 項目 欄」→ 上限（ratchet_cmp と同じく、項目と欄が一致する最初の行の3列目）
+function lineLimits(override?: Map<string, Buffer>): Map<string, string> {
+    const m = new Map<string, string>();
+    for (const f of LINES) for (const r of lineRows(lineText(f, override))) {
+        const k = `${f} ${r[0]} ${r[1]}`;
+        if (r.length >= 3 && !m.has(k)) m.set(k, r[2]);
+    }
+    return m;
+}
+const linesHash = (override?: Map<string, Buffer>) => sha([...lineLimits(override)].map(([k, v]) => `${k} ${v}`).join("\n"));
+// 実測の記録（gates.sh が GATE_MEAS に渡したファイル）: 「ファイル 項目 欄 実測」の行と、本体の緑の印 #body-ok
+function readMeas(file?: string): { rows: string[][]; body: boolean } | null {
+    if (!file) return null;
+    let txt: string;
+    try { txt = fs.readFileSync(file, "utf8"); } catch { return null; }
+    const ls = txt.split("\n").filter(Boolean);
+    return { rows: ls.filter((l) => !l.startsWith("#")).map((l) => l.split(" ")).filter((r) => r.length === 4), body: ls.includes("#body-ok") };
+}
+// 記録の実測をいまの線で判定する（ratchet_cmp と同じ比較 — 実測 > 上限で赤・行が無ければ赤）
+function judge(meas: string[][], override?: Map<string, Buffer>): { fail: string[]; ok: string[] } {
+    const lim = lineLimits(override);
+    const out = { fail: [] as string[], ok: [] as string[] };
+    for (const [f, it, c, v] of meas) {
+        const l = lim.get(`${f} ${it} ${c}`);
+        if (l === undefined || !NUM.test(l)) out.fail.push(`FAIL: ratchet — ${f} に ${it} ${c} の上限の行が無い（記録の実測 ${v} で再判定・再実行なし）`);
+        else if (Number(v) > Number(l)) out.fail.push(`FAIL: ratchet — ${f} ${it} ${c} = ${v} > ${l}（記録の実測で再判定・再実行なし。正当な増えなら scripts/ratchet.ts retake で引き直す）`);
+        else out.ok.push(`ratchet: ${f} ${it} ${c} = ${v} ≤ ${l}（記録の実測で再判定）`);
+    }
+    return out;
+}
+
 // override: 相対パス → 中身（M1 の「1 バイト変えた」上書き）
 function fileHash(rel: string, override?: Map<string, Buffer>): string {
+    if (LINES.includes(rel)) return sha(`lines-shape\n${lineShape(lineText(rel, override))}`);
     const o = override?.get(rel);
     if (o) return sha(o);
     const abs = path.join(ROOT, rel);
@@ -159,9 +208,12 @@ function compHash1(rel: string, override?: Map<string, Buffer>): string {
 
 // ── 宣言 ──
 
-type Deps = { paths: Map<string, string[]>; nondet: Set<string>; always: Set<string>; local: Set<string>; optional: Set<string> };
+// place = 置き場所の表（@place <train|nightly>: — 札のないゲートは branch）・recheck = 2か所目で確かめる行（@recheck <場所>: <ゲート…|all> # 理由）・
+// regen = 取り直しの道具が書くパス（@regen: — scripts/carry.ts が列車の上で merge 以外に変えてよいパスとして読む）
+type Deps = { paths: Map<string, string[]>; nondet: Set<string>; always: Set<string>; local: Set<string>; optional: Set<string>;
+    place: Map<string, string>; placeDup: string[]; recheck: { where: string; gates: string[]; why: string }[]; regen: string[]; lines: Set<string> };
 function loadDeps(): Deps {
-    const d: Deps = { paths: new Map(), nondet: new Set(), always: new Set(), local: new Set(), optional: new Set() };
+    const d: Deps = { paths: new Map(), nondet: new Set(), always: new Set(), local: new Set(), optional: new Set(), place: new Map(), placeDup: [], recheck: [], regen: [], lines: new Set() };
     for (const raw of fs.readFileSync(DEPS, "utf8").split("\n")) {
         const line = raw.replace(/#.*/, "").trim();
         if (!line) continue;
@@ -169,9 +221,15 @@ function loadDeps(): Deps {
         if (i < 0) throw new Error(`gatedeps.txt: no colon: ${raw}`);
         const k = line.slice(0, i).trim();
         const v = line.slice(i + 1).trim().split(/\s+/).filter(Boolean);
-        if (k === "@nondet") v.forEach((g) => d.nondet.add(g));
+        const pm = /^@place (train|nightly)$/.exec(k);
+        const rm = /^@recheck (\S+)$/.exec(k);
+        if (pm) v.forEach((g) => { if (d.place.has(g)) d.placeDup.push(g); d.place.set(g, pm[1]); });
+        else if (rm) d.recheck.push({ where: rm[1], gates: v, why: raw.includes("#") ? raw.slice(raw.indexOf("#") + 1).trim() : "" });
+        else if (k === "@regen") d.regen.push(...v);
+        else if (k === "@nondet") v.forEach((g) => d.nondet.add(g));
         else if (k === "@always") v.forEach((g) => d.always.add(g));
         else if (k === "@local") v.forEach((g) => d.local.add(g));
+        else if (k === "@lines") v.forEach((g) => d.lines.add(g));
         // ?<パス> = 無くてもよい生成物（木によって有無が違う — out/bench の入力のデータなど）: 有れば中身、無ければ absent で鍵に入る。lint の存在の検査をしない
         else { v.filter((p) => p.startsWith("?")).forEach((p) => d.optional.add(p.slice(1))); d.paths.set(k, v.map((p) => p.replace(/^\?/, ""))); }
     }
@@ -221,10 +279,10 @@ const HELPERS: Record<string, string[]> = {
     check_retired: ["scripts/frozen"], tool_retired: ["scripts/frozen"],
 };
 
-function gateComps(g: string, d: Deps): [string, string][] {
+function gateComps(g: string, d: Deps, override?: Map<string, Buffer>): [string, string][] {
     const decl = (d.paths.get(g) ?? DEFAULT_DEPS).filter((p) => !p.startsWith("~"));
     const own = [...new Set([...entryOf(g), ...decl])];
-    const c = commonComps().concat(own.map((p) => [p, compHash(p)] as [string, string]));
+    const c = commonComps().concat(own.map((p) => [p, compHash(p, override)] as [string, string]));
     // @local = 結果が木の場所に依るゲート（実行時の命令数・RSS を上限値と比べる — パスの長さで値が動く）: 鍵に木のルートを入れて、記録をその木でだけ当てる
     if (d.local.has(g)) c.push(["#root", ROOT]);
     return c;
@@ -286,6 +344,9 @@ function closure(entry: string[]): string[] {
         if (p.startsWith("scripts/") && !isFile(p) && exists(p)) { (filesOf(p) ?? []).forEach((f) => todo.push(f)); continue; }
         if (!p.startsWith("scripts/") || !isFile(p) || !/\.(sh|ts|list|txt)$/.test(p)) continue;
         if (p === "scripts/gatelib.sh" && !entry.includes(p)) continue;
+        // stage2.sh の焼き込みの一覧（scripts/bake.list）が指す例題は、焼き込みの値を通してだけ stage2 の ELF に入る — その中身は記録の鍵の成分
+        // out/stage2/sober2 が覆うので、一覧の中を辿らない（辿ると stage2.sh を呼ぶ全部のゲートが examples を言及したことになる）
+        if (p === "scripts/bake.list" && !entry.includes(p)) continue;
         for (const m of mentions(p)) if (!seen.has(m)) todo.push(m);
     }
     for (const e of entry) if (!isFile(e)) seen.delete(e);
@@ -317,11 +378,13 @@ function allGates(): string[] {
 
 // ── 記録 ──
 
-type Rec = { key: string; comps: [string, string][]; commit: string; time: string; secs: number; last: string; root?: string };
+// meas = 線との比較の実測（@lines のゲート）・lv = 記録したときの線の値のハッシュ・ec = ゲートの終了コード（線だけ赤の記録は非0）
+type Rec = { key: string; comps: [string, string][]; commit: string; time: string; secs: number; last: string; root?: string; meas?: string[][]; lv?: string; ec?: number };
 // 記録は鍵ごとに 1 ファイル（memo/<gate>/<鍵>.json）・ゲートごとに直近 KEEP 本（mtime で LRU — 当たった記録は mtime を更新）。
 // 編集を戻した木・ブランチや worktree の切り替えでも前の記録に当たる（R2 ①）
 const KEEP = 16; // 共有の格納場所で2つの木の分
-const recDir = (g: string) => path.join(SHARED, g);
+let sharedRoot = SHARED; // selftest が一時の場所に差し替える
+const recDir = (g: string) => path.join(sharedRoot, g);
 const recFile = (g: string, key: string) => path.join(recDir(g), `${key}.json`);
 const pendFile = (g: string) => path.join(MEMO, "pending", `${g}.json`);
 function readRec(g: string, key: string): Rec | null {
@@ -346,8 +409,28 @@ function lint(d: Deps): string[] {
         // 上限値の表（bench/ratchet.txt）と比べるゲートは実行時の値を測る — 木の場所で値が動くので @local（記録を木の間で共有しない）。
         // 見るのは入口のスクリプトの本文の言及だけ（推移的な依存はscripts/ の言及で広がりすぎる）
         if (entryOf(g).some((e) => mentions(e).includes(RATCHET)) && !d.local.has(g)) bad.push(`${g}: reads ${RATCHET} but is not @local (its result can depend on the tree's location)`);
+        // 線を読むゲートは @lines（線の値は鍵に入らない — 記録の実測で再判定する）。@lines のゲートは上限を ratchet_cmp だけで比べる（上限の列を直に読まない）
+        for (const lf of LINES) if (entryOf(g).some((e) => mentions(e).includes(lf)) && !d.lines.has(g)) bad.push(`${g}: reads ${lf} but is not @lines (the line values are not in the key — compare with ratchet_cmp so a record can be re-judged)`);
+        if (d.lines.has(g)) for (const e of entryOf(g)) {
+            let txt = "";
+            try { txt = fs.readFileSync(path.join(ROOT, e), "utf8"); } catch {}
+            if (!/\bratchet_cmp\b/.test(txt)) bad.push(`${g}: @lines but ${e} does not call ratchet_cmp`);
+            txt.split("\n").forEach((l, i) => {
+                if (!l.trimStart().startsWith("#") && LINES.some((lf) => l.includes(lf)) && /print \$3\b/.test(l)) bad.push(`${g}: ${e}:${i + 1} reads the limit column directly — compare with ratchet_cmp`);
+            });
+        }
     }
     for (const g of d.paths.keys()) if (!allGates().includes(g)) bad.push(`${g}: declared but not a gate`);
+    for (const g of d.lines) if (!allGates().includes(g)) bad.push(`${g}: @lines but not a gate`);
+    // 置き場所の表: 札のゲートが実在する・1つのゲートに @place は1つ・@recheck は nightly / release で理由つき・@regen のパスが実在する
+    for (const g of d.place.keys()) if (!allGates().includes(g)) bad.push(`@place: ${g} is not a gate`);
+    for (const g of d.placeDup) bad.push(`@place: ${g} has more than one place`);
+    for (const r of d.recheck) {
+        if (r.where !== "nightly" && r.where !== "release") bad.push(`@recheck ${r.where}: the place must be nightly or release`);
+        if (!r.why) bad.push(`@recheck ${r.where}: no reason (write it as a comment after the line)`);
+        for (const g of r.gates) if (g !== "all" && !allGates().includes(g)) bad.push(`@recheck ${r.where}: ${g} is not a gate`);
+    }
+    for (const p of d.regen) if (!exists(p)) bad.push(`@regen: ${p} does not exist`);
     return bad;
 }
 
@@ -379,11 +462,12 @@ function crossTree(d: Deps): number {
     try {
         const c = path.join(t, "tree");
         // out/gold（テキストのゴールデンの全文 — 生成物で鍵の入力ではない）は写さない: 並んで走る irtext・lltext・corejson・astjson が
-        // out/gold/.<種類>.XXXXXX に一時ディレクトリを作って消すので、写しの途中で消える。ほかの実行の残り（例が out/・examples/out に作って消すファイル）も
+        // out/gold/.<種類>.XXXXXX に一時ディレクトリを作って消すので、写しの途中で消える。out/tmp（揮発の一時置き場。implicitfreeze が
+        // 木の写しを作って消す）も同じ理由で写さない。ディレクトリごと消えると rsync は終了コード23で落ち、下の24の許しでは救えない。ほかの実行の残り（例が out/・examples/out に作って消すファイル）も
         // 写しの途中で消えうる — rsync の終了コード24（写しの途中で消えた元のファイル）は許す。消えたのが鍵の入力なら、写しの鍵が元と違って下の比べで落ちる
         try {
             execFileSync("rsync", ["-a", `--link-dest=${ROOT}/`, "--exclude", "/.git", "--exclude", "/.pair", "--exclude", "/out/bench", "--exclude", "/out/inst",
-                "--exclude", "/out/rust", "--exclude", "/out/skym", "--exclude", "/out/gold", "--exclude", "/scripts/.gatecache", `${ROOT}/`, `${c}/`], { stdio: ["ignore", "ignore", "pipe"] });
+                "--exclude", "/out/rust", "--exclude", "/out/skym", "--exclude", "/out/gold", "--exclude", "/out/tmp", "--exclude", "/scripts/.gatecache", `${ROOT}/`, `${c}/`], { stdio: ["ignore", "ignore", "pipe"] });
         } catch (e: any) {
             if (e?.status !== 24) throw e;
         }
@@ -445,36 +529,64 @@ function crossTree(d: Deps): number {
     return fail;
 }
 
+// 1本の判定: 行（HIT / REJUDGE / MISS）と、REJUDGE のときのログ。override = selftest の上書き（pending に書かない）
+function checkOne(g: string, d: Deps, stale: Set<string>, override?: Map<string, Buffer>): { line: string; log?: string } {
+    let comps: [string, string][];
+    try { comps = gateComps(g, d, override); } catch (e) { return { line: `MISS ${g} key error: ${(e as Error).message}` }; }
+    const key = keyOf(comps);
+    if (!override) writeAtomic(pendFile(g), JSON.stringify({ key, comps }));
+    const nd = d.nondet.has(g) ? " [非決定の札]" : "";
+    if (d.always.has(g)) return { line: `MISS ${g} always (@always)` };
+    if (stale.has(g)) return { line: `MISS ${g} declaration is stale (gatememo lint)` };
+    const h = readRec(g, key);
+    if (h) {
+        let rj = "", last = h.last;
+        if (d.lines.has(g)) {
+            if (!h.meas) return { line: `MISS ${g} the record has no measurements of the lines (@lines — recorded before the re-judging)` };
+            const j = judge(h.meas, override);
+            const head = `${g} ${key.slice(0, 8)} ${h.commit.slice(0, 8)} ${h.time}${nd}`;
+            if (j.fail.length) {
+                return { line: `REJUDGE ${head} | ${j.fail[0]}`,
+                    log: [...j.fail, ...j.ok, `${g}: FAIL — re-judged the record of ${h.commit.slice(0, 8)} ${h.time} against the current lines: ${j.fail.length} over (not re-run)`].join("\n") };
+            }
+            if (h.lv !== linesHash(override) || h.ec) { rj = " [re-judged]"; last = `re-judged against the current lines: ${j.ok.length} ok | ${h.last}`; }
+        }
+        if (!override) { const t = new Date(); fs.utimesSync(recFile(g, key), t, t); }
+        return { line: `HIT ${g} ${key.slice(0, 8)} ${h.commit.slice(0, 8)} ${h.time}${nd}${rj} | ${last}` };
+    }
+    const newest = recs(g)[0];
+    if (!newest) return { line: `MISS ${g} no record` };
+    const r: Rec = JSON.parse(fs.readFileSync(newest, "utf8"));
+    const old = new Map(r.comps);
+    const now = new Map(comps);
+    const diff = [...new Set([...old.keys(), ...now.keys()])].filter((k) => old.get(k) !== now.get(k));
+    return { line: `MISS ${g} changed: ${diff.slice(0, 3).join(" ")}${diff.length > 3 ? ` (+${diff.length - 3})` : ""}` };
+}
+const rejudgeLog = (g: string) => path.join(MEMO, "rejudge", `${g}.log`);
 function cmdCheck(gates: string[]) {
     const d = loadDeps();
     const stale = new Set(lint(d).map((l) => l.split(":")[0]));
     for (const g of gates) {
-        let comps: [string, string][];
-        try { comps = gateComps(g, d); } catch (e) { console.log(`MISS ${g} key error: ${(e as Error).message}`); continue; }
-        const key = keyOf(comps);
-        writeAtomic(pendFile(g), JSON.stringify({ key, comps }));
-        const nd = d.nondet.has(g) ? " [非決定の札]" : "";
-        if (d.always.has(g)) { console.log(`MISS ${g} always (@always)`); continue; }
-        if (stale.has(g)) { console.log(`MISS ${g} declaration is stale (gatememo lint)`); continue; }
-        const h = readRec(g, key);
-        if (h) {
-            const t = new Date();
-            fs.utimesSync(recFile(g, key), t, t);
-            console.log(`HIT ${g} ${key.slice(0, 8)} ${h.commit.slice(0, 8)} ${h.time}${nd} | ${h.last}`);
-            continue;
-        }
-        const newest = recs(g)[0];
-        if (!newest) { console.log(`MISS ${g} no record`); continue; }
-        const r: Rec = JSON.parse(fs.readFileSync(newest, "utf8"));
-        const old = new Map(r.comps);
-        const now = new Map(comps);
-        const diff = [...new Set([...old.keys(), ...now.keys()])].filter((k) => old.get(k) !== now.get(k));
-        console.log(`MISS ${g} changed: ${diff.slice(0, 3).join(" ")}${diff.length > 3 ? ` (+${diff.length - 3})` : ""}`);
+        const r = checkOne(g, d, stale);
+        // REJUDGE = 記録の実測がいまの線を越えた（gates.sh はこのログをゲートのログにして FAIL にする — 再実行しない）
+        if (r.log) writeAtomic(rejudgeLog(g), `${r.log}\n`);
+        console.log(r.line);
     }
     saveHstat();
 }
 
-function cmdRecord(g: string, secs: string, log: string) {
+// 終了0なら記録する。@lines のゲートは実測（meas）と本体の緑の印が要る。終了が非0でも、本体の緑の印があり、記録の実測がいまの線で赤なら
+// 「線だけ赤」として記録する（ゲートの結果は FAIL のまま — 線を引き直したコミットでは、再実行せずに再判定で緑になる）
+function cmdRecord(g: string, secs: string, log: string, measFile?: string, ecs?: string) {
+    const d = loadDeps();
+    const ec = Number(ecs ?? "0");
+    let meas: string[][] | undefined;
+    if (d.lines.has(g)) {
+        const m = readMeas(measFile);
+        if (!m || !m.body) { console.log(`gatememo: ${g} not recorded (@lines but no measurements or no body-ok mark — scripts/gatelib.sh ratchet_cmp / meas_body_ok)`); return; }
+        meas = m.rows;
+        if (ec !== 0 && judge(meas).fail.length === 0) { console.log(`gatememo: ${g} not recorded (failed although the measurements are within the lines)`); return; }
+    } else if (ec !== 0) { console.log(`gatememo: ${g} not recorded (exit ${ec})`); return; }
     const txt = fs.readFileSync(log, "utf8");
     // ゲート自身の環境の SKIP（unshare なし・perf なし 等）は記録しない。中の差分スキップ（inputs unchanged）は記録してよい
     const envSkip = txt.split("\n").some((l) => /\bSKIP\b/.test(l) && !/SKIP: inputs unchanged since the last pass/.test(l));
@@ -484,6 +596,7 @@ function cmdRecord(g: string, secs: string, log: string) {
     try { commit = execFileSync("git", ["-C", ROOT, "--no-optional-locks", "rev-parse", "HEAD"], { encoding: "utf8" }).trim(); } catch {}
     const last = txt.split("\n").filter((l) => l.trim() && !l.startsWith("ok")).pop()?.slice(0, 110) ?? "";
     const rec: Rec = { key: p.key, comps: p.comps, commit, time: new Date().toLocaleString("sv").slice(0, 16), secs: Number(secs), last, root: ROOT };
+    if (meas) { rec.meas = meas; rec.lv = linesHash(); rec.ec = ec; }
     writeAtomic(recFile(g, p.key), JSON.stringify(rec));
     for (const f of recs(g).slice(KEEP)) fs.rmSync(f, { force: true });
 }
@@ -508,7 +621,10 @@ function cmdSelftest(): number {
         if (fs.lstatSync(abs).isSymbolicLink()) continue;
         const buf = Buffer.from(fs.readFileSync(abs));
         const mut = buf.length === 0 ? Buffer.from([1]) : Buffer.from(buf); // 空のファイルは 1 バイト足した形
-        if (buf.length > 0) mut[buf.length >> 1] ^= 1;
+        // 線のファイルは形で数える（値とコメントは鍵の外）— 変える位置 = 最初の行の項目の先頭のバイト
+        const at = LINES.includes(f) ? buf.toString("utf8").split("\n").findIndex((l) => l.trim() && !l.trim().startsWith("#")) : -1;
+        if (at >= 0) mut[Buffer.byteLength(buf.toString("utf8").split("\n").slice(0, at).map((l) => `${l}\n`).join(""))] ^= 1;
+        else if (buf.length > 0) mut[buf.length >> 1] ^= 1;
         const h0 = compHash(p);
         const h1 = compHash(p, new Map([[f, mut]]));
         n++;
@@ -519,9 +635,78 @@ function cmdSelftest(): number {
     const c0 = gateComps(g0, d);
     const c1 = c0.map(([k, v], i) => [k, i === 0 ? `${v}x` : v] as [string, string]);
     if (keyOf(c0) === keyOf(c1)) { console.log("FAIL: a component change does not change the key"); fail++; }
+    fail += linesSelftest(d);
     if (process.env.GATEMEMO_NO_XTREE !== "1") fail += crossTree(d);
     saveHstat();
     console.log(`gatememo: ${n} components × 1-byte change, ${allGates().length} gates linted, fail=${fail}`);
+    return fail;
+}
+
+// 線の検査: (a) 線の値とコメントの変更で、どのゲートの鍵も変わらない (b) 線の行を足すと、その線を読む @lines のゲートの鍵が変わる
+// (c) 再判定の経路（@lines の各ゲート・一時の格納場所の合成の記録 — 実測 = いまの上限）: そのままで HIT・上限を1つ実測の下へ下げると鍵は同じまま
+// REJUDGE（記録の実測がいまの線で赤）・全部を上げてコメントを足すと HIT [re-judged]・実測の無い記録は MISS
+function linesSelftest(d: Deps): number {
+    let fail = 0;
+    const say = (ok: boolean, msg: string) => { if (!ok) { console.log(`FAIL: lines: ${msg}`); fail++; } };
+    const gates = allGates().filter((g) => !d.always.has(g));
+    const none = new Map<string, Buffer>(); // 空の上書き = pending に書かず、記録の mtime も触らない
+    const base = new Map(gates.map((g) => [g, keyOf(gateComps(g, d, none))]));
+    const bump = (txt: string, fn: (v: number, i: number) => number) => {
+        let i = 0;
+        return txt.split("\n").map((l) => {
+            const r = l.trim().split(/\s+/);
+            if (l.trim().startsWith("#") || r.length < 3 || !NUM.test(r[2])) return l;
+            r[2] = String(fn(Number(r[2]), i++));
+            return r.join(" ");
+        }).join("\n");
+    };
+    // (a)
+    const up = new Map(LINES.map((f) => [f, Buffer.from(`${bump(lineText(f), (v) => v + 1)}# a comment added by gatememo selftest\n`)] as [string, Buffer]));
+    const moved = gates.filter((g) => keyOf(gateComps(g, d, up)) !== base.get(g));
+    say(moved.length === 0, `changing only the line values and comments changes the keys of ${moved.join(" ")}`);
+    // (b)
+    for (const lf of LINES) {
+        const add = new Map([[lf, Buffer.from(`${lineText(lf)}\ngatememo/selftest probe 1\n`)]]);
+        for (const g of [...d.lines].filter((x) => [...entryOf(x), ...(d.paths.get(x) ?? [])].includes(lf)))
+            say(keyOf(gateComps(g, d, add)) !== base.get(g), `adding a row to ${lf} does not change the key of ${g}`);
+    }
+    // (c)
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "gatememo-lines-"));
+    const saved = sharedRoot;
+    let n = 0;
+    try {
+        sharedRoot = tmp;
+        const stale = new Set<string>();
+        for (const g of d.lines) {
+            const lf = LINES.find((x) => [...entryOf(g), ...(d.paths.get(g) ?? [])].includes(x));
+            if (!lf) { say(false, `@lines gate ${g} declares no line file`); continue; }
+            const lim = lineLimits();
+            const meas = [...lim].filter(([k, v]) => k.startsWith(`${lf} `) && NUM.test(v)).map(([k, v]) => [...k.split(" "), v]);
+            if (!meas.length) { say(false, `${lf} has no numeric line`); continue; }
+            const comps = gateComps(g, d, none);
+            const key = keyOf(comps);
+            const rec: Rec = { key, comps, commit: "selftest", time: "selftest", secs: 0, last: "selftest", meas, lv: linesHash(), ec: 0 };
+            writeAtomic(recFile(g, key), JSON.stringify(rec));
+            const r0 = checkOne(g, d, stale, none);
+            say(r0.line.startsWith(`HIT ${g} `) && !r0.line.includes("[re-judged]"), `${g}: a record within the lines is not a plain HIT: ${r0.line}`);
+            const [f0, it0, c0, v0] = meas[0];
+            const low = new Map([[lf, Buffer.from(bump(lineText(lf), (v, i) => (i === 0 ? Number(v0) / 2 - 1 : v)))]]);
+            say(keyOf(gateComps(g, d, low)) === key, `${g}: lowering a line value changes the key`);
+            const r1 = checkOne(g, d, stale, low);
+            say(r1.line.startsWith(`REJUDGE ${g} `) && (r1.log ?? "").includes(`${f0} ${it0} ${c0} = ${v0} >`), `${g}: a line lowered below the recorded measurement is not REJUDGE: ${r1.line}`);
+            const r2 = checkOne(g, d, stale, up);
+            say(r2.line.startsWith(`HIT ${g} `) && r2.line.includes("[re-judged]"), `${g}: raised lines are not HIT [re-judged]: ${r2.line}`);
+            const { meas: _m, ...bare } = rec;
+            writeAtomic(recFile(g, key), JSON.stringify(bare));
+            const r3 = checkOne(g, d, stale, none);
+            say(r3.line.startsWith(`MISS ${g} `), `${g}: a record without measurements is not MISS: ${r3.line}`);
+            n++;
+        }
+    } finally {
+        sharedRoot = saved;
+        fs.rmSync(tmp, { recursive: true, force: true });
+    }
+    console.log(`gatememo: lines — values and comments of ${LINES.join(" ")} outside every key, a new row changes the @lines gates, re-judging (HIT / REJUDGE / HIT [re-judged] / MISS) of ${n} @lines gates`);
     return fail;
 }
 
@@ -616,6 +801,23 @@ function cmdVerified(g: string) {
     writeAtomic(verFile, JSON.stringify(ver));
 }
 
+// いまの木に当たる記録の実測（scripts/ratchet.ts retake が読む）: 1行 = 「ゲート コミット 終了コード ファイル 項目 欄 実測」。pending に書かない。
+// 当たる記録 = パスの成分（# で始まらない成分 — 道具の鍵・環境は gates.sh の中でだけ決まる）がいまの木と全部同じ、最も新しい記録
+function cmdMeas(gates: string[]) {
+    const d = loadDeps();
+    for (const g of gates.length ? gates : [...d.lines]) {
+        const path1 = (c: [string, string][]) => c.filter(([k]) => !k.startsWith("#")).map(([k, v]) => `${k}=${v}`).join("\n");
+        const now = path1(gateComps(g, d, new Map()));
+        let h: Rec | null = null;
+        for (const rf of recs(g)) {
+            const r: Rec = JSON.parse(fs.readFileSync(rf, "utf8"));
+            if (path1(r.comps) === now) { h = r; break; }
+        }
+        if (!h) { console.error(`gatememo meas: ${g}: no record for the current tree (run the gate first)`); continue; }
+        for (const r of h.meas ?? []) console.log([g, h.commit.slice(0, 12), h.ec ?? 0, ...r].join(" "));
+    }
+}
+
 function cmdExtract(gates: string[]) {
     for (const g of gates.length ? gates : allGates()) console.log(`${g}: ${extracted(g).join(" ")}`);
 }
@@ -624,7 +826,7 @@ loadHstat();
 const [cmd, ...rest] = process.argv.slice(2);
 switch (cmd) {
     case "check": cmdCheck(rest); break;
-    case "record": cmdRecord(rest[0], rest[1], rest[2]); saveHstat(); break;
+    case "record": cmdRecord(rest[0], rest[1], rest[2], rest[3], rest[4]); saveHstat(); break;
     case "lint": { const b = lint(loadDeps()); b.forEach((l) => console.log(l)); process.exit(b.length ? 1 : 0); }
     case "selftest": process.exit(cmdSelftest() ? 1 : 0);
     case "extract": cmdExtract(rest); break;
@@ -634,6 +836,9 @@ switch (cmd) {
     case "verified": cmdVerified(rest[0]); break;
     case "last": cmdLast(rest); break;
     case "keys": cmdKeys(rest); break;
+    case "meas": cmdMeas(rest); break;
     case "cover": console.log(coverOf(rest[0]).join("\n")); break;
+    // 置き場所の表: place <train|nightly> = その場所の札のゲート（1行に1つ）・place regen = @regen のパス・place always / lines = @always / @lines のゲート（列車で持ち越さない）
+    case "place": { const d = loadDeps(); const w = rest[0]; console.log((w === "regen" ? d.regen : w === "always" ? [...d.always] : w === "lines" ? [...d.lines] : [...d.place].filter(([, p]) => p === w).map(([g]) => g)).join("\n")); break; }
     default: console.error("usage: gatememo.ts check|record|lint|selftest|extract …"); process.exit(2);
 }

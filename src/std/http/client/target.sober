@@ -2,10 +2,11 @@ package client
 
 // リクエストのURLの読み（http / httpsの絶対URLだけ）とredirectのLocationの解決
 
+import "std/internal/ip"
 import "std/iter"
 import "std/strings"
 
-// 読んだ URL（host は小文字・port は省略時 80 / 443・path は '?' の後ろを含み '#' の前まで — 空なら "/"）
+// 読んだ URL（host は小文字〔IPv6 の番地は角括弧を外した綴り〕・port は省略時 80 / 443・path は '?' の後ろを含み '#' の前まで — 空なら "/"）
 type target struct {
     tls bool
     host string
@@ -17,23 +18,30 @@ func badTarget() target {
     return target{tls: false, host: "", port: 0, path: ""}
 }
 
-// "host:port"（Dial に渡す形）
+// URI の host の綴り（IPv6 の番地は角括弧で括る。RFC 3986 3.2.2）
+func uriHost(host string) string {
+    return if strings.Contains(host, ":") { "[${host}]" } else { host }
+}
+
+// "host:port"（Dial と CONNECT の authority に渡す形）
 func dialAddr(t target) string {
-    return "${t.host}:${t.port}"
+    return "${uriHost(t.host)}:${t.port}"
 }
 
-// Host の頭の値（既定の port は書かない）
+// Host の頭の値（既定の port は書かない。RFC 9110 7.2）
 func hostHeader(t target) string {
-    return if (t.tls && t.port == 443) || (!t.tls && t.port == 80) { t.host } else { "${t.host}:${t.port}" }
+    h := uriHost(t.host)
+    return if (t.tls && t.port == 443) || (!t.tls && t.port == 80) { h } else { "${h}:${t.port}" }
 }
 
-// scheme・host・port の組（redirect で origin が変わったかの比較）
+// scheme・host・port の組（redirect で origin が変わったかの比較）。IPv6 の番地は RFC 5952 の綴りに正規化して比べる（[2001:DB8::1] と [2001:db8:0::1] は同じ origin）
 func origin(t target) string {
     scheme := if t.tls { "https" } else { "http" }
-    return "${scheme}://${t.host}:${t.port}"
+    h := if strings.Contains(t.host, ":") { internal.ip.Format6(internal.ip.Parse6(t.host)) } else { t.host }
+    return "${scheme}://${uriHost(h)}:${t.port}"
 }
 
-// u の読み（ok = false: scheme が http / https でない・userinfo がある・IPv6 の番地・host が空・port の形・空白や制御文字）
+// u の読み（ok = false: scheme が http / https でない・userinfo がある・角括弧の中が IPv6 の番地でない・IPv6 の zone〔RFC 6874〕・host が空・port の形・空白や制御文字）
 func parseTarget(u string) (target, bool) {
     b := bytes(u)
     mut at := 0
@@ -60,15 +68,33 @@ func parseTarget(u string) (target, bool) {
         pe += 1
     }
     auth := sub(b, at, he)
-    if strings.Contains(auth, "@") || strings.Contains(auth, "[") {
+    if strings.Contains(auth, "@") {
         return badTarget(), false
     }
     mut host := auth
     mut port := if secure { 443 } else { 80 }
-    h, ps, hasPort := strings.Cut(auth, ":")
-    if hasPort {
+    mut rest := ""
+    mut hasPort := false
+    if strings.HasPrefix(auth, "[") {
+        // IP-literal（RFC 3986 3.2.2）: 角括弧の中は IPv6 の番地だけ。zone（%）は受けない（RFC 6874 は任意の拡張で、主なブラウザも受けない）
+        inner, after, closed := strings.Cut(strings.TrimPrefix(auth, "["), "]")
+        if !closed || len(internal.ip.Parse6(inner)) != 16 || (after != "" && !strings.HasPrefix(after, ":")) {
+            return badTarget(), false
+        }
+        host = inner
+        rest = strings.TrimPrefix(after, ":")
+        hasPort = after != ""
+    } else {
+        if strings.Contains(auth, "]") {
+            return badTarget(), false
+        }
+        h, ps, hp := strings.Cut(auth, ":")
         host = h
-        port = portOf(ps)
+        rest = ps
+        hasPort = hp
+    }
+    if hasPort {
+        port = portOf(rest)
         if port <= 0 {
             return badTarget(), false
         }

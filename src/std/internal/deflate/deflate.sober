@@ -85,10 +85,10 @@ func hashBits(n int) int {
 }
 
 // w が長さ n の入力の容量を持つか（整えていない w は入力の長さに合わせて取って true）。
-// 要る容量: 記号は min(n + 1, symMax)・鎖は p & wmask で引くので min(n, 32768)・ハッシュの表は 2^hb（16 ビットの項目 4 つで 1 語・head は末尾に off と高水位の 2 語）
+// 要る容量: 記号は min(n + 1, symMax)・鎖は p & pmaskOf(n) で引くので pmaskOf(n) + 1・ハッシュの表は 2^hb（16 ビットの項目 4 つで 1 語・head は末尾に off と高水位の 2 語）
 func fit(w mut Work, n int) bool {
     nsy := if n < symMax { n + 1 } else { symMax }
-    np := if n < wmask + 1 { n } else { wmask + 1 }
+    np := pmaskOf(n) + 1
     nsw := (nsy + 1) >> 1
     npw := (np + 3) >> 2
     nhw := ((1 << hashBits(n)) >> 2) + 2
@@ -158,6 +158,16 @@ func encodeIn(w mut Work, h mut History, adapt bool, data []byte, level int) []b
 const minMatch = 3
 const maxMatch = 258
 const wmask = 32767
+
+// 長さ n の列の鎖（prev）の添字のマスク: 2^k − 1 ≥ n − 1 の最小（3 以上・上限 wmask）。位置は n 未満なので p & pmaskOf(n) = p & wmask。
+// 表の大きさの検査を輪の前の 1 回にできる（輪の中の添字はこのマスクで切る。lower の bce は輪の前の検査を根拠に輪の中の検査を外す）
+func pmaskOf(n int) int {
+    mut m := 3
+    while m < n - 1 && m < wmask {
+        m = (m << 1) | 1
+    }
+    return m
+}
 // 一致の距離の上限（zlib の MAX_DIST = 窓 − MIN_LOOKAHEAD — 同じ大きさの圧縮に揃える）
 const maxDist = 32506
 // ハッシュの表の大きさの割り: 2^hb ≥ n / hdiv（表の 1 区画あたり入力 hdiv バイトまで）。作業域を詰めるために 4 にしたことがある（命令 +22% の値札）—
@@ -802,7 +812,7 @@ func pad2(f []int, cnt int) []int {
 // リテラルより高いことが多く、捨てた方が縮む面もある — 率の線は flatecheck の check.ts で見る）。
 // 語は 8 バイトの 1 回の読み（末尾の 7 位置だけバイトずつ・末尾 3 バイトの位置は 3 バイトのまま = 鎖の雑音だけで害なし）。
 // 表の値は下駄つき（p + 1 + off — Work の off の注釈）
-func insert(head mut pool.Scratch, prev mut pool.Scratch, data []byte, p int, hmask int, off int) int {
+func insert(head mut pool.Scratch, prev mut pool.Scratch, data []byte, p int, hmask int, pm int, off int) int {
     mut u := 0
     if p > len(data) - 8 {
         u = int(data[p]) | (int(data[p + 1]) << 8) | (int(data[p + 2]) << 16)
@@ -816,7 +826,7 @@ func insert(head mut pool.Scratch, prev mut pool.Scratch, data []byte, p int, hm
     // head の読みと書きを続けて置く（同じ添字の境界検査とヘッダの読みが 1 回に畳まれる — prev の書きを間に挟むと別の番地の store で読み直しになる）
     old := pool.LoadRaw16(mut head, h)
     pool.StoreRaw16(mut head, h, p + 1 + off)
-    pool.StoreRaw16(mut prev, p & wmask, old)
+    pool.StoreRaw16(mut prev, p & pm, old)
     return old - 1 - off
 }
 
@@ -839,7 +849,7 @@ func rebase(w mut Work, n int) {
 
 // 位置 p から鎖を cur から辿って、prevLen より長い最長の一致を探す（zlib の longest_match）。
 // 返り = (長さ, 始まり) — prevLen を越えなければ (prevLen を残りで切った値, −1)
-func longest(prev mut pool.Scratch, off int, data []byte, p int, cur int, prevLen int, good int, nice int, chain int) (int, int) {
+func longest(prev mut pool.Scratch, pm int, off int, data []byte, p int, cur int, prevLen int, good int, nice int, chain int) (int, int) {
     n := len(data)
     la := n - p
     maxl := if la < maxMatch { la } else { maxMatch }
@@ -847,23 +857,32 @@ func longest(prev mut pool.Scratch, off int, data []byte, p int, cur int, prevLe
     mut nc := if nice > la { la } else { nice }
     mut best := prevLen
     mut start := 0 - 1
+    if best >= maxl {
+        return if best > la { la } else { best }, start
+    }
+    // 輪の条件を 1 本に: 候補の下限（c ≥ 0 と c > p − maxDist の強い方）。best < maxl は輪の中で常に成り立つ（nc ≤ maxl で、l ≥ nc なら
+    // ch = 0 で抜ける）ので判定しない。p 側の best の位置のバイトは best が変わったときだけ読み直す
     lim := p - maxDist
+    lo := if lim > 0 - 1 { lim } else { 0 - 1 }
+    mut pb := data[p + best]
     mut c := cur
-    while best < maxl && c >= 0 && c > lim && ch > 0 {
+    while c > lo && ch > 0 {
         // 振るいは zlib と同じ 4 バイト（best の位置・その 1 つ前・頭の 2 バイト — 外れの候補の大半はここで落ちる）。通った候補の伸ばしは
         // 一致の長さの核 1 本（binary.MatchLen — x86 の最適化のバックエンドは 16 バイトずつの手書きの本体。c < p なので c + maxl ≤ p + maxl ≤ n・
         // 3 ≤ maxl。旧形 = 8 バイトの xor + 1 バイトずつの末尾）
-        if data[c + best] == data[p + best] && data[c + best - 1] == data[p + best - 1] && data[c] == data[p] && data[c + 1] == data[p + 1] {
+        if data[c + best] == pb && data[c + best - 1] == data[p + best - 1] && data[c] == data[p] && data[c + 1] == data[p + 1] {
             l := 2 + binary.MatchLen(data, c + 2, p + 2, maxl - 2)
             if l > best {
                 best = l
                 start = c
                 if l >= nc {
                     ch = 0
+                } else {
+                    pb = data[p + best]
                 }
             }
         }
-        c = pool.LoadRaw16(mut prev, c & wmask) - 1 - off
+        c = pool.LoadRaw16(mut prev, c & pm) - 1 - off
         ch -= 1
     }
     return if best > la { la } else { best }, start
@@ -919,6 +938,7 @@ func greedy(w mut Work, data []byte, level int, p0 int, ct []byte) (int, int) {
     chain := if level == 1 { 4 } else if level == 2 { 8 } else { 32 }
     n := len(data)
     hm := w.hmask
+    pm := pmaskOf(n)
     mut off := w.off
     mut p := p0
     while p < n {
@@ -928,15 +948,19 @@ func greedy(w mut Work, data []byte, level int, p0 int, ct []byte) (int, int) {
             off = w.off
         }
         pe := if n < offMax - off { n } else { offMax - off + 1 }
+        // 表の大きさの検査を内側の輪の前に 1 回（輪の中の表の添字は hm / pm で切るので、輪の中の検査はこの 2 本に支配されて外れる。
+        // rebase の呼び出しの後に置く）
+        _ = pool.LoadRaw16(mut w.head, hm)
+        _ = pool.LoadRaw16(mut w.prev, pm)
         while p < pe {
             mut hh := 0 - 1
             if n - p >= minMatch {
-                hh = insert(mut w.head, mut w.prev, data, p, hm, off)
+                hh = insert(mut w.head, mut w.prev, data, p, hm, pm, off)
             }
             mut ml := 0
             mut ms := 0 - 1
             if hh >= 0 && p - hh <= maxDist {
-                l, st := longest(mut w.prev, off, data, p, hh, minMatch - 1, good, nice, chain)
+                l, st := longest(mut w.prev, pm, off, data, p, hh, minMatch - 1, good, nice, chain)
                 ml = l
                 ms = st
             }
@@ -945,7 +969,7 @@ func greedy(w mut Work, data []byte, level int, p0 int, ct []byte) (int, int) {
                 if ml <= maxIns && n - p - ml >= minMatch {
                     mut k := 1
                     while k < ml {
-                        insert(mut w.head, mut w.prev, data, p + k, hm, off)
+                        insert(mut w.head, mut w.prev, data, p + k, hm, pm, off)
                         k += 1
                     }
                 }
@@ -978,6 +1002,7 @@ func lazy(w mut Work, data []byte, level int, p0 int, ct []byte) (int, int) {
     n := len(data)
     // Work のスカラーは輪の前で局所へ写す（w 越しの欄は表への書きのたびに読み直しになる）。nsym は止める所で書き戻す
     hm := w.hmask
+    pm := pmaskOf(n)
     mut off := w.off
     mut p := p0
     mut prevLen := minMatch - 1
@@ -993,16 +1018,20 @@ func lazy(w mut Work, data []byte, level int, p0 int, ct []byte) (int, int) {
             off = w.off
         }
         pe := if n < offMax - off { n } else { offMax - off + 1 }
+        // 表の大きさの検査を内側の輪の前に 1 回（輪の中の表の添字は hm / pm で切るので、輪の中の検査はこの 2 本に支配されて外れる。
+        // rebase の呼び出しの後に置く）
+        _ = pool.LoadRaw16(mut w.head, hm)
+        _ = pool.LoadRaw16(mut w.prev, pm)
         while p < pe {
             mut hh := 0 - 1
             if n - p >= minMatch {
-                hh = insert(mut w.head, mut w.prev, data, p, hm, off)
+                hh = insert(mut w.head, mut w.prev, data, p, hm, pm, off)
             }
             prevLen = ml
             prevMatch = ms
             ml = minMatch - 1
             if hh >= 0 && prevLen < maxLazy && p - hh <= maxDist {
-                l, st := longest(mut w.prev, off, data, p, hh, prevLen, good, nice, chain)
+                l, st := longest(mut w.prev, pm, off, data, p, hh, prevLen, good, nice, chain)
                 ml = l
                 ms = st
                 if ml == minMatch && (st < 0 || p - st > tooFar) {
@@ -1025,7 +1054,7 @@ func lazy(w mut Work, data []byte, level int, p0 int, ct []byte) (int, int) {
                 while k > 0 {
                     q += 1
                     if q <= maxIns {
-                        insert(mut w.head, mut w.prev, data, q, hm, off)
+                        insert(mut w.head, mut w.prev, data, q, hm, pm, off)
                     }
                     k -= 1
                 }
@@ -1163,7 +1192,7 @@ func Feed(s mut Stream, p []byte) []byte {
                 rebase(mut s.w, n)
             }
             while q < r && n - q >= minMatch {
-                insert(mut s.w.head, mut s.w.prev, data, q, s.w.hmask, s.w.off)
+                insert(mut s.w.head, mut s.w.prev, data, q, s.w.hmask, pmaskOf(n), s.w.off)
                 q += 1
             }
             newBlock(mut s.w)

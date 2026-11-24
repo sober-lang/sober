@@ -1,0 +1,132 @@
+package record
+
+// TLS 1.2 の記録（Dir.suite が Gcm12 / ChaCha12 / CbcSha1 / CbcSha256〔| Etm〕のとき — Seal / SealInto / Open が分かれてくる）。
+// 外側の型が本当の内容の型（1.3 の内側の型と 0 埋めは無い）。AAD / MAC の頭 = 番号 ‖ 型 ‖ 0x0303 ‖ 平文の長さ（RFC 5246 6.2.3）。
+// AEAD は準備済みの鍵（Dir.aes / Dir.cc）で SealTo / SealInto / OpenAt を呼ぶ。GCM の本文 = 明示の nonce（番号 8 バイト）‖ 暗号文 ‖ tag。
+// CBC は記録ごとに生の鍵を展開する（std/internal/cbcrec）。明示の IV = AES_ivKey(番号 ‖ 0)（ivKey = Dir.iv — key_block を相手と共有する長さより
+// 16 バイト長く取った末尾。秘密の鍵の下の置換の像なので相手の外からは予測できず、番号が増えるだけなので繰り返さない — RFC 5246 6.2.3.2）
+
+import "std/crypto/aescbc"
+import "std/crypto/aesgcm"
+import "std/crypto/chacha20poly1305"
+import "std/internal/cbcrec"
+import "std/iter"
+
+// 平文 pt の記録 1 つ（頭 5 バイトつき — d.seq は呼び手が進める）。記録は相手へ送る値なので公開（@bless — 1.3 の SealTo と同じ）
+@bless
+func seal12(d Dir, ctype int, pt []byte) []byte {
+    m := len(pt)
+    if isCbc(d.suite) {
+        k := internal.cbcrec.New(macAlg(d.suite), d.secret, d.raw) catch return []byte{}
+        iv := CbcIv(d.iv, d.seq)
+        frag := if (d.suite & Etm) != 0 { internal.cbcrec.SealEtm(k, d.seq, ctype, 0x0303, iv, pt) catch []byte{} } else { internal.cbcrec.Seal(k, d.seq, ctype, 0x0303, iv, pt) catch []byte{} }
+        return cat2(head12(ctype, len(frag)), frag)
+    }
+    ad := aad12(d.seq, ctype, m)
+    if d.suite == Gcm12 {
+        r, _ := crypto.aesgcm.SealTo(d.aes, cat2(d.iv, seq8(d.seq)), ad, pt, cat2(head12(ctype, 8 + m + 16), seq8(d.seq)), []byte{})
+        return r
+    }
+    r, _ := crypto.chacha20poly1305.SealTo(d.cc, nonceOf(d.iv, d.seq), ad, pt, head12(ctype, m + 16), []byte{})
+    return r
+}
+
+// SealInto の 1.2 の形（記録 1 つを dst[at:] に — 入らなければ −1。書いた記録と長さは公開）
+@bless
+func sealInto12(d Dir, ctype int, pt []byte, dst mut []byte, at int) int {
+    m := len(pt)
+    if isCbc(d.suite) {
+        r := seal12(d, ctype, pt)
+        if at < 0 || at + len(r) > len(dst) {
+            return 0 - 1
+        }
+        for i <- iter.Range(0, len(r)) {
+            dst[at + i] = r[i]
+        }
+        return len(r)
+    }
+    ad := aad12(d.seq, ctype, m)
+    if d.suite == Gcm12 {
+        return crypto.aesgcm.SealInto(d.aes, cat2(d.iv, seq8(d.seq)), ad, pt, cat2(head12(ctype, 8 + m + 16), seq8(d.seq)), []byte{}, mut dst, at)
+    }
+    return crypto.chacha20poly1305.SealInto(d.cc, nonceOf(d.iv, d.seq), ad, pt, head12(ctype, m + 16), []byte{}, mut dst, at)
+}
+
+// 枠 r の内容の型と平文（d.seq は呼び手が進める）。外側の型が 20〜23 でなければ unexpected_message・平文が 2^14 を超えれば record_overflow・
+// 認証・埋め草・MAC の誤りは bad_record_mac（区別しない）。開いた平文は公開（1.3 の Open と同じ基準 — @bless）
+@errors(Alert)
+@bless
+func open12(d Dir, r Frame) (int, []byte, error?) {
+    ct := int(r.b[r.off])
+    if ct < CtCcs || ct > CtApp {
+        return 0, []byte{}, Alert{desc: AlertUnexpected}
+    }
+    body := r.n - HeadSize
+    at := r.off + HeadSize
+    mut p := []byte{}
+    if isCbc(d.suite) {
+        k := internal.cbcrec.New(macAlg(d.suite), d.secret, d.raw) catch return 0, []byte{}, Alert{desc: AlertInternal}
+        frag := r.b[at:at + body]
+        p = if (d.suite & Etm) != 0 { internal.cbcrec.OpenEtm(k, d.seq, ct, 0x0303, frag) catch return 0, []byte{}, Alert{desc: AlertBadMac} } else { internal.cbcrec.Open(k, d.seq, ct, 0x0303, frag) catch return 0, []byte{}, Alert{desc: AlertBadMac} }
+    } else if d.suite == Gcm12 {
+        if body < 8 + 16 {
+            return 0, []byte{}, Alert{desc: AlertBadMac}
+        }
+        nonce := cat2(d.iv, r.b[at:at + 8])
+        p = crypto.aesgcm.OpenAt(d.aes, nonce, aad12(d.seq, ct, body - 24), r.b, at + 8, body - 8) catch return 0, []byte{}, Alert{desc: AlertBadMac}
+    } else {
+        if body < 16 {
+            return 0, []byte{}, Alert{desc: AlertBadMac}
+        }
+        p = crypto.chacha20poly1305.OpenAt(d.cc, nonceOf(d.iv, d.seq), aad12(d.seq, ct, body - 16), r.b, at, body) catch return 0, []byte{}, Alert{desc: AlertBadMac}
+    }
+    if len(p) > MaxPlain {
+        return 0, []byte{}, Alert{desc: AlertOverflow}
+    }
+    return ct, p, nil
+}
+
+// CBC の明示の IV（AES_ivKey(番号の 8 バイト ‖ 0 × 8) — 1 ブロックの CBC を IV 0 で = ECB）。IV は記録に載せて送る値なので公開（@bless）
+@secret(ivKey)
+@bless
+@effects()
+func CbcIv(ivKey []byte, seq int) []byte {
+    k := crypto.aescbc.Prepare(ivKey) catch return []byte{}
+    mut z := mut []byte{}
+    for i <- iter.Range(0, 16) {
+        z = append(z, 0)
+    }
+    zero := freeze(z)
+    blk := cat2(seq8(seq), seq8(0))
+    r := crypto.aescbc.Encrypt(k, zero, blk) catch return []byte{}
+    return r
+}
+
+// 1.2 の記録の頭（型・0x0303・本文の長さ）
+func head12(ctype int, n int) []byte {
+    return []byte{byte(ctype), byte(3), byte(3), byte((n >> 8) & 0xff), byte(n & 0xff)}
+}
+
+// 番号 ‖ 型 ‖ 0x0303 ‖ 平文の長さ
+func aad12(seq int, ctype int, n int) []byte {
+    return cat2(seq8(seq), []byte{byte(ctype), byte(3), byte(3), byte((n >> 8) & 0xff), byte(n & 0xff)})
+}
+
+func seq8(n int) []byte {
+    mut b := mut []byte{}
+    for i <- iter.Range(0, 8) {
+        b = append(b, byte((n >> (56 - 8 * i)) & 0xff))
+    }
+    return freeze(b)
+}
+
+func cat2(a []byte, b []byte) []byte {
+    mut out := mut []byte{}
+    for x <- a {
+        out = append(out, x)
+    }
+    for x <- b {
+        out = append(out, x)
+    }
+    return freeze(out)
+}

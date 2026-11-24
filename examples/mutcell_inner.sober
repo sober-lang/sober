@@ -1,0 +1,44 @@
+package main
+
+// 逆の向き: mutのstructの局所がループの中（内側）・器が外。structのフィールドごとのセルも外の束縛のregionに作る
+type S struct {
+    n int
+    name string
+}
+
+func fill(i int) []int {
+    mut b := mut []int{}
+    while len(b) < 64 {
+        b = append(b, i)
+    }
+    return freeze(b)
+}
+
+func label(k int) string {
+    if k == 0 {
+        return "a" + "b"
+    }
+    return "c" + "d"
+}
+
+func walk(st mut S, rs mut [][]int, i int) {
+    if i > 0 {
+        rs = append(rs, fill(i + 6))
+        st.n += 1
+        walk(mut st, mut rs, i - 1)
+    }
+}
+
+func main() {
+    mut rs := mut [][]int{}
+    mut k := 0
+    while k < 2 {
+        mut st := S{n: k, name: label(k)}
+        walk(mut st, mut rs, 2)
+        println(st.n)
+        println(st.name)
+        k += 1
+    }
+    println(len(rs))
+    println(rs[0][0] + rs[0][63] + rs[1][0] + rs[1][63])
+}

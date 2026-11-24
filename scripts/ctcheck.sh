@@ -5,6 +5,8 @@
 # ループの添字・境界の検査）に依る — ゴールデンを書き直すときは差分の分岐が公開の値に依ることを機械語で検証してから（--regen）。
 # neg* は規律を破った見本（秘密でif・早く抜ける比較・可変時間のrt.matchlenの呼び出し）で、検査が分岐を数えられること・可変時間の呼び出しを捕まえることの負例としてゴールデンに載る
 #   scripts/ctcheck.sh [--regen]
+# ゴールデンの並びを呼び手のロケールに依らせない
+export LC_ALL=C.UTF-8
 set -uo pipefail
 cd "$(dirname "$0")/.."
 S2=${STAGE2:-out/stage2/sober2}
@@ -36,8 +38,19 @@ for f in "${FUNCS[@]}"; do INF[$f]=1; done
 VT=$(awk '$2 == "@rt.matchlen" || $2 == "@std/binary.MatchLen" || $2 == "@rt.jclean" { printf " 0x%x", strtonum("0x" $1) }' "$W/syms")
 : > "$W/vt"
 end=$(readelf -lW "$W/app" | awk '$1 == "LOAD" && $NF == "0x1000" && $(NF-1) == "E" { printf "%016x", strtonum($3) + strtonum($5); exit }')
+# tls.Serveの接続の本体（net.Serveへ渡すラムダ。秘密の状態を作って k へ渡す）はELFではspawnの通し番号の記号kid#Nになる。番号は題材とstdで動くので、
+# std/tls.stateOfを呼ぶkid#をちょうど1つ探し、@std/tls.Serve/body の名前で照合する（funcs.txtの +@std/tls.Serve/body）
+SO=$(awk '$2 == "@std/tls.stateOf" { printf "0x%x", strtonum("0x" $1) }' "$W/syms")
+BODY=$({ sort -k1,1 "$W/syms"; echo "$end ~end"; } | awk 'NR > 1 { print pa, $1, pn } { pa = $1; pn = $2 }' | while read -r a b n; do
+    case "$n" in @kid#*) ;; *) continue ;; esac
+    "$OD" -D -b binary -m i386:x86-64 -M intel --adjust-vma=0x400000 --start-address=0x$a --stop-address=0x$b "$W/app" | sed -n '8,$p' | cut -f3 \
+        | awk -v t="$SO" '$1 == "call" && $2 == t { f = 1 } END { exit !f }' && echo "$n"
+done)
+[ -n "$SO" ] && [ "$(echo "$BODY" | grep -c .)" = 1 ] || { echo "ctcheck: FAIL — not exactly one task body (kid#) calls @std/tls.stateOf: '${BODY//$'\n'/ }'"; exit 1; }
+INF[$BODY]=1
 { sort -k1,1 "$W/syms"; echo "$end ~end"; } | awk 'NR > 1 { print pa, $1, pn } { pa = $1; pn = $2 }' | while read -r a b n; do
     [ -n "${INF[$n]:-}" ] || continue
+    [ "$n" = "$BODY" ] && n=@std/tls.Serve/body
     "$OD" -D -b binary -m i386:x86-64 -M intel --adjust-vma=0x400000 --start-address=0x$a --stop-address=0x$b "$W/app" | sed -n '8,$p' | cut -f3 \
         | awk -v last="$([ "$b" = "$end" ] && echo 1)" 'last && ($1 == "nop" || $0 ~ /^add +BYTE PTR \[rax\],al/) && (p == "ret" || p == "syscall") { exit } NF { print; p = $1 }' > "$W/dis"
     jcc=$(awk '$1 ~ /^j/ && $1 != "jmp" { printf " %s", $1 }' "$W/dis")

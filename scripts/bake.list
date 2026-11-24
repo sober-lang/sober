@@ -1,0 +1,22 @@
+# 焼き込み（std・rtの関数の値をコンパイラに焼き込む — cold81）の入力の例題。scripts/bakepick.ts が貪欲法で選ぶ（重み = その鍵を使う例題の数）
+# 2026-11-18 選び直し: 例題671本の今の鍵で、上位20本がほかの例題の使うstd・rtのβの鍵の94.2%を覆う（40本で96.9%）
+examples/cli_wc.sober
+examples/web_server_route.sober
+examples/utf8_view.sober
+examples/http_router.sober
+examples/quick_props.sober
+examples/web_login.sober
+examples/json_encode.sober
+examples/web_server_hello.sober
+examples/pg_transfer.sober
+examples/web_server_tls.sober
+examples/http_reqresp.sober
+examples/dest_return.sober
+examples/json_put.sober
+examples/security_cache.sober
+examples/domain_requeue.sober
+examples/import_qualified.sober
+examples/float_format.sober
+examples/iter_region_domain_mut.sober
+examples/net_deadline_order.sober
+examples/http_static.sober

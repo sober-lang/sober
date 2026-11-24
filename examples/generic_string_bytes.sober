@@ -1,0 +1,30 @@
+package main
+
+// 総称の実体はstringと[]byteで別（表現は同じでも型は別 — lowerの実体の鍵がstringの印を見る）。同じプログラムでtask.Mapの結果を[]byteに、
+// task.Tryの結果をstringにする（task.Outcome[T]の実体が2つ。鍵が同じだと、Tryのswitchの `v` が[]byteになって腕が合流しない）
+
+import "std/task"
+
+func enc(k int) []byte {
+    return []byte{byte(65 + k)}
+}
+
+func msg() string {
+    return "m"
+}
+
+func main() int {
+    es, err := task.Map([]int{1, 2}, (k) => enc(k))
+    n := if err == nil { len(es) } else { 0 }
+    r, serr := task.Run((s task.Scope) => {
+        h := task.Spawn(s, () => msg(), budget: 4 * task.MB)
+        pm := switch task.Try(h) {
+        case task.Ok{v}: v
+        case task.Failed{}: ""
+        case task.Died{cause}: ""
+        }
+        pm
+    })
+    println(n, if serr == nil { r } else { "x" })
+    return 0
+}

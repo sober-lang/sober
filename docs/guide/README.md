@@ -13,9 +13,10 @@ A path for people using Sober for the first time. Read from top to bottom and yo
 7. [Standard library guide](std.md) — a map by package
 8. [Web client](web-client.md) — calling HTTP APIs with `std/http/client`: one-shot requests, failure labels, carrying cookies as values, streamed bodies and keep-alive sessions
 9. [Web server](web-server.md) — serving HTTP with `std/http/server`: routing, where state lives, streaming and SSE, safe cookies, login sessions, TLS, running in production
-10. [PostgreSQL](postgres.md) — using a database with `std/pg`: connecting with TLS and SCRAM, statements with the SQL text in a const slot, reading rows, failure labels, transactions, a connection pool
-11. [Security guide](security.md) — threat by threat: what Sober removes, how, and what it leaves to you
-12. [Environment variables](env.md) — the variables a Sober program reads at run time (the runtime and the standard library)
+10. [Logs — print.Log](logs.md) — writing records as JSON Lines with print.Log from `std/print`: the line format, where it goes (`@logs`), records that cannot be written
+11. [PostgreSQL](postgres.md) — using a database with `std/pg`: connecting with TLS and SCRAM, statements with the SQL text in a const slot, reading rows, failure labels, transactions, a connection pool
+12. [Security guide](security.md) — threat by threat: what Sober removes, how, and what it leaves to you
+13. [Environment variables](env.md) — the variables a Sober program reads at run time (the runtime and the standard library)
 
 Every code example in the guide is a real file in `examples/`; the compiler's verification net (`scripts/gates.sh`) builds and runs each one every time and checks the output (only the PostgreSQL examples are built and checked without running, since the net has no database; `scripts/pgoracle.sh` runs them and checks their output).
 

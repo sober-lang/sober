@@ -129,6 +129,10 @@
           "path": "std/internal/utf8"
         },
         {
+          "ref": "iter",
+          "path": "std/iter"
+        },
+        {
           "ref": "iter#",
           "path": "std/iter"
         },
@@ -297,10 +301,9 @@
           "has_try": false,
           "callees": [
             "append",
-            "byte",
             "errOf",
             "freeze",
-            "len",
+            "iter.Range",
             "sysAddr",
             "sysCall",
             "sysDeadline"

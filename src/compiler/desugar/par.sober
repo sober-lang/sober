@@ -75,7 +75,7 @@ func parCall(st mut S, key int, fi int, args ListRef, at NodeRef, eb int, ef int
         ep := expr(mut st, latN(mut st, args, 1), eb, ef, depth)?
         eb2 := giveBind(mut st, lam, eb, depth, ept)
         sc := expr(mut st, latN(mut st, args, 0), eb, ef, depth + 1)?
-        sp := parSpawn(mut st, sc, latN(mut st, args, 2), at, eb2, ef, depth + 1, 1)?
+        sp := parSpawn(mut st, sc, latN(mut st, args, 0), latN(mut st, args, 2), at, eb2, ef, depth + 1, 1)?
         return cLet(mut st, ep, sp), nil
     }
     if key == PAR_SCOPE {
@@ -95,7 +95,7 @@ func parCall(st mut S, key int, fi int, args ListRef, at NodeRef, eb int, ef int
             return 0, diag.Malformed{at: posOf(mut st, at)}
         }
         sc := expr(mut st, latN(mut st, args, 0), eb, ef, depth)?
-        return parSpawn(mut st, sc, latN(mut st, args, 1), at, eb, ef, depth, 0)
+        return parSpawn(mut st, sc, latN(mut st, args, 0), latN(mut st, args, 1), at, eb, ef, depth, 0)
     }
     if na != 1 {
         return 0, diag.Malformed{at: posOf(mut st, at)}
@@ -430,7 +430,7 @@ func parSpawnIn(st mut S, fi int, args ListRef, at NodeRef, eb int, ef int, dept
     }
     p := expr(mut st, latN(mut st, args, 1), eb, ef, depth)?
     sc := expr(mut st, latN(mut st, args, 0), eb, ef, depth + 1)?
-    sp := parSpawn(mut st, sc, latN(mut st, args, 2), at, eb, ef, depth + 1, 0)?
+    sp := parSpawn(mut st, sc, latN(mut st, args, 0), latN(mut st, args, 2), at, eb, ef, depth + 1, 0)?
     et := errTy(mut st, st.curPkg, at, TYFUEL)?
     nilv := zeroOf(mut st, tOpt(mut st, et), at)?
     td := variantIn(mut st, fnPkg(mut st, fi), strLit(mut st, "Shed"), 0)
@@ -449,9 +449,33 @@ func parSpawnIn(st mut S, fi int, args ListRef, at NodeRef, eb int, ef int, dept
     return cLet(mut st, p, cIte(mut st, cTT(mut st), ok, shed)), nil
 }
 
+// spawnの子の捕獲（自由変数の添字fv — spawnの点の深さdepthから数える）のうち、scopeの実引数scnのregionを越えて渡せない値の束縛
+// （Leanの Ty.givable rs が偽 — 反復・ブロックのregionで作った値など）。無ければ -1。束縛の列に無い変数（脱糖器の隠れの束縛）と割った束縛は見ない
+func spawnCapBad(st mut S, scn NodeRef, fv []int, eb int, ef int, depth int) int {
+    stt := computeTy(mut st, scn, eb, ef)
+    if stt == -1 || tg(mut st, stt) != TOwn || tyAt(mut st, stt).a != OWN_SCOPE {
+        return -1
+    }
+    rs := tRegion(mut st, stt)
+    for j <- fv {
+        lv := depth - 1 - j
+        mut b := eb
+        while b >= 0 && bnd(mut st, b).level != lv {
+            b = bnd(mut st, b).parent
+        }
+        if b >= 0 {
+            x := bnd(mut st, b)
+            if !x.split && x.ty != -1 && !tyGivable(mut st, rs, x.ty) {
+                return b
+            }
+        }
+    }
+    return -1
+}
+
 // `task.Spawn(s, () => g)`: `spawn s a g'` — クロージャ変換（コアの上 — p3a-draft 1.2）: gを親の環境・1段深いregion（子自前のregion）で
 // 脱糖し、コアの自由変数（親の束縛）を組 a に詰めて、本体の参照を var 0 の射影へ置き換える
-func parSpawn(st mut S, sc CoreRef, arg NodeRef, at NodeRef, eb int, ef int, depth int, np int) (CoreRef, error?) {
+func parSpawn(st mut S, sc CoreRef, scn NodeRef, arg NodeRef, at NodeRef, eb int, ef int, depth int, np int) (CoreRef, error?) {
     lam := parLambda(mut st, arg, np)
     if lam == -1 {
         return 0, diag.Malformed{at: posOf(mut st, at)}
@@ -478,6 +502,12 @@ func parSpawn(st mut S, sc CoreRef, arg NodeRef, at NodeRef, eb int, ef int, dep
     }
     fv := freeze(fv0)
     n := len(fv)
+    // 捕獲の寿命（Leanの kSpawn の givable rs — checkの検査器と同じ判定をbuildの道でも掛ける）
+    bad := spawnCapBad(mut st, scn, fv, eb, ef, depth)
+    if bad >= 0 {
+        hit := fsAny(mut st, nB(nodeOf(mut st, lam)), bnd(mut st, bad).name)
+        return 0, diag.Par{at: posOf(mut st, if hit != -1 { hit } else { at }), kind: 41}
+    }
     vs := ListRef(listN(mut st, n))
     for m <- iter.Range(0, n) {
         hsetCore(mut st, int(vs) + 1 + m, cVar(mut st, fv[m]))

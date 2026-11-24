@@ -11,7 +11,9 @@ import "std/crypto/hkdf"
 import "std/crypto/hmac"
 import "std/crypto/sha256"
 import "std/crypto/x25519"
+import "std/internal/ip"
 import "std/internal/x509"
+import "std/strings"
 import "std/iter"
 import "std/internal/p256"
 import "std/internal/record"
@@ -239,21 +241,9 @@ func clientHello(p CParams, random []byte, sessid []byte, group int, pub []byte,
     return msg(tClientHello, freeze(b))
 }
 
-// IPv4 / IPv6 の綴りか（SNI に IP は載せない — RFC 6066 3）
+// IPv4 / IPv6 の綴りか（SNI に IP は載せない。RFC 6066 3）。IPv6 は角括弧があれば外して読む
 func isIPLit(h string) bool {
-    hb := bytes(h)
-    mut dots := 0
-    for x <- hb {
-        if x == ':' {
-            return true
-        }
-        if x == '.' {
-            dots += 1
-        } else if x < '0' || x > '9' {
-            return false
-        }
-    }
-    return dots == 3
+    return len(internal.ip.Parse4(h)) == 4 || len(internal.ip.Parse6(strings.TrimSuffix(strings.TrimPrefix(h, "["), "]"))) == 16
 }
 
 // 受けた record の枠を 1 つ食わせる

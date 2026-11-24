@@ -4,6 +4,7 @@ package io
 // 失敗はerrnoを反映したラベル（NotFound・Denied・Timeout・Other）か、囲むtask.Runの期限が尽きた後のExpiredで返る。
 // text として読むなら `s := string(io.ReadFile(p)?)?`（UTF-8 の検査つき）
 
+import "std/iter"
 import "std/strings"
 
 // 組み込みの宣言（本体なし。実装はコンパイラの表: loader/intrinsic.sober・desugar / lower の SysKey）
@@ -349,8 +350,9 @@ func ReadAt(f File, off int, n int) ([]byte, error?) {
         return []byte{}, Expired{}
     }
     mut b := mut []byte{}
-    while len(b) < n {
-        b = append(b, byte(0))
+    // 零で埋める形（lower が一括の埋めに下ろす。要素ごとの append にしない）
+    for _ <- iter.Range(0, n) {
+        b = append(b, 0)
     }
     mut got := 0
     while got < n {

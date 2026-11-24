@@ -4,6 +4,8 @@
 # 入力 = examples/effects_*.sober（負例の違反の表を含む）と std の全 package（合成の main — 宣言の違反 0 件の証人）と compiler/ 自身（要約の行だけ — 自己 check の受理の証人）。
 #
 #   scripts/effectsdump.sh [--regen]
+# ゴールデンの並びを呼び手のロケールに依らせない
+export LC_ALL=C.UTF-8
 set -uo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$PWD

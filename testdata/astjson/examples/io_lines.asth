@@ -1,6 +1,8 @@
-@@full	8eb6fb393aa7a1c2	1372	41536
-@head	ba880a0d4d84da63	0	217
+@@full	c64399094fa447b5	1791	52879
+@head	3dbf37cddba5ca2b	0	248
 const longLen	5cb8eedd3fbae862	1	51
 func allx	bb7ed2a9266d5049	30	1067
-func main	8558b7da740da744	77	2546
+func main	b711b9e6892040a4	87	2863
+func removeAll	587e7712509490fc	18	694
 func run	6a2485fc8263e143	110	3588
+func runDir	25a59a75464b1e89	37	1321

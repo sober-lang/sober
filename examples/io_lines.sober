@@ -2,9 +2,10 @@ package main
 
 // io.Lines の確認: 切片（64 KiB）の境界をまたぐ行の縫い直し・空行・CRLF・LF の無い末尾の行。
 // 行の設計: alpha / 空行 / crlf(CRLF) / 'x' × 70,000（切片1と2をまたぐ — またいだ行だけstdの中でコピーする）/ tail（LFなし）。
-// リポジトリのルートを cwd にして実行する。書き込み先は out/ の下
+// リポジトリのルートを cwd にして実行する。書き込み先は実行ごとの out/io_lines.<n> の下
 import "std/io"
 import "std/iter"
+import "std/os"
 
 const longLen = 70000
 
@@ -42,7 +43,9 @@ func run(p string) (int, error?) {
 }
 
 func main() int {
-    p := "out/io_lines.tmp"
+    d := runDir("io_lines")
+    defer removeAll(d)
+    p := d + "/io_lines.tmp"
     mut w := mut []byte{}
     for c <- bytes("alpha\n\ncrlf\r\n") {
         w = append(w, c)
@@ -61,4 +64,26 @@ func main() int {
     // 500 = 5 行・下 2 桁 0 = 不一致なし
     println("result: ${r}")
     return 0
+}
+
+// 実行ごとの置き場 out/<name>.<単調時計の値>（同じ作業ディレクトリで同時に走る実行どうしが上書きし合わない）。
+// mkdirは既にあれば失敗するので、作れた名前がこの実行のもの。作れない状態で回り続けないよう、試す回数に上限を置く（作れなければ ""）
+func runDir(name string) string {
+    _ = os.Mkdir("out")
+    mut n := 0
+    while n < 100 {
+        c := "out/${name}.${os.Monotonic()}"
+        if os.Mkdir(c) == nil {
+            return c
+        }
+        n = n + 1
+    }
+    return ""
+}
+
+// 置き場を中身ごと消す
+func removeAll(d string) {
+    if d != "" {
+        _ = os.Run("/bin/rm", []string{"-rf", d}) catch 0
+    }
 }

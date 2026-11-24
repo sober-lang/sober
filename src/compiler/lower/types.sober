@@ -22,6 +22,7 @@ const TFunc = 10   // a = FnType（関数型の仮引数 — 値ではない）
 const TFnv = 11    // a = FnType（関数値）・b = 値の位置のフラグ（匿名の関数型のフィールド — 工程5d）・c = 名前付き関数型（型宣言 + 1）
 const TNamed = 12  // named scalar（language.md 32 節）: a = 下地の型（int / bool）, b = 型宣言の節。表現は下地と同じ1ワード
 const TFloat = 14  // float（language.md 37 節）: 1ワードにIEEE 754 binary64のビット列（演算の瞬間だけxmmへ — x86.soberのxFloat*）
+const TMulti = 15  // 分岐の末尾の多値（if・switchの式を多値の右辺に置いた形）: a = 要素の型の列。値は要素の値の列。lowerの内部だけ（IRへは要素ごとに出る）
 const TByte = 13   // byte（language.md 33 節）: ワードの中の0〜255（[]byteのセルは段階Bまでワードのまま）。型なしの整数定数を受ける・比較6種・算術なし
 
 // StructInfo / UnionInfo（st.typesのチェーン）: [tag(TStruct / TUnion), decl, pkg, fields / variants（列）, words, state, next, 型]

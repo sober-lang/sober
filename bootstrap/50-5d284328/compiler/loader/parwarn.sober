@@ -1,0 +1,13 @@
+package loader
+
+import "std/io"
+
+// 並列の子が死んで、親が別の経路（逐次）で作り直したことを標準エラーへ1行（既定で出す — 黙って遅くならないように）。
+// stage = 段の名前・kids = 子の数・redo = 作り直した経路・more = 上げる設定の追記（空でよい）。出力は経路に依らないので変わらない。
+// 子の死因と高水位は親から読めない（task.Cause は不透明・台帳に子ごとの値は無い）ので、起きうる原因として子のregionのスロットを添える
+func ParFellBack(stage string, kids int, redo string, more string) {
+    slot := finEnv("SOBER_TASK_REGION_MB")
+    mb := if slot > 0 { slot } else { 512 }
+    _ = io.WriteStderr(bytes("sober: ${stage}: a parallel child died (${kids} children); redone ${redo} — the output is the same, only slower. " +
+        "The parent cannot see the child's cause or peak; the usual cause is the child's region slot (SOBER_TASK_REGION_MB = ${mb} MiB): raise SOBER_TASK_REGION_MB${more}\n"))
+}

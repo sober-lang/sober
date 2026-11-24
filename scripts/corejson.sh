@@ -34,6 +34,13 @@ gold_post() {
         read -r ta tb <<< "$pair"
         cmp -s "$1/$ta.json" "$1/$tb.json" || { echo "FAIL: core JSON of $ta differs from its expanded twin $tb (an alias is not transparent)"; bad=1; }
     done
+    # 展開の共有（desugar/share.sober）: examples/expand_share のコアに、applyの展開が3つ（dblとincの共有の定義が1本ずつ・捕獲のあるラムダの呼び所の埋め込み1つ）、
+    # renderの展開が1つ（同じ関数を渡す2か所の共有の定義）。共有しない形への退行（4 / 2）と、条件を外れる形を共有する誤り（2）を見る
+    local es=$1/examples_expand_share.json n
+    if [ -f "$es" ]; then
+        n=$(node -e 'const s=require("fs").readFileSync(process.argv[1],"utf8");const c=m=>s.split(JSON.stringify(Array.from(Buffer.from(m)))).length-1;console.log(c("expand-share-apply")+" "+c("expand-share-render"))' "$es")
+        [ "$n" = "3 1" ] || { echo "FAIL: examples/expand_share: the expansions of apply / render in the core are $n (want 3 1 — desugar/share.sober)"; bad=1; }
+    fi
     [ "$bad" = 0 ]
 }
 gold_text_main core corejson "$0" "$@"

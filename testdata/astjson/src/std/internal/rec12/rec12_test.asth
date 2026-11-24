@@ -1,0 +1,6 @@
+@@full	73dcab08a2b2fcc4	1744	62230
+@head	921e908340d9939e	0	301
+func TestAead	bc0b8e356b4d2de1	183	5568
+func TestPrf	a802f1ffa5cad627	30	1367
+func flip	0ffd4a28426e2a74	46	1552
+func pat	4afb1f0aa7bb282b	37	1328

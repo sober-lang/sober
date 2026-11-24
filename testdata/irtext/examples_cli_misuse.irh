@@ -1,4 +1,4 @@
-@@full	d5dd561a1822df79	54854	1185617
+@@full	51b358b638ec337b	54838	1185270
 @globals	133e6af536ac034a	156	5359
 main.main	5a909d3a64ab810e	1649	38222
 main.try	59f965d83c09b934	5694	139574
@@ -40,7 +40,7 @@ rt.write_all	055ce3041b682336	37	563
 rt.write_fd	079b825360e0fd15	8	156
 rt.write_file	7b5c6fea05e73e3e	47	846
 sober_entry	017a210055670993	968	18950
-std/builder.Build[byte]	71a2e1eea257de3b	317	6174
+std/builder.Build[byte]	dabba60e422eae8b	313	6088
 std/builder.PushAll[byte]	8affe3bcddfa6c5c	180	3255
 std/builder.PushBetween[byte]	1ce3b72b338fc7b2	199	3749
 std/builder.PushString	c4f42da0f27b2d86	31	667
@@ -48,7 +48,7 @@ std/builder.PushWord	e5df9f41a165b038	116	2107
 std/builder.Push[byte]	0ab962c91f11ee58	71	1327
 std/builder.pushAllSlow[byte]	4191315bab713a59	220	4069
 std/builder.pushBetweenSlow[byte]	5e2ec5431996fcb0	37	884
-std/builder.pushSlow[byte]	8c201cc60987728b	357	7033
+std/builder.pushSlow[byte]	1546d233e5965b10	353	6946
 std/builder.pushWordSlow	ab0b2044e7609547	54	985
 std/cli.Format	6e0b286485f5c4f7	1397	33663
 std/cli.Is	4e5c0014c70607dd	21	345
@@ -140,7 +140,7 @@ std/strings.Cut	0fdb95b4ff759b2a	177	3429
 std/strings.Fields	5859346739228e87	278	5299
 std/strings.HasPrefix	496b5e1c70286c46	48	1003
 std/strings.IndexInvalid	e9b3178b203570fa	260	4632
-std/strings.Join	43997b6f1efd0a54	489	9859
+std/strings.Join	6488ff3cddf6168e	481	9685
 std/strings.TrimPrefix	fe4403dfe9a2a94d	108	2098
 std/strings.TrimSuffix	12c7f25ce26a3ad4	112	2188
 std/strings.cont	95fdb007c8799239	48	845

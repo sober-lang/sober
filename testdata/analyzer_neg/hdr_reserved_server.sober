@@ -1,0 +1,12 @@
+package main
+
+import "std/http"
+import "std/http/server"
+
+const SC = "Set-Cookie"
+
+// serverが書くヘッダの名前を、文字列のリテラルとconstでheaders:に書く
+func main() {
+    rs := []http.server.Route{http.server.Route{method: "GET", path: "/", handler: (r) => http.server.Response{status: 200, contentType: "text/plain", body: bytes("hi"), headers: http.server.Headers{list: []http.Field{http.Field{name: "Date", value: "x"}, http.Field{name: "content-type", value: "text/html"}, http.Field{name: "Content-Encoding", value: "gzip"}, http.Field{name: "Vary", value: "*"}, http.Field{name: "CDN-Cache-Control", value: "max-age=1"}, http.Field{name: "ETag", value: "\"a\""}, http.Field{name: SC, value: "a=b"}}}}}}
+    println(len(rs))
+}

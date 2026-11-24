@@ -1,0 +1,12 @@
+package main
+
+import "std/http"
+import "std/http/client"
+
+const H = "Host"
+
+// clientが書くヘッダの名前を、文字列のリテラル・const・`+` でheaders:に書く
+func main() {
+    r, e := http.client.Request("http://127.0.0.1:1/", headers: []http.Field{http.Field{name: H, value: "x"}, http.Field{name: "transfer-" + "encoding", value: "chunked"}, http.Field{"Connection", "close"}, http.Field{name: "content-length", value: "0"}})
+    println(e == nil)
+}

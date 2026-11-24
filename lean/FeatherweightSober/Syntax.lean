@@ -630,8 +630,10 @@ def Ty.sub : Ty → Ty → Bool
   | .ref false r t, .ref false r' t' => decide (r ≤ r') && decide (t = t')
   | .slice false r t, .slice false r' t' => decide (r ≤ r') && Ty.sub t t'
   | .map false r t, .map false r' t' => decide (r ≤ r') && Ty.sub t t'
-  -- domain の家の region は imm の参照と同じく上界（関数の実引数で呼び手空間へ合わせる — 状態の型は不変）
-  | .dom r t, .dom r' t' => decide (r ≤ r') && decide (t = t')
+  -- domain の家の region は imm の参照と同じく上界（関数の実引数で呼び手空間へ合わせる）。状態の型は形で比べる（relocR 0 の一致）:
+  -- 状態は機械の表に relocR 0 で梱包され、入ると今の最内の region へ写る（denter）ので、状態の型の内側の領域の番号は信用されない。
+  -- 内側も浅い imm 共変（Ty.sub）にして、上界の緩みが escape 検査を狭める向きに保たれる（Ty.sub_regionsBelow）
+  | .dom r t, .dom r' t' => decide (r ≤ r') && Ty.sub t t' && decide (t.relocR 0 = t'.relocR 0)
   | .muRs r n i b, .muRs r' n' i' b' =>
     decide (n = n') && decide (i = i') && decide (b = b') && (decide (r = r') || (decide (r ≤ r') && b.covOk))
   | a, b => decide (a = b)
@@ -663,7 +665,7 @@ theorem Ty.sub_refl : ∀ t : Ty, Ty.sub t t = true
   | .slice m r t => by cases m <;> simp [Ty.sub, Ty.sub_refl t]
   | .map m r t => by cases m <;> simp [Ty.sub, Ty.sub_refl t]
   | .chan rc t => by simp [Ty.sub]
-  | .dom rc t => by simp [Ty.sub]
+  | .dom rc t => by simp [Ty.sub, Ty.sub_refl t]
   | .own k r t => by simp [Ty.sub]
   | .fn p r => by simp [Ty.sub]
   | .mus _ _ b => by simp [Ty.sub]
@@ -727,11 +729,11 @@ theorem Ty.sub_regionsBelow {d : Nat} :
     simp only [Ty.sub, decide_eq_true_eq] at hs
     exact hs ▸ hb
   | .dom rc t, tb, hs, hb => by
-    obtain ⟨r', rfl, hle⟩ : ∃ r', tb = .dom r' t ∧ rc ≤ r' := by
+    obtain ⟨r', t', rfl, hle, hst⟩ : ∃ r' t', tb = .dom r' t' ∧ rc ≤ r' ∧ Ty.sub t t' = true := by
       cases tb <;> simp [Ty.sub] at hs
-      · obtain ⟨h1, rfl⟩ := hs; exact ⟨_, rfl, h1⟩
+      · exact ⟨_, _, rfl, hs.1.1, hs.1.2⟩
     simp only [Ty.regionsBelow, Bool.and_eq_true, decide_eq_true_eq] at hb ⊢
-    exact ⟨by omega, hb.2⟩
+    exact ⟨by omega, Ty.sub_regionsBelow hst hb.2⟩
   | .own k r t, tb, hs, hb => by
     simp only [Ty.sub, decide_eq_true_eq] at hs
     exact hs ▸ hb
@@ -808,9 +810,9 @@ theorem Ty.sub_mutFree :
     simp only [Ty.sub, decide_eq_true_eq] at hs
     rw [hs]
   | .dom rc t, tb, hs => by
-    obtain ⟨r', rfl⟩ : ∃ r', tb = .dom r' t := by
+    obtain ⟨r', t', rfl⟩ : ∃ r' t', tb = .dom r' t' := by
       cases tb <;> simp [Ty.sub] at hs
-      · obtain ⟨_, rfl⟩ := hs; exact ⟨_, rfl⟩
+      · exact ⟨_, _, rfl⟩
     simp [Ty.mutFree]
   | .own k r t, tb, hs => by
     simp only [Ty.sub, decide_eq_true_eq] at hs
@@ -911,9 +913,9 @@ theorem Ty.sub_chan_inv {rc : Nat} {t tb : Ty} (hs : Ty.sub (.chan rc t) tb = tr
   · obtain ⟨rfl, rfl⟩ := hs; rfl
 
 theorem Ty.sub_dom_inv {rc : Nat} {t tb : Ty} (hs : Ty.sub (.dom rc t) tb = true) :
-    ∃ r', tb = .dom r' t ∧ rc ≤ r' := by
+    ∃ r' t', tb = .dom r' t' ∧ rc ≤ r' ∧ Ty.sub t t' = true ∧ t.relocR 0 = t'.relocR 0 := by
   cases tb <;> simp [Ty.sub] at hs
-  · obtain ⟨h1, rfl⟩ := hs; exact ⟨_, rfl, h1⟩
+  · obtain ⟨⟨h1, h2⟩, h3⟩ := hs; exact ⟨_, _, rfl, h1, h2, h3⟩
 
 theorem Ty.sub_own_inv {k : OwnK} {r : Nat} {t tb : Ty} (hs : Ty.sub (.own k r t) tb = true) :
     tb = .own k r t := by
@@ -1004,9 +1006,9 @@ theorem Ty.sub_trans : ∀ {a b c : Ty}, Ty.sub a b = true → Ty.sub b c = true
   | .unit, _, _, h1, h2 => by obtain rfl := Ty.sub_unit_inv h1; exact h2
   | .chan _ _, _, _, h1, h2 => by obtain rfl := Ty.sub_chan_inv h1; exact h2
   | .dom _ _, _, _, h1, h2 => by
-    obtain ⟨r1, rfl, h1'⟩ := Ty.sub_dom_inv h1
-    obtain ⟨r2, rfl, h2'⟩ := Ty.sub_dom_inv h2
-    simp only [Ty.sub, Bool.and_eq_true, decide_eq_true_eq]; exact ⟨by omega, trivial⟩
+    obtain ⟨r1, t1, rfl, h1', s1, e1⟩ := Ty.sub_dom_inv h1
+    obtain ⟨r2, t2, rfl, h2', s2, e2⟩ := Ty.sub_dom_inv h2
+    simp only [Ty.sub, Bool.and_eq_true, decide_eq_true_eq]; exact ⟨⟨by omega, Ty.sub_trans s1 s2⟩, e1.trans e2⟩
   | .own _ _ _, _, _, h1, h2 => by obtain rfl := Ty.sub_own_inv h1; exact h2
   | .fn _ _, _, _, h1, h2 => by obtain rfl := Ty.sub_fn_inv h1; exact h2
   | .mus _ _ _, _, _, h1, h2 => by obtain rfl := Ty.sub_mus_inv h1; exact h2
@@ -1047,6 +1049,33 @@ theorem Ty.sub_trans : ∀ {a b c : Ty}, Ty.sub a b = true → Ty.sub b c = true
     · exact .inr ⟨h', hc'⟩
     · exact .inr ⟨h, hc⟩
     · exact .inr ⟨by omega, hc⟩
+
+/-- relocR 0 はシフトの前の relocR 0 を吸収する（domain の状態の型を形で比べる Ty.sub の腕が、シフトで崩れない） -/
+theorem Ty.relocR0_shiftR_abs {ρ : Nat} : ∀ t : Ty, ((t.relocR 0).shiftR ρ).relocR 0 = (t.shiftR ρ).relocR 0
+  | .int => rfl
+  | .tvar i r k => by cases h1 : k.rf <;> cases h2 : k.imm <;> simp [Ty.relocR, Ty.shiftR, h1, h2]
+  | .bool => rfl
+  | .byte => rfl
+  | .f64 => rfl
+  | .unit => rfl
+  | .opt t => by simp [Ty.relocR, Ty.shiftR, Ty.relocR0_shiftR_abs t]
+  | .union l r => by simp [Ty.relocR, Ty.shiftR, Ty.relocR0_shiftR_abs l, Ty.relocR0_shiftR_abs r]
+  | .prod l r => by simp [Ty.relocR, Ty.shiftR, Ty.relocR0_shiftR_abs l, Ty.relocR0_shiftR_abs r]
+  | .ref m r t => by cases m <;> simp [Ty.relocR, Ty.shiftR, Ty.shiftR_zero, Ty.relocR0_shiftR_abs t]
+  | .slice m r t => by cases m <;> simp [Ty.relocR, Ty.shiftR, Ty.shiftR_zero, Ty.relocR0_shiftR_abs t]
+  | .map m r t => by cases m <;> simp [Ty.relocR, Ty.shiftR, Ty.shiftR_zero, Ty.relocR0_shiftR_abs t]
+  | .chan rc t => by simp [Ty.relocR, Ty.shiftR, Ty.shiftR_zero]
+  | .dom rc t => by simp [Ty.relocR, Ty.shiftR, Ty.shiftR_zero]
+  | .own k r t => by simp [Ty.relocR, Ty.shiftR, Ty.shiftR_zero]
+  | .fn p r => rfl
+  | .mus _ _ _ => rfl
+  | .rvar _ => rfl
+  | .muRs r n i b => by cases h : b.mutFree <;> simp [Ty.relocR, Ty.shiftR, h]
+
+/-- relocR 0 の一致はシフトの後も保たれる -/
+theorem Ty.relocR_congr_shiftR {ρ : Nat} {a b : Ty} (h : a.relocR 0 = b.relocR 0) :
+    (a.shiftR ρ).relocR 0 = (b.shiftR ρ).relocR 0 := by
+  rw [← Ty.relocR0_shiftR_abs a, ← Ty.relocR0_shiftR_abs b, h]
 
 /-- sub とシフトの可換性: 両辺を同じ ρ でずらしても sub は保たれる
 （シフト定理の call ケース） -/
@@ -1106,8 +1135,9 @@ theorem Ty.sub_shiftR {ρ : Nat} :
     obtain rfl := Ty.sub_chan_inv hs
     exact Ty.sub_refl _
   | .dom rc t, tb, hs => by
-    obtain ⟨r', rfl, hle⟩ := Ty.sub_dom_inv hs
-    simp only [Ty.shiftR, Ty.sub, Bool.and_eq_true, decide_eq_true_eq]; exact ⟨by omega, trivial⟩
+    obtain ⟨r', t', rfl, hle, hst, he⟩ := Ty.sub_dom_inv hs
+    simp only [Ty.shiftR, Ty.sub, Bool.and_eq_true, decide_eq_true_eq]
+    exact ⟨⟨by omega, Ty.sub_shiftR hst⟩, Ty.relocR_congr_shiftR he⟩
   | .own k r t, tb, hs => by
     obtain rfl := Ty.sub_own_inv hs
     exact Ty.sub_refl _
@@ -1652,6 +1682,54 @@ theorem Ty.tsubst_mutFree {ts : List Ty} : ∀ t : Ty, t.mutFree = true → t.ki
   | map m r t ih => cases m <;> simp_all [Ty.tsubst, Ty.mutFree, Ty.kindsOk]
   | _ => simp_all [Ty.tsubst, Ty.mutFree, Ty.kindsOk]
 
+/-- relocR 0 は型代入の前の relocR 0 を吸収する（domain の状態の型を形で比べる Ty.sub の腕が、型代入で崩れない） -/
+theorem Ty.relocR0_tsubst_abs {ts : List Ty} : ∀ t : Ty, t.kindsOk ts = true →
+    ((t.relocR 0).tsubst ts).relocR 0 = (t.tsubst ts).relocR 0
+  | .int, _ => rfl
+  | .tvar i r k, hk => by
+    cases h1 : k.rf
+    · cases h2 : k.imm
+      · simp [Ty.relocR, h1, h2]
+      · cases hi : ts[i]? with
+        | none => simp [Ty.relocR, Ty.tsubst, h1, h2, hi]
+        | some s =>
+          simp only [Ty.kindsOk, hi] at hk
+          have hmc : s.mutFree = true ∧ s.chanFree = true := by
+            simp [Kind.imm, h1] at h2; simp [kindOk, h2.1, h2.2] at hk; exact ⟨by simp_all, by simp_all⟩
+          simp [Ty.relocR, Ty.tsubst, h1, h2, hi, Ty.relocR_atR _ _ s hmc.1 hmc.2]
+    · simp [Ty.relocR, h1]
+  | .bool, _ => rfl
+  | .byte, _ => rfl
+  | .f64, _ => rfl
+  | .unit, _ => rfl
+  | .opt t, hk => by simp [Ty.kindsOk] at hk; simp [Ty.relocR, Ty.tsubst, Ty.relocR0_tsubst_abs t hk]
+  | .union l r, hk => by
+    simp [Ty.kindsOk] at hk; simp [Ty.relocR, Ty.tsubst, Ty.relocR0_tsubst_abs l hk.1, Ty.relocR0_tsubst_abs r hk.2]
+  | .prod l r, hk => by
+    simp [Ty.kindsOk] at hk; simp [Ty.relocR, Ty.tsubst, Ty.relocR0_tsubst_abs l hk.1, Ty.relocR0_tsubst_abs r hk.2]
+  | .ref m r t, hk => by
+    simp [Ty.kindsOk] at hk; cases m <;> simp [Ty.relocR, Ty.tsubst, Ty.shiftR_zero, Ty.relocR0_tsubst_abs t hk]
+  | .slice m r t, hk => by
+    simp [Ty.kindsOk] at hk; cases m <;> simp [Ty.relocR, Ty.tsubst, Ty.shiftR_zero, Ty.relocR0_tsubst_abs t hk]
+  | .map m r t, hk => by
+    simp [Ty.kindsOk] at hk; cases m <;> simp [Ty.relocR, Ty.tsubst, Ty.shiftR_zero, Ty.relocR0_tsubst_abs t hk]
+  | .chan rc t, _ => by simp [Ty.relocR, Ty.tsubst, Ty.shiftR_zero]
+  | .dom rc t, _ => by simp [Ty.relocR, Ty.tsubst, Ty.shiftR_zero]
+  | .own k r t, _ => by simp [Ty.relocR, Ty.tsubst, Ty.shiftR_zero]
+  | .fn p r, _ => rfl
+  | .mus _ _ _, _ => rfl
+  | .rvar _, _ => rfl
+  | .muRs r n i b, hk => by
+    simp [Ty.kindsOk] at hk
+    cases h : b.mutFree
+    · simp [Ty.relocR, Ty.tsubst, h]
+    · simp [Ty.relocR, Ty.tsubst, h, Ty.tsubst_mutFree b h hk]
+
+/-- relocR 0 の一致は型代入の後も保たれる -/
+theorem Ty.relocR_congr_tsubst {ts : List Ty} {a b : Ty} (ha : a.kindsOk ts = true) (hb : b.kindsOk ts = true)
+    (h : a.relocR 0 = b.relocR 0) : (a.tsubst ts).relocR 0 = (b.tsubst ts).relocR 0 := by
+  rw [← Ty.relocR0_tsubst_abs a ha, ← Ty.relocR0_tsubst_abs b hb, h]
+
 theorem Ty.tsubst_chanFree {ts : List Ty} : ∀ t : Ty, t.chanFree = true → t.kindsOk ts = true → (t.tsubst ts).chanFree = true := by
   intro t; induction t with
   | tvar i r kd =>
@@ -1987,7 +2065,15 @@ theorem Ty.sub_tsubst {ts : List Ty} : ∀ {ta tb : Ty}, Ty.sub ta tb = true →
       · simp [Ty.kindsOk] at ha hb; simp [Ty.tsubst, Ty.sub, h.1, ih h.2 ha hb]
       · obtain ⟨rfl, rfl⟩ := h; exact Ty.sub_refl _
     | _ => cases m <;> simp [Ty.sub] at h
-  | dom r t ih => intro b h ha hb; cases b <;> simp_all [Ty.sub, Ty.tsubst, Ty.kindsOk]
+  | dom r t ih =>
+    intro b h ha hb
+    cases b with
+    | dom r' t' =>
+      simp only [Ty.sub, Bool.and_eq_true, decide_eq_true_eq] at h
+      simp only [Ty.kindsOk] at ha hb
+      simp only [Ty.tsubst, Ty.sub, Bool.and_eq_true, decide_eq_true_eq]
+      exact ⟨⟨h.1.1, ih h.1.2 ha hb⟩, Ty.relocR_congr_tsubst ha hb h.2⟩
+    | _ => simp [Ty.sub] at h
   | muRs r n i bb ih =>
     intro b h ha hb; cases b with
     | muRs r' n' i' b' =>
@@ -3440,6 +3526,10 @@ inductive Expr : Type where
   | unreach (t : Ty)
   /-- 現在（最内）の region への割り当て。参照を返す（m = mut フラグ） -/
   | alloc (m : Bool) (e : Expr)
+  /-- region r への割り当て（alloc の region 指定版 — mksliceAt と同じく r は注釈）: 外のスコープの mut 場所と一緒に
+  anchor つきの呼び出しへ渡す mut の束縛のセルを、最初から行き先の region に作る（mut の実引数の region は正確一致なので、
+  セルが内側の region にあると anchor 1 つに揃わない） -/
+  | allocAt (m : Bool) (r : Nat) (e : Expr)
   /-- `!r` -/
   | deref (e : Expr)
   /-- `r := e`（mut 参照への書き込み）。unit を返す -/
@@ -3626,6 +3716,7 @@ def shift (c : Nat) : Expr → Expr
   | jump n t e => jump n t (shift c e)
   | unreach t => unreach t
   | alloc m e => alloc m (shift c e)
+  | allocAt m r e => allocAt m r (shift c e)
   | deref e => deref (shift c e)
   | assign l e => assign (shift c l) (shift c e)
   | whileE c' b => whileE (shift c c') (shift c b)
@@ -3713,6 +3804,7 @@ def subst (k : Nat) (v : Expr) : Expr → Expr
   | jump n t e => jump n t (subst k v e)
   | unreach t => unreach t
   | alloc m e => alloc m (subst k v e)
+  | allocAt m r e => allocAt m r (subst k v e)
   | deref e => deref (subst k v e)
   | assign l e => assign (subst k v l) (subst k v e)
   | whileE c b => whileE (subst k v c) (subst k v b)
@@ -3804,6 +3896,7 @@ def shiftTy (ρ : Nat) : Expr → Expr
   | jump n t e => jump n (t.shiftR ρ) (shiftTy ρ e)
   | unreach t => unreach (t.shiftR ρ)
   | alloc m e => alloc m (shiftTy ρ e)
+  | allocAt m r e => allocAt m (r + ρ) (shiftTy ρ e)
   | deref e => deref (shiftTy ρ e)
   | assign l e => assign (shiftTy ρ l) (shiftTy ρ e)
   | whileE c b => whileE (shiftTy ρ c) (shiftTy ρ b)
@@ -3892,6 +3985,7 @@ def tsubstTy (ts : List Ty) : Expr → Expr
   | jump n t e => jump n (t.tsubst ts) (tsubstTy ts e)
   | unreach t => unreach (t.tsubst ts)
   | alloc m e => alloc m (tsubstTy ts e)
+  | allocAt m r e => allocAt m r (tsubstTy ts e)
   | deref e => deref (tsubstTy ts e)
   | assign l e => assign (tsubstTy ts l) (tsubstTy ts e)
   | whileE c b => whileE (tsubstTy ts c) (tsubstTy ts b)
@@ -3982,6 +4076,7 @@ def noNewchan : Expr → Bool
   | jump _ _ e => noNewchan e
   | unreach _ => true
   | alloc _ e => noNewchan e
+  | allocAt _ _ e => noNewchan e
   | deref e => noNewchan e
   | assign l e => noNewchan l && noNewchan e
   | whileE c b => noNewchan c && noNewchan b
@@ -4073,6 +4168,7 @@ def renTy (ρ0 δ : Nat) : Expr → Expr
   | jump n t e => jump n (t.renR ρ0 δ) (renTy ρ0 δ e)
   | unreach t => unreach (t.renR ρ0 δ)
   | alloc m e => alloc m (renTy ρ0 δ e)
+  | allocAt m r e => allocAt m (rmap ρ0 δ r) (renTy ρ0 δ e)
   | deref e => deref (renTy ρ0 δ e)
   | assign l e => assign (renTy ρ0 δ l) (renTy ρ0 δ e)
   | whileE c b => whileE (renTy ρ0 δ c) (renTy ρ0 δ b)
@@ -4160,7 +4256,7 @@ def src : Expr → Bool
   | .clone _ e => e.src
   | .mapv _ _ _ _ => false
   | .ite c t e | .ifnil c t e => c.src && t.src && e.src
-  | .some e | .inl _ e | .inr _ e | .block e | .blockR _ e | .copyTo _ _ e | .alloc _ e | .deref e
+  | .some e | .inl _ e | .inr _ e | .block e | .blockR _ e | .copyTo _ _ e | .alloc _ e | .allocAt _ _ e | .deref e
   | .freeze e | .recv e | .close e | .fst e | .snd e | .unfold e | .fold _ e => e.src
   | .dnew _ i _ => i.src
   | .domV _ _ _ => false

@@ -26,10 +26,13 @@ type Place struct {
     gap int
 }
 
-// 配置の計測のオプションつきのビルドの結果。tab = 保存する番地の表（saveでなければ空）
+// 配置の計測と熱さのプロファイルのオプションつきのビルドの結果。tab = 保存する番地の表（saveでなければ空）・
+// pfHit / pfRows = 指紋の合った関数の数・プロファイルの行の数（プロファイルが無ければ0）
 type Placed struct {
     exe []byte
     tab []byte
+    pfHit int
+    pfRows int
 }
 
 func PlaceOff() Place {

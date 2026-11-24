@@ -1,5 +1,5 @@
-@@full	ea8bca483671ea80	5126	98818
-@globals	a153c4ed39e5f4be	55	482
+@@full	e20a2fadeb580685	5149	99180
+@globals	d437034d858da184	55	482
 main.main	10fbb8911ae0cf52	667	15589
 main.sum	3a67b3cc4b83447a	74	1516
 rt.cat8	d7763d59e08dbc55	20	361
@@ -10,7 +10,7 @@ rt.depth_report	82cf7487321a4fba	100	1902
 rt.extend8	07eab8594a80add3	30	524
 rt.flush	beec28d2792e8799	43	659
 rt.grow_try	9e10061b87b86cd0	48	869
-rt.lease_op	49c69261a4461dcc	77	1082
+rt.lease_op	5549b5c2b3e2fd3e	100	1444
 rt.map_grow	f7ce73b3814ab14a	122	2126
 rt.map_hash	d223d44571a67549	52	981
 rt.panic	c3ddf15893018f15	208	3767

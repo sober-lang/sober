@@ -1,0 +1,34 @@
+package main
+
+import "std/os"
+
+// selfpar の spec の枠の割り当ての照合の題材: idx は6種類の定数で呼ばれ、枠（SP_PER = 4）を取り合う。'x' と 'y' は3か所ずつ（頻度が高い）・
+// 'c' 'd' 'e' 'f' は1か所ずつ。名前の順の先着なら名前の早い a1〜a4 の 'c' 'd' 'e' 'f' が枠を取り、頻度の順なら 'x' と 'y' が必ず枠を取る
+func idx(b []byte, c byte) int {
+    mut i := 0
+    while i < len(b) {
+        if b[i] == c {
+            return i
+        }
+        i += 1
+    }
+    return -1
+}
+
+func a1(b []byte) int { return idx(b, 'c') }
+func a2(b []byte) int { return idx(b, 'd') }
+func a3(b []byte) int { return idx(b, 'e') }
+func a4(b []byte) int { return idx(b, 'f') }
+func z1(b []byte) int { return idx(b, 'x') + idx(b, 'y') }
+func z2(b []byte) int { return idx(b, 'x') + idx(b, 'y') }
+func z3(b []byte) int { return idx(b, 'x') + idx(b, 'y') }
+
+func main() int {
+    a, e := os.Args()
+    if e != nil || len(a) == 0 {
+        return 1
+    }
+    b := bytes(a[0])
+    println(a1(b) + a2(b) + a3(b) + a4(b) + z1(b) + z2(b) + z3(b))
+    return 0
+}

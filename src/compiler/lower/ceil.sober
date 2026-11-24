@@ -1,0 +1,291 @@
+package lower
+
+// 天井の空き待ち（Serveの接続の本文の受け）: std/http/serverは、本文の列を伸ばす直前にnet_op 19（rt.ceil_need(n, dl)）で「あとnバイト要る」を頼む。
+// rtは手元（入場の量 + 借りた量）が計上済みの上限の和 + 固定費 + nを覆うまで節のチェーンから借りる。プールの節か根の天井が埋まっていて借りられなければ、
+// 天井の空き待ちの列（全体で1本・FIFO）に積んでparkする。起こすのは台帳を返した点（taskの終わりのadmitReturn・parkのrt.bor_give）で、列の頭から1本。
+// 起きたtaskは借りを試し直し、借りられなければ列の頭に戻る（来た順を保つ）。待ちの期限はdl（粗い時刻の単位 — 呼び手の本文の期限）で、待つ間はTC_RDLに置き、
+// rdlの走査が期限の過ぎた待ち手を -110で起こす。期限を持たない頼み（dl = 0）は待たない（借りられなければその場で戻り、続く確保が今と同じく天井で死ぬ）。
+// 確保の点そのものは待たない（確保の点の中継はワーカーごとの退避の場所を使い、xmmを退避しない — 待つのはこの頼みの点だけ）
+
+// 天井の空き待ち（IO_PENDING + 5 — 起こす側と期限の走査がCASで競う。起こす側 = 1・期限 = -110）
+const PEND_CEIL = -9223372036854775802
+// 列の節のTC_AWPREV: 前の節のTCB・頭なら CQ_HEAD・0 = 列に居ない
+const CQ_HEAD = 1
+
+func buildCeilRt(st mut St) {
+    if !st.rdlOn {
+        return
+    }
+    buildCeilNeed(mut st)
+    buildCeilWake(mut st)
+}
+
+// 列の尾へ（鍵の下）
+func cqPushBack(st mut St, mn int, t int) {
+    zero := iconst(mut st, 0)
+    tp := itop(mut st, t)
+    store(mut st, tp, TC_AWNEXT, zero)
+    tl := load(mut st, mn, MN_CQT)
+    bE := newBlock(mut st)
+    bN := newBlock(mut st)
+    bJ := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, tl, zero), bE, -1, bN, -1)
+    setCur(mut st, bE)
+    store(mut st, mn, MN_CQH, t)
+    store(mut st, tp, TC_AWPREV, iconst(mut st, CQ_HEAD))
+    br(mut st, bJ, -1)
+    setCur(mut st, bN)
+    store(mut st, itop(mut st, tl), TC_AWNEXT, t)
+    store(mut st, tp, TC_AWPREV, tl)
+    br(mut st, bJ, -1)
+    setCur(mut st, bJ)
+    store(mut st, mn, MN_CQT, t)
+}
+
+// 列の頭へ（鍵の下 — 起きて借りられなかった待ち手が来た順の位置へ戻る）
+func cqPushFront(st mut St, mn int, t int) {
+    zero := iconst(mut st, 0)
+    tp := itop(mut st, t)
+    h := load(mut st, mn, MN_CQH)
+    store(mut st, tp, TC_AWPREV, iconst(mut st, CQ_HEAD))
+    store(mut st, tp, TC_AWNEXT, h)
+    bE := newBlock(mut st)
+    bN := newBlock(mut st)
+    bJ := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, h, zero), bE, -1, bN, -1)
+    setCur(mut st, bE)
+    store(mut st, mn, MN_CQT, t)
+    br(mut st, bJ, -1)
+    setCur(mut st, bN)
+    store(mut st, itop(mut st, h), TC_AWPREV, t)
+    br(mut st, bJ, -1)
+    setCur(mut st, bJ)
+    store(mut st, mn, MN_CQH, t)
+}
+
+// 列から外す（鍵の下・列に居るときだけ呼ぶ）
+func cqUnlink(st mut St, mn int, t int) {
+    zero := iconst(mut st, 0)
+    tp := itop(mut st, t)
+    p := load(mut st, tp, TC_AWPREV)
+    nx := load(mut st, tp, TC_AWNEXT)
+    isH := cmp(mut st, CEq, p, iconst(mut st, CQ_HEAD))
+    bH := newBlock(mut st)
+    bP := newBlock(mut st)
+    bJ := newBlock(mut st)
+    condbr(mut st, isH, bH, -1, bP, -1)
+    setCur(mut st, bH)
+    store(mut st, mn, MN_CQH, nx)
+    br(mut st, bJ, -1)
+    setCur(mut st, bP)
+    store(mut st, itop(mut st, p), TC_AWNEXT, nx)
+    br(mut st, bJ, -1)
+    setCur(mut st, bJ)
+    bT := newBlock(mut st)
+    bN := newBlock(mut st)
+    bJ2 := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, nx, zero), bT, -1, bN, -1)
+    setCur(mut st, bT)
+    // 尾を外した: 新しい尾は前の節（頭だったなら空）
+    store(mut st, mn, MN_CQT, bin(mut st, BMul, p, bin(mut st, BXor, isH, iconst(mut st, 1))))
+    br(mut st, bJ2, -1)
+    setCur(mut st, bN)
+    store(mut st, itop(mut st, nx), TC_AWPREV, p)
+    br(mut st, bJ2, -1)
+    setCur(mut st, bJ2)
+    store(mut st, tp, TC_AWPREV, zero)
+    store(mut st, tp, TC_AWNEXT, zero)
+}
+
+// 手元の下限（TC_BORの上位 — admit.soberのborPin）を、少なくともneedバイト（BOR_UNITに切り上げ）に上げる
+func ceilPinUp(st mut St, me int, need int) {
+    u := bin(mut st, BSar, bin(mut st, BAdd, need, iconst(mut st, BOR_UNIT - 1)), iconst(mut st, 16))
+    w := load(mut st, me, TC_BOR)
+    pcur := bin(mut st, BAnd, bin(mut st, BSar, w, iconst(mut st, BOR_PSHIFT)), iconst(mut st, BOR_PMASK))
+    nu := imin(mut st, imax(mut st, pcur, u), iconst(mut st, BOR_PMASK))
+    store(mut st, me, TC_BOR, bin(mut st, BOr, bin(mut st, BAnd, w, iconst(mut st, 17592186044415)), bin(mut st, BShl, nu, iconst(mut st, BOR_PSHIFT))))
+}
+
+// 入場した節（プールの節のときだけ）の、予約で埋まっていない天井（天井 − 予約の和。借りが全部返っても空くのはここまで）。プールの節でなければ大きい値
+func ceilRoom(st mut St, me int) int {
+    if !st.poolOn {
+        return iconst(mut st, LED_BMAX)
+    }
+    n0 := load(mut st, me, TC_NODE)
+    lo := bin(mut st, BSub, bin(mut st, BAdd, ptoi(mut st, globaladdr(mut st, st.poolG)), iconst(mut st, 8)), iconst(mut st, SR_LED * 8))
+    off := bin(mut st, BSub, n0, lo)
+    inP := bin(mut st, BAnd, cmp(mut st, CGe, off, iconst(mut st, 0)), cmp(mut st, CLt, off, iconst(mut st, POOL_MAX * POOL_W * 8)))
+    bP := newBlock(mut st)
+    bJ := newBlock(mut st)
+    r := param(mut st, bJ, TyI64)
+    condbr(mut st, inP, bP, -1, bJ, list1(mut st, iconst(mut st, LED_BMAX)))
+    setCur(mut st, bP)
+    led := bin(mut st, BAnd, load(mut st, itop(mut st, n0), SR_LED), iconst(mut st, 2 * LED_BMAX + 1))
+    br(mut st, bJ, list1(mut st, bin(mut st, BSub, iconst(mut st, LED_BMAX), led)))
+    setCur(mut st, bJ)
+    return r
+}
+
+// rt.ceil_need(n, dl) → 0 = 手元が足りる（借りた。手元の下限をそこまで上げる）・-1 = 借りられず待たなかった（期限なし・予約で埋まった天井に決して入らない）・
+// -110 = 待ちの期限が来た。n = 0は手元の下限を外す（本文を受け終えた — 余った借りは次のparkで返る）
+func buildCeilNeed(st mut St) {
+    begin(mut st, st.rtCeilNeed)
+    n := 0
+    dl := 1
+    zero := iconst(mut st, 0)
+    one := iconst(mut st, 1)
+    mn := globaladdr(mut st, st.mnG)
+    wk := globaladdr(mut st, st.wkG)
+    meta := globaladdr(mut st, st.meta)
+    sg := globaladdr(mut st, st.slotsG)
+    tcb := curTcb(mut st)
+    me := itop(mut st, tcb)
+    // 入場していないtask（mainと走らせ直し）は借りない（台帳の外）
+    bAdm := branchIf(mut st, cmp(mut st, CEq, load(mut st, me, TC_ADM), zero))
+    ret(mut st, zero)
+    setCur(mut st, bAdm)
+    bN0 := branchIf(mut st, cmp(mut st, CEq, n, zero))
+    store(mut st, me, TC_BOR, bin(mut st, BAnd, load(mut st, me, TC_BOR), iconst(mut st, 17592186044415)))
+    ret(mut st, zero)
+    setCur(mut st, bN0)
+    // fr = 1: 一度待って起こされた（借りられなければ列の頭へ戻る）
+    bTry := newBlock(mut st)
+    fr := param(mut st, bTry, TyI64)
+    br(mut st, bTry, list1(mut st, zero))
+    setCur(mut st, bTry)
+    g := load(mut st, mn, MN_CGEN)
+    need := bin(mut st, BAdd, bin(mut st, BAdd, wmCharged(mut st, meta, sg, tcb), iconst(mut st, TASK_FIXED)), n)
+    short := bin(mut st, BSub, need, borrowHave(mut st, me))
+    bShort := branchIf(mut st, cmp(mut st, CLe, short, zero))
+    ceilPinUp(mut st, me, need)
+    ret(mut st, zero)
+    setCur(mut st, bShort)
+    b := bin(mut st, BAnd, bin(mut st, BAdd, short, iconst(mut st, BOR_UNIT - 1)), iconst(mut st, -BOR_UNIT))
+    old := load(mut st, me, TC_BOR)
+    fl := ledBorrowAdd(mut st, me, b, bin(mut st, BAdd, bin(mut st, BAnd, old, iconst(mut st, -4)), b))
+    bFail := branchIf(mut st, cmp(mut st, CEq, bin(mut st, BAnd, fl, iconst(mut st, BOR_DIED)), zero))
+    borCount(mut st, fl, old, BOR_SCOPE, MN_LBORS)
+    store(mut st, me, TC_BOR, bin(mut st, BOr, bin(mut st, BAdd, old, b), fl))
+    ceilPinUp(mut st, me, need)
+    ret(mut st, zero)
+    setCur(mut st, bFail)
+    _ = ledBorrowAdd(mut st, me, bin(mut st, BSub, zero, b), zero)
+    // 借りを持ったままは待たない: 余りを返した後も借りが残る（受けた本文や前のリクエストの分を計上の内に持つ）taskが待つと、待ち手どうしで
+    // 天井を塞ぎ、待っていないtaskが居なくなると誰も返さずに止まる。待ち手が持つのは予約だけ（予約は下の空きの計算に入っている）
+    call(mut st, st.rtBorGive, list1(mut st, me))
+    bHold := branchIf(mut st, cmp(mut st, CNe, borAmount(mut st, me), zero))
+    ret(mut st, iconst(mut st, -1))
+    setCur(mut st, bHold)
+    // 予約で埋まっていない天井に入らない量は、待っても入らない（借りが全部返っても空かない）— 待たない
+    bFit := branchIf(mut st, cmp(mut st, CGt, b, ceilRoom(mut st, me)))
+    ret(mut st, iconst(mut st, -1))
+    setCur(mut st, bFit)
+    // 期限を持たない頼みは待たない
+    bNd := branchIf(mut st, cmp(mut st, CEq, dl, zero))
+    ret(mut st, iconst(mut st, -1))
+    setCur(mut st, bNd)
+    bPast := branchIf(mut st, cmp(mut st, CLe, dl, load(mut st, wk, WK_REPOCH)))
+    atomicXadd(mut st, mn, MN_CWDIE, one)
+    ret(mut st, iconst(mut st, -110))
+    setCur(mut st, bPast)
+    // 積む: 返しの番号が試しの前から動いていれば、積まずに試し直す（返し手は「返す → 番号を進める → 列を見る」・待ち手は「番号を読む → 試す → 鍵の下で積んで番号を見る」）
+    store(mut st, me, TC_IORES, iconst(mut st, PEND_CEIL))
+    spinLock(mut st, mn, MN_CLK)
+    bMoved := newBlock(mut st)
+    bQ := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, load(mut st, mn, MN_CGEN), g), bMoved, -1, bQ, -1)
+    setCur(mut st, bMoved)
+    lockGiveFence(mut st, mn, MN_CLK)
+    store(mut st, me, TC_IORES, zero)
+    br(mut st, bTry, list1(mut st, fr))
+    setCur(mut st, bQ)
+    bFr := newBlock(mut st)
+    bBk := newBlock(mut st)
+    bQd := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, fr, zero), bFr, -1, bBk, -1)
+    setCur(mut st, bFr)
+    cqPushFront(mut st, mn, tcb)
+    br(mut st, bQd, -1)
+    setCur(mut st, bBk)
+    cqPushBack(mut st, mn, tcb)
+    atomicXadd(mut st, mn, MN_CWCNT, one)
+    br(mut st, bQd, -1)
+    setCur(mut st, bQd)
+    lockGiveFence(mut st, mn, MN_CLK)
+    // 待つ間は期限をrdlの走査に見せる（呼び手は本文の受けの外で期限を外しているので、戻る前に0へ戻す）
+    store(mut st, me, TC_RDL, dl)
+    atomicXadd(mut st, mn, MN_CWN, one)
+    store(mut st, wk, WK_NETW, urAdd(mut st, load(mut st, wk, WK_NETW), 1))
+    call(mut st, st.rtTaskWait, list0(mut st))
+    wk2 := globaladdr(mut st, st.wkG)
+    res := load(mut st, me, TC_IORES)
+    // 起こす側の起こしは待ち手の数を減らさない（期限の走査の起こしは減らす — muxと同じ）
+    store(mut st, wk2, WK_NETW, bin(mut st, BSub, load(mut st, wk2, WK_NETW), cmp(mut st, CEq, res, one)))
+    store(mut st, me, TC_RDL, zero)
+    store(mut st, me, TC_IORES, zero)
+    atomicXadd(mut st, mn, MN_CWN, iconst(mut st, -1))
+    // 期限で起きたなら列にまだ居る — 外す
+    spinLock(mut st, mn, MN_CLK)
+    bIn := branchIf(mut st, cmp(mut st, CNe, load(mut st, me, TC_AWPREV), zero))
+    cqUnlink(mut st, mn, tcb)
+    br(mut st, bIn, -1)
+    setCur(mut st, bIn)
+    lockGiveFence(mut st, mn, MN_CLK)
+    bTo := branchIf(mut st, cmp(mut st, CEq, res, iconst(mut st, -110)))
+    atomicXadd(mut st, mn, MN_CWDIE, one)
+    // 期限で戻る待ち手が受けていた起こしは無い（CASで走査が勝った）。次の待ち手を起こし直す必要は無い（起こす側はCASに負けたら次へ進む）
+    ret(mut st, iconst(mut st, -110))
+    setCur(mut st, bTo)
+    br(mut st, bTry, list1(mut st, one))
+}
+
+// 台帳を返した点の後（返し手は返してから呼ぶ）: 返しの番号を進め、列が空でなければrt.ceil_wakeで頭の1本を起こす
+func ceilWake(st mut St) {
+    if !st.rdlOn {
+        return
+    }
+    mn := globaladdr(mut st, st.mnG)
+    atomicXadd(mut st, mn, MN_CGEN, iconst(mut st, 1))
+    bW := branchIf(mut st, cmp(mut st, CNe, load(mut st, mn, MN_CQH), iconst(mut st, 0)))
+    call(mut st, st.rtCeilWake, list0(mut st))
+    br(mut st, bW, -1)
+    setCur(mut st, bW)
+}
+
+// rt.ceil_wake(): 鍵の下で列の頭を外し、CASに勝てば（期限の走査より先なら）起こす。負けた節は捨てて次の頭へ
+func buildCeilWake(st mut St) {
+    begin(mut st, st.rtCeilWake)
+    zero := iconst(mut st, 0)
+    mn := globaladdr(mut st, st.mnG)
+    spinLock(mut st, mn, MN_CLK)
+    loop := newBlock(mut st)
+    br(mut st, loop, -1)
+    setCur(mut st, loop)
+    h := load(mut st, mn, MN_CQH)
+    bE := branchIf(mut st, cmp(mut st, CEq, h, zero))
+    lockGiveFence(mut st, mn, MN_CLK)
+    ret(mut st, -1)
+    setCur(mut st, bE)
+    cqUnlink(mut st, mn, h)
+    hp := itop(mut st, h)
+    o := atomicCas(mut st, hp, TC_IORES, iconst(mut st, PEND_CEIL), iconst(mut st, 1))
+    bWin := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, o, iconst(mut st, PEND_CEIL)), bWin, -1, loop, -1)
+    setCur(mut st, bWin)
+    lockGiveFence(mut st, mn, MN_CLK)
+    taskWakeAny(mut st, hp)
+    ret(mut st, -1)
+}
+
+// 期限の走査（rdl.sober — 待ち手tのワーカーの上）: 起こす側とCASで競い、勝てば -110で起こして待ち手の数を1減らす
+func ceilCasWake(st mut St, t int) {
+    tp := itop(mut st, t)
+    o := atomicCas(mut st, tp, TC_IORES, iconst(mut st, PEND_CEIL), iconst(mut st, -110))
+    bW := branchIf(mut st, cmp(mut st, CEq, o, iconst(mut st, PEND_CEIL)))
+    tk := globaladdr(mut st, st.taskG)
+    wk := globaladdr(mut st, st.wkG)
+    readyPush(mut st, tk, t)
+    store(mut st, wk, WK_NETW, urAdd(mut st, load(mut st, wk, WK_NETW), -1))
+    br(mut st, bW, -1)
+    setCur(mut st, bW)
+}

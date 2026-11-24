@@ -3,7 +3,8 @@ package main
 // 受けと送りの期限の検査（scripts/slowcheck.sh）のサーバー。conns: 4で立て、期限を短くする（頭1秒・本文2秒・送りの間隔1秒）。
 // budgetは/bigの応答（1 MiB）を覆う2 MiB（天井に空きがある構成）。SLOW_FULLがあれば既定の64 KiB（天井 = 4本の予約で埋まる構成 —
 // 予約を越えて伸びる接続は天井を越えて死に、Ledgerのcutに数えられる）
-// SLOW_TLS_PORTがあれば、平文の代わりにTLSで127.0.0.1:<SLOW_TLS_PORT> に立つ（"tls-ready <port>" を出してから待ち受ける）。平文は "ready <port>"
+// SLOW_TLS_PORTがあれば、平文の代わりにTLSで127.0.0.1:<SLOW_TLS_PORT> に立つ（"tls-ready <port>" を出してから待ち受ける）。平文は "ready <port>"。
+// SLOW_TLS_HW（ms）は握手のheadWait（既定1000）
 //   /       → "ok\n"
 //   /big    → 1 MiBの本文
 //   /sleep  → ハンドラが2.5秒眠ってから "slept\n"（routeの実行中は期限が効かない）
@@ -91,7 +92,10 @@ func budget() int {
 }
 
 func plain() error? {
-    for l <- net.Listen("127.0.0.1:0")? {
+    // SLOW_V6 があれば IPv6 のループバック（[::1]）で立つ。Serve のワーカーごとの listener も IPv6 で足される
+    v6 := os.Getenv("SLOW_V6") catch nil
+    la := if v6 != nil && v6 != "" { "[::1]:0" } else { "127.0.0.1:0" }
+    for l <- net.Listen(la)? {
         println("ready ${net.Port(l)}")
         // SLOW_CONNS（一斉の到着の試し）があればその上限
         cs := os.Getenv("SLOW_CONNS") catch nil
@@ -101,8 +105,8 @@ func plain() error? {
     return nil
 }
 
-func tlsConn(c tls.Conn) error? {
-    return http.server.ServeWith((k) => tls.Recv(c, k), (b) => tls.Send(c, b), route, headWait: 1000 * task.MS, bodyWait: 2000 * task.MS, sendWait: 1000 * task.MS, put: (b) => tls.Put(c, b))
+func tlsConn(c net.Conn) error? {
+    return http.server.ServeConn(c, route, headWait: 1000 * task.MS, bodyWait: 2000 * task.MS, sendWait: 1000 * task.MS)
 }
 
 func run() error? {
@@ -114,7 +118,10 @@ func run() error? {
     println("tls-ready ${tp}")
     cs := os.Getenv("SLOW_CONNS") catch nil
     n := if cs == nil { 4 } else { convert.ParseInt(cs) catch 4 }
-    return tls.Serve("127.0.0.1:${tp}", cfg, tlsConn, budget: budget(), conns: n, headWait: 1000 * task.MS)
+    // SLOW_TLS_HW（ms）があれば握手のheadWait（署名の列の検査。列で待つ間に期限が過ぎる形）。既定1秒
+    hs := os.Getenv("SLOW_TLS_HW") catch nil
+    hw := if hs == nil { 1000 } else { convert.ParseInt(hs) catch 1000 }
+    return tls.Serve("127.0.0.1:${tp}", cfg, tlsConn, budget: budget(), conns: n, headWait: hw * task.MS)
 }
 
 // net.Waiting の読みと、プールの evicted の和が変わるたびに "waiting <待っている数> <上限>" / "evicted <和>" を stderr へ出す（stdout は task の順に並ぶので、

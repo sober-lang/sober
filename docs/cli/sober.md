@@ -51,11 +51,15 @@ arguments:
   <entry>  a .sober file or a main package directory
 
 flags:
-  --emit=<form>  output form (default an executable): elf, ll, ir
-  --no-opt       skip the IR passes
-  -o <file>      write the output to <file> (default a.out for an executable,
-                 else the standard output)
-  --passes       run the IR passes on --emit=ll / ir
+  --emit=<form>     output form (default an executable): elf, ll, ir
+  --no-opt          skip the IR passes
+  -o <file>         write the output to <file> (default a.out for an executable,
+                    else the standard output)
+  --passes          run the IR passes on --emit=ll / ir
+  --profile <file>  place the code blocks that the profile <file> marks cold
+                    after the hot code of each function (applies to the
+                    functions whose fingerprints match; scripts/profgen.sh
+                    writes profiles)
 
 environment:
   SOBER_BUILD_CACHE     0 turns the build cache off (default on)

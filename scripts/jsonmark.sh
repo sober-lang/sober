@@ -14,7 +14,7 @@ trap 'rm -rf "$W"' EXIT
 export SOBER_WORKERS=1
 fail=0
 n=0
-progs=(testdata/jsonmark/main.sober $(grep -l 'json\.Encode' examples/*.sober | sort))
+progs=(testdata/jsonmark/main.sober $(grep -l 'json\.Encode' examples/*.sober | grep -v '_neg_' | sort))
 for p in "${progs[@]}"; do
     b=$(basename "$(dirname "$p")")-$(basename "$p" .sober)
     "$S2" build "$p" --emit=elf -o "$W/$b.n" > /dev/null 2>&1 || { echo "jsonmark: FAIL build $p"; fail=$((fail + 1)); continue; }

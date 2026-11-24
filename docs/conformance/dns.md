@@ -4,7 +4,7 @@
 
 ## Scope
 
-Name resolution in `std/net` (a stub resolver — used when `net.Dial` gets a host that is not an IPv4 literal). It does not use libc's getaddrinfo. There is no recursive resolver and no authoritative server.
+Name resolution in `std/net`: a stub resolver, used when `net.Dial` gets a host that is not an IP address literal. It does not use libc's getaddrinfo. There is no recursive resolver and no authoritative server.
 
 ## Supported
 
@@ -15,7 +15,8 @@ Name resolution in `std/net` (a stub resolver — used when `net.Dial` gets a ho
 | search / ndots candidate order (resolv.conf(5)) | Supported | `std/net.TestCandidates` |
 | Truncated (TC) answers retried over TCP; CNAME chains (up to 8) | Supported | `std/net.TestParseAnswer`<br>interop dns: 7 (2026-11-06) |
 | Spoofing defenses: getrandom txid; the answer's txid, name and type must match; compression loops are cut | Supported | `std/net.TestParseAnswer`<br>interop dns: 7 (2026-11-06) |
-| Reads A and AAAA (Dial is IPv4-only) | Partial | `std/net.TestParseAnswer`<br>`std/net.TestDialLocalhost` |
+| IPv6 nameservers and dialing IPv6 (each attempt except the last is cut after 2 seconds, the RFC 8305 5 upper bound) | Supported | `std/net.TestResolveBoth`<br>`std/net.TestEcho4And6`<br>`std/net.TestDialCap` |
+| Queries A and AAAA at once from one UDP socket (one-sided answers, NXDOMAIN, NODATA on both, TCP retry for the truncated side only); answers ordered IPv6 first, alternating (RFC 8305 4); /etc/hosts reads IPv6 lines in file order | Supported | `std/net.TestResolveBoth`<br>`std/net.TestInterleave`<br>`std/net.TestHosts`<br>`std/net.TestParseAnswer` |
 <!-- confsync:end claims dns-resolver yes,partial -->
 
 ## Not supported by design
@@ -34,7 +35,6 @@ Name resolution in `std/net` (a stub resolver — used when `net.Dial` gets a ho
 | Item | Planned | Evidence of today's behavior |
 |---|---|---|
 | EDNS0 (today answers over 512 bytes fall back to TCP) | 0.8 | none |
-| IPv6 nameservers and dialing IPv6 | 0.8 | none |
 <!-- confsync:end claims dns-resolver planned -->
 
 ## Evidence — interop

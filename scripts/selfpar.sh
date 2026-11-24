@@ -25,10 +25,18 @@
 #      拒否をフェーズとファイルをまたいで置いた例（testdata/selfpar/finish/trees_cross）の build の出力がW1 ≡ W8（証人 fallback=rejected — 逐次でやり直す）≡ W8 + 子の死。
 #      ミューテーション18: 子の拒否を見ない
 #  11. 最後の検証（vfyFinal）をB2の子の中で（compiler/lower/move.soberのlParBatch・verify.soberのvfyRun）: 既定の検証（SOBER_VERIFYなし）の自己buildのW8は
-#      子の結果を使う（証人 #vfyfinal kid=… parent=0）・ELFは1本の経路と同じ。B2の前にIRを壊すミュータント107（--rt-mutant=107）の診断が W1 ≡ W2 ≡ W8 ≡ W12（同じ1件）。
+#      子の結果を使う（証人 #vfyfinal kid=… parent=… dirty=… — 親が検証するのは子の検証の後に書き換えた関数だけ）・ELFは1本の経路と同じ。B2の前にIRを壊すミュータント107（--rt-mutant=107）の診断が W1 ≡ W2 ≡ W8 ≡ W12（同じ1件）。
 #      ミューテーション19: 親が子の検証の文面を見ない
 #   8. irinl の並びに依らない展開（report-1185）: 自己 build の ELF が処理の入力の並びの撹拌（SOBER_IRINL_ORDER=1 逆順 / 7 乱順）≡ 1 本の経路 +
 #      入力の並びのまま処理するミューテーション14（撹拌で割れること）
+#  12. noret の並びに依らない終端化: 自己 build の ELF が並びの逆転（SOBER_NORET_ORDER=1）≡ 1 本の経路。題材 testdata/selfpar/noret_order.sober
+#      （推移で戻らない関数）も逆転 ≡ 既定。ミューテーション20: 戻らない関数の集合を不動点で求めず、チェーンの順に1レベルずつ判定する（題材の逆転で割れること）
+#  13. spec の並びに依らない特化: 自己 build の ELF が作業列の入力の逆転（SOBER_SPEC_ORDER=1）≡ 1 本の経路。ミューテーション21: 作業列を名前の順に
+#      並べずチェーンの順のまま回す（自己 build の逆転で割れること — 同じ呼ばれる側を SP_PER より多くの定数の組で呼ぶ package がある）。
+#      枠は組の中の呼び出し点の多い順（同数は定数の組の安定なハッシュの順）: 題材 testdata/selfpar/spec_freq.sober の逆転 ≡ 既定・
+#      ミューテーション22: 頻度で枠を与える部分を外し作業列の先着に戻す（題材のELFが本物と割れること。要求の道の命令〔reqinst・ringinst〕でも落ちる）
+#  14. regionFlow の並びに依らない判定: 自己 build の ELF が判定と書き換えの順の逆転（SOBER_RFLOW_ORDER=1）≡ 1 本の経路
+#      （呼び先の遅延の値〔rfMaskOf・rfFreshOf・rfEoOf〕が、呼び先の書き換えの前後で変わらないこと）
 #   並列（ゲートの高速化タスクR0 — report-1220）: 各回の実行とミューテーションの1本ずつをgatelibのpar_runの仕事にして $JOBS本ずつ並べる（単体の既定4）。
 #   仕事は自分の作業ディレクトリ（$PAR_W）だけに書き、ミューテーションは専用の木のコピーをsedする（共有の $W/treeは読むだけ）。1本の経路のELF（bseq）との
 #   照合は全部の仕事が終わってから。FAIL の行と最後の要約の行の形は逐次の版と同じ
@@ -247,7 +255,7 @@ j_mut3() {
 #    移し器の往復（段階4 後半 ラウンド 9 — compiler/lower/move.sober: SOBER_BUILD_PAR=roundtripでバッチの前ごとに全関数の本体を詰め、旧い本体を毒で
 #    潰して積み直す）も同じELF。ミューテーション: 積み直しでブロックの命令の尾（B_ITAIL）を付け替えないと割れること。
 #    W8はlowerのバッチ（B1 / B2）も群の子で回す（ラウンド10 — lParBatch）: 1本の経路はそれも外す。ミューテーション: 子のB1の列からlicmを抜くと割れること
-BCFGS=("SOBER_WORKERS=1" "SOBER_WORKERS=8 SOBER_PAR_STATS=1" "SOBER_WORKERS=8 SOBER_BUDGET_MB=0" "SOBER_WORKERS=8 SOBER_BUILD_PAR=roundtrip" "SOBER_WORKERS=8 SOBER_LOWER_SPLIT=3 SOBER_LOWER_REV=1 SOBER_PAR_STATS=1" "SOBER_WORKERS=8 SOBER_LOWER_SPLIT=1" "SOBER_WORKERS=8 SOBER_LOWER_SPLIT=8 SOBER_PAR_STATS=1" "SOBER_WORKERS=8 SOBER_LOWER_SPLIT=8 SOBER_LOWER_DIE=1 SOBER_PAR_STATS=1" "SOBER_WORKERS=8 SOBER_FINISH_DIE=1 SOBER_PAR_STATS=1" "SOBER_WORKERS=8 SOBER_IRINL_ORDER=1" "SOBER_WORKERS=8 SOBER_IRINL_ORDER=7" "SOBER_WORKERS=8 SOBER_XPAR_DIE=1 SOBER_PAR_STATS=1" "SOBER_WORKERS=8 SOBER_PARCHECK_DIE=1 SOBER_PAR_STATS=1")
+BCFGS=("SOBER_WORKERS=1" "SOBER_WORKERS=8 SOBER_PAR_STATS=1" "SOBER_WORKERS=8 SOBER_BUDGET_MB=0" "SOBER_WORKERS=8 SOBER_BUILD_PAR=roundtrip" "SOBER_WORKERS=8 SOBER_LOWER_SPLIT=3 SOBER_LOWER_REV=1 SOBER_PAR_STATS=1" "SOBER_WORKERS=8 SOBER_LOWER_SPLIT=1" "SOBER_WORKERS=8 SOBER_LOWER_SPLIT=8 SOBER_PAR_STATS=1" "SOBER_WORKERS=8 SOBER_LOWER_SPLIT=8 SOBER_LOWER_DIE=1 SOBER_PAR_STATS=1" "SOBER_WORKERS=8 SOBER_FINISH_DIE=1 SOBER_PAR_STATS=1" "SOBER_WORKERS=8 SOBER_IRINL_ORDER=1" "SOBER_WORKERS=8 SOBER_IRINL_ORDER=7" "SOBER_WORKERS=8 SOBER_NORET_ORDER=1" "SOBER_WORKERS=8 SOBER_SPEC_ORDER=1" "SOBER_WORKERS=8 SOBER_RFLOW_ORDER=1" "SOBER_WORKERS=8 SOBER_XPAR_DIE=1 SOBER_PAR_STATS=1" "SOBER_WORKERS=8 SOBER_PARCHECK_DIE=1 SOBER_PAR_STATS=1")
 j_bseq() {
     (cd "$W/tree" && SOBER_BUILD_PAR=0 SOBER_LOWER_SPLIT=1 SOBER_WORKERS=8 "$S2" build app --emit=elf --passes -o "$W/bseq" > "$PAR_W/blog" 2>&1) || echo "FAIL: self build (1-path): $(head -c 200 "$PAR_W/blog")"
     return 0
@@ -317,8 +325,9 @@ j_build() { # j_build <番号> — BCFGS の 1 本。ELF は $W/bpar<番号>（b
 }
 # 席Aの子が γ の当たりの店を受け取る形（段階5 R3 — 配置先の切り口 γ: 親のTypeAllがエリアを読み戻した店を子へ渡す）: 同じ配置先で冷 → 温を
 # 逆順の子（SOBER_LOWER_SPLIT=3 SOBER_LOWER_REV=1）でビルドし、温のELF（$W/bcache）がbseqと一致・温で γ が全部当たり・子のパスを最後まで通る
+# 束（packageの単位の格納場所）は切る（SOBER_PKG_CACHE=0）: 束を使う温のビルドは捨てる関数を模擬するので直のパスを通る — この検査は分割のパスの子の形を見る
 j_cache() {
-    local c=$PAR_W/cache cfg="SOBER_WORKERS=8 SOBER_LOWER_SPLIT=3 SOBER_LOWER_REV=1 SOBER_PAR_STATS=1 SOBER_BUILD_CACHE=1 SOBER_CACHE_STAT=1"
+    local c=$PAR_W/cache cfg="SOBER_WORKERS=8 SOBER_LOWER_SPLIT=3 SOBER_LOWER_REV=1 SOBER_PAR_STATS=1 SOBER_BUILD_CACHE=1 SOBER_CACHE_STAT=1 SOBER_PKG_CACHE=0"
     # shellcheck disable=SC2086
     (cd "$W/tree" && env -u SOBER_VERIFY -u SOBER_CACHE_VERIFY $cfg SOBER_CACHE="$c" "$S2" build app --emit=elf --passes -o "$PAR_W/bcold" > "$PAR_W/blog" 2>&1) || { echo "FAIL: self build (cache cold, split): $(head -c 200 "$PAR_W/blog")"; return 0; }
     # shellcheck disable=SC2086
@@ -328,8 +337,9 @@ j_cache() {
     return 0
 }
 # ワードに詰めると同じで長さだけ違うstringの字面（testdata/selfpar/strwords）: 1本道のELF ≡ 逆順の子の冷 ≡ 温（rodataの大域の鍵の衝突の検査）
+# 束は切る（j_cache と同じ理由）
 j_strwords() {
-    local c=$PAR_W/swcache cfg="SOBER_WORKERS=8 SOBER_LOWER_SPLIT=3 SOBER_LOWER_REV=1 SOBER_PAR_STATS=1 SOBER_BUILD_CACHE=1" r
+    local c=$PAR_W/swcache cfg="SOBER_WORKERS=8 SOBER_LOWER_SPLIT=3 SOBER_LOWER_REV=1 SOBER_PAR_STATS=1 SOBER_BUILD_CACHE=1 SOBER_PKG_CACHE=0" r
     (cd "$G" && SOBER_BUILD_PAR=0 SOBER_LOWER_SPLIT=1 SOBER_WORKERS=8 "$S2" build strwords.sober --emit=elf --passes -o "$PAR_W/sw.seq" > "$PAR_W/swlog" 2>&1) || { echo "FAIL: strwords (1-path): $(head -c 200 "$PAR_W/swlog")"; return 0; }
     for r in cold warm; do
         # shellcheck disable=SC2086
@@ -544,7 +554,9 @@ vfyb() { # vfyb <コンパイラ> <出力> <env…> — 既定の検証（SOBER_
 j_vfy() {
     local w
     (cd "$W/tree" && env -u SOBER_VERIFY SOBER_WORKERS=8 SOBER_PAR_STATS=1 "$S2" build app --emit=elf --passes -o "$W/bvfy" > "$PAR_W/vlog" 2>&1) || echo "FAIL: self build (W8, final verification): $(head -c 200 "$PAR_W/vlog")"
-    grep -q '^#vfyfinal kid=[1-9][0-9]* parent=0$' "$PAR_W/vlog" || echo "FAIL: self build (W8) did not use the final verification of the group children: $(grep '^#vfyfinal' "$PAR_W/vlog")"
+    # 親が検証するのは、子の検証の後に親が書き換えた関数（cutInsert が検査点を置いた関数 — dirty）だけ
+    w=$(grep '^#vfyfinal' "$PAR_W/vlog")
+    [[ "$w" =~ ^#vfyfinal\ kid=[1-9][0-9]*\ parent=([0-9]+)\ dirty=([0-9]+)$ ]] && [ "${BASH_REMATCH[1]}" = "${BASH_REMATCH[2]}" ] || echo "FAIL: self build (W8) did not use the final verification of the group children: $(grep '^#vfyfinal' "$PAR_W/vlog")"
     for w in 1 2 8 12; do vfyb "$S2" "$PAR_W/vm$w" SOBER_WORKERS=$w; done
     grep -q '^panic: lower.InvalidIR{after: "the passes' "$PAR_W/vm1" || echo "FAIL: mutant 107 (W1) did not fail the final verification: $(head -c 200 "$PAR_W/vm1")"
     for w in 2 8 12; do
@@ -579,8 +591,61 @@ j_mut14() {
     return 0
 }
 
+# ミューテーション20（noretの並びに依らない終端化）: 題材の逆転が本物のコンパイラで既定と同じ・ミュータントで割れること
+j_mut20() {
+    local t=$ROOT/testdata/selfpar/noret_order.sober
+    for o in 0 1; do
+        SOBER_BUILD_CACHE=0 SOBER_NORET_ORDER=$o "$S2" build "$t" -o "$PAR_W/nr$o" > "$PAR_W/nlog" 2>&1 || { echo "FAIL: noret_order build (order $o): $(head -c 200 "$PAR_W/nlog")"; return 0; }
+    done
+    cmp -s "$PAR_W/nr0" "$PAR_W/nr1" || echo "FAIL: noret_order — SOBER_NORET_ORDER=1 changed the ELF"
+    mytree
+    anchor lower/noret.sober '^                if irInsOp(mut st, i) == OpCall && spFind(nr, int(irInsFn(mut st, i))) >= 0 {$' "mutant 20: the non-returning set (nr) was not found in lower/noret.sober"
+    sed -i '/^func noretFunc(/,/^}/s/^                if irInsOp(mut st, i) == OpCall \&\& spFind(nr, int(irInsFn(mut st, i))) >= 0 {$/                if irInsOp(mut st, i) == OpCall \&\& ilNonretSeed(mut st, irInsFn(mut st, i)) {/; s/^        if noretCallsNr(mut st, FnRef(fl\[k\]), nr) {$/        if irFnBHead(mut st, FnRef(fl[k])) != -1 {/' "$PAR_W/tree/lower/noret.sober"
+    mutbuild 20 "20 " || return 0
+    for o in 0 1; do
+        SOBER_BUILD_CACHE=0 SOBER_NORET_ORDER=$o "$W/mut20" build "$t" -o "$PAR_W/nm$o" > "$PAR_W/nlog" 2>&1
+    done
+    if cmp -s "$PAR_W/nm0" "$PAR_W/nm1"; then
+        echo "FAIL: mutant 20 (noret one level in the chain order) was not caught"
+    fi
+    return 0
+}
+
+# ミューテーション21（specの並びに依らない特化）: 作業列をチェーンの順のまま回すと、入力の逆転（SOBER_SPEC_ORDER=1）で自己buildのELFが割れること
+j_mut21() {
+    mytree
+    anchor lower/spec.sober '^    for k <- sort.Order(len(ofr), (a, b) => spBytesLess(nmf\[a\], nmf\[b\])) {$' "mutant 21: the name order (sort.Order) was not found in lower/spec.sober"
+    sed -i 's/^    for k <- sort.Order(len(ofr), (a, b) => spBytesLess(nmf\[a\], nmf\[b\])) {$/    for k <- iter.Range(0, len(ofr)) {/' "$PAR_W/tree/lower/spec.sober"
+    mutbuild 21 "21 " || return 0
+    cp "$W/tree/lower/spec.sober" "$PAR_W/tree/lower/spec.sober"
+    (cd "$PAR_W/tree" && SOBER_WORKERS=8 "$W/mut21" build app --emit=elf --passes -o "$PAR_W/bm0" > "$PAR_W/blog" 2>&1)
+    (cd "$PAR_W/tree" && SOBER_WORKERS=8 SOBER_SPEC_ORDER=1 "$W/mut21" build app --emit=elf --passes -o "$PAR_W/bm1" > "$PAR_W/blog" 2>&1)
+    if cmp -s "$PAR_W/bm0" "$PAR_W/bm1"; then
+        echo "FAIL: mutant 21 (spec in the chain order) was not caught"
+    fi
+    return 0
+}
+
+# ミューテーション22（specの枠を頻度で与える）: 題材の逆転が本物で既定と同じ・頻度を外したミュータントで題材のELFが本物と割れること
+j_mut22() {
+    local t=$ROOT/testdata/selfpar/spec_freq.sober
+    for o in 0 1; do
+        SOBER_BUILD_CACHE=0 SOBER_SPEC_ORDER=$o "$S2" build "$t" -o "$PAR_W/sf$o" > "$PAR_W/slog" 2>&1 || { echo "FAIL: spec_freq build (order $o): $(head -c 200 "$PAR_W/slog")"; return 0; }
+    done
+    cmp -s "$PAR_W/sf0" "$PAR_W/sf1" || echo "FAIL: spec_freq — SOBER_SPEC_ORDER=1 changed the ELF"
+    mytree
+    anchor lower/spec.sober '^                            adm := if pr >= 0 { pre.recs\[pr + 5 + 3 \* key\[1\]\] == 1 } else { per < SP_PER }$' "mutant 22: the frequency slots (adm) were not found in lower/spec.sober"
+    sed -i 's/^                            adm := if pr >= 0 { pre.recs\[pr + 5 + 3 \* key\[1\]\] == 1 } else { per < SP_PER }$/                            adm := per < SP_PER/' "$PAR_W/tree/lower/spec.sober"
+    mutbuild 22 "22 " || return 0
+    SOBER_BUILD_CACHE=0 "$W/mut22" build "$t" -o "$PAR_W/sm" > "$PAR_W/slog" 2>&1
+    if cmp -s "$PAR_W/sf0" "$PAR_W/sm"; then
+        echo "FAIL: mutant 22 (spec slots without the frequency) was not caught"
+    fi
+    return 0
+}
+
 # 仕事の投入（長いものから — ミューテーションは検査器をビルドしてから自己buildを1〜2回）
-for k in 4 5 6 7 8 9 14; do par_run "j_mut$k"; done
+for k in 4 5 6 7 8 9 14 20 21 22; do par_run "j_mut$k"; done
 par_run j_bseq
 for i in "${!BCFGS[@]}"; do par_run j_build "$i"; done
 par_run j_cache
@@ -614,23 +679,26 @@ fail=$(grep -c '^FAIL' "$W/jobs.out")
 # 全部の仕事の後の照合
 grep -q '"ok":true' "$W/self1" || { echo "FAIL: self check (W1) not accepted: $(head -c 200 "$W/self1")"; fail=$((fail + 1)); }
 # RSSのラチェット（bench/ratchet.txtのself/check rss — 自己check〔一括・W1〕のpeak RSS。段階6 P6-6で新設）
-rlim=$(awk '$1 == "self/check" && $2 == "rss" { print $3 }' "$ROOT/bench/ratchet.txt")
+# 線との比較の赤は lfail に数える（fail = 線のほかの検査。本体の緑の印 meas_body_ok は fail だけで決める — gatelib.sh の ratchet_cmp）
+lfail=0
 rss=$(( $(cat "$W/self1.rss") / 1024 ))
-if [ -n "$rlim" ] && [ "$rss" -gt "$rlim" ]; then
-    echo "FAIL: ratchet — 自己 check（W1）の peak RSS ${rss} MB > ${rlim} MB（bench/ratchet.txt）"; fail=$((fail + 1))
-fi
+ratchet_cmp bench/ratchet.txt self/check rss "$rss"
+case $? in
+    0) ;;
+    1) echo "FAIL: ratchet — 自己 check（W1）の peak RSS ${rss} MB > ${RATCHET_LIM} MB（bench/ratchet.txt）"; lfail=$((lfail + 1)) ;;
+    *) echo "FAIL: ratchet — bench/ratchet.txt に self/check rss の行が無い"; lfail=$((lfail + 1)) ;;
+esac
+rlim=$RATCHET_LIM
 # 検査器の本体の命令数のラチェット（bench/ratchet.txtのself/check body — G命令・W1の「最後まで − defs」。核の節の数に出ない検査器の遅さの検査:
 # 同じ節の数のまま検査器の時間が3倍になった形〔別のregionのmut実引数2つを取る再帰の関数1つ〕はRSSの上限値にたまたま掛かっただけだった）
-blim=$(awk '$1 == "self/check" && $2 == "body" { print $3 }' "$ROOT/bench/ratchet.txt")
-if [ "${#INSTP[@]}" = 0 ]; then
-    :
-elif [ -n "$blim" ]; then
+if [ "${#INSTP[@]}" != 0 ]; then
     body=$(awk -F, '/instructions/ { v[FILENAME] = $1 } END { printf "%.3f", (v[ARGV[1]] - v[ARGV[2]]) / 1e9 }' "$W/self1.inst" "$W/defs1.inst")
-    if awk -v v="$body" -v l="$blim" 'BEGIN { exit !(v > l) }'; then
-        echo "FAIL: ratchet — 自己 check（W1）の検査器の本体の命令 ${body} G > ${blim} G（bench/ratchet.txt — scripts/checkstats.sh で段ごとに見る）"; fail=$((fail + 1))
-    else
-        echo "ratchet: 自己 check（W1）の検査器の本体の命令 ${body} G ≤ ${blim} G"
-    fi
+    ratchet_cmp bench/ratchet.txt self/check body "$body"
+    case $? in
+        0) echo "ratchet: 自己 check（W1）の検査器の本体の命令 ${body} G ≤ ${RATCHET_LIM} G" ;;
+        1) echo "FAIL: ratchet — 自己 check（W1）の検査器の本体の命令 ${body} G > ${RATCHET_LIM} G（bench/ratchet.txt — scripts/checkstats.sh で段ごとに見る）"; lfail=$((lfail + 1)) ;;
+        *) echo "FAIL: ratchet — bench/ratchet.txt に self/check body の行が無い"; lfail=$((lfail + 1)) ;;
+    esac
 fi
 for v in selfseq self8 self0 selfdie; do
     cmp -s "$W/self1" "$W/$v" || { echo "FAIL: self check $v differs from W1"; diff "$W/self1" "$W/$v" | head -4; fail=$((fail + 1)); }
@@ -651,5 +719,6 @@ for k in 4 5 6 7 8 9; do
         fail=$((fail + 1))
     fi
 done
-echo "selfpar: self check {1-path (W1 rss ${rss} MB ≤ ${rlim} MB), W 1, 8, 8 + budget 0, 8 + range child death} + self iface + $n synthetic runs + $nf layered runs + self build {1-path, W 1, 8, 8 + budget 0, 8 + roundtrip, 8 + lower split 3 rev, 8 + lower direct, 8 + lower split 8, 8 + lower split 8 child death, 8 + finish child death, 8 + parcheck child death, 8 + irinl order rev, 8 + irinl order seed 7, strwords 1-path ≡ split cold ≡ warm} + $nfin finish runs + $npc parcheck runs + 3 trees runs + final verification {W8 children, mutant 107 W 1 ≡ 2 ≡ 8 ≡ 12} + 19 mutants, fail=$fail$([ "${#INSTP[@]}" = 0 ] && echo " (SKIP[perf] check body ratchet)")"
-[ $fail = 0 ]
+echo "selfpar: self check {1-path (W1 rss ${rss} MB ≤ ${rlim} MB), W 1, 8, 8 + budget 0, 8 + range child death} + self iface + $n synthetic runs + $nf layered runs + self build {1-path, W 1, 8, 8 + budget 0, 8 + roundtrip, 8 + lower split 3 rev, 8 + lower direct, 8 + lower split 8, 8 + lower split 8 child death, 8 + finish child death, 8 + parcheck child death, 8 + irinl order rev, 8 + irinl order seed 7, 8 + noret order rev, 8 + spec order rev, 8 + rflow order rev, strwords 1-path ≡ split cold ≡ warm} + $nfin finish runs + $npc parcheck runs + 3 trees runs + final verification {W8 children, mutant 107 W 1 ≡ 2 ≡ 8 ≡ 12} + 22 mutants, fail=$fail, ratchet fail=$lfail$([ "${#INSTP[@]}" = 0 ] && echo " (SKIP[perf] check body ratchet)")"
+[ $fail = 0 ] && meas_body_ok
+[ $fail = 0 ] && [ $lfail = 0 ]

@@ -1,0 +1,19 @@
+package main
+
+// 負例（checkが拒否 — analyzer）: `@effects` の許容は常にobs（ログ）を含み、外すのは `!obs` だけ。`!obs` の関数がprint.Logに届く
+
+import "std/print"
+
+type Step struct {
+    n int
+}
+
+@effects(!obs)
+func next(n int) int {
+    print.Log[Step](Step{n: n})
+    return n + 1
+}
+
+func main() {
+    println(next(1))
+}

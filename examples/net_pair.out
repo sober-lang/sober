@@ -1,0 +1,15 @@
+HTTP/1.1 200 OK
+Content-Type: text/plain
+Cache-Control: private
+Content-Length: 8
+Date: Sun, 06 Nov 1994 08:49:37 GMT
+
+hello /aHTTP/1.1 200 OK
+Content-Type: text/plain
+Cache-Control: private
+Content-Length: 8
+Connection: close
+Date: Sun, 06 Nov 1994 08:49:37 GMT
+
+hello /b
+ok

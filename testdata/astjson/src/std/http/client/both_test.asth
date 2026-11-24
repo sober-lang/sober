@@ -1,0 +1,21 @@
+@@full	27e7ae164b1dec87	4764	151264
+@head	5bd50fa45c4fd8b1	0	392
+func TestBothCookie	c371a166162f15f2	16	606
+func TestBothRequest	c3d7007490f77197	16	607
+func TestBothSession	93ac39bbb9fb7acf	16	607
+func TestBothStream	97727fafd06bcb42	16	606
+func bothBits	476c69e0160765cc	49	1682
+func bothCookies	01f43ea2e8642b3d	91	3406
+func bothForms	4c5cc776eac33d1a	7	313
+func bothH1	a9c5caf4754f5be8	15	598
+func bothH2	dbe0cecb3fc6735b	19	745
+func bothPeer	f8a5e784f284f7da	81	2837
+func bothPolicy	ed8b1f00083302cd	15	753
+func bothPort	d76b34dfa631bd07	22	777
+func bothRequests	fa4fea33c918c259	66	2206
+func bothServe	9a12551f5937a7b3	157	5315
+func bothStream	c3fe838cb04ca828	54	1945
+func bothStreams	89620359342f9857	26	979
+func bothSummary	e2ae0d38edd4e772	46	1898
+func bothWait	b500df8b12d033c1	39	1399
+type bothGot	69e72720d0e3ef97	2	114

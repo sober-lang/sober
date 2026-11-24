@@ -465,7 +465,7 @@ func urNetGate(st mut St, rec int, wait int) int {
     awCut(mut st, pa, t)
     // rtが直にウェイクアップする待ち（受け — netring.soberのPEND_RT）はウェイクアップするだけ・POLL_ADDと送りは取り消す（完了で -110としてウェイクアップする）・
     // domain の Await の待ち手（TC_DQDL ≠ 0 — domain.sober）は手渡しと CAS で競う（手渡しが勝っていれば何もしない）
-    if st.domUse {
+    if st.domUse || st.muxUse {
         bDw := newBlock(mut st)
         bNd := newBlock(mut st)
         condbr(mut st, cmp(mut st, CNe, load(mut st, tp, TC_DQDL), zero), bDw, -1, bNd, -1)
@@ -621,6 +621,13 @@ func buildUpoll(st mut St) {
         frClock(mut st)
         br(mut st, bCk, -1)
         setCur(mut st, bCk)
+    }
+    if st.logUse {
+        // 実際に眠るとき（mc ≠ 0）だけ、ログのバッファを書き出す（logsink.sober）
+        bLg := branchIf(mut st, cmp(mut st, CNe, mc, zero))
+        logBeforeSleep(mut st)
+        br(mut st, bLg, -1)
+        setCur(mut st, bLg)
     }
     r := urSys(mut st, 426, []int{load(mut st, rp, UR_EFDX), n, mc, bin(mut st, BOr, fl, load(mut st, rp, UR_EFL)), ga, gs})
     if fuse {

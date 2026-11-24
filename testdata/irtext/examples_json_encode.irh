@@ -1,4 +1,4 @@
-@@full	f3576d08c80194c1	32946	655846
+@@full	e59fcfb4e0307c2c	32934	655595
 @globals	1d8bbcbeedbb4e24	185	5783
 main.$jsonDecodeTop~487e04f7	584fb44add8bfc48	83	1656
 main.$jsonDecode~0d23158f	bc2f9e7738161d73	151	2953
@@ -77,7 +77,7 @@ rt.write_all	055ce3041b682336	37	563
 rt.write_fd	079b825360e0fd15	8	156
 rt.write_file	7b5c6fea05e73e3e	47	846
 sober_entry	24e21cfe89d1dc59	969	18980
-std/builder.Build[byte]	71a2e1eea257de3b	317	6174
+std/builder.Build[byte]	dabba60e422eae8b	313	6088
 std/builder.Len[byte]	be5eae1672cfc653	13	242
 std/builder.PushAll[byte]	8affe3bcddfa6c5c	180	3255
 std/builder.PushBetween[byte]	1ce3b72b338fc7b2	199	3749
@@ -86,7 +86,7 @@ std/builder.PushWord	e5df9f41a165b038	116	2107
 std/builder.Push[byte]	0ab962c91f11ee58	71	1327
 std/builder.pushAllSlow[byte]	4191315bab713a59	220	4069
 std/builder.pushBetweenSlow[byte]	5e2ec5431996fcb0	37	884
-std/builder.pushSlow[byte]	8c201cc60987728b	357	7033
+std/builder.pushSlow[byte]	1546d233e5965b10	353	6946
 std/builder.pushWordSlow	ab0b2044e7609547	54	985
 std/convert.FormatFloat	4c5df6b86a6fd8d9	23	496
 std/convert.FormatInt	151aa2fbcfb409ff	68	1306
@@ -116,7 +116,7 @@ std/internal/floatfmt.wordAt	dd6d112b3872d1b2	124	2085
 std/internal/jsonw.Byte	3b42a9c0d56941df	26	483
 std/internal/jsonw.Finish	0d66011724451ae7	65	1196
 std/internal/jsonw.Float	aab8a19d0c74af5e	39	752
-std/internal/jsonw.Grow	0747f1d98852ec4c	94	1781
+std/internal/jsonw.Grow	b287d71a60f3ee9d	90	1703
 std/internal/jsonw.Int	969e5eb6e56171a5	146	2795
 std/internal/jsonw.IntSize	162c92478eb38a69	23	337
 std/internal/jsonw.Put	22dda4cd03c13f70	36	651

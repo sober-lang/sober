@@ -32,7 +32,6 @@ type S struct {
     only int
     onlySet bool
     sigOnly bool
-    e2sBad ListRef   // 上げないフラグ（条件5）
     // 区間（脱糖 + 検査を区間ごとに子 task で: core_out.sober の DefRng）: rangeSet なら関数表の添字 [rlo, rhi) の Def だけ本体つき・
     // 他の Def は署名だけ（部分検査の視点の外と同じ形）。根の式は rangeRoot のときだけ
     rangeSet bool
@@ -56,7 +55,6 @@ type S struct {
     genOnly bool     // 型パラメータを持つ Def の本体だけを脱糖する（kind の推論の前段 — DefRng.gen）
     givenK []int     // 本体を読まない総称関数の kind（loader.Program の fn_kinds — 関数表の添字で [関数, n, k…]）
     refs RefGraph    // 区間の子: 親の計画が作った参照の辺（rangeReach）
-    planBad []int    // 区間の子: 親の計画が決めたE2-Sの上げないフラグ（e2sScanCallsの結果 — 子は走査しない。空 = 自分で走査）
     stopAt int       // 計測のオプション（core_out.soberのWithCoreOptのstopAt）
     adopted bool     // 店を呼び手から受け取った（表層型検査器を走らせない — core_out.sober の WithAdopt）
     trustStd bool    // std の Def を署名だけにする（L0 の受理印 — core_out.sober の WithCoreOpt の trust）
@@ -135,6 +133,11 @@ type S struct {
     // 外の mut 場所へ格納する値の行き先の region + 1（0 = 無し — 宛先構築レーン M4）。値の式の最上段の mut のリテラルだけが消費する
     // （mksliceAt / mkmapAtで行き先に作る — mutはcopyToでコピーできない）。exprの入口で必ず落とす（部分式へ漏らさない）
     mutDest int
+    // mutCellAhead の覚え（ヒープの列の番号 + 1・0 = 無し）: ファイルごとの、mut 実引数を 2 つ以上渡す呼び出しの
+    // 最後の字句の位置 + 2（1 = 無し・0 = 未計算）。前段（prefix）で取る
+    cellLast int
+    // 同じく関数ごと（関数の添字で引く — 展開しない mut 関数へ mut 実引数を 2 つ以上渡す呼び出しの最後の字句の位置 + 2）
+    cellFnLast int
     // structリテラルの行き先のregion + 1（0 = 無し — F-bb）: exprが消費したmutDestをstructリテラル（composite）がフィールドの値へ引き継ぐための受け渡し。
     // compositeが読んでfvDestに移し、fieldValuesInの入口で必ず落とす（入れ子のフィールドの値へはmutDestとして1フィールドずつ渡し直す）
     compDest int
@@ -228,6 +231,8 @@ type S struct {
     implAt NodeRef  // 脱糖中の暗黙の freeze の点（expr が CFreeze で包んだ節 — 中身の脱糖では包まない）
     instEnvs int
     insts int
+    // 展開の共有の表（share.sober — [F, 実引数の関数の列, 定義の添字, 次]・-1 = 空）
+    shares int
     jstk int
     jlab int
     // コアの JSON の kind（JsonK）: jks = 推論した kind の列（Def の順に [n, k…]・空 = 脱糖器の kind のまま）・jkAt = 印字中の Def の
@@ -269,6 +274,10 @@ type S struct {
     capPend []int
     // 省略可の匿名関数型の仮引数を持つ関数のコピー（loader.Programのz_decl — [宣言の節の参照, ファイル, 節の区間lo, hi) の4ワードずつ。ZVariant / zBlock）
     zdecl []int
+    // e2sEnclosing の索引: [ファイルごとの始まり ×(ファイルの数 + 1), ファイルの順に並べた関数の添字（同じファイルの中は昇順）]。
+    // 添字 [0, e2sN) の関数の分（後から足した関数は走査する）
+    e2sIx []int
+    e2sN int
     // envの形（closure.sober）: shRecDecl / shRecTy = この脱糖で持ち上げたクロージャの形の記録（named fn type の宣言 →
     // env の型・重複なし — 前走りが shapesFor で読む）、shDecl / shTy = 前走りが集めた形（入口が loadShapes で積む — U_F はこれの閉じた union）
     shRecDecl table.Table[int]
@@ -337,12 +346,21 @@ func HeapFreeze(st mut S) table.Frozen[int] {
 // 生の1ワード（文字列のバイト・値の列の要素・列の個数）— 木の列・文字列（LBASE）なら木のdata、他はヒープ
 func dat(st mut S, x int) int {
     if x >= LBASE {
+        if x >= YLBASE {
+            // 店の列の文字列（γ の読み戻し — trStr）
+            return table.Get(mut st.ty.yl, x - YLBASE)
+        }
         if x >= LBASE + LK {
             return badRef()
         }
         return st.trees[refFile(x)].data[refIdx(x)]
     }
     return hget(mut st, x)
+}
+
+// 文字列 x が木の文字列（ソースの data を指す — LBASE 以上・店の列〔YLBASE 以上〕でない）か
+func treeStr(x int) bool {
+    return x >= LBASE && x < YLBASE
 }
 
 // ── ヒープの小道具（展開される — 呼び出し点ごとに小さい）──
@@ -458,11 +476,11 @@ func strIs(st mut S, a StrRef, w string) bool {
     if slen(mut st, a) != len(b) {
         return false
     }
-    if int(a) >= LBASE {
+    if treeStr(int(a)) {
         return dataIs(st.trees[refFile(int(a))].data, refIdx(int(a)) + 1, b)
     }
     for i <- iter.Range(0, len(b)) {
-        if hget(mut st, int(a) + 1 + i) != int(b[i]) {
+        if sat(mut st, a, i) != int(b[i]) {
             return false
         }
     }
@@ -476,7 +494,7 @@ func strHasPrefix(st mut S, a StrRef, w string) bool {
         return false
     }
     for i <- iter.Range(0, len(b)) {
-        c := if int(a) >= LBASE { st.trees[refFile(int(a))].data[refIdx(int(a)) + 1 + i] } else { hget(mut st, int(a) + 1 + i) }
+        c := sat(mut st, a, i)
         if c != int(b[i]) {
             return false
         }
@@ -494,7 +512,7 @@ func strEqPart(st mut S, a StrRef, s StrRef, lo int, hi int) bool {
 
 // 文字列 a のバイト [alo, alo + n) と文字列 s のバイト [slo, slo + n) の一致（両方が木の文字列なら data を直に比べる）
 func strSpanEq(st mut S, a StrRef, alo int, s StrRef, slo int, n int) bool {
-    if int(a) >= LBASE && int(s) >= LBASE {
+    if treeStr(int(a)) && treeStr(int(s)) {
         return dataEq(st.trees[refFile(int(a))].data, refIdx(int(a)) + 1 + alo, st.trees[refFile(int(s))].data, refIdx(int(s)) + 1 + slo, n)
     }
     for i <- iter.Range(0, n) {
@@ -702,6 +720,10 @@ func sat(st mut S, s StrRef, i int) int {
 
 // listN で取った文字列 s の i 番目のバイトを書く（作った直後に埋める形 — lput と同じ）
 func sput(st mut S, s StrRef, i int, v int) {
+    // 店の列の文字列（γ の読み戻し）は書かない — 子へ写した店の列を変えない
+    if int(s) >= YLBASE {
+        panic(InvariantBroken{})
+    }
     hset(mut st, int(s) + 1 + i, v)
 }
 
@@ -832,6 +854,25 @@ func PkgFhi(st mut S, pk int) int {
     return hget(mut st, st.pkgs + pk * PKSZ + 3)
 }
 
+// packageの数
+func PkgCount(st mut S) int {
+    return st.npkg
+}
+
+// package pk が import する package の列（暗黙の import を含む・重複はありうる）
+func PkgImports(st mut S, pk int) []int {
+    im := hget(mut st, st.pkgs + pk * PKSZ + 4)
+    n := hget(mut st, im) / 2
+    mut out := mut []int{}
+    for i <- iter.Range(0, n) {
+        q := hget(mut st, im + 2 + i * 2)
+        if q >= 0 {
+            out = append(out, q)
+        }
+    }
+    return freeze(out)
+}
+
 // ファイル f の KFile 節
 func FileRoot(st mut S, f int) NodeRef {
     return hgetN(mut st, st.files + f * 2)
@@ -846,7 +887,7 @@ func FilePkg(st mut S, f int) int {
 // import はファイルごと（language.md 20 節 — Go と同じ）: s が木の文字列（ソースに書いた名前）なら、その名前を書いたファイルが
 // 自分で import した参照名だけが引ける（同じ package の別ファイルの import は見えない）。合成の名前（ヒープの文字列 — 暗黙の import 等）は package の表
 func ImportOf(st mut S, pk int, s StrRef, lo int, hi int) int {
-    if int(s) >= LBASE && FilePkg(mut st, refFile(int(s))) == pk && !fileImports(mut st, refFile(int(s)), s, lo, hi) {
+    if treeStr(int(s)) && FilePkg(mut st, refFile(int(s))) == pk && !fileImports(mut st, refFile(int(s)), s, lo, hi) {
         return -1
     }
     im := hget(mut st, st.pkgs + pk * PKSZ + 4)

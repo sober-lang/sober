@@ -8,6 +8,8 @@
 #   - コーパスの列の再生役が同じpanicで死ぬ・駆動役が試行の前にコーパスの列を再生して同じ失敗を特定する・失敗しないCheckは期限まで回ってexit 0
 #   scripts/quickfuzz.sh            照合
 #   scripts/quickfuzz.sh --regen    ゴールデンを作り直す（差分を見てからコミット）
+# ゴールデンの並びを呼び手のロケールに依らせない
+export LC_ALL=C.UTF-8
 set -uo pipefail
 cd "$(dirname "$0")/.."
 SOBER=${SOBER:-./bin/sober}

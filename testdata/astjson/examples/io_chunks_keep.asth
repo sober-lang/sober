@@ -1,7 +1,9 @@
-@@full	1c396f133d0b3781	1220	32125
-@head	650e5dd06f87d7e1	0	172
+@@full	80f61238dffd117b	1639	43476
+@head	be19b77c3b8076f7	0	203
 func check	8c42322eaea4a92f	32	1110
-func main	52a5f436720eea0c	68	2299
+func main	b5d4aaaee4e4d6fb	78	2622
 func pat	820ed95aa8ea1130	8	346
+func removeAll	587e7712509490fc	18	694
 func run	4f8054aacbe0ac3f	78	2717
+func runDir	25a59a75464b1e89	37	1321
 type Keep	9d78e5e00ad669d7	4	194

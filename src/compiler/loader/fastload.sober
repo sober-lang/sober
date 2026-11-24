@@ -1,0 +1,650 @@
+package loader
+
+// package の仕上げの結果を格納場所から読む読み込み（D1 区切り3c-3 — plan-d1-3-bldn.md）: load の前に試す速い経路。
+// import を辿る発見は load と同じ順で、値（PkgVal）が当たる package は parse しない（値の import の列で辿る）。外れた package と、
+// 依存の宣言の木が変わった package だけを「依存の宣言の木 + 自分のソース」で仕上げ（pkgfin の入口）、値の列から全体を組み立てる（asmProgram）。
+// 値は P の切り口に、P と別の塩の鍵で置く。鍵は2つ: ソースの鍵（package のパスとファイルのパス・中身のハッシュ）と、ソースの鍵に依存の宣言の木の要約を足した鍵。
+// 発見はソースの鍵の値の import の列で辿る（import はソースだけで決まる）。値の依存の要約が今の依存と合わなければ、足した鍵の値を引く。
+// 同じ鍵に別の値は書かない（格納場所は先に書いた値を残す）。ソースの鍵には、まだ無いときだけ書く。
+// 使わない場合（load へ）: 格納場所を使わない・テスト・計装・mutation・依存のモジュール・SOBER_PKG_FIN=0。
+// 回し直す場合（load へ — 拒否の診断は load が出す）: 発見の途中の拒否・仕上げの拒否・組み立ての失敗（モジュールの名前の衝突・import の循環・optfn の要る組の不足）
+
+import "ast"
+import "std/builder"
+import "std/io"
+import "std/iter"
+import "std/sort"
+import "std/strings"
+import "std/table"
+import "std/task"
+
+// 速い経路を使うか
+func fastOn(m Manifest, pc PCache) bool {
+    return pc.on && m.test == "" && !m.cover && m.mutate == 0 && len(m.dbl_t) == 0 && len(m.mod.dep_name) == 0 && finEnv("SOBER_PKG_FIN") == 1
+}
+
+// 発見で集めた package 1 つ
+type FlPkg struct {
+    path string
+    files []string
+    std bool
+    ka []int
+    kb []int
+    hit bool
+    hd PvHead
+}
+
+// 値の鍵（package のパスとファイルごとのパス・中身のハッシュ — P と別の塩）
+func flKey(path string, files []string, ka []int, kb []int) PcKey {
+    mut s := "sober-pkgfin ${PV_VER}\n${path}\n"
+    for i <- iter.Range(0, len(files)) {
+        s = s + "${files[i]} ${ka[i]} ${kb[i]}\n"
+    }
+    return pcKey(bytes(s))
+}
+
+// ソースの鍵に依存の宣言の木の要約を足した鍵
+func flDepKey(fk PcKey, dk PcKey) PcKey {
+    return pcKey(bytes("sober-pkgfin-dep ${PV_VER}\n${fk.a} ${fk.b} ${dk.a} ${dk.b}\n"))
+}
+
+// 鍵 k の値の頭を out へ足す（本体と宣言の木は使うときに符号から読む）。大きな構造体は返さずに呼び手の置き場へ書く（return ごとに全フィールドの移しが要るため）
+func flHeadAt(pc PCache, k PcKey, path string, nf int, out mut []PvHead) bool {
+    e := pcFind(pc, k.a, k.b)
+    if e < 0 {
+        return false
+    }
+    vb, bok := pcBytes(pc, e)
+    return bok && pvHeadAppend(vb, mut out) && out[0].path == path && len(out[0].imports) == nf
+}
+
+// 宣言の木のハッシュ
+func flStubKey(files []string, stubs []ast.Tree) PcKey {
+    mut w := builder.Builder[int]{}
+    for i <- iter.Range(0, len(stubs)) {
+        pvStr(mut w, files[i])
+        stubWords(mut w, stubs[i])
+    }
+    return pcKey(Varints(builder.Build(mut w)))
+}
+
+// 木が @embed を持つか
+func hasEmbed(t ast.Tree) bool {
+    for x <- t.nodes {
+        if x.kind == ast.EEmbed {
+            return true
+        }
+    }
+    return false
+}
+
+// 速い経路（ok = false なら load で回し直す）
+func fastLoad(m Manifest, fsm bool, sm map[string]string, pc PCache, sink mut PcSink) (Program, bool) {
+    mut vals := mut []PvHead{}
+    mut p := Program{}
+    why := if fastHeads(m, fsm, sm, pc, mut sink, mut vals) { asmHeads(mut vals, m.mod, mut p) } else { "-" }
+    if why == "" {
+        Stage("f-fin")
+        mut cf := mut []string{}
+        for c <- contractFiles(m, fsm, sm, noWiring()) {
+            cf = append(cf, c)
+        }
+        for c <- m.mod.files {
+            cf = append(cf, c)
+        }
+        p.contract_files = freeze(cf)
+        p.std_src = sm
+    } else if why != "-" && finEnv("SOBER_PKG_FIN_STAT") == 1 {
+        _ = io.WriteStderr(bytes("#pkgcache fallback ${why}\n"))
+    }
+    return p, why == ""
+}
+
+// 発見と値の照らし・仕上げ直し（全 package の値の頭を vals へ — false なら load で回し直す）
+func fastHeads(m Manifest, fsm bool, sm map[string]string, pc PCache, sink mut PcSink, vals mut []PvHead) bool {
+    main := "main"
+    entryIsFile := if fsm { !isDir(m.entry) } else { has(m.files, m.entry) }
+    mut ps := mut []FlPkg{}
+    mut raws := mut [][]ast.Tree{}
+    // main
+    mfs := if entryIsFile { []string{m.entry} } else { dirFiles(m, fsm, sm, m.entry) }
+    if len(mfs) == 0 {
+        return false
+    }
+    if !flPkg(m, fsm, sm, pc, main, mfs, false, mut sink, mut ps, mut raws) {
+        return false
+    }
+    mut nm0 := if ps[0].hit { 0 } else { 1 }
+    mut seen := mut []string{}
+    mut going := true
+    while going {
+        mut loaded := mut []string{}
+        for k <- iter.Range(0, len(ps)) {
+            loaded = append(loaded, ps[k].path)
+        }
+        ld := freeze(loaded)
+        mut pending := mut []string{}
+        for k <- iter.Range(0, len(ps)) {
+            for i <- iter.Range(0, len(ps[k].files)) {
+                for ip <- flImports(mut ps, mut raws, k, i) {
+                    path := if strings.HasPrefix(ip, "$") { cut(ip, 1, len(bytes(ip))) } else { ip }
+                    synth := strings.HasPrefix(ip, "$")
+                    if !synth && !importPathOk(path) {
+                        return false
+                    }
+                    if isInternal(path) && !ps[k].std && !synth {
+                        return false
+                    }
+                    if !has(ld, path) && !has(freeze(seen), path) && !has(freeze(pending), path) {
+                        pending = append(pending, path)
+                    }
+                }
+            }
+        }
+        for p <- freeze(pending) {
+            seen = append(seen, p)
+            fs := dirFiles(m, fsm, sm, p)
+            if len(fs) == 0 || depOf(m.mod, p) >= 0 {
+                return false
+            }
+            if !flPkg(m, fsm, sm, pc, p, fs, isStd(p), mut sink, mut ps, mut raws) {
+                return false
+            }
+            nm0 = nm0 + (if ps[len(ps) - 1].hit { 0 } else { 1 })
+            // 外れが多いビルド（冷えたビルドなど）は発見の途中でやめる（下の判定を発見した分に掛ける — 全体の経路が parse し直すので、ここで parse する分が無駄になる）
+            if nm0 > 2 && nm0 * 4 > len(ps) {
+                return false
+            }
+        }
+        going = len(pending) > 0
+    }
+    // 外れが多いビルド（冷えたビルドなど）は、package を1つずつ仕上げるより全体の仕上げ（load）が速い — そこで全 package の値を作る（pkgCapture）
+    mut nmiss := 0
+    for k <- iter.Range(0, len(ps)) {
+        nmiss = nmiss + (if ps[k].hit { 0 } else { 1 })
+    }
+    if nmiss > 2 && nmiss * 4 > len(ps) {
+        return false
+    }
+    Stage("parsed")
+    // 依存の順（import の深さ優先の帰りがけ — 依存が先）に、値を照らすか仕上げ直す
+    np := len(ps)
+    mut ix := mut map[string]int{}
+    for k <- iter.Range(0, np) {
+        ix[ps[k].path] = k
+    }
+    ixs := freeze(ix)
+    mut imp := mut [][]int{}
+    for k <- iter.Range(0, np) {
+        mut ds := mut []int{}
+        for i <- iter.Range(0, len(ps[k].files)) {
+            for ip <- flImports(mut ps, mut raws, k, i) {
+                path := if strings.HasPrefix(ip, "$") { cut(ip, 1, len(bytes(ip))) } else { ip }
+                d := mapIx(ixs, path)
+                if d >= 0 && d != k {
+                    ds = append(ds, d)
+                }
+            }
+        }
+        imp = append(imp, freeze(ds))
+    }
+    ims := freeze(imp)
+    mut ord := mut []int{}
+    mut vis := mut []bool{}
+    for _ <- iter.Range(0, np) {
+        vis = append(vis, false)
+    }
+    for k <- iter.Range(0, np) {
+        flVisit(ims, k, mut vis, mut ord)
+    }
+    mut done := mut []bool{}
+    mut cks := mut []PcKey{}
+    mut lks := mut [][]int{}
+    for k <- iter.Range(0, np) {
+        vals = append(vals, PvHead{})
+        done = append(done, false)
+        cks = append(cks, PcKey{0, 0})
+        lks = append(lks, []int{})
+    }
+    for k <- freeze(ord) {
+        mut lv := mut []bool{}
+        for _ <- iter.Range(0, np) {
+            lv = append(lv, false)
+        }
+        mut link := mut []int{}
+        flVisit(ims, k, mut lv, mut link)
+        lk := freeze(link)
+        mut ds := ""
+        for l <- lk {
+            if l != k {
+                ds = ds + "${ps[l].path} ${vals[l].stubA} ${vals[l].stubB}\n"
+            }
+        }
+        dk := pcKey(bytes(ds))
+        fk := flKey(ps[k].path, ps[k].files, ps[k].ka, ps[k].kb)
+        ck := flDepKey(fk, dk)
+        mut use := ps[k].hit && ps[k].hd.depA == dk.a && ps[k].hd.depB == dk.b && ps[k].hd.embed == 0
+        if use {
+            vals[k] = ps[k].hd
+        } else if ps[k].hit {
+            mut cv := mut []PvHead{}
+            if flHeadAt(pc, ck, ps[k].path, len(ps[k].files), mut cv) && cv[0].depA == dk.a && cv[0].depB == dk.b && cv[0].embed == 0 {
+                vals[k] = cv[0]
+                use = true
+            }
+        }
+        if use {
+            done[k] = true
+        } else {
+            if !flRebuild(m, fsm, sm, pc, k, mut ps, mut raws, mut vals, lk, []string{}, []int{}, dk, mut sink) {
+                return false
+            }
+            if finEnv("SOBER_PKG_FIN_STAT") == 1 {
+                _ = io.WriteStderr(bytes("#pkgcache rebuild ${ps[k].path} hit=${ps[k].hit} stub=${vals[k].stubA}\n"))
+            }
+            table.Push(mut sink.t, PcPut{5, ck.a, ck.b, vals[k].raw, ps[k].path})
+            if !ps[k].hit {
+                table.Push(mut sink.t, PcPut{5, fk.a, fk.b, vals[k].raw, ps[k].path})
+            }
+        }
+        cks[k] = ck
+        lks[k] = lk
+    }
+    // optfn: 下流の package からの要る組があれば、その組で仕上げた値を使う（下流が先 — 変種の本体が上流へ出す要求を足すので）。
+    // 変種は宣言の木を変えない（変われば全体の経路へ — 依存する側の鍵が変わるため）
+    mut j := len(ord) - 1
+    while j >= 0 {
+        k := ord[j]
+        zr, zm := flZReq(mut vals, k)
+        if len(zr) > 0 {
+            dk := PcKey{vals[k].depA, vals[k].depB}
+            cz := flZKey(cks[k], zr, zm)
+            sa := vals[k].stubA
+            sb := vals[k].stubB
+            mut cv := mut []PvHead{}
+            if flHeadAt(pc, cz, ps[k].path, len(ps[k].files), mut cv) && cv[0].depA == dk.a && cv[0].depB == dk.b && cv[0].embed == 0 && cv[0].stubA == sa && cv[0].stubB == sb {
+                vals[k] = cv[0]
+            } else {
+                if !flRebuild(m, fsm, sm, pc, k, mut ps, mut raws, mut vals, lks[k], zr, zm, dk, mut sink) || vals[k].stubA != sa || vals[k].stubB != sb {
+                    return false
+                }
+                done[k] = false
+                if finEnv("SOBER_PKG_FIN_STAT") == 1 {
+                    _ = io.WriteStderr(bytes("#pkgcache rebuild-optfn ${ps[k].path} n=${len(zr)}\n"))
+                }
+                table.Push(mut sink.t, PcPut{5, cz.a, cz.b, vals[k].raw, ps[k].path})
+            }
+        }
+        j -= 1
+    }
+    if finEnv("SOBER_PKG_FIN_STAT") == 1 {
+        mut nh := 0
+        mut nd := 0
+        for k <- iter.Range(0, np) {
+            nh = nh + (if ps[k].hit { 1 } else { 0 })
+            nd = nd + (if done[k] { 1 } else { 0 })
+        }
+        _ = io.WriteStderr(bytes("#pkgcache packages=${np} hit=${nh} used=${nd}\n"))
+    }
+    return true
+}
+
+// package ps の値を「依存の宣言の木（vals の lk のうち自分以外）+ 自分のソース」で仕上げ直す（parse していなければ parse — P の格納場所を引く）。
+// zr・zm = 下流の package からの optfn の要る組
+func flRebuild(m Manifest, fsm bool, sm map[string]string, pc PCache, k int, ps mut []FlPkg, raws mut [][]ast.Tree, vals mut []PvHead, lk []int, zr []string, zm []int, dk PcKey, sink mut PcSink) bool {
+    mut raw := raws[k]
+    if len(raw) != len(ps[k].files) {
+        mut rr := mut []ast.Tree{}
+        for f <- ps[k].files {
+            t, pp, perr := parseFile(m, fsm, sm, f, ps[k].std, 0, pc)
+            if perr != nil {
+                return false
+            }
+            table.Push(mut sink.t, pp)
+            rr = append(rr, t)
+        }
+        raw = freeze(rr)
+    }
+    mut ts := mut []ast.Tree{}
+    mut lp := mut []string{}
+    mut lpath := mut []string{}
+    mut lstd := mut []bool{}
+    for l <- lk {
+        if l == k {
+            for i <- iter.Range(0, len(raw)) {
+                ts = append(ts, raw[i])
+                lp = append(lp, ps[k].path)
+                lpath = append(lpath, ps[k].files[i])
+                lstd = append(lstd, ps[k].std)
+            }
+        } else {
+            sts := pvStubsRaw(vals[l].raw)
+            if len(sts) != len(vals[l].imports) {
+                return false
+            }
+            for i <- iter.Range(0, len(sts)) {
+                ts = append(ts, sts[i])
+                lp = append(lp, vals[l].path)
+                lpath = append(lpath, vals[l].files[i])
+                lstd = append(lstd, vals[l].stds[i])
+            }
+        }
+    }
+    mut fx := FinX{tgt: ps[k].path, inZ: zr, inM: zm, nopatch: true}
+    q, err := finish(freeze(ts), freeze(lp), freeze(lpath), freeze(lstd), []string{}, false, 0, m.mod, m.inf, mut fx)
+    if err != nil {
+        return false
+    }
+    kq := pathIndex(q.pkg_path, ps[k].path)
+    if kq < 0 {
+        return false
+    }
+    v := PkgValRun(q, kq, fx, raw, dk)
+    raws[k] = raw
+    vals[k] = pvHeadOf(v, PkgValEnc(v))
+    return true
+}
+
+// package k への、ほかの package からの optfn の要る組（"Z の package のパス 名前" と有無 — 名前・有無の昇順・重なりなし）
+func flZReq(vals mut []PvHead, k int) ([]string, []int) {
+    path := vals[k].path
+    mut seen := mut map[string]int{}
+    mut zs := mut []string{}
+    mut ms := mut []int{}
+    for l <- iter.Range(0, len(vals)) {
+        if l != k {
+            for i <- iter.Range(0, len(vals[l].ozOutZ)) {
+                zp, _, _ := strings.Cut(vals[l].ozOutZ[i], " ")
+                key := "${vals[l].ozOutZ[i]} ${vals[l].ozOutM[i]}"
+                if zp == path && seen[key] == nil {
+                    seen[key] = 1
+                    zs = append(zs, vals[l].ozOutZ[i])
+                    ms = append(ms, vals[l].ozOutM[i])
+                }
+            }
+        }
+    }
+    return ozReqSorted(freeze(zs), freeze(ms))
+}
+
+// 値の頭の列から全体を組み立てる（ここで各値の本体を 1 回だけ読み戻す）
+func asmHeads(hs mut []PvHead, md Mod, out mut Program) string {
+    // 値の木の復号は package ごとに独立なので、子の task で並行に（1つの task が全 package を順に復号すると、100万行で約 0.6 秒）。
+    // 組み立て（asmProgram）の呼び出しは1か所に保つ（Program を受け渡す呼び出し点ごとに検査の費用が大きい）
+    mut raws := mut [][]byte{}
+    mut ks := mut []int{}
+    for i <- iter.Range(0, len(hs)) {
+        raws = append(raws, hs[i].raw)
+        ks = append(ks, i)
+    }
+    rs := freeze(raws)
+    mut pts := []PvTs{}
+    mut par := false
+    if len(hs) >= 2 && task.Ledger().workers > 1 {
+        r, err := task.Map(freeze(ks), (k) => pvTreesDec(rs[k]))
+        if err == nil {
+            pts = r
+            par = true
+        } else {
+            ParFellBack("package values", len(ks), "sequentially", "")
+        }
+    }
+    mut vs := mut []PkgVal{}
+    for i <- iter.Range(0, len(hs)) {
+        if !pkgValAppendTs(rs[i], if par { pts[i] } else { pvTreesDec(rs[i]) }, mut vs) {
+            return "unreadable value ${hs[i].path}"
+        }
+    }
+    return asmProgram(freeze(vs), md, mut out)
+}
+
+// 要る組を (名前, 有無) の昇順に
+func ozReqSorted(zs []string, ms []int) ([]string, []int) {
+    o := sort.Order(len(zs), (a, b) => strLess(zs[a], zs[b]) || zs[a] == zs[b] && ms[a] < ms[b])
+    mut z2 := mut []string{}
+    mut m2 := mut []int{}
+    for i <- o {
+        z2 = append(z2, zs[i])
+        m2 = append(m2, ms[i])
+    }
+    return freeze(z2), freeze(m2)
+}
+
+// 依存の要約を足した鍵 ck に、下流からの optfn の要る組を足した鍵
+func flZKey(ck PcKey, zr []string, zm []int) PcKey {
+    mut s := "sober-pkgfin-z ${PV_VER}\n${ck.a} ${ck.b}\n"
+    for i <- iter.Range(0, len(zr)) {
+        s = s + "${zr[i]} ${zm[i]}\n"
+    }
+    return pcKey(bytes(s))
+}
+
+// 全体の仕上げ r の package k の値（鍵の依存の要約は呼び手が足す）とファイルのパス
+// 値は符号と頭で返す（依存の要約は呼び手が符号に書き込む — pvPatchDep）
+type CapOne struct {
+    hd PvHead
+    fs []string
+    dreq []string
+}
+
+func capOne(dts []ast.Tree, fpkg []string, fpath []string, r Program, fx FinX, k int) CapOne {
+    path := r.pkg_path[k]
+    mut raw := mut []ast.Tree{}
+    mut fs := mut []string{}
+    for f <- iter.Range(0, len(dts)) {
+        if fpkg[f] == path {
+            raw = append(raw, dts[f])
+            fs = append(fs, fpath[f])
+        }
+    }
+    mut oz := mut []string{}
+    mut om := mut []int{}
+    for i <- iter.Range(0, len(fx.aOZo)) {
+        if fx.aOZo[i] == path {
+            oz = append(oz, fx.aOZz[i])
+            om = append(om, fx.aOZm[i])
+        }
+    }
+    mut bn := mut []string{}
+    mut bm := mut []int{}
+    for i <- iter.Range(0, len(fx.aZBp)) {
+        if fx.aZBp[i] == path {
+            bn = append(bn, fx.aZBn[i])
+            bm = append(bm, fx.aZBm[i])
+        }
+    }
+    fxk := FinX{tgt: path, inZ: []string{}, inM: []int{}, dreq: destReqStrs(fx.aPre, fx.aPrePkg, path), outZ: freeze(oz), outM: freeze(om), zbN: freeze(bn), zbM: freeze(bm), capT: fx.capT}
+    rw := freeze(raw)
+    v := PkgValRun(r, k, fxk, rw, PcKey{0, 0})
+    return CapOne{pvHeadOf(v, PkgValEnc(v)), freeze(fs), v.dreq}
+}
+
+func flVisit(ims [][]int, k int, vis mut []bool, out mut []int) {
+    if vis[k] {
+        return
+    }
+    vis[k] = true
+    for d <- ims[k] {
+        flVisit(ims, d, mut vis, mut out)
+    }
+    out = append(out, k)
+}
+
+// package 1 つのファイルを読み、鍵を組んで値を引く（当たらなければ parse — 木を返す）
+func flPkg(m Manifest, fsm bool, sm map[string]string, pc PCache, path string, files []string, std bool, sink mut PcSink, ps mut []FlPkg, raws mut [][]ast.Tree) bool {
+    mut ka := mut []int{}
+    mut kb := mut []int{}
+    for f <- files {
+        src, ok := readSrc(m, fsm, sm, f, std)
+        if !ok {
+            return false
+        }
+        k := pcKey(src)
+        ka = append(ka, k.a)
+        kb = append(kb, k.b)
+    }
+    fk := flKey(path, files, freeze(ka), freeze(kb))
+    e := pcFind(pc, fk.a, fk.b)
+    if e >= 0 {
+        vb, bok := pcBytes(pc, e)
+        mut hh := mut []PvHead{}
+        if bok && pvHeadAppend(vb, mut hh) && hh[0].path == path && len(hh[0].imports) == len(files) {
+            ps = append(ps, FlPkg{path, files, std, freeze(ka), freeze(kb), true, hh[0]})
+            raws = append(raws, []ast.Tree{})
+            return true
+        }
+    }
+    mut rr := mut []ast.Tree{}
+    for f <- files {
+        t, pp, perr := parseFile(m, fsm, sm, f, std, 0, pc)
+        if perr != nil {
+            return false
+        }
+        table.Push(mut sink.t, pp)
+        rr = append(rr, t)
+    }
+    ps = append(ps, FlPkg{path, files, std, freeze(ka), freeze(kb), false, PvHead{}})
+    raws = append(raws, freeze(rr))
+    return true
+}
+
+// package の i 番目のファイルの import のパス（当たりは値から・外れは木から — rawImports の形）
+func flImports(ps mut []FlPkg, raws mut [][]ast.Tree, k int, i int) []string {
+    if ps[k].hit {
+        return ps[k].hd.imports[i]
+    }
+    return rawImports(raws[k][i])
+}
+
+// 全体の仕上げ r（dest の下流の旗を足さずに回した結果・fx.all の途中の情報）から全 package の値を作って sink へ積み、
+// dest の下流の旗を全 package の出す要求から名前で足した木の列を返す（速い経路が使えなかったビルド — 次のビルドで当たる）
+func pkgCapture(dts []ast.Tree, fpkg []string, fpath []string, r Program, fx FinX, pc PCache, sink mut PcSink) []ast.Tree {
+    // ファイルの P の鍵（parse の読みが積んだ項目から）
+    mut pk1 := mut map[string]int{}
+    mut pk2 := mut map[string]int{}
+    for pp <- PcList(mut sink) {
+        if pp.st >= 1 && pp.st <= 3 {
+            pk1[pp.path] = pp.k1
+            pk2[pp.path] = pp.k2
+        }
+    }
+    k1s := freeze(pk1)
+    k2s := freeze(pk2)
+    np := len(r.pkg_path)
+    mut vals := mut []PvHead{}
+    mut fls := mut [][]string{}
+    mut dqs := mut [][]string{}
+    // package ごとの値と符号は互いに独立 — 子 task で作る（子の死は直のパスで作り直す）
+    cs, cerr := task.Map(finFiles(np), (k) => capOne(dts, fpkg, fpath, r, fx, k))
+    for k <- iter.Range(0, np) {
+        c := if cerr == nil { cs[k] } else { capOne(dts, fpkg, fpath, r, fx, k) }
+        vals = append(vals, c.hd)
+        fls = append(fls, c.fs)
+        dqs = append(dqs, c.dreq)
+    }
+    // 依存の宣言の木のハッシュ（fastLoad と同じリンク集合の並び）
+    mut ix := mut map[string]int{}
+    for k <- iter.Range(0, np) {
+        ix[r.pkg_path[k]] = k
+    }
+    ixs := freeze(ix)
+    mut imp := mut [][]int{}
+    for k <- iter.Range(0, np) {
+        mut ds := mut []int{}
+        for ims <- vals[k].imports {
+            for ip <- ims {
+                p0 := if strings.HasPrefix(ip, "$") { cut(ip, 1, len(bytes(ip))) } else { ip }
+                d := mapIx(ixs, p0)
+                if d >= 0 && d != k {
+                    ds = append(ds, d)
+                }
+            }
+        }
+        imp = append(imp, freeze(ds))
+    }
+    imps := freeze(imp)
+    // 依存の要約と下流からの optfn の要る組
+    mut dks := mut []PcKey{}
+    mut zrs := mut [][]string{}
+    mut zms := mut [][]int{}
+    for k <- iter.Range(0, np) {
+        mut lv := mut []bool{}
+        for _ <- iter.Range(0, np) {
+            lv = append(lv, false)
+        }
+        mut link := mut []int{}
+        flVisit(imps, k, mut lv, mut link)
+        mut ds := ""
+        for l <- freeze(link) {
+            if l != k {
+                ds = ds + "${r.pkg_path[l]} ${vals[l].stubA} ${vals[l].stubB}\n"
+            }
+        }
+        dk := pcKey(bytes(ds))
+        dks = append(dks, dk)
+        zr, zm := flZReq(mut vals, k)
+        zrs = append(zrs, zr)
+        zms = append(zms, zm)
+    }
+    mut req := mut map[string]int{}
+    for k <- iter.Range(0, np) {
+        dk := dks[k]
+        zr := zrs[k]
+        zm := zms[k]
+        for s <- dqs[k] {
+            req[s] = 1
+        }
+        // 全部のファイルの P の鍵が揃うときだけ置く
+        mut ka := mut []int{}
+        mut kb := mut []int{}
+        mut ok := true
+        for f <- fls[k] {
+            a := k1s[f]
+            b := k2s[f]
+            if a == nil || b == nil {
+                ok = false
+            } else {
+                ka = append(ka, a)
+                kb = append(kb, b)
+            }
+        }
+        if ok && len(fls[k]) > 0 {
+            fk := flKey(r.pkg_path[k], fls[k], freeze(ka), freeze(kb))
+            ck := if len(zr) > 0 { flZKey(flDepKey(fk, dk), zr, zm) } else { flDepKey(fk, dk) }
+            vb := pvPatchDep(vals[k].raw, dk)
+            // ソースの鍵: まだ無いとき書く（下流からの optfn の要る組がある値は書かない — 組なしの値と違いうる）。
+            // 検証モードでは、置いた値の依存の要約が今と同じなら書いてバイトで比べる
+            fe := if len(zr) > 0 { 0 - 1 } else { pcFind(pc, fk.a, fk.b) }
+            mut putF := fe < 0 && len(zr) == 0
+            mut cmpE := pcFind(pc, ck.a, ck.b)
+            if fe >= 0 && pc.vfy {
+                sb, sok := pcBytes(pc, fe)
+                mut sv := mut []PvHead{}
+                putF = sok && pvHeadAppend(sb, mut sv) && sv[0].depA == dk.a && sv[0].depB == dk.b
+                cmpE = if cmpE < 0 && putF { fe } else { cmpE }
+            }
+            // 検証モード: 格納場所の同じ鍵の値と違えば、違う項目を印字する（書き込みの検証が stale で止める前に特定する）
+            if pc.vfy && cmpE >= 0 {
+                sb, sok := pcBytes(pc, cmpE)
+                mut sv := mut []PkgVal{}
+                mut ov := mut []PkgVal{}
+                dok := sok && pkgValAppend(sb, mut sv)
+                vok := pkgValAppend(vb, mut ov)
+                d := if dok && vok { pvDiff(sv[0], ov[0]) } else { "unreadable" }
+                if d != "" {
+                    _ = io.WriteStderr(bytes("cache: finished package ${r.pkg_path[k]} differs from the stored value: ${d}\n"))
+                }
+            }
+            table.Push(mut sink.t, PcPut{5, ck.a, ck.b, vb, r.pkg_path[k]})
+            if putF {
+                table.Push(mut sink.t, PcPut{5, fk.a, fk.b, vb, r.pkg_path[k]})
+            }
+        }
+    }
+    rq := freeze(req)
+    mut ts := mut []ast.Tree{}
+    for t <- r.trees {
+        ts = append(ts, destPatchByName(t, rq))
+    }
+    return freeze(ts)
+}

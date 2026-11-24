@@ -53,6 +53,7 @@ func optimize(st mut St) {
 func optPre(st mut St) {
     optRegionFree(mut st)
     optInline(mut st)
+    bxOptPre(mut st)
 }
 
 // 設計整合パスの関数ごとのフェーズを全関数に（optFuncは関数の本体とkindsInitの表・作業域だけを読む — バッチB1の子の頭でも掛けられる・lParBatch）
@@ -128,9 +129,12 @@ func optFunc(st mut St, f FnRef) {
 
 // region を使わない関数を悲観的な不動点で求め、その region.enter / region.setdepth を消す
 func optRegionFree(st mut St) {
+    use := bxCUse(mut st)
     mut f := st.fhead
     while f != -1 {
-        if irFnBHead(mut st, f) != -1 {
+        if use && bxCUsed(mut st, f) {
+            rfSeed(mut st, f)
+        } else if irFnBHead(mut st, f) != -1 {
             rfLocal(mut st, f)
         }
         f = irFnNext(mut st, f)
@@ -141,7 +145,7 @@ func optRegionFree(st mut St) {
         f = st.fhead
         while f != -1 {
             r := irFnRFree(mut st, f)
-            if r >= 0 && desugar.HeapGet(mut st.d, r) == 0 && rfCallees(mut st, desugar.HeapGet(mut st.d, r + 1)) {
+            if r >= 0 && desugar.HeapGet(mut st.d, r) == 0 && !(use && bxCUsed(mut st, f)) && rfCallees(mut st, desugar.HeapGet(mut st.d, r + 1)) {
                 desugar.HeapSet(mut st.d, r, 1)
                 changed = true
             }
@@ -167,6 +171,19 @@ func optRegionFree(st mut St) {
         }
         f = irFnNext(mut st, f)
     }
+}
+
+// 要約の値を使うモード: 要約にある関数の F_RFREE を要約の値で置く（[regionを使わないか, 呼ぶ関数の列 = 空, P0' の形, 0]。
+// 不動点はこの関数を動かさない — 要約の値は不動点の値。単調なので、ほかの関数の不動点の値も変わらない）
+func rfSeed(st mut St, f FnRef) {
+    v := bxCPeek(mut st, f, BX_OPRE, 0)
+    if len(v) == 0 {
+        if irFnBHead(mut st, f) != -1 {
+            rfLocal(mut st, f)
+        }
+        return
+    }
+    irSetFnRFree(mut st, f, if v[0] < 0 { -1 } else { rec4(mut st, v[0], listN(mut st, 0), v[1], 0) })
 }
 
 // 呼ぶ関数の列 l がすべて region を使わないと分かっているか。rt.panic / rt.panic_mem は戻らないので数えない
@@ -268,10 +285,84 @@ func inlineShape(st mut St, f FnRef) bool {
     return true
 }
 
-// モジュールの全関数で、P0' の対象の関数の呼び出しを展開する
+// モジュールの全関数で、P0' の対象の関数の呼び出しを展開する。呼び先を先に処理するので、呼び手が読む呼び先の形（inlineOk）は
+// 呼び先が自分の呼び先を展開した後の形で、関数の並びに依らない（呼び手が読む値を、呼び先の package の要約に呼び手から独立に置ける）
 func optInline(st mut St) {
+    mut stt := mut map[int]int{}
+    if bxCUse(mut st) {
+        inlineSeed(mut st, mut stt)
+    }
     mut f := st.fhead
     while f != -1 {
+        if stt[int(f)] == nil && !inlineFast(mut st, mut stt, f) {
+            inlineFrom(mut st, mut stt, f)
+        }
+        f = irFnNext(mut st, f)
+    }
+}
+
+// 要約の値を使うモード: 要約にある P0' の対象の関数は、要約の本体（optPre の後の形 — 呼び出しを含まない）を本体にして済みにする
+func inlineSeed(st mut St, stt mut map[int]int) {
+    mut t := ckNone()
+    mut tab := false
+    mut f := st.fhead
+    while f != -1 {
+        r := irFnRFree(mut st, f)
+        if r >= 0 && desugar.HeapGet(mut st.d, r) == 1 && desugar.HeapGet(mut st.d, r + 2) == 1 && bxCUsed(mut st, f) {
+            v := bxCPeek(mut st, f, BX_OPBODY, 0)
+            if len(v) > 0 {
+                if !tab {
+                    t = bxTab(mut st)
+                    tab = true
+                }
+                p := bxCBodyV(mut st, v, t)
+                if len(p) > 1 {
+                    mvUnpack(mut st, f, p)
+                    stt[int(f)] = 2
+                }
+            }
+        }
+        f = irFnNext(mut st, f)
+    }
+}
+
+// 速い道: f の P0 の呼び先が全部済んでいれば、作業列を使わずにブロックごとに1回の走査で展開して真。済んでいない呼び先を持つブロックに
+// 当たったら偽（そのブロックより前の展開済みのブロックはそのまま — 展開したコピーは呼び出しを含まないので、後でもう一度歩いても変わらない）
+func inlineFast(st mut St, stt mut map[int]int, f FnRef) bool {
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut hit := false
+        mut ins := irBlkIHead(mut st, b)
+        while ins != -1 {
+            if irInsOp(mut st, ins) == OpCall {
+                g := irInsFn(mut st, ins)
+                r := irFnRFree(mut st, g)
+                if r >= 0 && desugar.HeapGet(mut st.d, r) == 1 {
+                    if stt[int(g)] == nil {
+                        return false
+                    }
+                    if !hit && inlineOk(mut st, g) {
+                        hit = true
+                    }
+                }
+            }
+            ins = irInsNext(mut st, ins)
+        }
+        if hit {
+            inlineBlock(mut st, f, b)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    r := irFnRFree(mut st, f)
+    if r >= 0 && desugar.HeapGet(mut st.d, r) == 1 {
+        stt[int(f)] = 2
+    }
+    return true
+}
+
+// 呼び先が済んだ f を展開し、P0 を満たす f に済みの印を付ける（P0 の呼び先の呼び出しが無ければ展開するものは無い — inlineOk は P0 を要する）
+func inlineDone(st mut St, stt mut map[int]int, f FnRef, has bool) {
+    if has {
         mut b := irFnBHead(mut st, f)
         while b != -1 {
             if blockHasInline(mut st, b) {
@@ -279,7 +370,70 @@ func optInline(st mut St) {
             }
             b = irBlkNext(mut st, b)
         }
-        f = irFnNext(mut st, f)
+    }
+    r := irFnRFree(mut st, f)
+    if r >= 0 && desugar.HeapGet(mut st.d, r) == 1 {
+        stt[int(f)] = 2
+    }
+}
+
+// root から、P0 の呼び先を先に（後順で）展開する。stt は P0 を満たす関数だけに印を付ける（1 = 作業列にある・2 = 済み — ほかの関数は
+// 呼び先として辿られない）。作業列の1段 = [関数, 見ているブロック, 次に見る命令, P0 の呼び先の呼び出しがあるか]。
+// 再帰の環で作業列にある関数に当たったら辿らない。作業列にある関数はまだ環の呼び出しを持つので形は偽 — 環の中の関数は
+// 互いの呼び出しを持ち続けるので、どこから入っても形は偽のまま
+func inlineFrom(st mut St, stt mut map[int]int, root FnRef) {
+    mut stk := mut []int{}
+    mut n := 0
+    mut nf := int(root)
+    while nf >= 0 {
+        r0 := irFnRFree(mut st, FnRef(nf))
+        if r0 >= 0 && desugar.HeapGet(mut st.d, r0) == 1 {
+            stt[nf] = 1
+        }
+        nb := irFnBHead(mut st, FnRef(nf))
+        if 4 * n == len(stk) {
+            stk = append(stk, 0)
+            stk = append(stk, 0)
+            stk = append(stk, 0)
+            stk = append(stk, 0)
+        }
+        stk[4 * n] = nf
+        stk[4 * n + 1] = int(nb)
+        stk[4 * n + 2] = if nb != -1 { int(irBlkIHead(mut st, nb)) } else { -1 }
+        stk[4 * n + 3] = 0
+        n += 1
+        nf = -1
+        while nf < 0 && n > 0 {
+            k := 4 * (n - 1)
+            mut b := BlkRef(stk[k + 1])
+            mut ins := InsRef(stk[k + 2])
+            while nf < 0 && b != -1 {
+                if ins == -1 {
+                    b = irBlkNext(mut st, b)
+                    if b != -1 {
+                        ins = irBlkIHead(mut st, b)
+                    }
+                } else {
+                    if irInsOp(mut st, ins) == OpCall {
+                        g := irInsFn(mut st, ins)
+                        r := irFnRFree(mut st, g)
+                        if r >= 0 && desugar.HeapGet(mut st.d, r) == 1 {
+                            stk[k + 3] = 1
+                            if stt[int(g)] == nil {
+                                nf = int(g)
+                            }
+                        }
+                    }
+                    ins = irInsNext(mut st, ins)
+                }
+            }
+            stk[k + 1] = int(b)
+            stk[k + 2] = int(ins)
+            if nf < 0 {
+                inlineDone(mut st, mut stt, FnRef(stk[k]), stk[k + 3] == 1)
+                n -= 1
+            }
+        }
     }
 }
 

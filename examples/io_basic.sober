@@ -1,9 +1,10 @@
 package main
 
 // io-3: std/io の ReadFile / WriteFile（同期 syscall の直呼び）と errno → ラベル、`string(b)` の検査。
-// リポジトリのルートを cwd にして実行する（gate・codegen.test と同じ）。書き込み先は out/ の下
+// リポジトリのルートを cwd にして実行する（gate・codegen.test と同じ）。書き込み先は実行ごとの out/io_basic.<n> の下（印字は置き場の中の名前）
 
 import "std/io"
+import "std/os"
 import "std/strings"
 
 func why(p string, e error) string {
@@ -25,11 +26,16 @@ func readText(p string) (string, error?) {
 }
 
 func showText(p string) {
+    showAs(p, p)
+}
+
+// pを読み、印字ではnameと呼ぶ
+func showAs(name string, p string) {
     s, err := readText(p)
     if err != nil {
-        println(why(p, err))
+        println(why(name, err))
     } else {
-        println("${p}: ${len(bytes(s))} bytes, first line = ${firstLine(s)}")
+        println("${name}: ${len(bytes(s))} bytes, first line = ${firstLine(s)}")
     }
 }
 
@@ -64,6 +70,8 @@ func sum(b []byte) int {
 }
 
 func main() {
+    d := runDir("io_basic")
+    defer removeAll(d)
     showText("testdata/io/hello.txt")
     showText("testdata/io/missing.txt")
     showText("testdata/io")
@@ -74,23 +82,45 @@ func main() {
         big = append(big, byte(97 + i % 26))
         i += 1
     }
-    p := "out/io_basic.tmp"
-    check(p, io.WriteFile(p, big))
+    p := d + "/io_basic.tmp"
+    check("io_basic.tmp", io.WriteFile(p, big))
     b, err := io.ReadFile(p)
     if err != nil {
-        println(why(p, err))
+        println(why("io_basic.tmp", err))
     } else {
         println("read back ${len(b)} bytes, sum ${sum(b)}")
     }
     // 不正な UTF-8 を書いて text として読む
-    q := "out/io_basic_bad.tmp"
-    check(q, io.WriteFile(q, []byte{104, 105, 255, 10}))
-    showText(q)
+    q := d + "/io_basic_bad.tmp"
+    check("io_basic_bad.tmp", io.WriteFile(q, []byte{104, 105, 255, 10}))
+    showAs("io_basic_bad.tmp", q)
     // 空のファイル
-    z := "out/io_basic_empty.tmp"
-    check(z, io.WriteFile(z, []byte{}))
-    showText(z)
+    z := d + "/io_basic_empty.tmp"
+    check("io_basic_empty.tmp", io.WriteFile(z, []byte{}))
+    showAs("io_basic_empty.tmp", z)
     // 書けない場所
     check("/proc/version", io.WriteFile("/proc/version", []byte{65}))
     check("out/no/such/dir.tmp", io.WriteFile("out/no/such/dir.tmp", []byte{65}))
+}
+
+// 実行ごとの置き場 out/<name>.<単調時計の値>（同じ作業ディレクトリで同時に走る実行どうしが上書きし合わない）。
+// mkdirは既にあれば失敗するので、作れた名前がこの実行のもの。作れない状態で回り続けないよう、試す回数に上限を置く（作れなければ ""）
+func runDir(name string) string {
+    _ = os.Mkdir("out")
+    mut n := 0
+    while n < 100 {
+        c := "out/${name}.${os.Monotonic()}"
+        if os.Mkdir(c) == nil {
+            return c
+        }
+        n = n + 1
+    }
+    return ""
+}
+
+// 置き場を中身ごと消す
+func removeAll(d string) {
+    if d != "" {
+        _ = os.Run("/bin/rm", []string{"-rf", d}) catch 0
+    }
 }

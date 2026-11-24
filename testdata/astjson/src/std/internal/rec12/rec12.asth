@@ -1,0 +1,11 @@
+@@full	f26f6f25cc983543	2714	76399
+@head	928f4171c1acf4ec	0	277
+func Open	292c508147ef0a2a	124	4234
+func Prf	5d4a1863a227dc75	68	2451
+func Seal	fc81fb61cb851991	66	2346
+func Seq8	99736d98fbc1aa2a	34	1192
+func aad	5b06ee9450fa6d9e	28	1009
+func cat	70070d7f454cc7cb	33	1226
+func nonce	05f6b327d573b88e	63	2113
+func slice	ffc112bbb83a7a5c	29	1115
+type BadMac	73eed27f820cfdc2	1	67

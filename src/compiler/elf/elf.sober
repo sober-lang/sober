@@ -82,6 +82,9 @@ func ident() []byte {
     return builder.Build(mut b)
 }
 
+// 機械語を写す区間の大きさ（バイト）
+const copyBlock = 65536
+
 // 実行ファイルのバイト列（code の全部・rodata・.bss の大きさ bssBytes）
 // ヘッダ（176 B）だけBuilderで組み、本体は1本のsliceへ直にappendする（regionの先端で伸びるので途中のコピーは出ない）。
 // 全部をBuilderに積んでBuildで連続のsliceへコピーする形は取らない — 機械語の表・Builder・連続のsliceの3つが同時に生きて、自己buildのRSSの高水位（+15 MB）になる
@@ -99,14 +102,30 @@ func Executable(code mut table.Table[byte], rodata []byte, bssBytes int) []byte 
     for i <- iter.Range(0, len(hdr)) {
         f = append(f, hdr[i])
     }
-    for i <- iter.Range(0, n) {
-        f = append(f, table.Get(mut code, i))
+    // 機械語は区間ごとに一括で読んで写す（要素ごとの Get は範囲の判定と chunk の二重の境界検査を払う）
+    mut buf := mut []byte{}
+    for _ <- iter.Range(0, copyBlock) {
+        buf = append(buf, 0)
+    }
+    mut at := 0
+    while at < n {
+        m := if n - at < copyBlock { n - at } else { copyBlock }
+        table.Read(mut code, at, m, mut buf)
+        // コピーのループの形（copyloop の一括のコピー）
+        mut q := 0
+        while q < m {
+            f = append(f, buf[q])
+            q += 1
+        }
+        at += m
     }
     for i <- iter.Range(CodeOffset + n, lay.Rodata - base) {
         f = append(f, 0)
     }
-    for i <- iter.Range(0, len(rodata)) {
-        f = append(f, rodata[i])
+    mut r := 0
+    while r < len(rodata) {
+        f = append(f, rodata[r])
+        r += 1
     }
     return freeze(f)
 }

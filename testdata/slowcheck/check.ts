@@ -12,6 +12,8 @@ import tls from "node:tls";
 const port = +process.argv[2];
 const useTls = process.argv.includes("--tls");
 const full = process.argv.includes("--full");
+// --host: 繋ぐ先の番地（既定 127.0.0.1。::1 で srv の SLOW_V6=1〔[::1] の listener〕を見る）
+const host = process.argv.includes("--host") ? process.argv[process.argv.indexOf("--host") + 1] : "127.0.0.1";
 const SLACK = 2500;
 const HEAD = 1000;
 const BODY = 2000;
@@ -24,15 +26,15 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 function connect(): Promise<net.Socket> {
   return new Promise((res, rej) => {
     const s: net.Socket = useTls
-      ? tls.connect({ port, host: "127.0.0.1", rejectUnauthorized: false, ALPNProtocols: ["http/1.1"] }, () => res(s))
-      : net.connect(port, "127.0.0.1", () => res(s));
+      ? tls.connect({ port, host, rejectUnauthorized: false, ALPNProtocols: ["http/1.1"] }, () => res(s))
+      : net.connect(port, host, () => res(s));
     s.on("error", (e) => rej(e));
   });
 }
 
 function rawConnect(): Promise<net.Socket> {
   return new Promise((res, rej) => {
-    const s = net.connect(port, "127.0.0.1", () => res(s));
+    const s = net.connect(port, host, () => res(s));
     s.on("error", (e) => rej(e));
   });
 }
@@ -380,8 +382,8 @@ async function rcvbuf() {
 }
 
 // 入場が埋まったとき（reject: なし）: 何も送らない接続4本で conns: 4 を埋めた後に繋いだ2本は、閉じられずに列で待ち、
-// 埋めた接続が切られるか閉じられて枠が空いた後に処理される（io_uring の経路では、入場を待つ接続があるとき rt が受けの無い入場済みの接続から切る。
-// epoll の経路〔W1〕は頭の期限で閉じられた後。どちらでも応答が返ることを見て、待った時間は記録に出す）
+// 埋めた接続が切られて枠が空いた後に処理される（入場を待つ接続があるとき、rt が受けの無い入場済みの接続から切る。io_uring と epoll の経路で同じ）。
+// 応答が返ることと、待った時間が頭の期限より短いこと（期限で閉じられるのを待たずに枠が取り戻された）を見る
 async function waitFull() {
   const ss = await Promise.all([0, 1, 2, 3].map(() => rawConnect()));
   await sleep(200);
@@ -396,7 +398,7 @@ async function waitFull() {
       return { ok: false, ms: Date.now() - t0, d: String(e) };
     }
   }));
-  check("wait-full", rs.every((r) => r.ok), rs.map((r) => `${r.ms}ms ${r.d}`).join(" / "));
+  check("wait-full", rs.every((r) => r.ok && r.ms < HEAD), rs.map((r) => `${r.ms}ms ${r.d}`).join(" / ") + ` (want < ${HEAD}ms)`);
   for (const s of ss) s.destroy();
 }
 

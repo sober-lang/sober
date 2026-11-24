@@ -69,19 +69,19 @@ V-3. トップレベルの束縛はconst式だけ — 関数を呼べず、実�
 
 ## 3.2 mut引数
 
-V-4. 仮引数の型の先頭の `mut`（`func bump(n mut int)`）はmut引数のマークで、呼び手の可変の場所への参照を受ける — 呼び先の書きは呼び手に見える。呼び出し点にも `mut` を書く（`bump(mut k)`）。実引数は呼び手のmutの場所（mutのローカル・mut仮引数）か、そこからフィールドをたどったパス（`mut st.nodes`）に限る。マークの無い実引数・不変の束縛は拒否する。
-例: [`examples/mutparam.sober`](../../examples/mutparam.sober)・[`examples/field_mutarg.sober`](../../examples/field_mutarg.sober)・[`examples/tour_06_mut.sober`](../../examples/tour_06_mut.sober)
+V-4. 仮引数の型の先頭の `mut`（`func bump(n mut int)`）はmut引数のマークで、呼び手の可変の場所への参照を受ける — 呼び先の書きは呼び手に見える。呼び出し点にも `mut` を書く（`bump(mut k)`）。実引数は呼び手のmutの場所（mutのローカル・mut仮引数）か、そこからフィールドをたどったパス（`mut st.nodes`）に限る。マークの無い実引数・不変の束縛は拒否する。1つの呼び出しのmut実引数は、別のスコープの束縛でよい（ループや入れ子のブロックの中のローカルと、外のローカルやmut仮引数）。呼び先が再帰するかどうかに依らない。
+例: [`examples/mutparam.sober`](../../examples/mutparam.sober)・[`examples/field_mutarg.sober`](../../examples/field_mutarg.sober)・[`examples/tour_06_mut.sober`](../../examples/tour_06_mut.sober)・[`examples/mutcell_loop.sober`](../../examples/mutcell_loop.sober)・[`examples/mutcell_inner.sober`](../../examples/mutcell_inner.sober)・[`examples/mutcell_scalar.sober`](../../examples/mutcell_scalar.sober)・[`examples/mutcell_param.sober`](../../examples/mutcell_param.sober)
 拒否: [`examples/mutarg_neg_mark.sober`](../../examples/mutarg_neg_mark.sober)・[`examples/mutarg_neg_const.sober`](../../examples/mutarg_neg_const.sober)・[`examples/mutarg_decl_mismatch.sober`](../../examples/mutarg_decl_mismatch.sober)
 決定: [language.md 26節](../language.md)
 
 V-5. 同じ呼び出しのmut実引数どうしは重ならない — 同じパスや、一方が他方のフィールドのパス（`f(mut s, mut s)`・`f(mut t, mut t.xs)`）は拒否する。兄弟のフィールド・別の根は重ならない。mutとimmの実引数の重なり（`f(mut t, t)`）は許し、immの側は呼び出しの前の値を見る。
 例: [`examples/mut_args_disjoint.sober`](../../examples/mut_args_disjoint.sober)・[`examples/ref_param.sober`](../../examples/ref_param.sober)
-拒否: [`examples/mutarg_neg_alias.sober`](../../examples/mutarg_neg_alias.sober)
+拒否: [`examples/mutarg_neg_alias.sober`](../../examples/mutarg_neg_alias.sober)・[`examples/mutcell_neg_alias.sober`](../../examples/mutcell_neg_alias.sober)
 決定: [language.md 26節](../language.md)
 
 V-6. mut仮引数（slice・mapとそれを含むstruct）の中身は呼び出しの外へ逃げない — 仮引数を根に持つパスをreturnの値・他への代入・フィールド・appendの要素に置けない。要素の読み（`return xs[i]`）とスカラーのフィールドの読みは書ける。
 例: [`examples/hdr_mut2.sober`](../../examples/hdr_mut2.sober)
-拒否: [`examples/mutarg_neg_escape.sober`](../../examples/mutarg_neg_escape.sober)
+拒否: [`examples/mutarg_neg_escape.sober`](../../examples/mutarg_neg_escape.sober)・[`examples/mutcell_neg_escape.sober`](../../examples/mutcell_neg_escape.sober)
 決定: [language.md 26節](../language.md)
 
 V-7. 関数型の仮引数はmutにできる（`func(st mut S, x int)`）。mut仮引数は関数型1つに1本までで、その位置は関数型の同一性に入る。mut仮引数を持つ関数は、同じ位置にmutを持つ関数型の値になる。値の呼び出しのmut仮引数には `mut x` を渡し、他の仮引数には値を渡す。ラムダの仮引数の型を書くならmutのマークも関数型と同じ位置に書き、型を書かなければmut仮引数の位置は関数型から決まる。

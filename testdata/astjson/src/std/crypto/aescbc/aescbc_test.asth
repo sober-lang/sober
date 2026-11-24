@@ -1,0 +1,10 @@
+@@full	314e3dbc712f5577	2690	75631
+@head	00a1a447bbed7b1a	0	185
+func TestBadSize	f653629562bff07a	95	2843
+func TestRoundTrip	9b5ce306d8b1ef10	68	2180
+func TestVectors	89a667ff23f6dfe2	104	3553
+func nib	04d4adc55e42e2ca	20	700
+func pat	4afb1f0aa7bb282b	37	1328
+func same	157a079231a324d0	47	1571
+func slice	ffc112bbb83a7a5c	29	1115
+func unhex	c118fbe8d7655acf	52	1726

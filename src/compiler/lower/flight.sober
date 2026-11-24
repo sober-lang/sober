@@ -34,6 +34,7 @@ const FK_CLOCK = 11  // a = CLOCK_MONOTONIC（ns — スリープの前だけ読
 const FK_END = 12    // a = 終わった TCB・b = 罠の結果（0 = 戻った・1 = 死んだ）
 const FK_PANIC = 13  // a = panic の点の番号・b = 今の TCB
 const FK_READY = 14  // a = epollがreadinessを返した待ち手のTCB・b = 1なら待ち中（ウェイクアップする — 対のWAKEが続くはず）
+const FK_SIG = 16    // a = 種類 | ストリームID << 8 | (枠 + 1) << 40・b = 長さ（接続のtaskが子の合図を1つ取り出した — mux.soberのop 51。合図と切片〔RECV〕の並びが録る入力）
 const FK_POST = 15   // a = fd | 頼んだ長さ << 32・b = 1なら送信バッファリングした（0 = 送り場に入らず今の送り — 送信バッファリングのフラグのある送りだけ）
 
 // 記録が on のときだけ通る区画を開く（ワーカーの環の基底 ≠ 0）。返り = 続きの区画（呼び手が区画の終わりで br → setCur する）
@@ -167,7 +168,9 @@ func frInit(st mut St, sp int, n int) {
     store(mut st, mp, 4, tscOp(mut st))
     store(mut st, mp, 5, clockNs(mut st))
     store(mut st, mp, 6, syscall(mut st, list1(mut st, iconst(mut st, 39))))
-    store(mut st, mn, MN_FLP, p)
+    // SOBER_FLIGHT_KEEP=1なら正常終了でも消さない（再生の照合が読む — scripts/schedfuzz.sh）
+    keep := envMb(mut st, sp, "SOBER_FLIGHT_KEEP=", 0, true)
+    store(mut st, mn, MN_FLP, bin(mut st, BMul, p, cmp(mut st, CEq, keep, iconst(mut st, 0))))
     store(mut st, mn, MN_FLB, m)
     store(mut st, wk, WK_FRI, iconst(mut st, 0))
     store(mut st, wk, WK_FRM, bin(mut st, BSub, bin(mut st, BShl, iconst(mut st, 1), lg), iconst(mut st, 1)))
@@ -194,7 +197,7 @@ func frWorker(st mut St, a int, k int) {
     setCur(mut st, bE)
 }
 
-// 正常終了（mainが返った）でファイルを消す（kill・panicで死んだときは残る — 検査が拾う）
+// 正常終了（mainが返った）でファイルを消す（kill・panicで死んだときは残る — 検査が拾う。SOBER_FLIGHT_KEEP=1なら残す）
 func frUnlink(st mut St) {
     p := load(mut st, globaladdr(mut st, st.mnG), MN_FLP)
     bE := branchIf(mut st, cmp(mut st, CNe, p, iconst(mut st, 0)))

@@ -1,0 +1,57 @@
+package http
+
+// HTTP の語彙のうちサーバ（std/http/server）とクライアント（std/http/client）が共に使うもの: ヘッダの 1 本・書けないヘッダの panic ラベル・状態の番号
+
+// レスポンスの状態の番号（RFC 9110 15 節）。std/http/serverが理由句を知る番号は下の型つきのconst（http.OK …）— 状態行の表はこのconstの全部を
+// 列挙する（@exhaustive — language.md 13 節の補「表の網羅」）。constに無い番号も `http.StatusCode(418)` や整数のリテラル（`status: 418`）で書ける（理由句は空）
+type StatusCode int
+
+// 200 OK
+const OK = StatusCode(200)
+// 201 Created
+const Created = StatusCode(201)
+// 204 No Content（本文なし・Content-Length を書かない）
+const NoContent = StatusCode(204)
+// 301 Moved Permanently
+const MovedPermanently = StatusCode(301)
+// 302 Found
+const Found = StatusCode(302)
+// 304 Not Modified（条件付き GET の一致 — 本文なし）
+const NotModified = StatusCode(304)
+// 400 Bad Request（リクエストの頭が読めない）
+const BadRequest = StatusCode(400)
+// 401 Unauthorized
+const Unauthorized = StatusCode(401)
+// 403 Forbidden
+const Forbidden = StatusCode(403)
+// 404 Not Found（Dispatch の一致なし・Static のファイルなし）
+const NotFound = StatusCode(404)
+// 405 Method Not Allowed（Dispatch — Allow を付ける）
+const MethodNotAllowed = StatusCode(405)
+// 412 Precondition Failed（If-Match / If-Unmodified-Since の不一致）
+const PreconditionFailed = StatusCode(412)
+// 413 Content Too Large（本文が上限を超える）
+const ContentTooLarge = StatusCode(413)
+// 431 Request Header Fields Too Large（リクエストの頭が上限を超える）
+const RequestHeaderFieldsTooLarge = StatusCode(431)
+// 500 Internal Server Error（handler の失敗）
+const InternalServerError = StatusCode(500)
+// 501 Not Implemented（知らない Transfer-Encoding）
+const NotImplemented = StatusCode(501)
+// 503 Service Unavailable
+const ServiceUnavailable = StatusCode(503)
+// 505 HTTP Version Not Supported
+const HTTPVersionNotSupported = StatusCode(505)
+
+// 任意ヘッダの 1 本
+type Field struct {
+    name string
+    value string
+}
+
+// レスポンスの頭がアプリの値のままでは書けない（呼び手の契約違反。panic ラベル）。nameは書けない欄の名前:
+// headersの1本（名前が空か tchar でない・値がfield-valueでない・std/http/server が書く名前・1行だけの欄の2本目）・
+// "Content-Encoding"（Codedのencodingがtokenでない）・"status"（200〜999の外。1xxは最終のレスポンスにならない・204 / 205 / 304に本文）
+type BadHeader panic {
+    name string
+}

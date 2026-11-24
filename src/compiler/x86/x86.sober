@@ -893,6 +893,21 @@ func AesenclastXX(c mut table.Table[byte], x int, y int) {
     sse38(mut c, 0xdd, x, y)
 }
 
+// aesdec x, y（AESの復号の1ラウンド — CBCの復号。std/internal/recordのTLS 1.2のCBC）— 66 [REX] 0F 38 DE /r
+func AesdecXX(c mut table.Table[byte], x int, y int) {
+    sse38(mut c, 0xde, x, y)
+}
+
+// aesdeclast x, y（復号の最後のラウンド）— 66 [REX] 0F 38 DF /r
+func AesdeclastXX(c mut table.Table[byte], x int, y int) {
+    sse38(mut c, 0xdf, x, y)
+}
+
+// aesimc x, y（ラウンドの鍵の InvMixColumns — 復号の鍵の展開）— 66 [REX] 0F 38 DB /r
+func AesimcXX(c mut table.Table[byte], x int, y int) {
+    sse38(mut c, 0xdb, x, y)
+}
+
 // pshufb x, y（バイトの並べ替え — SSSE3。GHASH のバイト順の反転）— 66 [REX] 0F 38 00 /r
 func PshufbXX(c mut table.Table[byte], x int, y int) {
     sse38(mut c, 0x00, x, y)

@@ -6,6 +6,7 @@ package loader
 //     s := json.Encode[User](u)              // → $jsonEncodeTop_<f>_<k>_0(u)
 //     （DecodeWith / EncodeWithは最後の実引数にフィールド名 → JSONのキーの対応の辞書map[string]string — 根のAPI _1）
 //
+// <f> は呼び出すファイルの package の中の序数（relFile — 全体のファイル番号ではない）。
 // struct T と、そのフィールドから届く型（int・float・bool・string・`U?`・`[]U`・入れ子のstruct）ごとに変換の関数（普通のSober）を、呼び出すファイルfごとの
 // 合成ファイル `$json/<f のパス>`（同じpackage）に書いてpackageの末尾に足す。変換の関数はstd/jsonの部品（NeedObject・Need・Get・Items・DecInt …）を呼ぶ。
 // フィールドの名前 = JSONのキー（Rename辞書は未実装）・`U?` のフィールドだけ欠けとnullをnilで受ける・余ったフィールドは無視・欠けたフィールドはjson.Missing。
@@ -48,19 +49,31 @@ func JsonPrefix() string {
 
 // 全ファイルの `json.Decode[T](…)` を変換し、合成ファイルをpackageの末尾に足す（layoutAllの3段目と同じ並べ方）
 @errors(diag.JsonShape, diag.GrammarMismatch)
-func jsonAll(ts []ast.Tree, fpkg []string, fpath []string, fstd []bool) (LOut, error?) {
+func jsonAll(ts []ast.Tree, fpkg []string, fpath []string, fstd []bool, inf []string) (LOut, error?) {
     mut outT := mut []ast.Tree{}
     mut srcs := mut []string{}
+    mut pd := mut []int{}
     for i <- iter.Range(0, len(ts)) {
-        t2, src, err := jsonFile(ts, fpkg, i)
+        t2, src, pend, err := jsonFile(ts, fpkg, fpath, i, inf)
         if err != nil {
             return LOut{}, err
         }
         outT = append(outT, t2)
         srcs = append(srcs, src)
+        for k <- iter.Range(0, len(pend) / 2) {
+            pd = append(pd, i)
+            pd = append(pd, pend[k * 2])
+            pd = append(pd, pend[k * 2 + 1])
+        }
     }
-    rt := freeze(outT)
     ss := freeze(srcs)
+    out := synthAppend(freeze(outT), ss, fpkg, fpath, fstd, JsonPrefix())?
+    return LOut{trees: out.trees, pkg: out.pkg, path: out.path, std: out.std, pend: synthShift(freeze(pd), ss, fpkg)}, nil
+}
+
+// 変換した木の列rtに、合成ソースss（ファイルごと — 要らなければ ""）をparseしてpackageの末尾に足す（合成ファイルのパス = prefix + 元のパス）
+@errors(diag.GrammarMismatch)
+func synthAppend(rt []ast.Tree, ss []string, fpkg []string, fpath []string, fstd []bool, prefix string) (LOut, error?) {
     mut nt := mut []ast.Tree{}
     mut np := mut []string{}
     mut npath := mut []string{}
@@ -81,7 +94,7 @@ func jsonAll(ts []ast.Tree, fpkg []string, fpath []string, fstd []bool) (LOut, e
                     }
                     nt = append(nt, st)
                     np = append(np, fpkg[j])
-                    npath = append(npath, JsonPrefix() + fpath[j])
+                    npath = append(npath, prefix + fpath[j])
                     nstd = append(nstd, fstd[j])
                 }
             }
@@ -101,17 +114,20 @@ func isJsonOp(op string) bool {
     return op == "Decode" || op == "Encode" || op == "DecodeWith" || op == "EncodeWith"
 }
 
-// ファイルfの `json.Decode[T](…)` を変換の関数の呼び出しへ（結果は（変換した木, 合成ソース — 要らなければ ""））
+// ファイルfの `json.Decode[T](…)` を変換の関数の呼び出しへ（結果は（変換した木, 合成ソース — 要らなければ "", 保留の呼び出し — [節, API] の2ワードずつ））。
+// 型引数の字面の無い `json.Encode(v)`・`json.EncodeWith(v, rename)` は、1回目（inf.on = 偽）は変換せずに保留に積み、2回目は推論した根の型（inf）で変換する
 @errors(diag.JsonShape)
-func jsonFile(ts []ast.Tree, fpkg []string, f int) (ast.Tree, string, error?) {
+func jsonFile(ts []ast.Tree, fpkg []string, fpath []string, f int, inf []string) (ast.Tree, string, []int, error?) {
     t := ts[f]
     n0 := len(t.nodes)
     // std/jsonをimportしないファイルにAPIは無い（isJsonDecodeは常に偽 — 節ごとに名前のstringとimportの引きを作らない）
     if !importsPath(t, "std/json") {
-        return t, "", nil
+        return t, "", []int{}, nil
     }
-    // 呼び出しの位置（節の番号）と型の式
+    // 呼び出しの位置（節の番号）と根の要求
     mut calls := mut []int{}
+    mut rr := mut []JReq{}
+    mut pend := mut []int{}
     mut done := mut []bool{}
     for i <- iter.Range(0, n0) {
         done = append(done, false)
@@ -119,28 +135,48 @@ func jsonFile(ts []ast.Tree, fpkg []string, f int) (ast.Tree, string, error?) {
     for i <- iter.Range(0, n0) {
         x := t.nodes[i]
         if x.kind == ast.ECall && t.nodes[x.a].kind == ast.EIndex && isJsonDecode(t, t.nodes[t.nodes[x.a].a]) {
+            idx := t.nodes[x.a]
+            r := jsonRoot(ts, fpkg, f, idx.b)
+            if r.kind != jStruct && r.kind != jValue {
+                return t, "", []int{}, diag.JsonShape{at: diag.Pos{file: f, tok: t.nodes[idx.b].tok}, kind: 1}
+            }
             calls = append(calls, i)
+            rr = append(rr, r)
             done[t.nodes[x.a].a] = true
+        } else if x.kind == ast.ECall && isJsonDecode(t, t.nodes[x.a]) && infJsonOp(Name(t, t.nodes[x.a].b)) {
+            api := if Name(t, t.nodes[x.a].b) == "Encode" { InfEncode } else { InfEncodeWith }
+            done[x.a] = true
+            if isStrict(inf) {
+                return t, "", []int{}, diag.JsonShape{at: diag.Pos{file: f, tok: t.nodes[x.a].tok}, kind: 11}
+            }
+            if len(inf) == 0 {
+                pend = append(pend, i)
+                pend = append(pend, api)
+            } else {
+                pk, nm, ok := infRoot(inf, fpath[f], i)
+                r := if ok { rootOf(ts, fpkg, pk, nm) } else { JReq{} }
+                if r.kind != jStruct && r.kind != jValue {
+                    return t, "", []int{}, diag.JsonShape{at: diag.Pos{file: f, tok: t.nodes[x.a].tok}, kind: 1}
+                }
+                calls = append(calls, i)
+                rr = append(rr, r)
+            }
         }
     }
     for i <- iter.Range(0, n0) {
         if isJsonDecode(t, t.nodes[i]) && !done[i] {
-            return t, "", diag.JsonShape{at: diag.Pos{file: f, tok: t.nodes[i].tok}, kind: 3}
+            return t, "", []int{}, diag.JsonShape{at: diag.Pos{file: f, tok: t.nodes[i].tok}, kind: 3}
         }
     }
     cs := freeze(calls)
     if len(cs) == 0 {
-        return t, "", nil
+        return t, "", freeze(pend), nil
     }
     // 要求の表（根 = 各呼び出しのT・続いてフィールドから届く型 — 待ち行列で）
     mut reqs := mut []JReq{}
     mut roots := mut []int{}
     for c <- iter.Range(0, len(cs)) {
-        idx := t.nodes[t.nodes[cs[c]].a]
-        r := jsonRoot(ts, fpkg, f, idx.b)
-        if r.kind != jStruct && r.kind != jValue {
-            return t, "", diag.JsonShape{at: diag.Pos{file: f, tok: t.nodes[idx.b].tok}, kind: 1}
-        }
+        r := rr[c]
         k := reqIndex(freeze(reqs), r.canon)
         if k < 0 {
             reqs = append(reqs, r)
@@ -152,7 +188,7 @@ func jsonFile(ts []ast.Tree, fpkg []string, f int) (ast.Tree, string, error?) {
     // 読みのAPIがあるか（裸のjson.Valueのフィールドは読みの変換を組めない — unionはゼロ値を持たないので `?` の早期returnのstructが作れない）
     mut decodes := false
     for c <- iter.Range(0, len(cs)) {
-        on := Name(t, t.nodes[t.nodes[t.nodes[cs[c]].a].a].b)
+        on := jsonOpOf(t, cs[c])
         if on == "Decode" || on == "DecodeWith" {
             decodes = true
         }
@@ -167,10 +203,10 @@ func jsonFile(ts []ast.Tree, fpkg []string, f int) (ast.Tree, string, error?) {
                 fd := st.nodes[ast.ListAt(st, body.a, k)]
                 e, bad := jsonType(ts, fpkg, r.file, fd.b)
                 if bad >= 0 {
-                    return t, "", diag.JsonShape{at: diag.Pos{file: r.file, tok: bad}, kind: 2}
+                    return t, "", []int{}, diag.JsonShape{at: diag.Pos{file: r.file, tok: bad}, kind: 2}
                 }
                 if decodes && e.kind == jValue {
-                    return t, "", diag.JsonShape{at: diag.Pos{file: r.file, tok: st.nodes[fd.b].tok}, kind: 4}
+                    return t, "", []int{}, diag.JsonShape{at: diag.Pos{file: r.file, tok: st.nodes[fd.b].tok}, kind: 4}
                 }
                 if e.kind >= jStruct && reqIndex(freeze(reqs), e.canon) < 0 {
                     reqs = append(reqs, e)
@@ -179,7 +215,7 @@ func jsonFile(ts []ast.Tree, fpkg []string, f int) (ast.Tree, string, error?) {
         } else if r.kind == jSlice || r.kind == jOpt {
             e, bad := jsonType(ts, fpkg, r.file, r.node)
             if bad >= 0 {
-                return t, "", diag.JsonShape{at: diag.Pos{file: r.file, tok: bad}, kind: 2}
+                return t, "", []int{}, diag.JsonShape{at: diag.Pos{file: r.file, tok: bad}, kind: 2}
             }
             if e.kind >= jStruct && reqIndex(freeze(reqs), e.canon) < 0 {
                 reqs = append(reqs, e)
@@ -201,14 +237,21 @@ func jsonFile(ts []ast.Tree, fpkg []string, f int) (ast.Tree, string, error?) {
     for c <- iter.Range(0, len(cs)) {
         x := t.nodes[cs[c]]
         idx := t.nodes[x.a]
-        on := Name(t, t.nodes[idx.a].b)
+        on := jsonOpOf(t, cs[c])
         op := if on == "Encode" || on == "EncodeWith" { "$jsonEncodeTop" } else { "$jsonDecodeTop" }
         // Withなしは対応の辞書を省いたAPI（変換の根のAPIが空のmapを渡す）
         sfx := if on == "Decode" || on == "Encode" { "_0" } else { "_1" }
-        ns[x.a] = ast.Node{ast.EIdent, idx.tok, ast.PutLit(mut db, "${op}_${f}_${rts[c]}${sfx}"), 0, 0, 0, 0, 0}
+        ns[x.a] = ast.Node{ast.EIdent, idx.tok, ast.PutLit(mut db, "${op}_${relFile(fpkg, f)}_${rts[c]}${sfx}"), 0, 0, 0, 0, 0}
     }
     src := jsonSource(ts, fpkg, f, rs)
-    return ast.Tree{nodes: freeze(ns), data: builder.Build(mut db), file: t.file}, src, nil
+    return ast.Tree{nodes: freeze(ns), data: builder.Build(mut db), file: t.file}, src, freeze(pend), nil
+}
+
+// 変換のAPIの呼び出しの節cの名前（`json.Encode[T](…)` と型引数の字面の無い `json.Encode(…)` のどちらも）
+func jsonOpOf(t ast.Tree, c int) string {
+    callee := t.nodes[t.nodes[c].a]
+    sel := if callee.kind == ast.EIndex { t.nodes[callee.a] } else { callee }
+    return Name(t, sel.b)
 }
 
 // 正準の綴り canon の要求の添字（無ければ -1）
@@ -308,14 +351,7 @@ func jsonRoot(ts []ast.Tree, fpkg []string, f int, e int) JReq {
         pkg = importPath(t, Name(t, t.nodes[x.a].a))
         name = Name(t, x.b)
     }
-    if isJsonValue(pkg, name) {
-        return valueReq()
-    }
-    df, dn := findStruct(ts, fpkg, pkg, name)
-    if df < 0 {
-        return JReq{}
-    }
-    return JReq{kind: jStruct, canon: "${pkg}.${name}", pkg: pkg, name: name, file: df, node: dn, elem: -1}
+    return rootOf(ts, fpkg, pkg, name)
 }
 
 // package pkg の型パラメータなしの struct の宣言 name の（ファイル, 節）（無ければ -1）
@@ -340,6 +376,7 @@ func findStruct(ts []ast.Tree, fpkg []string, pkg string, name string) (int, int
 func jsonSource(ts []ast.Tree, fpkg []string, f int, rs []JReq) string {
     t := ts[f]
     pkg := fpkg[f]
+    rf := relFile(fpkg, f)
     mut s := "package ${Name(t, t.nodes[t.file].a)}\n\nimport $jj \"std/json\"\nimport $jb \"std/builder\"\nimport $jw \"std/internal/jsonw\"\n"
     mut paths := mut []string{}
     for k <- iter.Range(0, len(rs)) {
@@ -354,7 +391,7 @@ func jsonSource(ts []ast.Tree, fpkg []string, f int, rs []JReq) string {
     for k <- iter.Range(0, len(rs)) {
         r := rs[k]
         sp := spell(ts, fpkg, rs, ps, pkg, k)
-        fname := "$jsonDecode_${f}_${k}"
+        fname := "$jsonDecode_${rf}_${k}"
         if r.kind == jStruct {
             st := ts[r.file]
             body := st.nodes[st.nodes[r.node].c]
@@ -366,40 +403,40 @@ func jsonSource(ts []ast.Tree, fpkg []string, f int, rs []JReq) string {
                 fname2 := Name(st, fd.a)
                 e, _ := jsonType(ts, fpkg, r.file, fd.b)
                 if e.kind == jOpt {
-                    s = s + "    $f${j} := $jsonField_${f}_${reqIndex(rs, e.canon)}($d, $jj.GetAt($d, $o, $jj.KeyOf(rename, \"${fname2}\"), ${j}), rename)?\n"
+                    s = s + "    $f${j} := $jsonField_${rf}_${reqIndex(rs, e.canon)}($d, $jj.GetAt($d, $o, $jj.KeyOf(rename, \"${fname2}\"), ${j}), rename)?\n"
                 } else {
                     // `?` は束縛ごとに 1 つ（実引数の中の `?` は lower が拒否する）
-                    s = s + "    $k${j} := $jj.NeedAt($d, $o, $jj.KeyOf(rename, \"${fname2}\"), ${j})?\n    $f${j} := ${decCall(rs, f, e)}($d, $k${j}${decTail(e)})?\n"
+                    s = s + "    $k${j} := $jj.NeedAt($d, $o, $jj.KeyOf(rename, \"${fname2}\"), ${j})?\n    $f${j} := ${decCall(rs, rf, e)}($d, $k${j}${decTail(e)})?\n"
                 }
                 lit = if j == 0 { "${fname2}: $f${j}" } else { lit + ", ${fname2}: $f${j}" }
             }
             s = s + "    return ${sp}{${lit}}, nil\n}\n"
-            s = s + "\nfunc $jsonDecodeTop_${f}_${k}_0($d $jj.Doc, $n int) (${sp}, error?) {\n    return ${fname}($d, $n, map[string]string{})\n}\n"
-            s = s + "\nfunc $jsonDecodeTop_${f}_${k}_1($d $jj.Doc, $n int, rename map[string]string) (${sp}, error?) {\n    return ${fname}($d, $n, rename)\n}\n"
+            s = s + "\nfunc $jsonDecodeTop_${rf}_${k}_0($d $jj.Doc, $n int) (${sp}, error?) {\n    return ${fname}($d, $n, map[string]string{})\n}\n"
+            s = s + "\nfunc $jsonDecodeTop_${rf}_${k}_1($d $jj.Doc, $n int, rename map[string]string) (${sp}, error?) {\n    return ${fname}($d, $n, rename)\n}\n"
         } else if r.kind == jSlice {
             e, _ := jsonType(ts, fpkg, r.file, r.node)
             ei := reqIndex(rs, e.canon)
             esp := if ei >= 0 { spell(ts, fpkg, rs, ps, pkg, ei) } else { e.canon }
             s = s + "\nfunc ${fname}($d $jj.Doc, $n int, rename map[string]string) (${sp}, error?) {\n    $it := $jj.Items($d, $n)?\n"
             s = s + "    mut $xs := mut []${esp}{}\n    mut $i := 0\n    while $i < len($it) {\n"
-            s = s + "        $v := ${decCall(rs, f, e)}($d, $it[$i]${decTail(e)})?\n        $xs = append($xs, $v)\n        $i += 1\n    }\n"
+            s = s + "        $v := ${decCall(rs, rf, e)}($d, $it[$i]${decTail(e)})?\n        $xs = append($xs, $v)\n        $i += 1\n    }\n"
             s = s + "    return freeze($xs), nil\n}\n"
         } else if r.kind == jOpt {
             e, _ := jsonType(ts, fpkg, r.file, r.node)
             s = s + "\nfunc ${fname}($d $jj.Doc, $n int, rename map[string]string) (${sp}, error?) {\n    if $jj.IsNull($d, $n) {\n        return nil, nil\n    }\n"
-            s = s + "    $v := ${decCall(rs, f, e)}($d, $n${decTail(e)})?\n    return $v, nil\n}\n"
+            s = s + "    $v := ${decCall(rs, rf, e)}($d, $n${decTail(e)})?\n    return $v, nil\n}\n"
             // フィールドの位置（欠けもnil）
             // 絞りは肯定の形で書く（早期 return の後の絞り込みは check が拒否する）
-            s = s + "\nfunc $jsonField_${f}_${k}($d $jj.Doc, $m int?, rename map[string]string) (${sp}, error?) {\n    if $m != nil {\n        return ${fname}($d, $m, rename)\n    }\n"
+            s = s + "\nfunc $jsonField_${rf}_${k}($d $jj.Doc, $m int?, rename map[string]string) (${sp}, error?) {\n    if $m != nil {\n        return ${fname}($d, $m, rename)\n    }\n"
             s = s + "    return nil, nil\n}\n"
         } else if r.kind == jValue {
             s = s + "\nfunc ${fname}($d $jj.Doc, $n int, rename map[string]string) ($jj.Value, error?) {\n    return $jj.Tree($d, $n), nil\n}\n"
-            s = s + "\nfunc $jsonDecodeTop_${f}_${k}_0($d $jj.Doc, $n int) ($jj.Value, error?) {\n    return ${fname}($d, $n, map[string]string{})\n}\n"
-            s = s + "\nfunc $jsonDecodeTop_${f}_${k}_1($d $jj.Doc, $n int, rename map[string]string) ($jj.Value, error?) {\n    return ${fname}($d, $n, rename)\n}\n"
+            s = s + "\nfunc $jsonDecodeTop_${rf}_${k}_0($d $jj.Doc, $n int) ($jj.Value, error?) {\n    return ${fname}($d, $n, map[string]string{})\n}\n"
+            s = s + "\nfunc $jsonDecodeTop_${rf}_${k}_1($d $jj.Doc, $n int, rename map[string]string) ($jj.Value, error?) {\n    return ${fname}($d, $n, rename)\n}\n"
         }
-        s = s + jsonEncodeFn(ts, fpkg, rs, ps, pkg, f, k, false, fast[k]) + jsonEncodeFn(ts, fpkg, rs, ps, pkg, f, k, true, false)
+        s = s + jsonEncodeFn(ts, fpkg, rs, ps, pkg, rf, k, false, fast[k]) + jsonEncodeFn(ts, fpkg, rs, ps, pkg, rf, k, true, false)
         if fast[k] {
-            s = s + jsonFastFns(ts, fpkg, rs, ps, pkg, f, k)
+            s = s + jsonFastFns(ts, fpkg, rs, ps, pkg, rf, k)
         }
     }
     return s

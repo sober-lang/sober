@@ -3,6 +3,7 @@
 //   node scripts/reqinst.ts acct <cg少> <cg多> <バッチの差>  callgrind（--dump-instr=yes）2本の差から「命令/リクエスト 熱い 64 B 行の数」を1行で
 // 題材 = 下のSUBJの鍵（asyncdbだけは別のサーバ〔bench/asyncdb〕と代役のPG〔bench/pgstub〕を相手に測る — scripts/reqinst.sh）。足すときはSUBJにリクエストを1本・bench/ratchet.txtに `srv/<鍵> ireq` と `srv/<鍵> hot64` の2行（bench/httparena/README.mdのreqinstの節）
 import * as net from "node:net";
+import * as tls from "node:tls";
 import { readFileSync } from "node:fs";
 
 const SUBJ: Record<string, string> = {
@@ -14,6 +15,11 @@ const SUBJ: Record<string, string> = {
     "Connection: keep-alive\r\nCache-Control: no-cache\r\nPragma: no-cache\r\n\r\n",
   // async-db の 20 行（std/pg のプールから準備済みの文で読み、行を JSON に — 相手は代役の PG）
   asyncdb: "GET /async-db?min=10&max=50&limit=20 HTTP/1.1\r\nHost: localhost\r\n\r\n",
+  // json-comp の 40 件（gzipの符号器 — サーバは DATASET_PATH の表を読む）。scripts/profgen.sh の題材（bench/ratchet.txt には行が無いので reqinst.sh は回さない）
+  jsoncomp: "GET /json/40?m=8 HTTP/1.1\r\nHost: localhost:8080\r\nAccept-Encoding: gzip, br\r\n\r\n",
+  // 8gbit の形（POST /echo・本文 10,240 B を TLS の port へ）— 本文が record をまたいで届くので、受けの持ち越し（std/tls の pendCopy）を通る。
+  // tls* の題材は TLS で繋ぐ（reqinst.sh が証明書を渡して tls-ready の port を読む）
+  tlsecho: "POST /echo HTTP/1.1\r\nHost: localhost:8081\r\nContent-Type: application/octet-stream\r\nContent-Length: 10240\r\n\r\n" + "echo-body:".repeat(1024),
 };
 const BATCH = 16;
 
@@ -21,9 +27,10 @@ function cli(port: number, batches: number, subj: string, bsz: number): void {
   const one = SUBJ[subj];
   if (one === undefined) { console.error(`reqinst: 題材 ${subj} が無い（${Object.keys(SUBJ).join(" ")}）`); process.exit(2); }
   const batch = one.repeat(bsz);
-  const s = net.connect(port, "127.0.0.1");
+  const isTls = subj.startsWith("tls");
+  const s = isTls ? tls.connect({ port, host: "127.0.0.1", rejectUnauthorized: false }) : net.connect(port, "127.0.0.1");
   let left = batches, got = 0, buf = "";
-  s.on("connect", () => s.write(batch));
+  s.on(isTls ? "secureConnect" : "connect", () => s.write(batch));
   s.on("data", (d) => {
     buf += d.toString("latin1");
     let i;

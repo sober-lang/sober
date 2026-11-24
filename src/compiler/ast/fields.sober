@@ -1,0 +1,79 @@
+package ast
+
+import "std/iter"
+
+// 節の種類ごとの 6 フィールド（a〜f）の意味（loader の段に現れる全部の種類 — 宣言の木の詰め直しとハッシュが使う）:
+// 0 = 生の値・1 = 節（-1 可）・2 = 文字列（データの位置・-1 可）・3 = 節の列・4 = 文字列の列・5 = 生の値の列・6 = 文字列の列 + 1（0 = 無し）・
+// 7 = 節の列（0 = 無し）。3 桁ずつ a から f へ（FieldOf で引く）。EFor の c は b で変わる（b = 1 なら文の列・でなければ式）
+func FieldDesc(k int) int {
+    return switch k {
+    case EIdent | EStrlit | TName: fd6(2, 0, 0, 0, 0, 0)
+    case EMutArg: fd6(2, 0, 0, 0, 0, 0)
+    case EEmbed: fd6(2, 0, 2, 0, 0, 0)
+    case EFloat: fd6(0, 2, 0, 0, 0, 0)
+    case EBinary: fd6(0, 1, 1, 0, 0, 0)
+    case EUnary: fd6(0, 1, 0, 0, 0, 0)
+    case ECall: fd6(1, 3, 0, 0, 0, 0)
+    case EPipe: fd6(1, 1, 3, 0, 0, 0)
+    case EIndex | ETry | SWhile | KEntry | ECatch: fd6(1, 1, 0, 0, 0, 0)
+    case TMap: fd6(1, 1, 0, 0, 0, 0)
+    case ESlice3 | EIf: fd6(1, 1, 1, 0, 0, 0)
+    case EInterp: fd6(4, 3, 0, 0, 0, 0)
+    case ESlicelit: fd6(1, 3, 0, 0, 0, 0)
+    case EMaplit: fd6(1, 1, 3, 0, 0, 0)
+    case EComposite: fd6(2, 3, 3, 0, 0, 0)
+    case EFieldTy: fd6(2, 2, 3, 0, 0, 0)
+    case ESelector: fd6(1, 2, 0, 0, 0, 0)
+    case ELambda | KCase: fd6(3, 1, 0, 0, 0, 0)
+    case ESwitch: fd6(3, 3, 1, 0, 0, 0)
+    case EBlock | SRet | KBlock | BStruct | BUnion | BError | KPConst | BPanic | TTuple: fd6(3, 0, 0, 0, 0, 0)
+    case EFor: fd6(3, 0, 1, 0, 0, 0)
+    case SBind: fd6(4, 0, 3, 0, 0, 0)
+    case SAssign: fd6(3, 0, 3, 0, 0, 0)
+    case SExpr | SDefer | SYield | TOpt | TMutP | EParen | TSlice | BDefined | BAlias: fd6(1, 0, 0, 0, 0, 0)
+    case TArray: fd6(0, 1, 0, 0, 0, 0)
+    case TFunc: fd6(3, 3, 4, 0, 0, 0)
+    case BFunc: fd6(3, 3, 4, 6, 0, 6)
+    case TGeneric | KVariant: fd6(2, 3, 0, 0, 0, 0)
+    case KFile: fd6(2, 3, 3, 3, 3, 7)
+    case KImport: fd6(2, 2, 0, 0, 0, 0)
+    case KPType: fd6(2, 2, 3, 0, 0, 0)
+    case KTypeDecl: fd6(2, 4, 1, 0, 0, 0)
+    case KField | KParam | KElem | KLParam | KFieldPat | KNamedArg: fd6(2, 1, 0, 0, 0, 0)
+    case KConst: fd6(2, 1, 0, 0, 2, 0)
+    case KFuncDecl: fd6(2, 4, 3, 3, 1, 5)
+    case KIntrinsic: fd6(2, 2, 3, 3, 0, 0)
+    case KGen: fd6(4, 1, 3, 0, 0, 0)
+    case KReplaces | KLogs: fd6(2, 0, 0, 0, 0, 0)
+    case KDoubles: fd6(3, 0, 0, 0, 0, 0)
+    default: 0
+    }
+}
+
+func fd6(a int, b int, c int, d int, e int, f int) int {
+    return a + b * 8 + c * 64 + d * 512 + e * 4096 + f * 32768
+}
+
+// 節 x のフィールド i（0 = a … 5 = f）の意味（FieldDesc の桁・EFor の c を b で分ける）
+func FieldOf(x Node, i int) int {
+    if x.kind == EFor && i == 2 {
+        return if x.b == 1 { 3 } else { 1 }
+    }
+    mut c := FieldDesc(x.kind)
+    for _ <- iter.Range(0, i) {
+        c = c / 8
+    }
+    return c % 8
+}
+
+// 節 x のフィールド i の値
+func FieldAt(x Node, i int) int {
+    return switch i {
+    case 0: x.a
+    case 1: x.b
+    case 2: x.c
+    case 3: x.d
+    case 4: x.e
+    default: x.f
+    }
+}

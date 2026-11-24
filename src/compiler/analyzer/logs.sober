@@ -1,0 +1,91 @@
+package analyzer
+
+import "desugar"
+import "std/iter"
+import "std/table"
+
+// `@logs(stdout)` のプログラムでmainが結果の印字（println）に届く（at = mainの関数宣言, 付帯 = 届く最初の辺の添字。-1 = mainの本体が直に呼ぶ）
+const MLogsOut = 53
+
+// `@logs(stdout)` のプログラムで、mainからprintlnに届けば拒否する。結果の標準出力にログが混ざるため（language.md 42 節）。
+// 到達はエフェクトの導出のグラフ（解いた後の辺）を、printlnを呼ぶ節から辺の逆向きに伝えて求める。io.WriteStdoutは対象にしない
+func logsCheck(az mut Az) {
+    n := az.ef.n
+    mut mark := table.Table[int]{}
+    for i <- iter.Range(0, n) {
+        table.Push(mut mark, 0)
+    }
+    mut work := table.Table[int]{}
+    for i <- iter.Range(0, table.Len(mut az.ef.outs) / 2) {
+        o := table.Get(mut az.ef.outs, i * 2)
+        if table.Get(mut mark, o) == 0 {
+            table.Set(mut mark, o, 1)
+            table.Push(mut work, o)
+        }
+    }
+    if table.Len(mut work) == 0 {
+        return
+    }
+    ne := table.Len(mut az.ef.e) / 3
+    mut head := table.Table[int]{}
+    for i <- iter.Range(0, n) {
+        table.Push(mut head, -1)
+    }
+    mut next := table.Table[int]{}
+    for i <- iter.Range(0, ne) {
+        src := table.Get(mut az.ef.e, i * 3 + 1)
+        table.Push(mut next, -1)
+        if src >= 0 {
+            table.Set(mut next, i, table.Get(mut head, src))
+            table.Set(mut head, src, i)
+        }
+    }
+    mut h := 0
+    while h < table.Len(mut work) {
+        s := table.Get(mut work, h)
+        h += 1
+        mut i := table.Get(mut head, s)
+        while i != -1 {
+            to := table.Get(mut az.ef.e, i * 3)
+            if table.Get(mut mark, to) == 0 {
+                table.Set(mut mark, to, 1)
+                table.Push(mut work, to)
+            }
+            i = table.Get(mut next, i)
+        }
+    }
+    m := logsMain(mut az)
+    if m < 0 || table.Get(mut mark, m) == 0 {
+        return
+    }
+    // 届く最初の辺: mainの本体の直のprintlnが先・無ければ印の付いた源からの辺
+    mut via := -2
+    for i <- iter.Range(0, table.Len(mut az.ef.outs) / 2) {
+        if via == -2 && table.Get(mut az.ef.outs, i * 2) == m {
+            via = -1
+        }
+    }
+    for i <- iter.Range(0, ne) {
+        src := table.Get(mut az.ef.e, i * 3 + 1)
+        if via == -2 && table.Get(mut az.ef.e, i * 3) == m && src >= 0 && table.Get(mut mark, src) == 1 {
+            via = i
+        }
+    }
+    report(mut az, MLogsOut, desugar.FnAt(mut az.d, m).node, desugar.NodeRef(via))
+}
+
+// main packageのmainの関数の添字（無ければ -1）
+func logsMain(az mut Az) int {
+    for fi <- iter.Range(0, az.nfn) {
+        if str(mut az, desugar.PkgPath(mut az.d, desugar.FnAt(mut az.d, fi).pkg)) == "main" && str(mut az, desugar.StrRef(fnDecl(mut az, fi).a)) == "main" {
+            return fi
+        }
+    }
+    return -1
+}
+
+// MLogsOutの本文（x = 届く最初の辺の添字。-1 = mainの本体が直に呼ぶ）
+func logsMessage(az mut Az, x int) string {
+    via := if x < 0 { "the call of 'println'" } else { efEdgeStr(mut az, table.Get(mut az.ef.e, x * 3 + 1), desugar.NodeRef(table.Get(mut az.ef.e, x * 3 + 2))) }
+    return "this program sends its log to standard output (@logs(stdout)), but main reaches println via ${via}: the log would mix into the program's output (remove @logs(stdout), or stop printing results with println)"
+}

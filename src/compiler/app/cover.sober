@@ -3,6 +3,7 @@ package main
 // カバレッジの計装のインターフェース（`sober build --cover` の点の表・`sober test --cover` の読み込み・合わせ・報告・--cover-out）。
 // 点の表はloader（coverx.sober）が決め、フラグは実行ファイルが終わりに $SOBER_COVERへ書く（見出し `sober cover v1 <鍵>` + 点の数のバイト）
 
+import "infload"
 import "std/io"
 import "std/iter"
 import "std/sort"
@@ -10,7 +11,6 @@ import "std/strings"
 import "ast"
 import "lexer"
 import "loader"
-import "desugar"
 
 // 点 1 つ（位置・種類・fn の点なら関数の名前 — ラムダは空）。line = 0 はファイルが読めなかった点（col = 字句の番号）
 type CovPt struct {
@@ -31,13 +31,13 @@ func noCover() CovData {
     return CovData{pts: []CovPt{}, hit: []bool{}}
 }
 
-// loadNamedのカバレッジの計装つき（loader.LoadFsCover — parseのキャッシュは使わない）
+// loadBuildのカバレッジの計装つき（loader.LoadFsCover — parseのキャッシュは使わない）
 func loadCover(entry string, std map[string]string) (loader.Program, []loader.PcPut, error?) {
     p, lerr := loader.LoadFsCover(entry, std)
     if lerr != nil {
         return p, []loader.PcPut{}, lerr
     }
-    q, nerr := desugar.NamedValueArgs(p)
+    q, _, nerr := infload.Infer(p, loader.ReqOf(loader.ReqFsCover, entry, false), std)
     return q, []loader.PcPut{}, nerr
 }
 
@@ -47,7 +47,7 @@ func loadTestCover(pkg string, std map[string]string, pats []string) (loader.Pro
     if lerr != nil {
         return p, []loader.PcPut{}, lerr
     }
-    q, nerr := desugar.NamedValueArgs(p)
+    q, _, nerr := infload.Infer(p, loader.ReqTestOf(loader.ReqTestCover, pkg, pats, 0), std)
     return q, []loader.PcPut{}, nerr
 }
 

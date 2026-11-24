@@ -4,7 +4,10 @@
 # RSSの傾きの1点にも鳴りにくい崖）。bench/httparena/main.soberのコピー（mainだけを期限つきでrunに差し替え — パスは本物）に
 # keep-aliveのbaselineの3形を流し、終わりの #par tasksのstack_hw（taskのスタックの最深 — rt.pstat_endの走査）が予算 − 64 B以下かを見る。
 # TLSの経路（同じ本体をtls.Serveで — 握手から）は、予算にstd/tlsのwaitStack（TLSの接続の宣言に足す量）を足した上限で見る。
-# --mutants: ミューテーション47（新しいチャンクのスタックの頂上を1 KiB下げる = パスが1 KiB深くなったのと同じ）で落ちることを検証する
+# TLSの経路は往復の後に接続を開いたまま待たせ、エリアの死んだページを返す走査（rdl.sober rdlTrim。#par tasksのtrim）が通ったことと、そのときの
+# 待ちの深さ（park_hw。エリアの頂上からのB）が1ページ − 64 B以下（待っているTLSの接続のスタックはTCBのページとエリアの1ページ）かを見る。
+# --mutants: ミューテーション47（新しいチャンクのスタックの頂上を1 KiB下げる = パスが1 KiB深くなったのと同じ）で落ちることを検証する。
+#   ミューテーション118（死んだページを返さない）でtrimが0になることも
 #   scripts/stackcheck.sh [--mutants]
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -24,7 +27,7 @@ cat >> "$W/arena.sober" <<'SRC'
 
 func main() int {
     tp := os.Getenv("STACKCHECK_TLS_PORT") catch nil
-    _, _ = task.Run((s task.Scope) => run("0", if tp == nil { "0" } else { tp }), deadline: 2500 * task.MS)
+    _, _ = task.Run((s task.Scope) => run("0", if tp == nil { "0" } else { tp }, "0"), deadline: 4000 * task.MS)
     return 0
 }
 SRC
@@ -48,11 +51,14 @@ measureTls() {
     env SOBER_PAR_STATS=1 SOBER_WORKERS=2 STACKCHECK_TLS_PORT=$tp TLS_CERT=testdata/crypto/httparena-server.crt TLS_KEY=testdata/crypto/httparena-server.key DATASET_PATH=testdata/httpcheck/dataset.json "$x" > "$W/out" 2> "$W/err" &
     local pid=$!
     for _ in $(seq 100); do grep -q '^tls-ready' "$W/out" 2> /dev/null && (exec 3<>/dev/tcp/127.0.0.1/$tp) 2> /dev/null && break; sleep 0.05; done
-    node --experimental-strip-types --no-warnings scripts/stackcheck.ts "$tp" 16 300 --tls > "$W/tclient" 2>&1
+    node --experimental-strip-types --no-warnings scripts/stackcheck.ts "$tp" 16 300 --tls --idle 1500 > "$W/tclient" 2>&1
     wait $pid
     grep -o 'stack_hw=[0-9]*' "$W/err" | cut -d= -f2
 }
 hwt=$(measureTls "$W/srv")
+trim=$(grep -o ' trim=[0-9]*' "$W/err" | cut -d= -f2)
+phw=$(grep -o 'park_hw=[0-9]*' "$W/err" | cut -d= -f2)
+limp=$((4096 - 64))
 # 接続のtaskがエリアの形（本体の枠はページ0の余白・下はワーカーのエリア）で走ったか: 入らなかった数area_farが0（framestatの @roomの予測と実際の照合）
 af=$(grep -o 'area_far=[0-9]*' "$W/err" | cut -d= -f2)
 fail=0
@@ -70,6 +76,10 @@ if [ $MUT = 1 ]; then
     "$S2" build "$W/arena.sober" --rt-mutant=60 -o "$W/srv60" > "$W/b.log" 2>&1 || { echo "stackcheck: FAIL build m60"; exit 1; }
     measure "$W/srv60" > /dev/null
     a60=$(grep -o 'area_far=[0-9]*' "$W/err" | cut -d= -f2)
+    "$S2" build "$W/arena.sober" --rt-mutant=118 -o "$W/srv118" > "$W/b.log" 2>&1 || { echo "stackcheck: FAIL build m118"; exit 1; }
+    measureTls "$W/srv118" > /dev/null
+    t118=$(grep -o ' trim=[0-9]*' "$W/err" | cut -d= -f2)
+    if [ "${t118:-x}" = 0 ] && grep -q '^ok 4800$' "$W/tclient"; then echo "stackcheck: m118 caught (trim 0)"; else echo "stackcheck: FAIL — mutant 118 was not caught (trim ${t118:-none})"; fail=1; fi
     if [ -n "$a60" ] && [ "$a60" -gt 0 ] && grep -q '^ok 4800$' "$W/client"; then echo "stackcheck: m60 caught (area_far $a60)"; else echo "stackcheck: FAIL — mutant 60 was not caught (area_far ${a60:-none} · client $(head -c 120 "$W/client"))"; fail=1; fi
 fi
 if [ -z "$hwt" ] || ! grep -q '^ok 4800$' "$W/tclient"; then
@@ -77,5 +87,10 @@ if [ -z "$hwt" ] || ! grep -q '^ok 4800$' "$W/tclient"; then
 elif [ "$hwt" -gt "$limt" ]; then
     echo "stackcheck: FAIL — the TLS connection task's deepest stack is $hwt B > $limt B (TCB_TOP_ROOM $room + one page + waitStack $wst − 64): a waiting TLS connection holds more stack pages than its declaration counts"; fail=1
 fi
-[ $fail = 0 ] && echo "stackcheck: PASS (stack_hw $hw ≤ $lim B · area_far 0 · TLS stack_hw $hwt ≤ $limt B)"
+if [ -z "$trim" ] || [ "$trim" = 0 ]; then
+    echo "stackcheck: FAIL — TLS: trim=${trim:-none}: no waiting connection had its dead stack pages returned (rdl.sober rdlTrim)"; fail=1
+elif [ -z "$phw" ] || [ "$phw" -gt "$limp" ]; then
+    echo "stackcheck: FAIL — a waiting TLS connection's stack is ${phw:-none} B deep on its area > $limp B (one page − 64): every waiting TLS connection holds one more stack page"; fail=1
+fi
+[ $fail = 0 ] && echo "stackcheck: PASS (stack_hw $hw ≤ $lim B · area_far 0 · TLS stack_hw $hwt ≤ $limt B · TLS trim $trim · park_hw $phw ≤ $limp B)"
 exit $fail

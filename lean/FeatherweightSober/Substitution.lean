@@ -144,6 +144,8 @@ theorem store_mono {e : Expr} {Δ : Defs} {Ξ : ChanTy} {Ψ Ψ' : StoreTy} {f b 
   | jump n t e ihe => cases he with | jump hn h hr => exact .jump hn (ihe h) hr
   | alloc m e ihe =>
     cases he with | alloc h hb hbd hmf => exact .alloc (ihe h) hb hbd hmf
+  | allocAt m r e ihe =>
+    cases he with | allocAt h h1 h2 h3 h4 h5 => exact .allocAt (ihe h) h1 h2 h3 h4 h5
   | deref e ihe => cases he with | deref h => exact .deref (ihe h)
   | assign l e ihl ihe => cases he with | assign h1 h2 => exact .assign (ihl h1) (ihe h2)
   | whileE c b ihc ihb => cases he with | whileE h1 h2 => exact .whileE (ihc h1) (ihb h2)
@@ -295,6 +297,8 @@ theorem chan_mono {e : Expr} {Ξ Ξ' : ChanTy} {Ψ : StoreTy} {f b d : Nat} {Γ 
   | jump n t e ihe => cases he with | jump hn h hr => exact .jump hn (ihe h) hr
   | alloc m e ihe =>
     cases he with | alloc h hb hbd hmf => exact .alloc (ihe h) hb hbd hmf
+  | allocAt m r e ihe =>
+    cases he with | allocAt h h1 h2 h3 h4 h5 => exact .allocAt (ihe h) h1 h2 h3 h4 h5
   | deref e ihe => cases he with | deref h => exact .deref (ihe h)
   | assign l e ihl ihe => cases he with | assign h1 h2 => exact .assign (ihl h1) (ihe h2)
   | whileE c b ihc ihb => cases he with | whileE h1 h2 => exact .whileE (ihc h1) (ihb h2)
@@ -427,6 +431,8 @@ theorem f_mono {e : Expr} {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f f' b d : N
   | jump n t e ihe => cases he with | jump hn h hr => exact .jump hn (ihe h) hr
   | alloc m e ihe =>
     cases he with | alloc h hb hbd hmf => exact .alloc (ihe h) hb hbd hmf
+  | allocAt m r e ihe =>
+    cases he with | allocAt h h1 h2 h3 h4 h5 => exact .allocAt (ihe h) h1 h2 h3 h4 h5
   | deref e ihe => cases he with | deref h => exact .deref (ihe h)
   | assign l e ihl ihe => cases he with | assign h1 h2 => exact .assign (ihl h1) (ihe h2)
   | whileE c b ihc ihb => cases he with | whileE h1 h2 => exact .whileE (ihc h1) (ihb h2)
@@ -993,6 +999,9 @@ theorem subst_preserve {e : Expr} {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f b 
   | alloc m e ihe =>
     cases he with
     | alloc h hb hbd hmf => exact .alloc (ihe h hvv hv) hb hbd hmf
+  | allocAt m r e ihe =>
+    cases he with
+    | allocAt h h1 h2 h3 h4 h5 => exact .allocAt (ihe h hvv hv) h1 h2 h3 h4 h5
   | deref e ihe =>
     cases he with
     | deref h => exact .deref (ihe h hvv hv)
@@ -1222,6 +1231,8 @@ theorem b_lower {e : Expr} {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f b b' d : 
   | jump n t e ihe => cases he with | jump hn h hr => exact .jump hn (ihe hb h) (Ty.jumpRel_lower hb hr)
   | alloc m e ihe =>
     cases he with | alloc h hrb hbd hmf => exact .alloc (ihe hb h) hrb (by omega) hmf
+  | allocAt m r e ihe =>
+    cases he with | allocAt h h1 h2 h3 h4 h5 => exact .allocAt (ihe hb h) h1 (by omega) h3 h4 h5
   | deref e ihe => cases he with | deref h => exact .deref (ihe hb h)
   | assign l e ihl ihe =>
     cases he with | assign h1 h2 => exact .assign (ihl hb h1) (ihe hb h2)
@@ -1418,6 +1429,9 @@ theorem f_lower {e : Expr} {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f f' b d : 
   | alloc m e ihe =>
     simp only [Expr.noNewchan] at hnc
     cases he with | alloc h hrb hbd hmf => exact .alloc (ihe hnc h) hrb hbd hmf
+  | allocAt m r e ihe =>
+    simp only [Expr.noNewchan] at hnc
+    cases he with | allocAt h h1 h2 h3 h4 h5 => exact .allocAt (ihe hnc h) h1 h2 h3 h4 h5
   | deref e ihe =>
     simp only [Expr.noNewchan] at hnc
     cases he with | deref h => exact .deref (ihe hnc h)
@@ -1692,8 +1706,8 @@ theorem value_coerce {v : Expr} {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f b d 
   | domV p k r =>
     cases he with
     | domVT h0 h1 h2 =>
-      obtain ⟨r', rfl, hle⟩ := Ty.sub_dom_inv hs
-      exact ⟨.domV p k r, .domVT h0 (Nat.le_trans h1 hle) h2⟩
+      obtain ⟨r', t', rfl, hle, -, he⟩ := Ty.sub_dom_inv hs
+      exact ⟨.domV p k r, .domVT h0 (Nat.le_trans h1 hle) (by rw [← he]; exact h2)⟩
 
 end HasType
 

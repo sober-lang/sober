@@ -1,0 +1,751 @@
+package loader
+
+// package の仕上げの結果の値（D1 区切り3 — 格納場所の切り口 BC_F の値。plan-d1-3-bldn.md）: 1 つの package のファイルの列・finish の後の木・
+// Program の行（ファイルは package の中の序数・節はファイルの中の番号 — 全体の通し番号を持たない）。符号は語の列の varint（pcache の Varints）。
+// 木は P と同じ形（節の 8 フィールドを前の節との差で・データを前の語との差で）
+
+import "ast"
+import "std/builder"
+import "std/iter"
+import "std/strings"
+
+const PV_VER = 5
+
+// 符号の固定の頭のバイト数: [頭の長さ][本体の長さ][depA][depB]（8 バイト LE ずつ — 依存の要約は符号の後に書き込める）
+const PV_HDR = 32
+
+type PkgVal struct {
+    path string
+    files []string
+    stds []bool
+    trees []ast.Tree
+    // 関数の行: ファイルの序数・宣言の節・旗（expands 1・mut_def 2・closed 4・has_try 8）・callees の名前
+    fnOrd []int
+    fnNode []int
+    fnFlags []int
+    fnCallees [][]string
+    // const の行: ファイルの序数・節・値・旗（has 1・dict 2）
+    cOrd []int
+    cNode []int
+    cVal []int
+    cFlags []int
+    errs []string
+    // 捕捉の行: ファイルの序数・ラムダの節・捕捉の名前・借りのビット
+    capOrd []int
+    capNode []int
+    capNames [][]string
+    capBrw []int
+    // optfn の変種の宣言: [ファイルの序数, 宣言の節, 節の区間 lo, hi] の 4 語ずつ
+    zdecl []int
+    // 以下は組み立てと鍵のための途中の情報（PkgValRun が足す）
+    // parse したファイル（files の先頭 — 合成のファイルは package の末尾）ごとの import のパス（rawImports）と宣言の木
+    imports [][]string
+    stubs []ast.Tree
+    // dest の出す要求（"V <package 名>.<名前>"・"A …"）・optfn の出す要求（"Z の package のパス 名前" と有無）と自分の Z に作った組（名前と有無）
+    dreq []string
+    ozOutZ []string
+    ozOutM []int
+    ozBuiltN []string
+    ozBuiltM []int
+    // 捕捉の行ごとの旗（cap_pend の行の旗）・名前ごとの展開待ちのターゲットの身元（"" = 普通の捕捉）・流れる行の対（ターゲットの身元, 行の序数）
+    capFlag []int
+    capTgt [][]string
+    pendT []string
+    pendR []int
+    // この package の仕上げで見つかった展開待ちの捕捉のターゲットの身元の全部（全体のターゲットはこの和）
+    capT []string
+    // @logs（main だけ — 0 = 無し・1 = stderr・2 = stdout）
+    logs int
+    // 格納場所の照らし（fastload.sober）: 依存の package（リンク集合）の宣言の木のハッシュ・自分の宣言の木のハッシュ・@embed を持つか（1 なら置いた値を使わない）
+    depA int
+    depB int
+    stubA int
+    stubB int
+    embed int
+    // 宣言の木の部分の符号（pkgValAppend が読み戻さずに持つ — 依存する package を仕上げ直すときだけ pvStubsOf が読み戻す）
+    stubRaw []byte
+}
+
+// Program p の package k の値
+func PkgValOf(p Program, k int) PkgVal {
+    lo := p.pkg_lo[k]
+    hi := p.pkg_hi[k]
+    mut files := mut []string{}
+    mut stds := mut []bool{}
+    mut trees := mut []ast.Tree{}
+    for f <- iter.Range(lo, hi) {
+        files = append(files, p.file_path[f])
+        stds = append(stds, p.file_std[f])
+        trees = append(trees, p.trees[f])
+    }
+    mut v := PkgVal{path: p.pkg_path[k], files: freeze(files), stds: freeze(stds), trees: freeze(trees), imports: [][]string{}, stubs: []ast.Tree{}, dreq: []string{}, ozOutZ: []string{}, ozOutM: []int{}, ozBuiltN: []string{}, ozBuiltM: []int{}, capFlag: []int{}, capTgt: [][]string{}, pendT: []string{}, pendR: []int{}, capT: []string{}, logs: 0, depA: 0, depB: 0, stubA: 0, stubB: 0, embed: 0, stubRaw: []byte{}}
+    mut fo := mut []int{}
+    mut fnd := mut []int{}
+    mut ffl := mut []int{}
+    mut fcs := mut [][]string{}
+    for i <- iter.Range(0, len(p.fn_file)) {
+        f := p.fn_file[i]
+        if f >= lo && f < hi {
+            fo = append(fo, f - lo)
+            fnd = append(fnd, p.fn_node[i])
+            ffl = append(ffl, pvB(p.fn_expands[i], 1) + pvB(p.fn_mut_def[i], 2) + pvB(p.fn_closed[i], 4) + pvB(p.fn_has_try[i], 8))
+            mut cs := mut []string{}
+            for j <- iter.Range(p.fn_clo[i], p.fn_chi[i]) {
+                cs = append(cs, p.callees[j])
+            }
+            fcs = append(fcs, freeze(cs))
+        }
+    }
+    v.fnOrd = freeze(fo)
+    v.fnNode = freeze(fnd)
+    v.fnFlags = freeze(ffl)
+    v.fnCallees = freeze(fcs)
+    mut co := mut []int{}
+    mut cn := mut []int{}
+    mut cv := mut []int{}
+    mut cf := mut []int{}
+    for i <- iter.Range(0, len(p.c_file)) {
+        f := p.c_file[i]
+        if f >= lo && f < hi {
+            co = append(co, f - lo)
+            cn = append(cn, p.c_node[i])
+            cv = append(cv, p.c_value[i])
+            cf = append(cf, pvB(p.c_has[i], 1) + pvB(p.c_dict[i], 2))
+        }
+    }
+    v.cOrd = freeze(co)
+    v.cNode = freeze(cn)
+    v.cVal = freeze(cv)
+    v.cFlags = freeze(cf)
+    mut es := mut []string{}
+    for i <- iter.Range(0, len(p.err_name)) {
+        if p.err_pkg[i] == k {
+            es = append(es, p.err_name[i])
+        }
+    }
+    v.errs = freeze(es)
+    mut ko := mut []int{}
+    mut kn := mut []int{}
+    mut kns := mut [][]string{}
+    mut kb := mut []int{}
+    for i <- iter.Range(0, len(p.cap_file)) {
+        f := p.cap_file[i]
+        if f >= lo && f < hi {
+            ko = append(ko, f - lo)
+            kn = append(kn, p.cap_node[i])
+            mut ns := mut []string{}
+            for j <- iter.Range(p.cap_lo[i], p.cap_hi[i]) {
+                ns = append(ns, p.cap_names[j])
+            }
+            kns = append(kns, freeze(ns))
+            kb = append(kb, p.cap_brw[i])
+        }
+    }
+    mut kfl := mut []int{}
+    mut ktg := mut [][]string{}
+    for i <- iter.Range(0, len(p.cap_file)) {
+        f := p.cap_file[i]
+        if f >= lo && f < hi {
+            kfl = append(kfl, capFlagQ(p, i))
+            mut tg := mut []string{}
+            for _ <- iter.Range(p.cap_lo[i], p.cap_hi[i]) {
+                tg = append(tg, "")
+            }
+            ktg = append(ktg, freeze(tg))
+        }
+    }
+    v.capFlag = freeze(kfl)
+    v.capTgt = freeze(ktg)
+    v.capOrd = freeze(ko)
+    v.capNode = freeze(kn)
+    v.capNames = freeze(kns)
+    v.capBrw = freeze(kb)
+    mut zd := mut []int{}
+    mut i := 0
+    while i + 3 < len(p.z_decl) {
+        f := p.z_decl[i]
+        if f >= lo && f < hi {
+            zd = append(zd, f - lo)
+            zd = append(zd, p.z_decl[i + 1])
+            zd = append(zd, p.z_decl[i + 2])
+            zd = append(zd, p.z_decl[i + 3])
+        }
+        i += 4
+    }
+    v.zdecl = freeze(zd)
+    return v
+}
+
+func pvB(b bool, bit int) int {
+    return if b { bit } else { 0 }
+}
+
+func pvStr(w mut builder.Builder[int], s string) {
+    b := bytes(s)
+    builder.Push(mut w, len(b))
+    for c <- b {
+        builder.Push(mut w, int(c))
+    }
+}
+
+func pvInts(w mut builder.Builder[int], xs []int) {
+    builder.Push(mut w, len(xs))
+    for x <- xs {
+        builder.Push(mut w, x)
+    }
+}
+
+func pvStrs(w mut builder.Builder[int], xs []string) {
+    builder.Push(mut w, len(xs))
+    for x <- xs {
+        pvStr(mut w, x)
+    }
+}
+
+// 木の語（P と同じ形: file・節の数・データの数・節ごとに 8 フィールドの前の節との差・データの前の語との差）
+func pvTree(w mut builder.Builder[int], t ast.Tree) {
+    builder.Push(mut w, t.file)
+    builder.Push(mut w, len(t.nodes))
+    builder.Push(mut w, len(t.data))
+    mut p := ast.Node{0, 0, 0, 0, 0, 0, 0, 0}
+    for x <- t.nodes {
+        builder.Push(mut w, x.kind)
+        builder.Push(mut w, x.tok - p.tok)
+        builder.Push(mut w, x.a - p.a)
+        builder.Push(mut w, x.b - p.b)
+        builder.Push(mut w, x.c - p.c)
+        builder.Push(mut w, x.d - p.d)
+        builder.Push(mut w, x.e - p.e)
+        builder.Push(mut w, x.f - p.f)
+        p = x
+    }
+    mut pw := 0
+    for d <- t.data {
+        builder.Push(mut w, d - pw)
+        pw = d
+    }
+}
+
+// 値の符号: [頭の長さ・本体の長さ・depA・depB（8 バイト LE ずつ）][頭][本体][宣言の木]。頭 = 発見と照らしに使う部分（PvHead — 本体を読まずに読む）
+func PkgValEnc(v PkgVal) []byte {
+    mut h := builder.Builder[int]{}
+    builder.Push(mut h, PV_VER)
+    pvStr(mut h, v.path)
+    builder.Push(mut h, len(v.files))
+    for i <- iter.Range(0, len(v.files)) {
+        pvStr(mut h, v.files[i])
+        builder.Push(mut h, pvB(v.stds[i], 1))
+    }
+    builder.Push(mut h, len(v.imports))
+    for i <- iter.Range(0, len(v.imports)) {
+        pvStrs(mut h, v.imports[i])
+    }
+    pvStrs(mut h, v.ozOutZ)
+    pvInts(mut h, v.ozOutM)
+    builder.Push(mut h, v.stubA)
+    builder.Push(mut h, v.stubB)
+    builder.Push(mut h, v.embed)
+    hb := Varints(builder.Build(mut h))
+    mut w := builder.Builder[int]{}
+    builder.Push(mut w, PV_VER)
+    for t <- v.trees {
+        pvTree(mut w, t)
+    }
+    pvInts(mut w, v.fnOrd)
+    pvInts(mut w, v.fnNode)
+    pvInts(mut w, v.fnFlags)
+    for cs <- v.fnCallees {
+        pvStrs(mut w, cs)
+    }
+    pvInts(mut w, v.cOrd)
+    pvInts(mut w, v.cNode)
+    pvInts(mut w, v.cVal)
+    pvInts(mut w, v.cFlags)
+    pvStrs(mut w, v.errs)
+    pvInts(mut w, v.capOrd)
+    pvInts(mut w, v.capNode)
+    for ns <- v.capNames {
+        pvStrs(mut w, ns)
+    }
+    pvInts(mut w, v.capBrw)
+    pvInts(mut w, v.zdecl)
+    pvStrs(mut w, v.dreq)
+    pvStrs(mut w, v.ozBuiltN)
+    pvInts(mut w, v.ozBuiltM)
+    pvInts(mut w, v.capFlag)
+    for ts <- v.capTgt {
+        pvStrs(mut w, ts)
+    }
+    pvStrs(mut w, v.pendT)
+    pvInts(mut w, v.pendR)
+    pvStrs(mut w, v.capT)
+    builder.Push(mut w, v.logs)
+    mb := Varints(builder.Build(mut w))
+    mut out := mut []byte{}
+    pvLE(mut out, len(hb))
+    pvLE(mut out, len(mb))
+    pvLE(mut out, v.depA)
+    pvLE(mut out, v.depB)
+    for c <- hb {
+        out = append(out, c)
+    }
+    for c <- mb {
+        out = append(out, c)
+    }
+    if len(v.stubRaw) > 0 {
+        for c <- v.stubRaw {
+            out = append(out, c)
+        }
+    } else {
+        mut sw := builder.Builder[int]{}
+        builder.Push(mut sw, len(v.stubs))
+        for t <- v.stubs {
+            pvTree(mut sw, t)
+        }
+        for c <- Varints(builder.Build(mut sw)) {
+            out = append(out, c)
+        }
+    }
+    return freeze(out)
+}
+
+func pvLE(out mut []byte, x int) {
+    for k <- iter.Range(0, 8) {
+        out = append(out, byte((x >> (8 * k)) & 255))
+    }
+}
+
+func pvU64(b []byte, at int) int {
+    mut x := 0
+    for k <- iter.Range(0, 8) {
+        x = x | (int(b[at + k]) << (8 * k))
+    }
+    return x
+}
+
+// 符号の頭と本体の長さ（壊れていれば ok = false）
+func pvLens(b []byte) (int, int, bool) {
+    if len(b) < PV_HDR {
+        return 0, 0, false
+    }
+    hl := pvU64(b, 0)
+    ml := pvU64(b, 8)
+    return hl, ml, hl >= 0 && ml >= 0 && hl <= len(b) && ml <= len(b) - hl - PV_HDR
+}
+
+// 符号 b の依存の要約を dk に書き換えた符号
+func pvPatchDep(b []byte, dk PcKey) []byte {
+    mut out := mut []byte{}
+    for k <- iter.Range(0, 16) {
+        out = append(out, b[k])
+    }
+    pvLE(mut out, dk.a)
+    pvLE(mut out, dk.b)
+    for k <- iter.Range(PV_HDR, len(b)) {
+        out = append(out, b[k])
+    }
+    return freeze(out)
+}
+
+// 読み手（語の列と位置・壊れていれば bad）
+// 値の符号の読み手: b の [at, end) の zigzag の varint を1語ずつ戻す（語の列へ一度に戻さない — 語の列は 1 バイトあたり 8 バイトを確保する）
+type PvRd struct {
+    b []byte
+    at int
+    end int
+    bad bool
+}
+
+func pvGet(r mut PvRd) int {
+    mut z := 0
+    mut s := 0
+    mut x := 128
+    while x >= 128 {
+        if r.at >= r.end || s > 63 {
+            r.bad = true
+            return 0
+        }
+        x = int(r.b[r.at])
+        r.at += 1
+        z = z | ((x & 127) << s)
+        s += 7
+    }
+    return ((z >> 1) & PC_LOW63) ^ (0 - (z & 1))
+}
+
+func pvLen(r mut PvRd) int {
+    n := pvGet(mut r)
+    // 1語は1バイト以上なので、残りのバイトより多い長さは壊れた値
+    if n < 0 || n > r.end - r.at {
+        r.bad = true
+        return 0
+    }
+    return n
+}
+
+func pvGetStr(r mut PvRd) string {
+    n := pvLen(mut r)
+    mut b := mut []byte{}
+    for _ <- iter.Range(0, n) {
+        b = append(b, byte(pvGet(mut r) & 255))
+    }
+    return string(freeze(b)) catch ""
+}
+
+func pvGetInts(r mut PvRd) []int {
+    n := pvLen(mut r)
+    mut xs := mut []int{}
+    for _ <- iter.Range(0, n) {
+        xs = append(xs, pvGet(mut r))
+    }
+    return freeze(xs)
+}
+
+func pvGetStrs(r mut PvRd) []string {
+    n := pvLen(mut r)
+    mut xs := mut []string{}
+    for _ <- iter.Range(0, n) {
+        xs = append(xs, pvGetStr(mut r))
+    }
+    return freeze(xs)
+}
+
+func pvGetTree(r mut PvRd) ast.Tree {
+    file := pvGet(mut r)
+    nn := pvLen(mut r)
+    nd := pvLen(mut r)
+    mut nb := builder.Builder[ast.Node]{}
+    mut p := ast.Node{0, 0, 0, 0, 0, 0, 0, 0}
+    for _ <- iter.Range(0, nn) {
+        k := pvGet(mut r)
+        p = ast.Node{k, p.tok + pvGet(mut r), p.a + pvGet(mut r), p.b + pvGet(mut r), p.c + pvGet(mut r), p.d + pvGet(mut r), p.e + pvGet(mut r), p.f + pvGet(mut r)}
+        builder.Push(mut nb, p)
+    }
+    mut ds := mut []int{}
+    mut pw := 0
+    for _ <- iter.Range(0, nd) {
+        pw = pw + pvGet(mut r)
+        ds = append(ds, pw)
+    }
+    return ast.Tree{builder.Build(mut nb), freeze(ds), file}
+}
+
+// 値の頭（発見と照らしに使う部分）と符号の全体。速い経路と全体の仕上げからの値の作成は、PkgVal を持ち回らずにこれで回す
+// （PkgVal は大きく、受け渡しのたびに全フィールドの複製が要る — 組み立ての前に pkgValAppend で 1 回だけ読み戻す）
+type PvHead struct {
+    path string
+    files []string
+    stds []bool
+    imports [][]string
+    ozOutZ []string
+    ozOutM []int
+    stubA int
+    stubB int
+    embed int
+    depA int
+    depB int
+    raw []byte
+}
+
+// 値 v とその符号 b の頭
+func pvHeadOf(v PkgVal, b []byte) PvHead {
+    return PvHead{v.path, v.files, v.stds, v.imports, v.ozOutZ, v.ozOutM, v.stubA, v.stubB, v.embed, v.depA, v.depB, b}
+}
+
+// 符号の頭を読み戻して hs へ足す（壊れていれば false）。大きな構造体は返さずに呼び手の表へ足す（return ごとに全フィールドの移しが要るため）
+func pvHeadAppend(b []byte, hs mut []PvHead) bool {
+    hl, _, lok := pvLens(b)
+    if !lok {
+        return false
+    }
+    if PV_HDR + hl > len(b) {
+        return false
+    }
+    mut r := PvRd{b: b, at: PV_HDR, end: PV_HDR + hl, bad: false}
+    if pvGet(mut r) != PV_VER || r.bad {
+        return false
+    }
+    path := pvGetStr(mut r)
+    nf := pvLen(mut r)
+    mut files := mut []string{}
+    mut stds := mut []bool{}
+    for _ <- iter.Range(0, nf) {
+        files = append(files, pvGetStr(mut r))
+        stds = append(stds, pvGet(mut r) == 1)
+    }
+    ni := pvLen(mut r)
+    mut ims := mut [][]string{}
+    for _ <- iter.Range(0, ni) {
+        ims = append(ims, pvGetStrs(mut r))
+    }
+    oz := pvGetStrs(mut r)
+    om := pvGetInts(mut r)
+    sa := pvGet(mut r)
+    sb := pvGet(mut r)
+    em := pvGet(mut r)
+    if r.bad || r.at != r.end || len(om) != len(oz) {
+        return false
+    }
+    hs = append(hs, PvHead{path, freeze(files), freeze(stds), freeze(ims), oz, om, sa, sb, em, pvU64(b, 16), pvU64(b, 24), b})
+    return true
+}
+
+// 値を読み戻して vs へ足す（壊れていれば false）。宣言の木は読み戻さずに stubRaw に持つ（pvStubsOf が読む）
+func pkgValAppend(b []byte, vs mut []PkgVal) bool {
+    return pkgValAppendTs(b, pvTreesDec(b), mut vs)
+}
+
+// 値の符号 b の木の部分（ts）と、その後ろの読みの位置（at — 読めなければ -1）。木の復号だけを子の task へ出すための分け目
+type PvTs struct {
+    ts []ast.Tree
+    at int
+}
+
+func pvTreesDec(b []byte) PvTs {
+    mut hh := mut []PvHead{}
+    if !pvHeadAppend(b, mut hh) {
+        return PvTs{ts: []ast.Tree{}, at: -1}
+    }
+    nf := len(hh[0].files)
+    hl, ml, _ := pvLens(b)
+    if PV_HDR + hl + ml > len(b) {
+        return PvTs{ts: []ast.Tree{}, at: -1}
+    }
+    mut r := PvRd{b: b, at: PV_HDR + hl, end: PV_HDR + hl + ml, bad: false}
+    if pvGet(mut r) != PV_VER || r.bad {
+        return PvTs{ts: []ast.Tree{}, at: -1}
+    }
+    mut trees := mut []ast.Tree{}
+    for _ <- iter.Range(0, nf) {
+        trees = append(trees, pvGetTree(mut r))
+    }
+    return PvTs{ts: freeze(trees), at: if r.bad { -1 } else { r.at }}
+}
+
+// 木を復号済みの値の符号 b（pt = pvTreesDec の結果）の残りを読んで vs へ足す
+func pkgValAppendTs(b []byte, pt PvTs, vs mut []PkgVal) bool {
+    mut hh := mut []PvHead{}
+    if pt.at < 0 || !pvHeadAppend(b, mut hh) {
+        return false
+    }
+    hd := freeze(hh)[0]
+    hl, ml, _ := pvLens(b)
+    mut r := PvRd{b: b, at: pt.at, end: PV_HDR + hl + ml, bad: false}
+    trees := pt.ts
+    fnOrd := pvGetInts(mut r)
+    fnNode := pvGetInts(mut r)
+    fnFlags := pvGetInts(mut r)
+    mut fcs := mut [][]string{}
+    for _ <- iter.Range(0, len(fnOrd)) {
+        fcs = append(fcs, pvGetStrs(mut r))
+    }
+    fnCallees := freeze(fcs)
+    cOrd := pvGetInts(mut r)
+    cNode := pvGetInts(mut r)
+    cVal := pvGetInts(mut r)
+    cFlags := pvGetInts(mut r)
+    errs := pvGetStrs(mut r)
+    capOrd := pvGetInts(mut r)
+    capNode := pvGetInts(mut r)
+    mut kns := mut [][]string{}
+    for _ <- iter.Range(0, len(capOrd)) {
+        kns = append(kns, pvGetStrs(mut r))
+    }
+    capNames := freeze(kns)
+    capBrw := pvGetInts(mut r)
+    zdecl := pvGetInts(mut r)
+    stubs := []ast.Tree{}
+    stubRaw := b[PV_HDR + hl + ml:len(b)]
+    dreq := pvGetStrs(mut r)
+    ozBuiltN := pvGetStrs(mut r)
+    ozBuiltM := pvGetInts(mut r)
+    capFlag := pvGetInts(mut r)
+    mut ctg := mut [][]string{}
+    for _ <- iter.Range(0, len(capOrd)) {
+        ctg = append(ctg, pvGetStrs(mut r))
+    }
+    capTgt := freeze(ctg)
+    pendT := pvGetStrs(mut r)
+    pendR := pvGetInts(mut r)
+    capT := pvGetStrs(mut r)
+    logs := pvGet(mut r)
+    if len(capFlag) != len(capOrd) || len(pendR) != len(pendT) || len(ozBuiltM) != len(ozBuiltN) {
+        return false
+    }
+    if r.bad || r.at != r.end || len(fnNode) != len(fnOrd) || len(fnFlags) != len(fnOrd) || len(cNode) != len(cOrd) || len(cVal) != len(cOrd) || len(cFlags) != len(cOrd) || len(capNode) != len(capOrd) || len(capBrw) != len(capOrd) {
+        return false
+    }
+    vs = append(vs, PkgVal{path: hd.path, files: hd.files, stds: hd.stds, trees: trees, fnOrd: fnOrd, fnNode: fnNode, fnFlags: fnFlags, fnCallees: fnCallees,
+        cOrd: cOrd, cNode: cNode, cVal: cVal, cFlags: cFlags, errs: errs, capOrd: capOrd, capNode: capNode, capNames: capNames, capBrw: capBrw, zdecl: zdecl,
+        imports: hd.imports, stubs: stubs, dreq: dreq, ozOutZ: hd.ozOutZ, ozOutM: hd.ozOutM, ozBuiltN: ozBuiltN, ozBuiltM: ozBuiltM, capFlag: capFlag, capTgt: capTgt,
+        pendT: pendT, pendR: pendR, capT: capT, logs: logs, depA: hd.depA, depB: hd.depB, stubA: hd.stubA, stubB: hd.stubB, embed: hd.embed, stubRaw: stubRaw})
+    return true
+}
+
+// 宣言の木（読み戻していなければ stubRaw から）
+func pvStubsOf(v PkgVal) []ast.Tree {
+    return if len(v.stubRaw) == 0 { v.stubs } else { pvStubsDec(v.stubRaw) }
+}
+
+// 符号の全体 b の宣言の木
+func pvStubsRaw(b []byte) []ast.Tree {
+    hl, ml, ok := pvLens(b)
+    return if ok { pvStubsDec(b[PV_HDR + hl + ml:len(b)]) } else { []ast.Tree{} }
+}
+
+func pvStubsDec(sraw []byte) []ast.Tree {
+    if len(sraw) == 0 {
+        return []ast.Tree{}
+    }
+    mut r := PvRd{b: sraw, at: 0, end: len(sraw), bad: false}
+    n := pvLen(mut r)
+    mut out := mut []ast.Tree{}
+    for _ <- iter.Range(0, n) {
+        out = append(out, pvGetTree(mut r))
+    }
+    return if r.bad { []ast.Tree{} } else { freeze(out) }
+}
+
+// 宣言の木で仕上げた package の結果 q（package k）と途中の情報 fx・ソースの木 raw（parse したファイル — files の先頭と同じ並び）の値（宣言の木の印・@embed の有無・依存の要約 dk を入れて）
+func PkgValRun(q Program, k int, fx FinX, raw []ast.Tree, dk PcKey) PkgVal {
+    mut v := PkgValOf(q, k)
+    lo := q.pkg_lo[k]
+    // 宣言の木: 本体を残す関数は総称・@expand・省略可の関数型の仮引数・展開される関数（この package の関数の行の expands）
+    mut exm := mut map[string]int{}
+    for i <- iter.Range(0, len(q.fn_file)) {
+        f := q.fn_file[i]
+        if f >= lo && f < q.pkg_hi[k] && q.fn_expands[i] {
+            t := q.trees[f]
+            exm[q.file_path[f] + " " + Name(t, t.nodes[q.fn_node[i]].a)] = 1
+        }
+    }
+    ex := freeze(exm)
+    mut ims := mut [][]string{}
+    mut sts := mut []ast.Tree{}
+    for i <- iter.Range(0, len(raw)) {
+        t := raw[i]
+        ims = append(ims, rawImports(t))
+        sts = append(sts, StubTree(t, stubKeep(t, q.file_path[lo + i], ex)))
+    }
+    v.imports = freeze(ims)
+    v.stubs = freeze(sts)
+    v.dreq = fx.dreq
+    v.ozOutZ = fx.outZ
+    v.ozOutM = fx.outM
+    v.ozBuiltN = fx.zbN
+    v.ozBuiltM = fx.zbM
+    mut fl := mut []int{}
+    mut ctg := mut [][]string{}
+    mut rowOf := mut map[int]int{}
+    mut ri := 0
+    for i <- iter.Range(0, len(q.cap_file)) {
+        f := q.cap_file[i]
+        if f >= lo && f < q.pkg_hi[k] {
+            rowOf[i] = ri
+            ri += 1
+            fl = append(fl, capFlagQ(q, i))
+            mut tg := mut []string{}
+            for j <- iter.Range(q.cap_lo[i], q.cap_hi[i]) {
+                lq := capPkQ(q, j)
+                tg = append(tg, if lq >= 0 { fx.capT[lq] } else { "" })
+            }
+            ctg = append(ctg, freeze(tg))
+        }
+    }
+    v.capFlag = freeze(fl)
+    v.capTgt = freeze(ctg)
+    ro := freeze(rowOf)
+    mut pt := mut []string{}
+    mut pr := mut []int{}
+    for lq <- iter.Range(0, len(fx.capT)) {
+        for x <- pendRowsQ(q, lq) {
+            r0 := ro[x]
+            if r0 != nil {
+                pt = append(pt, fx.capT[lq])
+                pr = append(pr, r0)
+            }
+        }
+    }
+    v.pendT = freeze(pt)
+    v.pendR = freeze(pr)
+    // ターゲットは持ち主の package の値にだけ持たせる（全体のターゲットは持ち主ごとの和 — ターゲットは呼ばれる側から呼ぶ側へ広がるので、持ち主の仕上げで見つかる）
+    mut own := mut []string{}
+    for s0 <- fx.capT {
+        if strings.HasPrefix(s0, q.pkg_path[k] + "\t") {
+            own = append(own, s0)
+        }
+    }
+    v.capT = freeze(own)
+    v.logs = if q.pkg_path[k] != "main" { 0 } else if q.logs_stdout { 2 } else { 1 }
+    sk := flStubKey(v.files, v.stubs)
+    v.stubA = sk.a
+    v.stubB = sk.b
+    v.depA = dk.a
+    v.depB = dk.b
+    mut em := 0
+    for t <- raw {
+        em = if hasEmbed(t) { 1 } else { em }
+    }
+    v.embed = em
+    return v
+}
+
+// 木 t の import のパス（宣言の順・全部 — load の発見と同じ集め方）。合成の import（参照名が `$` で始まる — synthImport）は頭に `$` を付ける
+func rawImports(t ast.Tree) []string {
+    imps := t.nodes[t.file].b
+    mut out := mut []string{}
+    for i <- iter.Range(0, ast.ListLen(t, imps)) {
+        im := t.nodes[ast.ListAt(t, imps, i)]
+        out = append(out, if synthImport(t, im) { "$" + Name(t, im.b) } else { Name(t, im.b) })
+    }
+    return freeze(out)
+}
+
+// 2 つの値の最初の違う項目（同じなら ""）— 格納場所の検証モードの特定
+func pvDiff(a PkgVal, b PkgVal) string {
+    if !seq(a.files, b.files) {
+        return "files"
+    }
+    for i <- iter.Range(0, len(a.trees)) {
+        if i >= len(b.trees) || !pcTreeEq(a.trees[i], b.trees[i]) {
+            return "tree ${a.files[i]}:${if i < len(b.trees) { pkgTreeDiffAll(a.trees[i], b.trees[i]) } else { 0 - 9 }}"
+        }
+    }
+    if !ieq(a.fnOrd, b.fnOrd) || !ieq(a.fnNode, b.fnNode) || !ieq(a.fnFlags, b.fnFlags) {
+        return "fn rows"
+    }
+    for i <- iter.Range(0, len(a.fnCallees)) {
+        if !seq(a.fnCallees[i], b.fnCallees[i]) {
+            return "callees"
+        }
+    }
+    if !ieq(a.cOrd, b.cOrd) || !ieq(a.cVal, b.cVal) || !ieq(a.cFlags, b.cFlags) || !seq(a.errs, b.errs) {
+        return "consts/errs"
+    }
+    if !ieq(a.capOrd, b.capOrd) || !ieq(a.capNode, b.capNode) || !ieq(a.capBrw, b.capBrw) || !ieq(a.capFlag, b.capFlag) {
+        return "caps"
+    }
+    if !ieq(a.zdecl, b.zdecl) {
+        return "zdecl"
+    }
+    if !seq(a.dreq, b.dreq) {
+        return "dreq ${len(a.dreq)}/${len(b.dreq)}"
+    }
+    if !seq(a.ozOutZ, b.ozOutZ) || !ieq(a.ozOutM, b.ozOutM) || !seq(a.ozBuiltN, b.ozBuiltN) || !ieq(a.ozBuiltM, b.ozBuiltM) {
+        return "optfn"
+    }
+    if !seq(a.pendT, b.pendT) || !ieq(a.pendR, b.pendR) || !seq(a.capT, b.capT) {
+        return "pend"
+    }
+    as := pvStubsOf(a)
+    bs := pvStubsOf(b)
+    for i <- iter.Range(0, len(as)) {
+        if i >= len(bs) || !pcTreeEq(as[i], bs[i]) {
+            return "stub ${a.files[i]}"
+        }
+    }
+    if a.stubA != b.stubA || a.depA != b.depA || a.embed != b.embed || a.logs != b.logs {
+        return "keys stub=${a.stubA != b.stubA} dep=${a.depA != b.depA}"
+    }
+    return ""
+}

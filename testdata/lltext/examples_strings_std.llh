@@ -1,4 +1,4 @@
-@@full	db18433a27075c1e	19996	670646
+@@full	7cf70184628eb68d	19966	669678
 @globals	deed16921b415ad3	86	2016
 main.main	33195cd3eb59522e	6580	256807
 main.showCut	ac1f8806566fe82c	149	5102
@@ -49,9 +49,9 @@ std/strings.HasPrefix	fde9a37ab9dffebd	109	3851
 std/strings.HasSuffix	14258143686d2fb3	113	4008
 std/strings.Index	6db73700ab40036d	53	1968
 std/strings.IndexByte	425c5e1fd5f7b39c	158	4872
-std/strings.Join	fae29800dc75dcf6	908	29245
+std/strings.Join	45ca7bc3ccc9e60a	896	28859
 std/strings.LastIndex	64985be41bb5ce59	52	1944
-std/strings.Replace	f44b80c10b51aa78	1474	47756
+std/strings.Replace	a95ff1687643b154	1456	47174
 std/strings.Split	77c4f813c6c49278	923	31316
 std/strings.ToLower	373c82bc7bf4846e	54	1924
 std/strings.ToUpper	9df3f8d2d614dca5	56	1975

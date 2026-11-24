@@ -1,6 +1,6 @@
 # ゲートtlsfuzzの期待の表。1行 = スクリプト<TAB>群<TAB>サーバー<TAB>引数<TAB>落ちてよい検査の名前（Pythonの正規表現・空 = 全件PASS）<TAB>理由
 # 群: x = ClientHelloの群secp256r1をx25519に替えた写しで実行する（サーバーはX25519だけ）・o = 元のまま
-# サーバー: http = examples/web_server_tls（固定のレスポンス）・echo = examples/tls_serve（受けた平文を返す）
+# サーバー: http = examples/web_server_tls（固定のレスポンス）・echo = examples/tls_serve（受けた平文を返す）・half = examples/tls_serveのlive-half（相手のclose_notifyの後に送る）
 # 引数: 空なら無し、- で始まればスペース区切りの引数、そうでなければ実行する検査の名前1つ
 # スクリプトの名前がtest-sober-で始まる行は、testdata/tlsfuzz/の自前の会話（tlsfuzzerのライブラリで書いた、tlsfuzzerの本体に無い形）
 # 落ちてよい名前に載せるのは、RFCの解釈・設計の方針の違いと、サーバーが対応しない構成だけ。RFCのMUSTに反する失敗は載せない
@@ -32,3 +32,6 @@ test-tls13-version-negotiation	x	http	SSL 2.0 ClientHello with TLS 1.3 version a
 test-tls13-lengths	x	echo	-n 30
 test-sober-close-first	x	http	
 test-sober-alert-after-put	x	http	
+test-sober-half-close	x	half	
+test-tls13-0rtt-garbage	x	http	-n 0 --cookie --num-bytes 16384	^(handshake with invalid 0-RTT( and CCS| and CCS between early data records| with fragmented early data| and unknown version \(downgrade to TLS 1\.2\))?|undecryptable record later in handshake together with early_data)$	0-RTTはHelloRetryRequest（cookieつき）で断って読み飛ばす（RFC 9846 4.3.10の2つ目の方法）。この6件は1つ目の方法（ServerHelloを返して復号に失敗したrecordを捨てる）を期待する。downgradeの1件はTLS 1.2にも対応しない
+test-sober-early-limit	x	http	

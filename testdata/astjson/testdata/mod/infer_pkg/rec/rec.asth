@@ -1,0 +1,6 @@
+@@full	7c3866c22003956e	173	3465
+@head	c59fa09c59a63af7	0	30
+func MakeHidden	471be1647962e2f8	5	306
+func MakePub	693d47f56287b6c6	5	297
+type Pub	7e0132d5d1ac7854	3	162
+type hidden	06d0d683425c2d01	3	165

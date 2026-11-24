@@ -11,24 +11,47 @@ func show(path string) {
 }
 
 func main() {
-    _ = os.Mkdir("out")
+    d := runDir("os_runto")
+    defer removeAll(d)
     println("before")
-    c, err := os.RunTo("/bin/sh", []string{"-c", "echo out; echo err >&2; exit 3"}, "out/os_runto.o", "out/os_runto.e")
+    c, err := os.RunTo("/bin/sh", []string{"-c", "echo out; echo err >&2; exit 3"}, d + "/o", d + "/e")
     if err == nil {
         println(c)
     }
-    show("out/os_runto.o")
-    show("out/os_runto.e")
-    m, merr := os.RunTo("/bin/sh", []string{"-c", "echo a; echo b >&2; echo c"}, "out/os_runto.m", "out/os_runto.m")
+    show(d + "/o")
+    show(d + "/e")
+    m, merr := os.RunTo("/bin/sh", []string{"-c", "echo a; echo b >&2; echo c"}, d + "/m", d + "/m")
     if merr == nil {
         println(m)
     }
-    show("out/os_runto.m")
-    _, nerr := os.RunTo("/bin/true", []string{}, "out/no/such/dir/o", "out/os_runto.e")
+    show(d + "/m")
+    _, nerr := os.RunTo("/bin/true", []string{}, d + "/no/such/dir/o", d + "/e")
     println(switch nerr {
     case nil: "ran"
     case io.NotFound{}: "not found"
     default: "other"
     })
     println("after")
+}
+
+// 実行ごとの置き場 out/<name>.<単調時計の値>（同じ作業ディレクトリで同時に走る実行どうしが上書きし合わない）。
+// mkdirは既にあれば失敗するので、作れた名前がこの実行のもの。作れない状態で回り続けないよう、試す回数に上限を置く（作れなければ ""）
+func runDir(name string) string {
+    _ = os.Mkdir("out")
+    mut n := 0
+    while n < 100 {
+        c := "out/${name}.${os.Monotonic()}"
+        if os.Mkdir(c) == nil {
+            return c
+        }
+        n = n + 1
+    }
+    return ""
+}
+
+// 置き場を中身ごと消す
+func removeAll(d string) {
+    if d != "" {
+        _ = os.Run("/bin/rm", []string{"-rf", d}) catch 0
+    }
 }

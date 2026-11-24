@@ -1,0 +1,143 @@
+package server
+
+// TLSの接続のServeConn（tls.Serveが渡すnet.Conn）。プロトコルはALPNとproto: で決まる: H2 = HTTP/2・Both = ALPNがh2ならHTTP/2でなければHTTP/1.1・H1 = HTTP/1.1。
+// 相手の役はh2tls_testのもの（h2lPeer = ALPNでh2を申し出る生のHTTP/2・h2cPeer = std/http/clientのHTTP/2）と、std/http/clientのHTTP/1.1
+
+import "std/http/client"
+import "std/net"
+import "std/os"
+import "std/task"
+import "std/tls"
+
+func ctBoth(c net.Conn) error? {
+    return ServeConn(c, h2lRoute, headWait: 5000 * task.MS, proto: Both)
+}
+
+func ctH2(c net.Conn) error? {
+    return ServeConn(c, h2lRoute, headWait: 5000 * task.MS, proto: H2)
+}
+
+func ctH1(c net.Conn) error? {
+    return ServeConn(c, h2lRoute, headWait: 5000 * task.MS)
+}
+
+// tls.Serveの上にServeConnを立て、相手の役peerが終わったら畳む。mode = 1 Both・2 H2・3 H1。alpn = サーバーが申し出るALPN（空なら申し出ない）。
+// big = 接続の予算を大きく宣言する（1 MiBの本文のため）。ほかは既定の予算（64 KiB） — routeの結果を余分にコピーすると、40000 Bの本文の往復で予算を越える
+func ctServe(mode int, alpn []string, peer func(port int) int, big bool?) int {
+    port := h2lPort() catch 0
+    cfg0, ce := tls.Parse(h2lFile("testdata/crypto/httparena-server.crt"), h2lFile("testdata/crypto/httparena-server.key"))
+    assert(ce == nil)
+    cfg := if len(alpn) > 0 { tls.Alpn(cfg0, alpn) } else { cfg0 }
+    v, e := task.Run((s task.Scope) => {
+        d := task.NewDomain(s, h2lGot{v: 0 - 1})
+        _, e2 := task.Run((s2 task.Scope) => {
+            _ = task.Spawn(s2, () => {
+                _ = tls.Serve("127.0.0.1:${port}", cfg, if mode == 1 { ctBoth } else if mode == 2 { ctH2 } else { ctH1 }, budget: if big != nil && big { 4 * 1048576 } else { 64 * 1024 }, conns: 4)
+                0
+            })
+            _ = task.Spawn(s2, () => {
+                r := peer(port)
+                task.Update(d, (g mut h2lGot) => {
+                    g.v = r
+                    0
+                })
+                xs := []int{1}
+                xs[9]
+            })
+            0
+        }, deadline: 10000 * task.MS)
+        _ = e2
+        task.Read(d, (g h2lGot) => g.v)
+    })
+    return if e == nil { v } else { 0 - 2 }
+}
+
+// std/http/clientのHTTP/1.1の往復（ALPNでh2に決まらない接続）。結果 = 通った項目のビット（全部で7）
+func ctH1Peer(port int) int {
+    base := "https://localhost:${port}"
+    roots := tls.ParseRoots(h2lFile("testdata/crypto/httparena-server.crt")) catch return 0 - 1
+    pol := http.client.Policy{extraRoots: roots, timeout: 5000 * task.MS}
+    mut tries := 0
+    mut up := false
+    while !up && tries < 200 {
+        _, e := http.client.Request("${base}/a", policy: pol)
+        up = e == nil
+        if !up {
+            os.Sleep(20)
+        }
+        tries += 1
+    }
+    mut bits := 0
+    r1, e1 := http.client.Request("${base}/a", policy: pol)
+    if e1 == nil && r1.status == 200 && string(r1.body) catch "" == "hello /a" {
+        bits = bits | 1
+    }
+    mut big := mut []byte{}
+    while len(big) < 12000 {
+        big = append(big, byte(65 + len(big) % 23))
+    }
+    sent := freeze(big)
+    r2, e2 := http.client.Request("${base}/echo", method: "POST", body: sent, policy: pol)
+    if e2 == nil && r2.status == 200 && len(r2.body) == len(sent) && r2.body[11999] == sent[11999] {
+        bits = bits | 2
+    }
+    // keep-aliveの1本の接続で3往復（受けた切片ごとにPutで積んだ応答を、次の受けの前に送る）
+    mut sn := 0
+    oe := http.client.Open(base, (ss) => {
+        a, ea := http.client.Send(ss, "${base}/a")
+        b, eb := http.client.Send(ss, "${base}/big")
+        c, ec := http.client.Send(ss, "${base}/x")
+        if ea == nil && eb == nil && ec == nil && a.status == 200 && len(b.body) == 40000 && string(c.body) catch "" == "hello /x" {
+            sn = 1
+        }
+    }, policy: pol)
+    if oe == nil && sn == 1 {
+        bits = bits | 4
+    }
+    return bits
+}
+
+// Both + ALPN h2: 生のHTTP/2の相手とstd/http/clientのHTTP/2の相手
+func TestConnTlsBoth() {
+    assert(ctServe(1, []string{"h2", "http/1.1"}, (port) => h2lOk(h2lPeer(port, h2tRequests([]string{"/a", "/big", "/echo"}, bytes("xyz")), 3), 3)) == 1)
+    assert(ctServe(1, []string{"h2", "http/1.1"}, (port) => h2cPeer(port)) == 127)
+}
+
+// Both + ALPN http/1.1（サーバーがh2を申し出ない）: HTTP/1.1
+func TestConnTlsBothH11() {
+    assert(ctServe(1, []string{"http/1.1"}, (port) => ctH1Peer(port)) == 7)
+}
+
+// H2: ALPNに依らずHTTP/2。前置きでない最初のバイトは応答なしで閉じる
+func TestConnTlsH2() {
+    assert(ctServe(2, []string{"h2", "http/1.1"}, (port) => h2lOk(h2lPeer(port, h2tRequests([]string{"/a", "/big", "/echo"}, bytes("xyz")), 3), 3)) == 1)
+    assert(ctServe(2, []string{"h2", "http/1.1"}, (port) => h2lOk(h2lPeer(port, bytes("GET / HTTP/1.1\r\nHost: x\r\n\r\n"), 1), 1)) == 2)
+}
+
+// H1（ALPNなし）: HTTP/1.1
+func TestConnTlsH1() {
+    assert(ctServe(3, []string{}, (port) => ctH1Peer(port)) == 7)
+}
+
+// 1 MiBの応答（受けた切片1つ分のレスポンスをnet.Putで積む道で、送りが切片をまたぐ）
+func ctHugePeer(port int) int {
+    base := "https://localhost:${port}"
+    roots := tls.ParseRoots(h2lFile("testdata/crypto/httparena-server.crt")) catch return 0 - 1
+    pol := http.client.Policy{extraRoots: roots, timeout: 5000 * task.MS}
+    mut tries := 0
+    mut up := false
+    while !up && tries < 200 {
+        _, e := http.client.Request("${base}/a", policy: pol)
+        up = e == nil
+        if !up {
+            os.Sleep(20)
+        }
+        tries += 1
+    }
+    r, e := http.client.Request("${base}/huge", policy: pol)
+    return if e == nil && r.status == 200 && len(r.body) == 1048576 { 1 } else { 0 }
+}
+
+func TestConnTlsHuge() {
+    assert(ctServe(3, []string{}, (port) => ctHugePeer(port), big: true) == 1)
+}

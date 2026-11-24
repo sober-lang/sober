@@ -1,0 +1,234 @@
+package net
+
+// IPv4 と IPv6 のループバックの listen・dial・echo と、addr の形の検査
+
+import "std/internal/ip"
+import "std/io"
+import "std/os"
+import "std/strings"
+import "std/task"
+import "std/time"
+
+// listenAddr で listen し、同じ task が dialHost へ Dial して 3 バイト送り、Accept で受けて送り返したものを読む（往復できたバイト数・失敗は負）
+func echoVia(listenAddr string, dialHost string) int {
+    return echoRun(listenAddr, dialHost) catch -1
+}
+
+func echoRun(listenAddr string, dialHost string) (int, error?) {
+    mut got := 0
+    for l <- Listen(listenAddr)? {
+        for c <- Dial("${dialHost}:${Port(l)}")? {
+            Send(c, bytes("abc"))?
+            _, e := task.Run((s task.Scope) => echoOne(l) catch -1, deadline: 5000 * task.MS)
+            if e != nil {
+                return -2, nil
+            }
+            for chunk <- Recv(c)? {
+                got += len(chunk)
+                if got >= 3 {
+                    break
+                }
+            }
+        }
+    }
+    return got, nil
+}
+
+// 1 本だけ受けて、3 バイト届くまで送り返す
+func echoOne(l Listener) (int, error?) {
+    mut total := 0
+    for c <- Accept(l)? {
+        for chunk <- Recv(c)? {
+            total += len(chunk)
+            Send(c, chunk)?
+            if total >= 3 {
+                break
+            }
+        }
+        break
+    }
+    return total, nil
+}
+
+func TestEcho4And6() {
+    assert(echoVia("127.0.0.1:0", "127.0.0.1") == 3)
+    if skipV6("TestEcho4And6") {
+        return
+    }
+    assert(echoVia("[::1]:0", "[::1]") == 3)
+    assert(echoVia("[::1%lo]:0", "[::1]") == 3)
+    assert(echoVia("[0:0:0:0:0:0:0:1]:0", "[::1]") == 3)
+}
+
+// v6 の listener の Port と、Serve のワーカーごとの listener が読む bind の番地（28 バイト）
+func TestBound6() {
+    if skipV6("TestBound6") {
+        return
+    }
+    mut p := -1
+    mut n := 0
+    _ = Listen("[::1]:0", (l) => {
+        p = Port(l)
+        n = len(boundAddr(l.fd))
+    })
+    assert(p > 0 && n == 28)
+    _ = Listen("127.0.0.1:0", (l) => {
+        n = len(boundAddr(l.fd))
+    })
+    assert(n == 16)
+}
+
+// [::] の listener には IPv4 から繋がらない（IPV6_V6ONLY = 1 の明示。sysctl の bindv6only = 0 の環境でも）
+func TestV6Only() {
+    if skipV6("TestV6Only") {
+        return
+    }
+    mut refused := false
+    _ = Listen("[::]:0", (l) => {
+        refused = Dial("127.0.0.1:${Port(l)}", (c) => {}) != nil
+    })
+    assert(refused)
+}
+
+func badAddr(e error?) bool {
+    return switch e {
+    case nil: false
+    case Bad{}: true
+    default: false
+    }
+}
+
+func TestAddrForms() {
+    assert(len(sockaddr("127.0.0.1:80")) == 16)
+    assert(len(sockaddr("[::1]:80")) == 28)
+    assert(len(sockaddr("[fe80::1%1]:80")) == 28)
+    assert(len(sockaddr("::1:80")) == 0)
+    assert(len(sockaddr("[::1]")) == 0)
+    assert(len(sockaddr("[fe80::1%no-such-if0]:80")) == 0)
+    assert(len(sockaddr("localhost:80")) == 0)
+    sa := sockaddr("[2001:db8::1%7]:8080")
+    assert(sa[0] == 10 && sa[2] == 0x1f && sa[3] == 0x90 && sa[8] == 0x20 && sa[9] == 0x01 && sa[23] == 1 && sa[24] == 7)
+    assert(badAddr(Listen("::1:0", (l) => {})))
+    assert(badAddr(Listen("[::1]", (l) => {})))
+    assert(badAddr(Dial("::1:80", (c) => {})))
+    assert(badAddr(Dial("[fe80::1%no-such-if0]:80", (c) => {})))
+    assert(badAddr(Dial(":80", (c) => {})))
+}
+
+// ":0" は dual-stack: IPv4 と IPv6 の両方から繋がる（IPV6_V6ONLY = 0 の明示）。Serve のワーカーごとの listener も同じ値を読む
+func TestDualStack() {
+    if skipV6("TestDualStack") {
+        return
+    }
+    assert(echoVia(":0", "127.0.0.1") == 3)
+    assert(echoVia(":0", "[::1]") == 3)
+    mut only := -1
+    mut n := 0
+    _ = Listen(":0", (l) => {
+        only = v6onlyOf(l.fd)
+        n = len(boundAddr(l.fd))
+    })
+    assert(only == 0 && n == 28)
+    _ = Listen("[::]:0", (l) => {
+        only = v6onlyOf(l.fd)
+    })
+    assert(only == 1)
+}
+
+// 黒穴の listener（backlog 0 で accept しない。2 本の接続で受け入れの列を埋めると、後の SYN はカーネルが捨てて応答しない）。
+// 返すのは [listener の fd, 埋めた接続の fd…, port]
+func blackHole() []int {
+    fd := sysCall(41, 2, 526337, 0, 0, 0, 0)
+    sa := sa4([]byte{127, 0, 0, 1}, 0)
+    _ = sysCall(49, fd, sysAddr(sa), 16, 0, 0, 0)
+    _ = sysCall(50, fd, 0, 0, 0, 0, 0)
+    p := int(boundAddr(fd)[2]) * 256 + int(boundAddr(fd)[3])
+    mut o := mut []int{}
+    o = append(o, fd)
+    mut i := 0
+    while i < 3 {
+        i += 1
+        c := sysCall(41, 2, 526337, 0, 0, 0, 0)
+        _ = sysCall(42, c, sysAddr(sa4([]byte{127, 0, 0, 1}, p)), 16, 0, 0, 0)
+        o = append(o, c)
+    }
+    o = append(o, p)
+    return freeze(o)
+}
+
+func closeAll(fs []int) {
+    mut i := 0
+    while i < len(fs) - 1 {
+        _ = sysCall(3, fs[i], 0, 0, 0, 0, 0)
+        i += 1
+    }
+}
+
+func TestInterleave() {
+    a := []byte{10, 0, 0, 1}
+    b := []byte{10, 0, 0, 2}
+    x := internal.ip.Parse6("2001:db8::1")
+    y := internal.ip.Parse6("2001:db8::2")
+    o := interleave([][]byte{a, b, x, y})
+    assert(len(o) == 4 && len(o[0]) == 16 && o[0][15] == 1 && len(o[1]) == 4 && o[1][3] == 1 && o[2][15] == 2 && o[3][3] == 2)
+    o2 := interleave([][]byte{a, x, y})
+    assert(len(o2) == 3 && o2[0][15] == 1 && o2[1][3] == 1 && o2[2][15] == 2)
+}
+
+// 最後以外の試行は 2 秒あまりで打ち切って次の番地へ進む。到達しない番地（100::/64〔RFC 6666〕・経路が無ければすぐ失敗）も次へ進む
+func TestDialCap() {
+    bh := blackHole()
+    p := bh[len(bh) - 1]
+    mut ok := false
+    mut dt := 0
+    _ = Listen("127.0.0.1:0", (l) => {
+        live := sa4([]byte{127, 0, 0, 1}, Port(l))
+        t0 := time.Mono().ns
+        e := dialAll([][]byte{sa6(internal.ip.Parse6("100::1"), 80, 0), sa4([]byte{127, 0, 0, 1}, p), live}, (c) => {
+            ok = true
+        })
+        dt = time.Mono().ns - t0
+        assert(e == nil)
+    })
+    closeAll(bh)
+    assert(ok)
+    // 下限 = 2 本目の打ち切り（2 秒）が働いたこと。上限 = 打ち切りが無ければ backlog の黒穴で約 127 秒待つことの対比で、
+    // 負荷の下のスケジューラの遅れを吸えるだけ緩くてよい（実発: 全ゲート並走で 4,007 ms）
+    assert(dt >= 1900 * task.MS && dt < 10000 * task.MS)
+}
+
+// 最後の試行には上限を掛けない: 黒穴 1 本だけなら 2 秒で切らずに scope の期限（3 秒）まで待つ
+func TestDialLastUncapped() {
+    bh := blackHole()
+    p := bh[len(bh) - 1]
+    t0 := time.Mono().ns
+    de, e := task.Run((s task.Scope) => dialAll([][]byte{sa4([]byte{127, 0, 0, 1}, p)}, (c) => {}), deadline: 3000 * task.MS)
+    dt := time.Mono().ns - t0
+    closeAll(bh)
+    assert((de != nil || e != nil) && dt >= 2900 * task.MS)
+}
+
+// IPv6 のループバック（::1）が無く、SOBER_GATES_ALLOW_SKIP に ipv6 があるときだけ true を返し、飛ばした旨を 1 行出す。
+// ::1 が無くても ipv6 を外していなければ false（テストはそのまま走って落ちる。照合できない検査は FAIL）
+func skipV6(test string) bool {
+    if hasLoopback6() {
+        return false
+    }
+    v, e := os.Getenv("SOBER_GATES_ALLOW_SKIP")
+    if e != nil || v == nil {
+        return false
+    }
+    for w <- strings.Fields(v) {
+        if w == "ipv6" {
+            println("SKIP[ipv6] ${test}: no IPv6 loopback (::1)")
+            return true
+        }
+    }
+    return false
+}
+
+// /proc/net/if_inet6 に ::1 の行があるか
+func hasLoopback6() bool {
+    t := io.ReadFile("/proc/net/if_inet6") catch []byte{}
+    return strings.Contains(bytesToString(t), "00000000000000000000000000000001 ")
+}

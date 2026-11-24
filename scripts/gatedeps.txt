@@ -20,7 +20,8 @@ a1oracle: examples testdata/a1   # 題材 = examples の type_recursive* 5 本 +
 memcheck: examples testdata/memcheck testdata/alias testdata/specpkg   # 題材 = .out を持つ examples（上界の黄金は testdata/memcheck/expect.txt）+ 手組み・alias / specpkg = 題材の import 先
 guidetest: examples testdata/guide ~testdata   # 本文の testdata/fuzz は写しの中の題材のコーパス（木の testdata は読まない）
 testreplay: src/stage1 ~testdata   # 本文の testdata は一時の package の中の名前（木の testdata は読まない）
-incrbuild: bench examples fuzz/progen src/stage1 scripts/omit/incrbuild.list testdata   # fuzz/progen = 鎖の題材の生成器（抽出が拾わない — 手で足す）
+incrbuild_self: src/stage1 ~bench ~examples ~fuzz/progen ~scripts/omit/incrbuild.list ~testdata   # --self は自己のチェーンだけ（題材 = src/compiler + src/std の写し — 共通の成分）。本文の例題・bench・progen・omit の言及は --ex の相
+incrbuild_ex: bench examples fuzz/progen src/stage1 scripts/omit/incrbuild.list testdata   # fuzz/progen = 鎖の題材の生成器（抽出が拾わない — 手で足す）
 incrrace: examples src/stage1
 cacheaudit: bench examples src/stage1
 tyorder: bench examples src/stage1
@@ -48,6 +49,7 @@ checkverdict: examples scripts/irtext.sh testdata
 checksplit: examples scripts/irtext.sh testdata
 checkpos: examples scripts/checkpos.ts testdata   # 変異の題材の生成（node）と黄金の検査器の拒否の entry
 cachesplit: examples scripts/checkverdict.sh scripts/irtext.sh testdata
+pkgfin: examples src/stage1 testdata
 splitcache: examples scripts/checkverdict.sh scripts/irtext.sh testdata   # リリースの組（gates.sh --release）— cachesplit のキャッシュの冷・温・検証の部分
 cachekey: examples testdata scripts/omit/cachekey.list scripts/omit/cachekey-gh.list
 panicmsg: examples testdata
@@ -78,7 +80,7 @@ seqpar: examples scripts/seqpar.list
 xpar: examples   # 題材 = examplesの大きい例4本（群が2つ以上になる大きさ）
 lparcfg: scripts/lparcfg.ts
 schedvec: examples scripts/schedvec.list scripts/schedvec.ts
-schedfuzz: examples scripts/schedfuzz.list testdata/readyspill bench/spawn
+schedfuzz: examples scripts/schedfuzz.list testdata/readyspill bench/spawn scripts/flight.ts
 parbudget: bench/skynet examples scripts/schedfuzz.list testdata/parbudget
 cutstat: bench/par bench/skynet examples testdata/cutstat
 vecchk: examples
@@ -88,14 +90,14 @@ clidoc: bin/sober docs/cli docs/guide/env.ja.md ~docs/guide scripts testdata/cli
 outline: examples src/stage1 testdata/outline
 doclead: examples scripts/doclead.ts src/stage1
 docsync: README.ja.md README.md docs examples scripts/docsync.ts testdata/checkverdict testdata/guide testdata/mod ~testdata   # 本文の testdata/mod/${…} は規則の参照の題材の黄金（宣言の testdata/mod の中）
-confsync: docs/conformance examples testdata/conformance testdata/crypto testdata/pg testdata/ctcheck testdata/httpcheck testdata/stdtest testdata/tls testdata/wycheproof testdata/x509 scripts/confsync.ts ~scripts   # std の _test.sober が @embed で読む testdata と主張の証拠の黄金・~scripts = 文書と道具の注が名指す相互接続の道具（読まない — 記録は testdata/conformance）
+confsync: docs/conformance examples testdata/conformance testdata/crypto testdata/pg testdata/ctcheck testdata/httpcheck testdata/stdtest testdata/tls testdata/wycheproof testdata/x509 scripts/confsync.ts ~scripts ~testdata/tls12   # std の _test.sober が @embed で読む testdata と主張の証拠の黄金・~scripts = 文書と道具の注が名指す相互接続の道具（読まない — 記録は testdata/conformance）・~testdata/tls12: 本文が言及するのは相互接続の記録の名前 tls12（testdata/conformance/interop/tls12.txt）で、testdata/tls12は読まない
 benchsync: README.ja.md README.md bench docs scripts/bench.sh scripts/benchchart.ts scripts/benchfetch.sh scripts/benchsync.ts
 maprepr: bench examples testdata ?out/bench/measurements-1000000.txt ?out/bench/fasta-250000.txt scripts/omit/maprepr.list   # out/bench の入力は有るときだけ題材に足す（木によって有無が違う）
 streq: bench examples testdata ?out/bench/logagg-500000.txt ?out/bench/routing-500000.txt ?out/bench/jsonapi-100000.ndjson scripts/omit/streq.list   # out/bench の入力は有るときだけ題材に足す（木によって有無が違う）
 strix: examples src/stage1
 ubfstat: bench/1brc examples scripts/ubfstat.list
 framestat: bench/httparena scripts/framestat.list
-reqinst: bench/httparena bench/asyncdb bench/pgstub bench/ratchet.txt scripts/reqinst.ts ~bench ~src/stage1   # ~src/stage1 = 冒頭で呼ぶ scripts/stage2.sh の言及（stage1は全ゲートに共通の成分）・~bench = DATABASE_URL の user 名（postgres://bench:bench@…）が lint にパスと読まれるだけ
+reqinst: bench/httparena bench/asyncdb bench/pgstub bench/ratchet.txt scripts/reqinst.ts testdata/crypto ~bench ~src/stage1   # testdata/crypto = 題材 tlsecho の証明書（本家と同じ対）・~src/stage1 = 冒頭で呼ぶ scripts/stage2.sh の言及（stage1は全ゲートに共通の成分）・~bench = DATABASE_URL の user 名（postgres://bench:bench@…）が lint にパスと読まれるだけ
 ringinst: bench/httparena bench/ratchet.txt scripts/reqinst.ts ~src/stage1   # ~src/stage1 = 冒頭で呼ぶ scripts/stage2.sh の言及（stage1は全ゲートに共通の成分）
 sortcheck: testdata/sortcheck
 matchlencheck: testdata/matchlen
@@ -107,15 +109,23 @@ ctcheck: testdata/ctcheck testdata/secretdump
 cryptocheck: examples testdata/crypto testdata/wycheproof   # M2（report-1222）が名指し: Sober のプログラムが実行時に読む・import する入力（本文の抽出では見えない）
 tlsfsm: lean lean/.lake/build/bin/sober-gen testdata/tls
 tlsfuzz: examples testdata/crypto testdata/tlsfuzz scripts/tlsfuzz-fetch.sh ~scripts   # ~scripts: 本文のscripts/〈名前〉.pyはtlsfuzzerの中のパス。tlsfuzzerの取得物（out/tlsfuzz）は、取得のスクリプトの固定のcommitと版で決まる
+tls12interop: testdata/crypto testdata/tls12   # opensslのs_client（環境の道具の版）と、testdata/tls12/srv.soberのサーバー
+h2spec: examples testdata/h2spec testdata/h2flood scripts/h2spec-fetch.sh   # h2specの取得物（out/h2spec）は、取得のスクリプトの固定のURLとsha256で決まる（使う時点でもsha256を照合）
 iterregion: examples
 rflowmeter: bench/httparena   # ゴミ計つきのコンパイラで build する題材（std は stage2 の鍵に入る）
 fitcheck: bench examples src/stage1 testdata
+profcov: bench/httparena ~scripts/profgen.sh ~scripts/profgen.ts ~scripts/reqinst.ts ~testdata/httpcheck ~src/stage1   # main.prof（プロファイル）と main.sober（題材）。~ = 取り直しの手順として profgen.sh を名指すだけ（profgen.sh が読む reqinst.ts・testdata/httpcheck も同じ）・~src/stage1 = 冒頭で呼ぶ scripts/stage2.sh の言及
 numpert: bench examples src/stage1
 fnhash: 
 tyhash: 
-iouring: examples testdata/io_par ~testdata   # testdata は監査（report-1222）で読む単位に詰めた — M2 で確認
+iouring: examples testdata/io_par testdata/dlchain ~testdata   # testdata は監査（report-1222）で読む単位に詰めた — M2 で確認
 httpcheck: scripts/flight.ts testdata/httpcheck testdata/tlserr examples
+fdcap: testdata/fdcap testdata/crypto
+mapcap: testdata/mapcap scripts/mapcap.ts
+parkres: testdata/parkres scripts/mapcap.ts
+acceptretry: testdata/acceptretry
 slowcheck: testdata/slowcheck testdata/crypto   # 題材 = testdata/slowcheck（TLSの構成はtestdata/cryptoの証明書）
+signprobe: scripts/slowcheck.sh testdata/slowcheck testdata/crypto   # slowcheck.sh --probe（署名の列の題材の probe max だけ）
 starve: testdata/starve
 tschain: testdata/delaylat
 fusecheck: scripts/flight.ts testdata/httpcheck
@@ -127,6 +137,7 @@ pincheck: testdata/pin
 oversub: testdata/oversub
 laypin: bench/httparena examples scripts/laypin.ts src/stage1
 pid1stop: scripts/pid1stop.ts testdata/pid1stop
+logcheck: scripts/logcheck.ts testdata/logcheck
 mdwecheck: testdata/mdwe
 vaslot: testdata/vaslot
 refs: bench docs examples lean scripts src/stage1 testdata
@@ -148,6 +159,19 @@ ir_roundtrip: examples src/stage1
 gatememo: scripts   # 本体は全部の宣言のパスと本文を読む — @always で毎回走る
 gateenv: scripts   # lintはORDERの全部のゲートのスクリプトを読む。1秒なので@alwaysで毎回走らせる
 
-@nondet: stages selfpar incrrace seqpar schedvec schedfuzz parbudget iouring httpcheck slowcheck starve tschain fusecheck wincheck stackcheck areacheck pincheck oversub pid1stop
+@nondet: h2spec stages selfpar incrrace seqpar schedvec schedfuzz parbudget iouring httpcheck slowcheck acceptretry signprobe starve tschain fusecheck wincheck stackcheck areacheck pincheck oversub pid1stop logcheck
 @always: gatememo refs gateenv   # refsは .gitを読むのでM2の写し（.gitなし）で確かめられないので、毎回走らせる（29 s）。M1とlintは全部の宣言と本文を読む（数秒）ので、記録せず毎回走らせる
 @local: stages selfpar reqinst ringinst axes   # 実行時の命令数・RSS を bench/ratchet.txt の上限値と比べる — パスの長さで値が動くので、記録を木の間で共有しない（キーに木のルートを入れる）
+@lines: stages selfpar axes reqinst ringinst framestat   # 線（bench/ratchet.txt・scripts/framestat.list）と実測を比べる — 線の値とコメントは鍵に入らない（形だけ）。比較は gatelib.sh の ratchet_cmp で、実測を記録に残し、鍵が当たったら記録の実測をいまの線で判定し直す（gatememo.ts checkOne）
+
+# 置き場所の表（検証の増分化 — .pair設計 design-gateincr-2）: 保証ごとに確かめる場所を1か所に決める。場所はチェックレベル（gates.sh --level N — 数字が大きいほど網が細かい）と一対一:
+#   レベル1 branch（札なし）  = 変更の検証: 枝の変更だけで値が決まる保証。枝の取り込みの前の契約
+#   レベル2 train（@place train） = 合成の検証: 合成で初めて値が決まる保証（出力の照合・上限値）。push前。レベル1の結果は scripts/carry.ts の条件で持ち越す
+#   レベル3 nightly（@place nightly） = 包括の網: 全部を冷で・実行時間の線の FAIL。1日1回
+#   レベル4 release = リリース: レベル3 + タグ release のゲート
+# 2か所目で確かめるのは @recheck の行だけ（理由のコメントは必須）。@regen = 取り直しの道具（regen.sh・上限値の取り直し）が書くパス（列車の上で merge 以外に変えてよいパス）
+@place train: astjson corejson irtext lltext loaderjson effectsdump secretdump ctcheck stdref clidoc docsync stages selfpar framestat ringinst reqinst lparcfg memcheck profcov   # 合成で初めて値が決まる（出力の照合・上限値）
+@place nightly: incrmut signprobe   # signprobe = 壁時計の応答の線（全件の負荷の下で越える揺れがある。保証は slowcheck の検査のビルドが持つ）。incrmut = 枝の全件の臨界が 936 → 505 秒で一番効く。守るのは開発のキャッシュの正しさで、利用者に出る出力は train の照合と release の冷が持つ。穴の窓は最大1日
+@recheck nightly: all   # branch の結果の持ち越し（train）は合成の相互作用を見ない。外れを1日以内に捕まえる
+@recheck release: all   # 最後の砦（冷・記録の再利用なし）
+@regen: testdata/astjson testdata/checkverdict testdata/corejson testdata/irtext testdata/lltext testdata/effectsdump testdata/cutstat testdata/secretdump testdata/ctcheck testdata/outline testdata/stdref docs/std bench/ratchet.txt scripts/framestat.list

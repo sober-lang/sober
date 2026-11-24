@@ -273,7 +273,7 @@ partial def ev (env : List AV) (e : Expr) (s : St) : AV × St :=
     let (_, s) := ev env a s
     let js := s.jumps.set n (s :: s.jumps.getD n [])
     (.bufs [], { s with jumps := js, dead := true })
-  | .alloc _ a =>
+  | .alloc _ a | .allocAt _ _ a =>
     let (v, s) := ev env a s
     let (c, s) := s.fresh
     (.refs [c], s.setCell c v)

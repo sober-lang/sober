@@ -10,6 +10,8 @@
 #   - --mutate と --cover を同時に指定したら黙らずに拒否する
 #   scripts/mutate.sh            照合
 #   scripts/mutate.sh --regen    ゴールデンを作り直す（差分を見てからコミット）
+# ゴールデンの並びを呼び手のロケールに依らせない
+export LC_ALL=C.UTF-8
 set -uo pipefail
 cd "$(dirname "$0")/.."
 SOBER=${SOBER:-./bin/sober}

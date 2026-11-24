@@ -28,6 +28,7 @@ import "std/table"
 import "std/iter"
 import "ast"
 import "diag"
+import "std/sort"
 
 // fnValAll の結果: η 展開後の木と、値の位置のラムダの捕捉の表（ラムダは [ファイル, 節] で引く — 捕捉 0 本でも
 // 値の位置のマークとして載る）。namesは [lo, hi) の切り出し
@@ -43,11 +44,15 @@ type FnVals struct {
     // compileが重くなる）— [名前の数N, 名前ごとのターゲットの番号（-1 = 普通の捕捉）× N, 行の数R, 行ごとの流れのフラグ × R（1 = ターゲットの仮引数へ流れる
     // 実引数のラムダの行 — 持ち上げの時に捕捉を平たく積む元）, ターゲットの数Q, 流れる行のlo × Q, hi × Q, 流れる行…（推移 — 転送を含む）]
     cap_pend []int
+    // 展開待ちの捕捉のターゲット（cap_pend のターゲットの番号の順 — ファイル・宣言の節・仮引数の位置）
+    qf []int
+    qd []int
+    qi []int
 }
 
 // ProgramからCxを組み直す（desugarがloaderの判定 — FnValDecl — を読むための入口。判定の一元化）
 func ProgCx(p Program) Cx {
-    return Cx{p.trees, p.file_pkg, p.pkg_path, p.pkg_lo, p.pkg_hi, p.imp_pkg, p.imp_ref, p.imp_path, tyTab(p.trees, p.file_pkg)}
+    return Cx{p.trees, p.file_pkg, p.pkg_path, p.pkg_lo, p.pkg_hi, p.imp_pkg, p.imp_ref, p.imp_path, impIx(p.pkg_path, p.imp_pkg, p.imp_path), tyTab(p.trees, p.file_pkg)}
 }
 
 // 全ファイルの型宣言の索引を組む（typeDeclAtが呼び出しの実引数・仮引数・フィールドごとに引く — packageの型宣言を毎回総なめにすると、
@@ -2030,7 +2035,7 @@ func fvOneLam(w mut FvW, cx Cx, ft FnTab, lam int, mask int, flow int, call int,
 @errors(diag.FnArg, diag.FnCap)
 func fnValAll(cx Cx, ft FnTab) (FnVals, error?) {
     // 関数値の代入 `x = e` を `x = W(e)` へ（assignconv.sober）。以降は変換の経路で読む
-    cx0 := Cx{assignConvAll(cx, ft), cx.file_pkg, cx.pkg_path, cx.pkg_lo, cx.pkg_hi, cx.imp_pkg, cx.imp_ref, cx.imp_path, cx.tys}
+    cx0 := Cx{assignConvAll(cx, ft), cx.file_pkg, cx.pkg_path, cx.pkg_lo, cx.pkg_hi, cx.imp_pkg, cx.imp_ref, cx.imp_path, cx.imp_ix, cx.tys}
     ts, eerr := fnValEtaAll(cx0, ft)
     if eerr != nil {
         return FnVals{}, eerr
@@ -2041,7 +2046,7 @@ func fnValAll(cx Cx, ft FnTab) (FnVals, error?) {
 // η展開の後の木tsの捕捉の走査。展開される仮引数の呼び出しの値の位置に名前付き関数があれば（againのときだけ）、ηへ書き換えて走査し直す
 @errors(diag.FnArg, diag.FnCap)
 func fnValFrom(cx Cx, ft FnTab, ts []ast.Tree, again bool) (FnVals, error?) {
-    cx2 := Cx{ts, cx.file_pkg, cx.pkg_path, cx.pkg_lo, cx.pkg_hi, cx.imp_pkg, cx.imp_ref, cx.imp_path, cx.tys}
+    cx2 := Cx{ts, cx.file_pkg, cx.pkg_path, cx.pkg_lo, cx.pkg_hi, cx.imp_pkg, cx.imp_ref, cx.imp_path, cx.imp_ix, cx.tys}
     mut w := FvW{lb: 0 - 1}
     mut ts2 := mut []ast.Tree{}
     mut f := 0
@@ -2087,21 +2092,103 @@ func fnValFrom(cx Cx, ft FnTab, ts []ast.Tree, again bool) (FnVals, error?) {
         rounds += 1
     }
     pl, ph, pr := fvPendRows(mut w, es, builder.Build(mut w.frow))
-    // lo/hi を通しの添字に直す（fvOneLam はラムダごとの [0, n) を積んでいる — names は積んだ順なので前からの累計）
-    los := builder.Build(mut w.clo)
-    his := builder.Build(mut w.chi)
+    mut qf := mut []int{}
+    mut qd := mut []int{}
+    mut qi := mut []int{}
+    for q <- iter.Range(0, w.qc) {
+        qf = append(qf, table.Get(mut w.qf, q))
+        qd = append(qd, table.Get(mut w.qd, q))
+        qi = append(qi, table.Get(mut w.qi, q))
+    }
+    return fvCanon(freeze(ts2), builder.Build(mut w.cfile), builder.Build(mut w.cnode), builder.Build(mut w.chi), builder.Build(mut w.cnames), builder.Build(mut w.cbrw),
+        builder.Build(mut w.cpk), builder.Build(mut w.cflow), freeze(qf), freeze(qd), freeze(qi), pl, ph, pr), nil
+}
+
+// 捕捉の表と展開待ちの捕捉の表を正準の並びにする: 行は流れの行でないもの → 流れの行の順に、それぞれファイルの順（ファイルの中は歩きの順のまま）・
+// ターゲットは（ファイル, 宣言の節, 仮引数）の順・ターゲットへ流れる行は行の番号の昇順。発見の順（全体のファイルの順と流れの周の順）に依らず、行とターゲットの集合だけで決まる
+// （package ごとの仕上げの結果から全体の表を組み立てる形 — D1 区切り3）。ns = 行ごとの捕捉の名前の数（fvOneLam が積んだ順の [0, n)）
+func fvCanon(ts []ast.Tree, cfile []int, cnode []int, ns []int, names []string, brw []int, pk []int, flow []int, qf []int, qd []int, qi []int, pl []int, ph []int, pr []int) FnVals {
+    nr := len(cfile)
+    nq := len(qf)
+    fw := flow
+    fo := (r int) => if r < len(fw) && fw[r] == 1 { 1 } else { 0 }
+    ro := sort.Order(nr, (a, b) => fo(a) < fo(b) || fo(a) == fo(b) && cfile[a] < cfile[b])
+    qo := sort.Order(nq, (a, b) => qf[a] < qf[b] || qf[a] == qf[b] && (qd[a] < qd[b] || qd[a] == qd[b] && qi[a] < qi[b]))
+    // 古い番号 → 新しい番号
+    mut rn := mut []int{}
+    for _ <- iter.Range(0, nr) {
+        rn = append(rn, 0)
+    }
+    for k <- iter.Range(0, nr) {
+        rn[ro[k]] = k
+    }
+    mut qn := mut []int{}
+    for _ <- iter.Range(0, nq) {
+        qn = append(qn, 0)
+    }
+    for k <- iter.Range(0, nq) {
+        qn[qo[k]] = k
+    }
+    // 行ごとの名前の始まり（古い並び）
+    mut ost := mut []int{}
+    mut acc := 0
+    for r <- iter.Range(0, nr) {
+        ost = append(ost, acc)
+        acc += ns[r]
+    }
+    mut f2 := mut []int{}
+    mut n2 := mut []int{}
     mut lo2 := mut []int{}
     mut hi2 := mut []int{}
-    mut acc := 0
-    mut i := 0
-    while i < len(los) {
-        lo2 = append(lo2, acc)
-        acc += his[i]
-        hi2 = append(hi2, acc)
-        i += 1
+    mut nm2 := mut []string{}
+    mut br2 := mut []int{}
+    mut pk2 := mut []int{}
+    mut fl2 := mut []int{}
+    mut at := 0
+    for k <- iter.Range(0, nr) {
+        r := ro[k]
+        f2 = append(f2, cfile[r])
+        n2 = append(n2, cnode[r])
+        br2 = append(br2, brw[r])
+        fl2 = append(fl2, if r < len(flow) { flow[r] } else { 0 })
+        lo2 = append(lo2, at)
+        for j <- iter.Range(ost[r], ost[r] + ns[r]) {
+            nm2 = append(nm2, names[j])
+            p := if j < len(pk) { pk[j] } else { 0 - 1 }
+            pk2 = append(pk2, if p >= 0 { qn[p] } else { p })
+        }
+        at += ns[r]
+        hi2 = append(hi2, at)
     }
-    return FnVals{freeze(ts2), builder.Build(mut w.cfile), builder.Build(mut w.cnode), freeze(lo2), freeze(hi2), builder.Build(mut w.cnames), builder.Build(mut w.cbrw),
-        fvPendPack(builder.Build(mut w.cpk), builder.Build(mut w.cflow), pl, ph, pr)}, nil
+    // ターゲットへ流れる行（新しい並びのターゲットごとに、新しい行の番号の昇順）
+    mut pl2 := mut []int{}
+    mut ph2 := mut []int{}
+    mut pr2 := mut []int{}
+    for k <- iter.Range(0, nq) {
+        q := qo[k]
+        mut rs := mut []int{}
+        if q < len(pl) {
+            for j <- iter.Range(pl[q], ph[q]) {
+                rs = append(rs, rn[pr[j]])
+            }
+        }
+        rf := freeze(rs)
+        so := sort.Order(len(rf), (a, b) => rf[a] < rf[b])
+        pl2 = append(pl2, len(pr2))
+        for j <- so {
+            pr2 = append(pr2, rf[j])
+        }
+        ph2 = append(ph2, len(pr2))
+    }
+    mut qf2 := mut []int{}
+    mut qd2 := mut []int{}
+    mut qi2 := mut []int{}
+    for k <- iter.Range(0, nq) {
+        qf2 = append(qf2, qf[qo[k]])
+        qd2 = append(qd2, qd[qo[k]])
+        qi2 = append(qi2, qi[qo[k]])
+    }
+    return FnVals{ts, freeze(f2), freeze(n2), freeze(lo2), freeze(hi2), freeze(nm2), freeze(br2), fvPendPack(freeze(pk2), freeze(fl2), freeze(pl2), freeze(ph2), freeze(pr2)), freeze(qf2), freeze(qd2), freeze(qi2)}
 }
 
 // ファイルごとに、vh（[ファイル, 実引数の節, 仮引数の数, mut仮引数のビット]）の名前付き関数をηのラムダへ書き換える

@@ -82,7 +82,7 @@ func setupLink(conn net.Conn, blk []int, rt via, t target, pa internal.hsc.CPara
         handshakeAt(conn, blk, 1, pa, pa)?
     }
     if rt.proxied && t.tls {
-        hostPort := "${t.host}:${t.port}"
+        hostPort := dialAddr(t)
         auth := if rt.auth == "" { "" } else { "Proxy-Authorization: ${rt.auth}\r\n" }
         linkSend(conn, blk, bytes("CONNECT ${hostPort} HTTP/1.1\r\nHost: ${hostPort}\r\n${auth}\r\n"))?
         mut raw := mut []byte{}
@@ -117,7 +117,7 @@ func setupLink(conn net.Conn, blk []int, rt via, t target, pa internal.hsc.CPara
 @errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other, internal.record.Alert, internal.hsc.CertFailed)
 @effects(block, io, panic, nondet)
 func linkTrip(conn net.Conn, blk []int, pa internal.hsc.CParams, pb internal.hsc.CParams, req []byte, raw mut []byte, st mut scanSt, noBody bool, maxBody int) error? {
-    linkSend(conn, blk, req)?
+    tripSend(conn, blk, pa, pb, req)?
     mut first := true
     mut eof := false
     while !eof && !settled(st) {

@@ -667,3 +667,287 @@ func LamReachesAwait(st mut S, n NodeRef, marks []int) bool {
     }
     return false
 }
+
+// buildの捕獲の寿命の検査（parSpawnのspawnCapBad — checkの検査器の kSpawn の givable rs と同じ判定）で脱糖する関数の印。返すのは飛ばす印（true = 脱糖しない）。
+// 判定が偽になりうるspawnの点（spCapRisk）を、自前で持つか、呼び出し点へ展開される関数を経由して持つ、stdの外の関数だけを脱糖する（展開される関数は
+// E2-Sの上げで自前のDefになりうる・stdの関数は焼き込みの検査の側）。印は2種類: own = 自前の危うさ（脱糖が要る）・arg = 関数型の仮引数を子が使う
+// （危うさは呼び手が渡すラムダの捕獲で決まる — 呼び出し点の実引数を見て呼び手へ伝える）。印の無いプログラムは空（呼び手は脱糖を走らせない）
+func SpawnSkip(st mut S) []bool {
+    mut isSp := mut []bool{}
+    mut any := false
+    for i <- iter.Range(0, st.nfn) {
+        k := ParKey(mut st, i)
+        sp := k == PAR_SPAWN || k == PAR_SPAWNIN || k == PAR_SPAWNGIVE
+        isSp = append(isSp, sp)
+        any = any || sp
+    }
+    if !any {
+        return []bool{}
+    }
+    mut own := mut []bool{}
+    mut arg := mut []bool{}
+    for i <- iter.Range(0, st.nfn) {
+        own = append(own, false)
+        arg = append(arg, false)
+    }
+    mut nc := spNameCache(mut st)
+    // 展開される関数の呼び出し点（持ち主・呼び出しの節・呼び先）
+    mut co := mut []int{}
+    mut cn := mut []int{}
+    mut cg := mut []int{}
+    ff := fileFns(mut st)
+    for f <- iter.Range(0, st.nfile) {
+        t := st.trees[f]
+        pk := FilePkg(mut st, f)
+        rr := fnRanges(mut st, ff, f)
+        for n <- iter.Range(0, len(t.nodes)) {
+            if t.nodes[n].kind == ast.ECall {
+                cnode := NodeRef(ABASE + f * FW + n)
+                cal0 := nA(nodeOf(mut st, cnode))
+                cal := if kindN(mut st, cal0) == ast.EIndex { nA(nodeOf(mut st, cal0)) } else { cal0 }
+                ci := e2sCallee(mut st, pk, cal)
+                o := zOr(mut st, f, n, rangeOfSorted(rr, t.nodes[n].tok))
+                if ci >= 0 && o >= 0 && isSp[ci] {
+                    args := lB(nodeOf(mut st, cnode))
+                    li := if ParKey(mut st, ci) == PAR_SPAWN { 1 } else { 2 }
+                    lam := if li < lenL(mut st, args) { latN(mut st, args, li) } else { NodeRef(-1) }
+                    if lam == -1 || kindN(mut st, lam) != ast.ELambda {
+                        own[o] = true
+                    } else {
+                        r := spRisk(mut st, mut nc, o, nB(nodeOf(mut st, lam)))
+                        own[o] = own[o] || r == 2
+                        arg[o] = arg[o] || r == 1
+                    }
+                } else if ci >= 0 && o >= 0 && fnDef(mut st, ci) < 0 && int(fnBody(mut st, ci)) >= 0 {
+                    co = append(co, o)
+                    cn = append(cn, int(cnode))
+                    cg = append(cg, ci)
+                }
+            }
+        }
+    }
+    mut ch := true
+    while ch {
+        ch = false
+        for e <- iter.Range(0, len(co)) {
+            o := co[e]
+            g := cg[e]
+            if own[g] && !own[o] {
+                own[o] = true
+                ch = true
+            }
+            if arg[g] && !own[o] {
+                args := lB(nodeOf(mut st, NodeRef(cn[e])))
+                for q <- iter.Range(0, lenL(mut st, args)) {
+                    an := latN(mut st, args, q)
+                    if an != -1 {
+                        r := spRisk(mut st, mut nc, o, if kindN(mut st, an) == ast.ELambda { nB(nodeOf(mut st, an)) } else { an })
+                        if r == 2 && !own[o] {
+                            own[o] = true
+                            ch = true
+                        } else if r == 1 && !arg[o] {
+                            arg[o] = true
+                            ch = true
+                        }
+                    }
+                }
+            }
+        }
+    }
+    mut skip := mut []bool{}
+    mut need := false
+    for i <- iter.Range(0, st.nfn) {
+        on := own[i] && !IsStdPkg(mut st, fnPkg(mut st, i))
+        skip = append(skip, !on)
+        need = need || on
+    }
+    return if need { freeze(skip) } else { []bool{} }
+}
+
+// 関数ごとの、task.Runの本体の入れ子で束縛した名前と、関数型の仮引数の名前の溜め（初めて引いたときに数える）
+type SpNames struct {
+    at []int       // 関数ごとの [始め, 入れ子の数, 仮引数の数]（-1 = まだ）
+    names []StrRef
+}
+
+func spNameCache(st mut S) SpNames {
+    mut at := mut []int{}
+    for i <- iter.Range(0, st.nfn * 3) {
+        at = append(at, 0 - 1)
+    }
+    return SpNames{at: freeze(at), names: []StrRef{}}
+}
+
+// 子のラムダの本体bの危うさ（持ち主o）: 2 = 入れ子の束縛でregionを持ちうる名前を使う・1 = 関数型の仮引数を使う（呼び手の実引数で決まる）・0 = 無し
+func spRisk(st mut S, nc mut SpNames, o int, b NodeRef) int {
+    if nc.at[o * 3] < 0 {
+        st0 := len(nc.names)
+        mut ns := mut []StrRef{}
+        for x <- nc.names {
+            ns = append(ns, x)
+        }
+        nest := spNestedNames(mut st, fnBody(mut st, o))
+        for x <- nest {
+            ns = append(ns, x)
+        }
+        mut np := 0
+        ps := fnParams(mut st, o)
+        for i <- iter.Range(0, lenL(mut st, ps)) {
+            prm := latN(mut st, ps, i)
+            tk := kindN(mut st, nB(nodeOf(mut st, prm)))
+            if tk == ast.TFunc || tk == ast.TOpt {
+                ns = append(ns, sA(nodeOf(mut st, prm)))
+                np += 1
+            }
+        }
+        mut at := mut []int{}
+        for x <- nc.at {
+            at = append(at, x)
+        }
+        at[o * 3] = st0
+        at[o * 3 + 1] = len(nest)
+        at[o * 3 + 2] = np
+        nc.at = freeze(at)
+        nc.names = freeze(ns)
+    }
+    s0 := nc.at[o * 3]
+    nn := nc.at[o * 3 + 1]
+    np := nc.at[o * 3 + 2]
+    nested := nc.names[s0:s0 + nn]
+    fnps := nc.names[s0 + nn:s0 + nn + np]
+    if spRiskName(mut st, b, nested, []StrRef{}) {
+        return 2
+    }
+    return if spRiskName(mut st, b, []StrRef{}, fnps) { 1 } else { 0 }
+}
+
+func spHas(st mut S, xs []StrRef, s StrRef) bool {
+    for x <- xs {
+        if strEq(mut st, x, s) {
+            return true
+        }
+    }
+    return false
+}
+
+// 木nの中の名前のうち、入れ子の束縛でregionを持ちうるもの・関数型の仮引数があるか
+func spRiskName(st mut S, n NodeRef, nested []StrRef, fnps []StrRef) bool {
+    if n == -1 {
+        return false
+    }
+    x := nodeOf(mut st, n)
+    if x.kind == ast.EIdent {
+        nm := sA(x)
+        return spHas(mut st, fnps, nm) || spHas(mut st, nested, nm) && !pcRegionFree(mut st, YTypeOf(mut st, n), 8)
+    }
+    c := pcDesc(mut st, x)
+    for j <- iter.Range(0, 6) {
+        d := c / pow8(j) % 8
+        v := pcField(x, j)
+        if d == 1 && v != -1 {
+            if spRiskName(mut st, NodeRef(v), nested, fnps) {
+                return true
+            }
+        } else if d == 3 && v != -1 {
+            l := ListRef(v)
+            for i <- iter.Range(0, lenL(mut st, l)) {
+                if spRiskName(mut st, latN(mut st, l, i), nested, fnps) {
+                    return true
+                }
+            }
+        }
+    }
+    return false
+}
+
+// 関数の本体nの中の、task.Runの本体の入れ子で束縛した名前（本体の頭の文の束縛は数えない）
+func spNestedNames(st mut S, n NodeRef) []StrRef {
+    // 名前はヒープの末尾に積む（再帰する mut の関数へ局所の mut slice を st と一緒に渡すと check の 1 slot の規則に掛かる — coreFreeと同じ）
+    base := hlen(mut st)
+    spWalkRun(mut st, n)
+    mut out := mut []StrRef{}
+    for q <- iter.Range(base, hlen(mut st)) {
+        out = append(out, StrRef(hget(mut st, q)))
+    }
+    return freeze(out)
+}
+
+// 木nを歩き、task.Runの呼び出しの本体を見つけたら、頭の文の束縛を外して入れ子の束縛を集める
+func spWalkRun(st mut S, n NodeRef) {
+    if n == -1 {
+        return
+    }
+    x := nodeOf(mut st, n)
+    if x.kind == ast.ECall {
+        cal0 := nA(x)
+        cal := if kindN(mut st, cal0) == ast.EIndex { nA(nodeOf(mut st, cal0)) } else { cal0 }
+        fk := findFn(mut st, cal, -1)
+        args := lB(x)
+        if fk >= 0 && ParKey(mut st, fk) == PAR_SCOPE && lenL(mut st, args) >= 1 && kindN(mut st, latN(mut st, args, 0)) == ast.ELambda {
+            body := nB(nodeOf(mut st, latN(mut st, args, 0)))
+            bk := kindN(mut st, body)
+            if bk == ast.EBlock || bk == ast.KBlock {
+                ss := lA(nodeOf(mut st, body))
+                for i <- iter.Range(0, lenL(mut st, ss)) {
+                    sn := latN(mut st, ss, i)
+                    if sn != -1 && kindN(mut st, sn) == ast.SBind {
+                        vs := lC(nodeOf(mut st, sn))
+                        for q <- iter.Range(0, lenL(mut st, vs)) {
+                            spCollect(mut st, latN(mut st, vs, q))
+                        }
+                    } else {
+                        spCollect(mut st, sn)
+                    }
+                }
+            } else {
+                spCollect(mut st, body)
+            }
+            for i <- iter.Range(1, lenL(mut st, args)) {
+                spWalkRun(mut st, latN(mut st, args, i))
+            }
+            return
+        }
+    }
+    c := pcDesc(mut st, x)
+    for j <- iter.Range(0, 6) {
+        d := c / pow8(j) % 8
+        v := pcField(x, j)
+        if d == 1 && v != -1 {
+            spWalkRun(mut st, NodeRef(v))
+        } else if d == 3 && v != -1 {
+            l := ListRef(v)
+            for i <- iter.Range(0, lenL(mut st, l)) {
+                spWalkRun(mut st, latN(mut st, l, i))
+            }
+        }
+    }
+}
+
+// 木nの中の束縛の名前（:= の名前・for の生成の名前・ラムダの仮引数）を全部集める
+func spCollect(st mut S, n NodeRef) {
+    if n == -1 {
+        return
+    }
+    x := nodeOf(mut st, n)
+    if x.kind == ast.SBind || x.kind == ast.KGen {
+        l := lA(x)
+        for i <- iter.Range(0, lenL(mut st, l)) {
+            hpush(mut st, int(latS(mut st, l, i)))
+        }
+    } else if x.kind == ast.KLParam {
+        hpush(mut st, int(sA(x)))
+    }
+    c := pcDesc(mut st, x)
+    for j <- iter.Range(0, 6) {
+        d := c / pow8(j) % 8
+        v := pcField(x, j)
+        if d == 1 && v != -1 {
+            spCollect(mut st, NodeRef(v))
+        } else if d == 3 && v != -1 {
+            l := ListRef(v)
+            for i <- iter.Range(0, lenL(mut st, l)) {
+                spCollect(mut st, latN(mut st, l, i))
+            }
+        }
+    }
+}

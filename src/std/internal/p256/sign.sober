@@ -1,0 +1,239 @@
+package p256
+
+// ECDSA の署名（P-256・SHA-256 — TLS のサーバーの証明書の鍵）。nonce k は RFC 6979 の決定的な導出（HMAC-DRBG）で、乱数を使わない:
+// 同じ (d, hash) には同じ k、違う hash には独立の k になるので、k の再利用（= 鍵の漏えい）が構造で起きない。
+// スカラー（法 n — 群の位数）の演算は 4 limb の Montgomery（R = 2^256・汎用の CIOS）。秘密の d と k に依る分岐・添字・早抜けを持たない
+
+import "std/crypto/hmac"
+import "std/internal/bless"
+import "std/iter"
+
+// 位数 n = 2^256 − 2^224 + 2^192 − 0x4319055258e8617b0c46353d039cdaaf の limb（符号つきのワードとして）
+const n0 = -884452912994769583
+const n1 = -4834901526196019580
+const n2 = -1
+const n3 = -4294967296
+
+// −n⁻¹ mod 2^64（Montgomery の簡約の係数）
+const n0inv = -3687945983376704433
+
+func nfe() fe {
+    return fe{l0: n0, l1: n1, l2: n2, l3: n3}
+}
+
+// t + a·b + c の (下位, 上位)（どの入力も 2^64 未満なので上位は溢れない）
+func mac(t int, a int, b int, c int) (int, int) {
+    lo := a * b
+    hi := mulhi(a, b)
+    s1 := t + lo
+    s2 := s1 + c
+    return s2, hi + cy(t, lo, s1) + cy(s1, c, s2)
+}
+
+// a の i 番目の limb（i は公開の添字）
+func limb(a fe, i int) int {
+    return if i == 0 { a.l0 } else if i == 1 { a.l1 } else if i == 2 { a.l2 } else { a.l3 }
+}
+
+// t（+ 繰り上がり c）を n 未満へ: t ≥ n か c = 1 なら t − n（分岐なし — t < 2n が前提）
+func nreduce(t fe, c int) fe {
+    d, br := sub4(t, nfe())
+    return sel(0 - (c | (1 - br)), d, t)
+}
+
+func nadd(a fe, b fe) fe {
+    s, c := add4(a, b)
+    return nreduce(s, c)
+}
+
+// Montgomery の積 a·b·R⁻¹ mod n（a, b < n）
+func nmul(a fe, b fe) fe {
+    av := []int{a.l0, a.l1, a.l2, a.l3}
+    nv := []int{n0, n1, n2, n3}
+    mut t := mut []int{0, 0, 0, 0, 0, 0}
+    for i <- iter.Range(0, 4) {
+        bi := limb(b, i)
+        mut c := 0
+        for j <- iter.Range(0, 4) {
+            lo, hi := mac(t[j], av[j], bi, c)
+            t[j] = lo
+            c = hi
+        }
+        s := t[4] + c
+        t[5] = cy(t[4], c, s)
+        t[4] = s
+        m := t[0] * n0inv
+        _, c0 := mac(t[0], m, n0, 0)
+        c = c0
+        for j <- iter.Range(1, 4) {
+            lo, hi := mac(t[j], m, nv[j], c)
+            t[j - 1] = lo
+            c = hi
+        }
+        s2 := t[4] + c
+        t[3] = s2
+        t[4] = t[5] + cy(t[4], c, s2)
+    }
+    return nreduce(fe{l0: t[0], l1: t[1], l2: t[2], l3: t[3]}, t[4])
+}
+
+// 法 n の Montgomery の文脈（R mod n・R² mod n — 公開の値）
+type scalarField struct {
+    one fe
+    r2 fe
+}
+
+func newScalarField() scalarField {
+    // n > 2^255 なので R mod n = 2^256 − n
+    rm, _ := sub4(zfe(), nfe())
+    mut r := rm
+    for _ <- iter.Range(0, 256) {
+        s, c := add4(r, r)
+        r = nreduce(s, c)
+    }
+    return scalarField{one: rm, r2: r}
+}
+
+// a^(n−2)（Montgomery の形の逆元 — 指数は公開の定数なので bit で分岐してよい）
+func ninv(sf scalarField, a fe) fe {
+    // n − 2 の limb（大きい端から）
+    ws := []int{-4294967296, -1, -4834901526196019580, -884452912994769585}
+    mut r := sf.one
+    for w <- ws {
+        mut k := 63
+        while k >= 0 {
+            r = nmul(r, r)
+            if ((w >> k) & 1) == 1 {
+                r = nmul(r, a)
+            }
+            k -= 1
+        }
+    }
+    return r
+}
+
+// x が 1 ≤ x < n なら 1・それ以外 0（分岐なし）
+func inRange(x fe) int {
+    _, br := sub4(x, nfe())
+    return br & (1 - feIsZero(x))
+}
+
+func cat(parts [][]byte) []byte {
+    mut o := mut []byte{}
+    for p <- parts {
+        for b <- p {
+            o = append(o, b)
+        }
+    }
+    return freeze(o)
+}
+
+func fill(v int) []byte {
+    mut o := mut []byte{}
+    for _ <- iter.Range(0, 32) {
+        o = append(o, byte(v))
+    }
+    return freeze(o)
+}
+
+// DER の INTEGER（b = 32 バイトの大きい端の非負の公開の値 — 先頭の 0 を削り、最上位の bit が立てば 0 を 1 つ前に置く）
+func putDerInt(o mut []byte, b []byte) {
+    mut i := 0
+    while i < 31 && b[i] == 0 {
+        i += 1
+    }
+    pad := int(b[i]) >= 128
+    o = append(o, 2)
+    o = append(o, byte(32 - i + (if pad { 1 } else { 0 })))
+    if pad {
+        o = append(o, 0)
+    }
+    for x <- b[i:32] {
+        o = append(o, x)
+    }
+}
+
+// 署名の (r, s)（32 バイトの大きい端の組 — 試験が RFC 6979 のベクタと照合する）。d が 1 ≤ d < n の 32 バイトでないか hash が 32 バイトでなければ空の組
+@secret(d)
+@effects()
+func signRS(d []byte, hash []byte) ([]byte, []byte) {
+    if len(d) != 32 || len(hash) != 32 {
+        return []byte{}, []byte{}
+    }
+    x := feOf(d, 0)
+    // 鍵が範囲の中か（鍵の妥当性は公開の性質）
+    if internal.bless.Int(inRange(x)) == 0 {
+        return []byte{}, []byte{}
+    }
+    // bits2octets(hash) = hash mod n（qlen = hlen = 256 なので bits2int は恒等・hash < 2^256 < 2n なので引くのは高々 1 回）
+    e := nreduce(feOf(hash, 0), 0)
+    mut eo := mut []byte{}
+    putFe(mut eo, e)
+    eb := freeze(eo)
+    // RFC 6979 3.2 b〜g
+    mut v := fill(1)
+    mut k := fill(0)
+    k = crypto.hmac.Sum256(k, cat([][]byte{v, []byte{0}, d, eb}))
+    v = crypto.hmac.Sum256(k, v)
+    k = crypto.hmac.Sum256(k, cat([][]byte{v, []byte{1}, d, eb}))
+    v = crypto.hmac.Sum256(k, v)
+    f := newField()
+    sf := newScalarField()
+    xm := nmul(x, sf.r2)
+    em := nmul(e, sf.r2)
+    mut rOut := []byte{}
+    mut sOut := []byte{}
+    mut done := false
+    while !done {
+        // 3.2 h: 候補 k = bits2int(V)（qlen = 256 — V の 32 バイトそのもの）
+        v = crypto.hmac.Sum256(k, v)
+        kc := feOf(v, 0)
+        // 範囲の外の候補は捨てて次へ（確率 2^−32 程度）。捨てた候補は使わないので、捨てたことが見えても使う k の情報は漏れない
+        if internal.bless.Int(inRange(kc)) == 1 {
+            // r = x(k·G) mod n（1 ≤ k < n なので k·G は無限遠点でない・x < p < 2n なので引くのは高々 1 回）
+            q := smul(f, v, pt{x: f.gx, y: f.gy, z: f.one})
+            r := nreduce(fromMont(fmul(q.x, finv(f, q.z))), 0)
+            // s = k⁻¹·(e + r·d) mod n
+            ki := ninv(sf, nmul(kc, sf.r2))
+            t := nadd(nmul(nmul(r, sf.r2), xm), em)
+            s := nmul(nmul(ki, t), fe{l0: 1, l1: 0, l2: 0, l3: 0})
+            // r と s は署名として公開する値
+            mut ro := mut []byte{}
+            putFe(mut ro, r)
+            mut so := mut []byte{}
+            putFe(mut so, s)
+            rb := internal.bless.Bytes(freeze(ro))
+            sb := internal.bless.Bytes(freeze(so))
+            // r = 0 か s = 0 なら次の候補へ（RFC 6979 3.4 — 実際には起きない確率）
+            if internal.bless.Int(feIsZero(r) | feIsZero(s)) == 0 {
+                rOut = rb
+                sOut = sb
+                done = true
+            }
+        }
+        if !done {
+            k = crypto.hmac.Sum256(k, cat([][]byte{v, []byte{0}}))
+            v = crypto.hmac.Sum256(k, v)
+        }
+    }
+    return rOut, sOut
+}
+
+// 秘密のスカラー d（32 バイトの大きい端・1 ≤ d < n）による hash（SHA-256 の 32 バイト）の ECDSA の署名。
+// 形 = DER の Ecdsa-Sig-Value（SEQUENCE { r INTEGER, s INTEGER } — TLS の CertificateVerify と ServerKeyExchange の形）。d か hash が不正なら空
+@secret(d)
+@effects()
+func Sign(d []byte, hash []byte) []byte {
+    r, s := signRS(d, hash)
+    if len(r) == 0 {
+        return []byte{}
+    }
+    mut body := mut []byte{}
+    putDerInt(mut body, r)
+    putDerInt(mut body, s)
+    mut o := mut []byte{0x30, byte(len(body))}
+    for b <- body {
+        o = append(o, b)
+    }
+    return freeze(o)
+}

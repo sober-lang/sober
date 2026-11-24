@@ -11,15 +11,39 @@ func show(path string) {
 }
 
 func main() {
-    _ = os.Mkdir("out")
+    d := runDir("os_runtoenv")
+    defer removeAll(d)
+    o := d + "/o"
     sh := "echo \"X=[$SOBER_EX_X] Y=[$SOBER_EX_Y]\""
-    a, _ := os.RunToEnv("/bin/sh", []string{"-c", sh}, []string{"SOBER_EX_X=one", "SOBER_EX_X=two", "SOBER_EX_Y=three"}, "out/os_runtoenv.o", "out/os_runtoenv.o")
+    a, _ := os.RunToEnv("/bin/sh", []string{"-c", sh}, []string{"SOBER_EX_X=one", "SOBER_EX_X=two", "SOBER_EX_Y=three"}, o, o)
     println(a)
-    show("out/os_runtoenv.o")
+    show(o)
     // 足す列が空なら親の環境のまま（RunTo と同じ）
-    b, _ := os.RunToEnv("/bin/sh", []string{"-c", sh}, []string{}, "out/os_runtoenv.o", "out/os_runtoenv.o")
+    b, _ := os.RunToEnv("/bin/sh", []string{"-c", sh}, []string{}, o, o)
     println(b)
-    show("out/os_runtoenv.o")
+    show(o)
     t0 := os.Monotonic()
     println(os.Monotonic() >= t0)
+}
+
+// 実行ごとの置き場 out/<name>.<単調時計の値>（同じ作業ディレクトリで同時に走る実行どうしが上書きし合わない）。
+// mkdirは既にあれば失敗するので、作れた名前がこの実行のもの。作れない状態で回り続けないよう、試す回数に上限を置く（作れなければ ""）
+func runDir(name string) string {
+    _ = os.Mkdir("out")
+    mut n := 0
+    while n < 100 {
+        c := "out/${name}.${os.Monotonic()}"
+        if os.Mkdir(c) == nil {
+            return c
+        }
+        n = n + 1
+    }
+    return ""
+}
+
+// 置き場を中身ごと消す
+func removeAll(d string) {
+    if d != "" {
+        _ = os.Run("/bin/rm", []string{"-rf", d}) catch 0
+    }
 }

@@ -1,0 +1,2 @@
+examples/mutcell_neg_escape.sober:11:37: error: the contents of the mut parameter `rs` must not escape the call (here: `rs[…]`) — the caller's freeze would no longer be sound. Return a newly built value, or write into the caller's binding (`rs = …`) (Analyzer)
+exit=1

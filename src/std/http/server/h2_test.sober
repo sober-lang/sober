@@ -1,0 +1,197 @@
+package server
+
+// HTTP/2の写し（h2.sober）: 解いたヘッダからRequest（頭・位置の表・疑似ヘッダの検査・host・cookie）と、ResponseからHPACKのブロック
+// （HTTP/1.1の頭と同じ欄・送れない欄を落とす）
+
+import "std/http"
+import "std/internal/hpack"
+import "std/utf8"
+
+// [名前, 値, 名前, 値, …] を internal.hpack.Decode の形（out・fs）にする
+func h2Fields(kv []string) ([]byte, []int) {
+    mut out := mut []byte{}
+    mut fs := mut []int{}
+    mut i := 0
+    while i + 1 < len(kv) {
+        ns := len(out)
+        for c <- bytes(kv[i]) {
+            out = append(out, c)
+        }
+        vs := len(out)
+        for c <- bytes(kv[i + 1]) {
+            out = append(out, c)
+        }
+        fs = append(fs, ns)
+        fs = append(fs, vs - ns)
+        fs = append(fs, vs)
+        fs = append(fs, len(out) - vs)
+        i += 2
+    }
+    return freeze(out), freeze(fs)
+}
+
+func h2Req(kv []string, body []byte) (Request, int) {
+    out, fs := h2Fields(kv)
+    return h2Request(out, fs, body)
+}
+
+func strOr(s string?, d string) string {
+    return if s != nil { s } else { d }
+}
+
+func TestH2Request() {
+    r, c := h2Req([]string{":method", "GET", ":scheme", "http", ":path", "/a/b?x=1&y=2", ":authority", "example.com:8080", "accept", "*/*", "x-id", "7"}, []byte{})
+    assert(c == 0)
+    assert(r.method == "GET" && r.path == "/a/b" && r.query == "x=1&y=2")
+    assert(strOr(Header(r, "host"), "-") == "example.com:8080")
+    assert(strOr(Header(r, "Accept"), "-") == "*/*")
+    assert(strOr(Header(r, "x-id"), "-") == "7")
+    hl := HeaderList(r)
+    assert(len(hl) == 3 && hl[0].name == "host" && hl[1].name == "accept" && hl[2].name == "x-id")
+    // 頭はHTTP/1.1の形で、版は HTTP/2
+    h := string(utf8.Bytes(r.head)) catch ""
+    assert(h == "GET /a/b?x=1&y=2 HTTP/2\r\nhost: example.com:8080\r\naccept: */*\r\nx-id: 7\r\n\r\n")
+}
+
+func TestH2RequestCookieBody() {
+    r, c := h2Req([]string{":method", "POST", ":scheme", "https", ":path", "/p", "cookie", "a=1", "content-length", "3", "cookie", "b=2", "cookie", "c=3"}, bytes("xyz"))
+    assert(c == 0)
+    h := string(utf8.Bytes(r.head)) catch ""
+    // cookieは最初の位置に「; 」で1本
+    assert(h == "POST /p HTTP/2\r\ncookie: a=1; b=2; c=3\r\ncontent-length: 3\r\n\r\n")
+    assert(len(r.body) == 3)
+    // :authorityが無ければhostの欄をそのまま使う・:authorityがあればhostの欄は落とす
+    r2, c2 := h2Req([]string{":method", "GET", ":scheme", "http", ":path", "/", "host", "h.example"}, []byte{})
+    assert(c2 == 0 && strOr(Header(r2, "host"), "-") == "h.example")
+    r3, c3 := h2Req([]string{":method", "GET", ":scheme", "http", ":path", "/", ":authority", "a.example", "host", "h.example"}, []byte{})
+    assert(c3 == 0 && strOr(Header(r3, "host"), "-") == "a.example" && len(HeaderList(r3)) == 1)
+    // OPTIONS * と CONNECT
+    r4, c4 := h2Req([]string{":method", "OPTIONS", ":scheme", "http", ":path", "*"}, []byte{})
+    assert(c4 == 0 && r4.path == "*")
+    r5, c5 := h2Req([]string{":method", "CONNECT", ":authority", "x.example:443"}, []byte{})
+    assert(c5 == 0 && r5.method == "CONNECT" && r5.path == "x.example:443")
+}
+
+// 形の誤り（RFC 9113 8.1.1・8.2・8.3）と、HTTP/1.1と同じ400
+func TestH2RequestBad() {
+    m := h2Malformed
+    base := []string{":method", "GET", ":scheme", "http", ":path", "/"}
+    _, c0 := h2Req(base, []byte{})
+    assert(c0 == 0)
+    cases := [][]string{
+        []string{":scheme", "http", ":path", "/"},
+        []string{":method", "GET", ":path", "/"},
+        []string{":method", "GET", ":scheme", "http"},
+        []string{":method", "GET", ":scheme", "http", ":path", ""},
+        []string{":method", "GET", ":method", "GET", ":scheme", "http", ":path", "/"},
+        []string{":method", "GET", ":scheme", "http", "accept", "*/*", ":path", "/"},
+        []string{":method", "GET", ":scheme", "http", ":path", "/", ":status", "200"},
+        []string{":method", "GET", ":scheme", "http", ":path", "/", ":foo", "x"},
+        []string{":method", "GET", ":scheme", "http", ":path", "/", "Accept", "*/*"},
+        []string{":method", "GET", ":scheme", "http", ":path", "/", "connection", "keep-alive"},
+        []string{":method", "GET", ":scheme", "http", ":path", "/", "keep-alive", "1"},
+        []string{":method", "GET", ":scheme", "http", ":path", "/", "transfer-encoding", "chunked"},
+        []string{":method", "GET", ":scheme", "http", ":path", "/", "upgrade", "h2c"},
+        []string{":method", "GET", ":scheme", "http", ":path", "/", "proxy-connection", "x"},
+        []string{":method", "GET", ":scheme", "http", ":path", "/", "te", "gzip"},
+        []string{":method", "GET", ":scheme", "http", ":path", "/", "x", " lead"},
+        []string{":method", "GET", ":scheme", "http", ":path", "/", "x", "trail\t"},
+        []string{":method", "GET", ":scheme", "http", ":path", "/", "x", "a\nb"},
+        []string{":method", "GET", ":scheme", "http", ":path", "/", "content-length", "5"},
+        []string{":method", "GET", ":scheme", "http", ":path", "abc"},
+        []string{":method", "CONNECT", ":scheme", "http", ":authority", "x:1"},
+        []string{":method", "CONNECT"},
+    }
+    for k <- cases {
+        _, c := h2Req(k, []byte{})
+        assert(c == m)
+    }
+    // teのtrailersは通る
+    _, ct := h2Req([]string{":method", "GET", ":scheme", "http", ":path", "/", "te", "trailers"}, []byte{})
+    assert(ct == 0)
+    // :pathの空白・制御文字とhostの形の誤りは400（HTTP/1.1と同じ）
+    _, c1 := h2Req([]string{":method", "GET", ":scheme", "http", ":path", "/a b"}, []byte{})
+    assert(c1 == 400)
+    _, c2 := h2Req([]string{":method", "GET", ":scheme", "http", ":path", "/", ":authority", "a b"}, []byte{})
+    assert(c2 == 400)
+}
+
+// HPACKのブロックを解いて [名前, 値, …]
+func h2Decode(blk []byte) []string {
+    mut d := internal.hpack.Dec{}
+    internal.hpack.Init(mut d)
+    mut out := mut []byte{}
+    mut fs := mut []int{}
+    st := internal.hpack.Decode(mut d, blk, mut out, mut fs, 65536)
+    assert(st == internal.hpack.Ok)
+    o := freeze(out)
+    mut r := mut []string{}
+    mut i := 0
+    while i < len(fs) {
+        r = append(r, string(o[fs[i]:fs[i] + fs[i + 1]]) catch "?")
+        r = append(r, string(o[fs[i + 2]:fs[i + 2] + fs[i + 3]]) catch "?")
+        i += 4
+    }
+    return freeze(r)
+}
+
+// HTTP/1.1の頭（respHead）を [小文字の名前, 値, …] に（状態行は :status・送れない欄は落とす — 照合の基準）
+func h1Expect(h []byte) []string {
+    mut r := mut []string{":status", string(h[9:12]) catch "?"}
+    mut i := h2NextLine(h, 0)
+    while i < len(h) && h[i] != '\r' {
+        e := h2NextLine(h, i)
+        mut c := i
+        while h[c] != ':' {
+            c += 1
+        }
+        if !h2DropName(h, i, c) {
+            mut nm := mut []byte{}
+            for x <- h[i:c] {
+                nm = append(nm, if x >= 'A' && x <= 'Z' { byte(int(x) + 32) } else { x })
+            }
+            r = append(r, string(freeze(nm)) catch "?")
+            r = append(r, string(h[c + 2:e - 2]) catch "?")
+        }
+        i = e
+    }
+    return freeze(r)
+}
+
+func sameStrs(a []string, b []string) bool {
+    if len(a) != len(b) {
+        return false
+    }
+    mut i := 0
+    while i < len(a) {
+        if a[i] != b[i] {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+// 同じResponseからHTTP/1.1の頭とHTTP/2のブロックで同じ欄（送れない欄を除く）
+func TestH2Head() {
+    rs := []Response{
+        Text("hello"),
+        Status(http.NotFound),
+        Json("{}"),
+        Response{status: http.OK, contentType: "text/plain", body: bytes("x"), headers: Headers{list: []http.Field{http.Field{name: "X-Request-Id", value: "42"}, http.Field{name: "Upgrade", value: "h2c"}, http.Field{name: "Keep-Alive", value: "timeout=5"}}}, cache: NoStore{}},
+        Response{status: http.StatusCode(299), contentType: "", body: bytes("abc")},
+    }
+    for r <- rs {
+        h1 := respHead(r, true, false, 0)
+        got := h2Decode(h2Head(r, 0, len(r.body)))
+        assert(sameStrs(got, h1Expect(h1)))
+    }
+    // 送れない欄は落ちる・:statusが最初
+    got := h2Decode(h2Head(rs[3], 0, 1))
+    assert(got[0] == ":status" && got[1] == "200")
+    mut i := 0
+    while i < len(got) {
+        assert(got[i] != "upgrade" && got[i] != "keep-alive" && got[i] != "connection" && got[i] != "transfer-encoding")
+        i += 2
+    }
+}

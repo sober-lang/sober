@@ -305,6 +305,7 @@ type PoolView struct {
     conns int
     cut int
     borrowed int
+    acceptRetry int
 }
 ```
 
@@ -319,6 +320,7 @@ type PoolView struct {
 - `conns` — taskの数の天井（0 = 無し）。net.Serve の節は conns: を書いたときだけ持つ（入場はバイトの天井で決まる）。parent が -1 の行は Serve の全部の親で、天井は無い（0）
 - `cut` — このプールで入場したtaskのうち、予約を越えて伸びようとしてプールか根の天井を越え、死んだ数（RegionExceeded{cause: budget}。diedの内数）
 - `borrowed` — このプールとその下の節で入場したtaskが、今、予約を越えて借りている量の和（used・tasks と同じく下の節を含む。全部の行を足すと親の分が重なる）（バイト — usedの外。天井が数えるのは used + borrowed）
+- `acceptRetry` — net.Serve の受け付けのループが accept の一時的な失敗（EMFILE・ENFILE・ENOBUFS・ENOMEM・ECONNABORTED）で受け直した回数の累計（接続を受けていないので shed には数えない）
 
 ## DomainView
 
@@ -339,6 +341,24 @@ domainの合計の行（Ledger().domains — [language.md 11 節](../language.md
 - `maxWait` — 待ったAwaitの到着から入るまでの最大（ns — 読むと0に戻るウィンドウの値・maxWaitと同じ流儀）
 - `expired` — 待ちの上限が来て io.Expired で返った回数の累計
 - `poisoned` — 本体が死んで毒になった domain の数の累計
+
+## LogView
+
+```sober
+type LogView struct {
+    written int
+    dropped int
+    maxPending int
+}
+```
+
+ログのsinkの観測（Ledger().logs — [language.md 42 節](../language.md)）: 全ワーカーの合計。written + dropped = print.Logを呼んだ数（書き出しを待っているレコードを除く）
+
+フィールド:
+
+- `written` — 書き出せたレコードの数の累計
+- `dropped` — 書き切れずに捨てたレコードの数の累計
+- `maxPending` — バッファに溜まった最大のバイト数（読むと0に戻るウィンドウの値・maxWaitと同じ流儀）
 
 ## LedgerView
 
@@ -366,6 +386,12 @@ type LedgerView struct {
     parkSwap int
     pools []PoolView
     domains DomainView
+    streamChunks int
+    streamChunksPeak int
+    ceilWaiting int
+    ceilWait int
+    ceilWaitDied int
+    logs LogView
 }
 ```
 
@@ -386,6 +412,12 @@ type LedgerView struct {
 - `parkDeepWin` — シャロースリープできる点だったがエリアのウィンドウに中身があってディープスリープした回数の累計（parkDeepの内数 — 受けのregionに途中のリクエストを持って待つ等）
 - `parkSwap` — シャロースリープする前に所有エリアとワーカーのエリアを入れ替えた回数の累計（parkShallowの内数 — ディープスリープの後の受け）
 - `domains` — domain の合計の行
+- `streamChunks` — HTTP/2のストリームの応答を置く溜め（全体で1つ・16 KiBのチャンク）の、使っているチャンクの数
+- `streamChunksPeak` — その最大
+- `ceilWaiting` — プールの節か根の天井の空きを今待っているtaskの数（net.Serveの接続の本文の受け — [language.md 11 節](../language.md)「天井で待つ」）
+- `ceilWait` — 天井の空きを待った回数の累計
+- `ceilWaitDied` — 天井の空きを待つうちに期限が来た回数の累計（その後の確保が天井を越えれば、borrowOverとプールの節のcutにも数える）
+- `logs` — ログのsink（print.Logを使わないプログラムは0）
 
 ## Ledger
 

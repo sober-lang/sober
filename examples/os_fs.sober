@@ -34,7 +34,9 @@ func main() int {
     if child() {
         return 0
     }
-    d := "out/os_fs.d"
+    w := runDir("os_fs")
+    defer removeAll(w)
+    d := w + "/os_fs.d"
     // 前の実行の残りがあれば EEXIST — どちらでも続ける
     e0 := code(os.Mkdir(d))
     println(e0 == 0 || e0 == 17)
@@ -70,4 +72,26 @@ func main() int {
     c := os.Run("/usr/bin/env", []string{"SOBER_OS_FS_CHILD=a=b", "SOBER_OS_FS_EMPTY=", args[0]}) catch return 1
     println(c)
     return 0
+}
+
+// 実行ごとの置き場 out/<name>.<単調時計の値>（同じ作業ディレクトリで同時に走る実行どうしが上書きし合わない）。
+// mkdirは既にあれば失敗するので、作れた名前がこの実行のもの。作れない状態で回り続けないよう、試す回数に上限を置く（作れなければ ""）
+func runDir(name string) string {
+    _ = os.Mkdir("out")
+    mut n := 0
+    while n < 100 {
+        c := "out/${name}.${os.Monotonic()}"
+        if os.Mkdir(c) == nil {
+            return c
+        }
+        n = n + 1
+    }
+    return ""
+}
+
+// 置き場を中身ごと消す
+func removeAll(d string) {
+    if d != "" {
+        _ = os.Run("/bin/rm", []string{"-rf", d}) catch 0
+    }
 }

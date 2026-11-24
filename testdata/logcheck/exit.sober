@@ -1,0 +1,23 @@
+package main
+
+// logcheckの題材: 2記録を書いてから、実引数で終わり方を選ぶ（ok = 正常終了・panic = 死・sleep = 眠ってシグナルを待つ）
+import "std/os"
+import "std/print"
+
+type Step struct {
+    n int
+}
+
+func main() {
+    print.Log[Step](Step{n: 1})
+    print.Log[Step](Step{n: 2})
+    args, _ := os.Args()
+    mode := if len(args) > 1 { args[1] } else { "ok" }
+    if mode == "panic" {
+        xs := []int{1}
+        _ = xs[len(xs) + 1]
+    }
+    if mode == "sleep" {
+        os.Sleep(5000)
+    }
+}

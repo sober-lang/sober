@@ -1,0 +1,30 @@
+package main
+
+// net.Pair: ポートを使わずに、サーバー（子のtask）とクライアント（呼び手）を繋がった接続の組で繋ぐ。
+// クライアントはkeep-aliveの1本の接続で2件の要求を送り、応答を読み終えたら戻る（Pairがクライアントの側を閉じ、サーバーの終わりを待つ）
+
+import "std/http/server"
+import "std/net"
+
+func route(r http.server.Request) http.server.Response {
+    return http.server.Text("hello ${r.path}")
+}
+
+// cから相手が閉じるまで読んだバイト列（2件目の要求はConnection: close — サーバーが応答の後に閉じる）
+func readAll(c net.Conn) string {
+    mut got := mut []byte{}
+    _ = net.Recv(c, (x) => {
+        for y <- x {
+            got = append(got, y)
+        }
+    })
+    return string(freeze(got)) catch "?"
+}
+
+func main() {
+    e := net.Pair((c) => http.server.ServeConn(c, route), (c) => {
+        _ = net.Send(c, bytes("GET /a HTTP/1.1\r\nHost: x\r\n\r\nGET /b HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n"))
+        println(readAll(c))
+    })
+    println(if e == nil { "ok" } else { "pair failed" })
+}

@@ -1,5 +1,5 @@
-@@full	5884ad6b9954f643	10572	321536
-@globals	83cf1bc550e5d281	73	1314
+@@full	0e28aa4ad9b7e9e2	10618	322671
+@globals	67bc97c168568e68	73	1314
 main.enc	677438e45cae3ba1	275	9257
 main.main	e0279698ebb98f30	1325	50881
 rt.cat8	8e67ba05682822cf	32	783
@@ -11,7 +11,7 @@ rt.err_relocate	53a0187cf00f29f0	8	227
 rt.extend8	d53e9ae3a3f525f5	41	1172
 rt.flush	62dd0e169a766cae	72	1742
 rt.grow_try	c3052a27d9b3efe7	87	2220
-rt.lease_op	ec2282f5baef3bb1	146	3167
+rt.lease_op	967871f6cf7a6b7b	192	4302
 rt.map_grow	1ded4e285ed15ca6	201	5153
 rt.map_hash	2ff53caae4579b53	82	2132
 rt.panic	32464efdace6bcb9	435	13078

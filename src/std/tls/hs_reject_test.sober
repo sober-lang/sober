@@ -2,13 +2,14 @@ package tls
 
 // std/internal/hsの拒否の検査（hsはstdの内側）: ClientHelloを組み立てて
 // （偽の転送路で）Feed に通し、サーバが返す alert の番号を照合する。TLS 1.2 だけの ClientHello = protocol_version（70）・X25519 も PSS も共通の suite も
-// 無い = handshake_failure（40）・圧縮・重複の拡張・短い / ゼロの key_share・HRR の後も X25519 が無い = illegal_parameter（47）・ALPN の不一致 =
+// 無い = handshake_failure（40）・圧縮・重複の拡張・同じname_typeが2つのserver_name・短い / ゼロの key_share・HRR の後も X25519 が無い = illegal_parameter（47）・ALPN の不一致 =
 // no_application_protocol（120）・読めない = decode_error（50）・最初に application_data / CCS 2 枚 = unexpected_message（10）・改竄した record =
 // bad_record_mac（20）・違う verify_data の Finished = decrypt_error（51）・長すぎる record = record_overflow（22）。最初に正しい ClientHello で
 // サーバの flight が出る（WaitFin へ）ことも見る
 
 import "std/crypto/pem"
 import "std/crypto/rsa"
+import "std/crypto/sha256"
 import "std/crypto/x25519"
 import "std/hex"
 import "std/iter"
@@ -85,7 +86,13 @@ func rjU16list(xs []int, w1 bool) []byte {
 
 // h の ClientHello の record（平文 — 頭 5 バイト込み）。cut > 0 なら本体を cut バイトで打ち切る
 func rjClientHello(h rjHello, cut int) []byte {
+    return rjClientHelloX(h, cut, []byte{})
+}
+
+// 拡張の列の先頭に、組み立て済みの拡張extra（型と長さの頭込み）を置いたClientHelloのrecord
+func rjClientHelloX(h rjHello, cut int, extra []byte) []byte {
     mut x := mut []byte{}
+    rjPb(mut x, extra)
     if len(h.versions) > 0 {
         rjExt(mut x, 43, rjU16list(h.versions, true))
     }
@@ -233,6 +240,48 @@ func rjPatch(s []byte, off int, v int) []byte {
     return freeze(o)
 }
 
+// server_nameの拡張（型 0）。names = (name_type, 名前) の列。listLen < 0 ならリストの長さを中身から数える。tail = リストの後ろに足す余りのバイト
+func rjSni(types []int, names []string, listLen int, tail []byte) []byte {
+    mut l := mut []byte{}
+    for i <- iter.Range(0, len(types)) {
+        rjP8(mut l, types[i])
+        rjP16(mut l, len(bytes(names[i])))
+        rjPb(mut l, bytes(names[i]))
+    }
+    mut b := mut []byte{}
+    rjP16(mut b, if listLen < 0 { len(l) } else { listLen })
+    rjPb(mut b, freeze(l))
+    rjPb(mut b, tail)
+    mut x := mut []byte{}
+    rjExt(mut x, 0, freeze(b))
+    return freeze(x)
+}
+
+// early_dataの拡張（中身は空）
+func rjEarly() []byte {
+    return []byte{0, 42, 0, 0}
+}
+
+// cookieの拡張（中身 = rjParamsの乱数の源から作るcookie。サーバーのHelloRetryRequestと同じ値）
+func rjCookie() []byte {
+    c := crypto.sha256.Sum256(testCat(bytes("sober-tls-reject"), bytes("cookie")))
+    mut b := mut []byte{}
+    rjP16(mut b, len(c))
+    rjPb(mut b, c)
+    mut x := mut []byte{}
+    rjExt(mut x, 44, freeze(b))
+    return freeze(x)
+}
+
+// 外側の型がapplication_dataの平文のrecordをn個（本体はそれぞれsize バイト — 0-RTTのデータの代わり）
+func rjEarlyRecs(n int, size int) []byte {
+    mut o := []byte{}
+    for i <- iter.Range(0, n) {
+        o = testCat(o, rjRec(23, testZeros(size)))
+    }
+    return o
+}
+
 // 拒否の場合 1 つ（名前・流すバイト列・期待する alert の番号）
 type rjCase struct {
     name string
@@ -245,6 +294,14 @@ func TestReject() {
     ok := rjClientHello(g, 0)
     d0, sent, _ := rjRun(ok)
     assert(d0 == 0 && sent > 0)
+    // server_nameは構文だけを見る。正しい形なら名前が証明書と合わなくても続ける
+    dn, sentn, _ := rjRun(rjClientHelloX(g, 0, rjSni([]int{0}, []string{"example.invalid"}, 0 - 1, []byte{})))
+    assert(dn == 0 && sentn > 0)
+    // early_dataつきのClientHelloにはcookieつきのHelloRetryRequestを返し、0-RTTのデータを上限（2 × MaxCipher）まで読み飛ばして、2番目のClientHelloで続ける
+    ch1e := rjClientHelloX(g, 0, rjEarly())
+    ch2c := rjClientHelloX(g, 0, rjCookie())
+    de, sente, _ := rjRun(testCat(ch1e, testCat(rjEarlyRecs(2, internal.record.MaxCipher), ch2c)))
+    assert(de == 0 && sente > 0)
     noShare := rjHello{versions: g.versions, groups: []int{0x0017, 0x001d}, shareGroup: 0x0017, share: rjSeq(4, 65), sigs: g.sigs, alpn: g.alpn, suites: g.suites, comp: g.comp, dup: false}
     cases := []rjCase{
         rjCase{name: "tls12", s: rjClientHello(rjHello{versions: []int{}, groups: g.groups, shareGroup: g.shareGroup, share: g.share, sigs: g.sigs, alpn: g.alpn, suites: g.suites, comp: g.comp, dup: false}, 0), want: 70},
@@ -272,6 +329,17 @@ func TestReject() {
         rjCase{name: "alpn-empty-name", s: rjClientHello(rjHello{versions: g.versions, groups: g.groups, shareGroup: g.shareGroup, share: g.share, sigs: g.sigs, alpn: []string{""}, suites: g.suites, comp: g.comp, dup: false}, 0), want: 50},
         rjCase{name: "share-missing", s: rjClientHello(rjHello{versions: g.versions, groups: g.groups, shareGroup: 0, share: []byte{}, sigs: g.sigs, alpn: g.alpn, suites: g.suites, comp: g.comp, dup: false}, 0), want: 109},
         rjCase{name: "alert-empty", s: testCat(ok, rjSealed(ok, internal.record.CtAlert, []byte{}, 0)), want: 10},
+        rjCase{name: "sni-empty-list", s: rjClientHelloX(g, 0, rjSni([]int{}, []string{}, 0 - 1, []byte{})), want: 50},
+        rjCase{name: "sni-empty-name", s: rjClientHelloX(g, 0, rjSni([]int{0}, []string{""}, 0 - 1, []byte{})), want: 50},
+        rjCase{name: "sni-trailing", s: rjClientHelloX(g, 0, rjSni([]int{0}, []string{"localhost"}, 0 - 1, []byte{0})), want: 50},
+        rjCase{name: "sni-list-long", s: rjClientHelloX(g, 0, rjSni([]int{0}, []string{"localhost"}, 13, []byte{})), want: 50},
+        rjCase{name: "sni-dup-type", s: rjClientHelloX(g, 0, rjSni([]int{0, 0}, []string{"a.example", "b.example"}, 0 - 1, []byte{})), want: 47},
+        rjCase{name: "early-skip-over", s: testCat(ch1e, testCat(rjEarlyRecs(2, internal.record.MaxCipher), rjEarlyRecs(1, 1))), want: 10},
+        rjCase{name: "early-ch2-nocookie", s: testCat(ch1e, rjClientHello(g, 0)), want: 47},
+        rjCase{name: "early-ch2-badcookie", s: testCat(ch1e, rjClientHelloX(g, 0, rjPatch(rjCookie(), 10, 0xff))), want: 47},
+        rjCase{name: "early-ch2-early", s: testCat(ch1e, rjClientHelloX(g, 0, testCat(rjCookie(), rjEarly()))), want: 47},
+        rjCase{name: "early-nonempty", s: rjClientHelloX(g, 0, []byte{0, 42, 0, 1, 0}), want: 50},
+        rjCase{name: "app-after-hrr", s: testCat(rjClientHello(noShare, 0), rjEarlyRecs(1, 10)), want: 10},
         rjCase{name: "fin-short", s: testCat(ok, rjSealed(ok, internal.record.CtHandshake, rjFin(31), 0)), want: 50},
     }
     mut bad := 0

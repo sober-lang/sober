@@ -15,6 +15,7 @@ package loader
 
 import "ast"
 import "std/binary"
+import "std/io"
 import "std/builder"
 import "std/iter"
 import "std/table"
@@ -38,6 +39,10 @@ type PCache struct {
     eo []int
     el []int
     fs [][]byte
+    // 値を当たったときだけ読む項目（fs の値が空）: パックのパス・パックの中の位置・検査和（lower の bcSum と同じ式 — PcSum）
+    fpath []string
+    foff []int
+    fh []int
 }
 
 // 1ファイルの読みの結果: st = 0（格納場所なし）/ 1（当たり）/ 2（外れ — vを書く）/ 3（検証モード — vを書いて格納場所と比べる）/
@@ -65,7 +70,7 @@ func PcList(k mut PcSink) []PcPut {
 }
 
 func PcOff() PCache {
-    return PCache{on: false, vfy: false, pt: []int{}, k2: []int{}, ef: []int{}, eo: []int{}, el: []int{}, fs: [][]byte{}}
+    return PCache{on: false, vfy: false, pt: []int{}, k2: []int{}, ef: []int{}, eo: []int{}, el: []int{}, fs: [][]byte{}, fpath: []string{}, foff: []int{}, fh: []int{}}
 }
 
 // 項目ごとの鍵h1の列ksから開番地の表（大きさは2の冪で項目の数の2倍以上・空きのフィールド = 0。鍵はハッシュなので混ぜない）
@@ -236,7 +241,11 @@ func pcEnc(t ast.Tree) []byte {
 // 項目eの値の木（読めなければok = false — 呼び手はparseへ落ちる）。値を一括でワードの列に戻して（Unvarints）添字で読む
 func pcDec(pc PCache, e int) (ast.Tree, bool) {
     bad := ast.Tree{[]ast.Node{}, []int{}, 0 - 1}
-    ws, ok := Unvarints(pc.fs[pc.ef[e]], pc.eo[e], pc.eo[e] + pc.el[e])
+    vb, vok := pcBytes(pc, e)
+    if !vok {
+        return ast.Tree{[]ast.Node{}, []int{}, 0 - 1}, false
+    }
+    ws, ok := Unvarints(vb, 0, len(vb))
     if !ok || len(ws) < 4 {
         return bad, false
     }
@@ -271,10 +280,12 @@ func pcSame(pc PCache, e int, b []byte) bool {
     if pc.el[e] != len(b) {
         return false
     }
-    f := pc.fs[pc.ef[e]]
-    o := pc.eo[e]
+    f, fok := pcBytes(pc, e)
+    if !fok {
+        return false
+    }
     for k <- iter.Range(0, len(b)) {
-        if f[o + k] != b[k] {
+        if f[k] != b[k] {
             return false
         }
     }
@@ -315,7 +326,46 @@ func PcSame(pc PCache, e int, b []byte) bool {
 }
 
 func PcWords(pc PCache, e int) ([]int, bool) {
-    return Unvarints(pc.fs[pc.ef[e]], pc.eo[e], pc.eo[e] + pc.el[e])
+    vb, vok := pcBytes(pc, e)
+    if !vok {
+        return []int{}, false
+    }
+    return Unvarints(vb, 0, len(vb))
+}
+
+// 項目 e の値のバイト列（読み込みで読んだ値か、パックから今読む値 — 検査和が合わなければ偽）
+func pcBytes(pc PCache, e int) ([]byte, bool) {
+    f := pc.fs[pc.ef[e]]
+    if len(f) > 0 || pc.el[e] == 0 {
+        return f[pc.eo[e]:pc.eo[e] + pc.el[e]], true
+    }
+    if e >= len(pc.fpath) || pc.fpath[e] == "" {
+        return []byte{}, false
+    }
+    fd := io.Open(pc.fpath[e]) catch return []byte{}, false
+    defer io.Close(fd)
+    b := io.ReadAt(fd, pc.foff[e], pc.el[e]) catch []byte{}
+    if len(b) != pc.el[e] || PcSum(b, 0, len(b)) != pc.fh[e] {
+        return []byte{}, false
+    }
+    return b, true
+}
+
+// バイト列 b の [lo, hi) の検査和（語単位の混ぜ — 64 bit。lower の格納場所の検査和と同じ — lower.bcSum がこれを呼ぶ）
+func PcSum(b []byte, lo int, hi int) int {
+    mut h := PC_S1 ^ (hi - lo)
+    mut i := lo
+    while i + 8 <= hi {
+        h = (h ^ binary.Load64(b, i)) * PC_M1
+        h = h ^ (h >> 29)
+        i += 8
+    }
+    while i < hi {
+        h = (h ^ int(b[i])) * PC_M2
+        h = h ^ (h >> 31)
+        i += 1
+    }
+    return h
 }
 
 // PcOn / PcVfyは表のフラグの読みのインターフェース

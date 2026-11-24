@@ -1,0 +1,14 @@
+serve: expired
+case 0: scope died=true
+recv: expired
+case 1: scope died=true
+accept: expired
+case 2: scope died=true
+grand recv: expired
+grand scope: err=false
+case 3: scope died=true
+later accept: expired
+case 4: scope died=true
+retry: expired expired
+case 5: scope died=true
+done

@@ -1,0 +1,30 @@
+@@full	d18dc2656829f51b	8720	251303
+@head	c9f29cbfe46b0ba1	0	305
+const MacSha1	df469ac185d8547e	1	47
+const MacSha256	36ccf4735184089e	1	49
+const hdrSize	44ba182f10b1a7ca	1	48
+const ivSize	725e5c03718176fe	1	47
+const padWindow	717a70579f069aa7	1	51
+func MacSize	252e4400eadf6efd	12	456
+func New	503d92a190aa91ab	56	2433
+func Open	f327462e8b4018db	281	9206
+func OpenEtm	a49d01beffde786d	157	5380
+func Seal	8c1e51a2ec96c470	99	3457
+func SealEtm	0ce264a688423cf7	92	3217
+func blockOf	5219a439993840ea	30	1163
+func bytesOf	aac4568e0577c782	21	803
+func cat	70070d7f454cc7cb	33	1226
+func eqMask	9a819c081e4191e2	11	488
+func head	b2d63c803f18cff1	28	1045
+func header	2189886592dc755b	91	3077
+func hmacPub	f8fb9d3c32ac2901	32	1247
+func initOf	857f0bf00c0781bd	17	653
+func leMask	9422452023c8fb11	10	445
+func ltMask	c7163291dd02453a	9	412
+func macCt	86c784faac88972c	320	10449
+func pads	b0b7f2fa11e13548	44	1501
+func sum3	d9fd1b16f3fe30c0	78	2727
+func tail	5b63f0dbd4c7c256	30	1112
+type BadKey	966dc7f4fce41fcf	1	67
+type BadMac	73eed27f820cfdc2	1	67
+type Keys	3b0b545c917c847c	5	260

@@ -1,0 +1,474 @@
+package mux
+
+// 接続の受けに混ぜる子の合図（language.md 11節「std専用の例外 = 外部のioの境界の多重化」）。std/http/serverのHTTP/2が使う。
+// 接続のtaskが記録（Words個のint）を自分のscopeの外側に作り、Ofで手がかりにする。子（ストリームのtask）は手がかりを捕獲して、
+// Postでバイト列と合図を積む。バイト列はrtの溜め（全体で1つ・チャンクごと）に写るので、子のregionにも接続のregionにも残らない。
+// 接続のtaskはTakeで到着の順に取り出し、空ならWaitSigで待つ。合図の並びは録る入力（11節の決定性の約束の範囲の表）。
+// 記録は子より長く生きる場所に置く（子は記録を作ったscopeの出口より先に終わる）
+
+import "std/io"
+import "std/net"
+import "std/internal/sec"
+
+// 記録の大きさ（int の数 — 頭8 + ストリームの枠 Slots × 2 + 死んだ枠のビット2）
+const Words = 266
+
+// ストリームの枠の数。応答のバイト列（Resp・RespEnd）は枠ごとにチャンク1つまで積め、前の応答がFreeされるまで次のPostが待つ
+const Slots = 128
+
+// 合図の種類
+// 応答のバイト列を積んだ
+const Resp = 1
+// ストリームが終わった
+const End = 2
+// 接続のtaskを起こすだけの合図（枠なし — TLSの送りが1周の上限で止めた続き）
+const Room = 3
+// 応答のヘッダのブロック（HEADERS）・本文の無い応答のヘッダのブロック（HEADERS + END_STREAM）
+const Head = 4
+const HeadEnd = 5
+// 最後の応答のバイト列（DATA + END_STREAM。Respと同じく枠に数える）
+const RespEnd = 6
+// ストリームを形の誤りで取り消す（RST_STREAM PROTOCOL_ERROR）
+const Reject = 7
+
+// 1回のPostで積めるバイト数の上限（溜めのチャンク1つ）
+const Max = 16352
+
+// Postの結果
+const Ok = 0
+// 溜めが尽きた（taskの無いプログラムだけ — taskのあるプログラムでは空くまで待つ）
+const Full = 0 - 12
+// Maxを越えた・枠の番号が範囲の外
+const TooLong = 0 - 22
+
+// 期限で待ちが切れた（WaitSig・Postの結果）
+const Expired = 0 - 110
+// 親が死んで待ちが切れた（WaitSig・Postの結果）
+const Orphaned = 0 - 125
+
+@intrinsic("net_op")
+func sysNetOp(op int, fd int, a int, b int) int
+
+@intrinsic("addr")
+func sysAddr(b []byte) int
+
+@intrinsic("addrn")
+func addrn(b []int) int
+
+@intrinsic("read_fd")
+func sysReadFd(fd int, n int) []byte
+
+@intrinsic("errno")
+func sysErrno() int
+
+@intrinsic("deadline")
+func sysDeadline() int
+
+@intrinsic("wait_fd")
+func sysWaitFd(fd int, ev int) int
+
+// 記録の手がかり（封をした値 — 子のクロージャが捕獲できる）
+type Mux struct {
+    at int
+    seal muxSeal
+}
+
+// 取り出した合図（Freeで溜めへ返すまで有効）
+type Sig struct {
+    at int
+}
+
+type muxSeal struct {
+}
+
+// recはWords個の0のint。recを置いた場所が子より長く生きること
+func Of(rec []int) Mux {
+    return Mux{at: addrn(rec), seal: muxSeal{}}
+}
+
+// 種類kindの合図とバイト列bを積む（Ok / TooLong / Expired / Orphaned）。待っている接続のtaskを起こす。
+// slot（0 ≤ slot < Slots・-1 = 枠なし）を付けた応答は、同じ枠の前の応答がFreeされるまで待つ。溜めが尽きていれば空くまで待つ
+func Post(m Mux, kind int, sid int, b []byte, slot int) int {
+    if len(b) > Max || slot >= Slots {
+        return TooLong
+    }
+    s1 := if slot < 0 { 0 } else { slot + 1 }
+    return sysNetOp(50, m.at, kind + len(b) * 256 + sid * 16777216, sysAddr(b) + s1 * 281474976710656)
+}
+
+// 到着の順で次の合図を取る（無ければ at = 0）
+func Take(m Mux) Sig {
+    return Sig{at: sysNetOp(51, m.at, 0, 0)}
+}
+
+func None(s Sig) bool {
+    return s.at == 0
+}
+
+func Kind(s Sig) int {
+    return sysNetOp(52, s.at, 0, 0)
+}
+
+func Sid(s Sig) int {
+    return sysNetOp(52, s.at, 1, 0)
+}
+
+// 合図の枠（Postのslot・-1 = 枠なし）
+func Slot(s Sig) int {
+    return sysNetOp(52, s.at, 4, 0)
+}
+
+func Len(s Sig) int {
+    return sysNetOp(52, s.at, 2, 0)
+}
+
+// 合図のバイト列の写し
+func Bytes(s Sig) []byte {
+    n := Len(s)
+    mut out := mut []byte{}
+    while len(out) < n {
+        out = append(out, byte(0))
+    }
+    _ = sysNetOp(53, s.at, sysAddr(out), 0)
+    return freeze(out)
+}
+
+// 合図のバイト列の [off, off + n) をdstの尾へ写す（範囲は呼び手が長さの内に収める）
+func AppendAt(dst mut []byte, s Sig, off int, n int) {
+    base := len(dst)
+    mut i := 0
+    while i < n {
+        dst = append(dst, byte(0))
+        i += 1
+    }
+    if n > 0 {
+        dstAt := sysAddr(dst) + base
+        _ = sysNetOp(53, s.at, dstAt, off + n * 4294967296)
+    }
+}
+
+// 合図のチャンクを溜めへ返す（枠の応答なら、その枠の次のPostが進める）
+func Free(m Mux, s Sig) {
+    _ = sysNetOp(54, m.at, s.at, 0)
+}
+
+// 合図のバイト列の [off, off + n) をcへ送る（コピーしない — 溜めのチャンクから直に）。送り終えてからFreeする
+@errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other)
+@effects(block, io, nondet)
+func Send(c net.Conn, s Sig, off int, n int) error? {
+    return SendFd(c.fd, s, off, n)
+}
+
+// Sendのfd版（std/http/serverのHTTP/2の送りのhelper — net.Connを持たずに接続のfdで送る）
+@errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other)
+@effects(block, io, nondet)
+func SendFd(fd int, s Sig, off int, n int) error? {
+    if sysDeadline() != 0 {
+        return io.Expired{}
+    }
+    return sendAt(fd, sysNetOp(52, s.at, 3, 0) + off, n)
+}
+
+// bをfdへ送る（net.Sendと同じ送り — std/http/serverのHTTP/2の送りのhelper）
+@errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other)
+@effects(block, io, nondet)
+func SendBytes(fd int, b []byte) error? {
+    if sysDeadline() != 0 {
+        return io.Expired{}
+    }
+    return sendAt(fd, sysAddr(b), len(b))
+}
+
+// 番地baseからnバイトをfdへ送り切る（EAGAIN・EINTR・EINPROGRESSは書ける待ち）
+func sendAt(fd int, base int, n int) error? {
+    mut done := 0
+    while done < n {
+        r := sysNetOp(1, fd, base + done, n - done)
+        if r == 0 - 11 || r == 0 - 4 || r == 0 - 115 {
+            w := sysWaitFd(fd, 4)
+            if w < 0 {
+                return waitErr(w)
+            }
+        } else if r < 0 {
+            return errOf(0 - r)
+        } else {
+            done += r
+        }
+    }
+    return nil
+}
+
+// 列が空でなくなるまで待つ（Ok / Expired — 期限はtask.Runのdeadline:）
+func WaitSig(m Mux) int {
+    return sysNetOp(55, m.at, 0, 0)
+}
+
+// 溜めの使っているチャンクの数・その最大・上限
+func PoolUse() int {
+    return sysNetOp(56, 0, 0, 0)
+}
+
+func PoolPeak() int {
+    return sysNetOp(56, 0, 1, 0)
+}
+
+func PoolCap() int {
+    return sysNetOp(56, 0, 2, 0)
+}
+
+// 溜めの上限をnチャンクにする（最初のPostより前だけ効く — std/netのServeが箱から置く）
+func SetPoolCap(n int) {
+    _ = sysNetOp(57, 0, n, 0)
+}
+
+// c の受信に、mの合図を混ぜて k へ渡す（HTTP/2の接続のtask）。合図が積まれていれば空の切片を渡す（呼び手はTakeで到着の順に取り出す）。
+// 他はnet.Recvと同じ（FINで列が終わる・切片はこの反復のregionの []byte）。合図と切片の並びは録る入力
+@errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other)
+@effects(block, io, nondet)
+func RecvMux(c net.Conn, m Mux, k func([]byte)) error? {
+    // 直前の読みがEAGAINだったか（epollのパスで、readinessを待つ前に読ませる）
+    mut eag := 0
+    while true {
+        if sysDeadline() != 0 {
+            return io.Expired{}
+        }
+        w := sysNetOp(58, m.at, c.fd, eag)
+        if w < 0 {
+            return waitErr(w)
+        }
+        if w == 2 {
+            eag = 0
+            k([]byte{})
+        } else {
+            // nの上位のフラグ（1 << 40）= net.Recvと同じ受け（ringのパスならrt.netrecv）
+            n := {
+                b := sysReadFd(c.fd, 65536 + 1099511627776)
+                e := sysErrno()
+                if e != 0 {
+                    0 - e
+                } else if len(b) == 0 {
+                    0
+                } else {
+                    k(b)
+                    len(b)
+                }
+            }
+            if n == 0 {
+                return nil
+            }
+            if n == 0 - 11 || n == 0 - 4 {
+                eag = 1
+            } else if n < 0 {
+                return errOf(0 - n)
+            } else {
+                eag = 0
+            }
+        }
+    }
+    return nil
+}
+
+// cの受信と合図をkへ渡す（RecvMuxと同じ受け — 空の切片が合図）。最初にfirst（空でなければ — 前に受けた切片の残り）を渡してから続きを受ける。
+// TLSの接続（c.secが空でない）では、firstは平文で、受けたバイトはrecordを開いた平文にしてkへ渡す（平文が空なら渡さない — net.Recvと同じ）。
+// firstが空なら最初の周に持ち越し（handshakeの残り）を通す。
+// 誤りは返さない: 受けの失敗・相手の閉じ・期限で終わる（呼び手は受けのループの中で接続の全体を回し、終わったらループの後で片付ける）。
+// TLSは相手のclose_notify・fatal alert・壊れたrecord（こちらがalertを送って閉じる）でも終わる。
+// kを呼ぶ所は1つだけ（呼び手のループの本体を2か所へ展開させない）
+func RecvFrom(c net.Conn, m Mux, first []byte, k func([]byte)) {
+    // TLSの状態は本体の外の関数だけが読む（平文の接続の展開の枠に状態を置かない）
+    tl := len(c.sec) > 0
+    // TLSでfirstが空なら、最初の周は読まずに持ち越し（handshakeの残り）だけを通す
+    mut pre := len(first) > 0 || tl
+    mut eag := 0
+    mut go := true
+    while go {
+        w := if pre { 1 } else if sysDeadline() != 0 { 0 - 110 } else { sysNetOp(58, m.at, c.fd, eag) }
+        if w < 0 {
+            go = false
+        } else {
+            sig := !pre && w == 2
+            n := {
+                b := if pre { first } else if sig { []byte{} } else { sysReadFd(c.fd, 65536 + 1099511627776) }
+                e := if pre || sig { 0 } else { sysErrno() }
+                if e != 0 {
+                    0 - e
+                } else if len(b) == 0 && !sig && !pre {
+                    0
+                } else {
+                    x := if tl && !sig && !(pre && len(first) > 0) { secOpen(c, b) } else { b }
+                    if sig || len(x) > 0 {
+                        k(x)
+                    }
+                    if sig { 1 } else { len(b) + 1 }
+                }
+            }
+            pre = false
+            if n == 0 - 11 || n == 0 - 4 {
+                eag = 1
+            } else if n <= 0 || tl && !sig && secAfter(c, n) != 0 {
+                go = false
+            } else {
+                eag = 0
+            }
+        }
+    }
+}
+
+// TLSの受けの切片bを開いた平文（RecvFromの本体の外）
+func secOpen(c net.Conn, b []byte) []byte {
+    s := c.sec[0]
+    return s.ops.recv(s.st, c.fd, b, false)
+}
+
+// TLSの受けの1周の後（n = 受けの結果・0 = FIN）: FINならrecordの途中で切れていないかを見る・平文をkへ渡し終えたら積んだ分を送る。
+// 結果 = 0（続く）か終わりの印（internal.sec.Recv* — 4 = 積んだ分の送りの失敗）
+func secAfter(c net.Conn, n int) int {
+    s := c.sec[0]
+    if n == 0 {
+        _ = s.ops.recv(s.st, c.fd, []byte{}, true)
+    }
+    r := s.ops.code(s.st)
+    return if r == internal.sec.RecvMore && n > 0 && s.ops.flush(s.st, c.fd, 1) < 0 { 4 } else { r }
+}
+
+// cの受信をkへ渡す（net.Recvと同じ受け）。最初にfirst（空でなければ — 前に受けて見分けに使った切片）を渡してから続きを受ける。
+// kを呼ぶ所は1つだけ（呼び手のループの本体を2か所へ展開させない — ServeConnのHTTP/1.1の経路の命令を増やさない）
+@errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other)
+@effects(block, io, nondet)
+func RecvAfter(c net.Conn, first []byte, k func([]byte)) error? {
+    // TLSの接続（c.secが空でない）: 最初の周は読まずに持ち越し（handshakeの残り）だけを通す・受けたバイトは開いた平文にしてkへ（空なら渡さない）。firstは平文の接続だけ
+    tl := len(c.sec) > 0
+    mut pre := len(first) > 0 || tl
+    while true {
+        if sysDeadline() != 0 {
+            return io.Expired{}
+        }
+        n := {
+            b := if pre { first } else { sysReadFd(c.fd, 65536 + 1099511627776) }
+            e := if pre { 0 } else { sysErrno() }
+            if e != 0 {
+                0 - e
+            } else if len(b) == 0 && !pre {
+                0
+            } else {
+                x := if tl { secOpen(c, b) } else { b }
+                if len(x) > 0 {
+                    k(x)
+                }
+                len(b) + 1
+            }
+        }
+        pre = false
+        if tl {
+            t := secAfter(c, n)
+            if t != 0 {
+                return secErr(t)
+            }
+        }
+        if n == 0 - 11 || n == 0 - 4 {
+            w := sysWaitFd(c.fd, 1)
+            if w < 0 {
+                return waitErr(w)
+            }
+        } else if n < 0 {
+            return errOf(0 - n)
+        } else if n == 0 {
+            return nil
+        }
+    }
+    return nil
+}
+
+// TLSの受けの終わりの印 → 受けの結果（net.Recvと同じ: 相手のclose_notify = 終わり・壊れたrecord = io.Other{errno: 71}・ほか = io.Closed）
+func secErr(t int) error? {
+    return if t == internal.sec.RecvEnd { nil } else if t == internal.sec.RecvBad { io.Other{errno: 71} } else { io.Closed{} }
+}
+
+// errno → ラベル（std/net の errOf と同じ表）
+func errOf(e int) error {
+    if e == 32 || e == 104 || e == 111 {
+        return io.Closed{}
+    }
+    if e == 110 {
+        return if sysDeadline() != 0 { io.Expired{} } else { io.Timeout{} }
+    }
+    if e == 125 {
+        return io.Expired{}
+    }
+    if e == 13 || e == 1 {
+        return io.Denied{}
+    }
+    return io.Other{errno: e}
+}
+
+// 待ちの失敗のラベル（std/net の waitErr と同じ読み）
+func waitErr(w int) error {
+    if w == 0 - 110 {
+        return if sysDeadline() != 0 { io.Expired{} } else { io.Timeout{} }
+    }
+    return errOf(0 - w)
+}
+
+// 要求の塊: バイト列bを溜めのチャンクの連なりへ写して取っ手を返す（0 = 溜めが尽きた — 待たない）。子は取っ手だけを捕獲し、
+// TakeBlobで自分のregionへ写す（子へ渡す値を接続のtaskの反復のregionに置かない）
+func PutBlob(b []byte) int {
+    return sysNetOp(59, sysAddr(b), len(b), 0)
+}
+
+// 塊hを写して返し、チャンクを溜めへ返す
+func TakeBlob(h int) []byte {
+    n := sysNetOp(60, h, 0, 0)
+    mut out := mut []byte{}
+    while len(out) < n {
+        out = append(out, byte(0))
+    }
+    _ = sysNetOp(61, h, sysAddr(out), 0)
+    _ = sysNetOp(62, h, 0, 0)
+    return freeze(out)
+}
+
+// 塊hを写さずに返す
+func FreeBlob(h int) {
+    _ = sysNetOp(62, h, 0, 0)
+}
+
+// 入場の見込み: 今のtaskが次にspawnする子が、天井の節から根まで入る空きがあるか（足さずに読むだけ — 読んだ後に他のtaskが入れば、
+// spawnは今どおり縮退する）。decl = 子のspawnがbudget:で宣言する上界（入場の数え方を合わせる）
+func AdmitRoom(decl int) bool {
+    return sysNetOp(63, 0, decl, 0) == 1
+}
+
+// 入場の空きの知らせが届いていたか（読んで消す）
+func TakeRoom(m Mux) bool {
+    return sysNetOp(64, m.at, 0, 0) != 0
+}
+
+// 入場の空きを待つ登録簿に積む / 外す（外さずに記録を捨てない — 接続の終わりで必ず外す）
+func RegRoom(m Mux) {
+    _ = sysNetOp(65, m.at, 0, 0)
+}
+
+func UnregRoom(m Mux) {
+    _ = sysNetOp(66, m.at, 0, 0)
+}
+
+// 今のtaskの予約（宣言の上界 — net.Serveの接続のbudget。0 = 宣言なし）
+func Reserve() int {
+    return sysNetOp(67, 0, 0, 0)
+}
+
+// 断ったストリームをshedに数える（今のtaskの入場した名前つきプールの節と根）
+func CountShed() {
+    _ = sysNetOp(68, 0, 0, 0)
+}
+
+// 今のtaskが次にspawnする子1つに、死の印を付ける（0 ≤ slot < Slots）。その子が死ぬか切られると、mの死んだ枠のビット（TakeDead）が立ち、
+// 待っている接続のtaskが起きる（合図のチャンクを取らない — 溜めが尽きていても届く）。正常に返った子は何もしない
+func DieNext(m Mux, slot int) {
+    _ = sysNetOp(69, m.at, slot, 0)
+}
+
+// 死んだ枠のビットのw番目のワード（w = 0: 枠0〜63・1: 枠64〜127）を読んで0にする。立っている枠は、ここで読むまで空かない
+func TakeDead(m Mux, w int) int {
+    return sysNetOp(70, m.at, w, 0)
+}

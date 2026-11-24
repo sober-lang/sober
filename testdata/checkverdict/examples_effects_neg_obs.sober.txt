@@ -1,0 +1,2 @@
+examples/effects_neg_obs.sober:11:1: error: 'main.next' may have the effect obs via the call of 'print.Log', which its @effects does not allow (allowed: block, io, panic, nondet) (Analyzer)
+exit=1

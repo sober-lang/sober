@@ -167,8 +167,12 @@ func typeParams(out mut []byte, t ast.Tree, l int) {
 func file(out mut []byte, t ast.Tree) {
     f := t.nodes[t.file]
     pk := if f.f != 0 { t.nodes[t.data[f.f + 1]].kind } else { 0 }
-    rep := pk == ast.KReplaces || pk == ast.KDoubles
-    if pk == ast.KReplaces {
+    rep := pk == ast.KReplaces || pk == ast.KDoubles || pk == ast.KLogs
+    if pk == ast.KLogs {
+        obuf.Lit(mut out, "@logs(")
+        raw(mut out, t, t.nodes[t.data[f.f + 1]].a)
+        obuf.Lit(mut out, ")\n")
+    } else if pk == ast.KReplaces {
         obuf.Lit(mut out, "@replaces(\"")
         quoted(mut out, t, t.nodes[t.data[f.f + 1]].a)
         obuf.Lit(mut out, "\")\n")

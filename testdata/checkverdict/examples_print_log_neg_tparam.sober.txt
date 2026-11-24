@@ -1,0 +1,2 @@
+sober: load error at examples/print_log_neg_tparam.sober:12:11: print.Log needs a concrete struct type, but the record's type here contains a type parameter: the writer is generated per type, so call print.Log where the type is known
+exit=1

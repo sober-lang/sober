@@ -1,0 +1,595 @@
+package loader
+
+// package ごとの仕上げの結果から全体の Program の表を組み立てる（D1 区切り3c — plan-d1-3-bldn.md の全体の段）。
+// 検証モード SOBER_PKGFIN_VERIFY=2: 全 package を下流から順（import する側が先 — optfn の要る組を下流から上流へ渡す）に宣言の木で仕上げ、
+// その結果を組み立てて、全体で回した Program と表ごとにバイトで比べる（stderr に `#pkgasm ok` か `#pkgasm mismatch <表>`）
+
+import "ast"
+import "std/io"
+import "std/iter"
+import "std/sort"
+import "std/strings"
+
+// package ごとの仕上げの結果（宣言の木で回した Program と途中の情報 — at は package のパス → 添字）
+type PkgRuns struct {
+    qs []Program
+    xs []FinX
+    at map[string]int
+}
+
+func runIx(rs PkgRuns, path string) int {
+    i := rs.at[path]
+    return if i == nil { 0 - 1 } else { i }
+}
+
+func pkgFinVerify2(dts []ast.Tree, fpkg []string, fpath []string, fstd []bool, md Mod, inf []string, p Program) {
+    mut exm := mut map[string]int{}
+    for i <- iter.Range(0, len(p.fn_file)) {
+        if p.fn_expands[i] {
+            pt := p.trees[p.fn_file[i]]
+            exm[p.file_path[p.fn_file[i]] + " " + Name(pt, pt.nodes[p.fn_node[i]].a)] = 1
+        }
+    }
+    ex := freeze(exm)
+    order := SplitOrder(p)
+    mut rq := mut []Program{}
+    mut rx := mut []FinX{}
+    mut at := mut map[string]int{}
+    mut accZ := mut []string{}
+    mut accM := mut []int{}
+    mut j := len(order) - 1
+    while j >= 0 {
+        k := order[j]
+        path := p.pkg_path[k]
+        link := SplitLink(p, k)
+        mut ts := mut []ast.Tree{}
+        mut lp := mut []string{}
+        mut lpath := mut []string{}
+        mut lstd := mut []bool{}
+        for l <- link {
+            for f <- iter.Range(0, len(dts)) {
+                if fpkg[f] == l {
+                    ts = append(ts, if l == path { dts[f] } else { StubTree(dts[f], stubKeep(dts[f], fpath[f], ex)) })
+                    lp = append(lp, fpkg[f])
+                    lpath = append(lpath, fpath[f])
+                    lstd = append(lstd, fstd[f])
+                }
+            }
+        }
+        mut iz := mut []string{}
+        mut im := mut []int{}
+        for i <- iter.Range(0, len(accZ)) {
+            if strings.HasPrefix(accZ[i], path + " ") {
+                iz = append(iz, accZ[i])
+                im = append(im, accM[i])
+            }
+        }
+        mut fx := FinX{tgt: path, inZ: freeze(iz), inM: freeze(im)}
+        q, err := finish(freeze(ts), freeze(lp), freeze(lpath), freeze(lstd), []string{}, false, 0, md, inf, mut fx)
+        if err != nil {
+            _ = io.WriteStderr(bytes("#pkgasm mismatch rejected ${path}\n"))
+            return
+        }
+        for i <- iter.Range(0, len(fx.outZ)) {
+            accZ = append(accZ, fx.outZ[i])
+            accM = append(accM, fx.outM[i])
+        }
+        at[path] = len(rq)
+        rq = append(rq, q)
+        rx = append(rx, fx)
+        j -= 1
+    }
+    rs := PkgRuns{freeze(rq), freeze(rx), freeze(at)}
+    // 値を通した組み立て: 各 package の値（PkgValRun）を符号化して読み戻し、ロード順に並べて asmProgram で組み立てる
+    mut vals := mut []PkgVal{}
+    mut vbad := ""
+    for k <- iter.Range(0, len(p.pkg_path)) {
+        ri := runIx(rs, p.pkg_path[k])
+        q := rs.qs[ri]
+        kq := pathIndex(q.pkg_path, p.pkg_path[k])
+        mut raw := mut []ast.Tree{}
+        for f <- iter.Range(0, len(dts)) {
+            if fpkg[f] == p.pkg_path[k] {
+                raw = append(raw, dts[f])
+            }
+        }
+        v0 := PkgValRun(q, kq, rs.xs[ri], freeze(raw), PcKey{0, 0})
+        ok := pkgValAppend(PkgValEnc(v0), mut vals)
+        if !ok {
+            vals = append(vals, PkgVal{})
+            vbad = if vbad == "" { "decode ${p.pkg_path[k]}" } else { vbad }
+        }
+    }
+    mut asm := Program{}
+    aw := asmProgram(freeze(vals), md, mut asm)
+    why1 := if vbad != "" { vbad } else if aw != "" { "asm: " + aw } else { progDiff(asm, p) }
+    why := why1
+    _ = io.WriteStderr(bytes(if why == "" { "#pkgasm ok\n" } else { "#pkgasm mismatch ${why}\n" }))
+}
+
+func ieq(a []int, b []int) bool {
+    if len(a) != len(b) {
+        return false
+    }
+    for i <- iter.Range(0, len(a)) {
+        if a[i] != b[i] {
+            return false
+        }
+    }
+    return true
+}
+
+func seq(a []string, b []string) bool {
+    if len(a) != len(b) {
+        return false
+    }
+    for i <- iter.Range(0, len(a)) {
+        if a[i] != b[i] {
+            return false
+        }
+    }
+    return true
+}
+
+func beq(a []bool, b []bool) bool {
+    if len(a) != len(b) {
+        return false
+    }
+    for i <- iter.Range(0, len(a)) {
+        if a[i] != b[i] {
+            return false
+        }
+    }
+    return true
+}
+
+// 2 つの木の最初の違う節（同じなら -1・データが違えば -2）
+func pkgTreeDiffAll(a ast.Tree, b ast.Tree) int {
+    if !ieq(a.data, b.data) {
+        return 0 - 2
+    }
+    n := if len(a.nodes) < len(b.nodes) { len(a.nodes) } else { len(b.nodes) }
+    for i <- iter.Range(0, n) {
+        x := a.nodes[i]
+        y := b.nodes[i]
+        if x.kind != y.kind || x.tok != y.tok || x.a != y.a || x.b != y.b || x.c != y.c || x.d != y.d || x.e != y.e || x.f != y.f {
+            return i
+        }
+    }
+    return if len(a.nodes) != len(b.nodes) { n } else { 0 - 1 }
+}
+
+// 木 t の関数の本体の KBlock に、下流の要求 req（"V <package 名>.<名前>"・"A …"）から旗を足す: A なら 4・V なら 1（変えなければ今の値）。
+// optfn の変種 `Z$z<有無>` は Z の名前で引く（変種は dest の後で Z の本体を写して作る — 写した本体は Z の旗を持つ）
+func destPatchByName(t ast.Tree, req map[string]int) ast.Tree {
+    pn := Name(t, t.nodes[t.file].a)
+    fns := t.nodes[t.file].d
+    mut at := mut []int{}
+    mut to := mut []int{}
+    for k <- iter.Range(0, ast.ListLen(t, fns)) {
+        fd := t.nodes[ast.ListAt(t, fns, k)]
+        if fd.e >= 0 {
+            nm0 := Name(t, fd.a)
+            nmA, _, hasZ := strings.Cut(nm0, "$z")
+            nm := if hasZ { nmA } else { nm0 }
+            cur := t.nodes[fd.e].e
+            v := if req["A " + pn + "." + nm] != nil { 4 } else if req["V " + pn + "." + nm] != nil { 1 } else { cur }
+            if v != cur {
+                at = append(at, fd.e)
+                to = append(to, v)
+            }
+        }
+    }
+    if len(at) == 0 {
+        return t
+    }
+    mut ns := mut []ast.Node{}
+    for x <- t.nodes {
+        ns = append(ns, x)
+    }
+    for j <- iter.Range(0, len(at)) {
+        x := ns[at[j]]
+        ns[at[j]] = ast.Node{x.kind, x.tok, x.a, x.b, x.c, x.d, to[j], x.f}
+    }
+    return ast.Tree{freeze(ns), t.data, t.file}
+}
+
+// q の展開待ちの捕捉の表の読み（desugar の capPkAt / capFlowAt / PendRow と同じ詰めた形）
+func capPkQ(q Program, j int) int {
+    cp := q.cap_pend
+    return if len(cp) == 0 { 0 - 1 } else { cp[1 + j] }
+}
+
+func capFlagQ(q Program, i int) int {
+    cp := q.cap_pend
+    return if len(cp) == 0 { 0 } else { cp[2 + cp[0] + i] }
+}
+
+func capFlowQ(q Program, i int) bool {
+    return capFlagQ(q, i) == 1
+}
+
+func pendRowsQ(q Program, t int) []int {
+    cp := q.cap_pend
+    if len(cp) == 0 {
+        return []int{}
+    }
+    qb := 2 + cp[0] + cp[1 + cp[0]]
+    nq := cp[qb]
+    mut out := mut []int{}
+    for k <- iter.Range(cp[qb + 1 + t], cp[qb + 1 + nq + t]) {
+        out = append(out, cp[qb + 1 + 2 * nq + k])
+    }
+    return freeze(out)
+}
+
+func atoiS(s string) int {
+    mut n := 0
+    for c <- bytes(s) {
+        n = n * 10 + int(c) - 48
+    }
+    return n
+}
+
+func mapIx(m map[string]int, k string) int {
+    v := m[k]
+    return if v == nil { 0 - 1 } else { v }
+}
+
+func ijoin(xs []int) string {
+    mut s := ""
+    for x <- xs {
+        s = s + "${x},"
+    }
+    return s
+}
+
+// package path の仕上げの Program q の、package の中の ord 番目のファイルの func 宣言 name の節（無ければ -1）
+func declNamed(q Program, path string, ord int, name string) int {
+    k := pathIndex(q.pkg_path, path)
+    if k < 0 {
+        return 0 - 1
+    }
+    t := q.trees[q.pkg_lo[k] + ord]
+    fs := t.nodes[t.file].d
+    for i <- iter.Range(0, ast.ListLen(t, fs)) {
+        d := ast.ListAt(t, fs, i)
+        if Name(t, t.nodes[d].a) == name {
+            return d
+        }
+    }
+    return 0 - 1
+}
+
+// 値の列 vals（package のロード順）から全体の Program を組み立てて out へ書く（Program は返さない — return ごとに全フィールドの移しが要る）。
+// 組み立てられなければ理由（全体の経路で回し直す）:
+// 表の拒否・import の循環・モジュールの名前の衝突・捕捉のターゲットの宣言が見つからない
+func asmProgram(vals []PkgVal, md Mod, out mut Program) string {
+    np := len(vals)
+    mut pixm := mut map[string]int{}
+    for k <- iter.Range(0, np) {
+        pixm[vals[k].path] = k
+    }
+    pix := freeze(pixm)
+    mut ts := mut []ast.Tree{}
+    mut fp := mut []string{}
+    mut paths := mut []string{}
+    mut stds := mut []bool{}
+    mut base := mut []int{}
+    for k <- iter.Range(0, np) {
+        base = append(base, len(ts))
+        for i <- iter.Range(0, len(vals[k].files)) {
+            ts = append(ts, vals[k].trees[i])
+            fp = append(fp, vals[k].path)
+            paths = append(paths, vals[k].files[i])
+            stds = append(stds, vals[k].stds[i])
+        }
+    }
+    bs := freeze(base)
+    tsf := freeze(ts)
+    fpf := freeze(fp)
+    pt, perr := pkgTable(tsf, fpf, md)
+    if perr != nil {
+        return "pkgTable"
+    }
+    it, ierr := importTable(tsf, pt)
+    if ierr != nil {
+        return "importTable"
+    }
+    // モジュールの名前の衝突（modTrees と同じ表 — 起点のモジュールの全ファイルの import 名）
+    mut tno := mut map[string]string{}
+    for k <- iter.Range(0, np) {
+        for i <- iter.Range(0, len(vals[k].imports)) {
+            if !vals[k].stds[i] && !isStd(vals[k].path) && depOf(md, vals[k].path) < 0 {
+                for p0 <- vals[k].imports[i] {
+                    if !strings.HasPrefix(p0, "$") {
+                        n, o := treeName(md, p0)
+                        o0 := tno[n]
+                        if o0 != nil && o0 != o {
+                            return "mod names"
+                        }
+                        tno[n] = o
+                    }
+                }
+            }
+        }
+    }
+    // 関数・const・error・z_decl
+    mut ff := mut []int{}
+    mut fnd := mut []int{}
+    mut fe := mut []bool{}
+    mut fm := mut []bool{}
+    mut fc := mut []bool{}
+    mut ftr := mut []bool{}
+    mut fclo := mut []int{}
+    mut fchi := mut []int{}
+    mut cal := mut []string{}
+    mut cf := mut []int{}
+    mut cn := mut []int{}
+    mut cv := mut []int{}
+    mut ch := mut []bool{}
+    mut cd := mut []bool{}
+    mut en := mut []string{}
+    mut ep := mut []int{}
+    mut zd := mut []int{}
+    mut logs := false
+    for k <- iter.Range(0, np) {
+        for i <- iter.Range(0, len(vals[k].fnOrd)) {
+            ff = append(ff, bs[k] + vals[k].fnOrd[i])
+            fnd = append(fnd, vals[k].fnNode[i])
+            fe = append(fe, (vals[k].fnFlags[i] & 1) != 0)
+            fm = append(fm, (vals[k].fnFlags[i] & 2) != 0)
+            fc = append(fc, (vals[k].fnFlags[i] & 4) != 0)
+            ftr = append(ftr, (vals[k].fnFlags[i] & 8) != 0)
+            fclo = append(fclo, len(cal))
+            for c <- vals[k].fnCallees[i] {
+                cal = append(cal, c)
+            }
+            fchi = append(fchi, len(cal))
+        }
+        for i <- iter.Range(0, len(vals[k].cOrd)) {
+            cf = append(cf, bs[k] + vals[k].cOrd[i])
+            cn = append(cn, vals[k].cNode[i])
+            cv = append(cv, vals[k].cVal[i])
+            ch = append(ch, (vals[k].cFlags[i] & 1) != 0)
+            cd = append(cd, (vals[k].cFlags[i] & 2) != 0)
+        }
+        for e <- vals[k].errs {
+            en = append(en, e)
+            ep = append(ep, k)
+        }
+        mut i := 0
+        while i + 3 < len(vals[k].zdecl) {
+            zd = append(zd, bs[k] + vals[k].zdecl[i])
+            zd = append(zd, vals[k].zdecl[i + 1])
+            zd = append(zd, vals[k].zdecl[i + 2])
+            zd = append(zd, vals[k].zdecl[i + 3])
+            i += 4
+        }
+        logs = logs || vals[k].logs == 2
+    }
+    // 捕捉の表（行は流れでない行 → 流れの行・それぞれ package のロード順 → package の中の並び）とターゲット（正準の並び）
+    mut rk := mut []int{}
+    mut rr := mut []int{}
+    for pass <- iter.Range(0, 2) {
+        for k <- iter.Range(0, np) {
+            for i <- iter.Range(0, len(vals[k].capOrd)) {
+                if (if vals[k].capFlag[i] == 1 { 1 } else { 0 }) == pass {
+                    rk = append(rk, k)
+                    rr = append(rr, i)
+                }
+            }
+        }
+    }
+    rks := freeze(rk)
+    rrs := freeze(rr)
+    // 行の (package, 序数) → 全体の行の番号
+    mut gr := mut map[string]int{}
+    for g <- iter.Range(0, len(rks)) {
+        gr["${rks[g]} ${rrs[g]}"] = g
+    }
+    grs := freeze(gr)
+    mut tkey := mut map[string]int{}
+    mut tf := mut []int{}
+    mut td := mut []int{}
+    mut ti := mut []int{}
+    for k <- iter.Range(0, np) {
+        mut ids := mut []string{}
+        for tg <- vals[k].capTgt {
+            for s <- tg {
+                if s != "" {
+                    ids = append(ids, s)
+                }
+            }
+        }
+        for s <- vals[k].pendT {
+            ids = append(ids, s)
+        }
+        for s <- vals[k].capT {
+            ids = append(ids, s)
+        }
+        for s <- freeze(ids) {
+            if tkey[s] == nil {
+                ps := strings.Split(s, "\t")
+                tk := mapIx(pix, ps[0])
+                if tk < 0 {
+                    return "cap target ${s}"
+                }
+                gf := bs[tk] + atoiS(ps[1])
+                dn := declNamedT(tsf[gf], ps[2])
+                if dn < 0 {
+                    return "cap target decl ${s}"
+                }
+                tkey[s] = len(tf)
+                tf = append(tf, gf)
+                td = append(td, dn)
+                ti = append(ti, atoiS(ps[3]))
+            }
+        }
+    }
+    tfs := freeze(tf)
+    tds := freeze(td)
+    tis := freeze(ti)
+    nt := len(tfs)
+    tord := sort.Order(nt, (a, b) => tfs[a] < tfs[b] || tfs[a] == tfs[b] && (tds[a] < tds[b] || tds[a] == tds[b] && tis[a] < tis[b]))
+    mut tn2 := mut []int{}
+    for _ <- iter.Range(0, nt) {
+        tn2 = append(tn2, 0)
+    }
+    for x <- iter.Range(0, nt) {
+        tn2[tord[x]] = x
+    }
+    tk0 := freeze(tkey)
+    mut kf := mut []int{}
+    mut kn := mut []int{}
+    mut klo := mut []int{}
+    mut khi := mut []int{}
+    mut knm := mut []string{}
+    mut kb := mut []int{}
+    mut pk := mut []int{}
+    mut fl := mut []int{}
+    for g <- iter.Range(0, len(rks)) {
+        rg := rks[g]
+        i := rrs[g]
+        kf = append(kf, bs[rks[g]] + vals[rg].capOrd[i])
+        kn = append(kn, vals[rg].capNode[i])
+        kb = append(kb, vals[rg].capBrw[i])
+        fl = append(fl, vals[rg].capFlag[i])
+        klo = append(klo, len(knm))
+        for j <- iter.Range(0, len(vals[rg].capNames[i])) {
+            knm = append(knm, vals[rg].capNames[i][j])
+            s := vals[rg].capTgt[i][j]
+            pk = append(pk, if s == "" { 0 - 1 } else { tn2[mapIx(tk0, s)] })
+        }
+        khi = append(khi, len(knm))
+    }
+    mut pt2 := mut []int{}
+    mut pr2 := mut []int{}
+    for k <- iter.Range(0, np) {
+        for i <- iter.Range(0, len(vals[k].pendT)) {
+            pt2 = append(pt2, tn2[mapIx(tk0, vals[k].pendT[i])])
+            pr2 = append(pr2, mapIx(grs, "${k} ${vals[k].pendR[i]}"))
+        }
+    }
+    pts := freeze(pt2)
+    prs := freeze(pr2)
+    mut pl3 := mut []int{}
+    mut ph3 := mut []int{}
+    mut pr3 := mut []int{}
+    for x <- iter.Range(0, nt) {
+        mut rows := mut []int{}
+        for y <- iter.Range(0, len(pts)) {
+            if pts[y] == x {
+                rows = append(rows, prs[y])
+            }
+        }
+        rf := freeze(rows)
+        so := sort.Order(len(rf), (a, b) => rf[a] < rf[b])
+        pl3 = append(pl3, len(pr3))
+        mut last := 0 - 1
+        for y <- so {
+            if rf[y] != last {
+                pr3 = append(pr3, rf[y])
+                last = rf[y]
+            }
+        }
+        ph3 = append(ph3, len(pr3))
+    }
+    // dest の下流の旗（全 package の出す要求から名前で）
+    mut req := mut map[string]int{}
+    for k <- iter.Range(0, np) {
+        for s <- vals[k].dreq {
+            req[s] = 1
+        }
+    }
+    rq := freeze(req)
+    mut tp := mut []ast.Tree{}
+    for t <- tsf {
+        tp = append(tp, destPatchByName(t, rq))
+    }
+    // optfn の要る組: 全 package の出す要求が、Z の package が作った組に含まれること（含まれなければ全体の経路で回し直す）
+    for k <- iter.Range(0, np) {
+        for i <- iter.Range(0, len(vals[k].ozOutZ)) {
+            zp, zn, _ := strings.Cut(vals[k].ozOutZ[i], " ")
+            zk := mapIx(pix, zp)
+            if zk < 0 || !ozBuilt(vals, zk, zn, vals[k].ozOutM[i]) {
+                return "optfn request ${vals[k].ozOutZ[i]} ${vals[k].ozOutM[i]}"
+            }
+        }
+    }
+    // 型引数の推論の保留の行（Program.inf — finishはlay.pendを置く）はpackageの値に無いので空。組み立ての経路（SOBER_PKG_FIN）は保留の推論を運ばない
+    p := Program{freeze(tp), pt.file_pkg, pt.path, pt.name, pt.lo, pt.hi, it.pkg, it.ref, it.path,
+        freeze(ff), freeze(fnd), freeze(fe), freeze(fm), freeze(fc), freeze(ftr), freeze(fclo), freeze(fchi), freeze(cal),
+        freeze(cf), freeze(cn), freeze(cv), freeze(ch), freeze(cd), freeze(en), freeze(ep), freeze(paths), freeze(stds), map[string]string{},
+        freeze(kf), freeze(kn), freeze(klo), freeze(khi), freeze(knm), freeze(kb),
+        fvPendPack(freeze(pk), freeze(fl), freeze(pl3), freeze(ph3), freeze(pr3)), freeze(zd), []int{}, "", []string{}, []int{}, logs, []int{}}
+    cx := ProgCx(p)
+    if cycleAt(cx).file >= 0 {
+        return "import cycle"
+    }
+    out = p
+    return ""
+}
+
+func declNamedT(t ast.Tree, name string) int {
+    fs := t.nodes[t.file].d
+    for i <- iter.Range(0, ast.ListLen(t, fs)) {
+        d := ast.ListAt(t, fs, i)
+        if Name(t, t.nodes[d].a) == name {
+            return d
+        }
+    }
+    return 0 - 1
+}
+
+func ozBuilt(vals []PkgVal, k int, name string, m int) bool {
+    for i <- iter.Range(0, len(vals[k].ozBuiltN)) {
+        if vals[k].ozBuiltN[i] == name && vals[k].ozBuiltM[i] == m {
+            return true
+        }
+    }
+    return false
+}
+
+// 2 つの Program の表の最初の違い（同じなら ""）— 検証モードと格納場所の検証モードが使う
+func progDiff(a Program, b Program) string {
+    if !seq(a.file_path, b.file_path) || !beq(a.file_std, b.file_std) {
+        return "files"
+    }
+    if !ieq(a.file_pkg, b.file_pkg) || !seq(a.pkg_path, b.pkg_path) || !seq(a.pkg_name, b.pkg_name) || !ieq(a.pkg_lo, b.pkg_lo) || !ieq(a.pkg_hi, b.pkg_hi) {
+        return "packages"
+    }
+    if !ieq(a.imp_pkg, b.imp_pkg) || !seq(a.imp_ref, b.imp_ref) || !seq(a.imp_path, b.imp_path) {
+        return "imports"
+    }
+    if !ieq(a.fn_file, b.fn_file) || !ieq(a.fn_node, b.fn_node) || !beq(a.fn_expands, b.fn_expands) || !beq(a.fn_mut_def, b.fn_mut_def) || !beq(a.fn_closed, b.fn_closed) || !beq(a.fn_has_try, b.fn_has_try) {
+        return "functions"
+    }
+    if !ieq(a.fn_clo, b.fn_clo) || !ieq(a.fn_chi, b.fn_chi) || !seq(a.callees, b.callees) {
+        return "callees"
+    }
+    if !ieq(a.c_file, b.c_file) || !ieq(a.c_node, b.c_node) || !ieq(a.c_value, b.c_value) || !beq(a.c_has, b.c_has) || !beq(a.c_dict, b.c_dict) {
+        return "consts"
+    }
+    if !seq(a.err_name, b.err_name) || !ieq(a.err_pkg, b.err_pkg) {
+        return "errors"
+    }
+    if !ieq(a.cap_file, b.cap_file) || !ieq(a.cap_node, b.cap_node) || !ieq(a.cap_lo, b.cap_lo) || !ieq(a.cap_hi, b.cap_hi) || !seq(a.cap_names, b.cap_names) || !ieq(a.cap_brw, b.cap_brw) {
+        return "caps"
+    }
+    if !ieq(a.cap_pend, b.cap_pend) {
+        return "cap_pend"
+    }
+    if !ieq(a.z_decl, b.z_decl) {
+        return "z_decl"
+    }
+    if a.logs_stdout != b.logs_stdout {
+        return "logs"
+    }
+    for f <- iter.Range(0, len(a.trees)) {
+        if !pcTreeEq(a.trees[f], b.trees[f]) {
+            return "tree ${a.file_path[f]}:${pkgTreeDiffAll(a.trees[f], b.trees[f])}"
+        }
+    }
+    return ""
+}

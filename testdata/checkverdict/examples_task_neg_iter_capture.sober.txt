@@ -1,0 +1,2 @@
+sober: load error at examples/task_neg_iter_capture.sober:27:53: the spawned task lives until the scope exits, but it captures a value made inside a loop iteration or a block of the scope body, which is freed when that ends — make the value in the scope body before the loop, or inside the task
+exit=1

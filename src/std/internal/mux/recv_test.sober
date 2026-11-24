@@ -1,0 +1,389 @@
+package mux
+
+// RecvMux: 外の相手の切片と、子のストリームの合図が同じ受けに混ざる。子は時間をずらして積み、相手も間をあけて送る。
+// 接続のtaskは両方を受け切る（合図の中身と本数・切片のバイト数）。待ちは合図でもfdでも明ける
+
+import "std/io"
+import "std/net"
+import "std/os"
+import "std/task"
+
+func zerosN(n int) []int {
+    mut r := mut []int{}
+    while len(r) < n {
+        r = append(r, 0)
+    }
+    return freeze(r)
+}
+
+func patN(sid int, n int) []byte {
+    mut b := mut []byte{}
+    while len(b) < n {
+        b = append(b, byte((sid * 13 + len(b)) % 251))
+    }
+    return freeze(b)
+}
+
+func sameN(a []byte, b []byte) bool {
+    if len(a) != len(b) {
+        return false
+    }
+    mut i := 0
+    while i < len(a) {
+        if a[i] != b[i] {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+// 相手の役: 3回に分けて送り、間をあける。最後に閉じる（FIN）
+func peer(port int) (int, error?) {
+    for c <- net.Dial("127.0.0.1:${port}")? {
+        net.Send(c, bytes("abc"))?
+        os.Sleep(20)
+        net.Send(c, bytes("defg"))?
+        os.Sleep(20)
+        net.Send(c, bytes("hi"))?
+        os.Sleep(30)
+    }
+    return 0, nil
+}
+
+// 合図を全部取り出す（[応答の数, 終わりの数, 中身の誤り]を足す）
+func drainAll(m Mux, acc mut []int) {
+    mut sg := Take(m)
+    while !None(sg) {
+        sid := Sid(sg)
+        if Kind(sg) == End {
+            acc[1] = acc[1] + 1
+        } else {
+            acc[0] = acc[0] + 1
+            if !sameN(Bytes(sg), patN(sid, sid * 53 % 2000)) {
+                acc[2] = acc[2] + 1
+            }
+        }
+        Free(m, sg)
+        sg = Take(m)
+    }
+}
+
+// 接続のtaskの受け: 切片と合図をFINまで受け、子が全部終わるまで残りの合図を受ける
+// （応答の数 × 1000000 + 終わりの数 × 1000 + 受けたバイト数・中身の誤りがあれば -1）
+func recvAll(c net.Conn, m Mux, n int) (int, error?) {
+    mut acc := mut []int{0, 0, 0}
+    mut got := 0
+    for chunk <- RecvMux(c, m)? {
+        if len(chunk) == 0 {
+            drainAll(m, mut acc)
+        } else {
+            got += len(chunk)
+        }
+    }
+    while acc[1] < n {
+        if WaitSig(m) != Ok {
+            return -2, nil
+        }
+        drainAll(m, mut acc)
+    }
+    return if acc[2] != 0 { -1 } else { acc[0] * 1000000 + acc[1] * 1000 + got }, nil
+}
+
+// 1本だけ受け、接続の寿命のscopeで子をn本生んで受ける
+func acceptOne(l net.Listener, m Mux, n int) (int, error?) {
+    mut out := -3
+    for c <- net.Accept(l)? {
+        v, e := task.Run((s task.Scope) => {
+            mut i := 1
+            while i <= n {
+                sid := i * 2 + 1
+                slot := i - 1
+                _ = task.Spawn(s, () => {
+                    os.Sleep(sid % 7 * 5)
+                    _ = Post(m, Resp, sid, patN(sid, sid * 53 % 2000), slot)
+                    os.Sleep(sid % 3 * 10)
+                    _ = Post(m, End, sid, []byte{}, -1)
+                    0
+                })
+                i += 1
+            }
+            recvAll(c, m, n) catch -5
+        })
+        out = if e == nil { v } else { -8 }
+        break
+    }
+    return out, nil
+}
+
+func serve(n int) (int, error?) {
+    mut r := 0
+    for l <- net.Listen("127.0.0.1:0")? {
+        port := net.Port(l)
+        rec := zerosN(Words)
+        m := Of(rec)
+        v, e := task.Run((s task.Scope) => {
+            _ = task.Spawn(s, () => peer(port) catch -1)
+            acceptOne(l, m, n) catch -4
+        }, deadline: 10000 * task.MS)
+        r = if e == nil { v } else { -6 }
+    }
+    return r, nil
+}
+
+func TestRecvMux() {
+    n := 24
+    r := serve(n) catch -7
+    assert(r == n * 1000000 + n * 1000 + 9)
+    assert(PoolUse() == 0)
+}
+
+// 親が死ぬと、RecvMuxとWaitSigの待ちは切られる（RecvMux = io.Expired・WaitSig = -125）
+type Got struct {
+    v int
+}
+
+func orphRecv(port int, d task.Domain[Got]) (int, error?) {
+    rec := zerosN(Words)
+    m := Of(rec)
+    for c <- net.Dial("127.0.0.1:${port}")? {
+        e := RecvMux(c, m, (b) => {
+            _ = b
+        })
+        code := switch e {
+        case nil: 3
+        case io.Expired{}: 1
+        case io.Timeout{}: 5
+        case io.Closed{}: 5
+        case io.Denied{}: 5
+        case io.Other{errno}: 5 + errno * 0
+        }
+        task.Update(d, (st mut Got) => {
+            st.v += code
+            0
+        })
+    }
+    return 0, nil
+}
+
+func orphWait(d task.Domain[Got]) int {
+    rec := zerosN(Words)
+    m := Of(rec)
+    r := WaitSig(m)
+    task.Update(d, (st mut Got) => {
+        st.v += if r == 0 - 125 { 10 } else { 30 }
+        0
+    })
+    return 0
+}
+
+func orphParent(port int, d task.Domain[Got]) int {
+    _, e := task.Run((s task.Scope) => {
+        _ = task.Spawn(s, () => orphRecv(port, d) catch -1)
+        _ = task.Spawn(s, () => orphWait(d))
+        os.Sleep(50)
+        xs := []int{1}
+        xs[9]
+    })
+    _ = e
+    return 0
+}
+
+func orphRun() (int, error?) {
+    mut out := 0
+    for l <- net.Listen("127.0.0.1:0")? {
+        port := net.Port(l)
+        v, e := task.Run((s task.Scope) => {
+            d := task.NewDomain(s, Got{v: 0})
+            _, e2 := task.Run((s2 task.Scope) => {
+                _ = task.Spawn(s2, () => orphParent(port, d))
+                0
+            })
+            _ = e2
+            task.Read(d, (st Got) => st.v)
+        })
+        out = if e == nil { v } else { -1 }
+    }
+    return out, nil
+}
+
+func TestRecvMuxOrphan() {
+    r := orphRun() catch -2
+    assert(r == 11)
+}
+
+// Send: 接続のtaskが、子の積んだ応答のバイト列をコピーせずに相手へ送る。分けて送っても（off・n）相手には順に全部届く
+func reader(port int, want int) (int, error?) {
+    mut sum := 0
+    mut got := 0
+    for c <- net.Dial("127.0.0.1:${port}")? {
+        for chunk <- net.Recv(c)? {
+            for x <- chunk {
+                sum = (sum * 31 + int(x)) % 1000000007
+            }
+            got += len(chunk)
+            if got >= want {
+                break
+            }
+        }
+    }
+    return if got == want { sum } else { -1 }, nil
+}
+
+// 子が積む中身を、ストリームIDの順に並べたときの和（readerと同じ式）
+func wantSum(n int) int {
+    mut sum := 0
+    mut i := 1
+    while i <= n {
+        b := patN(i, 3000 + i * 100)
+        for x <- b {
+            sum = (sum * 31 + int(x)) % 1000000007
+        }
+        i += 1
+    }
+    return sum
+}
+
+func sendAll(l net.Listener, m Mux, n int) (int, error?) {
+    for c <- net.Accept(l)? {
+        v, e := task.Run((s task.Scope) => {
+            mut i := 1
+            while i <= n {
+                sid := i
+                _ = task.Spawn(s, () => {
+                    os.Sleep((n - sid) * 3)
+                    _ = Post(m, Resp, sid, patN(sid, 3000 + sid * 100), sid - 1)
+                    0
+                })
+                i += 1
+            }
+            // ストリームIDの順に送る（届いた順ではなく — 先に届いた分は列に残して待つ）
+            sendOrdered(c, m, n) catch -5
+        })
+        return if e == nil { v } else { -8 }, nil
+    }
+    return -3, nil
+}
+
+func sendOrdered(c net.Conn, m Mux, n int) (int, error?) {
+    mut held := mut []Sig{}
+    while len(held) < n {
+        held = append(held, Sig{at: 0})
+    }
+    mut next := 1
+    while next <= n {
+        sg := Take(m)
+        if None(sg) {
+            if WaitSig(m) != Ok {
+                return -2, nil
+            }
+        } else {
+            held[Sid(sg) - 1] = sg
+        }
+        while next <= n && !None(held[next - 1]) {
+            h := held[next - 1]
+            ln := Len(h)
+            // 2回に分けて送る
+            Send(c, h, 0, ln / 3)?
+            Send(c, h, ln / 3, ln - ln / 3)?
+            Free(m, h)
+            next += 1
+        }
+    }
+    return 0, nil
+}
+
+// [送りの結果, 相手が受けた中身の和]
+func sendRun(n int, want int) ([]int, error?) {
+    mut out := mut []int{-9, -9}
+    for l <- net.Listen("127.0.0.1:0")? {
+        port := net.Port(l)
+        rec := zerosN(Words)
+        m := Of(rec)
+        v, e := task.Run((s task.Scope) => {
+            h := task.Spawn(s, () => reader(port, want) catch -1)
+            a := sendAll(l, m, n) catch -4
+            b := task.Join(h)
+            []int{a, b}
+        }, deadline: 10000 * task.MS)
+        if e == nil {
+            out[0] = v[0]
+            out[1] = v[1]
+        }
+    }
+    return freeze(out), nil
+}
+
+func TestSend() {
+    n := 10
+    mut want := 0
+    mut i := 1
+    while i <= n {
+        want += 3000 + i * 100
+        i += 1
+    }
+    r := sendRun(n, want) catch []int{-7, -7}
+    assert(r[0] == 0)
+    assert(r[1] == wantSum(n))
+    assert(PoolUse() == 0)
+}
+
+// 再生の題材（scripts/schedfuzz.shの照合）: 待ち・時刻に依らない形。相手の切片は接続のtaskが受ける前に送り済みで、子は眠らずに積む。
+// 合図と切片の並び（飛行記録のSIGとRECV）は、ワーカー1ではスケジュールの選択の列だけで決まる
+func replayConn(l net.Listener, m Mux, n int) (int, error?) {
+    for c <- net.Accept(l)? {
+        v, e := task.Run((s task.Scope) => {
+            mut i := 1
+            while i <= n {
+                sid := i * 2 + 1
+                slot := i - 1
+                _ = task.Spawn(s, () => {
+                    _ = Post(m, Resp, sid, patN(sid, sid * 53 % 2000), slot)
+                    _ = Post(m, End, sid, []byte{}, -1)
+                    0
+                })
+                i += 1
+            }
+            replayRecv(c, m, n) catch -5
+        })
+        return if e == nil { v } else { -8 }, nil
+    }
+    return -3, nil
+}
+
+func replayRecv(c net.Conn, m Mux, n int) (int, error?) {
+    mut acc := mut []int{0, 0, 0}
+    mut got := 0
+    for chunk <- RecvMux(c, m)? {
+        if len(chunk) == 0 {
+            drainAll(m, mut acc)
+        } else {
+            got += len(chunk)
+        }
+        if acc[1] == n && got == 7 {
+            break
+        }
+    }
+    return if acc[2] != 0 { -1 } else { acc[0] * 1000000 + acc[1] * 1000 + got }, nil
+}
+
+func replayRun(n int) (int, error?) {
+    mut r := -9
+    for l <- net.Listen("127.0.0.1:0")? {
+        for c <- net.Dial("127.0.0.1:${net.Port(l)}")? {
+            net.Send(c, bytes("abc"))?
+            net.Send(c, bytes("defg"))?
+            rec := zerosN(Words)
+            m := Of(rec)
+            v, e := task.Run((s task.Scope) => replayConn(l, m, n) catch -4, deadline: 10000 * task.MS)
+            r = if e == nil { v } else { -6 }
+        }
+    }
+    return r, nil
+}
+
+func TestReplayOrder() {
+    n := 6
+    r := replayRun(n) catch -7
+    assert(r == n * 1000000 + n * 1000 + 7)
+}

@@ -16,7 +16,7 @@ package desugar
 //       11 = 関数型の仮引数（展開されるクロージャ — 子へは値しか渡せない）の捕獲・12 = 札・handle・端点を関数の実引数に・domainも含めて戻り値に（コアのparamOk / retOkが拒否する形 — domainは実引数に置ける）
 //       domain（language.md 11 節「domain」— Update / Read / Await は展開される std の関数・NewDomain は鍵）: 31 = 本体・when: が生のラムダ（仮引数 1 つ）でない・
 //       32 = 本体・when: の捕獲が imm のデータでない（mut の束縛・mut の中身・札・handle・端点・関数型の仮引数）・33 = 本体・when: から外への脱出・
-//       35 = wait: が呼び出し・割り算を含む・39 = domain を作った scope より長く生きる場所へ置く（domesc.sober）。domain の値（task.Domain）は札・handle と同じ側（8 / 9 / 19 と 12 の戻り値が拒否 — 捕獲と関数の実引数は通す）
+//       35 = wait: が呼び出し・割り算を含む・40 = 例外のpackage（std/net・std/http/server）の関数が子taskで呼ぶ関数型の仮引数（handler・route）へ渡したラムダが、mutの束縛・mutの中身を捕獲する・39 = domain を作った scope より長く生きる場所へ置く（domesc.sober）。domain の値（task.Domain）は札・handle と同じ側（8 / 9 / 19 と 12 の戻り値が拒否 — 捕獲と関数の実引数は通す）
 // Joinの結果の数（PC_CATCHLHS / PC_MULTIBIND — diag.Parでなくloaderの診断を名前で参照する）: Joinの結果は字面でT 1つで、fallibleなtaskのT = `(U, error?)` は
 // 呼び出し点の型引数で決まる。loader（catchx.sober）は字面で数えるので Join の判定をここへ保留する — `task.Join(h) catch D` は fallible な task だけ（CatchLhs）・
 // 値 1 つの束縛 `d := task.Join(h)` は infallible な task だけ（MultiBind）
@@ -196,6 +196,14 @@ func pcWalk(st mut S, fi int, n NodeRef) PcHit {
             // task.Map の budget:（Spawn と同じ柵 kind 20）
             return PcHit{at: latN(mut st, lB(x), 2), kind: 20}
         } else if (fk < 0 && !pcIsAppend(mut st, cal)) || (fk >= 0 && !strIs(mut st, PkgPath(mut st, fnPkg(mut st, fk)), "std/task")) {
+            // 例外のpackageの関数が子taskで呼ぶ関数型の仮引数（net.Serveのhandler・ServeConnのroute）へ渡したラムダは、子の捕獲と同じ規則（kind 40）。
+            // 例外のpackageの中ではpcUsesがその仮引数の捕獲を見ないので、渡す側のここで見る
+            if fk >= 0 && pcExcPkg(mut st, fk) && !pcExcPkg(mut st, fi) {
+                h := pcHandlerArgs(mut st, fi, fk, lB(x))
+                if h.kind != 0 {
+                    return h
+                }
+            }
             if fk >= 0 && deFnLamDom(mut st, fk) {
                 deMark(mut st, fi)
             }
@@ -935,8 +943,10 @@ func pcUses(st mut S, fi int, n NodeRef, base int, end int) PcHit {
             if mk == 1 || (k == ast.EMutArg && mk >= 0) {
                 return PcHit{at: n, kind: 4}
             }
-            // std/net の Serve の handler は子の本体で直に呼ぶ（task.Map の f と同じ — 実引数のラムダの捕獲は子の本体への展開の後の検査が見る）
-            if mk == 0 && pcParamFn(mut st, fi, name) && !strIs(mut st, PkgPath(mut st, fnPkg(mut st, fi)), "std/net") {
+            // std/net の Serve の handler は子の本体で直に呼ぶ（task.Map の f と同じ — 実引数のラムダの捕獲は子の本体への展開の後の検査が見る）。
+            // std/http/server の HTTP/2 の接続（serveH2）が子のストリームで呼ぶ route も同じ形（実引数のラムダの捕獲は子の本体への展開の後の検査が見る）
+            pkg := PkgPath(mut st, fnPkg(mut st, fi))
+            if mk == 0 && pcParamFn(mut st, fi, name) && !strIs(mut st, pkg, "std/net") && !strIs(mut st, pkg, "std/http/server") {
                 return PcHit{at: n, kind: 11}
             }
             if mk == 0 {
@@ -1009,6 +1019,94 @@ func pcLocalMut(st mut S, fi int, name StrRef, dotted bool) int {
 }
 
 // 名前nameが関数fiの関数型の仮引数か（展開されるクロージャ — lowerでは値でなく本体のコピー）
+// 関数fiが子taskの捕獲の例外のpackage（std/net・std/http/server — 子の本体へ展開される関数型の仮引数を持つ）にあるか
+func pcExcPkg(st mut S, fi int) bool {
+    pkg := PkgPath(mut st, fnPkg(mut st, fi))
+    return strIs(mut st, pkg, "std/net") || strIs(mut st, pkg, "std/http/server")
+}
+
+// 例外のpackageの関数fkの実引数argsのうち、子taskが呼ぶ仮引数へ渡した生のラムダの捕獲（mutの束縛・mutの中身 → kind 40）
+func pcHandlerArgs(st mut S, fi int, fk int, args ListRef) PcHit {
+    for i <- iter.Range(0, lenL(mut st, args)) {
+        a := latN(mut st, args, i)
+        if a != -1 && kindN(mut st, a) == ast.ELambda && pcSpawnParam(mut st, fk, i, 6) {
+            h := pcCaptures(mut st, fi, a)
+            if h.kind == 4 || h.kind == 21 {
+                return PcHit{at: h.at, kind: 40}
+            }
+        }
+    }
+    return pcNone()
+}
+
+// 例外のpackageの関数fkのj番目の関数型の仮引数が、子task（Spawn・SpawnIn・SpawnGiveの実引数の中）で使われるか。
+// 同じ名前の仮引数へ渡す先の例外のpackageの関数をdepthの深さまで辿る（ServeConn → serveConnAny → serveH2 の形）。束縛の隠しは見ない（多めに当たる側）
+func pcSpawnParam(st mut S, fk int, j int, depth int) bool {
+    if depth <= 0 || fk < 0 || !pcExcPkg(mut st, fk) || fnBody(mut st, fk) == -1 {
+        return false
+    }
+    ps := fnParams(mut st, fk)
+    if j >= lenL(mut st, ps) {
+        return false
+    }
+    p := nodeOf(mut st, latN(mut st, ps, j))
+    if p.b == -1 || kindN(mut st, NodeRef(p.b)) != ast.TFunc {
+        return false
+    }
+    // 本体の中の名前はfkのpackageで引く（歩いている関数のpackageから一時に切り替える）
+    cur := st.curPkg
+    st.curPkg = fnPkg(mut st, fk)
+    r := pcSpawnUse(mut st, fnBody(mut st, fk), sA(p), false, depth)
+    st.curPkg = cur
+    return r
+}
+
+// 木nの中で名前nameが子taskの中で使われるか（kid = 子の実引数の中）・例外のpackageの関数の子taskが呼ぶ仮引数へ渡されるか
+func pcSpawnUse(st mut S, n NodeRef, name StrRef, kid bool, depth int) bool {
+    if n == -1 {
+        return false
+    }
+    x := nodeOf(mut st, n)
+    if x.kind == ast.EIdent {
+        return kid && strEq(mut st, sA(x), name)
+    }
+    mut inKid := kid
+    if x.kind == ast.ECall {
+        cal := if kindN(mut st, nA(x)) == ast.EIndex { nA(nodeOf(mut st, nA(x))) } else { nA(x) }
+        fk := findFn(mut st, cal, -1)
+        key := if fk >= 0 { ParKey(mut st, fk) } else { 0 }
+        if key == PAR_SPAWN || key == PAR_SPAWNIN || key == PAR_SPAWNGIVE {
+            inKid = true
+        } else if fk >= 0 && pcExcPkg(mut st, fk) {
+            args := lB(x)
+            for i <- iter.Range(0, lenL(mut st, args)) {
+                a := latN(mut st, args, i)
+                if a != -1 && kindN(mut st, a) == ast.EIdent && strEq(mut st, sA(nodeOf(mut st, a)), name) && pcSpawnParam(mut st, fk, i, depth - 1) {
+                    return true
+                }
+            }
+        }
+    }
+    c := pcDesc(mut st, x)
+    for j <- iter.Range(0, 6) {
+        d := c / pow8(j) % 8
+        v := pcField(x, j)
+        if d == 1 && v != -1 {
+            if pcSpawnUse(mut st, NodeRef(v), name, inKid, depth) {
+                return true
+            }
+        } else if d == 3 && v != -1 {
+            l := ListRef(v)
+            for i <- iter.Range(0, lenL(mut st, l)) {
+                if pcSpawnUse(mut st, latN(mut st, l, i), name, inKid, depth) {
+                    return true
+                }
+            }
+        }
+    }
+    return false
+}
+
 func pcParamFn(st mut S, fi int, name StrRef) bool {
     ps := fnParams(mut st, fi)
     for i <- iter.Range(0, lenL(mut st, ps)) {

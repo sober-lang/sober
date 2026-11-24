@@ -5,6 +5,8 @@
 # （kv2 / kv3 / kvbug の kv.sober は kv と虫だけの差 — kv2 / kv3 は 4 節の虫 1 匹・kvbug は 3 匹・kv2 / kv3 のテストは kv のテストの頭）も見る
 #   scripts/guidetest.sh            照合
 #   scripts/guidetest.sh --regen    ゴールデンを作り直す（差分を見てからコミット）
+# ゴールデンの並びを呼び手のロケールに依らせない
+export LC_ALL=C.UTF-8
 set -uo pipefail
 cd "$(dirname "$0")/.."
 SOBER=${SOBER:-./bin/sober}

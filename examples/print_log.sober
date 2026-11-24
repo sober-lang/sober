@@ -1,0 +1,25 @@
+package main
+
+// print.Log writes a record (a struct) as one JSON Lines line to the log (standard error unless @logs says otherwise).
+// It returns nothing, never waits and never panics. The line is {"ts":"<time>","<type name>":<fields>}; the record type is the type of the argument
+
+import "std/print"
+
+type Visit struct {
+    path string
+    status int
+    took float
+    tags []string
+    user string?
+}
+
+func handle(path string) int {
+    status := if path == "/" { 200 } else { 404 }
+    print.Log(Visit{path: path, status: status, took: 0.25, tags: []string{"web"}, user: nil})
+    return status
+}
+
+func main() {
+    println(handle("/"))
+    println(handle("/missing"))
+}

@@ -1,0 +1,7 @@
+package main
+
+import "audit"
+
+func main() int {
+    return audit.Code()
+}

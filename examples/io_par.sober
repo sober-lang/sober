@@ -2,8 +2,9 @@ package main
 
 // Summarize access logs that are split into shards — one task per shard.
 // Each task reads its shard and writes a one-line summary next to the report; main merges the counts.
-// Run from the repository root (writes under out/).
+// Run from the repository root (writes under out/io_par.<n>, a directory of its own for each run).
 import "std/io"
+import "std/os"
 import "std/task"
 import "std/strings"
 
@@ -40,17 +41,19 @@ func tally(text string) Tally {
     return t
 }
 
-func summarize(shard int) (Tally, error?) {
+func summarize(d string, shard int) (Tally, error?) {
     text := string(io.ReadFile("testdata/io_par/access-${shard}.log")?)?
     t := tally(text)
     line := "shard ${shard}: ${t.requests} requests, ${t.errors} errors, ${t.sent} bytes\n"
-    io.WriteFile("out/io_par-${shard}.txt", bytes(line))?
+    io.WriteFile(d + "/io_par-${shard}.txt", bytes(line))?
     return t, nil
 }
 
 func main() int {
     shards := []int{1, 2, 3, 4}
-    ts, err := task.Map(shards, (k) => summarize(k))
+    d := runDir("io_par")
+    defer removeAll(d)
+    ts, err := task.Map(shards, (k) => summarize(d, k))
     if err != nil {
         println(switch err {
         case io.NotFound{}: "a log shard is missing"
@@ -65,10 +68,32 @@ func main() int {
         total.sent += t.sent
     }
     for k <- shards {
-        text := string(io.ReadFile("out/io_par-${k}.txt") catch return 1) catch return 1
+        text := string(io.ReadFile(d + "/io_par-${k}.txt") catch return 1) catch return 1
         line, _, _ := strings.Cut(text, "\n")
         println(line)
     }
     println("total: ${total.requests} requests, ${total.errors} errors, ${total.sent} bytes")
     return 0
+}
+
+// 実行ごとの置き場 out/<name>.<単調時計の値>（同じ作業ディレクトリで同時に走る実行どうしが上書きし合わない）。
+// mkdirは既にあれば失敗するので、作れた名前がこの実行のもの。作れない状態で回り続けないよう、試す回数に上限を置く（作れなければ ""）
+func runDir(name string) string {
+    _ = os.Mkdir("out")
+    mut n := 0
+    while n < 100 {
+        c := "out/${name}.${os.Monotonic()}"
+        if os.Mkdir(c) == nil {
+            return c
+        }
+        n = n + 1
+    }
+    return ""
+}
+
+// 置き場を中身ごと消す
+func removeAll(d string) {
+    if d != "" {
+        _ = os.Run("/bin/rm", []string{"-rf", d}) catch 0
+    }
 }

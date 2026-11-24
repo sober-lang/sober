@@ -25,6 +25,8 @@ The HTTP/1.1 (RFC 9110–9112) server (`std/http/server`) and client (`std/http/
 | multipart/form-data (RFC 7578) | Supported | `std/http/server.TestMultipartRfc`<br>`std/http/server.TestMultipartBrowsers`<br>`testdata/httpcheck/check.ts`: upload formdata |
 | Server-Sent Events (text/event-stream, Last-Event-ID) | Supported | `std/http/server.TestFormatEvent`<br>`testdata/httpcheck/check.ts`: sse Last-Event-ID |
 | Expect: 100-continue (a 100 is sent once the header is complete and the body has not arrived; Expect in HTTP/1.0 is ignored) | Supported | `testdata/httpcheck/check.ts`: expect 100-continue<br>`testdata/httpcheck/check.ts`: expect 100-continue HTTP/1.0 ignored |
+| HTTP/2 (h2c with prior knowledge; RFC 9113, HPACK RFC 7541; chosen with ServeConn's `proto:`; each stream calls route in its own task — external oracle h2spec, 146 cases) | Supported | `testdata/h2spec/pass.txt`: generic/4/1 ok<br>`testdata/h2spec/pass.txt`: generic/4/3 ok<br>`std/http/server.TestH2One`<br>`std/http/server.TestH2SlowFast` |
+| HTTP/2 over TLS (ALPN h2: ServeConn takes the TLS connection that tls.Serve hands over. Frame conformance does not depend on the transport and is checked by h2spec over plaintext; the receive and send paths over TLS are checked by h2flood over TLS 1.3 and 1.2 and by interop with nghttp. The TLS client of h2spec offers TLS 1.2 at most, so its 146 cases run over TLS 1.2 against a DangerouslyAllowTls12 server; all are stages of the h2spec gate) | Supported | `std/http/server.TestConnTlsBoth`<br>`std/http/server.TestConnTlsH2`<br>`std/http/server.TestH2TlsHuge` |
 <!-- confsync:end claims http-server yes,partial -->
 
 ### Client
@@ -38,6 +40,8 @@ The HTTP/1.1 (RFC 9110–9112) server (`std/http/server`) and client (`std/http/
 | Proxy (CONNECT tunnel, Proxy-Authorization) | Supported | `std/http/client.TestProxyLoopback`<br>interop http: proxy-connect (2026-11-07)<br>interop http: proxy-auth (2026-11-07) |
 | Skips 1xx interim responses | Supported | `std/http/client.TestScanSplits` |
 | Timeouts and body limits (on in the zero value) | Supported | `std/http/client.TestTimeoutAndRefused` |
+| Connecting to IPv6 addresses (bracketed URL authority; Host and the CONNECT authority keep the brackets; redirect origins are compared in RFC 5952 form) | Supported | `std/http/client.TestTarget`<br>`std/http/client.TestPlainLoopback6` |
+| HTTP/2 (h2 is offered by ALPN to https targets, one stream at a time per connection; h2c is not used for http targets) | Supported | `std/http/server.TestH2TlsClient` |
 <!-- confsync:end claims http-client yes,partial -->
 
 ### Cookies
@@ -164,11 +168,93 @@ Requirements that do not apply because the feature is absent.
 | RFC 9110 15.3.7: header and content rules for 206 (Range is not implemented) | Not applicable | none |
 <!-- confsync:end claims http-must na -->
 
+## RFC 9113 and 7541 MUSTs (server, HTTP/2)
+
+The MUSTs and MUST NOTs that RFC 9113 (HTTP/2) and RFC 7541 (HPACK) place on a server and that have evidence, with section numbers. As in the RFC 9110 and 9112 table, nearby requirements from one section share a row, and requirements without evidence are left out. h2spec cases are cited by their line in `testdata/h2spec/pass.txt` (the list of passed cases that the h2spec gate writes and compares). h2spec numbers sections after RFC 7540; the rows use RFC 9113 section numbers.
+
+<!-- confsync:begin claims h2-must yes,partial -->
+| Item | Status | Evidence |
+|---|---|---|
+| RFC 9113 3.2: HTTP/2 over TLS starts by ALPN h2 (a TLS connection is not told from HTTP/1.1 by the preface; with proto: Both, HTTP/2 when ALPN picked h2 and HTTP/1.1 otherwise) | Supported | `std/http/server.TestConnTlsBoth`<br>`std/http/server.TestConnTlsBothH11` |
+| RFC 9113 3.3, 3.4: the server connection preface is a SETTINGS frame sent first, and the SETTINGS in the peer's preface is acknowledged | Supported | `testdata/h2spec/pass.txt`: generic/1/1 ok<br>`testdata/h2spec/pass.txt`: http2/3.5/1 ok<br>`testdata/h2spec/pass.txt`: http2/6.5.3/2 ok |
+| RFC 9113 3.4: an invalid connection preface is a connection error of type PROTOCOL_ERROR (proto: H2; proto: Both reads a connection that does not start with the preface as HTTP/1.1) | Supported | `testdata/h2spec/pass.txt`: http2/3.5/2 ok |
+| RFC 9113 4.1: frames of unknown types are discarded; unused flags and the reserved bit are ignored on receipt | Supported | `testdata/h2spec/pass.txt`: http2/4.1/1 ok<br>`testdata/h2spec/pass.txt`: http2/4.1/2 ok<br>`testdata/h2spec/pass.txt`: http2/4.1/3 ok |
+| RFC 9113 4.2: frames of 2^14 octets are received; a frame over SETTINGS_MAX_FRAME_SIZE is a FRAME_SIZE_ERROR (a connection error for frames carrying a field block) | Supported | `testdata/h2spec/pass.txt`: http2/4.2/1 ok<br>`testdata/h2spec/pass.txt`: http2/4.2/2 ok<br>`testdata/h2spec/pass.txt`: http2/4.2/3 ok |
+| RFC 9113 4.3: a field block that does not decompress is a connection error of type COMPRESSION_ERROR | Supported | `testdata/h2spec/pass.txt`: http2/4.3/1 ok<br>`std/internal/hpack.TestBad` |
+| RFC 9113 4.3, 6.2, 6.10: a frame of another type or for another stream in the middle of a field block is a connection error of type PROTOCOL_ERROR | Supported | `testdata/h2spec/pass.txt`: http2/4.3/2 ok<br>`testdata/h2spec/pass.txt`: http2/4.3/3 ok<br>`testdata/h2spec/pass.txt`: http2/6.2/1 ok<br>`testdata/h2spec/pass.txt`: http2/6.2/2 ok<br>`testdata/h2spec/pass.txt`: http2/6.10/2 ok |
+| RFC 9113 5.1, 6.4: a frame other than HEADERS or PRIORITY (RST_STREAM included) on an idle stream is a connection error of type PROTOCOL_ERROR | Supported | `testdata/h2spec/pass.txt`: http2/5.1/1 ok<br>`testdata/h2spec/pass.txt`: http2/5.1/2 ok<br>`testdata/h2spec/pass.txt`: http2/5.1/3 ok<br>`testdata/h2spec/pass.txt`: http2/5.1/4 ok<br>`testdata/h2spec/pass.txt`: http2/6.4/2 ok |
+| RFC 9113 5.1, 6.1: DATA, HEADERS or CONTINUATION on a half-closed (remote) or closed stream is a STREAM_CLOSED error (including after the server sent RST_STREAM) | Supported | `testdata/h2spec/pass.txt`: http2/5.1/5 ok<br>`testdata/h2spec/pass.txt`: http2/5.1/6 ok<br>`testdata/h2spec/pass.txt`: http2/5.1/7 ok<br>`testdata/h2spec/pass.txt`: http2/5.1/8 ok<br>`testdata/h2spec/pass.txt`: http2/5.1/9 ok<br>`testdata/h2spec/pass.txt`: http2/5.1/10 ok<br>`testdata/h2spec/pass.txt`: http2/5.1/11 ok<br>`testdata/h2spec/pass.txt`: http2/5.1/12 ok<br>`testdata/h2spec/pass.txt`: http2/5.1/13 ok<br>`testdata/h2spec/pass.txt`: http2/6.1/2 ok |
+| RFC 9113 5.1: WINDOW_UPDATE, PRIORITY and RST_STREAM on a half-closed (remote) stream, and PRIORITY on a closed stream, are not errors | Supported | `testdata/h2spec/pass.txt`: generic/2/2 ok<br>`testdata/h2spec/pass.txt`: generic/2/3 ok<br>`testdata/h2spec/pass.txt`: generic/2/4 ok<br>`testdata/h2spec/pass.txt`: generic/2/5 ok |
+| RFC 9113 5.1.1: an even-numbered stream identifier, or one smaller than a previously opened stream, is a connection error of type PROTOCOL_ERROR | Supported | `testdata/h2spec/pass.txt`: http2/5.1.1/1 ok<br>`testdata/h2spec/pass.txt`: http2/5.1.1/2 ok |
+| RFC 9113 5.1.2: a HEADERS frame that exceeds the advertised concurrent stream limit is a stream error of type PROTOCOL_ERROR or REFUSED_STREAM | Supported | `testdata/h2spec/pass.txt`: http2/5.1.2/1 ok |
+| RFC 9113 5.2.1, 6.9.1: the server never sends more than the flow-control windows (stream and connection) advertised by the peer | Supported | `testdata/h2spec/pass.txt`: http2/6.9.1/1 ok<br>`std/http/server.TestH2WindowStall` |
+| RFC 9113 5.2.2: frames keep being read while handlers run (a slow handler does not stall other streams on the connection) | Supported | `std/http/server.TestH2SlowFast` |
+| RFC 9113 5.4.1: on a connection error the server sends GOAWAY and then closes the TCP connection | Supported | `testdata/h2spec/pass.txt`: http2/5.4.1/1 ok<br>`std/http/server.TestH2RstBudget` |
+| RFC 9113 5.4.2: on a stream error the server sends RST_STREAM for that stream and the connection goes on (a stream whose child dies in route, by panic or by exceeding its budget, gets INTERNAL_ERROR) | Supported | `std/http/server.TestH2ChildDeath`<br>`std/http/server.TestH2TlsChildDeath` |
+| RFC 9113 5.5: unknown extension frames and unknown settings are ignored; an extension frame in the middle of a field block is a connection error of type PROTOCOL_ERROR | Supported | `testdata/h2spec/pass.txt`: http2/5.5/1 ok<br>`testdata/h2spec/pass.txt`: http2/5.5/2 ok<br>`testdata/h2spec/pass.txt`: http2/6.5.2/5 ok |
+| RFC 9113 6.1: a DATA frame on stream 0, or with padding as long as the payload or longer, is a connection error of type PROTOCOL_ERROR | Supported | `testdata/h2spec/pass.txt`: http2/6.1/1 ok<br>`testdata/h2spec/pass.txt`: http2/6.1/3 ok<br>`testdata/h2spec/pass.txt`: generic/3.1/3 ok |
+| RFC 9113 6.2: a HEADERS frame on stream 0, or with padding as long as the payload or longer, is a connection error of type PROTOCOL_ERROR | Supported | `testdata/h2spec/pass.txt`: http2/6.2/3 ok<br>`testdata/h2spec/pass.txt`: http2/6.2/4 ok<br>`testdata/h2spec/pass.txt`: generic/3.2/2 ok |
+| RFC 9113 6.3: PRIORITY on stream 0 is a connection error of type PROTOCOL_ERROR; PRIORITY with a length other than 5 is a stream error of type FRAME_SIZE_ERROR | Supported | `testdata/h2spec/pass.txt`: http2/6.3/1 ok<br>`testdata/h2spec/pass.txt`: http2/6.3/2 ok |
+| RFC 9113 6.4: RST_STREAM on stream 0 is a PROTOCOL_ERROR and RST_STREAM with a length other than 4 is a FRAME_SIZE_ERROR (both connection errors) | Supported | `testdata/h2spec/pass.txt`: http2/6.4/1 ok<br>`testdata/h2spec/pass.txt`: http2/6.4/3 ok |
+| RFC 9113 6.5: SETTINGS with ACK and a payload, or with a length that is not a multiple of 6, is a FRAME_SIZE_ERROR; SETTINGS on a non-zero stream is a PROTOCOL_ERROR (both connection errors) | Supported | `testdata/h2spec/pass.txt`: http2/6.5/1 ok<br>`testdata/h2spec/pass.txt`: http2/6.5/2 ok<br>`testdata/h2spec/pass.txt`: http2/6.5/3 ok |
+| RFC 9113 6.5.2: SETTINGS_ENABLE_PUSH other than 0 or 1 and SETTINGS_MAX_FRAME_SIZE out of range are PROTOCOL_ERRORs; SETTINGS_INITIAL_WINDOW_SIZE above 2^31-1 is a FLOW_CONTROL_ERROR (all connection errors) | Supported | `testdata/h2spec/pass.txt`: http2/6.5.2/1 ok<br>`testdata/h2spec/pass.txt`: http2/6.5.2/2 ok<br>`testdata/h2spec/pass.txt`: http2/6.5.2/3 ok<br>`testdata/h2spec/pass.txt`: http2/6.5.2/4 ok<br>`std/internal/h2frame.TestSettings` |
+| RFC 9113 6.5.3: SETTINGS values are applied in the order they appear, and the ACK is sent right after | Supported | `testdata/h2spec/pass.txt`: http2/6.5.3/1 ok<br>`testdata/h2spec/pass.txt`: http2/6.5.3/2 ok |
+| RFC 9113 6.7: a PING without ACK gets a PING with ACK and the same payload, and a PING with ACK gets no reply; PING on a non-zero stream is a PROTOCOL_ERROR and PING with a length other than 8 is a FRAME_SIZE_ERROR (both connection errors) | Supported | `testdata/h2spec/pass.txt`: http2/6.7/1 ok<br>`testdata/h2spec/pass.txt`: http2/6.7/2 ok<br>`testdata/h2spec/pass.txt`: http2/6.7/3 ok<br>`testdata/h2spec/pass.txt`: http2/6.7/4 ok |
+| RFC 9113 6.8: GOAWAY on a non-zero stream is a connection error of type PROTOCOL_ERROR | Supported | `testdata/h2spec/pass.txt`: http2/6.8/1 ok |
+| RFC 9113 6.9: WINDOW_UPDATE with an increment of 0 is a stream error of type PROTOCOL_ERROR on a stream and a connection error on the connection; WINDOW_UPDATE with a length other than 4 is a connection error of type FRAME_SIZE_ERROR | Supported | `testdata/h2spec/pass.txt`: http2/6.9/1 ok<br>`testdata/h2spec/pass.txt`: http2/6.9/2 ok<br>`testdata/h2spec/pass.txt`: http2/6.9/3 ok |
+| RFC 9113 6.9.1: a WINDOW_UPDATE that takes a window above 2^31-1 ends the stream (stream window) or the connection (connection window) with FLOW_CONTROL_ERROR | Supported | `testdata/h2spec/pass.txt`: http2/6.9.1/2 ok<br>`testdata/h2spec/pass.txt`: http2/6.9.1/3 ok |
+| RFC 9113 6.9.2: when SETTINGS_INITIAL_WINDOW_SIZE changes, open stream windows move by the difference and nothing is sent until a negative window is positive again; a change that takes a window above the maximum is a connection error of type FLOW_CONTROL_ERROR | Supported | `testdata/h2spec/pass.txt`: http2/6.9.2/1 ok<br>`testdata/h2spec/pass.txt`: http2/6.9.2/2 ok<br>`testdata/h2spec/pass.txt`: http2/6.9.2/3 ok |
+| RFC 9113 6.10: CONTINUATION is accepted only right after HEADERS or CONTINUATION without END_HEADERS, and is otherwise a connection error of type PROTOCOL_ERROR, as is CONTINUATION on stream 0 | Supported | `testdata/h2spec/pass.txt`: http2/6.10/1 ok<br>`testdata/h2spec/pass.txt`: http2/6.10/3 ok<br>`testdata/h2spec/pass.txt`: http2/6.10/4 ok<br>`testdata/h2spec/pass.txt`: http2/6.10/5 ok<br>`testdata/h2spec/pass.txt`: http2/6.10/6 ok<br>`testdata/h2spec/pass.txt`: generic/3.10/2 ok |
+| RFC 9113 7: unknown error codes in GOAWAY and RST_STREAM trigger no special behavior | Supported | `testdata/h2spec/pass.txt`: http2/7/1 ok<br>`testdata/h2spec/pass.txt`: http2/7/2 ok |
+| RFC 9113 8.1: a HEADERS frame without END_STREAM after the one that opened the request, and pseudo-header fields in trailers, are malformed (trailers themselves are accepted) | Supported | `testdata/h2spec/pass.txt`: http2/8.1/1 ok<br>`testdata/h2spec/pass.txt`: http2/8.1.2.1/3 ok<br>`testdata/h2spec/pass.txt`: generic/4/4 ok |
+| RFC 9113 8.1.1: a malformed request is a stream error of type PROTOCOL_ERROR (including content-length differing from the sum of the DATA lengths) | Supported | `testdata/h2spec/pass.txt`: http2/8.1.2.6/1 ok<br>`testdata/h2spec/pass.txt`: http2/8.1.2.6/2 ok<br>`std/http/server.TestH2Malformed` |
+| RFC 9113 8.2, 8.2.1: uppercase in a field name, a line break in a value, and leading or trailing whitespace in a value are malformed | Supported | `testdata/h2spec/pass.txt`: http2/8.1.2/1 ok<br>`std/http/server.TestH2RequestBad` |
+| RFC 9113 8.2.2: connection-specific header fields (connection, keep-alive, proxy-connection, transfer-encoding, upgrade) and TE with a value other than trailers are malformed; responses carry no connection-specific header fields | Supported | `testdata/h2spec/pass.txt`: http2/8.1.2.2/1 ok<br>`testdata/h2spec/pass.txt`: http2/8.1.2.2/2 ok<br>`std/http/server.TestH2RequestBad`<br>`std/http/server.TestH2Head` |
+| RFC 9113 8.2.3: multiple cookie fields are joined with "; " into one before the application sees them | Supported | `std/http/server.TestH2RequestCookieBody` |
+| RFC 9113 8.3: unknown pseudo-header fields, response pseudo-header fields, pseudo-header fields after a regular field, and a repeated pseudo-header field are malformed | Supported | `testdata/h2spec/pass.txt`: http2/8.1.2.1/1 ok<br>`testdata/h2spec/pass.txt`: http2/8.1.2.1/2 ok<br>`testdata/h2spec/pass.txt`: http2/8.1.2.1/4 ok<br>`testdata/h2spec/pass.txt`: http2/8.1.2.3/5 ok<br>`testdata/h2spec/pass.txt`: http2/8.1.2.3/6 ok<br>`testdata/h2spec/pass.txt`: http2/8.1.2.3/7 ok<br>`std/http/server.TestH2RequestBad` |
+| RFC 9113 8.3.1: a missing :method, :scheme or :path, or an empty :path, is malformed; when :authority is present it is used instead of Host | Supported | `testdata/h2spec/pass.txt`: http2/8.1.2.3/1 ok<br>`testdata/h2spec/pass.txt`: http2/8.1.2.3/2 ok<br>`testdata/h2spec/pass.txt`: http2/8.1.2.3/3 ok<br>`testdata/h2spec/pass.txt`: http2/8.1.2.3/4 ok<br>`std/http/server.TestH2RequestCookieBody` |
+| RFC 9113 8.3.2: every response carries :status as its first field | Supported | `std/http/server.TestH2Head` |
+| RFC 9113 8.4: a PUSH_PROMISE received by the server is a connection error of type PROTOCOL_ERROR | Supported | `testdata/h2spec/pass.txt`: http2/8.2/1 ok |
+<!-- confsync:end claims h2-must yes,partial -->
+
+### HPACK (RFC 7541)
+
+<!-- confsync:begin claims hpack-must yes,partial -->
+| Item | Status | Evidence |
+|---|---|---|
+| RFC 7541 2.1: decoded fields keep their order in the block (Appendix C examples) | Supported | `std/internal/hpack.TestC3`<br>`std/internal/hpack.TestC4`<br>`std/internal/hpack.TestC5`<br>`std/internal/hpack.TestC6` |
+| RFC 7541 2.3.3, 6.1: an index beyond both tables, and index 0, are decoding errors | Supported | `testdata/h2spec/pass.txt`: hpack/2.3.3/1 ok<br>`testdata/h2spec/pass.txt`: hpack/2.3.3/2 ok<br>`testdata/h2spec/pass.txt`: hpack/6.1/1 ok<br>`std/internal/hpack.TestBad` |
+| RFC 7541 4.2: a dynamic table size update that is not at the start of a block is a decoding error | Supported | `testdata/h2spec/pass.txt`: hpack/4.2/1 ok<br>`std/internal/hpack.TestSizeUpdate` |
+| RFC 7541 5.1: an integer over the implementation limits is a decoding error | Supported | `std/internal/hpack.TestInt`<br>`std/internal/hpack.TestBad` |
+| RFC 7541 5.2: a Huffman string with padding longer than 7 bits, padding that is not the most significant bits of EOS, or the EOS symbol is a decoding error | Supported | `testdata/h2spec/pass.txt`: hpack/5.2/1 ok<br>`testdata/h2spec/pass.txt`: hpack/5.2/2 ok<br>`testdata/h2spec/pass.txt`: hpack/5.2/3 ok |
+| RFC 7541 6.3: a dynamic table size update above SETTINGS_HEADER_TABLE_SIZE is a decoding error | Supported | `testdata/h2spec/pass.txt`: hpack/6.3/1 ok<br>`std/internal/hpack.TestSizeUpdate` |
+<!-- confsync:end claims hpack-must yes,partial -->
+
+### Not applicable (HTTP/2)
+
+Requirements that do not apply because the feature is absent.
+
+<!-- confsync:begin claims h2-must na -->
+| Item | Status | Evidence |
+|---|---|---|
+| RFC 9113 4.3.1: rules for the table size update after a reduction (the sending HPACK uses no dynamic table, and the receiving table size is never reduced) | Not applicable | none |
+| RFC 9113 5.1.1, 5.1.2, 6.6, 8.4: rules for sending server push (the server opens no streams and sends no PUSH_PROMISE) | Not applicable | none |
+| RFC 9113 8.5: CONNECT rules (CONNECT is not implemented — a CONNECT request is malformed) | Not applicable | none |
+<!-- confsync:end claims h2-must na -->
+
+<!-- confsync:begin claims hpack-must na -->
+| Item | Status | Evidence |
+|---|---|---|
+| RFC 7541 4.2: table size rules for the encoder (the sending HPACK uses no dynamic table) | Not applicable | none |
+| RFC 7541 6.2.3, 7.1.3: rules for keeping never-indexed literals when forwarding (the server does not forward received fields) | Not applicable | none |
+<!-- confsync:end claims hpack-must na -->
+
 ## Not supported by design
 
 <!-- confsync:begin claims http-server intentional -->
 | Item | Status | Evidence |
 |---|---|---|
+| HTTP/2 server push (no PUSH_PROMISE is sent) and Upgrade: h2c (h2c is prior knowledge only) | Not supported (by design) | none |
 | Upgrade (including WebSocket), CONNECT (SSE is today's answer for server push — WebSocket moves to a 0.8+ pin once there is a real demand) | Not supported (by design) | none |
 <!-- confsync:end claims http-server intentional -->
 
@@ -182,6 +268,7 @@ Requirements that do not apply because the feature is absent.
 | Item | Status | Evidence |
 |---|---|---|
 | WHATWG URL Standard parsing (no browser-style lenient parsing — the strict RFC 3986 side) | Not supported (by design) | none |
+| Zone identifiers in IPv6 URL hosts (RFC 6874; an optional extension most browsers also reject) | Not supported (by design) | `std/http/client.TestTarget` |
 <!-- confsync:end claims http-url intentional -->
 
 <!-- confsync:begin claims http-cookie intentional -->
@@ -196,16 +283,13 @@ Requirements that do not apply because the feature is absent.
 | Item | Planned | Evidence of today's behavior |
 |---|---|---|
 | Range requests (206) | 0.8 | none |
-| HTTP/2 (h2 / h2c — external oracle h2spec) | 0.8 | none |
 | HTTP/3 (QUIC — external oracle quic-interop-runner) | 0.8 | none |
 <!-- confsync:end claims http-server planned -->
 
 <!-- confsync:begin claims http-client planned -->
 | Item | Planned | Evidence of today's behavior |
 |---|---|---|
-| Connecting to IPv6 addresses | 0.8 | `std/http/client.TestTarget` |
 | Decoding a response Content-Encoding (Accept-Encoding is not sent today) | 0.8 | none |
-| HTTP/2 | 0.8 | none |
 <!-- confsync:end claims http-client planned -->
 
 <!-- confsync:begin claims http-url planned -->

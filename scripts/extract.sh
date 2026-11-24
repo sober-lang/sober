@@ -9,6 +9,8 @@
 #
 # 生成物はcompiler/checkerのpackageに入ってビルドが通る（抽出器E2 — 手書きのコピーは退役。移行期の --hand〔旧 ≡ 新〕はE2で役目を終えて撤去）。
 # 前提: lean/ でlakeが使える（単発ではここでsober-extract / sober-genをビルドする — gatesの下は共有のビルドのフェーズがビルドする）・bin/sober
+# ゴールデンの並びを呼び手のロケールに依らせない
+export LC_ALL=C.UTF-8
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$PWD

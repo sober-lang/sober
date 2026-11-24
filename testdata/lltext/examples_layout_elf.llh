@@ -1,4 +1,4 @@
-@@full	83d8551d458f19d2	17300	541947
+@@full	8866a20b3a008590	17128	535352
 @globals	51d26577740cf5da	67	6112
 main.$layoutDecodeAt_0_1	ce4dae5882ca4800	127	4161
 main.$layoutDecode_0_0	a6adc68b514d92cc	2141	69944
@@ -6,7 +6,7 @@ main.$layoutDecode_0_1	a799ab9be8f682e1	1944	61328
 main.$layoutEncode_0_0	d6a8578c864c3032	1958	62087
 main.$layoutEncode_0_1	c4909266d2604de4	1550	48409
 main.elfIdent	5618548524de0c47	298	10494
-main.main	82127ab85d348e8a	1778	60280
+main.main	2a7606590c1724fa	1618	54078
 main.segment	6161dc4c05fc8aab	112	3806
 rt.cat8	8e67ba05682822cf	32	783
 rt.copy	3de19df856ca0737	27	640
@@ -43,8 +43,8 @@ rt.write_all	86bfd44897da62e9	58	1390
 rt.write_fd	50346736cb5c6f69	9	276
 rt.write_file	2426a5f18cf5ccce	75	2065
 sober_entry	745a659157ae2d4d	1863	51851
-std/builder.Build[byte]	1856c8945e852c63	588	18514
+std/builder.Build[byte]	f732278874880982	582	18315
 std/builder.Push[byte]	77908bc60447c93c	124	3900
-std/builder.pushSlow[byte]	e439a9d342048a1a	625	19559
+std/builder.pushSlow[byte]	1df310631d0922f4	619	19365
 std/layout.FailLength	f1cc112eb7e80a03	324	11771
 std/layout.FailWidth	1c2553acce69b571	376	13718

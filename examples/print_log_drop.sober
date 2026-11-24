@@ -1,0 +1,30 @@
+package main
+
+// print.Log never waits for the reader. A record it cannot write (here: one over the 32 KiB limit) is thrown away. The number thrown away
+// appears in the {"ts":…,"$dropped":{"n":N}} line right after them and in dropped of task.Ledger().logs (written + dropped = calls)
+
+import "std/os"
+import "std/print"
+import "std/task"
+
+type Note struct {
+    text string
+}
+
+func big(n int) string {
+    mut s := "x"
+    while len(bytes(s)) < n {
+        s = s + s
+    }
+    return s
+}
+
+func main() {
+    print.Log(Note{text: "before"})
+    print.Log(Note{text: big(40000)})
+    print.Log(Note{text: "after"})
+    // let the buffer drain (a worker writes its buffer out before it sleeps)
+    os.Sleep(20)
+    l := task.Ledger().logs
+    println("written ${l.written} dropped ${l.dropped}")
+}

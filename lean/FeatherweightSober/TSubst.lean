@@ -818,6 +818,14 @@ theorem tsubst_typing {ks : List Kind} {ts : List Ty} {Δ : Defs} (hΔ : SigOk �
       obtain ⟨r, w⟩ := ihe h hs hE hΓ hΛ
       exact ⟨.alloc r (Ty.tsubst_regionsBelow _ hrb (K w)) hbd (fun hm => Ty.tsubst_mutFree _ (hmf hm) (K w)),
         by simp [Ty.tvWf, w]⟩
+  | allocAt m r0 e ihe =>
+    intro f b d Γ Λ t he hs hE hΓ hΛ
+    simp only [Expr.src, Expr.tvWf] at hs hE
+    cases he with
+    | allocAt h hrb hbr hrd hmf hcf =>
+      obtain ⟨r, w⟩ := ihe h hs hE hΓ hΛ
+      exact ⟨.allocAt r (Ty.tsubst_regionsBelow _ hrb (K w)) hbr hrd (fun hm => Ty.tsubst_mutFree _ (hmf hm) (K w))
+        (Ty.tsubst_chanFree _ hcf (K w)), by simp [Ty.tvWf, w]⟩
   | deref e ihe =>
     intro f b d Γ Λ t he hs hE hΓ hΛ
     simp only [Expr.src, Expr.tvWf] at hs hE

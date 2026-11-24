@@ -1,0 +1,6 @@
+{"ok":true,"ty":{"k":"unit"}}
+(check exit 0)
+{"Name":"a","n":1}
+{"Kind":"h","n":2}
+{"kind":"h","n":2}
+(run exit 0)

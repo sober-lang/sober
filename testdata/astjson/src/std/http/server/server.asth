@@ -1,5 +1,6 @@
-@@full	800879fb1c15acba	81177	2799192
+@@full	7de7f6ffe001fd6f	81022	2793000
 @head	8316562a22836768	19	1876
+const ceilMin	242b0693da82d323	1	51
 const chunkHole	df5153f8b8d5ed97	1	73
 const continueLine	74d854abcb9cde37	1	85
 const gzMin	2873ddb62c606102	1	48
@@ -37,8 +38,7 @@ func Merge	191d769097da1ff0	33	1232
 func Mount	7e89b0c344ae2fa5	61	2391
 func Param	f6550d6f3bb6c8fc	145	4540
 func Query	f042e4e6e7742dc2	10	449
-func ServeConn	2590d28b07b053b1	93	3528
-func ServeWith	6073b54638390d02	60	2403
+func ServeConn	f2e5716da661bf98	43	1661
 func Static	bf8838aa385b6523	45	1851
 func Status	ac5b9147e53d8583	8	496
 func Text	58fc6741a4103f54	10	540
@@ -52,7 +52,8 @@ func bodyHead	5af98b6a3974e7b8	278	8810
 func cacheLine	8dd502190c058395	21	850
 func cacheValue	46ec00a111eb6bac	54	2205
 func carryIn	7389dc7c5082149b	123	4278
-func carryOut	10928c91ebd1c82e	203	6775
+func carryOut	2e27ab8e696c0e01	236	7783
+func ceilNeed	d495b13c928f2030	24	909
 func chain	113f5d2d5737af5a	93	3206
 func checkField	3289f8659900973a	13	595
 func chunkDone	4978afd8cebe0c76	53	1873
@@ -130,12 +131,12 @@ func segEnd	181685924feb06ec	23	871
 func segKind	dcadf3c0177f3ae9	36	1202
 func sendArmed	90c22d0e6a5ec405	23	886
 func sendCounted	dd03f498700d8e19	46	1606
-func sendFused	024a23cd216574d5	19	702
+func sendFused	19c8ae8c3e6c6802	32	1086
 func sendGather	24248e7b42273c0e	60	2006
-func sendTimed	1e7ce54c5745c74e	20	769
+func sendTimed	5a37d832406ddda7	34	1179
 func sendUnder	60a0a6a1d772209b	114	3936
 func serveBuf	11856165a685fe42	783	25006
-func serveCore	af38f25fa0e3ad6e	560	18040
+func serveCore	d19db37b3eb9ab99	554	17938
 func sharedValue	21a976707c73f749	36	1255
 func singleField	12e365b788b4d6c0	36	1332
 func skipOWS	45b22e7ba5dafd85	28	1061
@@ -185,6 +186,6 @@ type Validators	d7f53d6db78ea26e	4	231
 type WorkNoCompress	51895128025f1159	1	75
 type badHost	b7c40183d02e1f10	1	68
 type badTarget	952bcf487817baf7	1	70
-type carry	c462b55a6923b7fd	12	597
+type carry	4a6adf1ddc091e98	15	740
 type frame	35ab14c9262521a6	10	502
 type validSeal	de736f69014fe2f7	1	71

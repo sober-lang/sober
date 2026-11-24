@@ -1,0 +1,21 @@
+package main
+
+// 接続ごと・HTTP/2のストリームごとのtaskで走るhandlerは、mutの束縛を捕獲できない（checkとbuildが拒否する — 共有の状態はtask.Domainへ）
+
+import "std/http/server"
+import "std/net"
+
+func run() error? {
+    mut n := 0
+    for l <- net.Listen("127.0.0.1:0")? {
+        net.Serve(l, (c net.Conn) => http.server.ServeConn(c, (r http.server.Request) => {
+            n = n + 1
+            http.server.Text("x")
+        }))?
+    }
+    return nil
+}
+
+func main() int {
+    return if run() == nil { 0 } else { 1 }
+}

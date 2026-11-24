@@ -42,14 +42,11 @@ jobs:
       - name: Build stage2 (bootstrap chain)
         run: scripts/stage2.sh
 
-      # The released binary is stage3: stage2 builds the compiler itself (with the std L0 baked in), the same
-      # steps scripts/stages.sh checks. --check rebuilds it with itself and requires the same ELF (fixed point).
-      - name: Build stage3 (the released binary) and check the fixed point
-        run: scripts/stage3.sh --check -o out/stage3/sober
-
       # The release-only gates: checks taken out of the per-merge gate run (scripts/gates.sh --release has them
-      # too). Run here, before anything is published, so a release cannot skip them. They read the stage2 built
-      # above and the corpus in examples/ and testdata/ (no Lean, no external downloads).
+      # too). Run here, before stage3 is built, so a release cannot skip them: stage3 bakes the cache values of std
+      # and rt into the released binary, and only values from a run that passed these gates may be baked (the CI
+      # has no record of the server runs that scripts/releaseok.sh reads, so passing them in this job is the mark).
+      # They read the stage2 built above and the corpus in examples/ and testdata/ (no Lean, no external downloads).
       - name: Release-only gates (split-check cache and its keys)
         env:
           JOBS: 4
@@ -59,6 +56,12 @@ jobs:
         run: |
           scripts/splitcache.sh
           scripts/cachekey.sh
+
+      # The released binary is stage3: stage2 builds the compiler itself (with the std L0 and the std / rt cache
+      # values baked in — scripts/stagelib.sh stage_bake). --check rebuilds it with itself and requires the same
+      # ELF (fixed point).
+      - name: Build stage3 (the released binary) and check the fixed point
+        run: scripts/stage3.sh --check -o out/stage3/sober
 
       - name: Smoke test
         run: |

@@ -1,0 +1,91 @@
+package main
+
+// scope の子が死ぬと、兄弟の tls.Serve の待ちも切れる（language.md 28 節「キャンセルは協調的」— 子の死 = その scope の期限が今来た）。
+// case 0 = 誰も繋がない（accept の待ち）・case 1 = 平文で繋いだまま何も送らない相手（handshake の受けの待ち）。tls.Serve は io.Expired を返し、
+// scope は子の死を受ける（died）
+
+import "std/io"
+import "std/iter"
+import "std/net"
+import "std/os"
+import "std/task"
+import "std/tls"
+
+@embed("testdata/crypto/httparena-server.*")
+const Certs = map[string]string{}
+
+func file(p string) string {
+    v := Certs[p]
+    return if v != nil { v } else { "" }
+}
+
+func main() {
+    cfg, e := tls.Parse(file("testdata/crypto/httparena-server.crt"), file("testdata/crypto/httparena-server.key"))
+    if e != nil {
+        println("parse failed")
+        return
+    }
+    for k <- iter.Range(0, 2) {
+        port := freePort() catch 0
+        _, se := task.Run((s task.Scope) => {
+            _ = task.Spawn(s, () => {
+                println("case ${k}: serve ${label(tls.Serve("127.0.0.1:${port}", cfg, echo))}")
+                0
+            })
+            _ = task.Spawn(s, () => peer(k, port))
+            0
+        })
+        println("case ${k}: scope died=${se != nil}")
+    }
+}
+
+func freePort() (int, error?) {
+    mut port := 0
+    for l <- net.Listen("127.0.0.1:0")? {
+        port = net.Port(l)
+    }
+    return port, nil
+}
+
+// 相手の役: case 1 は平文で繋いで（handshake を始めずに）Serve が受けの待ちに入った頃に死ぬ。case 0 は繋がずに死ぬ
+func peer(k int, port int) int {
+    os.Sleep(50)
+    if k == 1 {
+        _ = hold(port)
+    }
+    return die()
+}
+
+// 平文で繋ぎ、Serve が handshake の受けを待つ間（50 ミリ秒）持ってから、繋いだまま死ぬ（閉じるのは task の出口）
+func hold(port int) error? {
+    for c <- net.Dial("127.0.0.1:${port}")? {
+        net.Flush(c)?
+        os.Sleep(50)
+        _ = die()
+    }
+    return nil
+}
+
+func die() int {
+    xs := []int{1}
+    return xs[9]
+}
+
+func echo(c net.Conn) error? {
+    for b <- net.Recv(c)? {
+        net.Send(c, b)?
+    }
+    return nil
+}
+
+func label(e error?) string {
+    return switch e {
+    case nil: "done"
+    case io.Expired{}: "expired"
+    case io.Timeout{}: "timeout"
+    case io.Closed{}: "closed"
+    case io.Denied{}: "denied"
+    case io.Other{errno}: "errno ${errno}"
+    case net.Bad{}: "bad"
+    }
+}

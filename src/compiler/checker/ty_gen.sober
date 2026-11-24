@@ -910,7 +910,9 @@ func sub(st mut S, a0 int, a1 int) bool {
     case TDom:
         // FS.Ty.sub.eq_8
         if g_a1 == TDom {
-            return (((tA(mut st, a0)) <= (tA(mut st, a1))) && (tyEq(mut st, (tB(mut st, a0)), (tB(mut st, a1)))))
+            v_t := tB(mut st, a0)
+            v_t_p := tB(mut st, a1)
+            return ((((tA(mut st, a0)) <= (tA(mut st, a1))) && sub(mut st, v_t, v_t_p)) && (tyEq(mut st, relocR(mut st, 0, v_t), relocR(mut st, 0, v_t_p))))
         }
     case TMuRs:
         // FS.Ty.sub.eq_9

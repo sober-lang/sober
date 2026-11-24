@@ -6,6 +6,8 @@
 # sober.mod を書き換えたら check の答えの再生が外れること（読んだファイルの照合に sober.mod が入る）を見る
 #   scripts/modcheck.sh            照合
 #   scripts/modcheck.sh --regen    ゴールデンを作り直す（差分を見てからコミット）
+# ゴールデンの並びを呼び手のロケールに依らせない
+export LC_ALL=C.UTF-8
 set -uo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$PWD

@@ -1,10 +1,10 @@
-@@full	b8db85448c5f8fea	6330	178041
+@@full	062fceaeeebaf194	6421	180910
 @head	23ff3a59a5992b61	0	264
 func TestCountOf	7b5bf372e5dbbaf4	24	814
 func TestDecode	f56941a9c02d66ca	142	4534
 func TestEncode	5173108e9cf678a9	125	4398
 func TestNumericText	8e22c8362250b9b3	137	4111
-func TestParseUrl	858d9e76f645d383	84	2945
+func TestParseUrl	786ad71627e663c5	102	3529
 func TestRowJsonText	45e8ca8a486202ed	165	5083
 func TestRowUtf8	58e96eedaa2ab2b3	172	5420
 func TestScaled	90ce0d2857cd94f4	109	3747

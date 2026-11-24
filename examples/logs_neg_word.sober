@@ -1,0 +1,7 @@
+@logs(file)
+package main
+
+// 負例（loaderが拒否）: `@logs` の語はstdoutかstderr
+
+func main() {
+}

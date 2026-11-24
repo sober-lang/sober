@@ -6,6 +6,8 @@
 #   ④ shape[T] の T が別 package の struct（testdata/jsonpkg — 合成ファイルの参照名の import）: 実行の出力が app.out と一致
 #   ⑤ json.Encodeの高速パス（上界 → 1本確保 → 位置で書く）≡ builderのパス（EncodeWithに空の辞書）: testdata/jsonfastの無作為の値3,000件でバイト一致
 #   --regen: expect.txt を書き直す（緑の木からだけ）・--go: Go encoding/json の判定と並べて表示（scripts/oracles/jsonsuite.go）
+# ゴールデンの並びを呼び手のロケールに依らせない
+export LC_ALL=C.UTF-8
 set -uo pipefail
 cd "$(dirname "$0")/.."
 SOBER=${SOBER:-./bin/sober}

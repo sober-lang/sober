@@ -1,0 +1,452 @@
+package hpack
+
+// RFC 7541 付録Cの例（C.1〜C.6）・符号化と復号の往復・誤りの形・解いた量の上限（HPACKの爆弾）
+
+import "std/iter"
+
+// 16進の列（空白と改行は読み飛ばす）
+func unhex(s string) []byte {
+    b := bytes(s)
+    mut r := mut []byte{}
+    mut i := 0
+    while i < len(b) {
+        if int(b[i]) <= 0x20 {
+            i += 1
+        } else {
+            r = append(r, byte(hex2(b, i)))
+            i += 2
+        }
+    }
+    return freeze(r)
+}
+
+func eqb(a []byte, b []byte) bool {
+    if len(a) != len(b) {
+        return false
+    }
+    for i <- iter.Range(0, len(a)) {
+        if a[i] != b[i] {
+            return false
+        }
+    }
+    return true
+}
+
+func cat(r mut []byte, s []byte) {
+    for i <- iter.Range(0, len(s)) {
+        r = append(r, s[i])
+    }
+}
+
+// 解いたヘッダの並びを "名前: 値\n" の列にする
+func render(out []byte, fs []int) []byte {
+    mut r := mut []byte{}
+    mut k := 0
+    while k < len(fs) {
+        cat(mut r, out[fs[k]:fs[k] + fs[k + 1]])
+        cat(mut r, bytes(": "))
+        cat(mut r, out[fs[k + 2]:fs[k + 2] + fs[k + 3]])
+        r = append(r, byte(10))
+        k += 4
+    }
+    return freeze(r)
+}
+
+// 動的表の中身（新しい順に "名前: 値\n"）
+func table(d Dec) []byte {
+    mut r := mut []byte{}
+    for k <- iter.Range(0, d.n) {
+        e := ((d.first + d.n - 1 - k) & (entMax - 1)) * 3
+        for j <- iter.Range(0, d.ents[e + 1]) {
+            r = append(r, d.ring[(d.ents[e] + j) & ringMask])
+        }
+        cat(mut r, bytes(": "))
+        for j <- iter.Range(0, d.ents[e + 2]) {
+            r = append(r, d.ring[(d.ents[e] + d.ents[e + 1] + j) & ringMask])
+        }
+        r = append(r, byte(10))
+    }
+    return freeze(r)
+}
+
+// blkを解き、ヘッダの並び・動的表・大きさの和が期待どおりか
+func step(d mut Dec, blk string, want string, tab string, size int) {
+    mut out := mut []byte{}
+    mut fs := mut []int{}
+    st := Decode(mut d, unhex(blk), mut out, mut fs, 1 << 20)
+    assert(st == Ok)
+    assert(eqb(render(out, fs), bytes(want)))
+    assert(eqb(table(d), bytes(tab)))
+    assert(d.size == size)
+}
+
+func setup(d mut Dec, max int) {
+    Init(mut d)
+    d.max = max
+}
+
+// C.1 整数の表現
+func TestInt() {
+    v1, q1 := readInt(unhex("0a"), 0, 5)
+    assert(v1 == 10 && q1 == 1)
+    v2, q2 := readInt(unhex("1f9a0a"), 0, 5)
+    assert(v2 == 1337 && q2 == 3)
+    v3, q3 := readInt(unhex("2a"), 0, 8)
+    assert(v3 == 42 && q3 == 1)
+    mut o := mut []byte{}
+    putInt(mut o, 0, 5, 1337)
+    assert(eqb(o, unhex("1f9a0a")))
+    // 続きのバイトが切れている
+    _, q4 := readInt(unhex("1f9a"), 0, 5)
+    assert(q4 < 0)
+    // 大きすぎる値
+    _, q5 := readInt(unhex("1fffffffffff01"), 0, 5)
+    assert(q5 < 0)
+    for v <- iter.Range(0, 70000) {
+        mut b := mut []byte{}
+        putInt(mut b, 0x40, 6, v)
+        w, q := readInt(b, 0, 6)
+        assert(w == v && q == len(b) && (int(b[0]) & 0xc0) == 0x40)
+    }
+}
+
+// C.2 1つずつのヘッダ
+func TestC2() {
+    mut d := Dec{}
+    setup(mut d, 4096)
+    step(mut d, "400a 6375 7374 6f6d 2d6b 6579 0d63 7573 746f 6d2d 6865 6164 6572", "custom-key: custom-header\n", "custom-key: custom-header\n", 55)
+    mut d2 := Dec{}
+    setup(mut d2, 4096)
+    step(mut d2, "040c 2f73 616d 706c 652f 7061 7468", ":path: /sample/path\n", "", 0)
+    mut d3 := Dec{}
+    setup(mut d3, 4096)
+    step(mut d3, "1008 7061 7373 776f 7264 0673 6563 7265 74", "password: secret\n", "", 0)
+    mut d4 := Dec{}
+    setup(mut d4, 4096)
+    step(mut d4, "82", ":method: GET\n", "", 0)
+}
+
+// C.3 リクエスト（Huffmanなし）
+func TestC3() {
+    mut d := Dec{}
+    setup(mut d, 4096)
+    step(mut d, "8286 8441 0f77 7777 2e65 7861 6d70 6c65 2e63 6f6d",
+        ":method: GET\n:scheme: http\n:path: /\n:authority: www.example.com\n", ":authority: www.example.com\n", 57)
+    step(mut d, "8286 84be 5808 6e6f 2d63 6163 6865",
+        ":method: GET\n:scheme: http\n:path: /\n:authority: www.example.com\ncache-control: no-cache\n",
+        "cache-control: no-cache\n:authority: www.example.com\n", 110)
+    step(mut d, "8287 85bf 400a 6375 7374 6f6d 2d6b 6579 0c63 7573 746f 6d2d 7661 6c75 65",
+        ":method: GET\n:scheme: https\n:path: /index.html\n:authority: www.example.com\ncustom-key: custom-value\n",
+        "custom-key: custom-value\ncache-control: no-cache\n:authority: www.example.com\n", 164)
+}
+
+// C.4 リクエスト（Huffman）
+func TestC4() {
+    mut d := Dec{}
+    setup(mut d, 4096)
+    step(mut d, "8286 8441 8cf1 e3c2 e5f2 3a6b a0ab 90f4 ff",
+        ":method: GET\n:scheme: http\n:path: /\n:authority: www.example.com\n", ":authority: www.example.com\n", 57)
+    step(mut d, "8286 84be 5886 a8eb 1064 9cbf",
+        ":method: GET\n:scheme: http\n:path: /\n:authority: www.example.com\ncache-control: no-cache\n",
+        "cache-control: no-cache\n:authority: www.example.com\n", 110)
+    step(mut d, "8287 85bf 4088 25a8 49e9 5ba9 7d7f 8925 a849 e95b b8e8 b4bf",
+        ":method: GET\n:scheme: https\n:path: /index.html\n:authority: www.example.com\ncustom-key: custom-value\n",
+        "custom-key: custom-value\ncache-control: no-cache\n:authority: www.example.com\n", 164)
+}
+
+const c5r1 = ":status: 302\ncache-control: private\ndate: Mon, 21 Oct 2013 20:13:21 GMT\nlocation: https://www.example.com\n"
+const c5t1 = "location: https://www.example.com\ndate: Mon, 21 Oct 2013 20:13:21 GMT\ncache-control: private\n:status: 302\n"
+const c5r2 = ":status: 307\ncache-control: private\ndate: Mon, 21 Oct 2013 20:13:21 GMT\nlocation: https://www.example.com\n"
+const c5t2 = ":status: 307\nlocation: https://www.example.com\ndate: Mon, 21 Oct 2013 20:13:21 GMT\ncache-control: private\n"
+const c5r3 = ":status: 200\ncache-control: private\ndate: Mon, 21 Oct 2013 20:13:22 GMT\nlocation: https://www.example.com\ncontent-encoding: gzip\nset-cookie: foo=ASDJKHQKBZXOQWEOPIUAXQWEOIU; max-age=3600; version=1\n"
+const c5t3 = "set-cookie: foo=ASDJKHQKBZXOQWEOPIUAXQWEOIU; max-age=3600; version=1\ncontent-encoding: gzip\ndate: Mon, 21 Oct 2013 20:13:22 GMT\n"
+
+// C.5 レスポンス（Huffmanなし・表の大きさ256で追い出しが起きる）
+func TestC5() {
+    mut d := Dec{}
+    setup(mut d, 256)
+    step(mut d, "4803 3330 3258 0770 7269 7661 7465 611d 4d6f 6e2c 2032 3120 4f63 7420 3230 3133 2032 303a 3133 3a32 3120 474d 546e 1768 7474 7073 3a2f 2f77 7777 2e65 7861 6d70 6c65 2e63 6f6d",
+        c5r1, c5t1, 222)
+    step(mut d, "4803 3330 37c1 c0bf", c5r2, c5t2, 222)
+    step(mut d, "88c1 611d 4d6f 6e2c 2032 3120 4f63 7420 3230 3133 2032 303a 3133 3a32 3220 474d 54c0 5a04 677a 6970 7738 666f 6f3d 4153 444a 4b48 514b 425a 584f 5157 454f 5049 5541 5851 5745 4f49 553b 206d 6178 2d61 6765 3d33 3630 303b 2076 6572 7369 6f6e 3d31",
+        c5r3, c5t3, 215)
+}
+
+// C.6 レスポンス（Huffman・表の大きさ256）
+func TestC6() {
+    mut d := Dec{}
+    setup(mut d, 256)
+    step(mut d, "4882 6402 5885 aec3 771a 4b61 96d0 7abe 9410 54d4 44a8 2005 9504 0b81 66e0 82a6 2d1b ff6e 919d 29ad 1718 63c7 8f0b 97c8 e9ae 82ae 43d3",
+        c5r1, c5t1, 222)
+    step(mut d, "4883 640e ffc1 c0bf", c5r2, c5t2, 222)
+    step(mut d, "88c1 6196 d07a be94 1054 d444 a820 0595 040b 8166 e084 a62d 1bff c05a 839b d9ab 77ad 94e7 821d d7f2 e6c7 b335 dfdf cd5b 3960 d5af 2708 7f36 72c1 ab27 0fb5 291f 9587 3160 65c0 03ed 4ee5 b106 3d50 07",
+        c5r3, c5t3, 215)
+}
+
+func bad(blk string) {
+    mut d := Dec{}
+    setup(mut d, 4096)
+    mut out := mut []byte{}
+    mut fs := mut []int{}
+    assert(Decode(mut d, unhex(blk), mut out, mut fs, 1 << 20) == Bad)
+}
+
+// 誤りの形はBad
+func TestBad() {
+    // 添字0・表の外の添字（静的表61まで・動的表は空）
+    bad("80")
+    bad("be")
+    bad("7e00")
+    // 表の大きさの更新がブロックの頭でない・上限4096を越える
+    bad("823f e11f")
+    bad("3fe21f")
+    // 文字列の長さがブロックを越える・値が無い
+    bad("0005 6162")
+    bad("0003 616263")
+    // Huffman: 8ビットの埋め草・0の埋め草・EOS（30ビットの1）
+    bad("0081 ff 00")
+    bad("0081 00 00")
+    bad("0084 ffff fffc 00")
+    // 整数が切れている
+    bad("0f")
+}
+
+// 表の大きさの更新（頭なら何度でも）と追い出し
+func TestSizeUpdate() {
+    mut d := Dec{}
+    setup(mut d, 4096)
+    step(mut d, "400a 6375 7374 6f6d 2d6b 6579 0d63 7573 746f 6d2d 6865 6164 6572", "custom-key: custom-header\n", "custom-key: custom-header\n", 55)
+    step(mut d, "20 3f e11f 82", ":method: GET\n", "", 0)
+    assert(d.max == 4096)
+}
+
+// 乱数の列（xorshift）
+func next(x int) int {
+    mut v := x ^ (x << 13)
+    v = v ^ (v >> 7)
+    return v ^ (v << 17)
+}
+
+// 符号化（Field・Status）して解くと元に戻る。Huffmanの有り無し・名前の大文字・静的表の名前・全バイト
+func TestRoundtrip() {
+    mut x := 88172645463325252
+    names := []string{"content-type", "Content-Length", "x-custom", "date", "server", "set-cookie", "x-a", "Vary"}
+    for it <- iter.Range(0, 400) {
+        mut blk := mut []byte{}
+        mut want := mut []byte{}
+        x = next(x)
+        code := 100 + (x & 0x7fffffff) % 500
+        Status(mut blk, code)
+        cat(mut want, bytes(":status: "))
+        want = append(want, byte(0x30 + (code / 100) % 10))
+        want = append(want, byte(0x30 + (code / 10) % 10))
+        want = append(want, byte(0x30 + code % 10))
+        want = append(want, byte(10))
+        x = next(x)
+        nf := (x & 0x7fffffff) % 6
+        for f <- iter.Range(0, nf) {
+            x = next(x)
+            nm := bytes(names[(x & 0x7fffffff) % len(names)])
+            x = next(x)
+            n := (x & 0x7fffffff) % 300
+            mut v := mut []byte{}
+            for j <- iter.Range(0, n) {
+                x = next(x)
+                // 半分は印字できる文字・半分は全バイト
+                v = append(v, if it % 2 == 0 { byte(0x20 + (x & 0x7fffffff) % 95) } else { byte(x & 0xff) })
+            }
+            Field(mut blk, nm, v, it % 3 != 0)
+            for j <- iter.Range(0, len(nm)) {
+                want = append(want, lower(nm[j]))
+            }
+            cat(mut want, bytes(": "))
+            cat(mut want, v)
+            want = append(want, byte(10))
+        }
+        mut d := Dec{}
+    setup(mut d, 4096)
+        mut out := mut []byte{}
+        mut fs := mut []int{}
+        assert(Decode(mut d, blk, mut out, mut fs, 1 << 20) == Ok)
+        assert(eqb(render(out, fs), want))
+        assert(d.n == 0)
+    }
+}
+
+// 静的表の名前は添字で書く・表に無い名前は字句・:statusの表の値は1バイト
+func TestEncodeForm() {
+    mut b := mut []byte{}
+    Field(mut b, bytes("Content-Type"), bytes("a"), false)
+    assert(eqb(b, unhex("0f10 0161")))
+    mut c := mut []byte{}
+    Status(mut c, 200)
+    Status(mut c, 418)
+    assert(eqb(c, unhex("88 0803 343138")))
+    mut e := mut []byte{}
+    Field(mut e, bytes("www-authenticate"), bytes(""), false)
+    assert(eqb(e, unhex("0f2e 00")))
+    mut h := mut []byte{}
+    huffEncode(mut h, bytes("www.example.com"))
+    assert(eqb(h, unhex("f1e3 c2e5 f23a 6ba0 ab90 f4ff")))
+}
+
+// HPACKの爆弾: 大きい項目を1つ表に入れ、1バイトの添字で何度も引く。上限で止まり（outは上限で抑えられる）、
+// 表の更新は最後まで続くので次のブロックも解ける
+func TestBomb() {
+    mut d := Dec{}
+    setup(mut d, 4096)
+    mut blk := mut []byte{}
+    // 名前 "x"・値 4000 バイトを表に足す
+    blk = append(blk, byte(0x40))
+    putInt(mut blk, 0, 7, 1)
+    blk = append(blk, byte(0x78))
+    putInt(mut blk, 0, 7, 4000)
+    for i <- iter.Range(0, 4000) {
+        blk = append(blk, byte(0x61))
+    }
+    for i <- iter.Range(0, 5000) {
+        blk = append(blk, byte(0xbe))
+    }
+    // 上限を越えた後の、表に足す字句（表は更新される）
+    blk = append(blk, byte(0x40))
+    putInt(mut blk, 0, 7, 1)
+    blk = append(blk, byte(0x79))
+    putInt(mut blk, 0, 7, 1)
+    blk = append(blk, byte(0x62))
+    mut out := mut []byte{}
+    mut fs := mut []int{}
+    assert(Decode(mut d, freeze(blk), mut out, mut fs, 8192) == Large)
+    assert(len(out) <= 8192)
+    // 表は "y: b" と "x: aaa…"
+    assert(d.n == 2 && d.size == 4033 + 34)
+    mut out2 := mut []byte{}
+    mut fs2 := mut []int{}
+    assert(Decode(mut d, unhex("be"), mut out2, mut fs2, 8192) == Ok)
+    assert(eqb(render(out2, fs2), bytes("y: b\n")))
+}
+
+// 表の大きさを越える項目は表を空にする（RFC 7541 4.4）。名前を表から引いた項目が、その名前の項目を追い出す形
+func TestEvictSelf() {
+    mut d := Dec{}
+    setup(mut d, 100)
+    step(mut d, "400a 6375 7374 6f6d 2d6b 6579 0d63 7573 746f 6d2d 6865 6164 6572", "custom-key: custom-header\n", "custom-key: custom-header\n", 55)
+    // 名前は動的表の62番（追い出される項目）・値は20バイト（足すと100を越える）
+    step(mut d, "7e 14 7676 7676 7676 7676 7676 7676 7676 7676 7676 7676", "custom-key: vvvvvvvvvvvvvvvvvvvv\n", "custom-key: vvvvvvvvvvvvvvvvvvvv\n", 62)
+    mut big := mut []byte{}
+    big = append(big, byte(0x40))
+    putInt(mut big, 0, 7, 1)
+    big = append(big, byte(0x7a))
+    putInt(mut big, 0, 7, 80)
+    for i <- iter.Range(0, 80) {
+        big = append(big, byte(0x7a))
+    }
+    mut out := mut []byte{}
+    mut fs := mut []int{}
+    assert(Decode(mut d, freeze(big), mut out, mut fs, 1 << 20) == Ok)
+    assert(d.n == 0 && d.size == 0)
+}
+
+// 表の参照の模型（古い順の名前と値の列。loより前は追い出した項目）と照合する乱択: 表に足す字句（名前は字句・静的表・動的表）・表の添字・
+// 表に足さない字句・ブロックの頭の大きさの更新を混ぜ、輪の折り返しと項目の数の上限をまたぐ
+func TestTableModel() {
+    mut x := 2463534242
+    mut d := Dec{}
+    setup(mut d, 4096)
+    mut mn := mut [][]byte{}
+    mut mv := mut [][]byte{}
+    mut msize := 0
+    mut mmax := 4096
+    mut lo := 0
+    for blkNo <- iter.Range(0, 300) {
+        mut blk := mut []byte{}
+        mut want := mut []byte{}
+        x = next(x)
+        if (x & 0x7fffffff) % 7 == 0 {
+            x = next(x)
+            mmax = if (x & 1) == 0 { 4096 } else { (x & 0x7fffffff) % 4097 }
+            putInt(mut blk, 0x20, 5, mmax)
+            while msize > mmax {
+                msize -= len(mn[lo]) + len(mv[lo]) + 32
+                lo += 1
+            }
+        }
+        x = next(x)
+        nf := 1 + (x & 0x7fffffff) % 12
+        for f <- iter.Range(0, nf) {
+            x = next(x)
+            kind := (x & 0x7fffffff) % 5
+            x = next(x)
+            n := if (x & 0xff) < 8 { (x & 0x7fffffff) % 3000 } else { (x & 0x7fffffff) % 40 }
+            mut v := mut []byte{}
+            for j <- iter.Range(0, n) {
+                x = next(x)
+                v = append(v, byte(0x61 + (x & 0x7fffffff) % 26))
+            }
+            x = next(x)
+            hf := (x & 1) == 0
+            if kind == 4 && len(mn) > lo {
+                // 動的表の添字
+                x = next(x)
+                k := (x & 0x7fffffff) % (len(mn) - lo)
+                putInt(mut blk, 0x80, 7, 62 + k)
+                cat(mut want, mn[len(mn) - 1 - k])
+                cat(mut want, bytes(": "))
+                cat(mut want, mv[len(mv) - 1 - k])
+                want = append(want, byte(10))
+            } else {
+                // 名前: 字句・静的表・動的表
+                mut nm := mut []byte{}
+                x = next(x)
+                src := (x & 0x7fffffff) % 3
+                ix := kind != 3
+                hi := if ix { 0x40 } else { 0 }
+                pb := if ix { 6 } else { 4 }
+                if src == 1 {
+                    x = next(x)
+                    i := 1 + (x & 0x7fffffff) % 61
+                    putInt(mut blk, hi, pb, i)
+                    cat(mut nm, bytes(staticName(i)))
+                } else if src == 2 && len(mn) > lo {
+                    x = next(x)
+                    k := (x & 0x7fffffff) % (len(mn) - lo)
+                    putInt(mut blk, hi, pb, 62 + k)
+                    cat(mut nm, mn[len(mn) - 1 - k])
+                } else {
+                    x = next(x)
+                    for j <- iter.Range(0, 1 + (x & 0x7fffffff) % 20) {
+                        x = next(x)
+                        nm = append(nm, byte(0x61 + (x & 0x7fffffff) % 26))
+                    }
+                    putInt(mut blk, hi, pb, 0)
+                    putStr(mut blk, nm, hf)
+                }
+                putStr(mut blk, v, hf)
+                cat(mut want, nm)
+                cat(mut want, bytes(": "))
+                cat(mut want, v)
+                want = append(want, byte(10))
+                if ix {
+                    s := len(nm) + len(v) + 32
+                    if s > mmax {
+                        lo = len(mn)
+                        msize = 0
+                    } else {
+                        while msize + s > mmax {
+                            msize -= len(mn[lo]) + len(mv[lo]) + 32
+                            lo += 1
+                        }
+                        mn = append(mn, freeze(nm))
+                        mv = append(mv, freeze(v))
+                        msize += s
+                    }
+                }
+            }
+        }
+        mut out := mut []byte{}
+        mut fs := mut []int{}
+        assert(Decode(mut d, freeze(blk), mut out, mut fs, 1 << 30) == Ok)
+        assert(eqb(render(out, fs), want))
+        assert(d.size == msize && d.n == len(mn) - lo)
+    }
+}
+

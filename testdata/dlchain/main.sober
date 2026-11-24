@@ -1,0 +1,57 @@
+package main
+
+// 期限の待ちのチェーン（epollのパスの EP_DLQ・双方向 — netpoll.sober awPush / awCut）の自己検査の題材（scripts/iouring.sh のミュータント50）:
+// 受け付けないlistenerへ3本の task が接続し、それぞれ自分の期限（300・100・500 ms）つきの scope の中で Recv を待つ（3本がチェーンに並ぶ —
+// 後に待った方が頭）。真ん中の待ち手が最初に期限で外れ（途中の節を外す）、残りが順に外れる。それを2周する（1周目に壊れたチェーンを2周目が歩く）
+
+import "std/io"
+import "std/iter"
+import "std/net"
+import "std/os"
+import "std/task"
+
+func main() {
+    println(run() catch "listen failed")
+}
+
+func run() (string, error?) {
+    for l <- net.Listen("127.0.0.1:0")? {
+        addr := "127.0.0.1:${net.Port(l)}"
+        for round <- iter.Range(0, 2) {
+            r, _ := task.Run((s task.Scope) => {
+                h0 := task.Spawn(s, () => waitOne(addr, 300))
+                os.Sleep(20)
+                h1 := task.Spawn(s, () => waitOne(addr, 100))
+                os.Sleep(20)
+                h2 := task.Spawn(s, () => waitOne(addr, 500))
+                "${task.Join(h0)} ${task.Join(h1)} ${task.Join(h2)}"
+            })
+            println("round ${round}: ${r}")
+        }
+    }
+    return "done", nil
+}
+
+func waitOne(addr string, ms int) string {
+    r, _ := task.Run((s task.Scope) => label(waitRecv(addr)), deadline: ms * task.MS)
+    return r
+}
+
+func label(e error?) string {
+    return switch e {
+    case nil: "done"
+    case io.Expired{}: "expired"
+    default: "other"
+    }
+}
+
+// 誰も送らない（受け付けもしない）接続を Recv で待つ
+func waitRecv(addr string) error? {
+    for c <- net.Dial(addr)? {
+        for chunk <- net.Recv(c)? {
+            _ = chunk
+            break
+        }
+    }
+    return nil
+}

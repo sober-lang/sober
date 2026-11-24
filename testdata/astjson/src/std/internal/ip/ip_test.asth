@@ -1,0 +1,9 @@
+@@full	898501f1dee1ee3b	4477	127582
+@head	fcc54ec4160b5906	0	148
+func TestFormat6Rfc5952	5c916cd0b2ba3929	163	5387
+func TestParse4	90475817f2b2fa1e	152	4503
+func TestParse6Rejects	0e151500715be249	69	2310
+func TestParse6Rfc4291	f4431d9c84bec3ce	250	7285
+func TestSplitHostPort	f4805b2c33af1ef9	141	4880
+func eq	43c235c0cbf26e81	40	1355
+func h6	93e361e321df04f7	8	354

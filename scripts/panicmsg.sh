@@ -3,6 +3,8 @@
 # obsは終了コードとstdoutだけを見る（stderrは捨てる）ので、ここがstderrの検査。対象 = examples/*.exitとtestdata/*/app.exitのうち .stderrを持つもの。
 #   scripts/panicmsg.sh            照合
 #   scripts/panicmsg.sh --regen    .exit を持つ例全部の .stderr を作り直す（文面を意図して変えたとき — 差分を見てからコミット）
+# ゴールデンの並びを呼び手のロケールに依らせない
+export LC_ALL=C.UTF-8
 set -uo pipefail
 cd "$(dirname "$0")/.."
 SOBER=${SOBER:-./bin/sober}

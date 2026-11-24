@@ -7,7 +7,7 @@
 import { readFileSync } from "node:fs";
 
 const [dumpPath, tracePath, name] = process.argv.slice(2);
-const WORDS: Record<string, number> = { block: 1, io: 2, panic: 4, nondet: 8 };
+const WORDS: Record<string, number> = { block: 1, io: 2, panic: 4, nondet: 8, obs: 16 };
 const derived = new Map<number, number>();
 for (const line of readFileSync(dumpPath, "utf8").split("\n")) {
     const m = / effects (\S+) fi=(\d+) bits=([a-z, ]+?)( declared)?$/.exec(line);

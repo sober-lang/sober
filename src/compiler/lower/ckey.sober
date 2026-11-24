@@ -182,21 +182,21 @@ func ckIsFn(t CkTab, w int) bool {
 // 本体の中の参照との一致（g == st.rtX）でしか読まない。呼び出しを足すのは本体がそのrtを参照するときだけで、そのとき記録は必ずあり、
 // 参照は本体の正準形（安定な鍵 + 記録の事実）として鍵に入る。参照しない関数の機械語は、記録の有無で変わらない。
 // 例外のubBound（B2のubfFuncが印のついた読みを畳む）は、印のある関数だけckFnが鍵に入れる。
-// x = xParCfg（x86）・他 = lParCfg（B1・B2。17番目からはmfCfgの [数, 引きの関数…]）
+// x = xParCfg（x86）・他 = lParCfg（B1・B2。LP_MF番目からはmfCfgの [数, 引きの関数…]）
 func ckDrop(cfg []int, x bool) []bool {
     mut d := mut []bool{}
     for k <- iter.Range(0, len(cfg)) {
         d = append(d, false)
     }
-    ks := if x { []int{13, 14, 17, 19, 20, 22, 26} } else { []int{0, 1, 2, 3, 4, 7, 8, 15, 16} }
+    ks := if x { []int{13, 14, 17, 19, 20, 22, 26, 34} } else { []int{0, 1, 2, 3, 4, 7, 8, 15, 16, 18} }
     for k <- ks {
         if k < len(cfg) {
             d[k] = true
         }
     }
-    if !x && len(cfg) > 17 {
-        n := cfg[17]
-        for k <- iter.Range(17, 18 + n) {
+    if !x && len(cfg) > LP_MF {
+        n := cfg[LP_MF]
+        for k <- iter.Range(LP_MF, LP_MF + 1 + n) {
             if k < len(cfg) {
                 d[k] = true
             }
@@ -227,13 +227,13 @@ func ckCfg(t CkTab, cfg []int, rets []int, drop []bool) []int {
 }
 
 // 扉の監査（SOBER_CACHE_VERIFY=2）: 鍵に混ぜないワード（ckDrop）を揺らしても cfg の正準形が変わらないこと（そのワードを参照しない
-// 関数は、記録の有無に依らず当たる）。lParCfg の mfCfg の数のワード（17）は並びの形なので揺らさない
+// 関数は、記録の有無に依らず当たる）。lParCfg の mfCfg の数のワード（LP_MF）は並びの形なので揺らさない
 func ckDropCheck(t CkTab, cfg []int, rets []int, drop []bool, h []int, x bool) {
     mut cf := mut []int{}
     mut rs := mut []int{}
     for k <- iter.Range(0, len(cfg)) {
         w := cfg[k]
-        if drop[k] && !(!x && k == 17) {
+        if drop[k] && !(!x && k == LP_MF) {
             cf = append(cf, if ckIsFn(t, w) { -1 } else { w ^ 85 })
             rs = append(rs, 0)
         } else {
@@ -607,6 +607,11 @@ func ckRtFns(st mut St) []int {
 // IR を歩き直さない: B2 の子が呼べるのは本体の関数の参照と cfg（rt）だけで、cut が足すのも rt だけ — この約束は `--emit=cachekeys` のときだけ
 // ckBetaCheck が最後の本体の全部の関数の参照で照合する（はみ出せば落ちる）
 func ckBeta(st mut St, t CkTab, fr []int) []int {
+    return ckBetaSeed(mut st, t, fr, t.c1, t.c2)
+}
+
+// ckBetaの種（s1 / s2）を選べる形。種がx86のcfgの正準形でないもの = プロファイルの指紋（profile.sober — x86のcfgに依らない）
+func ckBetaSeed(st mut St, t CkTab, fr []int, s1 int, s2 int) []int {
     b2 := ckStage(mut st, 1)
     cuts := ckCutBits(mut st)
     // rtの関数のうち番地を取られるものの集合（安定な鍵のハッシュの和。チェーンの順と、番地を取られないrtの関数の数に依らない）
@@ -627,8 +632,8 @@ func ckBeta(st mut St, t CkTab, fr []int) []int {
             out = append(out, 0)
         } else {
             cb := ckIdx(cuts, fr[k]) + 1
-            mut a := ckM1(ckM1(ckM1(ckM1(t.c1, table.Get(mut st.ckk, q + 2)), cb), st.xAddr[k]), ra)
-            mut c := ckM2(ckM2(ckM2(ckM2(t.c2, table.Get(mut st.ckk, q + 3)), cb), st.xAddr[k]), rc)
+            mut a := ckM1(ckM1(ckM1(ckM1(s1, table.Get(mut st.ckk, q + 2)), cb), st.xAddr[k]), ra)
+            mut c := ckM2(ckM2(ckM2(ckM2(s2, table.Get(mut st.ckk, q + 3)), cb), st.xAddr[k]), rc)
             n := table.Get(mut st.ckk, q + 4)
             for j <- iter.Range(q + 5, q + 5 + n) {
                 bit := st.xAddr[xIndex(fr, table.Get(mut st.ckk, j))]

@@ -2,7 +2,7 @@ package main
 
 // 開いた File の属性（language.md 28 節「根の下の開き」）: `io.Stat(f)?` は fstat 1 回の io.FileInfo{size, modTime, kind}。
 // modTime はエポックからの ns で、同じ path の os.ModTime と同じ値。通常のファイルでなくても誤りにしない（kind で見分ける — kind は option: FileInfo がゼロ値を持つため。Stat は必ず入れる）。
-// リポジトリのルートを cwd にして実行する（作業域は out/io_stat — mtime は touch -d で固定・fifo は mkfifo で作る）
+// リポジトリのルートを cwd にして実行する（作業域は実行ごとの out/io_stat.<n> — mtime は touch -d で固定・fifo は mkfifo で作る）
 
 import "std/io"
 import "std/os"
@@ -60,8 +60,32 @@ func run(w string) error? {
 }
 
 func main() {
-    e := run("out/io_stat")
+    d := runDir("io_stat")
+    defer removeAll(d)
+    e := run(d)
     if e != nil {
         println("run: ${why(e)}")
+    }
+}
+
+// 実行ごとの置き場 out/<name>.<単調時計の値>（同じ作業ディレクトリで同時に走る実行どうしが上書きし合わない）。
+// mkdirは既にあれば失敗するので、作れた名前がこの実行のもの。作れない状態で回り続けないよう、試す回数に上限を置く（作れなければ ""）
+func runDir(name string) string {
+    _ = os.Mkdir("out")
+    mut n := 0
+    while n < 100 {
+        c := "out/${name}.${os.Monotonic()}"
+        if os.Mkdir(c) == nil {
+            return c
+        }
+        n = n + 1
+    }
+    return ""
+}
+
+// 置き場を中身ごと消す
+func removeAll(d string) {
+    if d != "" {
+        _ = os.Run("/bin/rm", []string{"-rf", d}) catch 0
     }
 }

@@ -1,0 +1,119 @@
+package rec12
+
+// TLS 1.2 の鍵の導出と AEAD の記録（std/tls の dangerouslyAllowTls12 の道 — クライアント〔std/internal/hsc〕とサーバー〔std/internal/hs〕が共有する）。
+// PRF は P_SHA256（RFC 5246 5 — AES-128 と ChaCha20 のスイートはどれも SHA-256 の PRF）。AEAD の記録は AES-128-GCM（RFC 5288 — 明示の nonce 8 バイト）と
+// ChaCha20-Poly1305（RFC 7905 — nonce = IV ⊕ 番号）。AAD = 番号 ‖ 型 ‖ 0x0303 ‖ 平文の長さ。CBC の記録は std/internal/cbcrec
+
+import "std/crypto/aesgcm"
+import "std/crypto/chacha20poly1305"
+import "std/crypto/hmac"
+import "std/internal/bless"
+import "std/iter"
+
+// 認証の失敗・断片が短い（相手には bad_record_mac）
+type BadMac error
+
+// PRF(secret, label, seed) の先頭 n バイト（P_SHA256(secret, label ‖ seed)）
+@secret(secret)
+@effects(!io, !block, !nondet)
+func Prf(secret []byte, label string, seed []byte, n int) []byte {
+    ls := cat(bytes(label), seed)
+    mut out := mut []byte{}
+    mut a := crypto.hmac.Sum256(secret, ls)
+    while len(out) < n {
+        for x <- crypto.hmac.Sum256(secret, cat(a, ls)) {
+            if len(out) < n {
+                out = append(out, x)
+            }
+        }
+        a = crypto.hmac.Sum256(secret, a)
+    }
+    return freeze(out)
+}
+
+// 番号の 8 バイト（big endian）
+@effects(!io, !block, !nondet)
+func Seq8(n int) []byte {
+    mut b := mut []byte{}
+    for i <- iter.Range(0, 8) {
+        b = append(b, byte((n >> (56 - 8 * i)) & 0xff))
+    }
+    return freeze(b)
+}
+
+// 平文 pt の記録の本文（記録の頭 5 バイトは含まない）。gcm = AES-128-GCM（本文 = 明示の nonce〔番号〕‖ 暗号文 ‖ tag）・
+// それ以外は ChaCha20-Poly1305（本文 = 暗号文 ‖ tag）。key / iv = 鍵の塊から切った書く側の鍵と IV（GCM は 4 バイト・ChaCha20 は 12 バイト）
+@secret(key, iv)
+@effects(!io, !block, !nondet)
+func Seal(gcm bool, key []byte, iv []byte, seq int, ct int, pt []byte) []byte {
+    ad := aad(seq, ct, len(pt))
+    nn := nonce(gcm, iv, seq)
+    sealed := if gcm { crypto.aesgcm.Seal(key, nn, ad, pt) catch []byte{} } else { crypto.chacha20poly1305.Seal(key, nn, ad, pt) catch []byte{} }
+    return if gcm { cat(Seq8(seq), sealed) } else { sealed }
+}
+
+// 記録の本文 body の平文（認証の失敗・短い本文は BadMac）
+@errors(BadMac)
+@secret(key, iv)
+@effects(!io, !block, !nondet)
+func Open(gcm bool, key []byte, iv []byte, seq int, ct int, body []byte) ([]byte, error?) {
+    ex := if gcm { 8 } else { 0 }
+    if len(body) < ex + 16 {
+        return []byte{}, BadMac{}
+    }
+    nn := if gcm { cat(iv, slice(body, 0, 8)) } else { nonce(false, iv, seq) }
+    sealed := slice(body, ex, len(body))
+    ad := aad(seq, ct, len(sealed) - 16)
+    if gcm {
+        pt, e := crypto.aesgcm.Open(key, nn, ad, sealed)
+        if e != nil {
+            return []byte{}, BadMac{}
+        }
+        // 記録の層の出口（中身の種類と長さが決まった記録の平文は公開 — 1.3 の internal.record.Open と同じ基準）
+        return internal.bless.Bytes(pt), nil
+    }
+    pt2, e2 := crypto.chacha20poly1305.Open(key, nn, ad, sealed)
+    if e2 != nil {
+        return []byte{}, BadMac{}
+    }
+    return internal.bless.Bytes(pt2), nil
+}
+
+// 番号 ‖ 型 ‖ 0x0303 ‖ 平文の長さ
+func aad(seq int, ct int, n int) []byte {
+    return cat(Seq8(seq), []byte{byte(ct), 3, 3, byte(n >> 8), byte(n & 0xff)})
+}
+
+// GCM = IV 4 バイト ‖ 明示の 8 バイト〔番号〕・ChaCha20 = IV 12 バイト ⊕ 番号
+@secret(iv)
+func nonce(gcm bool, iv []byte, seq int) []byte {
+    s := Seq8(seq)
+    if gcm {
+        return cat(iv, s)
+    }
+    mut o := mut []byte{}
+    for i <- iter.Range(0, 12) {
+        sb := if i < 4 { 0 } else { int(s[i - 4]) }
+        o = append(o, byte(int(iv[i]) ^ sb))
+    }
+    return freeze(o)
+}
+
+func cat(a []byte, b []byte) []byte {
+    mut out := mut []byte{}
+    for x <- a {
+        out = append(out, x)
+    }
+    for x <- b {
+        out = append(out, x)
+    }
+    return freeze(out)
+}
+
+func slice(a []byte, lo int, hi int) []byte {
+    mut out := mut []byte{}
+    for i <- iter.Range(lo, hi) {
+        out = append(out, a[i])
+    }
+    return freeze(out)
+}

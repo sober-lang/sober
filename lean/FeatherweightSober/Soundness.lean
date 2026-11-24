@@ -801,8 +801,8 @@ theorem Ty.clampR_mono {k : Nat} : ∀ {a b : Ty}, Ty.sub a b = true → Ty.sub 
   | .unit, _, h => by obtain rfl := Ty.sub_unit_inv h; exact Ty.sub_refl _
   | .chan _ _, _, h => by obtain rfl := Ty.sub_chan_inv h; exact Ty.sub_refl _
   | .dom _ _, _, h => by
-    obtain ⟨r', rfl, hle⟩ := Ty.sub_dom_inv h
-    simp only [Ty.clampR, Ty.sub, Bool.and_eq_true, decide_eq_true_eq]; exact ⟨by omega, trivial⟩
+    obtain ⟨r', t', rfl, -, -, -⟩ := Ty.sub_dom_inv h
+    simpa [Ty.clampR] using h
   | .own _ _ _, _, h => by obtain rfl := Ty.sub_own_inv h; exact Ty.sub_refl _
   | .fn _ _, _, h => by obtain rfl := Ty.sub_fn_inv h; exact Ty.sub_refl _
   | .mus _ _ _, _, h => by obtain rfl := Ty.sub_mus_inv h; exact Ty.sub_refl _
@@ -849,7 +849,9 @@ theorem Ty.sub_chanFree : ∀ {a b : Ty}, Ty.sub a b = true → a.chanFree = b.c
   | .f64, _, h => by obtain rfl := Ty.sub_f64_inv h; rfl
   | .unit, _, h => by obtain rfl := Ty.sub_unit_inv h; rfl
   | .chan _ _, _, h => by obtain rfl := Ty.sub_chan_inv h; rfl
-  | .dom _ _, _, h => by obtain ⟨_, rfl, -⟩ := Ty.sub_dom_inv h; rfl
+  | .dom _ _, _, h => by
+    obtain ⟨_, _, rfl, -, hst, -⟩ := Ty.sub_dom_inv h
+    simp [Ty.chanFree, Ty.sub_chanFree hst]
   | .own _ _ _, _, h => by obtain rfl := Ty.sub_own_inv h; rfl
   | .fn _ _, _, h => by obtain rfl := Ty.sub_fn_inv h; rfl
   | .mus _ _ _, _, h => by obtain rfl := Ty.sub_mus_inv h; rfl
@@ -1306,8 +1308,11 @@ theorem relocW_ok {Δ : Defs} {Ξ : ChanTy} {b k : Nat} {rec : Ty → Heap → E
   | dom rc t ih =>
     intro T v Ψ H D0 hH hD hDk hv he hW hs hc
     -- 値の家の region は上界の内側（r1 ≤ rc）: domain の値はそのまま W に型が付く
-    obtain ⟨r1, rfl, hr1⟩ : ∃ r1, T = .dom r1 t ∧ r1 ≤ rc := by
+    obtain ⟨r1, t1, rfl, hr1, he1⟩ : ∃ r1 t1, T = .dom r1 t1 ∧ r1 ≤ rc ∧ t1.relocR 0 = t.relocR 0 := by
       cases T with
+      | dom r1 t1 =>
+        simp only [Ty.clampR, Ty.sub, Bool.and_eq_true, decide_eq_true_eq] at hs
+        exact ⟨_, _, rfl, hs.1.1, hs.2⟩
       | ref m _ _ => cases m <;> simp_all [Ty.clampR, Ty.sub]
       | slice m _ _ => cases m <;> simp_all [Ty.clampR, Ty.sub]
       | map m _ _ => cases m <;> simp_all [Ty.clampR, Ty.sub]
@@ -1315,7 +1320,7 @@ theorem relocW_ok {Δ : Defs} {Ξ : ChanTy} {b k : Nat} {rec : Ty → Heap → E
       | tvar _ _ kd => cases hr : kd.rf <;> cases hi : kd.imm <;> simp [Ty.clampR, Ty.sub, hr, hi] at hs
       | _ => simp_all [Ty.clampR, Ty.sub]
     obtain ⟨p', k', r0, rfl, hle0, hlt, hlk⟩ := canonical_dom hv he
-    exact leaf hH hDk hv (.domVT hlt (Nat.le_trans hle0 hr1) hlk) hW rfl
+    exact leaf hH hDk hv (.domVT hlt (Nat.le_trans hle0 hr1) (by rw [← he1]; exact hlk)) hW rfl
   | own _ r t ih =>
     intro T v Ψ H D0 hH hD hDk hv he hW hs hc
     obtain rfl := Ty.clampR_sub_leaf (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) hs
@@ -1740,8 +1745,9 @@ theorem Ty.relocR_mono_mf {k : Nat} : ∀ {a b : Ty}, Ty.sub a b = true → Ty.s
   | .unit, _, h => by obtain rfl := Ty.sub_unit_inv h; exact Ty.sub_refl _
   | .chan _ _, _, h => by obtain rfl := Ty.sub_chan_inv h; exact Ty.sub_refl _
   | .dom _ _, _, h => by
-    obtain ⟨r', rfl, hle⟩ := Ty.sub_dom_inv h
-    simp only [Ty.relocR, Ty.sub, Bool.and_eq_true, decide_eq_true_eq]; exact ⟨by omega, trivial⟩
+    obtain ⟨r', t', rfl, hle, hst, he⟩ := Ty.sub_dom_inv h
+    simp only [Ty.relocR, Ty.sub, Bool.and_eq_true, decide_eq_true_eq]
+    exact ⟨⟨by omega, Ty.sub_shiftR hst⟩, Ty.relocR_congr_shiftR he⟩
   | .own _ _ _, _, h => by obtain rfl := Ty.sub_own_inv h; exact Ty.sub_refl _
   | .fn _ _, _, h => by obtain rfl := Ty.sub_fn_inv h; exact Ty.sub_refl _
   | .mus _ _ _, _, h => by obtain rfl := Ty.sub_mus_inv h; exact Ty.sub_refl _
@@ -3379,6 +3385,11 @@ theorem preservation_eval {Δ : Defs} {Ξ : ChanTy} {Λ : LCtx} {b : Nat} {Ψ : 
       cases he with
       | alloc h1 hb hbd hmf =>
         exact ⟨Ξ, .refl Ξ, .eval' hD h1 (.allocK hb hbd hmf hS) hH, hC⟩
+    | allocAt m r e =>
+      simp only [step] at hs; cases hs
+      cases he with
+      | allocAt h1 hb hbr hrd hmf hcf =>
+        exact ⟨Ξ, .refl Ξ, .eval' hD h1 (.allocAtK hb hbr hrd hmf hS) hH, hC⟩
     | deref e =>
       simp only [step] at hs; cases hs
       cases he with
@@ -4902,6 +4913,26 @@ theorem preservation_ret {Δ : Defs} {Ξ : ChanTy} {Λ : LCtx} {b : Nat} {Ψ : S
           rfl
         · exact hS'.mono (fun d' _ => (storeLE_set_concat hσ (m, t)).take_take d')
             (take_set_of_le hbd _)
+    | @allocAtK _ S' _ m r _ _ hb hbr hrd hmf hS' =>
+      simp only [step] at hs
+      split at hs
+      case h_2 => simp at hs
+      case h_1 ρ hρ =>
+        cases hs
+        have hrH : r < H.length := (List.getElem?_eq_some_iff.mp hρ).1
+        have hrΨ : r < Ψ.length := by rw [← hH.len]; exact hrH
+        obtain ⟨σ, hσ⟩ : ∃ σ, Ψ[r]? = some σ := ⟨_, List.getElem?_eq_getElem hrΨ⟩
+        have hslen : ρ.length = σ.length := hH.storeLen r ρ σ hρ hσ
+        refine ⟨Ξ, .refl Ξ, .ret' (Λ := Λ) (Ψ := Ψ.set r (σ ++ [(m, t)])) (D := D)
+          (t := .ref m r t) (by simp [hD]) (.loc r ρ.length)
+          (.loc (ρ := σ ++ [(m, t)]) ?_ ?_ hrd (Nat.le_refl _)
+            (fun _ => ⟨rfl, hbr⟩) (fun h => h)) ?_
+          (heapOk_append1 hH hρ hσ hbr hv (HasType.value_strengthen hv he hb) hb hmf), hC⟩
+        · rw [List.getElem?_set_self hrΨ]
+        · rw [hslen, List.getElem?_append_right (Nat.le_refl _), Nat.sub_self]
+          rfl
+        · exact hS'.mono (fun d' _ => (storeLE_set_concat hσ (m, t)).take_take d')
+            (take_set_of_le hbr _)
     | derefK hS' =>
       rename_i S' m r t'
       obtain ⟨r0, a, σ, m', rfl, hσ, hσa, hrd, -, hmb, hmm⟩ := canonical_ref hv he
@@ -6344,6 +6375,11 @@ theorem progress {Δ : Defs} {Ξ : ChanTy} {b : Nat} {s : State} {tf : Ty} {K : 
         ⟨_, List.getElem?_eq_getElem (by omega)⟩
       exact ⟨[], .ret (H.set (H.length - 1) (ρ ++ [(m, v)])) S'
         (.loc (H.length - 1) ρ.length), K, by simp only [step, hρ]⟩
+    | @allocAtK _ S' d m r _ _ hb hbr hrd hmf hS' =>
+      right; right; right
+      have hrH : r < H.length := by rw [hH.len, hD]; exact hrd
+      obtain ⟨ρ, hρ⟩ : ∃ ρ, H[r]? = some ρ := ⟨_, List.getElem?_eq_getElem hrH⟩
+      exact ⟨[], .ret (H.set r (ρ ++ [(m, v)])) S' (.loc r ρ.length), K, by simp only [step, hρ]⟩
     | derefK hS' =>
       rename_i S' m r t'
       obtain ⟨r, a, σ, m', rfl, hσ, hσa, hrd, -, -, -⟩ := canonical_ref hv he
@@ -6908,6 +6944,7 @@ theorem step_shared_stable_leaf {Δ : Defs} {Ξ : ChanTy} {b : Nat} {s : State} 
     | inr l e => simp only [step] at hs; cases hs; rfl
     | case e bl br => simp only [step] at hs; cases hs; rfl
     | alloc m e => simp only [step] at hs; cases hs; rfl
+    | allocAt m r e => simp only [step] at hs; cases hs; rfl
     | deref e => simp only [step] at hs; cases hs; rfl
     | assign l e => simp only [step] at hs; cases hs; rfl
     | whileE c body => simp only [step] at hs; cases hs; rfl
@@ -7041,6 +7078,14 @@ theorem step_shared_stable_leaf {Δ : Defs} {Ξ : ChanTy} {b : Nat} {s : State} 
         have hHlen : H.length = d + 1 := by rw [hH.len, hD]
         simp only [State.heap]
         exact take_set_of_le (by omega) _
+    | allocAtK hb hbr hrd hmf hS' =>
+      simp only [step] at hs
+      split at hs
+      case h_2 => simp at hs
+      case h_1 ρ hρ =>
+        cases hs
+        simp only [State.heap]
+        exact take_set_of_le hbr _
     | derefK hS' =>
       rename_i S' m r t'
       obtain ⟨r, a, σ, m', rfl, hσ, hσa, hrd, -, -, -⟩ := canonical_ref hv he

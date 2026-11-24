@@ -1,13 +1,15 @@
-@@full	2f0081341b78fc93	7348	204290
+@@full	f2f11700100cab64	7826	216812
 @head	32ac9f6193fda562	12	988
 const appCap	6f2f6931f0f3ce11	3	112
 const appW	8a4c483fa37e99e4	5	168
 const bDead	253324b31b4551e3	1	45
+const bH2	3ff60f47a669e58c	1	43
 const bInner	8f9a4fd4d9d9d9e5	1	46
 const bOuter	4e905ff7670e793b	1	46
 const lApp	443d8a1ed32a73fb	5	167
 const lAppLen	e840e83c9e992a7f	1	47
 const lFlags	77139ed107ec8352	1	46
+const lH2	89d7ba36db232600	3	113
 const lInner	fb685fd49e8ff916	3	111
 const lOuter	9123a113c8fdee1f	1	46
 const leftCap	6cd43b274d7c277c	3	111
@@ -19,10 +21,10 @@ func dead	255f7c0126425db9	11	454
 func feed	10373b95e8cb0bf4	213	7036
 func flagsOf	6d1d23d3185d769d	10	406
 func getBytes	4f7450f6cf0a5887	49	1739
-func handshakeAt	832d1756f90d953f	207	7047
-func linkPoll	e3bb3a484d93b326	103	3498
+func handshakeAt	269a16b538bc8058	225	7602
+func linkPoll	6a6d01fbf1f07c10	57	1913
 func linkSend	3779b95cbaf0264c	16	665
-func newLink	fab9141d4ca93337	26	934
+func newLink	9c4b4b48a2d492c5	26	932
 func putApp	59c8bde0a8a4fcf2	33	1133
 func putBytes	308f0772afb0a3b0	62	2126
 func putConn	e404c2de75bf4f84	36	1424
@@ -33,5 +35,7 @@ func sendAt	f4a1fc6f842c0ea1	60	2079
 func setFlag	b28f161a11d2f19e	15	624
 func slotOf	97e1ceb2d8f32ac4	12	464
 func tailOf2	641080b1558a68fb	30	1103
+func tlsPoll	3299e56f571c9bd9	75	2684
 func topLayer	c509e94fdef666f8	27	928
+func tripSend	9ff06b33f2614a7e	28	1114
 func view	a6adb5d652ef80f1	14	606

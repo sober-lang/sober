@@ -1,0 +1,16 @@
+package main
+
+// net.Pairのserverは子のtaskで走るので、mutの束縛を捕獲できない（net.Serveのhandlerと同じ規則 — checkとbuildが拒否する）
+
+import "std/net"
+
+func main() {
+    mut n := 0
+    _ = net.Pair((c) => {
+        n += 1
+        nil
+    }, (c) => {
+        _ = net.Send(c, bytes("x"))
+    })
+    println(n)
+}

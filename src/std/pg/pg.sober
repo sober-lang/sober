@@ -155,7 +155,7 @@ func Open(at string, k func(c Conn), policy Policy?) error? {
     cp0 := internal.hsc.NewCParams(c.host, []string{}, c.roots, time.UnixSec(time.Now()), []byte{})
     cp := if c.allowTls12 { internal.hsc.WithTls12(cp0) } else { cp0 }
     mut err := noErr()
-    de := net.Dial("${c.host}:${c.port}", (conn) => {
+    de := net.Dial(dialAddr(c.host, c.port), (conn) => {
         err = openOn(conn.fd, c, cp, k)
     })
     if de != nil {

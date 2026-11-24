@@ -29,7 +29,7 @@ const CFnref = 21    // a = 関数の添字, b = 型引数の列（-1 = 無し�
 const CAnn = 23      // a = e, b = 型
 const CBlock = 24    // a
 const CBlockR = 25   // a = 型, b = e
-const CAlloc = 26    // a = m, b = e
+const CAlloc = 26    // a = m, b = e, d = region + 1（0 = 最内 — region 指定版 allocAt）
 const CDeref = 27    // a
 const CAssign = 28   // a = l, b = e
 const CWhile = 29    // a = c, b = body
@@ -237,6 +237,11 @@ func cFnref(st mut S, fi int, ts int) CoreRef {
 // cAlloc の m は mut（0 / 1）
 func cAlloc(st mut S, m int, e CoreRef) CoreRef {
     return ce(mut st, CAlloc, m, int(e), 0, 0)
+}
+
+// セルを region r に作る（allocAt — 外の mut と一緒に anchor つきの呼び出しへ渡す mut の束縛のセル。d = r + 1）
+func cAllocAt(st mut S, m int, r int, e CoreRef) CoreRef {
+    return ce(mut st, CAlloc, m, int(e), 0, r + 1)
 }
 
 // cStrlit の s はバイト列（ヒープの文字列）、r は region

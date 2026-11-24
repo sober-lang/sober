@@ -2,6 +2,7 @@ package main
 
 // Set-Cookieを足すmiddlewareは動的なルートだけにMountし、共有の方針のStaticはMergeで外に置く（origin_neg_setcookie_mountの直し方）
 import "std/http/server"
+import "std/net"
 
 func refresh(r http.server.Request, w http.server.Response) http.server.Response {
     return http.server.Response{status: w.status, contentType: w.contentType, body: w.body, length: w.length, stream: w.stream, headers: w.headers, coded: w.coded, cookies: []http.server.SetCookie{http.server.SetCookie{name: "sid", value: "s1", maxAge: 3600}}}
@@ -18,16 +19,25 @@ func show(b []byte) error? {
     return nil
 }
 
-func give(a string, k func([]byte)) error? {
-    k(bytes(a))
-    return nil
-}
-
 func main() {
     app := []http.server.Route{http.server.Route{method: "GET", path: "/", handler: (r) => http.server.Text("hi\n")}}
     rs := http.server.Merge(
         http.server.Static("/assets", "/nonexistent", cache: http.server.Fresh{maxAge: 31536000, immutable: true}),
         http.server.Mount("", app, []http.server.Middleware{http.server.Middleware{after: refresh}}))
-    e := http.server.ServeWith((k) => give("GET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n", k), (b) => show(b), (r) => http.server.Dispatch(rs, r))
+    e := net.Pair((c) => http.server.ServeConn(c, (r) => http.server.Dispatch(rs, r)), (c) => {
+        _ = net.Send(c, bytes("GET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n"))
+        _ = show(readAll(c))
+    })
     println(e == nil)
+}
+
+// 相手が閉じるまで受けたバイト列（最後の要求はConnection: close — サーバーが応答の後に閉じる）
+func readAll(c net.Conn) []byte {
+    mut got := mut []byte{}
+    _ = net.Recv(c, (x) => {
+        for y <- x {
+            got = append(got, y)
+        }
+    })
+    return freeze(got)
 }

@@ -25,6 +25,8 @@
 # 行の無いパス: 同じrt.netwaitの呼び出しの中でディープスリープした後の再park — 記しつきのparkはAREA_NEARなら必ず浅く、NEARは本体の入口で立ててtaskの間
 # 消えないのでウェイクアップしない（記しつきでディープスリープするのは遠いパスだけで、それは浅くならない）。別のワーカーでの完了 — 走り始めたtaskはTC_WORKERに固定でウェイクアップも持ち主へ
 set -uo pipefail
+# チャンクを写像の並び（ガード | チャンク）から見つける（areacheck.ts）ので、rt にチャンクごとの写像を作らせる（開発用 — 本番の形はアリーナ。task.sober chunkMap）
+export SOBER_CHUNK_ARENA=0
 cd "$(dirname "$0")/.."
 S2=${STAGE2:-out/stage2/sober2}
 W=$(mktemp -d)

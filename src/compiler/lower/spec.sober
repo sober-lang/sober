@@ -12,6 +12,7 @@ package lower
 
 import "desugar"
 import "std/iter"
+import "std/sort"
 import "std/table"
 
 const SP_MAX = 32
@@ -20,9 +21,12 @@ const SP_DEPTH = 3
 const SP_INL = 12
 // 内側の複製をコピーした後の複製を残す・呼び手へコピーする大きさの上限（熱い命令）
 const SP_KEEP = 24
-// 同じ callee の複製の数の上限（違う定数の組）
+// 同じ組の中の、同じ callee の複製の数の上限（違う定数の組）
 const SP_PER = 4
-// 表の記録: [callee, 定数の数 n, (仮引数の位置, 種類〔0 = 整数・1 = globaladdr〕, 値) × n, 複製〔-1 = 捨てた〕]
+// 表の記録: [組, callee, 定数の数 n, (仮引数の位置, 種類〔0 = 整数・1 = globaladdr〕, 値) × n, 複製〔-1 = 捨てた〕]
+// 組 = 呼び手のpackage（-2 - package。packageの関数）か、呼び手の関数の記録（インスタンス・ラムダ・子・rt）。複製の作り直しと上限は組の中だけで数え、
+// 組をまたいで複製を共有しない: あるpackageの特化が、ほかのpackageの呼び出しの並びに依らない（packageの単位でlower以降を飛ばす前提）。
+// 複製はそれを作った呼び手の組に属し、複製の中の呼び出しも同じ組で数える
 const SP_K_INT = 0
 const SP_K_GLOB = 1
 
@@ -31,49 +35,137 @@ func specModule(st mut St) int {
     save := st.fn
     mut tab := mut []int{}
     mut work := mut []int{}
+    // 関数の記録 → 組（packageの関数だけ。表に無い関数は自分が組）
+    mut grp := mut map[int]int{}
+    for i <- iter.Range(0, table.Len(mut st.infos)) {
+        x := infoAt(mut st, i)
+        if int(x.ir) >= 0 && x.fn >= 0 {
+            grp[int(x.ir)] = -2 - x.pkg
+        }
+    }
+    // 作業列は名前の順（packageの関数の安定な鍵 — チェーンの順は発見の順で、ほかのpackageの呼び出しの並びで変わる。組の中の表の引きと
+    // 上限SP_PERの枠の取り合いを並びに依らせない）。SOBER_SPEC_ORDER=1 = 並べる前の入力を逆に（撹拌の検査 — 結果は並びに依らない）
+    mut orig := mut []int{}
     mut f := st.fhead
     while f != -1 {
         if irFnBHead(mut st, f) != -1 {
-            work = append(work, int(f))
-            work = append(work, 0)
+            orig = append(orig, int(f))
         }
         f = irFnNext(mut st, f)
+    }
+    if ilEnvInt("SOBER_SPEC_ORDER") == 1 {
+        for i <- iter.Range(0, len(orig) / 2) {
+            t := orig[i]
+            orig[i] = orig[len(orig) - 1 - i]
+            orig[len(orig) - 1 - i] = t
+        }
+    }
+    ofr := freeze(orig)
+    mut nms := mut [][]byte{}
+    for r <- ofr {
+        mut nm := mut []byte{}
+        printName(mut st, mut nm, irFnName(mut st, FnRef(r)))
+        nms = append(nms, freeze(nm))
+    }
+    nmf := freeze(nms)
+    for k <- sort.Order(len(ofr), (a, b) => spBytesLess(nmf[a], nmf[b])) {
+        work = append(work, ofr[k])
+        work = append(work, 0)
+        g0 := grp[ofr[k]]
+        work = append(work, if g0 != nil { g0 } else { ofr[k] })
     }
     // 資格の表（元の関数 — 番地の昇順〔spFindが二分探索で引く。チェーンの順とは限らないのでfnIdsで並べる — チェーンの順で集めると規則順のチェーンで
     // 引きが外れ、全呼び出し点が資格を歩き直して引き金のマークなしで複製を試すことになる〕。複製は呼ぶたびに数える）
     fl := fnIds(mut st)
+    // 要約の値を使うモード: 要約にある関数は、使い道のマークと引き金のマークの周ごとの値（BX_SPEC・BX_SPRND）を要約から置き、中継の周で
+    // 求め直さない（呼び手の周 r は呼び先の周 r - 1 の値を読む — 周ごとの値が要る。sv = [使い道, 中継の前, 1周, 2周, 3周] か空）
+    use := bxCUse(mut st)
+    mut svs := mut [][]int{}
+    for k <- iter.Range(0, len(fl)) {
+        svs = append(svs, if use { spSumVals(mut st, FnRef(fl[k])) } else { []int{} })
+    }
+    sv := freeze(svs)
     mut fi0 := mut []int{}
     for k <- iter.Range(0, len(fl)) {
-        fi0 = append(fi0, spInfo(mut st, FnRef(fl[k])))
+        fi0 = append(fi0, if len(sv[k]) > 0 { sv[k][0] } else { spInfo(mut st, FnRef(fl[k])) })
     }
     finfo := freeze(fi0)
     // 引き金のマーク（比較に効く仮引数 — 直に・算術1レベルを経て・比較に効くcalleeの仮引数へ渡る〔小さい関数の間の不動点3周〕）。複製は
     // 定数の引数がこのマークに当たるときだけ作る（使い道のマークfinfoだけで作ると、定数を受けても畳めない関数の複製を作って捨てる費用が判定の仕事 +1.4 G）
     mut fs0 := mut []int{}
     for k <- iter.Range(0, len(fl)) {
-        fs0 = append(fs0, if finfo[k] > 0 { spSens(mut st, FnRef(fl[k])) } else { 0 })
+        fs0 = append(fs0, if len(sv[k]) > 0 { sv[k][1] } else if finfo[k] > 0 { spSens(mut st, FnRef(fl[k])) } else { 0 })
     }
     mut fsens := freeze(fs0)
+    mut rnd := mut []int{}
+    for k <- iter.Range(0, 3 * len(fl)) {
+        rnd = append(rnd, 0)
+    }
+    for k <- iter.Range(0, len(fl)) {
+        rnd[3 * k] = fsens[k]
+    }
     for r <- iter.Range(0, 3) {
         mut nx := mut []int{}
         for k <- iter.Range(0, len(fl)) {
-            nx = append(nx, if finfo[k] > 0 { fsens[k] | spRelayMask(mut st, FnRef(fl[k]), fl, fsens) } else { 0 })
+            nx = append(nx, if len(sv[k]) > 0 { sv[k][2 + r] } else if finfo[k] > 0 { fsens[k] | spRelayMask(mut st, FnRef(fl[k]), fl, fsens) } else { 0 })
         }
         fsens = freeze(nx)
+        if r < 2 {
+            for k <- iter.Range(0, len(fl)) {
+                rnd[3 * k + 1 + r] = fsens[k]
+            }
+        }
     }
+    // 境の要約の事実 [使い道のマーク, 引き金のマーク] と、複製の元になりうる関数（使い道のマークがある — SP_MAX 以下）の処理の前の本体
+    if st.bx.on {
+        bt := bxTab(mut st)
+        for k <- iter.Range(0, len(fl)) {
+            bxFact(mut st, FnRef(fl[k]), BX_SPEC, finfo[k], fsens[k], 0)
+            if bxCOn(mut st) {
+                zcv, zch := bxCSpec(mut st, FnRef(fl[k]))
+                bxCCmp(mut st, FnRef(fl[k]), BX_SPEC, zcv, zch, []int{finfo[k], fsens[k]})
+            }
+            if finfo[k] > 0 {
+                bxFact(mut st, FnRef(fl[k]), BX_SPRND, rnd[3 * k], rnd[3 * k + 1], rnd[3 * k + 2])
+                if bxCOn(mut st) {
+                    zcv, zch := bxCSprnd(mut st, FnRef(fl[k]))
+                    bxCCmp(mut st, FnRef(fl[k]), BX_SPRND, zcv, zch, []int{rnd[3 * k], rnd[3 * k + 1], rnd[3 * k + 2]})
+                }
+            }
+            if finfo[k] > 0 && irFnBHead(mut st, FnRef(fl[k])) != -1 {
+                // 要約の値を使うモード: 複製の元になる本体を、この時点（処理の前）の要約の本体（BX_SPPRE）にする
+                if len(sv[k]) > 0 {
+                    spSumBody(mut st, FnRef(fl[k]), bt)
+                }
+                bxBody(mut st, FnRef(fl[k]), BX_SPPRE, bt)
+            }
+        }
+    }
+    // 枠の割り当て（並びに依らない）: 元の関数の呼び出し点の (組, callee, 定数の組) を数え、組 × callee ごとに呼び出し点の多い順（同数は鍵の値の順）に
+    // SP_PERの枠を与える。複製の中の呼び出し（ここに現れない定数の組）は、名前の順の作業列での先着で残りの枠を取る
+    pre := spPreCount(mut st, mut work, fl, finfo, fsens)
     mut made := 0
     mut clones := mut []int{}
     mut origs := mut []int{}
     mut callers := mut []int{}
+    // 元の関数を呼び手として処理したときの呼び出しの付け替え（関数 → [序数, 元の callee, 複製]…）。複製はいつも処理の前の本体から作る
+    // （付け替えを戻して複製し、元へ付け直す）: 別の呼び手が複製する本体が、その関数を先に処理したか — 名前の順 — に依らない。
+    // 中の呼び出しは、複製を呼び手として処理するときに複製の組で特化し直す
+    mut mods := mut map[int][]int{}
+    // 本体を下ろさなかった関数の複製が要約の本体を読む鍵の表（1回だけ組む — 要約の本体が指すのは元の関数で、作った複製は指さない）
+    sbt := if use { bxTab(mut st) } else { ckNone() }
     mut w := 0
     while w < len(work) {
         cf := FnRef(work[w])
         depth := work[w + 1]
-        w += 2
+        gr := work[w + 2]
+        w += 3
         st.fn = cf
         // 定義の表は最初の候補の呼び出しで作る（候補の無い関数で値の表を組まない）
         mut defs := []int{}
         mut touched := false
+        mut ordn := 0
+        isOrig := spFind(fl, int(cf)) >= 0
         mut b := irFnBHead(mut st, cf)
         while b != -1 {
             mut ins := if irBlkTerm(mut st, b) == TmExit { InsRef(-1) } else { irBlkIHead(mut st, b) }
@@ -88,32 +180,50 @@ func specModule(st mut St) int {
                     }
                     key := spKey(mut st, defs, g, ins, mask)
                     if len(key) > 2 && spTrig(key, sens) {
+                        // 束の自分の分へ: 特化の候補の呼び出しを持つ関数（本体を下ろさないモードでは本体を捨てない — 複製と枠の割り当て〔spPreCount〕は
+                        // 候補の呼び出しの全部で決まる）
+                        if isOrig {
+                            bxFact(mut st, cf, BX_SPMK, int(cf), 0, 0)
+                        }
                         // 表を引く（同じ callee・同じ定数の組）
                         mut found := -2
                         mut per := 0
                         mut t := 0
                         while t < len(tab) && found == -2 {
-                            n := tab[t + 1]
-                            if tab[t] == key[0] {
+                            n := tab[t + 2]
+                            mine := tab[t] == gr && tab[t + 1] == key[0]
+                            if mine {
                                 per += 1
                             }
-                            mut same := tab[t] == key[0] && n == key[1]
+                            mut same := mine && n == key[1]
                             for k <- iter.Range(0, 3 * n) {
-                                if same && tab[t + 2 + k] != key[2 + k] {
+                                if same && tab[t + 3 + k] != key[2 + k] {
                                     same = false
                                 }
                             }
                             if same {
-                                found = tab[t + 2 + 3 * n]
+                                found = tab[t + 3 + 3 * n]
                             }
-                            t += 3 + 3 * n
-                        }
-                        if found == -2 && (per >= SP_PER || spHopeless(tab, key)) {
-                            // 同じ callee の違う定数の組は SP_PER まで（strLit・iconst のように多くの定数で呼ばれる関数を複製で増やさない）
-                            found = -1
+                            t += 4 + 3 * n
                         }
                         if found == -2 {
-                            c := spClone(mut st, g, cf, key)
+                            // 同じ callee の違う定数の組は SP_PER まで（strLit・iconst のように多くの定数で呼ばれる関数を複製で増やさない）
+                            pr := spPreFind(pre, gr, key)
+                            adm := if pr >= 0 { pre.recs[pr + 5 + 3 * key[1]] == 1 } else { per < SP_PER }
+                            if !adm || spHopeless(tab, gr, key) {
+                                found = -1
+                            }
+                        }
+                        if found == -2 {
+                            mg := mods[int(g)]
+                            if mg != nil {
+                                spSetCalls(mut st, g, mg, 1)
+                            }
+                            c := spClone(mut st, g, cf, key, gr, sbt)
+                            if mg != nil {
+                                spSetCalls(mut st, g, mg, 2)
+                            }
+                            tab = append(tab, gr)
                             for k <- iter.Range(0, len(key)) {
                                 tab = append(tab, key[k])
                             }
@@ -126,11 +236,25 @@ func specModule(st mut St) int {
                                 if depth + 1 < SP_DEPTH {
                                     work = append(work, int(c))
                                     work = append(work, depth + 1)
+                                    work = append(work, gr)
                                 }
                             }
                             st.fn = cf
                         }
                         if found >= 0 {
+                            if isOrig {
+                                mut m0 := mods[int(cf)]
+                                mut m1 := mut []int{}
+                                if m0 != nil {
+                                    for v <- m0 {
+                                        m1 = append(m1, v)
+                                    }
+                                }
+                                m1 = append(m1, ordn)
+                                m1 = append(m1, int(g))
+                                m1 = append(m1, found)
+                                mods[int(cf)] = freeze(m1)
+                            }
                             irSetInsA(mut st, ins, found)
                             if !touched {
                                 touched = true
@@ -140,6 +264,7 @@ func specModule(st mut St) int {
                     }
                 }
                 ins = irInsNext(mut st, ins)
+                ordn += 1
             }
             b = irBlkNext(mut st, b)
         }
@@ -202,6 +327,220 @@ func specModule(st mut St) int {
     }
     st.fn = save
     return made
+}
+
+// 要約にある関数の特化の値 [使い道のマーク, 引き金のマークの中継の前, 1周, 2周, 3周]（使い道のマークが無ければ引き金のマークは全部 0。読めなければ空）
+func spSumVals(st mut St, f FnRef) []int {
+    v := bxCPeek(mut st, f, BX_SPEC, 0)
+    if len(v) == 0 {
+        return []int{}
+    }
+    if v[0] <= 0 {
+        return []int{v[0], 0, 0, 0, 0}
+    }
+    r := bxCPeek(mut st, f, BX_SPRND, 0)
+    if len(r) == 0 {
+        return []int{}
+    }
+    return []int{v[0], r[0], r[1], r[2], v[1]}
+}
+
+// 要約にある関数の本体を、要約の処理の前の本体（BX_SPPRE）にする（読めなければ今の本体のまま）
+func spSumBody(st mut St, f FnRef, t CkTab) {
+    v := bxCPeek(mut st, f, BX_SPPRE, 0)
+    if len(v) == 0 {
+        return
+    }
+    p := bxCBodyV(mut st, v, t)
+    if len(p) > 1 {
+        mvUnpack(mut st, f, p)
+    }
+}
+
+// 枠の割り当ての表: recs = [組, callee, n, (位置, 種類, 値) × n, 呼び出し点の数, 同数の比べの値, 枠を得たか]…・ix = 鍵のハッシュ → recsの位置（開番地）。
+// 同数の比べの値 = 定数の組のハッシュ（大域は記録の番地でなく安定な鍵 — 番地は発見の順に依る）
+type SpPre struct {
+    recs []int
+    ix map[int]int
+}
+
+func spPreHash(gr int, key []int, salt int) int {
+    mut h := ckM1(CK_S1, gr)
+    for w <- key {
+        h = ckM1(h, w)
+    }
+    return ckM1(h, salt)
+}
+
+// 表の (組, 鍵) の位置（無ければ -1）
+func spPreFind(pre SpPre, gr int, key []int) int {
+    mut salt := 0
+    while true {
+        at := pre.ix[spPreHash(gr, key, salt)]
+        if at == nil {
+            return -1
+        }
+        if spPreSame(pre.recs, at, gr, key) {
+            return at
+        }
+        salt += 1
+    }
+    return -1
+}
+
+func spPreSame(recs []int, at int, gr int, key []int) bool {
+    if recs[at] != gr || recs[at + 1] != key[0] || recs[at + 2] != key[1] {
+        return false
+    }
+    for k <- iter.Range(0, 3 * key[1]) {
+        if recs[at + 3 + k] != key[2 + k] {
+            return false
+        }
+    }
+    return true
+}
+
+
+// 元の関数（作業列 work の [関数, 深さ, 組]…）の呼び出し点を数えて、組 × callee ごとに多い順の SP_PER 個に枠を与える
+func spPreCount(st mut St, work mut []int, fl []int, finfo []int, fsens []int) SpPre {
+    mut recs := mut []int{}
+    mut ix := mut map[int]int{}
+    mut w := 0
+    while w < len(work) {
+        cf := FnRef(work[w])
+        gr := work[w + 2]
+        w += 3
+        mut defs := []int{}
+        mut b := irFnBHead(mut st, cf)
+        while b != -1 {
+            mut ins := if irBlkTerm(mut st, b) == TmExit { InsRef(-1) } else { irBlkIHead(mut st, b) }
+            while ins != -1 {
+                g := if irInsOp(mut st, ins) == OpCall { irInsFn(mut st, ins) } else { FnRef(-1) }
+                gi := if int(g) >= 0 && g != cf { spFind(fl, int(g)) } else { -1 }
+                mask := if int(g) < 0 || g == cf { -1 } else if gi >= 0 { finfo[gi] } else { spInfo(mut st, g) }
+                sens := if gi >= 0 { fsens[gi] } else { mask }
+                if mask > 0 && sens > 0 {
+                    if len(defs) == 0 {
+                        st.fn = cf
+                        defs = spDefs(mut st, cf)
+                    }
+                    key := spKey(mut st, defs, g, ins, mask)
+                    if len(key) > 2 && spTrig(key, sens) {
+                        mut salt := 0
+                        mut done := false
+                        while !done {
+                            h := spPreHash(gr, key, salt)
+                            at := ix[h]
+                            if at == nil {
+                                ix[h] = len(recs)
+                                recs = append(recs, gr)
+                                for v <- key {
+                                    recs = append(recs, v)
+                                }
+                                recs = append(recs, 1)
+                                recs = append(recs, spTie(mut st, key))
+                                recs = append(recs, 0)
+                                done = true
+                            } else {
+                                mut same := recs[at] == gr && recs[at + 1] == key[0] && recs[at + 2] == key[1]
+                                for k <- iter.Range(0, 3 * key[1]) {
+                                    if same && recs[at + 3 + k] != key[2 + k] {
+                                        same = false
+                                    }
+                                }
+                                if same {
+                                    recs[at + 3 + 3 * key[1]] += 1
+                                    done = true
+                                } else {
+                                    salt += 1
+                                }
+                            }
+                        }
+                    }
+                }
+                ins = irInsNext(mut st, ins)
+            }
+            b = irBlkNext(mut st, b)
+        }
+    }
+    // 組 × callee ごとに、数の多い順（同数は鍵の値の順）の先頭 SP_PER 個に枠
+    mut offs := mut []int{}
+    mut q := 0
+    while q < len(recs) {
+        offs = append(offs, q)
+        q += 6 + 3 * recs[q + 2]
+    }
+    of := freeze(offs)
+    rf := freeze(recs)
+    ord := sort.Order(len(of), (a, b) => spPreLess(rf, of[a], of[b]))
+    mut adm := mut []int{}
+    xFill(mut adm, len(of), 0)
+    mut run := 0
+    for k <- iter.Range(0, len(ord)) {
+        at := of[ord[k]]
+        if k > 0 {
+            pv := of[ord[k - 1]]
+            run = if rf[pv] == rf[at] && rf[pv + 1] == rf[at + 1] { run + 1 } else { 0 }
+        }
+        if run < SP_PER {
+            adm[ord[k]] = 1
+        }
+    }
+    mut out := mut []int{}
+    for k <- iter.Range(0, len(of)) {
+        at := of[k]
+        n := rf[at + 2]
+        for j <- iter.Range(0, 5 + 3 * n) {
+            out = append(out, rf[at + j])
+        }
+        out = append(out, adm[k])
+    }
+    return SpPre{recs: freeze(out), ix: freeze(ix)}
+}
+
+// 枠の順: 組・callee の昇順 → 呼び出し点の数の降順 → 定数の組（数・位置・種類・値）の昇順
+func spPreLess(r []int, a int, b int) bool {
+    if r[a] != r[b] {
+        return r[a] < r[b]
+    }
+    if r[a + 1] != r[b + 1] {
+        return r[a + 1] < r[b + 1]
+    }
+    ca := r[a + 3 + 3 * r[a + 2]]
+    cb := r[b + 3 + 3 * r[b + 2]]
+    if ca != cb {
+        return ca > cb
+    }
+    return r[a + 4 + 3 * r[a + 2]] < r[b + 4 + 3 * r[b + 2]]
+}
+
+// 定数の組の安定なハッシュ（大域の値は安定な鍵のハッシュに替える）
+func spTie(st mut St, key []int) int {
+    mut h := ckM1(CK_S2, key[1])
+    for j <- iter.Range(0, key[1]) {
+        h = ckM1(h, key[2 + 3 * j])
+        h = ckM1(h, key[3 + 3 * j])
+        if key[3 + 3 * j] == SP_K_GLOB {
+            mut gh := mut []int{}
+            ckBytesTo(mut gh, xGlobKey(mut st, key[4 + 3 * j]))
+            h = ckM1(h, gh[0])
+        } else {
+            h = ckM1(h, key[4 + 3 * j])
+        }
+    }
+    return h
+}
+
+// バイト列の辞書順
+func spBytesLess(a []byte, b []byte) bool {
+    mut i := 0
+    while i < len(a) && i < len(b) {
+        if a[i] != b[i] {
+            return a[i] < b[i]
+        }
+        i += 1
+    }
+    return len(a) < len(b)
 }
 
 // f の中の残さない複製の呼び出しを元の callee へ戻す
@@ -322,14 +661,14 @@ func spInfo(st mut St, g FnRef) int {
 
 // 鍵keyと同じcallee・同じ定数の位置の組の複製が一度捨てられたか（表の記録の複製のフィールドが -1 — 定数の値が違っても畳み方は同じ
 // 見込み・試す費用を払わない。位置の組が違えば別 — hasPrefixAt の at だけの定数と p まで定数とは畳め方が違う）
-func spHopeless(tab []int, key []int) bool {
+func spHopeless(tab []int, gr int, key []int) bool {
     mut t := 0
     while t < len(tab) {
-        n := tab[t + 1]
-        if tab[t] == key[0] && n == key[1] && tab[t + 2 + 3 * n] == -1 {
+        n := tab[t + 2]
+        if tab[t] == gr && tab[t + 1] == key[0] && n == key[1] && tab[t + 3 + 3 * n] == -1 {
             mut same := true
             for j <- iter.Range(0, n) {
-                if tab[t + 2 + 3 * j] != key[2 + 3 * j] {
+                if tab[t + 3 + 3 * j] != key[2 + 3 * j] {
                     same = false
                 }
             }
@@ -337,7 +676,7 @@ func spHopeless(tab []int, key []int) bool {
                 return true
             }
         }
-        t += 3 + 3 * n
+        t += 4 + 3 * n
     }
     return false
 }
@@ -480,22 +819,51 @@ func spKey(st mut St, defs []int, g FnRef, ins InsRef, mask int) []int {
     return freeze(key)
 }
 
+// gの呼び出しの付け替え m（[序数, 元の callee, 複製]…・序数の昇順 — 作業列の歩きと同じ: exitで終わるブロックの命令は数えない）の
+// 行き先を、which = 1 なら元の callee へ・2 なら複製へ置く
+func spSetCalls(st mut St, g FnRef, m []int, which int) {
+    mut ordn := 0
+    mut q := 0
+    mut b := irFnBHead(mut st, g)
+    while b != -1 && q < len(m) {
+        mut ins := if irBlkTerm(mut st, b) == TmExit { InsRef(-1) } else { irBlkIHead(mut st, b) }
+        while ins != -1 && q < len(m) {
+            if m[q] == ordn {
+                irSetInsA(mut st, ins, m[q + which])
+                q += 3
+            }
+            ins = irInsNext(mut st, ins)
+            ordn += 1
+        }
+        b = irBlkNext(mut st, b)
+    }
+}
+
 // gの複製を作り、keyの仮引数を定数に置き換えて畳む。畳んだ後が元より小さくなければ捨てて -1。複製は関数のチェーンの末尾に積む
-func spClone(st mut St, g FnRef, cf FnRef, key []int) FnRef {
-    size0 := ilSize(mut st, g)
-    // 本体のコピー: 詰めて（元の本体は転送のマークで潰れる）元へも複製へも積み直す
-    pk := mvPack(mut st, g, false)
-    mvUnpack(mut st, g, pk)
+func spClone(st mut St, g FnRef, cf FnRef, key []int, gr int, bt CkTab) FnRef {
+    // 本体のコピー: 詰めて（元の本体は転送のマークで潰れる）元へも複製へも積み直す。本体を下ろさなかった関数は要約の処理の前の本体（BX_SPPRE）から
+    mut pk := []int{}
+    if irFnBHead(mut st, g) == -1 && bxCSelf(mut st, g) >= 0 {
+        v := bxCPeek(mut st, g, BX_SPPRE, 0)
+        pk = if len(v) > 0 { bxCBodyV(mut st, v, bt) } else { []int{-1} }
+        if len(pk) <= 1 {
+            panic(InvariantBroken{})
+        }
+    } else {
+        pk = mvPack(mut st, g, false)
+        mvUnpack(mut st, g, pk)
+    }
     c := FnRef(recN(mut st, FSZ))
     for k <- iter.Range(0, FSZ) {
         desugar.HeapSet(mut st.d, int(c) + k, desugar.HeapGet(mut st.d, int(g) + k))
     }
     irSetFnName(mut st, c, int(strCat(mut st, strCat(mut st, desugar.StrRef(irFnName(mut st, g)), strLit(mut st, "$s")), decimal(mut st, int(c)))))
     irSetFnExport(mut st, c, 0)
-    // 安定な鍵の材料: 複製 = (callee, 定数の組) — 名前の `$s<番地>` はヒープの並びに依る
+    // 安定な鍵の材料: 複製 = (組, callee, 定数の組) — 名前の `$s<番地>` はヒープの並びに依る。組が違えば同じ (callee, 定数の組) の別の複製
     table.Push(mut st.sk, SK_SPEC)
-    table.Push(mut st.sk, 1 + len(key))
+    table.Push(mut st.sk, 2 + len(key))
     table.Push(mut st.sk, int(c))
+    table.Push(mut st.sk, gr)
     for w <- key {
         table.Push(mut st.sk, w)
     }

@@ -1,0 +1,478 @@
+package loader
+
+// package ごとの仕上げ（D1 — plan-d1-stub-bldn.md）: package P を「P が推移的に import する package は宣言の木・P はソース」で finish に掛けると、
+// P の仕上げの結果（木と Program の行）は全体で回したものと同じになる。例外は dest の本体の旗のうち下流の使い方で決まる分（destPatch —
+// 全体の段で足す）。宣言の木は、関数の本体を外した木（総称・展開される関数・@expand・省略可の関数型の仮引数を持つ関数は本体ごと —
+// .sobi の wholeFn と同じ基準）。
+// 検証モード SOBER_PKGFIN_VERIFY=1: load の後に、全 package についてこの形で finish を回し直し、全体で回した結果とバイトで比べる
+// 値の符号（pkgval.sober）の往復も照らす（符号化 → 読み戻し → 符号化がバイトで同じ・木が同じ）
+// （stderr に `#pkgfin <path> ok|mismatch …` と `#pkgfin summary ok=<n> bad=<n>` — 下流の旗の分は比べない）
+
+import "ast"
+import "std/builder"
+import "std/io"
+import "std/iter"
+import "std/sort"
+
+// 宣言の木: 本体を外す関数（keep が偽 — ファイルの func 宣言の並びごと）の本体を、空のブロックに置き換えて取り除き、残った節の番号を詰めた木。
+// 節は元の並び（後順）のまま。データの列は元のまま残し、節の列を持つ列（番号を付け替える）だけをデータの末尾に足し直す（文字列・生の値はそのまま指す）。
+// フィールドの意味は ast.FieldDesc
+func StubTree(t ast.Tree, keep []bool) ast.Tree {
+    n := len(t.nodes)
+    root := t.nodes[t.file]
+    // 本体を外す宣言の本体の根
+    mut cutAt := mut []bool{}
+    for _ <- iter.Range(0, n) {
+        cutAt = append(cutAt, false)
+    }
+    mut any := false
+    for k <- iter.Range(0, ast.ListLen(t, root.d)) {
+        x := t.nodes[ast.ListAt(t, root.d, k)]
+        if x.e >= 0 && !keep[k] {
+            cutAt[x.e] = true
+            any = true
+        }
+    }
+    if !any {
+        return t
+    }
+    cuts := freeze(cutAt)
+    // 届く節（根から — 外す本体の根は葉として届く）
+    mut seen := mut []bool{}
+    for _ <- iter.Range(0, n) {
+        seen = append(seen, false)
+    }
+    mut st := mut []int{t.file}
+    mut sp := 1
+    while sp > 0 {
+        sp -= 1
+        i := st[sp]
+        if i < 0 || i >= n || seen[i] {
+            continue
+        }
+        seen[i] = true
+        if cuts[i] {
+            continue
+        }
+        x := t.nodes[i]
+        for j <- iter.Range(0, 6) {
+            c := ast.FieldOf(x, j)
+            v := ast.FieldAt(x, j)
+            if c == 1 && v >= 0 {
+                sp = stubPush(mut st, sp, v)
+            } else if (c == 3 || c == 7 && v > 0) && v >= 0 {
+                for q <- iter.Range(0, t.data[v]) {
+                    w := t.data[v + 1 + q]
+                    if w >= 0 {
+                        sp = stubPush(mut st, sp, w)
+                    }
+                }
+            }
+        }
+    }
+    mut nw := mut []int{}
+    mut m := 0
+    for i <- iter.Range(0, n) {
+        nw = append(nw, if seen[i] { m } else { 0 - 1 })
+        m = if seen[i] { m + 1 } else { m }
+    }
+    nws := freeze(nw)
+    mut dd := mut []int{}
+    for w <- t.data {
+        dd = append(dd, w)
+    }
+    empty := len(dd)
+    dd = append(dd, 0)
+    mut ns := mut []ast.Node{}
+    for i <- iter.Range(0, n) {
+        if seen[i] {
+            x := t.nodes[i]
+            if cuts[i] {
+                ns = append(ns, ast.Node{ast.KBlock, x.tok, empty, 0, 0, 0, 0, 0})
+            } else {
+                mut fs := mut []int{}
+                for j <- iter.Range(0, 6) {
+                    c := ast.FieldOf(x, j)
+                    v := ast.FieldAt(x, j)
+                    if c == 1 && v >= 0 {
+                        fs = append(fs, nws[v])
+                    } else if (c == 3 || c == 7 && v > 0) && v >= 0 {
+                        at := len(dd)
+                        dd = append(dd, t.data[v])
+                        for q <- iter.Range(0, t.data[v]) {
+                            w := t.data[v + 1 + q]
+                            dd = append(dd, if w >= 0 { nws[w] } else { w })
+                        }
+                        fs = append(fs, at)
+                    } else {
+                        fs = append(fs, v)
+                    }
+                }
+                ns = append(ns, ast.Node{x.kind, x.tok, fs[0], fs[1], fs[2], fs[3], fs[4], fs[5]})
+            }
+        }
+    }
+    return ast.Tree{freeze(ns), freeze(dd), nws[t.file]}
+}
+
+// 宣言の木のハッシュの語: 節ごとに種類とフィールド（文字列と列は中身をたどる — データの中の位置に依らない）。
+// 字句の位置（節の tok と関数の宣言の付加の列の位置 — extIsPos）は入れない: 依存する側の仕上げの結果は上流の位置に依らない（位置を写すのは同じ木の中だけ・上流を指す診断は拒否の
+// 経路で、拒否は全体の経路へ回し直す）。本体に行を足す編集で下流を仕上げ直さないため
+func stubWords(w mut builder.Builder[int], t ast.Tree) {
+    builder.Push(mut w, len(t.nodes))
+    builder.Push(mut w, t.file)
+    for x <- t.nodes {
+        builder.Push(mut w, x.kind)
+        for j <- iter.Range(0, 6) {
+            c := ast.FieldOf(x, j)
+            v := ast.FieldAt(x, j)
+            if c == 2 {
+                stubStr(mut w, t, v)
+            } else if (c == 3 || c == 5 || c == 7 && v > 0) && v >= 0 {
+                builder.Push(mut w, t.data[v])
+                fext := x.kind == ast.KFuncDecl && j == 5
+                for q <- iter.Range(0, t.data[v]) {
+                    builder.Push(mut w, if fext && extIsPos(q) { 0 } else { t.data[v + 1 + q] })
+                }
+            } else if (c == 4 && v >= 0) || (c == 6 && v > 0) {
+                l := if c == 6 { v - 1 } else { v }
+                builder.Push(mut w, t.data[l])
+                for q <- iter.Range(0, t.data[l]) {
+                    stubStr(mut w, t, t.data[l + 1 + q])
+                }
+            } else {
+                builder.Push(mut w, v)
+            }
+        }
+    }
+}
+
+func stubStr(w mut builder.Builder[int], t ast.Tree, s int) {
+    if s < 0 {
+        builder.Push(mut w, s)
+        return
+    }
+    builder.Push(mut w, t.data[s])
+    for q <- iter.Range(0, t.data[s]) {
+        builder.Push(mut w, t.data[s + 1 + q])
+    }
+}
+
+// ファイル t（package path）の func 宣言ごとに本体を残すか: 総称・@expand・省略可の匿名関数型の仮引数・展開される関数（ex = "path 名前" の集合）
+func stubKeep(t ast.Tree, path string, ex map[string]int) []bool {
+    root := t.nodes[t.file]
+    mut out := mut []bool{}
+    for k <- iter.Range(0, ast.ListLen(t, root.d)) {
+        d := ast.ListAt(t, root.d, k)
+        x := t.nodes[d]
+        gen := x.b >= 0 && ast.ListLen(t, x.b) > 0
+        exp := x.f >= 0 && t.data[x.f] >= 8 && t.data[x.f + 8] != 0
+        out = append(out, exp || ozDeclOptParam(t, d) || ex[path + " " + Name(t, x.a)] != nil)
+    }
+    return freeze(out)
+}
+
+// 関数の宣言の付加の列（parser の funcExt）の q 番が字句の位置か: start・end・sig_end・errsTok・注釈の secTok・effsTok・cstTok
+func extIsPos(q int) bool {
+    return q == 1 || q == 2 || q == 3 || q == 6 || q == 10 || q == 13 || q == 15
+}
+
+// 宣言 d が省略可の匿名関数型 `(func(…) R)?` の仮引数を持つか
+func ozDeclOptParam(t ast.Tree, d int) bool {
+    ps := t.nodes[d].c
+    for q <- iter.Range(0, ast.ListLen(t, ps)) {
+        ty := t.nodes[t.nodes[ast.ListAt(t, ps, q)].b]
+        if ty.kind == ast.TOpt && t.nodes[ty.a].kind == ast.TFunc {
+            return true
+        }
+    }
+    return false
+}
+
+// 検証モード: 全 package について、package ごとの仕上げ（依存は宣言の木・リンク集合の順）の結果を、全体で回した結果 p とバイトで比べる
+func pkgFinVerify(dts []ast.Tree, fpkg []string, fpath []string, fstd []bool, md Mod, inf []string, p Program) {
+    mut exm := mut map[string]int{}
+    for i <- iter.Range(0, len(p.fn_file)) {
+        if p.fn_expands[i] {
+            pt := p.trees[p.fn_file[i]]
+            exm[p.file_path[p.fn_file[i]] + " " + Name(pt, pt.nodes[p.fn_node[i]].a)] = 1
+        }
+    }
+    ex := freeze(exm)
+    mut ok := 0
+    mut bad := 0
+    for k <- iter.Range(0, len(p.pkg_path)) {
+        link := SplitLink(p, k)
+        mut ts := mut []ast.Tree{}
+        mut lp := mut []string{}
+        mut lpath := mut []string{}
+        mut lstd := mut []bool{}
+        for l <- link {
+            for f <- iter.Range(0, len(dts)) {
+                if fpkg[f] == l {
+                    ts = append(ts, if l == p.pkg_path[k] { dts[f] } else { StubTree(dts[f], stubKeep(dts[f], fpath[f], ex)) })
+                    lp = append(lp, fpkg[f])
+                    lpath = append(lpath, fpath[f])
+                    lstd = append(lstd, fstd[f])
+                }
+            }
+        }
+        mut fx := FinX{}
+        q, err := finish(freeze(ts), freeze(lp), freeze(lpath), freeze(lstd), []string{}, false, 0, md, inf, mut fx)
+        why0 := if err != nil { "rejected" } else { pkgFinDiff(p, q, p.pkg_path[k]) }
+        why := if why0 == "" { pkgValRound(q, p.pkg_path[k]) } else { why0 }
+        if why == "" {
+            ok += 1
+        } else {
+            bad += 1
+            _ = io.WriteStderr(bytes("#pkgfin ${p.pkg_path[k]} mismatch ${why}\n"))
+        }
+    }
+    _ = io.WriteStderr(bytes("#pkgfin summary ok=${ok} bad=${bad}\n"))
+}
+
+// package path の木（合成のファイルを含む — パスで引く）と Program の行が p と q で同じか（違えば理由・同じなら ""）。
+// 関数の本体の KBlock の旗 e は比べない（下流の使い方で決まる分は全体の段 destPatch が足す）
+func pkgFinDiff(p Program, q Program, path string) string {
+    for f <- iter.Range(0, len(p.file_path)) {
+        if p.pkg_path[p.file_pkg[f]] == path {
+            mut g := 0 - 1
+            for h <- iter.Range(0, len(q.file_path)) {
+                if q.file_path[h] == p.file_path[f] {
+                    g = h
+                }
+            }
+            if g < 0 {
+                return "${p.file_path[f]} missing"
+            }
+            r := pkgTreeDiff(p.trees[f], q.trees[g])
+            if r >= -2 {
+                return "${p.file_path[f]}:${r}"
+            }
+        }
+    }
+    ra := pkgRowSig(p, path)
+    rb := pkgRowSig(q, path)
+    for i <- iter.Range(0, len(ra)) {
+        if ra[i] != rb[i] {
+            return "rows${i}"
+        }
+    }
+    return ""
+}
+
+// 2 つの木の最初の違う節（データが違えば -2・節の数が違えば短い方の長さ・同じなら -3）。本体の KBlock の旗 e は比べない
+func pkgTreeDiff(a ast.Tree, b ast.Tree) int {
+    if len(a.data) != len(b.data) {
+        return 0 - 2
+    }
+    for i <- iter.Range(0, len(a.data)) {
+        if a.data[i] != b.data[i] {
+            return 0 - 2
+        }
+    }
+    if len(a.nodes) != len(b.nodes) {
+        return if len(a.nodes) < len(b.nodes) { len(a.nodes) } else { len(b.nodes) }
+    }
+    mut body := mut []bool{}
+    for i <- iter.Range(0, len(a.nodes)) {
+        body = append(body, false)
+    }
+    fs := a.nodes[a.file].d
+    for k <- iter.Range(0, ast.ListLen(a, fs)) {
+        e := a.nodes[ast.ListAt(a, fs, k)].e
+        if e >= 0 {
+            body[e] = true
+        }
+    }
+    for i <- iter.Range(0, len(a.nodes)) {
+        x := a.nodes[i]
+        y := b.nodes[i]
+        if x.kind != y.kind || x.tok != y.tok || x.a != y.a || x.b != y.b || x.c != y.c || x.d != y.d || (x.e != y.e && !body[i]) || x.f != y.f {
+            return i
+        }
+    }
+    return 0 - 3
+}
+
+func pkgB(b bool) string {
+    return if b { "1" } else { "0" }
+}
+
+// package path の Program の行の要約（関数・const・error・捕捉の行。全体の番号を使わない — ファイルはパス・節はファイルの中の番号）
+func pkgRowSig(p Program, path string) []string {
+    mut fnS := ""
+    for i <- iter.Range(0, len(p.fn_file)) {
+        f := p.fn_file[i]
+        if p.pkg_path[p.file_pkg[f]] == path {
+            t := p.trees[f]
+            mut cs := ""
+            for j <- iter.Range(p.fn_clo[i], p.fn_chi[i]) {
+                cs = cs + p.callees[j] + ","
+            }
+            fnS = fnS + p.file_path[f] + "#" + Name(t, t.nodes[p.fn_node[i]].a) + ":" + pkgB(p.fn_expands[i]) + pkgB(p.fn_mut_def[i]) + pkgB(p.fn_closed[i]) + pkgB(p.fn_has_try[i]) + "[" + cs + "];"
+        }
+    }
+    mut cS := ""
+    for i <- iter.Range(0, len(p.c_file)) {
+        f := p.c_file[i]
+        if p.pkg_path[p.file_pkg[f]] == path {
+            cS = cS + p.file_path[f] + "#${p.c_node[i]}:${p.c_value[i]}" + pkgB(p.c_has[i]) + pkgB(p.c_dict[i]) + ";"
+        }
+    }
+    mut eS := ""
+    for i <- iter.Range(0, len(p.err_name)) {
+        if p.pkg_path[p.err_pkg[i]] == path {
+            eS = eS + p.err_name[i] + ";"
+        }
+    }
+    mut kS := ""
+    for i <- iter.Range(0, len(p.cap_file)) {
+        f := p.cap_file[i]
+        if p.pkg_path[p.file_pkg[f]] == path {
+            mut ns := ""
+            for j <- iter.Range(p.cap_lo[i], p.cap_hi[i]) {
+                ns = ns + p.cap_names[j] + ","
+            }
+            kS = kS + p.file_path[f] + "#${p.cap_node[i]}:" + ns + "/${p.cap_brw[i]};"
+        }
+    }
+    return []string{fnS, cS, eS, kS}
+}
+
+// q の package path の値の往復（違えば理由・同じなら ""）
+func pkgValRound(q Program, path string) string {
+    k := pathIndex(q.pkg_path, path)
+    if k < 0 {
+        return "codec: no package"
+    }
+    v := PkgValOf(q, k)
+    b := PkgValEnc(v)
+    mut vs := mut []PkgVal{}
+    if !pkgValAppend(b, mut vs) {
+        return "codec: decode"
+    }
+    b2 := PkgValEnc(vs[0])
+    if len(b) != len(b2) {
+        return "codec: re-encode"
+    }
+    for i <- iter.Range(0, len(b)) {
+        if b[i] != b2[i] {
+            return "codec: re-encode"
+        }
+    }
+    for i <- iter.Range(0, len(v.trees)) {
+        if !pcTreeEq(v.trees[i], vs[0].trees[i]) {
+            return "codec: tree ${v.files[i]}"
+        }
+    }
+    return ""
+}
+
+// finish の途中の情報（package ごとの仕上げ — tgt が空でなければ取る）: 入力 = 下流の package からの optfn の要る組（"Z の package のパス 名前" と有無）。
+// 出力 = dest の出す要求（destReqStrs）・optfn の出す要求（呼び出し点ごと）と対象の Z に作った組・展開待ちの捕捉のターゲットの身元
+type FinX struct {
+    tgt string
+    inZ []string
+    inM []int
+    dreq []string
+    outZ []string
+    outM []int
+    zbN []string
+    zbM []int
+    capT []string
+    // nopatch = dest の下流の旗を足さない（仕上げ直した package の値を、全体の仕上げから作る値とバイトで同じにする — fastload.sober）
+    nopatch bool
+    // all = 全 package の分を取る（全体の仕上げから値を作る — pkgCapture）: dest の前の木と package・optfn の呼び出し点ごとの要求（呼び出し点の package・Z・有無）・作った組（Z の package・名前・有無）
+    all bool
+    aPre []ast.Tree
+    aPrePkg []string
+    aOZo []string
+    aOZz []string
+    aOZm []int
+    aZBp []string
+    aZBn []string
+    aZBm []int
+}
+
+// 木の列 ts（dest の前）の package tgt のファイルが出す dest の要求: "V <package 名>.<関数名>"（値の位置の名前）・"A …"（返る列へ追記する呼び出しの呼び先）。
+// 重なりを除いて昇順（destTables と同じ規則 — destReqFile）
+func destReqStrs(ts []ast.Tree, fpkg []string, tgt string) []string {
+    mut seen := mut map[string]int{}
+    mut out := mut []string{}
+    for f <- iter.Range(0, len(ts)) {
+        if fpkg[f] == tgt {
+            t := ts[f]
+            pn := Name(t, t.nodes[t.file].a)
+            mut callee := mut []bool{}
+            for i <- iter.Range(0, len(t.nodes)) {
+                callee = append(callee, false)
+            }
+            for i <- iter.Range(0, len(t.nodes)) {
+                x := t.nodes[i]
+                if x.kind == ast.ECall && x.a >= 0 {
+                    callee[x.a] = true
+                }
+            }
+            for i <- iter.Range(0, len(t.nodes)) {
+                x := t.nodes[i]
+                if !callee[i] && x.kind == ast.EIdent {
+                    dreqPut(mut out, mut seen, "V " + pn + "." + Name(t, x.a))
+                } else if !callee[i] && x.kind == ast.ESelector && x.a >= 0 && t.nodes[x.a].kind == ast.EIdent {
+                    dreqPut(mut out, mut seen, "V " + Name(t, t.nodes[x.a].a) + "." + Name(t, x.b))
+                }
+            }
+            sc := scalarFns(t)
+            fns := t.nodes[t.file].d
+            for k <- iter.Range(0, ast.ListLen(t, fns)) {
+                fd := t.nodes[ast.ListAt(t, fns, k)]
+                if fd.e >= 0 {
+                    for c0 <- destAppend(t, fd.e, sc) {
+                        c := t.nodes[t.nodes[c0].a]
+                        if c.kind == ast.EIdent {
+                            dreqPut(mut out, mut seen, "A " + pn + "." + Name(t, c.a))
+                        } else if c.kind == ast.ESelector && c.a >= 0 && t.nodes[c.a].kind == ast.EIdent {
+                            dreqPut(mut out, mut seen, "A " + Name(t, t.nodes[c.a].a) + "." + Name(t, c.b))
+                        }
+                    }
+                }
+            }
+        }
+    }
+    rs0 := freeze(out)
+    o := sort.Order(len(rs0), (a, b) => strLess(rs0[a], rs0[b]))
+    mut r := mut []string{}
+    for i <- o {
+        r = append(r, rs0[i])
+    }
+    return freeze(r)
+}
+
+func dreqPut(out mut []string, seen mut map[string]int, s string) {
+    if seen[s] == nil {
+        seen[s] = 1
+        out = append(out, s)
+    }
+}
+
+// バイトの辞書順で a < b
+func strLess(a string, b string) bool {
+    x := bytes(a)
+    y := bytes(b)
+    n := if len(x) < len(y) { len(x) } else { len(y) }
+    for i <- iter.Range(0, n) {
+        if x[i] != y[i] {
+            return x[i] < y[i]
+        }
+    }
+    return len(x) < len(y)
+}
+
+func stubPush(st mut []int, sp int, v int) int {
+    if sp < len(st) {
+        st[sp] = v
+    } else {
+        st = append(st, v)
+    }
+    return sp + 1
+}

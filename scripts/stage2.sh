@@ -31,7 +31,7 @@ set -uo pipefail
 # ビルドの入力（SOBER_O1 — キーに入る）・コピーの木のオプション（GATES_PREBUILT）
 if [ "${SOBER_STAGE2_ENV:-}" != fixed ]; then
     keep=()
-    for v in HOME PATH TMPDIR ZIG ZIG_GLOBAL_CACHE_DIR ZIG_LOCAL_CACHE_DIR XDG_CACHE_HOME STAGE1 SOBER_O1 GATES_PREBUILT; do [ -n "${!v+x}" ] && keep+=("$v=${!v}"); done
+    for v in HOME PATH TMPDIR ZIG ZIG_GLOBAL_CACHE_DIR ZIG_LOCAL_CACHE_DIR XDG_CACHE_HOME STAGE1 SOBER_O1 SOBER_BAKE GATES_PREBUILT; do [ -n "${!v+x}" ] && keep+=("$v=${!v}"); done
     exec env -i "${keep[@]}" SOBER_STAGE2_ENV=fixed bash "${BASH_SOURCE[0]}" "$@"
 fi
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -65,9 +65,9 @@ fi
 # 表が割れて下の内容ハッシュのパスに落ちる。表は下のパスの末尾（鮮度の確定後）にだけ書く
 stat_key() {
     {
-        find "$STAGE1" "$ROOT/bootstrap/chain.txt" "$ROOT/src/compiler" "$ROOT/src/std" -type f -printf '%p %s %T@\n' 2> /dev/null
+        find "$STAGE1" "$ROOT/bootstrap/chain.txt" "$ROOT/scripts/bake.list" "$ROOT/src/compiler" "$ROOT/src/std" -type f -printf '%p %s %T@\n' 2> /dev/null
         find "$OUT" -maxdepth 2 -type f \( -name 'sober-boot*' -o -name sober2 -o -name '.key*' \) -printf '%p %s %T@\n' 2> /dev/null
-        echo "O1=${SOBER_O1:-}"
+        echo "O1=${SOBER_O1:-} BAKE=${SOBER_BAKE:-1}"
     } | LC_ALL=C sort | sha256sum | cut -d' ' -f1
 }
 STATF=$OUT/.stat
@@ -152,13 +152,18 @@ done
 # 最後の boot が --emit=elf を知っていて -O1 の列でなければ、stage2 は boot の正規バックエンドで ELF に（.ll と zig cc を通らない）
 S2VIA=ll
 if knows_elf_step $((${#CHAIN[@]} - 1)) && [ -z "${SOBER_O1:-}" ]; then S2VIA=elf; fi
-key() { echo "$(rel_key "$BOOT" src/compiler src/std) $S2OPT $S2VIA"; }
+key() { echo "$(rel_key "$BOOT" src/compiler src/std scripts/bake.list) $S2OPT $S2VIA bake${SOBER_BAKE:-1}"; }
 fresh() { [ -x "$OUT/sober2" ] && [ -f "$OUT/.key" ] && [ "$(cat "$OUT/.key")" = "$1" ]; }
 
 # l0_bake <仮のstage2>: 仮のstage2（L0は仮のファイルだけ）にstdの全packageの.sobiを書かせ、木のl0/std/に置く
 # （stdのプリビルド焼き込み。同じコードが計算した値を、再ビルドするstage2に @embedで焼き込む。手順はscripts/stagelib.shのstage_l0で、stage3と同じ）
 l0_bake() {
     stage_l0 "$1" "$W/root" "$W" || exit 1
+}
+
+# 焼き込み（cold81 — 手順の本体は stagelib.sh の stage_bake。stage3.sh も同じ手順で焼く）
+bake_packs() {
+    stage_bake "$1" "$W/root" "$W" || exit 1
 }
 
 k=$(key)
@@ -172,12 +177,20 @@ if [ "$force" = 1 ] || ! fresh "$k"; then
         W=$(mktemp -d)
         trap 'rm -rf "$W"' EXIT
         tree_of "$W/root" "$ROOT/src/compiler" "$ROOT/src/std"
+        # 焼き込みのコンパイラの鍵（app/main.sober の SelfKeyFiles — γ の鍵と置き場の世代の名前に使う）: この .key を作業の木にだけ書く。仮のstage2と本番が
+        # 同じ鍵を持つ（焼き込みの値を作るコンパイラと、焼き込みを含む本番のコンパイラで鍵が循環しない）。src/ の selfkey/key.txt は空のまま
+        printf '%s' "$k" > "$W/root/selfkey/key.txt"
         # 設計整合パス（--passes — 最後のboot = ブートストラップチェーンの5行目以降が知っている）を掛けてビルドする
         if [ "$S2VIA" = elf ]; then
             (cd "$W/root" && ELF_ENTRY=app elf_build "$BOOT" "$W/sober2" --passes) >&2 || { echo "stage2.sh: FAIL boot build of src/compiler/app" >&2; exit 1; }
             # 2ステージ目: L0を焼き込んで再ビルドする
             l0_bake "$W/sober2"
             (cd "$W/root" && ELF_ENTRY=app elf_build "$BOOT" "$W/sober2" --passes) >&2 || { echo "stage2.sh: FAIL boot build of src/compiler/app (with L0)" >&2; exit 1; }
+            # 3ステージ目: 後段の関数キャッシュの値を焼き込んで再ビルドする
+            if [ "${SOBER_BAKE:-1}" != 0 ]; then
+                bake_packs "$W/sober2"
+                (cd "$W/root" && ELF_ENTRY=app elf_build "$BOOT" "$W/sober2" --passes) >&2 || { echo "stage2.sh: FAIL boot build of src/compiler/app (with the baked packs)" >&2; exit 1; }
+            fi
             rm -f "$OUT/stage2.ll"
             mv "$W/sober2" "$OUT/sober2.new" && mv "$OUT/sober2.new" "$OUT/sober2"
         else

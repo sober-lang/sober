@@ -1,4 +1,4 @@
-@@full	6d9fa3d8e3913e49	11048	345990
+@@full	8404f6ab7ef2dc2b	11064	345865
 @head	e4f59f3dad8aa813	0	638
 func chunked	f3e4b83ae137ce2b	134	4713
 func dpath	f73e2675fd904859	16	590
@@ -12,12 +12,12 @@ func login	31709984a07b59ef	14	839
 func main	feeadad1a2ad1ff5	33	1038
 func me	ca5af851bf54f50c	24	908
 func num	ee114ef3835d5aff	25	828
-func plain	085eb9507587a930	80	3019
+func plain	8459e868d05a691b	102	3716
 func route	c94629839bd1842d	323	11159
 func run	f81fc0841363457d	152	5008
 func sendFile	37b571074ad560c5	41	1456
-func serveTls	b2ee8ca4c21a1d36	27	1180
-func serveTlsConn	c8b3815470f0af47	60	2378
+func serveTls	a18eec03c03f3c7a	27	1180
+func serveTlsConn	105ca6bcdfa19e6c	42	1750
 func sharedRoutes	79c71e5bcde73826	57	2621
 func slow	61c5166d0b858849	11	661
 func slowBody	d371dc499e1a8477	33	1122

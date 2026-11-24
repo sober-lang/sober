@@ -4,7 +4,7 @@
 
 ## 範囲
 
-`std/net` の名前の解決（スタブリゾルバ — `net.Dial` がIPv4の綴りでないホストを受けたとき）。libcのgetaddrinfoを使わない。再帰のリゾルバ・権威サーバは持たない。
+`std/net` の名前の解決。`net.Dial` がIPの番地の綴りでないホストを受けたときに使うスタブリゾルバ。libcのgetaddrinfoを使わない。再帰のリゾルバ・権威サーバは持たない。
 
 ## 対応
 
@@ -15,7 +15,8 @@
 | search / ndotsの候補の順（resolv.conf(5)） | 対応 | `std/net.TestCandidates` |
 | 切り詰め（TC）はTCPで問い直す・CNAMEのチェーン（深さ8まで） | 対応 | `std/net.TestParseAnswer`<br>相互接続dns: 7（2026-11-06） |
 | 偽装への備え: txidはgetrandom・レスポンスのtxidと問いの名前と型の一致を確認する・名前の圧縮のループを断つ | 対応 | `std/net.TestParseAnswer`<br>相互接続dns: 7（2026-11-06） |
-| AとAAAAを読む（DialはIPv4だけ） | 一部 | `std/net.TestParseAnswer`<br>`std/net.TestDialLocalhost` |
+| IPv6のnameserverとIPv6へのDial（最後以外の試行は2秒で打ち切る。RFC 8305 5の上限値） | 対応 | `std/net.TestResolveBoth`<br>`std/net.TestEcho4And6`<br>`std/net.TestDialCap` |
+| AとAAAAを1つのUDPのsocketから同時に問う（片方だけの答え・NXDOMAIN・両方のNODATA・切り詰めの側だけをTCPで）・答えはIPv6を先に交互に並べる（RFC 8305 4）・/etc/hostsはIPv6の行も読みファイルの順 | 対応 | `std/net.TestResolveBoth`<br>`std/net.TestInterleave`<br>`std/net.TestHosts`<br>`std/net.TestParseAnswer` |
 <!-- confsync:end claims dns-resolver yes,partial -->
 
 ## 意図して外したこと
@@ -34,7 +35,6 @@
 | 項目 | 時期 | 今の挙動の証拠 |
 |---|---|---|
 | EDNS0（今は512バイトを超えるレスポンスがTCPへフォールバックする） | 0.8圏 | なし |
-| IPv6のnameserverとIPv6へのDial | 0.8圏 | なし |
 <!-- confsync:end claims dns-resolver planned -->
 
 ## 証拠 — 相互接続

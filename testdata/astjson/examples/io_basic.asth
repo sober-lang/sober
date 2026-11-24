@@ -1,9 +1,12 @@
-@@full	c0c0998887a7a280	1981	54191
-@head	ea9c184ba6dd3499	0	184
+@@full	1c90ca8110fd459a	2488	67610
+@head	7e8ca409bd63a7b4	0	215
 func check	54a636cb8ca110ac	21	758
 func firstLine	48757ce4af16e3a8	49	1670
-func main	bcbf0f06ffc0feb6	133	4325
+func main	761049407d0d093a	149	4902
 func readText	ee5c35caea2bb435	19	710
-func showText	44baabad8ee4d3d7	31	1082
+func removeAll	587e7712509490fc	18	694
+func runDir	25a59a75464b1e89	37	1321
+func showAs	2cef5d2403207e98	32	1154
+func showText	63b857a756e88165	6	292
 func sum	5933e5edf4c7e26b	25	900
 func why	4aa50053ba53fb35	32	1660

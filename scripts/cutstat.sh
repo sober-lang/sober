@@ -6,6 +6,8 @@
 #   終わり、出力がゴールデンどおり
 # ③ ミューテーションの自己検査（1件で足りる）: 3 = 検査点なし・9 = カウンタが0に戻らない → ② が終わらない（timeout）。10 = 間引かない → ① の表が食い違う
 #   scripts/cutstat.sh [--regen]
+# ゴールデンの並びを呼び手のロケールに依らせない
+export LC_ALL=C.UTF-8
 set -uo pipefail
 cd "$(dirname "$0")/.."
 S2=${STAGE2:-out/stage2/sober2}

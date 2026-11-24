@@ -1,0 +1,17 @@
+package main
+
+// 負例（拒否）: ジェネリック関数の中で、型パラメータの値をprint.Logに渡す（書き手は型ごとに合成するので、型の決まる所で呼ぶ）
+
+import "std/print"
+
+type Visit struct {
+    path string
+}
+
+func audit[T](x T) {
+    print.Log(x)
+}
+
+func main() {
+    audit(Visit{path: "/"})
+}

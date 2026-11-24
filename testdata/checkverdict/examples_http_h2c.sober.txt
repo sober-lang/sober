@@ -1,0 +1,2 @@
+{"ok":true,"ty":{"k":"int"}}
+exit=0

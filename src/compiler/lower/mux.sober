@@ -1,0 +1,1138 @@
+package lower
+
+// 接続の受けに混ぜる子の合図（language.md 11節「std専用の例外 = 外部のioの境界の多重化」・std/internal/mux）: rt.mux(op, m, a, b)。
+// muxの記録（MX_*）は接続のtaskのscopeのregionにある []int（std/internal/muxが作る）。合図は溜めのチャンク1つ（頭 + バイト列）で、
+// 記録の列（鍵の下・到着の順）に積む。接続のtaskは列の頭から取り、空なら待つ。
+// - 待ちはdomainのAwaitと同じ規約（TC_IORES = PEND_DOM・起こす側と期限の走査がCASで競う・勝った側だけがウェイクアップする — domain.soberのdomExpire）。
+//   期限（TC_DL）があれば自分のワーカーのpollerの期限のチェーンに積む。待っている間はTC_DQDL = 1（ringの期限の走査がdomainの待ち手として扱う印）
+// - 溜め（mux.pool・小さい組はmux.spool）: 全体で1つ。MUX_CHUNKとMUX_SMALLの2組のチャンクを、組ごとにMAP_NORESERVEで最初の積みのときに写像する。
+//   上限は2組で分け合うバイトの予算（MP_USE — 小さいチャンクの単位）。空きはCASのスタック（頭のワード = 番号 + 1 | 世代 << 32 —
+//   世代でABAを避ける）。使っていない番号は数え上げで取る。上限を越えたら積めない（-12）
+// 操作: 50 = 積む（m, a = 種類 | 長さ << 8 | ストリームID << 24, b = バイト列の番地 | (枠 + 1) << 48 → 0 / -12 = 溜めが尽きた / -22 = 長すぎる）・
+// 51 = 列の頭を取る（m → チャンクの番地 / 0 = 空）・52 = チャンクの欄（m = チャンク, a = 0: 種類・1: ストリームID・2: 長さ・3: バイト列の番地・4: 枠〔-1 = なし〕）・
+// 53 = バイト列を写す（m = チャンク, a = 写し先の番地, b = 0: 全体・off | 長さ << 32: 範囲 → 長さ）・54 = チャンクを溜めへ返す（m = muxの記録, a = チャンク → 0）・
+// 55 = 待つ（m → 0 = 列が空でない / -110 = 期限）・56 = 溜めの数え（a = 0: 使っているチャンク・1: その最大・2: 上限）・
+// 57 = 溜めの上限をaチャンクにする（写像の前だけ効く → 0）・58 = 合図かfdの受けを待つ（muxFdWait）・
+// 59 = 要求の塊を作る（m = バイト列の番地, a = 長さ → 取っ手〔最初のチャンクの番地〕/ 0 = 溜めが尽きた — 待たない: 接続のtaskが呼ぶ）・
+// 60 = 塊の長さ（m = 取っ手）・61 = 塊を写し出す（m = 取っ手, a = 写し先の番地 → 長さ）・62 = 塊を溜めへ返す（m = 取っ手 → 0）・
+// 63 = 入場の見込み（a = 足すバイト → 1 / 0）・64 = 入場の空きの知らせを読んで0に戻す・65 / 66 = 入場の空きの登録簿に積む / 外す・
+// 67 = 今のtaskの宣言の上界・68 = shedを数える・69 = 次のspawn 1回の子に死の印を付ける（m = muxの記録, a = 枠 → 0）・
+// 70 = 死んだ枠のビットのワードaを読んで0にする（a = 0〜1 → ビット）
+
+import "desugar"
+
+// muxの記録のワード
+const MX_LOCK = 0    // 鍵（cellLock — 本体は待たない）
+const MX_HEAD = 1    // 列の頭と尾（チャンクの番地 — 0 = 空）
+const MX_TAIL = 2
+const MX_WAIT = 3    // 待っているtask（0 = 無し）
+const MX_N = 4       // 列の本数
+const MX_ROOM = 5    // 1 = 入場の空きの知らせが届いた（接続のtaskがop 64で読んで0に戻す）
+const MX_REG = 6     // 1 = 入場の空きの登録簿（rt.mnのMN_MROOM）に居る
+const MX_RNEXT = 7   // 登録簿の次の記録（0 = 末尾）
+// ストリームの枠（MX_SLOT0から2ワードずつ: 消費されていない応答のチャンクの数・待っている子）。応答はストリームごとにチャンク1つまで積める
+const MX_SLOT0 = 8
+const MX_NSLOT = 128
+// 死んだ枠のビット（枠128本 → 2ワード）: 印の付いた子が罠から戻ると、taskの終わりがその枠のビットを立てて待ち手を起こす（muxDieMark）。
+// 接続のtaskがop 70で読んで0にするまで、その枠は空かない（ビットの立っている枠が別のストリームに使い回されることは無い）
+const MX_DEAD = MX_SLOT0 + 2 * MX_NSLOT
+const MX_WORDS = MX_DEAD + 2
+
+// チャンクの頭のワード（バイト列はMXC_DATAワード目から）
+const MXC_NEXT = 0   // 列の次（番地）・空きのスタックでは次の番号 + 1
+const MXC_TAG = 1    // 種類 | ストリームID << 8 | (枠 + 1) << 40（0 = 枠なし）
+const MXC_LEN = 2
+const MXC_IDX = 3    // 溜めの中の番号
+const MXC_DATA = 4
+const MUX_CHUNK = 16384
+const MUX_MAX = MUX_CHUNK - MXC_DATA * 8
+// 小さいチャンクの組（合図の頭・終わり・小さい応答・小さい要求の塊 — 中身がMUX_SMAX以下なら小さい組から取る）。
+// 溜めの上限はバイトの予算で、2つの組で分け合う（数えの単位 = 小さいチャンク1つ。大きいチャンクはMUX_UNITS単位）
+const MUX_SMALL = 512
+const MUX_SMAX = MUX_SMALL - MXC_DATA * 8
+const MUX_UNITS = MUX_CHUNK / MUX_SMALL
+
+// 溜めの大域のワード
+const MP_BASE = 0    // 写像の番地（0 = まだ）
+const MP_FREE = 1    // 空きのスタックの頭（番号 + 1 | 世代 << 32）
+const MP_NEXT = 2    // まだ使っていない番号
+const MP_CAP = 3     // 上限（チャンクの数 — 0 = 既定）
+const MP_USE = 4     // 使っている量（単位 = 小さいチャンク1つ。大きい組の大域だけが数える — 2つの組の和）
+const MP_PEAK = 5    // その最大
+const MP_INIT = 6    // 写像の鍵
+const MP_WORDS = 8
+// 溜めの待ちの大域（鍵・待っている子のチェーンの頭〔TC_DQNEXTで繋ぐ〕）
+const MPW_HEAD = 1
+// 上限の既定（箱の無いプログラム — 64 MiBの予約〔触った分だけ常駐〕）と、箱から導くときの割合（箱 >> 17 = 箱の1/8 ÷ 16 KiB）・下限・上限
+const MUX_CAP_DEF = 4096
+const MUX_CAP_SHIFT = 17
+const MUX_CAP_MIN = 256
+const MUX_CAP_MAX = 1048576
+
+// rt.muxと溜めの大域を（初出なら）宣言してrt.muxを返す（cont.soberのnet_op 50〜68から）
+// 子の死の印を使う（rt.mux op 69 を下ろした — rt.task_new・taskの終わりが印を写す・読む）。事象に積む: 分割のパスの子が下ろした関数と、
+// 本体を下ろさない関数（束の模擬）でも、親が立て直す
+func needMuxDie(st mut St) {
+    lsNeed(mut st, NEED_MUXDIE, 0)
+    st.dieOn = true
+}
+
+func needMux(st mut St) FnRef {
+    lsNeed(mut st, NEED_MUX, 0)
+    st.muxUse = true
+    if st.rtMux == -1 {
+        st.rtMux = addFunc(mut st, int(strLit(mut st, "rt.mux")), desugar.ListRef(list4(mut st, TyI64, TyI64, TyI64, TyI64)), TyI64)
+        st.muxG = addGlobalInit(mut st, int(strLit(mut st, "mux.pool")), MP_WORDS, -1)
+        st.muxSG = addGlobalInit(mut st, int(strLit(mut st, "mux.spool")), MP_WORDS, -1)
+        st.muxWG = addGlobalInit(mut st, int(strLit(mut st, "mux.poolw")), 2, -1)
+        st.rtMuxRoom = addFunc(mut st, int(strLit(mut st, "rt.mux_room")), desugar.ListRef(list0(mut st)), -1)
+        if st.taskUse {
+            needAdmitWake(mut st)
+        }
+        if st.taskUse {
+            _ = needNet(mut st)
+        }
+    }
+    return st.rtMux
+}
+
+// rt.muxの本体（使うプログラムだけ）
+func buildMuxRt(st mut St) {
+    if st.rtMux == -1 {
+        return
+    }
+    begin(mut st, st.rtMux)
+    op := 0
+    m := 1
+    a := 2
+    b := 3
+    zero := iconst(mut st, 0)
+    mp := itop(mut st, m)
+    // 50: 積む
+    bN50 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 50)))
+    muxPost(mut st, mp, a, b)
+    setCur(mut st, bN50)
+    // 51: 列の頭を取る
+    bN51 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 51)))
+    cellLock(mut st, mp)
+    h := load(mut st, mp, MX_HEAD)
+    bHv := branchIf(mut st, cmp(mut st, CNe, h, zero))
+    nx := load(mut st, itop(mut st, h), MXC_NEXT)
+    store(mut st, mp, MX_HEAD, nx)
+    bTl := branchIf(mut st, cmp(mut st, CEq, nx, zero))
+    store(mut st, mp, MX_TAIL, zero)
+    br(mut st, bTl, -1)
+    setCur(mut st, bTl)
+    store(mut st, mp, MX_N, urAdd(mut st, load(mut st, mp, MX_N), -1))
+    frRec(mut st, FK_SIG, load(mut st, itop(mut st, h), MXC_TAG), load(mut st, itop(mut st, h), MXC_LEN))
+    br(mut st, bHv, -1)
+    setCur(mut st, bHv)
+    cellUnlock(mut st, mp)
+    ret(mut st, h)
+    setCur(mut st, bN51)
+    // 52: チャンクの欄
+    bN52 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 52)))
+    tg := load(mut st, mp, MXC_TAG)
+    v0 := bin(mut st, BAnd, tg, iconst(mut st, 255))
+    v1 := bin(mut st, BAnd, bin(mut st, BSar, tg, iconst(mut st, 8)), iconst(mut st, 2147483647))
+    v2 := load(mut st, mp, MXC_LEN)
+    v3 := urAdd(mut st, m, MXC_DATA * 8)
+    r01 := bin(mut st, BAdd, v0, bin(mut st, BMul, cmp(mut st, CEq, a, iconst(mut st, 1)), bin(mut st, BSub, v1, v0)))
+    r012 := bin(mut st, BAdd, r01, bin(mut st, BMul, cmp(mut st, CEq, a, iconst(mut st, 2)), bin(mut st, BSub, v2, r01)))
+    r0123 := bin(mut st, BAdd, r012, bin(mut st, BMul, cmp(mut st, CEq, a, iconst(mut st, 3)), bin(mut st, BSub, v3, r012)))
+    v4 := urAdd(mut st, bin(mut st, BAnd, bin(mut st, BSar, tg, iconst(mut st, 40)), iconst(mut st, 255)), -1)
+    ret(mut st, bin(mut st, BAdd, r0123, bin(mut st, BMul, cmp(mut st, CEq, a, iconst(mut st, 4)), bin(mut st, BSub, v4, r0123))))
+    setCur(mut st, bN52)
+    // 53: バイト列を写す
+    bN53 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 53)))
+    // b = 0: 全体・b ≠ 0: 範囲（off = 下位32ビット・長さ = 上位）
+    nAll := load(mut st, mp, MXC_LEN)
+    rg := cmp(mut st, CNe, b, iconst(mut st, 0))
+    n34 := bin(mut st, BAdd, nAll, bin(mut st, BMul, rg, bin(mut st, BSub, bin(mut st, BSar, b, iconst(mut st, 32)), nAll)))
+    src53 := urAdd(mut st, bin(mut st, BAdd, m, bin(mut st, BAnd, b, iconst(mut st, 4294967295))), MXC_DATA * 8)
+    call(mut st, st.rtCopy8, list3(mut st, itop(mut st, a), itop(mut st, src53), n34))
+    ret(mut st, n34)
+    setCur(mut st, bN53)
+    // 54: チャンクを返す
+    bN54 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 54)))
+    muxFree(mut st, mp, itop(mut st, a))
+    ret(mut st, zero)
+    setCur(mut st, bN54)
+    // 55: 待つ
+    bN55 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 55)))
+    muxWait(mut st, mp)
+    setCur(mut st, bN55)
+    // 58: 合図かfdの受けを待つ
+    bN58 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 58)))
+    muxFdWait(mut st, mp, a, b)
+    setCur(mut st, bN58)
+    // 59〜62: 要求の塊（チャンクの連なり）
+    bN59 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 59)))
+    blobPut(mut st, m, a)
+    setCur(mut st, bN59)
+    bN60 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 60)))
+    ret(mut st, load(mut st, mp, MXC_TAG))
+    setCur(mut st, bN60)
+    bN61 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 61)))
+    blobCopy(mut st, m, a)
+    setCur(mut st, bN61)
+    bN62 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 62)))
+    blobFree(mut st, m)
+    ret(mut st, zero)
+    setCur(mut st, bN62)
+    // 63〜66: 入場の見込み・入場の空きの知らせを読んで0に戻す・登録簿に積む・外す
+    bN63 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 63)))
+    muxAdmitPeek(mut st, a)
+    setCur(mut st, bN63)
+    bN64 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 64)))
+    ret(mut st, atomicXchg(mut st, mp, MX_ROOM, zero))
+    setCur(mut st, bN64)
+    bN65 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 65)))
+    muxRoomReg(mut st, mp, true)
+    setCur(mut st, bN65)
+    bN66 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 66)))
+    muxRoomReg(mut st, mp, false)
+    setCur(mut st, bN66)
+    // 67: 今のtaskの宣言の上界（TC_DECL — Serveの接続の予約。0 = 宣言なし）・68: 今のtaskの入場した節（名前つきプールの節ならそこ）と根のshedに1を足す
+    bN67 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 67)))
+    if st.taskUse {
+        ret(mut st, load(mut st, itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR)), TC_DECL))
+    } else {
+        ret(mut st, zero)
+    }
+    setCur(mut st, bN67)
+    bN68 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 68)))
+    if st.taskUse {
+        atomicXadd(mut st, globaladdr(mut st, st.mnG), MN_LSHED, iconst(mut st, 1))
+        if st.poolOn {
+            n0 := load(mut st, itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR)), TC_NODE)
+            lo := bin(mut st, BSub, bin(mut st, BAdd, ptoi(mut st, globaladdr(mut st, st.poolG)), iconst(mut st, 8)), iconst(mut st, SR_LED * 8))
+            off := bin(mut st, BSub, n0, lo)
+            bIn := branchIf(mut st, bin(mut st, BAnd, cmp(mut st, CGe, off, zero), cmp(mut st, CLt, off, iconst(mut st, POOL_MAX * POOL_W * 8))))
+            atomicXadd(mut st, itop(mut st, n0), PL_SHED, iconst(mut st, 1))
+            br(mut st, bIn, -1)
+            setCur(mut st, bIn)
+        }
+    }
+    ret(mut st, zero)
+    setCur(mut st, bN68)
+    // 69: 次のspawn 1回の子に死の印（今のtaskのTC_DNEXT — rt.task_newが子のTC_DIEへ写す）・70: 死んだ枠のビットを読んで0にする
+    bN69 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 69)))
+    if st.dieOn {
+        store(mut st, itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR)), TC_DNEXT, bin(mut st, BOr, m, bin(mut st, BShl, a, iconst(mut st, 48))))
+    }
+    ret(mut st, zero)
+    setCur(mut st, bN69)
+    bN70 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 70)))
+    ret(mut st, atomicXchg(mut st, itop(mut st, bin(mut st, BAdd, m, bin(mut st, BShl, a, iconst(mut st, 3)))), MX_DEAD, zero))
+    setCur(mut st, bN70)
+    // 56: 溜めの数え
+    pl := globaladdr(mut st, st.muxG)
+    bN56 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 56)))
+    c0 := mpChunks(mut st, load(mut st, pl, MP_USE))
+    c1 := mpChunks(mut st, load(mut st, pl, MP_PEAK))
+    c2 := mpCap(mut st, pl)
+    s01 := bin(mut st, BAdd, c0, bin(mut st, BMul, cmp(mut st, CEq, a, iconst(mut st, 1)), bin(mut st, BSub, c1, c0)))
+    ret(mut st, bin(mut st, BAdd, s01, bin(mut st, BMul, cmp(mut st, CEq, a, iconst(mut st, 2)), bin(mut st, BSub, c2, s01))))
+    setCur(mut st, bN56)
+    // 57: 溜めの上限
+    lockTake(mut st, pl, MP_INIT)
+    bNoMap := branchIf(mut st, cmp(mut st, CEq, load(mut st, pl, MP_BASE), zero))
+    store(mut st, pl, MP_CAP, a)
+    br(mut st, bNoMap, -1)
+    setCur(mut st, bNoMap)
+    lockGiveFence(mut st, pl, MP_INIT)
+    ret(mut st, zero)
+}
+
+// 溜めの上限（チャンクの数）: op 57で置いた値・無ければ箱（根の天井MN_CAP — cgroupのmemory.max・MemTotal・SOBER_BUDGET_MB）の1/8を
+// チャンクの大きさで割った数（MUX_CAP_MIN〜MUX_CAP_MAXに収める）・箱が無ければ（taskの無いプログラム）既定。箱は入口で1度だけ決まるので、
+// 写像の大きさと取りの上限は同じ値になる
+func mpCap(st mut St, pl int) int {
+    zero := iconst(mut st, 0)
+    c := load(mut st, pl, MP_CAP)
+    bx := if st.taskUse { load(mut st, globaladdr(mut st, st.mnG), MN_CAP) } else { zero }
+    d := imin(mut st, imax(mut st, bin(mut st, BSar, bx, iconst(mut st, MUX_CAP_SHIFT)), iconst(mut st, MUX_CAP_MIN)), iconst(mut st, MUX_CAP_MAX))
+    dd := bin(mut st, BAdd, d, bin(mut st, BMul, cmp(mut st, CEq, bx, zero), bin(mut st, BSub, iconst(mut st, MUX_CAP_DEF), d)))
+    return bin(mut st, BAdd, c, bin(mut st, BMul, cmp(mut st, CEq, c, zero), dd))
+}
+
+// 量の数え（小さいチャンクの単位）を大きいチャンクの数へ（切り上げ — 数えの報告とTask.Ledgerの欄はチャンクの数のまま）
+func mpChunks(st mut St, u int) int {
+    return bin(mut st, BSar, urAdd(mut st, u, MUX_UNITS - 1), iconst(mut st, 5))
+}
+
+// 溜めの写像の番地（初回は鍵の下で写像する）。pl = 組の大域・写像の大きさはどちらの組もバイトの予算（大きい組の上限 × MUX_CHUNK）
+func mpBase(st mut St, pl int) int {
+    zero := iconst(mut st, 0)
+    b0 := load(mut st, pl, MP_BASE)
+    bD := newBlock(mut st)
+    r := param(mut st, bD, TyI64)
+    bMk := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, b0, zero), bD, list1(mut st, b0), bMk, -1)
+    setCur(mut st, bMk)
+    lockTake(mut st, pl, MP_INIT)
+    b1 := load(mut st, pl, MP_BASE)
+    bNew := newBlock(mut st)
+    bOld := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, b1, zero), bNew, -1, bOld, -1)
+    setCur(mut st, bNew)
+    nb := sysMmap(mut st, bin(mut st, BMul, mpCap(mut st, globaladdr(mut st, st.muxG)), iconst(mut st, MUX_CHUNK)))
+    store(mut st, pl, MP_BASE, nb)
+    lockGiveFence(mut st, pl, MP_INIT)
+    br(mut st, bD, list1(mut st, nb))
+    setCur(mut st, bOld)
+    lockGiveFence(mut st, pl, MP_INIT)
+    br(mut st, bD, list1(mut st, b1))
+    setCur(mut st, bD)
+    return r
+}
+
+// 溜めからチャンクを1つ取る → 番地 / 0（尽きた）。small = 1なら小さい組・0なら大きい組（実行時の値）。
+// 先にバイトの予算から量を取り（越えたら戻して0）、それから組の空きのスタックか、まだ使っていない番号から取る
+func mpTake(st mut St, small int) int {
+    zero := iconst(mut st, 0)
+    pb := globaladdr(mut st, st.muxG)
+    pl := itop(mut st, bin(mut st, BAdd, ptoi(mut st, pb), bin(mut st, BMul, small, bin(mut st, BSub, ptoi(mut st, globaladdr(mut st, st.muxSG)), ptoi(mut st, pb)))))
+    sz := bin(mut st, BAdd, iconst(mut st, MUX_CHUNK), bin(mut st, BMul, small, iconst(mut st, MUX_SMALL - MUX_CHUNK)))
+    un := bin(mut st, BAdd, iconst(mut st, MUX_UNITS), bin(mut st, BMul, small, iconst(mut st, 1 - MUX_UNITS)))
+    capU := bin(mut st, BMul, mpCap(mut st, pb), iconst(mut st, MUX_UNITS))
+    bD := newBlock(mut st)
+    r := param(mut st, bD, TyI64)
+    u := bin(mut st, BAdd, atomicXadd(mut st, pb, MP_USE, un), un)
+    bOver := newBlock(mut st)
+    bIn0 := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CGt, u, capU), bOver, -1, bIn0, -1)
+    setCur(mut st, bOver)
+    atomicXadd(mut st, pb, MP_USE, bin(mut st, BSub, zero, un))
+    br(mut st, bD, list1(mut st, zero))
+    setCur(mut st, bIn0)
+    mpPeak(mut st, pb, u)
+    base := mpBase(mut st, pl)
+    lo := iconst(mut st, 4294967295)
+    l := newBlock(mut st)
+    br(mut st, l, -1)
+    setCur(mut st, l)
+    h := load(mut st, pl, MP_FREE)
+    ix1 := bin(mut st, BAnd, h, lo)
+    bPop := newBlock(mut st)
+    bBump := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, ix1, zero), bPop, -1, bBump, -1)
+    setCur(mut st, bPop)
+    ca := bin(mut st, BAdd, base, bin(mut st, BMul, urAdd(mut st, ix1, -1), sz))
+    nx := load(mut st, itop(mut st, ca), MXC_NEXT)
+    nh := bin(mut st, BOr, nx, bin(mut st, BShl, urAdd(mut st, bin(mut st, BSar, h, iconst(mut st, 32)), 1), iconst(mut st, 32)))
+    o := atomicCas(mut st, pl, MP_FREE, h, nh)
+    bWon := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, o, h), bWon, -1, l, -1)
+    setCur(mut st, bWon)
+    br(mut st, bD, list1(mut st, ca))
+    setCur(mut st, bBump)
+    // まだ使っていない番号（予算の内なら、組の番号は写像の内に収まる — 念のため照合し、外なら量を戻して0）
+    n := atomicXadd(mut st, pl, MP_NEXT, iconst(mut st, 1))
+    bIn := newBlock(mut st)
+    bOut := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CLt, bin(mut st, BMul, n, sz), bin(mut st, BMul, mpCap(mut st, pb), iconst(mut st, MUX_CHUNK))), bIn, -1, bOut, -1)
+    setCur(mut st, bOut)
+    atomicXadd(mut st, pb, MP_USE, bin(mut st, BSub, zero, un))
+    br(mut st, bD, list1(mut st, zero))
+    setCur(mut st, bIn)
+    cb := bin(mut st, BAdd, base, bin(mut st, BMul, n, sz))
+    // 番号と組（上位のビット）
+    store(mut st, itop(mut st, cb), MXC_IDX, bin(mut st, BOr, n, bin(mut st, BShl, small, iconst(mut st, 40))))
+    br(mut st, bD, list1(mut st, cb))
+    setCur(mut st, bD)
+    return r
+}
+
+// 最大をuまで上げる（CASのループ）
+func mpPeak(st mut St, pl int, u int) {
+    l := newBlock(mut st)
+    bD := newBlock(mut st)
+    br(mut st, l, -1)
+    setCur(mut st, l)
+    p := load(mut st, pl, MP_PEAK)
+    bUp := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CGt, u, p), bUp, -1, bD, -1)
+    setCur(mut st, bUp)
+    o := atomicCas(mut st, pl, MP_PEAK, p, u)
+    condbr(mut st, cmp(mut st, CEq, o, p), bD, -1, l, -1)
+    setCur(mut st, bD)
+}
+
+// チャンクcp（ptr）を溜めへ返す
+func mpFree(st mut St, cp int) {
+    pb := globaladdr(mut st, st.muxG)
+    idx := load(mut st, cp, MXC_IDX)
+    small := bin(mut st, BSar, idx, iconst(mut st, 40))
+    pl := itop(mut st, bin(mut st, BAdd, ptoi(mut st, pb), bin(mut st, BMul, small, bin(mut st, BSub, ptoi(mut st, globaladdr(mut st, st.muxSG)), ptoi(mut st, pb)))))
+    un := bin(mut st, BAdd, iconst(mut st, MUX_UNITS), bin(mut st, BMul, small, iconst(mut st, 1 - MUX_UNITS)))
+    ix1 := urAdd(mut st, bin(mut st, BAnd, idx, iconst(mut st, 4294967295)), 1)
+    l := newBlock(mut st)
+    bD := newBlock(mut st)
+    br(mut st, l, -1)
+    setCur(mut st, l)
+    h := load(mut st, pl, MP_FREE)
+    store(mut st, cp, MXC_NEXT, bin(mut st, BAnd, h, iconst(mut st, 4294967295)))
+    nh := bin(mut st, BOr, ix1, bin(mut st, BShl, urAdd(mut st, bin(mut st, BSar, h, iconst(mut st, 32)), 1), iconst(mut st, 32)))
+    o := atomicCas(mut st, pl, MP_FREE, h, nh)
+    condbr(mut st, cmp(mut st, CEq, o, h), bD, -1, l, -1)
+    setCur(mut st, bD)
+    atomicXadd(mut st, pb, MP_USE, bin(mut st, BSub, iconst(mut st, 0), un))
+    if st.taskUse {
+        // 溜めを待つ子を1人起こす（鍵の下で — チェーンに居る待ち手はまだ鍵を取り直していないので、別の待ちに移っていない）。
+        // 待ち手が居なければ鍵を取らない: 量のxadd（順序の柵）の後に頭を鍵なしで読む。待つ側は頭に積んでから（xchg — 柵）予算を見直すので、
+        // 解放と待ちのどちらかが必ず相手を見る（取りこぼさない）
+        pw := globaladdr(mut st, st.muxWG)
+        bAny := branchIf(mut st, cmp(mut st, CNe, load(mut st, pw, MPW_HEAD), iconst(mut st, 0)))
+        cellLock(mut st, pw)
+        wl := newBlock(mut st)
+        wd := newBlock(mut st)
+        br(mut st, wl, -1)
+        setCur(mut st, wl)
+        t := load(mut st, pw, MPW_HEAD)
+        bT := newBlock(mut st)
+        condbr(mut st, cmp(mut st, CNe, t, iconst(mut st, 0)), bT, -1, wd, -1)
+        setCur(mut st, bT)
+        tp := itop(mut st, t)
+        store(mut st, pw, MPW_HEAD, load(mut st, tp, TC_DQNEXT))
+        store(mut st, tp, TC_DQNEXT, iconst(mut st, 0))
+        ow := atomicCas(mut st, tp, TC_IORES, iconst(mut st, PEND_DOM), iconst(mut st, 1))
+        bWon := newBlock(mut st)
+        condbr(mut st, cmp(mut st, CEq, ow, iconst(mut st, PEND_DOM)), bWon, -1, wl, -1)
+        setCur(mut st, bWon)
+        taskWakeAny(mut st, tp)
+        br(mut st, wd, -1)
+        setCur(mut st, wd)
+        cellUnlock(mut st, pw)
+        br(mut st, bAny, -1)
+        setCur(mut st, bAny)
+    }
+}
+
+// op 54: チャンクcp（ptr）を返す。応答で枠があれば、枠の数えを戻して待っている子を起こす（muxの記録mpの鍵の下で）
+func muxFree(st mut St, mp int, cp int) {
+    tg := load(mut st, cp, MXC_TAG)
+    s1 := bin(mut st, BAnd, bin(mut st, BSar, tg, iconst(mut st, 40)), iconst(mut st, 255))
+    isR := muxIsData(mut st, bin(mut st, BAnd, tg, iconst(mut st, 255)))
+    bS := branchIf(mut st, bin(mut st, BAnd, isR, cmp(mut st, CNe, s1, iconst(mut st, 0))))
+    sp := gepWord(mut st, mp, urAdd(mut st, bin(mut st, BMul, urAdd(mut st, s1, -1), iconst(mut st, 2)), MX_SLOT0))
+    cellLock(mut st, mp)
+    store(mut st, sp, 0, urAdd(mut st, load(mut st, sp, 0), -1))
+    muxWakeAt(mut st, sp, 1)
+    cellUnlock(mut st, mp)
+    br(mut st, bS, -1)
+    setCur(mut st, bS)
+    mpFree(mut st, cp)
+}
+
+// op 59: 長さnのバイト列（番地addr）をチャンクの連なりへ写す。最初のチャンクのMXC_TAGに全体の長さ、各チャンクのMXC_LENにその分の長さ、
+// MXC_NEXTに次のチャンクの番地。途中で溜めが尽きたら取った分を返して0（待たない）
+func blobPut(st mut St, addr int, n int) {
+    zero := iconst(mut st, 0)
+    l := newBlock(mut st)
+    off := param(mut st, l, TyI64)
+    prev := param(mut st, l, TyI64)
+    head := param(mut st, l, TyI64)
+    br(mut st, l, list3(mut st, zero, zero, zero))
+    setCur(mut st, l)
+    // 長さ0でもチャンクを1つ持つ（取っ手が0にならない）
+    bMore := newBlock(mut st)
+    bDone := newBlock(mut st)
+    condbr(mut st, bin(mut st, BOr, cmp(mut st, CLt, off, n), cmp(mut st, CEq, head, zero)), bMore, -1, bDone, -1)
+    setCur(mut st, bMore)
+    c := mpTake(mut st, cmp(mut st, CLe, bin(mut st, BSub, n, off), iconst(mut st, MUX_SMAX)))
+    bGot := newBlock(mut st)
+    bNone := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, c, zero), bGot, -1, bNone, -1)
+    setCur(mut st, bNone)
+    bHv := branchIf(mut st, cmp(mut st, CNe, head, zero))
+    blobFree(mut st, head)
+    br(mut st, bHv, -1)
+    setCur(mut st, bHv)
+    ret(mut st, zero)
+    setCur(mut st, bGot)
+    cp := itop(mut st, c)
+    rem := bin(mut st, BSub, n, off)
+    k := imin(mut st, rem, iconst(mut st, MUX_MAX))
+    store(mut st, cp, MXC_NEXT, zero)
+    store(mut st, cp, MXC_LEN, k)
+    store(mut st, cp, MXC_TAG, n)
+    call(mut st, st.rtCopy8, list3(mut st, itop(mut st, urAdd(mut st, c, MXC_DATA * 8)), itop(mut st, bin(mut st, BAdd, addr, off)), k))
+    bLink := newBlock(mut st)
+    bFirst := newBlock(mut st)
+    bNx := newBlock(mut st)
+    nh := param(mut st, bNx, TyI64)
+    condbr(mut st, cmp(mut st, CNe, prev, zero), bLink, -1, bFirst, -1)
+    setCur(mut st, bLink)
+    store(mut st, itop(mut st, prev), MXC_NEXT, c)
+    br(mut st, bNx, list1(mut st, head))
+    setCur(mut st, bFirst)
+    br(mut st, bNx, list1(mut st, c))
+    setCur(mut st, bNx)
+    br(mut st, l, list3(mut st, bin(mut st, BAdd, off, k), c, nh))
+    setCur(mut st, bDone)
+    ret(mut st, head)
+}
+
+// op 61: 塊hを番地dstへ写して長さを返す
+func blobCopy(st mut St, h int, dst int) {
+    zero := iconst(mut st, 0)
+    l := newBlock(mut st)
+    c := param(mut st, l, TyI64)
+    off := param(mut st, l, TyI64)
+    br(mut st, l, list2(mut st, h, zero))
+    setCur(mut st, l)
+    bB := newBlock(mut st)
+    bD := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, c, zero), bB, -1, bD, -1)
+    setCur(mut st, bB)
+    cp := itop(mut st, c)
+    k := load(mut st, cp, MXC_LEN)
+    call(mut st, st.rtCopy8, list3(mut st, itop(mut st, bin(mut st, BAdd, dst, off)), itop(mut st, urAdd(mut st, c, MXC_DATA * 8)), k))
+    br(mut st, l, list2(mut st, load(mut st, cp, MXC_NEXT), bin(mut st, BAdd, off, k)))
+    setCur(mut st, bD)
+    ret(mut st, off)
+}
+
+// 塊hのチャンクを全部溜めへ返す（チャンクの頭は返す前に次を読む）
+func blobFree(st mut St, h int) {
+    zero := iconst(mut st, 0)
+    l := newBlock(mut st)
+    c := param(mut st, l, TyI64)
+    bB := newBlock(mut st)
+    bD := newBlock(mut st)
+    br(mut st, l, list1(mut st, h))
+    setCur(mut st, l)
+    condbr(mut st, cmp(mut st, CNe, c, zero), bB, -1, bD, -1)
+    setCur(mut st, bB)
+    cp := itop(mut st, c)
+    nx := load(mut st, cp, MXC_NEXT)
+    mpFree(mut st, cp)
+    br(mut st, l, list1(mut st, nx))
+    setCur(mut st, bD)
+}
+
+// 枠に数える種類か（1 = 応答のバイト列・6 = 最後の応答のバイト列 — std/internal/muxのRespとRespEnd）
+func muxIsData(st mut St, kind int) int {
+    return bin(mut st, BOr, cmp(mut st, CEq, kind, iconst(mut st, 1)), cmp(mut st, CEq, kind, iconst(mut st, 6)))
+}
+
+// 溜めの予算にun単位の空きができるまで待つ（取れそうなら待たずに0）。結果はmuxSleepと同じ（1 = 起こされた）
+func mpWait(st mut St, mei int, me int, un int) int {
+    zero := iconst(mut st, 0)
+    pl := globaladdr(mut st, st.muxG)
+    pw := globaladdr(mut st, st.muxWG)
+    cellLock(mut st, pw)
+    // 先にチェーンの頭へ積み（xchg — 順序の柵）、それから予算を見直す（mpFreeは量を返してから頭を鍵なしで読むので、ここで空きを見落としても
+    // 返した側が積んだ自分を見る）。空きがあれば外して待たない（鍵の下なので頭は自分のまま）
+    store(mut st, me, TC_DQNEXT, load(mut st, pw, MPW_HEAD))
+    _ = atomicXchg(mut st, pw, MPW_HEAD, mei)
+    room := cmp(mut st, CLe, bin(mut st, BAdd, load(mut st, pl, MP_USE), un), bin(mut st, BMul, mpCap(mut st, pl), iconst(mut st, MUX_UNITS)))
+    bD := newBlock(mut st)
+    r := param(mut st, bD, TyI64)
+    bW := newBlock(mut st)
+    bNo := newBlock(mut st)
+    condbr(mut st, room, bNo, -1, bW, -1)
+    setCur(mut st, bNo)
+    store(mut st, pw, MPW_HEAD, load(mut st, me, TC_DQNEXT))
+    store(mut st, me, TC_DQNEXT, zero)
+    cellUnlock(mut st, pw)
+    br(mut st, bD, list1(mut st, zero))
+    setCur(mut st, bW)
+    // 待ち手の語はチェーンの外の仮の語に置く — 起こすのはチェーンを歩くmpFree
+    rs := muxSleep(mut st, pw, me, TC_DQPREV, mei, me, -1, -1, 0)
+    // 起こされずに戻った（期限・孤児）ならチェーンから外す
+    cellLock(mut st, pw)
+    ul := newBlock(mut st)
+    ud := newBlock(mut st)
+    ua := param(mut st, ul, TyI64)
+    br(mut st, ul, list1(mut st, urAdd(mut st, ptoi(mut st, pw), MPW_HEAD * 8)))
+    setCur(mut st, ul)
+    wcur := load(mut st, itop(mut st, ua), 0)
+    bC := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, wcur, zero), bC, -1, ud, -1)
+    setCur(mut st, bC)
+    bHit := newBlock(mut st)
+    bNx := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, wcur, mei), bHit, -1, bNx, -1)
+    setCur(mut st, bHit)
+    store(mut st, itop(mut st, ua), 0, load(mut st, me, TC_DQNEXT))
+    br(mut st, ud, -1)
+    setCur(mut st, bNx)
+    br(mut st, ul, list1(mut st, urAdd(mut st, wcur, TC_DQNEXT * 8)))
+    setCur(mut st, ud)
+    store(mut st, me, TC_DQNEXT, zero)
+    cellUnlock(mut st, pw)
+    br(mut st, bD, list1(mut st, rs))
+    setCur(mut st, bD)
+    return r
+}
+
+// op 50: チャンクを取ってバイト列を写し、列の尾に積み、接続のtaskが待っていればCASで起こす。応答で枠があれば、枠の前の応答が消費されるまで待つ。
+// 溜めが尽きていれば空くまで待つ（taskの無いプログラムは -12）。待ちの結果が期限・孤児なら積まずにそれを返す
+func muxPost(st mut St, mp int, tag0 int, pk int) {
+    zero := iconst(mut st, 0)
+    one := iconst(mut st, 1)
+    addr := bin(mut st, BAnd, pk, iconst(mut st, 281474976710655))
+    s1 := bin(mut st, BAnd, bin(mut st, BSar, pk, iconst(mut st, 48)), iconst(mut st, 255))
+    n := bin(mut st, BAnd, bin(mut st, BSar, tag0, iconst(mut st, 8)), iconst(mut st, 65535))
+    kind := bin(mut st, BAnd, tag0, iconst(mut st, 255))
+    tag1 := bin(mut st, BOr, kind, bin(mut st, BShl, bin(mut st, BSar, tag0, iconst(mut st, 24)), iconst(mut st, 8)))
+    tag := bin(mut st, BOr, tag1, bin(mut st, BShl, s1, iconst(mut st, 40)))
+    bOkLen := branchIf(mut st, bin(mut st, BAnd, cmp(mut st, CLe, n, iconst(mut st, MUX_MAX)), cmp(mut st, CLe, s1, iconst(mut st, MX_NSLOT))))
+    useSlot := bin(mut st, BAnd, muxIsData(mut st, kind), cmp(mut st, CNe, s1, zero))
+    sp := gepWord(mut st, mp, urAdd(mut st, bin(mut st, BMul, urAdd(mut st, s1, -1), iconst(mut st, 2)), MX_SLOT0))
+    mut mei := 0
+    mut me := 0
+    if st.taskUse {
+        mei = load(mut st, globaladdr(mut st, st.taskG), TK_CUR)
+        me = itop(mut st, mei)
+        if st.orphOn {
+            ov := orphEnter(mut st, mei, OK_MUX)
+            bOv := branchIf(mut st, cmp(mut st, CNe, ov, zero))
+            muxOut(mut st, mei, ov)
+            setCur(mut st, bOv)
+        }
+    }
+    // 枠: 前の応答が消費されるまで待ち、数えを1にする
+    bTake := newBlock(mut st)
+    bSl := newBlock(mut st)
+    condbr(mut st, useSlot, bSl, -1, bTake, -1)
+    setCur(mut st, bSl)
+    sl := newBlock(mut st)
+    br(mut st, sl, -1)
+    setCur(mut st, sl)
+    cellLock(mut st, mp)
+    bFree := newBlock(mut st)
+    bBusy := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, load(mut st, sp, 0), zero), bFree, -1, bBusy, -1)
+    setCur(mut st, bFree)
+    store(mut st, sp, 0, one)
+    cellUnlock(mut st, mp)
+    br(mut st, bTake, -1)
+    setCur(mut st, bBusy)
+    if st.taskUse {
+        rs := muxSleep(mut st, mp, sp, 1, mei, me, -1, -1, 0)
+        bAg := newBlock(mut st)
+        bEx := newBlock(mut st)
+        condbr(mut st, bin(mut st, BOr, cmp(mut st, CEq, rs, one), cmp(mut st, CEq, rs, zero)), bAg, -1, bEx, -1)
+        setCur(mut st, bAg)
+        br(mut st, sl, -1)
+        setCur(mut st, bEx)
+        muxOut(mut st, mei, rs)
+    } else {
+        cellUnlock(mut st, mp)
+        ret(mut st, iconst(mut st, -11))
+    }
+    // チャンクを取る（尽きていれば空くまで待つ）
+    setCur(mut st, bTake)
+    tl0 := newBlock(mut st)
+    br(mut st, tl0, -1)
+    setCur(mut st, tl0)
+    sm := cmp(mut st, CLe, n, iconst(mut st, MUX_SMAX))
+    c := mpTake(mut st, sm)
+    bGot := newBlock(mut st)
+    bNone := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, c, zero), bGot, -1, bNone, -1)
+    setCur(mut st, bNone)
+    mut bGiveUp := BlkRef(-1)
+    mut gv := 0
+    if st.taskUse {
+        rw := mpWait(mut st, mei, me, bin(mut st, BAdd, iconst(mut st, MUX_UNITS), bin(mut st, BMul, sm, iconst(mut st, 1 - MUX_UNITS))))
+        bAg2 := newBlock(mut st)
+        bGiveUp = newBlock(mut st)
+        gv = param(mut st, bGiveUp, TyI64)
+        condbr(mut st, bin(mut st, BOr, cmp(mut st, CEq, rw, one), cmp(mut st, CEq, rw, zero)), bAg2, -1, bGiveUp, list1(mut st, rw))
+        setCur(mut st, bAg2)
+        br(mut st, tl0, -1)
+    } else {
+        bGiveUp = newBlock(mut st)
+        gv = param(mut st, bGiveUp, TyI64)
+        br(mut st, bGiveUp, list1(mut st, iconst(mut st, -12)))
+    }
+    // 積まずに抜ける: 取った枠を戻す（同じストリームの子は自分だけなので、起こす相手は居ない）
+    setCur(mut st, bGiveUp)
+    bRel := branchIf(mut st, useSlot)
+    cellLock(mut st, mp)
+    store(mut st, sp, 0, zero)
+    cellUnlock(mut st, mp)
+    br(mut st, bRel, -1)
+    setCur(mut st, bRel)
+    if st.taskUse {
+        muxOut(mut st, mei, gv)
+    } else {
+        ret(mut st, gv)
+    }
+    setCur(mut st, bGot)
+    cp := itop(mut st, c)
+    store(mut st, cp, MXC_NEXT, zero)
+    store(mut st, cp, MXC_TAG, tag)
+    store(mut st, cp, MXC_LEN, n)
+    call(mut st, st.rtCopy8, list3(mut st, itop(mut st, urAdd(mut st, c, MXC_DATA * 8)), itop(mut st, addr), n))
+    cellLock(mut st, mp)
+    tl := load(mut st, mp, MX_TAIL)
+    bT := newBlock(mut st)
+    bH := newBlock(mut st)
+    bE := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, tl, zero), bT, -1, bH, -1)
+    setCur(mut st, bT)
+    store(mut st, itop(mut st, tl), MXC_NEXT, c)
+    br(mut st, bE, -1)
+    setCur(mut st, bH)
+    store(mut st, mp, MX_HEAD, c)
+    br(mut st, bE, -1)
+    setCur(mut st, bE)
+    store(mut st, mp, MX_TAIL, c)
+    store(mut st, mp, MX_N, urAdd(mut st, load(mut st, mp, MX_N), 1))
+    muxWakeAt(mut st, mp, MX_WAIT)
+    cellUnlock(mut st, mp)
+    if st.taskUse {
+        muxOut(mut st, mei, zero)
+    } else {
+        ret(mut st, zero)
+    }
+    setCur(mut st, bOkLen)
+    ret(mut st, iconst(mut st, -22))
+}
+
+// 待ち手（wpのwoffワード目）がいれば外し、CASで勝ったときだけウェイクアップする（鍵の下で）
+func muxWakeAt(st mut St, wp0 int, woff int) {
+    zero := iconst(mut st, 0)
+    w := load(mut st, wp0, woff)
+    bW := branchIf(mut st, cmp(mut st, CNe, w, zero))
+    store(mut st, wp0, woff, zero)
+    wp := itop(mut st, w)
+    o := atomicCas(mut st, wp, TC_IORES, iconst(mut st, PEND_DOM), iconst(mut st, 1))
+    bWin := branchIf(mut st, cmp(mut st, CEq, o, iconst(mut st, PEND_DOM)))
+    taskWakeAny(mut st, wp)
+    br(mut st, bWin, -1)
+    setCur(mut st, bWin)
+    br(mut st, bW, -1)
+    setCur(mut st, bW)
+}
+
+// 期限の走査・fdのreadiness・孤児の走査（どれも待ち手のワーカーのpoller）が待ち手tをresで起こす: 積む側とCASで競い、勝てばウェイクアップして待ち手の数を1減らす
+func muxCasWake(st mut St, t int, res int) {
+    tp := itop(mut st, t)
+    o := atomicCas(mut st, tp, TC_IORES, iconst(mut st, PEND_DOM), res)
+    bW := branchIf(mut st, cmp(mut st, CEq, o, iconst(mut st, PEND_DOM)))
+    tk := globaladdr(mut st, st.taskG)
+    wk := globaladdr(mut st, st.wkG)
+    frRec(mut st, FK_WAKE, t, res)
+    readyPush(mut st, tk, t)
+    store(mut st, wk, WK_NETW, urAdd(mut st, load(mut st, wk, WK_NETW), -1))
+    br(mut st, bW, -1)
+    setCur(mut st, bW)
+}
+
+// 待ちを終える知らせ（鍵の下で読む）: 入場の空き・死んだ枠のビット
+func muxRoomDead(st mut St, mp int) int {
+    dd := bin(mut st, BOr, load(mut st, mp, MX_DEAD), load(mut st, mp, MX_DEAD + 1))
+    return cmp(mut st, CNe, bin(mut st, BOr, load(mut st, mp, MX_ROOM), dd), iconst(mut st, 0))
+}
+
+// taskの終わり（罠から戻った後 — r = 1なら死んだか切られた）: 子の死の印v（muxの記録の番地 | 枠 << 48・0 = 無し）があって罠から戻ったなら、記録の死んだ枠のビットを
+// 立てて待ち手を起こす（積む合図と同じ鍵の下 — 待ち手は鍵の下で知らせを見てから眠る）。合図のチャンクを取らないので、溜めが尽きていても届く。
+// 印の付いた子の枠は接続のtaskがビットを見るまで空かないので、ビットは立っていない — 足し算がORになる
+func muxDieMark(st mut St, v int, r int) {
+    // ミュータント113（検査の自己検査 — std/http/serverのTestH2ChildDeath）: ビットを立てない（死んだストリームが閉じず、接続の終わりが子を待ち続ける）
+    if st.rtMut == 113 {
+        return
+    }
+    zero := iconst(mut st, 0)
+    bNo := branchIf(mut st, bin(mut st, BAnd, cmp(mut st, CNe, v, zero), cmp(mut st, CNe, r, zero)))
+    mp := itop(mut st, bin(mut st, BAnd, v, iconst(mut st, 281474976710655)))
+    sl := bin(mut st, BAnd, bin(mut st, BSar, v, iconst(mut st, 48)), iconst(mut st, 255))
+    wp := itop(mut st, bin(mut st, BAdd, ptoi(mut st, mp), bin(mut st, BShl, bin(mut st, BSar, sl, iconst(mut st, 6)), iconst(mut st, 3))))
+    cellLock(mut st, mp)
+    atomicXadd(mut st, wp, MX_DEAD, bin(mut st, BShl, iconst(mut st, 1), bin(mut st, BAnd, sl, iconst(mut st, 63))))
+    muxWakeAt(mut st, mp, MX_WAIT)
+    cellUnlock(mut st, mp)
+    br(mut st, bNo, -1)
+    setCur(mut st, bNo)
+}
+
+// taskの終わり: 自分の死の印（TC_DIE）を読んで消し、罠から戻ったなら知らせる
+func muxDiedIn(st mut St, tcb int, r int) {
+    if !st.dieOn {
+        return
+    }
+    v := load(mut st, tcb, TC_DIE)
+    bV := branchIf(mut st, cmp(mut st, CNe, v, iconst(mut st, 0)))
+    store(mut st, tcb, TC_DIE, iconst(mut st, 0))
+    muxDieMark(mut st, v, r)
+    br(mut st, bV, -1)
+    setCur(mut st, bV)
+}
+
+// 待ちの出口（孤児の登録の種類を消して r を返す）
+func muxOut(st mut St, mei int, r int) {
+    if st.orphOn {
+        orphLeave(mut st, mei)
+    }
+    ret(mut st, r)
+}
+
+// 鍵lkを持って呼ぶ: 待ち手としてwpのwoffワード目に置き（np ≠ -1 なら接続の記録のNR_WAITにも）、鍵を返して起こされるまで待つ。ep ≠ -1 なら fd（ep の epoll）の
+// readinessもONESHOTで待ち、起きた後で外す。結果（1 = 積まれた・0 = fdのreadiness・-110 = 期限・-125 = 孤児・負のerrno = 登録の失敗）を返す
+func muxSleep(st mut St, lk int, wp int, woff int, mei int, me int, np int, ep int, fd int) int {
+    zero := iconst(mut st, 0)
+    one := iconst(mut st, 1)
+    wk := globaladdr(mut st, st.wkG)
+    store(mut st, wp, woff, mei)
+    store(mut st, me, TC_IORES, iconst(mut st, PEND_DOM))
+    store(mut st, me, TC_DQDL, one)
+    if np != -1 {
+        store(mut st, np, NR_WAIT, mei)
+    }
+    cellUnlock(mut st, lk)
+    bReg := newBlock(mut st)
+    if ep != -1 {
+        // fdのreadiness（EPOLLIN | ONESHOT・data = TCB）。登録に失敗したら自分のCASで待ちを取り消す（負けたら積む側が起こした — その起こしを吸う）
+        ev := iconst(mut st, 1 + EV_ONESHOT)
+        e1 := epCtl(mut st, ep, 3, fd, ev, mei)
+        bAdd := newBlock(mut st)
+        bE := newBlock(mut st)
+        e := param(mut st, bE, TyI64)
+        condbr(mut st, cmp(mut st, CEq, e1, iconst(mut st, -2)), bAdd, -1, bE, list1(mut st, e1))
+        setCur(mut st, bAdd)
+        br(mut st, bE, list1(mut st, epCtl(mut st, ep, 1, fd, ev, mei)))
+        setCur(mut st, bE)
+        bBad := newBlock(mut st)
+        condbr(mut st, cmp(mut st, CLt, e, zero), bBad, -1, bReg, -1)
+        setCur(mut st, bBad)
+        o := atomicCas(mut st, me, TC_IORES, iconst(mut st, PEND_DOM), e)
+        bMine := newBlock(mut st)
+        condbr(mut st, cmp(mut st, CEq, o, iconst(mut st, PEND_DOM)), bMine, -1, bReg, -1)
+        setCur(mut st, bMine)
+        // 待たずに片付ける（積む側の起こしは来ない — CASに勝った）
+        store(mut st, me, TC_DQDL, zero)
+        cellLock(mut st, lk)
+        bMw := branchIf(mut st, cmp(mut st, CEq, load(mut st, wp, woff), mei))
+        store(mut st, wp, woff, zero)
+        br(mut st, bMw, -1)
+        setCur(mut st, bMw)
+        cellUnlock(mut st, lk)
+        muxOut(mut st, mei, e)
+    } else {
+        br(mut st, bReg, -1)
+    }
+    setCur(mut st, bReg)
+    // 期限があれば自分のワーカーのpollerの期限のチェーンへ（netのringかepoll — 無ければ作る）
+    dlv := load(mut st, me, TC_DL)
+    rg := load(mut st, wk, WK_RING)
+    bR0 := newBlock(mut st)
+    bR := newBlock(mut st)
+    bEp := newBlock(mut st)
+    bW := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, rg, zero), bR0, -1, bEp, -1)
+    setCur(mut st, bR0)
+    condbr(mut st, cmp(mut st, CNe, load(mut st, itop(mut st, rg), UR_NET), zero), bR, -1, bEp, -1)
+    setCur(mut st, bR)
+    bRd := branchIf(mut st, cmp(mut st, CNe, dlv, zero))
+    dlqPush(mut st, rg, mei, dlv)
+    br(mut st, bRd, -1)
+    setCur(mut st, bRd)
+    br(mut st, bW, -1)
+    setCur(mut st, bEp)
+    ep2 := epRec(mut st, wk)
+    bEd := branchIf(mut st, cmp(mut st, CNe, dlv, zero))
+    awPush(mut st, urAdd(mut st, ep2, EP_DLQ * 8), mei)
+    br(mut st, bEd, -1)
+    setCur(mut st, bEd)
+    br(mut st, bW, -1)
+    setCur(mut st, bW)
+    store(mut st, wk, WK_NETW, urAdd(mut st, load(mut st, wk, WK_NETW), 1))
+    call(mut st, st.rtTaskWait, list0(mut st))
+    awUnlink(mut st, mei)
+    store(mut st, me, TC_DQDL, zero)
+    if ep != -1 {
+        // 起きた理由によらずONESHOTを外す（残すと、後のreadinessが別の待ちのこのtaskを起こす）
+        epCtl(mut st, ep, 2, fd, zero, zero)
+    }
+    if np != -1 {
+        bNw := branchIf(mut st, cmp(mut st, CEq, load(mut st, np, NR_WAIT), mei))
+        store(mut st, np, NR_WAIT, zero)
+        br(mut st, bNw, -1)
+        setCur(mut st, bNw)
+    }
+    res := load(mut st, me, TC_IORES)
+    // 積む側の起こしは待ち手の数を減らさない（pollerの起こしは減らす — domainと同じ）
+    store(mut st, wk, WK_NETW, bin(mut st, BSub, load(mut st, wk, WK_NETW), cmp(mut st, CEq, res, one)))
+    cellLock(mut st, lk)
+    bMine2 := branchIf(mut st, cmp(mut st, CEq, load(mut st, wp, woff), mei))
+    store(mut st, wp, woff, zero)
+    br(mut st, bMine2, -1)
+    setCur(mut st, bMine2)
+    cellUnlock(mut st, lk)
+    return res
+}
+
+// op 55: 列が空でなくなるまで待つ（0）。期限で切れたら -110・孤児なら -125
+func muxWait(st mut St, mp int) {
+    zero := iconst(mut st, 0)
+    if !st.taskUse {
+        // taskの無いプログラム: 積む者がいない
+        ret(mut st, bin(mut st, BSub, iconst(mut st, -11), bin(mut st, BMul, cmp(mut st, CNe, load(mut st, mp, MX_HEAD), zero), iconst(mut st, -11))))
+        return
+    }
+    mei := load(mut st, globaladdr(mut st, st.taskG), TK_CUR)
+    me := itop(mut st, mei)
+    if st.orphOn {
+        ov := orphEnter(mut st, mei, OK_MUX)
+        bOv := branchIf(mut st, cmp(mut st, CNe, ov, zero))
+        muxOut(mut st, mei, ov)
+        setCur(mut st, bOv)
+    }
+    l := newBlock(mut st)
+    br(mut st, l, -1)
+    setCur(mut st, l)
+    cellLock(mut st, mp)
+    bEmpty := newBlock(mut st)
+    bHave := newBlock(mut st)
+    condbr(mut st, bin(mut st, BOr, cmp(mut st, CNe, load(mut st, mp, MX_HEAD), zero), muxRoomDead(mut st, mp)), bHave, -1, bEmpty, -1)
+    setCur(mut st, bHave)
+    cellUnlock(mut st, mp)
+    muxOut(mut st, mei, zero)
+    setCur(mut st, bEmpty)
+    res := muxSleep(mut st, mp, mp, MX_WAIT, mei, me, -1, -1, 0)
+    bTo := branchIf(mut st, cmp(mut st, CEq, res, iconst(mut st, 1)))
+    br(mut st, l, -1)
+    setCur(mut st, bTo)
+    muxOut(mut st, mei, res)
+}
+
+// 溜めが空の・接続の記録の無いringのワーカーでfdの受けを待つ間の、合図だけの待ちの上限（ns）。fdのreadinessをこの経路では待たないので、
+// 切れたら呼び手が読み直す
+const MUX_POLL_NS = 1000000
+
+// op 58（m = muxの記録・a = fd・b = 1なら直前の読みがEAGAINだった）: 合図かfdの受けのどちらかが来るまで待つ。
+// 2 = 列が空でない・1 = fdを読んでよい（ringのパスなら受けの列にデータ・FIN・誤りがある。epollのパスなら readiness が来たか、b = 0 で読む前）・
+// -110 = 期限・-125 = 孤児
+func muxFdWait(st mut St, mp int, fd int, eag int) {
+    zero := iconst(mut st, 0)
+    one := iconst(mut st, 1)
+    k2 := iconst(mut st, 2)
+    if !st.taskUse {
+        ret(mut st, bin(mut st, BAdd, one, cmp(mut st, CNe, load(mut st, mp, MX_HEAD), zero)))
+        return
+    }
+    mei := load(mut st, globaladdr(mut st, st.taskG), TK_CUR)
+    me := itop(mut st, mei)
+    if st.orphOn {
+        ov := orphEnter(mut st, mei, OK_MUX)
+        bOv := branchIf(mut st, cmp(mut st, CNe, ov, zero))
+        muxOut(mut st, mei, ov)
+        setCur(mut st, bOv)
+    }
+    l := newBlock(mut st)
+    br(mut st, l, -1)
+    setCur(mut st, l)
+    cellLock(mut st, mp)
+    bHave := newBlock(mut st)
+    bEmpty := newBlock(mut st)
+    condbr(mut st, bin(mut st, BOr, cmp(mut st, CNe, load(mut st, mp, MX_HEAD), zero), muxRoomDead(mut st, mp)), bHave, -1, bEmpty, -1)
+    setCur(mut st, bHave)
+    cellUnlock(mut st, mp)
+    muxOut(mut st, mei, k2)
+    setCur(mut st, bEmpty)
+    rg, nr := nrRing(mut st, fd)
+    bRing := newBlock(mut st)
+    bNoRec := newBlock(mut st)
+    bPoll := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, nr, zero), bRing, -1, bNoRec, -1)
+    // ringのパス: 受けの列の状態を見て、返せなければ RECV を張って両方で待つ
+    setCur(mut st, bRing)
+    np := itop(mut st, nr)
+    rp := itop(mut st, rg)
+    ready := bin(mut st, BOr, cmp(mut st, CEq, bin(mut st, BAnd, sstGet(mut st, np), iconst(mut st, 3)), iconst(mut st, SS_ERR)), cmp(mut st, CNe, load(mut st, np, NR_QH), zero))
+    ready2 := bin(mut st, BOr, ready, bin(mut st, BOr, cmp(mut st, CNe, load(mut st, np, NR_ERR), zero), nrFin(mut st, np)))
+    bNotReady := newBlock(mut st)
+    bReady := newBlock(mut st)
+    condbr(mut st, ready2, bReady, -1, bNotReady, -1)
+    setCur(mut st, bReady)
+    cellUnlock(mut st, mp)
+    muxOut(mut st, mei, one)
+    setCur(mut st, bNotReady)
+    bArm := newBlock(mut st)
+    bW := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, load(mut st, np, NR_ARMED), zero), bArm, -1, bW, -1)
+    setCur(mut st, bArm)
+    // 環が空ならRECVを張れない: 上限つきの合図だけの待ち（下のbPoll）
+    bArmOk := newBlock(mut st)
+    condbr(mut st, bin(mut st, BOr, cmp(mut st, CEq, load(mut st, rp, UR_PB), zero), cmp(mut st, CEq, load(mut st, rp, UR_PBF), zero)), bPoll, -1, bArmOk, -1)
+    setCur(mut st, bArmOk)
+    nrArmRecv(mut st, rg, np, fd, zero)
+    br(mut st, bW, -1)
+    setCur(mut st, bW)
+    r1 := muxSleep(mut st, mp, mp, MX_WAIT, mei, me, np, -1, 0)
+    bAgain := newBlock(mut st)
+    bEnd := newBlock(mut st)
+    condbr(mut st, bin(mut st, BOr, cmp(mut st, CEq, r1, one), cmp(mut st, CEq, r1, zero)), bAgain, -1, bEnd, -1)
+    setCur(mut st, bAgain)
+    br(mut st, l, -1)
+    setCur(mut st, bEnd)
+    muxOut(mut st, mei, r1)
+    // 接続の記録が無い: netのringのワーカーなら上限つきの待ち・でなければepoll
+    setCur(mut st, bNoRec)
+    bNetRing := newBlock(mut st)
+    bEpoll := newBlock(mut st)
+    bRg := newBlock(mut st)
+    // nrRingは記録が無ければringも0で返すので、ワーカーのringを読み直す
+    rgw := load(mut st, globaladdr(mut st, st.wkG), WK_RING)
+    condbr(mut st, cmp(mut st, CNe, rgw, zero), bRg, -1, bEpoll, -1)
+    setCur(mut st, bRg)
+    condbr(mut st, cmp(mut st, CNe, load(mut st, itop(mut st, rgw), UR_NET), zero), bNetRing, -1, bEpoll, -1)
+    setCur(mut st, bNetRing)
+    br(mut st, bPoll, -1)
+    setCur(mut st, bEpoll)
+    // まだ読んでいなければ先に読ませる
+    bTry := newBlock(mut st)
+    bEw := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, eag, zero), bTry, -1, bEw, -1)
+    setCur(mut st, bTry)
+    cellUnlock(mut st, mp)
+    muxOut(mut st, mei, one)
+    setCur(mut st, bEw)
+    wk := globaladdr(mut st, st.wkG)
+    ep := epRec(mut st, wk)
+    r2 := muxSleep(mut st, mp, mp, MX_WAIT, mei, me, -1, ep, fd)
+    bAg2 := newBlock(mut st)
+    bNx2 := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, r2, one), bAg2, -1, bNx2, -1)
+    setCur(mut st, bAg2)
+    br(mut st, l, -1)
+    setCur(mut st, bNx2)
+    // readiness（0）なら読ませる・他は期限か孤児か登録の失敗
+    muxOut(mut st, mei, bin(mut st, BAdd, r2, bin(mut st, BMul, cmp(mut st, CEq, r2, zero), one)))
+    // 上限つきの合図だけの待ち（鍵を持って来る）: 期限をmin(期限, 今 + MUX_POLL_NS)に一時に下げて待ち、上限で切れたら読ませる
+    setCur(mut st, bPoll)
+    old := load(mut st, me, TC_DL)
+    tgt := bin(mut st, BAdd, clockNs(mut st), iconst(mut st, MUX_POLL_NS))
+    useOld := bin(mut st, BAnd, cmp(mut st, CNe, old, zero), cmp(mut st, CLt, old, tgt))
+    tmp := bin(mut st, BAdd, tgt, bin(mut st, BMul, useOld, bin(mut st, BSub, old, tgt)))
+    store(mut st, me, TC_DL, tmp)
+    r3 := muxSleep(mut st, mp, mp, MX_WAIT, mei, me, -1, -1, 0)
+    // 戻す（孤児の走査が期限のワードに印〔1〕を書いていれば残す）
+    dlNow := load(mut st, me, TC_DL)
+    store(mut st, me, TC_DL, bin(mut st, BAdd, dlNow, bin(mut st, BMul, cmp(mut st, CEq, dlNow, tmp), bin(mut st, BSub, old, dlNow))))
+    bAg3 := newBlock(mut st)
+    bNx3 := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, r3, one), bAg3, -1, bNx3, -1)
+    setCur(mut st, bAg3)
+    br(mut st, l, -1)
+    setCur(mut st, bNx3)
+    // 期限で切れた: 本物の期限なら -110・上限なら読ませる
+    bTmo := newBlock(mut st)
+    bOth := newBlock(mut st)
+    condbr(mut st, bin(mut st, BAnd, cmp(mut st, CEq, r3, iconst(mut st, -110)), cmp(mut st, CEq, useOld, zero)), bTmo, -1, bOth, -1)
+    setCur(mut st, bTmo)
+    muxOut(mut st, mei, one)
+    setCur(mut st, bOth)
+    muxOut(mut st, mei, r3)
+}
+
+// rt.mux_room(): 入場の空きを待つ接続の記録（登録簿）の全部に知らせの印を立て、待っている接続のtaskをCASで起こす（入場の返しの点から — 登録簿の鍵の下。
+// 記録の鍵は登録簿の鍵の後で取る — 登録と外しは登録簿の鍵だけを取る）
+func buildMuxRoom(st mut St) {
+    if st.rtMuxRoom == -1 {
+        return
+    }
+    begin(mut st, st.rtMuxRoom)
+    zero := iconst(mut st, 0)
+    mn := globaladdr(mut st, st.mnG)
+    lockTake(mut st, mn, MN_MRLK)
+    l := newBlock(mut st)
+    r := param(mut st, l, TyI64)
+    bB := newBlock(mut st)
+    bD := newBlock(mut st)
+    br(mut st, l, list1(mut st, load(mut st, mn, MN_MROOM)))
+    setCur(mut st, l)
+    condbr(mut st, cmp(mut st, CNe, r, zero), bB, -1, bD, -1)
+    setCur(mut st, bB)
+    rp := itop(mut st, r)
+    store(mut st, rp, MX_ROOM, iconst(mut st, 1))
+    cellLock(mut st, rp)
+    muxWakeAt(mut st, rp, MX_WAIT)
+    cellUnlock(mut st, rp)
+    br(mut st, l, list1(mut st, load(mut st, rp, MX_RNEXT)))
+    setCur(mut st, bD)
+    lockGiveFence(mut st, mn, MN_MRLK)
+    ret(mut st, -1)
+}
+
+// op 63（a = 子の見積もりに足すバイト）: 今のtaskの天井の節（TC_CNODE）から根まで、次のspawn 1回の子が入る空きがあるか（1 / 0 — 足さずに読むだけ。
+// 読んだ後に他のtaskが入れば、spawnは今どおり縮退する — 競合の窓は既存の縮退に落ちる）
+func muxAdmitPeek(st mut St, extra int) {
+    zero := iconst(mut st, 0)
+    if !st.taskUse {
+        ret(mut st, iconst(mut st, 1))
+        return
+    }
+    mn := globaladdr(mut st, st.mnG)
+    me := itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
+    // 子のspawnが宣言する上界（budget:）と同じ数え方（admitInの宣言の枝 — 宣言 + 宣言の下位1ビット + 固定費 + task 1つ）
+    e := bin(mut st, BAdd, bin(mut st, BAdd, extra, bin(mut st, BAnd, extra, iconst(mut st, 1))), iconst(mut st, EST_FLOOR + LED_ONE))
+    l := newBlock(mut st)
+    n := param(mut st, l, TyI64)
+    bN := newBlock(mut st)
+    bRoot := newBlock(mut st)
+    br(mut st, l, list1(mut st, load(mut st, me, TC_CNODE)))
+    setCur(mut st, l)
+    condbr(mut st, cmp(mut st, CEq, n, zero), bRoot, -1, bN, -1)
+    setCur(mut st, bN)
+    np := itop(mut st, n)
+    // 子は普通のspawn: プールの節にはtaskの数を足さない（admitInと同じ数え方 — ledNodeE）
+    bOv := branchIf(mut st, cmp(mut st, CEq, bin(mut st, BAnd, bin(mut st, BAdd, load(mut st, np, SR_LED), ledNodeE(mut st, n, e, iconst(mut st, 1))), iconst(mut st, LED_OVF)), zero))
+    br(mut st, l, list1(mut st, load(mut st, np, SR_PNODE)))
+    setCur(mut st, bOv)
+    ret(mut st, zero)
+    setCur(mut st, bRoot)
+    ret(mut st, cmp(mut st, CEq, bin(mut st, BAnd, bin(mut st, BAdd, load(mut st, mn, MN_LED), e), iconst(mut st, LED_OVF)), zero))
+}
+
+// op 65 / 66: 記録mpを入場の空きの登録簿に積む（居れば何もしない）/ 外す（居なければ何もしない）
+func muxRoomReg(st mut St, mp int, add bool) {
+    zero := iconst(mut st, 0)
+    mn := globaladdr(mut st, st.mnG)
+    lockTake(mut st, mn, MN_MRLK)
+    reg := load(mut st, mp, MX_REG)
+    if add {
+        bNew := branchIf(mut st, cmp(mut st, CEq, reg, zero))
+        store(mut st, mp, MX_RNEXT, load(mut st, mn, MN_MROOM))
+        store(mut st, mn, MN_MROOM, ptoi(mut st, mp))
+        store(mut st, mn, MN_MRN, urAdd(mut st, load(mut st, mn, MN_MRN), 1))
+        store(mut st, mp, MX_REG, iconst(mut st, 1))
+        br(mut st, bNew, -1)
+        setCur(mut st, bNew)
+    } else {
+        bIn := branchIf(mut st, cmp(mut st, CNe, reg, zero))
+        // 前の語の番地（頭のワードか前の記録のMX_RNEXT）を歩いて外す
+        l := newBlock(mut st)
+        pa := param(mut st, l, TyI64)
+        bC := newBlock(mut st)
+        bD := newBlock(mut st)
+        br(mut st, l, list1(mut st, ptoi(mut st, gepWord(mut st, mn, iconst(mut st, MN_MROOM)))))
+        setCur(mut st, l)
+        cur0 := load(mut st, itop(mut st, pa), 0)
+        condbr(mut st, cmp(mut st, CNe, cur0, zero), bC, -1, bD, -1)
+        setCur(mut st, bC)
+        bHit := newBlock(mut st)
+        bNx := newBlock(mut st)
+        condbr(mut st, cmp(mut st, CEq, cur0, ptoi(mut st, mp)), bHit, -1, bNx, -1)
+        setCur(mut st, bHit)
+        store(mut st, itop(mut st, pa), 0, load(mut st, mp, MX_RNEXT))
+        store(mut st, mn, MN_MRN, urAdd(mut st, load(mut st, mn, MN_MRN), -1))
+        br(mut st, bD, -1)
+        setCur(mut st, bNx)
+        br(mut st, l, list1(mut st, urAdd(mut st, cur0, MX_RNEXT * 8)))
+        setCur(mut st, bD)
+        store(mut st, mp, MX_REG, zero)
+        store(mut st, mp, MX_ROOM, zero)
+        br(mut st, bIn, -1)
+        setCur(mut st, bIn)
+    }
+    lockGiveFence(mut st, mn, MN_MRLK)
+    ret(mut st, zero)
+}

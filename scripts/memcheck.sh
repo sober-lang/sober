@@ -10,6 +10,8 @@
 #   scripts/memcheck.sh            照合（ゴールデン + 実測 ≤ 上界 + 緩さの分布）
 #   scripts/memcheck.sh --regen    ゴールデンを作り直す
 #   scripts/memcheck.sh --mut      検査の確認: 解析のミュータント8本（SOBER_MEMREP_MUT=1..8 — memrep.soberのmrMut）でそれぞれ少なくとも1題材が赤になること
+# ゴールデンの並びを呼び手のロケールに依らせない
+export LC_ALL=C.UTF-8
 set -uo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$PWD

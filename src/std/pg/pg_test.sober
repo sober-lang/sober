@@ -9,6 +9,7 @@ func TestParseUrl() {
     t2, ok2 := parseUrl("postgresql://u%40x@127.0.0.1:6543")
     assert(ok2 && t2.user == "u@x" && t2.port == 6543 && t2.db == "u@x")
     t3, ok3 := parseUrl("postgres://u@[::1]:5433/d")
+    assert(dialAddr(t3.host, t3.port) == "[::1]:5433" && dialAddr("127.0.0.1", 5432) == "127.0.0.1:5432")
     assert(ok3 && t3.host == "::1" && t3.port == 5433)
     // password・クエリ・port の形・スキーム・ホスト無し・複数ホストは読まない
     for bad <- badUrls() {

@@ -1,30 +1,181 @@
 package lower
 
+import "std/iter"
+
 // 戻らない呼び出しの終端化（report-ct2 (i) / ct5 — 展開の後・cfgClean の前に親で 1 回）: 呼び先が戻らない利用者の関数（TmRet のブロックが無い — ラベル panic を
 // 包む補助関数 binary.outOfRange 等。判定は irinl の ilNonretSeed: rt.* と本体の無い宣言は保守的に「戻る」・関数値の呼び出し OpCallI は見ない）なら、
 // 呼び出しの後ろを切ってブロックを TmExit（PANIC — 到達しない）で閉じる。呼び出しの後ろに続きがあると、
 // ① 呼び出しをまたいで生きる値が callee-saved / スタックへ押し出され（longest の運搬値 best / ch / start の退避）
 // ② ループの中の呼び出しとして読みの持ち上げを止める（LICM / GVN）。
 // 閉じたブロックはx86の配置で冷たい側へ（TmExitのシード — irinlのilHotと同じ解釈）。切って到達しなくなったブロックは中身を消してTmExitに（値の使い手は
-// 支配される側にしかいないので一緒に消える）— チェーンから外すのはcfgCleanのP4
+// 支配される側にしかいないので一緒に消える）— チェーンから外すのはcfgCleanのP4。
+// 戻らない関数の集合は閉じる前に不動点で求める（チェーンの順に依らない）: 全部を「戻る」と仮定して始め、入口から戻りのブロックへの道が、
+// 戻らないと分かった呼び先の呼び出しを越えずには無い関数だけを「戻らない」へ移す（増えるだけ — 健全な側の不動点。自分を呼ぶだけの関数は戻るのまま）。
+// 呼び先の対象 = 利用者の関数（rt.* と rt.panic / rt.panic_mem は除く — ilNonretSeedと同じ）
 func noretModule(st mut St) {
-    mut f := st.fhead
-    while f != -1 {
-        if irFnBHead(mut st, f) != -1 {
-            noretFunc(mut st, f)
+    fl := fnIds(mut st)
+    n := len(fl)
+    // SOBER_NORET_ORDER=1 = 見る順と閉じる順を逆に（撹拌の検査 — 結果は並びに依らない）
+    rev := ilEnvInt("SOBER_NORET_ORDER") == 1
+    // 種 = 戻りのブロックが1つも無い対象の関数（届くかを調べるまでもなく戻らない）。戻らない関数の表 nr は記録の昇順（小さい — 二分探索で引く）
+    mut nr := []int{}
+    mut rs := mut []bool{}
+    // 要約の値を使うモード: 要約にある関数は要約の値（終端化の時点の「戻らないか」— 不動点の値）を種にし、不動点で動かさない
+    use := bxCUse(mut st)
+    mut used := mut []bool{}
+    mut unr := mut []bool{}
+    for k <- iter.Range(0, n) {
+        v := if use { bxCPeek(mut st, FnRef(fl[k]), BX_NORET, 0) } else { []int{} }
+        used = append(used, len(v) > 0)
+        unr = append(unr, len(v) > 0 && v[0] == 1)
+    }
+    for k0 <- iter.Range(0, n) {
+        k := if rev { n - 1 - k0 } else { k0 }
+        if used[k] {
+            if unr[k] {
+                nr = noretAdd(nr, fl[k])
+            }
+        } else if noretTarget(mut st, FnRef(fl[k])) && !llReturns(mut st, FnRef(fl[k])) {
+            nr = noretAdd(nr, fl[k])
         }
-        f = irFnNext(mut st, f)
+    }
+    if st.bx.on {
+        for k <- iter.Range(0, n) {
+            rs = append(rs, llReturns(mut st, FnRef(fl[k])))
+        }
+    }
+    if len(nr) == 0 {
+        noretFacts(mut st, fl, nr, freeze(rs))
+        return
+    }
+    // 戻らない呼び先を呼ぶ関数を、変化が無くなるまで見直す（増えるだけ）
+    mut changed := true
+    while changed {
+        changed = false
+        for k0 <- iter.Range(0, n) {
+            k := if rev { n - 1 - k0 } else { k0 }
+            f := FnRef(fl[k])
+            if !used[k] && spFind(nr, fl[k]) < 0 && noretTarget(mut st, f) && noretCallsNr(mut st, f, nr) && !noretReaches(mut st, f, nr) {
+                nr = noretAdd(nr, fl[k])
+                changed = true
+            }
+        }
+    }
+    noretFacts(mut st, fl, nr, freeze(rs))
+    for k0 <- iter.Range(0, n) {
+        k := if rev { n - 1 - k0 } else { k0 }
+        if noretCallsNr(mut st, FnRef(fl[k]), nr) {
+            noretFunc(mut st, FnRef(fl[k]), nr)
+        }
     }
 }
 
-func noretFunc(st mut St, f FnRef) {
+// 境の要約の事実 [戻らないか, 戻りのブロックがあるか]（閉じる前 — 呼び手が読む値。x86 の時点の本体は格納場所の当たり方に依る: β1 の当たりは B2 を飛ばす）
+func noretFacts(st mut St, fl []int, nr []int, rs []bool) {
+    if !st.bx.on {
+        return
+    }
+    for k <- iter.Range(0, len(fl)) {
+        f := FnRef(fl[k])
+        a := if spFind(nr, fl[k]) >= 0 { 1 } else { 0 }
+        b := if rs[k] { 1 } else { 0 }
+        bxFact(mut st, f, BX_NORET, a, b, 0)
+        if bxCOn(mut st) {
+            zcv, zch := bxCNoret(mut st, f)
+            bxCCmp(mut st, f, BX_NORET, zcv, zch, []int{a, b})
+        }
+    }
+}
+
+// 戻らない関数の判定の対象（利用者の関数 — rt.* と rt.panic / rt.panic_mem は除く。ilNonretSeedと同じ）
+func noretTarget(st mut St, g FnRef) bool {
+    return g != st.rtPanic && g != st.rtPanicMem && !ilIsRt(mut st, g)
+}
+
+// 昇順の表 xs へ x を足す
+func noretAdd(xs []int, x int) []int {
+    mut o := mut []int{}
+    mut placed := false
+    for y <- xs {
+        if !placed && x < y {
+            o = append(o, x)
+            placed = true
+        }
+        o = append(o, y)
+    }
+    if !placed {
+        o = append(o, x)
+    }
+    return freeze(o)
+}
+
+// f が戻らない呼び先（nr）を呼ぶか
+func noretCallsNr(st mut St, f FnRef, nr []int) bool {
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            if irInsOp(mut st, i) == OpCall && spFind(nr, int(irInsFn(mut st, i))) >= 0 {
+                return true
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return false
+}
+
+// f の入口から戻りのブロックへ、戻らない呼び先（nr）の呼び出しを越えずに届くか（本体の無い宣言は戻る）
+func noretReaches(st mut St, f FnRef, nr []int) bool {
+    entry := irFnBHead(mut st, f)
+    if entry == -1 {
+        return true
+    }
+    nb := irFnNBlk(mut st, f)
+    mut seen := mut []int{}
+    xFill(mut seen, nb, 0)
+    mut work := mut []int{}
+    xFill(mut work, nb, 0)
+    work[0] = int(entry)
+    mut sp := 1
+    seen[irBlkId(mut st, entry)] = 1
+    while sp > 0 {
+        sp -= 1
+        x := BlkRef(work[sp])
+        mut stop := false
+        mut i := irBlkIHead(mut st, x)
+        while i != -1 && !stop {
+            if irInsOp(mut st, i) == OpCall {
+                stop = spFind(nr, int(irInsFn(mut st, i))) >= 0
+            }
+            i = irInsNext(mut st, i)
+        }
+        if !stop {
+            t := irBlkTerm(mut st, x)
+            if t == TmRet {
+                return true
+            }
+            for k <- iter.Range(0, 2) {
+                nx := if t == TmBr && k == 0 { irBlkX1(mut st, x) } else if t == TmCondbr { if k == 0 { irBlkX2(mut st, x) } else { irBlkX4(mut st, x) } } else { -1 }
+                if nx != -1 && seen[irBlkId(mut st, BlkRef(nx))] == 0 {
+                    seen[irBlkId(mut st, BlkRef(nx))] = 1
+                    work[sp] = nx
+                    sp += 1
+                }
+            }
+        }
+    }
+    return false
+}
+
+func noretFunc(st mut St, f FnRef, nr []int) {
     mut hit := false
     mut b := irFnBHead(mut st, f)
     while b != -1 {
         if irBlkTerm(mut st, b) != TmExit {
             mut i := irBlkIHead(mut st, b)
             while i != -1 {
-                if irInsOp(mut st, i) == OpCall && ilNonretSeed(mut st, irInsFn(mut st, i)) {
+                if irInsOp(mut st, i) == OpCall && spFind(nr, int(irInsFn(mut st, i))) >= 0 {
                     noretClose(mut st, b)
                     irSetInsNext(mut st, i, InsRef(-1))
                     irSetBlkITail(mut st, b, i)

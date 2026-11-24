@@ -1,0 +1,38 @@
+package loader
+
+import "ast"
+import "diag"
+import "std/iter"
+import "std/strings"
+
+// ログの行き先の宣言 `@logs(stdout | stderr)`（language.md 42 節）を読んで木から外す（以降の層は見ない）。
+// 置けるのは main package のファイル（`_test.sober`・`_double.sober` の外）の package 節の前で、プログラムに高々 1 つ。
+// 結果は stdout を選んだかと、外した後の木
+@errors(diag.Logs)
+func logsOf(trees []ast.Tree, fpath []string) (bool, []ast.Tree, error?) {
+    mut out := mut []ast.Tree{}
+    mut seen := false
+    mut stdout := false
+    for i <- iter.Range(0, len(trees)) {
+        t := trees[i]
+        x := preNode(t, ast.KLogs)
+        if x < 0 {
+            out = append(out, t)
+        } else {
+            at := diag.Pos{file: i, tok: t.nodes[x].tok}
+            if !StrIs(t, t.nodes[t.file].a, "main") || strings.HasSuffix(fpath[i], "_test.sober") || isDoubleFile(fpath[i]) {
+                return false, trees, diag.Logs{at: at, kind: 1}
+            }
+            if seen {
+                return false, trees, diag.Logs{at: at, kind: 2}
+            }
+            if !StrIs(t, t.nodes[x].a, "stdout") && !StrIs(t, t.nodes[x].a, "stderr") {
+                return false, trees, diag.Logs{at: at, kind: 3}
+            }
+            seen = true
+            stdout = StrIs(t, t.nodes[x].a, "stdout")
+            out = append(out, dropReplaces(t))
+        }
+    }
+    return stdout, freeze(out), nil
+}

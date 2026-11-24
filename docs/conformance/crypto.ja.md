@@ -16,7 +16,8 @@
 | 鍵交換X25519 | 対応 | wycheproof/x25519 = 518 |
 | 鍵交換P-256（ECDH・定数時間 — TLSのsecp256r1） | 対応 | wycheproof/ecdh_secp256r1 = 355 |
 | 署名の検証ECDSA P-256 / P-384・RSA-PSS・RSA PKCS#1 v1.5 | 対応 | cavp/ecdsa-sigver = 30<br>wycheproof/rsa-pss-2048-sha256-mgf1-32 = 108 |
-| 署名の生成（RSA-PSSだけ — TLSのサーバのCertificateVerify） | 一部 | `std/tls.TestTrace` |
+| ECDSAの署名P-256 / SHA-256（RFC 6979の決定的なnonce・定数時間〔dudect〕） | 対応 | `std/internal/p256.TestSignRfc6979`<br>`std/internal/p256.TestSignVectors`<br>`std/internal/p256.TestSignVerify` |
+| 署名の生成（RSA-PSS — TLS 1.3のCertificateVerify・RSASSA-PKCS1-v1_5 — TLS 1.2のServerKeyExchange） | 対応 | `std/tls.TestTrace`<br>`std/crypto/rsa.TestSignPKCS1v15` |
 | 秘密に触る関数の定数時間（静的な検査ctcheck — 関数ごとの条件分岐の列をゴールデンと照合） | 対応 | `testdata/ctcheck/expect.txt`: aesgcm |
 | パスワードハッシュ: Argon2id（推し）・bcrypt・PBKDF2-HMAC-SHA256・PHC文字列のVerify | 対応 | xcrypto/argon2id = 19<br>xcrypto/bcrypt = 18<br>go/pbkdf2-sha256 = 432 |
 <!-- confsync:end claims crypto-prims yes,partial -->
@@ -36,7 +37,6 @@
 | 項目 | 時期 | 今の挙動の証拠 |
 |---|---|---|
 | AES-256-GCM | 0.8圏 | なし |
-| ECDSAの署名（RFC 6979） | 0.8圏 | なし |
 <!-- confsync:end claims crypto-prims planned -->
 
 ## 証拠 — 通ったベクタ

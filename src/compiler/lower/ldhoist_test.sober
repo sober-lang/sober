@@ -89,3 +89,86 @@ func TestLdhoist() {
     assert(lhT(7) == 1, "chain to rt")
     assert(lhT(8) == 1, "not mut")
 }
+
+// f(P ptr〔mutのフラグ〕, n i64) で、輪の前に `y = load (gep.word P, 3)[1]` を読み、輪の中で同じワードを読む形に巻き上げを掛け、
+// 関数全体に残ったそのワードのloadの数を返す（1 = 輪の前の読みを使い回した・2 = 前置きに新しい読みを置いた）。kind: 0 = 前置きの中で読むだけ・
+// 1 = 読みの後に同じワードへのstore・2 = 読みの後に未知の関数の呼び出し・3 = 読みの後にPの別のワードへのstore（書きうる命令として数える）・
+// 4 = 読みを前置きの手前のブロックに置く（前任が1つの連なり）・5 = 4で前置きの中にstore・6 = 4で前置きの前任が2つ（連なりが切れる）
+func lrT(kind int) int {
+    mut st := St{}
+    initScalars(mut st)
+    desugar.HeapPush(mut st.d, 0)
+    pt := listN(mut st, 2)
+    desugar.HeapSet(mut st.d, pt + 1, TyPtr)
+    desugar.HeapSet(mut st.d, pt + 2, TyI64)
+    other := addFunc(mut st, 0, desugar.ListRef(listN(mut st, 0)), -1)
+    f := addFunc(mut st, 0, desugar.ListRef(pt), -1)
+    irSetFnMutP(mut st, f, 1)
+    st.fn = f
+    p := 0
+    n := 1
+    entry := newBlock(mut st)
+    st.cur = entry
+    hd := newBlock(mut st)
+    body := newBlock(mut st)
+    done := newBlock(mut st)
+    irSetBlkLoop(mut st, hd, 1)
+    y := load(mut st, gepWord(mut st, p, iconst(mut st, 3)), 1)
+    if kind >= 4 {
+        pre := newBlock(mut st)
+        if kind == 6 {
+            side := newBlock(mut st)
+            condbr(mut st, cmp(mut st, CLt, y, n), pre, -1, side, -1)
+            setCur(mut st, side)
+            br(mut st, pre, -1)
+        } else {
+            br(mut st, pre, -1)
+        }
+        setCur(mut st, pre)
+        if kind == 5 {
+            store(mut st, gepWord(mut st, p, iconst(mut st, 3)), 1, n)
+        }
+    } else if kind == 1 {
+        store(mut st, gepWord(mut st, p, iconst(mut st, 3)), 1, n)
+    } else if kind == 2 {
+        _ = call(mut st, other, listN(mut st, 0))
+    } else if kind == 3 {
+        store(mut st, p, 0, n)
+    }
+    br(mut st, hd, list1(mut st, y))
+    setCur(mut st, hd)
+    i := param(mut st, hd, TyI64)
+    condbr(mut st, cmp(mut st, CLt, i, n), body, -1, done, -1)
+    setCur(mut st, body)
+    x := load(mut st, gepWord(mut st, p, iconst(mut st, 3)), 1)
+    br(mut st, hd, list1(mut st, bin(mut st, BAdd, i, x)))
+    setCur(mut st, done)
+    ret(mut st, -1)
+    ldhoistFunc(mut st, f)
+    mut nl := 0
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut k := irBlkIHead(mut st, b)
+        while k != -1 {
+            // 元の形（gep.word P, 3 の 1 ワード目）と、前置きに置く畳んだ形（P の 4 ワード目）
+            if irInsOp(mut st, k) == OpLoad && (irInsB(mut st, k) == 1 || (irInsA(mut st, k) == p && irInsB(mut st, k) == 4)) {
+                nl += 1
+            }
+            k = irInsNext(mut st, k)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return nl
+}
+
+func TestLdhoistReuse() {
+    // 使い回す形: 前置きの中・前任が1つの連なりの手前のブロック
+    assert(lrT(0) == 1, "reuse in pre")
+    assert(lrT(4) == 1, "reuse through chain")
+    // 使い回さない形（書きうる命令の判定・連なりの判定を外すミュータントはここで落ちる）
+    assert(lrT(1) == 2, "store same word")
+    assert(lrT(2) == 2, "call")
+    assert(lrT(3) == 2, "store other word")
+    assert(lrT(5) == 2, "store in pre")
+    assert(lrT(6) == 2, "two preds")
+}

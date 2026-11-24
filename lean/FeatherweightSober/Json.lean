@@ -164,6 +164,7 @@ def exprToJson : Expr → Json
       Json.mkObj [("k", "jump"), ("n", (n : Nat)), ("t", tyToJson t), ("e", exprToJson e)]
   | .unreach t => Json.mkObj [("k", "unreach"), ("t", tyToJson t)]
   | .alloc m e => Json.mkObj [("k", "alloc"), ("mut", m), ("e", exprToJson e)]
+  | .allocAt m r e => Json.mkObj [("k", "alloc"), ("mut", m), ("e", exprToJson e), ("r", (r : Nat))]
   | .deref e => Json.mkObj [("k", "deref"), ("e", exprToJson e)]
   | .assign l e => Json.mkObj [("k", "assign"), ("l", exprToJson l), ("e", exprToJson e)]
   | .whileE c b => Json.mkObj [("k", "while"), ("c", exprToJson c), ("body", exprToJson b)]
@@ -503,7 +504,10 @@ def exprFromJson : Nat → Json → Except String Expr
     | "alloc" => do
         let m ← j.getObjVal? "mut" >>= Json.getBool?
         let e ← j.getObjVal? "e" >>= exprFromJson fuel
-        pure (.alloc m e)
+        -- "r" があれば region 指定版（allocAt — 省略 = 最内の alloc）
+        match j.getObjVal? "r" with
+        | .ok rj => pure (.allocAt m (← rj.getNat?) e)
+        | .error _ => pure (.alloc m e)
     | "deref" => do
         let e ← j.getObjVal? "e" >>= exprFromJson fuel
         pure (.deref e)

@@ -3,7 +3,7 @@ package main
 // クロージャの名前の呼び出し形の生成元（language.md 7 節L-for）: 展開される関数の匿名の関数型の仮引数 `recv func(k func(T)) error?` を
 // 文形 for の生成元に置ける — `for x <- recv()? { … }`。脱糖は呼び出し形の生成元と同じ（継続 `(x) => { … }` を末尾の実引数に足す — 展開で
 // recv が実引数のラムダに置き換わってから文形 for の脱糖に乗る）。本体の `?`・break・continue・非局所 return は普通の文形 for と同じ。
-// 使用例 = 転送路の抽象（http.ServeWith(recv, send, …)）の形
+// 使用例 = 受けの生成元を仮引数で受ける形（std/http/serverのServeConnの核 serveCore(recv, send, …)）
 
 type Short error {
     v int

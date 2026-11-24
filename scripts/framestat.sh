@@ -14,6 +14,7 @@
 set -uo pipefail
 export SOBER_HASH_SEED=${SOBER_HASH_SEED:-0}
 cd "$(dirname "$0")/.."
+. scripts/gatelib.sh
 R=$PWD
 S2=${STAGE2:-out/stage2/sober2}
 case "$S2" in /*) ;; *) S2=$R/$S2 ;; esac
@@ -23,6 +24,7 @@ room=$(sed -n 's/^const TCB_TOP_ROOM = \([0-9]*\).*/\1/p' src/compiler/lower/tas
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 fail=0; n=0
+lfail=0   # 線との比較の赤（ratchet_cmp — 線の値の変更は記録の実測で再判定される）。fail = 線のほかの検査（@room・@shallow・変異）
 stat() {   # stat <題材> [build の追加の旗…] → $W/<鍵>.txt
     local src=$1 key; shift; key=$(echo "$src $*" | tr '/@. =-' '______')
     [ -f "$W/$key.txt" ] && { echo "$W/$key.txt"; return; }
@@ -74,8 +76,12 @@ while read -r src fn lim; do
         *) got=$(awk -v n="$fn" '$1 == "frame" && $2 == n { print $3; exit }' "$f"); got=${got:-0} ;;
     esac
     n=$((n + 1))
-    if [ "$got" -gt "$lim" ]; then echo "FAIL $src $fn: $got B > $lim B"; fail=$((fail + 1))
+    ratchet_cmp scripts/framestat.list "$src" "$fn" "$got"; rc=$?
+    lim=$RATCHET_LIM
+    if [ $rc = 2 ]; then echo "FAIL $src $fn: $got B — no numeric limit in scripts/framestat.list"; lfail=$((lfail + 1))
+    elif [ $rc = 1 ]; then echo "FAIL $src $fn: $got B > $lim B"; lfail=$((lfail + 1))
     elif [ $((got * 102 / 100)) -lt "$lim" ]; then echo "note $src $fn: $got B — 2% or more below $lim B (tighten scripts/framestat.list)"; fi
 done < scripts/framestat.list
-echo "framestat: $n limits — frame sizes within scripts/framestat.list, fail=$fail"
-[ $fail = 0 ]
+echo "framestat: $n limits — frame sizes within scripts/framestat.list, fail=$fail, ratchet fail=$lfail"
+[ $fail = 0 ] && meas_body_ok
+[ $fail = 0 ] && [ $lfail = 0 ]

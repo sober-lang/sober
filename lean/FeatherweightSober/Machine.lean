@@ -109,6 +109,8 @@ inductive Frame : Type where
   | sndK
   /-- 割り当ての値評価中。m は書き込むタグ（物理的にタグを刻むため保持） -/
   | allocK (m : Bool)
+  /-- region r への割り当ての値評価中（allocAt） -/
+  | allocAtK (m : Bool) (r : Nat)
   | derefK
   /-- 代入の左辺評価中（右辺 e を保持） -/
   | assignL (e : Expr)
@@ -948,6 +950,7 @@ def step (Δ : Defs) (π : List Bool) : State → ChanSt → Option (State × Ch
   -- 到達しない（A5）: 評価に来たら panic（ゼロ除算と同じ終端 — 27 節の「到達 = バグ」）
   | .eval H S (unreach _), K => some (.panic H, K)
   | .eval H S (alloc m e), K => some (.eval H (.allocK m :: S) e, K)
+  | .eval H S (allocAt m r e), K => some (.eval H (.allocAtK m r :: S) e, K)
   | .eval H S (deref e), K => some (.eval H (.derefK :: S) e, K)
   | .eval H S (assign l e), K => some (.eval H (.assignL e :: S) l, K)
   | .eval H S (whileE c b), K => some (.eval H (.whileK c b :: S) c, K)
@@ -1080,6 +1083,10 @@ def step (Δ : Defs) (π : List Bool) : State → ChanSt → Option (State × Ch
       match H[H.length - 1]? with
       | Option.some ρ =>
           some (.ret (H.set (H.length - 1) (ρ ++ [(m, v)])) S (loc (H.length - 1) ρ.length), K)
+      | Option.none => none
+  | .ret H (.allocAtK m r :: S) v, K =>
+      match H[r]? with
+      | Option.some ρ => some (.ret (H.set r (ρ ++ [(m, v)])) S (loc r ρ.length), K)
       | Option.none => none
   | .ret H (.derefK :: S) (loc r a), K =>
       match H[r]? with

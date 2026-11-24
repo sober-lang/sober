@@ -1,0 +1,44 @@
+package main
+
+// 借りの位置の鍵の形と、捕捉の型の中の名前付き関数型（language.md 25 節 (α-L0)）: 値の呼び出しの借りの実引数のラムダ `(r) => route(r)` が捕捉するrouteは
+// 展開待ちで、流れる先のラムダが捕捉する []Route の型を辿ると Handler → Resp → Stream の署名に届く。Stream の借りの仮引数 emit の型は、
+// emit に渡すラムダ（send と su を捕捉する）の鍵の形が揃ってから決まる
+
+type Stream func(emit func(b int) int) int
+
+type Resp struct {
+    stream Stream?
+}
+
+type Handler func(r int) Resp
+
+type Route struct {
+    h Handler
+}
+
+type Fn func(c int, route func(r int) Resp) int
+
+type run struct {
+    f Fn
+}
+
+func buf(send func(b int) int, route func(r int) Resp, su int) int {
+    w := route(1)
+    st := w.stream
+    return if st != nil { st((p) => send(p) + su) } else { 0 }
+}
+
+func sec(c int, route func(r int) Resp) int {
+    return buf((b) => b + c, route, c * 10)
+}
+
+func top(c int, route func(r int) Resp) int {
+    x := run{f: sec}
+    f := x.f
+    return f(c, (r) => route(r))
+}
+
+func main() {
+    rs := []Route{Route{h: (r) => Resp{stream: (emit) => emit(r + 4)}}}
+    println(top(3, (r) => rs[0].h(r)))
+}

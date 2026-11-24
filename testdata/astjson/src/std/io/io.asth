@@ -1,5 +1,5 @@
-@@full	7351faafbfaa18ef	11408	323421
-@head	96f1bcb252ca9666	47	3320
+@@full	652556f7dc071097	11415	323630
+@head	a0af67b526fe7a3c	47	3353
 const Stderr	9b222277bf92bb82	3	223
 const Stdin	283fe88ffef4a3ec	3	222
 const Stdout	0a161fd16bf44f3d	3	223
@@ -17,7 +17,7 @@ func OpenRoot	6fd1602710062a52	69	2683
 func OpenUnder	40ef7196511d2c6c	111	3972
 func Raw	4a89cd7de4c46771	6	301
 func ReadAll	439a98f513184310	39	1373
-func ReadAt	62b6bb561bb8671b	119	3913
+func ReadAt	7f8e55f6d3a928c9	119	3922
 func ReadDir	0f65e44f81944184	149	4958
 func ReadFile	8f17a3bfba0966c2	36	1292
 func ReadStdin	5867fe5f733a1935	37	1273

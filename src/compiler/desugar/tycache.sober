@@ -275,7 +275,14 @@ func trStr(st mut S, r mut TyRd) StrRef {
     for i <- iter.Range(0, n) {
         b = append(b, byte(trGet(mut r)))
     }
-    return strOf(mut st, freeze(b))
+    // 店の列に積む（StrRef = YLBASE + 添字・列の形はヒープの文字列と同じ [n, バイト…]）。ヒープに積むと、席 A の子が親と同じ番地で
+    // 引くためにヒープの後半（TypeAll の作業の列を含む全部）を写す要があった
+    at := table.Len(mut st.ty.yl)
+    table.Push(mut st.ty.yl, len(b))
+    for c <- freeze(b) {
+        table.Push(mut st.ty.yl, int(c))
+    }
+    return StrRef(YLBASE + at)
 }
 
 func trRec(st mut S, r mut TyRd) int {

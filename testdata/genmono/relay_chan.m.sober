@@ -1,7 +1,7 @@
 package main
 
 // 総称関数の版（relay_chan.g.sober）の型引数を手で代入した単相の版。関数の対応（単相 = 総称の単相コピーの名前）
-// genmono: relayS = relay[[]byte]
+// genmono: relayS = relay[string]
 // genmono: relayR = relay[main.Row]
 
 import "std/task"

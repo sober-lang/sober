@@ -3,6 +3,8 @@
 # irtext・lltextは表（全文は out/gold/ — docs/golden.md）。
 #   scripts/regen.sh            10 種を同時に（各スクリプトの中も entry ごとに並列 — JOBS は nproc / 4・最低 4）
 # 規律は今までどおり: regenはgates緑の木 / 意図した差だけを確認してから（ゴールデンregenはgates緑からだけ）。差は git diff で見る
+# ゴールデンの並びを呼び手のロケールに依らせない
+export LC_ALL=C.UTF-8
 set -uo pipefail
 cd "$(dirname "$0")/.."
 scripts/stage2.sh --quiet > /dev/null || exit 1

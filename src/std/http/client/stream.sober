@@ -106,8 +106,8 @@ func streamOnce(c cfg, t target, r outgoing, follow bool, cookie string, k func(
     req := requestBytes(r.method, requestTarget(rt, t), withProxyAuth(rt, t, r.headers), r.body, c.userAgent, false, cookie)
     noBody := r.method == "HEAD"
     mb := c.maxBody
-    pa := params(c, rt.px)
-    pb := params(c, t)
+    pa := params(c, rt.px, false)
+    pb := params(c, t, true)
     start := time.Mono()
     mut ss := streamSt{st: newScan(), d: newBody(newScan()), head: false, follow: follow, loc: ""}
     mut hb := mut []byte{}
@@ -152,7 +152,7 @@ func streamOnce(c cfg, t target, r outgoing, follow bool, cookie string, k func(
 @errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other, internal.record.Alert, internal.hsc.CertFailed)
 @effects(block, io, panic, nondet)
 func streamLink(conn net.Conn, blk []int, pa internal.hsc.CParams, pb internal.hsc.CParams, req []byte, hb mut []byte, ss mut streamSt, noBody bool, maxBody int, k func(p Part)) error? {
-    linkSend(conn, blk, req)?
+    tripSend(conn, blk, pa, pb, req)?
     mut head := noResponse()
     mut eof := false
     while !eof {

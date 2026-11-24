@@ -51,6 +51,7 @@
 | `SOBER_TLS_INTEROP` | std/internal/hsc | TLSのクライアントの相互接続のテストのディレクトリ（scripts/tlsinterop.shがGoのサーバを起動して渡す — 無ければ繋がない・テスト用） |
 | `SOBER_PG_ORACLE` | std/internal/pgwire | 実のPostgreSQLとの往復のテストの設定のファイル（scripts/pgoracle.shがPostgreSQL 17 / 18を立てて渡す — 無ければ繋がない・テスト用） |
 | `SOBER_DNS_FAKE` | std/net | 名前の解決の送受のテストの偽のDNSサーバのport（scripts/dnsinterop.shが渡す — 無ければ問わない・テスト用） |
+| `SOBER_GATES_ALLOW_SKIP` | std/net・std/http/client | IPv6のテストを飛ばす条件の名前（空白区切り）。`ipv6` があり、IPv6のループバック（::1）が無いときだけ、`SKIP[ipv6]` の行を出して飛ばす。無ければテストは走って落ちる（テスト用。ゲートの照合できない条件と同じ名前） |
 | `SOBER_HTTP_INTEROP` | std/http/client | HTTPクライアントの相互接続のテストのディレクトリ（scripts/httpinterop.shがGoのnet/httpのサーバを起動して渡す — 無ければ繋がない・テスト用） |
 | `SOBER_QUICK_SEED` | std/quick | プロパティベーステストのシード（10進・New / Namedが混ぜる — 無ければ0。探索を広げるときに変える） |
 | `SOBER_QUICK_TRIALS` | std/quick | Checkの試行の数（1以上 — 無ければCheckのtrials:・既定100） |

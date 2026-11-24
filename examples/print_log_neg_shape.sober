@@ -1,0 +1,13 @@
+package main
+
+// 負例（loaderが拒否）: print.Logのフィールドの型はJSONの書き出しと同じ範囲（mapは範囲の外）
+
+import "std/print"
+
+type Counts struct {
+    byPath map[string]int
+}
+
+func main() {
+    print.Log[Counts](Counts{byPath: map[string]int{}})
+}

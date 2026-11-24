@@ -1,0 +1,26 @@
+package main
+
+// 負例: ループの中の局所のmutの器と外のmutを再帰する関数へ一緒に渡せても（器のセルは外のregionに作る）、
+// 呼び先がmutの仮引数の中身を呼び出しの外へ逃がす形は拒否する（language.md 26節のU3）
+type S struct {
+    keep mut [][]int
+}
+
+func walk(st mut S, rs mut [][]int, i int) {
+    if i > 0 {
+        st.keep = append(st.keep, rs[i - 1])
+        walk(mut st, mut rs, i - 1)
+    }
+}
+
+func main() {
+    mut st := S{keep: mut [][]int{}}
+    mut k := 0
+    while k < 1 {
+        mut rs := mut [][]int{}
+        rs = append(rs, []int{7})
+        walk(mut st, mut rs, 1)
+        k += 1
+    }
+    println(len(st.keep))
+}

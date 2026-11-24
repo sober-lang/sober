@@ -84,6 +84,7 @@ func buildCancelRt(st mut St) {
     setCur(mut st, bNo)
     ret(mut st, zero)
     buildCutEnd(mut st)
+    buildExitMark(mut st)
     buildCancelCheck(mut st)
     buildTaskRerun(mut st)
 }
@@ -134,6 +135,16 @@ func buildCutEnd(st mut St) {
     condbr(mut st, cmp(mut st, CEq, o, c0), bHit, -1, bLoop, -1)
     setCur(mut st, bHit)
     cutRaise(mut st)
+    // 子の死は、本体が出口に着いた後なら、scopeの下のioの待ちも切る（孤児と同じ取り消し — language.md 28 節「子の死で待ちを切る」）: 印を見て、
+    // 着いていれば世代を進めてスリープするワーカーを起こす（まだなら本体が出口の印を立てるときに発火する — exitMark）。
+    // ミュータント127 = 子の死で発火しない（待っている兄弟が起こされず、期限まで待つ — iouring の net_sibcut が捕まえる）
+    if st.rtMut != 127 && st.orphOn {
+        // ミュータント128（orphan.sober の判定と組）では、本体が走っている間も死の時点で発火する
+        bE := branchIf(mut st, if st.rtMut == 128 { iconst(mut st, 1) } else { cmp(mut st, CEq, load(mut st, rec0, SR_EXIT), iconst(mut st, 1)) })
+        orphFire(mut st)
+        br(mut st, bE, -1)
+        setCur(mut st, bE)
+    }
     br(mut st, bDone, -1)
     setCur(mut st, bDone)
     bR := newBlock(mut st)
@@ -203,7 +214,7 @@ func cutRtPure(st mut St, g FnRef) bool {
     return g == st.rtAlloc8 || g == st.rtCat8 || g == st.rtCopy || g == st.rtCopy8 || g == st.rtExtend8 || g == st.rtGrow || g == st.rtGrow8 || g == st.rtGrowTry ||
         g == st.rtKidKeep || g == st.rtMapGrow || isMapRt(mut st, g) || g == st.rtMaphash || g == st.rtPanic || g == st.rtPanicMem || g == st.rtRalloc || g == st.rtReloc ||
         g == st.rtReloc8 || g == st.rtErrReloc || g == st.rtRenter || g == st.rtRenterL || g == st.rtRenterLL || g == st.rtSlotNew || g == st.rtDpGive || g == st.rtDpTake || g == st.rtSlotTake || g == st.rtSlotGive || g == st.rtSlotTrim || g == st.rtStreq || g == st.rtMatchLen || g == st.rtJClean ||
-        g == st.rtTaskGo || g == st.rtTaskNew || g == st.rtTaskInline || g == st.rtTaskWait || g == st.rtTaskWaitK || g == st.rtTip8 || g == st.rtTipN8 || g == st.rtUnmap || g == st.rtTaskRerun || g == st.rtCancel || g == st.rtCutWalk || g == st.rtCutEnd || g == st.rtMnDelay || g == st.rtLockWait
+        g == st.rtExitMark || g == st.rtTaskGo || g == st.rtTaskNew || g == st.rtTaskInline || g == st.rtTaskWait || g == st.rtTaskWaitK || g == st.rtTip8 || g == st.rtTipN8 || g == st.rtUnmap || g == st.rtTaskRerun || g == st.rtCancel || g == st.rtCutWalk || g == st.rtCutEnd || g == st.rtMnDelay || g == st.rtLockWait
 }
 
 // spawnの格納場所の定数を書く（純な子 = 1・純でないがstdoutに書かない子 = 2）: 純でない関数 = チャネルに触る・syscall / 間接呼び出し /
@@ -228,6 +239,10 @@ func cutPatch(st mut St) {
     mut place := false
     mut f := st.fhead
     while f != -1 {
+        // 本体を下ろさなかった関数の旗は束の自分の分から（パスの途中で宣言させた rt の関数の列に rt.netop がある）
+        if !place && irFnBHead(mut st, f) == -1 && bxCSelfHasRt(mut st, f, chF(mut st, NETF_OP)) {
+            place = true
+        }
         if !cutIsRt(mut st, f) {
             at := len(cs)
             cs = append(cs, int(f))
@@ -254,6 +269,8 @@ func cutPatch(st mut St) {
                             }
                             if op == OpCall && g == chF(mut st, NETF_OP) && cutConstArg0(mut st, f, i) == 5 {
                                 place = true
+                                // 束の自分の分へ（本体を下ろさない関数の旗 — 下の bxCSelfHasRt）
+                                bxFact(mut st, f, BX_RTNEED, int(g), 0, 0)
                             }
                             if g == st.rtOutDrain {
                                 err = true
@@ -276,6 +293,25 @@ func cutPatch(st mut St) {
         }
         f = irFnNext(mut st, f)
     }
+    // 要約の値を使うモード: 要約にある関数は、純でないかと stdout に書くか（BX_CUT — 不動点の値）を要約から置き、2つの不動点で動かさない
+    // （us = 置いた関数 → 1 + stdout に書くか）
+    mut us := mut map[int]int{}
+    if bxCUse(mut st) {
+        // 純でないかの表は、利用者の関数（cs）について組み直す（要約の値で純になる関数の印を外す）
+        mut bd := mut map[int]int{}
+        mut at := 0
+        while at < len(cs) {
+            v := bxCPeek(mut st, FnRef(cs[at]), BX_CUT, 0)
+            if len(v) > 0 {
+                us[cs[at]] = 1 + v[1]
+            }
+            if (len(v) > 0 && v[0] == 1) || (len(v) == 0 && bad[cs[at]] != nil) {
+                bd[cs[at]] = 1
+            }
+            at += 2 + cs[at + 1]
+        }
+        bad = bd
+    }
     mut going := true
     while going {
         going = false
@@ -283,7 +319,7 @@ func cutPatch(st mut St) {
         while at < len(cs) {
             g := cs[at]
             n := cs[at + 1]
-            if bad[g] == nil {
+            if bad[g] == nil && us[g] == nil {
                 for q <- iter.Range(0, n) {
                     if bad[cs[at + 2 + q]] != nil && bad[g] == nil {
                         bad[g] = 1
@@ -297,16 +333,34 @@ func cutPatch(st mut St) {
     if place && st.mnExtra >= 0 {
         irSetInsA(mut st, InsRef(st.mnExtra), 1)
     }
-    out := outSolve(mut st, cs, leaf, ind, taken)
+    out := outSolve(mut st, cs, leaf, ind, taken, us)
+    // 境の要約の事実 [純でないか, stdoutに書くか]
+    if st.bx.on {
+        mut at := 0
+        while at < len(cs) {
+            cb := if bad[cs[at]] != nil { 1 } else { 0 }
+            co := if out[cs[at]] != nil { 1 } else { 0 }
+            bxFact(mut st, FnRef(cs[at]), BX_CUT, cb, co, 0)
+            if bxCOn(mut st) {
+                zcv, zch := bxCCut(mut st, FnRef(cs[at]))
+                bxCCmp(mut st, FnRef(cs[at]), BX_CUT, zcv, zch, []int{cb, co})
+            }
+            at += 2 + cs[at + 1]
+        }
+    }
     k = st.cutSites
     while k != -1 {
         kid := desugar.HeapGet(mut st.d, k + 2)
+        // 本体の無い関数の打ち切りのマーク（命令 -1 — 定数は β2 の機械語の中）
+        ins := desugar.HeapGet(mut st.d, k + 1)
         if bad[kid] == nil {
-            irSetInsA(mut st, InsRef(desugar.HeapGet(mut st.d, k + 1)), 1)
+            if ins != -1 {
+                irSetInsA(mut st, InsRef(ins), 1)
+            }
             desugar.HeapSet(mut st.d, k + 3, 1)
             st.cutKids = st.cutKids + 1
-        } else if out[kid] == nil {
-            irSetInsA(mut st, InsRef(desugar.HeapGet(mut st.d, k + 1)), 2)
+        } else if out[kid] == nil && ins != -1 {
+            irSetInsA(mut st, InsRef(ins), 2)
         }
         k = desugar.HeapGet(mut st.d, k)
     }
@@ -335,7 +389,7 @@ func cutConstArg0(st mut St, f FnRef, ci InsRef) int {
 // 「全部書く」に倒さず、番地を取られた全関数の合併（閉じた世界 — 番地を取られた関数のどれかが書くなら、間接呼び出しを持つ関数は全部書く側。
 // spawn の子の入口は番地を取られるが OpTStart で始まり、間接呼び出しの先にならないので除く）。直の io の書き込み（WriteFd・syscall）は区間の
 // 対象外（11 節 — 行バッファを通らない）なので葉にしない
-func outSolve(st mut St, cs []int, leaf []int, ind []int, taken []int) map[int]int {
+func outSolve(st mut St, cs []int, leaf []int, ind []int, taken []int, us map[int]int) map[int]int {
     // 逆辺: 呼び先g → 呼び手のチェーン（rhead[g] = 辺の番号・rnext / rfrom = 辺の列）
     mut rhead := mut map[int]int{}
     mut rnext := mut []int{}
@@ -365,10 +419,20 @@ func outSolve(st mut St, cs []int, leaf []int, ind []int, taken []int) map[int]i
             tk[g] = 1
         }
     }
+    // 要約から置いた関数（us）は、要約の値で種にし、伝播で動かさない
     mut out := mut map[int]int{}
     mut work := mut []int{}
+    at = 0
+    while at < len(cs) {
+        u := us[cs[at]]
+        if u != nil && u == 2 {
+            out[cs[at]] = 1
+            work = append(work, cs[at])
+        }
+        at += 2 + cs[at + 1]
+    }
     for g <- leaf {
-        if out[g] == nil {
+        if out[g] == nil && us[g] == nil {
             out[g] = 1
             work = append(work, g)
         }
@@ -381,7 +445,7 @@ func outSolve(st mut St, cs []int, leaf []int, ind []int, taken []int) map[int]i
         if !anyInd && tk[g] != nil {
             anyInd = true
             for h <- ind {
-                if out[h] == nil {
+                if out[h] == nil && us[h] == nil {
                     out[h] = 1
                     work = append(work, h)
                 }
@@ -391,7 +455,7 @@ func outSolve(st mut St, cs []int, leaf []int, ind []int, taken []int) map[int]i
         mut e := if r != nil { r } else { -1 }
         while e != -1 {
             c := rfrom[e]
-            if out[c] == nil {
+            if out[c] == nil && us[c] == nil {
                 out[c] = 1
                 work = append(work, c)
             }
@@ -413,7 +477,17 @@ func cutSuccs(st mut St, b BlkRef, out mut []int) {
 }
 
 // 関数 f が直に呼ぶ / 番地を取る利用者の関数（rt を除く）
-func cutCallees(st mut St, f FnRef, out mut []int) {
+func cutCallees(st mut St, f FnRef, sm map[int][]int, out mut []int) {
+    // 本体を下ろさなかった関数は要約の呼び出しの辺から（cutSumCallees）
+    cs0 := sm[int(f)]
+    if cs0 != nil {
+        for g <- cs0 {
+            if !cutIsRt(mut st, FnRef(g)) {
+                out = append(out, g)
+            }
+        }
+        return
+    }
     // β1の当たりでB2を飛ばした関数（本体はB2の入力のまま）は格納場所の相手の列から（bcache.sober）
     if bcSkipped(mut st, int(f)) {
         cs := bcSkCalls(st.bcSk, st.bcInf, int(f))
@@ -442,6 +516,7 @@ func cutCallees(st mut St, f FnRef, out mut []int) {
 
 // 検査点を置く（最適化の後・バックエンドの前）: 純な子から届く利用者の関数のループの後ろの辺の手前と、再帰する関数の入口のブロックの末尾
 func cutInsert(st mut St) {
+    sm := cutSumCallees(mut st)
     mut inR := mut map[int]int{}
     mut dirty := mut map[int]int{}
     mut work := mut []int{}
@@ -458,13 +533,19 @@ func cutInsert(st mut St) {
         wi += 1
         if inR[f] == nil {
             inR[f] = 1
-            cutCallees(mut st, FnRef(f), mut work)
+            cutCallees(mut st, FnRef(f), sm, mut work)
         }
     }
     mut f := st.fhead
     while f != -1 {
-        if inR[int(f)] != nil && irFnBHead(mut st, f) != -1 {
-            rec := cutRecursive(mut st, f, mut inR)
+        if inR[int(f)] != nil && irFnBHead(mut st, f) == -1 && sm[int(f)] != nil {
+            // 本体を下ろさなかった関数: 検査点は β2 の機械語の中。β の鍵の 2 bit（束の仮定）だけ積む
+            if st.ckOn {
+                table.Push(mut st.ckCut, int(f))
+                table.Push(mut st.ckCut, if cutRecursive(mut st, f, sm, mut inR) { 1 } else { 0 })
+            }
+        } else if inR[int(f)] != nil && irFnBHead(mut st, f) != -1 {
+            rec := cutRecursive(mut st, f, sm, mut inR)
             // β の鍵の 2 bit（ckey.sober — 到達性はモジュールの事実なので鍵に入れる）
             if st.ckOn {
                 table.Push(mut st.ckCut, int(f))
@@ -485,10 +566,10 @@ func cutInsert(st mut St) {
 }
 
 // f が自分へ戻る呼び出しの路を持つか（届く関数の集合 inR の中で）
-func cutRecursive(st mut St, f FnRef, inR mut map[int]int) bool {
+func cutRecursive(st mut St, f FnRef, sm map[int][]int, inR mut map[int]int) bool {
     mut seen := mut map[int]int{}
     mut work := mut []int{}
-    cutCallees(mut st, f, mut work)
+    cutCallees(mut st, f, sm, mut work)
     mut wi := 0
     while wi < len(work) {
         g := work[wi]
@@ -498,7 +579,7 @@ func cutRecursive(st mut St, f FnRef, inR mut map[int]int) bool {
         }
         if seen[g] == nil && inR[g] != nil {
             seen[g] = 1
-            cutCallees(mut st, FnRef(g), mut work)
+            cutCallees(mut st, FnRef(g), sm, mut work)
         }
     }
     return false
@@ -1004,4 +1085,37 @@ func cutRaise(st mut St) {
     setCur(mut st, wn)
     br(mut st, wl, list1(mut st, bin(mut st, BAdd, wi, iconst(mut st, 1))))
     setCur(mut st, wd)
+}
+
+// 本体を下ろさなかった関数の呼び先と番地を取る相手（要約の呼び出しの辺 — B2 の後の本体の辺と同じ列）。記録 → 相手の記録の列
+func cutSumCallees(st mut St) map[int][]int {
+    mut m := mut map[int][]int{}
+    if !bxCUse(mut st) {
+        return freeze(m)
+    }
+    t := bxTab(mut st)
+    mut f := st.fhead
+    while f != -1 {
+        sp := bxCSelf(mut st, f)
+        e := bxCEnt(mut st, int(f))
+        if sp >= 0 && e >= 0 {
+            mut cs := mut []int{}
+            for k <- iter.Range(0, bxCW(mut st, e + 7)) {
+                p := e + 8 + 3 * k
+                h1 := bxCW(mut st, p + 1)
+                h2 := bxCW(mut st, p + 2)
+                if h1 != 0 || h2 != 0 {
+                    g := bxCRec(t, h1, h2)
+                    if g < 0 {
+                        bxCSelfMiss(mut st, sp, "self-cut")
+                    } else {
+                        cs = append(cs, g)
+                    }
+                }
+            }
+            m[int(f)] = freeze(cs)
+        }
+        f = irFnNext(mut st, f)
+    }
+    return freeze(m)
 }

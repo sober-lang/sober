@@ -18,9 +18,10 @@ const SOBER = process.env.SOBER ?? path.join(ROOT, "bin/sober");
 const PKGS = [
   "std/internal/ec", "std/internal/x509", "std/crypto/password", "std/internal/sha512", "std/internal/record", "std/tls",
   "std/internal/hsc", "std/internal/p256", "std/http/server", "std/http/client", "std/net", "testdata/stdtest/stdurl",
+  "std/internal/hpack", "std/internal/h2frame", "std/internal/cbcrec", "std/crypto/rsa",
 ];
 const EXAMPLES = ["crypto_wycheproof_aead", "crypto_wycheproof_aesgcm", "crypto_wycheproof_mac", "crypto_wycheproof_pss", "crypto_wycheproof_x25519"];
-const INTEROP = ["tls", "http", "dns"];
+const INTEROP = ["tls", "tls12", "http", "dns"];
 
 const errors: string[] = [];
 const fail = (m: string) => errors.push(m);
@@ -344,6 +345,18 @@ const BLOCKS: Record<string, (lang: Lang) => string[]> = {
     num("interop/tls");
     return o;
   },
+  "interop-tls12": (lang) => {
+    const m = interopMeta.get("tls12");
+    const o = [L(lang, `最終確認: ${m?.date}（木 ${m?.commit} — scripts/tls12interop.sh・相手 = openssl s_client・ゲート tls12interop でも毎回回る）`,
+      `Last run: ${m?.date} (tree ${m?.commit} — scripts/tls12interop.sh; peer = openssl s_client; the gate tls12interop runs it every time)`), "",
+      L(lang, "| 件 | 結果 |", "| Case | Result |"), "|---|---|"];
+    for (const x of list("interop/tls12")) {
+      const i = x.indexOf(" ");
+      o.push(`| ${x.slice(0, i)} | ${x.slice(i + 1)} |`);
+    }
+    num("interop/tls12");
+    return o;
+  },
   "interop-http": (lang) => {
     const m = interopMeta.get("http");
     return [L(lang, `最終確認: ${m?.date}（木 ${m?.commit} — scripts/httpinterop.sh・相手 = Go net/http）`, `Last run: ${m?.date} (tree ${m?.commit} — scripts/httpinterop.sh; peer = Go net/http)`), "",
@@ -356,13 +369,14 @@ const BLOCKS: Record<string, (lang: Lang) => string[]> = {
   },
   summary: (lang) => {
     const o = [L(lang, "| 章 | 対応 | 一部 | 意図して非対応 | 未実装 | 非対応 | 対象外 |", "| Chapter | Supported | Partial | By design | Not yet | Not supported | Not applicable |"), "|---|---:|---:|---:|---:|---:|---:|"];
-    // RFCのMUSTの行（塊http-must）は機能の行と混ぜず、httpの章を2行に分けて数える
+    // RFCのMUSTの行（塊http-must・HTTP/2のh2-mustとhpack-must）は機能の行と混ぜず、httpの章を3行に分けて数える
     const rows: [string, string, (b: string) => boolean][] = [
       ["tls", "tls", (b) => b.startsWith("tls-")],
       ["x509", "x509", (b) => b.startsWith("x509-")],
       ["crypto", "crypto", (b) => b.startsWith("crypto-")],
       ["http", L(lang, "http（機能）", "http (features)"), (b) => b.startsWith("http-") && b !== "http-must"],
       ["http", L(lang, "http（RFCのMUST）", "http (RFC MUSTs)"), (b) => b === "http-must"],
+      ["http", L(lang, "http（HTTP/2のMUST）", "http (HTTP/2 MUSTs)"), (b) => b === "h2-must" || b === "hpack-must"],
       ["dns", "dns", (b) => b.startsWith("dns-")],
     ];
     for (const [ch, label, inBlock] of rows) {

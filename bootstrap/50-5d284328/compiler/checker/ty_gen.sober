@@ -1,0 +1,2250 @@
+package checker
+
+// 生成物 — 手で直さない（lean/Extract が Lean の定義の方程式から作る。作り直し = scripts/extract.sh --regen・照合 = scripts/extract.sh --check）。
+// 元: lean/FeatherweightSober/Syntax.lean・Typing.lean（設定 = lean/Extract/Config.lean）
+
+import "std/iter"
+import "std/table"
+
+// ── 前奏（Extract/Config.lean の prelude — 抽出物が呼ぶ小さな関数）──
+
+// Nat の引き算（Lean の Nat は 0 で止まる — Sober の int は負になる）
+func natSub(a int, b int) int {
+    return if a < b { 0 } else { a - b }
+}
+
+func natMin(a int, b int) int {
+    return if a < b { a } else { b }
+}
+
+// Option（Nat / 番地）の or・getD（-1 = none）
+func optOr(a int, b int) int {
+    return if a >= 0 { a } else { b }
+}
+
+func optGetD(a int, d int) int {
+    return if a >= 0 { a } else { d }
+}
+
+// Bool の欄は 0 / 1 の int
+func b2i(b bool) int {
+    return if b { 1 } else { 0 }
+}
+
+// Kind（packedTypes — 旗を詰めた int）の欄
+func kRf(k int) bool {
+    return (k & 1) != 0
+}
+
+func kMf(k int) bool {
+    return (k & 2) != 0
+}
+
+func kCf(k int) bool {
+    return (k & 4) != 0
+}
+
+func kCov(k int) bool {
+    return (k & 8) != 0
+}
+
+func kKf(k int) bool {
+    return (k & 16) != 0
+}
+
+// List Ty（st.h の [n, t…]、-1 = 空）の添字（範囲外 = -1）
+func listGet(st mut S, ts int, i int) int {
+    return if ts < 0 || i < 0 || i >= table.Get(mut st.h, ts) { 0 - 1 } else { table.Get(mut st.h, ts + 1 + i) }
+}
+
+// 構成子の生成（左辺の仮引数 old と同じ構成子を作る場所）: 欄が全部 old と同じなら old をそのまま返す
+// （記録は作ったら変えない・等しさは構造で見る — 観測等価。子が変わらなかった型を作り直さない）
+func mkLike(st mut S, old int, k int, a int, b int, c int) int {
+    x := tyAt(mut st, old)
+    return if x.tag == k && x.a == a && x.b == b && x.c == c { old } else { mk(mut st, k, a, b, c) }
+}
+
+func mkLike4(st mut S, old int, k int, a int, b int, c int, d int) int {
+    x := tyAt(mut st, old)
+    return if x.tag == k && x.a == a && x.b == b && x.c == c && x.d == d { old } else { mk4(mut st, k, a, b, c, d) }
+}
+
+// FS.Ty の構造の等しさ（deriving DecidableEq — 同じ番地なら等しい: 記録は作ったら変えない）
+func tyEq(st mut S, a int, b int) bool {
+    if a == b {
+        return true
+    }
+    gt_a := tg(mut st, a)
+    if gt_a != tg(mut st, b) {
+        return false
+    }
+    switch gt_a {
+    case TVar:
+        return tA(mut st, a) == tA(mut st, b) && tB(mut st, a) == tB(mut st, b) && tC(mut st, a) == tC(mut st, b)
+    case TOpt:
+        return tyEq(mut st, tA(mut st, a), tA(mut st, b))
+    case TUn:
+        return tyEq(mut st, tA(mut st, a), tA(mut st, b)) && tyEq(mut st, tB(mut st, a), tB(mut st, b))
+    case TPr:
+        return tyEq(mut st, tA(mut st, a), tA(mut st, b)) && tyEq(mut st, tB(mut st, a), tB(mut st, b))
+    case TRef:
+        return tA(mut st, a) == tA(mut st, b) && tB(mut st, a) == tB(mut st, b) && tyEq(mut st, tC(mut st, a), tC(mut st, b))
+    case TSl:
+        return tA(mut st, a) == tA(mut st, b) && tB(mut st, a) == tB(mut st, b) && tyEq(mut st, tC(mut st, a), tC(mut st, b))
+    case TMp:
+        return tA(mut st, a) == tA(mut st, b) && tB(mut st, a) == tB(mut st, b) && tyEq(mut st, tC(mut st, a), tC(mut st, b))
+    case TChan:
+        return tA(mut st, a) == tA(mut st, b) && tyEq(mut st, tB(mut st, a), tB(mut st, b))
+    case TFn:
+        return tyEq(mut st, tA(mut st, a), tA(mut st, b)) && tyEq(mut st, tB(mut st, a), tB(mut st, b))
+    case TOwn:
+        return tA(mut st, a) == tA(mut st, b) && tB(mut st, a) == tB(mut st, b) && tyEq(mut st, tC(mut st, a), tC(mut st, b))
+    case TRVar:
+        return tA(mut st, a) == tA(mut st, b)
+    case TMuS:
+        return tA(mut st, a) == tA(mut st, b) && tB(mut st, a) == tB(mut st, b) && tyEq(mut st, tC(mut st, a), tC(mut st, b))
+    case TMuRs:
+        return tA(mut st, a) == tA(mut st, b) && tB(mut st, a) == tB(mut st, b) && tC(mut st, a) == tC(mut st, b) && tyEq(mut st, tD(mut st, a), tD(mut st, b))
+    case TDom:
+        return tA(mut st, a) == tA(mut st, b) && tyEq(mut st, tB(mut st, a), tB(mut st, b))
+    }
+    return true
+}
+
+// FS.Ty.regionsBelow（方程式 19 本）
+func regionsBelow(st mut S, a0 int, a1 int) bool {
+    switch tg(mut st, a1) {
+    case TInt:
+        // FS.Ty.regionsBelow.eq_1
+        return true
+    case TVar:
+        // FS.Ty.regionsBelow.eq_2
+        return (kRf((tC(mut st, a1))) || ((tB(mut st, a1)) < a0))
+    case TBool:
+        // FS.Ty.regionsBelow.eq_3
+        return true
+    case TByte:
+        // FS.Ty.regionsBelow.eq_4
+        return true
+    case TF64:
+        // FS.Ty.regionsBelow.eq_5
+        return true
+    case TUnit:
+        // FS.Ty.regionsBelow.eq_6
+        return true
+    case TOpt:
+        // FS.Ty.regionsBelow.eq_7
+        return regionsBelow(mut st, a0, (tA(mut st, a1)))
+    case TUn:
+        // FS.Ty.regionsBelow.eq_8
+        v_d := a0
+        return (regionsBelow(mut st, v_d, (tA(mut st, a1))) && regionsBelow(mut st, v_d, (tB(mut st, a1))))
+    case TPr:
+        // FS.Ty.regionsBelow.eq_9
+        v_d := a0
+        return (regionsBelow(mut st, v_d, (tA(mut st, a1))) && regionsBelow(mut st, v_d, (tB(mut st, a1))))
+    case TRef:
+        // FS.Ty.regionsBelow.eq_10
+        v_d := a0
+        return (((tB(mut st, a1)) < v_d) && regionsBelow(mut st, v_d, (tC(mut st, a1))))
+    case TSl:
+        // FS.Ty.regionsBelow.eq_11
+        v_d := a0
+        return (((tB(mut st, a1)) < v_d) && regionsBelow(mut st, v_d, (tC(mut st, a1))))
+    case TMp:
+        // FS.Ty.regionsBelow.eq_12
+        v_d := a0
+        return (((tB(mut st, a1)) < v_d) && regionsBelow(mut st, v_d, (tC(mut st, a1))))
+    case TChan:
+        // FS.Ty.regionsBelow.eq_13
+        v_rc := tA(mut st, a1)
+        return ((v_rc <= a0) && regionsBelow(mut st, v_rc, (tB(mut st, a1))))
+    case TDom:
+        // FS.Ty.regionsBelow.eq_14
+        v_d := a0
+        return (((tA(mut st, a1)) < v_d) && regionsBelow(mut st, v_d, (tB(mut st, a1))))
+    case TOwn:
+        // FS.Ty.regionsBelow.eq_15
+        v_d := a0
+        return (((tB(mut st, a1)) < v_d) && regionsBelow(mut st, v_d, (tC(mut st, a1))))
+    case TFn:
+        // FS.Ty.regionsBelow.eq_16
+        return true
+    case TMuS:
+        // FS.Ty.regionsBelow.eq_17
+        return true
+    case TRVar:
+        // FS.Ty.regionsBelow.eq_18
+        return true
+    }
+    // FS.Ty.regionsBelow.eq_19
+    return ((tA(mut st, a1)) < a0)
+}
+
+// FS.Ty.mutFree（方程式 19 本）
+func mutFree(st mut S, a0 int) bool {
+    switch tg(mut st, a0) {
+    case TInt:
+        // FS.Ty.mutFree.eq_1
+        return true
+    case TVar:
+        // FS.Ty.mutFree.eq_2
+        v_k := tC(mut st, a0)
+        return (kRf(v_k) || kMf(v_k))
+    case TBool:
+        // FS.Ty.mutFree.eq_3
+        return true
+    case TByte:
+        // FS.Ty.mutFree.eq_4
+        return true
+    case TF64:
+        // FS.Ty.mutFree.eq_5
+        return true
+    case TUnit:
+        // FS.Ty.mutFree.eq_6
+        return true
+    case TOpt:
+        // FS.Ty.mutFree.eq_7
+        return mutFree(mut st, (tA(mut st, a0)))
+    case TUn:
+        // FS.Ty.mutFree.eq_8
+        return (mutFree(mut st, (tA(mut st, a0))) && mutFree(mut st, (tB(mut st, a0))))
+    case TPr:
+        // FS.Ty.mutFree.eq_9
+        return (mutFree(mut st, (tA(mut st, a0))) && mutFree(mut st, (tB(mut st, a0))))
+    case TRef:
+        // FS.Ty.mutFree.eq_10
+        return (!(tA(mut st, a0) != 0) && mutFree(mut st, (tC(mut st, a0))))
+    case TSl:
+        // FS.Ty.mutFree.eq_11
+        return (!(tA(mut st, a0) != 0) && mutFree(mut st, (tC(mut st, a0))))
+    case TMp:
+        // FS.Ty.mutFree.eq_12
+        return (!(tA(mut st, a0) != 0) && mutFree(mut st, (tC(mut st, a0))))
+    case TChan:
+        // FS.Ty.mutFree.eq_13
+        return true
+    case TDom:
+        // FS.Ty.mutFree.eq_14
+        return true
+    case TFn:
+        // FS.Ty.mutFree.eq_15
+        return true
+    case TMuS:
+        // FS.Ty.mutFree.eq_16
+        return true
+    case TRVar:
+        // FS.Ty.mutFree.eq_17
+        return true
+    case TOwn:
+        // FS.Ty.mutFree.eq_18
+        return false
+    }
+    // FS.Ty.mutFree.eq_19
+    return mutFree(mut st, (tD(mut st, a0)))
+}
+
+// FS.Ty.keyOk（方程式 4 本）
+func keyOk(st mut S, a0 int) bool {
+    switch tg(mut st, a0) {
+    case TInt:
+        // FS.Ty.keyOk.eq_1
+        return true
+    case TVar:
+        // FS.Ty.keyOk.eq_2
+        v_k := tC(mut st, a0)
+        return (kKf(v_k) && kMf(v_k))
+    case TSl:
+        // FS.Ty.keyOk.eq_3
+        if tA(mut st, a0) == 0 && tg(mut st, tC(mut st, a0)) == TByte {
+            return true
+        }
+    }
+    // FS.Ty.keyOk.eq_4
+    return false
+}
+
+// FS.Ty.keyCompat（方程式 4 本）
+func keyCompat(st mut S, a0 int, a1 int) bool {
+    g_a1 := tg(mut st, a1)
+    switch tg(mut st, a0) {
+    case TInt:
+        // FS.Ty.keyCompat.eq_1
+        if g_a1 == TInt {
+            return true
+        }
+    case TVar:
+        // FS.Ty.keyCompat.eq_2
+        if g_a1 == TVar {
+            v_k := tC(mut st, a0)
+            v_k_p := tC(mut st, a1)
+            return ((((((tA(mut st, a0)) == (tA(mut st, a1))) && kKf(v_k)) && kMf(v_k)) && kKf(v_k_p)) && kMf(v_k_p))
+        }
+    case TSl:
+        // FS.Ty.keyCompat.eq_3
+        if tA(mut st, a0) == 0 && tg(mut st, tC(mut st, a0)) == TByte && g_a1 == TSl && tA(mut st, a1) == 0 && tg(mut st, tC(mut st, a1)) == TByte {
+            return true
+        }
+    }
+    // FS.Ty.keyCompat.eq_4
+    return false
+}
+
+// FS.Ty.shiftR（方程式 19 本）
+func shiftR(st mut S, a0 int, a1 int) int {
+    switch tg(mut st, a1) {
+    case TInt:
+        // FS.Ty.shiftR.eq_1
+        return a1
+    case TVar:
+        // FS.Ty.shiftR.eq_2
+        v_rho_1 := tB(mut st, a1)
+        v_k := tC(mut st, a1)
+        return mkLike(mut st, a1, TVar, (tA(mut st, a1)), if kRf(v_k) { v_rho_1 } else { (v_rho_1 + a0) }, v_k)
+    case TBool:
+        // FS.Ty.shiftR.eq_3
+        return a1
+    case TByte:
+        // FS.Ty.shiftR.eq_4
+        return a1
+    case TF64:
+        // FS.Ty.shiftR.eq_5
+        return a1
+    case TUnit:
+        // FS.Ty.shiftR.eq_6
+        return a1
+    case TOpt:
+        // FS.Ty.shiftR.eq_7
+        return mkLike(mut st, a1, TOpt, shiftR(mut st, a0, (tA(mut st, a1))), 0, 0)
+    case TUn:
+        // FS.Ty.shiftR.eq_8
+        v_rho := a0
+        return mkLike(mut st, a1, TUn, shiftR(mut st, v_rho, (tA(mut st, a1))), shiftR(mut st, v_rho, (tB(mut st, a1))), 0)
+    case TPr:
+        // FS.Ty.shiftR.eq_9
+        v_rho := a0
+        return mkLike(mut st, a1, TPr, shiftR(mut st, v_rho, (tA(mut st, a1))), shiftR(mut st, v_rho, (tB(mut st, a1))), 0)
+    case TRef:
+        // FS.Ty.shiftR.eq_10
+        v_rho := a0
+        return mkLike(mut st, a1, TRef, b2i((tA(mut st, a1) != 0)), ((tB(mut st, a1)) + v_rho), shiftR(mut st, v_rho, (tC(mut st, a1))))
+    case TSl:
+        // FS.Ty.shiftR.eq_11
+        v_rho := a0
+        return mkLike(mut st, a1, TSl, b2i((tA(mut st, a1) != 0)), ((tB(mut st, a1)) + v_rho), shiftR(mut st, v_rho, (tC(mut st, a1))))
+    case TMp:
+        // FS.Ty.shiftR.eq_12
+        v_rho := a0
+        return mkLike(mut st, a1, TMp, b2i((tA(mut st, a1) != 0)), ((tB(mut st, a1)) + v_rho), shiftR(mut st, v_rho, (tC(mut st, a1))))
+    case TChan:
+        // FS.Ty.shiftR.eq_13
+        v_rho := a0
+        return mkLike(mut st, a1, TChan, ((tA(mut st, a1)) + v_rho), shiftR(mut st, v_rho, (tB(mut st, a1))), 0)
+    case TDom:
+        // FS.Ty.shiftR.eq_14
+        v_rho := a0
+        return mkLike(mut st, a1, TDom, ((tA(mut st, a1)) + v_rho), shiftR(mut st, v_rho, (tB(mut st, a1))), 0)
+    case TFn:
+        // FS.Ty.shiftR.eq_15
+        return a1
+    case TMuS:
+        // FS.Ty.shiftR.eq_16
+        return a1
+    case TRVar:
+        // FS.Ty.shiftR.eq_17
+        return a1
+    case TOwn:
+        // FS.Ty.shiftR.eq_18
+        v_rho := a0
+        return mkLike(mut st, a1, TOwn, (tA(mut st, a1)), ((tB(mut st, a1)) + v_rho), shiftR(mut st, v_rho, (tC(mut st, a1))))
+    }
+    // FS.Ty.shiftR.eq_19
+    return mkLike4(mut st, a1, TMuRs, ((tA(mut st, a1)) + a0), (tB(mut st, a1)), (tC(mut st, a1)), (tD(mut st, a1)))
+}
+
+// FS.Ty.relocR（方程式 22 本）
+func relocR(st mut S, a0 int, a1 int) int {
+    switch tg(mut st, a1) {
+    case TInt:
+        // FS.Ty.relocR.eq_1
+        return a1
+    case TVar:
+        // FS.Ty.relocR.eq_2
+        v_rho := a0
+        v_i := tA(mut st, a1)
+        v_k := tC(mut st, a1)
+        return if kRf(v_k) { a1 } else { if kImm(v_k) { mkLike(mut st, a1, TVar, v_i, v_rho, v_k) } else { mkLike(mut st, a1, TVar, v_i, ((tB(mut st, a1)) + v_rho), v_k) } }
+    case TBool:
+        // FS.Ty.relocR.eq_3
+        return a1
+    case TByte:
+        // FS.Ty.relocR.eq_4
+        return a1
+    case TF64:
+        // FS.Ty.relocR.eq_5
+        return a1
+    case TUnit:
+        // FS.Ty.relocR.eq_6
+        return a1
+    case TOpt:
+        // FS.Ty.relocR.eq_7
+        return mkLike(mut st, a1, TOpt, relocR(mut st, a0, (tA(mut st, a1))), 0, 0)
+    case TUn:
+        // FS.Ty.relocR.eq_8
+        v_rho := a0
+        return mkLike(mut st, a1, TUn, relocR(mut st, v_rho, (tA(mut st, a1))), relocR(mut st, v_rho, (tB(mut st, a1))), 0)
+    case TPr:
+        // FS.Ty.relocR.eq_9
+        v_rho := a0
+        return mkLike(mut st, a1, TPr, relocR(mut st, v_rho, (tA(mut st, a1))), relocR(mut st, v_rho, (tB(mut st, a1))), 0)
+    case TRef:
+        // FS.Ty.relocR.eq_10
+        if tA(mut st, a1) == 0 {
+            v_rho := a0
+            return mkLike(mut st, a1, TRef, b2i(false), v_rho, relocR(mut st, v_rho, (tC(mut st, a1))))
+        }
+        // FS.Ty.relocR.eq_13（最後の腕 — 先行の腕が外れれば当たる: tA(mut st, a1) != 0）
+        v_rho := a0
+        return mkLike(mut st, a1, TRef, b2i(true), ((tB(mut st, a1)) + v_rho), shiftR(mut st, v_rho, (tC(mut st, a1))))
+    case TSl:
+        // FS.Ty.relocR.eq_11
+        if tA(mut st, a1) == 0 {
+            v_rho := a0
+            return mkLike(mut st, a1, TSl, b2i(false), v_rho, relocR(mut st, v_rho, (tC(mut st, a1))))
+        }
+        // FS.Ty.relocR.eq_14（最後の腕 — 先行の腕が外れれば当たる: tA(mut st, a1) != 0）
+        v_rho := a0
+        return mkLike(mut st, a1, TSl, b2i(true), ((tB(mut st, a1)) + v_rho), shiftR(mut st, v_rho, (tC(mut st, a1))))
+    case TMp:
+        // FS.Ty.relocR.eq_12
+        if tA(mut st, a1) == 0 {
+            v_rho := a0
+            return mkLike(mut st, a1, TMp, b2i(false), v_rho, relocR(mut st, v_rho, (tC(mut st, a1))))
+        }
+        // FS.Ty.relocR.eq_15（最後の腕 — 先行の腕が外れれば当たる: tA(mut st, a1) != 0）
+        v_rho := a0
+        return mkLike(mut st, a1, TMp, b2i(true), ((tB(mut st, a1)) + v_rho), shiftR(mut st, v_rho, (tC(mut st, a1))))
+    case TChan:
+        // FS.Ty.relocR.eq_16
+        v_rho := a0
+        return mkLike(mut st, a1, TChan, ((tA(mut st, a1)) + v_rho), shiftR(mut st, v_rho, (tB(mut st, a1))), 0)
+    case TDom:
+        // FS.Ty.relocR.eq_17
+        v_rho := a0
+        return mkLike(mut st, a1, TDom, ((tA(mut st, a1)) + v_rho), shiftR(mut st, v_rho, (tB(mut st, a1))), 0)
+    case TFn:
+        // FS.Ty.relocR.eq_18
+        return a1
+    case TMuS:
+        // FS.Ty.relocR.eq_19
+        return a1
+    case TRVar:
+        // FS.Ty.relocR.eq_20
+        return a1
+    case TOwn:
+        // FS.Ty.relocR.eq_21
+        v_rho := a0
+        return mkLike(mut st, a1, TOwn, (tA(mut st, a1)), ((tB(mut st, a1)) + v_rho), shiftR(mut st, v_rho, (tC(mut st, a1))))
+    }
+    // FS.Ty.relocR.eq_22
+    v_rho := a0
+    v_n := tB(mut st, a1)
+    v_i := tC(mut st, a1)
+    v_b := tD(mut st, a1)
+    return if mutFree(mut st, v_b) { mkLike4(mut st, a1, TMuRs, v_rho, v_n, v_i, v_b) } else { mkLike4(mut st, a1, TMuRs, ((tA(mut st, a1)) + v_rho), v_n, v_i, v_b) }
+}
+
+// FS.rmap（方程式 2 本）
+func rmap(a0 int, a1 int, a2 int) int {
+    // FS.rmap.eq_1
+    if a2 == 0 {
+        return a0
+    }
+    // FS.rmap.eq_2（最後の腕 — 先行の腕が外れれば当たる: a2 >= 1）
+    return ((((a2 - 1)) + 1) + a1)
+}
+
+// FS.Ty.renR（方程式 19 本）
+func renR(st mut S, a0 int, a1 int, a2 int) int {
+    switch tg(mut st, a2) {
+    case TInt:
+        // FS.Ty.renR.eq_1
+        return a2
+    case TVar:
+        // FS.Ty.renR.eq_2
+        v_rho := tB(mut st, a2)
+        v_k := tC(mut st, a2)
+        return mkLike(mut st, a2, TVar, (tA(mut st, a2)), if kRf(v_k) { v_rho } else { rmap(a0, a1, v_rho) }, v_k)
+    case TBool:
+        // FS.Ty.renR.eq_3
+        return a2
+    case TByte:
+        // FS.Ty.renR.eq_4
+        return a2
+    case TF64:
+        // FS.Ty.renR.eq_5
+        return a2
+    case TUnit:
+        // FS.Ty.renR.eq_6
+        return a2
+    case TOpt:
+        // FS.Ty.renR.eq_7
+        return mkLike(mut st, a2, TOpt, renR(mut st, a0, a1, (tA(mut st, a2))), 0, 0)
+    case TUn:
+        // FS.Ty.renR.eq_8
+        v_rho0 := a0
+        v_delta := a1
+        return mkLike(mut st, a2, TUn, renR(mut st, v_rho0, v_delta, (tA(mut st, a2))), renR(mut st, v_rho0, v_delta, (tB(mut st, a2))), 0)
+    case TPr:
+        // FS.Ty.renR.eq_9
+        v_rho0 := a0
+        v_delta := a1
+        return mkLike(mut st, a2, TPr, renR(mut st, v_rho0, v_delta, (tA(mut st, a2))), renR(mut st, v_rho0, v_delta, (tB(mut st, a2))), 0)
+    case TRef:
+        // FS.Ty.renR.eq_10
+        v_rho0 := a0
+        v_delta := a1
+        return mkLike(mut st, a2, TRef, b2i((tA(mut st, a2) != 0)), rmap(v_rho0, v_delta, (tB(mut st, a2))), renR(mut st, v_rho0, v_delta, (tC(mut st, a2))))
+    case TSl:
+        // FS.Ty.renR.eq_11
+        v_rho0 := a0
+        v_delta := a1
+        return mkLike(mut st, a2, TSl, b2i((tA(mut st, a2) != 0)), rmap(v_rho0, v_delta, (tB(mut st, a2))), renR(mut st, v_rho0, v_delta, (tC(mut st, a2))))
+    case TMp:
+        // FS.Ty.renR.eq_12
+        v_rho0 := a0
+        v_delta := a1
+        return mkLike(mut st, a2, TMp, b2i((tA(mut st, a2) != 0)), rmap(v_rho0, v_delta, (tB(mut st, a2))), renR(mut st, v_rho0, v_delta, (tC(mut st, a2))))
+    case TChan:
+        // FS.Ty.renR.eq_13
+        v_rho0 := a0
+        v_delta := a1
+        return mkLike(mut st, a2, TChan, rmap(v_rho0, v_delta, (tA(mut st, a2))), renR(mut st, v_rho0, v_delta, (tB(mut st, a2))), 0)
+    case TDom:
+        // FS.Ty.renR.eq_14
+        v_rho0 := a0
+        v_delta := a1
+        return mkLike(mut st, a2, TDom, rmap(v_rho0, v_delta, (tA(mut st, a2))), renR(mut st, v_rho0, v_delta, (tB(mut st, a2))), 0)
+    case TFn:
+        // FS.Ty.renR.eq_15
+        return a2
+    case TMuS:
+        // FS.Ty.renR.eq_16
+        return a2
+    case TRVar:
+        // FS.Ty.renR.eq_17
+        return a2
+    case TOwn:
+        // FS.Ty.renR.eq_18
+        v_rho0 := a0
+        v_delta := a1
+        return mkLike(mut st, a2, TOwn, (tA(mut st, a2)), rmap(v_rho0, v_delta, (tB(mut st, a2))), renR(mut st, v_rho0, v_delta, (tC(mut st, a2))))
+    }
+    // FS.Ty.renR.eq_19
+    return mkLike4(mut st, a2, TMuRs, rmap(a0, a1, (tA(mut st, a2))), (tB(mut st, a2)), (tC(mut st, a2)), (tD(mut st, a2)))
+}
+
+// FS.Ty.relocA（方程式 22 本）
+func relocA(st mut S, a0 int, a1 int, a2 int) int {
+    switch tg(mut st, a2) {
+    case TInt:
+        // FS.Ty.relocA.eq_1
+        return a2
+    case TVar:
+        // FS.Ty.relocA.eq_2
+        v_rho0 := a0
+        v_d := a1
+        v_i := tA(mut st, a2)
+        v_r := tB(mut st, a2)
+        v_k := tC(mut st, a2)
+        return if kRf(v_k) { a2 } else { if kImm(v_k) { mkLike(mut st, a2, TVar, v_i, if v_r == 0 { v_rho0 } else { v_d }, v_k) } else { mkLike(mut st, a2, TVar, v_i, rmap(v_rho0, v_d, v_r), v_k) } }
+    case TBool:
+        // FS.Ty.relocA.eq_3
+        return a2
+    case TByte:
+        // FS.Ty.relocA.eq_4
+        return a2
+    case TF64:
+        // FS.Ty.relocA.eq_5
+        return a2
+    case TUnit:
+        // FS.Ty.relocA.eq_6
+        return a2
+    case TOpt:
+        // FS.Ty.relocA.eq_7
+        return mkLike(mut st, a2, TOpt, relocA(mut st, a0, a1, (tA(mut st, a2))), 0, 0)
+    case TUn:
+        // FS.Ty.relocA.eq_8
+        v_rho0 := a0
+        v_d := a1
+        return mkLike(mut st, a2, TUn, relocA(mut st, v_rho0, v_d, (tA(mut st, a2))), relocA(mut st, v_rho0, v_d, (tB(mut st, a2))), 0)
+    case TPr:
+        // FS.Ty.relocA.eq_9
+        v_rho0 := a0
+        v_d := a1
+        return mkLike(mut st, a2, TPr, relocA(mut st, v_rho0, v_d, (tA(mut st, a2))), relocA(mut st, v_rho0, v_d, (tB(mut st, a2))), 0)
+    case TRef:
+        // FS.Ty.relocA.eq_10
+        if tA(mut st, a2) == 0 {
+            v_rho0 := a0
+            v_d := a1
+            return mkLike(mut st, a2, TRef, b2i(false), if (tB(mut st, a2)) == 0 { v_rho0 } else { v_d }, relocA(mut st, v_rho0, v_d, (tC(mut st, a2))))
+        }
+        // FS.Ty.relocA.eq_13（最後の腕 — 先行の腕が外れれば当たる: tA(mut st, a2) != 0）
+        v_rho0 := a0
+        v_d := a1
+        return mkLike(mut st, a2, TRef, b2i(true), rmap(v_rho0, v_d, (tB(mut st, a2))), renR(mut st, v_rho0, v_d, (tC(mut st, a2))))
+    case TSl:
+        // FS.Ty.relocA.eq_11
+        if tA(mut st, a2) == 0 {
+            v_rho0 := a0
+            v_d := a1
+            return mkLike(mut st, a2, TSl, b2i(false), if (tB(mut st, a2)) == 0 { v_rho0 } else { v_d }, relocA(mut st, v_rho0, v_d, (tC(mut st, a2))))
+        }
+        // FS.Ty.relocA.eq_14（最後の腕 — 先行の腕が外れれば当たる: tA(mut st, a2) != 0）
+        v_rho0 := a0
+        v_d := a1
+        return mkLike(mut st, a2, TSl, b2i(true), rmap(v_rho0, v_d, (tB(mut st, a2))), renR(mut st, v_rho0, v_d, (tC(mut st, a2))))
+    case TMp:
+        // FS.Ty.relocA.eq_12
+        if tA(mut st, a2) == 0 {
+            v_rho0 := a0
+            v_d := a1
+            return mkLike(mut st, a2, TMp, b2i(false), if (tB(mut st, a2)) == 0 { v_rho0 } else { v_d }, relocA(mut st, v_rho0, v_d, (tC(mut st, a2))))
+        }
+        // FS.Ty.relocA.eq_15（最後の腕 — 先行の腕が外れれば当たる: tA(mut st, a2) != 0）
+        v_rho0 := a0
+        v_d := a1
+        return mkLike(mut st, a2, TMp, b2i(true), rmap(v_rho0, v_d, (tB(mut st, a2))), renR(mut st, v_rho0, v_d, (tC(mut st, a2))))
+    case TChan:
+        // FS.Ty.relocA.eq_16
+        v_rho0 := a0
+        v_d := a1
+        return mkLike(mut st, a2, TChan, rmap(v_rho0, v_d, (tA(mut st, a2))), renR(mut st, v_rho0, v_d, (tB(mut st, a2))), 0)
+    case TDom:
+        // FS.Ty.relocA.eq_17
+        v_rho0 := a0
+        v_d := a1
+        return mkLike(mut st, a2, TDom, rmap(v_rho0, v_d, (tA(mut st, a2))), renR(mut st, v_rho0, v_d, (tB(mut st, a2))), 0)
+    case TFn:
+        // FS.Ty.relocA.eq_18
+        return a2
+    case TMuS:
+        // FS.Ty.relocA.eq_19
+        return a2
+    case TRVar:
+        // FS.Ty.relocA.eq_20
+        return a2
+    case TOwn:
+        // FS.Ty.relocA.eq_21
+        v_rho0 := a0
+        v_d := a1
+        return mkLike(mut st, a2, TOwn, (tA(mut st, a2)), rmap(v_rho0, v_d, (tB(mut st, a2))), renR(mut st, v_rho0, v_d, (tC(mut st, a2))))
+    }
+    // FS.Ty.relocA.eq_22
+    v_rho0 := a0
+    v_d := a1
+    v_r := tA(mut st, a2)
+    v_n := tB(mut st, a2)
+    v_i := tC(mut st, a2)
+    v_b := tD(mut st, a2)
+    return if mutFree(mut st, v_b) { mkLike4(mut st, a2, TMuRs, if v_r == 0 { v_rho0 } else { v_d }, v_n, v_i, v_b) } else { mkLike4(mut st, a2, TMuRs, rmap(v_rho0, v_d, v_r), v_n, v_i, v_b) }
+}
+
+// FS.Ty.clampR（方程式 9 本）
+func clampR(st mut S, a0 int, a1 int) int {
+    switch tg(mut st, a1) {
+    case TVar:
+        // FS.Ty.clampR.eq_1
+        v_kd := tC(mut st, a1)
+        return if kRf(v_kd) { a1 } else { if kImm(v_kd) { mkLike(mut st, a1, TVar, (tA(mut st, a1)), natMin((tB(mut st, a1)), a0), v_kd) } else { a1 } }
+    case TOpt:
+        // FS.Ty.clampR.eq_2
+        return mkLike(mut st, a1, TOpt, clampR(mut st, a0, (tA(mut st, a1))), 0, 0)
+    case TUn:
+        // FS.Ty.clampR.eq_3
+        v_k := a0
+        return mkLike(mut st, a1, TUn, clampR(mut st, v_k, (tA(mut st, a1))), clampR(mut st, v_k, (tB(mut st, a1))), 0)
+    case TPr:
+        // FS.Ty.clampR.eq_4
+        v_k := a0
+        return mkLike(mut st, a1, TPr, clampR(mut st, v_k, (tA(mut st, a1))), clampR(mut st, v_k, (tB(mut st, a1))), 0)
+    case TRef:
+        // FS.Ty.clampR.eq_5
+        if tA(mut st, a1) == 0 {
+            v_k := a0
+            return mkLike(mut st, a1, TRef, b2i(false), natMin((tB(mut st, a1)), v_k), clampR(mut st, v_k, (tC(mut st, a1))))
+        }
+    case TSl:
+        // FS.Ty.clampR.eq_6
+        if tA(mut st, a1) == 0 {
+            v_k := a0
+            return mkLike(mut st, a1, TSl, b2i(false), natMin((tB(mut st, a1)), v_k), clampR(mut st, v_k, (tC(mut st, a1))))
+        }
+    case TMp:
+        // FS.Ty.clampR.eq_7
+        if tA(mut st, a1) == 0 {
+            v_k := a0
+            return mkLike(mut st, a1, TMp, b2i(false), natMin((tB(mut st, a1)), v_k), clampR(mut st, v_k, (tC(mut st, a1))))
+        }
+    case TMuRs:
+        // FS.Ty.clampR.eq_8
+        v_b := tD(mut st, a1)
+        return if mutFree(mut st, v_b) { mkLike4(mut st, a1, TMuRs, natMin((tA(mut st, a1)), a0), (tB(mut st, a1)), (tC(mut st, a1)), v_b) } else { a1 }
+    }
+    // FS.Ty.clampR.eq_9
+    return a1
+}
+
+// FS.Ty.noClamp（方程式 9 本）
+func noClamp(st mut S, a0 int, a1 int) bool {
+    switch tg(mut st, a1) {
+    case TVar:
+        // FS.Ty.noClamp.eq_1
+        v_kd := tC(mut st, a1)
+        return ((kRf(v_kd) || !kImm(v_kd)) || ((tB(mut st, a1)) <= a0))
+    case TOpt:
+        // FS.Ty.noClamp.eq_2
+        return noClamp(mut st, a0, (tA(mut st, a1)))
+    case TUn:
+        // FS.Ty.noClamp.eq_3
+        v_k := a0
+        return (noClamp(mut st, v_k, (tA(mut st, a1))) && noClamp(mut st, v_k, (tB(mut st, a1))))
+    case TPr:
+        // FS.Ty.noClamp.eq_4
+        v_k := a0
+        return (noClamp(mut st, v_k, (tA(mut st, a1))) && noClamp(mut st, v_k, (tB(mut st, a1))))
+    case TRef:
+        // FS.Ty.noClamp.eq_5
+        if tA(mut st, a1) == 0 {
+            v_k := a0
+            return (((tB(mut st, a1)) <= v_k) && noClamp(mut st, v_k, (tC(mut st, a1))))
+        }
+    case TSl:
+        // FS.Ty.noClamp.eq_6
+        if tA(mut st, a1) == 0 {
+            v_k := a0
+            return (((tB(mut st, a1)) <= v_k) && noClamp(mut st, v_k, (tC(mut st, a1))))
+        }
+    case TMp:
+        // FS.Ty.noClamp.eq_7
+        if tA(mut st, a1) == 0 {
+            v_k := a0
+            return (((tB(mut st, a1)) <= v_k) && noClamp(mut st, v_k, (tC(mut st, a1))))
+        }
+    case TMuRs:
+        // FS.Ty.noClamp.eq_8
+        return ((tA(mut st, a1)) <= a0)
+    }
+    // FS.Ty.noClamp.eq_9
+    return true
+}
+
+// FS.Ty.annFree（方程式 19 本）
+func annFree(st mut S, a0 int) bool {
+    switch tg(mut st, a0) {
+    case TInt:
+        // FS.Ty.annFree.eq_1
+        return true
+    case TVar:
+        // FS.Ty.annFree.eq_2
+        return kKf((tC(mut st, a0)))
+    case TBool:
+        // FS.Ty.annFree.eq_3
+        return true
+    case TByte:
+        // FS.Ty.annFree.eq_4
+        return true
+    case TF64:
+        // FS.Ty.annFree.eq_5
+        return true
+    case TUnit:
+        // FS.Ty.annFree.eq_6
+        return true
+    case TOpt:
+        // FS.Ty.annFree.eq_7
+        return false
+    case TUn:
+        // FS.Ty.annFree.eq_8
+        return false
+    case TPr:
+        // FS.Ty.annFree.eq_9
+        return (annFree(mut st, (tA(mut st, a0))) && annFree(mut st, (tB(mut st, a0))))
+    case TRef:
+        // FS.Ty.annFree.eq_10
+        return true
+    case TSl:
+        // FS.Ty.annFree.eq_11
+        return ((tA(mut st, a0) != 0) || annFree(mut st, (tC(mut st, a0))))
+    case TMp:
+        // FS.Ty.annFree.eq_12
+        return ((tA(mut st, a0) != 0) || annFree(mut st, (tC(mut st, a0))))
+    case TChan:
+        // FS.Ty.annFree.eq_13
+        return true
+    case TDom:
+        // FS.Ty.annFree.eq_14
+        return true
+    case TFn:
+        // FS.Ty.annFree.eq_15
+        return true
+    case TMuS:
+        // FS.Ty.annFree.eq_16
+        return true
+    case TRVar:
+        // FS.Ty.annFree.eq_17
+        return true
+    case TOwn:
+        // FS.Ty.annFree.eq_18
+        return true
+    }
+    // FS.Ty.annFree.eq_19
+    return false
+}
+
+// FS.Ty.isMut0（方程式 5 本）
+func isMut0(st mut S, a0 int) bool {
+    switch tg(mut st, a0) {
+    case TVar:
+        // FS.Ty.isMut0.eq_1
+        return false
+    case TRef:
+        // FS.Ty.isMut0.eq_2
+        return ((tA(mut st, a0) != 0) && ((tB(mut st, a0)) == 0))
+    case TSl:
+        // FS.Ty.isMut0.eq_3
+        return ((tA(mut st, a0) != 0) && ((tB(mut st, a0)) == 0))
+    case TMp:
+        // FS.Ty.isMut0.eq_4
+        return ((tA(mut st, a0) != 0) && ((tB(mut st, a0)) == 0))
+    }
+    // FS.Ty.isMut0.eq_5
+    return false
+}
+
+// FS.Ty.mutTop（方程式 5 本）
+func mutTop(st mut S, a0 int) int {
+    switch tg(mut st, a0) {
+    case TVar:
+        // FS.Ty.mutTop.eq_1
+        return -1
+    case TRef:
+        // FS.Ty.mutTop.eq_2
+        return if (tA(mut st, a0) != 0) { (tB(mut st, a0)) } else { -1 }
+    case TSl:
+        // FS.Ty.mutTop.eq_3
+        return if (tA(mut st, a0) != 0) { (tB(mut st, a0)) } else { -1 }
+    case TMp:
+        // FS.Ty.mutTop.eq_4
+        return if (tA(mut st, a0) != 0) { (tB(mut st, a0)) } else { -1 }
+    }
+    // FS.Ty.mutTop.eq_5
+    return -1
+}
+
+// FS.Ty.anchorOf（方程式 3 本）
+func anchorOf(st mut S, a0 int, a1 int) int {
+    g_a0 := tg(mut st, a0)
+    // FS.Ty.anchorOf.eq_1
+    if g_a0 == TPr && tg(mut st, a1) == TPr {
+        o_or := anchorOf(mut st, (tA(mut st, a0)), (tA(mut st, a1)))
+        if o_or >= 0 {
+            return o_or
+        }
+        return anchorOf(mut st, (tB(mut st, a0)), (tB(mut st, a1)))
+    }
+    // FS.Ty.anchorOf.eq_2
+    if g_a0 == TPr {
+        return -1
+    }
+    // FS.Ty.anchorOf.eq_3
+    return if isMut0(mut st, a0) { mutTop(mut st, a1) } else { -1 }
+}
+
+// FS.Ty.sub（方程式 10 本）
+func sub(st mut S, a0 int, a1 int) bool {
+    // 近道 FS.Ty.sub_refl（定理。先に当てても値は同じ）
+    if a0 == a1 {
+        return true
+    }
+    g_a1 := tg(mut st, a1)
+    switch tg(mut st, a0) {
+    case TVar:
+        // FS.Ty.sub.eq_1
+        if g_a1 == TVar {
+            v_rho := tB(mut st, a0)
+            v_k := tC(mut st, a0)
+            v_rho_p := tB(mut st, a1)
+            return ((((tA(mut st, a0)) == (tA(mut st, a1))) && (v_k == (tC(mut st, a1)))) && (((v_rho == v_rho_p) || kRf(v_k)) || (kCov(v_k) && (v_rho <= v_rho_p))))
+        }
+    case TOpt:
+        // FS.Ty.sub.eq_2
+        if g_a1 == TOpt {
+            return sub(mut st, (tA(mut st, a0)), (tA(mut st, a1)))
+        }
+    case TUn:
+        // FS.Ty.sub.eq_3
+        if g_a1 == TUn {
+            return (sub(mut st, (tA(mut st, a0)), (tA(mut st, a1))) && sub(mut st, (tB(mut st, a0)), (tB(mut st, a1))))
+        }
+    case TPr:
+        // FS.Ty.sub.eq_4
+        if g_a1 == TPr {
+            return (sub(mut st, (tA(mut st, a0)), (tA(mut st, a1))) && sub(mut st, (tB(mut st, a0)), (tB(mut st, a1))))
+        }
+    case TRef:
+        // FS.Ty.sub.eq_5
+        if tA(mut st, a0) == 0 && g_a1 == TRef && tA(mut st, a1) == 0 {
+            return (((tB(mut st, a0)) <= (tB(mut st, a1))) && (tyEq(mut st, (tC(mut st, a0)), (tC(mut st, a1)))))
+        }
+    case TSl:
+        // FS.Ty.sub.eq_6
+        if tA(mut st, a0) == 0 && g_a1 == TSl && tA(mut st, a1) == 0 {
+            return (((tB(mut st, a0)) <= (tB(mut st, a1))) && sub(mut st, (tC(mut st, a0)), (tC(mut st, a1))))
+        }
+    case TMp:
+        // FS.Ty.sub.eq_7
+        if tA(mut st, a0) == 0 && g_a1 == TMp && tA(mut st, a1) == 0 {
+            return (((tB(mut st, a0)) <= (tB(mut st, a1))) && sub(mut st, (tC(mut st, a0)), (tC(mut st, a1))))
+        }
+    case TDom:
+        // FS.Ty.sub.eq_8
+        if g_a1 == TDom {
+            return (((tA(mut st, a0)) <= (tA(mut st, a1))) && (tyEq(mut st, (tB(mut st, a0)), (tB(mut st, a1)))))
+        }
+    case TMuRs:
+        // FS.Ty.sub.eq_9
+        if g_a1 == TMuRs {
+            v_r := tA(mut st, a0)
+            v_b := tD(mut st, a0)
+            v_r_p := tA(mut st, a1)
+            return (((((tB(mut st, a0)) == (tB(mut st, a1))) && ((tC(mut st, a0)) == (tC(mut st, a1)))) && (tyEq(mut st, v_b, (tD(mut st, a1))))) && ((v_r == v_r_p) || ((v_r <= v_r_p) && covOk(mut st, v_b))))
+        }
+    }
+    // FS.Ty.sub.eq_10
+    return (tyEq(mut st, a0, a1))
+}
+
+// FS.Ty.chanFree（方程式 19 本）
+func chanFree(st mut S, a0 int) bool {
+    switch tg(mut st, a0) {
+    case TInt:
+        // FS.Ty.chanFree.eq_1
+        return true
+    case TVar:
+        // FS.Ty.chanFree.eq_2
+        v_k := tC(mut st, a0)
+        return (kRf(v_k) || kCf(v_k))
+    case TBool:
+        // FS.Ty.chanFree.eq_3
+        return true
+    case TByte:
+        // FS.Ty.chanFree.eq_4
+        return true
+    case TF64:
+        // FS.Ty.chanFree.eq_5
+        return true
+    case TUnit:
+        // FS.Ty.chanFree.eq_6
+        return true
+    case TOpt:
+        // FS.Ty.chanFree.eq_7
+        return chanFree(mut st, (tA(mut st, a0)))
+    case TUn:
+        // FS.Ty.chanFree.eq_8
+        return (chanFree(mut st, (tA(mut st, a0))) && chanFree(mut st, (tB(mut st, a0))))
+    case TPr:
+        // FS.Ty.chanFree.eq_9
+        return (chanFree(mut st, (tA(mut st, a0))) && chanFree(mut st, (tB(mut st, a0))))
+    case TRef:
+        // FS.Ty.chanFree.eq_10
+        return chanFree(mut st, (tC(mut st, a0)))
+    case TSl:
+        // FS.Ty.chanFree.eq_11
+        return chanFree(mut st, (tC(mut st, a0)))
+    case TMp:
+        // FS.Ty.chanFree.eq_12
+        return chanFree(mut st, (tC(mut st, a0)))
+    case TChan:
+        // FS.Ty.chanFree.eq_13
+        return false
+    case TDom:
+        // FS.Ty.chanFree.eq_14
+        return false
+    case TFn:
+        // FS.Ty.chanFree.eq_15
+        return true
+    case TMuS:
+        // FS.Ty.chanFree.eq_16
+        return true
+    case TRVar:
+        // FS.Ty.chanFree.eq_17
+        return true
+    case TOwn:
+        // FS.Ty.chanFree.eq_18
+        return false
+    }
+    // FS.Ty.chanFree.eq_19
+    return chanFree(mut st, (tD(mut st, a0)))
+}
+
+// FS.Ty.clampOk（方程式 9 本）
+func clampOk(st mut S, a0 int, a1 int, a2 int) bool {
+    switch tg(mut st, a2) {
+    case TVar:
+        // FS.Ty.clampOk.eq_1
+        v_k := a1
+        v_kd := tC(mut st, a2)
+        return (((kRf(v_kd) || !kImm(v_kd)) || ((tB(mut st, a2)) <= v_k)) || (a0 <= v_k))
+    case TOpt:
+        // FS.Ty.clampOk.eq_2
+        return clampOk(mut st, a0, a1, (tA(mut st, a2)))
+    case TUn:
+        // FS.Ty.clampOk.eq_3
+        v_b := a0
+        v_k := a1
+        return (clampOk(mut st, v_b, v_k, (tA(mut st, a2))) && clampOk(mut st, v_b, v_k, (tB(mut st, a2))))
+    case TPr:
+        // FS.Ty.clampOk.eq_4
+        v_b := a0
+        v_k := a1
+        return (clampOk(mut st, v_b, v_k, (tA(mut st, a2))) && clampOk(mut st, v_b, v_k, (tB(mut st, a2))))
+    case TRef:
+        // FS.Ty.clampOk.eq_5
+        if tA(mut st, a2) == 0 {
+            v_k := a1
+            return (((tB(mut st, a2)) <= v_k) || ((a0 <= v_k) && chanFree(mut st, (tC(mut st, a2)))))
+        }
+    case TSl:
+        // FS.Ty.clampOk.eq_6
+        if tA(mut st, a2) == 0 {
+            v_k := a1
+            return (((tB(mut st, a2)) <= v_k) || ((a0 <= v_k) && chanFree(mut st, (tC(mut st, a2)))))
+        }
+    case TMp:
+        // FS.Ty.clampOk.eq_7
+        if tA(mut st, a2) == 0 {
+            v_k := a1
+            return (((tB(mut st, a2)) <= v_k) || ((a0 <= v_k) && chanFree(mut st, (tC(mut st, a2)))))
+        }
+    case TMuRs:
+        // FS.Ty.clampOk.eq_8
+        v_k := a1
+        return (((tA(mut st, a2)) <= v_k) || ((a0 <= v_k) && chanFree(mut st, (tD(mut st, a2)))))
+    }
+    // FS.Ty.clampOk.eq_9
+    return true
+}
+
+// FS.Ty.jumpRel（方程式 1 本）
+func jumpRel(st mut S, a0 int, a1 int, a2 int, a3 int) bool {
+    // FS.Ty.jumpRel.eq_1
+    v_k := a1
+    v_tJ := a2
+    return (sub(mut st, clampR(mut st, v_k, v_tJ), a3) && clampOk(mut st, a0, v_k, v_tJ))
+}
+
+// FS.Ty.readAs（方程式 2 本）
+func readAs(st mut S, a0 bool, a1 int, a2 int) int {
+    // FS.Ty.readAs.eq_1
+    if a1 < 0 {
+        v_x := a2
+        return if (a0 || annFree(mut st, v_x)) { v_x } else { -1 }
+    }
+    // FS.Ty.readAs.eq_2（最後の腕 — 先行の腕が外れれば当たる: a1 >= 0）
+    v_t := a1
+    return if sub(mut st, a2, v_t) { v_t } else { -1 }
+}
+
+// FS.Kind.imm（方程式 1 本）
+func kImm(a0 int) bool {
+    // FS.Kind.imm.eq_1
+    v_k := a0
+    return (kRf(v_k) || (kMf(v_k) && kCf(v_k)))
+}
+
+// FS.Kind.le（方程式 1 本）
+func kLe(a0 int, a1 int) bool {
+    // FS.Kind.le.eq_1
+    v_k := a0
+    v_k_p := a1
+    return (((((!kRf(v_k) || kRf(v_k_p)) && (!kMf(v_k) || kMf(v_k_p))) && (!kCf(v_k) || kCf(v_k_p))) && (!kCov(v_k) || kCov(v_k_p))) && (!kKf(v_k) || kKf(v_k_p)))
+}
+
+// FS.Kind.isNorm（方程式 1 本）
+func kIsNorm(a0 int) bool {
+    // FS.Kind.isNorm.eq_1
+    v_k := a0
+    return ((!(kRf(v_k) || kKf(v_k)) || ((kMf(v_k) && kCf(v_k)) && kCov(v_k))) && (!kCov(v_k) || (kMf(v_k) && kCf(v_k))))
+}
+
+// FS.Kind.place（方程式 1 本）
+func kPlace(a0 int, a1 int) int {
+    // FS.Kind.place.eq_1
+    return if kRf(a0) { 0 } else { a1 }
+}
+
+// FS.Ty.atR（方程式 19 本）
+func atR(st mut S, a0 int, a1 int) int {
+    switch tg(mut st, a1) {
+    case TInt:
+        // FS.Ty.atR.eq_1
+        return a1
+    case TVar:
+        // FS.Ty.atR.eq_2
+        v_k_1 := tC(mut st, a1)
+        return mkLike(mut st, a1, TVar, (tA(mut st, a1)), if kRf(v_k_1) { (tB(mut st, a1)) } else { a0 }, v_k_1)
+    case TBool:
+        // FS.Ty.atR.eq_3
+        return a1
+    case TByte:
+        // FS.Ty.atR.eq_4
+        return a1
+    case TF64:
+        // FS.Ty.atR.eq_5
+        return a1
+    case TUnit:
+        // FS.Ty.atR.eq_6
+        return a1
+    case TOpt:
+        // FS.Ty.atR.eq_7
+        return mkLike(mut st, a1, TOpt, atR(mut st, a0, (tA(mut st, a1))), 0, 0)
+    case TUn:
+        // FS.Ty.atR.eq_8
+        v_k := a0
+        return mkLike(mut st, a1, TUn, atR(mut st, v_k, (tA(mut st, a1))), atR(mut st, v_k, (tB(mut st, a1))), 0)
+    case TPr:
+        // FS.Ty.atR.eq_9
+        v_k := a0
+        return mkLike(mut st, a1, TPr, atR(mut st, v_k, (tA(mut st, a1))), atR(mut st, v_k, (tB(mut st, a1))), 0)
+    case TRef:
+        // FS.Ty.atR.eq_10
+        v_k := a0
+        return mkLike(mut st, a1, TRef, b2i((tA(mut st, a1) != 0)), v_k, atR(mut st, v_k, (tC(mut st, a1))))
+    case TSl:
+        // FS.Ty.atR.eq_11
+        v_k := a0
+        return mkLike(mut st, a1, TSl, b2i((tA(mut st, a1) != 0)), v_k, atR(mut st, v_k, (tC(mut st, a1))))
+    case TMp:
+        // FS.Ty.atR.eq_12
+        v_k := a0
+        return mkLike(mut st, a1, TMp, b2i((tA(mut st, a1) != 0)), v_k, atR(mut st, v_k, (tC(mut st, a1))))
+    case TChan:
+        // FS.Ty.atR.eq_13
+        v_k := a0
+        return mkLike(mut st, a1, TChan, v_k, atR(mut st, v_k, (tB(mut st, a1))), 0)
+    case TDom:
+        // FS.Ty.atR.eq_14
+        v_k := a0
+        return mkLike(mut st, a1, TDom, v_k, atR(mut st, v_k, (tB(mut st, a1))), 0)
+    case TFn:
+        // FS.Ty.atR.eq_15
+        return a1
+    case TMuS:
+        // FS.Ty.atR.eq_16
+        return a1
+    case TRVar:
+        // FS.Ty.atR.eq_17
+        return a1
+    case TOwn:
+        // FS.Ty.atR.eq_18
+        v_k := a0
+        return mkLike(mut st, a1, TOwn, (tA(mut st, a1)), v_k, atR(mut st, v_k, (tC(mut st, a1))))
+    }
+    // FS.Ty.atR.eq_19
+    return mkLike4(mut st, a1, TMuRs, a0, (tB(mut st, a1)), (tC(mut st, a1)), (tD(mut st, a1)))
+}
+
+// FS.kindOk（方程式 1 本）
+func kindOk(st mut S, a0 int, a1 int) bool {
+    // FS.kindOk.eq_1
+    v_k := a0
+    v_s := a1
+    return (((((((argFree(mut st, v_s) && rfree(mut st, 0, v_s)) && recOk(mut st, v_s)) && (!kRf(v_k) || (regionsBelow(mut st, 0, v_s) && chanFree(mut st, v_s)))) && (!kMf(v_k) || mutFree(mut st, v_s))) && (!kCf(v_k) || chanFree(mut st, v_s))) && (!kCov(v_k) || ((covOk(mut st, v_s) && mutFree(mut st, v_s)) && chanFree(mut st, v_s)))) && (!kKf(v_k) || keyOk(mut st, v_s)))
+}
+
+// FS.Ty.tvWf（方程式 14 本）
+func tvWf(st mut S, a0 int, a1 int) bool {
+    switch tg(mut st, a1) {
+    case TVar:
+        // FS.Ty.tvWf.eq_1
+        v_ks := a0
+        v_i := tA(mut st, a1)
+        return if listGet(mut st, v_ks, v_i) >= 0 { kLe((tC(mut st, a1)), (listGet(mut st, v_ks, v_i))) } else { false }
+    case TOpt:
+        // FS.Ty.tvWf.eq_2
+        return tvWf(mut st, a0, (tA(mut st, a1)))
+    case TUn:
+        // FS.Ty.tvWf.eq_3
+        v_ks := a0
+        return (tvWf(mut st, v_ks, (tA(mut st, a1))) && tvWf(mut st, v_ks, (tB(mut st, a1))))
+    case TPr:
+        // FS.Ty.tvWf.eq_4
+        v_ks := a0
+        return (tvWf(mut st, v_ks, (tA(mut st, a1))) && tvWf(mut st, v_ks, (tB(mut st, a1))))
+    case TRef:
+        // FS.Ty.tvWf.eq_5
+        return tvWf(mut st, a0, (tC(mut st, a1)))
+    case TSl:
+        // FS.Ty.tvWf.eq_6
+        return tvWf(mut st, a0, (tC(mut st, a1)))
+    case TMp:
+        // FS.Ty.tvWf.eq_7
+        return tvWf(mut st, a0, (tC(mut st, a1)))
+    case TChan:
+        // FS.Ty.tvWf.eq_8
+        return tvWf(mut st, a0, (tB(mut st, a1)))
+    case TDom:
+        // FS.Ty.tvWf.eq_9
+        return tvWf(mut st, a0, (tB(mut st, a1)))
+    case TFn:
+        // FS.Ty.tvWf.eq_10
+        v_ks := a0
+        return (tvWf(mut st, v_ks, (tA(mut st, a1))) && tvWf(mut st, v_ks, (tB(mut st, a1))))
+    case TMuS:
+        // FS.Ty.tvWf.eq_11
+        return tvWf(mut st, a0, (tC(mut st, a1)))
+    case TOwn:
+        // FS.Ty.tvWf.eq_12
+        return tvWf(mut st, a0, (tC(mut st, a1)))
+    case TMuRs:
+        // FS.Ty.tvWf.eq_13
+        return tvWf(mut st, a0, (tD(mut st, a1)))
+    }
+    // FS.Ty.tvWf.eq_14
+    return true
+}
+
+// FS.Ty.raisedOk（方程式 14 本）
+func raisedOk(st mut S, a0 int, a1 int) bool {
+    switch tg(mut st, a1) {
+    case TVar:
+        // FS.Ty.raisedOk.eq_1
+        v_ks := a0
+        v_i := tA(mut st, a1)
+        v_rho := tB(mut st, a1)
+        v_k := tC(mut st, a1)
+        return if listGet(mut st, v_ks, v_i) >= 0 { ((kLe(v_k, (listGet(mut st, v_ks, v_i))) && kLe((listGet(mut st, v_ks, v_i)), v_k)) && (v_rho == kPlace(v_k, v_rho))) } else { false }
+    case TOpt:
+        // FS.Ty.raisedOk.eq_2
+        return raisedOk(mut st, a0, (tA(mut st, a1)))
+    case TUn:
+        // FS.Ty.raisedOk.eq_3
+        v_ks := a0
+        return (raisedOk(mut st, v_ks, (tA(mut st, a1))) && raisedOk(mut st, v_ks, (tB(mut st, a1))))
+    case TPr:
+        // FS.Ty.raisedOk.eq_4
+        v_ks := a0
+        return (raisedOk(mut st, v_ks, (tA(mut st, a1))) && raisedOk(mut st, v_ks, (tB(mut st, a1))))
+    case TRef:
+        // FS.Ty.raisedOk.eq_5
+        return raisedOk(mut st, a0, (tC(mut st, a1)))
+    case TSl:
+        // FS.Ty.raisedOk.eq_6
+        return raisedOk(mut st, a0, (tC(mut st, a1)))
+    case TMp:
+        // FS.Ty.raisedOk.eq_7
+        return raisedOk(mut st, a0, (tC(mut st, a1)))
+    case TChan:
+        // FS.Ty.raisedOk.eq_8
+        return raisedOk(mut st, a0, (tB(mut st, a1)))
+    case TDom:
+        // FS.Ty.raisedOk.eq_9
+        return raisedOk(mut st, a0, (tB(mut st, a1)))
+    case TFn:
+        // FS.Ty.raisedOk.eq_10
+        v_ks := a0
+        return (raisedOk(mut st, v_ks, (tA(mut st, a1))) && raisedOk(mut st, v_ks, (tB(mut st, a1))))
+    case TMuS:
+        // FS.Ty.raisedOk.eq_11
+        return raisedOk(mut st, a0, (tC(mut st, a1)))
+    case TOwn:
+        // FS.Ty.raisedOk.eq_12
+        return raisedOk(mut st, a0, (tC(mut st, a1)))
+    case TMuRs:
+        // FS.Ty.raisedOk.eq_13
+        return raisedOk(mut st, a0, (tD(mut st, a1)))
+    }
+    // FS.Ty.raisedOk.eq_14
+    return true
+}
+
+// FS.Ty.tsubst（方程式 19 本）
+func tsubst(st mut S, a0 int, a1 int) int {
+    // 近道 Extract.tsubst_nil（定理。先に当てても値は同じ）
+    if a0 < 0 {
+        return a1
+    }
+    switch tg(mut st, a1) {
+    case TInt:
+        // FS.Ty.tsubst.eq_1
+        return a1
+    case TVar:
+        // FS.Ty.tsubst.eq_2
+        v_ts := a0
+        v_i := tA(mut st, a1)
+        return if listGet(mut st, v_ts, v_i) >= 0 { atR(mut st, (tB(mut st, a1)), (listGet(mut st, v_ts, v_i))) } else { a1 }
+    case TBool:
+        // FS.Ty.tsubst.eq_3
+        return a1
+    case TByte:
+        // FS.Ty.tsubst.eq_4
+        return a1
+    case TF64:
+        // FS.Ty.tsubst.eq_5
+        return a1
+    case TUnit:
+        // FS.Ty.tsubst.eq_6
+        return a1
+    case TOpt:
+        // FS.Ty.tsubst.eq_7
+        return mkLike(mut st, a1, TOpt, tsubst(mut st, a0, (tA(mut st, a1))), 0, 0)
+    case TUn:
+        // FS.Ty.tsubst.eq_8
+        v_ts := a0
+        return mkLike(mut st, a1, TUn, tsubst(mut st, v_ts, (tA(mut st, a1))), tsubst(mut st, v_ts, (tB(mut st, a1))), 0)
+    case TPr:
+        // FS.Ty.tsubst.eq_9
+        v_ts := a0
+        return mkLike(mut st, a1, TPr, tsubst(mut st, v_ts, (tA(mut st, a1))), tsubst(mut st, v_ts, (tB(mut st, a1))), 0)
+    case TRef:
+        // FS.Ty.tsubst.eq_10
+        return mkLike(mut st, a1, TRef, b2i((tA(mut st, a1) != 0)), (tB(mut st, a1)), tsubst(mut st, a0, (tC(mut st, a1))))
+    case TSl:
+        // FS.Ty.tsubst.eq_11
+        return mkLike(mut st, a1, TSl, b2i((tA(mut st, a1) != 0)), (tB(mut st, a1)), tsubst(mut st, a0, (tC(mut st, a1))))
+    case TMp:
+        // FS.Ty.tsubst.eq_12
+        return mkLike(mut st, a1, TMp, b2i((tA(mut st, a1) != 0)), (tB(mut st, a1)), tsubst(mut st, a0, (tC(mut st, a1))))
+    case TChan:
+        // FS.Ty.tsubst.eq_13
+        return mkLike(mut st, a1, TChan, (tA(mut st, a1)), tsubst(mut st, a0, (tB(mut st, a1))), 0)
+    case TDom:
+        // FS.Ty.tsubst.eq_14
+        return mkLike(mut st, a1, TDom, (tA(mut st, a1)), tsubst(mut st, a0, (tB(mut st, a1))), 0)
+    case TFn:
+        // FS.Ty.tsubst.eq_15
+        v_ts := a0
+        return mkLike(mut st, a1, TFn, tsubst(mut st, v_ts, (tA(mut st, a1))), tsubst(mut st, v_ts, (tB(mut st, a1))), 0)
+    case TMuS:
+        // FS.Ty.tsubst.eq_16
+        return mkLike(mut st, a1, TMuS, (tA(mut st, a1)), (tB(mut st, a1)), tsubst(mut st, a0, (tC(mut st, a1))))
+    case TRVar:
+        // FS.Ty.tsubst.eq_17
+        return a1
+    case TOwn:
+        // FS.Ty.tsubst.eq_18
+        return mkLike(mut st, a1, TOwn, (tA(mut st, a1)), (tB(mut st, a1)), tsubst(mut st, a0, (tC(mut st, a1))))
+    }
+    // FS.Ty.tsubst.eq_19
+    return mkLike4(mut st, a1, TMuRs, (tA(mut st, a1)), (tB(mut st, a1)), (tC(mut st, a1)), tsubst(mut st, a0, (tD(mut st, a1))))
+}
+
+// FS.Ty.tvarsBelow（方程式 19 本）
+func tvarsBelow(st mut S, a0 int, a1 int) bool {
+    switch tg(mut st, a1) {
+    case TInt:
+        // FS.Ty.tvarsBelow.eq_1
+        return true
+    case TVar:
+        // FS.Ty.tvarsBelow.eq_2
+        return ((tA(mut st, a1)) < a0)
+    case TBool:
+        // FS.Ty.tvarsBelow.eq_3
+        return true
+    case TByte:
+        // FS.Ty.tvarsBelow.eq_4
+        return true
+    case TF64:
+        // FS.Ty.tvarsBelow.eq_5
+        return true
+    case TUnit:
+        // FS.Ty.tvarsBelow.eq_6
+        return true
+    case TOpt:
+        // FS.Ty.tvarsBelow.eq_7
+        return tvarsBelow(mut st, a0, (tA(mut st, a1)))
+    case TUn:
+        // FS.Ty.tvarsBelow.eq_8
+        v_n := a0
+        return (tvarsBelow(mut st, v_n, (tA(mut st, a1))) && tvarsBelow(mut st, v_n, (tB(mut st, a1))))
+    case TPr:
+        // FS.Ty.tvarsBelow.eq_9
+        v_n := a0
+        return (tvarsBelow(mut st, v_n, (tA(mut st, a1))) && tvarsBelow(mut st, v_n, (tB(mut st, a1))))
+    case TRef:
+        // FS.Ty.tvarsBelow.eq_10
+        return tvarsBelow(mut st, a0, (tC(mut st, a1)))
+    case TSl:
+        // FS.Ty.tvarsBelow.eq_11
+        return tvarsBelow(mut st, a0, (tC(mut st, a1)))
+    case TMp:
+        // FS.Ty.tvarsBelow.eq_12
+        return tvarsBelow(mut st, a0, (tC(mut st, a1)))
+    case TChan:
+        // FS.Ty.tvarsBelow.eq_13
+        return tvarsBelow(mut st, a0, (tB(mut st, a1)))
+    case TDom:
+        // FS.Ty.tvarsBelow.eq_14
+        return tvarsBelow(mut st, a0, (tB(mut st, a1)))
+    case TFn:
+        // FS.Ty.tvarsBelow.eq_15
+        v_n := a0
+        return (tvarsBelow(mut st, v_n, (tA(mut st, a1))) && tvarsBelow(mut st, v_n, (tB(mut st, a1))))
+    case TMuS:
+        // FS.Ty.tvarsBelow.eq_16
+        return tvarsBelow(mut st, a0, (tC(mut st, a1)))
+    case TRVar:
+        // FS.Ty.tvarsBelow.eq_17
+        return true
+    case TOwn:
+        // FS.Ty.tvarsBelow.eq_18
+        return tvarsBelow(mut st, a0, (tC(mut st, a1)))
+    }
+    // FS.Ty.tvarsBelow.eq_19
+    return tvarsBelow(mut st, a0, (tD(mut st, a1)))
+}
+
+// FS.Ty.argFree（方程式 19 本）
+func argFree(st mut S, a0 int) bool {
+    switch tg(mut st, a0) {
+    case TInt:
+        // FS.Ty.argFree.eq_1
+        return true
+    case TVar:
+        // FS.Ty.argFree.eq_2
+        return true
+    case TBool:
+        // FS.Ty.argFree.eq_3
+        return true
+    case TByte:
+        // FS.Ty.argFree.eq_4
+        return true
+    case TF64:
+        // FS.Ty.argFree.eq_5
+        return true
+    case TUnit:
+        // FS.Ty.argFree.eq_6
+        return true
+    case TOpt:
+        // FS.Ty.argFree.eq_7
+        return argFree(mut st, (tA(mut st, a0)))
+    case TUn:
+        // FS.Ty.argFree.eq_8
+        return (argFree(mut st, (tA(mut st, a0))) && argFree(mut st, (tB(mut st, a0))))
+    case TPr:
+        // FS.Ty.argFree.eq_9
+        return (argFree(mut st, (tA(mut st, a0))) && argFree(mut st, (tB(mut st, a0))))
+    case TRef:
+        // FS.Ty.argFree.eq_10
+        return argFree(mut st, (tC(mut st, a0)))
+    case TSl:
+        // FS.Ty.argFree.eq_11
+        return argFree(mut st, (tC(mut st, a0)))
+    case TMp:
+        // FS.Ty.argFree.eq_12
+        return argFree(mut st, (tC(mut st, a0)))
+    case TChan:
+        // FS.Ty.argFree.eq_13
+        return false
+    case TDom:
+        // FS.Ty.argFree.eq_14
+        return chanFree(mut st, (tB(mut st, a0)))
+    case TFn:
+        // FS.Ty.argFree.eq_15
+        return true
+    case TMuS:
+        // FS.Ty.argFree.eq_16
+        return true
+    case TRVar:
+        // FS.Ty.argFree.eq_17
+        return true
+    case TOwn:
+        // FS.Ty.argFree.eq_18
+        return false
+    }
+    // FS.Ty.argFree.eq_19
+    return argFree(mut st, (tD(mut st, a0)))
+}
+
+// FS.Ty.paramOk（方程式 1 本）
+func paramOk(st mut S, a0 int) bool {
+    // FS.Ty.paramOk.eq_1
+    v_t := a0
+    return (regionsBelow(mut st, 1, v_t) && argFree(mut st, v_t))
+}
+
+// FS.Ty.retOk（方程式 22 本）
+func retOk(st mut S, a0 int) bool {
+    switch tg(mut st, a0) {
+    case TInt:
+        // FS.Ty.retOk.eq_1
+        return true
+    case TVar:
+        // FS.Ty.retOk.eq_2
+        v_k := tC(mut st, a0)
+        return (kRf(v_k) || ((kMf(v_k) && kCf(v_k)) && ((tB(mut st, a0)) < 2)))
+    case TBool:
+        // FS.Ty.retOk.eq_3
+        return true
+    case TByte:
+        // FS.Ty.retOk.eq_4
+        return true
+    case TF64:
+        // FS.Ty.retOk.eq_5
+        return true
+    case TUnit:
+        // FS.Ty.retOk.eq_6
+        return true
+    case TOpt:
+        // FS.Ty.retOk.eq_7
+        return retOk(mut st, (tA(mut st, a0)))
+    case TUn:
+        // FS.Ty.retOk.eq_8
+        return (retOk(mut st, (tA(mut st, a0))) && retOk(mut st, (tB(mut st, a0))))
+    case TPr:
+        // FS.Ty.retOk.eq_9
+        return (retOk(mut st, (tA(mut st, a0))) && retOk(mut st, (tB(mut st, a0))))
+    case TRef:
+        // FS.Ty.retOk.eq_10
+        if tA(mut st, a0) == 0 {
+            return (((tB(mut st, a0)) < 2) && retOk(mut st, (tC(mut st, a0))))
+        }
+        // FS.Ty.retOk.eq_13（最後の腕 — 先行の腕が外れれば当たる: tA(mut st, a0) != 0）
+        return false
+    case TSl:
+        // FS.Ty.retOk.eq_11
+        if tA(mut st, a0) == 0 {
+            return (((tB(mut st, a0)) < 2) && retOk(mut st, (tC(mut st, a0))))
+        }
+        // FS.Ty.retOk.eq_14（最後の腕 — 先行の腕が外れれば当たる: tA(mut st, a0) != 0）
+        return false
+    case TMp:
+        // FS.Ty.retOk.eq_12
+        if tA(mut st, a0) == 0 {
+            return (((tB(mut st, a0)) < 2) && retOk(mut st, (tC(mut st, a0))))
+        }
+        // FS.Ty.retOk.eq_15（最後の腕 — 先行の腕が外れれば当たる: tA(mut st, a0) != 0）
+        return false
+    case TChan:
+        // FS.Ty.retOk.eq_16
+        return false
+    case TDom:
+        // FS.Ty.retOk.eq_17
+        return false
+    case TFn:
+        // FS.Ty.retOk.eq_18
+        return true
+    case TMuS:
+        // FS.Ty.retOk.eq_19
+        return true
+    case TRVar:
+        // FS.Ty.retOk.eq_20
+        return true
+    case TMuRs:
+        // FS.Ty.retOk.eq_21
+        v_b := tD(mut st, a0)
+        return ((mutFree(mut st, v_b) && ((tA(mut st, a0)) < 2)) && retOk(mut st, v_b))
+    }
+    // FS.Ty.retOk.eq_22
+    return false
+}
+
+// FS.Ty.givable（方程式 6 本）
+func givable(st mut S, a0 int, a1 int) bool {
+    switch tg(mut st, a1) {
+    case TVar:
+        // FS.Ty.givable.eq_1
+        return ((mutFree(mut st, a1) && chanFree(mut st, a1)) && regionsBelow(mut st, (a0 + 1), a1))
+    case TOwn:
+        // FS.Ty.givable.eq_2
+        if tA(mut st, a1) == 2 {
+            v_t := tC(mut st, a1)
+            return (mutFree(mut st, v_t) && chanFree(mut st, v_t))
+        }
+        // FS.Ty.givable.eq_3
+        if tA(mut st, a1) == 3 {
+            v_t := tC(mut st, a1)
+            return (mutFree(mut st, v_t) && chanFree(mut st, v_t))
+        }
+    case TDom:
+        // FS.Ty.givable.eq_4
+        v_t := tB(mut st, a1)
+        return ((((tA(mut st, a1)) <= a0) && mutFree(mut st, v_t)) && chanFree(mut st, v_t))
+    case TPr:
+        // FS.Ty.givable.eq_5
+        v_rs := a0
+        return (givable(mut st, v_rs, (tA(mut st, a1))) && givable(mut st, v_rs, (tB(mut st, a1))))
+    }
+    // FS.Ty.givable.eq_6
+    v_x := a1
+    return ((mutFree(mut st, v_x) && chanFree(mut st, v_x)) && regionsBelow(mut st, (a0 + 1), v_x))
+}
+
+// FS.Ty.rehome（方程式 5 本）
+func rehome(st mut S, a0 int, a1 int) int {
+    switch tg(mut st, a1) {
+    case TVar:
+        // FS.Ty.rehome.eq_1
+        return a1
+    case TOwn:
+        // FS.Ty.rehome.eq_2
+        if tA(mut st, a1) == 2 {
+            return mkLike(mut st, a1, TOwn, 2, a0, (tC(mut st, a1)))
+        }
+        // FS.Ty.rehome.eq_3
+        if tA(mut st, a1) == 3 {
+            return mkLike(mut st, a1, TOwn, 3, a0, (tC(mut st, a1)))
+        }
+    case TPr:
+        // FS.Ty.rehome.eq_4
+        v_d := a0
+        return mkLike(mut st, a1, TPr, rehome(mut st, v_d, (tA(mut st, a1))), rehome(mut st, v_d, (tB(mut st, a1))), 0)
+    }
+    // FS.Ty.rehome.eq_5
+    return a1
+}
+
+// FS.Ty.payOk（方程式 1 本）
+func payOk(st mut S, a0 int, a1 int) bool {
+    // FS.Ty.payOk.eq_1
+    v_te := a0
+    v_t := a1
+    return ((((mutFree(mut st, v_te) && chanFree(mut st, v_te)) && mutFree(mut st, v_t)) && chanFree(mut st, v_t)) && (tyEq(mut st, relocR(mut st, 0, v_te), relocR(mut st, 0, v_t))))
+}
+
+// FS.Ty.rsubst（方程式 19 本）
+func rsubst(st mut S, a0 int, a1 int, a2 int) int {
+    switch tg(mut st, a0) {
+    case TInt:
+        // FS.Ty.rsubst.eq_1
+        return a0
+    case TVar:
+        // FS.Ty.rsubst.eq_2
+        return a0
+    case TBool:
+        // FS.Ty.rsubst.eq_3
+        return a0
+    case TByte:
+        // FS.Ty.rsubst.eq_4
+        return a0
+    case TF64:
+        // FS.Ty.rsubst.eq_5
+        return a0
+    case TUnit:
+        // FS.Ty.rsubst.eq_6
+        return a0
+    case TOpt:
+        // FS.Ty.rsubst.eq_7
+        return mkLike(mut st, a0, TOpt, rsubst(mut st, (tA(mut st, a0)), a1, a2), 0, 0)
+    case TUn:
+        // FS.Ty.rsubst.eq_8
+        v_x := a1
+        v_x_3 := a2
+        return mkLike(mut st, a0, TUn, rsubst(mut st, (tA(mut st, a0)), v_x, v_x_3), rsubst(mut st, (tB(mut st, a0)), v_x, v_x_3), 0)
+    case TPr:
+        // FS.Ty.rsubst.eq_9
+        v_x := a1
+        v_x_3 := a2
+        return mkLike(mut st, a0, TPr, rsubst(mut st, (tA(mut st, a0)), v_x, v_x_3), rsubst(mut st, (tB(mut st, a0)), v_x, v_x_3), 0)
+    case TRef:
+        // FS.Ty.rsubst.eq_10
+        return mkLike(mut st, a0, TRef, b2i((tA(mut st, a0) != 0)), (tB(mut st, a0)), rsubst(mut st, (tC(mut st, a0)), a1, a2))
+    case TSl:
+        // FS.Ty.rsubst.eq_11
+        return mkLike(mut st, a0, TSl, b2i((tA(mut st, a0) != 0)), (tB(mut st, a0)), rsubst(mut st, (tC(mut st, a0)), a1, a2))
+    case TMp:
+        // FS.Ty.rsubst.eq_12
+        return mkLike(mut st, a0, TMp, b2i((tA(mut st, a0) != 0)), (tB(mut st, a0)), rsubst(mut st, (tC(mut st, a0)), a1, a2))
+    case TChan:
+        // FS.Ty.rsubst.eq_13
+        return mkLike(mut st, a0, TChan, (tA(mut st, a0)), rsubst(mut st, (tB(mut st, a0)), a1, a2), 0)
+    case TDom:
+        // FS.Ty.rsubst.eq_14
+        return mkLike(mut st, a0, TDom, (tA(mut st, a0)), rsubst(mut st, (tB(mut st, a0)), a1, a2), 0)
+    case TFn:
+        // FS.Ty.rsubst.eq_15
+        v_x := a1
+        v_x_3 := a2
+        return mkLike(mut st, a0, TFn, rsubst(mut st, (tA(mut st, a0)), v_x, v_x_3), rsubst(mut st, (tB(mut st, a0)), v_x, v_x_3), 0)
+    case TOwn:
+        // FS.Ty.rsubst.eq_16
+        return mkLike(mut st, a0, TOwn, (tA(mut st, a0)), (tB(mut st, a0)), rsubst(mut st, (tC(mut st, a0)), a1, a2))
+    case TMuS:
+        // FS.Ty.rsubst.eq_17
+        v_n := tA(mut st, a0)
+        return mkLike(mut st, a0, TMuS, v_n, (tB(mut st, a0)), rsubst(mut st, (tC(mut st, a0)), (a1 + v_n), a2))
+    case TRVar:
+        // FS.Ty.rsubst.eq_18
+        return if (tA(mut st, a0)) == a1 { a2 } else { a0 }
+    }
+    // FS.Ty.rsubst.eq_19
+    v_n := tB(mut st, a0)
+    return mkLike4(mut st, a0, TMuRs, (tA(mut st, a0)), v_n, (tC(mut st, a0)), rsubst(mut st, (tD(mut st, a0)), (a1 + v_n), a2))
+}
+
+// FS.Ty.rfree（方程式 19 本）
+func rfree(st mut S, a0 int, a1 int) bool {
+    switch tg(mut st, a1) {
+    case TInt:
+        // FS.Ty.rfree.eq_1
+        return true
+    case TVar:
+        // FS.Ty.rfree.eq_2
+        return true
+    case TBool:
+        // FS.Ty.rfree.eq_3
+        return true
+    case TByte:
+        // FS.Ty.rfree.eq_4
+        return true
+    case TF64:
+        // FS.Ty.rfree.eq_5
+        return true
+    case TUnit:
+        // FS.Ty.rfree.eq_6
+        return true
+    case TOpt:
+        // FS.Ty.rfree.eq_7
+        return rfree(mut st, a0, (tA(mut st, a1)))
+    case TUn:
+        // FS.Ty.rfree.eq_8
+        v_n := a0
+        return (rfree(mut st, v_n, (tA(mut st, a1))) && rfree(mut st, v_n, (tB(mut st, a1))))
+    case TPr:
+        // FS.Ty.rfree.eq_9
+        v_n := a0
+        return (rfree(mut st, v_n, (tA(mut st, a1))) && rfree(mut st, v_n, (tB(mut st, a1))))
+    case TRef:
+        // FS.Ty.rfree.eq_10
+        return rfree(mut st, a0, (tC(mut st, a1)))
+    case TSl:
+        // FS.Ty.rfree.eq_11
+        return rfree(mut st, a0, (tC(mut st, a1)))
+    case TMp:
+        // FS.Ty.rfree.eq_12
+        return rfree(mut st, a0, (tC(mut st, a1)))
+    case TChan:
+        // FS.Ty.rfree.eq_13
+        return rfree(mut st, a0, (tB(mut st, a1)))
+    case TDom:
+        // FS.Ty.rfree.eq_14
+        return rfree(mut st, a0, (tB(mut st, a1)))
+    case TFn:
+        // FS.Ty.rfree.eq_15
+        v_n := a0
+        return (rfree(mut st, v_n, (tA(mut st, a1))) && rfree(mut st, v_n, (tB(mut st, a1))))
+    case TOwn:
+        // FS.Ty.rfree.eq_16
+        return rfree(mut st, a0, (tC(mut st, a1)))
+    case TMuS:
+        // FS.Ty.rfree.eq_17
+        return rfree(mut st, (a0 + (tA(mut st, a1))), (tC(mut st, a1)))
+    case TRVar:
+        // FS.Ty.rfree.eq_18
+        return ((tA(mut st, a1)) < a0)
+    }
+    // FS.Ty.rfree.eq_19
+    return rfree(mut st, (a0 + (tB(mut st, a1))), (tD(mut st, a1)))
+}
+
+// FS.Ty.isFn（方程式 3 本）
+func isFn(st mut S, a0 int) bool {
+    switch tg(mut st, a0) {
+    case TVar:
+        // FS.Ty.isFn.eq_1
+        return false
+    case TFn:
+        // FS.Ty.isFn.eq_2
+        return true
+    }
+    // FS.Ty.isFn.eq_3
+    return false
+}
+
+// FS.Ty.unfold（方程式 3 本）
+func unfold(st mut S, a0 int) int {
+    switch tg(mut st, a0) {
+    case TMuS:
+        // FS.Ty.unfold.eq_1
+        v_n := tA(mut st, a0)
+        v_bs := tC(mut st, a0)
+        return substG(mut st, comp(mut st, v_bs, (tB(mut st, a0))), false, v_n, v_bs, 0, v_n)
+    case TMuRs:
+        // FS.Ty.unfold.eq_2
+        v_n := tB(mut st, a0)
+        v_bs := tD(mut st, a0)
+        return shiftR(mut st, (tA(mut st, a0)), substG(mut st, comp(mut st, v_bs, (tC(mut st, a0))), true, v_n, v_bs, 0, v_n))
+    }
+    // FS.Ty.unfold.eq_3
+    return a0
+}
+
+// FS.Ty.covOk（方程式 17 本）
+func covOk(st mut S, a0 int) bool {
+    switch tg(mut st, a0) {
+    case TInt:
+        // FS.Ty.covOk.eq_1
+        return true
+    case TVar:
+        // FS.Ty.covOk.eq_2
+        v_k := tC(mut st, a0)
+        return (kRf(v_k) || ((kCov(v_k) && kMf(v_k)) && kCf(v_k)))
+    case TBool:
+        // FS.Ty.covOk.eq_3
+        return true
+    case TByte:
+        // FS.Ty.covOk.eq_4
+        return true
+    case TF64:
+        // FS.Ty.covOk.eq_5
+        return true
+    case TUnit:
+        // FS.Ty.covOk.eq_6
+        return true
+    case TOpt:
+        // FS.Ty.covOk.eq_7
+        return covOk(mut st, (tA(mut st, a0)))
+    case TUn:
+        // FS.Ty.covOk.eq_8
+        return (covOk(mut st, (tA(mut st, a0))) && covOk(mut st, (tB(mut st, a0))))
+    case TPr:
+        // FS.Ty.covOk.eq_9
+        return (covOk(mut st, (tA(mut st, a0))) && covOk(mut st, (tB(mut st, a0))))
+    case TRef:
+        // FS.Ty.covOk.eq_10
+        if tA(mut st, a0) == 0 {
+            v_t := tC(mut st, a0)
+            return ((regionsBelow(mut st, 0, v_t) && chanFree(mut st, v_t)) && rfree(mut st, 0, v_t))
+        }
+    case TSl:
+        // FS.Ty.covOk.eq_11
+        if tA(mut st, a0) == 0 {
+            return covOk(mut st, (tC(mut st, a0)))
+        }
+    case TMp:
+        // FS.Ty.covOk.eq_12
+        if tA(mut st, a0) == 0 {
+            return covOk(mut st, (tC(mut st, a0)))
+        }
+    case TFn:
+        // FS.Ty.covOk.eq_13
+        return true
+    case TMuS:
+        // FS.Ty.covOk.eq_14
+        return true
+    case TRVar:
+        // FS.Ty.covOk.eq_15
+        return true
+    case TMuRs:
+        // FS.Ty.covOk.eq_16
+        return covOk(mut st, (tD(mut st, a0)))
+    }
+    // FS.Ty.covOk.eq_17
+    return false
+}
+
+// FS.Ty.comp（方程式 3 本）
+func comp(st mut S, a0 int, a1 int) int {
+    switch tg(mut st, a0) {
+    case TPr:
+        // FS.Ty.comp.eq_1
+        if a1 == 0 {
+            return (tA(mut st, a0))
+        }
+        // FS.Ty.comp.eq_2
+        if a1 >= 1 {
+            return comp(mut st, (tB(mut st, a0)), ((a1 - 1)))
+        }
+    }
+    // FS.Ty.comp.eq_3
+    return st.tInt
+}
+
+// FS.Ty.isChain（方程式 3 本）
+func isChain(st mut S, a0 int, a1 int) bool {
+    switch tg(mut st, a0) {
+    case TUnit:
+        // FS.Ty.isChain.eq_1
+        if a1 == 0 {
+            return true
+        }
+    case TPr:
+        // FS.Ty.isChain.eq_2
+        if a1 >= 1 {
+            return isChain(mut st, (tB(mut st, a0)), ((a1 - 1)))
+        }
+    }
+    // FS.Ty.isChain.eq_3
+    return false
+}
+
+// FS.Ty.chainFn（方程式 3 本）
+func chainFn(st mut S, a0 int, a1 int) bool {
+    switch tg(mut st, a0) {
+    case TUnit:
+        // FS.Ty.chainFn.eq_1
+        if a1 == 0 {
+            return true
+        }
+    case TPr:
+        // FS.Ty.chainFn.eq_2
+        if a1 >= 1 {
+            return (isFn(mut st, (tA(mut st, a0))) && chainFn(mut st, (tB(mut st, a0)), ((a1 - 1))))
+        }
+    }
+    // FS.Ty.chainFn.eq_3
+    return false
+}
+
+// FS.Ty.rguardN（方程式 15 本）
+func rguardN(st mut S, a0 int, a1 int, a2 bool, a3 int) bool {
+    switch tg(mut st, a3) {
+    case TVar:
+        // FS.Ty.rguardN.eq_1
+        return true
+    case TOpt:
+        // FS.Ty.rguardN.eq_2
+        return rguardN(mut st, a0, a1, a2, (tA(mut st, a3)))
+    case TUn:
+        // FS.Ty.rguardN.eq_3
+        v_k := a0
+        v_n := a1
+        v_inFn := a2
+        return (rguardN(mut st, v_k, v_n, v_inFn, (tA(mut st, a3))) && rguardN(mut st, v_k, v_n, v_inFn, (tB(mut st, a3))))
+    case TPr:
+        // FS.Ty.rguardN.eq_4
+        v_k := a0
+        v_n := a1
+        v_inFn := a2
+        return (rguardN(mut st, v_k, v_n, v_inFn, (tA(mut st, a3))) && rguardN(mut st, v_k, v_n, v_inFn, (tB(mut st, a3))))
+    case TRef:
+        // FS.Ty.rguardN.eq_5
+        return rguardN(mut st, a0, a1, a2, (tC(mut st, a3)))
+    case TSl:
+        // FS.Ty.rguardN.eq_6
+        return rguardN(mut st, a0, a1, a2, (tC(mut st, a3)))
+    case TMp:
+        // FS.Ty.rguardN.eq_7
+        return rguardN(mut st, a0, a1, a2, (tC(mut st, a3)))
+    case TChan:
+        // FS.Ty.rguardN.eq_8
+        return rguardN(mut st, a0, a1, a2, (tB(mut st, a3)))
+    case TDom:
+        // FS.Ty.rguardN.eq_9
+        return rguardN(mut st, a0, a1, a2, (tB(mut st, a3)))
+    case TOwn:
+        // FS.Ty.rguardN.eq_10
+        return rguardN(mut st, a0, a1, a2, (tC(mut st, a3)))
+    case TFn:
+        // FS.Ty.rguardN.eq_11
+        v_k := a0
+        v_n := a1
+        return (rguardN(mut st, v_k, v_n, true, (tA(mut st, a3))) && rguardN(mut st, v_k, v_n, true, (tB(mut st, a3))))
+    case TRVar:
+        // FS.Ty.rguardN.eq_12
+        v_k := a0
+        v_i := tA(mut st, a3)
+        return (!((v_k <= v_i) && (v_i < (v_k + a1))) || !a2)
+    case TMuS:
+        // FS.Ty.rguardN.eq_13
+        return rguardN(mut st, (a0 + (tA(mut st, a3))), a1, a2, (tC(mut st, a3)))
+    case TMuRs:
+        // FS.Ty.rguardN.eq_14
+        return rguardN(mut st, (a0 + (tB(mut st, a3))), a1, a2, (tD(mut st, a3)))
+    }
+    // FS.Ty.rguardN.eq_15
+    return true
+}
+
+// FS.Ty.uoccAny（方程式 14 本）
+func uoccAny(st mut S, a0 int, a1 int, a2 bool, a3 int) bool {
+    switch tg(mut st, a3) {
+    case TVar:
+        // FS.Ty.uoccAny.eq_1
+        return false
+    case TOpt:
+        // FS.Ty.uoccAny.eq_2
+        return uoccAny(mut st, a0, a1, true, (tA(mut st, a3)))
+    case TUn:
+        // FS.Ty.uoccAny.eq_3
+        v_k := a0
+        v_n := a1
+        v_g := a2
+        return (uoccAny(mut st, v_k, v_n, v_g, (tA(mut st, a3))) || uoccAny(mut st, v_k, v_n, v_g, (tB(mut st, a3))))
+    case TPr:
+        // FS.Ty.uoccAny.eq_4
+        v_k := a0
+        v_n := a1
+        v_g := a2
+        return (uoccAny(mut st, v_k, v_n, v_g, (tA(mut st, a3))) || uoccAny(mut st, v_k, v_n, v_g, (tB(mut st, a3))))
+    case TRef:
+        // FS.Ty.uoccAny.eq_5
+        return uoccAny(mut st, a0, a1, false, (tC(mut st, a3)))
+    case TSl:
+        // FS.Ty.uoccAny.eq_6
+        return uoccAny(mut st, a0, a1, true, (tC(mut st, a3)))
+    case TMp:
+        // FS.Ty.uoccAny.eq_7
+        return uoccAny(mut st, a0, a1, true, (tC(mut st, a3)))
+    case TChan:
+        // FS.Ty.uoccAny.eq_8
+        return uoccAny(mut st, a0, a1, false, (tB(mut st, a3)))
+    case TDom:
+        // FS.Ty.uoccAny.eq_9
+        return uoccAny(mut st, a0, a1, false, (tB(mut st, a3)))
+    case TOwn:
+        // FS.Ty.uoccAny.eq_10
+        return uoccAny(mut st, a0, a1, false, (tC(mut st, a3)))
+    case TRVar:
+        // FS.Ty.uoccAny.eq_11
+        v_k := a0
+        v_i := tA(mut st, a3)
+        return ((!a2 && (v_k <= v_i)) && (v_i < (v_k + a1)))
+    case TMuS:
+        // FS.Ty.uoccAny.eq_12
+        return uoccAny(mut st, (a0 + (tA(mut st, a3))), a1, a2, (tC(mut st, a3)))
+    case TMuRs:
+        // FS.Ty.uoccAny.eq_13
+        return uoccAny(mut st, (a0 + (tB(mut st, a3))), a1, a2, (tD(mut st, a3)))
+    }
+    // FS.Ty.uoccAny.eq_14
+    return false
+}
+
+// FS.Ty.sinkPick（方程式 1 本）
+func sinkPick(st mut S, a0 int, a1 int, a2 int) int {
+    // FS.Ty.sinkPick.eq_1
+    v_c := a1
+    v_bs := a2
+    return if uoccAny(mut st, 0, a0, false, comp(mut st, v_bs, v_c)) { v_bs } else { rsubst(mut st, v_bs, v_c, st.tInt) }
+}
+
+// FS.Ty.sinkStep（方程式 2 本）
+func sinkStep(st mut S, a0 int, a1 int, a2 int) int {
+    // FS.Ty.sinkStep.eq_1
+    if a2 == 0 {
+        return a1
+    }
+    // FS.Ty.sinkStep.eq_2（最後の腕 — 先行の腕が外れれば当たる: a2 >= 1）
+    v_n := a0
+    v_c := (a2 - 1)
+    return sinkPick(mut st, v_n, v_c, sinkStep(mut st, v_n, a1, v_c))
+}
+
+// FS.Ty.sinkRounds（方程式 2 本）
+func sinkRounds(st mut S, a0 int, a1 int, a2 int) int {
+    // FS.Ty.sinkRounds.eq_1
+    if a2 == 0 {
+        return a1
+    }
+    // FS.Ty.sinkRounds.eq_2（最後の腕 — 先行の腕が外れれば当たる: a2 >= 1）
+    v_n := a0
+    return sinkStep(mut st, v_n, sinkRounds(mut st, v_n, a1, ((a2 - 1))), v_n)
+}
+
+// FS.Ty.allSink（方程式 2 本）
+func allSink(st mut S, a0 int, a1 int, a2 int) bool {
+    // FS.Ty.allSink.eq_1
+    if a2 == 0 {
+        return true
+    }
+    // FS.Ty.allSink.eq_2（最後の腕 — 先行の腕が外れれば当たる: a2 >= 1）
+    v_bs := a0
+    v_n := a1
+    v_k := (a2 - 1)
+    return (!uoccAny(mut st, 0, v_n, false, comp(mut st, v_bs, v_k)) && allSink(mut st, v_bs, v_n, v_k))
+}
+
+// FS.Ty.groupOk（方程式 1 本）
+func groupOk(st mut S, a0 int, a1 int) bool {
+    // FS.Ty.groupOk.eq_1
+    v_bs := a0
+    v_n := a1
+    return (rguardN(mut st, 0, v_n, false, v_bs) && allSink(mut st, sinkRounds(mut st, v_n, v_bs, v_n), v_n, v_n))
+}
+
+// FS.Ty.grp（方程式 1 本）
+func grp(st mut S, a0 bool, a1 int, a2 int, a3 int) int {
+    // FS.Ty.grp.eq_1
+    v_n := a1
+    v_j := a2
+    v_bs := a3
+    return if a0 { mk4(mut st, TMuRs, 0, v_n, v_j, v_bs) } else { mk(mut st, TMuS, v_n, v_j, v_bs) }
+}
+
+// FS.Ty.substG（方程式 2 本）
+func substG(st mut S, a0 int, a1 bool, a2 int, a3 int, a4 int, a5 int) int {
+    // FS.Ty.substG.eq_1
+    if a5 == 0 {
+        return a0
+    }
+    // FS.Ty.substG.eq_2（最後の腕 — 先行の腕が外れれば当たる: a5 >= 1）
+    v_x_1 := a1
+    v_x_2 := a2
+    v_x_3 := a3
+    v_x_4 := a4
+    return substG(mut st, rsubst(mut st, a0, v_x_4, grp(mut st, v_x_1, v_x_2, v_x_4, v_x_3)), v_x_1, v_x_2, v_x_3, (v_x_4 + 1), ((a5 - 1)))
+}
+
+// FS.Ty.localOnly（方程式 19 本）
+func localOnly(st mut S, a0 int) bool {
+    switch tg(mut st, a0) {
+    case TInt:
+        // FS.Ty.localOnly.eq_1
+        return true
+    case TVar:
+        // FS.Ty.localOnly.eq_2
+        v_k := tC(mut st, a0)
+        return (kRf(v_k) || (((tB(mut st, a0)) == 0) && kCf(v_k)))
+    case TBool:
+        // FS.Ty.localOnly.eq_3
+        return true
+    case TByte:
+        // FS.Ty.localOnly.eq_4
+        return true
+    case TF64:
+        // FS.Ty.localOnly.eq_5
+        return true
+    case TUnit:
+        // FS.Ty.localOnly.eq_6
+        return true
+    case TOpt:
+        // FS.Ty.localOnly.eq_7
+        return localOnly(mut st, (tA(mut st, a0)))
+    case TUn:
+        // FS.Ty.localOnly.eq_8
+        return (localOnly(mut st, (tA(mut st, a0))) && localOnly(mut st, (tB(mut st, a0))))
+    case TPr:
+        // FS.Ty.localOnly.eq_9
+        return (localOnly(mut st, (tA(mut st, a0))) && localOnly(mut st, (tB(mut st, a0))))
+    case TRef:
+        // FS.Ty.localOnly.eq_10
+        return (((tB(mut st, a0)) == 0) && localOnly(mut st, (tC(mut st, a0))))
+    case TSl:
+        // FS.Ty.localOnly.eq_11
+        return (((tB(mut st, a0)) == 0) && localOnly(mut st, (tC(mut st, a0))))
+    case TMp:
+        // FS.Ty.localOnly.eq_12
+        return (((tB(mut st, a0)) == 0) && localOnly(mut st, (tC(mut st, a0))))
+    case TChan:
+        // FS.Ty.localOnly.eq_13
+        v_t := tB(mut st, a0)
+        return (((((tA(mut st, a0)) == 0) && regionsBelow(mut st, 0, v_t)) && chanFree(mut st, v_t)) && rfree(mut st, 0, v_t))
+    case TDom:
+        // FS.Ty.localOnly.eq_14
+        v_t := tB(mut st, a0)
+        return (((((tA(mut st, a0)) == 0) && regionsBelow(mut st, 0, v_t)) && chanFree(mut st, v_t)) && rfree(mut st, 0, v_t))
+    case TOwn:
+        // FS.Ty.localOnly.eq_15
+        v_t := tC(mut st, a0)
+        return (((((tB(mut st, a0)) == 0) && regionsBelow(mut st, 0, v_t)) && chanFree(mut st, v_t)) && rfree(mut st, 0, v_t))
+    case TFn:
+        // FS.Ty.localOnly.eq_16
+        return true
+    case TMuS:
+        // FS.Ty.localOnly.eq_17
+        return true
+    case TRVar:
+        // FS.Ty.localOnly.eq_18
+        return true
+    }
+    // FS.Ty.localOnly.eq_19
+    return ((tA(mut st, a0)) == 0)
+}
+
+// FS.Ty.recOk（方程式 19 本）
+func recOk(st mut S, a0 int) bool {
+    switch tg(mut st, a0) {
+    case TInt:
+        // FS.Ty.recOk.eq_1
+        return true
+    case TVar:
+        // FS.Ty.recOk.eq_2
+        return true
+    case TBool:
+        // FS.Ty.recOk.eq_3
+        return true
+    case TByte:
+        // FS.Ty.recOk.eq_4
+        return true
+    case TF64:
+        // FS.Ty.recOk.eq_5
+        return true
+    case TUnit:
+        // FS.Ty.recOk.eq_6
+        return true
+    case TOpt:
+        // FS.Ty.recOk.eq_7
+        return recOk(mut st, (tA(mut st, a0)))
+    case TUn:
+        // FS.Ty.recOk.eq_8
+        return (recOk(mut st, (tA(mut st, a0))) && recOk(mut st, (tB(mut st, a0))))
+    case TPr:
+        // FS.Ty.recOk.eq_9
+        return (recOk(mut st, (tA(mut st, a0))) && recOk(mut st, (tB(mut st, a0))))
+    case TRef:
+        // FS.Ty.recOk.eq_10
+        return recOk(mut st, (tC(mut st, a0)))
+    case TSl:
+        // FS.Ty.recOk.eq_11
+        return recOk(mut st, (tC(mut st, a0)))
+    case TMp:
+        // FS.Ty.recOk.eq_12
+        return recOk(mut st, (tC(mut st, a0)))
+    case TChan:
+        // FS.Ty.recOk.eq_13
+        return recOk(mut st, (tB(mut st, a0)))
+    case TDom:
+        // FS.Ty.recOk.eq_14
+        return recOk(mut st, (tB(mut st, a0)))
+    case TOwn:
+        // FS.Ty.recOk.eq_15
+        return recOk(mut st, (tC(mut st, a0)))
+    case TFn:
+        // FS.Ty.recOk.eq_16
+        return (recOk(mut st, (tA(mut st, a0))) && recOk(mut st, (tB(mut st, a0))))
+    case TMuS:
+        // FS.Ty.recOk.eq_17
+        v_n := tA(mut st, a0)
+        v_bs := tC(mut st, a0)
+        return ((chainFn(mut st, v_bs, v_n) && ((tB(mut st, a0)) < v_n)) && recOk(mut st, v_bs))
+    case TRVar:
+        // FS.Ty.recOk.eq_18
+        return true
+    }
+    // FS.Ty.recOk.eq_19
+    v_n := tB(mut st, a0)
+    v_bs := tD(mut st, a0)
+    return ((((isChain(mut st, v_bs, v_n) && ((tC(mut st, a0)) < v_n)) && localOnly(mut st, v_bs)) && groupOk(mut st, v_bs, v_n)) && recOk(mut st, v_bs))
+}
+
+// FS.Ty.musOk（方程式 2 本）
+func musOk(st mut S, a0 int) bool {
+    switch tg(mut st, a0) {
+    case TMuS:
+        // FS.Ty.musOk.eq_1
+        return (recOk(mut st, a0) && rfree(mut st, 0, a0))
+    }
+    // FS.Ty.musOk.eq_2
+    return false
+}
+
+// FS.Ty.muRsOk（方程式 2 本）
+func muRsOk(st mut S, a0 int) bool {
+    switch tg(mut st, a0) {
+    case TMuRs:
+        // FS.Ty.muRsOk.eq_1
+        return (recOk(mut st, a0) && rfree(mut st, 0, a0))
+    }
+    // FS.Ty.muRsOk.eq_2
+    return false
+}
+
+// FS.Ty.foldOk（方程式 1 本）
+func foldOk(st mut S, a0 int) bool {
+    // FS.Ty.foldOk.eq_1
+    v_t := a0
+    return (musOk(mut st, v_t) || muRsOk(mut st, v_t))
+}
+

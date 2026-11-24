@@ -554,12 +554,15 @@ def genTyped (t : Ty) (Γ : Ctx) (b d : Nat) : Nat → Rand Expr
       let s ← genTy 1
       let m := (← rnd 2) ≠ 0
       let e ← genTyped s Γ b d fuel
-      let Γ' := .ref m (d - 1) s :: Γ
+      -- imm のセルは最も浅い region b に作る（allocAt — セルの宛先構築。乱数を余分に引かない — 既存のベクタの列を保つ）。b が最内なら alloc
+      let r := if m then d - 1 else b
+      let a := if r + 1 = d then Expr.alloc m e else .allocAt m r e
+      let Γ' := .ref m r s :: Γ
       if m && (← rnd 1) = 0 then
         match ← useAt Γ' b d 0 with
-        | some (u, ty) => return .letE (.alloc m e) (.letE u (← genTyped t (ty :: Γ') b d fuel))
-        | none => return .letE (.alloc m e) (← genTyped t Γ' b d fuel)
-      else return .letE (.alloc m e) (← genTyped t Γ' b d fuel)
+        | some (u, ty) => return .letE a (.letE u (← genTyped t (ty :: Γ') b d fuel))
+        | none => return .letE a (← genTyped t Γ' b d fuel)
+      else return .letE a (← genTyped t Γ' b d fuel)
     | .allocDeref =>
       return .deref (.alloc true (← genTyped t Γ b d fuel))
     | .mutop => do -- assign / freeze / deref / call（Γ の mut ref を使う — useRef）
@@ -976,7 +979,7 @@ def kids : Expr → List Expr
   | .call _ _ _ e => [e]
   | .callv _ f e => [f, e]
   | .ann e _ | .block e | .blockR _ e | .copyTo _ _ e | .label _ e | .jump _ _ e => [e]
-  | .alloc _ e | .deref e | .freeze e => [e]
+  | .alloc _ e | .allocAt _ _ e | .deref e | .freeze e => [e]
   | .assign l e => [l, e]
   | .whileE c b => [c, b]
   | .index e i _ => [e, i]
@@ -1021,6 +1024,7 @@ def setKids (x : Expr) (cs : List Expr) : Expr :=
   | .label t _, [e] => .label t e
   | .jump n t _, [e] => .jump n t e
   | .alloc m _, [e] => .alloc m e
+  | .allocAt m r _, [e] => .allocAt m r e
   | .deref _, [e] => .deref e
   | .freeze _, [e] => .freeze e
   | .assign _ _, [l, e] => .assign l e
@@ -1087,7 +1091,7 @@ def targCf (a : Nat) : Expr := .call a 33 [.chan a .int] (.pair (.mkslice true (
 /-- 変異の種別: その節に当てられるもの（1 か所だけ・1 規則だけ破る狙い） -/
 def mutKinds : Expr → List String
   | .alloc _ _ | .mkslice _ _ => ["flag"]
-  | .mksliceAt _ _ _ => ["flag", "region"]
+  | .mksliceAt _ _ _ | .allocAt _ _ _ => ["flag", "region"]
   | .mkmap _ _ => ["flag", "key"]
   | .mkmapAt _ _ _ => ["flag", "region", "key"]
   | .strlit _ _ | .newchan _ _ | .newch _ _ _ => ["region"]
@@ -1121,6 +1125,8 @@ def applyMut (kind : String) (e : Expr) : Rand Expr := do
   | "flag", .alloc m x => return .alloc (!m) x
   | "flag", .mkslice m t => return .mkslice (!m) t
   | "flag", .mksliceAt m t r => return .mksliceAt (!m) t r
+  | "flag", .allocAt m r x => return .allocAt (!m) r x
+  | "region", .allocAt m r x => return .allocAt m (← bumpR r) x
   | "flag", .mkmap m t => return .mkmap (!m) t
   | "flag", .mkmapAt m t r => return .mkmapAt (!m) t r
   | "region", .mksliceAt m t r => return .mksliceAt m t (← bumpR r)

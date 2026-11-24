@@ -2,6 +2,7 @@ package net
 
 // 名前の解決のテスト（white-box — 純粋な部品の単体と、/etc/hostsのlocalhostでDialが繋がること）
 
+import "std/internal/ip"
 import "std/io"
 import "std/iter"
 import "std/os"
@@ -10,7 +11,10 @@ import "std/task"
 
 func TestResolvConf() {
     c := parseResolvConf("# comment\nnameserver 10.0.0.1\nnameserver ::1\nnameserver 10.0.0.2 ; x\nnameserver 10.0.0.3\nnameserver 10.0.0.4\nsearch corp.example. example.com\noptions ndots:3 timeout:2 attempts:4 rotate\n")
-    assert(len(c.servers) == 3 && c.servers[0] == "10.0.0.1" && c.servers[2] == "10.0.0.3")
+    assert(len(c.servers) == 3 && c.servers[0] == "10.0.0.1" && c.servers[1] == "::1" && c.servers[2] == "10.0.0.2")
+    z := parseResolvConf("nameserver fe80::1%eth0\nnameserver 010.0.0.1\nnameserver x\nnameserver 2001:db8::53\n")
+    assert(len(z.servers) == 1 && z.servers[0] == "2001:db8::53")
+    assert(serverAddr("::1", 53) == "[::1]:53" && serverAddr("10.0.0.1", 53) == "10.0.0.1:53")
     assert(len(c.search) == 2 && c.search[0] == "corp.example")
     assert(c.ndots == 3 && c.attempts == 4)
     d := parseResolvConf("")
@@ -21,6 +25,11 @@ func TestHosts() {
     h := hostsLookup("127.0.0.1 localhost\n# x\n10.1.2.3  api.internal API2 # trailing\n::1 localhost\n", "API2")
     assert(len(h) == 1 && int(h[0][0]) == 10 && int(h[0][3]) == 3)
     assert(len(hostsLookup("127.0.0.1 localhost\n", "nope")) == 0)
+    // IPv6 の行も読み、ファイルの順を保つ（v6 を先に並べ替えない）。zone つきの行は飛ばす
+    l := hostsLookup("127.0.0.1 localhost\n::1 localhost ip6-localhost\nfe80::1%lo localhost\n", "localhost")
+    assert(len(l) == 2 && len(l[0]) == 4 && len(l[1]) == 16 && l[1][15] == 1)
+    l6 := hostsLookup("::1 localhost\n127.0.0.1 localhost\n", "LOCALHOST")
+    assert(len(l6) == 2 && len(l6[0]) == 16 && len(l6[1]) == 4)
 }
 
 func TestCandidates() {
@@ -172,5 +181,165 @@ func firstOctets(ips [][]byte, e error?) string {
     case NoHost{}: "NoHost"
     case io.Timeout{}: "Timeout"
     default: "other"
+    }
+}
+
+// 同じプロセスの偽の nameserver（UDP と、同じ port の TCP）。名前ごとに決めたレスポンスを返し、4 バイトの "quit" の datagram で止まる:
+// both.test（A 10.0.0.1・AAAA 2001:db8::1）・a-only.test（A 10.0.0.2 だけ。AAAA は答えない）・six-only.test（AAAA 2001:db8::2 だけ。A は答えない）・
+// nx.test（A は NXDOMAIN・AAAA は答えない）・nodata.test（両方とも答えの無い NOERROR）・half.test（A は NODATA・AAAA は答えない）・
+// tc6.test（A 10.0.0.3・AAAA は UDP で TC を立てて空、TCP で 2001:db8::3）
+func fakeReply(q []byte, tcp bool) []byte {
+    id := int(q[0]) << 8 | int(q[1])
+    name, p := readName(q, 12)
+    qt := int(q[p]) << 8 | int(q[p + 1])
+    a := qt == qtA
+    v6 := internal.ip.Parse6("2001:db8::1")
+    if name == "both.test" {
+        return if a { resp(id, 0, 0, name, qt, rr([]byte{0xc0, 12}, qtA, []byte{10, 0, 0, 1}), 1) } else { resp(id, 0, 0, name, qt, rr([]byte{0xc0, 12}, qtAaaa, v6), 1) }
+    }
+    if name == "a-only.test" {
+        return if a { resp(id, 0, 0, name, qt, rr([]byte{0xc0, 12}, qtA, []byte{10, 0, 0, 2}), 1) } else { []byte{} }
+    }
+    if name == "six-only.test" {
+        return if a { []byte{} } else { resp(id, 0, 0, name, qt, rr([]byte{0xc0, 12}, qtAaaa, internal.ip.Parse6("2001:db8::2")), 1) }
+    }
+    if name == "nx.test" {
+        return if a { resp(id, 0, 3, name, qt, []byte{}, 0) } else { []byte{} }
+    }
+    if name == "nodata.test" {
+        return resp(id, 0, 0, name, qt, []byte{}, 0)
+    }
+    if name == "half.test" {
+        return if a { resp(id, 0, 0, name, qt, []byte{}, 0) } else { []byte{} }
+    }
+    if name == "tc6.test" {
+        if a {
+            return resp(id, 0, 0, name, qt, rr([]byte{0xc0, 12}, qtA, []byte{10, 0, 0, 3}), 1)
+        }
+        return if tcp { resp(id, 0, 0, name, qt, rr([]byte{0xc0, 12}, qtAaaa, internal.ip.Parse6("2001:db8::3")), 1) } else { resp(id, 0x02, 0, name, qt, []byte{}, 0) }
+    }
+    return resp(id, 0, 3, name, qt, []byte{}, 0)
+}
+
+func zeros(o mut []byte, n int) {
+    mut i := 0
+    while i < n {
+        o = append(o, 0)
+        i += 1
+    }
+}
+
+// UDP の偽 nameserver の本体（受けた問いに fakeReply を返す。"quit" か待ちの失敗で 0 を返す）
+@effects(block, io, nondet)
+func fakeUdp(fd int) int {
+    while true {
+        mut buf := mut []byte{}
+        zeros(mut buf, 512)
+        mut from := mut []byte{}
+        zeros(mut from, 28)
+        mut fl := mut []byte{28, 0, 0, 0}
+        n := sysCall(45, fd, sysAddr(buf), 512, 0, sysAddr(from), sysAddr(fl))
+        if n < 0 {
+            if again(n, fd, evIn) != 0 {
+                return 0
+            }
+        } else {
+            if n == 4 {
+                return 0
+            }
+            b := freeze(buf)
+            r := fakeReply(sliceBytes(b, 0, n), false)
+            if len(r) > 0 {
+                _ = sysCall(44, fd, sysAddr(r), len(r), 0, sysAddr(from), int(fl[0]))
+            }
+        }
+    }
+    return 0
+}
+
+// TCP の偽 nameserver（1 本だけ受けて、長さの前置きの問い 1 つに答える）
+func fakeTcp(l Listener) (int, error?) {
+    for c <- Accept(l)? {
+        mut got := mut []byte{}
+        for chunk <- Recv(c)? {
+            for x <- chunk {
+                got = append(got, x)
+            }
+            g := freeze(got)
+            if len(g) >= 2 && len(g) >= 2 + (int(g[0]) << 8 | int(g[1])) {
+                r := fakeReply(sliceBytes(g, 2, len(g)), true)
+                Send(c, cat2([]byte{byte(len(r) >> 8), byte(len(r) & 0xff)}, r))?
+                break
+            }
+        }
+        break
+    }
+    return 0, nil
+}
+
+// name を偽の nameserver（host = "127.0.0.1" か "::1"）で引いた結果の綴り（番地を "," で繋ぐ・NoHost・Timeout・other）
+func viaFake(host string, name string) string {
+    return viaFakeRun(host, name) catch "fail"
+}
+
+func viaFakeRun(host string, name string) (string, error?) {
+    mut out := "none"
+    for l <- Listen(serverAddr(host, 0))? {
+        p := Port(l)
+        sa := sockaddr(serverAddr(host, p))
+        fd := sysCall(41, family(sa), 526338, 0, 0, 0, 0)
+        _ = sysCall(49, fd, sysAddr(sa), len(sa), 0, 0, 0)
+        r, e := task.Run((s task.Scope) => {
+            u := task.Spawn(s, () => fakeUdp(fd))
+            c := task.Spawn(s, () => lookQuit(host, name, p, sa))
+            if name == "tc6.test" {
+                _ = fakeTcp(l) catch 0
+            }
+            _ = task.Join(u)
+            task.Join(c)
+        }, deadline: 5000 * task.MS)
+        _ = sysCall(3, fd, 0, 0, 0, 0, 0)
+        out = if e != nil { "fail" } else { r }
+    }
+    return out, nil
+}
+
+// 引いてから偽の nameserver に "quit" を送る
+@effects(block, io, nondet)
+func lookQuit(host string, name string, p int, sa []byte) string {
+    cf := dnsConf{servers: []string{host}, search: []string{}, ndots: 1, timeout: 300 * task.MS, attempts: 1}
+    ips, e := resolveIn(name, cf, "", p)
+    q := sysCall(41, family(sa), 526338, 0, 0, 0, 0)
+    quit := bytes("quit")
+    _ = sysCall(44, q, sysAddr(quit), 4, 0, sysAddr(sa), len(sa))
+    _ = sysCall(3, q, 0, 0, 0, 0, 0)
+    return switch e {
+    case nil: addrsText(ips)
+    case NoHost{}: "NoHost"
+    case io.Timeout{}: "Timeout"
+    default: "other"
+    }
+}
+
+func addrsText(ips [][]byte) string {
+    mut parts := mut []string{}
+    for a <- ips {
+        v4 := "${int(a[0])}.${int(a[1])}.${int(a[2])}.${int(a[3])}"
+        parts = append(parts, if len(a) == 16 { internal.ip.Format6(a) } else { v4 })
+    }
+    return strings.Join(freeze(parts), ",")
+}
+
+// A と AAAA を同時に問う: 両方の答え（v6 が先の交互）・片方だけの答え・NXDOMAIN・NODATA・切り詰めの側だけを TCP で。nameserver が IPv6 でも
+func TestResolveBoth() {
+    hosts := if skipV6("TestResolveBoth (the IPv6 nameserver)") { []string{"127.0.0.1"} } else { []string{"127.0.0.1", "::1"} }
+    for host <- hosts {
+        assert(viaFake(host, "both.test") == "2001:db8::1,10.0.0.1")
+        assert(viaFake(host, "a-only.test") == "10.0.0.2")
+        assert(viaFake(host, "six-only.test") == "2001:db8::2")
+        assert(viaFake(host, "nx.test") == "NoHost")
+        assert(viaFake(host, "nodata.test") == "NoHost")
+        assert(viaFake(host, "half.test") == "Timeout")
+        assert(viaFake(host, "tc6.test") == "2001:db8::3,10.0.0.3")
     }
 }

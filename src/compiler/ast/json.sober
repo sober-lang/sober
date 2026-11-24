@@ -224,7 +224,7 @@ func emit(out mut []byte, t Tree, n0 int, d int) {
         kList(mut out, t, e, false, "consts", x.e)
         if x.f != 0 {
             fk := t.nodes[t.data[x.f + 1]].kind
-            kList(mut out, t, e, false, if fk == KReplaces { "replaces" } else if fk == KDoubles { "doubles" } else { "intrinsics" }, x.f)
+            kList(mut out, t, e, false, if fk == KReplaces { "replaces" } else if fk == KDoubles { "doubles" } else if fk == KLogs { "logs" } else { "intrinsics" }, x.f)
         }
     } else if k == KImport {
         kStr(mut out, t, e, true, "alias", x.a)
@@ -289,6 +289,9 @@ func emit(out mut []byte, t Tree, n0 int, d int) {
         kTok(mut out, e, x)
     } else if k == KDoubles {
         kList(mut out, t, e, true, "paths", x.a)
+        kTok(mut out, e, x)
+    } else if k == KLogs {
+        kStr(mut out, t, e, true, "to", x.a)
         kTok(mut out, e, x)
     } else if k == KIntrinsic {
         kStr(mut out, t, e, true, "name", x.a)

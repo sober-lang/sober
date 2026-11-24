@@ -1,4 +1,4 @@
-@@full	701023d9c13701ef	8792	244229
+@@full	64dc88f1c7a1d819	9212	256755
 @head	1a6e5736df5c1e55	18	1304
 const GB	c5804c5c1f24bb54	1	51
 const KB	4920dd3a28823eee	1	45
@@ -14,7 +14,7 @@ func Lease	e7e778e280af4fda	8	436
 func LeaseBlock	46b6b771b1cc19d7	6	311
 func LeaseGive	4c131b2743a4412d	16	647
 func LeaseTake	dd63c2ec30cf7612	102	3314
-func Ledger	166619aa56fc19ff	177	6578
+func Ledger	3321d1d736c6d52d	215	8043
 func LocalNew	7f178944de8d3a38	103	3496
 func Map	a60f8101dbba5669	91	3299
 func MarkFailed	5ca77d3b1e46a852	8	396
@@ -27,6 +27,7 @@ func Recv	0d01d21038917662	8	393
 func RecvAll	ebda5477a28c1abc	25	957
 func Run	6abee7d7e9b31b89	29	1310
 func Send	c7456328fa2e94df	11	536
+func ServeAcceptRetry	fbad3a719b3b1731	13	576
 func ServePool	aa0aa720dd3953c8	35	1410
 func Spawn	bc8e9a6b7bf0faca	11	559
 func SpawnGive	c075da59b252bb97	13	653
@@ -48,14 +49,15 @@ type ChildDied	0fea276789770f61	2	121
 type Domain	c27b6d6edb545647	2	122
 type DomainView	7c19837116464060	5	280
 type Handle	0703180dfa8cc8d7	2	122
-type LedgerView	8629555bea1bb127	24	1268
+type LedgerView	c2f9f58b90c99d1d	30	1605
 type Local	f75c2ec26f68bf16	3	150
 type LocalType	f23dce0a0a20703b	1	70
+type LogView	770d72957aa4a2e5	4	227
 type NotLowered	237d4d914c5e97d7	1	71
 type Outcome	95ea0eca9639a0e4	4	297
 type Pool	53518882dbacf5d9	2	117
 type PoolLimit	716b516a90c8e79b	1	70
-type PoolView	34d34762635a654e	15	766
+type PoolView	208ecf23939bc30b	16	822
 type Receiver	fbde46a5963fedce	2	124
 type Scope	fd1cbf5f2a110b69	2	118
 type Sender	f10a5ed352d56e4e	2	122

@@ -78,9 +78,14 @@ func meText(r http.server.Request) string {
     return if v == nil { "anonymous" } else { "sid=${v}" }
 }
 
+func hostOf(r http.server.Request) string {
+    v := http.server.Header(r, "host")
+    return if v == nil { "" } else { v }
+}
+
 func route(r http.server.Request) http.server.Response {
     p := r.path
-    return if p == "/login" { loginResponse() } else if p == "/me" { http.server.Text(meText(r)) } else if p == "/hello" { http.server.Text("hello ${r.method}") } else if p == "/to-hello" { redirectTo("/hello") } else if p == "/to-me" { redirectTo("/me") } else if p == "/loop" { redirectTo("/loop") } else if p == "/big" { http.server.Text("0123456789abcdef0123456789abcdef") } else if p == "/echo" { http.server.Text(bytesToString(r.body)) } else { http.server.Status(404) }
+    return if p == "/login" { loginResponse() } else if p == "/me" { http.server.Text(meText(r)) } else if p == "/hello" { http.server.Text("hello ${r.method}") } else if p == "/host" { http.server.Text(hostOf(r)) } else if p == "/to-hello" { redirectTo("/hello") } else if p == "/to-me" { redirectTo("/me") } else if p == "/loop" { redirectTo("/loop") } else if p == "/big" { http.server.Text("0123456789abcdef0123456789abcdef") } else if p == "/echo" { http.server.Text(bytesToString(r.body)) } else { http.server.Status(404) }
 }
 
 // 子のtaskのリクエストの結果の要約（"status:body" か誤りの名前）
@@ -110,6 +115,30 @@ func serveN(l net.Listener, n int) error? {
         }
     }
     return nil
+}
+
+// IPv6 のループバック: URL の角括弧の authority で繋がり、Host の頭は角括弧つきで送る。redirect の origin は綴りの揺れを同じと読む
+func TestPlainLoopback6() {
+    if skipV6("TestPlainLoopback6") {
+        return
+    }
+    e := net.Listen("[::1]:0", (l) => {
+        p := net.Port(l)
+        got, _ := task.Run((s) => {
+            h := task.Spawn(s, () => []string{
+                summary("http://[::1]:${p}/hello", "", "", nil, nil),
+                summary("http://[0:0:0:0:0:0:0:1]:${p}/host", "", "", nil, nil),
+                summary("http://[::1]:${p}/to-hello", "", "", nil, nil),
+            })
+            _ = serveN(l, 1 + 1 + 2)
+            task.Join(h)
+        }, deadline: 10000 * task.MS)
+        assert(len(got) == 3)
+        assert(got[0] == "200:hello GET")
+        assert(got[1] == "200:[0:0:0:0:0:0:0:1]:${p}")
+        assert(got[2] == "200:hello GET")
+    })
+    assert(e == nil)
 }
 
 func TestPlainLoopback() {
@@ -672,4 +701,29 @@ func TestProxyLoopback() {
         assert(got[2] == "200:abs")
     })
     assert(e == nil)
+}
+
+// IPv6 のループバック（::1）が無く、SOBER_GATES_ALLOW_SKIP に ipv6 があるときだけ true を返し、飛ばした旨を 1 行出す。
+// ::1 が無くても ipv6 を外していなければ false（テストはそのまま走って落ちる。照合できない検査は FAIL）
+func skipV6(test string) bool {
+    if hasLoopback6() {
+        return false
+    }
+    v, e := os.Getenv("SOBER_GATES_ALLOW_SKIP")
+    if e != nil || v == nil {
+        return false
+    }
+    for w <- strings.Fields(v) {
+        if w == "ipv6" {
+            println("SKIP[ipv6] ${test}: no IPv6 loopback (::1)")
+            return true
+        }
+    }
+    return false
+}
+
+// /proc/net/if_inet6 に ::1 の行があるか
+func hasLoopback6() bool {
+    t := io.ReadFile("/proc/net/if_inet6") catch []byte{}
+    return strings.Contains(bytesToString(t), "00000000000000000000000000000001 ")
 }

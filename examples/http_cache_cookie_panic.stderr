@@ -1,1 +1,2 @@
-panic: http.BadHeader{name: "Set-Cookie"} at std/http/server/server.sober:3376:14
+panic: ChildDied{cause: http.BadHeader{…}} at std/net/pair.sober:29:18
+  cause at std/http/server/server.sober:3384:14

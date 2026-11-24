@@ -10,6 +10,7 @@ import "std/base64"
 import "std/crypto/pem"
 import "std/crypto/sha256"
 import "std/internal/ec"
+import "std/internal/ip"
 import "std/internal/sha512"
 import "std/iter"
 import "std/strings"
@@ -407,14 +408,14 @@ func ipUnder(ip []byte, c []byte) bool {
     return true
 }
 
-// leaf の SAN が host に合うか（host は小文字にして末尾の . を落とす・IP の綴りなら iPAddress と・名前なら dNSName と — ワイルドカードは最左のラベル丸ごとの "*." だけ）
+// leaf の SAN が host に合うか（host は小文字にして末尾の . を落とす・IP の綴り〔IPv6 は角括弧があれば外す〕なら iPAddress と・名前なら dNSName と — ワイルドカードは最左のラベル丸ごとの "*." だけ）
 func hostOk(c Cert, host string) bool {
     h := strings.ToLower(strings.TrimSuffix(host, "."))
-    ip4 := parseIP(h)
-    ip := if len(ip4) > 0 { ip4 } else { parseIP6(h) }
-    if len(ip) > 0 {
+    ip4 := internal.ip.Parse4(h)
+    want := if len(ip4) > 0 { ip4 } else { internal.ip.Parse6(strings.TrimSuffix(strings.TrimPrefix(h, "["), "]")) }
+    if len(want) > 0 {
         for x <- c.ips {
-            if same(x, ip) {
+            if same(x, want) {
                 return true
             }
         }
@@ -443,89 +444,6 @@ func nameMatch(pat string, h string) bool {
     hb := bytes(h)
     tail := string(hb[dot:len(hb)]) catch ""
     return tail == rest && strings.Count(rest, ".") >= 2
-}
-
-// IPv4 の 10 進の点区切り（4 バイト — 他の綴りは空。IPv6 の綴りの照合は持たない）
-func parseIP(s string) []byte {
-    f := strings.Split(s, ".")
-    if len(f) != 4 {
-        return []byte{}
-    }
-    mut o := mut []byte{}
-    for p <- f {
-        pb := bytes(p)
-        if len(pb) == 0 || len(pb) > 3 || (len(pb) > 1 && pb[0] == '0') {
-            return []byte{}
-        }
-        mut v := 0
-        for x <- pb {
-            if x < '0' || x > '9' {
-                return []byte{}
-            }
-            v = v * 10 + int(x) - 48
-        }
-        if v > 255 {
-            return []byte{}
-        }
-        o = append(o, byte(v))
-    }
-    return freeze(o)
-}
-
-// IPv6 の綴り（RFC 4291 2.2 — 16 進の 8 群・"::" の省略 1 か所・末尾の IPv4 の形は持たない。[] の括りは外してから渡す）→ 16 バイト（他は空）
-func parseIP6(s0 string) []byte {
-    s := strings.TrimSuffix(strings.TrimPrefix(s0, "["), "]")
-    if !strings.Contains(s, ":") {
-        return []byte{}
-    }
-    head, tail, dbl := strings.Cut(s, "::")
-    if dbl && strings.Contains(tail, "::") {
-        return []byte{}
-    }
-    hs := if head == "" { []string{} } else { strings.Split(head, ":") }
-    ts := if !dbl || tail == "" { []string{} } else { strings.Split(tail, ":") }
-    n := len(hs) + len(ts)
-    if (!dbl && n != 8) || (dbl && n > 7) {
-        return []byte{}
-    }
-    mut groups := mut []int{}
-    for g <- hs {
-        groups = append(groups, hex16(g))
-    }
-    if dbl {
-        for k <- iter.Range(0, 8 - n) {
-            groups = append(groups, 0)
-        }
-    }
-    for g <- ts {
-        groups = append(groups, hex16(g))
-    }
-    mut o := mut []byte{}
-    for g <- groups {
-        if g < 0 {
-            return []byte{}
-        }
-        o = append(o, byte(g >> 8))
-        o = append(o, byte(g & 0xff))
-    }
-    return freeze(o)
-}
-
-// 16 進の 1〜4 桁（他は -1）
-func hex16(g string) int {
-    b := bytes(g)
-    if len(b) == 0 || len(b) > 4 {
-        return -1
-    }
-    mut v := 0
-    for x <- b {
-        d := if x >= '0' && x <= '9' { int(x) - 48 } else if x >= 'a' && x <= 'f' { int(x) - 87 } else { -1 }
-        if d < 0 {
-            return -1
-        }
-        v = v * 16 + d
-    }
-    return v
 }
 
 // p の鍵で child の署名が合うか（eOk・eSig・eUnsup）

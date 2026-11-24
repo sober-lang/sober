@@ -102,6 +102,7 @@ def renameFn (ρ : Nat → Nat) : Expr → Expr
   | jump n t e => jump n t (renameFn ρ e)
   | unreach t => unreach t
   | alloc m e => alloc m (renameFn ρ e)
+  | allocAt m r e => allocAt m r (renameFn ρ e)
   | deref e => deref (renameFn ρ e)
   | assign l e => assign (renameFn ρ l) (renameFn ρ e)
   | whileE c b => whileE (renameFn ρ c) (renameFn ρ b)

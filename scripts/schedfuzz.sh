@@ -31,8 +31,22 @@ deathobs() {
 while read -r e mark; do
     case "$e" in ''|'#'*) continue ;; esac
     n=$((n + 1))
-    # SCHEDFUZZ_FLAGS = 検査のbuildの追加の引数（--rt-mutant=28 = 実行待ちの列の環の容量8。溢れのパスごと回す）
-    "$S2" build "$e" --emit=elf ${SCHEDFUZZ_FLAGS:-} -o "$W/bin.$n" > /dev/null 2>&1 || { echo "FAIL: build $e"; fail=$((fail + 1)); continue; }
+    case "$e" in
+    test:*)
+        # std の単体テスト1本（`test:<package> <テストの名前>` — std/internal を import する検査は examples に置けない）: テストの実行ファイルを
+        # 作り、その名前を引数に走らせる包みを観測する（観測 = 終了コードと標準出力・標準エラー）
+        tp=${e#test:}
+        tn=$mark
+        mark=""
+        mkdir -p "$W/tw.$n"
+        "$S2" test --fresh --work "$W/tw.$n" --run "$tn" "$tp" > /dev/null 2>&1 && [ -x "$W/tw.$n/t" ] || { echo "FAIL: build $e $tn"; fail=$((fail + 1)); continue; }
+        printf '#!/bin/sh\nexec "%s" "%s"\n' "$W/tw.$n/t" "$tn" > "$W/bin.$n"
+        ;;
+    *)
+        # SCHEDFUZZ_FLAGS = 検査のbuildの追加の引数（--rt-mutant=28 = 実行待ちの列の環の容量8。溢れのパスごと回す）
+        "$S2" build "$e" --emit=elf ${SCHEDFUZZ_FLAGS:-} -o "$W/bin.$n" > /dev/null 2>&1 || { echo "FAIL: build $e"; fail=$((fail + 1)); continue; }
+        ;;
+    esac
     chmod +x "$W/bin.$n"
     obs "$W/bin.$n" "$W/base" SOBER_WORKERS=1
     deathobs "$W/base" > "$W/base.d"
@@ -134,5 +148,32 @@ for r in $(seq 20); do
     SOBER_WORKERS=2 timeout 5 "$W/sp" loop 1000000 > /dev/null 2>&1
     [ $? = 124 ] && { echo "FAIL: bench/spawn loop W2 did not finish — a child stayed in a run queue the steal gate (MN_DQB) does not show"; fail=$((fail + 1)); break; }
 done
-echo "schedfuzz: $n programs × $K seeds × workers {$WS} + 8 mutants + domain check ($dchk examples · mutant 76) + lot nets (mutant 55 · reap-late) + readyspill + steal-gate stall, fail=$fail"
+# 接続の受けに混ざる子の合図の並びの再生（language.md 11節の決定性の約束の範囲の表「接続の受けに混ざる子の合図の位置」— 録る入力）:
+# std/internal/mux の TestReplayOrder をワーカー1で乱択のスケジュールで走らせて選択の列を取り（SOBER_SCHED_TRACE）、同じ列で走らせ直すと、
+# 飛行記録の合図（SIG）と切片（RECV）の並びが同じになること。シードの間で並びが2通り以上あること（検査が並びの違いを見ている証人）
+rpd=0
+mkdir -p "$W/rp"
+"$S2" test --fresh --work "$W/rp" --run TestReplayOrder std/internal/mux > /dev/null 2>&1 && [ -x "$W/rp/t" ] || { echo "FAIL: build std/internal/mux TestReplayOrder"; fail=$((fail + 1)); }
+if [ -x "$W/rp/t" ]; then
+    rpseq() {   # rpseq <飛行記録> → 合図と切片の並び（時刻と番号を落とす）
+        node --experimental-strip-types scripts/flight.ts "$1" 2> /dev/null | grep -E ' (SIG|RECV) ' | sed 's/^t=[0-9]* w=[0-9]* #[0-9]* //'
+    }
+    : > "$W/rp.h"
+    for s in $(seq 1 "$K"); do
+        rm -f "$W/rp.f1" "$W/rp.f2"
+        SOBER_WORKERS=1 SOBER_SCHED_SEED=$s SOBER_SCHED_TRACE=1 SOBER_FLIGHT="$W/rp.f1" SOBER_FLIGHT_KEEP=1 timeout 60 "$W/rp/t" TestReplayOrder > /dev/null 2> "$W/rp.e1" || { echo "FAIL: replay seed $s — the recording run failed"; fail=$((fail + 1)); continue; }
+        L=$(grep '^#sched ' "$W/rp.e1" | awk '{print $3}' | paste -sd, -)
+        SOBER_WORKERS=1 SOBER_SCHED="$L" SOBER_FLIGHT="$W/rp.f2" SOBER_FLIGHT_KEEP=1 timeout 60 "$W/rp/t" TestReplayOrder > /dev/null 2>&1 || { echo "FAIL: replay seed $s — the replay run failed"; fail=$((fail + 1)); continue; }
+        rpseq "$W/rp.f1" > "$W/rp.q1"
+        rpseq "$W/rp.f2" > "$W/rp.q2"
+        if [ ! -s "$W/rp.q1" ] || ! grep -q '^SIG ' "$W/rp.q1" || ! grep -q '^RECV ' "$W/rp.q1"; then
+            echo "FAIL: replay seed $s — the flight record has no SIG / RECV events"; fail=$((fail + 1)); continue
+        fi
+        cmp -s "$W/rp.q1" "$W/rp.q2" || { echo "FAIL: replay seed $s — the same choice list gave another order of signals and chunks"; diff "$W/rp.q1" "$W/rp.q2" | head -6; fail=$((fail + 1)); }
+        md5sum < "$W/rp.q1" >> "$W/rp.h"
+    done
+    rpd=$(sort -u "$W/rp.h" | wc -l)
+    [ "$rpd" -ge 2 ] || { echo "FAIL: replay — every seed gave the same order of signals and chunks (the check does not see the order)"; fail=$((fail + 1)); }
+fi
+echo "schedfuzz: $n programs × $K seeds × workers {$WS} + mux replay ($K seeds · $rpd orders) + 8 mutants + domain check ($dchk examples · mutant 76) + lot nets (mutant 55 · reap-late) + readyspill + steal-gate stall, fail=$fail"
 [ $fail = 0 ]

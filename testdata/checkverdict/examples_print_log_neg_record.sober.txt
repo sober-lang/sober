@@ -1,0 +1,2 @@
+sober: load error at examples/print_log_neg_record.sober:9:11: print.Log writes a record of a struct type: the record's type (the type argument, written or inferred from the record) must be a struct type without type parameters (its name becomes the key of the record)
+exit=1

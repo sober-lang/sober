@@ -1,0 +1,13 @@
+// incrmut m30の題材（sum_spawn.soberと組）: taskを使うがspawnの点が無い（純な子の判定 cutPatch が回らない）。std/convertの関数は同じ
+package main
+
+import "std/task"
+
+func main() {
+    r, e := task.Run((s task.Scope) => { 3 })
+    if e != nil {
+        println("error")
+        return
+    }
+    println("n ${r} first ${r * 2}")
+}

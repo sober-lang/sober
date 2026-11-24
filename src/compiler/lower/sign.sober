@@ -1,0 +1,157 @@
+package lower
+
+// 署名の列（language.md 28節「実行待ちの列の順」の署名の列）: std/tlsの握手のtaskが、非対称の計算（署名と鍵の共有）を始める直前に入るワーカーごとのFIFO。
+// 入ったtaskは実行待ちの列に並ばない。rt.mn_nextは、間引きの周（MN_BACKLOG_EVERY周に1回）と実行待ちの列が空のときに、先頭から1本取る。
+// 1本の走りが長い計算を実行待ちの列の外で待たせ、同じワーカーの他のtask（済んだ接続のリクエスト・受け付けのループ）の待ちに足さない。
+// - 列はTCBのチェーン（TC_AWNEXT / TC_AWPREV。期限の待ちのチェーン・入場の待ちのチェーンと同じワード。taskは同時に1本のチェーンにしか居ない）。
+//   頭TK_SGH = いちばん古い・TK_SGT = いちばん新しい。走り始めたtaskはワーカーに固定なので、積む・取る・外すのはどれも持ち主のワーカーだけ（鍵なし）
+// - 待つ間のTC_IORESはPEND_SIGN。取り出しで0・Serveの期限の走査（rdl.sober）が期限の過ぎたtaskを外して -110でウェイクアップする
+// - 協調形（M:Nでない）では列を作らず、すぐ0を返す（協調形のtaskNextには間引きの周が無い）
+import "desugar"
+
+const TK_SGH = 10
+const TK_SGT = 11
+// 検査のビルド（ミュータント123・124）だけが使う: 実行待ちの列が空でないときに署名の列から取ってから、次に取れるまでに残っている周の数
+const TK_SGD = 12
+// IO_PENDING + 4: 署名の列の待ち（期限の走査が外して -110でウェイクアップする）
+const PEND_SIGN = -9223372036854775803
+
+// rt.sign_waitを（初出なら）宣言する（net_op 31を使うstd/taskのプログラムだけ）
+func needSign(st mut St) {
+    lsNeed(mut st, NEED_SIGN, 0)
+    if st.signOn || !st.taskUse {
+        return
+    }
+    st.signOn = true
+    st.rtSignWait = addFunc(mut st, int(strLit(mut st, "rt.sign_wait")), desugar.ListRef(list0(mut st)), TyI64)
+}
+
+// net_opのop 31: 今のtaskを署名の列に積んで、順番が来るまで待つ（→ 0 = 順番が来た・-110 = Serveの期限が過ぎた）。opは定数のときだけここへ来る
+func signOp(st mut St) int {
+    if !st.taskUse {
+        return iconst(mut st, 0)
+    }
+    needSign(mut st)
+    return call(mut st, st.rtSignWait, list0(mut st))
+}
+
+func buildSignRt(st mut St) {
+    if !st.signOn {
+        return
+    }
+    begin(mut st, st.rtSignWait)
+    zero := iconst(mut st, 0)
+    bMn := newBlock(mut st)
+    bCo := newBlock(mut st)
+    // ミュータント111（検査の自己検査）: 列に入らずすぐ返す（署名の列の無い形）
+    condbr(mut st, if st.rtMut == 111 { cmp(mut st, CNe, zero, zero) } else { mnOn(mut st) }, bMn, -1, bCo, -1)
+    setCur(mut st, bCo)
+    ret(mut st, zero)
+    setCur(mut st, bMn)
+    tk := globaladdr(mut st, st.taskG)
+    me := load(mut st, tk, TK_CUR)
+    tp := itop(mut st, me)
+    store(mut st, tp, TC_IORES, iconst(mut st, PEND_SIGN))
+    signPush(mut st, tk, me)
+    call(mut st, st.rtTaskWait, list0(mut st))
+    ret(mut st, load(mut st, tp, TC_IORES))
+}
+
+// tを署名の列の後ろへ
+func signPush(st mut St, tk int, t int) {
+    zero := iconst(mut st, 0)
+    tp := itop(mut st, t)
+    tail := load(mut st, tk, TK_SGT)
+    store(mut st, tp, TC_AWNEXT, zero)
+    bE := newBlock(mut st)
+    bN := newBlock(mut st)
+    bJ := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, tail, zero), bE, -1, bN, -1)
+    setCur(mut st, bE)
+    store(mut st, tp, TC_AWPREV, urAdd(mut st, ptoi(mut st, tk), TK_SGH * 8))
+    store(mut st, tk, TK_SGH, t)
+    br(mut st, bJ, -1)
+    setCur(mut st, bN)
+    store(mut st, tp, TC_AWPREV, urAdd(mut st, tail, TC_AWNEXT * 8))
+    store(mut st, itop(mut st, tail), TC_AWNEXT, t)
+    br(mut st, bJ, -1)
+    setCur(mut st, bJ)
+    store(mut st, tk, TK_SGT, t)
+}
+
+// 署名の列の先頭を取って bGot（[task, 種類1]）へ。空なら bFail へ。取ったtaskのTC_IORESは0（順番が来た）
+func signPop(st mut St, tk int, bGot BlkRef, bFail BlkRef) {
+    zero := iconst(mut st, 0)
+    h := load(mut st, tk, TK_SGH)
+    bH := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, h, zero), bFail, -1, bH, -1)
+    setCur(mut st, bH)
+    signGapCheck(mut st, tk)
+    signCut(mut st, tk, h)
+    store(mut st, itop(mut st, h), TC_IORES, zero)
+    br(mut st, bGot, list2(mut st, itop(mut st, h), iconst(mut st, 1)))
+}
+
+// 署名の列の保証の照合（検査のビルドだけ: ミュータント123・124。slowcheck）: 実行待ちの列のtaskの待ちに足される署名は、
+// MN_BACKLOG_EVERY周ごとに1本まで。rt.mn_nextの周の頭（signGapTick）で、実行待ちの列が空でない周ならTK_SGDを1つ減らし（0で止める）、
+// 空の周なら0にする（空になった時点で、それより前の署名を待ちに持つtaskは居ない）。実行待ちの列が空でないときに取るのは、TK_SGDが0のときだけ。
+// 取ったらTK_SGDをMN_BACKLOG_EVERYにする。外れたら印字して終了コード103
+func signGapTick(st mut St, tk int, r int) {
+    if st.rtMut != 123 && st.rtMut != 124 {
+        return
+    }
+    zero := iconst(mut st, 0)
+    d := load(mut st, tk, TK_SGD)
+    dm := bin(mut st, BSub, d, cmp(mut st, CGt, d, zero))
+    store(mut st, tk, TK_SGD, bin(mut st, BMul, cmp(mut st, CNe, r, zero), dm))
+}
+
+func signGapCheck(st mut St, tk int) {
+    if st.rtMut != 123 && st.rtMut != 124 {
+        return
+    }
+    zero := iconst(mut st, 0)
+    r := load(mut st, tk, TK_READY)
+    d := load(mut st, tk, TK_SGD)
+    bJ := branchIf(mut st, bin(mut st, BAnd, cmp(mut st, CNe, r, zero), cmp(mut st, CNe, d, zero)))
+    toStderr(mut st, globaladdr(mut st, st.meta))
+    printLit(mut st, "sign-check: a signature taken with ")
+    call(mut st, st.rtPint, list1(mut st, r))
+    printLit(mut st, " tasks in the run queue, ")
+    call(mut st, st.rtPint, list1(mut st, d))
+    printLit(mut st, " rounds before the next signature is allowed\n")
+    call(mut st, st.rtFlush, list0(mut st))
+    exit(mut st, 103)
+    setCur(mut st, bJ)
+    store(mut st, tk, TK_SGD, bin(mut st, BMul, cmp(mut st, CNe, r, zero), iconst(mut st, MN_BACKLOG_EVERY)))
+}
+
+// 署名の列に居るtを外す（TC_AWPREV = 前のワードの番地。頭のワードか前のtaskのTC_AWNEXT）。後ろの端なら TK_SGT を前のtask（頭なら0）に
+func signCut(st mut St, tk int, t int) {
+    zero := iconst(mut st, 0)
+    tp := itop(mut st, t)
+    pv := load(mut st, tp, TC_AWPREV)
+    nx := load(mut st, tp, TC_AWNEXT)
+    store(mut st, itop(mut st, pv), 0, nx)
+    bN := newBlock(mut st)
+    bT := newBlock(mut st)
+    bJ := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, nx, zero), bN, -1, bT, -1)
+    setCur(mut st, bN)
+    store(mut st, itop(mut st, nx), TC_AWPREV, pv)
+    br(mut st, bJ, -1)
+    setCur(mut st, bT)
+    hd := urAdd(mut st, ptoi(mut st, tk), TK_SGH * 8)
+    store(mut st, tk, TK_SGT, bin(mut st, BMul, cmp(mut st, CNe, pv, hd), urAdd(mut st, pv, 0 - TC_AWNEXT * 8)))
+    br(mut st, bJ, -1)
+    setCur(mut st, bJ)
+    store(mut st, tp, TC_AWPREV, zero)
+}
+
+// Serveの期限の走査（rdl.sober）から: 署名の列で待つt（TC_IORES = PEND_SIGN）の期限が過ぎた。列から外して -110でウェイクアップする
+func signExpire(st mut St, t int) {
+    tk := globaladdr(mut st, st.taskG)
+    signCut(mut st, tk, t)
+    store(mut st, itop(mut st, t), TC_IORES, iconst(mut st, -110))
+    readyPush(mut st, tk, t)
+}

@@ -15,6 +15,11 @@ type target struct {
     db string
 }
 
+// Dial に渡す "host:port"（IPv6 の番地は角括弧で括る）
+func dialAddr(host string, port int) string {
+    return if strings.Contains(host, ":") { "[${host}]:${port}" } else { "${host}:${port}" }
+}
+
 func noTarget() target {
     return target{user: "", host: "", port: 0, db: ""}
 }

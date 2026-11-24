@@ -264,7 +264,7 @@ func loadTestPkg(pkg string, std map[string]string, bv lower.BcView, cv CovOpt) 
     if cv.on {
         return loadTestCover(pkg, std, if len(cv.pats) == 0 { []string{pkg} } else { cv.pats })
     }
-    return loadNamed(pkg, true, std, if bv.on { lower.BcParseView(bv) } else { loader.PcOff() })
+    return loadBuild(pkg, true, std, if bv.on { lower.BcParseView(bv) } else { loader.PcOff() }, false, false)
 }
 
 // テストの実行ファイルを1本走らせる（出力は <work>/o・e。covfが空でなければ前の子のフラグを消してから、子のフラグの書き出し先を引数 `cover:out=<covf>` で渡す —

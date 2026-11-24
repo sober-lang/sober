@@ -109,6 +109,8 @@ The following five properties are derived from these two.
 
 - Memory safety and freedom from data races, with no GC and no borrow checker. This is derived from value orientation (see the section above).
 - Unhandled errors are rejected. Errors are sets of labels that the analyzer derives from the call graph, and public boundaries must declare them ([rules](docs/spec/07-errors.ja.md), in Japanese).
+- Servers stay within their memory box under attack, with handlers written as ordinary code. Every allocation a handler makes lands in the connection's task region, so memory is counted per connection, not estimated. The server stops exactly the connection that exceeded its budget and reclaims its memory wholesale. An outside limit, such as a container's, can only kill every connection together.
+- Servers bound how long they wait. Receiving the head, receiving the body and sending each have a deadline (`headWait:`, `bodyWait:`, `sendWait:`). When admission is full, new connections wait in a queue, and while they wait, idle connections are cut to free slots. All 27 checks of HttpArena's resilience suite end as survived (v0.7.5).
 
 → [Why safe](docs/design-notes/safe.md) (in Japanese)
 
@@ -118,6 +120,8 @@ The following five properties are derived from these two.
 - Runtime speed on par with Rust. Against straightforward Rust using the same algorithms, across 9 sequential benchmarks: 6 wins, 2 ties, 1 loss (the loss is n-body 1.17×). Against Go: 6 wins, 3 ties, no losses. <!-- benchsync:readme-speed-en -->
 - A memory footprint on par with Rust. There is no GC. Peak RSS is at or below Rust's in 8 of the 9 benchmarks (the exception is k-nucleotide). <!-- benchsync:readme-rss-en -->
 - Tasks are light. Measured on 2026-10-10, [Skynet](bench/skynet) with 1.11 million tasks ran 5× faster than Go.
+- Waiting connections are small. A TLS connection waiting for its next request keeps 12 KiB resident (measured with 4,000 connections).
+- Rebuilds are short. After a one-line change to a 100,000-line program, `sober build` finishes in 0.85 s (1,000,000 lines: 8.6 s). Measured on 2026-11-23 with 8 workers, median of 9 runs.
 
 → [Why fast](docs/design-notes/fast.md) (in Japanese)
 
@@ -226,7 +230,7 @@ How it goes about solving these (the design moves):
 
 Everything below is a real artifact in this tree:
 
-- An HTTP/1.1 + TLS 1.3 server — the `std/http/server` entry sits alongside C / Rust / V implementations on the public [HttpArena](https://github.com/MDA2AV/HttpArena) leaderboard (`bench/httparena/`)
+- An HTTP server: HTTP/1.1 and HTTP/2 (h2c, and over TLS by ALPN), TLS 1.3 (and TLS 1.2 when enabled explicitly). The `std/http/server` entry sits alongside C / Rust / V implementations on the public [HttpArena](https://github.com/MDA2AV/HttpArena) leaderboard (`bench/httparena/`). The gates check HTTP/2 with h2spec
 - This compiler itself — ~160K lines of self-hosted Sober, from lexing to x86-64 machine code and ELF emission, with no libc (`src/compiler/`)
 - The standard library — JSON, gzip/deflate, TLS 1.3, an HTTP client (with certificate-chain verification), crypto (AES-GCM / SHA-256 / RSA / x25519 / password hashing), session tokens, a PostgreSQL client and the io_uring M:N runtime (`src/std/`)
 - Developer tooling — the test runner, property-based testing, fuzzing, coverage, mutation testing and watch (the whole `sober test` stack is itself written in Sober as part of the compiler)
@@ -247,12 +251,12 @@ Language:
 - Memory: regions (lifetime = the nesting of scopes), Pool, declared resource limits (budgets)
 - Concurrency: structured concurrency (scopes and tasks), channels, deterministic parallelism, budgets and deadlines, leases, domains (serialized updates from many tasks to one state, with a bound on waiting; no locks in the source)
 - Packages and imports: one directory = one package, the qualifier is every segment of the import path (`std/http/server` → `http.server.X`), and a `sober.mod` at the build root declares the module's name and its local dependencies ([rules](docs/spec/08-packages.ja.md), in Japanese)
-- Annotations: `@embed`, `@layout`, secret-value tracking, and more
+- Annotations: `@embed`, `@layout`, `@logs` (where the log goes), secret-value tracking, and more
 - Testing: `sober test` and assert (prints the values of subexpressions and the assert's position when false; an optional label `assert(e, label)`), property-based testing with std/quick, `sober fuzz`, `--cover` (coverage), `--mutate` (mutation testing), build-time substitution (a test's `@doubles` names a double — `*_double.sober` — that its build reads in place of the real package; signatures, types and effects are checked against the real declarations)
 
-Standard library (33 packages — signatures and descriptions in the [std reference](docs/std/README.ja.md)):
+Standard library (34 packages. Signatures and descriptions are in the [std reference](docs/std/README.ja.md)):
 
-- I/O and networking: io, os, net (TCP, a stub DNS resolver), http/server (an HTTP/1.1 server, SSE, multipart, cookies), http/client (an HTTP/1.1 client — TLS 1.3 by default, the certificate chain always verified), tls (a TLS 1.3 server), url, session (signed session tokens), time (wall clock and monotonic clock, RFC 3339 / HTTP-date, time zones), cli (a CLI declared as a table), env (a table of declared environment variables), pg (a PostgreSQL client — wire protocol 3.0, TLS / SCRAM, transactions, a connection pool)
+- I/O and networking: io, os, print (structured logs: print.Log writes a record as one JSON Lines line and never waits; a record it cannot write is thrown away, and the number thrown away appears in a `$dropped` line and in `task.Ledger().logs`), net (TCP over IPv4 and IPv6 with dual-stack listeners, a stub DNS resolver that asks for A and AAAA), http/server (an HTTP/1.1 and HTTP/2 server, SSE, multipart, cookies, deadlines for receiving and sending, an admission queue), http/client (an HTTP/1.1 and HTTP/2 client; TLS 1.3 by default, the certificate chain always verified), tls (a TLS 1.3 server; TLS 1.2 when enabled explicitly), url, session (signed session tokens), time (wall clock and monotonic clock, RFC 3339 / HTTP-date, time zones), cli (a CLI declared as a table), env (a table of declared environment variables), pg (a PostgreSQL client: wire protocol 3.0, TLS / SCRAM, transactions, a connection pool)
 - Cryptography and hashing: crypto (AES-GCM, ChaCha20-Poly1305, SHA-256, HMAC, HKDF, X25519, RSA, PEM, password hashing — Argon2id, bcrypt, PBKDF2 — cryptographic randomness, constant-time operations), hash (crc32, sha256), uuid (v4 / v7)
 - Encoding and conversion: json, base64, hex, binary, convert, strings, utf8, compress (flate / gzip encoding and decoding)
 - Data and computation: iter, sort, math, rand, table, builder, pool, layout
@@ -261,6 +265,7 @@ Standard library (33 packages — signatures and descriptions in the [std refere
 Tools (subcommands of the single `sober` binary):
 
 - `build` (with intermediate outputs via `--emit=ll|ir|elf`), `run`, `check` (type-check and analyze without building), `test` (`--cover`, `--mutate`, `--wiring`), `fuzz`, `watch` (checks on every save and warms build and tests in the background), `fmt`, `iface` (print a package's public surface), `fix` (write derived `@effects` / `@errors` declarations), `outline` (declarations and their line ranges), `doc --cli`, `cache`
+- `build --profile=<file>` lays out the code blocks that a profile marks cold after the hot code of each function. The output depends only on the source, the compiler and the profile. In a local measurement on bench/httparena (median of 8 code layouts), cycles per request went down by 6.7% for pipelined and 5.7% for json-comp
 - `check`, `build` and `test` remember the answer to a query and return it when the same query comes again; after an edit they redo only the changed functions and packages (the caches are on by default)
 
 ## Roadmap — not yet implemented
@@ -274,7 +279,13 @@ Standard library (features to implement before 1.0):
 - [ ] TLS features for operations (certificate reload, client authentication, session resumption)
 - [x] Database clients: PostgreSQL (wire protocol 3.0, TLS / SCRAM, transactions, a connection pool)
 - [ ] Database clients: MySQL
-- [x] An HTTP client (HTTP/1.1, TLS 1.3 / 1.2, proxy CONNECT)
+- [x] An HTTP client (HTTP/1.1 and HTTP/2, TLS 1.3 / 1.2, proxy CONNECT)
+- [x] HTTP/2 for the server (h2c, and over TLS by ALPN)
+- [x] TLS 1.2 for the server (enabled explicitly)
+- [x] IPv6 (dual-stack listeners, AAAA lookups)
+- [x] Structured logs (print.Log)
+- [ ] Access logs for the HTTP server
+- [ ] Debug output separate from results (print.Debug)
 - [ ] Full coverage of HTTP/1.1
 - [ ] The missing halves of one-sided API pairs
 - [ ] Regular expressions (design under consideration)

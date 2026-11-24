@@ -45,7 +45,7 @@ func ozIsOptFn(t ast.Tree, ty int) bool {
 
 // 全ファイルの木の省略可の関数型の仮引数を変換し分ける。変換がなければ木をそのまま返す（changed = false — 関数表も組み直さない）
 @errors(diag.FnOpt)
-func optFnAll(cx Cx, ft FnTab) ([]ast.Tree, bool, []int, error?) {
+func optFnAll(cx Cx, ft FnTab, fx mut FinX) ([]ast.Tree, bool, []int, error?) {
     // 省略可の関数型がどこにも無ければ何もしない（大半のプログラム — 走査 1 回だけ）
     mut any := false
     for f <- iter.Range(0, len(cx.trees)) {
@@ -84,6 +84,15 @@ func optFnAll(cx Cx, ft FnTab) ([]ast.Tree, bool, []int, error?) {
     for z <- iter.Range(0, len(zz.file)) {
         ozRequest(mut rq, z, 0)
     }
+    // package ごとの仕上げ（pkgfin.sober）: 下流の package からの要る組を足す（Z は package のパスと名前で引く）
+    for i <- iter.Range(0, len(fx.inZ)) {
+        for z <- iter.Range(0, len(zz.file)) {
+            zt := cx.trees[zz.file[z]]
+            if cx.pkg_path[cx.file_pkg[zz.file[z]]] + " " + Name(zt, zt.nodes[zz.node[z]].a) == fx.inZ[i] {
+                ozRequest(mut rq, z, fx.inM[i])
+            }
+        }
+    }
     // Zでない関数の中のZの呼び出し（[ファイル, 節, Z, 有無] の4ワードずつ — 変換のフェーズで差し替える）
     mut calls := builder.Builder[int]{}
     for f <- iter.Range(0, len(cx.trees)) {
@@ -119,6 +128,60 @@ func optFnAll(cx Cx, ft FnTab) ([]ast.Tree, bool, []int, error?) {
     }
     rzs := freeze(rz)
     rms := freeze(rm)
+    // 全体の仕上げで全 package の値を作る（fastload.sober の pkgCapture）: 呼び出し点ごとの要求と作った組を全部
+    if fx.all {
+        mut ao := mut []string{}
+        mut az := mut []string{}
+        mut am := mut []int{}
+        for i <- iter.Range(0, table.Len(mut rq.of)) {
+            z := table.Get(mut rq.oz, i)
+            zt := cx.trees[zz.file[z]]
+            ao = append(ao, cx.pkg_path[cx.file_pkg[table.Get(mut rq.of, i)]])
+            az = append(az, cx.pkg_path[cx.file_pkg[zz.file[z]]] + " " + Name(zt, zt.nodes[zz.node[z]].a))
+            am = append(am, table.Get(mut rq.om, i))
+        }
+        fx.aOZo = freeze(ao)
+        fx.aOZz = freeze(az)
+        fx.aOZm = freeze(am)
+        mut bp := mut []string{}
+        mut bn := mut []string{}
+        mut bm := mut []int{}
+        for i <- iter.Range(0, len(rzs)) {
+            zt := cx.trees[zz.file[rzs[i]]]
+            bp = append(bp, cx.pkg_path[cx.file_pkg[zz.file[rzs[i]]]])
+            bn = append(bn, Name(zt, zt.nodes[zz.node[rzs[i]]].a))
+            bm = append(bm, rms[i])
+        }
+        fx.aZBp = freeze(bp)
+        fx.aZBn = freeze(bn)
+        fx.aZBm = freeze(bm)
+    }
+    // package ごとの仕上げ（pkgfin.sober）: 対象の package の呼び出し点が出す要求と、対象の package の Z に作る組
+    if fx.tgt != "" {
+        mut oz := mut []string{}
+        mut om := mut []int{}
+        for i <- iter.Range(0, table.Len(mut rq.of)) {
+            if cx.pkg_path[cx.file_pkg[table.Get(mut rq.of, i)]] == fx.tgt {
+                z := table.Get(mut rq.oz, i)
+                zt := cx.trees[zz.file[z]]
+                oz = append(oz, cx.pkg_path[cx.file_pkg[zz.file[z]]] + " " + Name(zt, zt.nodes[zz.node[z]].a))
+                om = append(om, table.Get(mut rq.om, i))
+            }
+        }
+        fx.outZ = freeze(oz)
+        fx.outM = freeze(om)
+        mut bz := mut []string{}
+        mut bm := mut []int{}
+        for i <- iter.Range(0, len(rzs)) {
+            if cx.pkg_path[cx.file_pkg[zz.file[rzs[i]]]] == fx.tgt {
+                zt := cx.trees[zz.file[rzs[i]]]
+                bz = append(bz, Name(zt, zt.nodes[zz.node[rzs[i]]].a))
+                bm = append(bm, rms[i])
+            }
+        }
+        fx.zbN = freeze(bz)
+        fx.zbM = freeze(bm)
+    }
     mut out := mut []ast.Tree{}
     mut zd := mut []int{}
     for f <- iter.Range(0, len(cx.trees)) {
@@ -146,17 +209,17 @@ type OzStep struct {
 // 名前付き実引数の変換（namedargs.sober）・省略可の関数型の変換し分け（optFnAll — 省略をnilにした後の木を読む）・η 展開（eta.sober —
 // 変換した後の木と関数表で）を続けて掛ける（finishのステージ — 局所をfinishの枠に積まないために分けた）
 @errors(diag.NamedArg, diag.FnOpt, diag.FnArg)
-func optEtaAll(cx0 Cx, ft0 FnTab) (OzStep, error?) {
+func optEtaAll(cx0 Cx, ft0 FnTab, fx mut FinX) (OzStep, error?) {
     nts, naerr := namedArgsAll(cx0, ft0)
     if naerr != nil {
         return OzStep{}, naerr
     }
-    cx := Cx{nts, cx0.file_pkg, cx0.pkg_path, cx0.pkg_lo, cx0.pkg_hi, cx0.imp_pkg, cx0.imp_ref, cx0.imp_path, cx0.tys}
-    ots, changed, zd, oerr := optFnAll(cx, ft0)
+    cx := Cx{nts, cx0.file_pkg, cx0.pkg_path, cx0.pkg_lo, cx0.pkg_hi, cx0.imp_pkg, cx0.imp_ref, cx0.imp_path, cx0.imp_ix, cx0.tys}
+    ots, changed, zd, oerr := optFnAll(cx, ft0, mut fx)
     if oerr != nil {
         return OzStep{}, oerr
     }
-    cx1 := Cx{ots, cx.file_pkg, cx.pkg_path, cx.pkg_lo, cx.pkg_hi, cx.imp_pkg, cx.imp_ref, cx.imp_path, cx.tys}
+    cx1 := Cx{ots, cx.file_pkg, cx.pkg_path, cx.pkg_lo, cx.pkg_hi, cx.imp_pkg, cx.imp_ref, cx.imp_path, cx.imp_ix, cx.tys}
     ft := if changed { fnTab(cx1) } else { ft0 }
     ets, eerr := etaAll(cx1, ft)
     if eerr != nil {
@@ -458,6 +521,10 @@ func ozHolePos(t ast.Tree, x ast.Node) int {
 type OzReq struct {
     z table.Table[int]
     m table.Table[int]
+    // 呼び出し点ごとの要求（重なりを除かない — 呼び出し点のファイル・Z・有無。package ごとの仕上げが出す要求を取る）
+    of table.Table[int]
+    oz table.Table[int]
+    om table.Table[int]
 }
 
 func ozRequest(rq mut OzReq, z int, m int) {
@@ -499,6 +566,9 @@ func ozScan(cx Cx, ft FnTab, zz OzZ, f int, root int, z int, m int, rq mut OzReq
             }
             cm := ozCallMask(zz, zj, z, m, t, x)
             ozRequest(mut rq, zj, cm)
+            table.Push(mut rq.of, f)
+            table.Push(mut rq.oz, zj)
+            table.Push(mut rq.om, cm)
             if z < 0 {
                 builder.Push(mut calls, f)
                 builder.Push(mut calls, n)
@@ -1007,7 +1077,7 @@ func ozFile(cx Cx, ft FnTab, zz OzZ, rz []int, rm []int, cs []int, f int) (ast.T
         }
         i += 4
     }
-    // Zの宣言 → 要る組のコピー（発見の順）
+    // Zの宣言 → 要る組のコピー（有無のビットの昇順 — 要求の発見の順〔全体のファイルの順〕に依らず、Zと要る組の集合だけで決まる）
     fs := t.nodes[t.file].d
     mut nfs := mut []int{}
     mut vs := mut []int{}
@@ -1017,13 +1087,11 @@ func ozFile(cx Cx, ft FnTab, zz OzZ, rz []int, rm []int, cs []int, f int) (ast.T
         if z < 0 {
             nfs = append(nfs, d)
         } else {
-            for r <- iter.Range(0, len(rz)) {
-                if rz[r] == z {
-                    v := ozVariant(mut g, cx, ft, zz, z, rm[r])
-                    nfs = append(nfs, v)
-                    vs = append(vs, v)
-                    vs = append(vs, g.blo)
-                }
+            for m <- ozMasks(rz, rm, z) {
+                v := ozVariant(mut g, cx, ft, zz, z, m)
+                nfs = append(nfs, v)
+                vs = append(vs, v)
+                vs = append(vs, g.blo)
             }
         }
     }
@@ -1044,4 +1112,27 @@ func ozFile(cx Cx, ft FnTab, zz OzZ, rz []int, rm []int, cs []int, f int) (ast.T
         ns = append(ns, if j < len(r0) && r0[j] && !r1[j] { ast.Node{ast.EInt, x.tok, 0, 0, 0, 0, 0, 0} } else { x })
     }
     return ast.Tree{freeze(ns), data, t.file}, freeze(vs)
+}
+
+// Z の要る組の有無のビットの列（昇順・重なりなし）
+func ozMasks(rz []int, rm []int, z int) []int {
+    mut ms := mut []int{}
+    for r <- iter.Range(0, len(rz)) {
+        if rz[r] == z {
+            mut j := len(ms)
+            ms = append(ms, rm[r])
+            while j > 0 && ms[j - 1] > rm[r] {
+                ms[j] = ms[j - 1]
+                j -= 1
+            }
+            ms[j] = rm[r]
+        }
+    }
+    mut out := mut []int{}
+    for i <- iter.Range(0, len(ms)) {
+        if i == 0 || ms[i] != ms[i - 1] {
+            out = append(out, ms[i])
+        }
+    }
+    return freeze(out)
 }

@@ -1,0 +1,58 @@
+package rec12
+
+// PRF の既知の値（TLS 1.2 の P_SHA256 の公開の試験の値 — 100 バイト）と、AEAD の記録の往復・改ざん・番号の違い
+
+import "std/crypto/aesgcm"
+import "std/hex"
+import "std/internal/bless"
+import "std/iter"
+
+func TestPrf() {
+    s, _ := hex.Parse("9bbe436ba940f017b17652849a71db35")
+    seed, _ := hex.Parse("a0ba9f936cda311827a6f796ffd5198c")
+    out := internal.bless.Bytes(Prf(s, "test label", seed, 100))
+    assert(hex.Format(out) == "e3f229ba727be17b8d122620557cd453c2aab21d07c3d495329b52d4e61edb5a6b301791e90d35c9c9a46b4e14baf9af0fa022f7077def17abfd3797c0564bab4fbc91666e9def9b97fce34f796789baa48082d122ee42c5a72e5a5110fff70187347b66")
+}
+
+func TestAead() {
+    for g <- iter.Range(0, 2) {
+        gcm := g == 0
+        if gcm && !crypto.aesgcm.Available() {
+            continue
+        }
+        key := pat(if gcm { 16 } else { 32 }, 1)
+        iv := pat(if gcm { 4 } else { 12 }, 2)
+        for n <- iter.Range(0, 40) {
+            pt := pat(n * 7, n)
+            body := internal.bless.Bytes(Seal(gcm, key, iv, 5 + n, 23, pt))
+            got, e := Open(gcm, key, iv, 5 + n, 23, body)
+            assert(e == nil && hex.Format(got) == hex.Format(pt))
+            _, e1 := Open(gcm, key, iv, 6 + n, 23, body)
+            assert(e1 != nil)
+            _, e2 := Open(gcm, key, iv, 5 + n, 22, body)
+            assert(e2 != nil)
+            for at <- iter.Range(0, len(body)) {
+                _, e3 := Open(gcm, key, iv, 5 + n, 23, flip(body, at))
+                assert(e3 != nil)
+            }
+        }
+        _, e4 := Open(gcm, key, iv, 0, 23, pat(10, 3))
+        assert(e4 != nil)
+    }
+}
+
+func pat(n int, seed int) []byte {
+    mut out := mut []byte{}
+    for i <- iter.Range(0, n) {
+        out = append(out, byte((i * 31 + seed * 17 + 5) & 0xff))
+    }
+    return freeze(out)
+}
+
+func flip(a []byte, at int) []byte {
+    mut out := mut []byte{}
+    for i <- iter.Range(0, len(a)) {
+        out = append(out, if i == at { byte(int(a[i]) ^ 1) } else { a[i] })
+    }
+    return freeze(out)
+}

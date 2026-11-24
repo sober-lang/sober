@@ -1,0 +1,13 @@
+@@full	eaecf1614a692719	5376	199755
+@head	bab7343fa1ae1af3	0	439
+func TestNetConn	ccec0a7dd56de38b	73	2612
+func ncAccept	bd7d8940066067bb	84	2778
+func ncBig	558768dffd4acbb8	25	885
+func ncPeer	c15fc30c037c9775	324	10715
+func ncRead	7e380f305e369509	188	6223
+func ncRound	02ae03863fde568a	46	1538
+func ncScribble	305f84a050e53aa1	39	1303
+func ncSeal	0bf9f74b0bfb82dc	16	675
+func ncServe	18d8b747e2fb4def	50	1694
+func ncShort	e37f5918fcd60ce9	23	803
+func ncShow	39726daaf6a0055b	31	1449

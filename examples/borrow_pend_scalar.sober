@@ -1,0 +1,20 @@
+package main
+
+// 展開待ちの捕捉と自分の捕捉の混在（language.md 25 節 (α-L0)）: 借りの位置のラムダが、囲む展開される関数の匿名の関数型の仮引数 f（展開待ち）と
+// 値の仮引数 su（自分の捕捉）の両方を捕捉する。展開待ちを先に、自分の捕捉を後に並べた形と、その逆の形
+
+type Stream func(emit func(b int) int) int
+
+func after(f func(x int) int, st Stream, su int) int {
+    return st((p) => f(p) + su)
+}
+
+func before(f func(x int) int, st Stream, su int) int {
+    return st((p) => su * 100 + f(p))
+}
+
+func main() {
+    k := 3
+    println(after((x) => x + k, (emit) => emit(10), 7))
+    println(before((x) => x * k, (emit) => emit(10) + emit(1), 2))
+}

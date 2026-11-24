@@ -1,0 +1,791 @@
+package lower
+
+// print.Logのsink（language.md 42 節）: ワーカーごとのバッファ @rt.log（ワーカーのグローバル — std/taskのプログラムでは各ワーカーに写り、触った分だけ常駐）。
+// 記録はstd/internal/logwの部品が鍵log_begin → log_word / log_bytes → log_endの列で書く。書きかけの間は待たないので、記録の途中でワーカーをまたがない。
+// - バッファは線形: 記録は末尾（LG_CUR）に足し、積み終えたら積んだ端（LG_TAIL）を進める。書き出しは先頭（LG_HEAD）から積んだ端まで。
+//   足りなくなったら、書き出していない分を先頭へ詰め直してから判定する（書きの塊はいつも連続の1区間）
+// - 入りきらない・1記録が32 KiBを越える記録は、あふれの印を立てて捨て、droppedと落とした区間の数（LG_GAP）を数える。
+//   次に記録を始めるとき、落とした区間の印の行 `{"ts":…,"$dropped":{"n":N}}` を先に積む
+// - 書き出しは改行で切った4,096バイト以下の塊。fdの種類（パイプ・ソケットならpwritev2のRWF_NOWAIT・他は素のwrite）は最初の書き出しで1回見る。
+//   EAGAINなら残して次の点で書く。読み手を待たない
+// - 書き出す点: log_endで4 KiBを越えたとき・期限（最初の記録から10 ms）を過ぎたとき・終了（rt.depth_report）・panicの死（toStderr）
+// ログを使うプログラム（合成の書き手 `$logTop_…` がある — st.logUse）だけがこのrtを持つ。使わないプログラムの命令とELFは変わらない
+
+import "desugar"
+import "diag"
+import "std/iter"
+
+// @rt.logの配置（ワード）
+const LG_HEAD = 0     // 書き出した端（バイト — バッファの先頭から）
+const LG_TAIL = 1     // 積んだ端
+const LG_CUR = 2      // 書く位置
+const LG_START = 3    // 書きかけの記録の先頭
+const LG_OVF = 4      // あふれの印（書きかけの記録を捨てる）
+const LG_DUE = 5      // 期限（CLOCK_REALTIMEのns — 0 = 積んだ記録が無い）
+const LG_GAP = 6      // まだ印の行を出していない、落とした記録の数
+const LG_WRITTEN = 7  // 書き出せた記録の数
+const LG_DROPPED = 8  // 落とした記録の数
+const LG_MAXP = 9     // 溜まった最大のバイト数（Ledgerが読むと0）
+const LG_SEC = 10     // LG_TSの綴りの秒 + 1（0 = まだ無い）
+const LG_FDK = 11     // 書き出し先のfdの種類（0 = まだ見ていない・1 = RWF_NOWAIT・2 = 素のwrite）
+const LG_FIX = 12     // SOBER_DATE_SECの秒 + 2（1 = 無い・0 = まだ読んでいない）
+const LG_NOW = 13     // 今の記録を始めた時刻（ns）
+const LG_TS = 14      // `YYYY-MM-DDTHH:MM:SS.` の20バイト（3ワード）
+const LG_IOV = 17     // pwritev2のiovec（2ワード）
+const LG_STAT = 19    // fstatのstruct stat（144バイト = 18ワード）
+const LG_DUET = 37    // 期限のTSC（std/taskのプログラムの周の頭が比べる — 0 = 積んだ記録が無い）
+// 落とした区間の印の行の位置の列（書き出していない印の行の先頭 — 環で先頭LG_MQH・数LG_MQN）。書き出しは印の行を単独の塊で書き、記録の数に入れない
+const LG_MQH = 38
+const LG_MQN = 39
+const LG_MQ = 40
+const LG_MQCAP = 64   // 列が満杯なら印の行を後回しにする（落とした数は次の印の行にまとまる）
+const LG_BUF = 104    // バッファ（LG_CAPバイト + 書きの余白の1ワード）
+const LG_CAP = 65536
+const LG_REC = 32768  // 1記録の上限
+const LG_CHUNK = 4096 // 書き出しの塊の上限（PIPE_BUF）
+const LG_WORDS = LG_BUF + LG_CAP / 8 + 1
+
+// ログを使うか・行き先（buildInitから — installRtより前に）
+func logInit(st mut St) {
+    st.logUse = false
+    for i <- iter.Range(0, nfn(mut st)) {
+        if !st.logUse && strPrefix(mut st, sA(nodeOf(mut st, fnNode(mut st, i))), "$logTop_") {
+            st.logUse = true
+        }
+    }
+}
+
+// StrRef aがwで始まるか
+func strPrefix(st mut St, a desugar.StrRef, w string) bool {
+    b := bytes(w)
+    if slen(mut st, a) < len(b) {
+        return false
+    }
+    for i <- iter.Range(0, len(b)) {
+        if sat(mut st, a, i) != int(b[i]) {
+            return false
+        }
+    }
+    return true
+}
+
+// sinkの大域とrt関数の宣言（installRtから — ログを使うプログラムだけ）
+func needLogRt(st mut St) {
+    if !st.logUse {
+        return
+    }
+    st.logG = addWorkerGlobal(mut st, int(strLit(mut st, "rt.log")), LG_WORDS)
+    // 時刻はvDSOで読む（rt.vdso_getの本体はbuildVdsoRtが組むので、その前に宣言する）
+    if dlFn(st.rtD3) == 0 {
+        needVdso(mut st)
+    }
+    if st.taskUse {
+        // ワーカーkの@rt.logの番地（rt.mn_startが置く — 終わりの書き出しとLedgerが全ワーカーを回る。ワーカー0は静的な番地）
+        st.logsG = addGlobalInit(mut st, int(strLit(mut st, "rt.logs")), MAXW, -1)
+    }
+    st.rtLogBegin = addFunc(mut st, int(strLit(mut st, "rt.log_begin")), desugar.ListRef(list0(mut st)), -1)
+    st.rtLogWord = addFunc(mut st, int(strLit(mut st, "rt.log_word")), desugar.ListRef(list2(mut st, TyI64, TyI64)), -1)
+    st.rtLogBytes = addFunc(mut st, int(strLit(mut st, "rt.log_bytes")), desugar.ListRef(list1(mut st, TyPtr)), -1)
+    st.rtLogEnd = addFunc(mut st, int(strLit(mut st, "rt.log_end")), desugar.ListRef(list0(mut st)), -1)
+    st.rtLogRoom = addFunc(mut st, int(strLit(mut st, "rt.log_room")), desugar.ListRef(list2(mut st, TyPtr, TyI64)), TyI64)
+    st.rtLogFlush = addFunc(mut st, int(strLit(mut st, "rt.log_flush")), desugar.ListRef(list1(mut st, TyPtr)), -1)
+    st.rtLogDrain = addFunc(mut st, int(strLit(mut st, "rt.log_drain")), desugar.ListRef(list0(mut st)), -1)
+}
+
+// 鍵log_*の呼び出し（k = ioBuiltinの種類 78〜81）
+func logBuiltin(st mut St, k int, args desugar.ListRef, at desugar.NodeRef) (int, error?) {
+    if !st.logUse {
+        return 0, diag.Mismatch{at: posOf(mut st, at)}
+    }
+    if k == 78 {
+        call(mut st, st.rtLogBegin, list0(mut st))
+    } else if k == 81 {
+        call(mut st, st.rtLogEnd, list0(mut st))
+    } else if k == 79 {
+        v := expr(mut st, latN(mut st, args, 0))?
+        if isTag(mut st, v.t, TNever) {
+            return -1, nil
+        }
+        n := expr(mut st, latN(mut st, args, 1))?
+        if isTag(mut st, n.t, TNever) {
+            return -1, nil
+        }
+        if !isTag(mut st, v.t, TInt) || !isTag(mut st, n.t, TInt) {
+            return 0, diag.Mismatch{at: posOf(mut st, at)}
+        }
+        call(mut st, st.rtLogWord, list2(mut st, v.v, n.v))
+    } else {
+        b := expr(mut st, latN(mut st, args, 0))?
+        if isTag(mut st, b.t, TNever) {
+            return -1, nil
+        }
+        if !isTag(mut st, b.t, TSlice) || isString(mut st, b.t) || !isTag(mut st, desugar.HeapGet(mut st.d, b.t + 1), TByte) {
+            return 0, diag.Mismatch{at: posOf(mut st, at)}
+        }
+        call(mut st, st.rtLogBytes, list1(mut st, b.v))
+    }
+    return one1(mut st, tInt(mut st), iconst(mut st, 0)), nil
+}
+
+// 書き出し先のfd
+func logFd(st mut St) int {
+    return iconst(mut st, if st.logOut { 1 } else { 2 })
+}
+
+// 印の行の位置の列のi番目（先頭h から）の語の番地
+func logMq(st mut St, lg int, h int, i int) int {
+    return gepWord(mut st, gepWord(mut st, lg, iconst(mut st, LG_MQ)), bin(mut st, BRem, bin(mut st, BAdd, h, i), iconst(mut st, LG_MQCAP)))
+}
+
+// バッファのiバイト目の番地
+func logAt(st mut St, lg int, i int) int {
+    return gepByte(mut st, gepWord(mut st, lg, iconst(mut st, LG_BUF)), i)
+}
+
+// 定数の綴りwを位置pos（room済み — 8バイトの余白あり）から書き、次の位置を返す
+func logPutLit(st mut St, lg int, pos int, w string) int {
+    b := bytes(w)
+    mut i := 0
+    while i < len(b) {
+        store(mut st, logAt(mut st, lg, urAdd(mut st, pos, i)), 0, iconst(mut st, leWord(b, i)))
+        i += 8
+    }
+    return urAdd(mut st, pos, len(b))
+}
+
+// 0 ≤ v < 100 の2桁を位置pos（バイトの番地）に
+func logDig2(st mut St, p int, v int) {
+    store8(mut st, p, 0, urAdd(mut st, bin(mut st, BDiv, v, iconst(mut st, 10)), 48))
+    store8(mut st, gepByte(mut st, p, iconst(mut st, 1)), 0, urAdd(mut st, bin(mut st, BRem, v, iconst(mut st, 10)), 48))
+}
+
+func buildLogRt(st mut St) {
+    if !st.logUse {
+        return
+    }
+    buildLogBegin(mut st)
+    buildLogWord(mut st)
+    buildLogBytes(mut st)
+    buildLogEnd(mut st)
+    buildLogRoom(mut st)
+    buildLogFlush(mut st)
+    buildLogDrain(mut st)
+}
+
+// rt.log_begin(): 前の書きかけを捨て、時刻を読み、落とした区間の印の行と頭 `{"ts":"…",` を積んで書きかけを始める
+func buildLogBegin(st mut St) {
+    begin(mut st, st.rtLogBegin)
+    zero := iconst(mut st, 0)
+    lg := globaladdr(mut st, st.logG)
+    tail := load(mut st, lg, LG_TAIL)
+    store(mut st, lg, LG_CUR, tail)
+    store(mut st, lg, LG_START, tail)
+    store(mut st, lg, LG_OVF, zero)
+    // SOBER_DATE_SEC（試験の固定の時刻 — HTTPのDateと同じ）は最初の記録で1回読む
+    bFix := branchIf(mut st, cmp(mut st, CEq, load(mut st, lg, LG_FIX), zero))
+    store(mut st, lg, LG_FIX, urAdd(mut st, envNum(mut st, itop(mut st, load(mut st, globaladdr(mut st, st.meta), W_ARGV)), "SOBER_DATE_SEC=", -1, true, 1 << 40), 2))
+    br(mut st, bFix, -1)
+    setCur(mut st, bFix)
+    fix := load(mut st, lg, LG_FIX)
+    now := clockAt(mut st, iconst(mut st, 0))
+    store(mut st, lg, LG_NOW, now)
+    fixed := cmp(mut st, CGe, fix, iconst(mut st, 2))
+    bS := newBlock(mut st)
+    sec := param(mut st, bS, TyI64)
+    ms := param(mut st, bS, TyI64)
+    bF := newBlock(mut st)
+    bC := newBlock(mut st)
+    condbr(mut st, fixed, bF, -1, bC, -1)
+    setCur(mut st, bF)
+    br(mut st, bS, list2(mut st, urAdd(mut st, fix, -2), zero))
+    setCur(mut st, bC)
+    br(mut st, bS, list2(mut st, bin(mut st, BDiv, now, iconst(mut st, 1000000000)), bin(mut st, BRem, bin(mut st, BDiv, now, iconst(mut st, 1000000)), iconst(mut st, 1000))))
+    setCur(mut st, bS)
+    // 秒が変わったときだけ `YYYY-MM-DDTHH:MM:SS.` を作り直す（日付はrdlDateと同じcivil_from_days）
+    bSame := branchIf(mut st, cmp(mut st, CNe, urAdd(mut st, sec, 1), load(mut st, lg, LG_SEC)))
+    store(mut st, lg, LG_SEC, urAdd(mut st, sec, 1))
+    days := bin(mut st, BDiv, sec, iconst(mut st, 86400))
+    t := bin(mut st, BRem, sec, iconst(mut st, 86400))
+    z := urAdd(mut st, days, 719468)
+    era := bin(mut st, BDiv, z, iconst(mut st, 146097))
+    doe := bin(mut st, BSub, z, bin(mut st, BMul, era, iconst(mut st, 146097)))
+    yoe := bin(mut st, BDiv, bin(mut st, BSub, bin(mut st, BAdd, bin(mut st, BSub, doe, bin(mut st, BDiv, doe, iconst(mut st, 1460))), bin(mut st, BDiv, doe, iconst(mut st, 36524))), bin(mut st, BDiv, doe, iconst(mut st, 146096))), iconst(mut st, 365))
+    doy := bin(mut st, BSub, doe, bin(mut st, BSub, bin(mut st, BAdd, bin(mut st, BMul, yoe, iconst(mut st, 365)), bin(mut st, BDiv, yoe, iconst(mut st, 4))), bin(mut st, BDiv, yoe, iconst(mut st, 100))))
+    mp := bin(mut st, BDiv, urAdd(mut st, bin(mut st, BMul, doy, iconst(mut st, 5)), 2), iconst(mut st, 153))
+    d := urAdd(mut st, bin(mut st, BSub, doy, bin(mut st, BDiv, urAdd(mut st, bin(mut st, BMul, mp, iconst(mut st, 153)), 2), iconst(mut st, 5))), 1)
+    m0 := bin(mut st, BSub, urAdd(mut st, mp, 2), bin(mut st, BMul, cmp(mut st, CGe, mp, iconst(mut st, 10)), iconst(mut st, 12)))
+    y := bin(mut st, BAdd, bin(mut st, BAdd, yoe, bin(mut st, BMul, era, iconst(mut st, 400))), cmp(mut st, CLe, m0, iconst(mut st, 1)))
+    tx := gepWord(mut st, lg, iconst(mut st, LG_TS))
+    tpl := bytes("0000-00-00T00:00:00.")
+    for w <- iter.Range(0, 3) {
+        store(mut st, tx, w, iconst(mut st, leWord(tpl, w * 8)))
+    }
+    logDig2(mut st, tx, bin(mut st, BDiv, y, iconst(mut st, 100)))
+    logDig2(mut st, gepByte(mut st, tx, iconst(mut st, 2)), bin(mut st, BRem, y, iconst(mut st, 100)))
+    logDig2(mut st, gepByte(mut st, tx, iconst(mut st, 5)), urAdd(mut st, m0, 1))
+    logDig2(mut st, gepByte(mut st, tx, iconst(mut st, 8)), d)
+    logDig2(mut st, gepByte(mut st, tx, iconst(mut st, 11)), bin(mut st, BDiv, t, iconst(mut st, 3600)))
+    logDig2(mut st, gepByte(mut st, tx, iconst(mut st, 14)), bin(mut st, BRem, bin(mut st, BDiv, t, iconst(mut st, 60)), iconst(mut st, 60)))
+    logDig2(mut st, gepByte(mut st, tx, iconst(mut st, 17)), bin(mut st, BRem, t, iconst(mut st, 60)))
+    br(mut st, bSame, -1)
+    setCur(mut st, bSame)
+    // 落とした区間の印の行（積めなければあふれの印が立ち、この記録も落ちる）
+    gap := load(mut st, lg, LG_GAP)
+    bNoGap := branchIf(mut st, bin(mut st, BAnd, cmp(mut st, CGt, gap, zero), cmp(mut st, CLt, load(mut st, lg, LG_MQN), iconst(mut st, LG_MQCAP))))
+    bRoomG := branchIf(mut st, cmp(mut st, CNe, call(mut st, st.rtLogRoom, list2(mut st, lg, iconst(mut st, 80))), zero))
+    mk0 := load(mut st, lg, LG_CUR)
+    mqn := load(mut st, lg, LG_MQN)
+    store(mut st, logMq(mut st, lg, urAdd(mut st, load(mut st, lg, LG_MQH), 0), mqn), 0, mk0)
+    store(mut st, lg, LG_MQN, urAdd(mut st, mqn, 1))
+    p1 := logTs(mut st, lg, mk0, ms)
+    p2 := logPutLit(mut st, lg, p1, "Z\",\"\$dropped\":{\"n\":")
+    p3 := logPutDec(mut st, lg, p2, gap)
+    p4 := logPutLit(mut st, lg, p3, "}}\n")
+    store(mut st, lg, LG_CUR, p4)
+    store(mut st, lg, LG_TAIL, p4)
+    store(mut st, lg, LG_START, p4)
+    store(mut st, lg, LG_GAP, zero)
+    br(mut st, bRoomG, -1)
+    setCur(mut st, bRoomG)
+    br(mut st, bNoGap, -1)
+    setCur(mut st, bNoGap)
+    // 記録の頭
+    bOvf := branchIf(mut st, cmp(mut st, CEq, load(mut st, lg, LG_OVF), zero))
+    bRoom := branchIf(mut st, cmp(mut st, CNe, call(mut st, st.rtLogRoom, list2(mut st, lg, iconst(mut st, 40))), zero))
+    q1 := logTs(mut st, lg, load(mut st, lg, LG_CUR), ms)
+    store(mut st, lg, LG_CUR, logPutLit(mut st, lg, q1, "Z\","))
+    br(mut st, bRoom, -1)
+    setCur(mut st, bRoom)
+    br(mut st, bOvf, -1)
+    setCur(mut st, bOvf)
+    // 期限は積んだ記録が無いときに始める
+    bDue := branchIf(mut st, cmp(mut st, CEq, load(mut st, lg, LG_DUE), zero))
+    store(mut st, lg, LG_DUE, urAdd(mut st, now, 10000000))
+    if st.taskUse {
+        // 周の頭の比べはTSCで（2^25 ≈ 10 ms — 校正の1点目と同じ目安。正確さは要らない）
+        store(mut st, lg, LG_DUET, urAdd(mut st, load(mut st, globaladdr(mut st, st.wkG), WK_NOW), 1 << 25))
+    }
+    br(mut st, bDue, -1)
+    setCur(mut st, bDue)
+    ret(mut st, -1)
+}
+
+// 位置posから `{"ts":"<20バイト><ms 3桁>` を書き、次の位置を返す
+func logTs(st mut St, lg int, pos int, ms int) int {
+    p1 := logPutLit(mut st, lg, pos, "{\"ts\":\"")
+    tx := gepWord(mut st, lg, iconst(mut st, LG_TS))
+    dst := logAt(mut st, lg, p1)
+    store(mut st, dst, 0, load(mut st, tx, 0))
+    store(mut st, gepByte(mut st, dst, iconst(mut st, 8)), 0, load(mut st, tx, 1))
+    store(mut st, gepByte(mut st, dst, iconst(mut st, 16)), 0, load(mut st, tx, 2))
+    m := gepByte(mut st, dst, iconst(mut st, 20))
+    store8(mut st, m, 0, urAdd(mut st, bin(mut st, BDiv, ms, iconst(mut st, 100)), 48))
+    logDig2(mut st, gepByte(mut st, m, iconst(mut st, 1)), bin(mut st, BRem, ms, iconst(mut st, 100)))
+    return urAdd(mut st, p1, 23)
+}
+
+// 位置posから v（> 0）の10進を書き、次の位置を返す
+func logPutDec(st mut St, lg int, pos int, v int) int {
+    zero := iconst(mut st, 0)
+    ten := iconst(mut st, 10)
+    // 桁数
+    cl := newBlock(mut st)
+    cx := param(mut st, cl, TyI64)
+    cn := param(mut st, cl, TyI64)
+    cb := newBlock(mut st)
+    cd := newBlock(mut st)
+    br(mut st, cl, list2(mut st, v, zero))
+    setCur(mut st, cl)
+    condbr(mut st, cmp(mut st, CGt, cx, zero), cb, -1, cd, -1)
+    setCur(mut st, cb)
+    br(mut st, cl, list2(mut st, bin(mut st, BDiv, cx, ten), urAdd(mut st, cn, 1)))
+    setCur(mut st, cd)
+    end := bin(mut st, BAdd, pos, cn)
+    // 後ろから
+    wl := newBlock(mut st)
+    wx := param(mut st, wl, TyI64)
+    wp := param(mut st, wl, TyI64)
+    wb := newBlock(mut st)
+    wd := newBlock(mut st)
+    br(mut st, wl, list2(mut st, v, end))
+    setCur(mut st, wl)
+    condbr(mut st, cmp(mut st, CGt, wx, zero), wb, -1, wd, -1)
+    setCur(mut st, wb)
+    np := urAdd(mut st, wp, -1)
+    store8(mut st, logAt(mut st, lg, np), 0, urAdd(mut st, bin(mut st, BRem, wx, ten), 48))
+    br(mut st, wl, list2(mut st, bin(mut st, BDiv, wx, ten), np))
+    setCur(mut st, wd)
+    return end
+}
+
+// rt.log_room(lg, n) → 1 / 0: 書く位置の後ろにnバイト（と8バイトの余白）を空ける。足りなければ書き出していない分を先頭へ詰め直す。
+// 入らない・記録が32 KiBを越えるならあふれの印を立てて0
+func buildLogRoom(st mut St) {
+    begin(mut st, st.rtLogRoom)
+    lg := 0
+    n := 1
+    zero := iconst(mut st, 0)
+    one := iconst(mut st, 1)
+    cpos := load(mut st, lg, LG_CUR)
+    bOk := newBlock(mut st)
+    bNo := newBlock(mut st)
+    bBig := branchIf(mut st, cmp(mut st, CGt, bin(mut st, BSub, bin(mut st, BAdd, cpos, n), load(mut st, lg, LG_START)), iconst(mut st, LG_REC)))
+    br(mut st, bNo, -1)
+    setCur(mut st, bBig)
+    bFit := branchIf(mut st, cmp(mut st, CGt, bin(mut st, BAdd, cpos, n), iconst(mut st, LG_CAP)))
+    // 詰め直し（先頭が0なら空きは無い）
+    head := load(mut st, lg, LG_HEAD)
+    bMove := branchIf(mut st, cmp(mut st, CEq, head, zero))
+    br(mut st, bNo, -1)
+    setCur(mut st, bMove)
+    words := bin(mut st, BDiv, urAdd(mut st, bin(mut st, BSub, cpos, head), 7), iconst(mut st, 8))
+    call(mut st, st.rtCopy, list3(mut st, logAt(mut st, lg, zero), logAt(mut st, lg, head), words))
+    store(mut st, lg, LG_TAIL, bin(mut st, BSub, load(mut st, lg, LG_TAIL), head))
+    store(mut st, lg, LG_START, bin(mut st, BSub, load(mut st, lg, LG_START), head))
+    // 印の行の位置も詰め直す
+    ql := newBlock(mut st)
+    qi := param(mut st, ql, TyI64)
+    qb := newBlock(mut st)
+    qd := newBlock(mut st)
+    br(mut st, ql, list1(mut st, zero))
+    setCur(mut st, ql)
+    condbr(mut st, cmp(mut st, CLt, qi, load(mut st, lg, LG_MQN)), qb, -1, qd, -1)
+    setCur(mut st, qb)
+    qa := logMq(mut st, lg, load(mut st, lg, LG_MQH), qi)
+    store(mut st, qa, 0, bin(mut st, BSub, load(mut st, qa, 0), head))
+    br(mut st, ql, list1(mut st, urAdd(mut st, qi, 1)))
+    setCur(mut st, qd)
+    cpos2 := bin(mut st, BSub, cpos, head)
+    store(mut st, lg, LG_CUR, cpos2)
+    store(mut st, lg, LG_HEAD, zero)
+    condbr(mut st, cmp(mut st, CGt, bin(mut st, BAdd, cpos2, n), iconst(mut st, LG_CAP)), bNo, -1, bOk, -1)
+    setCur(mut st, bFit)
+    br(mut st, bOk, -1)
+    setCur(mut st, bNo)
+    store(mut st, lg, LG_OVF, one)
+    ret(mut st, zero)
+    setCur(mut st, bOk)
+    ret(mut st, one)
+}
+
+// 空きの判定の速い道: 書く位置の後ろにnバイトがあり、記録が32 KiBを越えないならrt.log_roomを呼ばない。
+// 返すのは空きが無かったときのブロック（今のブロックは書いてよい側）
+func logRoomFast(st mut St, lg int, n int) BlkRef {
+    zero := iconst(mut st, 0)
+    end := bin(mut st, BAdd, load(mut st, lg, LG_CUR), n)
+    fits := bin(mut st, BAnd, cmp(mut st, CLe, end, iconst(mut st, LG_CAP)), cmp(mut st, CLe, bin(mut st, BSub, end, load(mut st, lg, LG_START)), iconst(mut st, LG_REC)))
+    bGo := newBlock(mut st)
+    bSlow := newBlock(mut st)
+    bNo := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, fits, zero), bGo, -1, bSlow, -1)
+    setCur(mut st, bSlow)
+    condbr(mut st, cmp(mut st, CNe, call(mut st, st.rtLogRoom, list2(mut st, lg, n)), zero), bGo, -1, bNo, -1)
+    setCur(mut st, bGo)
+    return bNo
+}
+
+// rt.log_word(v, n): vの下位nバイトを書きかけに足す
+func buildLogWord(st mut St) {
+    begin(mut st, st.rtLogWord)
+    v := 0
+    n := 1
+    zero := iconst(mut st, 0)
+    lg := globaladdr(mut st, st.logG)
+    bOvf := branchIf(mut st, cmp(mut st, CEq, load(mut st, lg, LG_OVF), zero))
+    bRoom := logRoomFast(mut st, lg, n)
+    cpos := load(mut st, lg, LG_CUR)
+    store(mut st, logAt(mut st, lg, cpos), 0, v)
+    store(mut st, lg, LG_CUR, bin(mut st, BAdd, cpos, n))
+    if st.rtMut == 114 {
+        // 変異（logcheck）: 積んだ端を書きかけの途中で進める（落とした記録の途中までが出る）
+        store(mut st, lg, LG_TAIL, bin(mut st, BAdd, cpos, n))
+    }
+    br(mut st, bRoom, -1)
+    setCur(mut st, bRoom)
+    br(mut st, bOvf, -1)
+    setCur(mut st, bOvf)
+    ret(mut st, -1)
+}
+
+// rt.log_bytes(b): 列bを書きかけに足す（ワードずつ・残りはバイトずつ — 列の外を読まない）
+func buildLogBytes(st mut St) {
+    begin(mut st, st.rtLogBytes)
+    zero := iconst(mut st, 0)
+    src := itop(mut st, load(mut st, 0, 0))
+    n := load(mut st, 0, 1)
+    lg := globaladdr(mut st, st.logG)
+    bOvf := branchIf(mut st, cmp(mut st, CEq, load(mut st, lg, LG_OVF), zero))
+    bRoom := logRoomFast(mut st, lg, n)
+    cpos := load(mut st, lg, LG_CUR)
+    dst := logAt(mut st, lg, cpos)
+    nw := bin(mut st, BMul, bin(mut st, BDiv, n, iconst(mut st, 8)), iconst(mut st, 8))
+    wl := newBlock(mut st)
+    wi := param(mut st, wl, TyI64)
+    wb := newBlock(mut st)
+    wd := newBlock(mut st)
+    br(mut st, wl, list1(mut st, zero))
+    setCur(mut st, wl)
+    condbr(mut st, cmp(mut st, CLt, wi, nw), wb, -1, wd, -1)
+    setCur(mut st, wb)
+    store(mut st, gepByte(mut st, dst, wi), 0, load(mut st, gepByte(mut st, src, wi), 0))
+    br(mut st, wl, list1(mut st, urAdd(mut st, wi, 8)))
+    setCur(mut st, wd)
+    bl := newBlock(mut st)
+    bi := param(mut st, bl, TyI64)
+    bb := newBlock(mut st)
+    bd := newBlock(mut st)
+    br(mut st, bl, list1(mut st, nw))
+    setCur(mut st, bl)
+    condbr(mut st, cmp(mut st, CLt, bi, n), bb, -1, bd, -1)
+    setCur(mut st, bb)
+    store8(mut st, gepByte(mut st, dst, bi), 0, load8(mut st, gepByte(mut st, src, bi), 0))
+    br(mut st, bl, list1(mut st, urAdd(mut st, bi, 1)))
+    setCur(mut st, bd)
+    store(mut st, lg, LG_CUR, bin(mut st, BAdd, cpos, n))
+    if st.rtMut == 114 {
+        // 変異（logcheck）: 積んだ端を書きかけの途中で進める（落とした記録の途中までが出る）
+        store(mut st, lg, LG_TAIL, bin(mut st, BAdd, cpos, n))
+    }
+    br(mut st, bRoom, -1)
+    setCur(mut st, bRoom)
+    br(mut st, bOvf, -1)
+    setCur(mut st, bOvf)
+    ret(mut st, -1)
+}
+
+// rt.log_end(): 書きかけを1記録として積み終える（あふれていれば捨てて数える）。4 KiBを越えたか期限を過ぎていれば書き出す
+func buildLogEnd(st mut St) {
+    begin(mut st, st.rtLogEnd)
+    zero := iconst(mut st, 0)
+    lg := globaladdr(mut st, st.logG)
+    bKeep := branchIf(mut st, cmp(mut st, CNe, load(mut st, lg, LG_OVF), zero))
+    store(mut st, lg, LG_CUR, load(mut st, lg, LG_START))
+    store(mut st, lg, LG_OVF, zero)
+    if st.rtMut != 115 {
+        // 変異115（logcheck）: 落とした記録を数えない
+        store(mut st, lg, LG_DROPPED, urAdd(mut st, load(mut st, lg, LG_DROPPED), 1))
+    }
+    store(mut st, lg, LG_GAP, urAdd(mut st, load(mut st, lg, LG_GAP), 1))
+    ret(mut st, -1)
+    setCur(mut st, bKeep)
+    tail := load(mut st, lg, LG_CUR)
+    store(mut st, lg, LG_TAIL, tail)
+    store(mut st, lg, LG_START, tail)
+    pend := bin(mut st, BSub, tail, load(mut st, lg, LG_HEAD))
+    bMax := branchIf(mut st, cmp(mut st, CGt, pend, load(mut st, lg, LG_MAXP)))
+    store(mut st, lg, LG_MAXP, pend)
+    br(mut st, bMax, -1)
+    setCur(mut st, bMax)
+    big := cmp(mut st, CGe, pend, iconst(mut st, LG_CHUNK))
+    late := cmp(mut st, CGe, load(mut st, lg, LG_NOW), load(mut st, lg, LG_DUE))
+    bNo := branchIf(mut st, cmp(mut st, CNe, bin(mut st, BOr, big, late), zero))
+    call(mut st, st.rtLogFlush, list1(mut st, lg))
+    br(mut st, bNo, -1)
+    setCur(mut st, bNo)
+    ret(mut st, -1)
+}
+
+// 区間 [a, b) の改行の数。8バイトずつ: x = w ^ 0x0a…0a の0のバイトを数える（t = ((x & 0x7f…7f) + 0x7f…7f) | x は0でないバイトの最上位ビットが立つ。
+// ~t & 0x80…80 の立ったビットの数 = 0のバイトの数）。残りはバイトずつ
+func logCountNl(st mut St, lg int, a int, b int) int {
+    zero := iconst(mut st, 0)
+    nl8 := iconst(mut st, 723401728380766730)      // 0x0a0a0a0a0a0a0a0a
+    m7 := iconst(mut st, 9187201950435737471)      // 0x7f7f7f7f7f7f7f7f
+    lo := iconst(mut st, 72340172838076673)        // 0x0101010101010101
+    wend := bin(mut st, BSub, b, bin(mut st, BRem, bin(mut st, BSub, b, a), iconst(mut st, 8)))
+    l := newBlock(mut st)
+    i := param(mut st, l, TyI64)
+    c := param(mut st, l, TyI64)
+    body := newBlock(mut st)
+    tl := newBlock(mut st)
+    ti := param(mut st, tl, TyI64)
+    tc := param(mut st, tl, TyI64)
+    br(mut st, l, list2(mut st, a, zero))
+    setCur(mut st, l)
+    condbr(mut st, cmp(mut st, CLt, i, wend), body, -1, tl, list2(mut st, i, c))
+    setCur(mut st, body)
+    x := bin(mut st, BXor, load(mut st, logAt(mut st, lg, i), 0), nl8)
+    t := bin(mut st, BOr, bin(mut st, BAdd, bin(mut st, BAnd, x, m7), m7), x)
+    z := bin(mut st, BAnd, bin(mut st, BSar, bin(mut st, BXor, t, iconst(mut st, -1)), iconst(mut st, 7)), lo)
+    // バイトごとの0 / 1の和（掛けて最上位のバイトへ集める）
+    k := bin(mut st, BAnd, bin(mut st, BSar, bin(mut st, BMul, z, lo), iconst(mut st, 56)), iconst(mut st, 255))
+    br(mut st, l, list2(mut st, urAdd(mut st, i, 8), bin(mut st, BAdd, c, k)))
+    setCur(mut st, tl)
+    tb := newBlock(mut st)
+    done := newBlock(mut st)
+    nc := param(mut st, done, TyI64)
+    condbr(mut st, cmp(mut st, CLt, ti, b), tb, -1, done, list1(mut st, tc))
+    setCur(mut st, tb)
+    br(mut st, tl, list2(mut st, urAdd(mut st, ti, 1), bin(mut st, BAdd, tc, cmp(mut st, CEq, load8(mut st, logAt(mut st, lg, ti), 0), iconst(mut st, 10)))))
+    setCur(mut st, done)
+    return nc
+}
+
+// rt.log_flush(lg): 積んだ端までを、改行で切った4,096バイト以下の塊で書き出す。EAGAINなら残す。書けない誤りなら落として数える。
+// 全部書けて書きかけが無ければ、バッファを先頭へ戻す
+func buildLogFlush(st mut St) {
+    begin(mut st, st.rtLogFlush)
+    lg := 0
+    zero := iconst(mut st, 0)
+    one := iconst(mut st, 1)
+    nl := iconst(mut st, 10)
+    fd := logFd(mut st)
+    // fdの種類（最初の書き出しで1回 — パイプ・ソケットはRWF_NOWAIT）
+    bKnown := branchIf(mut st, cmp(mut st, CEq, load(mut st, lg, LG_FDK), zero))
+    sb := gepWord(mut st, lg, iconst(mut st, LG_STAT))
+    r0 := syscall(mut st, list3(mut st, iconst(mut st, 5), fd, ptoi(mut st, sb)))
+    ty := bin(mut st, BAnd, load8(mut st, gepByte(mut st, sb, iconst(mut st, 25)), 0), iconst(mut st, 240))
+    nw := bin(mut st, BAnd, cmp(mut st, CEq, r0, zero), bin(mut st, BOr, cmp(mut st, CEq, ty, iconst(mut st, 16)), cmp(mut st, CEq, ty, iconst(mut st, 192))))
+    store(mut st, lg, LG_FDK, bin(mut st, BSub, iconst(mut st, 2), nw))
+    br(mut st, bKnown, -1)
+    setCur(mut st, bKnown)
+    loop := newBlock(mut st)
+    head := param(mut st, loop, TyI64)
+    done := newBlock(mut st)
+    dh := param(mut st, done, TyI64)
+    br(mut st, loop, list1(mut st, load(mut st, lg, LG_HEAD)))
+    setCur(mut st, loop)
+    tail := load(mut st, lg, LG_TAIL)
+    bWork := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CLt, head, tail), bWork, -1, done, list1(mut st, head))
+    setCur(mut st, bWork)
+    // 塊の終わり: [head, lim) の最後の改行の次。無ければ（4 KiBを越える1記録）lim以降の最初の改行の次
+    // 印の行は単独の塊で書く: 先頭が印の行なら lim = head + 1（後ろへの探しで改行が無く、前への探しが印の行の終わりを見つける）。
+    // 印の行が後ろにあれば、その手前で切る
+    mqn := load(mut st, lg, LG_MQN)
+    mqh := load(mut st, lg, LG_MQH)
+    hasM := cmp(mut st, CGt, mqn, zero)
+    mpos := load(mut st, logMq(mut st, lg, mqh, zero), 0)
+    isM := bin(mut st, BAnd, hasM, cmp(mut st, CEq, mpos, head))
+    // 変異117（logcheck）: 塊をPIPE_BUFで切らない
+    lim0 := urAdd(mut st, head, if st.rtMut == 117 { LG_CAP } else { LG_CHUNK })
+    lim1 := bin(mut st, BAdd, lim0, bin(mut st, BMul, cmp(mut st, CGt, lim0, tail), bin(mut st, BSub, tail, lim0)))
+    lim2 := bin(mut st, BAdd, lim1, bin(mut st, BMul, bin(mut st, BAnd, hasM, cmp(mut st, CLt, mpos, lim1)), bin(mut st, BSub, mpos, lim1)))
+    lim := bin(mut st, BAdd, lim2, bin(mut st, BMul, isM, bin(mut st, BSub, urAdd(mut st, head, 1), lim2)))
+    bk := newBlock(mut st)
+    bi := param(mut st, bk, TyI64)
+    bkb := newBlock(mut st)
+    fwd := newBlock(mut st)
+    have := newBlock(mut st)
+    he := param(mut st, have, TyI64)
+    br(mut st, bk, list1(mut st, urAdd(mut st, lim, -1)))
+    setCur(mut st, bk)
+    condbr(mut st, cmp(mut st, CGe, bi, head), bkb, -1, fwd, -1)
+    setCur(mut st, bkb)
+    bNot := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, load8(mut st, logAt(mut st, lg, bi), 0), nl), have, list1(mut st, urAdd(mut st, bi, 1)), bNot, -1)
+    setCur(mut st, bNot)
+    br(mut st, bk, list1(mut st, urAdd(mut st, bi, -1)))
+    setCur(mut st, fwd)
+    fl := newBlock(mut st)
+    fi := param(mut st, fl, TyI64)
+    flb := newBlock(mut st)
+    br(mut st, fl, list1(mut st, lim))
+    setCur(mut st, fl)
+    // 積んだ記録は改行で終わるので、tailの手前で必ず見つかる（見つからなければtailまで）
+    condbr(mut st, cmp(mut st, CLt, fi, tail), flb, -1, have, list1(mut st, tail))
+    setCur(mut st, flb)
+    fNot := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, load8(mut st, logAt(mut st, lg, fi), 0), nl), have, list1(mut st, urAdd(mut st, fi, 1)), fNot, -1)
+    setCur(mut st, fNot)
+    br(mut st, fl, list1(mut st, urAdd(mut st, fi, 1)))
+    setCur(mut st, have)
+    ln := bin(mut st, BSub, he, head)
+    base := ptoi(mut st, logAt(mut st, lg, head))
+    wr := newBlock(mut st)
+    bNow := newBlock(mut st)
+    bPlain := newBlock(mut st)
+    res := newBlock(mut st)
+    r := param(mut st, res, TyI64)
+    br(mut st, wr, -1)
+    setCur(mut st, wr)
+    condbr(mut st, cmp(mut st, CEq, load(mut st, lg, LG_FDK), one), bNow, -1, bPlain, -1)
+    setCur(mut st, bNow)
+    iov := gepWord(mut st, lg, iconst(mut st, LG_IOV))
+    store(mut st, iov, 0, base)
+    store(mut st, iov, 1, ln)
+    // pwritev2(fd, iov, 1, pos_l = -1, pos_h = 0, RWF_NOWAIT) — 位置 -1 = ファイルの今の位置
+    args := listN(mut st, 7)
+    desugar.HeapSet(mut st.d, args + 1, iconst(mut st, 328))
+    desugar.HeapSet(mut st.d, args + 2, fd)
+    desugar.HeapSet(mut st.d, args + 3, ptoi(mut st, iov))
+    desugar.HeapSet(mut st.d, args + 4, one)
+    desugar.HeapSet(mut st.d, args + 5, iconst(mut st, -1))
+    desugar.HeapSet(mut st.d, args + 6, zero)
+    desugar.HeapSet(mut st.d, args + 7, iconst(mut st, 8))
+    rn := syscall(mut st, args)
+    // EOPNOTSUPP（RWF_NOWAITの効かないfd・古いカーネル）は素のwriteに倒す
+    bNs := branchIf(mut st, cmp(mut st, CEq, rn, iconst(mut st, -95)))
+    store(mut st, lg, LG_FDK, iconst(mut st, 2))
+    br(mut st, wr, -1)
+    setCur(mut st, bNs)
+    br(mut st, res, list1(mut st, rn))
+    setCur(mut st, bPlain)
+    br(mut st, res, list1(mut st, syscall(mut st, list4(mut st, one, fd, base, ln))))
+    setCur(mut st, res)
+    // EINTR = やり直し・EAGAIN = 残して終わる・他の誤り = この塊を落とす・書けた分は数えて進める
+    bIntr := branchIf(mut st, cmp(mut st, CEq, r, iconst(mut st, -4)))
+    br(mut st, wr, -1)
+    setCur(mut st, bIntr)
+    bAgain := branchIf(mut st, cmp(mut st, CEq, r, iconst(mut st, -11)))
+    br(mut st, done, list1(mut st, head))
+    setCur(mut st, bAgain)
+    nh := bin(mut st, BAdd, head, bin(mut st, BMul, r, cmp(mut st, CGe, r, zero)))
+    bRec := newBlock(mut st)
+    bMark := newBlock(mut st)
+    condbr(mut st, isM, bMark, -1, bRec, -1)
+    // 印の行: 数えない。書けたら（書けない誤りでも）列から外す。途中まで書けたら位置を進める
+    setCur(mut st, bMark)
+    bPart := branchIf(mut st, bin(mut st, BAnd, cmp(mut st, CGe, r, zero), cmp(mut st, CLt, nh, he)))
+    store(mut st, logMq(mut st, lg, mqh, zero), 0, nh)
+    br(mut st, loop, list1(mut st, nh))
+    setCur(mut st, bPart)
+    store(mut st, lg, LG_MQH, bin(mut st, BRem, urAdd(mut st, mqh, 1), iconst(mut st, LG_MQCAP)))
+    store(mut st, lg, LG_MQN, urAdd(mut st, mqn, -1))
+    br(mut st, loop, list1(mut st, he))
+    // 記録の行: 改行の数 = 記録の数（塊は印の行を含まない）
+    setCur(mut st, bRec)
+    bErr := branchIf(mut st, cmp(mut st, CLt, r, zero))
+    store(mut st, lg, LG_DROPPED, bin(mut st, BAdd, load(mut st, lg, LG_DROPPED), logCountNl(mut st, lg, head, he)))
+    br(mut st, loop, list1(mut st, he))
+    setCur(mut st, bErr)
+    store(mut st, lg, LG_WRITTEN, bin(mut st, BAdd, load(mut st, lg, LG_WRITTEN), logCountNl(mut st, lg, head, nh)))
+    br(mut st, loop, list1(mut st, nh))
+    setCur(mut st, done)
+    store(mut st, lg, LG_HEAD, dh)
+    // 全部書けた: 期限を外す。書きかけも無ければ先頭へ戻す
+    bRest := branchIf(mut st, cmp(mut st, CEq, dh, load(mut st, lg, LG_TAIL)))
+    store(mut st, lg, LG_DUE, zero)
+    store(mut st, lg, LG_DUET, zero)
+    bIdle := branchIf(mut st, cmp(mut st, CEq, dh, load(mut st, lg, LG_CUR)))
+    store(mut st, lg, LG_HEAD, zero)
+    store(mut st, lg, LG_TAIL, zero)
+    store(mut st, lg, LG_MQH, zero)
+    store(mut st, lg, LG_CUR, zero)
+    store(mut st, lg, LG_START, zero)
+    br(mut st, bIdle, -1)
+    setCur(mut st, bIdle)
+    br(mut st, bRest, -1)
+    setCur(mut st, bRest)
+    ret(mut st, -1)
+}
+
+// rt.log_drain(): 全部のワーカーのバッファの積んだ端までを書き出す（終了・panicの死）
+func buildLogDrain(st mut St) {
+    begin(mut st, st.rtLogDrain)
+    call(mut st, st.rtLogFlush, list1(mut st, globaladdrRaw(mut st, st.logG)))
+    if st.taskUse {
+        lt := globaladdr(mut st, st.logsG)
+        l := newBlock(mut st)
+        k := param(mut st, l, TyI64)
+        body := newBlock(mut st)
+        done := newBlock(mut st)
+        br(mut st, l, list1(mut st, iconst(mut st, 1)))
+        setCur(mut st, l)
+        condbr(mut st, cmp(mut st, CLt, k, load(mut st, globaladdr(mut st, st.mnG), MN_N)), body, -1, done, -1)
+        setCur(mut st, body)
+        a := load(mut st, gepWord(mut st, lt, k), 0)
+        bSkip := branchIf(mut st, cmp(mut st, CNe, a, iconst(mut st, 0)))
+        call(mut st, st.rtLogFlush, list1(mut st, itop(mut st, a)))
+        br(mut st, bSkip, -1)
+        setCur(mut st, bSkip)
+        br(mut st, l, list1(mut st, urAdd(mut st, k, 1)))
+        setCur(mut st, done)
+    }
+    ret(mut st, -1)
+}
+
+// rt.mn_startのワーカーkの写像の中で、@rt.logの番地aを表に置く
+func logWorkerStart(st mut St, k int, a int) {
+    store(mut st, gepWord(mut st, globaladdr(mut st, st.logsG), k), 0, ptoi(mut st, a))
+}
+
+// std/taskのプログラムの周の頭（WK_NOWを書いた直後）: 期限のTSCを過ぎていれば書き出す（読み1・比較1・分岐1）
+func logRoundHead(st mut St, now int) {
+    if !st.logUse {
+        return
+    }
+    lg := globaladdr(mut st, st.logG)
+    // 期限0（積んだ記録が無い）は 0 − 1 が符号なしの最大で、比べが偽になる
+    bNo := branchIf(mut st, cmp(mut st, CUlt, urAdd(mut st, load(mut st, lg, LG_DUET), -1), now))
+    call(mut st, st.rtLogFlush, list1(mut st, lg))
+    br(mut st, bNo, -1)
+    setCur(mut st, bNo)
+}
+
+// ワーカーが実際に眠る直前: 積んだ記録があれば書き出す
+func logBeforeSleep(st mut St) {
+    if !st.logUse {
+        return
+    }
+    lg := globaladdr(mut st, st.logG)
+    bNo := branchIf(mut st, cmp(mut st, CGt, load(mut st, lg, LG_TAIL), load(mut st, lg, LG_HEAD)))
+    call(mut st, st.rtLogFlush, list1(mut st, lg))
+    br(mut st, bNo, -1)
+    setCur(mut st, bNo)
+}
+
+// Ledgerのlogsの語（k = -10 written の和・-11 dropped の和・-12 maxPending の最大 — 読むと0）。rt.ledgerの負のkの枝から
+func logLedger(st mut St, k int) {
+    if !st.logUse {
+        return
+    }
+    zero := iconst(mut st, 0)
+    for kk <- iter.Range(10, 13) {
+        bS := newBlock(mut st)
+        bN := newBlock(mut st)
+        condbr(mut st, cmp(mut st, CEq, k, iconst(mut st, 0 - kk)), bS, -1, bN, -1)
+        setCur(mut st, bS)
+        lt := globaladdr(mut st, st.logsG)
+        lp := newBlock(mut st)
+        i := param(mut st, lp, TyI64)
+        acc := param(mut st, lp, TyI64)
+        body := newBlock(mut st)
+        bW := newBlock(mut st)
+        done := newBlock(mut st)
+        // ワーカー0は静的な番地・他は表から（立つ前は0 — 飛ばす）
+        a0 := globaladdrRaw(mut st, st.logG)
+        v0 := if kk == 12 { atomicXchg(mut st, a0, LG_MAXP, zero) } else { load(mut st, a0, if kk == 10 { LG_WRITTEN } else { LG_DROPPED }) }
+        br(mut st, lp, list2(mut st, iconst(mut st, 1), v0))
+        setCur(mut st, lp)
+        condbr(mut st, cmp(mut st, CLt, i, load(mut st, globaladdr(mut st, st.mnG), MN_N)), body, -1, done, -1)
+        setCur(mut st, body)
+        wa := load(mut st, gepWord(mut st, lt, i), 0)
+        condbr(mut st, cmp(mut st, CEq, wa, zero), lp, list2(mut st, urAdd(mut st, i, 1), acc), bW, -1)
+        setCur(mut st, bW)
+        w := itop(mut st, wa)
+        if kk == 12 {
+            v := atomicXchg(mut st, w, LG_MAXP, zero)
+            br(mut st, lp, list2(mut st, urAdd(mut st, i, 1), bin(mut st, BAdd, acc, bin(mut st, BMul, cmp(mut st, CGt, v, acc), bin(mut st, BSub, v, acc)))))
+        } else {
+            br(mut st, lp, list2(mut st, urAdd(mut st, i, 1), bin(mut st, BAdd, acc, load(mut st, w, if kk == 10 { LG_WRITTEN } else { LG_DROPPED }))))
+        }
+        setCur(mut st, done)
+        ret(mut st, acc)
+        setCur(mut st, bN)
+    }
+}
+
+// 停止のハンドラの頭（シグナルsig — ログを使うプログラムだけ）: ログのバッファを書き出す。PID 1なら呼び手のexit_group(128 + sig)へ続く。
+// PID 1でなければ、ハンドラを既定の動作に戻して同じシグナルを自分へ送り直し、止めていたシグナルを通す（親から見た死に方 = 既定の動作の死と同じ）。
+// 書き出しは積んだ端までを読むだけで、持ち主のワーカーの書き出しと協調しない（同じ行が2回出ることがある — 落とすより二重の側）
+func logSigExit(st mut St, sig int) {
+    if !st.logUse {
+        return
+    }
+    zero := iconst(mut st, 0)
+    call(mut st, st.rtLogDrain, list0(mut st))
+    pid := syscall(mut st, list1(mut st, iconst(mut st, 39)))
+    bInit := branchIf(mut st, cmp(mut st, CNe, pid, iconst(mut st, 1)))
+    sa := newSlotAddr(mut st, 4)
+    for w <- iter.Range(0, 4) {
+        store(mut st, sa, w, zero)
+    }
+    // rt_sigaction(sig, SIG_DFL)・kill(pid, sig)・rt_sigprocmask(SIG_UNBLOCK, {sig})
+    syscall(mut st, list5(mut st, iconst(mut st, 13), iconst(mut st, sig), ptoi(mut st, sa), zero, iconst(mut st, 8)))
+    syscall(mut st, list3(mut st, iconst(mut st, 62), pid, iconst(mut st, sig)))
+    store(mut st, sa, 0, iconst(mut st, 1 << (sig - 1)))
+    syscall(mut st, list5(mut st, iconst(mut st, 14), iconst(mut st, 1), ptoi(mut st, sa), zero, iconst(mut st, 8)))
+    br(mut st, bInit, -1)
+    setCur(mut st, bInit)
+}

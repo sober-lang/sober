@@ -251,7 +251,7 @@ func ParseFloat(d Doc, n int) (float, error?)
 func Encode[T](v T) string
 ```
 
-vのJSON（空白なし・フィールドは宣言の順・`U?` のnilはnull）。Tの範囲はDecodeと同じ + 裸のjson.Valueのフィールド・T = json.Value（値の木 — 印字はFormatと同じ規則）。float の NaN / ±Inf は panic(NotFinite)
+vのJSON（空白なし・フィールドは宣言の順・`U?` のnilはnull）。Tの範囲はDecodeと同じ + 裸のjson.Valueのフィールド・T = json.Value（値の木 — 印字はFormatと同じ規則）。float の NaN / ±Inf は panic(NotFinite)。Tはvの型から推論する（json.Encode(v)。明示のjson.Encode[T](v)も同じ）。ジェネリック関数の中で型パラメータの値は渡せない（変換の関数を型ごとに合成するため）
 
 例:
 

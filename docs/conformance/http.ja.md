@@ -25,6 +25,8 @@ HTTP/1.1（RFC 9110〜9112）のサーバ（`std/http/server`）とクライア�
 | multipart/form-data（RFC 7578） | 対応 | `std/http/server.TestMultipartRfc`<br>`std/http/server.TestMultipartBrowsers`<br>`testdata/httpcheck/check.ts`: upload formdata |
 | Server-Sent Events（text/event-stream・Last-Event-ID） | 対応 | `std/http/server.TestFormatEvent`<br>`testdata/httpcheck/check.ts`: sse Last-Event-ID |
 | Expect: 100-continue（頭が揃い本文が未着なら100を送る。HTTP/1.0のExpectは無視する） | 対応 | `testdata/httpcheck/check.ts`: expect 100-continue<br>`testdata/httpcheck/check.ts`: expect 100-continue HTTP/1.0 ignored |
+| HTTP/2（h2c — 事前知識。RFC 9113・HPACKはRFC 7541。ServeConnの `proto:` で選ぶ・ストリームごとに別のtaskでrouteを呼ぶ — 外部オラクルh2spec 146項目） | 対応 | `testdata/h2spec/pass.txt`: generic/4/1 ok<br>`testdata/h2spec/pass.txt`: generic/4/3 ok<br>`std/http/server.TestH2One`<br>`std/http/server.TestH2SlowFast` |
+| HTTP/2 over TLS（ALPNのh2 — tls.Serveが渡すTLSの接続をServeConnへ。フレームの準拠はトランスポートに依らないので平文のh2specが見て、TLSの上の受けと送りの道はh2flood〔TLS 1.3と1.2〕とnghttpとの相互運用が見る。h2specのTLSのクライアントはTLS 1.2までなので、DangerouslyAllowTls12のサーバーにTLS 1.2で146項目を当てる〔どれもh2specのゲートの段〕） | 対応 | `std/http/server.TestConnTlsBoth`<br>`std/http/server.TestConnTlsH2`<br>`std/http/server.TestH2TlsHuge` |
 <!-- confsync:end claims http-server yes,partial -->
 
 ### クライアント
@@ -38,6 +40,8 @@ HTTP/1.1（RFC 9110〜9112）のサーバ（`std/http/server`）とクライア�
 | proxy（CONNECTのトンネル・Proxy-Authorization） | 対応 | `std/http/client.TestProxyLoopback`<br>相互接続http: proxy-connect（2026-11-07）<br>相互接続http: proxy-auth（2026-11-07） |
 | 1xxの中間のレスポンスを読み捨てる | 対応 | `std/http/client.TestScanSplits` |
 | 期限と本文の上限（ゼロ値で有効） | 対応 | `std/http/client.TestTimeoutAndRefused` |
+| IPv6の番地への接続（URLの角括弧のauthority・HostとCONNECTのauthorityは角括弧つき・redirectのoriginはRFC 5952の綴りに正規化して比べる） | 対応 | `std/http/client.TestTarget`<br>`std/http/client.TestPlainLoopback6` |
+| HTTP/2（httpsの行き先にALPNでh2を申し出て、1接続に1ストリームずつ往復する。httpの行き先にh2cは使わない） | 対応 | `std/http/server.TestH2TlsClient` |
 <!-- confsync:end claims http-client yes,partial -->
 
 ### cookie
@@ -164,11 +168,93 @@ RFC 9110とRFC 9112がサーバー（オリジンサーバー・リクエスト�
 | RFC 9110 15.3.7: 206の頭と内容の規則（Rangeを実装しない） | 対象外 | なし |
 <!-- confsync:end claims http-must na -->
 
+## RFC 9113・7541のMUST（サーバー・HTTP/2）
+
+RFC 9113（HTTP/2）とRFC 7541（HPACK）がサーバーに課すMUSTとMUST NOTのうち、検査の証拠があるものを節の番号つきで並べる。RFC 9110・9112の表と同じく、同じ節の近い要件は1行に束ね、証拠の無い要件は載せない。h2specの項目は `testdata/h2spec/pass.txt`（h2specのゲートが作って照合する、通った項目の一覧）の行で引く。h2specの節の番号はRFC 7540のもので、行の節の番号はRFC 9113のもの。
+
+<!-- confsync:begin claims h2-must yes,partial -->
+| 項目 | 状態 | 証拠 |
+|---|---|---|
+| RFC 9113 3.2: TLSの上のHTTP/2はALPNのh2で始める（TLSの接続は前置きでHTTP/1.1と見分けない。proto: Bothは、ALPNがh2ならHTTP/2・でなければHTTP/1.1） | 対応 | `std/http/server.TestConnTlsBoth`<br>`std/http/server.TestConnTlsBothH11` |
+| RFC 9113 3.3・3.4: サーバーの前置きは最初のフレームのSETTINGSで、相手の前置きのSETTINGSにはACKを返す | 対応 | `testdata/h2spec/pass.txt`: generic/1/1 ok<br>`testdata/h2spec/pass.txt`: http2/3.5/1 ok<br>`testdata/h2spec/pass.txt`: http2/6.5.3/2 ok |
+| RFC 9113 3.4: 無効な接続の前置きはPROTOCOL_ERRORの接続の誤り（proto: H2。proto: Bothは前置きで始まらない接続をHTTP/1.1として読む） | 対応 | `testdata/h2spec/pass.txt`: http2/3.5/2 ok |
+| RFC 9113 4.1: 知らない種類のフレームは捨て、使わない旗と予約のビットは受けて無視する | 対応 | `testdata/h2spec/pass.txt`: http2/4.1/1 ok<br>`testdata/h2spec/pass.txt`: http2/4.1/2 ok<br>`testdata/h2spec/pass.txt`: http2/4.1/3 ok |
+| RFC 9113 4.2: 2^14オクテットのフレームを受ける・SETTINGS_MAX_FRAME_SIZEを越えるフレームはFRAME_SIZE_ERROR（ヘッダのブロックを運ぶフレームでは接続の誤り） | 対応 | `testdata/h2spec/pass.txt`: http2/4.2/1 ok<br>`testdata/h2spec/pass.txt`: http2/4.2/2 ok<br>`testdata/h2spec/pass.txt`: http2/4.2/3 ok |
+| RFC 9113 4.3: ヘッダのブロックを復号できなければCOMPRESSION_ERRORの接続の誤り | 対応 | `testdata/h2spec/pass.txt`: http2/4.3/1 ok<br>`std/internal/hpack.TestBad` |
+| RFC 9113 4.3・6.2・6.10: ヘッダのブロックの途中に、他の種類か他のストリームのフレームが来たらPROTOCOL_ERRORの接続の誤り | 対応 | `testdata/h2spec/pass.txt`: http2/4.3/2 ok<br>`testdata/h2spec/pass.txt`: http2/4.3/3 ok<br>`testdata/h2spec/pass.txt`: http2/6.2/1 ok<br>`testdata/h2spec/pass.txt`: http2/6.2/2 ok<br>`testdata/h2spec/pass.txt`: http2/6.10/2 ok |
+| RFC 9113 5.1・6.4: idleのストリームにHEADERSとPRIORITYの外のフレーム（RST_STREAMを含む）が来たらPROTOCOL_ERRORの接続の誤り | 対応 | `testdata/h2spec/pass.txt`: http2/5.1/1 ok<br>`testdata/h2spec/pass.txt`: http2/5.1/2 ok<br>`testdata/h2spec/pass.txt`: http2/5.1/3 ok<br>`testdata/h2spec/pass.txt`: http2/5.1/4 ok<br>`testdata/h2spec/pass.txt`: http2/6.4/2 ok |
+| RFC 9113 5.1・6.1: half-closed (remote)とclosedのストリームへのDATA・HEADERS・CONTINUATIONはSTREAM_CLOSEDの誤り（RST_STREAMを送った後のものを含む） | 対応 | `testdata/h2spec/pass.txt`: http2/5.1/5 ok<br>`testdata/h2spec/pass.txt`: http2/5.1/6 ok<br>`testdata/h2spec/pass.txt`: http2/5.1/7 ok<br>`testdata/h2spec/pass.txt`: http2/5.1/8 ok<br>`testdata/h2spec/pass.txt`: http2/5.1/9 ok<br>`testdata/h2spec/pass.txt`: http2/5.1/10 ok<br>`testdata/h2spec/pass.txt`: http2/5.1/11 ok<br>`testdata/h2spec/pass.txt`: http2/5.1/12 ok<br>`testdata/h2spec/pass.txt`: http2/5.1/13 ok<br>`testdata/h2spec/pass.txt`: http2/6.1/2 ok |
+| RFC 9113 5.1: half-closed (remote)のストリームへのWINDOW_UPDATE・PRIORITY・RST_STREAMと、closedのストリームへのPRIORITYは誤りにしない | 対応 | `testdata/h2spec/pass.txt`: generic/2/2 ok<br>`testdata/h2spec/pass.txt`: generic/2/3 ok<br>`testdata/h2spec/pass.txt`: generic/2/4 ok<br>`testdata/h2spec/pass.txt`: generic/2/5 ok |
+| RFC 9113 5.1.1: 偶数のストリームIDと、前に開いたものより小さいストリームIDはPROTOCOL_ERRORの接続の誤り | 対応 | `testdata/h2spec/pass.txt`: http2/5.1.1/1 ok<br>`testdata/h2spec/pass.txt`: http2/5.1.1/2 ok |
+| RFC 9113 5.1.2: 広告した同時ストリーム数を越えさせるHEADERSは、PROTOCOL_ERRORかREFUSED_STREAMのストリームの誤り | 対応 | `testdata/h2spec/pass.txt`: http2/5.1.2/1 ok |
+| RFC 9113 5.2.1・6.9.1: 相手が広告した流れの窓（ストリームと接続）を越えて送らない | 対応 | `testdata/h2spec/pass.txt`: http2/6.9.1/1 ok<br>`std/http/server.TestH2WindowStall` |
+| RFC 9113 5.2.2: ハンドラが走っている間も、接続のフレームを受け続ける（遅いハンドラが同じ接続の他のストリームを止めない） | 対応 | `std/http/server.TestH2SlowFast` |
+| RFC 9113 5.4.1: 接続の誤りではGOAWAYを送ってからTCPの接続を閉じる | 対応 | `testdata/h2spec/pass.txt`: http2/5.4.1/1 ok<br>`std/http/server.TestH2RstBudget` |
+| RFC 9113 5.4.2: ストリームの誤りではそのストリームにRST_STREAMを送り、接続は続ける（routeのpanicや予算の超過でストリームの子が死んだら、INTERNAL_ERROR） | 対応 | `std/http/server.TestH2ChildDeath`<br>`std/http/server.TestH2TlsChildDeath` |
+| RFC 9113 5.5: 知らない拡張のフレームと知らない設定は無視する・ヘッダのブロックの途中の拡張のフレームはPROTOCOL_ERRORの接続の誤り | 対応 | `testdata/h2spec/pass.txt`: http2/5.5/1 ok<br>`testdata/h2spec/pass.txt`: http2/5.5/2 ok<br>`testdata/h2spec/pass.txt`: http2/6.5.2/5 ok |
+| RFC 9113 6.1: ストリームID 0のDATAと、埋め草の長さが中身の長さ以上のDATAはPROTOCOL_ERRORの接続の誤り | 対応 | `testdata/h2spec/pass.txt`: http2/6.1/1 ok<br>`testdata/h2spec/pass.txt`: http2/6.1/3 ok<br>`testdata/h2spec/pass.txt`: generic/3.1/3 ok |
+| RFC 9113 6.2: ストリームID 0のHEADERSと、埋め草の長さが中身の長さ以上のHEADERSはPROTOCOL_ERRORの接続の誤り | 対応 | `testdata/h2spec/pass.txt`: http2/6.2/3 ok<br>`testdata/h2spec/pass.txt`: http2/6.2/4 ok<br>`testdata/h2spec/pass.txt`: generic/3.2/2 ok |
+| RFC 9113 6.3: ストリームID 0のPRIORITYはPROTOCOL_ERRORの接続の誤り・長さが5でないPRIORITYはFRAME_SIZE_ERRORのストリームの誤り | 対応 | `testdata/h2spec/pass.txt`: http2/6.3/1 ok<br>`testdata/h2spec/pass.txt`: http2/6.3/2 ok |
+| RFC 9113 6.4: ストリームID 0のRST_STREAMはPROTOCOL_ERROR・長さが4でないRST_STREAMはFRAME_SIZE_ERROR（どちらも接続の誤り） | 対応 | `testdata/h2spec/pass.txt`: http2/6.4/1 ok<br>`testdata/h2spec/pass.txt`: http2/6.4/3 ok |
+| RFC 9113 6.5: ACKつきで中身のあるSETTINGSと、長さが6の倍数でないSETTINGSはFRAME_SIZE_ERROR・ストリームIDが0でないSETTINGSはPROTOCOL_ERROR（どちらも接続の誤り） | 対応 | `testdata/h2spec/pass.txt`: http2/6.5/1 ok<br>`testdata/h2spec/pass.txt`: http2/6.5/2 ok<br>`testdata/h2spec/pass.txt`: http2/6.5/3 ok |
+| RFC 9113 6.5.2: SETTINGS_ENABLE_PUSHの0と1の外の値・SETTINGS_MAX_FRAME_SIZEの範囲の外の値はPROTOCOL_ERROR・2^31-1を越えるSETTINGS_INITIAL_WINDOW_SIZEはFLOW_CONTROL_ERROR（どちらも接続の誤り） | 対応 | `testdata/h2spec/pass.txt`: http2/6.5.2/1 ok<br>`testdata/h2spec/pass.txt`: http2/6.5.2/2 ok<br>`testdata/h2spec/pass.txt`: http2/6.5.2/3 ok<br>`testdata/h2spec/pass.txt`: http2/6.5.2/4 ok<br>`std/internal/h2frame.TestSettings` |
+| RFC 9113 6.5.3: SETTINGSの値は出てきた順に当て、済んだらすぐACKを返す | 対応 | `testdata/h2spec/pass.txt`: http2/6.5.3/1 ok<br>`testdata/h2spec/pass.txt`: http2/6.5.3/2 ok |
+| RFC 9113 6.7: ACKなしのPINGに同じ中身のACKつきのPINGを返し、ACKつきのPINGには返さない・ストリームIDが0でないPINGはPROTOCOL_ERROR・長さが8でないPINGはFRAME_SIZE_ERROR（どちらも接続の誤り） | 対応 | `testdata/h2spec/pass.txt`: http2/6.7/1 ok<br>`testdata/h2spec/pass.txt`: http2/6.7/2 ok<br>`testdata/h2spec/pass.txt`: http2/6.7/3 ok<br>`testdata/h2spec/pass.txt`: http2/6.7/4 ok |
+| RFC 9113 6.8: ストリームIDが0でないGOAWAYはPROTOCOL_ERRORの接続の誤り | 対応 | `testdata/h2spec/pass.txt`: http2/6.8/1 ok |
+| RFC 9113 6.9: 増分0のWINDOW_UPDATEは、ストリームではPROTOCOL_ERRORのストリームの誤り・接続ではPROTOCOL_ERRORの接続の誤り・長さが4でないWINDOW_UPDATEはFRAME_SIZE_ERRORの接続の誤り | 対応 | `testdata/h2spec/pass.txt`: http2/6.9/1 ok<br>`testdata/h2spec/pass.txt`: http2/6.9/2 ok<br>`testdata/h2spec/pass.txt`: http2/6.9/3 ok |
+| RFC 9113 6.9.1: 窓を2^31-1より大きくするWINDOW_UPDATEは、ストリームの窓ならストリームを・接続の窓なら接続をFLOW_CONTROL_ERRORで断つ | 対応 | `testdata/h2spec/pass.txt`: http2/6.9.1/2 ok<br>`testdata/h2spec/pass.txt`: http2/6.9.1/3 ok |
+| RFC 9113 6.9.2: SETTINGS_INITIAL_WINDOW_SIZEが変わったら、開いたストリームの窓を差の分だけ動かし、負になった窓が正に戻るまで送らない・窓を上限より大きくする変化はFLOW_CONTROL_ERRORの接続の誤り | 対応 | `testdata/h2spec/pass.txt`: http2/6.9.2/1 ok<br>`testdata/h2spec/pass.txt`: http2/6.9.2/2 ok<br>`testdata/h2spec/pass.txt`: http2/6.9.2/3 ok |
+| RFC 9113 6.10: CONTINUATIONは、END_HEADERSの無いHEADERSかCONTINUATIONの直後だけ受け、ほかはPROTOCOL_ERRORの接続の誤り・ストリームID 0のCONTINUATIONもPROTOCOL_ERROR | 対応 | `testdata/h2spec/pass.txt`: http2/6.10/1 ok<br>`testdata/h2spec/pass.txt`: http2/6.10/3 ok<br>`testdata/h2spec/pass.txt`: http2/6.10/4 ok<br>`testdata/h2spec/pass.txt`: http2/6.10/5 ok<br>`testdata/h2spec/pass.txt`: http2/6.10/6 ok<br>`testdata/h2spec/pass.txt`: generic/3.10/2 ok |
+| RFC 9113 7: 知らない誤りの符号のGOAWAYとRST_STREAMで、特別なふるまいをしない | 対応 | `testdata/h2spec/pass.txt`: http2/7/1 ok<br>`testdata/h2spec/pass.txt`: http2/7/2 ok |
+| RFC 9113 8.1: 要求を開いたHEADERSの後のEND_STREAMの無いHEADERSと、trailerの擬似ヘッダは形の誤り（trailerそのものは受ける） | 対応 | `testdata/h2spec/pass.txt`: http2/8.1/1 ok<br>`testdata/h2spec/pass.txt`: http2/8.1.2.1/3 ok<br>`testdata/h2spec/pass.txt`: generic/4/4 ok |
+| RFC 9113 8.1.1: 形の誤りの要求は、PROTOCOL_ERRORのストリームの誤り（content-lengthとDATAの長さの和の食い違いを含む） | 対応 | `testdata/h2spec/pass.txt`: http2/8.1.2.6/1 ok<br>`testdata/h2spec/pass.txt`: http2/8.1.2.6/2 ok<br>`std/http/server.TestH2Malformed` |
+| RFC 9113 8.2・8.2.1: 名前の大文字・値の改行・値の頭と尾の空白は形の誤り | 対応 | `testdata/h2spec/pass.txt`: http2/8.1.2/1 ok<br>`std/http/server.TestH2RequestBad` |
+| RFC 9113 8.2.2: 接続に固有のヘッダ（connection・keep-alive・proxy-connection・transfer-encoding・upgrade）と、trailersの外の値のTEは形の誤り・応答に接続に固有のヘッダを付けない | 対応 | `testdata/h2spec/pass.txt`: http2/8.1.2.2/1 ok<br>`testdata/h2spec/pass.txt`: http2/8.1.2.2/2 ok<br>`std/http/server.TestH2RequestBad`<br>`std/http/server.TestH2Head` |
+| RFC 9113 8.2.3: 複数のcookieの欄は「; 」で1本に繋いでからアプリへ渡す | 対応 | `std/http/server.TestH2RequestCookieBody` |
+| RFC 9113 8.3: 知らない擬似ヘッダ・応答の擬似ヘッダ・普通の欄の後の擬似ヘッダ・同じ擬似ヘッダの2回目は形の誤り | 対応 | `testdata/h2spec/pass.txt`: http2/8.1.2.1/1 ok<br>`testdata/h2spec/pass.txt`: http2/8.1.2.1/2 ok<br>`testdata/h2spec/pass.txt`: http2/8.1.2.1/4 ok<br>`testdata/h2spec/pass.txt`: http2/8.1.2.3/5 ok<br>`testdata/h2spec/pass.txt`: http2/8.1.2.3/6 ok<br>`testdata/h2spec/pass.txt`: http2/8.1.2.3/7 ok<br>`std/http/server.TestH2RequestBad` |
+| RFC 9113 8.3.1: :method・:scheme・:pathの欠けと空の:pathは形の誤り・:authorityがあればHostでなく:authorityを使う | 対応 | `testdata/h2spec/pass.txt`: http2/8.1.2.3/1 ok<br>`testdata/h2spec/pass.txt`: http2/8.1.2.3/2 ok<br>`testdata/h2spec/pass.txt`: http2/8.1.2.3/3 ok<br>`testdata/h2spec/pass.txt`: http2/8.1.2.3/4 ok<br>`std/http/server.TestH2RequestCookieBody` |
+| RFC 9113 8.3.2: すべての応答に:statusを最初の欄として置く | 対応 | `std/http/server.TestH2Head` |
+| RFC 9113 8.4: サーバーが受けたPUSH_PROMISEはPROTOCOL_ERRORの接続の誤り | 対応 | `testdata/h2spec/pass.txt`: http2/8.2/1 ok |
+<!-- confsync:end claims h2-must yes,partial -->
+
+### HPACK（RFC 7541）
+
+<!-- confsync:begin claims hpack-must yes,partial -->
+| 項目 | 状態 | 証拠 |
+|---|---|---|
+| RFC 7541 2.1: 復号した欄を、ブロックの中の順に並べる（付録Cの例） | 対応 | `std/internal/hpack.TestC3`<br>`std/internal/hpack.TestC4`<br>`std/internal/hpack.TestC5`<br>`std/internal/hpack.TestC6` |
+| RFC 7541 2.3.3・6.1: 表の外の添字と添字0は復号の誤り | 対応 | `testdata/h2spec/pass.txt`: hpack/2.3.3/1 ok<br>`testdata/h2spec/pass.txt`: hpack/2.3.3/2 ok<br>`testdata/h2spec/pass.txt`: hpack/6.1/1 ok<br>`std/internal/hpack.TestBad` |
+| RFC 7541 4.2: ブロックの頭にない表の大きさの更新は復号の誤り | 対応 | `testdata/h2spec/pass.txt`: hpack/4.2/1 ok<br>`std/internal/hpack.TestSizeUpdate` |
+| RFC 7541 5.1: 実装の上限を越える整数は復号の誤り | 対応 | `std/internal/hpack.TestInt`<br>`std/internal/hpack.TestBad` |
+| RFC 7541 5.2: Huffmanの埋め草が7ビットより長い文字列・埋め草がEOSの符号の上位のビットでない文字列・EOSの記号を含む文字列は復号の誤り | 対応 | `testdata/h2spec/pass.txt`: hpack/5.2/1 ok<br>`testdata/h2spec/pass.txt`: hpack/5.2/2 ok<br>`testdata/h2spec/pass.txt`: hpack/5.2/3 ok |
+| RFC 7541 6.3: SETTINGS_HEADER_TABLE_SIZEを越える表の大きさの更新は復号の誤り | 対応 | `testdata/h2spec/pass.txt`: hpack/6.3/1 ok<br>`std/internal/hpack.TestSizeUpdate` |
+<!-- confsync:end claims hpack-must yes,partial -->
+
+### 対象外（HTTP/2）
+
+その機能を持たないので掛からない要件。
+
+<!-- confsync:begin claims h2-must na -->
+| 項目 | 状態 | 証拠 |
+|---|---|---|
+| RFC 9113 4.3.1: 表の大きさを下げた後の表の大きさの更新の規則（送りのHPACKは動的表を使わない・受けの表の大きさを下げない） | 対象外 | なし |
+| RFC 9113 5.1.1・5.1.2・6.6・8.4: server pushの送りの規則（サーバーはストリームを開かず、PUSH_PROMISEを送らない） | 対象外 | なし |
+| RFC 9113 8.5: CONNECTの規則（CONNECTを実装しない — CONNECTの要求は形の誤り） | 対象外 | なし |
+<!-- confsync:end claims h2-must na -->
+
+<!-- confsync:begin claims hpack-must na -->
+| 項目 | 状態 | 証拠 |
+|---|---|---|
+| RFC 7541 4.2: 符号化の側の表の大きさの規則（送りのHPACKは動的表を使わない） | 対象外 | なし |
+| RFC 7541 6.2.3・7.1.3: 索引しない字句を中継で保つ規則（受けた欄を他へ送る中継をしない） | 対象外 | なし |
+<!-- confsync:end claims hpack-must na -->
+
 ## 意図して外したこと
 
 <!-- confsync:begin claims http-server intentional -->
 | 項目 | 状態 | 証拠 |
 |---|---|---|
+| HTTP/2のserver push（PUSH_PROMISEを送らない）とUpgrade: h2c（h2cは事前知識だけ） | 意図して非対応 | なし |
 | Upgrade（WebSocketを含む）・CONNECT（サーバからの押し出しはSSEが今の答え — WebSocketは実需が立てば0.8以降のピンへ上げる） | 意図して非対応 | なし |
 <!-- confsync:end claims http-server intentional -->
 
@@ -182,6 +268,7 @@ RFC 9110とRFC 9112がサーバー（オリジンサーバー・リクエスト�
 | 項目 | 状態 | 証拠 |
 |---|---|---|
 | WHATWG URL Standardの構文解析（ブラウザの寛容な解釈は持たない — RFC 3986の厳格な側） | 意図して非対応 | なし |
+| URLのIPv6の番地のzone（RFC 6874。任意の拡張で、主なブラウザも受けない） | 意図して非対応 | `std/http/client.TestTarget` |
 <!-- confsync:end claims http-url intentional -->
 
 <!-- confsync:begin claims http-cookie intentional -->
@@ -196,16 +283,13 @@ RFC 9110とRFC 9112がサーバー（オリジンサーバー・リクエスト�
 | 項目 | 時期 | 今の挙動の証拠 |
 |---|---|---|
 | Range（206） | 0.8圏 | なし |
-| HTTP/2（h2 / h2c — 外部オラクルh2spec） | 0.8圏 | なし |
 | HTTP/3（QUIC — 外部オラクルquic-interop-runner） | 0.8圏 | なし |
 <!-- confsync:end claims http-server planned -->
 
 <!-- confsync:begin claims http-client planned -->
 | 項目 | 時期 | 今の挙動の証拠 |
 |---|---|---|
-| IPv6の番地への接続 | 0.8圏 | `std/http/client.TestTarget` |
 | レスポンスのContent-Encodingの復号（今はAccept-Encodingを送らない） | 0.8圏 | なし |
-| HTTP/2 | 0.8圏 | なし |
 <!-- confsync:end claims http-client planned -->
 
 <!-- confsync:begin claims http-url planned -->

@@ -1,10 +1,12 @@
 package main
 
-// 公開のtls.Send / tls.Put / tls.Flushの送りの失敗の返り方の題材（scripts/httpcheck.sh）。handlerは最初に1行送り、相手はそれを受けてから1行送って
+// TLSの接続（tls.Serveが渡すnet.Conn）のnet.Send / net.Put / net.Flushの送りの失敗の返り方の題材（scripts/httpcheck.sh）。handlerは最初に1行送り、相手はそれを受けてから1行送って
 // RSTで切る。handlerは相手が切った後に送り、各呼び出しが返した値を印字する。
-// TLSERR_MODE: L = 受けを1回で抜けて、handlerの最後のtls.Sendの結果をhandlerが返す・F = 受けを1回で抜けて、tls.Putとtls.Flush・
-// R = tls.Recvのkの中でtls.Put（Recvの中のFlushが送る）。どれも送りの完了を待ち、失敗をその呼び出し（Rは tls.Recv）が返す
+// TLSERR_MODE: L = 受けを1回で抜けて、handlerの最後のnet.Sendの結果をhandlerが返す・F = 受けを1回で抜けて、net.Putとnet.Flush・
+// R = net.Recvのkの中でnet.Put（受けの中のFlushが送る）。どれも送りの完了を待ち、失敗をその呼び出し（Rは net.Recv）が返す
 
+import "std/io"
+import "std/net"
 import "std/os"
 import "std/tls"
 
@@ -19,51 +21,54 @@ func say(s string) {
 func show(e error?) string {
     return switch e {
         case nil: "ok"
-        case tls.Closed{}: "closed"
-        case tls.BadRecord{}: "bad record"
+        case io.Closed{}: "closed"
+        case io.Timeout{}: "timeout"
+        case io.Expired{}: "expired"
+        case io.Denied{}: "denied"
+        case io.Other{errno}: "other ${errno}"
     }
 }
 
 // 受けを1回で抜ける
-func first(c tls.Conn) error? {
-    for b <- tls.Recv(c)? {
+func first(c net.Conn) error? {
+    for b <- net.Recv(c)? {
         break
     }
     return nil
 }
 
-func last(c tls.Conn) error? {
-    tls.Send(c, bytes("hi\n"))?
+func last(c net.Conn) error? {
+    net.Send(c, bytes("hi\n"))?
     e0 := first(c)
     if e0 != nil {
         say("recv: ${show(e0)}")
         return e0
     }
     os.Sleep(300)
-    e := tls.Send(c, bytes("last\n"))
+    e := net.Send(c, bytes("last\n"))
     say("L send: ${show(e)}")
     return e
 }
 
-func putFlush(c tls.Conn) error? {
-    tls.Send(c, bytes("hi\n"))?
+func putFlush(c net.Conn) error? {
+    net.Send(c, bytes("hi\n"))?
     e0 := first(c)
     if e0 != nil {
         say("recv: ${show(e0)}")
         return e0
     }
     os.Sleep(300)
-    e1 := tls.Put(c, bytes("put\n"))
-    e2 := tls.Flush(c)
+    e1 := net.Put(c, bytes("put\n"))
+    e2 := net.Flush(c)
     say("F put: ${show(e1)} flush: ${show(e2)}")
     return e2
 }
 
-func inRecv(c tls.Conn) error? {
-    tls.Send(c, bytes("hi\n"))?
-    e := tls.Recv(c, (b) => {
+func inRecv(c net.Conn) error? {
+    net.Send(c, bytes("hi\n"))?
+    e := net.Recv(c, (b) => {
         os.Sleep(300)
-        say("R put: ${show(tls.Put(c, b))}")
+        say("R put: ${show(net.Put(c, b))}")
     })
     say("R recv: ${show(e)}")
     return e

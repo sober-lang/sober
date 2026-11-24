@@ -1,0 +1,26 @@
+package main
+
+// 負例: 入れ子のブロックの局所と外のmutを一緒に渡せても、同じ呼び出しのmut実引数どうしの重なり
+// （一方が他方のフィールド）は拒否する（language.md 26節 — mut実引数は呼び出しの間、排他）
+type S struct {
+    xs []int
+    n int
+}
+
+func walk(st mut S, xs mut []int, c mut int, i int) {
+    if i > 0 {
+        xs = append(xs, i)
+        c += 1
+        walk(mut st, mut xs, mut c, i - 1)
+    }
+}
+
+func main() {
+    mut st := S{xs: []int{}, n: 0}
+    {
+        mut c := 0
+        walk(mut st, mut st.xs, mut c, 2)
+        println(c)
+    }
+    println(len(st.xs))
+}

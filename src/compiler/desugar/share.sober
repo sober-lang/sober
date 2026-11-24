@@ -1,0 +1,270 @@
+package desugar
+
+import "ast"
+import "std/iter"
+import "std/table"
+
+// 展開の共有（language.md 8節）: 展開される関数F（匿名の関数型の仮引数を持つ — 25節）の呼び所で、関数型の仮引数の実引数がどれも名前つきの関数
+// （loaderのη展開 — eta.sober — の後は `($e0, …) => f($e0, …)` のラムダ）なら、
+// 展開をFごと・実引数の関数ごとに1本の持ち上げた定義へまとめ、呼び所は関数型でない実引数でその定義を呼ぶ（総称のインスタンスinstDefと同じ持ち上げの道）。
+// 本体は今の展開そのもの（inlineCallを定義の文脈で1回）なので、観測は呼び所ごとの展開と同じで、コアは普通の定義と普通のcallだけで書ける。
+// 外す形（今までどおり呼び所で展開する）: 型パラメータ・mutの仮引数・mutの部分を持つ型の仮引数・名前つき関数型の仮引数・std/taskの関数・
+// 関数型の実引数がη展開の形でないラムダ（捕獲のあるもの）や局所の値・展開中のFの中の同じFの呼び出し（再帰は展開の道が拒否する）
+
+// 呼び所（F = fi・実引数 args — 名前つきの実引数は並べ替え済み）の共有の定義の添字。共有しない形なら -1
+func shareCall(st mut S, fi int, explicit NodeRef, args ListRef, at NodeRef, eb int, ef int) (int, error?) {
+    if explicit != -1 || lenL(mut st, fnTParams(mut st, fi)) > 0 || int(fnBody(mut st, fi)) < 0 || inInlining(mut st, fi) {
+        return -1, nil
+    }
+    pk := fnPkg(mut st, fi)
+    if strIs(mut st, PkgPath(mut st, pk), "std/task") {
+        return -1, nil
+    }
+    ps := fnParams(mut st, fi)
+    np := lenL(mut st, ps)
+    if lenL(mut st, args) != np {
+        return -1, nil
+    }
+    mut nf := 0
+    for i <- iter.Range(0, np) {
+        p := latN(mut st, ps, i)
+        arg := latN(mut st, args, i)
+        if ast.ParamIsMut(nodeOf(mut st, p)) || kindN(mut st, arg) == ast.EMutArg {
+            return -1, nil
+        }
+        pt := nB(nodeOf(mut st, p))
+        if kindN(mut st, pt) == ast.TFunc {
+            if etaTarget(mut st, arg, eb, ef) < 0 {
+                return -1, nil
+            }
+            nf += 1
+        } else {
+            w, err := tyOf(mut st, pk, pt, at, TYFUEL)
+            if err != nil || !tyMutFreeD(mut st, w) {
+                return -1, nil
+            }
+            fdr, ferr := fieldFnValDecl(mut st, pk, st.tenv, pt)
+            if ferr != nil || fdr >= 0 {
+                return -1, nil
+            }
+        }
+    }
+    if nf == 0 {
+        return -1, nil
+    }
+    // 鍵 = (F, 関数型の仮引数ごとの実引数の関数)
+    fs := ListRef(listN(mut st, nf))
+    mut q := 0
+    for i <- iter.Range(0, np) {
+        if kindN(mut st, nB(nodeOf(mut st, latN(mut st, ps, i)))) == ast.TFunc {
+            hset(mut st, int(fs) + 1 + q, etaTarget(mut st, latN(mut st, args, i), eb, ef))
+            q += 1
+        }
+    }
+    mut r := st.shares
+    while r != -1 {
+        if hget(mut st, r) == fi && shareKeyEq(mut st, ListRef(hget(mut st, r + 1)), fs, nf) {
+            if st.luOn {
+                luEdge(mut st, hget(mut st, r + 2) - st.ndef)
+            }
+            return hget(mut st, r + 2), nil
+        }
+        r = hget(mut st, r + 3)
+    }
+    if st.dkCur != 0 {
+        dkRead(mut st, st.nfn + fi)
+    }
+    idx := st.ndef + st.nlifted
+    def := rec5(mut st, 0, 0, 0, -1, -1)
+    if st.liftedTail >= 0 {
+        hset(mut st, st.liftedTail + 4, def)
+    } else {
+        st.liftedHead = def
+    }
+    st.liftedTail = def
+    st.nlifted = st.nlifted + 1
+    table.Push(mut st.liftAt, int(fnNode(mut st, fi)))
+    st.shares = rec5(mut st, fi, int(fs), idx, st.shares, 0)
+    // 本体は呼び出しの途中で脱糖する（instDefと同じく、関数の文脈・switch・errorのswitch・辞書constの文脈を外して戻す）
+    sw := swCtx(mut st)
+    ec := errCtx(mut st)
+    dc := st.dictConst
+    st.hasErrSw = 0
+    st.dictConst = -1
+    lc := st.lctx
+    if st.luOn {
+        luEdge(mut st, idx - st.ndef)
+        st.lctx = st.nfn + 1 + idx - st.ndef
+    }
+    body := shareBody(mut st, fi, args, at)?
+    st.lctx = lc
+    st.dictConst = dc
+    setErrCtx(mut st, ec)
+    setSwCtx(mut st, sw)
+    for k <- iter.Range(0, 4) {
+        hset(mut st, def + k, hget(mut st, body + k))
+    }
+    return idx, nil
+}
+
+// 実引数 a が名前つきの関数のη展開のラムダ（`($e0, …, $e{n-1}) => f($e0, …, $e{n-1})` — loaderのeta.sober）なら f の関数の添字。でなければ -1。
+// f は呼び所のpackageで引く名前（局所の束縛・局所のクロージャではない — 局所はトップレベルの名前を使えない）
+func etaTarget(st mut S, a NodeRef, eb int, ef int) int {
+    if kindN(mut st, a) != ast.ELambda {
+        return -1
+    }
+    lps := lA(nodeOf(mut st, a))
+    n := lenL(mut st, lps)
+    body := nB(nodeOf(mut st, a))
+    if body == -1 || kindN(mut st, body) != ast.ECall {
+        return -1
+    }
+    callee := nA(nodeOf(mut st, body))
+    cargs := lB(nodeOf(mut st, body))
+    if int(cargs) < 0 || int(lps) < 0 {
+        return -1
+    }
+    if lenL(mut st, cargs) != n {
+        return -1
+    }
+    for k <- iter.Range(0, n) {
+        lp := nodeOf(mut st, latN(mut st, lps, k))
+        ca := latN(mut st, cargs, k)
+        if ca == -1 || kindN(mut st, ca) != ast.EIdent || !strEq(mut st, sA(nodeOf(mut st, ca)), StrRef(lp.a)) {
+            return -1
+        }
+    }
+    if kindN(mut st, callee) == ast.EIdent && (lookup(mut st, eb, sA(nodeOf(mut st, callee))) >= 0 || lookupF(mut st, ef, sA(nodeOf(mut st, callee))) >= 0) {
+        return -1
+    }
+    return findFn(mut st, callee, eb)
+}
+
+func shareKeyEq(st mut S, a ListRef, b ListRef, n int) bool {
+    mut ok := lenL(mut st, a) == n
+    for i <- iter.Range(0, n) {
+        ok = ok && hget(mut st, int(a) + 1 + i) == hget(mut st, int(b) + 1 + i)
+    }
+    return ok
+}
+
+// 共有の定義の本体（defOfと同じ形）: 仮引数 = Fの関数型でない仮引数・本体 = Fの展開（関数型の仮引数には呼び所の関数の名前の節を、
+// ほかの仮引数には定義の仮引数の名前を渡す）。関数の名前は呼び所のpackageで引く（呼び所の名前は修飾なしの識別子だけ）
+func shareBody(st mut S, fi int, args ListRef, at NodeRef) (int, error?) {
+    cpk := st.curPkg
+    saved_rd := st.rdepth
+    saved := fnCtx(mut st)
+    st.rdepth = 2
+    saved_tf := st.taskFloor
+    st.taskFloor = 0
+    saved_ps := st.parScope1
+    st.parScope1 = 0
+    saved_op := st.opos
+    if st.track {
+        st.opos = PackPos(posOf(mut st, fnNode(mut st, fi)))
+    }
+    defer {
+        st.taskFloor = saved_tf
+        st.parScope1 = saved_ps
+        st.opos = saved_op
+    }
+    pk := fnPkg(mut st, fi)
+    st.curPkg = cpk
+    st.tenv = tvarEnv(mut st, fnTParams(mut st, fi), 0)
+    st.curTparams = 0
+    ps := fnParams(mut st, fi)
+    np := lenL(mut st, ps)
+    mut m := 0
+    for i <- iter.Range(0, np) {
+        if kindN(mut st, nB(nodeOf(mut st, latN(mut st, ps, i)))) != ast.TFunc {
+            m += 1
+        }
+    }
+    ptys := ListRef(listN(mut st, m))
+    args2 := ListRef(listN(mut st, np))
+    exs := ListRef(listN(mut st, if m >= 2 { m } else { 0 }))
+    mut eb := -1
+    mut d := 1
+    mut j := 0
+    for i <- iter.Range(0, np) {
+        prm := latN(mut st, ps, i)
+        pt := nB(nodeOf(mut st, prm))
+        if kindN(mut st, pt) == ast.TFunc {
+            hset(mut st, int(args2) + 1 + i, int(latN(mut st, args, i)))
+            continue
+        }
+        t := tyOf(mut st, pk, pt, at, TYFUEL)?
+        hsetTy(mut st, int(ptys) + 1 + j, t)
+        dd := declOfTypeExpr(mut st, pk, pt)
+        el := elemDeclOfTypeExpr(mut st, pk, pt)
+        sty := SurfaceOf(mut st, pk, pt)
+        if m == 1 {
+            eb = bind(mut st, eb, sA(nodeOf(mut st, prm)), 0, false, dd, t, el, 0, t, false, sty)
+        } else {
+            hsetCore(mut st, int(exs) + 1 + j, treeProj(mut st, cVar(mut st, d - 1), j, m))
+            eb = bind(mut st, eb, sA(nodeOf(mut st, prm)), d, false, dd, t, el, 0, t, false, sty)
+            d += 1
+        }
+        hset(mut st, int(args2) + 1 + i, synNode(mut st, ast.Node{kind: ast.EIdent, tok: nodeOf(mut st, prm).tok, a: nodeOf(mut st, prm).a, b: -1, c: -1, d: -1, e: -1, f: -1}, prm))
+        j += 1
+    }
+    param := tyTree(mut st, ptys)
+    rl0 := fnResults(mut st, fi)
+    nr := lenL(mut st, rl0)
+    rtys := ListRef(listN(mut st, nr))
+    for i <- iter.Range(0, nr) {
+        rt := tyOf(mut st, pk, latN(mut st, rl0, i), at, TYFUEL)?
+        hsetTy(mut st, int(rtys) + 1 + i, retTy(mut st, rt))
+    }
+    ret := resTy(mut st, rtys)
+    st.curRtys = rtys
+    st.curRes = rl0
+    st.curResPkg = pk
+    rl := newLabel(mut st, LRet, ret)
+    setLabelRtys(mut st, rl, rtys)
+    st.retTarget = pushLabel(mut st, rl)
+    st.loopFloor = st.nlab
+    expBegin(mut st)
+    inner, ierr := inlineCall(mut st, fi, at, NodeRef(-1), args2, at, eb, -1, d)
+    expEnd(mut st, fi, 0)
+    st.nlab = st.nlab - 1
+    if ierr != nil {
+        setFnCtx(mut st, saved)
+        st.rdepth = saved_rd
+        return 0, ierr
+    }
+    mut body := labelNode(mut st, rl, inner, WNone)
+    body = wrapLets(mut st, exs, body)
+    setFnCtx(mut st, saved)
+    st.rdepth = saved_rd
+    return rec5(mut st, int(param), int(ret), int(body), -1, -1), nil
+}
+
+// 共有の定義を呼ぶ（関数型でない実引数だけを、Fの仮引数の型へ — 普通の関数の呼び出しと同じ変換。mutの部分を持つ型は共有の条件で外してある）
+func shareSite(st mut S, fi int, sd int, args ListRef, at NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
+    pk := fnPkg(mut st, fi)
+    ps := fnParams(mut st, fi)
+    np := lenL(mut st, ps)
+    mut m := 0
+    for i <- iter.Range(0, np) {
+        if kindN(mut st, nB(nodeOf(mut st, latN(mut st, ps, i)))) != ast.TFunc {
+            m += 1
+        }
+    }
+    vs := ListRef(listN(mut st, m))
+    mut j := 0
+    for i <- iter.Range(0, np) {
+        prm := latN(mut st, ps, i)
+        pt := nB(nodeOf(mut st, prm))
+        if kindN(mut st, pt) == ast.TFunc {
+            continue
+        }
+        arg := latN(mut st, args, i)
+        wantAssignable(mut st, SurfaceOf(mut st, pk, pt), arg, eb, ef)?
+        w := tyOf(mut st, pk, pt, at, TYFUEL)?
+        v := if kindN(mut st, arg) == ast.EStrlit && isStringTy(mut st, w) { cStrlit(mut st, nodeOf(mut st, arg).a, st.taskFloor) } else { coerceExpr(mut st, arg, w, eb, ef, depth, at)? }
+        hsetCore(mut st, int(vs) + 1 + j, v)
+        j += 1
+    }
+    return cCall(mut st, sd, treePair(mut st, vs), -1, st.rdepth - 1), nil
+}

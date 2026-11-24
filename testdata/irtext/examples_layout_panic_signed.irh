@@ -1,4 +1,4 @@
-@@full	7a9b2e706634f569	4251	80038
+@@full	055833c5afaf1851	4247	79951
 @globals	a6e4573a811f3847	50	392
 main.$layoutEncode_0_0	f24d062942b5da5d	214	4239
 main.main	e817f2e01f07d9bd	166	3471
@@ -40,6 +40,6 @@ rt.write_file	7b5c6fea05e73e3e	47	846
 sober_entry	017a210055670993	968	18950
 std/builder.Len[byte]	be5eae1672cfc653	13	242
 std/builder.Push[byte]	0ab962c91f11ee58	71	1327
-std/builder.pushSlow[byte]	8c201cc60987728b	357	7033
+std/builder.pushSlow[byte]	1546d233e5965b10	353	6946
 std/layout.FailLength	5e4c5a99f34a8f4c	166	3467
 std/layout.FailWidth	7da07c6822114d31	187	3919

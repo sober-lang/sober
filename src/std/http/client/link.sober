@@ -12,7 +12,7 @@ import "std/iter"
 import "std/net"
 import "std/internal/record"
 
-// 格納場所の形: [旗, 上の平文の持ち越しのバイト数, 外の層, 内の層, 上の平文の持ち越し × appW]。層 = [接続の状態 × ConnW, 持ち越しのバイト数, 持ち越し × leftW]
+// 格納場所の形: [旗, 上の平文の持ち越しのバイト数, 外の層, 内の層, 上の平文の持ち越し × appW, HTTP/2の層 × h2W]。層 = [接続の状態 × ConnW, 持ち越しのバイト数, 持ち越し × leftW]
 const lFlags = 0
 const lAppLen = 1
 const leftCap = 16384 + 512
@@ -23,16 +23,19 @@ const lInner = 2 + slotW
 const lApp = 2 + 2 * slotW
 const appCap = 65536 + 16384
 const appW = (appCap + 7) / 8
+// HTTP/2の層の状態（h2.sober — ALPNでh2に決まった行き先だけが使う）
+const lH2 = lApp + appW
 
 // 旗のビット
 const bDead = 1    // 接続はもう使えない（相手が閉じた・閉じで区切るレスポンス・Connection: close・途中の失敗）
 const bOuter = 2   // 外の層（proxy への TLS）がある
 const bInner = 4   // 内の層（行き先への TLS）がある
+const bH2 = 8      // 内の層のALPNがh2（HTTP/2の層を重ねる — h2.sober）
 
 func newLink() []int {
     mut b := mut []int{}
     mut i := 0
-    while i < lApp + appW {
+    while i < lH2 + h2W {
         b = append(b, 0)
         i += 1
     }
@@ -97,11 +100,31 @@ func linkSend(conn net.Conn, blk []int, b []byte) error? {
 @errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other, internal.record.Alert, internal.hsc.CertFailed)
 @effects(block, io, panic, nondet)
 func linkPoll(conn net.Conn, blk []int, pa internal.hsc.CParams, pb internal.hsc.CParams) ([]byte, bool, error?) {
+    if h2On(blk) {
+        return h2Poll(conn, blk, pa, pb)
+    }
     n := leaseOp(4, blk, lAppLen, 0)
     if n > 0 {
         _ = leaseOp(5, blk, lAppLen, 0)
         return getBytes(blk, lApp, n), false, nil
     }
+    return tlsPoll(conn, blk, pa, pb)
+}
+
+// HTTP/1.1の形のリクエストを送る（HTTP/2の層があれば、その層で新しいストリームにする）
+@errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other, internal.record.Alert, internal.hsc.CertFailed)
+@effects(block, io, panic, nondet)
+func tripSend(conn net.Conn, blk []int, pa internal.hsc.CParams, pb internal.hsc.CParams, req []byte) error? {
+    if h2On(blk) {
+        return h2Send(conn, blk, pa, pb, req)
+    }
+    return linkSend(conn, blk, req)
+}
+
+// 素の接続の次の切片を、TLSの層に通したいちばん上のTLSの平文（持ち越しは見ない）
+@errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other, internal.record.Alert, internal.hsc.CertFailed)
+@effects(block, io, panic, nondet)
+func tlsPoll(conn net.Conn, blk []int, pa internal.hsc.CParams, pb internal.hsc.CParams) ([]byte, bool, error?) {
     raw, eof := rawPoll(conn)?
     fl := flagsOf(blk)
     mut data := raw
@@ -240,7 +263,7 @@ func handshakeAt(conn net.Conn, blk []int, layer int, p internal.hsc.CParams, pa
     rest := freeze(buf)
     _ = leaseOp(5, blk, s + internal.hsc.ConnW, len(rest))
     putBytes(blk, s + internal.hsc.ConnW + 1, rest)
-    setFlag(blk, if layer == 1 { bOuter } else { bInner })
+    setFlag(blk, (if layer == 1 { bOuter } else { bInner }) | (if layer == 2 && internal.hsc.ClientAlpn(ch) == "h2" { bH2 } else { 0 }))
     return nil
 }
 

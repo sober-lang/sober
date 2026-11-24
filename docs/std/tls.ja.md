@@ -4,7 +4,7 @@
 
 `import "std/tls"`
 
-TLS 1.3 のサーバ（RFC 9846 — X25519・AES-128-GCM / ChaCha20-Poly1305・RSA-PSS の証明書・resumption / 0-RTT なし）。tls.Serve(addr, cfg, k) が net.Serve を包み、handshake が済んだ接続だけを k に渡す（handshake 中の接続を利用者に触らせない）。tls.Connはnet.Connと同じ顔の同一性の型（コピーできない・外へ出せない・give: で渡せない）で、tls.Recv / tls.Sendがnet.Recv / net.Sendと同じ形。net.Conn と顔が違う唯一の点: tls.Recv を break で途中で抜けると、その接続の読みは終わる（次の tls.Recv は Closed — 切片に残った record を持ち越さない）。誤りは粗い3ラベル（HandshakeFailed〔alertの種はフィールド〕・BadRecord・Closed）。信頼の起点の値 Roots（ParseRoots が作る — 私的 PKI の CA を足すとき std/http/client の Policy の extraRoots: に渡す）もここに住む
+TLS 1.3 のサーバ（RFC 9846 — X25519・AES-128-GCM / ChaCha20-Poly1305・RSA-PSS の証明書・resumption / 0-RTT なし）。tls.Serve(addr, cfg, k) が net.Serve を包み、handshake が済んだ接続だけを k に渡す（handshake 中の接続を利用者に触らせない）。kへ渡す接続はTLSの状態を持つnet.Conn（net.Recv / net.Send / net.Put / net.Flushが暗号化して読み書きする — 平文の接続と同じ関数・同じ規則。breakで抜けた後も、次のnet.Recvが続きを読む）。受けの誤りはnetのラベル（相手のfatal alert・閉じた後 = io.Closed・壊れたrecord = io.Other{errno: 71}）。handshakeの誤り（HandshakeFailed〔alertの種はフィールド〕・Closed）はServeの中で吸収する（alertを送って閉じ、kは呼ばない）。信頼の起点の値 Roots（ParseRoots が作る — 私的 PKI の CA を足すとき std/http/client の Policy の extraRoots: に渡す）もここに住む
 
 ## HandshakeFailed
 
@@ -16,21 +16,13 @@ type HandshakeFailed error {
 
 handshake が失敗した（alert = 送った alert の番号 — RFC 9846 6）
 
-## BadRecord
-
-```sober
-type BadRecord error
-```
-
-受けた record が壊れている（改竄・形の誤り・想定外のメッセージ — 相手へ alert を送って閉じた）
-
 ## Closed
 
 ```sober
 type Closed error
 ```
 
-接続が閉じている（相手の切断・相手の alert・転送路の失敗・途中で抜けた後の Recv）
+handshakeの途中で接続が閉じた（相手の切断・転送路の失敗）
 
 ## Config
 
@@ -38,11 +30,17 @@ type Closed error
 type Config struct {
     chain [][]byte
     key crypto.rsa.PrivateKey
+    ec []byte
     alpn []string
+    allow12 bool
 }
 ```
 
 サーバの設定（Load / Parseが作る — 証明書のチェーン・葉の鍵・受けるALPN）
+
+フィールド:
+
+- `ec` — 葉の鍵が P-256 の ECDSA ならそのスカラー（空 = key の RSA）
 
 ## Roots
 
@@ -63,27 +61,13 @@ type BadRoots error
 
 ParseRootsのPEMが読めない（CERTIFICATEのチャンクが無い・チャンクのDERが証明書の形でない）
 
-## Conn
-
-```sober
-type Conn struct {
-    c net.Conn
-    blk []int
-    wr internal.record.Dir
-    wk []int
-    seal tlsSeal
-}
-```
-
-handshake の済んだ接続（同一性の型 — net.Conn と同じ規則。tls.Serve の k の仮引数としてだけ生まれる）
-
 ## Handler
 
 ```sober
-type Handler func(c Conn) error?
+type Handler func(c net.Conn) error?
 ```
 
-handshake の済んだ接続 1 本の処理（名前つきの関数型 — 値として接続の task へ渡る。[language.md 14 節](../language.md): 公開境界の関数型は名前つき）
+handshake の済んだ接続 1 本の処理（名前つきの関数型 — 値として接続の task へ渡る。[language.md 14 節](../language.md): 公開境界の関数型は名前つき）。接続はTLSの状態を持つnet.Conn（net.Recv / net.Send / net.Put / net.Flushが暗号化して読み書きする）
 
 ## Parse
 
@@ -93,7 +77,7 @@ handshake の済んだ接続 1 本の処理（名前つきの関数型 — 値�
 func Parse(certPem string, keyPem string) (Config, error?)
 ```
 
-PEMの証明書のチェーン（CERTIFICATEが1つ以上 — 葉が先頭）とPKCS#8のRSAの鍵のConfig（ALPNの既定 = http/1.1 — 変えるならAlpn）
+PEMの証明書のチェーン（CERTIFICATEが1つ以上 — 葉が先頭）とPKCS#8の鍵のConfig（ALPNの既定 = http/1.1 — 変えるならAlpn）。鍵は RSA か P-256 の ECDSA で、種類から署名とTLS 1.2のスイートの集合が決まる（ECDSA の鍵 = ECDHE-ECDSA のスイート・ecdsa\_secp256r1\_sha256）。どちらとしても読めなければ crypto.rsa.BadKey
 
 失敗のラベル: `crypto.pem.Bad`・`crypto.rsa.BadKey`
 
@@ -118,6 +102,15 @@ func Alpn(cfg Config, alpn []string) Config
 
 受ける ALPN をサーバの好みの順 alpn に替えた Config（空 = ALPN を使わない。相手の申し出と重ならなければ no\_application\_protocol — RFC 7301）
 
+## DangerouslyAllowTls12
+
+```sober
+@effects()
+func DangerouslyAllowTls12(cfg Config) Config
+```
+
+TLS 1.2 のクライアントも受ける Config（既定は 1.3 だけ）。古いクライアント（Windows 7 / 8.1 の IE 11・古い Safari・Java 7 / 8・Android 4.4 ほか）を繋ぐための opt-in で、1.3 を申し出る相手は今までどおり 1.3。1.2 の道は CBC（MAC-then-encrypt）と RSA 鍵交換（前方秘匿なし）のスイートを含む — 知られた攻撃の面は定数時間の処理・暗黙の拒否・降格の番兵で塞ぐが、1.3 だけの既定より危うい面を持つことを、綴りの dangerously で呼び手に引き受けさせる。ALPN で h2 に決まった接続は ECDHE + AEAD のスイートだけ。再開・再交渉・圧縮・SSL 3.0〜TLS 1.1 は持たない
+
 ## Load
 
 ```sober
@@ -138,7 +131,7 @@ Parse のファイル版（certPath / keyPath を読む）
 func Serve(addr string, cfg Config, k Handler, budget int?, conns int?, reject string?, region int?, headWait int?) error?
 ```
 
-addr で待ち受け、接続ごとに handshake を済ませてから k を走らせる（接続 1 本 = task 1 本 — net.Serve と同じ admission・k の失敗と死は吸収）。handshake の失敗は alert を送って閉じ、k は呼ばない。k が返ったら（error を返しても）close\_notify を送って閉じる。k が死んだときは close\_notify を送らずに閉じるconns・reject・regionはnet.Serveへそのまま（意味も既定もnet.Serveと同じ）。budgetは接続1本の宣言（既定 64 KiB）にwaitStackを足してnet.Serveへ渡す。headWait = 接続を受けてからhandshakeが済むまでの上限（task.MS・既定30秒・0以下は開いた時点で期限切れ）。期限が来たら何も送らずに閉じ、kは呼ばない。kの中のhttp.server.ServeWithは、入った時刻から自分のheadWait: を数える（handshakeの分は数えない）
+addr で待ち受け、接続ごとに handshake を済ませてから k を走らせる（接続 1 本 = task 1 本 — net.Serve と同じ admission・k の失敗と死は吸収）。handshake の失敗は alert を送って閉じ、k は呼ばない。k が返ったら（error を返しても）close\_notify を送って閉じる。k が死んだときは close\_notify を送らずに閉じるconns・reject・regionはnet.Serveへそのまま（意味も既定もnet.Serveと同じ）。budgetは接続1本の宣言（既定 64 KiB）にwaitStackを足してnet.Serveへ渡す。headWait = 接続を受けてからhandshakeが済むまでの上限（task.MS・既定30秒・0以下は開いた時点で期限切れ）。期限が来たら何も送らずに閉じ、kは呼ばない。kの中のhttp.server.ServeConnは、入った時刻から自分のheadWait: を数える（handshakeの分は数えない）
 
 失敗のラベル: `net.Bad`・`io.Closed`・`io.Timeout`・`io.Expired`・`io.Denied`・`io.Other`
 
@@ -150,50 +143,11 @@ type Overflow panic
 
 方向のワードの列が席に入らない（stdの内部の約束違反 — panicラベル）
 
-## Recv
+## Protocol
 
 ```sober
-@errors(BadRecord, Closed)
-@effects(block, io, nondet)
-func Recv(c Conn, k func([]byte)) error?
+@effects()
+func Protocol(c net.Conn) string
 ```
 
-c の受けた application の平文を k に順に渡す（呼び出し形の生成元 — `for b <- tls.Recv(c)? { … }`）。相手の close\_notify で nil。受けの表は internal.hs.Feed の Connected の枝が持つ（受けの方向 rd から作った Hs に枠を 1 つずつ internal.hs.Step〔mut なしの入口 — 表は Feed と共有〕で通す — 表を 1 か所に）。受けた KeyUpdate は受けの鍵を進め、update\_requested なら次の Send が先に自分の KeyUpdate を送る。改竄・形の誤り・想定外は alert を送って BadRecord。k が Put で積んだ分は、受けた切片 1 つ分の record を k へ配り終えるたびに送る（Flush — 次の受けを待つ前に。pump）。1 つの接続で 1 度だけ回せる（break で途中で抜けた後・2 度目は Closed）
-
-失敗のラベル: [`BadRecord`](#badrecord)・[`Closed`](#closed)
-
-## Send
-
-```sober
-@errors(Closed)
-@effects(block, io, panic, nondet)
-func Send(c Conn, b []byte) error?
-```
-
-b を application の record にして c へ送る（空の b は送らない — Put + Flush）。相手の KeyUpdate の要求・AES-GCM の使用上限の手前なら、先に自分の KeyUpdate を送って鍵を進める
-
-失敗のラベル: [`Closed`](#closed)
-
-## Put
-
-```sober
-@errors(Closed)
-@effects(block, io, panic, nondet)
-func Put(c Conn, b []byte) error?
-```
-
-bをapplicationのrecordにしてcの送信バッファに積む。ここでは送らない。Flushか、tls.Recvのkが戻ったときか、送信バッファに入らない次のPutか、Serveの出口が送る。空のbは積まない。送信バッファに入らないとき（積んだ分と合わせてワーカーの送信バッファのチャンクを越える・チャンクを予約できない）と、鍵を進める前後は、積んだ分を送ってからbのrecordをその場で送る（順序は保つ）
-
-失敗のラベル: [`Closed`](#closed)
-
-## Flush
-
-```sober
-@errors(Closed)
-@effects(block, io, nondet)
-func Flush(c Conn) error?
-```
-
-cの送信バッファに積んだrecordを送る（無ければ何もしない）
-
-失敗のラベル: [`Closed`](#closed)
+cのALPNで決まったプロトコル（"h2"・"http/1.1"。申し出が無い・合わなかった・平文の接続は ""）

@@ -1,0 +1,105 @@
+package desugar
+
+// 型引数の字面の無い print.Log(rec)・json.Encode(v)・json.EncodeWith(v, rename)（loaderの保留 — loader/infer.sober）の根の型を、
+// 最初の実引数の表層型から読む。表層型は保留の呼び出しを含む関数にだけ付ける（NamedValueArgsのnvReachと同じ形 — 実引数の型は
+// 囲む関数の本体と宣言された署名・constの型で決まり、他の関数の本体の型付けに依らない）。typerは読むだけで、判定は変えない
+
+import "ast"
+import "loader"
+import "std/iter"
+
+// 根の型の読みの結果
+const InfOk = 0        // 型パラメータなしの型宣言（pkg・name。structか json.Value かはloaderが引く）
+const InfNotDecl = 1   // 型宣言でない（int・slice など）か、型引数つきの型宣言
+const InfTParam = 2    // 型パラメータを含む
+const InfUnknown = 3   // 型が決まらなかった（実引数の式に型の誤りがある）
+
+type InfTy struct {
+    kind int
+    pkg string
+    name string
+}
+
+// pの保留の呼び出しごとの根の型（loader.InfAtの順）
+func InferRoots(p loader.Program) []InfTy {
+    n := loader.InfPending(p)
+    mut st := S{}
+    Init(mut st, p)
+    mut fs := mut []int{}
+    mut ns := mut []int{}
+    for i <- iter.Range(0, n) {
+        f, nd, _ := loader.InfAt(p, i)
+        fs = append(fs, f)
+        ns = append(ns, nd)
+    }
+    st.nvMark = infReach(mut st, freeze(fs), freeze(ns))
+    st.nvSet = true
+    TypeAll(mut st)
+    mut out := mut []InfTy{}
+    for i <- iter.Range(0, n) {
+        out = append(out, infRoot(mut st, p, fs[i], ns[i]))
+    }
+    return freeze(out)
+}
+
+// ファイルf・節nの呼び出しの最初の実引数の表層型を根の型に直す
+func infRoot(st mut S, p loader.Program, f int, n int) InfTy {
+    cn := NodeRef(ABASE + f * FW + n)
+    args := lB(nodeOf(mut st, cn))
+    if lenL(mut st, args) == 0 {
+        return InfTy{kind: InfUnknown, pkg: "", name: ""}
+    }
+    y := YTypeOf(mut st, latN(mut st, args, 0))
+    if y < 0 {
+        return InfTy{kind: InfUnknown, pkg: "", name: ""}
+    }
+    if YHasVar(mut st, y) {
+        return InfTy{kind: InfTParam, pkg: "", name: ""}
+    }
+    x := YAt(mut st, y)
+    if x.k != YDecl || x.c != -1 || !isTreeNode(x.a) {
+        return InfTy{kind: InfNotDecl, pkg: "", name: ""}
+    }
+    df := refFile(x.a)
+    t := p.trees[df]
+    td := t.nodes[refIdx(x.a)]
+    return InfTy{kind: InfOk, pkg: p.pkg_path[FilePkg(mut st, df)], name: loader.Name(t, td.a)}
+}
+
+// 保留の呼び出し（ファイルfs[i]・節ns[i]）を含む関数のマーク（関数の外 — constの初期化式 — はTypeAllの頭で全部付く）
+func infReach(st mut S, fs []int, ns []int) ListRef {
+    mark := ListRef(listN(mut st, st.nfn))
+    for f <- iter.Range(0, st.nfile) {
+        mut hit := false
+        for i <- iter.Range(0, len(fs)) {
+            if fs[i] == f {
+                hit = true
+            }
+        }
+        if hit {
+            t := st.trees[f]
+            mut rs := mut []int{}
+            for i <- iter.Range(0, st.nfn) {
+                nd := fnNode(mut st, i)
+                if fileOf(mut st, nd) == f {
+                    ext := nodeOf(mut st, nd).f
+                    if ext >= 0 && !ZVariant(mut st, i) {
+                        rs = append(rs, i)
+                        rs = append(rs, latI(mut st, ListRef(ext), 1))
+                        rs = append(rs, latI(mut st, ListRef(ext), 2))
+                    }
+                }
+            }
+            rr := freeze(rs)
+            for i <- iter.Range(0, len(fs)) {
+                if fs[i] == f {
+                    fi := zOr(mut st, f, ns[i], rangeOfSorted(rr, t.nodes[ns[i]].tok))
+                    if fi >= 0 {
+                        lput(mut st, mark, fi, 1)
+                    }
+                }
+            }
+        }
+    }
+    return mark
+}

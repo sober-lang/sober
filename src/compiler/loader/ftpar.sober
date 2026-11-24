@@ -21,22 +21,24 @@ type FinT struct {
 type FinTreesR struct {
     trees []ast.Tree
     ok bool
+    // dest の前の木（keep のときだけ — package ごとの仕上げが dest の出す要求を取る。でなければ空）
+    pre []ast.Tree
 }
 
 // 子の経路を通すか（計装の無いbuild・ワーカー2以上・ファイル2つ以上）。通さないなら空の結果（ok = false — 呼び手が逐次の経路）
-func finTreesTry(lay LOut, covOn bool, mutate int) FinTreesR {
+func finTreesTry(lay LOut, covOn bool, mutate int, keep bool, patch bool) FinTreesR {
     if !covOn && mutate == 0 && finParOn(len(lay.trees)) {
-        return finTreesPar(lay)
+        return finTreesPar(lay, keep, patch)
     }
     return finTreesNo()
 }
 
 func finTreesNo() FinTreesR {
-    return FinTreesR{[]ast.Tree{}, false}
+    return FinTreesR{[]ast.Tree{}, false, []ast.Tree{}}
 }
 
 // 子の経路（ok = false は拒否か子の死 — 呼び手が逐次の経路でやり直す）
-func finTreesPar(lay LOut) FinTreesR {
+func finTreesPar(lay LOut, keep bool, patch bool) FinTreesR {
     n := len(lay.trees)
     ts := lay.trees
     paths := lay.path
@@ -66,14 +68,14 @@ func finTreesPar(lay LOut) FinTreesR {
         base += ast.ListLen(ts2[i], ts2[i].nodes[ts2[i].file].d)
     }
     bases := freeze(bs)
-    out, derr := task.Map(finFiles(n), (f) => destFile(ts2[f], vf, rf, mas, bases[f]))
+    out, derr := task.Map(finFiles(n), (f) => if patch { destPatch(destFile(ts2[f], mas, bases[f]), vf, rf, bases[f]) } else { destFile(ts2[f], mas, bases[f]) })
     if derr != nil {
         finStat("trees", n, "died")
         ParFellBack("finish trees", n, "on the direct path", "")
         return finTreesNo()
     }
     finStat("trees", n, "none")
-    return FinTreesR{out, true}
+    return FinTreesR{out, true, if keep { ts2 } else { []ast.Tree{} }}
 }
 
 // 子の本体: ファイルfに embed → nilcase → flow → quick → assert を掛ける（逐次の経路の各変換の1ファイル分）

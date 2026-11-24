@@ -105,6 +105,48 @@ func yDangerGive(st mut S, t int, name StrRef, v NodeRef) {
     yFieldNote(mut st, 8, v, name, t)
 }
 
+// stdの外のコードがstdの `Dangerously` で始まる公開関数を呼んだ点（tls.DangerouslyAllowTls12 のような緩める組み立ての関数）を記録する
+// （種類9 — 種類8と同じ常時の警告。規則は同じ接頭辞: フィールドなら `dangerously`・公開関数なら `Dangerously`。t = 関数の宣言のpackage）
+func yDangerCall(st mut S, fi int, name StrRef, at NodeRef) {
+    if !strHasPrefix(mut st, name, "Dangerously") || strHasPrefix(mut st, PkgPath(mut st, st.ypk), "std/") {
+        return
+    }
+    pk := fnPkg(mut st, fi)
+    if !strHasPrefix(mut st, PkgPath(mut st, pk), "std/") {
+        return
+    }
+    yFieldNote(mut st, 9, at, name, pk)
+}
+
+// 種類9（緩める関数の呼び出し — yDangerCall）の記録の数
+func DangerCalls(st mut S) int {
+    mut n := 0
+    mut r := st.yfaHead - 1
+    while r >= 0 {
+        if hget(mut st, r) == 9 {
+            n += 1
+        }
+        r = hget(mut st, r + 4)
+    }
+    return n
+}
+
+// 種類9のj番目 [呼び出しの節, 関数の名前, 関数のpackage]
+func DangerCall(st mut S, j int) (NodeRef, StrRef, int) {
+    mut n := 0
+    mut r := st.yfaHead - 1
+    while r >= 0 {
+        if hget(mut st, r) == 9 {
+            if n == j {
+                return NodeRef(hget(mut st, r + 1)), StrRef(hget(mut st, r + 2)), hget(mut st, r + 3)
+            }
+            n += 1
+        }
+        r = hget(mut st, r + 4)
+    }
+    return NodeRef(0 - 1), StrRef(0 - 1), 0 - 1
+}
+
 // 種類8（緩和のフィールドに値を与えた — yDangerGive）の記録の数
 func DangerNotes(st mut S) int {
     mut n := 0

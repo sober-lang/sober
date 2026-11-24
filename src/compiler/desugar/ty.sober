@@ -55,15 +55,24 @@ type Ty struct {
 
 const TBASE = 1099511627776
 const TBUCKETS = 65536
+// 表層型の表の頭の数の上限（大きいほど鎖が短いが、表と凍結の写しの常駐が増える — 頭1つ 8 B）
+const TBUCKETS_MAX = 262144
+// 鎖の平均の長さの上限（節の数 ÷ 頭の数）。TBUCKETS_MAX を越える規模では、頭を節の数 ÷ TBUCKETS_LOAD まで増やす
+// （頭打ちのままだと鎖が規模に比例して伸び、引き〔yGet〕の1回が規模に比例する）。TBUCKETS_HARD = その場合の上限
+const TBUCKETS_LOAD = 8
+const TBUCKETS_HARD = 16777216
 
-// 木の節の総数に見合うハッシュ表の頭の数（2 の冪・1024〜TBUCKETS）
+// 木の節の総数に見合うハッシュ表の頭の数（2 の冪・1024〜TBUCKETS_MAX。節の数 ÷ TBUCKETS_LOAD がそれを越える規模では、そこまで〔上限 TBUCKETS_HARD〕）
 func bucketsFor(ts []ast.Tree) int {
     mut n := 0
     for i <- iter.Range(0, len(ts)) {
         n += len(ts[i].nodes)
     }
     mut b := 1024
-    while b < n && b < TBUCKETS {
+    while b < n && b < TBUCKETS_MAX {
+        b = b * 2
+    }
+    while b < n / TBUCKETS_LOAD && b < TBUCKETS_HARD {
         b = b * 2
     }
     return b
@@ -72,6 +81,12 @@ func bucketsFor(ts []ast.Tree) int {
 // 表の頭の数（初期化前のゼロ値の S — Init を通らない経路 — は TBUCKETS）
 func bucketsOf(b int) int {
     return if b > 0 { b } else { TBUCKETS }
+}
+
+// 型の intern の表の頭の数（型の数は木の節の数ほど増えないので TBUCKETS で頭打ち）
+func tyBuckets(b int) int {
+    n := bucketsOf(b)
+    return if n < TBUCKETS { n } else { TBUCKETS }
 }
 
 // 型 t の記録（非ジェネリックの包み — F-10）
@@ -87,11 +102,11 @@ func tyHash(x int) int {
 // フィールドは生のint（子の型はint(t)）— 外からは下の種類つきの構築子で作る
 func mkTy(st mut S, tag int, a int, b int, c int, d int) TyRef {
     if table.Len(mut st.tyBucket) == 0 {
-        for _ <- iter.Range(0, bucketsOf(st.hbuckets)) {
+        for _ <- iter.Range(0, tyBuckets(st.hbuckets)) {
             table.Push(mut st.tyBucket, -1)
         }
     }
-    hb := (((((tyHash(tag) * 31 + tyHash(a)) % 1000003) * 31 + tyHash(b)) % 1000003 * 31 + tyHash(c)) % 1000003 * 31 + tyHash(d)) % bucketsOf(st.hbuckets)
+    hb := (((((tyHash(tag) * 31 + tyHash(a)) % 1000003) * 31 + tyHash(b)) % 1000003 * 31 + tyHash(c)) % 1000003 * 31 + tyHash(d)) % tyBuckets(st.hbuckets)
     mut i := table.Get(mut st.tyBucket, hb)
     while i >= 0 {
         x := tyAt(mut st, TyRef(TBASE + i))
@@ -840,6 +855,27 @@ func tyMutFreeD(st mut S, t TyRef) bool {
     case TMuS: tyMutFreeD(mut st, TyRef(tyAt(mut st, t).c))
     default: true
     }
+}
+
+// spawnで子へ渡せる型か（LeanのTy.givable rs の写し — 子はscopeの出口まで生きるので、渡す値のregionはscopeのregion rs以下）:
+// 組は成分ごと・端点はペイロードがimmでchanなし・domainは家のregion ≤ rs・scopeとhandleは渡せない・それ以外はimmでchanなしでregion ≤ rs。
+// 型変数はkindの旗を見ない（Leanより広い — 狭い側はcheckの検査器が拒否する）
+func tyGivable(st mut S, rs int, t TyRef) bool {
+    x := tg(mut st, t)
+    if x == TPr {
+        return tyGivable(mut st, rs, tLeft(mut st, t)) && tyGivable(mut st, rs, tRight(mut st, t))
+    }
+    if x == TOwn {
+        k := tyAt(mut st, t).a
+        if k == OWN_TX || k == OWN_RX {
+            return tyMutFreeD(mut st, tElem(mut st, t)) && tyChanFree(mut st, tElem(mut st, t))
+        }
+        if k == OWN_DOM {
+            return tRegion(mut st, t) <= rs && tyMutFreeD(mut st, tElem(mut st, t)) && tyChanFree(mut st, tElem(mut st, t))
+        }
+        return false
+    }
+    return tyMutFreeD(mut st, t) && tyChanFree(mut st, t) && !tyRegionAbove(mut st, t, rs)
 }
 
 // 展開されるジェネリック・ジェネリック struct の型引数（チャネル・参照を含まない値の型）

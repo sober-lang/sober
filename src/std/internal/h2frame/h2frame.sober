@@ -1,0 +1,306 @@
+package h2frame
+
+// HTTP/2のフレームの層（RFC 9113 4節・6節）: フレームの頭の読み書き・フレームごとの形の検査・ペイロードの読みと、送るフレームの組み立て。
+// 状態（ストリームの状態機械・窓）は持たない。std/http/serverとstd/http/clientのHTTP/2が使う
+
+import "std/iter"
+
+// フレームの種類（RFC 9113 6節）
+const Data = 0
+const Headers = 1
+const Priority = 2
+const RstStream = 3
+const Settings = 4
+const PushPromise = 5
+const Ping = 6
+const Goaway = 7
+const WindowUpdate = 8
+const Continuation = 9
+
+// フラグ
+const EndStream = 1
+const Ack = 1
+const EndHeaders = 4
+const Padded = 8
+const PriorityFlag = 0x20
+
+// 誤りの符号（RFC 9113 7節）
+const NoError = 0
+const ProtocolError = 1
+const InternalError = 2
+const FlowControlError = 3
+const SettingsTimeout = 4
+const StreamClosed = 5
+const FrameSizeError = 6
+const RefusedStream = 7
+const Cancel = 8
+const CompressionError = 9
+const ConnectError = 10
+const EnhanceYourCalm = 11
+const InadequateSecurity = 12
+const Http11Required = 13
+
+// 検査の結果の印: 誤りの符号にこれを足した値は、ストリームの誤り（RST_STREAM）。足していなければ接続の誤り（GOAWAY）。0 = 誤りなし
+const StreamScope = 0x100
+
+// SETTINGSの識別子（RFC 9113 6.5.2）
+const HeaderTableSize = 1
+const EnablePush = 2
+const MaxConcurrentStreams = 3
+const InitialWindowSize = 4
+const MaxFrameSize = 5
+const MaxHeaderListSize = 6
+
+// フレームの頭の大きさ・既定のフレームの大きさの上限・窓の上限
+const HeadLen = 9
+const DefaultMaxFrame = 16384
+const MaxWindow = 2147483647
+
+// 接続の前置き（RFC 9113 3.4）
+const Preface = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
+
+// フレームの頭
+type Frame struct {
+    len int
+    typ int
+    flags int
+    sid int
+}
+
+func Len(f Frame) int {
+    return f.len
+}
+
+func Type(f Frame) int {
+    return f.typ
+}
+
+func Flags(f Frame) int {
+    return f.flags
+}
+
+// ストリームID（予約のビットは落とす）
+func Sid(f Frame) int {
+    return f.sid
+}
+
+func Has(f Frame, flag int) bool {
+    return (f.flags & flag) != 0
+}
+
+// b[at:]が接続の前置きで始まるか（足りなければfalse）
+func IsPreface(b []byte, at int) bool {
+    p := bytes(Preface)
+    if len(b) - at < len(p) {
+        return false
+    }
+    for i <- iter.Range(0, len(p)) {
+        if b[at + i] != p[i] {
+            return false
+        }
+    }
+    return true
+}
+
+func u16(b []byte, at int) int {
+    return (int(b[at]) << 8) | int(b[at + 1])
+}
+
+func u24(b []byte, at int) int {
+    return (int(b[at]) << 16) | (int(b[at + 1]) << 8) | int(b[at + 2])
+}
+
+func u32(b []byte, at int) int {
+    return (int(b[at]) << 24) | (int(b[at + 1]) << 16) | (int(b[at + 2]) << 8) | int(b[at + 3])
+}
+
+// b[at:at+9]のフレームの頭を読む（長さの検査は呼び手。len(b) - at >= 9）
+func Head(b []byte, at int) Frame {
+    return Frame{len: u24(b, at), typ: int(b[at + 3]), flags: int(b[at + 4]), sid: u32(b, at + 5) & 0x7fffffff}
+}
+
+// フレームの頭の形の検査（RFC 9113 4.2・6節）。maxFrame = 自分が広告したSETTINGS_MAX_FRAME_SIZE。
+// 結果 = 0か、誤りの符号（StreamScopeを足していればストリームの誤り）。知らない種類は0（読み捨てる。RFC 9113 4.1）
+func Check(f Frame, maxFrame int) int {
+    if f.len > maxFrame {
+        return FrameSizeError
+    }
+    t := f.typ
+    if t == Data || t == Headers || t == Continuation {
+        return if f.sid == 0 { ProtocolError } else { 0 }
+    }
+    if t == Priority {
+        if f.sid == 0 {
+            return ProtocolError
+        }
+        return if f.len != 5 { FrameSizeError + StreamScope } else { 0 }
+    }
+    if t == RstStream {
+        if f.sid == 0 {
+            return ProtocolError
+        }
+        return if f.len != 4 { FrameSizeError } else { 0 }
+    }
+    if t == Settings {
+        if f.sid != 0 {
+            return ProtocolError
+        }
+        if (f.flags & Ack) != 0 {
+            return if f.len != 0 { FrameSizeError } else { 0 }
+        }
+        return if f.len % 6 != 0 { FrameSizeError } else { 0 }
+    }
+    if t == PushPromise {
+        // pushを許していない（SETTINGS_ENABLE_PUSH = 0）。サーバーはクライアントから受けない
+        return ProtocolError
+    }
+    if t == Ping {
+        if f.sid != 0 {
+            return ProtocolError
+        }
+        return if f.len != 8 { FrameSizeError } else { 0 }
+    }
+    if t == Goaway {
+        if f.sid != 0 {
+            return ProtocolError
+        }
+        return if f.len < 8 { FrameSizeError } else { 0 }
+    }
+    if t == WindowUpdate {
+        return if f.len != 4 { FrameSizeError } else { 0 }
+    }
+    return 0
+}
+
+// DATAとHEADERSのペイロードb[at:at+len]から、埋め草と優先度の欄を除いた中身の範囲 (始まり, 終わり, 誤り)。誤り = Checkと同じ形
+func Body(f Frame, b []byte, at int) (int, int, int) {
+    mut s := at
+    e := at + f.len
+    mut pad := 0
+    if (f.flags & Padded) != 0 {
+        if f.len < 1 {
+            return 0, 0, FrameSizeError
+        }
+        pad = int(b[s])
+        s += 1
+    }
+    if f.typ == Headers && (f.flags & PriorityFlag) != 0 {
+        if e - s < 5 {
+            return 0, 0, FrameSizeError
+        }
+        // 自分に依存する優先度はストリームの誤り（RFC 9113 5.3.1）。優先度そのものは読み捨てる
+        if (u32(b, s) & 0x7fffffff) == f.sid {
+            return 0, 0, ProtocolError + StreamScope
+        }
+        s += 5
+    }
+    if pad > e - s {
+        return 0, 0, ProtocolError
+    }
+    return s, e - pad, 0
+}
+
+// PRIORITYのペイロードの検査（自分への依存はストリームの誤り）
+func CheckPriority(f Frame, b []byte, at int) int {
+    return if (u32(b, at) & 0x7fffffff) == f.sid { ProtocolError + StreamScope } else { 0 }
+}
+
+// SETTINGSのペイロードb[at:at+n]の値の検査（RFC 9113 6.5.2）。0か接続の誤りの符号
+func CheckSettings(b []byte, at int, n int) int {
+    mut i := 0
+    while i + 6 <= n {
+        id := u16(b, at + i)
+        v := u32(b, at + i + 2)
+        if id == EnablePush && v > 1 {
+            return ProtocolError
+        }
+        if id == InitialWindowSize && v > MaxWindow {
+            return FlowControlError
+        }
+        if id == MaxFrameSize && (v < DefaultMaxFrame || v > 16777215) {
+            return ProtocolError
+        }
+        i += 6
+    }
+    return 0
+}
+
+// SETTINGSのペイロードのk番目の項目 (識別子, 値)
+func Setting(b []byte, at int, k int) (int, int) {
+    return u16(b, at + k * 6), u32(b, at + k * 6 + 2)
+}
+
+// WINDOW_UPDATEの増分（予約のビットは落とす）。0の増分の誤りは呼び手（ストリームなら PROTOCOL_ERRORのストリームの誤り・0番なら接続の誤り）
+func Increment(b []byte, at int) int {
+    return u32(b, at) & 0x7fffffff
+}
+
+// RST_STREAMの誤りの符号
+func RstCode(b []byte, at int) int {
+    return u32(b, at)
+}
+
+// GOAWAYの (最後のストリームID, 誤りの符号)
+func GoawayInfo(b []byte, at int) (int, int) {
+    return u32(b, at) & 0x7fffffff, u32(b, at + 4)
+}
+
+func put24(out mut []byte, v int) {
+    out = append(out, byte((v >> 16) & 0xff))
+    out = append(out, byte((v >> 8) & 0xff))
+    out = append(out, byte(v & 0xff))
+}
+
+func put32(out mut []byte, v int) {
+    out = append(out, byte((v >> 24) & 0xff))
+    out = append(out, byte((v >> 16) & 0xff))
+    out = append(out, byte((v >> 8) & 0xff))
+    out = append(out, byte(v & 0xff))
+}
+
+// フレームの頭を積む
+func PutHead(out mut []byte, n int, typ int, flags int, sid int) {
+    put24(mut out, n)
+    out = append(out, byte(typ))
+    out = append(out, byte(flags))
+    put32(mut out, sid & 0x7fffffff)
+}
+
+// SETTINGSを積む（ids と vals は同じ長さ）
+func PutSettings(out mut []byte, ids []int, vals []int) {
+    PutHead(mut out, len(ids) * 6, Settings, 0, 0)
+    for i <- iter.Range(0, len(ids)) {
+        out = append(out, byte((ids[i] >> 8) & 0xff))
+        out = append(out, byte(ids[i] & 0xff))
+        put32(mut out, vals[i])
+    }
+}
+
+// SETTINGSのACKを積む
+func PutSettingsAck(out mut []byte) {
+    PutHead(mut out, 0, Settings, Ack, 0)
+}
+
+// PINGを積む（ack = 応答。payload = 8バイト）
+func PutPing(out mut []byte, ack bool, payload []byte) {
+    PutHead(mut out, 8, Ping, if ack { Ack } else { 0 }, 0)
+    for i <- iter.Range(0, 8) {
+        out = append(out, payload[i])
+    }
+}
+
+func PutGoaway(out mut []byte, last int, code int) {
+    PutHead(mut out, 8, Goaway, 0, 0)
+    put32(mut out, last & 0x7fffffff)
+    put32(mut out, code)
+}
+
+func PutRst(out mut []byte, sid int, code int) {
+    PutHead(mut out, 4, RstStream, 0, sid)
+    put32(mut out, code)
+}
+
+func PutWindowUpdate(out mut []byte, sid int, inc int) {
+    PutHead(mut out, 4, WindowUpdate, 0, sid)
+    put32(mut out, inc & 0x7fffffff)
+}

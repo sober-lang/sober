@@ -1,0 +1,261 @@
+package mux
+
+// 子が積んだバイト列を接続のtaskが到着の順に取り出す。待ち（空の列で眠り、子のPostで起きる）・期限・溜めの返却
+
+import "std/os"
+import "std/task"
+
+func fresh() []int {
+    mut r := mut []int{}
+    while len(r) < Words {
+        r = append(r, 0)
+    }
+    return freeze(r)
+}
+
+func pat(sid int, n int) []byte {
+    mut b := mut []byte{}
+    while len(b) < n {
+        b = append(b, byte((sid * 7 + len(b)) % 251))
+    }
+    return freeze(b)
+}
+
+func same(a []byte, b []byte) bool {
+    if len(a) != len(b) {
+        return false
+    }
+    mut i := 0
+    while i < len(a) {
+        if a[i] != b[i] {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+// 列の順と欄（taskなしの積みと取り出し）
+func TestOrder() {
+    rec := fresh()
+    m := Of(rec)
+    assert(None(Take(m)))
+    assert(Post(m, Resp, 1, pat(1, 10), -1) == Ok)
+    assert(Post(m, End, 3, []byte{}, -1) == Ok)
+    assert(Post(m, Resp, 5, pat(5, Max), -1) == Ok)
+    assert(Post(m, Resp, 5, pat(5, Max + 1), -1) == TooLong)
+    s1 := Take(m)
+    assert(Kind(s1) == Resp && Sid(s1) == 1 && Len(s1) == 10 && same(Bytes(s1), pat(1, 10)))
+    Free(m, s1)
+    s2 := Take(m)
+    assert(Kind(s2) == End && Sid(s2) == 3 && Len(s2) == 0)
+    Free(m, s2)
+    s3 := Take(m)
+    assert(Sid(s3) == 5 && same(Bytes(s3), pat(5, Max)))
+    Free(m, s3)
+    assert(None(Take(m)))
+    assert(PoolUse() == 0)
+}
+
+// 子が積み、接続のtaskが待って受ける。ストリームごとの中身と本数が合い、溜めが全部戻る
+func TestChildren() {
+    rec := fresh()
+    m := Of(rec)
+    n := 40
+    got, e := task.Run((s task.Scope) => {
+        mut i := 1
+        while i <= n {
+            sid := i * 2 + 1
+            slot := i - 1
+            _ = task.Spawn(s, () => {
+                _ = Post(m, Resp, sid, pat(sid, sid * 37 % 3000), slot)
+                _ = Post(m, End, sid, []byte{}, -1)
+                0
+            })
+            i += 1
+        }
+        mut ends := 0
+        mut bad := 0
+        mut resp := 0
+        while ends < n {
+            sg := Take(m)
+            if None(sg) {
+                assert(WaitSig(m) == Ok)
+            } else {
+                if Kind(sg) == End {
+                    ends += 1
+                } else {
+                    resp += 1
+                    if !same(Bytes(sg), pat(Sid(sg), Sid(sg) * 37 % 3000)) {
+                        bad += 1
+                    }
+                }
+                Free(m, sg)
+            }
+        }
+        resp * 1000 + bad
+    })
+    assert(e == nil)
+    assert(got == n * 1000)
+    assert(PoolUse() == 0)
+    assert(PoolPeak() >= 1)
+}
+
+// 誰も積まなければ期限で切れる
+func TestExpire() {
+    rec := fresh()
+    m := Of(rec)
+    r, e := task.Run((s task.Scope) => {
+        WaitSig(m)
+    }, deadline: 20 * task.MS)
+    _ = e
+    assert(r == Expired)
+}
+
+// 枠: 同じ枠の応答は、前の応答がFreeされるまで次のPostが待つ（列に同じ枠の応答は1つまで）
+func TestSlotWait() {
+    rec := fresh()
+    m := Of(rec)
+    r, e := task.Run((s task.Scope) => {
+        _ = task.Spawn(s, () => {
+            mut k := 0
+            while k < 3 {
+                _ = Post(m, Resp, 7, pat(k, 100 + k), 4)
+                k += 1
+            }
+            _ = Post(m, End, 7, []byte{}, -1)
+            0
+        })
+        mut seen := 0
+        mut bad := 0
+        mut ends := 0
+        while ends < 1 {
+            sg := Take(m)
+            if None(sg) {
+                assert(WaitSig(m) == Ok)
+            } else {
+                if Kind(sg) == Resp {
+                    if !same(Bytes(sg), pat(seen, 100 + seen)) {
+                        bad += 1
+                    }
+                    seen += 1
+                    // Freeの前は、子は次の応答を積めない
+                    os.Sleep(20)
+                    nx := Take(m)
+                    if !None(nx) {
+                        if Kind(nx) == Resp {
+                            bad += 100
+                        } else {
+                            ends += 1
+                        }
+                        Free(m, nx)
+                    }
+                } else {
+                    ends += 1
+                }
+                Free(m, sg)
+            }
+        }
+        seen * 1000 + bad
+    }, deadline: 5000 * task.MS)
+    assert(e == nil)
+    assert(r == 3000)
+    assert(PoolUse() == 0)
+}
+
+// 溜め: 上限を越える子の積みは、空くまで待ってから進む。最大は上限を越えない
+func TestPoolWait() {
+    SetPoolCap(4)
+    rec := fresh()
+    m := Of(rec)
+    n := 12
+    r, e := task.Run((s task.Scope) => {
+        mut i := 0
+        while i < n {
+            sid := i
+            _ = task.Spawn(s, () => {
+                _ = Post(m, Resp, sid, pat(sid, 500), -1)
+                0
+            })
+            i += 1
+        }
+        mut got := 0
+        mut bad := 0
+        while got < n {
+            sg := Take(m)
+            if None(sg) {
+                assert(WaitSig(m) == Ok)
+            } else {
+                if !same(Bytes(sg), pat(Sid(sg), 500)) {
+                    bad += 1
+                }
+                got += 1
+                os.Sleep(2)
+                Free(m, sg)
+            }
+        }
+        got * 1000 + bad
+    }, deadline: 5000 * task.MS)
+    assert(e == nil)
+    assert(r == n * 1000)
+    assert(PoolCap() == 4)
+    assert(PoolPeak() <= 4 && PoolPeak() >= 1)
+    assert(PoolUse() == 0)
+    assert(task.Ledger().streamChunks == 0)
+    assert(task.Ledger().streamChunksPeak == PoolPeak())
+}
+
+// 溜めの空きを待つ子は必ず起きる（返す側は待ち手が居るときだけ鍵を取る — 待つ側は列に積んでから空きを見直すので取りこぼさない）。
+// 上限1チャンクに、大きい組の積みを子40本から同時に出し、受け手は取ったらすぐ返す（返しと待ちが詰まって交互に起きる）。15周
+func TestPoolWaitWake() {
+    SetPoolCap(1)
+    mut round := 0
+    mut ok := 0
+    while round < 15 {
+        rec := fresh()
+        m := Of(rec)
+        n := 40
+        r, e := task.Run((s task.Scope) => {
+            mut i := 0
+            while i < n {
+                sid := i
+                _ = task.Spawn(s, () => {
+                    _ = Post(m, Resp, sid, pat(sid, 600), -1)
+                    0
+                })
+                i += 1
+            }
+            mut got := 0
+            while got < n {
+                sg := Take(m)
+                if None(sg) {
+                    assert(WaitSig(m) == Ok)
+                } else {
+                    got += 1
+                    Free(m, sg)
+                }
+            }
+            got
+        }, deadline: 5000 * task.MS)
+        if e == nil && r == n {
+            ok += 1
+        }
+        round += 1
+    }
+    assert(ok == 15)
+    assert(PoolPeak() <= 1)
+    assert(PoolUse() == 0)
+}
+
+// 溜めの上限は箱（task.Ledger().cap — 根の天井）の1/8をチャンクの大きさで割った数（256〜2^20）
+func TestPoolCapBox() {
+    bx := task.Ledger().cap
+    mut want := bx >> 17
+    if want < 256 {
+        want = 256
+    }
+    if want > 1048576 {
+        want = 1048576
+    }
+    assert(PoolCap() == want)
+}

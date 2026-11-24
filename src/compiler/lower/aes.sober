@@ -32,6 +32,13 @@ const AK_GHASH = 3  // a = [状態, p, n]
 const AK_TAG = 4    // a = [状態, dst]（dst[0:16] = Y ⊕ E(J0) — 状態は読むだけ）
 const AK_SEAL = 5   // a = [状態, src, dst, n]（n は 128 の倍数 — CTR と、書いた暗号文の GHASH を縫い合わせて 1 回の走査）
 const AK_OPEN = 6   // a = [状態, src, dst, n]（n は 128 の倍数 — 暗号文 src の GHASH と CTR の復号を縫い合わせて 1 回の走査）
+const AK_CBCKEY = 7 // a = [key, CBC の鍵の表]
+const AK_CBCE = 8   // a = [状態, src, dst, n]（n は 16 の倍数 — CBC の暗号化）
+const AK_CBCD = 9   // a = [状態, src, dst, n]（n は 16 の倍数 — CBC の復号）
+
+// CBC の鍵の表（352 バイト — aescbckey が 1 回作る）: [0, 176) 暗号化の鍵 11 ラウンド・[176, 352) 復号の鍵（Equivalent Inverse Cipher の順 —
+// 暗号化の鍵の 10, aesimc(9), …, aesimc(1), 0）。CBC の状態: [0, 16) 連鎖の IV（前の暗号文のブロック）・[32, 40) 鍵の表の番地（AS_KEY — GCM と同じ位置）
+const AK_DEC = 176
 
 // cpuaesの値（hwのパス: rt.cpuのフラグのbit 1）
 func cpuAes(st mut St) int {
@@ -48,5 +55,5 @@ func aesOp(st mut St, kind int, vs int) int {
 
 // IR テキストの綴り
 func aesName(kind int) string {
-    return if kind == AK_CPU { "aes.cpu " } else if kind == AK_KEY { "aes.key " } else if kind == AK_CTR { "aes.ctr " } else if kind == AK_GHASH { "aes.ghash " } else if kind == AK_TAG { "aes.tag " } else if kind == AK_SEAL { "aes.seal " } else { "aes.open " }
+    return if kind == AK_CPU { "aes.cpu " } else if kind == AK_KEY { "aes.key " } else if kind == AK_CTR { "aes.ctr " } else if kind == AK_GHASH { "aes.ghash " } else if kind == AK_TAG { "aes.tag " } else if kind == AK_SEAL { "aes.seal " } else if kind == AK_OPEN { "aes.open " } else if kind == AK_CBCKEY { "aes.cbckey " } else if kind == AK_CBCE { "aes.cbce " } else { "aes.cbcd " }
 }

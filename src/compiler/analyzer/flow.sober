@@ -24,6 +24,10 @@ type Eng struct {
     env table.Table[int]     // 今の関数の局所 [名前, lo, hi]…
     envN int
     envChanged bool
+    // 宣言ごとの局所（envDeclare）: envKey = 項目ごとの宣言の鍵（-1 = 名前ごとの項目）・envCur = [名前, 項目]… の envCurN 組（名前ごとの今の項目）
+    envKey table.Table[int]
+    envCur table.Table[int]
+    envCurN int
     // 今の関数の局所の束縛のラムダ（`f := (…) => …` — 使用の点へ展開される）の名前とラムダの節（llN 個が有効 — errors の名前空間）
     llName table.Table[int]
     llLam table.Table[int]
@@ -161,7 +165,81 @@ func enqueue(az mut Az, f int) {
 
 // ── 局所（名前 → 集合 — az.er.envN 個が有効）──
 
+// 同じ名前の束縛が兄弟のスコープ（別のfor・別のブロック）にあっても、宣言ごとに別の項目にする。シャドーイングの禁止で、ある点で見える同じ名前の束縛は1つだけで、
+// 構造の順に歩くとそれはその名前の最後に歩いた宣言になる。だから宣言を歩くたびに名前の今の項目を付け替え、参照と代入（envFind）は今の項目を引く。
+// 項目は関数の巡回の周をまたいで持つ（前の周の値と合併する — ループで持ち越す値を見逃さない）。key = 宣言の鍵（節と名前の位置）
+func envDeclare(az mut Az, name desugar.StrRef, key int, m LSet) {
+    if name == -1 {
+        return
+    }
+    mut i := -1
+    for q <- iter.Range(0, az.er.envN) {
+        if q < table.Len(mut az.er.envKey) && table.Get(mut az.er.envKey, q) == key {
+            i = q
+        }
+    }
+    if i == -1 {
+        i = az.er.envN
+        envKeyPut(mut az, key)
+        if i * 3 < table.Len(mut az.er.env) {
+            table.Set(mut az.er.env, i * 3, int(name))
+            table.Set(mut az.er.env, i * 3 + 1, lsNone().lo)
+            table.Set(mut az.er.env, i * 3 + 2, lsNone().hi)
+        } else {
+            table.Push(mut az.er.env, int(name))
+            table.Push(mut az.er.env, lsNone().lo)
+            table.Push(mut az.er.env, lsNone().hi)
+        }
+        az.er.envN += 1
+    }
+    c := envCurOf(mut az, name)
+    if c >= 0 {
+        table.Set(mut az.er.envCur, c * 2 + 1, i)
+    } else if az.er.envCurN * 2 < table.Len(mut az.er.envCur) {
+        table.Set(mut az.er.envCur, az.er.envCurN * 2, int(name))
+        table.Set(mut az.er.envCur, az.er.envCurN * 2 + 1, i)
+        az.er.envCurN += 1
+    } else {
+        table.Push(mut az.er.envCur, int(name))
+        table.Push(mut az.er.envCur, i)
+        az.er.envCurN += 1
+    }
+    o := envGet(mut az, i)
+    if !lsSub(m, o) {
+        u := lsOr(o, m)
+        table.Set(mut az.er.env, i * 3 + 1, u.lo)
+        table.Set(mut az.er.env, i * 3 + 2, u.hi)
+        az.er.envChanged = true
+    }
+}
+
+// 名前の今の項目の組の位置（無い・項目が切り詰められた〔ラムダの本体の後〕なら -1）
+func envCurOf(az mut Az, name desugar.StrRef) int {
+    for c <- iter.Range(0, az.er.envCurN) {
+        if desugar.StrEq(mut az.d, desugar.StrRef(table.Get(mut az.er.envCur, c * 2)), name) {
+            return if table.Get(mut az.er.envCur, c * 2 + 1) < az.er.envN { c } else { -1 }
+        }
+    }
+    return -1
+}
+
+// 項目 envN の宣言の鍵を置く
+func envKeyPut(az mut Az, key int) {
+    if az.er.envN < table.Len(mut az.er.envKey) {
+        table.Set(mut az.er.envKey, az.er.envN, key)
+    } else {
+        while table.Len(mut az.er.envKey) < az.er.envN {
+            table.Push(mut az.er.envKey, -1)
+        }
+        table.Push(mut az.er.envKey, key)
+    }
+}
+
 func envFind(az mut Az, name desugar.StrRef) int {
+    c := envCurOf(mut az, name)
+    if c >= 0 {
+        return table.Get(mut az.er.envCur, c * 2 + 1)
+    }
     for i <- iter.Range(0, az.er.envN) {
         if desugar.StrEq(mut az.d, desugar.StrRef(table.Get(mut az.er.env, i * 3)), name) {
             return i
@@ -180,6 +258,7 @@ func envAdd(az mut Az, name desugar.StrRef, m LSet) {
     }
     i := envFind(mut az, name)
     if i == -1 {
+        envKeyPut(mut az, -1)
         if az.er.envN * 3 < table.Len(mut az.er.env) {
             table.Set(mut az.er.env, az.er.envN * 3, int(name))
             table.Set(mut az.er.env, az.er.envN * 3 + 1, m.lo)

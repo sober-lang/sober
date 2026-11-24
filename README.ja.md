@@ -109,6 +109,8 @@ Soberの値指向は、次の2つの約束を指します（詳しくは[値指�
 
 - メモリ安全かつデータ競合なし。GCも借用検査も使いません。これは値指向から導かれます（上の節）。
 - エラーの取りこぼしを拒否する。解析器が呼び出しのグラフからエラーをラベルの集合として導出し、公開の境界では宣言を求めます（[規則](docs/spec/07-errors.ja.md)）。
+- 攻撃を受けてもサーバーはメモリの箱に収まり、ハンドラはふつうのコードのまま。ハンドラの確保はすべて接続のtaskのregionに入るので、メモリは接続ごとに実測で数えられ、予算を越えた接続だけを止めて、そのメモリをまるごと取り戻せます。外側の上限（コンテナ）では、全接続を道連れにすることしかできません。
+- サーバーは待つ時間に上限を持つ。ヘッダの受信・本文の受信・送信のそれぞれに期限があります（`headWait:`・`bodyWait:`・`sendWait:`）。入場が満ちたときは、新しい接続を待ち行列で待たせ、待たせている間は何も受けていない接続を切って枠を空けます。HttpArenaの耐性の検査27項目が、すべてsurvivedで終わります（v0.7.5）。
 
 → [なぜ安全か](docs/design-notes/safe.md)
 
@@ -118,6 +120,8 @@ Soberの値指向は、次の2つの約束を指します（詳しくは[値指�
 - Rustに匹敵する実行速度。同じアルゴリズムの素直なRustと比べて、逐次9題材で勝ち6・互角2・負け1（負けはn-body 1.17×）。Goには6勝3互角（負けなし）です。 <!-- benchsync:readme-speed-ja -->
 - Rust並みのメモリフットプリント。GCはありません。最大RSSは9題材中8題材でRust以下です（上回るのはk-nucleotide）。 <!-- benchsync:readme-rss-ja -->
 - taskが軽い。2026-10-10の計測で、[Skynet](bench/skynet) の111万taskがGoの5倍速く動きました。
+- 待っている接続が小さい。次のリクエストを待つTLSの接続の常駐は12 KiBです（4,000本の接続での実測）。
+- 再ビルドが短い。10万行のプログラムの1行を変えた後の `sober build` は0.85秒です（100万行で8.6秒）。2026-11-23の計測で、ワーカー8・9回の中央値です。
 
 → [なぜ速いか](docs/design-notes/fast.md)
 
@@ -226,7 +230,7 @@ Soberは言語そのものの他に、いくつかの「検証できる主張」
 
 全部この木の中の実物です:
 
-- HTTP/1.1 + TLS 1.3のサーバ — `std/http/server` で書いたentryが [HttpArena](https://github.com/MDA2AV/HttpArena) の公開リーダーボードでC / Rust / Vの実装と並んでいます（`bench/httparena/`）
+- HTTPのサーバ: HTTP/1.1とHTTP/2（h2cと、TLSの上でALPN）・TLS 1.3（明示すればTLS 1.2も）。`std/http/server` で書いたentryが [HttpArena](https://github.com/MDA2AV/HttpArena) の公開リーダーボードでC / Rust / Vの実装と並んでいます（`bench/httparena/`）。HTTP/2はゲートでh2specにかけています
 - このコンパイラ自身 — 約16万行のセルフホスト。字句解析からx86-64の機械語とELFの生成まで、libcなしでSoberで書かれています（`src/compiler/`）
 - stdの中身 — JSON・gzip / deflate・TLS 1.3・HTTPクライアント（証明書チェーンの検証つき）・暗号（AES-GCM / SHA-256 / RSA / x25519 / パスワードハッシュ）・セッショントークン・PostgreSQLのクライアント・io_uringのM:Nランタイム（`src/std/`）
 - 開発道具 — テストランナー・プロパティベーステスト・ファジング・カバレッジ・ミューテーションテスト・watch（`sober test` の一式もコンパイラの一部としてSober製）
@@ -247,12 +251,12 @@ v0.7時点で実装済みの表面の一覧です。規則の全文は[言語仕
 - メモリ: region（寿命 = スコープの入れ子）・Pool・資源の上限の宣言（予算）
 - 並行: structured concurrency（scopeとtask）・チャネル・決定的な並列・予算と期限・lease・domain（多くのtaskから1つの状態への直列の更新・待ちの上限つき。ソースにlockは書かない）
 - packageとimport: 1ディレクトリ = 1 package・修飾子はimportパスの全要素（`std/http/server` → `http.server.X`）・ビルドの起点の `sober.mod` でモジュールの名前とローカルの依存を宣言（[規則](docs/spec/08-packages.ja.md)）
-- アノテーション: `@embed`・`@layout`・秘密の値の追跡 ほか
+- アノテーション: `@embed`・`@layout`・`@logs`（ログの行き先）・秘密の値の追跡 ほか
 - テスト: `sober test` とassert（偽なら部分式の値とassertの位置を印字・任意のラベル `assert(e, label)`）・std/quickのプロパティベーステスト・`sober fuzz`・`--cover`（カバレッジ）・`--mutate`（ミューテーションテスト）・ビルド時の差し替え（テストの `@doubles` が明示したdouble〔`*_double.sober`〕を、そのテストのビルドでだけ本物のpackageの代わりに読む — 署名・型・エフェクトは本物の宣言と照合）
 
-標準ライブラリ（全33 package。署名と説明は [stdリファレンス](docs/std/README.ja.md)）:
+標準ライブラリ（全34 package。署名と説明は [stdリファレンス](docs/std/README.ja.md)）:
 
-- 入出力と通信: io・os・net（TCP・DNSのスタブリゾルバ）・http/server（HTTP/1.1サーバ・SSE・multipart・Cookie）・http/client（HTTP/1.1クライアント — TLS 1.3が既定・証明書チェーンは常に検証）・tls（TLS 1.3サーバ）・url・session（署名つきのセッショントークン）・time（壁時計と単調時計・RFC 3339 / HTTP-date・タイムゾーン）・cli（宣言の表のCLI）・env（環境変数の宣言の表）・pg（PostgreSQLのクライアント — wire protocol 3.0・TLS / SCRAM・トランザクション・接続プール）
+- 入出力と通信: io・os・print（構造化ログ。print.Logはレコードを1行のJSON Linesにして書き、待たない。書き切れないレコードは捨て、捨てた件数は `$dropped` の行と `task.Ledger().logs` に残る）・net（IPv4とIPv6のTCP・dual-stackのlisten・AとAAAAを問い合わせるDNSのスタブリゾルバ）・http/server（HTTP/1.1とHTTP/2のサーバ・SSE・multipart・Cookie・受信と送信の期限・入場の待ち行列）・http/client（HTTP/1.1とHTTP/2のクライアント。TLS 1.3が既定・証明書チェーンは常に検証）・tls（TLS 1.3サーバ。明示すればTLS 1.2も）・url・session（署名つきのセッショントークン）・time（壁時計と単調時計・RFC 3339 / HTTP-date・タイムゾーン）・cli（宣言の表のCLI）・env（環境変数の宣言の表）・pg（PostgreSQLのクライアント。wire protocol 3.0・TLS / SCRAM・トランザクション・接続プール）
 - 暗号とハッシュ: crypto（AES-GCM・ChaCha20-Poly1305・SHA-256・HMAC・HKDF・X25519・RSA・PEM・パスワードハッシュ〔Argon2id・bcrypt・PBKDF2〕・暗号用の乱数・定数時間演算）・hash（crc32・sha256）・uuid（v4 / v7）
 - 符号化と変換: json・base64・hex・binary・convert・strings・utf8・compress（flate / gzipの符号と復号）
 - データと計算: iter・sort・math・rand・table・builder・pool・layout
@@ -261,6 +265,7 @@ v0.7時点で実装済みの表面の一覧です。規則の全文は[言語仕
 ツール（単バイナリ `sober` のサブコマンド）:
 
 - `build`（`--emit=ll|ir|elf` の中間出力つき）・`run`・`check`（buildせずに型検査 + analyzer）・`test`（`--cover`・`--mutate`・`--wiring`）・`fuzz`・`watch`（保存のたびにcheckし、buildとテストを裏で温める）・`fmt`・`iface`（packageの公開面の印字）・`fix`（導出した `@effects` / `@errors` の書き込み）・`outline`（宣言の一覧と行の範囲）・`doc --cli`・`cache`
+- `build --profile=<file>` は、プロファイルが冷たいと示したコードのブロックを、各関数の熱いコードの後ろに並べる。出力はソース・コンパイラ・プロファイルだけで決まる。bench/httparenaの手元の計測（8通りのコード配置の中央値）で、リクエストあたりのcyclesがpipelinedで6.7%、json-compで5.7%減った
 - `check`・`build`・`test` は前回と同じ問い合わせの答えを覚えて返し、編集の後は変わった関数とpackageだけをやり直す（キャッシュは既定on）
 
 ## ロードマップ — まだ実装していないもの
@@ -274,7 +279,13 @@ v0.7時点で実装済みの表面の一覧です。規則の全文は[言語仕
 - [ ] 運用のためのTLSの機能（証明書の差し替え・クライアント認証・セッションの再開）
 - [x] データベースのクライアント: PostgreSQL（wire protocol 3.0・TLS / SCRAM・トランザクション・接続プール）
 - [ ] データベースのクライアント: MySQL
-- [x] HTTPクライアント（HTTP/1.1・TLS 1.3 / 1.2・プロキシのCONNECT）
+- [x] HTTPクライアント（HTTP/1.1とHTTP/2・TLS 1.3 / 1.2・プロキシのCONNECT）
+- [x] サーバのHTTP/2（h2cと、TLSの上でALPN）
+- [x] サーバのTLS 1.2（明示して有効にする）
+- [x] IPv6（dual-stackのlisten・AAAAの問い合わせ）
+- [x] 構造化ログ（print.Log）
+- [ ] HTTPサーバのアクセスログ
+- [ ] 結果と混ざらないデバッグ出力（print.Debug）
 - [ ] HTTP/1.1の網羅
 - [ ] 対になるAPIのうち、片側しかないものの残り半分
 - [ ] 正規表現（設計を検討中）

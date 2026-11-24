@@ -41,9 +41,10 @@ func leaseAll(cx Cx) ([]ast.Tree, error?) {
     ppar := pkgOf(cx, "std/task")
     ppool := pkgOf(cx, "std/pool")
     mut out := mut []ast.Tree{}
-    mut k := 0
     for f <- iter.Range(0, len(cx.trees)) {
         t := cx.trees[f]
+        // 合成の束縛 $lp<k> / $at<k> の番号はファイルごとに数える（ほかのファイルのウィンドウの数で名前が変わらない）
+        mut k := 0
         // std/taskもstd/poolもimportしないファイルは触る所が無い（ウィンドウのラムダはparserが $task / $poolを足すので、ここに入る）— 自己buildのコスト
         if !leaseImports(cx, f, ppar, ppool) {
             out = append(out, t)
@@ -59,7 +60,7 @@ func leaseAll(cx Cx) ([]ast.Tree, error?) {
                     if b.kind == ast.EIdent {
                         pk := fileImportOf(cx, f, Name(t, b.a))
                         if pk >= 0 && (pk == ppar || pk == ppool) {
-                            return []ast.Tree{}, diag.Par{at: diag.Pos{file: f, tok: x.tok}, kind: if StrIs(t, x.b, "ServePool") { PAR_SERVEPOOL_RESERVED } else { PAR_LEASE_RESERVED }}
+                            return []ast.Tree{}, diag.Par{at: diag.Pos{file: f, tok: x.tok}, kind: if StrIs(t, x.b, "ServePool") || StrIs(t, x.b, "ServeAcceptRetry") { PAR_SERVEPOOL_RESERVED } else { PAR_LEASE_RESERVED }}
                         }
                     }
                 }
@@ -87,15 +88,15 @@ func leaseAll(cx Cx) ([]ast.Tree, error?) {
     return freeze(out), nil
 }
 
-// stdの中だけが呼べる std/task の関数の名前か（task.NewLocal / task.Leaseの変換先と、std/netのServeのプール ServePool）。
+// stdの中だけが呼べる std/task の関数の名前か（task.NewLocal / task.Leaseの変換先と、std/netのServeのプール ServePool と受け付けの失敗の扱い ServeAcceptRetry）。
 // docs/std の生成（tools/docgen）もこの表で外す
 func StdOnlyName(s string) bool {
-    return s == "LocalNew" || s == "LeaseTake" || s == "LeaseGive" || s == "LeaseBlock" || s == "LeaseAttach" || s == "ServePool"
+    return s == "LocalNew" || s == "LeaseTake" || s == "LeaseGive" || s == "LeaseBlock" || s == "LeaseAttach" || s == "ServePool" || s == "ServeAcceptRetry"
 }
 
 // フィールドの名前sがstdの中だけが呼べる名前か（StdOnlyName と同じ表）
 func leaseReserved(t ast.Tree, s int) bool {
-    return StrIs(t, s, "LocalNew") || StrIs(t, s, "LeaseTake") || StrIs(t, s, "LeaseGive") || StrIs(t, s, "LeaseBlock") || StrIs(t, s, "LeaseAttach") || StrIs(t, s, "ServePool")
+    return StrIs(t, s, "LocalNew") || StrIs(t, s, "LeaseTake") || StrIs(t, s, "LeaseGive") || StrIs(t, s, "LeaseBlock") || StrIs(t, s, "LeaseAttach") || StrIs(t, s, "ServePool") || StrIs(t, s, "ServeAcceptRetry")
 }
 
 // 節 x が std/task の NewLocal（1）/ Lease（2）の呼び出しか（違えば 0）。`task.NewLocal[T](…)` の型引数の形も

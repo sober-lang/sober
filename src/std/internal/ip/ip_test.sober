@@ -1,0 +1,125 @@
+package ip
+
+// RFC 4291 2.2の綴りの例を全部（3つの形）と、RFC 5952の2.1・4節・5節の例を全部。SplitHostPortの受ける形と拒む形
+
+func eq(a []byte, b []byte) bool {
+    if len(a) != len(b) {
+        return false
+    }
+    mut i := 0
+    while i < len(a) {
+        if a[i] != b[i] {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+func h6(s string) string {
+    return Format6(Parse6(s))
+}
+
+func TestParse4() {
+    assert(eq(Parse4("127.0.0.1"), []byte{127, 0, 0, 1}))
+    assert(eq(Parse4("0.0.0.0"), []byte{0, 0, 0, 0}))
+    assert(eq(Parse4("255.255.255.255"), []byte{255, 255, 255, 255}))
+    assert(len(Parse4("256.0.0.1")) == 0)
+    assert(len(Parse4("01.2.3.4")) == 0)
+    assert(len(Parse4("1.2.3")) == 0)
+    assert(len(Parse4("1.2.3.4.5")) == 0)
+    assert(len(Parse4("1..3.4")) == 0)
+    assert(len(Parse4("1.2.3.")) == 0)
+    assert(len(Parse4(".1.2.3")) == 0)
+    assert(len(Parse4("1.2.3.4a")) == 0)
+    assert(len(Parse4("1234.2.3.4")) == 0)
+    assert(len(Parse4("")) == 0)
+    assert(len(Parse4("::1")) == 0)
+}
+
+// RFC 4291 2.2の1つ目の形（16進の8群）・2つ目（"::"の省略）・3つ目（末尾のIPv4）の例
+func TestParse6Rfc4291() {
+    a := Parse6("ABCD:EF01:2345:6789:ABCD:EF01:2345:6789")
+    assert(eq(a, []byte{0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89}))
+    b := Parse6("2001:DB8:0:0:8:800:200C:417A")
+    assert(eq(b, []byte{0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 8, 8, 0, 0x20, 0x0c, 0x41, 0x7a}))
+    assert(eq(Parse6("2001:DB8::8:800:200C:417A"), b))
+    assert(eq(Parse6("FF01:0:0:0:0:0:0:101"), Parse6("FF01::101")))
+    assert(eq(Parse6("FF01::101"), []byte{0xff, 0x01, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01, 0x01}))
+    assert(eq(Parse6("0:0:0:0:0:0:0:1"), Parse6("::1")))
+    assert(eq(Parse6("::1"), []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}))
+    assert(eq(Parse6("0:0:0:0:0:0:0:0"), Parse6("::")))
+    assert(eq(Parse6("::"), []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}))
+    c := Parse6("0:0:0:0:0:0:13.1.68.3")
+    assert(eq(c, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 13, 1, 68, 3}))
+    assert(eq(Parse6("::13.1.68.3"), c))
+    d := Parse6("0:0:0:0:0:FFFF:129.144.52.38")
+    assert(eq(d, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, 129, 144, 52, 38}))
+    assert(eq(Parse6("::FFFF:129.144.52.38"), d))
+}
+
+func TestParse6Rejects() {
+    cases1 := []string{"", "1", "1.2.3.4", ":", ":::", "1::2::3", "1:2:3:4:5:6:7", "1:2:3:4:5:6:7:8:9", "1:2:3:4:5:6:7::8",
+            "12345::", "g::", ":1::", "1::2:", "1:2:3:4:5:6:7:", "::1.2.3", "::1.2.3.4:5", "1.2.3.4::", "1:2:3:4:5:6:7:1.2.3.4",
+            "::01.2.3.4", "[::1]", "::1%eth0", " ::1"}
+    for s <- cases1 {
+        assert(len(Parse6(s)) == 0)
+    }
+    assert(len(Parse6("1:2:3:4:5:6::")) == 16)
+    assert(len(Parse6("::2:3:4:5:6:7:8")) == 16)
+    assert(len(Parse6("1:2:3:4:5:6:1.2.3.4")) == 16)
+}
+
+// RFC 5952 2.1の同じ番地の綴りの例は全部、4節の規則で1つの綴りになる
+func TestFormat6Rfc5952() {
+    cases2 := []string{"2001:db8:0:0:1:0:0:1", "2001:0db8:0:0:1:0:0:1", "2001:db8::1:0:0:1", "2001:db8::0:1:0:0:1",
+            "2001:0db8::1:0:0:1", "2001:db8:0:0:1::1", "2001:db8:0000:0:1::1", "2001:DB8:0:0:1::1"}
+    for s <- cases2 {
+        assert(h6(s) == "2001:db8::1:0:0:1")
+    }
+    // 4.1 先頭の0を省く
+    assert(h6("2001:db8::0001") == "2001:db8::1")
+    assert(h6("2001:db8::0000:1") == "2001:db8::1")
+    // 4.2.1 できるだけ短く
+    assert(h6("2001:db8:0:0:0:0:2:1") == "2001:db8::2:1")
+    assert(h6("2001:db8::0:1") == "2001:db8::1")
+    // 4.2.2 1群だけの0は"::"にしない
+    assert(h6("2001:db8:0:1:1:1:1:1") == "2001:db8:0:1:1:1:1:1")
+    assert(h6("2001:db8::1:1:1:1:1") == "2001:db8:0:1:1:1:1:1")
+    // 4.2.3 最長の並び・同じ長さなら左
+    assert(h6("2001:0:0:1:0:0:0:1") == "2001:0:0:1::1")
+    assert(h6("2001:db8:0:0:1:0:0:1") == "2001:db8::1:0:0:1")
+    // 4.3 小文字
+    assert(h6("2001:DB8::ABCD") == "2001:db8::abcd")
+    // 5 IPv4-mapped
+    assert(h6("::ffff:192.0.2.1") == "::ffff:192.0.2.1")
+    assert(h6("0:0:0:0:0:FFFF:C000:0201") == "::ffff:192.0.2.1")
+    // 端
+    assert(h6("::") == "::")
+    assert(h6("::1") == "::1")
+    assert(h6("1::") == "1::")
+    assert(h6("1:2:3:4:5:6:7:8") == "1:2:3:4:5:6:7:8")
+    assert(h6("0:0:0:0:0:0:13.1.68.3") == "::d01:4403")
+    assert(Format6([]byte{1, 2, 3}) == "")
+}
+
+func TestSplitHostPort() {
+    h, p, z, ok := SplitHostPort("127.0.0.1:8080")
+    assert(ok && h == "127.0.0.1" && p == 8080 && z == "")
+    h2, p2, z2, ok2 := SplitHostPort("[::1]:0")
+    assert(ok2 && h2 == "::1" && p2 == 0 && z2 == "")
+    h3, p3, z3, ok3 := SplitHostPort("[fe80::1%eth0]:443")
+    assert(ok3 && h3 == "fe80::1" && p3 == 443 && z3 == "eth0")
+    h4, p4, z4, ok4 := SplitHostPort(":65535")
+    assert(ok4 && h4 == "" && p4 == 65535 && z4 == "")
+    h5, p5, _, ok5 := SplitHostPort("example.com:80")
+    assert(ok5 && h5 == "example.com" && p5 == 80)
+    h6s, _, _, ok6 := SplitHostPort("[::]:1")
+    assert(ok6 && h6s == "::")
+    cases3 := []string{"", "::1:80", "127.0.0.1", "127.0.0.1:", "127.0.0.1:65536", "127.0.0.1:-1", "127.0.0.1:8a", "[::1]", "[::1]:",
+            "[::1:80", "::1]:80", "[127.0.0.1]:80", "[fe80::1%]:80", "[x]:80", "a]:80", "[::1]x:80", "1.2.3.4:123456"}
+    for s <- cases3 {
+        _, _, _, bad := SplitHostPort(s)
+        assert(!bad)
+    }
+}

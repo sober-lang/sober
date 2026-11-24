@@ -363,19 +363,19 @@ func kpush(xs mut []int, sp int, v int) int {
 
 // 親の前段（区間の並列の check）: 型パラメータを持つ Def の本体だけを脱糖して推論した、名前付きの Def の kind
 // （関数表の添字で [関数, n, k…] の並び — desugar.DefRng.kinds の形）
-@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnArg, diag.FnCap, diag.Cell)
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnArg, diag.FnCap, diag.Cell, diag.Par)
 func KindsGen(p loader.Program, excl []int, only int, trust bool) ([]int, error?) {
     return KindsGenP(p, excl, only, trust, desugar.EmptyPlan())
 }
 
 // KindsGen の、親の計画 plan の参照の辺で表層型検査を総称関数から届く関数に絞る版（区間の並列の check の親）
-@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnArg, diag.FnCap, diag.Cell)
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnArg, diag.FnCap, diag.Cell, diag.Par)
 func KindsGenP(p loader.Program, excl []int, only int, trust bool, plan desugar.DefPlan) ([]int, error?) {
     return kindsGenR(p, excl, only, trust, desugar.GenRng(plan), KG_FN)
 }
 
 // KindsGen の、呼び手（build の lower）が同じ Program で型付けた店 fz を受け取る版（表層型検査器を走らせない）
-@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnArg, diag.FnCap, diag.Cell)
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnArg, diag.FnCap, diag.Cell, diag.Par)
 func KindsGenT(p loader.Program, excl []int, trust bool, fz desugar.TyFrozen) ([]int, error?) {
     return kindsGenR(p, excl, -1, trust, desugar.WithAdopt(desugar.GenRng(desugar.EmptyPlan()), fz), KG_FN)
 }
@@ -387,7 +387,7 @@ const KG_FAIL = 2
 const KG_WHY = 3
 
 // 結果が []int の脱糖と検査の本体。WithCoreOpt は呼び出し点ごとに展開されるので、呼び出し点はここの 1 か所にする
-@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnArg, diag.FnCap, diag.Cell)
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnArg, diag.FnCap, diag.Cell, diag.Par)
 func kindsGenR(p loader.Program, excl []int, only int, trust bool, rng desugar.DefRng, mode int) ([]int, error?) {
     return desugar.WithCoreOpt(p, excl, only, trust, 0, rng, (d) => []int{}, (c, m) => switch mode {
         case KG_FAIL: kindFailOf(c)

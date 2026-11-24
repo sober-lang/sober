@@ -333,6 +333,13 @@ func call(st mut S, callee0 NodeRef, args ListRef, at NodeRef, eb int, ef int, d
     if ckey != 0 {
         return cellCall(mut st, ckey, args, at, eb, ef, depth)
     }
+    // 関数型の実引数がどれもトップレベルの関数の名前なら、展開を共有の定義1本にまとめて呼ぶ（share.sober）
+    if fnExpands(mut st, fi) {
+        sd := shareCall(mut st, fi, explicit, args, at, eb, ef)?
+        if sd >= 0 {
+            return shareSite(mut st, fi, sd, args, at, eb, ef, depth)
+        }
+    }
     if fnExpands(mut st, fi) || e2sSiteInline(mut st, fi, explicit, args, eb, ef, at) {
         expBegin(mut st)
         r, ierr := inlineCall(mut st, fi, callee0, explicit, args, at, eb, ef, depth)
@@ -384,6 +391,28 @@ func call(st mut S, callee0 NodeRef, args ListRef, at NodeRef, eb int, ef int, d
                 mb := lookup(mut st, eb, latS(mut st, DotParts(mut st, nodeOf(mut st, ma).a), 0))
                 if mb >= 0 && (anchor < 0 || bnd(mut st, mb).region < anchor) {
                     anchor = bnd(mut st, mb).region
+                }
+            }
+        }
+    }
+    // immの仮引数でも、型が可変の位置（mutのコンテナ）を持つなら、実引数の根の束縛のregionをanchorの候補にする。
+    // 可変の位置は部分型で不変なので、仮引数の型をanchorへ写した形が実引数の型と一致するのは、anchorが実引数のregionのときだけ。
+    // この型の実引数はコピーできない（storeCopyはmutFreeの型だけを写す）
+    for q <- iter.Range(0, na) {
+        prm := latN(mut st, ps, q)
+        ma := latN(mut st, args, q)
+        if !ast.ParamIsMut(nodeOf(mut st, prm)) {
+            mut rt := ma
+            while kindN(mut st, rt) == ast.ESelector {
+                rt = nA(nodeOf(mut st, rt))
+            }
+            if kindN(mut st, rt) == ast.EIdent {
+                w, err := tyIn(mut st, fnPkg(mut st, fi), penv, nB(nodeOf(mut st, prm)), at)
+                if err == nil && !tyMutFreeD(mut st, w) {
+                    mb := lookup(mut st, eb, sA(nodeOf(mut st, rt)))
+                    if mb >= 0 && bnd(mut st, mb).region < st.rdepth - 1 && (anchor < 0 || bnd(mut st, mb).region < anchor) {
+                        anchor = bnd(mut st, mb).region
+                    }
                 }
             }
         }

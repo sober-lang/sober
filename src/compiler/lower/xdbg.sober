@@ -9,7 +9,7 @@ package lower
 import "desugar"
 import "std/iter"
 
-// x86の群のcfg（base — 末尾のワードが値の長さ）の後ろへSOBER_XDBGの値のバイト列を足す
+// x86の群のcfg（base）の後ろへ列を足す（SOBER_XDBGの値のバイト列・プロファイルの印の表 — 長さはbaseのワード）
 func xdbgCfg(base []int, pat []int) []int {
     mut cfg := mut []int{}
     for k <- iter.Range(0, len(base)) {
@@ -21,11 +21,11 @@ func xdbgCfg(base []int, pat []int) []int {
     return freeze(cfg)
 }
 
-// cfgのnワードの値のバイト列（cfgのbaseの長さの後ろ — xdbgCfgの逆）
-func xdbgPatOf(cfg []int, n int) []int {
+// cfgの位置atからのnワード（xdbgCfgで足した列を取り出す）
+func xdbgPatOf(cfg []int, at int, n int) []int {
     mut pat := mut []int{}
     for k <- iter.Range(0, n) {
-        pat = append(pat, cfg[len(cfg) - n + k])
+        pat = append(pat, cfg[at + k])
     }
     return freeze(pat)
 }

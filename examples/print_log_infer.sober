@@ -1,0 +1,25 @@
+package main
+
+// print.Log and json.Encode take the record's type from the argument: print.Log(rec), json.Encode(v).
+// Writing the type argument, print.Log[T](rec), is the same call
+
+import "std/json"
+import "std/print"
+
+type Visit struct {
+    path string
+    status int
+}
+
+func visit(path string) Visit {
+    return Visit{path: path, status: if path == "/" { 200 } else { 404 }}
+}
+
+func main() {
+    v := visit("/")
+    print.Log(v)
+    print.Log[Visit](visit("/missing"))
+    println(json.Encode(v))
+    println(json.Encode[Visit](v))
+    println(json.EncodeWith(visit("/x"), map[string]string{"status": "code"}))
+}

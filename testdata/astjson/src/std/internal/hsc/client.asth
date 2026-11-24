@@ -1,5 +1,5 @@
-@@full	497c565727b4cf93	17172	534084
-@head	5d82de5f00cbcd56	0	425
+@@full	4fa38cd804c84485	17099	532284
+@head	e06cf1b2c6ee0545	0	501
 const aBadCertificate	cecc780a3ccff0d1	1	56
 const aCertificateExpired	f002b47f2bdcc107	1	60
 const aUnknownCa	a506b41e05cfc7a4	1	51
@@ -19,7 +19,7 @@ func cfeed	8234ee66b851643a	485	16306
 func clientHello	d72300b8f70219b8	471	14062
 func crnd	b364460ef415fd0e	34	1235
 func eeAlpn	6b163d6b3cfcc0a6	113	3681
-func isIPLit	800c3611ef21e6f2	41	1452
+func isIPLit	3f4ebea64f79469e	30	1081
 func noLeaf	f74b3d9e224ea8e2	10	457
 func onCertificate	ae7213d946bd4b4c	150	4950
 func onClientSealed	df9957dd7d1407c2	453	15308

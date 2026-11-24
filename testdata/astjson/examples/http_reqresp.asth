@@ -1,10 +1,12 @@
-@@full	f849bcca65c0ad76	1918	57313
-@head	9927f56d96dc3c93	0	326
+@@full	6412f818fc7a3a2f	2559	77276
+@head	958fa381f8f85c8a	0	389
 func create	e0b5327ee5a7e2fa	53	2175
-func feed	146cd0cdacb0aa67	14	535
 func login	d4c4c9028dd4e915	24	947
-func main	09ad651d4196ff57	99	4482
+func main	8dd3326965558012	127	5392
 func or	01410288ef3a70dd	13	459
+func readAll	f5c560cbc949d739	28	1057
+func removeAll	587e7712509490fc	18	694
+func runDir	25a59a75464b1e89	37	1321
 func show	62bd2a266e93f744	35	1205
-func static	0723b46d74dc4022	48	2035
+func static	d0c512dc95ea8b37	50	2125
 type User	3ccacdc69057424f	3	165

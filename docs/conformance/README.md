@@ -30,12 +30,13 @@ The four statuses:
 <!-- confsync:begin summary -->
 | Chapter | Supported | Partial | By design | Not yet | Not supported | Not applicable |
 |---|---:|---:|---:|---:|---:|---:|
-| [tls](tls.md) | 18 | 2 | 6 | 5 | 0 | 0 |
+| [tls](tls.md) | 23 | 4 | 6 | 4 | 0 | 0 |
 | [x509](x509.md) | 7 | 1 | 4 | 3 | 0 | 0 |
-| [crypto](crypto.md) | 7 | 1 | 2 | 2 | 0 | 0 |
-| [http (features)](http.md) | 23 | 1 | 4 | 7 | 0 | 0 |
+| [crypto](crypto.md) | 9 | 0 | 2 | 1 | 0 | 0 |
+| [http (features)](http.md) | 27 | 1 | 6 | 4 | 0 | 0 |
 | [http (RFC MUSTs)](http.md) | 43 | 1 | 0 | 0 | 2 | 8 |
-| [dns](dns.md) | 4 | 1 | 3 | 2 | 0 | 0 |
+| [http (HTTP/2 MUSTs)](http.md) | 46 | 0 | 0 | 0 | 0 | 5 |
+| [dns](dns.md) | 6 | 0 | 3 | 1 | 0 | 0 |
 <!-- confsync:end summary -->
 
 ## Kinds of evidence

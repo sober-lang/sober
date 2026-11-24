@@ -1,0 +1,37 @@
+package main
+
+// 値の呼び出しの借りの実引数のラムダが、名前の関数を渡した展開の仮引数を末尾で呼ぶ形（`(n) => f(n)` — fにはmkを渡す）。
+// 末尾の呼び出しの結果は呼び手の宛先に作られる（ラムダの深度に作って境界でコピーし直さない — 本文の分の余分な確保が無い）
+
+type R struct {
+    b []byte
+}
+
+type K func(f func(n int) R) int
+
+type kr struct {
+    k K
+}
+
+func body(f func(n int) R) int {
+    r := f(3000)
+    return len(r.b) + int(r.b[2999])
+}
+
+func mk(n int) R {
+    mut b := mut []byte{}
+    while len(b) < n {
+        b = append(b, byte(len(b) % 7))
+    }
+    return R{b: freeze(b)}
+}
+
+func via(f func(n int) R) int {
+    x := kr{k: body}
+    g := x.k
+    return g((n) => f(n))
+}
+
+func main() {
+    println(via(mk))
+}

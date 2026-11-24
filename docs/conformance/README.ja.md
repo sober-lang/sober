@@ -30,12 +30,13 @@ Soberのstdが実装する通信プロトコルと暗号の、規格への準拠
 <!-- confsync:begin summary -->
 | 章 | 対応 | 一部 | 意図して非対応 | 未実装 | 非対応 | 対象外 |
 |---|---:|---:|---:|---:|---:|---:|
-| [tls](tls.ja.md) | 18 | 2 | 6 | 5 | 0 | 0 |
+| [tls](tls.ja.md) | 23 | 4 | 6 | 4 | 0 | 0 |
 | [x509](x509.ja.md) | 7 | 1 | 4 | 3 | 0 | 0 |
-| [crypto](crypto.ja.md) | 7 | 1 | 2 | 2 | 0 | 0 |
-| [http（機能）](http.ja.md) | 23 | 1 | 4 | 7 | 0 | 0 |
+| [crypto](crypto.ja.md) | 9 | 0 | 2 | 1 | 0 | 0 |
+| [http（機能）](http.ja.md) | 27 | 1 | 6 | 4 | 0 | 0 |
 | [http（RFCのMUST）](http.ja.md) | 43 | 1 | 0 | 0 | 2 | 8 |
-| [dns](dns.ja.md) | 4 | 1 | 3 | 2 | 0 | 0 |
+| [http（HTTP/2のMUST）](http.ja.md) | 46 | 0 | 0 | 0 | 0 | 5 |
+| [dns](dns.ja.md) | 6 | 0 | 3 | 1 | 0 | 0 |
 <!-- confsync:end summary -->
 
 ## 証拠の種類

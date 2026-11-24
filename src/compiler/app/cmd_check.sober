@@ -2,6 +2,7 @@ package main
 
 // `sober check` のhandlerとcheckのパス（一括 / 小分け / 関数単位キャッシュ・L0・前段の並走）— watchもこのパスで検査し直す
 
+import "infload"
 import "std/io"
 import "std/hex"
 import "std/hash"
@@ -566,7 +567,7 @@ func verdictOk(out []byte) bool {
 }
 
 // checkのパスの読み（格納場所vが開いていればparseの木P0を引く）・2つ目の戻り = ファイルごとの読みの結果（checkの子が書く）。
-// 積み先 sink はここで持つ（loadNamed と同じ — 読みの作業域を呼び手に残さない）
+// 積み先 sink はここで持つ（loadBuild と同じ — 読みの作業域を呼び手に残さない）
 func loadCk(entry string, test bool, std map[string]string, v lower.BcView) (loader.Program, []loader.PcPut, error?) {
     mut sink := loader.PcSink{}
     p, lerr := loader.LoadFsC(entry, std, if v.on { lower.BcParseView(v) } else { loader.PcOff() }, test, mut sink)
@@ -582,7 +583,7 @@ func cmdCheckPkg(entry string, pkg string, dir string, sigs bool) int {
     if lerr != nil {
         return fail(loadDiag(p0, std, lerr))
     }
-    p, nerr := surface(p0)
+    p, _, nerr := surface(p0, loader.ReqViewOf(entry, pkg, dir), std)
     if nerr != nil {
         return fail(loadDiag(p, std, nerr))
     }
@@ -829,11 +830,13 @@ type SplitOne struct {
 }
 
 func splitOne(entry string, pkg string, link []string, sobis []loader.Sobi, std map[string]string) SplitOne {
-    p0, raw, lerr := loader.LoadViewMemRaw(entry, pkg, link, sobis, std)
+    p0, raw0, lerr := loader.LoadViewMemRaw(entry, pkg, link, sobis, std)
     if lerr != nil {
         return SplitOne{2, []byte{}, loadDiag(p0, std, lerr), []byte{}}
     }
-    p, nerr := surface(p0)
+    // 型引数の推論で読み込みをやり直したら、生の木もやり直した側（合成のファイルの並びがそろう）
+    p, raw1, nerr := surface(p0, loader.ReqViewMemOf(entry, pkg, link, sobis), std)
+    raw := if len(raw1) > 0 { raw1 } else { raw0 }
     if nerr != nil {
         return SplitOne{2, []byte{}, loadDiag(p, std, nerr), []byte{}}
     }
@@ -1208,7 +1211,7 @@ func checkFront(entry string, tst bool, std map[string]string) int {
 
 // 答えに効かない環境変数（格納場所・計測・watchのオプション）— 鍵に入れない
 const replayEnvSkip = []string{"SOBER_CACHE", "SOBER_CACHE_MAX", "SOBER_CACHE_GENS", "SOBER_CACHE_FLOOR", "SOBER_CACHE_STAT", "SOBER_CACHE_VERIFY",
-    "SOBER_CACHE_FSCK", "SOBER_CHECK_CACHE", "SOBER_CHECK_REPLAY", "SOBER_BUILD_CACHE", "SOBER_SELF_KEY", "SOBER_WATCH_MS",
+    "SOBER_CACHE_FSCK", "SOBER_PKG_CACHE", "SOBER_SUM_CHECK", "SOBER_SUM_CONST", "SOBER_K0_LOG", "SOBER_CHECK_CACHE", "SOBER_CHECK_REPLAY", "SOBER_BUILD_CACHE", "SOBER_SELF_KEY", "SOBER_WATCH_MS",
     "SOBER_WATCH_QUIET", "SOBER_WATCH_BUILD", "SOBER_WATCH_TEST", "SOBER_COVER", "SOBER_TEST_FILES_OUT"}
 
 func replayKey(entry string, tst bool) string {
@@ -1485,7 +1488,7 @@ func checkFrontR(entry string, tst bool, std map[string]string, wc bool) CheckRe
     if lerr != nil {
         return withEmbeds(failRes(loadDiag(p0, std, lerr), userFiles(p0)), userEmbeds(p0))
     }
-    p, nerr := desugar.NamedValueArgs(p0)
+    p, _, nerr := infload.Infer(p0, loader.ReqOf(loader.ReqFs, entry, tst), std)
     loader.Stage("ck-nva")
     fs := userFiles(p)
     es := userEmbeds(p)

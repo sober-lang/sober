@@ -1,0 +1,107 @@
+package main
+
+// 番号の大きい fd（rt の FD_CAP の手前の 65,536 を越える番号）で、平文の Serve と TLS の Serve が受けて応答することの題材（scripts/fdcap.sh が
+// 先に fd を約66,000本開いた状態で走らせる）。平文と TLS のそれぞれで、クライアントの task が keep-alive のセッションを1本ずつ張り、
+// /t（ふつうの応答）・/d（Delayed — 時刻つきの送りの経路）・/t を順に送る。応答の数を数えて印字する（出力は経路とワーカー数に依らない）
+// 使い方: main <tlsPort> <cert.pem> <key.pem>
+
+import "std/convert"
+import "std/http/client"
+import "std/http/server"
+import "std/io"
+import "std/iter"
+import "std/net"
+import "std/os"
+import "std/task"
+import "std/tls"
+
+const N = 24
+
+func route(r http.server.Request) http.server.Response {
+    return if r.path == "/d" { http.server.Delayed(20, http.server.Text("d")) } else { http.server.Text("t") }
+}
+
+// 1本のセッションで3往復し、期待どおりの応答の数を返す。TLS の Serve は自分で listen するので、張れるまで 20 ms ごとに試し直す（100回まで）
+func session(url string, pol http.client.Policy) int {
+    mut n := 0
+    mut tries := 0
+    while tries < 100 {
+        g, e := once(url, pol)
+        n = g
+        tries = if e == nil { 100 } else { tries + 1 }
+        if e != nil {
+            os.Sleep(20)
+        }
+    }
+    return n
+}
+
+func once(url string, pol http.client.Policy) (int, error?) {
+    paths := []string{"/t", "/d", "/t"}
+    mut good := 0
+    oe := http.client.Open(url, (s) => {
+        for p <- paths {
+            r, e := http.client.Send(s, p)
+            want := if p == "/d" { "d" } else { "t" }
+            if e == nil && r.status == 200 && (string(r.body) catch "") == want {
+                good += 1
+            }
+        }
+    }, policy: pol)
+    return good, oe
+}
+
+func clients(url string, pol http.client.Policy) int {
+    mut ids := mut []int{}
+    for i <- iter.Range(0, N) {
+        ids = append(ids, i)
+    }
+    rs, _ := task.Map(freeze(ids), (i int) => session(url, pol))
+    mut sum := 0
+    for v <- rs {
+        sum += v
+    }
+    return sum
+}
+
+func plain() string {
+    mut out := "plain: listen failed"
+    e := net.Listen("127.0.0.1:0", (l) => {
+        port := net.Port(l)
+        r, _ := task.Run((s task.Scope) => {
+            h := task.Spawn(s, () => clients("http://127.0.0.1:${port}", http.client.Policy{}))
+            _, _ = task.Run((s2 task.Scope) => net.Serve(l, (c net.Conn) => http.server.ServeConn(c, route), conns: 64), deadline: 2000 * task.MS)
+            task.Join(h)
+        }, deadline: 20000 * task.MS)
+        out = "plain: ${r} / ${N * 3}"
+    })
+    return if e != nil { "plain: listen failed" } else { out }
+}
+
+func secure(port int, crt string, key string) string {
+    cfg, ce := tls.Parse(crt, key)
+    roots, re := tls.ParseRoots(crt)
+    if ce != nil || re != nil {
+        return "tls: bad cert"
+    }
+    pol := http.client.Policy{extraRoots: roots}
+    r, _ := task.Run((s task.Scope) => {
+        h := task.Spawn(s, () => clients("https://127.0.0.1:${port}", pol))
+        _, _ = task.Run((s2 task.Scope) => tls.Serve("127.0.0.1:${port}", cfg, (c net.Conn) => http.server.ServeConn(c, route), conns: 64), deadline: 3000 * task.MS)
+        task.Join(h)
+    }, deadline: 20000 * task.MS)
+    return "tls: ${r} / ${N * 3}"
+}
+
+func main() {
+    args := os.Args() catch []string{}
+    if len(args) < 4 {
+        println("usage: main <tlsPort> <cert.pem> <key.pem>")
+        return
+    }
+    port := convert.ParseInt(args[1]) catch 0
+    crt := string(io.ReadFile(args[2]) catch []byte{}) catch ""
+    key := string(io.ReadFile(args[3]) catch []byte{}) catch ""
+    println(plain())
+    println(secure(port, crt, key))
+}

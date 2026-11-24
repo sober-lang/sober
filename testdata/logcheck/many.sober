@@ -1,0 +1,36 @@
+package main
+
+// logcheckの題材: 8本のtaskが3,000記録ずつ書き、書き終えて眠った後（バッファが空になる）にLedger().logsを標準出力へ
+import "std/os"
+import "std/print"
+import "std/task"
+
+type Hit struct {
+    w int
+    i int
+    path string
+    took float
+}
+
+func main() {
+    _, e := task.Run((s task.Scope) => {
+        mut k := 0
+        while k < 8 {
+            w := k
+            _ = task.Spawn(s, () => {
+                mut i := 0
+                while i < 3000 {
+                    print.Log[Hit](Hit{w: w, i: i, path: "/items/0123456789/abcdefghijklmnopqrstuvwxyz/0123456789", took: 0.125})
+                    i += 1
+                }
+                0
+            })
+            k += 1
+        }
+        0
+    })
+    _ = e
+    os.Sleep(100)
+    l := task.Ledger().logs
+    println("${l.written} ${l.dropped}")
+}

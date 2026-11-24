@@ -1,0 +1,7 @@
+examples/effects_neg_obs.sober:12:6: effects main.next fi=0 bits=obs declared
+examples/effects_neg_obs.sober:17:6: effects main.main fi=1 bits=io, obs
+token 8: effects main.$logW_0_0 fi=2 bits=obs
+token 44: effects print.Log fi=3 bits=obs
+std/iter/iter.sober:8:6: ftype Iter union=none
+examples/effects_neg_obs.sober:11:1: violation 'main.next' may have the effect obs via the call of 'print.Log', which its @effects does not allow (allowed: block, io, panic, nondet)
+summary fns=53 lambdas=2 edges=170 any=none any-calls=0 fvalues=0 declared=26 violations=1

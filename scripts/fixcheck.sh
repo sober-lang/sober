@@ -7,6 +7,8 @@
 #      欠け・古さの負例は stage2 の L0 bake〔std の check〕が MEffMissing / MEffStale で落ちる形が受け持つ — CLI は焼き込みの std しか読まない）
 #
 #   scripts/fixcheck.sh [--regen]
+# ゴールデンの並びを呼び手のロケールに依らせない
+export LC_ALL=C.UTF-8
 set -uo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$PWD

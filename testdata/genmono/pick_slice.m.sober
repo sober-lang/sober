@@ -2,7 +2,7 @@ package main
 
 // 総称関数の版（pick_slice.g.sober）の型引数を手で代入した単相の版。関数の対応（単相 = 総称の単相コピーの名前）
 // genmono: pickS = pick[[]int]
-// genmono: pickT = pick[[]byte]
+// genmono: pickT = pick[string]
 
 func pickS(a []int, b []int, first bool) []int {
     return if first { a } else { b }

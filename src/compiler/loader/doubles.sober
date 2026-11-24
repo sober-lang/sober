@@ -64,8 +64,8 @@ func presetWiring(m Manifest) Wiring {
 }
 
 // double のディレクトリ dir を entry にした読み（`sober check <double>` — 相手を import するだけの合成の main で、相手を dir から読み契約を検査する）
-@errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.Mod, diag.ImportPath, diag.NoStd, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.EmbedTooLarge, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.LeadingZero, diag.LitRange, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.Par, diag.Double, diag.Cell)
-func loadDouble(dir string, sm map[string]string) (Program, error?) {
+@errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.Mod, diag.ImportPath, diag.NoStd, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.EmbedTooLarge, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnOpt, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.LeadingZero, diag.LitRange, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.Par, diag.Double, diag.Logs, diag.Cell)
+func loadDouble(dir string, sm map[string]string, inf []string) (Program, error?) {
     m0 := Manifest{}
     tgt, ok := targetOf(m0, true, sm, dir)
     if !ok {
@@ -76,7 +76,7 @@ func loadDouble(dir string, sm map[string]string) (Program, error?) {
     }
     src := "package main\n\nimport tp \"${tgt}\"\n\nfunc main() {\n}\n"
     mut sink := PcSink{}
-    return load(Manifest{TestMainPath(), "", []string{}, "", src, false, []string{}, 0, []string{tgt}, []string{dir}, NoMod()}, true, sm, PcOff(), mut sink)
+    return load(Manifest{TestMainPath(), "", []string{}, "", src, false, []string{}, 0, []string{tgt}, []string{dir}, NoMod(), inf}, true, sm, PcOff(), mut sink)
 }
 
 // テストの package（m.test）の `_test.sober` の @doubles から差し替えの表を組む（trees = 読んだ木 — テストの package は読み終わっている）
@@ -604,7 +604,7 @@ func extAt(t ast.Tree, x ast.Node, k int, def int) int {
 const EXT_ERRS = 5
 const EXT_EFFS = 12
 
-// エフェクトの項の列の許容のビット（ワードだけ — 型の名前の項があれば -1）
+// エフェクトの項の列の許容のビット（ワードだけ。型の名前の項があれば -1）。`!obs` を書かない限りobsを含む
 func effAllow(t ast.Tree, l int) int {
     ws := strList(t, l)
     mut bits := 0
@@ -612,13 +612,13 @@ func effAllow(t ast.Tree, l int) int {
     for k <- iter.Range(0, len(ws)) {
         w := strings.TrimPrefix(ws[k], "!")
         neg = neg || w != ws[k]
-        b := if w == "block" { EffBlock } else if w == "io" { EffIo } else if w == "panic" { EffPanic } else if w == "nondet" { EffNondet } else { 0 }
+        b := if w == "block" { EffBlock } else if w == "io" { EffIo } else if w == "panic" { EffPanic } else if w == "nondet" { EffNondet } else if w == "obs" { EffObs } else { 0 }
         if b == 0 {
             return -1
         }
         bits = bits | b
     }
-    return if neg { (EffBlock | EffIo | EffPanic | EffNondet) & ^bits } else { bits }
+    return if neg { EffAll & ^bits } else { bits | EffObs }
 }
 
 // @errors のラベルの列をパスつきの名前へ（否定・読めない項があれば ok = false）

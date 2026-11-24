@@ -1,0 +1,5 @@
+receiver: got hello
+receiver: done
+body: saw the death
+body: send done
+scope died=true

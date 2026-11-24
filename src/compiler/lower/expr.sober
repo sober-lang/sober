@@ -43,16 +43,47 @@ func evalMulti(st mut St, e desugar.NodeRef) (int, error?) {
     case ast.ETry:
         return tryResults(mut st, e)
     }
+    // ブロックの式 `{ …; f() }` の多値はcheck（脱糖器）も受けないので、旗を立てない（両方で拒否のまま）
+    st.multiTail = k == ast.EIf || k == ast.ESwitch
     x := expr(mut st, e)?
+    st.multiTail = false
     if isTag(mut st, x.t, TNever) {
         return -1, nil
     }
     if isTag(mut st, x.t, TNone) {
         return list0(mut st), nil
     }
+    if isTag(mut st, x.t, TMulti) {
+        return multiList(mut st, x), nil
+    }
     r := list2(mut st, x.t, x.v)
     desugar.HeapSet(mut st.d, r, 1)
     return r, nil
+}
+
+// TMultiの値（要素の型の列と値の列）を多値の列 [n, (型, 値)…] に
+func multiList(st mut St, x Val) int {
+    ts := desugar.HeapGet(mut st.d, x.t + 1)
+    n := desugar.HeapGet(mut st.d, ts)
+    r := listN(mut st, n * 2)
+    desugar.HeapSet(mut st.d, r, n)
+    for i <- iter.Range(0, n) {
+        desugar.HeapSet(mut st.d, r + 1 + i * 2, desugar.HeapGet(mut st.d, ts + 1 + i))
+        desugar.HeapSet(mut st.d, r + 2 + i * 2, desugar.HeapGet(mut st.d, x.v + 1 + i))
+    }
+    return r
+}
+
+// 多値の列 r（[n, (型, 値)…]）のTMultiの値
+func multiVal(st mut St, r int) Val {
+    n := desugar.HeapGet(mut st.d, r)
+    ts := listN(mut st, n)
+    vs := listN(mut st, n)
+    for i <- iter.Range(0, n) {
+        desugar.HeapSet(mut st.d, ts + 1 + i, desugar.HeapGet(mut st.d, r + 1 + i * 2))
+        desugar.HeapSet(mut st.d, vs + 1 + i, desugar.HeapGet(mut st.d, r + 2 + i * 2))
+    }
+    return Val{t: rec4(mut st, TMulti, ts, 0, 0), v: vs}
 }
 
 // `a, b := e` の右辺: 1 つの多値の式で、結果の個数が want_n
@@ -517,6 +548,7 @@ func emitCall0(st mut St, irf FnRef, fv int, params desugar.ListRef, results des
     // 関数値の呼び出しの mut 仮引数の実引数の位置（ir.sober CALLI_MSH — slotcolor がその番地を逃げでなく読み書きと読む）
     mut mm := 0
     mut ownSret := false
+    mut ownW := 0
     if sret {
         mut rw := 0
         i = 0
@@ -532,6 +564,7 @@ func emitCall0(st mut St, irf FnRef, fv int, params desugar.ListRef, results des
         } else {
             sp = newSlotAddrOwn(mut st, if rw > 1 { rw } else { 1 })
             ownSret = true
+            ownW = if rw > 1 { rw } else { 1 }
         }
         desugar.HeapSet(mut st.d, argl + 1, sp)
         k = 1
@@ -618,7 +651,7 @@ func emitCall0(st mut St, irf FnRef, fv int, params desugar.ListRef, results des
     if sret {
         if ownSret {
             // この呼び出し点だけの受け皿（使い回さない）: 呼び出しの後は書かれない
-            privMarkLong(mut st, sp)
+            privMarkRcv(mut st, sp, ownW)
         }
         mut off := 0
         i = 0
@@ -1643,6 +1676,9 @@ func joinType(st mut St, acc int, t int, at desugar.NodeRef) (int, error?) {
 
 // joinTypeにnilの分岐の規則（spec T-16）を足したもの — 分岐のどれかがnilで終わるif / switch（nilArm）の合流
 func joinTypeN(st mut St, acc int, t int, nilArm bool, at desugar.NodeRef) (int, error?) {
+    if (acc >= 0 && isTag(mut st, acc, TMulti)) || isTag(mut st, t, TMulti) {
+        return joinMulti(mut st, acc, t, at)
+    }
     if !nilArm {
         return joinType(mut st, acc, t, at)
     }
@@ -1651,6 +1687,29 @@ func joinTypeN(st mut St, acc int, t int, nilArm bool, at desugar.NodeRef) (int,
         return j, nil
     }
     return joinNil(mut st, acc, t, true, at)
+}
+
+// 多値の分岐の合流: 要素ごとに同じ型であること（コアのifの規則と同じ — 単値のT? への寄せ・戻らない分岐〔panic・return〕はcheckも受けない）。
+// 個数・要素の型が違う・片方だけが多値・戻らない分岐ならMismatch
+func joinMulti(st mut St, acc int, t int, at desugar.NodeRef) (int, error?) {
+    if acc < 0 {
+        return t, nil
+    }
+    if !isTag(mut st, acc, TMulti) || !isTag(mut st, t, TMulti) {
+        return 0, diag.Mismatch{at: posOf(mut st, at)}
+    }
+    a := desugar.HeapGet(mut st.d, acc + 1)
+    b := desugar.HeapGet(mut st.d, t + 1)
+    n := desugar.HeapGet(mut st.d, a)
+    if desugar.HeapGet(mut st.d, b) != n {
+        return 0, diag.Mismatch{at: posOf(mut st, at)}
+    }
+    for i <- iter.Range(0, n) {
+        if !tEql(mut st, desugar.HeapGet(mut st.d, a + 1 + i), desugar.HeapGet(mut st.d, b + 1 + i)) {
+            return 0, diag.Mismatch{at: posOf(mut st, at)}
+        }
+    }
+    return acc, nil
 }
 
 // nilの分岐の規則: nilとTはT?（TがT? ならそのまま）。nilArmならT? とTもT?（nilの分岐の後ろのTの分岐・TとT? の分岐の合流）。値はjoinArmsがT? へ寄せる
@@ -1731,6 +1790,9 @@ func joinArms(st mut St, ends int, t int) (int, int) {
         setCur(mut st, -1)
         return tNever(mut st), 0
     }
+    if isTag(mut st, t, TMulti) {
+        return joinMultiArms(mut st, ends, t)
+    }
     join := newBlock(mut st)
     ty := irTy(mut st, t)
     res := if ty >= 0 { param(mut st, join, ty) } else { 0 }
@@ -1754,6 +1816,41 @@ func joinArms(st mut St, ends int, t int) (int, int) {
         return t, res
     }
     return tNone(mut st), 0
+}
+
+// 多値の分岐の合流（joinArmsの要素ごと版）: 合流のブロックに要素ごとの引数を作り、分岐ごとに値の列を渡す。値は合流の値の列
+func joinMultiArms(st mut St, ends int, t int) (int, int) {
+    n := desugar.HeapGet(mut st.d, ends)
+    ts := desugar.HeapGet(mut st.d, t + 1)
+    m := desugar.HeapGet(mut st.d, ts)
+    join := newBlock(mut st)
+    res := listN(mut st, m)
+    for k <- iter.Range(0, m) {
+        ty := irTy(mut st, desugar.HeapGet(mut st.d, ts + 1 + k))
+        desugar.HeapSet(mut st.d, res + 1 + k, if ty >= 0 { param(mut st, join, ty) } else { 0 })
+    }
+    for i <- iter.Range(0, n) {
+        setCur(mut st, BlkRef(desugar.HeapGet(mut st.d, ends + 1 + i * 3)))
+        evs := desugar.HeapGet(mut st.d, ends + 3 + i * 3)
+        // 値のある要素だけを引数の列へ（要素の型は合流の型と同じ — joinMulti）
+        mut cnt := 0
+        for k <- iter.Range(0, m) {
+            if irTy(mut st, desugar.HeapGet(mut st.d, ts + 1 + k)) >= 0 {
+                cnt += 1
+            }
+        }
+        args := listN(mut st, cnt)
+        mut q := 0
+        for k <- iter.Range(0, m) {
+            if irTy(mut st, desugar.HeapGet(mut st.d, ts + 1 + k)) >= 0 {
+                desugar.HeapSet(mut st.d, args + 1 + q, desugar.HeapGet(mut st.d, evs + 1 + k))
+                q += 1
+            }
+        }
+        br(mut st, join, if cnt > 0 { args } else { -1 })
+    }
+    setCur(mut st, join)
+    return t, res
 }
 
 // 条件が `x != nil` / `x == nil`（x は T? の名前）なら (名前, then 側が値ありか)。でなければ (-1, false)
@@ -1817,6 +1914,8 @@ func narrowedElse(st mut St, name desugar.StrRef, el desugar.NodeRef, w int, at 
 // w（T? の期待、無ければ -1）があれば分岐ごとに合わせてから合流する
 func ifExpr(st mut St, e desugar.NodeRef, w int) (Val, error?) {
     at := e
+    mt := st.multiTail
+    st.multiTail = false
     nname, some_then := nilTest(mut st, nA(nodeOf(mut st, e)))
     cx := expr(mut st, nA(nodeOf(mut st, e)))?
     if isTag(mut st, cx.t, TNever) {
@@ -1835,6 +1934,7 @@ func ifExpr(st mut St, e desugar.NodeRef, w int) (Val, error?) {
         narrow := nname != -1 && some_then == (arm == 0)
         mut vt := -1
         mut vv := 0
+        st.multiTail = mt
         if arm == 0 {
             ss := lA(nodeOf(mut st, nB(nodeOf(mut st, e))))
             if narrow {
@@ -1879,6 +1979,7 @@ func ifExpr(st mut St, e desugar.NodeRef, w int) (Val, error?) {
         } else {
             vt = tNone(mut st)
         }
+        st.multiTail = false
         // 期待型（かT? の中身）が named scalar / byteなら、型なしの定数1つの分岐をそれに割り当てる（exprExpectingと同じ規則 — 32 / 33 節）
         armE := if arm == 0 { nB(nodeOf(mut st, e)) } else { el }
         if w >= 0 && armE != -1 && cur(mut st) != -1 && armUntyped(mut st, armE) {

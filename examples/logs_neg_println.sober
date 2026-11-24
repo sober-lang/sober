@@ -1,0 +1,12 @@
+@logs(stdout)
+package main
+
+// 負例（checkが拒否 — analyzer）: ログを標準出力へ送るプログラムで、mainがprintlnに届く（結果の出力にログが混ざる）
+
+func report(n int) {
+    println("n = ${n}")
+}
+
+func main() {
+    report(3)
+}

@@ -1,0 +1,121 @@
+package p256
+
+// P-256 の秘密鍵のファイルの形（PKCS#8 の PrivateKeyInfo — RFC 5208 / RFC 5915。openssl genpkey -algorithm EC の出力）
+
+import "std/internal/bless"
+
+// der[at:] の 1 つの TLV（タグ tag・短い形か 0x81 / 0x82 の長さ）の中身の (先頭, 長さ, 誤り)。end を越えれば誤り
+func tlv(der []byte, at int, end int, tag int) (int, int, bool) {
+    if at + 2 > end || int(der[at]) != tag {
+        return 0, 0, true
+    }
+    l0 := int(der[at + 1])
+    mut start := at + 2
+    mut l := l0
+    if l0 == 0x81 {
+        if at + 3 > end {
+            return 0, 0, true
+        }
+        l = int(der[at + 2])
+        start = at + 3
+    } else if l0 == 0x82 {
+        if at + 4 > end {
+            return 0, 0, true
+        }
+        l = (int(der[at + 2]) << 8) | int(der[at + 3])
+        start = at + 4
+    } else if l0 >= 0x80 {
+        return 0, 0, true
+    }
+    if start + l > end {
+        return 0, 0, true
+    }
+    return start, l, false
+}
+
+func same(der []byte, at int, l int, want []byte) bool {
+    if l != len(want) {
+        return false
+    }
+    mut i := 0
+    while i < l {
+        if der[at + i] != want[i] {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+// PKCS#8 の DER の P-256 の秘密鍵 → スカラー d（32 バイトの大きい端）。
+// 形 = SEQUENCE { 0, SEQUENCE { id-ecPublicKey, prime256v1 }, OCTET STRING { ECPrivateKey } }・ECPrivateKey = SEQUENCE { 1, OCTET STRING d〔32 バイト〕, [0] 曲線?, [1] 公開鍵? }。
+// 読めない・P-256 でない・d が 1 ≤ d < n でない・公開鍵が付いていて d·G と食い違うなら (空, false)
+func ParsePKCS8(der []byte) ([]byte, bool) {
+    bad := []byte{}
+    q, ql0, te := tlv(der, 0, len(der), 0x30)
+    if te || q + ql0 != len(der) {
+        return bad, false
+    }
+    v0, vl, ve := tlv(der, q, len(der), 0x02)
+    if ve || !same(der, v0, vl, []byte{0}) {
+        return bad, false
+    }
+    a0, al, ae := tlv(der, v0 + vl, len(der), 0x30)
+    if ae {
+        return bad, false
+    }
+    // id-ecPublicKey = 1.2.840.10045.2.1・prime256v1 = 1.2.840.10045.3.1.7
+    o0, ol, oe := tlv(der, a0, a0 + al, 0x06)
+    if oe || !same(der, o0, ol, []byte{0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01}) {
+        return bad, false
+    }
+    c0, cl, ce := tlv(der, o0 + ol, a0 + al, 0x06)
+    if ce || c0 + cl != a0 + al || !same(der, c0, cl, []byte{0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07}) {
+        return bad, false
+    }
+    k0, kl, ke := tlv(der, a0 + al, len(der), 0x04)
+    if ke || k0 + kl != len(der) {
+        return bad, false
+    }
+    s0, sl, se := tlv(der, k0, k0 + kl, 0x30)
+    if se {
+        return bad, false
+    }
+    end := s0 + sl
+    w0, wl, we := tlv(der, s0, end, 0x02)
+    if we || !same(der, w0, wl, []byte{1}) {
+        return bad, false
+    }
+    d0, dl, de := tlv(der, w0 + wl, end, 0x04)
+    if de || dl != 32 {
+        return bad, false
+    }
+    d := der[d0:d0 + 32]
+    if internal.bless.Int(inRange(feOf(d, 0))) == 0 {
+        return bad, false
+    }
+    // 任意の [0] 曲線と [1] 公開鍵（BIT STRING — 先頭の 0 は未使用の bit の数）
+    mut at := d0 + 32
+    if at < end && int(der[at]) == 0xa0 {
+        e0, el, ee := tlv(der, at, end, 0xa0)
+        if ee {
+            return bad, false
+        }
+        at = e0 + el
+    }
+    if at < end {
+        q0, ql, qe := tlv(der, at, end, 0xa1)
+        if qe {
+            return bad, false
+        }
+        b0, bl, be := tlv(der, q0, q0 + ql, 0x03)
+        if be || bl != 66 || der[b0] != 0 || !same(der, b0 + 1, 65, PublicKey(d)) {
+            return bad, false
+        }
+        at = q0 + ql
+    }
+    if at != end {
+        return bad, false
+    }
+    return d, true
+}

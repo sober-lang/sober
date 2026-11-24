@@ -1,5 +1,5 @@
-@@full	9ff9a6a06fb97c4c	4594	86267
-@globals	4a5b54fa4c6d6948	56	418
+@@full	a97f6a67c9586810	4594	86267
+@globals	7f7e0131d6e852cd	56	418
 main.authed	c6e140a7587c081f	8	131
 main.main	8667af6e75db0dd2	211	4368
 main.page	6148feaea81584d4	277	5384
@@ -9,7 +9,7 @@ rt.copy	17b32315347f22b4	18	269
 rt.copy8	65f5b1aea0ea6a7f	18	268
 rt.cstr	adea5d2788671437	39	594
 rt.depth_report	82cf7487321a4fba	100	1902
-rt.err_relocate	3d423b66a80ff274	48	780
+rt.err_relocate	182089f590030371	48	780
 rt.extend8	07eab8594a80add3	30	524
 rt.flush	beec28d2792e8799	43	659
 rt.grow_try	9e10061b87b86cd0	48	869
@@ -47,5 +47,5 @@ std/http/server.hi32	e03716e8e66e0a31	9	146
 std/http/server.lo32	674b0e878108b0e2	9	155
 std/http/server.lower	39dcb9a07c1d9ac4	31	449
 std/utf8.Bytes	aa9b53de1ac3370d	19	366
-std/utf8.Str	bdb545c169880f8c	245	4836
+std/utf8.Str	dda04856e588323a	245	4836
 std/utf8.boundary	41744191e4465882	52	880

@@ -1,0 +1,514 @@
+package client
+
+import "std/internal/h2frame"
+import "std/internal/hpack"
+import "std/internal/hsc"
+import "std/io"
+import "std/net"
+import "std/internal/record"
+
+// HTTP/2の層（ALPNでh2に決まった行き先 — 経路の層のいちばん上に重ねる）: 1接続で1ストリームずつ。
+// 送り: HTTP/1.1の形に組んだリクエスト（requestBytes）を読み直して、HEADERS（+ CONTINUATION）とDATAにする。
+// 受け: 今のストリームのフレームを、HTTP/1.1の形のレスポンスに組み直して上の読み（scan）へ渡す。本文は、相手がcontent-lengthを付けていればそのまま
+// （END_STREAMで長さが合わなければ断たれた扱い）・無ければchunkedに組む（そのときだけ頭にtransfer-encoding: chunkedを足す）。
+// 相手の動的表は使わせない（SETTINGS_HEADER_TABLE_SIZE = 0 — 接続をまたぐ表を持たない）。受けの窓は最大に開け、使った分を接続の窓へ返す。
+// 状態は格納場所のlH2から（ワード）: 下の定数の欄・フレームの持ち越し・ヘッダのブロックの持ち越し
+
+const hF = 0        // 旗（1 = 前置きを送った・2 = 相手のSETTINGSを受けた・4 = 今のストリームが相手に断たれた / 接続の終わり）
+const hNext = 1     // 次のストリームID
+const hCur = 2      // 今のストリームID（0 = 無し）
+const hPInit = 3    // 相手のSETTINGS_INITIAL_WINDOW_SIZE
+const hPMax = 4     // 相手のSETTINGS_MAX_FRAME_SIZE
+const hCSend = 5    // 接続の送りの窓
+const hSSend = 6    // 今のストリームの送りの窓
+const hCUsed = 7    // 受けて、まだ接続の窓へ返していないバイト数
+const hPh = 8       // 今のストリームの段階（0 = 頭を待つ・1 = 本文・2 = 済んだ）
+const hNoBody = 9   // 1 = 本文を持たない（HEAD）
+const hChunk = 10   // 本文の組み方（0 = 渡さない・1 = chunkedで組む・2 = 相手のcontent-lengthのまま渡す）
+const hHbLen = 11   // ヘッダのブロックの持ち越しのバイト数（-1 = 持ち越し中でない）
+const hHbEs = 12    // 持ち越し中のブロックのEND_STREAM
+const hFLen = 13    // フレームの持ち越しのバイト数
+const hClen = 14    // 相手のcontent-length（hChunk = 2）
+const hGot = 15     // 渡した本文のバイト数（hChunk = 2）
+const hWords = 16
+const hFCap = 16384 + 9
+const hFW = (hFCap + 7) / 8
+const hHbCap = 65536
+const hHbW = (hHbCap + 7) / 8
+const hFrame = hWords
+const hHb = hWords + hFW
+const h2W = hWords + hFW + hHbW
+
+const fPreface = 1
+const fSettings = 2
+const fShut = 4
+
+// 受けの窓（ストリームの初期の窓と接続の窓）
+const h2Win = 2147483647
+
+func h2Get(blk []int, k int) int {
+    return leaseOp(4, blk, lH2 + k, 0)
+}
+
+func h2Set(blk []int, k int, v int) {
+    _ = leaseOp(5, blk, lH2 + k, v)
+}
+
+func h2On(blk []int) bool {
+    return (flagsOf(blk) & bH2) != 0
+}
+
+// いちばん上の平文の次の分（h2Pollが組んだHTTP/1.1の形のレスポンスの続き）。相手に断たれたら閉じとして返す
+@errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other, internal.record.Alert, internal.hsc.CertFailed)
+@effects(block, io, panic, nondet)
+func h2Poll(conn net.Conn, blk []int, pa internal.hsc.CParams, pb internal.hsc.CParams) ([]byte, bool, error?) {
+    mut eof := false
+    // 本文を送る間に組んだ分があれば、先にそれ
+    if leaseOp(4, blk, lAppLen, 0) == 0 {
+        d, e := tlsPoll(conn, blk, pa, pb)?
+        eof = e
+        h2Frames(conn, blk, d)?
+    }
+    n := leaseOp(4, blk, lAppLen, 0)
+    _ = leaseOp(5, blk, lAppLen, 0)
+    return getBytes(blk, lApp, n), eof || (h2Get(blk, hF) & fShut) != 0, nil
+}
+
+// HTTP/1.1の形のリクエストreqを、新しいストリームで送る（最初は前置きと自分のSETTINGSも）。本文は相手の窓の内で送り、窓が無ければ受けて待つ
+@errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other, internal.record.Alert, internal.hsc.CertFailed)
+@effects(block, io, panic, nondet)
+func h2Send(conn net.Conn, blk []int, pa internal.hsc.CParams, pb internal.hsc.CParams, req []byte) error? {
+    mut out := mut []byte{}
+    if (h2Get(blk, hF) & fPreface) == 0 {
+        for x <- bytes(internal.h2frame.Preface) {
+            out = append(out, x)
+        }
+        internal.h2frame.PutSettings(mut out, []int{internal.h2frame.HeaderTableSize, internal.h2frame.EnablePush, internal.h2frame.InitialWindowSize}, []int{0, 0, h2Win})
+        internal.h2frame.PutWindowUpdate(mut out, 0, h2Win - 65535)
+        h2Set(blk, hF, h2Get(blk, hF) | fPreface)
+        h2Set(blk, hNext, 1)
+        h2Set(blk, hPInit, 65535)
+        h2Set(blk, hPMax, internal.h2frame.DefaultMaxFrame)
+        h2Set(blk, hCSend, 65535)
+        h2Set(blk, hHbLen, 0 - 1)
+    }
+    sid := h2Get(blk, hNext)
+    h2Set(blk, hNext, sid + 2)
+    h2Set(blk, hCur, sid)
+    h2Set(blk, hPh, 0)
+    h2Set(blk, hChunk, 0)
+    h2Set(blk, hHbLen, 0 - 1)
+    h2Set(blk, hSSend, h2Get(blk, hPInit))
+    h2Set(blk, hF, h2Get(blk, hF) & ^fShut)
+    hb, body, head := h2Block(req)
+    h2Set(blk, hNoBody, if head { 1 } else { 0 })
+    // ヘッダのブロック（相手のフレームの上限で切る — 続きはCONTINUATION）
+    pm := h2Get(blk, hPMax)
+    mut at := 0
+    mut first := true
+    while first || at < len(hb) {
+        n := if len(hb) - at < pm { len(hb) - at } else { pm }
+        last := at + n >= len(hb)
+        typ := if first { internal.h2frame.Headers } else { internal.h2frame.Continuation }
+        fl := (if last { internal.h2frame.EndHeaders } else { 0 }) | (if first && len(body) == 0 { internal.h2frame.EndStream } else { 0 })
+        internal.h2frame.PutHead(mut out, n, typ, fl, sid)
+        mut i := at
+        while i < at + n {
+            out = append(out, hb[i])
+            i += 1
+        }
+        at += n
+        first = false
+    }
+    linkSend(conn, blk, freeze(out))?
+    // 本文（相手のSETTINGSを受けてから — 初期の窓が既定より小さい相手に、既定の窓で送りすぎない）
+    mut off := 0
+    while off < len(body) {
+        cs := h2Get(blk, hCSend)
+        ss := h2Get(blk, hSSend)
+        if (h2Get(blk, hF) & fSettings) == 0 || cs <= 0 || ss <= 0 {
+            if (h2Get(blk, hF) & fShut) != 0 {
+                return io.Closed{}
+            }
+            d, eof := tlsPoll(conn, blk, pa, pb)?
+            h2Frames(conn, blk, d)?
+            if eof {
+                return io.Closed{}
+            }
+        } else {
+            mut n := len(body) - off
+            if h2Get(blk, hPMax) < n {
+                n = h2Get(blk, hPMax)
+            }
+            if cs < n {
+                n = cs
+            }
+            if ss < n {
+                n = ss
+            }
+            mut o := mut []byte{}
+            internal.h2frame.PutHead(mut o, n, internal.h2frame.Data, if off + n >= len(body) { internal.h2frame.EndStream } else { 0 }, sid)
+            mut i := off
+            while i < off + n {
+                o = append(o, body[i])
+                i += 1
+            }
+            linkSend(conn, blk, freeze(o))?
+            h2Set(blk, hCSend, cs - n)
+            h2Set(blk, hSSend, ss - n)
+            off += n
+        }
+    }
+    return nil
+}
+
+// HTTP/1.1の形のリクエスト（requestBytesの出力 — 要求の行・頭・本文）を、HPACKのヘッダのブロックと本文とHEADかに読み直す。
+// Hostは:authorityへ・接続に固有の頭（Connection・Keep-Alive・Proxy-Connection・Transfer-Encoding・Upgrade）は落とす
+func h2Block(req []byte) ([]byte, []byte, bool) {
+    mut hb := mut []byte{}
+    le := lineEnd2(req, 0, len(req))
+    sp1 := h2Index(req, 0, le, ' ')
+    sp2 := h2Index(req, sp1 + 1, le, ' ')
+    method := slicePiece(req, 0, sp1)
+    path := slicePiece(req, sp1 + 1, sp2)
+    mut auth := []byte{}
+    mut at := le + 2
+    // 頭の行（名前, 値）を先に集め、:authorityを決めてから擬似ヘッダを先頭に置く
+    mut ns := mut []int{}
+    while at < len(req) && !(at + 1 < len(req) && req[at] == '\r' && req[at + 1] == '\n') {
+        e := lineEnd2(req, at, len(req))
+        c := h2Index(req, at, e, ':')
+        vs := h2SkipSp(req, c + 1, e)
+        name := slicePiece(req, at, c)
+        if h2Fold(name, "host") {
+            auth = slicePiece(req, vs, e)
+        } else if !h2Fold(name, "connection") && !h2Fold(name, "keep-alive") && !h2Fold(name, "proxy-connection") && !h2Fold(name, "transfer-encoding") && !h2Fold(name, "upgrade") {
+            ns = append(ns, at)
+            ns = append(ns, c)
+            ns = append(ns, vs)
+            ns = append(ns, e)
+        }
+        at = e + 2
+    }
+    internal.hpack.Field(mut hb, bytes(":method"), method, false)
+    internal.hpack.Field(mut hb, bytes(":scheme"), bytes("https"), false)
+    internal.hpack.Field(mut hb, bytes(":authority"), auth, false)
+    internal.hpack.Field(mut hb, bytes(":path"), path, false)
+    mut i := 0
+    while i < len(ns) {
+        internal.hpack.Field(mut hb, slicePiece(req, ns[i], ns[i + 1]), slicePiece(req, ns[i + 2], ns[i + 3]), false)
+        i += 4
+    }
+    bs := if at + 2 <= len(req) { at + 2 } else { len(req) }
+    return freeze(hb), slicePiece(req, bs, len(req)), h2Fold(method, "HEAD")
+}
+
+func h2Index(b []byte, s int, e int, c byte) int {
+    mut i := s
+    while i < e && b[i] != c {
+        i += 1
+    }
+    return i
+}
+
+func h2SkipSp(b []byte, s int, e int) int {
+    mut i := s
+    while i < e && (b[i] == ' ' || b[i] == '\t') {
+        i += 1
+    }
+    return i
+}
+
+// bが名前nameと大小を無視して同じか
+func h2Fold(b []byte, name string) bool {
+    nb := bytes(name)
+    if len(b) != len(nb) {
+        return false
+    }
+    mut i := 0
+    while i < len(b) {
+        x := int(b[i]) + (if b[i] >= 'A' && b[i] <= 'Z' { 32 } else { 0 })
+        y := int(nb[i]) + (if nb[i] >= 'A' && nb[i] <= 'Z' { 32 } else { 0 })
+        if x != y {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+// 下から来た平文dを、持ち越しと繋いでフレームに切り、今のストリームのレスポンスをHTTP/1.1の形で上の平文の持ち越しへ足す。
+// 制御のフレームへの返事（SETTINGSのACK・PINGのACK・接続の窓）はまとめて送る
+@errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other, internal.record.Alert)
+@effects(block, io, panic, nondet)
+func h2Frames(conn net.Conn, blk []int, d []byte) error? {
+    b := catBytes(getBytes(blk, lH2 + hFrame, h2Get(blk, hFLen)), d)
+    mut out := mut []byte{}
+    mut snd := mut []byte{}
+    mut at := 0
+    mut go := true
+    while go && len(b) - at >= internal.h2frame.HeadLen {
+        f := internal.h2frame.Head(b, at)
+        n := internal.h2frame.Len(f)
+        if n > internal.h2frame.DefaultMaxFrame {
+            h2Shut(blk)
+            go = false
+        } else if len(b) - at < internal.h2frame.HeadLen + n {
+            go = false
+        } else {
+            h2Frame(blk, f, b, at + internal.h2frame.HeadLen, mut out, mut snd)
+            at += internal.h2frame.HeadLen + n
+        }
+    }
+    rest := tailOf2(b, at)
+    h2Set(blk, hFLen, len(rest))
+    putBytes(blk, lH2 + hFrame, rest)
+    if len(out) > 0 {
+        n0 := leaseOp(4, blk, lAppLen, 0)
+        putApp(blk, catBytes(getBytes(blk, lApp, n0), freeze(out)))
+    }
+    if len(snd) > 0 {
+        linkSend(conn, blk, freeze(snd))?
+    }
+    return nil
+}
+
+// 今のストリームが相手に断たれた・接続が使えない
+func h2Shut(blk []int) {
+    h2Set(blk, hF, h2Get(blk, hF) | fShut)
+    setFlag(blk, bDead)
+}
+
+// フレーム1つ（中身はb[p:p + Len(f)]）
+func h2Frame(blk []int, f internal.h2frame.Frame, b []byte, p int, out mut []byte, snd mut []byte) {
+    typ := internal.h2frame.Type(f)
+    sid := internal.h2frame.Sid(f)
+    n := internal.h2frame.Len(f)
+    cur := h2Get(blk, hCur)
+    ph := h2Get(blk, hPh)
+    if typ == internal.h2frame.Data {
+        // 接続の窓は、どのストリームのDATAでも使った分を返す
+        used := h2Get(blk, hCUsed) + n
+        if used >= h2Win / 2 {
+            internal.h2frame.PutWindowUpdate(mut snd, 0, used)
+            h2Set(blk, hCUsed, 0)
+        } else {
+            h2Set(blk, hCUsed, used)
+        }
+        if sid == cur && ph == 1 {
+            s, e, bad := internal.h2frame.Body(f, b, p)
+            if bad != 0 {
+                h2Shut(blk)
+            } else {
+                ck := h2Get(blk, hChunk)
+                if ck == 1 && e > s {
+                    h2Chunk(mut out, b, s, e)
+                } else if ck == 2 {
+                    mut i := s
+                    while i < e {
+                        out = append(out, b[i])
+                        i += 1
+                    }
+                    h2Set(blk, hGot, h2Get(blk, hGot) + (e - s))
+                }
+                if internal.h2frame.Has(f, internal.h2frame.EndStream) {
+                    h2End(blk, mut out)
+                }
+            }
+        }
+    } else if typ == internal.h2frame.Headers && sid == cur && ph < 2 {
+        s, e, bad := internal.h2frame.Body(f, b, p)
+        if bad != 0 {
+            h2Shut(blk)
+        } else {
+            h2Set(blk, hHbLen, 0)
+            h2Set(blk, hHbEs, if internal.h2frame.Has(f, internal.h2frame.EndStream) { 1 } else { 0 })
+            h2Piece(blk, b, s, e, internal.h2frame.Has(f, internal.h2frame.EndHeaders), mut out)
+        }
+    } else if typ == internal.h2frame.Continuation && sid == cur && h2Get(blk, hHbLen) >= 0 {
+        h2Piece(blk, b, p, p + n, internal.h2frame.Has(f, internal.h2frame.EndHeaders), mut out)
+    } else if typ == internal.h2frame.Settings && !internal.h2frame.Has(f, internal.h2frame.Ack) {
+        mut k := 0
+        while (k + 1) * 6 <= n {
+            id, v := internal.h2frame.Setting(b, p, k)
+            if id == internal.h2frame.InitialWindowSize {
+                h2Set(blk, hSSend, h2Get(blk, hSSend) + v - h2Get(blk, hPInit))
+                h2Set(blk, hPInit, v)
+            } else if id == internal.h2frame.MaxFrameSize {
+                h2Set(blk, hPMax, v)
+            }
+            k += 1
+        }
+        h2Set(blk, hF, h2Get(blk, hF) | fSettings)
+        internal.h2frame.PutSettingsAck(mut snd)
+    } else if typ == internal.h2frame.Ping && !internal.h2frame.Has(f, internal.h2frame.Ack) && n == 8 {
+        internal.h2frame.PutPing(mut snd, true, slicePiece(b, p, p + 8))
+    } else if typ == internal.h2frame.WindowUpdate && n == 4 {
+        inc := internal.h2frame.Increment(b, p)
+        if sid == 0 {
+            h2Set(blk, hCSend, h2Get(blk, hCSend) + inc)
+        } else if sid == cur {
+            h2Set(blk, hSSend, h2Get(blk, hSSend) + inc)
+        }
+    } else if typ == internal.h2frame.RstStream && sid == cur && ph < 2 {
+        h2Shut(blk)
+    } else if typ == internal.h2frame.Goaway && n >= 8 {
+        // 新しいストリームは開かない（接続を使い捨てにする）。今のストリームが相手の最後より後なら、断たれた
+        last, _ := internal.h2frame.GoawayInfo(b, p)
+        setFlag(blk, bDead)
+        if last < cur && ph < 2 {
+            h2Shut(blk)
+        }
+    } else if typ == internal.h2frame.PushPromise {
+        // ENABLE_PUSH = 0 を送った相手のPUSH_PROMISEは接続の誤り
+        h2Shut(blk)
+    }
+}
+
+// ヘッダのブロックの断片b[s:e]を持ち越しへ足し、END_HEADERSなら解いてHTTP/1.1の形にする
+func h2Piece(blk []int, b []byte, s int, e int, endh bool, out mut []byte) {
+    hl := h2Get(blk, hHbLen)
+    if hl + (e - s) > hHbCap {
+        h2Shut(blk)
+        return
+    }
+    whole := catBytes(getBytes(blk, lH2 + hHb, hl), slicePiece(b, s, e))
+    if !endh {
+        putBytes(blk, lH2 + hHb, whole)
+        h2Set(blk, hHbLen, len(whole))
+        return
+    }
+    h2Set(blk, hHbLen, 0 - 1)
+    es := h2Get(blk, hHbEs) == 1
+    if h2Get(blk, hPh) == 1 {
+        // trailer: 本文の終わり（中身は渡さない）
+        h2End(blk, mut out)
+        return
+    }
+    mut d := internal.hpack.Dec{}
+    internal.hpack.Init(mut d)
+    mut ho := mut []byte{}
+    mut fs := mut []int{}
+    if internal.hpack.Decode(mut d, whole, mut ho, mut fs, hHbCap) != internal.hpack.Ok || len(fs) < 4 {
+        h2Shut(blk)
+        return
+    }
+    hv := freeze(ho)
+    fv := freeze(fs)
+    // 最初は:status（3桁）
+    if !h2Fold(slicePiece(hv, fv[0], fv[0] + fv[1]), ":status") || fv[3] != 3 {
+        h2Shut(blk)
+        return
+    }
+    st := (int(hv[fv[2]]) - 48) * 100 + (int(hv[fv[2] + 1]) - 48) * 10 + int(hv[fv[2] + 2]) - 48
+    if st < 100 || st > 999 {
+        h2Shut(blk)
+        return
+    }
+    if st < 200 {
+        // 途中の応答（100 Continue など）は渡さない
+        return
+    }
+    bodyless := h2Get(blk, hNoBody) == 1 || st == 204 || st == 304
+    // 相手のcontent-length（あれば本文をそのまま渡す）
+    mut clen := 0 - 1
+    mut q := 4
+    while q < len(fv) {
+        if h2Fold(slicePiece(hv, fv[q], fv[q] + fv[q + 1]), "content-length") {
+            clen = digits2(hv, fv[q + 2], fv[q + 2] + fv[q + 3])
+        }
+        q += 4
+    }
+    chunk := !bodyless && !es && clen < 0
+    for x <- bytes("HTTP/1.1 ${st}\r\n") {
+        out = append(out, x)
+    }
+    mut i := 4
+    while i < len(fv) {
+        name := slicePiece(hv, fv[i], fv[i] + fv[i + 1])
+        skip := (len(name) > 0 && name[0] == ':') || h2Fold(name, "connection") || h2Fold(name, "transfer-encoding")
+        if !skip {
+            for x <- name {
+                out = append(out, x)
+            }
+            out = append(out, ':')
+            out = append(out, ' ')
+            mut j := fv[i + 2]
+            while j < fv[i + 2] + fv[i + 3] {
+                out = append(out, hv[j])
+                j += 1
+            }
+            out = append(out, '\r')
+            out = append(out, '\n')
+        }
+        i += 4
+    }
+    tail := if chunk { "transfer-encoding: chunked\r\n\r\n" } else if bodyless || clen >= 0 { "\r\n" } else { "content-length: 0\r\n\r\n" }
+    for x <- bytes(tail) {
+        out = append(out, x)
+    }
+    h2Set(blk, hChunk, if chunk { 1 } else if !bodyless && clen >= 0 { 2 } else { 0 })
+    h2Set(blk, hClen, clen)
+    h2Set(blk, hGot, 0)
+    if es && !bodyless && clen > 0 {
+        // 本文の無いEND_STREAMなのにcontent-lengthが正（RFC 9113 8.1.1 — 形の誤り）
+        h2Shut(blk)
+    }
+    h2Set(blk, hPh, if es { 2 } else { 1 })
+}
+
+// chunkedの1つ（長さの16進・本文・CRLF）
+func h2Chunk(out mut []byte, b []byte, s int, e int) {
+    hexd := "0123456789abcdef"
+    mut ds := mut []byte{}
+    mut v := e - s
+    while v > 0 {
+        ds = append(ds, bytes(hexd)[v % 16])
+        v = v / 16
+    }
+    mut k := len(ds)
+    while k > 0 {
+        k -= 1
+        out = append(out, ds[k])
+    }
+    out = append(out, '\r')
+    out = append(out, '\n')
+    mut i := s
+    while i < e {
+        out = append(out, b[i])
+        i += 1
+    }
+    out = append(out, '\r')
+    out = append(out, '\n')
+}
+
+// 今のストリームの本文の終わり
+func h2End(blk []int, out mut []byte) {
+    if h2Get(blk, hChunk) == 2 && h2Get(blk, hGot) != h2Get(blk, hClen) {
+        // content-lengthと本文の長さが違う（RFC 9113 8.1.1 — 形の誤り）
+        h2Shut(blk)
+    }
+    if h2Get(blk, hChunk) == 1 {
+        for x <- bytes("0\r\n\r\n") {
+            out = append(out, x)
+        }
+    }
+    h2Set(blk, hPh, 2)
+}
+
+// b[s:e]の10進（数字でなければ -1）
+func digits2(b []byte, s int, e int) int {
+    if e <= s {
+        return 0 - 1
+    }
+    mut v := 0
+    mut i := s
+    while i < e {
+        if b[i] < '0' || b[i] > '9' || v > 1000000000000 {
+            return 0 - 1
+        }
+        v = v * 10 + int(b[i]) - 48
+        i += 1
+    }
+    return v
+}

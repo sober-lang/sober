@@ -10,6 +10,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 # Dateは実の時計で見る（check.tsのdateHdrが今の時刻 ±5秒を見る。gates.shの固定の値を外す）
 unset SOBER_DATE_SEC
+source scripts/gatelib.sh
 S2=${STAGE2:-out/stage2/sober2}
 W=$(mktemp -d)
 SP=
@@ -70,6 +71,29 @@ for cfg in "SOBER_WORKERS=8" "SOBER_WORKERS=1" "SOBER_WORKERS=8 SRV_WORK=1" "SOB
     fi
     FL_KEEP=
 done
+# IPv6: srv をホストを省いた ":port"（SRV_LISTEN=dual — dual-stack）で立て、代表の群（check.ts --quick: baseline・パイプライン・誤り・json）を
+# 127.0.0.1 と ::1 の両方から掛ける（W8・W1）。IPv6 のループバックが無い環境は FAIL（外すのは SOBER_GATES_ALLOW_SKIP=ipv6 だけ）
+need_ipv6 httpcheck "the dual-stack listener over ::1"; v6=$?
+[ $v6 = 2 ] && fail=1
+if [ $v6 = 0 ]; then
+    for w in 8 1; do
+        env SOBER_WORKERS=$w SRV_LISTEN=dual DATASET_PATH=testdata/httpcheck/dataset.json "$W/srv" 0 > "$W/srvd.out" 2> "$W/srvd.err" &
+        SP=$!
+        port=
+        for i in $(seq 100); do port=$(sed -n 's/^ready \([0-9]*\)$/\1/p' "$W/srvd.out"); [ -n "$port" ] && break; sleep 0.05; done
+        if [ -z "$port" ]; then
+            echo "httpcheck: FAIL dual W$w — server did not start ($(head -c 200 "$W/srvd.err"))"; fail=1
+        else
+            for h in 127.0.0.1 ::1; do
+                out=$(timeout 120 node --experimental-strip-types --no-warnings testdata/httpcheck/check.ts "$port" --quick --host "$h" 2>&1) || { echo "httpcheck: FAIL dual W$w host $h (port $port)"; echo "$out" | tail -20; fail=1; }
+                sum="$sum [dual W$w $h: $(echo "$out" | sed -n 's/^check: \([0-9]* passed, [0-9]* failed\).*/\1/p')]"
+            done
+        fi
+        kill $SP 2>/dev/null
+        wait $SP 2>/dev/null
+        SP=
+    done
+fi
 # 時刻つきの送信バッファリング（Delayed — rt.netop 9のms）の検査一式の自己検査: ミュータント84（受けが満了を待たない）・87（格納場所の容量2で溢れた送りが待たずに出る）でビルドした
 # srvはDelayedの検査で落ちる・88（容量2 — 溢れてrt.sleepに倒す正しい形）は通る。examples/http_delayed_cut.soberは既定でゴールデン（.out）どおり、
 # ミュータント85（期限で切ったマークを見ない）・86（閉じが送らないマークを付けない）はW8・87はW1（ringのパスでない送りの待ち）でゴールデンから外れる

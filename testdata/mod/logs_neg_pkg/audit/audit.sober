@@ -1,0 +1,6 @@
+@logs(stdout)
+package audit
+
+func Code() int {
+    return 0
+}

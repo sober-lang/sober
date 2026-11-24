@@ -144,6 +144,8 @@ func initState(st mut S, p loader.Program) {
     st.mainPkg = pathPkg(p, "main")
     // 関数（ファイル順 × 宣言順）。Def の添字は展開されない・main.main 以外に宣言順で振る
     st.nfn = len(p.fn_node)
+    st.e2sIx = []int{}
+    st.e2sN = 0
     mut ndef := 0
     k = 0
     while k < st.nfn {

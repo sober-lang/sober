@@ -162,6 +162,11 @@ func typeKey(st mut St, t int) {
         }
         return
     case TSlice:
+        // stringは[]byteと別の実体（表現は同じでも型は別 — tEqlと同じ区別。鍵が同じだと先に作った方の実体を後の方が引く）
+        if desugar.HeapGet(mut st.d, t + 3) != 0 {
+            putLit(mut st, "string")
+            return
+        }
         putLit(mut st, if desugar.HeapGet(mut st.d, t + 2) != 0 { "mut[]" } else { "[]" })
         typeKey(mut st, desugar.HeapGet(mut st.d, t + 1))
         return
@@ -336,13 +341,17 @@ func instFunc(st mut St, fidx int, targs desugar.ListRef) (int, error?) {
     pk := fnPkg(mut st, fidx)
     decl := fnNode(mut st, fidx)
     k := instKey(mut st, int(strDot(mut st, pkgPath(mut st, pk), fnName(mut st, fidx))), targs)
-    mut x := st.insts
-    while x >= 0 {
-        if strEq(mut st, hgetS(mut st, x + 1), k) {
-            lsEv(mut st, EV_INST, int(infoAt(mut st, desugar.HeapGet(mut st.d, x + 2)).ir), 0, 0, 0)
-            return desugar.HeapGet(mut st.d, x + 2), nil
+    x := instFind(mut st, k)
+    if x >= 0 {
+        fi0 := desugar.HeapGet(mut st.d, x + 2)
+        if bxSimRaw(mut st, fi0) {
+            // 捨てた関数の模擬が作った仮の記録: 型を埋める
+            env0 := bindsOf(mut st, lB(nodeOf(mut st, decl)), targs)
+            sig0 := sigIn(mut st, decl, pk, env0)?
+            bxSimFill(mut st, fi0, decl, pk, desugar.ListRef(sig0.ps), desugar.ListRef(sig0.rs), env0, fnTransparent(mut st, fidx))
         }
-        x = desugar.HeapGet(mut st.d, x)
+        lsEv(mut st, EV_INST, int(infoAt(mut st, fi0).ir), 0, 0, 0)
+        return fi0, nil
     }
     env := bindsOf(mut st, lB(nodeOf(mut st, decl)), targs)
     sig := sigIn(mut st, decl, pk, env)?
@@ -350,9 +359,47 @@ func instFunc(st mut St, fidx int, targs desugar.ListRef) (int, error?) {
     if fnTransparent(mut st, fidx) {
         markTransp(mut st, fi)
     }
-    st.insts = rec4(mut st, st.insts, int(k), fi, 0)
+    instAdd(mut st, k, fi)
     lsEv(mut st, EV_INST, int(infoAt(mut st, fi).ir), 0, 0, 0)
     return fi, nil
+}
+
+const INST_HEADS = 65536
+
+// インスタンスの鍵 k の頭（0〜INST_HEADS - 1）
+func instHash(st mut St, k desugar.StrRef) int {
+    mut h := 0
+    for i <- iter.Range(0, slen(mut st, k)) {
+        h = (h * 31 + sat(mut st, k, i)) & (INST_HEADS - 1)
+    }
+    return h
+}
+
+// 鍵 k のインスタンスの記録（無ければ -1）
+func instFind(st mut St, k desugar.StrRef) int {
+    if table.Len(mut st.instm) == 0 {
+        return -1
+    }
+    mut x := table.Get(mut st.instm, instHash(mut st, k))
+    while x >= 0 {
+        if strEq(mut st, hgetS(mut st, x + 1), k) {
+            return x
+        }
+        x = desugar.HeapGet(mut st.d, x + 3)
+    }
+    return -1
+}
+
+// 鍵 k のインスタンス fi を表に足す（鍵は表に無いこと）
+func instAdd(st mut St, k desugar.StrRef, fi int) {
+    if table.Len(mut st.instm) == 0 {
+        for _ <- iter.Range(0, INST_HEADS) {
+            table.Push(mut st.instm, -1)
+        }
+    }
+    h := instHash(mut st, k)
+    st.insts = rec4(mut st, st.insts, int(k), fi, table.Get(mut st.instm, h))
+    table.Set(mut st.instm, h, st.insts)
 }
 
 // ジェネリック関数の呼び出し: 引数を左から評価して退避 → 型引数（表層型検査器の表）→ インスタンスを呼ぶ

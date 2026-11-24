@@ -260,11 +260,17 @@ func hasKind(ns []ast.Node, kind int) bool {
 
 // source_file <- package_clause ';' (import_decl ';')* top_level_decl* EOF
 func parseFile(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx) int {
-    // package 節の前置の注釈は `@replaces("path")`（double の名乗り）か `@doubles("path", …)`（テストの構成の差し替えの表）のどちらか 1 つ
-    // （置ける場所の検査は loader）
+    // package 節の前置の注釈は `@replaces("path")`（double の名乗り）・`@doubles("path", …)`（テストの構成の差し替えの表）・
+    // `@logs(word)`（ログの行き先）のどれか 1 つ（置ける場所と語の検査は loader）
     mut p0 := 0
     mut pre := -1
-    if tg(cx, 0) == lexer.At {
+    if tg(cx, 0) == lexer.At && textIs(cx, 1, "logs") {
+        if tg(cx, 2) != lexer.LParen || tg(cx, 3) != lexer.Identifier || tg(cx, 4) != lexer.RParen {
+            return -1
+        }
+        p0 = if tg(cx, 5) == lexer.Semicolon { 6 } else { 5 }
+        pre = node(mut nb, ast.KLogs, tk(cx, 0), name(mut db, cx, 3), p0 + 1, 0, 0, 0, 0)
+    } else if tg(cx, 0) == lexer.At {
         rep := textIs(cx, 1, "replaces")
         if !(rep || textIs(cx, 1, "doubles")) || tg(cx, 2) != lexer.LParen {
             return -1

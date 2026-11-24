@@ -1,0 +1,311 @@
+package lower
+
+// 番地の合流を語の合流に直す（展開後のSROA。sroaFuncが逃げの判定で、終端の実引数だけで逃げるスロットを見つけたときに呼ぶ）。
+// 対象: ブロックの仮引数pが、どの辺でもスロットの番地（slotaddrの結果）を受け、pの使い道がブロックの頭のloadだけの形。
+// 頭とは、ブロックの先頭から、メモリを書かない命令と、受けるスロットの外のスロットへのstoreだけが続く間。
+// 書き換え: そのloadの結果をブロックの仮引数にし、各辺の元のブロックの終わりで同じ変位のloadをして実引数に渡す。
+// pは使われない仮引数として残し、辺からは番地0を渡す（外すと値の番号に穴ができる。使われない仮引数は後の掃除が落とす）。
+// 辺の実引数に出なくなったスロットは、ほかの使い道が定数の変位のload / storeだけならSROAが割る。
+// 正しさ: 辺の元の終わりからloadまでの間に、受けるスロットへ書く命令も呼び出しも無い（pwSafe。別のスロットは別のメモリ）。
+// よって辺の元で読んだ値は、合流先の頭で読む値と同じ。辺の元の終わりに足すloadは別の辺へ進むときにも走るが、スロットの読みは副作用を持たない。
+// 最初のSROA（elfeqがstage1と照合する形）には掛けない。
+
+import "desugar"
+import "std/iter"
+
+// 直したらtrue。slotOf = slotaddrの結果 → スロットの番号（SROAの逃げの判定の表。gep.wordの結果は入れない）・swords = スロットの語数
+func pwFunc(st mut St, f FnRef, slotOf []int, swords []int) bool {
+    nv := len(slotOf)
+    nb := irFnNBlk(mut st, f)
+    // 終端だけを歩く: スロットの番地を実引数に持つ辺の行き先（候補のブロック）。候補が無ければ何もしない
+    mut cand := mut []int{}
+    xFill(mut cand, nb, 0)
+    mut any := false
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        t := irBlkTerm(mut st, b)
+        for e <- iter.Range(0, if t == TmBr { 1 } else if t == TmCondbr { 2 } else { 0 }) {
+            kt := if t == TmBr { B_X1 } else if e == 0 { B_X2 } else { B_X4 }
+            l := desugar.HeapGet(mut st.d, int(b) + kt + 1)
+            if l >= 0 {
+                for k <- iter.Range(0, desugar.HeapGet(mut st.d, l)) {
+                    a := desugar.HeapGet(mut st.d, l + 1 + k)
+                    if a >= 0 && a < nv && slotOf[a] >= 0 {
+                        cand[irBlkId(mut st, BlkRef(desugar.HeapGet(mut st.d, int(b) + kt)))] = 1
+                        any = true
+                    }
+                }
+            }
+        }
+        b = irBlkNext(mut st, b)
+    }
+    if !any {
+        return false
+    }
+    // 候補のブロックへ入る辺（元のブロックと実引数の欄）
+    mut eTo := mut []int{}
+    mut eFrom := mut []int{}
+    mut eKt := mut []int{}
+    b = irFnBHead(mut st, f)
+    while b != -1 {
+        t := irBlkTerm(mut st, b)
+        for e <- iter.Range(0, if t == TmBr { 1 } else if t == TmCondbr { 2 } else { 0 }) {
+            kt := if t == TmBr { B_X1 } else if e == 0 { B_X2 } else { B_X4 }
+            to := desugar.HeapGet(mut st.d, int(b) + kt)
+            if cand[irBlkId(mut st, BlkRef(to))] == 1 {
+                eTo = append(eTo, to)
+                eFrom = append(eFrom, int(b))
+                eKt = append(eKt, kt)
+            }
+        }
+        b = irBlkNext(mut st, b)
+    }
+    mut ed := PwEdges{to: freeze(eTo), from: freeze(eFrom), kt: freeze(eKt)}
+    // 値ごとの使い道の数と、非i64の値を書かれるスロットの表は、最初に要るときに作る（どちらも関数の全部の命令を歩く）。
+    // 非i64の値を書かれるスロットは受けない。mem2regはそれを持ち上げず（m2rFuncの逃げの判定）、持ち上げない関数では
+    // SROAが消したgepの番号の穴を詰めない
+    mut uses := mut []int{}
+    mut nonI := []int{}
+    mut changed := false
+    // 候補のブロックごとに、仮引数を1つずつ直す（直すたびに辺の実引数の列が変わるので、仮引数の位置はその都度数え直す）
+    b = irFnBHead(mut st, f)
+    while b != -1 {
+        if cand[irBlkId(mut st, b)] == 1 {
+            mut again := true
+            while again {
+                again = false
+                mut j := 0
+                mut p := irBlkPHead(mut st, b)
+                while p >= 0 && !again {
+                    v := xParamVal(mut st, p)
+                    inc := pwIncoming(mut st, ed, b, j, slotOf)
+                    if len(inc) > 0 {
+                        n, mo := pwScan(mut st, b, v, slotOf, inc)
+                        if n > 0 && len(uses) == 0 {
+                            pwUses(mut st, f, nv, mut uses)
+                        }
+                        if n > 0 && n == uses[v] && pwWordsOk(inc, swords, mo) && len(nonI) == 0 {
+                            nonI = pwNonI(mut st, f, slotOf, len(swords))
+                        }
+                        if n > 0 && n == uses[v] && pwWordsOk(inc, swords, mo) && pwAllI(inc, nonI) {
+                            pwRewrite(mut st, f, ed, b, j, v, desugar.HeapGet(mut st.d, p + 2), slotOf, inc)
+                            uses[v] = 0
+                            again = true
+                            changed = true
+                        }
+                    }
+                    j += 1
+                    p = xParamNext(mut st, p)
+                }
+            }
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return changed
+}
+
+// 値（番号 < nv）ごとの使い道の数（命令と終端の被演算子）をusesに入れる
+func pwUses(st mut St, f FnRef, nv int, uses mut []int) {
+    xFill(mut uses, nv, 0)
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut ins := irBlkIHead(mut st, b)
+        while ins != -1 {
+            for k <- iter.Range(0, xNOps(mut st, ins)) {
+                v := xOpnd(mut st, ins, k)
+                if v >= 0 && v < nv {
+                    uses[v] = uses[v] + 1
+                }
+            }
+            ins = irInsNext(mut st, ins)
+        }
+        for k <- iter.Range(0, xNTermOps(mut st, b)) {
+            v := xTermOpnd(mut st, b, k)
+            if v >= 0 && v < nv {
+                uses[v] = uses[v] + 1
+            }
+        }
+        b = irBlkNext(mut st, b)
+    }
+}
+
+// 候補のブロックへ入る辺（元のブロック・行き先の欄 B_X1 / B_X2 / B_X4 — 実引数の列はその次の欄）
+type PwEdges struct {
+    to []int
+    from []int
+    kt []int
+}
+
+// toへの全部の辺のj番目の実引数のスロットの番号の列（どれかがスロットの番地でなければ空）
+func pwIncoming(st mut St, ed PwEdges, to BlkRef, j int, slotOf []int) []int {
+    mut out := mut []int{}
+    for q <- iter.Range(0, len(ed.to)) {
+        if ed.to[q] == int(to) {
+            l := desugar.HeapGet(mut st.d, ed.from[q] + ed.kt[q] + 1)
+            if l < 0 || j >= desugar.HeapGet(mut st.d, l) {
+                return []int{}
+            }
+            a := desugar.HeapGet(mut st.d, l + 1 + j)
+            if a < 0 || a >= len(slotOf) || slotOf[a] < 0 {
+                return []int{}
+            }
+            out = append(out, slotOf[a])
+        }
+    }
+    return freeze(out)
+}
+
+// スロットごとに、非i64の値を書かれるか（1）
+func pwNonI(st mut St, f FnRef, slotOf []int, ns int) []int {
+    vt := valueTypes(mut st, f)
+    mut out := mut []int{}
+    xFill(mut out, ns, 0)
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut ins := irBlkIHead(mut st, b)
+        while ins != -1 {
+            if irInsOp(mut st, ins) == OpStore {
+                a := irInsA(mut st, ins)
+                if a >= 0 && a < len(slotOf) && slotOf[a] >= 0 && desugar.HeapGet(mut st.d, vt + 1 + irInsC(mut st, ins)) != TyI64 {
+                    out[slotOf[a]] = 1
+                }
+            }
+            ins = irInsNext(mut st, ins)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return freeze(out)
+}
+
+// 受けるスロットがどれも非i64の値を書かれないか
+func pwAllI(inc []int, nonI []int) bool {
+    mut ok := true
+    for k <- iter.Range(0, len(inc)) {
+        ok = ok && nonI[inc[k]] == 0
+    }
+    return ok
+}
+
+// 変位moの語を、受けるどのスロットも持つか
+func pwWordsOk(inc []int, swords []int, mo int) bool {
+    mut ok := mo >= 0
+    for k <- iter.Range(0, len(inc)) {
+        ok = ok && mo < swords[inc[k]]
+    }
+    return ok
+}
+
+// bの頭の、vを番地にした定数の変位のloadの数と、最大の変位
+func pwScan(st mut St, b BlkRef, v int, slotOf []int, inc []int) (int, int) {
+    mut n := 0
+    mut mo := -1
+    mut ins := irBlkIHead(mut st, b)
+    while ins != -1 && pwSafe(mut st, ins, slotOf, inc) {
+        if irInsOp(mut st, ins) == OpLoad && irInsA(mut st, ins) == v && irInsB(mut st, ins) >= 0 {
+            n += 1
+            if irInsB(mut st, ins) > mo {
+                mo = irInsB(mut st, ins)
+            }
+        }
+        ins = irInsNext(mut st, ins)
+    }
+    return n, mo
+}
+
+// 受けるスロットの中身を変えない命令か: メモリを書かない・呼ばない命令と、incの外のスロットの番地（slotaddrの結果）へのstore
+func pwSafe(st mut St, ins InsRef, slotOf []int, inc []int) bool {
+    op := irInsOp(mut st, ins)
+    if pwPure(op) {
+        return true
+    }
+    if op == OpStore || isNarrowSt(op) {
+        a := irInsA(mut st, ins)
+        if a < 0 || a >= len(slotOf) || slotOf[a] < 0 {
+            return false
+        }
+        for k <- iter.Range(0, len(inc)) {
+            if inc[k] == slotOf[a] {
+                return false
+            }
+        }
+        return true
+    }
+    return false
+}
+
+// メモリを書かない・呼ばない命令
+func pwPure(op int) bool {
+    return op == OpDead || op == OpConst || op == OpBin || op == OpCmp || op == OpLoad || op == OpLoad8 || op == OpLoad16 || op == OpLoad32 || op == OpGepW || op == OpGepB || op == OpPtoi || op == OpItop || op == OpSlotaddr || op == OpGlobal || op == OpFuncaddr || op == OpFsAddr
+}
+
+// toのj番目の仮引数v（使い道は頭のloadだけ）を、loadの結果の仮引数に置き換える。pty = vの型
+func pwRewrite(st mut St, f FnRef, ed PwEdges, to BlkRef, j int, v int, pty int, slotOf []int, inc []int) {
+    // vのloadを集め、命令の鎖から外す（OpDeadで残すと、mem2regが走らない関数で検証器が受け付けない）
+    mut lres := mut []int{}
+    mut loff := mut []int{}
+    mut prev := InsRef(-1)
+    mut ins := irBlkIHead(mut st, to)
+    while ins != -1 && pwSafe(mut st, ins, slotOf, inc) {
+        nx := irInsNext(mut st, ins)
+        if irInsOp(mut st, ins) == OpLoad && irInsA(mut st, ins) == v && irInsB(mut st, ins) >= 0 {
+            lres = append(lres, irInsRes(mut st, ins))
+            loff = append(loff, irInsB(mut st, ins))
+            if prev == -1 {
+                irSetBlkIHead(mut st, to, nx)
+            } else {
+                irSetInsNext(mut st, prev, nx)
+            }
+            if nx == -1 {
+                irSetBlkITail(mut st, to, prev)
+            }
+        } else {
+            prev = ins
+        }
+        ins = nx
+    }
+    // loadの結果を仮引数の末尾へ（vは残す）
+    for k <- iter.Range(0, len(lres)) {
+        np := rec4(mut st, -1, lres[k], TyI64, 0)
+        tail := irBlkPTail(mut st, to)
+        if tail < 0 {
+            irSetBlkPHead(mut st, to, np)
+        } else {
+            desugar.HeapSet(mut st.d, tail, np)
+        }
+        irSetBlkPTail(mut st, to, np)
+    }
+    // 辺ごと: j番目の実引数を番地0に替え、元のブロックの終わりで読んだ語を末尾へ
+    for q <- iter.Range(0, len(ed.to)) {
+        if ed.to[q] == int(to) {
+            b := BlkRef(ed.from[q])
+            kt := ed.kt[q]
+            old := desugar.HeapGet(mut st.d, int(b) + kt + 1)
+            n0 := desugar.HeapGet(mut st.d, old)
+            a := desugar.HeapGet(mut st.d, old + 1 + j)
+            l := listN(mut st, n0 + len(lres))
+            mut w := 0
+            for k <- iter.Range(0, n0) {
+                if k != j {
+                    desugar.HeapSet(mut st.d, l + 1 + w, desugar.HeapGet(mut st.d, old + 1 + k))
+                } else {
+                    z0 := newValueIn(mut st, f)
+                    linkInst(mut st, b, mkInst(mut st, z0, OpConst, 0, 0, 0))
+                    mut z := z0
+                    if pty == TyPtr {
+                        z = newValueIn(mut st, f)
+                        linkInst(mut st, b, mkInst(mut st, z, OpItop, z0, 0, 0))
+                    }
+                    desugar.HeapSet(mut st.d, l + 1 + w, z)
+                }
+                w += 1
+            }
+            for k <- iter.Range(0, len(lres)) {
+                x := newValueIn(mut st, f)
+                linkInst(mut st, b, mkInst(mut st, x, OpLoad, a, loff[k], 0))
+                desugar.HeapSet(mut st.d, l + 1 + w, x)
+                w += 1
+            }
+            desugar.HeapSet(mut st.d, int(b) + kt + 1, l)
+        }
+    }
+}

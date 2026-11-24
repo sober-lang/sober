@@ -1,0 +1,3531 @@
+package server
+
+// HTTP/1.1のサーバの最小形: 接続1本のリクエストを順にrouteへ渡し、レスポンスを書く。接続1本 = task 1本はnet.Serveの仕事で、
+// ここは包まない（利用者が `func app(c net.Conn) error? { return http.server.ServeConn(c, route) }` を net.Serve に渡す）。
+// リクエスト1件 = routeの呼び出し1回 = 反復1回のregion（DOMの「1フレーム1 region」と同じ基準）。切片1つに入ったリクエスト（パイプライン）のレスポンスは
+// まとめてsend 1回（積んだ列が64 KiBを超えたら、そこで送ってから続きを処理する）。ヘッダは頭のバイト列の上の位置の線形の表（mapにしない）。ルーターはルートの表（`[]Route`。データ）と
+// 純関数の合成（Mount / Merge）+ Dispatch（route のコールバックに包んで渡す — ServeConn は無変更）。ミドルウェアは before / after の組。
+// 範囲: HTTP/1.1と1.0のリクエスト・keep-alive（1.1の既定。1.0はConnection: keep-alive）・Connection: close・パイプライン・本文はContent-Lengthとchunked
+// （chunkの拡張は文法を確かめて読み捨てる。trailerは読み捨てる）・レスポンスのgzip（ServeConnのcompression:）・レスポンスのstream（Responseのstream。長さ既知はContent-Length、
+// 長さ不定はchunked〔HTTP/1.0は閉じで区切る〕）・SSEのイベントの組み立て（FormatEvent）。誤りのレスポンスの後は閉じる。誤りのstatusはRFC 9110・9112に合わせる:
+// 400 = 形の誤り（Hostが無いHTTP/1.1のリクエスト・2本以上のHost・形の誤ったHostの値・ヘッダの値の制御文字・chunkの拡張の文法の誤り・chunkedが最後に1回でない
+// Transfer-Encoding・HTTP/1.0のTransfer-Encoding・版の文字列の文法の誤りを含む。Transfer-Encodingの空の要素は読み飛ばす）・414 = リクエスト行のターゲットの途中で
+// 頭の上限・431 = それ以外の頭の上限・413 = 本文の上限・501 = chunkedが最後に1回あり、ほかの符号化を含むTransfer-Encoding（chunkedのパラメータは読み捨てる）・505 = 形は正しく1.0と1.1
+// 以外の版。入れないもの: HTTP/2・TLS・br・レスポンスのtrailer・URLのデコード・Serverヘッダ。Expect: 100-continueは、頭が揃い本文が未着のときに100を送る（本文が上限を越えるなら頭の時点で413）。
+// リクエストの頭はUTF-8で検査する（0x80以上のobs-textは400）
+// 切片をまたぐリクエスト: 残りを接続ごとの持ち越しの列へコピーし、次の切片と繋いだコピーを反復のregionに作って読み直す。頭が揃って本文を待つリクエストは、
+// 本文が揃うまで読み直さない: Content-Lengthの本文は持ち越しの列へ足し、chunkedの本文は届いた分から解いて、解いた本文だけを持ち越しの列へ積む（生のバイトは
+// 途中で切れた1行だけ）。持ち越しの列は、頭の上限 + 本文の上限 + 18バイトまで伸びる
+
+import "std/binary"
+import "std/compress/flate"
+import "std/compress/gzip"
+import "std/http"
+import "std/internal/deflate"
+import "std/io"
+import "std/json"
+import "std/net"
+import "std/os"
+import "std/strings"
+import "std/task"
+import "std/utf8"
+
+// リクエスト1件（この反復のregion — routeが返ったら消える。外へ持ち出すならコピーする）
+type Request struct {
+    method string
+    // リクエストの対象の '?' の前（生のまま — %のデコードはしない）
+    path string
+    query string // リクエストの対象の '?' の後（生のまま — %のデコードはしない）
+    // リクエストの頭（リクエスト行からヘッダの終わりの空行まで — 検査済み）。認証のヘッダを含むので認証の源（stdの外のpackageで読むと、その値と読んだ関数は
+    // 認証に届く — language.md 12 節「出所の依存」。stdの中の読み〔Header・Dispatchのコピー〕は源にしない）
+    head utf8.View @credential
+    // headの上のヘッダの位置 × 本数。1本 = 2ワード [名前の始め | 終わり << 32, 値の始め | 終わり << 32]（lo32 / hi32で読む — 頭は4 GiB未満）
+    headers []int
+    // 本文（Content-Lengthの分・chunkedは繋いだコピー）
+    body []byte
+    // Dispatchが一致させたルートのpath（"/users/:id" — ルーターを通らないリクエストは ""。Paramはこれとpathを並べて歩く）
+    pattern string
+}
+
+// レスポンス（status・Content-Type〔"" なら書かない〕・本文）。streamがあれば本文の代わりにServeConnが頭の後でstreamを呼び、streamが
+// emitに渡したバイト列をそのまま送る（コールバック形式〔継続渡し / CPS〕— language.md 28 節w2の「レスポンスの枠」）。emit 1回 = 送り1回（emitをまたいでバッファしない）。
+// length があれば Content-Length（stream が emit で送る合計は length ちょうどであること — ServeConn は合計を数え、超えた emit は送らず・stream が返った時点で
+// 合計が length でなければ閉じる〔相手は本文の切れで知る〕）。length が nil（長さ不定）なら Transfer-Encoding: chunked（emit 1 回 = chunk 1 つ・空の emit は送らない・stream が nil で
+// 返ったら終端のchunk）— HTTP/1.0のリクエストにはContent-Lengthもchunkedも書かず、streamが返ったら閉じる（閉じで区切る）。streamが誤りを返したら終端を書かずに閉じる。
+// compression: があり・Content-Typeが圧縮向き・リクエストがgzipを受け・codedが無いstreamのレスポンス（長さ既知ならlengthが1024以上のとき）はgzipにしてchunkedで送る
+// （emit 1回 = deflateの sync flush 1回 = chunk 1つ・ウィンドウはemitをまたいで持ち越す・HTTP/1.0は閉じで区切る・Varyはbodyのレスポンスと同じ）。HEADでは呼ばない（頭はGETと同じ）。
+// streamはリクエストの値（pathなど）を捕捉してよいクロージャ。Fileは捕捉させずpathを捕捉してstreamの中で開く。送りの状態out（Out — 中身は
+// std/http/serverの外から見えない）は呼び手が持ち、emitを呼ぶたびに `emit(mut out, b)` と渡す（クロージャはmutを捕捉しない — language.md 25 節「関数型のmut仮引数」）:
+//
+//     func handle(r http.server.Request) http.server.Response {
+//         return http.server.Response{status: 200, contentType: "text/plain", length: n, stream: (out, emit) => sendFile(r.path, mut out, emit)}
+//     }
+//     func sendFile(path string, out mut http.server.Out, emit func(out mut http.server.Out, b []byte) error?) error? {
+//         f := io.Open(path)?
+//         defer io.Close(f)
+//         for b <- io.Chunks(f)? { emit(mut out, io.Raw(b))? }
+//         return nil
+//     }
+type Response struct {
+    status http.StatusCode
+    contentType string
+    body []byte
+    // streamの本文の長さ（Content-Length — nil = 長さ不定 = chunked）。bodyのレスポンスでは読まない。304では、compression: のVaryを200と同じ条件で
+    // 決めるための200の本文の長さ（contentTypeと組で。304はContent-Typeを書かない）
+    length int?
+    stream Stream?
+    // 任意ヘッダ（書いた順に Cache-Control の後へ）。std/http/server が書く名前（Date・Content-Type・Content-Length・Content-Encoding・
+    // Transfer-Encoding・Connection・Vary）・保存の方針と検証子の名前（Cache-Control・CDN-Cache-Control・Surrogate-Control・ETag・Last-Modified —
+    // 書くのは型のフィールドcache / validatorsだけ）・tokenでない名前・field-valueでない値（制御文字・前後の空白）・1行だけの欄（Locationなど。singleFieldの表）の2本目は
+    // panic(BadHeader)。表に無い欄（リストの欄・アプリが定めた欄）は同じ名前で何本でも書ける。レスポンスの分割の封:
+    //
+    //     http.server.Response{status: 200, contentType: "text/plain", body: b, headers: http.server.Headers{list: []http.Field{http.Field{name: "X-Request-Id", value: id}}}}
+    headers Headers?
+    // 本文の符号化を選んだレスポンス（Staticのprecompressed — 下のCoded）。あればServeConnはVary: Accept-Encodingを書き、encodingが空でなければ
+    // Content-Encoding を書き、compression: を掛けない
+    coded Coded?
+    // 保存の方針（Cache-Control）。レスポンス1件で書くのはPrivate / NoStore — 共有キャッシュも保存してよい方針（Fresh）はルートの行（Route.cache・
+    // Staticのcache:）で書き、Dispatchがこのフィールドの無いレスポンスにコピーする〔stdの外でレスポンス1件にFresh / Sharedを書くとanalyzerが拒否する〕）。どこにも無ければ `Cache-Control: private`（利用者のブラウザだけが保存してよい —
+    // 認証つきのリクエストのレスポンスをCDNの規則が拾う形〔web cache deception〕の入口を狭める既定）
+    //
+    //     http.server.Response{status: 200, contentType: "text/plain", body: b, cache: http.server.NoStore{}}
+    cache Cache?
+    // 検証子（ETag・Last-Modified — 作れるのはstd/http/serverだけ: 封の型。同じ検証子を別の利用者の中身に付けると、検証しに来たキャッシュへの304で
+    // 他人の版が出る — 検証子は中身から std が作る）
+    validators Validators?
+    // Set-Cookie（書けるのはこのフィールドだけ — 下のSetCookie）。書いた順に任意ヘッダの後へ
+    cookies []SetCookie
+    // 送る前の待ち（ミリ秒 — Delayed で付ける。0 以下 = 待たない）。接続の task はハンドラから戻った浅い点で待つ
+    delay int
+}
+
+// レスポンスの検証子（ETagとLast-Modified — Staticが作る。modifiedは秒・0以下はLast-Modifiedを書かない）
+type Validators struct {
+    etag string
+    modified int
+    seal validSeal
+}
+
+// Validators の封（非公開 — 外で値を書けない）
+type validSeal struct {
+}
+
+// レスポンスの本文がリクエストのAccept-Encodingで選ばれたこと（encoding = 選んだ符号化〔"br" / "gzip"〕・"" = 候補を見たが元のまま）。
+// 本文は既にその符号化のバイト列（ServeConnは圧縮しない — 選ぶだけ）。同じURLのレスポンスがリクエストの頭で変わるので、元のままのレスポンスにもVaryを付ける
+type Coded struct {
+    encoding string
+}
+
+// 任意ヘッダの列（Responseのフィールドをoptionの包みにしてあるのは、フィールドを持たないレスポンス〔大半〕のパスに空の列の確保とregionの付け替えを
+// 積まないため）
+type Headers struct {
+    list []http.Field
+}
+
+// Set-Cookieの1本（Response.cookiesの要素。Set-Cookieを書けるのはこのフィールドだけ。生のSet-Cookieをheadersに書くとpanic(BadHeader)）。
+// 利用者ごとの値（`@personal`）: 共有キャッシュに保存されうる方針（`@stored`・`@shared`）のルートとレスポンスでは返せない（analyzerが拒否・実行時はpanic(BadHeader)）。
+// 省いたフィールドのゼロ値が安全な側: Secure・HttpOnly・SameSite=Lax・Path=/・Domainなし（host-only — サブドメインへ送らない）・Max-Ageなし（ブラウザを閉じるまで）。
+// 緩めるフィールドはdangerouslyの綴り（grepで全部拾える）。値は符号化しない — cookie-octet〔英数字と記号のうち空白・`"` `,` `;` `\` 以外〕に収まらない値は
+// 呼び手がurl.Escapeかbase64urlで包む。名前・値・フィールドの組み合わせが書けなければpanic(BadHeader{name: "Set-Cookie"})
+//
+//     http.server.Response{status: 200, contentType: "text/plain", body: b, cookies: []http.server.SetCookie{http.server.SetCookie{name: "__Host-sid", value: tok}}}
+type SetCookie struct {
+    name string
+    value string
+    // 秒（0 = 今ある cookie を消す・負は書けない）。nil = Max-Age を書かない
+    maxAge int?
+    // nil = "/"
+    path string?
+    // nil = Domain を書かない（host-only）
+    domain string?
+    // nil = Lax
+    sameSite SameSite?
+    // trueでSecureを外す（httpの開発環境だけのオプション — SameSiteNone・名前の __Host- / __Secure- とは組めない）
+    dangerouslyAllowHttp bool
+    // true で HttpOnly を外す（スクリプトから読ませる）
+    dangerouslyScriptReadable bool
+} @personal
+
+// SameSite 属性（RFC 6265bis 5.4.7 — None は Secure が要る）
+type SameSite union {
+    SameSiteLax {}
+    SameSiteStrict {}
+    SameSiteNone {}
+}
+
+// レスポンスの本文の供給（emitは借り — 呼ぶ・借りの位置へ渡すだけ。language.md 25 節「借り」）。outは送りの状態で、emitに毎回mutで渡す
+type Stream func(out mut Out, emit func(out mut Out, b []byte) error?) error? @errors(emit, io.NotFound, io.Denied, io.Timeout, io.Expired, io.Other)
+
+// stream の送りの状態（圧縮する stream の符号器・送った合計・長さ既知なら length・超えたか）。ServeConn が作って stream に渡す — 利用者は
+// 中身を読み書きせず、受け取った out を emit にそのまま渡す
+type Out struct {
+    s internal.deflate.Stream
+    n int
+    lim int?
+    over bool
+}
+
+// 200・text/plainのレスポンス
+@effects()
+func Text(s string) Response {
+    return Response{status: http.OK, contentType: "text/plain", body: bytes(s)}
+}
+
+// rをmsミリ秒待ってから送るレスポンス（ms ≤ 0は待たない）。待つのはそのレスポンスの頭を書く直前で、同じ接続の前のリクエストのレスポンスは先に送る。
+// ハンドラの中でos.Sleepしてから返すのと送る時刻は同じだが、待つ間ハンドラのスタックとリクエストのregionを持たない（接続のtaskは
+// ハンドラから戻った浅い点でスリープする）。接続の期限はos.Sleepと同じく待ちを切る（language.md 28 節）
+//
+//     return http.server.Delayed(50, http.server.Text("ok"))
+@effects()
+func Delayed(ms int, r Response) Response {
+    // フィールドを並べてコピーしない。フィールドを足したときにコピー漏れが起きない
+    mut w := r
+    w.delay = ms
+    return w
+}
+
+// 200・application/jsonのレスポンス（sは組み上がったJSON — std/jsonのPut… / Done）
+@effects()
+func Json(s string) Response {
+    return Response{status: http.OK, contentType: "application/json", body: bytes(s)}
+}
+
+// Server-Sent Events のイベント 1 つ（WHATWG HTML 9.2 の text/event-stream — FormatEvent で組んで stream の emit に渡す）。event = イベントの種類（nil = 書かない・
+// 受け手は message）・data = 本文（改行で行に割る）・id = 最後のイベントの番号（受け手が繋ぎ直すときに Last-Event-ID で返す — `http.server.Header(r, "Last-Event-ID")`）・
+// retry = 繋ぎ直しの待ち（ミリ秒）
+type Event struct {
+    event string?
+    data string
+    id string?
+    retry int?
+}
+
+// Eventのevent / idにCR・LF・NULがある（呼び手の契約違反 — イベントの差し込みの封: 行の区切りを値に書けると、受け手に別のイベントやフィールドを足せる。panicラベル）
+type BadEvent panic {
+    field string
+}
+
+// e の text/event-stream の 1 イベント（`event:`・`id:`・`retry:`・`data:` の行と、終わりの空行）。data は改行（LF・CRLF・CR）で割って行ごとの `data:` にする
+// （受け手は行をLFで繋ぎ直す — 改行の種類はLFに揃う）。event / idにCR・LF・NULがあればpanic(BadEvent)。配送はレスポンスのstreamで、emit 1回 = 送り1回
+// （language.md 28 節の「SSE」— 長さ不定の stream は chunked）。心拍のコメントは `emit(mut out, bytes(": ping\n\n"))` で書ける:
+//
+//     http.server.Response{status: 200, contentType: "text/event-stream", cache: http.server.NoStore{}, stream: (out, emit) => {
+//         emit(mut out, bytes(http.server.FormatEvent(http.server.Event{event: "tick", data: "1", id: "1"})))?
+//         nil
+//     }}
+@effects(panic)
+func FormatEvent(e Event) string {
+    mut out := mut []byte{}
+    ev := e.event
+    if ev != nil {
+        if eventBad(ev) {
+            return panic(BadEvent{field: "event"})
+        }
+        for x <- bytes("event: ${ev}\n") {
+            out = append(out, x)
+        }
+    }
+    id := e.id
+    if id != nil {
+        if eventBad(id) {
+            return panic(BadEvent{field: "id"})
+        }
+        for x <- bytes("id: ${id}\n") {
+            out = append(out, x)
+        }
+    }
+    rt := e.retry
+    if rt != nil {
+        for x <- bytes("retry: ${rt}\n") {
+            out = append(out, x)
+        }
+    }
+    d := bytes(e.data)
+    mut s := 0
+    mut i := 0
+    while i <= len(d) {
+        if i == len(d) || d[i] == '\r' || d[i] == '\n' {
+            for x <- bytes("data: ") {
+                out = append(out, x)
+            }
+            mut j := s
+            while j < i {
+                out = append(out, d[j])
+                j += 1
+            }
+            out = append(out, '\n')
+            // CRLF は 1 つの改行
+            i = if i + 1 < len(d) && d[i] == '\r' && d[i + 1] == '\n' { i + 2 } else { i + 1 }
+            s = i
+        } else {
+            i += 1
+        }
+    }
+    out = append(out, '\n')
+    return string(freeze(out)) catch ""
+}
+
+// v に CR・LF・NUL があるか（Event の event / id に書けない文字）
+func eventBad(v string) bool {
+    for x <- bytes(v) {
+        if x == '\r' || x == '\n' || x == 0 {
+            return true
+        }
+    }
+    return false
+}
+
+// 本文なしのレスポンス（http.NotFound / http.MethodNotAllowed …）
+@effects()
+func Status(code http.StatusCode) Response {
+    return Response{status: code, contentType: "", body: []byte{}}
+}
+
+// ServeConnのcompression: の値（レスポンスのgzip — RFC 1952。levelはstd/compress/flateと同じ1〜9・0は既定の6と読む — ゼロ値 `http.server.Gzip{}` が既定）:
+//
+//     http.server.ServeConn(c, route, compression: http.server.Gzip{level: 6})
+//
+// ServeConnがリクエストのAccept-Encodingを見て、レスポンスのContent-Typeが圧縮向き（text/* かapplication/json）で本文が1024バイト以上なら、本文を
+// gzipにしてContent-Encoding: gzipを付ける。圧縮しうるレスポンスには受けないリクエストにもVary: Accept-Encodingを付ける（同じURLのレスポンスがリクエストの頭で変わる — 中継の
+// キャッシュの正しさ）。routeは圧縮を知らない（middlewareと同じ位置 — リクエストごとに直列化 + 圧縮・圧縮済みのコピーをバッファしない）。1〜9の外のlevelはpanic(BadLevel)。
+// 接続ごとに直近の動的Huffmanの木を記録し（compress.gzip.History — 最初に圧縮したレスポンスで接続あたり4 KB: 記録 ≈1.2 KBが接続のページを1枚持つ）、似た本文の続く接続では木を作らずに使う:
+// 圧縮した本文は接続のリクエストの列で決まる（同じ列なら同じバイト列）・大きさは記録を使ったブロックで記録なしの1.03倍まで（ε = 0.03）。
+// `Gzip{fresh: true}` で記録を持たない（毎回最適の木 = 今までの決定的なパス）
+type Gzip struct {
+    level int
+    // true = 接続ごとの記録を持たない（毎回その本文の最適の木 = 記録なしの決定的なパス — 圧縮した本文がリクエストごとに本文だけで決まる。内容アドレスのキャッシュ等）
+    fresh bool
+}
+
+// Gzip の level が 0〜9 の外（呼び手の契約違反 — panic ラベル。language.md 27 節）
+type BadLevel panic {
+    level int
+}
+
+// ServeConn の work: を compression: なしで渡した（作業域は圧縮の符号器のもの — 呼び手の契約違反。panic ラベル）
+type WorkNoCompress panic
+
+// 圧縮する本文の下限（これ未満は頭と符号の表の分で得が無い — Go の gzhttp の既定と同じ 1024）
+const gzMin = 1024
+
+// r のヘッダ name の値（名前は大文字小文字を区別しない — 最初の一致。無ければ nil）。認証のヘッダ（Authorization・Proxy-Authorization・Cookie）は
+// 読めない（nil）— 読むインターフェースはAuthorizationとCookieだけ（認証の源の明示: 認証に届くレスポンスを共有キャッシュへ宣言する形をanalyzerが拒否する — language.md 13 節の補3）
+@effects()
+func Header(r Request, name string) string? {
+    nb := bytes(name)
+    if eqFold(nb, 0, len(nb), bytes("authorization")) || eqFold(nb, 0, len(nb), bytes("proxy-authorization")) || eqFold(nb, 0, len(nb), bytes("cookie")) {
+        return nil
+    }
+    return headerOf(r, nb)
+}
+
+// rのヘッダの全部（受けた順・同じ名前の行は別の要素）。名前は小文字にする（大文字を含む名前だけコピーし、ほかは頭の上の区間）。値は頭の上の区間で、コピーしない。
+// 認証のヘッダ（Authorization・Proxy-Authorization・Cookie）は含まない。読むインターフェースはAuthorizationとCookieだけ（Headerと同じ）
+@effects()
+func HeaderList(r Request) []http.Field {
+    hb := utf8.Bytes(r.head)
+    mut out := mut []http.Field{}
+    mut i := 0
+    while i < len(r.headers) {
+        ns := lo32(r.headers[i])
+        ne := hi32(r.headers[i])
+        if !credName(hb, ns, ne) {
+            // 頭はUTF-8で検査済みで、区間の境界はASCIIの字の上なので、utf8.Strは失敗しない（Headerと同じ扱い）
+            name, e1 := utf8.Str(r.head, ns, ne)
+            value, e2 := utf8.Str(r.head, lo32(r.headers[i + 1]), hi32(r.headers[i + 1]))
+            if e1 == nil && e2 == nil {
+                out = append(out, http.Field{name: lowerName(hb, ns, ne, name), value: value})
+            }
+        }
+        i += 2
+    }
+    return freeze(out)
+}
+
+// b[s:e) が認証のヘッダの名前か（大文字小文字を区別しない）
+func credName(b []byte, s int, e int) bool {
+    return eqFold(b, s, e, bytes("authorization")) || eqFold(b, s, e, bytes("proxy-authorization")) || eqFold(b, s, e, bytes("cookie"))
+}
+
+// ヘッダの名前 `b[s:e)`（= name）の小文字の綴り。大文字を含まなければnameをそのまま返す
+func lowerName(b []byte, s int, e int, name string) string {
+    mut k := s
+    while k < e && !(b[k] >= 'A' && b[k] <= 'Z') {
+        k += 1
+    }
+    if k == e {
+        return name
+    }
+    mut o := mut []byte{}
+    mut j := s
+    while j < e {
+        o = append(o, lower(b[j]))
+        j += 1
+    }
+    // 名前はtcharだけ（ASCII）なので、文字列への変換は失敗しない
+    return string(freeze(o)) catch name
+}
+
+// r の Authorization ヘッダの値（認証の源 — 最初の行。無ければ nil。scheme の解釈〔Bearer / Basic〕はしない）
+@credential
+@effects()
+func Authorization(r Request) string? {
+    return headerOf(r, bytes("authorization"))
+}
+
+// r の Cookie ヘッダの name の値（認証の源 — RFC 6265 5.4 の `name=value; name2=value2` を `;` で切り、前後の空白を除いて名前が
+// ちょうど等しい〔大文字小文字を区別する〕最初の組の値。値が `"` で囲まれていれば外す。Cookie の行が 2 本以上あれば順に見る・`=` の無い組は飛ばす・
+// デコードしない。無ければ nil）
+@credential
+@effects()
+func Cookie(r Request, name string) string? {
+    hb := utf8.Bytes(r.head)
+    ck := bytes("cookie")
+    mut i := 0
+    while i < len(r.headers) {
+        if eqFold(hb, lo32(r.headers[i]), hi32(r.headers[i]), ck) {
+            v := cookieIn(r, lo32(r.headers[i + 1]), hi32(r.headers[i + 1]), name)
+            if v != nil {
+                return v
+            }
+        }
+        i += 2
+    }
+    return nil
+}
+
+// head の [s, e)（Cookie の行の値）の中の name の値
+func cookieIn(r Request, s int, e int, name string) string? {
+    hb := utf8.Bytes(r.head)
+    mut p := s
+    while p < e {
+        q0 := indexIn(hb, p, e, ';')
+        q := if q0 < 0 { e } else { q0 }
+        ps := skipOWS(hb, p, q)
+        pe := trimOWS(hb, ps, q)
+        eq := indexIn(hb, ps, pe, '=')
+        if eq >= 0 {
+            ne := trimOWS(hb, ps, eq)
+            if isLit(hb, ps, ne, name) {
+                mut vs := skipOWS(hb, eq + 1, pe)
+                mut ve := pe
+                if ve - vs >= 2 && hb[vs] == '"' && hb[ve - 1] == '"' {
+                    vs += 1
+                    ve -= 1
+                }
+                v, err := utf8.Str(r.head, vs, ve)
+                if err != nil {
+                    return nil
+                }
+                return v
+            }
+        }
+        p = q + 1
+    }
+    return nil
+}
+
+// r のヘッダ nb の値（Header の中身 — 認証のヘッダも読む）
+func headerOf(r Request, nb []byte) string? {
+    hb := utf8.Bytes(r.head)
+    mut i := 0
+    while i < len(r.headers) {
+        if eqFold(hb, lo32(r.headers[i]), hi32(r.headers[i]), nb) {
+            v, e := utf8.Str(r.head, lo32(r.headers[i + 1]), hi32(r.headers[i + 1]))
+            if e != nil {
+                return nil
+            }
+            return v
+        }
+        i += 2
+    }
+    return nil
+}
+
+// r の query の key の値（`k=v&…` の最初の一致・= の無い項目は値 ""・デコードしない。無ければ nil — デコードした値・同じキーの全部の組は url.ParseQuery(r.query)）
+@effects()
+func Query(r Request, key string) string? {
+    return pairOf(r.query, key)
+}
+
+// 本文（Content-Type が application/x-www-form-urlencoded のとき）の key の値（Query と同じ切り方 — `k=v&…` の最初の一致・デコードしない。
+// form でない・本文が UTF-8 でない・無ければ nil — デコードした値・全部の組は url.ParseQuery）
+@effects()
+func Form(r Request, key string) string? {
+    ct := Header(r, "content-type")
+    if ct == nil || !isMedia(ct, "application/x-www-form-urlencoded") {
+        return nil
+    }
+    b := string(r.body) catch return nil
+    return pairOf(b, key)
+}
+
+// 本文を JSON として読んだ表（std/json の Doc — 型へは `json.Decode[T](d, json.Root(d))`。総称の包み〔T を受ける関数〕は
+// json.Decode の型引数が具体の struct を要るので書けない）
+@errors(json.BadJson)
+@effects()
+func JsonDoc(r Request) (json.Doc, error?) {
+    return json.Parse(r.body)
+}
+
+// Content-Type の値 ct の媒体の型（; の前・前後の空白を除く・大小を無視）が m か
+func isMedia(ct string, m string) bool {
+    b := bytes(ct)
+    k := indexIn(b, 0, len(b), ';')
+    s := skipOWS(b, 0, if k < 0 { len(b) } else { k })
+    return eqFold(b, s, trimOWS(b, s, if k < 0 { len(b) } else { k }), bytes(m))
+}
+
+// `k=v&…` の s の key の値（最初の一致・= の無い項目は値 ""・無ければ nil）
+// 1 回の前進で項目の境（&）と鍵の終わり（最初の =）を見て、鍵はバイトで比べる — 列を作るのは一致した値の 1 本だけ。
+// 末尾の & の後ろの空の項目は項目に数えない（途中の空の項目は数える）
+func pairOf(s string, key string) string? {
+    b := bytes(s)
+    kb := bytes(key)
+    n := len(b)
+    mut i := 0
+    while i < n {
+        mut j := i
+        mut e := -1
+        while j < n && b[j] != '&' {
+            if e < 0 && b[j] == '=' {
+                e = j
+            }
+            j += 1
+        }
+        ke := if e < 0 { j } else { e }
+        if isSeg(b, i, ke, kb) {
+            return if e < 0 { "" } else { bytesToString(b[e + 1:j]) }
+        }
+        i = j + 1
+    }
+    return nil
+}
+
+// リクエスト1件の処理（ルートの表の行が持つ）
+type Handler func(r Request) Response
+
+// ハンドラの前に走るコールバック（nil = 続ける・レスポンスを返すとshort-circuit — 内側のmiddlewareとハンドラは走らない）
+type Before func(r Request) Response?
+
+// ハンドラの後に走るコールバック（内側が返したレスポンスwを受けてレスポンスを返す）
+type After func(r Request, w Response) Response
+
+// ルートの前後に挟む処理（beforeとafterの組 — どちらも省ける）。チェーンの順は外から内: beforeは外→内、ハンドラ、afterは内→外。
+// beforeがレスポンスを返したら、それより外のmiddlewareのafterだけを内→外で掛ける（玉ねぎの意味 — short-circuitしたmw自身と内側のafterは走らない）。
+// nextを受けて内側を呼ぶ形（Express / Koa）は今の言語で書けない（型が自分を関数型の中で名前で参照する再帰型 — language.md 28 節）
+type Middleware struct {
+    before Before?
+    after After?
+}
+
+// ルートの表の 1 行（method + path のパターン → ハンドラ・ルート単位の middleware）。パターンは "/" で区切ったセグメントの列:
+// 静的（`users`）・`:name`（1 セグメント — 空は不一致）・`*name`（末尾だけ — 残り全部〔0 個以上のセグメント・"/" を含む〕。値は先頭の "/" を除いた残り）。
+// 表はただのデータ — モジュールは `[]http.server.Route` を返す関数を export し、Mount / Merge で合成する（表を歩けば全ルートが見える）:
+//
+//     func routes() []http.server.Route {
+//         return http.server.Merge(
+//             http.server.Mount("/users", users.Routes(), []http.server.Middleware{auth}),
+//             []http.server.Route{http.server.Route{method: "GET", path: "/health", handler: health}})
+//     }
+//     rs := routes()
+//     http.server.ServeConn(c, (r) => http.server.Dispatch(rs, r))
+type Route struct {
+    method string
+    path string
+    handler Handler
+    middleware []Middleware
+    // この行のレスポンスの保存の方針（レスポンスがcacheを持たない2xxと304にDispatchがコピーする・レスポンスのcacheが勝つ・他の状態は既定のprivate。nil = 既定のprivate）。
+    // 共有キャッシュも保存してよい方針（Fresh）を書けるのはこの行とStaticだけ（Response.cacheのフィールドの説明）
+    cache Cache?
+}
+
+// routes の各行の path の前に prefix を付け、mw を各行の middleware の列の頭に足した表（純関数 — 足した mw は元の行の mw より外側で走る）。
+// アプリ単位の middleware は `Mount("", routes, appMw)`
+@effects()
+func Mount(prefix string, routes []Route, mw []Middleware) []Route {
+    mut out := mut []Route{}
+    for x <- routes {
+        mut ms := mut []Middleware{}
+        for m <- mw {
+            ms = append(ms, m)
+        }
+        for m <- x.middleware {
+            ms = append(ms, m)
+        }
+        out = append(out, Route{method: x.method, path: prefix + x.path, handler: x.handler, middleware: freeze(ms), cache: x.cache})
+    }
+    return freeze(out)
+}
+
+// a と b を繋いだ表
+@effects()
+func Merge(a []Route, b []Route) []Route {
+    mut out := mut []Route{}
+    for x <- a {
+        out = append(out, x)
+    }
+    for x <- b {
+        out = append(out, x)
+    }
+    return freeze(out)
+}
+
+// routes から r に一致する行を選んで middleware とハンドラを走らせる。一致は path のパターンと method（大文字小文字を区別する）。
+// 優先順は表の並びに依らない: 一致した行どうしは、先頭から見て最初に種類が違うセグメントで 静的 > :name > *name の方が勝つ（同じ具体さなら表の先の行）。
+// HEADのリクエストはHEADの行が無ければGETの行へ（本文はServeConnが落とす）。pathが一致する行があってmethodが合わなければ405・無ければ404。
+// パスはデコードしない・末尾の "/" は区別する（リダイレクトしない）。どの行にも一致しないCONNECTは501、ターゲットが "*" のリクエストは
+// OPTIONSなら204（本文とAllowなし。RFC 9110 9.3.7）、ほかのメソッドは400。absolute-form（http://host/path）のリクエストはpathの部分で照合する
+@effects(Handler, Before, After)
+func Dispatch(routes []Route, r Request) Response {
+    pb := bytes(r.path)
+    mut best := -1
+    mut bestGet := -1
+    mut i := 0
+    while i < len(routes) {
+        pp := bytes(routes[i].path)
+        // "/" の次のバイトが静的に違う行は照合しない（一致しない行の大半はここで落ちる）
+        near := len(pp) < 2 || len(pb) < 2 || pp[1] == pb[1] || pp[1] == ':' || pp[1] == '*'
+        if !near {
+            // 照合しない
+        } else if routes[i].method == r.method {
+            // 字面どおり等しい path は静的な一致（:name の字面の path も同じ行が選ばれる — 値は字面のまま）
+            mk := if routes[i].path == r.path { 1 } else { matchKind(pp, pb) }
+            if mk > 0 && (best < 0 || moreSpecific(pp, bytes(routes[best].path))) {
+                best = i
+                // 静的だけで一致した行は最も具体的（同じ具体さは表の先の行）— 残りを見ない
+                if mk == 1 {
+                    i = len(routes)
+                }
+            }
+        } else if routes[i].method == "GET" && r.method == "HEAD" {
+            if matchKind(pp, pb) > 0 && (bestGet < 0 || moreSpecific(pp, bytes(routes[bestGet].path))) {
+                bestGet = i
+            }
+        }
+        i += 1
+    }
+    k := if best >= 0 { best } else { bestGet }
+    if k < 0 {
+        return unrouted(routes, r.method, pb)
+    }
+    mut rr := r
+    rr.pattern = routes[k].path
+    if len(routes[k].middleware) != 0 {
+        return policed(chain(routes[k], rr), routes[k].cache)
+    }
+    // 方針の無い行はレスポンスをそのまま返す — policedを通すとレスポンスを値で受けて返すコピーがリクエストごとに1段増える
+    if routes[k].cache == nil {
+        return routes[k].handler(rr)
+    }
+    return policed(routes[k].handler(rr), routes[k].cache)
+}
+
+// ルートの方針rcをレスポンスwにコピーする — 成功のレスポンス（2xx）と304にだけ。404 / 412 / 500に行のmax-ageを付けると、CDNが「無い」を行の寿命だけ
+// 配り続ける（名前に版を入れた資産のFresh{immutable} なら1年）。コピーしないレスポンスは既定のprivate。
+// Dispatchの外に置くのは、レスポンスの受け皿をハンドラを呼ぶパスのスタックに載せないため
+func policed(w Response, rc Cache?) Response {
+    st := int(w.status)
+    if rc == nil || w.cache != nil || !(st >= 200 && st < 300 || w.status == http.NotModified) {
+        return w
+    }
+    return withCache(w, rc)
+}
+
+// 一致する行の無いリクエストのレスポンス（405 + Allowか404）。Dispatchの外に置くのは、レスポンスの組み立ての枠をハンドラを呼ぶパスのスタックに載せないため
+// どの行にも一致しないCONNECTは501（サーバーはCONNECTを実装しない。RFC 9110 9.1）・asterisk-form（ターゲットが "*"）はOPTIONSだけで、
+// ほかのメソッドは400（RFC 9112 3.2）。OPTIONS * はサーバー全体への問いで、204（本文なし）を返す（RFC 9110 9.3.7。Allowは付けない:
+// 表の外のハンドラ〔ServeConnのrouteで表の前に分ける経路〕があるので、表から全体のメソッドを列挙できない）。行のパターンは '/' で始まるので "*" と一致する行は無い
+func unrouted(routes []Route, method string, pb []byte) Response {
+    if method == "CONNECT" {
+        return Status(http.NotImplemented)
+    }
+    if len(pb) == 1 && pb[0] == '*' {
+        return Status(if method == "OPTIONS" { http.NoContent } else { http.BadRequest })
+    }
+    allow := allowOf(routes, pb)
+    return if allow == "" { Status(http.NotFound) } else { Response{status: http.MethodNotAllowed, contentType: "", body: []byte{}, headers: Headers{list: []http.Field{http.Field{name: "Allow", value: allow}}}} }
+}
+
+// wに行の方針rcをコピーしたレスポンス（Dispatchの外に置く理由はunroutedと同じ）。cache以外のフィールドは全部そのまま。
+// フィールドを並べてコピーしない（フィールドを足したときにコピー漏れが起きない）
+func withCache(w Response, rc Cache) Response {
+    mut out := w
+    out.cache = rc
+    return out
+}
+
+// path に一致する行の method の列（405 の Allow — 表の順・重複なし・GET があれば HEAD も。一致する行が無ければ "" = 404。
+// 一致する行が無いときだけ走る）
+func allowOf(routes []Route, pb []byte) string {
+    mut ms := mut []string{}
+    for x <- routes {
+        if matchKind(bytes(x.path), pb) > 0 {
+            for m <- if x.method == "GET" { []string{"GET", "HEAD"} } else { []string{x.method} } {
+                mut seen := false
+                mut i := 0
+                while i < len(ms) {
+                    seen = seen || ms[i] == m
+                    i += 1
+                }
+                if !seen {
+                    ms = append(ms, m)
+                }
+            }
+        }
+    }
+    return strings.Join(freeze(ms), ", ")
+}
+
+// middleware のある行 x の before（外→内）・ハンドラ・after（内→外）を r に掛ける
+func chain(x Route, r Request) Response {
+    n := len(x.middleware)
+    mut i := 0
+    mut stop := false
+    mut w := Status(http.InternalServerError)
+    while i < n && !stop {
+        b := x.middleware[i].before
+        if b != nil {
+            s := b(r)
+            if s != nil {
+                w = s
+                stop = true
+            }
+        }
+        if !stop {
+            i += 1
+        }
+    }
+    if !stop {
+        w = x.handler(r)
+    }
+    // after は入った middleware だけ（short-circuit した middleware 自身は除く）を内→外で
+    while i > 0 {
+        i -= 1
+        a := x.middleware[i].after
+        if a != nil {
+            w = a(r, w)
+        }
+    }
+    return w
+}
+
+// prefix の下の GET を root の下のファイルで返すルートの表（1 行 — `GET <prefix>/*path` — Mount / Merge で合成する。prefix は "" か "/" で始まり "/" で終わらない形）:
+//
+//     rs := http.server.Merge(http.server.Static("/assets", "/srv/www", precompressed: true, cache: http.server.Fresh{maxAge: 31536000, immutable: true}), app())
+//     http.server.ServeConn(c, (r) => http.server.Dispatch(rs, r))
+//
+// リクエストごとにrootをio.OpenRootし、`*path` をio.OpenUnderで開いてio.Statの大きさをContent-Lengthに、本文をstreamで送る（キャッシュしない — ディスクに追従。
+// root の付け替えにも追従）。root の外へ出ないのはカーネルの保証（io.OpenUnder — `..`・絶対パス・外を指す symlink は拒否）で、ここは path を検査しない。
+// 無い・根の外・通常のファイルでない・権限なし・`*path` が空 = 404（存在を漏らさない）・それ以外の失敗 = 500。ドットファイルも出す（root は公開するもの）。
+// precompressed: trueならリクエストのAccept-Encodingで `<name>.br`（brを優先）か `<name>.gz` を選んで素通しし（圧縮はしない）、Content-Encodingと
+// Vary: Accept-Encoding を付ける（元の名前のファイルが無ければ 404）。Content-Type は元の名前の拡張子（mimeOf）。
+// 条件付きGET（RFC 9110 13 節）: レスポンスに弱いETag（送る実体の更新時刻と大きさ + 変種のマーク — `W/"<ns の 16 進>-<大きさの 16 進>[-br|-gz]"`）・
+// Last-Modified・Cache-Control（cache: — 省略は Revalidate）を付け、If-Match / If-Unmodified-Since が偽なら 412・If-None-Match が一致するか、
+// If-None-Match が無く If-Modified-Since が Last-Modified とちょうど等しければ 304（等しいだけ — 古い版へ戻したデプロイで新しい版を使い続けさせない）。
+// 304 の頭は ETag・Cache-Control・（precompressed なら）Vary だけ。開いてから送るまでの間にファイルが差し替わったら（大きさか更新時刻が変われば）接続を閉じる。
+// root を開いた io.Root で受けないのは、行の handler も stream も値のクロージャで、同一性の型を捕捉できないから（language.md 28 節「静的ファイル」）
+@effects()
+func Static(prefix string, root string, precompressed bool?, cache Cache?) []Route {
+    pc := if precompressed != nil { precompressed } else { false }
+    cc := if cache != nil { cache } else { Revalidate{} }
+    return []Route{Route{method: "GET", path: prefix + "/*path", handler: (r) => staticGet(root, pc, r), middleware: []Middleware{}, cache: cc}}
+}
+
+// 保存の方針（Cache-Controlの値）。書く所は2つ: ルートの行（Route.cache・Staticのcache: — 全部のvariant）とレスポンス1件（Response.cache —
+// Private / NoStore だけ）。Fresh と Shared は共有キャッシュ（CDN・中継）も保存してよい方針（`@shared`）で、ルートの行でだけ書く（共有してよいかは
+// ルート単位の宣言 — 認証に届くハンドラ・middleware のルートでの共有の宣言・認証の middleware の Mount の下の共有のルートを analyzer が拒否する —
+// language.md 12 節「出所の依存」）
+type Cache union {
+    // `no-cache`: 保存してよいが、使う前に毎回検証する（304で本文を送らない）。検証のリクエストは今のリクエストを送った側のヘッダを運ぶので、共有可の宣言に数えない。
+    // 共有キャッシュは保存しうる（`@stored`）: 304で検証が通ると保存したヘッダを使うので、Set-Cookieとは組み合わせられない
+    Revalidate {} @stored
+    // `max-age=<maxAge>`（immutableなら `, immutable`）— maxAge秒は検証せずに使う（名前に版やハッシュを入れた資産向け・負の値は0）
+    Fresh { maxAge int; immutable bool? } @shared
+    // `public, max-age=<maxAge>`（sMaxAgeがあれば `, s-maxage=<sMaxAge>`）— 共有キャッシュにも明示で保存させる（Authorizationつきのリクエストのレスポンスも —
+    // RFC 9111 3.5。負の値は 0）
+    Shared { maxAge int; sMaxAge int? } @shared
+    // `no-store` — 保存しない
+    NoStore {}
+    // `private`（maxAgeがあれば `private, max-age=<maxAge>`）— 利用者のブラウザだけが保存してよい（レスポンスの既定）
+    Private { maxAge int? }    // Cache-Control を書かない — 保存の可否を受け手の経験則（RFC 9111 4.2.2）に任せるので、共有キャッシュも保存しうる側（`@shared` — ルートの行でだけ書ける）。
+    // 毎レスポンスの頭の24バイトが要らない公開のAPI向け（認証に届くルートでは書けない — 上のFresh / Sharedと同じ検査）
+    Unstated {} @shared
+}
+
+// cのCache-Controlの行（CRLFつき — nil = レスポンスの既定のprivate・Unstatedは書かない）
+func cacheLine(c Cache?) string {
+    if c == nil {
+        // 既定のprivateは定数のまま（レスポンスごとに文字列を組まない）
+        return "Cache-Control: private\r\n"
+    }
+    return switch c {
+    case Unstated{}: ""
+    default: "Cache-Control: ${cacheValue(c)}\r\n"
+    }
+}
+
+// cが共有キャッシュに保存されうる方針か（`@stored` と `@shared` のvariantと同じ集合。cache_test.soberが宣言と照合する）
+func storedPolicy(c Cache?) bool {
+    if c == nil {
+        return false
+    }
+    return switch c {
+    case Revalidate{}: true
+    case Fresh{maxAge, immutable}: true
+    case NoStore{}: false
+    case Private{maxAge}: false
+    case Shared{maxAge, sMaxAge}: true
+    case Unstated{}: true
+    }
+}
+
+// cのCache-Controlの値（nil = レスポンスの既定のprivate・Unstatedは空 — 行ごと書かない）
+func cacheValue(c Cache?) string {
+    if c == nil {
+        return "private"
+    }
+    return switch c {
+    case Revalidate{}: "no-cache"
+    case Fresh{maxAge, immutable}: freshValue(maxAge, immutable)
+    case NoStore{}: "no-store"
+    case Private{maxAge}: if maxAge == nil { "private" } else { "private, max-age=${if maxAge < 0 { 0 } else { maxAge }}" }
+    case Shared{maxAge, sMaxAge}: sharedValue(maxAge, sMaxAge)
+    case Unstated{}: ""
+    }
+}
+
+// Shared の Cache-Control の値（`public, max-age=N`・sMaxAge があれば `, s-maxage=M`）
+func sharedValue(maxAge int, sMaxAge int?) string {
+    s := "public, max-age=${if maxAge < 0 { 0 } else { maxAge }}"
+    return if sMaxAge == nil { s } else { s + ", s-maxage=${if sMaxAge < 0 { 0 } else { sMaxAge }}" }
+}
+
+// Fresh の Cache-Control の値（`max-age=N`・immutable なら `, immutable`）
+func freshValue(maxAge int, immutable bool?) string {
+    mut s := "max-age=${if maxAge < 0 { 0 } else { maxAge }}"
+    if immutable != nil && immutable {
+        s = s + ", immutable"
+    }
+    return s
+}
+
+// Static の行の handler（開いて属性を見てから閉じ、本文は stream の中で開き直す — stream は File を持ち越せない）
+func staticGet(root string, pc bool, r Request) Response {
+    rel := Param(r, "path")
+    if rel == nil || rel == "" {
+        return Status(http.NotFound)
+    }
+    st, e := statUnder(root, rel)
+    if e != nil {
+        return Status(staticCode(e))
+    }
+    ct := mimeOf(rel)
+    if pc {
+        if accepts(r, "br", "br") {
+            sb, eb := statUnder(root, rel + ".br")
+            if eb == nil {
+                return staticOf(r, root, rel + ".br", sb, ct, "br", true)
+            }
+        }
+        if acceptsGzip(r) {
+            sg, eg := statUnder(root, rel + ".gz")
+            if eg == nil {
+                return staticOf(r, root, rel + ".gz", sg, ct, "gzip", true)
+            }
+        }
+        return staticOf(r, root, rel, st, ct, "", true)
+    }
+    return staticOf(r, root, rel, st, ct, "", false)
+}
+
+// rootの下のfile（属性st・符号化enc・coded = 符号化を選んだレスポンス〔Varyを付ける〕）のレスポンス — 条件が偽なら304 / 412・他は200
+func staticOf(r Request, root string, file string, st io.FileInfo, ct string, enc string, coded bool) Response {
+    tag := etagOf(st, enc)
+    mt := st.modTime
+    // Last-ModifiedはDateの秒より後にしない（未来の更新時刻のファイル。RFC 9110 8.8.2.1）。条件の比較も同じ秒で行う。
+    // Dateの行の無い接続は抑えず、RFC 850の年の窓は更新時刻の年から決める
+    now := nowSec()
+    lm := if mt <= 0 { 0 } else if now < 0 { mt / 1000000000 } else { imin(mt / 1000000000, now) }
+    c := condOf(r, tag, lm, yearOf(if now < 0 { lm } else { now }))
+    if c == 412 {
+        return Status(http.PreconditionFailed)
+    }
+    if c == 304 {
+        vs := Validators{etag: tag, modified: 0, seal: validSeal{}}
+        if coded {
+            return Response{status: http.NotModified, contentType: "", body: []byte{}, coded: Coded{encoding: ""}, validators: vs}
+        }
+        // 200と同じVary（compression: の圧縮の対象か）をserveConnが決められるよう、200のContent-Typeと長さを持たせる（304はContent-Typeを書かない）
+        return Response{status: http.NotModified, contentType: ct, length: st.size, body: []byte{}, validators: vs}
+    }
+    vs := Validators{etag: tag, modified: lm, seal: validSeal{}}
+    n := st.size
+    if coded {
+        return Response{status: http.OK, contentType: ct, length: n, stream: (out, emit) => sendUnder(root, file, n, mt, mut out, emit), coded: Coded{encoding: enc}, validators: vs}
+    }
+    return Response{status: http.OK, contentType: ct, length: n, stream: (out, emit) => sendUnder(root, file, n, mt, mut out, emit), validators: vs}
+}
+
+// root の下の rel を開いて属性を見て閉じる（通常のファイルでなければ io.Other — EISDIR）
+@errors(io.NotFound, io.Denied, io.Other, io.Timeout, io.Expired)
+func statUnder(root string, rel string) (io.FileInfo, error?) {
+    d := io.OpenRoot(root)?
+    defer io.CloseRoot(d)
+    f := io.OpenUnder(d, rel)?
+    defer io.Close(f)
+    st := io.Stat(f)?
+    k := st.kind
+    if k == nil {
+        return st, io.Other{errno: 21}
+    }
+    reg := switch k {
+    case io.Regular{}: true
+    default: false
+    }
+    if !reg {
+        return st, io.Other{errno: 21}
+    }
+    return st, nil
+}
+
+// root の下の rel の先頭 n バイトを切片ずつ emit へ渡す（開き直した実体の大きさか更新時刻が handler で見た n / mt と違えば
+// 誤り〔ESTALE〕— ServeConn が接続を閉じる。読めた分が n より短くても誤り）
+func sendUnder(root string, rel string, n int, mt int, out mut Out, emit func(out mut Out, b []byte) error?) error? {
+    d := io.OpenRoot(root)?
+    defer io.CloseRoot(d)
+    f := io.OpenUnder(d, rel)?
+    defer io.Close(f)
+    st := io.Stat(f)?
+    if st.size != n || st.modTime != mt {
+        return io.Other{errno: 116}
+    }
+    mut left := n
+    for c <- io.Chunks(f)? {
+        b := io.Raw(c)
+        k := if len(b) < left { len(b) } else { left }
+        emit(mut out, b[0:k])?
+        left -= k
+        if left == 0 {
+            break
+        }
+    }
+    if left > 0 {
+        return io.Other{errno: 5}
+    }
+    return nil
+}
+
+// 属性stの実体（符号化encの変種）の弱いETag — 変種ごとにマークを変える（同じETagの2つのバイト列は中継のキャッシュの毒）
+func etagOf(st io.FileInfo, enc string) string {
+    sfx := if enc == "br" { "-br" } else if enc == "gzip" { "-gz" } else { "" }
+    return "W/\"${hexOf(st.modTime)}-${hexOf(st.size)}${sfx}\""
+}
+
+// n の 16 進（小文字・負なら先頭に '-'）
+func hexOf(n int) string {
+    if n == 0 {
+        return "0"
+    }
+    mut v := if n < 0 { 0 - n } else { n }
+    mut ds := mut []byte{}
+    while v > 0 {
+        d := v % 16
+        ds = append(ds, byte(if d < 10 { 48 + d } else { 87 + d }))
+        v = v / 16
+    }
+    mut out := mut []byte{}
+    if n < 0 {
+        out = append(out, '-')
+    }
+    mut i := len(ds) - 1
+    while i >= 0 {
+        out = append(out, ds[i])
+        i -= 1
+    }
+    return string(freeze(out)) catch ""
+}
+
+// リクエストrの前提条件（RFC 9110 13.2.2の順）をETag tag・Last-Modifiedの秒lm（0以下は「無い」）・今の年cy（RFC 850の2桁の年の読み）の表現に対して評価する: 0 = 続ける・412・304。
+// If-Match（強い比較）→ 無ければ If-Unmodified-Since（≤）→ If-None-Match（弱い比較）→ 無ければ If-Modified-Since（ちょうど等しい — 13.1.3 の exact）。
+// 日付が読めない・If-Modified-Since / If-Unmodified-Since が 2 行以上あるものは無視する（13.1.3 / 13.1.4）。If-Range は Range を持たないので無視（13.1.5）
+func condOf(r Request, tag string, lm int, cy int) int {
+    hb := utf8.Bytes(r.head)
+    tb := bytes(tag)
+    mut im := 0
+    mut imHit := false
+    mut inm := 0
+    mut inmHit := false
+    mut ius := 0
+    mut iusAt := 0
+    mut ims := 0
+    mut imsAt := 0
+    mut i := 0
+    while i < len(r.headers) {
+        ns := lo32(r.headers[i])
+        ne := hi32(r.headers[i])
+        vs := lo32(r.headers[i + 1])
+        ve := hi32(r.headers[i + 1])
+        if eqFold(hb, ns, ne, bytes("if-match")) {
+            im += 1
+            imHit = imHit || tagIn(hb, vs, ve, tb, false)
+        } else if eqFold(hb, ns, ne, bytes("if-none-match")) {
+            inm += 1
+            inmHit = inmHit || tagIn(hb, vs, ve, tb, true)
+        } else if eqFold(hb, ns, ne, bytes("if-unmodified-since")) {
+            ius += 1
+            iusAt = i
+        } else if eqFold(hb, ns, ne, bytes("if-modified-since")) {
+            ims += 1
+            imsAt = i
+        }
+        i += 2
+    }
+    if im > 0 {
+        if !imHit {
+            return 412
+        }
+    } else if ius == 1 && lm > 0 {
+        d, ok := parseDate(hb, lo32(r.headers[iusAt + 1]), hi32(r.headers[iusAt + 1]), cy)
+        if ok && lm > d {
+            return 412
+        }
+    }
+    if inm > 0 {
+        return if inmHit { 304 } else { 0 }
+    }
+    if ims == 1 && lm > 0 {
+        d, ok := parseDate(hb, lo32(r.headers[imsAt + 1]), hi32(r.headers[imsAt + 1]), cy)
+        if ok && lm == d {
+            return 304
+        }
+    }
+    return 0
+}
+
+// b[s:e)（If-Match / If-None-Match の値 — `*` か entity-tag のコンマ区切り）のどれかが tag に一致するか（weak = 弱い比較〔W/ を見ない〕・
+// でなければ強い比較〔両方 W/ でない〕）。`*` は一致（表現がある — 開けたファイルにだけ評価する）。形の崩れた所から先は見ない
+func tagIn(b []byte, s int, e int, tag []byte, weak bool) bool {
+    tw := len(tag) > 2 && tag[0] == 'W' && tag[1] == '/'
+    ts := if tw { 2 } else { 0 }
+    mut p := s
+    while p < e {
+        p = skipOWS(b, p, e)
+        if p >= e {
+            return false
+        }
+        if b[p] == ',' {
+            p += 1
+            continue
+        }
+        if b[p] == '*' {
+            return true
+        }
+        w := p + 1 < e && b[p] == 'W' && b[p + 1] == '/'
+        q := if w { p + 2 } else { p }
+        if q >= e || b[q] != '"' {
+            return false
+        }
+        z := indexIn(b, q + 1, e, '"')
+        if z < 0 {
+            return false
+        }
+        if (weak || (!w && !tw)) && z + 1 - q == len(tag) - ts {
+            mut same := true
+            mut k := 0
+            while same && k < z + 1 - q {
+                same = b[q + k] == tag[ts + k]
+                k += 1
+            }
+            if same {
+                return true
+            }
+        }
+        p = z + 1
+    }
+    return false
+}
+
+// エポックからの秒 sec（0 以上）の IMF-fixdate（`Sun, 06 Nov 1994 08:49:37 GMT` — RFC 9110 5.6.7）
+func httpDate(sec int) string {
+    days := sec / 86400
+    t := sec % 86400
+    y, m, d := civilOf(days)
+    wd := []string{"Thu", "Fri", "Sat", "Sun", "Mon", "Tue", "Wed"}[days % 7]
+    mn := monthNames()[m - 1]
+    return "${wd}, ${pad(d, 2)} ${mn} ${pad(y, 4)} ${pad(t / 3600, 2)}:${pad(t / 60 % 60, 2)}:${pad(t % 60, 2)} GMT"
+}
+
+// n（0 以上）の 10 進を w 桁に 0 で詰めたもの
+func pad(n int, w int) string {
+    mut s := "${n}"
+    mut k := len(bytes(s))
+    while k < w {
+        s = "0" + s
+        k += 1
+    }
+    return s
+}
+
+func monthNames() []string {
+    return []string{"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}
+}
+
+// エポックからの日数 z の（年, 月 1〜12, 日 1〜31）— 先発グレゴリオ暦（H. Hinnant の civil_from_days）
+func civilOf(z int) (int, int, int) {
+    zz := z + 719468
+    era := (if zz >= 0 { zz } else { zz - 146096 }) / 146097
+    doe := zz - era * 146097
+    yoe := (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365
+    doy := doe - (365 * yoe + yoe / 4 - yoe / 100)
+    mp := (5 * doy + 2) / 153
+    d := doy - (153 * mp + 2) / 5 + 1
+    m := if mp < 10 { mp + 3 } else { mp - 9 }
+    return yoe + era * 400 + (if m <= 2 { 1 } else { 0 }), m, d
+}
+
+// （年, 月 1〜12, 日）のエポックからの日数（civilOf の逆 — days_from_civil）
+func daysOf(y int, m int, d int) int {
+    yy := y - (if m <= 2 { 1 } else { 0 })
+    era := (if yy >= 0 { yy } else { yy - 399 }) / 400
+    yoe := yy - era * 400
+    doy := (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + d - 1
+    doe := yoe * 365 + yoe / 4 - yoe / 100 + doy
+    return era * 146097 + doe - 719468
+}
+
+// b[s:e)（前後の空白は除く）の HTTP-date のエポックからの秒（RFC 9110 5.6.7 の 3 形 — IMF-fixdate・RFC 850・asctime。大小は区別する・
+// 曜日の名前は検査するが日付との一致は見ない・RFC 850 の 2 桁の年はyear850で今の年cyから読む）。読めなければ (0, false)
+func parseDate(b []byte, s0 int, e0 int, cy int) (int, bool) {
+    s := skipOWS(b, s0, e0)
+    e := trimOWS(b, s, e0)
+    c := indexIn(b, s, e, ',')
+    if c < 0 {
+        // asctime: `Sun Nov  6 08:49:37 1994`
+        if e - s != 24 || !isDay(b, s, s + 3, false) || b[s + 3] != ' ' || b[s + 7] != ' ' || b[s + 10] != ' ' || b[s + 19] != ' ' {
+            return 0, false
+        }
+        d := if b[s + 8] == ' ' { digits(b, s + 9, s + 10) } else { digits(b, s + 8, s + 10) }
+        return dateOf(digits(b, s + 20, s + 24), monthOf(b, s + 4), d, b, s + 11)
+    }
+    if c - s == 3 {
+        // IMF-fixdate: `Sun, 06 Nov 1994 08:49:37 GMT`
+        if e - s != 29 || !isDay(b, s, c, false) || b[s + 4] != ' ' || b[s + 7] != ' ' || b[s + 11] != ' ' || b[s + 16] != ' ' || b[s + 25] != ' ' || !isLit(b, s + 26, e, "GMT") {
+            return 0, false
+        }
+        return dateOf(digits(b, s + 12, s + 16), monthOf(b, s + 8), digits(b, s + 5, s + 7), b, s + 17)
+    }
+    // RFC 850: `Sunday, 06-Nov-94 08:49:37 GMT`
+    if !isDay(b, s, c, true) || e - c != 24 || b[c + 1] != ' ' || b[c + 4] != '-' || b[c + 8] != '-' || b[c + 11] != ' ' || b[c + 20] != ' ' || !isLit(b, c + 21, e, "GMT") {
+        return 0, false
+    }
+    yy := digits(b, c + 9, c + 11)
+    return dateOf(if yy < 0 { -1 } else { year850(yy, cy) }, monthOf(b, c + 5), digits(b, c + 2, c + 4), b, c + 12)
+}
+
+// RFC 850の2桁の年yy（0〜99）の西暦: 今の年cyと同じ世紀に置き、50年より先になるなら100年前の年（RFC 9110 5.6.7。年の単位で比べる）
+func year850(yy int, cy int) int {
+    y := cy - cy % 100 + yy
+    return if y > cy + 50 { y - 100 } else { y }
+}
+
+// 今の秒: 送るDateの行の秒（Dateより後の時刻を書かないため）。Dateの行の無い接続（rtの行が無い・単体テスト）は -1
+func nowSec() int {
+    da := sysNetOp(17, 0, 0, 0)
+    if da != 0 {
+        s1 := sysNetOp(18, da, 0, 0)
+        if s1 > 0 {
+            return s1 - 1
+        }
+    }
+    return -1
+}
+
+// エポックからの秒secの年
+func yearOf(sec int) int {
+    y, _, _ := civilOf(sec / 86400)
+    return y
+}
+
+// 年月日（負 = 読めなかった）と b[t:t+8)（`hh:mm:ss`）のエポックからの秒（日が月の日数を越える・時刻の範囲の外なら (0, false) — 秒は 60〔閏秒〕まで）
+func dateOf(y int, m int, d int, b []byte, t int) (int, bool) {
+    if b[t + 2] != ':' || b[t + 5] != ':' {
+        return 0, false
+    }
+    hh := digits(b, t, t + 2)
+    mi := digits(b, t + 3, t + 5)
+    ss := digits(b, t + 6, t + 8)
+    if y < 0 || m < 1 || d < 1 || hh < 0 || hh > 23 || mi < 0 || mi > 59 || ss < 0 || ss > 60 {
+        return 0, false
+    }
+    leap := y % 4 == 0 && (y % 100 != 0 || y % 400 == 0)
+    ml := []int{31, if leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31}[m - 1]
+    if d > ml {
+        return 0, false
+    }
+    return daysOf(y, m, d) * 86400 + hh * 3600 + mi * 60 + ss, true
+}
+
+// b[s:s+3) の月の名前の番号（1〜12 — でなければ 0）
+func monthOf(b []byte, s int) int {
+    mut i := 0
+    for n <- monthNames() {
+        i += 1
+        if isLit(b, s, s + 3, n) {
+            return i
+        }
+    }
+    return 0
+}
+
+// b[s:e) が曜日の名前か（long = RFC 850 の長い名前 `Sunday`・でなければ 3 字の `Sun`）
+func isDay(b []byte, s int, e int, long bool) bool {
+    ns := if long {
+        []string{"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"}
+    } else {
+        []string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
+    }
+    for n <- ns {
+        if isLit(b, s, e, n) {
+            return true
+        }
+    }
+    return false
+}
+
+// 開きの誤りeのレスポンスのstatus（無い・根の外・権限なし・通常のファイルでない・名前の形〔NUL・長すぎ・symlinkの段数〕= 404・他 = 500）
+func staticCode(e error) http.StatusCode {
+    return switch e {
+    case io.NotFound{}: http.NotFound
+    case io.Denied{}: http.NotFound
+    case io.Other{errno}: if errno == 21 || errno == 22 || errno == 36 || errno == 40 { http.NotFound } else { http.InternalServerError }
+    default: http.InternalServerError
+    }
+}
+
+// 名前の拡張子（最後の '.' の後・大小無視）の Content-Type（表に無ければ application/octet-stream）
+func mimeOf(name string) string {
+    b := bytes(name)
+    mut i := len(b) - 1
+    while i >= 0 && b[i] != '.' && b[i] != '/' {
+        i -= 1
+    }
+    if i < 0 || b[i] == '/' {
+        return "application/octet-stream"
+    }
+    s := i + 1
+    e := len(b)
+    return switch {
+    case eqFold(b, s, e, bytes("html")) || eqFold(b, s, e, bytes("htm")): "text/html; charset=utf-8"
+    case eqFold(b, s, e, bytes("css")): "text/css; charset=utf-8"
+    case eqFold(b, s, e, bytes("js")) || eqFold(b, s, e, bytes("mjs")): "text/javascript; charset=utf-8"
+    case eqFold(b, s, e, bytes("json")) || eqFold(b, s, e, bytes("map")): "application/json"
+    case eqFold(b, s, e, bytes("txt")): "text/plain; charset=utf-8"
+    case eqFold(b, s, e, bytes("xml")): "application/xml"
+    case eqFold(b, s, e, bytes("svg")): "image/svg+xml"
+    case eqFold(b, s, e, bytes("png")): "image/png"
+    case eqFold(b, s, e, bytes("jpg")) || eqFold(b, s, e, bytes("jpeg")): "image/jpeg"
+    case eqFold(b, s, e, bytes("gif")): "image/gif"
+    case eqFold(b, s, e, bytes("webp")): "image/webp"
+    case eqFold(b, s, e, bytes("avif")): "image/avif"
+    case eqFold(b, s, e, bytes("ico")): "image/x-icon"
+    case eqFold(b, s, e, bytes("woff2")): "font/woff2"
+    case eqFold(b, s, e, bytes("woff")): "font/woff"
+    case eqFold(b, s, e, bytes("ttf")): "font/ttf"
+    case eqFold(b, s, e, bytes("wasm")): "application/wasm"
+    case eqFold(b, s, e, bytes("pdf")): "application/pdf"
+    default: "application/octet-stream"
+    }
+}
+
+// rのパターンの :key / *keyの値（Dispatchが一致させたパターンとpathを並べて歩く — パターンにkeyが無い・ルーターを通らないリクエストはnil）
+@effects()
+func Param(r Request, key string) string? {
+    p := bytes(r.pattern)
+    s := bytes(r.path)
+    kb := bytes(key)
+    if len(p) == 0 {
+        return nil
+    }
+    mut i := 1
+    mut j := 1
+    while i <= len(p) {
+        pe := segEnd(p, i)
+        se := if j <= len(s) { segEnd(s, j) } else { len(s) }
+        if pe > i && p[i] == '*' {
+            if !isSeg(p, i + 1, pe, kb) {
+                return nil
+            }
+            st := if j <= len(s) { j } else { len(s) }
+            return bytesToString(s[st:len(s)])
+        }
+        if pe > i && p[i] == ':' && isSeg(p, i + 1, pe, kb) {
+            return bytesToString(s[j:se])
+        }
+        i = pe + 1
+        j = se + 1
+    }
+    return nil
+}
+
+// b の i からのセグメントの終わり（次の "/" か末尾）
+func segEnd(b []byte, i int) int {
+    mut k := i
+    while k < len(b) && b[k] != '/' {
+        k += 1
+    }
+    return k
+}
+
+// b[s:e) が name とバイト一致するか
+func isSeg(b []byte, s int, e int, name []byte) bool {
+    if e - s != len(name) {
+        return false
+    }
+    mut k := 0
+    while k < len(name) {
+        if b[s + k] != name[k] {
+            return false
+        }
+        k += 1
+    }
+    return true
+}
+
+// パターン p の i からのセグメントの種類（2 = 静的・1 = :name・0 = *name）
+func segKind(p []byte, i int) int {
+    return if i < len(p) && p[i] == '*' { 0 } else if i < len(p) && p[i] == ':' { 1 } else { 2 }
+}
+
+// パターン p が path s に一致するか（0 = 不一致・1 = 静的のセグメントだけで一致・2 = :name / *name を含んで一致）。
+// 1 バイトずつ並べて歩く（静的な行は最初の違うバイトで抜ける — 表を走査する費用の大半はここ）
+func matchKind(p []byte, s []byte) int {
+    np := len(p)
+    ns := len(s)
+    if np == 0 || ns == 0 || p[0] != '/' || s[0] != '/' {
+        return 0
+    }
+    mut i := 1
+    mut j := 1
+    mut kind := 1
+    while i < np {
+        c := p[i]
+        if p[i - 1] == '/' && c == '*' {
+            return 2
+        }
+        if p[i - 1] == '/' && c == ':' {
+            // :name — path のセグメントは空でない
+            if j >= ns || s[j] == '/' {
+                return 0
+            }
+            while i < np && p[i] != '/' {
+                i += 1
+            }
+            while j < ns && s[j] != '/' {
+                j += 1
+            }
+            kind = 2
+        } else if j >= ns {
+            // path が尽きた — 残りのパターンが末尾の "/*name" だけなら 0 個のセグメントで一致
+            return if c == '/' && i + 1 < np && p[i + 1] == '*' && segEnd(p, i + 1) == np { 2 } else { 0 }
+        } else if s[j] != c {
+            return 0
+        } else {
+            i += 1
+            j += 1
+        }
+    }
+    return if j == ns { kind } else { 0 }
+}
+
+// パターン a が b より具体的か（同じ path に一致した 2 つ — 最初に種類の違うセグメントで 静的 > :name > *name。先に尽きた方は
+// 相手の残りが *name なので具体的。同じなら false）
+func moreSpecific(a []byte, b []byte) bool {
+    mut i := 1
+    mut j := 1
+    while i <= len(a) && j <= len(b) {
+        ka := segKind(a, i)
+        kb := segKind(b, j)
+        if ka != kb {
+            return ka > kb
+        }
+        if ka == 0 {
+            return false
+        }
+        i = segEnd(a, i) + 1
+        j = segEnd(b, j) + 1
+    }
+    return i > len(a) && j <= len(b)
+}
+
+// cのリクエストを順にrouteに渡してレスポンスを書く（keep-alive）。相手が閉じる（FIN）・Connection: close・HTTP/1.0の既定・誤りのレスポンスの後で返る
+// （閉じるのは呼び手 — net.Serveの接続のtaskの出口）。maxHead = リクエストの頭の上限（既定8 KiB — 超えたら431）・maxBody = 本文の上限
+// （既定16 KiB。超えたら413。chunkの大きさの行の数がintに収まらなければ400）。ターゲットに0x80以上のバイトがあれば400（非ASCIIは%エンコードして送る）。
+// absolute-formのターゲット（RFC 9112 3.2.2）は受け、Hostはターゲットのauthorityを使う（受けたHostは無視する）。Transfer-Encodingのchunkedに付いた
+// パラメータは読み捨てる（Content-Lengthとの併記は400）。レスポンスの頭にはDate（IMF-fixdate。ワーカーごとに秒が変わったときだけ作り直す値で、
+// 最大で約0.3秒古い）を書く。本文と持ち越しは接続のtaskのregionに載るので、上限はnet.Serveのbudget（既定64 KiB）に収まる大きさで
+// （目安: budget ≥ 3 × (maxHead + maxBody) + 16 KiB〔受けの切片〕）。compression: はレスポンスのgzip（上のGzip — 省略 = 圧縮しない）。
+// work: はcompression: の符号器の作業域のストレージ（ワーカー局所のlease — region-domain-pool.md 4d節）: 省略するとリクエストごとに作業域を取る（接続のtaskの
+// regionにページとして残る — 接続の数に比例）。渡すと同じワーカーのストレージを借りる（作業域は ≈ 200 KB × ワーカーの数で接続の数に依らない・結果は同じバイト列）:
+//
+//     gzw := task.NewLocal((w mut compress.flate.Work) => compress.flate.NewWork(mut w))   // Serve の前に 1 回
+//     net.Serve(l, (c net.Conn) => http.server.ServeConn(c, route, compression: http.server.Gzip{}, work: gzw))
+//
+// work: は compression: と組みで（compression: なしの work: は panic(WorkNoCompress{}) — 呼び手の契約違反）。1 つのストレージを全部の接続で共有してよい（中はワーカーごとに分かれている）
+//
+// 期限（相手が送り終える・受け終えるのを待つ時間の上限。単位はtask.MS・0以下は開いた時点で期限切れ・期限なしは書けない）:
+// headWait = リクエストの頭が揃うまで（既定30秒。数え始めはServeConnに入った時刻と、前のリクエストのレスポンスを送り終えた時刻。keep-aliveの待ちを含む）・
+// bodyWait = 頭が揃ってから本文を受け終えるまで（既定60秒）・sendWait = 送りが1バイトも進まない間隔（既定60秒）。routeの実行中は効かない。
+// 期限が来たら、待っていた受け・送りがio.Timeoutで戻り、ServeConnはio.Timeoutを返す（相手には何も送らずに閉じる）。net.ServeのLedgerの
+// プールの節のtimeoutが1増える。期限は最大で約2秒遅れて効く（早くは効かない）。scopeの期限（task.Runのdeadline:）とは別のもので、どちらも効く
+@errors(io.NotFound, io.Closed, io.Timeout, io.Expired, io.Denied, io.Other)
+@effects(block, io, panic, nondet, Stream)
+func ServeConn(c net.Conn, route func(Request) Response, maxHead int?, maxBody int?, headWait int?, bodyWait int?, sendWait int?, compression Gzip?, work task.Local?) error? {
+    // 集めて送る形が恒常的に使えない接続（ringのパスでない・送信バッファリングが切られている — sendGatherが負）では、以後試さない
+    mut gp := true
+    return serveCore((k) => net.Recv(c, k), (b) => net.Send(c, b), route, c.fd, maxHead: maxHead, maxBody: maxBody, headWait: headWait, bodyWait: bodyWait, sendWait: sendWait, compression: compression, work: work, fsend: (b) => sendFused(c, b), tsend: (b, ms) => sendTimed(c, b, ms), gsend: (h, b) => {
+        mut sent := false
+        if gp {
+            r := sendGather(c, h, b)
+            gp = r >= 0
+            sent = r == 1
+        }
+        sent
+    })
+}
+
+// rtのnetのインターフェース（std/netのsysNetOpと同じ組み込み）。ここで使うのはop 9（今のtaskの次の送り1回を送信バッファリングにするフラグ・fdの位置 = 送る前の待ち〔ms〕）・
+// op 11（まとめて送信する。sendGather）・op 14（今のtaskの受けと送りの期限のワードを置く）・op 15（ワーカーの粗い時刻）・op 16（今のtaskをワーカーの期限の列へ入れる。fdの位置 = 接続の番号・負ならなし）・
+// op 17（ワーカーのDateの行の番地。0 = 無し）・op 18（fdの位置の番地の1ワード）
+@intrinsic("net_op")
+func sysNetOp(op int, fd int, a int, b int) int
+
+// net.Sendの送信バッファリング: 列をワーカーの送り場へコピーしてスリープせずに戻る（誤り・送り残しは同じ接続の次の受け・送りが返す / 送り切る — language.md 28 節）。
+// keep-aliveのループの末尾 — 次にするのが受けのときだけ使う。ringのパスでない・送り場に入らなければ今の送り
+func sendFused(c net.Conn, b []byte) error? {
+    _ = sysNetOp(9, 0, 0, 0)
+    return net.Send(c, b)
+}
+
+// ヘッダhと本文bを、送信バッファリングで1回に送る（rtがワーカーの送り場の1チャンクへhとbを続けてコピーしてSENDを1本積む — sendFusedでhとbを繋いだ列を送るのと同じ意味）。
+// → 1 = 送った・0 = 今は積めない（送り場が空いていない・前の送りが片付いていない・合計が送り場のチャンクを越える・期限切れ）・負 = この接続では積めない（ringのパスでない・
+// 送信バッファリングが切られている）。1以外は何も送らない — 呼び手は繋いだ列を今の送りで送る
+func sendGather(c net.Conn, h []byte, b []byte) int {
+    if len(h) + len(b) > 16384 || len(b) == 0 || len(h) == 0 || sysDeadline() != 0 {
+        return 0
+    }
+    return sysNetOp(11, c.fd + len(h) * 16777216 + len(b) * 17592186044416, sysAddr(h), sysAddr(b))
+}
+
+@intrinsic("addr")
+func sysAddr(b []byte) int
+
+// bの後ろにDateの行と頭の終わり（`Date: <IMF-fixdate>\r\n\r\n`）を足した列。Dateの行はrtがワーカーごとに、秒が変わったときだけ作り直す。
+// rtの行が無い（単体テスト・期限の列に入っていない）なら `\r\n` だけを足す。bはmutの束縛の値（`b = sysAppendDate(b)`の形）
+@intrinsic("append_date")
+func sysAppendDate(b []byte) mut []byte
+
+
+// rtのleaseのインターフェース（std/taskと同じ組み込み）。ここで使うのはop 10だけ: 今のtaskの次のtls.Recvの中のFlushを待たない印
+@intrinsic("lease_op")
+func leaseOp(op int, blk []int, off int, v int) int
+
+@intrinsic("deadline")
+func sysDeadline() int
+
+// 時刻つきの送信バッファリング: ms待ってからbを送る（Delayedのレスポンスがループの末尾のとき — os.Sleep(ms) + sendFusedと同じ意味）。rtが列をコピーして時計の表に積み、
+// 満了でrtが送る（接続のtaskはスリープせずに次の受けへ — 受けは満了まで次のリクエストを返さない）。期限で切れたら送らず、次の受けがio.Expiredを返す
+func sendTimed(c net.Conn, b []byte, ms int) error? {
+    _ = sysNetOp(9, ms, 0, 0)
+    return net.Send(c, b)
+}
+
+// ServeConn の核を転送路の受信コールバック recv（`for chunk <- recv()? { … }` の生成元 — net.Recv / tls.Recv の形）と送信コールバック send に一般化したもの
+// （ServeConn は net の 1 行の包み・TLS の接続は `http.server.ServeWith((k) => tls.Recv(c, k), (b) => tls.Send(c, b), route, put: (b) => tls.Put(c, b))`）。
+// 失敗は recv / send / put が返すもの（仮引数の名前の @errors — language.md 13 節: 呼び手は渡したコールバックのラベルで switch を網羅する）。
+// put（省略可 — language.md 25 節Z）を渡すと送りを2フェーズにする: 受けた切片1つ分のレスポンスの列をputで積み（送らない）、積んだ分はrecvが次の受けを待つ前に
+// 送る約束（tls.Recvは切片1つを配り終えるたびにtls.Flushする — 送りの完了待ちがレスポンスの作業のregion〔受けの反復〕の閉じた後になり、待ちの間にレスポンスの
+// 平文のページを抱えない）。streamのレスポンス（前のレスポンスと頭・emitごと — emitの間隔のまま相手へ届く）はputがあってもsendで送る。putを渡さない呼び出し点の
+// コードは put の無い形と同じ（`if put != nil` は呼び出し点ごとに畳まれる）
+// 誤りのレスポンスの後の読み捨て（linger）もrecvの続きを読む — tls.Recvは2度目をClosedで返すので読み捨てずに閉じる（TLSのclose_notifyは呼び手のServeが送る）
+// headWait / bodyWait / sendWaitはServeConnと同じ。送りの間隔は、tls.Serveの接続のように接続の番号が分かれば送りの進みで数え、分からなければ送り1回の待ちの上限
+@errors(recv, send, put, io.NotFound, io.Denied, io.Timeout, io.Expired, io.Other)
+@effects(block, io, panic, Stream)
+func ServeWith(recv func(k func([]byte)) error?, send func(b []byte) error?, route func(Request) Response, maxHead int?, maxBody int?, headWait int?, bodyWait int?, sendWait int?, compression Gzip?, work task.Local?, put (func(b []byte) error?)?) error? {
+    return serveCore(recv, send, route, -1, maxHead: maxHead, maxBody: maxBody, headWait: headWait, bodyWait: bodyWait, sendWait: sendWait, compression: compression, work: work, put: put)
+}
+
+// ServeWithの本体。fsend（省略可）= 次に受けを待つレスポンスの送り（ServeConnの平文のkeep-aliveのループ — sendFused）: putが無く、閉じないレスポンスの列の送りだけがこれを使う。
+// tsend（省略可 — fsendと組み）= 待ってから送るレスポンスの送り（sendTimed）: ループの末尾のDelayedの待ちをserveBufが返したときに使う
+// gsend（省略可 — fsendと組み・putとは組まない）= バッチの最後のレスポンスの頭と本文を、繋がずに1回で送る（sendGather）。断られたら（false）serveBufは本文をoutへ積み、fsendで送る
+func serveCore(recv func(k func([]byte)) error?, send func(b []byte) error?, route func(Request) Response, fd int, maxHead int?, maxBody int?, headWait int?, bodyWait int?, sendWait int?, compression Gzip?, work task.Local?, put (func(b []byte) error?)?, fsend (func(b []byte) error?)?, tsend (func(b []byte, ms int) error?)?, gsend (func(h []byte, b []byte) bool)?) error? {
+    mh := if maxHead != nil { maxHead } else { 8192 }
+    mb := if maxBody != nil { maxBody } else { 16384 }
+    gz := if compression != nil { gzLevel(compression) } else { 0 }
+    fresh := compression != nil && compression.fresh
+    if work != nil && gz == 0 {
+        return panic(WorkNoCompress{})
+    }
+    // 持ち越し（未完のリクエスト）の状態とその列。持ち越しが無い受け（切片1つでリクエストが揃うふつうの往復）は、比較2つ（受けの直後のcs.pnと、
+    // serveBufの後の残り）だけを通る。持ち越しの処理は別の関数（carryIn・展開しないcarryOut）に置く。持ち越しの列は未完のリクエストの長さまで伸ばす
+    // （appendの倍々で再確保は対数回・接続のregionに残るのは最長の持ち越しの2倍以内）
+    mut cs := carry{pn: 0, wait: 0, need: 0, ph: 0, ecode: 0, st: 0, rem: 0, total: 0, ln: 0, tb: 0, cont: false}
+    mut pend := mut []byte{}
+    mut line := mut []byte{}
+    // レスポンスのgzipの動的の木の記録（接続ごと — 出力は接続のリクエストの列の決定的な関数。最初に圧縮したレスポンスで確保 — 接続あたりページ1枚 = 4 KB・圧縮しない接続は0 B）
+    mut hist := compress.gzip.History{}
+    // 受けと送りの期限（粗い時刻の単位。waitUnits）。dl = 次の受けの期限・body = 持ち越しのリクエストの頭が揃い本文を待っている
+    hu := waitUnits(if headWait != nil { headWait } else { 30000 * task.MS })
+    bu := waitUnits(if bodyWait != nil { bodyWait } else { 60000 * task.MS })
+    su := imin(waitUnits(if sendWait != nil { sendWait } else { 60000 * task.MS }), 65535)
+    _ = sysNetOp(16, fd, 0, 0)
+    mut dl := sysNetOp(15, 0, 0, 0) + hu
+    mut body := false
+    _ = sysNetOp(14, dl, 0, 0)
+    for chunk <- recv()? {
+        // routeの実行中は期限を外す（受けの待ちの直前に置き直す）
+        _ = sysNetOp(14, 0, 0, 0)
+        // 持ち越しがあれば、carryInが繋いだコピー（反復のregion）を返す。本文がまだ揃わない・本文の誤りなら空の列（serveBufは何もしない）
+        in := if cs.pn == 0 { chunk } else { carryIn(mut cs, mut pend, mut line, chunk, mh, mb) }
+        used, shut0, out0, tms, hw, se := serveBuf(send, in, route, mh, mb, gz, fresh, work, mut hist, tsend != nil && put == nil, su, gsend: gsend)
+        if se != nil {
+            return se
+        }
+        mut shut := shut0
+        mut out := out0
+        // 残り（未完のリクエスト）か持ち越しがあれば、carryOutが持ち越す。頭が揃ったら本文の期限を今から数え（頭を少しずつ送る相手は張り直さない）、
+        // 本文の誤りはそのstatusのレスポンスを下の送りと読み捨ての経路で送る
+        rest := len(in) - used
+        if rest + cs.pn != 0 {
+            if carryOut(mut cs, mut pend, mut line, in, used, shut, hw, mh, mb) && !body {
+                dl = sysNetOp(15, 0, 0, 0) + bu
+                body = true
+            }
+            if cs.ecode != 0 {
+                out = respHead(Status(http.StatusCode(cs.ecode)), false, false, 0)
+                shut = 2
+            } else if cs.cont {
+                // 本文を待つ前に100を送る（RFC 9110 10.1.1。頭が揃って本文を待つ形へ移るのはリクエストごとに1回なので、100も1回）。
+                // 同じ切片で済んだリクエストのレスポンスの後ろに置く
+                out = withContinue(out)
+            }
+            cs.cont = false
+        }
+        if tms > 0 && tsend != nil {
+            // 時刻つきの送り（epollのパスではrtの中でms眠ってから送る）: 送りの間隔の期限は待ちの分だけ後ろへ
+            _ = sysNetOp(14, sysNetOp(15, 0, 0, 0) + su + waitUnits(tms * task.MS) + su * 4294967296, 0, 0)
+            tsend(out, tms)?
+        } else if len(out) > 0 {
+            if put != nil {
+                armSend(su)
+                // 次にするのが受けなら、受けの前の送り（tls.Recvの中のFlush）は完了を待たなくてよい印を置く。送りの結果は次の受けが返す（平文のsendFusedと同じ）
+                if shut == 0 {
+                    _ = leaseOp(10, []int{}, 0, 0)
+                }
+                put(out)?
+            } else if fsend != nil && shut == 0 {
+                // 送信バッファリングの送り（送信バッファに積んで待たない）: 期限の値は受けの期限 dl のまま（keep-aliveのリクエストごとの送りに時刻の読みを足さない）、
+                // 送りの間隔のビットを足す。送り場に入らずに今の送りへ倒れて待つと、dl を過ぎた後は送りの進み（相手が受け取ったバイト）を見て張り直す —
+                // 読み続ける遅い相手を切らない（dl はリクエストの前から数えるので、大きいレスポンスでは送りの途中で過ぎうる）。進まなければ送りの間隔で切る
+                _ = sysNetOp(14, dl + su * 4294967296, 0, 0)
+                fsend(out)?
+            } else {
+                armSend(su)
+                send(out)?
+            }
+        }
+        if shut != 0 {
+            // 閉じる前の後始末（linger・閉じの送りの片付け）も相手の待ちで止まらないように、頭の期限をもう1回分だけ置く。送りの間隔のビットも足す —
+            // 閉じは送信バッファリングの送りの残りの完了を待つので、読み続ける相手は送りの進みで張り直す（読まない相手は送りの間隔で切る）
+            _ = sysNetOp(14, sysNetOp(15, 0, 0, 0) + hu + su * 4294967296, 0, 0)
+        }
+        if shut == 2 {
+            linger(recv)
+        }
+        if shut != 0 {
+            return nil
+        }
+        // 次の受けの期限: この切片でリクエストが1件以上済んだら、次のリクエストの頭を今から数える（Delayedの送りを積んだら満了の後から）。
+        // 済んでいなければ前の期限のまま（本文の期限は上のcarryOutの後で置いた）
+        if used > 0 {
+            dl = sysNetOp(15, 0, 0, 0) + hu + (if tms > 0 { waitUnits(tms * task.MS) } else { 0 })
+            body = false
+        }
+        _ = sysNetOp(14, dl, 0, 0)
+    }
+    // 相手が送りを閉じた（受けが終わった）: 閉じの後始末の期限（上の shut ≠ 0 と同じ形 — 送信バッファリングの送りの残りを、読み続ける相手には送り切る）
+    _ = sysNetOp(14, sysNetOp(15, 0, 0, 0) + hu + su * 4294967296, 0, 0)
+    return nil
+}
+
+// 待ちの時間（ns。task.MSの倍数）→ rtの粗い時刻の単位の数（2^29 nsで、切り上げ + 2: 置いた時点の粗い時刻は本当の時刻より最大1単位古く、走査は単位の境で数えるので、
+// 期限が早く来ないための余り。lower/rdl.sober）。0以下は0（開いた時点で期限切れ）・上限は2^30単位
+func waitUnits(ns int) int {
+    if ns <= 0 {
+        return 0
+    }
+    if ns >= 1 << 59 {
+        return 1 << 30
+    }
+    return ((ns + 536870911) >> 29) + 2
+}
+
+func imin(a int, b int) int {
+    return if a < b { a } else { b }
+}
+
+// 送りの間隔の期限を置く（rtの期限のワード: 下位32ビット = 粗い時刻 + 間隔・32ビットから = 間隔。送りが進めばrtが張り直す）
+func armSend(su int) {
+    _ = sysNetOp(14, sysNetOp(15, 0, 0, 0) + su + su * 4294967296, 0, 0)
+}
+
+// 送りの期限を外す（routeとstreamの利用者のコードは期限の外で走る）
+func rdlOff() {
+    _ = sysNetOp(14, 0, 0, 0)
+}
+
+// serveBufの中の送り（streamの前のレスポンスと頭・溢れた列・streamの終端）: 送りの間隔の期限の中で送り、送り終えたら外す
+func sendArmed(send func(b []byte) error?, b []byte, su int) error? {
+    armSend(su)
+    e := send(b)
+    rdlOff()
+    return e
+}
+
+// Gzip の level（0 = 既定の 6・1〜9 の外は panic）
+func gzLevel(g Gzip) int {
+    if g.level < 0 || g.level > 9 {
+        return panic(BadLevel{level: g.level})
+    }
+    return if g.level == 0 { 6 } else { g.level }
+}
+
+// pend[n:]へpを書く（pendの長さを越える分は伸ばす）→ 書いた後の長さ
+func putAt(pend mut []byte, n int, p []byte) int {
+    // 長さの内は添字で書く（lowerが一括のコピーにする形）・越える分はappendで伸ばす
+    m := imin(len(p), len(pend) - n)
+    mut i := 0
+    while i < m {
+        pend[n + i] = p[i]
+        i += 1
+    }
+    for x <- p[i:len(p)] {
+        pend = append(pend, x)
+    }
+    return n + len(p)
+}
+
+// 持ち越しの状態。pn = 持ち越しの列（pend）の長さ。wait = 持ち越しの先頭の、頭が揃い本文を待っているリクエストの形: 0 = なし（または未確認）・
+// 1 = Content-Lengthの本文を、pnがneedになるまでpendへ足す・2 = chunkedの本文を受けた切片から解き、pendへ「頭・大きさの行の場所（phからchunkHoleバイト）・
+// 解いた本文」の形で積む（生のバイトは途中で切れた1行だけをlineに持つ）。どちらも揃うまでserveBufへ渡さない（受けるたびに持ち越しを読み直さない）。
+// ecode = 本文の誤りのstatus（0 = なし）。
+// chunkedを解く状態: st: 0 = 大きさの行・1 = データ・2 = データの後の行末・3 = データの後のCRの後・4 = trailerの行。rem = 今のchunkのデータの残り・
+// total = 解いた本文の合計・ln = 途中で切れた行（line）のバイト数・tb = 読み終えたtrailerの行のバイト数
+type carry struct {
+    pn int
+    wait int
+    need int
+    ph int
+    ecode int
+    st int
+    rem int
+    total int
+    ln int
+    tb int
+    // 頭が揃ったリクエストがExpect: 100-continueのHTTP/1.1（carryOutが立て、serveCoreが100を送って下ろす）
+    cont bool
+}
+
+// 持ち越しのある受け（cs.pn > 0）の、serveBufへ渡す列: 持ち越しと切片を繋いだコピー（反復のregion）。本文を待っているリクエストは、揃うまで空の列を返す
+// （Content-Lengthの本文は持ち越しへ足し、chunkedの本文は解いて積む）。本文の誤りはcs.ecodeに置いて空の列を返す
+func carryIn(cs mut carry, pend mut []byte, line mut []byte, chunk []byte, mh int, mb int) []byte {
+    mut at := 0
+    if cs.wait == 1 {
+        if cs.pn + len(chunk) < cs.need {
+            cs.pn = putAt(mut pend, cs.pn, chunk)
+            return []byte{}
+        }
+    } else if cs.wait == 2 {
+        r, n2 := unchunkFeed(mut cs, mut line, mut pend, cs.pn, chunk, mh, mb)
+        cs.pn = n2
+        if r == -1 {
+            return []byte{}
+        }
+        if r < -1 {
+            cs.ecode = 0 - r
+            return []byte{}
+        }
+        cs.pn = chunkDone(mut pend, cs.pn, cs.ph, cs.total)
+        at = r
+    }
+    in := joined(mut pend, cs.pn, chunk[at:len(chunk)])
+    cs.pn = 0
+    cs.wait = 0
+    return in
+}
+
+// serveBufの後の持ち越し（残りか持ち越しがあるとき）→ 頭が揃って本文を待つ形へ移ったか。本文を待っている・誤り・閉じるときは何もしない。
+// 残り（in[used:]）を持ち越しの列へ移す。残りの頭が揃っていれば本文を待つ形へ移り、chunkedの本文はここから解く
+// （hw = serveBufが見た残りの頭が揃っている。済んだリクエストの後ろの残りも移す: Expect: 100-continueの相手は、100を受けるまで次を送らない）
+@noinline
+func carryOut(cs mut carry, pend mut []byte, line mut []byte, in []byte, used int, shut int, hw bool, mh int, mb int) bool {
+    if cs.pn != 0 || cs.ecode != 0 || shut != 0 {
+        return false
+    }
+    if used > 0 && !hw {
+        cs.pn = putAt(mut pend, 0, in[used:len(in)])
+        return false
+    }
+    rs := if used > 0 { in[used:len(in)] } else { in }
+    he, cl, chunked, cont := bodyHead(rs)
+    cs.cont = cont
+    if he > 0 && chunked {
+        cs.ph = he
+        cs.pn = putAt(mut pend, 0, rs[0:he])
+        cs.pn = putAt(mut pend, cs.pn, bytes(chunkHole))
+        cs.st = 0
+        cs.rem = 0
+        cs.total = 0
+        cs.ln = 0
+        cs.tb = 0
+        r, n2 := unchunkFeed(mut cs, mut line, mut pend, cs.pn, rs[he:len(rs)], mh, mb)
+        cs.pn = n2
+        cs.wait = 2
+        // frameAtが足りないとした本文は、同じ文法で解いても終わらない（終わったなら2つの解き方の食い違いで、400で閉じる）
+        if r != -1 {
+            cs.ecode = if r < -1 { 0 - r } else { 400 }
+        }
+        return true
+    }
+    if he > 0 {
+        cs.wait = 1
+        cs.need = he + cl
+    }
+    cs.pn = putAt(mut pend, 0, rs)
+    return he > 0
+}
+
+// frameAtが足りないとした未完のリクエストbの頭が揃っていれば → (頭の終わり, Content-Lengthの値, chunkedか)。揃っていなければ頭の終わりは0。
+// 頭の検査はframeAtが済ませている（揃った頭に誤りがあれば、frameAtは足りないではなく誤りを返す）ので、本文の長さを決めるヘッダだけを読む。
+// 第4の値 = HTTP/1.1のリクエストにExpect: 100-continueがある（HTTP/1.0のExpectは無視する。RFC 9110 10.1.1）
+func bodyHead(b []byte) (int, int, bool, bool) {
+    n := len(b)
+    mut p := 0
+    while p < n && (b[p] == '\r' || b[p] == '\n') {
+        p += 1
+    }
+    // 頭の終わり（空行）を行の終わりだけで探す。揃っていなければヘッダを読まずに戻る（頭を少しずつ送る相手の受けごとの作業を小さく保つ）
+    rl := lineEnd(b, p)
+    if rl < 0 {
+        return 0, 0, false, false
+    }
+    mut he := 0
+    mut q := rl + 1
+    while he == 0 {
+        if q < n && b[q] == '\n' {
+            he = q + 1
+        } else if q + 1 < n && b[q] == '\r' && b[q + 1] == '\n' {
+            he = q + 2
+        } else {
+            e := lineEnd(b, q)
+            if e < 0 {
+                return 0, 0, false, false
+            }
+            q = e + 1
+        }
+    }
+    mut cl := 0
+    mut chunked := false
+    mut cont := false
+    rc := contentEnd(b, p, rl)
+    v11 := rc - p >= 8 && isLit(b, rc - 8, rc, "HTTP/1.1")
+    q = rl + 1
+    while q < he - 2 {
+        e := lineEnd(b, q)
+        c := contentEnd(b, q, e)
+        colon := indexIn(b, q, c, ':')
+        nl := colon - q
+        if nl == 14 && eqFold(b, q, colon, bytes("content-length")) {
+            cl = digits(b, skipOWS(b, colon + 1, c), trimOWS(b, skipOWS(b, colon + 1, c), c))
+        } else if nl == 17 && eqFold(b, q, colon, bytes("transfer-encoding")) {
+            chunked = true
+        } else if nl == 6 && v11 && eqFold(b, q, colon, bytes("expect")) {
+            vs := skipOWS(b, colon + 1, c)
+            cont = eqFold(b, vs, trimOWS(b, vs, c), bytes("100-continue"))
+        }
+        q = e + 1
+    }
+    return he, cl, chunked, cont
+}
+
+// 100 Continueの中間のレスポンス
+const continueLine = "HTTP/1.1 100 Continue\r\n\r\n"
+
+// outの後ろにcontinueLineを足した列
+func withContinue(out []byte) []byte {
+    mut o := mut []byte{}
+    for x <- out {
+        o = append(o, x)
+    }
+    for x <- bytes(continueLine) {
+        o = append(o, x)
+    }
+    return freeze(o)
+}
+
+// 頭の後ろに置く大きさの行の場所（16桁の16進 + CRLF）。本文が揃ったらchunkDoneが合計で埋め、頭 + chunk 1つの本文としてserveBufへ渡す
+const chunkHole = "0000000000000000\r\n"
+
+// pからchunkedの本文を解き、データをpend[pn:]へ足す → (pの中の本文の終わりの直後〔trailerの空行の後〕・-1 = 足りない・-400 / -413 / -431 = 誤り, 足した後のpendの長さ)。
+// 文法と誤りはchunkedEndと同じ。途中で切れた行はlineへ持ち越す: 大きさの行は1024バイトを越えたら400・trailerは行の合計がmhを越えたら431
+func unchunkFeed(u mut carry, line mut []byte, pend mut []byte, pn0 int, p []byte, mh int, mb int) (int, int) {
+    mut pn := pn0
+    mut i := 0
+    n := len(p)
+    while i < n {
+        if u.st == 1 {
+            k := imin(u.rem, n - i)
+            pn = putAt(mut pend, pn, p[i:i + k])
+            u.rem -= k
+            i += k
+            if u.rem == 0 {
+                u.st = 2
+            }
+        } else if u.st == 2 || u.st == 3 {
+            c := p[i]
+            if c == '\n' {
+                u.st = 0
+            } else if c == '\r' && u.st == 2 {
+                u.st = 3
+            } else {
+                return -400, pn
+            }
+            i += 1
+        } else {
+            e := lineEnd(p, i)
+            if e < 0 {
+                u.ln = putAt(mut line, u.ln, p[i:n])
+                if u.st == 0 && u.ln > 1024 {
+                    return -400, pn
+                }
+                if u.st == 4 && u.tb + u.ln > mh {
+                    return -431, pn
+                }
+                return -1, pn
+            }
+            // 行（LFまで）: 持ち越しがあれば繋いだコピーで読む
+            l := if u.ln == 0 { p[i:e + 1] } else { joined(mut line, u.ln, p[i:e + 1]) }
+            u.ln = 0
+            i = e + 1
+            le := len(l) - 1
+            if u.st == 0 {
+                c := contentEnd(l, 0, le)
+                mut q := 0
+                mut size := 0
+                while q < c && hexVal(l[q]) >= 0 {
+                    // intに収まらない大きさ（2^63以上）は数として読めない行で400。収まって本文の上限を越えるなら413
+                    if size >= 576460752303423488 {
+                        return -400, pn
+                    }
+                    size = size * 16 + hexVal(l[q])
+                    q += 1
+                }
+                if q == 0 || (q < c && !chunkExt(l, q, c)) {
+                    return -400, pn
+                }
+                if size > mb {
+                    return -413, pn
+                }
+                if size == 0 {
+                    u.st = 4
+                } else {
+                    u.total += size
+                    if u.total > mb {
+                        return -413, pn
+                    }
+                    u.rem = size
+                    u.st = 1
+                }
+            } else {
+                if contentEnd(l, 0, le) == 0 {
+                    return i, pn
+                }
+                u.tb += len(l)
+                if u.tb > mh {
+                    return -431, pn
+                }
+                te, colon, bad := fieldLine(l, 0)
+                if te != le || !fieldLineOk(l, 0, te, colon, bad) {
+                    return -400, pn
+                }
+            }
+        }
+    }
+    return -1, pn
+}
+
+// 解き終えたchunkedの本文: 大きさの行の場所（pend[ph:]）を合計で埋め、終わりのchunk（合計が0なら大きさの行がそれ）とtrailerの空行を足す → pendの長さ
+func chunkDone(pend mut []byte, pn int, ph int, total int) int {
+    mut v := total
+    mut k := 15
+    while k >= 0 {
+        pend[ph + k] = bytes("0123456789abcdef")[v & 15]
+        v = v >> 4
+        k -= 1
+    }
+    return putAt(mut pend, pn, if total == 0 { bytes("\r\n") } else { bytes("\r\n0\r\n\r\n") })
+}
+
+// pendの先頭pnバイトとbを繋いだコピー
+func joined(pend mut []byte, pn int, b []byte) []byte {
+    mut out := mut []byte{}
+    mut i := 0
+    while i < pn {
+        out = append(out, pend[i])
+        i += 1
+    }
+    for x <- b {
+        out = append(out, x)
+    }
+    return freeze(out)
+}
+
+// 閉じる前に相手の残りを読み捨てる（lingering close — 未読を残して閉じるとRSTになり、送ったレスポンスが相手に届かないことがある。
+// 誤りのレスポンスの後・closeのリクエストの後ろに続きがあったとき。上限 = 相手のFINか64 KiBか2秒）
+func linger(recv func(k func([]byte)) error?) {
+    _, _ = task.Run((s task.Scope) => {
+        _ = drain(recv)
+        0
+    }, deadline: 2000 * task.MS)
+}
+
+func drain(recv func(k func([]byte)) error?) error? {
+    mut n := 0
+    for chunk <- recv()? {
+        n += len(chunk)
+        if n > 65536 {
+            break
+        }
+    }
+    return nil
+}
+
+// bの頭から揃ったリクエストを順に処理する → (使ったバイト数, 0 = 続ける・1 = 閉じる・2 = 残りを読み捨ててから閉じる, レスポンスを繋いだ列, 時刻つきの送りの待ち,
+// 残りのリクエストの頭が揃い本文を待っているか, 送りの誤り)。
+// 未完のリクエストの手前で止まる。streamのレスポンスはここで前のレスポンスと頭をcへ送ってからstreamを呼び、残りのリクエストへ進む（パイプラインの順序を保つ）。
+// streamの失敗（送りの失敗・ファイルの読みの失敗）は頭を送った後なのでレスポンスを直せない — 誤りを返して閉じる（相手はContent-Lengthに足りない本文で切れを知る）。
+// stream の誤りのラベルは Stream の @errors（emit の失敗 + io の 5 つ — language.md 12 節の面「高階」）。
+// streamを呼ぶパスをServeConnの側の反復に置くと、streamの無いリクエストのパスが1件 ≈ 200命令・cycles +10%を払う（だからここに置く）。
+// レスポンスの列は1本のmutの列へ一括のコピーで積む（for x <- S { out = append(out, x) } — lowerの一括化。
+// 切片ごとのbuilder〔24本のシード + chunkの成長〕と片ごとのPushStringで積む形はレスポンス1件 ≈ 4.5K命令と遅い）
+func serveBuf(send func(b []byte) error?, b []byte, route func(Request) Response, mh int, mb int, gz int, fresh bool, wk task.Local?, hist mut compress.gzip.History, tsOk bool, su int, gsend (func(h []byte, b []byte) bool)?) (int, int, []byte, int, bool, error?) {
+    mut out := mut []byte{}
+    mut at := 0
+    mut shut := 0
+    // outの先頭のレスポンスの前の待ち（ミリ秒 — Delayed。ループを出てから待つ）
+    mut dl := 0
+    mut more := true
+    mut hw := false
+    // outをgsendで送り終えた（バッチの最後の応答 — 以後outを使わない）
+    mut gone := false
+    while more && shut == 0 {
+        mut hs := mut []int{}
+        f := frameAt(b, at, mh, mb, mut hs)
+        if f.st == 0 {
+            // 足りない: 先頭の空行だけは捨ててよい
+            at = f.s
+            hw = f.he > 0
+            more = false
+        } else if f.st != 1 {
+            for x <- respHead(Status(http.StatusCode(f.st)), false, false, 0) {
+                out = append(out, x)
+            }
+            shut = 2
+        } else {
+            req, e := request(b, f, freeze(hs))
+            if e != nil {
+                for x <- respHead(Status(http.BadRequest), false, false, 0) {
+                    out = append(out, x)
+                }
+                shut = 2
+            } else {
+                resp := route(req)
+                // 長さ不定の stream（圧縮する stream も — 圧縮後の長さは不定）を HTTP/1.0 へ送るときは閉じで区切る（keep-alive を外す — 頭は Connection: close）。
+                // Accept-Encodingは圧縮しうるレスポンスのときだけ読む（wireがaeを使うのはgzWantsの条件が全部立つパスだけ）
+                st := resp.stream
+                ln := resp.length
+                ae := gz > 0 && gzWants(resp.coded != nil, st != nil, ln, len(resp.body), resp.contentType) && acceptsGzip(req)
+                zs := ae && st != nil
+                ul := st != nil && (ln == nil || zs)
+                kp := f.keep && !(ul && f.v10)
+                // 頭と本文（compression: なら圧縮した本文 — 頭の Content-Length もそれに合わせる。HEAD は本文を書かない〔頭は GET と同じ〕）。
+                ms := resp.delay
+                if ms > 0 || dl > 0 && st != nil && req.method != "HEAD" {
+                    // Delayed: 前のレスポンスを送り、このレスポンスの頭の前で待つ。待つのはループを出てから（下）。稀なパス（同じバッチの前に待ちが
+                    // 残っている・stream は頭をここで送る）だけ、残った待ちをここで済ませる
+                    if dl > 0 {
+                        os.Sleep(dl)
+                        dl = 0
+                    }
+                    if len(out) > 0 {
+                        e3 := sendArmed(send, freeze(out), su)
+                        if e3 != nil {
+                            return at, 1, []byte{}, 0, false, e3
+                        }
+                        out = mut []byte{}
+                    }
+                    if st != nil && req.method != "HEAD" {
+                        os.Sleep(ms)
+                    } else {
+                        dl = ms
+                    }
+                }
+                enc, bd := wire(resp, gz, fresh, ae, wk, mut hist)
+                // Content-Length に書く長さ（stream は length — 圧縮する stream は長さ不定）
+                bl := if st == nil { len(bd) } else if ln != nil && enc != 2 { ln } else { -1 }
+                // 頭は out へ直に積む（out はループの中で freeze して送るので mut では渡せない — 伸ばすだけの局所のラムダを渡す）
+                put := (p []byte) => {
+                    for x <- p {
+                        out = append(out, x)
+                    }
+                }
+                put1 := (c byte) => {
+                    out = append(out, c)
+                }
+                putHead(put, put1, resp, kp, f.v10, enc, bl)
+                // 頭の終わりにDateの行と空行
+                out = sysAppendDate(out)
+                at = f.end
+                shut = if kp { 0 } else if at < len(b) { 2 } else { 1 }
+                more = at < len(b)
+                if req.method != "HEAD" {
+                    if st != nil {
+                        // 前のレスポンスと頭を送ってからstreamを呼ぶ
+                        e2 := sendArmed(send, freeze(out), su)
+                        if e2 != nil {
+                            return at, 1, []byte{}, 0, false, e2
+                        }
+                        out = mut []byte{}
+                        // 送りの状態（stream の 4 つの形で 1 つ — 枠に Out を 1 つだけ置く）。lim は長さ既知の形だけが読む
+                        mut so := Out{lim: ln}
+                        if zs {
+                            // 圧縮する stream: emit 1 回 = Feed 1 回（sync flush）= chunk 1 つ（HTTP/1.0 は素で — 閉じの区切り）。返ったら最後のブロックと CRC-32 と長さ・
+                            // 終端。長さ既知なら非圧縮の合計を数え、length でなければ最後を書かずに閉じる（符号器と合計は送りの状態 so — stream が emit に渡し回す）
+                            v10 := f.v10
+                            internal.deflate.Begin(mut so.s, gz, true)
+                            st(mut so, (o, p) => gzFeed(mut o, p, (q) => {
+                                armSend(su)
+                                emr := if v10 { send(q) } else { send(chunkOf(q)) }
+                                rdlOff()
+                                emr
+                            }))?
+                            short := if ln != nil { so.n != ln } else { false }
+                            if so.over || short {
+                                return at, 1, []byte{}, 0, false, nil
+                            }
+                            tl := internal.deflate.End(mut so.s)
+                            sendArmed(send, if v10 { tl } else { chunkEnd(tl) }, su)?
+                        } else if ul && !f.v10 {
+                            // chunked: emit 1 回 = chunk 1 つ・返ったら終端（誤りなら終端を書かずに閉じる）
+                            st(mut so, (o, p) => if len(p) == 0 { nil } else {
+                                armSend(su)
+                                emr := send(chunkOf(p))
+                                rdlOff()
+                                emr
+                            })?
+                            sendArmed(send, bytes("0\r\n\r\n"), su)?
+                        } else if ln != nil {
+                            // 長さ既知: 合計を数え、超えた emit は送らない・返った時点で length でなければ閉じる（相手は本文の切れで知る）
+                            st(mut so, (o, p) => sendCounted(mut o, p, (q) => {
+                                armSend(su)
+                                emr := send(q)
+                                rdlOff()
+                                emr
+                            }))?
+                            if so.over || so.n != ln {
+                                return at, 1, []byte{}, 0, false, nil
+                            }
+                        } else {
+                            st(mut so, (o, p) => {
+                                armSend(su)
+                                emr := send(p)
+                                rdlOff()
+                                emr
+                            })?
+                        }
+                    } else {
+                        // バッチの最後の本文: 頭（out）と本文を送り場へ直に集めて送れたら（本文をoutへ積むコピーを省く）、ループはここで終わり、呼び手へは空の列を返す
+                        if !more && gsend != nil && shut == 0 && dl == 0 && len(out) > 0 {
+                            gone = gsend(freeze(out), bd)
+                        }
+                        if !gone {
+                            for x <- bd {
+                                out = append(out, x)
+                            }
+                        }
+                    }
+                }
+                // 同じ切片に続きのリクエストがあり、積んだレスポンスがoutCapを超えたら、今の送り（完了を待つ）で送ってから続きを処理する。
+                // 読まない相手に向けて、切片1つ分のリクエストのレスポンスを全部つないで抱えないため（積んだ列はoutCap + レスポンス1件まで）。
+                // Delayedの待ちが残っている間は送らない（待ちはoutの先頭のレスポンスの前に置く）。送るバイト列は変わらない
+                if len(out) >= outCap && more && shut == 0 && dl == 0 {
+                    e4 := sendArmed(send, freeze(out), su)
+                    if e4 != nil {
+                        return at, 1, []byte{}, 0, false, e4
+                    }
+                    out = mut []byte{}
+                }
+            }
+        }
+    }
+    // Delayedの待ちはリクエストのループを出てから（リクエストのregionを手放した後 — ハンドラのスタックも持たない）。前のレスポンスはマークを付けたときに送り済み。
+    // ループの末尾（閉じない・切片を使い切った）で時刻つきの送りが使えれば、待たずに待ちのmsを返す（呼び手がtsendで送る）
+    if dl > 0 {
+        if tsOk && shut == 0 && at == len(b) {
+            return at, shut, freeze(out), dl, hw, nil
+        }
+        os.Sleep(dl)
+    }
+    if gone {
+        return at, shut, []byte{}, 0, hw, nil
+    }
+    return at, shut, freeze(out), 0, hw, nil
+}
+
+// serveBufが同じ切片の続きのリクエストを処理する前に、積んだレスポンスを送る大きさ
+const outCap = 65536
+
+// 1件のリクエストの枠（位置はbの上）。揃った枠はrequestがリクエスト行とヘッダを読み直さずに組めるよう、リクエスト行の空白の位置とヘッダの位置の表も持つ
+type frame struct {
+    // st: 0 = 足りない・1 = 揃った・他 = 誤りの status
+    st int
+    // s = リクエストの始め（先頭の空行の後）・he = 頭の終わり（本文の始め）・end = リクエストの終わり
+    s int
+    he int
+    end int
+    chunked bool
+    // keep = レスポンスの後も保つ・v10 = HTTP/1.0
+    keep bool
+    v10 bool
+    // リクエスト行の1つ目・2つ目の空白（bの上 — ヘッダの位置の表は呼び手の列hsに積む: frameAtのhs）
+    sp1 int
+    sp2 int
+}
+
+func fr(st int, s int) frame {
+    return frame{st: st, s: s, he: 0, end: 0, chunked: false, keep: false, v10: false, sp1: 0, sp2: 0}
+}
+
+// b[i:] の最初の LF の位置（無ければ -1）
+func lineEnd(b []byte, i int) int {
+    // 8バイトずつ: ワードx = 8バイト ^ LFの並び — LFの位置のバイトが0。(x − 0x01…) & ^x & 0x80… の最下位の立ったバイトが最初の0のバイト
+    // （上の桁への借りの偽のマークは最初の0より上にしか出ない）
+    n := len(b)
+    mut j := i
+    while j + 8 <= n {
+        x := binary.Load64(b, j) ^ 723401728380766730
+        t := (x - 72340172838076673) & (x ^ -1) & -9187201950435737472
+        if t != 0 {
+            mut y := t
+            while y & 255 == 0 {
+                y = y >> 8
+                j += 1
+            }
+            return j
+        }
+        j += 8
+    }
+    while j < n && b[j] != '\n' {
+        j += 1
+    }
+    return if j < n { j } else { -1 }
+}
+
+// b[i:] の最初のLFの位置と、それより前の最初の ':' の位置・最初の不正なバイト（CR・HTAB以外の制御文字・DEL。RFC 9110 5.5）の位置（無いものは -1。LFが無ければLFの位置が -1）。
+// lineEndと同じ8バイトずつの読みで「0x20未満・':'・DEL」の3つを一緒に探す（LFとCRは0x20未満に含まれる。立ったマークは読み直したバイトで確認する。借りの偽のマークは数えない）
+func fieldLine(b []byte, i int) (int, int, int) {
+    n := len(b)
+    mut colon := -1
+    mut bad := -1
+    mut j := i
+    while j + 8 <= n {
+        x := binary.Load64(b, j)
+        y1 := x ^ swColon
+        y2 := x ^ swDEL
+        mut u := ((((x - swSP) & (x ^ -1)) | ((y1 - swOne) & (y1 ^ -1)) | ((y2 - swOne) & (y2 ^ -1))) >> 7) & swOne
+        while u != 0 {
+            p := j + (((u & (0 - u)) * swIdx) >> 56)
+            c := b[p]
+            if c == '\n' {
+                return p, colon, bad
+            } else if c == ':' {
+                if colon < 0 {
+                    colon = p
+                }
+            } else if bad < 0 && ((c < 32 && c != '\t') || c == 127) {
+                bad = p
+            }
+            u = u & (u - 1)
+        }
+        j += 8
+    }
+    while j < n {
+        c := b[j]
+        if c == '\n' {
+            return j, colon, bad
+        } else if c == ':' {
+            if colon < 0 {
+                colon = j
+            }
+        } else if bad < 0 && ((c < 32 && c != '\t') || c == 127) {
+            bad = j
+        }
+        j += 1
+    }
+    return -1, colon, bad
+}
+
+// 8バイトのワードの各バイトに同じ字を並べた定数（ワード ^ 定数 で一致のバイトが 0）と、0のバイトのマークの計算・番号引きの定数
+const swSP = 0x2020202020202020
+const swColon = 0x3a3a3a3a3a3a3a3a
+const swDEL = 0x7f7f7f7f7f7f7f7f
+const swOne = 0x0101010101010101
+const swIdx = 0x0001020304050607
+// "HTTP/1.1" / "HTTP/1.0" をlittle-endianで読んだワード
+const wHTTP11 = 0x312e312f50545448
+const wHTTP10 = 0x302e312f50545448
+// "host" をlittle-endianで読んだ4バイト（名前を小文字に寄せて1回で比べる）
+const wHost = 0x74736f68
+
+// 8バイトの各バイトの最上位ビット
+const swHigh = -9187201950435737472
+// Hostの値を8バイトずつ読む範囲の検査の定数。最上位ビットが0のバイトbにw + Aを足すと「b >= 下端」で、w + Bを足すと「b > 上端」で最上位ビットが立つ
+// （どのバイトも0x80未満なら桁は隣のバイトへ上がらない。上端より大なら下端以上でもあるので、2つの和のXORの最上位ビットが「範囲の内」）。範囲は0x2d〜0x2e（- .）・0x30〜0x39（0-9）・0x61〜0x7a（a-z）
+const hrA1 = 0x5353535353535353
+const hrB1 = 0x5151515151515151
+const hrA2 = 0x5050505050505050
+const hrB2 = 0x4646464646464646
+const hrA3 = 0x1f1f1f1f1f1f1f1f
+const hrB3 = 0x0505050505050505
+
+// Request.headersの1ワードの下位32ビット（区間の始め）・上位32ビット（区間の終わり）
+func lo32(x int) int {
+    return x & 0xffffffff
+}
+
+func hi32(x int) int {
+    return x >> 32
+}
+
+// LF の位置 le の行の中身の終わり（直前の CR を除く）
+func contentEnd(b []byte, ls int, le int) int {
+    return if le > ls && b[le - 1] == '\r' { le - 1 } else { le }
+}
+
+// bのatからのリクエストの枠を読む（頭の形・Content-Length / Transfer-Encoding / Connection・本文の長さと上限）。頭は1回だけなめる:
+// 行ごとにLFを探し（8バイトずつ — リクエスト行はSP・CR、ヘッダの行は ':'・CRも同じ読みで）、空行で頭の終わり。リクエスト行・ヘッダの誤りは最初の1つを覚えて空行まで進む
+// （頭の終わりが無ければ誤りより「足りない / 431」が先 — 誤りの順はリクエスト行 → ヘッダの並び）。ヘッダの位置はrequestのためにhsへ
+// 1本2ワードの [名前の始め | 終わり << 32, 値の始め | 終わり << 32] × 本数（sからの相対 — Request.headersの形）を積む（呼び手の空の列 — 揃わなかった枠の分は読まない）。
+// 表を呼び手の列に積むのは、枠を自分のregionで組んでコピーし出す往復をリクエストごとに払わないため
+func frameAt(b []byte, at int, mh int, mb int, hs mut []int) frame {
+    n := len(b)
+    // リクエストの前の空行は読み飛ばす（RFC 9112 2.2）
+    mut s := at
+    while s < n && (b[s] == '\r' || b[s] == '\n') {
+        s += 1
+    }
+    // 頭の終わり = 空行（LF LF か LF CR LF）の直後 — 空行の前の LF は s + mh より前
+    lim := if n < s + mh { n } else { s + mh }
+    short := if n - s >= mh { 431 } else { 0 }
+    // リクエスト行: method SP target SP version（空白は2つちょうど・空のフィールドなし・中のCRは誤り）。「0x20未満か0x80以上」とSPを同じ8バイトの読みで探す
+    // （LFとCRは0x20未満に含まれる。行は1回なめるだけで、立ったマークは読み直したバイトで確認するので、借りの偽のマーク〔最初の一致より上〕は数えない）。
+    // ターゲットの中のNULと制御文字（0x20未満。HTABを含む）と0x80以上のバイトは400（RFC 9112 3.2・RFC 3986 2。非ASCIIは%エンコードしてから送る）
+    mut le := -1
+    mut sp1 := -1
+    mut sp2 := -1
+    mut nsp := 0
+    mut cr := -1
+    mut j := s
+    while le < 0 && j + 8 <= n {
+        x := binary.Load64(b, j)
+        y1 := x ^ swSP
+        mut u := ((((x - swSP) | x) | ((y1 - swOne) & (y1 ^ -1))) >> 7) & swOne
+        while u != 0 && le < 0 {
+            // 最下位の立ったバイトの番号（u & −u = 1 << 8k を掛けると最上位のバイトが k）
+            p := j + (((u & (0 - u)) * swIdx) >> 56)
+            c := b[p]
+            if c == '\n' {
+                le = p
+            } else if c == ' ' {
+                nsp += 1
+                if sp1 < 0 {
+                    sp1 = p
+                } else if sp2 < 0 {
+                    sp2 = p
+                }
+            } else if c == '\r' {
+                if cr < 0 {
+                    cr = p
+                }
+            } else if (c < 32 || c >= 128) && cr < 0 && sp1 >= 0 && sp2 < 0 {
+                cr = p
+            }
+            u = u & (u - 1)
+        }
+        j += 8
+    }
+    while le < 0 && j < n {
+        c := b[j]
+        if c == '\n' {
+            le = j
+        } else if c == ' ' {
+            nsp += 1
+            if sp1 < 0 {
+                sp1 = j
+            } else if sp2 < 0 {
+                sp2 = j
+            }
+        } else if c == '\r' {
+            if cr < 0 {
+                cr = j
+            }
+        } else if (c < 32 || c >= 128) && cr < 0 && sp1 >= 0 && sp2 < 0 {
+            cr = j
+        }
+        j += 1
+    }
+    if le < 0 || le >= lim {
+        // リクエスト行の途中で上限: 空白が無ければメソッドが長すぎる（501）、空白が1つだけならターゲットが長すぎる（414）。RFC 9112 3
+        return fr(if short != 0 && (sp1 < 0 || sp1 >= lim) { 501 } else if short != 0 && sp1 < lim && (sp2 < 0 || sp2 >= lim) { 414 } else { short }, s)
+    }
+    ce := contentEnd(b, s, le)
+    mut err := if (cr >= 0 && cr < ce) || nsp != 2 || sp1 <= s || sp2 <= sp1 + 1 { 400 } else { 0 }
+    mut v11 := false
+    mut v10 := false
+    if err == 0 {
+        // 版は8バイトちょうどのときだけワード1つの比較
+        if ce - sp2 - 1 == 8 {
+            w := binary.Load64(b, sp2 + 1)
+            v11 = w == wHTTP11
+            v10 = w == wHTTP10
+        }
+        if !v11 && !v10 {
+            err = versionErr(b, sp2 + 1, ce)
+        }
+    }
+    // ヘッダ（空行まで）
+    mut cl := -1
+    // Transfer-Encodingの行をつないだリストの状態（teAddの形。0 = 行が無い）
+    mut te := 0
+    mut closeTok := false
+    mut kaTok := false
+    mut he := -1
+    mut prev := le
+    while he < 0 {
+        if prev >= lim {
+            return fr(short, s)
+        }
+        ls := prev + 1
+        if ls < n && b[ls] == '\n' {
+            he = ls + 1
+        } else if ls + 1 < n && b[ls] == '\r' && b[ls + 1] == '\n' {
+            he = ls + 2
+        } else {
+            if err != 0 {
+                e := lineEnd(b, ls)
+                if e < 0 {
+                    return fr(short, s)
+                }
+                prev = e
+            } else {
+                e, colon, bad := fieldLine(b, ls)
+                if e < 0 {
+                    return fr(short, s)
+                }
+                c := contentEnd(b, ls, e)
+                // 名前はtcharだけ（先頭の空白〔obs-fold〕もここで落ちる）・行の中のCRと制御文字は誤り（値はHTAB・表示できる字・obs-textだけ）。tcharは128ビットの表をその場で引く
+                mut k := ls
+                while k < colon && b[k] < 128 && ((if b[k] < 64 { tcLo } else { tcHi }) >> (int(b[k]) & 63)) & 1 != 0 {
+                    k += 1
+                }
+                if colon <= ls || colon >= c || k < colon || (bad >= 0 && bad < c) {
+                    err = 400
+                } else {
+                    vs := skipOWS(b, colon + 1, c)
+                    ve := trimOWS(b, vs, c)
+                    hs = append(hs, (ls - s) | (colon - s) << 32)
+                    hs = append(hs, (vs - s) | (ve - s) << 32)
+                    // 名前の長さと 1 字目（小文字に寄せて）で絞ってから eqFold（User-Agent と Connection は同じ 10 字）
+                    nl := colon - ls
+                    c0 := int(b[ls]) | 32
+                    if nl == 14 && c0 == 99 && eqFold(b, ls, colon, bytes("content-length")) {
+                        v := digits(b, vs, ve)
+                        if v < 0 || (cl >= 0 && cl != v) {
+                            err = 400
+                        }
+                        cl = v
+                    } else if nl == 17 && c0 == 116 && eqFold(b, ls, colon, bytes("transfer-encoding")) {
+                        te = teAdd(te, b, vs, ve)
+                    } else if nl == 10 && c0 == 99 && eqFold(b, ls, colon, bytes("connection")) {
+                        // 早道: 値が token 1 つちょうど（keep-alive / close）ならカンマ割りを通さない
+                        if eqFold(b, vs, ve, bytes("keep-alive")) {
+                            kaTok = true
+                        } else if eqFold(b, vs, ve, bytes("close")) {
+                            closeTok = true
+                        } else {
+                            closeTok = closeTok || hasToken(b, vs, ve, bytes("close"))
+                            kaTok = kaTok || hasToken(b, vs, ve, bytes("keep-alive"))
+                        }
+                    }
+                }
+                prev = e
+            }
+        }
+    }
+    if err != 0 {
+        return fr(err, s)
+    }
+    // Transfer-Encodingの誤り（HTTP/1.0のTransfer-Encodingは枠の誤り。RFC 9112 6.1）と、Content-Lengthとの併記（400）
+    if te != 0 {
+        e2 := if v10 { 400 } else { teErr(te) }
+        if e2 != 0 || cl >= 0 {
+            return fr(if e2 != 0 { e2 } else { 400 }, s)
+        }
+    }
+    chunked := te != 0
+    keep := !closeTok && (v11 || kaTok)
+    mut end := he
+    if chunked {
+        end = chunkedEnd(b, he, mb)
+        if end < 0 && end != -1 {
+            return fr(0 - end, s)
+        }
+    } else if cl > mb {
+        return fr(413, s)
+    } else if cl > 0 {
+        end = if he + cl <= n { he + cl } else { -1 }
+    }
+    if end == -1 {
+        // 本文が足りない: 頭の終わりを返す（持ち越しが頭を読み直すかを決める）
+        return frame{st: 0, s: s, he: he, end: 0, chunked: false, keep: false, v10: false, sp1: 0, sp2: 0}
+    }
+    return frame{st: 1, s: s, he: he, end: end, chunked: chunked, keep: keep, v10: v10, sp1: sp1, sp2: sp2}
+}
+
+// b[ls:e)（eはLF）がヘッダの行の文法に合うか（名前はtcharだけで空でない・':' がある・行の中にCRと、HTAB以外の制御文字・DELが無い）。
+// colon・badはfieldLineの戻り値。frameAtのヘッダの行と同じ規則（frameAtは表を引く形をその場に展開している）
+func fieldLineOk(b []byte, ls int, e int, colon int, bad int) bool {
+    c := contentEnd(b, ls, e)
+    if colon <= ls || colon >= c || (bad >= 0 && bad < c) {
+        return false
+    }
+    mut k := ls
+    while k < colon && tchar(b[k]) {
+        k += 1
+    }
+    return k == colon
+}
+
+// he からの chunked の本文の終わり（trailer の空行の後）。-1 = 足りない・-400 / -413 = 誤り
+func chunkedEnd(b []byte, he int, mb int) int {
+    mut p := he
+    mut total := 0
+    while true {
+        e := lineEnd(b, p)
+        if e < 0 {
+            return if len(b) - p > 1024 { -400 } else { -1 }
+        }
+        c := contentEnd(b, p, e)
+        mut q := p
+        mut size := 0
+        while q < c && hexVal(b[q]) >= 0 {
+            // intに収まらない大きさ（2^63以上）は数として読めない行で400。収まって本文の上限を越えるなら413
+            if size >= 576460752303423488 {
+                return -400
+            }
+            size = size * 16 + hexVal(b[q])
+            q += 1
+        }
+        // chunk-ext（; …）は文法だけ確かめて読み捨てる
+        if q == p || (q < c && !chunkExt(b, q, c)) {
+            return -400
+        }
+        if size > mb {
+            return -413
+        }
+        p = e + 1
+        if size == 0 {
+            // trailer: 空行まで、ヘッダの行と同じ文法を確かめて読み捨てる（文法の外は400。RFC 9112 7.1.2）
+            mut t := p
+            while true {
+                te, colon, bad := fieldLine(b, t)
+                if te < 0 {
+                    return -1
+                }
+                if contentEnd(b, t, te) == t {
+                    return te + 1
+                }
+                if !fieldLineOk(b, t, te, colon, bad) {
+                    return -400
+                }
+                t = te + 1
+            }
+        }
+        total += size
+        if total > mb {
+            return -413
+        }
+        if p + size >= len(b) {
+            return -1
+        }
+        d := p + size
+        if b[d] == '\n' {
+            p = d + 1
+        } else if b[d] == '\r' {
+            if d + 1 >= len(b) {
+                return -1
+            }
+            if b[d + 1] != '\n' {
+                return -400
+            }
+            p = d + 2
+        } else {
+            return -400
+        }
+    }
+    return -1
+}
+
+// Hostのヘッダの誤り（無い・2本以上・値の形）。レスポンスは400
+type badHost error
+
+// 版の文字列b[s:e]（HTTP/1.0・HTTP/1.1以外）の誤りのstatus: 形が "HTTP/" DIGIT "." DIGITなら対応しない版で505、形の誤りは400（RFC 9112 2.3）
+func versionErr(b []byte, s int, e int) int {
+    return if e - s == 8 && isLit(b, s, s + 5, "HTTP/") && b[s + 5] >= '0' && b[s + 5] <= '9' && b[s + 6] == '.' && b[s + 7] >= '0' && b[s + 7] <= '9' { 505 } else { 400 }
+}
+
+// Transfer-Encodingの行b[vs:ve] を、それまでの行の状態teに足した状態。値はtransfer-codingのリスト（RFC 9112 6.1・RFC 9110 5.6.1・10.1.4）:
+// transfer-coding = token *( OWS ";" OWS token BWS "=" BWS ( token / quoted-string ) )。状態の1語のビット = chunkedの数（0〜2）・4 = 最後の要素がchunked・
+// 8 = chunked以外の符号化・16 = 文法の誤り・32 = 行がある
+func teAdd(te0 int, b []byte, vs int, ve int) int {
+    // ふつうの形（行が1本で値がchunkedちょうど）
+    if te0 == 0 && eqFold(b, vs, ve, bytes("chunked")) {
+        return teChunked
+    }
+    mut te := te0 | 32
+    mut q := vs
+    while true {
+        q = skipOWS(b, q, ve)
+        if q == ve {
+            return te
+        }
+        // 空の要素（値が空・先頭や末尾のコンマ・連続したコンマ）は読み飛ばす（RFC 9110 5.6.1）。要素が1つも無いリストはchunkedが無いのでteErrが400にする
+        if b[q] == ',' {
+            q += 1
+            continue
+        }
+        k := q
+        while q < ve && tchar(b[q]) {
+            q += 1
+        }
+        if q == k {
+            return te | 16
+        }
+        // chunkedはパラメータが付いていても最後の符号化として数える（本文の長さはchunkedで決まる。RFC 9112 6.3の4）。chunkedに定義された
+        // パラメータは無く、符号化は理解できるものなので、パラメータは文法を確かめて読み捨てる（501にしない。Content-Lengthとの併記は400）
+        isChunked := eqFold(b, k, q, bytes("chunked"))
+        mut p := skipOWS(b, q, ve)
+        while p < ve && b[p] == ';' {
+            p = skipOWS(b, p + 1, ve)
+            n0 := p
+            while p < ve && tchar(b[p]) {
+                p += 1
+            }
+            if p == n0 {
+                return te | 16
+            }
+            p = skipOWS(b, p, ve)
+            if p >= ve || b[p] != '=' {
+                return te | 16
+            }
+            p = skipOWS(b, p + 1, ve)
+            if p < ve && b[p] == '"' {
+                p = quotedEnd(b, p, ve)
+                if p < 0 {
+                    return te | 16
+                }
+            } else {
+                v0 := p
+                while p < ve && tchar(b[p]) {
+                    p += 1
+                }
+                if p == v0 {
+                    return te | 16
+                }
+            }
+            p = skipOWS(b, p, ve)
+        }
+        if isChunked {
+            te = if te & 3 < 2 { te + 1 } else { te }
+            te = te | 4
+        } else {
+            te = (te | 8) & (4 ^ -1)
+        }
+        if p == ve {
+            return te
+        }
+        if b[p] != ',' {
+            return te | 16
+        }
+        q = p + 1
+    }
+    return te
+}
+
+// 行が1本で値がchunkedちょうどの状態
+const teChunked = 37
+
+// Transfer-Encodingのリストの状態teの誤りのstatus（0 = chunkedが1回だけ最後にある）。文法の誤り・chunkedの2回目・chunkedが最後でない（chunkedが無い形を含む）は400
+// （最後の符号化がchunkedでないと本文の長さが決まらない。RFC 9112 6.1）。文法は正しく、chunkedが最後に1回あり、ほかの符号化を含むときは501
+func teErr(te int) int {
+    return if te & 16 != 0 || te & 3 != 1 || te & 4 == 0 { 400 } else if te & 8 != 0 { 501 } else { 0 }
+}
+
+// 揃った枠（頭の始めs・HTTP/1.0ならv10・ヘッダの位置の表hs）のHostが正しいか: 1本だけ（2本目は値が同じでも誤り）・値はhostFullの形・HTTP/1.1では必須
+// （HTTP/1.0は無くてよい。RFC 9112 3.2）。frameAtのヘッダのループではなく、揃った枠のヘッダの位置の表で見る: frameAtはインライン展開の呼ぶ側の大きさの
+// 上限とレジスタの割り当てに敏感で、ループに分岐を足すとヘッダ1本ごとの命令が増える
+func hostCheck(b []byte, s int, v10 bool, hs []int) bool {
+    n := len(b)
+    mut host := -1
+    mut k := 0
+    while k < len(hs) {
+        w := hs[k]
+        ns := s + (w & 0xffffffff)
+        // 名前が4字で、小文字に寄せた先頭の4バイトが "host"（名前の後には ':' と行末が続くので、8バイトの読みは頭の内に収まる。収まらない端は1字ずつ）
+        if (w >> 32) - (w & 0xffffffff) == 4 && (if ns + 8 <= n { (binary.Load64(b, ns) | 0x20202020) & 0xffffffff == wHost } else { eqFold(b, ns, ns + 4, bytes("host")) }) {
+            if host >= 0 {
+                return false
+            }
+            host = k + 1
+        }
+        k += 2
+    }
+    if host < 0 {
+        return v10
+    }
+    vs := s + (hs[host] & 0xffffffff)
+    e := s + (hs[host] >> 32)
+    // ふつうの形（reg-nameの字の空でない並び + 任意の ":" 数字*）はここで読み、それ以外（%XX・IP-literal・誤り）だけhostFullに回す
+    mut i := vs
+    // 8バイトずつ: どのバイトも「- .」「0-9」「a-z」のどれか（よくあるホスト名の字）なら進む。外れる字があれば1バイトずつの表に任せる
+    while i + 8 <= e {
+        x := binary.Load64(b, i)
+        m := ((x + hrA1) ^ (x + hrB1)) | ((x + hrA2) ^ (x + hrB2)) | ((x + hrA3) ^ (x + hrB3))
+        if x & swHigh != 0 || m & swHigh != swHigh {
+            break
+        }
+        i += 8
+    }
+    while i < e && bytes(regTab)[int(b[i])] == 49 {
+        i += 1
+    }
+    mut pe := i
+    if pe > vs && pe < e && b[pe] == ':' {
+        pe += 1
+        while pe < e && b[pe] >= '0' && b[pe] <= '9' {
+            pe += 1
+        }
+    }
+    return (pe == e && i > vs) || hostFull(b, vs, e)
+}
+
+// Hostの値b[s:e] がuri-host [":" port] の形か（RFC 9110 7.2・RFC 3986 3.2.2）。hostは空でない（httpのURIは空のhostを許さない。RFC 9110 4.2.1）。
+// IP-literalは字の集合だけを見る（IPv6の文法は見ない。値をルーティングに使わず、注入を止めるには字の集合で足りる）。
+// reg-nameの文法はコンマを許すが拒否する: 実在のホスト名には現れず、中継が2本のHostを1本につないだ形と区別できない
+func hostFull(b []byte, s int, e int) bool {
+    mut i := s
+    if i < e && b[i] == '[' {
+        i += 1
+        while i < e && (b[i] == ':' || regChar(b[i])) {
+            i += 1
+        }
+        if i == s + 1 || i >= e || b[i] != ']' {
+            return false
+        }
+        i += 1
+    } else {
+        while i < e && b[i] != ':' {
+            if b[i] == '%' {
+                if i + 2 >= e || hexVal(b[i + 1]) < 0 || hexVal(b[i + 2]) < 0 {
+                    return false
+                }
+                i += 3
+            } else if regChar(b[i]) {
+                i += 1
+            } else {
+                return false
+            }
+        }
+        if i == s {
+            return false
+        }
+    }
+    if i < e {
+        if b[i] != ':' {
+            return false
+        }
+        i += 1
+        while i < e && b[i] >= '0' && b[i] <= '9' {
+            i += 1
+        }
+    }
+    return i == e
+}
+
+// reg-nameの字（unreservedと、コンマを除くsub-delims）
+func regChar(c byte) bool {
+    return bytes(regTab)[int(c)] == 49
+}
+
+// reg-nameの字の表。バイトの値ごとに1字（"1" = reg-nameの字）
+const regTab = "0000000000000000000000000000000001001011111101101111111111010100011111111111111111111111111000010111111111111111111111111110001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+
+// b[q:c]（chunkの大きさの桁の後から行の中身の終わりまで。空でない）がchunk-extの文法どおりか（RFC 9112 7.1.1）:
+//   *( BWS ";" BWS name [ BWS "=" BWS ( token / quoted-string ) ] )。nameはtoken。BWSは ';' と '=' の前後にだけ置ける（桁の後の空白で終わる形は誤り）
+func chunkExt(b []byte, q0 int, c int) bool {
+    mut q := q0
+    while q < c {
+        q = skipOWS(b, q, c)
+        if q >= c || b[q] != ';' {
+            return false
+        }
+        q = skipOWS(b, q + 1, c)
+        k := q
+        while q < c && tchar(b[q]) {
+            q += 1
+        }
+        if q == k {
+            return false
+        }
+        t := skipOWS(b, q, c)
+        if t < c && b[t] == '=' {
+            q = skipOWS(b, t + 1, c)
+            if q < c && b[q] == '"' {
+                q = quotedEnd(b, q, c)
+                if q < 0 {
+                    return false
+                }
+            } else {
+                k2 := q
+                while q < c && tchar(b[q]) {
+                    q += 1
+                }
+                if q == k2 {
+                    return false
+                }
+            }
+        }
+    }
+    return true
+}
+
+// b[q] の '"' から始まるquoted-stringの直後の位置（閉じが無いか、字が文法の外なら -1）。
+// qdtext = HTAB / SP / 0x21 / 0x23-0x5B / 0x5D-0x7E / obs-text・quoted-pair = "\" ( HTAB / SP / VCHAR / obs-text )（RFC 9110 5.6.4）
+func quotedEnd(b []byte, q0 int, c int) int {
+    mut q := q0 + 1
+    while q < c {
+        x := b[q]
+        if x == '"' {
+            return q + 1
+        }
+        if x == '\\' {
+            q += 1
+            if q >= c || !(b[q] == '\t' || (b[q] >= 32 && b[q] != 127)) {
+                return -1
+            }
+        } else if !(x == '\t' || (x >= 32 && x != 127)) {
+            return -1
+        }
+        q += 1
+    }
+    return -1
+}
+
+// 揃った枠fのRequest（頭がUTF-8でなければ誤り・hs = frameAtが積んだヘッダの位置の表）。origin-form（ターゲットが '/' で始まる）でなければ
+// 冷たいotherFormへ（absolute-form・asterisk-form・CONNECT。引数だけが生きている入口で分け、ふつうの形の割り当てを変えない）
+func request(b []byte, f frame, hs []int) (Request, error?) {
+    if b[f.sp1 + 1] != '/' {
+        return otherForm(b, f, hs)
+    }
+    if !hostCheck(b, f.s, f.v10, hs) {
+        return Request{method: "", path: "", query: "", head: utf8.View{}, headers: []int{}, body: []byte{}, pattern: ""}, badHost{}
+    }
+    v := utf8.Check(b[f.s:f.he])?
+    hb := utf8.Bytes(v)
+    // リクエスト行の空白とヘッダの位置はframeAtが集めた（頭を読み直さない）
+    sp1 := f.sp1 - f.s
+    sp2 := f.sp2 - f.s
+    q := indexIn(hb, sp1 + 1, sp2, '?')
+    // 切る位置はどれも ASCII の区切り（SP・'?'）の上か直後で、hb は頭全体を Check 済み。検査済みの UTF-8 では ASCII のバイトも
+    // その次のバイトも継続バイトになりえないので、どの位置も字の境目 — utf8.Str の境界の検査は常に通る（検査せずに切る）。
+    // 区切りでない位置で切る変更は、この前提を壊す（字の途中で切った string ができる）
+    method := bytesToString(hb[0:sp1])
+    path := bytesToString(hb[sp1 + 1:if q >= 0 { q } else { sp2 }])
+    query := if q >= 0 { bytesToString(hb[q + 1:sp2]) } else { "" }
+    body := if f.chunked { unchunk(b, f.he) } else { b[f.he:f.end] }
+    return Request{method: method, path: path, query: query, head: v, headers: hs, body: body, pattern: ""}, nil
+}
+
+// origin-formでないリクエストのRequest（requestの冷たい側。呼び手のserveBufがターゲットの1字目で分ける。Hostと頭のUTF-8の検査はrequestと同じ）。
+// absolute-form（RFC 9112 3.2.2）: サーバーは受けなければならず、オリジンサーバーは受けたHostを無視してターゲットのhostを使う。
+// schemeはhttpかhttps（大文字小文字を区別しない）・authorityはHostの値と同じ形（userinfoは誤り）で、どちらも外れたら400。
+// pathはauthorityの後（空なら "/"）。Hostのヘッダの値の位置をターゲットのauthorityに置き換える（Header(r, "host") がターゲットの側を返す）。
+// Hostのヘッダが無い（HTTP/1.0）ときは足さない
+func otherForm(b []byte, f frame, hs []int) (Request, error?) {
+    if !hostCheck(b, f.s, f.v10, hs) {
+        return Request{method: "", path: "", query: "", head: utf8.View{}, headers: []int{}, body: []byte{}, pattern: ""}, badHost{}
+    }
+    v := utf8.Check(b[f.s:f.he])?
+    hb := utf8.Bytes(v)
+    sp1 := f.sp1 - f.s
+    sp2 := f.sp2 - f.s
+    method := bytesToString(hb[0:sp1])
+    body := if f.chunked { unchunk(b, f.he) } else { b[f.he:f.end] }
+    // asterisk-form（"*"）とCONNECTのauthority-formは、ターゲットをそのままpathにしてunroutedに任せる（OPTIONS * は204・ほかの "*" は400・CONNECTは501）
+    if (sp2 - sp1 == 2 && hb[sp1 + 1] == '*') || method == "CONNECT" {
+        return Request{method: method, path: bytesToString(hb[sp1 + 1:sp2]), query: "", head: v, headers: hs, body: body, pattern: ""}, nil
+    }
+    t := sp1 + 1
+    a := if sp2 - t > 7 && eqFold(hb, t, t + 7, bytes("http://")) { t + 7 } else if sp2 - t > 8 && eqFold(hb, t, t + 8, bytes("https://")) { t + 8 } else { -1 }
+    if a < 0 {
+        return Request{method: "", path: "", query: "", head: utf8.View{}, headers: []int{}, body: []byte{}, pattern: ""}, badTarget{}
+    }
+    mut ae := a
+    while ae < sp2 && hb[ae] != '/' && hb[ae] != '?' {
+        ae += 1
+    }
+    if !hostFull(hb, a, ae) {
+        return Request{method: "", path: "", query: "", head: utf8.View{}, headers: []int{}, body: []byte{}, pattern: ""}, badTarget{}
+    }
+    q := indexIn(hb, ae, sp2, '?')
+    pe := if q >= 0 { q } else { sp2 }
+    path := if pe == ae { "/" } else { bytesToString(hb[ae:pe]) }
+    query := if q >= 0 { bytesToString(hb[q + 1:sp2]) } else { "" }
+    mut nh := mut []int{}
+    for w <- hs {
+        nh = append(nh, w)
+    }
+    mut k := 0
+    while k < len(nh) {
+        w := nh[k]
+        if (w >> 32) - (w & 0xffffffff) == 4 && eqFold(hb, w & 0xffffffff, w >> 32, bytes("host")) {
+            nh[k + 1] = a | (ae << 32)
+        }
+        k += 2
+    }
+    return Request{method: method, path: path, query: query, head: v, headers: freeze(nh), body: body, pattern: ""}, nil
+}
+
+// absolute-formのターゲットの誤り（schemeがhttp / httpsでない・authorityの形）。レスポンスは400
+type badTarget error
+
+// heからの（検査済みの）chunkedの本文を繋いだコピー
+func unchunk(b []byte, he int) []byte {
+    mut out := mut []byte{}
+    mut p := he
+    mut size := 1
+    while size > 0 {
+        e := lineEnd(b, p)
+        mut q := p
+        size = 0
+        while hexVal(b[q]) >= 0 {
+            size = size * 16 + hexVal(b[q])
+            q += 1
+        }
+        p = e + 1
+        for x <- b[p:p + size] {
+            out = append(out, x)
+        }
+        p += size
+        if size > 0 {
+            p += if b[p] == '\r' { 2 } else { 1 }
+        }
+    }
+    return freeze(out)
+}
+
+// レスポンスrがwireの圧縮のパスに入りうるか（符号化済みでなく・本文〔streamなら長さ既知のlength — 長さ不定は常に〕がgzMin以上・Content-Typeが圧縮向き
+// — wire の条件と同じ）
+func gzWants(coded bool, stream bool, ln int?, bl int, ct string) bool {
+    return !coded && gzSize(stream, ln, bl) && compressible(ct)
+}
+
+// レスポンスの大きさが圧縮の下限を越えるか（streamはlength — 長さ不定は常に越える扱い・bodyのレスポンスは本文の長さbl）
+func gzSize(stream bool, ln int?, bl int) bool {
+    if stream {
+        return if ln != nil { ln >= gzMin } else { true }
+    }
+    return bl >= gzMin
+}
+
+// レスポンスrの頭の符号化のマーク（putHeadのenc）と送る本文（gz > 0 = compression: のlevel・ae = リクエストがgzipを受ける・wk = work: の格納場所）。圧縮しうるレスポンス（gzipが有効・Content-Typeが圧縮向き・
+// 本文が gzMin 以上）には Vary: Accept-Encoding を付け、ae なら本文を gzip にして Content-Encoding: gzip を付ける
+func wire(r Response, gz int, fresh bool, ae bool, wk task.Local?, hist mut compress.gzip.History) (int, []byte) {
+    if r.coded != nil {
+        // 符号化を選び済みのレスポンス（Staticのprecompressed）はcompression: の外 — VaryとContent-Encodingだけ
+        return 3, if r.stream != nil { []byte{} } else { r.body }
+    }
+    if r.stream != nil {
+        // 本文はstreamが送る。圧縮しうるstreamのレスポンスにはVary・aeなら長さ不定の頭（chunked / HTTP/1.0は閉じの区切り）にContent-Encoding: gzip
+        // （serveBuf が emit ごとに圧縮する — language.md 28 節の「compress + stream」）
+        if gz == 0 || !gzSize(true, r.length, 0) || !compressible(r.contentType) {
+            return 0, []byte{}
+        }
+        return if ae { 2 } else { 1 }, []byte{}
+    }
+    if gz == 0 {
+        return 0, r.body
+    }
+    if r.status == http.NotModified {
+        // 304には、同じリクエストの200（stream）が持つVaryを付ける（RFC 9110 15.4.5）。Content-Encodingは付けない
+        return if gzSize(true, r.length, 0) && compressible(r.contentType) { 1 } else { 0 }, []byte{}
+    }
+    if len(r.body) < gzMin || !compressible(r.contentType) {
+        return 0, r.body
+    }
+    if !ae {
+        return 1, r.body
+    }
+    z := if fresh {
+        if wk != nil { task.Lease(wk, (w mut compress.flate.Work) => compress.gzip.EncodeWith(mut w, r.body, gz)) } else { compress.gzip.Encode(r.body, gz) }
+    } else if wk != nil {
+        task.Lease(wk, (w mut compress.flate.Work) => compress.gzip.EncodeWithHistory(mut w, mut hist, r.body, gz))
+    } else {
+        compress.gzip.EncodeHistory(mut hist, r.body, gz)
+    }
+    return 2, z
+}
+
+// emit 1 回分の p を圧縮して out へ渡す（空の p は何もしない — sync flush の空打ちを送らない）。合計が lim を超えたら以後は送らない
+func gzFeed(z mut Out, p []byte, out func(q []byte) error?) error? {
+    if len(p) == 0 || z.over {
+        return nil
+    }
+    z.n += len(p)
+    lim := z.lim
+    if lim != nil {
+        if z.n > lim {
+            z.over = true
+            return nil
+        }
+    }
+    return out(internal.deflate.Feed(mut z.s, p))
+}
+
+// p を数えて out へ渡す（合計が lim〔長さ既知の stream の length〕を超える emit は送らず、以後も送らない）
+func sendCounted(c mut Out, p []byte, out func(q []byte) error?) error? {
+    if c.over {
+        return nil
+    }
+    c.n += len(p)
+    lim := c.lim
+    if lim != nil {
+        if c.n > lim {
+            c.over = true
+            return nil
+        }
+    }
+    return out(p)
+}
+
+// 圧縮の最後のバイト列 tl（空でない）の chunk と終端の chunk を繋いだ列（送り 1 回）
+func chunkEnd(tl []byte) []byte {
+    mut c := mut []byte{}
+    for x <- chunkOf(tl) {
+        c = append(c, x)
+    }
+    for x <- bytes("0\r\n\r\n") {
+        c = append(c, x)
+    }
+    return freeze(c)
+}
+
+// p（空でない）の chunk 1 つ（長さの 16 進・CRLF・p・CRLF — RFC 9112 7.1）。送りは 1 回（空の p は呼び手が送らない — 長さ 0 の chunk は終端）
+func chunkOf(p []byte) []byte {
+    mut c := mut []byte{}
+    n := len(p)
+    mut sh := 0
+    while (n >> (sh + 4)) > 0 {
+        sh += 4
+    }
+    while sh >= 0 {
+        d := (n >> sh) & 15
+        c = append(c, byte(if d < 10 { 48 + d } else { 87 + d }))
+        sh -= 4
+    }
+    c = append(c, '\r')
+    c = append(c, '\n')
+    for x <- p {
+        c = append(c, x)
+    }
+    c = append(c, '\r')
+    c = append(c, '\n')
+    return freeze(c)
+}
+
+// Content-Type が圧縮向きか（text/* と application/json — 媒体の型の大小は無視・; の後の引数は見ない）。text/event-stream は外す
+// （SSE — 長命で同時接続が多い流れにレスポンスごとの符号器の作業域を積まない・中継のバッファで遅延が壊れる・秘密を含む流れの圧縮の長さの漏れ — language.md 28 節の「SSE」）
+func compressible(ct string) bool {
+    b := bytes(ct)
+    e := {
+        k := indexIn(b, 0, len(b), ';')
+        trimOWS(b, 0, if k < 0 { len(b) } else { k })
+    }
+    return (e > 5 && eqFold(b, 0, 5, bytes("text/")) && !eqFold(b, 0, e, bytes("text/event-stream"))) || eqFold(b, 0, e, bytes("application/json"))
+}
+
+// リクエストのAccept-Encoding（複数の行も）がgzipを受けるか（RFC 9110 12.5.3）: 項目をコンマで切り、名前（大小無視）がgzipかx-gzipの項目が
+// あればその q で決め、無ければ * の項目の q で決める。q は 0（0・0.0・0.00・0.000）だけが拒否・読めない q は受ける（go-stdlib の acceptsGzip と同じ寛容さ）。
+// 同じ名前の項目が 2 つ以上あれば、どれか 1 つが受ければ受ける
+func acceptsGzip(r Request) bool {
+    return accepts(r, "gzip", "x-gzip")
+}
+
+// リクエストのAccept-Encodingが符号化a（別名b — 無ければaを2回）を受けるか（acceptsGzipと同じ読み — 名前の項目が無ければ * のq）
+func accepts(r Request, a string, b string) bool {
+    hb := utf8.Bytes(r.head)
+    an := bytes("accept-encoding")
+    mut g := 0 - 1
+    mut st := 0 - 1
+    mut i := 0
+    while i < len(r.headers) {
+        if eqFold(hb, lo32(r.headers[i]), hi32(r.headers[i]), an) {
+            ve := hi32(r.headers[i + 1])
+            mut p := lo32(r.headers[i + 1])
+            while p <= ve {
+                j := {
+                    k := indexIn(hb, p, ve, ',')
+                    if k < 0 { ve } else { k }
+                }
+                ns := skipOWS(hb, p, j)
+                sc := {
+                    k := indexIn(hb, ns, j, ';')
+                    if k < 0 { j } else { k }
+                }
+                ne := trimOWS(hb, ns, sc)
+                q := qOf(hb, sc, j)
+                if eqFold(hb, ns, ne, bytes(a)) || eqFold(hb, ns, ne, bytes(b)) {
+                    g = if g == 1 { 1 } else { q }
+                } else if isLit(hb, ns, ne, "*") {
+                    st = if st == 1 { 1 } else { q }
+                }
+                p = j + 1
+            }
+        }
+        i += 2
+    }
+    return g == 1 || (g < 0 && st == 1)
+}
+
+// 項目の引数 b[s:e)（`;q=0.5` の形の列 — s は最初の ';' か e）の q が 0 なら 0・他は 1（q が無い・読めないも 1）
+func qOf(b []byte, s int, e int) int {
+    mut p := s
+    while p < e {
+        j := {
+            k := indexIn(b, p + 1, e, ';')
+            if k < 0 { e } else { k }
+        }
+        ks := skipOWS(b, p + 1, j)
+        eq := indexIn(b, ks, j, '=')
+        if eq >= 0 && eqFold(b, ks, trimOWS(b, ks, eq), bytes("q")) {
+            vs := skipOWS(b, eq + 1, j)
+            ve := trimOWS(b, vs, j)
+            return if zeroQ(b, vs, ve) { 0 } else { 1 }
+        }
+        p = j
+    }
+    return 1
+}
+
+// b[s:e) が q の 0（"0"・"0."・"0.0"〜"0.000"）か
+func zeroQ(b []byte, s int, e int) bool {
+    if e <= s || b[s] != '0' || e - s > 5 {
+        return false
+    }
+    if e - s == 1 {
+        return true
+    }
+    if b[s + 1] != '.' {
+        return false
+    }
+    mut i := s + 2
+    while i < e {
+        if b[i] != '0' {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+// レスポンスrの頭をput（チャンク）・put1（1バイト）で積む（状態行・Content-Type・encが2ならContent-Encoding: gzip・3ならr.codedのContent-Encoding〔空なら書かない〕・
+// 1〜3 なら Vary: Accept-Encoding・Content-Length〔204・304 は書かない〕・
+// 閉じるなら Connection: close・HTTP/1.0 の keep-alive は明示。Dateの行と頭の終わりの空行は書かない — 呼び手がsysAppendDateで足す）。n = Content-Length に書く長さ（送る本文の長さ — -1 = 長さ不定の stream: chunked か閉じの区切り）。
+// 304にはContent-Typeを書かない（Staticの304はVaryを決めるためにContent-Typeを持つ）。
+// アプリの値が書けなければpanic(BadHeader): statusが200〜999の外（1xxは最終のレスポンスにならない）・204 / 205 / 304に本文・
+// Coded.encodingがtokenでない・任意ヘッダ（checkFields）
+func putHead(put func(p []byte), put1 func(c byte), r Response, keep bool, v10 bool, enc int, n int) {
+    // 早道: 頭の飾りの無い200の本文のレスポンス（validators・cache・headers・enc・streamなし）は定型の列を
+    // 3つのチャンクで書く（状態行 + Content-Typeの名前・既定のCache-Control + Content-Lengthの名前 — 下の一般のパスと同じバイト列）
+    if r.status == http.OK && r.validators == nil && r.cache == nil && r.headers == nil && len(r.cookies) == 0 && enc == 0 && r.stream == nil && r.contentType != "" {
+        put(bytes("HTTP/1.1 200 OK\r\nContent-Type: "))
+        put(bytes(r.contentType))
+        put(bytes("\r\nCache-Control: private\r\nContent-Length: "))
+        mut p := 1
+        while p * 10 <= n {
+            p = p * 10
+        }
+        while p > 0 {
+            put1(byte(48 + n / p % 10))
+            p = p / 10
+        }
+        tl := if !keep { "\r\nConnection: close\r\n" } else if v10 { "\r\nConnection: keep-alive\r\n" } else { "\r\n" }
+        put(bytes(tl))
+        return
+    }
+    bad := badField(r, enc)
+    if bad != "" {
+        panic(http.BadHeader{name: bad})
+    }
+    put(bytes(statusLine(r.status)))
+    if r.contentType != "" && r.status != http.NotModified {
+        put(bytes("Content-Type: "))
+        put(bytes(r.contentType))
+        put(bytes("\r\n"))
+    }
+    vs := r.validators
+    if vs != nil {
+        put(bytes("ETag: ${vs.etag}\r\n"))
+        if vs.modified > 0 {
+            put(bytes("Last-Modified: ${httpDate(vs.modified)}\r\n"))
+        }
+    }
+    put(bytes(cacheLine(r.cache)))
+    fs := r.headers
+    if fs != nil {
+        for f <- fs.list {
+            put(bytes(f.name))
+            put(bytes(": "))
+            put(bytes(f.value))
+            put(bytes("\r\n"))
+        }
+    }
+    for ck <- r.cookies {
+        put(bytes(cookieLineIn(ck, r.cache)))
+    }
+    if enc == 2 {
+        put(bytes("Content-Encoding: gzip\r\n"))
+    }
+    cd := r.coded
+    if enc == 3 && cd != nil && cd.encoding != "" {
+        put(bytes("Content-Encoding: "))
+        put(bytes(cd.encoding))
+        put(bytes("\r\n"))
+    }
+    if enc > 0 {
+        put(bytes("Vary: Accept-Encoding\r\n"))
+    }
+    // 204・304 には Content-Length を書かない（RFC 9110 8.6 — 204 は MUST NOT・304 は 200 の長さと等しいときだけ書ける — 書かない側に倒す）。
+    // 204・205・304は本文を持たない（RFC 9110 15.3.5・15.3.6・15.4.5）。205はContent-Length: 0を書く
+    if r.status == http.NoContent || r.status == http.NotModified {
+        if !keep {
+            put(bytes("Connection: close\r\n"))
+        } else if v10 {
+            put(bytes("Connection: keep-alive\r\n"))
+        }
+        return
+    }
+    if n < 0 {
+        // 長さ不定の stream: HTTP/1.1 は chunked・HTTP/1.0 は閉じで区切る（呼び手が keep を外してある — Connection: close だけ）
+        te := if v10 { "Connection: close\r\n" } else if !keep { "Transfer-Encoding: chunked\r\nConnection: close\r\n" } else { "Transfer-Encoding: chunked\r\n" }
+        put(bytes(te))
+        return
+    }
+    put(bytes("Content-Length: "))
+    // 長さの10進（上の桁から — コピーの列を作らない）
+    mut p := 1
+    while p * 10 <= n {
+        p = p * 10
+    }
+    while p > 0 {
+        put1(byte(48 + n / p % 10))
+        p = p / 10
+    }
+    tail := if !keep { "\r\nConnection: close\r\n" } else if v10 { "\r\nConnection: keep-alive\r\n" } else { "\r\n" }
+    put(bytes(tail))
+}
+
+// レスポンスrの頭のコピー（putHeadを新しい列に。終わりにDateの行と空行）
+func respHead(r Response, keep bool, v10 bool, enc int) []byte {
+    mut h := mut []byte{}
+    put := (p []byte) => {
+        for x <- p {
+            h = append(h, x)
+        }
+    }
+    put1 := (c byte) => {
+        h = append(h, c)
+    }
+    ln := r.length
+    putHead(put, put1, r, keep, v10, enc, if r.stream == nil { len(r.body) } else if ln != nil { ln } else { -1 })
+    h = sysAppendDate(h)
+    return freeze(h)
+}
+
+// 任意ヘッダ f が書けるか（名前は tchar の 1 文字以上・値がfield-value〔valueOk〕・std/http/server が書く名前〔Dateを含む〕でも保存の方針と検証子の名前でも Set-Cookie でもない
+// — でなければpanic(BadHeader)。保存の方針は型のフィールドcacheだけで書く: 共有キャッシュへの宣言を文字列に書けるとanalyzerが方針を値として見られない。
+// Set-Cookieは型のフィールドcookiesだけで書く: 文字列で書けるとSecure / HttpOnly / SameSiteの既定を迂回できる）
+func checkField(f http.Field) {
+    if !fieldOk(f) {
+        panic(http.BadHeader{name: f.name})
+    }
+}
+
+// putHeadの一般のパスで、アプリの値のままでは書けない欄の名前（BadHeaderのname。書けるなら空）:
+// "status" = 200〜999の外（1xxは最終のレスポンスにならない。RFC 9110 15.2・2.2）か、204 / 205 / 304に本文（15.3.5・15.3.6・15.4.5）・
+// "Content-Encoding" = Codedのencodingがtokenでない（enc 3で書くとき）・
+// 任意ヘッダの名前 = checkFieldの外か、1行だけの欄（singleField）の同じ名前（大小を無視）の2本目。
+// 表に無い欄は2本目も書ける（RFC 9110 5.3が2行を禁じるのは、リストでない欄だけ）
+func badField(r Response, enc int) string {
+    code := int(r.status)
+    if code < 200 || code > 999 {
+        return "status"
+    }
+    if (code == 204 || code == 205 || code == 304) && (len(r.body) > 0 || r.stream != nil) {
+        return "status"
+    }
+    cd := r.coded
+    if enc == 3 && cd != nil && cd.encoding != "" && !tokenRun(bytes(cd.encoding), 0, len(bytes(cd.encoding))) {
+        return "Content-Encoding"
+    }
+    fs := r.headers
+    if fs != nil {
+        list := fs.list
+        mut i := 0
+        while i < len(list) {
+            if !fieldOk(list[i]) {
+                return list[i].name
+            }
+            nb := bytes(list[i].name)
+            mut j := if singleField(nb) { 0 } else { i }
+            while j < i {
+                if eqFold(nb, 0, len(nb), bytes(list[j].name)) {
+                    return list[i].name
+                }
+                j += 1
+            }
+            i += 1
+        }
+    }
+    return ""
+}
+
+// nameが、仕様が1行だけと定めた欄（ABNFがリストでない）の名前か（大小を無視）。ライブラリが書く欄（Date・Content-Type・Content-Length・ETag・
+// Last-Modifiedなど）はfieldOkが名前ごと拒否するので、ここには載せない。根拠の節は準拠の文書の表
+func singleField(name []byte) bool {
+    names := []string{"location", "content-location", "content-range", "retry-after", "server", "age", "expires", "content-disposition", "strict-transport-security", "x-frame-options"}
+    for n <- names {
+        if eqFold(name, 0, len(name), bytes(n)) {
+            return true
+        }
+    }
+    return false
+}
+
+// cがfield-valueに置ける字か（VCHAR・obs-text・SP・HTAB）
+func fieldByte(c byte) bool {
+    x := int(c)
+    return x >= 0x20 && x != 0x7f || x == 0x09
+}
+
+// bがfield-valueか（RFC 9110 5.5: field-vchar・SP・HTABの列で、前後に空白が無い。空はよい）
+func valueOk(b []byte) bool {
+    n := len(b)
+    if n > 0 && (b[0] == ' ' || b[0] == '\t' || b[n - 1] == ' ' || b[n - 1] == '\t') {
+        return false
+    }
+    for x <- b {
+        if !fieldByte(x) {
+            return false
+        }
+    }
+    return true
+}
+
+func fieldOk(f http.Field) bool {
+    nb := bytes(f.name)
+    vb := bytes(f.value)
+    mut bad := len(nb) == 0 || !tokenRun(nb, 0, len(nb)) || !valueOk(vb)
+    names := []string{"date", "content-type", "content-length", "content-encoding", "transfer-encoding", "connection", "vary", "cache-control", "cdn-cache-control", "surrogate-control", "etag", "last-modified", "set-cookie"}
+    for n <- names {
+        bad = bad || eqFold(nb, 0, len(nb), bytes(n))
+    }
+    return !bad
+}
+
+// c が書けるか（名前は token・値は cookie-octet の列・path と domain は CTL と `;` を含まない 1 文字以上・maxAge は 0 以上・
+// SameSiteNone と __Host- / __Secure- は Secure が要る・__Host- は Path=/ で Domain なし）
+func cookieOk(c SetCookie) bool {
+    nb := bytes(c.name)
+    if len(nb) == 0 || !tokenRun(nb, 0, len(nb)) {
+        return false
+    }
+    for x <- bytes(c.value) {
+        k := int(x)
+        if k < 0x21 || k > 0x7e || k == 0x22 || k == 0x2c || k == 0x3b || k == 0x5c {
+            return false
+        }
+    }
+    p := c.path
+    if p != nil && !attrOk(p) {
+        return false
+    }
+    d := c.domain
+    if d != nil && !attrOk(d) {
+        return false
+    }
+    m := c.maxAge
+    if m != nil && m < 0 {
+        return false
+    }
+    none := switch c.sameSite {
+    case nil: false
+    case SameSiteNone{}: true
+    case SameSiteLax{}: false
+    case SameSiteStrict{}: false
+    }
+    host := strings.HasPrefix(c.name, "__Host-")
+    if c.dangerouslyAllowHttp && (none || host || strings.HasPrefix(c.name, "__Secure-")) {
+        return false
+    }
+    if host && (d != nil || (p != nil && p != "/")) {
+        return false
+    }
+    return true
+}
+
+// 属性の値（Path・Domain）に置けるか（1 文字以上・CTL と `;` が無い）
+func attrOk(s string) bool {
+    b := bytes(s)
+    if len(b) == 0 {
+        return false
+    }
+    for x <- b {
+        if int(x) < 0x20 || int(x) == 0x7f || x == ';' {
+            return false
+        }
+    }
+    return true
+}
+
+// 方針cacheのレスポンスのcのSet-Cookieの行。Set-Cookieと共有キャッシュに保存されうる方針は組み合わせない
+// （analyzerが拒否する形。checkを通さないbuildを止める）。判定をputHeadの外に置くのは、cookiesを持たないレスポンスの経路と
+// putHeadのフレームに足さないため
+func cookieLineIn(c SetCookie, cache Cache?) string {
+    if storedPolicy(cache) {
+        panic(http.BadHeader{name: "Set-Cookie"})
+    }
+    return cookieLine(c)
+}
+
+// c の Set-Cookie の行（CRLF つき）。書けなければ panic(BadHeader{name: "Set-Cookie"})
+func cookieLine(c SetCookie) string {
+    if !cookieOk(c) {
+        panic(http.BadHeader{name: "Set-Cookie"})
+    }
+    p := c.path
+    pv := if p == nil { "/" } else { p }
+    mut s := "Set-Cookie: ${c.name}=${c.value}; Path=${pv}"
+    d := c.domain
+    if d != nil {
+        s = "${s}; Domain=${d}"
+    }
+    m := c.maxAge
+    if m != nil {
+        s = "${s}; Max-Age=${m}"
+    }
+    if !c.dangerouslyAllowHttp {
+        s = "${s}; Secure"
+    }
+    if !c.dangerouslyScriptReadable {
+        s = "${s}; HttpOnly"
+    }
+    ss := switch c.sameSite {
+    case nil: "Lax"
+    case SameSiteLax{}: "Lax"
+    case SameSiteStrict{}: "Strict"
+    case SameSiteNone{}: "None"
+    }
+    return "${s}; SameSite=${ss}\r\n"
+}
+
+// status の状態行（RFC 9110 15 節の理由句の綴り — 表は StatusCode の const の全部・知らない番号は理由句を空に）
+@exhaustive
+func statusLine(code http.StatusCode) string {
+    return switch code {
+    case http.OK: "HTTP/1.1 200 OK\r\n"
+    case http.Created: "HTTP/1.1 201 Created\r\n"
+    case http.NoContent: "HTTP/1.1 204 No Content\r\n"
+    case http.MovedPermanently: "HTTP/1.1 301 Moved Permanently\r\n"
+    case http.Found: "HTTP/1.1 302 Found\r\n"
+    case http.NotModified: "HTTP/1.1 304 Not Modified\r\n"
+    case http.BadRequest: "HTTP/1.1 400 Bad Request\r\n"
+    case http.Unauthorized: "HTTP/1.1 401 Unauthorized\r\n"
+    case http.Forbidden: "HTTP/1.1 403 Forbidden\r\n"
+    case http.NotFound: "HTTP/1.1 404 Not Found\r\n"
+    case http.MethodNotAllowed: "HTTP/1.1 405 Method Not Allowed\r\n"
+    case http.PreconditionFailed: "HTTP/1.1 412 Precondition Failed\r\n"
+    case http.ContentTooLarge: "HTTP/1.1 413 Content Too Large\r\n"
+    case http.RequestHeaderFieldsTooLarge: "HTTP/1.1 431 Request Header Fields Too Large\r\n"
+    case http.InternalServerError: "HTTP/1.1 500 Internal Server Error\r\n"
+    case http.NotImplemented: "HTTP/1.1 501 Not Implemented\r\n"
+    case http.ServiceUnavailable: "HTTP/1.1 503 Service Unavailable\r\n"
+    case http.HTTPVersionNotSupported: "HTTP/1.1 505 HTTP Version Not Supported\r\n"
+    default: "HTTP/1.1 ${int(code)} \r\n"
+    }
+}
+
+// b[s:e) の c の最初の位置（無ければ -1）
+func indexIn(b []byte, s int, e int, c byte) int {
+    mut i := s
+    while i < e {
+        if b[i] == c {
+            return i
+        }
+        i += 1
+    }
+    return -1
+}
+
+// b[s:e) が lit とバイト一致するか
+func isLit(b []byte, s int, e int, lit string) bool {
+    lb := bytes(lit)
+    if e - s != len(lb) {
+        return false
+    }
+    mut i := 0
+    while i < len(lb) {
+        if b[s + i] != lb[i] {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+// ASCII の大文字を小文字に
+func lower(c byte) byte {
+    return if c >= 'A' && c <= 'Z' { byte(int(c) + 32) } else { c }
+}
+
+// b[s:e) が name と ASCII の大文字小文字を無視して一致するか
+func eqFold(b []byte, s int, e int, name []byte) bool {
+    if e - s != len(name) {
+        return false
+    }
+    mut i := 0
+    while i < len(name) {
+        if lower(b[s + i]) != lower(name[i]) {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+// b[s:e) のカンマ区切りの項目に tok（大文字小文字を無視）があるか
+func hasToken(b []byte, s int, e int, tok []byte) bool {
+    mut i := s
+    while i < e {
+        j := {
+            k := indexIn(b, i, e, ',')
+            if k < 0 { e } else { k }
+        }
+        ts := skipOWS(b, i, j)
+        if eqFold(b, ts, trimOWS(b, ts, j), tok) {
+            return true
+        }
+        i = j + 1
+    }
+    return false
+}
+
+// b[s:e) がヘッダ名の字（tchar — 空白・制御文字・区切りを含まない）だけか
+func tokenRun(b []byte, s int, e int) bool {
+    mut i := s
+    while i < e {
+        if !tchar(b[i]) {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+// c がヘッダ名の字か（tokenRun の 1 字分 — RFC 9110 5.6.2 の tchar。字の集合を 128 ビットの表〔0〜63 = tcLo・64〜127 = tcHi〕で引く —
+// 比べのチェーンを並べる書き方は展開されず1字 ≈ 80命令と遅い）
+func tchar(c byte) bool {
+    x := int(c)
+    return if x < 64 { (tcLo >> x) & 1 != 0 } else if x < 128 { (tcHi >> (x - 64)) & 1 != 0 } else { false }
+}
+
+const tcLo = 288068722172624896
+const tcHi = 6341068274398134270
+
+// b[s:e) の先頭の空白（SP / HT）の後の位置
+func skipOWS(b []byte, s int, e int) int {
+    mut i := s
+    while i < e && (b[i] == ' ' || b[i] == '\t') {
+        i += 1
+    }
+    return i
+}
+
+// b[s:e) の末尾の空白を除いた終わり
+func trimOWS(b []byte, s int, e int) int {
+    mut i := e
+    while i > s && (b[i - 1] == ' ' || b[i - 1] == '\t') {
+        i -= 1
+    }
+    return i
+}
+
+// b[s:e) の 10 進の値（空・数字以外・15 桁を超える = -1）
+func digits(b []byte, s int, e int) int {
+    if e <= s || e - s > 15 {
+        return -1
+    }
+    mut v := 0
+    mut i := s
+    while i < e {
+        if b[i] < '0' || b[i] > '9' {
+            return -1
+        }
+        v = v * 10 + int(b[i]) - 48
+        i += 1
+    }
+    return v
+}
+
+// 16 進の字の値（でなければ -1）
+func hexVal(c byte) int {
+    return if c >= '0' && c <= '9' {
+        int(c) - 48
+    } else if c >= 'a' && c <= 'f' {
+        int(c) - 87
+    } else if c >= 'A' && c <= 'F' {
+        int(c) - 55
+    } else {
+        -1
+    }
+}

@@ -2,7 +2,8 @@ package main
 
 // ログインのセッション: パスワードのハッシュ（crypto/password）と世代つきのトークン（std/session）を __Host- の cookie に載せる。
 // ユーザーの行はハッシュの隣に世代を持ち、パスワードを変えると世代が進んで、それまでに発行したトークンは全部切れる（他の端末の古い cookie も）。
-// 状態（ユーザーの表）を持つので受けは直列（ServeConn に渡すラムダは借り — mut の表を通せる）。並行に受けるなら状態は外の保存先に置く。
+// ユーザーの表はdomain（task.NewDomain）に置く: ServeConnのrouteは並行に呼ばれうる（HTTP/2のストリームごとの子task）ので、可変の表を捕獲できない。
+// domainの本体は先に確保した列の要素だけを書く（名前とハッシュのバイト・長さ・世代 — 表を伸ばさない。行の数の上限はmaxUsers）。
 // 後半の客は 2 台の端末（laptop / phone）の代役で、cookie は値として各端末が持つ（レスポンスから http.client.CookieValue で取り出し、次のリクエストの cookies: に載せる）
 
 import "std/crypto/password"
@@ -18,6 +19,118 @@ import "std/url"
 type User struct {
     hash string
     gen int
+}
+
+// ユーザーの表（domainの状態）: i番目の行の名前は names[i * nameCap ..] の nlen[i] バイト、ハッシュは hashes[i * hashCap ..] の hlen[i] バイト
+const maxUsers = 16
+const nameCap = 64
+const hashCap = 160
+
+type Users struct {
+    n int
+    names mut []byte
+    nlen mut []int
+    hashes mut []byte
+    hlen mut []int
+    gens mut []int
+}
+
+// 表の写し（task.Readの本体が返す — 不変の欄だけ。探しはこの上で行う）
+type Snap struct {
+    n int
+    names []byte
+    nlen []int
+    hashes []byte
+    hlen []int
+    gens []int
+}
+
+
+// 表の行（見つからなければ found = false）
+type Row struct {
+    found bool
+    hash string
+    gen int
+}
+
+
+
+// 写しの中の名前nbの行
+func lookup(st Snap, nb []byte) Row {
+    mut at := -1
+    mut i := 0
+    while i < st.n {
+        if st.nlen[i] == len(nb) {
+            mut same := true
+            mut j := 0
+            while j < len(nb) {
+                if st.names[i * nameCap + j] != nb[j] {
+                    same = false
+                }
+                j += 1
+            }
+            if same {
+                at = i
+            }
+        }
+        i += 1
+    }
+    if at < 0 {
+        return Row{found: false, hash: "", gen: 0}
+    }
+    mut hb := mut []byte{}
+    mut j := 0
+    while j < st.hlen[at] {
+        hb = append(hb, st.hashes[at * hashCap + j])
+        j += 1
+    }
+    return Row{found: true, hash: string(freeze(hb)) catch "", gen: st.gens[at]}
+}
+
+// 行を書く（無ければ足す — task.Updateの本体から）。gen < 0 = 足すだけ（あれば1）。結果 = 0（書いた）・1（もうある）・2（表が満杯か長すぎる）
+func store(st mut Users, nb []byte, hb []byte, gen int) int {
+    mut at := -1
+    mut i := 0
+    while i < st.n {
+        if st.nlen[i] == len(nb) {
+            mut same := true
+            mut j := 0
+            while j < len(nb) {
+                if st.names[i * nameCap + j] != nb[j] {
+                    same = false
+                }
+                j += 1
+            }
+            if same {
+                at = i
+            }
+        }
+        i += 1
+    }
+    if at >= 0 && gen < 0 {
+        return 1
+    }
+    if len(nb) > nameCap || len(hb) > hashCap || (at < 0 && st.n >= maxUsers) {
+        return 2
+    }
+    row := if at >= 0 { at } else { st.n }
+    mut j := 0
+    while j < len(nb) {
+        st.names[row * nameCap + j] = nb[j]
+        j += 1
+    }
+    j = 0
+    while j < len(hb) {
+        st.hashes[row * hashCap + j] = hb[j]
+        j += 1
+    }
+    st.nlen[row] = len(nb)
+    st.hlen[row] = len(hb)
+    st.gens[row] = if gen < 0 { 0 } else { gen }
+    if at < 0 {
+        st.n += 1
+    }
+    return 0
 }
 
 const cookieName = "__Host-sid"
@@ -48,85 +161,33 @@ func unauthorized(why string) http.server.Response {
     return http.server.Response{status: 401, contentType: "text/plain", body: bytes(why)}
 }
 
-// cookie のトークンの持ち主（name が "" なら why が断る理由）
-func whoami(users mut map[string]User, k session.Key, r http.server.Request) (string, string) {
+// cookieのトークンを開いて、subject（根の行を引く名前）を返す（開けなければ空の名前と理由）
+func opened(k session.Key, r http.server.Request) (session.Unchecked?, string) {
     raw := http.server.Cookie(r, cookieName)
     if raw == nil {
-        return "", "not logged in"
+        return nil, "not logged in"
     }
     u, e := session.Open(k, raw, time.Now())
     if e != nil {
-        return "", switch e {
+        return nil, switch e {
             case session.Bad{}: "invalid session: log in"
             case session.Expired{}: "session expired: log in again"
         }
     }
-    user := users[session.Subject(u)]
-    if user == nil {
+    return u, ""
+}
+
+// 開いたトークンを根の行（今の世代）と照らして、認可に使える名前を返す（使えなければ空の名前と理由）
+func checked(u session.Unchecked, row Row) (string, string) {
+    if !row.found {
         return "", "unknown user: log in"
     }
-    c, es := session.Check(u, user.gen)
+    c, es := session.Check(u, row.gen)
     if es != nil {
         return "", "session revoked (the password was changed): log in again"
     }
     who, _ := session.Who(c)
     return who, ""
-}
-
-func signup(users mut map[string]User, r http.server.Request) http.server.Response {
-    name := field(r, "name")
-    pw := field(r, "password")
-    if name == nil || pw == nil || name == "" {
-        return http.server.Status(400)
-    }
-    if users[name] != nil {
-        return http.server.Status(409)
-    }
-    h := crypto.password.Argon2id(pw) catch return http.server.Status(500)
-    users[name] = User{hash: h, gen: 0}
-    return http.server.Response{status: 201, contentType: "text/plain", body: bytes("created ${name}")}
-}
-
-func logIn(users mut map[string]User, k session.Key, r http.server.Request) http.server.Response {
-    name := field(r, "name")
-    pw := field(r, "password")
-    if name == nil || pw == nil {
-        return http.server.Status(400)
-    }
-    user := users[name]
-    if user == nil {
-        return unauthorized("wrong name or password")
-    }
-    ok := crypto.password.Verify(user.hash, pw) catch false
-    if !ok {
-        return unauthorized("wrong name or password")
-    }
-    return issue(name, user, k, "welcome ${name}")
-}
-
-// 古いパスワードを検証して新しいハッシュに替え、世代を進める（他の端末のトークンは全部Staleになる）。この端末には新しい世代のトークンを渡し直す
-func changePassword(users mut map[string]User, k session.Key, r http.server.Request) http.server.Response {
-    name, why := whoami(mut users, k, r)
-    if name == "" {
-        return unauthorized(why)
-    }
-    old := field(r, "old")
-    pw := field(r, "new")
-    if old == nil || pw == nil {
-        return http.server.Status(400)
-    }
-    user := users[name]
-    if user == nil {
-        return unauthorized("unknown user: log in")
-    }
-    ok := crypto.password.Verify(user.hash, old) catch false
-    if !ok {
-        return http.server.Response{status: 403, contentType: "text/plain", body: bytes("wrong password")}
-    }
-    h := crypto.password.Argon2id(pw) catch return http.server.Status(500)
-    next := User{hash: h, gen: user.gen + 1}
-    users[name] = next
-    return issue(name, next, k, "password changed: other sessions are revoked")
 }
 
 // この端末の cookie を消す（トークンそのものは期限まで有効 — 全部の端末を切るのは世代を進める changePassword）
@@ -135,19 +196,97 @@ func logout() http.server.Response {
     return http.server.Response{status: 200, contentType: "text/plain", body: bytes("bye"), cookies: []http.server.SetCookie{c}}
 }
 
-func route(users mut map[string]User, k session.Key, r http.server.Request) http.server.Response {
+// 保存したハッシュとパスワードの照合（失敗は偽）
+func verifyPw(stored string, pw string) bool {
+    return crypto.password.Verify(stored, pw) catch false
+}
+
+// nbの行（task.Readで表の写しを取り、写しの上で探す）
+func rowOf(users task.Domain[Users], nb []byte) Row {
+    return lookup(task.Read(users, (st Users) => Snap{n: st.n, names: clone(st.names), nlen: clone(st.nlen), hashes: clone(st.hashes), hlen: clone(st.hlen), gens: clone(st.gens)}), nb)
+}
+
+// パスワードをハッシュにして、世代0の行を足す
+func signup(users task.Domain[Users], r http.server.Request) http.server.Response {
+    name := field(r, "name")
+    pw := field(r, "password")
+    if name == nil || pw == nil || name == "" {
+        return http.server.Status(400)
+    }
+    nb := bytes(name)
+    if rowOf(users, nb).found {
+        return http.server.Status(409)
+    }
+    h := crypto.password.Argon2id(pw) catch return http.server.Status(500)
+    hb := bytes(h)
+    // 確かめてから書くまでに同じ名前が足されていれば409（task.Updateの中で決める）
+    code := task.Update(users, (st mut Users) => store(mut st, nb, hb, -1))
+    if code != 0 {
+        return http.server.Status(if code == 1 { 409 } else { 507 })
+    }
+    return http.server.Response{status: 201, contentType: "text/plain", body: bytes("created ${name}")}
+}
+
+// パスワードを照合して、今の世代のトークンをcookieに載せる
+func logIn(users task.Domain[Users], k session.Key, r http.server.Request) http.server.Response {
+    name := field(r, "name")
+    pw := field(r, "password")
+    if name == nil || pw == nil {
+        return http.server.Status(400)
+    }
+    row := rowOf(users, bytes(name))
+    if !row.found || !verifyPw(row.hash, pw) {
+        return unauthorized("wrong name or password")
+    }
+    return issue(name, User{hash: row.hash, gen: row.gen}, k, "welcome ${name}")
+}
+
+// cookieのトークンの持ち主（nameが "" ならwhyが断る理由）
+func whoami(users task.Domain[Users], k session.Key, r http.server.Request) (string, string) {
+    u, why := opened(k, r)
+    if u == nil {
+        return "", why
+    }
+    return checked(u, rowOf(users, bytes(session.Subject(u))))
+}
+
+// 古いパスワードを検証して新しいハッシュに替え、世代を進める（他の端末のトークンは全部Staleになる）。この端末には新しい世代のトークンを渡し直す
+func changePassword(users task.Domain[Users], k session.Key, r http.server.Request) http.server.Response {
+    name, why := whoami(users, k, r)
+    if name == "" {
+        return unauthorized(why)
+    }
+    oldPw := field(r, "old")
+    newPw := field(r, "new")
+    if oldPw == nil || newPw == nil {
+        return http.server.Status(400)
+    }
+    row := rowOf(users, bytes(name))
+    if !verifyPw(row.hash, oldPw) {
+        return http.server.Response{status: 403, contentType: "text/plain", body: bytes("wrong password")}
+    }
+    h := crypto.password.Argon2id(newPw) catch return http.server.Status(500)
+    nb := bytes(name)
+    hb := bytes(h)
+    next := User{hash: h, gen: row.gen + 1}
+    g := next.gen
+    _ = task.Update(users, (st mut Users) => store(mut st, nb, hb, g))
+    return issue(name, next, k, "password changed: other sessions are revoked")
+}
+
+func route(users task.Domain[Users], k session.Key, r http.server.Request) http.server.Response {
     if r.method == "POST" && r.path == "/signup" {
-        return signup(mut users, r)
+        return signup(users, r)
     }
     if r.method == "POST" && r.path == "/login" {
-        return logIn(mut users, k, r)
+        return logIn(users, k, r)
     }
     if r.method == "GET" && r.path == "/me" {
-        name, why := whoami(mut users, k, r)
+        name, why := whoami(users, k, r)
         return if name == "" { unauthorized(why) } else { http.server.Text("hello ${name}") }
     }
     if r.method == "POST" && r.path == "/change-password" {
-        return changePassword(mut users, k, r)
+        return changePassword(users, k, r)
     }
     if r.method == "POST" && r.path == "/logout" {
         return logout()
@@ -155,19 +294,38 @@ func route(users mut map[string]User, k session.Key, r http.server.Request) http
     return http.server.Status(404)
 }
 
-// n 本の接続を順に受ける
+// n 本の接続を順に受ける（ユーザーの表のdomainはこのscopeの寿命）
 func serve(l net.Listener, n int) error? {
-    mut users := mut map[string]User{}
-    k := session.KeyNew()
+    _, e := task.Run((s) => {
+        mut u := Users{n: 0, names: mut []byte{}, nlen: mut []int{}, hashes: mut []byte{}, hlen: mut []int{}, gens: mut []int{}}
+        while len(u.names) < maxUsers * nameCap {
+            u.names = append(u.names, byte(0))
+        }
+        while len(u.hashes) < maxUsers * hashCap {
+            u.hashes = append(u.hashes, byte(0))
+        }
+        while len(u.gens) < maxUsers {
+            u.nlen = append(u.nlen, 0)
+            u.hlen = append(u.hlen, 0)
+            u.gens = append(u.gens, 0)
+        }
+        users := task.NewDomain(s, u)
+        k := session.KeyNew()
+        serveWith(l, n, (r) => route(users, k, r)) catch 1
+    })
+    return e
+}
+
+func serveWith(l net.Listener, n int, rt func(http.server.Request) http.server.Response) (int, error?) {
     mut i := 0
     for c <- net.Accept(l)? {
-        http.server.ServeConn(c, (r) => route(mut users, k, r))?
+        http.server.ServeConn(c, rt)?
         i = i + 1
         if i == n {
             break
         }
     }
-    return nil
+    return 0, nil
 }
 
 // --- ここから客（端末の代役） ---

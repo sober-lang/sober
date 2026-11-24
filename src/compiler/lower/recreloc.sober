@@ -143,6 +143,7 @@ func rcRecord(st mut St, info int) int {
     if st.ls.on {
         st.ls.rej = true
     }
+    lsPush(mut st, EV_REC, 0, 0, 0, 0)
     // 成分 = 型表の並びで info と互いに届く情報（決定的な順）
     t := rcTyOf(mut st, info)
     mut ms := mut []int{}

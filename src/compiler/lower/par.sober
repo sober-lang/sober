@@ -38,7 +38,9 @@ const SR_PNODE = 13  // 外の節（budget: の scope だけ）
 const SR_DMIN = 14
 const SR_DCAUSE = 15
 const SR_DLOCK = 16
-const SRSZ = 17
+// 本体が出口に着いた（1 — 子の死でscopeの下のioの待ちを切るのは、この後だけ: 本体が走っている間は、本体が子の死を値として扱える。orphan.sober）
+const SR_EXIT = 17
+const SRSZ = 18
 // handleの枠（scopeのregionのワード）: [状態（0 = 走っている・1 = 完了・2 = 死・3 = 切られた〔段階6 P4-5 — 死因のワード = 子の関数の番地 | 預かりのフィールドの位置 << 32〕）, 死因, scopeの記録, 結果…, 捕獲…]。子の実引数 = 枠 + FR_RES
 const FR_STATE = 0
 const FR_CAUSE = 1
@@ -388,6 +390,7 @@ func parScope(st mut St, fi int, pk int, args desugar.ListRef, at desugar.NodeRe
     store(mut st, rec, SR_DMIN, iconst(mut st, 4611686018427387904))
     store(mut st, rec, SR_DCAUSE, zero)
     store(mut st, rec, SR_DLOCK, zero)
+    store(mut st, rec, SR_EXIT, zero)
     store(mut st, rec, SR_CUT, zero)
     store(mut st, rec, SR_NKID, zero)
     // 今のtaskの開いているscopeのチェーンへ（段階6 P4-5 — 死ぬ / 切られるtaskはtask_startでこのチェーンの子を待ってから終わる）
@@ -490,7 +493,9 @@ func parScope(st mut St, fi int, pk int, args desugar.ListRef, at desugar.NodeRe
         _, jv := joinArms(mut st, ends, t)
         x = Val{t: t, v: jv}
     }
-    // 出口: 子が全部終わるまで待つ（P3b — 待っている子がいれば scope を開いた task は止まる）
+    // 出口: 子が全部終わるまで待つ（P3b — 待っている子がいれば scope を開いた task は止まる）。待つ前に出口に着いた印を立て、もう子が死んでいれば
+    // scopeの下のioの待ちを切る（子の側は死のフラグを立てた後に印を見る — どちらの順でも少なくとも一方が発火する）
+    exitMark(mut st, rec)
     waitLive(mut st, rec)
     store(mut st, itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR)), TC_SCOPE, load(mut st, rec, SR_UP))
     if budgeted {

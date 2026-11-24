@@ -1,0 +1,174 @@
+package loader
+
+// 型引数の字面を持たない print.Log(rec)・json.Encode(v)・json.EncodeWith(v, rename) の読み込み（language.md 42 節・16 節）。
+// loaderは型を推論しないので、1回目の読み込みは呼び出しを変換せずに「保留」としてProgramに載せる（Program.inf）。
+// 型を知る層（compiler/infload）が保留の実引数の表層型を読み、根の型の表をつけて同じ読み込みをやり直す（LoadReq — 表はManifest.inf）。
+// 2回目は字面の型引数と同じ合成（jsonFile / logFile）を通る。保留の無いプログラムは1回で終わる
+
+import "ast"
+import "diag"
+import "std/iter"
+
+// 保留の呼び出しのAPI
+const InfLog = 0
+const InfEncode = 1
+const InfEncodeWith = 2
+
+// 1回目の読み込みの推論の表（空 — 保留を集める）
+func InfOff() []string {
+    return []string{}
+}
+
+// 推論をしない読み込みの印（Load — 型を知る層を通らずに下の層へ渡す道具の入口）。保留の呼び出しは集めずに拒否する
+func infStrict() []string {
+    return []string{"-"}
+}
+
+// 推論の表infが推論をしない読み込みの印か
+func isStrict(inf []string) bool {
+    return len(inf) == 1 && inf[0] == "-"
+}
+
+// 保留の表pd（[ファイル, 節, API] の並び — synthAppendの前の添字）のファイルを、合成ファイルを足した後の添字に直す
+//（synthAppendはpackageの最後のファイルの後に、そのpackageの合成ファイルを足す — ss[j] != "" のファイルjごとに1つ）
+func synthShift(pd []int, ss []string, fpkg []string) []int {
+    if len(pd) == 0 {
+        return pd
+    }
+    mut at := mut []int{}
+    mut add := 0
+    mut lo := 0
+    for i <- iter.Range(0, len(ss)) {
+        at = append(at, i + add)
+        if i + 1 == len(ss) || fpkg[i + 1] != fpkg[i] {
+            for j <- iter.Range(lo, i + 1) {
+                if ss[j] != "" {
+                    add += 1
+                }
+            }
+            lo = i + 1
+        }
+    }
+    mut out := mut []int{}
+    for k <- iter.Range(0, len(pd) / 3) {
+        out = append(out, at[pd[k * 3]])
+        out = append(out, pd[k * 3 + 1])
+        out = append(out, pd[k * 3 + 2])
+    }
+    return freeze(out)
+}
+
+// 保留の呼び出しの数
+func InfPending(p Program) int {
+    return len(p.inf) / 3
+}
+
+// i番目の保留の呼び出しの（ファイル, 節, API）。ファイルはpの添字
+func InfAt(p Program, i int) (int, int, int) {
+    return p.inf[i * 3], p.inf[i * 3 + 1], p.inf[i * 3 + 2]
+}
+
+// 読み込みの要求（推論の表をつけて同じ読み込みをやり直すため — compiler/infload）
+const ReqFs = 0        // LoadFs（test = LoadTestFs）。LoadFsCのparseのキャッシュはやり直しでは使わない
+const ReqView = 1      // LoadView
+const ReqViewMem = 2   // LoadViewMemRaw
+const ReqFsCover = 3   // LoadFsCover
+const ReqTestCover = 4 // LoadTestFsCover
+const ReqFsMutate = 5  // LoadFsMutate
+const ReqTestMutate = 6 // LoadTestFsMutate
+
+type Req struct {
+    kind int
+    entry string
+    test bool
+    target string
+    dir string
+    paths []string
+    sobis []Sobi
+    pats []string
+    one int
+}
+
+func ReqOf(kind int, entry string, test bool) Req {
+    return Req{kind: kind, entry: entry, test: test, target: "", dir: "", paths: []string{}, sobis: []Sobi{}, pats: []string{}, one: 0}
+}
+
+func ReqViewOf(entry string, target string, dir string) Req {
+    return Req{kind: ReqView, entry: entry, test: false, target: target, dir: dir, paths: []string{}, sobis: []Sobi{}, pats: []string{}, one: 0}
+}
+
+func ReqViewMemOf(entry string, target string, paths []string, sobis []Sobi) Req {
+    return Req{kind: ReqViewMem, entry: entry, test: false, target: target, dir: "", paths: paths, sobis: sobis, pats: []string{}, one: 0}
+}
+
+func ReqTestOf(kind int, pkg string, pats []string, one int) Req {
+    return Req{kind: kind, entry: pkg, test: true, target: "", dir: "", paths: []string{}, sobis: []Sobi{}, pats: pats, one: one}
+}
+
+// 要求rの読み込みを推論の表infつきでやり直す（2つ目の戻り = 生の木 — ReqViewMemだけ・他は空）
+// 要求rの読み込みを推論の表infつきでやり直す（2つ目の戻り = 生の木 — ReqViewMemだけ・他は空）。parseのキャッシュは使わない
+@errors(diag.ReadFail, diag.NoPkgDir, diag.ImportPath, diag.NoStd, diag.LeadingZero, diag.LitRange, diag.TestSignature, diag.Double, diag.GrammarMismatch, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.EmbedTooLarge, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.TopDup, diag.VariantDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.MultiBind, diag.MutAlias, diag.CatchLhs, diag.Sealed, diag.Identity, diag.FnArg, diag.FnOpt, diag.FnCap, diag.ForFallible, diag.AssertOutsideTest, diag.TypeDecl, diag.Layout, diag.JsonShape, diag.Intrinsic, diag.Par, diag.PanicLabel, diag.Logs, diag.Cell, diag.Mod)
+func LoadReq(r Req, sm map[string]string, inf []string) (Program, []ast.Tree, error?) {
+    mut paths := r.paths
+    if r.kind == ReqView {
+        lb, lok := readPath(r.dir + "/link.txt")
+        ps, pok := linesOf(lb)
+        if !lok || !pok {
+            return Program{}, []ast.Tree{}, diag.ReadFail{at: diag.None()}
+        }
+        paths = ps
+    }
+    if r.kind == ReqView || r.kind == ReqViewMem {
+        return loadViewRaw(r.entry, r.target, paths, r.dir, r.sobis, sm, inf)
+    }
+    p, err := loadAgain(r, sm, inf)
+    return p, []ast.Tree{}, err
+}
+
+// 要求r（視点でないもの）の読み込みを推論の表infつきでやり直す
+@errors(diag.ReadFail, diag.NoPkgDir, diag.ImportPath, diag.NoStd, diag.LeadingZero, diag.LitRange, diag.TestSignature, diag.Double, diag.GrammarMismatch, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.EmbedTooLarge, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.TopDup, diag.VariantDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.MultiBind, diag.MutAlias, diag.CatchLhs, diag.Sealed, diag.Identity, diag.FnArg, diag.FnOpt, diag.FnCap, diag.ForFallible, diag.AssertOutsideTest, diag.TypeDecl, diag.Layout, diag.JsonShape, diag.Intrinsic, diag.Par, diag.PanicLabel, diag.Logs, diag.Cell, diag.Mod)
+func loadAgain(r Req, sm map[string]string, inf []string) (Program, error?) {
+    if r.test || r.kind == ReqTestCover || r.kind == ReqTestMutate {
+        mu := if r.kind != ReqTestMutate { 0 } else if r.one >= 0 { r.one + 2 } else { 1 }
+        return loadTest(r.entry, sm, r.kind == ReqTestCover, if r.kind == ReqTestMutate { []string{r.entry} } else { r.pats }, mu, inf)
+    }
+    if r.kind == ReqFs && doubleDir(Manifest{}, true, sm, r.entry) {
+        return loadDouble(r.entry, sm, inf)
+    }
+    mut sink := PcSink{}
+    return load(Manifest{r.entry, "", []string{}, "", "", r.kind != ReqFs, []string{}, if r.kind == ReqFsMutate { 1 } else { 0 }, []string{}, []string{}, NoMod(), inf}, true, sm, PcOff(), mut sink)
+}
+
+// 推論の対象のAPIの名前か（Decodeは型引数が結果にしか現れないので対象でない）
+func infJsonOp(op string) bool {
+    return op == "Encode" || op == "EncodeWith"
+}
+
+// 根の型の表から、ファイルのパスpath・節nの呼び出しの根の型（package のパス, 名前 — 無ければ ok = 偽）
+func infRoot(inf []string, path string, n int) (string, string, bool) {
+    ns := "${n}"
+    for i <- iter.Range(0, len(inf) / 4) {
+        if inf[i * 4 + 1] == ns && inf[i * 4] == path {
+            return inf[i * 4 + 2], inf[i * 4 + 3], true
+        }
+    }
+    return "", "", false
+}
+
+// package pkg の型 name の根の要求（json.Value か型パラメータなしのstruct — どちらでもなければ kind 0）
+func rootOf(ts []ast.Tree, fpkg []string, pkg string, name string) JReq {
+    if isJsonValue(pkg, name) {
+        return valueReq()
+    }
+    df, dn := findStruct(ts, fpkg, pkg, name)
+    if df < 0 {
+        return JReq{}
+    }
+    return JReq{kind: jStruct, canon: "${pkg}.${name}", pkg: pkg, name: name, file: df, node: dn, elem: -1}
+}
+
+// ファイルf・節nの呼び出しの呼ばれる側の字句（診断の位置）
+func CallTok(p Program, f int, n int) int {
+    t := p.trees[f]
+    return t.nodes[t.nodes[n].a].tok
+}

@@ -65,13 +65,18 @@ func fieldTy(st mut S, dr int, i int, at NodeRef) (TyRef, error?) {
 
 // struct の値 v（純粋な式 — 変数か射影）から、葉ごとに alloc した ref の木を組む
 func cellsOf(st mut S, v0 CoreRef, dr int) CoreRef {
+    return cellsOfAt(mut st, v0, dr, -1)
+}
+
+// cellsOf のセルを region r に作る版（r = -1 は最内 — allocAt。外の mut と一緒に anchor つきの呼び出しへ渡す束縛）
+func cellsOfAt(st mut S, v0 CoreRef, dr int, r int) CoreRef {
     // 再帰の組のstructの値は1段開いてから割る（v0は純粋な式なのでフィールドごとに開き直してよい）
     v := if isRecDr(mut st, dr) { cUnfold(mut st, v0) } else { v0 }
     n := lenL(mut st, structFields(mut st, dr))
     comps := ListRef(listN(mut st, n))
     for i <- iter.Range(0, n) {
         p := treeProj(mut st, v, i, n)
-        hsetCore(mut st, int(comps) + 1 + i, if fieldSplits(mut st, dr, i) { cellsOf(mut st, p, fieldDecl(mut st, dr, i)) } else { cAlloc(mut st, 1, p) })
+        hsetCore(mut st, int(comps) + 1 + i, if fieldSplits(mut st, dr, i) { cellsOfAt(mut st, p, fieldDecl(mut st, dr, i), r) } else if r >= 0 { cAllocAt(mut st, 1, r, p) } else { cAlloc(mut st, 1, p) })
     }
     return treePair(mut st, comps)
 }

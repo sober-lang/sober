@@ -67,15 +67,19 @@ ireq() {
 mapfile -t subjs < <(awk '$1 ~ /^ring\// && $2 == "ireq" { sub(/^ring\//, "", $1); print $1 }' bench/ratchet.txt)
 [ "${#subjs[@]}" -gt 0 ] || { echo "ringinst: FAIL — bench/ratchet.txt に ring/<題材> ireq の行が無い"; exit 1; }
 fail=0
+lfail=0   # 線との比較の赤（ratchet_cmp — 線の値の変更は記録の実測で再判定される）。fail = 線のほかの検査（変異61を含む）
 n=0
 for subj in "${subjs[@]}"; do
     v=$(ireq "$W/srv" "$subj"); ec=$?
     if [ $ec = 2 ]; then cant ringinst io_uring "the ring path instruction counts" && exit 0; exit 1; fi
     [ $ec = 0 ] || { echo "FAIL ring/$subj: 計測できない"; fail=$((fail + 1)); continue; }
-    lim=$(awk -v k="ring/$subj" '$1 == k && $2 == "ireq" { print $3; exit }' bench/ratchet.txt)
     n=$((n + 1))
-    if awk -v v="$v" -v l="$lim" 'BEGIN { exit !(v > l) }'; then
-        echo "FAIL ring/$subj ireq = $v > $lim（bench/ratchet.txt — ring の道の要求 1 件の固定費の増え。正当なら実測 + 2 で引き直して事後追認）"; fail=$((fail + 1))
+    ratchet_cmp bench/ratchet.txt "ring/$subj" ireq "$v"; rc=$?
+    lim=$RATCHET_LIM
+    if [ $rc = 2 ]; then
+        echo "FAIL ring/$subj ireq = $v — bench/ratchet.txt に行が無い"; lfail=$((lfail + 1))
+    elif [ $rc = 1 ]; then
+        echo "FAIL ring/$subj ireq = $v > $lim（bench/ratchet.txt — ring の道の要求 1 件の固定費の増え。正当なら実測 + 2 で引き直して事後追認）"; lfail=$((lfail + 1))
     elif awk -v v="$v" -v l="$lim" 'BEGIN { exit !(v * 1.005 < l) }'; then
         echo "note ring/$subj ireq = $v — 上限 $lim より下がった（bench/ratchet.txt を締め直す）"
     else
@@ -115,5 +119,6 @@ elif [ "$yes" -gt "$no" ]; then
 else
     echo "FAIL mutant 61 ring/$subj: caught in only $yes of $k pairs (Δ ≥ $MUT_MIN; pairs:$pairs) — not caught"; fail=$((fail + 1))
 fi
-echo "ringinst: $n lines (ring/* ireq in bench/ratchet.txt), fail=$fail"
-[ $fail = 0 ]
+echo "ringinst: $n lines (ring/* ireq in bench/ratchet.txt), fail=$fail, ratchet fail=$lfail"
+[ $fail = 0 ] && meas_body_ok
+[ $fail = 0 ] && [ $lfail = 0 ]

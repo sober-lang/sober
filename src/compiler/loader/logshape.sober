@@ -1,0 +1,311 @@
+package loader
+
+// print.Log[T] の合成（language.md 42 節）。json.Encode[T] と同じ固定テンプレートの方式（jsonshape.sober）で、呼び出しを型ごとの書き手へ変換する:
+//
+//     print.Log[AccessRecord](r)          // → $logTop_<f>_<k>(r)
+//
+// 書き手はstd/internal/logwの部品（Begin・Word・Int・Str・Float・End）を呼び、ワーカーのログのバッファへ直に書く（文字列を作らない・panicしない）。
+// 行の頭 `{"ts":"…",` はrtがBeginで書き、合成の書き手は `"<型の名前>":{…}}` と改行を書く。
+// 型の範囲はjson.Encodeと同じ（json.Valueを除く）で、根はstructに限る。合成ファイルは `$log/<f のパス>`（同じpackage）。
+// 型引数の字面の無い `print.Log(r)` は、型を知る層が推論した根の型で読み込みをやり直して変換する（infer.sober）。
+// 以降の層（脱糖器・検査器・lower）は変換した後の木だけを読む。コア / Leanは無変更
+
+import "std/builder"
+import "std/iter"
+import "ast"
+import "diag"
+
+// 合成ファイルのパスの接頭辞
+func LogPrefix() string {
+    return "$log/"
+}
+
+// 全ファイルの `print.Log[T](…)` を変換し、合成ファイルをpackageの末尾に足す
+@errors(diag.JsonShape, diag.GrammarMismatch)
+func logAll(ts []ast.Tree, fpkg []string, fpath []string, fstd []bool, inf []string, prev []int) (LOut, error?) {
+    mut outT := mut []ast.Tree{}
+    mut srcs := mut []string{}
+    mut pd := mut []int{}
+    for x <- prev {
+        pd = append(pd, x)
+    }
+    for i <- iter.Range(0, len(ts)) {
+        t2, src, pend, err := logFile(ts, fpkg, fpath, i, inf)
+        if err != nil {
+            return LOut{}, err
+        }
+        outT = append(outT, t2)
+        srcs = append(srcs, src)
+        for k <- iter.Range(0, len(pend)) {
+            pd = append(pd, i)
+            pd = append(pd, pend[k])
+            pd = append(pd, InfLog)
+        }
+    }
+    ss := freeze(srcs)
+    out := synthAppend(freeze(outT), ss, fpkg, fpath, fstd, LogPrefix())?
+    return LOut{trees: out.trees, pkg: out.pkg, path: out.path, std: out.std, pend: synthShift(freeze(pd), ss, fpkg)}, nil
+}
+
+// 節xが `print.Log`（std/printの参照名）か
+func isLogCall(t ast.Tree, x ast.Node) bool {
+    return x.kind == ast.ESelector && t.nodes[x.a].kind == ast.EIdent && importPath(t, Name(t, t.nodes[x.a].a)) == "std/print" && Name(t, x.b) == "Log"
+}
+
+// ファイルfの `print.Log[T](…)` を書き手の呼び出しへ（結果は（変換した木, 合成ソース — 要らなければ "", 保留の呼び出しの節））。
+// 型引数の字面の無い `print.Log(rec)` は、1回目（inf.on = 偽）は変換せずに保留に積み、2回目は推論した根の型（inf）で変換する
+@errors(diag.JsonShape)
+func logFile(ts []ast.Tree, fpkg []string, fpath []string, f int, inf []string) (ast.Tree, string, []int, error?) {
+    t := ts[f]
+    n0 := len(t.nodes)
+    if !importsPath(t, "std/print") {
+        return t, "", []int{}, nil
+    }
+    mut calls := mut []int{}
+    mut rr := mut []JReq{}
+    mut pend := mut []int{}
+    mut done := mut []bool{}
+    for i <- iter.Range(0, n0) {
+        done = append(done, false)
+    }
+    for i <- iter.Range(0, n0) {
+        x := t.nodes[i]
+        if x.kind == ast.ECall && t.nodes[x.a].kind == ast.EIndex && isLogCall(t, t.nodes[t.nodes[x.a].a]) {
+            // 根の型は型引数の字面から読む
+            idx := t.nodes[x.a]
+            r := jsonRoot(ts, fpkg, f, idx.b)
+            if r.kind != jStruct {
+                return t, "", []int{}, diag.JsonShape{at: diag.Pos{file: f, tok: t.nodes[idx.b].tok}, kind: 5}
+            }
+            calls = append(calls, i)
+            rr = append(rr, r)
+            done[t.nodes[x.a].a] = true
+        } else if x.kind == ast.ECall && isLogCall(t, t.nodes[x.a]) {
+            done[x.a] = true
+            if isStrict(inf) {
+                return t, "", []int{}, diag.JsonShape{at: diag.Pos{file: f, tok: t.nodes[x.a].tok}, kind: 11}
+            }
+            if len(inf) == 0 {
+                pend = append(pend, i)
+            } else {
+                pk, nm, ok := infRoot(inf, fpath[f], i)
+                r := if ok { rootOf(ts, fpkg, pk, nm) } else { JReq{} }
+                if r.kind != jStruct {
+                    return t, "", []int{}, diag.JsonShape{at: diag.Pos{file: f, tok: t.nodes[x.a].tok}, kind: 5}
+                }
+                calls = append(calls, i)
+                rr = append(rr, r)
+            }
+        }
+    }
+    for i <- iter.Range(0, n0) {
+        if isLogCall(t, t.nodes[i]) && !done[i] {
+            return t, "", []int{}, diag.JsonShape{at: diag.Pos{file: f, tok: t.nodes[i].tok}, kind: 7}
+        }
+    }
+    cs := freeze(calls)
+    if len(cs) == 0 {
+        return t, "", freeze(pend), nil
+    }
+    tr, src, err := logSynth(ts, fpkg, f, cs, freeze(rr))
+    return tr, src, freeze(pend), err
+}
+
+// ファイルfの呼び出しcs（ECallの節）を、根の型rr（呼び出しごとのstructの要求）の書き手の呼び出しへ変換し、書き手の合成ソースを作る。
+// 根の型の出所（型引数の字面か、推論した型か）に依らない
+@errors(diag.JsonShape)
+func logSynth(ts []ast.Tree, fpkg []string, f int, cs []int, rr []JReq) (ast.Tree, string, error?) {
+    t := ts[f]
+    n0 := len(t.nodes)
+    // 要求の表（根 = 各呼び出しのT・続いてフィールドから届く型 — 待ち行列で）
+    mut reqs := mut []JReq{}
+    mut roots := mut []int{}
+    for c <- iter.Range(0, len(cs)) {
+        r := rr[c]
+        k := reqIndex(freeze(reqs), r.canon)
+        if k < 0 {
+            reqs = append(reqs, r)
+            roots = append(roots, len(reqs) - 1)
+        } else {
+            roots = append(roots, k)
+        }
+    }
+    mut q := 0
+    while q < len(reqs) {
+        r := reqs[q]
+        if r.kind == jStruct {
+            st := ts[r.file]
+            body := st.nodes[st.nodes[r.node].c]
+            for k <- iter.Range(0, ast.ListLen(st, body.a)) {
+                fd := st.nodes[ast.ListAt(st, body.a, k)]
+                e, bad := jsonType(ts, fpkg, r.file, fd.b)
+                if bad >= 0 || e.kind == jValue {
+                    return t, "", diag.JsonShape{at: diag.Pos{file: r.file, tok: if bad >= 0 { bad } else { st.nodes[fd.b].tok }}, kind: 6}
+                }
+                if e.kind >= jStruct && reqIndex(freeze(reqs), e.canon) < 0 {
+                    reqs = append(reqs, e)
+                }
+            }
+        } else if r.kind == jSlice || r.kind == jOpt {
+            e, bad := jsonType(ts, fpkg, r.file, r.node)
+            if bad >= 0 || e.kind == jValue {
+                return t, "", diag.JsonShape{at: diag.Pos{file: r.file, tok: if bad >= 0 { bad } else { st0Tok(ts, r) }}, kind: 6}
+            }
+            if e.kind >= jStruct && reqIndex(freeze(reqs), e.canon) < 0 {
+                reqs = append(reqs, e)
+            }
+        }
+        q += 1
+    }
+    rs := freeze(reqs)
+    rts := freeze(roots)
+    mut ns := mut []ast.Node{}
+    for i <- iter.Range(0, n0) {
+        ns = append(ns, t.nodes[i])
+    }
+    mut db := builder.Builder[int]{}
+    for j <- iter.Range(0, len(t.data)) {
+        builder.Push(mut db, t.data[j])
+    }
+    for c <- iter.Range(0, len(cs)) {
+        x := t.nodes[cs[c]]
+        ns[x.a] = ast.Node{ast.EIdent, t.nodes[x.a].tok, ast.PutLit(mut db, "$logTop_${relFile(fpkg, f)}_${rts[c]}"), 0, 0, 0, 0, 0}
+    }
+    src := logSource(ts, fpkg, f, rs, rts)
+    return ast.Tree{nodes: freeze(ns), data: builder.Build(mut db), file: t.file}, src, nil
+}
+
+// 要求r（[]U / U?）の中身の型の式の字句
+func st0Tok(ts []ast.Tree, r JReq) int {
+    return ts[r.file].nodes[r.node].tok
+}
+
+// ファイルfの書き手の合成ソース（rts = 根の要求 — $logTopを作る）
+func logSource(ts []ast.Tree, fpkg []string, f int, rs []JReq, rts []int) string {
+    t := ts[f]
+    pkg := fpkg[f]
+    rf := relFile(fpkg, f)
+    mut s := "package ${Name(t, t.nodes[t.file].a)}\n\nimport $lw \"std/internal/logw\"\n"
+    mut paths := mut []string{}
+    for k <- iter.Range(0, len(rs)) {
+        p := rs[k].pkg
+        if rs[k].kind == jStruct && p != pkg && pathIndex(freeze(paths), p) < 0 {
+            s = s + "import $jt${len(paths)} \"${p}\"\n"
+            paths = append(paths, p)
+        }
+    }
+    ps := freeze(paths)
+    for k <- iter.Range(0, len(rs)) {
+        r := rs[k]
+        sp := spell(ts, fpkg, rs, ps, pkg, k)
+        s = s + "\nfunc $logW_${rf}_${k}($v ${sp}) {\n"
+        if r.kind == jStruct {
+            st := ts[r.file]
+            body := st.nodes[st.nodes[r.node].c]
+            n := ast.ListLen(st, body.a)
+            // 定数の綴りは隣どうしをまとめて1回で書く（文字列のフィールドの引用符も前後の綴りに含める）
+            mut pend := "{"
+            for j <- iter.Range(0, n) {
+                fd := st.nodes[ast.ListAt(st, body.a, j)]
+                nm := Name(st, fd.a)
+                e, _ := jsonType(ts, fpkg, r.file, fd.b)
+                pend = pend + (if j == 0 { "" } else { "," }) + "\"${nm}\":"
+                if e.kind == jString {
+                    s = s + logLit(pend + "\"", "    ") + "    $lw.StrBody($v.${nm})\n"
+                    pend = "\""
+                } else {
+                    s = s + logLit(pend, "    ") + logEnc(rs, rf, e, "$v.${nm}", "    ")
+                    pend = ""
+                }
+            }
+            s = s + logLit(pend + "}", "    ") + "}\n"
+        } else if r.kind == jSlice {
+            e, _ := jsonType(ts, fpkg, r.file, r.node)
+            s = s + logLit("[", "    ") + "    mut $i := 0\n    while $i < len($v) {\n        if $i > 0 {\n" + logLit(",", "            ") + "        }\n"
+            s = s + logEnc(rs, rf, e, "$v[$i]", "        ") + "        $i += 1\n    }\n" + logLit("]", "    ") + "}\n"
+        } else if r.kind == jOpt {
+            e, _ := jsonType(ts, fpkg, r.file, r.node)
+            s = s + "    if $v != nil {\n" + logEnc(rs, rf, e, "$v", "        ") + "    } else {\n" + logLit("null", "        ") + "    }\n}\n"
+        }
+    }
+    for k <- iter.Range(0, len(rs)) {
+        if intIndex(rts, k) >= 0 {
+            sp := spell(ts, fpkg, rs, ps, pkg, k)
+            s = s + "\nfunc $logTop_${rf}_${k}($v ${sp}) {\n    $lw.Begin()\n" + logLit("\"${rs[k].name}\":", "    ") + "    $logW_${rf}_${k}($v)\n" + logLit("}\n", "    ") + "    $lw.End()\n}\n"
+        }
+    }
+    return s
+}
+
+// xs の中の v の添字（無ければ -1）
+func intIndex(xs []int, v int) int {
+    for i <- iter.Range(0, len(xs)) {
+        if xs[i] == v {
+            return i
+        }
+    }
+    return -1
+}
+
+// 値x（綴り）を要求eで書く文（ind = 字下げ）
+func logEnc(rs []JReq, f int, e JReq, x string, ind string) string {
+    return switch e.kind {
+    case jInt: "${ind}$lw.Int(${x})\n"
+    case jFloat: "${ind}$lw.Float(${x})\n"
+    case jBool: "${ind}if ${x} {\n${ind}    $lw.Word(${wordOf("true")}, 4)\n${ind}} else {\n${ind}    $lw.Word(${wordOf("false")}, 5)\n${ind}}\n"
+    case jString: "${ind}$lw.Str(${x})\n"
+    default: "${ind}$logW_${f}_${reqIndex(rs, e.canon)}(${x})\n"
+    }
+}
+
+// 定数の綴り s（ASCII — 型とフィールドの名前は識別子）を8バイトずつのWordの文にする（ind = 字下げ）
+func logLit(s string, ind string) string {
+    b := bytes(s)
+    // 長い綴りだけLit（log_bytesの1回）。短い綴りは8バイトずつのWordの方が安い
+    if len(b) > 32 {
+        return "${ind}$lw.Lit(\"${logEsc(s)}\")\n"
+    }
+    mut out := ""
+    mut i := 0
+    while i < len(b) {
+        n := if len(b) - i < 8 { len(b) - i } else { 8 }
+        mut w := 0
+        mut j := n - 1
+        while j >= 0 {
+            w = (w << 8) | int(b[i + j])
+            j -= 1
+        }
+        out = out + "${ind}$lw.Word(${w}, ${n})\n"
+        i += n
+    }
+    return out
+}
+
+// 8バイト以下の綴り s のlittle-endianのワード
+func wordOf(s string) int {
+    b := bytes(s)
+    mut w := 0
+    mut j := len(b) - 1
+    while j >= 0 {
+        w = (w << 8) | int(b[j])
+        j -= 1
+    }
+    return w
+}
+
+// 合成ソースの文字列の字面の中身（'"' と '\\' と改行をエスケープ — 綴りは識別子と区切りだけで、'$' は現れない）
+func logEsc(s string) string {
+    mut out := mut []byte{}
+    for c <- bytes(s) {
+        if c == '"' || c == '\\' {
+            out = append(out, '\\')
+            out = append(out, c)
+        } else if c == '\n' {
+            out = append(out, '\\')
+            out = append(out, 'n')
+        } else {
+            out = append(out, c)
+        }
+    }
+    return string(freeze(out)) catch s
+}

@@ -15,8 +15,10 @@ const echoBig = process.argv.includes("--echo-big");
 // --tls: 生の送受を TLS の上で（相手 = srv の SRV_TLS_PORT — tls.Serve + ServeWith の put:）。fetch / curl / EventSource の受け手を使う群は飛ばす
 const useTls = process.argv.includes("--tls");
 const CONNECT = useTls ? "secureConnect" : "connect";
+// --host: 繋ぐ先の番地（既定 127.0.0.1。IPv6 の ::1 で、srv の SRV_LISTEN=dual〔":port" の dual-stack〕を見る）
+const host = process.argv.includes("--host") ? process.argv[process.argv.indexOf("--host") + 1] : "127.0.0.1";
 function dial(): net.Socket {
-    return useTls ? tls.connect({ port, host: "127.0.0.1", rejectUnauthorized: false }) : net.createConnection({ port, host: "127.0.0.1" });
+    return useTls ? tls.connect({ port, host, rejectUnauthorized: false }) : net.createConnection({ port, host });
 }
 const staticDir = process.argv.includes("--static") ? process.argv[process.argv.indexOf("--static") + 1] : "";
 const fragRandom = Number(process.argv[process.argv.indexOf("--frag-random") + 1] ?? 100) || 100;
@@ -1473,6 +1475,16 @@ async function originEp() {
 }
 
 // --delayed-only: Delayedの検査だけ（httpcheck.shのミューテーションの自己検査 — 時刻つきの送信バッファリングのrtのミュータント84 / 87 / 88でビルドしたsrvに掛ける）
+// --quick: 代表の群だけ（baseline・パイプライン・誤り・json）— IPv6 の接続先や dual-stack の listener で同じ応答が返ることの確認
+if (process.argv.includes("--quick")) {
+    await baseline();
+    await pipeline();
+    await errors();
+    await jsonEp();
+    console.log(`check: ${pass} passed, ${fail} failed (quick, host ${host})`);
+    for (const f of fails.slice(0, 30)) console.log("  FAIL " + f);
+    process.exit(fail ? 1 : 0);
+}
 if (process.argv.includes("--delayed-only")) {
     await delayed();
     console.log(`check: ${pass} passed, ${fail} failed (delayed only)`);

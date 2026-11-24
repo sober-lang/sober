@@ -49,6 +49,8 @@ type LOut struct {
     pkg []string
     path []string
     std []bool
+    // 保留の呼び出し（infer.sober — [ファイル（treesの添字）, 節, API] の並び。1回目の読み込みだけ）
+    pend []int
 }
 
 // 合成ファイルのパスの接頭辞（実在しないパスの予約 — `$` は識別子にもパスにも書けない）
@@ -114,7 +116,7 @@ func layoutAll(ts []ast.Tree, fpkg []string, fpath []string, fstd []bool) (LOut,
     mut outT := mut []ast.Tree{}
     mut srcs := mut []string{}
     for i <- iter.Range(0, len(ts)) {
-        t2, src, err := layoutFile(ts[i], i, fpkg[i], ds)
+        t2, src, err := layoutFile(ts[i], i, relFile(fpkg, i), fpkg[i], ds)
         if err != nil {
             return LOut{}, err
         }
@@ -290,7 +292,7 @@ func resolveName(t ast.Tree, pkg string, ds []LDecl, nm string) int {
 // ファイルt（f番目・package pkg）を変換する: @layoutのフィールドの型・`layout.X[T]` の差し替え・幅の語の拒否・定数の範囲。
 // 結果は（変換した木, 合成ソース — 変換の関数が要らなければ ""）
 @errors(diag.Layout)
-func layoutFile(t ast.Tree, f int, pkg string, ds []LDecl) (ast.Tree, string, error?) {
+func layoutFile(t ast.Tree, f int, rf int, pkg string, ds []LDecl) (ast.Tree, string, error?) {
     n0 := len(t.nodes)
     // std/layout を import するか（しなければ isLayoutRef は常に偽 — 節ごとに名前の string と import の引きを作らない）
     lay := importsPath(t, "std/layout")
@@ -376,7 +378,7 @@ func layoutFile(t ast.Tree, f int, pkg string, ds []LDecl) (ast.Tree, string, er
                     used = append(used, d)
                     k = len(used) - 1
                 }
-                ns[x.a] = ast.Node{ast.EIdent, c.tok, ast.PutLit(mut db, "$layout${op}_${f}_${k}"), 0, 0, 0, 0, 0}
+                ns[x.a] = ast.Node{ast.EIdent, c.tok, ast.PutLit(mut db, "$layout${op}_${rf}_${k}"), 0, 0, 0, 0, 0}
                 done[x.a] = true
                 done[c.a] = true
                 changed = true
@@ -420,7 +422,7 @@ func layoutFile(t ast.Tree, f int, pkg string, ds []LDecl) (ast.Tree, string, er
         return t, "", nil
     }
     us := freeze(used)
-    src := if len(us) == 0 { "" } else { synthSource(t, f, pkg, ds, us) }
+    src := if len(us) == 0 { "" } else { synthSource(t, rf, pkg, ds, us) }
     return ast.Tree{nodes: freeze(ns), data: builder.Build(mut db), file: t.file}, src, nil
 }
 
@@ -489,8 +491,8 @@ func hiOf(fd LField) int {
     return if fd.signed { (1 << (fd.n * 8 - 1)) - 1 } else { (1 << (fd.n * 8)) - 1 }
 }
 
-// ファイルt（f番目・package pkg）が使う @layoutの struct us の変換の関数のソース
-func synthSource(t ast.Tree, f int, pkg string, ds []LDecl, us []int) string {
+// ファイルt（package pkg の中の rf 番目）が使う @layoutの struct us の変換の関数のソース
+func synthSource(t ast.Tree, rf int, pkg string, ds []LDecl, us []int) string {
     mut s := "package ${Name(t, t.nodes[t.file].a)}\n\nimport $lb \"std/builder\"\nimport $ll \"std/layout\"\n"
     // 他 package の struct は参照名 $lt<j> で import する（同じパスは 1 回）
     mut paths := mut []string{}
@@ -505,7 +507,7 @@ func synthSource(t ast.Tree, f int, pkg string, ds []LDecl, us []int) string {
     for k <- iter.Range(0, len(us)) {
         d := ds[us[k]]
         tn := if d.pkg == pkg { d.name } else { "$lt${pathIndex(ps, d.pkg)}.${d.name}" }
-        s = s + decodeFn(d, tn, "${f}_${k}") + encodeFn(d, tn, "${f}_${k}")
+        s = s + decodeFn(d, tn, "${rf}_${k}") + encodeFn(d, tn, "${rf}_${k}")
     }
     return s
 }
@@ -606,4 +608,14 @@ func pushValue(fd LField, x string, label string, ind string) string {
         s = s + "${ind}$lb.Push(mut $out, byte((${x} >> ${sh}) & 255))\n"
     }
     return s
+}
+
+// 合成の名前に使うファイルの番号: package の中の序数（全体のファイル番号ではない — ほかの package のファイルの数で名前が変わらない）。
+// fpkg は package ごとに連続した並び
+func relFile(fpkg []string, f int) int {
+    mut j := f
+    while j > 0 && fpkg[j - 1] == fpkg[f] {
+        j -= 1
+    }
+    return f - j
 }

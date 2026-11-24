@@ -243,7 +243,7 @@ func ckRanges(plan desugar.DefPlan, cost []int, skip []bool, aud bool) []desugar
 }
 
 // キャッシュのパスの1周（checkRoundParから — 鍵の計画のあるplan）
-@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap, diag.Cell, diag.FnArg)
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap, diag.Cell, diag.FnArg, diag.Par)
 func checkRoundCk(p loader.Program, excl []int, trust bool, plan desugar.DefPlan, cc CkCache) (Round, error?) {
     cost0 := desugar.PlanCost(plan)
     nfn := len(cost0)

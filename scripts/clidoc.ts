@@ -3,6 +3,8 @@
 //      ⊆ docs/guide/env.ja.md の表（ランタイムが rt の中で字句でなく読む名前は "…" の照合に掛からない — 表の側の全数は見ていない）
 //   ③ bin/sober と scripts/ が sober に渡すフラグの綴り ⊆ そのコマンドの表の宣言（dev 込み）+ 予約の綴り + bin/sober だけが解くフラグ
 //      （行の中の `"$S2" <command> …` 等の呼び出しの形と、bin/soberのcmd_<command> のcaseの分岐を読む — 検査は粗く「表に無い綴り」だけを赤にする）
+//   ④ build --rt-mutant の許可の列 ≡ src/compiler/lower が分岐に使う変異の番号（`rtMut` / `mut0` と数・名前つきの定数の == / != と、
+//      `rtMut >= a && st.rtMut <= b` の範囲を読む）。欠番は VACANT に理由つきで書き、列にも実装にも無いことを見る
 import { readFileSync, readdirSync } from "node:fs";
 
 const spec = JSON.parse(readFileSync(process.argv[2], "utf8"));
@@ -64,5 +66,39 @@ for (const f of files) {
         }
     });
 }
+// ④
+const VACANT: Record<number, string> = {
+    18: "どの版のCLIにも無かった番号",
+    19: "廃止（slot_newの深度の検査を既定のrtに常設した — a266b5288）",
+    23: "廃止（実行待ちの列をFIFOだけにした — 085cb9fd5）",
+    24: "廃止（同上 — 085cb9fd5）",
+    82: "使われなかった番号（並走の作業の予約 — 09b1259e4は84から足した）",
+    83: "使われなかった番号（同上）",
+    104: "使われなかった番号（並走の作業の予約 — c3dc9b9d0は105から足した）",
+};
+const allow = new Set<number>(spec.commands.find((c: any) => c.name === "build").flags.find((f: any) => f.name === "rt-mutant").allow);
+const lowerFiles = walk("src/compiler/lower");
+const consts = new Map<string, number>();
+for (const f of lowerFiles) for (const m of readFileSync(f, "utf8").matchAll(/^const ([A-Z][A-Z0-9_]*) = (\d+)\b/gm)) consts.set(m[1], +m[2]);
+const num = (t: string, at: string) => {
+    const v = /^\d/.test(t) ? +t : consts.get(t);
+    if (v === undefined) red(`rt mutant constant ${t} (${at}) is not a numeric const of src/compiler/lower`);
+    return v;
+};
+const impl = new Map<number, string>();
+for (const f of lowerFiles) readFileSync(f, "utf8").split("\n").forEach((l, i) => {
+    const at = `${f}:${i + 1}`;
+    const add = (v: number | undefined) => { if (v !== undefined && !impl.has(v)) impl.set(v, at); };
+    for (const m of l.matchAll(/\b(?:rtMut|mut0) *(?:==|!=) *([A-Z][A-Z0-9_]*|\d+)\b/g)) add(num(m[1], at));
+    for (const m of l.matchAll(/\brtMut *>= *([A-Z][A-Z0-9_]*|\d+) *&& *st\.rtMut *<= *([A-Z][A-Z0-9_]*|\d+)/g)) {
+        const a = num(m[1], at), b = num(m[2], at);
+        if (a !== undefined && b !== undefined) for (let k = a; k <= b; k++) add(k);
+    }
+});
+for (const n of allow) if (!impl.has(n)) red(`rt mutant ${n} is allowed by build --rt-mutant but src/compiler/lower has no branch on it`);
+for (const [n, at] of impl) if (!allow.has(n)) red(`rt mutant ${n} (${at}) is not in the allow list of build --rt-mutant (src/compiler/app/main.sober)`);
+for (const k of Object.keys(VACANT)) if (allow.has(+k) || impl.has(+k)) red(`rt mutant ${k} is listed as vacant in scripts/clidoc.ts but is in use`);
+const top = Math.max(...impl.keys());
+for (let k = 1; k <= top; k++) if (!allow.has(k) && !(k in VACANT)) red(`rt mutant ${k} is missing from the allow list without a reason in VACANT (scripts/clidoc.ts)`);
 if (bad > 0) process.exit(1);
-console.log(`clidoc: env ${seen.size} ⊆ declared ${declared.size} · std env ${stdSeen.size} ⊆ guide ${guide.size} · flags ok`);
+console.log(`clidoc: env ${seen.size} ⊆ declared ${declared.size} · std env ${stdSeen.size} ⊆ guide ${guide.size} · flags ok · rt mutants ${allow.size} ≡ lower (vacant ${Object.keys(VACANT).length})`);

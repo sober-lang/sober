@@ -51,6 +51,7 @@ Declare the variables your own program reads in a [std/env](../std/env.ja.md) ta
 | `SOBER_TLS_INTEROP` | std/internal/hsc | the directory of the TLS client interop net (scripts/tlsinterop.sh starts the Go servers and passes it — no connection when unset; for tests) |
 | `SOBER_PG_ORACLE` | std/internal/pgwire | the config file of the real-PostgreSQL round-trip net (scripts/pgoracle.sh starts PostgreSQL 17 / 18 and passes it — no connection when unset; for tests) |
 | `SOBER_DNS_FAKE` | std/net | the port of the fake DNS server for the name-resolution net (scripts/dnsinterop.sh passes it — no query when unset; for tests) |
+| `SOBER_GATES_ALLOW_SKIP` | std/net, std/http/client | names of conditions to skip, separated by spaces. With `ipv6` and no IPv6 loopback (::1), the IPv6 tests print a `SKIP[ipv6]` line and skip; otherwise they run and fail (for tests; the same names as the gates use for checks they cannot run) |
 | `SOBER_HTTP_INTEROP` | std/http/client | the directory of the HTTP client interop net (scripts/httpinterop.sh starts the Go net/http servers and passes it — no connection when unset; for tests) |
 | `SOBER_QUICK_SEED` | std/quick | the seed of property-based tests (decimal — New / Named mix it in; 0 when unset. Change it to widen the search) |
 | `SOBER_QUICK_TRIALS` | std/quick | the number of trials per Check (1 or more — falls back to Check's trials:, default 100) |

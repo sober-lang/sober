@@ -1,0 +1,27 @@
+@@full	6c05c4aff20978e4	9281	327128
+@head	7dcb8cf3f9a656b9	0	348
+func TestRecvMux	97ca31e677339a7e	30	1010
+func TestRecvMuxOrphan	90302a702d81bd19	12	468
+func TestReplayOrder	7d333d99b281b278	23	814
+func TestSend	9679b54f3af91ffa	57	1842
+func acceptOne	8f413ac418095070	123	3907
+func drainAll	5cbdea80b3003a6e	77	2468
+func orphParent	ea7db9561a0d354e	53	1830
+func orphRecv	82f35e8a23e881aa	76	2861
+func orphRun	cb67179b21460a4e	79	2683
+func orphWait	eff75ddd758b8aea	41	1413
+func patN	389477c39b662c16	33	1181
+func peer	984e22752f5669b0	58	1801
+func reader	70da0a1cd2937f3d	64	2163
+func recvAll	6e768e00c89a6957	88	2742
+func replayConn	fbe54ee6fb247bc0	102	3255
+func replayRecv	afdfe390b6d8e9e5	78	2466
+func replayRun	cc15109f99cfb69f	87	2849
+func sameN	e887a7a3ba4dbe93	40	1358
+func sendAll	6a53e5555927b885	94	2979
+func sendOrdered	fdd8b9cad1fc5cdb	116	3711
+func sendRun	ef64f80ccc49158e	102	3392
+func serve	95e21beb48773579	76	2499
+func wantSum	85e59899de050938	39	1367
+func zerosN	7243f89c020a73b6	22	815
+type Got	22a642b709817497	2	110

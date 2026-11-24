@@ -885,3 +885,14 @@ func TyEmitK0(p loader.Program, exe string) []byte {
     }
     return bytes(out)
 }
+
+// 鍵のインターフェースの package k の値（lowerの束の鍵 K0 が読む）: [コンパイラの鍵の要約 ×2, ソースの要約 ×2, 宣言の要約 ×2]。
+// 鍵のインターフェースが開いていなければ（格納場所を使わない型付け・部分の型付け）空
+func TyPkgKeys(st mut S, k int) []int {
+    if st.ty.kst == 0 || k < 0 || k >= st.npkg {
+        return []int{}
+    }
+    b := ksB(mut st)
+    return []int{hget(mut st, b + KSX1), hget(mut st, b + KSX2), ksAt(mut st, KSKS, k * 2), ksAt(mut st, KSKS, k * 2 + 1), ksAt(mut st, KSKD, k * 2), ksAt(mut st, KSKD, k * 2 + 1)}
+}
+

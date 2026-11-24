@@ -1,0 +1,9 @@
+@@full	107ad0a39d48c8d3	4002	123652
+@head	574d7cca4d1d9e24	0	176
+const HashSha1	5f5ffd4fa828a108	1	48
+const HashSha256	ab533bcdbb0155f6	1	50
+const HashSha384	8cede96da3dae87e	1	50
+func DecryptPremaster	2cd3fbf57aba0e15	194	6264
+func SignPKCS1v15	eb27cb6addd4dcb8	162	5498
+func crtPow	64672764f025759a	157	4969
+func digestPrefix	075e371b15084bff	181	5742

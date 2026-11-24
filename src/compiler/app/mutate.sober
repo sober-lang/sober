@@ -5,6 +5,7 @@ package main
 // killと数える。どのテストも届かないミュータントは走らせずに未到達。期限は基線のそのテストの時間 × 10 + 0.5 s（子が自分でSIGALRM）。
 // スコア = kill / 到達（未到達は分母に入れない — 「テストが無い」と「テストが弱い」を分ける）
 
+import "infload"
 import "std/io"
 import "std/iter"
 import "std/task"
@@ -13,7 +14,6 @@ import "std/sort"
 import "std/strings"
 import "loader"
 import "lower"
-import "desugar"
 
 // ミュータント1体の結果（res = survived / unreached / ignored / killed / mem / timeout / crash・by = 殺したテスト）
 type MutRes struct {
@@ -213,7 +213,8 @@ func loadTestMutate(pkg string, std map[string]string, one int) (loader.Program,
     if lerr != nil {
         return p, lerr
     }
-    return desugar.NamedValueArgs(p)
+    q, _, err := infload.Infer(p, loader.ReqTestOf(loader.ReqTestMutate, pkg, []string{}, one), std)
+    return q, err
 }
 
 // --run の接頭辞に当たるテストを名前の順に（kill のテストを決定的にする）

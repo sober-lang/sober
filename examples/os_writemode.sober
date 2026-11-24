@@ -15,7 +15,9 @@ func run(p string) int {
 }
 
 func main() int {
-    p := "out/os_writemode.sh"
+    d := runDir("os_writemode")
+    defer removeAll(d)
+    p := d + "/os_writemode.sh"
     if io.WriteFile(p, bytes("#!/bin/sh\necho hi from the script\nexit 3\n")) != nil {
         println("cannot write")
         return 1
@@ -38,4 +40,26 @@ func main() int {
         println("other")
     }
     return 0
+}
+
+// 実行ごとの置き場 out/<name>.<単調時計の値>（同じ作業ディレクトリで同時に走る実行どうしが上書きし合わない）。
+// mkdirは既にあれば失敗するので、作れた名前がこの実行のもの。作れない状態で回り続けないよう、試す回数に上限を置く（作れなければ ""）
+func runDir(name string) string {
+    _ = os.Mkdir("out")
+    mut n := 0
+    while n < 100 {
+        c := "out/${name}.${os.Monotonic()}"
+        if os.Mkdir(c) == nil {
+            return c
+        }
+        n = n + 1
+    }
+    return ""
+}
+
+// 置き場を中身ごと消す
+func removeAll(d string) {
+    if d != "" {
+        _ = os.Run("/bin/rm", []string{"-rf", d}) catch 0
+    }
 }

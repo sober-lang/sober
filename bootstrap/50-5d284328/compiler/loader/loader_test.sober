@@ -1,0 +1,104 @@
+package loader
+
+// loader の単体テスト（純関数の小道具）: パスの切り分け・バイト順・@embed のパターン・テスト名の規則・@intrinsic の宣言の検査
+
+import "ast"
+import "diag"
+import "lexer"
+import "parser"
+
+func TestDirBase() {
+    assert(Dirname("a/b/c.sober") == "a/b")
+    assert(Dirname("c.sober") == "")
+    assert(Basename("a/b/c.sober") == "c.sober")
+    assert(Basename("c.sober") == "c.sober")
+}
+
+func TestByteLess() {
+    assert(ByteLess("a", "b"))
+    assert(!ByteLess("b", "a"))
+    assert(ByteLess("ab", "abc"))
+    assert(!ByteLess("abc", "abc"))
+    // バイト順（LC_ALL=C）: 大文字は小文字より前
+    assert(ByteLess("Z", "a"))
+}
+
+func TestValidPattern() {
+    assert(validPattern("std/**/*.sober"))
+    assert(validPattern("data/*.txt"))
+    assert(!validPattern(""))
+    assert(!validPattern("/abs"))
+    assert(!validPattern("a//b"))
+    assert(!validPattern("a/../b"))
+    assert(!validPattern("a/x**/b"))
+    assert(!validPattern("a/[b]"))
+}
+
+func TestMatchSeg() {
+    assert(matchSeg(bytes("*.sober"), 0, bytes("x.sober"), 0))
+    assert(!matchSeg(bytes("*.sober"), 0, bytes("x.txt"), 0))
+    assert(matchSeg(bytes("a?c"), 0, bytes("abc"), 0))
+    assert(!matchSeg(bytes("a?c"), 0, bytes("ac"), 0))
+}
+
+func TestTestName() {
+    assert(isTestName("Test"))
+    assert(isTestName("TestAdd"))
+    assert(isTestName("Test_x"))
+    assert(!isTestName("Testify"))
+    assert(!isTestName("test"))
+}
+
+// src の 1 ファイルを package pkg の std のファイルとして @intrinsic の検査に掛けた拒否の kind（受理なら 0・読めなければ -1）
+func intrinsicKind(src string, pkg string) int {
+    b := bytes(src)
+    t, ok := parser.Parse(b, lexer.Lex(b))
+    if !ok {
+        return -1
+    }
+    return switch intrinsicAll([]ast.Tree{t}, []string{pkg}, []bool{true}) {
+        case nil: 0
+        case diag.Intrinsic{kind}: kind
+    }
+}
+
+func TestIntrinsicFBitsOnlyInMath() {
+    fbits := "package p\n\n@intrinsic(\"fbits\")\nfunc f(x float) int\n"
+    assert(intrinsicKind(fbits, "std/math") == 0)
+    assert(intrinsicKind(fbits, "std/convert") == 5)
+    assert(intrinsicKind(fbits, "std/internal/floatfmt") == 5)
+    // 逆向きの読み替えはどこでも宣言できる（NaN のビット列を外へ出さない）
+    assert(intrinsicKind("package p\n\n@intrinsic(\"ffrombits\")\nfunc g(b int) float\n", "std/convert") == 0)
+}
+
+func TestIntrinsicGrowNoZeroOnlyInJsonw() {
+    g := "package p\n\n@intrinsic(\"grow_nozero\")\nfunc grow(b []byte, n int) mut []byte\n"
+    assert(intrinsicKind(g, "std/internal/jsonw") == 0)
+    assert(intrinsicKind(g, "std/json") == 5)
+    assert(intrinsicKind(g, "std/math") == 5)
+}
+
+func TestIntrinsicAppendDateOnlyInHttpServer() {
+    g := "package p\n\n@intrinsic(\"append_date\")\nfunc d(b []byte) mut []byte\n"
+    assert(intrinsicKind(g, "std/http/server") == 0)
+    assert(intrinsicKind(g, "std/http") == 5)
+    assert(intrinsicKind(g, "std/time") == 5)
+}
+
+func TestEmbedFit() {
+    // 小さいファイルは収まる
+    k0, _ := embedFit(1000, 100, []int{10, 10}, []int{100, 200})
+    assert(k0 == -1)
+    // 2つ目で上限を越える: 添字1と、その前までに残っていた語の数
+    k1, r1 := embedFit(1000, 100, []int{10, 10}, []int{100, TREE_WORDS})
+    assert(k1 == 1)
+    assert(r1 == TREE_WORDS - (1000 + 1 + 2 + 2 + 10 + 100))
+    // 1つ目でちょうど越える（上限は >= で拒否）
+    k2, _ := embedFit(0, 0, []int{0}, []int{TREE_WORDS - 4})
+    assert(k2 == 0)
+    k3, _ := embedFit(0, 0, []int{0}, []int{TREE_WORDS - 5})
+    assert(k3 == -1)
+    // 節の列で越える（ファイルの数が多い）
+    k4, _ := embedFit(0, TREE_WORDS - 10, []int{1, 1, 1, 1}, []int{1, 1, 1, 1})
+    assert(k4 == 2)
+}

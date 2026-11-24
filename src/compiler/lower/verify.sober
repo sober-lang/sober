@@ -35,6 +35,7 @@ func vfyFinal(st mut St, after string) {
 
 func vfyRun(st mut St, after string) {
     mut nk := 0
+    mut nd := 0
     nf := xCountFuncs(mut st)
     mut f := st.fhead
     while f != -1 {
@@ -46,6 +47,9 @@ func vfyRun(st mut St, after string) {
             m0 := if pre == nil { vfyFunc(mut st, f, nf) } else if pre < 0 { "" } else { st.vfyMsg[pre] }
             if pre != nil {
                 nk += 1
+            }
+            if st.vfyPreOn && st.vfyDirty[int(f)] != nil {
+                nd += 1
             }
             // 全展開した直線の長さ（キャンセルの検査点の距離Kの約束を最終IRで照合 — フェーズごとの検証〔SOBER_VERIFY=each — gates〕の最後のフェーズだけ。
             // 既定の build では掛けない — 近似の外れで利用者の build を内部エラーにしない。vfyRun に引数を足すと自己 check の RSS が +40 MB）
@@ -59,9 +63,9 @@ func vfyRun(st mut St, after string) {
         }
         f = irFnNext(mut st, f)
     }
-    // 証人（scripts/selfpar.sh）: 子の検証の結果を使った関数の数と、親が検証した関数の数
+    // 証人（scripts/selfpar.sh）: 子の検証の結果を使った関数の数・親が検証した関数の数・そのうち子の検証の後に親が書き換えた関数（cutInsert）の数
     if st.vfyPreOn && lsEnvInt("SOBER_PAR_STATS") == 1 {
-        _ = io.WriteStderr(bytes("#vfyfinal kid=${nk} parent=${vfyBodies(mut st) - nk}\n"))
+        _ = io.WriteStderr(bytes("#vfyfinal kid=${nk} parent=${vfyBodies(mut st) - nk} dirty=${nd}\n"))
     }
 }
 
@@ -500,7 +504,7 @@ func vfyInst(st mut St, v mut vfyS, w mut m2rW, f FnRef, ins InsRef, nf int) str
             return if n != nm { "montmul op ${c} with ${n} operands" } else { vfyList(mut st, mut v, mut w, a, TyI64, "montmul") }
         }
         if b == AES_B {
-            na := if c == AK_CPU { 0 } else if c == AK_KEY { 2 } else if c == AK_CTR { 4 } else if c == AK_GHASH { 3 } else if c == AK_TAG { 2 } else if c == AK_SEAL || c == AK_OPEN { 4 } else { -1 }
+            na := if c == AK_CPU { 0 } else if c == AK_KEY { 2 } else if c == AK_CTR { 4 } else if c == AK_GHASH { 3 } else if c == AK_TAG { 2 } else if c == AK_SEAL || c == AK_OPEN || c == AK_CBCE || c == AK_CBCD { 4 } else if c == AK_CBCKEY { 2 } else { -1 }
             return if n != na { "aes op ${c} with ${n} operands" } else { vfyList(mut st, mut v, mut w, a, TyI64, "aes") }
         }
         if n < 1 || n > 7 {

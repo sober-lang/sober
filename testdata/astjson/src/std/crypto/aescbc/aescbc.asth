@@ -1,0 +1,17 @@
+@@full	4b74d825fbc95fde	2220	58486
+@head	4ff3d96ebeb3c3f1	17	1276
+const BlockSize	74d49cd71312ada3	1	50
+const KeySize	9b101d928db4f31e	1	48
+const stKey	e078881a51b7caf3	1	46
+const stSize	91ec0f065a03d82d	1	47
+const tblSize	e288279fd71d3885	1	49
+func Available	458655cc8ea670c8	6	271
+func Decrypt	50196bcdc2df1cc7	19	736
+func DecryptAt	c0770201d2bab1b3	84	2891
+func Encrypt	c5318150ff7c3c26	72	2452
+func Prepare	e18c17fd66bb107f	46	1784
+func newState	75a4aacd0a9ff086	66	2223
+func zeros	fa54ac2b7606b305	25	928
+type BadSize	707547808861de14	1	68
+type Key	b1edff6c3441c422	3	149
+type NoHardware	ff8b4806d02b82e4	1	71

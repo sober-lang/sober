@@ -1,0 +1,11 @@
+@@full	dc9231cffd23b108	3180	96040
+@head	16b6981214f1308b	0	339
+const detVectors	32a4ff3acd7f2eb0	3	140
+const keyPem	980779049b0dd6c5	3	136
+const rfcKey	3f0cdb34cb1f449d	1	114
+func TestParsePKCS8	b90aa50ccd8650c9	152	4899
+func TestSignDeterministic	3920b334fc8513c3	60	2057
+func TestSignRejects	cd76ac4a5eafc1a9	81	2623
+func TestSignRfc6979	c138d1354743ab6f	66	2472
+func TestSignVectors	effdb60509d06428	93	2967
+func TestSignVerify	c756a89f260c0836	90	3210

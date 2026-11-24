@@ -91,7 +91,7 @@ type BodyTooLarge error
 // 相手が接続を拒んだ・レスポンスの途中で閉じた
 type Closed error
 
-// URL の形の誤り（scheme が http / https でない・userinfo・IPv6 の番地・空白や制御文字）
+// URL の形の誤り（scheme が http / https でない・userinfo・角括弧の中が IPv6 の番地でない・IPv6 の zone〔RFC 6874〕・空白や制御文字）
 type BadUrl error
 
 // レスポンスの形の誤り（状態行・頭・chunkedの形・頭の上限64 KiB超え）
@@ -277,8 +277,8 @@ func once(c cfg, t target, r outgoing, cookie string) (Response, error?) {
     rt := viaOf(c, t)
     req := requestBytes(r.method, requestTarget(rt, t), withProxyAuth(rt, t, r.headers), r.body, c.userAgent, false, cookie)
     noBody := r.method == "HEAD"
-    pa := params(c, rt.px)
-    pb := params(c, t)
+    pa := params(c, rt.px, false)
+    pb := params(c, t, true)
     mb := c.maxBody
     start := time.Mono()
     mut raw := mut []byte{}
@@ -388,9 +388,9 @@ func wrap(e error) error? {
     return e
 }
 
-// TLS の握手の設定（SNI と名前の照合 = host・時刻 = 今の壁時計）
+// TLS の握手の設定（SNI と名前の照合 = host・時刻 = 今の壁時計）。h2 = ALPNでh2も申し出る（行き先の層 — proxyへの層はhttp/1.1だけ）
 @effects(io)
-func params(c cfg, t target) internal.hsc.CParams {
-    p := internal.hsc.NewCParams(t.host, []string{"http/1.1"}, c.roots, time.UnixSec(time.Now()), []byte{})
+func params(c cfg, t target, h2 bool) internal.hsc.CParams {
+    p := internal.hsc.NewCParams(t.host, if h2 { []string{"h2", "http/1.1"} } else { []string{"http/1.1"} }, c.roots, time.UnixSec(time.Now()), []byte{})
     return if c.allowTls12 { internal.hsc.WithTls12(p) } else { p }
 }

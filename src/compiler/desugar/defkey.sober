@@ -432,7 +432,7 @@ func dkGraph(st mut S) DkGraph {
             h = dkStr(mut st, h, PkgPath(mut st, fnPkg(mut st, i)))
             x := FnAt(mut st, i)
             h = dkW(h, (if x.expands { 1 } else { 0 }) + (if x.mutDef { 2 } else { 0 }) + (if x.closed { 4 } else { 0 }) + (if x.def >= 0 { 8 } else { 0 }) +
-                (if e2sExcluded(st.e2sExcl, i) { 16 } else { 0 }) + (if latI(mut st, st.e2sBad, i) != 0 { 32 } else { 0 }) + (if ZVariant(mut st, i) { 64 } else { 0 }))
+                (if e2sExcluded(st.e2sExcl, i) { 16 } else { 0 }) + (if ZVariant(mut st, i) { 64 } else { 0 }))
             if isTreeNode(int(nd)) {
                 txt = printer.FuncDeclText(st.trees[refFile(int(nd))], refIdx(int(nd)), e < nfn, false)
             }

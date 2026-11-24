@@ -1,0 +1,2 @@
+sober: load error at examples/logs_neg_word.sober:1:1: @logs takes stdout or stderr: `@logs(stdout)` sends the log to standard output (standard error when @logs is not written)
+exit=1

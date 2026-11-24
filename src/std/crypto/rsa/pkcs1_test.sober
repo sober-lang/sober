@@ -1,0 +1,115 @@
+package rsa
+
+// PKCS#1 v1.5 の署名（公開鍵で戻すと EM になる）と、TLS 1.2 の premaster の復号（正しい形・壊した形のそれぞれ）
+import "std/crypto/pem"
+import "std/internal/bless"
+import "std/internal/dudect"
+import "std/iter"
+
+@embed("testdata/crypto/httparena-server.*")
+const pkKeys = map[string]string{}
+
+func pkKey() PrivateKey {
+    s := pkKeys["testdata/crypto/httparena-server.key"]
+    kb, _ := crypto.pem.Parse(if s != nil { s } else { "" })
+    k, _ := ParsePKCS8(kb[0].der)
+    return k
+}
+
+// m を公開鍵で冪にした値（暗号文 — 検査のための素の RSA）
+func pkEncRaw(pub PublicKey, m []byte) []byte {
+    return bnToBytes(expPub(toMont(bnFromBytes(m, len(pub.n)), pub.mt), pub.e, bnBits(pub.e), pub.mt), pub.k)
+}
+
+func TestSignPKCS1v15() {
+    k := pkKey()
+    pub := Public(k)
+    mut d := mut []byte{}
+    for i <- iter.Range(0, 32) {
+        d = append(d, byte(i))
+    }
+    digest := freeze(d)
+    sig, e := SignPKCS1v15(k, HashSha256, digest)
+    assert(e == nil && len(sig) == pub.k)
+    em := pkEncRaw(pub, sig)
+    pre := digestPrefix(HashSha256)
+    assert(em[0] == byte(0) && em[1] == byte(1))
+    ps := pub.k - len(pre) - 32 - 3
+    mut ok := true
+    for i <- iter.Range(2, 2 + ps) {
+        ok = ok && em[i] == byte(0xff)
+    }
+    ok = ok && em[2 + ps] == byte(0)
+    for i <- iter.Range(0, len(pre)) {
+        ok = ok && em[3 + ps + i] == pre[i]
+    }
+    for i <- iter.Range(0, 32) {
+        ok = ok && em[pub.k - 32 + i] == digest[i]
+    }
+    assert(ok)
+}
+
+// 形を作る: 0x00 0x02 ‖ 0 を含まない埋め草 ‖ 0x00 ‖ ver ‖ 46 バイト。how = 0 正しい・1 先頭が違う・2 埋め草に 0・3 版が違う・4 区切りが無い
+func pkPremasterEm(pub PublicKey, how int) []byte {
+    mut m := mut []byte{byte(0), byte(if how == 1 { 1 } else { 2 })}
+    for i <- iter.Range(0, pub.k - 51) {
+        m = append(m, byte(if how == 2 && i == 5 { 0 } else { 1 + i % 250 }))
+    }
+    m = append(m, byte(if how == 4 { 7 } else { 0 }))
+    m = append(m, byte(3))
+    m = append(m, byte(if how == 3 { 1 } else { 3 }))
+    for i <- iter.Range(0, 46) {
+        m = append(m, byte(100 + i))
+    }
+    return freeze(m)
+}
+
+func TestDecryptPremaster() {
+    k := pkKey()
+    pub := Public(k)
+    mut f := mut []byte{}
+    for i <- iter.Range(0, 48) {
+        f = append(f, byte(200))
+    }
+    fb := freeze(f)
+    ver := []byte{byte(3), byte(3)}
+    good := internal.bless.Bytes(DecryptPremaster(k, pkEncRaw(pub, pkPremasterEm(pub, 0)), ver, fb))
+    assert(len(good) == 48 && good[0] == byte(3) && good[1] == byte(3) && good[2] == byte(100) && good[47] == byte(145))
+    for how <- iter.Range(1, 5) {
+        r := internal.bless.Bytes(DecryptPremaster(k, pkEncRaw(pub, pkPremasterEm(pub, how)), ver, fb))
+        assert(len(r) == 48 && r[0] == byte(200) && r[47] == byte(200), "how ${how}")
+    }
+    // 長さの違う暗号文
+    assert(internal.bless.Bytes(DecryptPremaster(k, []byte{byte(1)}, ver, fb))[0] == byte(200))
+}
+
+// dudect の題材: TLS 1.2 の premaster の復号を、クラス0 = 正しい形・クラス1 = 壊れた形（版・埋め草・区切りを順に壊す）で検定する。
+// 両クラスとも埋め草と中身は毎回違う値（固定の入力を繰り返す形は偽の漏れを出す）。SOBER_DUDECT が無ければ何もしない
+func TestPremasterDudect() {
+    n := internal.dudect.Count()
+    if n == 0 {
+        return
+    }
+    k := pkKey()
+    pub := Public(k)
+    mut f := mut []byte{}
+    for i <- iter.Range(0, 48) {
+        f = append(f, byte(200))
+    }
+    fb := freeze(f)
+    ver := []byte{byte(3), byte(3)}
+    internal.dudect.Measure("rsa_premaster", n, 21, (c, i) => {
+        how := if c == 0 { 0 } else { 2 + i % 3 }
+        mut m := mut []byte{byte(0), byte(2)}
+        for j <- iter.Range(0, pub.k - 51) {
+            m = append(m, byte(if how == 2 && j == i % 50 { 0 } else { 1 + (i * 31 + j * 7) % 250 }))
+        }
+        m = append(m, byte(if how == 4 { 9 } else { 0 }))
+        m = append(m, byte(3))
+        m = append(m, byte(if how == 3 { 1 } else { 3 }))
+        for j <- iter.Range(0, 46) {
+            m = append(m, byte((i + j) % 256))
+        }
+        pkEncRaw(pub, freeze(m))
+    }, (b) => internal.bless.Bytes(DecryptPremaster(k, b, ver, fb))[0] == byte(3))
+}

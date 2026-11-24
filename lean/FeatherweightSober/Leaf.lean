@@ -126,6 +126,11 @@ theorem stepLeaf_allocK (Δ : Defs) (π π' : List Bool) (H : Heap) (S : Stack) 
   first | kR | (cases v <;> kR)
 
 set_option maxHeartbeats 0 in
+theorem stepLeaf_allocAtK (Δ : Defs) (π π' : List Bool) (H : Heap) (S : Stack) (v : Expr) (K K2 : ChanSt) (m : Bool) (r : Nat) :
+    step Δ π' (.ret H ((.allocAtK m r) :: S) v) K2 = (step Δ π (.ret H ((.allocAtK m r) :: S) v) K).map (fun p => (p.1.fixLeaf, K2)) := by
+  first | kR | (cases v <;> kR)
+
+set_option maxHeartbeats 0 in
 theorem stepLeaf_derefK (Δ : Defs) (π π' : List Bool) (H : Heap) (S : Stack) (v : Expr) (K K2 : ChanSt)  :
     step Δ π' (.ret H ((.derefK) :: S) v) K2 = (step Δ π (.ret H ((.derefK) :: S) v) K).map (fun p => (p.1.fixLeaf, K2)) := by
   first | kR | (cases v <;> kR)
@@ -479,6 +484,7 @@ theorem stepLeaf_ret (Δ : Defs) (π π' : List Bool) (H : Heap) (S : Stack) (v 
     | annK t => exact stepLeaf_annK Δ π π' H S v K K2 t
     | sndK => exact stepLeaf_sndK Δ π π' H S v K K2
     | allocK m => exact stepLeaf_allocK Δ π π' H S v K K2 m
+    | allocAtK m r => exact stepLeaf_allocAtK Δ π π' H S v K K2 m r
     | derefK => exact stepLeaf_derefK Δ π π' H S v K K2
     | assignL e => exact stepLeaf_assignL Δ π π' H S v K K2 e
     | assignR l => exact stepLeaf_assignR Δ π π' H S v K K2 l

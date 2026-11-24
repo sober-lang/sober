@@ -1,0 +1,4 @@
+dual v4: ping
+dual v6: ping
+v6only v6: ping
+v6only v4: refused

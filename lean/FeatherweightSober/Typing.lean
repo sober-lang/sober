@@ -165,6 +165,12 @@ inductive HasType (Δ : Defs) : ChanTy → StoreTy → Nat → Nat → Nat → C
       HasType Δ Ξ Ψ f b (d + 1) Γ Λ e t → t.regionsBelow (d + 1) → b ≤ d →
       (m = false → t.mutFree) →
       HasType Δ Ξ Ψ f b (d + 1) Γ Λ (.alloc m e) (.ref m d t)
+  /-- region r へのセルの割り当て（alloc の region 指定版 — mksliceAt と同じ床 `b ≤ r`・`r < d`）。
+  格納型は region ≤ r だけを指し、chan を持たない（renTy の写像が region の上界を保つため — mksliceAt と同じ） -/
+  | allocAt {Ξ Ψ f b d Γ Λ} {m : Bool} {r : Nat} {e : Expr} {t : Ty} :
+      HasType Δ Ξ Ψ f b d Γ Λ e t → t.regionsBelow (r + 1) → b ≤ r → r < d →
+      (m = false → t.mutFree) → t.chanFree = true →
+      HasType Δ Ξ Ψ f b d Γ Λ (.allocAt m r e) (.ref m r t)
   | deref {Ξ Ψ f b d Γ Λ} {e : Expr} {m : Bool} {r : Nat} {t : Ty} :
       HasType Δ Ξ Ψ f b d Γ Λ e (.ref m r t) → HasType Δ Ξ Ψ f b d Γ Λ (.deref e) t
   /-- `l := e`。mut 参照にのみ書ける。unit を返す -/
@@ -523,7 +529,7 @@ def Expr.tvWf (ks : List Kind) : Expr → Bool
     c.tvWf ks && t.tvWf ks && e.tvWf ks
   | .nil t | .unreach t | .mkslice _ t | .mksliceAt _ t _ | .mkmapAt _ t _ | .mkmap _ t | .newchan _ t
   | .scopeV _ t | .newch _ _ t => t.tvWf ks
-  | .some e | .fst e | .snd e | .block e | .alloc _ e | .deref e | .freeze e | .lenE e | .tobyte e
+  | .some e | .fst e | .snd e | .block e | .alloc _ e | .allocAt _ _ e | .deref e | .freeze e | .lenE e | .tobyte e
   | .fconv _ e | .toint e | .lenm e | .keysm e | .recv e | .close e | .unfold e => e.tvWf ks
   | .inl t e | .inr t e | .ann e t | .blockR t e | .copyTo _ t e | .label t e | .jump _ t e | .fold t e
   | .dnew _ e t | .denter t e | .join t e | .tryJ t e => t.tvWf ks && e.tvWf ks
@@ -568,7 +574,7 @@ def Expr.raisedOk (ks : List Kind) : Expr → Bool
     c.raisedOk ks && t.raisedOk ks && e.raisedOk ks
   | .nil t | .unreach t | .mkslice _ t | .mksliceAt _ t _ | .mkmapAt _ t _ | .mkmap _ t | .newchan _ t
   | .scopeV _ t | .newch _ _ t => t.raisedOk ks
-  | .some e | .fst e | .snd e | .block e | .alloc _ e | .deref e | .freeze e | .lenE e | .tobyte e
+  | .some e | .fst e | .snd e | .block e | .alloc _ e | .allocAt _ _ e | .deref e | .freeze e | .lenE e | .tobyte e
   | .fconv _ e | .toint e | .lenm e | .keysm e | .recv e | .close e | .unfold e => e.raisedOk ks
   | .inl t e | .inr t e | .ann e t | .blockR t e | .copyTo _ t e | .label t e | .jump _ t e | .fold t e
   | .dnew _ e t | .denter t e | .join t e | .tryJ t e => t.raisedOk ks && e.raisedOk ks

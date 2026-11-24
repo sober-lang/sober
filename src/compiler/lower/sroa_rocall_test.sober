@@ -1,0 +1,44 @@
+package lower
+
+// 展開後のSROAの、読むだけのrtの関数の実引数の写し（sroa.sober）の単体テスト（`cd compiler && ../bin/sober test lower`）:
+// 3語のスロットを書いて番地をrtの関数へ渡し、その後に語0を読んで返す関数をIRで組み、SROA（cg）+ mem2regの後のretの値を見る
+
+import "desugar"
+
+// 仮引数3本を3語のスロットへ書き、呼ぶ関数にスロットの番地を渡してから語0を返す。ro = 呼ぶ関数を読むだけのrtの関数（rt.print_str）として登録する。
+// 割って持ち上がれば retは仮引数0（番号0）・割らなければloadの結果（3以上）
+func rcT(ro bool, cg bool) int {
+    mut st := St{}
+    initScalars(mut st)
+    kindsInit(mut st)
+    desugar.HeapPush(mut st.d, 0)
+    g := addFunc(mut st, 0, desugar.ListRef(list1(mut st, TyPtr)), -1)
+    if ro {
+        st.rtPstr = g
+    }
+    pt := listN(mut st, 3)
+    desugar.HeapSet(mut st.d, pt + 1, TyI64)
+    desugar.HeapSet(mut st.d, pt + 2, TyI64)
+    desugar.HeapSet(mut st.d, pt + 3, TyI64)
+    f := addFunc(mut st, 0, desugar.ListRef(pt), TyI64)
+    begin(mut st, f)
+    b0 := st.cur
+    sa := newSlotAddr(mut st, 3)
+    store(mut st, sa, 0, 0)
+    store(mut st, sa, 1, 1)
+    store(mut st, sa, 2, 2)
+    call(mut st, g, list1(mut st, sa))
+    ret(mut st, load(mut st, sa, 0))
+    sroaFunc(mut st, f, cg)
+    m2rFunc(mut st, f)
+    return irBlkX1(mut st, b0)
+}
+
+func TestSroaReadOnlyCall() {
+    // 読むだけのrtの関数へ渡すスロットは、一時のスロットへの写しを渡して割る
+    assert(rcT(true, true) == 0)
+    // ほかの関数へ渡すスロットは逃げたまま
+    assert(rcT(false, true) >= 3)
+    // 最初のSROA（cg = false）は写さない
+    assert(rcT(true, false) >= 3)
+}

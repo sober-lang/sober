@@ -17,7 +17,24 @@
 #    外すのはSOBER_GATES_ALLOW_SKIP（条件の名前を空白区切り。例: "perf cpus"）。外した照合は `SKIP[条件] ゲート: 照合しなかったもの` の行を出し、
 #    gates.shの要約はALL PASSではなくPASS with N skippedと、外したゲートと条件の名前を出す。条件の名前の一覧はgateenv.shのCONDS
 
+# ゴールデンの並び（sort・ls・glob）を呼び手のロケールに依らせない（読み込んだスクリプト全部に効く）
+export LC_ALL=C.UTF-8
 GATELIB_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+
+# 上限値（線）との比較: ratchet_cmp <線のファイル（ルートからの相対）> <項目> <欄> <実測>。線のファイルの「項目 欄 上限」の行の上限と比べる。
+# 実測 ≤ 上限なら0・超えたら1・行が無ければ2。上限は RATCHET_LIM に残す（呼び手が文面に使う）。比べた実測は $GATE_MEAS（gates.sh がゲートごとに渡す）に
+# 「ファイル 項目 欄 実測」で1行足す — gatememo の記録に残り、線の値だけが変わったコミットでは再実行せずに記録の実測で判定し直す（scripts/gatememo.ts）。
+# 線を読むゲート（scripts/gatedeps.txt の @lines）は、線の上限をこの関数だけで比べる（自分で上限を読んで比べると、再判定に乗らない）
+ratchet_cmp() {
+    local f=$1 it=$2 c=$3 v=$4
+    RATCHET_LIM=$(awk -v k="$it" -v c="$c" '$1 !~ /^#/ && $1 == k && $2 == c { print $3; exit }' "$GATELIB_ROOT/$f")
+    [ -n "${GATE_MEAS:-}" ] && echo "$f $it $c $v" >> "$GATE_MEAS"
+    [ -n "$RATCHET_LIM" ] || return 2
+    awk -v a="$v" -v b="$RATCHET_LIM" 'BEGIN { exit !(a > b) }' && return 1
+    return 0
+}
+# 線との比較のほかの検査が全部通ったときに呼ぶ（本体の緑の印）。gates.sh は、線だけが赤のゲートの実測もこの印があるときだけ記録に残す
+meas_body_ok() { [ -n "${GATE_MEAS:-}" ] && echo "#body-ok" >> "$GATE_MEAS"; return 0; }
 
 # 照合できない条件 $2の扱いを決める（$1 = ゲート名・$3 = 照合しなかったもの〔英語の短い句〕）。SOBER_GATES_ALLOW_SKIPに $2があれば
 # SKIPの行を出して0（呼び手はその照合を飛ばす）。無ければFAILの行を出して1（呼び手はFAILにする）
@@ -27,6 +44,15 @@ cant() {
     esac
     echo "$1: FAIL: $2 is not available, so $3 cannot be checked (set SOBER_GATES_ALLOW_SKIP=$2 to skip it explicitly)"
     return 1
+}
+
+# IPv6のループバック（::1）が使えるか。0 = 使える・1 = 外した（SKIPの行を出した）・2 = 使えない（FAILの行を出した）
+need_ipv6() { # $1 = ゲート名・$2 = 照合しなかったもの
+    if [ -r /proc/net/if_inet6 ] && grep -q '^00000000000000000000000000000001 ' /proc/net/if_inet6; then
+        return 0
+    fi
+    cant "$1" ipv6 "$2" && return 1
+    return 2
 }
 
 # perfを探してPERFに入れる（PERF → PATH → /nix/store）。0 = 使える・1 = 外した（SKIPの行を出した）・2 = 使えない（FAILの行を出した）
@@ -261,7 +287,8 @@ gold_key() { # $1 = 生成のスクリプト。全文の鍵 = stage2・bin/sober
         sha256sum "$GATELIB_ROOT/bin/sober" "$1" | cut -d' ' -f1
         (cd "$GATELIB_ROOT" && find examples testdata src/std -type f -not -path 'testdata/irtext/*' -not -path 'testdata/lltext/*' \
             -not -path 'testdata/corejson/*' -not -path 'testdata/astjson/*' | LC_ALL=C sort | xargs -d '\n' sha256sum)
-        env | grep -E '^SOBER_(DATE_SEC|HASH_SEED)=' | LC_ALL=C sort
+        # どちらの値も無い環境（ゲートの外から直に呼んだとき）でも鍵を計算する。grep の「一致なし」で pipefail が関数を落とさないように
+        { env | grep -E '^SOBER_(DATE_SEC|HASH_SEED)=' || true; } | LC_ALL=C sort
     } | sha256sum | cut -d' ' -f1
 }
 
@@ -414,7 +441,8 @@ beyond_stage1() { # $1 = IRテキスト。stage1（凍結したZig）のIRの語
     # 6度目（TLSタスク796）: AES-GCMのチャンク（`aes.cpu` / `aes.key` / `aes.ctr` / `aes.ghash` — compiler/lower/aes.sober）
     # 7度目（RSAの続き — report-864）: 多倍長のチャンク（`mm.cpu` / `mm.mul` — compiler/lower/mulx.sober）
     # 8度目（deflate v2）: 狭いワードの読み書き（`load16` / `store16` / `load32` / `store32` — pool.ScratchのLoadRaw16等）
-    grep -qE '= (fadd|fsub|fmul|fdiv|fsqrt|fofint|ftoint|feq|fne|flt|fle|fgt|fge|trap|fsaddr|atomic\.[a-z]+|clone|mulhi|aes\.[a-z]+|mm\.[a-z]+|load16|load32) |^ *(unwind|tswitch |tstart |fence|pause|fsaddr |atomic\.|clone |store16 |store32 )' "$1"
+    # 9度目（ログのフェーズ①）: vDSOの呼び出し `vcall`（print.Logの時刻 — std/taskを使わないプログラムにも現れる）
+    grep -qE '= (fadd|fsub|fmul|fdiv|fsqrt|fofint|ftoint|feq|fne|flt|fle|fgt|fge|trap|fsaddr|atomic\.[a-z]+|clone|mulhi|aes\.[a-z]+|mm\.[a-z]+|load16|load32) |= vcall\(|^ *(unwind|tswitch |tstart |fence|pause|fsaddr |atomic\.|clone |store16 |store32 )' "$1"
 }
 
 neg_beyond_stage1() { # $1 = 負例のentry（testdata/loader_neg/<名前>/app）。その負例の格納場所にマークbeyond_stage1（中身 = 理由）があれば0 —

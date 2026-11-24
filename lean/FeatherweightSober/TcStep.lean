@@ -172,6 +172,13 @@ def kAlloc : Option Ty → Nat → Nat → Bool → Option Ty
       if t.regionsBelow (d + 1) && decide (b ≤ d) && (m || t.mutFree) then some (.ref m d t) else none
   | _, _, _, _ => none
 
+def kAllocAt : Option Ty → Nat → Nat → Bool → Nat → Option Ty
+  | some t, b, d, m, r =>
+      if t.regionsBelow (r + 1) && decide (b ≤ r) && decide (r < d) && (m || t.mutFree) && t.chanFree then
+        some (.ref m r t)
+      else none
+  | none, _, _, _, _ => none
+
 def kDeref : Option Ty → Option Ty
   | some (.ref _ _ t) => some t
   | _ => none
@@ -437,6 +444,8 @@ def tcStep (Δ : Defs) (f b d : Nat) (Γ : Ctx) (Λ : LCtx) (r1 r2 r3 : Option T
   | .copyTo k t _, _ + 1 => .ret (kCopyTo r1 b d k t)
   | .alloc _ e, 0 => .sub e b d Γ Λ
   | .alloc m _, _ + 1 => .ret (kAlloc r1 b d m)
+  | .allocAt _ _ e, 0 => .sub e b d Γ Λ
+  | .allocAt m r _, _ + 1 => .ret (kAllocAt r1 b d m r)
   | .deref e, 0 => .sub e b d Γ Λ
   | .deref _, _ + 1 => .ret (kDeref r1)
   | .assign l _, 0 => .sub l b d Γ Λ

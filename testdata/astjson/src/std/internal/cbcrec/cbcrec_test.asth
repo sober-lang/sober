@@ -1,0 +1,15 @@
+@@full	80c7b18ac045ed31	6471	220979
+@head	c6036975488e795c	0	344
+func TestKat	941f2b900045e8c8	64	2791
+func TestPadRange	6dce25a984db84b9	152	4726
+func TestSha256Block	8f31c7c5a4caef37	152	4889
+func TestTamper	8fd9b802ce1cb5f7	200	6108
+func flip	dc5701bb649a75c7	47	1617
+func flips	339be2d475cc82c9	7	307
+func kat	649250e3db545b11	133	4325
+func lensA	78399fb78c113968	15	481
+func lensB	c31e458bbc5cc8cc	9	341
+func openRef	3f1474d2ba39f4c1	167	5492
+func pat	4afb1f0aa7bb282b	37	1328
+func same	157a079231a324d0	47	1571
+func sealPad	ab13adcdfebfc5d1	84	3023

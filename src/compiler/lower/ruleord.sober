@@ -147,6 +147,10 @@ func roPoints(st mut St) int {
     off := st.numOff
     for o <- iter.Range(0, np) {
         i := InsRef(table.Get(mut st.ptIns, o))
+        // 本体の無い持ち主の点（要約の値を使うモードで飛ばした関数 — 番号は β2 の後埋めが安定な鍵で引く）
+        if int(i) == -1 {
+            continue
+        }
         if irInsOp(mut st, i) != OpConst || irInsB(mut st, i) != CT_PSITE || irInsA(mut st, i) != o + off {
             panic(InvariantBroken{})
         }
@@ -160,6 +164,9 @@ func roPoints(st mut St) int {
     }
     for o <- iter.Range(0, ns) {
         i := InsRef(table.Get(mut st.stIns, o + 1))
+        if int(i) == -1 {
+            continue
+        }
         v := irInsA(mut st, i)
         if irInsOp(mut st, i) != OpConst || irInsB(mut st, i) != CT_SITE || (v >> 2) != o + 1 + off {
             panic(InvariantBroken{})

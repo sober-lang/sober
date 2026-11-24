@@ -1,7 +1,7 @@
-@@full	1454e18810903a70	940	26131
-@head	a267a1b05af63503	0	151
+@@full	e65eda82b898103b	1065	31716
+@head	56b0812ccd8115b1	0	183
 func give	10d2aee2bdb2b33a	14	535
 func login	f8b814abeaaa2ed8	14	841
-func main	11de2bf012c22b43	53	2767
+func main	7c6f7d064ffbf0e7	73	3431
 func show	3e93c0498cd26fe0	39	1321
 func slow	4bee24f6f1472d1c	13	571

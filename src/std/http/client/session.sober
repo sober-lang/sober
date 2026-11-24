@@ -47,8 +47,8 @@ func Open(at string, k func(s Session), policy Policy?) error? {
         return BadUrl{}
     }
     rt := viaOf(c, t)
-    pa := params(c, rt.px)
-    pb := params(c, t)
+    pa := params(c, rt.px, false)
+    pb := params(c, t, true)
     to := c.timeout
     start := time.Mono()
     mut err := noErr()

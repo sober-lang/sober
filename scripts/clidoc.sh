@@ -7,6 +7,8 @@
 #   ②③ scripts/clidoc.ts（環境変数の綴り ⊆ 表の宣言 ∪ docs/guide/env.ja.md の表・scripts と bin/sober が渡すフラグ ⊆ 表の宣言）
 #
 #   scripts/clidoc.sh [--regen]   --regen は ① の生成物を書き直す（②③ と負例は見ない）
+# ゴールデンの並びを呼び手のロケールに依らせない
+export LC_ALL=C.UTF-8
 set -uo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$PWD

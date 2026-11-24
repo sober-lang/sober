@@ -143,3 +143,94 @@ func TestBver() {
     c0, c1 := bvT(1, 9)
     assert(c0 == 9 && c1 == -1)
 }
+
+// 仮引数 (x, m, y, y2, m2, z) の関数に、輪の前の検査 `uge w, y`（w = `sar m, 2`）と、その後の表の添字の検査 `uge (sar (and_ x, m), 2), y'` を組んで
+// bceFunc を掛け、残った condbr の数を返す（⑦）。kind: 0 = 直列・1 = 定数のマスク（w = 8191・添字は x & 32767）・2 = w のシフトが 1（添字は 2）・
+// 3 = w が別のマスク m2 から・4 = y' = y2（長さが違う）・5 = 添字の検査を w の検査の真の辺（panic の側）に置く・6 = 添字の検査を輪の中に置く
+// （輪の頭の前任 = w の検査の偽の辺と戻りの辺）・7 = 6 で輪の頭へ w の検査を通らない入りの辺もある・8 = 定数のマスクが w より大きい（w = 100）
+func cvT(kind int) int {
+    mut st := St{}
+    initScalars(mut st)
+    desugar.HeapPush(mut st.d, 0)
+    pt := listN(mut st, 6)
+    for k <- iter.Range(1, 7) {
+        desugar.HeapSet(mut st.d, pt + k, TyI64)
+    }
+    f := addFunc(mut st, 0, desugar.ListRef(pt), -1)
+    st.fn = f
+    entry := newBlock(mut st)
+    st.cur = entry
+    bad := newBlock(mut st)
+    ok := newBlock(mut st)
+    done := newBlock(mut st)
+    x := 0
+    m := 1
+    y := 2
+    y2 := 3
+    m2 := 4
+    z := 5
+    sh2 := iconst(mut st, 2)
+    w := if kind == 1 { iconst(mut st, 8191) } else if kind == 8 { iconst(mut st, 100) } else if kind == 2 { bin(mut st, BSar, m, iconst(mut st, 1)) } else if kind == 3 { bin(mut st, BSar, m2, sh2) } else { bin(mut st, BSar, m, sh2) }
+    mk := if kind == 1 || kind == 8 { iconst(mut st, 32767) } else { m }
+    yc := if kind == 4 { y2 } else { y }
+    if kind == 6 || kind == 7 {
+        h := newBlock(mut st)
+        body := newBlock(mut st)
+        latch := newBlock(mut st)
+        if kind == 7 {
+            a := newBlock(mut st)
+            condbr(mut st, z, a, -1, h, -1)
+            setCur(mut st, a)
+        }
+        condbr(mut st, cmp(mut st, CUge, w, y), bad, -1, h, -1)
+        setCur(mut st, h)
+        br(mut st, body, -1)
+        setCur(mut st, body)
+        e := bin(mut st, BSar, bin(mut st, BAnd, x, mk), sh2)
+        condbr(mut st, cmp(mut st, CUge, e, yc), bad, -1, latch, -1)
+        setCur(mut st, latch)
+        condbr(mut st, z, h, -1, done, -1)
+    } else if kind == 5 {
+        condbr(mut st, cmp(mut st, CUge, w, y), ok, -1, done, -1)
+        setCur(mut st, ok)
+        e := bin(mut st, BSar, bin(mut st, BAnd, x, mk), sh2)
+        condbr(mut st, cmp(mut st, CUge, e, yc), bad, -1, done, -1)
+    } else {
+        condbr(mut st, cmp(mut st, CUge, w, y), bad, -1, ok, -1)
+        setCur(mut st, ok)
+        e := bin(mut st, BSar, bin(mut st, BAnd, x, mk), sh2)
+        condbr(mut st, cmp(mut st, CUge, e, yc), bad, -1, done, -1)
+    }
+    setCur(mut st, bad)
+    ret(mut st, -1)
+    setCur(mut st, done)
+    ret(mut st, -1)
+    bceFunc(mut st, f)
+    mut n := 0
+    mut b := irFnBHead(mut st, f)
+    while int(b) != -1 {
+        if irBlkTerm(mut st, b) == TmCondbr {
+            n += 1
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return n
+}
+
+func TestBceCover() {
+    // ⑦: `sar m, 2 <u y` の偽の辺が支配する `sar (x & m), 2 <u y` の検査は消える（w の検査だけが残る）
+    assert(cvT(0) == 1)
+    // 定数のマスクは ⑤ へ（32767 >> 2 = 8191 ≤ 8191）
+    assert(cvT(1) == 1)
+    // シフトの量が違えば言わない・別のマスク・別の長さ・真の辺からは言わない
+    assert(cvT(2) == 2)
+    assert(cvT(3) == 2)
+    assert(cvT(4) == 2)
+    assert(cvT(5) == 2)
+    // 輪の頭の前任が w の検査の偽の辺と戻りの辺だけなら、輪の中の検査も消える（輪の終わりの z の condbr と w の検査が残る）
+    assert(cvT(6) == 2)
+    // 輪の頭へ w の検査を通らない入りの辺があれば言わない（z の condbr 2 本と 2 本の検査）
+    assert(cvT(7) == 4)
+    // 定数のマスクの上界（8191）が w（100）より大きければ消さない
+    assert(cvT(8) == 2)
+}

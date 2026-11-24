@@ -48,6 +48,11 @@ const IBLoad32 = 71
 const ICtz64 = 72
 // bstore64(b, i, v) → 0（b[i:i+8] に v を little-endian の 8 バイトで書く — 検査なし・境界は std/internal/jsonw の Word が 1 か所で見る。b は呼び手の mut の列）
 const IBStore64 = 73
+// ログの記録の書き（std/internal/logwだけ。状態〔書きかけの開始・書く位置・あふれのフラグ〕はワーカーの表に持つ。language.md 42 節）
+const ILogBegin = 82   // log_begin() → 0（前の書きかけを捨て、落とした区間の行と頭の `{"ts":"…",` を積んで書きかけを始める）
+const ILogWord = 83    // log_word(v, n) → 0（vの下位nバイト〔n ≤ 8・little-endian〕を書きかけに足す。入りきらなければあふれのフラグ）
+const ILogBytes = 84   // log_bytes(b) → 0（bを書きかけに足す。入りきらない・記録が32 KiBを越えるならあふれのフラグ）
+const ILogEnd = 85     // log_end() → 0（書きかけを1記録として積み終える。あふれのフラグがあれば捨ててdroppedを数える）
 const ICellReset = 58  // cell_reset() → 0（std/testing/cellの格納場所を全部空にする — std/quickの試行の頭。格納場所を使わないプログラムは何もしない）
 const IRunFdEnv = 51  // run_fd_env(argv, envz, ofd, efd) → run_fd と同じで、子の環境を envz（「NAME=値 + 0」の連結）だけにする（rt.run_fd_env）
 const IMkdir = 11
@@ -75,6 +80,10 @@ const ILeaseOp = 32     // ワーカー局所のleaseのrtのAPI（region-domain
                        // （op 0 = ワーカーの数・1 = 今のワーカーの番号・2 = blk[off] のマークを取る〔1 = 取れた・0 = 使用中〕・3 = 返す・4 = blk[off] の生の読み・5 = 生の書き）
 const ILeaseView = 33   // lease_view(blk, off, n) → blk[off:off+n] のワードを指すmut []int（配置先のエリアを予約ページのScratchに付ける — 深度はblkのまま）
 const ILeaseBytes = 47  // lease_bytes(blk, off, n) → blkのoffワード目からnバイトを指すmut []byte（lease_viewのバイト版 — std/tlsの送りのバッチで使う）
+const IAesCbcKey = 79  // aescbckey(key, 表) → 0（key = 16 バイトの番地・表 = 352 バイトの番地 — [0, 176) 暗号化の鍵・[176, 352) 復号の鍵〔aesimc の逆順〕。std/crypto/aescbc だけ）
+const IAesCbcEnc = 80  // aescbce(st, src, dst, n) → 0（n は 16 の倍数 — CBC の暗号化。st の [0, 16) の連鎖の IV を最後の暗号文のブロックへ進める）
+const IAesCbcDec = 81  // aescbcd(st, src, dst, n) → 0（n は 16 の倍数 — CBC の復号。st の [0, 16) を最後の暗号文のブロックへ進める・src と dst は同じでよい）
+const ILeaseAt = 78     // lease_at(blk, off, n) → blk[off]のワードが指す番地からnバイトを指すmut []byte（lease_op 12がblkの深度に確保した席 — std/tlsの受けの持ち越し）
 const ICpuClmul = 35    // cpuclmul() → この機械でcrcfoldのパスを使えるか（0 / 1 — x86の最適化のバックエンドのELFのCPUIDの判定・他の出力は0）
 const IAesCpu = 37      // cpuaes() → この機械で AES-GCM の塊を使えるか（0 / 1 — AES-NI・PCLMULQDQ・SSSE3。x86 の最適化のバックエンドの ELF の CPUID の判定・他の出力は 0）
 const IAesKey = 38      // aeskey(key, ctx) → 0（key = 16 バイトの番地・ctx = 272 バイトの作業域の番地 — 鍵の展開と GHASH の H の冪。std/crypto/aesgcm だけ）
@@ -101,7 +110,7 @@ const ILoad64 = 34      // load64(b, i) → b[i:i+8] の 8 バイトを little-e
 
 // 鍵の綴り → 番号（閉じた集合の外は 0）
 func IntrinsicCode(key string) int {
-    return if key == "fsqrt" { IFSqrt } else if key == "fbits" { IFBits } else if key == "ffrombits" { IFFromBits } else if key == "errno" { IErrno } else if key == "args" { IArgs } else if key == "environ" { IEnviron } else if key == "read_file" { IReadFile } else if key == "read_dir" { IReadDir } else if key == "read_fd" { IReadFd } else if key == "run" { IRun } else if key == "run_fd" { IRunFd } else if key == "run_fd_env" { IRunFdEnv } else if key == "mkdir" { IMkdir } else if key == "syscall" { ISyscall } else if key == "addr" { IAddr } else if key == "wait_fd" { IWaitFd } else if key == "fd_own" { IFdOwn } else if key == "net_op" { INetOp } else if key == "stat" { IStat } else if key == "sleep" { ISleep } else if key == "write_file" { IWriteFile } else if key == "write_fd" { IWriteFd } else if key == "write_mode" { IWriteMode } else if key == "rename" { IRename } else if key == "par_pool" { IParPool } else if key == "par_ledger" { IParLedger } else if key == "par_fail" { IParFail } else if key == "open" { IOpen } else if key == "close" { IClose } else if key == "chunk_open" { IChunkOpen } else if key == "chunk_next" { IChunkNext } else if key == "chunk_close" { IChunkClose } else if key == "deadline" { IDeadline } else if key == "lease_op" { ILeaseOp } else if key == "lease_view" { ILeaseView } else if key == "lease_bytes" { ILeaseBytes } else if key == "load64" { ILoad64 } else if key == "load16" { ILoad16 } else if key == "store16" { IStore16 } else if key == "load32" { ILoad32 } else if key == "store32" { IStore32 } else if key == "appendword" { IAppendWord } else if key == "grow_nozero" { IGrowNoZero } else if key == "append_date" { IAppendDate } else if key == "bload32" { IBLoad32 } else if key == "ctz64" { ICtz64 } else if key == "bstore64" { IBStore64 } else if key == "matchlen" { IMatchLen } else if key == "jclean" { IJClean } else if key == "cpuclmul" { ICpuClmul } else if key == "crcfold" { ICrcFold } else if key == "cpuaes" { IAesCpu } else if key == "aeskey" { IAesKey } else if key == "aesctr" { IAesCtr } else if key == "aesghash" { IAesGhash } else if key == "aestag" { IAesTag } else if key == "aesseal" { IAesSeal } else if key == "aesopen" { IAesOpen } else if key == "mulhi" { IMulHi } else if key == "addrn" { IAddrN } else if key == "cpumulx" { IMmCpu } else if key == "montmul" { IMmMul } else if key == "mmsel" { IMmSel } else if key == "montsqr" { IMmSqr } else if key == "femul" { IFeMul } else if key == "cpusha" { IShaCpu } else if key == "sha256blk" { IShaBlk } else if key == "cycles" { ICycles } else if key == "clock" { IClock } else if key == "cover" { ICover } else if key == "cover_fd" { ICoverFd } else if key == "cover_get" { ICoverGet } else if key == "cover_n" { ICoverN } else if key == "cover_mid" { ICoverMid } else if key == "cover_setmid" { ICoverSetMid } else if key == "cell_reset" { ICellReset } else if key == "net_peek" { INetPeek } else { 0 }
+    return if key == "fsqrt" { IFSqrt } else if key == "fbits" { IFBits } else if key == "ffrombits" { IFFromBits } else if key == "errno" { IErrno } else if key == "args" { IArgs } else if key == "environ" { IEnviron } else if key == "read_file" { IReadFile } else if key == "read_dir" { IReadDir } else if key == "read_fd" { IReadFd } else if key == "run" { IRun } else if key == "run_fd" { IRunFd } else if key == "run_fd_env" { IRunFdEnv } else if key == "mkdir" { IMkdir } else if key == "syscall" { ISyscall } else if key == "addr" { IAddr } else if key == "wait_fd" { IWaitFd } else if key == "fd_own" { IFdOwn } else if key == "net_op" { INetOp } else if key == "stat" { IStat } else if key == "sleep" { ISleep } else if key == "write_file" { IWriteFile } else if key == "write_fd" { IWriteFd } else if key == "write_mode" { IWriteMode } else if key == "rename" { IRename } else if key == "par_pool" { IParPool } else if key == "par_ledger" { IParLedger } else if key == "par_fail" { IParFail } else if key == "open" { IOpen } else if key == "close" { IClose } else if key == "chunk_open" { IChunkOpen } else if key == "chunk_next" { IChunkNext } else if key == "chunk_close" { IChunkClose } else if key == "deadline" { IDeadline } else if key == "lease_op" { ILeaseOp } else if key == "lease_view" { ILeaseView } else if key == "lease_bytes" { ILeaseBytes } else if key == "lease_at" { ILeaseAt } else if key == "load64" { ILoad64 } else if key == "load16" { ILoad16 } else if key == "store16" { IStore16 } else if key == "load32" { ILoad32 } else if key == "store32" { IStore32 } else if key == "appendword" { IAppendWord } else if key == "grow_nozero" { IGrowNoZero } else if key == "append_date" { IAppendDate } else if key == "bload32" { IBLoad32 } else if key == "ctz64" { ICtz64 } else if key == "bstore64" { IBStore64 } else if key == "matchlen" { IMatchLen } else if key == "jclean" { IJClean } else if key == "cpuclmul" { ICpuClmul } else if key == "crcfold" { ICrcFold } else if key == "cpuaes" { IAesCpu } else if key == "aeskey" { IAesKey } else if key == "aesctr" { IAesCtr } else if key == "aesghash" { IAesGhash } else if key == "aestag" { IAesTag } else if key == "aesseal" { IAesSeal } else if key == "aesopen" { IAesOpen } else if key == "aescbckey" { IAesCbcKey } else if key == "aescbce" { IAesCbcEnc } else if key == "aescbcd" { IAesCbcDec } else if key == "mulhi" { IMulHi } else if key == "addrn" { IAddrN } else if key == "cpumulx" { IMmCpu } else if key == "montmul" { IMmMul } else if key == "mmsel" { IMmSel } else if key == "montsqr" { IMmSqr } else if key == "femul" { IFeMul } else if key == "cpusha" { IShaCpu } else if key == "sha256blk" { IShaBlk } else if key == "cycles" { ICycles } else if key == "clock" { IClock } else if key == "cover" { ICover } else if key == "cover_fd" { ICoverFd } else if key == "cover_get" { ICoverGet } else if key == "cover_n" { ICoverN } else if key == "cover_mid" { ICoverMid } else if key == "cover_setmid" { ICoverSetMid } else if key == "cell_reset" { ICellReset } else if key == "net_peek" { INetPeek } else if key == "log_begin" { ILogBegin } else if key == "log_word" { ILogWord } else if key == "log_bytes" { ILogBytes } else if key == "log_end" { ILogEnd } else { 0 }
 }
 
 // 関数のエフェクトのビット（language.md 12 節の関数のエフェクト — v1の語彙。上位ビットは出所のcredential等、将来の拡張用に予約）
@@ -109,7 +118,8 @@ const EffBlock = 1   // 待ちに入りうる（taskの検査点・leaseのウ�
 const EffIo = 2      // プロセスの外と出入りする（入力も出力も）
 const EffPanic = 4   // 明示の panic(L{…})（境界検査・RegionExceeded は数えない）
 const EffNondet = 8  // io の入力を固定しても値が揺れる（時刻・タイミング）
-const EffAll = 15
+const EffObs = 16    // プログラムが読み戻せない観測の出力（ログ）。`@effects` の許容は `!obs` が無い限り常に含む
+const EffAll = 31
 
 // 鍵の番号のエフェクトのビット（葉の表 — エフェクトの葉はrtの原始のAPIで、表はcompilerが持つ）。
 // 純な鍵（fsqrt・fbits・errno・addr・load64・cpu*・crcfold・aes*（aesseal・aesopen を含む）・mulhi・montmul・mmsel・montsqr・femul・sha256blk — cpu* は機械に依るが 1 プロセスで一定）と lease_* / par_pool / par_fail（観測は
@@ -121,6 +131,7 @@ func IntrinsicEffects(code int) int {
     case ICellReset: EffIo
     case IArgs | IEnviron | IReadFile | IReadDir | IMkdir | IStat | IWriteFile | IWriteFd | IWriteMode | IRename | IOpen | IClose | IChunkOpen | ISyscall | IFdOwn | IClock | IAppendDate: EffIo
     case IDeadline | ICycles | IParLedger | INetPeek: EffNondet
+    case ILogBegin | ILogWord | ILogBytes | ILogEnd: EffObs
     default: 0
     }
 }
@@ -163,7 +174,7 @@ func IntrinsicSig(code int) string {
     case INetOp | INetPeek: "iiii>i"
     case ILeaseOp: "inii>i"
     case ILeaseView: "nii>m"
-    case ILeaseBytes: "nii>x"
+    case ILeaseBytes | ILeaseAt: "nii>x"
     case ILoad64: "bi>i"
     case ILoad16 | ILoad32: "ni>i"
     case IStore16 | IStore32: "nii>i"
@@ -183,6 +194,8 @@ func IntrinsicSig(code int) string {
     case IAesGhash: "iii>i"
     case IAesSeal: "iiii>i"
     case IAesOpen: "iiii>i"
+    case IAesCbcKey: "ii>i"
+    case IAesCbcEnc | IAesCbcDec: "iiii>i"
     case IAesTag: "ii>i"
     case IMulHi: "ii>i"
     case IAddrN: "n>i"
@@ -199,6 +212,10 @@ func IntrinsicSig(code int) string {
     case ICoverFd: "ii>i"
     case ICoverGet: "i>i"
     case ICellReset: ">i"
+    case ILogBegin: ">i"
+    case ILogWord: "ii>i"
+    case ILogBytes: "b>i"
+    case ILogEnd: ">i"
     case ICoverN: ">i"
     case ICoverMid: ">i"
     case ICoverSetMid: "i>i"
@@ -246,6 +263,8 @@ func keyPkg(code int) string {
     case IGrowNoZero: "std/internal/jsonw"
     case IAppendDate: "std/http/server"
     case INetPeek: "std/net"
+    case ILeaseAt: "std/tls"
+    case ILogBegin | ILogWord | ILogBytes | ILogEnd: "std/internal/logw"
     default: ""
     }
 }
@@ -257,6 +276,8 @@ func keyWhy(code int) string {
     case IGrowNoZero: "only the writes of std/internal/jsonw keep the grown bytes written before they are read"
     case IAppendDate: "the Date line of a worker is part of the HTTP response head that std/http/server writes"
     case INetPeek: "only net.Waiting reads the listeners of net.Serve"
+    case ILeaseAt: "the seat at the word of the storage is the receive carry of a TLS connection, allocated by std/tls"
+    case ILogBegin | ILogWord | ILogBytes | ILogEnd: "the writers of std/internal/logw keep a record whole between log_begin and log_end without waiting"
     default: ""
     }
 }

@@ -1,4 +1,6 @@
-@@full	122bcf18caa9cd2b	655	17047
+@@full	240af3b3d08bb49d	1114	29819
 @head	e4dd247103c72e26	0	179
-func main	fdc44ea606526956	89	3076
+func main	ac26ecad481d2289	109	3587
+func removeAll	587e7712509490fc	18	694
+func runDir	25a59a75464b1e89	37	1321
 func show	a9248adff2679fe7	18	698

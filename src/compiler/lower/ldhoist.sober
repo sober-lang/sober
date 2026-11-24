@@ -28,6 +28,8 @@ func ldhoistModule(st mut St) {
     while f != -1 {
         if irFnBHead(mut st, f) != -1 && lbScan(mut st, f) & 2 != 0 {
             ldhoistFunc(mut st, f)
+            // 直列の経路もlB2Funcと同じ列（ldhoistの後にbce。bce.soberの⑦）
+            bceFold(mut st, f)
         }
         f = irFnNext(mut st, f)
     }
@@ -392,8 +394,11 @@ func ldhoistFunc(st mut St, f FnRef) {
                                 }
                             }
                             if x < 0 {
-                                x = newValueIn(mut st, f)
-                                linkInst(mut st, pre, mkInst(mut st, x, OpLoad, p, word, irInsC(mut st, ins)))
+                                x = lhReuse(mut st, f, np, mut w, mut pw.def, outside, p, word, irInsC(mut st, ins))
+                                if x < 0 {
+                                    x = newValueIn(mut st, f)
+                                    linkInst(mut st, pre, mkInst(mut st, x, OpLoad, p, word, irInsC(mut st, ins)))
+                                }
                                 newK = append(newK, key)
                                 newV = append(newV, x)
                             }
@@ -416,6 +421,43 @@ func ldhoistFunc(st mut St, f FnRef) {
         optRenumber(mut st, f)
     }
 }
+
+// 前置きのブロック（番号 b）と、そこへ前任が 1 つのブロックの連なりで続く手前の LH_CHAIN 個のブロックに、P のチェーンのワード word を
+// 型 ty で読む load があり、その後ろ（前置きの終わりまで）にメモリを書きうる命令が無ければ、その load の値（無ければ -1）。
+// 輪の前の明示の検査（pool.Scratch の表の大きさ）が読んだ長さを、輪の中の読みと同じ値にする（bce.sober の ⑦ が同じ長さを要る）
+func lhReuse(st mut St, f FnRef, np int, w mut m2rW, def mut []int, b int, p int, word int, ty int) int {
+    mut blks := mut []int{b}
+    mut bc := b
+    while len(blks) < LH_CHAIN && w.pcnt[bc + 1] - w.pcnt[bc] == 1 {
+        q := w.preds[w.pcnt[bc]]
+        if q == bc || w.rpoIx[q] < 0 {
+            break
+        }
+        blks = append(blks, q)
+        bc = q
+    }
+    mut x := -1
+    mut k := len(blks) - 1
+    while k >= 0 {
+        mut ins := irBlkIHead(mut st, BlkRef(w.blk[blks[k]]))
+        while ins != -1 {
+            op := irInsOp(mut st, ins)
+            if op == OpLoad {
+                kk, off := lhRoot(mut st, f, np, mut def, irInsA(mut st, ins), p)
+                if kk == LH_SELF && off >= 0 && off + irInsB(mut st, ins) == word && irInsC(mut st, ins) == ty && irInsRes(mut st, ins) >= 0 {
+                    x = irInsRes(mut st, ins)
+                }
+            } else if !(lhQuiet(op) || isNarrowLd(op)) {
+                x = -1
+            }
+            ins = irInsNext(mut st, ins)
+        }
+        k -= 1
+    }
+    return x
+}
+
+const LH_CHAIN = 4
 
 // 命令 i を付け替え済みか
 func lhDone(al mut []int, i int) bool {

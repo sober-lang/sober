@@ -1,10 +1,9 @@
-@@full	eb956724836fd556	2541	68883
-@head	4cf171239e1982f2	0	193
+@@full	006a1684ee856314	2723	76110
+@head	e3f171731daead7f	0	225
 func app	d638fb14d877bb9e	70	2878
 func auth	2aff6e5e6b21a8c5	27	983
 func authAfter	783461daee611024	9	464
 func create	d893a35cc195505c	8	517
-func feed	146cd0cdacb0aa67	14	535
 func files	de54143f92b30518	13	755
 func getUser	8c4213e591e6078f	16	683
 func health	9b200c2f6bab8958	8	406
@@ -13,7 +12,8 @@ func logBefore	5b125e7099762e9b	13	549
 func main	49d7d4243cf50c24	56	2356
 func me	27400a38bcd8f180	8	402
 func or	01410288ef3a70dd	13	459
-func serve	83fd5bc461eddd13	30	1192
+func readAll	f5c560cbc949d739	28	1057
+func serve	41058fcc26842082	44	1642
 func show	62bd2a266e93f744	35	1205
 func static	cc4ff20f41cc2b99	16	686
 func top	e21dba6df21d2db9	16	680

@@ -437,7 +437,8 @@ func xSlotCallEv(st mut St, ins InsRef, aslot []int, aoff []int, nv int, excl mu
     mb := xg(mut st, callee + F_MUTP)
     // 参照で渡す仮引数（F_REFP）の実引数のスロットは呼び出しの点の読み（保守側に読み書きで数える — 呼ばれた関数は書かない）
     rb := xg(mut st, callee + F_REFP)
-    rtrw := callee == int(st.rtCopy) || callee == int(st.rtCopy8) || callee == int(st.rtReloc) || callee == int(st.rtReloc8) || callee == int(st.rtErrReloc)
+    // 読むだけのrtの関数（rtReadOnly）の実引数も呼び出しの点の読み書きに数える（SROAが写した一時のスロット — 保守側）
+    rtrw := callee == int(st.rtCopy) || callee == int(st.rtCopy8) || callee == int(st.rtReloc) || callee == int(st.rtReloc8) || callee == int(st.rtErrReloc) || rtReadOnly(mut st, callee)
     // 受け皿の全語の書きは事象の最初に（後ろ向きでは実引数の読み書きが先に効き、受け皿の書きの点で mut 仮引数が生きている —
     // 呼ばれた関数は受け皿を書いた後にも mut の実引数を読み書きしうる〔defer〕ので、受け皿は呼び出しの間ずっとその席と干渉する）
     o0 := if n > 0 { xOpnd(mut st, ins, 0) } else { -1 }

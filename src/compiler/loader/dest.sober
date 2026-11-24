@@ -13,16 +13,50 @@ import "ast"
 import "lexer"
 
 // 全ファイルの関数にフラグを立てた木
-func destMarksAll(ts []ast.Tree) []ast.Tree {
+// patch が偽なら下流の使い方で決まる旗（destPatch）を足さない（package の値を作る全体の仕上げ — 全体の段で名前で足す）
+func destMarksAll(ts []ast.Tree, patch bool) []ast.Tree {
     vf := valueFns(ts)
     rf, mas := appendTargets(ts)
     mut out := mut []ast.Tree{}
     mut base := 0
     for i <- iter.Range(0, len(ts)) {
-        out = append(out, destFile(ts[i], vf, rf, mas, base))
+        lt := destFile(ts[i], mas, base)
+        out = append(out, if patch { destPatch(lt, vf, rf, base) } else { lt })
         base += ast.ListLen(ts[i], ts[i].nodes[ts[i].file].d)
     }
     return freeze(out)
+}
+
+// ファイルt（関数の番号の始まり base）の関数の本体のKBlockに、下流の使い方で決まる旗を足す（変える節が無ければtのまま）:
+// 返る列へ追記する呼び出し（フラグ3）の呼び先になりうる（rf）なら4（lowerは入口で宛先の旗も読む — 戻りのコピーの床を宛先に）・
+// 関数値として使われうる（vf）なら1（関数値の呼び出しの宛先の書きを受けて 0 に戻す。lower は結果が slice を持つ関数でだけ読む）
+func destPatch(t ast.Tree, vf []int, rf []int, base int) ast.Tree {
+    fns := t.nodes[t.file].d
+    mut at := mut []int{}
+    mut to := mut []int{}
+    for k <- iter.Range(0, ast.ListLen(t, fns)) {
+        fd := t.nodes[ast.ListAt(t, fns, k)]
+        if fd.e >= 0 {
+            cur := t.nodes[fd.e].e
+            v := if rf[base + k] != 0 { 4 } else if vf[base + k] != 0 { 1 } else { cur }
+            if v != cur {
+                at = append(at, fd.e)
+                to = append(to, v)
+            }
+        }
+    }
+    if len(at) == 0 {
+        return t
+    }
+    mut ns := mut []ast.Node{}
+    for i <- iter.Range(0, len(t.nodes)) {
+        ns = append(ns, t.nodes[i])
+    }
+    for j <- iter.Range(0, len(at)) {
+        x := ns[at[j]]
+        ns[at[j]] = ast.Node{x.kind, x.tok, x.a, x.b, x.c, x.d, to[j], x.f}
+    }
+    return ast.Tree{nodes: freeze(ns), data: t.data, file: t.file}
 }
 
 // 全ファイルの関数宣言の表（名前のhash → チェーン）: (mask, チェーンの頭 × (mask + 1), 関数ごとに3ワード = ファイル・宣言の節・チェーンの次)。番号は
@@ -159,11 +193,11 @@ func valueMark(ts []ast.Tree, tab []int, ent []int, out mut []int, mask int, nt 
     }
 }
 
-// ファイルtの関数ごとのフラグ（立てる節が無ければtのまま）
-func destFile(t ast.Tree, vf []int, rf []int, mas [][]int, base int) ast.Tree {
+// ファイルtの関数ごとのフラグのうち、そのファイルの木だけで決まるもの（立てる節が無ければtのまま）。下流の使い方で決まる本体の旗
+// （関数値として使われうる・返る列へ追記される呼び先）は destPatch が足す
+func destFile(t ast.Tree, mas [][]int, base int) ast.Tree {
     mut marks := mut []int{}
     mut apnd := mut []int{}
-    mut rets := mut []int{}
     fns := t.nodes[t.file].d
     sc := scalarFns(t)
     for k <- iter.Range(0, ast.ListLen(t, fns)) {
@@ -177,18 +211,14 @@ func destFile(t ast.Tree, vf []int, rf []int, mas [][]int, base int) ast.Tree {
             for j <- iter.Range(0, len(ma)) {
                 apnd = append(apnd, ma[j])
             }
-            // フラグを持つ関数は本体のKBlockにもフラグ（lowerが入口で宛先の深度のレジスタを読む）。関数値として使われうる関数も
-            // （関数値の呼び出しの宛先の書きを受けて 0 に戻す。lower は結果が slice を持つ関数でだけ読む）
-            if rf[base + k] != 0 {
-                // 返る列へ追記する呼び出し（フラグ3）の呼び先になりうる: 本体のフラグ4（lowerは入口で宛先の旗も読む — 戻りのコピーの床を宛先に）
-                rets = append(rets, fd.e)
-            } else if len(ms) > 0 || len(ma) > 0 || vf[base + k] != 0 {
+            // フラグを持つ関数は本体のKBlockにもフラグ（lowerが入口で宛先の深度のレジスタを読む）
+            if len(ms) > 0 || len(ma) > 0 {
                 marks = append(marks, fd.e)
             }
         }
     }
     lm := destLambdas(t, sc)
-    if len(marks) == 0 && len(lm) == 0 && len(apnd) == 0 && len(rets) == 0 {
+    if len(marks) == 0 && len(lm) == 0 && len(apnd) == 0 {
         return t
     }
     mut ns := mut []ast.Node{}
@@ -204,10 +234,6 @@ func destFile(t ast.Tree, vf []int, rf []int, mas [][]int, base int) ast.Tree {
     for j <- iter.Range(0, len(apnd)) {
         x := ns[apnd[j]]
         ns[apnd[j]] = ast.Node{x.kind, x.tok, x.a, x.b, x.c, x.d, 3, x.f}
-    }
-    for j <- iter.Range(0, len(rets)) {
-        x := ns[rets[j]]
-        ns[rets[j]] = ast.Node{x.kind, x.tok, x.a, x.b, x.c, x.d, 4, x.f}
     }
     // ラムダの本体のフラグは2（そのラムダ自身の値へ流れ着く — lowerは持ち上げたラムダの本体を下ろすときだけ使う。展開されるラムダの本体では使わない:
     // 展開の宛先は定義した関数の宛先で、ループの中の展開の結果が反復ごとに外の region へ積もるので別扱いにする）

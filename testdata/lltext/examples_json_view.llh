@@ -1,4 +1,4 @@
-@@full	35f03593c296a027	32456	1042075
+@@full	64bbc83bbc019139	32444	1041682
 @globals	326730807d0a4e08	117	5334
 main.main	b6e17614c9d70a98	760	27590
 main.walk	b26a364cf2fe9d3e	1319	48100
@@ -42,7 +42,7 @@ rt.write_all	86bfd44897da62e9	58	1390
 rt.write_fd	50346736cb5c6f69	9	276
 rt.write_file	2426a5f18cf5ccce	75	2065
 sober_entry	5df1985842bc807f	1864	51893
-std/builder.Build[byte]	1856c8945e852c63	588	18514
+std/builder.Build[byte]	f732278874880982	582	18315
 std/builder.Len[byte]	56ebe24feb8fa818	20	647
 std/builder.PushAll[byte]	bcb88aef54a285ed	345	10286
 std/builder.PushBetween[byte]	921d17922e3062e9	373	11494
@@ -50,7 +50,7 @@ std/builder.PushString	241de1007f253f38	62	2262
 std/builder.Push[byte]	77908bc60447c93c	124	3900
 std/builder.pushAllSlow[byte]	5eca9629f80c5d0c	416	12613
 std/builder.pushBetweenSlow[byte]	17d2ce5d5ed7c61c	70	2657
-std/builder.pushSlow[byte]	e439a9d342048a1a	625	19559
+std/builder.pushSlow[byte]	1df310631d0922f4	619	19365
 std/convert.FormatInt	85e74a469462b98a	119	3724
 std/convert.decWord	e30a055678204a0d	184	5523
 std/convert.formatUint	e1e7a8d5ffec6123	642	20856

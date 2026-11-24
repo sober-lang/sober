@@ -1,10 +1,14 @@
-@@full	6d0a0f399193a341	9740	311626
-@head	092f072aca2e191f	0	463
+@@full	91971c14174d30c9	12361	396174
+@head	5595fc7f0c6a73aa	0	505
 func TestFrameType	641b2e8d8b715b66	93	2714
-func TestReject	e263ff3eeb83e250	592	25229
+func TestReject	2e30cebedebe4a31	847	34267
 func rjBadFin	535da4735187a6a5	15	594
-func rjClientHello	7f697e118bd794b4	301	9113
+func rjClientHello	79f5427bcf308665	11	511
+func rjClientHelloX	461a129d4a73e0a7	308	9352
+func rjCookie	2f10822a691db561	45	1510
 func rjDesc	00b2f0f07d27bc97	17	777
+func rjEarly	08c856712bd25910	9	343
+func rjEarlyRecs	f6da7ea197e7b60b	28	1049
 func rjExt	a0ccf3d58d51fc35	22	813
 func rjFeed	3f6b951f87a2743e	13	511
 func rjFin	46830513c51af260	33	1054
@@ -20,6 +24,7 @@ func rjRec	af87702bd3aa5d13	34	1156
 func rjRun	389225a550c1f0b9	39	1389
 func rjSealed	6cadbaae88abce2d	54	2085
 func rjSeq	b1066f86138eb5bf	31	1146
+func rjSni	892f8adc8f0264be	94	3032
 func rjU16list	64faf5dee2269ff8	43	1432
 type rjCase	f234ee90f714dec6	5	251
 type rjHello	32af545b3afbab97	17	780

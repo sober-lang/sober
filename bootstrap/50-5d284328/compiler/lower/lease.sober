@@ -1,0 +1,221 @@
+package lower
+
+// ワーカー局所のleaseのrt（region-domain-pool.md 4d節 — std/task・std/poolのコピー先のインターフェースlease_op / lease_view）。
+// 格納場所はtask.Localのimmの列blk（NewLocalを呼んだregionに住む）で、ワーカーごとのエリア [フラグ, チェーン, フィールドごとに (tag, ワード …)] を持つ。
+// - フラグを取る（op 2）: エリアのフラグが0なら1にして今のtaskのチェーン（TC_LEASE — フラグの番地の列・エリアのチェーンのワードで繋ぐ）の頭に積む。使用中なら0（倒れ）
+// - 返す（op 3）: フラグを0にしてチェーンの頭を外す（予約ページは字面のブロックでdeferが返す — チェーンはLIFO）
+// - ワードの比較交換（op 8）: std/internal/lotの枠の状態（ワーカーを跨ぐ — エリアのワードと違い取り合いがある）
+// - 死の出口: taskのチェーンを頭から歩いてフラグを外す（rt.lease_drain — fd_drainと同じ所。縮退した子は入る前の頭まで）。1つでも外したら死の通し番号
+//   （rt.mnのMN_LDRAIN）を上げる — フラグを外した後に上げるので、番号を読んでからフラグを読む者には上がった番号の死が必ず見える
+// - 死の通し番号の読み（op 9）: lot の Reap が前に見た番号と同じなら走査を飛ばす
+// std/taskを使わない（taskの無い）プログラムはチェーンを持たない（死 = プロセスの終わり）。エリアのワードの読み書き（op 4 / 5）はrtの呼び出しの中 —
+// immの列のワードを書くので、最適化から見えるload / storeにしない（呼び出しは不透明な境界）
+
+import "desugar"
+import "diag"
+
+const TC_LEASE = TC_DL + 1
+
+// rt.lease_op（と task のあるプログラムなら rt.lease_drain）を（初出なら）宣言する
+func needLease(st mut St) {
+    lsNeed(mut st, NEED_LEASE, 0)
+    if st.rtLeaseOp == -1 {
+        st.rtLeaseOp = addFunc(mut st, int(strLit(mut st, "rt.lease_op")), desugar.ListRef(list4(mut st, TyI64, TyI64, TyI64, TyI64)), TyI64)
+        if st.taskUse {
+            st.rtLeaseDrain = addFunc(mut st, int(strLit(mut st, "rt.lease_drain")), desugar.ListRef(list2(mut st, TyPtr, TyI64)), -1)
+        }
+    }
+}
+
+// 鍵 lease_op（k = 29 — (op, blk, off, v) → int）・lease_view（30 — (blk, off, n) → mut []int）・lease_bytes（44 — (blk, off, n) → mut []byte）の呼び出し（cont.sober の ioBuiltin から）
+func leaseBuiltin(st mut St, k int, args desugar.ListRef, at desugar.NodeRef) (int, error?) {
+    n := lenL(mut st, args)
+    vs := listN(mut st, n)
+    mut i := 0
+    while i < n {
+        v := expr(mut st, latN(mut st, args, i))?
+        if isTag(mut st, v.t, TNever) {
+            return -1, nil
+        }
+        // blk は仮引数の 2 番目（op）/ 1 番目（view）— []int のヘッダ。他は int
+        isBlk := (k == 29 && i == 1) || (k != 29 && i == 0)
+        if isBlk != isTag(mut st, v.t, TSlice) || (!isBlk && !isTag(mut st, v.t, TInt)) {
+            return 0, diag.Mismatch{at: posOf(mut st, at)}
+        }
+        desugar.HeapSet(mut st.d, vs + 1 + i, v.v)
+        i += 1
+    }
+    a := leaseArg(mut st, vs, 0)
+    if k == 29 {
+        needLease(mut st)
+        blk := desugar.HeapGet(mut st.d, vs + 2)
+        return one1(mut st, tInt(mut st), call(mut st, st.rtLeaseOp, list4(mut st, a, load(mut st, blk, 0), desugar.HeapGet(mut st.d, vs + 3), desugar.HeapGet(mut st.d, vs + 4)))), nil
+    }
+    // View: ptr = blkの先頭 + offワード・長さn（lease_bytesはバイト）・深度 = blkの深度（ワードはblkの住むregionにある — 外へのコピーの判断はblkと同じ）
+    t := mkSlice(mut st, if k == 44 { tByte(mut st) } else { tInt(mut st) }, true)
+    out := newAgg(mut st, t)
+    off := desugar.HeapGet(mut st.d, vs + 2)
+    store(mut st, out, 0, bin(mut st, BAdd, load(mut st, a, 0), bin(mut st, BShl, off, iconst(mut st, 3))))
+    store(mut st, out, 1, desugar.HeapGet(mut st.d, vs + 3))
+    store(mut st, out, 2, load(mut st, a, 2))
+    return one1(mut st, t, out), nil
+}
+
+// 値の列 vs の i 番目
+func leaseArg(st mut St, vs int, i int) int {
+    return desugar.HeapGet(mut st.d, vs + 1 + i)
+}
+
+// rt.lease_op(op, p, off, v)・rt.lease_drain(tcb, stop)（使うプログラムだけ — lower の最後）
+func buildLeaseRt(st mut St) {
+    if st.rtLeaseOp == -1 {
+        return
+    }
+    begin(mut st, st.rtLeaseOp)
+    op := 0
+    addr := itop(mut st, bin(mut st, BAdd, 1, bin(mut st, BShl, 2, iconst(mut st, 3))))
+    zero := iconst(mut st, 0)
+    one := iconst(mut st, 1)
+    // op 0: ワーカーの数・op 1: 今のワーカーの番号（task の無いプログラムは 1 本 = 0 番）
+    b0 := branchIf(mut st, cmp(mut st, CEq, op, zero))
+    ret(mut st, if st.taskUse { load(mut st, globaladdr(mut st, st.mnG), MN_N) } else { one })
+    setCur(mut st, b0)
+    b1 := branchIf(mut st, cmp(mut st, CEq, op, one))
+    ret(mut st, if st.taskUse { load(mut st, globaladdr(mut st, st.wkG), WK_ID) } else { zero })
+    setCur(mut st, b1)
+    // op 6: 今の深度より深い自前のスロット（死んだregion — 前の命の高水位が残る）のページをOSへ返す（1回きりの深い作業の後 — tlsのhandshakeの後）。
+    // 返すのは [スロットの基底, bump) の全部（W_MADVの残しを使わない — 次の命は最初のページから触り直す）。bumpは書き換えない（slotReleaseのusedは
+    // admission の観測 — admitEnd — に流れるので、命の高水位のまま残す）。task の無いプログラムは何もしない
+    b6 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 6)))
+    if st.taskUse {
+        leaseTrim(mut st)
+    }
+    ret(mut st, zero)
+    setCur(mut st, b6)
+    // op 4: 生の読み・op 5: 生の書き
+    b4 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 4)))
+    ret(mut st, load(mut st, addr, 0))
+    setCur(mut st, b4)
+    b5 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 5)))
+    store(mut st, addr, 0, 3)
+    ret(mut st, zero)
+    setCur(mut st, b5)
+    // op 8: ワードの比較交換（lock cmpxchg — vの下位8ビット = 期待・その上 = 新しい値・結果 = 古い値〔期待と等しければ書けた〕）。
+    // ワーカーを跨いで同じワードを取り合うstd/internal/lotの枠の状態のインターフェース（op 4 / 5の速いパスの後ろ — 前に置くとtlsの小関数の部分インラインの頭が変わる）
+    b8 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 8)))
+    ret(mut st, atomicCas(mut st, addr, 0, bin(mut st, BAnd, 3, iconst(mut st, 255)), bin(mut st, BSar, 3, iconst(mut st, 8))))
+    setCur(mut st, b8)
+    // op 9: 死の通し番号（task の無いプログラムは死が無い — 0）
+    b9 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 9)))
+    ret(mut st, if st.taskUse { load(mut st, globaladdr(mut st, st.mnG), MN_LDRAIN) } else { zero })
+    setCur(mut st, b9)
+    // op 10: 今のtaskの次のrt.netop 13（b = 1。tls.Recvの中のFlush）を待たない印（std/httpのServeWithが、put:の後に受けが続くときに置く）。TC_FUSEに−2を置く。
+    // rt.netop 1は−2を「送信バッファリングのフラグ無し」と読んで消す。taskの無いプログラムは何もしない
+    b10 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 10)))
+    if st.taskUse {
+        tcm := itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
+        store(mut st, tcm, TC_FUSE, iconst(mut st, -2))
+    }
+    ret(mut st, zero)
+    setCur(mut st, b10)
+    // op 3: 返す（フラグを外し、チェーンの頭をエリアのチェーンのワードへ）
+    b3 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 3)))
+    store(mut st, addr, 0, zero)
+    if st.taskUse {
+        me := itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
+        store(mut st, me, TC_LEASE, load(mut st, addr, 1))
+    }
+    ret(mut st, zero)
+    setCur(mut st, b3)
+    // op 2: 取る（使用中なら0）。ミュータント15（検査の自己検査 — schedfuzz）: フラグを見ずに取る（予約ページの中で譲ったtaskの格納場所を別の予約ページが共有する）
+    bFree := branchIf(mut st, if st.rtMut == 15 { iconst(mut st, 0) } else { cmp(mut st, CNe, load(mut st, addr, 0), zero) })
+    ret(mut st, zero)
+    setCur(mut st, bFree)
+    store(mut st, addr, 0, one)
+    if st.taskUse {
+        me := itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
+        store(mut st, addr, 1, load(mut st, me, TC_LEASE))
+        store(mut st, me, TC_LEASE, ptoi(mut st, addr))
+    }
+    ret(mut st, one)
+    if st.rtLeaseDrain == -1 {
+        return
+    }
+    // lease_drain(tcb, stop): チェーンの頭がstopになるまでフラグを外す（死・切られた子はstop = 0で全部 — 予約ページのdeferが走らない）
+    begin(mut st, st.rtLeaseDrain)
+    tcb := 0
+    stop := 1
+    loop := newBlock(mut st)
+    v := param(mut st, loop, TyI64)
+    done := newBlock(mut st)
+    head := load(mut st, tcb, TC_LEASE)
+    br(mut st, loop, list1(mut st, head))
+    setCur(mut st, loop)
+    more := branchIf(mut st, cmp(mut st, CEq, v, stop))
+    br(mut st, done, -1)
+    setCur(mut st, more)
+    p := itop(mut st, v)
+    nx := load(mut st, p, 1)
+    store(mut st, p, 0, iconst(mut st, 0))
+    br(mut st, loop, list1(mut st, nx))
+    setCur(mut st, done)
+    store(mut st, tcb, TC_LEASE, stop)
+    // 1つでも外したら死の通し番号を上げる（lock xadd — フラグのstoreの後ろの柵を兼ねる）。ミュータント55（検査の自己検査 — lot_test）: 上げない
+    if st.rtMut != 55 {
+        bump := newBlock(mut st)
+        out := newBlock(mut st)
+        condbr(mut st, cmp(mut st, CNe, head, stop), bump, -1, out, -1)
+        setCur(mut st, bump)
+        _ = atomicXadd(mut st, globaladdr(mut st, st.mnG), MN_LDRAIN, iconst(mut st, 1))
+        br(mut st, out, -1)
+        setCur(mut st, out)
+    }
+    ret(mut st, -1)
+}
+
+// 子の入口の出口でtaskのチェーンに残ったleaseのフラグを外す（fdDrainCallから — 死・切られた子は予約ページのdeferが走らない）
+func leaseDrainCall(st mut St) {
+    if st.rtLeaseDrain != -1 {
+        call(mut st, st.rtLeaseDrain, list2(mut st, 0, iconst(mut st, 0)))
+    }
+}
+
+// op 6 の本体: 深度 k（今の深度 < k ≤ 自前の最深 SLOT_OWN）のスロットの [基底, bump) を madvise(MADV_DONTNEED)。
+// bump は task の切り替えで自前の範囲ごと退避・復元される（slotRange）ので、この task の命の高水位 — 範囲の外の値（0 か大きさ超え）は飛ばす
+func leaseTrim(st mut St) {
+    meta := globaladdr(mut st, st.meta)
+    sg := globaladdr(mut st, st.slotsG)
+    hi := load(mut st, sg, SLOT_OWN)
+    size := load(mut st, meta, W_SLOT_SIZE)
+    loop := newBlock(mut st)
+    k := param(mut st, loop, TyI64)
+    body := newBlock(mut st)
+    rel := newBlock(mut st)
+    nxt := newBlock(mut st)
+    done := newBlock(mut st)
+    br(mut st, loop, list1(mut st, bin(mut st, BAdd, load(mut st, meta, W_DEPTH), iconst(mut st, 1))))
+    setCur(mut st, loop)
+    condbr(mut st, cmp(mut st, CLe, k, hi), body, -1, done, -1)
+    setCur(mut st, body)
+    s0 := slotReal(mut st, meta, load(mut st, gepWord(mut st, sg, k), 0), curTcb(mut st))
+    // 予約ページ（移す前）は飛ばす。予約ページから移したスロットは普通のスロット
+    s := s0
+    used := bin(mut st, BSub, load(mut st, gepWord(mut st, meta, k), W_BUMP), s)
+    inR := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CGt, used, iconst(mut st, 0)), inR, -1, nxt, -1)
+    setCur(mut st, inR)
+    condbr(mut st, cmp(mut st, CLe, used, size), rel, -1, nxt, -1)
+    setCur(mut st, rel)
+    // ミュータント43: 予約ページの守りを外す（rt.region_enterの返しと同じ）
+    if winArm(mut st) && st.rtMut != 43 {
+        relW := newBlock(mut st)
+        condbr(mut st, isWinT(mut st, meta, s0, curTcb(mut st)), nxt, -1, relW, -1)
+        setCur(mut st, relW)
+    }
+    // madvise(s, used, MADV_DONTNEED = 4)。失敗は無視（返せなくても意味は変わらない）
+    syscall(mut st, list4(mut st, iconst(mut st, 28), s, used, iconst(mut st, 4)))
+    br(mut st, nxt, -1)
+    setCur(mut st, nxt)
+    br(mut st, loop, list1(mut st, bin(mut st, BAdd, k, iconst(mut st, 1))))
+    setCur(mut st, done)
+}

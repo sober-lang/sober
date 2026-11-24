@@ -209,6 +209,7 @@ func walkFn(az mut Az, fi int) {
     az.cur = fi
     az.pk = desugar.FnAt(mut az.d, fi).pkg
     az.er.envN = 0
+    az.er.envCurN = 0
     mut again := true
     mut n := 0
     while again && n < 16 {

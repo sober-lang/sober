@@ -1,0 +1,173 @@
+package logw
+
+// print.Logの合成の関数（compiler/loader/logshape.sober）だけが呼ぶ部品。Begin → 値の書き → End の列で1記録を書く。
+// 記録はワーカーのログのバッファへ直に書く（状態はrtのワーカーの表に持ち、窓のsliceは関数の外へ出ない）。Begin〜Endの間は待たないので、ワーカーをまたがない。
+// どれもpanicせず待たない: 入りきらなければrtがあふれのフラグを立て、Endがその記録を落として数える
+
+import "std/internal/floatfmt"
+import "std/math"
+
+@intrinsic("log_begin")
+func sysBegin() int
+
+@intrinsic("log_word")
+func sysWord(v int, n int) int
+
+@intrinsic("log_bytes")
+func sysBytes(b []byte) int
+
+@intrinsic("log_end")
+func sysEnd() int
+
+// エスケープの要らない区間の長さ（std/jsonのsysCleanと同じ組み込み）
+@intrinsic("jclean")
+func sysClean(b []byte) int
+
+// 記録を始める（前の書きかけは捨てる。頭の `{"ts":"…",` はrtが書く）
+@effects(obs)
+func Begin() {
+    _ = sysBegin()
+}
+
+// 記録を積み終える（あふれていれば落として数える）
+@effects(obs)
+func End() {
+    _ = sysEnd()
+}
+
+// vの下位nバイト（n ≤ 8・little-endian。定数の綴りを8バイトずつ焼いたもの）を書く
+@effects(obs)
+func Word(v int, n int) {
+    _ = sysWord(v, n)
+}
+
+// nの10進を書く（確保なし。8桁ずつワードに詰める）
+@effects(obs)
+func Int(n int) {
+    if n >= 0 && n < 100000000 {
+        acc, d := dec8(n)
+        _ = sysWord(acc, d)
+        return
+    }
+    if n == -9223372036854775807 - 1 {
+        _ = sysBytes(bytes("-9223372036854775808"))
+        return
+    }
+    mut m := n
+    if m < 0 {
+        _ = sysWord(45, 1)
+        m = 0 - m
+    }
+    // m < 2^63 < 10^19: 上位（≤ 3桁）・中位8桁・下位8桁
+    lo := m % 100000000
+    rest := m / 100000000
+    if rest < 100000000 {
+        acc, d := dec8(rest)
+        _ = sysWord(acc, d)
+    } else {
+        hi := rest / 100000000
+        acc, d := dec8(hi)
+        _ = sysWord(acc, d)
+        _ = sysWord(pad8(rest % 100000000), 8)
+    }
+    _ = sysWord(pad8(lo), 8)
+}
+
+// x（0 ≤ x < 10^8）の10進の綴りを1ワードに詰めたものと桁数（最上位の桁が最下位のバイト）
+@effects()
+func dec8(x0 int) (int, int) {
+    mut x := x0
+    mut acc := 0
+    mut d := 0
+    while x >= 100 {
+        // x < 10^8 < 2^32 なので x / 100 = (x × ⌈2^37 / 100⌉) >> 37
+        q := (x * 1374389535) >> 37
+        r := x - q * 100
+        t := (r * 103) >> 10
+        acc = (acc << 16) | ((48 + r - t * 10) << 8) | (48 + t)
+        x = q
+        d += 2
+    }
+    if x >= 10 {
+        t := (x * 103) >> 10
+        acc = (acc << 16) | ((48 + x - t * 10) << 8) | (48 + t)
+        d += 2
+    } else {
+        acc = (acc << 8) | (48 + x)
+        d += 1
+    }
+    return acc, d
+}
+
+// x（0 ≤ x < 10^8）の頭を0で埋めた8桁の綴りのワード
+@effects()
+func pad8(x int) int {
+    acc, d := dec8(x)
+    mut w := acc
+    mut k := d
+    while k < 8 {
+        w = (w << 8) | 48
+        k += 1
+    }
+    return w
+}
+
+// 引用符つきの s を書く（エスケープはstd/jsonのPutStringと同じ綴り）
+@effects(obs)
+func Str(s string) {
+    _ = sysWord(34, 1)
+    StrBody(s)
+    _ = sysWord(34, 1)
+}
+
+// 引用符なしで s を書く（合成の書き手は引用符を前後の定数の綴りに含める）
+@effects(obs)
+func StrBody(s string) {
+    sb := bytes(s)
+    mut run := 0
+    mut i := sysClean(sb)
+    while i < len(sb) {
+        _ = sysBytes(sb[run:i])
+        c := sb[i]
+        if c == '"' || c == '\\' {
+            _ = sysWord(92 | (int(c) << 8), 2)
+        } else if c == '\n' {
+            _ = sysWord(92 | (110 << 8), 2)
+        } else if c == '\r' {
+            _ = sysWord(92 | (114 << 8), 2)
+        } else if c == '\t' {
+            _ = sysWord(92 | (116 << 8), 2)
+        } else {
+            // \u00XX
+            _ = sysWord(92 | (117 << 8) | (48 << 16) | (48 << 24) | (hex(int(c) >> 4) << 32) | (hex(int(c) & 15) << 40), 6)
+        }
+        run = i + 1
+        i = run + sysClean(sb[run:len(sb)])
+    }
+    _ = sysBytes(sb[run:len(sb)])
+}
+
+// 定数の綴り s を書く（合成の書き手の、8バイトを越える綴り）
+@effects(obs)
+func Lit(s string) {
+    sb := bytes(s)
+    _ = sysBytes(sb)
+}
+
+@effects()
+func hex(d int) int {
+    return if d < 10 { 48 + d } else { 87 + d }
+}
+
+// fの最短の往復表現を書く。NaNと±Infはnull。
+// 最短の表現はstd/internal/floatfmtで作るので、値に依らない定数の大きさの作業域を確保する（後で確保なしの形に差し替えられるように、ここに閉じる）
+@effects(obs)
+func Float(f float) {
+    if f != f || f - f != 0.0 {
+        _ = sysWord(110 | (117 << 8) | (108 << 16) | (108 << 24), 4)
+        return
+    }
+    s := internal.floatfmt.Format(math.Bits(f))
+    sb := bytes(s)
+    _ = sysBytes(sb)
+}

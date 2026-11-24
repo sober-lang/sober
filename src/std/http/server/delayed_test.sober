@@ -1,9 +1,10 @@
 package server
 
 // Delayedの検査一式: 送る前の待ちはそのレスポンスの頭の直前・前のレスポンスは先に送る・後ろのレスポンスは待ちの後・待ちが重なれば順に足される・
-// stream / HEAD / 0以下の待ち。転送路は偽物（recvはリクエストの列を1切片で渡す・sendは送った切片ごとに本文のマークと経過を格納場所へ）
+// stream / HEAD / 0以下の待ち。転送路はnet.Pair（クライアントはリクエストの列を1回で送り、受けた切片ごとに本文のマークと経過を格納場所へ）
 
 import "std/convert"
+import "std/net"
 import "std/strings"
 import "std/testing/cell"
 import "std/time"
@@ -26,8 +27,8 @@ func delayRoute(r Request) Response {
     }
 }
 
-// 送った切片のマーク（含む本文の語 — 表の順）と、始まりからの経過（ms — 下限だけを照合する: 負荷で待ちは延びるだけ）
-func delayRecord(b []byte) error? {
+// 受けた切片のマーク（含む本文の語 — 表の順）と、始まりからの経過（ms — 下限だけを照合する: 負荷で待ちは延びるだけ）
+func delayRecord(b []byte) {
     s := string(b) catch ""
     mut tag := ""
     words := []string{"A1", "SLOW", "TWO", "ZERO", "B2", "STR"}
@@ -39,12 +40,6 @@ func delayRecord(b []byte) error? {
     ms := (time.Mono().ns - testing.cell.Get(T0)) / 1000000
     testing.cell.Update(Log, (l) => l + "[" + (if tag == "" { "head" } else { tag }) + "]")
     testing.cell.Update(Ms, (l) => l + "${ms} ")
-    return nil
-}
-
-func delayFeed(s string, k func([]byte)) error? {
-    k(bytes(s))
-    return nil
 }
 
 func delayGet(p string) string {
@@ -55,7 +50,10 @@ func delayServe(reqs string) string {
     testing.cell.Set(Log, "")
     testing.cell.Set(Ms, "")
     testing.cell.Set(T0, time.Mono().ns)
-    e := ServeWith((k) => delayFeed(reqs + "GET /end HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n", k), (b) => delayRecord(b), delayRoute)
+    e := net.Pair((c) => ServeConn(c, delayRoute), (c) => {
+        _ = net.Send(c, bytes(reqs + "GET /end HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n"))
+        _ = net.Recv(c, (b) => delayRecord(b))
+    })
     assert(e == nil)
     return testing.cell.Get(Log)
 }
@@ -101,11 +99,27 @@ func TestDelayedZero() {
     assert(l == "[A1 ZERO B2]", l)
 }
 
-// stream: 前のレスポンスを送ってから、頭の前で待つ
+// stream: 前のレスポンスを送ってから、頭の前で待つ。頭・本文・後ろのレスポンスは待ちの後の続けての送りで、受けの切片の分かれ方は
+// カーネルに依る（1つにまとまることもある）— 1つ目の切片がA1だけで、残りが待ちの後に届くことを見る
 func TestDelayedStream() {
     l := delayServe(delayGet("/A1") + delayGet("/stream") + delayGet("/B2"))
-    assert(l == "[A1][head][STR][B2]", l)
-    assert(waitedAtLeast([]int{0, 30, 30, 30}), testing.cell.Get(Ms))
+    assert(strings.HasPrefix(l, "[A1][") && strings.Contains(l, "STR") && strings.Contains(l, "B2"), l)
+    assert(waitedRestAtLeast(30), testing.cell.Get(Ms))
+}
+
+// 2つ目以降の受けの切片の経過がどれも lo ms 以上か（1つ目は待たない）
+func waitedRestAtLeast(lo int) bool {
+    fs := strings.Fields(testing.cell.Get(Ms))
+    mut ok := len(fs) >= 2
+    mut i := 0
+    for f <- fs {
+        v := convert.ParseInt(f) catch -1
+        if i > 0 && v < lo {
+            ok = false
+        }
+        i += 1
+    }
+    return ok
 }
 
 // HEAD も同じ点で待つ（本文は書かない）

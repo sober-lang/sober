@@ -1,0 +1,14 @@
+package main
+
+import "std/http"
+import "std/http/client"
+import "std/http/server"
+
+// 予約名の検査の負例の対: 実行時に決まる名前（stdのpanicが受ける）・相手の側だけの予約名（serverのHost・clientのContent-Type）・
+// 予約でない名前は、checkが受理する
+func main() {
+    n := if len(bytes("ab")) > 1 { "Host" } else { "X-A" }
+    r, e := http.client.Request("http://127.0.0.1:1/", headers: []http.Field{http.Field{name: n, value: "x"}, http.Field{name: "content-type", value: "text/plain"}})
+    rs := []http.server.Route{http.server.Route{method: "GET", path: "/", handler: (q) => http.server.Response{status: 200, contentType: "text/plain", body: bytes("hi"), headers: http.server.Headers{list: []http.Field{http.Field{name: "Host", value: "h"}, http.Field{name: "X-Request-Id", value: "1"}}}}}}
+    println(e == nil && len(rs) == 1)
+}

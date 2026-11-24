@@ -1,0 +1,20 @@
+package main
+
+// 負例（拒否）: json.Decodeは型引数を書く（型が結果にしか現れないので、実引数から推論できない）
+
+import "std/json"
+
+type Visit struct {
+    path string
+}
+
+func main() {
+    d, err := json.Parse(bytes("{\"path\":\"/\"}"))
+    if err != nil {
+        return
+    }
+    v, derr := json.Decode(d, json.Root(d))
+    if derr == nil {
+        println(v.path)
+    }
+}

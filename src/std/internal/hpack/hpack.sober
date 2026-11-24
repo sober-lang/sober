@@ -1,0 +1,631 @@
+package hpack
+
+// HTTP/2のヘッダの圧縮（RFC 7541）の復号と符号化。std/http/serverのHTTP/2が使う。
+// 復号は動的表を持つ（接続ごとに1つ・表の大きさは既定の4096から変えない）。符号化は動的表を使わない（静的表と字句だけ。状態を持たないので、どのtaskからでも呼べる）。
+
+import "std/iter"
+
+// Decodeの結果
+const Ok = 0
+// 形の誤り（RFC 9113ではCOMPRESSION_ERRORの接続の誤り）
+const Bad = 1
+// 解いた量がlimを越えた。表の更新はブロックの最後まで続けたので、接続は続けられる
+const Large = 2
+
+// 動的表の大きさの上限（SETTINGS_HEADER_TABLE_SIZEの既定の値。広告しない）
+const TableMax = 4096
+
+// 表の項目のバイトの輪の大きさ。生きている項目（4096以下）と、書いている途中の新しい項目（4096以下）が重ならない
+const ringSize = 8192
+const ringMask = 8191
+// 項目の数の上限（4096 ÷ 32）
+const entMax = 128
+
+// 復号の状態。ゼロ値をInitで整えてから使う
+type Dec struct {
+    ring mut []byte
+    // 項目ごとに (輪の中の始まり, 名前の長さ, 値の長さ)。first = いちばん古い項目の番号
+    ents mut []int
+    first int
+    n int
+    // 次の項目を書く輪の位置・RFC 7541 4.1の大きさの和・今の上限
+    wpos int
+    size int
+    max int
+    // 書き込みの行き先（項目を解くあいだだけ使う）
+    toRing bool
+    ringW int
+    ringOver bool
+    toOut bool
+    outW int
+    used int
+    lim int
+    large bool
+}
+
+func Init(d mut Dec) {
+    for i <- iter.Range(0, ringSize) {
+        d.ring = append(d.ring, byte(0))
+    }
+    for i <- iter.Range(0, entMax * 3) {
+        d.ents = append(d.ents, 0)
+    }
+    d.first = 0
+    d.n = 0
+    d.wpos = 0
+    d.size = 0
+    d.max = TableMax
+}
+
+// ヘッダのブロックblkを解く。解いたヘッダは、名前と値のバイトをoutに積み、fsに (名前の位置, 名前の長さ, 値の位置, 値の長さ) の4つを積む（位置はoutの中）。
+// lim = 解いた量（名前 + 値 + 32 の和。RFC 7541 4.1）の上限。越えたらLargeで、outとfsの中身は途中までになる
+func Decode(d mut Dec, blk []byte, out mut []byte, fs mut []int, lim int) int {
+    d.used = 0
+    d.lim = lim
+    d.large = false
+    mut p := 0
+    mut head := true
+    while p < len(blk) {
+        b := int(blk[p])
+        if b >= 0x80 {
+            v, q := readInt(blk, p, 7)
+            if q < 0 || v == 0 {
+                return Bad
+            }
+            p = q
+            head = false
+            if !emitIndexed(mut d, v, mut out, mut fs) {
+                return Bad
+            }
+        } else if b >= 0x40 {
+            v, q := readInt(blk, p, 6)
+            if q < 0 {
+                return Bad
+            }
+            p = literal(mut d, blk, q, v, true, mut out, mut fs)
+            if p < 0 {
+                return Bad
+            }
+            head = false
+        } else if b >= 0x20 {
+            // 表の大きさの更新はブロックの頭だけ（RFC 7541 4.2）
+            v, q := readInt(blk, p, 5)
+            if q < 0 || !head || v > TableMax {
+                return Bad
+            }
+            p = q
+            d.max = v
+            evict(mut d, 0)
+        } else {
+            v, q := readInt(blk, p, 4)
+            if q < 0 {
+                return Bad
+            }
+            p = literal(mut d, blk, q, v, false, mut out, mut fs)
+            if p < 0 {
+                return Bad
+            }
+            head = false
+        }
+    }
+    return if d.large { Large } else { Ok }
+}
+
+// blk[p]の下位nビットを前置きとする整数（RFC 7541 5.1）: (値, 次の位置)。形が壊れていれば位置 < 0
+func readInt(blk []byte, p int, n int) (int, int) {
+    mask := (1 << n) - 1
+    mut v := int(blk[p]) & mask
+    mut q := p + 1
+    if v < mask {
+        return v, q
+    }
+    mut m := 0
+    while true {
+        // 2^28を越える値は使い道が無い（長さは残りのブロックを越え、添字は表を越える）
+        if q >= len(blk) || m > 21 {
+            return 0, 0 - 1
+        }
+        c := int(blk[q])
+        q += 1
+        v += (c & 0x7f) << m
+        m += 7
+        if c < 0x80 {
+            return v, q
+        }
+    }
+    return 0, 0 - 1
+}
+
+// 表の添字のヘッダをそのまま積む。添字が表の外ならfalse
+func emitIndexed(d mut Dec, idx int, out mut []byte, fs mut []int) bool {
+    if idx <= 61 {
+        nm := bytes(staticName(idx))
+        vl := bytes(staticValue(idx))
+        if !fits(mut d, len(nm) + len(vl)) {
+            return true
+        }
+        o := len(out)
+        appendAll(mut out, nm)
+        appendAll(mut out, vl)
+        push(mut fs, o, len(nm), o + len(nm), len(vl))
+        return true
+    }
+    k := idx - 62
+    if k >= d.n {
+        return false
+    }
+    e := ((d.first + d.n - 1 - k) & (entMax - 1)) * 3
+    st := d.ents[e]
+    nl := d.ents[e + 1]
+    vl := d.ents[e + 2]
+    if !fits(mut d, nl + vl) {
+        return true
+    }
+    o := len(out)
+    for j <- iter.Range(0, nl + vl) {
+        out = append(out, d.ring[(st + j) & ringMask])
+    }
+    push(mut fs, o, nl, o + nl, vl)
+    return true
+}
+
+// 名前と値で長さnの項目を、解いた量の上限に数える。越えたらLargeの印を立ててfalse
+func fits(d mut Dec, n int) bool {
+    if d.large || d.used + n + 32 > d.lim {
+        d.large = true
+        return false
+    }
+    d.used += n + 32
+    return true
+}
+
+func push(fs mut []int, a int, b int, c int, e int) {
+    fs = append(fs, a)
+    fs = append(fs, b)
+    fs = append(fs, c)
+    fs = append(fs, e)
+}
+
+func appendAll(out mut []byte, s []byte) {
+    for i <- iter.Range(0, len(s)) {
+        out = append(out, s[i])
+    }
+}
+
+// 字句の名前か値を持つヘッダ（blk[p]は名前の添字の後）。idx = 名前の添字（0 = 名前も字句）・ix = 表に足す形か。次の位置を返す（壊れていれば < 0）
+func literal(d mut Dec, blk []byte, p int, idx int, ix bool, out mut []byte, fs mut []int) int {
+    d.toRing = ix
+    d.ringW = 0
+    d.ringOver = false
+    d.toOut = !d.large
+    d.outW = 0
+    o := len(out)
+    mut q := p
+    if idx == 0 {
+        q = readStr(mut d, blk, q, mut out)
+        if q < 0 {
+            return q
+        }
+    } else if idx <= 61 {
+        nm := bytes(staticName(idx))
+        for i <- iter.Range(0, len(nm)) {
+            put(mut d, nm[i], mut out)
+        }
+    } else {
+        k := idx - 62
+        if k >= d.n {
+            return 0 - 1
+        }
+        e := ((d.first + d.n - 1 - k) & (entMax - 1)) * 3
+        st := d.ents[e]
+        for j <- iter.Range(0, d.ents[e + 1]) {
+            put(mut d, d.ring[(st + j) & ringMask], mut out)
+        }
+    }
+    nl := d.outW
+    rnl := d.ringW
+    if q >= len(blk) {
+        return 0 - 1
+    }
+    q = readStr(mut d, blk, q, mut out)
+    if q < 0 {
+        return q
+    }
+    if d.toOut {
+        d.used += d.outW + 32
+        push(mut fs, o, nl, o + nl, d.outW - nl)
+    }
+    if ix {
+        add(mut d, rnl, d.ringW - rnl)
+    }
+    return q
+}
+
+// 1バイトを行き先へ書く。表の項目は上限を越えたら書くのをやめる（表に入らない大きさ）。outは解いた量の上限を越えたらやめてLargeの印を立てる
+func put(d mut Dec, c byte, out mut []byte) {
+    if d.toRing {
+        if d.ringW < TableMax - 32 {
+            d.ring[(d.wpos + d.ringW) & ringMask] = c
+            d.ringW += 1
+        } else {
+            d.ringOver = true
+        }
+    }
+    if d.toOut {
+        if d.used + d.outW + 1 + 32 > d.lim {
+            d.toOut = false
+            d.large = true
+        } else {
+            out = append(out, c)
+            d.outW += 1
+        }
+    }
+}
+
+// 文字列（RFC 7541 5.2）を解いて行き先へ書く。次の位置を返す（壊れていれば < 0）
+func readStr(d mut Dec, blk []byte, p int, out mut []byte) int {
+    h := int(blk[p]) >= 0x80
+    n, q := readInt(blk, p, 7)
+    if q < 0 || n > len(blk) - q {
+        return 0 - 1
+    }
+    if !h {
+        for i <- iter.Range(q, q + n) {
+            put(mut d, blk[i], mut out)
+        }
+        return q + n
+    }
+    return if huffDecode(mut d, blk, q, q + n, mut out) { q + n } else { 0 - 1 }
+}
+
+// 正準Huffmanの符号の長さごとの数（長さ0〜30。2桁の16進）と、長さの順・同じ長さは記号の順に並べた記号（2桁の16進。最後の "--" = EOS）
+const huffCounts = "00000000000a1a20060005030206020300000003080d1a1d0c040f131d0004"
+const huffSyms = "303132616365696f737420252d2e2f333435363738393d415f62646667686c6d6e7072753a42434445464748494a4b4c4d4e4f5051525354555657596a6b71767778797a262a2c3b585a212228293f272b7c233e0024405b5d7e5e7d3c607b5cc3d0808283a2b8c2e0e299a1a7acb0b1b3d1d8d9e3e5e68184858688929a9ca0a3a4a9aaadb2b5b9babbbdbec4c6e4e8e90187898a8b8c8d8f93959697989b9d9ea5a6a8aeafb4b6b7bcbfc5e7ef098e9091949fabced7e1ecedc7cfeaebc0c1c8c9cacdd2d5dadbeef0f2f3ffcbccd3d4d6dddedff1f4f5f6f7f8fafbfcfdfe020304050607080b0c0e0f1011121314151718191a1b1c1d1e1f7fdcf90a0d16--"
+
+func hexv(c byte) int {
+    x := int(c)
+    return if x <= 0x39 { x - 0x30 } else { x - 0x61 + 10 }
+}
+
+func hex2(s []byte, i int) int {
+    return (hexv(s[i]) << 4) | hexv(s[i + 1])
+}
+
+// blk[a:b]のHuffmanの符号を解く（RFC 7541 5.2・付録B）。上位のビットから1ビットずつ、長さごとの符号の始まりと比べる（puffの形）
+func huffDecode(d mut Dec, blk []byte, a int, b int, out mut []byte) bool {
+    cs := bytes(huffCounts)
+    ss := bytes(huffSyms)
+    mut code := 0
+    mut first := 0
+    mut index := 0
+    mut l := 0
+    for i <- iter.Range(a, b) {
+        c := int(blk[i])
+        mut k := 7
+        while k >= 0 {
+            code = code | ((c >> k) & 1)
+            l += 1
+            cnt := hex2(cs, l * 2)
+            if code - cnt < first {
+                at := (index + (code - first)) * 2
+                if ss[at] == byte(0x2d) {
+                    // EOSは符号の中に現れてはいけない
+                    return false
+                }
+                put(mut d, byte(hex2(ss, at)), mut out)
+                code = 0
+                first = 0
+                index = 0
+                l = 0
+            } else {
+                index += cnt
+                first = (first + cnt) << 1
+                code = code << 1
+                if l >= 30 {
+                    return false
+                }
+            }
+            k -= 1
+        }
+    }
+    // 埋め草: 7ビット以下で、全部1（EOSの頭）
+    return l <= 7 && (code >> 1) == (1 << l) - 1
+}
+
+// 輪のwposに書いた名前nlと値vlの項目を表に足す（RFC 7541 4.4: 入らない大きさなら表を空にする）
+func add(d mut Dec, nl int, vl int) {
+    s := nl + vl + 32
+    if d.ringOver || s > d.max {
+        evict(mut d, d.max + 1)
+        return
+    }
+    evict(mut d, s)
+    e := ((d.first + d.n) & (entMax - 1)) * 3
+    d.ents[e] = d.wpos
+    d.ents[e + 1] = nl
+    d.ents[e + 2] = vl
+    d.n += 1
+    d.size += s
+    d.wpos = (d.wpos + nl + vl) & ringMask
+}
+
+// 大きさの和 + room が上限以下になるまで古い項目を外す
+func evict(d mut Dec, room int) {
+    while d.n > 0 && d.size + room > d.max {
+        e := d.first * 3
+        d.size -= d.ents[e + 1] + d.ents[e + 2] + 32
+        d.first = (d.first + 1) & (entMax - 1)
+        d.n -= 1
+    }
+}
+
+// 静的表（RFC 7541 付録A）の名前。i = 1〜61
+func staticName(i int) string {
+    return switch i {
+    case 1: ":authority"
+    case 2: ":method"
+    case 3: ":method"
+    case 4: ":path"
+    case 5: ":path"
+    case 6: ":scheme"
+    case 7: ":scheme"
+    case 8: ":status"
+    case 9: ":status"
+    case 10: ":status"
+    case 11: ":status"
+    case 12: ":status"
+    case 13: ":status"
+    case 14: ":status"
+    case 15: "accept-charset"
+    case 16: "accept-encoding"
+    case 17: "accept-language"
+    case 18: "accept-ranges"
+    case 19: "accept"
+    case 20: "access-control-allow-origin"
+    case 21: "age"
+    case 22: "allow"
+    case 23: "authorization"
+    case 24: "cache-control"
+    case 25: "content-disposition"
+    case 26: "content-encoding"
+    case 27: "content-language"
+    case 28: "content-length"
+    case 29: "content-location"
+    case 30: "content-range"
+    case 31: "content-type"
+    case 32: "cookie"
+    case 33: "date"
+    case 34: "etag"
+    case 35: "expect"
+    case 36: "expires"
+    case 37: "from"
+    case 38: "host"
+    case 39: "if-match"
+    case 40: "if-modified-since"
+    case 41: "if-none-match"
+    case 42: "if-range"
+    case 43: "if-unmodified-since"
+    case 44: "last-modified"
+    case 45: "link"
+    case 46: "location"
+    case 47: "max-forwards"
+    case 48: "proxy-authenticate"
+    case 49: "proxy-authorization"
+    case 50: "range"
+    case 51: "referer"
+    case 52: "refresh"
+    case 53: "retry-after"
+    case 54: "server"
+    case 55: "set-cookie"
+    case 56: "strict-transport-security"
+    case 57: "transfer-encoding"
+    case 58: "user-agent"
+    case 59: "vary"
+    case 60: "via"
+    case 61: "www-authenticate"
+    default: ""
+    }
+}
+
+// 静的表の値
+func staticValue(i int) string {
+    return switch i {
+    case 1: ""
+    case 2: "GET"
+    case 3: "POST"
+    case 4: "/"
+    case 5: "/index.html"
+    case 6: "http"
+    case 7: "https"
+    case 8: "200"
+    case 9: "204"
+    case 10: "206"
+    case 11: "304"
+    case 12: "400"
+    case 13: "404"
+    case 14: "500"
+    case 15: ""
+    case 16: "gzip, deflate"
+    case 17: ""
+    case 18: ""
+    case 19: ""
+    case 20: ""
+    case 21: ""
+    case 22: ""
+    case 23: ""
+    case 24: ""
+    case 25: ""
+    case 26: ""
+    case 27: ""
+    case 28: ""
+    case 29: ""
+    case 30: ""
+    case 31: ""
+    case 32: ""
+    case 33: ""
+    case 34: ""
+    case 35: ""
+    case 36: ""
+    case 37: ""
+    case 38: ""
+    case 39: ""
+    case 40: ""
+    case 41: ""
+    case 42: ""
+    case 43: ""
+    case 44: ""
+    case 45: ""
+    case 46: ""
+    case 47: ""
+    case 48: ""
+    case 49: ""
+    case 50: ""
+    case 51: ""
+    case 52: ""
+    case 53: ""
+    case 54: ""
+    case 55: ""
+    case 56: ""
+    case 57: ""
+    case 58: ""
+    case 59: ""
+    case 60: ""
+    case 61: ""
+    default: ""
+    }
+}
+
+// 整数vを、前置きのビットを除いた上位のビットhiと、下位nビットの前置きで書く（RFC 7541 5.1）
+func putInt(out mut []byte, hi int, n int, v int) {
+    mask := (1 << n) - 1
+    if v < mask {
+        out = append(out, byte(hi | v))
+        return
+    }
+    out = append(out, byte(hi | mask))
+    mut x := v - mask
+    while x >= 0x80 {
+        out = append(out, byte((x & 0x7f) | 0x80))
+        x = x >> 7
+    }
+    out = append(out, byte(x))
+}
+
+// :statusのヘッダを積む。静的表にある値（200・204・206・304・400・404・500）は添字1バイト
+func Status(out mut []byte, code int) {
+    idx := switch code {
+    case 200: 8
+    case 204: 9
+    case 206: 10
+    case 304: 11
+    case 400: 12
+    case 404: 13
+    case 500: 14
+    default: 0
+    }
+    if idx != 0 {
+        out = append(out, byte(0x80 | idx))
+        return
+    }
+    // 表に足さない字句（名前は静的表の8番）・値は3桁
+    putInt(mut out, 0, 4, 8)
+    out = append(out, byte(3))
+    out = append(out, byte(0x30 + (code / 100) % 10))
+    out = append(out, byte(0x30 + (code / 10) % 10))
+    out = append(out, byte(0x30 + code % 10))
+}
+
+// ヘッダ1つを、表に足さない字句（RFC 7541 6.2.2）で積む。名前は小文字にして書く（HTTP/2の名前は小文字）。名前が静的表にあれば添字で書く。
+// huff = 値をHuffmanで符号化する（短くならなければ字句のまま）
+func Field(out mut []byte, name []byte, value []byte, huff bool) {
+    idx := nameIndex(name)
+    if idx != 0 {
+        putInt(mut out, 0, 4, idx)
+    } else {
+        out = append(out, byte(0))
+        putInt(mut out, 0, 7, len(name))
+        for i <- iter.Range(0, len(name)) {
+            out = append(out, lower(name[i]))
+        }
+    }
+    putStr(mut out, value, huff)
+}
+
+// 文字列を積む。huffで、Huffmanの方が短ければHuffmanで
+func putStr(out mut []byte, s []byte, huff bool) {
+    if huff {
+        n := huffLen(s)
+        if n < len(s) {
+            putInt(mut out, 0x80, 7, n)
+            huffEncode(mut out, s)
+            return
+        }
+    }
+    putInt(mut out, 0, 7, len(s))
+    appendAll(mut out, s)
+}
+
+func lower(c byte) byte {
+    x := int(c)
+    return if x >= 0x41 && x <= 0x5a { byte(x + 0x20) } else { c }
+}
+
+// 名前（大小を無視）の静的表の最初の添字（無ければ0）
+func nameIndex(name []byte) int {
+    for i <- iter.Range(1, 62) {
+        s := bytes(staticName(i))
+        if len(s) == len(name) {
+            mut j := 0
+            while j < len(s) && s[j] == lower(name[j]) {
+                j += 1
+            }
+            if j == len(s) {
+                return i
+            }
+        }
+    }
+    return 0
+}
+
+// 記号ごとの符号（8桁の16進）と長さ（2桁の16進）。記号0〜255
+const huffCodes = "00001ff80d007fffd8170fffffe21c0fffffe31c0fffffe41c0fffffe51c0fffffe61c0fffffe71c0fffffe81c00ffffea183ffffffc1e0fffffe91c0fffffea1c3ffffffd1e0fffffeb1c0fffffec1c0fffffed1c0fffffee1c0fffffef1c0ffffff01c0ffffff11c0ffffff21c3ffffffe1e0ffffff31c0ffffff41c0ffffff51c0ffffff61c0ffffff71c0ffffff81c0ffffff91c0ffffffa1c0ffffffb1c0000001406000003f80a000003f90a00000ffa0c00001ff90d0000001506000000f808000007fa0b000003fa0a000003fb0a000000f908000007fb0b000000fa0800000016060000001706000000180600000000050000000105000000020500000019060000001a060000001b060000001c060000001d060000001e060000001f060000005c07000000fb0800007ffc0f000000200600000ffb0c000003fc0a00001ffa0d00000021060000005d070000005e070000005f0700000060070000006107000000620700000063070000006407000000650700000066070000006707000000680700000069070000006a070000006b070000006c070000006d070000006e070000006f07000000700700000071070000007207000000fc080000007307000000fd0800001ffb0d0007fff01300001ffc0d00003ffc0e000000220600007ffd0f00000003050000002306000000040500000024060000000505000000250600000026060000002706000000060500000074070000007507000000280600000029060000002a0600000007050000002b0600000076070000002c06000000080500000009050000002d060000007707000000780700000079070000007a070000007b0700007ffe0f000007fc0b00003ffd0e00001ffd0d0ffffffc1c000fffe614003fffd216000fffe714000fffe814003fffd316003fffd416003fffd516007fffd917003fffd616007fffda17007fffdb17007fffdc17007fffdd17007fffde1700ffffeb18007fffdf1700ffffec1800ffffed18003fffd716007fffe01700ffffee18007fffe117007fffe217007fffe317007fffe417001fffdc15003fffd816007fffe517003fffd916007fffe617007fffe71700ffffef18003fffda16001fffdd15000fffe914003fffdb16003fffdc16007fffe817007fffe917001fffde15007fffea17003fffdd16003fffde1600fffff018001fffdf15003fffdf16007fffeb17007fffec17001fffe015001fffe115003fffe016001fffe215007fffed17003fffe116007fffee17007fffef17000fffea14003fffe216003fffe316003fffe416007ffff017003fffe516003fffe616007ffff11703ffffe01a03ffffe11a000fffeb140007fff113003fffe716007ffff217003fffe81601ffffec1903ffffe21a03ffffe31a03ffffe41a07ffffde1b07ffffdf1b03ffffe51a00fffff11801ffffed190007fff213001fffe31503ffffe61a07ffffe01b07ffffe11b03ffffe71a07ffffe21b00fffff218001fffe415001fffe51503ffffe81a03ffffe91a0ffffffd1c07ffffe31b07ffffe41b07ffffe51b000fffec1400fffff318000fffed14001fffe615003fffe916001fffe715001fffe815007ffff317003fffea16003fffeb1601ffffee1901ffffef1900fffff41800fffff51803ffffea1a007ffff41703ffffeb1a07ffffe61b03ffffec1a03ffffed1a07ffffe71b07ffffe81b07ffffe91b07ffffea1b07ffffeb1b0ffffffe1c07ffffec1b07ffffed1b07ffffee1b07ffffef1b07fffff01b03ffffee1a"
+
+func huffCode(cs []byte, c byte) (int, int) {
+    at := int(c) * 10
+    mut v := 0
+    for i <- iter.Range(0, 8) {
+        v = (v << 4) | hexv(cs[at + i])
+    }
+    return v, hex2(cs, at + 8)
+}
+
+// sのHuffmanの符号のバイト数
+func huffLen(s []byte) int {
+    cs := bytes(huffCodes)
+    mut bits := 0
+    for i <- iter.Range(0, len(s)) {
+        _, l := huffCode(cs, s[i])
+        bits += l
+    }
+    return (bits + 7) >> 3
+}
+
+// sをHuffmanで符号化して積む。最後のバイトの余りはEOSの頭（1のビット）で埋める
+func huffEncode(out mut []byte, s []byte) {
+    cs := bytes(huffCodes)
+    mut acc := 0
+    mut n := 0
+    for i <- iter.Range(0, len(s)) {
+        v, l := huffCode(cs, s[i])
+        acc = (acc << l) | v
+        n += l
+        while n >= 8 {
+            n -= 8
+            out = append(out, byte((acc >> n) & 0xff))
+        }
+        acc = acc & ((1 << n) - 1)
+    }
+    if n > 0 {
+        out = append(out, byte(((acc << (8 - n)) | ((1 << (8 - n)) - 1)) & 0xff))
+    }
+}

@@ -1,0 +1,14 @@
+// incrmut m30の題材（sum_nospawn.soberと組）: 純な子を spawn する（純な子の判定 cutPatch が回る）。std/convertの関数は子から呼ばない
+// （呼ぶと検査点のビットで束の鍵が変わり、要約の鍵の③を落としても割れない）
+package main
+
+import "std/task"
+
+func main() {
+    xs, e := task.Map([]int{1, 2, 3}, (x) => x * 2)
+    if e != nil {
+        println("error")
+        return
+    }
+    println("n ${len(xs)} first ${xs[0]}")
+}

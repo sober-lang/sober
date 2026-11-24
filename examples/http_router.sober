@@ -5,6 +5,7 @@ package main
 // sendがレスポンスを印字する（examples/http_servewithの形 — 行末のCRは外して印字）
 
 import "std/http/server"
+import "std/net"
 
 // nil を "-" に
 func or(s string?) string {
@@ -90,13 +91,11 @@ func show(b []byte) error? {
     return nil
 }
 
-func feed(s string, k func([]byte)) error? {
-    k(bytes(s))
-    return nil
-}
-
 func serve(rs []http.server.Route, reqs string) {
-    e := http.server.ServeWith((k) => feed(reqs, k), (b) => show(b), (r) => http.server.Dispatch(rs, r))
+    e := net.Pair((c) => http.server.ServeConn(c, (r) => http.server.Dispatch(rs, r)), (c) => {
+        _ = net.Send(c, bytes(reqs))
+        _ = show(readAll(c))
+    })
     println(e == nil)
 }
 
@@ -120,4 +119,15 @@ func main() {
     // 表の並びを入れ替えても同じ（優先順は並びに依らない）
     println("-- reversed")
     serve(app(true), reqs)
+}
+
+// 相手が閉じるまで受けたバイト列（最後の要求はConnection: close — サーバーが応答の後に閉じる）
+func readAll(c net.Conn) []byte {
+    mut got := mut []byte{}
+    _ = net.Recv(c, (x) => {
+        for y <- x {
+            got = append(got, y)
+        }
+    })
+    return freeze(got)
 }

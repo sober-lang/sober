@@ -1,0 +1,4 @@
+case 0: serve expired
+case 0: scope died=true
+case 1: serve expired
+case 1: scope died=true

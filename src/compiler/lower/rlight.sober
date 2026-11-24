@@ -18,12 +18,16 @@ import "std/table"
 
 // 条件を満たす関数の region.enter を軽い enter に置き換える
 func regionLightModule(st mut St) {
+    bxRlEnt(mut st)
     mut f := st.fhead
     while f != -1 {
         if irFnBHead(mut st, f) != -1 && rlEligible(mut st, f) {
             rlRewrite(mut st, f)
         }
         f = irFnNext(mut st, f)
+    }
+    if st.rtRenterL == -1 && bxCNeedRt(mut st, "@rt.region_enter_light") {
+        rlNeed(mut st)
     }
 }
 
@@ -103,12 +107,27 @@ func loopLightModule(st mut St, dirty mut map[int]int) {
         gi += 1
         at += 2 + cs[at + 1]
     }
-    // シード化（戻らない関数はllCalleesが呼び先の列を空にしてあり、llFnOwnAllocも偽 — #8）
+    // シード化（戻らない関数はllCalleesが呼び先の列を空にしてあり、llFnOwnAllocも偽 — #8）。
+    // 要約の値を使うモード: 要約にある関数は要約の値（BX_LOOPL — 不動点の値）を種にし、3つの不動点で動かさない（sv = [ma, mx, eo, mz]）
+    use := bxCUse(mut st)
+    mut usd := mut []bool{}
+    mut sv := mut []int{}
+    for k <- iter.Range(0, nf) {
+        v := if use { bxCPeek(mut st, FnRef(fs[k]), BX_LOOPL, 0) } else { []int{} }
+        usd = append(usd, len(v) > 0)
+        sv = append(sv, if len(v) > 0 { v[0] | (v[1] << 1) | ((v[2] & 3) << 2) } else { 0 })
+    }
     mut wl := mut []int{}
     mut sp := 0
     for k <- iter.Range(0, nf) {
         g := FnRef(fs[k])
-        if llFnOwnAlloc(mut st, g, false) {
+        if usd[k] {
+            va[k] = sv[k] & 1 == 1
+            vx[k] = (sv[k] >> 1) & 1 == 1
+            if vx[k] {
+                sp = llPush(mut wl, sp, k)
+            }
+        } else if llFnOwnAlloc(mut st, g, false) {
             va[k] = true
             if llFnEscape(mut st, g) {
                 vx[k] = true
@@ -122,7 +141,7 @@ func loopLightModule(st mut St, dirty mut map[int]int) {
         j := wl[sp]
         for e <- iter.Range(deg[j], deg[j + 1]) {
             g := rev[e] / 2
-            if !vx[g] {
+            if !vx[g] && !usd[g] {
                 vx[g] = true
                 va[g] = true
                 sp = llPush(mut wl, sp, g)
@@ -138,7 +157,7 @@ func loopLightModule(st mut St, dirty mut map[int]int) {
         sp -= 1
         j := wl[sp]
         for e <- iter.Range(deg[j], deg[j + 1]) {
-            if rev[e] % 2 == 0 && !va[rev[e] / 2] {
+            if rev[e] % 2 == 0 && !va[rev[e] / 2] && !usd[rev[e] / 2] {
                 va[rev[e] / 2] = true
                 sp = llPush(mut wl, sp, rev[e] / 2)
             }
@@ -155,7 +174,11 @@ func loopLightModule(st mut St, dirty mut map[int]int) {
     at = 0
     gi = 0
     while at < len(cs) {
-        if va[gi] && !vx[gi] {
+        if usd[gi] {
+            if (sv[gi] >> 2) & 1 == 1 {
+                eo[fs[gi]] = 1
+            }
+        } else if va[gi] && !vx[gi] {
             mut clean := true
             for k <- iter.Range(0, cs[at + 1]) {
                 c := cs[at + 2 + k]
@@ -179,7 +202,7 @@ func loopLightModule(st mut St, dirty mut map[int]int) {
     // 開く点の前にこれらの呼び出しを置かないので、動かした後もすべての確保とregionの出入りは動かす前と同じ深度で起こる
     mut vz := mut []bool{}
     for k <- iter.Range(0, nf) {
-        vz = append(vz, va[k] || rsTouches(mut st, FnRef(fs[k])))
+        vz = append(vz, if usd[k] { (sv[k] >> 3) & 1 == 1 } else { va[k] || rsTouches(mut st, FnRef(fs[k])) })
     }
     for k <- iter.Range(0, nf) {
         if vz[k] {
@@ -190,7 +213,7 @@ func loopLightModule(st mut St, dirty mut map[int]int) {
         sp -= 1
         j := wl[sp]
         for e <- iter.Range(deg[j], deg[j + 1]) {
-            if !vz[rev[e] / 2] {
+            if !vz[rev[e] / 2] && !usd[rev[e] / 2] {
                 vz[rev[e] / 2] = true
                 sp = llPush(mut wl, sp, rev[e] / 2)
             }
@@ -246,6 +269,7 @@ func loopLightModule(st mut St, dirty mut map[int]int) {
                         sAt = sAt0
                     }
                     rlNeedLoop(mut st)
+                    bxFact(mut st, f, BX_RTNEED, int(st.rtRenterLL), 0, 0)
                     irSetInsOp(mut st, i, OpCall)
                     irSetInsRes(mut st, i, -1)
                     irSetInsA(mut st, i, int(st.rtRenterLL))
@@ -265,8 +289,24 @@ func loopLightModule(st mut St, dirty mut map[int]int) {
         }
         f = irFnNext(mut st, f)
     }
+    if st.rtRenterLL == -1 && bxCNeedRt(mut st, "@rt.region_enter_lloop") {
+        rlNeedLoop(mut st)
+    }
     if table.Len(mut st.rsRecs) > 0 {
         rsKeepMa(mut st, mut mz, fs)
+    }
+    // 境の要約の事実 [ma, mx, eo | mz << 1]
+    if st.bx.on {
+        for k <- iter.Range(0, nf) {
+            g := FnRef(fs[k])
+            le := if llMa(mut eo, g) { 1 } else { 0 }
+            lz := if llMa(mut mz, g) { 1 } else { 0 }
+            bxFact(mut st, g, BX_LOOPL, if va[k] { 1 } else { 0 }, if vx[k] { 1 } else { 0 }, le | (lz << 1))
+            if bxCOn(mut st) {
+                zcv, zch := bxCLoopl(mut st, g)
+                bxCCmp(mut st, g, BX_LOOPL, zcv, zch, []int{if va[k] { 1 } else { 0 }, if vx[k] { 1 } else { 0 }, le, lz})
+            }
+        }
     }
     rsStatPrint(mut rc)
 }
@@ -288,14 +328,23 @@ func llPush(stack mut []int, sp int, x int) int {
 // 書き込みの値の計算と入口の読みは DCE が後で消す
 func anchorPruneModule(st mut St, dirty mut map[int]int) {
     // 関数ごとの事実: own = 読んだ値を転送以外に使う・fw = 読んだ値を転送する呼び先の列（-1 = 呼び先の分からない転送 — 保守的に要る）
+    // 要約の値を使うモード: 要約にある関数は要約の値（BX_ANCHOR — 不動点の値）を置き、不動点で動かさない（us = 置いた関数）
     mut rd := mut map[int]int{}
+    mut us := mut map[int]int{}
+    use := bxCUse(mut st)
     mut fw := mut []int{}
     mut f := st.fhead
     while f != -1 {
         at := len(fw)
         fw = append(fw, int(f))
         fw = append(fw, 0)
-        if apTaint(mut st, f, mut fw, at) {
+        v := if use { bxCPeek(mut st, f, BX_ANCHOR, 0) } else { []int{} }
+        if len(v) > 0 {
+            us[int(f)] = 1
+            if v[0] == 1 {
+                rd[int(f)] = 1
+            }
+        } else if apTaint(mut st, f, mut fw, at) {
             rd[int(f)] = 1
         }
         f = irFnNext(mut st, f)
@@ -307,7 +356,7 @@ func anchorPruneModule(st mut St, dirty mut map[int]int) {
         while at < len(fw) {
             g := FnRef(fw[at])
             n := fw[at + 1]
-            if !llMa(mut rd, g) {
+            if !llMa(mut rd, g) && !llMa(mut us, g) {
                 mut hit := false
                 for k <- iter.Range(0, n) {
                     c := fw[at + 2 + k]
@@ -321,6 +370,19 @@ func anchorPruneModule(st mut St, dirty mut map[int]int) {
                 }
             }
             at += 2 + n
+        }
+    }
+    // 境の要約の事実 [rd]
+    if st.bx.on {
+        f = st.fhead
+        while f != -1 {
+            ra := if llMa(mut rd, f) { 1 } else { 0 }
+            bxFact(mut st, f, BX_ANCHOR, ra, 0, 0)
+            if bxCOn(mut st) {
+                zcv, zch := bxCAnchor(mut st, f)
+                bxCCmp(mut st, f, BX_ANCHOR, zcv, zch, []int{ra})
+            }
+            f = irFnNext(mut st, f)
         }
     }
     f = st.fhead
@@ -618,7 +680,8 @@ func apNeeded(st mut St, i0 InsRef, metas mut []int, rd mut map[int]int) bool {
 func llReturns(st mut St, f FnRef) bool {
     mut b := irFnBHead(mut st, f)
     if b == -1 {
-        return true
+        // 本体を下ろさなかった関数は要約の値（regionLight の時点の「戻りうるか」）。ほかの本体の無い関数は戻りうる
+        return bxCReturns(mut st, f)
     }
     while b != -1 {
         if irBlkTerm(mut st, b) == TmRet {
@@ -1465,6 +1528,17 @@ func llBlkScan(st mut St, b BlkRef) int {
     return k
 }
 
+// 呼び手の rlEligible が読む g の値: 入口で region に入らず、戻りうるか（要約の値を使うモードで g が要約にあれば要約の値 — BX_RLENT）
+func rlOpenRet(st mut St, g FnRef) bool {
+    if bxCUsed(mut st, g) {
+        v := bxCPeek(mut st, g, BX_RLENT, 0)
+        if len(v) > 0 {
+            return v[0] == 0 && v[1] == 1
+        }
+    }
+    return !rlEnters(mut st, g) && llReturns(mut st, g)
+}
+
 // 入口で region に入る関数か（region.enter か、置き換え済みの軽い enter の呼び出しが入口のブロックにある）
 func rlEnters(st mut St, g FnRef) bool {
     b := irFnBHead(mut st, g)
@@ -1520,7 +1594,7 @@ func rlEligible(st mut St, f FnRef) bool {
                 // 同じ特例（#8 の原理 — llReturns のコメント。この判定が無いと Load64 の入口の enter が task のプログラムでだけ light のまま残り、
                 // 展開先の insert / longest が ≈ 20 命令 / 呼び出しを払う）。llReturns は最後（短絡 — 落ちる呼び出しだけ走査）
                 free := (r >= 0 && desugar.HeapGet(mut st.d, r) == 1) || g == st.rtPanic || g == st.rtPanicMem
-                if !free && !rlEnters(mut st, g) && llReturns(mut st, g) {
+                if !free && rlOpenRet(mut st, g) {
                     return false
                 }
             }
@@ -1556,6 +1630,7 @@ func reWhy(st mut St, on bool, f FnRef, why string, g FnRef) {
 // f の region.enter を軽い enter の呼び出しに置き換える
 func rlRewrite(st mut St, f FnRef) {
     rlNeed(mut st)
+    bxFact(mut st, f, BX_RTNEED, int(st.rtRenterL), 0, 0)
     mut i := irBlkIHead(mut st, irFnBHead(mut st, f))
     while i != -1 {
         if irInsOp(mut st, i) == OpREnter {
@@ -1644,8 +1719,8 @@ func rlBuild(st mut St, fnr FnRef, gen bool) {
 //      戻るパスでregionに触れない関数（reQuiet — regionを使うのは戻らない呼び出しの先だけ。binary.Load64の境界のpanicの形）も同じ理由で可
 // 書き換え = enter を消し、relocate（宛先 = 呼び手の深度 = 省略後の今の深度。値は全部それ以下に住むので空振り）と出口の setdepth（同じ深度へ戻すだけ）も消す。
 // 観測: 深度の上限（27 節 — 実装の限界であって意味ではない）に届く段数が葉の分だけ遅れる方向にしか動かない（再帰の資源の有界性は再帰のループの中のenterが守る）
-func regionElideModule(st mut St) {
-    why := rflowWhyEnv()
+func regionElideModule(st mut St, nth int) {
+    why := st.rfWhyOn
     // 省いた関数は呼び手の判定（呼び先が region を使うか）を変えうるので、省けた関数が無くなるまで回す（関数の並びの順に依らない）
     mut changed := true
     while changed {
@@ -1653,7 +1728,7 @@ func regionElideModule(st mut St) {
         mut qm := mut map[int]int{}
         mut f := st.fhead
         while f != -1 {
-            if irFnBHead(mut st, f) != -1 && reEligible(mut st, mut qm, why, f) {
+            if irFnBHead(mut st, f) != -1 && reEligible(mut st, mut qm, why, f, nth) {
                 reRewrite(mut st, f)
                 // 省く前の形で数えた判定（f と f を呼ぶ関数の分）を捨てる
                 qm = mut map[int]int{}
@@ -1662,6 +1737,36 @@ func regionElideModule(st mut St) {
             f = irFnNext(mut st, f)
         }
     }
+    // 境の要約の事実 [reQuiet, P0の判定（rfree）, 戻るか]（収束した後の形で）
+    if st.bx.on {
+        mut qm := mut map[int]int{}
+        mut f := st.fhead
+        while f != -1 {
+            if irFnBHead(mut st, f) != -1 {
+                r := irFnRFree(mut st, f)
+                rq := if reQuiet(mut st, mut qm, f, nth) { 1 } else { 0 }
+                rv := if r < 0 { -1 } else { desugar.HeapGet(mut st.d, r) }
+                rr := if llReturns(mut st, f) { 1 } else { 0 }
+                bxFact(mut st, f, BX_RELIDE, rq, rv, rr)
+                if bxCOn(mut st) {
+                    zcv, zch := bxCRelide(mut st, f)
+                    bxCCmp(mut st, f, BX_RELIDE, zcv, zch, []int{rq, rv, rr})
+                }
+            }
+            f = irFnNext(mut st, f)
+        }
+    }
+}
+
+// 呼び手が読む g の「戻りうるか」（要約の値を使うモードで g が要約にあれば、nth 回目の regionElide の要約の値 — BX_RELIDE）
+func reReturns(st mut St, g FnRef, nth int) bool {
+    if bxCUsed(mut st, g) {
+        v := bxCPeek(mut st, g, BX_RELIDE, nth)
+        if len(v) > 0 {
+            return v[2] == 1
+        }
+    }
+    return llReturns(mut st, g)
 }
 
 // 今の深度に確保しない rt の関数か
@@ -1709,13 +1814,13 @@ func reDepthArith(st mut St, f FnRef) bool {
 // regionを使うのは戻らない呼び出しの先だけ（死ぬパスの1回分）。qm: 0 = 未計算・1 = 触れない・2 = 触れうる・3 = 数えている途中（ループ — 触れうるに倒す）
 // 呼び先をたどる深さ優先は再帰でなくスタックで回す（枠 = [関数, ブロック, 命令] の3ワード）— mutの仮引数2つの再帰はcheckでDefに上がらず、
 // 自己 check の時間と RSS が倍になる
-func reQuiet(st mut St, qm mut map[int]int, g FnRef) bool {
+func reQuiet(st mut St, qm mut map[int]int, g FnRef, nth int) bool {
     x := qm[int(g)]
     if x != nil {
         return x == 1
     }
-    if !reQuietOpen(mut st, mut qm, g) {
-        return false
+    if !reQuietOpen(mut st, mut qm, g, nth) {
+        return rfMapIs(mut qm, int(g), 1)
     }
     mut stk := mut []int{}
     b0 := irFnBHead(mut st, g)
@@ -1749,14 +1854,14 @@ func reQuiet(st mut St, qm mut map[int]int, g FnRef) bool {
                     free := r >= 0 && desugar.HeapGet(mut st.d, r) == 1
                     if h == st.rtRalloc || h == st.rtAlloc8 || h == st.rtErrAlloc {
                         ok = false
-                    } else if !free && !reRtOk(mut st, h) && llReturns(mut st, h) {
+                    } else if !free && !reRtOk(mut st, h) && reReturns(mut st, h, nth) {
                         y := qm[int(h)]
                         if y != nil {
                             ok = y == 1
-                        } else if reQuietOpen(mut st, mut qm, h) {
+                        } else if reQuietOpen(mut st, mut qm, h, nth) {
                             child = int(h)
                         } else {
-                            ok = false
+                            ok = rfMapIs(mut qm, int(h), 1)
                         }
                     }
                 }
@@ -1788,8 +1893,16 @@ func reQuiet(st mut St, qm mut map[int]int, g FnRef) bool {
     return res
 }
 
-// gを数え始める（数えている途中のマーク3）か。本体の無い関数とrtは中を見ずに触れうる（2）に倒す — rtの本体は深度の表を直に読み書きする（regionのopを持たない）
-func reQuietOpen(st mut St, qm mut map[int]int, g FnRef) bool {
+// gを数え始める（数えている途中のマーク3）か。本体の無い関数とrtは中を見ずに触れうる（2）に倒す — rtの本体は深度の表を直に読み書きする（regionのopを持たない）。
+// 要約の値を使うモードで g が要約にあれば、中を見ずに nth 回目の regionElide の要約の値（BX_RELIDE の静かか — 収束した後の値）で決める
+func reQuietOpen(st mut St, qm mut map[int]int, g FnRef, nth int) bool {
+    if bxCUsed(mut st, g) {
+        v := bxCPeek(mut st, g, BX_RELIDE, nth)
+        if len(v) > 0 {
+            qm[int(g)] = if v[0] == 1 { 1 } else { 2 }
+            return false
+        }
+    }
     if irFnBHead(mut st, g) == -1 || ilIsRt(mut st, g) {
         qm[int(g)] = 2
         return false
@@ -1798,7 +1911,7 @@ func reQuietOpen(st mut St, qm mut map[int]int, g FnRef) bool {
     return true
 }
 
-func reEligible(st mut St, qm mut map[int]int, why bool, f FnRef) bool {
+func reEligible(st mut St, qm mut map[int]int, why bool, f FnRef, nth int) bool {
     entry := irFnBHead(mut st, f)
     mut enters := 0
     mut ds := mut map[int]int{}
@@ -1837,7 +1950,7 @@ func reEligible(st mut St, qm mut map[int]int, why bool, f FnRef) bool {
                 r := irFnRFree(mut st, g)
                 free := r >= 0 && desugar.HeapGet(mut st.d, r) == 1
                 // 戻らない利用者の関数も可（rlEligibleと同じ特例 — 727。戻らないのでfへ戻る路が無く、深度の加算は死ぬパスの1回分だけ）
-                if !free && !reRtOk(mut st, g) && llReturns(mut st, g) && !reQuiet(mut st, mut qm, g) {
+                if !free && !reRtOk(mut st, g) && reReturns(mut st, g, nth) && !reQuiet(mut st, mut qm, g, nth) {
                     reWhy(mut st, why, f, "callee using regions:", g)
                     return false
                 }

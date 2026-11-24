@@ -11,7 +11,7 @@ package lower
 // - 子はtask.Mapの群の子（A-2）: 既定はワーカーが2本以上のときだけ分割（群の数 = ワーカー数・W1は直のパス — 大規模のlowerで
 //   直列の頭が床になるのを防ぐための必須部品なので既定で通し、小規模の損〔命令〕は許容 — docs/incremental.md「段階6 R3」）。子の死は直のパスで下ろし直す
 // オプション: SOBER_LOWER_SPLIT=k（群の数 — 0 / 1 = 直のパス〔opt-out〕・W1でも逐次の子で回る）・SOBER_LOWER_REV=1（子が受け持ちを逆順に下ろす — 事象の列の純性の検査）・
-//   SOBER_LOWER_DIE=g（g番の群の子が頭で死ぬ — 子の死 → 直のパスの検査）。証人 = SOBER_PAR_STATS=1で `#lower split groups=k fallback=none|died|rejected`
+//   SOBER_LOWER_DIE=g（g番の群の子が頭で死ぬ — 子の死 → 直のパスの検査）。証人 = SOBER_PAR_STATS=1で `#lower split groups=k fallback=none|died|rejected|small|nofit`（nofit = 子の固定の部分だけでスロットを越える規模 — 子を立てない）
 
 import "desugar"
 import "loader"
@@ -45,6 +45,7 @@ const EV_SITE = 10   // a = spawn の点の即値の命令（番号 × 4 + 下 2
 const EV_CHAN = 11   // 下ろし中の関数がチャネルに触る
 const EV_CUT = 12    // a = 打ち切りのマークの即値の命令, b = 子の関数の子の記録
 const EV_EMB = 13    // a = 子の @embed のグローバル（名前が中身を特定する — embed.sober）
+const EV_REC = 14    // 再帰型の境界コピーの補助を宣言した（recreloc.sober — 子は拒否する。束の模擬はこの関数を捨てない）
 const EVW = 5
 
 const NEED_ADMIT = 1
@@ -89,6 +90,9 @@ const NEED_ERRALLOC = 39
 const NEED_VDSO = 40
 const NEED_NWAIT = 41
 const NEED_RDL = 42
+const NEED_SIGN = 43
+const NEED_MUX = 44
+const NEED_MUXDIE = 45
 
 // 安定な鍵の材料: 発見順の番号で名前が付く関数・番号を、持ち主（下ろしていた関数の記録）と持ち主の中の序数で
 // 引けるようにst.skへ積む（[種類, 語数, 中身…]）。直のパスはlsEvの鉤（事象と同じ点）・模擬のパスはlsReplayの1周目（持ち主 = 積み戻す記録）・
@@ -97,7 +101,7 @@ const SK_LAM = 1    // [記録, 持ち主]
 const SK_KID = 2    // [記録, 持ち主]
 const SK_PSITE = 3  // [持ち主]（panic の点の番号 = SK_PSITE の積んだ順）
 const SK_SITE = 4   // [持ち主]（spawn の点の番号 = SK_SITE の積んだ順 + 1）
-const SK_SPEC = 5   // [複製, spec の鍵 [callee, n, (位置, 種類, 値) × n]…]
+const SK_SPEC = 5   // [複製, 組, spec の鍵 [callee, n, (位置, 種類, 値) × n]…]
 
 func skAdd(st mut St, kind int, a int, b int) {
     table.Push(mut st.sk, kind)
@@ -128,6 +132,9 @@ func lsEv(st mut St, code int, a int, b int, c int, d int) {
 // 事象だけを記録する（安定な鍵の材料は積まない — 辞書 const のラムダの 2 回目以降の参照: 持ち主は作った関数のまま。
 // 積み直すと直のパスだけ持ち主が最後に参照した関数へ上書きされ、模擬〔作ったときだけ積む〕と規則順が割れる）
 func lsPush(st mut St, code int, a int, b int, c int, d int) {
+    if !st.ls.on && st.bx.on && !st.bx.mute {
+        bxCap(mut st, code, a, b, c, d)
+    }
     if st.ls.on {
         table.Push(mut st.ls.ev, code)
         table.Push(mut st.ls.ev, a)
@@ -221,6 +228,7 @@ func lsChild(p loader.Program, fz desugar.TyFrozen, dl bool, par bool, cfg []int
     st.ls.par = if par { 2 } else { 1 }
     desugar.Init(mut st.d, p)
     desugar.TyAdopt(mut st.d, fz)
+    st.logOut = p.logs_stdout
     buildInit(mut st)
     e1 := programTypes(mut st)
     if e1 != nil {
@@ -362,6 +370,11 @@ func lsProgram(st mut St, p loader.Program) (bool, error?) {
     // 子がスロットに収まる数まで分ける（SOBER_LOWER_SPLITの明示はそのまま）
     if lsEnvInt("SOBER_LOWER_SPLIT") < 0 {
         kf := lsFitGroups(nodes, lsSlotMb())
+        if kf == 0 {
+            // 子の固定の部分だけでスロットを越える規模: 立てれば必ず死んで直のパスで下ろし直すので、はじめから直のパス
+            lsStat(k, "nofit")
+            return false, nil
+        }
         if kf > k {
             k = kf
         }
@@ -426,9 +439,10 @@ func lsProgram(st mut St, p loader.Program) (bool, error?) {
 const LS_MIN_NODES = 160000
 
 // 子の高水位の見積もり（バイト）= LS_FIX_B × 計画の全部の節 + LS_OWN_B × 子の受け持つ節。100万行の題材（計画 1,112万節・W8）で、
-// 子16で433 MB・子32で321 MBの実測から（全部の節の分は子が親の店の写しを持つ分）
-const LS_FIX_B = 19
-const LS_OWN_B = 323
+// 子8 / 32 / 64 で 715 / 340 / 288 MB の実測から（全部の節の分は、子が親の型の店を写す分と、全体に走らせる buildInit・programTypes の分。
+// 3点のどれも下回らない側に丸めた）
+const LS_FIX_B = 22
+const LS_OWN_B = 340
 
 // 子のregionのスロット（MiB — 子の既定のスロット 512 か SOBER_TASK_REGION_MB）
 func lsSlotMb() int {
@@ -436,11 +450,11 @@ func lsSlotMb() int {
     return if v > 0 { v } else { 512 }
 }
 
-// 子の高水位がスロットの3/4以下になる群の最小の数（全部の節の分だけでスロットの3/4を越えるなら1 — 分けても収まらない。死んだら lsWarnDied）
+// 子の高水位がスロットの3/4以下になる群の最小の数。全部の節の分だけでスロットの3/4を越えるなら0（分けても収まらない — 子を立てずに直のパス）
 func lsFitGroups(nodes int, slotMb int) int {
     room := slotMb * 1048576 * 3 / 4 - LS_FIX_B * nodes
     if room <= 0 {
-        return 1
+        return 0
     }
     own := LS_OWN_B * nodes
     return (own + room - 1) / room
@@ -718,6 +732,9 @@ func lsReplay(st mut St, outs []LsOut) error? {
                 st.cutSites = rec4(mut st, st.cutSites, int(ins), kr, 0)
             }
         }
+        if st.bx.on {
+            bxCapReplay(mut st, prec, en, ev0, ne, c, mut fmap, mut gmap)
+        }
     }
     return nil
 }
@@ -861,5 +878,8 @@ func lsReplayNeed(st mut St, id int, arg int) {
     case NEED_VDSO: needVdso(mut st)
     case NEED_NWAIT: _ = needNetWait(mut st)
     case NEED_RDL: needRdl(mut st)
+    case NEED_SIGN: needSign(mut st)
+    case NEED_MUX: _ = needMux(mut st)
+    case NEED_MUXDIE: needMuxDie(mut st)
     }
 }

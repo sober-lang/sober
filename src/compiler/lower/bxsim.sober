@@ -1,0 +1,721 @@
+package lower
+
+// 照合しないビルド（bxCSkip）の、下ろす前に捨てる関数を決める計画（bxCPlan）と、作業列で pop した捨てる関数の模擬（bxCSim）。
+// 模擬は本体を作らず、束の模擬用の列の事象を直のパスと同じ順に流す: 記録（名前の関数・実体・ラムダ・子）・need・綴り・panic と spawn の点・
+// 打ち切りのマーク・チャネルのマーク。事象は直のパスと同じ口（lsEv）で積むので、束と K0 の材料（bx.ev）も直のパスと同じになる。
+// 点の命令は無い（-1）。模擬で作る実体・ラムダ・子は言語の型の無い仮の記録（IR の署名は束の自分の分から。言語の型は下ろす呼び手が
+// 実体を要求したときに埋める — bxSimFill。埋まらない仮の記録を下ろそうとしたら panic）。
+// 捨てる単位の規則（どれも「全部が条件を満たす単位だけ捨てる」）:
+// - ラムダと子の関数は持ち主と同じ扱い（持ち主の下ろしの途中で宣言の節を作るので、子だけを下ろせない）
+// - 下ろす実体を要求する関数は捨てない（実体の型は下ろす呼び手の要求でしか埋まらない）
+// - 再帰の組（束の自分の分の呼び出しの辺）は組ごと
+// 置き場は前のビルドの記録（束の自分の分）で決める。増えた場合（外れの package の関数が捨てた実体を要求した）は下ろした後に見つけ、
+// その実体の置き場の package を外れにしてやり直しの周へ回す（bxCHomeCheck）
+
+import "desugar"
+import "std/io"
+import "std/iter"
+import "std/table"
+
+// 捨てる関数を決める（bxCSelfLoad の後・下ろす前）。sm = 写した列（bxCSelfParse）・sts = 綴りの表
+func bxCPlan(st mut St, sm []byte, sts []int) {
+    st.bx.smb = sm
+    st.bx.sts = sts
+    mut sx := mut map[int]int{}
+    for j <- iter.Range(0, len(sts) / 4) {
+        if sx[sts[4 * j]] == nil {
+            sx[sts[4 * j]] = j
+        }
+    }
+    st.bx.stx = freeze(sx)
+    // package のパスの鍵 → package
+    np := desugar.PkgCount(mut st.d)
+    mut pq := mut map[int]int{}
+    mut ph := mut []int{}
+    for q <- iter.Range(0, np) {
+        mut nm := mut []byte{}
+        roStr(mut st, mut nm, pkgPath(mut st, q))
+        mut h := mut []int{}
+        ckBytesTo(mut h, freeze(nm))
+        pq[h[0]] = q
+        ph = append(ph, h[1])
+    }
+    // 要約の関数の表（安定な鍵の1語目 → cw の位置）
+    mut sx1 := mut map[int]int{}
+    for k <- iter.Range(0, bxCG(mut st, BXC_NENT)) {
+        at := bxCG(mut st, BXC_ENT) + 2 * k
+        if sx1[bxCG(mut st, at)] == nil {
+            sx1[bxCG(mut st, at)] = bxCG(mut st, at + 1)
+        }
+    }
+    // 関数（同じ安定な鍵の項目は1つに — 置く束の数を数える）
+    mut uk := mut map[int]int{}
+    mut k1 := mut []int{}
+    mut uh := mut []int{}
+    mut up := mut []int{}
+    mut uc := mut []int{}
+    se := bxCG(mut st, BXC_SE)
+    sf := bxCG(mut st, BXC_SF)
+    for k <- iter.Range(0, bxCG(mut st, BXC_NSE)) {
+        h1 := bxCG(mut st, se + 3 * k)
+        h2 := bxCG(mut st, se + 3 * k + 1)
+        u0 := uk[h1]
+        if u0 == nil {
+            uk[h1] = len(up)
+            k1 = append(k1, h1)
+            uh = append(uh, h2)
+            up = append(up, sf + bxCG(mut st, se + 3 * k + 2))
+            uc = append(uc, 1)
+        } else if uh[u0] == h2 {
+            uc[u0] += 1
+        } else {
+            // 鍵の1語目だけが重なる別の関数: どちらも捨てない
+            uc[u0] = -1
+        }
+    }
+    ukf := freeze(uk)
+    uhf := freeze(uh)
+    n := len(up)
+    // 捨てない理由（0 = 候補）: 1 = 置き場に当たりの候補でない package がある・2 = β2 の値を束に持たない・3 = spec の候補の呼び出しを持つ・
+    // 4 = 展開の組1か、組2の葉の極小関数（呼び手は組1なら処理の後の本体を、葉の一巡〔ilLeafSweep〕は処理の後の本体をコピーするが、
+// 要約に置く本体は組2なら処理の前）・5 = 要約に無い・6 = 辞書 const のラムダを作る（2回目からの参照が名前でなく節で引く）・7 = 要求する実体か作るラムダ・子が束に無いか、
+// IR の署名が無い・9 = 再帰型の境界コピーの補助を宣言する（記録を事象なしに作る — 模擬で作れない）
+    mut why := mut []int{}
+    mut own := mut []int{}
+    for u <- iter.Range(0, n) {
+        p := up[u]
+        mut w := 0
+        hr := bxCSelfPart(mut st, p, 7)
+        if hr[1] <= 0 || uc[u] != hr[1] {
+            w = 1
+        }
+        for j <- iter.Range(0, if hr[1] > 0 { hr[1] } else { 0 }) {
+            q := pq[bxCG(mut st, hr[0] + 1 + 2 * j)]
+            if q != nil && ph[q] == bxCG(mut st, hr[0] + 2 + 2 * j) && bxCState(mut st, q) == 1 {
+                // 当たりの候補の置き場
+            } else {
+                w = 1
+            }
+        }
+        if w == 0 && bxCG(mut st, p - 3) <= 0 {
+            w = 2
+        }
+        if w == 0 && bxCSelfPart(mut st, p, 8)[1] < 3 {
+            w = 7
+        }
+        if w == 0 && bxCSelfPart(mut st, p, 5)[1] > 0 {
+            w = 3
+        }
+        e0 := sx1[k1[u]]
+        if w == 0 && !(e0 != nil && bxCW(mut st, e0) == uh[u]) {
+            w = 5
+        }
+        if w == 0 && e0 != nil {
+            at := e0 + 8 + 3 * bxCW(mut st, e0 + 7)
+            mut done := false
+            for k <- iter.Range(0, bxCW(mut st, at)) {
+                pp := at + 1 + 5 * k
+                if !done && bxCW(mut st, pp) == BX_IRINL {
+                    done = true
+                    z := bxCW(mut st, pp + 3)
+                    if (z & 3) == 1 || ((z >> 2) & 1 == 1 && (z & 3) == 0) {
+                        w = 4
+                    }
+                }
+            }
+        }
+        why = append(why, w)
+        own = append(own, -1)
+    }
+    // 模擬用の列から、作るラムダ・子（持ち主の単位）と要求する実体
+    mut rq := mut []int{}
+    for u <- iter.Range(0, n) {
+        mut r := BcRd{b: sm, at: bxCG(mut st, up[u] - 4), end: len(sm), bad: false}
+        ln := bcGet(mut r)
+        nm := sm[r.at:r.at + ln]
+        r.at += ln
+        ne := bcGet(mut r)
+        for _ <- iter.Range(0, ne) {
+            code := bcGet(mut r)
+            if code == EV_FN || code == EV_INST || code == EV_CUT || code == EV_EMB || code == EV_PLAB {
+                l := bcGet(mut r)
+                if code == EV_INST {
+                    v := bxUOf(ukf, uhf, sm[r.at:r.at + l])
+                    if v < 0 {
+                        if why[u] == 0 {
+                            why[u] = 7
+                        }
+                    } else {
+                        rq = append(rq, u)
+                        rq = append(rq, v)
+                    }
+                }
+                r.at += l
+            } else if code == EV_LAM || code == EV_KID {
+                x := bcGet(mut r)
+                fl := bcGet(mut r)
+                if fl == 0 {
+                    v := bxUOf(ukf, uhf, bxOwnKey(nm, code, bcGet(mut r)))
+                    if v < 0 {
+                        if why[u] == 0 {
+                            why[u] = 7
+                        }
+                    } else {
+                        own[v] = u
+                    }
+                    if code == EV_LAM && x == 1 && why[u] == 0 {
+                        why[u] = 6
+                    }
+                } else {
+                    l := bcGet(mut r)
+                    r.at += l
+                }
+            } else if code == EV_NEED {
+                _ = bcGet(mut r)
+                _ = bcGet(mut r)
+            } else if code == EV_REC {
+                if why[u] == 0 {
+                    why[u] = 9
+                }
+            } else if code == EV_PSITE {
+                _ = bcGet(mut r)
+                l := bcGet(mut r)
+                if l < 0 {
+                    _ = bcGet(mut r)
+                } else {
+                    r.at += l
+                    _ = bcGet(mut r)
+                }
+                _ = bcGet(mut r)
+            }
+        }
+        if r.bad {
+            panic(InvariantBroken{})
+        }
+    }
+    // 再帰の組（束の自分の分の呼び出しの辺 — 種類 0）
+    mut dg := mut []int{}
+    mut ad := mut []int{}
+    for u <- iter.Range(0, n) {
+        dg = append(dg, len(ad))
+        p := up[u]
+        pr := bxCSelfPart(mut st, p, 1)
+        for j <- iter.Range(0, if pr[1] > 0 { pr[1] } else { 0 }) {
+            if bxCG(mut st, pr[0] + 1 + 2 * j) == 0 {
+                kk := bxCSelfKey(mut st, p, bxCG(mut st, pr[0] + 2 + 2 * j))
+                v := ukf[kk[0]]
+                if v != nil && uhf[v] == kk[1] {
+                    ad = append(ad, v)
+                }
+            }
+        }
+    }
+    dg = append(dg, len(ad))
+    sc := bxSccOf(n, freeze(dg), freeze(ad))
+    // 単位の規則の不動点（捨てない関数は増えるだけ）
+    mut kept := mut []bool{}
+    for u <- iter.Range(0, n) {
+        kept = append(kept, why[u] != 0)
+    }
+    mut changed := true
+    while changed {
+        changed = false
+        for u <- iter.Range(0, n) {
+            o := own[u]
+            if o >= 0 && kept[u] != kept[o] {
+                kept[u] = true
+                kept[o] = true
+                changed = true
+            }
+        }
+        // 規則 (b): 下ろす実体を要求する関数は捨てない。ただし展開の組1だけが理由の実体（理由 4）は、要求する関数のうち1つ
+        // （rq の最初の組）を捨てなければ足りる（その関数が instFunc で模擬の仮の記録の型を埋める）
+        mut rqk := mut map[int]int{}
+        mut p := 0
+        while p + 1 < len(rq) {
+            if kept[rq[p]] {
+                rqk[rq[p + 1]] = 1
+            }
+            p += 2
+        }
+        p = 0
+        while p + 1 < len(rq) {
+            v := rq[p + 1]
+            if kept[v] && !kept[rq[p]] && (why[v] != 4 || rqk[v] == nil) {
+                kept[rq[p]] = true
+                rqk[v] = 1
+                changed = true
+            }
+            p += 2
+        }
+        mut kc := mut map[int]int{}
+        for u <- iter.Range(0, n) {
+            if kept[u] {
+                kc[sc[u]] = 1
+            }
+        }
+        for u <- iter.Range(0, n) {
+            if !kept[u] && kc[sc[u]] != nil {
+                kept[u] = true
+                changed = true
+            }
+        }
+    }
+    mut dm := mut map[int]int{}
+    mut dm2 := mut map[int]int{}
+    mut nw := mut []int{0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+    for u <- iter.Range(0, n) {
+        if !kept[u] {
+            dm[k1[u]] = up[u]
+            dm2[k1[u]] = uh[u]
+            nw[0] += 1
+        } else if why[u] == 4 {
+            // 捨てない実体のうち、模擬が仮の記録を作ってよいもの（位置を負で置く — bxCRawKey）
+            dm[k1[u]] = 0 - up[u] - 1
+            dm2[k1[u]] = uh[u]
+            nw[4] += 1
+        } else if why[u] == 0 {
+            nw[8] += 1
+        } else {
+            nw[why[u]] += 1
+        }
+    }
+    st.bx.dm = freeze(dm)
+    st.bx.dm2 = freeze(dm2)
+    bxCS(mut st, BXC_NDR, nw[0])
+    if lsEnvInt("SOBER_CACHE_STAT") == 1 {
+        _ = io.WriteStderr(bytes("cache: drop used=${n} dropped=${nw[0]} kept-home=${nw[1]} kept-nobeta=${nw[2]} kept-spec=${nw[3]} kept-inl1=${nw[4]} kept-nosum=${nw[5]} kept-dict=${nw[6]} kept-gone=${nw[7]} kept-rec=${nw[9]} kept-unit=${nw[8]}\n"))
+    }
+}
+
+// 綴り b（安定な鍵の名前）の関数の番号（無ければ -1）
+func bxUOf(uk map[int]int, uh []int, b []byte) int {
+    mut h := mut []int{}
+    ckBytesTo(mut h, b)
+    v := uk[h[0]]
+    if v != nil && uh[v] == h[1] {
+        return v
+    }
+    return -1
+}
+
+// 持ち主の名前 nm の ord 番目のラムダ（code = EV_LAM）・子の関数の安定な鍵の名前（xFnKey の形）
+func bxOwnKey(nm []byte, code int, ord int) []byte {
+    mut o := mut []byte{}
+    for x <- nm {
+        o = append(o, x)
+    }
+    o = append(o, '/')
+    o = append(o, byte(if code == EV_LAM { 'L' } else { 'K' }))
+    xHex(mut o, ord)
+    return freeze(o)
+}
+
+// 下ろす前に捨てる関数を決めたか（照合しないビルドで、捨てる関数がある）
+func bxCSimOn(st mut St) bool {
+    return bxCSkip(mut st) && table.Len(mut st.bx.c) > BXC_NDR && bxCG(mut st, BXC_NDR) > 0
+}
+
+// 作業列から取った FnInfo fi を捨てるなら、その自分の分の位置（下ろすなら -1）
+func bxCDropAt(st mut St, fi int) int {
+    if !bxCSimOn(mut st) {
+        return -1
+    }
+    if fi < table.Len(mut st.bx.fp) && table.Get(mut st.bx.fp, fi) > 0 {
+        return table.Get(mut st.bx.fp, fi) - 1
+    }
+    return bxCDropKey(mut st, xNameBytes(mut st, irFnName(mut st, infoAt(mut st, fi).ir)))
+}
+
+// 安定な鍵の名前 b の関数を捨てるなら、その自分の分の位置（下ろすなら -1）
+func bxCDropKey(st mut St, b []byte) int {
+    mut h := mut []int{}
+    ckBytesTo(mut h, b)
+    p := st.bx.dm[h[0]]
+    h2 := st.bx.dm2[h[0]]
+    if p == nil || h2 == nil || h2 != h[1] || p < 0 {
+        return -1
+    }
+    return p
+}
+
+// 安定な鍵の名前 b の関数が、捨てないが模擬が仮の記録を作ってよい実体なら、その自分の分の位置（でなければ -1）
+func bxCRawKey(st mut St, b []byte) int {
+    mut h := mut []int{}
+    ckBytesTo(mut h, b)
+    p := st.bx.dm[h[0]]
+    h2 := st.bx.dm2[h[0]]
+    if p == nil || h2 == nil || h2 != h[1] || p >= 0 {
+        return -1
+    }
+    return 0 - p - 1
+}
+
+// 関数の名前と package のパスの表（初めて要るときに組む）
+func bxCNames(st mut St) {
+    if st.bx.nm {
+        return
+    }
+    mut fm := mut map[string]int{}
+    for i <- iter.Range(0, nfn(mut st)) {
+        mut nb := mut []byte{}
+        roStr(mut st, mut nb, pkgPath(mut st, fnPkg(mut st, i)))
+        nb = append(nb, '.')
+        roStr(mut st, mut nb, fnName(mut st, i))
+        fm[string(freeze(nb)) catch ""] = i
+    }
+    mut pm := mut map[string]int{}
+    for q <- iter.Range(0, desugar.PkgCount(mut st.d)) {
+        mut nb := mut []byte{}
+        roStr(mut st, mut nb, pkgPath(mut st, q))
+        pm[string(freeze(nb)) catch ""] = q
+    }
+    st.bx.fnm = freeze(fm)
+    st.bx.pkm = freeze(pm)
+    st.bx.nm = true
+}
+
+// 印字の形の名前（printName — `@名前` か `@"…"`）の中身
+func bxRawName(b []byte) []byte {
+    if len(b) >= 3 && b[1] == '"' {
+        mut o := mut []byte{}
+        mut i := 2
+        while i < len(b) - 1 {
+            if b[i] == '\\' && i + 1 < len(b) - 1 {
+                i += 1
+            }
+            o = append(o, b[i])
+            i += 1
+        }
+        return freeze(o)
+    }
+    return b[1:len(b)]
+}
+
+// バイト列 b のヒープの文字列
+func bxHeapStr(st mut St, b []byte) int {
+    at := desugar.HeapLen(mut st.d)
+    desugar.HeapPush(mut st.d, len(b))
+    for x <- b {
+        desugar.HeapPush(mut st.d, int(x))
+    }
+    return at
+}
+
+// 列 r の [長さ, バイト]
+func bxSimTake(r mut BcRd) []byte {
+    l := bcGet(mut r)
+    if r.bad || l < 0 || l > r.end - r.at {
+        panic(InvariantBroken{})
+    }
+    mut b := mut []byte{}
+    for k <- iter.Range(r.at, r.at + l) {
+        b = append(b, r.b[k])
+    }
+    r.at += l
+    return freeze(b)
+}
+
+// 仮の記録（IR の署名は束の自分の分〔位置 p〕から。言語の型は bxSimFill が埋める）と、作業列の FnInfo
+func bxSimRec(st mut St, name int, p int) int {
+    sg := bxCSelfPart(mut st, p, 8)
+    if sg[1] < 3 {
+        panic(InvariantBroken{})
+    }
+    pl := listN(mut st, sg[1] - 3)
+    for k <- iter.Range(0, sg[1] - 3) {
+        desugar.HeapSet(mut st.d, pl + 1 + k, bxCG(mut st, sg[0] + 4 + k))
+    }
+    irf := addFunc(mut st, name, desugar.ListRef(pl), bxCG(mut st, sg[0] + 1))
+    irSetFnMutP(mut st, irf, bxCG(mut st, sg[0] + 2))
+    irSetFnRefP(mut st, irf, bxCG(mut st, sg[0] + 3))
+    fi := table.Len(mut st.infos)
+    table.Push(mut st.infos, FnInfo{fn: -1, pkg: -1, ir: irf, params: desugar.ListRef(-1), results: desugar.ListRef(-1), next: st.work, decl: desugar.NodeRef(-1), env: -1, transp: false})
+    st.work = fi
+    return fi
+}
+
+// 仮の記録か（型が埋まっていない）
+func bxSimRaw(st mut St, fi int) bool {
+    return int(infoAt(mut st, fi).params) == -1
+}
+
+// 仮の記録 fi の言語の型を埋める（下ろす呼び手が実体を要求した — instFunc。IR の署名は作ったときに束から置いた）
+func bxSimFill(st mut St, fi int, decl desugar.NodeRef, pk int, params desugar.ListRef, results desugar.ListRef, env int, transp bool) {
+    x := infoAt(mut st, fi)
+    // 作業列で後回しにした記録（next = -2 — program）は、型が埋まったここで作業列へ戻す
+    later := x.next == -2
+    table.Set(mut st.infos, fi, FnInfo{fn: -1, pkg: pk, ir: x.ir, params: params, results: results, next: if later { st.work } else { x.next }, decl: decl, env: env, transp: transp})
+    if later {
+        st.work = fi
+    }
+}
+
+// 模擬で作った記録 fi を、自分の分の位置 p の関数として流す（作業列で pop したとき）
+func bxSimMark(st mut St, fi int, p int) {
+    while table.Len(mut st.bx.fp) <= fi {
+        table.Push(mut st.bx.fp, 0)
+    }
+    table.Set(mut st.bx.fp, fi, p + 1)
+}
+
+// 安定な鍵の名前 b のラムダ・子の関数の記録（loc = この模擬で作ったもの。無ければ持ち主の外のものを引き直す）
+func bxSimRef(st mut St, loc mut map[int]int, b []byte) int {
+    mut h := mut []int{}
+    ckBytesTo(mut h, b)
+    v := loc[h[0]]
+    if v != nil {
+        return v
+    }
+    w := st.bx.lk[h[0]]
+    if w != nil {
+        return w
+    }
+    ix := xSkIndex(mut st)
+    mut m := mut map[int]int{}
+    mut q := 0
+    n := table.Len(mut st.sk)
+    while q < n {
+        kind := table.Get(mut st.sk, q)
+        if kind == SK_LAM || kind == SK_KID {
+            r := table.Get(mut st.sk, q + 2)
+            mut k := mut []int{}
+            ckBytesTo(mut k, xFnKey(mut st, ix, r))
+            m[k[0]] = r
+        }
+        q += 2 + table.Get(mut st.sk, q + 1)
+    }
+    st.bx.lk = freeze(m)
+    z := st.bx.lk[h[0]]
+    if z == nil {
+        return panic(InvariantBroken{})
+    }
+    return z
+}
+
+// 捨てる関数 fi（自分の分の位置 p）の模擬用の列を流す
+func bxCSim(st mut St, fi int, p int) error? {
+    bxCNames(mut st)
+    prec := infoAt(mut st, fi).ir
+    st.fn = prec
+    table.Push(mut st.bx.rp, int(prec))
+    sb := st.bx.smb
+    mut r := BcRd{b: sb, at: bxCG(mut st, p - 4), end: len(sb), bad: false}
+    own := bxSimTake(mut r)
+    mut c := BcRd{b: sb, at: bxCG(mut st, p - 5), end: len(sb), bad: false}
+    nc := bcGet(mut c)
+    ne := bcGet(mut r)
+    if nc != ne * BX_CW {
+        return panic(InvariantBroken{})
+    }
+    mut loc := mut map[int]int{}
+    for _ <- iter.Range(0, ne) {
+        code := bcGet(mut r)
+        mut cw := mut []int{}
+        for _ <- iter.Range(0, BX_CW) {
+            cw = append(cw, bcGet(mut c))
+        }
+        if cw[0] != code {
+            return panic(InvariantBroken{})
+        }
+        switch code {
+        case EV_FN:
+            i := st.bx.fnm[string(bxRawName(bxSimTake(mut r))) catch ""]
+            if i == nil {
+                return panic(InvariantBroken{})
+            }
+            _ = funcByKey(mut st, i)?
+        case EV_INST:
+            bxSimInst(mut st, bxSimTake(mut r))
+        case EV_LAM:
+            bxSimLam(mut st, code, mut r, own, mut loc)
+        case EV_KID:
+            bxSimLam(mut st, code, mut r, own, mut loc)
+        case EV_NEED:
+            a := bcGet(mut r)
+            b := bcGet(mut r)
+            // need の中で呼ぶ need の事象は列に別にある（積むのはこの1つ）
+            st.bx.mute = true
+            lsReplayNeed(mut st, a, b)
+            st.bx.mute = false
+            lsPush(mut st, EV_NEED, a, b, 0, 0)
+        case EV_STR:
+            j := st.bx.stx[cw[3]]
+            if j == nil {
+                return panic(InvariantBroken{})
+            }
+            if st.bx.sts[4 * j + 1] != cw[4] {
+                return panic(InvariantBroken{})
+            }
+            o := st.bx.sts[4 * j + 2]
+            s := bxHeapStr(mut st, sb[o:o + st.bx.sts[4 * j + 3]])
+            g := strGlobal(mut st, desugar.StrRef(s))
+            lsEv(mut st, EV_STR, g, s, 0, 0)
+        case EV_EMB:
+            b := bxSimTake(mut r)
+            _, size, _, _ := embParse(b)
+            _ = embGlobal(mut st, desugar.StrRef(bxHeapStr(mut st, b)), size)
+        case EV_PSITE:
+            kind := bcGet(mut r)
+            l := bcGet(mut r)
+            mut file := 0
+            if l < 0 {
+                file = bcGet(mut r)
+            } else {
+                path := r.b[r.at:r.at + l]
+                r.at += l
+                ord := bcGet(mut r)
+                pk := st.bx.pkm[string(path) catch ""]
+                if pk == nil {
+                    return panic(InvariantBroken{})
+                }
+                file = pkgFlo(mut st, pk) + ord
+            }
+            tok := bcGet(mut r)
+            table.Push(mut st.psites, kind)
+            table.Push(mut st.psites, file)
+            table.Push(mut st.psites, tok)
+            lsEv(mut st, EV_PSITE, -1, kind, file, tok)
+        case EV_PLAB:
+            s := bxHeapStr(mut st, bxSimTake(mut r))
+            st.plabs = rec4(mut st, st.plabs, table.Len(mut st.psites) / 3, s, 0)
+            lsEv(mut st, EV_PLAB, s, 0, 0, 0)
+        case EV_SITEN:
+            st.nsite += 1
+            lsEv(mut st, EV_SITEN, 0, 0, 0, 0)
+        case EV_SITE:
+            lsEv(mut st, EV_SITE, -1, 0, 0, 0)
+        case EV_CHAN:
+            cutMarkChan(mut st)
+        case EV_CUT:
+            kr := bxSimRef(mut st, mut loc, bxSimTake(mut r))
+            st.cutSites = rec4(mut st, st.cutSites, -1, kr, 0)
+            lsEv(mut st, EV_CUT, -1, kr, 0, 0)
+        default:
+            return panic(InvariantBroken{})
+        }
+        if r.bad || c.bad {
+            return panic(InvariantBroken{})
+        }
+    }
+    return nil
+}
+
+// 模擬のラムダ（code = EV_LAM）・子の関数の事象: 自分の作るもの（仮の記録を足して作業列へ — 持ち主の単位で捨てるので、pop したら模擬する）か、
+// ほかの関数の作ったものの参照（辞書 const のラムダの2回目から）
+func bxSimLam(st mut St, code int, r mut BcRd, own []byte, loc mut map[int]int) {
+    x := bcGet(mut r)
+    fl := bcGet(mut r)
+    if fl == 0 {
+        key := bxOwnKey(own, code, bcGet(mut r))
+        q := bxCDropKey(mut st, key)
+        if q < 0 {
+            panic(InvariantBroken{})
+        }
+        mut nf := 0
+        if code == EV_LAM {
+            nf = st.nlambda
+            st.nlambda = nf + 1
+        } else {
+            nf = st.nkid
+            st.nkid = nf + 1
+        }
+        kfi := bxSimRec(mut st, int(strCat(mut st, strLit(mut st, if code == EV_LAM { "lambda#" } else { "kid#" }), decimal(mut st, nf))), q)
+        bxSimMark(mut st, kfi, q)
+        rec := int(infoAt(mut st, kfi).ir)
+        mut h := mut []int{}
+        ckBytesTo(mut h, key)
+        loc[h[0]] = rec
+        lsEv(mut st, code, rec, if x == 1 { 0 } else { -1 }, 0, 0)
+    } else {
+        rec := bxSimRef(mut st, mut loc, bxSimTake(mut r))
+        lsPush(mut st, code, rec, if x == 1 { 0 } else { -1 }, 0, 0)
+    }
+}
+
+// 模擬の実体の要求（nm = 実体の安定な鍵の名前 — instFunc と同じ表 st.insts を引き、無ければ仮の記録を足す。要求する関数を捨てるので、
+// 実体も捨てる — 捨てる単位の規則）
+func bxSimInst(st mut St, nm []byte) {
+    k := bxHeapStr(mut st, bxRawName(nm))
+    x := instFind(mut st, desugar.StrRef(k))
+    if x >= 0 {
+        lsEv(mut st, EV_INST, int(infoAt(mut st, desugar.HeapGet(mut st.d, x + 2)).ir), 0, 0, 0)
+        return
+    }
+    p0 := bxCDropKey(mut st, nm)
+    // 捨てない実体（理由 4）は仮の記録を作る。要求する関数の1つを下ろし、その instFunc が型を埋める（program が埋まるまで後回しにする）
+    p := if p0 >= 0 { p0 } else { bxCRawKey(mut st, nm) }
+    if p < 0 {
+        panic(InvariantBroken{})
+    }
+    fi := bxSimRec(mut st, k, p)
+    instAdd(mut st, desugar.StrRef(k), fi)
+    lsEv(mut st, EV_INST, int(infoAt(mut st, fi).ir), 0, 0, 0)
+}
+
+// 下ろした後: 模擬で流した関数の置き場（今のビルドの事象から求める — bxHomes）に当たりの候補でない package があれば、置き場が増えた。
+// その関数の当たりの候補の置き場を外れにする（やり直しの周で下ろす）
+func bxCHomeCheck(st mut St) {
+    if !bxCSkip(mut st) || table.Len(mut st.bx.rp) == 0 {
+        return
+    }
+    mut rs := mut map[int]int{}
+    for k <- iter.Range(0, table.Len(mut st.bx.rp)) {
+        rs[table.Get(mut st.bx.rp, k)] = 1
+    }
+    fr := fnIds(mut st)
+    mut idx := mut map[int]int{}
+    for i <- iter.Range(0, len(fr)) {
+        idx[fr[i]] = i
+    }
+    mut own := mut []int{}
+    hs := bxHomes(mut st, fr, freeze(idx), mut own)
+    mut g := 0
+    for i <- iter.Range(0, len(fr)) {
+        if rs[fr[i]] != nil {
+            mut gw := false
+            for q <- hs[i] {
+                if bxCState(mut st, q) != 1 && bxCState(mut st, q) != 3 {
+                    gw = true
+                }
+            }
+            if gw {
+                g += 1
+                for q <- hs[i] {
+                    if bxCState(mut st, q) == 1 {
+                        bxCSetPq(mut st, q, 0, 3)
+                        bxCRedoSay(mut st, "home", bxCPkgName(mut st, q))
+                    }
+                }
+            }
+        }
+    }
+    if lsEnvInt("SOBER_CACHE_STAT") == 1 {
+        _ = io.WriteStderr(bytes("cache: drop simulated=${table.Len(mut st.bx.rp)} home-gw=${g}\n"))
+    }
+}
+
+// 束の読みの後: 模擬で流した関数の β2 の値をどの束からも読めなかった（K0 の取りこぼしで束が外れた）なら、その関数を置く package を外れにする
+// （やり直しの周で下ろす — この周の出力は捨てる）
+func bxCSimLost(st mut St, fr []int, bmem [][]int, pks []int, vE []int) {
+    if !bxCSimOn(mut st) || table.Len(mut st.bx.rp) == 0 {
+        return
+    }
+    mut rs := mut map[int]int{}
+    for k <- iter.Range(0, table.Len(mut st.bx.rp)) {
+        rs[table.Get(mut st.bx.rp, k)] = 1
+    }
+    for b <- iter.Range(0, len(bmem)) {
+        mut lost := false
+        for i <- bmem[b] {
+            if rs[fr[i]] != nil && vE[i] < 0 {
+                lost = true
+            }
+        }
+        q := pks[4 * b]
+        if lost && bxCState(mut st, q) != 3 {
+            bxCSetPq(mut st, q, 0, 3)
+            bxCRedoSay(mut st, "lost", bxCPkgName(mut st, q))
+        }
+    }
+}

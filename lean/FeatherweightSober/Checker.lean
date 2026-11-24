@@ -161,6 +161,13 @@ def typecheck (Δ : Defs) (Ξ : ChanTy) (Ψ : StoreTy) (f : Nat) : Nat → Nat �
             some (.ref m d t)
           else none
       | none => none
+  | b, d, Γ, Λ, .allocAt m r e =>
+      match typecheck Δ Ξ Ψ f b d Γ Λ e with
+      | some t =>
+          if t.regionsBelow (r + 1) && decide (b ≤ r) && decide (r < d) && (m || t.mutFree) && t.chanFree then
+            some (.ref m r t)
+          else none
+      | none => none
   | b, d, Γ, Λ, .deref e =>
       match typecheck Δ Ξ Ψ f b d Γ Λ e with
       | some (.ref _ _ t) => some t
@@ -589,6 +596,19 @@ theorem typecheck_sound {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f : Nat} :
       rcases hcond.2 with hm' | hmf
       · rw [hm] at hm'; cases hm'
       · exact hmf
+  | allocAt m r e ih =>
+    intro b d Γ Λ t h
+    simp only [typecheck] at h
+    split at h <;> try cases h
+    split at h <;> try cases h
+    rename_i hcond
+    simp only [Bool.and_eq_true, decide_eq_true_eq, Bool.or_eq_true] at hcond
+    obtain ⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩ := hcond
+    refine .allocAt (ih ‹_›) h1 h2 h3 ?_ h5
+    intro hm
+    rcases h4 with hm' | hmf
+    · rw [hm] at hm'; cases hm'
+    · exact hmf
   | deref e ih =>
     intro b d Γ Λ t h
     simp only [typecheck] at h
@@ -1114,6 +1134,13 @@ theorem typecheck_complete {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f : Nat} :
     cases m with
     | false => simp [typecheck, ih hs, hrb, hbd, hmf rfl]
     | true => simp [typecheck, ih hs, hrb, hbd]
+  | allocAt h1 hrb hbr hrd hmf hcf ih =>
+    intro hs
+    simp only [Expr.src] at hs
+    rename_i m _ _ _
+    cases m with
+    | false => simp [typecheck, ih hs, hrb, hbr, hrd, hmf rfl, hcf]
+    | true => simp [typecheck, ih hs, hrb, hbr, hrd, hcf]
   | deref h ih =>
     intro hs
     simp only [Expr.src] at hs

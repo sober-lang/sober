@@ -194,14 +194,34 @@ type St struct {
     rtCancel FnRef
     rtCutWalk FnRef
     rtCutEnd FnRef
+    rtExitMark FnRef
     cutGenG int
     // std/testing/cellの配置先の表（lower/cell.sober — 0 = 無し）
     cellG int
     cellUse bool
+    // print.Logのsink（logsink.sober）: ログを使うか・行き先が標準出力か・@rt.log・rt関数
+    logUse bool
+    logOut bool
+    logG int
+    logsG int
+    rtLogBegin FnRef
+    rtLogWord FnRef
+    rtLogBytes FnRef
+    rtLogEnd FnRef
+    rtLogRoom FnRef
+    rtLogFlush FnRef
+    rtLogDrain FnRef
     domWait bool         // 入口の木がtask.Awaitを名前で参照する（domain.soberの待ちの列・手渡し — desugar.DomNamedのAwait版）
     domAt int            // 展開中の利用者の task.Update / Read / Await の呼び出し点（毒の死の場所 — domain.sober・-1 = 無し）
     domKeys []int        // Await の when の鍵の表（[ラムダの節, 型環境] の組 — 通し番号 = 組の添字 + 1・domWhenKey）
     awaitMarks []int     // 関数ごとに task.Await に届くか（desugar.AwaitMarks — domWait のプログラムで最初の Spawn が引く・空 = まだ）
+    dieOn bool           // 子の死の印（rt.mux op 69 — mux.soberのmuxDieMark）を使う。rt.task_new・taskの終わりが印を写す・読む（rtの本体より前の下ろしで立つ）
+    muxUse bool          // rt.muxを使う（mux.sober — 期限の走査がdomainと同じ規約の待ち手を扱う。rtの本体より前の下ろしで立つ）
+    rtMux FnRef
+    rtMuxRoom FnRef
+    muxG int
+    muxSG int
+    muxWG int
     domUse bool          // 入口からtask.NewDomainに届く（domain.sober — 本体で死んだtaskの毒のパスをtaskの終わりに組む）
     // 孤児の待ち（orphan.sober）: orphOn = 組む（std/task のプログラムで wait_fd を使う）・@rt.orphgen・rt.orph_*
     orphOn bool
@@ -241,6 +261,12 @@ type St struct {
     xPl Place
     xPlKeys [][]byte
     xPlOut []byte
+    // 熱さのプロファイル（`--profile` と開発用の `--cold-emit` / `--blkmap`。profile.sober）。xPf = 印の表（x86の群の子へcfgで渡す — オフなら空）・
+    // pfHit / pfRows = 指紋の合った関数の数・プロファイルの行の数
+    xProf Prof
+    xPf []int
+    pfHit int
+    pfRows int
     // 毒のオプション（環境変数SOBER_SLOT_POISON — 開発用・最適化のバックエンドの入口で零初期化しないワードを0x5a… で埋める — zeroinit.sober）
     slotPoison bool
     rtKidKeep FnRef
@@ -359,6 +385,8 @@ type St struct {
     tailW int
     // 値のswitch式の分岐の型なし定数を割り当てる型（byte・named scalar）+ 1（0 = 無し）: exprExpectingが置き、switchExprが入口で読んで消す
     swW int
+    // 分岐の末尾の多値をTMultiで返すか: evalMultiがif・switchの式の前に置き、ifExpr・switchExprが入口で読んで消して分岐ごとに置き直し、blockTailが入口で読んで消す
+    multiTail bool
     // 宛先構築レーンM5（格納点のコピー）: 字面のregionの入れ子（反復のregion・式ブロック）・各レベルの入口で退避した深度（IRの値）・
     // mut 仮引数の行き先の深度（呼び手が W_ANCHOR で渡す — 入口で読む IR の値・-1 = 無し）・今の関数が region 透過か
     rnest int
@@ -439,6 +467,8 @@ type St struct {
     kaInit bool // 型引数の kind の検査の前の準備をしたか（kindarg.sober）
     closKs int // クロージャの値形（closure.sober）: Kごとのenvの形のチェーンの頭 + 1（0 = 無し）
     closFns int // 持ち上げたクロージャの関数の捕捉の記録のチェーンの頭 + 1（0 = 無し）
+    closPrepping int // closPrepの途中か（1 — closBorrowFtが関数値に倒した借りの仮引数を控える）
+    brwLate int // closPrepの途中で関数値に倒した借りの仮引数の記録 [next, 仮引数の列, 添字, 関数型] のチェーン（-1 = 無し）
     liftBrw int // 次の liftClosure が借りの実引数のラムダか（1 — emitCall の間接呼び出しの実引数が立て、liftClosure が入口で消費する）
     callEnv int // 次の emitCall が隠れ第 1 引数に渡す env の番地 + 1（0 = 無し — emitCall が入口で消費する）
     // `return g(…)` の転送（retStmt が立てる）: 呼び出しの節 sretAt - 1（0 = 無し）の emitCall は、結果の型の列が sretTs と同じなら新しいスロットでなく
@@ -448,7 +478,7 @@ type St struct {
     sretHit bool
     // 呼び出しの間に書かれない集成値の番地（imm の束縛の私有のスロット・参照の仮引数・
     // 呼び出しの受け皿と、それらからの定数の gep — 関数ごとに privGen を進めて空にする）。emitCall はここにある番地だけをコピーせずに参照の位置へ渡す
-    privT table.Table[int] // 値 → その値を記録した関数の通し番号（privGen と等しければ記録あり）
+    privT table.Table[int] // 値 → (その値を記録した関数の通し番号 × 2^20 + 受け皿の語数) × 2 + 長寿命のフラグ（通し番号が privGen と等しければ記録あり）
     privGen int
     tenv int // 型環境（generics.sober — [n, (名前, 型)…]、-1 = 空）
     // レイアウトの入れ子の深さと、slice / map の要素の位置で出会って後回しにした型宣言（types.sober — 要素の大きさは外側の大きさに効かない。
@@ -459,7 +489,8 @@ type St struct {
     boxWB []int
     // 絞った mut の名前（narrowkill.sober — [名前, 中身の記録, 外のセルの記録]…）: 書く文の頭 / 後ろで外のセルへ戻す
     nrwCells []int
-    insts int // ジェネリック関数のインスタンスのチェーン（[next, キー, FnInfo]）
+    insts int // ジェネリック関数のインスタンスのチェーン（[next, キー, FnInfo, 同じハッシュの次]）
+    instm table.Table[int] // インスタンスの鍵のハッシュの頭（INST_HEADS 個 — 同じ頭の記録の鎖の先頭・instFind・instAdd が最初の足しで組む）
     inDict int // 辞書 const の展開中か（0 / 1）
     traceEffs bool   // 開発用 `--trace-effects`: 関数の入口 / 出口とエフェクトの葉の印字（traceEff / traceLeaf — 関数のエフェクトの動的オラクル）
     traceErrs bool   // 開発用 `--trace-errors`: error を返す出口ごとにタグを出す計装（traceErr — error 網羅 analyzer の動的オラクル）
@@ -467,6 +498,7 @@ type St struct {
     halted bool      // stopAtのフェーズに着いた
     dumpIr bool      // 計測のオプション（`--dump-ir`）: 止めたフェーズのIRテキストを出力にする
     irTags bool      // 開発のオプションSOBER_IR_TAGS=1（写像同値の照合器）: IRテキストの札つきの定数に ` !p`（panicの点）/ ` !s`（spawnの点）を付ける
+    rfWhyOn bool     // 環境変数SOBER_RFLOW_WHYが立っているか（関数ごとに引かない — 1回だけ引いて持つ）
     noRflow bool     // `--no-rflow`（C1 — rflow.sober）: 戻り値へ流れる関数のregionの省略を掛けない（検査 = 掛けた ≟ 掛けない）
     noSpec bool      // `--no-spec`: 定数引数の特化を掛けない（検査 = 掛けた ≟ 掛けない）
     noVec bool       // `--no-vec`: ベクトル化を掛けない（検査 = 掛けた ≟ 掛けない）
@@ -515,12 +547,19 @@ type St struct {
     rtRdlJoin FnRef
     rtRdlLeave FnRef
     rtRdlSweep FnRef
+    // 天井の空き待ち（ceil.sober。rdlOnと同じプログラム）: rt.ceil_need（net_op 19）・rt.ceil_wake（台帳を返した点）
+    rtCeilNeed FnRef
+    rtCeilWake FnRef
+    // 署名の列（sign.sober。net_op 31を使うstd/taskのプログラムだけ）: signOn = 組む・rt.sign_wait
+    signOn bool
+    rtSignWait FnRef
     // ワーカー局所の lease の rt（lease.sober — lease_op を使うプログラムだけ）
     rtLeaseOp FnRef
     rtLeaseDrain FnRef
     rtCh int        // rt.chunk_open / next / close / submit / drain の記録（std/io の Chunks — chunk.sober の chF。-1 = 使わない。
                     // Stのフィールド1つに畳む — フィールドはStを組む箇所ごとに自己checkの核の節を足す）
     fdregG int     // rt.fdreg（開いたfdの登録簿のチェーン — fdごとに1ワード。std/taskのプログラムだけ）
+    arenaG int     // rt.carena（taskのチャンクとエリアを切り出すアリーナ — task.sober chunkMap）
     statbuf int    // rt.statbuf（stat(2) の struct stat — 18ワード）
     rtPanic FnRef     // rt.panic(点の番号) / rt.panic_mem(種類) — panic の観測性（panic.sober）
     rtPanicMem FnRef
@@ -561,6 +600,7 @@ type St struct {
     vfyDirty map[int]int   // 子の検証の後に親が書き換えた関数（cutInsert — 最後の検証で検証し直す）
     mvRound bool // バッチの前ごとに全関数の本体を詰めて積み直す（move.soberの検査 — SOBER_BUILD_PAR=roundtrip）
     ls LSplit    // 席 A（split.sober）: lower の頭の関数単位化 — 子の事象の記録
+    bx Bx        // 工程Bの束（bundle.sober）
 }
 
 // 状態のスカラーを「無し」（-1）にする（build が必要なものを上書きする）
@@ -643,6 +683,11 @@ func initScalars(st mut St) {
     st.covG = -1
     st.covFdG = -1
     st.covMidG = -1
+    st.rtMux = -1
+    st.rtMuxRoom = -1
+    st.muxG = -1
+    st.muxSG = -1
+    st.muxWG = -1
     st.rtMode = -1
     st.rtMkdir = -1
     st.rtRename = -1
@@ -664,10 +709,14 @@ func initScalars(st mut St) {
     st.rtRdlJoin = -1
     st.rtRdlLeave = -1
     st.rtRdlSweep = -1
+    st.rtCeilNeed = -1
+    st.rtCeilWake = -1
+    st.rtSignWait = -1
     st.rtLeaseOp = -1
     st.rtLeaseDrain = -1
     st.rtFrameNew = -1
     st.fdregG = -1
+    st.arenaG = -1
     st.rtCh = -1
     st.rtCstr = -1
     st.rtPanic = -1

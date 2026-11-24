@@ -104,7 +104,7 @@ Goと同じ: 識別子、整数 / 浮動小数 / 文字リテラル（n進は `0
 | scope | `scope { }`、`scope(timeout: 200 * time.ms) { }`、`parallel scope { }` | 11節 |
 | spawn / await | `spawn f(x)` → `Task[T]`、`await(t)?` | 11節 |
 | shield | `shield { ... }`（式ブロック。`defer shield { }` と合成） | 11節 |
-| 注釈 | `@pure`、`@errors(NotFound, Timeout)`、`@layout(c)`、`@recursion(depth: 8)`、`@noblock { }`、`@exhaustive`（関数 — 表の網羅。language.md 13節の補）、`@secret(k)`（関数 — 仮引数の源）・`k []byte @secret`（structのフィールド）・`@secret const`、`@bless`（関数 — stdだけ。language.md 12節「秘密の値の宣言」）、`@credential`（関数 / structのフィールド — stdだけ）・`Fresh { … } @shared`（unionのvariant — stdだけ）・`@bless(origin)`（関数 — stdだけ。12節「出所の依存」）、`@effects(io, !block…)`（関数の前置 / 名前付き関数型の後置 — 12節「関数のエフェクトの宣言」）、`@const(sql)`（関数 — const仮引数。12節「const仮引数」） | 10節 |
+| 注釈 | `@pure`、`@errors(NotFound, Timeout)`、`@layout(c)`、`@recursion(depth: 8)`、`@noblock { }`、`@exhaustive`（関数 — 表の網羅。language.md 13節の補）、`@secret(k)`（関数 — 仮引数の源）・`k []byte @secret`（structのフィールド）・`@secret const`、`@bless`（関数 — stdだけ。language.md 12節「秘密の値の宣言」）、`@credential`（関数 / structのフィールド — stdだけ）・`Fresh { … } @shared`（unionのvariant — stdだけ）・`@bless(origin)`（関数 — stdだけ。12節「出所の依存」）、`@effects(io, !block…)`（関数の前置 / 名前付き関数型の後置 — 12節「関数のエフェクトの宣言」）、`@const(sql)`（関数 — const仮引数。12節「const仮引数」）、`@logs(stdout)`（main packageのpackage節の前。ログの行き先・42節） | 10節 |
 | 名前付き引数 | `f(x, sep: ",")`、`scope(timeout: 200 * time.ms)`、`@json(name: "x")`。位置が先・名前が後、省略は `T?` 引数のみ、直接呼び出しと名前付き関数型のみ（決定7） | 決定7 |
 
 ---
@@ -115,12 +115,12 @@ Goと同じ: 識別子、整数 / 浮動小数 / 文字リテラル（n進は `0
 
 ```ebnf
 SourceFile   = [ PackageAnnot [ ";" ] ] PackageClause ";" { ImportDecl ";" } { TopLevelDecl ";" } .
-PackageAnnot = "@" "replaces" "(" string_lit ")" | "@" "doubles" "(" string_lit { "," string_lit } [ "," ] ")" .   (* package 節の前の注釈はどちらか 1 つ — double の名乗り（`_double.sober`）とテストの構成の差し替えの表（テストの package の `_test.sober`）。置き場の検査は loader（language.md 41 節） *)
+PackageAnnot = "@" "replaces" "(" string_lit ")" | "@" "doubles" "(" string_lit { "," string_lit } [ "," ] ")" | "@" "logs" "(" ( "stdout" | "stderr" ) ")" .   (* package 節の前の注釈は 1 つまで。double の名乗り（`_double.sober`）・テストの構成の差し替えの表（テストの package の `_test.sober`）・ログの行き先（main package のファイル。プログラムに 1 つまで）。stdout / stderr は `@effects` の語と同じ裸の語。置き場の検査は loader（language.md 41 節・42 節） *)
 ImportDecl   = "import" ( ImportSpec | "(" { ImportSpec ";" } ")" ) .
 ImportSpec   = [ identifier ] string_lit .                 (* 別名のみ。"_" と "." は無い（決定 14）。init() も無い *)
 TopLevelDecl = { Annotation } ( ConstDecl | TypeDecl | FuncDecl | BindDecl ) .
 
-Annotation   = "@" identifier [ "(" [ AnnotArgs ] ")" ] .   (* 名前は閉じた集合 — errors・noinline・layout・embed・exhaustive〔関数の印 — 表の網羅〕・secret〔関数は仮引数の名前の列（空にしない）・const は引数なし〕・bless〔関数 — 引数なしか `(origin)`〕・credential〔関数〕・effects〔関数 — 語・否定の語・名前付き関数型の名前の列〕ほか（package 節の前の replaces・doubles は PackageAnnot）。知らない名前は文法の外 *)
+Annotation   = "@" identifier [ "(" [ AnnotArgs ] ")" ] .   (* 名前は閉じた集合 — errors・noinline・layout・embed・exhaustive〔関数の印 — 表の網羅〕・secret〔関数は仮引数の名前の列（空にしない）・const は引数なし〕・bless〔関数 — 引数なしか `(origin)`〕・credential〔関数〕・effects〔関数 — 語・否定の語・名前付き関数型の名前の列〕ほか（package 節の前の replaces・doubles・logs は PackageAnnot）。知らない名前は文法の外 *)
 AnnotArgs    = AnnotArg { "," AnnotArg } .
 AnnotArg     = [ identifier ":" ] ConstExpr .            (* 名前付き / 位置。Argument と同じ並びで引数が const 式に限られるだけ *)
 

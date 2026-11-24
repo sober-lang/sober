@@ -11,6 +11,7 @@ import "desugar"
 import "diag"
 import "loader"
 import "std/iter"
+import "std/strings"
 import "std/table"
 
 // 指摘 1 件: 位置 at と本文 what（fix が差し込む行の提示を含む）
@@ -79,7 +80,7 @@ func RunC(p loader.Program, c desugar.TyCache) []Finding {
 func runAz(p loader.Program, only bool, c desugar.TyCache) []Finding {
     mut az := Az{d: desugar.S{}, pk: 0, out: table.Table[int]{}, ok: table.Table[int]{}, nfn: 0, nerr: 0, er: Eng{sets: table.Table[int]{}, rhead: table.Table[int]{}, rnode: table.Table[int]{}, work: table.Table[int]{}, inq: table.Table[int]{}, env: table.Table[int]{}, envN: 0, envChanged: false},
         pbase: table.Table[int]{}, errfn: table.Table[int]{},
-        ffield: table.Table[int]{}, cur: 0, rec: false, sw: table.Table[int]{}, unknown: 0, walks: 0, declared: table.Table[int]{}, swpk: table.Table[int]{}, swarms: table.Table[int]{}, lit: table.Table[int]{}, wins: table.Table[int]{}, winN: 0, winBase: 0, flowBase: 0, cand: table.Table[int]{}, dflow: table.Table[int]{}, exsw: table.Table[int]{}, trySink: 0, cstDecl: desugar.NodeRef(-1), cstMask: 0, lamf: table.Table[int]{}, lamFN: 0, lamBase: 0, lamCand: 0, lamck: table.Table[int]{}, sv: Sv{on: false, rec: false, natom: 0, atoms: table.Table[int]{}, resBase: 0, sinkBase: 0, pbase: table.Table[int]{}, npar: 0, pinBase: 0, secp: table.Table[int]{}, rpos: table.Table[int]{}, nres: 0, mres: table.Table[int]{}, mresN: 0, sinkAt: table.Table[int]{}, sinkK: table.Table[int]{}, fl: table.Table[int]{}, flBase: 0, hk: table.Table[int]{}, cons: table.Table[int]{}, lamIn: LSet{lo: 0, hi: 0}, viol: table.Table[int]{}, walks: 0, touch: table.Table[int]{}, pe: table.Table[int]{}, peN: 0, al: table.Table[int]{}, alN: 0, fmh: table.Table[int]{}, fm: table.Table[int]{}, fbn: table.Table[int]{}, mal: table.Table[int]{}, malN: 0, nodump: false, bind: false, og: false, effBase: 0, effHit: false, catom: -1, shMask: 0, oMask: 0, mountFn: -1, shv: table.Table[int]{}, shf: table.Table[int]{}, ftn: table.Table[int]{}, ov: table.Table[int]{}, credf: table.Table[int]{}, stMask: 0, kMask: 0, pers: table.Table[int]{}, kwit: table.Table[int]{}}, ef: Ef{n: 0, nk: table.Table[int]{}, nref: table.Table[int]{}, bits: table.Table[int]{}, e: table.Table[int]{}, fnodes: table.Table[int]{}, fn: 0, cur: 0, lp: table.Table[int]{}, lpN: 0, lb: table.Table[int]{}, lbN: 0, addr: table.Table[int]{}, flam: table.Table[int]{}, viol: table.Table[int]{}, anyCalls: 0, ek: table.Table[int]{}, own: table.Table[int]{}, tm: table.Table[int]{}, tdecl: table.Table[int]{}, te: table.Table[int]{}, ekind: 0, tst: table.Table[int]{}}}
+        ffield: table.Table[int]{}, cur: 0, rec: false, sw: table.Table[int]{}, unknown: 0, walks: 0, declared: table.Table[int]{}, swpk: table.Table[int]{}, swarms: table.Table[int]{}, lit: table.Table[int]{}, wins: table.Table[int]{}, winN: 0, winBase: 0, flowBase: 0, cand: table.Table[int]{}, dflow: table.Table[int]{}, exsw: table.Table[int]{}, trySink: 0, cstDecl: desugar.NodeRef(-1), cstMask: 0, lamf: table.Table[int]{}, lamFN: 0, lamBase: 0, lamCand: 0, lamck: table.Table[int]{}, sv: Sv{on: false, rec: false, natom: 0, atoms: table.Table[int]{}, resBase: 0, sinkBase: 0, pbase: table.Table[int]{}, npar: 0, pinBase: 0, secp: table.Table[int]{}, rpos: table.Table[int]{}, nres: 0, mres: table.Table[int]{}, mresN: 0, sinkAt: table.Table[int]{}, sinkK: table.Table[int]{}, fl: table.Table[int]{}, flBase: 0, hk: table.Table[int]{}, cons: table.Table[int]{}, lamIn: LSet{lo: 0, hi: 0}, viol: table.Table[int]{}, walks: 0, touch: table.Table[int]{}, pe: table.Table[int]{}, peN: 0, al: table.Table[int]{}, alN: 0, fmh: table.Table[int]{}, fm: table.Table[int]{}, fbn: table.Table[int]{}, mal: table.Table[int]{}, malN: 0, nodump: false, bind: false, og: false, effBase: 0, effHit: false, catom: -1, shMask: 0, oMask: 0, mountFn: -1, shv: table.Table[int]{}, shf: table.Table[int]{}, ftn: table.Table[int]{}, ov: table.Table[int]{}, credf: table.Table[int]{}, stMask: 0, kMask: 0, pers: table.Table[int]{}, kwit: table.Table[int]{}}, ef: Ef{n: 0, nk: table.Table[int]{}, nref: table.Table[int]{}, bits: table.Table[int]{}, e: table.Table[int]{}, fnodes: table.Table[int]{}, fn: 0, cur: 0, lp: table.Table[int]{}, lpN: 0, lb: table.Table[int]{}, lbN: 0, addr: table.Table[int]{}, flam: table.Table[int]{}, viol: table.Table[int]{}, anyCalls: 0, ek: table.Table[int]{}, own: table.Table[int]{}, tm: table.Table[int]{}, tdecl: table.Table[int]{}, te: table.Table[int]{}, ekind: 0, tst: table.Table[int]{}, fcall: table.Table[int]{}, outs: table.Table[int]{}}}
     desugar.TypedC(mut az.d, p, c)
     if !only {
         efRun(mut az, p)
@@ -120,6 +121,9 @@ func runAz(p loader.Program, only bool, c desugar.TyCache) []Finding {
         checkSwitches(mut az)
         checkExhaustive(mut az)
         efCheck(mut az)
+        if p.logs_stdout {
+            logsCheck(mut az)
+        }
         svInit(mut az)
         svSolve(mut az)
     }
@@ -147,6 +151,10 @@ func runAz(p loader.Program, only bool, c desugar.TyCache) []Finding {
         at, f, decl, pk := desugar.DangerNote(mut az.d, j)
         fs = append(fs, Finding{warn: true, at: desugar.PosOf(mut az.d, at), what: dangerMessage(mut az, f, decl, pk)})
     }
+    for j <- iter.Range(0, desugar.DangerCalls(mut az.d)) {
+        at, f, pk := desugar.DangerCall(mut az.d, j)
+        fs = append(fs, Finding{warn: true, at: desugar.PosOf(mut az.d, at), what: dangerCallMessage(mut az, f, pk)})
+    }
     for i <- iter.Range(0, table.Len(mut az.out) / 3) {
         k := table.Get(mut az.out, i * 3)
         at := desugar.NodeRef(table.Get(mut az.out, i * 3 + 1))
@@ -161,6 +169,8 @@ func runAz(p loader.Program, only bool, c desugar.TyCache) []Finding {
             fs = append(fs, Finding{warn: false, at: diag.Pos{file: pos.file, tok: t}, what: constAnnMessage(mut az, at, int(x))})
         } else if k == MEffAnn || k == MEffLeak || k == MEffFnLeak || k == MEffMissing || k == MEffStale {
             fs = append(fs, Finding{warn: false, at: efPos(mut az, k, at), what: efMessage(mut az, k, at, int(x))})
+        } else if k == MLogsOut {
+            fs = append(fs, Finding{warn: false, at: desugar.PosOf(mut az.d, at), what: logsMessage(mut az, int(x))})
         } else if k == MSwGap || k == MSwDeadDefault {
             fs = append(fs, Finding{warn: false, at: desugar.PosOf(mut az.d, at), what: swMessage(mut az, k, int(x))})
         } else if k == MExhMissing || k == MExhDeadDefault {
@@ -171,6 +181,8 @@ func runAz(p loader.Program, only bool, c desugar.TyCache) []Finding {
             fs = append(fs, Finding{warn: false, at: desugar.PosOf(mut az.d, at), what: pre[i]})
         } else if k == MOrgMeet {
             fs = append(fs, Finding{warn: false, at: desugar.PosOf(mut az.d, at), what: ogMessage(mut az, int(x))})
+        } else if k == MHdrName {
+            fs = append(fs, Finding{warn: false, at: desugar.PosOf(mut az.d, at), what: hdrMessage(int(x))})
         } else if k == MOrgStd {
             fs = append(fs, Finding{warn: false, at: desugar.PosOf(mut az.d, at), what: ogStdMessage(int(x))})
         } else if k == MSecAnn {
@@ -263,6 +275,12 @@ func dangerMessage(az mut Az, f desugar.StrRef, decl desugar.NodeRef, pk int) st
     tname := str(mut az, desugar.StrRef(node(mut az, decl).a))
     pkg := str(mut az, desugar.PkgPath(mut az.d, pk))
     return "`${fname}` of ${pkg}.${tname} relaxes a safe default — this warning stays as long as it is set (there is no way to silence it; the safe setting removes it)"
+}
+
+func dangerCallMessage(az mut Az, f desugar.StrRef, pk int) string {
+    fname := str(mut az, f)
+    pkg := str(mut az, desugar.PkgPath(mut az.d, pk))
+    return "`${fname}` of ${pkg} relaxes a safe default — this warning stays as long as it is called (there is no way to silence it; the safe setting removes it)"
 }
 
 // ── 小道具 ──
@@ -382,6 +400,7 @@ func expr(az mut Az, e desugar.NodeRef) {
     } else if k == ast.ECall {
         constCall(mut az, desugar.NodeRef(x.a), desugar.ListRef(x.b), desugar.NodeRef(-1))
         callSite(mut az, e, desugar.NodeRef(x.a))
+        hdrCall(mut az, desugar.NodeRef(x.a), desugar.ListRef(x.b))
         leaseCall(mut az, e, desugar.NodeRef(x.a))
         expr(mut az, desugar.NodeRef(x.a))
         if az.winN > az.winBase && spawnsChild(mut az, desugar.NodeRef(x.a)) {
@@ -417,6 +436,7 @@ func expr(az mut Az, e desugar.NodeRef) {
     } else if k == ast.EMaplit {
         entries(mut az, desugar.ListRef(x.c))
     } else if k == ast.EComposite {
+        hdrComposite(mut az, x)
         elems(mut az, desugar.ListRef(x.b))
     } else if k == ast.ELambda {
         body := desugar.NodeRef(x.b)
@@ -494,7 +514,7 @@ func entries(az mut Az, l desugar.ListRef) {
 func ErrorsDump(p loader.Program) []Finding {
     mut az := Az{d: desugar.S{}, pk: 0, out: table.Table[int]{}, ok: table.Table[int]{}, nfn: 0, nerr: 0, er: Eng{sets: table.Table[int]{}, rhead: table.Table[int]{}, rnode: table.Table[int]{}, work: table.Table[int]{}, inq: table.Table[int]{}, env: table.Table[int]{}, envN: 0, envChanged: false},
         pbase: table.Table[int]{}, errfn: table.Table[int]{},
-        ffield: table.Table[int]{}, cur: 0, rec: false, sw: table.Table[int]{}, unknown: 0, walks: 0, declared: table.Table[int]{}, swpk: table.Table[int]{}, swarms: table.Table[int]{}, lit: table.Table[int]{}, wins: table.Table[int]{}, winN: 0, winBase: 0, flowBase: 0, cand: table.Table[int]{}, dflow: table.Table[int]{}, trySink: 0, lamf: table.Table[int]{}, lamFN: 0, lamBase: 0, lamCand: 0, lamck: table.Table[int]{}, sv: Sv{on: false, rec: false, natom: 0, atoms: table.Table[int]{}, resBase: 0, sinkBase: 0, pbase: table.Table[int]{}, npar: 0, pinBase: 0, secp: table.Table[int]{}, rpos: table.Table[int]{}, nres: 0, mres: table.Table[int]{}, mresN: 0, sinkAt: table.Table[int]{}, sinkK: table.Table[int]{}, fl: table.Table[int]{}, flBase: 0, hk: table.Table[int]{}, cons: table.Table[int]{}, lamIn: LSet{lo: 0, hi: 0}, viol: table.Table[int]{}, walks: 0, touch: table.Table[int]{}, pe: table.Table[int]{}, peN: 0, al: table.Table[int]{}, alN: 0, fmh: table.Table[int]{}, fm: table.Table[int]{}, fbn: table.Table[int]{}, mal: table.Table[int]{}, malN: 0, nodump: false, bind: false, og: false, effBase: 0, effHit: false, catom: -1, shMask: 0, oMask: 0, mountFn: -1, shv: table.Table[int]{}, shf: table.Table[int]{}, ftn: table.Table[int]{}, ov: table.Table[int]{}, credf: table.Table[int]{}, stMask: 0, kMask: 0, pers: table.Table[int]{}, kwit: table.Table[int]{}}, ef: Ef{n: 0, nk: table.Table[int]{}, nref: table.Table[int]{}, bits: table.Table[int]{}, e: table.Table[int]{}, fnodes: table.Table[int]{}, fn: 0, cur: 0, lp: table.Table[int]{}, lpN: 0, lb: table.Table[int]{}, lbN: 0, addr: table.Table[int]{}, flam: table.Table[int]{}, viol: table.Table[int]{}, anyCalls: 0, ek: table.Table[int]{}, own: table.Table[int]{}, tm: table.Table[int]{}, tdecl: table.Table[int]{}, te: table.Table[int]{}, ekind: 0, tst: table.Table[int]{}}}
+        ffield: table.Table[int]{}, cur: 0, rec: false, sw: table.Table[int]{}, unknown: 0, walks: 0, declared: table.Table[int]{}, swpk: table.Table[int]{}, swarms: table.Table[int]{}, lit: table.Table[int]{}, wins: table.Table[int]{}, winN: 0, winBase: 0, flowBase: 0, cand: table.Table[int]{}, dflow: table.Table[int]{}, trySink: 0, lamf: table.Table[int]{}, lamFN: 0, lamBase: 0, lamCand: 0, lamck: table.Table[int]{}, sv: Sv{on: false, rec: false, natom: 0, atoms: table.Table[int]{}, resBase: 0, sinkBase: 0, pbase: table.Table[int]{}, npar: 0, pinBase: 0, secp: table.Table[int]{}, rpos: table.Table[int]{}, nres: 0, mres: table.Table[int]{}, mresN: 0, sinkAt: table.Table[int]{}, sinkK: table.Table[int]{}, fl: table.Table[int]{}, flBase: 0, hk: table.Table[int]{}, cons: table.Table[int]{}, lamIn: LSet{lo: 0, hi: 0}, viol: table.Table[int]{}, walks: 0, touch: table.Table[int]{}, pe: table.Table[int]{}, peN: 0, al: table.Table[int]{}, alN: 0, fmh: table.Table[int]{}, fm: table.Table[int]{}, fbn: table.Table[int]{}, mal: table.Table[int]{}, malN: 0, nodump: false, bind: false, og: false, effBase: 0, effHit: false, catom: -1, shMask: 0, oMask: 0, mountFn: -1, shv: table.Table[int]{}, shf: table.Table[int]{}, ftn: table.Table[int]{}, ov: table.Table[int]{}, credf: table.Table[int]{}, stMask: 0, kMask: 0, pers: table.Table[int]{}, kwit: table.Table[int]{}}, ef: Ef{n: 0, nk: table.Table[int]{}, nref: table.Table[int]{}, bits: table.Table[int]{}, e: table.Table[int]{}, fnodes: table.Table[int]{}, fn: 0, cur: 0, lp: table.Table[int]{}, lpN: 0, lb: table.Table[int]{}, lbN: 0, addr: table.Table[int]{}, flam: table.Table[int]{}, viol: table.Table[int]{}, anyCalls: 0, ek: table.Table[int]{}, own: table.Table[int]{}, tm: table.Table[int]{}, tdecl: table.Table[int]{}, te: table.Table[int]{}, ekind: 0, tst: table.Table[int]{}, fcall: table.Table[int]{}, outs: table.Table[int]{}}}
     // 表層型検査器を通す（名前付き関数型の @errors — F の値の呼び出し・F の値のラムダの記録は Typed の表を読む: check と同じ導出）
     desugar.Typed(mut az.d, p)
     errInit(mut az)
@@ -559,6 +579,11 @@ func seenBefore(az mut Az, i int) bool {
 
 // 関数 fi の `<package のパス>.<名前>`
 func fnName(az mut Az, fi int) string {
+    nm := str(mut az, desugar.StrRef(fnDecl(mut az, fi).a))
+    // print.Logの合成の書き手（loader/logshape.sober）は、呼び出し点の綴りで示す
+    if strings.HasPrefix(nm, "$logTop_") {
+        return "print.Log"
+    }
     return "${str(mut az, desugar.PkgPath(mut az.d, desugar.FnAt(mut az.d, fi).pkg))}.${str(mut az, desugar.StrRef(fnDecl(mut az, fi).a))}"
 }
 

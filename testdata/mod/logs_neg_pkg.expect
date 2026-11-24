@@ -1,0 +1,2 @@
+sober: load error at audit/audit.sober:1:1: @logs is written only before the package clause of a file of the main package (not a _test.sober or _double.sober file)
+(check exit 1)

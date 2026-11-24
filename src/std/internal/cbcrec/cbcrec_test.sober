@@ -1,0 +1,218 @@
+package cbcrec
+
+// 既知の値（node の crypto の HMAC と AES-128-CBC で作った断片の SHA-256）・往復・埋め草の長さの全域・改ざんを、
+// 素直な参照（埋め草を読んでから普通に HMAC を計算する — 時間は秘密に依るが正しさの照合の相手）と突き合わせる
+
+import "std/crypto/aescbc"
+import "std/crypto/sha256"
+import "std/hex"
+import "std/internal/bless"
+import "std/iter"
+
+func TestKat() {
+    if !crypto.aescbc.Available() {
+        return
+    }
+    kat(1, 0, "636dc177ebdfd149091a4527db932d804b14d5ee958fadbfacf96c73d4aaaeb9", "1a48edd5541c88b997301741ca69cbdded0e50d97047a60e381c4cd43889856f")
+    kat(1, 1, "2bdbf2b7b9a90a857cd9a8301a50751b87cd84c0d488aacf311e6d261748c0cd", "4d0f55788762a38ab3b4b5789a2b4f2de236009d67000a9b22dbec85375988bf")
+    kat(1, 55, "47600752ddbe8b8cfd5db54c8bbab3f65c1887046af6297e5958e3ff29f749c2", "87956c29aa72f7555ed76ee29c1ae4fa01ce98347a828bbbeb75722eb98a9d33")
+    kat(1, 100, "51bef81c901248604b5d8a016b20c286d0d7f40d5e64edf1a42e8693aed4477e", "309e6108e249f790743c24b2751e68881828120d637f25579d553b8b6a6c15ed")
+    kat(2, 0, "29fc405f3d452c8c54d8c2fe964af57a3a2fcbde14857a775f76f2939692c8cb", "d179ee83347f9327bdb9ebb2805a0d9d475c86eed92ba7922407500d2d0eca09")
+    kat(2, 1, "c2458c484b2e92480ad4a0e9754f8a82f2c6ae3e5ab8f29c1b403c347c705ac4", "b7945e2518d82651505ef77315caddc87af5dc26845cd07dfa94d5bdd65670db")
+    kat(2, 55, "93df2fb255025e42d16d7cc5ab07d79bbfeba2dc0f1b94cf1a51e89dcd312e28", "7d5d3faa5f056050e43482b054116dbf2c10cc060ed3e704bade833658bc8a5d")
+    kat(2, 100, "52135210d6ed61ed8d90b22551c80e3d8f30cc11a169b47a637181d173578f60", "2b09a407fb23e90cafd6fc2b22fe3b841bf865d74f2f095f47b96fe646ee0d52")
+}
+
+func kat(alg int, n int, mte string, etm string) {
+    k, _ := New(alg, pat(MacSize(alg), 1), pat(16, 2))
+    pt := pat(n, 4 + n)
+    a0, _ := Seal(k, 7 + n, 23, 0x0303, pat(16, 3), pt)
+    a := internal.bless.Bytes(a0)
+    assert(hex.Format(crypto.sha256.Sum256(a)) == mte)
+    b0, _ := SealEtm(k, 7 + n, 23, 0x0303, pat(16, 3), pt)
+    b := internal.bless.Bytes(b0)
+    assert(hex.Format(crypto.sha256.Sum256(b)) == etm)
+    back, e := Open(k, 7 + n, 23, 0x0303, a)
+    assert(e == nil && same(back, pt))
+    back2, e2 := OpenEtm(k, 7 + n, 23, 0x0303, b)
+    assert(e2 == nil && same(back2, pt))
+}
+
+// 平文の長さ × 埋め草の長さ（最短から 255 まで）の全部で、Open が参照と同じ平文を返す。seq・型・版の違いは BadMac
+func TestPadRange() {
+    if !crypto.aescbc.Available() {
+        return
+    }
+    for alg <- iter.Range(1, 3) {
+        k, _ := New(alg, pat(MacSize(alg), 5), pat(16, 6))
+        for n <- lensA() {
+            pt := pat(n, n)
+            base := 15 - (n + MacSize(alg)) % 16
+            mut padv := base
+            while padv < 256 {
+                f := sealPad(k, 9, 23, 0x0303, pat(16, n + padv), pt, padv)
+                got, e := Open(k, 9, 23, 0x0303, f)
+                assert(e == nil && same(got, pt))
+                ref, re := openRef(k, 9, 23, 0x0303, f)
+                assert(re && same(ref, pt))
+                _, e1 := Open(k, 10, 23, 0x0303, f)
+                assert(e1 != nil)
+                _, e2 := Open(k, 9, 22, 0x0303, f)
+                assert(e2 != nil)
+                _, e3 := Open(k, 9, 23, 0x0302, f)
+                assert(e3 != nil)
+                padv += 16
+            }
+        }
+    }
+}
+
+// 1 バイトの改ざん（IV・本文・MAC・埋め草の各位置）と、壊した埋め草の値: Open は参照と同じ判定（全部 BadMac か、参照も受理する形だけ受理）
+func TestTamper() {
+    if !crypto.aescbc.Available() {
+        return
+    }
+    for alg <- iter.Range(1, 3) {
+        k, _ := New(alg, pat(MacSize(alg), 7), pat(16, 8))
+        for n <- lensB() {
+            pt := pat(n, 3 * n)
+            f := sealPad(k, 1, 23, 0x0303, pat(16, 9), pt, 15 - (n + MacSize(alg)) % 16 + 32)
+            for at <- iter.Range(0, len(f)) {
+                for x <- flips() {
+                    g := flip(f, at, x)
+                    got, e := Open(k, 1, 23, 0x0303, g)
+                    ref, ok := openRef(k, 1, 23, 0x0303, g)
+                    assert((e == nil) == ok)
+                    if ok {
+                        assert(same(got, ref))
+                    }
+                }
+            }
+            // 短い・16 の倍数でない断片
+            _, s1 := Open(k, 1, 23, 0x0303, head(f, 16 + 16))
+            assert(s1 != nil)
+            _, s2 := Open(k, 1, 23, 0x0303, head(f, len(f) - 1))
+            assert(s2 != nil)
+            eb, _ := SealEtm(k, 1, 23, 0x0303, pat(16, 9), pt)
+            for at <- iter.Range(0, len(eb)) {
+                _, e := OpenEtm(k, 1, 23, 0x0303, flip(eb, at, 1))
+                assert(e != nil)
+            }
+        }
+    }
+}
+
+// 写しの圧縮関数で組んだ SHA-256 が crypto/sha256 と一致する（長さ 0〜200 — 詰めのブロックの境目を含む）
+func TestSha256Block() {
+    for n <- iter.Range(0, 200) {
+        m := pat(n, n + 1)
+        mut h := mut []int{}
+        for v <- initOf(MacSha256) {
+            h = append(h, v)
+        }
+        mut w := mut []int{}
+        for i <- iter.Range(0, 64) {
+            w = append(w, 0)
+        }
+        mut q := mut []byte{}
+        for x <- m {
+            q = append(q, x)
+        }
+        q = append(q, byte(0x80))
+        while len(q) % 64 != 56 {
+            q = append(q, byte(0))
+        }
+        for i <- iter.Range(0, 8) {
+            q = append(q, byte(((8 * n) >> (56 - 8 * i)) & 0xff))
+        }
+        qs := freeze(q)
+        for b <- iter.Range(0, len(qs) / 64) {
+            blockOf(MacSha256, mut h, mut w, qs, 64 * b)
+        }
+        assert(same(bytesOf(MacSha256, freeze(h)), crypto.sha256.Sum256(m)))
+    }
+}
+
+// 平文 ‖ MAC ‖ 埋め草（padv + 1 バイトの padv）を CBC で暗号化した断片
+func sealPad(k Keys, seq int, typ int, ver int, iv []byte, pt []byte, padv int) []byte {
+    mac := hmacPub(k.alg, k.mac, header(seq, typ, ver, len(pt)), pt)
+    mut body := mut []byte{}
+    for x <- pt {
+        body = append(body, x)
+    }
+    for x <- mac {
+        body = append(body, x)
+    }
+    for i <- iter.Range(0, padv + 1) {
+        body = append(body, byte(padv))
+    }
+    ct, _ := crypto.aescbc.Encrypt(k.aes, iv, freeze(body))
+    return cat(iv, ct)
+}
+
+// 素直な参照（埋め草を読んで分岐し、普通の HMAC で照合する）
+func openRef(k Keys, seq int, typ int, ver int, f []byte) ([]byte, bool) {
+    ml := MacSize(k.alg)
+    l := len(f) - 16
+    if l < 16 || l % 16 != 0 || l < ml + 1 {
+        return []byte{}, false
+    }
+    p0, _ := crypto.aescbc.DecryptAt(k.aes, head(f, 16), f, 16, l)
+    p := internal.bless.Bytes(p0)
+    pad := int(p[l - 1])
+    if pad + 1 + ml > l {
+        return []byte{}, false
+    }
+    for i <- iter.Range(0, pad + 1) {
+        if int(p[l - 1 - i]) != pad {
+            return []byte{}, false
+        }
+    }
+    n := l - pad - 1 - ml
+    want := internal.bless.Bytes(hmacPub(k.alg, k.mac, header(seq, typ, ver, n), head(p, n)))
+    for j <- iter.Range(0, ml) {
+        if want[j] != p[n + j] {
+            return []byte{}, false
+        }
+    }
+    return head(p, n), true
+}
+
+func pat(n int, seed int) []byte {
+    mut out := mut []byte{}
+    for i <- iter.Range(0, n) {
+        out = append(out, byte((i * 31 + seed * 17 + 5) & 0xff))
+    }
+    return freeze(out)
+}
+
+func flip(a []byte, at int, x int) []byte {
+    mut out := mut []byte{}
+    for i <- iter.Range(0, len(a)) {
+        out = append(out, if i == at { byte(int(a[i]) ^ x) } else { a[i] })
+    }
+    return freeze(out)
+}
+
+func same(a []byte, b []byte) bool {
+    if len(a) != len(b) {
+        return false
+    }
+    mut d := 0
+    for i <- iter.Range(0, len(a)) {
+        d = d | (int(a[i]) ^ int(b[i]))
+    }
+    return d == 0
+}
+
+func lensA() []int {
+    return []int{0, 1, 15, 16, 31, 44, 64, 100, 200, 300}
+}
+
+func lensB() []int {
+    return []int{0, 5, 40, 130}
+}
+
+func flips() []int {
+    return []int{1, 0x80}
+}

@@ -1,0 +1,129 @@
+package aescbc
+
+// AES-128-CBC（NIST SP 800-38A 6.2 — 鍵 16 バイト・IV 16 バイト・長さは 16 の倍数。埋め草は付けない — 呼び手の record 層が付けて外す）。
+// TLS 1.2 の CBC のスイート（std/tls の dangerouslyAllowTls12 の道）のためだけにある。本体は x86 の AES-NI の専用命令の実装で、ソフトの AES は書かない
+// （表引きは定数時間にならない）: 専用命令の無い機械・x86 の最適化のバックエンド以外の出力では Available() = false で、Prepare は NoHardware を返す。
+// CBC は認証しない。MAC と組み合わせ、埋め草の検査と MAC の照合を定数時間で行うのは呼び手の責任（Lucky13）
+//
+//     k := crypto.aescbc.Prepare(key)?
+//     ct := crypto.aescbc.Encrypt(k, iv, pt)?
+//     pt := crypto.aescbc.Decrypt(k, iv, ct)?
+
+import "std/iter"
+
+@intrinsic("cpuaes")
+func sysCpuAes() int
+
+@intrinsic("aescbckey")
+func sysCbcKey(key int, tbl int) int
+
+@intrinsic("aescbce")
+func sysCbcEnc(st int, src int, dst int, n int) int
+
+@intrinsic("aescbcd")
+func sysCbcDec(st int, src int, dst int, n int) int
+
+@intrinsic("addr")
+func sysAddr(b []byte) int
+
+// 長さの定数（バイト）
+const KeySize = 16 // 鍵の長さ
+const BlockSize = 16 // ブロックと IV の長さ
+
+// 鍵の表の大きさと状態の配置（compiler/lower/aes.soberのCBCの節と同じ — 状態の [0, 16) は連鎖の IV・[32, 40) は鍵の表の番地）
+const tblSize = 352
+const stKey = 32
+const stSize = 40
+
+// この機械で AES の専用命令の実装を使えない（AES-NI が無い・SOBER_NOAES=1・x86 の最適化のバックエンド以外の出力）
+type NoHardware error
+
+// 鍵・IV の長さが違う・本文の長さが 16 の倍数でない・切片の外を指す
+type BadSize error
+
+// この機械で CBC が使えるか
+@effects(!io, !block, !nondet)
+func Available() bool {
+    return sysCpuAes() == 1
+}
+
+// 展開した鍵（暗号化の鍵 11 ラウンドと復号の鍵 11 ラウンド。Prepare の後は書かない — 状態が番地で指す）
+type Key struct {
+    tbl []byte @secret
+}
+
+// key を展開した Key（専用命令の有無と鍵の長さはここで見る）
+@errors(NoHardware, BadSize)
+@secret(key)
+@effects(!io, !block, !nondet)
+func Prepare(key []byte) (Key, error?) {
+    if sysCpuAes() != 1 {
+        return Key{tbl: []byte{}}, NoHardware{}
+    }
+    if len(key) != KeySize {
+        return Key{tbl: []byte{}}, BadSize{}
+    }
+    tbl := zeros(tblSize)
+    _ = sysCbcKey(sysAddr(key), sysAddr(tbl))
+    return Key{tbl: tbl}, nil
+}
+
+// pt（16 の倍数）を iv から連鎖して暗号化したもの（pt と同じ長さ）
+@errors(BadSize)
+@effects(!io, !block, !nondet)
+func Encrypt(k Key, iv []byte, pt []byte) ([]byte, error?) {
+    if len(iv) != BlockSize || len(pt) % BlockSize != 0 || len(k.tbl) != tblSize {
+        return []byte{}, BadSize{}
+    }
+    out := zeros(len(pt))
+    if len(pt) > 0 {
+        s := newState(k, iv)
+        _ = sysCbcEnc(sysAddr(s), sysAddr(pt), sysAddr(out), len(pt))
+    }
+    return out, nil
+}
+
+// Encrypt の逆（ct と同じ長さの平文 — 埋め草はそのまま返す）
+@errors(BadSize)
+@effects(!io, !block, !nondet)
+func Decrypt(k Key, iv []byte, ct []byte) ([]byte, error?) {
+    return DecryptAt(k, iv, ct, 0, len(ct))
+}
+
+// b[off, off + n) を iv から連鎖して復号したもの（record の受けの列から写さずに読む形）
+@errors(BadSize)
+@effects(!io, !block, !nondet)
+func DecryptAt(k Key, iv []byte, b []byte, off int, n int) ([]byte, error?) {
+    if len(iv) != BlockSize || n % BlockSize != 0 || off < 0 || n < 0 || off + n > len(b) || len(k.tbl) != tblSize {
+        return []byte{}, BadSize{}
+    }
+    out := zeros(n)
+    if n > 0 {
+        s := newState(k, iv)
+        _ = sysCbcDec(sysAddr(s), sysAddr(b) + off, sysAddr(out), n)
+    }
+    return out, nil
+}
+
+// 連鎖の状態（IV ‖ 0 埋め ‖ 鍵の表の番地）
+func newState(k Key, iv []byte) []byte {
+    mut s := mut []byte{}
+    for i <- iter.Range(0, stSize) {
+        s = append(s, if i < BlockSize { iv[i] } else { byte(0) })
+    }
+    a := sysAddr(k.tbl)
+    for i <- iter.Range(0, 8) {
+        s[stKey + i] = byte((a >> (8 * i)) & 0xff)
+    }
+    return freeze(s)
+}
+
+func zeros(n int) []byte {
+    mut z := mut []byte{}
+    mut i := 0
+    while i < n {
+        z = append(z, 0)
+        i += 1
+    }
+    return freeze(z)
+}

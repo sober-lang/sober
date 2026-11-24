@@ -59,7 +59,7 @@ const TC_SCOPE = 19  // 開いている最内のscopeの記録（SR_UPで外へ 
 const TC_CUTOK = 20  // 1 = 純な子（切ってよい — 段階6 P4-5 cancel.sober）・2 = 純でないがstdoutに書かない子（区間を持たない）。main・それ以外の子・走らせ直しは0。切ってよいかは1のビット
 const TC_IDX = 21    // 生んだscopeの中の番号（生んだ順 — 打ち切りのフラグSR_CUTと比べる）
 const TC_SITE = 22   // spawn の点の番号（1 始まり — 0 = 走らせ直し。計測〔spawn の点ごとの使用量〕・見積もりに使う）
-const TC_ADM = 23    // 入場で台帳に積んだ量（admit.sober — 見積もりのバイト | 1 << LED_TSHIFT。0 = 計上していない〔main・走らせ直し〕）
+const TC_ADM = 23    // 入場で台帳に積んだ量（admit.sober — 見積もりのバイト | 1 << LED_TSHIFT | 普通のspawnの印ADM_PLAIN。0 = 計上していない〔main・走らせ直し〕）
 const TC_NODE = 24   // 入場で足した天井の節の最内（budget: のscopeの記録 — 段階6 P5-3 admit.sober。0 = 根だけ）
 const TC_DECL = 25   // 宣言の上界（budget: — 0 = 宣言なし。終わりで宣言超過を数える）
 const TC_CNODE = 26  // 今効いている天井の節（spawn の子の入場が辿る入口 — 生まれたときは TC_NODE・budget: の scope の開閉で付け替える）
@@ -73,7 +73,7 @@ const TC_WORDS = TC_FLEN + 5
 // 自前の深度の [スロットの基底, bump] の退避（深度k → TC_SAVE + 2k・+1）。2 × (MAX_DEPTH + 1) ワード = 16 KiBの列なので記録の末尾に置く —
 // 毎回のioのフィールド（TC_FLEN〜TC_SLOTSZ・TC_FDS / TC_CHS / TC_DL = ワード27〜34）をTC_NEXT等と同じ先頭のページに収め、完了1本でTCBの2ページを
 // 触らないため（退避の列の後ろに置くとioのフィールドが5ページ目に来て、4096接続のringでdTLBの取りこぼし12 / リクエストのうち
-// 3.6がrt.uring_pollのTC_IORESになる）。TC_SAVEはTC_DL・TC_LEASE（ワード35）・孤児の登録簿のTC_ORG（ワード36 — orphan.sober）・TC_NSLOT（ワード37）・計上済みの上限のワード（TC_HW〜TC_SNEG = 60〜63）・TC_CELL（ワード64）・TC_BOR（ワード65）より後ろ・TC_END × 8 = 16,928 B < 予約ページの始まり（WIN_OFF = 18,432 — チャンクの末尾の4ページは浅いregionの予約ページ）
+// 3.6がrt.uring_pollのTC_IORESになる）。TC_SAVEはTC_DL・TC_LEASE（ワード35）・孤児の登録簿のTC_ORG（ワード36 — orphan.sober）・TC_NSLOT（ワード37）・計上済みの上限のワード（TC_HW〜TC_SNEG = 60〜63）・TC_CELL（ワード64）・TC_BOR（ワード65）・子の死の印TC_DNEXT / TC_DIE（ワード66・67）より後ろ・TC_END × 8 = 16,944 B < 予約ページの始まり（WIN_OFF = 18,432 — チャンクの末尾の4ページは浅いregionの予約ページ）
 // 次のspawn 1回のスロットの大きさのフラグ（バイト — 0 = フラグなし。rt.netop 6が今のtaskに書き、rt.task_newが親のこのワードを読んで消す — std/netのServeのregion:）
 const TC_NSLOT = 37
 // TC_PREV = 溢れの列の1つ古い側（実行待ちの列の環から溢れたtaskだけ）。TC_WAKE = 積んだ時刻（TSC。LedgerのmaxWaitが読む）。
@@ -116,7 +116,11 @@ const TC_SNP = 57
 const TC_WANCH = 58
 // 格納場所（cell.sober）: 鍵を持っている表の番地（0 = 持っていない。鍵の中で死んだらtaskの終わりが鍵を返す — cellDiedIn）
 const TC_CELL = 64
-const TC_SAVE = 66
+// 子の死の印（mux.soberのmuxDieMark — HTTP/2のストリームの子）: TC_DNEXT = 次のspawn 1回の子に付ける印（rt.mux op 69が今のtaskに書き、rt.task_new / task_new_inが読んで消す。
+// 縮退した子はrt.task_inlineが読んで消す）・TC_DIE = この子の印（muxの記録の番地 | 枠 << 48 — 0 = 無し。taskの終わりが読んで消す）。spawnごとに書くので先頭のページに
+const TC_DNEXT = 66
+const TC_DIE = 67
+const TC_SAVE = 68
 const TC_END = TC_SAVE + 2 * (MAX_DEPTH + 1)
 // 開いたfdのチェーンの頭（fd + 1・0 = 空 — 登録簿rt.soberのneedOpen）。sysOpenを使うプログラムでだけ使うワード（TC_WORDSの外）。mainの記録
 // （rt.main_task）は退避の列の末尾まで（TC_END）なので、TC_FDS / TC_CHS / TC_DLはどのプログラムでも中にある。子のチャンクの記録はTASK_HEADのページの中
@@ -265,6 +269,7 @@ func needTaskRt(st mut St) {
     st.cutGenG = addGlobalInit(mut st, int(strLit(mut st, "rt.cutgen")), 1, -1)
     st.rtCutWalk = addFunc(mut st, int(strLit(mut st, "rt.cut_walk")), desugar.ListRef(list1(mut st, TyPtr)), TyI64)
     st.rtCutEnd = addFunc(mut st, int(strLit(mut st, "rt.cut_end")), desugar.ListRef(list2(mut st, TyPtr, TyI64)), TyI64)
+    st.rtExitMark = addFunc(mut st, int(strLit(mut st, "rt.exit_mark")), desugar.ListRef(list1(mut st, TyI64)), -1)
     st.rtCancel = addFunc(mut st, int(strLit(mut st, "rt.cancel_check")), desugar.ListRef(list0(mut st)), -1)
     st.rtTaskRerun = addFunc(mut st, int(strLit(mut st, "rt.task_rerun")), desugar.ListRef(list1(mut st, TyPtr)), -1)
     needMnRt(mut st)
@@ -315,6 +320,9 @@ func taskInitMain(st mut St, sp int) {
     store(mut st, globaladdr(mut st, st.mainTcb), TC_SLOTSZ, ms)
     store(mut st, globaladdr(mut st, st.mainTcb), TC_SNEG, bin(mut st, BSub, iconst(mut st, 0), ms))
     tmb := envMb(mut st, sp, "SOBER_TASK_REGION_MB=", DEFAULT_TASK_SLOT_MB, false)
+    store(mut st, globaladdr(mut st, st.pstatG), PS_MAPCAP, envNum(mut st, sp, "SOBER_MAPCAP=", 0, true, 1 << 40))
+    needArena(mut st)
+    store(mut st, globaladdr(mut st, st.arenaG), CA_SINGLE, cmp(mut st, CEq, envNum(mut st, sp, "SOBER_CHUNK_ARENA=", 1, true, 1), iconst(mut st, 0)))
     store(mut st, meta, W_SLOT_DEF, imin(mut st, bin(mut st, BShl, ceilPow2(mut st, tmb), iconst(mut st, 20)), ms))
     if dlFn(st.rtD3) != 0 {
         vdsoInit(mut st, sp)
@@ -2589,7 +2597,9 @@ func taskHandover(st mut St, from int, to int) {
     store(mut st, globaladdr(mut st, st.wkG), WK_CUT, load(mut st, globaladdr(mut st, st.cutGenG), 0))
 }
 
-// rt.task_new() ptr: プールのチャンクか、新しいチャンク（mmap + ガードページのmprotect）。予約の失敗はregionの超過と同じ死（102）
+// rt.task_new() ptr: プールのチャンクか、新しいチャンク（mmap + ガードページのmprotect）。予約の失敗はregionの超過と同じ死（102）。
+// rt.task_new_in（SpawnIn）では、予約の失敗はその子だけの shed: 作りかけのチャンクを外し、入場で足した量を戻して 0 を返す（呼び手の Serve はその接続を断る。
+// 呼んだ task〔受け付けのループ〕を死なせると、その scope の入場済みの接続が全部切られる）
 func buildTaskNew(st mut St) {
     buildTaskNewFn(mut st, st.rtTaskNew, false)
     if st.poolOn {
@@ -2713,28 +2723,34 @@ func buildTaskNewFn(st mut St, fnr FnRef, inPool bool) {
     lockGive(mut st, mnc, MN_RLOCK)
     br(mut st, bMm, -1)
     setCur(mut st, bMm)
-    args := listN(mut st, 7)
-    desugar.HeapSet(mut st.d, args + 1, iconst(mut st, 9))
-    desugar.HeapSet(mut st.d, args + 2, iconst(mut st, 0))
-    desugar.HeapSet(mut st.d, args + 3, iconst(mut st, size))
-    desugar.HeapSet(mut st.d, args + 4, iconst(mut st, 3))
-    desugar.HeapSet(mut st.d, args + 5, iconst(mut st, 16418))
-    desugar.HeapSet(mut st.d, args + 6, iconst(mut st, -1))
-    desugar.HeapSet(mut st.d, args + 7, iconst(mut st, 0))
-    b := syscall(mut st, args)
+    // アリーナから切り出す（ガードはアリーナの側で置く — chunkMap）。失敗は負の errno（写像の数の上限・VA の予約の失敗）
+    b := chunkMap(mut st, size)
     bad := newBlock(mut st)
     ok := newBlock(mut st)
     condbr(mut st, cmp(mut st, CUge, b, iconst(mut st, -4095)), bad, -1, ok, -1)
     setCur(mut st, bad)
-    memPanic(mut st, PM_VA)
+    if inPool {
+        mapShed(mut st, adm, -1, 0)
+    } else {
+        memPanic(mut st, PM_VA)
+    }
     setCur(mut st, ok)
-    // mprotect(チャンクの先頭, TASK_GUARD, PROT_NONE)（失敗 = 写像の数の上限vm.max_map_count — ガードなしで走らせずva_exhaustedで死ぬ）
-    pr := syscall(mut st, list4(mut st, iconst(mut st, 10), b, iconst(mut st, TASK_GUARD), iconst(mut st, 0)))
+    // ガードはchunkMapが置いた（失敗はbの負の値）。SpawnInの失敗の経路の形を保つために、ここでのガードの失敗は無い
+    pr := iconst(mut st, 0)
+    // SOBER_MAPCAP（開発用）: 新しいチャンクの数が上限に届いていれば、mprotect の失敗と同じに扱う
+    ps := globaladdr(mut st, st.pstatG)
+    mcap := load(mut st, ps, PS_MAPCAP)
+    sim := bin(mut st, BAnd, cmp(mut st, CNe, mcap, iconst(mut st, 0)), cmp(mut st, CGe, load(mut st, ps, PS_TCBMAP), mcap))
     bBadP := newBlock(mut st)
     okP := newBlock(mut st)
-    condbr(mut st, cmp(mut st, CNe, pr, iconst(mut st, 0)), bBadP, -1, okP, -1)
+    condbr(mut st, bin(mut st, BOr, cmp(mut st, CNe, pr, iconst(mut st, 0)), sim), bBadP, -1, okP, -1)
     setCur(mut st, bBadP)
-    memPanic(mut st, PM_VA)
+    // ミュータント120: SpawnIn でも今までどおり死ぬ（scripts/mapcap.sh が捕まえる）
+    if inPool && st.rtMut != 120 {
+        mapShed(mut st, adm, b, size)
+    } else {
+        memPanic(mut st, PM_VA)
+    }
     setCur(mut st, okP)
     // 計測のカウンタ: 新しいチャンクの数（共有の予備・手元のチェーンの取りこぼしは入力に比例して増える — 検査）
     atomicXadd(mut st, globaladdr(mut st, st.pstatG), PS_TCBMAP, iconst(mut st, 1))
@@ -2749,7 +2765,8 @@ func buildTaskNewFn(st mut St, fnr FnRef, inPool bool) {
     }
     br(mut st, bGot, list1(mut st, bp))
     setCur(mut st, bGot)
-    store(mut st, got, TC_ADM, adm.e)
+    // 普通のspawn（rt.task_new）で入場したtaskには印ADM_PLAINを付ける（終わりの返しがプールの節にtaskの数を返さない — admit.soberのledNodeE）
+    store(mut st, got, TC_ADM, if inPool || !st.poolOn { adm.e } else { bin(mut st, BOr, adm.e, bin(mut st, BMul, cmp(mut st, CNe, adm.e, iconst(mut st, 0)), iconst(mut st, ADM_PLAIN))) })
     if st.areaOn {
         store(mut st, got, TC_ONW, if mark >= 0 { mark } else { iconst(mut st, 0) })
     }
@@ -2770,6 +2787,11 @@ func buildTaskNewFn(st mut St, fnr FnRef, inPool bool) {
     store(mut st, got, TC_WMX, iconst(mut st, 0))
     store(mut st, got, TC_WBIG, iconst(mut st, 0))
     store(mut st, got, TC_SITE, bin(mut st, BSar, 0, iconst(mut st, 2)))
+    // 子の死の印（rt.mux op 69）: 親の次のspawn 1回の印を子へ写して消す（入場できずに縮退した子はrt.task_inlineが読む）
+    if st.dieOn {
+        store(mut st, got, TC_DIE, load(mut st, parT, TC_DNEXT))
+        store(mut st, parT, TC_DNEXT, iconst(mut st, 0))
+    }
     // 未着手の子の上限は親から継ぐ
     store(mut st, got, TC_BACKLOG, load(mut st, itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR)), TC_BACKLOG))
     if inPool {
@@ -3169,6 +3191,10 @@ func buildTaskSwitch(st mut St) {
     begin(mut st, st.rtTaskSwitch)
     shal := st.areaOn && st.rtShLand != -1
     mut save := 0
+    if st.areaOn {
+        // Serve の接続の task（TC_ONW の bit 0）が止まるときは、待ちの形〔シャロー / ディープ〕に依らず予約を縮める（admit.sober parkShrink — 下の parkRestore が足し戻す）
+        parkShrink(mut st, 0)
+    }
     if shal {
         save = areaPark(mut st, 0)
     } else if st.areaOn {
@@ -3177,6 +3203,8 @@ func buildTaskSwitch(st mut St) {
     taskHandover(mut st, 0, 1)
     if st.areaOn {
         areaSpCheck(mut st, 0, 1)
+        // 待っている間に縮めた予約を足し戻す（admit.sober parkRestore）
+        parkRestore(mut st, 1)
     }
     fresh := newBlock(mut st)
     resume := newBlock(mut st)
@@ -3451,6 +3479,7 @@ func buildTaskStart(st mut St) {
         domDiedIn(mut st, 0)
     }
     cellDiedIn(mut st, 0)
+    muxDiedIn(mut st, 0, r)
     frRec(mut st, FK_END, ptoi(mut st, 0), r)
     fdDrainCall(mut st)
     orphEnd(mut st, 0)
@@ -3499,4 +3528,126 @@ func buildTaskStart(st mut St) {
     store(mut st, tk, TK_FREE, ptoi(mut st, 0))
     call(mut st, st.rtTaskSwitch, list2(mut st, 0, nx))
     ret(mut st, -1)
+}
+
+// SpawnIn の子のチャンクが作れなかった（mmap か ガードの mprotect の失敗 — 写像の数の上限か VA の予約の失敗）: その子だけを shed にする。
+// b ≥ 0 なら作りかけのチャンク（size バイト）を外す。入場で足した量（adm.e — 根の台帳と節のチェーン）を戻し、入場の数を1つ戻して shed に数え、
+// 入場を待つ側を起こして 0 を返す（VA_SHED の shed と同じ返し方 — 呼び手が (nil, Shed{})）
+func mapShed(st mut St, adm Adm, b int, size int) {
+    if b != -1 {
+        syscall(mut st, list3(mut st, iconst(mut st, 11), b, iconst(mut st, size)))
+    }
+    mn := globaladdr(mut st, st.mnG)
+    atomicXadd(mut st, mn, MN_LED, bin(mut st, BSub, iconst(mut st, 0), adm.e))
+    n0 := adm.node
+    bU := newBlock(mut st)
+    bU2 := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, n0, iconst(mut st, 0)), bU, -1, bU2, -1)
+    setCur(mut st, bU)
+    ledUndo(mut st, n0, iconst(mut st, 0), adm.e, iconst(mut st, 0))
+    poolCount(mut st, n0, PL_SHED)
+    atomicXadd(mut st, itop(mut st, n0), PL_ADMIT, iconst(mut st, -1))
+    br(mut st, bU2, -1)
+    setCur(mut st, bU2)
+    atomicXadd(mut st, mn, MN_LSHED, iconst(mut st, 1))
+    if awFn(st.rtD3) != 0 {
+        _ = ledWakeG(mut st)
+    }
+    ceilWake(mut st)
+    ret(mut st, itop(mut st, iconst(mut st, 0)))
+}
+
+// taskのチャンクとエリアのアリーナ（@rt.carena = [鍵, 次に切り出す番地, アリーナの終わり, ガードの形（0 = まだ・1 = MADV_GUARD_INSTALL・2 = mprotect）, チャンクごとの写像の旗]）。
+// チャンクとエリアは [ガード | …] の形で、ガードを置くと写像（VMA）が分かれるmprotect（PROT_NONE）では、チャンク1つに写像が2つ要り、写像の数の上限
+// （vm.max_map_count）の半分でtaskが作れなくなる。MADV_GUARD_INSTALL（Linux 6.13〜）のガードは写像を分けないので、アリーナ（CARENA_SZの
+// NORESERVEの写像1つ）から切り出せば、写像の数はtaskの数に依らない。古いカーネル（EINVAL）では、同じアリーナの中でmprotectに倒れる
+// （写像はチャンクごとに分かれる — 前と同じ数）。ガードの印はMADV_DONTNEED（rt.tcb_trim）の後も残る
+const CARENA_SZ = 67108864
+const CA_LOCK = 0
+const CA_CUR = 1
+const CA_END = 2
+const CA_MODE = 3
+// 1 = チャンクごとの写像（開発用 SOBER_CHUNK_ARENA=0 — 写像の並びからチャンクを見つける検査〔areacheck〕のための前の形。ガードはmprotect）
+const CA_SINGLE = 4
+
+func needArena(st mut St) {
+    if st.arenaG == -1 {
+        st.arenaG = addGlobalInit(mut st, int(strLit(mut st, "rt.carena")), 5, -1)
+    }
+}
+
+// アリーナからsizeバイト（ページの倍数）を切り出して先頭の1ページにガードを置き、先頭の番地を返す（失敗は負のerrno）。切り出しは鍵の中（新しいチャンクを
+// 作るときだけ通る遅い経路）。ミュータント121: ガードを常にmprotectで置く（古いカーネルの形 — scripts/mapcap.shの写像の数の検査が捕まえる）
+func chunkMap(st mut St, size int) int {
+    needArena(mut st)
+    zero := iconst(mut st, 0)
+    ca := globaladdr(mut st, st.arenaG)
+    single := load(mut st, ca, CA_SINGLE)
+    bOut := newBlock(mut st)
+    out := param(mut st, bOut, TyI64)
+    spinLock(mut st, ca, CA_LOCK)
+    c0 := load(mut st, ca, CA_CUR)
+    bNew := newBlock(mut st)
+    bCut := newBlock(mut st)
+    at := param(mut st, bCut, TyI64)
+    condbr(mut st, bin(mut st, BAnd, cmp(mut st, CUge, load(mut st, ca, CA_END), bin(mut st, BAdd, c0, iconst(mut st, size))), cmp(mut st, CEq, single, zero)), bCut, list1(mut st, c0), bNew, -1)
+    // 新しいアリーナ（足りない残りは捨てる — VAだけ）
+    setCur(mut st, bNew)
+    margs := listN(mut st, 7)
+    desugar.HeapSet(mut st.d, margs + 1, iconst(mut st, 9))
+    desugar.HeapSet(mut st.d, margs + 2, zero)
+    asz := bin(mut st, BAdd, bin(mut st, BMul, single, iconst(mut st, size)), bin(mut st, BMul, cmp(mut st, CEq, single, zero), iconst(mut st, CARENA_SZ)))
+    desugar.HeapSet(mut st.d, margs + 3, asz)
+    desugar.HeapSet(mut st.d, margs + 4, iconst(mut st, 3))
+    desugar.HeapSet(mut st.d, margs + 5, iconst(mut st, 16418))
+    desugar.HeapSet(mut st.d, margs + 6, iconst(mut st, -1))
+    desugar.HeapSet(mut st.d, margs + 7, zero)
+    m := syscall(mut st, margs)
+    bMf := newBlock(mut st)
+    bMok := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CUge, m, iconst(mut st, -4095)), bMf, -1, bMok, -1)
+    setCur(mut st, bMf)
+    lockGive(mut st, ca, CA_LOCK)
+    br(mut st, bOut, list1(mut st, m))
+    setCur(mut st, bMok)
+    // MADV_NOHUGEPAGE（15）: 透過的 huge page が always の環境では、チャンクの頂上を触るだけで隣のチャンクを含む 2 MiB が常駐する
+    // チャンクごとの写像（SOBER_CHUNK_ARENA=0 — 前の形）にはかけない（写像の旗を前と同じに保つ）
+    bNh := newBlock(mut st)
+    bNhJ := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, single, zero), bNh, -1, bNhJ, -1)
+    setCur(mut st, bNh)
+    syscall(mut st, list4(mut st, iconst(mut st, 28), m, asz, iconst(mut st, 15)))
+    br(mut st, bNhJ, -1)
+    setCur(mut st, bNhJ)
+    store(mut st, ca, CA_END, bin(mut st, BAdd, m, asz))
+    br(mut st, bCut, list1(mut st, m))
+    setCur(mut st, bCut)
+    store(mut st, ca, CA_CUR, bin(mut st, BAdd, at, iconst(mut st, size)))
+    // ガード: 形がまだ（0）か1ならMADV_GUARD_INSTALL（102）を試す。EINVAL（-22）なら形を2にしてmprotectへ
+    mode := load(mut st, ca, CA_MODE)
+    bTryG := newBlock(mut st)
+    bProt := newBlock(mut st)
+    bDone := newBlock(mut st)
+    rv := param(mut st, bDone, TyI64)
+    condbr(mut st, bin(mut st, BOr, bin(mut st, BOr, cmp(mut st, CEq, mode, iconst(mut st, 2)), single), if st.rtMut == 121 { iconst(mut st, 1) } else { zero }), bProt, -1, bTryG, -1)
+    setCur(mut st, bTryG)
+    g := syscall(mut st, list4(mut st, iconst(mut st, 28), at, iconst(mut st, TASK_GUARD), iconst(mut st, 102)))
+    bGinv := newBlock(mut st)
+    bGset := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, g, iconst(mut st, -22)), bGinv, -1, bGset, -1)
+    setCur(mut st, bGinv)
+    store(mut st, ca, CA_MODE, iconst(mut st, 2))
+    br(mut st, bProt, -1)
+    setCur(mut st, bGset)
+    store(mut st, ca, CA_MODE, bin(mut st, BAdd, bin(mut st, BMul, cmp(mut st, CEq, g, zero), iconst(mut st, 1)), bin(mut st, BMul, cmp(mut st, CNe, g, zero), mode)))
+    br(mut st, bDone, list1(mut st, g))
+    setCur(mut st, bProt)
+    pr := syscall(mut st, list4(mut st, iconst(mut st, 10), at, iconst(mut st, TASK_GUARD), zero))
+    br(mut st, bDone, list1(mut st, pr))
+    setCur(mut st, bDone)
+    lockGive(mut st, ca, CA_LOCK)
+    // ガードを置けなければ失敗（ガードなしで走らせない）: 切り出した分は捨てる（VAだけ）
+    br(mut st, bOut, list1(mut st, bin(mut st, BAdd, bin(mut st, BMul, cmp(mut st, CEq, rv, zero), at), bin(mut st, BMul, cmp(mut st, CNe, rv, zero), rv))))
+    setCur(mut st, bOut)
+    return out
 }

@@ -1,0 +1,29 @@
+package sha1
+
+// FIPS 180-4 の例（"abc"・空・2ブロックの448ビット）と、100万の 'a'
+import "std/hex"
+
+func hexOf(b []byte) string {
+    return hex.Format(b)
+}
+
+func TestVectors() {
+    assert(hexOf(Sum1(bytes("abc"))) == "a9993e364706816aba3e25717850c26c9cd0d89d")
+    assert(hexOf(Sum1([]byte{})) == "da39a3ee5e6b4b0d3255bfef95601890afd80709")
+    assert(hexOf(Sum1(bytes("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"))) == "84983e441c3bd26ebaae4aa1f95129e5e54670f1")
+}
+
+func TestMillion() {
+    mut s := New()
+    mut chunk := mut []byte{}
+    while len(chunk) < 1000 {
+        chunk = append(chunk, byte(97))
+    }
+    c := freeze(chunk)
+    mut i := 0
+    while i < 1000 {
+        Write(mut s, c)
+        i += 1
+    }
+    assert(hexOf(Sum(s)) == "34aa973cd4c4daa4f61eeb2bdbad27316534016f")
+}

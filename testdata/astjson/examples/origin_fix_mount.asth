@@ -1,6 +1,6 @@
-@@full	250b703ce957b257	925	26475
-@head	a267a1b05af63503	0	151
-func give	10d2aee2bdb2b33a	14	535
-func main	20285dfd2cdeb415	64	2689
+@@full	027c9ebadcb15a8a	1107	33702
+@head	56b0812ccd8115b1	0	183
+func main	a59a2a652d985c2a	78	3139
+func readAll	f5c560cbc949d739	28	1057
 func refresh	3338da055ddc23fa	25	1387
 func show	62bd2a266e93f744	35	1205

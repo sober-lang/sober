@@ -447,6 +447,12 @@ type Double error {
     kind int
 }
 
+// ログの行き先の宣言 `@logs`（loader/logs.sober。language.md 42 節）の拒否。kind は Format の文面の番号
+type Logs error {
+    at Pos
+    kind int
+}
+
 // テストの構成の状態の格納場所（std/testing/cell — language.md 41 節）の拒否。kindはFormatの文面の番号（1〜3 = loader・10〜 = desugar）
 type Cell error {
     at Pos
@@ -530,6 +536,7 @@ func At(err error?) Pos {
     case PureExprStmt{at}: at
     case TestSignature{at}: at
     case Double{at}: at
+    case Logs{at}: at
     case Mod{at}: at
     case Cell{at}: at
     case Frozen{n}: None()
@@ -658,6 +665,11 @@ func Format(err error?, where string) string {
         case 21: "this function's @effects is not within the @effects of the function of the same name in the package the double replaces"
         default: "the replaced declaration names a type in @effects or uses a negated label in @errors, which a double cannot be checked against yet"
     })
+    case Logs{at, kind}: loadLine(err, where, switch kind {
+        case 1: "@logs is written only before the package clause of a file of the main package (not a _test.sober or _double.sober file)"
+        case 2: "@logs is written once in a program"
+        default: "@logs takes stdout or stderr: `@logs(stdout)` sends the log to standard output (standard error when @logs is not written)"
+    })
     case Mod{at, kind}: loadLine(err, where, switch kind {
         case 1: "sober.mod is a `module \"path\"` line followed by `dep [name] \"source\"` and `alias name \"std/root\"` lines (plain string literals — no escapes or interpolation)"
         case 2: "the last segment of a module path is its name: a lowercase identifier (a-z, 0-9, _ — not starting with a digit) that is not a keyword"
@@ -744,10 +756,17 @@ func Format(err error?, where string) string {
         default: "internal: a name still refers to an alias after the loader rewrote aliases to the types they name"
     })
     case JsonShape{at, kind}: loadLine(err, where, switch kind {
-        case 1: "the type argument of json.Decode / Encode must be a struct type without type parameters or json.Value"
+        case 1: "the type of json.Decode / Encode (the type argument, written or inferred from the value) must be a struct type without type parameters or json.Value"
         case 2: "json.Decode / Encode support struct fields of int, float, bool, string, json.Value, nested structs, []T and T? (generic structs, unions, maps and named scalars come later)"
         case 4: "json.Decode cannot read into a struct with a json.Value field (a union has no zero value, so the early return of `?` has no struct to return) — make the field json.Value? or read it with json.Tree"
-        default: "json.Decode / Encode (and DecodeWith / EncodeWith) are called with a type argument: json.Decode[T](doc, node), json.Encode[T](value)"
+        case 5: "print.Log writes a record of a struct type: the record's type (the type argument, written or inferred from the record) must be a struct type without type parameters (its name becomes the key of the record)"
+        case 6: "print.Log writes struct fields of int, float, bool, string, nested structs, []T and T? (json.Value, generic structs, unions, maps and named scalars are not written)"
+        case 7: "print.Log is only called directly, print.Log(rec): the writer of each record type is generated at the call"
+        case 8: "print.Log needs a concrete struct type, but the record's type here contains a type parameter: the writer is generated per type, so call print.Log where the type is known"
+        case 9: "json.Encode needs a concrete type, but the value's type here contains a type parameter: the encoder is generated per type, so call json.Encode where the type is known"
+        case 10: "the type argument of print.Log / json.Encode cannot be inferred because the argument's type is not known; fix the argument or write the type argument, print.Log[T](rec)"
+        case 11: "this load path does not infer type arguments, so print.Log / json.Encode are called with the type argument here: print.Log[T](rec), json.Encode[T](v)"
+        default: "json.Decode / DecodeWith need the type argument because the type appears only in the result, json.Decode[T](doc, node); json.Encode / EncodeWith are only called directly, json.Encode(value)"
     })
     case Intrinsic{at, kind, key, pkg, why}: loadLine(err, where, switch kind {
         case 1: "@intrinsic is only accepted inside std"
@@ -781,7 +800,7 @@ func Format(err error?, where string) string {
         case 26: "a worker-local place holds a struct with only scalar fields (int, byte, bool, float) and pool.Scratch fields, without type parameters"
         case 27: "the setup of task.NewLocal sizes each pool.Scratch field exactly once — pool.NewScratch(mut w.f, n) with n a constant (a literal, a const name, + - * <<) — and does nothing else"
         case 28: "LocalNew / LeaseTake / LeaseGive / LeaseBlock / LeaseAttach are what task.NewLocal / task.Lease are rewritten into — call task.NewLocal / task.Lease instead"
-        case 38: "task.ServePool is the pool of net.Serve — only std/net calls it; use task.NewPool"
+        case 38: "task.ServePool and task.ServeAcceptRetry belong to net.Serve — only std/net calls them; use task.NewPool"
         case 11: "a spawned task cannot capture a function-typed parameter (it is a closure inlined at the call — call it in the scope body and spawn with the value)"
         case 31: "task.Update / task.Read / task.Await take lambda literals written at the call with one parameter — (st mut S) => … for the body, (st S) => … for task.Read and when:"
         case 32: "the body of a domain call (and when:) captures only imm data — not a mut binding or mut contents, task.Scope, task.Handle, a channel endpoint or a function-typed parameter (the body may run on another task)"
@@ -789,6 +808,8 @@ func Format(err error?, where string) string {
         case 35: "wait: is a relative time written without calls or division (a literal, a name, task.MS, + - *)"
         case 36: "the body of a domain call writes only region-free values (int, bool, byte, float and structs of them) into the state, and not through a map index — the state lives as long as the domain and is written in place, so append, re-slicing, strings or map writes would grow it on every call. Rewrite: (1) preallocate a mut slice in init: and write its elements (st.items[i] = v), (2) keep a count or an index in the state and the growing data outside the domain, or (3) return the value from the body and store it outside"
         case 37: "the body of a domain call cannot pass the state (or a part of it) as a mut argument — the function could grow the state, which is written in place. Rewrite: (1) make the function take values and return the new ones, then assign them in the body (st.n = next(st.n)), (2) write the fields directly in the body, or (3) pass an imm copy and assign what the function returns"
+        case 41: "the spawned task lives until the scope exits, but it captures a value made inside a loop iteration or a block of the scope body, which is freed when that ends — make the value in the scope body before the loop, or inside the task"
+        case 40: "this handler runs on a task of its own (each connection of net.Serve, each HTTP/2 stream of http.server.ServeConn, the server of net.Pair), so it cannot capture a mut binding or mut contents. Rewrite: keep the shared state in a task.Domain made in the scope that calls Serve (task.NewDomain), capture the domain, and read or write it in the handler with task.Read / task.Update"
         case 39: "a domain cannot be put where it outlives the scope that made it — here it is stored in a place made outside that scope (or in a mut parameter, whose place the function does not know), or captured by a task spawned on an outer scope. Rewrite: (1) keep it in a binding made inside the scope that made the domain (a struct made there can hold it), or (2) spawn the task on the scope that made the domain"
         default: "task.Scope, task.Handle and channel endpoints do not cross a function boundary, and a task.Domain is not returned from a function (pass values to the function and spawn in the scope body)"
     }) }
@@ -841,15 +862,15 @@ func Format(err error?, where string) string {
 
 // loadLine は loader の拒否の 1 行（位置があれば `load error at <where>: <理由>`）
 // identityName / identityMakerは同一性の種類の番号（Identityのkind）の型の綴りと生成のAPI
-// 同一性の種類の表（i行目 = packageのpath・型の名前・種類の番号・資源か・作れるAPI）。loaderのゼロ値の検査・desugarの捕捉の検査とfilecheck・
+// 同一性の種類の表（i行目 = packageのpath・型の名前・種類の番号・資源か・作れるAPI。種類の番号11〔旧いtls.Conn〕は欠番）。loaderのゼロ値の検査・desugarの捕捉の検査とfilecheck・
 // lowerのクロージャの照合・このpackageの文面はみなこの表を読む（名前の集合を1か所に — diagはその全部がimportする底のpackage）。
 // 資源 = 開いた接続やファイルの類（filecheckがコピー・持ち出し・composite・捕獲・give: を見る）— taskの札・handle・端点・Pool・Localは資源でない（taskの規則が見る）
-const IdPaths = []string{"std/task", "std/task", "std/task", "std/task", "std/task", "std/task", "std/io", "std/io", "std/net", "std/net", "std/tls", "std/http/client", "std/pg"}
-const IdNames = []string{"Scope", "Handle", "Sender", "Receiver", "Pool", "Local", "File", "Root", "Listener", "Conn", "Conn", "Session", "Conn"}
-const IdFamilies = []int{1, 2, 3, 4, 5, 7, 6, 8, 9, 10, 11, 12, 13}
-const IdResources = []bool{false, false, false, false, false, false, true, true, true, true, true, true, true}
+const IdPaths = []string{"std/task", "std/task", "std/task", "std/task", "std/task", "std/task", "std/io", "std/io", "std/net", "std/net", "std/http/client", "std/pg"}
+const IdNames = []string{"Scope", "Handle", "Sender", "Receiver", "Pool", "Local", "File", "Root", "Listener", "Conn", "Session", "Conn"}
+const IdFamilies = []int{1, 2, 3, 4, 5, 7, 6, 8, 9, 10, 12, 13}
+const IdResources = []bool{false, false, false, false, false, false, true, true, true, true, true, true}
 const IdMakers = []string{"task.Run (the body's parameter)", "task.Spawn", "task.NewChannel", "task.NewChannel", "task.NewPool", "task.NewLocal", "io.Open", "io.OpenRoot",
-    "net.Listen (the parameter of its function)", "net.Accept or net.Dial (the parameter of its function)", "tls.Serve (the handler's parameter)", "client.Open (the parameter of its function)", "pg.Open (the parameter of its function)"}
+    "net.Listen (the parameter of its function)", "net.Accept, net.Dial or tls.Serve (the parameter of its function)", "client.Open (the parameter of its function)", "pg.Open (the parameter of its function)"}
 
 // 表の i 行目の型の綴り（package の path の最後の段 + 名前 — "client.Session"）
 func idSpelling(i int) string {
@@ -927,12 +948,13 @@ func WordsOf(err error?) Words {
     case FnCap{at, kind}: Words{tag: 11, kind: kind, at: at, missing: None()}
     case FnArg{at, kind}: Words{tag: 13, kind: kind, at: at, missing: None()}
     case Cell{at, kind}: Words{tag: 14, kind: kind, at: at, missing: None()}
+    case Par{at, kind}: Words{tag: 15, kind: kind, at: at, missing: None()}
     default: Words{tag: 0, kind: 0, at: None(), missing: None()}
     }
 }
 
 // WordsOf の逆（種類 tag・kind・位置 at・2 つ目の位置 missing — 種類 0 は呼ばない）
-@errors(CoreFragment, UnknownName, Malformed, TypeMismatch, PrintArg, LenString, UntypedNil, NonExhaustive, ImmWrite, FieldType, FnCap, FnArg, Cell)
+@errors(CoreFragment, UnknownName, Malformed, TypeMismatch, PrintArg, LenString, UntypedNil, NonExhaustive, ImmWrite, FieldType, FnCap, FnArg, Cell, Par)
 func FromWords(tag int, kind int, at Pos, missing Pos) error? {
     return switch tag {
     case 2: UnknownName{at: at}
@@ -947,6 +969,7 @@ func FromWords(tag int, kind int, at Pos, missing Pos) error? {
     case 11: FnCap{at: at, kind: kind}
     case 13: FnArg{at: at, kind: kind}
     case 14: Cell{at: at, kind: kind}
+    case 15: Par{at: at, kind: kind}
     default: CoreFragment{at: at}
     }
 }

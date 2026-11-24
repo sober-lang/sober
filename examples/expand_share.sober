@@ -1,0 +1,42 @@
+package main
+
+// 展開の共有（脱糖器 — desugar/share.sober）: 展開される関数（匿名の関数型の仮引数を持つ — language.md 25節）を、同じ名前つきの関数で何か所から呼んでも、
+// コアには展開の定義が1本だけ入る（呼び所はその定義を普通に呼ぶ）。別の関数を渡す呼び所は別の定義、捕獲のあるラムダを渡す呼び所は今までどおり呼び所で展開する。
+// 結果がsliceの関数（regionの中身を持つ結果）も同じ。出力は共有の有無で変わらない（scripts/corejson.sh がコアの中の展開の数を数える）
+
+func apply(x int, f func(int) int) int {
+    mark := "expand-share-apply"
+    return f(x) + len(bytes(mark))
+}
+
+func render(n int, f func(int) []byte) []byte {
+    mark := "expand-share-render"
+    mut out := mut []byte{}
+    for b <- f(n) {
+        out = append(out, b)
+    }
+    out = append(out, byte(len(bytes(mark))))
+    return freeze(out)
+}
+
+func dbl(x int) int {
+    return x * 2
+}
+
+func inc(x int) int {
+    return x + 1
+}
+
+func digits(n int) []byte {
+    return bytes("${n}")
+}
+
+func main() {
+    k := 100
+    println(apply(1, dbl))
+    println(apply(2, dbl))
+    println(apply(3, inc))
+    println(apply(4, (x) => x + k))
+    println(len(render(12, digits)))
+    println(len(render(345, digits)))
+}

@@ -1,20 +1,33 @@
-@@full	a51d87e13dc26c94	6365	183672
-@head	cee2760dddae56a7	0	476
+@@full	60f5fb84df2b87ba	9856	294703
+@head	0b31efc2b209dd5d	0	548
 const cookieName	eb7758be152be2cb	1	64
+const hashCap	e9af0eb868979d9a	1	49
+const maxUsers	c5eb4f7b118205c0	1	49
+const nameCap	91ff630bd3e0d43b	1	48
 const ttlSec	f56d4422b094d27b	1	49
-func changePassword	61c48730bcddbf9c	112	4075
+func changePassword	2194c793eef8639b	119	4366
+func checked	0a20e80cec0108e6	35	1343
 func field	49e71ce51fcc8af5	37	1290
 func issue	4d6b7fe8a09eb770	35	1670
-func logIn	d83612450c81efee	70	2496
+func logIn	52e98ce2fd256c63	65	2413
 func logout	a1d0223ecbcab093	16	893
+func lookup	a6d566a1a8fe32d3	116	4043
 func main	db494cb5294d784a	56	1981
+func opened	255389bd4ba64ed1	47	1781
 func pairs	3c4e9428696aff2d	38	1401
-func route	8a3e6d02093113f6	110	3779
+func route	cfd571caf2ed11b3	109	3750
+func rowOf	d442dbd051269c6b	38	1541
 func send	302f7d30490f1dde	81	3381
-func serve	4ace23952a1a0a8c	48	1705
-func signup	6f8e0ba52ba66948	75	2767
+func serve	8805498933c1f219	117	4182
+func serveWith	7a2fbe5e5e18562a	40	1418
+func signup	d317e990576a597e	108	3807
+func store	4eb3cc0abe0aa915	200	6477
 func tour	35d391fd27a24460	250	8594
 func unauthorized	8a5aafa03023fee7	9	535
-func whoami	101380a565626f73	84	3111
+func verifyPw	ec0d3efb8a271160	12	535
+func whoami	76571f7e67f870ba	32	1191
 type Reply	158127a8cdb05d20	4	191
+type Row	f9d4d3f1b709cb09	4	215
+type Snap	b3a1d23c0ca2d403	12	541
 type User	8d95b401c1c468b7	3	165
+type Users	26da35025e4a2d5d	12	537

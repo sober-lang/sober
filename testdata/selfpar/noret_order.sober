@@ -1,0 +1,57 @@
+// selfpar の noret の並びの照合の題材: h は戻らない（panic で終わる）・g は h を呼んだ後にしか戻らない（推移で戻らない）・f は g を呼ぶ。
+// 関数のチェーンは h → g → f の順。閉じる順を逆にすると、チェーンの順に1レベルずつ判定する形では f の呼び出しの後ろが切られなくなる
+package main
+
+import "std/binary"
+import "std/iter"
+import "std/os"
+
+
+func h(n int) int {
+    mut acc := 0
+    for i <- iter.Range(0, n) {
+        acc = acc * 31 + i
+        acc = acc ^ (acc >> 3)
+        acc = acc + (acc << 2)
+        acc = acc - i * 7
+        acc = acc ^ (acc >> 5)
+        acc = acc + i * 11
+    }
+    panic(binary.OutOfRange{i: acc, n: 0})
+}
+
+func g(n int) int {
+    mut acc := n
+    for i <- iter.Range(0, n) {
+        acc = acc * 17 + i
+        acc = acc ^ (acc >> 7)
+        acc = acc + (acc << 3)
+        acc = acc - i * 5
+        acc = acc ^ (acc >> 2)
+        acc = acc + i * 13
+    }
+    x := h(acc)
+    return x + acc
+}
+
+func f(n int) int {
+    mut acc := 0
+    for i <- iter.Range(0, n) {
+        if i == 7 {
+            acc = acc + g(i)
+        }
+        acc = acc * 3 + i
+        acc = acc ^ (acc >> 4)
+        acc = acc + (acc << 1)
+    }
+    return acc
+}
+
+func main() int {
+    a, e := os.Args()
+    if e != nil {
+        return 1
+    }
+    println(f(len(a)))
+    return 0
+}

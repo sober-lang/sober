@@ -1,0 +1,2 @@
+sober: load error at examples/print_log_neg_shape.sober:8:12: print.Log writes struct fields of int, float, bool, string, nested structs, []T and T? (json.Value, generic structs, unions, maps and named scalars are not written)
+exit=1

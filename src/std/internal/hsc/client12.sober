@@ -6,11 +6,10 @@ package hsc
 
 import "std/crypto"
 import "std/crypto/aesgcm"
-import "std/crypto/chacha20poly1305"
-import "std/crypto/hmac"
 import "std/crypto/sha256"
 import "std/crypto/x25519"
 import "std/internal/bless"
+import "std/internal/rec12"
 import "std/internal/x509"
 import "std/iter"
 import "std/internal/record"
@@ -193,7 +192,7 @@ func on12(h mut Ch, p CParams, m []byte) (Out, error?) {
         return flight12(mut h)
     }
     if k == 4 && t == tFinished {
-        want := prf(h.ms, "server finished", crypto.sha256.Sum(h.th), 12)
+        want := internal.rec12.Prf(h.ms, "server finished", crypto.sha256.Sum(h.th), 12)
         if len(m) != 4 + 12 || !crypto.Equal(sliceOf(m, 4, 12), want) {
             return none(), alert(aDecryptError)
         }
@@ -284,10 +283,10 @@ func flight12(h mut Ch) (Out, error?) {
     cke := msg(tClientKeyExchange, freeze(kb))
     crypto.sha256.Write(mut h.th, cke)
     putBytes(mut send, plain(internal.record.CtHandshake, cke))
-    h.ms = prf(h.pms, "extended master secret", crypto.sha256.Sum(h.th), 48)
+    h.ms = internal.rec12.Prf(h.pms, "extended master secret", crypto.sha256.Sum(h.th), 48)
     kl := if isGcm12(h.suite) { 16 } else { 32 }
     il := if isGcm12(h.suite) { 4 } else { 12 }
-    block := prf(h.ms, "key expansion", cat(h.srandom, h.crandom), 2 * kl + 2 * il)
+    block := internal.rec12.Prf(h.ms, "key expansion", cat(h.srandom, h.crandom), 2 * kl + 2 * il)
     h.wkey = sliceOf(block, 0, kl)
     h.rkey = sliceOf(block, kl, kl)
     h.wiv = sliceOf(block, 2 * kl, il)
@@ -295,58 +294,16 @@ func flight12(h mut Ch) (Out, error?) {
     putBytes(mut send, plain(internal.record.CtCcs, []byte{1}))
     h.wkeyed = true
     // verify_data は握手の要約の MAC で相手に送る値（公開してよい — transcript に積むので祝福してから）
-    fin := msg(tFinished, internal.bless.Bytes(prf(h.ms, "client finished", crypto.sha256.Sum(h.th), 12)))
+    fin := msg(tFinished, internal.bless.Bytes(internal.rec12.Prf(h.ms, "client finished", crypto.sha256.Sum(h.th), 12)))
     crypto.sha256.Write(mut h.th, fin)
     putBytes(mut send, seal12(mut h, internal.record.CtHandshake, fin))
     h.ph = C12Ccs{}
     return Out{send: freeze(send), app: []byte{}, done: false, closed: false, peer: 0 - 1, upd: false}, nil
 }
 
-// PRF（RFC 5246 5 — P_SHA256(secret, label ‖ seed) の先頭 n バイト）
-func prf(secret []byte, label string, seed []byte, n int) []byte {
-    ls := cat(bytes(label), seed)
-    mut out := mut []byte{}
-    mut a := crypto.hmac.Sum256(secret, ls)
-    while len(out) < n {
-        for x <- crypto.hmac.Sum256(secret, cat(a, ls)) {
-            if len(out) < n {
-                out = append(out, x)
-            }
-        }
-        a = crypto.hmac.Sum256(secret, a)
-    }
-    return freeze(out)
-}
-
-func seq8(n int) []byte {
-    mut b := mut []byte{}
-    for i <- iter.Range(0, 8) {
-        b = append(b, byte((n >> (56 - 8 * i)) & 0xff))
-    }
-    return freeze(b)
-}
-
-// 1.2 の AEAD の nonce（GCM = IV 4 バイト ‖ 明示の 8 バイト〔番号〕・ChaCha20 = IV 12 バイト ⊕ 番号 — RFC 5288 / 7905）
-func nonce12(gcm bool, iv []byte, seq int) []byte {
-    s := seq8(seq)
-    if gcm {
-        return cat(iv, s)
-    }
-    mut o := mut []byte{}
-    for i <- iter.Range(0, 12) {
-        sb := if i < 4 { 0 } else { int(s[i - 4]) }
-        o = append(o, byte(int(iv[i]) ^ sb))
-    }
-    return freeze(o)
-}
-
 // 平文 pt の 1.2 の record 1 枚（AAD = 番号 ‖ 型 ‖ 0x0303 ‖ 平文の長さ）
 func seal12(h mut Ch, ct int, pt []byte) []byte {
-    gcm := isGcm12(h.suite)
-    ad := cat(seq8(h.wseq), []byte{byte(ct), 3, 3, byte(len(pt) >> 8), byte(len(pt) & 0xff)})
-    nn := nonce12(gcm, h.wiv, h.wseq)
-    sealed := if gcm { crypto.aesgcm.Seal(h.wkey, nn, ad, pt) catch []byte{} } else { crypto.chacha20poly1305.Seal(h.wkey, nn, ad, pt) catch []byte{} }
-    body := if gcm { cat(seq8(h.wseq), sealed) } else { sealed }
+    body := internal.rec12.Seal(isGcm12(h.suite), h.wkey, h.wiv, h.wseq, ct, pt)
     h.wseq += 1
     mut o := mut []byte{}
     put8(mut o, ct)
@@ -373,28 +330,7 @@ func seal12App(h mut Ch, pt []byte) []byte {
 func open12(h mut Ch, f internal.record.Frame) ([]byte, error?) {
     ct := int(f.b[f.off])
     _, body := internal.record.Plain(f)
-    gcm := isGcm12(h.suite)
-    ex := if gcm { 8 } else { 0 }
-    if len(body) < ex + 16 {
-        return []byte{}, alert(internal.record.AlertBadMac)
-    }
-    nn := if gcm { cat(h.riv, sliceOf(body, 0, 8)) } else { nonce12(false, h.riv, h.rseq) }
-    sealed := sliceOf(body, ex, len(body) - ex)
-    pl := len(sealed) - 16
-    ad := cat(seq8(h.rseq), []byte{byte(ct), 3, 3, byte(pl >> 8), byte(pl & 0xff)})
-    if gcm {
-        pt, e := crypto.aesgcm.Open(h.rkey, nn, ad, sealed)
-        if e != nil {
-            return []byte{}, alert(internal.record.AlertBadMac)
-        }
-        h.rseq += 1
-        // record層の出口（1.3のinternal.record.Openと同じ基準 — 中身の種類と長さが決まったrecordの平文は公開。http以降がこれで分岐する）
-        return internal.bless.Bytes(pt), nil
-    }
-    pt2, e2 := crypto.chacha20poly1305.Open(h.rkey, nn, ad, sealed)
-    if e2 != nil {
-        return []byte{}, alert(internal.record.AlertBadMac)
-    }
+    pt := internal.rec12.Open(isGcm12(h.suite), h.rkey, h.riv, h.rseq, ct, body) catch return []byte{}, alert(internal.record.AlertBadMac)
     h.rseq += 1
-    return internal.bless.Bytes(pt2), nil
+    return pt, nil
 }

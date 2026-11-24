@@ -1,0 +1,2307 @@
+package lower
+
+// 工程Bの束（切り口BC_PKG — packageの値）: packageごとに、そこに置く関数のβ2の値と事象の列を1つの値にして読み書きする。
+// 置く関数（G1）= packageの関数・その関数を持ち主とするラムダと子・特化の複製（組のpackageか呼び手の置き場）・そのpackageの関数が要求した
+// 総称の実体（要求した関数の置き場の和 — 同じ実体が2つ以上の束に入りうる）。rtの関数と、どこからも要求されない合成の関数は束の外。
+// 鍵はソースから決まる K0（bxKeyPlan）と、照合の値（束の仮定 = 上から決まる事実とプログラム全体の値のハッシュ。bxTop）。
+// lower以降は飛ばさない。当たった束の中身（β2の鍵と事象の列）は今のビルドと比べ、違えば外れにする（漏れの見張り。SOBER_K0_LOG=1 で印字）。
+// 当たれば置く関数のβ2の値を束から読み、関数ごとの項目を引かない。外れは今のビルドの値から束を組んで書く（検証モードは作り直した束を格納場所の束とバイトで比べる）。
+// 事象の列の正準形 = [種類, 関数の安定な鍵 ×2, 大域の安定な鍵 ×2, x, y, z]（記録は安定な鍵のハッシュ・ファイルはパスのハッシュ・
+// ラベルは綴りのハッシュ・命令の番地は持たない — 番号は札と後埋めで機械語の外）
+
+import "desugar"
+import "std/binary"
+import "std/io"
+import "std/iter"
+import "std/sort"
+import "std/table"
+
+const BX_EVW = 7     // 記録した事象の語数 [持ち主, 種類, 関数の記録, 大域の記録, x, y, z]（EV_PLAB の x はラベルの綴り StrRef）
+const BX_CW = 8      // 正準形の事象の語数
+const BX_TAG = 5001  // 鍵の版
+const BX_SRCX = 3074457345618258602  // 宣言のソースのハッシュの項目の鍵の種（束の格納場所の鍵から — 事前の引きが投機の package の変わった関数を求める）
+const BX_SUMX = 6148914691236517205  // 境の要約の項目の鍵の種（切り口BC_PKGに置く — 切り口を足さない: BcViewのフィールドはStの検査の費用になる）
+const BX_SUMV = 8    // 要約の形の版
+const BX_FACT = 100  // 事象のコードのこれ以上 = パスの局所の事実（要約へ・事象の列と束の鍵には入れない）
+const BX_RFLOW = 101 // regionFlowの事実 [旗, pmk, frs | eoM << 2]（旗 = 入口のenter | atCaller << 1 | rpt << 2 | rtDep << 3）
+const BX_RELIDE = 102 // regionElideの事実 [reQuiet, P0の判定, 戻るか]（regionElideは2回回る — 2つ積む）
+const BX_ANCHOR = 103 // anchorPruneの事実 [rd]
+const BX_LOOPL = 104 // loopLightの事実 [ma, mx, eo | mz << 1]
+const BX_SPEC = 105  // 定数引数の特化の事実 [使い道のマーク spInfo, 引き金のマーク spSens（中継の3周の後）]
+const BX_CUT = 106   // 純な子の判定の事実 [純でないか, stdoutに書くか]（cutPatch）
+const BX_IRINL = 107 // 展開の事実 [処理の前の大きさ ilSize, 形の判定 ilShape, 組 | 葉の極小か << 2 | 処理の前の本体に戻らない利用者の関数の呼び出しがあるか << 3]
+const BX_ILBODY = 108 // 展開の入力の本体（呼び手がコピーする時点 — 組2は処理の前・組1と極小は処理の後）[位置, 長さ] — 要約では [長さ, 0] と末尾のバイト
+const BX_SPPRE = 109 // 特化の入力の本体（特化の始まりの時点 — 呼び手として処理する前）
+const BX_TOPD = 200   // 上からのビット（regionFlow: x = 番地を取られるか・入口か | 強連結成分の中か << 1）。束の仮定へ入れ、要約には入れない
+const BX_ICLS = 201   // 間接呼び出しの形（regionFlow: x = 引数の数・y = 結果の型）。束の仮定へ入れる
+const BX_RTIN = 202   // 展開したrtの関数（irinl: x = rtの関数の記録）。束の仮定へ入れる
+const BX_RTNEED = 205 // パスの途中で宣言する rt の関数を要した（x = rt の関数の記録 — regionLight・loopLight の軽い enter）。束の仮定の自分の分へ入れる
+const BX_SPMK = 204   // spec の特化の候補の呼び出しを持つ（x = 呼び手の記録）。束の自分の分へ入れる（持つ関数は本体を捨てない）
+const BX_RFE = 203    // regionFlow が辿る辺（x = 種類〔0 = 呼び出し・1 = 番地を取る〕・y = 相手の記録）。束の仮定の自分の分へ入れる
+const BX_ILHOT = 111 // 展開の入力の事実 [コピーする時点の大きさ ilSize, 熱い命令の数 ilHot]
+const BX_NORET = 110 // 戻らない呼び出しの終端化の事実 [戻らないか, 戻りのブロックがあるか]（閉じる前）
+const BX_OPRE = 112  // 設計整合パスのモジュールのフェーズ（optPre）の後の事実 [regionを使わないか（F_RFREE の1語目・記録が無ければ -1）, P0' の形か]
+const BX_OPBODY = 113 // P0' の展開の入力の本体（optPre の後 — 呼び手がコピーする時点。P0' の対象の関数だけ）
+const BX_RLENT = 114 // 軽い enter のパス（regionLight）の時点の事実 [入口で region に入るか, 戻りうるか]
+const BX_SPRND = 115 // 定数引数の特化の引き金のマークの周ごとの値 [中継の前, 1周の後, 2周の後]（3周の後は BX_SPEC — 使い道のマークのある関数だけ）
+
+// 本体の事実のコードか（要約では [長さ, 0] と末尾のバイト）
+func bxBodyCode(c int) bool {
+    return c == BX_ILBODY || c == BX_SPPRE || c == BX_OPBODY
+}
+
+// Stのフィールド（小さく保つ — Stを受ける全関数の検査の費用がフィールドの数と型の大きさで増える。束の計画はBxPlanでx86の段へ渡す）
+type Bx struct {
+    on bool
+    ev table.Table[int]   // 記録した事象（直のパスはlsPush・模擬のパスはlsReplay）
+    c table.Table[int]    // 事実の定数化の照合の状態（sumconst.sober — 照合しないビルドは空）
+    drop int              // 持ち主がx86の関数の列に無い事象の数
+    rb int                // 束から読んだバイト
+    bd table.Table[byte]  // 本体の事実のバイト（bxBody — 事実の x = 位置・y = 長さ）
+    smb []byte            // 当たりの候補の束の正準形の事象の列・模擬用の列・綴り（bxCSelfLoad — bxCSim が読む）
+    sts []int             // 綴りの表 [大域の安定な鍵 ×2, smb の位置, 長さ]…
+    stx map[int]int       // 綴りの表の大域の安定な鍵の1語目 → sts の項目の番号
+    dm map[int]int        // 捨てる関数の安定な鍵の1語目 → 自分の分の位置（bxCPlan）
+    dm2 map[int]int       // 捨てる関数の安定な鍵の1語目 → 2語目
+    fp table.Table[int]   // FnInfo → 模擬で作った記録の自分の分の位置 + 1（0 = 名前で引く）
+    fnm map[string]int    // 関数の名前（"pkg.Name"）→ 関数表の添字（bxCSim が初めて要るときに組む）
+    pkm map[string]int    // package のパス → package
+    lk map[int]int        // ラムダ・子の関数の安定な鍵の1語目 → 記録（持ち主の外から引くときに組み直す）
+    nm bool               // fnm・pkm を組んだか
+    rp table.Table[int]   // 模擬で流した関数の記録（bxCHomeCheck）
+    mute bool             // 事象を積まない（模擬の need — 中で呼ぶ need の事象は列に別にある）
+    sp [][]int            // package ごとの宣言のソースのハッシュ（bxCSrcPkg の形・事前の引きで求めた package だけ — 束を書くときに使い回す）
+    pr [][]byte           // 前の周の全部の後の境の要約（package の添字・空 = 無い — やり直しの周の投機が前回の束の索引より先に使う）。この周の分は bxCKeep が置く
+    rc BxReach            // PkgReach の結果（事前の引きと計画で2回使う。木と名前の解決だけで決まり、下ろす間に変わらない）
+}
+
+// PkgReach の結果（rch が空 = まだ求めていない）
+type BxReach struct {
+    xs []int
+    rch [][]int
+}
+
+// 束の計画（bcPreX86が作り、bxWriteが外れの束を書く）
+type BxPlan struct {
+    on bool
+    pk []int              // 束ごとに [package, 格納場所の鍵 k1, k2（0, 0 = 書かない）, 当たりの項目（-1 = 外れ）]。bxKeyPlan の前の k1, k2 は束の仮定
+    mem [][]int           // 束ごとの置く関数（x86の関数の添字・安定な鍵の順）
+    evo []int             // x86の関数の添字 i の事象の列の正準形 = evw[evo[i]:evo[i + 1]]
+    evw []int
+    sh []int              // x86の関数の添字 → 安定な鍵 [h1, h2]
+    vE []int              // x86の関数の添字 → β2の値を読んだ束の項目（-1 = 束から読んでいない）
+    vLo []int
+    vHi []int
+    names [][]byte        // 束ごとのpackageのパス（staleの明示）
+    sum [][]byte          // 束ごとの境の要約（bxKeyPlan）
+    sk []int              // 束ごとに [要約の鍵 k1, k2, 作ったか（0 = 格納場所から読んだ）]
+    ib []int              // 束ごとに前回の束の索引の鍵の種 ×2 と書き直すか（凍結の後は名前を読めないので先に組む — bxCIdxBases）
+    so []int              // x86の関数の添字 i の模擬用の列 = sb[so[i]:so[i + 1]]（bxSim — 組まなかった関数は空）
+    sb []byte
+    tb [][]byte           // 束ごとの綴りの表（bxSim — 組まなかった束は空）
+    src [][]int           // 束ごとの package の宣言のソースのハッシュ（bxCSrcPkg の形・書く束だけ — bxSrcList）
+}
+
+func bxNone() BxPlan {
+    return BxPlan{on: false, pk: []int{}, mem: [][]int{}, evo: []int{}, evw: []int{}, sh: []int{}, vE: []int{}, vLo: []int{}, vHi: []int{}, names: [][]byte{}, sum: [][]byte{}, sk: []int{}, ib: []int{}, so: []int{}, sb: []byte{}, tb: [][]byte{}, src: [][]int{}}
+}
+
+// 束を使うビルドか（格納場所を使う最適化のパス・焼き込みのパックを作るビルドは使わない。SOBER_PKG_CACHE=0 で外す）
+func bxInit(st mut St) {
+    st.bx.on = st.bcv.on && !bcBakeStd() && lsEnvInt("SOBER_PKG_CACHE") != 0
+}
+
+// ファイルの添字 f の安定な形（packageのパスとpackageの中の序数のハッシュ — 添字はロードの順に依る）
+func bxFile(st mut St, f int) int {
+    if f < 0 {
+        return f
+    }
+    pk := desugar.FilePkg(mut st.d, f)
+    mut h := ckM1(CK_S1, f - pkgFlo(mut st, pk))
+    p := pkgPath(mut st, pk)
+    for i <- iter.Range(0, slen(mut st, p)) {
+        h = ckM1(h, sat(mut st, p, i))
+    }
+    return h
+}
+
+func bxStrHash(st mut St, s int) int {
+    mut h := CK_S1
+    for i <- iter.Range(0, slen(mut st, desugar.StrRef(s))) {
+        h = ckM1(h, sat(mut st, desugar.StrRef(s), i))
+    }
+    return h
+}
+
+func bxPush(st mut St, owner int, code int, rec int, gl int, x int, y int, z int) {
+    table.Push(mut st.bx.ev, owner)
+    table.Push(mut st.bx.ev, code)
+    table.Push(mut st.bx.ev, rec)
+    table.Push(mut st.bx.ev, gl)
+    table.Push(mut st.bx.ev, x)
+    table.Push(mut st.bx.ev, y)
+    table.Push(mut st.bx.ev, z)
+}
+
+// パスの局所の事実1つ（パスの終わりに置く関数ごとに — 持ち主は関数の記録。要約が拾う）
+func bxFact(st mut St, f FnRef, code int, x int, y int, z int) {
+    if st.bx.on {
+        bxPush(mut st, int(f), code, -1, -1, x, y, z)
+    }
+}
+
+// 本体1つを事実として積む（正準形 — bcAlphaHeapと同じ: 外を指す語は安定な鍵。tは今の記録を覆う鍵の表）。
+// 詰めずに作れない形（チェーンの末尾のフィールドが最後でない）は長さ -1 で積む（本体を詰め直すと記録の番地が動く — 出力を変えない）
+func bxBody(st mut St, f FnRef, code int, t CkTab) {
+    if !st.bx.on {
+        return
+    }
+    b := bcAlphaHeap(mut st, f, t)
+    if bxCOn(mut st) {
+        bxCBodyCk(mut st, f, code, t, b)
+    }
+    at := table.Len(mut st.bx.bd)
+    for x <- b {
+        table.Push(mut st.bx.bd, x)
+    }
+    bxPush(mut st, int(f), code, -1, -1, at, if len(b) == 0 { -1 } else { len(b) }, 0)
+}
+
+// 設計整合パスのモジュールのフェーズ（optPre）の後の事実（本体のある関数ごと）: 呼び手の P0 の不動点（rfCallees）が読む1語目と、
+// 呼び手の P0' の展開（inlineOk・inlineCallAt）が読む形と本体
+func bxOptPre(st mut St) {
+    if !st.bx.on {
+        return
+    }
+    mut bt := ckNone()
+    mut tab := false
+    mut f := st.fhead
+    while f != -1 {
+        if irFnBHead(mut st, f) != -1 {
+            r := irFnRFree(mut st, f)
+            fr := if r < 0 { -1 } else { desugar.HeapGet(mut st.d, r) }
+            sh := if fr == 1 && inlineShape(mut st, f) { 1 } else { 0 }
+            bxFact(mut st, f, BX_OPRE, fr, sh, 0)
+            if bxCOn(mut st) {
+                zcv, zch := bxCOpre(mut st, f)
+                bxCCmp(mut st, f, BX_OPRE, zcv, zch, []int{fr, sh})
+                // 呼び手が引いた形（F_RFREE の3語目 — 最初の問いで覚える）がこの時点の形と違えば、形が展開の順に依る
+                if fr == 1 && desugar.HeapGet(mut st.d, r + 2) >= 0 && desugar.HeapGet(mut st.d, r + 2) != sh {
+                    bxCMis(mut st, int(f), BX_OPRE + 1000 * BXC_ORDER)
+                }
+            }
+            if sh == 1 {
+                if !tab {
+                    bt = bxTab(mut st)
+                    tab = true
+                }
+                bxBody(mut st, f, BX_OPBODY, bt)
+            }
+        }
+        f = irFnNext(mut st, f)
+    }
+}
+
+// 軽い enter のパス（regionLight）の前の事実（本体のある関数ごと）: 呼び手の rlEligible が読む値。このパスの書き換え（入口の enter を
+// 軽い enter の呼び出しへ）はどちらの値も変えない
+func bxRlEnt(st mut St) {
+    if !st.bx.on {
+        return
+    }
+    mut f := st.fhead
+    while f != -1 {
+        if irFnBHead(mut st, f) != -1 {
+            e := if rlEnters(mut st, f) { 1 } else { 0 }
+            r := if llReturns(mut st, f) { 1 } else { 0 }
+            bxFact(mut st, f, BX_RLENT, e, r, 0)
+            if bxCOn(mut st) {
+                zcv, zch := bxCRlent(mut st, f)
+                bxCCmp(mut st, f, BX_RLENT, zcv, zch, []int{e, r})
+            }
+        }
+        f = irFnNext(mut st, f)
+    }
+}
+
+// 本体の事実を積むパスの鍵の表（今の記録を全部覆う — 特化の複製など、α の表の後に増えた記録の綴りを作る）
+func bxTab(st mut St) CkTab {
+    return if st.bx.on { ckTab(mut st, lParCfg(mut st, true), false) } else { ckNone() }
+}
+
+// 直のパスの事象1つ（lsPushの引数 — 記録は親の記録）
+func bxCap(st mut St, code int, a int, b int, c int, d int) {
+    owner := int(st.fn)
+    if code == EV_FN || code == EV_CUT {
+        bxPush(mut st, owner, code, b, -1, 0, 0, 0)
+    } else if code == EV_INST || code == EV_KID {
+        bxPush(mut st, owner, code, a, -1, 0, 0, 0)
+    } else if code == EV_LAM {
+        bxPush(mut st, owner, code, a, -1, if b >= 0 { 1 } else { 0 }, 0, 0)
+    } else if code == EV_STR || code == EV_EMB {
+        bxPush(mut st, owner, code, -1, a, 0, 0, 0)
+    } else if code == EV_NEED {
+        bxPush(mut st, owner, code, -1, -1, a, b, 0)
+    } else if code == EV_PSITE {
+        bxPush(mut st, owner, code, -1, -1, b, c, d)
+    } else if code == EV_PLAB {
+        bxPush(mut st, owner, code, -1, -1, a, 0, 0)
+    } else {
+        bxPush(mut st, owner, code, -1, -1, 0, 0, 0)
+    }
+}
+
+// 模擬のパスの1関数の事象（子の記録を親の記録へ付け替えた後 — lsReplayの2周目の後）
+func bxCapReplay(st mut St, prec int, en []int, ev0 int, ne int, c int, fmap mut map[int]int, gmap mut map[int]int) {
+    for k <- iter.Range(0, ne) {
+        x := ev0 + k * EVW
+        code := en[x]
+        a := en[x + 1]
+        b := en[x + 2]
+        if code == EV_FN || code == EV_CUT {
+            r := fmap[c * LS_C + b]
+            bxPush(mut st, prec, code, if r != nil { r } else { -1 }, -1, 0, 0, 0)
+        } else if code == EV_INST || code == EV_KID || code == EV_LAM {
+            r := fmap[c * LS_C + a]
+            bxPush(mut st, prec, code, if r != nil { r } else { -1 }, -1, if code == EV_LAM && b >= 0 { 1 } else { 0 }, 0, 0)
+        } else if code == EV_STR || code == EV_EMB {
+            g := gmap[c * LS_C + a]
+            bxPush(mut st, prec, code, -1, if g != nil { g } else { -1 }, 0, 0, 0)
+        } else if code == EV_NEED {
+            bxPush(mut st, prec, code, -1, -1, a, b, 0)
+        } else if code == EV_PSITE {
+            bxPush(mut st, prec, code, -1, -1, b, en[x + 3], en[x + 4])
+        } else if code == EV_PLAB {
+            bxPush(mut st, prec, code, -1, -1, a, 0, 0)
+        } else {
+            bxPush(mut st, prec, code, -1, -1, 0, 0, 0)
+        }
+    }
+}
+
+func bxMerge(a []int, b []int) []int {
+    mut o := mut []int{}
+    for x <- a {
+        o = append(o, x)
+    }
+    for x <- b {
+        mut has := false
+        for y <- a {
+            if y == x {
+                has = true
+            }
+        }
+        if !has {
+            o = append(o, x)
+        }
+    }
+    return freeze(o)
+}
+
+// x86の関数の添字ごとの置き場（packageの集合 — G1）
+func bxHomes(st mut St, fr []int, idx map[int]int, ownOut mut []int) [][]int {
+    ix := xSkIndex(mut st)
+    mut pk := mut map[int]int{}
+    for i <- iter.Range(0, table.Len(mut st.infos)) {
+        x := infoAt(mut st, i)
+        if int(x.ir) >= 0 && x.fn >= 0 {
+            pk[int(x.ir)] = x.pkg
+        }
+    }
+    // 実体の要求 [要求した記録, 実体]…
+    mut rq0 := mut []int{}
+    n := table.Len(mut st.bx.ev) / BX_EVW
+    for k <- iter.Range(0, n) {
+        if table.Get(mut st.bx.ev, BX_EVW * k + 1) == EV_INST {
+            rq0 = append(rq0, table.Get(mut st.bx.ev, BX_EVW * k))
+            rq0 = append(rq0, table.Get(mut st.bx.ev, BX_EVW * k + 2))
+        }
+    }
+    rq := freeze(rq0)
+    mut hs := mut [][]int{}
+    mut own := mut []int{}   // 持ち主の添字（ラムダ・子・特化の複製の呼び手の組）・-1 = 無し
+    for i <- iter.Range(0, len(fr)) {
+        q := ix.at[fr[i]]
+        p := pk[fr[i]]
+        mut h := []int{}
+        mut o := -1
+        if q != nil {
+            kd := table.Get(mut st.sk, q)
+            w := table.Get(mut st.sk, q + 3)
+            if kd == SK_SPEC && w <= -2 {
+                h = []int{-2 - w}
+            } else if w >= 0 {
+                j := idx[w]
+                o = if j != nil { j } else { -1 }
+            }
+        } else if p != nil {
+            h = []int{p}
+        }
+        hs = append(hs, h)
+        own = append(own, o)
+    }
+    mut changed := true
+    while changed {
+        changed = false
+        for i <- iter.Range(0, len(fr)) {
+            if own[i] >= 0 {
+                m := bxMerge(hs[i], hs[own[i]])
+                if len(m) != len(hs[i]) {
+                    hs[i] = m
+                    changed = true
+                }
+            }
+        }
+        mut p := 0
+        while p + 1 < len(rq) {
+            r := idx[rq[p]]
+            t := idx[rq[p + 1]]
+            if r != nil && t != nil && ix.at[fr[t]] == nil && pk[fr[t]] == nil {
+                m := bxMerge(hs[t], hs[r])
+                if len(m) != len(hs[t]) {
+                    hs[t] = m
+                    changed = true
+                }
+            }
+            p += 2
+        }
+    }
+    for o <- own {
+        ownOut = append(ownOut, o)
+    }
+    return freeze(hs)
+}
+
+// x86の関数の添字ごとの根の関数の安定な名前 [h1, h2]（desugar.FnKey — ラムダ・子は持ち主を辿る。根の無いもの〔特化の複製・総称の実体・
+// 合成の関数〕は [0, 0]）。境の要約が、根の関数ごとの事実のハッシュを持つ（依るpackageの鍵 K0 が、届く関数の分だけを読む）
+func bxRoots(st mut St, fr []int, own []int) []int {
+    mut fn := mut map[int]int{}
+    for i <- iter.Range(0, table.Len(mut st.infos)) {
+        x := infoAt(mut st, i)
+        if int(x.ir) >= 0 && x.fn >= 0 {
+            fn[int(x.ir)] = x.fn
+        }
+    }
+    mut rk := mut []int{}
+    for i <- iter.Range(0, len(fr)) {
+        mut j := i
+        mut n := 0
+        while fn[fr[j]] == nil && own[j] >= 0 && n < len(fr) {
+            j = own[j]
+            n += 1
+        }
+        f := fn[fr[j]]
+        if f != nil {
+            k := desugar.FnKey(mut st.d, f)
+            rk = append(rk, k[0])
+            rk = append(rk, k[1])
+        } else {
+            rk = append(rk, 0)
+            rk = append(rk, 0)
+        }
+    }
+    return freeze(rk)
+}
+
+// 記録 r の安定な鍵（ckTab — 無ければ [0, 0]）を out へ
+func bxRef(out mut []int, t CkTab, r int) {
+    ri := if r >= 0 { ckIdx(t.ix, r) } else { -1 }
+    out = append(out, if ri >= 0 { t.hs[2 * ri] } else { 0 })
+    out = append(out, if ri >= 0 { t.hs[2 * ri + 1] } else { 0 })
+}
+
+// β2の鍵を組んだ後（bcPreX86 — 凍結の前）: 束を組み、鍵を引き、当たった束の置く関数のβ2の値の位置を計画（vE / vLo / vHi）へ
+func bxPlan(st mut St, t CkTab, fr []int, beta []int) BxPlan {
+    mut idx := mut map[int]int{}
+    for i <- iter.Range(0, len(fr)) {
+        idx[fr[i]] = i
+    }
+    fidx := freeze(idx)
+    mut own := mut []int{}
+    hs := bxHomes(mut st, fr, fidx, mut own)
+    rk := bxRoots(mut st, fr, freeze(own))
+    // 安定な鍵
+    mut sh := mut []int{}
+    for i <- iter.Range(0, len(fr)) {
+        ri := ckIdx(t.ix, fr[i])
+        sh = append(sh, t.hs[2 * ri])
+        sh = append(sh, t.hs[2 * ri + 1])
+    }
+    shf := freeze(sh)
+    // 事象の列の正準形（関数ごと — 持ち主の添字で数えて詰める。関数の中は記録した順）
+    n := table.Len(mut st.bx.ev) / BX_EVW
+    mut ow := mut []int{}
+    mut cnt := mut []int{}
+    xFill(mut cnt, len(fr) + 1, 0)
+    mut drop := 0
+    // 事実（コード ≥ BX_FACT）は別の列へ（関数ごとに [コード, x, y, z]。持ち主の消えた事実は捨てる — 展開で消えた関数）
+    mut fct := mut []int{}
+    xFill(mut fct, len(fr) + 1, 0)
+    // 束の仮定の材料（上からのビット — 関数ごとの和・間接呼び出しの形 [関数の添字, 引数の数, 結果の型]…）
+    mut tdb := mut []int{}
+    xFill(mut tdb, len(fr), 0)
+    mut icv := mut []int{}
+    mut rtv := mut []int{}
+    for k <- iter.Range(0, n) {
+        o := fidx[table.Get(mut st.bx.ev, BX_EVW * k)]
+        c0 := table.Get(mut st.bx.ev, BX_EVW * k + 1)
+        if c0 >= BX_TOPD {
+            ow = append(ow, -1)
+            if o != nil {
+                if c0 == BX_TOPD {
+                    tdb[o] = tdb[o] | table.Get(mut st.bx.ev, BX_EVW * k + 4)
+                } else if c0 == BX_RTIN {
+                    rtv = append(rtv, o)
+                    rtv = append(rtv, table.Get(mut st.bx.ev, BX_EVW * k + 4))
+                } else if c0 == BX_ICLS {
+                    icv = append(icv, o)
+                    icv = append(icv, table.Get(mut st.bx.ev, BX_EVW * k + 4))
+                    icv = append(icv, table.Get(mut st.bx.ev, BX_EVW * k + 5))
+                }
+            }
+        } else if c0 >= BX_FACT {
+            ow = append(ow, -1)
+            if o != nil {
+                fct[o + 1] += 4
+            }
+        } else if o == nil {
+            drop += 1
+            ow = append(ow, -1)
+        } else {
+            ow = append(ow, o)
+            cnt[o + 1] += BX_CW
+        }
+    }
+    for i <- iter.Range(0, len(fr)) {
+        fct[i + 1] += fct[i]
+    }
+    // 本体を下ろさなかった関数の展開した rt の関数は束の自分の分から
+    if bxCUse(mut st) {
+        // 鍵の表に無い rt の関数（展開で消えた — 鍵の段の表 st.ckk にはある）の安定な鍵 → 記録
+        rfb := bxRtGone(mut st, t)
+        for i <- iter.Range(0, len(fr)) {
+            sp := bxCSelf(mut st, FnRef(fr[i]))
+            if sp >= 0 {
+                pr := bxCSelfPart(mut st, sp, 3)
+                for k <- iter.Range(0, pr[1]) {
+                    hk := bxCSelfKey(mut st, sp, bxCG(mut st, pr[0] + 1 + k))
+                    h1 := hk[0]
+                    h2 := hk[1]
+                    g0 := bxCRec(t, h1, h2)
+                    g1 := rfb[h1]
+                    g := if g0 >= 0 { g0 } else if g1 != nil && g1[1] == h2 { g1[0] } else { -1 }
+                    if g < 0 {
+                        bxCSelfMiss(mut st, sp, "self-rtin")
+                    } else {
+                        rtv = append(rtv, i)
+                        rtv = append(rtv, g)
+                    }
+                }
+            }
+        }
+    }
+    fco := freeze(fct)
+    mut fcw := mut []int{}
+    xFill(mut fcw, fco[len(fr)], 0)
+    mut ffl := mut []int{}
+    for i <- iter.Range(0, len(fr)) {
+        ffl = append(ffl, fco[i])
+    }
+    for k <- iter.Range(0, n) {
+        at := BX_EVW * k
+        if table.Get(mut st.bx.ev, at + 1) >= BX_FACT && table.Get(mut st.bx.ev, at + 1) < BX_TOPD {
+            o := fidx[table.Get(mut st.bx.ev, at)]
+            if o != nil {
+                fcw[ffl[o]] = table.Get(mut st.bx.ev, at + 1)
+                fcw[ffl[o] + 1] = table.Get(mut st.bx.ev, at + 4)
+                fcw[ffl[o] + 2] = table.Get(mut st.bx.ev, at + 5)
+                fcw[ffl[o] + 3] = table.Get(mut st.bx.ev, at + 6)
+                ffl[o] += 4
+            }
+        }
+    }
+    fcwf := freeze(fcw)
+    for i <- iter.Range(0, len(fr)) {
+        cnt[i + 1] += cnt[i]
+    }
+    evo := freeze(cnt)
+    mut evw := mut []int{}
+    xFill(mut evw, evo[len(fr)], 0)
+    mut fill := mut []int{}
+    for i <- iter.Range(0, len(fr)) {
+        fill = append(fill, evo[i])
+    }
+    for k <- iter.Range(0, n) {
+        o := ow[k]
+        if o >= 0 {
+            at := BX_EVW * k
+            code := table.Get(mut st.bx.ev, at + 1)
+            mut w := mut []int{code}
+            bxRef(mut w, t, table.Get(mut st.bx.ev, at + 2))
+            bxRef(mut w, t, table.Get(mut st.bx.ev, at + 3))
+            y := table.Get(mut st.bx.ev, at + 5)
+            x := table.Get(mut st.bx.ev, at + 4)
+            w = append(w, if code == EV_PLAB { bxStrHash(mut st, x) } else { x })
+            w = append(w, if code == EV_PSITE { bxFile(mut st, y) } else { y })
+            w = append(w, table.Get(mut st.bx.ev, at + 6))
+            for v <- w {
+                evw[fill[o]] = v
+                fill[o] += 1
+            }
+        }
+    }
+    evwf := freeze(evw)
+    owf := freeze(ow)
+    st.bx.drop = drop
+    // packageごとの置く関数（安定な鍵の順）
+    mut np := 0
+    for h <- hs {
+        for p <- h {
+            if p + 1 > np {
+                np = p + 1
+            }
+        }
+    }
+    mut pc := mut []int{}
+    xFill(mut pc, np + 1, 0)
+    for i <- iter.Range(0, len(fr)) {
+        for p <- hs[i] {
+            pc[p + 1] += 1
+        }
+    }
+    for p <- iter.Range(0, np) {
+        pc[p + 1] += pc[p]
+    }
+    po := freeze(pc)
+    mut pw := mut []int{}
+    xFill(mut pw, po[np], 0)
+    mut pf := mut []int{}
+    for p <- iter.Range(0, np) {
+        pf = append(pf, po[p])
+    }
+    for i <- iter.Range(0, len(fr)) {
+        for p <- hs[i] {
+            pw[pf[p]] = i
+            pf[p] += 1
+        }
+    }
+    by := freeze(pw)
+    tp := bxTopPrep(mut st, t, fr, freeze(tdb), freeze(icv), freeze(rtv), fco, fcwf, shf)
+    mut pks := mut []int{}
+    mut bmem := mut [][]int{}
+    mut names := mut [][]byte{}
+    mut vE := mut []int{}
+    mut vLo := mut []int{}
+    mut vHi := mut []int{}
+    xFill(mut vE, len(fr), -1)
+    xFill(mut vLo, len(fr), 0)
+    xFill(mut vHi, len(fr), 0)
+    for p <- iter.Range(0, np) {
+        if po[p + 1] > po[p] {
+            ms0 := by[po[p]:po[p + 1]]
+            ord := sort.Order(len(ms0), (a, b) => bxLess(t, fr, ms0[a], ms0[b]))
+            mut ms1 := mut []int{}
+            for k <- ord {
+                ms1 = append(ms1, ms0[k])
+            }
+            ms := freeze(ms1)
+            ah := bxTop(mut st, tp, fr, ms, shf)
+            pks = append(pks, p)
+            pks = append(pks, ah[0])
+            pks = append(pks, ah[1])
+            pks = append(pks, -1)
+            bmem = append(bmem, ms)
+            mut nm := mut []byte{}
+            roStr(mut st, mut nm, pkgPath(mut st, p))
+            names = append(names, freeze(nm))
+        }
+    }
+    bmf := freeze(bmem)
+    // 鍵 K0 と境の要約（packageのimportの順に下から — 当たりの候補の項目を pks[4b+3] に・pks[4b+1..2] を書く鍵に）
+    nmf := freeze(names)
+    bxCFields(mut st, t, fr)
+    sums, skf := bxKeyPlan(mut st, t, fr, bmf, shf, mut pks, fco, fcwf, nmf, rk, false)
+    bxCKeep(mut st, mut pks, sums)
+    bxCReport(mut st)
+    bxCNoneSay(mut st)
+    // 当たりの候補の束をまとめて読んでから（近い項目を1回の読みに — bcPrefetch）、置く関数のβ2の値の位置を積む。読めない束は外れ
+    // （置く関数は関数ごとの項目を引く）
+    mut es := mut []int{}
+    for b <- iter.Range(0, len(pks) / 4) {
+        if pks[4 * b + 3] >= 0 {
+            es = append(es, pks[4 * b + 3])
+        }
+    }
+    bcPrefetch(mut st, freeze(es))
+    // 模擬用の列: 照合（SOBER_SUM_CONST=check）は置く関数の全部を組んで当たった束と比べる。ほかは書く束の分だけ（読みの後）
+    rcmp := bxCOn(mut st)
+    mut sc := BxSimC{so: []int{}, sb: []byte{}, tb: [][]byte{}}
+    if rcmp {
+        sc = bxSim(mut st, t, fr, owf, bmf, bxWant(bmf, []int{}, true), hs)
+    }
+    mut rpFns := 0
+    mut rpBad := 0
+    for b <- iter.Range(0, len(pks) / 4) {
+        e := pks[4 * b + 3]
+        if e >= 0 {
+            _, vok := bcVal(mut st, e)
+            mut rr := if vok { bxRead(mut st, e, fr, bmf[b], shf, beta, evo, evwf, rcmp, sc.so, sc.sb, if rcmp { sc.tb[b] } else { []byte{} }, mut vE, mut vLo, mut vHi) } else { 1 }
+            if rr == 3 {
+                // 模擬用の列だけが違う（β2の値と正準形は一致 — 出力に効かないので、照合の食い違いとして数えて当たりのまま）
+                rpBad += 1
+                _ = io.WriteStderr(bytes("cache: replay mismatch: "))
+                _ = io.WriteStderr(nmf[b])
+                _ = io.WriteStderr(bytes("\n"))
+                rr = 0
+            }
+            if rr == 0 && rcmp {
+                rpFns += len(bmf[b])
+            }
+            if rr == 2 {
+                // K0と仮定が当たり、中身がこのビルドと違う（K0か仮定の取りこぼし — 漏れの見張り）。外れにして書かない
+                table.Set(mut st.bcCnt, 15, table.Get(mut st.bcCnt, 15) + 1)
+                if lsEnvInt("SOBER_K0_LOG") >= 1 {
+                    _ = io.WriteStderr(bytes("cache: k0 leak: "))
+                    _ = io.WriteStderr(nmf[b])
+                    _ = io.WriteStderr(bytes("\n"))
+                }
+                pks[4 * b + 1] = 0
+                pks[4 * b + 2] = 0
+            }
+            if rr != 0 {
+                for i <- bmf[b] {
+                    if vE[i] == e {
+                        vE[i] = -1
+                    }
+                }
+                pks[4 * b + 3] = -1
+            }
+        }
+        bxCnt(mut st, pks[4 * b + 3] >= 0)
+    }
+    bxCSimLost(mut st, fr, bmf, pks, freeze(vE))
+    if rcmp {
+        _ = io.WriteStderr(bytes("cache: replay fns=${rpFns} bad=${rpBad}\n"))
+    } else {
+        sc = bxSim(mut st, t, fr, owf, bmf, bxWant(bmf, pks, false), hs)
+    }
+    pkf := freeze(pks)
+    return BxPlan{on: true, pk: pkf, mem: bmf, evo: evo, evw: evwf, sh: shf, vE: freeze(vE), vLo: freeze(vLo), vHi: freeze(vHi), names: nmf, sum: sums, sk: skf, ib: bxCIdxBases(mut st, pkf), so: sc.so, sb: sc.sb, tb: sc.tb, src: bxSrcList(mut st, fr, bmf, pkf)}
+}
+
+// 模擬用の列（関数ごと — 飛ばした package の関数の事象を、名前と綴りで今の作業列へ流す材料）。want の関数だけ組む（凍結の前 — 名前を読む）。
+// 列 = [自分の安定な鍵の名前, 事象の数, 事象…]（事象は正準形の列と同じ順）。事象 = [種類, 中身]:
+// EV_FN・EV_INST・EV_CUT = 相手の名前。EV_LAM・EV_KID = [辞書 const のラムダか, 0, 自分の中の序数]（持ち主が自分）か [同, 1, 相手の名前]。
+// EV_EMB = 大域の名前。EV_PLAB = ラベルの綴り。EV_NEED = [x, y]。
+// EV_PSITE = [種類, package のパス, package の中のファイルの序数, 字句]（ファイルが無ければパスの代わりに -1 とファイルの値）。ほかは種類だけ。
+// EV_STR の綴りは束ごとの綴りの表に1回だけ置き、正準形の事象の大域の安定な鍵で引く（同じ大きい綴りを多くの関数が参照するので、関数の列には
+// 書かない）。綴りの表 = [数, (大域の安定な鍵 ×2, 綴り)…]（置く関数の順に初出の順）。
+// 数は bcVarints・名前と綴りは [長さ, バイト]。wb = 組む束（その置く関数を組む）
+func bxSim(st mut St, t CkTab, fr []int, ow []int, bmem [][]int, wb []bool, hs [][]int) BxSimC {
+    ix := xSkIndex(mut st)
+    mut wf0 := mut []bool{}
+    for _ <- fr {
+        wf0 = append(wf0, false)
+    }
+    for b <- iter.Range(0, len(bmem)) {
+        if wb[b] {
+            for i <- bmem[b] {
+                wf0[i] = true
+            }
+        }
+    }
+    wf := freeze(wf0)
+    // 綴りの大域 → 綴り（strGlobal の表 [次, 綴り, 大域, 0]）
+    mut sg := mut map[int]int{}
+    mut e := st.strs
+    while e >= 0 {
+        sg[desugar.HeapGet(mut st.d, e + 2)] = desugar.HeapGet(mut st.d, e + 1)
+        e = desugar.HeapGet(mut st.d, e)
+    }
+    // 関数ごとの事象の添字（記録した順）
+    mut cnt := mut []int{}
+    xFill(mut cnt, len(fr) + 1, 0)
+    for o <- ow {
+        if o >= 0 {
+            cnt[o + 1] += 1
+        }
+    }
+    for i <- iter.Range(0, len(fr)) {
+        cnt[i + 1] += cnt[i]
+    }
+    eo := freeze(cnt)
+    mut ek := mut []int{}
+    xFill(mut ek, eo[len(fr)], 0)
+    mut fill := mut []int{}
+    for i <- iter.Range(0, len(fr)) {
+        fill = append(fill, eo[i])
+    }
+    for k <- iter.Range(0, len(ow)) {
+        o := ow[k]
+        if o >= 0 {
+            ek[fill[o]] = k
+            fill[o] += 1
+        }
+    }
+    mut nmi := mut map[int]int{}
+    mut nms := mut [][]byte{}
+    mut so := mut []int{0}
+    mut sb := mut []byte{}
+    // 関数ごとの EV_STR の大域（記録した順）= sgl[sgo[i]:sgo[i + 1]]
+    mut sgo := mut []int{0}
+    mut sgl := mut []int{}
+    // 束の仮定の自分の分の事実（関数ごと — 積んだ順）と B2 の呼び先の列
+    so0 := bxSelfIdx(mut st, fr)
+    sfo, sfw := bxSelfAll(mut st, t, ix, so0, len(fr), fr, wf, ckStage(mut st, 1), hs)
+    for i <- iter.Range(0, len(fr)) {
+        if wf[i] {
+            bxSimName(mut st, mut sb, ix, mut nmi, mut nms, fr[i])
+            for x <- bcVarints(sfw[sfo[i]:sfo[i + 1]]) {
+                sb = append(sb, x)
+            }
+            bxSimInt(mut sb, eo[i + 1] - eo[i])
+            for q <- iter.Range(eo[i], eo[i + 1]) {
+                at := BX_EVW * ek[q]
+                code := table.Get(mut st.bx.ev, at + 1)
+                rec := table.Get(mut st.bx.ev, at + 2)
+                gl := table.Get(mut st.bx.ev, at + 3)
+                x := table.Get(mut st.bx.ev, at + 4)
+                y := table.Get(mut st.bx.ev, at + 5)
+                bxSimInt(mut sb, code)
+                if code == EV_FN || code == EV_INST || code == EV_CUT {
+                    bxSimName(mut st, mut sb, ix, mut nmi, mut nms, rec)
+                } else if code == EV_LAM || code == EV_KID {
+                    bxSimInt(mut sb, x)
+                    q0 := if rec >= 0 { ix.at[rec] } else { nil }
+                    mut self := false
+                    if q0 != nil {
+                        kd := table.Get(mut st.sk, q0)
+                        self = (kd == SK_LAM || kd == SK_KID) && table.Get(mut st.sk, q0 + 3) == fr[i]
+                    }
+                    if self {
+                        o0 := ix.ord[rec]
+                        bxSimInt(mut sb, 0)
+                        bxSimInt(mut sb, if o0 != nil { o0 } else { 0 })
+                    } else {
+                        bxSimInt(mut sb, 1)
+                        bxSimName(mut st, mut sb, ix, mut nmi, mut nms, rec)
+                    }
+                } else if code == EV_STR {
+                    sgl = append(sgl, gl)
+                } else if code == EV_EMB {
+                    bxSimBytes(mut sb, globNameBytes0(mut st, desugar.StrRef(desugar.HeapGet(mut st.d, gl + G_NAME))))
+                } else if code == EV_PLAB {
+                    bxSimStr(mut st, mut sb, x)
+                } else if code == EV_NEED {
+                    bxSimInt(mut sb, x)
+                    bxSimInt(mut sb, y)
+                } else if code == EV_PSITE {
+                    bxSimInt(mut sb, x)
+                    if y < 0 {
+                        bxSimInt(mut sb, -1)
+                        bxSimInt(mut sb, y)
+                    } else {
+                        pk := desugar.FilePkg(mut st.d, y)
+                        mut nm := mut []byte{}
+                        roStr(mut st, mut nm, pkgPath(mut st, pk))
+                        bxSimBytes(mut sb, freeze(nm))
+                        bxSimInt(mut sb, y - pkgFlo(mut st, pk))
+                    }
+                    bxSimInt(mut sb, table.Get(mut st.bx.ev, at + 6))
+                }
+            }
+        }
+        so = append(so, len(sb))
+        sgo = append(sgo, len(sgl))
+    }
+    // 束ごとの綴りの表
+    mut tb := mut [][]byte{}
+    for b <- iter.Range(0, len(bmem)) {
+        mut o := mut []byte{}
+        if wb[b] {
+            mut seen := mut map[int]int{}
+            mut gs := mut []int{}
+            for i <- bmem[b] {
+                for q <- iter.Range(sgo[i], sgo[i + 1]) {
+                    g := sgl[q]
+                    if seen[g] == nil {
+                        seen[g] = 1
+                        gs = append(gs, g)
+                    }
+                }
+            }
+            bxSimInt(mut o, len(gs))
+            for g <- gs {
+                mut h := mut []int{}
+                bxRef(mut h, t, g)
+                bxSimInt(mut o, h[0])
+                bxSimInt(mut o, h[1])
+                s := sg[g]
+                if s != nil {
+                    bxSimStr(mut st, mut o, s)
+                } else {
+                    panic(InvariantBroken{})
+                }
+            }
+        }
+        tb = append(tb, freeze(o))
+    }
+    return BxSimC{so: freeze(so), sb: freeze(sb), tb: freeze(tb)}
+}
+
+// 束の仮定の自分の分の事実（BX_RFE・BX_ICLS・BX_RTIN）の関数の添字ごとの添字 [始まり（len(fr) + 1 語）…, 事象の添字…]
+func bxSelfIdx(st mut St, fr []int) []int {
+    mut idx := mut map[int]int{}
+    for i <- iter.Range(0, len(fr)) {
+        idx[fr[i]] = i
+    }
+    n := table.Len(mut st.bx.ev) / BX_EVW
+    mut cnt := mut []int{}
+    xFill(mut cnt, len(fr) + 1, 0)
+    mut ks := mut []int{}
+    for k <- iter.Range(0, n) {
+        c := table.Get(mut st.bx.ev, BX_EVW * k + 1)
+        if c == BX_RFE || c == BX_ICLS || c == BX_RTIN || c == BX_SPMK || c == BX_RTNEED {
+            o := idx[table.Get(mut st.bx.ev, BX_EVW * k)]
+            if o != nil {
+                cnt[o + 1] += 1
+                ks = append(ks, k)
+            }
+        }
+    }
+    for i <- iter.Range(0, len(fr)) {
+        cnt[i + 1] += cnt[i]
+    }
+    mut out := mut []int{}
+    for c <- cnt {
+        out = append(out, c)
+    }
+    xFill(mut out, len(fr) + 1 + len(ks), 0)
+    mut fill := mut []int{}
+    for i <- iter.Range(0, len(fr)) {
+        fill = append(fill, cnt[i])
+    }
+    for k <- ks {
+        o := idx[table.Get(mut st.bx.ev, BX_EVW * k)]
+        if o != nil {
+            out[len(fr) + 1 + fill[o]] = k
+            fill[o] += 1
+        }
+    }
+    return freeze(out)
+}
+
+// 関数の添字 i（記録 f）の束の仮定の自分の分（本体を下ろさない関数は、regionFlow・束の仮定・spec がこれを本体の代わりに読む）:
+// [鍵の数, (安定な鍵 ×2)…（関数の中の相手の表）, 辺の数, (種類, 相手)…, 間接呼び出しの数, (引数の数, 結果の型)…,
+//  展開した rt の関数の数, 相手…, B2 の呼び先の数〔B2 の鍵が無ければ -1〕, 相手…, 特化の候補の呼び出しの数, 自分…,
+//  パスの途中で宣言させた rt の関数の数, 相手…, 置き場の数, (package のパスの鍵 ×2)…, IR の署名の語数, 語…, 1, 番地を取られるか]。相手 = 関数の中の相手の表の添字
+// （同じ相手を何度も指す — 鍵を1回だけ書く。表は関数ごと: 同じ関数が2つの束に入っても列が束に依らない）。
+func bxSelfAll(st mut St, t CkTab, ix XSkIdx, so []int, n int, fr []int, wf []bool, b2 map[int]int, hs [][]int) ([]int, []int) {
+    // 列は全関数で1本ずつ（関数ごとに列を作らない — 自己 build で関数の数 × 列の数の確保が RSS +0.6 GB だった）
+    mut out := mut []int{}
+    mut offs := mut []int{0}
+    mut sec := mut []int{}   // 関数ごとの項目（相手は記録のまま）
+    mut rp := mut []int{}    // sec の中の相手の語の位置
+    mut rs := mut []int{}    // 関数ごとの相手の表（記録）
+    for i <- iter.Range(0, n) {
+        if wf[i] {
+            f := fr[i]
+            s0 := len(sec)
+            p0 := len(rp)
+            r0 := len(rs)
+            // 辺・間接呼び出し・展開した rt・残した複製（事象の積んだ順）
+            mut ne := 0
+            mut ni := 0
+            mut nr := 0
+            mut nm := 0
+            for q <- iter.Range(so[i], so[i + 1]) {
+                c := table.Get(mut st.bx.ev, BX_EVW * so[n + 1 + q] + 1)
+                if c == BX_RFE {
+                    ne += 1
+                } else if c == BX_ICLS {
+                    ni += 1
+                } else if c == BX_RTIN {
+                    nr += 1
+                } else if c == BX_SPMK && ckIdx(t.ix, table.Get(mut st.bx.ev, BX_EVW * so[n + 1 + q] + 4)) >= 0 {
+                    // 鍵の表に無い（後で消えた）複製は書かない
+                    nm += 1
+                }
+            }
+            mut nn := 0
+            for q <- iter.Range(so[i], so[i + 1]) {
+                if table.Get(mut st.bx.ev, BX_EVW * so[n + 1 + q] + 1) == BX_RTNEED {
+                    nn += 1
+                }
+            }
+            for part <- iter.Range(0, 5) {
+                code := if part == 0 { BX_RFE } else if part == 1 { BX_ICLS } else if part == 2 { BX_RTIN } else if part == 3 { BX_SPMK } else { BX_RTNEED }
+                sec = append(sec, if part == 0 { ne } else if part == 1 { ni } else if part == 2 { nr } else if part == 3 { nm } else { nn })
+                for q <- iter.Range(so[i], so[i + 1]) {
+                    at := BX_EVW * so[n + 1 + q]
+                    if table.Get(mut st.bx.ev, at + 1) == code {
+                        if code == BX_RFE {
+                            sec = append(sec, table.Get(mut st.bx.ev, at + 4))
+                            rp = append(rp, len(sec))
+                            sec = append(sec, table.Get(mut st.bx.ev, at + 5))
+                        } else if code == BX_ICLS {
+                            sec = append(sec, table.Get(mut st.bx.ev, at + 4))
+                            sec = append(sec, table.Get(mut st.bx.ev, at + 5))
+                        } else if code == BX_RTIN || code == BX_RTNEED || ckIdx(t.ix, table.Get(mut st.bx.ev, at + 4)) >= 0 {
+                            rp = append(rp, len(sec))
+                            sec = append(sec, table.Get(mut st.bx.ev, at + 4))
+                        }
+                    }
+                }
+                if part == 2 {
+                    // B2 の呼び先（展開した rt の後・残した複製の前）
+                    q := ckIdx(b2, f)
+                    if q < 0 {
+                        sec = append(sec, -1)
+                    } else {
+                        nb := table.Get(mut st.ckk, q + 4)
+                        sec = append(sec, nb)
+                        for j <- iter.Range(q + 5, q + 5 + nb) {
+                            rp = append(rp, len(sec))
+                            sec = append(sec, table.Get(mut st.ckk, j))
+                        }
+                    }
+                }
+            }
+            // 相手の記録を関数の中の相手の表の添字へ（初出の順）
+            for k <- iter.Range(p0, len(rp)) {
+                r := sec[rp[k]]
+                mut x := r0
+                while x < len(rs) && rs[x] != r {
+                    x += 1
+                }
+                if x == len(rs) {
+                    rs = append(rs, r)
+                }
+                sec[rp[k]] = x - r0
+            }
+            out = append(out, len(rs) - r0)
+            for k <- iter.Range(r0, len(rs)) {
+                ri := ckIdx(t.ix, rs[k])
+                if ri >= 0 {
+                    out = append(out, t.hs[2 * ri])
+                    out = append(out, t.hs[2 * ri + 1])
+                } else {
+                    bxRefX(mut st, mut out, t, ix, rs[k])
+                }
+            }
+            for k <- iter.Range(s0, len(sec)) {
+                out = append(out, sec[k])
+            }
+            // 置き場（package のパスの鍵 — 次のビルドが、下ろす前に置き場の全部が当たりの候補かを決める）
+            out = append(out, len(hs[i]))
+            for p <- hs[i] {
+                mut pn := mut []byte{}
+                roStr(mut st, mut pn, pkgPath(mut st, p))
+                ckBytesTo(mut out, freeze(pn))
+            }
+            // IR の署名 [戻りの型, mut 仮引数のマーク, 参照の仮引数のマーク, 引数の型…]（模擬が作る記録 — 実体・ラムダ・子 — に置く）
+            pt := irFnPtys(mut st, FnRef(f))
+            if pt == -1 {
+                out = append(out, 0)
+            } else {
+                npt := lenL(mut st, desugar.ListRef(pt))
+                out = append(out, 3 + npt)
+                out = append(out, irFnRet(mut st, FnRef(f)))
+                out = append(out, irFnMutP(mut st, FnRef(f)))
+                out = append(out, irFnRefP(mut st, FnRef(f)))
+                for k <- iter.Range(0, npt) {
+                    out = append(out, latI(mut st, desugar.ListRef(pt), k))
+                }
+            }
+            // 番地を取られるか（上からの事実 — 事前の引きが、下ろす package の値の参照と比べる: bxCAddrNew）
+            out = append(out, 1)
+            out = append(out, st.xAddr[i])
+        }
+        offs = append(offs, len(out))
+    }
+    return freeze(offs), freeze(out)
+}
+
+// rs の中の r の添字（無ければ len(rs)）
+func bxSelfAt(rs []int, r int) int {
+    mut k := 0
+    while k < len(rs) && rs[k] != r {
+        k += 1
+    }
+    return k
+}
+
+// 鍵の段の表（st.ckk）にあり、鍵の表 t に無い関数（パスの途中で消えた）の安定な鍵の1語目 → [記録, 2語目]
+func bxRtGone(st mut St, t CkTab) map[int][]int {
+    ix := xSkIndex(mut st)
+    mut m := mut map[int][]int{}
+    mut seen := mut map[int]int{}
+    n := table.Len(mut st.ckk)
+    mut q := 0
+    while q < n {
+        r := table.Get(mut st.ckk, q + 1)
+        if ckIdx(t.ix, r) < 0 && seen[r] == nil {
+            seen[r] = 1
+            mut h := mut []int{}
+            ckBytesTo(mut h, xFnKey(mut st, ix, r))
+            m[h[0]] = []int{r, h[1]}
+        }
+        q += 5 + table.Get(mut st.ckk, q + 4)
+    }
+    return freeze(m)
+}
+
+// 関数の記録 r の安定な鍵を out へ（鍵の表に無い記録 — パスの途中で消えた関数 — は綴りから求める）
+func bxRefX(st mut St, out mut []int, t CkTab, ix XSkIdx, r int) {
+    ri := if r >= 0 { ckIdx(t.ix, r) } else { -1 }
+    if ri >= 0 {
+        out = append(out, t.hs[2 * ri])
+        out = append(out, t.hs[2 * ri + 1])
+    } else {
+        ckBytesTo(mut out, xFnKey(mut st, ix, r))
+    }
+}
+
+// 模擬用の列（関数の添字 i の列 = sb[so[i]:so[i + 1]]・束 b の綴りの表 = tb[b]）
+type BxSimC struct {
+    so []int
+    sb []byte
+    tb [][]byte
+}
+
+// 記録 r の安定な鍵の名前を [長さ, バイト] で（nmi / nms = 組んだ名前の控え）
+func bxSimName(st mut St, sb mut []byte, ix XSkIdx, nmi mut map[int]int, nms mut [][]byte, r int) {
+    j := nmi[r]
+    mut k := 0
+    if j != nil {
+        k = j
+    } else {
+        k = len(nms)
+        nmi[r] = k
+        nms = append(nms, xFnKey(mut st, ix, r))
+    }
+    bxSimBytes(mut sb, nms[k])
+}
+
+func bxSimInt(sb mut []byte, v int) {
+    for x <- bcVarints([]int{v}) {
+        sb = append(sb, x)
+    }
+}
+
+func bxSimBytes(sb mut []byte, b []byte) {
+    bxSimInt(mut sb, len(b))
+    for x <- b {
+        sb = append(sb, x)
+    }
+}
+
+// 木の文字列 s の綴りを [長さ, バイト] で
+func bxSimStr(st mut St, sb mut []byte, s int) {
+    n := slen(mut st, desugar.StrRef(s))
+    bxSimInt(mut sb, n)
+    for i <- iter.Range(0, n) {
+        sb = append(sb, byte(sat(mut st, desugar.StrRef(s), i)))
+    }
+}
+
+// 模擬用の列を組む束（all = 全部・ほか = 書く束〔外れで書く鍵のある束〕）
+func bxWant(bmem [][]int, pk []int, all bool) []bool {
+    mut w := mut []bool{}
+    for b <- iter.Range(0, len(bmem)) {
+        w = append(w, all || (pk[4 * b + 3] < 0 && (pk[4 * b + 1] != 0 || pk[4 * b + 2] != 0)))
+    }
+    return freeze(w)
+}
+
+func bxLess(t CkTab, fr []int, a int, b int) bool {
+    ra := ckIdx(t.ix, fr[a])
+    rb := ckIdx(t.ix, fr[b])
+    if t.hs[2 * ra] != t.hs[2 * rb] {
+        return t.hs[2 * ra] < t.hs[2 * rb]
+    }
+    return t.hs[2 * ra + 1] < t.hs[2 * rb + 1]
+}
+
+func bxCnt(st mut St, hit bool) {
+    at := if hit { 13 } else { 14 }
+    table.Set(mut st.bcCnt, at, table.Get(mut st.bcCnt, at) + 1)
+}
+
+// 束の項目 e を読み、置く関数 ms の β2 の値の位置を積む。0 = 読めた・1 = 形が合わない・2 = β2の鍵か事象の列がこのビルドと違う・
+// 3 = 模擬用の列か綴りの表だけがこのビルドと違う（rcmp のとき — so / sb / tb はこのビルドの模擬用の列と綴りの表）
+// （まだ全部を下ろすので、当たった束の中身を今のビルドと比べられる）。値 = [置く関数の数] と、置く関数ごとに
+// [安定な鍵 ×2, β2の鍵 ×2, 値の長さ]（可変長）+ 値のバイト + [事象の語数, 事象…]（可変長）+ [模擬用の列の長さ]（可変長）+ 模擬用の列（bxSim）、
+// 最後に束の綴りの表（bxSim）
+func bxRead(st mut St, e int, fr []int, ms []int, sh []int, beta []int, evo []int, evw []int, rcmp bool, so []int, sb []byte, tb []byte, vE mut []int, vLo mut []int, vHi mut []int) int {
+    mut r := bcRdS(mut st, e)
+    st.bx.rb += r.end
+    mut diff := false
+    mut sdiff := false
+    why := lsEnvInt("SOBER_K0_LOG") == 2
+    nm := bcGet(mut r)
+    if r.bad || nm != len(ms) {
+        return 1
+    }
+    for i <- ms {
+        d0 := diff
+        s1 := bcGet(mut r)
+        s2 := bcGet(mut r)
+        b1 := bcGet(mut r)
+        b2 := bcGet(mut r)
+        n := bcGet(mut r)
+        if r.bad || s1 != sh[2 * i] || s2 != sh[2 * i + 1] || n < 0 || n > r.end - r.at {
+            return 1
+        }
+        // 本体を下ろさなかった関数は β2 の鍵を持たない（K0 と仮定の当たりが中身を保証する — 照合なしで使う）
+        if (b1 != beta[2 * i] || b2 != beta[2 * i + 1]) && bxCSelf(mut st, FnRef(fr[i])) < 0 {
+            diff = true
+        }
+        if n > 0 && vE[i] < 0 {
+            vE[i] = e
+            vLo[i] = r.at
+            vHi[i] = r.at + n
+        }
+        r.at += n
+        ne := bcGet(mut r)
+        if r.bad || ne < 0 {
+            return 1
+        }
+        if ne != evo[i + 1] - evo[i] {
+            diff = true
+        }
+        for k <- iter.Range(0, ne) {
+            v := bcGet(mut r)
+            if !diff && v != evw[evo[i] + k] {
+                diff = true
+            }
+        }
+        ns := bcGet(mut r)
+        if r.bad || ns < 0 || ns > r.end - r.at {
+            return 1
+        }
+        if rcmp && !sdiff {
+            if ns != so[i + 1] - so[i] {
+                sdiff = true
+            } else {
+                for k <- iter.Range(0, ns) {
+                    if r.b[r.at + k] != sb[so[i] + k] {
+                        sdiff = true
+                    }
+                }
+            }
+            if sdiff {
+                _ = io.WriteStderr(bytes("cache: replay mismatch at "))
+                _ = io.WriteStderr(xNameBytes(mut st, irFnName(mut st, FnRef(fr[i]))))
+                _ = io.WriteStderr(bytes("\n"))
+            }
+        }
+        r.at += ns
+        if why && diff && !d0 {
+            // 中身が最初に違った関数（SOBER_K0_LOG=2）
+            _ = io.WriteStderr(bytes("cache: k0 leak at "))
+            _ = io.WriteStderr(xNameBytes(mut st, irFnName(mut st, FnRef(fr[i]))))
+            _ = io.WriteStderr(bytes(if b1 != beta[2 * i] || b2 != beta[2 * i + 1] { " (beta2 key)\n" } else { " (events)\n" }))
+        }
+    }
+    t0 := r.at
+    nt := bcGet(mut r)
+    if r.bad || nt < 0 {
+        return 1
+    }
+    for _ <- iter.Range(0, nt) {
+        _ = bcGet(mut r)
+        _ = bcGet(mut r)
+        ln := bcGet(mut r)
+        if r.bad || ln < 0 || ln > r.end - r.at {
+            return 1
+        }
+        r.at += ln
+    }
+    if r.bad || r.at != r.end {
+        return 1
+    }
+    if rcmp && !sdiff {
+        if r.at - t0 != len(tb) {
+            sdiff = true
+        } else {
+            for k <- iter.Range(0, len(tb)) {
+                if r.b[t0 + k] != tb[k] {
+                    sdiff = true
+                }
+            }
+        }
+        if sdiff {
+            _ = io.WriteStderr(bytes("cache: replay mismatch at the string table\n"))
+        }
+    }
+    return if diff { 2 } else if sdiff { 3 } else { 0 }
+}
+
+// x86の関数の添字 i の β2 の値のバイト: 束から読んだ値・関数ごとの項目の当たり・このビルドの書きのバッチ（wb = β2の鍵 h1 → bcWiの添字）・
+// 格納場所の同じ鍵の項目（検証モードで作り直した値は書きのバッチに積まない — 同じ値が格納場所にある）。無ければ空と偽
+func bxValOf(st mut St, pl BxPlan, i int, wb map[int]int) ([]byte, bool) {
+    if pl.vE[i] >= 0 {
+        b, ok := bcVal(mut st, pl.vE[i])
+        return b[pl.vLo[i]:pl.vHi[i]], ok
+    }
+    h := st.bcHx[i]
+    if h >= 0 {
+        return bcVal(mut st, table.Get(mut st.bcDp, h))
+    }
+    k1 := st.bcBk[2 * i]
+    k2 := st.bcBk[2 * i + 1]
+    w := wb[k1]
+    if w != nil && table.Get(mut st.bcWi, 6 * w + 2) == k2 {
+        lo := table.Get(mut st.bcWi, 6 * w + 3)
+        n := table.Get(mut st.bcWi, 6 * w + 4)
+        mut o := mut []byte{}
+        for q <- iter.Range(lo, lo + n) {
+            o = append(o, table.Get(mut st.bcW, q))
+        }
+        return freeze(o), true
+    }
+    e := bcFind(st.bcv, BC_B2, k1, k2)
+    if e >= 0 {
+        return bcVal(mut st, e)
+    }
+    return []byte{}, false
+}
+
+// 境の要約（packageの値の、依るpackageが呼ぶ側として読む事実）= [版, 鍵の数, 安定な鍵 ×2…, 根の数, (根の関数の名前 ×2, 根の事実のハッシュ ×2, 本体の印)…,
+// 置く関数の数, 置く関数ごとの事実…]。根の事実のハッシュ = 根の関数（ラムダ・子は持ち主を辿る — bxRoots）ごとの置く関数のハッシュの和（K0が、届く関数の分だけを読む）。
+// 鍵の表の先頭は置く関数（束と同じ安定な鍵の順）、その後に辺の相手（初出の順）。置く関数ごとに:
+// [戻りの型, mut仮引数のマーク, 参照の仮引数のマーク, 番地を取られるか, 戻るか, rfree, 呼び出しの辺の数, (種類, 相手の鍵の表の添字)…,
+//  事実の数, (コード, x, y, z)…]（事実 = パスの局所の事実 — bxFact。パスの順・関数の中は積んだ順）。本体の事実（bxBody）は [コード, 長さ, 0, 0] で、
+//  バイトは varint の列の後ろに関数の順・事実の順で続ける
+// 種類 0 = 呼び出し・1 = 番地を取る（OpFuncaddr）。相手の安定な鍵が無い（rt の合成など）は鍵 [0, 0]。展開・特化の入力の本体は後の版で足す
+func bxSum1(st mut St, t CkTab, fr []int, ms []int, sh []int, fco []int, fcw []int, rk []int) []byte {
+        mut blob := mut []byte{}
+        mut sk := mut []int{}
+        mut kix := mut map[int]int{}
+        for i <- ms {
+            kix[sh[2 * i]] = len(sk) / 2
+            sk = append(sk, sh[2 * i])
+            sk = append(sk, sh[2 * i + 1])
+        }
+        mut ws := mut []int{len(ms)}
+        // 根の関数ごとの事実のハッシュ [根の名前 ×2, h1, h2]…（初出の順）
+        mut rt := mut []int{}
+        mut rix := mut map[int]int{}
+        for i <- ms {
+            w0 := len(ws)
+            b0 := len(blob)
+            f := FnRef(fr[i])
+            ws = append(ws, irFnRet(mut st, f))
+            ws = append(ws, irFnMutP(mut st, f))
+            ws = append(ws, irFnRefP(mut st, f))
+            ws = append(ws, if i < len(st.xAddr) { st.xAddr[i] } else { 0 })
+            // 戻るか: 終端化の時点の値（x86 の時点の本体は格納場所の当たり方に依る — β1 の当たりは B2 を飛ばす）
+            mut rt0 := -1
+            mut q0 := fco[i]
+            while q0 < fco[i + 1] {
+                if rt0 < 0 && fcw[q0] == BX_NORET {
+                    rt0 = fcw[q0 + 2]
+                }
+                q0 += 4
+            }
+            ws = append(ws, if rt0 >= 0 { rt0 } else if llReturns(mut st, f) { 1 } else { 0 })
+            rf := irFnRFree(mut st, f)
+            ws = append(ws, if rf < 0 { -1 } else { desugar.HeapGet(mut st.d, rf) })
+            // 呼び出しの辺はB2の後の記録（bcB1Collect — β1の当たりの関数はB2を飛ばしてIRがB2の入力のままなので、IRを歩くと格納場所の状態に依る）
+            cs0 := bcSkCalls(st.bcCl, st.bcInf, fr[i])
+            cs := if st.bcCl[fr[i]] != nil { cs0 } else { bxCallsIr(mut st, f) }
+            ne := len(cs) / 2
+            ws = append(ws, ne)
+            for k <- iter.Range(0, ne) {
+                ws = append(ws, cs[2 * k])
+                mut kh := mut []int{}
+                bxRef(mut kh, t, cs[2 * k + 1])
+                mut x := -1
+                c0 := kix[kh[0]]
+                if c0 != nil && sk[2 * c0 + 1] == kh[1] {
+                    x = c0
+                } else {
+                    // ハッシュの1語目が衝突したときは表を歩く
+                    for q <- iter.Range(0, len(sk) / 2) {
+                        if x < 0 && sk[2 * q] == kh[0] && sk[2 * q + 1] == kh[1] {
+                            x = q
+                        }
+                    }
+                }
+                if x < 0 {
+                    x = len(sk) / 2
+                    if c0 == nil {
+                        kix[kh[0]] = x
+                    }
+                    sk = append(sk, kh[0])
+                    sk = append(sk, kh[1])
+                }
+                ws = append(ws, x)
+            }
+            // パスの局所の事実（パスの順・関数の中は積んだ順）
+            ws = append(ws, (fco[i + 1] - fco[i]) / 4)
+            mut q := fco[i]
+            while q < fco[i + 1] {
+                c := fcw[q]
+                if bxBodyCode(c) {
+                    // 本体: 位置は要約の外（積んだ順に依る）— [コード, 長さ, 0, 0] にして、バイトは要約の末尾へ
+                    ws = append(ws, c)
+                    ws = append(ws, fcw[q + 2])
+                    ws = append(ws, 0)
+                    ws = append(ws, 0)
+                    if fcw[q + 2] > 0 {
+                        for k <- iter.Range(fcw[q + 1], fcw[q + 1] + fcw[q + 2]) {
+                            blob = append(blob, table.Get(mut st.bx.bd, k))
+                        }
+                    }
+                } else {
+                    for k <- iter.Range(q, q + 4) {
+                        ws = append(ws, fcw[k])
+                    }
+                }
+                q += 4
+            }
+            // 置く関数1つのハッシュ（辺の相手は鍵の表の添字でなく安定な鍵 — 添字は前の関数の辺に依る）を根の関数へ足す
+            mut m1 := CK_S1
+            mut m2 := CK_S2
+            for k <- iter.Range(w0, w0 + 7) {
+                m1 = ckM1(m1, ws[k])
+                m2 = ckM2(m2, ws[k])
+            }
+            mut at := w0 + 7
+            for k <- iter.Range(0, ws[w0 + 6]) {
+                x := ws[at + 1]
+                m1 = ckM1(ckM1(ckM1(m1, ws[at]), sk[2 * x]), sk[2 * x + 1])
+                m2 = ckM2(ckM2(ckM2(m2, ws[at]), sk[2 * x]), sk[2 * x + 1])
+                at += 2
+            }
+            for k <- iter.Range(at, len(ws)) {
+                m1 = ckM1(m1, ws[k])
+                m2 = ckM2(m2, ws[k])
+            }
+            mut bb := mut []byte{}
+            for k <- iter.Range(b0, len(blob)) {
+                bb = append(bb, blob[k])
+            }
+            hb := bxHashB(freeze(bb))
+            m1 = ckM1(ckM1(m1, hb[0]), sh[2 * i])
+            m2 = ckM2(ckM2(m2, hb[1]), sh[2 * i + 1])
+            r0 := rix[rk[2 * i]]
+            mut ri := if r0 != nil && rt[5 * r0 + 1] == rk[2 * i + 1] { r0 } else { -1 }
+            if ri < 0 && r0 != nil {
+                // 名前のハッシュの1語目が衝突したときは表を歩く
+                for z <- iter.Range(0, len(rt) / 5) {
+                    if ri < 0 && rt[5 * z] == rk[2 * i] && rt[5 * z + 1] == rk[2 * i + 1] {
+                        ri = z
+                    }
+                }
+            }
+            if ri < 0 {
+                if r0 == nil {
+                    rix[rk[2 * i]] = len(rt) / 5
+                }
+                ri = len(rt) / 5
+                rt = append(rt, rk[2 * i])
+                rt = append(rt, rk[2 * i + 1])
+                rt = append(rt, 0)
+                rt = append(rt, 0)
+                rt = append(rt, 0)
+            }
+            rt[5 * ri + 2] += m1
+            rt[5 * ri + 3] += m2
+            // 本体の印（展開か特化の入力の本体がある — 依るpackageへ本体が写りうるので、K0は本体の中の呼び先も辿る）
+            mut qb := fco[i]
+            while qb < fco[i + 1] {
+                if bxBodyCode(fcw[qb]) {
+                    rt[5 * ri + 4] = 1
+                }
+                qb += 4
+            }
+        }
+        mut all := mut []int{BX_SUMV, len(sk) / 2}
+        for v <- sk {
+            all = append(all, v)
+        }
+        all = append(all, len(rt) / 5)
+        for v <- rt {
+            all = append(all, v)
+        }
+        for v <- ws {
+            all = append(all, v)
+        }
+        mut out := mut []byte{}
+        for x <- bcVarints(freeze(all)) {
+            out = append(out, x)
+        }
+        for x <- blob {
+            out = append(out, x)
+        }
+        return freeze(out)
+}
+
+// バイト列のハッシュ [h1, h2]（8バイトずつ — bcSumと同じ形の2本）
+func bxHashB(b []byte) []int {
+    mut h1 := CK_S1 ^ len(b)
+    mut h2 := CK_S2 ^ len(b)
+    mut i := 0
+    while i + 8 <= len(b) {
+        w := binary.Load64(b, i)
+        h1 = (h1 ^ w) * CK_M1
+        h1 = h1 ^ (h1 >> 29)
+        h2 = (h2 ^ w) * CK_M2
+        h2 = h2 ^ (h2 >> 31)
+        i += 8
+    }
+    while i < len(b) {
+        h1 = ckM1(h1, int(b[i]))
+        h2 = ckM2(h2, int(b[i]))
+        i += 1
+    }
+    return []int{h1, h2}
+}
+
+// ③'（プログラム全体の旗。K0 が読む — 下ろす前に決まるものだけ）[h1, h2]: 種類の旗・罠 / task / ワーカー / pstat の大域と rt.meta の有無・lock_wait・
+// SOBER_XDBG・errorのラベルの表（タグ = 表の添字 — packageのパスとラベルの綴り）・熱さのプロファイルの中身と旗。spawnの点があるか（下ろして決まる）は束の仮定（bxTopPrep）
+func bxFlags(st mut St) []int {
+    fl := (if st.noVec { 1 } else { 0 }) | (if st.taskUse { 2 } else { 0 }) | (if st.winOn { 4 } else { 0 }) | (if st.areaOn { 8 } else { 0 }) |
+        (if st.trapUse { 16 } else { 0 })
+    gl := (if st.trapG >= 0 { 1 } else { 0 }) | (if st.taskG >= 0 { 2 } else { 0 }) | (if st.wkG >= 0 { 4 } else { 0 }) | (if st.pstatG >= 0 { 8 } else { 0 }) |
+        (if st.meta >= 0 { 16 } else { 0 }) | (if int(st.rtLockWait) >= 0 { 32 } else { 0 })
+    mut h1 := ckM1(ckM1(ckM1(CK_S1, fl), gl), len(st.xdbgPat))
+    mut h2 := ckM2(ckM2(ckM2(CK_S2, fl), gl), len(st.xdbgPat))
+    for w <- st.xdbgPat {
+        h1 = ckM1(h1, w)
+        h2 = ckM2(h2, w)
+    }
+    ne := desugar.NErr(mut st.d)
+    h1 = ckM1(h1, ne)
+    h2 = ckM2(h2, ne)
+    for i <- iter.Range(0, ne) {
+        ps := bxStrHash(mut st, int(pkgPath(mut st, desugar.ErrPkg(mut st.d, i))))
+        nm := bxStrHash(mut st, nodeOf(mut st, desugar.ErrNode(mut st.d, i)).a)
+        h1 = ckM1(ckM1(h1, ps), nm)
+        h2 = ckM2(ckM2(h2, ps), nm)
+    }
+    // 熱さのプロファイル: 中身と旗。束が当たると捨てた関数はβ2の鍵を照合せずに束の機械語を使うので、プロファイルの切片を混ぜた
+    // β2の鍵（pfKey）だけでは足りない。プロファイルの無いビルドの旗は変えない
+    pf := st.xProf
+    if pf.on {
+        pg := (if pf.cold { 1 } else { 0 }) | (if pf.blkmap { 2 } else { 0 })
+        h1 = ckM1(ckM1(ckM1(h1, PRF_S1), pg), len(pf.text))
+        h2 = ckM2(ckM2(ckM2(h2, PRF_S2), pg), len(pf.text))
+        for c <- pf.text {
+            h1 = ckM1(h1, int(c))
+            h2 = ckM2(h2, int(c))
+        }
+    }
+    return []int{h1, h2}
+}
+
+// 関数 fr[j] の、間接呼び出しの相手として読まれる事実のハッシュ [h1, h2]: 安定な鍵（相手の集合）と、regionFlow の事実（間接の辺を辿る
+// 判定が読む）と純な子の判定の事実（cutPatch の stdout に書くか）。ほかのパスは間接呼び出しの相手を読まない（保守的に倒す）
+func bxIndFact(st mut St, fr []int, j int, sh []int, fco []int, fcw []int) []int {
+    mut g1 := ckM1(CK_S1, sh[2 * j])
+    mut g2 := ckM2(CK_S2, sh[2 * j + 1])
+    mut q := fco[j]
+    while q < fco[j + 1] {
+        c := fcw[q]
+        if c == BX_RFLOW || c == BX_CUT {
+            for k <- iter.Range(q, q + 4) {
+                g1 = ckM1(g1, fcw[k])
+                g2 = ckM2(g2, fcw[k])
+            }
+        }
+        q += 4
+    }
+    return []int{g1, g2}
+}
+
+// 束の仮定の材料（ビルドで1つ）
+type BxTop struct {
+    td []int              // x86の関数の添字 → 上からのビット（BX_TOPD の和）
+    ic []int              // x86の関数の添字 → 間接呼び出しの相手の事実の和 [h1, h2]（形ごとの和を、呼び出しの順に混ぜたもの）と、
+                          // 展開したrtの関数の α と B2 の鍵（展開した順に混ぜたもの）
+    cuts map[int]int      // cutInsertのフラグ（ckCutBits）
+    b2 map[int]int        // B2の鍵の索引（呼び先の列 — ckStage）
+    sbo map[int]int       // 本体を下ろさなかった関数の B2 の呼び先（束の自分の分）: 記録 → sbw の位置（B2 の鍵が無かった関数は無い）
+    sbw []int             // [呼び先の数, 呼び先の記録…]…
+    ra []int              // rtの関数のうち番地を取られるものの集合のハッシュ
+}
+
+func bxTopPrep(st mut St, t CkTab, fr []int, tdb []int, icv []int, rtv []int, fco []int, fcw []int, sh []int) BxTop {
+    // 番地を取られる関数（上からのビットの1）の事実のハッシュ [添字, h1, h2]…
+    mut tk := mut []int{}
+    for j <- iter.Range(0, len(fr)) {
+        if tdb[j] & 1 != 0 {
+            g := if bxCSelf(mut st, FnRef(fr[j])) >= 0 { bxCIndFact(mut st, fr[j], sh[2 * j], sh[2 * j + 1]) } else { bxIndFact(mut st, fr, j, sh, fco, fcw) }
+            tk = append(tk, j)
+            tk = append(tk, g[0])
+            tk = append(tk, g[1])
+        }
+    }
+    // 純な子の判定（cutPatch）を回すビルドでは、間接呼び出しは番地を取られた全部の関数の和を読む（形で分けない）
+    cutOn := st.taskUse && st.cutSites != -1
+    mut cl := mut []int{}
+    mut ic := mut []int{}
+    xFill(mut ic, 2 * len(fr), 0)
+    mut z := 0
+    while z < len(icv) {
+        o := icv[z]
+        na := icv[z + 1]
+        cc := icv[z + 2]
+        mut c := -1
+        for y <- iter.Range(0, len(cl) / 4) {
+            if c < 0 && cl[4 * y] == na && cl[4 * y + 1] == cc {
+                c = y
+            }
+        }
+        if c < 0 {
+            mut d1 := 0
+            mut d2 := 0
+            mut y := 0
+            while y < len(tk) {
+                if cutOn || rfSigFits(mut st, FnRef(fr[tk[y]]), na, cc) {
+                    d1 += tk[y + 1]
+                    d2 += tk[y + 2]
+                }
+                y += 3
+            }
+            c = len(cl) / 4
+            cl = append(cl, na)
+            cl = append(cl, cc)
+            cl = append(cl, ckM1(ckM1(ckM1(CK_S1, na), cc), d1))
+            cl = append(cl, ckM2(ckM2(ckM2(CK_S2, na), cc), d2))
+        }
+        ic[2 * o] = ckM1(ic[2 * o], cl[4 * c + 2])
+        ic[2 * o + 1] = ckM2(ic[2 * o + 1], cl[4 * c + 3])
+        z += 3
+    }
+    // cfgの正準形（α・B2・x86 の鍵に入るプログラム全体の値: 旗と、必要になったときに宣言するrtの関数のうち鍵に入るものの有無）
+    ca := bxCfgH(mut st, t, lParCfg(mut st, false))
+    cb := bxCfgH(mut st, t, lParCfg(mut st, true))
+    // 展開したrtの関数の本体（α と B2 の鍵 — 無ければ 0）
+    if len(rtv) > 0 {
+        s0 := ckStage(mut st, 0)
+        s1 := ckStage(mut st, 1)
+        mut z2 := 0
+        while z2 < len(rtv) {
+            o := rtv[z2]
+            g := rtv[z2 + 1]
+            q0 := ckIdx(s0, g)
+            q1 := ckIdx(s1, g)
+            kw := []int{bxCkWord(mut st, q0, 2), bxCkWord(mut st, q0, 3), bxCkWord(mut st, q1, 2), bxCkWord(mut st, q1, 3)}
+            for w <- kw {
+                ic[2 * o] = ckM1(ic[2 * o], w)
+                ic[2 * o + 1] = ckM2(ic[2 * o + 1], w)
+            }
+            z2 += 2
+        }
+    }
+    // deadline: を書くプログラムか（時計の読み方が変わる — clockAt）
+    dl := if dlFn(st.rtD3) != 0 { 1 } else { 0 }
+    // 純な子の判定を回すか（taskを使い、spawnの点がある — 点は下ろして決まるので K0 でなく仮定に）
+    cs := if cutOn { 1 } else { 0 }
+    mut ra1 := ckM1(ckM1(ckM1(ckM1(ckM1(CK_S1, ca[0]), cb[0]), t.c1), dl), cs)
+    mut ra2 := ckM2(ckM2(ckM2(ckM2(ckM2(CK_S2, ca[1]), cb[1]), t.c2), dl), cs)
+    for r <- st.ckRt {
+        if st.xAddr[xIndex(fr, r)] != 0 {
+            i := ckIdx(t.ix, r)
+            ra1 += ckM1(t.hs[2 * i], 7)
+            ra2 += ckM2(t.hs[2 * i + 1], 7)
+        }
+    }
+    mut sbo := mut map[int]int{}
+    mut sbw := mut []int{}
+    if bxCUse(mut st) {
+        for i <- iter.Range(0, len(fr)) {
+            sp := bxCSelf(mut st, FnRef(fr[i]))
+            if sp >= 0 {
+                pb := bxCSelfPart(mut st, sp, 4)
+                if pb[1] >= 0 {
+                    sbo[fr[i]] = len(sbw)
+                    sbw = append(sbw, pb[1])
+                    for k <- iter.Range(0, pb[1]) {
+                        g := bxCSelfRec(mut st, sp, bxCG(mut st, pb[0] + 1 + k), t)
+                        if g < 0 {
+                            bxCSelfMiss(mut st, sp, "self-b2")
+                        }
+                        sbw = append(sbw, g)
+                    }
+                }
+            }
+        }
+    }
+    return BxTop{td: tdb, ic: freeze(ic), cuts: ckCutBits(mut st), b2: ckStage(mut st, 1), sbo: freeze(sbo), sbw: freeze(sbw), ra: []int{ra1, ra2}}
+}
+
+// 境の要約の置く関数ごとの [安定な鍵 ×2, 辺のハッシュ ×2, 事実のハッシュ ×2]（辺の相手は安定な鍵で。事実は番地を取られるか〔上からの事実〕を除く）
+func bxSumFns(sum []byte) []int {
+    mut r := BcRd{b: sum, at: 0, end: len(sum), bad: false}
+    mut out := mut []int{}
+    if bcGet(mut r) != BX_SUMV {
+        return freeze(out)
+    }
+    nk := bcGet(mut r)
+    mut sk := mut []int{}
+    for y <- iter.Range(0, 2 * nk) {
+        sk = append(sk, bcGet(mut r))
+    }
+    nr := bcGet(mut r)
+    for y <- iter.Range(0, 5 * nr) {
+        _ = bcGet(mut r)
+    }
+    nf := bcGet(mut r)
+    mut i := 0
+    while i < nf && !r.bad && 2 * i + 1 < len(sk) {
+        mut f1 := CK_S1
+        mut f2 := CK_S2
+        for k <- iter.Range(0, 6) {
+            w := bcGet(mut r)
+            if k != 3 {
+                f1 = ckM1(f1, w)
+                f2 = ckM2(f2, w)
+            }
+        }
+        ne := bcGet(mut r)
+        mut e1 := CK_S1
+        mut e2 := CK_S2
+        for k <- iter.Range(0, ne) {
+            kind := bcGet(mut r)
+            x := bcGet(mut r)
+            a := if x >= 0 && 2 * x + 1 < len(sk) { sk[2 * x] } else { -1 }
+            c := if x >= 0 && 2 * x + 1 < len(sk) { sk[2 * x + 1] } else { -1 }
+            e1 = ckM1(ckM1(ckM1(e1, kind), a), c)
+            e2 = ckM2(ckM2(ckM2(e2, kind), a), c)
+        }
+        nfa := bcGet(mut r)
+        for k <- iter.Range(0, 4 * nfa) {
+            w := bcGet(mut r)
+            f1 = ckM1(f1, w)
+            f2 = ckM2(f2, w)
+        }
+        out = append(out, sk[2 * i])
+        out = append(out, sk[2 * i + 1])
+        out = append(out, e1)
+        out = append(out, e2)
+        out = append(out, f1)
+        out = append(out, f2)
+        i += 1
+    }
+    return freeze(out)
+}
+
+// 「1周で止まる」の前提の見張り（SOBER_SUM_CHECK=1）: K0が当たり仮定に落ちた束（上からの事実が変わった）で、古い枠の要約と今の要約の、
+// 両方にある関数の呼び出しの辺と事実を比べる。辺が違えば上からの事実が辺を変えた（つなぐ段で求め直しが2周以上になりうる）
+func bxTdWatch(st mut St, olds []int, sumNow []byte, fr []int, ms []int, pname []byte) {
+    cfs := bxSumFns(sumNow)
+    mut cix := mut map[int]int{}
+    for i <- iter.Range(0, len(cfs) / 6) {
+        cix[cfs[6 * i]] = i
+    }
+    for c1 <- olds {
+        k2o, ok := bcK2Of(st.bcv, c1)
+        se := if ok { bcFindS(mut st, BC_PKG, ckM1(ckM1(CK_S1, BX_SUMX), c1), ckM2(ckM2(CK_S2, BX_SUMX), k2o)) } else { -1 }
+        if se >= 0 {
+            ov, vok := bcVal(mut st, se)
+            ofs := if vok { bxSumFns(ov) } else { []int{} }
+            mut dEdge := -1
+            mut dFact := -1
+            for j <- iter.Range(0, len(ofs) / 6) {
+                i0 := cix[ofs[6 * j]]
+                if i0 != nil && cfs[6 * i0 + 1] == ofs[6 * j + 1] {
+                    if dEdge < 0 && (cfs[6 * i0 + 2] != ofs[6 * j + 2] || cfs[6 * i0 + 3] != ofs[6 * j + 3]) {
+                        dEdge = i0
+                    }
+                    if dFact < 0 && (cfs[6 * i0 + 4] != ofs[6 * j + 4] || cfs[6 * i0 + 5] != ofs[6 * j + 5]) {
+                        dFact = i0
+                    }
+                }
+            }
+            if dEdge >= 0 {
+                table.Set(mut st.bcCnt, 17, table.Get(mut st.bcCnt, 17) + 1)
+                bxTdSay(mut st, "edges", pname, fr[ms[dEdge]])
+            }
+            if dFact >= 0 {
+                table.Set(mut st.bcCnt, 18, table.Get(mut st.bcCnt, 18) + 1)
+                bxTdSay(mut st, "facts", pname, fr[ms[dFact]])
+            }
+        }
+    }
+}
+
+func bxTdSay(st mut St, what string, pname []byte, f int) {
+    _ = io.WriteStderr(bytes("cache: top-down facts changed the ${what} of package "))
+    _ = io.WriteStderr(pname)
+    _ = io.WriteStderr(bytes(" at "))
+    _ = io.WriteStderr(xNameBytes(mut st, irFnName(mut st, FnRef(f))))
+    _ = io.WriteStderr(bytes("\n"))
+}
+
+// st.ckk の位置 q の語 q + k（q < 0 は 0）
+func bxCkWord(st mut St, q int, k int) int {
+    return if q < 0 { 0 } else { table.Get(mut st.ckk, q + k) }
+}
+
+// lowerの cfg（lParCfg）の正準形 [h1, h2]（ckTab と同じ式 — 記録の安定な鍵と戻りの型は x86 の鍵の表 t から）
+func bxCfgH(st mut St, t CkTab, cfg []int) []int {
+    mut rets := mut []int{}
+    for w <- cfg {
+        rets = append(rets, if ckIsFn(t, w) { t.rs[ckIdx(t.ix, w)] } else { 0 })
+    }
+    return ckCfg(t, cfg, freeze(rets), ckDrop(cfg, false))
+}
+
+// 書く束（外れ・鍵あり）ごとの、package の宣言のソースのハッシュ（bxCSrcPkg の形 — 事前の引きで求めた package は使い回す）
+func bxSrcList(st mut St, fr []int, bmem [][]int, pk []int) [][]int {
+    mut out := mut [][]int{}
+    for b <- iter.Range(0, len(bmem)) {
+        q := pk[4 * b]
+        if pk[4 * b + 3] < 0 && (pk[4 * b + 1] != 0 || pk[4 * b + 2] != 0) {
+            out = append(out, if q < len(st.bx.sp) && len(st.bx.sp[q]) > 0 { st.bx.sp[q] } else { bxCSrcPkg(mut st, q, map[int]int{}, map[int]int{}) })
+        } else {
+            out = append(out, []int{})
+        }
+    }
+    return freeze(out)
+}
+
+// 束の仮定のハッシュ [h1, h2]（照合の値 — 上から決まる事実）: 置く関数ごとに（安定な鍵の順）、安定な鍵（置く関数の集合 — 届くかは上から決まる）・
+// 番地を取られるか（x86 と regionFlow）・入口か・強連結成分の中か・cutInsertのフラグ・間接呼び出しの相手の事実の和・B2の呼び先ごとの
+// 番地を取られるか（x86の呼び出し規約）と、プログラム全体の値（cfgの正準形・rtの関数のうち番地を取られるものの集合）
+func bxTop(st mut St, tp BxTop, fr []int, ms []int, sh []int) []int {
+    mut h1 := ckM1(ckM1(CK_S1, BX_TOPTAG), tp.ra[0])
+    mut h2 := ckM2(ckM2(CK_S2, BX_TOPTAG), tp.ra[1])
+    for i <- ms {
+        cb := ckIdx(tp.cuts, fr[i]) + 1
+        ws := []int{sh[2 * i], sh[2 * i + 1], st.xAddr[i], tp.td[i], cb, tp.ic[2 * i], tp.ic[2 * i + 1]}
+        for w <- ws {
+            h1 = ckM1(h1, w)
+            h2 = ckM2(h2, w)
+        }
+        q := ckIdx(tp.b2, fr[i])
+        so := ckIdx(tp.sbo, fr[i])
+        if so >= 0 {
+            nc := tp.sbw[so]
+            h1 = ckM1(h1, nc)
+            h2 = ckM2(h2, nc)
+            for k <- iter.Range(so + 1, so + 1 + nc) {
+                g := tp.sbw[k]
+                bit := if g >= 0 { st.xAddr[xIndex(fr, g)] } else { 0 }
+                h1 = ckM1(h1, bit)
+                h2 = ckM2(h2, bit)
+            }
+        } else if q >= 0 {
+            n := table.Get(mut st.ckk, q + 4)
+            h1 = ckM1(h1, n)
+            h2 = ckM2(h2, n)
+            for j <- iter.Range(q + 5, q + 5 + n) {
+                bit := st.xAddr[xIndex(fr, table.Get(mut st.ckk, j))]
+                h1 = ckM1(h1, bit)
+                h2 = ckM2(h2, bit)
+            }
+        } else {
+            h1 = ckM1(h1, -1)
+            h2 = ckM2(h2, -1)
+        }
+    }
+    return []int{h1, h2}
+}
+
+// 束の格納場所の枠の数（同じK0で照合の値が違う束を並べて置く — 格納場所は同じ鍵の項目を1つしか持てない）
+const BX_SLOTS = 4
+const BX_K0TAG = 5008  // K0 の版（束の値の形の版を兼ねる）
+const BX_TOPTAG = 5004 // 束の仮定の版
+
+// 束の鍵 K0 と境の要約（packageのimportの順に下から）。
+// K0(p) = 版 ‖ ③' ‖ コンパイラの鍵の要約とpのソースの要約（γ）‖ pへ写る別のpackageの宣言の要約（desugar.PkgReach — 参照されるconst・総称・@expandの
+// 部分木）‖ pから届く別のpackageの関数の事実（境の要約の根の関数ごとのハッシュ — desugar.PkgReach）‖
+// 推移的なimportの各 d の (パス, 宣言の要約〔γ〕) の和。
+// 格納場所の鍵 = [K0の1語目 ⊕ 枠, K0の2語目 ⊕ 照合の値]（照合の値 = 束の仮定 pk[4b+1..2]。上からの事実は K0 に無いので、仮定が合う枠だけを当てる）。
+// 合う枠が無ければ空いた最初の枠に書き、全部埋まっていれば書かない（pk[4b+1..2] = 0）。検証モードは合う枠を作り直した束と比べる。
+// 要約の鍵 = 束の格納場所の鍵（仮定を含む）。束が当たり要約の鍵も当たれば格納場所から読み、ほかは作る（SOBER_SUM_CHECK=1・検証モードは全部作る）
+func bxKeyPlan(st mut St, t CkTab, fr []int, bmem [][]int, sh []int, pk mut []int, fco []int, fcw []int, names [][]byte, rk []int, ear bool) ([][]byte, []int) {
+    chk := lsEnvInt("SOBER_SUM_CHECK") == 1 && !ear
+    klv := if ear { 0 } else { lsEnvInt("SOBER_K0_LOG") }
+    klog := klv >= 1
+    nb := len(bmem)
+    np := desugar.PkgCount(mut st.d)
+    fg := bxFlags(mut st)
+    if len(st.bx.rc.rch) == 0 {
+        xs0, rch0 := desugar.PkgReach(mut st.d)
+        st.bx.rc = BxReach{xs: xs0, rch: rch0}
+    }
+    xs := st.bx.rc.xs
+    rch := st.bx.rc.rch
+    // 根の関数の事実のハッシュの表（済んだpackageの要約から — 名前の1語目 → ftab の添字・ftab = [名前の2語目, h1, h2, 本体の印]…）と、
+    // packageごとの根の無い置く関数のハッシュ（rest — 届く関数の本体が呼びうる総称の実体・合成の関数）
+    mut fmap := mut map[int]int{}
+    mut ftab := mut []int{}
+    mut fkm := mut map[int][]int{}   // 関数の添字 → 安定な名前（desugar.FnKey）
+    mut frm := mut map[int][]int{}   // 関数の添字 → 本体が参照する関数（desugar.FnRefs）
+    mut rest := mut []int{}
+    xFill(mut rest, 2 * np, 0)
+    mut pb := mut []int{}
+    xFill(mut pb, np, -1)
+    for b <- iter.Range(0, nb) {
+        pb[pk[4 * b]] = b
+    }
+    // importの成分（packageごとに [パス, 宣言の要約 ×2] — 鍵のインターフェースが無ければ鍵を作らない）
+    mut kd := mut []int{}
+    mut kok := true
+    for q <- iter.Range(0, np) {
+        ky := desugar.TyPkgKeys(mut st.d, q)
+        if len(ky) == 6 {
+            kd = append(kd, ky[4])
+            kd = append(kd, ky[5])
+        } else {
+            kok = false
+            kd = append(kd, 0)
+            kd = append(kd, 0)
+        }
+    }
+    mut done := mut []bool{}
+    mut need := mut []bool{}
+    for q <- iter.Range(0, np) {
+        done = append(done, false)
+        need = append(need, false)
+    }
+    // 要るpackage = 束のpackageから import で届くもの
+    mut stk := mut []int{}
+    for b <- iter.Range(0, nb) {
+        if !need[pk[4 * b]] {
+            need[pk[4 * b]] = true
+            stk = append(stk, pk[4 * b])
+        }
+    }
+    mut si := 0
+    while si < len(stk) {
+        for d <- desugar.PkgImports(mut st.d, stk[si]) {
+            if d < np && !need[d] {
+                need[d] = true
+                stk = append(stk, d)
+            }
+        }
+        si += 1
+    }
+    mut clo := mut [][]int{}
+    mut ph := mut []int{}
+    for q <- iter.Range(0, np) {
+        clo = append(clo, []int{})
+        ph = append(ph, 0)
+        ph = append(ph, 0)
+    }
+    mut sums := mut [][]byte{}
+    mut sk := mut []int{}
+    for b <- iter.Range(0, nb) {
+        sums = append(sums, []byte{})
+        sk = append(sk, 0)
+        sk = append(sk, 0)
+        sk = append(sk, 0)
+    }
+    mut left := 0
+    for q <- iter.Range(0, np) {
+        if need[q] {
+            left += 1
+        }
+    }
+    while left > 0 {
+        mut moved := false
+        for q <- iter.Range(0, np) {
+            if need[q] && !done[q] {
+                ims := desugar.PkgImports(mut st.d, q)
+                mut ready := true
+                for d <- ims {
+                    if d < np && d != q && !done[d] {
+                        ready = false
+                    }
+                }
+                if ready {
+                    // 推移的なimportの集合（印の列で和を取る）
+                    mut mk := mut []bool{}
+                    for z <- iter.Range(0, np) {
+                        mk = append(mk, false)
+                    }
+                    for d <- ims {
+                        if d < np && d != q {
+                            mk[d] = true
+                            for e <- clo[d] {
+                                mk[e] = true
+                            }
+                        }
+                    }
+                    mut cl := mut []int{}
+                    mut d1 := 0
+                    mut d2 := 0
+                    for d <- iter.Range(0, np) {
+                        if mk[d] {
+                            cl = append(cl, d)
+                            ps := bxStrHash(mut st, int(pkgPath(mut st, d)))
+                            d1 += ckM1(ckM1(ckM1(CK_S1, ps), kd[2 * d]), kd[2 * d + 1])
+                            d2 += ckM2(ckM2(ckM2(CK_S2, ps), kd[2 * d]), kd[2 * d + 1])
+                        }
+                    }
+                    clo[q] = freeze(cl)
+                    // q から届く別のpackageの関数の事実（根の関数ごとのハッシュ）と、届いたpackageの根の無い置く関数のハッシュ。要約に根の無い関数
+                    // （展開で消えた関数・置く関数の無いpackage）はソースの要約（γ）で代える
+                    mut r1 := 0
+                    mut r2 := 0
+                    mut rd := mut []bool{}
+                    for y0 <- iter.Range(0, np) {
+                        rd = append(rd, false)
+                    }
+                    // 届く関数 = q の直の参照（写る宣言の本体の中を含む — desugar.PkgReach）から、本体が q へ写りうる関数（境の要約の本体の印・
+                    // 総称・@expand・要約に無い関数）の本体の参照を推移的に辿ったもの
+                    mut fst := mut []int{}
+                    for g <- rch[q] {
+                        fst = append(fst, g)
+                    }
+                    mut fseen := mut map[int]int{}
+                    mut fz := 0
+                    while fz < len(fst) {
+                        g := fst[fz]
+                        fz += 1
+                        if fseen[g] == nil {
+                            fseen[g] = 1
+                            d := desugar.FnPkgOf(mut st.d, g)
+                            k0 := fkm[g]
+                            nk := if k0 != nil { k0 } else { desugar.FnKey(mut st.d, g) }
+                            if k0 == nil {
+                                fkm[g] = nk
+                            }
+                            n1 := nk[0]
+                            n2 := nk[1]
+                            e := fmap[n1]
+                            mut walk := desugar.FnCopies(mut st.d, g)
+                            if d == q {
+                                walk = false
+                            } else if e != nil && ftab[4 * e] == n2 {
+                                r1 += ckM1(ckM1(ckM1(CK_S1, n1), ftab[4 * e + 1]), ftab[4 * e + 2])
+                                r2 += ckM2(ckM2(ckM2(CK_S2, n2), ftab[4 * e + 1]), ftab[4 * e + 2])
+                                walk = walk || ftab[4 * e + 3] == 1
+                            } else {
+                                kyd := desugar.TyPkgKeys(mut st.d, d)
+                                s1 := if len(kyd) == 6 { kyd[2] } else { 0 }
+                                s2 := if len(kyd) == 6 { kyd[3] } else { 0 }
+                                r1 += ckM1(ckM1(ckM1(ckM1(CK_S1, 7), n1), s1), s2)
+                                r2 += ckM2(ckM2(ckM2(ckM2(CK_S2, 7), n2), s1), s2)
+                                walk = true
+                            }
+                            if d != q && d >= 0 && d < np && !rd[d] {
+                                rd[d] = true
+                                r1 += ckM1(ckM1(ckM1(CK_S1, 9), rest[2 * d]), rest[2 * d + 1])
+                                r2 += ckM2(ckM2(ckM2(CK_S2, 9), rest[2 * d]), rest[2 * d + 1])
+                            }
+                            if walk {
+                                f0 := frm[g]
+                                fs := if f0 != nil { f0 } else { desugar.FnRefs(mut st.d, g) }
+                                if f0 == nil {
+                                    frm[g] = fs
+                                }
+                                for h <- fs {
+                                    fst = append(fst, h)
+                                }
+                            }
+                        }
+                    }
+                    b := pb[q]
+                    if b >= 0 && ear {
+                        // 外れの集合の package（状態 6）は候補を引かない（下ろす）。要約は投機で上の package の K0 に渡す
+                        s6 := bxCState(mut st, q) == 6
+                        ky := desugar.TyPkgKeys(mut st.d, q)
+                        mut got := false
+                        if !s6 && kok && len(ky) == 6 {
+                            k1 := ckM1(ckM1(ckM1(ckM1(ckM1(ckM1(ckM1(ckM1(ckM1(ckM1(CK_S1, BX_K0TAG), fg[0]), ky[0]), ky[1]), ky[2]), ky[3]), xs[2 * q]), xs[2 * q + 1]), r1), d1)
+                            got = bxCEarlySlot(mut st, q, k1, mut sums, b, fg)
+                        }
+                        if !got {
+                            // 投機: 前の周の全部の後の要約か、package の前回の束の要約（索引）
+                            got = bxCSpecSum(mut st, q, fg, mut sums, b)
+                        }
+                        if !got && !s6 {
+                            bxCSetPq(mut st, q, 0, 5)
+                        }
+                    } else if b >= 0 && !ear {
+                        ky := desugar.TyPkgKeys(mut st.d, q)
+                        g1 := pk[4 * b + 1]
+                        g2 := pk[4 * b + 2]
+                        mut w1 := 0
+                        mut w2 := 0
+                        mut e := -1
+                        mut olds := mut []int{}
+                        mut found := false
+                        if kok && len(ky) == 6 {
+                            k1 := ckM1(ckM1(ckM1(ckM1(ckM1(ckM1(ckM1(ckM1(ckM1(ckM1(CK_S1, BX_K0TAG), fg[0]), ky[0]), ky[1]), ky[2]), ky[3]), xs[2 * q]), xs[2 * q + 1]), r1), d1)
+                            k2 := ckM2(ckM2(ckM2(ckM2(ckM2(ckM2(ckM2(ckM2(ckM2(ckM2(CK_S2, BX_K0TAG), fg[1]), ky[0]), ky[1]), ky[2]), ky[3]), xs[2 * q]), xs[2 * q + 1]), r2), d2)
+                            c2 := ckM2(ckM2(k2, g1), g2)
+                            mut free := -1
+                            mut used := 0
+                            for s <- iter.Range(0, BX_SLOTS) {
+                                c1 := ckM1(k1, s)
+                                if w1 == 0 && w2 == 0 {
+                                    if bcFind(st.bcv, BC_PKG, c1, c2) >= 0 {
+                                        w1 = c1
+                                        w2 = c2
+                                        found = true
+                                    } else if bcHasK1(st.bcv, BC_PKG, c1) {
+                                        used += 1
+                                        olds = append(olds, c1)
+                                    } else if free < 0 {
+                                        free = s
+                                    }
+                                }
+                            }
+                            if w1 != 0 || w2 != 0 {
+                                if !st.bcv.vfy {
+                                    e = bcFind(st.bcv, BC_PKG, w1, w2)
+                                }
+                            } else {
+                                if used > 0 {
+                                    // K0 が当たり仮定が合わない（上からの事実が変わった）
+                                    table.Set(mut st.bcCnt, 16, table.Get(mut st.bcCnt, 16) + 1)
+                                    if klog {
+                                        _ = io.WriteStderr(bytes("cache: k0 hit with other top-down facts: "))
+                                        _ = io.WriteStderr(names[b])
+                                        _ = io.WriteStderr(bytes("\n"))
+                                    }
+                                }
+                                if free >= 0 {
+                                    w1 = ckM1(k1, free)
+                                    w2 = c2
+                                }
+                            }
+                        }
+                        if bxCEar(mut st) {
+                            // 事前の引きの照合: 事前の K0 と今の K0・事前の枠と当たった枠
+                            k1n := if kok && len(ky) == 6 { ckM1(ckM1(ckM1(ckM1(ckM1(ckM1(ckM1(ckM1(ckM1(ckM1(CK_S1, BX_K0TAG), fg[0]), ky[0]), ky[1]), ky[2]), ky[3]), xs[2 * q]), xs[2 * q + 1]), r1), d1) } else { 0 }
+                            // 届く関数のpackageの事前の状態で、K0 の違いを説明する（枠の違い・投機の外れ・要約の無い package の仮定の外れ）
+                            // 届く関数のpackageに投機（状態 4）があれば 2・枠の違ったもの（状態 3）があれば 1・要約の無い package の仮定（状態 5・6）があれば 3
+                            mut expl := 0
+                            mut cul := -1
+                            for d0 <- iter.Range(0, np) {
+                                if rd[d0] {
+                                    s0 := bxCState(mut st, d0)
+                                    e0 := if s0 == 4 { 2 } else if s0 == 3 { 1 } else if s0 == 5 || s0 == 6 { 3 } else { 0 }
+                                    // 強さの順 2 > 1 > 3
+                                    if e0 != 0 && (expl == 0 || (expl == 3 && e0 != 3) || (expl == 1 && e0 == 2)) {
+                                        expl = e0
+                                        cul = d0
+                                    }
+                                }
+                            }
+                            bxCS(mut st, BXC_CUL, cul)
+                            bxCLate(mut st, q, k1n, if found { w1 } else { 0 }, if found { w2 } else { 0 }, names[b], fg, expl)
+                        }
+                        pk[4 * b + 1] = w1
+                        pk[4 * b + 2] = w2
+                        pk[4 * b + 3] = e
+                        if klv == 2 && e < 0 {
+                            _ = io.WriteStderr(bytes("cache: pkg miss "))
+                            _ = io.WriteStderr(names[b])
+                            _ = io.WriteStderr(bytes("\n"))
+                        }
+                        if w1 != 0 || w2 != 0 {
+                            sk[3 * b] = ckM1(ckM1(CK_S1, BX_SUMX), w1)
+                            sk[3 * b + 1] = ckM2(ckM2(CK_S2, BX_SUMX), w2)
+                        }
+                        mut got := false
+                        if e >= 0 && !chk {
+                            se := bcFindS(mut st, BC_PKG, sk[3 * b], sk[3 * b + 1])
+                            if se >= 0 {
+                                v, ok := bcVal(mut st, se)
+                                if ok {
+                                    sums[b] = v
+                                    got = true
+                                }
+                            }
+                        }
+                        if !got {
+                            sums[b] = bxSum1(mut st, t, fr, bmem[b], sh, fco, fcw, rk)
+                            sk[3 * b + 2] = if w1 != 0 || w2 != 0 { 1 } else { 0 }
+                        }
+                        if chk && e < 0 && len(olds) > 0 {
+                            bxTdWatch(mut st, freeze(olds), sums[b], fr, bmem[b], names[b])
+                        }
+                    }
+                    if b >= 0 {
+                        // 根の関数のハッシュの表を読む（版が違えば読まない — 届いた関数はソースの要約で代わる）
+                        mut sr := BcRd{b: sums[b], at: 0, end: len(sums[b]), bad: false}
+                        if bcGet(mut sr) == BX_SUMV {
+                            nk := bcGet(mut sr)
+                            for y <- iter.Range(0, 2 * nk) {
+                                _ = bcGet(mut sr)
+                            }
+                            nr := bcGet(mut sr)
+                            for y <- iter.Range(0, nr) {
+                                a1 := bcGet(mut sr)
+                                a2 := bcGet(mut sr)
+                                f1 := bcGet(mut sr)
+                                f2 := bcGet(mut sr)
+                                fb := bcGet(mut sr)
+                                if !sr.bad {
+                                    if a1 == 0 && a2 == 0 {
+                                        rest[2 * q] = f1
+                                        rest[2 * q + 1] = f2
+                                    } else {
+                                        fmap[a1] = len(ftab) / 4
+                                        ftab = append(ftab, a2)
+                                        ftab = append(ftab, f1)
+                                        ftab = append(ftab, f2)
+                                        ftab = append(ftab, fb)
+                                    }
+                                }
+                            }
+                        }
+                        hb := bxHashB(sums[b])
+                        ph[2 * q] = hb[0]
+                        ph[2 * q + 1] = hb[1]
+                    }
+                    done[q] = true
+                    left -= 1
+                    moved = true
+                }
+            }
+        }
+        if !moved {
+            // importの循環（loaderが拒否する — 来ない）
+            left = 0
+        }
+    }
+    return freeze(sums), freeze(sk)
+}
+
+// bcCaptureAll の後: 外れの束を組んで書きのバッチへ（検証モードは bcAdd が格納場所の束と比べる — 食い違った束はpackageの名前を先に印字）
+func bxWrite(st mut St, pl BxPlan) {
+    mut wb0 := mut map[int]int{}
+    for k <- iter.Range(0, table.Len(mut st.bcWi) / 6) {
+        if table.Get(mut st.bcWi, 6 * k) == BC_B2 {
+            wb0[table.Get(mut st.bcWi, 6 * k + 1)] = k
+        }
+    }
+    wb := freeze(wb0)
+    // 書いた束の数・バイト・そのうち模擬用の列のバイト（長さの語を含む — SOBER_CACHE_STAT=1）
+    mut nbw := 0
+    mut bsz := 0
+    mut ssz := 0
+    for b <- iter.Range(0, len(pl.mem)) {
+        if pl.pk[4 * b + 3] < 0 && (pl.pk[4 * b + 1] != 0 || pl.pk[4 * b + 2] != 0) {
+            mut out := mut []byte{}
+            for x <- bcVarints([]int{len(pl.mem[b])}) {
+                out = append(out, x)
+            }
+            mut ok := true
+            mut s1 := 0
+            for i <- pl.mem[b] {
+                keyed := st.bcBk[2 * i] != 0 || st.bcBk[2 * i + 1] != 0
+                mut v := []byte{}
+                if keyed {
+                    v0, vok := bxValOf(mut st, pl, i, wb)
+                    v = v0
+                    if !vok {
+                        ok = false
+                    }
+                }
+                for x <- bcVarints([]int{pl.sh[2 * i], pl.sh[2 * i + 1], st.bcBk[2 * i], st.bcBk[2 * i + 1], len(v)}) {
+                    out = append(out, x)
+                }
+                for x <- v {
+                    out = append(out, x)
+                }
+                mut w := mut []int{pl.evo[i + 1] - pl.evo[i]}
+                for q <- iter.Range(pl.evo[i], pl.evo[i + 1]) {
+                    w = append(w, pl.evw[q])
+                }
+                for x <- bcVarints(freeze(w)) {
+                    out = append(out, x)
+                }
+                sl := bcVarints([]int{pl.so[i + 1] - pl.so[i]})
+                for x <- sl {
+                    out = append(out, x)
+                }
+                for q <- iter.Range(pl.so[i], pl.so[i + 1]) {
+                    out = append(out, pl.sb[q])
+                }
+                s1 += len(sl) + pl.so[i + 1] - pl.so[i]
+            }
+            for x <- pl.tb[b] {
+                out = append(out, x)
+            }
+            s1 += len(pl.tb[b])
+            if ok {
+                vb := freeze(out)
+                nbw += 1
+                bsz += len(vb)
+                ssz += s1
+                k1 := pl.pk[4 * b + 1]
+                k2 := pl.pk[4 * b + 2]
+                if st.bcv.vfy {
+                    e := bcFindS(mut st, BC_PKG, k1, k2)
+                    if e >= 0 && !bcSameS(mut st, e, vb) {
+                        _ = io.WriteStderr(bytes("cache: stale bundle of package "))
+                        _ = io.WriteStderr(pl.names[b])
+                        _ = io.WriteStderr(bytes("\n"))
+                    }
+                }
+                bcAdd(mut st, BC_PKG, k1, k2, vb)
+                if len(pl.src[b]) > 0 {
+                    bcAdd(mut st, BC_PKG, ckM1(ckM1(CK_S1, BX_SRCX), k1), ckM2(ckM2(CK_S2, BX_SRCX), k2), bxSrcBytes(pl.src[b]))
+                }
+                bxCIdxWrite(mut st, pl.ib, b, k1, k2)
+            }
+        } else if pl.pk[4 * b + 3] >= 0 && len(pl.ib) > 0 && pl.ib[3 * b + 2] == 1 {
+            bxCIdxWrite(mut st, pl.ib, b, pl.pk[4 * b + 1], pl.pk[4 * b + 2])
+        }
+    }
+    // 境の要約（要約の鍵 — bxKeyPlan）: 作った要約を、格納場所に同じ鍵の項目があれば比べ（検証モード = 古い要約・
+    // ほか = 要約が格納場所の当たり方に依る — SOBER_SUM_CHECK=1 で全部作るとき）、無ければ書く
+    for b <- iter.Range(0, len(pl.mem)) {
+        if pl.sk[3 * b + 2] == 1 {
+            k1 := pl.sk[3 * b]
+            k2 := pl.sk[3 * b + 1]
+            e := bcFindS(mut st, BC_PKG, k1, k2)
+            if e >= 0 && !bcSameS(mut st, e, pl.sum[b]) {
+                if st.bcv.vfy {
+                    _ = io.WriteStderr(bytes("cache: stale summary of package "))
+                } else {
+                    _ = io.WriteStderr(bytes("cache: summary depends on the cache state: "))
+                }
+                _ = io.WriteStderr(pl.names[b])
+                _ = io.WriteStderr(bytes("\n"))
+            }
+            // 同じ鍵があれば書かない（検証モードはbcAddが比べて古い項目に積む — 終わりで落ちる）
+            bcAdd(mut st, BC_PKG, k1, k2, pl.sum[b])
+        }
+    }
+    if lsEnvInt("SOBER_CACHE_STAT") == 1 {
+        mut tot := 0
+        mut mx := 0
+        for v <- pl.sum {
+            tot += len(v)
+            if len(v) > mx {
+                mx = len(v)
+            }
+        }
+        // 本体の事実の内訳（展開 / 特化 / P0' の入力: 数・バイト・詰めずに作れなかった数）
+        mut bn := mut []int{0, 0, 0, 0, 0, 0, 0, 0, 0}
+        for k <- iter.Range(0, table.Len(mut st.bx.ev) / BX_EVW) {
+            c := table.Get(mut st.bx.ev, BX_EVW * k + 1)
+            if bxBodyCode(c) {
+                j := if c == BX_ILBODY { 0 } else if c == BX_SPPRE { 3 } else { 6 }
+                y := table.Get(mut st.bx.ev, BX_EVW * k + 5)
+                bn[j] += 1
+                if y < 0 {
+                    bn[j + 2] += 1
+                } else {
+                    bn[j + 1] += y
+                }
+            }
+        }
+        _ = io.WriteStderr(bytes("cache: bundle written=${nbw} bytes=${bsz} replay=${ssz}\n"))
+        _ = io.WriteStderr(bytes("cache: summary packages=${len(pl.sum)} bytes=${tot} max=${mx} inline=${bn[0]}/${bn[1]}B/${bn[2]}x spec=${bn[3]}/${bn[4]}B/${bn[5]}x opt=${bn[6]}/${bn[7]}B/${bn[8]}x\n"))
+    }
+}
+
+// IRの本体の呼び出しの辺 [種類, 相手]…（B2の後の記録の無い関数 — 切替・罠を持つ関数など）
+func bxCallsIr(st mut St, f FnRef) []int {
+    cs := bcCalls(mut st, f)
+    return cs[0:len(cs) - 1]
+}

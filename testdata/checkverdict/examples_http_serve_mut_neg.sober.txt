@@ -1,0 +1,2 @@
+sober: load error at examples/http_serve_mut_neg.sober:12:13: this handler runs on a task of its own (each connection of net.Serve, each HTTP/2 stream of http.server.ServeConn, the server of net.Pair), so it cannot capture a mut binding or mut contents. Rewrite: keep the shared state in a task.Domain made in the scope that calls Serve (task.NewDomain), capture the domain, and read or write it in the handler with task.Read / task.Update
+exit=1

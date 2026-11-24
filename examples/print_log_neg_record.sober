@@ -1,0 +1,10 @@
+package main
+
+// 負例（拒否）: print.Logの記録はstructで書く（型の名前が記録の鍵になる）。推論した型がstructでなければ拒否する
+
+import "std/print"
+
+func main() {
+    n := 3
+    print.Log(n)
+}

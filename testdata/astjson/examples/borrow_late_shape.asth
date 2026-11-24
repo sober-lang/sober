@@ -1,0 +1,12 @@
+@@full	168a9108a3119630	842	20602
+@head	f8802cba5eefdec2	0	31
+func buf	0020a13187e8f3d7	32	1221
+func main	479ed2e11e8267d5	25	1040
+func sec	a150aa46d00a4136	16	665
+func top	eb206116b165763c	19	851
+type Fn	c701df2bc9983f3d	6	262
+type Handler	1148a05983b3a274	3	151
+type Resp	69fc7931f311c9ee	3	138
+type Route	08074654e68eaeef	2	116
+type Stream	9c342b536a5b070b	5	234
+type run	aabafd0bbc38299c	2	109

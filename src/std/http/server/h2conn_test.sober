@@ -1,0 +1,954 @@
+package server
+
+// HTTP/2の接続（ServeConnのproto: Both）をloopbackで: 相手の役がフレームを手で組んで送り、応答のHEADERSとDATAを読む。
+// 1本の要求・同じ接続の複数のストリーム・遅いハンドラが速いハンドラを止めないこと・本文のある要求・形の誤りのRST_STREAM
+
+import "std/http"
+import "std/internal/h2frame"
+import "std/internal/hpack"
+import "std/net"
+import "std/os"
+import "std/task"
+
+func h2tRoute(r Request) Response {
+    if r.path == "/slow" {
+        os.Sleep(150)
+        return Text("slow")
+    }
+    if r.path == "/echo" {
+        return Response{status: http.OK, contentType: "application/octet-stream", body: r.body}
+    }
+    if r.path == "/big" {
+        mut b := mut []byte{}
+        while len(b) < 40000 {
+            b = append(b, byte(97 + len(b) % 26))
+        }
+        return Response{status: http.OK, contentType: "text/plain", body: freeze(b)}
+    }
+    if r.path == "/panic" {
+        xs := []int{1}
+        return Text("x${xs[len(bytes(r.path))]}")
+    }
+    return Text("hello ${r.path}")
+}
+
+// 要求のヘッダのブロック
+func h2tBlock(method string, path string) []byte {
+    mut blk := mut []byte{}
+    internal.hpack.Field(mut blk, bytes(":method"), bytes(method), false)
+    internal.hpack.Field(mut blk, bytes(":scheme"), bytes("http"), false)
+    internal.hpack.Field(mut blk, bytes(":path"), bytes(path), false)
+    internal.hpack.Field(mut blk, bytes(":authority"), bytes("localhost"), false)
+    return freeze(blk)
+}
+
+// 送る列: 前置き・空のSETTINGS・要求（[sid, ES]ごとのHEADERS）・本文（あれば最後のストリームへDATA）
+func h2tRequests(paths []string, body []byte) []byte {
+    mut out := mut []byte{}
+    for x <- bytes(internal.h2frame.Preface) {
+        out = append(out, x)
+    }
+    internal.h2frame.PutSettings(mut out, []int{}, []int{})
+    mut i := 0
+    while i < len(paths) {
+        sid := i * 2 + 1
+        last := i == len(paths) - 1
+        hasBody := last && len(body) > 0
+        blk := h2tBlock(if hasBody { "POST" } else { "GET" }, paths[i])
+        internal.h2frame.PutHead(mut out, len(blk), internal.h2frame.Headers, internal.h2frame.EndHeaders | (if hasBody { 0 } else { internal.h2frame.EndStream }), sid)
+        for x <- blk {
+            out = append(out, x)
+        }
+        if hasBody {
+            internal.h2frame.PutHead(mut out, len(body), internal.h2frame.Data, internal.h2frame.EndStream, sid)
+            for x <- body {
+                out = append(out, x)
+            }
+        }
+        i += 1
+    }
+    return freeze(out)
+}
+
+// 相手の役: 送って、want本のストリームがEND_STREAMで終わるまで読む（wantが負なら、ストリームID −want が終わるまで）。結果 = 終わった順のストリームID・status・本文の長さの列
+// （[sid, status, 本文の長さ, …]・RST_STREAMはstatus = -誤りの符号）
+func h2tClient(port int, req []byte, want int) ([]int, error?) {
+    mut res := mut []int{}
+    for c <- net.Dial("127.0.0.1:${port}")? {
+        net.Send(c, req)?
+        mut buf := mut []byte{}
+        mut d := internal.hpack.Dec{}
+        internal.hpack.Init(mut d)
+        mut st := mut []int{}
+        mut bl := mut []int{}
+        mut ids := mut []int{}
+        mut done := 0
+        for chunk <- net.Recv(c)? {
+            for x <- chunk {
+                buf = append(buf, x)
+            }
+            mut at := 0
+            b := freeze(buf)
+            while len(b) - at >= 9 && len(b) - at >= 9 + internal.h2frame.Len(internal.h2frame.Head(b, at)) {
+                f := internal.h2frame.Head(b, at)
+                n := internal.h2frame.Len(f)
+                typ := internal.h2frame.Type(f)
+                sid := internal.h2frame.Sid(f)
+                p := at + 9
+                mut k := 0
+                while k < len(ids) && ids[k] != sid {
+                    k += 1
+                }
+                if k == len(ids) && sid != 0 {
+                    ids = append(ids, sid)
+                    st = append(st, 0)
+                    bl = append(bl, 0)
+                }
+                if typ == internal.h2frame.Settings && !internal.h2frame.Has(f, internal.h2frame.Ack) {
+                    mut ack := mut []byte{}
+                    internal.h2frame.PutSettingsAck(mut ack)
+                    net.Send(c, freeze(ack))?
+                } else if typ == internal.h2frame.Headers {
+                    mut ho := mut []byte{}
+                    mut fs := mut []int{}
+                    _ = internal.hpack.Decode(mut d, b[p:p + n], mut ho, mut fs, 65536)
+                    hv := freeze(ho)
+                    st[k] = (int(hv[fs[2]]) - 48) * 100 + (int(hv[fs[2] + 1]) - 48) * 10 + int(hv[fs[2] + 2]) - 48
+                } else if typ == internal.h2frame.Data {
+                    bl[k] = bl[k] + n
+                } else if typ == internal.h2frame.RstStream {
+                    st[k] = 0 - internal.h2frame.RstCode(b, p)
+                    res = append(res, sid)
+                    res = append(res, st[k])
+                    res = append(res, bl[k])
+                    done += 1
+                }
+                if (typ == internal.h2frame.Headers || typ == internal.h2frame.Data) && internal.h2frame.Has(f, internal.h2frame.EndStream) {
+                    res = append(res, sid)
+                    res = append(res, st[k])
+                    res = append(res, bl[k])
+                    done += 1
+                }
+                at += 9 + n
+            }
+            mut rest := mut []byte{}
+            while at < len(b) {
+                rest = append(rest, b[at])
+                at += 1
+            }
+            buf = rest
+            if want > 0 && done >= want || want < 0 && h2tSeen(freeze(res), 0 - want) {
+                break
+            }
+        }
+        break
+    }
+    return freeze(res), nil
+}
+
+// 結果の列（[sid, status, 本文の長さ, …]）にストリームsidがあるか
+func h2tSeen(r []int, sid int) bool {
+    mut i := 0
+    while i + 2 < len(r) {
+        if r[i] == sid {
+            return true
+        }
+        i += 3
+    }
+    return false
+}
+
+func h2tServe(l net.Listener) (int, error?) {
+    for c <- net.Accept(l)? {
+        ServeConn(c, h2tRoute, proto: Both)?
+        break
+    }
+    return 0, nil
+}
+
+// 送ってwant本を読む（結果はh2tClientと同じ）
+func h2tRun(req []byte, want int) []int {
+    return h2tRun2(req, want) catch []int{-2}
+}
+
+func h2tRun2(req []byte, want int) ([]int, error?) {
+    mut r := mut []int{}
+    for l <- net.Listen("127.0.0.1:0")? {
+        port := net.Port(l)
+        v, e := task.Run((s task.Scope) => {
+            h := task.Spawn(s, () => h2tClient(port, req, want) catch []int{-1})
+            _ = h2tServe(l) catch -1
+            task.Join(h)
+        }, deadline: 10000 * task.MS)
+        if e == nil {
+            for x <- v {
+                r = append(r, x)
+            }
+        }
+    }
+    return freeze(r), nil
+}
+
+func TestH2One() {
+    r := h2tRun(h2tRequests([]string{"/a"}, []byte{}), 1)
+    assert(len(r) == 3 && r[0] == 1 && r[1] == 200 && r[2] == len(bytes("hello /a")))
+}
+
+// 遅いストリーム（1）の前に、後の速いストリーム（3・5）が終わる
+func TestH2SlowFast() {
+    r := h2tRun(h2tRequests([]string{"/slow", "/b", "/c"}, []byte{}), 3)
+    assert(len(r) == 9)
+    assert(r[6] == 1 && r[7] == 200 && r[8] == 4)
+    assert(r[0] != 1 && r[3] != 1)
+}
+
+// 本文のある要求（POST /echo）と、窓とMAX_FRAME_SIZEで切られる大きい応答
+func TestH2BodyBig() {
+    mut body := mut []byte{}
+    while len(body) < 3000 {
+        body = append(body, byte(48 + len(body) % 10))
+    }
+    r := h2tRun(h2tRequests([]string{"/big", "/echo"}, freeze(body)), 2)
+    assert(len(r) == 6)
+    mut i := 0
+    mut seen := 0
+    while i < 6 {
+        if r[i] == 1 {
+            // 40000バイトは相手の窓（既定65535）に入り、16384ずつのDATAに切られる
+            assert(r[i + 1] == 200 && r[i + 2] == 40000)
+            seen += 1
+        }
+        if r[i] == 3 {
+            assert(r[i + 1] == 200 && r[i + 2] == 3000)
+            seen += 1
+        }
+        i += 3
+    }
+    assert(seen == 2)
+}
+
+// 形の誤り（大文字の名前）はRST_STREAM（PROTOCOL_ERROR）・接続は続き、後の要求に応じる
+func TestH2Malformed() {
+    mut out := mut []byte{}
+    for x <- bytes(internal.h2frame.Preface) {
+        out = append(out, x)
+    }
+    internal.h2frame.PutSettings(mut out, []int{}, []int{})
+    mut blk := mut []byte{}
+    for x <- h2tBlock("GET", "/x") {
+        blk = append(blk, x)
+    }
+    // 字句の名前（大文字）: 0x00・名前の長さ・名前・値の長さ・値
+    blk = append(blk, byte(0))
+    blk = append(blk, byte(3))
+    for x <- bytes("Bad") {
+        blk = append(blk, x)
+    }
+    blk = append(blk, byte(1))
+    blk = append(blk, byte(49))
+    bb := freeze(blk)
+    internal.h2frame.PutHead(mut out, len(bb), internal.h2frame.Headers, internal.h2frame.EndHeaders | internal.h2frame.EndStream, 1)
+    for x <- bb {
+        out = append(out, x)
+    }
+    b2 := h2tBlock("GET", "/ok")
+    internal.h2frame.PutHead(mut out, len(b2), internal.h2frame.Headers, internal.h2frame.EndHeaders | internal.h2frame.EndStream, 3)
+    for x <- b2 {
+        out = append(out, x)
+    }
+    r := h2tRun(freeze(out), 2)
+    // 終わる順は子の走り方で決まる（形の誤りも子が見つける）ので、ストリームごとに見る
+    assert(len(r) == 6)
+    mut ok := 0
+    mut i := 0
+    while i < 6 {
+        if r[i] == 1 && r[i + 1] == 0 - internal.h2frame.ProtocolError {
+            ok += 1
+        }
+        if r[i] == 3 && r[i + 1] == 200 {
+            ok += 1
+        }
+        i += 3
+    }
+    assert(ok == 2)
+}
+
+// ---- streamのレスポンス・gzip・Delayed・HEAD（5c）
+
+func h2sRoute(r Request) Response {
+    if r.path == "/stream" {
+        // 長さ不定: emit 3回（2回目は溜めのチャンクより大きい）
+        return Response{status: http.OK, contentType: "text/plain", stream: (out, emit) => {
+            _ = emit(mut out, bytes("abc"))
+            mut big := mut []byte{}
+            while len(big) < 20000 {
+                big = append(big, byte(120))
+            }
+            _ = emit(mut out, freeze(big))
+            emit(mut out, bytes("xyz"))
+        }}
+    }
+    if r.path == "/len" {
+        return Response{status: http.OK, contentType: "text/plain", length: 6, stream: (out, emit) => {
+            _ = emit(mut out, bytes("abc"))
+            emit(mut out, bytes("def"))
+        }}
+    }
+    if r.path == "/badlen" {
+        // lengthより短い: ストリームはRST_STREAM（INTERNAL_ERROR）
+        return Response{status: http.OK, contentType: "text/plain", length: 10, stream: (out, emit) => emit(mut out, bytes("abc"))}
+    }
+    if r.path == "/delay" {
+        return Delayed(150, Text("late"))
+    }
+    if r.path == "/gz" {
+        mut b := mut []byte{}
+        while len(b) < 5000 {
+            b = append(b, byte(97 + len(b) % 3))
+        }
+        return Response{status: http.OK, contentType: "text/html", body: freeze(b)}
+    }
+    return Text("hello ${r.path}")
+}
+
+// 送ってwant本のストリームを読む（結果 = 終わった順の [sid, status, 本文の長さ, content-encodingがgzipなら1]）
+func h2sClient(port int, req []byte, want int) ([]int, error?) {
+    mut res := mut []int{}
+    for c <- net.Dial("127.0.0.1:${port}")? {
+        net.Send(c, req)?
+        mut buf := mut []byte{}
+        mut d := internal.hpack.Dec{}
+        internal.hpack.Init(mut d)
+        mut ids := mut []int{}
+        mut st := mut []int{}
+        mut bl := mut []int{}
+        mut gzs := mut []int{}
+        mut done := 0
+        for chunk <- net.Recv(c)? {
+            for x <- chunk {
+                buf = append(buf, x)
+            }
+            mut at := 0
+            b := freeze(buf)
+            while len(b) - at >= 9 && len(b) - at >= 9 + internal.h2frame.Len(internal.h2frame.Head(b, at)) {
+                f := internal.h2frame.Head(b, at)
+                n := internal.h2frame.Len(f)
+                typ := internal.h2frame.Type(f)
+                sid := internal.h2frame.Sid(f)
+                p := at + 9
+                mut k := 0
+                while k < len(ids) && ids[k] != sid {
+                    k += 1
+                }
+                if k == len(ids) && sid != 0 {
+                    ids = append(ids, sid)
+                    st = append(st, 0)
+                    bl = append(bl, 0)
+                    gzs = append(gzs, 0)
+                }
+                if typ == internal.h2frame.Settings && !internal.h2frame.Has(f, internal.h2frame.Ack) {
+                    mut ack := mut []byte{}
+                    internal.h2frame.PutSettingsAck(mut ack)
+                    net.Send(c, freeze(ack))?
+                } else if typ == internal.h2frame.Headers {
+                    mut ho := mut []byte{}
+                    mut fs := mut []int{}
+                    _ = internal.hpack.Decode(mut d, b[p:p + n], mut ho, mut fs, 65536)
+                    hv := freeze(ho)
+                    fv := freeze(fs)
+                    st[k] = (int(hv[fv[2]]) - 48) * 100 + (int(hv[fv[2] + 1]) - 48) * 10 + int(hv[fv[2] + 2]) - 48
+                    mut q := 0
+                    while q < len(fv) {
+                        if h2Is(hv, fv[q], fv[q + 1], "content-encoding") && h2Is(hv, fv[q + 2], fv[q + 3], "gzip") {
+                            gzs[k] = 1
+                        }
+                        q += 4
+                    }
+                } else if typ == internal.h2frame.Data {
+                    bl[k] = bl[k] + n
+                } else if typ == internal.h2frame.RstStream {
+                    res = append(res, sid)
+                    res = append(res, 0 - internal.h2frame.RstCode(b, p))
+                    res = append(res, bl[k])
+                    res = append(res, gzs[k])
+                    done += 1
+                }
+                if (typ == internal.h2frame.Headers || typ == internal.h2frame.Data) && internal.h2frame.Has(f, internal.h2frame.EndStream) {
+                    res = append(res, sid)
+                    res = append(res, st[k])
+                    res = append(res, bl[k])
+                    res = append(res, gzs[k])
+                    done += 1
+                }
+                at += 9 + n
+            }
+            mut rest := mut []byte{}
+            while at < len(b) {
+                rest = append(rest, b[at])
+                at += 1
+            }
+            buf = rest
+            if done >= want {
+                break
+            }
+        }
+        break
+    }
+    return freeze(res), nil
+}
+
+func h2sServe(l net.Listener) (int, error?) {
+    for c <- net.Accept(l)? {
+        ServeConn(c, h2sRoute, compression: Gzip{level: 6, fresh: true}, proto: H2)?
+        break
+    }
+    return 0, nil
+}
+
+func h2sRun2(req []byte, want int) ([]int, error?) {
+    mut r := mut []int{}
+    for l <- net.Listen("127.0.0.1:0")? {
+        port := net.Port(l)
+        v, e := task.Run((s task.Scope) => {
+            h := task.Spawn(s, () => h2sClient(port, req, want) catch []int{-1})
+            _ = h2sServe(l) catch -1
+            task.Join(h)
+        }, deadline: 10000 * task.MS)
+        if e == nil {
+            for x <- v {
+                r = append(r, x)
+            }
+        }
+    }
+    return freeze(r), nil
+}
+
+// 要求の並び（GET・gzipを受けるならaccept-encodingつき・HEAD）
+func h2sReq(paths []string, methods []string, gzipOk bool) []byte {
+    mut out := mut []byte{}
+    for x <- bytes(internal.h2frame.Preface) {
+        out = append(out, x)
+    }
+    internal.h2frame.PutSettings(mut out, []int{}, []int{})
+    mut i := 0
+    while i < len(paths) {
+        mut blk := mut []byte{}
+        for x <- h2tBlock(methods[i], paths[i]) {
+            blk = append(blk, x)
+        }
+        if gzipOk {
+            internal.hpack.Field(mut blk, bytes("accept-encoding"), bytes("gzip"), false)
+        }
+        bb := freeze(blk)
+        internal.h2frame.PutHead(mut out, len(bb), internal.h2frame.Headers, internal.h2frame.EndHeaders | internal.h2frame.EndStream, i * 2 + 1)
+        for x <- bb {
+            out = append(out, x)
+        }
+        i += 1
+    }
+    return freeze(out)
+}
+
+// 結果からsidの [status, 本文の長さ, gzip]（無ければ [-9, -9, -9]）
+func h2sOf(r []int, sid int) []int {
+    mut i := 0
+    while i + 3 < len(r) {
+        if r[i] == sid {
+            return []int{r[i + 1], r[i + 2], r[i + 3]}
+        }
+        i += 4
+    }
+    return []int{-9, -9, -9}
+}
+
+func TestH2Stream() {
+    r := h2sRun2(h2sReq([]string{"/stream", "/len", "/badlen", "/plain"}, []string{"GET", "GET", "GET", "GET"}, false), 4) catch []int{}
+    s1 := h2sOf(r, 1)
+    assert(s1[0] == 200 && s1[1] == 20006)
+    s3 := h2sOf(r, 3)
+    assert(s3[0] == 200 && s3[1] == 6)
+    s5 := h2sOf(r, 5)
+    assert(s5[0] == 0 - internal.h2frame.InternalError)
+    s7 := h2sOf(r, 7)
+    assert(s7[0] == 200 && s7[1] == len(bytes("hello /plain")))
+}
+
+// gzip（compression: と accept-encoding）・HEAD（本文なし）・Delayed（待つ子が後の要求を止めない）
+func TestH2GzipHeadDelay() {
+    r := h2sRun2(h2sReq([]string{"/delay", "/gz", "/gz", "/stream"}, []string{"GET", "GET", "HEAD", "GET"}, true), 4) catch []int{}
+    assert(len(r) == 16)
+    // Delayedのストリーム1が最後に終わる
+    assert(r[12] == 1)
+    d := h2sOf(r, 1)
+    assert(d[0] == 200 && d[1] == 4)
+    g := h2sOf(r, 3)
+    assert(g[0] == 200 && g[2] == 1 && g[1] > 0 && g[1] < 5000)
+    hd := h2sOf(r, 5)
+    assert(hd[0] == 200 && hd[1] == 0 && hd[2] == 1)
+    // 圧縮するstream（text/plainは圧縮向き）
+    sz := h2sOf(r, 7)
+    assert(sz[0] == 200 && sz[2] == 1 && sz[1] > 0)
+}
+
+// ---- 入場の待ちの列（6）: 天井（scopeのbudget:）を小さくして、遅いストリームを多く送る。入らない分は列で待ち、空きの知らせで子になり、全部応答される
+
+func h2qRoute(r Request) Response {
+    os.Sleep(30)
+    return Text("q ${r.path}")
+}
+
+func h2qServe(l net.Listener) (int, error?) {
+    for c <- net.Accept(l)? {
+        ServeConn(c, h2qRoute, proto: Both)?
+        break
+    }
+    return 0, nil
+}
+
+func h2qRun2(req []byte, want int) ([]int, error?) {
+    mut r := mut []int{}
+    for l <- net.Listen("127.0.0.1:0")? {
+        port := net.Port(l)
+        v, e := task.Run((s task.Scope) => {
+            h := task.Spawn(s, () => h2tClient(port, req, want) catch []int{-1})
+            _, e2 := task.Run((s2 task.Scope) => h2qServe(l) catch -1, budget: 96 * task.KB)
+            _ = e2
+            task.Join(h)
+        }, deadline: 20000 * task.MS)
+        if e == nil {
+            for x <- v {
+                r = append(r, x)
+            }
+        }
+    }
+    return freeze(r), nil
+}
+
+func TestH2Queue() {
+    mut paths := mut []string{}
+    mut i := 0
+    while i < 24 {
+        paths = append(paths, "/s${i}")
+        i += 1
+    }
+    in0 := task.Ledger().inline
+    r := h2qRun2(h2tRequests(freeze(paths), []byte{}), 24) catch []int{}
+    // 入らないストリームは縮退（接続のtaskの上で走る）せずに列で待った（入場の見込みを外すと、天井96 KiBで半分ほどが縮退する）。
+    // 1回までは、見込みを読んでからspawnするまでに他のtaskが入る競合の窓
+    assert(task.Ledger().inline - in0 <= 1)
+    assert(len(r) == 72)
+    mut ok := 0
+    mut j := 0
+    while j < 72 {
+        if r[j + 1] == 200 {
+            ok += 1
+        }
+        j += 3
+    }
+    assert(ok == 24)
+}
+
+// 前置き・n個の空のSETTINGS・（getなら）/aのGET
+func h2fReq(n int, get bool) []byte {
+    mut out := mut []byte{}
+    for x <- bytes(internal.h2frame.Preface) {
+        out = append(out, x)
+    }
+    mut i := 0
+    while i < n {
+        internal.h2frame.PutSettings(mut out, []int{}, []int{})
+        i += 1
+    }
+    if get {
+        blk := h2tBlock("GET", "/a")
+        internal.h2frame.PutHead(mut out, len(blk), internal.h2frame.Headers, internal.h2frame.EndHeaders | internal.h2frame.EndStream, 1)
+        for x <- blk {
+            out = append(out, x)
+        }
+    }
+    return freeze(out)
+}
+
+// 相手の役: 送って、GOAWAYかストリーム1の終わりか閉じるまで読む。結果 = [SETTINGSのACKの数, GOAWAYの符号（-1 = 無し）, ストリーム1のHEADERSの数]
+func h2fClient(port int, req []byte) ([]int, error?) {
+    mut acks := 0
+    mut code := -1
+    mut heads := 0
+    for c <- net.Dial("127.0.0.1:${port}")? {
+        net.Send(c, req)?
+        mut buf := mut []byte{}
+        for chunk <- net.Recv(c)? {
+            for x <- chunk {
+                buf = append(buf, x)
+            }
+            mut at := 0
+            b := freeze(buf)
+            mut end := false
+            while len(b) - at >= 9 && len(b) - at >= 9 + internal.h2frame.Len(internal.h2frame.Head(b, at)) {
+                f := internal.h2frame.Head(b, at)
+                typ := internal.h2frame.Type(f)
+                if typ == internal.h2frame.Settings && internal.h2frame.Has(f, internal.h2frame.Ack) {
+                    acks += 1
+                } else if typ == internal.h2frame.Goaway {
+                    _, gc := internal.h2frame.GoawayInfo(b, at + 9)
+                    code = gc
+                    end = true
+                } else if typ == internal.h2frame.Headers {
+                    heads += 1
+                    end = internal.h2frame.Has(f, internal.h2frame.EndStream)
+                } else if typ == internal.h2frame.Data && internal.h2frame.Has(f, internal.h2frame.EndStream) {
+                    end = true
+                }
+                at += 9 + internal.h2frame.Len(f)
+            }
+            mut rest := mut []byte{}
+            while at < len(b) {
+                rest = append(rest, b[at])
+                at += 1
+            }
+            buf = rest
+            if end {
+                break
+            }
+        }
+        break
+    }
+    return []int{acks, code, heads}, nil
+}
+
+func h2fRun(req []byte) []int {
+    return h2fRun2(req) catch []int{-2}
+}
+
+func h2fRun2(req []byte) ([]int, error?) {
+    mut r := mut []int{}
+    for l <- net.Listen("127.0.0.1:0")? {
+        port := net.Port(l)
+        v, e := task.Run((s task.Scope) => {
+            h := task.Spawn(s, () => h2fClient(port, req) catch []int{-1})
+            _ = h2tServe(l) catch -1
+            task.Join(h)
+        }, deadline: 10000 * task.MS)
+        if e == nil {
+            for x <- v {
+                r = append(r, x)
+            }
+        }
+    }
+    return freeze(r), nil
+}
+
+// 返すだけの制御フレームが上限を越えたらGOAWAY（ENHANCE_YOUR_CALM）で閉じる。上限の内なら要求に応じる
+func TestH2CtlFlood() {
+    r := h2fRun(h2fReq(h2CtlMax + 1, true))
+    assert(len(r) == 3 && r[0] == h2CtlMax && r[1] == internal.h2frame.EnhanceYourCalm && r[2] == 0)
+    r2 := h2fRun(h2fReq(h2CtlMax - 10, true))
+    assert(len(r2) == 3 && r2[0] == h2CtlMax - 10 && r2[1] == -1 && r2[2] == 1)
+}
+
+// 前置き・空のSETTINGS・本文つきのPOST /a（END_STREAMなしのHEADERS）・長さ0のDATAをk個・END_STREAMつきの本文
+func h2eReq(k int) []byte {
+    mut out := mut []byte{}
+    for x <- bytes(internal.h2frame.Preface) {
+        out = append(out, x)
+    }
+    internal.h2frame.PutSettings(mut out, []int{}, []int{})
+    blk := h2tBlock("POST", "/a")
+    internal.h2frame.PutHead(mut out, len(blk), internal.h2frame.Headers, internal.h2frame.EndHeaders, 1)
+    for x <- blk {
+        out = append(out, x)
+    }
+    mut i := 0
+    while i < k {
+        internal.h2frame.PutHead(mut out, 0, internal.h2frame.Data, 0, 1)
+        i += 1
+    }
+    internal.h2frame.PutHead(mut out, 1, internal.h2frame.Data, internal.h2frame.EndStream, 1)
+    out = append(out, byte(120))
+    return freeze(out)
+}
+
+// 続けて受けた長さ0のDATAが上限を越えたらGOAWAY（ENHANCE_YOUR_CALM）で閉じる。上限の内なら要求に応じる
+func TestH2EmptyFlood() {
+    r := h2fRun(h2eReq(h2EmptyMax + 1))
+    assert(len(r) == 3 && r[1] == internal.h2frame.EnhanceYourCalm && r[2] == 0)
+    r2 := h2fRun(h2eReq(h2EmptyMax))
+    assert(len(r2) == 3 && r2[1] == -1 && r2[2] == 1)
+}
+
+// 窓を0にしてGET /bigを送り、WINDOW_UPDATEを送らない相手
+func h2wReq() []byte {
+    mut out := mut []byte{}
+    for x <- bytes(internal.h2frame.Preface) {
+        out = append(out, x)
+    }
+    internal.h2frame.PutSettings(mut out, []int{internal.h2frame.InitialWindowSize}, []int{0})
+    blk := h2tBlock("GET", "/big")
+    internal.h2frame.PutHead(mut out, len(blk), internal.h2frame.Headers, internal.h2frame.EndHeaders | internal.h2frame.EndStream, 1)
+    for x <- blk {
+        out = append(out, x)
+    }
+    return freeze(out)
+}
+
+func h2wServe(l net.Listener) (int, error?) {
+    for c <- net.Accept(l)? {
+        ServeConn(c, h2tRoute, sendWait: 1000 * task.MS, proto: H2)?
+        break
+    }
+    return 0, nil
+}
+
+func h2wRun() []int {
+    return h2wRun2() catch []int{-2}
+}
+
+func h2wRun2() ([]int, error?) {
+    mut r := mut []int{}
+    for l <- net.Listen("127.0.0.1:0")? {
+        port := net.Port(l)
+        v, e := task.Run((s task.Scope) => {
+            h := task.Spawn(s, () => h2fClient(port, h2wReq()) catch []int{-1})
+            _ = h2wServe(l) catch -1
+            task.Join(h)
+        }, deadline: 10000 * task.MS)
+        if e == nil {
+            for x <- v {
+                r = append(r, x)
+            }
+        }
+    }
+    return freeze(r), nil
+}
+
+// 窓が開かず送れない応答を持つ接続は、sendWaitの間送りが進まなければ閉じる（HEADERSは窓で止まらないので届く・DATAは届かない）
+func TestH2WindowStall() {
+    r := h2wRun()
+    assert(len(r) == 3 && r[1] == -1 && r[2] == 1)
+}
+
+// 前置き・空のSETTINGS・GET /を開いてすぐWINDOW_UPDATE(0)（サーバーにRST_STREAMを送らせる）をn組
+func h2rReq(n int) []byte {
+    mut out := mut []byte{}
+    for x <- bytes(internal.h2frame.Preface) {
+        out = append(out, x)
+    }
+    internal.h2frame.PutSettings(mut out, []int{}, []int{})
+    blk := h2tBlock("GET", "/a")
+    mut i := 0
+    while i < n {
+        sid := 1 + i * 2
+        internal.h2frame.PutHead(mut out, len(blk), internal.h2frame.Headers, internal.h2frame.EndHeaders | internal.h2frame.EndStream, sid)
+        for x <- blk {
+            out = append(out, x)
+        }
+        internal.h2frame.PutWindowUpdate(mut out, sid, 0)
+        i += 1
+    }
+    return freeze(out)
+}
+
+// 相手の役: 送って、GOAWAYか閉じるまで読む。結果 = GOAWAYの符号（-1 = 無し）
+func h2gClient(port int, req []byte) (int, error?) {
+    mut code := -1
+    for c <- net.Dial("127.0.0.1:${port}")? {
+        net.Send(c, req)?
+        mut buf := mut []byte{}
+        for chunk <- net.Recv(c)? {
+            for x <- chunk {
+                buf = append(buf, x)
+            }
+            mut at := 0
+            b := freeze(buf)
+            while len(b) - at >= 9 && len(b) - at >= 9 + internal.h2frame.Len(internal.h2frame.Head(b, at)) {
+                f := internal.h2frame.Head(b, at)
+                if internal.h2frame.Type(f) == internal.h2frame.Goaway {
+                    _, gc := internal.h2frame.GoawayInfo(b, at + 9)
+                    code = gc
+                }
+                at += 9 + internal.h2frame.Len(f)
+            }
+            mut rest := mut []byte{}
+            while at < len(b) {
+                rest = append(rest, b[at])
+                at += 1
+            }
+            buf = rest
+            if code >= 0 {
+                break
+            }
+        }
+        break
+    }
+    return code, nil
+}
+
+func h2gRun(req []byte) int {
+    return h2gRun2(req) catch -2
+}
+
+func h2gRun2(req []byte) (int, error?) {
+    mut r := -3
+    for l <- net.Listen("127.0.0.1:0")? {
+        port := net.Port(l)
+        v, e := task.Run((s task.Scope) => {
+            h := task.Spawn(s, () => h2gClient(port, req) catch -1)
+            _ = h2tServe(l) catch -1
+            task.Join(h)
+        }, deadline: 10000 * task.MS)
+        if e == nil {
+            r = v
+        }
+    }
+    return r, nil
+}
+
+// 相手の誤りで送るRST_STREAMが予算（一度にh2RstBurst本）を越えたらGOAWAY（ENHANCE_YOUR_CALM）で閉じる
+func TestH2RstBudget() {
+    assert(h2gRun(h2rReq(h2RstBurst + 200)) == internal.h2frame.EnhanceYourCalm)
+}
+
+// 1つの切片の中で「開く（HEADERS + END_STREAM）→ 取り消す（RST_STREAM CANCEL）」をn回続け、最後に普通の要求を送る列。
+// 揃ったストリームを子を作る列は枠の数（128）の大きさで、取り消し済みの要素は受けの1周の終わりまで残るので、n > 128 で列が満ちる
+func h2cutReq(n int) []byte {
+    mut out := mut []byte{}
+    for x <- bytes(internal.h2frame.Preface) {
+        out = append(out, x)
+    }
+    internal.h2frame.PutSettings(mut out, []int{}, []int{})
+    // ヘッダのブロックは静的表の参照3つ（:method GET・:path /・:scheme http — 3バイト）: 1組 = 25バイトなので、4 KiBの受けにも枠の数を越える組が入る
+    blk := []byte{0x82, 0x84, 0x86}
+    mut i := 0
+    while i <= n {
+        sid := i * 2 + 1
+        internal.h2frame.PutHead(mut out, len(blk), internal.h2frame.Headers, internal.h2frame.EndHeaders | internal.h2frame.EndStream, sid)
+        for x <- blk {
+            out = append(out, x)
+        }
+        if i < n {
+            internal.h2frame.PutRst(mut out, sid, internal.h2frame.Cancel)
+        }
+        i += 1
+    }
+    return freeze(out)
+}
+
+// 揃って取り消されたストリームが枠の数を越えても、接続は生きて最後の要求に答える（列が満ちたら取り消し済みを詰める）
+func TestH2RapidResetChunk() {
+    n := 300
+    r := h2tRun(h2cutReq(n), 0 - (n * 2 + 1))
+    mut ok := false
+    mut i := 0
+    while i + 2 < len(r) {
+        if r[i] == n * 2 + 1 && r[i + 1] == 200 {
+            ok = true
+        }
+        i += 3
+    }
+    assert(ok, "results ${len(r)}")
+}
+
+// 結果の列（[sid, status, 本文の長さ, …]）のストリームsidのstatus（無ければ -100）
+func h2tStat(r []int, sid int) int {
+    mut i := 0
+    while i + 2 < len(r) {
+        if r[i] == sid {
+            return r[i + 1]
+        }
+        i += 3
+    }
+    return 0 - 100
+}
+
+// ストリームの子が死ぬ（routeのpanic）と、そのストリームだけRST_STREAM（INTERNAL_ERROR）で閉じ、同じ接続のほかの要求は返る。
+// 死んだ子の枠が空かなければ、接続の終わり（h2Drain）が子を待ち続けて期限で落ちる。予算の超過で死ぬ形はh2tls_test（接続の予算の天井がある形）
+func TestH2ChildDeath() {
+    r := h2tRun(h2tRequests([]string{"/panic", "/a", "/panic", "/b"}, []byte{}), 4)
+    assert(h2tStat(r, 1) == 0 - internal.h2frame.InternalError)
+    assert(h2tStat(r, 3) == 200)
+    assert(h2tStat(r, 5) == 0 - internal.h2frame.InternalError)
+    assert(h2tStat(r, 7) == 200)
+}
+
+
+func h2nConn(c net.Conn) error? {
+    return ServeConn(c, h2tRoute, proto: H2)
+}
+
+func h2nServe(port int, big bool) error? {
+    for l <- net.Listen("127.0.0.1:${port}")? {
+        if big {
+            net.Serve(l, h2nConn, budget: 256 * task.KB, conns: 2)?
+        } else {
+            net.Serve(l, h2nConn, conns: 2)?
+        }
+    }
+    return nil
+}
+
+// 2本の接続で同時に/slow（150 ms）を1本ずつ。結果 = 200で返った接続のビット
+func h2nPeers(port int) int {
+    // サーバーが待ち受けを始めるまで繋ぎ直す（負荷の下では始まりが遅れる）
+    mut up := false
+    mut tries := 0
+    while !up && tries < 200 {
+        up = h2nProbe(port) == nil
+        if !up {
+            os.Sleep(20)
+        }
+        tries += 1
+    }
+    v, e := task.Run((s task.Scope) => {
+        a := task.Spawn(s, () => h2tClient(port, h2tRequests([]string{"/slow"}, []byte{}), 1) catch []int{-1})
+        b := task.Spawn(s, () => h2tClient(port, h2tRequests([]string{"/slow"}, []byte{}), 1) catch []int{-1})
+        ra := task.Join(a)
+        rb := task.Join(b)
+        (if h2tStat(ra, 1) == 200 { 1 } else { 0 }) | (if h2tStat(rb, 1) == 200 { 2 } else { 0 })
+    })
+    return if e == nil { v } else { 0 - 3 }
+}
+
+func h2nProbe(port int) error? {
+    for c <- net.Dial("127.0.0.1:${port}")? {
+        net.Send(c, []byte{})?
+        break
+    }
+    return nil
+}
+
+// `conns:` は接続の本数の天井: conns: 2のServeで2本の接続が開いていても、ストリームの子（接続のtaskの子）は本数に数えないので入場して返る
+func TestH2Conns() {
+    assert(h2nRun(false) == 3)
+}
+
+// 接続の予約を大きく書いても（budget: 256 KiB）、接続で埋まった天井に子が入れる（接続ごとの進行の保証の余白 — 天井は全部の接続が子を1本ずつ走らせる量を持つ）
+func TestH2ConnsBudget() {
+    assert(h2nRun(true) == 3)
+}
+
+func h2nRun(big bool) int {
+    port := h2lPort() catch 0
+    v, e := task.Run((s task.Scope) => {
+        d := task.NewDomain(s, h2lGot{v: 0 - 1})
+        _, e2 := task.Run((s2 task.Scope) => {
+            _ = task.Spawn(s2, () => {
+                _ = h2nServe(port, big)
+                0
+            })
+            _ = task.Spawn(s2, () => {
+                r := h2nPeers(port)
+                task.Update(d, (g mut h2lGot) => {
+                    g.v = r
+                    0
+                })
+                // 相手の役が終わったら、子の死でscopeを畳む（net.Serveは止める口を持たない）
+                xs := []int{1}
+                xs[9]
+            })
+            0
+        }, deadline: 5000 * task.MS)
+        _ = e2
+        task.Read(d, (g h2lGot) => g.v)
+    })
+    return if e == nil { v } else { 0 - 2 }
+}

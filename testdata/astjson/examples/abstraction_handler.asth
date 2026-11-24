@@ -1,9 +1,9 @@
-@@full	4f932f8726634861	1063	29216
-@head	4cf171239e1982f2	0	193
+@@full	249a9b7b3ef7a4e7	1245	36453
+@head	e3f171731daead7f	0	225
 const Auth	47d235353e44f9a2	20	718
-func feed	146cd0cdacb0aa67	14	535
 func greeter	f31e0b1eda1e9de0	18	760
-func main	e99e3504d2bd3d9b	36	1508
+func main	b30bb3fb048e8efa	50	1958
 func or	01410288ef3a70dd	13	459
+func readAll	f5c560cbc949d739	28	1057
 func routes	19ef6540647f71d5	25	1182
 func show	62bd2a266e93f744	35	1205

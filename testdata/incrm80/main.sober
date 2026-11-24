@@ -1,0 +1,46 @@
+package main
+
+import "std/iter"
+
+// 見張りの題材（incrmut m80）: 展開の組1の総称の実体 g[int] を、いくつもの関数が要求する。変更の無いビルドでは、
+// 要求する関数のうち1つだけを下ろし、その instFunc が模擬の仮の記録の型を埋める（残りは束から模擬で流す）
+
+const M = 1000003
+
+func g[T](x0 T, x1 T, n int) T {
+    mut acc := n % M
+    if acc % 43 < 43 {
+        acc = (acc + 647) % M
+    } else {
+        acc = (acc * 12) % M
+    }
+    return if acc % 2 == 0 { x0 } else { x1 }
+}
+
+func f1(n int) int {
+    return (g(n, n + 1, n) * 3 + 1) % M
+}
+
+func f2(n int) int {
+    return (g(n + 2, n, n) * 5 + 2) % M
+}
+
+func f3(n int) int {
+    return (g(n, n + 3, n + 1) * 7 + 3) % M
+}
+
+func f4(n int) int {
+    return (g(n + 4, n, n + 2) * 11 + 4) % M
+}
+
+func f5(n int) int {
+    return (g(n, n + 5, n + 3) * 13 + 5) % M
+}
+
+func main() int {
+    mut s := 0
+    for i <- iter.Range(0, 10) {
+        s = (s + f1(i) + f2(i) + f3(i) + f4(i) + f5(i)) % M
+    }
+    return s % 7
+}

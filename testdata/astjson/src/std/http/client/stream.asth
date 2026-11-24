@@ -1,4 +1,4 @@
-@@full	dc600cfe9eea4ae2	7298	245970
+@@full	b12cde9d5871961e	7318	246540
 @head	eef79cc2094b76cd	0	315
 const cData	cd6c5d5432ed2ec9	1	45
 const cDataCr	68e235d4e3ff88c0	1	47
@@ -16,8 +16,8 @@ func newBody	37cfd47a33639b71	28	1216
 func readBody	58ae546bed76d0da	207	6838
 func slicePiece	901f7cdf8d829a1a	30	1152
 func step	a7620a0f7f30f9ef	248	8579
-func streamLink	44404ec8ff273e5e	189	6772
-func streamOnce	834f8554c3d227f3	239	8380
+func streamLink	7d289c7ad1d4a2c2	191	6824
+func streamOnce	1c497681344fe277	241	8437
 type Part	73ce1c0b56987ae6	4	206
 type bodySt	726fca61da6ed5cd	10	507
 type streamSt	852f2117acdfc887	6	321

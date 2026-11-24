@@ -1,4 +1,4 @@
-@@full	5409b751b2e93b4a	4966	93795
+@@full	1d76a6c71d3b6d85	4958	93622
 @globals	a73ebb7020dd3322	53	745
 main.$layoutDecodeAt_1_0	3ab4b0d4043b2f25	48	891
 main.$layoutDecode_1_0	d459641bbfa83497	191	3542
@@ -41,8 +41,8 @@ rt.write_all	055ce3041b682336	37	563
 rt.write_fd	079b825360e0fd15	8	156
 rt.write_file	7b5c6fea05e73e3e	47	846
 sober_entry	017a210055670993	968	18950
-std/builder.Build[byte]	71a2e1eea257de3b	317	6174
+std/builder.Build[byte]	dabba60e422eae8b	313	6088
 std/builder.Push[byte]	0ab962c91f11ee58	71	1327
-std/builder.pushSlow[byte]	8c201cc60987728b	357	7033
+std/builder.pushSlow[byte]	1546d233e5965b10	353	6946
 std/layout.FailWidth	7da07c6822114d31	187	3919
 testdata/layout/wire.Ping	b601537ba0bc74cc	24	424

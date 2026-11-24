@@ -1,0 +1,19 @@
+package rec
+
+type Pub struct {
+    Name string
+    n int
+}
+
+type hidden struct {
+    Kind string
+    n int
+}
+
+func MakePub() Pub {
+    return Pub{Name: "a", n: 1}
+}
+
+func MakeHidden() hidden {
+    return hidden{Kind: "h", n: 2}
+}

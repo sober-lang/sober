@@ -85,8 +85,13 @@ function socks(): number {
   try { return fs.readdirSync(`/proc/${pid}/fd`).filter((f) => { try { return fs.readlinkSync(`/proc/${pid}/fd/${f}`).startsWith("socket:"); } catch { return false; } }).length; }
   catch { return -1; }
 }
+// 読みの最中の判定は投げるだけにする（snap が、サーバーが動かずに読めたかを見てから判定する）
+class Unsettled extends Error {}
+let probing = false;
 function bad(why: string): never {
-  console.log(`areacheck-bad ${why}`);
+  if (probing) throw new Unsettled(why);
+  // 理由は1行で出す（areacheck.sh は最後の1行で判定する。答えの本文に改行が入ると、捕まえた変異が「捕まらない」に見える）
+  console.log(`areacheck-bad ${why.replace(/\r/g, "\\r").replace(/\n/g, "\\n")}`);
   p.kill("SIGKILL");
   process.exit(1);
 }
@@ -96,9 +101,37 @@ function bad(why: string): never {
 function serverGone(): boolean {
   try { return /^\d+ \(.*\) Z /.test(fs.readFileSync(`/proc/${pid}/stat`, "utf8")); } catch { return true; }
 }
+// サーバーの全スレッドのコンテキストスイッチの数の和（読みの前後で同じなら、読んでいる間サーバーは動いていない）
+function ctxsw(): number {
+  let n = 0;
+  for (const t of fs.readdirSync(`/proc/${pid}/task`)) {
+    const st = fs.readFileSync(`/proc/${pid}/task/${t}/status`, "utf8");
+    n += +(/\bvoluntary_ctxt_switches:\s*(\d+)/.exec(st)?.[1] ?? 0) + +(/nonvoluntary_ctxt_switches:\s*(\d+)/.exec(st)?.[1] ?? 0);
+  }
+  return n;
+}
+const sleepSync = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+// 読みは1語ずつで、サーバーが読みの間に動く（エリアの交換が読みの途中に入る）と、保存則が崩れたように見える。読みの前後でサーバーの
+// スイッチの数が変わっていたら、静まるのを待って読み直し、動かずに読めた回だけで判定する（50回で読めなければ、最後の回で判定する）
 function snap(tag: string): number {
-  try { return snapRaw(tag); } catch (e) {
-    if (!serverGone()) throw e;
+  try {
+    for (let a = 0; ; a++) {
+      const c0 = ctxsw(), lines: string[] = [];
+      const log = console.log;
+      probing = true;
+      console.log = (...x: unknown[]) => { lines.push(x.join(" ")); };
+      let r = 0, why: string | null = null;
+      try { r = snapRaw(tag); } catch (e) { if (!(e instanceof Unsettled)) throw e; why = e.message; } finally { probing = false; console.log = log; }
+      if (ctxsw() !== c0 && a < 50) {
+        for (let q = 0, t = 0; q < 3 && t < 20000; t += 10) { q = idle() ? q + 1 : 0; sleepSync(10); }
+        continue;
+      }
+      for (const l of lines) console.log(l);
+      if (why !== null) bad(why);
+      return r;
+    }
+  } catch (e) {
+    if (e instanceof Unsettled || !serverGone()) throw e;
     bad(`server stopped during the measurement at ${tag} (${(e as NodeJS.ErrnoException).code ?? e}; exit ${p.exitCode ?? p.signalCode ?? "pending"}): ${err.trim().replace(/\n+/g, " | ").slice(0, 200)}`);
   }
 }

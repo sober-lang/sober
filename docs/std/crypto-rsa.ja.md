@@ -4,15 +4,7 @@
 
 `import "std/crypto/rsa"`
 
-RSA の秘密鍵の読み（PKCS#8 の DER）と RSASSA-PSS（RFC 8017 8.1 — SHA-256・MGF1-SHA256）の署名と検証。TLS 1.3 の CertificateVerify（rsa\_pss\_rsae\_sha256）の本体。
-
-```sober
-k := crypto.rsa.ParsePKCS8(der)?
-sig := crypto.rsa.SignPSS(k, msg, crypto.Rand(32))?   // saltは呼び手が渡す（決定的な検査のため）
-ok := crypto.rsa.VerifyPSS(crypto.rsa.Public(k), msg, sig, 32)
-```
-
-署名は CRT（m^dp mod p・m^dq mod q を合わせる）で、出した署名を公開鍵で検証してから返す（CRT の故障攻撃〔Bellcore〕の古典の防御 — 合わなければ crypto.rsa.Fault）。多倍長は 64 bit の limb（bn.sober — 積の上位は組み込み mulhi・montMul は x86 の専用命令の実装）・定数時間の規律は std/crypto の頭の 4 項
+RSASSA-PKCS1-v1\_5 の署名（RFC 8017 8.2 — TLS 1.2 の ServerKeyExchange の rsa\_pkcs1\_sha1 / sha256 / sha384）と、TLS 1.2 の RSA 鍵交換の premaster の復号（RFC 5246 7.4.7.1 — Bleichenbacher / ROBOT の対策: 形の検査を分岐なしで畳み、外れたら呼び手が渡した乱数に定数時間で差し替える。失敗を呼び手にも相手にも区別させない）。どちらも std/tls の dangerouslyAllowTls12 の道だけ
 
 ## ParsePKCS8
 
@@ -39,6 +31,52 @@ func NewPublic(nb []byte, eb []byte) (PublicKey, error?)
 大きい端のバイト列のnとeの公開鍵（検証に使うAPI）
 
 失敗のラベル: [`BadKey`](#badkey)
+
+## HashSha1
+
+```sober
+const HashSha1 = 1
+```
+
+署名のハッシュの種類（DigestInfo の前置き — RFC 8017 9.2 の注 1）
+
+## HashSha256
+
+```sober
+const HashSha256 = 2
+```
+
+署名のハッシュの種類（DigestInfo の前置き — RFC 8017 9.2 の注 1）
+
+## HashSha384
+
+```sober
+const HashSha384 = 3
+```
+
+署名のハッシュの種類（DigestInfo の前置き — RFC 8017 9.2 の注 1）
+
+## SignPKCS1v15
+
+```sober
+@errors(BadSize, Fault)
+@bless
+@effects(!io, !block, !nondet)
+func SignPKCS1v15(k PrivateKey, hash int, digest []byte) ([]byte, error?)
+```
+
+digest（hash の値 — SHA-1 は 20・SHA-256 は 32・SHA-384 は 48 バイト）の RSASSA-PKCS1-v1\_5 の署名（k バイト）
+
+失敗のラベル: [`BadSize`](#badsize)・[`Fault`](#fault)
+
+## DecryptPremaster
+
+```sober
+@effects(!io, !block, !nondet)
+func DecryptPremaster(k PrivateKey, ct []byte, ver []byte, fallback []byte) []byte
+```
+
+TLS 1.2 の RSA 鍵交換の premaster（48 バイト）。ct = EncryptedPreMasterSecret の中身・ver = ClientHello の client\_version（2 バイト）・fallback = 呼び手が先に作った 48 バイトの乱数。形（0x00 0x02 ‖ 0 を含まない埋め草 ‖ 0x00 ‖ 48 バイト・先頭 2 バイトが ver）が合わなければ fallback を返す。形の検査・版の照合・差し替えは秘密の値に依る分岐を持たない（全部を OR で畳んで最後に 1 回の mask で選ぶ）。長さの違う ct は公開の誤りとして fallback を返す
 
 ## PublicKey
 

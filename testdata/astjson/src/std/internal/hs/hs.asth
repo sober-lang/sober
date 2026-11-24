@@ -1,5 +1,5 @@
-@@full	75245744eb779b49	18660	557374
-@head	ac0036db7950696f	0	541
+@@full	b8a1ec5ed3611b43	23366	733062
+@head	50010b540fa9ea93	0	583
 const aCloseNotify	4762032002f7b0a4	1	52
 const aDecodeError	d2ddff6ad3c95d3f	1	53
 const aDecryptError	8fab8fca1b92732f	1	54
@@ -10,7 +10,9 @@ const aMissingExtension	7fba54a53b950c59	1	59
 const aNoAlpn	73526c16b2817de4	1	49
 const aProtocolVersion	80d2f700f24bf01b	1	57
 const aUnexpected	2df65d85eed326b7	1	52
+const earlySkipMax	5a2466f4bc6b5cfc	5	205
 const groupX25519	7d6dc561046ad744	1	63
+const sigEcdsaSha256	9bf360241959b5fa	1	68
 const sigPssSha256	cc88180a73134b61	1	66
 const tCertificate	b6a822c335f6e4eb	1	53
 const tCertificateVerify	af7952202a0ef6ff	1	59
@@ -21,6 +23,8 @@ const tKeyUpdate	448745687de916f8	1	51
 const tMessageHash	c7b8b22df245d50f	1	54
 const tServerHello	9d23d77a28e4a2bc	1	52
 const xAlpn	bc09c9b3ffde84b2	1	46
+const xCookie	21151d8094d159e3	1	48
+const xEarlyData	e839c7b4fec66b43	1	51
 const xKeyShare	a9588bd61d84c42d	1	50
 const xPreSharedKey	b95ebbc23826666b	1	54
 const xServerName	875408c438e1b619	1	51
@@ -31,35 +35,41 @@ func AlertRecord	a55ef0ad2e577f1d	47	1710
 func Alpn	c0b18cc824bf86ae	5	268
 func Bare	b6537e7a00bfc356	21	842
 func CloseNotify	053c16d7e1b7637c	8	373
+func ConfigParams	7d763346381e5684	22	1221
 func Dirs	693774e45d87608a	8	383
 func Feed	4f46093c7a006296	24	955
 func IsConnected	4a6bc873a14774ee	11	521
-func New	33a6a33854dc50e5	32	1592
-func NewParams	6e9ba9b87587cb00	18	1001
-func Probe	53333b43f1a566c5	47	1812
+func Keyed	1bca53e903f8f809	5	268
+func New	15fa659422242c54	47	2333
+func NewParams	350c4031885ced82	21	1151
+func Probe	936025212e8ecbcd	56	2256
+func RecvState	6db24c69dd358e82	9	411
 func Resume	94315a1b1a3b893d	15	669
+func ResumeWith	c41339e36db0b02a	14	630
 func SealApp	77aa588c0835a0da	76	2647
 func Secrets	07305b8484b5a0b5	40	1488
 func Step	208519b0fcc98eda	50	1777
 func Suite	1e0780780a65d2b7	5	267
+func WithEcdsa	4ff558228488322c	19	954
 func alert	df6a2d38cfe2f90d	6	351
 func ccsOnce	6c69fda67a218214	36	1227
 func certificate	5ffde24e4afabca0	58	1858
-func certificateVerify	38524e2899dbc440	97	3137
+func certificateVerify	8631bf94798450c7	139	4472
 func deriveSecret	2dcd5d1573b7e68e	16	716
 func emptyDir	430c620dad2a80e7	11	485
-func emptyHello	4fcc4f1156f21c36	21	1143
+func emptyHello	8f19700867bbf7b1	37	1996
 func encryptedExtensions	0a27dd1fc011ec01	74	2349
-func feedIn	5a64401b1754aa3f	62	2308
-func feedPlain	a3449303e09bdbb4	166	5453
-func feedSealed	484c62b777d09400	229	7746
+func feedIn	41cdc5340a199603	83	3058
+func feedPlain	5160ef38c884fed3	198	6482
+func feedSealed	9364e3ae47f28fb5	232	7846
 func helloBody	6f4a0a69c1459b8e	63	2075
-func helloRetry	6ddb223f2ec8571c	141	4895
+func helloRetry	52844d446979afc7	199	6690
 func hrrRandom	ad22b035f1187d4b	10	429
+func isEc	27ad6ac6fc33341e	9	384
 func none	ed6ccf90050418ce	13	655
-func onClientHello	9ca9c0a2b8b811bb	533	18099
-func onSealedMsg	26482053d39f00aa	194	6530
-func parseHello	0929cd76adada766	582	19309
+func onClientHello	74488082bed246ba	578	19552
+func onSealedMsg	5be7f0cb7d3248d5	243	8100
+func parseHello	cc1fac32a43902a0	940	31587
 func peerAlert	6c15ece00522399b	51	1885
 func pickAlpn	210bacd23e674473	22	857
 func pickSuite	15accc41a290aa95	22	845
@@ -67,8 +77,8 @@ func plain	adb0a4f99d256718	92	3037
 func rnd	1eb83154eb17a0c8	34	1233
 func serverHello	0e9e7c5a3a370199	67	2205
 func zeros	04465eb24cf94f8e	26	943
-type Hs	f260ad5d8d7122e9	25	1199
+type Hs	1d345c0142fe52c9	40	1900
 type Out	96c788737a37536c	9	435
-type Params	cef99ee89bd588fb	11	517
-type Phase	d45b03c33f7c52d3	1	221
-type hello	d9cf8da2be18ffc0	19	939
+type Params	961e863a074c3dae	14	654
+type Phase	1ed3004274f26233	1	320
+type hello	291bbabbf1fa2f31	35	1739

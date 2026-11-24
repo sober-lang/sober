@@ -1,0 +1,2 @@
+examples/logs_neg_println.sober:10:6: error: this program sends its log to standard output (@logs(stdout)), but main reaches println via the call of 'main.report': the log would mix into the program's output (remove @logs(stdout), or stop printing results with println) (Analyzer)
+exit=1

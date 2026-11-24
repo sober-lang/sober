@@ -3,9 +3,10 @@ package main
 // 切片の View を反復の外へ逃がす形の確認（design-dev.md）: 文形 for の k の引数（切片の View）を反復の外へ逃がす形 — 外の mut 変数・struct のフィールド・
 // Bytes の値ごと — は check が拒否するのでなく、region の境界コピーでコピーになる（language.md 28 節「外へ持ち出した View はコピーになる」）。
 // ストリームが先へ進んでスロットが使い回された後も、逃がしたコピーは最初の切片の中身のまま（コピーが無ければ後の切片の中身に化ける）。
-// リポジトリのルートを cwd にして実行する。書き込み先は out/ の下
+// リポジトリのルートを cwd にして実行する。書き込み先は実行ごとの out/io_chunks_keep.<n> の下
 import "std/io"
 import "std/iter"
+import "std/os"
 
 // 切片をフィールドに逃がす先（b = 切片のコピー・c = Bytes の値ごと）
 type Keep struct {
@@ -47,7 +48,9 @@ func run(p string) (bool, bool, bool, int, error?) {
 }
 
 func main() int {
-    p := "out/io_chunks_keep.tmp"
+    d := runDir("io_chunks_keep")
+    defer removeAll(d)
+    p := d + "/io_chunks_keep.tmp"
     mut w := mut []byte{}
     for i <- iter.Range(0, 163840) {
         w = append(w, pat(i))
@@ -64,4 +67,26 @@ func main() int {
     println("kept via struct field: ${b}")
     println("kept via Bytes value: ${c}")
     return 0
+}
+
+// 実行ごとの置き場 out/<name>.<単調時計の値>（同じ作業ディレクトリで同時に走る実行どうしが上書きし合わない）。
+// mkdirは既にあれば失敗するので、作れた名前がこの実行のもの。作れない状態で回り続けないよう、試す回数に上限を置く（作れなければ ""）
+func runDir(name string) string {
+    _ = os.Mkdir("out")
+    mut n := 0
+    while n < 100 {
+        c := "out/${name}.${os.Monotonic()}"
+        if os.Mkdir(c) == nil {
+            return c
+        }
+        n = n + 1
+    }
+    return ""
+}
+
+// 置き場を中身ごと消す
+func removeAll(d string) {
+    if d != "" {
+        _ = os.Run("/bin/rm", []string{"-rf", d}) catch 0
+    }
 }

@@ -27,7 +27,8 @@ func needLease(st mut St) {
     }
 }
 
-// 鍵 lease_op（k = 29 — (op, blk, off, v) → int）・lease_view（30 — (blk, off, n) → mut []int）・lease_bytes（44 — (blk, off, n) → mut []byte）の呼び出し（cont.sober の ioBuiltin から）
+// 鍵 lease_op（k = 29 — (op, blk, off, v) → int）・lease_view（30 — (blk, off, n) → mut []int）・lease_bytes（44 — (blk, off, n) → mut []byte）・
+// lease_at（74 — (blk, off, n) → mut []byte）の呼び出し（cont.sober の ioBuiltin から）
 func leaseBuiltin(st mut St, k int, args desugar.ListRef, at desugar.NodeRef) (int, error?) {
     n := lenL(mut st, args)
     vs := listN(mut st, n)
@@ -51,11 +52,13 @@ func leaseBuiltin(st mut St, k int, args desugar.ListRef, at desugar.NodeRef) (i
         blk := desugar.HeapGet(mut st.d, vs + 2)
         return one1(mut st, tInt(mut st), call(mut st, st.rtLeaseOp, list4(mut st, a, load(mut st, blk, 0), desugar.HeapGet(mut st.d, vs + 3), desugar.HeapGet(mut st.d, vs + 4)))), nil
     }
-    // View: ptr = blkの先頭 + offワード・長さn（lease_bytesはバイト）・深度 = blkの深度（ワードはblkの住むregionにある — 外へのコピーの判断はblkと同じ）
-    t := mkSlice(mut st, if k == 44 { tByte(mut st) } else { tInt(mut st) }, true)
+    // View: ptr = blkの先頭 + offワード・長さn（lease_bytesはバイト）・深度 = blkの深度（ワードはblkの住むregionにある — 外へのコピーの判断はblkと同じ）。
+    // lease_at（74）は ptr = blk[off]のワード（lease_op 12がblkの深度に確保した席の番地 — 深度はblkと同じ）
+    t := mkSlice(mut st, if k == 44 || k == 74 { tByte(mut st) } else { tInt(mut st) }, true)
     out := newAgg(mut st, t)
     off := desugar.HeapGet(mut st.d, vs + 2)
-    store(mut st, out, 0, bin(mut st, BAdd, load(mut st, a, 0), bin(mut st, BShl, off, iconst(mut st, 3))))
+    at0 := bin(mut st, BAdd, load(mut st, a, 0), bin(mut st, BShl, off, iconst(mut st, 3)))
+    store(mut st, out, 0, if k == 74 { load(mut st, itop(mut st, at0), 0) } else { at0 })
     store(mut st, out, 1, desugar.HeapGet(mut st.d, vs + 3))
     store(mut st, out, 2, load(mut st, a, 2))
     return one1(mut st, t, out), nil
@@ -109,7 +112,7 @@ func buildLeaseRt(st mut St) {
     b9 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 9)))
     ret(mut st, if st.taskUse { load(mut st, globaladdr(mut st, st.mnG), MN_LDRAIN) } else { zero })
     setCur(mut st, b9)
-    // op 10: 今のtaskの次のrt.netop 13（b = 1。tls.Recvの中のFlush）を待たない印（std/httpのServeWithが、put:の後に受けが続くときに置く）。TC_FUSEに−2を置く。
+    // op 10: 今のtaskの次のrt.netop 13（b = 1。TLSの接続の受けの中のFlush）を待たない印（std/http/serverのServeConnが、TLSの接続でレスポンスを積んだ後に受けが続くときに置く — putFused）。TC_FUSEに−2を置く。
     // rt.netop 1は−2を「送信バッファリングのフラグ無し」と読んで消す。taskの無いプログラムは何もしない
     b10 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 10)))
     if st.taskUse {
@@ -118,6 +121,22 @@ func buildLeaseRt(st mut St) {
     }
     ret(mut st, zero)
     setCur(mut st, b10)
+    // op 11: 今の深度（std/tlsのacceptが格納場所を作った深度を記録する — op 12の確保先）
+    b11 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 11)))
+    ret(mut st, regionDepth(mut st))
+    setCur(mut st, b11)
+    // op 12: blk[off]が0なら、blk[off + 1]の深度にvワードを確保して番地をblk[off]へ書く。結果 = blk[off]の番地（std/tlsの受けの持ち越しの席 —
+    // 切片をまたいだ接続だけが、格納場所と同じ深度に1回確保する。深度を実引数で受けるrt.region_alloc — 今の深度のレジスタは書き換えない）。
+    // ミュータント112（検査の自己検査 — std/tlsのTestNetConn）: 今の深度に確保する（受けの関数のregionに置かれ、breakの後の読みで壊れる）
+    b12 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 12)))
+    have := load(mut st, addr, 0)
+    bNew := branchIf(mut st, cmp(mut st, CNe, have, zero))
+    ret(mut st, have)
+    setCur(mut st, bNew)
+    seat := ptoi(mut st, call(mut st, st.rtRalloc, list2(mut st, if st.rtMut == 112 { regionDepth(mut st) } else { load(mut st, addr, 1) }, 3)))
+    store(mut st, addr, 0, seat)
+    ret(mut st, seat)
+    setCur(mut st, b12)
     // op 3: 返す（フラグを外し、チェーンの頭をエリアのチェーンのワードへ）
     b3 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 3)))
     store(mut st, addr, 0, zero)

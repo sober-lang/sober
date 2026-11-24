@@ -1,0 +1,13 @@
+@@full	21770244ddec174b	4324	150471
+@head	faf3ec81f88a9055	0	401
+func TestConnTlsBoth	bb2d9c4513feaa53	46	1553
+func TestConnTlsBothH11	17e880f68decc44b	15	592
+func TestConnTlsH1	f995db0473f569b6	14	554
+func TestConnTlsH2	23ee7f53398c3bb9	53	1772
+func TestConnTlsHuge	b9cef09f5f6cc27c	16	625
+func ctBoth	9f3e6d7e5c5f7ebf	15	590
+func ctH1	1da0286c4e20fed2	13	519
+func ctH1Peer	fab3857ffad4abca	260	8975
+func ctH2	412582874587c49c	15	586
+func ctHugePeer	eb5c8ab7533443dc	92	3331
+func ctServe	f7d32d73368ea4b6	185	6144

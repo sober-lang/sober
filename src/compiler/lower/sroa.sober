@@ -4,6 +4,7 @@ package lower
 // ワードごとの1ワードスロットに割るIR → IRのパス。割った後の1ワードスロットは既存のmem2reg（m2r.sober — コピー・不変）がSSA値へ持ち上げる。
 // 対象: スロットのアドレス（slotaddr の結果）の使い道が「定数オフセットの load の番地」「定数オフセットの store の番地」だけのスロット
 // （格納される値・他の命令の引数・辺の引数・ret・gep・ptoi・call の引数になったら逃げている — 対象外。load8 / store8 も逃げ）。
+// 展開後のSROAは、読むだけのrtの関数（rtReadOnly）の8語以下の実引数を、呼び出しの直前の一時のスロットへの写しに替えて対象に入れる。
 // 書き換え: スロットs（wワード）の各 `%a = slotaddr s` を「ワード0のスロットのslotaddr」に変え、直後にワード1..w-1のslotaddrを差し込み、
 // `load %a[k]` / `store %a[k], v` をワードkのアドレスのオフセット0へ付け替える。元のスロットはslotaddrが無くなり、mem2regの出口で落ちる。
 // 意味は変えない: 逃げないスロットのメモリはワードごとに独立に読み書きされるだけ（スロットは入口でゼロ初期化 — 割ったワードも同じ）
@@ -22,6 +23,7 @@ func sroaModule(st mut St, cg bool) {
     }
 }
 
+// cg（展開後だけ）: 終端の実引数だけで逃げるスロットがあれば、番地の合流を語の合流に直して（phiword.sober）終端の逃げを数え直す
 func sroaFunc(st mut St, f FnRef, cg bool) {
     // スロットの語数（番号の順 = チェーンの順）
     mut swords := mut []int{}
@@ -39,6 +41,9 @@ func sroaFunc(st mut St, f FnRef, cg bool) {
     xFill(mut slotOf, nv, -1)
     mut ok := mut []int{}
     xFill(mut ok, ns, 0)
+    // 終端の被演算子（辺の実引数・条件・戻り値）で逃げたら0
+    mut escT := mut []int{}
+    xFill(mut escT, ns, 1)
     mut any := false
     for k <- iter.Range(0, ns) {
         if swords[k] > 1 {
@@ -95,13 +100,28 @@ func sroaFunc(st mut St, f FnRef, cg bool) {
     gb := freeze(gbase)
     gofs := freeze(goff)
     sw := freeze(swords)
+    // cg: 読むだけのrtの関数（rtReadOnly）の8語以下の実引数は逃げに数えず、その点（ブロック・呼び出し・実引数の位置）を控える
+    mut cB := mut []int{}
+    mut cIns := mut []int{}
+    mut cK := mut []int{}
     // 逃げる使い道（m2rEsc と同じ形 — 番地としての定数オフセットの load / store だけが逃げない）
     b = irFnBHead(mut st, f)
     while b != -1 {
         mut ins := irBlkIHead(mut st, b)
         while ins != -1 {
             op := irInsOp(mut st, ins)
-            if op == OpLoad || op == OpStore {
+            if cg && op == OpCall && rtReadOnly(mut st, int(irInsFn(mut st, ins))) {
+                for k <- iter.Range(0, xNOps(mut st, ins)) {
+                    v := xOpnd(mut st, ins, k)
+                    if v >= 0 && v < nv && so[v] >= 0 && (!hasG || gb[v] < 0) && sw[so[v]] <= 8 {
+                        cB = append(cB, int(b))
+                        cIns = append(cIns, int(ins))
+                        cK = append(cK, k)
+                    } else {
+                        m2rEsc(so, mut ok, v)
+                    }
+                }
+            } else if op == OpLoad || op == OpStore {
                 p := irInsA(mut st, ins)
                 if so[p] >= 0 && (irInsB(mut st, ins) < 0 || (if hasG { gofs[p] } else { 0 }) + irInsB(mut st, ins) >= sw[so[p]]) {
                     ok[so[p]] = 0
@@ -119,9 +139,64 @@ func sroaFunc(st mut St, f FnRef, cg bool) {
             ins = irInsNext(mut st, ins)
         }
         for k <- iter.Range(0, xNTermOps(mut st, b)) {
-            m2rEsc(so, mut ok, xTermOpnd(mut st, b, k))
+            m2rEsc(so, mut escT, xTermOpnd(mut st, b, k))
         }
         b = irBlkNext(mut st, b)
+    }
+    // 終端の実引数だけで逃げるスロットがあれば、合流を直して終端の逃げを数え直す。
+    // 書き換えが足すのは定数の変位のload（語数の内）・定数・itopと、それらの新しい値（番号 ≥ nv）だけなので、ほかの使い道の判定は変わらない
+    mut termOnly := false
+    for k <- iter.Range(0, ns) {
+        termOnly = termOnly || (escT[k] == 0 && ok[k] == 1)
+    }
+    if cg && termOnly && pwFunc(mut st, f, sroaPlainSlots(so, gb, hasG), sw) {
+        escT = mut []int{}
+        xFill(mut escT, ns, 1)
+        b = irFnBHead(mut st, f)
+        while b != -1 {
+            for k <- iter.Range(0, xNTermOps(mut st, b)) {
+                v := xTermOpnd(mut st, b, k)
+                if v < nv {
+                    m2rEsc(so, mut escT, v)
+                }
+            }
+            b = irBlkNext(mut st, b)
+        }
+    }
+    for k <- iter.Range(0, ns) {
+        if escT[k] == 0 {
+            ok[k] = 0
+        }
+    }
+    // 割れるスロットを読むだけの呼び出しへ渡す点では、呼び出しの直前に一時のスロットへ全語を写して、その番地を渡す
+    // （呼ばれた関数は読むだけなので、写しの中身は呼び出しの間の元の中身と同じ。一時のスロットは逃げたまま割らない）
+    st.fn = f
+    for q <- iter.Range(0, len(cIns)) {
+        ins := InsRef(cIns[q])
+        a := xOpnd(mut st, ins, cK[q])
+        k := so[a]
+        if ok[k] == 1 {
+            w := sw[k]
+            ts := irFnNSlot(mut st, f)
+            sroaNewSlotW(mut st, f, w)
+            bb := BlkRef(cB[q])
+            t := newValue(mut st)
+            // 直前の命令はここで求める（控えた後に番地の合流の書き換えが頭のloadを鎖から外しうる）
+            mut at := sroaInsAt(mut st, bb, sroaPrevOf(mut st, bb, ins), t, OpSlotaddr, ts, 0, 0)
+            for j <- iter.Range(0, w) {
+                x := newValue(mut st)
+                at = sroaInsAfter(mut st, bb, at, x, OpLoad, a, j, 0)
+                at = sroaInsAfter(mut st, bb, at, -1, OpStore, t, j, x)
+            }
+            // 実引数の列は写してから替える（列を共有するほかの命令を変えない）
+            old := irInsB(mut st, ins)
+            n := desugar.HeapGet(mut st.d, old)
+            l := listN(mut st, n)
+            for j <- iter.Range(0, n) {
+                desugar.HeapSet(mut st.d, l + 1 + j, if j == cK[q] { t } else { desugar.HeapGet(mut st.d, old + 1 + j) })
+            }
+            irSetInsB(mut st, ins, l)
+        }
     }
     // 割るスロットごとにワードの1ワードスロットをチェーンの末尾へ（first[k] = ワード0の新しい番号）
     mut first := mut []int{}
@@ -152,7 +227,8 @@ func sroaFunc(st mut St, f FnRef, cg bool) {
             if irInsOp(mut st, ins) == OpSlotaddr {
                 k := irInsA(mut st, ins)
                 r := irInsRes(mut st, ins)
-                if fs[k] >= 0 {
+                // k ≥ len(fs) = 上で足した一時のスロット
+                if k < len(fs) && fs[k] >= 0 {
                     irSetInsA(mut st, ins, fs[k])
                     mut at := ins
                     for j <- iter.Range(1, sw[k]) {
@@ -183,7 +259,8 @@ func sroaFunc(st mut St, f FnRef, cg bool) {
                         irSetInsA(mut st, ins, wb[p] + off)
                         irSetInsB(mut st, ins, 0)
                     }
-                } else if hasG && gb[p] >= 0 && fs[so[p]] >= 0 {
+                } else if hasG && p < len(gb) && gb[p] >= 0 && fs[so[p]] >= 0 {
+                    // p ≥ len(gb) = 一時のスロットの番地（上で足した値）
                     // 定数gep.word越しのload / storeはワードgoff + kの1ワードスロットへ（ワード0 = 元のslotaddrの値）
                     r := gb[p]
                     w := gofs[p] + irInsB(mut st, ins)
@@ -201,10 +278,22 @@ func sroaFunc(st mut St, f FnRef, cg bool) {
     }
 }
 
-// 関数fに1ワードのスロットをチェーンの末尾へ足す（記録 = [次, 語数, 番号, 空きチェーンの次, 直近のslotaddrの値] — newSlotと同じ形）
-func sroaNewSlot(st mut St, f FnRef) {
+// slotaddrの結果だけの表（定数gep.wordの結果を外す）
+func sroaPlainSlots(so []int, gb []int, hasG bool) []int {
+    if !hasG {
+        return so
+    }
+    mut out := mut []int{}
+    for v <- iter.Range(0, len(so)) {
+        out = append(out, if gb[v] >= 0 { -1 } else { so[v] })
+    }
+    return freeze(out)
+}
+
+// 関数fにwワードのスロットをチェーンの末尾へ足す（sroaNewSlotと同じ形）
+func sroaNewSlotW(st mut St, f FnRef, w int) {
     n := irFnNSlot(mut st, f)
-    s := rec4(mut st, -1, 1, n, -1)
+    s := rec4(mut st, -1, w, n, -1)
     desugar.HeapPush(mut st.d, -1)
     tail := irFnSTail(mut st, f)
     if tail < 0 {
@@ -214,6 +303,36 @@ func sroaNewSlot(st mut St, f FnRef) {
     }
     irSetFnSTail(mut st, f, s)
     irSetFnNSlot(mut st, f, n + 1)
+}
+
+// ブロックblkの中でinsの直前の命令（insが先頭なら -1）
+func sroaPrevOf(st mut St, blk BlkRef, ins InsRef) int {
+    mut prev := -1
+    mut i := irBlkIHead(mut st, blk)
+    while i != -1 && i != ins {
+        prev = int(i)
+        i = irInsNext(mut st, i)
+    }
+    return prev
+}
+
+// prevの直後（prev = -1 ならブロックの先頭）に命令を差し込む
+func sroaInsAt(st mut St, blk BlkRef, prev int, res int, op int, a int, b int, c int) InsRef {
+    if prev >= 0 {
+        return sroaInsAfter(mut st, blk, InsRef(prev), res, op, a, b, c)
+    }
+    r := mkInst(mut st, res, op, a, b, c)
+    irSetInsNext(mut st, r, irBlkIHead(mut st, blk))
+    if irBlkIHead(mut st, blk) == -1 {
+        irSetBlkITail(mut st, blk, r)
+    }
+    irSetBlkIHead(mut st, blk, r)
+    return r
+}
+
+// 関数fに1ワードのスロットをチェーンの末尾へ足す（記録 = [次, 語数, 番号, 空きチェーンの次, 直近のslotaddrの値] — newSlotと同じ形）
+func sroaNewSlot(st mut St, f FnRef) {
+    sroaNewSlotW(mut st, f, 1)
 }
 
 // ブロック blk の命令 at の直後に命令 [res, op, a, b, c] を差し込み、その記録を返す

@@ -154,3 +154,4 @@ func needKinds(p loader.Program, has []bool, stdOnly bool) bool {
     }
     return false
 }
+

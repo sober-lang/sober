@@ -23,10 +23,24 @@ func main() {
     })
     if len(args) == 1 {
         println("100 trials passed")
+        // 子の出力の置き場は実行ごとに別のディレクトリにする（同じ作業ディレクトリで同時に走る実行どうしが上書きし合わない）。
+        // mkdir は既にあれば失敗するので、作れた名前がこの実行のもの。作れない状態で回り続けないよう、試す回数に上限を置く
         _ = os.Mkdir("out")
-        ec := os.RunTo(args[0], []string{"quick:fuzz=60000", "quick:tmp=out/quick_fuzz"}, "out/quick_fuzz.o", "out/quick_fuzz.e") catch -1
+        mut d := ""
+        mut n := 0
+        while d == "" && n < 100 {
+            c := "out/quick_fuzz.${os.Monotonic()}"
+            if os.Mkdir(c) == nil {
+                d = c
+            }
+            n = n + 1
+        }
+        ec := os.RunTo(args[0], []string{"quick:fuzz=60000", "quick:tmp=${d}"}, d + "/o", d + "/e") catch -1
         println("fuzz: exit ${ec}")
-        e := io.ReadFile("out/quick_fuzz.e") catch []byte{}
+        e := io.ReadFile(d + "/e") catch []byte{}
+        _ = os.Remove(d + "/o")
+        _ = os.Remove(d + "/e")
+        _ = os.RemoveDir(d)
         for ln <- strings.Split(string(e) catch "", "\n") {
             if strings.HasPrefix(ln, "quick:") || strings.HasPrefix(ln, "    Int") {
                 println(ln)

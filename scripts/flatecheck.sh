@@ -10,6 +10,8 @@
 # 逐次の符号器（段 8-4b — std/internal/deflate の Stream）: sober test std/internal/deflate を DEFLATE_DUMP つきで走らせ（単体の網 = 一括の復号で往復・emit の切り方の無作為・
 # sync flush の接頭辞）、書かれた列を stream.ts が node:zlib（gunzipSync・接頭辞の inflateRawSync Z_SYNC_FLUSH・逐次の createGunzip）で照合する
 #   scripts/flatecheck.sh [--regen]
+# ゴールデンの並びを呼び手のロケールに依らせない
+export LC_ALL=C.UTF-8
 set -uo pipefail
 cd "$(dirname "$0")/.."
 S2=${STAGE2:-out/stage2/sober2}

@@ -1,0 +1,111 @@
+package rsa
+
+// RSASSA-PKCS1-v1_5 の署名（RFC 8017 8.2 — TLS 1.2 の ServerKeyExchange の rsa_pkcs1_sha1 / sha256 / sha384）と、
+// TLS 1.2 の RSA 鍵交換の premaster の復号（RFC 5246 7.4.7.1 — Bleichenbacher / ROBOT の対策: 形の検査を分岐なしで畳み、外れたら
+// 呼び手が渡した乱数に定数時間で差し替える。失敗を呼び手にも相手にも区別させない）。どちらも std/tls の dangerouslyAllowTls12 の道だけ
+
+import "std/crypto"
+import "std/internal/bless"
+import "std/iter"
+
+// 署名のハッシュの種類（DigestInfo の前置き — RFC 8017 9.2 の注 1）
+const HashSha1 = 1
+const HashSha256 = 2
+const HashSha384 = 3
+
+// hash の DigestInfo の前置き（DER の AlgorithmIdentifier と OCTET STRING の頭）
+func digestPrefix(hash int) []byte {
+    return if hash == HashSha1 {
+        []byte{byte(0x30), byte(0x21), byte(0x30), byte(0x09), byte(0x06), byte(0x05), byte(0x2b), byte(0x0e), byte(0x03), byte(0x02), byte(0x1a), byte(0x05), byte(0x00), byte(0x04), byte(0x14)}
+    } else if hash == HashSha256 {
+        []byte{byte(0x30), byte(0x31), byte(0x30), byte(0x0d), byte(0x06), byte(0x09), byte(0x60), byte(0x86), byte(0x48), byte(0x01), byte(0x65), byte(0x03), byte(0x04), byte(0x02), byte(0x01), byte(0x05), byte(0x00), byte(0x04), byte(0x20)}
+    } else {
+        []byte{byte(0x30), byte(0x41), byte(0x30), byte(0x0d), byte(0x06), byte(0x09), byte(0x60), byte(0x86), byte(0x48), byte(0x01), byte(0x65), byte(0x03), byte(0x04), byte(0x02), byte(0x02), byte(0x05), byte(0x00), byte(0x04), byte(0x30)}
+    }
+}
+
+// digest（hash の値 — SHA-1 は 20・SHA-256 は 32・SHA-384 は 48 バイト）の RSASSA-PKCS1-v1_5 の署名（k バイト）
+@errors(BadSize, Fault)
+@bless
+@effects(!io, !block, !nondet)
+func SignPKCS1v15(k PrivateKey, hash int, digest []byte) ([]byte, error?) {
+    pub := k.pub
+    pre := digestPrefix(hash)
+    tLen := len(pre) + len(digest)
+    if pub.k < tLen + 11 {
+        return []byte{}, BadSize{}
+    }
+    // EM = 0x00 ‖ 0x01 ‖ PS（0xff の列）‖ 0x00 ‖ T
+    mut em := mut []byte{byte(0), byte(1)}
+    for i <- iter.Range(0, pub.k - tLen - 3) {
+        em = append(em, byte(0xff))
+    }
+    em = append(em, byte(0))
+    for x <- pre {
+        em = append(em, x)
+    }
+    for x <- digest {
+        em = append(em, x)
+    }
+    e := freeze(em)
+    s := crtPow(k, bnFromBytes(e, len(pub.n)))
+    sig := internal.bless.Bytes(bnToBytes(s, pub.k))
+    // 自己検証（CRT の故障攻撃の防御 — SignPSS と同じ）
+    back := bnToBytes(expPub(toMont(bnFromBytes(sig, len(pub.n)), pub.mt), pub.e, bnBits(pub.e), pub.mt), pub.k)
+    if !sameTail(back, internal.bless.Bytes(e)) {
+        return []byte{}, Fault{}
+    }
+    return sig, nil
+}
+
+// TLS 1.2 の RSA 鍵交換の premaster（48 バイト）。ct = EncryptedPreMasterSecret の中身・ver = ClientHello の client_version（2 バイト）・
+// fallback = 呼び手が先に作った 48 バイトの乱数。形（0x00 0x02 ‖ 0 を含まない埋め草 ‖ 0x00 ‖ 48 バイト・先頭 2 バイトが ver）が合わなければ fallback を返す。
+// 形の検査・版の照合・差し替えは秘密の値に依る分岐を持たない（全部を OR で畳んで最後に 1 回の mask で選ぶ）。長さの違う ct は公開の誤りとして fallback を返す
+@effects(!io, !block, !nondet)
+func DecryptPremaster(k PrivateKey, ct []byte, ver []byte, fallback []byte) []byte {
+    pub := k.pub
+    if len(ct) != pub.k || len(fallback) != 48 || len(ver) != 2 || pub.k < 48 + 11 {
+        return fallback
+    }
+    c := bnFromBytes(ct, len(pub.n))
+    if !bnLess(c, pub.n) {
+        return fallback
+    }
+    m := bnToBytes(crtPow(k, c), pub.k)
+    n := pub.k
+    // 悪さの和: 先頭 2 バイト・区切りの 0（n - 49）・埋め草の中の 0（[2, n - 49)）・版
+    mut bad := int(m[0]) | (int(m[1]) ^ 2) | int(m[n - 49])
+    for i <- iter.Range(2, n - 49) {
+        bad = bad | (((int(m[i]) - 1) >> 63) & 1)
+    }
+    bad = bad | (int(m[n - 48]) ^ int(ver[0])) | (int(m[n - 47]) ^ int(ver[1]))
+    mask := crypto.NonZero(bad)
+    mut out := mut []byte{}
+    for i <- iter.Range(0, 48) {
+        out = append(out, byte(crypto.Select(mask, int(fallback[i]), int(m[n - 48 + i]))))
+    }
+    return freeze(out)
+}
+
+// x^d mod n（CRT — SignPSS と同じ形: s = sq + q × (qinv × (sp - sq) mod p)）
+func crtPow(k PrivateKey, x []int) []int {
+    pub := k.pub
+    mp := k.mp
+    np := len(mp.m)
+    sp := expMont(toMont(x, mp), k.dp, k.pbits, mp)
+    sq := expMont(toMont(x, k.mq), k.dq, k.qbits, k.mq)
+    l := np + 1
+    blk := zeros(5 * l)
+    mut w := leaseView(blk, 0, 5 * l)
+    wa := addrn(blk)
+    put(mut w, 0, toMont(sp, mp), np)
+    put(mut w, l, toMont(sq, mp), np)
+    put(mut w, 3 * l, k.qinv, np)
+    subMod(mut w, 2 * l, 0, l, mp.m)
+    montMul(mut w, wa, 4 * l, 2 * l, 3 * l, mp)
+    mut h := mut []int{}
+    for i <- iter.Range(0, np) {
+        h = append(h, w[4 * l + i])
+    }
+    return bnAddMul(sq, k.mq.m, freeze(h), len(pub.n))
+}

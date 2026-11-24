@@ -1,0 +1,18 @@
+@@full	03061b0c3266828b	559	10949
+@head	0217ce35de3860f3	0	73
+const AlpnH11	79863f92facdef99	1	47
+const AlpnH2	dc972363a482cca2	1	46
+const AlpnNone	c77b2bc034cdd083	1	48
+const RecvBad	b0cf1eb8cb7b8ae7	1	47
+const RecvClosed	e0dab64c63b0c99c	1	50
+const RecvEnd	8f2a5baf8dd3bc5c	1	47
+const RecvMore	fefd603fbbe00108	1	48
+func New	25609ea30552bb9e	17	1027
+type CodeFn	fdb6978a5dd3def3	3	151
+type FlushFn	fa1861144f934201	5	214
+type Ops	81fb22d0adf98fcc	5	272
+type PutFn	b2cf9ad67215bdf3	6	248
+type RecvFn	931c26cda42620a4	8	319
+type State	0c07da41e64cd341	5	265
+type Store	d741afba2cbe08bf	6	296
+type secSeal	76318420616f4035	1	69

@@ -1,0 +1,332 @@
+package cbcrec
+
+// TLS 1.2 の CBC の記録（RFC 5246 6.2.3.2 — AES-128-CBC と HMAC-SHA1 / HMAC-SHA256）。std/tls の dangerouslyAllowTls12 の道だけ。
+// 断片 = 明示の IV（16 バイト）‖ CBC(平文 ‖ MAC ‖ 埋め草)。MAC は seq ‖ 型 ‖ 版 ‖ 長さ ‖ 平文 の HMAC（MAC-then-encrypt）。
+// Open は Lucky13 の対策として、埋め草の検査・MAC の取り出し・MAC の計算を、埋め草の長さ（秘密）に依らない処理で行う:
+// 埋め草は末尾 256 バイトの窓を全部見る・MAC の取り出しはありうる位置を全部なめて mask で選ぶ・MAC の計算は、ありうる長さの範囲の
+// ブロックを全部圧縮して、本当の最後のブロックの後の連鎖値を mask で選ぶ（BoringSSL の EVP_tls_cbc_digest_record と同じ考え方）。
+// 埋め草の誤りと MAC の誤りは同じ BadMac（相手には同じ bad_record_mac）。
+// encrypt_then_mac（RFC 7366）を相手と合意した接続は SealEtm / OpenEtm（MAC = seq ‖ 型 ‖ 版 ‖ 長さ ‖ IV ‖ 暗号文 — 先に照合するので Lucky13 の面が無い）
+
+import "std/crypto"
+import "std/crypto/aescbc"
+import "std/crypto/sha256"
+import "std/internal/bless"
+import "std/internal/sha1"
+import "std/iter"
+
+// MAC の種類
+const MacSha1 = 1
+const MacSha256 = 2
+
+const ivSize = 16
+const hdrSize = 13
+const padWindow = 256
+
+// 鍵が合わない・暗号の専用命令が無い
+type BadKey error
+
+// 断片の形・埋め草・MAC のどれかが合わない（区別しない）
+type BadMac error
+
+// 1 方向の鍵（MAC の鍵と AES の鍵）
+type Keys struct {
+    alg int
+    mac []byte @secret
+    aes crypto.aescbc.Key
+}
+
+// MAC の長さ（SHA-1 は 20・SHA-256 は 32）
+func MacSize(alg int) int {
+    return if alg == MacSha1 { 20 } else { 32 }
+}
+
+// 1 方向の鍵（mac = MAC の鍵〔MacSize(alg) バイト〕・key = AES-128 の鍵）
+@errors(BadKey)
+@secret(mac, key)
+@effects(!io, !block, !nondet)
+func New(alg int, mac []byte, key []byte) (Keys, error?) {
+    if (alg != MacSha1 && alg != MacSha256) || len(mac) != MacSize(alg) {
+        return Keys{alg: 0, mac: []byte{}, aes: crypto.aescbc.Key{tbl: []byte{}}}, BadKey{}
+    }
+    a := crypto.aescbc.Prepare(key) catch return Keys{alg: 0, mac: []byte{}, aes: crypto.aescbc.Key{tbl: []byte{}}}, BadKey{}
+    return Keys{alg: alg, mac: mac, aes: a}, nil
+}
+
+// 平文 pt の断片（iv = 明示の IV〔予測できない値 — 呼び手が記録ごとに作る〕）。断片は相手へ送る値なので公開（@bless — aesgcm.SealTo と同じ）
+@errors(BadMac)
+@bless
+@effects(!io, !block, !nondet)
+func Seal(k Keys, seq int, typ int, ver int, iv []byte, pt []byte) ([]byte, error?) {
+    mac := hmacPub(k.alg, k.mac, header(seq, typ, ver, len(pt)), pt)
+    mut body := mut []byte{}
+    for x <- pt {
+        body = append(body, x)
+    }
+    for x <- mac {
+        body = append(body, x)
+    }
+    padv := 15 - len(body) % 16
+    for i <- iter.Range(0, padv + 1) {
+        body = append(body, byte(padv))
+    }
+    ct := crypto.aescbc.Encrypt(k.aes, iv, freeze(body)) catch return []byte{}, BadMac{}
+    return cat(iv, ct), nil
+}
+
+// 断片 frag の平文（形・埋め草・MAC のどれかが合わなければ BadMac）。処理の時間は frag の長さだけに依る
+@errors(BadMac)
+@effects(!io, !block, !nondet)
+func Open(k Keys, seq int, typ int, ver int, frag []byte) ([]byte, error?) {
+    ml := MacSize(k.alg)
+    l := len(frag) - ivSize
+    if l < 16 || l % 16 != 0 || l < ml + 1 {
+        return []byte{}, BadMac{}
+    }
+    p := crypto.aescbc.DecryptAt(k.aes, head(frag, ivSize), frag, ivSize, l) catch return []byte{}, BadMac{}
+    // 埋め草（末尾の窓 — 埋め草の長さ pad + 1 の中の全バイトが pad）
+    pad := int(p[l - 1])
+    mut good := leMask(pad + 1 + ml, l)
+    win := if l < padWindow { l } else { padWindow }
+    for i <- iter.Range(0, win) {
+        good = good & ^(leMask(i, pad) & crypto.NonZero(int(p[l - 1 - i]) ^ pad))
+    }
+    // 埋め草が誤りなら埋め草を 0 として続ける（MAC の計算の量を変えない）
+    n := l - ((pad + 1) & good) - ml
+    lo := if l - ml - padWindow > 0 { l - ml - padWindow } else { 0 }
+    hi := l - ml
+    // 記録の MAC（ありうる位置 [lo, hi] を全部なめて n の位置を選ぶ）
+    mut got := mut []int{}
+    for j <- iter.Range(0, ml) {
+        got = append(got, 0)
+    }
+    for s <- iter.Range(lo, hi + 1) {
+        at := eqMask(s, n)
+        for j <- iter.Range(0, ml) {
+            got[j] = got[j] | (int(p[s + j]) & at)
+        }
+    }
+    want := macCt(k.alg, k.mac, header(seq, typ, ver, 0), p, n, lo, hi)
+    mut d := 0
+    for j <- iter.Range(0, ml) {
+        d = d | (int(want[j]) ^ got[j])
+    }
+    good = good & ^crypto.NonZero(d)
+    // 判定と長さは相手に見える（bad_record_mac か、平文の長さの記録）ので、ここで公開の値にする
+    if internal.bless.Int(good) == 0 {
+        return []byte{}, BadMac{}
+    }
+    return head(p, internal.bless.Int(n)), nil
+}
+
+// encrypt_then_mac の断片（IV ‖ CBC(平文 ‖ 埋め草) ‖ MAC — 公開）
+@errors(BadMac)
+@bless
+@effects(!io, !block, !nondet)
+func SealEtm(k Keys, seq int, typ int, ver int, iv []byte, pt []byte) ([]byte, error?) {
+    mut body := mut []byte{}
+    for x <- pt {
+        body = append(body, x)
+    }
+    padv := 15 - len(body) % 16
+    for i <- iter.Range(0, padv + 1) {
+        body = append(body, byte(padv))
+    }
+    ct := crypto.aescbc.Encrypt(k.aes, iv, freeze(body)) catch return []byte{}, BadMac{}
+    c := cat(iv, ct)
+    return cat(c, hmacPub(k.alg, k.mac, header(seq, typ, ver, len(c)), c)), nil
+}
+
+// SealEtm の逆（MAC を先に定数時間で照合し、合ってから復号して埋め草を外す）
+@errors(BadMac)
+@effects(!io, !block, !nondet)
+func OpenEtm(k Keys, seq int, typ int, ver int, frag []byte) ([]byte, error?) {
+    ml := MacSize(k.alg)
+    c := len(frag) - ml
+    l := c - ivSize
+    if l < 16 || l % 16 != 0 {
+        return []byte{}, BadMac{}
+    }
+    body := head(frag, c)
+    want := hmacPub(k.alg, k.mac, header(seq, typ, ver, c), body)
+    if !crypto.Equal(want, tail(frag, c)) {
+        return []byte{}, BadMac{}
+    }
+    p := crypto.aescbc.DecryptAt(k.aes, head(frag, ivSize), frag, ivSize, l) catch return []byte{}, BadMac{}
+    // MAC が合った後の埋め草は相手が作った値（秘密の面が無い）
+    pad := internal.bless.Int(int(p[l - 1]))
+    if pad + 1 > l {
+        return []byte{}, BadMac{}
+    }
+    for i <- iter.Range(0, pad + 1) {
+        if internal.bless.Int(int(p[l - 1 - i])) != pad {
+            return []byte{}, BadMac{}
+        }
+    }
+    return head(p, l - pad - 1), nil
+}
+
+// seq ‖ 型 ‖ 版 ‖ 長さ（13 バイト）
+func header(seq int, typ int, ver int, n int) []byte {
+    mut h := mut []byte{}
+    for i <- iter.Range(0, 8) {
+        h = append(h, byte((seq >> (56 - 8 * i)) & 0xff))
+    }
+    h = append(h, byte(typ & 0xff))
+    h = append(h, byte((ver >> 8) & 0xff))
+    h = append(h, byte(ver & 0xff))
+    h = append(h, byte((n >> 8) & 0xff))
+    h = append(h, byte(n & 0xff))
+    return freeze(h)
+}
+
+// 長さが公開の HMAC（key ≤ 64 バイト — New が見る）: H(opad ‖ H(ipad ‖ a ‖ b))
+@secret(key)
+func hmacPub(alg int, key []byte, a []byte, b []byte) []byte {
+    ip := pads(key, 0x36)
+    inner := sum3(alg, ip, a, b)
+    return sum3(alg, pads(key, 0x5c), inner, []byte{})
+}
+
+// Open の MAC の計算（Lucky13 の対策）。メッセージ = hdr（長さの欄は n で上書き）‖ p[0, n)・n は [lo, hi] の秘密の値。
+// ありうる最短のメッセージに必ず含まれるブロックは普通に圧縮し、その後ろは、ありうる最長のメッセージの最後のブロックまでを、
+// 毎回同じバイトの組み立て（メッセージのバイト・0x80・0・長さ）で圧縮して、本当の最後のブロックの後の連鎖値を mask で選ぶ
+@secret(mac, p, n)
+func macCt(alg int, mac []byte, hdr0 []byte, p []byte, n int, lo int, hi int) []byte {
+    mut x := mut []byte{}
+    for i <- iter.Range(0, hdrSize - 2) {
+        x = append(x, hdr0[i])
+    }
+    x = append(x, byte((n >> 8) & 0xff))
+    x = append(x, byte(n & 0xff))
+    for y <- p {
+        x = append(x, y)
+    }
+    xs := freeze(x)
+    mut h := mut []int{}
+    for v <- initOf(alg) {
+        h = append(h, v)
+    }
+    mut w := mut []int{}
+    for i <- iter.Range(0, 80) {
+        w = append(w, 0)
+    }
+    blockOf(alg, mut h, mut w, pads(mac, 0x36), 0)
+    m := hdrSize + n
+    kMin := (hdrSize + lo) / 64
+    kMax := (hdrSize + hi + 8) / 64
+    for kb <- iter.Range(0, kMin) {
+        blockOf(alg, mut h, mut w, xs, 64 * kb)
+    }
+    kLast := (m + 8) >> 6
+    bits := (64 + m) * 8
+    mut res := mut []int{}
+    for j <- iter.Range(0, len(h)) {
+        res = append(res, 0)
+    }
+    for kb <- iter.Range(kMin, kMax + 1) {
+        last := eqMask(kb, kLast)
+        mut blk := mut []byte{}
+        for b <- iter.Range(0, 64) {
+            q := 64 * kb + b
+            v := if q < len(xs) { int(xs[q]) } else { 0 }
+            mut o := (v & ltMask(q, m)) | (0x80 & eqMask(q, m))
+            if b >= 56 {
+                o = o | (((bits >> (8 * (63 - b))) & 0xff) & last)
+            }
+            blk = append(blk, byte(o))
+        }
+        blockOf(alg, mut h, mut w, freeze(blk), 0)
+        for j <- iter.Range(0, len(h)) {
+            res[j] = res[j] | (h[j] & last)
+        }
+    }
+    inner := bytesOf(alg, freeze(res))
+    return sum3(alg, pads(mac, 0x5c), inner, []byte{})
+}
+
+// a ≤ b なら -1・それ以外は 0（|a|, |b| < 2^62）
+@secret(a, b)
+func leMask(a int, b int) int {
+    return ^((b - a) >> 63)
+}
+
+// a < b なら -1・それ以外は 0
+@secret(a, b)
+func ltMask(a int, b int) int {
+    return (a - b) >> 63
+}
+
+// a == b なら -1・それ以外は 0
+@secret(a, b)
+func eqMask(a int, b int) int {
+    return ^crypto.NonZero(a ^ b)
+}
+
+// 64 バイトの鍵のブロック（key ‖ 0 埋め）を x で xor したもの
+@secret(key)
+func pads(key []byte, x int) []byte {
+    mut out := mut []byte{}
+    for i <- iter.Range(0, 64) {
+        out = append(out, byte((if i < len(key) { int(key[i]) } else { 0 }) ^ x))
+    }
+    return freeze(out)
+}
+
+func sum3(alg int, a []byte, b []byte, c []byte) []byte {
+    if alg == MacSha1 {
+        mut s := internal.sha1.New()
+        internal.sha1.Write(mut s, a)
+        internal.sha1.Write(mut s, b)
+        internal.sha1.Write(mut s, c)
+        return internal.sha1.Sum(s)
+    }
+    mut s := crypto.sha256.New()
+    crypto.sha256.Write(mut s, a)
+    crypto.sha256.Write(mut s, b)
+    crypto.sha256.Write(mut s, c)
+    return crypto.sha256.Sum(s)
+}
+
+func initOf(alg int) []int {
+    return if alg == MacSha1 { internal.sha1.Init() } else { sha256Init() }
+}
+
+func blockOf(alg int, h mut []int, w mut []int, src []byte, off int) {
+    if alg == MacSha1 {
+        internal.sha1.Block(mut h, mut w, src, off)
+    } else {
+        sha256Block(mut h, mut w, src, off)
+    }
+}
+
+func bytesOf(alg int, h []int) []byte {
+    return if alg == MacSha1 { internal.sha1.Bytes(h) } else { sha256Bytes(h) }
+}
+
+func cat(a []byte, b []byte) []byte {
+    mut out := mut []byte{}
+    for x <- a {
+        out = append(out, x)
+    }
+    for x <- b {
+        out = append(out, x)
+    }
+    return freeze(out)
+}
+
+func head(a []byte, n int) []byte {
+    mut out := mut []byte{}
+    for i <- iter.Range(0, n) {
+        out = append(out, a[i])
+    }
+    return freeze(out)
+}
+
+func tail(a []byte, from int) []byte {
+    mut out := mut []byte{}
+    for i <- iter.Range(from, len(a)) {
+        out = append(out, a[i])
+    }
+    return freeze(out)
+}

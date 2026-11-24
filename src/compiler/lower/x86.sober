@@ -297,8 +297,9 @@ func xModule(st mut St, syms bool) []byte {
             names = append(names, freeze(nm))
         }
     }
-    fk := if st.fnHash || st.ckEmit || st.xPl.on { xFnKeys(mut st) } else { [][]byte{} }
-    if st.xPl.on {
+    fk := if st.fnHash || st.ckEmit || st.xPl.on || st.xProf.on { xFnKeys(mut st) } else { [][]byte{} }
+    // 熱さのプロファイル（profile.sober）も関数の鍵で行を引く（凍結の後のxModuleFrozenが読む）
+    if st.xPl.on || st.xProf.on {
         st.xPlKeys = fk
     }
     // 段階3の β の鍵の表（凍結の前 — 名前を読む。x86のcfgの正準形つき）
@@ -307,11 +308,14 @@ func xModule(st mut St, syms bool) []byte {
         st.ckRt = ckRtFns(mut st)
     }
     // 段階3の格納場所の β2（bcache.sober）: 鍵を組んで引き、B2を飛ばしたのに外れた関数へ遅れてB2を掛ける（ヒープを書く — 凍結の前）
-    if st.bcv.on {
-        bcPreX86(mut st, entryRec, ckt)
+    pl := if st.bcv.on { bcPreX86(mut st, entryRec, ckt) } else { bxNone() }
+    // 全部の後の照合で外れた package があれば、lowerCore が外れの集合を増やして回し直す（この周の出力と書きのバッチは捨てる）
+    if len(bxCRedoSet(mut st)) > 0 {
+        return []byte{}
     }
     // 検証モードのstaleの明示（凍結の後は名前を読めない — bcStaleName）
-    if st.bcv.vfy {
+    // 焼き込みのパックを作るビルド（SOBER_BAKE_STD=1）も、β2 を書くかの判定に名前を使う（bcBakeSkipX）
+    if st.bcv.vfy || bcBakeStd() {
         st.bcNames = bcNamesOf(mut st)
     }
     // ヒープを凍らせる（以後x86のフェーズはヒープを書かない — 読みはxgが凍らせた表から。凍結のインターフェース）。
@@ -324,11 +328,11 @@ func xModule(st mut St, syms bool) []byte {
         st.hfOn = true
     }
     loader.Stage("x-freeze")
-    return xModuleFrozen(mut st, syms, entryRec, if st.fnHash || st.ckEmit { fk } else { freeze(names) }, ckt)
+    return xModuleFrozen(mut st, syms, entryRec, if st.fnHash || st.ckEmit { fk } else { freeze(names) }, ckt, pl)
 }
 
 // 凍結の後のxModuleの本体（呼び出しの及ぶ範囲がヒープ〔st.d.h・hget / hset / hpush・dat〕に届かないことをscripts/lparcfg.tsの検査が見る）
-func xModuleFrozen(st mut St, syms bool, entryRec int, names [][]byte, ckt CkTab) []byte {
+func xModuleFrozen(st mut St, syms bool, entryRec int, names [][]byte, ckt CkTab, pl BxPlan) []byte {
     // 関数・globalの記録 → 番号（番地の昇順の位置 — 二分探索で引く。配置はチェーンの順 = ford / gord — recIds）
     mut fch := mut []int{}
     mut f := st.fhead
@@ -349,6 +353,18 @@ func xModuleFrozen(st mut St, syms bool, entryRec int, names [][]byte, ckt CkTab
         if st.ckEmit {
             ckBetaCheck(mut st, frecs)
             return ckEmitText(mut st, frecs, names, beta)
+        }
+    }
+    // 熱さのプロファイル（profile.sober）: 関数の鍵と指紋で行を引き、冷たいブロックの印の表を組む（x86の群の子へはxParCfgで）
+    // 格納場所を使うビルドはbcPreX86が組んだ（β2の鍵に切片を混ぜるため）
+    if st.xProf.on && !st.bcv.on {
+        fp := if ckt.on && !st.bcv.on { ckBetaSeed(mut st, ckt, frecs, PRF_S1, PRF_S2) } else { pfZeros(2 * nf) }
+        st.xPf = pfMarks(mut st, st.xPlKeys, fp, nf)
+        if st.xProf.blkmap {
+            println("pfhit ${st.pfHit} ${st.pfRows}")
+            for i <- iter.Range(0, nf) {
+                println("blkfn ${i} ${fp[2 * i]} ${fp[2 * i + 1]} ${string(st.xPlKeys[i]) catch ""}")
+            }
         }
     }
     mut gch := mut []int{}
@@ -514,6 +530,12 @@ func xModuleFrozen(st mut St, syms bool, entryRec int, names [][]byte, ckt CkTab
         st.xPlOut = xPlTable(mut st, freeze(fbeg), freeze(fend), ce, x86.Here(mut c), gr0, gord, freeze(gro), freeze(goff), ru, bss, len(rodata))
     }
     lay := elf.LayoutOf(x86.Here(mut c), len(rodata))
+    // ブロックの番地の表（`--blkmap` — profile.sober）: 関数の入口の番地（`blkat <関数の添字> <番地>`。kid・lambdaは鍵とsymsの名前が違うので番地で結ぶ）
+    if len(st.xPf) > 0 && (st.xPf[0] & PRF_MAP) != 0 {
+        for i <- iter.Range(0, nf) {
+            println("blkat ${i} ${lay.Code + fstart[i]}")
+        }
+    }
     if syms {
         mut out := mut []byte{}
         for fk <- iter.Range(0, nf) {
@@ -563,6 +585,11 @@ func xModuleFrozen(st mut St, syms bool, entryRec int, names [][]byte, ckt CkTab
     exe := elf.Executable(mut c, freeze(rodata), if bss > 8 { bss } else { 8 })
     if st.bcv.on {
         bcCaptureAll(mut st, exe, mut fx, fr, gr0, ckt)
+        if st.bx.on {
+            loader.Stage("bx-cap")
+            bxWrite(mut st, pl)
+            loader.Stage("bx-write")
+        }
         bcFlush(mut st)
     }
     return exe
@@ -636,9 +663,10 @@ type XGroup struct {
 
 // 子のStにコピーするフィールド（xFuncが読むStのフィールドの全部 — 上の注意）
 func xParCfg(st mut St) []int {
-    // 末尾のワード = SOBER_XDBGの値の長さ。値のバイト列はその後ろへ（xdbgCfg — 鍵にも入るので値を変えればキャッシュに当たらない）
-    return xdbgCfg([]int{int(st.rtCopy), int(st.rtCopy8), int(st.rtGrow), int(st.rtGrow8), int(st.rtGrowTry), int(st.rtMapGrow), int(st.rtReloc), int(st.rtReloc8),
-        st.trapG, if st.trapUse { 1 } else { 0 }, if st.taskUse { 1 } else { 0 }, if st.xcopy { 1 } else { 0 }, st.xLay, int(st.rtPanic), int(st.rtPanicMem), if st.slotPoison { 1 } else { 0 }, if st.frStat { 1 } else { 0 }, int(st.rtMatchLen), st.rtMut, int(st.rtJClean), int(st.rtErrReloc), if st.memRep { 1 } else { 0 }, int(st.rtWinRalloc), st.taskG, st.wkG, st.pstatG, int(st.xNWait), int(st.rtWmAlloc), int(st.rtWmRaise), int(st.rtWmAllocS), int(st.rtWmRaiseS), st.keepG, int(st.rtLockWait), len(st.xdbgPat)}, st.xdbgPat)
+    // 最後の2ワード = SOBER_XDBGの値の長さ・プロファイルの印の表（profile.sober）の長さ。値のバイト列と印の表はその後ろへこの順で
+    // （xdbgCfg — 鍵にも入るので値を変えればキャッシュに当たらない）
+    return xdbgCfg(xdbgCfg([]int{int(st.rtCopy), int(st.rtCopy8), int(st.rtGrow), int(st.rtGrow8), int(st.rtGrowTry), int(st.rtMapGrow), int(st.rtReloc), int(st.rtReloc8),
+        st.trapG, if st.trapUse { 1 } else { 0 }, if st.taskUse { 1 } else { 0 }, if st.xcopy { 1 } else { 0 }, st.xLay, int(st.rtPanic), int(st.rtPanicMem), if st.slotPoison { 1 } else { 0 }, if st.frStat { 1 } else { 0 }, int(st.rtMatchLen), st.rtMut, int(st.rtJClean), int(st.rtErrReloc), if st.memRep { 1 } else { 0 }, int(st.rtWinRalloc), st.taskG, st.wkG, st.pstatG, int(st.xNWait), int(st.rtWmAlloc), int(st.rtWmRaise), int(st.rtWmAllocS), int(st.rtWmRaiseS), st.keepG, int(st.rtLockWait), int(st.rtPstr), int(st.rtPqstr), int(st.rtStreq), len(st.xdbgPat), len(st.xPf)}, st.xdbgPat), st.xPf)
 }
 
 // 整列（配置の土台）: 関数の先頭とループの頭を XA_* バイトの境界へ nop で詰める（最適化のバックエンドだけ — 写しのバックエンドは
@@ -858,7 +886,12 @@ func xParGroup(g XGroup, hf table.Frozen[int], cfg []int, addr []int, fr []int, 
     st.rtWmRaiseS = FnRef(cfg[30])
     st.keepG = cfg[31]
     st.rtLockWait = FnRef(cfg[32])
-    st.xdbgPat = xdbgPatOf(cfg, cfg[33])
+    // 読むだけのrtの関数（rtReadOnly — slotcolorが実引数を呼び出しの点の読み書きに数える）
+    st.rtPstr = FnRef(cfg[33])
+    st.rtPqstr = FnRef(cfg[34])
+    st.rtStreq = FnRef(cfg[35])
+    st.xdbgPat = xdbgPatOf(cfg, 38, cfg[36])
+    st.xPf = xdbgPatOf(cfg, 38 + cfg[36], cfg[37])
     // 段階3の例外のマーク（xRegCc）
     st.xAddr = addr
     st.xXmm = 0
@@ -1084,6 +1117,7 @@ type xF struct {
     wc mut []int         // 冷たいブロックを深さ 0 で数えた重み（区間分割 S3a — 熱いブロックに使用の無い値はこちらを重みに）
     hu mut []int         // ループの中の熱いブロックの使用の数（定義・恒等の辺の実引数・ループの外の使用は数えない）
     cold mut []int       // 吐く順のブロックが冷たいか（xColdBlocks）
+    etl mut []int        // ブロック（番号）を吐く順だけで末尾の区画の前へ寄せたか（xEmitOrder — 位置の番号は元のまま）。寄せなければ空
     // 冷たい領域の末尾配置（区間分割 S3b）: 末尾の区画の始まりの位置（無ければ大きな値）・末尾の外包（値ごと — 本体と別の部分区間に）
     c0 int
     tS mut []int
@@ -1567,7 +1601,7 @@ func xFunc(st mut St, c mut table.Table[byte], fx mut table.Table[int], wb mut t
     mut e := xF{f: f, nv: xfNVal(mut st, f), np: xFnNParam(mut st, f), nb: xfNBlk(mut st, f), blk: mut []int{}, order: mut []int{}, norder: 0, bpos: mut []int{},
         ivS: mut []int{}, ivE: mut []int{}, loc: mut []int{}, pnx: mut []int{}, pv: mut []int{}, npc: 0, spd: mut []int{}, lpR: mut []int{}, cuts: mut []int{}, sv: mut []int{}, pwt: mut []int{}, ldep: mut []int{}, pfix: mut []int{}, aL: mut []int{}, aB: mut []int{}, aC: mut []int{}, aN: mut []int{}, ev: mut []int{}, slotDisp: mut []int{}, isConst: mut []int{}, constV: mut []int{}, tg: mut []int{}, saveReg: mut []int{}, saveDisp: mut []int{},
         nsave: 0, blockAt: mut []int{}, jAt: mut []int{}, jTo: mut []int{}, nj: 0, eoA: mut []int{}, eoP: mut []int{}, eoT: mut []int{}, eoX: mut []int{}, bdep: mut []int{}, hvV: mut []int{}, hvB: mut []int{}, hdB: mut []int{}, div0: mut []int{}, nd: 0, pos: 0, mvD: mut []int{}, mvS: mut []int{}, mvLive: mut []int{},
-        opt: !st.xcopy, fuse: mut []int{}, flg: mut []int{}, fcc: 0, next: -1, fell: false, hP: mut []int{}, hA1: mut []int{}, hA2: mut []int{}, hOp: mut []int{}, wt: mut []int{}, wc: mut []int{}, hu: mut []int{}, cold: mut []int{}, c0: 9223372036854775807, tS: mut []int{}, tE: mut []int{}, npc0: 0, porig: mut []int{}, remat: mut []int{}, fold: mut []int{}, fA: mut []int{}, fB: mut []int{}, fS: mut []int{}, fcls: mut []int{}, nx: xNXmm, ng: xNAlloc, svOk: mut []int{}, cp: mut []int{}, cpc: mut []int{}, cpm: mut []int{}, csd: mut []int{}, nofr: false, shAt: 0, zTop: 0, zCnt: 0, rc: false, nreg: 0, hR: mut []int{}, putV: -1, putR: -1, putAt: -1, zAt: mut []int{}, mA: -1, mC: -1, mD: -1, memOn: false, u8x: -1}
+        opt: !st.xcopy, fuse: mut []int{}, flg: mut []int{}, fcc: 0, next: -1, fell: false, hP: mut []int{}, hA1: mut []int{}, hA2: mut []int{}, hOp: mut []int{}, wt: mut []int{}, wc: mut []int{}, hu: mut []int{}, cold: mut []int{}, etl: mut []int{}, c0: 9223372036854775807, tS: mut []int{}, tE: mut []int{}, npc0: 0, porig: mut []int{}, remat: mut []int{}, fold: mut []int{}, fA: mut []int{}, fB: mut []int{}, fS: mut []int{}, fcls: mut []int{}, nx: xNXmm, ng: xNAlloc, svOk: mut []int{}, cp: mut []int{}, cpc: mut []int{}, cpm: mut []int{}, csd: mut []int{}, nofr: false, shAt: 0, zTop: 0, zCnt: 0, rc: false, nreg: 0, hR: mut []int{}, putV: -1, putR: -1, putAt: -1, zAt: mut []int{}, mA: -1, mC: -1, mD: -1, memOn: false, u8x: -1}
     xFill(mut e.blk, e.nb, -1)
     e.rc = xRegCc(mut st, f, frecs)
     e.nreg = if !e.rc { 0 } else if e.np < xNArgReg { e.np } else { xNArgReg }
@@ -1771,6 +1805,9 @@ func xFunc(st mut St, c mut table.Table[byte], fx mut table.Table[int], wb mut t
     xFill(mut e.mvD, maxArgs + len(e.sv), 0)
     xFill(mut e.mvS, maxArgs + len(e.sv), 0)
     xFill(mut e.mvLive, maxArgs + len(e.sv), 0)
+    if e.opt && len(st.xPf) > 0 {
+        xEmitOrder(mut st, mut e, xIndex(frecs, int(f)))
+    }
 
     mut hdr := mut []int{}
     xFill(mut hdr, e.norder, 0)
@@ -1923,6 +1960,7 @@ func xFunc(st mut St, c mut table.Table[byte], fx mut table.Table[int], wb mut t
             win = false
         }
     }
+    bend := x86.Here(mut c)
     if e.nd > 0 {
         at := x86.Here(mut c)
         for k <- iter.Range(0, e.nd) {
@@ -1951,6 +1989,9 @@ func xFunc(st mut St, c mut table.Table[byte], fx mut table.Table[int], wb mut t
     }
     if len(st.xdbgPat) > 0 && xdbgMatch(mut st, f) {
         xdbgDump(mut st, mut e, f, entry, nsp1, split, nsp)
+    }
+    if len(st.xPf) > 0 && (st.xPf[0] & PRF_MAP) != 0 {
+        xBlkMap(mut e, xIndex(frecs, int(f)), entry, bend)
     }
     return entry
 }
@@ -5956,6 +5997,11 @@ func xInst(st mut St, e mut xF, c mut table.Table[byte], fx mut table.Table[int]
                 x86.MovMemImm32(mut c, x86.Rbp, xLocVal(l), a)
                 xTagAt(mut e, res, x86.Here(mut c) - 4)
             }
+        } else if e.opt && xIsGpr(xLocAt(mut e, res, e.pos)) {
+            // 結果のレジスタへ直に作る（rax を経た移しの 1 op を省く）
+            r := xLocVal(xLocAt(mut e, res, e.pos))
+            x86.MovRegImm64(mut c, r, a)
+            xPut(mut e, mut c, res, r)
         } else {
             x86.MovRegImm64(mut c, x86.Rax, a)
             xPut(mut e, mut c, res, x86.Rax)
@@ -6163,6 +6209,11 @@ func xInst(st mut St, e mut xF, c mut table.Table[byte], fx mut table.Table[int]
         xPut(mut e, mut c, res, x86.Rax)
     } else if (op == OpPtoi || op == OpItop || op == OpGlobal) && e.remat[res] == 1 {
         // 大域の番地（とその ptoi / itop）は使う点で作り直す
+    } else if (op == OpPtoi || op == OpItop) && e.opt && xIsGpr(xLocAt(mut e, res, e.pos)) {
+        // 結果のレジスタへ直に読む（元がフレームにあるとき、rax へ読んでから移す 1 op を省く）
+        r := xLocVal(xLocAt(mut e, res, e.pos))
+        xGetInto(mut e, mut c, a, r)
+        xPut(mut e, mut c, res, r)
     } else if op == OpPtoi || op == OpItop {
         x := xGet(mut e, mut c, a, x86.Rax)
         xPut(mut e, mut c, res, x)
@@ -7202,7 +7253,7 @@ func xTermEmitOpt(st mut St, e mut xF, c mut table.Table[byte], b BlkRef) {
             e.eoT = append(e.eoT, int(elseTo))
             e.eoX = append(e.eoX, elseArgs)
             xEdge(mut st, mut e, mut c, thenTo, thenArgs, true)
-        } else if e.bpos[xbId(mut st, elseTo)] >= e.c0 && e.bpos[xbId(mut st, thenTo)] < e.c0 && !xEdgeMoves(mut st, mut e, thenTo, thenArgs) {
+        } else if xIsTail(mut e, xbId(mut st, elseTo)) && !xIsTail(mut e, xbId(mut st, thenTo)) && !xEdgeMoves(mut st, mut e, thenTo, thenArgs) {
             // elseが末尾の冷たい区画（panicの点・遅いパス）でコピーが要る: コピーを関数の末尾へ出し、thenへは落ちるかjmp（コピーをその場に置くと
             // 境界検査の熱いパスがすべてtakenに反転する）
             e.eoA = append(e.eoA, x86.JccRel32(mut c, cc ^ 1))
@@ -7210,7 +7261,7 @@ func xTermEmitOpt(st mut St, e mut xF, c mut table.Table[byte], b BlkRef) {
             e.eoT = append(e.eoT, int(elseTo))
             e.eoX = append(e.eoX, elseArgs)
             xEdge(mut st, mut e, mut c, thenTo, thenArgs, true)
-        } else if e.bpos[xbId(mut st, thenTo)] >= e.c0 && e.bpos[xbId(mut st, elseTo)] < e.c0 && !xEdgeMoves(mut st, mut e, elseTo, elseArgs) {
+        } else if xIsTail(mut e, xbId(mut st, thenTo)) && !xIsTail(mut e, xbId(mut st, elseTo)) && !xEdgeMoves(mut st, mut e, elseTo, elseArgs) {
             e.eoA = append(e.eoA, x86.JccRel32(mut c, cc))
             e.eoP = append(e.eoP, e.pos)
             e.eoT = append(e.eoT, int(thenTo))
@@ -7721,6 +7772,16 @@ func xAes(st mut St, e mut xF, c mut table.Table[byte], res int, ops int, kind i
         xGetInto(mut e, mut c, xAt(mut st, ops, 2), x86.Rcx)
         xGetInto(mut e, mut c, xAt(mut st, ops, 3), x86.Rdx)
         xAesStitch(mut c, kind == AK_OPEN)
+    } else if kind == AK_CBCKEY {
+        xGetInto(mut e, mut c, xAt(mut st, ops, 0), x86.R11)
+        xGetInto(mut e, mut c, xAt(mut st, ops, 1), x86.Rax)
+        xAesCbcKey(mut c)
+    } else if kind == AK_CBCE || kind == AK_CBCD {
+        xGetInto(mut e, mut c, xAt(mut st, ops, 0), x86.R11)
+        xGetInto(mut e, mut c, xAt(mut st, ops, 1), x86.Rax)
+        xGetInto(mut e, mut c, xAt(mut st, ops, 2), x86.Rcx)
+        xGetInto(mut e, mut c, xAt(mut st, ops, 3), x86.Rdx)
+        xAesCbc(mut c, kind == AK_CBCD)
     } else {
         xGetInto(mut e, mut c, xAt(mut st, ops, 0), x86.R11)
         xGetInto(mut e, mut c, xAt(mut st, ops, 1), x86.Rax)
@@ -8386,20 +8447,7 @@ func xAesKey(c mut table.Table[byte]) {
     xAesConst(mut c, AK_ONE, 1, 0)
     xAesConst(mut c, AK_MASK, -1, -1)
     xAesConst(mut c, AK_MASK + 16, 0, 0)
-    x86.MovdquXMem(mut c, 1, x86.R11, 0)
-    x86.MovdquMemX(mut c, x86.Rax, 0, 1)
-    rcons := []int{1, 2, 4, 8, 16, 32, 64, 128, 0x1b, 0x36}
-    for r <- iter.Range(0, 10) {
-        x86.AeskeygenassistXXI(mut c, 2, 1, rcons[r])
-        x86.PshufdXXI(mut c, 2, 2, 0xff)
-        x86.MovdqaXX(mut c, 3, 1)
-        for k <- iter.Range(0, 3) {
-            x86.PslldqXI(mut c, 3, 4)
-            x86.PxorXX(mut c, 1, 3)
-        }
-        x86.PxorXX(mut c, 1, 2)
-        x86.MovdquMemX(mut c, x86.Rax, 16 * (r + 1), 1)
-    }
+    xAesExpand(mut c)
     // H = E(0)
     x86.PxorXX(mut c, 0, 0)
     for r <- iter.Range(0, 11) {
@@ -8437,6 +8485,79 @@ func xAesKey(c mut table.Table[byte]) {
         x86.MovdqaXX(mut c, 11, 0)
         xAesKeyPow(mut c, k)
     }
+}
+
+// 鍵の展開（r11 = 鍵 16 バイト → [rax + 0, rax + 176) に 11 ラウンドの鍵 — aeskeygenassist の Intel の形・xmm1〜3 を作業に）
+func xAesExpand(c mut table.Table[byte]) {
+    x86.MovdquXMem(mut c, 1, x86.R11, 0)
+    x86.MovdquMemX(mut c, x86.Rax, 0, 1)
+    rcons := []int{1, 2, 4, 8, 16, 32, 64, 128, 0x1b, 0x36}
+    for r <- iter.Range(0, 10) {
+        x86.AeskeygenassistXXI(mut c, 2, 1, rcons[r])
+        x86.PshufdXXI(mut c, 2, 2, 0xff)
+        x86.MovdqaXX(mut c, 3, 1)
+        for k <- iter.Range(0, 3) {
+            x86.PslldqXI(mut c, 3, 4)
+            x86.PxorXX(mut c, 1, 3)
+        }
+        x86.PxorXX(mut c, 1, 2)
+        x86.MovdquMemX(mut c, x86.Rax, 16 * (r + 1), 1)
+    }
+}
+
+// AK_CBCKEY（r11 = 鍵 16 バイト・rax = CBC の鍵の表）: 暗号化の鍵と、復号の鍵（10, aesimc(9), …, aesimc(1), 0 の順 — aesdec の Equivalent Inverse Cipher）
+func xAesCbcKey(c mut table.Table[byte]) {
+    xAesExpand(mut c)
+    for r <- iter.Range(0, 11) {
+        x86.MovdquXMem(mut c, 1, x86.Rax, 16 * (10 - r))
+        if r > 0 && r < 10 {
+            x86.AesimcXX(mut c, 1, 1)
+        }
+        x86.MovdquMemX(mut c, x86.Rax, AK_DEC + 16 * r, 1)
+    }
+}
+
+// AK_CBCE / AK_CBCD（r11 = 状態・rax = src・rcx = dst・rdx = n〔16 の倍数〕）: 鍵 11 本を xmm1〜11 に置き、1 ブロックずつ連鎖する。
+// xmm0 = 連鎖の IV（前の暗号文のブロック）・xmm12 / 13 を作業に。復号は暗号文を先に読むので src と dst が同じでよい。出口で状態の IV を進める
+func xAesCbc(c mut table.Table[byte], dec bool) {
+    x86.MovdquXMem(mut c, 0, x86.R11, 0)
+    xAesEnter(mut c)
+    base := if dec { AK_DEC } else { 0 }
+    for r <- iter.Range(0, 11) {
+        x86.MovdquXMem(mut c, r + 1, x86.R11, base + 16 * r)
+    }
+    x86.CmpRegImm(mut c, x86.Rdx, 16)
+    toEnd := x86.JccRel32(mut c, x86.CondB)
+    l1 := x86.Here(mut c)
+    x86.MovdquXMem(mut c, 12, x86.Rax, 0)
+    if dec {
+        x86.MovdqaXX(mut c, 13, 12)
+        x86.PxorXX(mut c, 13, 1)
+        for r <- iter.Range(1, 10) {
+            x86.AesdecXX(mut c, 13, r + 1)
+        }
+        x86.AesdeclastXX(mut c, 13, 11)
+        x86.PxorXX(mut c, 13, 0)
+        x86.MovdquMemX(mut c, x86.Rcx, 0, 13)
+        x86.MovdqaXX(mut c, 0, 12)
+    } else {
+        x86.PxorXX(mut c, 0, 12)
+        x86.PxorXX(mut c, 0, 1)
+        for r <- iter.Range(1, 10) {
+            x86.AesencXX(mut c, 0, r + 1)
+        }
+        x86.AesenclastXX(mut c, 0, 11)
+        x86.MovdquMemX(mut c, x86.Rcx, 0, 0)
+    }
+    x86.AddRegImm(mut c, x86.Rax, 16)
+    x86.AddRegImm(mut c, x86.Rcx, 16)
+    x86.SubRegImm(mut c, x86.Rdx, 16)
+    x86.CmpRegImm(mut c, x86.Rdx, 16)
+    b1 := x86.JccRel32(mut c, x86.CondAe)
+    x86.PatchRel32(mut c, b1, l1)
+    x86.PatchRel32(mut c, toEnd, x86.Here(mut c))
+    xAesLeave(mut c)
+    x86.MovdquMemX(mut c, x86.R11, 0, 0)
 }
 
 // xmm0 = H^(k+1) を表の [AK_H + 16k] に・その上下の xor を両半分に並べて [AK_KAR + 16k] に（xmm1 を作業に）
@@ -9901,7 +10022,7 @@ func xNameBytes(st mut St, s int) []byte {
     return freeze(nm)
 }
 
-// 関数の記録 f の安定な鍵（持ち主 / callee を辿る — 再帰しない）
+// 関数の記録 f の安定な鍵（持ち主 / callee を辿る。再帰は spec の複製の組の1レベルだけ）
 func xFnKey(st mut St, ix XSkIdx, f int) []byte {
     mut sfxs := mut [][]byte{}
     mut fcur := f
@@ -9919,7 +10040,7 @@ func xFnKey(st mut St, ix XSkIdx, f int) []byte {
             sfx = append(sfx, '$')
             sfx = append(sfx, 's')
             sfx = append(sfx, '(')
-            mut j := q + 5
+            mut j := q + 6
             while j + 2 < q + 2 + w {
                 xHex(mut sfx, table.Get(mut st.sk, j))
                 sfx = append(sfx, ':')
@@ -9936,7 +10057,19 @@ func xFnKey(st mut St, ix XSkIdx, f int) []byte {
                 j += 3
             }
             sfx = append(sfx, ')')
-            fcur = table.Get(mut st.sk, q + 3)
+            // 組（spec.sober — 呼び手のpackageのパスか、呼び手の関数の鍵。呼び手の関数は複製でないので、その鍵はここへ戻らない）
+            sfx = append(sfx, '@')
+            gr := table.Get(mut st.sk, q + 3)
+            if gr <= -2 {
+                roStr(mut st, mut sfx, pkgPath(mut st, -2 - gr))
+            } else {
+                sfx = append(sfx, '{')
+                for b <- xFnKey(mut st, ix, gr) {
+                    sfx = append(sfx, b)
+                }
+                sfx = append(sfx, '}')
+            }
+            fcur = table.Get(mut st.sk, q + 4)
         } else {
             sfx = append(sfx, '/')
             sfx = append(sfx, byte(if kind == SK_LAM { 'L' } else { 'K' }))

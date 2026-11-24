@@ -495,6 +495,17 @@ theorem meet_typing {k1 k2 m : List Kind} (H : MeetK k1 k2 m) {Δ : Defs} (hΔ :
         subst e1 e2
         exact ⟨.ref mu _ T, by simpa [Ty.tvWf] using w, rfl, rfl,
           .alloc r (H.regionsBelow rb1 rb2) bd1 (fun h => H.mutFree (mf1 h) (mf2 h))⟩
+  | allocAt mu r0 e ihe =>
+    intro f b d Γ Λ t1 t2 h1 h2 hs hE hΓ hΛ
+    simp only [Expr.src, Expr.tvWf] at hs hE
+    cases h1 with
+    | allocAt a1 rb1 br1 rd1 mf1 cf1 =>
+      cases h2 with
+      | allocAt a2 rb2 _ _ mf2 cf2 =>
+        obtain ⟨T, w, e1, e2, r⟩ := ihe a1 a2 hs hE hΓ hΛ
+        subst e1 e2
+        exact ⟨.ref mu _ T, by simpa [Ty.tvWf] using w, rfl, rfl,
+          .allocAt r (H.regionsBelow rb1 rb2) br1 rd1 (fun h => H.mutFree (mf1 h) (mf2 h)) (H.chanFree cf1 cf2)⟩
   | freeze e ihe =>
     intro f b d Γ Λ t1 t2 h1 h2 hs hE hΓ hΛ
     simp only [Expr.src, Expr.tvWf] at hs hE

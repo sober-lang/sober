@@ -1,0 +1,46 @@
+package main
+
+// 再帰する関数（Defとして呼ぶ）へ、ループの中の局所のmutの器と外のmutの束縛を一緒に渡す。
+// 器のセルは外の束縛のregionに作る（mutの実引数のセルのregionはanchorと正確一致）
+type S struct {
+    keep []int
+    n int
+}
+
+func fill(i int) []int {
+    mut b := mut []int{}
+    while len(b) < 64 {
+        b = append(b, i)
+    }
+    return freeze(b)
+}
+
+func walk(st mut S, rs mut []int, i int) {
+    if i > 0 {
+        st.keep = fill(i + 6)
+        rs = append(rs, i)
+        st.n += len(rs)
+        walk(mut st, mut rs, i - 1)
+    }
+}
+
+func main() {
+    mut st := S{keep: []int{}, n: 0}
+    mut k := 0
+    while k < 3 {
+        mut rs := mut []int{}
+        walk(mut st, mut rs, 2)
+        println(len(rs))
+        k += 1
+    }
+    mut junk := 0
+    mut j := 0
+    while j < 4 {
+        u := fill(j + 100)
+        junk += u[0]
+        j += 1
+    }
+    println(st.keep[0] + st.keep[63])
+    println(st.n)
+    println(junk)
+}

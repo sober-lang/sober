@@ -16,6 +16,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 source scripts/gatelib.sh
+gate_env   # 鍵と出力の環境をゲートと揃える（直に呼んでも、gates.sh・regen.sh の中と同じ鍵になる）
 
 SOBER=${SOBER:-./bin/sober}   # 生成元 = 主のsober（主役交代R39 — それまではZig版。付け替え時にバイト不変を確認済み）
 GOLDEN=testdata/astjson

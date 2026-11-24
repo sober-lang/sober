@@ -13,7 +13,16 @@ func TestTarget() {
     assert(ok2 && !u.tls && u.port == 80 && u.path == "/" && hostHeader(u) == "example.com")
     v, ok3 := parseTarget("http://example.com?a=b")
     assert(ok3 && v.path == "/?a=b")
-    bads := []string{"ftp://x/", "http://user:pw@x/", "http://[::1]/", "http:///p", "http://x:0/", "http://x:65536/", "http://x/a b", "x/y"}
+    w, ok4 := parseTarget("http://[::1]:8080/p")
+    assert(ok4 && w.host == "::1" && w.port == 8080 && hostHeader(w) == "[::1]:8080" && dialAddr(w) == "[::1]:8080")
+    x, ok5 := parseTarget("https://[2001:DB8::1]")
+    assert(ok5 && x.host == "2001:db8::1" && x.port == 443 && x.path == "/" && hostHeader(x) == "[2001:db8::1]")
+    y, ok6 := parseTarget("https://[2001:db8:0::1]:443/z")
+    assert(ok6 && origin(x) == origin(y) && origin(y) == "https://[2001:db8::1]:443")
+    m, ok7 := parseTarget("http://[::ffff:192.0.2.1]/")
+    assert(ok7 && hostHeader(m) == "[::ffff:192.0.2.1]")
+    bads := []string{"ftp://x/", "http://user:pw@x/", "http://[fe80::1%25eth0]/", "http://[fe80::1%eth0]/", "http://[::1/", "http://[x]/", "http://[::1]x/",
+        "http://[127.0.0.1]/", "http://::1/", "http://x]/", "http://[::1]:/", "http:///p", "http://x:0/", "http://x:65536/", "http://x/a b", "x/y"}
     for bad <- bads {
         _, okb := parseTarget(bad)
         assert(!okb)
@@ -26,6 +35,8 @@ func TestLocation() {
     assert(resolveLocation(b, "//c.example/z") == "https://c.example/z")
     assert(resolveLocation(b, "/root") == "https://a.example/root")
     assert(resolveLocation(b, "next") == "https://a.example/dir/next")
+    b6, _ := parseTarget("http://[::1]:8080/dir/page")
+    assert(resolveLocation(b6, "/root") == "http://[::1]:8080/root")
 }
 
 func TestRequestBytes() {

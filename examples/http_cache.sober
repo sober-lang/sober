@@ -3,11 +3,13 @@ package main
 // 保存の方針と認証の源（language.md 12 節・28 節）: レスポンスのCache-Controlの既定はprivate（共有キャッシュに載せない）・
 // レスポンス1件の方針はPrivate / NoStore・共有キャッシュも保存してよい方針（Fresh）はルートの行で書く（Dispatchがcacheの無いレスポンスに反映する — レスポンスの方針が勝つ）。
 // 認証のヘッダ（Authorization・Cookie）は専用の API http.server.Authorization / http.server.Cookieでだけ読める（http.server.Headerはnil）。
-// 保存の方針と検証子の名前（Cache-Control・ETagほか）を任意ヘッダに書くとpanic(BadHeader) — 最後のリクエストがそれで死ぬ（終了101）。
+// 保存の方針と検証子の名前（Cache-Control・ETagほか）を任意ヘッダに書くとpanic(BadHeader) — 最後のリクエストがそれで死ぬ（終了101。checkは名前のリテラルを拒否する — checkを通さないbuildの形）。
 // ネットの代わりにrecvが決まったリクエストの列を1切片で渡し、sendがレスポンスを印字する（examples/http_routerの形 — 行末のCRは外して印字）
 
 import "std/http"
 import "std/http/server"
+import "std/net"
+import "std/strings"
 
 func or(s string?) string {
     return if s != nil { s } else { "-" }
@@ -49,13 +51,6 @@ func show(b []byte) error? {
     return nil
 }
 
-// 切片を2つ渡す（予約名のpanicの前に1つ目の切片のレスポンスが出る）
-func give(a string, b string, k func([]byte)) error? {
-    k(bytes(a))
-    k(bytes(b))
-    return nil
-}
-
 func main() {
     rs := []http.server.Route{
         http.server.Route{method: "GET", path: "/me", handler: me},
@@ -69,6 +64,90 @@ func main() {
         "GET /token HTTP/1.1\r\nHost: x\r\n\r\n" +
         "GET /logo HTTP/1.1\r\nHost: x\r\n\r\n" +
         "GET /none HTTP/1.1\r\nHost: x\r\n\r\n"
-    e := http.server.ServeWith((k) => give(reqs, "GET /raw HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n", k), (b) => show(b), (r) => http.server.Dispatch(rs, r))
+    e := net.Pair((c) => http.server.ServeConn(c, (r) => http.server.Dispatch(rs, r)), (c) => {
+        // 1つ目の切片の要求を送り、その応答を読み終えてから2つ目を送る（2つ目でサーバーが死ぬ前に、1つ目の応答が届く）
+        first := reqs
+        _ = net.Send(c, bytes(first))
+        _ = show(readN(c, strings.Count(first, " HTTP/1.1\r\n")) catch []byte{})
+        _ = net.Send(c, bytes("GET /raw HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n"))
+        _ = show(readAll(c))
+    })
     println(e == nil)
+}
+
+// 相手が閉じるまで受けたバイト列（最後の要求はConnection: close — サーバーが応答の後に閉じる）
+func readAll(c net.Conn) []byte {
+    mut got := mut []byte{}
+    _ = net.Recv(c, (x) => {
+        for y <- x {
+            got = append(got, y)
+        }
+    })
+    return freeze(got)
+}
+
+// 相手からn件のレスポンス（頭とContent-Lengthの本文）を受け終えるまでのバイト列（1つ目の切片の応答だけを先に読む — 次の要求を送る前に）
+func readN(c net.Conn, n int) ([]byte, error?) {
+    mut got := mut []byte{}
+    mut done := 0
+    mut at := 0
+    for x <- net.Recv(c)? {
+        for y <- x {
+            got = append(got, y)
+        }
+        mut more := true
+        while more && done < n {
+            h := headEnd(freeze(got), at)
+            if h < 0 {
+                more = false
+            } else {
+                end := h + bodyLen(freeze(got), at, h)
+                if end > len(got) {
+                    more = false
+                } else {
+                    done += 1
+                    at = end
+                }
+            }
+        }
+        if done >= n {
+            break
+        }
+    }
+    return freeze(got), nil
+}
+
+// bのatから始まる頭の終わり（空行の後の位置。無ければ -1）
+func headEnd(b []byte, at int) int {
+    mut i := at
+    while i + 3 < len(b) {
+        if b[i] == '\r' && b[i + 1] == '\n' && b[i + 2] == '\r' && b[i + 3] == '\n' {
+            return i + 4
+        }
+        i += 1
+    }
+    return 0 - 1
+}
+
+// bのat〜hの頭のContent-Lengthの値（無ければ0）
+func bodyLen(b []byte, at int, h int) int {
+    key := bytes("Content-Length: ")
+    mut i := at
+    while i + len(key) < h {
+        mut j := 0
+        while j < len(key) && b[i + j] == key[j] {
+            j += 1
+        }
+        if j == len(key) {
+            mut v := 0
+            mut k := i + j
+            while k < h && b[k] >= '0' && b[k] <= '9' {
+                v = v * 10 + int(b[k]) - 48
+                k += 1
+            }
+            return v
+        }
+        i += 1
+    }
+    return 0
 }

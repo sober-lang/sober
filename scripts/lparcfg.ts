@@ -30,6 +30,7 @@ const ALLOW: Record<string, string> = {
   meta: "cfg",
   rtMatchLen: "cfg", rtJClean: "cfg",   // 展開後のフィールドの読みの巻き上げ（ldhoist.sober — ループの中で許す読むだけのrt）・lParCfgの15 / 16番
   rtStreq: "cfg",   // コピーの転送（cpfwd.sober — 読むだけのrt.str_eq）   // 展開後の上限の巻き上げ（rlim.sober — 種の番地 @rt.meta）   // ヘッダのループ昇格（hloop.sober — 許すrtの呼び出し・確保の根）   // UTF-8の境界の畳み（ubf.sober — Checkの呼び出しの点・boundaryのコピーのフラグの有無）
+  rtPstr: "cfg", rtPqstr: "cfg",   // 展開後のSROA（sroa.sober — 読むだけのrtの関数の実引数を一時のスロットへ写す: rtReadOnly）・lParCfgの17 / 18番
   lkid: "kid", lret: "kid",   // 群の子のフラグと呼び先の戻りの型の表（lFnRet — move.sober）
   lpty: "kid", vfyLast: "kid",   // B2の子の最後の検証（vfyFunc）: 呼び先の仮引数の型の表（lPtys）と、検証の形（子では常に最後の1回の形）
   bcAud: "ro",   // 扉の監査のフラグ（子では既定の偽 — 監査は束を回さない: lParOn）
@@ -136,7 +137,8 @@ for (const [k, users] of [...fields].sort()) {
     // loader.ParFellBack（子の死を逐次で作り直した警告 — report-cold-4）はloader.Stageと同じく環境変数を読んで標準エラーへ書くだけなので許す
     // loader.EmbedReload（@embedの[]byteの中身の読み直し — lower/embed.sober）は、引数がパスと長さと指紋（文字列と整数）だけでStもヒープも受けず、
     // 返すバイト列は書き手がrodataのバッファへ写すだけ（凍結した表を読みも書きもしない）なので許す。照合に外れればEmbedChangedで止まる
-    const ext = n === "xg" ? [] : [...b.matchAll(/\b(desugar|loader|ast)\.[A-Za-z_]+\(/g)].map(m => m[0]).filter(c => c !== "loader.Stage(" && c !== "loader.Varints(" && c !== "loader.ParFellBack(" && c !== "loader.EmbedReload(");
+    // loader.PcSum（格納場所の値のバイト列の範囲の要約 — 読み込みの遅延）は、バイト列と範囲を受けて整数を返す純関数（Stもヒープも受けない）なので許す
+    const ext = n === "xg" ? [] : [...b.matchAll(/\b(desugar|loader|ast)\.[A-Za-z_]+\(/g)].map(m => m[0]).filter(c => c !== "loader.Stage(" && c !== "loader.Varints(" && c !== "loader.PcSum(" && c !== "loader.ParFellBack(" && c !== "loader.EmbedReload(");
     if (ext.length) { console.log(`FAIL ext-call after the freeze ${fns.get(n)!.file}:${n}: ${[...new Set(ext)].join(" ")}`); heapFail += 1; }
   }
   if (verbose) console.log(`xModuleFrozen closure: ${xs.size} functions`);
@@ -173,11 +175,11 @@ let x86Fields = 0;
     const DOOR: Record<string, RegExp> = { hf: /^hf$/, hfOn: /^true$/, xAddr: /^addr$/, xXmm: /^(0|all)$/, memFr: /^table\.Table\[int\]\{\}$/ };
     const pg = fns.get("xParGroup")!.body;
     const pc = fns.get("xParCfg");
-    // 要素の数 = `return []int{…}` の一番外の括弧の中のカンマ + 1（SOBER_XDBG の値を後ろへ足す包み `return xdbgCfg([]int{…}, …)` も同じ — 足す分は
-    // 末尾のワード〔値の長さ〕で決まり、読み手はcfg[末尾のワード] を経て読む）
+    // 要素の数 = `return []int{…}` の一番外の括弧の中のカンマ + 1（SOBER_XDBG の値とプロファイルの印の表を後ろへ足す包み
+    // `return xdbgCfg(xdbgCfg([]int{…}, …), …)` も同じ — 足す分は列の最後のワード〔長さ〕で決まり、読み手はそのワードを経て読む）
     let ncfg = 0;
     if (pc) {
-      const hm = pc.body.match(/return (?:xdbgCfg\()?\[\]int\{/);
+      const hm = pc.body.match(/return (?:xdbgCfg\()*\[\]int\{/);
       const at = hm ? hm.index! : -1;
       if (at >= 0) {
         let d = 0, n = 1;

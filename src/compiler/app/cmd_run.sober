@@ -24,7 +24,7 @@ func cmdRun(cl cli.Parsed) int {
         return misuse("run --exe takes only the entry")
     }
     std := Std
-    p, _, lerr := loadNamed(cli.Pos(cl, Entry), false, std, loader.PcOff())
+    p, _, lerr := loadBuild(cli.Pos(cl, Entry), false, std, loader.PcOff(), false, false)
     if lerr != nil {
         return fail(loadDiag(p, std, lerr))
     }

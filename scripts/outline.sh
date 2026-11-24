@@ -2,6 +2,8 @@
 # outline（gates）: `sober outline` の出力 ≡ ゴールデンtestdata/outline/*.golden（text / json）+ jsonの形の照合（node）。
 #   題材 = testdata/outline/sample.sober（宣言の種類・注釈・複数行の署名・doc）・examples の 2 本・std の package（ディレクトリ・--depth・--no-test・--public）
 #   scripts/outline.sh [--regen]   --regen はゴールデンを書き直す
+# ゴールデンの並びを呼び手のロケールに依らせない
+export LC_ALL=C.UTF-8
 set -uo pipefail
 cd "$(dirname "$0")/.."
 scripts/stage2.sh --quiet || exit 1

@@ -1,10 +1,12 @@
 package main
 
 // 安全な既定の緩和の常時の警告（受理は変えない — language.md「安全な既定の緩和」）: stdのstructの `dangerously` で始まるフィールドに字面のfalse以外を
-// 与える構築は毎回鳴る（変数経由も）。鳴らない形: 字面のfalse・フィールドを省く（ゼロ値 = 安全な側）・stdの外のstructの同名のフィールド
+// 与える構築は毎回鳴る（変数経由も）。鳴らない形: 字面のfalse・フィールドを省く（ゼロ値 = 安全な側）・stdの外のstructの同名のフィールド。
+// 緩める組み立ての関数（stdの `Dangerously` で始まる公開関数 — tls.DangerouslyAllowTls12）の呼び出しも毎回鳴る（下のrelax）
 
 import "std/http/client"
 import "std/http/server"
+import "std/tls"
 
 type Mine struct {
     dangerouslyLoud bool
@@ -28,4 +30,13 @@ func main() {
     _ = omitted
     _ = c
     _ = m
+}
+
+// TLS 1.2も受けるConfig（鳴る）と、ALPNだけを替えたConfig（鳴らない）
+func relax(cfg tls.Config) tls.Config {
+    return tls.DangerouslyAllowTls12(cfg)
+}
+
+func strict(cfg tls.Config) tls.Config {
+    return tls.Alpn(cfg, []string{"http/1.1"})
 }

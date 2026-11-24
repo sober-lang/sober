@@ -1,0 +1,261 @@
+package tls
+
+// TLSの接続のmux.RecvFrom: 受けた平文と、子の合図（std/internal/mux）が同じ受けに混ざる。相手はrecordを2つの切片に割り、間をあけて送る。
+// 子はその間に合図を積む。接続のtaskは平文を全部受けてPutで返し（切片ごとに送られる）、合図を全部受ける。
+// 合図が半端なrecordの持ち越しを壊さないこと・相手のclose_notifyで列が終わること
+
+import "std/net"
+import "std/os"
+import "std/task"
+import "std/time"
+import "std/internal/hsc"
+import "std/internal/mux"
+import "std/internal/record"
+import "std/internal/x509"
+
+func rmZeros(n int) []int {
+    mut r := mut []int{}
+    while len(r) < n {
+        r = append(r, 0)
+    }
+    return freeze(r)
+}
+
+func rmCat(a []byte, b []byte) []byte {
+    mut o := mut []byte{}
+    for x <- a {
+        o = append(o, x)
+    }
+    for x <- b {
+        o = append(o, x)
+    }
+    return freeze(o)
+}
+
+func rmChunk(c net.Conn) []byte {
+    return rmChunkOr(c) catch []byte{}
+}
+
+func rmChunkOr(c net.Conn) ([]byte, error?) {
+    mut out := []byte{}
+    for x <- net.Recv(c)? {
+        out = x
+        break
+    }
+    return rmCat([]byte{}, out), nil
+}
+
+type rmLink struct {
+    rec []byte
+}
+
+// 相手の受け: recordを揃えて復号し、平文がwant バイト揃うまで読む（揃った平文・閉じたら途中まで）。want = 0はhandshakeが済むまで
+func rmRead(c net.Conn, ch mut internal.hsc.Ch, p internal.hsc.CParams, l mut rmLink, want int) []byte {
+    mut app := []byte{}
+    while (want == 0 && !internal.hsc.ClientConnected(ch)) || (want > 0 && len(app) < want) {
+        r := l.rec
+        rn := if len(r) >= 5 && len(r) >= 5 + (int(r[3]) << 8 | int(r[4])) { 5 + (int(r[3]) << 8 | int(r[4])) } else { 0 }
+        if rn == 0 {
+            more := rmChunk(c)
+            if len(more) == 0 {
+                return app
+            }
+            l.rec = rmCat(r, more)
+        } else {
+            o, e := internal.hsc.FeedClient(mut ch, p, internal.record.At(r, 0, rn))
+            if e != nil {
+                return app
+            }
+            if len(o.send) > 0 {
+                _ = net.Send(c, o.send)
+            }
+            app = rmCat(app, o.app)
+            l.rec = rmCat([]byte{}, r[rn:len(r)])
+        }
+    }
+    return app
+}
+
+// 相手の役: handshake → "hello" → 返しを読む → "world!" のrecordを2つの切片に割って間をあけて送る → 返しを読む → close_notify
+func rmPeer(port int) string {
+    roots := ParseRoots(testFile(testCerts, "testdata/crypto/httparena-server.crt")) catch return "roots"
+    p := internal.hsc.NewCParams("localhost", []string{}, roots.certs, time.UnixSec(time.Now()), []byte{})
+    mut res := "dial"
+    _ = net.Dial("127.0.0.1:${port}", (c) => {
+        res = rmTalk(c, p)
+    })
+    return res
+}
+
+func rmTalk(c net.Conn, p internal.hsc.CParams) string {
+    h0, first := internal.hsc.StartClient(p)
+    mut ch := h0
+    mut l := rmLink{rec: []byte{}}
+    _ = net.Send(c, first)
+    _ = rmRead(c, mut ch, p, mut l, 0)
+    if !internal.hsc.ClientConnected(ch) {
+        return "hs"
+    }
+    s1 := internal.hsc.ClientSeal(mut ch, bytes("hello")) catch []byte{}
+    _ = net.Send(c, s1)
+    a := rmRead(c, mut ch, p, mut l, 5)
+    s2 := internal.hsc.ClientSeal(mut ch, bytes("world!")) catch []byte{}
+    half := len(s2) / 2
+    _ = net.Send(c, s2[0:half])
+    os.Sleep(60)
+    _ = net.Send(c, s2[half:len(s2)])
+    b := rmRead(c, mut ch, p, mut l, 6)
+    _ = net.Send(c, internal.hsc.ClientAlert(mut ch, 0))
+    return "${string(a) catch "?"}|${string(b) catch "?"}"
+}
+
+// 接続のtask: 子をn本生み（時間をずらして応答と終わりの合図を積む）、mux.RecvFromで平文と合図を受ける。
+// 平文はnet.Putで返す。結果 = 応答の数 × 1000000 + 終わりの数 × 1000 + 受けたバイト数（受けの中で合図を1つも受けないのは -1）
+func rmConn(c net.Conn, n int) int {
+    rec := rmZeros(internal.mux.Words)
+    m := internal.mux.Of(rec)
+    v, e := task.Run((s task.Scope) => {
+        mut i := 1
+        while i <= n {
+            sid := i * 2 + 1
+            slot := i - 1
+            _ = task.Spawn(s, () => {
+                os.Sleep(sid % 5 * 20)
+                _ = internal.mux.Post(m, internal.mux.Resp, sid, bytes("r${sid}"), slot)
+                os.Sleep(sid % 3 * 15)
+                _ = internal.mux.Post(m, internal.mux.End, sid, []byte{}, -1)
+                0
+            })
+            i += 1
+        }
+        mut acc := mut []int{0, 0, 0, 0}
+        internal.mux.RecvFrom(c, m, []byte{}, (b) => {
+            if len(b) == 0 {
+                acc[3] = acc[3] + 1
+                rmDrain(m, mut acc)
+            } else {
+                acc[2] = acc[2] + len(b)
+                _ = net.Put(c, b)
+            }
+        })
+        while acc[1] < n {
+            if internal.mux.WaitSig(m) != internal.mux.Ok {
+                acc[1] = n + 100
+            }
+            rmDrain(m, mut acc)
+        }
+        if acc[3] == 0 { 0 - 1 } else { acc[0] * 1000000 + acc[1] * 1000 + acc[2] }
+    })
+    return if e == nil { v } else { 0 - 2 }
+}
+
+func rmDrain(m internal.mux.Mux, acc mut []int) {
+    mut sg := internal.mux.Take(m)
+    while !internal.mux.None(sg) {
+        if internal.mux.Kind(sg) == internal.mux.End {
+            acc[1] = acc[1] + 1
+        } else {
+            acc[0] = acc[0] + 1
+        }
+        internal.mux.Free(m, sg)
+        sg = internal.mux.Take(m)
+    }
+}
+
+func rmAccept(l net.Listener, cfg Config, wk []int, n int) (int, error?) {
+    mut v := 0 - 3
+    for nc <- net.Accept(l)? {
+        // acceptNetの本体と同じ（handshake → 状態 → net.Secure → k → 積み残しとclose_notify）
+        blk := handshake(nc, cfg)?
+        st := stateOf(blk, wk)
+        // 持ち越しの席を置く深度 = 格納場所の深度（acceptNetと同じ）
+        _ = leaseOp(5, st.st.blk, fSeat + 1, leaseOp(11, []int{}, 0, 0))
+        _ = net.Secure(nc, st, (c) => {
+            v = rmConn(c, n)
+            net.Flush(c)
+        })
+        _ = net.Send(nc, closeRecord(st.st))
+        break
+    }
+    return v, nil
+}
+
+func rmCfg() Config {
+    c, e := Parse(testFile(testCerts, "testdata/crypto/httparena-server.crt"), testFile(testCerts, "testdata/crypto/httparena-server.key"))
+    assert(e == nil)
+    return c
+}
+
+func TestRecvMux() {
+    n := 12
+    mut peer := ""
+    e := net.Listen("127.0.0.1:0", (l) => {
+        port := net.Port(l)
+        cfg := rmCfg()
+        wk := workNew()
+        r, _ := task.Run((s task.Scope) => {
+            h := task.Spawn(s, () => rmPeer(port))
+            v := rmAccept(l, cfg, wk, n) catch -4
+            "${v}/${task.Join(h)}"
+        }, deadline: 10000 * task.MS)
+        peer = r
+    })
+    assert(e == nil)
+    assert(peer == "${n * 1000000 + n * 1000 + 11}/hello|world!")
+    assert(internal.mux.PoolUse() == 0)
+}
+
+// ALPN: サーバの好みが h2, http/1.1 のとき、相手の申し出でh2に決まった接続だけが格納場所のビットを持つ（申し出なし・http/1.1だけはh2でない）
+func apHello(port int, offer []string) string {
+    roots := ParseRoots(testFile(testCerts, "testdata/crypto/httparena-server.crt")) catch return "roots"
+    p := internal.hsc.NewCParams("localhost", offer, roots.certs, time.UnixSec(time.Now()), []byte{})
+    mut res := "dial"
+    _ = net.Dial("127.0.0.1:${port}", (c) => {
+        h0, first := internal.hsc.StartClient(p)
+        mut ch := h0
+        mut l := rmLink{rec: []byte{}}
+        _ = net.Send(c, first)
+        _ = rmRead(c, mut ch, p, mut l, 0)
+        res = if internal.hsc.ClientConnected(ch) { "c:${internal.hsc.ClientAlpn(ch)}" } else { "hs" }
+        _ = net.Send(c, internal.hsc.ClientAlert(mut ch, 0))
+    })
+    return res
+}
+
+func apAccept(l net.Listener, cfg Config) (string, error?) {
+    mut v := "none"
+    for nc <- net.Accept(l)? {
+        blk := handshake(nc, cfg)?
+        st := stateOf(blk, workNew())
+        _ = net.Secure(nc, st, (c) => {
+            v = if Protocol(c) == "h2" { "s:h2" } else { "s:-" }
+            nil
+        })
+        _ = net.Send(nc, closeRecord(st.st))
+        break
+    }
+    return v, nil
+}
+
+func apOne(offer []string) string {
+    mut out := ""
+    e := net.Listen("127.0.0.1:0", (l) => {
+        port := net.Port(l)
+        cfg := Alpn(rmCfg(), []string{"h2", "http/1.1"})
+        r, _ := task.Run((s task.Scope) => {
+            h := task.Spawn(s, () => apHello(port, offer))
+            v := apAccept(l, cfg) catch "acc"
+            "${v}/${task.Join(h)}"
+        }, deadline: 10000 * task.MS)
+        out = r
+    })
+    assert(e == nil)
+    return out
+}
+
+func TestAlpnH2() {
+    assert(apOne([]string{"h2", "http/1.1"}) == "s:h2/c:h2")
+    assert(apOne([]string{"http/1.1", "h2"}) == "s:h2/c:h2")
+    assert(apOne([]string{"http/1.1"}) == "s:-/c:http/1.1")
+    assert(apOne([]string{}) == "s:-/c:")
+}

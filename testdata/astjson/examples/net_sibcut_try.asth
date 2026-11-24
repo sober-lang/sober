@@ -1,0 +1,10 @@
+@@full	e1ee86841af5a530	1724	53590
+@head	652aaf8bba128acd	0	280
+func acceptOne	179b5c05bdce68fe	43	1448
+func dier	32864f4c192f6c49	14	505
+func freePort	1c35349f688cd577	22	777
+func label	3e15f19a00c566c7	29	1371
+func main	7342b935568638a7	76	2783
+func receiver	13f71e728561face	13	524
+func sendOnce	467bf8c8c8db19cf	24	884
+func sendTo	55f46a521930b432	32	1161

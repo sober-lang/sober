@@ -1,5 +1,5 @@
-@@full	4fa7e016a14d5c30	5893	113624
-@globals	991f1ee85d827bfd	56	465
+@@full	92564a709aca57de	5953	114817
+@globals	a67233225cb89ce4	56	465
 main.main	41254c976be178e7	918	20764
 main.same	f2cb9c31b90b9eac	76	1312
 rt.cat8	d7763d59e08dbc55	20	361
@@ -46,6 +46,6 @@ std/convert.formatUint	03b275590cce180d	375	7383
 std/io.Close	f2a4210f29b60944	12	196
 std/io.Open	bfd29aca39a45036	181	3343
 std/io.ReadAll	42b1d421abbe3b02	194	3754
-std/io.ReadAt	89d29f2a0f8ca25e	460	9083
+std/io.ReadAt	9c4f2ce54be606ad	520	10276
 std/io.ReadFile	7947d6a5d2b51e46	192	3736
 std/io.errOf	e0abc0f7d3aac949	134	2354

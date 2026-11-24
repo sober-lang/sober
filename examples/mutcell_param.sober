@@ -1,0 +1,34 @@
+package main
+
+// 再帰する関数の本体で、自分のmutの仮引数stと局所のmutの器を、別の再帰する関数へ一緒に渡す（呼び手もDef）。
+// 局所の器のセルはmutの仮引数のregion（呼び手空間）に作る
+type S struct {
+    n int
+}
+
+func collect(st mut S, out mut []int, i int) {
+    if i > 0 {
+        out = append(out, i)
+        st.n += 1
+        collect(mut st, mut out, i - 1)
+    }
+}
+
+func run(st mut S, depth int) int {
+    if depth == 0 {
+        return 0
+    }
+    mut total := 0
+    {
+        mut out := mut []int{}
+        collect(mut st, mut out, depth)
+        total = len(out)
+    }
+    return total + run(mut st, depth - 1)
+}
+
+func main() {
+    mut st := S{n: 0}
+    println(run(mut st, 3))
+    println(st.n)
+}

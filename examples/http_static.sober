@@ -7,7 +7,7 @@ package main
 // If-Modified-Since のちょうどの一致は 304（ETag・Cache-Control・Vary だけ — Content-Length も本文も無い）・If-Match / If-Unmodified-Since が偽なら 412。
 // 更新時刻は touch -d で固定する（ETag と Last-Modified が決まる）。
 // loopbackで1本のtaskがDial → パイプラインのリクエストを送る → AcceptしてServeConn → レスポンスを受ける（http_streamの形）。
-// リポジトリのルートを cwd にして実行する（作業域は out/http_static — symlink は ln で張る）
+// リポジトリのルートを cwd にして実行する（作業域は実行ごとの out/http_static.<n> — symlink は ln で張る）
 
 import "std/http/server"
 import "std/io"
@@ -142,8 +142,32 @@ func serveOne(l net.Listener, w string) (int, error?) {
 }
 
 func main() {
-    e := run("out/http_static")
+    d := runDir("http_static")
+    defer removeAll(d)
+    e := run(d)
     if e != nil {
         println("error")
+    }
+}
+
+// 実行ごとの置き場 out/<name>.<単調時計の値>（同じ作業ディレクトリで同時に走る実行どうしが上書きし合わない）。
+// mkdirは既にあれば失敗するので、作れた名前がこの実行のもの。作れない状態で回り続けないよう、試す回数に上限を置く（作れなければ ""）
+func runDir(name string) string {
+    _ = os.Mkdir("out")
+    mut n := 0
+    while n < 100 {
+        c := "out/${name}.${os.Monotonic()}"
+        if os.Mkdir(c) == nil {
+            return c
+        }
+        n = n + 1
+    }
+    return ""
+}
+
+// 置き場を中身ごと消す
+func removeAll(d string) {
+    if d != "" {
+        _ = os.Run("/bin/rm", []string{"-rf", d}) catch 0
     }
 }

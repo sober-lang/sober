@@ -3,6 +3,8 @@
 # `watch: …`）をゴールデンtestdata/watchcheck/expect.txtと照合する。編集の列 = 受理 → 脱糖の拒否 → 検査器の拒否 → 直す → 同じ拒否をもう一度（拒否の値の当たり）
 # → 直す。各周の `watch:` の行が出るのを待ってから次の編集を当てる（時間で待たない）。周ごとの当否（SOBER_CACHE_STAT）は照合の外で、最後の 2 周が
 # 当たりであることだけ見る。使い方: scripts/watchcheck.sh [--regen]
+# ゴールデンの並びを呼び手のロケールに依らせない
+export LC_ALL=C.UTF-8
 set -uo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$PWD

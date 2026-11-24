@@ -1,0 +1,15 @@
+package print
+
+// 結果・デバッグ出力・ログのAPI（language.md 42 節）。今はログのLogだけ。
+
+// 合成の書き手が使う部品（loaderが合成ファイルからimportする）
+import "std/internal/logw"
+
+// 以下はloaderが合成するAPI（stdに実体は無い — 呼び出しは型ごとの書き手へ変換される）
+
+// 合成: func Log[T](rec T) @effects(obs)
+// recを1行のJSON Lines（`{"ts":"<時刻>","<Tの型の名前>":<recのフィールド>}`）にして、ログの行き先（`@logs`・既定は標準エラー）へ書く。
+// 結果は無く、待たず、panicしない。書き出せないレコードは捨てる。捨てた件数は直後の `$dropped` の行と task.Ledger().logs の dropped に残る。
+// Tはrecの型から推論する（print.Log(rec)。明示のprint.Log[T](rec)も同じ）。書き手を型ごとに合成するので、ジェネリック関数の中で型パラメータの値は渡せない。Tはstructで、フィールドの範囲はjson.Encodeと同じ（json.Valueを除く）。
+// floatのNaNと±Infはnull。floatのフィールドは、値に依らない定数の大きさの作業域を使う
+// 例: examples/print_log.sober

@@ -24,16 +24,23 @@
 # 2026-11-17 HTTPのDate（serveBufのレスポンスの場所で頭の始めの9ワードを組む・実測 × 1.01・事後承認）: serveTlsConn 6224 → 6287・kid#2 2400 → 2424・@zero 2712 → 2740
 # 2026-11-17 conf75c（RFCのMUSTの直し・1行だけの欄の表〔badFieldのループの分岐〕をmain-new14にmergeした形・実測 × 1.01・事後承認）: serveTlsConn 6304 → 6368
 # 2026-11-17 conf75d（Dateの行を組み込みappend_dateで足す形。serveBufとputHeadのdh / daの仮引数が消えた・main-new15の上・実測 × 1.01・事後承認）: serveTlsConn 6368 → 6190
-bench/httparena/main.sober main.serveTlsConn 6190
+# 2026-11-19 tls79（std/internal/hsのserver_nameの構文の検査・0-RTTの読み飛ばし〔Hsに3欄〕・std/tlsのPutの判定。main-new39の上・実測 × 1.01・事後承認）: serveTlsConn 6190 → 6254（実測6192。途中のコミット18f5851b1では6400）
+bench/httparena/main.sober main.serveTlsConn 6254
 # 2026-11-09タスクC R1b（std/http/serverのDelayed — Responseにdelayのフィールド8 B・待ちの呼び出しをserveCoreの浅い点に1つ。崖〔スタックのページの際〕はR1のTCB_TOP_ROOM 3 KiBで退きstackcheckが縛る・report-c-2・実測 × 1.01・標準運用の再設定 — 事後承認）: kid#2 2192 → 2224・Dispatch 1072 → 1088
 # 2026-11-13 P7の修正の後の再設定（分割のパスでF_REFPを運ぶ — 参照で渡す実引数のスロットが逃げの扱いでなくなり枠が縮んだ・実測 × 1.01）: kid#2 2400 → 2069（実測2048）
 # 2026-11-13引き上げ（fq D4 — asyncのDelayedを満了でrtが送る。async以外のパスが払う費用 = 時刻つきの送りの検証〔送りと受けのインターフェース・頭の取り込みの数え〕・stdのserveBufの戻り値とtsendの判定。cyclesのA/Bでは揺れの中・事後承認〔ユーザー決定2026-10-22〕・report-fq-7 9 節）: serveCoreの仮引数tsendとserveBufの5つ目の戻り値・実測 × 1.01 — kid#2 2,080 → 2101・@zero 2,312 → 2335
 # 2026-11-17 conf75c（同じ変更・実測 × 1.01・事後承認）: kid#2 2464 → 2489
 # 2026-11-17 conf75d（同じ変更・実測 × 1.01・事後承認）: kid#2 2489 → 2392
-bench/httparena/main.sober kid#2 2392
+# 2026-11-19 HTTP/2の入口の統一（ServeConnがproto:の分岐とHTTP/2の経路を持つ — ユーザー裁定の代価。接続のtaskの本体〔serveConnAnyの展開〕の枠が2368 → 2816 B〔+448 B — 前置きの判別の切片とHTTP/2の経路の局所のスロット〕・零初期化72 → 216 B。@roomの内〔チャンクのページ0の余白に収まる〕。H1の要求1件の命令はreqinst・ringinstの線の内。実測 × 1.005・標準運用の再設定で、事後承認）: bench/httparena kid#2 2392 → 2830
+# 2026-11-20 工程9（entryの8082にh2c〔ServeConnのproto: H2〕のlistenerを足した — spawnが1つ増えて子の番号がずれた: 平文の接続のtaskはkid#2 → kid#6〔実測2736 B・しきい値はそのまま〕。h2cの接続のtaskはkid#3〔実測2752 B — 実測 × 1.005 = 2766〕で、ページ0の余白の内〔@room〕。標準運用・事後承認）
+bench/httparena/main.sober kid#7 2830
+# 2026-11-20 C6の2段目（ServeConnがTLSの接続も受ける — 平文とTLSでHTTP/1.1・HTTP/2のそれぞれ1つの展開。HTTP/2の受けのmux.RecvFromにTLSの分岐 +32 B〔kid#6も2752 → 2784 B・上限値の内〕。実測2784 × 1.005・標準運用・事後承認）
+# 2026-11-20 C6の3段目（benchのTLSの口がServeConnへ — tls.Serveの下にspawnが1つ増え、子の番号がずれた: 平文の接続のtaskはkid#6 → kid#7〔実測2768 B〕・h2cはkid#3 → kid#4〔2784 B〕。上限値はそのまま）
+bench/httparena/main.sober kid#4 2798
 # 接続のtaskの本体の枠がチャンクのページ0の余白（TCB_TOP_ROOM）に収まるしきい値（本体 + 入口 + 88 B ≤ 余白 — 本体の枠だけページ0・下はワーカーのエリアで走る形の前提）
-bench/httparena/main.sober @room kid#2 rt.task_start_mn
-bench/httparena/main.sober @shallow kid#2 2
+bench/httparena/main.sober @room kid#7 rt.task_start_mn
+bench/httparena/main.sober @room kid#4 rt.task_start_mn
+bench/httparena/main.sober @shallow kid#7 2
 # 2026-11-12 slotcolorの門を外す（ec32 — 全関数を彩色）+ sretの転送（return g(…) のコピーが消える）・下がる方向の再設定 = 実測 × 1.01: Dispatch 1072 → 1083・@sum 99088 → 100079・@self @sum 1186416 → 1198280
 # 2026-11-13 P7の修正の後の再設定（同上・実測 × 1.01）: Dispatch 1083 → 905（実測896）
 # 2026-11-15・引き上げ（F-cookie1: DispatchのRequestを「mutのコピー + 1フィールドの代入」の形にした。Requestのコピーが枠に載る分。リクエストごとの命令は約36減る〔リテラルに戻すとsrv/pipeline 3578 → 3596・ring/pipeline 5977 → 6006〕。stackcheckは予算の内〔stack_hw 2424 ≤ 7104 B〕・実測 × 1.01・事後承認）: Dispatch 905 → 1018（実測1008）
@@ -48,13 +55,23 @@ bench/httparena/main.sober std/http/server.Dispatch 1018
 # 2026-11-16 entry74（bench/httparenaに/async-dbを足した: std/pgのプール・行の読み・std/netの接続の関数が題材に入る。std/http/serverの変更だけの題材では @sum 101264・@zero 2008で前の上限値の内。実測204672 B・2544 B × 1.01・標準運用の再設定で、事後承認）: bench/httparena @sum 101501→206719・@zero 2029→2570
 # 2026-11-17 conf75d（同じ変更・実測 × 1.01・事後承認）: @sum 209159 → 199318
 # 2026-11-18 rs76（entryにPOST /parseを足した: json.Parse・url.ParseQuery・http.server.Multipart・gzip / flateの復号の関数が題材に入る・実測204016 B × 1.01・事後承認）: @sum 199318 → 206056
-bench/httparena/main.sober @sum 206056
+# 2026-11-19 IPv6の工程3（x509・hscの番地の解析をstd/internal/ipへ寄せた: ip.Parse6 288・groups 224・Parse4 112・hex16 16・hsc.isIPLit +80・rt.panic +32、x509のparseIP6 320・parseIP 128・hex16 16が消えた。205840 → 206128 B・実測 × 1.005・標準運用の再設定で、事後承認）: bench/httparena @sum 206056 → 207159
+# 2026-11-19 IPv6の工程4〜6（std/netのsockaddrのIPv6・dual-stack・Dialの2秒の打ち切り）: 工程4〜5でstd/netのsa6 128・sa4 80・sockaddr +112・SplitHostPort 160ほかで206128 → 206768 B（上限値の内）、工程6でconnectFd 288・interleave 192・connWait 64・internal.sock.Dial −96・tcpAsk −32で207184 B。実測 × 1.005・標準運用の再設定で、事後承認）: bench/httparena @sum 207159 → 208220
+# 2026-11-19 IPv6の工程7（名前の解決でAとAAAAを同時に問う: askBoth 880・tcpRetry 432・serverAddr 176・resolveIn +128・answered0 96・prefixOf 96・udpAsk +48ほか、askが消えて −656。207184 → 208368 B・実測 × 1.005・標準運用の再設定で、事後承認）: bench/httparena @sum 208220 → 209410
+# 2026-11-19 HTTP/2の入口の統一（同上）: HTTP/2の関数が題材に入る（hpack.staticName / staticValue 1504ずつ・h2Request 608・h2Head 544・h2DirectOut 352ほか）と、接続のtaskの本体2つ〔平文・TLS〕の +448ずつ。208624 → 227760 B。実測 × 1.005・標準運用の再設定で、事後承認）: bench/httparena @sum 209410 → 228899
+# 2026-11-20 工程9（entryの8082のh2cのlistener — ServeConnのproto: H2の展開が1つ増えた分。実測230704 B × 1.005・標準運用・事後承認）: @sum 228899 → 231858
+# 2026-11-20 C6の1段目（net.ConnにTLSの状態の欄 — 題材はtls.Serveを使うので、状態の辞書の関数が入る: tls.recvNet 2432・hs.ResumeWith 1040・net.secSend 352・secAfter 288・tls.stateOf 272・accept +240・net.secOpen 240・serveTlsConn +224・h2First +144〔net.Recvの展開の局所〕ほか。230704 → 238000 B。接続のtaskの本体は平文2736 → 2752。実測 × 1.005・標準運用の再設定で、事後承認）: bench/httparena @sum 231858 → 239190
+# 2026-11-20 C6の2段目（ServeConnがTLSの接続も受ける — mux.RecvAfter / RecvFromのTLSの分岐・mux.secOpen / secAfter / secErr・http/serverのputFused / putTimed / secH2・net.Put +64ほか。238000 → 239600 B。実測 × 1.005・標準運用・事後承認）: bench/httparena @sum 239190 → 240798
+# 2026-11-21 TLS 1.2のサーバー（DangerouslyAllowTls12 — 1.2の道はopt-inの実行時の旗で分かれるので、tls.Serveを使う題材には1.2の関数が全部入る: hs.onKeyExchange 640・serverKeyExchange 496・serverHello12 480・record.seal12 448・cbcrec.macCt 448・onClientHello12 368・record.open12 352・rsa.SignPKCS1v15 352・rec12.Seal 320ほか。240798 → 253872 B。実測 × 1.005・標準運用の再設定で、事後承認）: bench/httparena @sum 240798 → 255142
+# 2026-11-22 sg1（ECDSAのサーバー証明書 — tls.Serveを使う題材にECDSAの署名の関数が入る: p256.signRS 1008・ParsePKCS8 288・ninv 224・nmul 144・Sign 144・putDerInt 128・hs.ConfigParams 432〔Allow12を置き換え〕ほか、tls.Parse +352・tls.handshake −848〔Paramsの組み立てを1回に〕。254752 → 257056 B。実測 × 1.005・標準運用の再設定で、事後承認）: bench/httparena @sum 255142 → 258341
+bench/httparena/main.sober @sum 258341
 # 2026-10-25 P3（飽和下の待ちの上限D — rt.mn_next / rt.task_newのワードが増えた・report-1142 / 1143・実測 × 1.01・標準運用の再設定 — ユーザーへは事後承認）: bench/httparena @zero 2008（しきい値1996を越えた）→ 2029
 # 2026-10-26飛行記録（rt.netopのACCEPTのgetpeernameの受け皿・clockNsの時計の受け皿 — onのエリアの中の枠・report-1176・実測 × 1.01・標準運用の再設定 — ユーザーへは事後承認）: bench/httparena @zero 2088（しきい値2029を越えた）→ 2109
 # 2026-11-09 baseline 4M R0（std/http/server — frameAt / putHead / wireが呼び手の列へ積む透過の形に・serveBufの周回の束縛hs / hd・report-bl4m-5・実測2136 B × 1.01・標準運用の再設定 — 事後承認）: bench/httparena @zero 2136（しきい値2133を越えた）→ 2157
 # 2026-11-09ワーカーのCPUの固定をL3の群へ（rt.mn_llcの作業域 — 経路と読んだcpulistの384 B・ワーカーの入口で1回だけ走る関数の零初期化・report-ccx-0・実測2520 B × 1.01・標準運用の再設定 — 事後承認）: bench/httparena @zero 2157 → 2545
 # 2026-11-13 P7大きな値の参照渡し（K = 8ワードを超えるimmの集成値を番地1ワードで渡す — 番地を渡す値はスロットに残り〔SSAへ昇格できない〕、全ワードが書かれたと示せないパスがあれば入口の零初期化の対象になる・命令 −484 / リクエスト・report-fq-3 (B)・実測 × 1.01・標準運用の再設定 — 事後承認）: httparena @zero 2264（上限値1955を越えた — Requestの21ワードのスロット2つが要零に）→ 2286
-bench/httparena/main.sober @zero 2740
+# 2026-11-19 HTTP/2の入口の統一（同上）: 接続のtaskの本体2つの零初期化 +144ずつ・h2Pump 24・rt.mux 16ほか。2640 → 2968 B。実測 × 1.005・標準運用の再設定で、事後承認）: bench/httparena @zero 2740 → 2983
+bench/httparena/main.sober @zero 2983
 # 2026-10-25 Z レーン ラウンド 2（finishにoptEtaAllの結果〔OzStep〕— namedargs・optfn・η を1つの関数へ寄せた後の残り +48 B・report-1157・実測 × 1.01・標準運用の再設定 — ユーザーへは事後承認）: @self loader.finish 2016（HEAD 1968）→ 2036
 # 2026-10-27凍ったmapの封（finishのfreezeの点に封の鍵のスロット4ワード + 32 B — 関数ごとに1本・report-1209・実測 × 1.01・標準運用の再設定 — ユーザーへは事後承認）: @self loader.finish 2048（しきい値2036を越えた）→ 2068
 # 2026-10-31カバレッジの計装（finishにcoverAllの結果〔CoverOut — 点の列と鍵がProgramまで生きる〕・report-cov-2・実測 × 1.01・標準運用の再設定 — 事後承認）: @self loader.finish 2144（しきい値2068を越えた）→ 2166
@@ -64,7 +81,14 @@ bench/httparena/main.sober @zero 2740
 # 2026-11-16 R3cとmain da13a748cの取り込みの後（実測 × 1.01）: 同じmainのstage2で mainの木 2512・r3の木 2544（コンパイラの分0・木の分 +32 = loader/fnval.soberの変更）: 2537 → 2570
 # 2026-11-17 再設定（工程1の計上済みの上限と全レジスタを保つ中継〔bud75〕。費用の内訳 = report-bud-5・ユーザーの決定 2026-11-17〔budgetを実際のバイトに効かせる費用として受け入れる〕。基点 = main-new13〔0a1c7cd48〕の同じ箱: 実測 2656 B〔上限値2570を越えた〕・実測 × 1.01・事後承認）: 2570→2683
 # 2026-11-17（main-new14〔budgetの工程1〕とpar76〔ローダーの木の変換の子 — finishに逐次の経路を残す・ParCheckの区間の子〕を合わせた木。実測 × 1.01・事後承認）: @self loader.finish 2816（上限値2683を越えた）→ 2845
-@self loader.finish 2845
+# 2026-11-22 p2（型引数の推論 — finishの引数に推論の表〔Manifest.inf〕が1つ増えた分。実測 × 1.01・事後承認〔ナビ裁定〕）: @self loader.finish 2864（上限値2845を越えた）→ 2893
+# 2026-11-21 bldn C1（loader の Cx に import の索引のフィールド imp_ix〔slice 1つ〕を足した — finish が持つ Cx の局所の分。実測 × 1.01・事後承認）: @self loader.finish 2944（上限値2845を越えた）→ 2974
+# 2026-11-22 train52（main-new51b + p2 + aln1 + bld80 の merge の木 — p2 の推論の表と bld80 の Cx の imp_ix の両方が finish に乗った分。merge の木の実測 × 1.01・事後承認）: @self loader.finish 3008（上限値2974を越えた）→ 3038
+# 2026-11-22 bldn D1 の区切り3（finish の途中の情報 FinX〔package ごとの仕上げ・全体の仕上げからの値の作成の取り出し〕を持つ分。実測 × 1.01・事後承認）: @self loader.finish 3072（上限値2974を越えた）→ 3103
+# 2026-11-22 train54（main-new53b + sf1 + bld80 の merge の木 — 両側の足したコンパイラのコードが重なった分。merge の木の実測 × 1.01・事後承認）: @self loader.finish 3120（上限値3103を越えた）→ 3151
+# 2026-11-22 regw1 A（参照で渡す型の不変の束縛に、単一の結果の呼び出しの受け皿をそのまま使う。finish の29語の短命の受け皿が消えて区画の中ほどに穴が残り、19語のスロットが長く生きる29語の束縛と重なれずに底に新しい区画を取った — 彩色の詰め方の非単調。スロットの和は減っている。実測 × 1.01・事後承認〔ナビ裁定〕）: @self loader.finish 3152（上限値3038を越えた）→ 3184
+# 2026-11-23 train55（main-new54 + small2 + bld80 + regw1 + tlsstk の merge の木 — bld80 の FinX の分〔3151〕と regw1 A の受け皿の束縛の区画の詰め方〔3184〕が finish に重なった分。merge の木の実測 × 1.01・事後承認）:  loader.finish 3248（上限値3184を越えた）→ 3280
+@self loader.finish 3280
 # 2026-10-23 effect のマイルストーン 段階5a-1（analyzer/effects.soberの歩きと解き — report-1084・実測 × 1.01の標準運用）: @self @sum 861456
 # 2026-10-23 effect のマイルストーン 段階5a-2 / 5a-3（traceの計装・sober fix — report-1084・実測 × 1.01の標準運用）: @self @sum 876496
 # 2026-10-25 Sレーン（tlsの送信のバッチ — Put / Flush・pumpの受けの反復ごとのFlush・http.ServeFlushedの展開・report-1128〜1131・実測 × 1.01・標準運用の再設定 — ユーザーへは事後承認）: bench/httparena @sum 103632（しきい値103198を越えた）→ 104668
@@ -112,5 +136,20 @@ bench/httparena/main.sober @zero 2740
 # 2026-11-17 再設定（工程1の計上済みの上限と全レジスタを保つ中継〔bud75〕。費用の内訳 = report-bud-5・ユーザーの決定 2026-11-17〔budgetを実際のバイトに効かせる費用として受け入れる〕。基点 = main-new13〔0a1c7cd48〕の同じ箱: 実測 1352848 B〔上限値1341183を越えた〕・実測 × 1.01・事後承認）: 1341183→1366377
 # 2026-11-17 par76（ParCheckの歩きの区間の子〔desugar/pcpar.sober〕・finishの木の変換の子〔loader/ftpar.sober〕・buildPanicの字句解析の子の新しい関数の枠。同じstage2で base 01a84a1ff の上限値の内 → 1352736・実測 × 1.01・標準運用の再設定 — 事後承認）: 1341183 → 1366263
 # 2026-11-17（main-new14〔budgetの工程1〕とpar76〔ローダーの木の変換の子 — finishに逐次の経路を残す・ParCheckの区間の子〕を合わせた木。実測 × 1.01・事後承認）: @self @sum 1368160（上限値1366377を越えた）→ 1381842
+# 2026-11-18 cold81（後段の関数キャッシュの焼き込み — lower/bcache.sober のパックの出どころを1つの表に〔bcLoadFrom・bcIndexOfMem〕・焼き込みの受け皿 Baked・世代の満杯の判定 bcHadFile・app の焼き込みの鍵〔bakedKey〕。実測 1,382,080 B × 1.01・事後承認）
 # 2026-11-18（bud77 に main-new29〜34 を merge した木。同じ stage2 の作りで、基点 main-new35〔98821ad18〕1381280 → 1382336〔+1056 B — bud77 の lower の関数〔借りの計上・天井・予備のチャンクの刈り〕と、予備のスロットの採り・rt.tcb_trim の呼び出しの直し〕。実測 × 1.01・事後承認）: @self @sum 1382336（上限値1381842を越えた）→ 1396159
-@self @sum 1396159
+# 2026-11-20 C6の1段目（analyzer/effects.soberのefTermOrWords・stdのnet / tls / internal.secの新しい関数の枠。実測1396480 × 1.005・事後承認）: @self @sum 1396159 → 1403462
+# 2026-11-19 bld80 手順3a（新しい関数の枠: lower.bxKeyPlan 992〔bxSumPlan 528を置き換え〕・bxFlags 192・desugarのcpkSub 416・PkgCopyKeys 400・cpkRes1 240・cpkDecl 240・TyPkgKeys 64ほか、bxPlan −352。同じstage2で基点93bc3b146の木1396032 → 1397872〔+1840 B〕。実測 × 1.005・事後承認）: @self @sum 1397872（上限値1396159を越えた）→ 1404862
+# 2026-11-20 bld80 手順3c（新しい関数の枠: lower.bxCEarly 864・bxCRemap 528・bxCReport 400・bxCParse 304・bxCSortPairs 304・bxCFields 256・bxCBody 240・bxCBodyCk 240・bxCMap 192・bxCEnv 160・noretFacts 144・読む道の関数 各112〜128ほか。同じstage2で基点18e9e5a1eの木1400720 → 1406832〔+6112 B〕。実測 × 1.005・事後承認）: @self @sum 1406832（上限値1404862を越えた）→ 1413866
+# 2026-11-20 bld80 手順3dの区切り3の工程3-2a（新しい関数の枠: lower.inlineSeed 1008〔鍵の表 CkTab のローカル〕・bxCBodyV 240・bxCAddrs 176・rlOpenRet 112・bxCPeek 112・rfSeed 80・bxCUsed 64、bcAddr +160・noretModule +144・rlEligible +32・optRegionFree +32、stdの総称の実体の差 +約300。同じstage2で基点20ca026abの木1413760 → 1415760〔+2000 B〕。実測 × 1.005・事後承認）: @self @sum 1415760（上限値1413866を越えた）→ 1422839
+# 2026-11-20 bld80 手順3dの区切り3の工程3-3a（本体を捨てて後段を直す。新しい関数の枠: lower.cutSumCallees 800・bxSelfAll 560・bxRtGone 448・bxCRec 368・bxCDrop 368・spSumClones 352・bxSelfIdx 288・bxCSelfParse 224・bxCNeedRt 224・rfSelfEdges 208・bxCSelfMap 208・bxCSelfLoad 176・bxCSelfKeys 160・bxCIndFact 128・bxRefX 112、specModule +992・regionFlowModule +800・spClone +480・bxTopPrep +144。実測 1425632 × 1.01。標準運用の再設定・事後承認）
+# 2026-11-21再設定（train50 = main-new49〔3b391c8b2〕+ die48〔fee087efd〕+ bld80〔0626b6f18〕+ jc2b〔e11941e29〕の merge の木。merge の前の線は main-new49 と bld80 の両側にそれぞれの実測で置かれていた — 片方ずつの足しが重なった分。実測の1.005倍・事後承認）: 実測 1453632 B〔main-new49 の線 1403462・bld80 の線 1439888〕 → 1460901
+# 2026-11-21 再設定（事後承認待ち・標準運用 × 1.005。ログのフェーズ①〔log2 — print.Logのsink・合成の書き手・analyzerのobs / @logs / 秘密のsink〕のコンパイラの成長分。lowerのlogsink.soberほかの関数の枠。実測1411728 × 1.005・事後承認）: @self @sum 1411728（上限値1403462を越えた）→ 1418787
+# 2026-11-21 F-sdw1の直し（desugar/reach.soberのSpawnSkip・前ふるい・core_out.soberのSpawnCheck・lower.soberのbuildBodyの新しい関数の枠。実測1410496 × 1.005・事後承認）: @self @sum 1403462 → 1417548
+# 2026-11-21 TLS 1.2のサーバーの束（analyzerのDangerouslyの呼び出しの警告〔desugar/fieldwrite.soberのyDangerCall・analyzerのdangerCallMessage〕とx86のCBCの組み込み〔xAesCbc・xAesCbcKey〕。1417548 → 1417728 B。実測 × 1.005・標準運用の再設定で、事後承認）: @self @sum 1417548 → 1424817
+# 2026-11-21再設定（train51 = main-new50〔71d71df6a〕+ log2〔ff1b1fdb5〕+ h2b80〔962bd529c〕の merge の木。merge の前の線は両側にそれぞれの実測で置かれていた。merge の木の実測 × 1.005・事後承認。実測 1484736 B）: 1460901 → 1492160
+# 2026-11-22 p2（型引数の推論の新しい関数の枠: desugar.InferRoots 7200〔desugarの状態S〕・loader.LoadReq・infload.Infer・loader.loadAgain・main.splitOne +1328・jsonFile / logFile +736ほか。同じstage2で基点8b61d5f55の木1484736 → 1508224〔+23488 B〕。実測 × 1.01・事後承認〔ナビ裁定〕）: @self @sum 1508224（上限値1492160を越えた）→ 1523306
+# 2026-11-22 train53（sf1とsg1のmergeの木。各側は単独で上限値の内〔基点main-new52b 1519888 B・sf1 1523232 B〔desugar.shareBody 480・shareCall 304・shareSite 240・main.loadProfile 208・etaTarget 192・analyzerの入口 各+160ほか〕・sg1 1521184 B〔stdにファイルを足したときのmainのcmd群の枠 — testMutate +192・cmdCheck +144・ほか各+80〕〕で、合わせて1524512 B〔両側の和〕。実測 × 1.005・標準運用の再設定で、事後承認）: @self @sum 1523306 → 1532134
+# 2026-11-22 bldn D1 の区切り3a〜3d（package の仕上げの値〔loader の pkgfin・pkgval・pkgasm・fastload ほか〕の関数の枠。受け渡しの無駄を直した後〔fa2e44f3e〕の実測 1540192 B × 1.005・事後承認）: 1492160 → 1547893
+# 2026-11-22 train54（main-new53b + sf1 + bld80 の merge の木 — 両側の足したコンパイラのコードが重なった分。merge の木の実測 × 1.01・事後承認）: @self @sum 1575120（上限値1547893を越えた）→ 1590871
+@self @sum 1590871

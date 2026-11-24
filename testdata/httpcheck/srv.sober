@@ -7,7 +7,7 @@ package main
 // レスポンスのgzipは既定のlevel（compression: http.server.Gzip{} — json-compの検査はcheck.tsのjsonComp・SRV_FRESHが空でなければGzip{fresh: true} = 接続ごとの記録なし）。SRV_WORKが空でなければ符号器の作業域を
 // ワーカー局所の lease で借りる（ServeConn の work: — report-720。httpcheck.sh が両方の構成で回す）。SRV_MAXBODY（バイト）があれば ServeConn の maxBody:
 // （既定 16 KiB — httpcheck.sh の echo の大きい本文の構成〔8gbit の検査の 100 KB と上限 128 KiB〕だけが渡す）
-// SRV_TLS_PORT があれば平文の代わりに TLS で 127.0.0.1:<SRV_TLS_PORT> に立つ（tls.Serve + ServeWith の put: = `(b) => tls.Put(c, b)` — bench/httparena の
+// SRV_TLS_PORT があれば平文の代わりに TLS で 127.0.0.1:<SRV_TLS_PORT> に立つ（tls.Serve + ServeConn — bench/httparena の
 // TLS の形。"tls-ready <port>" を出してから待ち受ける・httpcheck.sh の SRV_TLS=1 の構成 + check.ts --tls）
 
 import "std/compress/flate"
@@ -333,14 +333,17 @@ func run(port string) error? {
     if tp == nil || tp == "" {
         return plain(port, ds, st, sh, dp, dl, mb, wk)
     }
-    // TLSの構成: 同じrouteをtls.Serveの上のServeWith（put: = tls.Put — レスポンスの列を積むオプション）で127.0.0.1:<SRV_TLS_PORT> に立てる（平文の待ち受けは立てない）
+    // TLSの構成: 同じrouteをtls.Serveの上のServeConn（TLSの接続はレスポンスの列をnet.Putで積む）で127.0.0.1:<SRV_TLS_PORT> に立てる（平文の待ち受けは立てない）
     cfg := tls.Load("testdata/crypto/httparena-server.crt", "testdata/crypto/httparena-server.key")?
     println("tls-ready ${tp}")
     return serveTls(tp, cfg, ds, if sr != nil { sr } else { "/nonexistent" }, dp, dl, mb)
 }
 
 func plain(port string, ds []Item, st []http.server.Route, sh []http.server.Route, dp string, dl int, mb int, wk task.Local?) error? {
-    for l <- net.Listen("0.0.0.0:${port}")? {
+    // SRV_LISTEN=dual: ホストを省いた ":port"（dual-stack。IPv4 と IPv6 の両方を受ける）で立つ。既定は 0.0.0.0（IPv4 だけ）
+    lz := os.Getenv("SRV_LISTEN") catch nil
+    la := if lz != nil && lz == "dual" { ":${port}" } else { "0.0.0.0:${port}" }
+    for l <- net.Listen(la)? {
         println("ready ${net.Port(l)}")
         fz := os.Getenv("SRV_FRESH") catch nil
         fresh := fz != nil && fz != ""
@@ -351,14 +354,13 @@ func plain(port string, ds []Item, st []http.server.Route, sh []http.server.Rout
 
 // TLSの構成の待ち受け（符号器の作業域はリクエストごと — work: は平文の構成だけが見る・routeの表は接続ごとに組む — Handlerのクロージャは平たい値だけを捕捉する）
 func serveTls(tp string, cfg tls.Config, ds []Item, root string, dp string, dl int, mb int) error? {
-    return tls.Serve("127.0.0.1:${tp}", cfg, (c tls.Conn) => serveTlsConn(c, ds, root, dp, dl, mb))
+    return tls.Serve("127.0.0.1:${tp}", cfg, (c net.Conn) => serveTlsConn(c, ds, root, dp, dl, mb))
 }
 
-func serveTlsConn(c tls.Conn, ds []Item, root string, dp string, dl int, mb int) error? {
+func serveTlsConn(c net.Conn, ds []Item, root string, dp string, dl int, mb int) error? {
     st := http.server.Static("/static", root, precompressed: true)
     sh := sharedRoutes(root)
-    return http.server.ServeWith((k) => tls.Recv(c, k), (b) => tls.Send(c, b), (r http.server.Request) => route(ds, st, sh, dp, dl, r), maxBody: mb, compression: http.server.Gzip{},
-        put: (b) => tls.Put(c, b))
+    return http.server.ServeConn(c, (r http.server.Request) => route(ds, st, sh, dp, dl, r), maxBody: mb, compression: http.server.Gzip{})
 }
 
 func main() int {

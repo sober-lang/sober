@@ -335,7 +335,8 @@ func convExpr(st mut S, h []int, labs []desugar.Label, tys []desugar.Ty, cs []de
             r = node(mut st, W_FNREF, 0, a, ts, 0)
         }
         if k == desugar.CAlloc {
-            r = node(mut st, W_ALLOC, 0, a, v0, 0)
+            // d = region + 1（0 = 最内の alloc・それ以外は allocAt）
+            r = node(mut st, W_ALLOC, 0, a, v0, d)
         }
         if k == desugar.CStrlit {
             r = node(mut st, W_STRLIT, 0, b, 0, 0)

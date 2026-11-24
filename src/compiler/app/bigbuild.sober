@@ -1,0 +1,73 @@
+package main
+
+import "std/io"
+import "std/iter"
+import "std/strings"
+import "std/task"
+import "std/cli"
+
+// 大きいプログラムの build を、予算の大きい子の task で走らせる。
+// main の task の region は1つあたり4 GiB（SOBER_REGION_MB の既定）で、build はプログラムの全体を外側の region に持ち続けるので、
+// 約67万行（ソース約25 MB）でその region が4 GiBに達して死ぬ。子の task の region の容量は budget: 以上の2の冪なので、
+// 入力の大きさから見積もった budget: の子で走らせれば、この境界が消える（予約は仮想の番地だけで、常駐は増えない）。
+// 子が入れない（根の天井より大きい予算）なら、rt がその場で逐次に走らせる（main の上 — 今までと同じ）
+
+// 子で走らせる入力の大きさの下限（バイト）。これより小さい入力は main で走らせる（今までと同じ — 4 GiB の半分より十分下）
+const BIG_SRC_BYTES = 8 * 1048576
+// 見積もりを打ち切る大きさ（これを越えたら数えるのをやめる — 予算はこの大きさで頭打ち）
+const BIG_SRC_CAP = 256 * 1048576
+// 辿るディレクトリの数の上限（作業ディレクトリが大きい木の根でも見積もりが長引かない）
+const BIG_SRC_DIRS = 8192
+
+// 入力の .sober の大きさの見積もり（作業ディレクトリの下 — 隠しディレクトリ〔. で始まる名前〕は辿らない）。BIG_SRC_CAP で打ち切る
+func srcBytes() int {
+    mut total := 0
+    mut dirs := mut []string{"."}
+    mut i := 0
+    while i < len(dirs) && i < BIG_SRC_DIRS && total < BIG_SRC_CAP {
+        d := dirs[i]
+        i += 1
+        es := io.ReadDir(d) catch []io.DirEntry{}
+        for k <- iter.Range(0, len(es)) {
+            nm := es[k].Name
+            if strings.HasPrefix(nm, ".") {
+                continue
+            }
+            p := if d == "." { nm } else { d + "/" + nm }
+            switch es[k].Kind {
+            case io.Dir{}:
+                dirs = append(dirs, p)
+            case io.Regular{}:
+                if strings.HasSuffix(nm, ".sober") {
+                    b := io.ReadFile(p) catch []byte{}
+                    total += len(b)
+                }
+            default:
+            }
+        }
+    }
+    return total
+}
+
+// build の入口: 入力が大きければ子の task で、そうでなければ今までどおり main で
+func cmdBuildTop(cl cli.Parsed) int {
+    n := srcBytes()
+    if n < BIG_SRC_BYTES {
+        return cmdBuild(cl)
+    }
+    // 予算 = ソース1バイトあたり256バイト（100万行の題材の実測: 外側の region がソース1バイトあたり約200バイト）
+    bud := n * 256
+    rc, serr := task.Run((s task.Scope) => {
+        h := task.Spawn(s, () => cmdBuild(cl), budget: bud)
+        switch task.Try(h) {
+        case task.Ok{v}: v
+        case task.Failed{}: -1
+        case task.Died{cause}: -1
+        }
+    })
+    if serr == nil && rc >= 0 {
+        return rc
+    }
+    _ = io.WriteStderr(bytes("sober: the build of a large program (${n / 1048576} MiB of source) died in its own task; redone on the main task — the output is the same\n"))
+    return cmdBuild(cl)
+}

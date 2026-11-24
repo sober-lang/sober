@@ -1,0 +1,3 @@
+# h2specの落ちてよい項目（scripts/h2spec.sh）。1行 = モード（both = proto: Both・h2 = proto: H2）・h2specのJUnitの出力のpackage・classname・理由（タブ区切り）。
+# ここに無い項目が落ちたらゲートはFAIL。ここにある項目が通っても失敗にはしない。h2のモードは落ちてよい項目を持たない（146項目すべて）
+both	http2/3.5	Sends invalid connection preface	proto: BothはHTTP/1.1にも応じるので、PRIで始まらない最初のバイトはHTTP/1.1の要求として読む（不正な要求なら400で閉じる）。h2specはGOAWAY（PROTOCOL_ERROR）を期待する。proto: H2では前置き以外を全部GOAWAYで閉じて通る

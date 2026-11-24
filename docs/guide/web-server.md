@@ -211,48 +211,57 @@ GET /nope -> 404
 - If the path matches but the method does not, the response is 405 with an `Allow` header. HEAD is answered by the GET row (without sending the body)
 - The table is a value, so `for x <- routes()` walks every route (the first three lines of the output)
 
-## 3. Where state lives — serial, or an outside store
+## 3. Where state lives — a domain, or an outside store
 
-When you want state that changes across requests, like a table of users, there are exactly two places to put it.
+State that changes across requests, like a table of users, goes in a domain or in an outside store (a database or the like).
 
-- To keep the state in the process, accept serially. Accept connections one at a time with `for c <- net.Accept(l)`, and pass the `mut` table through the lambda you give to `ServeConn`. `ServeConn`'s `route` parameter is a borrow (used only during the call, never kept), so you can pass it a lambda that captures a `mut` value
-- To accept in parallel, put the state in a domain or an outside store (a database or the like). `net.Serve` runs its handler in a separate task per connection, all at once, so the handler cannot capture a `mut` value. Two tasks writing the same table at the same time (a data race) is a shape the language does not let you write. To keep the state in the process, make it with `task.NewDomain(s, init)` inside the `task.Run` around `net.Serve`, let the handler capture it, and apply updates one at a time with `task.Update(d, (st mut T) => …)` (a domain body is a short update that neither waits nor does io — counters, small tables, the free slots of a connection pool). Ask an outside store for large or durable state
+`net.Serve` runs its handler on a separate task per connection, all at once. `ServeConn` runs the route on a separate task per stream under HTTP/2. So neither the handler nor the route can capture a `mut` binding or `mut` contents. The rule holds whatever `proto:` is, and check and build reject it at the call. Two tasks writing the same table at the same time (a data race) is a shape the language does not let you write.
 
-The example in section 7 (`examples/web_login.sober`) takes the first form. `serve` owns the `users` table and the key, and passes them to `route` through a borrowed lambda.
+- To keep the state in the process, put it in a domain. Make it with `task.NewDomain(s, init)` in the scope that calls `ServeConn`, let the handler capture it, read it with `task.Read(d, (st T) => …)` and write it with `task.Update(d, (st mut T) => …)`. A domain body is a short update that neither waits nor does io (counters, small tables, the free slots of a connection pool). The body writes only elements of slices allocated beforehand and values that do not grow a region
+- Ask an outside store for large or durable state
+
+The example in section 7 (`examples/web_login.sober`) takes the first form. `serve` makes the domain of the user table and the key, and passes them to `route`. The rows keep names and hashes in byte slices allocated beforehand, so the number of rows has a limit (`maxUsers`).
 
 ```sober
 // examples/web_login.sober (excerpt)
-// n 本の接続を順に受ける
+// n 本の接続を順に受ける（ユーザーの表のdomainはこのscopeの寿命）
 func serve(l net.Listener, n int) error? {
-    mut users := mut map[string]User{}
-    k := session.KeyNew()
-    mut i := 0
-    for c <- net.Accept(l)? {
-        http.server.ServeConn(c, (r) => route(mut users, k, r))?
-        i = i + 1
-        if i == n {
-            break
+    _, e := task.Run((s) => {
+        mut u := Users{n: 0, names: mut []byte{}, nlen: mut []int{}, hashes: mut []byte{}, hlen: mut []int{}, gens: mut []int{}}
+        while len(u.names) < maxUsers * nameCap {
+            u.names = append(u.names, byte(0))
         }
-    }
-    return nil
+        while len(u.hashes) < maxUsers * hashCap {
+            u.hashes = append(u.hashes, byte(0))
+        }
+        while len(u.gens) < maxUsers {
+            u.nlen = append(u.nlen, 0)
+            u.hlen = append(u.hlen, 0)
+            u.gens = append(u.gens, 0)
+        }
+        users := task.NewDomain(s, u)
+        k := session.KeyNew()
+        serveWith(l, n, (r) => route(users, k, r)) catch 1
+    })
+    return e
 }
 ```
 
 ```sober
 // examples/web_login.sober (excerpt)
-func route(users mut map[string]User, k session.Key, r http.server.Request) http.server.Response {
+func route(users task.Domain[Users], k session.Key, r http.server.Request) http.server.Response {
     if r.method == "POST" && r.path == "/signup" {
-        return signup(mut users, r)
+        return signup(users, r)
     }
     if r.method == "POST" && r.path == "/login" {
-        return logIn(mut users, k, r)
+        return logIn(users, k, r)
     }
     if r.method == "GET" && r.path == "/me" {
-        name, why := whoami(mut users, k, r)
+        name, why := whoami(users, k, r)
         return if name == "" { unauthorized(why) } else { http.server.Text("hello ${name}") }
     }
     if r.method == "POST" && r.path == "/change-password" {
-        return changePassword(mut users, k, r)
+        return changePassword(users, k, r)
     }
     if r.method == "POST" && r.path == "/logout" {
         return logout()
@@ -261,7 +270,7 @@ func route(users mut map[string]User, k session.Key, r http.server.Request) http
 }
 ```
 
-The handlers are ordinary functions that take `mut users`. Even a function that only reads (`whoami`) takes it as `mut`: passing a `mut` value to a non-`mut` parameter freezes it at that point, and check rejects any later write.
+The handlers are ordinary functions that take the domain `users`. The domain is passed as a value, and every read and write goes through `task.Read` and `task.Update` (`rowOf` reads a copy of the table and looks the name up in the copy).
 
 ## 4. Streaming the body — `Response.stream`
 
@@ -379,13 +388,14 @@ package main
 // Server-Sent Events（language.md 28 節の「SSE」）: レスポンスの stream で text/event-stream を送る。長さ不定の stream なので chunked で、
 // emit 1 回 = chunk 1 つ = 送り 1 回（std は emit をまたいでバッファリングしない — イベントは組んだ順にすぐ届く）。イベントの行は http.server.FormatEvent で組む
 // （data の改行は行ごとの `data:` に割る・event / id の改行は panic(BadEvent) — examples/http_sse_bad）。保存させない（cache: NoStore）。
-// text/event-stream は compression: の対象外（ServeWith に compression: を渡しても圧縮しない — 頭に Content-Encoding も Vary も無い）。
+// text/event-stream は compression: の対象外（ServeConn に compression: を渡しても圧縮しない — 頭に Content-Encoding も Vary も無い）。
 // 繋ぎ直した受け手は最後に受けた id を Last-Event-ID で返す（http.server.Header で読む — ここではその続きから送る）。
 // 長命の接続は scope の deadline の外に置く（ServeConn を deadline つきの task.Run で包むと流れが切れる）。
 // ネットの代わりに recv が決まったリクエストの列を渡し、send が送りの 1 回ずつを印字する（行末の CR は外す・送りの区切りに `--`）
 
 import "std/convert"
 import "std/http/server"
+import "std/net"
 
 func show(b []byte) error? {
     mut out := mut []byte{}
@@ -421,16 +431,25 @@ func route(r http.server.Request) http.server.Response {
     return http.server.Response{status: 200, contentType: "text/event-stream", cache: http.server.NoStore{}, stream: (out, emit) => events(from, mut out, emit)}
 }
 
-func give(a string, k func([]byte)) error? {
-    k(bytes(a))
-    return nil
-}
-
 func main() {
     reqs := "GET /events HTTP/1.1\r\nHost: x\r\nAccept: text/event-stream\r\nAccept-Encoding: gzip\r\n\r\n" +
         "GET /events HTTP/1.1\r\nHost: x\r\nLast-Event-ID: 41\r\nConnection: close\r\n\r\n"
-    e := http.server.ServeWith((k) => give(reqs, k), (b) => show(b), route, compression: http.server.Gzip{})
+    e := net.Pair((c) => http.server.ServeConn(c, route, compression: http.server.Gzip{}), (c) => {
+        _ = net.Send(c, bytes(reqs))
+        _ = show(readAll(c))
+    })
     println(e == nil)
+}
+
+// 相手が閉じるまで受けたバイト列（最後の要求はConnection: close — サーバーが応答の後に閉じる）
+func readAll(c net.Conn) []byte {
+    mut got := mut []byte{}
+    _ = net.Recv(c, (x) => {
+        for y <- x {
+            got = append(got, y)
+        }
+    })
+    return freeze(got)
 }
 ```
 
@@ -443,89 +462,76 @@ Cache-Control: no-store
 Transfer-Encoding: chunked
 Date: Sun, 06 Nov 1994 08:49:37 GMT
 
-
--- 30
+30
 event: tick
 id: 1
 data: n = 1
 data: square = 1
 
 
-
--- 8
+8
 : ping
 
 
-
--- 30
+30
 event: tick
 id: 2
 data: n = 2
 data: square = 4
 
 
-
--- 30
+30
 event: tick
 id: 3
 data: n = 3
 data: square = 9
 
 
-
--- 17
+17
 retry: 5000
 data: bye
 
 
+0
 
--- 0
-
-
--- HTTP/1.1 200 OK
+HTTP/1.1 200 OK
 Content-Type: text/event-stream
 Cache-Control: no-store
 Transfer-Encoding: chunked
 Connection: close
 Date: Sun, 06 Nov 1994 08:49:37 GMT
 
-
--- 35
+35
 event: tick
 id: 42
 data: n = 42
 data: square = 1764
 
 
-
--- 8
+8
 : ping
 
 
-
--- 35
+35
 event: tick
 id: 43
 data: n = 43
 data: square = 1849
 
 
-
--- 35
+35
 event: tick
 id: 44
 data: n = 44
 data: square = 1936
 
 
-
--- 17
+17
 retry: 5000
 data: bye
 
 
-
--- 0
+0
 
 
 true
@@ -533,7 +539,7 @@ true
 
 - Newlines in `data` are split into one `data:` line each. A newline in `event` or `id` is a panic (`BadEvent`)
 - One `emit` is one chunk, so events reach the client right away, in the order you build them
-- Do not let it be stored: set `cache: http.server.NoStore{}`. `text/event-stream` is excluded from `compression:` (passing `compression:` to `ServeWith` does not compress it)
+- Do not let it be stored: set `cache: http.server.NoStore{}`. `text/event-stream` is excluded from `compression:` (passing `compression:` to `ServeConn` does not compress it)
 - A client that reconnects sends back the last `id` it received in the `Last-Event-ID` header (read it with `http.server.Header` and continue from there)
 - Keep long-lived connections outside any scope with a deadline. Wrapped in a deadline, the stream is cut when the deadline passes
 
@@ -587,56 +593,39 @@ The flow:
 
 ```sober
 // examples/web_login.sober (excerpt)
-// cookie のトークンの持ち主（name が "" なら why が断る理由）
-func whoami(users mut map[string]User, k session.Key, r http.server.Request) (string, string) {
-    raw := http.server.Cookie(r, cookieName)
-    if raw == nil {
-        return "", "not logged in"
+// cookieのトークンの持ち主（nameが "" ならwhyが断る理由）
+func whoami(users task.Domain[Users], k session.Key, r http.server.Request) (string, string) {
+    u, why := opened(k, r)
+    if u == nil {
+        return "", why
     }
-    u, e := session.Open(k, raw, time.Now())
-    if e != nil {
-        return "", switch e {
-            case session.Bad{}: "invalid session: log in"
-            case session.Expired{}: "session expired: log in again"
-        }
-    }
-    user := users[session.Subject(u)]
-    if user == nil {
-        return "", "unknown user: log in"
-    }
-    c, es := session.Check(u, user.gen)
-    if es != nil {
-        return "", "session revoked (the password was changed): log in again"
-    }
-    who, _ := session.Who(c)
-    return who, ""
+    return checked(u, rowOf(users, bytes(session.Subject(u))))
 }
 ```
 
 ```sober
 // examples/web_login.sober (excerpt)
 // 古いパスワードを検証して新しいハッシュに替え、世代を進める（他の端末のトークンは全部Staleになる）。この端末には新しい世代のトークンを渡し直す
-func changePassword(users mut map[string]User, k session.Key, r http.server.Request) http.server.Response {
-    name, why := whoami(mut users, k, r)
+func changePassword(users task.Domain[Users], k session.Key, r http.server.Request) http.server.Response {
+    name, why := whoami(users, k, r)
     if name == "" {
         return unauthorized(why)
     }
-    old := field(r, "old")
-    pw := field(r, "new")
-    if old == nil || pw == nil {
+    oldPw := field(r, "old")
+    newPw := field(r, "new")
+    if oldPw == nil || newPw == nil {
         return http.server.Status(400)
     }
-    user := users[name]
-    if user == nil {
-        return unauthorized("unknown user: log in")
-    }
-    ok := crypto.password.Verify(user.hash, old) catch false
-    if !ok {
+    row := rowOf(users, bytes(name))
+    if !verifyPw(row.hash, oldPw) {
         return http.server.Response{status: 403, contentType: "text/plain", body: bytes("wrong password")}
     }
-    h := crypto.password.Argon2id(pw) catch return http.server.Status(500)
-    next := User{hash: h, gen: user.gen + 1}
-    users[name] = next
+    h := crypto.password.Argon2id(newPw) catch return http.server.Status(500)
+    nb := bytes(name)
+    hb := bytes(h)
+    next := User{hash: h, gen: row.gen + 1}
+    g := next.gen
+    _ = task.Update(users, (st mut Users) => store(mut st, nb, hb, g))
     return issue(name, next, k, "password changed: other sessions are revoked")
 }
 ```
@@ -649,7 +638,8 @@ package main
 
 // ログインのセッション: パスワードのハッシュ（crypto/password）と世代つきのトークン（std/session）を __Host- の cookie に載せる。
 // ユーザーの行はハッシュの隣に世代を持ち、パスワードを変えると世代が進んで、それまでに発行したトークンは全部切れる（他の端末の古い cookie も）。
-// 状態（ユーザーの表）を持つので受けは直列（ServeConn に渡すラムダは借り — mut の表を通せる）。並行に受けるなら状態は外の保存先に置く。
+// ユーザーの表はdomain（task.NewDomain）に置く: ServeConnのrouteは並行に呼ばれうる（HTTP/2のストリームごとの子task）ので、可変の表を捕獲できない。
+// domainの本体は先に確保した列の要素だけを書く（名前とハッシュのバイト・長さ・世代 — 表を伸ばさない。行の数の上限はmaxUsers）。
 // 後半の客は 2 台の端末（laptop / phone）の代役で、cookie は値として各端末が持つ（レスポンスから http.client.CookieValue で取り出し、次のリクエストの cookies: に載せる）
 
 import "std/crypto/password"
@@ -665,6 +655,118 @@ import "std/url"
 type User struct {
     hash string
     gen int
+}
+
+// ユーザーの表（domainの状態）: i番目の行の名前は names[i * nameCap ..] の nlen[i] バイト、ハッシュは hashes[i * hashCap ..] の hlen[i] バイト
+const maxUsers = 16
+const nameCap = 64
+const hashCap = 160
+
+type Users struct {
+    n int
+    names mut []byte
+    nlen mut []int
+    hashes mut []byte
+    hlen mut []int
+    gens mut []int
+}
+
+// 表の写し（task.Readの本体が返す — 不変の欄だけ。探しはこの上で行う）
+type Snap struct {
+    n int
+    names []byte
+    nlen []int
+    hashes []byte
+    hlen []int
+    gens []int
+}
+
+
+// 表の行（見つからなければ found = false）
+type Row struct {
+    found bool
+    hash string
+    gen int
+}
+
+
+
+// 写しの中の名前nbの行
+func lookup(st Snap, nb []byte) Row {
+    mut at := -1
+    mut i := 0
+    while i < st.n {
+        if st.nlen[i] == len(nb) {
+            mut same := true
+            mut j := 0
+            while j < len(nb) {
+                if st.names[i * nameCap + j] != nb[j] {
+                    same = false
+                }
+                j += 1
+            }
+            if same {
+                at = i
+            }
+        }
+        i += 1
+    }
+    if at < 0 {
+        return Row{found: false, hash: "", gen: 0}
+    }
+    mut hb := mut []byte{}
+    mut j := 0
+    while j < st.hlen[at] {
+        hb = append(hb, st.hashes[at * hashCap + j])
+        j += 1
+    }
+    return Row{found: true, hash: string(freeze(hb)) catch "", gen: st.gens[at]}
+}
+
+// 行を書く（無ければ足す — task.Updateの本体から）。gen < 0 = 足すだけ（あれば1）。結果 = 0（書いた）・1（もうある）・2（表が満杯か長すぎる）
+func store(st mut Users, nb []byte, hb []byte, gen int) int {
+    mut at := -1
+    mut i := 0
+    while i < st.n {
+        if st.nlen[i] == len(nb) {
+            mut same := true
+            mut j := 0
+            while j < len(nb) {
+                if st.names[i * nameCap + j] != nb[j] {
+                    same = false
+                }
+                j += 1
+            }
+            if same {
+                at = i
+            }
+        }
+        i += 1
+    }
+    if at >= 0 && gen < 0 {
+        return 1
+    }
+    if len(nb) > nameCap || len(hb) > hashCap || (at < 0 && st.n >= maxUsers) {
+        return 2
+    }
+    row := if at >= 0 { at } else { st.n }
+    mut j := 0
+    while j < len(nb) {
+        st.names[row * nameCap + j] = nb[j]
+        j += 1
+    }
+    j = 0
+    while j < len(hb) {
+        st.hashes[row * hashCap + j] = hb[j]
+        j += 1
+    }
+    st.nlen[row] = len(nb)
+    st.hlen[row] = len(hb)
+    st.gens[row] = if gen < 0 { 0 } else { gen }
+    if at < 0 {
+        st.n += 1
+    }
+    return 0
 }
 
 const cookieName = "__Host-sid"
@@ -695,85 +797,33 @@ func unauthorized(why string) http.server.Response {
     return http.server.Response{status: 401, contentType: "text/plain", body: bytes(why)}
 }
 
-// cookie のトークンの持ち主（name が "" なら why が断る理由）
-func whoami(users mut map[string]User, k session.Key, r http.server.Request) (string, string) {
+// cookieのトークンを開いて、subject（根の行を引く名前）を返す（開けなければ空の名前と理由）
+func opened(k session.Key, r http.server.Request) (session.Unchecked?, string) {
     raw := http.server.Cookie(r, cookieName)
     if raw == nil {
-        return "", "not logged in"
+        return nil, "not logged in"
     }
     u, e := session.Open(k, raw, time.Now())
     if e != nil {
-        return "", switch e {
+        return nil, switch e {
             case session.Bad{}: "invalid session: log in"
             case session.Expired{}: "session expired: log in again"
         }
     }
-    user := users[session.Subject(u)]
-    if user == nil {
+    return u, ""
+}
+
+// 開いたトークンを根の行（今の世代）と照らして、認可に使える名前を返す（使えなければ空の名前と理由）
+func checked(u session.Unchecked, row Row) (string, string) {
+    if !row.found {
         return "", "unknown user: log in"
     }
-    c, es := session.Check(u, user.gen)
+    c, es := session.Check(u, row.gen)
     if es != nil {
         return "", "session revoked (the password was changed): log in again"
     }
     who, _ := session.Who(c)
     return who, ""
-}
-
-func signup(users mut map[string]User, r http.server.Request) http.server.Response {
-    name := field(r, "name")
-    pw := field(r, "password")
-    if name == nil || pw == nil || name == "" {
-        return http.server.Status(400)
-    }
-    if users[name] != nil {
-        return http.server.Status(409)
-    }
-    h := crypto.password.Argon2id(pw) catch return http.server.Status(500)
-    users[name] = User{hash: h, gen: 0}
-    return http.server.Response{status: 201, contentType: "text/plain", body: bytes("created ${name}")}
-}
-
-func logIn(users mut map[string]User, k session.Key, r http.server.Request) http.server.Response {
-    name := field(r, "name")
-    pw := field(r, "password")
-    if name == nil || pw == nil {
-        return http.server.Status(400)
-    }
-    user := users[name]
-    if user == nil {
-        return unauthorized("wrong name or password")
-    }
-    ok := crypto.password.Verify(user.hash, pw) catch false
-    if !ok {
-        return unauthorized("wrong name or password")
-    }
-    return issue(name, user, k, "welcome ${name}")
-}
-
-// 古いパスワードを検証して新しいハッシュに替え、世代を進める（他の端末のトークンは全部Staleになる）。この端末には新しい世代のトークンを渡し直す
-func changePassword(users mut map[string]User, k session.Key, r http.server.Request) http.server.Response {
-    name, why := whoami(mut users, k, r)
-    if name == "" {
-        return unauthorized(why)
-    }
-    old := field(r, "old")
-    pw := field(r, "new")
-    if old == nil || pw == nil {
-        return http.server.Status(400)
-    }
-    user := users[name]
-    if user == nil {
-        return unauthorized("unknown user: log in")
-    }
-    ok := crypto.password.Verify(user.hash, old) catch false
-    if !ok {
-        return http.server.Response{status: 403, contentType: "text/plain", body: bytes("wrong password")}
-    }
-    h := crypto.password.Argon2id(pw) catch return http.server.Status(500)
-    next := User{hash: h, gen: user.gen + 1}
-    users[name] = next
-    return issue(name, next, k, "password changed: other sessions are revoked")
 }
 
 // この端末の cookie を消す（トークンそのものは期限まで有効 — 全部の端末を切るのは世代を進める changePassword）
@@ -782,19 +832,97 @@ func logout() http.server.Response {
     return http.server.Response{status: 200, contentType: "text/plain", body: bytes("bye"), cookies: []http.server.SetCookie{c}}
 }
 
-func route(users mut map[string]User, k session.Key, r http.server.Request) http.server.Response {
+// 保存したハッシュとパスワードの照合（失敗は偽）
+func verifyPw(stored string, pw string) bool {
+    return crypto.password.Verify(stored, pw) catch false
+}
+
+// nbの行（task.Readで表の写しを取り、写しの上で探す）
+func rowOf(users task.Domain[Users], nb []byte) Row {
+    return lookup(task.Read(users, (st Users) => Snap{n: st.n, names: clone(st.names), nlen: clone(st.nlen), hashes: clone(st.hashes), hlen: clone(st.hlen), gens: clone(st.gens)}), nb)
+}
+
+// パスワードをハッシュにして、世代0の行を足す
+func signup(users task.Domain[Users], r http.server.Request) http.server.Response {
+    name := field(r, "name")
+    pw := field(r, "password")
+    if name == nil || pw == nil || name == "" {
+        return http.server.Status(400)
+    }
+    nb := bytes(name)
+    if rowOf(users, nb).found {
+        return http.server.Status(409)
+    }
+    h := crypto.password.Argon2id(pw) catch return http.server.Status(500)
+    hb := bytes(h)
+    // 確かめてから書くまでに同じ名前が足されていれば409（task.Updateの中で決める）
+    code := task.Update(users, (st mut Users) => store(mut st, nb, hb, -1))
+    if code != 0 {
+        return http.server.Status(if code == 1 { 409 } else { 507 })
+    }
+    return http.server.Response{status: 201, contentType: "text/plain", body: bytes("created ${name}")}
+}
+
+// パスワードを照合して、今の世代のトークンをcookieに載せる
+func logIn(users task.Domain[Users], k session.Key, r http.server.Request) http.server.Response {
+    name := field(r, "name")
+    pw := field(r, "password")
+    if name == nil || pw == nil {
+        return http.server.Status(400)
+    }
+    row := rowOf(users, bytes(name))
+    if !row.found || !verifyPw(row.hash, pw) {
+        return unauthorized("wrong name or password")
+    }
+    return issue(name, User{hash: row.hash, gen: row.gen}, k, "welcome ${name}")
+}
+
+// cookieのトークンの持ち主（nameが "" ならwhyが断る理由）
+func whoami(users task.Domain[Users], k session.Key, r http.server.Request) (string, string) {
+    u, why := opened(k, r)
+    if u == nil {
+        return "", why
+    }
+    return checked(u, rowOf(users, bytes(session.Subject(u))))
+}
+
+// 古いパスワードを検証して新しいハッシュに替え、世代を進める（他の端末のトークンは全部Staleになる）。この端末には新しい世代のトークンを渡し直す
+func changePassword(users task.Domain[Users], k session.Key, r http.server.Request) http.server.Response {
+    name, why := whoami(users, k, r)
+    if name == "" {
+        return unauthorized(why)
+    }
+    oldPw := field(r, "old")
+    newPw := field(r, "new")
+    if oldPw == nil || newPw == nil {
+        return http.server.Status(400)
+    }
+    row := rowOf(users, bytes(name))
+    if !verifyPw(row.hash, oldPw) {
+        return http.server.Response{status: 403, contentType: "text/plain", body: bytes("wrong password")}
+    }
+    h := crypto.password.Argon2id(newPw) catch return http.server.Status(500)
+    nb := bytes(name)
+    hb := bytes(h)
+    next := User{hash: h, gen: row.gen + 1}
+    g := next.gen
+    _ = task.Update(users, (st mut Users) => store(mut st, nb, hb, g))
+    return issue(name, next, k, "password changed: other sessions are revoked")
+}
+
+func route(users task.Domain[Users], k session.Key, r http.server.Request) http.server.Response {
     if r.method == "POST" && r.path == "/signup" {
-        return signup(mut users, r)
+        return signup(users, r)
     }
     if r.method == "POST" && r.path == "/login" {
-        return logIn(mut users, k, r)
+        return logIn(users, k, r)
     }
     if r.method == "GET" && r.path == "/me" {
-        name, why := whoami(mut users, k, r)
+        name, why := whoami(users, k, r)
         return if name == "" { unauthorized(why) } else { http.server.Text("hello ${name}") }
     }
     if r.method == "POST" && r.path == "/change-password" {
-        return changePassword(mut users, k, r)
+        return changePassword(users, k, r)
     }
     if r.method == "POST" && r.path == "/logout" {
         return logout()
@@ -802,19 +930,38 @@ func route(users mut map[string]User, k session.Key, r http.server.Request) http
     return http.server.Status(404)
 }
 
-// n 本の接続を順に受ける
+// n 本の接続を順に受ける（ユーザーの表のdomainはこのscopeの寿命）
 func serve(l net.Listener, n int) error? {
-    mut users := mut map[string]User{}
-    k := session.KeyNew()
+    _, e := task.Run((s) => {
+        mut u := Users{n: 0, names: mut []byte{}, nlen: mut []int{}, hashes: mut []byte{}, hlen: mut []int{}, gens: mut []int{}}
+        while len(u.names) < maxUsers * nameCap {
+            u.names = append(u.names, byte(0))
+        }
+        while len(u.hashes) < maxUsers * hashCap {
+            u.hashes = append(u.hashes, byte(0))
+        }
+        while len(u.gens) < maxUsers {
+            u.nlen = append(u.nlen, 0)
+            u.hlen = append(u.hlen, 0)
+            u.gens = append(u.gens, 0)
+        }
+        users := task.NewDomain(s, u)
+        k := session.KeyNew()
+        serveWith(l, n, (r) => route(users, k, r)) catch 1
+    })
+    return e
+}
+
+func serveWith(l net.Listener, n int, rt func(http.server.Request) http.server.Response) (int, error?) {
     mut i := 0
     for c <- net.Accept(l)? {
-        http.server.ServeConn(c, (r) => route(mut users, k, r))?
+        http.server.ServeConn(c, rt)?
         i = i + 1
         if i == n {
             break
         }
     }
-    return nil
+    return 0, nil
 }
 
 // --- ここから客（端末の代役） ---
@@ -948,18 +1095,19 @@ func route(r http.server.Request) http.server.Response {
 
 ## 9. Publishing over TLS — `tls.Serve`
 
-To publish over https, use `std/tls`. `tls.Serve` completes the handshake on each connection before calling the handler, and the handler connects `tls.Recv` / `tls.Send` to the receiving and sending sides of `http.server.ServeWith` (`ServeConn` is the same wrapper for a `net.Conn`).
+To publish over https, use `std/tls`. `tls.Serve` completes the handshake on each connection before calling the handler, and the handler receives a `net.Conn` that carries the TLS state, which it passes to `http.server.ServeConn` like a plain connection (`net.Recv` / `net.Send` encrypt and decrypt too).
 
 ```sober
 // examples/web_server_tls.sober
 package main
 
-// Web サーバのガイド 9 節: https で公開する。tls.Serve が handshake を済ませた接続だけを app に渡し、app は tls.Recv / tls.Send を
-// http.server.ServeWith の受けと送りに繋ぐ（ServeConn の TLS 版）。証明書と鍵は @embed で焼き込む（起動時にファイルから読むなら tls.Load）。
+// Web サーバのガイド 9 節: https で公開する。tls.Serve が handshake を済ませた接続だけを app に渡し、app はその接続（TLS の状態を持つ
+// net.Conn）を平文の接続と同じに http.server.ServeConn へ渡す。証明書と鍵は @embed で焼き込む（起動時にファイルから読むなら tls.Load）。
 // 既定の走りは設定の確認だけ。`web_server_tls live <port>` で127.0.0.1:<port> にhttpsで待ち受ける
 // （試すなら curl --cacert testdata/crypto/httparena-server.crt https://localhost:<port>/ — 自己署名の証明書なので起点を足す）
 
 import "std/http/server"
+import "std/net"
 import "std/os"
 import "std/tls"
 
@@ -976,8 +1124,8 @@ func route(r http.server.Request) http.server.Response {
 }
 
 // 接続1本のhandler（handshakeは済んでいる — cは復号した後の読み書きのインターフェース）
-func app(c tls.Conn) error? {
-    return http.server.ServeWith((k) => tls.Recv(c, k), (b) => tls.Send(c, b), route)
+func app(c net.Conn) error? {
+    return http.server.ServeConn(c, route)
 }
 
 func main() int {
@@ -1006,7 +1154,7 @@ certificate and key: ok
 - `tls.Serve` listens on `addr` itself (no `net.Listen` in between). One connection is one task, and the promises about accepting (absorbing failures and deaths, deadlines) are the same as for `net.Serve`
 - Pass the certificate chain and the key to `tls.Parse` as PEM strings. The example bakes them into the executable with `@embed`. To read them from files at startup, use `tls.Load(certPath, keyPath)`
 - `tls.Alpn(cfg, []string{"http/1.1"})` sets the protocols to select with ALPN
-- `ServeWith` also has an optional way to queue sends and send them together (`put:` — pass `tls.Put`). Every optional field is in the [std/http/server](../std/http-server.ja.md) reference
+- On a TLS connection, `ServeConn` queues the responses for one received chunk and sends them together before the next receive (`net.Put` / `net.Flush`). Every optional field is in the [std/http/server](../std/http-server.ja.md) reference
 - In the repository's checks the example only checks its configuration; `live <port>` actually listens (see the note at the top of the example for how to try it)
 
 ## 10. Running in production
@@ -1026,9 +1174,9 @@ The fields of `net.Serve` set the limits on accepting connections.
 | `reject:` | none | at the ceiling, bytes sent once to a new connection before closing it (left out, accepted connections wait in a runtime queue, and admitted connections that receive nothing or receive slowly are cut first to free slots) |
 | `region:` | 128 MiB | limit on one region of a connection's task (beyond it, that connection's task dies) |
 
-The root ceiling is the memory ceiling of the process (from the cgroup memory.max, or else physical memory). `net.Waiting()` reports the number of connections waiting for admission. Setups that cannot use io_uring (the epoll path) have neither the runtime queue nor the taking back of slots. When full, connections wait in the kernel's queue in arrival order. The details are in section 9 of the [security guide](security.md#9-resource-exhaustion-denial-of-service).
+The root ceiling is the memory ceiling of the process (from the cgroup memory.max, or else physical memory). `net.Waiting()` reports the number of connections waiting for admission. Setups that cannot use io_uring (the epoll path) have the same runtime queue and take slots back the same way. The details are in section 9 of the [security guide](security.md#9-resource-exhaustion-denial-of-service).
 
-`ServeConn`'s `maxBody:` may exceed `budget:`. A body beyond the reservation is received by borrowing from the free part of the ceiling. If the ceiling is full, that connection's task dies with `RegionExceeded{cause: budget}` (not 413). Raise `budget:` only when you want to avoid borrowing.
+`ServeConn`'s `maxBody:` may exceed `budget:`. A body beyond the reservation is received by borrowing from the free part of the ceiling. A `Content-Length` body borrows its whole amount when it starts. If the ceiling is full, it waits for room in arrival order until `bodyWait:`. If it still does not fit, that connection's task dies with `RegionExceeded{cause: budget}` (not 413). Raise `budget:` only when you want to avoid borrowing.
 
 ## 11. The boundary of a handover — replacing the binary
 

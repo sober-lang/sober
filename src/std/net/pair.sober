@@ -1,0 +1,46 @@
+package net
+
+import "std/internal/sec"
+import "std/io"
+import "std/task"
+
+// 繋がった接続の組（一方へ送ったバイトが他方の受けに届く — カーネルのsocketpair・AF_UNIXのstream・非ブロック）の一方をserverへ子のtaskで、
+// 他方をclientへ呼び手のtaskで渡す。clientが返ったらclientの側を閉じ（serverの受けは相手の閉じで終わる）、serverの終わりを待って戻る。
+// serverの誤りの値は吸収する（結果はclientが受けたバイトで見る）。serverの死（panic）は呼び手に伝わる（子のJoinと同じ — 例と試験で見落とさない）。
+// Pairが返す誤りはsocketpairの失敗だけ。
+// 例と試験で、ポートを使わずにサーバーとクライアントを1つのプログラムの中で繋ぐのに使う（ServeConnの受けの待ち・期限・送信バッファリングは本物の接続と同じ道で走る）。
+// serverは並行に走るので、可変を捕獲できない（net.Serveのhandlerと同じ規則）
+@errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other)
+@effects(block, io, nondet)
+func Pair(server func(c Conn) error?, client func(c Conn)) error? {
+    if sysDeadline() != 0 {
+        return io.Expired{}
+    }
+    mut sv := mut []byte{0, 0, 0, 0, 0, 0, 0, 0}
+    r := sysCall(53, 1, 526337, 0, sysAddr(sv), 0, 0)
+    if r < 0 {
+        return errOf(0 - r)
+    }
+    fa := int(sv[0]) | int(sv[1]) << 8 | int(sv[2]) << 16 | int(sv[3]) << 24
+    fb := int(sv[4]) | int(sv[5]) << 8 | int(sv[6]) << 16 | int(sv[7]) << 24
+    _, _ = task.Run((s) => {
+        h := task.Spawn(s, () => pairServe(fa, server))
+        pairClient(fb, client)
+        task.Join(h)
+    })
+    return nil
+}
+
+// Pairのserverの側（子のtask）: 接続を渡し、返ったら閉じる
+func pairServe(fd int, server func(c Conn) error?) int {
+    _ = sysFdOwn(fd)
+    defer closeFd(fd)
+    _ = server(Conn{fd: fd, sec: []internal.sec.State{}, seal: netSeal{}})
+    return 0
+}
+
+// Pairのclientの側（呼び手のtask）: 接続を渡し、返ったら閉じる（clientの本体が抜けても閉じる）
+func pairClient(fd int, client func(c Conn)) {
+    defer closeFd(fd)
+    client(Conn{fd: fd, sec: []internal.sec.State{}, seal: netSeal{}})
+}

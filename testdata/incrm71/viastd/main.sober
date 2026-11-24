@@ -1,0 +1,15 @@
+package main
+
+// incrbuild の列 testdata/incrm71（viastd → viacopy を格納場所を共有して順に）: viastd が std/binary の束を置き、viacopy は deflate の写し（defl）
+// だけが外れる。両方とも compress/flate を import する（プログラムの error の集合が同じでないと束の鍵が全部外れる）
+
+import "std/compress/flate"
+import "std/iter"
+
+func main() {
+    mut data := mut []byte{}
+    for i <- iter.Range(0, 4000) {
+        data = append(data, byte((i * 7 + i / 13) % 61))
+    }
+    println(len(compress.flate.Encode(freeze(data), 6)))
+}

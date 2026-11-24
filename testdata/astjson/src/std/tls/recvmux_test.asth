@@ -1,0 +1,19 @@
+@@full	c6c453102655ecd0	7214	249723
+@head	466187ca847ab065	0	491
+func TestAlpnH2	77f475607ccab80e	41	1412
+func TestRecvMux	ba24e70101191edd	93	3219
+func apAccept	91a8a6bf53b09070	65	2186
+func apHello	73b02180a2afbd57	102	3743
+func apOne	454f40c1098d6ad0	73	2585
+func rmAccept	8f8520effbc2b1de	83	2805
+func rmCat	db34d700bb9776f9	33	1216
+func rmCfg	7c483c51aac4747f	20	759
+func rmChunk	b98609b77096ee07	10	434
+func rmChunkOr	0f854170e0fd241a	27	967
+func rmConn	e68704872ae2dcd9	227	7174
+func rmDrain	d7e6fc493140a920	60	2088
+func rmPeer	35b99a144e39894e	49	1857
+func rmRead	133db6ae1ac7bda6	165	5411
+func rmTalk	a999e2e9bc970fca	147	4974
+func rmZeros	bf50b4bfc209224b	22	816
+type rmLink	a7608036e0961b5a	3	152

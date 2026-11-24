@@ -1,6 +1,7 @@
 package main
 
 import "std/http/server"
+import "std/net"
 
 // ハンドラがレスポンス1件に保存されうる方針（Revalidate）を書き、afterがそのレスポンスにSet-Cookieを足す
 func stamp(r http.server.Request, w http.server.Response) http.server.Response {
@@ -9,6 +10,8 @@ func stamp(r http.server.Request, w http.server.Response) http.server.Response {
 
 func main() {
     rs := []http.server.Route{http.server.Route{method: "GET", path: "/", handler: (r) => http.server.Response{status: 200, contentType: "text/plain", body: bytes("hi"), cache: http.server.Revalidate{}}, middleware: []http.server.Middleware{http.server.Middleware{after: stamp}}}}
-    e := http.server.ServeWith((k) => k(bytes("GET / HTTP/1.1\r\n\r\n")), (b) => nil, (r) => http.server.Dispatch(rs, r))
+    e := net.Pair((c) => http.server.ServeConn(c, (r) => http.server.Dispatch(rs, r)), (c) => {
+        _ = net.Send(c, bytes("GET / HTTP/1.1\r\n\r\n"))
+    })
     println(e == nil)
 }

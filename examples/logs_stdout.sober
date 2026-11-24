@@ -1,0 +1,20 @@
+@logs(stdout)
+package main
+
+// @logs(stdout), written once before the package clause of the main package, sends the log to standard output.
+// The log must not mix with printed results, so this program does not use println
+
+import "std/print"
+
+type Tick struct {
+    n int
+    ok bool
+}
+
+func main() {
+    mut i := 0
+    while i < 3 {
+        print.Log(Tick{n: i, ok: i % 2 == 0})
+        i += 1
+    }
+}

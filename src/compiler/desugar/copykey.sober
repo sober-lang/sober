@@ -1,0 +1,360 @@
+package desugar
+
+// 別のpackageへ写る宣言の要約（lowerの束の鍵 K0 の成分）: package p の束には、p が参照する別のpackageの const の値（int は畳んだ値・
+// 文字列 / 列 / map の const は使う側で木から下ろす — lower の dictConst）と、総称の関数・@expand の関数の本体（実体と展開は使う側の束に入る）が写る。
+// 宣言ごとに、木の部分木のハッシュ（字句の番号は絶対のまま — panicの点の位置が字句の番号で束の事象の列に入る）を取り、p から届く宣言の和を作る。
+// 届く = p の木の修飾参照（`ref.N`）で引いた宣言と、写る宣言の本体の中の参照（裸の名前はその宣言のpackageで・修飾参照はそのpackageのimportで）で
+// 推移的に引いた宣言。普通の関数は本体が写らない（呼ぶだけ — 本体の事実は境の要約が運ぶ）ので、そこで止める。ローカルの束縛が隠す名前も引く（多めに引く — 健全）
+
+import "ast"
+import "std/iter"
+
+const CPK_M1 = -7046029254386353131
+const CPK_M2 = -4417276706812531889
+
+func cpkM(h int, v int, m int) int {
+    x := (h ^ v) * m
+    return x ^ (x >> 29)
+}
+
+// 木（ファイル f）の節 i の部分木を [a, b] へ混ぜた値を返し、参照（名前の綴りの位置 — 裸 [0, f, 名前, -1] / 修飾 [1, f, 基底, 名前]）を rs へ積む
+func cpkSub(t ast.Tree, descs []int, f int, i int, a0 int, b0 int, rs mut []int) []int {
+    if i < 0 {
+        return []int{cpkM(a0, -1, CPK_M1), b0}
+    }
+    x := t.nodes[i]
+    mut a := cpkM(cpkM(a0, x.kind, CPK_M1), x.tok, CPK_M1)
+    mut b := cpkM(b0, x.kind + 7 * x.tok, CPK_M2)
+    if x.kind == ast.EIdent {
+        rs = append(rs, 0)
+        rs = append(rs, f)
+        rs = append(rs, x.a)
+        rs = append(rs, -1)
+    } else if x.kind == ast.ESelector && x.a >= 0 && t.nodes[x.a].kind == ast.EIdent {
+        rs = append(rs, 1)
+        rs = append(rs, f)
+        rs = append(rs, t.nodes[x.a].a)
+        rs = append(rs, x.b)
+    }
+    c := if x.kind == ast.EFor && x.b == 1 { d6(3, 0, 3, 0, 0, 0) } else if x.kind == ast.EFor { d6(3, 0, 1, 0, 0, 0) } else { descs[x.kind] }
+    fs := []int{x.a, x.b, x.c, x.d, x.e, x.f}
+    mut cc := c
+    for v <- fs {
+        k := cc % 8
+        cc = cc / 8
+        if k == 1 {
+            r1 := cpkSub(t, descs, f, v, a, b, mut rs)
+            a = r1[0]
+            b = r1[1]
+        } else if k == 0 || v < 0 {
+            a = cpkM(a, v, CPK_M1)
+            b = cpkM(b, v, CPK_M2)
+        } else {
+            // 列（data[v] = 長さ・要素）: 3 = 節の列・4 = 文字列の列（要素は文字列の位置 — 綴りを混ぜる）・ほか = 文字列か値の列
+            n := t.data[v]
+            a = cpkM(a, n, CPK_M1)
+            for j <- iter.Range(0, n) {
+                y := t.data[v + 1 + j]
+                if k == 3 {
+                    r2 := cpkSub(t, descs, f, y, a, b, mut rs)
+                    a = r2[0]
+                    b = r2[1]
+                } else if k == 4 && y >= 0 {
+                    for q <- iter.Range(y, y + 1 + t.data[y]) {
+                        b = cpkM(b, t.data[q], CPK_M2)
+                    }
+                } else {
+                    b = cpkM(b, y, CPK_M2)
+                }
+            }
+        }
+    }
+    return []int{a, b}
+}
+
+// 宣言の参照 r（const = 0 + 添字 / 関数 = 1 + 添字）の [h1, h2, 写るか, 参照の列…]（参照は解決した宣言の参照）
+func cpkDecl(st mut S, kind int, idx int) []int {
+    n := if kind == 0 { ConNode(mut st, idx) } else { fnNode(mut st, idx) }
+    f := refFile(int(n))
+    pk := FilePkg(mut st, f)
+    mut a := 0
+    // 字句の番号の意味はファイルに依る（packageのパスとpackageの中の序数）
+    s := PkgPath(mut st, pk)
+    for q <- iter.Range(0, slen(mut st, s)) {
+        a = cpkM(a, sat(mut st, s, q), CPK_M1)
+    }
+    mut b := cpkM(0, f - PkgFlo(mut st, pk), CPK_M2)
+    copies := kind == 0 || fnExpands(mut st, idx) || lenL(mut st, fnTParams(mut st, idx)) > 0
+    // 普通の関数も本体を歩く（参照を辿る — 届く関数の要約を鍵に入れる）。値（[h1, h2]）は写る宣言だけが使う
+    mut rs := mut []int{}
+    r3 := cpkSub(st.trees[f], st.descs, f, refIdx(int(n)), a, b, mut rs)
+    a = r3[0]
+    b = r3[1]
+    if kind == 0 {
+        a = cpkM(a, ConValue(mut st, idx), CPK_M1)
+        b = cpkM(b, if ConHas(mut st, idx) { 1 } else { 0 }, CPK_M2)
+    }
+    mut o := mut []int{a, b, if copies { 1 } else { 0 }}
+    for r <- cpkResolve(mut st, pk, freeze(rs)) {
+        o = append(o, r)
+    }
+    return freeze(o)
+}
+
+// 参照の列 rs（cpkSub の形）を package pk から解決した宣言の参照（const = 2 × 添字・関数 = 2 × 添字 + 1）へ。own = 裸の名前も引くか
+func cpkRes1(st mut S, pk int, rs []int, own bool) []int {
+    mut o := mut []int{}
+    mut q := 0
+    while q + 3 < len(rs) {
+        f := rs[q + 1]
+        nm := StrRef(LBASE + f * FW + rs[q + 2])
+        r := if rs[q] == 0 { if own { ResolveTop(mut st, pk, nm, false, TopConst | TopFn) } else { noTop() } } else { ResolveSel(mut st, pk, nm, StrRef(LBASE + f * FW + rs[q + 3]), TopConst | TopFn) }
+        if r.kind == TopConst && r.idx >= 0 {
+            o = append(o, 2 * r.idx)
+        } else if r.kind == TopFn && r.idx >= 0 {
+            o = append(o, 2 * r.idx + 1)
+        }
+        q += 4
+    }
+    return freeze(o)
+}
+
+func cpkResolve(st mut S, pk int, rs []int) []int {
+    return cpkRes1(mut st, pk, rs, true)
+}
+
+// 関数 fi の安定な名前 [h1, h2]（packageのパスと関数の名前 — 添字はロードの順に依る）
+func FnKey(st mut S, fi int) []int {
+    mut a := 0
+    mut b := 0
+    s := PkgPath(mut st, fnPkg(mut st, fi))
+    for q <- iter.Range(0, slen(mut st, s)) {
+        a = cpkM(a, sat(mut st, s, q), CPK_M1)
+        b = cpkM(b, sat(mut st, s, q), CPK_M2)
+    }
+    a = cpkM(a, -1, CPK_M1)
+    b = cpkM(b, -1, CPK_M2)
+    n := fnName(mut st, fi)
+    for q <- iter.Range(0, slen(mut st, n)) {
+        a = cpkM(a, sat(mut st, n, q), CPK_M1)
+        b = cpkM(b, sat(mut st, n, q), CPK_M2)
+    }
+    return []int{a, b}
+}
+
+// packageごとの、pへ写る宣言の要約とpが直に参照する別のpackageの関数: keys = [h1, h2]…（package の添字の順）・refs[p] = 関数の添字…。
+// p の木の修飾参照から、写る宣言（const・総称・@expand）の本体の参照を推移的に辿る（写る宣言の本体は p の中で下ろされる）。普通の関数は辿らない
+// （本体が写るのは展開と特化だけ — lowerが境の要約の本体の印を見て FnRefs で辿る）。写る宣言は部分木のハッシュの和を keys へ
+func PkgReach(st mut S) ([]int, [][]int) {
+    np := st.npkg
+    mut memo := mut map[int][]int{}
+    mut out := mut []int{}
+    mut reach := mut [][]int{}
+    for p <- iter.Range(0, np) {
+        // p の木の修飾参照（木の全部の節を平らに歩く — 試し読みの残りの節も引く: 多めに引く — 健全）
+        mut rs := mut []int{}
+        for f <- iter.Range(PkgFlo(mut st, p), PkgFhi(mut st, p)) {
+            t := st.trees[f]
+            for i <- iter.Range(0, len(t.nodes)) {
+                x := t.nodes[i]
+                if x.kind == ast.ESelector && x.a >= 0 && x.a < len(t.nodes) && t.nodes[x.a].kind == ast.EIdent {
+                    rs = append(rs, 1)
+                    rs = append(rs, f)
+                    rs = append(rs, t.nodes[x.a].a)
+                    rs = append(rs, x.b)
+                }
+            }
+        }
+        mut stk := mut []int{}
+        for r <- cpkRes1(mut st, p, freeze(rs), false) {
+            stk = append(stk, r)
+        }
+        mut seen := mut map[int]int{}
+        mut h1 := 0
+        mut h2 := 0
+        mut fk := mut []int{}
+        mut si := 0
+        while si < len(stk) {
+            r := stk[si]
+            si += 1
+            if seen[r] == nil {
+                seen[r] = 1
+                d0 := memo[r]
+                d := if d0 != nil { d0 } else { cpkDecl(mut st, r % 2, r / 2) }
+                if d0 == nil {
+                    memo[r] = d
+                }
+                dpk := if r % 2 == 0 { ConPkg(mut st, r / 2) } else { fnPkg(mut st, r / 2) }
+                if dpk != p {
+                    // 写る宣言は部分木の和へ（宣言の値はpackageのパス・ファイルの序数・部分木 — 添字はロードの順に依るので混ぜない）
+                    if d[2] == 1 {
+                        h1 += cpkM(d[0], 1, CPK_M1)
+                        h2 += cpkM(d[1], 2, CPK_M2)
+                    }
+                    if r % 2 == 1 {
+                        fk = append(fk, r / 2)
+                    }
+                }
+                if d[2] == 1 {
+                    for k <- iter.Range(3, len(d)) {
+                        stk = append(stk, d[k])
+                    }
+                }
+            }
+        }
+        out = append(out, h1)
+        out = append(out, h2)
+        reach = append(reach, freeze(fk))
+    }
+    return freeze(out), freeze(reach)
+}
+
+// 関数 fi の本体が参照する関数の添字…（裸の名前はfiのpackageで・修飾参照はそのimportで解決する。ローカルの束縛が隠す名前も引く — 多めに引く）
+func FnRefs(st mut S, fi int) []int {
+    d := cpkDecl(mut st, 1, fi)
+    mut o := mut []int{}
+    for k <- iter.Range(3, len(d)) {
+        if d[k] % 2 == 1 {
+            o = append(o, d[k] / 2)
+        }
+    }
+    return freeze(o)
+}
+
+// 関数 fi の package と、本体が使う側へ写るか（総称・@expand）
+func FnPkgOf(st mut S, fi int) int {
+    return fnPkg(mut st, fi)
+}
+
+func FnCopies(st mut S, fi int) bool {
+    return fnExpands(mut st, fi) || lenL(mut st, fnTParams(mut st, fi)) > 0
+}
+
+// 木（ファイル f）の節 i の部分木で、呼び出しの相手の位置（ECall の a・EPipe の b）でなく値として現れる名前の参照を rs へ積む
+// （cpkSub と同じ形 — 裸 [0, f, 名前, -1] / 修飾 [1, f, 基底, 名前]）。callee = 節 i が呼び出しの相手の位置か
+func cpkVal(t ast.Tree, descs []int, f int, i int, callee bool, rs mut []int) {
+    if i < 0 {
+        return
+    }
+    x := t.nodes[i]
+    if x.kind == ast.EIdent {
+        if !callee {
+            rs = append(rs, 0)
+            rs = append(rs, f)
+            rs = append(rs, x.a)
+            rs = append(rs, -1)
+        }
+        return
+    }
+    if x.kind == ast.ESelector && x.a >= 0 && t.nodes[x.a].kind == ast.EIdent {
+        if !callee {
+            rs = append(rs, 1)
+            rs = append(rs, f)
+            rs = append(rs, t.nodes[x.a].a)
+            rs = append(rs, x.b)
+        }
+        return
+    }
+    c := if x.kind == ast.EFor && x.b == 1 { d6(3, 0, 3, 0, 0, 0) } else if x.kind == ast.EFor { d6(3, 0, 1, 0, 0, 0) } else { descs[x.kind] }
+    fs := []int{x.a, x.b, x.c, x.d, x.e, x.f}
+    mut cc := c
+    for j <- iter.Range(0, 6) {
+        v := fs[j]
+        k := cc % 8
+        cc = cc / 8
+        at := (x.kind == ast.ECall && j == 0) || (x.kind == ast.EPipe && j == 1)
+        if k == 1 {
+            cpkVal(t, descs, f, v, at, mut rs)
+        } else if k == 3 && v >= 0 {
+            for y <- iter.Range(0, t.data[v]) {
+                cpkVal(t, descs, f, t.data[v + 1 + y], false, mut rs)
+            }
+        }
+    }
+}
+
+// 関数 fi の本体が値として参照する関数の添字…（呼び出しの相手の位置の参照を除く。ローカルの束縛が隠す名前も引く — 多めに引く）
+func FnValRefs(st mut S, fi int) []int {
+    n := fnNode(mut st, fi)
+    f := refFile(int(n))
+    pk := FilePkg(mut st, f)
+    mut rs := mut []int{}
+    cpkVal(st.trees[f], st.descs, f, refIdx(int(n)), false, mut rs)
+    mut o := mut []int{}
+    for r <- cpkResolve(mut st, pk, freeze(rs)) {
+        if r % 2 == 1 {
+            o = append(o, r / 2)
+        }
+    }
+    return freeze(o)
+}
+
+// 木の節 i の部分木の、位置に依らないハッシュ [a, b]（字句の番号は base からの差・文字列は綴り — 同じファイルの前の行の編集で動かない）
+func cpkSrc(t ast.Tree, descs []int, i int, base int, a0 int, b0 int) []int {
+    if i < 0 {
+        return []int{cpkM(a0, -1, CPK_M1), b0}
+    }
+    x := t.nodes[i]
+    mut a := cpkM(cpkM(a0, x.kind, CPK_M1), x.tok - base, CPK_M1)
+    mut b := cpkM(b0, x.kind + 7 * (x.tok - base), CPK_M2)
+    c := if x.kind == ast.EFor && x.b == 1 { d6(3, 0, 3, 0, 0, 0) } else if x.kind == ast.EFor { d6(3, 0, 1, 0, 0, 0) } else { descs[x.kind] }
+    fs := []int{x.a, x.b, x.c, x.d, x.e, x.f}
+    mut cc := c
+    for v <- fs {
+        k := cc % 8
+        cc = cc / 8
+        if k == 1 {
+            r1 := cpkSrc(t, descs, v, base, a, b)
+            a = r1[0]
+            b = r1[1]
+        } else if k == 0 || v < 0 {
+            a = cpkM(a, v, CPK_M1)
+            b = cpkM(b, v, CPK_M2)
+        } else if k == 2 {
+            for q <- iter.Range(v, v + 1 + t.data[v]) {
+                b = cpkM(b, t.data[q], CPK_M2)
+            }
+        } else {
+            n := t.data[v]
+            a = cpkM(a, n, CPK_M1)
+            for j <- iter.Range(0, n) {
+                y := t.data[v + 1 + j]
+                if k == 3 {
+                    r2 := cpkSrc(t, descs, y, base, a, b)
+                    a = r2[0]
+                    b = r2[1]
+                } else if k == 4 && y >= 0 {
+                    for q <- iter.Range(y, y + 1 + t.data[y]) {
+                        b = cpkM(b, t.data[q], CPK_M2)
+                    }
+                } else {
+                    b = cpkM(b, y, CPK_M2)
+                }
+            }
+        }
+    }
+    return []int{a, b}
+}
+
+// 関数 fi の宣言のソースのハッシュ [h1, h2]（位置に依らない — 本体の編集の見積もり: 前回の束の関数ごとの値と比べる）
+func FnSrcKey(st mut S, fi int) []int {
+    n := fnNode(mut st, fi)
+    f := refFile(int(n))
+    t := st.trees[f]
+    i := refIdx(int(n))
+    return cpkSrc(t, st.descs, i, t.nodes[i].tok, 0, 0)
+}
+
+// ファイル f の木のハッシュ（節と列を並びのまま混ぜる — 位置に依る。ファイルが前回と同じかの判定だけに使う）
+func FileTreeKey(st mut S, f int) int {
+    t := st.trees[f]
+    mut a := cpkM(0, len(t.nodes), CPK_M1)
+    for x <- t.nodes {
+        a = cpkM(cpkM(cpkM(cpkM(a, x.kind ^ (x.tok << 8), CPK_M1), x.a, CPK_M1), x.b ^ (x.c << 21), CPK_M1), x.d ^ (x.e << 21) ^ (x.f << 42), CPK_M1)
+    }
+    a = cpkM(a, len(t.data), CPK_M1)
+    for v <- t.data {
+        a = cpkM(a, v, CPK_M1)
+    }
+    return a
+}

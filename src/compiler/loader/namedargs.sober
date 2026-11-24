@@ -16,7 +16,8 @@ import "std/iter"
 import "ast"
 import "diag"
 
-// func 宣言の表（package と名前で引く — 名前のハッシュの鎖。funcs.sober の FnIndex と同じ形）
+// func 宣言の表。package と名前の組のハッシュの鎖（head・next）で引く。同じ名前の関数が多くの package にあっても、
+// 鎖は package の数で伸びない。package を問わない問い合わせは、名前と印の組ごとに代表 1 つだけを繋いだ名前の鎖（nhead・nnext）で引く
 type FnTab struct {
     pkg []int
     file []int
@@ -25,6 +26,8 @@ type FnTab struct {
     // FN_VALP = 値の位置の型〔値化可能な named fn type かその option〕の mut でない仮引数を持つ（fnval の callHits — 持たない呼び先は実引数を見ない）
     head []int
     next []int
+    nhead []int
+    nnext []int
     mask int
 }
 
@@ -112,18 +115,42 @@ func fnTab(cx Cx) FnTab {
     while mask < len(files) * 2 {
         mask = mask * 2 + 1
     }
+    pks := builder.Build(mut pkg)
+    fls := builder.Build(mut flags)
     mut head := mut []int{}
+    mut nhead := mut []int{}
     for i <- iter.Range(0, mask + 1) {
         head = append(head, -1)
+        nhead = append(nhead, -1)
     }
     mut next := builder.Builder[int]{}
+    mut nnext := mut []int{}
+    for i <- iter.Range(0, len(files)) {
+        nnext = append(nnext, -1)
+    }
     for i <- iter.Range(0, len(files)) {
         t := cx.trees[files[i]]
-        b := dataHash(t, t.nodes[nodes[i]].a, mask)
+        s := t.nodes[nodes[i]].a
+        nh := dataHash(t, s, mask)
+        b := pkgHash(nh, pks[i], mask)
         builder.Push(mut next, head[b])
         head[b] = i
+        // 名前と印の組の代表（先に積んだものを残す — 問い合わせは有無だけを見る）
+        mut h := nhead[nh]
+        while h >= 0 && !(fls[h] == fls[i] && dataEq(cx.trees[files[h]], cx.trees[files[h]].nodes[nodes[h]].a, t, s)) {
+            h = nnext[h]
+        }
+        if h < 0 {
+            nnext[i] = nhead[nh]
+            nhead[nh] = i
+        }
     }
-    return FnTab{builder.Build(mut pkg), files, nodes, builder.Build(mut flags), freeze(head), builder.Build(mut next), mask}
+    return FnTab{pks, files, nodes, fls, freeze(head), builder.Build(mut next), freeze(nhead), freeze(nnext), mask}
+}
+
+// 名前のハッシュ nh と package pk の組のハッシュ
+func pkgHash(nh int, pk int, mask int) int {
+    return (nh + (pk + 1) * 40503) & mask
 }
 
 // データプールの文字列 s のハッシュ（funcs.sober の nameHash と同じ式 — 文字列を作らない）
@@ -148,11 +175,23 @@ func dataEq(a ast.Tree, sa int, b ast.Tree, sb int) bool {
     return true
 }
 
-// package pk の func 宣言（名前 = 木 t の文字列 s）の表の番号（無ければ -1）。only が 0 でなければ印 only〔FN_OPT / FN_FPARAM〕を持つ関数だけを見る
+// package pk の func 宣言（名前 = 木 t の文字列 s）の表の番号（無ければ -1）。only が 0 でなければ印 only〔FN_OPT / FN_FPARAM〕を持つ関数だけを見る。
+// pk < 0（package を問わない）は有無だけを返す: 返る番号は、該当する関数のうちのどれか
 func fnFind(cx Cx, ft FnTab, pk int, t ast.Tree, s int, only int) int {
-    mut h := ft.head[dataHash(t, s, ft.mask)]
+    nh := dataHash(t, s, ft.mask)
+    if pk < 0 {
+        mut g := ft.nhead[nh]
+        while g >= 0 {
+            if (ft.flags[g] & only) == only && dataEq(cx.trees[ft.file[g]], cx.trees[ft.file[g]].nodes[ft.node[g]].a, t, s) {
+                return g
+            }
+            g = ft.nnext[g]
+        }
+        return -1
+    }
+    mut h := ft.head[pkgHash(nh, pk, ft.mask)]
     while h >= 0 {
-        if (pk < 0 || ft.pkg[h] == pk) && (ft.flags[h] & only) == only && dataEq(cx.trees[ft.file[h]], cx.trees[ft.file[h]].nodes[ft.node[h]].a, t, s) {
+        if ft.pkg[h] == pk && (ft.flags[h] & only) == only && dataEq(cx.trees[ft.file[h]], cx.trees[ft.file[h]].nodes[ft.node[h]].a, t, s) {
             return h
         }
         h = ft.next[h]

@@ -5,6 +5,7 @@ package main
 
 import "std/binary"
 import "std/crypto"
+import "std/crypto/aescbc"
 import "std/crypto/aesgcm"
 import "std/crypto/chacha20"
 import "std/crypto/chacha20poly1305"
@@ -21,6 +22,7 @@ import "std/pg"
 import "std/session"
 import "std/time"
 import "std/iter"
+import "std/net"
 import "std/tls"
 
 @embed("testdata/crypto/rsa2048.key")
@@ -52,12 +54,12 @@ func negPrefix(a []byte) int {
     return binary.MatchLen(a, 0, 8, 8)
 }
 
-// serveOne は接続 1 本で 1 回受けて送る（ctcheck の題材 — ELF に tls の受けと送りを載せる）
-func serveOne(c tls.Conn, a []byte) error? {
-    for p <- tls.Recv(c)? {
+// serveNet は TLS の状態を持つ net.Conn で同じことをする（net.Recv / net.Send の TLS の枝を載せる）
+func serveNet(c net.Conn, a []byte) error? {
+    for p <- net.Recv(c)? {
         println(len(p))
     }
-    return tls.Send(c, a)
+    return net.Send(c, a)
 }
 
 func main() {
@@ -79,6 +81,10 @@ func main() {
     gk, _ := crypto.aesgcm.Prepare(a)
     go, _ := crypto.aesgcm.OpenAt(gk, n, b, ga, 0, len(ga))
     println(len(ga) + len(go))
+    ck, _ := crypto.aescbc.Prepare(a)
+    ce, _ := crypto.aescbc.Encrypt(ck, k, k)
+    cd, _ := crypto.aescbc.Decrypt(ck, k, ce)
+    println(len(cd))
     prk := crypto.hkdf.Extract(b, k)
     okm, _ := crypto.hkdf.Expand(prk, b, 32)
     println(len(okm) + len(crypto.hmac.Sum256(k, a)) + len(crypto.sha256.Sum256(a)) + binary.Load64(k, 0))
@@ -101,10 +107,10 @@ func main() {
     sc, _ := session.Check(su, 1)
     si, _ := session.Of(sc)
     println(si.gen)
-    // tls（hs・Conn の送り・内側の record 層）は走らない枝から参照する（ELF に載せるだけ）
+    // tls（hs・TLSの状態を持つnet.Connの送り・内側の record 層）は走らない枝から参照する（ELF に載せるだけ）
     if len(a) == 1000 {
         cfg, _ := tls.Parse("", "")
-        _ = tls.Serve(":0", cfg, (tc) => serveOne(tc, a))
+        _ = tls.Serve(":0", cfg, (nc) => serveNet(nc, a))
     }
     // HTTPクライアント（hscの握手・1.2のrecord・バッチの格納場所）は走らない枝から参照する（ELFに載せるだけ）
     if len(a) == 1000 {
@@ -128,6 +134,9 @@ func main() {
             pk, _ := crypto.rsa.ParsePKCS8(bs[0].der)
             sig, _ := crypto.rsa.SignPSS(pk, a, b)
             println(len(sig))
+            sig1, _ := crypto.rsa.SignPKCS1v15(pk, crypto.rsa.HashSha256, a)
+            pm := crypto.rsa.DecryptPremaster(pk, b, a, b)
+            println(len(sig1) + len(pm))
         }
     }
     println(len(xs) + len(t) + len(c) + len(opened) + len(crypto.chacha20.Block(k, n, 0)) == 0)

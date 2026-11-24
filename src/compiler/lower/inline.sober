@@ -469,11 +469,20 @@ func lambdaCall0(st mut St, c int, args desugar.ListRef, at desugar.NodeRef) (in
         desugar.HeapSet(mut st.d, bs + 3 + i * 3, ba.v)
     }
     lam := desugar.NodeRef(cr.lambda)
+    // 呼び出し点に宛先構築のフラグがあり（呼び手のreturnへ流れ着く）、本体が呼び出し1つなら、その呼び出しへ呼び手の宛先を引き継ぐ。
+    // 名前の関数を渡したη（loaderが作る — 宛先のフラグを持たない）を、持ち上げたラムダの末尾で展開する形（借りのクロージャの `(r) => route(r)`）で、
+    // 呼ばれた側が展開の深度に結果を作って境界でコピーし直すのを避ける
+    fwd := int(at) >= 0 && destHere(mut st, at) && kindN(mut st, nB(nodeOf(mut st, lam))) == ast.ECall
+    callerDest := st.destDepth
     saved := enter(mut st, cr.chain, cr.pkg, cr.env, cr.ret, cr.inl)
     savedDest := st.destDepth
     savedFnDest := st.fnDest
-    st.destDepth = cr.dest
+    savedForce := st.forceDest
+    st.destDepth = if fwd { callerDest } else { cr.dest }
     st.fnDest = cr.fdest
+    if fwd {
+        st.forceDest = int(nB(nodeOf(mut st, lam)))
+    }
     // 展開されるラムダの本体ではラムダのフラグ（2）を使わない（展開の宛先は定義した関数の宛先 — ループの中の展開の結果が外のregionへ積もる）
     savedLam := st.lamDest
     st.lamDest = false
@@ -570,6 +579,7 @@ func lambdaCall0(st mut St, c int, args desugar.ListRef, at desugar.NodeRef) (in
     leave(mut st, saved)
     st.destDepth = savedDest
     st.fnDest = savedFnDest
+    st.forceDest = savedForce
     st.lamDest = savedLam
     if isTag(mut st, vt, TNever) {
         return -1, nil

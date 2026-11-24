@@ -1,4 +1,4 @@
-@@full	dff71c88d655f1b4	19381	689687
+@@full	25837624dd62eed6	20601	736087
 @head	cdba05e5b79c2590	0	665
 const Certs	e5e1400ec76f696e	3	135
 func TestCookieLoopback	37679597e4b937af	96	3128
@@ -6,6 +6,7 @@ func TestCookieValue	7bf7b999ac035f3d	73	2914
 func TestHttpInterop	f5fe8f5237a677e6	613	21569
 func TestParseProxy	7e643bf4b96c11b1	42	1548
 func TestPlainLoopback	1b41badc125a9a9f	163	5065
+func TestPlainLoopback6	7e199964e859a751	115	3728
 func TestProxyLoopback	69b282ef976ab126	95	3145
 func TestSessionKeyUpdate	1de0e5fa44e81fdc	87	2897
 func TestSessionPlain	3d84b3d3c0bcb83d	106	3487
@@ -18,6 +19,8 @@ func check	2d30e551bc2324c9	52	1978
 func cookieRound	f01a1a72dd9174f5	94	3700
 func emptyWr	9fd4acf48e891ed3	12	521
 func fakeProxy	2e411bcb9b17aab7	124	4415
+func hasLoopback6	e53d58b02296b642	17	703
+func hostOf	76d034d159c3c882	19	706
 func isBadProxy	577a49b0d13e32f6	13	566
 func kindName	e9ad37e50c36bb44	27	1209
 func kindName2	31e66a91ce4f3e70	10	502
@@ -28,11 +31,12 @@ func proxyOf	b4f0788a3e05e892	14	538
 func proxyStatus	7504dcc7a36b45ce	17	700
 func redirectTo	5ac9490badaadeca	21	1195
 func rootsOf	590b4e8beec13f4b	15	584
-func route	98c3867146cd29b4	91	3132
+func route	063a8b871c5633c8	103	3514
 func serveN	096a265b5a2d5c9c	33	1176
 func sessionSummary	f1501d04124ec202	84	3089
 func sessionVia	cdce1fd5a2ed6fcd	68	2401
 func sessionWith	cecf199b0918efdb	18	921
+func skipV6	933c7f0f880e2017	45	1579
 func srvParams	499deffe77836337	52	1996
 func streamFor	e955de026c24875d	26	987
 func streamLoop	095fe620eadaf10a	30	1204

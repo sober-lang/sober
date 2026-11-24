@@ -535,6 +535,10 @@ func exprJson(st mut S, out mut []byte, e0 CoreRef) {
         } else if k == CAlloc {
             obuf.Lit(mut out, "{\"k\":\"alloc\",\"mut\":")
             obuf.Bool(mut out, a != 0)
+            if cx.d != 0 {
+                obuf.Lit(mut out, ",\"r\":")
+                obuf.Int(mut out, cx.d - 1)
+            }
             obuf.Lit(mut out, ",\"e\":")
             sp = spush(mut st, sp, OS, J_CLOSE)
             sp = spush(mut st, sp, OE, b)

@@ -1,0 +1,99 @@
+package aescbc
+
+// NIST SP 800-38A F.2.1 / F.2.2（CBC-AES128）の既知の値と、長さの境目での往復・その場の復号を検証する
+
+import "std/iter"
+
+func TestVectors() {
+    if !Available() {
+        return
+    }
+    k, e := Prepare(unhex("2b7e151628aed2a6abf7158809cf4f3c"))
+    assert(e == nil)
+    iv := unhex("000102030405060708090a0b0c0d0e0f")
+    pt := unhex("6bc1bee22e409f96e93d7e117393172aae2d8a571e03ac9c9eb76fac45af8e5130c81c46a35ce411e5fbc1191a0a52eff69f2445df4f9b17ad2b417be66c3710")
+    want := unhex("7649abac8119b246cee98e9b12e9197d5086cb9b507219ee95db113a917678b273bed6b8e3c1743b7116e69e222295163ff1caa1681fac09120eca307586e1a7")
+    ct, _ := Encrypt(k, iv, pt)
+    assert(same(ct, want))
+    back, _ := Decrypt(k, iv, want)
+    assert(same(back, pt))
+    // 連鎖の途中から: 2 ブロック目以降は 1 ブロック目の暗号文を IV にして同じ値
+    ct2, _ := Encrypt(k, slice(want, 0, 16), slice(pt, 16, 64))
+    assert(same(ct2, slice(want, 16, 64)))
+    pt2, _ := DecryptAt(k, slice(want, 0, 16), want, 16, 48)
+    assert(same(pt2, slice(pt, 16, 64)))
+}
+
+func TestRoundTrip() {
+    if !Available() {
+        return
+    }
+    k, _ := Prepare(pat(16, 3))
+    iv := pat(16, 11)
+    for n <- iter.Range(0, 70) {
+        pt := pat(16 * n, n)
+        ct, e := Encrypt(k, iv, pt)
+        assert(e == nil)
+        assert(len(ct) == len(pt))
+        back, _ := Decrypt(k, iv, ct)
+        assert(same(back, pt))
+    }
+}
+
+func TestBadSize() {
+    if !Available() {
+        _, e := Prepare(pat(16, 1))
+        assert(e != nil)
+        return
+    }
+    _, e1 := Prepare(pat(15, 1))
+    assert(e1 != nil)
+    k, _ := Prepare(pat(16, 1))
+    _, e2 := Encrypt(k, pat(16, 2), pat(17, 3))
+    assert(e2 != nil)
+    _, e3 := Encrypt(k, pat(8, 2), pat(16, 3))
+    assert(e3 != nil)
+    _, e4 := DecryptAt(k, pat(16, 2), pat(32, 3), 16, 32)
+    assert(e4 != nil)
+}
+
+func unhex(s string) []byte {
+    b := bytes(s)
+    mut out := mut []byte{}
+    for i <- iter.Range(0, len(b) / 2) {
+        out = append(out, byte(nib(b[2 * i]) * 16 + nib(b[2 * i + 1])))
+    }
+    return freeze(out)
+}
+
+func nib(c byte) int {
+    v := int(c)
+    return if v >= 97 { v - 87 } else { v - 48 }
+}
+
+func pat(n int, seed int) []byte {
+    mut out := mut []byte{}
+    for i <- iter.Range(0, n) {
+        out = append(out, byte((i * 31 + seed * 17 + 5) & 0xff))
+    }
+    return freeze(out)
+}
+
+func slice(a []byte, lo int, hi int) []byte {
+    mut out := mut []byte{}
+    for i <- iter.Range(lo, hi) {
+        out = append(out, a[i])
+    }
+    return freeze(out)
+}
+
+func same(a []byte, b []byte) bool {
+    if len(a) != len(b) {
+        return false
+    }
+    mut d := 0
+    for i <- iter.Range(0, len(a)) {
+        d = d | (int(a[i]) ^ int(b[i]))
+    }
+    return d == 0
+}

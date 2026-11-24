@@ -1,0 +1,14 @@
+@@full	f537f51e1775b176	5386	188347
+@head	492b0c02d74f2895	0	431
+func TestCbcIv	213815d7de2c8e9f	120	3729
+func TestRecord12	009e24007bd34ec4	262	8182
+func TestRecord12Cross	49c07db1cb31427e	242	7556
+func bless12	6208a1158acb9122	10	447
+func dir12	0c83bd3b906f1b31	68	2253
+func flip12	1371c8de8d7fb4cc	46	1554
+func kinds	782ffb992cf0301c	15	565
+func lens12	426b60920b7235c8	12	416
+func pat	4afb1f0aa7bb282b	37	1328
+func retype	7ce4cdb3d1fa3349	40	1381
+func same12	60aeb0a3c4e17ceb	47	1573
+func slice12	e488ff8dec5762e4	29	1117

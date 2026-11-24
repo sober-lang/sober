@@ -28,3 +28,13 @@ func TestP256Shared() {
     peer := PublicKey(dscalar(1, 12345))
     internal.dudect.Measure("p256_shared", n, 21, dscalar, (x) => len(Shared(x, peer)) == 32)
 }
+
+// ECDSA の署名: 秘密は鍵 d と、d から導く nonce k。クラスの形は TestP256Shared と同じ（クラス 0 = 下位の 16 バイトが 0 の d・クラス 1 = 一様乱数）。hash は公開の値で固定
+func TestP256Sign() {
+    n := internal.dudect.CountDiv(100)
+    if n == 0 {
+        return
+    }
+    h := dscalar(1, 777)
+    internal.dudect.Measure("p256_sign", n, 22, dscalar, (x) => len(Sign(x, h)) > 0)
+}

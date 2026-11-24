@@ -7,7 +7,7 @@ package hs
 //   クライアントの Finished 待ち〕/ Connected / Closed）。Feed は record の枠 1 つを受けて、送るバイト列・受けた application の平文・閉じたかを返す
 //   （転送路の受けのインターフェースは1本のinternal.record.Framesのループ — handshakeの直後に同じ切片に乗ってきた application data も同じループで受ける）
 // - v1 の範囲: TLS 1.3 だけ・サーバだけ・X25519 だけ・TLS_AES_128_GCM_SHA256 / TLS_CHACHA20_POLY1305_SHA256・
-//   署名は rsa_pss_rsae_sha256（証明書は RSA-2048）・PSK / 0-RTT / クライアント証明書なし。ALPN の不一致は no_application_protocol（RFC 7301）
+//   署名は rsa_pss_rsae_sha256（証明書の鍵が RSA-2048）か ecdsa_secp256r1_sha256（P-256）・PSK / 0-RTTの受け入れ / クライアント証明書なし（0-RTTはHelloRetryRequestで断って読み飛ばす）。ALPN の不一致は no_application_protocol（RFC 7301）
 // - 乱数の源はParams.seed（空 = crypto.Rand・空でなければSHA-256(seed ‖ 用途) — 検査の決定的なゴールデンのため）
 // - 誤りは internal.record.Alert{desc}（相手へ送る alert の番号 — 呼び手は AlertRecord を送って閉じる）。相手の alert は Out.peer に
 
@@ -19,6 +19,7 @@ import "std/crypto/sha256"
 import "std/crypto/x25519"
 import "std/hex"
 import "std/internal/bless"
+import "std/internal/p256"
 import "std/iter"
 import "std/internal/record"
 
@@ -38,11 +39,17 @@ const xSupportedGroups = 10
 const xSignatureAlgorithms = 13
 const xAlpn = 16
 const xPreSharedKey = 41
+const xEarlyData = 42
 const xSupportedVersions = 43
+const xCookie = 44
 const xKeyShare = 51
+
+// 広告しないチケットへの0-RTTを読み飛ばす帯域の上限（読み飛ばしたrecordの本体の合計。暗号文で数える）。平文16 KiBをrecordの増え分込みで吸収する
+const earlySkipMax = 2 * internal.record.MaxCipher
 
 const groupX25519 = 0x001d
 const sigPssSha256 = 0x0804
+const sigEcdsaSha256 = 0x0403
 
 // alert の番号（RFC 9846 6）
 const aCloseNotify = 0
@@ -64,15 +71,31 @@ func hrrRandom() []byte {
 // サーバの設定（std/tlsのConfigがここへコピーする）
 type Params struct {
     chain [][]byte          // 証明書の列（DER — 葉が先頭）
-    key crypto.rsa.PrivateKey      // 葉の鍵（RSA-2048）
+    key crypto.rsa.PrivateKey      // 葉の鍵（RSA-2048 — ec が空のとき）
+    ec []byte               // 葉の鍵が P-256 の ECDSA ならそのスカラー（32 バイト — 空 = RSA）
     alpn []string           // 受ける ALPN（サーバの好みの順 — 空 = ALPN を使わない）
     suites []int            // suite の好みの順（internal.record.AesGcm / internal.record.ChaCha）
     seed []byte             // 乱数の源（空 = crypto.Rand）
+    allow12 bool            // TLS 1.2 の ClientHello を受ける（std/tls の DangerouslyAllowTls12 — server12.sober）
 }
 
 // Params（std/tlsのConfigから — 検査からも）
 func NewParams(chain [][]byte, key crypto.rsa.PrivateKey, alpn []string, suites []int, seed []byte) Params {
-    return Params{chain: chain, key: key, alpn: alpn, suites: suites, seed: seed}
+    return Params{chain: chain, key: key, alpn: alpn, suites: suites, seed: seed, allow12: false, ec: []byte{}}
+}
+
+// 葉の鍵を P-256 の ECDSA のスカラー d に替えた Params（署名 = ecdsa_secp256r1_sha256・1.2 のスイートは ECDHE-ECDSA）
+func WithEcdsa(p Params, d []byte) Params {
+    return Params{chain: p.chain, key: p.key, alpn: p.alpn, suites: p.suites, seed: p.seed, allow12: p.allow12, ec: d}
+}
+
+func isEc(p Params) bool {
+    return len(p.ec) > 0
+}
+
+// std/tls の Config からの Params（ec = 葉の鍵が P-256 の ECDSA ならそのスカラー・空 = key の RSA。allow12 = TLS 1.2 の ClientHello も受ける）
+func ConfigParams(chain [][]byte, key crypto.rsa.PrivateKey, ec []byte, alpn []string, suites []int, allow12 bool) Params {
+    return Params{chain: chain, key: key, alpn: alpn, suites: suites, seed: []byte{}, allow12: allow12, ec: ec}
 }
 
 // handshake の状態
@@ -80,6 +103,9 @@ type Phase union {
     Start {}
     WaitCH2 {}
     WaitFin {}
+    WaitCke12 {}
+    WaitCcs12 {}
+    WaitFin12 {}
     Connected {}
     Closed {}
 }
@@ -100,9 +126,22 @@ type Hs struct {
     hbuf []byte          // 組み立て中の handshake のバイト列（record をまたぐメッセージ）
     ccs bool             // 互換の CCS を 1 枚受けた
     hrr bool             // HelloRetryRequest を送った
-    ch1 []int            // 最初の ClientHello の suite の列（HRR の後の整合の検査）
+    early bool           // 最初の ClientHello に early_data があった（WaitCH2 で application_data の record を読み飛ばす — RFC 9846 4.3.10）
+    skipped int          // 読み飛ばした record の本体の合計
+    cookie []byte        // HelloRetryRequest に入れた cookie（2 番目の ClientHello が同じものを返す）
     keyed bool           // 送りの鍵がある（サーバの flight を封じた後 — alert を暗号化して送る）
     upd bool             // 相手が KeyUpdate で update_requested を送った（次の SealApp が先に自分の KeyUpdate を送る — RFC 9846 4.6.3）
+    // TLS 1.2 の道（server12.sober）: v12 = 1.2 を選んだ・cver = ClientHello の client_version（RSA 鍵交換の版の照合）・crandom / srandom・
+    // ems / etm = extended_master_secret / encrypt_then_mac を使う・group / priv = ECDHE の群と秘密の鍵・ms = master secret
+    v12 bool
+    cver int
+    crandom []byte
+    srandom []byte
+    ems bool
+    etm bool
+    group int
+    priv []byte
+    ms []byte
 }
 
 // Feed の結果（send = 相手へ送る record の列・app = 受けた application の平文・done = この枠で handshake が済んだ・
@@ -124,7 +163,8 @@ func none() Out {
 // 最初の ClientHello を待つ Hs
 func New() Hs {
     return Hs{ph: Start{}, th: crypto.sha256.New(), suite: 0, rd: emptyDir(), wr: emptyDir(), cHs: []byte{}, sHs: []byte{}, cAp: []byte{}, sAp: []byte{},
-        expFin: []byte{}, alpn: "", hbuf: []byte{}, ccs: false, hrr: false, ch1: []int{}, keyed: false, upd: false}
+        expFin: []byte{}, alpn: "", hbuf: []byte{}, ccs: false, hrr: false, early: false, skipped: 0, cookie: []byte{}, keyed: false, upd: false,
+        v12: false, cver: 0, crandom: []byte{}, srandom: []byte{}, ems: false, etm: false, group: 0, priv: []byte{}, ms: []byte{}}
 }
 
 // handshakeの済んだ接続の受けの方向rdだけを持つConnectedのHs（std/tlsのRecvが格納場所のrdから作る — Connectedの受けの表を
@@ -134,6 +174,18 @@ func Resume(rd internal.record.Dir) Hs {
     h.rd = rd
     h.ph = Connected{}
     return h
+}
+
+// Resumeに、前の受けで組み立て中だったhandshakeのバイト列hbufを戻したもの（std/tlsのnet.Connの受け — 受けの切片ごとに格納場所から作り直す）
+func ResumeWith(rd internal.record.Dir, hbuf []byte) Hs {
+    mut h := Resume(rd)
+    h.hbuf = hbuf
+    return h
+}
+
+// 受けの方向と、組み立て中のhandshakeのバイト列（ResumeWithの逆）
+func RecvState(h Hs) (internal.record.Dir, []byte) {
+    return h.rd, h.hbuf
 }
 
 // Connected の Feed に渡す空の Params（Connected の受けは Params を見ない）
@@ -155,6 +207,11 @@ func IsConnected(h Hs) bool {
     }
 }
 
+// サーバのflightを封じた後か（送りの鍵がある。非対称の計算は済んでいる）
+func Keyed(h Hs) bool {
+    return h.keyed
+}
+
 // 抽象の状態の名前（"start/c0/h0" の形 — フェーズ・互換のCCSを受けたか・HelloRetryRequestを送ったか。Closedは "closed"）。
 // 検査std/tlsのTestFsm（hs_fsm_test.sober）がLeanの遷移表（lean/FeatherweightSober/Tls.lean）と突き合わせるインターフェース
 func Probe(h Hs) string {
@@ -162,6 +219,9 @@ func Probe(h Hs) string {
         case Start{}: "start"
         case WaitCH2{}: "waitCH2"
         case WaitFin{}: "waitFin"
+        case WaitCke12{}: "waitCke12"
+        case WaitCcs12{}: "waitCcs12"
+        case WaitFin12{}: "waitFin12"
         case Connected{}: "connected"
         case Closed{}: ""
     }
@@ -227,11 +287,17 @@ func feedIn(h mut Hs, p Params, f internal.record.Frame) (Out, error?) {
         case Start{}: 0
         case WaitCH2{}: 0
         case WaitFin{}: 1
+        case WaitCke12{}: 3
+        case WaitCcs12{}: 3
+        case WaitFin12{}: 1
         case Connected{}: 1
         case Closed{}: 2
     }
     if k == 0 {
         return feedPlain(mut h, p, f, ct)
+    }
+    if k == 3 {
+        return feedPlain12(mut h, p, f, ct)
     }
     if k == 1 {
         return feedSealed(mut h, f, ct)
@@ -247,6 +313,14 @@ func alert(d int) error? {
 @errors(internal.record.Alert)
 func feedPlain(h mut Hs, p Params, f internal.record.Frame, ct int) (Out, error?) {
     _, body := internal.record.Plain(f)
+    // early_dataを断ったHelloRetryRequestの後は、外側の型がapplication_dataのrecord（0-RTTのデータ）を復号せずに上限まで捨てる（RFC 9846 4.3.10・4.7.1）
+    if ct == internal.record.CtApp && h.early {
+        h.skipped += len(body)
+        if h.skipped > earlySkipMax {
+            return none(), alert(aUnexpected)
+        }
+        return none(), nil
+    }
     // 暗号化していないrecordの本体の上限は2^14（RFC 9846 5.1）
     if len(body) > internal.record.MaxPlain {
         return none(), alert(internal.record.AlertOverflow)
@@ -291,7 +365,8 @@ func ccsOnce(h mut Hs, body []byte) (Out, error?) {
 @errors(internal.record.Alert)
 func feedSealed(h mut Hs, f internal.record.Frame, ct int) (Out, error?) {
     if ct == internal.record.CtCcs {
-        if IsConnected(h) {
+        // 1.2 の CCS は WaitCcs12 の 1 枚だけ（Finished の待ち・接続の後の CCS は unexpected_message）
+        if IsConnected(h) || h.v12 {
             return none(), alert(aUnexpected)
         }
         _, body := internal.record.Plain(f)
@@ -330,6 +405,17 @@ func feedSealed(h mut Hs, f internal.record.Frame, ct int) (Out, error?) {
 func onSealedMsg(h mut Hs, m []byte) (Out, error?) {
     t := int(m[0])
     connected := IsConnected(h)
+    v12 := internal.record.Is12(h.rd)
+    if !connected && h.v12 {
+        if t != tFinished {
+            return none(), alert(aUnexpected)
+        }
+        return onFinished12(mut h, m)
+    }
+    // 1.2 の接続の後の ClientHello（再交渉）は断る（RFC 5746 は持たない再交渉を no_renegotiation で知らせてよいとする — 閉じる）
+    if connected && v12 {
+        return none(), alert(if t == tClientHello { aNoRenegotiation } else { aUnexpected })
+    }
     if !connected && t == tFinished {
         // verify_dataの長さはhashの長さ。違えば構文の誤りでdecode_error、中身の不一致はdecrypt_error（RFC 9846 4.5.3・6）
         if len(m) != 4 + 32 {
@@ -394,6 +480,20 @@ type hello struct {
     hasGroups bool
     hasSigs bool
     hasPsk bool
+    hasEarly bool
+    cookie []byte
+    // 1.2 の道が読む欄（server12.sober）
+    random []byte
+    compNull bool
+    groupP bool
+    sigList []int
+    hasEms bool
+    hasEtm bool
+    hasReneg bool
+    renegEmpty bool
+    hasPointFmt bool
+    pointUnc bool
+    bad12 bool
 }
 
 // ClientHello の本体（型と長さの 4 バイトの後ろ）を読む（読めなければ decode_error・同じ拡張が 2 つなら illegal_parameter）。
@@ -402,7 +502,7 @@ type hello struct {
 func parseHello(m []byte) (hello, error?) {
     mut c := cur(4, len(m))
     legacy := u16(m, mut c)
-    _ = take(m, mut c, 32)
+    random := take(m, mut c, 32)
     sessid := take(m, mut c, u8(m, mut c))
     mut cs := sub(mut c, u16(m, mut c))
     mut suites := mut []int{}
@@ -410,7 +510,16 @@ func parseHello(m []byte) (hello, error?) {
         suites = append(suites, u16(m, mut cs))
     }
     mut cm := sub(mut c, u8(m, mut c))
-    compOk := rest(cm) == 1 && u8(m, mut cm) == 0
+    // 圧縮の方法の列（1.3 は null の 1 つだけ・1.2 は null を含めばよい）
+    mut compNull := false
+    mut ncomp := 0
+    while rest(cm) > 0 && !cm.bad {
+        if u8(m, mut cm) == 0 {
+            compNull = true
+        }
+        ncomp += 1
+    }
+    compOk := ncomp == 1 && compNull
     mut xs := if rest(c) > 0 { sub(mut c, u16(m, mut c)) } else { sub(mut c, 0) }
     mut seen := mut []int{}
     mut v13 := false
@@ -424,7 +533,19 @@ func parseHello(m []byte) (hello, error?) {
     mut hasGroups := false
     mut hasSigs := false
     mut hasPsk := false
+    mut hasEarly := false
+    mut cookie := []byte{}
     mut xbad := false
+    mut groupP := false
+    mut sigList := mut []int{}
+    mut hasEms := false
+    mut hasEtm := false
+    mut hasReneg := false
+    mut renegEmpty := false
+    mut hasPointFmt := false
+    mut pointUnc := false
+    // 1.2 の道だけが読む拡張の形の誤り（1.3 の ClientHello では知らない拡張と同じく読み飛ばす — onClientHello12 が decode_error にする）
+    mut bad12 := false
     while rest(xs) >= 4 {
         t := u16(m, mut xs)
         mut x := sub(mut xs, u16(m, mut xs))
@@ -436,6 +557,17 @@ func parseHello(m []byte) (hello, error?) {
         seen = append(seen, t)
         if t == xPreSharedKey {
             hasPsk = true
+        }
+        if t == xEarlyData {
+            // ClientHelloのearly_dataの中身は空（RFC 9846 4.2.10）
+            hasEarly = true
+            xbad = xbad || rest(x) != 0
+        }
+        if t == xCookie {
+            mut l := sub(mut x, u16(m, mut x))
+            xbad = xbad || rest(l) < 1
+            cookie = take(m, mut l, rest(l))
+            xbad = xbad || l.bad || x.bad || rest(x) != 0
         }
         if t == xSupportedVersions {
             mut l := sub(mut x, u8(m, mut x))
@@ -451,8 +583,12 @@ func parseHello(m []byte) (hello, error?) {
             mut l := sub(mut x, u16(m, mut x))
             xbad = xbad || rest(l) < 2
             while rest(l) >= 2 {
-                if u16(m, mut l) == groupX25519 {
+                g := u16(m, mut l)
+                if g == groupX25519 {
                     groupX = true
+                }
+                if g == groupP256 {
+                    groupP = true
                 }
             }
             xbad = xbad || l.bad || rest(l) != 0 || x.bad || rest(x) != 0
@@ -474,11 +610,52 @@ func parseHello(m []byte) (hello, error?) {
             mut l := sub(mut x, u16(m, mut x))
             xbad = xbad || rest(l) < 2
             while rest(l) >= 2 {
-                if u16(m, mut l) == sigPssSha256 {
+                sa := u16(m, mut l)
+                sigList = append(sigList, sa)
+                if sa == sigPssSha256 {
                     sigPss = true
                 }
             }
             xbad = xbad || l.bad || rest(l) != 0 || x.bad || rest(x) != 0
+        } else if t == xEms || t == xEtm {
+            // 中身は空（RFC 7627 5.1・RFC 7366 2）
+            hasEms = hasEms || t == xEms
+            hasEtm = hasEtm || t == xEtm
+            bad12 = bad12 || rest(x) != 0
+        } else if t == xReneg {
+            hasReneg = true
+            rn := u8(m, mut x)
+            _ = take(m, mut x, rn)
+            renegEmpty = rn == 0
+            bad12 = bad12 || x.bad || rest(x) != 0
+        } else if t == xEcPointFormats {
+            hasPointFmt = true
+            mut l := sub(mut x, u8(m, mut x))
+            bad12 = bad12 || rest(l) < 1
+            while rest(l) > 0 && !l.bad {
+                if u8(m, mut l) == 0 {
+                    pointUnc = true
+                }
+            }
+            bad12 = bad12 || l.bad || x.bad || rest(x) != 0
+        } else if t == xServerName {
+            // 構文だけを見る。値は使わない（証明書は1つ）。同じname_typeは2つまで書けない（RFC 6066 3）
+            mut l := sub(mut x, u16(m, mut x))
+            xbad = xbad || rest(l) < 3
+            mut types := mut []int{}
+            while rest(l) > 0 && !l.bad {
+                nt := u8(m, mut l)
+                hn := u16(m, mut l)
+                xbad = xbad || hn == 0
+                _ = take(m, mut l, hn)
+                for y <- types {
+                    if y == nt {
+                        dup = true
+                    }
+                }
+                types = append(types, nt)
+            }
+            xbad = xbad || l.bad || x.bad || rest(x) != 0
         } else if t == xAlpn {
             hasAlpn = true
             mut l := sub(mut x, u16(m, mut x))
@@ -502,18 +679,25 @@ func parseHello(m []byte) (hello, error?) {
         return emptyHello(), alert(aIllegalParameter)
     }
     return hello{legacy: legacy, sessid: sessid, suites: freeze(suites), compOk: compOk, v13: v13, groupX: groupX, share: share, hasShare: hasShare, sigPss: sigPss,
-        alpn: freeze(alpn), hasAlpn: hasAlpn, hasGroups: hasGroups, hasSigs: hasSigs, hasPsk: hasPsk}, nil
+        alpn: freeze(alpn), hasAlpn: hasAlpn, hasGroups: hasGroups, hasSigs: hasSigs, hasPsk: hasPsk, hasEarly: hasEarly, cookie: cookie,
+        random: random, compNull: compNull, groupP: groupP, sigList: freeze(sigList), hasEms: hasEms, hasEtm: hasEtm, hasReneg: hasReneg, renegEmpty: renegEmpty,
+        hasPointFmt: hasPointFmt, pointUnc: pointUnc, bad12: bad12}, nil
 }
 
 func emptyHello() hello {
     return hello{legacy: 0, sessid: []byte{}, suites: []int{}, compOk: false, v13: false, groupX: false, share: []byte{}, hasShare: false, sigPss: false, alpn: []string{},
-        hasAlpn: false, hasGroups: false, hasSigs: false, hasPsk: false}
+        hasAlpn: false, hasGroups: false, hasSigs: false, hasPsk: false, hasEarly: false, cookie: []byte{},
+        random: []byte{}, compNull: false, groupP: false, sigList: []int{}, hasEms: false, hasEtm: false, hasReneg: false, renegEmpty: false, hasPointFmt: false, pointUnc: false, bad12: false}
 }
 
 // ClientHello m（型と長さの頭込み）を受けて、サーバの flight（または HelloRetryRequest）を返す
 @errors(internal.record.Alert)
 func onClientHello(h mut Hs, p Params, m []byte) (Out, error?) {
     ch := parseHello(m)?
+    // 1.3 を申し出ない相手は、allow12 なら 1.2 の道（server12.sober）
+    if !ch.v13 && p.allow12 {
+        return onClientHello12(mut h, p, ch, m)
+    }
     // legacy_versionは0x0303だけ（RFC 9846 4.2.2）
     if ch.legacy != 0x0303 || !ch.v13 {
         return none(), alert(aProtocolVersion)
@@ -526,7 +710,8 @@ func onClientHello(h mut Hs, p Params, m []byte) (Out, error?) {
         return none(), alert(aIllegalParameter)
     }
     suite := pickSuite(p.suites, ch.suites)
-    if suite == 0 || !ch.sigPss || !ch.groupX {
+    sigOk := if isEc(p) { hasInt(ch.sigList, sigEcdsaSha256) } else { ch.sigPss }
+    if suite == 0 || !sigOk || !ch.groupX {
         return none(), alert(aHandshakeFailure)
     }
     alpn := pickAlpn(p.alpn, ch.alpn)
@@ -534,13 +719,13 @@ func onClientHello(h mut Hs, p Params, m []byte) (Out, error?) {
         return none(), alert(aNoAlpn)
     }
     if h.hrr {
-        // 2 番目の ClientHello: X25519 の key_share が要る・最初に選んだ suite がまだ入っている（RFC 9846 4.1.2 / 4.1.4）
-        if len(ch.share) == 0 || suite != h.suite {
+        // 2 番目の ClientHello: X25519 の key_share が要る・最初に選んだ suite がまだ入っている・送った cookie を返す・early_data は無い（RFC 9846 4.1.2 / 4.1.4 / 4.2.2 / 4.2.10）
+        if len(ch.share) == 0 || suite != h.suite || !crypto.Equal(ch.cookie, h.cookie) || ch.hasEarly {
             return none(), alert(aIllegalParameter)
         }
-    } else if len(ch.share) == 0 {
-        // X25519 の key_share が無い（supported_groups にはある）: HelloRetryRequest を 1 回だけ
-        return helloRetry(mut h, ch, suite, m)
+    } else if len(ch.share) == 0 || ch.hasEarly {
+        // X25519 の key_share が無い（supported_groups にはある）か、0-RTT を断る: HelloRetryRequest を 1 回だけ
+        return helloRetry(mut h, p, ch, suite, m)
     }
     if len(ch.share) != 32 {
         return none(), alert(aIllegalParameter)
@@ -594,10 +779,14 @@ func onClientHello(h mut Hs, p Params, m []byte) (Out, error?) {
 
 // HelloRetryRequest（transcript の先頭を message_hash(ClientHello1) に置き換え — RFC 9846 4.4.1）
 @errors(internal.record.Alert)
-func helloRetry(h mut Hs, ch hello, suite int, m []byte) (Out, error?) {
+// early_dataがあれば、0-RTTを断ってcookieを入れる（key_shareを送り済みのクライアントには、key_shareを求めないHelloRetryRequestになるので、cookieが2番目のClientHelloの変化になる）
+func helloRetry(h mut Hs, p Params, ch hello, suite int, m []byte) (Out, error?) {
     h.hrr = true
     h.suite = suite
-    h.ch1 = ch.suites
+    h.early = ch.hasEarly
+    if ch.hasEarly {
+        h.cookie = rnd(p, "cookie", 32)
+    }
     mh := msg(tMessageHash, crypto.sha256.Sum256(m))
     crypto.sha256.Write(mut h.th, mh)
     hr := hrrRandom()
@@ -605,9 +794,18 @@ func helloRetry(h mut Hs, ch hello, suite int, m []byte) (Out, error?) {
     put16(mut x, xSupportedVersions)
     put16(mut x, 2)
     put16(mut x, 0x0304)
-    put16(mut x, xKeyShare)
-    put16(mut x, 2)
-    put16(mut x, groupX25519)
+    // 送られた群をkey_shareで求めるHelloRetryRequestはクライアントが拒否する（RFC 9846 4.2.8）
+    if len(ch.share) == 0 {
+        put16(mut x, xKeyShare)
+        put16(mut x, 2)
+        put16(mut x, groupX25519)
+    }
+    if len(h.cookie) > 0 {
+        put16(mut x, xCookie)
+        put16(mut x, 2 + len(h.cookie))
+        put16(mut x, len(h.cookie))
+        putBytes(mut x, h.cookie)
+    }
     hrr := helloBody(hr, ch.sessid, suite, freeze(x))
     crypto.sha256.Write(mut h.th, hrr)
     mut send := mut []byte{}
@@ -702,7 +900,8 @@ func certificate(chain [][]byte) []byte {
     return msg(tCertificate, freeze(b))
 }
 
-// rsa_pss_rsae_sha256 の署名（64 × 0x20 ‖ "TLS 1.3, server CertificateVerify" ‖ 0 ‖ transcript の hash — RFC 9846 4.4.3・salt 32 バイト）
+// 署名（64 × 0x20 ‖ "TLS 1.3, server CertificateVerify" ‖ 0 ‖ transcript の hash — RFC 9846 4.4.3）: RSA の鍵は rsa_pss_rsae_sha256（salt 32 バイト）・
+// ECDSA の鍵は ecdsa_secp256r1_sha256（DER の Ecdsa-Sig-Value）
 @errors(internal.record.Alert)
 func certificateVerify(p Params, th []byte) ([]byte, error?) {
     mut c := mut []byte{}
@@ -712,12 +911,17 @@ func certificateVerify(p Params, th []byte) ([]byte, error?) {
     putBytes(mut c, bytes("TLS 1.3, server CertificateVerify"))
     put8(mut c, 0)
     putBytes(mut c, th)
-    sig, e := crypto.rsa.SignPSS(p.key, freeze(c), rnd(p, "salt", 32))
-    if e != nil {
-        return []byte{}, alert(aInternal)
+    mut sig := []byte{}
+    if isEc(p) {
+        sig = internal.p256.Sign(p.ec, crypto.sha256.Sum256(freeze(c)))
+        if len(sig) == 0 {
+            return []byte{}, alert(aInternal)
+        }
+    } else {
+        sig = crypto.rsa.SignPSS(p.key, freeze(c), rnd(p, "salt", 32)) catch return []byte{}, alert(aInternal)
     }
     mut b := mut []byte{}
-    put16(mut b, sigPssSha256)
+    put16(mut b, if isEc(p) { sigEcdsaSha256 } else { sigPssSha256 })
     put16(mut b, len(sig))
     putBytes(mut b, sig)
     return msg(tCertificateVerify, freeze(b)), nil

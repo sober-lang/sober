@@ -80,7 +80,8 @@ check() {   # check <name> <bin>（実引数は ARGS）
 }
 # 実行ファイルはビルドするたびに別の名前（カーネル6.18ではM:Nの実行の直後に同じパスへ書くとETXTBSY — report-660）
 while read -r e mark; do
-    case "$e" in ''|'#'*) continue ;; esac
+    # stdの単体テストの行（test: — schedfuzzだけが回す）は除く
+    case "$e" in ''|'#'*|test:*) continue ;; esac
     [ "$mark" = split ] && continue
     n=$((n + 1))
     "$S2" build "$e" --emit=elf -o "$W/bin.$n" > /dev/null 2>&1 || { echo "FAIL: build $e"; fail=$((fail + 1)); continue; }

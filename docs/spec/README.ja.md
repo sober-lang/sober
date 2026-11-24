@@ -27,8 +27,8 @@ Soberの言語仕様です。何が受理され、何が拒否され、受理さ
 8. [package](08-packages.ja.md) — import・可視性・フィールドの書き・std/internal
 9. [メモリ](09-memory.ja.md) — region・境界のコピー・appendと部分列・上限・Pool
 10. [並行](10-concurrency.ja.md) — scopeとtask・Join / Try・チャネル・決定性・予算と期限・lease・domain
-11. [io](11-io.ja.md) — 読み書き・開いた資源・ストリーム・ネットワーク・期限と壊れ方
-12. [アノテーション](12-annotations.ja.md) — 知られた注釈・@embed・@layout・analyzerの規則・秘密の値
+11. [io](11-io.ja.md) — 読み書き・開いた資源・ストリーム・ネットワーク・期限と壊れ方・ログ
+12. [アノテーション](12-annotations.ja.md) — 知られた注釈・@embed・@layout・analyzerの規則・秘密の値・ログの行き先
 13. [テスト](13-testing.ja.md) — `sober test`・assert
 
 ## 用語

@@ -1,4 +1,4 @@
-@@full	c2e7c1ad5cf6fe5d	13557	417642
+@@full	84c70e16be4ffe06	13527	416674
 @globals	b4c427f1ae95f823	75	1780
 main.main	e75ca1f383511a31	1011	37101
 rt.cat8	8e67ba05682822cf	32	783
@@ -41,9 +41,9 @@ std/convert.ParseBool	c7d4095093e7d114	1061	31141
 std/strings.Cut	501f0de67fbe1569	338	11244
 std/strings.EqualFold	d57ee4cc77601450	213	6878
 std/strings.Fields	1c416ca0e9945300	540	17398
-std/strings.Join	fae29800dc75dcf6	908	29245
+std/strings.Join	45ca7bc3ccc9e60a	896	28859
 std/strings.LastIndex	64985be41bb5ce59	52	1944
-std/strings.Replace	f44b80c10b51aa78	1474	47756
+std/strings.Replace	a95ff1687643b154	1456	47174
 std/strings.Split	77c4f813c6c49278	923	31316
 std/strings.ToLower	373c82bc7bf4846e	54	1924
 std/strings.ToUpper	9df3f8d2d614dca5	56	1975

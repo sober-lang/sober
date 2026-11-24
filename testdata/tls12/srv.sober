@@ -1,0 +1,36 @@
+package main
+
+// TLS 1.2 の相互運用（scripts/tls12interop.sh）のサーバー。`srv <port> <alpn,…> [<証明書の名前>]` で、testdata の証明書・DangerouslyAllowTls12・ALPN の列で
+// 127.0.0.1:<port> に立つ（"tls12-ready <port>" を出してから待ち受ける）。HTTP/1.1 で "ok\n" を返す。
+// 証明書の名前 = testdata/crypto/<名前>.crt / .key（既定 httparena-server — RSA。ecdsa-server は P-256 の ECDSA）
+
+import "std/http/server"
+import "std/io"
+import "std/net"
+import "std/os"
+import "std/strings"
+import "std/tls"
+
+func route(r http.server.Request) http.server.Response {
+    return http.server.Text("ok\n")
+}
+
+func conn(c net.Conn) error? {
+    return http.server.ServeConn(c, route)
+}
+
+func run(port string, alpn string, cert string) error? {
+    cfg0 := tls.Load("testdata/crypto/${cert}.crt", "testdata/crypto/${cert}.key")?
+    cfg := tls.DangerouslyAllowTls12(tls.Alpn(cfg0, strings.Split(alpn, ",")))
+    io.WriteStdout(bytes("tls12-ready ${port}\n"))?
+    return tls.Serve("127.0.0.1:${port}", cfg, conn)
+}
+
+func main() int {
+    args := os.Args() catch return 1
+    if len(args) != 3 && len(args) != 4 {
+        return 2
+    }
+    cert := if len(args) == 4 { args[3] } else { "httparena-server" }
+    return if run(args[1], args[2], cert) == nil { 0 } else { 1 }
+}

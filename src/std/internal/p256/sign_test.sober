@@ -1,0 +1,102 @@
+package p256
+
+// ECDSA の署名の試験（white-box）: RFC 6979 A.2.5 の P-256 / SHA-256 の 2 組・openssl（独立の実装 — nonce-type:1）で作った 48 組
+// （testdata/crypto/ecdsa_p256_det.txt — scripts/ecdsavec.ts）・std/internal/ec の検証での往復・決定性・不正な鍵の拒否
+
+import "std/crypto/pem"
+import "std/crypto/sha256"
+import "std/hex"
+import "std/internal/ec"
+import "std/strings"
+
+@embed("testdata/crypto/ecdsa_p256_det.txt")
+const detVectors = map[string]string{}
+
+const rfcKey = "c9afa9d845ba75166b5c215767b1d6934e50c3db36e89b127b8a622b120f6721"
+
+func TestSignRfc6979() {
+    d := unhex(rfcKey)
+    r1, s1 := signRS(d, crypto.sha256.Sum256(bytes("sample")))
+    assert(hex.Format(r1) == "efd48b2aacb6a8fd1140dd9cd45e81d69d2c877b56aaf991c34d0ea84eaf3716", "sample r")
+    assert(hex.Format(s1) == "f7cb1c942d657c41d436c7a1b6e29f65f3e900dbb9aff4064dc4ab2f843acda8", "sample s")
+    r2, s2 := signRS(d, crypto.sha256.Sum256(bytes("test")))
+    assert(hex.Format(r2) == "f1abb023518351cd71d881567b1ea663ed3efcf6c5132b354f28d3b0b7d38367", "test r")
+    assert(hex.Format(s2) == "019f4113742a2b14bd25926b49c649155f267e60d3814b4c0cc84250e46f0083", "test s")
+}
+
+func TestSignVectors() {
+    v := detVectors["testdata/crypto/ecdsa_p256_det.txt"]
+    assert(v != nil, "vectors embedded")
+    mut n := 0
+    for line <- strings.Split(if v != nil { v } else { "" }, "\n") {
+        p := strings.Split(line, " ")
+        if len(p) == 4 {
+            r, s := signRS(unhex(p[0]), unhex(p[1]))
+            assert(hex.Format(r) == p[2] && hex.Format(s) == p[3], "sign ${p[0]} ${p[1]}")
+            n += 1
+        }
+    }
+    assert(n == 48, "count ${n}")
+}
+
+// DER の署名が std/internal/ec の検証（独立の道 — 可変時間の検証器）を通り、hash を変えれば通らない
+func TestSignVerify() {
+    ks := []string{rfcKey, "01", "ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632550"}
+    for k <- ks {
+        d := scalar32(k)
+        pub := PublicKey(d)
+        h := crypto.sha256.Sum256(bytes("verify ${k}"))
+        sig := Sign(d, h)
+        assert(len(sig) >= 8 && sig[0] == 0x30, "der ${k}")
+        assert(internal.ec.Verify(internal.ec.P256(), pub, h, sig), "verify ${k}")
+        h2 := crypto.sha256.Sum256(bytes("other ${k}"))
+        assert(!internal.ec.Verify(internal.ec.P256(), pub, h2, sig), "other hash ${k}")
+    }
+}
+
+// 同じ入力に同じ署名・違う hash に違う r（k が入力から決まる）
+func TestSignDeterministic() {
+    d := unhex(rfcKey)
+    h := crypto.sha256.Sum256(bytes("det"))
+    assert(hex.Format(Sign(d, h)) == hex.Format(Sign(d, h)), "same")
+    ra, _ := signRS(d, h)
+    rb, _ := signRS(d, crypto.sha256.Sum256(bytes("det2")))
+    assert(hex.Format(ra) != hex.Format(rb), "different k")
+}
+
+func TestSignRejects() {
+    h := crypto.sha256.Sum256(bytes("x"))
+    assert(len(Sign(scalar32("00"), h)) == 0, "zero key")
+    assert(len(Sign(scalar32("ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551"), h)) == 0, "order")
+    assert(len(Sign(scalar32("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"), h)) == 0, "above order")
+    assert(len(Sign(unhex("01"), h)) == 0, "short key")
+    assert(len(Sign(unhex(rfcKey), h[0:20])) == 0, "short hash")
+}
+
+@embed("testdata/crypto/ecdsa-server.key")
+const keyPem = map[string]string{}
+
+// openssl genpkey の PKCS#8 の鍵が読め、付いている公開鍵と d·G が一致する（読みの中で照合）。形を崩した鍵は拒否
+func TestParsePKCS8() {
+    v := keyPem["testdata/crypto/ecdsa-server.key"]
+    assert(v != nil, "key embedded")
+    bs, err := crypto.pem.Parse(if v != nil { v } else { "" })
+    assert(err == nil && len(bs) == 1, "pem")
+    der := bs[0].der
+    d, ok := ParsePKCS8(der)
+    assert(ok && len(d) == 32, "parse")
+    h := crypto.sha256.Sum256(bytes("key"))
+    assert(len(Sign(d, h)) > 0, "sign with parsed key")
+    // 公開鍵の 1 バイトを変える → d·G と食い違う
+    mut bad := mut []byte{}
+    for x <- der {
+        bad = append(bad, x)
+    }
+    bad[len(bad) - 1] = byte(int(bad[len(bad) - 1]) ^ 1)
+    _, ok2 := ParsePKCS8(freeze(bad))
+    assert(!ok2, "public key mismatch")
+    _, ok3 := ParsePKCS8(der[0:len(der) - 1])
+    assert(!ok3, "truncated")
+    _, ok4 := ParsePKCS8([]byte{})
+    assert(!ok4, "empty")
+}

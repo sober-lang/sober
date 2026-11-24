@@ -111,7 +111,20 @@ const MN_LSNTL = MN_LSNTI + 32
 const MN_LSNH = MN_LSNTL + 1
 // net.Serve の全部の親の節の番地（0 = まだ無い — netring.sober の op 29 が鍵 MN_LSNL の下で作る）
 const MN_SPAR = MN_LSNH + 1
-const MN_WORDS = MN_SPAR + 1
+// 入場の空きを待つmuxの記録の登録簿（HTTP/2の接続 — mux.sober）: 鍵と頭（0 = 空。記録のMX_RNEXTで繋ぐ）
+const MN_MRLK = MN_SPAR + 1
+const MN_MROOM = MN_SPAR + 2
+// 登録簿に居る記録の数（鍵MN_MRLKの下で足し引き・evictedの走査が読む — 入場の空きを待つストリームを持つ接続も、入場を待つ者として数える）
+const MN_MRN = MN_SPAR + 3
+// 天井の空き待ちの列（ceil.sober — FIFO。TC_AWNEXT / TC_AWPREVで繋ぐ）: 鍵・頭・尾・返しの通し番号・今待っている数・待った回数の累計・待ちの期限で戻った数
+const MN_CLK = MN_SPAR + 4
+const MN_CQH = MN_SPAR + 5
+const MN_CQT = MN_SPAR + 6
+const MN_CGEN = MN_SPAR + 7
+const MN_CWN = MN_SPAR + 8
+const MN_CWCNT = MN_SPAR + 9
+const MN_CWDIE = MN_SPAR + 10
+const MN_WORDS = MN_SPAR + 11
 // rt.mn_llc の作業域（経路 LLC_PATH・読んだ中身 LLC_DATA から LLC_CAP バイト）
 const LLC_PATH = 0
 const LLC_DATA = 128
@@ -656,6 +669,9 @@ func buildMnStart(st mut St) {
                 store(mut st, a, W_DEST, zero)
                 store(mut st, a, W_ANCHOR, zero)
             }
+            if g == st.logG && st.logUse {
+                logWorkerStart(mut st, k, a)
+            }
             if g == st.wkG {
                 store(mut st, a, WK_ID, k)
                 if st.areaOn {
@@ -1004,6 +1020,26 @@ func buildTaskGoMn(st mut St) {
     setCur(mut st, bPl)
     store(mut st, pw, WK_PLOWN, iconst(mut st, 0))
     pto := load(mut st, pw, WK_PLTO)
+    // 行き先 -2 = 子を今ここで先に走らせ、親は自分の実行待ちの列へ譲る（列のあふれの道と同じ切り替え。値は子を先にの1つのスケジュールと同じ）。
+    // HTTP/2のストリームの子を作った場所で先に走らせ、待たずに終われば接続のtaskへすぐ戻る形。muxを使うプログラムでだけ組む
+    // （spawnの度に通る関数を、他のプログラムで太らせない）
+    if st.muxUse {
+        bInl := newBlock(mut st)
+        bPlace2 := newBlock(mut st)
+        condbr(mut st, cmp(mut st, CEq, pto, iconst(mut st, -2)), bInl, -1, bPlace2, -1)
+        setCur(mut st, bInl)
+        wki := globaladdr(mut st, st.wkG)
+        tki := globaladdr(mut st, st.taskG)
+        store(mut st, 1, TC_WORKER, load(mut st, wki, WK_ID))
+        call(mut st, st.rtMnTrace, list2(mut st, iconst(mut st, 1), load(mut st, 1, TC_ID)))
+        frRec(mut st, FK_RUN, ptoi(mut st, 1), iconst(mut st, 1))
+        store(mut st, wki, WK_NOW, tscOp(mut st))
+        readyPush(mut st, tki, ptoi(mut st, 0))
+        parkRelease(mut st, 0, false, false)
+        call(mut st, st.rtTaskSwitch, list2(mut st, 0, 1))
+        ret(mut st, -1)
+        setCur(mut st, bPlace2)
+    }
     me := load(mut st, pw, WK_ID)
     pk0 := bin(mut st, BRem, pto, bin(mut st, BSub, load(mut st, mn, MN_N), iconst(mut st, 1)))
     pk1 := bin(mut st, BAdd, pk0, cmp(mut st, CGe, pk0, me))
@@ -1311,6 +1347,8 @@ func buildMnNext(st mut St) {
     // 今（TSC — 周ごとに1回: この周で積むtaskの時刻と、取り出しの期限の比較に使う。スリープの明けもこの頭へ戻るので古い値で積まない）
     now := tscOp(mut st)
     store(mut st, wk, WK_NOW, now)
+    // ログのバッファの期限（logsink.sober — ログを使うプログラムだけ）
+    logRoundHead(mut st, now)
     // ring に task の io があれば提出と完了の取り込み（無ければ分岐 1 本）
     bIo := newBlock(mut st)
     bGo := newBlock(mut st)
@@ -1320,6 +1358,7 @@ func buildMnNext(st mut St) {
     br(mut st, bGo, -1)
     setCur(mut st, bGo)
     r := load(mut st, tk, TK_READY)
+    signGapTick(mut st, tk, r)
     pick := load(mut st, wk, WK_PICK)
     store(mut st, wk, WK_PICK, bin(mut st, BAdd, pick, iconst(mut st, 1)))
     bR := newBlock(mut st)
@@ -1331,6 +1370,12 @@ func buildMnNext(st mut St) {
     gp := param(mut st, bGot, TyPtr)
     gkind := param(mut st, bGot, TyI64)
     setCur(mut st, bRc)
+    // ミュータント124（署名の列の検査の自己検査 — 123の照合つき）: 間引きの周を待たずに、毎周まず署名の列から取る
+    if st.rtMut == 124 && st.signOn {
+        bNs := newBlock(mut st)
+        signPop(mut st, tk, bGot, bNs)
+        setCur(mut st, bNs)
+    }
     // 間引きの周（周の数の下位ビットがMN_BACKLOG_EVERY − 1の周）だけ、受け箱と未着手の子の列を見る。ほかの周は比較1回で実行待ちの列へ
     // （受け箱の周と未着手の子の周は同じ比較の中にあり、位相が結び付く。どちらも定数の周期）。
     // 受け箱: MN_INBOX_EVERY周に1回、空でなければ実行待ちの列が空でなくても先に取り込む（Serveのacceptのループ・他のワーカーからのウェイクアップの待ちを、
@@ -1347,6 +1392,12 @@ func buildMnNext(st mut St) {
     setCur(mut st, bIb)
     condbr(mut st, cmp(mut st, CEq, load(mut st, wk, WK_INBOX), zero), bBk, -1, bI, -1)
     setCur(mut st, bBk)
+    // 署名の列（sign.sober）: 同じ間引きの周に、未着手の子の列より先に1本。列が空なら未着手の子の列へ
+    if st.signOn {
+        bOwnB := newBlock(mut st)
+        signPop(mut st, tk, bGot, bOwnB)
+        setCur(mut st, bOwnB)
+    }
     if st.rtMut != 99 {
         ownPop(mut st, wk, bGot, bR)
     } else {
@@ -1438,7 +1489,12 @@ func buildMnNext(st mut St) {
     bChain := newBlock(mut st)
     cp := param(mut st, bChain, TyPtr)
     ckind := param(mut st, bChain, TyI64)
-    br(mut st, bStl, -1)
+    // 署名の列（sign.sober）: 実行待ちの列と自分の未着手の子の列が空なら、盗む前に1本
+    if st.signOn {
+        signPop(mut st, tk, bGot, bStl)
+    } else {
+        br(mut st, bStl, -1)
+    }
     // 盗む（他のワーカーの列の頭 — 未着手の子だけ）
     setCur(mut st, bStl)
     sp := call(mut st, st.rtMnSteal, list0(mut st))
@@ -1611,6 +1667,8 @@ func buildMnNext(st mut St) {
     setCur(mut st, fl)
     condbr(mut st, cmp(mut st, CEq, load(mut st, wk, WK_SLEEP), iconst(mut st, 1)), fw, -1, loop, -1)
     setCur(mut st, fw)
+    // 眠る前にログのバッファを書き出す（logsink.sober）
+    logBeforeSleep(mut st)
     args := listN(mut st, 5)
     desugar.HeapSet(mut st.d, args + 1, iconst(mut st, 202))
     desugar.HeapSet(mut st.d, args + 2, ptoi(mut st, gepWord(mut st, wk, iconst(mut st, WK_SLEEP))))
@@ -2190,6 +2248,7 @@ func buildTaskStartMn(st mut St) {
         domDiedIn(mut st, 0)
     }
     cellDiedIn(mut st, 0)
+    muxDiedIn(mut st, 0, r)
     frRec(mut st, FK_END, ptoi(mut st, 0), r)
     fdDrainCall(mut st)
     orphEnd(mut st, 0)

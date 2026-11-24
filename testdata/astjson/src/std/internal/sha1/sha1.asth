@@ -1,0 +1,16 @@
+@@full	dee5d6f53669e7fa	4158	123692
+@head	dbfcbb68158c8a5f	0	99
+const BlockSize	3f4eeb0664136a82	1	50
+const Size	2321f2aac04c9ada	1	45
+const mask32	e242771aea0b4720	1	66
+func Block	487342db2c2bd892	14	641
+func Bytes	122ea34c4a13d83a	45	1538
+func Init	17c1a7601d4eddc1	10	458
+func New	e6a1297fbc594557	8	424
+func Sum	7fc209e5ba7e76fc	114	3738
+func Sum1	8bcaee7c307f7e2e	16	609
+func Write	e60cc366b9949c29	140	4582
+func cat	57e12aa118327753	49	1765
+func compress	8e5e5ce5cdc02f36	286	8880
+func rotl	9d44e69440884067	15	599
+type State	dba5949c4f086cd3	6	280

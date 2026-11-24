@@ -4,6 +4,8 @@
 # 入力 = examples/secret_*.sober と std の全 package（合成の main — 違反 0 件の証人）と compiler/ 自身（自己の要約の行だけ — 源が 0 本 = 「compiler/ は秘密に触らない」の証人）。
 #
 #   scripts/secretdump.sh [--regen]
+# ゴールデンの並びを呼び手のロケールに依らせない
+export LC_ALL=C.UTF-8
 set -uo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$PWD

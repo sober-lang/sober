@@ -114,7 +114,7 @@ type Closed error
 type BadUrl error
 ```
 
-URL の形の誤り（scheme が http / https でない・userinfo・IPv6 の番地・空白や制御文字）
+URL の形の誤り（scheme が http / https でない・userinfo・角括弧の中が IPv6 の番地でない・IPv6 の zone〔RFC 6874〕・空白や制御文字）
 
 ## BadResponse
 

@@ -1,0 +1,173 @@
+package record
+
+// TLS 1.2 の記録（white-box）: 種類ごとの往復（Seal・SealInto → Open）・AEAD の本文が std/internal/rec12 と一致・CBC の断片が std/internal/cbcrec で開ける・
+// 番号と型の違いと改ざんは bad_record_mac・CBC の明示の IV が番号の生の値でなく、番号を変えて繰り返さない
+
+import "std/crypto/aescbc"
+import "std/crypto/aesgcm"
+import "std/hex"
+import "std/internal/bless"
+import "std/internal/cbcrec"
+import "std/internal/rec12"
+import "std/iter"
+
+func kinds() []int {
+    return []int{Gcm12, ChaCha12, CbcSha1, CbcSha256, CbcSha1 | Etm, CbcSha256 | Etm}
+}
+
+func dir12(kind int, seed int) Dir {
+    key := pat(if kind == ChaCha12 { 32 } else { 16 }, seed)
+    iv := pat(if kind == Gcm12 { 4 } else if kind == ChaCha12 { 12 } else { 16 }, seed + 1)
+    mac := if isCbc(kind) { pat(internal.cbcrec.MacSize(macAlg(kind)), seed + 2) } else { []byte{} }
+    d, _ := NewDir12(kind, key, iv, mac)
+    return d
+}
+
+func TestRecord12() {
+    for kind <- kinds() {
+        if kind != ChaCha12 && !crypto.aesgcm.Available() {
+            continue
+        }
+        for n <- lens12() {
+            mut w := dir12(kind, 3)
+            mut r := dir12(kind, 3)
+            w.seq = 40
+            r.seq = 40
+            pt := pat(n, n + 7)
+            rec := bless12(Seal(mut w, CtApp, pt, 0))
+            assert(internal.bless.Int(Seq(w)) == 41)
+            // SealInto は同じバイト列（CBC の IV も番号で決まる）
+            mut dst := mut []byte{}
+            for i <- iter.Range(0, len(rec) + 3) {
+                dst = append(dst, 0)
+            }
+            wi := dir12(kind, 3)
+            got := internal.bless.Int(SealInto(WithSeq(wi, 40), CtApp, pt, mut dst, 3))
+            assert(got == len(rec))
+            for i <- iter.Range(0, len(rec)) {
+                assert(dst[3 + i] == rec[i])
+            }
+            ct, p, e := Open(mut r, At(rec, 0, len(rec)))
+            assert(e == nil && ct == CtApp && same12(bless12(p), pt))
+            assert(internal.bless.Int(Seq(r)) == 41)
+            // 同じ記録をもう一度（番号が進んだ）・型を変えた頭・改ざん
+            _, _, e1 := Open(mut r, At(rec, 0, len(rec)))
+            assert(e1 != nil)
+            mut r2 := WithSeq(dir12(kind, 3), 40)
+            _, _, e2 := Open(mut r2, At(retype(rec, CtHandshake), 0, len(rec)))
+            assert(e2 != nil)
+            for at <- iter.Range(5, len(rec)) {
+                mut r3 := WithSeq(dir12(kind, 3), 40)
+                _, _, e3 := Open(mut r3, At(flip12(rec, at), 0, len(rec)))
+                assert(e3 != nil)
+            }
+        }
+    }
+}
+
+// AEAD の本文は rec12 と同じ・CBC の断片は cbcrec で開ける
+func TestRecord12Cross() {
+    if !crypto.aesgcm.Available() {
+        return
+    }
+    pt := pat(300, 5)
+    for g <- iter.Range(0, 2) {
+        kind := if g == 0 { Gcm12 } else { ChaCha12 }
+        key := pat(if g == 0 { 16 } else { 32 }, 3)
+        iv := pat(if g == 0 { 4 } else { 12 }, 4)
+        mut d, _ := NewDir12(kind, key, iv, []byte{})
+        d.seq = 9
+        rec := bless12(Seal(mut d, CtHandshake, pt, 0))
+        body := bless12(internal.rec12.Seal(g == 0, key, iv, 9, CtHandshake, pt))
+        assert(int(rec[0]) == CtHandshake && same12(slice12(rec, 5, len(rec)), body))
+    }
+    for kind <- kinds() {
+        if !isCbc(kind) {
+            continue
+        }
+        mac := pat(internal.cbcrec.MacSize(macAlg(kind)), 6)
+        mut d, _ := NewDir12(kind, pat(16, 7), pat(16, 8), mac)
+        d.seq = 77
+        rec := bless12(Seal(mut d, CtApp, pt, 0))
+        k, _ := internal.cbcrec.New(macAlg(kind), mac, pat(16, 7))
+        frag := slice12(rec, 5, len(rec))
+        p, e := if (kind & Etm) != 0 { internal.cbcrec.OpenEtm(k, 77, CtApp, 0x0303, frag) } else { internal.cbcrec.Open(k, 77, CtApp, 0x0303, frag) }
+        assert(e == nil && same12(bless12(p), pt))
+        // 断片の先頭 16 バイトが明示の IV = CbcIv(ivKey, 77)
+        assert(same12(slice12(frag, 0, 16), CbcIv(pat(16, 8), 77)))
+    }
+}
+
+// 明示の IV は番号の生の値でなく（番号 ‖ 0 のブロックと違う）、番号 0〜999 で繰り返さない
+func TestCbcIv() {
+    if !crypto.aescbc.Available() {
+        return
+    }
+    ivKey := pat(16, 9)
+    mut seen := mut []string{}
+    for s <- iter.Range(0, 1000) {
+        iv := CbcIv(ivKey, s)
+        assert(len(iv) == 16)
+        assert(!same12(iv, cat2(seq8(s), seq8(0))))
+        assert(!same12(slice12(iv, 0, 8), seq8(s)))
+        seen = append(seen, hex.Format(iv))
+    }
+    for i <- iter.Range(0, 1000) {
+        for j <- iter.Range(i + 1, 1000) {
+            assert(seen[i] != seen[j])
+        }
+    }
+    // 鍵が違えば同じ番号でも違う IV
+    assert(!same12(CbcIv(ivKey, 5), CbcIv(pat(16, 10), 5)))
+}
+
+func lens12() []int {
+    return []int{0, 1, 15, 16, 100, 1000, 16384}
+}
+
+func bless12(b []byte) []byte {
+    return internal.bless.Bytes(b)
+}
+
+func pat(n int, seed int) []byte {
+    mut out := mut []byte{}
+    for i <- iter.Range(0, n) {
+        out = append(out, byte((i * 31 + seed * 17 + 5) & 0xff))
+    }
+    return freeze(out)
+}
+
+func flip12(a []byte, at int) []byte {
+    mut out := mut []byte{}
+    for i <- iter.Range(0, len(a)) {
+        out = append(out, if i == at { byte(int(a[i]) ^ 1) } else { a[i] })
+    }
+    return freeze(out)
+}
+
+func retype(a []byte, t int) []byte {
+    mut out := mut []byte{}
+    for i <- iter.Range(0, len(a)) {
+        out = append(out, if i == 0 { byte(t) } else { a[i] })
+    }
+    return freeze(out)
+}
+
+func slice12(a []byte, lo int, hi int) []byte {
+    mut out := mut []byte{}
+    for i <- iter.Range(lo, hi) {
+        out = append(out, a[i])
+    }
+    return freeze(out)
+}
+
+func same12(a []byte, b []byte) bool {
+    if len(a) != len(b) {
+        return false
+    }
+    mut d := 0
+    for i <- iter.Range(0, len(a)) {
+        d = d | (int(a[i]) ^ int(b[i]))
+    }
+    return d == 0
+}

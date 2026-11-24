@@ -1,0 +1,48 @@
+package main
+
+// ホストを省いた ":0" の listen は dual-stack: 1 本の listener が IPv4（127.0.0.1）と IPv6（[::1]）の両方から受ける。
+// "[::]:0" は IPv6 だけ（IPV6_V6ONLY = 1）なので、127.0.0.1 からは繋がらない。"0.0.0.0" は IPv4 だけ
+
+import "std/net"
+import "std/task"
+
+func main() {
+    println("dual v4: ${echoed(":0", "127.0.0.1")}")
+    println("dual v6: ${echoed(":0", "[::1]")}")
+    println("v6only v6: ${echoed("[::]:0", "[::1]")}")
+    println("v6only v4: ${echoed("[::]:0", "127.0.0.1")}")
+}
+
+// listenAddr で listen し、dialHost へ繋いで "ping" を送り、受けて送り返したものを読む（繋がらなければ "refused"）
+func echoed(listenAddr string, dialHost string) string {
+    return run(listenAddr, dialHost) catch "refused"
+}
+
+func run(listenAddr string, dialHost string) (string, error?) {
+    mut got := mut []byte{}
+    for l <- net.Listen(listenAddr)? {
+        for c <- net.Dial("${dialHost}:${net.Port(l)}")? {
+            net.Send(c, bytes("ping"))?
+            _, _ = task.Run((s task.Scope) => echoOne(l) catch -1, deadline: 5000 * task.MS)
+            for chunk <- net.Recv(c)? {
+                for x <- chunk { got = append(got, x) }
+                if len(got) >= 4 { break }
+            }
+        }
+    }
+    return string(freeze(got)) catch "", nil
+}
+
+// 1 本だけ受けて、4 バイト届くまで送り返す
+func echoOne(l net.Listener) (int, error?) {
+    mut total := 0
+    for c <- net.Accept(l)? {
+        for chunk <- net.Recv(c)? {
+            total += len(chunk)
+            net.Send(c, chunk)?
+            if total >= 4 { break }
+        }
+        break
+    }
+    return total, nil
+}

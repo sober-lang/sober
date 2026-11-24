@@ -45,10 +45,10 @@ K1=20
 K2=220
 
 # ready <port> を出すまで待つ（出さずに死ぬか 120 秒で空）
-ready() { # ready <出力のファイル> <pid>
-    local i port=""
+ready() { # ready <出力のファイル> <pid> [<行の頭 — 既定 ready・TLS の題材は tls-ready>]
+    local i port="" rk=${3:-ready}
     for i in $(seq 1200); do
-        port=$(awk '$1 == "ready" { print $2; exit }' "$1" 2> /dev/null)
+        port=$(awk -v k="$rk" '$1 == k { print $2; exit }' "$1" 2> /dev/null)
         [ -n "$port" ] && break
         kill -0 "$2" 2> /dev/null || break
         sleep 0.1
@@ -57,13 +57,23 @@ ready() { # ready <出力のファイル> <pid>
 }
 
 measure() { # measure <srv> <題材> <格納場所の頭> [<環境>…] → 「ireq <x> hot64 <n>」
-    local srv=$1 subj=$2 o=$3 K vp port
+    local srv=$1 subj=$2 o=$3 K vp port rk=ready crt=/nonexistent key=/nonexistent tp=0 lo
     shift 3
+    # tls* の題材は TLS の port（本家と同じ対の証明書 — 握手の分は束の差で消える）。tls.Serve は自分で listen するので port を渡す
+    # （一時ポートの範囲の外から選ぶ — 並べて走るゲートの客の送信元ポートと重ならないように。fdcap と同じ形）
+    case $subj in tls*)
+        rk=tls-ready; crt=$R/testdata/crypto/httparena-server.crt; key=$R/testdata/crypto/httparena-server.key
+        lo=$(cut -f1 /proc/sys/net/ipv4/ip_local_port_range); tp=$((2000 + RANDOM % (lo > 2100 ? lo - 2100 : 1))) ;;
+    esac
     for K in $K1 $K2; do
-        env "$@" SOBER_WORKERS=1 SOBER_IO=2 SOBER_MDWE=0 TLS_CERT=/nonexistent TLS_KEY=/nonexistent \
-            taskset -c $CS "$VG" --tool=callgrind --dump-instr=yes --callgrind-out-file="$o.$K" "$srv" 0 0 > "$o.srv.$K" 2>&1 &
+        env "$@" SOBER_WORKERS=1 SOBER_IO=2 SOBER_MDWE=0 TLS_CERT=$crt TLS_KEY=$key \
+            taskset -c $CS "$VG" --tool=callgrind --dump-instr=yes --callgrind-out-file="$o.$K" "$srv" 0 $tp > "$o.srv.$K" 2>&1 &
         vp=$!
-        port=$(ready "$o.srv.$K" $vp)
+        port=$(ready "$o.srv.$K" $vp $rk)
+        # tls-ready は listen の前に出るので、受け口が開くまで待つ
+        if [ $rk = tls-ready ] && [ -n "$port" ]; then
+            for _ in $(seq 600); do (exec 3<>/dev/tcp/127.0.0.1/$port) 2> /dev/null && break; sleep 0.1; done
+        fi
         [ -n "$port" ] || { echo "reqinst: サーバが ready を出さない（$subj）: $(tail -c 300 "$o.srv.$K")" >&2; kill $vp 2> /dev/null; return 1; }
         NODE_NO_WARNINGS=1 taskset -c $CC node --experimental-strip-types scripts/reqinst.ts cli "$port" $K "$subj" 2> "$o.cli.$K" \
             || { echo "reqinst: 客が失敗（$subj 束 $K）: $(cat "$o.cli.$K")" >&2; kill $vp 2> /dev/null; return 1; }
@@ -101,10 +111,11 @@ if [ $has_db = 1 ] && [ -n "$CP" ]; then
 fi
 
 fail=0
+lfail=0   # 線との比較の赤（ratchet_cmp — 線の値の変更は記録の実測で再判定される）。fail = 線のほかの検査
 n=0
 # run_all <コンパイラ> <題材の絞り（allか題材の名）> — ビルドして測ってしきい値と照合し、fail / nを足す
 run_all() {
-    local cc=$1 only=$2 subj s got ireq hot col v lim srv
+    local cc=$1 only=$2 subj s got ireq hot col v lim srv rc
     "$cc" build bench/httparena/main.sober --emit=elf --passes -o "$W/srv" > "$W/build.log" 2>&1 || { echo "reqinst: FAIL build bench/httparena/main.sober: $(tail -c 400 "$W/build.log")"; fail=$((fail + 1)); return; }
     if [ $has_db = 1 ]; then
         "$cc" build bench/asyncdb --emit=elf --passes -o "$W/srv-asyncdb" > "$W/build-db.log" 2>&1 || { echo "reqinst: FAIL build bench/asyncdb: $(tail -c 400 "$W/build-db.log")"; fail=$((fail + 1)); return; }
@@ -126,12 +137,13 @@ run_all() {
         read -r _ ireq _ hot <<< "$got"
         for col in ireq hot64; do
             v=$([ $col = ireq ] && echo "$ireq" || echo "$hot")
-            lim=$(awk -v k="srv/$subj" -v c=$col '$1 == k && $2 == c { print $3; exit }' bench/ratchet.txt)
             n=$((n + 1))
-            if [ -z "$lim" ]; then
-                echo "FAIL srv/$subj $col = $v — bench/ratchet.txt に行が無い"; fail=$((fail + 1))
-            elif awk -v v="$v" -v l="$lim" 'BEGIN { exit !(v > l) }'; then
-                echo "FAIL srv/$subj $col = $v > $lim（bench/ratchet.txt — 全要求の道の固定費の増え。正当なら引き直して事後追認 — 冒頭の注）"; fail=$((fail + 1))
+            ratchet_cmp bench/ratchet.txt "srv/$subj" $col "$v"; rc=$?
+            lim=$RATCHET_LIM
+            if [ $rc = 2 ]; then
+                echo "FAIL srv/$subj $col = $v — bench/ratchet.txt に行が無い"; lfail=$((lfail + 1))
+            elif [ $rc = 1 ]; then
+                echo "FAIL srv/$subj $col = $v > $lim（bench/ratchet.txt — 全要求の道の固定費の増え。正当なら引き直して事後追認 — 冒頭の注）"; lfail=$((lfail + 1))
             elif awk -v v="$v" -v l="$lim" -v c=$col 'BEGIN { exit !(c == "ireq" ? v * 1.005 < l : v < l) }'; then
                 echo "note srv/$subj $col = $v — 上限 $lim より下がった（bench/ratchet.txt を締め直す）"
             else
@@ -146,21 +158,22 @@ if [ $mut = 1 ]; then
     bad=0
     # dispatch: Dispatchでリクエストのpathの長さをmutの局所にコピーして読み戻し、分岐する（全リクエストのパスに数命令）
     mkmut dispatch http/server/server.sober '/^func Dispatch(routes \[\]Route, r Request) Response {$/,/^}$/ s|^    pb := bytes(r.path)$|&\n    // reqinst mutant\n    mut mutw := len(pb)\n    mutw = mutw * 3 + len(routes)\n    if mutw == 9999991 {\n        return unrouted(routes, pb)\n    }|' || exit 1
-    fail=0; n=0
-    run_all "$W/mut-dispatch/sober2" all
-    if [ $fail -gt 0 ]; then echo "reqinst --mut: caught dispatch — $fail / $n lines red"; else echo "reqinst --mut: FAIL — 変異 dispatch（Dispatch に要求ごとの写し）が鳴らない"; bad=1; fi
+    fail=0; lfail=0; n=0
+    GATE_MEAS= run_all "$W/mut-dispatch/sober2" all
+    if [ $((fail + lfail)) -gt 0 ]; then echo "reqinst --mut: caught dispatch — $fail / $n lines red"; else echo "reqinst --mut: FAIL — 変異 dispatch（Dispatch に要求ごとの写し）が鳴らない"; bad=1; fi
     # pgrow: rowOf（DataRowの受け）で列の数をmutの局所にコピーして読み戻し、分岐する（行ごとに数命令 — asyncdbの20行で約 +100命令/リクエスト）
     if [ -z "$PGP" ]; then
         if [ $has_db = 0 ]; then echo "reqinst --mut: FAIL: 変異pgrowを当てるsrv/asyncdbの行がbench/ratchet.txtに無い"; bad=1
         else cant reqinst cpus "mutant pgrow (fewer than 3 CPUs)" || bad=1; fi
     else
         mkmut pgrow pg/pg.sober '/^func rowOf(body \[\]byte, cols \[\]int, fmts \[\]int) (Row, error?) {$/,/^}$/ s|^    nc := internal.pgwire.RowLen(body)$|&\n    // reqinst mutant\n    mut mutw := nc\n    mutw = mutw * 3 + len(cols)\n    if mutw == 9999991 {\n        return emptyRow(), internal.pgwire.Protocol{}\n    }|' || exit 1
-        fail=0; n=0
-        run_all "$W/mut-pgrow/sober2" asyncdb
-        if [ $fail -gt 0 ]; then echo "reqinst --mut: caught pgrow — $fail / $n lines red"; else echo "reqinst --mut: FAIL — 変異 pgrow（rowOf に行ごとの写し）が鳴らない"; bad=1; fi
+        fail=0; lfail=0; n=0
+        GATE_MEAS= run_all "$W/mut-pgrow/sober2" asyncdb
+        if [ $((fail + lfail)) -gt 0 ]; then echo "reqinst --mut: caught pgrow — $fail / $n lines red"; else echo "reqinst --mut: FAIL — 変異 pgrow（rowOf に行ごとの写し）が鳴らない"; bad=1; fi
     fi
     exit $bad
 fi
 run_all "$S2" all
-echo "reqinst: $n lines (srv/* ireq / hot64 in bench/ratchet.txt), fail=$fail"
-[ $fail = 0 ]
+echo "reqinst: $n lines (srv/* ireq / hot64 in bench/ratchet.txt), fail=$fail, ratchet fail=$lfail"
+[ $fail = 0 ] && meas_body_ok
+[ $fail = 0 ] && [ $lfail = 0 ]

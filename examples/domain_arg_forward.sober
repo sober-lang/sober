@@ -1,0 +1,32 @@
+package main
+
+// A function that takes a domain can pass it on to another function, also when the state has a mut slice:
+// the state's type is compared by its shape, because the state lives in the domain and is copied into the reader's region
+
+import "std/task"
+
+type Book struct {
+    n int
+    marks mut []int
+}
+
+func count(d task.Domain[Book]) int {
+    return task.Read(d, (b Book) => b.n + len(b.marks))
+}
+
+func forward(d task.Domain[Book]) int {
+    return count(d)
+}
+
+func label(s string, n int) int {
+    return len(bytes(s)) + n
+}
+
+func main() {
+    r, _ := task.Run((s) => {
+        d := task.NewDomain(s, Book{n: 3, marks: mut []int{1, 2}})
+        a := forward(d)
+        a + label("abc", count(d))
+    })
+    println("${r}")
+}

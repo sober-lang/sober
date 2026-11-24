@@ -1,0 +1,37 @@
+package main
+
+// 子はscopeの出口まで生きるので、ループの反復の中で作ったregionつきの値（ここではsliceを持つstruct）を捕獲できない（task.Spawnの捕獲の寿命 — 核の kSpawn の givable）。
+// 反復の終わりで値のregionが解放され、子は解放された領域を読む形になる。直し方 = ループの前（scopeの本体）で作るか、子の中で作る
+
+import "std/task"
+
+type Req struct {
+    tag int
+    body []byte
+}
+
+func mk(i int) Req {
+    mut b := mut []byte{}
+    while len(b) < 8 {
+        b = append(b, byte(65 + i))
+    }
+    return Req{tag: i, body: freeze(b)}
+}
+
+func main() {
+    t, _ := task.Run((s task.Scope) => {
+        mut hs := mut []task.Handle[int]{}
+        mut i := 0
+        while i < 3 {
+            r := mk(i)
+            hs = append(hs, task.Spawn(s, () => len(r.body) + r.tag))
+            i += 1
+        }
+        mut tot := 0
+        for h <- hs {
+            tot += task.Join(h)
+        }
+        tot
+    })
+    println(t)
+}

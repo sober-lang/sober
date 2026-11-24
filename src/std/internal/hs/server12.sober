@@ -1,0 +1,379 @@
+package hs
+
+// TLS 1.2 のサーバーの handshake（RFC 5246 — Params.allow12〔std/tls の DangerouslyAllowTls12〕のときだけ。1.3 を申し出た相手は 1.3）。
+// 範囲: 完全な handshake 1 回だけ（再開・再交渉・クライアント証明書なし）。スイート = ECDHE-RSA と RSA 鍵交換 × AES-128-GCM / ChaCha20-Poly1305 /
+// AES-128-CBC（SHA-1 / SHA-256 の MAC）。証明書の鍵が ECDSA（P-256）なら ECDHE-ECDSA × 同じ 4 つ（RSA 鍵交換は無い）。群 = X25519 と secp256r1。ALPN で h2 に決まった接続は ECDHE + AEAD だけ（RFC 9113 9.2.2）。
+// ServerHello の random の末尾 8 バイトは降格の番兵（RFC 8446 4.1.3）。extended_master_secret（RFC 7627）・encrypt_then_mac（RFC 7366）は相手が出せば使う。
+// renegotiation_info（RFC 5746）は空で返し、接続の後の ClientHello は no_renegotiation で閉じる。TLS_FALLBACK_SCSV は inappropriate_fallback（RFC 7507 — 1.3 を持つので）。
+// RSA 鍵交換の premaster は crypto.rsa.DecryptPremaster（形の誤りを区別しない暗黙の拒否 — RFC 5246 7.4.7.1）
+
+import "std/crypto"
+import "std/crypto/aesgcm"
+import "std/crypto/rsa"
+import "std/crypto/sha256"
+import "std/crypto/x25519"
+import "std/internal/p256"
+import "std/internal/rec12"
+import "std/internal/sha1"
+import "std/iter"
+import "std/internal/record"
+
+// 1.2 のスイート（IANA の番号）
+const s12RsaGcm = 0xc02f          // ECDHE-RSA-AES128-GCM-SHA256
+const s12RsaChaCha = 0xcca8       // ECDHE-RSA-CHACHA20-POLY1305-SHA256
+const s12RsaCbc256 = 0xc027       // ECDHE-RSA-AES128-CBC-SHA256
+const s12RsaCbc1 = 0xc013         // ECDHE-RSA-AES128-CBC-SHA
+const s12KxGcm = 0x009c           // RSA-AES128-GCM-SHA256
+const s12KxCbc256 = 0x003c        // RSA-AES128-CBC-SHA256
+const s12KxCbc1 = 0x002f          // RSA-AES128-CBC-SHA
+const s12EcGcm = 0xc02b           // ECDHE-ECDSA-AES128-GCM-SHA256
+const s12EcChaCha = 0xcca9        // ECDHE-ECDSA-CHACHA20-POLY1305-SHA256
+const s12EcCbc256 = 0xc023        // ECDHE-ECDSA-AES128-CBC-SHA256
+const s12EcCbc1 = 0xc009          // ECDHE-ECDSA-AES128-CBC-SHA
+
+// handshake の型と拡張（1.2）
+const tServerKeyExchange = 12
+const tServerHelloDone = 14
+const tClientKeyExchange = 16
+const xEcPointFormats = 11
+const xEtm = 22
+const xEms = 23
+const xReneg = 0xff01
+const scsvReneg = 0x00ff
+const scsvFallback = 0x5600
+const groupP256 = 23
+const sigPkcs1Sha256 = 0x0401
+const sigPkcs1Sha1 = 0x0201
+
+const aInappropriateFallback = 86
+const aNoRenegotiation = 100
+
+// サーバーの好みの順（証明書の鍵の種類 ec で集合が決まる。AES のスイートは AES-NI の無い機械では外す — crypto.aesgcm.Available）
+func suites12(ec bool) []int {
+    if ec {
+        return if crypto.aesgcm.Available() { []int{s12EcGcm, s12EcChaCha, s12EcCbc256, s12EcCbc1} } else { []int{s12EcChaCha} }
+    }
+    return if crypto.aesgcm.Available() { []int{s12RsaGcm, s12RsaChaCha, s12RsaCbc256, s12RsaCbc1, s12KxGcm, s12KxCbc256, s12KxCbc1} } else { []int{s12RsaChaCha} }
+}
+
+// ECDHE-ECDSA のスイートを、記録の層が同じ ECDHE-RSA のスイートへ（署名の種類だけが違う）
+func base12(s int) int {
+    return if s == s12EcGcm { s12RsaGcm } else if s == s12EcChaCha { s12RsaChaCha } else if s == s12EcCbc256 { s12RsaCbc256 } else if s == s12EcCbc1 { s12RsaCbc1 } else { s }
+}
+
+func isEcdhe12(s0 int) bool {
+    s := base12(s0)
+    return s == s12RsaGcm || s == s12RsaChaCha || s == s12RsaCbc256 || s == s12RsaCbc1
+}
+
+func isAead12(s0 int) bool {
+    s := base12(s0)
+    return s == s12RsaGcm || s == s12RsaChaCha || s == s12KxGcm
+}
+
+// スイートの記録の種類（internal.record の Gcm12 / ChaCha12 / CbcSha1 / CbcSha256）
+func kind12(s0 int, etm bool) int {
+    s := base12(s0)
+    if s == s12RsaGcm || s == s12KxGcm {
+        return internal.record.Gcm12
+    }
+    if s == s12RsaChaCha {
+        return internal.record.ChaCha12
+    }
+    b := if s == s12RsaCbc1 || s == s12KxCbc1 { internal.record.CbcSha1 } else { internal.record.CbcSha256 }
+    return if etm { b | internal.record.Etm } else { b }
+}
+
+// 1.2 の ClientHello（1.3 の supported_versions を持たない）への返事: ServerHello・Certificate・ServerKeyExchange（ECDHE だけ）・ServerHelloDone
+@errors(internal.record.Alert)
+func onClientHello12(h mut Hs, p Params, ch hello, m []byte) (Out, error?) {
+    if h.hrr || ch.legacy < 0x0303 {
+        return none(), alert(aProtocolVersion)
+    }
+    if ch.bad12 {
+        return none(), alert(aDecodeError)
+    }
+    if hasInt(ch.suites, scsvFallback) {
+        return none(), alert(aInappropriateFallback)
+    }
+    if !ch.compNull {
+        return none(), alert(aIllegalParameter)
+    }
+    // 再交渉の拡張は空（最初の handshake — RFC 5746 3.6）
+    if ch.hasReneg && !ch.renegEmpty {
+        return none(), alert(aHandshakeFailure)
+    }
+    // 鍵交換の群: supported_groups が無ければ secp256r1 を仮定する（RFC 8422 4）。署名: signature_algorithms が無ければ rsa_pkcs1_sha1（RFC 5246 7.4.1.4.1）。
+    // ECDSA の鍵は ecdsa_secp256r1_sha256 だけ（signature_algorithms の無い相手の既定 ecdsa_sha1 は持たない — その相手には共通のスイートが無い）
+    group := if !ch.hasGroups { groupP256 } else if ch.groupX { groupX25519 } else if ch.groupP { groupP256 } else { 0 }
+    sig := if isEc(p) { if ch.hasSigs && hasInt(ch.sigList, sigEcdsaSha256) { sigEcdsaSha256 } else { 0 } } else if !ch.hasSigs { sigPkcs1Sha1 } else if hasInt(ch.sigList, sigPkcs1Sha256) { sigPkcs1Sha256 } else if ch.sigPss { sigPssSha256 } else if hasInt(ch.sigList, sigPkcs1Sha1) { sigPkcs1Sha1 } else { 0 }
+    // ECDSA の証明書の曲線（secp256r1）も相手の supported_groups に入っていなければならない（RFC 8422 5.1 — X25519 だけの相手は ECDSA の署名を受けない）
+    curveOk := !isEc(p) || !ch.hasGroups || ch.groupP
+    ecOk := group != 0 && sig != 0 && curveOk && (!ch.hasPointFmt || ch.pointUnc)
+    mut alpn := pickAlpn(p.alpn, ch.alpn)
+    mut suite := pick12(suites12(isEc(p)), ch.suites, ecOk, alpn == "h2")
+    if alpn == "h2" && suite == 0 {
+        // h2 に使えるスイートが無い: h2 を除いた ALPN で選び直す
+        alpn = pickAlpn(without(p.alpn, "h2"), ch.alpn)
+        suite = pick12(suites12(isEc(p)), ch.suites, ecOk, false)
+    }
+    if suite == 0 {
+        return none(), alert(aHandshakeFailure)
+    }
+    if ch.hasAlpn && len(p.alpn) > 0 && alpn == "" {
+        return none(), alert(aNoAlpn)
+    }
+    crypto.sha256.Write(mut h.th, m)
+    h.v12 = true
+    h.suite = suite
+    h.alpn = alpn
+    h.cver = ch.legacy
+    h.crandom = ch.random
+    h.ems = ch.hasEms
+    h.etm = ch.hasEtm && !isAead12(suite)
+    // random = 24 バイトの乱数 ‖ 降格の番兵 "DOWNGRD" ‖ 0x01
+    h.srandom = cat(rnd(p, "random12", 24), []byte{0x44, 0x4f, 0x57, 0x4e, 0x47, 0x52, 0x44, 0x01})
+    sh := serverHello12(h.srandom, suite, alpn, ch.hasReneg || hasInt(ch.suites, scsvReneg), h.ems, h.etm, isEcdhe12(suite) && ch.hasPointFmt)
+    cert := certificate12(p.chain)
+    mut flight := cat(sh, cert)
+    if isEcdhe12(suite) {
+        h.group = group
+        h.priv = rnd(p, "ecdhe12", 32)
+        pub := if group == groupX25519 { crypto.x25519.Base(h.priv) } else { internal.p256.PublicKey(h.priv) }
+        if len(pub) == 0 {
+            return none(), alert(aInternal)
+        }
+        skx := serverKeyExchange(p, h.crandom, h.srandom, group, pub, sig)?
+        flight = cat(flight, skx)
+    }
+    flight = cat(flight, msg(tServerHelloDone, []byte{}))
+    crypto.sha256.Write(mut h.th, flight)
+    h.ph = WaitCke12{}
+    return Out{send: plain(internal.record.CtHandshake, flight), app: []byte{}, done: false, closed: false, peer: 0 - 1, upd: false}, nil
+}
+
+// 相手の出した順ではなく、サーバーの好みの順で選ぶ（ecOk = ECDHE に使える群と署名がある・h2 = ECDHE + AEAD だけ）
+func pick12(ours []int, theirs []int, ecOk bool, h2 bool) int {
+    for s <- ours {
+        if hasInt(theirs, s) && (ecOk || !isEcdhe12(s)) && (!h2 || (isEcdhe12(s) && isAead12(s))) {
+            return s
+        }
+    }
+    return 0
+}
+
+func serverHello12(random []byte, suite int, alpn string, reneg bool, ems bool, etm bool, pointFmt bool) []byte {
+    mut x := mut []byte{}
+    if reneg {
+        put16(mut x, xReneg)
+        put16(mut x, 1)
+        put8(mut x, 0)
+    }
+    if ems {
+        put16(mut x, xEms)
+        put16(mut x, 0)
+    }
+    if etm {
+        put16(mut x, xEtm)
+        put16(mut x, 0)
+    }
+    if pointFmt {
+        put16(mut x, xEcPointFormats)
+        put16(mut x, 2)
+        put8(mut x, 1)
+        put8(mut x, 0)
+    }
+    if alpn != "" {
+        ab := bytes(alpn)
+        put16(mut x, xAlpn)
+        put16(mut x, 3 + len(ab))
+        put16(mut x, 1 + len(ab))
+        put8(mut x, len(ab))
+        putBytes(mut x, ab)
+    }
+    // session_id は空（再開を持たない）
+    return helloBody(random, []byte{}, suite, freeze(x))
+}
+
+// 1.2 の Certificate（certificate_list だけ — 1.3 の context と拡張は無い）
+func certificate12(chain [][]byte) []byte {
+    mut l := mut []byte{}
+    for c <- chain {
+        put24(mut l, len(c))
+        putBytes(mut l, c)
+    }
+    mut b := mut []byte{}
+    put24(mut b, len(l))
+    putBytes(mut b, freeze(l))
+    return msg(tCertificate, freeze(b))
+}
+
+// ServerKeyExchange（named_curve ‖ 公開鍵 ‖ 署名のアルゴリズム ‖ 署名 — 署名の対象 = client_random ‖ server_random ‖ params）
+@errors(internal.record.Alert)
+func serverKeyExchange(p Params, cr []byte, sr []byte, group int, pub []byte, sig int) ([]byte, error?) {
+    mut pa := mut []byte{}
+    put8(mut pa, 3)
+    put16(mut pa, group)
+    put8(mut pa, len(pub))
+    putBytes(mut pa, pub)
+    params := freeze(pa)
+    tbs := cat(cat(cr, sr), params)
+    mut s := []byte{}
+    if sig == sigEcdsaSha256 {
+        s = internal.p256.Sign(p.ec, crypto.sha256.Sum256(tbs))
+        if len(s) == 0 {
+            return []byte{}, alert(aInternal)
+        }
+    } else if sig == sigPssSha256 {
+        s = crypto.rsa.SignPSS(p.key, tbs, rnd(p, "salt12", 32)) catch return []byte{}, alert(aInternal)
+    } else if sig == sigPkcs1Sha256 {
+        s = crypto.rsa.SignPKCS1v15(p.key, crypto.rsa.HashSha256, crypto.sha256.Sum256(tbs)) catch return []byte{}, alert(aInternal)
+    } else {
+        s = crypto.rsa.SignPKCS1v15(p.key, crypto.rsa.HashSha1, internal.sha1.Sum1(tbs)) catch return []byte{}, alert(aInternal)
+    }
+    mut b := mut []byte{}
+    putBytes(mut b, params)
+    put16(mut b, sig)
+    put16(mut b, len(s))
+    putBytes(mut b, s)
+    return msg(tServerKeyExchange, freeze(b)), nil
+}
+
+// WaitCke12 / WaitCcs12 の平文の記録（ClientKeyExchange・CCS）
+@errors(internal.record.Alert)
+func feedPlain12(h mut Hs, p Params, f internal.record.Frame, ct int) (Out, error?) {
+    _, body := internal.record.Plain(f)
+    if len(body) > internal.record.MaxPlain {
+        return none(), alert(internal.record.AlertOverflow)
+    }
+    wait := switch h.ph {
+        case WaitCcs12{}: true
+        default: false
+    }
+    if wait {
+        // CCS（中身 0x01 の 1 枚）の前に handshake のバイトが残っていてはならない（鍵の境目）
+        if ct != internal.record.CtCcs || len(body) != 1 || body[0] != 1 || len(h.hbuf) > 0 {
+            return none(), alert(aUnexpected)
+        }
+        h.ph = WaitFin12{}
+        return none(), nil
+    }
+    if ct != internal.record.CtHandshake || len(body) == 0 {
+        return none(), alert(aUnexpected)
+    }
+    h.hbuf = cat(h.hbuf, body)
+    if len(h.hbuf) < 4 {
+        return none(), nil
+    }
+    n := int(h.hbuf[1]) << 16 | int(h.hbuf[2]) << 8 | int(h.hbuf[3])
+    if int(h.hbuf[0]) != tClientKeyExchange {
+        return none(), alert(aUnexpected)
+    }
+    if len(h.hbuf) < 4 + n {
+        return none(), nil
+    }
+    if len(h.hbuf) != 4 + n {
+        return none(), alert(aUnexpected)
+    }
+    m := h.hbuf
+    h.hbuf = []byte{}
+    return onKeyExchange(mut h, p, m)
+}
+
+// ClientKeyExchange: premaster → master secret → key_block → 受けと送りの方向（受けは CCS の後・送りは自分の CCS の後に使う）
+@errors(internal.record.Alert)
+func onKeyExchange(h mut Hs, p Params, m []byte) (Out, error?) {
+    mut c := cur(4, len(m))
+    mut pms := []byte{}
+    if isEcdhe12(h.suite) {
+        pub := take(m, mut c, u8(m, mut c))
+        if c.bad || rest(c) != 0 || len(pub) == 0 {
+            return none(), alert(aDecodeError)
+        }
+        if h.group == groupX25519 {
+            if len(pub) != 32 {
+                return none(), alert(aIllegalParameter)
+            }
+            pms = crypto.x25519.Shared(h.priv, pub)
+            // 全 0 の共有値（低位数の点 — RFC 7748 6.1）は拒否（漏れるのは「全 0 か」の 1 ビット）
+            if crypto.Equal(pms, zeros(32)) {
+                return none(), alert(aIllegalParameter)
+            }
+        } else {
+            pms = internal.p256.Shared(h.priv, pub)
+            if len(pms) != 32 {
+                return none(), alert(aIllegalParameter)
+            }
+        }
+    } else {
+        ct := take(m, mut c, u16(m, mut c))
+        if c.bad || rest(c) != 0 {
+            return none(), alert(aDecodeError)
+        }
+        // 形の誤りは区別しない（乱数の premaster に差し替えて続け、Finished の不一致で落ちる — RFC 5246 7.4.7.1）
+        pms = crypto.rsa.DecryptPremaster(p.key, ct, []byte{byte(h.cver >> 8), byte(h.cver & 0xff)}, rnd(p, "pms12", 48))
+    }
+    crypto.sha256.Write(mut h.th, m)
+    h.ms = if h.ems { internal.rec12.Prf(pms, "extended master secret", crypto.sha256.Sum(h.th), 48) } else { internal.rec12.Prf(pms, "master secret", cat(h.crandom, h.srandom), 48) }
+    // key_block = client MAC ‖ server MAC ‖ client key ‖ server key ‖ client IV ‖ server IV（CBC は IV 16 バイトずつ — 相手が導出しうる長さ）‖
+    // サーバーの CBC の明示の IV の鍵 ivKey 16 バイト（相手と共有する長さの後ろ — 相手は読まない。record.CbcIv）
+    kind := kind12(h.suite, h.etm)
+    bs := base12(h.suite)
+    ml := if isAead12(bs) { 0 } else if bs == s12RsaCbc1 || bs == s12KxCbc1 { 20 } else { 32 }
+    kl := if bs == s12RsaChaCha { 32 } else { 16 }
+    il := if bs == s12RsaChaCha { 12 } else if isAead12(bs) { 4 } else { 16 }
+    ivk := if isAead12(h.suite) { 0 } else { 16 }
+    blk := internal.rec12.Prf(h.ms, "key expansion", cat(h.srandom, h.crandom), 2 * ml + 2 * kl + 2 * il + ivk)
+    cMac := sliceOf(blk, 0, ml)
+    sMac := sliceOf(blk, ml, ml)
+    cKey := sliceOf(blk, 2 * ml, kl)
+    sKey := sliceOf(blk, 2 * ml + kl, kl)
+    cIv := sliceOf(blk, 2 * ml + 2 * kl, il)
+    sIv := if isAead12(h.suite) { sliceOf(blk, 2 * ml + 2 * kl + il, il) } else { sliceOf(blk, 2 * ml + 2 * kl + 2 * il, 16) }
+    h.rd = internal.record.NewDir12(kind, cKey, cIv, cMac)?
+    h.wr = internal.record.NewDir12(kind, sKey, sIv, sMac)?
+    h.ph = WaitCcs12{}
+    return none(), nil
+}
+
+// WaitFin12 の Finished（verify_data 12 バイト）→ 自分の CCS と Finished を送って Connected
+@errors(internal.record.Alert)
+func onFinished12(h mut Hs, m []byte) (Out, error?) {
+    if len(m) != 4 + 12 {
+        return none(), alert(aDecodeError)
+    }
+    want := internal.rec12.Prf(h.ms, "client finished", crypto.sha256.Sum(h.th), 12)
+    if !crypto.Equal(sliceOf(m, 4, 12), want) {
+        return none(), alert(aDecryptError)
+    }
+    if len(h.hbuf) > 0 {
+        return none(), alert(aUnexpected)
+    }
+    crypto.sha256.Write(mut h.th, m)
+    fin := msg(tFinished, internal.rec12.Prf(h.ms, "server finished", crypto.sha256.Sum(h.th), 12))
+    mut send := mut []byte{}
+    putBytes(mut send, plain(internal.record.CtCcs, []byte{1}))
+    putBytes(mut send, internal.record.Seal(mut h.wr, internal.record.CtHandshake, fin, 0))
+    h.keyed = true
+    h.ph = Connected{}
+    return Out{send: freeze(send), app: []byte{}, done: true, closed: false, peer: 0 - 1, upd: false}, nil
+}
+
+func hasInt(xs []int, v int) bool {
+    for x <- xs {
+        if x == v {
+            return true
+        }
+    }
+    return false
+}
+
+func without(xs []string, v string) []string {
+    mut out := mut []string{}
+    for x <- xs {
+        if x != v {
+            out = append(out, x)
+        }
+    }
+    return freeze(out)
+}

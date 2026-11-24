@@ -1,0 +1,135 @@
+package server
+
+// 認証の源のインターフェースと保存の方針の検査一式（white-box — 非公開のrequest / frameAt / checkField経由の頭）: Cookieの切り出し（RFC 6265 5.4の `; ` 区切り・
+// 前後の空白・`"` の囲み・名前の大文字小文字・`=` の無い組・2本のCookie行）・HeaderとHeaderListが認証のヘッダを読まない・HeaderListの順と小文字の名前・Authorization・Dispatchがルートの
+// cacheをcacheの無いレスポンスにだけコピーする
+
+import "std/http"
+import "std/strings"
+
+// 頭h（リクエスト行から空行まで）のリクエスト
+func rq(h string) Request {
+    b := bytes(h)
+    mut hs := mut []int{}
+    f := frameAt(b, 0, 8192, 8192, mut hs)
+    r, e := request(b, f, freeze(hs))
+    assert(e == nil)
+    return r
+}
+
+// v が s か（nil は偽）
+func is(v string?, s string) bool {
+    if v == nil {
+        return false
+    }
+    return v == s
+}
+
+func TestCookie() {
+    r := rq("GET / HTTP/1.1\r\nHost: x\r\nCookie: a=1; sid=\"ab cd\" ;  b = 2;flag; Sid=up\r\nCookie: c=3\r\n\r\n")
+    assert(is(Cookie(r, "a"), "1"))
+    assert(is(Cookie(r, "sid"), "ab cd"))
+    assert(is(Cookie(r, "Sid"), "up"))
+    assert(is(Cookie(r, "b"), "2"))
+    assert(is(Cookie(r, "c"), "3"))
+    assert(Cookie(r, "flag") == nil)
+    assert(Cookie(r, "SID") == nil)
+    assert(Cookie(r, "") == nil)
+    e := rq("GET / HTTP/1.1\r\nHost: x\r\n\r\n")
+    assert(Cookie(e, "a") == nil)
+    // 空の値・= だけ
+    z := rq("GET / HTTP/1.1\r\nHost: x\r\nCookie: a=; =b; c=\"\"\r\n\r\n")
+    assert(is(Cookie(z, "a"), ""))
+    assert(is(Cookie(z, "c"), ""))
+}
+
+func TestCredentialHeaders() {
+    r := rq("GET / HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer t0k\r\nProxy-Authorization: Basic eA==\r\nCookie: a=1\r\nAccept: */*\r\n\r\n")
+    assert(Header(r, "authorization") == nil)
+    assert(Header(r, "Authorization") == nil)
+    assert(Header(r, "PROXY-AUTHORIZATION") == nil)
+    assert(Header(r, "cookie") == nil)
+    assert(is(Header(r, "accept"), "*/*"))
+    assert(is(Header(r, "host"), "x"))
+    assert(is(Authorization(r), "Bearer t0k"))
+    assert(Authorization(rq("GET / HTTP/1.1\r\nHost: x\r\n\r\n")) == nil)
+}
+
+func TestHeaderList() {
+    r := rq("GET / HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer t0k\r\nX-A: 1\r\ncookie: a=1\r\nx-a:  2 \r\nACCEPT: */*\r\nProxy-Authorization: Basic eA==\r\nx-empty:\r\n\r\n")
+    l := HeaderList(r)
+    assert(len(l) == 5)
+    assert(l[0].name == "host" && l[0].value == "x")
+    assert(l[1].name == "x-a" && l[1].value == "1")
+    assert(l[2].name == "x-a" && l[2].value == "2")
+    assert(l[3].name == "accept" && l[3].value == "*/*")
+    assert(l[4].name == "x-empty" && l[4].value == "")
+    assert(len(HeaderList(rq("GET / HTTP/1.0\r\n\r\n"))) == 0)
+}
+
+// どの行にも一致しないCONNECTは501・asterisk-formはOPTIONSだけ（204。ほかは400）
+func TestUnroutedMethod() {
+    rs := []Route{Route{method: "GET", path: "/", handler: (r) => Text("ok"), middleware: []Middleware{}}}
+    assert(Dispatch(rs, rq("CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\n")).status == http.NotImplemented)
+    assert(Dispatch(rs, rq("GET * HTTP/1.1\r\nHost: x\r\n\r\n")).status == http.BadRequest)
+    assert(Dispatch(rs, rq("OPTIONS * HTTP/1.1\r\nHost: x\r\n\r\n")).status == http.NoContent)
+    assert(Dispatch(rs, rq("OPTIONS * HTTP/1.1\r\nHost: x\r\n\r\n")).headers == nil)
+    assert(Dispatch(rs, rq("POST / HTTP/1.1\r\nHost: x\r\n\r\n")).status == http.MethodNotAllowed)
+    assert(Dispatch(rs, rq("GET /x HTTP/1.1\r\nHost: x\r\n\r\n")).status == http.NotFound)
+}
+
+func TestCacheDefault() {
+    assert(cacheValue(Private{}) == "private")
+    assert(cacheValue(Private{maxAge: 60}) == "private, max-age=60")
+    assert(cacheValue(Private{maxAge: -1}) == "private, max-age=0")
+    assert(cacheValue(Shared{maxAge: 60}) == "public, max-age=60")
+    assert(cacheValue(Shared{maxAge: 60, sMaxAge: 600}) == "public, max-age=60, s-maxage=600")
+    h := string(respHead(Text("x"), true, false, 0)) catch ""
+    assert(h == "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nCache-Control: private\r\nContent-Length: 1\r\n\r\n")
+    n := string(respHead(Response{status: http.OK, contentType: "", body: []byte{}, cache: NoStore{}}, true, false, 0)) catch ""
+    assert(n == "HTTP/1.1 200 OK\r\nCache-Control: no-store\r\nContent-Length: 0\r\n\r\n")
+}
+
+func TestRouteCache() {
+    rs := []Route{
+        Route{method: "GET", path: "/a", handler: (r) => Text("a"), middleware: []Middleware{}, cache: Fresh{maxAge: 60}},
+        Route{method: "GET", path: "/b", handler: (r) => Response{status: http.OK, contentType: "", body: []byte{}, cache: NoStore{}}, middleware: []Middleware{}, cache: Fresh{maxAge: 60}},
+        Route{method: "GET", path: "/c", handler: (r) => Text("c"), middleware: []Middleware{}},
+        Route{method: "GET", path: "/d", handler: (r) => Status(http.NotFound), middleware: []Middleware{}, cache: Fresh{maxAge: 60}}}
+    assert(cacheValue(Dispatch(rs, rq("GET /a HTTP/1.1\r\nHost: x\r\n\r\n")).cache) == "max-age=60")
+    assert(cacheValue(Dispatch(rs, rq("GET /b HTTP/1.1\r\nHost: x\r\n\r\n")).cache) == "no-store")
+    assert(cacheValue(Dispatch(rs, rq("GET /c HTTP/1.1\r\nHost: x\r\n\r\n")).cache) == "private")
+    // 404には行の方針をコピーしない
+    assert(cacheValue(Dispatch(rs, rq("GET /d HTTP/1.1\r\nHost: x\r\n\r\n")).cache) == "private")
+    // Mount はルートの cache を保つ
+    m := Mount("/p", rs, []Middleware{})
+    assert(cacheValue(Dispatch(m, rq("GET /p/a HTTP/1.1\r\nHost: x\r\n\r\n")).cache) == "max-age=60")
+}
+
+func TestUnstated() {
+    // ルートの行のUnstatedはCache-Controlの行を書かない（一般のパス・圧縮のパスとも）・既定と他の行は不変
+    rs := []Route{
+        Route{method: "GET", path: "/u", handler: (r) => Text("u"), middleware: []Middleware{}, cache: Unstated{}},
+        Route{method: "GET", path: "/d", handler: (r) => Text("d"), middleware: []Middleware{}},
+    }
+    u := Dispatch(rs, rq("GET /u HTTP/1.1\r\nHost: x\r\n\r\n"))
+    assert(cacheLine(u.cache) == "")
+    h := string(respHead(u, true, false, 0)) catch ""
+    assert(h == "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 1\r\n\r\n")
+    g := string(respHead(u, true, false, 2)) catch ""
+    assert(!strings.Contains(g, "Cache-Control"))
+    d := Dispatch(rs, rq("GET /d HTTP/1.1\r\nHost: x\r\n\r\n"))
+    assert(string(respHead(d, true, false, 0)) catch "" == "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nCache-Control: private\r\nContent-Length: 1\r\n\r\n")
+}
+
+// 実行時にSet-Cookieと組み合わせない方針の集合（storedPolicy）は、`@stored` と `@shared` のvariantと同じ
+// （analyzerが宣言から作る集合はscripts/secretdump.shのstdの表 = testdata/secretdump/origin_std.txtのstored / sharedの行）
+func TestStoredPolicy() {
+    assert(!storedPolicy(nil))
+    assert(storedPolicy(Revalidate{}))
+    assert(storedPolicy(Fresh{maxAge: 60}))
+    assert(storedPolicy(Shared{maxAge: 60}))
+    assert(storedPolicy(Unstated{}))
+    assert(!storedPolicy(Private{}))
+    assert(!storedPolicy(NoStore{}))
+}

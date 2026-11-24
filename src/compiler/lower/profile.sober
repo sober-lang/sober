@@ -1,0 +1,348 @@
+package lower
+
+import "std/iter"
+
+// 熱さのプロファイル（`sober build --profile=<file>`・開発用の `--cold-emit`・`--blkmap`）。プロファイルはx86の吐く順にだけ効く:
+// 冷たいと分かったブロックを、割り当ての順（位置の番号・区間・割り当て）を変えずに、吐く順で関数の末尾の冷たい区画の前へ寄せる（xEmitOrder）。
+// 出力 = f(ソース, コンパイラ, プロファイル)。プロファイルの行は関数の鍵（xFnKeys）と指紋（x86のcfgに依らないβの鍵 — pfFinger）で引き、
+// 指紋が合わない関数には使わない（静的な判定のまま）。誤ったブロックを冷たいとすることは起きないが、ソースやコンパイラの変更で
+// 黙って効かなくなる（効いている割合は scripts/profcov.sh が見る）
+//   text = プロファイルのファイルの中身（空 = 読まない）・cold = 静的に冷たいループの中のブロックも寄せる（吐く順の分離の検証用）・
+//   blkmap = 関数の鍵・指紋とブロックの番地の表を標準出力へ（scripts/profgen.sh が読む — SOBER_WORKERS=1で）
+type Prof struct {
+    on bool
+    text []byte
+    cold bool
+    blkmap bool
+}
+
+func ProfOff() Prof {
+    return Prof{on: false, text: []byte{}, cold: false, blkmap: false}
+}
+
+func ProfOf(text []byte, cold bool, blkmap bool) Prof {
+    return Prof{on: len(text) > 0 || cold || blkmap, text: text, cold: cold, blkmap: blkmap}
+}
+
+// プロファイルのファイルの1行目
+const ProfHeader = "sober-profile 1"
+
+// 指紋の種（x86のcfgの正準形の代わり — `--layout` などの配置のオプションに依らず、同じ関数は同じ指紋）
+const PRF_S1 = 7046029254386353131
+const PRF_S2 = -5403634167711393303
+
+// 印の表（st.xPf — x86の群の子へcfgの末尾で渡す）: [フラグ, 関数の数nf, 位置0 … 位置nf, ブロックの番号…]。関数iの冷たいブロック =
+// 番号の列の [位置i, 位置i+1)。フラグ: 1 = 静的に冷たいループの中のブロックも寄せる・2 = ブロックの番地の表を出す。オフなら空
+const PRF_COLD = 1
+const PRF_MAP = 2
+
+// プロファイルの行: f <指紋1> <指紋2> <数> <ブロックの番号>… <関数の鍵>（鍵は行末 — 空白を含みうる）。同じ鍵の行が2つ以上あれば、その鍵は使わない
+type PfTab struct {
+    idx map[string]int
+    fp1 []int
+    fp2 []int
+    at []int
+    ids []int
+}
+
+func pfParse(b []byte) PfTab {
+    mut idx := mut map[string]int{}
+    mut fp1 := mut []int{}
+    mut fp2 := mut []int{}
+    mut at := mut []int{0}
+    mut ids := mut []int{}
+    n := len(b)
+    mut i := 0
+    while i < n {
+        mut j := i
+        while j < n && b[j] != '\n' {
+            j += 1
+        }
+        if j - i > 2 && b[i] == 'f' && b[i + 1] == ' ' {
+            a1, n1 := pfInt(b, i + 2, j)
+            a2, n2 := pfInt(b, n1, j)
+            c, n3 := pfInt(b, n2, j)
+            mut p := n3
+            for q <- iter.Range(0, c) {
+                v, np := pfInt(b, p, j)
+                ids = append(ids, v)
+                p = np
+            }
+            key := string(b[p:j]) catch ""
+            if idx[key] == nil {
+                idx[key] = len(fp1)
+            } else {
+                idx[key] = -1
+            }
+            fp1 = append(fp1, a1)
+            fp2 = append(fp2, a2)
+            at = append(at, len(ids))
+        }
+        i = j + 1
+    }
+    return PfTab{idx: freeze(idx), fp1: freeze(fp1), fp2: freeze(fp2), at: freeze(at), ids: freeze(ids)}
+}
+
+// b[from:to] の頭の10進の整数（符号つき）と、その後ろの空白を飛ばした位置
+func pfInt(b []byte, from int, to int) (int, int) {
+    mut i := from
+    mut neg := false
+    if i < to && b[i] == '-' {
+        neg = true
+        i += 1
+    }
+    mut v := 0
+    while i < to && b[i] >= '0' && b[i] <= '9' {
+        v = v * 10 + int(b[i]) - 48
+        i += 1
+    }
+    while i < to && b[i] == ' ' {
+        i += 1
+    }
+    r := if neg { 0 - v } else { v }
+    return r, i
+}
+
+// プロファイルのファイルの形の検査: 形の崩れた最初の行の番号（1から。1行目 = ProfHeader）。崩れが無ければ0。
+// 2行目以降の空でない行は `f <指紋1> <指紋2> <数> <ブロックの番号>… <関数の鍵>`（整数は10進・空白1つで区切る・鍵は行の残りで空でない）
+func ProfBadLine(b []byte) int {
+    hd := bytes(ProfHeader)
+    n := len(b)
+    mut i := 0
+    mut ln := 1
+    while i < n {
+        mut j := i
+        while j < n && b[j] != '\n' {
+            j += 1
+        }
+        ok := if ln == 1 { j - i == len(hd) && pfSame(b, i, hd) } else { j == i || pfLineOk(b, i, j) }
+        if !ok {
+            return ln
+        }
+        i = j + 1
+        ln += 1
+    }
+    return if n == 0 { 1 } else { 0 }
+}
+
+// b[i:] が h で始まるか
+func pfSame(b []byte, i int, h []byte) bool {
+    mut ok := i + len(h) <= len(b)
+    for k <- iter.Range(0, len(h)) {
+        ok = ok && b[i + k] == h[k]
+    }
+    return ok
+}
+
+// b[i:j] がプロファイルの行の形か
+func pfLineOk(b []byte, i int, j int) bool {
+    if j - i < 2 || b[i] != 'f' || b[i + 1] != ' ' {
+        return false
+    }
+    mut p := i + 2
+    mut c := 0
+    mut k := 0
+    // 指紋2つと数、続いて数の分のブロックの番号（どれも整数の後ろに空白1つ）
+    while k < 3 + c {
+        e := pfNumEnd(b, p, j, k < 2)
+        if e < 0 || e >= j || b[e] != ' ' {
+            return false
+        }
+        if k == 2 {
+            cv, _ := pfInt(b, p, e)
+            c = cv
+        }
+        p = e + 1
+        k += 1
+    }
+    return p < j
+}
+
+// b[from:to] の頭の10進の整数（negOk なら '-' を許す）の終わりの位置。数字が無ければ -1
+func pfNumEnd(b []byte, from int, to int, negOk bool) int {
+    mut i := from
+    if negOk && i < to && b[i] == '-' {
+        i += 1
+    }
+    s := i
+    while i < to && b[i] >= '0' && b[i] <= '9' {
+        i += 1
+    }
+    return if i == s || i - s > 19 { -1 } else { i }
+}
+
+// 印の表を組む（凍結の前 — 鍵と指紋はxModuleが組む）: fk = 関数の鍵（frecsの順）・fp = 指紋（関数ごとに2ワード）。
+// 指紋の合った関数の数を st.pfHit に・プロファイルに行のある関数の数を st.pfRows に
+func pfMarks(st mut St, fk [][]byte, fp []int, nf int) []int {
+    p := st.xProf
+    mut out := mut []int{(if p.cold { PRF_COLD } else { 0 }) + (if p.blkmap { PRF_MAP } else { 0 }), nf}
+    tb := pfParse(p.text)
+    mut sel := mut []int{}
+    mut hit := 0
+    for i <- iter.Range(0, nf) {
+        r0 := tb.idx[string(fk[i]) catch ""]
+        mut r := -1
+        if r0 != nil {
+            r = r0
+        }
+        if r >= 0 && tb.fp1[r] == fp[2 * i] && tb.fp2[r] == fp[2 * i + 1] {
+            sel = append(sel, r)
+            hit += 1
+        } else {
+            sel = append(sel, -1)
+        }
+    }
+    st.pfHit = hit
+    st.pfRows = len(tb.fp1)
+    mut pos := 0
+    for i <- iter.Range(0, nf) {
+        out = append(out, pos)
+        if sel[i] >= 0 {
+            pos += tb.at[sel[i] + 1] - tb.at[sel[i]]
+        }
+    }
+    out = append(out, pos)
+    for i <- iter.Range(0, nf) {
+        if sel[i] >= 0 {
+            for q <- iter.Range(tb.at[sel[i]], tb.at[sel[i] + 1]) {
+                out = append(out, tb.ids[q])
+            }
+        }
+    }
+    return freeze(out)
+}
+
+// 関数（frecsの添字i）の冷たいブロックの番号の列の [始め, 終わり)（印の表の中の位置）。表が空なら [0, 0)
+func pfRange(pf []int, i int) (int, int) {
+    if len(pf) < 2 || i >= pf[1] {
+        return 0, 0
+    }
+    base := 3 + pf[1]
+    return base + pf[2 + i], base + pf[3 + i]
+}
+
+// 吐く順だけを並べ替える（割り当ての後・吐く前）: 印のブロック（プロファイルの冷たいブロック・PF_COLDなら静的に冷たいループの中のブロック）を、
+// 熱い部分の後ろ・末尾の冷たい区画の前へ、元の相対順のまま寄せる。位置の番号（bpos）・区間・割り当ては変えない — 吐く側は値の置き場所を
+// 位置で引く（xEmitBlk）ので、どの順で吐いても同じ機械語のブロックになり、変わるのは落ちる先と飛びだけ。
+// 割り当ての順そのものを並べ替える形は棄てた（docs/regalloc.md 3.1節 — 合流の仮引数の合体が崩れる）。
+// 入口のブロックと、既に末尾の区画にあるブロックは動かさない。吐く順の添字で持つ表（ldep・cold・ループの範囲lpR）も並べ替える
+func xEmitOrder(st mut St, e mut xF, fi int) {
+    pf := st.xPf
+    n := e.norder
+    mut mv := mut []int{}
+    xFill(mut mv, e.nb, 0)
+    mut any := false
+    lo, hi := pfRange(pf, fi)
+    for q <- iter.Range(lo, hi) {
+        b := pf[q]
+        if b >= 0 && b < e.nb && e.bpos[b] >= 0 && e.bpos[b] < e.c0 && b != e.order[0] {
+            mv[b] = 1
+            any = true
+        }
+    }
+    if (pf[0] & PRF_COLD) != 0 {
+        for k <- iter.Range(1, n) {
+            bi := e.order[k]
+            if e.cold[k] == 1 && k < len(e.ldep) && e.ldep[k] > 0 && e.bpos[bi] < e.c0 {
+                mv[bi] = 1
+                any = true
+            }
+        }
+    }
+    if !any {
+        return
+    }
+    // 熱い部分（0）・寄せるブロック（1）・末尾の区画（2）の順に（末尾の区画は元から吐く順の最後に固まっている）
+    mut ord := mut []int{}
+    mut ld := mut []int{}
+    mut cd := mut []int{}
+    for pass <- iter.Range(0, 3) {
+        for k <- iter.Range(0, n) {
+            bi := e.order[k]
+            cls := if e.bpos[bi] >= e.c0 { 2 } else if mv[bi] == 1 { 1 } else { 0 }
+            if cls == pass {
+                ord = append(ord, bi)
+                ld = append(ld, if k < len(e.ldep) { e.ldep[k] } else { 0 })
+                cd = append(cd, e.cold[k])
+            }
+        }
+    }
+    mut kNew := mut []int{}
+    xFill(mut kNew, e.nb, -1)
+    for k <- iter.Range(0, n) {
+        kNew[ord[k]] = k
+    }
+    // ループの範囲 [頭, 体の最後]: 頭を寄せたループ（ループ全体が冷たい）は範囲を消す。体の最後 = 範囲の中で寄せなかったブロックの新しい添字の最大
+    for j <- iter.Range(0, len(e.lpR) / 2) {
+        h := e.lpR[2 * j]
+        hi2 := e.lpR[2 * j + 1]
+        if h >= 0 && h < n {
+            hb := e.order[h]
+            if mv[hb] == 1 {
+                e.lpR[2 * j] = -1
+                e.lpR[2 * j + 1] = -1
+            } else {
+                mut nh := kNew[hb]
+                for k <- iter.Range(h, if hi2 < n { hi2 + 1 } else { n }) {
+                    bi := e.order[k]
+                    if mv[bi] == 0 && e.bpos[bi] < e.c0 && kNew[bi] > nh {
+                        nh = kNew[bi]
+                    }
+                }
+                e.lpR[2 * j] = kNew[hb]
+                e.lpR[2 * j + 1] = nh
+            }
+        }
+    }
+    e.order = ord
+    e.ldep = ld
+    e.cold = cd
+    e.etl = mv
+}
+
+// ブロック（番号）を吐く順で末尾の区画に吐くか（元の末尾の区画か、xEmitOrderが寄せたブロック）
+func xIsTail(e mut xF, bi int) bool {
+    return e.bpos[bi] >= e.c0 || (len(e.etl) > 0 && e.etl[bi] == 1)
+}
+
+// ブロックの番地の表（`--blkmap`）: `blk <関数の添字> <ブロックの番号> <入口からの位置>` を吐く順に・`blkend <関数の添字> <ブロックの終わりの位置>`
+// （終わりの後ろはゼロ除算の死と外置きの辺のコピー）。関数の鍵と指紋は親が `blkfn` で出す（xModuleFrozen）
+func xBlkMap(e mut xF, fi int, entry int, bend int) {
+    for k <- iter.Range(0, e.norder) {
+        bi := e.order[k]
+        println("blk ${fi} ${bi} ${e.blockAt[bi] - entry}")
+    }
+    println("blkend ${fi} ${bend - entry}")
+}
+
+// n個の0（指紋を計算しないビルド — 鍵の表が無い — ではどの行にも合わない）
+func pfZeros(n int) []int {
+    mut z := mut []int{}
+    for k <- iter.Range(0, n) {
+        z = append(z, 0)
+    }
+    return freeze(z)
+}
+
+// β2の鍵（関数ごとに2ワード — ckBeta）に、その関数に当てたプロファイルの切片（冷たいブロックの番号の列）を混ぜる（bcPreX86 —
+// 格納場所を使うプロファイルのビルド）。切片が空の関数・β2の鍵が無い関数（[0, 0]）の鍵は変えない: プロファイルを持たないビルドと
+// 格納場所を共有でき、プロファイルの当たる関数だけが別の項目になる
+func pfKey(beta []int, pf []int, nf int) []int {
+    mut out := mut []int{}
+    for i <- iter.Range(0, nf) {
+        mut a := beta[2 * i]
+        mut c := beta[2 * i + 1]
+        lo, hi := pfRange(pf, i)
+        if hi > lo && (a != 0 || c != 0) {
+            a = ckM1(ckM1(a, PRF_S1), hi - lo)
+            c = ckM2(ckM2(c, PRF_S2), hi - lo)
+            for q <- iter.Range(lo, hi) {
+                a = ckM1(a, pf[q])
+                c = ckM2(c, pf[q])
+            }
+        }
+        out = append(out, a)
+        out = append(out, c)
+    }
+    return freeze(out)
+}

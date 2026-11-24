@@ -26,7 +26,12 @@ const PS_MAXB = 9     // task の使用量（終わりの時点の自前のス�
 const PS_SUMB = 10    // その和
 const PS_HWMAX = 11   // taskの計上済みの上限の和の高水位の最大
 const PS_CHGMAX = 12  // taskの計上済みの上限の和の最大（低速パスの時点）
+const PS_TRIM = 13    // 寝続けている接続のtaskのエリアの死んだページを返した回数（rdl.sober rdlTrim）
+const PS_PARKHW = 14  // そのときの待ちの深さ（持っているエリアの頂上 − 退避したrsp）の最大（B。待っている接続が持つスタックのページ数の検査: stackcheck）
 const PS_VA = 16      // 予約したスロットの本数（VA = 本数 × スロットの大きさ）
+// 写像の失敗の模造（開発用の環境変数 SOBER_MAPCAP — 0 = 無し）: 新しいチャンクの数（PS_TCBMAP）がこれに届いたら、以後のチャンクのガードの mprotect を
+// 写像の数の上限（vm.max_map_count）に届いたのと同じ失敗として扱う（scripts/mapcap.sh）
+const PS_MAPCAP = 17
 const PS_SITE = 24    // spawn の点 k（1 始まり — 0 = 走らせ直し）の [task の数, 使用量の最大] = PS_SITE + 2k・+1
 // @rt.pbuf（入口の読みの作業域 — [終わりの添字, 読んだバイト…]・経路は PB_PATH から）
 const PB_END = 0
@@ -198,6 +203,8 @@ func buildPstatDump(st mut St) {
     pfield(mut st, "win_rel", load(mut st, ps, PS_WINREL))
     pfield(mut st, "stack_hw", load(mut st, ps, PS_STACKHW))
     pfield(mut st, "area_far", load(mut st, ps, PS_AFAR))
+    pfield(mut st, "trim", load(mut st, ps, PS_TRIM))
+    pfield(mut st, "park_hw", load(mut st, ps, PS_PARKHW))
     pfield(mut st, "ts_chain", load(mut st, ps, PS_TSCHAIN))
     call(mut st, st.rtPchar, list1(mut st, iconst(mut st, '\n')))
     // 入場の台帳: 入場・縮退・超過の数・計上の高水位・task の数の天井・終わりの計上（全部返れば 0）

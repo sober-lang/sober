@@ -1,4 +1,4 @@
-@@full	4c10bda8af1fb147	7730	227954
+@@full	c0bc8bb68a56cc51	7793	230065
 @head	34f3dbf85056cbd0	0	467
 const defaultMaxBody	5dd8ec99032e15d0	5	176
 const defaultRedirects	7c4ceeccf01adb7c	1	57
@@ -25,9 +25,9 @@ func lowerStr	b6bae7138b56ddc2	25	926
 func nilStr	3ec123d35cbe8c22	4	177
 func noErr	89e255c670469c9e	4	175
 func noResponse	6b8d15b6ca5ca4c6	9	516
-func once	b9351353fc1ae463	247	8544
+func once	52329d23b385b223	249	8601
 func outgoingOf	007030dcb9767b99	42	1602
-func params	69314bb8089c62dd	36	1370
+func params	c5d6446369c7125b	46	1705
 func policyOf	81a95fcf2d0baa3d	13	503
 func refusedStatus	6af40a78cadc6458	10	514
 func resolve	7f1c2ef766dc3f7f	180	6249

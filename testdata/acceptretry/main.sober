@@ -1,0 +1,42 @@
+package main
+
+// accept の一時的な失敗の受け直しの題材（scripts/acceptretry.sh）: 平文の HTTP を 127.0.0.1 の空きのポートで受け、"ready <port>" を出した後、
+// 200 ms ごとに Ledger の全部の行の acceptRetry の和を "retry <n>" で出して、止められるまで走る。Serve が返ったら "serve returned" を出して走り続ける
+// （ゲートが、受け付けが止まったことを新しい接続の拒否で見る）
+
+import "std/http/server"
+import "std/io"
+import "std/net"
+import "std/os"
+import "std/task"
+
+func route(r http.server.Request) http.server.Response {
+    return http.server.Text("t")
+}
+
+func report() int {
+    while true {
+        mut n := 0
+        for p <- task.Ledger().pools {
+            n += p.acceptRetry
+        }
+        _ = io.WriteStdout(bytes("retry ${n}\n"))
+        os.Sleep(200)
+    }
+    return 0
+}
+
+func main() {
+    _, _ = task.Run((s task.Scope) => {
+        _ = task.Spawn(s, () => report())
+        e := net.Listen("127.0.0.1:0", (l) => {
+            _ = io.WriteStdout(bytes("ready ${net.Port(l)}\n"))
+            _ = net.Serve(l, (c net.Conn) => http.server.ServeConn(c, route), conns: 100000)
+            _ = io.WriteStdout(bytes("serve returned\n"))
+        })
+        if e != nil {
+            println("listen failed")
+        }
+        0
+    })
+}

@@ -1503,9 +1503,11 @@ func bindsOf(st mut S, s NodeRef, eb0 int, ef int) int {
     }
     if lenL(mut st, names) > 1 && lenL(mut st, vals) == 1 {
         // 多値呼び出しの分解 `x, y := g(...)`: 成分ごとに結果の型を呼び手の座標で読む（stmts.sober の束縛と同じ — calleeRes・callResultTop）
-        cr := calleeRes(mut st, latN(mut st, vals, 0), eb0)
+        // if・switchの式は、分岐の末尾の呼び出しで結果の型式を読み、型は式全体の組を成分に割る（stmts.sober と同じ）
+        ra := multiArm(mut st, latN(mut st, vals, 0))
+        cr := calleeRes(mut st, ra, eb0)
         // `r, err := task.Run(…)`: 総称の多値なので結果の型式からは読めない — 呼び出しの型（parTy の組 (T, error?)）を成分に割る
-        whole := if lenL(mut st, names) == 2 && isParScope(mut st, latN(mut st, vals, 0), eb0) { computeTy(mut st, latN(mut st, vals, 0), eb0, ef) } else { TyRef(-1) }
+        whole := if (lenL(mut st, names) == 2 && isParScope(mut st, latN(mut st, vals, 0), eb0)) || ra != latN(mut st, vals, 0) { computeTy(mut st, latN(mut st, vals, 0), eb0, ef) } else { TyRef(-1) }
         mut eb := eb0
         for j <- iter.Range(0, lenL(mut st, names)) {
             has := cr.rtys != -1 && j < lenL(mut st, cr.rtys)
@@ -1518,10 +1520,12 @@ func bindsOf(st mut S, s NodeRef, eb0 int, ef int) int {
                 ty = if err != nil { TyRef(-1) } else { callResultTop(mut st, rt) }
                 sty = SurfaceOf(mut st, cr.pk, latN(mut st, cr.rtys, j))
             }
-            if whole != -1 && tg(mut st, whole) == TPr {
+            if ra != latN(mut st, vals, 0) && whole != -1 && tg(mut st, whole) == TPr {
+                ty = prodAt(mut st, whole, j, lenL(mut st, names))
+            } else if whole != -1 && tg(mut st, whole) == TPr {
                 ty = if j == 0 { tLeft(mut st, whole) } else { tRight(mut st, whole) }
             } else if has && cr.generic && ty == -1 {
-                ty = genericResTy(mut st, latN(mut st, vals, 0), eb0, ef, j, s)
+                ty = genericResTy(mut st, ra, eb0, ef, j, s)
             }
             eb = bind(mut st, eb, latS(mut st, names, j), 0, nodeOf(mut st, s).b != 0, d, ty, el, 0, -1, false, sty)
         }

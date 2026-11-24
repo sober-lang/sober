@@ -1,0 +1,2 @@
+sober: load error at examples/json_decode_neg_typearg.sober:16:21: json.Decode / DecodeWith need the type argument because the type appears only in the result, json.Decode[T](doc, node); json.Encode / EncodeWith are only called directly, json.Encode(value)
+exit=1

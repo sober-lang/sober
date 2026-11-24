@@ -1,0 +1,97 @@
+package main
+
+// 多値の分岐の式（language.md 2節「a, b := if ... else ...」）: if・else if・switchの式の分岐の末尾に多値の呼び出しを置き、
+// 分解点（多値の束縛・return）まで流す。分岐の値は要素ごとに合流する（要素の型は分岐どうしで同じ）
+
+import "std/iter"
+
+func one() (int, string) {
+    return 1, "one"
+}
+
+func two() (int, string) {
+    return 2, "two"
+}
+
+func pair(a int, b int) (int, int) {
+    return a, b
+}
+
+func found(k int) (int, string?) {
+    return k, "hit"
+}
+
+func missing(k int) (int, string?) {
+    return k, nil
+}
+
+func cells(n int) ([]int, int) {
+    mut xs := mut []int{}
+    for i <- iter.Range(0, n) {
+        xs = append(xs, i * 10)
+    }
+    return freeze(xs), n
+}
+
+// 結果が2つの関数の return if
+func pick(c bool) (int, string) {
+    return if c { one() } else { two() }
+}
+
+// else if の連なり
+func grade(n int) (int, string) {
+    return if n < 0 { pair2(0, "neg") } else if n == 0 { pair2(1, "zero") } else { pair2(2, "pos") }
+}
+
+func pair2(a int, b string) (int, string) {
+    return a, b
+}
+
+// switchの式（defaultあり）
+func name(k int) (int, int) {
+    return switch k {
+    case 1: pair(1, 10)
+    case 2: pair(2, 20)
+    default: pair(0, 0)
+    }
+}
+
+func show(s string?) string {
+    return if s != nil { s } else { "nil" }
+}
+
+func main() {
+    c := true
+    // 多値の束縛
+    n, s := if c { one() } else { two() }
+    println(n, s)
+    m, t := pick(false)
+    println(m, t)
+    // int と int の対
+    a, b := if !c { pair(1, 2) } else { pair(3, 4) }
+    println(a, b)
+    // switch
+    x, y := switch n {
+    case 1: pair(5, 6)
+    default: pair(7, 8)
+    }
+    println(x, y)
+    for k <- iter.Range(0, 3) {
+        p, q := name(k)
+        println(p, q)
+    }
+    ks := []int{0 - 1, 0, 1}
+    for k <- ks {
+        g, w := grade(k)
+        println(g, w)
+    }
+    // T? の要素（値のある分岐とnilを返す分岐）
+    for k <- iter.Range(0, 2) {
+        i, o := if k == 0 { found(k) } else { missing(k) }
+        println(i, show(o))
+    }
+    // 分岐の中で作ったsliceを外へ出す
+    base := 2
+    xs, cnt := if c { cells(base + 1) } else { cells(base) }
+    println(len(xs), cnt, xs[2])
+}

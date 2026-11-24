@@ -67,6 +67,8 @@ func switchExpr(st mut St, sw desugar.NodeRef) (Val, error?) {
     at := sw
     cw := st.swW - 1
     st.swW = 0
+    mt := st.multiTail
+    st.multiTail = false
     subjects := lA(nodeOf(mut st, sw))
     cases := lB(nodeOf(mut st, sw))
     dflt := nC(nodeOf(mut st, sw))
@@ -127,6 +129,7 @@ func switchExpr(st mut St, sw desugar.NodeRef) (Val, error?) {
             declareNew(mut st, hgetS(mut st, b + 1), LVal, desugar.HeapGet(mut st.d, b + 2), desugar.HeapGet(mut st.d, b + 3), c)?
             b = desugar.HeapGet(mut st.d, b)
         }
+        st.multiTail = mt
         mut av := armTail(mut st, lA(nodeOf(mut st, nB(nodeOf(mut st, c)))))?
         popScope(mut st)
         // 期待型がbyte / named scalar なら、末尾が型なしの定数の分岐をそれに割り当てる（if式の分岐と同じ規則）
@@ -152,6 +155,7 @@ func switchExpr(st mut St, sw desugar.NodeRef) (Val, error?) {
         checkCover(mut st, sw, cty, t)?
     }
     if dflt != -1 {
+        st.multiTail = mt
         mut dv := armValue(mut st, lA(nodeOf(mut st, dflt)))?
         if cw >= 0 && cur(mut st) != -1 && armUntyped(mut st, dflt) && armFits(mut st, cw, dv.t, dflt) {
             dv = Val{t: cw, v: dv.v}
@@ -175,11 +179,24 @@ func switchExpr(st mut St, sw desugar.NodeRef) (Val, error?) {
         // switch の後ろを落とし、外れのブロックが終端なしで残る — Zig 版の時代からの穴。B-3 の検証器が拾った）
         rt := if t < 0 || isTag(mut st, t, TNever) { tNone(mut st) } else { t }
         t = joinType(mut st, t, rt, at)?
-        zv := if isScalar(mut st, rt) { iconst(mut st, 0) } else if isAggregate(mut st, rt) { newAgg(mut st, rt) } else { 0 }
+        zv := if isTag(mut st, rt, TMulti) { multiZero(mut st, rt) } else if isScalar(mut st, rt) { iconst(mut st, 0) } else if isAggregate(mut st, rt) { newAgg(mut st, rt) } else { 0 }
         endsAdd(mut st, ends, cur(mut st), rt, zv)
     }
     jt, jv := joinArms(mut st, ends, if t < 0 { tNone(mut st) } else { t })
     return Val{t: jt, v: jv}, nil
+}
+
+// 多値の型tの要素ごとのゼロ値の列（外れの分岐 — 単値の外れと同じ作り方）
+func multiZero(st mut St, t int) int {
+    ts := desugar.HeapGet(mut st.d, t + 1)
+    n := desugar.HeapGet(mut st.d, ts)
+    vs := listN(mut st, n)
+    for i <- iter.Range(0, n) {
+        et := desugar.HeapGet(mut st.d, ts + 1 + i)
+        z := if isScalar(mut st, et) { iconst(mut st, 0) } else if isAggregate(mut st, et) { newAgg(mut st, et) } else { 0 }
+        desugar.HeapSet(mut st.d, vs + 1 + i, z)
+    }
+    return vs
 }
 
 // 網羅の規則（check に揃える）: union の型パターンの switch は全 variant を覆うか `_` / default を持つ。

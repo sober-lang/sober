@@ -2191,4 +2191,72 @@ example : typecheck [] ∅ [] 0 0 0 [] [] (block (scope .int (letE (Expr.dnew 0 
   native_decide
 example : typecheck [] ∅ [] 0 0 0 [] [] (block (denter .int (lit 0))) = none := by native_decide
 
+/-! ## 接続の受けに混ざる子の合図（std専用の例外。language.md 11節）: 既存の構成子への符号化
+
+子（ストリームのtask）は自分の端点（SPSC）へ応答を送ってから、domainに入って合図（自分の番号）を書く。
+接続のtaskはdomainに入って合図を読み、その番号の子の端点から受ける。合図の並び = domainに入る順のオラクル。
+表層のAwait（状態 = 合図の列・when: 列が空でない）は、コアではdenter（whenが偽の分岐はunreach）なので、
+ここでは状態を最後の合図1つにし、オラクルを「子の合図の直後に接続が入る」並びに限って書く。
+新しい構成子もオラクルも足さず、`kahn_schedule`（どのオラクルを固定しても）の範囲に入る。 -/
+
+/-- 子の本体（var 0 = (送り端, domain)）: 値vを送り、合図nを書く -/
+def muxChild (v n : Int) : Expr :=
+  letE (send (fst (var 0)) (lit v))
+    (letE (denter .int (snd (var 1))) (letE (dexit (snd (var 2)) (lit n)) triv))
+
+/-- 接続の1回の待ち: 合図を読んで消し、その子の端点から受ける（i0 / i1 = 子0 / 子1の受け端の束縛の添字） -/
+def muxWait (d i0 i1 : Nat) (k : Expr) : Expr :=
+  letE (denter .int (var d))
+    (letE (dexit (var (d + 1)) (lit 0))
+      (letE (ite (cmp .eq (var 1) (lit 1)) (recvOr0 (snd (var (i0 + 2)))) (recvOr0 (snd (var (i1 + 2))))) k))
+
+/-- domain（鍵 ([], 0)）と子ごとの端点を作り、2人の子を生み、接続が2回待つ。値 = 1回目に受けた値 × 1000 + 2回目 -/
+def exMux : Expr :=
+  block (scope .int (letE (Expr.dnew 0 (lit 0) .int) (letE (newch 0 1 .int) (letE (newch 0 1 .int)
+    (letE (spawn (var 3) (pair (fst (var 1)) (var 2)) (muxChild 100 1))
+      (letE (spawn (var 4) (pair (fst (var 1)) (var 3)) (muxChild 200 2))
+        -- var: 0 = h1・1 = h0・2 = c1・3 = c0・4 = d
+        (muxWait 4 3 2
+          -- var: 0 = r1・3 = h1・4 = h0・5 = c1・6 = c0・7 = d
+          (muxWait 7 6 5
+            -- var: 0 = r2・3 = r1・6 = h1・7 = h0
+            (letE (join .unit (var 6)) (letE (join .unit (var 8))
+              (add (Expr.arith .mul (var 5) (lit 1000)) (var 2))))))))))))
+
+example : typecheck [] ∅ [] 0 0 0 [] [] exMux = some (sty .int) := by native_decide
+-- 合図の並び [子0, 接続, 子1, 接続]: どちらのスケジュールでも 100・200 の順に受ける
+example : taskDone (runAny [] false 800 (loadT exMux) (oraK [[0], [], [1], []])).1 =
+    Option.some (inl (.union .unit .int) (lit 100200)) := by native_decide
+example : taskDone (runAny [] true 800 (loadT exMux) (oraK [[0], [], [1], []])).1 =
+    Option.some (inl (.union .unit .int) (lit 100200)) := by native_decide
+-- 合図の並び [子1, 接続, 子0, 接続]: 観測が変わる — 非決定は合図の並び（録る入力）に閉じる
+example : taskDone (runAny [] false 800 (loadT exMux) (oraK [[1], [], [0], []])).1 =
+    Option.some (inl (.union .unit .int) (lit 200100)) := by native_decide
+example : taskDone (runAny [] true 800 (loadT exMux) (oraK [[1], [], [0], []])).1 =
+    Option.some (inl (.union .unit .int) (lit 200100)) := by native_decide
+
+
+/-! セルの宛先構築（allocAt）: 内側の block の mut 束縛のセルを外の region（0）に作ると、外のセルと一緒に
+anchor つきの呼び出しへ渡せる（mut の実引数の region は正確一致 — 最内の alloc では anchor 1 つに揃わない） -/
+/-- 2 つの mut 参照を受け、1 つ目へ 2 つ目の中身を書く関数 -/
+def cellCopyDef : Def :=
+  { param := .prod (.ref true 0 .int) (.ref true 0 .int), ret := .unit,
+    body := assign (fst (var 0)) (deref (snd (var 0))) }
+def exCellDest : Expr :=
+  block (letE (alloc true (lit 1))
+    (letE (block (letE (allocAt true 0 (lit 7)) (call 0 0 [] (pair (var 1) (var 0)))))
+      (deref (var 1))))
+example : typecheck [cellCopyDef] ∅ [] 0 0 0 [] [] exCellDest = some .int := by native_decide
+example : (stepN [cellCopyDef] 100 (load exCellDest) ∅).1 = .ret [] [] (lit 7) := by native_decide
+/-- 最内の alloc のセル（region 1）は anchor 0 の仮引数と一致しない（F-cky1 の拒否の形） -/
+example : typecheck [cellCopyDef] ∅ [] 0 0 0 [] []
+    (block (letE (alloc true (lit 1))
+      (block (letE (alloc true (lit 7)) (call 0 0 [] (pair (var 1) (var 0))))))) = none := by native_decide
+/-- 行き先は今の世界の region だけ（r < d） -/
+example : typecheck [] ∅ [] 0 0 0 [] [] (block (allocAt true 1 (lit 1))) = none := by native_decide
+/-- 格納型は region ≤ r だけを指す（内側の region の slice を外のセルに入れない） -/
+example : typecheck [] ∅ [] 0 0 0 [] [] (block (block (allocAt true 0 (mkslice false .int)))) = none := by native_decide
+/-- 共有 region（< b）には作れない -/
+example : typecheck [] ∅ [] 1 1 2 [] [] (allocAt true 0 (lit 1)) = none := by native_decide
+
 end FS.Examples

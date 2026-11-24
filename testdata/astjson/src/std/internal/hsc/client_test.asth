@@ -1,9 +1,11 @@
-@@full	dc3aee8115900272	11561	370871
+@@full	43bbd22e90ff4c22	13021	409631
 @head	75417962907afe02	0	623
 const Certs	e5e1400ec76f696e	3	135
+const EcCerts	2a44e0f71ce32545	3	137
 const testNow	d2b26fe543036baa	1	56
 func TestCertFailures	f323f7d3cb6a702b	44	1519
 func TestDowngradeSentinel	9eda80a590f274c5	180	6018
+func TestEcdsaServer	f5a0008c35ae1e14	157	5552
 func TestHandshakeAndData	5b3f1dbb1a5e4b13	157	5308
 func TestHelloRetry	995b0af481494453	140	4697
 func TestHelloRetryP256	c7af72fa735aa6cd	349	11473
@@ -12,6 +14,8 @@ func TestTamperedFlight	63650df3c0da125f	90	3108
 func alertDesc	dd38ae93fb252c9c	17	811
 func certCause	69727032c7b175ab	27	1377
 func certFile	19349d26f74fa30a	15	564
+func ecFile	043495b5cdadbbb8	15	564
+func ecParams	74de1494bd3d60b5	72	2673
 func ext	0c40f34bd2734fa4	29	1015
 func failWith	97754ec677224f70	47	1854
 func fetch	c765ebe8550cf65b	279	9326

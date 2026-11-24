@@ -1,9 +1,10 @@
-@@full	be075c9991d12398	1577	43813
-@head	c9d8d2fb806a8653	0	249
+@@full	426d151fbba689bc	2045	57234
+@head	2fde6c32c07b228c	0	312
 const Certs	e5e1400ec76f696e	3	135
-func echo	a2b43adab9f1bed3	20	691
+func echo	c480f36eca271d01	20	691
 func file	73e474c5e72f1c93	16	576
-func main	29334fccd8a4511e	139	4690
-func once	7452865930b8ce23	35	1207
-func recvShow	6cb75925aabdd18f	16	725
+func half	a0d7d6a8c649cde7	19	718
+func main	6fa332e126fc5e8d	172	5684
+func once	5fadd8cd56ad61ca	45	1545
+func recvShow	e8770df3e6b6cae7	26	1233
 func show	fb55864b7c3dc6c0	16	726

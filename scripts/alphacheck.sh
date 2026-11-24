@@ -19,6 +19,8 @@
 # 往復（--keep なし）では逆の ALPHA_POST_BACK も要る
 # ミューテーションの検査: REFS_MUTANT（1多い / 2少ない / 3綴り違い）を書き換えに渡す（REFS_NOPOSTCHECK=1も渡すと道具の検査を飛ばしてV1〜V4へ通す）。
 # ミューテーションのときの戻しはgitのindexから（往復の道具の改名は使わない — 壊れた木は国勢調査が通らない）
+# ゴールデンの並びを呼び手のロケールに依らせない
+export LC_ALL=C.UTF-8
 set -uo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$PWD

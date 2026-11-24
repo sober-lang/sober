@@ -1,10 +1,10 @@
-@@full	81a2e7558f4a5e9c	4019	117113
+@@full	e6703b857becd306	4637	135663
 @head	c15db5599e5aaf11	0	218
 func TestBodyMachine	f8b75d8f011b0502	98	3202
-func TestLocation	b92ececdc2c6992a	40	1466
+func TestLocation	60c4ff5876df958e	53	1936
 func TestRequestBytes	cb5d77dfc26ba401	48	1948
 func TestScanBad	a1aa693075e7000a	49	2015
 func TestScanSplits	ee9a8d99dc7b78ec	146	5165
-func TestTarget	ad4fb6d6f230dfc7	99	3503
+func TestTarget	b96bb59842851f2e	202	7068
 func bodyBy	ae082b08d6060e98	95	3380
 func feedBy	94a565dd4db5682c	115	3922

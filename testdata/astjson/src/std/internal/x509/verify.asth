@@ -1,5 +1,5 @@
-@@full	d590d1a03dd86413	14107	431378
-@head	18ef44d4906af2d6	0	422
+@@full	d65bb922c3887be4	12042	367245
+@head	97e420273e1eaf39	0	462
 const eConstr	aa5239b796545de6	1	47
 const eExpired	23da2911993d86d5	1	48
 const eMalformed	1daf73bc895d4a85	1	50
@@ -23,8 +23,7 @@ func digest	1ce95bacef229a0d	41	1502
 func dnsUnder	03020172a4e771a3	56	1956
 func ekuServer	87e5442c85e6b553	20	772
 func hasExt	fb134cfb1b1207d8	23	883
-func hex16	e855009860e8a9a6	78	2518
-func hostOk	2024be5467165ef7	70	2356
+func hostOk	08b9c99bdb3c6d62	82	2787
 func inPath	2f20768a217532f8	20	776
 func ipUnder	da59272f58e0a357	63	2037
 func issuedBelow	4157e4aaa0ac085c	33	1161
@@ -34,8 +33,6 @@ func label	6a074faa97fc2e7b	35	1638
 func linkOk	4543b9fdd7b4f02e	204	6733
 func nameMatch	6ec08ea911aebf0d	67	2311
 func namesOk	748e56c1f35b411d	110	3677
-func parseIP	1a81d2f9b27927dd	107	3524
-func parseIP6	081e2f640e6e3d32	185	6132
 func push	5c46bafdbe54fbb1	28	1054
 func rsaV15	175c258e406cfad1	197	6533
 func sigOk	de58e8b20f0348f8	145	4789

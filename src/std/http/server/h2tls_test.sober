@@ -1,0 +1,353 @@
+package server
+
+// TLSの上のHTTP/2の接続（ServeConnのproto: H2 — 受けはmux.RecvFromがTLSの状態を見る・送りはhelperがoutへ積み、送りの点でnet.Sendが暗号化する）。
+// 相手の役はALPNでh2を申し出て、平文の場合と同じ要求の列（h2tRequests）を暗号化して送り、応答を復号して読む
+
+import "std/http/client"
+import "std/net"
+import "std/os"
+import "std/strings"
+import "std/task"
+import "std/time"
+import "std/tls"
+import "std/internal/h2frame"
+import "std/internal/hpack"
+import "std/internal/hsc"
+import "std/internal/record"
+import "std/internal/x509"
+
+@embed("testdata/crypto/httparena-server.*")
+const h2lCerts = map[string]string{}
+
+func h2lFile(p string) string {
+    v := h2lCerts[p]
+    return if v != nil { v } else { "" }
+}
+
+func h2lCat(a []byte, b []byte) []byte {
+    mut o := mut []byte{}
+    for x <- a {
+        o = append(o, x)
+    }
+    for x <- b {
+        o = append(o, x)
+    }
+    return freeze(o)
+}
+
+func h2lChunk(c net.Conn) []byte {
+    return h2lChunkOr(c) catch []byte{}
+}
+
+func h2lChunkOr(c net.Conn) ([]byte, error?) {
+    mut out := []byte{}
+    for x <- net.Recv(c)? {
+        out = x
+        break
+    }
+    return h2lCat([]byte{}, out), nil
+}
+
+type h2lLink struct {
+    rec []byte
+    app []byte
+}
+
+// recordを1つ読んで復号する（平文はl.appの尾へ）。閉じたらfalse
+func h2lStep(c net.Conn, ch mut internal.hsc.Ch, p internal.hsc.CParams, l mut h2lLink) bool {
+    r := l.rec
+    rn := if len(r) >= 5 && len(r) >= 5 + (int(r[3]) << 8 | int(r[4])) { 5 + (int(r[3]) << 8 | int(r[4])) } else { 0 }
+    if rn == 0 {
+        more := h2lChunk(c)
+        if len(more) == 0 {
+            return false
+        }
+        l.rec = h2lCat(r, more)
+        return true
+    }
+    o, e := internal.hsc.FeedClient(mut ch, p, internal.record.At(r, 0, rn))
+    if e != nil {
+        return false
+    }
+    if len(o.send) > 0 {
+        _ = net.Send(c, o.send)
+    }
+    l.app = h2lCat(l.app, o.app)
+    l.rec = h2lCat([]byte{}, r[rn:len(r)])
+    return !o.closed
+}
+
+// 相手の役: handshake（ALPN h2）→ 要求の列 → want本のストリームが終わるまで読む。結果 = "alpn|sid:status:本文の長さ,…"（終わった順）
+func h2lTalk(c net.Conn, p internal.hsc.CParams, req []byte, want int) string {
+    h0, first := internal.hsc.StartClient(p)
+    mut ch := h0
+    mut l := h2lLink{rec: []byte{}, app: []byte{}}
+    _ = net.Send(c, first)
+    while !internal.hsc.ClientConnected(ch) {
+        if !h2lStep(c, mut ch, p, mut l) {
+            return "hs"
+        }
+    }
+    sreq := internal.hsc.ClientSeal(mut ch, req) catch []byte{}
+    _ = net.Send(c, sreq)
+    mut d := internal.hpack.Dec{}
+    internal.hpack.Init(mut d)
+    mut ids := mut []int{}
+    mut st := mut []int{}
+    mut bl := mut []int{}
+    mut res := "${internal.hsc.ClientAlpn(ch)}|"
+    mut done := 0
+    while done < want {
+        b := l.app
+        if len(b) >= 9 && len(b) >= 9 + internal.h2frame.Len(internal.h2frame.Head(b, 0)) {
+            f := internal.h2frame.Head(b, 0)
+            n := internal.h2frame.Len(f)
+            typ := internal.h2frame.Type(f)
+            sid := internal.h2frame.Sid(f)
+            mut k := 0
+            while k < len(ids) && ids[k] != sid {
+                k += 1
+            }
+            if k == len(ids) && sid != 0 {
+                ids = append(ids, sid)
+                st = append(st, 0)
+                bl = append(bl, 0)
+            }
+            if typ == internal.h2frame.Settings && !internal.h2frame.Has(f, internal.h2frame.Ack) {
+                mut ack := mut []byte{}
+                internal.h2frame.PutSettingsAck(mut ack)
+                _ = net.Send(c, internal.hsc.ClientSeal(mut ch, freeze(ack)) catch []byte{})
+            } else if typ == internal.h2frame.Headers {
+                mut ho := mut []byte{}
+                mut fs := mut []int{}
+                _ = internal.hpack.Decode(mut d, b[9:9 + n], mut ho, mut fs, 65536)
+                hv := freeze(ho)
+                st[k] = (int(hv[fs[2]]) - 48) * 100 + (int(hv[fs[2] + 1]) - 48) * 10 + int(hv[fs[2] + 2]) - 48
+            } else if typ == internal.h2frame.Data {
+                bl[k] = bl[k] + n
+            } else if typ == internal.h2frame.RstStream {
+                st[k] = 0 - internal.h2frame.RstCode(b, 9)
+            }
+            if ((typ == internal.h2frame.Headers || typ == internal.h2frame.Data) && internal.h2frame.Has(f, internal.h2frame.EndStream)) || typ == internal.h2frame.RstStream {
+                res = "${res}${sid}:${st[k]}:${bl[k]},"
+                done += 1
+            }
+            l.app = h2lCat([]byte{}, b[9 + n:len(b)])
+        } else if !h2lStep(c, mut ch, p, mut l) {
+            return "${res}closed"
+        }
+    }
+    _ = net.Send(c, internal.hsc.ClientAlert(mut ch, 0))
+    return res
+}
+
+func h2lPeer(port int, req []byte, want int) string {
+    roots, re := internal.x509.RootsFromPEM(h2lFile("testdata/crypto/httparena-server.crt"))
+    if re != nil {
+        return "roots"
+    }
+    p := internal.hsc.NewCParams("localhost", []string{"h2"}, roots, time.UnixSec(time.Now()), []byte{})
+    // tls.Serveが待ち受けを始めるまで繋ぎ直す（負荷の下では始まりが遅れる）
+    mut res := "dial"
+    mut tries := 0
+    while res == "dial" && tries < 200 {
+        _ = net.Dial("127.0.0.1:${port}", (c) => {
+            res = h2lTalk(c, p, req, want)
+        })
+        if res == "dial" {
+            os.Sleep(20)
+        }
+        tries += 1
+    }
+    return res
+}
+
+// 大きい応答（/huge — 1 MiB。窓を開けた相手へ、1周の上限で止めては続ける送りを何十周もまたぐ）と、ほかはh2tRoute
+func h2lRoute(r Request) Response {
+    if r.path == "/huge" {
+        mut b := mut []byte{}
+        while len(b) < 1048576 {
+            b = append(b, byte(97 + len(b) % 26))
+        }
+        return Response{status: 200, contentType: "text/plain", body: freeze(b)}
+    }
+    if r.path == "/stream" || r.path == "/badlen" {
+        return h2sRoute(r)
+    }
+    return h2tRoute(r)
+}
+
+// 窓を大きく開けてから要求を送る列（前置き・SETTINGS〔初期の窓 2^30〕・接続のWINDOW_UPDATE・GET）
+func h2lWide(paths []string) []byte {
+    mut out := mut []byte{}
+    for x <- bytes(internal.h2frame.Preface) {
+        out = append(out, x)
+    }
+    internal.h2frame.PutSettings(mut out, []int{internal.h2frame.InitialWindowSize}, []int{1073741824})
+    internal.h2frame.PutWindowUpdate(mut out, 0, 1073741824)
+    mut i := 0
+    while i < len(paths) {
+        blk := h2tBlock("GET", paths[i])
+        internal.h2frame.PutHead(mut out, len(blk), internal.h2frame.Headers, internal.h2frame.EndHeaders | internal.h2frame.EndStream, i * 2 + 1)
+        for x <- blk {
+            out = append(out, x)
+        }
+        i += 1
+    }
+    return freeze(out)
+}
+
+// TLSの接続をHTTP/2で受ける（ServeConnのproto: H2）
+func h2lConn(c net.Conn) error? {
+    return ServeConn(c, h2lRoute, headWait: 5000 * task.MS, proto: H2)
+}
+
+// 空いているポート（Listenして閉じる）
+func h2lPort() (int, error?) {
+    mut port := 0
+    for l <- net.Listen("127.0.0.1:0")? {
+        port = net.Port(l)
+    }
+    return port, nil
+}
+
+type h2lGot struct {
+    v int
+}
+
+// 結果の分類: 1 = 期待どおり（終わる順は問わない）・2 = 応答なしで閉じられた・0 = ほか。want = 要求の本数（3 = h2tRequestsの3本・2 = h2lWideの/hugeと/a）
+func h2lOk(r string, want int) int {
+    ok3 := r == "h2|1:200:8,5:200:3,3:200:40000," || r == "h2|5:200:3,1:200:8,3:200:40000," || r == "h2|1:200:8,3:200:40000,5:200:3,"
+    ok2 := r == "h2|3:200:8,1:200:1048576," || r == "h2|1:200:1048576,3:200:8,"
+    return if (want == 3 && ok3) || (want == 2 && ok2) { 1 } else if r == "h2|closed" { 2 } else { 0 }
+}
+
+// big = 接続の予算を大きく宣言する（1 MiBの本文を作る子のため — 子の予算は接続の予約と同じ）。ほかは既定の予算
+func h2lRun(req []byte, want int, big bool) int {
+    return h2lServe(big, (port) => h2lOk(h2lPeer(port, req, want), want))
+}
+
+// tls.Serveの上にserveH2のTLSの形を立て、相手の役peer（ポートを受けて結果の数を返す）が終わったら畳む
+func h2lServe(big bool, peer func(port int) int) int {
+    port := h2lPort() catch 0
+    cfg0, ce := tls.Parse(h2lFile("testdata/crypto/httparena-server.crt"), h2lFile("testdata/crypto/httparena-server.key"))
+    assert(ce == nil)
+    cfg := tls.Alpn(cfg0, []string{"h2", "http/1.1"})
+    v, e := task.Run((s task.Scope) => {
+        d := task.NewDomain(s, h2lGot{v: 0 - 1})
+        _, e2 := task.Run((s2 task.Scope) => {
+            _ = task.Spawn(s2, () => {
+                _ = tls.Serve("127.0.0.1:${port}", cfg, h2lConn, budget: if big { 4 * 1048576 } else { 64 * 1024 }, conns: 4)
+                0
+            })
+            _ = task.Spawn(s2, () => {
+                r := peer(port)
+                task.Update(d, (g mut h2lGot) => {
+                    g.v = r
+                    0
+                })
+                xs := []int{1}
+                xs[9]
+            })
+            0
+        }, deadline: 10000 * task.MS)
+        _ = e2
+        task.Read(d, (g h2lGot) => g.v)
+    })
+    return if e == nil { v } else { 0 - 2 }
+}
+
+func TestH2Tls() {
+    assert(h2lRun(h2tRequests([]string{"/a", "/big", "/echo"}, bytes("xyz")), 3, false) == 1)
+    // 前置きでない最初のバイト: 応答なしで閉じる
+    assert(h2lRun(bytes("GET / HTTP/1.1\r\nHost: x\r\n\r\n"), 1, false) == 2)
+}
+
+// 窓の大きい相手へ1 MiBの応答を送り切る（TLSの1周の上限で止め、Roomの合図で次の周に続ける — 続きが止まれば期限で落ちる）
+func TestH2TlsHuge() {
+    assert(h2lRun(h2lWide([]string{"/huge", "/a"}), 2, true) == 1)
+}
+
+// TLSの上でも、死んだストリームの子（routeのpanic・子の予算の超過）はRST_STREAM（INTERNAL_ERROR）で閉じ、ほかの要求は返る
+func TestH2TlsChildDeath() {
+    assert(h2lServe(false, (port) => h2lDeadOk(h2lPeer(port, h2tRequests([]string{"/panic", "/a", "/huge"}, []byte{}), 3))) == 1)
+}
+
+func h2lDeadOk(r string) int {
+    return if strings.Contains(r, "|1:-2:") || strings.Contains(r, ",1:-2:") { if strings.Contains(r, "3:200:8,") && strings.Contains(r, "5:-2:") { 1 } else { 0 } } else { 0 }
+}
+
+// std/http/clientがALPNでh2を申し出て、HTTP/2だけを話すサーバーと往復する（Request・HEAD・本文のあるPOST・Session・Stream・長さ不定の本文・断たれたストリーム）。
+// 結果 = 通った項目のビット（全部で127）
+func h2cPeer(port int) int {
+    base := "https://localhost:${port}"
+    roots := tls.ParseRoots(h2lFile("testdata/crypto/httparena-server.crt")) catch return 0 - 1
+    pol := http.client.Policy{extraRoots: roots, timeout: 5000 * task.MS}
+    // tls.Serveが待ち受けを始めるまで繋ぎ直す
+    mut tries := 0
+    mut up := false
+    while !up && tries < 200 {
+        _, e := http.client.Request("${base}/a", policy: pol)
+        up = e == nil
+        if !up {
+            os.Sleep(20)
+        }
+        tries += 1
+    }
+    mut bits := 0
+    r1, e1 := http.client.Request("${base}/a", policy: pol)
+    if e1 == nil && r1.status == 200 && string(r1.body) catch "" == "hello /a" {
+        bits = bits | 1
+    }
+    mut big := mut []byte{}
+    while len(big) < 12000 {
+        big = append(big, byte(65 + len(big) % 23))
+    }
+    sent := freeze(big)
+    r2, e2 := http.client.Request("${base}/echo", method: "POST", body: sent, policy: pol)
+    if e2 == nil && r2.status == 200 && len(r2.body) == len(sent) && r2.body[11999] == sent[11999] {
+        bits = bits | 2
+    }
+    r3, e3 := http.client.Request("${base}/big", method: "HEAD", policy: pol)
+    if e3 == nil && r3.status == 200 && len(r3.body) == 0 {
+        bits = bits | 4
+    }
+    mut sn := 0
+    oe := http.client.Open(base, (ss) => {
+        a, ea := http.client.Send(ss, "${base}/a")
+        b, eb := http.client.Send(ss, "${base}/big")
+        c, ec := http.client.Send(ss, "${base}/x")
+        if ea == nil && eb == nil && ec == nil && a.status == 200 && len(b.body) == 40000 && string(c.body) catch "" == "hello /x" {
+            sn = 1
+        }
+    }, policy: pol)
+    if oe == nil && sn == 1 {
+        bits = bits | 8
+    }
+    mut got := 0
+    mut st := 0
+    se := http.client.Stream("${base}/big", (p) => {
+        if p.head.status != 0 {
+            st = p.head.status
+        }
+        got += len(p.chunk)
+    }, policy: pol)
+    if se == nil && st == 200 && got == 40000 {
+        bits = bits | 16
+    }
+    // 長さ不定の応答（content-lengthなし — 本文はchunkedに組み直して渡る）
+    r6, e6 := http.client.Request("${base}/stream", policy: pol)
+    if e6 == nil && r6.status == 200 && len(r6.body) == 20006 && r6.body[20005] == 'z' {
+        bits = bits | 32
+    }
+    // 宣言した長さより短い本文（サーバーがRST_STREAM）: 失敗として返る
+    _, e7 := http.client.Request("${base}/badlen", policy: pol)
+    if e7 != nil {
+        bits = bits | 64
+    }
+    return bits
+}
+
+func TestH2TlsClient() {
+    assert(h2lServe(false, (port) => h2cPeer(port)) == 127)
+}

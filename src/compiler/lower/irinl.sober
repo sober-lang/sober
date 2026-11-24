@@ -71,6 +71,18 @@ func irInlineModule(st mut St) {
     for i <- iter.Range(0, len(fr)) {
         ok = append(ok, ilShape(mut st, FnRef(fr[i]), size[i]))
     }
+    // 要約の値を使うモード: 要約にある関数は、展開の事実（BX_IRINL — 処理の前の大きさ・形・組・葉の極小か）を要約から置く（sv = [大きさ, 形, 組 | 葉 << 2 | 戻らない利用者の呼び出し << 3] か空）
+    use := bxCUse(mut st)
+    mut svs := mut [][]int{}
+    for i <- iter.Range(0, len(fr)) {
+        v := if use { bxCPeek(mut st, FnRef(fr[i]), BX_IRINL, 0) } else { []int{} }
+        svs = append(svs, v)
+        if len(v) > 0 {
+            size[i] = v[0]
+            ok[i] = v[1]
+        }
+    }
+    sv := freeze(svs)
     okf := freeze(ok)
     // カバレッジの計装の包み（極小と同じに扱う — 計装なしのプログラムでは空）
     mut cvm := mut []int{}
@@ -102,35 +114,94 @@ func irInlineModule(st mut St) {
     // 呼び先（入れ子が1レベル）の本体に戻らない利用者の呼び出しがある候補も先に処理する（730 — 種はpool.Load / binary.Load64の展開の後に
     // しか候補の本体に現れないのに、呼び手〔greedy / lazy〕が候補より先に処理されると ilHot が種を見ない）
     mut nrc := mut map[int]int{}
+    // nrv[i] = 処理の前の本体に戻らない利用者の関数の呼び出しがあるか（ilFirst が呼び先について読む）。本体を下ろさなかった関数は要約の展開の
+    // 事実のビット3から（本体が無いと判定が変わり、下ろす呼び手の組が変わる）
+    mut nrv := mut []int{}
+    for i <- iter.Range(0, len(fr)) {
+        v := if len(sv[i]) > 0 && irFnBHead(mut st, FnRef(fr[i])) == -1 { (sv[i][2] >> 3) & 1 } else if ilNonretCallee(mut st, FnRef(fr[i])) { 1 } else { 0 }
+        nrv = append(nrv, v)
+        nrc[fr[i]] = v
+    }
     for k <- iter.Range(0, len(fr)) {
         i := inp[k]
-        if okf[i] == 2 && irFnBHead(mut st, FnRef(fr[i])) != -1 {
+        if len(sv[i]) > 0 {
+            first[i] = if sv[i][2] & 3 == 1 { 1 } else { 0 }
+        } else if okf[i] == 2 && irFnBHead(mut st, FnRef(fr[i])) != -1 {
             first[i] = ilFirst(mut st, FnRef(fr[i]), mut nrc)
         }
     }
     ord := ilCallersFirst(mut st, fr, inp)
+    // 境の要約の展開の入力（呼び手がコピーする時点の本体と、その時点の大きさ・熱い命令の数）: 組2は処理の前（呼び手が先の順 — 呼び手は処理の前の
+    // 本体をコピーする）・極小の組0と組1は処理の後
+    bt := bxTab(mut st)
+    // 本体を下ろさなかった関数（要約の値を使うモード）: 処理しない。呼び手がコピーする時点の本体（要約の本体）だけを置き、パスの終わりに捨て直す
+    mut gone := mut []bool{}
+    for i <- iter.Range(0, len(fr)) {
+        gone = append(gone, bxCSelf(mut st, FnRef(fr[i])) >= 0)
+    }
+    mut lent := mut []int{}
+    mut tiny := mut []bool{}
+    for i <- iter.Range(0, len(fr)) {
+        tiny = append(tiny, okf[i] == 1 && (size[i] <= IL_TINY || (len(cv) > 0 && ilIn(cv, fr[i]))) && (irFnBHead(mut st, FnRef(fr[i])) != -1 || gone[i]))
+        if st.bx.on && okf[i] != 0 && !tiny[i] && first[i] != 1 && gone[i] && !ilIsRt(mut st, FnRef(fr[i])) {
+            if len(sv[i]) > 0 {
+                ilSumSeed(mut st, FnRef(fr[i]), bt, mut hot, i)
+                lent = append(lent, fr[i])
+            }
+        } else if st.bx.on && okf[i] != 0 && !tiny[i] && first[i] != 1 && irFnBHead(mut st, FnRef(fr[i])) != -1 && !ilIsRt(mut st, FnRef(fr[i])) {
+            if len(sv[i]) > 0 {
+                ilSumSeed(mut st, FnRef(fr[i]), bt, mut hot, i)
+            }
+            ilSnap(mut st, FnRef(fr[i]), okf[i], bt)
+        }
+    }
     for k <- iter.Range(0, len(ord)) {
         i := ord[len(ord) - 1 - k]
-        if okf[i] == 1 && (size[i] <= IL_TINY || (len(cv) > 0 && ilIn(cv, fr[i]))) && irFnBHead(mut st, FnRef(fr[i])) != -1 {
+        if tiny[i] && gone[i] {
+            first[i] = 2
+            if st.bx.on && len(sv[i]) > 0 {
+                ilSumSeed(mut st, FnRef(fr[i]), bt, mut hot, i)
+                lent = append(lent, fr[i])
+            }
+        } else if tiny[i] {
             ilFunc(mut st, FnRef(fr[i]), fr, okf, cv, mut hot)
             first[i] = 2
+            if st.bx.on && !ilIsRt(mut st, FnRef(fr[i])) {
+                if len(sv[i]) > 0 {
+                    ilSumSeed(mut st, FnRef(fr[i]), bt, mut hot, i)
+                }
+                ilSnap(mut st, FnRef(fr[i]), okf[i], bt)
+            }
         }
     }
     for k <- iter.Range(0, len(ord)) {
         i := ord[k]
         if first[i] == 1 {
-            ilFunc(mut st, FnRef(fr[i]), fr, okf, cv, mut hot)
+            if !gone[i] {
+                ilFunc(mut st, FnRef(fr[i]), fr, okf, cv, mut hot)
+            }
+            if st.bx.on && !ilIsRt(mut st, FnRef(fr[i])) {
+                if len(sv[i]) > 0 {
+                    ilSumSeed(mut st, FnRef(fr[i]), bt, mut hot, i)
+                    if gone[i] {
+                        lent = append(lent, fr[i])
+                    }
+                }
+                if !gone[i] {
+                    ilSnap(mut st, FnRef(fr[i]), okf[i], bt)
+                }
+            }
         }
     }
-    // 先に処理した候補の熱い命令の数は処理の後の本体で数え直す（後の呼び手がコピーするのは処理の後の本体）
+    // 先に処理した候補の熱い命令の数は処理の後の本体で数え直す（後の呼び手がコピーするのは処理の後の本体）。要約から置いた値はそのまま
     for i <- iter.Range(0, len(fr)) {
-        if first[i] == 1 {
+        if first[i] == 1 && len(sv[i]) == 0 {
             hot[i] = -2
         }
     }
     for k <- iter.Range(0, len(ord)) {
         i := ord[k]
-        if first[i] == 0 && irFnBHead(mut st, FnRef(fr[i])) != -1 {
+        if first[i] == 0 && irFnBHead(mut st, FnRef(fr[i])) != -1 && !gone[i] {
             ilFunc(mut st, FnRef(fr[i]), fr, okf, cv, mut hot)
         }
     }
@@ -138,7 +209,7 @@ func irInlineModule(st mut St) {
     // コピーされる — 入れ子が1レベルの規則でコピーの中は展開しない）をコピーする。包みは呼び出しを持たないので1巡で尽きる
     if len(cv) > 0 {
         for i <- iter.Range(0, len(fr)) {
-            if irFnBHead(mut st, FnRef(fr[i])) != -1 && !ilIn(cv, fr[i]) {
+            if irFnBHead(mut st, FnRef(fr[i])) != -1 && !ilIn(cv, fr[i]) && !gone[i] {
                 ilCoverSweep(mut st, FnRef(fr[i]), cv)
             }
         }
@@ -147,19 +218,49 @@ func irInlineModule(st mut St) {
     // （戻らない panic だけ）ので 1 巡で尽き、どの順に回しても同じ形になる
     mut leafm := mut []int{}
     for i <- iter.Range(0, len(fr)) {
-        if irFnBHead(mut st, FnRef(fr[i])) != -1 && ilLeafTiny(mut st, FnRef(fr[i])) && ilShapeD(mut st, FnRef(fr[i]), size[i], true) == 1 {
+        lf := if len(sv[i]) > 0 { (sv[i][2] >> 2) & 1 == 1 } else { irFnBHead(mut st, FnRef(fr[i])) != -1 && ilLeafTiny(mut st, FnRef(fr[i])) && ilShapeD(mut st, FnRef(fr[i]), size[i], true) == 1 }
+        if lf {
             leafm = append(leafm, fr[i])
         }
     }
     leaf := freeze(leafm)
+    // 境の要約の事実 [処理の前の大きさ, 形の判定, 組, 葉の極小か]（コピーする時点の本体と大きさ・熱い命令の数は ilSnap）
+    if st.bx.on {
+        for i <- iter.Range(0, len(fr)) {
+            lt := if ilIn(leaf, fr[i]) { 1 } else { 0 }
+            bxFact(mut st, FnRef(fr[i]), BX_IRINL, size[i], okf[i], first[i] | (lt << 2) | (nrv[i] << 3))
+            if bxCOn(mut st) {
+                zcv, zch := bxCIrinl(mut st, FnRef(fr[i]))
+                bxCCmp(mut st, FnRef(fr[i]), BX_IRINL, zcv, zch, []int{size[i], okf[i], first[i] & 3, lt, nrv[i]})
+            }
+        }
+    }
     if len(leaf) > 0 {
         for i <- iter.Range(0, len(fr)) {
-            if irFnBHead(mut st, FnRef(fr[i])) != -1 && !ilIn(leaf, fr[i]) {
+            if irFnBHead(mut st, FnRef(fr[i])) != -1 && !ilIn(leaf, fr[i]) && !gone[i] {
                 ilLeafSweep(mut st, FnRef(fr[i]), leaf)
             }
         }
     }
+    for g <- lent {
+        bxCDropFn(mut st, FnRef(g))
+    }
     st.fn = save
+}
+
+// 要約の値を使うモード: 呼び手がコピーする時点（ilSnap の時点）の g の本体を要約の本体（BX_ILBODY）にし、熱い命令の数（BX_ILHOT）を置く
+func ilSumSeed(st mut St, g FnRef, bt CkTab, hot mut []int, i int) {
+    h := bxCPeek(mut st, g, BX_ILHOT, 0)
+    if len(h) > 0 {
+        hot[i] = h[1]
+    }
+    v := bxCPeek(mut st, g, BX_ILBODY, 0)
+    if len(v) > 0 {
+        p := bxCBodyV(mut st, v, bt)
+        if len(p) > 1 {
+            mvUnpack(mut st, g, p)
+        }
+    }
 }
 
 // fの中の葉の極小関数（leaf）の呼び出しを全部コピーする — exitで終わるブロック（panicの点）は除く
@@ -546,6 +647,23 @@ func ilHot(st mut St, g FnRef) int {
     return if kind2 { n + 100000 } else { n }
 }
 
+// 境の要約の展開の入力: 呼び手がコピーする時点の本体と、その時点の大きさ・熱い命令の数
+// （本体は、呼び手がコピーしうるものだけ: 全体をコピーする形〔ok 1〕か、熱い命令が部分インラインの閾値以下の部分インラインの候補〔ok 2〕）
+func ilSnap(st mut St, g FnRef, ok int, bt CkTab) {
+    n := ilSize(mut st, g)
+    hc := ilHot(mut st, g)
+    bxFact(mut st, g, BX_ILHOT, n, hc, 0)
+    if bxCOn(mut st) {
+        zcv, zch := bxCIlhot(mut st, g)
+        bxCCmp(mut st, g, BX_ILHOT, zcv, zch, []int{n, hc})
+    }
+    h := if hc >= 100000 { hc - 100000 } else { hc }
+    lim := if hc >= 100000 { IL_PANICHOT } else { IL_HOTINS }
+    if ok == 1 || (ok == 2 && h >= 0 && h <= lim) {
+        bxBody(mut st, g, BX_ILBODY, bt)
+    }
+}
+
 // 関数の命令の数（死んだ命令を除く）
 func ilSize(st mut St, f FnRef) int {
     mut n := 0
@@ -861,6 +979,10 @@ func ilFunc(st mut St, f FnRef, fr []int, ok []int, cv []int, hot mut []int) {
 
 // ブロックbの呼び出しins（`%r = call @g(args)`）をgのコピーに置き換え、続きのブロックを返す
 func ilCall(st mut St, f FnRef, b BlkRef, ins InsRef, g FnRef) BlkRef {
+    // 束の仮定: rtの関数の本体はプログラムの機能で変わる（展開した側の本体が、rtの本体に依る）
+    if st.bx.on && ilIsRt(mut st, g) {
+        bxFact(mut st, f, BX_RTIN, int(g), 0, 0)
+    }
     args := irInsB(mut st, ins)
     res := irInsRes(mut st, ins)
     // 続き: 呼び出しの後ろの命令と元の終端を移す（後続の前任の数は b → c の付け替えなので変わらない）

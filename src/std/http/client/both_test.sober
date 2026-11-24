@@ -1,0 +1,193 @@
+package client
+
+// 同じ往復の検査を、TLSの上のHTTP/1.1とHTTP/2の両方で回す: tls.Serveの上のstd/http/serverのServeConnを、ALPNでhttp/1.1だけを申し出てHTTP/1.1だけを話す形（proto: H1）と、
+// h2だけを申し出てHTTP/2だけを話す形（proto: H2 — HTTP/2で始めない接続には応じない）で立てる。結果は平文の検査（client_test）と同じ期待の値
+
+import "std/http/server"
+import "std/net"
+import "std/os"
+import "std/task"
+import "std/tls"
+
+type bothGot struct {
+    v int
+}
+
+func bothH1(c net.Conn) error? {
+    return http.server.ServeConn(c, route, headWait: 5000 * task.MS)
+}
+
+func bothH2(c net.Conn) error? {
+    return http.server.ServeConn(c, route, headWait: 5000 * task.MS, proto: http.server.H2)
+}
+
+// 空いているポート（Listenして閉じる）
+func bothPort() (int, error?) {
+    mut port := 0
+    for l <- net.Listen("127.0.0.1:0")? {
+        port = net.Port(l)
+    }
+    return port, nil
+}
+
+// h2 = trueならHTTP/2の形・falseならHTTP/1.1の形のサーバーを立て、相手の役（bothPeer — 番号kind）が返ったら畳む。結果 = 期待の値と合った項目のビット
+func bothServe(h2 bool, kind int) int {
+    port := bothPort() catch 0
+    cfg0, ce := tls.Parse(certFile("testdata/crypto/httparena-server.crt"), certFile("testdata/crypto/httparena-server.key"))
+    assert(ce == nil)
+    tc := tls.Alpn(cfg0, if h2 { []string{"h2"} } else { []string{"http/1.1"} })
+    v, e := task.Run((s task.Scope) => {
+        d := task.NewDomain(s, bothGot{v: 0 - 1})
+        _, e2 := task.Run((s2 task.Scope) => {
+            _ = task.Spawn(s2, () => {
+                _ = tls.Serve("127.0.0.1:${port}", tc, if h2 { bothH2 } else { bothH1 }, conns: 4)
+                0
+            })
+            _ = task.Spawn(s2, () => {
+                r := bothPeer(kind, "https://localhost:${port}")
+                task.Update(d, (g mut bothGot) => {
+                    g.v = r
+                    0
+                })
+                // 相手の役が終わったら、子の死でscopeを畳む（tls.Serveは止める口を持たない）
+                xs := []int{1}
+                xs[9]
+            })
+            0
+        }, deadline: 20000 * task.MS)
+        _ = e2
+        task.Read(d, (g bothGot) => g.v)
+    })
+    return if e == nil { v } else { 0 - 2 }
+}
+
+// 回す形: false = HTTP/1.1・true = HTTP/2
+func bothForms() []bool {
+    return []bool{false, true}
+}
+
+// 相手の役: 1 = Request・2 = Session・3 = cookie・4 = Stream
+func bothPeer(kind int, base string) int {
+    bothWait(base)
+    return if kind == 1 {
+        bothBits(bothRequests(base), []string{"200:hello GET", "200:ping", "200:hello GET", "BodyTooLarge", "302:", "TooManyRedirects"})
+    } else if kind == 2 {
+        bothBits(sessionSummary(base, []string{"/hello", "/big", "/nope", "http://other.example/x", "/hello"}, true), []string{"200:hello GET", "200:0123456789abcdef0123456789abcdef", "404:", "BadUrl", "200:hello GET"})
+    } else if kind == 3 {
+        bothBits(bothCookies(base), []string{"302", "abc", "sid=abc", "anonymous", "sid=abc"})
+    } else {
+        bothBits(bothStreams(base), []string{"200:true:hello GET", "200:true:hello GET", "BodyTooLarge", "404:true:"})
+    }
+}
+
+// got[i] == want[i] の項目のビット（長さが違えば -3）
+func bothBits(got []string, want []string) int {
+    if len(got) != len(want) {
+        return 0 - 3
+    }
+    mut bits := 0
+    mut i := 0
+    while i < len(want) {
+        if got[i] == want[i] {
+            bits = bits | (1 << i)
+        }
+        i += 1
+    }
+    return bits
+}
+
+func bothStreams(base string) []string {
+    return []string{bothStream("${base}/hello", nil), bothStream("${base}/to-hello", nil), bothStream("${base}/big", 8), bothStream("${base}/nope", nil)}
+}
+
+func bothPolicy(maxBody int?, redirects int?) Policy {
+    return Policy{extraRoots: testRoots(), maxBody: maxBody, timeout: 5000 * task.MS, redirects: redirects}
+}
+
+// summaryと同じ要約（TLSの行き先 — 試験の証明書の根を足す）
+func bothSummary(url string, method string, body string, maxBody int?, redirects int?) string {
+    r, e := Request(url, method: method, body: bytes(body), policy: bothPolicy(maxBody, redirects))
+    return switch e {
+    case nil: "${r.status}:${bytesToString(r.body)}"
+    case TooManyRedirects{}: "TooManyRedirects"
+    case BodyTooLarge{}: "BodyTooLarge"
+    default: kindName(e)
+    }
+}
+
+// サーバーが立つまで繋ぎ直す（負荷の下では待ち受けの始まりが遅れる）
+func bothWait(base string) {
+    mut tries := 0
+    mut up := false
+    while !up && tries < 200 {
+        _, e := Request("${base}/hello", policy: bothPolicy(nil, nil))
+        up = e == nil
+        if !up {
+            os.Sleep(20)
+        }
+        tries += 1
+    }
+}
+
+func bothRequests(base string) []string {
+    r1 := bothSummary("${base}/hello", "", "", nil, nil)
+    r2 := bothSummary("${base}/echo", "POST", "ping", nil, nil)
+    r3 := bothSummary("${base}/to-hello", "", "", nil, nil)
+    r4 := bothSummary("${base}/big", "", "", 8, nil)
+    r5 := bothSummary("${base}/to-hello", "", "", nil, 0)
+    r6 := bothSummary("${base}/loop", "", "", nil, 3)
+    return []string{r1, r2, r3, r4, r5, r6}
+}
+
+// TestPlainLoopbackと同じ往復（Request・POSTの本文・redirect・本文の上限・redirectの上限）
+func TestBothRequest() {
+    for h2 <- bothForms() {
+        assert(bothServe(h2, 1) == 63, "h2 ${h2}")
+    }
+}
+
+// TestSessionPlainと同じ往復（Openの1本の接続で続けて送る・別のoriginはBadUrl）
+func TestBothSession() {
+    for h2 <- bothForms() {
+        assert(bothServe(h2, 2) == 31, "h2 ${h2}")
+    }
+}
+
+// TestCookieLoopbackと同じ運び（loginの302のSet-Cookie・cookies: を載せる / 載せない・同じoriginのredirectへ持っていく）
+func TestBothCookie() {
+    for h2 <- bothForms() {
+        assert(bothServe(h2, 3) == 31, "h2 ${h2}")
+    }
+}
+
+// TestStreamPlainと同じ往復
+func TestBothStream() {
+    for h2 <- bothForms() {
+        assert(bothServe(h2, 4) == 15, "h2 ${h2}")
+    }
+}
+
+// cookieRoundと同じ運び（TLSの行き先）
+func bothCookies(base string) []string {
+    pol := bothPolicy(nil, 0)
+    r1, _ := Request("${base}/login", method: "POST", body: bytes("pw"), policy: pol)
+    sid := CookieValue(r1, "sid")
+    v := if sid == nil { "" } else { sid }
+    r2, _ := Request("${base}/me", cookies: []Cookie{Cookie{name: "sid", value: v}}, policy: pol)
+    r3, _ := Request("${base}/me", policy: pol)
+    r4, _ := Request("${base}/to-me", cookies: []Cookie{Cookie{name: "sid", value: v}}, policy: bothPolicy(nil, nil))
+    return []string{"${r1.status}", v, bytesToString(r2.body), bytesToString(r3.body), bytesToString(r4.body)}
+}
+
+// streamSummaryと同じ要約（TLSの行き先）
+func bothStream(url string, maxBody int?) string {
+    mut n := 0
+    mut text := ""
+    mut st := 0
+    e := Stream(url, (part) => {
+        n += 1
+        st = part.head.status
+        text = "${text}${bytesToString(part.chunk)}"
+    }, policy: bothPolicy(maxBody, nil))
+    return if e == nil { "${st}:${n > 0}:${text}" } else { kindName2(e) }
+}

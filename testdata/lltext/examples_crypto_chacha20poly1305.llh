@@ -1,4 +1,4 @@
-@@full	8a9271f6fb0cbc46	24138	799135
+@@full	531206c77dd2d2bc	24090	797577
 @globals	b82fef0b60d153b0	89	2648
 main.check	d305b3753a3219cb	168	5713
 main.flip	3f5ac686b5303135	316	10275
@@ -6,7 +6,7 @@ main.main	5c189629914f947b	2079	76798
 main.record	2097839729c20bd0	3014	110288
 main.seq	4528b845df8db0c7	239	7927
 main.unhex	bd3cc07e1cfd72ef	103	3698
-main.wrap	c54705ff7a253e9a	721	23784
+main.wrap	92754d95641d10c3	715	23585
 rt.cat8	8e67ba05682822cf	32	783
 rt.copy	3de19df856ca0737	27	640
 rt.copy8	6216afe5d066d160	29	700
@@ -56,9 +56,9 @@ std/crypto/chacha20poly1305.Open	36ea5c954f449249	260	9210
 std/crypto/chacha20poly1305.OpenAt	d38bb2af90ce031d	592	20259
 std/crypto/chacha20poly1305.Prepare	bc6a09c319424b98	315	10720
 std/crypto/chacha20poly1305.Seal	21fdce5bac088a48	311	11156
-std/crypto/chacha20poly1305.SealTo	d550bf9262773288	1513	50697
-std/crypto/chacha20poly1305.ctTail	fa2d4e12d614162a	1041	33609
-std/crypto/chacha20poly1305.polyKey	7d19d41e2ebb03ef	509	16865
+std/crypto/chacha20poly1305.SealTo	b6dfcd50c619a07a	1495	50115
+std/crypto/chacha20poly1305.ctTail	41482d59d68368a4	1023	33029
+std/crypto/chacha20poly1305.polyKey	1f5e1cbdb8ca6fcd	503	16668
 std/crypto/poly1305.Sum	955264a12bfe02b8	172	6383
 std/crypto/poly1305.SumAead	f9fb91098c46c69f	297	11120
 std/crypto/poly1305.absorb	c3cd89d2278b5e0c	565	19319

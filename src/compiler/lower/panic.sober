@@ -9,6 +9,7 @@ package lower
 import "desugar"
 import "diag"
 import "loader"
+import "std/binary"
 import "lexer"
 import "std/io"
 import "std/iter"
@@ -367,6 +368,10 @@ func memHwDump(st mut St, meta int) {
 func buildDepthReport(st mut St) {
     begin(mut st, st.rtDrep)
     meta := globaladdr(mut st, st.meta)
+    // 変異116（logcheck）: 正常終了でログのバッファを書き出さない
+    if st.logUse && st.rtMut != 116 {
+        call(mut st, st.rtLogDrain, list0(mut st))
+    }
     if st.callStat {
         callStatDump(mut st, meta)
     }
@@ -479,7 +484,16 @@ func buildPanic(st mut St, p loader.Program) {
         }
         tks = append(tks, freeze(tk))
     }
-    lcs := siteLineColsAll(p, fs, freeze(tks))
+    // 行・列の控え（束の格納場所。鍵はファイルの中身と点の字句の列）: 当たったファイルは字句化しない。外れた分を書きのバッチへ
+    rs := siteLineColsAll(p, fs, freeze(tks), st.bcv)
+    mut lcl := mut [][]int{}
+    for k <- iter.Range(0, len(fs)) {
+        lcl = append(lcl, rs[k].lcs)
+        if st.bcv.on && !rs[k].hit {
+            bcAdd(mut st, BC_PKG, rs[k].k1, rs[k].k2, bcVarints(rs[k].lcs))
+        }
+    }
+    lcs := freeze(lcl)
     for k <- iter.Range(0, len(fs)) {
         mut j := 0
         for i <- iter.Range(0, n) {
@@ -677,6 +691,10 @@ func panicTextsFor(ftoi bool, tdied bool) []string {
 
 // 行バッファを今の fd（標準出力）へ吐いてから、以降の印字の fd を 2 にする
 func toStderr(st mut St, meta int) {
+    // ログのバッファを死因の印字の前に書き出す（ログを使うプログラムだけ）
+    if st.logUse {
+        call(mut st, st.rtLogDrain, list0(mut st))
+    }
     call(mut st, st.rtFlush, list0(mut st))
     // std/taskを使うプログラム: バッファした区間を先行順で全部出す（toStderrを通るのは終わりの前だけ）
     if st.taskUse {
@@ -709,28 +727,88 @@ func choose(st mut St, v int, ts []string, base int) {
 // p のファイル f の各字句の [行, 列]（1 起点 — diag.Where と同じ数え方）の平らな列。ソースが読めなければ空
 // ファイルfs[k]の点の字句tks[k]の行・列の語（行 | 列 << 24 — 字句が引けなければ 行 0・列 = 字句の番号）。ファイルごとの子で字句化する
 // （ワーカー1・ファイル1つと子の死は逐次）。子が返すのは点の分の語だけ（ファイルの全部の字句の行・列は子の中で捨てる）
-func siteLineColsAll(p loader.Program, fs []int, tks [][]int) [][]int {
+// 行・列の控えの鍵の種（束の格納場所の BC_PKG の鍵。buildPanic が使う）
+const PL_SEED = 6148914691236517205
+
+// ファイル1つの点の行・列（lcs）と控えの鍵・控えに当たったか
+type SiteLc struct {
+    lcs []int
+    k1 int
+    k2 int
+    hit bool
+}
+
+func siteLineColsAll(p loader.Program, fs []int, tks [][]int, v BcView) []SiteLc {
     if len(fs) >= 2 && task.Ledger().workers > 1 {
         mut ks := mut []int{}
         for k <- iter.Range(0, len(fs)) {
             ks = append(ks, k)
         }
-        r, err := task.Map(freeze(ks), (k) => siteLineCols(p, fs[k], tks[k]))
+        r, err := task.Map(freeze(ks), (k) => siteLineColsC(p, fs[k], tks[k], v))
         if err == nil {
             return r
         }
         loader.ParFellBack("panic sites", len(ks), "sequentially", "")
     }
-    mut o := mut [][]int{}
+    mut o := mut []SiteLc{}
     for k <- iter.Range(0, len(fs)) {
-        o = append(o, siteLineCols(p, fs[k], tks[k]))
+        o = append(o, siteLineColsC(p, fs[k], tks[k], v))
     }
     return freeze(o)
 }
 
-// ファイルfの字句tkの行・列の語
-func siteLineCols(p loader.Program, f int, tk []int) []int {
-    lcs := tokLineCols(p, f)
+// ファイルfの字句tkの行・列の語。控えに当たれば字句化しない（検証モードは常に字句化し、書きのバッチで控えと比べる）
+func siteLineColsC(p loader.Program, f int, tk []int, v BcView) SiteLc {
+    src := siteSrc(p, f)
+    mut k1 := ckM1(CK_S1, PL_SEED)
+    mut k2 := ckM2(CK_S2, PL_SEED)
+    if v.on {
+        n := len(src)
+        k1 = ckM1(k1, n)
+        k2 = ckM2(k2, n)
+        mut i := 0
+        while i + 8 <= n {
+            w := binary.Load64(src, i)
+            k1 = ckM1(k1, w)
+            k2 = ckM2(k2, w)
+            i += 8
+        }
+        while i < n {
+            k1 = ckM1(k1, int(src[i]))
+            k2 = ckM2(k2, int(src[i]))
+            i += 1
+        }
+        k1 = ckM1(k1, len(tk))
+        k2 = ckM2(k2, len(tk))
+        for t <- tk {
+            k1 = ckM1(k1, t)
+            k2 = ckM2(k2, t)
+        }
+        if !v.vfy {
+            e := bcFind(v, BC_PKG, k1, k2)
+            if e >= 0 {
+                b := if len(v.vs[e]) > 0 { v.vs[e] } else { bcReadOne(v.fp[v.ef[e]], v.eo[e], v.el[e]) }
+                if len(b) == v.el[e] && bcSum(b, 0, len(b)) == v.eh[e] {
+                    ws, ok := loader.Unvarints(b, 0, len(b))
+                    if ok && len(ws) == len(tk) {
+                        return SiteLc{lcs: ws, k1: k1, k2: k2, hit: true}
+                    }
+                }
+            }
+        }
+    }
+    return SiteLc{lcs: siteLineCols(src, tk), k1: k1, k2: k2, hit: false}
+}
+
+// ファイルfのソース（stdの焼き込みの表を持たないProgram〔Manifestで読む道具。lldump等〕はファイルを直に読む）
+func siteSrc(p loader.Program, f int) []byte {
+    src0, ok := loader.SourceFs(p, f, p.std_src)
+    return if ok { src0 } else { io.ReadFile(p.file_path[f]) catch []byte{} }
+}
+
+// ソースsrcの字句tkの行・列の語
+func siteLineCols(src []byte, tk []int) []int {
+    lcs := tokLineCols(src)
     mut o := mut []int{}
     for j <- iter.Range(0, len(tk)) {
         tok := tk[j]
@@ -739,10 +817,7 @@ func siteLineCols(p loader.Program, f int, tk []int) []int {
     return freeze(o)
 }
 
-func tokLineCols(p loader.Program, f int) []int {
-    src0, ok := loader.SourceFs(p, f, p.std_src)
-    // stdの焼き込みの表を持たないProgram（Manifestで読む道具 — lldump等。stdはファイルの格納場所から）はファイルを直に読む
-    src := if ok { src0 } else { io.ReadFile(p.file_path[f]) catch []byte{} }
+func tokLineCols(src []byte) []int {
     toks := lexer.Lex(src)
     mut out := mut []int{}
     mut line := 1

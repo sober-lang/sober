@@ -1,10 +1,11 @@
 package main
 
 // ルートの方針（cache:）を書いた行でも、Dispatchはレスポンスの他のフィールドをそのまま送る: Set-Cookie（cookies）と待ち（Delayed）。
-// 転送路は偽物。recvはリクエストの列を1切片で渡し、sendは送った切片を印字する（行末のCRは外す）。
-// /slow（Delayed）は待ちの後に送るので、前のレスポンスと別の切片に分かれる
+// サーバーとクライアントはnet.Pairで繋ぐ。クライアントはリクエストの列を1回で送り、受けた切片を印字する（行末のCRは外す）。
+// /slow（Delayed）は待ちの後に送るので、前のレスポンスと別の切片で届く
 
 import "std/http/server"
+import "std/net"
 
 func login(r http.server.Request) http.server.Response {
     return http.server.Response{status: 200, contentType: "text/plain", body: bytes("hi\n"), cookies: []http.server.SetCookie{http.server.SetCookie{name: "sid", value: "s1"}}}
@@ -38,6 +39,12 @@ func main() {
         http.server.Route{method: "GET", path: "/nostore", handler: login, cache: http.server.NoStore{}},
         http.server.Route{method: "GET", path: "/slow", handler: slow, cache: http.server.Fresh{maxAge: 60}}}
     reqs := "GET /plain HTTP/1.1\r\nHost: x\r\n\r\nGET /private HTTP/1.1\r\nHost: x\r\n\r\nGET /nostore HTTP/1.1\r\nHost: x\r\n\r\nGET /slow HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n"
-    e := http.server.ServeWith((k) => give(reqs, k), (b) => show(b), (r) => http.server.Dispatch(rs, r))
+    e := net.Pair((c) => http.server.ServeConn(c, (r) => http.server.Dispatch(rs, r)), (c) => {
+        _ = net.Send(c, bytes(reqs))
+        // 受けた切片ごとに印字する（待ちの前に送ったレスポンスと、待ちの後のレスポンスは別の切片で届く）
+        _ = net.Recv(c, (b) => {
+            _ = show(b)
+        })
+    })
     println(e == nil)
 }

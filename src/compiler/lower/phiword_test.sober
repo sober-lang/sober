@@ -1,0 +1,65 @@
+package lower
+
+// 番地の合流を語の合流に直す変換（phiword.sober）の単体テスト（`cd compiler && ../bin/sober test lower`）:
+// 2つの3語のスロットの番地を合流の辺で渡し、合流先の頭で語を読む関数をIRで組み、変換 + SROA（cg）+ mem2regの後に残るスロットの数を見る
+
+import "desugar"
+import "std/iter"
+
+// 仮引数 (c, x, y)。入口で2つのスロットへ書き、cで分けた2つの辺がそれぞれの番地を合流先へ渡す。合流先は語0と語1を読んで足して返す。
+// mode 1 = 合流先の頭で、読む前にスロット1へ書く（受けるスロットへの書きなので直さない）・mode 2 = 読みの間に3つ目のスロットへ書く（直す）
+func pwT(mode int) int {
+    mut st := St{}
+    initScalars(mut st)
+    kindsInit(mut st)
+    desugar.HeapPush(mut st.d, 0)
+    pt := listN(mut st, 3)
+    desugar.HeapSet(mut st.d, pt + 1, TyI64)
+    desugar.HeapSet(mut st.d, pt + 2, TyI64)
+    desugar.HeapSet(mut st.d, pt + 3, TyI64)
+    f := addFunc(mut st, 0, desugar.ListRef(pt), TyI64)
+    begin(mut st, f)
+    s1 := newSlotAddr(mut st, 3)
+    s2 := newSlotAddr(mut st, 3)
+    s3 := newSlotAddr(mut st, 1)
+    for k <- iter.Range(0, 3) {
+        store(mut st, s1, k, 1)
+        store(mut st, s2, k, 2)
+    }
+    b1 := newBlock(mut st)
+    b2 := newBlock(mut st)
+    b3 := newBlock(mut st)
+    condbr(mut st, 0, b1, -1, b2, -1)
+    setCur(mut st, b1)
+    br(mut st, b3, list1(mut st, s1))
+    setCur(mut st, b2)
+    br(mut st, b3, list1(mut st, s2))
+    setCur(mut st, b3)
+    p := param(mut st, b3, TyPtr)
+    if mode == 1 {
+        store(mut st, s1, 0, 2)
+    }
+    r0 := load(mut st, p, 0)
+    if mode == 2 {
+        store(mut st, s3, 0, r0)
+    }
+    ret(mut st, bin(mut st, BAdd, r0, load(mut st, p, 1)))
+    sroaModule(mut st, true)
+    m2rFunc(mut st, f)
+    mut n := 0
+    mut s := irFnSHead(mut st, f)
+    while s >= 0 {
+        n += 1
+        s = desugar.HeapGet(mut st.d, s)
+    }
+    return n
+}
+
+func TestPhiWord() {
+    // 直せば2つのスロットとも逃げが無くなり、SROAとmem2regで消える（3つ目の1語のスロットは使われず消える）
+    assert(pwT(0) == 0)
+    // 合流先で読む前に受けるスロットへ書く形は直さない（2つは番地の合流で逃げたまま）
+    assert(pwT(1) == 2)
+    // 読みの間の書きが別のスロットなら直す
+    assert(pwT(2) == 0)
+}

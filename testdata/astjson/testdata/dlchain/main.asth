@@ -1,0 +1,7 @@
+@@full	74bb0c9ffd34fed6	1074	39062
+@head	e947bff0a3c77179	0	268
+func label	cee93fdc9003fee8	15	629
+func main	475cbb938d9f30b1	7	297
+func run	67aaf8c52c1500b0	95	3164
+func waitOne	dc4d1fc56093885b	21	865
+func waitRecv	ec07f31009ae9df0	25	879

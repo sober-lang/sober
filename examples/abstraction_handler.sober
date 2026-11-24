@@ -5,6 +5,7 @@ package main
 // instead of the network, and each response is printed (the form of examples/http_router)
 
 import "std/http/server"
+import "std/net"
 
 func or(s string?) string {
     return if s != nil { s } else { "-" }
@@ -29,13 +30,11 @@ func main() {
         "GET /bye/bob HTTP/1.1\r\nHost: x\r\nX-Token: t\r\n\r\n" +
         "GET /hello/eve HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n"
     rs := routes()
-    e := http.server.ServeWith((k) => feed(reqs, k), (b) => show(b), (r) => http.server.Dispatch(rs, r))
+    e := net.Pair((c) => http.server.ServeConn(c, (r) => http.server.Dispatch(rs, r)), (c) => {
+        _ = net.Send(c, bytes(reqs))
+        _ = show(readAll(c))
+    })
     println(e == nil)
-}
-
-func feed(s string, k func([]byte)) error? {
-    k(bytes(s))
-    return nil
 }
 
 // prints a response without the CR at the end of each line
@@ -48,4 +47,15 @@ func show(b []byte) error? {
     }
     println(string(freeze(out)) catch "?")
     return nil
+}
+
+// 相手が閉じるまで受けたバイト列（最後の要求はConnection: close — サーバーが応答の後に閉じる）
+func readAll(c net.Conn) []byte {
+    mut got := mut []byte{}
+    _ = net.Recv(c, (x) => {
+        for y <- x {
+            got = append(got, y)
+        }
+    })
+    return freeze(got)
 }

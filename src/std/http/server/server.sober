@@ -1372,6 +1372,8 @@ func moreSpecific(a []byte, b []byte) bool {
 //     net.Serve(l, (c net.Conn) => http.server.ServeConn(c, route, compression: http.server.Gzip{}, work: gzw))
 //
 // work: は compression: と組みで（compression: なしの work: は panic(WorkNoCompress{}) — 呼び手の契約違反）。1 つのストレージを全部の接続で共有してよい（中はワーカーごとに分かれている）
+// proto: は応じるプロトコル（下のProto — 省略 = H1）。H2・BothではHTTP/2（h2c — 事前知識）のストリーム1本 = 子task 1本でrouteを呼ぶので、routeは並行に呼ばれうる。
+// だからrouteは可変を捕獲できない（どのprotoでも同じ規則 — task.Spawnのラムダと同じ）
 //
 // 期限（相手が送り終える・受け終えるのを待つ時間の上限。単位はtask.MS・0以下は開いた時点で期限切れ・期限なしは書けない）:
 // headWait = リクエストの頭が揃うまで（既定30秒。数え始めはServeConnに入った時刻と、前のリクエストのレスポンスを送り終えた時刻。keep-aliveの待ちを含む）・
@@ -1380,18 +1382,8 @@ func moreSpecific(a []byte, b []byte) bool {
 // プールの節のtimeoutが1増える。期限は最大で約2秒遅れて効く（早くは効かない）。scopeの期限（task.Runのdeadline:）とは別のもので、どちらも効く
 @errors(io.NotFound, io.Closed, io.Timeout, io.Expired, io.Denied, io.Other)
 @effects(block, io, panic, nondet, Stream)
-func ServeConn(c net.Conn, route func(Request) Response, maxHead int?, maxBody int?, headWait int?, bodyWait int?, sendWait int?, compression Gzip?, work task.Local?) error? {
-    // 集めて送る形が恒常的に使えない接続（ringのパスでない・送信バッファリングが切られている — sendGatherが負）では、以後試さない
-    mut gp := true
-    return serveCore((k) => net.Recv(c, k), (b) => net.Send(c, b), route, c.fd, maxHead: maxHead, maxBody: maxBody, headWait: headWait, bodyWait: bodyWait, sendWait: sendWait, compression: compression, work: work, fsend: (b) => sendFused(c, b), tsend: (b, ms) => sendTimed(c, b, ms), gsend: (h, b) => {
-        mut sent := false
-        if gp {
-            r := sendGather(c, h, b)
-            gp = r >= 0
-            sent = r == 1
-        }
-        sent
-    })
+func ServeConn(c net.Conn, route func(Request) Response, maxHead int?, maxBody int?, headWait int?, bodyWait int?, sendWait int?, compression Gzip?, work task.Local?, proto Proto?) error? {
+    return serveConnAny(c, route, maxHead, maxBody, headWait, bodyWait, sendWait, compression, work, if proto != nil { proto } else { H1 })
 }
 
 // rtのnetのインターフェース（std/netのsysNetOpと同じ組み込み）。ここで使うのはop 9（今のtaskの次の送り1回を送信バッファリングにするフラグ・fdの位置 = 送る前の待ち〔ms〕）・
@@ -1401,8 +1393,11 @@ func ServeConn(c net.Conn, route func(Request) Response, maxHead int?, maxBody i
 func sysNetOp(op int, fd int, a int, b int) int
 
 // net.Sendの送信バッファリング: 列をワーカーの送り場へコピーしてスリープせずに戻る（誤り・送り残しは同じ接続の次の受け・送りが返す / 送り切る — language.md 28 節）。
-// keep-aliveのループの末尾 — 次にするのが受けのときだけ使う。ringのパスでない・送り場に入らなければ今の送り
+// keep-aliveのループの末尾 — 次にするのが受けのときだけ使う。ringのパスでない・送り場に入らなければ今の送り。TLSの接続ではnet.Putで積む（putFused）
 func sendFused(c net.Conn, b []byte) error? {
+    if len(c.sec) > 0 {
+        return putFused(c, b)
+    }
     _ = sysNetOp(9, 0, 0, 0)
     return net.Send(c, b)
 }
@@ -1426,7 +1421,7 @@ func sysAddr(b []byte) int
 func sysAppendDate(b []byte) mut []byte
 
 
-// rtのleaseのインターフェース（std/taskと同じ組み込み）。ここで使うのはop 10だけ: 今のtaskの次のtls.Recvの中のFlushを待たない印
+// rtのleaseのインターフェース（std/taskと同じ組み込み）。ここで使うのはop 10だけ: 今のtaskの次の受けの中のFlush（TLSの接続 — putFused）を待たない印
 @intrinsic("lease_op")
 func leaseOp(op int, blk []int, off int, v int) int
 
@@ -1434,31 +1429,21 @@ func leaseOp(op int, blk []int, off int, v int) int
 func sysDeadline() int
 
 // 時刻つきの送信バッファリング: ms待ってからbを送る（Delayedのレスポンスがループの末尾のとき — os.Sleep(ms) + sendFusedと同じ意味）。rtが列をコピーして時計の表に積み、
-// 満了でrtが送る（接続のtaskはスリープせずに次の受けへ — 受けは満了まで次のリクエストを返さない）。期限で切れたら送らず、次の受けがio.Expiredを返す
+// 満了でrtが送る（接続のtaskはスリープせずに次の受けへ — 受けは満了まで次のリクエストを返さない）。期限で切れたら送らず、次の受けがio.Expiredを返す。
+// TLSの接続では待ってから積む（putTimed）
 func sendTimed(c net.Conn, b []byte, ms int) error? {
+    if len(c.sec) > 0 {
+        return putTimed(c, b, ms)
+    }
     _ = sysNetOp(9, ms, 0, 0)
     return net.Send(c, b)
 }
 
-// ServeConn の核を転送路の受信コールバック recv（`for chunk <- recv()? { … }` の生成元 — net.Recv / tls.Recv の形）と送信コールバック send に一般化したもの
-// （ServeConn は net の 1 行の包み・TLS の接続は `http.server.ServeWith((k) => tls.Recv(c, k), (b) => tls.Send(c, b), route, put: (b) => tls.Put(c, b))`）。
-// 失敗は recv / send / put が返すもの（仮引数の名前の @errors — language.md 13 節: 呼び手は渡したコールバックのラベルで switch を網羅する）。
-// put（省略可 — language.md 25 節Z）を渡すと送りを2フェーズにする: 受けた切片1つ分のレスポンスの列をputで積み（送らない）、積んだ分はrecvが次の受けを待つ前に
-// 送る約束（tls.Recvは切片1つを配り終えるたびにtls.Flushする — 送りの完了待ちがレスポンスの作業のregion〔受けの反復〕の閉じた後になり、待ちの間にレスポンスの
-// 平文のページを抱えない）。streamのレスポンス（前のレスポンスと頭・emitごと — emitの間隔のまま相手へ届く）はputがあってもsendで送る。putを渡さない呼び出し点の
-// コードは put の無い形と同じ（`if put != nil` は呼び出し点ごとに畳まれる）
-// 誤りのレスポンスの後の読み捨て（linger）もrecvの続きを読む — tls.Recvは2度目をClosedで返すので読み捨てずに閉じる（TLSのclose_notifyは呼び手のServeが送る）
-// headWait / bodyWait / sendWaitはServeConnと同じ。送りの間隔は、tls.Serveの接続のように接続の番号が分かれば送りの進みで数え、分からなければ送り1回の待ちの上限
-@errors(recv, send, put, io.NotFound, io.Denied, io.Timeout, io.Expired, io.Other)
-@effects(block, io, panic, Stream)
-func ServeWith(recv func(k func([]byte)) error?, send func(b []byte) error?, route func(Request) Response, maxHead int?, maxBody int?, headWait int?, bodyWait int?, sendWait int?, compression Gzip?, work task.Local?, put (func(b []byte) error?)?) error? {
-    return serveCore(recv, send, route, -1, maxHead: maxHead, maxBody: maxBody, headWait: headWait, bodyWait: bodyWait, sendWait: sendWait, compression: compression, work: work, put: put)
-}
-
-// ServeWithの本体。fsend（省略可）= 次に受けを待つレスポンスの送り（ServeConnの平文のkeep-aliveのループ — sendFused）: putが無く、閉じないレスポンスの列の送りだけがこれを使う。
+// ServeConnのHTTP/1.1の核: 受けの生成元recv（`for chunk <- recv()? { … }`）・送りsend。fd = 接続の番号（期限の列に入れる）。
+// fsend（省略可）= 次に受けを待つレスポンスの送り（keep-aliveのループ — sendFused）: 閉じないレスポンスの列の送りだけがこれを使う。
 // tsend（省略可 — fsendと組み）= 待ってから送るレスポンスの送り（sendTimed）: ループの末尾のDelayedの待ちをserveBufが返したときに使う
-// gsend（省略可 — fsendと組み・putとは組まない）= バッチの最後のレスポンスの頭と本文を、繋がずに1回で送る（sendGather）。断られたら（false）serveBufは本文をoutへ積み、fsendで送る
-func serveCore(recv func(k func([]byte)) error?, send func(b []byte) error?, route func(Request) Response, fd int, maxHead int?, maxBody int?, headWait int?, bodyWait int?, sendWait int?, compression Gzip?, work task.Local?, put (func(b []byte) error?)?, fsend (func(b []byte) error?)?, tsend (func(b []byte, ms int) error?)?, gsend (func(h []byte, b []byte) bool)?) error? {
+// gsend（省略可 — fsendと組み）= バッチの最後のレスポンスの頭と本文を、繋がずに1回で送る（sendGather）。断られたら（false）serveBufは本文をoutへ積み、fsendで送る
+func serveCore(recv func(k func([]byte)) error?, send func(b []byte) error?, route func(Request) Response, fd int, maxHead int?, maxBody int?, headWait int?, bodyWait int?, sendWait int?, compression Gzip?, work task.Local?, fsend (func(b []byte) error?)?, tsend (func(b []byte, ms int) error?)?, gsend (func(h []byte, b []byte) bool)?) error? {
     mh := if maxHead != nil { maxHead } else { 8192 }
     mb := if maxBody != nil { maxBody } else { 16384 }
     gz := if compression != nil { gzLevel(compression) } else { 0 }
@@ -1469,7 +1454,7 @@ func serveCore(recv func(k func([]byte)) error?, send func(b []byte) error?, rou
     // 持ち越し（未完のリクエスト）の状態とその列。持ち越しが無い受け（切片1つでリクエストが揃うふつうの往復）は、比較2つ（受けの直後のcs.pnと、
     // serveBufの後の残り）だけを通る。持ち越しの処理は別の関数（carryIn・展開しないcarryOut）に置く。持ち越しの列は未完のリクエストの長さまで伸ばす
     // （appendの倍々で再確保は対数回・接続のregionに残るのは最長の持ち越しの2倍以内）
-    mut cs := carry{pn: 0, wait: 0, need: 0, ph: 0, ecode: 0, st: 0, rem: 0, total: 0, ln: 0, tb: 0, cont: false}
+    mut cs := carry{pn: 0, wait: 0, need: 0, ph: 0, ecode: 0, st: 0, rem: 0, total: 0, ln: 0, tb: 0, cont: false, dl: 0, bu: 0, pin: false}
     mut pend := mut []byte{}
     mut line := mut []byte{}
     // レスポンスのgzipの動的の木の記録（接続ごと — 出力は接続のリクエストの列の決定的な関数。最初に圧縮したレスポンスで確保 — 接続あたりページ1枚 = 4 KB・圧縮しない接続は0 B）
@@ -1478,6 +1463,7 @@ func serveCore(recv func(k func([]byte)) error?, send func(b []byte) error?, rou
     hu := waitUnits(if headWait != nil { headWait } else { 30000 * task.MS })
     bu := waitUnits(if bodyWait != nil { bodyWait } else { 60000 * task.MS })
     su := imin(waitUnits(if sendWait != nil { sendWait } else { 60000 * task.MS }), 65535)
+    cs.bu = bu
     _ = sysNetOp(16, fd, 0, 0)
     mut dl := sysNetOp(15, 0, 0, 0) + hu
     mut body := false
@@ -1487,7 +1473,7 @@ func serveCore(recv func(k func([]byte)) error?, send func(b []byte) error?, rou
         _ = sysNetOp(14, 0, 0, 0)
         // 持ち越しがあれば、carryInが繋いだコピー（反復のregion）を返す。本文がまだ揃わない・本文の誤りなら空の列（serveBufは何もしない）
         in := if cs.pn == 0 { chunk } else { carryIn(mut cs, mut pend, mut line, chunk, mh, mb) }
-        used, shut0, out0, tms, hw, se := serveBuf(send, in, route, mh, mb, gz, fresh, work, mut hist, tsend != nil && put == nil, su, gsend: gsend)
+        used, shut0, out0, tms, hw, se := serveBuf(send, in, route, mh, mb, gz, fresh, work, mut hist, tsend != nil, su, gsend: gsend)
         if se != nil {
             return se
         }
@@ -1499,6 +1485,7 @@ func serveCore(recv func(k func([]byte)) error?, send func(b []byte) error?, rou
         if rest + cs.pn != 0 {
             if carryOut(mut cs, mut pend, mut line, in, used, shut, hw, mh, mb) && !body {
                 dl = sysNetOp(15, 0, 0, 0) + bu
+                cs.dl = dl
                 body = true
             }
             if cs.ecode != 0 {
@@ -1516,14 +1503,7 @@ func serveCore(recv func(k func([]byte)) error?, send func(b []byte) error?, rou
             _ = sysNetOp(14, sysNetOp(15, 0, 0, 0) + su + waitUnits(tms * task.MS) + su * 4294967296, 0, 0)
             tsend(out, tms)?
         } else if len(out) > 0 {
-            if put != nil {
-                armSend(su)
-                // 次にするのが受けなら、受けの前の送り（tls.Recvの中のFlush）は完了を待たなくてよい印を置く。送りの結果は次の受けが返す（平文のsendFusedと同じ）
-                if shut == 0 {
-                    _ = leaseOp(10, []int{}, 0, 0)
-                }
-                put(out)?
-            } else if fsend != nil && shut == 0 {
+            if fsend != nil && shut == 0 {
                 // 送信バッファリングの送り（送信バッファに積んで待たない）: 期限の値は受けの期限 dl のまま（keep-aliveのリクエストごとの送りに時刻の読みを足さない）、
                 // 送りの間隔のビットを足す。送り場に入らずに今の送りへ倒れて待つと、dl を過ぎた後は送りの進み（相手が受け取ったバイト）を見て張り直す —
                 // 読み続ける遅い相手を切らない（dl はリクエストの前から数えるので、大きいレスポンスでは送りの途中で過ぎうる）。進まなければ送りの間隔で切る
@@ -1550,6 +1530,11 @@ func serveCore(recv func(k func([]byte)) error?, send func(b []byte) error?, rou
         if used > 0 {
             dl = sysNetOp(15, 0, 0, 0) + hu + (if tms > 0 { waitUnits(tms * task.MS) } else { 0 })
             body = false
+            cs.dl = 0
+            if cs.pin {
+                _ = sysNetOp(19, 0, 0, 0)
+                cs.pin = false
+            }
         }
         _ = sysNetOp(14, dl, 0, 0)
     }
@@ -1634,6 +1619,23 @@ type carry struct {
     tb int
     // 頭が揃ったリクエストがExpect: 100-continueのHTTP/1.1（carryOutが立て、serveCoreが100を送って下ろす）
     cont bool
+    // 本文の期限（rtの粗い時刻の単位 — 0 = 本文を待っていない）と、本文の期限の単位数（bodyWait）。本文の列を伸ばす前の天井の頼み（ceilNeed）の待ちの期限
+    dl int
+    bu int
+    // 本文の分の天井の頼みが通った（受け終えたら下限を外す）
+    pin bool
+}
+
+// Content-Lengthの本文を待ち始めるときに、本文を受け終えるまでの分（持ち越しの列の倍々と、揃ったときのjoinedのコピー — 実測で本文の約2.2倍）をまとめてrtへ頼む（net_op 19）:
+// 手元が足りなければrtが借り、プールの節か根の天井が埋まっていれば天井の空きを本文の期限まで待つ。通れば受け終えるまで手元の下限として持つ
+// （受けの途中で借りを持ったまま待つ形を作らない）。期限が来るか、予約で埋まった天井に入らない量なら戻るだけで、続く確保が天井を越えれば今と同じく接続のtaskが死ぬ。
+// 予約の内に収まる小さい本文（ceilMin未満）は頼まない
+const ceilMin = 32768
+
+func ceilNeed(cs mut carry, n int) {
+    if n >= ceilMin && cs.dl != 0 {
+        cs.pin = sysNetOp(19, n, cs.dl, 0) == 0
+    }
 }
 
 // 持ち越しのある受け（cs.pn > 0）の、serveBufへ渡す列: 持ち越しと切片を繋いだコピー（反復のregion）。本文を待っているリクエストは、揃うまで空の列を返す
@@ -1641,6 +1643,7 @@ type carry struct {
 func carryIn(cs mut carry, pend mut []byte, line mut []byte, chunk []byte, mh int, mb int) []byte {
     mut at := 0
     if cs.wait == 1 {
+        // 伸ばした列（倍々 — 前の列はregionに残る）と、揃ったときのjoinedのコピー（倍々の確保の和）の分
         if cs.pn + len(chunk) < cs.need {
             cs.pn = putAt(mut pend, cs.pn, chunk)
             return []byte{}
@@ -1700,6 +1703,11 @@ func carryOut(cs mut carry, pend mut []byte, line mut []byte, in []byte, used in
     if he > 0 {
         cs.wait = 1
         cs.need = he + cl
+        cs.dl = sysNetOp(15, 0, 0, 0) + cs.bu
+        // 本文をもう受け終えている（この切片に揃っている）なら頼まない: 受けるバイトは残っておらず、待っても受けた分を持ったまま待つだけ
+        if len(rs) < cs.need {
+            ceilNeed(mut cs, 2 * cs.need + cs.need / 4)
+        }
     }
     cs.pn = putAt(mut pend, 0, rs)
     return he > 0

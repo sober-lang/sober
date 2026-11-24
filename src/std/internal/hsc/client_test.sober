@@ -35,6 +35,28 @@ func srvParams() internal.hs.Params {
     return internal.hs.NewParams([][]byte{cb[0].der}, k, []string{"http/1.1"}, []int{internal.record.AesGcm, internal.record.ChaCha}, bytes("srv-seed"))
 }
 
+@embed("testdata/crypto/ecdsa-server.*")
+const EcCerts = map[string]string{}
+
+func ecFile(p string) string {
+    v := EcCerts[p]
+    if v != nil {
+        return v
+    }
+    return ""
+}
+
+// 証明書の鍵が P-256 の ECDSA のサーバー（testdata/crypto/ecdsa-server.* — 自己署名）
+func ecParams() internal.hs.Params {
+    cb, _ := crypto.pem.Parse(ecFile("testdata/crypto/ecdsa-server.crt"))
+    kb, _ := crypto.pem.Parse(ecFile("testdata/crypto/ecdsa-server.key"))
+    d, ok := internal.p256.ParsePKCS8(kb[0].der)
+    assert(ok, "ecdsa key")
+    k, _ := crypto.rsa.ParsePKCS8([]byte{})
+    p := internal.hs.NewParams([][]byte{cb[0].der}, k, []string{"http/1.1"}, []int{internal.record.AesGcm, internal.record.ChaCha}, bytes("srv-seed"))
+    return internal.hs.WithEcdsa(p, d)
+}
+
 func testRoots() []internal.x509.Cert {
     rs, _ := internal.x509.RootsFromPEM(certFile("testdata/crypto/httparena-server.crt"))
     return rs
@@ -107,6 +129,33 @@ func TestHandshakeAndData() {
     assert(e4 == nil)
     _, app, _, e5 := toClient(mut c, cp, resp)
     assert(e5 == nil && bytesToString(app) == "HTTP/1.1 200 OK\r\n\r\n")
+}
+
+// ECDSA の証明書のサーバーとの 1.3 の handshake（CertificateVerify = ecdsa_secp256r1_sha256 — クライアントの x509 と ec の検証の道で照合）と往復
+func TestEcdsaServer() {
+    sp := ecParams()
+    rs, _ := internal.x509.RootsFromPEM(ecFile("testdata/crypto/ecdsa-server.crt"))
+    cp := NewCParams("localhost", []string{"http/1.1"}, rs, testNow, bytes("cli-seed"))
+    c0, firstHello := StartClient(cp)
+    mut c := c0
+    mut s := internal.hs.New()
+    flight := toServer(mut s, sp, firstHello)
+    fin, _, done, e := toClient(mut c, cp, flight)
+    assert(e == nil && done && ClientConnected(c), "ecdsa handshake")
+    _ = toServer(mut s, sp, fin)
+    assert(internal.hs.IsConnected(s))
+    resp, e4 := internal.hs.SealApp(mut s, bytes("HTTP/1.1 200 OK\r\n\r\n"))
+    assert(e4 == nil)
+    _, app, _, e5 := toClient(mut c, cp, resp)
+    assert(e5 == nil && bytesToString(app) == "HTTP/1.1 200 OK\r\n\r\n")
+    // RSA の証明書を信頼の起点にしたクライアントは ECDSA の証明書を拒否する（両方の主体名が CN=localhost なので、発行者は一致して署名の検証で落ちる）
+    cp2 := NewCParams("localhost", []string{"http/1.1"}, testRoots(), testNow, bytes("cli-seed"))
+    c1, hello2 := StartClient(cp2)
+    mut c2 := c1
+    mut s2 := internal.hs.New()
+    _, _, _, e6 := toClient(mut c2, cp2, toServer(mut s2, sp, hello2))
+    cause := certCause(e6)
+    assert(cause == "other" || cause == "UnknownAuthority", "untrusted ecdsa cert ${cause}")
 }
 
 // チェーンの検証の失敗のcause（入れ子のパターン — spec E-9）

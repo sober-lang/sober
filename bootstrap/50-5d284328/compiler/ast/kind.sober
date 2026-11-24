@@ -1,0 +1,61 @@
+package ast
+
+// .sobi の `@kind` の性質の綴り（language.md 29 節）。型パラメータごとの推論した kind を、正規形の全部の性質で書く。
+// 旗の詰め方は検査器と同じ（rf 1・mf 2・cf 4・cov 8・kf 16）。綴りを変えるときはこの表だけを直す（読み手と書き手が同じ表を引く）
+
+import "std/iter"
+
+// 書く順の i 番目の性質の綴り（i = 0〜4）
+func KindWord(i int) string {
+    return switch i {
+    case 0: "regionfree"
+    case 1: "key"
+    case 2: "mutfree"
+    case 3: "domainfree"
+    default: "covariant"
+    }
+}
+
+// 書く順の i 番目の性質の旗
+func KindBit(i int) int {
+    return switch i {
+    case 0: 1
+    case 1: 16
+    case 2: 2
+    case 3: 4
+    default: 8
+    }
+}
+
+// 性質の無い型パラメータの綴り
+const KindNone = "any"
+
+// 綴り w の旗（性質の綴りでなければ -1）
+func KindBitOf(w string) int {
+    for i <- iter.Range(0, 5) {
+        if KindWord(i) == w {
+            return KindBit(i)
+        }
+    }
+    return 0 - 1
+}
+
+// kind k（旗を詰めた int）の綴り（性質を書く順に空白で区切る。性質が無ければ any）
+func KindText(k int) string {
+    mut s := ""
+    for i <- iter.Range(0, 5) {
+        if k & KindBit(i) != 0 {
+            s = if s == "" { KindWord(i) } else { s + " " + KindWord(i) }
+        }
+    }
+    return if s == "" { KindNone } else { s }
+}
+
+// .sobi の `@kind` を持つ関数宣言の kind の列（付加の列の 16 番 — 型パラメータの順の旗。無ければ -1）
+func FuncKinds(t Tree, n int) int {
+    x := t.nodes[n]
+    if x.kind != KFuncDecl || x.f < 0 || t.data[x.f] < 17 {
+        return 0 - 1
+    }
+    return t.data[x.f + 17]
+}

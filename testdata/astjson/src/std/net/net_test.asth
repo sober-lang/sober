@@ -1,0 +1,18 @@
+@@full	8201e459d809b690	6151	187725
+@head	e1babba86e1321c2	0	353
+func TestAddrForms	1a98ee96fef0b223	168	5253
+func TestBound6	b50e3660e5355f4c	62	2092
+func TestDialCap	8dcc09747197cc27	107	3529
+func TestDialLastUncapped	8aa087cd92d48f17	71	2436
+func TestDualStack	8a1797f17e96e99b	79	2611
+func TestEcho4And6	2ac6597c85804427	42	1382
+func TestInterleave	9487c8d1f97d2c1c	133	4075
+func TestV6Only	7d303946feea10f7	31	1148
+func badAddr	113961da9cd42ab2	15	614
+func blackHole	2224cc5a6df51502	129	3863
+func closeAll	b5353378e4314fe2	28	952
+func echoOne	7ca76f8acb29421b	41	1329
+func echoRun	4f00385e6f552fd1	80	2627
+func echoVia	59e6722ca91fd5cf	11	496
+func hasLoopback6	e53d58b02296b642	17	703
+func skipV6	933c7f0f880e2017	45	1579

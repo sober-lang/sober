@@ -1,10 +1,10 @@
-@@full	a3d3cade4938d9c9	12513	368421
+@@full	6b112b3068952d63	12511	368351
 @head	3a77394ac5848f9c	0	584
 const defaultMaxRow	a445f870627aa903	5	176
 const defaultTimeout	57f6b1b94ccc4184	6	217
 const limitMaxRow	d4e85b793d8716f0	5	176
 func Exec	e78ca87ee81ebeec	46	1552
-func Open	784dcf0334fc318a	105	3671
+func Open	3644659d5e327b4b	106	3681
 func Query	27cde1fec5a701a8	43	1562
 func Script	39cd1fbac1d2c961	9	405
 func argsOf	f08ba0b448c69629	15	578

@@ -1,0 +1,33 @@
+package cbcrec
+
+// dudect の題材（white-box。scripts/dudect.sh が DUDECT_PKGS に std/internal/cbcrec を足して回す）。
+// MAC-then-encrypt の Open を、クラス0 = 埋め草の短い記録・クラス1 = 埋め草の長い記録（同じ断片の長さ・埋め草は正しい形）で検定する
+// （Lucky13 — 埋め草の長さで MAC の圧縮の回数が変われば時間に出る）。Open は seq 0 で照合するので、両クラスとも MAC の不一致で終わる
+// （判定までの処理は同じ）。本文は毎回違う値。環境変数 SOBER_DUDECT が無ければ何もしない
+
+import "std/crypto/aescbc"
+import "std/internal/dudect"
+import "std/iter"
+
+func TestOpenDudect() {
+    n := internal.dudect.Count()
+    if n == 0 || !crypto.aescbc.Available() {
+        return
+    }
+    k, _ := New(MacSha256, pat(32, 11), pat(16, 12))
+    internal.dudect.Measure("cbc_open_pad", n, 19, (c, i) => {
+        // 断片の本文 = 512 バイト: 平文 + MAC 32 + 埋め草。クラス0 = 埋め草 16 バイト・クラス1 = 埋め草 240 バイト
+        padv := if c == 0 { 15 } else { 239 }
+        pn := 512 - 32 - (padv + 1)
+        mut b := mut []byte{}
+        mut y := i * 2654435761 + 99
+        for j <- iter.Range(0, pn) {
+            y = y * 6364136223846793005 + 1442695040888963407
+            b = append(b, byte((y >> 33) & 0xff))
+        }
+        sealPad(k, i, 23, 0x0303, pat(16, i), freeze(b), padv)
+    }, (f) => {
+        _, e := Open(k, 0, 23, 0x0303, f)
+        e != nil
+    })
+}

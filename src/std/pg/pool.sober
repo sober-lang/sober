@@ -123,7 +123,7 @@ func With(p Pool, k func(c Conn)) error? {
 @errors(net.Bad, net.NoHost, net.NonASCIIHost, io.Closed, io.Timeout, io.Expired, io.Denied, io.Other, internal.record.Alert, internal.hsc.CertFailed, internal.pgwire.Protocol, Tls, Auth, Server)
 @effects(block, io, panic, nondet)
 func dialInto(p Pool, i int) error? {
-    fd := internal.sock.Dial("${p.c.host}:${p.c.port}")?
+    fd := internal.sock.Dial(dialAddr(p.c.host, p.c.port))?
     internal.lot.Fresh(p.lot, i, fd)
     blk := internal.lot.Place(p.lot, i)
     to := p.c.timeout

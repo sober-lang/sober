@@ -1,0 +1,22 @@
+package main
+
+// A struct value with a mut field can be passed on from a parameter to another function.
+// The call places the callee's results in the region of that argument (a mut position has an exact region, like a mut argument)
+
+type Tally struct {
+    n int
+    seen mut []int
+}
+
+func total(t Tally) int {
+    return t.n + len(t.seen)
+}
+
+func forward(t Tally) int {
+    return total(t)
+}
+
+func main() {
+    t := Tally{n: 3, seen: mut []int{7}}
+    println("${forward(t)}")
+}

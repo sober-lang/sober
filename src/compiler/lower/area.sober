@@ -15,28 +15,13 @@ import "std/iter"
 // エリアを1枚コピーする（[ガード | スタックTASK_STACK] — チャンクと同じ旗・ガードはPROT_NONE）→ 頂上の番地。エリアの予約ページを組むプログラムはチャンクと同じ並びで
 // 頂上の上にページ0と頭の分のVAも取る（エリアの予約ページが頂上 + AWIN_OFFに来る — 触るのは予約ページだけ）
 func areaMap(st mut St) int {
-    args := listN(mut st, 7)
-    desugar.HeapSet(mut st.d, args + 1, iconst(mut st, 9))
-    desugar.HeapSet(mut st.d, args + 2, iconst(mut st, 0))
-    desugar.HeapSet(mut st.d, args + 3, iconst(mut st, TASK_GUARD + TASK_STACK + if winArm(mut st) { 4096 + TASK_HEAD } else { 0 }))
-    desugar.HeapSet(mut st.d, args + 4, iconst(mut st, 3))
-    desugar.HeapSet(mut st.d, args + 5, iconst(mut st, 16418))
-    desugar.HeapSet(mut st.d, args + 6, iconst(mut st, -1))
-    desugar.HeapSet(mut st.d, args + 7, iconst(mut st, 0))
-    b := syscall(mut st, args)
+    b := chunkMap(mut st, TASK_GUARD + TASK_STACK + if winArm(mut st) { 4096 + TASK_HEAD } else { 0 })
     bad := newBlock(mut st)
     ok := newBlock(mut st)
     condbr(mut st, cmp(mut st, CUge, b, iconst(mut st, -4095)), bad, -1, ok, -1)
     setCur(mut st, bad)
     memPanic(mut st, PM_VA)
     setCur(mut st, ok)
-    pr := syscall(mut st, list4(mut st, iconst(mut st, 10), b, iconst(mut st, TASK_GUARD), iconst(mut st, 0)))
-    bBadP := newBlock(mut st)
-    okP := newBlock(mut st)
-    condbr(mut st, cmp(mut st, CNe, pr, iconst(mut st, 0)), bBadP, -1, okP, -1)
-    setCur(mut st, bBadP)
-    memPanic(mut st, PM_VA)
-    setCur(mut st, okP)
     return bin(mut st, BAdd, b, iconst(mut st, TASK_GUARD + TASK_STACK))
 }
 
@@ -125,8 +110,9 @@ func areaPark(st mut St, from int) int {
         br(mut st, bNw, -1)
         setCur(mut st, bNw)
     }
-    // ディープスリープするときは記しを消す: 退避がTC_CTX（記しの戻り先）を上書きするので、同じrt.netwaitの呼び出しの中の次のparkを浅くしない
-    store(mut st, from, TC_ONW, bin(mut st, BAnd, w, iconst(mut st, -1 - AREA_SARM)))
+    // ディープスリープするときは記しを消す: 退避がTC_CTX（記しの戻り先）を上書きするので、同じrt.netwaitの呼び出しの中の次のparkを浅くしない。
+    // 返した印（AREA_TRIM）も消す: この待ちの前に走った分のページは、次の走査でまた返す対象になる
+    store(mut st, from, TC_ONW, bin(mut st, BAnd, w, iconst(mut st, -1 - AREA_SARM - AREA_TRIM)))
     areaSwap(mut st, from)
     br(mut st, bJ, list1(mut st, from))
     setCur(mut st, bJ)

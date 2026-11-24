@@ -198,7 +198,7 @@ func aliasRef(t ast.Tree, pkg string, tab AliasTab, s string) (string, int, bool
     while tab.syn[k] != tp {
         k += 1
     }
-    return "$a${k}.${tn}", k, true
+    return "${aliasRefName(tp)}.${tn}", k, true
 }
 
 // ファイル t が path を import する参照名（無ければ ""）
@@ -275,9 +275,16 @@ func aliasFile(t ast.Tree, pkg string, tab AliasTab) ast.Tree {
     for k <- iter.Range(0, ast.ListLen(t, root.b)) {
         imps = append(imps, ast.ListAt(t, root.b, k))
     }
+    mut names := mut map[string]int{}
     for k <- iter.Range(0, len(tab.syn)) {
         if used[k] {
-            ns = append(ns, ast.Node{ast.KImport, 0, ast.PutLit(mut db, "$a${k}"), ast.PutLit(mut db, tab.syn[k]), 0, 0, 0, 0})
+            rn := aliasRefName(tab.syn[k])
+            // 参照名はファイルの中で一意であること（ハッシュの衝突で別の package を指さない — 起きたら黙って誤らずに止める）
+            if names[rn] != nil {
+                panic(InvariantBroken{})
+            }
+            names[rn] = k
+            ns = append(ns, ast.Node{ast.KImport, 0, ast.PutLit(mut db, rn), ast.PutLit(mut db, tab.syn[k]), 0, 0, 0, 0})
             imps = append(imps, len(ns) - 1)
         }
     }
@@ -291,7 +298,7 @@ func aliasStripCx(cx Cx, tab AliasTab) Cx {
     if len(tab.tname) == 0 {
         return cx
     }
-    return Cx{aliasStrip(cx.trees), cx.file_pkg, cx.pkg_path, cx.pkg_lo, cx.pkg_hi, cx.imp_pkg, cx.imp_ref, cx.imp_path, cx.tys}
+    return Cx{aliasStrip(cx.trees), cx.file_pkg, cx.pkg_path, cx.pkg_lo, cx.pkg_hi, cx.imp_pkg, cx.imp_ref, cx.imp_path, cx.imp_ix, cx.tys}
 }
 
 // finish の最後の fail-closed の検査（aliasLeft — ファイルの package のパスは cx の表から）
@@ -374,4 +381,22 @@ func aliasLeft(ts []ast.Tree, fpkg []string, tab AliasTab) diag.Pos {
         }
     }
     return diag.None()
+}
+
+// 別名の実体の package path を合成の import で引く参照名: `$a` + path の 64 bit の FNV-1a の16進。参照名はファイルの中で一意なら足りるので、
+// プログラム全体の別名の並びの番号ではなく path だけから決める（ほかの package の別名で名前が変わらない）
+func aliasRefName(path string) string {
+    b := bytes(path)
+    mut h := -3750763034362895579
+    for i <- iter.Range(0, len(b)) {
+        h = (h ^ int(b[i])) * 1099511628211
+    }
+    hx := bytes("0123456789abcdef")
+    mut out := mut []byte{}
+    out = append(out, '$')
+    out = append(out, 'a')
+    for i <- iter.Range(0, 16) {
+        out = append(out, hx[(h >> (60 - 4 * i)) & 15])
+    }
+    return string(freeze(out)) catch ""
 }

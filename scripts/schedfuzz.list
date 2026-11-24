@@ -1,4 +1,4 @@
-# schedfuzzの対象（scripts/schedfuzz.sh — 1行1例。2列目split = 今は割れて当然〔自己検査の証人 — 検査が反応することの確認〕）
+# schedfuzzの対象（scripts/schedfuzz.sh — 1行1例。2列目split = 今は割れて当然〔自己検査の証人 — 検査が反応することの確認〕。`test:<package> <テストの名前>` = stdの単体テスト1本〔std/internalをimportする検査〕）
 examples/task_bind.sober
 examples/task_capture.sober
 examples/task_capture_seq.sober
@@ -60,3 +60,8 @@ examples/domain_handoff.sober
 examples/domain_requeue.sober
 examples/domain_poison.sober
 examples/domain_await_result.sober
+test:std/internal/mux TestChildren
+test:std/internal/mux TestSlotWait
+test:std/internal/mux TestPoolWait
+test:std/internal/mux TestRecvMux
+test:std/internal/mux TestSend

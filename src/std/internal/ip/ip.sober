@@ -1,0 +1,234 @@
+package ip
+
+// IPの番地の綴りの解析と整形。純粋な関数だけで、syscallを持たない。net・x509・hsc・http/client・pgが共有する
+
+import "std/strings"
+
+// IPv4の10進の点区切り → 4バイト。ほかの綴りは空。各群は1〜3桁で0〜255。2桁以上の群の先頭の0は拒否する（8進と読む実装との食い違いを避ける）
+@effects()
+func Parse4(s string) []byte {
+    b := bytes(s)
+    mut o := mut []byte{}
+    mut v := 0
+    mut nd := 0
+    mut lead0 := false
+    mut i := 0
+    while i <= len(b) {
+        if i == len(b) || b[i] == '.' {
+            if nd == 0 || v > 255 || len(o) == 4 {
+                return []byte{}
+            }
+            o = append(o, byte(v))
+            v = 0
+            nd = 0
+        } else {
+            c := b[i]
+            if c < '0' || c > '9' || nd == 3 || (nd == 1 && lead0) {
+                return []byte{}
+            }
+            lead0 = nd == 0 && c == '0'
+            v = v * 10 + int(c) - 48
+            nd += 1
+        }
+        i += 1
+    }
+    if len(o) != 4 {
+        return []byte{}
+    }
+    return freeze(o)
+}
+
+// IPv6の綴り（RFC 4291 2.2の3つの形: 16進の8群・"::"の省略1か所・末尾のIPv4の形）→ 16バイト。ほかの綴りは空。
+// 16進の大文字と小文字を区別しない。角括弧とzone（%…）は含めずに渡す
+@effects()
+func Parse6(s string) []byte {
+    if !strings.Contains(s, ":") {
+        return []byte{}
+    }
+    head, tail, dbl := strings.Cut(s, "::")
+    if dbl && strings.Contains(tail, "::") {
+        return []byte{}
+    }
+    hs := if head == "" && dbl { []string{} } else { strings.Split(head, ":") }
+    ts := if !dbl || tail == "" { []string{} } else { strings.Split(tail, ":") }
+    hg := groups(hs, !dbl)
+    tg := groups(ts, dbl)
+    if (len(hg) == 1 && hg[0] < 0) || (len(tg) == 1 && tg[0] < 0) {
+        return []byte{}
+    }
+    n := len(hg) + len(tg)
+    if (!dbl && n != 8) || (dbl && n > 7) {
+        return []byte{}
+    }
+    mut o := mut []byte{}
+    for g <- hg {
+        o = append(o, byte(g >> 8))
+        o = append(o, byte(g & 0xff))
+    }
+    mut z := n
+    while z < 8 {
+        o = append(o, 0)
+        o = append(o, 0)
+        z += 1
+    }
+    for g <- tg {
+        o = append(o, byte(g >> 8))
+        o = append(o, byte(g & 0xff))
+    }
+    return freeze(o)
+}
+
+// 群の綴りの列 → 16ビットの値の列。last = この列が番地の末尾で、最後の群にIPv4の形を許す（2群になる）。誤りは[-1]
+func groups(fs []string, last bool) []int {
+    mut o := mut []int{}
+    mut i := 0
+    while i < len(fs) {
+        f := fs[i]
+        if last && i == len(fs) - 1 && strings.Contains(f, ".") {
+            v4 := Parse4(f)
+            if len(v4) != 4 {
+                return []int{-1}
+            }
+            o = append(o, int(v4[0]) * 256 + int(v4[1]))
+            o = append(o, int(v4[2]) * 256 + int(v4[3]))
+        } else {
+            g := hex16(f)
+            if g < 0 {
+                return []int{-1}
+            }
+            o = append(o, g)
+        }
+        i += 1
+    }
+    return freeze(o)
+}
+
+// 16進の1〜4桁（大文字と小文字を区別しない。ほかは-1）
+func hex16(g string) int {
+    b := bytes(g)
+    if len(b) == 0 || len(b) > 4 {
+        return -1
+    }
+    mut v := 0
+    for x <- b {
+        d := if x >= '0' && x <= '9' { int(x) - 48 } else if x >= 'a' && x <= 'f' { int(x) - 87 } else if x >= 'A' && x <= 'F' { int(x) - 55 } else { -1 }
+        if d < 0 {
+            return -1
+        }
+        v = v * 16 + d
+    }
+    return v
+}
+
+// addrをホスト・port・zoneに分ける。受ける形は "host:port"・"[v6]:port"・"[v6%zone]:port"・":port"（host = ""）。
+// hostは角括弧を外した綴り（名前・IPv4・IPv6のどれか。名前の検査はしない）。portは0〜65535の10進。
+// 角括弧の中はParse6で読める番地でなければならない。角括弧の無いhostに":"があれば誤り（"::1:80"はどこまでがホストか決まらない）。
+// zoneは角括弧の中の"%"の後ろ（空は誤り）。okがfalseなら他の値は使わない
+@effects()
+func SplitHostPort(addr string) (string, int, string, bool) {
+    hp, ps, found := strings.CutLast(addr, ":")
+    if !found {
+        return "", 0, "", false
+    }
+    port := parsePort(ps)
+    if port < 0 {
+        return "", 0, "", false
+    }
+    if strings.HasPrefix(hp, "[") {
+        if !strings.HasSuffix(hp, "]") {
+            return "", 0, "", false
+        }
+        inner := strings.TrimSuffix(strings.TrimPrefix(hp, "["), "]")
+        a, zone, hasZone := strings.Cut(inner, "%")
+        if (hasZone && zone == "") || len(Parse6(a)) != 16 {
+            return "", 0, "", false
+        }
+        return a, port, zone, true
+    }
+    if strings.Contains(hp, ":") || strings.Contains(hp, "[") || strings.Contains(hp, "]") {
+        return "", 0, "", false
+    }
+    return hp, port, "", true
+}
+
+// 10進の1〜5桁で0〜65535（ほかは-1）
+func parsePort(s string) int {
+    b := bytes(s)
+    if len(b) == 0 || len(b) > 5 {
+        return -1
+    }
+    mut v := 0
+    for c <- b {
+        if c < '0' || c > '9' {
+            return -1
+        }
+        v = v * 10 + int(c) - 48
+    }
+    return if v > 65535 { -1 } else { v }
+}
+
+// 16バイトのIPv6の番地 → RFC 5952の綴り（小文字・各群の先頭の0を省く・2群以上の最長の0の並び〔同じ長さなら左〕を"::"に・
+// ::ffff:0:0/96〔IPv4-mapped〕は末尾をIPv4の形に）。16バイトでなければ空
+@effects()
+func Format6(b []byte) string {
+    if len(b) != 16 {
+        return ""
+    }
+    mut g := mut []int{}
+    mut i := 0
+    while i < 8 {
+        g = append(g, int(b[2 * i]) * 256 + int(b[2 * i + 1]))
+        i += 1
+    }
+    if g[0] == 0 && g[1] == 0 && g[2] == 0 && g[3] == 0 && g[4] == 0 && g[5] == 0xffff {
+        return "::ffff:${int(b[12])}.${int(b[13])}.${int(b[14])}.${int(b[15])}"
+    }
+    mut best := -1
+    mut bestLen := 1
+    mut j := 0
+    while j < 8 {
+        if g[j] == 0 {
+            mut k := j
+            while k < 8 && g[k] == 0 {
+                k += 1
+            }
+            if k - j > bestLen {
+                best = j
+                bestLen = k - j
+            }
+            j = k
+        } else {
+            j += 1
+        }
+    }
+    mut out := mut []byte{}
+    mut p := 0
+    while p < 8 {
+        if p == best {
+            out = append(out, ':')
+            out = append(out, ':')
+            p += bestLen
+        } else {
+            if p > 0 && p != best + bestLen {
+                out = append(out, ':')
+            }
+            hexAppend(mut out, g[p])
+            p += 1
+        }
+    }
+    return bytesToString(freeze(out))
+}
+
+// vの16進（小文字・先頭の0を省く。0は"0"）をoへ足す
+func hexAppend(out mut []byte, v int) {
+    mut started := false
+    mut sh := 12
+    while sh >= 0 {
+        d := (v >> sh) & 15
+        if d != 0 || started || sh == 0 {
+            out = append(out, if d < 10 { byte(48 + d) } else { byte(87 + d) })
+            started = true
+        }
+        sh -= 4
+    }
+}

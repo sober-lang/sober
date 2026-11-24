@@ -1,9 +1,14 @@
-@@full	a2ae6c6899083520	3509	111974
-@head	077eef15b7940e8e	0	237
-func ask	c2fdc3a75d7f7e5b	73	2553
+@@full	9ab4439b6834af7f	5397	181113
+@head	837681fe62c956d3	0	273
+func answered0	e586539e2bfec58a	21	792
+func askBoth	c92816c9f7dcdc96	113	3983
 func cat2	947f0421fa072455	33	1215
-func resolveIn	d2bc10bad64da2f5	140	4936
+func prefixOf	7a8c73c59d8f6653	29	1083
+func resolveIn	d63ea3ae75d5b73d	199	6912
 func resolveSys	d1b0d0080c71670c	35	1301
+func serverAddr	9ae933599dc245c4	19	766
 func tcpAsk	f3f8bd2fb56c270c	126	4154
+func tcpRetry	96a413e5a800f4b2	33	1345
 func txid	33d6acca09fabb93	63	1986
-func udpAsk	e2a4a51554ec347b	127	4079
+func udpAsk	768207f1921c7700	235	7760
+type dnsPair	c818da9968443b66	3	175

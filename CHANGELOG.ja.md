@@ -2,6 +2,72 @@
 
 このファイルは公開リリースごとの利用者向けの変更点を記録する。形式は [Keep a Changelog](https://keepachangelog.com/ja/1.1.0/) に倣う。バージョンは [Semantic Versioning](https://semver.org/lang/ja/) に従う（0.x の間は後方互換を約束しない）。
 
+## v0.7.6（2026-11-24）
+
+HTTPサーバ（h2cと、TLSの上でALPNが選ぶh2）とHTTPクライアントにHTTP/2を、`std/net` にIPv6を、構造化したログ（`print.Log`）を足した版。TLSの接続は `net.Conn` になり、平文とTLSの接続を同じ関数で読み書きする。`tls.Serve` は、Configで求めたとき（`tls.DangerouslyAllowTls12`）だけTLS 1.2も受ける。既定はTLS 1.3だけのまま。互換性の無い変更を含む。
+
+### HTTP/2
+
+- `http.server.ServeConn` が、新しい名前つきの引数 `proto:` で選ぶとHTTP/2（事前知識のh2c。RFC 9113）で応じる。`http.server.H1`（既定）はいままでどおりHTTP/1.1だけ。`http.server.H2` はHTTP/2だけで、HTTP/2の前置きで始まらない接続にはGOAWAY（PROTOCOL_ERROR）を送って閉じる。`http.server.Both` は前置きで始まる接続にHTTP/2で、ほかにはHTTP/1.1で応じる。HTTP/2ではストリームごとに別のtaskでrouteを呼ぶので、遅いハンドラが同じ接続の他のストリームを止めない。応答を送り終えたストリームの間に、制御フレームを返すだけの求め（SETTINGSとPINGのACK）が1万を越えた相手には、GOAWAY（ENHANCE_YOUR_CALM）を送って閉じ、プールの `shed` に数える。サーバーにRST_STREAMを送らせる求めが予算（一度に1000本・約0.54秒ごとに20本回復）を越えた相手と、中身の無いフレーム（END_STREAMなしの長さ0のDATA・END_HEADERSなしの長さ0のCONTINUATION）を2つ続けて送った相手と、maxHead × 4 + 16 KiBより長いヘッダのブロックを送った相手も同じ。HTTP/2では `sendWait:` が、相手が流れの窓を閉じたままにして応答を送れない接続も閉じる。`ServeWith` の `proto:` は、TLSのALPNと一緒に後の変更で入れる
+- `http.client.Request`・`http.client.Stream`・`http.client.Open` は、httpsの行き先にALPNでHTTP/2（`h2`）も申し出て、選ばれたらHTTP/2で往復する（1接続に1ストリームずつ）。レスポンスの形と、maxBody・redirect・Sessionの規則は同じ。相手がcontent-lengthを付けない本文のレスポンスには、頭 `transfer-encoding: chunked` が載る。httpの行き先はいままでどおりHTTP/1.1だけ
+- `http.server.ServeConn` がTLSの接続を受ける。TLSの接続では、プロトコルを前置きでなくALPNと `proto:` で決める（RFC 9113 3.2）: `H2` はHTTP/2・`Both` はALPNが `h2` ならHTTP/2でなければHTTP/1.1・`H1` はHTTP/1.1。受けた切片1つ分のレスポンスは積んで、次の受けの前にまとめて送る
+- HTTP/2で、routeがpanicするか予算を越えてストリームの子が死んだら、そのストリームにRST_STREAM（INTERNAL_ERROR）を送って閉じ、接続は続ける。前は相手から見るとストリームが終わらず、相手の期限まで待った
+
+### 破壊的変更
+
+- 互換性の無い変更: `http.server.ServeConn` に渡すrouteと `net.Serve` に渡すhandlerは、`proto:` によらず、mutの束縛とmutの中身を捕獲できない。どちらも別のtask（接続ごと、HTTP/2ではストリームごと）で走るので、そこからの書き込みは競合する。前は `sober check` がstd/netの中の行を指して「core rule: spawn」で拒否し、`sober build` は通していた。今はどちらもhandlerの位置で拒否する。移行: 共有の状態を `task.Domain` に置く。`net.Serve` を呼ぶscopeで `task.NewDomain(s, init)` で作り、handlerでdomainを捕獲して、`task.Read` と `task.Update` で読み書きする（examples/web_login.sober）
+- 互換性の無い変更: `tls.Conn` と `tls.Recv` / `tls.Send` / `tls.Put` / `tls.Flush` を削除した。`tls.Serve` のhandler（`tls.Handler`）は `func(c net.Conn) error?` になった。接続はTLSの状態を持ち、`net.Recv` / `net.Send` / `net.Put` / `net.Flush` がその上で暗号化して読み書きする（平文の接続と同じ規則）。移行: handlerの仮引数を `tls.Conn` から `net.Conn` にし、`tls.Recv` / `tls.Send` / `tls.Put` / `tls.Flush` を `net.Recv` / `net.Send` / `net.Put` / `net.Flush` に替える
+- 互換性の無い変更: この版の作業中に足した `tls.RecvMux`・`tls.ServeNet`・`tls.NetHandler` を削除した（`tls.Serve` と `tls.Handler` が代わる。`tls.RecvMux` はstdの内部の型を受けるので、stdの外からは呼べなかった）
+- 互換性の無い変更: `tls.Recv` をbreakで抜けると接続の読みが終わる、という規則を撤去した。breakの後も、次の `net.Recv` が続きを読む（平文の接続と同じ）
+- 互換性の無い変更: TLSの接続の誤りは `std/net` のラベルを使う。相手のfatal alertと、閉じた後の読み書きは `io.Closed`（前は `tls.Closed`）。壊れたrecord（サーバがalertを送って閉じる）は `io.Other{errno: 71}`（EPROTO。前は `tls.BadRecord`）。`tls.BadRecord` は削除した。移行: `io` のラベルでswitchする
+- 互換性の無い変更: `http.server.ServeWith` を削除した。移行: TLSの接続は、`tls.Serve` が渡す接続をそのまま `http.server.ServeConn` に渡す（`tls.Serve(addr, cfg, (c) => http.server.ServeConn(c, route))`）。メモリの上の往復（例と試験）は、`net.Pair` のserverに `http.server.ServeConn` を置く
+
+### TLS
+
+- 相手のclose_notifyを受けた後も、TLSの接続（`tls.Serve` が渡す接続の `net.Send`・`net.Put`）で送れる。相手のclose_notifyは相手の書く側だけを閉じ、こちらの書く側は `tls.Serve` のkが返った後のclose_notifyで閉じる（RFC 9846 6.1）。前は `tls.Closed` を返していた。リクエストを送って書く側を閉じてからレスポンスを読むクライアントに、`net.Recv` が戻った後で返事を送れる。送りが `io.Closed` を返すのは、fatalのalertを送った・受けた後と、転送路の失敗のときだけ
+- `tls.Protocol(c)` を追加した。接続でALPNが決めたプロトコル（`"h2"`・`"http/1.1"`・決まらなかったか平文の接続なら `""`）を返す
+- `tls.DangerouslyAllowTls12(cfg)` を足した。このConfigの `tls.Serve` は、TLS 1.3を申し出ないTLS 1.2のクライアントも受ける（1.3を申し出る相手は今までどおり1.3。既定は1.3だけのまま）。完全なhandshakeだけで、スイートはECDHE-RSAとRSA鍵交換 × AES-128-GCM・ChaCha20-Poly1305・AES-128-CBC（MACはSHA-256 / SHA-1）。AES-NIの無い機械ではChaCha20だけ。ALPNでh2に決まる接続はECDHE + AEADだけ。CBCの道はLucky13に対して定数時間で、RSA鍵交換は暗黙の拒否。降格の番兵を置き、再交渉とTLS_FALLBACK_SCSVは断る
+
+### netとIPv6
+
+- `net.Listen`・`net.Dial` が角括弧のIPv6の番地を受ける: `[::1]:8080`・`[fe80::1%eth0]:8080`（zoneはインターフェースの名前か番号）。IPv6の番地のlistenerはIPV6_V6ONLYを立てるので、`[::]:8080` はIPv6だけを受ける。角括弧の無いIPv6の番地（`::1:80`）は `net.Bad`
+- `net.Listen(":8080")`（ホストを省いた形）は、1本のlistenerでIPv4とIPv6の両方を受ける（dual-stack。IPv6のsocketでIPV6_V6ONLYを0にする）。IPv6の無いカーネルでは `0.0.0.0` で受ける。`0.0.0.0:8080` はいままでどおりIPv4だけ、`[::]:8080` はIPv6だけ
+- ホスト名が複数の番地に引けたとき、`net.Dial` は最後以外の試行を2秒で打ち切って次の番地へ進む（RFC 8305 5節のConnection Attempt Delayの上限値）。前は、パケットを捨てる経路の番地への試行が、scopeの期限かカーネルの諦め（既定で127秒）まで待っていた。最後の試行はいままでどおりscopeの期限まで待つ。DNSの答えはIPv6とIPv4を交互に（IPv6が先。RFC 8305 4節）試し、/etc/hostsはファイルの順を保つ
+- `net.Dial` の名前の解決は、AとAAAAを1つのUDPのsocketから同時に問い、届いた答えを使う（NXDOMAINはどちらか一方で確定・NODATAは両方のとき）。/etc/resolv.confのIPv6のnameserverと、/etc/hostsのIPv6の行も使う。前はAだけを問い、IPv6のnameserverは飛ばしていた。続けて届いた2つの答えを1回の読みに繋げない（前は、偽装の答えの直後に届いた本物の答えなど、2つ目を落としえた）
+- `http.client.Request`・`http.client.Stream` がURLのIPv6の番地（`http://[::1]:8080/`）を受ける。Hostの頭とCONNECTのauthorityは角括弧つきで送り、redirectのoriginの比較はIPv6の番地をRFC 5952の綴りにそろえて行う。URLのzone（`[fe80::1%25eth0]`・RFC 6874）はいままでどおり `BadUrl`。`pg` はURLのIPv6のホスト（`postgres://u@[::1]:5432/d`）へ繋がる
+- 群の先頭に0のあるIPv4の番地（`010.0.0.1`）を番地として読まない。`net.Listen` は `net.Bad` を返し、`net.Dial` はホスト名として引く。8進と読み違える余地を閉じるため。Go 1.17以降と同じ
+- `net.Pair(server, client)` を追加した。繋がった接続の組（socketpair）を作り、一方で `server` を子のtaskで、他方で `client` を呼び手で走らせ、`client` が返ったらclientの側を閉じて `server` の終わりを待つ。serverの誤りの値は吸収し、serverの死は呼び手に伝わる。`net.Serve` のhandlerと同じく、`server` はmutの束縛を捕獲できない
+- `net.Serve` / `tls.Serve` の `conns:` は接続の本数の天井になった。接続のtaskが生む子（HTTP/2のストリーム・ハンドラのtask.Spawn）は本数に数えない。前は子も数えたので、HTTP/2で接続が `conns:` に届くと、どのストリームも始まらず、接続が閉じるまで止まった。あわせて `conns:` を書いたServeの天井を `conns × 2 × (budget + task.Fixed())` にした（2倍のうち1つ分は接続ごとの進行の保証の余白 — 天井は、全部の接続が自分の子を1本ずつ、接続の予約と同じ大きさで同時に走らせる量を持つ）
+
+### ログ
+
+- package `std/print` と `print.Log(rec)` を足した。レコード（structの値）を1行のJSON Lines（`{"ts":"<時刻>","<型の名前>":<フィールド>}`）にしてログへ書く。時刻はprint.Logを呼んだ時点（RFC 3339のUTC・ミリ秒）。フィールドはjson.Encodeと同じ綴りで、floatのNaNと±Infは `null`。print.Logは結果を返さず、待たず、panicしない。レコードはワーカーごとの64 KiBのバッファに積み、まとめて書き出す。読み手が遅れてバッファに入らないレコードと、32 KiBを越えるレコードは、書かずに捨てる。捨てたレコードの並びの直後に `{"ts":…,"$dropped":{"n":N}}` の1行（Nが捨てた件数）を出す。バッファは正常終了・panic（死因の前）・SIGTERMとSIGINTで書き出す（docs/guide/logs.ja.md）
+- ログの行き先は標準エラー。main packageのファイルのpackage節の前に1回 `@logs(stdout)` と書くと、標準出力へ送る。そのプログラムが `println` で結果を書くと、`sober check` が拒否する
+- エフェクト `obs`（プログラムが読み戻せない出力）を足した。print.Logが持つ。`@effects` の宣言は、`@effects(!obs)` と書かない限り常に `obs` を許す。だから `@effects()` の関数・domainの呼び出しの本体と `when:`・`cell.Update` に渡す関数の中でもprint.Logを呼べる
+- レコードのフィールド（入れ子のstructのフィールドとsliceの要素を含む）に `@secret` の値が届くprint.Logの呼び出しを、`sober check` が拒否する。診断はフィールドを `型.フィールド` の形で、型の宣言の位置に示す
+- `task.Ledger()` に `logs` を足した: `written`（書き出したレコードの数）・`dropped`（捨てたレコードの数）・`maxPending`（バッファに溜まった最大のバイト数。読むと0に戻る）。written + droppedは呼んだ数に等しい
+- `print.Log`・`json.Encode`・`json.EncodeWith` は、型引数を実引数の型から推論する: `print.Log(rec)`・`json.Encode(v)`。型引数を書いた形（`json.Encode[T](v)`）も同じ呼び出し。ジェネリック関数の中で、型パラメータの値をprint.Logに渡すことはできない
+
+### 言語とコンパイラ
+
+- `sober build` / `run` / `test` は、`task.Spawn` の子がループの反復やブロックの中で作ったregionつきの値（string・slice・mapとそのstruct）を捕獲する形を拒否する（`sober check` と同じ点・同じ文面）。前はbuildの道がこの検査を通さず、実行で子が解放された領域を読んだ
+- `sober check` は、stdの外からstdの `Dangerously` で始まる関数（`tls.DangerouslyAllowTls12` など）を呼ぶ点で毎回警告を出す（`dangerously…` のフィールドと同じ）。黙らせる手段は無い
+- `sober build --profile=<file>` が、プロファイルが冷たいとしたコードのブロックを、各関数の熱いコードの後ろに置く。プロファイルはテキストのファイル（1行目は `sober-profile 1`）で、scripts/profgen.sh がcallgrindの実行から書く。各行は関数をその鍵とコードの指紋で指し、指紋が合うときだけ使う。だから、古いコンパイラや古いソースで取った行は何も変えない。出力はソース・コンパイラ・プロファイルだけで決まる（ビルドのキャッシュと答えの再生は、プロファイルを鍵に入れる）。読めないファイルと、プロファイルの形でないファイルは、理由を言ってビルドを止める。どの行も合わないプロファイルは警告を出し、プロファイルなしと同じビルドになる。プロファイルが変えるのはコードを並べる順だけなので、効くのは最適化つきの実行ファイルで、ほかの `--emit` の形ではファイルを読んで検査するだけ
+- std/http/clientの関数の `headers:` と `http.server.Headers{list: …}` に、stdが自分で書くヘッダの名前をリテラルで書くと、`sober check` が拒否する（clientはHost・Content-Length・Transfer-Encoding・Connection。serverはDate・Content-Type・Content-Length・Content-Encoding・Transfer-Encoding・Connection・Vary・Cache-Control・CDN-Cache-Control・Surrogate-Control・ETag・Last-Modified・Set-Cookie。大文字小文字を区別しない）。見るのは、名前が文字列のリテラル・const・それらの `+` のとき。診断は値の正しい設定の仕方を示す。実行時に決まる名前は、今までどおりヘッダを書くときに `http.BadHeader` でpanicする
+- ループや入れ子のブロックの中で作ったmutのローカルを、外のmutの束縛やmut仮引数と一緒に、再帰する関数へ1つの呼び出しで渡す形を、`sober check` が受理する。前は `sober check` が「core rule: call」で拒否していた。`sober build` は受理し、プログラムは正しく動いていた。そのローカルのセルは、外の束縛のregionに作る
+- 直した誤り: 1つの総称の関数や型を `string` と `[]byte` の両方で使うプログラムで、`sober build` が内部の型の食い違いで止まっていた。例は、同じプログラムで `task.Map` の結果を `[]byte` に、`task.Try` の結果を `string` にする形や、`Box[string]` と `Box[[]byte]` を両方使う形。2つの実体が1つの鍵を共有していた。`sober check` は受理していた
+
+### 性能
+
+- 次のリクエストを待つ `tls.Serve` のTLSの接続の常駐が、24 KiBから12 KiBに減った（待っている接続4,000本での実測）。`tls.Serve` の接続ごとの処理を接続のtaskの中で走らせ、眠り続ける接続のスタックの使っていないページをランタイムが返す。json-tlsの手元の計測（4,096接続・8通りのコード配置の中央値）で、リクエストあたりのcyclesが2.9%減った
+- 1行の変更の後の再ビルドが速くなった: 10万行で1,388 msから850 ms、100万行で13.9秒から8.6秒（ワーカー8・同じ機械で9回の中央値）
+
+### bench/httparena
+
+- ポート8082のlistenerがh2c（`http.server.ServeConn` の `proto: http.server.H2`）と `GET /baseline2` に応じる。meta.jsonの種目にbaseline-h2cとjson-h2cを足した
+- サーバを `--profile=main.prof`（サーバの熱さのプロファイル。scripts/profgen.sh が作る）でビルドし、冷たいブロックを熱いコードの後ろに置く
+- TLSのlistenerの経路表を、接続ごとでなくリクエストごとに作る。次のリクエストを待つTLSの接続の常駐が、1ページ（4 KiB）減る。json-tlsの手元の計測（4,096接続・8通りのコードの配置）で、リクエストあたりのcyclesが3.6%減った
+
 ## v0.7.5（2026-11-18）
 
 攻撃への耐性を上げた版。httparenaの攻撃への耐性（Resilience）の検査27個が、全部survivedになった（これらの変更を入れる前の木では25個で、tiny-chunk-floodとjson-bignumがメモリの上限で落ちた）。満杯のときに新しい接続を受け付け続け、居座る接続から枠を取り戻し、入場をバイトの天井で決める。HTTPサーバに、受けと送りの待ちの上限（期限）を入れた。総称関数の型パラメータの性質（kind）を推論し、regionやmutを持つ型を型引数にできるようになった。`@embed` でバイト列を受けられる。互換性の無い変更を含む。
@@ -122,7 +188,7 @@
 ### 性能
 
 - 反復のregionを開く点を、本体で最初に確保する点の直前まで遅らせる。確保しないまま終わる周では、regionを開かない。bench/の題材で、命令がroutingで5.43%・jsonapiで1.73%減った。出力・panic・メモリの上限は変わらない。深度の上限（exit 102）に当たる点と、そのときに印字する深度は、浅い方へずれうる
-- `std/compress/flate`（記録つきの符号化。`std/http/server` のgzipのレスポンス）: ブロックごとの一時の列を作業域に移した。出力のバイトは同じ。手元の計測（bench/httparenaのjson-comp・4,096接続・8つのコード配置の中央値）で、リクエスト1件のcycles:uが1.31%減った
+- `std/compress/flate`（履歴（`History`）つきの符号化。`std/http/server` のgzipのレスポンス）: ブロックごとの一時の列を作業域に移した。出力のバイトは同じ。手元の計測（bench/httparenaのjson-comp・4,096接続・8つのコード配置の中央値）で、リクエスト1件のcycles:uが1.31%減った
 - JSONの書き出し（`json.Encode` と `std/http/server` のJSONのレスポンス）: 書き出しのバッファを伸ばすとき、伸ばした領域をゼロで埋めない。書く前に読まれることが無い形に限った、std内部の操作で行う。手元の計測（jsonの種目・4,096接続・8つのコード配置の中央値）で、リクエスト1件のcycles:uが4.54%減り、rpsが1.17%増えた
 - `std/http/server`: keep-aliveのバッチの最後のレスポンスで、ヘッダと本文をワーカーの送信バッファへ直接書き込んで送る。本文を一度別の列へ書き込むコピーが無くなった。io_uringの経路で、送信バッファに空きがあるときに使う
 - `std/tls`: 送信バッファを、接続ごとの列（16.4 KB）からワーカーの送信バッファの予約へ移した。接続ごとの状態が小さくなる。`tls.Send`・`tls.Put`・`tls.Flush` の約束は変わらない
@@ -190,7 +256,7 @@ HTTP サーバの要求 1 件の固定費を削った版。v0.6.6 から v0.7.1 
 
 ### std
 
-- `std/compress/gzip` / `std/compress/flate`（記録つきの符号化 — std/http/server の gzip の応答）: 記録の木を選ぶときの見積もりと正準の符号の作り直しの固定費を削った（出力のバイトは同じ）。手元の bench/httparena の json-comp で 1 要求の cycles −1.7%（8 つのコード配置の中央値・8/8 で減）
+- `std/compress/gzip` / `std/compress/flate`（履歴（`History`）つきの符号化 — std/http/server の gzip の応答）: 記録の木を選ぶときの見積もりと正準の符号の作り直しの固定費を削った（出力のバイトは同じ）。手元の bench/httparena の json-comp で 1 要求の cycles −1.7%（8 つのコード配置の中央値・8/8 で減）
 - `std/pg`: `pg.ColJsonText(r, i) (string, error?)` — json / jsonb の列の字句を string で読む。`json.Put(mut o, pg.ColJsonText(row, i)?)` で応答へそのまま積める（`string(pg.ColJson(row, i)?)` と書く必要がない）
 - `std/pg`: json / jsonb の列も、行を受けた時点で UTF-8 を確かめる（text の列と同じ扱い）。不正なバイト列を含む行は受けた時点で `Protocol` の誤りになる（前は利用者が string へ変えたときに初めて誤りになった）。text / json の列を string で読むときは確かめ直さない
 - `std/task`: `task.Ledger()` に `late`（待ちの上限 D を越えて走った task の数の累計）と `maxLate`（越えた量〔待ち − D〕の最大 — ns・読むと 0 に戻る）

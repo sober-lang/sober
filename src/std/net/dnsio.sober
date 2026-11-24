@@ -3,11 +3,12 @@ package net
 // 名前の解決の送受（UDP の問い合わせ・切り詰めなら TCP・nameserver の巡回・期限）
 
 import "std/io"
+import "std/strings"
 import "std/iter"
 import "std/task"
 import "std/time"
 
-// ホスト host の IPv4 の番地（/etc/hosts → /etc/resolv.conf — どちらも無ければ空の本文として読む）
+// ホスト host の番地（4 か 16 バイト。/etc/hosts → /etc/resolv.conf。どちらも無ければ空の本文として読む）
 @errors(Bad, NoHost, NonASCIIHost, io.Timeout, io.Expired)
 @effects(block, io, nondet)
 func resolveSys(host string) ([][]byte, error?) {
@@ -37,14 +38,27 @@ func resolveIn(host string, c dnsConf, hostsText string, port int) ([][]byte, er
         for a <- iter.Range(0, c.attempts) {
             for srv <- c.servers {
                 if !next {
-                    r := ask("${srv}:${port}", name, qtA, c.timeout)
-                    if r.ok && r.rcode == 0 && len(r.addrs) > 0 {
-                        return r.addrs, nil
-                    }
-                    // NXDOMAIN（3）か答えの無い NOERROR（NODATA）= この名前は無い → 次の候補
-                    if r.ok && (r.rcode == 3 || r.rcode == 0) {
+                    p := askBoth(serverAddr(srv, port), name, c.timeout)
+                    // NXDOMAIN（3）はどちらか一方で確定する（名前が無いのは family に依らない）→ 次の候補
+                    if (p.a.ok && p.a.rcode == 3) || (p.aaaa.ok && p.aaaa.rcode == 3) {
                         answered = true
                         next = true
+                    } else {
+                        mut addrs := mut [][]byte{}
+                        for x <- answered0(p.aaaa) {
+                            addrs = append(addrs, x)
+                        }
+                        for x <- answered0(p.a) {
+                            addrs = append(addrs, x)
+                        }
+                        if len(addrs) > 0 {
+                            return interleave(freeze(addrs)), nil
+                        }
+                        // 答えの無い NOERROR（NODATA）は両方のときだけ「この候補に答えが無い」→ 次の候補。片方だけなら、答えなかった側を待って次の nameserver へ
+                        if p.a.ok && p.a.rcode == 0 && p.aaaa.ok && p.aaaa.rcode == 0 {
+                            answered = true
+                            next = true
+                        }
                     }
                 }
             }
@@ -56,15 +70,40 @@ func resolveIn(host string, c dnsConf, hostsText string, port int) ([][]byte, er
     return [][]byte{}, io.Timeout{}
 }
 
-// server（"a.b.c.d:port"）に name の qtype を問う（期限 timeout ns — UDP・切り詰めなら同じ期限で TCP）。届かない・期限切れ・形の誤りは ok = false
+// nameserver の綴り（IPv4 か IPv6 の番地）と port の addr（IPv6 は角括弧で括る）
+func serverAddr(srv string, port int) string {
+    return if strings.Contains(srv, ":") { "[${srv}]:${port}" } else { "${srv}:${port}" }
+}
+
+// 答えの番地（NOERROR で答えたときだけ。ほかは空）
+func answered0(r dnsAnswer) [][]byte {
+    return if r.ok && r.rcode == 0 { r.addrs } else { [][]byte{} }
+}
+
+// A と AAAA の答えの組
+type dnsPair struct {
+    a dnsAnswer
+    aaaa dnsAnswer
+}
+
+// server に name の A と AAAA を問う（1 つの UDP の socket から 2 問を続けて送り、txid で振り分けて両方か期限 timeout ns まで待つ。
+// 切り詰められた側だけを同じ期限で TCP で問い直す）。届かない・期限切れ・形の誤りの側は ok = false
 @effects(block, io, nondet)
-func ask(server string, name string, qtype int, timeout int) dnsAnswer {
-    id := txid()
-    q := dnsQuery(id, name, qtype)
-    u, ue := task.Run((s) => udpAsk(server, q, id, name, qtype), deadline: timeout)
-    if ue != nil || !u.tc {
-        return if ue != nil { badAnswer() } else { u }
-    }
+func askBoth(server string, name string, timeout int) dnsPair {
+    ia := txid()
+    t2 := txid()
+    id6 := if t2 == ia { (ia + 1) & 0xffff } else { t2 }
+    qa := dnsQuery(ia, name, qtA)
+    q6 := dnsQuery(id6, name, qtAaaa)
+    u, ue := task.Run((s) => udpAsk(server, qa, ia, q6, id6, name), deadline: timeout)
+    p := if ue != nil { dnsPair{a: badAnswer(), aaaa: badAnswer()} } else { u }
+    ra := if p.a.ok && p.a.tc { tcpRetry(server, qa, ia, name, qtA, timeout) } else { p.a }
+    r6 := if p.aaaa.ok && p.aaaa.tc { tcpRetry(server, q6, id6, name, qtAaaa, timeout) } else { p.aaaa }
+    return dnsPair{a: ra, aaaa: r6}
+}
+
+@effects(block, io, nondet)
+func tcpRetry(server string, q []byte, id int, name string, qtype int, timeout int) dnsAnswer {
     t, te := task.Run((s) => tcpAsk(server, q, id, name, qtype), deadline: timeout)
     return if te != nil { badAnswer() } else { t }
 }
@@ -82,36 +121,67 @@ func txid() int {
     return ((ns & 255) << 8 | (ns >> 8) & 255) ^ (ns >> 16) & 255
 }
 
-// UDPで1回問う（txidと問いの合わないレスポンスは捨てて次のdatagramを待つ — 期限まで）
+// UDP で A（qa・ia）と AAAA（q6・i6）を続けて送り、両方の答えを待つ（txid と問いの合わないレスポンスは捨てて次の datagram を待つ。
+// 期限で待ちが切れたら、それまでに届いた側だけを返す。どちらかが NXDOMAIN なら、もう片方を待たない）
 @effects(block, io, nondet)
-func udpAsk(server string, q []byte, id int, name string, qtype int) dnsAnswer {
+func udpAsk(server string, qa []byte, ia int, q6 []byte, i6 int, name string) dnsPair {
     sa := sockaddr(server)
-    fd := sysCall(41, 2, 526338, 0, 0, 0, 0)
-    if fd < 0 || len(sa) != 16 {
-        return badAnswer()
+    none := dnsPair{a: badAnswer(), aaaa: badAnswer()}
+    if len(sa) == 0 {
+        return none
+    }
+    fd := sysCall(41, family(sa), 526338, 0, 0, 0, 0)
+    if fd < 0 {
+        return none
     }
     defer closeFd(fd)
-    if sysCall(42, fd, sysAddr(sa), 16, 0, 0, 0) < 0 {
-        return badAnswer()
+    if sysCall(42, fd, sysAddr(sa), len(sa), 0, 0, 0) < 0 {
+        return none
     }
-    if sysCall(1, fd, sysAddr(q), len(q), 0, 0, 0) != len(q) {
-        return badAnswer()
+    if sysCall(1, fd, sysAddr(qa), len(qa), 0, 0, 0) != len(qa) || sysCall(1, fd, sysAddr(q6), len(q6), 0, 0, 0) != len(q6) {
+        return none
     }
-    while true {
-        b := sysReadFd(fd, 65535 + 1099511627776)
-        e := sysErrno()
-        if e != 0 {
-            if again(0 - e, fd, evIn) != 0 {
-                return badAnswer()
+    mut ra := badAnswer()
+    mut r6 := badAnswer()
+    // 受けは recv(2) で datagram を 1 つずつ（sysReadFd は届いている分を続けて読むので、2 つの答えが 1 つの切片に繋がりうる）。
+    // EDNS0 を送らないので、答えは 512 バイトまで（越える答えは TC を立てて切り詰められる）
+    mut buf := mut []byte{}
+    mut z := 0
+    while z < 4096 {
+        buf = append(buf, 0)
+        z += 1
+    }
+    while !(ra.ok && r6.ok) && !(ra.ok && ra.rcode == 3) && !(r6.ok && r6.rcode == 3) {
+        n := sysCall(45, fd, sysAddr(buf), 4096, 0, 0, 0)
+        if n < 0 {
+            if again(n, fd, evIn) != 0 {
+                return dnsPair{a: ra, aaaa: r6}
             }
         } else {
-            r := parseAnswer(b, id, name, qtype)
-            if r.ok {
-                return r
+            b := prefixOf(mut buf, n)
+            x := parseAnswer(b, ia, name, qtA)
+            if x.ok && !ra.ok {
+                ra = x
+            } else {
+                y := parseAnswer(b, i6, name, qtAaaa)
+                if y.ok && !r6.ok {
+                    r6 = y
+                }
             }
         }
     }
-    return badAnswer()
+    return dnsPair{a: ra, aaaa: r6}
+}
+
+// b の先頭 n バイトの写し
+func prefixOf(b mut []byte, n int) []byte {
+    mut o := mut []byte{}
+    mut i := 0
+    while i < n {
+        o = append(o, b[i])
+        i += 1
+    }
+    return freeze(o)
 }
 
 // TCP で問う（2 バイトの長さの前置き — RFC 1035 4.2.2）

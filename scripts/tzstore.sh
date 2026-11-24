@@ -7,6 +7,8 @@
 #   scripts/tzstore.sh --regen [版]    tz の版（2026f の形・省略 = 最新のリリース）の tzdata を取って組み直す（ネットと zic が要る）
 #   scripts/tzstore.sh --latest        tz の最新のリリースの版を印字（data.iana.org/time-zones/tzdb/version — .github/workflows/tzstore.yml が銘の版と比べる）
 #   scripts/tzstore.sh --pinned        銘の版を印字
+# ゴールデンの並びを呼び手のロケールに依らせない
+export LC_ALL=C.UTF-8
 set -uo pipefail
 cd "$(dirname "$0")/.."
 D=testdata/tz

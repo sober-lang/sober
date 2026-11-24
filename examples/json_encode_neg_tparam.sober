@@ -1,0 +1,17 @@
+package main
+
+// 負例（拒否）: ジェネリック関数の中で、型パラメータの値をjson.Encodeに渡す（変換の関数は型ごとに合成するので、型の決まる所で呼ぶ）
+
+import "std/json"
+
+type Visit struct {
+    path string
+}
+
+func show[T](x T) string {
+    return json.Encode(x)
+}
+
+func main() {
+    println(show(Visit{path: "/"}))
+}

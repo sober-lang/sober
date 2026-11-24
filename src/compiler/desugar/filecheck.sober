@@ -512,7 +512,7 @@ func fcBrwPos(st mut S, fk int, i int, fuel int) bool {
         gcDoor(mut st)
     }
     // fk の本体の中の名前（同じ package の関数・fk の package の import）は fk の package で引く — 呼び手の package のままだと、
-    // 別の package の関数（server.ServeWith の serveBuf / linger）の中の呼び出しが見つからず借りの位置でない扱いになる
+    // 別の package の関数（server.ServeConn の serveBuf / linger）の中の呼び出しが見つからず借りの位置でない扱いになる
     cp := st.curPkg
     st.curPkg = fnPkg(mut st, fk)
     b := fsBad(mut st, body, sA(nodeOf(mut st, prm)), fuel - 1)

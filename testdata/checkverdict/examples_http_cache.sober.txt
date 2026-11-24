@@ -1,2 +1,2 @@
-{"ok":true,"ty":{"k":"unit"}}
-exit=0
+examples/http_cache.sober:40:160: error: Cache-Control is written by std/http/server and cannot be in headers: — set cache of http.server.Response or of the route (Route.cache) (at run time a reserved name panics with http.BadHeader. language.md 28 節) (Analyzer)
+exit=1

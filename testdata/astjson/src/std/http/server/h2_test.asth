@@ -1,0 +1,12 @@
+@@full	61be753139d1669b	6456	199727
+@head	47c6d4c4cb3818e6	0	306
+func TestH2Head	43ec5314fa269226	134	4914
+func TestH2Request	6c689824f348c9a5	128	4184
+func TestH2RequestBad	d2829190608fedf3	300	9903
+func TestH2RequestCookieBody	dde1d4a24c5250f0	177	5885
+func h1Expect	8e94caece5478ad1	130	4179
+func h2Decode	0b7c6f6c7c2e682c	110	3661
+func h2Fields	cdef1316cf205f55	100	3314
+func h2Req	b9bfe8f433140ef0	16	670
+func sameStrs	5260d4b48dd4c67e	40	1365
+func strOr	02403b4df45332a2	14	525

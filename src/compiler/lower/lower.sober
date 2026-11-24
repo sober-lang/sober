@@ -12,6 +12,7 @@ import "loader"
 import "std/io"
 import "std/iter"
 import "std/table"
+import "std/task"
 
 // 下ろす関数 1 つ（st.infos の要素 — 添字で指す）
 type FnInfo struct {
@@ -251,6 +252,16 @@ func ElfPassesCache(p loader.Program, dir string, v BcView, ps []loader.PcPut) (
     return o.b, nil
 }
 
+// ElfPassesCacheに熱さのプロファイル（profile.sober — プロファイルのファイルだけ。切片はβ2の鍵へ）を足したELF
+@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.KindArg, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch, diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.FieldType, diag.FnCap)
+func ElfProfileCache(p loader.Program, dir string, v BcView, ps []loader.PcPut, pf Prof) (Placed, error?) {
+    mut k := knob(KElf, true, true, false, false, 0, VfyLast)
+    k.bcDir = dir
+    k.pf = pf
+    o := lowerCore(p, k, v, ps)?
+    return Placed{exe: o.b, tab: []byte{}, pfHit: o.pf[0], pfRows: o.pf[1]}, nil
+}
+
 // ElfPassesと同じ形でビルドしたときの関数ごとの後段のキャッシュの鍵（`sober build --emit=cachekeys` — ckey.sober:
 // 1 行 `<安定な鍵> a=<α の鍵> b=<β の鍵>`）
 @errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.KindArg, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch, diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.FieldType, diag.FnCap)
@@ -330,12 +341,19 @@ func RtMutantLay(p loader.Program, n int, lay int, syms bool, vmode int) ([]byte
 // RtMutantLayに配置の計測のオプション（place.sober）を足したELFと、保存する番地の表（pl.saveでなければ空）
 @errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.KindArg, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch, diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.FieldType, diag.FnCap)
 func RtMutantPlace(p loader.Program, n int, lay int, syms bool, vmode int, pl Place) (Placed, error?) {
+    return RtMutantProf(p, n, lay, syms, vmode, pl, ProfOff())
+}
+
+// RtMutantPlaceに熱さのプロファイル（profile.sober）を足したELF
+@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.KindArg, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen, diag.Cell, diag.FnArg, diag.TypeMismatch, diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.FieldType, diag.FnCap)
+func RtMutantProf(p loader.Program, n int, lay int, syms bool, vmode int, pl Place, pf Prof) (Placed, error?) {
     mut k := knob(KElf, true, true, syms, false, 0, vmode)
     k.rtMut = n
     k.xLay = lay
     k.pl = pl
+    k.pf = pf
     o := lowerCore(p, k, bcNone(), []loader.PcPut{})?
-    return Placed{exe: o.b, tab: o.pt}, nil
+    return Placed{exe: o.b, tab: o.pt, pfHit: o.pf[0], pfRows: o.pf[1]}, nil
 }
 
 // 今の IR テキスト（--dump-ir）
@@ -394,6 +412,7 @@ type Knob struct {
     rtMut int
     xLay int
     pl Place
+    pf Prof
     callStat bool
     csSite bool
     cutStat bool
@@ -404,7 +423,7 @@ type Knob struct {
 
 func knob(out int, passes bool, m2r bool, syms bool, copy bool, stop int, vmode int) Knob {
     return Knob{out: out, passes: passes, m2r: m2r, syms: syms, copy: copy, stop: stop, vmode: vmode, ymode: 0, traceErrs: false, traceEffs: false, xseq: false,
-        mvRound: false, noVec: false, noSpec: false, noRflow: false, ubStat: false, frStat: false, memRep: false, dumpIr: false, trapProbe: false, rtMut: 0, xLay: 0, pl: PlaceOff(), callStat: false, csSite: false, cutStat: false, fnHash: false, ckEmit: false, bcDir: ""}
+        mvRound: false, noVec: false, noSpec: false, noRflow: false, ubStat: false, frStat: false, memRep: false, dumpIr: false, trapProbe: false, rtMut: 0, xLay: 0, pl: PlaceOff(), pf: ProfOff(), callStat: false, csSite: false, cutStat: false, fnHash: false, ckEmit: false, bcDir: ""}
 }
 
 // p を k の形で下ろす
@@ -418,13 +437,51 @@ type LowOut struct {
     b []byte
     ys []int
     pt []byte
+    // 熱さのプロファイル: [指紋の合った関数の数, プロファイルの行の数]
+    pf []int
 }
 
-// lower の全部の入口の本体（build の展開をこの関数 1 本だけが持つ — --passes の無い build は mut st を受ける関数を呼び出し点ごとに
-// 展開するので、build の呼び出し点が増えるたびに raw の自己 build の IR が build 1 本分ずつ伸びる）
-// bv = appがparseの前に読んだ格納場所の表（onでなければ格納場所のパスは自分で読む — Knobに入れない: Knobはlowerの入口ごとに組むので、
-// フィールドを足すと入口が全部太る）・ps = parseのキャッシュの読みの結果（書きのバッチへ）
+// lower の全部の入口。bv = appがparseの前に読んだ格納場所の表（onでなければ格納場所のパスは自分で読む — Knobに入れない: Knobはlowerの入口ごとに
+// 組むので、フィールドを足すと入口が全部太る）・ps = parseのキャッシュの読みの結果（書きのバッチへ）
 func lowerCore(p loader.Program, k Knob, bv BcView, ps []loader.PcPut) (LowOut, error?) {
+    return lowerCoreR(p, k, bv, ps, 0, []int{}, [][]byte{})
+}
+
+// やり直しの周（束を使うビルド — sumconst.sober の bxCRedoSet）: 全部の後の照合で外れた package を外れの集合 ms に足し、lower の段を新しい St で
+// 回し直す。外れに足すのは事前の候補が当たった package だけで、外れの集合の package は候補を引かないので、外れの集合は周ごとに増えるだけ。
+// 周の数は package の数で抑えられる。pr = 前の周の全部の後の境の要約（package の添字 — 次の周の投機が使う）。周は再帰で回す
+// （1周の St は lowerRound が返ると捨てる）
+func lowerCoreR(p loader.Program, k Knob, bv BcView, ps []loader.PcPut, rnd int, ms []int, pr [][]byte) (LowOut, error?) {
+    r := lowerRound(p, k, bv, ps, rnd, ms, pr)?
+    if len(r.add) == 0 {
+        return r.o, nil
+    }
+    if rnd > r.np {
+        panic(InvariantBroken{})
+    }
+    mut ms2 := mut []int{}
+    for q <- ms {
+        ms2 = append(ms2, q)
+    }
+    for q <- r.add {
+        ms2 = append(ms2, q)
+    }
+    return lowerCoreR(p, k, r.bv, ps, rnd + 1, freeze(ms2), r.pr)
+}
+
+// lower の1周の出力（add = やり直しで外れに足す package・bv = 格納場所の表〔次の周が読み直さない〕・np = package の数・
+// pr = 全部の後の境の要約〔package の添字〕）
+type LowRound struct {
+    o LowOut
+    add []int
+    bv BcView
+    np int
+    pr [][]byte
+}
+
+// lower の1周の本体（build の展開をこの関数 1 本だけが持つ — --passes の無い build は mut st を受ける関数を呼び出し点ごとに
+// 展開するので、build の呼び出し点が増えるたびに raw の自己 build の IR が build 1 本分ずつ伸びる）
+func lowerRound(p loader.Program, k Knob, bv BcView, ps []loader.PcPut, rnd int, ms []int, pr [][]byte) (LowRound, error?) {
     mut st := St{}
     st.traceErrs = k.traceErrs
     st.traceEffs = k.traceEffs
@@ -433,6 +490,7 @@ func lowerCore(p loader.Program, k Knob, bv BcView, ps []loader.PcPut) (LowOut, 
     st.noVec = k.noVec
     st.noSpec = k.noSpec
     st.noRflow = k.noRflow || rflowOffEnv()
+    st.rfWhyOn = rflowWhyEnv()
     st.ubStat = k.ubStat
     st.frStat = k.frStat
     st.memRep = k.memRep
@@ -444,6 +502,7 @@ func lowerCore(p loader.Program, k Knob, bv BcView, ps []loader.PcPut) (LowOut, 
     st.rtMut = k.rtMut
     st.xLay = k.xLay
     st.xPl = k.pl
+    st.xProf = k.pf
     if k.out != KTyper {
         st.slotPoison = slotPoisonEnv()
     }
@@ -453,9 +512,11 @@ func lowerCore(p loader.Program, k Knob, bv BcView, ps []loader.PcPut) (LowOut, 
     st.fnHash = k.fnHash
     // 後段の関数キャッシュの鍵（ckey.sober — 鍵の計算だけ・格納場所は持たない）: 最適化のバックエンドのELFのパスだけ
     st.ckEmit = k.ckEmit
-    st.ckOn = k.ckEmit || (k.out == KElf && k.passes && k.m2r && !k.copy && k.stop == 0 && (lsEnvInt("SOBER_BUILD_CACHE") == 1 || k.bcDir != ""))
+    // 熱さのプロファイル（profile.sober）は指紋にβの鍵を使うので、鍵を計算する（格納場所はプロファイルだけのビルドで使う — 切片はβ2の鍵へ。
+    // 検証の口 --cold-emit・--blkmap〔群の子が表を出す — 当たった関数は出さない〕は使わない）
+    st.ckOn = k.ckEmit || (k.out == KElf && k.passes && k.m2r && !k.copy && k.stop == 0 && (lsEnvInt("SOBER_BUILD_CACHE") == 1 || k.bcDir != "" || k.pf.on))
     // 後段の関数キャッシュの格納場所（bcache.sober）: 鍵を計算するパスのうち、mainが世代のディレクトリを渡したbuildだけ（照合の経路・開発用のオプションは使わない）
-    if st.ckOn && !k.ckEmit && k.bcDir != "" && !k.mvRound && !k.xseq && k.xLay == 0 && !k.pl.on {
+    if st.ckOn && !k.ckEmit && k.bcDir != "" && !k.mvRound && !k.xseq && k.xLay == 0 && !k.pl.on && !k.pf.cold && !k.pf.blkmap {
         st.bcDir = k.bcDir
         // 検証モード（=1）・扉の監査（=2 — 検証モードを含む・bcache.sober の bcAud*）
         vm := lsEnvInt("SOBER_CACHE_VERIFY")
@@ -471,8 +532,12 @@ func lowerCore(p loader.Program, k Knob, bv BcView, ps []loader.PcPut) (LowOut, 
             bcFsck(k.bcDir)
         }
         st.bcAf = -1
-        for q <- iter.Range(0, 13) {
+        for q <- iter.Range(0, 19) {
             table.Push(mut st.bcCnt, 0)
+        }
+        bxInit(mut st)
+        if rnd > 0 {
+            bxCSeed(mut st, rnd, ms, pr)
         }
         // parseのキャッシュ（P0）の書きの側と当否の数（loaderの読みの結果 — 格納場所を使わない読みでは空）
         bcParsePut(mut st, ps)
@@ -493,7 +558,7 @@ func lowerCore(p loader.Program, k Knob, bv BcView, ps []loader.PcPut) (LowOut, 
     if k.out == KTyper {
         mut ys := mut []int{}
         yReport(mut st, mut ys)
-        return LowOut{b: []byte{}, ys: freeze(ys), pt: []byte{}}, nil
+        return LowRound{o: LowOut{b: []byte{}, ys: freeze(ys), pt: []byte{}, pf: []int{0, 0}}, add: []int{}, bv: bv, np: 0, pr: [][]byte{}}, nil
     }
     mut b := []byte{}
     if k.out == KIr {
@@ -506,7 +571,11 @@ func lowerCore(p loader.Program, k Knob, bv BcView, ps []loader.PcPut) (LowOut, 
     } else {
         b = elfOutSt(mut st, k.passes, k.m2r, k.syms, k.copy)?
     }
-    return LowOut{b: b, ys: []int{}, pt: st.xPlOut}, nil
+    add := bxCRedoSet(mut st)
+    if len(add) == 0 {
+        bxCRounds(mut st, rnd, len(ms))
+    }
+    return LowRound{o: LowOut{b: b, ys: []int{}, pt: st.xPlOut, pf: []int{st.pfHit, st.pfRows}}, add: add, bv: st.bcv, np: desugar.PkgCount(mut st.d), pr: st.bx.pr}, nil
 }
 
 // mut 引数だけが展開の理由の関数を region 透過の実体関数として呼ぶか: raw（--passes なし）も透過が既定
@@ -565,6 +634,7 @@ func elfOutSt(st mut St, passes bool, m2r bool, syms bool, copy bool) ([]byte, e
     if passes && !copy && !st.noSpec {
         // 定数引数の特化（spec.sober。optimizeSsa の後: 定数は gvn の store の転送で呼び出しの引数に届く）
         _ = specModule(mut st)
+        bxCRemap(mut st)
         vfyModule(mut st, "spec")
         loader.Stage("spec")
     }
@@ -574,7 +644,7 @@ func elfOutSt(st mut St, passes bool, m2r bool, syms bool, copy bool) ([]byte, e
         if !st.noRflow {
             regionFlowModule(mut st)
         }
-        regionElideModule(mut st)
+        regionElideModule(mut st, 0)
         if stopHere(mut st, 11) {
             return []byte{}, nil
         }
@@ -604,7 +674,7 @@ func elfOutSt(st mut St, passes bool, m2r bool, syms bool, copy bool) ([]byte, e
         rlCleanModule(mut st, mut dirty)
         // 葉の region の省略をもう一度: 周回の enter と enter の後の region.depth を loopLight / rlClean が消した後の形で
         // 初めて条件 ① に掛かる葉（fnv・atoi 等）がある。入口の enter が軽い enter（呼び出し）に置き換わった関数は enter を数えないので外れる
-        regionElideModule(mut st)
+        regionElideModule(mut st, 1)
         relocNoopModule(mut st)
         vfyModule(mut st, "region light")
         loader.Stage("llight")
@@ -659,7 +729,8 @@ func elfOutSt(st mut St, passes bool, m2r bool, syms bool, copy bool) ([]byte, e
             mapFuseModule(mut st)
             vfyModule(mut st, "cfg clean")
             // 展開の後の SROA + mem2reg: 展開で見えるようになった多語スロット（展開した小さい関数の中の struct・ヘッダ）を割って持ち上げる。
-            // 番地が呼び出しの引数に逃げるスロットの境界つきの昇格（呼び出しの前後で書き戻し / 読み直し）は 1brc +4.6% で棄却
+            // mut仮引数の実引数に逃げるスロットを呼び出しの前後の写しと書き戻しで割る形は、iostream −2.2%と引き換えに
+            // revcomp +9.0%・nbody +1.3%（熱いループの中の呼び出しで写しが勝つ）で棄却。熱さのプロファイルがあるときだけ写す形なら再訪できる
             sroaModule(mut st, true)
             ccPostM2rModule(mut st)
             vfyModule(mut st, "post-inline sroa")
@@ -832,17 +903,52 @@ func build(st mut St, p0 loader.Program) error? {
     loader.Stage("buildpre")
     p := typedKinds(mut st, p0)?
     loader.Stage("kinds")
+    // spawnの捕獲の寿命の検査（kindarg.soberのspawnCheck — checkと同じ判定）は下ろしの結果に依らないので、子のtaskで下ろしと並行に走らせる。
+    // 検査の要らないプログラム（spawnの点に届く関数が無い）は子を生まない
+    sk := desugar.SpawnSkip(mut st.d)
+    if len(sk) == 0 {
+        return buildBody(mut st, p)
+    }
+    fz := desugar.TyFreeze(mut st.d)
+    mut berr := noErr()
+    code, _ := task.Run((s task.Scope) => {
+        h := task.Spawn(s, () => desugar.SpawnCheckCode(p, sk, fz))
+        berr = buildBody(mut st, p)
+        task.Join(h)
+    })
+    loader.Stage("spawncheck")
+    if berr != nil {
+        return berr
+    }
+    // code: 0 = 子が死んだ（検査の不具合 — 拒否にしない）・1 = 通った・2以上 = 拒否の位置
+    if code >= 2 {
+        return diag.Par{at: diag.Pos{file: (code - 2) / 4294967296, tok: (code - 2) % 4294967296}, kind: 41}
+    }
+    return nil
+}
+
+func noErr() error? {
+    return nil
+}
+
+// buildの本体（下ろし・rtの本体・規則順・panicの表）
+func buildBody(st mut St, p loader.Program) error? {
     // 規則順の鍵の境（buildPre までに作った記録は番地の順 — ruleord.sober）
     preF := int(st.ftail)
     preG := st.gtail
     // 席Aの分割のパスか直のパスか — program（本体の作業列）の呼び出しは1か所（lsProgramは分けなかった / 子が失敗したときfalse）
+    // 束の事前の引き（束を使うビルド）: K0 をソースと要約から組み、枠の候補を引く。下ろす前に
+    bxCEarly(mut st)
+    bxCSelfLoad(mut st)
     mut split := false
-    if lsGroups(mut st) > 1 {
+    // 捨てる関数のある照合しないビルドは直のパス（模擬は作業列の pop で流す — 分割の子は受け持ちを全部下ろす）
+    if lsGroups(mut st) > 1 && !bxCSimOn(mut st) {
         split = lsProgram(mut st, p)?
     }
     if !split {
         program(mut st)?
     }
+    bxCHomeCheck(mut st)
     // rtの本体（使った分だけ）— 直のパス・分割のパス（lsReplay）の共通の後段。1か所で呼ぶ（--passesの無いbuildは呼び出し点ごとに展開）
     loader.Stage("program")
     // 計装の点のバイト列の大きさ（rtの本体の書き出し — taskのrtの終わりのパスも — が点の数を読むのでrtの本体より前に）
@@ -860,6 +966,8 @@ func build(st mut St, p0 loader.Program) error? {
     }
     // panic の点の表と rt.panic の本体（panic.sober — 行・列はソースを読み直して出すので p が要る）
     buildPanic(mut st, p)
+    // 事実の定数化の照合（SOBER_SUM_CONST=check）: 要約の関数の表を記録へ引く — 事実を積む最初のパス（cutPatch）の前
+    bxCRemap(mut st)
     // 純な子の打ち切りのフラグの番地を決める（cancel.sober。最適化の前に: 格納場所の定数を畳ませる）
     if st.taskUse {
         cutPatch(mut st)
@@ -945,6 +1053,7 @@ func buildPre(st mut St, p loader.Program) error? {
     if st.bcv.on {
         bcGammaPut(mut st, gp)
     }
+    st.logOut = p.logs_stdout
     buildInit(mut st)
     return nil
 }
@@ -960,6 +1069,7 @@ func buildInit(st mut St) {
     st.nlambda = 0
     st.tenv = -1
     st.insts = -1
+    st.instm = table.Table[int]{}
     st.inDict = 0
     st.dlifts = -1
     st.kids = -1
@@ -1018,6 +1128,7 @@ func buildInit(st mut St) {
     // deadline: を書いたScopeがあるか（ParCheckTypedの歩きのマーク。ioのインターフェースの判定の下ろし方をprogramの前に決める・
     // 起動の vDSO の引き〔taskInitMain〕と meta の大きさのために installRt より前）
     needDeadline(mut st)
+    logInit(mut st)
     installRt(mut st)
 }
 
@@ -1025,10 +1136,40 @@ func buildInit(st mut St) {
 func program(st mut St) error? {
     _ = programMain(mut st)?
     loader.Stage("pmain")
-    while st.work >= 0 {
-        fi := st.work
-        st.work = infoAt(mut st, fi).next
-        funcBody(mut st, fi)?
+    // 型の埋まらない仮の記録（捨てない実体 — 理由 4）は後回しにする（next = -2。要求する関数の instFunc が型を埋めて作業列へ戻す — bxSimFill）
+    mut later := mut []int{}
+    mut going := true
+    while going {
+        while st.work >= 0 {
+            fi := st.work
+            st.work = infoAt(mut st, fi).next
+            // 照合しないビルドで捨てる関数は、本体の代わりに束の模擬用の列を流す（bxsim.sober）
+            p := bxCDropAt(mut st, fi)
+            if p >= 0 {
+                bxCSim(mut st, fi, p)?
+            } else if bxSimRaw(mut st, fi) {
+                x := infoAt(mut st, fi)
+                table.Set(mut st.infos, fi, FnInfo{fn: x.fn, pkg: x.pkg, ir: x.ir, params: x.params, results: x.results, next: -2, decl: x.decl, env: x.env, transp: x.transp})
+                later = append(later, fi)
+            } else {
+                funcBody(mut st, fi)?
+            }
+        }
+        // 作業列が尽きても型が埋まらない記録は、下ろす関数が1つも要求しなかった実体: 捨てる関数と同じく束の模擬用の列を流す
+        going = false
+        for fi <- freeze(later) {
+            if bxSimRaw(mut st, fi) && infoAt(mut st, fi).next == -2 {
+                q := bxCRawKey(mut st, xNameBytes(mut st, irFnName(mut st, infoAt(mut st, fi).ir)))
+                if q < 0 {
+                    panic(InvariantBroken{})
+                }
+                x := infoAt(mut st, fi)
+                table.Set(mut st.infos, fi, FnInfo{fn: x.fn, pkg: x.pkg, ir: x.ir, params: x.params, results: x.results, next: -1, decl: x.decl, env: x.env, transp: x.transp})
+                bxCSim(mut st, fi, q)?
+                going = true
+            }
+        }
+        later = mut []int{}
     }
     return nil
 }
@@ -1098,11 +1239,16 @@ func programRt(st mut St) {
     buildChunkRt(mut st)
     buildNetRt(mut st)
     buildNetRing(mut st)
+    buildMuxRt(mut st)
+    buildMuxRoom(mut st)
     buildRdlRt(mut st)
+    buildSignRt(mut st)
     buildOrphRt(mut st)
     if st.taskUse {
         buildWorkerInit(mut st)
     }
+    // ワーカーごとのグローバルの並びが決まった後（rt.log_drainがワーカーのrt.logの番地を並びから求める）
+    buildLogRt(mut st)
 }
 
 // ── 関数表 ──
@@ -1145,16 +1291,21 @@ func refParamTy(st mut St, t int) bool {
     return tWords(mut st, t) > REF_K && !isClosT(mut st, t) && !hasMap(mut st, t, SEAL_FUEL)
 }
 
-// 番地vを「呼び出しの間に書かれない集成値の番地」として記録する（表の値 = 世代 × 2 + 長寿命のフラグ）。
+// 番地vを「呼び出しの間に書かれない集成値の番地」として記録する（表の値 = (世代 × 2^20 + 受け皿の語数) × 2 + 長寿命のフラグ）。
 // 長寿命（privMarkLong）= 番地の先が関数の出口か、その番地を値に持つどの束縛よりも長く生きる: imm の束縛のスロット（名前が可視範囲にある間は
 // 返らない）・参照で受けた仮引数（呼び手のスロット）・使い回さない受け皿（newSlotAddrOwn）・クロージャの捕獲のスロット（本体の入口で取る）。
 // 展開の実引数のコピーは文の出口で空きチェーンへ返りうるので長寿命にしない（参照の位置へ渡すのは展開の中だけ）
 func privMark(st mut St, v int) {
-    privSet(mut st, v, st.privGen * 2)
+    privSet(mut st, v, st.privGen * 2097152)
 }
 
 func privMarkLong(st mut St, v int) {
-    privSet(mut st, v, st.privGen * 2 + 1)
+    privSet(mut st, v, st.privGen * 2097152 + 1)
+}
+
+// 呼び出し点だけの受け皿（expr.sober の ownSret — 長寿命）を、語数つきで記録する
+func privMarkRcv(st mut St, v int, words int) {
+    privSet(mut st, v, (st.privGen * 1048576 + words) * 2 + 1)
 }
 
 func privSet(st mut St, v int, x int) {
@@ -1167,12 +1318,17 @@ func privSet(st mut St, v int, x int) {
     table.Set(mut st.privT, v, x)
 }
 
+// vが今の関数の呼び出し点だけの受け皿の番地なら、その語数（でなければ0）
+func rcvWords(st mut St, v int) int {
+    return if isPriv(mut st, v) { (table.Get(mut st.privT, v) >> 1) % 1048576 } else { 0 }
+}
+
 func isPriv(st mut St, v int) bool {
-    return v >= 0 && v < table.Len(mut st.privT) && table.Get(mut st.privT, v) >> 1 == st.privGen
+    return v >= 0 && v < table.Len(mut st.privT) && table.Get(mut st.privT, v) >> 21 == st.privGen
 }
 
 func isPrivLong(st mut St, v int) bool {
-    return v >= 0 && v < table.Len(mut st.privT) && table.Get(mut st.privT, v) == st.privGen * 2 + 1
+    return v >= 0 && v < table.Len(mut st.privT) && table.Get(mut st.privT, v) >> 21 == st.privGen && table.Get(mut st.privT, v) & 1 == 1
 }
 
 // 関数宣言 decl の署名を package pk の文脈で読む（(引数の型の列, 結果の型の列) — 関数型の引数は TFunc）
@@ -1318,8 +1474,8 @@ func storeVal(st mut St, p int, off int, t int, v int) {
 // コピーの値から読む）。不変条件: 共有するのは imm
 // どうしだけ（どちらも書かれない — 共有は観測できない）で、元の番地の寿命がコピー先の使用の全区間を覆う（長寿命の元は可視範囲・関数の出口・
 // 呼び出しの間のどれかまで生き、展開の仮引数の束縛は呼び出しの式の中で終わる。受け皿は使い回さないので後で別の値に再利用されない）。
-// long = true（imm の束縛）は常にコピーする — 束縛が受け皿を直に使うと、呼び出し点ごとの受け皿が束縛の寿命の間生き続けて
-// スロットの彩色で重ねられなくなる（フレームが太る）。コピーしたスロットは長寿命として記録する
+// long = true（imm の束縛）はコピーする。受け皿をそのまま使う形はbindNameが先に決める（参照で渡す型・単一の結果の受け皿だけ）。
+// コピーしたスロットは長寿命として記録する
 func copyPriv(st mut St, t int, v int, long bool) int {
     if !isAggregate(mut st, t) {
         return v
@@ -1530,8 +1686,11 @@ func bindName(st mut St, name desugar.StrRef, t int, v int, mutable bool, at des
         return nil
     }
     if isAggregate(mut st, t) {
-        // imm の束縛の私有のスロットは束縛の後は書かれない（copyPriv）
-        c := if mutable { copyVal(mut st, t, v) } else { copyPriv(mut st, t, v, true) }
+        // imm の束縛の私有のスロットは束縛の後は書かれない（copyPriv）。参照で渡す型の値が、単一の結果の呼び出しの受け皿そのもの
+        // （受け皿の語数 = 型の語数）なら、コピーせずに受け皿を束縛に使う。受け皿は使い回さず、呼び出しの後は書かれない。
+        // コピー先も番地で渡されてスロットに残る型なので、受け皿を長く生かしてもスロットは増えない。小さな集成値はコピー先がSSAへ昇格して
+        // 消えるのでコピーする。タプルの1要素の束縛もコピーする（受け皿が他の結果の語ごと束縛の寿命の間生きる）
+        c := if mutable { copyVal(mut st, t, v) } else if refParamTy(mut st, t) && rcvWords(mut st, v) == tWords(mut st, t) { v } else { copyPriv(mut st, t, v, true) }
         return declareNew(mut st, name, if mutable { LCell } else { LVal }, t, c, at)
     }
     if !mutable {
@@ -2521,6 +2680,8 @@ func containsSlice(st mut St, t int) bool {
 func blockTail(st mut St, l desugar.ListRef) (Val, error?) {
     w := st.tailW - 1
     st.tailW = 0
+    mt := st.multiTail
+    st.multiTail = false
     n := lenL(mut st, l)
     last := if n > 0 && kindN(mut st, latN(mut st, l, n - 1)) == ast.SExpr { nA(nodeOf(mut st, latN(mut st, l, n - 1))) } else { desugar.NodeRef(-1) }
     tail := if last != -1 && isForStmt(mut st, last) { desugar.NodeRef(-1) } else { last }
@@ -2550,6 +2711,9 @@ func blockTail(st mut St, l desugar.ListRef) (Val, error?) {
         }
         if desugar.HeapGet(mut st.d, r) == 1 {
             return Val{t: desugar.HeapGet(mut st.d, r + 1), v: desugar.HeapGet(mut st.d, r + 2)}, nil
+        }
+        if mt && desugar.HeapGet(mut st.d, r) > 1 {
+            return multiVal(mut st, r), nil
         }
     }
     return Val{t: tNone(mut st), v: 0}, nil

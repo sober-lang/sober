@@ -1,0 +1,61 @@
+package sec
+
+import "std/internal/record"
+
+// TLSの接続の状態（net.Connの欄）。値を作れるのはこのpackageのNewだけで、呼ぶのはstd/tlsのServeだけ。
+// 状態の本体は格納場所の列blk（旗・送りと受けの方向・受けの持ち越し）に住み、値はそれへの参照と、std/tlsの名前つきの関数の辞書opsを持つ。
+// netはtlsをimportしない（層の向き）ので、TLSの読み書きはopsの関数の値を通す。TLSを使わないプログラムはopsの関数に届かない
+// alpn = ALPNで決まったプロトコル（下のAlpn* — handshakeの後は変わらない）
+type State struct {
+    st Store
+    ops Ops
+    alpn int
+    seal secSeal
+}
+
+// 状態の参照（格納場所の列・展開した送りの方向・ワーカーの封の作業の列）。opsの関数が受ける（関数型がStateを参照しない形 — 再帰の型にしない）
+type Store struct {
+    blk []int
+    wr internal.record.Dir
+    wk []int
+}
+
+// std/tlsの読み書きの関数（どれも閉じた名前つきの関数 — 捕獲を持たない）。
+// recv = 受けたバイトbを持ち越しと合わせてrecordに切り、受けの表に通した平文を返す。bが空なら持ち越しだけを通す。fin = 相手のFIN（bは空）。
+// 受けの結果（Recv*）は格納場所に残り、codeが読む（壊れたrecordの結果は1回だけ返し、以後はRecvClosed）。
+// put = bを封じて送信バッファに積む（積めなければその場で送る）。flush = 積んだ分を送る（nw = 1は送りの完了を待たない印を見る）。put・flushの結果は0 = 成功・負 = 失敗。
+// 関数型は名前つきで、エフェクトの契約はnet.Recv / net.Sendと同じ（panicを持たない — netの宣言を変えない）
+type Ops struct {
+    recv RecvFn
+    code CodeFn
+    put PutFn
+    flush FlushFn
+}
+
+type RecvFn func(s Store, fd int, b []byte, fin bool) []byte @effects(block, io, nondet)
+
+type CodeFn func(s Store) int @effects()
+
+type PutFn func(s Store, fd int, b []byte) int @effects(block, io, nondet)
+
+type FlushFn func(s Store, fd int, nw int) int @effects(block, io, nondet)
+
+// codeの結果
+const RecvMore = 0
+const RecvEnd = 1
+const RecvClosed = 2
+const RecvBad = 3
+
+// ALPNの結果（Stateのalpn）
+const AlpnNone = 0
+const AlpnH11 = 1
+const AlpnH2 = 2
+
+// 封（非公開 — 外で値を書けない）
+type secSeal struct {
+}
+
+@effects()
+func New(blk []int, wr internal.record.Dir, wk []int, ops Ops, alpn int) State {
+    return State{st: Store{blk: blk, wr: wr, wk: wk}, ops: ops, alpn: alpn, seal: secSeal{}}
+}

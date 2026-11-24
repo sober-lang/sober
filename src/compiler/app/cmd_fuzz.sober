@@ -84,7 +84,7 @@ func loadFuzz(pkg string, std map[string]string, bv lower.BcView, guide bool) (l
     if guide {
         return loadTestCover(pkg, std, []string{pkg})
     }
-    return loadNamed(pkg, true, std, if bv.on { lower.BcParseView(bv) } else { loader.PcOff() })
+    return loadBuild(pkg, true, std, if bv.on { lower.BcParseView(bv) } else { loader.PcOff() }, false, false)
 }
 
 // カバレッジの誘導のシードの格納場所（キャッシュのfuzz/<PWD ‖ package ‖ テスト名のハッシュ> — 格納場所が無ければ <work>/pool。作れなければ ""）

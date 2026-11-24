@@ -14,7 +14,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 source scripts/gatelib.sh
 # 外せる条件の名前（SOBER_GATES_ALLOW_SKIPに書ける語）
-CONDS=" perf valgrind nofile cpus io_uring unshare llvm python3 aes bmi2 boot-history SELFHOST_E2E_SKIP "
+CONDS=" perf valgrind nofile cpus io_uring unshare llvm python3 aes bmi2 boot-history SELFHOST_E2E_SKIP ipv6 nghttp "
 fail=0
 bad() { echo "FAIL: $*"; fail=$((fail + 1)); }
 unset SOBER_GATES_ALLOW_SKIP

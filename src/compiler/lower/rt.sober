@@ -104,11 +104,19 @@ func installRt(st mut St) {
     buildMapHash(mut st)
     buildPrintStr(mut st)
     installIo(mut st)
+    // print.Logのsink（logsink.sober — ログを使うプログラムだけ）
+    needLogRt(mut st)
 }
 
 // 入口 sober_entry(sp): アリーナを予約し、深度 0・出力 fd 1 で main を呼び、exit(0)（ir_rt.buildEntry）。
 // main_int（`func main() int`）なら戻り値が終了コード（0〜255 の外は panic 101 — exit_group(code)）。
 // sp は _start の初期 rsp — 環境変数 SOBER_REGION_MB を読み、W_ARGV に置く（read_args が読む）。予約の失敗（1MiB でも断られる）は exit 102
+// 読むだけのrtの関数か: 呼ばれた関数は実引数の番地の先を呼び出しの間だけ読み、書かず、残さない（rt.print_str・rt.print_qstr・rt.str_eq）。
+// 展開後のSROAはこの実引数にだけ逃げるスロットを一時のスロットへ写して割り（sroa.sober）、slotcolorはその実引数を呼び出しの点の読み書きに数える
+func rtReadOnly(st mut St, callee int) bool {
+    return callee >= 0 && (callee == int(st.rtPstr) || callee == int(st.rtPqstr) || callee == int(st.rtStreq))
+}
+
 func buildEntry(st mut St, main_fn FnRef, main_int bool) {
     f := addFunc(mut st, int(strLit(mut st, "sober_entry")), desugar.ListRef(list1(mut st, TyPtr)), -1)
     irSetFnExport(mut st, f, 1)
@@ -178,8 +186,9 @@ func buildEntry(st mut St, main_fn FnRef, main_int bool) {
     // PID 1（コンテナの init）ではカーネルが既定の動作のシグナルを届けない — SIGTERM / SIGINT で止まらない。PID 1 のときだけ両方にハンドラを張り、
     // 既定の動作の終了を exit_group(128 + sig) で再現する（143 / 130 — defer も行バッファも走らない既定の死と同じ）。PID 1 でなければ何も張らない
     // （振る舞いは今と同じ — 既定の動作のまま）。sigaction = [handler, flags = SA_RESTORER, restorer, mask 0]（ハンドラは戻らない）
+    // ログを使うプログラム（logsink.sober）は、PID 1でなくても張る: ハンドラがログのバッファを書き出してから、既定の動作で死に直す
     pid := syscall(mut st, list1(mut st, iconst(mut st, 39)))
-    notInit := branchIf(mut st, cmp(mut st, CEq, pid, iconst(mut st, 1)))
+    notInit := branchIf(mut st, if st.logUse { iconst(mut st, 1) } else { cmp(mut st, CEq, pid, iconst(mut st, 1)) })
     sa := globaladdr(mut st, actG)
     hTerm := funcaddr(mut st, fTerm)
     store(mut st, sa, 0, hTerm)
@@ -241,9 +250,11 @@ func buildEntry(st mut St, main_fn FnRef, main_int bool) {
     exit(mut st, 0)
     // 停止のハンドラ: exit_group(128 + sig)（戻らない・flush しない — async-signal-safe）
     begin(mut st, fTerm)
+    logSigExit(mut st, 15)
     syscall(mut st, list2(mut st, iconst(mut st, 231), iconst(mut st, 143)))
     exit(mut st, 143)
     begin(mut st, fInt)
+    logSigExit(mut st, 2)
     syscall(mut st, list2(mut st, iconst(mut st, 231), iconst(mut st, 130)))
     exit(mut st, 130)
 }
@@ -1188,6 +1199,12 @@ func needSleep(st mut St) {
                 needVdso(mut st)
             }
         }
+    } else if st.taskUse {
+        // 宣言済み: 入れ子のneedの事象だけを、使う関数ごとに積む（初出の関数だけに積むと、事象の持ち主が下ろす順に依る — 束の事象の列）
+        _ = needNet(mut st)
+        if dlFn(st.rtD3) == 0 {
+            needVdso(mut st)
+        }
     }
 }
 
@@ -1239,8 +1256,14 @@ func buildSleep(st mut St) {
         setCur(mut st, bR0)
         condbr(mut st, cmp(mut st, CNe, load(mut st, itop(mut st, rg), UR_NET), zero), bRing, -1, bTfd, -1)
         setCur(mut st, bRing)
-        sleepRing(mut st, rg, ms)
+        sleepRing(mut st, rg, ms, -1)
+        // epollのパスも時計の表に積む（fdを使わない — fdの上限に届いていても眠れる）。満了はrt.ep_pollが起こす（ep_pollを通る眠りの席に
+        // 置くため、epollの記録を先に作る — 一度もfdを待っていないワーカーでも、WK_NETWを見た眠りがep_pollへ進む）。表が満杯ならtimerfd
         setCur(mut st, bTfd)
+        _ = epRec(mut st, wk)
+        bTfd2 := newBlock(mut st)
+        sleepRing(mut st, zero, ms, bTfd2)
+        setCur(mut st, bTfd2)
         tfd := syscall(mut st, list3(mut st, iconst(mut st, 283), iconst(mut st, 1), iconst(mut st, 526336)))
         bOk := branchIf(mut st, cmp(mut st, CLt, tfd, zero))
         ret(mut st, bin(mut st, BSub, zero, tfd))
@@ -1267,7 +1290,17 @@ func buildSleep(st mut St) {
 // チェーンに積み、rt.closeが外す。taskが死ぬとdeferが走らない（11 節）ので、子の入口の出口（rt.task_start — 死も切られた子も通る）がrt.fd_drainで
 // チェーンに残ったfdを閉じる。チェーンの頭 = TCBのTC_FDS（fd + 1・0 = 空）・次 = @rt.fdreg[fd]（fdごとに1ワード — 別のfdのワードは別のtaskしか書かないので
 // ワーカーの間で鍵が要らない）。逐次のプログラムは使わない（deferが必ず走る — チェーンも表も足さない）
-const FD_CAP = 65536
+// fd の番号の上限 = 2^FD_BITS。登録簿・接続の記録の表（netring の NT_CAP）・待ちの期限の列（rdl の RDL_CAP）の大きさと、
+// io_uring の user_data に詰める fd の欄の幅（FD_MASK）がこれに従う。std/net の fdCap は同じ値でなければならない（ゲートが照合する）。
+// 表はどれも .bss か NORESERVE の写像で、触ったページだけが常駐する
+const FD_BITS = 21
+const FD_CAP = 1 << FD_BITS
+const FD_MASK = FD_CAP - 1
+
+// io_uring の user_data（と epoll の data）から fd の欄を取り出すマスク。ミュータント119は16ビットに戻す（scripts/fdcap.sh の自己点検）
+func fdMaskC(st mut St) int {
+    return iconst(mut st, if st.rtMut == 119 { 65535 } else { FD_MASK })
+}
 
 // rt.open / rt.close（と std/task のプログラムなら登録簿の表と rt.fd_drain）を（初出なら）宣言する — 使うプログラムでだけ足す
 func needOpen(st mut St) {

@@ -1,6 +1,6 @@
-@@full	c64ef42ff4da3f9b	51764	1104277
-@globals	7979f7b1b1337944	172	6473
-main.main	ac7dd3982bf6641d	17143	400452
+@@full	9830e7cf1b548b97	51345	1093593
+@globals	a1f8f8bf3ca50b1a	172	6473
+main.main	2a8e885bd59575d4	16899	394061
 main.rev	bc7a7da4b040cbfa	136	2631
 main.same	f5db3a5f889d15b7	92	1558
 main.sum	56599a04b438a05f	88	1535
@@ -74,7 +74,7 @@ std/os.RunToEnv	632404fab9e154e2	252	5317
 std/os.argvz	7af42d381b81659d	166	3182
 std/os.argz	535d23757f2dbe10	179	3374
 std/os.envName	5f694a2af9cd9324	163	3095
-std/os.envz	c9e8fe0081b7464b	565	11041
+std/os.envz	bac14475f415508d	561	10954
 std/os.errOf	198508e98d88fb58	106	1861
 std/os.keyIs	5be762fdc2c60600	121	2037
 std/os.openOut	5876170b324cdbef	182	3466
@@ -98,7 +98,7 @@ std/quick.corpusFiles	ac1adaf1fa81fc7b	480	10028
 std/quick.crashed	89cfa64ce41fda95	1249	27468
 std/quick.cut	f0ad75f4d49851dc	158	2936
 std/quick.discards	145be66008ec4f14	94	1934
-std/quick.drive	7a5d519ff0221dca	1695	40671
+std/quick.drive	9ce84fe67060580e	1614	38608
 std/quick.envInt	22462db00ec758ca	300	6218
 std/quick.exists	170a2787f24443a8	64	1237
 std/quick.firstDeath	cf8506f4b5b957f2	209	4572
@@ -125,7 +125,7 @@ std/quick.report	fac9f18015f4e897	498	11669
 std/quick.rest	ec3065ecbcaf4647	79	1537
 std/quick.sameDeath	8e279af717c69f54	46	875
 std/quick.say	e288a01b7a761a6c	18	343
-std/quick.schedCase	615f05df6dd0d7dc	512	11941
+std/quick.schedCase	8512b9e4de7cfe3f	430	9972
 std/quick.schedNote	220063b47daa700e	79	1611
 std/quick.schedOf	c55e6526ad0953bc	402	8497
 std/quick.scratch	d6dd374d1038a403	276	5730
@@ -152,7 +152,7 @@ std/rand.rotl32	6ae7e61647bd3f18	49	747
 std/strings.Cut	0fdb95b4ff759b2a	177	3429
 std/strings.HasPrefix	496b5e1c70286c46	48	1003
 std/strings.IndexInvalid	e9b3178b203570fa	260	4632
-std/strings.Join	43997b6f1efd0a54	489	9859
+std/strings.Join	6488ff3cddf6168e	481	9685
 std/strings.Split	2bcb0b21db9136c9	493	10156
 std/strings.TrimPrefix	fe4403dfe9a2a94d	108	2098
 std/strings.Valid	2d6d351312bd3ac3	18	362

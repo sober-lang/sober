@@ -540,6 +540,94 @@ theorem MeetK.kindsArgsOk (H : MeetK k1 k2 m) {ks : List Kind} {ts : List Ty} (w
   simp only [List.getElem_zip, List.getElem_map] at q1 q2 ⊢
   exact H.kindOk (w _ (List.getElem_mem _)) q1 q2
 
+theorem Ty.relocR0_ref (m : Bool) (r : Nat) (t : Ty) :
+    (Ty.ref m r t).relocR 0 = if m then .ref true r t else .ref false 0 (t.relocR 0) := by
+  cases m <;> simp [Ty.relocR, Ty.shiftR_zero]
+
+theorem Ty.relocR0_slice (m : Bool) (r : Nat) (t : Ty) :
+    (Ty.slice m r t).relocR 0 = if m then .slice true r t else .slice false 0 (t.relocR 0) := by
+  cases m <;> simp [Ty.relocR, Ty.shiftR_zero]
+
+theorem Ty.relocR0_map (m : Bool) (r : Nat) (t : Ty) :
+    (Ty.map m r t).relocR 0 = if m then .map true r t else .map false 0 (t.relocR 0) := by
+  cases m <;> simp [Ty.relocR, Ty.shiftR_zero]
+
+theorem Ty.relocR0_muRs (r n i : Nat) (b : Ty) :
+    (Ty.muRs r n i b).relocR 0 = .muRs (if b.mutFree then 0 else r) n i b := by
+  cases h : b.mutFree <;> simp [Ty.relocR, h]
+
+theorem Ty.relocR0_tvar (i ρ : Nat) (k : Kind) :
+    (Ty.tvar i ρ k).relocR 0 = .tvar i (if k.imm && !k.rf then 0 else ρ) k := by
+  cases h1 : k.rf <;> cases h2 : k.imm <;> simp [Ty.relocR, h1, h2]
+
+/-- relocR 0 の像が 2 つの kind の列で等しければ、交わり m でも等しい（domain の状態の型を形で比べる Ty.sub の腕） -/
+theorem MeetK.relocInj2 (H : MeetK k1 k2 m) : ∀ {A B : Ty},
+    (A.tsubst (Kind.idArgs k1)).relocR 0 = (B.tsubst (Kind.idArgs k1)).relocR 0 →
+    (A.tsubst (Kind.idArgs k2)).relocR 0 = (B.tsubst (Kind.idArgs k2)).relocR 0 →
+    (A.tsubst (Kind.idArgs m)).relocR 0 = (B.tsubst (Kind.idArgs m)).relocR 0 := by
+  intro A; induction A with
+  | tvar i ρ kd =>
+    intro B h1 h2
+    simp only [Ty.tsubst_idArgs_tvar', Ty.relocR0_tvar] at h1 h2 ⊢
+    cases B with
+    | tvar i' ρ' kd' =>
+      simp only [Ty.tsubst_idArgs_tvar', Ty.relocR0_tvar, Ty.tvar.injEq] at h1 h2 ⊢
+      obtain ⟨rfl, hρ1, hk1⟩ := h1
+      obtain ⟨-, hρ2, hk2⟩ := h2
+      rcases H.cases i with ⟨e1, e2, e3⟩ | ⟨a, b, e1, e2, e3, n1, n2⟩
+      · simp_all
+      · simp only [e1, e2, e3, Option.map_some, Option.getD_some, Kind.place] at hρ1 hρ2 hk1 hk2 ⊢
+        simp only [true_and, and_true]
+        obtain ⟨r1, m1, c1, v1, f1⟩ := a; obtain ⟨r2, m2, c2, v2, f2⟩ := b
+        simp only [Kind.isNorm] at n1 n2
+        cases r1 <;> cases m1 <;> cases c1 <;> cases r2 <;> cases m2 <;> cases c2 <;>
+          simp_all [Kind.imm, Kind.meet]
+    | ref mu _ _ => cases mu <;> simp [Ty.tsubst, Ty.relocR] at h1
+    | slice mu _ _ => cases mu <;> simp [Ty.tsubst, Ty.relocR] at h1
+    | map mu _ _ => cases mu <;> simp [Ty.tsubst, Ty.relocR] at h1
+    | muRs => simp [Ty.tsubst, Ty.relocR0_muRs] at h1
+    | _ => simp [Ty.tsubst, Ty.relocR] at h1
+  | int => intro B h1 h2; cases B <;> (try (rename_i mb _ _; cases mb)) <;> (try simp only [Ty.tsubst_idArgs_tvar', Ty.relocR0_tvar] at h1 h2 ⊢) <;> simp [Ty.tsubst, Ty.relocR, Ty.shiftR_zero] at h1 h2 ⊢ <;> (try (split at h1 <;> simp at h1))
+  | bool => intro B h1 h2; cases B <;> (try (rename_i mb _ _; cases mb)) <;> (try simp only [Ty.tsubst_idArgs_tvar', Ty.relocR0_tvar] at h1 h2 ⊢) <;> simp [Ty.tsubst, Ty.relocR, Ty.shiftR_zero] at h1 h2 ⊢ <;> (try (split at h1 <;> simp at h1))
+  | byte => intro B h1 h2; cases B <;> (try (rename_i mb _ _; cases mb)) <;> (try simp only [Ty.tsubst_idArgs_tvar', Ty.relocR0_tvar] at h1 h2 ⊢) <;> simp [Ty.tsubst, Ty.relocR, Ty.shiftR_zero] at h1 h2 ⊢ <;> (try (split at h1 <;> simp at h1))
+  | f64 => intro B h1 h2; cases B <;> (try (rename_i mb _ _; cases mb)) <;> (try simp only [Ty.tsubst_idArgs_tvar', Ty.relocR0_tvar] at h1 h2 ⊢) <;> simp [Ty.tsubst, Ty.relocR, Ty.shiftR_zero] at h1 h2 ⊢ <;> (try (split at h1 <;> simp at h1))
+  | unit => intro B h1 h2; cases B <;> (try (rename_i mb _ _; cases mb)) <;> (try simp only [Ty.tsubst_idArgs_tvar', Ty.relocR0_tvar] at h1 h2 ⊢) <;> simp [Ty.tsubst, Ty.relocR, Ty.shiftR_zero] at h1 h2 ⊢ <;> (try (split at h1 <;> simp at h1))
+  | opt t ih => intro B h1 h2; cases B <;> (try (rename_i mb _ _; cases mb)) <;> (try simp only [Ty.tsubst_idArgs_tvar', Ty.relocR0_tvar] at h1 h2 ⊢) <;> simp [Ty.tsubst, Ty.relocR, Ty.shiftR_zero] at h1 h2 ⊢ <;> (try (split at h1 <;> simp at h1)); all_goals first | exact ih h1 h2 | exact ⟨ihl h1.1 h2.1, ihr h1.2 h2.2⟩ | exact ⟨h1.1, ih h1.2 h2.2⟩ | exact ⟨h1.1, H.inj2 h1.2 h2.2⟩ | exact ⟨h1.1, h1.2.1, H.inj2 h1.2.2 h2.2.2⟩ | exact ⟨H.inj2 h1.1 h2.1, H.inj2 h1.2 h2.2⟩
+  | union l r ihl ihr => intro B h1 h2; cases B <;> (try (rename_i mb _ _; cases mb)) <;> (try simp only [Ty.tsubst_idArgs_tvar', Ty.relocR0_tvar] at h1 h2 ⊢) <;> simp [Ty.tsubst, Ty.relocR, Ty.shiftR_zero] at h1 h2 ⊢ <;> (try (split at h1 <;> simp at h1)); all_goals first | exact ih h1 h2 | exact ⟨ihl h1.1 h2.1, ihr h1.2 h2.2⟩ | exact ⟨h1.1, ih h1.2 h2.2⟩ | exact ⟨h1.1, H.inj2 h1.2 h2.2⟩ | exact ⟨h1.1, h1.2.1, H.inj2 h1.2.2 h2.2.2⟩ | exact ⟨H.inj2 h1.1 h2.1, H.inj2 h1.2 h2.2⟩
+  | prod l r ihl ihr => intro B h1 h2; cases B <;> (try (rename_i mb _ _; cases mb)) <;> (try simp only [Ty.tsubst_idArgs_tvar', Ty.relocR0_tvar] at h1 h2 ⊢) <;> simp [Ty.tsubst, Ty.relocR, Ty.shiftR_zero] at h1 h2 ⊢ <;> (try (split at h1 <;> simp at h1)); all_goals first | exact ih h1 h2 | exact ⟨ihl h1.1 h2.1, ihr h1.2 h2.2⟩ | exact ⟨h1.1, ih h1.2 h2.2⟩ | exact ⟨h1.1, H.inj2 h1.2 h2.2⟩ | exact ⟨h1.1, h1.2.1, H.inj2 h1.2.2 h2.2.2⟩ | exact ⟨H.inj2 h1.1 h2.1, H.inj2 h1.2 h2.2⟩
+  | ref mu r t ih => intro B h1 h2; cases mu <;> cases B <;> (try (rename_i mb _ _; cases mb)) <;> (try simp only [Ty.tsubst_idArgs_tvar', Ty.relocR0_tvar] at h1 h2 ⊢) <;> simp [Ty.tsubst, Ty.relocR, Ty.shiftR_zero] at h1 h2 ⊢ <;> (try (split at h1 <;> simp at h1)); all_goals first | exact ih h1 h2 | exact ⟨ihl h1.1 h2.1, ihr h1.2 h2.2⟩ | exact ⟨h1.1, ih h1.2 h2.2⟩ | exact ⟨h1.1, H.inj2 h1.2 h2.2⟩ | exact ⟨h1.1, h1.2.1, H.inj2 h1.2.2 h2.2.2⟩ | exact ⟨H.inj2 h1.1 h2.1, H.inj2 h1.2 h2.2⟩
+  | slice mu r t ih => intro B h1 h2; cases mu <;> cases B <;> (try (rename_i mb _ _; cases mb)) <;> (try simp only [Ty.tsubst_idArgs_tvar', Ty.relocR0_tvar] at h1 h2 ⊢) <;> simp [Ty.tsubst, Ty.relocR, Ty.shiftR_zero] at h1 h2 ⊢ <;> (try (split at h1 <;> simp at h1)); all_goals first | exact ih h1 h2 | exact ⟨ihl h1.1 h2.1, ihr h1.2 h2.2⟩ | exact ⟨h1.1, ih h1.2 h2.2⟩ | exact ⟨h1.1, H.inj2 h1.2 h2.2⟩ | exact ⟨h1.1, h1.2.1, H.inj2 h1.2.2 h2.2.2⟩ | exact ⟨H.inj2 h1.1 h2.1, H.inj2 h1.2 h2.2⟩
+  | map mu r t ih => intro B h1 h2; cases mu <;> cases B <;> (try (rename_i mb _ _; cases mb)) <;> (try simp only [Ty.tsubst_idArgs_tvar', Ty.relocR0_tvar] at h1 h2 ⊢) <;> simp [Ty.tsubst, Ty.relocR, Ty.shiftR_zero] at h1 h2 ⊢ <;> (try (split at h1 <;> simp at h1)); all_goals first | exact ih h1 h2 | exact ⟨ihl h1.1 h2.1, ihr h1.2 h2.2⟩ | exact ⟨h1.1, ih h1.2 h2.2⟩ | exact ⟨h1.1, H.inj2 h1.2 h2.2⟩ | exact ⟨h1.1, h1.2.1, H.inj2 h1.2.2 h2.2.2⟩ | exact ⟨H.inj2 h1.1 h2.1, H.inj2 h1.2 h2.2⟩
+  | chan rc t ih => intro B h1 h2; cases B <;> (try (rename_i mb _ _; cases mb)) <;> (try simp only [Ty.tsubst_idArgs_tvar', Ty.relocR0_tvar] at h1 h2 ⊢) <;> simp [Ty.tsubst, Ty.relocR, Ty.shiftR_zero] at h1 h2 ⊢ <;> (try (split at h1 <;> simp at h1)); all_goals first | exact ih h1 h2 | exact ⟨ihl h1.1 h2.1, ihr h1.2 h2.2⟩ | exact ⟨h1.1, ih h1.2 h2.2⟩ | exact ⟨h1.1, H.inj2 h1.2 h2.2⟩ | exact ⟨h1.1, h1.2.1, H.inj2 h1.2.2 h2.2.2⟩ | exact ⟨H.inj2 h1.1 h2.1, H.inj2 h1.2 h2.2⟩
+  | dom rc t ih => intro B h1 h2; cases B <;> (try (rename_i mb _ _; cases mb)) <;> (try simp only [Ty.tsubst_idArgs_tvar', Ty.relocR0_tvar] at h1 h2 ⊢) <;> simp [Ty.tsubst, Ty.relocR, Ty.shiftR_zero] at h1 h2 ⊢ <;> (try (split at h1 <;> simp at h1)); all_goals first | exact ih h1 h2 | exact ⟨ihl h1.1 h2.1, ihr h1.2 h2.2⟩ | exact ⟨h1.1, ih h1.2 h2.2⟩ | exact ⟨h1.1, H.inj2 h1.2 h2.2⟩ | exact ⟨h1.1, h1.2.1, H.inj2 h1.2.2 h2.2.2⟩ | exact ⟨H.inj2 h1.1 h2.1, H.inj2 h1.2 h2.2⟩
+  | fn p r ihp ihr => intro B h1 h2; cases B <;> (try (rename_i mb _ _; cases mb)) <;> (try simp only [Ty.tsubst_idArgs_tvar', Ty.relocR0_tvar] at h1 h2 ⊢) <;> simp [Ty.tsubst, Ty.relocR, Ty.shiftR_zero] at h1 h2 ⊢ <;> (try (split at h1 <;> simp at h1)); all_goals first | exact ih h1 h2 | exact ⟨ihl h1.1 h2.1, ihr h1.2 h2.2⟩ | exact ⟨h1.1, ih h1.2 h2.2⟩ | exact ⟨h1.1, H.inj2 h1.2 h2.2⟩ | exact ⟨h1.1, h1.2.1, H.inj2 h1.2.2 h2.2.2⟩ | exact ⟨H.inj2 h1.1 h2.1, H.inj2 h1.2 h2.2⟩
+  | mus n i b ih => intro B h1 h2; cases B <;> (try (rename_i mb _ _; cases mb)) <;> (try simp only [Ty.tsubst_idArgs_tvar', Ty.relocR0_tvar] at h1 h2 ⊢) <;> simp [Ty.tsubst, Ty.relocR, Ty.shiftR_zero] at h1 h2 ⊢ <;> (try (split at h1 <;> simp at h1)); all_goals first | exact ih h1 h2 | exact ⟨ihl h1.1 h2.1, ihr h1.2 h2.2⟩ | exact ⟨h1.1, ih h1.2 h2.2⟩ | exact ⟨h1.1, H.inj2 h1.2 h2.2⟩ | exact ⟨h1.1, h1.2.1, H.inj2 h1.2.2 h2.2.2⟩ | exact ⟨H.inj2 h1.1 h2.1, H.inj2 h1.2 h2.2⟩
+  | rvar i => intro B h1 h2; cases B <;> (try (rename_i mb _ _; cases mb)) <;> (try simp only [Ty.tsubst_idArgs_tvar', Ty.relocR0_tvar] at h1 h2 ⊢) <;> simp [Ty.tsubst, Ty.relocR, Ty.shiftR_zero] at h1 h2 ⊢ <;> (try (split at h1 <;> simp at h1)) <;> exact h1
+  | own k r t ih => intro B h1 h2; cases B <;> (try (rename_i mb _ _; cases mb)) <;> (try simp only [Ty.tsubst_idArgs_tvar', Ty.relocR0_tvar] at h1 h2 ⊢) <;> simp [Ty.tsubst, Ty.relocR, Ty.shiftR_zero] at h1 h2 ⊢ <;> (try (split at h1 <;> simp at h1)); all_goals first | exact ih h1 h2 | exact ⟨ihl h1.1 h2.1, ihr h1.2 h2.2⟩ | exact ⟨h1.1, ih h1.2 h2.2⟩ | exact ⟨h1.1, H.inj2 h1.2 h2.2⟩ | exact ⟨h1.1, h1.2.1, H.inj2 h1.2.2 h2.2.2⟩ | exact ⟨H.inj2 h1.1 h2.1, H.inj2 h1.2 h2.2⟩
+  | muRs r n i b ih =>
+    intro B h1 h2
+    cases B with
+    | muRs r' n' i' b' =>
+      simp only [Ty.tsubst, Ty.relocR0_muRs, Ty.muRs.injEq] at h1 h2 ⊢
+      obtain ⟨hr1, rfl, rfl, hb1⟩ := h1
+      obtain ⟨hr2, -, -, hb2⟩ := h2
+      have hbm := H.inj2 hb1 hb2
+      refine ⟨?_, rfl, rfl, hbm⟩
+      rw [hbm]
+      by_cases hr : r = r'
+      · subst hr; rfl
+      · have M1 : (b.tsubst (Kind.idArgs k1)).mutFree = true := by
+          rw [hb1] at hr1; cases h : (b'.tsubst (Kind.idArgs k1)).mutFree <;> simp_all
+        have M2 : (b.tsubst (Kind.idArgs k2)).mutFree = true := by
+          rw [hb2] at hr2; cases h : (b'.tsubst (Kind.idArgs k2)).mutFree <;> simp_all
+        have Mm := H.mutFree M1 M2
+        rw [hbm] at Mm; simp [Mm]
+    | ref mu _ _ => cases mu <;> simp [Ty.tsubst, Ty.relocR0_muRs, Ty.relocR] at h1
+    | slice mu _ _ => cases mu <;> simp [Ty.tsubst, Ty.relocR0_muRs, Ty.relocR] at h1
+    | map mu _ _ => cases mu <;> simp [Ty.tsubst, Ty.relocR0_muRs, Ty.relocR] at h1
+    | tvar => simp only [Ty.tsubst_idArgs_tvar', Ty.relocR0_tvar] at h1; simp [Ty.tsubst, Ty.relocR0_muRs] at h1
+    | _ => simp [Ty.tsubst, Ty.relocR0_muRs, Ty.relocR] at h1
+
 theorem MeetK.sub (H : MeetK k1 k2 m) : ∀ {A B : Ty}, Ty.sub (A.tsubst (Kind.idArgs k1)) (B.tsubst (Kind.idArgs k1)) = true →
     Ty.sub (A.tsubst (Kind.idArgs k2)) (B.tsubst (Kind.idArgs k2)) = true →
     Ty.sub (A.tsubst (Kind.idArgs m)) (B.tsubst (Kind.idArgs m)) = true := by
@@ -592,7 +680,8 @@ theorem MeetK.sub (H : MeetK k1 k2 m) : ∀ {A B : Ty}, Ty.sub (A.tsubst (Kind.i
     cases B <;> (try simp only [Ty.tsubst_idArgs_tvar'] at h1 h2 ⊢) <;> simp [Ty.tsubst, Ty.sub] at h1 h2 ⊢ <;> exact ⟨h1.1, H.inj2 h1.2 h2.2⟩
   | dom r t ih =>
     intro B h1 h2
-    cases B <;> (try simp only [Ty.tsubst_idArgs_tvar'] at h1 h2 ⊢) <;> simp [Ty.tsubst, Ty.sub] at h1 h2 ⊢ <;> exact ⟨h1.1, H.inj2 h1.2 h2.2⟩
+    cases B <;> (try simp only [Ty.tsubst_idArgs_tvar'] at h1 h2 ⊢) <;> simp [Ty.tsubst, Ty.sub] at h1 h2 ⊢
+    exact ⟨⟨h1.1.1, ih h1.1.2 h2.1.2⟩, H.relocInj2 h1.2 h2.2⟩
   | fn p r ihp ihr =>
     intro B h1 h2
     cases B <;> (try simp only [Ty.tsubst_idArgs_tvar'] at h1 h2 ⊢) <;> simp [Ty.tsubst, Ty.sub] at h1 h2 ⊢ <;> exact ⟨H.inj2 h1.1 h2.1, H.inj2 h1.2 h2.2⟩

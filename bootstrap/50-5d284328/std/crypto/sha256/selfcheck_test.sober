@@ -1,0 +1,48 @@
+package sha256
+
+// SHA-NIのチャンクの照合（white-box）: チャンクのWriteとSoberのwriteSを乱数の長さ・乱数の切れ目で突き合わせる。
+// scripts/cryptocheck.sh が SOBER_NOSHA の有無の両方で回す（倒れ先では両方 Sober — 同じ値になる）
+
+import "std/iter"
+
+func TestShaSelfCheck() {
+    assert(shaSelfCheck(1, 3000) == 0)
+    assert(shaSelfCheck(42, 1000) == 0)
+}
+
+// チャンクのWriteとSoberのwriteSの照合。シードseedの
+// 擬似乱数で長さ0〜300の入力をrounds個作り、乱数の長さの切れ目で1〜3回に分けて書いた値を両方のパスで比べる。食い違いの数を返す
+func shaSelfCheck(seed int, rounds int) int {
+    mut x := seed
+    mut bad := 0
+    for r <- iter.Range(0, rounds) {
+        x = x * 6364136223846793005 + 1442695040888963407
+        n := ((x >> 33) & 0x3fffffff) % 301
+        mut d := mut []byte{}
+        for i <- iter.Range(0, n) {
+            x = x * 6364136223846793005 + 1442695040888963407
+            d = append(d, byte((x >> 40) & 0xff))
+        }
+        data := freeze(d)
+        x = x * 6364136223846793005 + 1442695040888963407
+        c1 := if n > 0 { ((x >> 33) & 0x3fffffff) % (n + 1) } else { 0 }
+        x = x * 6364136223846793005 + 1442695040888963407
+        c2 := c1 + (if n - c1 > 0 { ((x >> 33) & 0x3fffffff) % (n - c1 + 1) } else { 0 })
+        mut a := New()
+        mut b := New()
+        Write(mut a, cat([]byte{}, data, 0, c1))
+        Write(mut a, cat([]byte{}, data, c1, c2))
+        Write(mut a, cat([]byte{}, data, c2, n))
+        writeS(mut b, cat([]byte{}, data, 0, c1))
+        writeS(mut b, cat([]byte{}, data, c1, c2))
+        writeS(mut b, cat([]byte{}, data, c2, n))
+        ha := Sum(a)
+        hb := sumS(b)
+        for i <- iter.Range(0, 32) {
+            if ha[i] != hb[i] {
+                bad += 1
+            }
+        }
+    }
+    return bad
+}

@@ -30,23 +30,28 @@ const RDL_SHORT_NS = 1000000
 // 走査のタイマーの完了の印（ringのuser_data・epollのdata。uring.soberのUD_* の続き。UDT_POLL〔2〕と読みのスロットの印〔1〕のビットを持たない）
 const UD_RDL = 8
 // 配列の大きさ（バイト。[数, task × fdの上限]・後ろのワード・枠の取り戻しの作業域〔RDL_CLS・RDL_HIST〕。NORESERVE。触った分だけ常駐）
-const RDL_ARR = 1052672
-const RDL_CAP = 65536
+const RDL_CAP = FD_CAP
+const RDL_ARR = ((RDL_HIST + 48) * 8 + 4095) / 4096 * 4096
 // 配列の後ろのワード: 走査の間隔と見直しの間隔のtimespec（ringのTIMEOUTが指す。2ワードずつ）・timerfdのitimerspec（4ワード）・timerfd + 1・読みの受け皿
-const RDL_TS = 65538
-const RDL_TS2 = 65540
-const RDL_IT = 65542
-const RDL_TFD = 65546
-const RDL_TBUF = 65547
+const RDL_TS = RDL_CAP + 2
+const RDL_TS2 = RDL_CAP + 4
+const RDL_IT = RDL_CAP + 6
+const RDL_TFD = RDL_CAP + 10
+const RDL_TBUF = RDL_CAP + 11
 // HTTPのDateの行（std/http/serverがレスポンスの頭へコピーする）: RDL_DSEC = 行の秒 + 1（0 = まだ作っていない）・RDL_DFIX = SOBER_DATE_SEC + 1
 // （0 = 壁時計を読む。例と検査の出力を固定する開発用）・RDL_DTXT = Dateの行と頭の終わり `Date: <IMF-fixdate>\r\n\r\n` のRDL_DLENバイト
 // （5ワードの場所。組み込みappend_dateが頭の終わりへコピーする。std/http/serverの今の秒はRDL_DSECをnet_op 17 / 18で読む）・RDL_DNAM = 曜日と月の名前の表
 // （"SunMon…Sat" の21バイト + "JanFeb…Dec" の36バイト）。走査と、列が空から始まるrt.rdl_joinで、秒が変わっていれば作り直す（約0.27秒ごと・熱いパスでは時計を読まない）
-const RDL_DSEC = 65548
-const RDL_DFIX = 65549
-const RDL_DTXT = 65550
+const RDL_DSEC = RDL_CAP + 12
+const RDL_DFIX = RDL_CAP + 13
+const RDL_DTXT = RDL_CAP + 14
 const RDL_DLEN = 39
-const RDL_DNAM = 65559
+const RDL_DNAM = RDL_CAP + 23
+// 寝続けている接続のtaskのエリアの死んだページを返す（rdlTrim）: RDL_TRIMT = 前の走査の時刻（WK_NOWのTSC）・RDL_TRIMN = この走査で返した本数。
+// 1回の走査で返すのはRDL_TRIM_MAX本まで。100万本を張った直後の走査が長く止まらないように、残りは次の走査で返す
+const RDL_TRIMT = RDL_CAP + 32
+const RDL_TRIMN = RDL_CAP + 33
+const RDL_TRIM_MAX = 4096
 const RDL_LOW = 4294967295
 const RDL_COUNTED = 4611686018427387904
 // プールの節の期限で切った数（admit.soberのPL_* の続き。Ledgerのtimeout）
@@ -64,12 +69,15 @@ func needRdl(st mut St) {
     st.rtRdlJoin = addFunc(mut st, int(strLit(mut st, "rt.rdl_join")), desugar.ListRef(list1(mut st, TyI64)), TyI64)
     st.rtRdlLeave = addFunc(mut st, int(strLit(mut st, "rt.rdl_leave")), desugar.ListRef(list1(mut st, TyPtr)), -1)
     st.rtRdlSweep = addFunc(mut st, int(strLit(mut st, "rt.rdl_sweep")), desugar.ListRef(list0(mut st)), -1)
+    st.rtCeilNeed = addFunc(mut st, int(strLit(mut st, "rt.ceil_need")), desugar.ListRef(list2(mut st, TyI64, TyI64)), TyI64)
+    st.rtCeilWake = addFunc(mut st, int(strLit(mut st, "rt.ceil_wake")), desugar.ListRef(list0(mut st)), -1)
 }
 
 // net_opのop 14（期限のワードをaにする）・15（ワーカーの粗い時刻）・16（今のtaskをワーカーの期限の列へ入れる。a = fd・負ならfdなし）・
 // 17（ワーカーのDateの行の番地。期限の列の配列が無ければ0。入れた後のtaskはワーカーに固定なので、番地は出るまで変わらない）・18（番地aの1ワード。17の行を読む）。
 // opは定数のときだけここへ来る
-func rdlOp(st mut St, op int, a int) int {
+// 19（天井の空きの頼み: a = あと要るバイト・b = 待ちの期限 — ceil.sober）
+func rdlOp(st mut St, op int, a int, b int) int {
     if !st.taskUse {
         return iconst(mut st, 0)
     }
@@ -88,6 +96,9 @@ func rdlOp(st mut St, op int, a int) int {
     }
     if op == 18 {
         return load(mut st, itop(mut st, a), 0)
+    }
+    if op == 19 {
+        return call(mut st, st.rtCeilNeed, list2(mut st, a, b))
     }
     return call(mut st, st.rtRdlJoin, list1(mut st, a))
 }
@@ -263,9 +274,10 @@ func buildRdlRt(st mut St) {
     buildRdlJoin(mut st)
     buildRdlLeave(mut st)
     buildRdlSweep(mut st)
+    buildCeilRt(mut st)
 }
 
-// rt.rdl_join(fd) → 0: 今のtaskをワーカーの期限の列へ（入っていればfdを足すだけ。tls.Serveが入れた後のServeWith）。列が空から始まるなら粗い時刻と走査の時刻を置く
+// rt.rdl_join(fd) → 0: 今のtaskをワーカーの期限の列へ（入っていればfdを足すだけ。tls.Serveが入れた後のServeConn）。列が空から始まるなら粗い時刻と走査の時刻を置く
 func buildRdlJoin(st mut St) {
     begin(mut st, st.rtRdlJoin)
     fd := 0
@@ -360,6 +372,11 @@ func buildRdlSweep(st mut St) {
     e := bin(mut st, BSar, clockNs(mut st), iconst(mut st, RDL_SHIFT))
     store(mut st, wk, WK_REPOCH, e)
     rdlDate(mut st, ap)
+    trim := rdlTrimOn(mut st)
+    me := if trim { load(mut st, globaladdr(mut st, st.taskG), TK_CUR) } else { zero }
+    if trim {
+        store(mut st, ap, RDL_TRIMN, zero)
+    }
     // ringのパスか（netのringのコードを組むプログラムで、今のワーカーがnetのringを持つ）
     ringCode := chF(mut st, NETF_RECV) != -1
     rec := if ringCode { load(mut st, wk, WK_RING) } else { zero }
@@ -383,13 +400,26 @@ func buildRdlSweep(st mut St) {
     setCur(mut st, sb)
     t := load(mut st, gepWord(mut st, ap, i), 0)
     tp := itop(mut st, t)
+    if trim {
+        rdlTrim(mut st, ap, t, me)
+    }
     r := load(mut st, tp, TC_RDL)
     due := bin(mut st, BAnd, cmp(mut st, CNe, r, zero), cmp(mut st, CLe, bin(mut st, BAnd, r, iconst(mut st, RDL_LOW)), e))
     ior := load(mut st, tp, TC_IORES)
     pr := cmp(mut st, CEq, ior, iconst(mut st, PEND_RT))
     ps := cmp(mut st, CEq, ior, iconst(mut st, PEND_SEND))
     pp := cmp(mut st, CEq, ior, iconst(mut st, IO_PENDING))
-    waiting := bin(mut st, BOr, bin(mut st, BOr, pr, ps), pp)
+    // 署名の列の待ち（sign.sober）も待ちに数える（ミュータント110: 数えない。期限の過ぎたtaskが列に残る）
+    sg := st.signOn && st.rtMut != 110
+    pg := if sg { cmp(mut st, CEq, ior, iconst(mut st, PEND_SIGN)) } else { 0 }
+    // muxの待ち手（mux.sober — HTTP/2の接続のtaskの受け）も期限で切る（積む側とCASで競う）
+    w0 := bin(mut st, BOr, bin(mut st, BOr, pr, ps), pp)
+    w1 := if sg { bin(mut st, BOr, w0, pg) } else { w0 }
+    pd := if st.muxUse { cmp(mut st, CEq, ior, iconst(mut st, PEND_DOM)) } else { 0 }
+    w2 := if st.muxUse { bin(mut st, BOr, w1, pd) } else { w1 }
+    // 天井の空きの待ち手（ceil.sober）も期限で起こす
+    pc := cmp(mut st, CEq, ior, iconst(mut st, PEND_CEIL))
+    waiting := bin(mut st, BOr, w2, pc)
     bDue := newBlock(mut st)
     bNw := newBlock(mut st)
     condbr(mut st, bin(mut st, BAnd, due, waiting), bDue, -1, bNw, -1)
@@ -430,9 +460,35 @@ func buildRdlSweep(st mut St) {
     }
     br(mut st, bCnt, -1)
     setCur(mut st, bCnt)
+    // 署名の列の待ちは列から外して -110でウェイクアップする（TC_AWNEXT / TC_AWPREVは署名の列のもので、下のdlUnlinkを通さない）
+    if sg {
+        bSg := newBlock(mut st)
+        bNsg := newBlock(mut st)
+        condbr(mut st, pg, bSg, -1, bNsg, -1)
+        setCur(mut st, bSg)
+        signExpire(mut st, t)
+        br(mut st, sn, -1)
+        setCur(mut st, bNsg)
+    }
+    bCl := newBlock(mut st)
+    bNcl := newBlock(mut st)
+    condbr(mut st, pc, bCl, -1, bNcl, -1)
+    setCur(mut st, bCl)
+    ceilCasWake(mut st, t)
+    br(mut st, sn, -1)
+    setCur(mut st, bNcl)
     // scopeの期限の待ちのチェーンにも居れば外す（今の走査が同じ待ちを2度ウェイクアップしない）
     if dlFn(st.rtD3) != 0 {
         dlUnlink(mut st, t, load(mut st, tp, TC_DL))
+    }
+    if st.muxUse {
+        bMx := newBlock(mut st)
+        bNm := newBlock(mut st)
+        condbr(mut st, pd, bMx, -1, bNm, -1)
+        setCur(mut st, bMx)
+        muxCasWake(mut st, t, iconst(mut st, -110))
+        br(mut st, sn, -1)
+        setCur(mut st, bNm)
     }
     // 受けの待ち（rtが直にウェイクアップする待ち）は -110でウェイクアップ
     bNr := newBlock(mut st)
@@ -476,13 +532,59 @@ func buildRdlSweep(st mut St) {
     rdlArm(mut st, wk, ap, RDL_TS)
     br(mut st, bEnd, -1)
     setCur(mut st, bEnd)
+    if trim {
+        store(mut st, ap, RDL_TRIMT, load(mut st, wk, WK_NOW))
+    }
     ret(mut st, -1)
+}
+
+// エリアの死んだページを返すか: 接続のtaskのスタックがシャロースリープの形のプログラム（rt.task_switchがareaParkで、ディープスリープのたびに印を消す形）
+func rdlTrimOn(st mut St) bool {
+    return st.areaOn && st.rtShLand != -1 && st.rtMut != 118
+}
+
+// 期限の列のtask t（今のtask meでない）が、フラグつきの接続のtaskで、前の走査から一度も走らずにディープスリープしていて、この待ちでまだ返していなければ、
+// 持っているエリアのうち退避したrspのページより下をmadviseで返す（ディープスリープの間も、前に深く呼んだ跡のページが常駐し続ける。TLSの接続はkの中で待つ）。
+// 走り始めたtaskはワーカーに固定で、走査は同じワーカーの上で走る。走査の間、t は走っていないので、rspより下の枠は死んでいる。
+// meは除く（mn_nextは止まるtaskのスタックの上で走り、meの退避したrspは古い）
+func rdlTrim(st mut St, ap int, t int, me int) {
+    zero := iconst(mut st, 0)
+    tp := itop(mut st, t)
+    onw := load(mut st, tp, TC_ONW)
+    sel := cmp(mut st, CEq, bin(mut st, BAnd, onw, iconst(mut st, 1 + 2 + AREA_SPARK + AREA_TRIM)), iconst(mut st, 1))
+    idle := cmp(mut st, CUlt, load(mut st, tp, TC_LRUN), load(mut st, ap, RDL_TRIMT))
+    nt := load(mut st, ap, RDL_TRIMN)
+    room := cmp(mut st, CLt, nt, iconst(mut st, RDL_TRIM_MAX))
+    go := bin(mut st, BAnd, bin(mut st, BAnd, sel, idle), bin(mut st, BAnd, room, cmp(mut st, CNe, t, me)))
+    bJ := branchIf(mut st, go)
+    store(mut st, tp, TC_ONW, bin(mut st, BOr, onw, iconst(mut st, AREA_TRIM)))
+    store(mut st, ap, RDL_TRIMN, urAdd(mut st, nt, 1))
+    a := load(mut st, tp, TC_AREA)
+    lo := bin(mut st, BSub, a, iconst(mut st, TASK_STACK))
+    sp := load(mut st, tp, TC_CTX)
+    // rspがエリアの中に無い（ページ0の本体の枠で待っている）ならエリア全体が死んでいる
+    inA := bin(mut st, BAnd, cmp(mut st, CUge, sp, lo), cmp(mut st, CUlt, sp, a))
+    live := bin(mut st, BAdd, a, bin(mut st, BMul, inA, bin(mut st, BSub, sp, a)))
+    hi := bin(mut st, BAnd, live, iconst(mut st, -4096))
+    bS := branchIf(mut st, pstatOn(mut st))
+    ps := globaladdr(mut st, st.pstatG)
+    atomicXadd(mut st, ps, PS_TRIM, iconst(mut st, 1))
+    atomicMax(mut st, ps, PS_PARKHW, bin(mut st, BSub, a, live))
+    br(mut st, bS, -1)
+    setCur(mut st, bS)
+    bM := branchIf(mut st, cmp(mut st, CUlt, lo, hi))
+    // madvise(lo, hi − lo, MADV_DONTNEED)。失敗は無視（返せなくても意味は変わらない）
+    syscall(mut st, list4(mut st, iconst(mut st, 28), lo, bin(mut st, BSub, hi, lo), iconst(mut st, 4)))
+    br(mut st, bM, -1)
+    setCur(mut st, bM)
+    br(mut st, bJ, -1)
+    setCur(mut st, bJ)
 }
 
 
 // 枠の取り戻しの作業域（期限の列の配列の後ろ — 配列は NORESERVE なので触った分だけ常駐）: 段階（RDL_CLS + 添字）・段階の表（48 段）
-const RDL_CLS = 65600
-const RDL_HIST = 131140
+const RDL_CLS = RDL_CAP + 64
+const RDL_HIST = 2 * RDL_CAP + 68
 
 // 入場を待つ接続があるとき（受け付けのループが入場を待って接続を手に持っている — held > 0）、このワーカーの期限の列から
 // k = ⌈(q + held) ÷ ワーカーの数⌉ 本を切る（q = 全 listener のランタイムの列の本数の和）:
@@ -512,14 +614,27 @@ func rdlEvict(st mut St, ap int, n int, e int, info int, lenp int) {
     br(mut st, ql, list2(mut st, urAdd(mut st, j, 1), bin(mut st, BAdd, q, c)))
     setCur(mut st, qe)
     // 満杯の印 = 受け付けのループが入場を待って接続を手に持っている（MN_LSNH > 0）。列に積まれただけ（一斉の到着でループが取り出す前）では切らない
+    // 入場の空きの登録簿で待つHTTP/2の接続（待っているストリームを持つ — muxを組むプログラムだけ）も、入場を待つ者として数える
     held := load(mut st, mn, MN_LSNH)
+    // 天井の空きを待つtask（ceil.sober）も、入場を待つ者として数える
+    mw := bin(mut st, BAdd, if st.muxUse { load(mut st, mn, MN_MRN) } else { zero }, load(mut st, mn, MN_CWN))
+    w := bin(mut st, BAdd, bin(mut st, BMul, q, cmp(mut st, CGt, held, zero)), bin(mut st, BAdd, held, mw))
     nw := load(mut st, mn, MN_N)
-    k := bin(mut st, BMul, bin(mut st, BDiv, bin(mut st, BAdd, bin(mut st, BAdd, q, held), bin(mut st, BSub, nw, one)), nw), cmp(mut st, CGt, held, zero))
+    k := bin(mut st, BMul, bin(mut st, BDiv, bin(mut st, BAdd, w, bin(mut st, BSub, nw, one)), nw), cmp(mut st, CGt, bin(mut st, BAdd, held, mw), zero))
     bK := branchIf(mut st, cmp(mut st, CGt, k, zero))
     hist := gepWord(mut st, ap, iconst(mut st, RDL_HIST))
     for h <- iter.Range(0, 48) {
         store(mut st, hist, h, zero)
     }
+    // epollの経路（今のワーカーがnetのringを持たない）では、受けの待ちはfdwaitの待ち（IO_PENDING）。送りの待ちは送りの間隔を持つので下の iv = 0 で外れる
+    rg0 := load(mut st, globaladdr(mut st, st.wkG), WK_RING)
+    bRc := newBlock(mut st)
+    bRj := newBlock(mut st)
+    epw := param(mut st, bRj, TyI64)
+    condbr(mut st, cmp(mut st, CNe, rg0, zero), bRc, -1, bRj, list1(mut st, one))
+    setCur(mut st, bRc)
+    br(mut st, bRj, list1(mut st, cmp(mut st, CEq, load(mut st, itop(mut st, rg0), UR_NET), zero)))
+    setCur(mut st, bRj)
     // 1回目: 段階を求めて表へ
     l1 := newBlock(mut st)
     i1 := param(mut st, l1, TyI64)
@@ -533,7 +648,10 @@ func rdlEvict(st mut St, ap int, n int, e int, info int, lenp int) {
     tp := itop(mut st, load(mut st, gepWord(mut st, ap, i1), 0))
     r := load(mut st, tp, TC_RDL)
     iv := bin(mut st, BAnd, bin(mut st, BSar, r, iconst(mut st, 32)), iconst(mut st, 65535))
-    pr := cmp(mut st, CEq, load(mut st, tp, TC_IORES), iconst(mut st, PEND_RT))
+    ior1 := load(mut st, tp, TC_IORES)
+    // HTTP/2の接続はmuxの待ち（PEND_DOM）で受ける。受けの期限を張っているのは走っているストリームも待っているストリームも無い間だけ（遊んでいる接続）
+    pr0 := bin(mut st, BOr, cmp(mut st, CEq, ior1, iconst(mut st, PEND_RT)), bin(mut st, BAnd, epw, cmp(mut st, CEq, ior1, iconst(mut st, IO_PENDING))))
+    pr := if st.muxUse { bin(mut st, BOr, pr0, cmp(mut st, CEq, ior1, iconst(mut st, PEND_DOM))) } else { pr0 }
     ri := load(mut st, tp, TC_RIDX)
     fd1 := bin(mut st, BAnd, bin(mut st, BSar, ri, iconst(mut st, 32)), iconst(mut st, 1073741823))
     cand := bin(mut st, BAnd, bin(mut st, BAnd, cmp(mut st, CNe, r, zero), pr), bin(mut st, BAnd, cmp(mut st, CEq, iv, zero), cmp(mut st, CNe, fd1, zero)))

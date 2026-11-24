@@ -1,0 +1,160 @@
+package analyzer
+
+// 予約ヘッダの名前のリテラル（language.md 28 節）: stdが書くヘッダの名前を、利用者がheaders:のhttp.Fieldに文字列のリテラル
+// （constと `+` で畳める値を含む）で書いたら拒否する。対象はstd/http/clientの関数の仮引数headersへ渡すスライスのリテラルと、
+// http.server.Headers{list: …} のスライスのリテラルの要素。実行時に決まる名前は、今までどおりstdのpanic(http.BadHeader)が拒否する
+
+import "ast"
+import "desugar"
+import "lexer"
+import "std/iter"
+import "std/strings"
+
+const MHdrName = 54  // 予約ヘッダの名前（at = name: の値の節, 付帯 = 表の添字。HdrServer以上はserverの表）
+
+const HdrServer = 100
+
+// clientが書く名前（wire.sober の fieldOk と同じ表）
+func hdrClientNames() []string {
+    return []string{"host", "content-length", "transfer-encoding", "connection"}
+}
+
+// serverが書く名前（server.sober の fieldOk と同じ表）
+func hdrServerNames() []string {
+    return []string{"date", "content-type", "content-length", "content-encoding", "transfer-encoding", "connection", "vary", "cache-control", "cdn-cache-control", "surrogate-control", "etag", "last-modified", "set-cookie"}
+}
+
+// 呼び出し callee(args) がstd/http/clientの関数なら、仮引数headersの実引数のリテラルを照合する
+func hdrCall(az mut Az, callee desugar.NodeRef, args desugar.ListRef) {
+    if desugar.IsStdPkg(mut az.d, az.pk) {
+        return
+    }
+    fi := cstFn(mut az, callee)
+    if fi < 0 || str(mut az, desugar.PkgPath(mut az.d, desugar.FnPkgOf(mut az.d, fi))) != "std/http/client" {
+        return
+    }
+    ps := desugar.ListRef(fnDecl(mut az, fi).c)
+    for j <- iter.Range(0, desugar.LenL(mut az.d, ps)) {
+        if j < desugar.LenL(mut az.d, args) && str(mut az, desugar.StrRef(node(mut az, nat(mut az, ps, j)).a)) == "headers" {
+            hdrList(mut az, nat(mut az, args, j), 0)
+        }
+    }
+}
+
+// 複合リテラル e（型 x.a）がhttp.server.Headersなら、listのリテラルを照合する
+func hdrComposite(az mut Az, x ast.Node) {
+    if desugar.IsStdPkg(mut az.d, az.pk) || !hdrTypeIs(mut az, desugar.StrRef(x.a), "std/http/server", "Headers") {
+        return
+    }
+    els := desugar.ListRef(x.b)
+    for i <- iter.Range(0, desugar.LenL(mut az.d, els)) {
+        el := node(mut az, nat(mut az, els, i))
+        if (el.a == -1 && i == 0) || (el.a != -1 && str(mut az, desugar.StrRef(el.a)) == "list") {
+            hdrList(mut az, desugar.NodeRef(el.b), HdrServer)
+        }
+    }
+}
+
+// 型名 name（package az.pk から見た参照名）が package path の型 tn か
+func hdrTypeIs(az mut Az, name desugar.StrRef, path string, tn string) bool {
+    r := desugar.ResolveType(mut az.d, az.pk, name)
+    return r.kind == desugar.TopType && str(mut az, desugar.StrRef(node(mut az, desugar.NodeRef(r.idx)).a)) == tn && str(mut az, desugar.PkgPath(mut az.d, r.pkg)) == path
+}
+
+// スライスのリテラル e の要素のうち、http.Fieldの複合リテラルの名前を照合する（side = 0 は client・HdrServer は server）
+func hdrList(az mut Az, e desugar.NodeRef, side int) {
+    if e == -1 {
+        return
+    }
+    x := node(mut az, e)
+    if x.kind == ast.EParen {
+        hdrList(mut az, desugar.NodeRef(x.a), side)
+        return
+    }
+    if x.kind != ast.ESlicelit {
+        return
+    }
+    es := desugar.ListRef(x.b)
+    for i <- iter.Range(0, desugar.LenL(mut az.d, es)) {
+        f := node(mut az, nat(mut az, es, i))
+        if f.kind == ast.EComposite && hdrTypeIs(mut az, desugar.StrRef(f.a), "std/http", "Field") {
+            fs := desugar.ListRef(f.b)
+            for k <- iter.Range(0, desugar.LenL(mut az.d, fs)) {
+                el := node(mut az, nat(mut az, fs, k))
+                if (el.a == -1 && k == 0) || (el.a != -1 && str(mut az, desugar.StrRef(el.a)) == "name") {
+                    hdrName(mut az, desugar.NodeRef(el.b), side)
+                }
+            }
+        }
+    }
+}
+
+func hdrName(az mut Az, e desugar.NodeRef, side int) {
+    s, ok := hdrFold(mut az, e, az.pk, 0)
+    if !ok {
+        return
+    }
+    n := strings.ToLower(s)
+    names := if side == HdrServer { hdrServerNames() } else { hdrClientNames() }
+    for i <- iter.Range(0, len(names)) {
+        if names[i] == n {
+            report(mut az, MHdrName, e, desugar.NodeRef(side + i))
+        }
+    }
+}
+
+// 式 e（package pk の中）の文字列をビルド時に畳む: 補間の無い文字列リテラル・constの名前・それらの `+`・括弧（畳めなければ false）
+func hdrFold(az mut Az, e desugar.NodeRef, pk int, depth int) (string, bool) {
+    if e == -1 || depth > 32 {
+        return "", false
+    }
+    x := node(mut az, e)
+    k := x.kind
+    if k == ast.EStrlit {
+        return str(mut az, desugar.StrRef(x.a)), true
+    }
+    if k == ast.EParen {
+        return hdrFold(mut az, desugar.NodeRef(x.a), pk, depth + 1)
+    }
+    if k == ast.EBinary && x.a == lexer.Plus {
+        l, lok := hdrFold(mut az, desugar.NodeRef(x.b), pk, depth + 1)
+        r, rok := hdrFold(mut az, desugar.NodeRef(x.c), pk, depth + 1)
+        return "${l}${r}", lok && rok
+    }
+    mut c := desugar.TopRef{kind: desugar.TopNone, pkg: -1, idx: -1, sub: 0}
+    if k == ast.EIdent {
+        c = desugar.ResolveTop(mut az.d, pk, desugar.StrRef(x.a), false, desugar.TopConst)
+    } else if k == ast.ESelector && kind(mut az, desugar.NodeRef(x.a)) == ast.EIdent {
+        c = desugar.ResolveSel(mut az.d, pk, desugar.StrRef(node(mut az, desugar.NodeRef(x.a)).a), desugar.StrRef(x.b), desugar.TopConst)
+    }
+    if c.kind != desugar.TopConst || c.idx < 0 {
+        return "", false
+    }
+    cn := node(mut az, desugar.ConNode(mut az.d, c.idx))
+    return hdrFold(mut az, desugar.NodeRef(cn.b), desugar.ConPkg(mut az.d, c.idx), depth + 1)
+}
+
+// 指摘の本文（付帯 = 表の添字）。直し方を言う
+func hdrMessage(x int) string {
+    if x >= HdrServer {
+        i := x - HdrServer
+        n := []string{"Date", "Content-Type", "Content-Length", "Content-Encoding", "Transfer-Encoding", "Connection", "Vary", "Cache-Control", "CDN-Cache-Control", "Surrogate-Control", "ETag", "Last-Modified", "Set-Cookie"}[i]
+        fix := switch i {
+        case 0 | 2 | 4 | 5: "drop it (the server writes it for every response)"
+        case 1: "set contentType of http.server.Response"
+        case 3: "use coded (http.server.Coded) or compression:"
+        case 6: "drop it (the server writes it from coded and compression:)"
+        case 7 | 8 | 9: "set cache of http.server.Response or of the route (Route.cache)"
+        case 10 | 11: "use validators (std/http/server makes them from the content)"
+        case _: "set cookies ([]http.server.SetCookie) of http.server.Response"
+        }
+        return "${n} is written by std/http/server and cannot be in headers: — ${fix} (at run time a reserved name panics with http.BadHeader. language.md 28 節)"
+    }
+    n := []string{"Host", "Content-Length", "Transfer-Encoding", "Connection"}[x]
+    fix := switch x {
+    case 0: "put the host in the url"
+    case 1 | 2: "pass the body as body: (the client sends it with Content-Length)"
+    case _: "drop it (the client keeps or closes the connection itself)"
+    }
+    return "${n} is written by std/http/client and cannot be in headers: — ${fix} (at run time a reserved name panics with http.BadHeader. language.md 28 節)"
+}
