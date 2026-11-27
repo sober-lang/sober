@@ -2,6 +2,21 @@
 
 This file records user-facing changes per public release. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow [Semantic Versioning](https://semver.org/) (no backward-compatibility promise while on 0.x).
 
+## v0.7.7 (2026-11-27)
+
+This release rebuilds the performance of the HTTP/2 server. No language or API changes.
+
+### Performance
+
+- HTTP/2 server throughput is about 9.8 times v0.7.6 (local measurement: small h2c responses, h2load with 100 concurrent streams, 732K → 7.18M requests/s). The work: HPACK decoding in one pass (a 12-bit Huffman table, decoding straight into the receive buffer), cheaper response encoding (static-table indexing, batched copies), fewer copies of the request head (chunk ownership moves to the child, which gets a reference), lazy tasks for stream children (a child is promoted to a task only when it is about to wait; the semantics a handler sees and the fairness rules are unchanged), and same-round sending (the connection's task sends responses without waiting for the next receive round)
+- TLS receiving decrypts straight into the caller's region, cutting instructions per request of a TLS echo by about 13%
+- HTTP/1.1 is faster across the board (against Go on the same runner, baseline +3%, json +5%, and more over v0.7.6)
+- Runtime: locked instructions per request cut to about a third (the SR_DEAD count is added only for children that died, the per-worker chunk cache ceiling went from 16 to 256, and a child's final signal is handed over directly)
+
+### Fixed
+
+- HTTP/2: in a specific ordering where a child dies right after posting its final signal, the death mark could stay on the slot and a later stream reusing the slot could be closed with RST_STREAM in error. The death mark's placement is fixed
+
 ## v0.7.6 (2026-11-24)
 
 This release adds HTTP/2 to the HTTP server (h2c, and h2 over TLS picked by ALPN) and to the HTTP client, IPv6 to `std/net`, and structured logs (`print.Log`). A TLS connection is now a `net.Conn`, so the same functions read and write plain and TLS connections. `tls.Serve` also accepts TLS 1.2 when the Config asks for it (`tls.DangerouslyAllowTls12`); the default stays TLS 1.3 only. It includes incompatible changes.

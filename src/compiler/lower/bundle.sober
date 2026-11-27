@@ -1464,7 +1464,7 @@ func bxHashB(b []byte) []int {
 // SOBER_XDBG・errorのラベルの表（タグ = 表の添字 — packageのパスとラベルの綴り）・熱さのプロファイルの中身と旗。spawnの点があるか（下ろして決まる）は束の仮定（bxTopPrep）
 func bxFlags(st mut St) []int {
     fl := (if st.noVec { 1 } else { 0 }) | (if st.taskUse { 2 } else { 0 }) | (if st.winOn { 4 } else { 0 }) | (if st.areaOn { 8 } else { 0 }) |
-        (if st.trapUse { 16 } else { 0 })
+        (if st.trapUse { 16 } else { 0 }) | (if st.lazyOn { 32 } else { 0 })
     gl := (if st.trapG >= 0 { 1 } else { 0 }) | (if st.taskG >= 0 { 2 } else { 0 }) | (if st.wkG >= 0 { 4 } else { 0 }) | (if st.pstatG >= 0 { 8 } else { 0 }) |
         (if st.meta >= 0 { 16 } else { 0 }) | (if int(st.rtLockWait) >= 0 { 32 } else { 0 })
     mut h1 := ckM1(ckM1(ckM1(CK_S1, fl), gl), len(st.xdbgPat))

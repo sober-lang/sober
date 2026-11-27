@@ -75,7 +75,7 @@ func step(d mut Dec, blk string, want string, tab string, size int) {
     mut fs := mut []int{}
     st := Decode(mut d, unhex(blk), mut out, mut fs, 1 << 20)
     assert(st == Ok)
-    assert(eqb(render(out, fs), bytes(want)))
+    assert(eqb(render(out, Fields(d, freeze(fs))), bytes(want)))
     assert(eqb(table(d), bytes(tab)))
     assert(d.size == size)
 }
@@ -268,7 +268,7 @@ func TestRoundtrip() {
         mut out := mut []byte{}
         mut fs := mut []int{}
         assert(Decode(mut d, blk, mut out, mut fs, 1 << 20) == Ok)
-        assert(eqb(render(out, fs), want))
+        assert(eqb(render(out, Fields(d, freeze(fs))), want))
         assert(d.n == 0)
     }
 }
@@ -322,7 +322,7 @@ func TestBomb() {
     mut out2 := mut []byte{}
     mut fs2 := mut []int{}
     assert(Decode(mut d, unhex("be"), mut out2, mut fs2, 8192) == Ok)
-    assert(eqb(render(out2, fs2), bytes("y: b\n")))
+    assert(eqb(render(out2, Fields(d, freeze(fs2))), bytes("y: b\n")))
 }
 
 // 表の大きさを越える項目は表を空にする（RFC 7541 4.4）。名前を表から引いた項目が、その名前の項目を追い出す形
@@ -445,8 +445,418 @@ func TestTableModel() {
         mut out := mut []byte{}
         mut fs := mut []int{}
         assert(Decode(mut d, freeze(blk), mut out, mut fs, 1 << 30) == Ok)
-        assert(eqb(render(out, fs), want))
+        assert(eqb(render(out, Fields(d, freeze(fs))), want))
         assert(d.size == msize && d.n == len(mn) - lo)
     }
 }
 
+
+// 長さの表が静的表の名前と合い、nameIndexがどの名前も（大文字でも）最初の添字で引く
+func TestNameIndex() {
+    ls := bytes(staticLens)
+    assert(len(ls) == 61)
+    for i <- iter.Range(1, 62) {
+        nm := bytes(staticName(i))
+        assert(int(ls[i - 1]) == len(nm) + 64)
+        mut first := i
+        for k <- iter.Range(1, i) {
+            if staticName(k) == staticName(i) && first == i {
+                first = k
+            }
+        }
+        assert(nameIndex(nm) == first)
+        mut up := mut []byte{}
+        for c <- nm {
+            up = append(up, if int(c) >= 0x61 && int(c) <= 0x7a { byte(int(c) - 0x20) } else { c })
+        }
+        assert(nameIndex(up) == first)
+    }
+    assert(nameIndex(bytes("x-none")) == 0)
+    assert(nameIndex(bytes("")) == 0)
+}
+
+// 旧い形（1ビットずつ）の復号。表引きの形と結果・拒否が一致することの参照
+func huffDecodeRef(d mut Dec, blk []byte, a int, b int, out mut []byte) bool {
+    cs := bytes(huffCounts)
+    ss := bytes(huffSyms)
+    mut code := 0
+    mut first := 0
+    mut index := 0
+    mut l := 0
+    for i <- iter.Range(a, b) {
+        c := int(blk[i])
+        mut k := 7
+        while k >= 0 {
+            code = code | ((c >> k) & 1)
+            l += 1
+            cnt := hex2(cs, l * 2)
+            if code - cnt < first {
+                at := (index + (code - first)) * 2
+                if ss[at] == byte(0x2d) {
+                    // EOSは符号の中に現れてはいけない
+                    return false
+                }
+                put(mut d, byte(hex2(ss, at)), mut out)
+                code = 0
+                first = 0
+                index = 0
+                l = 0
+            } else {
+                index += cnt
+                first = (first + cnt) << 1
+                code = code << 1
+                if l >= 30 {
+                    return false
+                }
+            }
+            k -= 1
+        }
+    }
+    // 埋め草: 7ビット以下で、全部1（EOSの頭）
+    return l <= 7 && (code >> 1) == (1 << l) - 1
+}
+
+// blkの全体をHuffmanの符号として解いた結果を、表引きの形と参照の形で比べる（成否と出力のバイト列が一致すること）
+func huffSame(blk []byte) bool {
+    mut d1 := Dec{}
+    setup(mut d1, 4096)
+    d1.toOut = true
+    d1.lim = 1 << 20
+    mut o1 := mut []byte{}
+    ok1 := huffDecode(mut d1, blk, 0, len(blk), mut o1)
+    mut d2 := Dec{}
+    setup(mut d2, 4096)
+    d2.toOut = true
+    d2.lim = 1 << 20
+    mut o2 := mut []byte{}
+    ok2 := huffDecodeRef(mut d2, blk, 0, len(blk), mut o2)
+    return ok1 == ok2 && (!ok1 || eqb(o1, o2))
+}
+
+// 表引きの形の復号: 全記号の往復・全部の1バイトと2バイトの列・乱数の列（符号化したものと生のもの）で参照の形と一致する
+func TestHuffFast() {
+    // 全記号（1つずつと、後ろに長い符号を続けたもの）: 符号化して解くと元に戻る
+    for c <- iter.Range(0, 256) {
+        mut s := mut []byte{}
+        s = append(s, byte(c))
+        mut h := mut []byte{}
+        huffEncode(mut h, s)
+        assert(huffSame(h))
+        s = append(s, byte(255 - c))
+        s = append(s, byte(c))
+        mut h2 := mut []byte{}
+        huffEncode(mut h2, s)
+        assert(huffSame(h2))
+        mut d := Dec{}
+        setup(mut d, 4096)
+        d.toOut = true
+        d.lim = 1 << 20
+        mut o := mut []byte{}
+        assert(huffDecode(mut d, h2, 0, len(h2), mut o))
+        assert(eqb(o, s))
+    }
+    // 全部の1バイトと2バイトの列（埋め草の規則・EOS・途中で切れた符号を網羅する）
+    for a <- iter.Range(0, 256) {
+        assert(huffSame([]byte{byte(a)}))
+        for b <- iter.Range(0, 256) {
+            assert(huffSame([]byte{byte(a), byte(b)}))
+        }
+    }
+    // 乱数の列: 符号化した列と、生の列（多くは不正）
+    mut x := 2463534242
+    for it <- iter.Range(0, 3000) {
+        x = next(x)
+        n := (x & 0x7fffffff) % 40
+        mut s := mut []byte{}
+        for j <- iter.Range(0, n) {
+            x = next(x)
+            s = append(s, if it % 2 == 0 { byte(0x20 + (x & 0x7fffffff) % 95) } else { byte(x & 0xff) })
+        }
+        mut h := mut []byte{}
+        huffEncode(mut h, s)
+        assert(huffSame(h))
+        assert(huffSame(s))
+    }
+    // 境界: 埋め草が1〜7ビットの1（受ける）・8ビットの1（拒む）・EOSの30ビット（拒む）
+    assert(huffSame(unhex("1f")))
+    assert(huffSame(unhex("ff")))
+    assert(huffSame(unhex("07ff")))
+    assert(huffSame(unhex("ffff fffc")))
+    assert(huffSame(unhex("ffff ffff")))
+}
+
+// 16を越える項目のブロック（Decodeが先に伸ばした範囲を越えた分はappendで積む）: 静的表の索引を20本
+func TestManyFields() {
+    mut d := Dec{}
+    setup(mut d, 4096)
+    mut blk := mut []byte{}
+    mut want := mut []byte{}
+    for k <- iter.Range(0, 20) {
+        idx := 2 + k % 7
+        blk = append(blk, byte(0x80 | idx))
+        cat(mut want, bytes(staticName(idx)))
+        cat(mut want, bytes(": "))
+        cat(mut want, bytes(staticValue(idx)))
+        want = append(want, byte(10))
+    }
+    mut out := mut []byte{}
+    mut fs := mut []int{}
+    assert(Decode(mut d, freeze(blk), mut out, mut fs, 1 << 20) == Ok)
+    assert(eqb(render(out, Fields(d, freeze(fs))), want))
+}
+
+// 解いた量の上限が欄の途中に来るどの値でも、outは上限の無い結果の頭で（表の添字の欄は全部か無し・字句の欄は上限の手前の字まで）、
+// 表の更新は上限の無いときと同じ。字句（生・Huffman）・表に足す形と足さない形・名前の静的表と動的表・空の値を混ぜる
+func TestLargeEdge() {
+    mut seed := mut []byte{}
+    seed = append(seed, byte(0x40))
+    putStr(mut seed, bytes("aa"), false)
+    putStr(mut seed, bytes("bbbb"), false)
+    mut blk := mut []byte{}
+    // 1 = 表の添字の欄・0 = 字句の欄
+    mut kinds := mut []int{}
+    blk = append(blk, byte(0x82))
+    kinds = append(kinds, 1)
+    blk = append(blk, byte(0x40))
+    putStr(mut blk, bytes("custom-key"), true)
+    putStr(mut blk, bytes("hello world"), true)
+    kinds = append(kinds, 0)
+    blk = append(blk, byte(0x00))
+    putStr(mut blk, bytes("x-r"), false)
+    putStr(mut blk, bytes("abcdefghij"), false)
+    kinds = append(kinds, 0)
+    blk = append(blk, byte(0xbf))
+    kinds = append(kinds, 1)
+    blk = append(blk, byte(0x7e))
+    putStr(mut blk, bytes("zzzzzz"), true)
+    kinds = append(kinds, 0)
+    blk = append(blk, byte(0x04))
+    putStr(mut blk, bytes("/p/q?r=1"), true)
+    kinds = append(kinds, 0)
+    blk = append(blk, byte(0x00))
+    putStr(mut blk, bytes("e"), false)
+    putStr(mut blk, bytes(""), false)
+    kinds = append(kinds, 0)
+    // 名前も値も空の字句（上限を越えた後でも、書く字が無ければLargeにならない）
+    blk = append(blk, byte(0x00))
+    putStr(mut blk, bytes(""), false)
+    putStr(mut blk, bytes(""), false)
+    kinds = append(kinds, 0)
+    mut d0 := Dec{}
+    setup(mut d0, 4096)
+    mut o0 := mut []byte{}
+    mut f0 := mut []int{}
+    assert(Decode(mut d0, freeze(seed), mut o0, mut f0, 1 << 20) == Ok)
+    mut full := mut []byte{}
+    mut ff := mut []int{}
+    assert(Decode(mut d0, freeze(blk), mut full, mut ff, 1 << 20) == Ok)
+    fv := Fields(d0, freeze(ff))
+    assert(len(fv) == len(kinds) * 4)
+    tab0 := table(d0)
+    fb := freeze(full)
+    for lim <- iter.Range(0, len(fb) + len(kinds) * 32 + 8) {
+        // 模型: 欄の順に、表の添字は全部か無し・字句は上限の手前の字まで
+        mut used := 0
+        mut want := 0
+        mut large := false
+        mut k := 0
+        while k < len(kinds) && !large {
+            n := fv[k * 4 + 1] + fv[k * 4 + 3]
+            room := lim - used - 32
+            if n <= room || (n == 0 && kinds[k] == 0) {
+                want += n
+                used += n + 32
+            } else {
+                if kinds[k] == 0 && room > 0 {
+                    want += room
+                }
+                large = true
+            }
+            k += 1
+        }
+        mut d := Dec{}
+        setup(mut d, 4096)
+        mut o1 := mut []byte{}
+        mut f1 := mut []int{}
+        assert(Decode(mut d, freeze(seed), mut o1, mut f1, 1 << 20) == Ok)
+        mut out := mut []byte{}
+        mut fs := mut []int{}
+        st := Decode(mut d, freeze(blk), mut out, mut fs, lim)
+        assert(st == if large { Large } else { Ok })
+        assert(len(out) == want)
+        assert(eqb(freeze(out), fb[0:want]))
+        assert(eqb(table(d), tab0))
+        assert(d.size == d0.size)
+    }
+}
+
+// 表に足す字句の大きさの境: 名前と値の和が輪に書ける上限（TableMax - 32）ちょうどなら表に入り、1つ越えれば表を空にする（生とHuffmanの両方）
+func TestRingEdge() {
+    for hf <- iter.Range(0, 2) {
+        for extra <- iter.Range(0, 2) {
+            mut d := Dec{}
+            setup(mut d, 4096)
+            step(mut d, "400161 0162", "a: b\n", "a: b\n", 34)
+            mut v := mut []byte{}
+            for i <- iter.Range(0, TableMax - 32 - 1 + extra) {
+                v = append(v, byte(0x61))
+            }
+            mut blk := mut []byte{}
+            blk = append(blk, byte(0x40))
+            putStr(mut blk, bytes("x"), false)
+            putStr(mut blk, freeze(v), hf == 1)
+            mut out := mut []byte{}
+            mut fs := mut []int{}
+            assert(Decode(mut d, freeze(blk), mut out, mut fs, 1 << 20) == Ok)
+            assert(len(out) == TableMax - 32 + extra)
+            if extra == 0 {
+                assert(d.n == 1 && d.size == TableMax)
+            } else {
+                assert(d.n == 0 && d.size == 0)
+            }
+        }
+    }
+}
+
+// 表に足さない長いHuffmanの字句（解いた字数が輪の空きを越えうる）は、輪の生きている項目を壊さない
+func TestHuffLongPlain() {
+    mut d := Dec{}
+    setup(mut d, 4096)
+    mut big := mut []byte{}
+    big = append(big, byte(0x40))
+    putStr(mut big, bytes("big"), false)
+    mut bv := mut []byte{}
+    for i <- iter.Range(0, 3500) {
+        bv = append(bv, byte(0x62))
+    }
+    putStr(mut big, freeze(bv), false)
+    mut o0 := mut []byte{}
+    mut f0 := mut []int{}
+    assert(Decode(mut d, freeze(big), mut o0, mut f0, 1 << 20) == Ok)
+    mut av := mut []byte{}
+    for i <- iter.Range(0, 5000) {
+        av = append(av, byte(0x61))
+    }
+    mut blk := mut []byte{}
+    blk = append(blk, byte(0x00))
+    putStr(mut blk, bytes("v"), false)
+    putStr(mut blk, freeze(av), true)
+    blk = append(blk, byte(0xbe))
+    mut want := mut []byte{}
+    cat(mut want, bytes("v: "))
+    cat(mut want, freeze(av))
+    cat(mut want, bytes("\nbig: "))
+    cat(mut want, freeze(bv))
+    want = append(want, byte(10))
+    mut out := mut []byte{}
+    mut fs := mut []int{}
+    assert(Decode(mut d, freeze(blk), mut out, mut fs, 1 << 20) == Ok)
+    assert(eqb(render(out, Fields(d, freeze(fs))), freeze(want)))
+}
+
+// 動的表の項目を添字で引く: 輪の端で項目が名前の中・名前と値の境・値の中のどこで切れても、名前と値がそのまま出る
+// （長さを変えながら足しては引くので、書く位置が輪を何周もして端のすべての切れ方を通る）
+func TestRingWrapIndexed() {
+    mut d := Dec{}
+    setup(mut d, 4096)
+    mut cuts := 0
+    for i <- iter.Range(0, 3000) {
+        nl := 1 + i % 53
+        vl := i % 31
+        mut nm := mut []byte{}
+        for k <- iter.Range(0, nl) {
+            nm = append(nm, byte(0x61 + (i + k) % 26))
+        }
+        mut vv := mut []byte{}
+        for k <- iter.Range(0, vl) {
+            vv = append(vv, byte(0x30 + (i + k) % 10))
+        }
+        st := d.wpos
+        if st + nl >= ringSize && st < ringSize {
+            cuts += 1
+        }
+        mut blk := mut []byte{}
+        blk = append(blk, byte(0x40))
+        putStr(mut blk, freeze(nm), false)
+        putStr(mut blk, freeze(vv), false)
+        blk = append(blk, byte(0x80 | 62))
+        mut out := mut []byte{}
+        mut fs := mut []int{}
+        assert(Decode(mut d, freeze(blk), mut out, mut fs, 1 << 20) == Ok)
+        f := Fields(d, freeze(fs))
+        o := freeze(out)
+        assert(len(f) == 8 && f[5] == nl && f[7] == vl)
+        for k <- iter.Range(0, nl) {
+            assert(o[f[4] + k] == nm[k])
+        }
+        for k <- iter.Range(0, vl) {
+            assert(o[f[6] + k] == vv[k])
+        }
+    }
+    // 名前の終わりが輪の端を越える（値が輪の頭から始まる）形を何度も通った
+    assert(cuts > 5)
+}
+
+// 名前の静的表の添字（Si）: 静的表の名前で表に足した項目は、動的表の添字で引いても同じ添字を出す。字句の名前の項目は0
+func TestSiDynamic() {
+    mut d := Dec{}
+    setup(mut d, 4096)
+    mut blk := mut []byte{}
+    blk = append(blk, byte(0x41))
+    putStr(mut blk, bytes("x.example"), false)
+    blk = append(blk, byte(0x40))
+    putStr(mut blk, bytes(":authority"), false)
+    putStr(mut blk, bytes("y"), false)
+    blk = append(blk, byte(0x80 | 63))
+    blk = append(blk, byte(0x80 | 62))
+    // 6ビットの前置きの63は続きのバイト（0）が要る
+    blk = append(blk, byte(0x7f))
+    blk = append(blk, byte(0))
+    putStr(mut blk, bytes("z"), false)
+    b := freeze(blk)
+    mut out := mut []byte{}
+    Begin(mut d, 1 << 20)
+    mut p := 0
+    mut sis := mut []int{}
+    while p < len(b) {
+        q, k, w := Next(mut d, b, p, mut out, len(out), bytes(""))
+        assert(k == Got)
+        sis = append(sis, d.Si)
+        p = q
+    }
+    // 静的の名前・字句の名前・動的63（静的の名前の項目）・動的62（字句の名前の項目）・動的表の名前（静的の名前の項目）の字句
+    assert(len(sis) == 5 && sis[0] == 1 && sis[1] == 0 && sis[2] == 1 && sis[3] == 0 && sis[4] == 1)
+}
+
+// 12ビットの表（huffFast）は、符号の表（huffCodes）から作り直したものと全項で一致する
+func TestHuffTable() {
+    hc := bytes(huffCodes)
+    ft := bytes(huffFast)
+    assert(len(ft) == 4096 * 5)
+    for p <- iter.Range(0, 4096) {
+        s1, l1 := huffFirst(hc, p, 12)
+        mut e := 0
+        if s1 >= 0 {
+            e = s1 << 12 | l1
+            if l1 < 12 {
+                s2, l2 := huffFirst(hc, p & ((1 << (12 - l1)) - 1), 12 - l1)
+                if s2 >= 0 {
+                    assert(s2 != 0)
+                    e = s1 << 12 | s2 << 4 | (l1 + l2)
+                }
+            }
+        }
+        assert(hex5(ft, p * 5) == e)
+    }
+}
+
+// nビットの窓bits（上位から）の頭にある符号の (記号, 長さ)。無ければ (-1, 0)
+func huffFirst(hc []byte, bits int, n int) (int, int) {
+    for c <- iter.Range(0, 256) {
+        code, l := huffCode(hc, byte(c))
+        if l <= n && bits >> (n - l) == code {
+            return c, l
+        }
+    }
+    return 0 - 1, 0
+}

@@ -1,5 +1,5 @@
-@@full	f3a661d1326fe9c0	9448	271257
-@globals	776b891f829921cf	64	1188
+@@full	6000b6759f1061c2	9651	277501
+@globals	5f4bf0ae5bb8d5ee	64	1210
 main.main	36cf7f1dd9ac79c9	1454	49430
 rt.cat8	8e67ba05682822cf	32	783
 rt.copy	3de19df856ca0737	27	640
@@ -15,7 +15,7 @@ rt.map_find.1.1.6.1	76a92171c4debfe5	954	25344
 rt.map_grow	1ded4e285ed15ca6	201	5153
 rt.map_hash	2ff53caae4579b53	82	2132
 rt.map_prefix	ee9f91db35b1fa91	150	3847
-rt.panic	2793786e33c04663	361	10931
+rt.panic	d02f332236c68536	392	11876
 rt.panic_mem	3390a5b1c035e7b0	368	11528
 rt.print_char	16bc2b4d2973b5a4	40	960
 rt.print_int	fcf4f40fed38131b	85	2225
@@ -39,7 +39,7 @@ rt.write_all	86bfd44897da62e9	58	1390
 rt.write_fd	50346736cb5c6f69	9	276
 rt.write_file	2426a5f18cf5ccce	75	2065
 sober_entry	0731987c81e54748	1879	52399
-std/internal/utf8.Parse	d86959bb3bf48771	261	8799
+std/internal/utf8.Parse	2e2ba36497303fb9	432	13959
 std/strings.IndexInvalid	70d8cbfdb18fc220	492	14075
 std/strings.cont	63982458d028e820	99	2931
 std/strings.seqLen	ce643cf9ca1a1d07	372	9598

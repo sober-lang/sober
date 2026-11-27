@@ -1,10 +1,11 @@
-@@full	bb5f9504feb07920	3158	81092
+@@full	8f3627e7658bb35c	3551	90980
 @head	752319c4cdd13594	0	234
 const KeySize	100b86d5ef905ac6	1	48
 const NonceSize	c818f8d4966074d1	1	50
 const Overhead	11f7e67e5cb5e1c0	1	49
 func Open	641ab4dcc8acb86b	28	1084
 func OpenAt	c55a40cd278eaa16	88	3103
+func OpenAtInto	7c865a7fb03dfb4b	66	2368
 func Prepare	4179825dc8df3511	21	881
 func Seal	f4ad80491e5ebd9d	28	1114
 func SealInto	aadc350b6f0af6e1	84	2939

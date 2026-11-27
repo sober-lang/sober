@@ -84,7 +84,7 @@ GET /nope -> 404
 - `ServeConn` handles keep-alive and pipelining (several requests in one read). A head over the limit (`maxHead:`, 8 KiB by default) gets 431, a body over the limit (`maxBody:`, 16 KiB by default) gets 413, and the connection is closed
 - The time spent waiting for the peer is also bounded by default: `headWait:` (30 s by default) until the head is complete, including the keep-alive wait; `bodyWait:` (60 s by default) until the body is received; `sendWait:` (60 s by default) for the longest interval in which sending makes no progress. When a deadline passes, the connection is closed without sending anything
 - The values of a `Request` (`path`, `body` and so on) live only for that one request. They are gone when `route` returns, so copy them if they must outlive it
-- For the checks, the example stops `net.Serve` by wrapping it in a 2-second deadline. In production, run it unwrapped and stop it with SIGTERM (sections 10 and 11)
+- For the checks, the example stops `net.Serve` by wrapping it in a 2-second deadline. In production, run it unwrapped and stop it with SIGTERM (sections 11 and 12)
 
 ## 2. Routing — `Route` and `Dispatch`
 
@@ -1157,7 +1157,159 @@ certificate and key: ok
 - On a TLS connection, `ServeConn` queues the responses for one received chunk and sends them together before the next receive (`net.Put` / `net.Flush`). Every optional field is in the [std/http/server](../std/http-server.ja.md) reference
 - In the repository's checks the example only checks its configuration; `live <port>` actually listens (see the note at the top of the example for how to try it)
 
-## 10. Running in production
+## 10. HTTP/2: `proto:` and ALPN
+
+`http.server.ServeConn` answers HTTP/1.1 only by default. To answer HTTP/2 too, write the optional argument `proto:`. On a plain connection it answers h2c (with prior knowledge, RFC 9113); on a TLS connection it answers h2 when ALPN picks it.
+
+| `proto:` | Plain connection | TLS connection |
+|---|---|---|
+| `http.server.H1` (default) | HTTP/1.1 | HTTP/1.1 |
+| `http.server.H2` | HTTP/2 only. A connection that does not start with the preface gets GOAWAY (PROTOCOL_ERROR) | HTTP/2 |
+| `http.server.Both` | HTTP/2 when the first 24 bytes are the preface, HTTP/1.1 otherwise | HTTP/2 when ALPN picked h2, HTTP/1.1 otherwise |
+
+### Plain connections (h2c)
+
+```sober
+// examples/http_h2c.sober
+package main
+
+// HTTP/2（h2c — 事前知識）に応じるサーバー（ServeConnのproto:）。ストリーム1本 = 子task 1本で、遅いハンドラ（/slow）が
+// 同じ接続の速いハンドラ（/fast）を止めない。引数なしでは何もしない。`live <port>` で127.0.0.1の<port>にHTTP/2とHTTP/1.1の両方（proto: Both）、
+// `live <port> h2` でHTTP/2だけ（proto: H2）で応じる（scripts/h2spec.shがh2specとcurl --http2-prior-knowledgeで検査する）:
+//
+//     curl --http2-prior-knowledge -Z http://127.0.0.1:<port>/slow http://127.0.0.1:<port>/fast
+
+import "std/http/server"
+import "std/net"
+import "std/os"
+
+func route(r http.server.Request) http.server.Response {
+    if r.path == "/slow" {
+        os.Sleep(300)
+        return http.server.Text("slow\n")
+    }
+    if r.path == "/stream" {
+        return http.server.Response{status: 200, contentType: "text/plain", stream: (out, emit) => {
+            _ = emit(mut out, bytes("one\n"))
+            emit(mut out, bytes("two\n"))
+        }}
+    }
+    return http.server.Text("hello ${r.path}\n")
+}
+
+func both(c net.Conn) error? {
+    return http.server.ServeConn(c, route, proto: http.server.Both)
+}
+
+func only(c net.Conn) error? {
+    return http.server.ServeConn(c, route, proto: http.server.H2)
+}
+
+func serve(port string, h2only bool) error? {
+    for l <- net.Listen("127.0.0.1:${port}")? {
+        if h2only {
+            net.Serve(l, only)?
+        } else {
+            net.Serve(l, both)?
+        }
+    }
+    return nil
+}
+
+func main() int {
+    args, _ := os.Args()
+    if len(args) >= 3 && args[1] == "live" {
+        return if serve(args[2], len(args) >= 4 && args[3] == "h2") == nil { 0 } else { 1 }
+    }
+    println("h2c server: run with live <port>")
+    return 0
+}
+```
+
+Output:
+
+```
+h2c server: run with live <port>
+```
+
+- `both` passes `proto: http.server.Both` and answers both HTTP/2 and HTTP/1.1 on the same port. `only` passes `proto: http.server.H2` and answers HTTP/2 only
+- Plain HTTP/2 is only the form where the peer speaks HTTP/2 from the start (prior knowledge). An HTTP/1.1 request with `Upgrade: h2c` is not switched over; it is answered as HTTP/1.1
+- In the checks the example does nothing; `live <port>` makes it listen (how to try it is in the comment at the top of the example)
+
+### HTTP/2 over TLS
+
+On a TLS connection the protocol is decided by ALPN in the handshake and by `proto:`, not by the connection preface (RFC 9113 3.2). List the protocols to accept in `tls.Alpn`, in the server's order of preference.
+
+```sober
+// examples/web_server_h2.sober
+package main
+
+// Web サーバのガイド 10 節: TLS の上で HTTP/2 に応じる。tls.Alpn に受けるプロトコルをサーバの好みの順（h2 を先）で並べ、
+// ServeConn を proto: Both で呼ぶ。TLS の接続では、ALPN で h2 に決まれば HTTP/2、http/1.1 に決まれば HTTP/1.1 で応じる（前置きは見ない）。
+// 決まったプロトコルは tls.Protocol(c) で読める。既定の走りは設定の確認だけ。`web_server_h2 live <port>` で 127.0.0.1:<port> に https で待ち受ける
+// （試すなら curl --http2 --cacert testdata/crypto/httparena-server.crt https://localhost:<port>/。自己署名の証明書なので起点を足す）
+
+import "std/http/server"
+import "std/net"
+import "std/os"
+import "std/tls"
+
+@embed("testdata/crypto/httparena-server.*")
+const Certs = map[string]string{}
+
+func file(p string) string {
+    v := Certs[p]
+    return if v != nil { v } else { "" }
+}
+
+// 接続1本のhandler: ALPN で決まったプロトコルを読み、route がそれを返す（route は p を捕まえるだけで、可変は捕まえない）
+func app(c net.Conn) error? {
+    p := tls.Protocol(c)
+    return http.server.ServeConn(c, (r http.server.Request) => http.server.Text("hello over ${p}\n"), proto: http.server.Both)
+}
+
+func main() int {
+    cfg, e := tls.Parse(file("testdata/crypto/httparena-server.crt"), file("testdata/crypto/httparena-server.key"))
+    if e != nil {
+        println("bad certificate or key")
+        return 1
+    }
+    h2 := tls.Alpn(cfg, []string{"h2", "http/1.1"})
+    println("certificate and key: ok, ALPN h2 first")
+    args, _ := os.Args()
+    if len(args) >= 3 && args[1] == "live" {
+        e2 := tls.Serve("127.0.0.1:${args[2]}", h2, app)
+        return if e2 == nil { 0 } else { 1 }
+    }
+    return 0
+}
+```
+
+Output:
+
+```
+certificate and key: ok, ALPN h2 first
+```
+
+- `tls.Alpn(cfg, []string{"h2", "http/1.1"})` picks h2 for a peer that offers h2, and http/1.1 for a peer that offers only http/1.1. When nothing overlaps with the peer's offer, the handshake ends with no_application_protocol (RFC 7301)
+- The ALPN default of a Config from `tls.Parse` is http/1.1 only. To answer HTTP/2 over TLS, add h2 with `tls.Alpn`
+- `proto: http.server.Both` splits HTTP/2 and HTTP/1.1 by the ALPN result. `proto: http.server.H2` speaks HTTP/2 whatever ALPN picked, so pair it with a Config that lists h2 only
+- `tls.Protocol(c)` returns the protocol that ALPN picked (`"h2"`, `"http/1.1"`, or `""` when none was offered, nothing matched, or the connection is plain)
+- In the checks the example only checks the configuration; `live <port>` makes it listen
+
+### One child task per stream
+
+Under HTTP/2, `ServeConn` calls the route on a child task per stream. A slow route does not hold up the other streams of the same connection. In the h2c example above, `/fast` on the same connection returns right away while `/slow` waits 300 milliseconds.
+
+The route can be called concurrently, so it cannot capture a `mut` binding or `mut` contents. The rule holds whatever `proto:` is, and check and build reject it at the call site. Where state that spans requests lives is in [section 3](#3-where-state-lives--a-domain-or-an-outside-store).
+
+When a stream's child dies (the route panics or exceeds its budget), the server sends RST_STREAM (INTERNAL_ERROR) for that stream, and the other streams of the connection go on.
+
+### The client side
+
+`http.client.Request`, `http.client.Stream` and `http.client.Open` offer h2 by ALPN to https targets and speak HTTP/2 when the server picks it (one stream at a time per connection). The response shape and the rules for maxBody, redirects and sessions stay the same. http targets stay on HTTP/1.1 only, as before. See [Web client](web-client.md) for how to use them.
+
+## 11. Running in production
 
 A program that uses std/net (and so `std/http/server` and `std/tls`) asks three things of its environment. The details are in the "Running servers" section of [Install](install.md).
 
@@ -1178,7 +1330,7 @@ The root ceiling is the memory ceiling of the process (from the cgroup memory.ma
 
 `ServeConn`'s `maxBody:` may exceed `budget:`. A body beyond the reservation is received by borrowing from the free part of the ceiling. A `Content-Length` body borrows its whole amount when it starts. If the ceiling is full, it waits for room in arrival order until `bodyWait:`. If it still does not fit, that connection's task dies with `RegionExceeded{cause: budget}` (not 413). Raise `budget:` only when you want to avoid borrowing.
 
-## 11. The boundary of a handover — replacing the binary
+## 12. The boundary of a handover — replacing the binary
 
 When you replace the binary with a new version, these are the two things you can do today.
 
@@ -1187,7 +1339,7 @@ When you replace the binary with a new version, these are the two things you can
 
 Not there yet: there is no way to signal the old version from outside to "stop accepting, finish the connections in progress, then exit" (graceful drain). `net.Serve` stops accepting at the deadline of its enclosing scope and returns after the running connections settle, but the deadline is a value fixed at startup and cannot be triggered by a signal.
 
-## 12. What this protects
+## 13. What this protects
 
 - The request head and body have limits by default (431 / 413); so does the time spent waiting for the peer (`headWait:` / `bodyWait:` / `sendWait:`), and so do the reservation per connection and the total memory for accepting
 - `Set-Cookie` can be written only through typed fields, and left-out fields are on the safe side (`Secure`, `HttpOnly`, `SameSite=Lax`, host-only). Loosening fields are spelled `dangerously…`, so grep finds them

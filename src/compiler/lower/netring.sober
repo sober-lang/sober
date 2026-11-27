@@ -837,7 +837,7 @@ func nrAt(st mut St, tab int, fd int) int {
 // 今のtaskを記録nrの待ち手にしてrtがウェイクアップするまで待つ（dl = 期限のチェーンに積む — 受け。閉じは積まない）。結果（0 / -110）を返す
 func nrWaitRt(st mut St, rg int, nr int, dl bool, tw FnRef) int {
     wk := globaladdr(mut st, st.wkG)
-    me := load(mut st, globaladdr(mut st, st.taskG), TK_CUR)
+    me := waitSelf(mut st)
     np := itop(mut st, nr)
     // 受け / accept の待ちは孤児なら待たない（閉じの待ちは取り消さない — orphan.sober）
     oc := dl && st.orphOn
@@ -993,7 +993,7 @@ func tpTake(st mut St, rg int, n int) int {
     f := load(mut st, rp, UR_TPF)
     nn := load(mut st, rp, UR_TPN)
     // 計測ツールのミュータント87 / 88: 容量2（溢れてrt.sleepに倒すパスを試験で通す）
-    room := bin(mut st, BOr, cmp(mut st, CNe, f, zero), cmp(mut st, CLt, nn, iconst(mut st, if st.rtMut == 87 || st.rtMut == 88 { 2 } else { TP_CAP })))
+    room := bin(mut st, BOr, cmp(mut st, CNe, f, zero), cmp(mut st, CLt, nn, iconst(mut st, if st.rtMut == 87 || st.rtMut == 88 || st.rtMut == 150 || st.rtMut == 151 { 2 } else { TP_CAP })))
     ok := bin(mut st, BAnd, bin(mut st, BAnd, cmp(mut st, CGt, base, iconst(mut st, 1)), cmp(mut st, CNe, load(mut st, rp, UR_FUSE), zero)),
         bin(mut st, BAnd, cmp(mut st, CLe, n, iconst(mut st, TP_SZ)), room))
     bJ := newBlock(mut st)
@@ -1021,7 +1021,7 @@ func tpWait(st mut St, rg int, nr int) {
     zero := iconst(mut st, 0)
     wk := globaladdr(mut st, st.wkG)
     np := itop(mut st, nr)
-    me := load(mut st, globaladdr(mut st, st.taskG), TK_CUR)
+    me := waitSelf(mut st)
     tp := itop(mut st, me)
     wl := newBlock(mut st)
     wb := newBlock(mut st)
@@ -1117,7 +1117,7 @@ func wbWaitFly(st mut St, rg int, nr int, fd int, s int) int {
     zero := iconst(mut st, 0)
     wk := globaladdr(mut st, st.wkG)
     np := itop(mut st, nr)
-    me := load(mut st, globaladdr(mut st, st.taskG), TK_CUR)
+    me := waitSelf(mut st)
     tp := itop(mut st, me)
     q := load(mut st, wk, WK_FUSEQ)
     store(mut st, wk, WK_FUSEQ, bin(mut st, BSub, q, cmp(mut st, CGt, q, zero)))
@@ -1185,8 +1185,8 @@ func buildNetRecv(st mut St) {
     setCur(mut st, l)
     // 時刻つきの送りが満了待ちなら、返すもの（列のデータ・FIN・誤り・今のread）があるときだけ満了まで待つ（後のリクエストの作業は満了の後）。
     // 返すものが無ければ今どおり受けを待つ（起きたらここへ戻る）
-    // ミュータント84（テスト群）: 待たない（後のリクエストのハンドラが満了の前に走る）
-    if st.rtMut != 84 {
+    // ミュータント84（テスト群）: 待たない（後のリクエストのハンドラが満了の前に走る）。152 = 84 + 照合
+    if st.rtMut != 84 && st.rtMut != 152 {
         s0 := sstGet(mut st, np)
         bTq := branchIf(mut st, cmp(mut st, CEq, bin(mut st, BAnd, s0, iconst(mut st, 3)), iconst(mut st, SS_TPEND)))
         have := bin(mut st, BOr, bin(mut st, BOr, cmp(mut st, CNe, load(mut st, np, NR_QH), zero), cmp(mut st, CNe, load(mut st, np, NR_ERR), zero)),
@@ -1198,6 +1198,12 @@ func buildNetRecv(st mut St) {
         setCur(mut st, bTh)
         br(mut st, bTq, -1)
         setCur(mut st, bTq)
+    }
+    if httpChk(mut st) {
+        // 照合: 時刻つきの送りが満了待ちのまま、返すもの（列のデータ・FIN・誤り）を持って受けを返さない（後のリクエストの作業は満了の後）
+        sc := sstGet(mut st, np)
+        hv := bin(mut st, BOr, bin(mut st, BOr, cmp(mut st, CNe, load(mut st, np, NR_QH), zero), cmp(mut st, CNe, load(mut st, np, NR_ERR), zero)), nrFin(mut st, np))
+        chkFail(mut st, bin(mut st, BAnd, cmp(mut st, CEq, bin(mut st, BAnd, sc, iconst(mut st, 3)), iconst(mut st, SS_TPEND)), hv), "http-check: a receive returned while the timed send of connection ", nr, " still waits for its time\n")
     }
     // 送信バッファリングの片付け: 誤りは列のデータより先に返す。未完は待たない（送り残しはカーネルが送り切る）
     ss := sstGet(mut st, np)
@@ -1317,7 +1323,7 @@ func buildNetWait(st mut St) {
     begin(mut st, chF(mut st, NETF_NWAIT))
     fd := 0
     // 行の出力を待つ前に出す（read_fd の頭と同じ順 — 待ちが read_fd の前に来たので）
-    call(mut st, st.rtFlush, list0(mut st))
+    flushLine(mut st)
     zero := iconst(mut st, 0)
     rg, nr := nrRing(mut st, fd)
     bRing := branchIf(mut st, cmp(mut st, CEq, nr, zero))
@@ -1488,7 +1494,7 @@ func sendCommit(st mut St, fd int) {
     ret(mut st, iconst(mut st, 1))
     setCur(mut st, bKeep)
     wa := bin(mut st, BAdd, load(mut st, rp, UR_WB), bin(mut st, BMul, k, iconst(mut st, WB_MAX)))
-    me := load(mut st, globaladdr(mut st, st.taskG), TK_CUR)
+    me := waitSelf(mut st)
     tp := itop(mut st, me)
     if st.orphOn {
         ov := orphEnter(mut st, me, OK_SEND)
@@ -1686,7 +1692,7 @@ func buildNetOp(st mut St) {
         ret(mut st, zero)
         setCur(mut st, bPw)
         pw := globaladdr(mut st, st.wkG)
-        store(mut st, pw, WK_PLOWN, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
+        store(mut st, pw, WK_PLOWN, waitSelf(mut st))
         store(mut st, pw, WK_PLTO, fd)
     }
     ret(mut st, zero)
@@ -1762,7 +1768,7 @@ func buildNetOp(st mut St) {
         rg, nr := nrRing(mut st, fd)
         bR := branchIf(mut st, cmp(mut st, CNe, nr, zero))
         wk := globaladdr(mut st, st.wkG)
-        me := load(mut st, globaladdr(mut st, st.taskG), TK_CUR)
+        me := waitSelf(mut st)
         if st.orphOn {
             ov := orphEnter(mut st, me, OK_SEND)
             bOv := branchIf(mut st, cmp(mut st, CNe, ov, zero))
@@ -1830,8 +1836,9 @@ func buildNetOp(st mut St) {
             blkFree(mut st, rg, tb)
             br(mut st, bTf, -1)
             setCur(mut st, bTf)
-            // ミュータント87（テスト群 — 格納場所の容量2と組み）: 待たずに今の送りへ（遅延が守られない）
-            if st.rtMut != 87 {
+            // ミュータント87（テスト群 — 格納場所の容量2と組み）: 待たずに今の送りへ（遅延が守られない）。151 = 87 + 照合
+            t0 := if httpChk(mut st) { sleepClock(mut st) } else { zero }
+            if st.rtMut != 87 && st.rtMut != 151 {
                 sr := call(mut st, st.rtSleep, list1(mut st, tms))
                 bSo := branchIf(mut st, cmp(mut st, CEq, sr, iconst(mut st, 110)))
                 br(mut st, bDone, list1(mut st, iconst(mut st, -110)))
@@ -1844,6 +1851,10 @@ func buildNetOp(st mut St) {
                     br(mut st, bDone, list1(mut st, ov2))
                     setCur(mut st, bOv2)
                 }
+            }
+            if httpChk(mut st) {
+                // 照合: 溢れて待つ時刻つきの送りは、頼んだ時間の半分も経たずに出ない（rt.sleepの粒度の揺れを偽陽性にしない幅）
+                chkFail(mut st, cmp(mut st, CLt, sleepClock(mut st), bin(mut st, BAdd, t0, bin(mut st, BMul, tms, iconst(mut st, 500000)))), "http-check: a timed send went out before its time (ms ", tms, ")\n")
             }
             br(mut st, bTn, -1)
             setCur(mut st, bTn)
@@ -1897,7 +1908,7 @@ func buildNetOp(st mut St) {
         tcn := itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
         tmn := bin(mut st, BSar, load(mut st, tcn, TC_FUSE), iconst(mut st, 1))
         store(mut st, tcn, TC_FUSE, zero)
-        if st.rtSleep != -1 && st.rtMut != 87 {
+        if st.rtSleep != -1 && st.rtMut != 87 && st.rtMut != 151 {
             bTnw := branchIf(mut st, cmp(mut st, CGt, tmn, zero))
             bTno := branchIf(mut st, cmp(mut st, CEq, call(mut st, st.rtSleep, list1(mut st, tmn)), iconst(mut st, 110)))
             ret(mut st, iconst(mut st, -110))
@@ -2316,4 +2327,9 @@ func acceptRetryOp(st mut St, w int, e int, n int) {
     ret(mut st, bin(mut st, BMul, ex, capd))
     setCur(mut st, bFat)
     ret(mut st, iconst(mut st, -1))
+}
+
+// 時刻つきの送りの照合のビルド（ミュータント150 = 88〔容量2〕+ 照合・151 = 87 + 照合・152 = 84 + 照合。httpcheck）
+func httpChk(st mut St) bool {
+    return st.rtMut >= 150 && st.rtMut <= 152
 }

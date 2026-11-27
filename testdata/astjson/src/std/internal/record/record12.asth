@@ -1,10 +1,10 @@
-@@full	04e68bbe466030a6	4262	139577
+@@full	eb4ec0935703b0d1	4417	144115
 @head	226d3c9c25a101b0	0	281
 func CbcIv	4878dcbaf5a5f960	59	2098
 func aad12	98dc88c9cefac48b	34	1207
 func cat2	da8782d90f30004b	33	1227
 func head12	23e7bfec6d3f9ddf	28	999
-func open12	76df57e18d8d606f	247	8466
+func open12Into	73ebcbd61d62e773	273	9114
 func seal12	999dff8c27f615f8	162	5393
 func sealInto12	402bcda6cabf3e2b	139	4562
 func seq8	e8cbcc7e7afabf0d	34	1192

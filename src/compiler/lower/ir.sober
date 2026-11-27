@@ -715,6 +715,9 @@ func addWorkerGlobal(st mut St, name int, words int) int {
 
 // 関数 f を呼ぶ（結果は f の ret — 無ければ -1）
 func call(st mut St, f FnRef, args int) int {
+    if st.taskUse && (f == st.rtTaskWait || f == st.rtTaskWaitK) {
+        taskWaitCheck(mut st)
+    }
     return push(mut st, irFnRet(mut st, f) >= 0, OpCall, int(f), args, 0)
 }
 

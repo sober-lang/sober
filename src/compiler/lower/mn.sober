@@ -193,7 +193,13 @@ const WK_SJUNK = WK_HOT + 14 // シャロースリープするtaskの退避の�
 const WK_PSWAP = WK_HOT + 15
 const WK_DPC = WK_HOT + 16
 const WK_DPS = WK_DPC + DP_MASK + 1
-const WK_WORDS = WK_DPS + (DP_MASK + 1) * DP_CAP
+// muxの溜めの小さい組の空きのキャッシュ（mux.sober）。持ち主だけが読み書きする行: WK_MXC = チェーンの頭（MXC_NEXTで繋ぐ・0 = 空）・WK_MXN = 本数
+const WK_MXC = WK_DPS + (DP_MASK + 1) * DP_CAP
+const WK_MXN = WK_MXC + 1
+// 待ちの台帳の縮めのうち、まだ台帳へ反映していない量（admit.sober parkShrink / parkFlush — このワーカーだけが書く）: 属する節（0 = 根だけ）と量（バイト・0以上で PARK_Q 未満）
+const WK_PNODE = WK_MXC + 8
+const WK_PDEBT = WK_PNODE + 1
+const WK_WORDS = WK_PDEBT + 1
 // @rt.sdp = [数の和, 列 r の数 × 32, 列 r の基底 × SRES_CAP × 32]
 const SDP_S = 2 + DP_MASK
 // 計装のカウンタ（開発用 --rt-mutant=4 だけ。表をWK_KNワードだけ延ばす・通常のbuildのIRは不変）: ワーカーごと・鍵なしの16ワード
@@ -466,6 +472,10 @@ func needMnRt(st mut St) {
     st.rtTcbTrim = addFunc(mut st, int(strLit(mut st, "rt.tcb_trim")), desugar.ListRef(list1(mut st, TyI64)), -1)
     st.rtMnPin = addFunc(mut st, int(strLit(mut st, "rt.mn_pin")), desugar.ListRef(list1(mut st, TyI64)), -1)
     st.rtMnLlc = addFunc(mut st, int(strLit(mut st, "rt.mn_llc")), desugar.ListRef(list2(mut st, TyI64, TyI64)), TyI64)
+    // 遅延task化（lazy.sober）: std/internal/muxを含むプログラムだけ
+    if st.lazyOn {
+        needLazyRt(mut st)
+    }
     needUringRt(mut st)
 }
 
@@ -473,6 +483,7 @@ func buildMnRt(st mut St) {
     buildWorkerMain(mut st)
     buildTaskGoMn(mut st)
     buildTaskStartMn(mut st)
+    buildLazyRt(mut st)
     buildMnNext(mut st)
     buildMnWake(mut st)
     buildMnKick(mut st)
@@ -576,11 +587,6 @@ func mnInit(st mut St, sp int) {
     st.mnExtra = int(irBlkITail(mut st, st.cur))
     n := n0w
     store(mut st, mn, MN_N, n)
-    // 返した小さいスロットに残す常駐（ワーカーごとにRES_CAPまで — task.sober smallPush）は、taskの計上の外にある。根の計上に起動時の定数として入れる
-    // （プールの節の天井には数えない — 常駐はワーカーごとの量で、プールをまたいで共有される）
-    if st.poolOn {
-        atomicXadd(mut st, mn, MN_LED, bin(mut st, BMul, n, iconst(mut st, RES_CAP)))
-    }
     // ワーカーの CPU の固定: 既定は CPU 1 つ（走れるワーカーが同じ CPU に重なって時間片〔≈ 3 ms〕を待つ形と、群・ソケットを越える移動を無くす）。
     // L3の群（∩ 許可）へ広げる形はSOBER_PIN=1のオプションとして残す（マシンによって低い負荷の尾が大きく崩れた — 既定にはしない）。
     // 既定はServeのプログラム（配置のフラグ = ex）で、ワーカー数をaffinityから決めたとき（SOBER_WORKERSなし）— マシンを占有するサーバの形。
@@ -1020,21 +1026,19 @@ func buildTaskGoMn(st mut St) {
     setCur(mut st, bPl)
     store(mut st, pw, WK_PLOWN, iconst(mut st, 0))
     pto := load(mut st, pw, WK_PLTO)
-    // 行き先 -2 = 子を今ここで先に走らせ、親は自分の実行待ちの列へ譲る（列のあふれの道と同じ切り替え。値は子を先にの1つのスケジュールと同じ）。
-    // HTTP/2のストリームの子を作った場所で先に走らせ、待たずに終われば接続のtaskへすぐ戻る形。muxを使うプログラムでだけ組む
-    // （spawnの度に通る関数を、他のプログラムで太らせない）
+    // 行き先 -2 = 子を今ここで先に走らせ、親を列の次に取る位置へ積む。ふつうはspawnの点の遅延task化（lazy.sober）が受け持ち、ここへ来るのは
+    // 遅延にしない子（子のスロットの大きさが親と違う）だけ。muxを使うプログラムでだけ組む（spawnの度に通る関数を、他のプログラムで太らせない）
     if st.muxUse {
         bInl := newBlock(mut st)
         bPlace2 := newBlock(mut st)
         condbr(mut st, cmp(mut st, CEq, pto, iconst(mut st, -2)), bInl, -1, bPlace2, -1)
         setCur(mut st, bInl)
         wki := globaladdr(mut st, st.wkG)
-        tki := globaladdr(mut st, st.taskG)
         store(mut st, 1, TC_WORKER, load(mut st, wki, WK_ID))
         call(mut st, st.rtMnTrace, list2(mut st, iconst(mut st, 1), load(mut st, 1, TC_ID)))
         frRec(mut st, FK_RUN, ptoi(mut st, 1), iconst(mut st, 1))
         store(mut st, wki, WK_NOW, tscOp(mut st))
-        readyPush(mut st, tki, ptoi(mut st, 0))
+        readyPushNext(mut st, globaladdr(mut st, st.taskG), ptoi(mut st, 0))
         parkRelease(mut st, 0, false, false)
         call(mut st, st.rtTaskSwitch, list2(mut st, 0, 1))
         ret(mut st, -1)
@@ -1300,6 +1304,45 @@ func tscCalibrate(st mut St, mn int, now int) {
 // でなければT = b（= T − 1）をxchg（柵）してからHを読む: H ≤ bならq[b] は持ち主のもの（盗み手はHを進めてからTを読み、H > Tで退く）。
 // H > bなら衝突。自分の列の鍵を取って確定したHで決める（H ≤ bなら取る・でなければT = Hに戻して空）。
 // 取れたらbGot（[task, 種類1]）へ、空ならbFailへ
+// 未着手の子の列の保証の照合（検査のビルドだけ: ミュータント157 = これと実行待ちの列の順の照合だけ・158 = 99 + これ。starve）: 自分の未着手の子の列が空でない周が
+// BK_GAP_MAX周続く間に、未着手の子の列か署名の列から1本も取らなければ印字して終了コード103（取るのは間引きの周〔MN_BACKLOG_EVERY周に1回〕で、
+// 受け箱の周と署名の列の周がその一部を使う）。数えはTK_BKD（周の頭で、列が空でなければ1つ足し、空なら0にする。取ったら0にする）
+const TK_BKD = 13
+const BK_GAP_MAX = 8 * MN_BACKLOG_EVERY
+
+func bkChk(st mut St) bool {
+    return st.rtMut >= 157 && st.rtMut <= 160
+}
+
+// 実行待ちの列の順の照合（検査のビルドだけ: ミュータント157〜160。159 = 93 + これ・160 = 98 + これ。starve）: 環から取ったtaskの積んだ時刻（TC_WAKE）は、
+// 残った環の底の枠の時刻以下（環は頭へ積み底から取るので、底ほど古い）。溢れの列から取った回（TK_SPOが動いた）は見ない
+func fifoCheck(st mut St, tk int, spo0 int, rp int) {
+    if !bkChk(mut st) {
+        return
+    }
+    tl := load(mut st, tk, TK_RQT)
+    fr := cmp(mut st, CEq, load(mut st, tk, TK_SPO), spo0)
+    ne := cmp(mut st, CNe, load(mut st, tk, TK_RQH), tl)
+    w := load(mut st, rp, TC_WAKE)
+    chkFail(mut st, bin(mut st, BAnd, bin(mut st, BAnd, fr, ne), cmp(mut st, CGt, w, load(mut st, rqSlot(mut st, tk, tl), 1))), "fifo-check: took a task queued at ", w, " before an older one at the ring's bottom\n")
+}
+
+func bkGapTick(st mut St, tk int, wk int) {
+    if !bkChk(mut st) {
+        return
+    }
+    ne := cmp(mut st, CGt, load(mut st, wk, WK_DT), load(mut st, wk, WK_DH))
+    d := bin(mut st, BMul, ne, bin(mut st, BAdd, load(mut st, tk, TK_BKD), iconst(mut st, 1)))
+    store(mut st, tk, TK_BKD, d)
+    chkFail(mut st, cmp(mut st, CGt, d, iconst(mut st, BK_GAP_MAX)), "backlog-check: unstarted children waited ", d, " rounds without a backlog take\n")
+}
+
+func bkGapReset(st mut St) {
+    if bkChk(mut st) {
+        store(mut st, globaladdr(mut st, st.taskG), TK_BKD, iconst(mut st, 0))
+    }
+}
+
 func ownPop(st mut St, wk int, bGot BlkRef, bFail BlkRef) {
     zero := iconst(mut st, 0)
     bOwn := newBlock(mut st)
@@ -1315,6 +1358,7 @@ func ownPop(st mut St, wk int, bGot BlkRef, bFail BlkRef) {
     oslot := gepWord(mut st, wk, bin(mut st, BAdd, bin(mut st, BAnd, ob, iconst(mut st, DQ_CAP - 1)), iconst(mut st, WK_DQ)))
     condbr(mut st, cmp(mut st, CLe, load(mut st, wk, WK_DH), ob), bOwnC, -1, bOwnL, -1)
     setCur(mut st, bOwnC)
+    bkGapReset(mut st)
     br(mut st, bGot, list2(mut st, itop(mut st, load(mut st, oslot, 0)), iconst(mut st, 1)))
     setCur(mut st, bOwnL)
     spinLock(mut st, wk, WK_DLOCK)
@@ -1324,6 +1368,7 @@ func ownPop(st mut St, wk int, bGot BlkRef, bFail BlkRef) {
     setCur(mut st, bOwnLT)
     op := load(mut st, oslot, 0)
     lockGive(mut st, wk, WK_DLOCK)
+    bkGapReset(mut st)
     br(mut st, bGot, list2(mut st, itop(mut st, op), iconst(mut st, 1)))
     setCur(mut st, bOwnE)
     store(mut st, wk, WK_DT, oh)
@@ -1359,6 +1404,7 @@ func buildMnNext(st mut St) {
     setCur(mut st, bGo)
     r := load(mut st, tk, TK_READY)
     signGapTick(mut st, tk, r)
+    bkGapTick(mut st, tk, wk)
     pick := load(mut st, wk, WK_PICK)
     store(mut st, wk, WK_PICK, bin(mut st, BAdd, pick, iconst(mut st, 1)))
     bR := newBlock(mut st)
@@ -1398,7 +1444,7 @@ func buildMnNext(st mut St) {
         signPop(mut st, tk, bGot, bOwnB)
         setCur(mut st, bOwnB)
     }
-    if st.rtMut != 99 {
+    if st.rtMut != 99 && st.rtMut != 158 {
         ownPop(mut st, wk, bGot, bR)
     } else {
         br(mut st, bR, -1)
@@ -1413,7 +1459,9 @@ func buildMnNext(st mut St) {
     tscCalibrate(mut st, mn, now)
     br(mut st, bCk, -1)
     setCur(mut st, bCk)
-    rp := itop(mut st, if st.rtMut == 93 || st.rtMut == 98 { readyPopMut(mut st, tk, pick) } else { readyPopTail(mut st, tk) })
+    spo0 := load(mut st, tk, TK_SPO)
+    rp := itop(mut st, if st.rtMut == 93 || st.rtMut == 98 || st.rtMut == 159 || st.rtMut == 160 { readyPopMut(mut st, tk, pick) } else { readyPopTail(mut st, tk) })
+    fifoCheck(mut st, tk, spo0, rp)
     if st.hwFold {
         prefetchNext2(mut st, mn, tk)
     }
@@ -1454,7 +1502,7 @@ func buildMnNext(st mut St) {
     wt := bin(mut st, BSub, now, load(mut st, rp, TC_WAKE))
     mx := load(mut st, wk, WK_MAXW)
     store(mut st, wk, WK_MAXW, bin(mut st, BAdd, mx, bin(mut st, BMul, cmp(mut st, CGt, wt, mx), bin(mut st, BSub, wt, mx))))
-    call(mut st, st.rtMnTrace, list2(mut st, iconst(mut st, 2), load(mut st, rp, TC_ID)))
+    mnTraceIf(mut st, iconst(mut st, 2), load(mut st, rp, TC_ID))
     kInc(mut st, 0)
     kSnap(mut st)
     frRec(mut st, FK_RUN, ptoi(mut st, rp), iconst(mut st, 0))
@@ -1495,8 +1543,13 @@ func buildMnNext(st mut St) {
     } else {
         br(mut st, bStl, -1)
     }
-    // 盗む（他のワーカーの列の頭 — 未着手の子だけ）
+    // 盗む（他のワーカーの列の頭 — 未着手の子だけ）。その前に、溜めた子の返しを反映して待ち手を起こす（admit.sober parkFlushIdle — 起こしたら列を見直す）
     setCur(mut st, bStl)
+    if st.poolOn && st.areaOn && !ledMut(mut st, 132) {
+        bSt2 := newBlock(mut st)
+        condbr(mut st, cmp(mut st, CNe, parkFlushIdle(mut st), zero), loop, -1, bSt2, -1)
+        setCur(mut st, bSt2)
+    }
     sp := call(mut st, st.rtMnSteal, list0(mut st))
     condbr(mut st, cmp(mut st, CNe, ptoi(mut st, sp), zero), bChain, list2(mut st, sp, iconst(mut st, 3)), bSpin, -1)
     // ウェイクアップの連鎖（Goのresetspinning → wakepの流儀）: 他の列か共有のスタックから取った者は、まだ仕事が見えて・暇がいて・回る者がいなければ次をウェイクアップする
@@ -1556,7 +1609,7 @@ func buildMnNext(st mut St) {
     setCur(mut st, bGot)
     store(mut st, gp, TC_WORKER, load(mut st, wk, WK_ID))
     store(mut st, gp, TC_LRUN, now)
-    call(mut st, st.rtMnTrace, list2(mut st, gkind, load(mut st, gp, TC_ID)))
+    mnTraceIf(mut st, gkind, load(mut st, gp, TC_ID))
     if st.rtMut == 4 {
         kInc(mut st, 0)
         kAdd(mut st, 1, cmp(mut st, CEq, gkind, iconst(mut st, 3)))
@@ -1614,6 +1667,9 @@ func buildMnNext(st mut St) {
     setCur(mut st, rl)
     condbr(mut st, bin(mut st, BAnd, cmp(mut st, CEq, load(mut st, wk, WK_SLEEP), iconst(mut st, 2)), ioBusy(mut st, wk, zero)), rb, -1, rUn, -1)
     setCur(mut st, rb)
+    // 眠る前に、待ちの台帳の未反映の縮めを反映する（負荷が止まれば台帳が正確な値に戻る — admit.sober parkFlush）
+    ledChkSleep(mut st)
+    parkFlush(mut st)
     kt0 := if st.rtMut == 4 { clockNs(mut st) } else { 0 }
     call(mut st, st.rtUpoll, list1(mut st, iconst(mut st, 1)))
     if st.rtMut == 4 {
@@ -1667,8 +1723,10 @@ func buildMnNext(st mut St) {
     setCur(mut st, fl)
     condbr(mut st, cmp(mut st, CEq, load(mut st, wk, WK_SLEEP), iconst(mut st, 1)), fw, -1, loop, -1)
     setCur(mut st, fw)
-    // 眠る前にログのバッファを書き出す（logsink.sober）
+    // 眠る前にログのバッファを書き出す（logsink.sober）・待ちの台帳の未反映の縮めを反映する（admit.sober parkFlush）
     logBeforeSleep(mut st)
+    ledChkSleep(mut st)
+    parkFlush(mut st)
     args := listN(mut st, 5)
     desugar.HeapSet(mut st.d, args + 1, iconst(mut st, 202))
     desugar.HeapSet(mut st.d, args + 2, ptoi(mut st, gepWord(mut st, wk, iconst(mut st, WK_SLEEP))))
@@ -2230,7 +2288,7 @@ func buildTaskStartMn(st mut St) {
         // カウンタ（開発用）: 走り始めたtaskの数（MN_CNT_START）と、spawnしたtaskと別のワーカーで走り始めた数（MN_CNT_CROSS）
         mnS := globaladdr(mut st, st.mnG)
         atomicXadd(mut st, mnS, MN_CNT_START, iconst(mut st, 1))
-        crossS := cmp(mut st, CNe, load(mut st, itop(mut st, load(mut st, 0, TC_WAKER)), TC_WORKER), load(mut st, globaladdr(mut st, st.wkG), WK_ID))
+        crossS := cmp(mut st, CNe, load(mut st, itop(mut st, bin(mut st, BAnd, load(mut st, 0, TC_WAKER), iconst(mut st, -2))), TC_WORKER), load(mut st, globaladdr(mut st, st.wkG), WK_ID))
         atomicXadd(mut st, mnS, MN_CNT_CROSS, crossS)
     }
     if st.rtMut == 4 {
@@ -2240,6 +2298,12 @@ func buildTaskStartMn(st mut St) {
     frame := itop(mut st, load(mut st, 0, TC_FRAME))
     // ミュータント97: rt.task_startと同じ（rt.segvの検査）
     r := trapCall(mut st, if st.rtMut == 97 { funcaddr(mut st, st.rtSegvProbe) } else { load(mut st, 0, TC_KID) }, fieldPtr(mut st, frame, FR_RES))
+    taskEndMn(mut st, frame, r)
+}
+
+// taskの終わり（rt.task_start_mn・昇格した子のrt.task_lazy_run — 今のtask = 仮引数0のチャンク・罠から戻った後）: 枠を公開し（結果 → 死因 → 状態）、
+// scopeの記録を原子的に数え、区間を閉じ（鍵の中）、待ち手をウェイクアップし、自前のスロットを返して次のtaskへ切り替える（戻らない）
+func taskEndMn(st mut St, frame int, r int) {
     // ミュータント62 = 出口形を外す（taskの終わりのスタックがページ0から自分のチャンクのスタックの領域へ伸びる — areacheckが捕まえる）
     if st.areaOn && st.rtMut != 62 {
         areaExit(mut st, 0)
@@ -2274,7 +2338,7 @@ func buildTaskStartMn(st mut St) {
         br(mut st, bF2, -1)
         setCur(mut st, bF2)
     }
-    atomicXadd(mut st, rec, SR_DEAD, dead)
+    deadAdd(mut st, rec, dead)
     poolDied(mut st, 0, dead)
     mn := globaladdr(mut st, st.mnG)
     bOc := newBlock(mut st)
@@ -2290,7 +2354,7 @@ func buildTaskStartMn(st mut St) {
     admitReturn(mut st, 0)
     // Join / Tryで待つtask（取ってウェイクアップする — 待ちの型のウェイクアップする側）
     mut jn := 0
-    if st.rtMut == 2 {
+    if st.rtMut == 2 || st.rtMut == 140 {
         // ミュータント2: ウェイクアップする側の取り出しを素のload / storeに
         jn = load(mut st, frame, FR_JOINER)
         store(mut st, frame, FR_JOINER, iconst(mut st, 0))
@@ -2319,7 +2383,7 @@ func buildTaskStartMn(st mut St) {
         mAdd(mut st, 10, iconst(mut st, -1))
     }
     admitEnd(mut st, 0, slotReleaseMn(mut st, 0))
-    nx := call(mut st, st.rtMnNext, list0(mut st))
+    nx := lazyNextOf(mut st, true)
     // 前に終わったチャンクを返し、自分を次に返す側へ（自分のスタックの上では返さない）
     wk := globaladdr(mut st, st.wkG)
     z := load(mut st, wk, WK_ZOMBIE)
@@ -2405,6 +2469,14 @@ func slotReleaseMn(st mut St, tcb int) int {
     return dacc
 }
 
+// 記録が有効なときだけrt.mn_trace(kind, id)を呼ぶ（フラグの判定を呼び手で）
+func mnTraceIf(st mut St, kind int, id int) {
+    j := branchIf(mut st, cmp(mut st, CNe, load(mut st, globaladdr(mut st, st.mnG), MN_TRACE), iconst(mut st, 0)))
+    call(mut st, st.rtMnTrace, list2(mut st, kind, id))
+    br(mut st, j, -1)
+    setCur(mut st, j)
+}
+
 // rt.mn_trace(kind, id)（SOBER_SCHED_TRACE=1 のとき — ワーカー 2 以上の出来事の列）: 標準エラーへ `#sched ev <通し番号> <ワーカー> <種類> <task>`
 // （種類 1 = 走り始め・2 = 再開）。再生はワーカー 1 で（p4-draft 3.3 — 強制再生は需要待ち）
 func buildMnTrace(st mut St) {
@@ -2460,13 +2532,13 @@ func prefetchIfCold(st mut St, t int, c int) {
     setCur(mut st, bJ)
 }
 
-// ミュータント93 / 98（開発用 --rt-mutant。gate starveの検出率の確認）: 実行待ちの列の新しい側（環の頭）から取る。環が空なら底から。
+// ミュータント93 / 98（開発用 --rt-mutant。gate starveの検出率の確認。159 / 160 = それぞれ + 実行待ちの列の順の照合 fifoCheck）: 実行待ちの列の新しい側（環の頭）から取る。環が空なら底から。
 // 98はpickの下10ビットが0の周だけ底から取る（底の待ちは有界だが、列の1周の定数倍では抑えられない）
 func readyPopMut(st mut St, tk int, pick int) int {
     zero := iconst(mut st, 0)
     h := load(mut st, tk, TK_RQH)
     mut nw := cmp(mut st, CNe, h, load(mut st, tk, TK_RQT))
-    if st.rtMut == 98 {
+    if st.rtMut == 98 || st.rtMut == 160 {
         nw = bin(mut st, BAnd, nw, cmp(mut st, CNe, bin(mut st, BAnd, pick, iconst(mut st, 1023)), zero))
     }
     bH := newBlock(mut st)

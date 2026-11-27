@@ -283,7 +283,7 @@ func buildRdlJoin(st mut St) {
     fd := 0
     zero := iconst(mut st, 0)
     wk := globaladdr(mut st, st.wkG)
-    me := load(mut st, globaladdr(mut st, st.taskG), TK_CUR)
+    me := waitSelf(mut st)
     tp := itop(mut st, me)
     ri := load(mut st, tp, TC_RIDX)
     fdw := bin(mut st, BShl, bin(mut st, BMul, urAdd(mut st, fd, 1), cmp(mut st, CGe, fd, zero)), iconst(mut st, 32))

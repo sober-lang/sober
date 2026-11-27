@@ -1,5 +1,5 @@
-@@full	9f9b278195e748d7	8222	250379
-@head	d5a6ff700929683a	20	1474
+@@full	03951b8825fdd90d	9373	284994
+@head	1650bfa558092fed	23	1660
 const End	a5c6b588d5e194c5	1	43
 const Expired	75edc5f0e1f4a600	3	107
 const Full	a475dff16b6195f8	3	103
@@ -14,14 +14,16 @@ const RespEnd	36d8b225fd400e42	1	47
 const Room	f75475770f720068	1	44
 const Slots	e19c6f034392b121	1	47
 const TooLong	576b18ff11c7dda7	3	106
-const Words	1d87605a7b550a31	1	47
+const Whole	2563d43c0a1ccdbb	1	45
+const Words	a99ec25e79c41d30	1	47
 func AdmitRoom	ab80c8196a139075	11	428
-func AppendAt	9345884dcf868143	50	1831
-func Bytes	f9b6898852cf6b67	39	1353
+func AppendAt	3b6f14363a9d989a	48	1772
+func Bytes	b9f533bd4273a428	40	1404
 func CountShed	d90486802525c742	8	322
-func DieNext	0a9ee51f983be685	11	492
+func DieNext	effbc0c7e9403f16	12	563
 func Free	a3582cf7372b9dd0	12	520
 func FreeBlob	627612929308e264	9	385
+func HeadLen	fac9c92c6dc961d0	10	397
 func Kind	a8f84083cc69ea2f	10	394
 func Len	d008e058e0a4e7c8	10	393
 func None	5b97429328625fde	7	324
@@ -30,28 +32,32 @@ func PoolCap	33bd6cac8c297e5a	8	296
 func PoolPeak	2df0347dc225b132	8	297
 func PoolUse	f5aece898f471544	8	296
 func Post	4c2a98a52b34e3f4	56	1956
+func PostWhole	9e36203cffc48f1d	70	2388
 func PutBlob	077b8dca053f58bc	14	520
-func RecvAfter	6c01eb44b783d489	173	5464
-func RecvFrom	25a9dd32f66d4466	214	6833
+func PutBlobFrom	f72d85d74a604dba	16	649
+func RecvAfter	fef1a8f7db5d62c8	186	5922
+func RecvFrom	e794fd28d9aaa27c	227	7291
 func RecvMux	b9f9b119416a2aa9	129	4106
 func RegRoom	57a316d37b562578	10	421
 func Reserve	72e4ced429300a9a	8	296
 func Send	2bf88253b6af56ff	14	616
 func SendBytes	9f32aa50bc6ef054	23	872
 func SendFd	7cb6a11bb0909273	28	1068
+func SendFrom	f8034c4615b80d0f	28	1053
 func SetPoolCap	9ee0eec3077c20a2	9	387
 func Sid	11cd0f2aaf05d9cc	10	393
 func Slot	6cad347874b0c86a	10	394
 func Take	90d82cbc9ac9b79b	11	476
-func TakeBlob	0bdca7b688b88fd5	49	1618
+func TakeBlob	31a240b77dbc7bbb	50	1669
 func TakeDead	7bb449726cf44431	11	463
 func TakeRoom	b188b79a5a136e3d	12	458
 func UnregRoom	8b3a8582749618b1	10	423
+func ViewBlob	38c889f0e8caf51d	21	725
 func WaitSig	01db43fee8b6216e	10	397
 func errOf	944d5a4b4ea4dfcb	54	1974
-func secAfter	4eb15d8fd09e08b6	61	2097
+func secAfter	b14a893727c221ba	65	2250
 func secErr	a6080bd810141602	24	938
-func secOpen	73fe9965167d0044	21	823
+func secOpen	9525a5e2746e2886	23	914
 func sendAt	b16a6d992cdadccb	71	2331
 func waitErr	3ba066c49968e345	26	958
 type Mux	116b145009f73fed	3	164

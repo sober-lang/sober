@@ -11,7 +11,7 @@ ct := crypto.chacha20poly1305.Seal(key, nonce, ad, pt)?       // 暗号文 ‖ t
 pt := crypto.chacha20poly1305.Open(key, nonce, ad, ct)?       // 改竄なら crypto.chacha20poly1305.Auth
 ```
 
-record 層向けの API（aesgcm と同じ形）: Prepare（鍵の長さを見る）・SealTo（head ‖ 暗号文 ‖ tag）・OpenAt（b[off, off + n) をコピーせずに検証してから復号）。MACは入力を繋がずにcrypto.poly1305.SumAeadで
+record 層向けの API（aesgcm と同じ形）: Prepare（鍵の長さを見る）・SealTo（head ‖ 暗号文 ‖ tag）・OpenAt（b[off, off + n) をコピーせずに検証してから復号）・OpenAtInto（平文を呼び手の列 dst[at:] へ）。MACは入力を繋がずにcrypto.poly1305.SumAeadで
 
 ## KeySize
 
@@ -147,3 +147,15 @@ b[off, off + n)（暗号文 ‖ tag）をコピーせずにtagを照合してか
 失敗のラベル: [`BadSize`](#badsize)・[`Auth`](#auth)
 
 対の `SealAt` は実需まで足さない（[language.md 34 節](../language.md) の規則 2）。
+
+## OpenAtInto
+
+```sober
+@errors(BadSize, Auth)
+@effects(!io, !block, !nondet)
+func OpenAtInto(k Key, nonce []byte, ad []byte, b []byte, off int, n int, dst mut []byte, at int) (int, error?)
+```
+
+b[off, off + n)（暗号文 ‖ tag）を呼び手の列 dst[at:] へ開いて、平文の長さ m = n − Overhead を返す（aesgcm.OpenAtIntoと同じAPI — 平文 = dst[at, at + m)・dst[at, at + n) が dst の外なら BadSize）。tag を照合してから復号した結果をコピーする（tag が合わなければ dst に書かない）
+
+失敗のラベル: [`BadSize`](#badsize)・[`Auth`](#auth)

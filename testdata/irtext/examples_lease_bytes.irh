@@ -1,5 +1,5 @@
-@@full	5a712b8883505f24	5897	112381
-@globals	64e8c83714031303	61	673
+@@full	07d6fd88c6c04801	6004	114399
+@globals	38e7b8c316bc9d2f	61	691
 main.enc	af59913ae9888934	151	3026
 main.main	86d550691d8fa937	625	14274
 rt.cat8	d7763d59e08dbc55	20	361
@@ -14,7 +14,7 @@ rt.grow_try	9e10061b87b86cd0	48	869
 rt.lease_op	5549b5c2b3e2fd3e	100	1444
 rt.map_grow	f7ce73b3814ab14a	122	2126
 rt.map_hash	d223d44571a67549	52	981
-rt.panic	26c36995ec7ee252	240	4379
+rt.panic	7921f5404f359fa7	256	4687
 rt.panic_mem	81af3d9454b47494	202	3821
 rt.print_char	bb60b2116b220a00	24	377
 rt.print_int	a3a50fa4912ac202	49	851
@@ -38,7 +38,7 @@ rt.write_all	055ce3041b682336	37	563
 rt.write_fd	079b825360e0fd15	8	156
 rt.write_file	7b5c6fea05e73e3e	47	846
 sober_entry	017a210055670993	968	18950
-std/internal/utf8.Parse	738f3ca68df9de10	137	2711
+std/internal/utf8.Parse	f7d82b6aed25f3ce	227	4323
 std/pool.Cap	0269769aed952a38	13	231
 std/pool.LeaseAttach	ca9e5e1b70861adf	220	4211
 std/pool.Load	a9f590ef4c18d27f	39	670

@@ -5,7 +5,7 @@
 #      fd が尽きて一部が受けられない（answered ≥ 10・pending ≥ 10 — EMFILE が起きた）のに Serve が返らず、答えた接続を 20本閉じると、待ち行列に
 #      残っていた接続が受けられて答え（late ≥ 1）、全部を閉じた後の新しい接続が 200 で答える（fresh = 1）。Ledger の acceptRetry > 0・
 #      stderr の診断の文（EMFILE）がちょうど1行。ワーカー2 × 経路 {自動〔ring〕, SOBER_IO=1〔epoll〕}
-#   ② 自己点検: ミュータント125（一時的な失敗でもループを終える — 直す前の形）では Serve が返り、late = 0・fresh = 0
+#   ② 自己点検: ミュータント125（一時的な失敗でもループを終える — 直す前の形）では Serve が返る（returned = 1 — サーバーの印字で決まる。late = 0・fresh = 0 は5秒の待ちの時間切れに依るので判定に使わない）
 #   scripts/acceptretry.sh
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -38,7 +38,7 @@ for io in "" 1; do
 done
 got=$(run "$W/m125")
 read -r _ an _ pe _ la _ fr _ re _ dg _ rt <<< "$got"
-if [ "${fr:-1}" != 0 ] || [ "${la:-1}" != 0 ]; then
+if [ "${rt:-0}" != 1 ]; then
     echo "acceptretry: FAIL mutant 125 was not caught: $got"; fail=1
 fi
 echo "acceptretry: $(tr '\n' ' ' < "$W/sum")· mutant 125: $got, fail=$fail"

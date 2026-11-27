@@ -1,3 +1,4 @@
-@@full	41017ff3ccd22aa2	182	4150
+@@full	f8ff7c5c3f327bff	395	10876
 @head	f9afd379a50e712d	0	66
-func Parse	7bccbb60935ef331	26	987
+const ASCII_FAST_MAX	1f1a68ff068f1d43	1	56
+func Parse	651887358fdbe95f	62	2084

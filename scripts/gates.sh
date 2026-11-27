@@ -186,6 +186,7 @@ declare -A GTAG=(
     [jsonsuite]="load lower backend"
     [unittest]="lex parse load desugar check lower backend"
     [x86enc]="backend"
+    [r11lint]="lower"
     [trapprobe]="lower backend"
     [seqpar]="lower backend"
     [xpar]="lower backend"
@@ -286,7 +287,7 @@ declare -A GTAG=(
 # 長いものから（並列の詰め順 — 2026-10-27にR1の実測の札で並べ直した: selfparの並列化〔R0〕で最長の札がincrbuild / leanbatch / hermeticの群に移った）。フェーズ3のキャッシュの検査4本（incrmut / incrbuild / incrrace / cacheaudit — 3〜4分ずつ）はstagesの直後に置く —
 # 後ろに置くと最後に長い札が重なって --full の wall が伸びる（R3 の 766 s — report-1204 3 節）
 # incrmut は単独で最長の札（冷の --full で 900 s 級）— 13 番目に置くと開始が 5 分近く遅れて臨界路になるので先頭に置く
-ORDER=(incrmut zigtest incrbuild_self incrbuild_ex leanbatch hermetic implicitfreeze cachesplit pkgfin splitcache selfhost_check stages nextgen elfeq incrrace iouring selfpar xpar incrcheck_self incrcheck_ex watchcheck testreplay quickfuzz cover mutate guidetest fnpkg modcheck a1oracle memcheck errtrace typerdiff efftrace cachekey streq strix fitcheck profcov numpert sobi obs cacheaudit tyorder selfhost_ll selfhost_e2e selfhost_lower selfhost_fmt selfhost_load toolcheck pkgcheck selfhost_parse io_args passes regionbound checkverdict checksplit checkpos panicmsg optdiff corejson irtext lltext llcheck astjson loaderjson selfhost_lex pool_oracle analyzer_neg secretdump effectsdump fixcheck uniqfreeze sobertest doubles jsonsuite unittest x86enc trapprobe seqpar lparcfg schedvec schedfuzz parbudget cutstat vecchk mapfuse partinl docsync clidoc outline doclead benchsync confsync maprepr ubfstat framestat reqinst ringinst sortcheck matchlencheck keepcheck jcleancheck jsonmark flatecheck ctcheck cryptocheck tlsfsm tlsfuzz tls12interop h2spec iterregion rflowmeter fnhash tyhash gatememo gateenv httpcheck fdcap mapcap parkres acceptretry slowcheck signprobe starve tschain fusecheck wincheck stackcheck segvcheck areacheck pincheck oversub laypin pid1stop logcheck mdwecheck vaslot refs stdref rootsync tzsync datadce corevec kindwit kindbuild kindexpand kindinfer writeform genmono extract axes obs_zig hermetic_zig ir_roundtrip)
+ORDER=(incrmut zigtest incrbuild_self incrbuild_ex leanbatch hermetic implicitfreeze cachesplit pkgfin splitcache selfhost_check stages nextgen elfeq incrrace iouring selfpar xpar incrcheck_self incrcheck_ex watchcheck testreplay quickfuzz cover mutate guidetest fnpkg modcheck a1oracle memcheck errtrace typerdiff efftrace cachekey streq strix fitcheck profcov numpert sobi obs cacheaudit tyorder selfhost_ll selfhost_e2e selfhost_lower selfhost_fmt selfhost_load toolcheck pkgcheck selfhost_parse io_args passes regionbound checkverdict checksplit checkpos panicmsg optdiff corejson irtext lltext llcheck astjson loaderjson selfhost_lex pool_oracle analyzer_neg secretdump effectsdump fixcheck uniqfreeze sobertest doubles jsonsuite unittest x86enc r11lint trapprobe seqpar lparcfg schedvec schedfuzz parbudget cutstat vecchk mapfuse partinl docsync clidoc outline doclead benchsync confsync maprepr ubfstat framestat reqinst ringinst sortcheck matchlencheck keepcheck jcleancheck jsonmark flatecheck ctcheck cryptocheck tlsfsm tlsfuzz tls12interop h2spec iterregion rflowmeter fnhash tyhash gatememo gateenv httpcheck fdcap mapcap parkres acceptretry slowcheck signprobe starve tschain fusecheck wincheck stackcheck segvcheck areacheck pincheck oversub laypin pid1stop logcheck mdwecheck vaslot refs stdref rootsync tzsync datadce corevec kindwit kindbuild kindexpand kindinfer writeform genmono extract axes obs_zig hermetic_zig ir_roundtrip)
 
 auto_tags() { # 変更ファイル → タグ（推定できない変更は all）
     local f
@@ -326,7 +327,7 @@ auto_tags() { # 変更ファイル → タグ（推定できない変更は all�
             scripts/selfhost_desugar.sh|scripts/corejson.sh) echo desugar ;;
             scripts/selfhost_check.sh|scripts/selfhost_e2e.sh|scripts/checkmut.ts|scripts/corevec.sh) echo check ;;
             scripts/obs.sh|scripts/hermetic.sh|scripts/pkgcheck.sh|scripts/io_args.sh|scripts/x86enc.sh|scripts/elfeq.sh|scripts/elfeq.list) echo backend ;;
-            scripts/selfhost_lower.sh|scripts/lparcfg.sh|scripts/lparcfg.ts|scripts/trapprobe.sh|testdata/trapprobe/*|scripts/seqpar.sh|scripts/seqpar.list|scripts/schedvec.sh|scripts/schedvec.ts|scripts/schedvec.list|scripts/schedfuzz.sh|scripts/schedfuzz.list|testdata/readyspill/*|scripts/parbudget.sh|testdata/parbudget/*|scripts/cutstat.sh|scripts/vecchk.sh|scripts/mapfuse.sh|scripts/partinl.sh|scripts/maprepr.sh|scripts/streq.sh|scripts/strix.sh|scripts/sortcheck.sh|scripts/matchlencheck.sh|testdata/matchlen/*|scripts/keepcheck.sh|testdata/keepcheck/*|scripts/jcleancheck.sh|testdata/jclean/*|scripts/jsonmark.sh|testdata/jsonmark/*|scripts/iterregion.sh|scripts/rflowmeter.sh|testdata/sortcheck/*|scripts/flatecheck.sh|testdata/flatecheck/*|scripts/ctcheck.sh|testdata/ctcheck/*|scripts/cryptocheck.sh|scripts/ubfstat.sh|scripts/ubfstat.list|scripts/framestat.sh|scripts/framestat.list|scripts/reqinst.sh|scripts/reqinst.ts|scripts/ringinst.sh|scripts/fitcheck.sh|scripts/profcov.sh|scripts/profgen.*|scripts/numpert.sh|scripts/tyorder.sh|scripts/cacheaudit.sh|scripts/incrbuild.sh|scripts/incrmut.sh|scripts/incrrace.sh|scripts/iouring.sh|testdata/dlchain/*|scripts/httpcheck.sh|scripts/fdcap.sh|testdata/fdcap/*|scripts/mapcap.sh|scripts/mapcap.ts|testdata/mapcap/*|scripts/parkres.sh|testdata/parkres/*|scripts/acceptretry.sh|testdata/acceptretry/*|testdata/httpcheck/*|scripts/slowcheck.sh|scripts/signprobe.sh|testdata/slowcheck/*|scripts/pid1stop.*|testdata/pid1stop/*|scripts/logcheck.*|testdata/logcheck/*|scripts/mdwecheck.sh|testdata/mdwe/*|scripts/vaslot.sh|testdata/vaslot/*|scripts/starve.sh|testdata/starve/*|scripts/tschain.sh|testdata/delaylat/*|scripts/fusecheck.sh|scripts/wincheck.sh|scripts/stackcheck.*|scripts/segvcheck.sh|testdata/segvcheck/*|scripts/areacheck.*|testdata/areacheck/*|scripts/pincheck.sh|testdata/pin/*|scripts/oversub.sh|testdata/oversub/*|scripts/laypin.*|testdata/wincheck/*|testdata/cutstat/*|scripts/optdiff.sh|scripts/typerdiff.sh|scripts/irtext.sh|scripts/lltext.sh|scripts/llcheck.sh|scripts/selfhost_ll.sh|scripts/stages.sh|scripts/selfhost_cli.sh|scripts/passes.sh|scripts/regionbound.sh|scripts/memcheck.sh|testdata/memcheck/*) echo lower ;;
+            scripts/selfhost_lower.sh|scripts/lparcfg.sh|scripts/lparcfg.ts|scripts/trapprobe.sh|testdata/trapprobe/*|scripts/seqpar.sh|scripts/seqpar.list|scripts/schedvec.sh|scripts/schedvec.ts|scripts/schedvec.list|scripts/schedfuzz.sh|scripts/schedfuzz.list|testdata/readyspill/*|scripts/parbudget.sh|testdata/parbudget/*|scripts/cutstat.sh|scripts/vecchk.sh|scripts/mapfuse.sh|scripts/partinl.sh|scripts/maprepr.sh|scripts/streq.sh|scripts/strix.sh|scripts/sortcheck.sh|scripts/matchlencheck.sh|testdata/matchlen/*|scripts/keepcheck.sh|testdata/keepcheck/*|scripts/jcleancheck.sh|testdata/jclean/*|scripts/jsonmark.sh|testdata/jsonmark/*|scripts/iterregion.sh|scripts/rflowmeter.sh|testdata/sortcheck/*|scripts/flatecheck.sh|testdata/flatecheck/*|scripts/ctcheck.sh|testdata/ctcheck/*|scripts/cryptocheck.sh|scripts/ubfstat.sh|scripts/ubfstat.list|scripts/framestat.sh|scripts/framestat.list|scripts/reqinst.sh|scripts/reqinst.ts|scripts/ringinst.sh|scripts/fitcheck.sh|scripts/profcov.sh|scripts/profgen.*|scripts/numpert.sh|scripts/tyorder.sh|scripts/cacheaudit.sh|scripts/incrbuild.sh|scripts/incrmut.sh|scripts/incrrace.sh|scripts/iouring.sh|testdata/dlchain/*|scripts/httpcheck.sh|scripts/fdcap.sh|testdata/fdcap/*|scripts/mapcap.sh|scripts/mapcap.ts|testdata/mapcap/*|scripts/parkres.sh|testdata/parkres/*|scripts/acceptretry.sh|testdata/acceptretry/*|testdata/httpcheck/*|scripts/slowcheck.sh|scripts/signprobe.sh|testdata/slowcheck/*|scripts/pid1stop.*|testdata/pid1stop/*|scripts/logcheck.*|testdata/logcheck/*|scripts/mdwecheck.sh|testdata/mdwe/*|scripts/vaslot.sh|testdata/vaslot/*|scripts/starve.sh|testdata/starve/*|scripts/tschain.sh|testdata/delaylat/*|scripts/fusecheck.sh|scripts/wincheck.sh|scripts/stackcheck.*|scripts/segvcheck.sh|testdata/segvcheck/*|scripts/areacheck.*|testdata/areacheck/*|scripts/pincheck.sh|testdata/pin/*|scripts/oversub.sh|testdata/oversub/*|scripts/laypin.*|testdata/wincheck/*|testdata/cutstat/*|scripts/optdiff.sh|scripts/r11lint.sh|scripts/typerdiff.sh|scripts/irtext.sh|scripts/lltext.sh|scripts/llcheck.sh|scripts/selfhost_ll.sh|scripts/stages.sh|scripts/selfhost_cli.sh|scripts/passes.sh|scripts/regionbound.sh|scripts/memcheck.sh|testdata/memcheck/*) echo lower ;;
             scripts/checkverdict.sh|testdata/checkverdict/*) echo check; echo docs ;;
             scripts/checkpos.sh|scripts/checkpos.ts|scripts/incrcheck.sh|scripts/watchcheck.sh|testdata/watchcheck/*) echo check ;;
             scripts/refs.sh|scripts/alphacheck.sh|scripts/alphamap.ts|src/compiler/tools/refs/*|testdata/refs/*) echo load ;;
@@ -465,7 +466,7 @@ grep -q 'stage2 rebuilt' "$LOGS/build.log" && s2note="stage2 rebuilt" || s2note=
 SOBER=$ROOT/bin/sober
 export SOBER
 export SOBER_CHECK=${SOBER_CHECK:-$ROOT/lean/.lake/build/bin/sober-check}
-[ -x "$SOBER_CHECK" ] || { echo "gates: $SOBER_CHECK not found (cd lean && lake build)"; exit 1; }
+[ -x "$SOBER_CHECK" ] || { echo "gates: $SOBER_CHECK not found (cd lean && lake build sober-check sober-gen sober-extract)"; exit 1; }
 # Leanの道具（sober-gen — tlsfsm・corevec・selfhost_check・extract／sober-extract — extract）はここで1回ビルドする。ゲートの中でビルドすると、
 # 並走する2本の lake build が実行中の道具を書き直してETXTBSYになり、ビルドしないゲートは順序次第で道具が無い（新しいworktreeの最初の --full）
 if [ "$prebuilt" = 0 ] && ! (cd lean && lake build sober-gen sober-extract) >> "$LOGS/build.log" 2>&1; then echo "gates: FAIL lake build sober-gen sober-extract (see $LOGS/build.log)"; exit 1; fi
@@ -569,7 +570,11 @@ run_gate() { # $1 = ゲート名。終了コードと所要を $W/res/<gate> に
         incrbuild_self) scripts/incrbuild.sh --self > "$LOGS/$g.log" 2>&1 || ec=$? ;;
         incrbuild_ex) scripts/incrbuild.sh --ex > "$LOGS/$g.log" 2>&1 || ec=$? ;;
         incrcheck_ex) scripts/incrcheck.sh --ex > "$LOGS/$g.log" 2>&1 || ec=$? ;;
-        *) "scripts/$g.sh" > "$LOGS/$g.log" 2>&1 || ec=$? ;;
+        *) "scripts/$g.sh" > "$LOGS/$g.log" 2>&1 || ec=$?
+            if [ -f "$LOGS/$g.mutspot" ]; then
+                echo "#mutants (spot): scripts/$g.sh --mutants" >> "$LOGS/$g.log"
+                "scripts/$g.sh" --mutants >> "$LOGS/$g.log" 2>&1 || { echo "FAIL: the mutants run (scripts/$g.sh --mutants) failed" >> "$LOGS/$g.log"; [ "$ec" = 0 ] && ec=1; }
+            fi ;;
     esac
     if [ -f "$W/memguard/$g" ]; then cat "$W/memguard/$g" >> "$LOGS/$g.log"; [ "$ec" = 0 ] && ec=137; fi
     echo "$ec $(( $(date +%s) - s ))" > "$W/res/$g"
@@ -619,6 +624,14 @@ if [ "$memo" = 1 ]; then
             spot=$(NODE_NO_WARNINGS=1 node --experimental-strip-types scripts/gatememo.ts pick 60 "${hits[@]}")
             [ -n "$spot" ] && checkhit=("$spot")
         fi
+        # ミュータントの回の抜き打ち（@mutants — 既定の回では走らないミュータントを、回ごとに1本だけ --mutants つきで走らせる）: HITなら走らせ直す
+        rm -f "$LOGS"/*.mutspot
+        mspot=""
+        [ "$verify" = 1 ] || mspot=$(NODE_NO_WARNINGS=1 node --experimental-strip-types scripts/gatememo.ts pickmut "${sel[@]}")
+        if [ -n "$mspot" ]; then
+            : > "$LOGS/$mspot.mutspot"
+            [ -f "$LOGS/$mspot.hit" ] && [ "$mspot" != "${checkhit[0]:-}" ] && checkhit+=("$mspot")
+        fi
         declare -A CHK=()
         for g in "${checkhit[@]}"; do CHK[$g]=1; done
         for g in "${hits[@]}"; do
@@ -628,7 +641,7 @@ if [ "$memo" = 1 ]; then
                 cp "$LOGS/$g.hit" "$LOGS/$g.log"; echo "hit 0" > "$W/res/$g"
             fi
         done
-        memonote="memo: $(( ${#hits[@]} - ${#checkhit[@]} )) hit / ${#run[@]} run (${#checkhit[@]} of them HIT re-run: ${checkhit[*]:-none})${rejudged[*]:+ / ${#rejudged[@]} re-judged red against the lines: ${rejudged[*]}} ($(( $(date +%s) - s ))s — misses in scripts/.gatecache/logs/memo-miss.log)"
+        memonote="memo: $(( ${#hits[@]} - ${#checkhit[@]} )) hit / ${#run[@]} run (${#checkhit[@]} of them HIT re-run: ${checkhit[*]:-none}; mutants spot: ${mspot:-none})${rejudged[*]:+ / ${#rejudged[@]} re-judged red against the lines: ${rejudged[*]}} ($(( $(date +%s) - s ))s — misses in scripts/.gatecache/logs/memo-miss.log)"
     else
         memonote="memo: check failed — all gates run (see $LOGS/gatememo-check.log)"
     fi
@@ -644,7 +657,7 @@ if [ "$mode" = train ]; then
         while read -r k g; do [ "$k" = CARRY ] && CAR[$g]=1; done < "$W/carry"
         rest=()
         for g in "${run[@]}"; do
-            if [ -n "${CAR[$g]:-}" ] && [ -z "${CHK[$g]:-}" ]; then carried+=("$g"); else rest+=("$g"); fi
+            if [ -n "${CAR[$g]:-}" ] && [ -z "${CHK[$g]:-}" ] && [ ! -f "$LOGS/$g.mutspot" ]; then carried+=("$g"); else rest+=("$g"); fi
         done
         cspot=""
         [ "${#carried[@]}" -gt 0 ] && cspot=$(NODE_NO_WARNINGS=1 node --experimental-strip-types scripts/gatememo.ts pick 60 "${carried[@]}")
@@ -871,6 +884,7 @@ if [ "$memo" = 1 ]; then
         if [ "$ec" = 0 ] || grep -qx '#body-ok' "$W/meas/$g" 2> /dev/null; then
             NODE_NO_WARNINGS=1 node --experimental-strip-types scripts/gatememo.ts record "$g" "$secs" "$LOGS/$g.log" "$W/meas/$g" "$ec" >> "$LOGS/gatememo-record.log" 2>&1
         fi
+        [ -f "$LOGS/$g.mutspot" ] && [ "$ec" = 0 ] && NODE_NO_WARNINGS=1 node --experimental-strip-types scripts/gatememo.ts verified "mut:$g"
         if [ -f "$LOGS/$g.hit" ]; then
             if [ "$ec" = 0 ]; then
                 NODE_NO_WARNINGS=1 node --experimental-strip-types scripts/gatememo.ts verified "$g"

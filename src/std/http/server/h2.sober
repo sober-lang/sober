@@ -14,136 +14,372 @@ import "std/task"
 import "std/utf8"
 
 // HTTP/2のリクエストとレスポンスを、HTTP/1.1と同じRequest・Responseの値へ写す（ハンドラから見て同じ観測にする）。
-// - リクエスト: 解いたヘッダ（std/internal/hpackのDecodeの結果）から、HTTP/1.1の形の頭（`GET /p?q HTTP/2\r\nhost: …\r\n…\r\n\r\n`）を組み、
-//   ヘッダの位置の表を作る。:authorityはhostに、分かれたcookieは「; 」で1本に繋ぐ（RFC 9113 8.3.1・8.2.3）
+// - リクエスト: 接続のtaskが、ヘッダのブロックを解きながら（std/internal/hpackのNext）検査して、HTTP/1.1の形の頭
+//   （`GET /p?q HTTP/2\r\nhost: …\r\n…\r\n\r\n`）を置き場へ直に書く（h2Fuse）。子は頭の行からヘッダの位置の表を作る（h2Finish）。
+//   :authorityはhostに、分かれたcookieは「; 」で1本に繋ぐ（RFC 9113 8.3.1・8.2.3）
 // - レスポンス: HTTP/1.1と同じputHeadが書く頭を行ごとに読み直してHPACKの欄にする（Date・Set-Cookie・Cache-Control・検証子・Varyの書き方を1か所に保つ）。
 //   HTTP/2で送れない欄（connection・keep-alive・proxy-connection・transfer-encoding・upgrade・te）は落とす（RFC 9113 8.2.2）
 
-// h2Requestの結果: 形の誤り（RFC 9113 8.1.1 — ストリームの誤りPROTOCOL_ERROR）
+// 要求の検査の結果: 形の誤り（RFC 9113 8.1.1 — ストリームの誤りPROTOCOL_ERROR）
 const h2Malformed = 1
 
-// 解いたヘッダ（out・fs — hpack.Decodeの形）と本文から、Requestを作る。結果の2つ目は0（使える）・h2Malformed・HTTP/1.1と同じ誤りのstatus（400）
-func h2Request(out []byte, fs []int, body []byte) (Request, int) {
-    mut method := -1
-    mut scheme := -1
-    mut auth := -1
-    mut path := -1
-    mut regular := false
-    mut hasHost := false
+// ヘッダのブロックblkを解きながら検査し、HTTP/1.1の形の頭のテキスト（`GET /p?q HTTP/2\r\nhost: …\r\n…\r\n\r\n`）を
+// 置き場の a0 から（cs.ab[a0:]）直に書く。疑似ヘッダは普通の欄が出るまで控え（cs.pv）へ解き、最初の普通の欄でリクエスト行とhostの行を書く。
+// 結果 = (書いた後の位置, 印)。位置 < 0 はブロックが壊れている（COMPRESSION_ERROR）。印 >= 0 はリクエスト行の区切り
+// （sp1 = メソッドの終わり | sp2 = 対象の終わり << 32。a0からの位置）、印 < 0 は形の誤り（-h2Malformed）。
+// 解いた量の上限（cs.mh）を越えたかはhpack.Overで見る。どの場合も置き場のa0より前は変えない（a0から先は書きかけが残りうる）。
+// 形の誤りを見つけた後も、表の同期のためにブロックの終わりまで解く。ここで見るのは欄ごとの形と疑似ヘッダの揃い方（どれも形の誤り）。
+// :pathの字・host・本文の長さ・UTF-8は、子のh2Finishが見る
+func h2Fuse(cs mut h2C, dec mut internal.hpack.Dec, blk []byte, a0 int) (int, int) {
+    internal.hpack.Begin(mut dec, cs.mh)
+    sep := bytes(": ")
+    none := bytes("")
+    // 疑似ヘッダの値の位置と長さ（cs.pvの中。位置 -1 = 無い）
+    mut ms := -1
+    mut ml := 0
+    mut ss := -1
+    mut sl := 0
+    mut au := -1
+    mut aul := 0
+    mut ps := -1
+    mut pl := 0
+    // 控えの次に書く位置
+    mut pw := 0
+    // 普通の欄を書き始めた位置（リクエスト行とhostの行の後。-1 = まだ控えへ解いている）
+    mut lines := -1
+    mut meta := 0
+    mut bad := false
+    mut w := a0
     mut nCookie := 0
-    mut i := 0
-    while i < len(fs) {
-        ns := fs[i]
-        nl := fs[i + 1]
-        vs := fs[i + 2]
-        vl := fs[i + 3]
-        if !h2ValueOk(out, vs, vl) || nl == 0 {
-            return h2Empty(), h2Malformed
-        }
-        if out[ns] == ':' {
-            // 疑似ヘッダは普通の欄より前で、1本ずつ。知らない疑似ヘッダ・:statusは形の誤り
-            if regular {
-                return h2Empty(), h2Malformed
+    mut p := 0
+    while p < len(blk) {
+        if lines < 0 {
+            q, k, w1 := internal.hpack.Next(mut dec, blk, p, mut cs.pv, pw, none)
+            if k == internal.hpack.Bad {
+                return -1, 0
             }
-            k := h2Pseudo(out, ns, nl)
-            if k == 0 {
-                return h2Empty(), h2Malformed
-            }
-            if k == 1 {
-                if method >= 0 {
-                    return h2Empty(), h2Malformed
+            p = q
+            if k == internal.hpack.Got && !bad {
+                nl := dec.Nl
+                vl := dec.Vl
+                vs := pw + nl
+                si := dec.Si
+                kind := if si >= 1 && si <= 7 { if si == 1 { 3 } else if si <= 3 { 1 } else if si <= 5 { 4 } else { 2 } } else { h2Kind(mut cs.pv, pw, nl) }
+                // 4つの疑似ヘッダの他（普通の欄・知らない疑似ヘッダ・:status・空の名前）は普通の欄の側へ。h2Lineが ':' と空の名前を落とす
+                if kind > 0 {
+                    // 疑似ヘッダは1本ずつ
+                    if !h2ValueOkM(mut cs.pv, vs, vl) {
+                        bad = true
+                    } else if kind == 1 {
+                        bad = ms >= 0
+                        ms = vs
+                        ml = vl
+                    } else if kind == 2 {
+                        bad = ss >= 0
+                        ss = vs
+                        sl = vl
+                    } else if kind == 3 {
+                        bad = au >= 0
+                        au = vs
+                        aul = vl
+                    } else {
+                        bad = ps >= 0
+                        ps = vs
+                        pl = vl
+                    }
+                    pw = w1
+                } else {
+                    // 最初の普通の欄: リクエスト行とhostの行を書いてから、控えに解いたこの欄を写して検査する
+                    w2, m1 := h2ReqLine(mut cs.ab, a0, mut cs.pv, ms, ml, ss, sl, au, aul, ps, pl)
+                    if m1 < 0 {
+                        bad = true
+                    } else {
+                        meta = m1
+                        lines = w2
+                        mut f := h2Wm(mut cs.ab, w2, mut cs.pv, pw, nl)
+                        if len(cs.ab) < f + 2 {
+                            h2Room(mut cs.ab, f + 2)
+                        }
+                        cs.ab[f] = ':'
+                        cs.ab[f + 1] = ' '
+                        f = h2Wm(mut cs.ab, f + 2, mut cs.pv, vs, vl)
+                        r := h2Line(mut cs.ab, w2, nl, vl, au >= 0)
+                        if r < 0 {
+                            bad = true
+                        } else {
+                            if r == 2 {
+                                nCookie += 1
+                            }
+                            w = if r == 0 { w2 } else { h2Crlf(mut cs.ab, f) }
+                        }
+                    }
                 }
-                method = i
-            } else if k == 2 {
-                if scheme >= 0 {
-                    return h2Empty(), h2Malformed
-                }
-                scheme = i
-            } else if k == 3 {
-                if auth >= 0 {
-                    return h2Empty(), h2Malformed
-                }
-                auth = i
-            } else {
-                if path >= 0 {
-                    return h2Empty(), h2Malformed
-                }
-                path = i
             }
         } else {
-            regular = true
-            if !h2NameOk(out, ns, nl) {
-                return h2Empty(), h2Malformed
+            q, k, w1 := internal.hpack.Next(mut dec, blk, p, mut cs.ab, w, sep)
+            if k == internal.hpack.Bad {
+                return -1, 0
             }
-            if h2ConnName(out, ns, nl) {
-                return h2Empty(), h2Malformed
-            }
-            // teは "trailers" だけ
-            if nl == 2 && out[ns] == 't' && out[ns + 1] == 'e' && !h2Is(out, vs, vl, "trailers") {
-                return h2Empty(), h2Malformed
-            }
-            if h2Is(out, ns, nl, "host") {
-                hasHost = true
-            }
-            if h2Is(out, ns, nl, "cookie") {
-                nCookie += 1
+            p = q
+            if k == internal.hpack.Got && !bad {
+                r := h2Line(mut cs.ab, w, dec.Nl, dec.Vl, au >= 0)
+                if r < 0 {
+                    bad = true
+                } else {
+                    if r == 2 {
+                        nCookie += 1
+                    }
+                    // hostの欄（:authorityがあるとき）は書いた区間を巻き戻す
+                    if r != 0 {
+                        if len(cs.ab) < w1 + 2 {
+                            h2Room(mut cs.ab, w1 + 2)
+                        }
+                        cs.ab[w1] = '\r'
+                        cs.ab[w1 + 1] = '\n'
+                        w = w1 + 2
+                    }
+                }
             }
         }
-        i += 4
     }
-    if method < 0 {
-        return h2Empty(), h2Malformed
+    if bad {
+        return w, 0 - h2Malformed
     }
-    connect := h2Is(out, fs[method + 2], fs[method + 3], "CONNECT")
+    if lines < 0 {
+        w2, m1 := h2ReqLine(mut cs.ab, a0, mut cs.pv, ms, ml, ss, sl, au, aul, ps, pl)
+        if m1 < 0 {
+            return w, m1
+        }
+        meta = m1
+        lines = w2
+        w = w2
+    }
+    if nCookie > 1 {
+        w = h2Cookies(mut cs.ab, lines, w, mut cs.pv)
+    }
+    return h2Crlf(mut cs.ab, w), meta
+}
+
+// 控えに解いた欄の名前の種類（1 = :method・2 = :scheme・3 = :authority・4 = :path・0 = それ以外）。
+// 名前が静的表の添字1〜7から来た欄は、呼び手が添字で決める
+func h2Kind(b mut []byte, s int, n int) int {
+    if n == 0 || b[s] != ':' {
+        return 0
+    }
+    return if h2IsM(mut b, s, n, ":method") { 1 } else if h2IsM(mut b, s, n, ":scheme") { 2 } else if h2IsM(mut b, s, n, ":authority") { 3 } else if h2IsM(mut b, s, n, ":path") { 4 } else { 0 }
+}
+
+// a[s:] に書いた普通の欄 `name: value` を検査する。結果 = -1（形の誤り）・0（hostの欄で、:authorityがあるので落とす）・1（残す）・2（残すcookie）
+func h2Line(a mut []byte, s int, nl int, vl int, auth bool) int {
+    vs := s + nl + 2
+    // 名前が空・普通の欄の後の疑似ヘッダ（':' はtcharでないので下の名前の検査でも落ちるが、空の値の前に見る）
+    if nl == 0 || a[s] == ':' {
+        return -1
+    }
+    if vl > 0 && (a[vs] == ' ' || a[vs] == '\t' || a[vs + vl - 1] == ' ' || a[vs + vl - 1] == '\t') {
+        return -1
+    }
+    if h2IsM(mut a, s, nl, "connection") || h2IsM(mut a, s, nl, "keep-alive") || h2IsM(mut a, s, nl, "proxy-connection") || h2IsM(mut a, s, nl, "transfer-encoding") || h2IsM(mut a, s, nl, "upgrade") {
+        return -1
+    }
+    // teは "trailers" だけ
+    if nl == 2 && a[s] == 't' && a[s + 1] == 'e' && !h2IsM(mut a, vs, vl, "trailers") {
+        return -1
+    }
+    if auth && h2IsM(mut a, s, nl, "host") {
+        return if h2ValueOkM(mut a, vs, vl) { 0 } else { -1 }
+    }
+    // 名前は小文字のtchar・値にNUL・CR・LFが無い（RFC 9113 8.2.1）
+    mut j := 0
+    while j < nl {
+        c := a[s + j]
+        if !tchar(c) || (c >= 'A' && c <= 'Z') {
+            return -1
+        }
+        j += 1
+    }
+    j = 0
+    while j < vl {
+        c := a[vs + j]
+        if c == 0 || c == '\r' || c == '\n' {
+            return -1
+        }
+        j += 1
+    }
+    return if nl == 6 && h2IsM(mut a, s, nl, "cookie") { 2 } else { 1 }
+}
+
+// リクエスト行と、:authorityがあればhostの行を a[n:] へ書く（疑似ヘッダの揃い方を見てから。値は控えpvの中）。結果はh2Fuseと同じ形
+func h2ReqLine(a mut []byte, n int, pv mut []byte, ms int, ml int, ss int, sl int, au int, aul int, ps int, pl int) (int, int) {
+    if ms < 0 {
+        return n, 0 - h2Malformed
+    }
+    connect := h2IsM(mut pv, ms, ml, "CONNECT")
     // CONNECTは :method と :authority だけ（:scheme・:pathは無い）。他は :scheme と空でない :path が要る
     if connect {
-        if scheme >= 0 || path >= 0 || auth < 0 {
-            return h2Empty(), h2Malformed
+        if ss >= 0 || ps >= 0 || au < 0 {
+            return n, 0 - h2Malformed
         }
-    } else if scheme < 0 || path < 0 || fs[path + 3] == 0 {
-        return h2Empty(), h2Malformed
+    } else if ss < 0 || ps < 0 || pl == 0 {
+        return n, 0 - h2Malformed
     }
-    // 頭を組む: リクエスト行・host（:authorityが優先）・普通の欄（cookieは最初の位置に1本へ繋ぐ）
-    mut h := mut []byte{}
-    h2Put(mut h, out, fs[method + 2], fs[method + 3])
-    h = append(h, ' ')
-    if connect {
-        h2Put(mut h, out, fs[auth + 2], fs[auth + 3])
-    } else {
-        h2Put(mut h, out, fs[path + 2], fs[path + 3])
+    mut w := h2Wm(mut a, n, mut pv, ms, ml)
+    sp1 := w - n
+    if len(a) < w + 1 {
+        h2Room(mut a, w + 1)
     }
-    sp2 := len(h)
-    for c <- bytes(" HTTP/2\r\n") {
-        h = append(h, c)
+    a[w] = ' '
+    w += 1
+    w = if connect { h2Wm(mut a, w, mut pv, au, aul) } else { h2Wm(mut a, w, mut pv, ps, pl) }
+    sp2 := w - n
+    w = h2W(mut a, w, bytes(" HTTP/2\r\nhost: "), 0, if au >= 0 { 15 } else { 9 })
+    if au >= 0 {
+        w = h2Crlf(mut a, h2Wm(mut a, w, mut pv, au, aul))
     }
-    mut hs := mut []int{}
-    if auth >= 0 {
-        h2Line(mut h, mut hs, bytes("host"), 0, 4, out, fs[auth + 2], fs[auth + 3])
-    }
-    mut cookieDone := false
-    i = 0
-    while i < len(fs) {
-        ns := fs[i]
-        nl := fs[i + 1]
-        if out[ns] != ':' && !(auth >= 0 && h2Is(out, ns, nl, "host")) {
-            if h2Is(out, ns, nl, "cookie") && nCookie > 1 {
-                if !cookieDone {
-                    cookieDone = true
-                    h2CookieLine(mut h, mut hs, out, fs)
+    return w, sp1 | sp2 << 32
+}
+
+// 普通の欄の行 a[w0:w]（`name: value\r\n` の並び・検査済み）を書き直す: cookieは最初の位置に全部を「; 」で繋いだ1行（RFC 9113 8.2.3）。
+// 行の写しをtmpに置いてから書く。書いた後の位置を返す
+func h2Cookies(a mut []byte, w0 int, w int, tmp mut []byte) int {
+    n := w - w0
+    h2Wm(mut tmp, 0, mut a, w0, n)
+    mut o := w0
+    mut done := false
+    mut i := 0
+    while i < n {
+        // 名前は ':' まで（tcharに ':' は無い）・値はCRまで（値にCRは無い）
+        mut c := i
+        while tmp[c] != ':' {
+            c += 1
+        }
+        mut e := c + 2
+        while tmp[e] != '\r' {
+            e += 1
+        }
+        if h2IsM(mut tmp, i, c - i, "cookie") {
+            if !done {
+                done = true
+                o = h2W(mut a, o, bytes("cookie: "), 0, 8)
+                mut first := true
+                mut k := i
+                while k < n {
+                    mut c2 := k
+                    while tmp[c2] != ':' {
+                        c2 += 1
+                    }
+                    mut e2 := c2 + 2
+                    while tmp[e2] != '\r' {
+                        e2 += 1
+                    }
+                    if h2IsM(mut tmp, k, c2 - k, "cookie") {
+                        if !first {
+                            o = h2W(mut a, o, bytes("; "), 0, 2)
+                        }
+                        first = false
+                        o = h2Wm(mut a, o, mut tmp, c2 + 2, e2 - c2 - 2)
+                    }
+                    k = e2 + 2
                 }
-            } else {
-                h2Line(mut h, mut hs, out, ns, nl, out, fs[i + 2], fs[i + 3])
+                o = h2W(mut a, o, bytes("\r\n"), 0, 2)
             }
+        } else {
+            o = h2Wm(mut a, o, mut tmp, i, e + 2 - i)
         }
-        i += 4
+        i = e + 2
     }
-    h = append(h, '\r')
-    h = append(h, '\n')
-    head := freeze(h)
-    tab := freeze(hs)
+    return o
+}
+
+// a[w:] へCRLFを書き、書いた後の位置を返す（短いので写しの部品を呼ばない）
+func h2Crlf(a mut []byte, w int) int {
+    if len(a) < w + 2 {
+        h2Room(mut a, w + 2)
+    }
+    a[w] = '\r'
+    a[w + 1] = '\n'
+    return w + 2
+}
+
+// aの長さをn以上にする（足りない分は0で伸ばす）
+func h2Room(a mut []byte, n int) {
+    while len(a) < n {
+        a = append(a, byte(0))
+    }
+}
+
+// b[s:s+k] を a[w:] へ書き、書いた後の位置を返す（w <= len(a)。aの長さの内は添字で、越えた分は足す。どちらもコピーのループの一括化に乗る形）
+func h2W(a mut []byte, w int, b []byte, s int, k int) int {
+    room := len(a) - w
+    n1 := if k <= room { k } else { room }
+    mut i := 0
+    while i < n1 {
+        a[w + i] = b[s + i]
+        i += 1
+    }
+    mut j := s + n1
+    while j < s + k {
+        a = append(a, b[j])
+        j += 1
+    }
+    return w + k
+}
+
+// h2Wと同じ（写す元をmutの持ち主から借りる）
+func h2Wm(a mut []byte, w int, b mut []byte, s int, k int) int {
+    room := len(a) - w
+    n1 := if k <= room { k } else { room }
+    mut i := 0
+    while i < n1 {
+        a[w + i] = b[s + i]
+        i += 1
+    }
+    mut j := s + n1
+    while j < s + k {
+        a = append(a, b[j])
+        j += 1
+    }
+    return w + k
+}
+
+// b[s:s+n] が lit と等しい（大小を区別する。bはmutの持ち主から借りる）
+func h2IsM(b mut []byte, s int, n int, lit string) bool {
+    l := bytes(lit)
+    if n != len(l) {
+        return false
+    }
+    mut i := 0
+    while i < n {
+        if b[s + i] != l[i] {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+// 値にNUL・CR・LFが無く、前後が空白でない（RFC 9113 8.2.1。bはmutの持ち主から借りる）
+func h2ValueOkM(b mut []byte, s int, n int) bool {
+    if n > 0 && (b[s] == ' ' || b[s] == '\t' || b[s + n - 1] == ' ' || b[s + n - 1] == '\t') {
+        return false
+    }
+    mut i := 0
+    while i < n {
+        c := b[s + i]
+        if c == 0 || c == '\r' || c == '\n' {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+// 子の側: 頭のテキスト（h2Composeが書いたもの・sp1とsp2はその印）と本文から、Requestを作る。
+// 結果の2つ目は0（使える）・h2Malformed・HTTP/1.1と同じ誤りのstatus（400）
+func h2Finish(head []byte, sp1 int, sp2 int, body []byte) (Request, int) {
+    tab := h2Tab(head, sp2 + 9)
     // :pathの中の制御文字・0x80以上・空白はHTTP/1.1と同じく400（RFC 9112 3.2）。'/' で始まらない :path は "*"（OPTIONS）だけ
-    sp1 := fs[method + 3]
-    if !connect {
+    if !h2Is(head, 0, sp1, "CONNECT") {
         mut j := sp1 + 1
         while j < sp2 {
             c := int(head[j])
@@ -152,11 +388,12 @@ func h2Request(out []byte, fs []int, body []byte) (Request, int) {
             }
             j += 1
         }
-        if head[sp1 + 1] != '/' && !(sp2 - sp1 == 2 && head[sp1 + 1] == '*' && h2Is(out, fs[method + 2], fs[method + 3], "OPTIONS")) {
+        if head[sp1 + 1] != '/' && !(sp2 - sp1 == 2 && head[sp1 + 1] == '*' && h2Is(head, 0, sp1, "OPTIONS")) {
             return h2Empty(), h2Malformed
         }
     }
-    if (auth >= 0 || hasHost) && !hostCheck(head, 0, false, tab) {
+    // hostの行（:authorityか、hostの欄）があれば1本だけで正しい形（HTTP/2では無くてよい — v10の扱い）
+    if !hostCheck(head, 0, true, tab) {
         return h2Empty(), 400
     }
     // content-lengthがあれば本文の長さと合うこと（RFC 9113 8.1.1）
@@ -175,13 +412,31 @@ func h2Request(out []byte, fs []int, body []byte) (Request, int) {
     return Request{method: m, path: p, query: qs, head: v, headers: tab, body: body, pattern: ""}, 0
 }
 
-func h2Empty() Request {
-    return Request{method: "", path: "", query: "", head: utf8.View{}, headers: []int{}, body: []byte{}, pattern: ""}
+// 頭のテキストのp以降の行 `name: value\r\n` の位置の表（名前の始め | 終わり << 32, 値の始め | 終わり << 32）。
+// 行はh2Composeが書いたもの（名前に ':' とCRは無く、値にCRは無い）。空行で終わる
+func h2Tab(head []byte, p int) []int {
+    mut hs := mut []int{}
+    mut i := p
+    while head[i] != '\r' {
+        a := i
+        while head[i] != ':' {
+            i += 1
+        }
+        b := i
+        i += 2
+        c := i
+        while head[i] != '\r' {
+            i += 1
+        }
+        hs = append(hs, a | b << 32)
+        hs = append(hs, c | i << 32)
+        i += 2
+    }
+    return freeze(hs)
 }
 
-// 疑似ヘッダの種類（1 = :method・2 = :scheme・3 = :authority・4 = :path・0 = 知らない）
-func h2Pseudo(b []byte, s int, n int) int {
-    return if h2Is(b, s, n, ":method") { 1 } else if h2Is(b, s, n, ":scheme") { 2 } else if h2Is(b, s, n, ":authority") { 3 } else if h2Is(b, s, n, ":path") { 4 } else { 0 }
+func h2Empty() Request {
+    return Request{method: "", path: "", query: "", head: utf8.View{}, headers: []int{}, body: []byte{}, pattern: ""}
 }
 
 // b[s:s+n] が lit と等しい（大小を区別する）
@@ -200,93 +455,7 @@ func h2Is(b []byte, s int, n int, lit string) bool {
     return true
 }
 
-// 名前は小文字のtcharだけ（大文字は形の誤り — RFC 9113 8.2.1）
-func h2NameOk(b []byte, s int, n int) bool {
-    mut i := 0
-    while i < n {
-        c := b[s + i]
-        if !tchar(c) || (c >= 'A' && c <= 'Z') {
-            return false
-        }
-        i += 1
-    }
-    return true
-}
 
-// 値にNUL・CR・LFが無く、前後が空白でない（RFC 9113 8.2.1）
-func h2ValueOk(b []byte, s int, n int) bool {
-    if n > 0 && (b[s] == ' ' || b[s] == '\t' || b[s + n - 1] == ' ' || b[s + n - 1] == '\t') {
-        return false
-    }
-    mut i := 0
-    while i < n {
-        c := b[s + i]
-        if c == 0 || c == '\r' || c == '\n' {
-            return false
-        }
-        i += 1
-    }
-    return true
-}
-
-// 接続に固有の欄（HTTP/2のリクエストでは形の誤り。teは別に見る）
-func h2ConnName(b []byte, s int, n int) bool {
-    return h2Is(b, s, n, "connection") || h2Is(b, s, n, "keep-alive") || h2Is(b, s, n, "proxy-connection") || h2Is(b, s, n, "transfer-encoding") || h2Is(b, s, n, "upgrade")
-}
-
-func h2Put(h mut []byte, b []byte, s int, n int) {
-    mut i := 0
-    while i < n {
-        h = append(h, b[s + i])
-        i += 1
-    }
-}
-
-// 1行 `name: value\r\n` を足し、位置を表へ積む
-func h2Line(h mut []byte, hs mut []int, nb []byte, ns int, nl int, vb []byte, vs int, vl int) {
-    a := len(h)
-    h2Put(mut h, nb, ns, nl)
-    b := len(h)
-    h = append(h, ':')
-    h = append(h, ' ')
-    c := len(h)
-    h2Put(mut h, vb, vs, vl)
-    d := len(h)
-    h = append(h, '\r')
-    h = append(h, '\n')
-    hs = append(hs, a | b << 32)
-    hs = append(hs, c | d << 32)
-}
-
-// cookieの欄を全部「; 」で繋いだ1行
-func h2CookieLine(h mut []byte, hs mut []int, out []byte, fs []int) {
-    a := len(h)
-    for c <- bytes("cookie") {
-        h = append(h, c)
-    }
-    b := len(h)
-    h = append(h, ':')
-    h = append(h, ' ')
-    c := len(h)
-    mut first := true
-    mut i := 0
-    while i < len(fs) {
-        if h2Is(out, fs[i], fs[i + 1], "cookie") {
-            if !first {
-                h = append(h, ';')
-                h = append(h, ' ')
-            }
-            first = false
-            h2Put(mut h, out, fs[i + 2], fs[i + 3])
-        }
-        i += 4
-    }
-    d := len(h)
-    h = append(h, '\r')
-    h = append(h, '\n')
-    hs = append(hs, a | b << 32)
-    hs = append(hs, c | d << 32)
-}
 
 // content-lengthの欄が全部、本文の長さnと等しい10進か（欄が無ければ真）
 func h2LengthOk(head []byte, hs []int, n int) bool {
@@ -370,6 +539,12 @@ func h2DropName(b []byte, s int, e int) bool {
 
 // レスポンスrのHTTP/2のヘッダのブロック（enc・nはrespHeadと同じ: 本文の符号化・Content-Lengthに書く長さ〔-1 = 長さ不定〕）
 func h2Head(r Response, enc int, n int) []byte {
+    if r.status == http.OK && r.validators == nil && r.headers == nil && len(r.cookies) == 0 && enc == 0 && r.stream == nil && r.contentType != "" {
+        cc := h2CacheForm(r.cache)
+        if cc != 0 {
+            return h2Plain(r.contentType, n, cc == 1)
+        }
+    }
     mut h := mut []byte{}
     put := (p []byte) => {
         for x <- p {
@@ -382,6 +557,59 @@ func h2Head(r Response, enc int, n int) []byte {
     putHead(put, put1, r, true, false, enc, n)
     h = sysAppendDate(h)
     return h2Block(freeze(h))
+}
+
+// h2Plainが書ける保存の方針か: 1 = 既定（Cache-Control: private）・2 = Unstated（欄を書かない）・0 = ほか
+func h2CacheForm(c Cache?) int {
+    if c == nil {
+        return 1
+    }
+    return switch c {
+    case Unstated{}: 2
+    default: 0
+    }
+}
+
+// 飾りの無い200の本文（検証子・任意ヘッダ・cookie・符号化・streamなし。保存の方針は既定かUnstated）の応答のブロックを、
+// HTTP/1.1の頭のテキストを経ずに書く。バイト列はh2Block(putHeadの列 + Dateの行)と同じ: 各欄は静的表の名前の添字の、表に足さない字句。
+// cc = Cache-Control: privateを書く
+func h2Plain(ct string, n int, cc bool) []byte {
+    mut blk := mut []byte{}
+    blk = append(blk, byte(0x88))
+    // content-type（静的表の31番）
+    blk = append(blk, byte(0x0f))
+    blk = append(blk, byte(0x10))
+    internal.hpack.Str(mut blk, bytes(ct))
+    // cache-control: private（24番）
+    if cc {
+        blk = append(blk, byte(0x0f))
+        blk = append(blk, byte(0x09))
+        internal.hpack.Str(mut blk, bytes("private"))
+    }
+    // content-length（28番）: 長さの10進
+    mut p := 1
+    mut nd := 1
+    while p * 10 <= n {
+        p = p * 10
+        nd += 1
+    }
+    blk = append(blk, byte(0x0f))
+    blk = append(blk, byte(0x0d))
+    blk = append(blk, byte(nd))
+    while p > 0 {
+        blk = append(blk, byte(48 + n / p % 10))
+        p = p / 10
+    }
+    // date（33番）: rtの行 `Date: <値>\r\n\r\n` から値を取る（rtの行が無ければ欄を書かない）
+    mut d0 := mut []byte{}
+    d0 = sysAppendDate(d0)
+    d := freeze(d0)
+    if len(d) > 10 {
+        blk = append(blk, byte(0x0f))
+        blk = append(blk, byte(0x12))
+        internal.hpack.Str(mut blk, d[6:len(d) - 4])
+    }
+    return freeze(blk)
 }
 
 // ServeConnが応じるプロトコル（proto:）
@@ -505,6 +733,9 @@ const h2Inline = true
 // TLSの1周に送りの列から積む量の上限（バイト）。積んだ分は1つのrecordとしてstd/tlsのワーカーの送信バッファ（16384 B）に収まる大きさ
 // （recordの頭・内容の型・tagの分の余白を残す）。越えるとnet.Put（TLSの送り）が封じた写しを接続のregionに作り、1周の写しが接続の予算（既定 64 KiB）を越える
 const h2TlsCap = 16128
+// 平文のDATAで、本文をoutへ写して周の終わりにまとめて送る大きさの上限（バイト）。これ以下の本文はHEADERSや他のストリームの応答と
+// 1回のsendにまとまる（小さい応答を本文ごとに送ると、1応答が2つのTCPセグメントになる）。越える本文は溜めのチャンクから直に送る（写さない）
+const h2CopyMax = 4096
 
 // 枠の状態
 const h2Free = 0
@@ -568,13 +799,13 @@ type h2C struct {
     hbSid int
     hbEs bool
     hbOld bool
-    // ヘッダと本文の置き場: ab = バイト・seg = 区間 [枠, 種類〔0 = ヘッダ・1 = 本文〕, 始まり, 長さ]・fa = 枠ごとのヘッダの位置の表
+    // ヘッダと本文の置き場: ab = バイト・seg = 区間 [枠, 種類〔0 = 頭のテキスト・1 = 本文〕, 始まり, 長さ, 同じ枠の次の区間〔-1 = 無い〕]
     ab mut []byte
     abn int
+    // 疑似ヘッダを解く控え（h2Fuse・ブロックごとに頭から使い回す）
+    pv mut []byte
     seg mut []int
     segn int
-    fa mut []int
-    fan int
     live int
     lastSid int
     // 送ったGOAWAYの符号（-1 = 送っていない）・相手のGOAWAY
@@ -601,15 +832,25 @@ type h2C struct {
     // blen = 受けた本文のバイト（-1 = 上限を越えた）
     blen mut []int
     sfa mut []int
+    // 枠ごとの区間のリスト（segの添字の頭と尾 — -1 = 空）と置き場のバイトの和
+    shd mut []int
+    stl mut []int
+    sby mut []int
     // 枠ごとの合図の列（4つまで × [合図, 送った量]）と長さ
     q mut []int
     qn mut []int
     rdy mut []int
     rdyn int
+    // TLS: 応答の全体のHEADERSがこの周の上限に収まらず、続きを次の周へ回した
+    tmore bool
     // 入場の待ちの列（報告2.8の(a)）: 揃ったストリーム（枠 | ストリームID << 8）をストリームIDの順に置き、入場の見込みがある間だけ頭から子を作る。
     // wb = 枠ごとの待ちの要求の置き場のバイト・wbytes = その和・resv = 接続の予約（和の上限 — 越える新しいストリームはREFUSED_STREAMでshed）
     wq mut []int
     wqn int
+    // 列の頭の位置（wqは長さh2Slotsの輪）
+    wqh int
+    // これより前の枠は全部使用中（h2Allocはここから空きを探す）
+    fl int
     wb mut []int
     wbytes int
     resv int
@@ -631,6 +872,9 @@ func h2Init(cs mut h2C, mh int, mb int, hu int) {
     h2Fill(mut cs.rwin, h2Slots, 0)
     h2Fill(mut cs.blen, h2Slots, 0)
     h2Fill(mut cs.sfa, h2Slots, -1)
+    h2Fill(mut cs.shd, h2Slots, -1)
+    h2Fill(mut cs.stl, h2Slots, -1)
+    h2Fill(mut cs.sby, h2Slots, 0)
     h2Fill(mut cs.qn, h2Slots, 0)
     h2Fill(mut cs.rdy, h2Slots, 0)
     h2Fill(mut cs.wq, h2Slots, 0)
@@ -686,7 +930,7 @@ func h2Find(cs mut h2C, sid int) int {
 }
 
 func h2Alloc(cs mut h2C, sid int) int {
-    mut i := 0
+    mut i := cs.fl
     while i < h2Slots {
         if cs.sst[i] == h2Free {
             cs.sid[i] = sid
@@ -697,6 +941,7 @@ func h2Alloc(cs mut h2C, sid int) int {
             cs.sfa[i] = -1
             cs.qn[i] = 0
             cs.active += 1
+            cs.fl = i + 1
             return i
         }
         i += 1
@@ -709,34 +954,51 @@ func h2Release(cs mut h2C, slot int) {
     h2DropStore(mut cs, slot)
     cs.sst[slot] = h2Free
     cs.sid[slot] = 0
+    if slot < cs.fl {
+        cs.fl = slot
+    }
     cs.active -= 1
 }
 
 // 枠の置き場の区間を捨てる。生きている区間が無くなったら置き場を空にする
 func h2DropStore(cs mut h2C, slot int) {
-    mut i := 0
-    while i < cs.segn {
-        if cs.seg[i] == slot {
-            cs.seg[i] = -1
-            cs.live -= 1
-        }
-        i += 4
+    mut i := cs.shd[slot]
+    while i >= 0 {
+        cs.seg[i] = -1
+        cs.live -= 1
+        i = cs.seg[i + 4]
     }
+    cs.shd[slot] = -1
+    cs.stl[slot] = -1
+    cs.sby[slot] = 0
     cs.sfa[slot] = -1
     if cs.live == 0 {
         cs.abn = 0
         cs.segn = 0
-        cs.fan = 0
     }
 }
 
 func h2AddSeg(cs mut h2C, slot int, kind int, b []byte, s int, k int) {
     st := cs.abn
     cs.abn = h2Wr(mut cs.ab, cs.abn, b, s, k)
+    h2Seg(mut cs, slot, kind, st, k)
+}
+
+// 置き場の ab[st:st+k]（書き済み）を、枠の種類kindの区間としてリストの尾へ
+func h2Seg(cs mut h2C, slot int, kind int, st int, k int) {
     cs.segn = h2WrInt(mut cs.seg, cs.segn, slot)
     cs.segn = h2WrInt(mut cs.seg, cs.segn, kind)
     cs.segn = h2WrInt(mut cs.seg, cs.segn, st)
+    at := cs.segn
     cs.segn = h2WrInt(mut cs.seg, cs.segn, k)
+    cs.segn = h2WrInt(mut cs.seg, cs.segn, -1)
+    if cs.stl[slot] < 0 {
+        cs.shd[slot] = at - 3
+    } else {
+        cs.seg[cs.stl[slot] + 4] = at - 3
+    }
+    cs.stl[slot] = at - 3
+    cs.sby[slot] += k
     cs.live += 1
 }
 
@@ -809,11 +1071,13 @@ func h2Cancel(cs mut h2C, m internal.mux.Mux, slot int) {
         h2Release(mut cs, slot)
     } else if cs.sst[slot] == h2Run {
         cs.sst[slot] = h2Reset
-        // 列に残った合図は捨てる（終わりの合図は子の数えのために残す）
+        // 列に残った合図は捨てる（Endは子の数えのために残す。子の終わりを兼ねる合図を捨てたら、ここで終わりとして処理する）
         mut k := 0
         mut kept := 0
+        mut fin := false
         while k < cs.qn[slot] {
             sg := internal.mux.Sig{at: cs.q[slot * 8 + k * 2]}
+            fin = fin || h2IsFin(internal.mux.Kind(sg))
             if internal.mux.Kind(sg) == internal.mux.End {
                 cs.q[slot * 8 + kept * 2] = cs.q[slot * 8 + k * 2]
                 cs.q[slot * 8 + kept * 2 + 1] = 0
@@ -824,6 +1088,9 @@ func h2Cancel(cs mut h2C, m internal.mux.Mux, slot int) {
             k += 1
         }
         cs.qn[slot] = kept
+        if fin && kept == 0 {
+            h2Fin(mut cs, slot)
+        }
     }
 }
 
@@ -957,7 +1224,7 @@ func h2Frame(cs mut h2C, dec mut internal.hpack.Dec, m internal.mux.Mux, f inter
                 }
                 h2ConnErr(mut cs, mut out, internal.h2frame.EnhanceYourCalm)
             } else if internal.h2frame.Has(f, internal.h2frame.EndHeaders) {
-                h2Block2(mut cs, mut dec, m, mut out)
+                h2Block2(mut cs, mut dec, m, h2HbCopy(mut cs), mut out)
             }
         }
     } else if typ == internal.h2frame.Data {
@@ -1069,27 +1336,34 @@ func h2Headers(cs mut h2C, dec mut internal.hpack.Dec, m internal.mux.Mux, f int
     cs.hbSid = sid
     cs.hbEs = internal.h2frame.Has(f, internal.h2frame.EndStream)
     cs.hbOld = old
-    cs.hbn = h2Wr(mut cs.hb, 0, b, s0, e0 - s0)
     if internal.h2frame.Has(f, internal.h2frame.EndHeaders) {
-        h2Block2(mut cs, mut dec, m, mut out)
+        // ブロックが1つのフレームに収まる（ふつうの場合）: フレームの本文から直に解く
+        h2Block2(mut cs, mut dec, m, b[s0:e0], mut out)
+    } else {
+        cs.hbn = h2Wr(mut cs.hb, 0, b, s0, e0 - s0)
     }
 }
 
-// 揃ったヘッダのブロックを解いて、ストリームを進める（表の同期のため、断るストリームのブロックも必ず解く）
-func h2Block2(cs mut h2C, dec mut internal.hpack.Dec, m internal.mux.Mux, out mut []byte) {
-    sid := cs.hbSid
-    cs.hbSid = 0
-    mut hout := mut []byte{}
-    mut fs := mut []int{}
+// CONTINUATIONで集めたヘッダのブロックのコピー
+func h2HbCopy(cs mut h2C) []byte {
     mut hbc := mut []byte{}
     mut hi := 0
     while hi < cs.hbn {
         hbc = append(hbc, cs.hb[hi])
         hi += 1
     }
-    blk := freeze(hbc)
-    st := internal.hpack.Decode(mut dec, blk, mut hout, mut fs, cs.mh)
-    if st == internal.hpack.Bad {
+    return freeze(hbc)
+}
+
+// 揃ったヘッダのブロックblkを解いて、ストリームを進める（表の同期のため、断るストリームのブロックも必ず解く）。
+// 頭のテキストは置き場の先端（ab[abn:]）へ直に書き（h2Fuse）、受け入れた形の正しいストリームのときだけabnを進めて枠の区間にする。
+// 断るストリーム・形の誤りでは書いた分はabnの先に残るだけで、次の書きが上書きする。印（形の誤りなら負）は枠に置く
+func h2Block2(cs mut h2C, dec mut internal.hpack.Dec, m internal.mux.Mux, blk []byte, out mut []byte) {
+    sid := cs.hbSid
+    cs.hbSid = 0
+    a0 := cs.abn
+    a1, meta := h2Fuse(mut cs, mut dec, blk, a0)
+    if a1 < 0 {
         h2ConnErr(mut cs, mut out, internal.h2frame.CompressionError)
         return
     }
@@ -1108,7 +1382,7 @@ func h2Block2(cs mut h2C, dec mut internal.hpack.Dec, m internal.mux.Mux, out mu
     if cs.peerGone {
         return
     }
-    if st == internal.hpack.Large {
+    if internal.hpack.Over(dec) {
         // ヘッダの上限を越えた: 431を返して閉じる（表は同期したまま）
         h2DirectOut(mut out, sid, 431)
         if !cs.hbEs {
@@ -1125,16 +1399,11 @@ func h2Block2(cs mut h2C, dec mut internal.hpack.Dec, m internal.mux.Mux, out mu
         internal.h2frame.PutRst(mut out, sid, internal.h2frame.RefusedStream)
         return
     }
-    ho := freeze(hout)
-    fv := freeze(fs)
-    h2AddSeg(mut cs, slot, 0, ho, 0, len(ho))
-    fst := cs.fan
-    mut i := 0
-    while i < len(fv) {
-        cs.fan = h2WrInt(mut cs.fa, cs.fan, fv[i])
-        i += 1
+    if meta >= 0 {
+        cs.abn = a1
+        h2Seg(mut cs, slot, 0, a0, a1 - a0)
     }
-    cs.sfa[slot] = fst | len(fv) << 32
+    cs.sfa[slot] = meta
     if cs.hbEs {
         h2Ready(mut cs, slot)
     }
@@ -1195,52 +1464,71 @@ func h2Data(cs mut h2C, m internal.mux.Mux, f internal.h2frame.Frame, b []byte, 
     }
 }
 
-// 枠のストリームのヘッダのバイト・位置の表・本文を置き場から写し、置き場の区間を捨てる。本文が上限を越えていれば真
-// （Requestは呼び手が写しを凍結してから組む — 子へ渡す値を接続の状態の別名にしない）
-func h2Gather(cs mut h2C, slot int, hdr mut []byte, fs mut []int, body mut []byte) bool {
-    mut i := 0
-    while i < cs.segn {
-        if cs.seg[i] == slot {
-            st := cs.seg[i + 2]
-            k := cs.seg[i + 3]
-            mut j := 0
-            while j < k {
-                if cs.seg[i + 1] == 0 {
-                    hdr = append(hdr, cs.ab[st + j])
-                } else {
-                    body = append(body, cs.ab[st + j])
-                }
-                j += 1
-            }
-        }
-        i += 4
-    }
+// 枠のストリームの要求を置き場から要求の塊の形（頭のテキスト + 本文 — h2FromBlob）へ1回で写し、置き場の区間を捨てる。
+// 結果 = (塊, 本文が上限を越えた〔このとき列は使わない〕, 頭の長さ, h2Composeの印〔h2Blockの書いたsfa〕)
+func h2Take(cs mut h2C, slot int) ([]byte, bool, int, int) {
+    hl := h2HeadLen(mut cs, slot)
     w := cs.sfa[slot]
-    if w >= 0 {
-        fst := w & 0xffffffff
-        fc := w >> 32
-        mut k := 0
-        while k < fc {
-            fs = append(fs, cs.fa[fst + k])
-            k += 1
-        }
-    }
+    mut o := mut []byte{}
+    h2TakeKind(mut cs, slot, 0, mut o)
+    h2TakeKind(mut cs, slot, 1, mut o)
     big := cs.blen[slot] < 0
     h2DropStore(mut cs, slot)
-    return big
+    return freeze(o), big, hl, w
+}
+
+// 枠の頭の区間の長さの和
+func h2HeadLen(cs mut h2C, slot int) int {
+    mut hl := 0
+    mut i := cs.shd[slot]
+    while i >= 0 {
+        if cs.seg[i + 1] == 0 {
+            hl += cs.seg[i + 3]
+        }
+        i = cs.seg[i + 4]
+    }
+    return hl
+}
+
+// 枠のストリームの要求を溜めの塊にして、置き場の区間を捨てる。区間が頭の1つだけ（本文もCONTINUATIONも無い要求）なら置き場から直に積み、
+// それ以外はh2Takeで1つの列にまとめてから積む。結果 = (取っ手〔0 = 溜めが尽きた・本文が上限を越えたときは積まない〕, 本文が上限を越えた, 頭の長さ, 印)
+func h2PutReq(cs mut h2C, slot int) (int, bool, int, int) {
+    i := cs.shd[slot]
+    if i >= 0 && cs.seg[i + 4] < 0 && cs.seg[i + 1] == 0 && cs.blen[slot] >= 0 {
+        k := cs.seg[i + 3]
+        w := cs.sfa[slot]
+        h := internal.mux.PutBlobFrom(mut cs.ab, cs.seg[i + 2], k)
+        h2DropStore(mut cs, slot)
+        return h, false, k, w
+    }
+    blob, big, hl, w := h2Take(mut cs, slot)
+    return if big { 0 } else { internal.mux.PutBlob(blob) }, big, hl, w
+}
+
+// 枠の種類kindの区間のバイトを、リストの順にoへ足す
+func h2TakeKind(cs mut h2C, slot int, kind int, o mut []byte) {
+    mut i := cs.shd[slot]
+    while i >= 0 {
+        if cs.seg[i + 1] == kind {
+            st := cs.seg[i + 2]
+            h2Cat(mut o, mut cs.ab, st, st + cs.seg[i + 3])
+        }
+        i = cs.seg[i + 4]
+    }
+}
+
+// a[s:e] をoへ足す（コピーのループの一括化〔appendの形〕に乗る形）
+func h2Cat(o mut []byte, a mut []byte, s int, e int) {
+    mut j := s
+    while j < e {
+        o = append(o, a[j])
+        j += 1
+    }
 }
 
 // 枠の置き場のバイト（ヘッダと本文）
 func h2SlotBytes(cs mut h2C, slot int) int {
-    mut t := 0
-    mut i := 0
-    while i < cs.segn {
-        if cs.seg[i] == slot {
-            t += cs.seg[i + 3]
-        }
-        i += 4
-    }
-    return t
+    return cs.sby[slot]
 }
 
 // 揃ったストリームを入場の待ちの列の尾へ。列に先客がいて、置き場のバイトの和が予約を越えるなら、新しいストリームをREFUSED_STREAMで断る
@@ -1255,7 +1543,7 @@ func h2Enqueue(cs mut h2C, slot int, sid int, out mut []byte) bool {
         internal.mux.CountShed()
         return false
     }
-    cs.wq[cs.wqn] = slot | sid << 8
+    cs.wq[(cs.wqh + cs.wqn) % h2Slots] = slot | sid << 8
     cs.wqn += 1
     cs.wb[slot] = b
     cs.wbytes += b
@@ -1264,12 +1552,8 @@ func h2Enqueue(cs mut h2C, slot int, sid int, out mut []byte) bool {
 
 // 列の頭を外す（枠 | ストリームID << 8）
 func h2Dequeue(cs mut h2C) int {
-    e := cs.wq[0]
-    mut i := 1
-    while i < cs.wqn {
-        cs.wq[i - 1] = cs.wq[i]
-        i += 1
-    }
+    e := cs.wq[cs.wqh]
+    cs.wqh = (cs.wqh + 1) % h2Slots
     cs.wqn -= 1
     slot := e & 255
     if cs.wb[slot] > 0 {
@@ -1291,14 +1575,9 @@ func h2DirectOut(out mut []byte, sid int, code int) {
 // outのまだ送っていない分を送る。fd < 0（TLS）は送らずにoutに残す（呼び手の受けのループの本体が、送りの点でまとめて暗号化して送る — h2Rest）
 func h2Send(fd int, cs mut h2C, out mut []byte) error? {
     if fd >= 0 && cs.osent < len(out) {
-        mut o := mut []byte{}
-        mut i := cs.osent
-        while i < len(out) {
-            o = append(o, out[i])
-            i += 1
-        }
+        s := cs.osent
         cs.osent = len(out)
-        internal.mux.SendBytes(fd, freeze(o))?
+        internal.mux.SendFrom(fd, mut out, s)?
     }
     return nil
 }
@@ -1323,7 +1602,11 @@ func h2Sigs(fd int, m internal.mux.Mux, cs mut h2C, out mut []byte) error? {
         if slot < 0 || slot >= h2Slots || cs.sst[slot] == h2Free || cs.sid[slot] != internal.mux.Sid(sg) {
             internal.mux.Free(m, sg)
         } else if cs.sst[slot] == h2Reset && internal.mux.Kind(sg) != internal.mux.End {
+            fin := h2IsFin(internal.mux.Kind(sg))
             internal.mux.Free(m, sg)
+            if fin {
+                h2Fin(mut cs, slot)
+            }
         } else {
             k := cs.qn[slot]
             cs.q[slot * 8 + k * 2] = sg.at
@@ -1381,7 +1664,7 @@ func h2FlushSlot(fd int, m internal.mux.Mux, cs mut h2C, slot int, out mut []byt
     sid := cs.sid[slot]
     while cs.qn[slot] > 0 {
         sg := internal.mux.Sig{at: cs.q[slot * 8]}
-        off := cs.q[slot * 8 + 1]
+        mut off := cs.q[slot * 8 + 1]
         k := internal.mux.Kind(sg)
         if k == internal.mux.Head || k == internal.mux.HeadEnd {
             n := internal.mux.Len(sg)
@@ -1391,8 +1674,25 @@ func h2FlushSlot(fd int, m internal.mux.Mux, cs mut h2C, slot int, out mut []byt
             }
             internal.mux.Free(m, sg)
             h2Pop(mut cs, slot)
-        } else if k == internal.mux.Resp || k == internal.mux.RespEnd {
+            if k == internal.mux.HeadEnd {
+                h2Fin(mut cs, slot)
+                return nil
+            }
+        } else if k == internal.mux.Resp || k == internal.mux.RespEnd || k == internal.mux.Whole {
             ln := internal.mux.Len(sg)
+            if k == internal.mux.Whole && off == 0 {
+                // 応答の全体: 先にHEADERS（窓に依らない）。送った量は本文の頭（= ヘッダのブロックの長さ）から数える
+                hl := internal.mux.HeadLen(sg)
+                if fd < 0 && len(out) > 0 && len(out) + 9 + hl > h2TlsCap - 9 {
+                    // TLS: この周の残りに収まらない。次の周で続ける（呼び手が自分へRoomの合図を積む）
+                    cs.tmore = true
+                    return nil
+                }
+                internal.h2frame.PutHead(mut out, hl, internal.h2frame.Headers, internal.h2frame.EndHeaders, sid)
+                internal.mux.AppendAt(mut out, sg, 0, hl)
+                off = hl
+                cs.q[slot * 8 + 1] = off
+            }
             rem := ln - off
             mut allow := rem
             if cs.csend < allow {
@@ -1411,10 +1711,16 @@ func h2FlushSlot(fd int, m internal.mux.Mux, cs mut h2C, slot int, out mut []byt
             if allow <= 0 && rem > 0 {
                 return nil
             }
-            es := k == internal.mux.RespEnd && allow == rem
+            es := (k == internal.mux.RespEnd || k == internal.mux.Whole) && allow == rem
             internal.h2frame.PutHead(mut out, allow, internal.h2frame.Data, if es { internal.h2frame.EndStream } else { 0 }, sid)
             if fd < 0 {
                 // TLS: 本文の範囲もoutへ写す（暗号化して送る — 溜めのチャンクから直に送れない）
+                internal.mux.AppendAt(mut out, sg, off, allow)
+            } else if allow <= h2CopyMax {
+                // 平文の小さい本文: outへ写す。まだ送っていない分がTLSの1周の量を越えるなら、先にそこまでを送る（1回のsendの大きさを抑える）
+                if len(out) - cs.osent + allow > h2TlsCap {
+                    h2Send(fd, mut cs, mut out)?
+                }
                 internal.mux.AppendAt(mut out, sg, off, allow)
             } else {
                 h2Send(fd, mut cs, mut out)?
@@ -1427,6 +1733,10 @@ func h2FlushSlot(fd int, m internal.mux.Mux, cs mut h2C, slot int, out mut []byt
             if off + allow >= ln {
                 internal.mux.Free(m, sg)
                 h2Pop(mut cs, slot)
+                if k != internal.mux.Resp {
+                    h2Fin(mut cs, slot)
+                    return nil
+                }
             } else {
                 cs.q[slot * 8 + 1] = off + allow
             }
@@ -1439,17 +1749,27 @@ func h2FlushSlot(fd int, m internal.mux.Mux, cs mut h2C, slot int, out mut []byt
             cs.sst[slot] = h2Reset
         } else {
             // 子の終わり: 枠を空ける（応答を送り終えたストリームなら、返すだけの制御フレームの数を0へ）
-            if cs.sst[slot] == h2Run {
-                cs.ctl = 0
-            }
             internal.mux.Free(m, sg)
             h2Pop(mut cs, slot)
-            cs.kids -= 1
-            h2Release(mut cs, slot)
+            h2Fin(mut cs, slot)
             return nil
         }
     }
     return nil
+}
+
+// 子の終わりを兼ねる合図か（子はこの後に何も積まない）
+func h2IsFin(k int) bool {
+    return k == internal.mux.End || k == internal.mux.HeadEnd || k == internal.mux.RespEnd || k == internal.mux.Whole
+}
+
+// 子の終わり: 枠を空ける（応答を送り終えたストリームなら、返すだけの制御フレームの数を0へ）
+func h2Fin(cs mut h2C, slot int) {
+    if cs.sst[slot] == h2Run {
+        cs.ctl = 0
+    }
+    cs.kids -= 1
+    h2Release(mut cs, slot)
 }
 
 func h2Pop(cs mut h2C, slot int) {
@@ -1502,48 +1822,13 @@ func h2Stall(cs mut h2C) {
     }
 }
 
-// 要求の塊の形: [ヘッダのバイト数 4][位置の表の数 4][ヘッダのバイト][位置の表 4 × 数][本文]（4 = 4バイトの小さい端の整数）
-func h2Ser(hdr []byte, fs []int, body []byte) []byte {
-    mut o := mut []byte{}
-    h2Put4(mut o, len(hdr))
-    h2Put4(mut o, len(fs))
-    for x <- hdr {
-        o = append(o, x)
+// 要求の塊（h2Take・h2PutReq — 頭のテキストhlバイト + 本文）とh2Composeの印wからRequestを作る。
+// hl > 0 なら w = sp1 | sp2 << 32（頭の区間はh2Composeの印が0以上のときだけ積むので w ≥ 0）。hl = 0 は接続のtaskが見つけた形の誤りで、誤りの符号は −w（印の無い枠は −1 = 形の誤り）
+func h2FromBlob(b []byte, hl int, w int) (Request, int) {
+    if hl == 0 {
+        return h2Empty(), if w >= 0 { w & 0xffffffff } else { 0 - w }
     }
-    for v <- fs {
-        h2Put4(mut o, v)
-    }
-    for x <- body {
-        o = append(o, x)
-    }
-    return freeze(o)
-}
-
-func h2Put4(o mut []byte, v int) {
-    o = append(o, byte(v & 255))
-    o = append(o, byte((v >> 8) & 255))
-    o = append(o, byte((v >> 16) & 255))
-    o = append(o, byte((v >> 24) & 255))
-}
-
-func h2Get4(b []byte, at int) int {
-    return int(b[at]) | int(b[at + 1]) << 8 | int(b[at + 2]) << 16 | int(b[at + 3]) << 24
-}
-
-// h2Serの逆（ヘッダのバイト・位置の表・本文）
-func h2De(b []byte) ([]byte, []int, []byte) {
-    hl := h2Get4(b, 0)
-    fc := h2Get4(b, 4)
-    hs := 8
-    fp := hs + hl
-    bp := fp + fc * 4
-    mut fs := mut []int{}
-    mut k := 0
-    while k < fc {
-        fs = append(fs, h2Get4(b, fp + k * 4))
-        k += 1
-    }
-    return b[hs:fp], freeze(fs), b[bp:len(b)]
+    return h2Finish(b[0:hl], w & 0xffffffff, w >> 32, b[hl:len(b)])
 }
 
 // 子の本文のバイト列を、溜めのチャンク（Max）ずつ枠つきで積む（kindは最後のチャンクの種類 — RespかRespEnd）。積めなければ（期限・孤児）io.Expired
@@ -1569,12 +1854,11 @@ func h2Reject(m internal.mux.Mux, sid int, slot int, code int) {
     _ = internal.mux.Post(m, internal.mux.End, sid, []byte{}, slot)
 }
 
-// 子: 要求の塊を自分のregionへ写してRequestを組み、routeを呼び、ヘッダのブロックと本文を溜めへ積み、終わりの合図を積む。
+// 子: 要求の塊を受けて（小さい塊は写さずに参照・それ以外は自分のregionへ写す）Requestを組み、routeを呼び、ヘッダのブロックと本文を溜めへ積み、終わりの合図を積む。
 // 応答の作り方はHTTP/1.1と同じ（wire・putHead・Delayed・gzip・stream）。HTTP/1.1で接続を閉じる場面（streamの誤り・長さの食い違い）は、
 // HTTP/2ではそのストリームだけをRST_STREAM（INTERNAL_ERROR）で取り消す
-func h2Child(h int, route func(Request) Response, m internal.mux.Mux, sid int, slot int, gz int, fresh bool, wk task.Local?) int {
-    hdr, fs, body0 := h2De(internal.mux.TakeBlob(h))
-    req, code := h2Request(hdr, fs, body0)
+func h2Child(h int, hl int, w int, route func(Request) Response, m internal.mux.Mux, sid int, slot int, gz int, fresh bool, wk task.Local?) int {
+    req, code := h2FromBlob(internal.mux.ViewBlob(h), hl, w)
     if code == h2Malformed {
         h2Reject(m, sid, slot, internal.h2frame.ProtocolError)
         return 0
@@ -1594,13 +1878,22 @@ func h2Child(h int, route func(Request) Response, m internal.mux.Mux, sid int, s
     bl := if st == nil { len(bd) } else if ln != nil && enc != 2 { ln } else { -1 }
     blk := h2Head(resp, enc, bl)
     if len(blk) > internal.mux.Max {
-        _ = internal.mux.Post(m, internal.mux.HeadEnd, sid, h2Head(Status(http.InternalServerError), 0, 0), slot)
-        _ = internal.mux.Post(m, internal.mux.End, sid, []byte{}, slot)
+        if internal.mux.Post(m, internal.mux.HeadEnd, sid, h2Head(Status(http.InternalServerError), 0, 0), slot) != internal.mux.Ok {
+            _ = internal.mux.Post(m, internal.mux.End, sid, []byte{}, slot)
+        }
         return 0
     }
     if head || (st == nil && len(bd) == 0) {
-        _ = internal.mux.Post(m, internal.mux.HeadEnd, sid, blk, slot)
-        _ = internal.mux.Post(m, internal.mux.End, sid, []byte{}, slot)
+        if internal.mux.Post(m, internal.mux.HeadEnd, sid, blk, slot) != internal.mux.Ok {
+            _ = internal.mux.Post(m, internal.mux.End, sid, []byte{}, slot)
+        }
+        return 0
+    }
+    // チャンク1つに収まる応答は、ヘッダのブロックと本文を1つの合図で（積みと取り出しが1回ずつ）
+    if st == nil && len(blk) + len(bd) <= internal.mux.Max {
+        if internal.mux.PostWhole(m, sid, blk, bd, slot) != internal.mux.Ok {
+            _ = internal.mux.Post(m, internal.mux.End, sid, []byte{}, slot)
+        }
         return 0
     }
     if internal.mux.Post(m, internal.mux.Head, sid, blk, slot) != internal.mux.Ok {
@@ -1608,8 +1901,9 @@ func h2Child(h int, route func(Request) Response, m internal.mux.Mux, sid int, s
         return 0
     }
     if st == nil {
-        _ = h2PostData(m, sid, slot, bd, internal.mux.RespEnd)
-        _ = internal.mux.Post(m, internal.mux.End, sid, []byte{}, slot)
+        if h2PostData(m, sid, slot, bd, internal.mux.RespEnd) != nil {
+            _ = internal.mux.Post(m, internal.mux.End, sid, []byte{}, slot)
+        }
         return 0
     }
     // stream: emit 1回 = DATA（溜めのチャンクずつ）。枠の待ちが背圧（窓の開かない相手には子が待つ）
@@ -1642,7 +1936,6 @@ func h2Child(h int, route func(Request) Response, m internal.mux.Mux, sid int, s
         h2Reject(m, sid, slot, internal.h2frame.InternalError)
         return 0
     }
-    _ = internal.mux.Post(m, internal.mux.End, sid, []byte{}, slot)
     return 0
 }
 
@@ -1653,7 +1946,7 @@ func h2Drain(m internal.mux.Mux, cs mut h2C) {
         mut k := 0
         while k < cs.qn[i] {
             sg := internal.mux.Sig{at: cs.q[i * 8 + k * 2]}
-            if internal.mux.Kind(sg) == internal.mux.End {
+            if h2IsFin(internal.mux.Kind(sg)) {
                 cs.kids -= 1
             }
             internal.mux.Free(m, sg)
@@ -1670,7 +1963,7 @@ func h2Drain(m internal.mux.Mux, cs mut h2C) {
             }
         }
         while !internal.mux.None(sg) {
-            if internal.mux.Kind(sg) == internal.mux.End {
+            if h2IsFin(internal.mux.Kind(sg)) {
                 cs.kids -= 1
             }
             internal.mux.Free(m, sg)
@@ -1727,7 +2020,7 @@ func serveH2(fd int, tl bool, rx func(m internal.mux.Mux, k func([]byte)), tx fu
     rec := h2Zeros(internal.mux.Words)
     m := internal.mux.Of(rec)
     _, e := task.Run((s task.Scope) => {
-        mut cs := h2C{buf: mut []byte{}, bn: 0, hb: mut []byte{}, hbn: 0, hbSid: 0, hbEs: false, hbOld: false, ab: mut []byte{}, abn: 0, seg: mut []int{}, segn: 0, fa: mut []int{}, fan: 0, live: 0, lastSid: 0, gone: -1, peerGone: false, acked: false, gotSet: false, peerMax: internal.h2frame.DefaultMaxFrame, peerInit: 65535, csend: 65535, crecv: h2ConnWin, active: 0, kids: 0, mh: 0, mb: 0, hu: 0, osent: 0, sid: mut []int{}, sst: mut []int{}, swin: mut []int{}, rwin: mut []int{}, blen: mut []int{}, sfa: mut []int{}, q: mut []int{}, qn: mut []int{}, rdy: mut []int{}, rdyn: 0}
+        mut cs := h2C{buf: mut []byte{}, bn: 0, hb: mut []byte{}, hbn: 0, hbSid: 0, hbEs: false, hbOld: false, ab: mut []byte{}, abn: 0, pv: mut []byte{}, seg: mut []int{}, segn: 0, live: 0, lastSid: 0, gone: -1, peerGone: false, acked: false, gotSet: false, peerMax: internal.h2frame.DefaultMaxFrame, peerInit: 65535, csend: 65535, crecv: h2ConnWin, active: 0, kids: 0, mh: 0, mb: 0, hu: 0, osent: 0, sid: mut []int{}, sst: mut []int{}, swin: mut []int{}, rwin: mut []int{}, blen: mut []int{}, sfa: mut []int{}, shd: mut []int{}, stl: mut []int{}, sby: mut []int{}, q: mut []int{}, qn: mut []int{}, rdy: mut []int{}, rdyn: 0}
         h2Init(mut cs, mh, mb, hu + su * 4294967296)
         mut dec := internal.hpack.Dec{}
         internal.hpack.Init(mut dec)
@@ -1754,7 +2047,8 @@ func serveH2(fd int, tl bool, rx func(m internal.mux.Mux, k func([]byte)), tx fu
                     alive = h2FlushAll(fd, m, mut cs, mut out) == nil
                 }
                 // TLS: outを写さずに渡す（TLSのoutはhelperが送らないので、周の頭から全部が未送）
-                full := tl && len(out) >= h2TlsCap - 9
+                full := tl && (len(out) >= h2TlsCap - 9 || cs.tmore)
+                cs.tmore = false
                 alive = alive && h2Send(fd, mut cs, mut out) == nil && (!tl || tx(freeze(out)) == nil)
                 if full && alive {
                     // 上限で止めた: 次の周で続ける（溜めが尽きて積めなければ、子の次の合図か送りの止まりの期限まで待つ）
@@ -1782,17 +2076,14 @@ func serveH2(fd int, tl bool, rx func(m internal.mux.Mux, k func([]byte)), tx fu
                     cs.reg = cs.reg
                 }
                 // 入場の見込みがある間だけ、列の頭から子を作る（ストリームの子を作る所はここ1つ）
+                mut spawned := false
                 while alive && cs.wqn > 0 && internal.mux.AdmitRoom(cb) {
                     qe := h2Dequeue(mut cs)
                     slot := qe & 255
                     sid := qe >> 8
                     if cs.sst[slot] == h2Half && cs.sid[slot] == sid {
-                        mut hdr := mut []byte{}
-                        mut fsx := mut []int{}
-                        mut bdy := mut []byte{}
-                        big := h2Gather(mut cs, slot, mut hdr, mut fsx, mut bdy)
-                        // 要求は溜めの塊へ写し、子には取っ手だけを捕獲させる（子は反復のregionより長く生きる）。溜めが尽きていれば503（接続のtaskは待たない）
-                        h := if big { 0 } else { internal.mux.PutBlob(h2Ser(freeze(hdr), freeze(fsx), freeze(bdy))) }
+                        // 要求は溜めの塊へ写し、子には取っ手と頭の長さ・印だけを捕獲させる（子は反復のregionより長く生きる）。溜めが尽きていれば503（接続のtaskは待たない）
+                        h, big, hl, w := h2PutReq(mut cs, slot)
                         code := if big { 413 } else if h == 0 { 503 } else { 0 }
                         if code == 0 {
                             cs.sst[slot] = h2Run
@@ -1801,9 +2092,10 @@ func serveH2(fd int, tl bool, rx func(m internal.mux.Mux, k func([]byte)), tx fu
                                 _ = sysNetOp(5, -2, 0, 0)
                             }
                             // 子が死ぬか切られたら、この枠の死んだビットが立つ（h2Deadが閉じる）
-                            internal.mux.DieNext(m, slot)
-                            _ = task.Spawn(s, () => h2Child(h, route, m, sid, slot, gz, fresh, wk), budget: cb)
+                            internal.mux.DieNext(m, slot, h)
+                            _ = task.Spawn(s, () => h2Child(h, hl, w, route, m, sid, slot, gz, fresh, wk), budget: cb)
                             cs.kids += 1
+                            spawned = true
                         } else {
                             if h2Direct(fd, mut cs, slot, code, mut qout) != nil {
                                 alive = false
@@ -1811,6 +2103,12 @@ func serveH2(fd int, tl bool, rx func(m internal.mux.Mux, k func([]byte)), tx fu
                         }
                     }
                 }
+                // 待たずに終わった子の応答（直の列）と死んだ子の枠を、この周の送りに載せる。TLSの1周の上限で止めたら次の周で続ける（上の送りの点と同じ）
+                if spawned && alive && h2Sigs(fd, m, mut cs, mut qout) != nil {
+                    alive = false
+                }
+                qfull := spawned && tl && (len(qout) >= h2TlsCap - 9 || cs.tmore)
+                cs.tmore = false
                 // 列が残れば入場の空きの登録簿へ（返しの点が知らせる）・空なら外す
                 if cs.wqn > 0 && !cs.reg {
                     internal.mux.RegRoom(m)
@@ -1826,6 +2124,13 @@ func serveH2(fd int, tl bool, rx func(m internal.mux.Mux, k func([]byte)), tx fu
                 }
                 if alive && len(qout) > 0 && (h2Send(fd, mut cs, mut qout) != nil || (tl && tx(h2Rest(mut cs, mut qout)) != nil)) {
                     alive = false
+                }
+                if spawned {
+                    if qfull && alive {
+                        _ = internal.mux.Post(m, internal.mux.Room, 0, []byte{}, 0 - 1)
+                    }
+                    // 窓で止まった応答があれば送りの止まりの期限を置く
+                    h2Stall(mut cs)
                 }
                 if !alive || h2Done(mut cs) {
                     break

@@ -180,8 +180,19 @@ func buildOrphRt(st mut St) {
     // フラグ 1（持ち主の死）は常に・2 以上（子の死）は本体が出口に着いた後だけ孤児。ミュータント126 = 子の死のフラグを見ない（iouring の net_sibcut が捕まえる）・
     // 128 = 出口の印を見ない（本体が走っている間も切る — net_serve と net_sibcut_try が捕まえる）
     c := load(mut st, rec, SR_CUT)
-    sib := if st.rtMut == 128 { cmp(mut st, CGe, c, iconst(mut st, 2)) } else { bin(mut st, BAnd, cmp(mut st, CGe, c, iconst(mut st, 2)), cmp(mut st, CEq, load(mut st, rec, SR_EXIT), iconst(mut st, 1))) }
-    hitc := if st.rtMut == 126 { cmp(mut st, CEq, c, iconst(mut st, 1)) } else { bin(mut st, BOr, cmp(mut st, CEq, c, iconst(mut st, 1)), sib) }
+    mut sib := 0
+    mut sibT := 0
+    if ioChk(mut st) {
+        // 照合のビルド: 子の死の判定（本体が出口に着いた後の子の死）を出口の印の1回の読みから作り、判定の結果と比べる
+        sibT = bin(mut st, BAnd, cmp(mut st, CGe, c, iconst(mut st, 2)), cmp(mut st, CEq, load(mut st, rec, SR_EXIT), iconst(mut st, 1)))
+        sib = sibT
+    } else {
+        sib = if st.rtMut == 128 { cmp(mut st, CGe, c, iconst(mut st, 2)) } else { bin(mut st, BAnd, cmp(mut st, CGe, c, iconst(mut st, 2)), cmp(mut st, CEq, load(mut st, rec, SR_EXIT), iconst(mut st, 1))) }
+    }
+    hitc := if st.rtMut == 126 || st.rtMut == 147 { cmp(mut st, CEq, c, iconst(mut st, 1)) } else { bin(mut st, BOr, cmp(mut st, CEq, c, iconst(mut st, 1)), sib) }
+    if ioChk(mut st) {
+        chkFail(mut st, bin(mut st, BAnd, sibT, cmp(mut st, CEq, hitc, iconst(mut st, 0))), "io-check: the orphan walk passed a scope ", ptoi(mut st, rec), " whose child died after its body reached the exit\n")
+    }
     condbr(mut st, hitc, bYes, -1, bL, list1(mut st, load(mut st, rec, SR_OTCB)))
     setCur(mut st, bYes)
     ret(mut st, iconst(mut st, 1))

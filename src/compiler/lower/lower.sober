@@ -1108,6 +1108,9 @@ func buildInit(st mut St) {
         st.domUse = desugar.DomNamed(mut st.d, "NewDomain")
         st.domWait = st.domUse && desugar.DomNamed(mut st.d, "Await")
         for i <- iter.Range(0, nfn(mut st)) {
+            if !st.lazyOn && strIs(mut st, desugar.PkgPath(mut st.d, fnPkg(mut st, i)), "std/internal/mux") {
+                st.lazyOn = true
+            }
             if !st.winOn && strIs(mut st, desugar.PkgPath(mut st.d, fnPkg(mut st, i)), "std/net") && strIs(mut st, sA(nodeOf(mut st, fnNode(mut st, i))), "Serve") {
                 st.winOn = true
                 // ミュータント66 = エリアを使わない（フェーズ1の前のスタックの形 — areacheckの遠いパスの行の基準）

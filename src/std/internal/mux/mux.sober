@@ -10,8 +10,8 @@ import "std/io"
 import "std/net"
 import "std/internal/sec"
 
-// 記録の大きさ（int の数 — 頭8 + ストリームの枠 Slots × 2 + 死んだ枠のビット2）
-const Words = 266
+// 記録の大きさ（int の数 — 頭8 + ストリームの枠 Slots × 2 + 死んだ枠のビット2 + 直の列の頭と尾・持ち主）
+const Words = 269
 
 // ストリームの枠の数。応答のバイト列（Resp・RespEnd）は枠ごとにチャンク1つまで積め、前の応答がFreeされるまで次のPostが待つ
 const Slots = 128
@@ -30,6 +30,10 @@ const HeadEnd = 5
 const RespEnd = 6
 // ストリームを形の誤りで取り消す（RST_STREAM PROTOCOL_ERROR）
 const Reject = 7
+// 応答の全体（HEADERSのブロックと最後の本文 — HEADERS + DATA END_STREAM。PostWholeで積む）。枠の背圧には数えない（子の最後の合図で、後が無い）
+const Whole = 8
+// HeadEnd・RespEnd・Wholeは子の終わりを兼ねる: 積めたら子はもう何も積まず、接続のtaskはその合図の消費で枠を空ける。
+// 積めた時点で今のtaskの死の印（DieNext）がこの枠を指していれば消える（枠が使い回された後の死で、別のストリームの枠にビットを立てない）
 
 // 1回のPostで積めるバイト数の上限（溜めのチャンク1つ）
 const Max = 16352
@@ -96,6 +100,16 @@ func Post(m Mux, kind int, sid int, b []byte, slot int) int {
     return sysNetOp(50, m.at, kind + len(b) * 256 + sid * 16777216, sysAddr(b) + s1 * 281474976710656)
 }
 
+// 応答の全体（ヘッダのブロックhと本文b）を1つのチャンクへ写し、種類Wholeの合図で積む（len(h) + len(b) ≤ Max）。結果はPostと同じ
+func PostWhole(m Mux, sid int, h []byte, b []byte, slot int) int {
+    if len(h) + len(b) > Max || slot >= Slots {
+        return TooLong
+    }
+    s1 := if slot < 0 { 0 } else { slot + 1 }
+    d := []int{sysAddr(h), sysAddr(b), len(b), s1}
+    return sysNetOp(74, m.at, Whole + len(h) * 256 + sid * 16777216, addrn(d))
+}
+
 // 到着の順で次の合図を取る（無ければ at = 0）
 func Take(m Mux) Sig {
     return Sig{at: sysNetOp(51, m.at, 0, 0)}
@@ -118,6 +132,11 @@ func Slot(s Sig) int {
     return sysNetOp(52, s.at, 4, 0)
 }
 
+// Wholeの合図のヘッダのブロックの長さ（バイト列の頭から。残りが本文）
+func HeadLen(s Sig) int {
+    return sysNetOp(52, s.at, 5, 0)
+}
+
 func Len(s Sig) int {
     return sysNetOp(52, s.at, 2, 0)
 }
@@ -126,8 +145,10 @@ func Len(s Sig) int {
 func Bytes(s Sig) []byte {
     n := Len(s)
     mut out := mut []byte{}
-    while len(out) < n {
-        out = append(out, byte(0))
+    mut i := 0
+    while i < n {
+        out = append(out, 0)
+        i += 1
     }
     _ = sysNetOp(53, s.at, sysAddr(out), 0)
     return freeze(out)
@@ -138,7 +159,7 @@ func AppendAt(dst mut []byte, s Sig, off int, n int) {
     base := len(dst)
     mut i := 0
     while i < n {
-        dst = append(dst, byte(0))
+        dst = append(dst, 0)
         i += 1
     }
     if n > 0 {
@@ -177,6 +198,16 @@ func SendBytes(fd int, b []byte) error? {
         return io.Expired{}
     }
     return sendAt(fd, sysAddr(b), len(b))
+}
+
+// bのsバイト目から尾までをfdへ送る（写さずにbの番地から。送りの間にbを書き換えない呼び手が使う）
+@errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other)
+@effects(block, io, nondet)
+func SendFrom(fd int, b mut []byte, s int) error? {
+    if sysDeadline() != 0 {
+        return io.Expired{}
+    }
+    return sendAt(fd, sysAddr(b) + s, len(b) - s)
 }
 
 // 番地baseからnバイトをfdへ送り切る（EAGAIN・EINTR・EINPROGRESSは書ける待ち）
@@ -295,7 +326,13 @@ func RecvFrom(c net.Conn, m Mux, first []byte, k func([]byte)) {
                 } else if len(b) == 0 && !sig && !pre {
                     0
                 } else {
-                    x := if tl && !sig && !(pre && len(first) > 0) { secOpen(c, b) } else { b }
+                    x := if tl && !sig && !(pre && len(first) > 0) {
+                        // 平文は、この周のregionに置いた出口の列へ直に開く（返り値で受けると、開いた平文を呼び手のregionへ写すことになる）
+                        mut so := mut []byte{}
+                        sn := secOpen(c, b, mut so)
+                        sp := freeze(so)
+                        sp[0:sn]
+                    } else { b }
                     if sig || len(x) > 0 {
                         k(x)
                     }
@@ -314,10 +351,10 @@ func RecvFrom(c net.Conn, m Mux, first []byte, k func([]byte)) {
     }
 }
 
-// TLSの受けの切片bを開いた平文（RecvFromの本体の外）
-func secOpen(c net.Conn, b []byte) []byte {
+// TLSの受けの切片bを開いた平文をoutの先頭から書いた長さ（RecvFromの本体の外）
+func secOpen(c net.Conn, b []byte, out mut []byte) int {
     s := c.sec[0]
-    return s.ops.recv(s.st, c.fd, b, false)
+    return s.ops.recv(s.st, c.fd, b, false, mut out)
 }
 
 // TLSの受けの1周の後（n = 受けの結果・0 = FIN）: FINならrecordの途中で切れていないかを見る・平文をkへ渡し終えたら積んだ分を送る。
@@ -325,7 +362,8 @@ func secOpen(c net.Conn, b []byte) []byte {
 func secAfter(c net.Conn, n int) int {
     s := c.sec[0]
     if n == 0 {
-        _ = s.ops.recv(s.st, c.fd, []byte{}, true)
+        mut o := mut []byte{}
+        _ = s.ops.recv(s.st, c.fd, []byte{}, true, mut o)
     }
     r := s.ops.code(s.st)
     return if r == internal.sec.RecvMore && n > 0 && s.ops.flush(s.st, c.fd, 1) < 0 { 4 } else { r }
@@ -351,7 +389,13 @@ func RecvAfter(c net.Conn, first []byte, k func([]byte)) error? {
             } else if len(b) == 0 && !pre {
                 0
             } else {
-                x := if tl { secOpen(c, b) } else { b }
+                x := if tl {
+                    // 平文は、この周のregionに置いた出口の列へ直に開く（返り値で受けると、開いた平文を呼び手のregionへ写すことになる）
+                    mut so := mut []byte{}
+                    sn := secOpen(c, b, mut so)
+                    sp := freeze(so)
+                    sp[0:sn]
+                } else { b }
                 if len(x) > 0 {
                     k(x)
                 }
@@ -419,12 +463,28 @@ func PutBlob(b []byte) int {
 func TakeBlob(h int) []byte {
     n := sysNetOp(60, h, 0, 0)
     mut out := mut []byte{}
-    while len(out) < n {
-        out = append(out, byte(0))
+    mut i := 0
+    while i < n {
+        out = append(out, 0)
+        i += 1
     }
     _ = sysNetOp(61, h, sysAddr(out), 0)
     _ = sysNetOp(62, h, 0, 0)
     return freeze(out)
+}
+
+// 塊hのバイト列。今のtaskが持つ塊（DieNextで渡された小さいチャンク1つ）なら写さずに参照し、チャンクはtaskの終わりに返る。
+// それ以外はTakeBlobと同じ（写して、チャンクを返す）
+func ViewBlob(h int) []byte {
+    if sysNetOp(75, h, 0, 0) == 1 {
+        return blobView(h)
+    }
+    return TakeBlob(h)
+}
+
+// b[s:s + n] から要求の塊を作る（PutBlobと同じ — 呼び手の置き場の途中を写す）
+func PutBlobFrom(b mut []byte, s int, n int) int {
+    return sysNetOp(59, sysAddr(b) + s, n, 0)
 }
 
 // 塊hを写さずに返す
@@ -463,12 +523,16 @@ func CountShed() {
 }
 
 // 今のtaskが次にspawnする子1つに、死の印を付ける（0 ≤ slot < Slots）。その子が死ぬか切られると、mの死んだ枠のビット（TakeDead）が立ち、
-// 待っている接続のtaskが起きる（合図のチャンクを取らない — 溜めが尽きていても届く）。正常に返った子は何もしない
-func DieNext(m Mux, slot int) {
-    _ = sysNetOp(69, m.at, slot, 0)
+// 待っている接続のtaskが起きる（合図のチャンクを取らない — 溜めが尽きていても届く）。正常に返った子は何もしない。
+// blob（0 = 無し）が小さいチャンク1つの塊なら、その子が塊を持つ: 子はViewBlobで写さずに参照し、塊は子のtaskの終わり（死んでも）に溜めへ返る
+func DieNext(m Mux, slot int, blob int) {
+    _ = sysNetOp(69, m.at, slot, blob)
 }
 
 // 死んだ枠のビットのw番目のワード（w = 0: 枠0〜63・1: 枠64〜127）を読んで0にする。立っている枠は、ここで読むまで空かない
 func TakeDead(m Mux, w int) int {
     return sysNetOp(70, m.at, w, 0)
 }
+
+@intrinsic("blob_view")
+func blobView(h int) []byte

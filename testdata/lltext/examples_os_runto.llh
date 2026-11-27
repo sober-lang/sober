@@ -1,5 +1,5 @@
-@@full	56118b8a6926222c	13744	424673
-@globals	efdd9e06ad621524	82	1278
+@@full	40dbfad543682687	13947	430930
+@globals	5aff030b2ad1453d	82	1300
 main.main	e28909a3e9840a4e	1114	42358
 main.removeAll	dc161da8994b91a4	303	10323
 main.runDir	edf8618c3f3b078c	325	11519
@@ -16,7 +16,7 @@ rt.grow_try	c3052a27d9b3efe7	87	2220
 rt.map_grow	1ded4e285ed15ca6	201	5153
 rt.map_hash	2ff53caae4579b53	82	2132
 rt.mkdir	1b5d9cc04dcf6439	46	1245
-rt.panic	b4764c50aa9034b9	392	11876
+rt.panic	71ff4d8e07aec24d	423	12834
 rt.panic_mem	3390a5b1c035e7b0	368	11528
 rt.print_char	16bc2b4d2973b5a4	40	960
 rt.print_int	fcf4f40fed38131b	85	2225
@@ -45,7 +45,7 @@ sober_entry	745a659157ae2d4d	1863	51851
 std/convert.FormatInt	85e74a469462b98a	119	3724
 std/convert.decWord	e30a055678204a0d	184	5523
 std/convert.formatUint	e1e7a8d5ffec6123	642	20856
-std/internal/utf8.Parse	708adbd668c5ffe0	261	8801
+std/internal/utf8.Parse	8d0c1dda0783bbb0	432	13961
 std/io.ReadFile	0e5abc7717bafb44	368	12264
 std/io.errOf	2d11e1af5df4e064	242	7243
 std/os.Mkdir	65278efbc6e6bf03	178	5734

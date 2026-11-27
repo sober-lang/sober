@@ -16,6 +16,7 @@ record層向けのAPI: 鍵の展開はPrepareで1回（接続ごと方向ごと 
 k := crypto.aesgcm.Prepare(key)?
 rec := crypto.aesgcm.SealTo(k, nonce, ad, pt, hdr, tail)?     // hdr ‖ 暗号文（pt ‖ tail）‖ tag
 pt := crypto.aesgcm.OpenAt(k, nonce, ad, buf, off, n)?        // buf[off, off + n) = 暗号文 ‖ tag
+m := crypto.aesgcm.OpenAtInto(k, nonce, ad, buf, off, n, mut dst, at)?  // 平文 = dst[at, at + m)（dst[at, at + n) を使う）
 ```
 
 ## KeySize
@@ -164,8 +165,20 @@ SealTo の宛先を呼び手の列 dst[at:] にした形（head ‖ 暗号文 �
 func OpenAt(k Key, nonce []byte, ad []byte, b []byte, off int, n int) ([]byte, error?)
 ```
 
-b[off, off + n)（暗号文 ‖ tag）を復号した平文（128 の倍数の部分は GHASH と復号を縫い合わせた 1 回の走査・残りは照合の後 — tag が合わなければ書いた平文を crypto.Wipe で消して Auth）。nonce の長さが違う・n が tag より短い・[off, off + n) が b の外なら BadSize
+b[off, off + n)（暗号文 ‖ tag）を復号した平文（OpenAtIntoの宛先を新しい列にした形）。nonce の長さが違う・n が tag より短い・[off, off + n) が b の外なら BadSize・tag が合わなければ Auth
 
 失敗のラベル: [`BadSize`](#badsize)・[`Auth`](#auth)
 
 対の `SealAt` は実需まで足さない（[language.md 34 節](../language.md) の規則 2）。
+
+## OpenAtInto
+
+```sober
+@errors(BadSize, Auth)
+@effects(!io, !block, !nondet)
+func OpenAtInto(k Key, nonce []byte, ad []byte, b []byte, off int, n int, dst mut []byte, at int) (int, error?)
+```
+
+b[off, off + n)（暗号文 ‖ tag）を呼び手の列 dst[at:] へ復号して、平文の長さ m = n − Overhead を返す（平文 = dst[at, at + m)）。dst[at, at + n) を使う（平文の後ろの Overhead バイトまでは、半端のブロックの CTR が書く作業の席 — 中身は決めない）。128 の倍数の部分は GHASH と復号を縫い合わせた 1 回の走査（暗号文 → dst へ直に）・残りの 16 の倍数と端は GHASH → 照合の後に復号する。tag が合わなければ dst[at, at + n) を 0 で消して Auth（平文は外へ出ない）。nonce の長さが違う・n が tag より短い・[off, off + n) が b の外・dst[at, at + n) が dst の外なら BadSize（dst には書かない）
+
+失敗のラベル: [`BadSize`](#badsize)・[`Auth`](#auth)

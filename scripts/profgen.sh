@@ -4,7 +4,7 @@
 # 題材 = bench/httparena/main.sober のサーバ。今の木のstage2で、プロファイルなしのELF・関数の先頭番地の表（--emit=syms）・ブロックの番地の表
 # （--blkmap）を作り、callgrind（reqinstと同じ形 — W1・SOBER_IO=2・SOBER_HASH_SEED=0・客とサーバを別のCPUに固定）で題材ごとに
 # 束の少と多の2本を流して、scripts/profgen.ts が冷たいブロックの集合を書く。
-#   題材: pipeline・hdr（束 20 / 220）・jsoncomp（gzipの符号器 — 束 2 / 22）。ringのパス（SOBER_IO=2でないパス）はcallgrindで測れないので、
+#   題材: pipeline・hdr（束 20 / 220）・jsoncomp（gzipの符号器 — 束 2 / 22）・bget・bpost・bchunk（HttpArenaのbaselineの3本 — keep-aliveで1本ずつ 320 / 3520。受けの待ちを通る）。ringのパス（SOBER_IO=2でないパス）はcallgrindで測れないので、
 #   そこでだけ通る関数には行が付かない（静的な判定のまま）
 #   冷たい = どの題材でも1要求あたりPROFGEN_TH（既定 1/64）回未満。プロファイルを取るELFはプロファイルなしでビルドする（プロファイルは
 #   吐く順にしか効かないので、ブロックの番号と指紋はプロファイルの有無で変わらない — 取り直しが前のプロファイルに依らない）
@@ -47,15 +47,15 @@ ready() { # ready <出力のファイル> <pid>
     echo "$port"
 }
 
-# run <題材> <束> <出力の頭>: サーバをcallgrindに掛けて題材を束の数だけ流す
+# run <題材> <束> <出力の頭> [<束の大きさ>]: サーバをcallgrindに掛けて題材を束の数だけ流す（束の大きさの既定は16）
 run() {
-    local subj=$1 k=$2 o=$3 vp port
+    local subj=$1 k=$2 o=$3 bsz=${4:-16} vp port
     SOBER_WORKERS=1 SOBER_IO=2 SOBER_MDWE=0 TLS_CERT=/nonexistent TLS_KEY=/nonexistent DATASET_PATH=$DATA taskset -c "$CS" "$VG" --tool=callgrind --dump-instr=yes \
         --callgrind-out-file="$o.cg" "$W/srv" 0 0 > "$o.out" 2>&1 &
     vp=$!
     port=$(ready "$o.out" $vp)
     [ -n "$port" ] || { echo "profgen: FAIL — サーバが ready を出さない（$subj）"; return 1; }
-    NODE_NO_WARNINGS=1 taskset -c "$CC" node --experimental-strip-types scripts/reqinst.ts cli "$port" "$k" "$subj" 2> "$o.cli" || { echo "profgen: FAIL — 客（$subj）: $(tail -c 300 "$o.cli")"; return 1; }
+    NODE_NO_WARNINGS=1 taskset -c "$CC" node --experimental-strip-types scripts/reqinst.ts cli "$port" "$k" "$subj" "$bsz" 2> "$o.cli" || { echo "profgen: FAIL — 客（$subj）: $(tail -c 300 "$o.cli")"; return 1; }
     kill -TERM $vp
     wait $vp 2> /dev/null
     return 0
@@ -63,12 +63,12 @@ run() {
 
 # once <出力>: 題材を全部流してプロファイルを書く
 once() {
-    local args=() s k1 k2
-    for s in pipeline:20:220 hdr:20:220 jsoncomp:2:22; do
-        IFS=: read -r subj k1 k2 <<< "$s"
-        run "$subj" "$k1" "$W/$subj.$k1" || return 1
-        run "$subj" "$k2" "$W/$subj.$k2" || return 1
-        args+=("$W/$subj.$k1.cg:$W/$subj.$k2.cg:$(( (k2 - k1) * 16 ))")
+    local args=() s k1 k2 bsz
+    for s in pipeline:20:220:16 hdr:20:220:16 jsoncomp:2:22:16 bget:320:3520:1 bpost:320:3520:1 bchunk:320:3520:1; do
+        IFS=: read -r subj k1 k2 bsz <<< "$s"
+        run "$subj" "$k1" "$W/$subj.$k1" "$bsz" || return 1
+        run "$subj" "$k2" "$W/$subj.$k2" "$bsz" || return 1
+        args+=("$W/$subj.$k1.cg:$W/$subj.$k2.cg:$(( (k2 - k1) * bsz ))")
     done
     NODE_NO_WARNINGS=1 node --max-old-space-size=8000 --experimental-strip-types scripts/profgen.ts "$W/blkmap" "$W/srv.syms" "$TH" "${args[@]}" > "$1"
 }

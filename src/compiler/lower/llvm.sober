@@ -226,7 +226,7 @@ func collectIncoming(st mut St, f FnRef) int {
                 r := irInsRes(mut st, ins)
                 desugar.HeapSet(mut st.d, cs + 1 + r * 2, 1)
                 desugar.HeapSet(mut st.d, cs + 2 + r * 2, irInsA(mut st, ins))
-            } else if op == OpStore || isNarrowSt(op) || op == OpCallI || op == OpTrapI || op == OpTSwitch || op == OpTStart {
+            } else if op == OpStore || isNarrowSt(op) || op == OpCallI || op == OpTrapI || op == OpTStart {
                 fresh += 1
             } else if op == OpBin && (irInsA(mut st, ins) == BDiv || irInsA(mut st, ins) == BRem) && divGuarded(mut st, cs, irInsC(mut st, ins)) {
                 fresh += 5

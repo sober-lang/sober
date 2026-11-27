@@ -146,20 +146,33 @@ fi
 # 子の死で兄弟の待ちを切る検査（language.md 28 節「キャンセルは協調的」— 本体が出口に着いた後だけ）: ミューテーション126（孤児の判定が子の死のフラグを見ない）・
 # 127（子の死で発火しない — 待っている兄弟が起こされない）はどちらも net_sibcut（W2）が止まる（期限の無い scope なので待ちが切れなければ終わらない）。
 # 128（本体が走っている間も切る）は net_sibcut_try（W2）の受け手が Expired を受けて出力が変わる。どれも素のビルドは期待の出力どおり
-for mc in "50 testdata/dlchain/main 1" "51 examples/net_deadline_order 2" "126 examples/net_sibcut 2" "127 examples/net_sibcut 2" "128 examples/net_sibcut_try 2"; do
+# 50 / 51 / 126 / 127の単独は止まって時間切れでしか捕まらないので、照合のビルド（144 = 照合だけ — 待ちのチェーンの前後の対・積んだ期限 ≥ 最早の期限の下界・
+# 孤児の判定と子の死の発火を出口の印の1回の読みと比べる。破れればexit 103）に入れた145〜148（= 50 / 51 / 126 / 127 + 照合）で捕まえる。
+# 145〜148の題材では、素のビルドの代わりに144を期待の出力と比べ（照合が破れない）、ミュータントは毎回exit 103と照合の行（io-check:）
+for mc in "145 testdata/dlchain/main 1" "146 examples/net_deadline_order 2" "147 examples/net_sibcut 2" "148 examples/net_sibcut 2" "128 examples/net_sibcut_try 2"; do
     set -- $mc
+    vs="o m"
     "$S2" build $2.sober --emit=elf --passes -o "$W/o$1" > "$W/buildm.log" 2>&1 || { echo "iouring: FAIL build $2"; exit 1; }
     "$S2" build $2.sober --emit=elf --passes --rt-mutant=$1 -o "$W/m$1" > "$W/buildm.log" 2>&1 || { echo "iouring: FAIL build $2 m$1"; exit 1; }
+    if [ "$1" -ge 145 ]; then
+        "$S2" build $2.sober --emit=elf --passes --rt-mutant=144 -o "$W/c$1" > "$W/buildm.log" 2>&1 || { echo "iouring: FAIL build $2 m144"; exit 1; }
+        vs="o c m"
+    fi
     { cat $2.out; echo "exit=0"; } > "$W/m$1.want"
-    for v in o m; do
+    for v in $vs; do
         ec=0
-        env SOBER_WORKERS=$3 timeout 10 "$W/$v$1" < /dev/null > "$W/$v$1.got" 2> /dev/null || ec=$?
+        env SOBER_WORKERS=$3 timeout 10 "$W/$v$1" < /dev/null > "$W/$v$1.got" 2> "$W/$v$1.err" || ec=$?
         echo "exit=$ec" >> "$W/$v$1.got"
         n=$((n + 1))
     done
-    if ! cmp -s "$W/m$1.want" "$W/o$1.got"; then echo "iouring: FAIL $2 W$3"; diff "$W/m$1.want" "$W/o$1.got" | head -5; fail=1; fi
-    if [ "$1" = 51 ] && [ "$auto" != uring ]; then continue; fi
-    if cmp -s "$W/m$1.want" "$W/m$1.got"; then echo "iouring: FAIL — mutant $1 was not caught by $2 W$3"; fail=1; fi
+    for v in $vs; do
+        [ $v = m ] && continue
+        if ! cmp -s "$W/m$1.want" "$W/$v$1.got"; then echo "iouring: FAIL $2 W$3$([ $v = c ] && echo " (check build 144)")"; diff "$W/m$1.want" "$W/$v$1.got" | head -5; fail=1; fi
+    done
+    if [ "$1" = 146 ] && [ "$auto" != uring ]; then continue; fi
+    if [ "$1" -ge 145 ]; then
+        if ! grep -qx "exit=103" "$W/m$1.got" || ! grep -q "^io-check: " "$W/m$1.err"; then echo "iouring: FAIL — mutant $1 was not caught by the check on $2 W$3 (want exit 103): $(tail -1 "$W/m$1.got") $(head -c 120 "$W/m$1.err")"; fail=1; fi
+    elif cmp -s "$W/m$1.want" "$W/m$1.got"; then echo "iouring: FAIL — mutant $1 was not caught by $2 W$3"; fail=1; fi
 done
 # 固定ファイルの表の最後の枠の検査: ミューテーション101は表の直後のページを塞いで最初の接続に最後の枠を使わせる（4バイトのフィールドを4バイトで読む今の形は
 # net_serve（W2・ringのパス）が期待値どおりに通る）。102は同じ形で4バイトのフィールドを8バイトで読む前の形に戻す（表の終わりを越えて落ちるので、検出される）
@@ -174,7 +187,7 @@ if [ "$auto" = uring ]; then
     done
 fi
 if [ $fail = 0 ]; then
-    echo "iouring: $n runs: observation ≡ W1 for SOBER_IO ∈ {auto(${auto}), 1, 2} × W ∈ {1, 2, 8} (collatz_par + io_par + io_par_stdin + io_chunks_par + io_chunks_par_die + io_chunks_at_par + net_echo + net_multi + net_deadline + net_deadline_spawn + net_deadline_order + net_orphan + net_orphan_dl + net_closed + net_serve + net_reject + net_region + net_region_mix〔SOBER_TASK_REGION_MB ∈ {既定, 4} も〕 + net_accept_break + http_arena + task_sleep_deadline + task_sleep_many。net・httpの例はSOBER_NET ∈ {auto, 1}も), one probe line per worker, net ring selection, deadline-chain mutants 50 (testdata/dlchain) / 51 caught, fixed-file guard mutants 101/102, fail=0"
+    echo "iouring: $n runs: observation ≡ W1 for SOBER_IO ∈ {auto(${auto}), 1, 2} × W ∈ {1, 2, 8} (collatz_par + io_par + io_par_stdin + io_chunks_par + io_chunks_par_die + io_chunks_at_par + net_echo + net_multi + net_deadline + net_deadline_spawn + net_deadline_order + net_orphan + net_orphan_dl + net_closed + net_serve + net_reject + net_region + net_region_mix〔SOBER_TASK_REGION_MB ∈ {既定, 4} も〕 + net_accept_break + http_arena + task_sleep_deadline + task_sleep_many。net・httpの例はSOBER_NET ∈ {auto, 1}も), one probe line per worker, net ring selection, deadline-chain and sibling-cut checks 145-148 (= 50 / 51 / 126 / 127 + check, exit 103; check-only 144 clean) · 128 caught, fixed-file guard mutants 101/102, fail=0"
 else
     echo "iouring: FAIL"
 fi

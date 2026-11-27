@@ -1,4 +1,4 @@
-@@full	10c3bc725ab0e650	14397	470134
+@@full	c86aad805b2ae0d2	14438	471100
 @head	d928ed9419e7e59e	0	346
 const fPreface	1acf005061e64c1f	1	48
 const fSettings	eb1cdb5b657d7b85	1	49
@@ -38,7 +38,7 @@ func h2Frames	3c07bdb19da35962	173	5729
 func h2Get	1ed33ebc399f008d	13	524
 func h2Index	fca8175336ad9429	23	929
 func h2On	80428897f2d3d013	11	452
-func h2Piece	7e217cc1eaa0f6af	528	16565
+func h2Piece	f0ca754d02901810	535	16817
 func h2Poll	f23312f9d9034608	72	2414
 func h2Send	b56eaef3c2119083	497	15765
 func h2Set	edd3a38fdfa64812	14	613

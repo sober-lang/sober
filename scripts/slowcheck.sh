@@ -147,9 +147,9 @@ flood SOBER_IO=2 -epoll
 # 署名の列: (1) 保証の照合 = 検査のビルド（ミュータント123 — rt.mn_next が、実行待ちの列が空でないときに署名の列から取るのは MN_BACKLOG_EVERY 周に1本までかを
 #     取るたびに照合し、外れたら印字して終了コード103）で loop と burst を通して103が出ない。自己点検: ミュータント124（123 + 毎周まず署名の列から取る）では103が出る。
 # (2) burst で、署名の列で待つ間に期限の過ぎた接続が、何も送られずに閉じられる（empty ≥ 1。ふつうは数千本。ミュータント110 = 期限の走査が署名の列を見ない形・
-#     ミュータント111 = 署名の列の無い形では、全部が期限の後に署名して返事を送るので 0）。probe max は判定しない（--probe・ゲート signprobe）
+#     ミュータント111 = 署名の列の無い形は、時間に依らず捕まえるため149 = 111 + 照合〔M:Nでは署名はいつも署名の列を通る〕にして、103で捕まえる）。probe max は判定しない（--probe・ゲート signprobe）
 sgx() { echo "$1" | sed -n "$2"; }
-for m in 123 124 110 111; do
+for m in 123 124 110 149; do
     "$S2" build testdata/slowcheck/srv.sober --emit=elf --passes --rt-mutant=$m -o "$W/srv.m$m" > "$W/build.m$m.log" 2>&1 || { echo "slowcheck: FAIL build srv mutant $m"; fail=1; continue; }
     mo=$(sig m$m "$W/srv.m$m")
     me=$(sgx "$mo" 's/^burst flights=[0-9]* empty=\([0-9]*\) .*/\1/p')
@@ -161,8 +161,8 @@ for m in 123 124 110 111; do
         else
             sum="$sum [sign queue: one signature per $(sed -n 's/^const MN_BACKLOG_EVERY = \([0-9]*\)$/\1/p' src/compiler/lower/mn.sober) rounds · expired ${me} · probe $(sgx "$mo" 's/^probe max=\([0-9]*\) .*/\1/p') ms]"
         fi ;;
-    124)
-        [ "$mx" = 103 ] || { echo "slowcheck: FAIL — mutant 124 was not caught by the sign queue check build (exit ${mx:-none})"; fail=1; } ;;
+    124|149)
+        [ "$mx" = 103 ] || { echo "slowcheck: FAIL — mutant $m was not caught by the sign queue check build (exit ${mx:-none})"; fail=1; } ;;
     *)
         if [ -n "$me" ] && [ "$me" -ge 1 ]; then
             echo "slowcheck: FAIL — mutant $m was not caught by the sign queue check ($(echo "$mo" | tr '\n' ' '))"; fail=1

@@ -43,13 +43,17 @@ func buildSignRt(st mut St) {
     zero := iconst(mut st, 0)
     bMn := newBlock(mut st)
     bCo := newBlock(mut st)
-    // ミュータント111（検査の自己検査）: 列に入らずすぐ返す（署名の列の無い形）
-    condbr(mut st, if st.rtMut == 111 { cmp(mut st, CNe, zero, zero) } else { mnOn(mut st) }, bMn, -1, bCo, -1)
+    // ミュータント111（検査の自己検査）: 列に入らずすぐ返す（署名の列の無い形）。149 = 111 + 照合
+    condbr(mut st, if st.rtMut == 111 || st.rtMut == 149 { cmp(mut st, CNe, zero, zero) } else { mnOn(mut st) }, bMn, -1, bCo, -1)
     setCur(mut st, bCo)
+    if st.rtMut == 123 || st.rtMut == 124 || st.rtMut == 149 {
+        // 照合のビルド: M:Nでは署名はいつも署名の列を通る（列を通らずに返るのはワーカー1のときだけ）
+        chkFail(mut st, mnOn(mut st), "sign-check: a signature taken outside the sign queue with ", load(mut st, globaladdr(mut st, st.mnG), MN_N), " workers\n")
+    }
     ret(mut st, zero)
     setCur(mut st, bMn)
     tk := globaladdr(mut st, st.taskG)
-    me := load(mut st, tk, TK_CUR)
+    me := waitSelf(mut st)
     tp := itop(mut st, me)
     store(mut st, tp, TC_IORES, iconst(mut st, PEND_SIGN))
     signPush(mut st, tk, me)
@@ -87,6 +91,7 @@ func signPop(st mut St, tk int, bGot BlkRef, bFail BlkRef) {
     condbr(mut st, cmp(mut st, CEq, h, zero), bFail, -1, bH, -1)
     setCur(mut st, bH)
     signGapCheck(mut st, tk)
+    bkGapReset(mut st)
     signCut(mut st, tk, h)
     store(mut st, itop(mut st, h), TC_IORES, zero)
     br(mut st, bGot, list2(mut st, itop(mut st, h), iconst(mut st, 1)))

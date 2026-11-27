@@ -12,6 +12,11 @@ const Bad = 1
 // 解いた量がlimを越えた。表の更新はブロックの最後まで続けたので、接続は続けられる
 const Large = 2
 
+// Nextの種別（Badも返す）: 欄を1つ書いた
+const Got = 3
+// 書いた欄は無い（表の大きさの更新か、上限を越えて書かなかった欄）
+const Skip = 4
+
 // 動的表の大きさの上限（SETTINGS_HEADER_TABLE_SIZEの既定の値。広告しない）
 const TableMax = 4096
 
@@ -24,7 +29,7 @@ const entMax = 128
 // 復号の状態。ゼロ値をInitで整えてから使う
 type Dec struct {
     ring mut []byte
-    // 項目ごとに (輪の中の始まり, 名前の長さ, 値の長さ)。first = いちばん古い項目の番号
+    // 項目ごとに (輪の中の始まり | 名前の静的表の添字 << 16, 名前の長さ, 値の長さ)。first = いちばん古い項目の番号
     ents mut []int
     first int
     n int
@@ -41,6 +46,20 @@ type Dec struct {
     used int
     lim int
     large bool
+    // fsの次に書く添字（Decodeが先に伸ばした範囲の中）
+    fw int
+    // Huffmanを輪の空きへ解く速い道（hw = 書き始めの輪の位置〔mask前〕・hk = 解いた字数）
+    fast bool
+    hw int
+    hk int
+    // outへ次に書く位置・表の大きさの更新を許す（ブロックの頭）
+    ow int
+    head bool
+    got bool
+    // Nextが欄を書いたとき: 名前の長さ・値の長さ・名前の静的表の添字（名前が静的表から来たとき〔動的表の項目の名前が静的表から来たときも〕。それ以外は0）
+    Nl int
+    Vl int
+    Si int
 }
 
 func Init(d mut Dec) {
@@ -57,58 +76,94 @@ func Init(d mut Dec) {
     d.max = TableMax
 }
 
-// ヘッダのブロックblkを解く。解いたヘッダは、名前と値のバイトをoutに積み、fsに (名前の位置, 名前の長さ, 値の位置, 値の長さ) の4つを積む（位置はoutの中）。
+// ヘッダのブロックblkを解く。解いたヘッダは、名前と値のバイトをoutに積み、fsに (名前の位置, 名前の長さ, 値の位置, 値の長さ) の4つを書く（位置はoutの中）。
+// fsの後ろには使わない0が残るので、項目はFieldsで切り出して読む。
 // lim = 解いた量（名前 + 値 + 32 の和。RFC 7541 4.1）の上限。越えたらLargeで、outとfsの中身は途中までになる
 func Decode(d mut Dec, blk []byte, out mut []byte, fs mut []int, lim int) int {
+    Begin(mut d, lim)
+    // fsを先に伸ばしておき、項目は添字で書く。outとfsへ交互にappendすると、regionの先端を外れた側が毎回写しになる（spec 9章M-4）。
+    // 項目は1つごとにブロックの1バイト以上と、解いた量の32以上を使うので、数はその小さい方で抑えられる（16を越える分はappendで伸ばす）
+    d.fw = len(fs)
+    mut nf := len(blk)
+    if lim / 32 < nf {
+        nf = lim / 32
+    }
+    if nf > 16 {
+        nf = 16
+    }
+    for k <- iter.Range(0, nf * 4) {
+        fs = append(fs, 0)
+    }
+    mut p := 0
+    mut w := len(out)
+    while p < len(blk) {
+        q, k, w1 := Next(mut d, blk, p, mut out, w, bytes(""))
+        if k == Bad {
+            return Bad
+        }
+        if k == Got {
+            push(mut d, mut fs, w, d.Nl, w + d.Nl, d.Vl)
+        }
+        p = q
+        w = w1
+    }
+    return if d.large { Large } else { Ok }
+}
+
+// Decodeが書いたfsの項目の範囲（fsはDecodeが先に伸ばした分の後ろに使わない0を持つ。凍らせた後にここで切る）
+func Fields(d Dec, fs []int) []int {
+    return fs[0:d.fw]
+}
+
+// ブロックを解き始める（lim = 解いた量の上限。Decodeと同じ数え方）
+func Begin(d mut Dec, lim int) {
     d.used = 0
     d.lim = lim
     d.large = false
-    mut p := 0
-    mut head := true
-    while p < len(blk) {
-        b := int(blk[p])
-        if b >= 0x80 {
-            v, q := readInt(blk, p, 7)
-            if q < 0 || v == 0 {
-                return Bad
-            }
-            p = q
-            head = false
-            if !emitIndexed(mut d, v, mut out, mut fs) {
-                return Bad
-            }
-        } else if b >= 0x40 {
-            v, q := readInt(blk, p, 6)
-            if q < 0 {
-                return Bad
-            }
-            p = literal(mut d, blk, q, v, true, mut out, mut fs)
-            if p < 0 {
-                return Bad
-            }
-            head = false
-        } else if b >= 0x20 {
-            // 表の大きさの更新はブロックの頭だけ（RFC 7541 4.2）
-            v, q := readInt(blk, p, 5)
-            if q < 0 || !head || v > TableMax {
-                return Bad
-            }
-            p = q
-            d.max = v
-            evict(mut d, 0)
-        } else {
-            v, q := readInt(blk, p, 4)
-            if q < 0 {
-                return Bad
-            }
-            p = literal(mut d, blk, q, v, false, mut out, mut fs)
-            if p < 0 {
-                return Bad
-            }
-            head = false
+    d.head = true
+}
+
+// 解いた量がBeginのlimを越えた（ブロックの終わりに見る）
+func Over(d Dec) bool {
+    return d.large
+}
+
+// ブロックblkの位置p（< len(blk)）から表現を1つ解く。欄なら、out[w:]へ名前・sep・値を書く（outの長さを越える分は足す）。
+// 結果 = (次の位置, 種別, 書いた後の位置)。GotのときNl・Vl・Siに欄の形を置く。Badはブロックが壊れている（位置は使わない）。
+// Skipでは書いた後の位置はwのまま（上限を越えた欄の書きかけはout[w:]に残りうる）
+func Next(d mut Dec, blk []byte, p int, out mut []byte, w int, sep []byte) (int, int, int) {
+    d.ow = w
+    b := int(blk[p])
+    if b >= 0x80 {
+        v, q := readInt(blk, p, 7)
+        if q < 0 || v == 0 {
+            return q, Bad, w
         }
+        d.head = false
+        k := emitIndexed(mut d, v, mut out, sep)
+        return q, k, if k == Got { d.ow } else { w }
     }
-    return if d.large { Large } else { Ok }
+    if b >= 0x20 && b < 0x40 {
+        // 表の大きさの更新はブロックの頭だけ（RFC 7541 4.2）
+        v, q := readInt(blk, p, 5)
+        if q < 0 || !d.head || v > TableMax {
+            return q, Bad, w
+        }
+        d.max = v
+        evict(mut d, 0)
+        return q, Skip, w
+    }
+    ix := b >= 0x40
+    v, q := readInt(blk, p, if ix { 6 } else { 4 })
+    if q < 0 {
+        return q, Bad, w
+    }
+    d.head = false
+    r := literal(mut d, blk, q, v, ix, mut out, sep)
+    if r < 0 {
+        return r, Bad, w
+    }
+    return r, if d.got { Got } else { Skip }, if d.got { d.ow } else { w }
 }
 
 // blk[p]の下位nビットを前置きとする整数（RFC 7541 5.1）: (値, 次の位置)。形が壊れていれば位置 < 0
@@ -136,37 +191,59 @@ func readInt(blk []byte, p int, n int) (int, int) {
     return 0, 0 - 1
 }
 
-// 表の添字のヘッダをそのまま積む。添字が表の外ならfalse
-func emitIndexed(d mut Dec, idx int, out mut []byte, fs mut []int) bool {
+// 表の添字のヘッダを書く。結果はNextの種別（添字が表の外ならBad）
+func emitIndexed(d mut Dec, idx int, out mut []byte, sep []byte) int {
     if idx <= 61 {
         nm := bytes(staticName(idx))
         vl := bytes(staticValue(idx))
         if !fits(mut d, len(nm) + len(vl)) {
-            return true
+            return Skip
         }
-        o := len(out)
-        appendAll(mut out, nm)
-        appendAll(mut out, vl)
-        push(mut fs, o, len(nm), o + len(nm), len(vl))
-        return true
+        d.ow = wCat(mut out, d.ow, nm, 0, len(nm))
+        // 区切りは短いので、写しの部品を呼ばずに書く
+        mut j := 0
+        while j < len(sep) {
+            if d.ow < len(out) {
+                out[d.ow] = sep[j]
+            } else {
+                out = append(out, sep[j])
+            }
+            d.ow += 1
+            j += 1
+        }
+        d.ow = wCat(mut out, d.ow, vl, 0, len(vl))
+        d.Nl = len(nm)
+        d.Vl = len(vl)
+        d.Si = idx
+        return Got
     }
     k := idx - 62
     if k >= d.n {
-        return false
+        return Bad
     }
     e := ((d.first + d.n - 1 - k) & (entMax - 1)) * 3
-    st := d.ents[e]
+    st := d.ents[e] & ringMask
     nl := d.ents[e + 1]
     vl := d.ents[e + 2]
     if !fits(mut d, nl + vl) {
-        return true
+        return Skip
     }
-    o := len(out)
-    for j <- iter.Range(0, nl + vl) {
-        out = append(out, d.ring[(st + j) & ringMask])
+    d.ow = wRing(mut out, d.ow, mut d.ring, st, nl)
+    mut j := 0
+    while j < len(sep) {
+        if d.ow < len(out) {
+            out[d.ow] = sep[j]
+        } else {
+            out = append(out, sep[j])
+        }
+        d.ow += 1
+        j += 1
     }
-    push(mut fs, o, nl, o + nl, vl)
-    return true
+    d.ow = wRing(mut out, d.ow, mut d.ring, (st + nl) & ringMask, vl)
+    d.Nl = nl
+    d.Vl = vl
+    d.Si = d.ents[e] >> 16
+    return Got
 }
 
 // 名前と値で長さnの項目を、解いた量の上限に数える。越えたらLargeの印を立ててfalse
@@ -179,27 +256,132 @@ func fits(d mut Dec, n int) bool {
     return true
 }
 
-func push(fs mut []int, a int, b int, c int, e int) {
-    fs = append(fs, a)
-    fs = append(fs, b)
-    fs = append(fs, c)
-    fs = append(fs, e)
+func push(d mut Dec, fs mut []int, a int, b int, c int, e int) {
+    if d.fw + 4 <= len(fs) {
+        fs[d.fw] = a
+        fs[d.fw + 1] = b
+        fs[d.fw + 2] = c
+        fs[d.fw + 3] = e
+    } else {
+        fs = append(fs, a)
+        fs = append(fs, b)
+        fs = append(fs, c)
+        fs = append(fs, e)
+    }
+    d.fw += 4
 }
 
+// src[a:b] をo[w:]へ書き、書いた後の位置を返す（w <= len(o)。oの長さの内は添字で、越えた分は足す。どちらもコピーのループの一括化に乗る形）
+func wCat(o mut []byte, w int, src []byte, a int, b int) int {
+    n := b - a
+    room := len(o) - w
+    n1 := if n <= room { n } else { room }
+    mut i := 0
+    while i < n1 {
+        o[w + i] = src[a + i]
+        i += 1
+    }
+    mut j := a + n1
+    while j < b {
+        o = append(o, src[j])
+        j += 1
+    }
+    return w + n
+}
+
+// sをoutへ足す（コピーのループの一括化に乗る形）
 func appendAll(out mut []byte, s []byte) {
-    for i <- iter.Range(0, len(s)) {
-        out = append(out, s[i])
+    mut j := 0
+    while j < len(s) {
+        out = append(out, s[j])
+        j += 1
     }
 }
 
+// 輪の区間 r[a:b] をo[w:]へ書く（wCatと同じ形。輪はmutの持ち主から借りる）
+func rCat(o mut []byte, w int, r mut []byte, a int, b int) int {
+    n := b - a
+    room := len(o) - w
+    n1 := if n <= room { n } else { room }
+    mut i := 0
+    while i < n1 {
+        o[w + i] = r[a + i]
+        i += 1
+    }
+    mut j := a + n1
+    while j < b {
+        o = append(o, r[j])
+        j += 1
+    }
+    return w + n
+}
+
+// 輪の位置s（mask済み）からn字をo[w:]へ書く。輪の端で2つの区間に分ける
+func wRing(o mut []byte, w int, r mut []byte, s int, n int) int {
+    m := if n < ringSize - s { n } else { ringSize - s }
+    w1 := rCat(mut o, w, mut r, s, s + m)
+    return rCat(mut o, w1, mut r, 0, n - m)
+}
+
+// src[a:a+n] を輪の位置w（mask前）から書く。輪の端で2つの区間に分ける
+func ringWrite(ring mut []byte, w int, src []byte, a int, n int) {
+    s := w & ringMask
+    m := if n < ringSize - s { n } else { ringSize - s }
+    mut j := 0
+    while j < m {
+        ring[s + j] = src[a + j]
+        j += 1
+    }
+    b := a + m
+    e := n - m
+    mut k := 0
+    while k < e {
+        ring[k] = src[b + k]
+        k += 1
+    }
+}
+
+// 項目の途中で、outへn字を足せる数を数えて進める（putを1字ずつ呼んだのと同じ結果: 上限を越える字の手前で止め、Largeの印を立てる）
+func outTake(d mut Dec, n int) int {
+    if !d.toOut || n == 0 {
+        return 0
+    }
+    room := d.lim - d.used - d.outW - 32
+    if n <= room {
+        d.outW += n
+        return n
+    }
+    d.toOut = false
+    d.large = true
+    r := if room > 0 { room } else { 0 }
+    d.outW += r
+    return r
+}
+
+// src[a:a+n] を行き先へ書く（putをn回呼んだのと同じ結果）
+func span(d mut Dec, src []byte, a int, n int, out mut []byte) {
+    if d.toRing {
+        room := TableMax - 32 - d.ringW
+        k := if n <= room { n } else { room }
+        ringWrite(mut d.ring, d.wpos + d.ringW, src, a, k)
+        d.ringW += k
+        if n > room {
+            d.ringOver = true
+        }
+    }
+    k := outTake(mut d, n)
+    d.ow = wCat(mut out, d.ow, src, a, a + k)
+}
+
 // 字句の名前か値を持つヘッダ（blk[p]は名前の添字の後）。idx = 名前の添字（0 = 名前も字句）・ix = 表に足す形か。次の位置を返す（壊れていれば < 0）
-func literal(d mut Dec, blk []byte, p int, idx int, ix bool, out mut []byte, fs mut []int) int {
+func literal(d mut Dec, blk []byte, p int, idx int, ix bool, out mut []byte, sep []byte) int {
     d.toRing = ix
     d.ringW = 0
     d.ringOver = false
     d.toOut = !d.large
     d.outW = 0
-    o := len(out)
+    d.got = false
+    d.Si = 0
     mut q := p
     if idx == 0 {
         q = readStr(mut d, blk, q, mut out)
@@ -208,22 +390,34 @@ func literal(d mut Dec, blk []byte, p int, idx int, ix bool, out mut []byte, fs 
         }
     } else if idx <= 61 {
         nm := bytes(staticName(idx))
-        for i <- iter.Range(0, len(nm)) {
-            put(mut d, nm[i], mut out)
-        }
+        span(mut d, nm, 0, len(nm), mut out)
+        d.Si = idx
     } else {
         k := idx - 62
         if k >= d.n {
             return 0 - 1
         }
         e := ((d.first + d.n - 1 - k) & (entMax - 1)) * 3
-        st := d.ents[e]
+        st := d.ents[e] & ringMask
         for j <- iter.Range(0, d.ents[e + 1]) {
             put(mut d, d.ring[(st + j) & ringMask], mut out)
         }
+        d.Si = d.ents[e] >> 16
     }
     nl := d.outW
     rnl := d.ringW
+    if d.toOut {
+        mut j := 0
+        while j < len(sep) {
+            if d.ow < len(out) {
+                out[d.ow] = sep[j]
+            } else {
+                out = append(out, sep[j])
+            }
+            d.ow += 1
+            j += 1
+        }
+    }
     if q >= len(blk) {
         return 0 - 1
     }
@@ -233,10 +427,12 @@ func literal(d mut Dec, blk []byte, p int, idx int, ix bool, out mut []byte, fs 
     }
     if d.toOut {
         d.used += d.outW + 32
-        push(mut fs, o, nl, o + nl, d.outW - nl)
+        d.got = true
+        d.Nl = nl
+        d.Vl = d.outW - nl
     }
     if ix {
-        add(mut d, rnl, d.ringW - rnl)
+        add(mut d, rnl, d.ringW - rnl, d.Si)
     }
     return q
 }
@@ -256,7 +452,12 @@ func put(d mut Dec, c byte, out mut []byte) {
             d.toOut = false
             d.large = true
         } else {
-            out = append(out, c)
+            if d.ow < len(out) {
+                out[d.ow] = c
+            } else {
+                out = append(out, c)
+            }
+            d.ow += 1
             d.outW += 1
         }
     }
@@ -270,9 +471,25 @@ func readStr(d mut Dec, blk []byte, p int, out mut []byte) int {
         return 0 - 1
     }
     if !h {
-        for i <- iter.Range(q, q + n) {
-            put(mut d, blk[i], mut out)
+        span(mut d, blk, q, n, mut out)
+        return q + n
+    }
+    // 解いた字数はn × 8 ÷ 5以下（最短の符号は5ビット）。輪の空き（新しい項目の上限の内）に収まるなら、輪へ解いてから一括で書く
+    if d.ringW + n * 8 / 5 <= TableMax - 32 {
+        d.fast = true
+        d.hw = d.wpos + d.ringW
+        d.hk = 0
+        ok := huffDecode(mut d, blk, q, q + n, mut out)
+        d.fast = false
+        if !ok {
+            return 0 - 1
         }
+        k := d.hk
+        if d.toRing {
+            d.ringW += k
+        }
+        t := outTake(mut d, k)
+        d.ow = wRing(mut out, d.ow, mut d.ring, d.hw & ringMask, t)
         return q + n
     }
     return if huffDecode(mut d, blk, q, q + n, mut out) { q + n } else { 0 - 1 }
@@ -291,49 +508,97 @@ func hex2(s []byte, i int) int {
     return (hexv(s[i]) << 4) | hexv(s[i + 1])
 }
 
-// blk[a:b]のHuffmanの符号を解く（RFC 7541 5.2・付録B）。上位のビットから1ビットずつ、長さごとの符号の始まりと比べる（puffの形）
-func huffDecode(d mut Dec, blk []byte, a int, b int, out mut []byte) bool {
-    cs := bytes(huffCounts)
-    ss := bytes(huffSyms)
-    mut code := 0
-    mut first := 0
-    mut index := 0
-    mut l := 0
-    for i <- iter.Range(a, b) {
-        c := int(blk[i])
-        mut k := 7
-        while k >= 0 {
-            code = code | ((c >> k) & 1)
-            l += 1
-            cnt := hex2(cs, l * 2)
-            if code - cnt < first {
-                at := (index + (code - first)) * 2
-                if ss[at] == byte(0x2d) {
-                    // EOSは符号の中に現れてはいけない
-                    return false
-                }
-                put(mut d, byte(hex2(ss, at)), mut out)
-                code = 0
-                first = 0
-                index = 0
-                l = 0
-            } else {
-                index += cnt
-                first = (first + cnt) << 1
-                code = code << 1
-                if l >= 30 {
-                    return false
-                }
-            }
-            k -= 1
-        }
-    }
-    // 埋め草: 7ビット以下で、全部1（EOSの頭）
-    return l <= 7 && (code >> 1) == (1 << l) - 1
+// 先頭の12ビット（上位から）で引く表: 1項 = 5桁の16進で (記号1 << 12) | (記号2 << 4) | 使うビットの数。12ビットに収まる符号を最大2つ解く。
+// 記号2 = 0は1つだけ（記号0の符号は13ビットなので2つ目には来ない）。ビットの数0 = 12ビットに収まらない符号の頭（1ビットずつの読みへ）。
+// テストのTestHuffTableが符号の表（huffCodes）から作り直して一致を見る
+const huffFast = "3030a3030a3030a3030a3031a3031a3031a3031a3032a3032a3032a3032a3061a3061a3061a3061a3063a3063a3063a3063a3065a3065a3065a3065a3069a3069a3069a3069a306fa306fa306fa306fa3073a3073a3073a3073a3074a3074a3074a3074a3020b3020b3025b3025b302db302db302eb302eb302fb302fb3033b3033b3034b3034b3035b3035b3036b3036b3037b3037b3038b3038b3039b3039b303db303db3041b3041b305fb305fb3062b3062b3064b3064b3066b3066b3067b3067b3068b3068b306cb306cb306db306db306eb306eb3070b3070b3072b3072b3075b3075b303ac3042c3043c3044c3045c3046c3047c3048c3049c304ac304bc304cc304dc304ec304fc3050c3051c3052c3053c3054c3055c3056c3057c3059c306ac306bc3071c3076c3077c3078c3079c307ac300053000530005300053130a3130a3130a3130a3131a3131a3131a3131a3132a3132a3132a3132a3161a3161a3161a3161a3163a3163a3163a3163a3165a3165a3165a3165a3169a3169a3169a3169a316fa316fa316fa316fa3173a3173a3173a3173a3174a3174a3174a3174a3120b3120b3125b3125b312db312db312eb312eb312fb312fb3133b3133b3134b3134b3135b3135b3136b3136b3137b3137b3138b3138b3139b3139b313db313db3141b3141b315fb315fb3162b3162b3164b3164b3166b3166b3167b3167b3168b3168b316cb316cb316db316db316eb316eb3170b3170b3172b3172b3175b3175b313ac3142c3143c3144c3145c3146c3147c3148c3149c314ac314bc314cc314dc314ec314fc3150c3151c3152c3153c3154c3155c3156c3157c3159c316ac316bc3171c3176c3177c3178c3179c317ac310053100531005310053230a3230a3230a3230a3231a3231a3231a3231a3232a3232a3232a3232a3261a3261a3261a3261a3263a3263a3263a3263a3265a3265a3265a3265a3269a3269a3269a3269a326fa326fa326fa326fa3273a3273a3273a3273a3274a3274a3274a3274a3220b3220b3225b3225b322db322db322eb322eb322fb322fb3233b3233b3234b3234b3235b3235b3236b3236b3237b3237b3238b3238b3239b3239b323db323db3241b3241b325fb325fb3262b3262b3264b3264b3266b3266b3267b3267b3268b3268b326cb326cb326db326db326eb326eb3270b3270b3272b3272b3275b3275b323ac3242c3243c3244c3245c3246c3247c3248c3249c324ac324bc324cc324dc324ec324fc3250c3251c3252c3253c3254c3255c3256c3257c3259c326ac326bc3271c3276c3277c3278c3279c327ac320053200532005320056130a6130a6130a6130a6131a6131a6131a6131a6132a6132a6132a6132a6161a6161a6161a6161a6163a6163a6163a6163a6165a6165a6165a6165a6169a6169a6169a6169a616fa616fa616fa616fa6173a6173a6173a6173a6174a6174a6174a6174a6120b6120b6125b6125b612db612db612eb612eb612fb612fb6133b6133b6134b6134b6135b6135b6136b6136b6137b6137b6138b6138b6139b6139b613db613db6141b6141b615fb615fb6162b6162b6164b6164b6166b6166b6167b6167b6168b6168b616cb616cb616db616db616eb616eb6170b6170b6172b6172b6175b6175b613ac6142c6143c6144c6145c6146c6147c6148c6149c614ac614bc614cc614dc614ec614fc6150c6151c6152c6153c6154c6155c6156c6157c6159c616ac616bc6171c6176c6177c6178c6179c617ac610056100561005610056330a6330a6330a6330a6331a6331a6331a6331a6332a6332a6332a6332a6361a6361a6361a6361a6363a6363a6363a6363a6365a6365a6365a6365a6369a6369a6369a6369a636fa636fa636fa636fa6373a6373a6373a6373a6374a6374a6374a6374a6320b6320b6325b6325b632db632db632eb632eb632fb632fb6333b6333b6334b6334b6335b6335b6336b6336b6337b6337b6338b6338b6339b6339b633db633db6341b6341b635fb635fb6362b6362b6364b6364b6366b6366b6367b6367b6368b6368b636cb636cb636db636db636eb636eb6370b6370b6372b6372b6375b6375b633ac6342c6343c6344c6345c6346c6347c6348c6349c634ac634bc634cc634dc634ec634fc6350c6351c6352c6353c6354c6355c6356c6357c6359c636ac636bc6371c6376c6377c6378c6379c637ac630056300563005630056530a6530a6530a6530a6531a6531a6531a6531a6532a6532a6532a6532a6561a6561a6561a6561a6563a6563a6563a6563a6565a6565a6565a6565a6569a6569a6569a6569a656fa656fa656fa656fa6573a6573a6573a6573a6574a6574a6574a6574a6520b6520b6525b6525b652db652db652eb652eb652fb652fb6533b6533b6534b6534b6535b6535b6536b6536b6537b6537b6538b6538b6539b6539b653db653db6541b6541b655fb655fb6562b6562b6564b6564b6566b6566b6567b6567b6568b6568b656cb656cb656db656db656eb656eb6570b6570b6572b6572b6575b6575b653ac6542c6543c6544c6545c6546c6547c6548c6549c654ac654bc654cc654dc654ec654fc6550c6551c6552c6553c6554c6555c6556c6557c6559c656ac656bc6571c6576c6577c6578c6579c657ac650056500565005650056930a6930a6930a6930a6931a6931a6931a6931a6932a6932a6932a6932a6961a6961a6961a6961a6963a6963a6963a6963a6965a6965a6965a6965a6969a6969a6969a6969a696fa696fa696fa696fa6973a6973a6973a6973a6974a6974a6974a6974a6920b6920b6925b6925b692db692db692eb692eb692fb692fb6933b6933b6934b6934b6935b6935b6936b6936b6937b6937b6938b6938b6939b6939b693db693db6941b6941b695fb695fb6962b6962b6964b6964b6966b6966b6967b6967b6968b6968b696cb696cb696db696db696eb696eb6970b6970b6972b6972b6975b6975b693ac6942c6943c6944c6945c6946c6947c6948c6949c694ac694bc694cc694dc694ec694fc6950c6951c6952c6953c6954c6955c6956c6957c6959c696ac696bc6971c6976c6977c6978c6979c697ac690056900569005690056f30a6f30a6f30a6f30a6f31a6f31a6f31a6f31a6f32a6f32a6f32a6f32a6f61a6f61a6f61a6f61a6f63a6f63a6f63a6f63a6f65a6f65a6f65a6f65a6f69a6f69a6f69a6f69a6f6fa6f6fa6f6fa6f6fa6f73a6f73a6f73a6f73a6f74a6f74a6f74a6f74a6f20b6f20b6f25b6f25b6f2db6f2db6f2eb6f2eb6f2fb6f2fb6f33b6f33b6f34b6f34b6f35b6f35b6f36b6f36b6f37b6f37b6f38b6f38b6f39b6f39b6f3db6f3db6f41b6f41b6f5fb6f5fb6f62b6f62b6f64b6f64b6f66b6f66b6f67b6f67b6f68b6f68b6f6cb6f6cb6f6db6f6db6f6eb6f6eb6f70b6f70b6f72b6f72b6f75b6f75b6f3ac6f42c6f43c6f44c6f45c6f46c6f47c6f48c6f49c6f4ac6f4bc6f4cc6f4dc6f4ec6f4fc6f50c6f51c6f52c6f53c6f54c6f55c6f56c6f57c6f59c6f6ac6f6bc6f71c6f76c6f77c6f78c6f79c6f7ac6f0056f0056f0056f0057330a7330a7330a7330a7331a7331a7331a7331a7332a7332a7332a7332a7361a7361a7361a7361a7363a7363a7363a7363a7365a7365a7365a7365a7369a7369a7369a7369a736fa736fa736fa736fa7373a7373a7373a7373a7374a7374a7374a7374a7320b7320b7325b7325b732db732db732eb732eb732fb732fb7333b7333b7334b7334b7335b7335b7336b7336b7337b7337b7338b7338b7339b7339b733db733db7341b7341b735fb735fb7362b7362b7364b7364b7366b7366b7367b7367b7368b7368b736cb736cb736db736db736eb736eb7370b7370b7372b7372b7375b7375b733ac7342c7343c7344c7345c7346c7347c7348c7349c734ac734bc734cc734dc734ec734fc7350c7351c7352c7353c7354c7355c7356c7357c7359c736ac736bc7371c7376c7377c7378c7379c737ac730057300573005730057430a7430a7430a7430a7431a7431a7431a7431a7432a7432a7432a7432a7461a7461a7461a7461a7463a7463a7463a7463a7465a7465a7465a7465a7469a7469a7469a7469a746fa746fa746fa746fa7473a7473a7473a7473a7474a7474a7474a7474a7420b7420b7425b7425b742db742db742eb742eb742fb742fb7433b7433b7434b7434b7435b7435b7436b7436b7437b7437b7438b7438b7439b7439b743db743db7441b7441b745fb745fb7462b7462b7464b7464b7466b7466b7467b7467b7468b7468b746cb746cb746db746db746eb746eb7470b7470b7472b7472b7475b7475b743ac7442c7443c7444c7445c7446c7447c7448c7449c744ac744bc744cc744dc744ec744fc7450c7451c7452c7453c7454c7455c7456c7457c7459c746ac746bc7471c7476c7477c7478c7479c747ac740057400574005740052030b2030b2031b2031b2032b2032b2061b2061b2063b2063b2065b2065b2069b2069b206fb206fb2073b2073b2074b2074b2020c2025c202dc202ec202fc2033c2034c2035c2036c2037c2038c2039c203dc2041c205fc2062c2064c2066c2067c2068c206cc206dc206ec2070c2072c2075c2000620006200062000620006200062000620006200062000620006200062000620006200062000620006200062530b2530b2531b2531b2532b2532b2561b2561b2563b2563b2565b2565b2569b2569b256fb256fb2573b2573b2574b2574b2520c2525c252dc252ec252fc2533c2534c2535c2536c2537c2538c2539c253dc2541c255fc2562c2564c2566c2567c2568c256cc256dc256ec2570c2572c2575c2500625006250062500625006250062500625006250062500625006250062500625006250062500625006250062d30b2d30b2d31b2d31b2d32b2d32b2d61b2d61b2d63b2d63b2d65b2d65b2d69b2d69b2d6fb2d6fb2d73b2d73b2d74b2d74b2d20c2d25c2d2dc2d2ec2d2fc2d33c2d34c2d35c2d36c2d37c2d38c2d39c2d3dc2d41c2d5fc2d62c2d64c2d66c2d67c2d68c2d6cc2d6dc2d6ec2d70c2d72c2d75c2d0062d0062d0062d0062d0062d0062d0062d0062d0062d0062d0062d0062d0062d0062d0062d0062d0062d0062e30b2e30b2e31b2e31b2e32b2e32b2e61b2e61b2e63b2e63b2e65b2e65b2e69b2e69b2e6fb2e6fb2e73b2e73b2e74b2e74b2e20c2e25c2e2dc2e2ec2e2fc2e33c2e34c2e35c2e36c2e37c2e38c2e39c2e3dc2e41c2e5fc2e62c2e64c2e66c2e67c2e68c2e6cc2e6dc2e6ec2e70c2e72c2e75c2e0062e0062e0062e0062e0062e0062e0062e0062e0062e0062e0062e0062e0062e0062e0062e0062e0062e0062f30b2f30b2f31b2f31b2f32b2f32b2f61b2f61b2f63b2f63b2f65b2f65b2f69b2f69b2f6fb2f6fb2f73b2f73b2f74b2f74b2f20c2f25c2f2dc2f2ec2f2fc2f33c2f34c2f35c2f36c2f37c2f38c2f39c2f3dc2f41c2f5fc2f62c2f64c2f66c2f67c2f68c2f6cc2f6dc2f6ec2f70c2f72c2f75c2f0062f0062f0062f0062f0062f0062f0062f0062f0062f0062f0062f0062f0062f0062f0062f0062f0062f0063330b3330b3331b3331b3332b3332b3361b3361b3363b3363b3365b3365b3369b3369b336fb336fb3373b3373b3374b3374b3320c3325c332dc332ec332fc3333c3334c3335c3336c3337c3338c3339c333dc3341c335fc3362c3364c3366c3367c3368c336cc336dc336ec3370c3372c3375c3300633006330063300633006330063300633006330063300633006330063300633006330063300633006330063430b3430b3431b3431b3432b3432b3461b3461b3463b3463b3465b3465b3469b3469b346fb346fb3473b3473b3474b3474b3420c3425c342dc342ec342fc3433c3434c3435c3436c3437c3438c3439c343dc3441c345fc3462c3464c3466c3467c3468c346cc346dc346ec3470c3472c3475c3400634006340063400634006340063400634006340063400634006340063400634006340063400634006340063530b3530b3531b3531b3532b3532b3561b3561b3563b3563b3565b3565b3569b3569b356fb356fb3573b3573b3574b3574b3520c3525c352dc352ec352fc3533c3534c3535c3536c3537c3538c3539c353dc3541c355fc3562c3564c3566c3567c3568c356cc356dc356ec3570c3572c3575c3500635006350063500635006350063500635006350063500635006350063500635006350063500635006350063630b3630b3631b3631b3632b3632b3661b3661b3663b3663b3665b3665b3669b3669b366fb366fb3673b3673b3674b3674b3620c3625c362dc362ec362fc3633c3634c3635c3636c3637c3638c3639c363dc3641c365fc3662c3664c3666c3667c3668c366cc366dc366ec3670c3672c3675c3600636006360063600636006360063600636006360063600636006360063600636006360063600636006360063730b3730b3731b3731b3732b3732b3761b3761b3763b3763b3765b3765b3769b3769b376fb376fb3773b3773b3774b3774b3720c3725c372dc372ec372fc3733c3734c3735c3736c3737c3738c3739c373dc3741c375fc3762c3764c3766c3767c3768c376cc376dc376ec3770c3772c3775c3700637006370063700637006370063700637006370063700637006370063700637006370063700637006370063830b3830b3831b3831b3832b3832b3861b3861b3863b3863b3865b3865b3869b3869b386fb386fb3873b3873b3874b3874b3820c3825c382dc382ec382fc3833c3834c3835c3836c3837c3838c3839c383dc3841c385fc3862c3864c3866c3867c3868c386cc386dc386ec3870c3872c3875c3800638006380063800638006380063800638006380063800638006380063800638006380063800638006380063930b3930b3931b3931b3932b3932b3961b3961b3963b3963b3965b3965b3969b3969b396fb396fb3973b3973b3974b3974b3920c3925c392dc392ec392fc3933c3934c3935c3936c3937c3938c3939c393dc3941c395fc3962c3964c3966c3967c3968c396cc396dc396ec3970c3972c3975c3900639006390063900639006390063900639006390063900639006390063900639006390063900639006390063d30b3d30b3d31b3d31b3d32b3d32b3d61b3d61b3d63b3d63b3d65b3d65b3d69b3d69b3d6fb3d6fb3d73b3d73b3d74b3d74b3d20c3d25c3d2dc3d2ec3d2fc3d33c3d34c3d35c3d36c3d37c3d38c3d39c3d3dc3d41c3d5fc3d62c3d64c3d66c3d67c3d68c3d6cc3d6dc3d6ec3d70c3d72c3d75c3d0063d0063d0063d0063d0063d0063d0063d0063d0063d0063d0063d0063d0063d0063d0063d0063d0063d0064130b4130b4131b4131b4132b4132b4161b4161b4163b4163b4165b4165b4169b4169b416fb416fb4173b4173b4174b4174b4120c4125c412dc412ec412fc4133c4134c4135c4136c4137c4138c4139c413dc4141c415fc4162c4164c4166c4167c4168c416cc416dc416ec4170c4172c4175c4100641006410064100641006410064100641006410064100641006410064100641006410064100641006410065f30b5f30b5f31b5f31b5f32b5f32b5f61b5f61b5f63b5f63b5f65b5f65b5f69b5f69b5f6fb5f6fb5f73b5f73b5f74b5f74b5f20c5f25c5f2dc5f2ec5f2fc5f33c5f34c5f35c5f36c5f37c5f38c5f39c5f3dc5f41c5f5fc5f62c5f64c5f66c5f67c5f68c5f6cc5f6dc5f6ec5f70c5f72c5f75c5f0065f0065f0065f0065f0065f0065f0065f0065f0065f0065f0065f0065f0065f0065f0065f0065f0065f0066230b6230b6231b6231b6232b6232b6261b6261b6263b6263b6265b6265b6269b6269b626fb626fb6273b6273b6274b6274b6220c6225c622dc622ec622fc6233c6234c6235c6236c6237c6238c6239c623dc6241c625fc6262c6264c6266c6267c6268c626cc626dc626ec6270c6272c6275c6200662006620066200662006620066200662006620066200662006620066200662006620066200662006620066430b6430b6431b6431b6432b6432b6461b6461b6463b6463b6465b6465b6469b6469b646fb646fb6473b6473b6474b6474b6420c6425c642dc642ec642fc6433c6434c6435c6436c6437c6438c6439c643dc6441c645fc6462c6464c6466c6467c6468c646cc646dc646ec6470c6472c6475c6400664006640066400664006640066400664006640066400664006640066400664006640066400664006640066630b6630b6631b6631b6632b6632b6661b6661b6663b6663b6665b6665b6669b6669b666fb666fb6673b6673b6674b6674b6620c6625c662dc662ec662fc6633c6634c6635c6636c6637c6638c6639c663dc6641c665fc6662c6664c6666c6667c6668c666cc666dc666ec6670c6672c6675c6600666006660066600666006660066600666006660066600666006660066600666006660066600666006660066730b6730b6731b6731b6732b6732b6761b6761b6763b6763b6765b6765b6769b6769b676fb676fb6773b6773b6774b6774b6720c6725c672dc672ec672fc6733c6734c6735c6736c6737c6738c6739c673dc6741c675fc6762c6764c6766c6767c6768c676cc676dc676ec6770c6772c6775c6700667006670066700667006670066700667006670066700667006670066700667006670066700667006670066830b6830b6831b6831b6832b6832b6861b6861b6863b6863b6865b6865b6869b6869b686fb686fb6873b6873b6874b6874b6820c6825c682dc682ec682fc6833c6834c6835c6836c6837c6838c6839c683dc6841c685fc6862c6864c6866c6867c6868c686cc686dc686ec6870c6872c6875c6800668006680066800668006680066800668006680066800668006680066800668006680066800668006680066c30b6c30b6c31b6c31b6c32b6c32b6c61b6c61b6c63b6c63b6c65b6c65b6c69b6c69b6c6fb6c6fb6c73b6c73b6c74b6c74b6c20c6c25c6c2dc6c2ec6c2fc6c33c6c34c6c35c6c36c6c37c6c38c6c39c6c3dc6c41c6c5fc6c62c6c64c6c66c6c67c6c68c6c6cc6c6dc6c6ec6c70c6c72c6c75c6c0066c0066c0066c0066c0066c0066c0066c0066c0066c0066c0066c0066c0066c0066c0066c0066c0066c0066d30b6d30b6d31b6d31b6d32b6d32b6d61b6d61b6d63b6d63b6d65b6d65b6d69b6d69b6d6fb6d6fb6d73b6d73b6d74b6d74b6d20c6d25c6d2dc6d2ec6d2fc6d33c6d34c6d35c6d36c6d37c6d38c6d39c6d3dc6d41c6d5fc6d62c6d64c6d66c6d67c6d68c6d6cc6d6dc6d6ec6d70c6d72c6d75c6d0066d0066d0066d0066d0066d0066d0066d0066d0066d0066d0066d0066d0066d0066d0066d0066d0066d0066e30b6e30b6e31b6e31b6e32b6e32b6e61b6e61b6e63b6e63b6e65b6e65b6e69b6e69b6e6fb6e6fb6e73b6e73b6e74b6e74b6e20c6e25c6e2dc6e2ec6e2fc6e33c6e34c6e35c6e36c6e37c6e38c6e39c6e3dc6e41c6e5fc6e62c6e64c6e66c6e67c6e68c6e6cc6e6dc6e6ec6e70c6e72c6e75c6e0066e0066e0066e0066e0066e0066e0066e0066e0066e0066e0066e0066e0066e0066e0066e0066e0066e0067030b7030b7031b7031b7032b7032b7061b7061b7063b7063b7065b7065b7069b7069b706fb706fb7073b7073b7074b7074b7020c7025c702dc702ec702fc7033c7034c7035c7036c7037c7038c7039c703dc7041c705fc7062c7064c7066c7067c7068c706cc706dc706ec7070c7072c7075c7000670006700067000670006700067000670006700067000670006700067000670006700067000670006700067230b7230b7231b7231b7232b7232b7261b7261b7263b7263b7265b7265b7269b7269b726fb726fb7273b7273b7274b7274b7220c7225c722dc722ec722fc7233c7234c7235c7236c7237c7238c7239c723dc7241c725fc7262c7264c7266c7267c7268c726cc726dc726ec7270c7272c7275c7200672006720067200672006720067200672006720067200672006720067200672006720067200672006720067530b7530b7531b7531b7532b7532b7561b7561b7563b7563b7565b7565b7569b7569b756fb756fb7573b7573b7574b7574b7520c7525c752dc752ec752fc7533c7534c7535c7536c7537c7538c7539c753dc7541c755fc7562c7564c7566c7567c7568c756cc756dc756ec7570c7572c7575c7500675006750067500675006750067500675006750067500675006750067500675006750067500675006750063a30c3a31c3a32c3a61c3a63c3a65c3a69c3a6fc3a73c3a74c3a0073a0073a0073a0073a0073a0073a0073a0073a0073a0073a0073a0073a0073a0073a0073a0073a0073a0073a0073a0073a0073a0074230c4231c4232c4261c4263c4265c4269c426fc4273c4274c420074200742007420074200742007420074200742007420074200742007420074200742007420074200742007420074200742007420074330c4331c4332c4361c4363c4365c4369c436fc4373c4374c430074300743007430074300743007430074300743007430074300743007430074300743007430074300743007430074300743007430074430c4431c4432c4461c4463c4465c4469c446fc4473c4474c440074400744007440074400744007440074400744007440074400744007440074400744007440074400744007440074400744007440074530c4531c4532c4561c4563c4565c4569c456fc4573c4574c450074500745007450074500745007450074500745007450074500745007450074500745007450074500745007450074500745007450074630c4631c4632c4661c4663c4665c4669c466fc4673c4674c460074600746007460074600746007460074600746007460074600746007460074600746007460074600746007460074600746007460074730c4731c4732c4761c4763c4765c4769c476fc4773c4774c470074700747007470074700747007470074700747007470074700747007470074700747007470074700747007470074700747007470074830c4831c4832c4861c4863c4865c4869c486fc4873c4874c480074800748007480074800748007480074800748007480074800748007480074800748007480074800748007480074800748007480074930c4931c4932c4961c4963c4965c4969c496fc4973c4974c490074900749007490074900749007490074900749007490074900749007490074900749007490074900749007490074900749007490074a30c4a31c4a32c4a61c4a63c4a65c4a69c4a6fc4a73c4a74c4a0074a0074a0074a0074a0074a0074a0074a0074a0074a0074a0074a0074a0074a0074a0074a0074a0074a0074a0074a0074a0074a0074b30c4b31c4b32c4b61c4b63c4b65c4b69c4b6fc4b73c4b74c4b0074b0074b0074b0074b0074b0074b0074b0074b0074b0074b0074b0074b0074b0074b0074b0074b0074b0074b0074b0074b0074b0074c30c4c31c4c32c4c61c4c63c4c65c4c69c4c6fc4c73c4c74c4c0074c0074c0074c0074c0074c0074c0074c0074c0074c0074c0074c0074c0074c0074c0074c0074c0074c0074c0074c0074c0074c0074d30c4d31c4d32c4d61c4d63c4d65c4d69c4d6fc4d73c4d74c4d0074d0074d0074d0074d0074d0074d0074d0074d0074d0074d0074d0074d0074d0074d0074d0074d0074d0074d0074d0074d0074d0074e30c4e31c4e32c4e61c4e63c4e65c4e69c4e6fc4e73c4e74c4e0074e0074e0074e0074e0074e0074e0074e0074e0074e0074e0074e0074e0074e0074e0074e0074e0074e0074e0074e0074e0074e0074f30c4f31c4f32c4f61c4f63c4f65c4f69c4f6fc4f73c4f74c4f0074f0074f0074f0074f0074f0074f0074f0074f0074f0074f0074f0074f0074f0074f0074f0074f0074f0074f0074f0074f0074f0075030c5031c5032c5061c5063c5065c5069c506fc5073c5074c500075000750007500075000750007500075000750007500075000750007500075000750007500075000750007500075000750007500075130c5131c5132c5161c5163c5165c5169c516fc5173c5174c510075100751007510075100751007510075100751007510075100751007510075100751007510075100751007510075100751007510075230c5231c5232c5261c5263c5265c5269c526fc5273c5274c520075200752007520075200752007520075200752007520075200752007520075200752007520075200752007520075200752007520075330c5331c5332c5361c5363c5365c5369c536fc5373c5374c530075300753007530075300753007530075300753007530075300753007530075300753007530075300753007530075300753007530075430c5431c5432c5461c5463c5465c5469c546fc5473c5474c540075400754007540075400754007540075400754007540075400754007540075400754007540075400754007540075400754007540075530c5531c5532c5561c5563c5565c5569c556fc5573c5574c550075500755007550075500755007550075500755007550075500755007550075500755007550075500755007550075500755007550075630c5631c5632c5661c5663c5665c5669c566fc5673c5674c560075600756007560075600756007560075600756007560075600756007560075600756007560075600756007560075600756007560075730c5731c5732c5761c5763c5765c5769c576fc5773c5774c570075700757007570075700757007570075700757007570075700757007570075700757007570075700757007570075700757007570075930c5931c5932c5961c5963c5965c5969c596fc5973c5974c590075900759007590075900759007590075900759007590075900759007590075900759007590075900759007590075900759007590076a30c6a31c6a32c6a61c6a63c6a65c6a69c6a6fc6a73c6a74c6a0076a0076a0076a0076a0076a0076a0076a0076a0076a0076a0076a0076a0076a0076a0076a0076a0076a0076a0076a0076a0076a0076b30c6b31c6b32c6b61c6b63c6b65c6b69c6b6fc6b73c6b74c6b0076b0076b0076b0076b0076b0076b0076b0076b0076b0076b0076b0076b0076b0076b0076b0076b0076b0076b0076b0076b0076b0077130c7131c7132c7161c7163c7165c7169c716fc7173c7174c710077100771007710077100771007710077100771007710077100771007710077100771007710077100771007710077100771007710077630c7631c7632c7661c7663c7665c7669c766fc7673c7674c760077600776007760077600776007760077600776007760077600776007760077600776007760077600776007760077600776007760077730c7731c7732c7761c7763c7765c7769c776fc7773c7774c770077700777007770077700777007770077700777007770077700777007770077700777007770077700777007770077700777007770077830c7831c7832c7861c7863c7865c7869c786fc7873c7874c780077800778007780077800778007780077800778007780077800778007780077800778007780077800778007780077800778007780077930c7931c7932c7961c7963c7965c7969c796fc7973c7974c790077900779007790077900779007790077900779007790077900779007790077900779007790077900779007790077900779007790077a30c7a31c7a32c7a61c7a63c7a65c7a69c7a6fc7a73c7a74c7a0077a0077a0077a0077a0077a0077a0077a0077a0077a0077a0077a0077a0077a0077a0077a0077a0077a0077a0077a0077a0077a007260082600826008260082600826008260082600826008260082600826008260082600826008260082a0082a0082a0082a0082a0082a0082a0082a0082a0082a0082a0082a0082a0082a0082a0082a0082c0082c0082c0082c0082c0082c0082c0082c0082c0082c0082c0082c0082c0082c0082c0082c0083b0083b0083b0083b0083b0083b0083b0083b0083b0083b0083b0083b0083b0083b0083b0083b008580085800858008580085800858008580085800858008580085800858008580085800858008580085a0085a0085a0085a0085a0085a0085a0085a0085a0085a0085a0085a0085a0085a0085a0085a0082100a2100a2100a2100a2200a2200a2200a2200a2800a2800a2800a2800a2900a2900a2900a2900a3f00a3f00a3f00a3f00a2700b2700b2b00b2b00b7c00b7c00b2300c3e00c00000000000000000000"
+
+func hex5(s []byte, i int) int {
+    return (hexv(s[i]) << 16) | (hexv(s[i + 1]) << 12) | (hexv(s[i + 2]) << 8) | (hexv(s[i + 3]) << 4) | hexv(s[i + 4])
 }
 
-// 輪のwposに書いた名前nlと値vlの項目を表に足す（RFC 7541 4.4: 入らない大きさなら表を空にする）
-func add(d mut Dec, nl int, vl int) {
+// blk[a:b]のHuffmanの符号を解く（RFC 7541 5.2・付録B）。12ビットに収まる符号は表（huffFast）を1回引き、最大2字を出す。
+// 長い符号と、残りのビットが足りない末尾は、上位のビットから1ビットずつ長さごとの符号の始まりと比べる（puffの形）
+func huffDecode(d mut Dec, blk []byte, a int, b int, out mut []byte) bool {
+    ft := bytes(huffFast)
+    cs := bytes(huffCounts)
+    ss := bytes(huffSyms)
+    // 読んだまだ使っていないビット（下位nbビット・上位のビットが先）
+    mut acc := 0
+    mut nb := 0
+    mut i := a
+    while true {
+        while nb <= 48 && i < b {
+            acc = (acc << 8) | int(blk[i])
+            nb += 8
+            i += 1
+        }
+        if nb == 0 {
+            return true
+        }
+        pk := if nb >= 12 { acc >> (nb - 12) } else { (acc << (12 - nb)) & 4095 }
+        e := hex5(ft, pk * 5)
+        ln := e & 15
+        if ln != 0 && ln <= nb {
+            hput(mut d, byte(e >> 12), mut out)
+            c2 := (e >> 4) & 255
+            if c2 != 0 {
+                hput(mut d, byte(c2), mut out)
+            }
+            nb -= ln
+            acc = acc & ((1 << nb) - 1)
+        } else {
+            mut code := 0
+            mut first := 0
+            mut index := 0
+            mut l := 0
+            mut more := true
+            while more {
+                // ここへ来るときは、入力が尽きたか、48ビットを越えて読んである（最長の符号は30ビット）。ビットが尽きたら入力の終わり
+                if nb == 0 {
+                    // 埋め草: 7ビット以下で、全部1（EOSの頭）
+                    return l <= 7 && (code >> 1) == (1 << l) - 1
+                }
+                nb -= 1
+                code = code | ((acc >> nb) & 1)
+                acc = acc & ((1 << nb) - 1)
+                l += 1
+                cnt := hex2(cs, l * 2)
+                if code - cnt < first {
+                    at := (index + (code - first)) * 2
+                    if ss[at] == byte(0x2d) {
+                        // EOSは符号の中に現れてはいけない
+                        return false
+                    }
+                    hput(mut d, byte(hex2(ss, at)), mut out)
+                    more = false
+                } else {
+                    index += cnt
+                    first = (first + cnt) << 1
+                    code = code << 1
+                    if l >= 30 {
+                        return false
+                    }
+                }
+            }
+        }
+    }
+    return true
+}
+
+// Huffmanの1字: 速い道は輪の空きへ、それ以外はput
+func hput(d mut Dec, c byte, out mut []byte) {
+    if d.fast {
+        d.ring[(d.hw + d.hk) & ringMask] = c
+        d.hk += 1
+    } else {
+        put(mut d, c, mut out)
+    }
+}
+
+// 輪のwposに書いた名前nlと値vlの項目を表に足す（RFC 7541 4.4: 入らない大きさなら表を空にする）。
+// si = 名前の静的表の添字（無ければ0）。項目の始まりの上位のビットに置き、添字で引いたときにSiへ出す
+func add(d mut Dec, nl int, vl int, si int) {
     s := nl + vl + 32
     if d.ringOver || s > d.max {
         evict(mut d, d.max + 1)
@@ -341,7 +606,7 @@ func add(d mut Dec, nl int, vl int) {
     }
     evict(mut d, s)
     e := ((d.first + d.n) & (entMax - 1)) * 3
-    d.ents[e] = d.wpos
+    d.ents[e] = d.wpos | si << 16
     d.ents[e + 1] = nl
     d.ents[e + 2] = vl
     d.n += 1
@@ -551,6 +816,12 @@ func Field(out mut []byte, name []byte, value []byte, huff bool) {
     putStr(mut out, value, huff)
 }
 
+// 文字列を字句のまま積む（長さの前置き + バイト列）
+func Str(out mut []byte, s []byte) {
+    putInt(mut out, 0, 7, len(s))
+    appendAll(mut out, s)
+}
+
 // 文字列を積む。huffで、Huffmanの方が短ければHuffmanで
 func putStr(out mut []byte, s []byte, huff bool) {
     if huff {
@@ -570,11 +841,16 @@ func lower(c byte) byte {
     return if x >= 0x41 && x <= 0x5a { byte(x + 0x20) } else { c }
 }
 
+// 静的表の名前の長さ（添字1〜61の順。各バイト = 長さ + 64）。nameIndexが長さの合う添字だけstaticNameを引くため
+const staticLens = "JGGEEGGGGGGGGGNOOMF[CEMMSPPNPMLFDDFGDDHQMHSMDHLRSEGGKFJYQJDCP"
+
 // 名前（大小を無視）の静的表の最初の添字（無ければ0）
 func nameIndex(name []byte) int {
+    ls := bytes(staticLens)
+    n := len(name) + 64
     for i <- iter.Range(1, 62) {
-        s := bytes(staticName(i))
-        if len(s) == len(name) {
+        if int(ls[i - 1]) == n {
+            s := bytes(staticName(i))
             mut j := 0
             while j < len(s) && s[j] == lower(name[j]) {
                 j += 1

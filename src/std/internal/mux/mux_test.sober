@@ -259,3 +259,310 @@ func TestPoolCapBox() {
     }
     assert(PoolCap() == want)
 }
+
+// 子の終わりを兼ねる合図を積んだ後の死は、死んだ枠のビットを立てない（枠はその合図の消費で空き、別のストリームに使い回される）。
+// 終わりの合図の前の死は今どおり立てる。本体は両方の子の合図を待ってから出口へ行く。本体が出口に着いた後に子が死ぬと、後から走る兄弟の積みは
+// 孤児として断られる（-125）ので、待たないと子の走る順で結果が変わる
+func TestDieAfterFin() {
+    rec := fresh()
+    m := Of(rec)
+    _, e := task.Run((s task.Scope) => {
+        ta, ra := task.NewChannel[int](cap: 1)
+        tb, rb := task.NewChannel[int](cap: 1)
+        DieNext(m, 3, 0)
+        _ = task.Spawn(s, (o) => {
+            _ = PostWhole(m, 7, pat(7, 5), pat(8, 9), 3)
+            task.Send(o, 1)
+            xs := []int{1}
+            xs[len(pat(7, 5))]
+        }, give: ta)
+        DieNext(m, 4, 0)
+        _ = task.Spawn(s, (o) => {
+            _ = Post(m, Head, 9, pat(9, 5), 4)
+            task.Send(o, 1)
+            xs := []int{1}
+            xs[len(pat(9, 5))]
+        }, give: tb)
+        _ = task.Recv(ra)
+        _ = task.Recv(rb)
+        0
+    })
+    assert(e != nil)
+    assert(TakeDead(m, 0) == 16)
+    mut n := 0
+    mut sg := Take(m)
+    while !None(sg) {
+        if Kind(sg) == Whole {
+            assert(HeadLen(sg) == 5 && Len(sg) == 14 && Slot(sg) == 3 && Sid(sg) == 7)
+            b := Bytes(sg)
+            assert(same(b[0:5], pat(7, 5)) && same(b[5:14], pat(8, 9)))
+        }
+        Free(m, sg)
+        n += 1
+        sg = Take(m)
+    }
+    assert(n == 2)
+    assert(PoolUse() == 0)
+}
+
+// バイト列の写し出し（Bytes・AppendAt・TakeBlob）が、長さの境界（0・1・小さいチャンクの上限480の前後・Max・塊の複数のチャンク）で中身を変えない
+func TestCopyOutBounds() {
+    rec := fresh()
+    m := Of(rec)
+    ns := []int{0, 1, 479, 480, 481, 4096, Max}
+    for n <- ns {
+        assert(Post(m, Resp, 3, pat(3, n), -1) == Ok)
+        sg := Take(m)
+        assert(Len(sg) == n && same(Bytes(sg), pat(3, n)))
+        mut d := mut []byte{byte(9)}
+        AppendAt(mut d, sg, 0, n)
+        assert(len(d) == n + 1 && d[0] == byte(9) && same(freeze(d)[1:n + 1], pat(3, n)))
+        if n > 2 {
+            mut e := mut []byte{}
+            AppendAt(mut e, sg, 1, n - 2)
+            assert(same(freeze(e), pat(3, n)[1:n - 1]))
+        }
+        Free(m, sg)
+    }
+    bs := []int{0, 1, 480, 481, Max, Max + 1, 3 * Max + 7}
+    for n <- bs {
+        h := PutBlob(pat(5, n))
+        assert(h != 0)
+        assert(same(TakeBlob(h), pat(5, n)))
+    }
+    assert(PoolUse() == 0)
+}
+
+// 要求の塊の持ち主: DieNextで渡した小さいチャンク1つの塊は、子がViewBlobで写さずに参照し、子のtaskの終わり（死んでも・参照しないで終わっても）に溜めへ返る。
+// 参照している間に他の塊が溜めを使い回しても中身は変わらない。大きい塊はTakeBlobと同じく写して返す
+func TestBlobOwn() {
+    rec := fresh()
+    m := Of(rec)
+    ns := []int{0, 1, 480, 481, 4096}
+    for n <- ns {
+        h := PutBlob(pat(5, n))
+        assert(h != 0)
+        _, e := task.Run((s task.Scope) => {
+            DieNext(m, 3, h)
+            _ = task.Spawn(s, () => {
+                b := ViewBlob(h)
+                assert(PoolUse() == (if n <= 480 { 1 } else { 0 }))
+                mut i := 0
+                while i < 4 {
+                    assert(same(TakeBlob(PutBlob(pat(6 + i, n))), pat(6 + i, n)))
+                    i += 1
+                }
+                assert(same(b, pat(5, n)))
+                0
+            })
+            0
+        })
+        assert(e == nil)
+        assert(PoolUse() == 0)
+    }
+    // 参照してから死ぬ・参照せずに死ぬ
+    ks := []int{0, 1}
+    for k <- ks {
+        h := PutBlob(pat(7, 40))
+        _, e := task.Run((s task.Scope) => {
+            DieNext(m, 4, h)
+            _ = task.Spawn(s, () => {
+                xs := []int{1}
+                b := if k == 0 { ViewBlob(h) } else { []byte{} }
+                xs[len(b) + 2 * k]
+            })
+            0
+        })
+        assert(e != nil)
+        assert(TakeDead(m, 0) == 16)
+        assert(PoolUse() == 0)
+    }
+}
+
+// 協調形（SOBER_WORKERS=1 — ゲートの既定）では、子を先に走らせて親を止める配置が無く、直の列は使われない。
+// 直の受けのテストはM:Nでだけ検査する（scripts/unittest.shがSOBER_WORKERS=4で別に走らせる）
+func coop() bool {
+    w, _ := os.Getenv("SOBER_WORKERS")
+    return w != nil && w == "1"
+}
+
+// 直の受け: 子を今ここで先に走らせる配置（net_op 5の行き先-2）で、子が待たずに終われば、子の終わりを兼ねる合図は直の列に積まれる。
+// 取り出しは列を先に見るので、同じ枠の中の順（Headを列へ・RespEndを直の列へ）は崩れない。直の列の合図の後に子が死んでも、死んだ枠のビットは立たない。
+// 配置は負荷によって効かないことがある（子が縮退する）ので、直の列が使われた回が出るまで繰り返す
+func TestDirectOrder() {
+    if coop() {
+        return
+    }
+    mut used := false
+    mut i := 0
+    while !used && i < 50 {
+        used = directOrderOnce()
+        i += 1
+    }
+    assert(used)
+}
+
+// 1回分（結果 = 直の列が使われた。使われなかった回は取り出すだけ）
+func directOrderOnce() bool {
+    rec := fresh()
+    m := Of(rec)
+    _, e := task.Run((s task.Scope) => {
+        _ = sysNetOp(5, 0 - 2, 0, 0)
+        DieNext(m, 2, 0)
+        _ = task.Spawn(s, () => {
+            _ = Post(m, Head, 5, pat(5, 4), 2)
+            _ = Post(m, RespEnd, 5, pat(6, 3), 2)
+            0
+        })
+        _ = sysNetOp(5, 0 - 2, 0, 0)
+        DieNext(m, 3, 0)
+        _ = task.Spawn(s, () => {
+            _ = PostWhole(m, 7, pat(7, 5), pat(8, 9), 3)
+            xs := []int{1}
+            xs[len(pat(7, 5))]
+        })
+        0
+    })
+    assert(e != nil)
+    used := rec[Words - 3] != 0
+    if !used {
+        _ = TakeDead(m, 0)
+        mut g := Take(m)
+        while !None(g) {
+            Free(m, g)
+            g = Take(m)
+        }
+        return false
+    }
+    assert(TakeDead(m, 0) == 0)
+    mut ks := mut []int{}
+    mut sg := Take(m)
+    ks = append(ks, Kind(sg))
+    Free(m, sg)
+    // 列が空で直の列にだけ合図がある間も、待ちはすぐ返る
+    w, _ := task.Run((s task.Scope) => WaitSig(m), deadline: 500 * task.MS)
+    assert(w == Ok)
+    sg = Take(m)
+    while !None(sg) {
+        ks = append(ks, Kind(sg))
+        if Kind(sg) == Whole {
+            b := Bytes(sg)
+            assert(HeadLen(sg) == 5 && same(b[0:5], pat(7, 5)) && same(b[5:14], pat(8, 9)))
+        }
+        Free(m, sg)
+        sg = Take(m)
+    }
+    assert(len(ks) == 3 && ks[0] == Head && ks[1] == RespEnd && ks[2] == Whole)
+    assert(rec[Words - 3] == 0)
+    assert(PoolUse() == 0)
+    return true
+}
+
+// 直の受け: 子の終わりを兼ねない合図は、昇格前でも列へ積む（子が後で待って昇格し、残りの合図を列へ積んでも順が崩れない）。
+// 配置が効いた回（spawnから戻った時点で子のHeadが積まれていて、続く子の終わりの合図が直の列に入った）が出るまで繰り返す
+func TestDirectPromote() {
+    if coop() {
+        return
+    }
+    mut used := false
+    mut i := 0
+    while !used && i < 50 {
+        used = directPromoteOnce()
+        i += 1
+    }
+    assert(used)
+}
+
+func directPromoteOnce() bool {
+    rec := fresh()
+    m := Of(rec)
+    r, e := task.Run((s task.Scope) => {
+        _ = sysNetOp(5, 0 - 2, 0, 0)
+        DieNext(m, 2, 0)
+        _ = task.Spawn(s, () => {
+            _ = Post(m, Head, 5, pat(5, 4), 2)
+            os.Sleep(2)
+            _ = Post(m, RespEnd, 5, pat(6, 3), 2)
+            0
+        })
+        // 子が先に走って待った（昇格した）なら、Headは積まれている（列か、ミュータント165なら直の列）
+        first := rec[1] != 0 || rec[Words - 3] != 0
+        _ = sysNetOp(5, 0 - 2, 0, 0)
+        DieNext(m, 3, 0)
+        _ = task.Spawn(s, () => {
+            _ = PostWhole(m, 7, pat(7, 5), pat(8, 9), 3)
+            0
+        })
+        if first { 1 } else { 0 }
+    })
+    assert(e == nil)
+    used := r == 1 && rec[Words - 3] != 0
+    mut ks := mut []int{}
+    mut sg := Take(m)
+    while !None(sg) {
+        ks = append(ks, Kind(sg))
+        Free(m, sg)
+        sg = Take(m)
+    }
+    if used {
+        assert(len(ks) == 3 && ks[0] == Head && ks[1] == RespEnd && ks[2] == Whole)
+    }
+    assert(PoolUse() == 0)
+    return used
+}
+
+// 直の受けと枠の数え: 昇格前の子でも、枠の前の応答が消費されていなければ直の列に積まずに待つ（待つ点で昇格し、親が先へ進む）。
+// 直の列に積んだ応答も枠に数え、消費で数えが0に戻る（同じ枠の次の子が積める）
+func TestDirectSlot() {
+    rec := fresh()
+    m := Of(rec)
+    r, e := task.Run((s task.Scope) => {
+        _ = sysNetOp(5, 0 - 2, 0, 0)
+        DieNext(m, 2, 0)
+        _ = task.Spawn(s, () => {
+            _ = Post(m, Resp, 5, pat(5, 4), 2)
+            _ = Post(m, RespEnd, 5, pat(6, 3), 2)
+            0
+        })
+        mut bad := 0
+        sg := Take(m)
+        if None(sg) || Kind(sg) != Resp {
+            bad += 1
+        }
+        // 前の応答を消費するまで、子の最後の応答は積まれない
+        if !None(Take(m)) {
+            bad += 10
+        }
+        Free(m, sg)
+        mut done := false
+        while !done {
+            g := Take(m)
+            if None(g) {
+                assert(WaitSig(m) == Ok)
+            } else {
+                done = Kind(g) == RespEnd
+                Free(m, g)
+            }
+        }
+        mut k := 0
+        while k < 2 {
+            sid := 7 + k * 2
+            _ = sysNetOp(5, 0 - 2, 0, 0)
+            DieNext(m, 2, 0)
+            _ = task.Spawn(s, () => {
+                _ = Post(m, RespEnd, sid, pat(7, 3), 2)
+                0
+            })
+            g2 := Take(m)
+            if None(g2) || Kind(g2) != RespEnd {
+                bad += 100
+            } else {
+                Free(m, g2)
+            }
+            k += 1
+        }
+        bad
+    }, deadline: 3000 * task.MS)
+    assert(e == nil && r == 0)
+    assert(PoolUse() == 0)
+}

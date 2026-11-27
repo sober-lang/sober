@@ -1,4 +1,4 @@
-@@full	17a907e2bf3fea7a	53323	1724315
+@@full	5359bf8234fedab3	53338	1724681
 @globals	9d9af859d472f8fd	144	6914
 main.$jsonDecodeTop~5c2ea075	a9e78cff953805e2	150	4644
 main.$jsonDecode~1071c2fd	418c61f9cf90041c	371	11924
@@ -34,7 +34,7 @@ rt.print_int	fcf4f40fed38131b	85	2225
 rt.print_str	5babf653806d4e12	31	756
 rt.read_args	9c8b6858421a8786	93	2708
 rt.read_dir	b42747d42b5cafec	191	5404
-rt.read_fd	5e371bfffc12fe40	130	3361
+rt.read_fd	6d4a416d81bfc2c6	145	3727
 rt.read_file	2be83d8ba944d1d6	170	4689
 rt.region_alloc	a7c0cbdacc4c1c84	38	1099
 rt.region_alloc8	551e460d26b19752	45	1346

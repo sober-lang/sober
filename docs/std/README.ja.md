@@ -92,7 +92,8 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`aesgcm.NoHardware`](crypto-aesgcm.ja.md#nohardware) — この機械で AES-GCM の専用命令の実装を使えない（AES-NI / PCLMULQDQ / SSSE3 が無い・SOBER\_NOAES=1・x86 の最適化のバックエンド以外の出力）
 - [`aesgcm.NonceSize`](crypto-aesgcm.ja.md#noncesize) — 長さの定数（バイト）
 - [`aesgcm.Open`](crypto-aesgcm.ja.md#open) — Seal の逆（復号しながら GHASH を畳み、tag を crypto.Equal で照合する — 合わなければ平文を消して Auth）
-- [`aesgcm.OpenAt`](crypto-aesgcm.ja.md#openat) — b[off, off + n)（暗号文 ‖ tag）を復号した平文（128 の倍数の部分は GHASH と復号を縫い合わせた 1 回の走査・残りは照合の後 — tag が合わなければ書いた平文を crypto.Wipe で消して Auth）。
+- [`aesgcm.OpenAt`](crypto-aesgcm.ja.md#openat) — b[off, off + n)（暗号文 ‖ tag）を復号した平文（OpenAtIntoの宛先を新しい列にした形）。
+- [`aesgcm.OpenAtInto`](crypto-aesgcm.ja.md#openatinto) — b[off, off + n)（暗号文 ‖ tag）を呼び手の列 dst[at:] へ復号して、平文の長さ m = n − Overhead を返す（平文 = dst[at, at + m)）。
 - [`aesgcm.Overhead`](crypto-aesgcm.ja.md#overhead) — 長さの定数（バイト）
 - [`aesgcm.Prepare`](crypto-aesgcm.ja.md#prepare) — key を展開した Key（専用命令の有無と鍵の長さはここで見る）
 - [`aesgcm.Seal`](crypto-aesgcm.ja.md#seal) — pt を暗号化して tag を付けたもの（暗号文 ‖ tag）。
@@ -130,6 +131,7 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`chacha20poly1305.NonceSize`](crypto-chacha20poly1305.ja.md#noncesize) — 長さの定数（バイト）
 - [`chacha20poly1305.Open`](crypto-chacha20poly1305.ja.md#open) — Seal の逆（tag を照合してから復号する）
 - [`chacha20poly1305.OpenAt`](crypto-chacha20poly1305.ja.md#openat) — b[off, off + n)（暗号文 ‖ tag）をコピーせずにtagを照合してから復号した平文。
+- [`chacha20poly1305.OpenAtInto`](crypto-chacha20poly1305.ja.md#openatinto) — b[off, off + n)（暗号文 ‖ tag）を呼び手の列 dst[at:] へ開いて、平文の長さ m = n − Overhead を返す（aesgcm.OpenAtIntoと同じAPI — 平文 = dst[at, at + m)・dst[at, at + n) が dst の外なら BadSize）。
 - [`chacha20poly1305.Overhead`](crypto-chacha20poly1305.ja.md#overhead) — 長さの定数（バイト）
 - [`chacha20poly1305.Prepare`](crypto-chacha20poly1305.ja.md#prepare) — key の Key（鍵の長さはここで見る）
 - [`chacha20poly1305.Seal`](crypto-chacha20poly1305.ja.md#seal) — pt を暗号化して tag を付けたもの（暗号文 ‖ tag）。

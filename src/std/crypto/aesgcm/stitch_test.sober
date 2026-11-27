@@ -45,6 +45,32 @@ func TestStitch() {
             p, oe := OpenAt(k, nonce, ad, want, 0, len(want))
             assert(oe == nil)
             assert(same(p, pt))
+            // OpenAtInto（dst の 3 バイト目から・dst[0, 3) は触らない）
+            mut q := mut []byte{}
+            for i <- iter.Range(0, 3 + len(want)) {
+                q = append(q, byte(0xcc))
+            }
+            m, ie := OpenAtInto(k, nonce, ad, want, 0, len(want), mut q, 3)
+            assert(ie == nil && m == n)
+            qd := freeze(q)
+            assert(qd[0] == 0xcc && qd[2] == 0xcc)
+            assert(same(qd[3:3 + n], pt))
+            // dst が短い（at + len(want) が外）は BadSize で dst に書かない
+            mut sh := mut []byte{byte(0xcc), byte(0xcc)}
+            _, se := OpenAtInto(k, nonce, ad, want, 0, len(want), mut sh, 1)
+            assert(se != nil)
+            // 改竄: 書いた平文は消える（dst[at, at + n) が全部 0・前は触らない）
+            mut q2 := mut []byte{}
+            for i <- iter.Range(0, 3 + len(want)) {
+                q2 = append(q2, byte(0xcc))
+            }
+            _, ae := OpenAtInto(k, nonce, ad, flip(want, len(want) - 1), 0, len(want), mut q2, 3)
+            assert(ae != nil)
+            qz := freeze(q2)
+            assert(qz[2] == 0xcc)
+            for i <- iter.Range(3, 3 + len(want)) {
+                assert(qz[i] == 0)
+            }
             // 改竄: tagの最後のビット・暗号文の頭のビット（縫い合わせのパスの中）
             bad := flip(want, len(want) - 1)
             _, be := OpenAt(k, nonce, ad, bad, 0, len(bad))

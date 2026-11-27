@@ -10,4 +10,4 @@ std/http/server/server.sober:739:6: shared Cache the shared cache policy 'Shared
 std/http/server/server.sober:739:6: shared Cache the shared cache policy 'Unstated'
 std/http/server/server.sober:132:6: personal SetCookie
 std/http/server/server.sober:546:6: meet-point std/http/server.Mount
-summary atoms=10 credentials=4 eff-fns=0 shared=3 stored=1 personal=1 shared-fields=2 violations=0 walks=2942
+summary atoms=10 credentials=4 eff-fns=0 shared=3 stored=1 personal=1 shared-fields=2 violations=0 walks=2997

@@ -396,8 +396,8 @@ func buildLogWord(st mut St) {
     cpos := load(mut st, lg, LG_CUR)
     store(mut st, logAt(mut st, lg, cpos), 0, v)
     store(mut st, lg, LG_CUR, bin(mut st, BAdd, cpos, n))
-    if st.rtMut == 114 {
-        // 変異（logcheck）: 積んだ端を書きかけの途中で進める（落とした記録の途中までが出る）
+    if st.rtMut == 114 || st.rtMut == 155 {
+        // 変異（logcheck）: 積んだ端を書きかけの途中で進める（落とした記録の途中までが出る）。155 = 114 + log_endの入口の照合
         store(mut st, lg, LG_TAIL, bin(mut st, BAdd, cpos, n))
     }
     br(mut st, bRoom, -1)
@@ -442,8 +442,8 @@ func buildLogBytes(st mut St) {
     br(mut st, bl, list1(mut st, urAdd(mut st, bi, 1)))
     setCur(mut st, bd)
     store(mut st, lg, LG_CUR, bin(mut st, BAdd, cpos, n))
-    if st.rtMut == 114 {
-        // 変異（logcheck）: 積んだ端を書きかけの途中で進める（落とした記録の途中までが出る）
+    if st.rtMut == 114 || st.rtMut == 155 {
+        // 変異（logcheck）: 積んだ端を書きかけの途中で進める（落とした記録の途中までが出る）。155 = 114 + log_endの入口の照合
         store(mut st, lg, LG_TAIL, bin(mut st, BAdd, cpos, n))
     }
     br(mut st, bRoom, -1)
@@ -458,6 +458,10 @@ func buildLogEnd(st mut St) {
     begin(mut st, st.rtLogEnd)
     zero := iconst(mut st, 0)
     lg := globaladdr(mut st, st.logG)
+    if lgChk(mut st) {
+        // 積んだ端は書きかけの記録の先頭に居る（積み終える前の記録は書き出しの範囲に入らない）
+        chkFail(mut st, cmp(mut st, CNe, load(mut st, lg, LG_TAIL), load(mut st, lg, LG_START)), "log-check: the committed end moved into the open record (tail ", load(mut st, lg, LG_TAIL), ")\n")
+    }
     bKeep := branchIf(mut st, cmp(mut st, CNe, load(mut st, lg, LG_OVF), zero))
     store(mut st, lg, LG_CUR, load(mut st, lg, LG_START))
     store(mut st, lg, LG_OVF, zero)
@@ -483,6 +487,11 @@ func buildLogEnd(st mut St) {
     br(mut st, bNo, -1)
     setCur(mut st, bNo)
     ret(mut st, -1)
+}
+
+// 記録の列の照合のビルド（ミュータント154 = これだけ・155 = 114 + これ・156 = 117 + これ。logcheck）
+func lgChk(st mut St) bool {
+    return st.rtMut >= 154 && st.rtMut <= 156
 }
 
 // 区間 [a, b) の改行の数。8バイトずつ: x = w ^ 0x0a…0a の0のバイトを数える（t = ((x & 0x7f…7f) + 0x7f…7f) | x は0でないバイトの最上位ビットが立つ。
@@ -557,8 +566,8 @@ func buildLogFlush(st mut St) {
     hasM := cmp(mut st, CGt, mqn, zero)
     mpos := load(mut st, logMq(mut st, lg, mqh, zero), 0)
     isM := bin(mut st, BAnd, hasM, cmp(mut st, CEq, mpos, head))
-    // 変異117（logcheck）: 塊をPIPE_BUFで切らない
-    lim0 := urAdd(mut st, head, if st.rtMut == 117 { LG_CAP } else { LG_CHUNK })
+    // 変異117（logcheck）: 塊をPIPE_BUFで切らない。156 = 117 + 塊の照合
+    lim0 := urAdd(mut st, head, if st.rtMut == 117 || st.rtMut == 156 { LG_CAP } else { LG_CHUNK })
     lim1 := bin(mut st, BAdd, lim0, bin(mut st, BMul, cmp(mut st, CGt, lim0, tail), bin(mut st, BSub, tail, lim0)))
     lim2 := bin(mut st, BAdd, lim1, bin(mut st, BMul, bin(mut st, BAnd, hasM, cmp(mut st, CLt, mpos, lim1)), bin(mut st, BSub, mpos, lim1)))
     lim := bin(mut st, BAdd, lim2, bin(mut st, BMul, isM, bin(mut st, BSub, urAdd(mut st, head, 1), lim2)))
@@ -591,6 +600,16 @@ func buildLogFlush(st mut St) {
     br(mut st, fl, list1(mut st, urAdd(mut st, fi, 1)))
     setCur(mut st, have)
     ln := bin(mut st, BSub, he, head)
+    if lgChk(mut st) {
+        // PIPE_BUFを越える塊は、4 KiBを越える1記録（改行は終わりの1つだけ）に限る。越える塊に記録が2つ以上あれば、並んだ書き手の行と割れうる
+        // 破れたら書き出しの範囲を空にしてから終わる（終了の書き出し rt.log_drain がこの照合へ戻ってこない）
+        many := cmp(mut st, CGt, logCountNl(mut st, lg, head, he), iconst(mut st, 1))
+        bOk := branchIf(mut st, bin(mut st, BAnd, cmp(mut st, CGt, ln, iconst(mut st, LG_CHUNK)), many))
+        store(mut st, lg, LG_HEAD, load(mut st, lg, LG_TAIL))
+        chkFail(mut st, iconst(mut st, 1), "log-check: a write of ", ln, " bytes holds several records over PIPE_BUF\n")
+        br(mut st, bOk, -1)
+        setCur(mut st, bOk)
+    }
     base := ptoi(mut st, logAt(mut st, lg, head))
     wr := newBlock(mut st)
     bNow := newBlock(mut st)

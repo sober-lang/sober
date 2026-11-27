@@ -21,7 +21,8 @@ type Store struct {
 }
 
 // std/tlsの読み書きの関数（どれも閉じた名前つきの関数 — 捕獲を持たない）。
-// recv = 受けたバイトbを持ち越しと合わせてrecordに切り、受けの表に通した平文を返す。bが空なら持ち越しだけを通す。fin = 相手のFIN（bは空）。
+// recv = 受けたバイトbを持ち越しと合わせてrecordに切り、受けの表に通した平文を呼び手の列outの先頭から書いて、その長さを返す（outは末尾を伸ばしうる・
+// 平文 = out[0, 返り値)）。bが空なら持ち越しだけを通す。fin = 相手のFIN（bは空・outに書かない）。
 // 受けの結果（Recv*）は格納場所に残り、codeが読む（壊れたrecordの結果は1回だけ返し、以後はRecvClosed）。
 // put = bを封じて送信バッファに積む（積めなければその場で送る）。flush = 積んだ分を送る（nw = 1は送りの完了を待たない印を見る）。put・flushの結果は0 = 成功・負 = 失敗。
 // 関数型は名前つきで、エフェクトの契約はnet.Recv / net.Sendと同じ（panicを持たない — netの宣言を変えない）
@@ -32,7 +33,7 @@ type Ops struct {
     flush FlushFn
 }
 
-type RecvFn func(s Store, fd int, b []byte, fin bool) []byte @effects(block, io, nondet)
+type RecvFn func(s Store, fd int, b []byte, fin bool, out mut []byte) int @effects(block, io, nondet)
 
 type CodeFn func(s Store) int @effects()
 

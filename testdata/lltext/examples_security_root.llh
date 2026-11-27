@@ -1,4 +1,4 @@
-@@full	55d07c7ece2c33ea	10225	310777
+@@full	f12f3ad5183e66d2	10240	311143
 @globals	38e78396a7f6305a	72	1022
 main.main	51bf37d9d8716b22	61	1838
 main.run	817b427c19380854	544	19100
@@ -24,7 +24,7 @@ rt.print_int	fcf4f40fed38131b	85	2225
 rt.print_str	5babf653806d4e12	31	756
 rt.read_args	9c8b6858421a8786	93	2708
 rt.read_dir	b42747d42b5cafec	191	5404
-rt.read_fd	5e371bfffc12fe40	130	3361
+rt.read_fd	6d4a416d81bfc2c6	145	3727
 rt.read_file	2be83d8ba944d1d6	170	4689
 rt.region_alloc	a7c0cbdacc4c1c84	38	1099
 rt.region_alloc8	551e460d26b19752	45	1346

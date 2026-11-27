@@ -248,7 +248,8 @@ self/build inst 98.07
 # 2026-11-22再設定（regw1 — B1a〔番地の合流を語の合流に直す — lower/phiword.sober・展開後のSROAの逃げの判定に相乗り〕のコンパイル時の仕事。2×2〔全部の木・W1・種0。コンパイラ = ba148c7b8 と regw1 の stage2 × 基点の木〕: コンパイラの退行 +0.43 G〔161.552 → 161.978 G。内訳 = 終端の走査 +0.04・使い道の数と頭の走査 +0.17・非i64の値を書かれるスロットの表〔valueTypes〕+0.11・書き換えと後段の仕事 +0.10 — 早期returnの置き換えで切り分け〕。基点の ba148c7b8 もゲートの中で 126.595 G と線を越えていた。stagesの実測127.035 G。実測の1.005倍・事後承認〔ナビ裁定〕）: 実測127.035 G → 線127.67
 # 2026-11-23再設定（regw1 — B1b〔展開後のSROAで、読むだけのrtの関数へ渡すスロットを一時のスロットへの写しに替えて割る〕。2×2〔全部の木・W1・種0・SOBER_BUILD_CACHE=0。コンパイラ = 568164f71 と 2d57b4b7a の stage2 × 同じ2つの木〕: コンパイラの退行 +0.637 G〔144.580 → 145.217。内訳 = 群の子への受け渡し・slotcolor・鍵の表 +0.13・判定 +0.04・写しと後段の仕事 +0.47 — コンパイラのソースは文字列の比較が多く、割れるスロットが増える〕・木の仕事 +0.07 G。stagesのstage3は自分のコードにもB1bが効くので、ゲートの実測は127.672 G〔線127.67をわずかに越えた〕。実測の1.005倍・事後承認待ち）: 実測127.672 G → 線128.31
 # 2026-11-23 取り直し（scripts/ratchet.ts retake・実測 × 1.005・事後承認）: self/build3 inst 132.32 → 133.04（実測 132.372・+0.04%）
-self/build3 inst 133.04
+# 2026-11-25 取り直し（scripts/ratchet.ts retake の規則・実測 × 1.005・事後承認）: self/build3 inst 133.04 → 133.90（実測 133.228・+0.14%）
+self/build3 inst 133.90
 # RSS は揺れが小さい（stages ゲートも同じ上限を見る — 段 5 の仕上げ便: 基準 837d0c6 の 506 MB の +30%）
 # 2026-10-05 締め直し（RSS 回収便 — huge page を止め返却の閾値 1 MiB で自己 build 540 → 216 MB・その +35%）
 # 2026-10-12 緩め（展開便 段 1 — 同じ裁定・report-565 / 566）: 290 → 296（stage3 の自己 build 294.9 MB の +1 MB）。値札 = spec の木の伸び +1.6 MB・特化の走り +3.3 MB
@@ -347,7 +348,8 @@ self/build rss 530
 # 2026-11-23再設定（regw1 — B1b〔上のself/build3 instと同じ変更〕。stagesの実測702 MB > 701〔B1aの後のゲートの実測は692〜696 MB — 割れるスロットと写しの命令の分〕。実測の1.005倍・事後承認待ち）: 実測702 MB → 線706
 # 2026-11-23再設定（train55 = main-new54〔740b9b49a〕+ small2〔345854340〕+ bld80〔32d9b9d97〕+ regw1〔a354d6233〕+ tlsstk〔a2f6240a9〕の merge の木。merge の前の線は両側〔bld80 — D3-0・D2-0で717・regw1 — B1bで706〕にそれぞれの実測で置かれていた — 両側の足したコンパイラのコードとコンパイル時の仕事が重なった分。merge の木の全件〔cache・-j 12・並走あり〕の実測 × 1.005・事後承認）: 実測729 MB → 線732
 # 2026-11-23 取り直し（scripts/ratchet.ts retake・実測 × 1.005・事後承認）: self/build3 rss 732 → 737（実測 733・+0.14%）
-self/build3 rss 737
+# 2026-11-25 取り直し（scripts/ratchet.ts retake・実測 × 1.005・事後承認）: self/build3 rss 737 → 742（実測 738・+0.14%）
+self/build3 rss 742
 # 2026-10-10 新設（展開の予算の配り直し便 — ナビ裁定 report-465 (6)）: stage3 の ELF の大きさ（MB = 10^6 バイト・scripts/stages.sh が照合）。
 # 今 7.87 MB（27b4aa60）— 上限 9.0 は +9% 級の膨張（呼び出しグラフの後順を全関数に掛けた棄却形の印）の網
 # 2026-10-18 引き上げ（TLS 便 796 の x86 の塊 + 席 A の A-1 で 9.01 MB — 膨張の網としての幅は保つ・ユーザー追認済み 2026-10-18）
@@ -500,7 +502,9 @@ self/build wall 6.6 ref
 # 2026-11-22再設定（main-new53の冷の全件〔--no-cache・全負荷〕で468 > 466。既知の傾向〔全負荷の冷で上に出る — NOTESの見張り〕・実測 468 × 1.005・事後承認）: 466 → 470
 # 2026-11-22再設定（bldn D1 の区切り3a〜3d — package の仕上げの値〔loader の pkgfin・pkgval・pkgasm・fastload ほか約 2,700 行〕。PkgVal と Program の受け渡しの無駄〔return ごとの全フィールドの移し・使わないフィールドの複製〕を直した後〔3400bbf1c・fa2e44f3e — IR の増えは +118k 行 → +67k 行〕。selfpar の 1-path の実測 466 MB〔検査される木が増えた分〕。実測の1.005倍・事後承認）: 464 → 469
 # 2026-11-23再設定（cky1。2×2〔上と同じ形〕で peak RSS の差は 0 MB〔基点も cky1 も 468〜471 MB の揺れの中 — 基点の時点で線に接している〕。gates の selfpar の実測 471 MB の1.005倍・事後承認待ち）: 470 → 473
-self/check rss 473
+# 2026-11-25 取り直し（scripts/ratchet.ts retake・実測 × 1.005・事後承認。main e620f5492 の時点で 474 MB と越えていた〔train62 の合流で検査される木が増えた分〕。札2 と覗き穴2つで +1 MB〔run の間の揺れ ±1 MB の幅〕）: self/check rss 473 → 478（実測 475・+0.42%）
+# 2026-11-26 取り直し（scripts/ratchet.ts retake・実測 × 1.005・事後承認）: self/check rss 478 → 484（実測 481・+0.63%）
+self/check rss 484
 # 2026-10-11 新設（自己 check の崖の切り分け — report-510 / 511）: self/check nodes = 自己 check の脱糖が作る核の節の数（check --expansion-report の 1 行目・W1 — 決定的）。
 # RSS の崖（2026-10-09 の +39 MB・段 A の +11 MB）の正体 = mut 仮引数 2 つ以上の関数の呼び出し点展開の入れ子の掛け算（xFunc 4 × xInst 2 → xGetInto 304 回）で、
 # RSS は節にほぼ比例（約 80〜100 B / 節）だが粒度の段で崖に見える。節の数で持てば退行が等式で鳴る。値札 = 実測 2,845,519（xFunc の呼び出し点 4 → 2 の後）の +1.9%
@@ -562,7 +566,10 @@ self/check nodes 5162166
 # 2026-11-22再設定（regw1 — B1a〔lower/phiword.sober〕とA〔受け皿の束縛 — lower.soberのbindName・privTに語数を畳む〕で検査する木が増えた分。Stに表のフィールドを足す形は 99.499 G〔Stを受ける関数の検査が型の大きさで重くなる〕で、privTに畳んで 99.307 G。selfparの実測 99.307 G × 1.005・事後承認待ち）: 99.30 → 99.80
 # 2026-11-23再設定（cky1 — F-cky1の直し〔セルの宛先構築 allocAt・脱糖器の mutCellAhead〕。2×2〔自己checkの検査器の本体 = 最後まで − defs・W1・格納場所なし。コンパイラ = 基点〔92ebe2830 のソースで建てた stage2〕と cky1 の stage2 を同じ置き場所に並べる × 同じ2つの木〕: コンパイラの差 +0.028 G・木の差 103.186 → 103.391 G〔+0.205 G — 足した脱糖器のコードの検査の分〕。脱糖の段〔defs で停止〕のコンパイラの差 +0.75 G〔先読みの絞り込み — ファイルごとの構文の位置と関数ごとの覚え〕。実測 103.420 G の1.005倍・事後承認待ち）: 103.33 → 103.94
 # 2026-11-24 取り直し（scripts/ratchet.ts retake・実測 × 1.005・事後承認）: self/check body 103.94 → 104.47（実測 103.949・+0.01%）
-self/check body 104.47
+# 2026-11-25 取り直し（scripts/ratchet.ts retake・実測 × 1.005・事後承認）: self/check body 104.47 → 105.21（実測 104.686・+0.21%）
+# 2026-11-26 取り直し（scripts/ratchet.ts retake・実測 × 1.005・事後承認）: self/check body 105.21 → 106.17（実測 105.633・+0.40%）
+# 2026-11-27 取り直し（scripts/ratchet.ts retake・実測 × 1.005・事後承認）: self/check body 106.17 → 107.22（実測 106.682・+0.48%）
+self/check body 107.22
 # 2026-11-17 再設定（事後承認。工程2の順序1・2〔bud76〕で検査されるコンパイラのソースが増えた分。基点 = main-new15〔f5704fb2e〕の同じ箱: 自己checkの検査器の本体 82.804 G → 83.150 G〔+0.42%〕。実測の1.005倍）: 82.98 → 83.57
 # 2026-10-08 物差しの変更（決定 (a)）: -par の 2 行は bench.sh が W8 + 物理 8 コア taskset で測る形に（selfw.sh と同じ —
 # 既定ワーカー数だと機械のコア数に依存: この機の 24 ワーカーで build-par 841 MB vs W8 628 MB）。check-par の ref も W8 の物差しで読み直すこと
@@ -738,5 +745,11 @@ srv/asyncdb hot64 1789
 # 2026-11-24 新設（ナビ指示 — 大きい record の TLS の受けの網）: srv/tlsecho = POST /echo（本文 10,240 B）を TLS の port へ（8gbit の形 — 本文が record をまたいで届き、受けの持ち越し〔std/tls pendCopy〕と
 # 受けの1回ごとの方向の組み立て〔record.UnpackView・hs の表の遅い作成〕を通る）。pendCopy をバイトごとに引き直す形（直す前の main-new60）は ireq 1,962,026.3（約11倍）で落ちる。
 # 実測 173,351.7〜173,364.6（2回）・hot64 1,218〜1,219。ireq は実測の最大 + 2・hot64 は実測の最大
-srv/tlsecho ireq 173366.6
-srv/tlsecho hot64 1219
+# 2026-11-24 取り直し（scripts/ratchet.ts retake・実測・事後承認）: srv/tlsecho hot64 1219 → 1220（実測 1220・+0.08%）
+# 2026-11-25 取り直し（scripts/ratchet.ts retake の規則・実測・事後承認）: srv/tlsecho hot64 1220 → 1225（実測 1225・+0.41%）
+# 2026-11-25・締め直しと再設定（hot64は事後承認。ナビの裁定 2026-11-25。tlsr1: TLSの受けの平文を呼び手のregionの出口の列へ直に開く〔record.OpenInto・aesgcm.OpenAtInto〕。付け替えの写し〔region_relocate8 → copy8 21.7K〕が消えた。
+# hot64の+9行の内訳〔関数ごとの熱い64 Bの行・基点7f71839c6との差〕: main.serveTlsConn +9・lambda#43 +6〔受けの周の出口の列のブロック〕・record.Open 16 → OpenInto 19 + room 8〔+11〕・aesgcm.OpenAt 92 → OpenAtInto 77〔−15〕・tls.recvNet +2・openBody −2・region_relocate8 −1・strip −1。
+# 実測 ireq 150,673.1〜150,677.0（3回）・hot64 1,228（2回））: ireq 173366.6→150679.0・hot64 1219→1228
+srv/tlsecho ireq 150679.0
+srv/tlsecho hot64 1228
+# 2026-11-25 train62: tlsrとscapの両方がsrv/tlsechoに触れた（hot64 1228対1225）。合流後のreqinstで実測が上限の内と確認（retake 0行・値はtlsr側のまま）

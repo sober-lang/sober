@@ -1,0 +1,16 @@
+@@full	93ecdf368dfda0f6	4742	177470
+@head	29ad33f6e354e244	4	595
+func TestLazyDie	813d87f63cccaae5	75	2440
+func TestLazyFdLeft	b3888faf22424701	32	1188
+func TestLazyOut	06c686df10473ab2	70	2220
+func TestLazyRegion	c332e17916d4fe45	9	357
+func TestLazyRegionPar	3629bc496650e72d	62	2089
+func TestLazyScopeWait	eb07d23eb0b3c75e	98	3182
+func lzDie	2ac4fd29982b75b5	31	1121
+func lzDieRound	a891c6aabc236142	122	4165
+func lzFdRound	07ad64c5f0c47e70	52	1711
+func lzKid	aea148e579fe8ce6	42	1404
+func lzRegionRound	7f44fb3bbbc69396	124	4009
+func lzSum	60fcd9282fe62cb1	16	627
+func lzTouch	de33020ad8e39da5	45	1494
+type lzCount	63d0b59995d7d233	2	114

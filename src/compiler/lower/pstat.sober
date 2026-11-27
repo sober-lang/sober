@@ -227,9 +227,12 @@ func buildPstatDump(st mut St) {
     // waitのscopeで入場を待った回数（段階3の ③）
     pfield(mut st, "waits", load(mut st, mn, MN_LWAIT))
     pfield(mut st, "tcap", load(mut st, mn, MN_TCAP))
-    // 終わりの計上（全部返っていれば0 — ミュータント7の検査）
+    // 終わりの計上（全部返っていれば0 — ミュータント7の検査）。最初のプールで根へ足した定数（返したスロットに残す常駐の上限 — admit.sober buildPoolNew）は
+    // taskの計上ではないので引く
     ledE := load(mut st, mn, MN_LED)
-    pfield(mut st, "held_bytes", bin(mut st, BAdd, load(mut st, mn, MN_CAP), bin(mut st, BSub, bin(mut st, BAnd, ledE, iconst(mut st, 2 * LED_BMAX + 1)), iconst(mut st, LED_BMAX))))
+    heldB := bin(mut st, BAdd, load(mut st, mn, MN_CAP), bin(mut st, BSub, bin(mut st, BAnd, ledE, iconst(mut st, 2 * LED_BMAX + 1)), iconst(mut st, LED_BMAX)))
+    resFix := if st.poolOn { bin(mut st, BMul, cmp(mut st, CGt, load(mut st, globaladdr(mut st, st.poolG), 0), iconst(mut st, 0)), bin(mut st, BMul, load(mut st, mn, MN_N), iconst(mut st, RES_CAP))) } else { iconst(mut st, 0) }
+    pfield(mut st, "held_bytes", bin(mut st, BSub, heldB, resFix))
     // 終わりの借りの和（借りるのは入場したtaskだけで、終わりで返す — 全部返っていれば0）
     pfield(mut st, "bor_held", load(mut st, mn, MN_LBSUM))
     pfield(mut st, "held_tasks", bin(mut st, BAdd, load(mut st, mn, MN_TCAP), bin(mut st, BSub, bin(mut st, BAnd, bin(mut st, BSar, ledE, iconst(mut st, LED_TSHIFT)), iconst(mut st, 2 * LED_TMAX + 1)), iconst(mut st, LED_TMAX))))

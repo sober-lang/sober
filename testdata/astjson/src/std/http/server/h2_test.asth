@@ -1,12 +1,48 @@
-@@full	61be753139d1669b	6456	199727
-@head	47c6d4c4cb3818e6	0	306
+@@full	bd74b8294080f0ed	39159	1448338
+@head	a529f1a74d8b7156	0	380
+const h2gAuths	28beb14fa28dd5e4	1	130
+const h2gMethods	c218ce6d1d7be287	1	105
+const h2gNames	a81fbad9e457b073	1	262
+const h2gPaths	15f617f8c1519224	1	133
+const h2gValues	2b48411452799407	1	251
+func TestH2Alloc	16b17c86901985a6	174	5781
+func TestH2ComposeGolden	53b30890ff1a8efe	726	23091
+func TestH2FuseGolden	fe741083dbfab4f5	1106	35821
 func TestH2Head	43ec5314fa269226	134	4914
+func TestH2PlainSame	ba9dc08c709e14b3	108	3835
+func TestH2PutReq	415948d2c163cda5	369	11846
 func TestH2Request	6c689824f348c9a5	128	4184
 func TestH2RequestBad	d2829190608fedf3	300	9903
 func TestH2RequestCookieBody	dde1d4a24c5250f0	177	5885
+func TestH2Take	1119f72746c6c8ee	332	10517
 func h1Expect	8e94caece5478ad1	130	4179
-func h2Decode	0b7c6f6c7c2e682c	110	3661
+func h2Blob	ba4edc4ed8936fc8	33	1227
+func h2Compose	bf2b64c4e10456ed	539	16989
+func h2ConnName	e8186fc9dcd3256c	40	1378
+func h2CookieLineRef	7a6776755f57d9a8	141	4682
+func h2CookiesRef	e1a816feada6f906	216	6939
+func h2Cp	c9532b82409a464d	32	1227
+func h2Decode	9034b1e3563608b2	119	3972
 func h2Fields	cdef1316cf205f55	100	3314
-func h2Req	b9bfe8f433140ef0	16	670
+func h2Grow	0c242af97f3430a5	17	676
+func h2Hex	c611a760dc840656	20	693
+func h2LineRef	970b695ee0a7bceb	86	3051
+func h2NameOk	67a2c557b39cbea4	38	1391
+func h2Pack	b4accc3ee574fedc	96	3239
+func h2Pool	244324d7bd5fddd3	102	3313
+func h2Pseudo	b6e37a363f9a8cdc	45	1446
+func h2PutRef	318358c30422c327	25	1008
+func h2RawBlock	f45656e93ded115d	76	2455
+func h2Req	b3961aa88b4a51ff	16	669
+func h2ReqLineRef	9352d391a5a54bce	213	6779
+func h2ReqNew	afa8e7b37c5a838d	137	5052
+func h2RequestRef	206cb99b232b42d8	717	22685
+func h2Rnd	b76c7e20e289f89f	8	357
+func h2SameBytes	a65a6ccae517d8bc	39	1320
+func h2SameMut	4e7b315b8a71cac5	42	1440
+func h2SameReq	28b74647032c5eb9	107	3652
+func h2Split	92a0b1823df4aac6	59	2017
+func h2ValueOk	0bd00c7b6c3c3534	76	2542
+func h2ViaText	e5b4ff0363beffc2	53	1870
 func sameStrs	5260d4b48dd4c67e	40	1365
 func strOr	02403b4df45332a2	14	525

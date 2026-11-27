@@ -48,6 +48,12 @@ pct=$((100 * hit / rows))
 # 公開の形: --emit の無い build（既定 = 最適化つきのELF）
 "$S2" build bench/httparena/main.sober --profile="$P" -o "$W/pub" > "$W/err" 2>&1 || { echo "profcov: FAIL --emit なしの --profile: $(tail -c 300 "$W/err")"; exit 1; }
 cmp -s "$W/pub" "$W/pnc" || { echo "FAIL: --emit なしの build --profile のELFが --emit=elf --passes の形と違う"; fail=$((fail + 1)); }
+# 関数の番地の表（--emit=syms）: bin/sober の口も --profile を渡し、プロファイルの配置（冷たいブロックの移動で関数の番地がずれる）の表を出す
+"$S2" build bench/httparena/main.sober --emit=syms -o "$W/s0" > "$W/err" 2>&1 || { echo "profcov: FAIL --emit=syms: $(tail -c 300 "$W/err")"; exit 1; }
+"$S2" build bench/httparena/main.sober --emit=syms --profile="$P" -o "$W/sp" > "$W/err" 2>&1 || { echo "profcov: FAIL --emit=syms --profile: $(tail -c 300 "$W/err")"; exit 1; }
+bin/sober build bench/httparena/main.sober --emit=syms --profile="$P" -o "$W/sw" > "$W/err" 2>&1 || { echo "profcov: FAIL bin/sober --emit=syms --profile: $(tail -c 300 "$W/err")"; exit 1; }
+cmp -s "$W/s0" "$W/sp" && { echo "FAIL: --emit=syms の表がプロファイルの有無で同じ（プロファイルの配置を反映していない）"; fail=$((fail + 1)); }
+cmp -s "$W/sw" "$W/sp" || { echo "FAIL: bin/sober の --emit=syms --profile の表が stage2 の --profile つきの表と違う（--profile を渡していない）"; fail=$((fail + 1)); }
 # 答えの再生: プロファイルのパスは鍵・中身は読んだ入力（写しを編集して外れることを見る）。ゲートの既定は再生を切る（SOBER_CHECK_REPLAY=0・SOBER_VERIFY=each）ので、相は明示する
 C2=$W/cache2
 mkdir -p "$C2"
@@ -90,5 +96,5 @@ for i in 1 2; do
     cmp -s "$W/m$i" "$W/base" || { echo "FAIL: 指紋の合わないプロファイルのELF（$i 回目）がプロファイルなしと違う"; fail=$((fail + 1)); }
 done
 [ "$nw" = 2 ] || { echo "FAIL: 指紋の合わないプロファイルの警告が2回とも出ない（$nw 回）"; fail=$((fail + 1)); }
-echo "profcov: 指紋の合う行 $hit / $rows（$pct%・下限 $MIN%）・--blkmap ≡ プロファイルなし・W1 ≡ 並列・格納場所の4相 ≡ 格納場所なし（パック $k0 → $k1）・公開の形・再生 $r1 / $r2 / $r3・診断 3 + 警告 $nw, fail=$fail"
+echo "profcov: 指紋の合う行 $hit / $rows（$pct%・下限 $MIN%）・--blkmap ≡ プロファイルなし・W1 ≡ 並列・格納場所の4相 ≡ 格納場所なし（パック $k0 → $k1）・公開の形・symsの表 ≡ プロファイルの配置・再生 $r1 / $r2 / $r3・診断 3 + 警告 $nw, fail=$fail"
 [ "$fail" = 0 ]

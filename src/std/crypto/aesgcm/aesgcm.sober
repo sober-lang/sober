@@ -12,6 +12,7 @@ package aesgcm
 //     k := crypto.aesgcm.Prepare(key)?
 //     rec := crypto.aesgcm.SealTo(k, nonce, ad, pt, hdr, tail)?     // hdr ‖ 暗号文（pt ‖ tail）‖ tag
 //     pt := crypto.aesgcm.OpenAt(k, nonce, ad, buf, off, n)?        // buf[off, off + n) = 暗号文 ‖ tag
+//     m := crypto.aesgcm.OpenAtInto(k, nonce, ad, buf, off, n, mut dst, at)?  // 平文 = dst[at, at + m)（dst[at, at + n) を使う）
 
 // チャンクはcompiler/lower/aes.sober・x86.soberのxAes: CTRは8ブロックを交互に・GHASHは8ブロックをまとめて還元1回・128の倍数の部分は両方を縫い合わせた1回の走査（aesseal / aesopen — GHASHはKaratsuba）
 
@@ -230,12 +231,36 @@ func SealInto(k Key, nonce []byte, ad []byte, pt []byte, head []byte, tail []byt
     return h + n + Overhead
 }
 
-// b[off, off + n)（暗号文 ‖ tag）を復号した平文（128 の倍数の部分は GHASH と復号を縫い合わせた 1 回の走査・残りは照合の後 — tag が合わなければ書いた平文を crypto.Wipe で消して Auth）。nonce の長さが違う・n が tag より短い・[off, off + n) が b の外なら BadSize
+// b[off, off + n)（暗号文 ‖ tag）を復号した平文（OpenAtIntoの宛先を新しい列にした形）。nonce の長さが違う・n が tag より短い・[off, off + n) が b の外なら BadSize・tag が合わなければ Auth
 @errors(BadSize, Auth)
 @effects(!io, !block, !nondet)
 func OpenAt(k Key, nonce []byte, ad []byte, b []byte, off int, n int) ([]byte, error?) { // 対の SealAt は実需まで足さない（34 節 2 の注記）
     if len(nonce) != NonceSize || n < Overhead || off < 0 || off + n > len(b) {
         return []byte{}, BadSize{}
+    }
+    // 宛先の列は暗号文のコピーで確保する（中身は OpenAtInto が上書きする — 0埋めのループは一括のコピーにならず16 KiBで ≈ 0.9命令 / B重い）
+    mut q := mut []byte{}
+    e := off + n
+    mut z := off
+    while z < e {
+        q = append(q, b[z])
+        z += 1
+    }
+    m := OpenAtInto(k, nonce, ad, b, off, n, mut q, 0)?
+    p := freeze(q)
+    return p[0:m], nil
+}
+
+// b[off, off + n)（暗号文 ‖ tag）を呼び手の列 dst[at:] へ復号して、平文の長さ m = n − Overhead を返す（平文 = dst[at, at + m)）。
+// dst[at, at + n) を使う（平文の後ろの Overhead バイトまでは、半端のブロックの CTR が書く作業の席 — 中身は決めない）。
+// 128 の倍数の部分は GHASH と復号を縫い合わせた 1 回の走査（暗号文 → dst へ直に）・残りの 16 の倍数と端は GHASH → 照合の後に復号する。
+// tag が合わなければ dst[at, at + n) を 0 で消して Auth（平文は外へ出ない）。nonce の長さが違う・n が tag より短い・[off, off + n) が b の外・
+// dst[at, at + n) が dst の外なら BadSize（dst には書かない）
+@errors(BadSize, Auth)
+@effects(!io, !block, !nondet)
+func OpenAtInto(k Key, nonce []byte, ad []byte, b []byte, off int, n int, dst mut []byte, at int) (int, error?) {
+    if len(nonce) != NonceSize || n < Overhead || off < 0 || off + n > len(b) || at < 0 || at + n > len(dst) {
+        return 0, BadSize{}
     }
     m := n - Overhead
     full := m - m % 16
@@ -256,22 +281,11 @@ func OpenAt(k Key, nonce []byte, ad []byte, b []byte, off int, n int) ([]byte, e
     if af < len(ad) {
         _ = sysAesGhash(sa, sa + stAd, 16)
     }
-    // 平文の列（16 の倍数に切り上げ — 半端の CTR の席）。128 の倍数の部分は GHASH と復号を縫い合わせて 1 回の走査（暗号文 → 平文の列へ直に）・
-    // 残りの 16 の倍数と端は GHASH → 照合の後に復号する。照合が合わなければ縫い合わせで書いた平文を消して Auth（平文は外へ出ない）
-    // 平文の列は暗号文のコピーで確保する（中身はチャンクが上書きする — 0埋めのループは一括のコピーにならず16 KiBで ≈ 0.9命令 / B重い。
-    // 切り上げのはみ出しは tag の席 — b の内側）
-    r16 := (m + 15) / 16 * 16
-    mut q := mut []byte{}
-    e := off + r16
-    mut z := off
-    while z < e {
-        q = append(q, b[z])
-        z += 1
-    }
     m8 := full - full % 128
     src := sysAddr(b) + off
+    base := sysAddr(dst) + at
     if m8 > 0 {
-        _ = sysAesOpen(sa, src, sysAddr(q), m8)
+        _ = sysAesOpen(sa, src, base, m8)
     }
     if full > m8 {
         _ = sysAesGhash(sa, src + m8, full - m8)
@@ -279,14 +293,18 @@ func OpenAt(k Key, nonce []byte, ad []byte, b []byte, off int, n int) ([]byte, e
     _ = sysAesGhash(sa, sa + stEdge, e16 + 16)
     _ = sysAesTag(sa, sa + stTag)
     if !crypto.Equal(st[stTag:stTag + 16], b[off + m:off + n]) {
-        crypto.Wipe(mut q)
-        return []byte{}, Auth{}
+        mut w := at
+        while w < at + n {
+            dst[w] = byte(0)
+            w += 1
+        }
+        return 0, Auth{}
     }
-    if r16 > m8 {
-        _ = sysAesCtr(sa, src + m8, sysAddr(q) + m8, m - m8)
+    // 残り（16 の倍数に切り上げ — 半端の CTR のはみ出しは dst[at + m, at + n) の作業の席に落ちる）
+    if m > m8 {
+        _ = sysAesCtr(sa, src + m8, base + m8, m - m8)
     }
-    p := freeze(q)
-    return p[0:m], nil
+    return m, nil
 }
 
 // record 1つの状態をs（空の列）に組む（stEdge + e16 + 16バイト — 0で一括に確保してフィールドだけ書く）: 計数器 = nonce ‖ 大きい端の2（本文は2から・

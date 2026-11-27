@@ -1,5 +1,5 @@
-@@full	86c1bc0c119b786d	23484	750525
-@globals	b3636c1fe365c232	111	2302
+@@full	1194a4338b2cc8f9	23687	756782
+@globals	ca5adcc00ce9c5db	111	2324
 main.compile	d0962ec6b72105ae	504	17283
 main.ioWhy	9f80c69208f10ad4	235	7835
 main.lines	32061b379342dcbe	533	17947
@@ -17,7 +17,7 @@ rt.flush	62dd0e169a766cae	72	1742
 rt.grow_try	c3052a27d9b3efe7	87	2220
 rt.map_grow	1ded4e285ed15ca6	201	5153
 rt.map_hash	2ff53caae4579b53	82	2132
-rt.panic	4b3eb9d948537e24	547	16666
+rt.panic	d78300879385fc1b	578	17624
 rt.panic_mem	3390a5b1c035e7b0	368	11528
 rt.print_char	16bc2b4d2973b5a4	40	960
 rt.print_int	fcf4f40fed38131b	85	2225
@@ -54,7 +54,7 @@ std/builder.pushSlow[testdata/minic_rd/parse.Node]	4b750bcd110b24fd	615	20103
 std/convert.FormatInt	85e74a469462b98a	119	3724
 std/convert.decWord	e30a055678204a0d	184	5523
 std/convert.formatUint	e1e7a8d5ffec6123	642	20856
-std/internal/utf8.Parse	187311450d4fe17d	261	8799
+std/internal/utf8.Parse	17c07c05cd97f34e	432	13959
 std/io.ReadFile	0e5abc7717bafb44	368	12264
 std/io.errOf	d095d016fcc767c9	242	7243
 std/pool.Acquire[main.Job]	738a873377b77cfe	473	15961

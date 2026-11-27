@@ -1,5 +1,5 @@
-@@full	14a26d447b782465	197272	7507515
-@globals	eab0c690043cf6cc	62	927
+@@full	e4c433f4db6b6cf5	197475	7513752
+@globals	debd70c0765f0654	62	949
 main.main	edf59bf2f57d9048	190607	7319220
 main.show	c130ac923c9c920e	224	7536
 rt.cat8	8e67ba05682822cf	32	783
@@ -13,7 +13,7 @@ rt.flush	62dd0e169a766cae	72	1742
 rt.grow_try	c3052a27d9b3efe7	87	2220
 rt.map_grow	1ded4e285ed15ca6	201	5153
 rt.map_hash	2ff53caae4579b53	82	2132
-rt.panic	6154348110a63ebd	330	9992
+rt.panic	af08dc7942bb8dde	361	10931
 rt.panic_mem	3390a5b1c035e7b0	368	11528
 rt.print_char	16bc2b4d2973b5a4	40	960
 rt.print_int	fcf4f40fed38131b	85	2225
@@ -37,7 +37,7 @@ rt.write_all	86bfd44897da62e9	58	1390
 rt.write_fd	50346736cb5c6f69	9	276
 rt.write_file	2426a5f18cf5ccce	75	2065
 sober_entry	745a659157ae2d4d	1863	51851
-std/internal/utf8.Parse	d86959bb3bf48771	261	8799
+std/internal/utf8.Parse	2e2ba36497303fb9	432	13959
 std/strings.IndexInvalid	70d8cbfdb18fc220	492	14075
 std/strings.Valid	179132ad28519ddd	35	1239
 std/strings.cont	63982458d028e820	99	2931

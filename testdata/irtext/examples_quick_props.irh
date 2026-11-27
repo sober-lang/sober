@@ -1,5 +1,5 @@
-@@full	9830e7cf1b548b97	51345	1093593
-@globals	a1f8f8bf3ca50b1a	172	6473
+@@full	075872d4c6bfdd26	51452	1095615
+@globals	e60f5db52c6f6564	172	6491
 main.main	2a8e885bd59575d4	16899	394061
 main.rev	bc7a7da4b040cbfa	136	2631
 main.same	f5db3a5f889d15b7	92	1558
@@ -20,7 +20,7 @@ rt.map_grow	f7ce73b3814ab14a	122	2126
 rt.map_hash	d223d44571a67549	52	981
 rt.map_prefix	0b91790d4ece5746	95	1650
 rt.mkdir	1b9359003f6de0ba	31	522
-rt.panic	f86e6a7bb866e45f	365	6800
+rt.panic	29d4ce1172518717	381	7109
 rt.panic_mem	f7479f1db41fdf96	215	4085
 rt.print_char	bb60b2116b220a00	24	377
 rt.print_int	a3a50fa4912ac202	49	851
@@ -53,7 +53,7 @@ std/convert.formatUint	03b275590cce180d	375	7383
 std/hex.Format	92257135f5c3e04e	224	4447
 std/internal/cover.Got	5b6209b2c03f79b6	12	217
 std/internal/cover.N	04d03555f4379034	9	156
-std/internal/utf8.Parse	71054a7ac5eb8633	137	2711
+std/internal/utf8.Parse	bf40306c9b735104	227	4323
 std/io.ReadDir	00cf4fe871f4825f	769	15575
 std/io.ReadFile	049ee71047162d7f	192	3736
 std/io.WriteFile	a749386e6f934616	148	2770

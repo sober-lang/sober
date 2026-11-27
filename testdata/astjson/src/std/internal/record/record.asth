@@ -1,4 +1,4 @@
-@@full	ddc170f121cd407a	14422	458599
+@@full	af0c9d1a59b2c722	14995	473505
 @head	b06c2a91375f141c	0	391
 const AesGcm	c7ef8495cc9c37be	1	60
 const AlertBadMac	9e77c3d8b5b4f73c	1	52
@@ -29,7 +29,8 @@ func Is12	8e4c2f8afb7e9319	9	414
 func NeedUpdate	a81260f791df9bb5	12	510
 func NewDir	a933ce02f971d3b1	103	4119
 func NewDir12	2998380769da5580	155	6146
-func Open	2464016cf56337ea	145	5040
+func Open	0e72e4a0d9281b79	29	1034
+func OpenInto	4a08d2f99d27ba28	169	5720
 func Pack	19b77676d9adc60b	67	2215
 func Plain	a813694e90df7d92	24	861
 func Seal	6aab232c93776c85	101	3378
@@ -46,11 +47,12 @@ func isCbc	86130ab61c8cffed	15	612
 func joined	1a5a3dfef4ffe9d5	29	1095
 func macAlg	8608c38a9d84afe9	19	739
 func nonceOf	a3ab63e3913687a9	124	3805
-func openBody	e9a379b98640b72f	62	2232
+func openBody	249ba284518fe176	65	2342
 func packBytes	5e693d1753c5e673	74	2496
+func room	97dd6ba9c652c497	35	1343
 func sealOne	872d7af13834a7c0	123	4280
-func strip	79c76e77cc3e55e2	53	1720
-func stripTail	5db14f0294897e50	209	6702
+func strip	b8579ce17a077d5a	57	1898
+func stripTail	7b5bc57af07b722a	209	6700
 func unpackBytes	4a60f80b57f24b54	85	2800
 func viewBytes	69bb4e5f348dc613	34	1227
 type Alert	fbc799f561f31c24	2	114

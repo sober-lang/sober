@@ -1,12 +1,21 @@
-@@full	ebd7c91c6e7e6626	5836	221508
-@head	5f6d9b0673b75474	0	177
+@@full	15a8af9d62c51964	14238	547495
+@head	6760b504e8f81b23	0	213
+func TestBlobOwn	9d7933a435e164a7	217	6631
 func TestChildren	4c6802310d6bd76b	176	5563
+func TestCopyOutBounds	1951851fc63e3615	196	5850
+func TestDieAfterFin	bddecde7df730c82	254	7739
+func TestDirectOrder	6db1dfbbd0630ef1	27	989
+func TestDirectPromote	baece414fbed7442	27	993
+func TestDirectSlot	c570665796807c2a	236	7207
 func TestExpire	c8338d168eef554b	32	1165
 func TestOrder	a799623440846794	189	5576
 func TestPoolCapBox	1ad6ff370114f64e	32	1168
 func TestPoolWait	d7b57f95b26118bf	180	5671
 func TestPoolWaitWake	d1e32781a708458d	136	4368
 func TestSlotWait	ca93df19f146a07f	186	5823
+func coop	19510690fdcec22a	14	537
+func directOrderOnce	8efb1a14e0c8f72d	327	9798
+func directPromoteOnce	3a2925da0fa3f35b	219	6547
 func fresh	b72e286f6616aa6d	21	757
 func pat	4c37bf622aec5334	33	1179
 func same	24035e0ce57abe3c	40	1357

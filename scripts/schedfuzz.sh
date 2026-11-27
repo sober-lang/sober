@@ -76,13 +76,13 @@ while read -r e mark; do
     fi
 done < scripts/schedfuzz.list
 # ミューテーションの自己検査（段階6 P4-4）: M:Nのrtにミューテーションを入れたビルド（--rt-mutant=N）で、検査が割れを捕まえること（1件で足りる —
-# 最初の割れで打ち切り）。1 = 未回収の失敗を到着順で選ぶ（正準順の破れ）・2 = 待ち手を素のstoreで置いて見直さない（ウェイクアップ損ね → デッドロックの死）・
+# 最初の割れで打ち切り）。1 = 未回収の失敗を到着順で選ぶ（正準順の破れ）・
 # 6 = 盗み手が被害者の鍵を取らない（盗み手どうしが同じ子を取る — 子が2回走る。Skynet回収 (a)）・15 = leaseの使用中のフラグを見ない
 # （予約ページの中で譲ったtaskの格納場所を同じワーカーの別の予約ページが共有する — region-domain-pool.md 4d節の倒れの証人。ワーカー1で2つの予約ページが必ず重なる）・
-# domainの待ちの列（domain.sober）: 52 = ウェイクアップした待ち手をPから外さない・53 = スリープし直しが番号の位置でなくPの尾へ・54 = 外さずにウェイクアップ済みのフラグだけ
-# （52 / 54は鍵の中のループで止まる — 打ち切り10秒）・77 = 待ったAwaitの状態の読み直しの代入に格納点のコピーを戻す（状態が呼び手のregionへ移り、
+# domainの待ちの列（domain.sober）: 53 = スリープし直しが番号の位置でなくPの尾へ（52 / 54は下のPの照合で捕まえる）
+# 77 = 待ったAwaitの状態の読み直しの代入に格納点のコピーを戻す（状態が呼び手のregionへ移り、
 # 回収された格納場所を本体の結果とproducerの書きが共有する）
-for m in "1 examples/task_fail_order.sober" "2 examples/task_join_race.sober" "6 examples/task_steal.sober" "15 examples/lease_yield.sober" "52 examples/domain_requeue.sober" "53 examples/domain_requeue.sober" "54 examples/domain_requeue.sober" "77 examples/domain_await_result.sober"; do
+for m in "1 examples/task_fail_order.sober" "6 examples/task_steal.sober" "15 examples/lease_yield.sober" "53 examples/domain_requeue.sober" "77 examples/domain_await_result.sober"; do
     set -- $m
     "$S2" build "$2" --emit=elf -o "$W/bin.m$1" > /dev/null 2>&1 && "$S2" build "$2" --emit=elf --rt-mutant=$1 -o "$W/mut.$1" > /dev/null 2>&1 || { echo "FAIL: build mutant $1 $2"; fail=$((fail + 1)); continue; }
     chmod +x "$W/bin.m$1" "$W/mut.$1"
@@ -97,6 +97,34 @@ for m in "1 examples/task_fail_order.sober" "2 examples/task_join_race.sober" "6
     if [ $caught = 0 ]; then
         echo "FAIL: mutant $1 ($2) was not caught — the M:N net does not see the broken rt"
         fail=$((fail + 1))
+    fi
+done
+# 窓を開くビルド（--rt-mutant=139 — Joinの待ちの「見る」と「置く」の間で、子が終わるまで譲る〔上限つき〕。ワーカー2以上だけ）: ミュータント2（待ち手を素のstoreで置いて
+# 見直さない — ウェイクアップ損ね）の交互は、乱択の遅れでは1周あたり約25%でしか開かない。窓を開けば、子の終わりより先に来たJoinのたびに開く
+#   139: Joinを使う一覧の例（splitの印のものを除く）をワーカー2 / 4で走らせ、既定の観測と同じ（窓を開いても正しい待ちの型は見直しで抜ける。
+#        死ぬ例は上の一覧の回と同じく終了コードと標準エラーだけを比べる）
+#   140（2 + 窓）: task_join_raceがワーカー2 / 4 / 8のどれでもデッドロックの死（乱択のシードなし・毎回）
+wn=0
+while read -r e mark; do
+    case "$e" in ''|'#'*|test:*) continue ;; esac
+    [ "$mark" = split ] && continue
+    grep -qE 'task\.(Join|Try)' "$e" || continue
+    "$S2" build "$e" --emit=elf -o "$W/wo.b" > /dev/null 2>&1 && "$S2" build "$e" --emit=elf --rt-mutant=139 -o "$W/wo.c" > /dev/null 2>&1 || { echo "FAIL: build window build $e"; fail=$((fail + 1)); continue; }
+    chmod +x "$W/wo.b" "$W/wo.c"
+    obs "$W/wo.b" "$W/base" SOBER_WORKERS=1
+    deathobs "$W/base" > "$W/base.d"
+    for w in 2 4; do
+        obs "$W/wo.c" "$W/run" SOBER_WORKERS=$w
+        if grep -qx "exit=0" "$W/base"; then cmp -s "$W/base" "$W/run"; else deathobs "$W/run" > "$W/run.d"; cmp -s "$W/base.d" "$W/run.d"; fi || { echo "FAIL: $e — the window build (rt mutant 139) changed the observation at SOBER_WORKERS=$w"; diff "$W/base" "$W/run" | head -6; fail=$((fail + 1)); }
+    done
+    wn=$((wn + 1))
+done < scripts/schedfuzz.list
+"$S2" build examples/task_join_race.sober --emit=elf --rt-mutant=140 -o "$W/wo.m" > /dev/null 2>&1 || { echo "FAIL: build window mutant 140"; fail=$((fail + 1)); }
+chmod +x "$W/wo.m"
+for w in 2 4 8; do
+    OBS_T=20 obs "$W/wo.m" "$W/run" SOBER_WORKERS=$w
+    if grep -qx 'exit=0' "$W/run" || ! grep -q 'Deadlock' "$W/run"; then
+        echo "FAIL: mutant 140 (2 + the window build) was not caught at SOBER_WORKERS=$w — want the deadlock death on every run ($(tr '\n' ' ' < "$W/run" | cut -c1-120))"; fail=$((fail + 1))
     fi
 done
 # domainの状態の格納場所の検査（--rt-mutant=75 — 出る点で書き戻す状態のヘッダのフラグが記録のregionのもの〔0かMAX_DEPTH〕でなければexit 104）:
@@ -117,8 +145,27 @@ while read -r e mark; do
             fail=$((fail + 1))
         fi
     done
+    # Pの照合（--rt-mutant=141 — Pへ入れる点で、入れるtaskがまだPに居ない・Pがループしていない。破れればexit 103）: 同じ例で偽陽性なし
+    "$S2" build "$e" --emit=elf --rt-mutant=141 -o "$W/dc.p" > /dev/null 2>&1 || { echo "FAIL: build P check $e"; fail=$((fail + 1)); continue; }
+    chmod +x "$W/dc.p"
+    for w in 1 4; do
+        obs "$W/dc.p" "$W/run" SOBER_WORKERS=$w
+        if grep -qx 'exit=103' "$W/run"; then
+            echo "FAIL: $e — the P check (rt mutant 141) fired at SOBER_WORKERS=$w: $(grep -m1 '^domain-check' "$W/run")"; fail=$((fail + 1))
+        elif [ $w = 1 ] && ! cmp -s "$W/base" "$W/run"; then
+            echo "FAIL: $e — the P check build (rt mutant 141) changed the observation"; diff "$W/base" "$W/run" | head -6; fail=$((fail + 1))
+        fi
+    done
     dchk=$((dchk + 1))
 done < scripts/schedfuzz.list
+# 142 = 52（ウェイクアップした待ち手をPから外さない）+ Pの照合・143 = 54（外さずにウェイクアップ済みのフラグだけ）+ Pの照合: 再スリープでPへ入れ直す点で、
+# ワーカー1でも4でも毎回exit 103（ミュータント単独は鍵の中のループで止まり、時間切れでしか捕まらなかった）
+"$S2" build examples/domain_requeue.sober --emit=elf --rt-mutant=142 -o "$W/dc.m142" > /dev/null 2>&1 && "$S2" build examples/domain_requeue.sober --emit=elf --rt-mutant=143 -o "$W/dc.m143" > /dev/null 2>&1 || { echo "FAIL: build P check mutants 142 / 143"; fail=$((fail + 1)); }
+chmod +x "$W/dc.m142" "$W/dc.m143"
+for m in 142 143; do for w in 1 4; do
+    OBS_T=20 obs "$W/dc.m$m" "$W/run" SOBER_WORKERS=$w
+    grep -qx 'exit=103' "$W/run" && grep -q '^domain-check: ' "$W/run" || { echo "FAIL: mutant $m was not caught by the P check at SOBER_WORKERS=$w (want exit 103): $(tr '\n' ' ' < "$W/run" | cut -c1-120)"; fail=$((fail + 1)); }
+done; done
 "$S2" build examples/domain_await_result.sober --emit=elf --rt-mutant=76 -o "$W/dc.m" > /dev/null 2>&1 || { echo "FAIL: build domain check mutant 76"; fail=$((fail + 1)); }
 chmod +x "$W/dc.m"
 obs "$W/dc.m" "$W/run" SOBER_WORKERS=1
@@ -175,5 +222,5 @@ if [ -x "$W/rp/t" ]; then
     rpd=$(sort -u "$W/rp.h" | wc -l)
     [ "$rpd" -ge 2 ] || { echo "FAIL: replay — every seed gave the same order of signals and chunks (the check does not see the order)"; fail=$((fail + 1)); }
 fi
-echo "schedfuzz: $n programs × $K seeds × workers {$WS} + mux replay ($K seeds · $rpd orders) + 8 mutants + domain check ($dchk examples · mutant 76) + lot nets (mutant 55 · reap-late) + readyspill + steal-gate stall, fail=$fail"
+echo "schedfuzz: $n programs × $K seeds × workers {$WS} + mux replay ($K seeds · $rpd orders) + 5 mutants + window build ($wn examples · mutant 140) + domain check and P check ($dchk examples · mutants 76 · 142 · 143) + lot nets (mutant 55 · reap-late) + readyspill + steal-gate stall, fail=$fail"
 [ $fail = 0 ]

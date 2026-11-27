@@ -6,7 +6,7 @@ package chacha20poly1305
 //     pt := crypto.chacha20poly1305.Open(key, nonce, ad, ct)?       // 改竄なら crypto.chacha20poly1305.Auth
 //
 // record 層向けの API（aesgcm と同じ形）: Prepare（鍵の長さを見る）・SealTo（head ‖ 暗号文 ‖ tag）・OpenAt（b[off, off + n) を
-// コピーせずに検証してから復号）。MACは入力を繋がずにcrypto.poly1305.SumAeadで
+// コピーせずに検証してから復号）・OpenAtInto（平文を呼び手の列 dst[at:] へ）。MACは入力を繋がずにcrypto.poly1305.SumAeadで
 
 import "std/crypto"
 import "std/crypto/chacha20"
@@ -151,6 +151,23 @@ func OpenAt(k Key, nonce []byte, ad []byte, b []byte, off int, n int) ([]byte, e
         return []byte{}, Auth{}
     }
     return crypto.chacha20.XorKeyStreamAt(k.key, nonce, 1, b, off, m), nil
+}
+
+// b[off, off + n)（暗号文 ‖ tag）を呼び手の列 dst[at:] へ開いて、平文の長さ m = n − Overhead を返す（aesgcm.OpenAtIntoと同じAPI — 平文 = dst[at, at + m)・
+// dst[at, at + n) が dst の外なら BadSize）。tag を照合してから復号した結果をコピーする（tag が合わなければ dst に書かない）
+@errors(BadSize, Auth)
+@effects(!io, !block, !nondet)
+func OpenAtInto(k Key, nonce []byte, ad []byte, b []byte, off int, n int, dst mut []byte, at int) (int, error?) {
+    if at < 0 || at + n > len(dst) {
+        return 0, BadSize{}
+    }
+    p := OpenAt(k, nonce, ad, b, off, n)?
+    mut i := 0
+    while i < len(p) {
+        dst[at + i] = p[i]
+        i += 1
+    }
+    return len(p), nil
 }
 
 // 1 回きりの Poly1305 の鍵（ブロック 0 の鍵ストリームの先頭 32 バイト — RFC 8439 2.6）

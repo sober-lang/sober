@@ -104,7 +104,7 @@ func domCall(st mut St, key int, args desugar.ListRef, at desugar.NodeRef) (int,
         return -1, nil
     }
     rec := itop(mut st, load(mut st, dx.v, 0))
-    me := itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
+    me := itop(mut st, waitSelf(mut st))
     if key == desugar.PAR_DENTER {
         t := yType(mut st, at)?
         cellLock(mut st, rec)
@@ -393,15 +393,49 @@ func domPUncount(st mut St, rec int, w int) {
 // Pのwをウェイクアップ済みにする（Pから外してフラグを立てる）
 func domOffP(st mut St, rec int, w int) {
     // ミュータント54 = Pから外さずにフラグだけ立てる（Pに残ったまま出口が外さない — 出たtaskの記録がPに残る）
-    if st.rtMut != 54 {
+    if st.rtMut != 54 && st.rtMut != 143 {
         domUnlink(mut st, rec, w)
         domPUncount(mut st, rec, w)
     }
     store(mut st, w, TC_DQH, iconst(mut st, 1))
 }
 
+// Pへ入れる点の照合（検査のビルドだけ: ミュータント141 = これだけ・142 = 52 + これ・143 = 54 + これ。schedfuzz）: Pを頭から歩き、meがまだPに居ないこと・
+// 歩いた数がDM_NWAIT以下（チェーンがループしていない）を見る。破れれば印字して終了コード103。フラグTC_DQHは見ない（ミュータントが崩すのはフラグとPの両方）
+func domPCheck(st mut St, rec int, me int) {
+    zero := iconst(mut st, 0)
+    l := newBlock(mut st)
+    p := param(mut st, l, TyI64)
+    k := param(mut st, l, TyI64)
+    b := newBlock(mut st)
+    bad := newBlock(mut st)
+    d := newBlock(mut st)
+    br(mut st, l, list2(mut st, load(mut st, rec, DM_WHEAD), zero))
+    setCur(mut st, l)
+    condbr(mut st, cmp(mut st, CEq, p, zero), d, -1, b, -1)
+    setCur(mut st, b)
+    hit := bin(mut st, BOr, cmp(mut st, CEq, p, ptoi(mut st, me)), cmp(mut st, CGt, k, load(mut st, rec, DM_NWAIT)))
+    nx := newBlock(mut st)
+    condbr(mut st, hit, bad, -1, nx, -1)
+    setCur(mut st, nx)
+    br(mut st, l, list2(mut st, load(mut st, itop(mut st, p), TC_DQNEXT), bin(mut st, BAdd, k, iconst(mut st, 1))))
+    setCur(mut st, bad)
+    toStderr(mut st, globaladdr(mut st, st.meta))
+    printLit(mut st, "domain-check: task ")
+    call(mut st, st.rtPint, list1(mut st, ptoi(mut st, me)))
+    printLit(mut st, " is put into the wait list P while P already holds it or loops (step ")
+    call(mut st, st.rtPint, list1(mut st, k))
+    printLit(mut st, ")\n")
+    call(mut st, st.rtFlush, list0(mut st))
+    exit(mut st, 103)
+    setCur(mut st, d)
+}
+
 // me を到着の番号の位置で P へ入れる（DM_RLAST が自分より古ければそこから・でなければ頭から歩く）
 func domPInsert(st mut St, rec int, me int) {
+    if st.rtMut == 141 || st.rtMut == 142 || st.rtMut == 143 {
+        domPCheck(mut st, rec, me)
+    }
     zero := iconst(mut st, 0)
     sq := load(mut st, me, TC_DQSEQ)
     l := newBlock(mut st)
@@ -482,7 +516,7 @@ func domHand(st mut St, rec int, w0 int) {
     n := load(mut st, wp, TC_DQNEXT)
     o := atomicCas(mut st, wp, TC_IORES, iconst(mut st, PEND_DOM), iconst(mut st, 1))
     // ミュータント52 = 手渡しでウェイクアップされた待ち手をPから外さない（フラグも立たない — 再スリープがPの同じ位置へ入れ直し、チェーンがループになる）
-    if st.rtMut != 52 {
+    if st.rtMut != 52 && st.rtMut != 142 {
         domOffP(mut st, rec, wp)
     }
     condbr(mut st, cmp(mut st, CEq, o, iconst(mut st, PEND_DOM)), wake, -1, l, list1(mut st, n))

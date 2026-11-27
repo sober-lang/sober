@@ -152,6 +152,8 @@ type St struct {
     // 浅いregionの予約ページを組むか（std/taskを使いstd/netのServeを持つプログラムだけ — 予約ページを張るtask〔region: の接続〕が無いプログラムは
     // 予約ページのパス・先端の伸長の比較を組まない。下ろしの前に決まる）
     winOn bool
+    // 遅延task化（lazy.sober）を組む: std/internal/mux（HTTP/2の多重化 — 配置のフラグの行き先-2を使う）を含むプログラム
+    lazyOn bool
     // 接続のtaskのスタックを本体の枠（チャンクのページ0）+ ワーカーのエリアに分ける形を組むか（std/netのServeを使うプログラム — area.sober）
     areaOn bool
     winG int           // 予約ページの有効のマーク（rt.win — 0 = 未読・1 = SOBER_TASK_WIN=0・2 = 有効）と予約ページのrt（task.soberの予約ページの注記）
@@ -231,6 +233,11 @@ type St struct {
     rtOrphReg FnRef
     rtOrphScan FnRef
     rtTaskRerun FnRef
+    rtTaskLazy FnRef
+    rtTaskLazyRun FnRef
+    rtTaskPromote FnRef
+    // waitSelfを組んだ関数（lazy.sober — rt.task_wait / task_wait_kの呼び出しの検査）
+    waitSelfFn FnRef
     cutSites int
     chanFns int
     cutKids int
@@ -701,6 +708,10 @@ func initScalars(st mut St) {
     st.rtCpuProbe = -1
     st.rtRfd = -1
     st.rtTaskWaitK = -1
+    st.rtTaskLazy = -1
+    st.rtTaskLazyRun = -1
+    st.rtTaskPromote = -1
+    st.waitSelfFn = -1
     st.rtShLand = -1
     st.xNWait = -1
     st.rtOpen = -1

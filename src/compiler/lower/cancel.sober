@@ -138,7 +138,18 @@ func buildCutEnd(st mut St) {
     // 子の死は、本体が出口に着いた後なら、scopeの下のioの待ちも切る（孤児と同じ取り消し — language.md 28 節「子の死で待ちを切る」）: 印を見て、
     // 着いていれば世代を進めてスリープするワーカーを起こす（まだなら本体が出口の印を立てるときに発火する — exitMark）。
     // ミュータント127 = 子の死で発火しない（待っている兄弟が起こされず、期限まで待つ — iouring の net_sibcut が捕まえる）
-    if st.rtMut != 127 && st.orphOn {
+    if ioChk(mut st) && st.orphOn {
+        // 照合のビルド: 出口の印を1回だけ読み、着いていれば孤児の世代が進んだこと（発火したこと）を見る。148 = 127 + 照合（発火しない）
+        ex := cmp(mut st, CEq, load(mut st, rec0, SR_EXIT), iconst(mut st, 1))
+        g0 := load(mut st, globaladdr(mut st, st.orphGenG), 0)
+        if st.rtMut != 148 {
+            bE := branchIf(mut st, ex)
+            orphFire(mut st)
+            br(mut st, bE, -1)
+            setCur(mut st, bE)
+        }
+        chkFail(mut st, bin(mut st, BAnd, ex, cmp(mut st, CEq, load(mut st, globaladdr(mut st, st.orphGenG), 0), g0)), "io-check: a child of scope ", ptoi(mut st, rec0), " died after its body reached the exit, and the cut did not fire\n")
+    } else if st.rtMut != 127 && st.orphOn {
         // ミュータント128（orphan.sober の判定と組）では、本体が走っている間も死の時点で発火する
         bE := branchIf(mut st, if st.rtMut == 128 { iconst(mut st, 1) } else { cmp(mut st, CEq, load(mut st, rec0, SR_EXIT), iconst(mut st, 1)) })
         orphFire(mut st)
@@ -180,7 +191,7 @@ func buildTaskRerun(st mut St) {
     begin(mut st, st.rtTaskRerun)
     frame := 0
     t := call(mut st, st.rtTaskNew, list2(mut st, iconst(mut st, 0), iconst(mut st, 0)))
-    me := itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
+    me := itop(mut st, waitSelf(mut st))
     d := load(mut st, globaladdr(mut st, st.meta), W_DEPTH)
     z := iconst(mut st, 0)
     store(mut st, t, TC_DEPTH, d)

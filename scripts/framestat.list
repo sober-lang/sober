@@ -33,14 +33,15 @@ bench/httparena/main.sober main.serveTlsConn 6254
 # 2026-11-17 conf75d（同じ変更・実測 × 1.01・事後承認）: kid#2 2489 → 2392
 # 2026-11-19 HTTP/2の入口の統一（ServeConnがproto:の分岐とHTTP/2の経路を持つ — ユーザー裁定の代価。接続のtaskの本体〔serveConnAnyの展開〕の枠が2368 → 2816 B〔+448 B — 前置きの判別の切片とHTTP/2の経路の局所のスロット〕・零初期化72 → 216 B。@roomの内〔チャンクのページ0の余白に収まる〕。H1の要求1件の命令はreqinst・ringinstの線の内。実測 × 1.005・標準運用の再設定で、事後承認）: bench/httparena kid#2 2392 → 2830
 # 2026-11-20 工程9（entryの8082にh2c〔ServeConnのproto: H2〕のlistenerを足した — spawnが1つ増えて子の番号がずれた: 平文の接続のtaskはkid#2 → kid#6〔実測2736 B・しきい値はそのまま〕。h2cの接続のtaskはkid#3〔実測2752 B — 実測 × 1.005 = 2766〕で、ページ0の余白の内〔@room〕。標準運用・事後承認）
-bench/httparena/main.sober kid#7 2830
+bench/httparena/main.sober kid#8 2830
 # 2026-11-20 C6の2段目（ServeConnがTLSの接続も受ける — 平文とTLSでHTTP/1.1・HTTP/2のそれぞれ1つの展開。HTTP/2の受けのmux.RecvFromにTLSの分岐 +32 B〔kid#6も2752 → 2784 B・上限値の内〕。実測2784 × 1.005・標準運用・事後承認）
 # 2026-11-20 C6の3段目（benchのTLSの口がServeConnへ — tls.Serveの下にspawnが1つ増え、子の番号がずれた: 平文の接続のtaskはkid#6 → kid#7〔実測2768 B〕・h2cはkid#3 → kid#4〔2784 B〕。上限値はそのまま）
-bench/httparena/main.sober kid#4 2798
+bench/httparena/main.sober kid#5 2798
+# 2026-11-27 train66（benchのrunにLEDGER_MSの計測の道具のspawn〔ledgerLoop〕が1つ増え、子の番号がずれた: 平文の接続のtaskはkid#7 → kid#8・h2cはkid#4 → kid#5〔どちらも枠2512 B・shallow 3で不変〕。上限値はそのまま）
 # 接続のtaskの本体の枠がチャンクのページ0の余白（TCB_TOP_ROOM）に収まるしきい値（本体 + 入口 + 88 B ≤ 余白 — 本体の枠だけページ0・下はワーカーのエリアで走る形の前提）
-bench/httparena/main.sober @room kid#7 rt.task_start_mn
-bench/httparena/main.sober @room kid#4 rt.task_start_mn
-bench/httparena/main.sober @shallow kid#7 2
+bench/httparena/main.sober @room kid#8 rt.task_start_mn
+bench/httparena/main.sober @room kid#5 rt.task_start_mn
+bench/httparena/main.sober @shallow kid#8 2
 # 2026-11-12 slotcolorの門を外す（ec32 — 全関数を彩色）+ sretの転送（return g(…) のコピーが消える）・下がる方向の再設定 = 実測 × 1.01: Dispatch 1072 → 1083・@sum 99088 → 100079・@self @sum 1186416 → 1198280
 # 2026-11-13 P7の修正の後の再設定（同上・実測 × 1.01）: Dispatch 1083 → 905（実測896）
 # 2026-11-15・引き上げ（F-cookie1: DispatchのRequestを「mutのコピー + 1フィールドの代入」の形にした。Requestのコピーが枠に載る分。リクエストごとの命令は約36減る〔リテラルに戻すとsrv/pipeline 3578 → 3596・ring/pipeline 5977 → 6006〕。stackcheckは予算の内〔stack_hw 2424 ≤ 7104 B〕・実測 × 1.01・事後承認）: Dispatch 905 → 1018（実測1008）

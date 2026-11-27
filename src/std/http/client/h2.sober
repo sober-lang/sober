@@ -389,12 +389,13 @@ func h2Piece(blk []int, b []byte, s int, e int, endh bool, out mut []byte) {
     internal.hpack.Init(mut d)
     mut ho := mut []byte{}
     mut fs := mut []int{}
-    if internal.hpack.Decode(mut d, whole, mut ho, mut fs, hHbCap) != internal.hpack.Ok || len(fs) < 4 {
+    dst := internal.hpack.Decode(mut d, whole, mut ho, mut fs, hHbCap)
+    hv := freeze(ho)
+    fv := internal.hpack.Fields(d, freeze(fs))
+    if dst != internal.hpack.Ok || len(fv) < 4 {
         h2Shut(blk)
         return
     }
-    hv := freeze(ho)
-    fv := freeze(fs)
     // 最初は:status（3桁）
     if !h2Fold(slicePiece(hv, fv[0], fv[0] + fv[1]), ":status") || fv[3] != 3 {
         h2Shut(blk)

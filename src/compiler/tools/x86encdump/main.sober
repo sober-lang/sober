@@ -604,6 +604,11 @@ func main() {
         at = x86.Here(mut c)
         x86.SetccCl(mut c, conds[k])
         line(mut c, at, "set${condName(conds[k])} cl")
+        for r <- iter.Range(0, 16) {
+            at = x86.Here(mut c)
+            x86.SetccReg(mut c, conds[k], r)
+            line(mut c, at, "set${condName(conds[k])} ${reg8Name(r)}")
+        }
     }
     mut at0 := x86.Here(mut c)
     x86.AndAlCl(mut c)
@@ -611,6 +616,13 @@ func main() {
     at0 = x86.Here(mut c)
     x86.OrAlCl(mut c)
     line(mut c, at0, "or al, cl")
+    for d <- iter.Range(0, 16) {
+        for r <- iter.Range(0, 16) {
+            at0 = x86.Here(mut c)
+            x86.MovzxReg32Reg8(mut c, d, r)
+            line(mut c, at0, "movzx ${reg32Name(d)}, ${reg8Name(r)}")
+        }
+    }
     mut at := x86.Here(mut c)
     x86.MovzxRaxAl(mut c)
     line(mut c, at, "movzx rax, al")

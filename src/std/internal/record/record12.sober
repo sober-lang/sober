@@ -2,7 +2,7 @@ package record
 
 // TLS 1.2 の記録（Dir.suite が Gcm12 / ChaCha12 / CbcSha1 / CbcSha256〔| Etm〕のとき — Seal / SealInto / Open が分かれてくる）。
 // 外側の型が本当の内容の型（1.3 の内側の型と 0 埋めは無い）。AAD / MAC の頭 = 番号 ‖ 型 ‖ 0x0303 ‖ 平文の長さ（RFC 5246 6.2.3）。
-// AEAD は準備済みの鍵（Dir.aes / Dir.cc）で SealTo / SealInto / OpenAt を呼ぶ。GCM の本文 = 明示の nonce（番号 8 バイト）‖ 暗号文 ‖ tag。
+// AEAD は準備済みの鍵（Dir.aes / Dir.cc）で SealTo / SealInto / OpenAtInto を呼ぶ。GCM の本文 = 明示の nonce（番号 8 バイト）‖ 暗号文 ‖ tag。
 // CBC は記録ごとに生の鍵を展開する（std/internal/cbcrec）。明示の IV = AES_ivKey(番号 ‖ 0)（ivKey = Dir.iv — key_block を相手と共有する長さより
 // 16 バイト長く取った末尾。秘密の鍵の下の置換の像なので相手の外からは予測できず、番号が増えるだけなので繰り返さない — RFC 5246 6.2.3.2）
 
@@ -52,38 +52,47 @@ func sealInto12(d Dir, ctype int, pt []byte, dst mut []byte, at int) int {
     return crypto.chacha20poly1305.SealInto(d.cc, nonceOf(d.iv, d.seq), ad, pt, head12(ctype, m + 16), []byte{}, mut dst, at)
 }
 
-// 枠 r の内容の型と平文（d.seq は呼び手が進める）。外側の型が 20〜23 でなければ unexpected_message・平文が 2^14 を超えれば record_overflow・
-// 認証・埋め草・MAC の誤りは bad_record_mac（区別しない）。開いた平文は公開（1.3 の Open と同じ基準 — @bless）
+// 枠 r の内容の型と平文を dst の at バイト目から書いた長さ（d.seq は呼び手が進める — record.OpenInto の 1.2 の形。dst は at + 本体の長さまで伸ばす）。
+// 外側の型が 20〜23 でなければ unexpected_message・平文が 2^14 を超えれば record_overflow・認証・埋め草・MAC の誤りは bad_record_mac（区別しない）。
+// 開いた平文は公開（1.3 の Open と同じ基準 — @bless）
 @errors(Alert)
 @bless
-func open12(d Dir, r Frame) (int, []byte, error?) {
+func open12Into(d Dir, r Frame, dst mut []byte, at int) (int, int, error?) {
     ct := int(r.b[r.off])
     if ct < CtCcs || ct > CtApp {
-        return 0, []byte{}, Alert{desc: AlertUnexpected}
+        return 0, 0, Alert{desc: AlertUnexpected}
     }
     body := r.n - HeadSize
-    at := r.off + HeadSize
-    mut p := []byte{}
+    b0 := r.off + HeadSize
+    room(mut dst, at + body, r)
+    mut n := 0
     if isCbc(d.suite) {
-        k := internal.cbcrec.New(macAlg(d.suite), d.secret, d.raw) catch return 0, []byte{}, Alert{desc: AlertInternal}
-        frag := r.b[at:at + body]
-        p = if (d.suite & Etm) != 0 { internal.cbcrec.OpenEtm(k, d.seq, ct, 0x0303, frag) catch return 0, []byte{}, Alert{desc: AlertBadMac} } else { internal.cbcrec.Open(k, d.seq, ct, 0x0303, frag) catch return 0, []byte{}, Alert{desc: AlertBadMac} }
+        k := internal.cbcrec.New(macAlg(d.suite), d.secret, d.raw) catch return 0, 0, Alert{desc: AlertInternal}
+        frag := r.b[b0:b0 + body]
+        p := if (d.suite & Etm) != 0 { internal.cbcrec.OpenEtm(k, d.seq, ct, 0x0303, frag) catch return 0, 0, Alert{desc: AlertBadMac} } else { internal.cbcrec.Open(k, d.seq, ct, 0x0303, frag) catch return 0, 0, Alert{desc: AlertBadMac} }
+        // 平文は本体より短い（IV・MAC・埋め草の分）ので伸ばした席に入る
+        mut i := 0
+        while i < len(p) {
+            dst[at + i] = p[i]
+            i += 1
+        }
+        n = len(p)
     } else if d.suite == Gcm12 {
         if body < 8 + 16 {
-            return 0, []byte{}, Alert{desc: AlertBadMac}
+            return 0, 0, Alert{desc: AlertBadMac}
         }
-        nonce := cat2(d.iv, r.b[at:at + 8])
-        p = crypto.aesgcm.OpenAt(d.aes, nonce, aad12(d.seq, ct, body - 24), r.b, at + 8, body - 8) catch return 0, []byte{}, Alert{desc: AlertBadMac}
+        nonce := cat2(d.iv, r.b[b0:b0 + 8])
+        n = crypto.aesgcm.OpenAtInto(d.aes, nonce, aad12(d.seq, ct, body - 24), r.b, b0 + 8, body - 8, mut dst, at) catch return 0, 0, Alert{desc: AlertBadMac}
     } else {
         if body < 16 {
-            return 0, []byte{}, Alert{desc: AlertBadMac}
+            return 0, 0, Alert{desc: AlertBadMac}
         }
-        p = crypto.chacha20poly1305.OpenAt(d.cc, nonceOf(d.iv, d.seq), aad12(d.seq, ct, body - 16), r.b, at, body) catch return 0, []byte{}, Alert{desc: AlertBadMac}
+        n = crypto.chacha20poly1305.OpenAtInto(d.cc, nonceOf(d.iv, d.seq), aad12(d.seq, ct, body - 16), r.b, b0, body, mut dst, at) catch return 0, 0, Alert{desc: AlertBadMac}
     }
-    if len(p) > MaxPlain {
-        return 0, []byte{}, Alert{desc: AlertOverflow}
+    if n > MaxPlain {
+        return 0, 0, Alert{desc: AlertOverflow}
     }
-    return ct, p, nil
+    return ct, n, nil
 }
 
 // CBC の明示の IV（AES_ivKey(番号の 8 バイト ‖ 0 × 8) — 1 ブロックの CBC を IV 0 で = ECB）。IV は記録に載せて送る値なので公開（@bless）

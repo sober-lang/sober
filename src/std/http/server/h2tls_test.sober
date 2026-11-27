@@ -3,6 +3,7 @@ package server
 // TLSの上のHTTP/2の接続（ServeConnのproto: H2 — 受けはmux.RecvFromがTLSの状態を見る・送りはhelperがoutへ積み、送りの点でnet.Sendが暗号化する）。
 // 相手の役はALPNでh2を申し出て、平文の場合と同じ要求の列（h2tRequests）を暗号化して送り、応答を復号して読む
 
+import "std/http"
 import "std/http/client"
 import "std/net"
 import "std/os"
@@ -171,6 +172,14 @@ func h2lRoute(r Request) Response {
         }
         return Response{status: 200, contentType: "text/plain", body: freeze(b)}
     }
+    if r.path == "/hdr" {
+        // 6,000バイトのヘッダつきの小さい応答（4本を1周に積むと、3本目のHEADERSがTLSの1周の上限に収まらない）
+        mut v := ""
+        while len(bytes(v)) < 6000 {
+            v = "${v}abcdefghijklmnopqrst"
+        }
+        return Response{status: 200, contentType: "text/plain", body: bytes("ok"), headers: Headers{list: []http.Field{http.Field{name: "X-Pad", value: v}}}}
+    }
     if r.path == "/stream" || r.path == "/badlen" {
         return h2sRoute(r)
     }
@@ -266,6 +275,15 @@ func TestH2Tls() {
 // 窓の大きい相手へ1 MiBの応答を送り切る（TLSの1周の上限で止め、Roomの合図で次の周に続ける — 続きが止まれば期限で落ちる）
 func TestH2TlsHuge() {
     assert(h2lRun(h2lWide([]string{"/huge", "/a"}), 2, true) == 1)
+}
+
+// 応答の全体の合図（HEADERSと本文を1つ）のHEADERSが1周の上限に収まらなければ、次の周へ回して送り切る（回し忘れると期限で落ちる）
+func TestH2TlsHeadCap() {
+    r := h2lServe(false, (port) => {
+        got := h2lPeer(port, h2lWide([]string{"/hdr", "/hdr", "/hdr", "/hdr"}), 4)
+        if strings.Count(got, ":200:2,") == 4 { 1 } else { 0 }
+    })
+    assert(r == 1)
 }
 
 // TLSの上でも、死んだストリームの子（routeのpanic・子の予算の超過）はRST_STREAM（INTERNAL_ERROR）で閉じ、ほかの要求は返る

@@ -1,4 +1,4 @@
-@@full	1792d1392e382011	11857	418383
+@@full	969311e759db0a79	24126	823835
 @head	2e396a03166856e8	0	184
 const c5r1	ad22496d2a6226b0	1	158
 const c5r2	ffb5ef147d6e34f9	1	158
@@ -7,7 +7,7 @@ const c5t1	958abbf79fd55680	1	158
 const c5t2	b6c59712deb63ced	1	158
 const c5t3	44f31e410177055a	1	179
 func TestBad	a5ac3acc3fecf476	44	1322
-func TestBomb	2d558dc82034c6f8	184	5788
+func TestBomb	38cd73d7056ad720	189	5935
 func TestC2	f9d84971dc320cc5	60	2166
 func TestC3	3189cb1ab34308ce	31	1549
 func TestC4	cd7d977083f457fd	31	1524
@@ -15,16 +15,28 @@ func TestC5	c3f322073df9722e	31	1414
 func TestC6	e179643bb4fe9e9c	31	1327
 func TestEncodeForm	97ccccd9917f76c5	87	2788
 func TestEvictSelf	8390dcddf875196d	106	3575
+func TestHuffFast	ec8e8233d31f8739	268	8420
+func TestHuffLongPlain	312b797ce609e38a	207	6619
+func TestHuffTable	ad66a2484ad12f83	102	3267
 func TestInt	e168bdbccee79aa9	147	4558
-func TestRoundtrip	97216aa3f9a5073d	286	9198
+func TestLargeEdge	7d8eb31384197f72	498	15725
+func TestManyFields	0ff76ce5132cfc9e	107	3477
+func TestNameIndex	9484494739128671	139	4405
+func TestRingEdge	54b4f94b62f0d7b3	149	4769
+func TestRingWrapIndexed	fdad7bed0a4cd0e6	234	7465
+func TestRoundtrip	b7bb8cd27bbf3f9b	291	9345
+func TestSiDynamic	4235985c33825027	186	5856
 func TestSizeUpdate	cc01a96bbc095b95	30	1114
-func TestTableModel	2294f933782e2d6d	593	18627
+func TestTableModel	068d45a12866f3e2	598	18774
 func bad	54f65da4adeabfde	30	1118
 func cat	f7de4cb1c53ed01d	22	832
 func eqb	0098c767e1644469	39	1312
+func huffDecodeRef	db43b0235f1feb29	152	5107
+func huffFirst	6ec57bc2f87f98c1	42	1467
+func huffSame	939d85923b659ea2	75	2626
 func next	09666d78e8c004ca	21	764
 func render	acaa12e785a89ea6	79	2479
 func setup	64cf30d5ae12207c	10	461
-func step	c9e4b9c1103839b0	59	2075
+func step	46af66ab6c76e7d6	64	2222
 func table	43b0fed54f7ba785	115	3690
 func unhex	57aebaf22fa0a41d	49	1663

@@ -12,4 +12,4 @@ std/http/server/server.sober:132:6: personal SetCookie
 std/http/server/server.sober:546:6: meet-point std/http/server.Mount
 examples/origin_neg_std.sober:7:6: violation @credential (a function) is for std only (credential sources, cache policies, per-user values and their blessings are declared by the standard library. language.md 12 節「出所の依存」)
 examples/origin_neg_std.sober:12:6: violation @bless(origin) is for std only (credential sources, cache policies, per-user values and their blessings are declared by the standard library. language.md 12 節「出所の依存」)
-summary atoms=10 credentials=4 eff-fns=0 shared=3 stored=1 personal=1 shared-fields=2 violations=2 walks=1406
+summary atoms=10 credentials=4 eff-fns=0 shared=3 stored=1 personal=1 shared-fields=2 violations=2 walks=1462

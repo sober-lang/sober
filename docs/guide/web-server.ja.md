@@ -84,7 +84,7 @@ GET /nope -> 404
 - `ServeConn` はkeep-aliveとパイプライン（1回の受けに入った複数のリクエスト）を扱います。頭が上限（`maxHead:` 既定8 KiB）を超えたら431、本文が上限（`maxBody:` 既定16 KiB）を超えたら413を返して閉じます
 - 相手を待つ時間にも既定で上限があります。頭が揃うまで（keep-aliveの待ちを含む）は `headWait:` 既定30秒、本文を受け終えるまでは `bodyWait:` 既定60秒、送りが進まない間隔は `sendWait:` 既定60秒です。期限が来たら、何も送らずに閉じます
 - `Request` の値（`path`・`body` など）はリクエスト1件の間だけ生きます。`route` が返ったら消えるので、リクエストをまたいで残すならコピーします
-- 例は検査の都合で `net.Serve` を2秒の期限で包んで止めています。本番では包まずに走らせ続け、止めるのはSIGTERMです（10・11節）
+- 例は検査の都合で `net.Serve` を2秒の期限で包んで止めています。本番では包まずに走らせ続け、止めるのはSIGTERMです（11・12節）
 
 ## 2. ルーティング — `Route` と `Dispatch`
 
@@ -1157,7 +1157,159 @@ certificate and key: ok
 - TLSの接続では、`ServeConn` は受けた切片1つ分のレスポンスを積んで、次の受けの前にまとめて送ります（`net.Put` / `net.Flush`）。任意の引数の全部は [std/http/server](../std/http-server.ja.md) のリファレンスにあります
 - 例は検査一式では設定を確認するだけで、`live <port>` で実際に待ち受けます（試し方は例の冒頭のコメント）
 
-## 10. 本番で走らせる
+## 10. HTTP/2: `proto:` とALPN
+
+`http.server.ServeConn` は既定でHTTP/1.1だけに応じます。HTTP/2にも応じるには、任意の引数 `proto:` を書きます。平文の接続ではh2c（事前知識の形。RFC 9113）、TLSの接続ではALPNで決まったh2に応じます。
+
+| `proto:` | 平文の接続 | TLSの接続 |
+|---|---|---|
+| `http.server.H1`（既定） | HTTP/1.1 | HTTP/1.1 |
+| `http.server.H2` | HTTP/2だけ。最初のバイトが前置きでなければGOAWAY（PROTOCOL_ERROR）で閉じる | HTTP/2 |
+| `http.server.Both` | 最初の24バイトが前置きならHTTP/2、でなければHTTP/1.1 | ALPNでh2に決まればHTTP/2、それ以外はHTTP/1.1 |
+
+### 平文の接続（h2c）
+
+```sober
+// examples/http_h2c.sober
+package main
+
+// HTTP/2（h2c — 事前知識）に応じるサーバー（ServeConnのproto:）。ストリーム1本 = 子task 1本で、遅いハンドラ（/slow）が
+// 同じ接続の速いハンドラ（/fast）を止めない。引数なしでは何もしない。`live <port>` で127.0.0.1の<port>にHTTP/2とHTTP/1.1の両方（proto: Both）、
+// `live <port> h2` でHTTP/2だけ（proto: H2）で応じる（scripts/h2spec.shがh2specとcurl --http2-prior-knowledgeで検査する）:
+//
+//     curl --http2-prior-knowledge -Z http://127.0.0.1:<port>/slow http://127.0.0.1:<port>/fast
+
+import "std/http/server"
+import "std/net"
+import "std/os"
+
+func route(r http.server.Request) http.server.Response {
+    if r.path == "/slow" {
+        os.Sleep(300)
+        return http.server.Text("slow\n")
+    }
+    if r.path == "/stream" {
+        return http.server.Response{status: 200, contentType: "text/plain", stream: (out, emit) => {
+            _ = emit(mut out, bytes("one\n"))
+            emit(mut out, bytes("two\n"))
+        }}
+    }
+    return http.server.Text("hello ${r.path}\n")
+}
+
+func both(c net.Conn) error? {
+    return http.server.ServeConn(c, route, proto: http.server.Both)
+}
+
+func only(c net.Conn) error? {
+    return http.server.ServeConn(c, route, proto: http.server.H2)
+}
+
+func serve(port string, h2only bool) error? {
+    for l <- net.Listen("127.0.0.1:${port}")? {
+        if h2only {
+            net.Serve(l, only)?
+        } else {
+            net.Serve(l, both)?
+        }
+    }
+    return nil
+}
+
+func main() int {
+    args, _ := os.Args()
+    if len(args) >= 3 && args[1] == "live" {
+        return if serve(args[2], len(args) >= 4 && args[3] == "h2") == nil { 0 } else { 1 }
+    }
+    println("h2c server: run with live <port>")
+    return 0
+}
+```
+
+出力:
+
+```
+h2c server: run with live <port>
+```
+
+- `both` は `proto: http.server.Both` で、同じportでHTTP/2とHTTP/1.1の両方に応じます。`only` は `proto: http.server.H2` で、HTTP/2だけに応じます
+- 平文のHTTP/2は、相手が最初からHTTP/2で話す形（事前知識）だけです。HTTP/1.1のリクエストの `Upgrade: h2c` では切り替えず、HTTP/1.1のまま応じます
+- 例は検査一式では何もせず、`live <port>` で実際に待ち受けます（試し方は例の冒頭のコメント）
+
+### TLSの上のHTTP/2
+
+TLSの接続では、プロトコルは接続の前置きでなく、handshakeのALPNと `proto:` で決まります（RFC 9113 3.2）。受けるプロトコルは `tls.Alpn` に、サーバの好みの順で並べます。
+
+```sober
+// examples/web_server_h2.sober
+package main
+
+// Web サーバのガイド 10 節: TLS の上で HTTP/2 に応じる。tls.Alpn に受けるプロトコルをサーバの好みの順（h2 を先）で並べ、
+// ServeConn を proto: Both で呼ぶ。TLS の接続では、ALPN で h2 に決まれば HTTP/2、http/1.1 に決まれば HTTP/1.1 で応じる（前置きは見ない）。
+// 決まったプロトコルは tls.Protocol(c) で読める。既定の走りは設定の確認だけ。`web_server_h2 live <port>` で 127.0.0.1:<port> に https で待ち受ける
+// （試すなら curl --http2 --cacert testdata/crypto/httparena-server.crt https://localhost:<port>/。自己署名の証明書なので起点を足す）
+
+import "std/http/server"
+import "std/net"
+import "std/os"
+import "std/tls"
+
+@embed("testdata/crypto/httparena-server.*")
+const Certs = map[string]string{}
+
+func file(p string) string {
+    v := Certs[p]
+    return if v != nil { v } else { "" }
+}
+
+// 接続1本のhandler: ALPN で決まったプロトコルを読み、route がそれを返す（route は p を捕まえるだけで、可変は捕まえない）
+func app(c net.Conn) error? {
+    p := tls.Protocol(c)
+    return http.server.ServeConn(c, (r http.server.Request) => http.server.Text("hello over ${p}\n"), proto: http.server.Both)
+}
+
+func main() int {
+    cfg, e := tls.Parse(file("testdata/crypto/httparena-server.crt"), file("testdata/crypto/httparena-server.key"))
+    if e != nil {
+        println("bad certificate or key")
+        return 1
+    }
+    h2 := tls.Alpn(cfg, []string{"h2", "http/1.1"})
+    println("certificate and key: ok, ALPN h2 first")
+    args, _ := os.Args()
+    if len(args) >= 3 && args[1] == "live" {
+        e2 := tls.Serve("127.0.0.1:${args[2]}", h2, app)
+        return if e2 == nil { 0 } else { 1 }
+    }
+    return 0
+}
+```
+
+出力:
+
+```
+certificate and key: ok, ALPN h2 first
+```
+
+- `tls.Alpn(cfg, []string{"h2", "http/1.1"})` は、h2を申し出た相手にh2を選び、http/1.1だけを申し出た相手にはhttp/1.1を選びます。相手の申し出と重ならなければ、handshakeはno_application_protocolで終わります（RFC 7301）
+- `tls.Parse` のConfigのALPNの既定はhttp/1.1だけです。TLSでHTTP/2に応じるには、`tls.Alpn` でh2を足します
+- `proto: http.server.Both` は、ALPNの結果でHTTP/2とHTTP/1.1を分けます。`proto: http.server.H2` はALPNの結果によらずHTTP/2で話すので、h2だけを並べたConfigと組みにします
+- `tls.Protocol(c)` は、ALPNで決まったプロトコル（`"h2"`・`"http/1.1"`、申し出が無い・合わなかった・平文の接続なら `""`）を返します
+- 例は検査一式では設定を確認するだけで、`live <port>` で実際に待ち受けます
+
+### ストリームごとに子task
+
+HTTP/2では、ストリーム1本 = `ServeConn` の子task 1本でrouteを呼びます。遅いrouteが、同じ接続のほかのストリームを止めません。上のh2cの例では、`/slow` の300ミリ秒の待ちの間も、同じ接続の `/fast` はすぐに返ります。
+
+routeは並行に呼ばれうるので、`mut` の束縛も `mut` の中身も捕まえられません。これは `proto:` によらない規則で、checkとbuildが呼び出し点で拒否します。リクエストをまたぐ状態の置き場所は [3節](#3-状態の置き場所--domainか外の保存先か) です。
+
+ストリームの子が死ぬと（routeのpanic・予算の超過）、サーバはそのストリームにRST_STREAM（INTERNAL_ERROR）を送り、接続のほかのストリームは続きます。
+
+### クライアントの側
+
+`http.client.Request`・`http.client.Stream`・`http.client.Open` は、httpsの行き先にALPNでh2を申し出て、サーバがh2を選べばHTTP/2で話します（1接続で1ストリームずつ）。レスポンスの形と、maxBody・redirect・セッションの規則は変わりません。httpの行き先は今までどおりHTTP/1.1だけです。使い方は [Webクライアント](web-client.ja.md) にあります。
+
+## 11. 本番で走らせる
 
 std/net（したがって `std/http/server` と `std/tls`）を使うプログラムは、環境に3つのことを求めます。詳しくは [インストール](install.ja.md) の「サーバを走らせる」の節にあります。
 
@@ -1178,7 +1330,7 @@ std/net（したがって `std/http/server` と `std/tls`）を使うプログ�
 
 `ServeConn` の `maxBody:` は、`budget:` を越えてもかまいません。予約を越える本文は、天井の空きから借りて受けます。`Content-Length` の本文は、受け始めるときに本文の分をまとめて借ります。天井が埋まっていれば、空きを来た順に `bodyWait:` まで待ちます。それでも入らなければ、その接続のtaskが `RegionExceeded{cause: budget}` で死にます（413ではありません）。`budget:` を上げるのは、借りずに済ませたいときだけです。
 
-## 11. 交代の境界 — バイナリを入れ替える
+## 12. 交代の境界 — バイナリを入れ替える
 
 新しい版のバイナリへ入れ替えるときに、今できることは次の2つです。
 
@@ -1187,7 +1339,7 @@ std/net（したがって `std/http/server` と `std/tls`）を使うプログ�
 
 まだ無いもの: 古い版に「受けるのをやめて、処理中の接続を流し切ってから終わる」と外から合図するAPI（graceful drain）はありません。`net.Serve` は包むscopeの期限で受けを止め、走っている接続の決着を待ってから返しますが、期限は起動のときに決める値で、外からの合図では発火しません。
 
-## 12. 何を守っているか
+## 13. 何を守っているか
 
 - リクエストの頭と本文には既定で上限がある（431 / 413）・相手を待つ時間にも既定で上限がある（`headWait:` / `bodyWait:` / `sendWait:`）・接続ごとの予約と、受け入れのメモリの合計にも上限がある
 - `Set-Cookie` は型のフィールドでだけ書け、省いたフィールドは安全な側（`Secure`・`HttpOnly`・`SameSite=Lax`・host-only）。緩めるフィールドは `dangerously` の綴りでgrepで拾える

@@ -1,4 +1,4 @@
-@@full	095b8aeb6e1628e5	7639	202979
+@@full	2822d1dfff5212cb	8074	215218
 @head	f7e2a46e28186357	29	2139
 const KeySize	9b101d928db4f31e	1	48
 const NonceSize	c818f8d4966074d1	1	50
@@ -10,7 +10,8 @@ const stTag	df371b9586a15533	1	46
 const tblSize	d1d9506e0a0100e5	1	49
 func Available	458655cc8ea670c8	6	271
 func Open	641ab4dcc8acb86b	28	1084
-func OpenAt	e79efd2bebfae6cc	298	9772
+func OpenAt	1588552db027a704	86	3014
+func OpenAtInto	700a250bf10d0f6e	286	9390
 func Prepare	29ee51843b7244d5	46	1784
 func Seal	f4ad80491e5ebd9d	28	1114
 func SealInto	e83c3c5229111a03	264	8682

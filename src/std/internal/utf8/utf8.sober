@@ -8,6 +8,16 @@ import "std/strings"
 // 妥当なUTF-8だけをstringにする（利用者は `string(b)` を書く。名前は変換の系統Parse — std命名規則）。表現は同じなので、検査の後は恒等（std専用のbytesToString）
 @errors(strings.BadUtf8)
 func Parse(b []byte) (string, error?) {
+    // 短い入力がASCIIだけなら、SSE2の検査器の前置きの固定費を払わずに返す（ASCIIだけの列に不正の位置は無い — 一般の検査と同じ答え）
+    if len(b) <= ASCII_FAST_MAX {
+        mut i := 0
+        while i < len(b) && b[i] < 128 {
+            i += 1
+        }
+        if i == len(b) {
+            return bytesToString(b), nil
+        }
+    }
     at := strings.IndexInvalid(b)
     if at >= 0 {
         return "", strings.BadUtf8{pos: at}
@@ -15,3 +25,6 @@ func Parse(b []byte) (string, error?) {
     s := bytesToString(b)
     return s, nil
 }
+
+// Parse がASCIIの速いパスで読む長さの上限（これより長い入力は一般の検査に全部任せる）
+const ASCII_FAST_MAX = 256

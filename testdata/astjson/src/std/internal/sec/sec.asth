@@ -1,4 +1,4 @@
-@@full	03061b0c3266828b	559	10949
+@@full	d8609c7d2d4e9174	567	11122
 @head	0217ce35de3860f3	0	73
 const AlpnH11	79863f92facdef99	1	47
 const AlpnH2	dc972363a482cca2	1	46
@@ -12,7 +12,7 @@ type CodeFn	fdb6978a5dd3def3	3	151
 type FlushFn	fa1861144f934201	5	214
 type Ops	81fb22d0adf98fcc	5	272
 type PutFn	b2cf9ad67215bdf3	6	248
-type RecvFn	931c26cda42620a4	8	319
+type RecvFn	3f124b910562a186	10	375
 type State	0c07da41e64cd341	5	265
 type Store	d741afba2cbe08bf	6	296
 type secSeal	76318420616f4035	1	69

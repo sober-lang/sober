@@ -1,0 +1,41 @@
+package main
+
+// Web サーバのガイド 10 節: TLS の上で HTTP/2 に応じる。tls.Alpn に受けるプロトコルをサーバの好みの順（h2 を先）で並べ、
+// ServeConn を proto: Both で呼ぶ。TLS の接続では、ALPN で h2 に決まれば HTTP/2、http/1.1 に決まれば HTTP/1.1 で応じる（前置きは見ない）。
+// 決まったプロトコルは tls.Protocol(c) で読める。既定の走りは設定の確認だけ。`web_server_h2 live <port>` で 127.0.0.1:<port> に https で待ち受ける
+// （試すなら curl --http2 --cacert testdata/crypto/httparena-server.crt https://localhost:<port>/。自己署名の証明書なので起点を足す）
+
+import "std/http/server"
+import "std/net"
+import "std/os"
+import "std/tls"
+
+@embed("testdata/crypto/httparena-server.*")
+const Certs = map[string]string{}
+
+func file(p string) string {
+    v := Certs[p]
+    return if v != nil { v } else { "" }
+}
+
+// 接続1本のhandler: ALPN で決まったプロトコルを読み、route がそれを返す（route は p を捕まえるだけで、可変は捕まえない）
+func app(c net.Conn) error? {
+    p := tls.Protocol(c)
+    return http.server.ServeConn(c, (r http.server.Request) => http.server.Text("hello over ${p}\n"), proto: http.server.Both)
+}
+
+func main() int {
+    cfg, e := tls.Parse(file("testdata/crypto/httparena-server.crt"), file("testdata/crypto/httparena-server.key"))
+    if e != nil {
+        println("bad certificate or key")
+        return 1
+    }
+    h2 := tls.Alpn(cfg, []string{"h2", "http/1.1"})
+    println("certificate and key: ok, ALPN h2 first")
+    args, _ := os.Args()
+    if len(args) >= 3 && args[1] == "live" {
+        e2 := tls.Serve("127.0.0.1:${args[2]}", h2, app)
+        return if e2 == nil { 0 } else { 1 }
+    }
+    return 0
+}

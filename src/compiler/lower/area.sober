@@ -128,10 +128,13 @@ func buildShallowLand(st mut St) {
     zero := iconst(mut st, 0)
     if st.areaOn && winArm(mut st) {
         awinRebase(mut st, t)
+        if st.rtMut == 91 || st.rtMut == 92 || st.rtMut == 138 || st.rtMut == 153 {
+            awinAnchorCheck(mut st, t)
+        }
     }
     parkReacquire(mut st)
-    // ミュータント72 = 期限のチェーンから外さない（起きたtaskがチェーンに残る — areacheckのdiscardedの相）
-    if dlFn(st.rtD3) != 0 && st.rtMut != 72 {
+    // ミュータント72 = 期限のチェーンから外さない（起きたtaskがチェーンに残る — areacheckのdiscardedの相）。138 = 72 + 積む点の照合（netpoll.sober awOffCheck）
+    if dlFn(st.rtD3) != 0 && st.rtMut != 72 && st.rtMut != 138 {
         awUnlink(mut st, ptoi(mut st, t))
     }
     store(mut st, itop(mut st, load(mut st, t, TC_SNP)), NR_WAIT, zero)
@@ -181,9 +184,9 @@ func rfdShallow(st mut St, fd int, n int, out int) {
 
 // 浅くスリープしていたt（TCBの番地 — ptr）のエリアの予約ページの深度（空のまま持ってスリープした — task.soberエリアの予約ページ）を、いまのワーカーのエリアの予約ページへ付け替える（スリープしている間に他の
 // taskが深くスリープしてエリアを持ち去っていれば違う）。空なので表の基底とbumpを差分だけずらす（予約ページから本物のスロットへ移した深度はそのまま）。
-// ミュータント80 = 付け替えない
+// ミュータント80 = 付け替えない（153 = 80 + 着地の点の照合 awinAnchorCheck）
 func awinRebase(st mut St, t int) {
-    if st.rtMut == 80 {
+    if st.rtMut == 80 || st.rtMut == 153 {
         return
     }
     tp := t
@@ -208,6 +211,15 @@ func awinRebase(st mut St, t int) {
     store(mut st, tp, TC_WANCH, nw)
     br(mut st, bGo, -1)
     setCur(mut st, bGo)
+}
+
+// 着地の点の照合（検査のビルドだけ: ミュータント91・92・138・153。areacheck）: エリアの予約ページの深度を持つtは、錨TC_WANCHがいまのワーカーのエリアの
+// 予約ページ（WK_AREA + AWIN_OFF + WIN_SZ）を指す。違えば印字して終了コード103。付け替え損ねた錨は、エリアが他のtaskへ移った後にだけ答えの上書きとして表に出る
+func awinAnchorCheck(st mut St, t int) {
+    tp := t
+    nw := bin(mut st, BAdd, load(mut st, globaladdr(mut st, st.wkG), WK_AREA), iconst(mut st, AWIN_OFF + WIN_SZ))
+    has := cmp(mut st, CNe, bin(mut st, BAnd, load(mut st, tp, TC_WSP), iconst(mut st, WSP_AREAS)), iconst(mut st, 0))
+    chkFail(mut st, bin(mut st, BAnd, has, cmp(mut st, CNe, load(mut st, tp, TC_WANCH), nw)), "aw-check: shallow-landed task's area window anchor is stale (now ", nw, ")\n")
 }
 
 // 切り替えの点の照合（検査のビルドだけ: ミュータント91・92〔+ 90〕。areacheck）: 止まるtask fromの今のスタックの番地（rt.task_switchの枠。退避するrspの近く）と、

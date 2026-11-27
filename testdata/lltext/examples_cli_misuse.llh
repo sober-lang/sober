@@ -1,5 +1,5 @@
-@@full	1fe787b80f18942a	104283	3657363
-@globals	245cd5f3a0290f4c	168	7004
+@@full	6520066fdeb7aff2	104486	3663634
+@globals	e85ecc5ab37482ec	168	7026
 main.main	ceba223803058ccb	2907	112879
 main.try	ab23adb3e8d6abe0	11715	467085
 rt.cat8	8e67ba05682822cf	32	783
@@ -15,7 +15,7 @@ rt.grow_try	c3052a27d9b3efe7	87	2220
 rt.jclean	98da2f88a22dd370	56	1251
 rt.map_grow	1ded4e285ed15ca6	201	5153
 rt.map_hash	2ff53caae4579b53	82	2132
-rt.panic	d9dc838679a64ceb	652	19785
+rt.panic	f9a459f0985b10bf	683	20754
 rt.panic_mem	3390a5b1c035e7b0	368	11528
 rt.print_char	16bc2b4d2973b5a4	40	960
 rt.print_int	fcf4f40fed38131b	85	2225
@@ -122,7 +122,7 @@ std/convert.FormatInt	85e74a469462b98a	119	3724
 std/convert.ParseInt	5eedb4b1489bffd1	996	31195
 std/convert.decWord	e30a055678204a0d	184	5523
 std/convert.formatUint	e1e7a8d5ffec6123	642	20856
-std/internal/utf8.Parse	f9b19591b5e364ab	261	8800
+std/internal/utf8.Parse	f07113ded85af878	432	13960
 std/json.Done	3cde0813411f1615	58	2023
 std/json.Put	6648362fe5c492af	42	1518
 std/json.PutBool	0062375559f1d2e1	76	2482

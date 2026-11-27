@@ -115,7 +115,7 @@ func chWait(st mut St, rp int, cell int, kind int) {
     c := if kind == 0 { cmp(mut st, CEq, load(mut st, cell, 0), iconst(mut st, IO_PENDING)) } else { cmp(mut st, CGt, load(mut st, rp, CH_INFL), iconst(mut st, 0)) }
     condbr(mut st, c, wb, -1, wd, -1)
     setCur(mut st, wb)
-    store(mut st, rp, CH_WAIT, ptoi(mut st, chMe(mut st)))
+    store(mut st, rp, CH_WAIT, waitSelf(mut st))
     call(mut st, st.rtTaskWait, list0(mut st))
     br(mut st, wl, -1)
     setCur(mut st, wd)

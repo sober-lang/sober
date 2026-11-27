@@ -1,4 +1,4 @@
-@@full	4bf7397e20dbaabd	20140	630874
+@@full	7c23db2f261dbf81	20285	632444
 @head	606bf1ba2ea403c9	33	2580
 const bBad	43755103cb7c895c	1	46
 const bDead	1c04a0ede4507002	1	45
@@ -39,7 +39,7 @@ func closeOut	3bcdfb40a6848382	47	1664
 func closeRecord	f562898e706087b3	48	1657
 func codeNet	ff891d2e5b326cef	51	1755
 func die	37005f4d43793d0d	74	2553
-func dieNet	351a6175a6569b20	23	872
+func dieNet	167f24439addd455	21	783
 func emptyConfig	933b25828dd78166	19	921
 func flags	c1028bf170a3181b	10	417
 func flushMode	6c17a29b257b836f	40	1394
@@ -54,10 +54,11 @@ func open	a258e64e57c674d4	57	1839
 func pendAt	7f78e2cf0bee58b6	49	1628
 func pendCopy	682fe99674ada839	48	1650
 func pendShift	c0ccfde7ed0a6e7d	50	1714
+func putAt	450b61ec8a208304	50	1697
 func putDir	c75d1af8a0524341	42	1505
 func putHbuf	8914e3c7d0ecf9d6	42	1482
 func putNet	86eca6f57d8b4969	87	2757
-func recvNet	d7f41c364e36fe9a	690	22321
+func recvNet	a1574dfd4dea2c21	663	21467
 func rest	4b1f877d6df9ef17	31	1144
 func sealPut	20a8ed6f561bd9d4	102	3482
 func seatUp	b775e9943d95c984	54	1855

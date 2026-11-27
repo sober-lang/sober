@@ -28,7 +28,8 @@ func TestStripPad() {
         }
         freeze(b)
     }, (b) => {
-        ct, _ := strip(b)
+        mut q := clone(b)
+        ct, _ := strip(mut q, 0, len(b))
         ct == CtApp
     })
 }

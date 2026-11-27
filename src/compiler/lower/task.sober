@@ -73,7 +73,7 @@ const TC_WORDS = TC_FLEN + 5
 // 自前の深度の [スロットの基底, bump] の退避（深度k → TC_SAVE + 2k・+1）。2 × (MAX_DEPTH + 1) ワード = 16 KiBの列なので記録の末尾に置く —
 // 毎回のioのフィールド（TC_FLEN〜TC_SLOTSZ・TC_FDS / TC_CHS / TC_DL = ワード27〜34）をTC_NEXT等と同じ先頭のページに収め、完了1本でTCBの2ページを
 // 触らないため（退避の列の後ろに置くとioのフィールドが5ページ目に来て、4096接続のringでdTLBの取りこぼし12 / リクエストのうち
-// 3.6がrt.uring_pollのTC_IORESになる）。TC_SAVEはTC_DL・TC_LEASE（ワード35）・孤児の登録簿のTC_ORG（ワード36 — orphan.sober）・TC_NSLOT（ワード37）・計上済みの上限のワード（TC_HW〜TC_SNEG = 60〜63）・TC_CELL（ワード64）・TC_BOR（ワード65）・子の死の印TC_DNEXT / TC_DIE（ワード66・67）より後ろ・TC_END × 8 = 16,944 B < 予約ページの始まり（WIN_OFF = 18,432 — チャンクの末尾の4ページは浅いregionの予約ページ）
+// 3.6がrt.uring_pollのTC_IORESになる）。TC_SAVEはTC_DL・TC_LEASE（ワード35）・孤児の登録簿のTC_ORG（ワード36 — orphan.sober）・TC_NSLOT（ワード37）・計上済みの上限のワード（TC_HW〜TC_SNEG = 60〜63）・TC_CELL（ワード64）・TC_BOR（ワード65）・子の死の印TC_DNEXT / TC_DIE（ワード66・67）・要求の塊の持ち主TC_BNEXT / TC_BLOB（ワード68・69）より後ろ・TC_END × 8 = 16,960 B < 予約ページの始まり（WIN_OFF = 18,432 — チャンクの末尾の4ページは浅いregionの予約ページ）
 // 次のspawn 1回のスロットの大きさのフラグ（バイト — 0 = フラグなし。rt.netop 6が今のtaskに書き、rt.task_newが親のこのワードを読んで消す — std/netのServeのregion:）
 const TC_NSLOT = 37
 // TC_PREV = 溢れの列の1つ古い側（実行待ちの列の環から溢れたtaskだけ）。TC_WAKE = 積んだ時刻（TSC。LedgerのmaxWaitが読む）。
@@ -120,7 +120,11 @@ const TC_CELL = 64
 // 縮退した子はrt.task_inlineが読んで消す）・TC_DIE = この子の印（muxの記録の番地 | 枠 << 48 — 0 = 無し。taskの終わりが読んで消す）。spawnごとに書くので先頭のページに
 const TC_DNEXT = 66
 const TC_DIE = 67
-const TC_SAVE = 68
+// 要求の塊の持ち主（mux.soberのblobHand・blobOwnEnd — HTTP/2のストリームの子）: TC_BNEXT = 次のspawn 1回の子に持たせる塊（rt.mux op 69が今のtaskに書き、
+// rt.task_new / task_new_inが子のTC_BLOBへ写して消す。縮退した子はrt.task_inlineが読んで消す）・TC_BLOB = このtaskが持つ塊（0 = 無し。taskの終わりが溜めへ返す）
+const TC_BNEXT = 68
+const TC_BLOB = 69
+const TC_SAVE = 70
 const TC_END = TC_SAVE + 2 * (MAX_DEPTH + 1)
 // 開いたfdのチェーンの頭（fd + 1・0 = 空 — 登録簿rt.soberのneedOpen）。sysOpenを使うプログラムでだけ使うワード（TC_WORDSの外）。mainの記録
 // （rt.main_task）は退避の列の末尾まで（TC_END）なので、TC_FDS / TC_CHS / TC_DLはどのプログラムでも中にある。子のチャンクの記録はTASK_HEADのページの中
@@ -755,6 +759,7 @@ func buildTaskWait(st mut St) {
 func taskWaitFn(st mut St, fnr FnRef, trim bool, kw bool) {
     begin(mut st, fnr)
     me := itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
+    lazyChkWait(mut st, me)
     // M:N: 次のtask（自分がウェイクアップされて積まれていれば自分 — 切り替えずに返る）
     bMn := newBlock(mut st)
     bCo := newBlock(mut st)
@@ -807,13 +812,14 @@ func parkReleaseW(st mut St, me int, trim bool, kw bool) {
     w2 := load(mut st, me, TC_WSP)
     base := load(mut st, me, TC_BASE)
     mut full := iconst(mut st, 0)
+    rs := regionStartPre(mut st, meta, ptoi(mut st, me))
     for r <- iter.Range(0, WIN_N) {
         if !(st.rtMut == 79 && r == 0) {
             k := bin(mut st, BAdd, base, iconst(mut st, 1 + r))
             isA := cmp(mut st, CNe, bin(mut st, BAnd, w2, iconst(mut st, WSP_AREA << (16 * (WIN_N - 1 - r)))), iconst(mut st, 0))
-            sb := slotReal(mut st, meta, load(mut st, gepWord(mut st, sg, k), 0), ptoi(mut st, me))
+            s := load(mut st, gepWord(mut st, sg, k), 0)
             // ミュータント81 = 予約ページから移した深度も予約ページの始まりで比べる（移した後の空の深度を中身ありと解釈し、毎回深くスリープする）
-            st0 := if st.rtMut == 81 { bin(mut st, BAdd, sb, bin(mut st, BSub, load(mut st, meta, W_SLOT_SIZE), iconst(mut st, WIN_SZ))) } else { winAdjT(mut st, meta, sb, ptoi(mut st, me)) }
+            st0 := if st.rtMut == 81 { bin(mut st, BAdd, slotReal(mut st, meta, s, ptoi(mut st, me)), bin(mut st, BSub, load(mut st, meta, W_SLOT_SIZE), iconst(mut st, WIN_SZ))) } else { regionStartW(mut st, rs, s) }
             ne := cmp(mut st, CNe, load(mut st, gepWord(mut st, meta, k), W_BUMP), st0)
             full = bin(mut st, BOr, full, bin(mut st, BAnd, isA, ne))
         }
@@ -872,6 +878,9 @@ func slotBase(st mut St, meta int, d int) int {
 // 予約ページ（移す前）のフィールドは予約ページのずらした基底のまま（予約ページの終わりが上限）。上限は深度の命をまたいで持ち越す（region_enterは書かない）
 // 深度の初めの上限と余白の最小。1ページ（WIN_SZ）より小さくできない: 本物の先頭を「上限 − 1ページ」の切り下げで出す（alignUp・rt.win_start）
 const WM_STEP = 4096
+// 別のtaskの予備のスロットを採るとき、前の持ち主の計上済みの上限を持ち越す上げ幅の上限（BOR_UNIT・既定のbudgetと同じ）。
+// 持ち越した分だけ計上は実際より多くなりうる（深度1つで最大この値）。遅い相手への送りのような大きな上げ幅は持ち越さない
+const WM_ADOPT_MAX = 65536
 // 計上済みの上限のワード（TC_HW〜TC_SNEG）はspawnごとに書くので、記録の先頭のページ（TC_SAVEより前）に置く。退避の列の後ろ（TC_END + k）に置くと、
 // 接続ごとにTCBの記録の末尾のページが1枚常駐する（areacheckがスリープしている接続のチャンクで見る）
 // taskの計上済みの上限の和の高水位（低速パスで測る）と、宣言を越えたかのフラグ（HW_FLAG — 1回だけ数える）
@@ -891,10 +900,12 @@ const BOR_UNIT = 65536
 // ワーカーごとに1本。その借りは単位1つに収まる（切り替えて待つtaskはparkで借りを返す — rt.bor_give）。
 // 予約で埋まったプールでも、走っているtaskが借りられるように、std/netのServeが天井にワーカー数 × この値を足す（Ledgerのワード22）
 const WK_WORK = BOR_UNIT
-// 返したスロットに残してよい常駐の上限（バイト・ワーカーごと — スロット1本ぶんの温かいページ = 既定のW_MADV）: 小さいスロットの手元の列に積むスロットは、先頭からW_MADVまでのページを残す。
+// 返したスロットに残してよい常駐の上限（バイト・ワーカーごと）: 小さいスロットの手元の列に積むスロットは、先頭からW_MADVまでのページを残す。
+// 列には、parkで縮めた接続の深度を大きさの違う子が押し出したスロットが要求ごとに往復する。和がこの上限の近くにあると、積みのたびのmadvise
+// （プロセス全体のTLBのshootdown）が要求の率に乗るので、往復の分が収まる大きさにする。足りる量は負荷の形に依る
 // 残した量の和をワーカーごとに数え（rt.smslotsのSM_RESワード・8 KiB単位）、越える分は積むときに返す。取るときに引く
 // 根の計上に起動時の定数（ワーカー数 × この値）として入れる（mn.sober — Serveの天井の余白WK_WORKには入れない。入れるとその分を借りられる）
-const RES_CAP = 1048576
+const RES_CAP = 4194304
 
 // big（0 / 1）なら印TC_WBIGをmax(印, d)へ
 func wbigUp(st mut St, tp int, d int, big int) {
@@ -1283,7 +1294,34 @@ func wmStart(st mut St, meta int, f int, tcb int) int {
     if !winArm(mut st) {
         return alignUp(mut st, f, load(mut st, meta, W_SLOT_SIZE))
     }
-    return winAdjT(mut st, meta, slotReal(mut st, meta, f, tcb), tcb)
+    return regionStartW(mut st, regionStartPre(mut st, meta, tcb), f)
+}
+
+// 表のフィールドsのregionの先頭（winAdj(slotReal(s))と同じ値・予約ページの判定は1回）。u = s + 大きさ − W は、予約ページなら予約ページの始まりで、
+// それ以外は大きさに切り下げると本物の先頭（rt.win_startと同じ式）。切り下げのマスクに予約ページのフラグ（全ビット）を足して、分岐なしで選ぶ
+func regionStart(st mut St, meta int, s int, tcb int) int {
+    if !winArm(mut st) {
+        return winAdj(mut st, meta, slotReal(mut st, meta, s, tcb))
+    }
+    return regionStartW(mut st, regionStartPre(mut st, meta, tcb), s)
+}
+
+// regionStartWの、フィールドに依らない値（大きさ・予約ページの錨・切り下げのマスク）。ループの外で1回作る
+type RsPre struct {
+    sz int
+    anc int
+    neg int
+}
+
+func regionStartPre(st mut St, meta int, tcb int) RsPre {
+    sz := load(mut st, meta, W_SLOT_SIZE)
+    return RsPre{sz: sz, anc: winAnchor(mut st, tcb), neg: bin(mut st, BMul, sz, iconst(mut st, -1))}
+}
+
+func regionStartW(st mut St, p RsPre, s int) int {
+    t := bin(mut st, BAdd, s, p.sz)
+    on := bin(mut st, BSub, iconst(mut st, 0), cmp(mut st, CUlt, bin(mut st, BSub, t, p.anc), iconst(mut st, (WIN_N - 1) * WIN_SZ + 1)))
+    return bin(mut st, BAnd, bin(mut st, BSub, t, iconst(mut st, WIN_SZ)), bin(mut st, BOr, p.neg, on))
 }
 
 // 深度dの上限をneedを覆う所まで上げ、生きている自前の深度 (TC_BASE, min(own, 今の深度)] の使用量（bump − 先頭。上げたneedを含む）の和の高水位をTC_HWに測る。
@@ -1561,8 +1599,11 @@ func buildSlotNew(st mut St) {
     defsz := cmp(mut st, CEq, load(mut st, meta, W_SLOT_SIZE), if st.poolOn { load(mut st, sg, SLOT_SPSZ) } else { load(mut st, meta, W_SLOT_DEF) })
     condbr(mut st, cmp(mut st, CNe, bin(mut st, BAnd, spare, defsz), iconst(mut st, 0)), bAdopt, -1, bTake, -1)
     setCur(mut st, bAdopt)
-    // 別のtaskの予備（混在を含む）: 計上済みの上限を先頭 + WM_STEPに戻す。上げてあった深度は印TC_WBIGを付け、次の入りで前の命のページを返す
+    // 別のtaskの予備（混在を含む）: 前の持ち主の上げ幅（計上済みの上限 − 先頭）がmin(WM_ADOPT_MAX, W_MADV)以下なら持ち越す。
+    // 越えたら上限を先頭 + WM_STEPに戻し、印TC_WBIGを付けて次の入りで前の命のページを返す。
+    // W_MADVで頭打ちにするのは、印の無い深度の前の命の高水位を先頭 + W_MADV以下に保つため（rt.region_enterが返すループを省く条件）
     bFor := newBlock(mut st)
+    bReset := newBlock(mut st)
     bOwnSp := newBlock(mut st)
     ctp := curTcb(mut st)
     condbr(mut st, cmp(mut st, CNe, load(mut st, sg, SLOT_SPTK), ctp), bFor, -1, bOwnSp, -1)
@@ -1570,8 +1611,11 @@ func buildSlotNew(st mut St) {
     af := load(mut st, gepWord(mut st, sg, d), 0)
     asz := load(mut st, meta, W_SLOT_SIZE)
     as0 := wmStart(mut st, meta, af, ctp)
+    lim := imin(mut st, iconst(mut st, WM_ADOPT_MAX), load(mut st, meta, W_MADV))
+    condbr(mut st, cmp(mut st, CGt, bin(mut st, BSub, bin(mut st, BAdd, af, asz), as0), lim), bReset, -1, bOwnSp, -1)
+    setCur(mut st, bReset)
     store(mut st, gepWord(mut st, sg, d), 0, bin(mut st, BSub, bin(mut st, BAdd, as0, iconst(mut st, WM_STEP)), asz))
-    wbigUp(mut st, itop(mut st, ctp), d, cmp(mut st, CGt, bin(mut st, BSub, bin(mut st, BAdd, af, asz), as0), iconst(mut st, WM_STEP)))
+    wbigUp(mut st, itop(mut st, ctp), d, iconst(mut st, 1))
     br(mut st, bOwnSp, -1)
     setCur(mut st, bOwnSp)
     store(mut st, sg, SLOT_OWN, d)
@@ -1961,7 +2005,7 @@ func parkTrim(st mut St, me int, own int) int {
     setCur(mut st, loop)
     condbr(mut st, bin(mut st, BAnd, cmp(mut st, CGt, k, base), cmp(mut st, CLe, k, own)), chk, -1, done, list1(mut st, k))
     setCur(mut st, chk)
-    empty := cmp(mut st, CEq, load(mut st, gepWord(mut st, meta, k), W_BUMP), winAdj(mut st, meta, slotReal(mut st, meta, load(mut st, gepWord(mut st, sg, k), 0), curTcb(mut st))))
+    empty := cmp(mut st, CEq, load(mut st, gepWord(mut st, meta, k), W_BUMP), regionStart(mut st, meta, load(mut st, gepWord(mut st, sg, k), 0), curTcb(mut st)))
     condbr(mut st, empty, step, -1, done, list1(mut st, k))
     setCur(mut st, step)
     br(mut st, loop, list1(mut st, bin(mut st, BSub, k, iconst(mut st, 1))))
@@ -2060,6 +2104,10 @@ func slotRange(st mut St, t int, lo int, hi int, save bool) {
     if save {
         store(mut st, sv, TC_SAVE, load(mut st, sp, 0))
         store(mut st, sv, TC_SAVE + 1, load(mut st, bp, W_BUMP))
+        // ミュータント178（areacheckの深度0の退避の対の照合の自己検査）: 退避の経路が深度0の対の2語目にも書く
+        if st.rtMut == 178 {
+            store(mut st, t, TC_SAVE + 1, load(mut st, sp, 0))
+        }
     } else {
         store(mut st, sp, 0, load(mut st, sv, TC_SAVE))
         store(mut st, bp, W_BUMP, load(mut st, sv, TC_SAVE + 1))
@@ -2757,8 +2805,8 @@ func buildTaskNewFn(st mut St, fnr FnRef, inPool bool) {
     br(mut st, bInit, list1(mut st, b))
     setCur(mut st, bInit)
     bp := itop(mut st, bin(mut st, BAdd, bInitB, iconst(mut st, tcbOff)))
-    // ミュータント47 = スタックの頂上を1 KiB下げる（パスが1 KiB深くなったのと同じ — stackcheckが捕まえる）
-    store(mut st, bp, TC_TOP, bin(mut st, BSub, ptoi(mut st, bp), iconst(mut st, if st.rtMut == 47 { 1024 } else { 0 })))
+    // ミュータント47 = スタックの頂上をTCB_TOP_ROOM + 1ページ下げる（どのパスも最深がstackcheckの上限を越える。今の深さに依らず捕まる量）
+    store(mut st, bp, TC_TOP, bin(mut st, BSub, ptoi(mut st, bp), iconst(mut st, if st.rtMut == 47 { TCB_TOP_ROOM + 4096 } else { 0 })))
     store(mut st, bp, TC_ENTRY, funcaddr(mut st, st.rtTaskStart))
     if st.areaOn {
         store(mut st, bp, TC_AREA, bin(mut st, BSub, ptoi(mut st, bp), iconst(mut st, TCB_TOP_ROOM)))
@@ -2788,9 +2836,16 @@ func buildTaskNewFn(st mut St, fnr FnRef, inPool bool) {
     store(mut st, got, TC_WBIG, iconst(mut st, 0))
     store(mut st, got, TC_SITE, bin(mut st, BSar, 0, iconst(mut st, 2)))
     // 子の死の印（rt.mux op 69）: 親の次のspawn 1回の印を子へ写して消す（入場できずに縮退した子はrt.task_inlineが読む）
+    // 親は入場の後で読み直す（入場の待ちで昇格前の子が昇格していれば、印は子のtaskにある — lazy.sober）
     if st.dieOn {
-        store(mut st, got, TC_DIE, load(mut st, parT, TC_DNEXT))
-        store(mut st, parT, TC_DNEXT, iconst(mut st, 0))
+        parA := itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
+        store(mut st, got, TC_DIE, load(mut st, parA, TC_DNEXT))
+        store(mut st, parA, TC_DNEXT, iconst(mut st, 0))
+        store(mut st, got, TC_BLOB, load(mut st, parA, TC_BNEXT))
+        // ミュータント163（照合の自己検査）: 親の印を消さない（次のop 69で照合3が止める）
+        if st.rtMut != 163 {
+            store(mut st, parA, TC_BNEXT, iconst(mut st, 0))
+        }
     }
     // 未着手の子の上限は親から継ぐ
     store(mut st, got, TC_BACKLOG, load(mut st, itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR)), TC_BACKLOG))
@@ -3522,7 +3577,7 @@ func buildTaskStart(st mut St) {
     setCur(mut st, bW2)
     pstatCall(mut st, st.rtPstatEnd, list1(mut st, 0))
     admitEnd(mut st, 0, slotRelease(mut st, 0))
-    nx := taskNext(mut st)
+    nx := lazyNextOf(mut st, false)
     tk := globaladdr(mut st, st.taskG)
     store(mut st, 0, TC_NEXT, load(mut st, tk, TK_FREE))
     store(mut st, tk, TK_FREE, ptoi(mut st, 0))
@@ -3650,4 +3705,11 @@ func chunkMap(st mut St, size int) int {
     br(mut st, bOut, list1(mut st, bin(mut st, BAdd, bin(mut st, BMul, cmp(mut st, CEq, rv, zero), at), bin(mut st, BMul, cmp(mut st, CNe, rv, zero), rv))))
     setCur(mut st, bOut)
     return out
+}
+
+func lazyNextOf(st mut St, mn bool) int {
+    if mn {
+        return call(mut st, st.rtMnNext, list0(mut st))
+    }
+    return taskNext(mut st)
 }

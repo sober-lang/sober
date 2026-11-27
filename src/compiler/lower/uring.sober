@@ -54,7 +54,7 @@ const UR_RFR = 73     // io_uring_rsrc_update（2ワード — offset = −1で�
 // mn_nextの頭でスリープせずに提出と取り込み（GETEVENTS・min_complete 0）+ 時計の表の満了。1回のenterで取り込むバッチが作業集合の深さで、バッチが深いと
 // 4096接続でcycles / リクエストが256接続の2.5倍の崖がある。小刻みにするとL2に収まる。取り込んだtaskは実行待ちの列の後ろ（FIFO）。
 // 棄てた案: 閾値を未完了の数に比例（同値）
-const UR_POKE = 8
+const UR_POKE = 16
 const UR_NCQ = 4096
 const UR_NETF = 12296 // IORING_SETUP_CQSIZE | SINGLE_ISSUER | DEFER_TASKRUN
 const UD_CANCEL = 3   // ASYNC_CANCEL の user_data（完了は捨てる）
@@ -382,7 +382,7 @@ func buildUio(st mut St) {
     setCur(mut st, bSync)
     ret(mut st, syscall(mut st, list4(mut st, bin(mut st, BSub, op, iconst(mut st, 22)), fd, addr, n)))
     setCur(mut st, bRing)
-    me := load(mut st, globaladdr(mut st, st.taskG), TK_CUR)
+    me := waitSelf(mut st)
     mp := itop(mut st, me)
     urSqe(mut st, rec, bin(mut st, BOr, op, bin(mut st, BShl, fd, iconst(mut st, 32))), addr, n, me, -1)
     pend := iconst(mut st, IO_PENDING)

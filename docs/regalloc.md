@@ -41,7 +41,7 @@ xAllocFrame  // 退避域・spill 先の変位・区間を持たない値の番�
   参照で渡す仮引数（Kワードを超えるimmの集成値 — docs/ir.md 6節）はスタックの1ワードが番地で、calleeはフィールドを `[番地 + 8k]` から読む
 - 割り当て可能なGPRは10本、すべてcallee-saved: `rbx, r12, r13, r14, r15, rsi, rdi, r8, r9, r10`（xAllocReg — 割り当てる順。
   syscallの引数に使うrsi/rdi/r8〜r10は後ろへ置く）
-- 一時レジスタはrax / rcx / rdx / r11の4本で、割り当てには使わない（xDivRem・xParallelMoveの循環の解消・符号拡張などが使う）
+- 一時レジスタはrax / rcx / rdx / r11の4本で、rax / rcx / rdx は割り当てには使わない（xDivRem・xParallelMoveの循環の解消・符号拡張などが使う）。r11 は最適化のバックエンドで11本目として割り当てる（2026-11-25・ナビ裁定）。条件は部分区間ごと: r11 を作業に使う命令（xInsUsesR11 — 関数値の呼び出し・罠・切り替え・開始・clone・scanb・crcfold・AES と多倍長の塊・rt.netwait の呼び出し〔シャロースリープの記しと着地〕）の位置に触れる部分区間（始まり ≤ 位置 ≤ 終わり）には割り当てない（xTouchR11 — xPrioPick・xPrioEvict・xEvictMaybe・xAnyFree）。r11 を作業に使う出力はすべて口 xT11 を通し、今の位置で r11 に生きた値が載っていればビルドを止める（割り当てと述語の食い違いを黙って壊さない — 割り当ての後に xR11Busy が r11 の部分区間を区間の組の列に集める）。生の x86.R11 は決めた関数の中だけ（ゲート r11lint）。熱いループで生きる値が10本を越えた逃がし（frameAt のリクエスト行の語の読みのループほか）が対象。棄てた案: 関数の単位の門（r11 を作業に使う命令を1つでも含む関数では10本 — 逃がしの多い frameAt・request・接続の本体・Dispatch がちょうど外れていた）・r11 の全面開放（作業に使う命令の前後で毎回退避が要り、命令の選びが r11 の空きに依る形になる）
 - xmmは8本（xX0+8〜15）が既定。関数がscanb（UTF-8検査のSSE2命令）を含まなければxmm2〜7も割り当てに使える14本（xNXmmWide）。
   scanbはxmm0〜7を作業に使うため、含む関数はこれらを呼び手の値のために壊さない（xHasScanB・xAllocFrame）。入口で退避するのは本体が実際に書く
   xmm2〜7の和（xBlkXmm — 本体の出力の仕方の隣に置く: 出口が「x >=u 128」だけのscanbはxmm0だけで退避なし・他のscanb / 数え上げ / UTF-8の検査器は

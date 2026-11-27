@@ -1,0 +1,230 @@
+package mux
+
+// 遅延task化（配置のフラグの行き先-2の子は、待つ点でtaskへ昇格する）: 昇格の前後で子のregionと親のregionが壊れない・返った子と昇格した子が混ざる
+
+import "std/os"
+import "std/task"
+
+func lzSum(b []byte) int {
+    mut s := 0
+    for x <- b {
+        s += int(x)
+    }
+    return s
+}
+
+// 子: regionにnバイトを作り、wなら待ってから（昇格）中身を検算する
+func lzKid(n int, w bool) int {
+    b := pat(n % 13, n)
+    s0 := lzSum(b)
+    if w {
+        os.Sleep(1)
+    }
+    return if lzSum(b) == s0 && len(b) == n { s0 } else { 0 - 1 }
+}
+
+// 呼ばれた関数のregion（親の深度より深い — kレベルの入れ子）にnバイトずつ作り、下のレベルから戻った後に検算する
+func lzTouch(n int, k int) int {
+    b := pat(7, n)
+    s0 := lzSum(b)
+    below := if k > 0 { lzTouch(n, k - 1) } else { 0 }
+    return if lzSum(b) == s0 && below >= 0 { s0 } else { 0 - 1 }
+}
+
+func TestLazyRegion() {
+    assert(lzRegionRound(40, 3) == 40)
+}
+
+// 4本の親が並んで同じことをする（返った子のスロットはワーカーのプールへ戻り、ほかの親の子が取る — 戻さない誤りが重なりになる）
+func TestLazyRegionPar() {
+    r, e := task.Run((s task.Scope) => {
+        mut hs := mut []task.Handle[int]{}
+        mut k := 0
+        while k < 4 {
+            hs = append(hs, task.Spawn(s, () => {
+                lzRegionRound(60, 2)
+            }))
+            k += 1
+        }
+        mut sum := 0
+        for v <- task.Gather(hs) {
+            sum += v
+        }
+        sum
+    })
+    assert(e == nil)
+    assert(r == 240)
+}
+
+// m本の子を順に生む（m3本に1本は待たずに返り、ほかは待って昇格する）。親は子が居る間と返った後に、子より深いregionを使う
+func lzRegionRound(m int, m3 int) int {
+    r, e := task.Run((s task.Scope) => {
+    mine := pat(3, 5000)
+    m0 := lzSum(mine)
+    mut ok := 0
+    mut i := 0
+    while i < m {
+        n := 1000 + i % 40 * 1000
+        w := i % m3 != 0
+        _ = sysNetOp(5, 0 - 2, 0, 0)
+        h := task.Spawn(s, () => lzKid(n, w))
+        // 親が子より深い深度のregionを使う（昇格した子が待っている間・返った子の後 — 隠す / 戻す / 移すの経路を通る）
+        t := lzTouch(n, 4)
+        v := task.Join(h)
+        if v == lzSum(pat(n % 13, n)) && t == lzSum(pat(7, n)) {
+            ok += 1
+        }
+        i += 1
+    }
+    if lzSum(mine) == m0 { ok } else { 0 - 1 }
+    })
+    return if e == nil { r } else { 0 - 1 }
+}
+
+type lzCount struct {
+    n int
+}
+
+// scopeの出口は昇格した子を待つ（昇格で生きている子の数に足す）: 待って昇格する子の数を、出口の後で数える
+func TestLazyScopeWait() {
+    r, e := task.Run((s task.Scope) => {
+        d := task.NewDomain(s, lzCount{n: 0})
+        _, e2 := task.Run((s2 task.Scope) => {
+            mut i := 0
+            while i < 8 {
+                _ = sysNetOp(5, 0 - 2, 0, 0)
+                _ = task.Spawn(s2, () => {
+                    os.Sleep(2)
+                    task.Update(d, (g mut lzCount) => {
+                        g.n += 1
+                        0
+                    })
+                    0
+                })
+                i += 1
+            }
+            0
+        })
+        assert(e2 == nil)
+        task.Read(d, (g lzCount) => g.n)
+    })
+    assert(e == nil)
+    assert(r == 8)
+}
+
+// 出力の区間（O1）: 昇格した子の出力は、spawnの点より後の親の出力より前に並ぶ（昇格で子の区間を親の区間の末尾から切り出す）
+func TestLazyOut() {
+    _, e := task.Run((s task.Scope) => {
+        mut i := 0
+        while i < 4 {
+            _ = sysNetOp(5, 0 - 2, 0, 0)
+            h := task.Spawn(s, () => {
+                println("lazyout k1")
+                os.Sleep(1)
+                println("lazyout k2")
+                0
+            })
+            println("lazyout p1")
+            _ = task.Join(h)
+            println("lazyout p2")
+            i += 1
+        }
+        0
+    })
+    assert(e == nil)
+}
+
+@intrinsic("open")
+func sysOpen(path string) int
+
+@intrinsic("close")
+func sysClose(fd int) int
+
+// 範囲外の添字で死ぬ子（fdなら開いたまま死ぬ — taskの出口がfdの連なりを閉じる・wなら待ってから〔昇格の後に〕死ぬ）
+func lzDie(n int, w bool, fd bool) int {
+    if fd {
+        _ = sysOpen("/dev/null")
+    }
+    if w {
+        os.Sleep(1)
+    }
+    b := pat(1, n)
+    return int(b[n])
+}
+
+// 子の死の道（昇格前に死んだ子も昇格してからtaskの終わりを通る）: Tryが死を返す・開いたfdが閉じる・死はscopeのerrになる
+func TestLazyDie() {
+    // 1周目でワーカーのfd（epoll・ring）が開き終わる。2周目の前後で一番小さい空きのfdが変わらない = 死んだ子のfdが閉じた
+    assert(lzDieRound() == 12)
+    base := sysOpen("/dev/null")
+    _ = sysClose(base)
+    assert(lzDieRound() == 12)
+    after := sysOpen("/dev/null")
+    _ = sysClose(after)
+    assert(after == base)
+    _, e3 := task.Run((s task.Scope) => {
+        _ = sysNetOp(5, 0 - 2, 0, 0)
+        _ = task.Spawn(s, () => lzDie(5, false, false))
+        0
+    })
+    assert(e3 != nil)
+}
+
+// fdを開いたまま普通に返る子（返った点はfdの連なりが残る子を昇格させてからtaskの終わりへ — 出口が閉じる）。死ぬ子のテストと別の
+// プロセスで走る（死は打ち切りの世代を進め、以後の返った子を全部遅いパスへ送る）
+func TestLazyFdLeft() {
+    _ = lzFdRound()
+    base := sysOpen("/dev/null")
+    _ = sysClose(base)
+    _ = lzFdRound()
+    after := sysOpen("/dev/null")
+    _ = sysClose(after)
+    assert(after == base)
+}
+
+func lzFdRound() int {
+    r, e := task.Run((s task.Scope) => {
+        mut i := 0
+        while i < 8 {
+            _ = sysNetOp(5, 0 - 2, 0, 0)
+            h := task.Spawn(s, () => sysOpen("/dev/null"))
+            _ = task.Join(h)
+            i += 1
+        }
+        0
+    })
+    assert(e == nil)
+    return r
+}
+
+// 12本の子が死ぬ（Tryで死を数える — 死はscopeのerrにもなる）
+func lzDieRound() int {
+    r, e := task.Run((s task.Scope) => {
+        d := task.NewDomain(s, lzCount{n: 0})
+        _, e2 := task.Run((s2 task.Scope) => {
+            mut i := 0
+            while i < 12 {
+                n := 10 + i
+                w := i % 2 == 1
+                fd := i % 3 == 2
+                _ = sysNetOp(5, 0 - 2, 0, 0)
+                h := task.Spawn(s2, () => lzDie(n, w, fd))
+                k := switch task.Try(h) {
+                case task.Ok{}: 0
+                case task.Failed{}: 0
+                case task.Died{}: 1
+                }
+                task.Update(d, (g mut lzCount) => {
+                    g.n += k
+                    0
+                })
+                i += 1
+            }
+            0
+        })
+        assert(e2 != nil)
+        task.Read(d, (g lzCount) => g.n)
+    })
+    assert(e == nil)
+    return r
+}

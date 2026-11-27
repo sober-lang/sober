@@ -113,7 +113,7 @@ jobs:
           git clone --quiet --depth 1 https://github.com/MDA2AV/gcannon.git
           cd gcannon
           make -s -j"$(nproc)" CFLAGS="-O2 -march=native -Iinclude -DUSE_PICO -Iexternal/picohttpparser -I$RUNNER_TEMP/gc/usr/include" \
-            LDFLAGS="-L$RUNNER_TEMP/gc/usr/lib -Wl,-rpath,$RUNNER_TEMP/gc/usr/lib -luring -lpthread"
+            LDFLAGS="-L$RUNNER_TEMP/gc/usr/lib -Wl,-rpath,$RUNNER_TEMP/gc/usr/lib -luring -lpthread -lssl -lcrypto"
           echo "GCANNON=$RUNNER_TEMP/gc/gcannon/gcannon" >> "$GITHUB_ENV"
 
       - name: Install wrk (json-tls — HttpArena's load generator for the TLS profiles)

@@ -26,13 +26,15 @@ function cval(name: string): number {
   return v;
 }
 // TCBのワードの定数（lowerの全ファイルの const TC_…）が重ならないこと: 範囲の印（TC_WORDS = 記録の語数・TC_SAVE〜TC_END = 退避の列）を除いた
-// ワードは互いに違い、退避の列に入らない（2つのbranchが同じ空きのワードを取ると、片方の値がもう片方を上書きする — 定数の値だけでは見えない）
+// ワードは互いに違い、退避の列に入らない（2つのbranchが同じ空きのワードを取ると、片方の値がもう片方を上書きする — 定数の値だけでは見えない）。
+// 深度0の退避の対（TC_SAVE・TC_SAVE + 1）は列に数えない: 退避は基底 + 1から（slotRange・taskHandover・昇格の移し）なので、どの経路も書かない。
+// 遅延task化のTC_LAZYCがその1語目を使う
 {
   const marks = new Set(["TC_WORDS", "TC_SAVE", "TC_END"]);
   const names = [...src.matchAll(/^const (TC_[A-Z0-9_]+) = /gm)].map((m) => m[1]).filter((n) => !marks.has(n));
   const at = new Map<number, string[]>();
   for (const n of names) { const v = cval(n); at.set(v, [...(at.get(v) ?? []), n]); }
-  const lo = cval("TC_SAVE"), hi = cval("TC_END");
+  const lo = cval("TC_SAVE") + 2, hi = cval("TC_END");
   const clash = [...at.entries()].filter(([v, ns]) => ns.length > 1 || (v >= lo && v < hi)).map(([v, ns]) => `word ${v}: ${ns.join(" · ")}`);
   if (clash.length) { console.log(`areacheck-bad TCB word constants overlap [${clash.join(" / ")}] (save array ${lo}..${hi - 1})`); process.exit(1); }
 }
@@ -55,16 +57,23 @@ let awMax = 0;
 // 機械語の範囲（シャロースリープの記し — TCBのワード0に本体の戻り先が残る: シャロースリープしているチャンクと、記して普通に返ったチャンク）
 const codeHi = Math.max(...fs.readFileSync(symf, "utf8").split("\n").filter((l) => /^[0-9a-f]+ /.test(l)).map((l) => parseInt(l.split(" ")[0], 16)));
 
+// stderrはファイルへ: rtが印字してから終わるので、接続の切れを見た時点で読めば理由が必ず入っている（パイプのdataの届く順に依らない）
+const errf = `${srv}.stderr`;
+const efd = fs.openSync(errf, "w");
+const errText = (): string => { try { return fs.readFileSync(errf, "utf8"); } catch { return ""; } };
 const p = spawn(srv, [process.env.AC_SERVE_MS ?? "6000", process.env.AC_HOLD_MS ?? "3000", ...(FAR ? ["far"] : [])],
-  { env: { ...process.env, SOBER_WORKERS: String(W), SOBER_PAR_STATS: "1" }, stdio: ["ignore", "pipe", "pipe"] });
+  { env: { ...process.env, SOBER_WORKERS: String(W), SOBER_PAR_STATS: "1" }, stdio: ["ignore", "pipe", efd] });
 const pid = p.pid!;
-let out = "", err = "";
+let out = "";
 p.stdout.on("data", (d) => { out += d; });
-p.stderr.on("data", (d) => { err += d; });
 const exited = new Promise<number>((r) => p.on("exit", (c) => r(c ?? -1)));
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+// 待ちの途中でサーバーが終わっていれば（照合のビルドの破れ = exit 103 など）、時間切れを待たずにその場で落とす
+function gone(what: string) {
+  if (p.exitCode !== null || p.signalCode !== null) bad(`server exited while waiting for ${what} (exit ${p.exitCode ?? p.signalCode})`);
+}
 async function until(f: () => boolean, ms: number, what: string) {
-  for (let t = 0; t < ms; t += 20) { if (f()) return; await sleep(20); }
+  for (let t = 0; t < ms; t += 20) { if (f()) return; gone(what); await sleep(20); }
   bad(`timeout waiting for ${what}`);
 }
 // サーバーのスレッドが全部スリープ（S）しているか（ワーカーが走らせるtaskが無い — 接続のtaskは全部止まっている）
@@ -77,7 +86,7 @@ function idle(): boolean {
 // 接続のtaskが止まる途中・終わる途中のことがあり、その途中のスタックのページが署名に入る）
 async function quiet(what: string) {
   let n = 0;
-  for (let t = 0; t < 20000; t += 10) { n = idle() ? n + 1 : 0; if (n >= 3) return; await sleep(10); }
+  for (let t = 0; t < 20000; t += 10) { n = idle() ? n + 1 : 0; if (n >= 3) return; gone(`the server to settle (${what})`); await sleep(10); }
   bad(`timeout waiting for the server to settle (${what})`);
 }
 // サーバーが開いているソケットの数（接続のtaskの出口がfdを閉じる — 客が閉じた接続のtaskが終わったことの目印）
@@ -91,7 +100,9 @@ let probing = false;
 function bad(why: string): never {
   if (probing) throw new Unsettled(why);
   // 理由は1行で出す（areacheck.sh は最後の1行で判定する。答えの本文に改行が入ると、捕まえた変異が「捕まらない」に見える）
-  console.log(`areacheck-bad ${why.replace(/\r/g, "\\r").replace(/\n/g, "\\n")}`);
+  // 照合のビルドのrtが印字した破れ（exit 103の理由）は、どの相の症状で落ちたかに依らず添える。areacheck.shはこの印で照合の検出を見分ける
+  const rc = /^(?:aw|area)-check: .*$/m.exec(errText());
+  console.log(`areacheck-bad ${why.replace(/\r/g, "\\r").replace(/\n/g, "\\n")}${rc ? ` [rt ${rc[0]}]` : ""}`);
   p.kill("SIGKILL");
   process.exit(1);
 }
@@ -132,7 +143,7 @@ function snap(tag: string): number {
     }
   } catch (e) {
     if (e instanceof Unsettled || !serverGone()) throw e;
-    bad(`server stopped during the measurement at ${tag} (${(e as NodeJS.ErrnoException).code ?? e}; exit ${p.exitCode ?? p.signalCode ?? "pending"}): ${err.trim().replace(/\n+/g, " | ").slice(0, 200)}`);
+    bad(`server stopped during the measurement at ${tag} (${(e as NodeJS.ErrnoException).code ?? e}; exit ${p.exitCode ?? p.signalCode ?? "pending"}): ${errText().trim().replace(/\n+/g, " | ").slice(0, 200)}`);
   }
 }
 
@@ -162,7 +173,7 @@ function snapRaw(tag: string): number {
   let shallow = 0;
   const strays: string[] = [];
   let tailRes = 0;
-  const awBad: string[] = [];
+  const awBad: string[] = [], d0Bad: string[] = [];
   let awSeen = 0;
   for (const h of chunkTops) {
     const a = REF ? h : word(h + ROOM + 8 * TC_AREA); held.push(a); if (a !== h) swapped++;
@@ -178,6 +189,9 @@ function snapRaw(tag: string): number {
     if (rsp !== 0 && !inArea && !onPage0) strays.push(`${h.toString(16)}:rsp ${rsp.toString(16)} area ${a.toString(16)}`);
     // エリアの予約ページの不変条件: シャロースリープしているtaskの予約ページの深度は全部空（ディープスリープしているtaskの予約ページの中身が守られることは /holdの答えが見る）
     const T = h + ROOM, wsp = BigInt.asUintN(64, BigInt(word(T + 8 * TC_WSP))), base = word(T + 8 * TC_BASE), sz = word(T + 8 * TC_SLOTSZ);
+    // 深度0の退避の対（語TC_SAVE・TC_SAVE + 1）は退避に使わない（上の重なりの照合の前提）。止まっているtaskでは、1語目（遅延task化の
+    // TC_LAZYC — 昇格前の子が居る間だけ非0で、その間の親は走っている）も2語目も0。退避を基底から書く変更が入ると、スロットの番地が入る
+    if (word(T + 8 * TC_SAVE) !== 0 || word(T + 8 * (TC_SAVE + 1)) !== 0) d0Bad.push(`${h.toString(16)}:${word(T + 8 * TC_SAVE).toString(16)},${word(T + 8 * (TC_SAVE + 1)).toString(16)}`);
     for (let r = 0; r < WIN_N; r++) {
       if (((wsp >> BigInt(16 * (WIN_N - 1 - r))) & BigInt(WSP_AREA)) === 0n) continue;
       const k = base + 1 + r, sb = word(T + 8 * (TC_SAVE + 2 * k)), bump = word(T + 8 * (TC_SAVE + 2 * k + 1));
@@ -194,6 +208,7 @@ function snapRaw(tag: string): number {
   if (n !== W || wkTops.length !== W) bad(`${line} — expected ${W} workers with one area each`);
   if (tailRes) bad(`${tag}: ${tailRes} chunks hold a resident page of the TCB record past page 0 (pages 1..${TAIL}) — a word written per spawn sits behind the save array`);
   if (strays.length) bad(`${tag}: a chunk left its stack outside the area it holds [${strays.slice(0, 3).join(" · ")}]`);
+  if (d0Bad.length) bad(`${tag}: ${d0Bad.length} chunks wrote the depth-0 save pair [${d0Bad.slice(0, 3).join(" · ")}]`);
   if (awBad.length) bad(`${tag}: area window invariant broken [${awBad.slice(0, 3).join(" · ")}]`);
   awMax = Math.max(awMax, awSeen);
   const want = new Set([...chunkTops, ...wkTops]);
@@ -351,6 +366,7 @@ async function main() {
   mx = Math.max(mx, snap("discarded"));
   for (const c of [...cs, ...ps, ...ls]) c.s.destroy();
   const code = await exited;
+  const err = errText();
   const af = /area_far=(\d+)/.exec(err);
   if (code !== 0) bad(`server exit ${code} (${err.slice(0, 200)})`);
   console.log(`areacheck-ok swapped-max ${mx} shallow-max ${smx} area_far ${af ? af[1] : "none"} parkswap ${swaps} awin ${awMax} deepwin ${pdw}`);

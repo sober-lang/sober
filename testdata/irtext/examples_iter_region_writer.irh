@@ -1,5 +1,5 @@
-@@full	0945bf728678464c	5797	108337
-@globals	dcf28b0a7738cd79	57	797
+@@full	9726d0f72a88d392	5904	110355
+@globals	3e688d948175bd4d	57	815
 main.main	42f9ac2be9dba813	282	5569
 rt.cat8	d7763d59e08dbc55	20	361
 rt.copy	17b32315347f22b4	18	269
@@ -12,7 +12,7 @@ rt.flush	beec28d2792e8799	43	659
 rt.grow_try	9e10061b87b86cd0	48	869
 rt.map_grow	f7ce73b3814ab14a	122	2126
 rt.map_hash	d223d44571a67549	52	981
-rt.panic	f70a90e234adabbb	250	4604
+rt.panic	8eb49c82d0fceee8	266	4912
 rt.panic_mem	81af3d9454b47494	202	3821
 rt.print_char	bb60b2116b220a00	24	377
 rt.print_int	a3a50fa4912ac202	49	851
@@ -40,7 +40,7 @@ std/convert.FormatInt	151aa2fbcfb409ff	68	1306
 std/convert.ParseInt	a0bbd8723a7909f3	547	10375
 std/convert.decWord	976a0481e914d2ba	119	2161
 std/convert.formatUint	03b275590cce180d	375	7383
-std/internal/utf8.Parse	2d5bb47aec785ce6	137	2713
+std/internal/utf8.Parse	bb1cbf2bfd3e30cb	227	4325
 std/io.WriteByte	1afbd4e7a78e6705	47	857
 std/io.writerByteSlow	6ed639cf7ef4ef08	37	712
 std/io.writerRoom	13a1de2aab98ca9f	90	1679

@@ -1,8 +1,10 @@
 package main
 
 // 待っている接続の予約の縮め（R2）の題材: 平文の HTTP を 127.0.0.1 の空きのポートで受け、"ready <port>" を出した後、200 ms ごとに Ledger の根の
-// 計上中のバイトと task の数を "ledger <used> <tasks>" で出して、止められるまで走る（scripts/parkres.sh が接続を張って閉じ、used の増えと戻りを見る）
+// 計上中のバイトと task の数と、Serve の節の task の数を "ledger <used> <tasks> <Serve の節の tasks>" で出して、止められるまで走る（scripts/parkres.sh が接続を張って閉じ、
+// used の増えと戻りを見る）。要求ごとに子を1本走らせる（接続の task が生む子の入場と返しも、閉じた後に台帳が元へ戻る勘定に入れる）
 
+import "std/convert"
 import "std/http/server"
 import "std/io"
 import "std/net"
@@ -10,16 +12,32 @@ import "std/os"
 import "std/task"
 
 func route(r http.server.Request) http.server.Response {
-    return http.server.Text("t")
+    v, _ := task.Run((s task.Scope) => task.Join(task.Spawn(s, () => len(bytes(r.path)))))
+    return http.server.Text("t${v - len(bytes(r.path))}")
 }
 
 func report() int {
     while true {
         l := task.Ledger()
-        _ = io.WriteStdout(bytes("ledger ${l.used} ${l.tasks}\n"))
+        mut pt := 0
+        for p <- l.pools {
+            if p.conns != 0 {
+                pt = p.tasks
+            }
+        }
+        _ = io.WriteStdout(bytes("ledger ${l.used} ${l.tasks} ${pt}\n"))
         os.Sleep(200)
     }
     return 0
+}
+
+// 接続の本数の天井（PARKRES_CONNSで小さくすると、天井が埋まって受け付けのループが入場の待ちに入る — 照合のbuildの待ち手の題材）
+func conns() int {
+    v := os.Getenv("PARKRES_CONNS") catch nil
+    if v == nil {
+        return 100000
+    }
+    return convert.ParseInt(v) catch 100000
 }
 
 func main() {
@@ -27,7 +45,7 @@ func main() {
         _ = task.Spawn(s, () => report())
         e := net.Listen("127.0.0.1:0", (l) => {
             _ = io.WriteStdout(bytes("ready ${net.Port(l)}\n"))
-            _ = net.Serve(l, (c net.Conn) => http.server.ServeConn(c, route), conns: 100000)
+            _ = net.Serve(l, (c net.Conn) => http.server.ServeConn(c, route), conns: conns())
         })
         if e != nil {
             println("listen failed")

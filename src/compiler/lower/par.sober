@@ -260,9 +260,12 @@ func waitWhileZero(st mut St, p int, off int, slot int) {
     setCur(mut st, body)
     // 遅延注入のインターフェース（待ちの点 — schedfuzz: 見て から 置く までのウィンドウを広げる）
     mnDelayPoint(mut st)
-    if st.rtMut == 2 {
+    if st.rtMut == 139 || st.rtMut == 140 {
+        winOpen(mut st, p, off)
+    }
+    if st.rtMut == 2 || st.rtMut == 140 {
         // ミュータント2: 待ち手を素のstoreで置き、見直さずにスリープする（見てから置くまでに子が終わるとウェイクアップし損ねる — デッドロックの死で鳴る）
-        store(mut st, p, slot, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
+        store(mut st, p, slot, waitSelf(mut st))
         call(mut st, st.rtTaskWait, list0(mut st))
         br(mut st, loop, -1)
         setCur(mut st, late)
@@ -274,7 +277,7 @@ func waitWhileZero(st mut St, p int, off int, slot int) {
         setCur(mut st, done)
         return
     }
-    atomicXchg(mut st, p, slot, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
+    atomicXchg(mut st, p, slot, waitSelf(mut st))
     condbr(mut st, cmp(mut st, CEq, load(mut st, p, off), iconst(mut st, 0)), sleep, -1, late, -1)
     setCur(mut st, late)
     w := atomicXchg(mut st, p, slot, iconst(mut st, 0))
@@ -286,6 +289,43 @@ func waitWhileZero(st mut St, p int, off int, slot int) {
     call(mut st, st.rtTaskWait, list0(mut st))
     br(mut st, loop, -1)
     setCur(mut st, done)
+}
+
+// 窓を開くビルド（ミュータント139 = これだけ・140 = 2 + これ。schedfuzz）: 「見る」と「置く」の間で、条件が立つまで最大WIN_YIELDS回、自分を実行待ちの列へ
+// 積んでから待つ（譲る。このワーカーに積まれた起こされたtaskも走る）。子は別のワーカーが盗んで走らせ終えるので、待ち手を置く前に子が終わる交互を、
+// Joinが子の終わりより先に来るたびに作る。正しい待ちの型は見直しで抜ける。上限は、子が終わらない待ち（デッドロック）をrtの検出へ渡すため。
+// ワーカー1では子を走らせるワーカーが無いので窓を開かない（その交互はワーカー1では起きない）
+const WIN_YIELDS = 100000
+
+func winOpen(st mut St, p int, off int) {
+    zero := iconst(mut st, 0)
+    yl := newBlock(mut st)
+    yi := param(mut st, yl, TyI64)
+    yb := newBlock(mut st)
+    yd := newBlock(mut st)
+    br(mut st, yl, list1(mut st, zero))
+    setCur(mut st, yl)
+    more := bin(mut st, BAnd, bin(mut st, BAnd, mnOn(mut st), cmp(mut st, CLt, yi, iconst(mut st, WIN_YIELDS))), cmp(mut st, CEq, load(mut st, p, off), zero))
+    condbr(mut st, more, yb, -1, yd, -1)
+    setCur(mut st, yb)
+    taskWakeAny(mut st, itop(mut st, waitSelf(mut st)))
+    call(mut st, st.rtTaskWait, list0(mut st))
+    br(mut st, yl, list1(mut st, bin(mut st, BAdd, yi, iconst(mut st, 1))))
+    setCur(mut st, yd)
+}
+
+// 子の死をscopeの記録の死の数へ足す（死んだ子だけ。死んでいない子が0を足すロックつき命令を、子の終わりの道から除く）。
+// 出口が死の数を読むのは生きている子の数が0になった後で、足すのは子がSR_LIVEを減らす前なので、順序は無条件に足す形と同じ。
+// ミュータント173（計測の比較用 — IBSのロックつき命令の数でだけ見える）: dead = 0でも足す
+func deadAdd(st mut St, rec int, dead int) {
+    if st.rtMut == 173 {
+        atomicXadd(mut st, rec, SR_DEAD, dead)
+        return
+    }
+    bJ := branchIf(mut st, cmp(mut st, CNe, dead, iconst(mut st, 0)))
+    atomicXadd(mut st, rec, SR_DEAD, dead)
+    br(mut st, bJ, -1)
+    setCur(mut st, bJ)
 }
 
 // scopeの出口の待ち（生きている子が0になるまで — 段階6 P4-4）: SR_LIVE = 生きている子の数 × 2 + 待っているフラグ（1）。待ち手をSR_WAITERに
@@ -301,7 +341,7 @@ func waitLive(st mut St, rec int) {
     v := load(mut st, rec, SR_LIVE)
     condbr(mut st, cmp(mut st, CLt, v, iconst(mut st, 2)), done, -1, body, -1)
     setCur(mut st, body)
-    store(mut st, rec, SR_WAITER, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
+    store(mut st, rec, SR_WAITER, waitSelf(mut st))
     o := atomicCas(mut st, rec, SR_LIVE, v, bin(mut st, BOr, v, iconst(mut st, 1)))
     condbr(mut st, cmp(mut st, CEq, o, v), sleep, -1, loop, -1)
     setCur(mut st, sleep)
@@ -394,7 +434,7 @@ func parScope(st mut St, fi int, pk int, args desugar.ListRef, at desugar.NodeRe
     store(mut st, rec, SR_CUT, zero)
     store(mut st, rec, SR_NKID, zero)
     // 今のtaskの開いているscopeのチェーンへ（段階6 P4-5 — 死ぬ / 切られるtaskはtask_startでこのチェーンの子を待ってから終わる）
-    tkS := itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
+    tkS := itop(mut st, waitSelf(mut st))
     store(mut st, rec, SR_UP, load(mut st, tkS, TC_SCOPE))
     store(mut st, rec, SR_OTCB, ptoi(mut st, tkS))
     store(mut st, tkS, TC_SCOPE, ptoi(mut st, rec))
@@ -1015,12 +1055,10 @@ func parSpawn(st mut St, pk int, tt SpawnTy, args desugar.ListRef, at desugar.No
         br(mut st, bJoin, -1)
         setCur(mut st, bTask)
     }
-    // 生きている子の数（× 2 — 下の位は出口の待ちのフラグ・子は別のワーカーで並行に減らす — 段階6 P4-4）
-    atomicXadd(mut st, rec, SR_LIVE, iconst(mut st, 2))
     // 子を先に走らせる（rt.task_go — 子が終わると rt.task_start が状態・死因・scope の死の数を書いてここへ戻す。
     // 深度・宛先 / anchor のレジスタ・罠の記録は切替が退避 / 復元する）
     meta := globaladdr(mut st, st.meta)
-    me := itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
+    me := itop(mut st, waitSelf(mut st))
     d := load(mut st, meta, W_DEPTH)
     zero := iconst(mut st, 0)
     store(mut st, tcb, TC_DEPTH, d)
@@ -1042,6 +1080,26 @@ func parSpawn(st mut St, pk int, tt SpawnTy, args desugar.ListRef, at desugar.No
         // 端点の持ち主を子へ（親に残った別名は失効 — 使うと panic）
         store(mut st, ch, chEnd, ptoi(mut st, tcb))
     }
+    // 遅延task化（lazy.sober — 配置のフラグの行き先-2: HTTP/2のストリームの子）: 子をtaskにせず今のtaskの上で走らせ、待つ点で昇格する。
+    // ワーカー1（協調形）は、ふつうのspawnへ
+    if st.rtTaskLazy != -1 && !give && !inn {
+        pw := globaladdr(mut st, st.wkG)
+        ok := bin(mut st, BAnd, bin(mut st, BAnd, cmp(mut st, CEq, load(mut st, pw, WK_PLOWN), ptoi(mut st, me)), cmp(mut st, CEq, load(mut st, pw, WK_PLTO), iconst(mut st, -2))),
+            mnOn(mut st))
+        bLz := newBlock(mut st)
+        bNm := newBlock(mut st)
+        condbr(mut st, ok, bLz, -1, bNm, -1)
+        setCur(mut st, bLz)
+        store(mut st, pw, WK_PLOWN, zero)
+        if !keepKid {
+            store(mut st, tcb, TC_KOFF, zero)
+        }
+        call(mut st, st.rtTaskLazy, list1(mut st, tcb))
+        br(mut st, bJoin, -1)
+        setCur(mut st, bNm)
+    }
+    // 生きている子の数（× 2 — 下の位は出口の待ちのフラグ・子は別のワーカーで並行に減らす — 段階6 P4-4）
+    atomicXadd(mut st, rec, SR_LIVE, iconst(mut st, 2))
     // spawnの切替点（rt.task_go。既定 = 子を先に: 親を実行待ちの列に載せて子へ。SOBER_SCHEDで親を先にも選べる）
     store(mut st, tcb, TC_STARTED, iconst(mut st, 0))
     call(mut st, st.rtTaskGo, list2(mut st, me, tcb))
@@ -1443,7 +1501,7 @@ func parNewChan(st mut St, pk int, args desugar.ListRef, at desugar.NodeRef, cal
     for i <- iter.Range(0, aw) {
         store(mut st, chp, CH_BUF + capN * tw + i, iconst(mut st, 0))
     }
-    me := load(mut st, globaladdr(mut st, st.taskG), TK_CUR)
+    me := waitSelf(mut st)
     zero := iconst(mut st, 0)
     store(mut st, chp, CH_CAP, iconst(mut st, capN))
     store(mut st, chp, CH_HEAD, zero)
@@ -1542,7 +1600,7 @@ func parSendRecv(st mut St, pk int, key int, args desugar.ListRef, at desugar.No
     setCur(mut st, loop)
     chanBlocked(mut st, chp, send, body, done)
     setCur(mut st, body)
-    atomicXchg(mut st, chp, wmy, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
+    atomicXchg(mut st, chp, wmy, waitSelf(mut st))
     chanBlocked(mut st, chp, send, sleep, late)
     setCur(mut st, late)
     wl := atomicXchg(mut st, chp, wmy, iconst(mut st, 0))

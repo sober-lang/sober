@@ -12,13 +12,13 @@ examples/block_escape H=2048 S=792
 examples/block_multi_bind H=80 S=480
 examples/block_region_value H=86 S=584
 examples/block_return H=16 S=480
-examples/block_tail_expect H=56 S=728
+examples/block_tail_expect H=56 S=888
 examples/bool H=0 S=136
 examples/borrow_cross_f H=0 S=top
 examples/borrow_eta_dest H=12042 S=624
 examples/borrow_fn_param_value H=24 S=448
 examples/borrow_forward H=24 S=584
-examples/borrow_late_shape H=8 S=592
+examples/borrow_late_shape H=8 S=576
 examples/borrow_mut_count H=0 S=592
 examples/borrow_pend_scalar H=0 S=392
 examples/bytes_ifexpr H=0 S=288
@@ -34,7 +34,7 @@ examples/closure_def_capture H=0 S=320
 examples/closure_env_union H=0 S=456
 examples/closure_field_capture H=0 S=384
 examples/closure_field_def H=0 S=304
-examples/closure_field_opt H=0 S=448
+examples/closure_field_opt H=0 S=432
 examples/closure_param H=0 S=400
 examples/closure_result H=0 S=368
 examples/closure_unreached H=0 S=320
@@ -64,7 +64,7 @@ examples/expand_outer_assign H=96 S=352
 examples/expr_eval H=288 S=top
 examples/fib H=0 S=top
 examples/field_param_ann H=0 S=576
-examples/fledger_resolved H=128 S=752
+examples/fledger_resolved H=128 S=848
 examples/float_basic H=2784 S=504
 examples/float_toint_panic H=0 S=208
 examples/flow_chain H=64 S=408
@@ -74,7 +74,7 @@ examples/fn_value_lambda_region H=0 S=752
 examples/fn_value_tail H=220 S=936
 examples/fntype_errors H=32 S=576
 examples/fntype_errors_flow H=48 S=696
-examples/fnval_call_result_field H=352 S=680
+examples/fnval_call_result_field H=352 S=664
 examples/fnvalue H=0 S=320
 examples/for_break H=48 S=288
 examples/for_callgen_expr H=0 S=136
@@ -104,9 +104,9 @@ examples/ifnil_region_join H=0 S=264
 examples/index_opassign H=32 S=288
 examples/inline H=0 S=136
 examples/interp_kind H=104 S=680
-examples/interp_outer_dest H=800 S=712
+examples/interp_outer_dest H=800 S=728
 examples/io_stdout H=64 S=512
-examples/lambda_block_niltail H=0 S=592
+examples/lambda_block_niltail H=0 S=576
 examples/lambda_block_opt H=0 S=424
 examples/lambda_borrow_annot H=0 S=560
 examples/lambda_result_fn_value H=0 S=688
@@ -124,7 +124,7 @@ examples/mutate_basic H=0 S=136
 examples/mutcell_scalar H=0 S=top
 examples/named_args H=108 S=544
 examples/named_fn_args H=0 S=392
-examples/named_fn_forward H=0 S=632
+examples/named_fn_forward H=0 S=616
 examples/named_scalar_assign H=0 S=136
 examples/named_scalar_ifarm H=0 S=136
 examples/named_scalar_nil H=0 S=152
@@ -147,7 +147,7 @@ examples/opt_unroll H=768 S=768
 examples/opt_unroll_panic H=32 S=304
 examples/opt_vec_scan_neg H=218 S=464
 examples/opt_vec_scan_panic H=143 S=464
-examples/opt_vec_scan_tail H=5378522 S=1176
+examples/opt_vec_scan_tail H=5378522 S=1160
 examples/opt_vec_scan_wrap H=218 S=464
 examples/optfn H=0 S=448
 examples/panic_builtin H=0 S=384
@@ -223,8 +223,8 @@ examples/union_anon_fn_field H=336 S=528
 examples/union_arm_strings H=192 S=472
 examples/union_fn_field H=0 S=616
 examples/union_one_variant H=80 S=top
-examples/utf8_pure H=496 S=896
-examples/utf8_std H=32272 S=592
+examples/utf8_pure H=496 S=992
+examples/utf8_std H=32272 S=752
 examples/while H=0 S=208
 examples/yield_return H=0 S=136
 testdata/memcheck/cats H=28896 S=424

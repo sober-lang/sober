@@ -1,5 +1,5 @@
-@@full	30127091a426662e	15610	320473
-@globals	6feabbfdd004fdde	78	1435
+@@full	64defb40f7a3683b	15717	322491
+@globals	c76b88fc6345d96a	78	1453
 main.main	2656e5b3412982f6	909	20415
 main.show	83ea891a0fa6a00c	648	14552
 main.try	7d1bfa5bf377fe18	737	16389
@@ -15,7 +15,7 @@ rt.flush	beec28d2792e8799	43	659
 rt.grow_try	9e10061b87b86cd0	48	869
 rt.map_grow	f7ce73b3814ab14a	122	2126
 rt.map_hash	d223d44571a67549	52	981
-rt.panic	6493e2959d1d3bed	256	4687
+rt.panic	d1bac20d4a8946eb	272	4995
 rt.panic_mem	81af3d9454b47494	202	3821
 rt.print_char	bb60b2116b220a00	24	377
 rt.print_int	a3a50fa4912ac202	49	851
@@ -57,7 +57,7 @@ std/env.inRange	1ca8e5bfa0b399c9	62	927
 std/env.intWant	df536fe20e085e45	250	5367
 std/env.lookup	9f7893d9248070e3	223	4213
 std/env.quote	339d86dd3b5160c7	52	946
-std/internal/utf8.Parse	7fc07bc459f1f222	137	2714
+std/internal/utf8.Parse	5ef867fc6908e48c	227	4326
 std/io.WriteStdout	7313405338ecb90f	144	2665
 std/io.errOf	bd2139f0b536f3a8	134	2355
 std/os.Getenv	af448ef8b36241fa	305	5879

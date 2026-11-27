@@ -5,6 +5,8 @@ package server
 
 import "std/http"
 import "std/internal/hpack"
+import "std/internal/mux"
+import "std/iter"
 import "std/utf8"
 
 // [名前, 値, 名前, 値, …] を internal.hpack.Decode の形（out・fs）にする
@@ -32,7 +34,52 @@ func h2Fields(kv []string) ([]byte, []int) {
 
 func h2Req(kv []string, body []byte) (Request, int) {
     out, fs := h2Fields(kv)
-    return h2Request(out, fs, body)
+    return h2ReqNew(out, fs, body)
+}
+
+// 書き手の経路: 接続のtaskの形（欄を字句のままのHPACKのブロックにして、h2Fuseで置き場の途中へ頭を書く）→ 要求の塊（h2Takeの形）→ 子の形（h2FromBlob）
+func h2ReqNew(out []byte, fs []int, body []byte) (Request, int) {
+    mut cs := h2C{buf: mut []byte{}, ab: mut []byte{}, pv: mut []byte{}, seg: mut []int{}, sid: mut []int{}, sst: mut []int{}, swin: mut []int{}, rwin: mut []int{}, blen: mut []int{}, sfa: mut []int{}, shd: mut []int{}, stl: mut []int{}, sby: mut []int{}, q: mut []int{}, qn: mut []int{}, rdy: mut []int{}, gone: -1}
+    h2Init(mut cs, 0, 0, 0)
+    cs.mh = 1 << 20
+    for c <- bytes("zzz") {
+        cs.ab = append(cs.ab, c)
+    }
+    mut d := internal.hpack.Dec{}
+    internal.hpack.Init(mut d)
+    w, meta := h2Fuse(mut cs, mut d, h2RawBlock(out, fs), 3)
+    assert(w >= 0 && !internal.hpack.Over(d))
+    hl := if meta >= 0 { w - 3 } else { 0 }
+    mut o := mut []byte{}
+    h2Cat(mut o, mut cs.ab, 3, 3 + hl)
+    return h2FromBlob(h2Blob(freeze(o), body), hl, meta)
+}
+
+
+
+// out・fsの欄を、字句のまま（表に足さない形・名前の大小もそのまま）のHPACKのブロックにする
+func h2RawBlock(out []byte, fs []int) []byte {
+    mut b := mut []byte{}
+    mut i := 0
+    while i < len(fs) {
+        b = append(b, byte(0))
+        internal.hpack.Str(mut b, out[fs[i]:fs[i] + fs[i + 1]])
+        internal.hpack.Str(mut b, out[fs[i + 2]:fs[i + 2] + fs[i + 3]])
+        i += 4
+    }
+    return freeze(b)
+}
+
+// 要求の塊の形（h2FromBlob — 頭のテキスト + 本文）
+func h2Blob(hdr []byte, body []byte) []byte {
+    mut o := mut []byte{}
+    for c <- hdr {
+        o = append(o, c)
+    }
+    for c <- body {
+        o = append(o, c)
+    }
+    return freeze(o)
 }
 
 func strOr(s string?, d string) string {
@@ -125,11 +172,12 @@ func h2Decode(blk []byte) []string {
     st := internal.hpack.Decode(mut d, blk, mut out, mut fs, 65536)
     assert(st == internal.hpack.Ok)
     o := freeze(out)
+    fv := internal.hpack.Fields(d, freeze(fs))
     mut r := mut []string{}
     mut i := 0
-    while i < len(fs) {
-        r = append(r, string(o[fs[i]:fs[i] + fs[i + 1]]) catch "?")
-        r = append(r, string(o[fs[i + 2]:fs[i + 2] + fs[i + 3]]) catch "?")
+    while i < len(fv) {
+        r = append(r, string(o[fv[i]:fv[i] + fv[i + 1]]) catch "?")
+        r = append(r, string(o[fv[i + 2]:fv[i + 2] + fv[i + 3]]) catch "?")
         i += 4
     }
     return freeze(r)
@@ -194,4 +242,1032 @@ func TestH2Head() {
         assert(got[i] != "upgrade" && got[i] != "keep-alive" && got[i] != "connection" && got[i] != "transfer-encoding")
         i += 2
     }
+}
+
+// HTTP/1.1の頭のテキストを解き直す形（h2Block）で作ったrのブロック
+func h2ViaText(r Response, n int) []byte {
+    mut h := mut []byte{}
+    put := (p []byte) => {
+        for x <- p {
+            h = append(h, x)
+        }
+    }
+    put1 := (b byte) => {
+        h = append(h, b)
+    }
+    putHead(put, put1, r, true, false, 0, n)
+    h = sysAppendDate(h)
+    return h2Block(freeze(h))
+}
+
+// 早道（h2Plain）のブロックが、h2Blockの形とバイト単位で同じ（早道に乗らない方針のNoStoreも並べる）
+func TestH2PlainSame() {
+    // 長さ130（前置きが2バイトになる）
+    long := "abcdefghijklmabcdefghijklmabcdefghijklmabcdefghijklmabcdefghijklmabcdefghijklmabcdefghijklmabcdefghijklmabcdefghijklmabcdefghijklm"
+    cts := []string{"text/plain", "application/json", long}
+    ns := []int{0, 1, 9, 10, 99, 100, 4096, 123456789}
+    caches := []Cache?{nil, Unstated{}, NoStore{}}
+    for ct <- cts {
+        for k <- iter.Range(0, len(ns) * len(caches)) {
+            n := ns[k / len(caches)]
+            r := Response{status: http.OK, contentType: ct, body: bytes("x"), cache: caches[k % len(caches)]}
+            old := h2ViaText(r, n)
+            got := h2Head(r, 0, n)
+            assert(len(got) == len(old))
+            for i <- iter.Range(0, len(old)) {
+                assert(got[i] == old[i])
+            }
+        }
+    }
+}
+
+// 枠ごとの区間のリスト: 3つの枠の区間を交互に積み、h2Takeの列が要求の塊の形（頭の区間・本文の区間をそれぞれ積んだ順に連ねたもの）と同じ。
+// 捨てた枠の区間は他の枠に混ざらず、全部を捨てると置き場が空に戻る
+func TestH2Take() {
+    mut cs := h2C{buf: mut []byte{}, ab: mut []byte{}, seg: mut []int{}, sid: mut []int{}, sst: mut []int{}, swin: mut []int{}, rwin: mut []int{}, blen: mut []int{}, sfa: mut []int{}, shd: mut []int{}, stl: mut []int{}, sby: mut []int{}, q: mut []int{}, qn: mut []int{}, rdy: mut []int{}, gone: -1}
+    h2Init(mut cs, 0, 0, 0)
+    src := bytes("aaBBBcccDDeeeeF")
+    h2AddSeg(mut cs, 1, 0, src, 0, 2)
+    h2AddSeg(mut cs, 2, 0, src, 2, 3)
+    h2AddSeg(mut cs, 1, 1, src, 5, 3)
+    h2AddSeg(mut cs, 3, 0, src, 8, 2)
+    h2AddSeg(mut cs, 2, 1, src, 10, 4)
+    h2AddSeg(mut cs, 1, 0, src, 14, 1)
+    cs.sfa[1] = 7 | 9 << 32
+    cs.sfa[2] = 1 | 2 << 32
+    cs.sfa[3] = 0 - h2Malformed
+    assert(h2SlotBytes(mut cs, 1) == 6 && h2SlotBytes(mut cs, 2) == 7)
+    b1, big1, hl1, w1 := h2Take(mut cs, 1)
+    assert(!big1 && hl1 == 3 && w1 == 7 | 9 << 32 && h2SameBytes(b1, h2Blob(bytes("aaF"), bytes("ccc"))))
+    assert(h2SlotBytes(mut cs, 1) == 0)
+    b3, _, hl3, w3 := h2Take(mut cs, 3)
+    assert(hl3 == 2 && w3 == 0 - h2Malformed && h2SameBytes(b3, h2Blob(bytes("DD"), []byte{})))
+    assert(cs.live == 2 && cs.segn > 0)
+    cs.blen[2] = -1
+    b2, big2, hl2, w2 := h2Take(mut cs, 2)
+    assert(big2 && hl2 == 3 && w2 == 1 | 2 << 32 && h2SameBytes(b2, h2Blob(bytes("BBB"), bytes("eeee"))))
+    assert(cs.live == 0 && cs.segn == 0 && cs.abn == 0)
+    // 空に戻った後の再利用
+    h2AddSeg(mut cs, 2, 0, src, 0, 1)
+    cs.sfa[2] = 5 | 6 << 32
+    b4, _, hl4, w4 := h2Take(mut cs, 2)
+    assert(hl4 == 1 && w4 == 5 | 6 << 32 && h2SameBytes(b4, h2Blob(bytes("a"), []byte{})))
+}
+
+// 要求を溜めの塊にする2つの道（頭の区間1つを置き場から直に積む・h2Takeでまとめてから積む）が、同じ塊と頭の長さ・印を返す。
+// 本文が上限を越えた枠は積まない
+func TestH2PutReq() {
+    mut cs := h2C{buf: mut []byte{}, ab: mut []byte{}, seg: mut []int{}, sid: mut []int{}, sst: mut []int{}, swin: mut []int{}, rwin: mut []int{}, blen: mut []int{}, sfa: mut []int{}, shd: mut []int{}, stl: mut []int{}, sby: mut []int{}, q: mut []int{}, qn: mut []int{}, rdy: mut []int{}, gone: -1}
+    h2Init(mut cs, 0, 0, 0)
+    src := bytes("aaBBBcccDDeeeeF")
+    // 1 = 頭の区間1つ（直の道）・2 = 頭と本文・3 = 頭の区間2つ（CONTINUATIONの形）・4 = 本文が上限を越えた・5 = 区間なし（形の誤り）・
+    // 6 = 本文の区間1つだけ（形の誤りのHEADERSの後のDATA — 頭の長さは0）
+    h2AddSeg(mut cs, 1, 0, src, 0, 2)
+    h2AddSeg(mut cs, 2, 0, src, 2, 3)
+    h2AddSeg(mut cs, 3, 0, src, 5, 3)
+    h2AddSeg(mut cs, 2, 1, src, 8, 2)
+    h2AddSeg(mut cs, 3, 0, src, 10, 4)
+    h2AddSeg(mut cs, 4, 0, src, 14, 1)
+    h2AddSeg(mut cs, 6, 1, src, 0, 2)
+    cs.sfa[1] = 1 | 2 << 32
+    cs.sfa[2] = 3 | 4 << 32
+    cs.sfa[3] = 5 | 6 << 32
+    cs.sfa[4] = 7 | 8 << 32
+    cs.sfa[5] = 0 - h2Malformed
+    cs.sfa[6] = 0 - h2Malformed
+    cs.blen[4] = -1
+    h1, big1, hl1, w1 := h2PutReq(mut cs, 1)
+    assert(h1 != 0 && !big1 && hl1 == 2 && w1 == 1 | 2 << 32 && h2SameBytes(internal.mux.TakeBlob(h1), bytes("aa")))
+    h2, big2, hl2, w2 := h2PutReq(mut cs, 2)
+    assert(h2 != 0 && !big2 && hl2 == 3 && w2 == 3 | 4 << 32 && h2SameBytes(internal.mux.TakeBlob(h2), bytes("BBBDD")))
+    h3, _, hl3, w3 := h2PutReq(mut cs, 3)
+    assert(h3 != 0 && hl3 == 7 && w3 == 5 | 6 << 32 && h2SameBytes(internal.mux.TakeBlob(h3), bytes("ccceeee")))
+    h4, big4, _, _ := h2PutReq(mut cs, 4)
+    assert(h4 == 0 && big4)
+    h5, _, hl5, w5 := h2PutReq(mut cs, 5)
+    assert(h5 != 0 && hl5 == 0 && w5 == 0 - h2Malformed && len(internal.mux.TakeBlob(h5)) == 0)
+    h6, _, hl6, w6 := h2PutReq(mut cs, 6)
+    assert(h6 != 0 && hl6 == 0 && w6 == 0 - h2Malformed && h2SameBytes(internal.mux.TakeBlob(h6), bytes("aa")))
+    assert(cs.live == 0 && internal.mux.PoolUse() == 0)
+}
+
+// 枠の割り当ては常に最小の空きの枠を返す（空けた枠は次の割り当てで使い直す）。全部の枠が埋まれば -1
+func TestH2Alloc() {
+    mut cs := h2C{buf: mut []byte{}, ab: mut []byte{}, seg: mut []int{}, sid: mut []int{}, sst: mut []int{}, swin: mut []int{}, rwin: mut []int{}, blen: mut []int{}, sfa: mut []int{}, shd: mut []int{}, stl: mut []int{}, sby: mut []int{}, q: mut []int{}, qn: mut []int{}, rdy: mut []int{}, gone: -1}
+    h2Init(mut cs, 0, 0, 0)
+    assert(h2Alloc(mut cs, 1) == 0 && h2Alloc(mut cs, 3) == 1 && h2Alloc(mut cs, 5) == 2 && h2Alloc(mut cs, 7) == 3)
+    h2Release(mut cs, 2)
+    h2Release(mut cs, 1)
+    assert(h2Alloc(mut cs, 9) == 1 && h2Alloc(mut cs, 11) == 2 && h2Alloc(mut cs, 13) == 4)
+    assert(h2Find(mut cs, 11) == 2 && h2Find(mut cs, 3) < 0)
+    mut sid := 15
+    while cs.active < h2Slots {
+        assert(h2Alloc(mut cs, sid) == cs.active - 1)
+        sid += 2
+    }
+    assert(h2Alloc(mut cs, sid) < 0)
+    h2Release(mut cs, 100)
+    assert(h2Alloc(mut cs, sid) == 100 && h2Alloc(mut cs, sid + 2) < 0)
+}
+
+func h2SameBytes(a []byte, b []byte) bool {
+    if len(a) != len(b) {
+        return false
+    }
+    for i <- iter.Range(0, len(a)) {
+        if a[i] != b[i] {
+            return false
+        }
+    }
+    return true
+}
+
+// 参照: 書き手（h2Compose・h2Finish）の前の形。解いたヘッダから子の側で頭を組み直す。黄金のテストの比較の相手
+func h2RequestRef(out []byte, fs []int, body []byte) (Request, int) {
+    mut method := -1
+    mut scheme := -1
+    mut auth := -1
+    mut path := -1
+    mut regular := false
+    mut hasHost := false
+    mut nCookie := 0
+    mut i := 0
+    while i < len(fs) {
+        ns := fs[i]
+        nl := fs[i + 1]
+        vs := fs[i + 2]
+        vl := fs[i + 3]
+        if !h2ValueOk(out, vs, vl) || nl == 0 {
+            return h2Empty(), h2Malformed
+        }
+        if out[ns] == ':' {
+            // 疑似ヘッダは普通の欄より前で、1本ずつ。知らない疑似ヘッダ・:statusは形の誤り
+            if regular {
+                return h2Empty(), h2Malformed
+            }
+            k := h2Pseudo(out, ns, nl)
+            if k == 0 {
+                return h2Empty(), h2Malformed
+            }
+            if k == 1 {
+                if method >= 0 {
+                    return h2Empty(), h2Malformed
+                }
+                method = i
+            } else if k == 2 {
+                if scheme >= 0 {
+                    return h2Empty(), h2Malformed
+                }
+                scheme = i
+            } else if k == 3 {
+                if auth >= 0 {
+                    return h2Empty(), h2Malformed
+                }
+                auth = i
+            } else {
+                if path >= 0 {
+                    return h2Empty(), h2Malformed
+                }
+                path = i
+            }
+        } else {
+            regular = true
+            if !h2NameOk(out, ns, nl) {
+                return h2Empty(), h2Malformed
+            }
+            if h2ConnName(out, ns, nl) {
+                return h2Empty(), h2Malformed
+            }
+            // teは "trailers" だけ
+            if nl == 2 && out[ns] == 't' && out[ns + 1] == 'e' && !h2Is(out, vs, vl, "trailers") {
+                return h2Empty(), h2Malformed
+            }
+            if h2Is(out, ns, nl, "host") {
+                hasHost = true
+            }
+            if h2Is(out, ns, nl, "cookie") {
+                nCookie += 1
+            }
+        }
+        i += 4
+    }
+    if method < 0 {
+        return h2Empty(), h2Malformed
+    }
+    connect := h2Is(out, fs[method + 2], fs[method + 3], "CONNECT")
+    // CONNECTは :method と :authority だけ（:scheme・:pathは無い）。他は :scheme と空でない :path が要る
+    if connect {
+        if scheme >= 0 || path >= 0 || auth < 0 {
+            return h2Empty(), h2Malformed
+        }
+    } else if scheme < 0 || path < 0 || fs[path + 3] == 0 {
+        return h2Empty(), h2Malformed
+    }
+    // 頭を組む: リクエスト行・host（:authorityが優先）・普通の欄（cookieは最初の位置に1本へ繋ぐ）
+    mut h := mut []byte{}
+    h2PutRef(mut h, out, fs[method + 2], fs[method + 3])
+    h = append(h, ' ')
+    if connect {
+        h2PutRef(mut h, out, fs[auth + 2], fs[auth + 3])
+    } else {
+        h2PutRef(mut h, out, fs[path + 2], fs[path + 3])
+    }
+    sp2 := len(h)
+    for c <- bytes(" HTTP/2\r\n") {
+        h = append(h, c)
+    }
+    mut hs := mut []int{}
+    if auth >= 0 {
+        h2LineRef(mut h, mut hs, bytes("host"), 0, 4, out, fs[auth + 2], fs[auth + 3])
+    }
+    mut cookieDone := false
+    i = 0
+    while i < len(fs) {
+        ns := fs[i]
+        nl := fs[i + 1]
+        if out[ns] != ':' && !(auth >= 0 && h2Is(out, ns, nl, "host")) {
+            if h2Is(out, ns, nl, "cookie") && nCookie > 1 {
+                if !cookieDone {
+                    cookieDone = true
+                    h2CookieLineRef(mut h, mut hs, out, fs)
+                }
+            } else {
+                h2LineRef(mut h, mut hs, out, ns, nl, out, fs[i + 2], fs[i + 3])
+            }
+        }
+        i += 4
+    }
+    h = append(h, '\r')
+    h = append(h, '\n')
+    head := freeze(h)
+    tab := freeze(hs)
+    // :pathの中の制御文字・0x80以上・空白はHTTP/1.1と同じく400（RFC 9112 3.2）。'/' で始まらない :path は "*"（OPTIONS）だけ
+    sp1 := fs[method + 3]
+    if !connect {
+        mut j := sp1 + 1
+        while j < sp2 {
+            c := int(head[j])
+            if c <= 0x20 || c >= 0x7f {
+                return h2Empty(), 400
+            }
+            j += 1
+        }
+        if head[sp1 + 1] != '/' && !(sp2 - sp1 == 2 && head[sp1 + 1] == '*' && h2Is(out, fs[method + 2], fs[method + 3], "OPTIONS")) {
+            return h2Empty(), h2Malformed
+        }
+    }
+    if (auth >= 0 || hasHost) && !hostCheck(head, 0, false, tab) {
+        return h2Empty(), 400
+    }
+    // content-lengthがあれば本文の長さと合うこと（RFC 9113 8.1.1）
+    if !h2LengthOk(head, tab, len(body)) {
+        return h2Empty(), h2Malformed
+    }
+    v, ue := utf8.Check(head)
+    if ue != nil {
+        return h2Empty(), 400
+    }
+    hb := utf8.Bytes(v)
+    q := indexIn(hb, sp1 + 1, sp2, '?')
+    m := bytesToString(hb[0:sp1])
+    p := bytesToString(hb[sp1 + 1:if q >= 0 { q } else { sp2 }])
+    qs := if q >= 0 { bytesToString(hb[q + 1:sp2]) } else { "" }
+    return Request{method: m, path: p, query: qs, head: v, headers: tab, body: body, pattern: ""}, 0
+}
+
+func h2PutRef(h mut []byte, b []byte, s int, n int) {
+    mut i := 0
+    while i < n {
+        h = append(h, b[s + i])
+        i += 1
+    }
+}
+
+// 1行 `name: value\r\n` を足し、位置を表へ積む
+func h2LineRef(h mut []byte, hs mut []int, nb []byte, ns int, nl int, vb []byte, vs int, vl int) {
+    a := len(h)
+    h2PutRef(mut h, nb, ns, nl)
+    b := len(h)
+    h = append(h, ':')
+    h = append(h, ' ')
+    c := len(h)
+    h2PutRef(mut h, vb, vs, vl)
+    d := len(h)
+    h = append(h, '\r')
+    h = append(h, '\n')
+    hs = append(hs, a | b << 32)
+    hs = append(hs, c | d << 32)
+}
+
+// cookieの欄を全部「; 」で繋いだ1行
+func h2CookieLineRef(h mut []byte, hs mut []int, out []byte, fs []int) {
+    a := len(h)
+    for c <- bytes("cookie") {
+        h = append(h, c)
+    }
+    b := len(h)
+    h = append(h, ':')
+    h = append(h, ' ')
+    c := len(h)
+    mut first := true
+    mut i := 0
+    while i < len(fs) {
+        if h2Is(out, fs[i], fs[i + 1], "cookie") {
+            if !first {
+                h = append(h, ';')
+                h = append(h, ' ')
+            }
+            first = false
+            h2PutRef(mut h, out, fs[i + 2], fs[i + 3])
+        }
+        i += 4
+    }
+    d := len(h)
+    h = append(h, '\r')
+    h = append(h, '\n')
+    hs = append(hs, a | b << 32)
+    hs = append(hs, c | d << 32)
+}
+
+// ---- 黄金: 書き手（h2Compose → 要求の塊 → h2Finish）と参照（h2RequestRef）が、乱択のヘッダの並びで同じ結果
+// （Requestの全部の値・誤りの符号〔形の誤り・400〕）。疑似ヘッダの順・重複・欠け・後ろに来た疑似ヘッダ・大文字の名前・NUL / CR / LF・
+// 前後の空白・接続に固有の欄・te・hostと:authorityの組み合わせ・cookieの分割・Content-Lengthの食い違い・:pathの制御文字と0x80以上・
+// UTF-8でないバイト・OPTIONS *・CONNECTを混ぜる
+
+func h2Rnd(s int) int {
+    // Park–Miller（法が素数なので下位のビットも偏らない）
+    return s * 48271 % 2147483647
+}
+
+// 文字列の列をバイト列の列に。"\\x" の後の2桁の16進は1バイト（UTF-8でないバイトを含めるため）
+func h2Pool(ss []string) [][]byte {
+    mut r := mut [][]byte{}
+    for s <- ss {
+        b := bytes(s)
+        mut o := mut []byte{}
+        mut i := 0
+        while i < len(b) {
+            if b[i] == '\\' && i + 3 < len(b) && b[i + 1] == 'x' {
+                o = append(o, byte(h2Hex(b[i + 2]) * 16 + h2Hex(b[i + 3])))
+                i += 4
+            } else {
+                o = append(o, b[i])
+                i += 1
+            }
+        }
+        r = append(r, freeze(o))
+    }
+    return freeze(r)
+}
+
+func h2Hex(c byte) int {
+    return if c >= 'a' { int(c) - 87 } else { int(c) - 48 }
+}
+
+const h2gNames = ":method|:scheme|:path|:authority|:status|:foo|accept|host|cookie|cookie|content-length|te|connection|keep-alive|transfer-encoding|upgrade|proxy-connection|Accept|x-id||a b|x:y|user-agent|hos|hostx|c\\x00|cookiE"
+const h2gValues = "GET|POST|CONNECT|OPTIONS|HEAD|http|/|/a?b=1|*||x.example|x.example:443|[::1]:80|a b|a,b|trailers|gzip|3|0|03|abc| lead|trail\\x09|a\\x0ab|a\\x0db|a=1|b=2|\\xc3\\xa9|/\\x01|a\\x00b|\\xff|/\\xff|\\x7f"
+const h2gMethods = "GET|GET|GET|POST|POST|HEAD|CONNECT|OPTIONS|GE T|get"
+const h2gPaths = "/|/|/|/a?b=1|/a/b?|/p?q=1&r|*|*x|/a b||?x|/\\xc3\\xa9|/\\x01|/\\xff|x|/x?\\x7f| /"
+const h2gAuths = "x.example|x.example|x.example:443|[::1]:80|a b|a,b||\\xc3\\xa9.x|x.example:44x"
+
+func h2Split(s string) [][]byte {
+    mut r := mut []string{}
+    b := bytes(s)
+    mut st := 0
+    mut i := 0
+    while i <= len(b) {
+        if i == len(b) || b[i] == '|' {
+            r = append(r, bytesToString(b[st:i]))
+            st = i + 1
+        }
+        i += 1
+    }
+    return h2Pool(freeze(r))
+}
+
+// 名前と値の組の列を、hpack.Decodeの形（out・fs）に
+func h2Pack(ns [][]byte, vs [][]byte) ([]byte, []int) {
+    mut out := mut []byte{}
+    mut fs := mut []int{}
+    mut i := 0
+    while i < len(ns) {
+        a := len(out)
+        for c <- ns[i] {
+            out = append(out, c)
+        }
+        b := len(out)
+        for c <- vs[i] {
+            out = append(out, c)
+        }
+        fs = append(fs, a)
+        fs = append(fs, b - a)
+        fs = append(fs, b)
+        fs = append(fs, len(out) - b)
+        i += 1
+    }
+    return freeze(out), freeze(fs)
+}
+
+func h2SameReq(r1 Request, c1 int, r2 Request, c2 int) bool {
+    if c1 != c2 {
+        return false
+    }
+    if c1 != 0 {
+        return true
+    }
+    if r1.method != r2.method || r1.path != r2.path || r1.query != r2.query || r1.pattern != r2.pattern {
+        return false
+    }
+    if !h2SameBytes(utf8.Bytes(r1.head), utf8.Bytes(r2.head)) || !h2SameBytes(r1.body, r2.body) || len(r1.headers) != len(r2.headers) {
+        return false
+    }
+    for i <- iter.Range(0, len(r1.headers)) {
+        if r1.headers[i] != r2.headers[i] {
+            return false
+        }
+    }
+    return true
+}
+
+func TestH2ComposeGolden() {
+    names := h2Split(h2gNames)
+    values := h2Split(h2gValues)
+    methods := h2Split(h2gMethods)
+    paths := h2Split(h2gPaths)
+    auths := h2Split(h2gAuths)
+    pseudo := h2Split(":method|:scheme|:path|:authority")
+    mut seed := 7
+    mut nOk := 0
+    mut nBad := 0
+    mut n400 := 0
+    mut nCookie := 0
+    for t <- iter.Range(0, 30000) {
+        mut ns := mut [][]byte{}
+        mut vs := mut [][]byte{}
+        seed = h2Rnd(seed)
+        body := if seed % 2 == 0 { []byte{} } else { bytes("abc") }
+        seed = h2Rnd(seed)
+        if seed % 100 < 85 {
+            // 揃った疑似ヘッダ（順は乱択・ときどき欠ける）+ 普通の欄
+            mut have := mut []int{}
+            for k <- iter.Range(0, 4) {
+                seed = h2Rnd(seed)
+                if k == 0 || seed % 100 < (if k == 3 { 60 } else { 97 }) {
+                    have = append(have, k)
+                }
+            }
+            mut order := mut []int{}
+            for k <- have {
+                seed = h2Rnd(seed)
+                order = append(order, k)
+                mut j := len(order) - 1
+                at := seed % len(order)
+                while j > at {
+                    order[j] = order[j - 1]
+                    j -= 1
+                }
+                order[at] = k
+            }
+            for k <- order {
+                seed = h2Rnd(seed)
+                ns = append(ns, pseudo[k])
+                vs = append(vs, if k == 0 { methods[seed % len(methods)] } else if k == 1 { bytes("http") } else if k == 2 { paths[seed % len(paths)] } else { auths[seed % len(auths)] })
+            }
+            seed = h2Rnd(seed)
+            nr := seed % 7
+            for k <- iter.Range(0, nr) {
+                seed = h2Rnd(seed)
+                // 普通の欄はたいてい正しい形（cookie・host・content-length・accept）、ときどき何でも
+                if seed % 8 != 0 {
+                    nm := seed / 8 % 6
+                    seed = h2Rnd(seed)
+                    ns = append(ns, if nm == 0 || nm == 5 { bytes("cookie") } else if nm == 1 { bytes("host") } else if nm == 2 { bytes("content-length") } else if nm == 3 { bytes("accept") } else { bytes("te") })
+                    vs = append(vs, if nm == 0 || nm == 5 { if seed % 2 == 0 { bytes("a=1") } else { bytes("b=2") } } else if nm == 1 { auths[seed % len(auths)] } else if nm == 2 { if seed % 5 == 0 { bytes("0") } else if seed % 5 == 1 { bytes("03") } else if len(body) == 0 { bytes("0") } else { bytes("3") } } else if nm == 3 { if seed % 4 == 0 { values[seed / 4 % len(values)] } else { bytes("*/*") } } else { bytes("trailers") })
+                } else {
+                    ns = append(ns, names[seed / 4 % len(names)])
+                    seed = h2Rnd(seed)
+                    vs = append(vs, values[seed % len(values)])
+                }
+            }
+            // ときどき、乱択の欄を乱択の位置へ
+            seed = h2Rnd(seed)
+            if seed % 100 < 10 {
+                seed = h2Rnd(seed)
+                at := seed % (len(ns) + 1)
+                seed = h2Rnd(seed)
+                nn := names[seed % len(names)]
+                seed = h2Rnd(seed)
+                nv := values[seed % len(values)]
+                mut ns2 := mut [][]byte{}
+                mut vs2 := mut [][]byte{}
+                for i <- iter.Range(0, len(ns) + 1) {
+                    if i == at {
+                        ns2 = append(ns2, nn)
+                        vs2 = append(vs2, nv)
+                    }
+                    if i < len(ns) {
+                        ns2 = append(ns2, ns[i])
+                        vs2 = append(vs2, vs[i])
+                    }
+                }
+                ns = ns2
+                vs = vs2
+            }
+        } else {
+            seed = h2Rnd(seed)
+            nf := seed % 8
+            for k <- iter.Range(0, nf) {
+                seed = h2Rnd(seed)
+                ns = append(ns, names[seed % len(names)])
+                seed = h2Rnd(seed)
+                vs = append(vs, values[seed % len(values)])
+            }
+        }
+        out, fs := h2Pack(freeze(ns), freeze(vs))
+        r1, c1 := h2RequestRef(out, fs, body)
+        r2, c2 := h2ReqNew(out, fs, body)
+        assert(h2SameReq(r1, c1, r2, c2))
+        if c1 == 0 {
+            nOk += 1
+            // 分かれたcookieを繋いだ形（題材の値に「;」を含むのはcookieの行だけ）
+            if indexIn(utf8.Bytes(r1.head), 0, len(utf8.Bytes(r1.head)), ';') >= 0 {
+                nCookie += 1
+            }
+        } else if c1 == h2Malformed {
+            nBad += 1
+        } else {
+            n400 += 1
+        }
+    }
+    // 題材が偏っていない（どの結果も十分に出る）
+    assert(nOk > 2000 && nBad > 3000 && n400 > 1000 && nCookie > 300)
+}
+
+// ---- 参照: 今までの書き手（hpack.Decodeの結果のout・fsから頭を書く）。融合の経路（h2Fuse）の黄金の比較の相手
+
+// 解いたヘッダ（out・fs — hpack.Decodeの形）を検査しながら、HTTP/1.1の形の頭のテキスト
+// （`GET /p?q HTTP/2\r\nhost: …\r\n…\r\n\r\n`）を a[n:] へ書く。接続のtaskが、ブロックを解いた直後に置き場へ書く。
+// 結果 = (書いた後の長さ, 印)。印 >= 0 はリクエスト行の区切り（sp1 = メソッドの終わり | sp2 = 対象の終わり << 32。a[n:] からの位置）。
+// 印 < 0 は形の誤り（-h2Malformed）で、書いた分は使わない。
+// ここで見るのは欄ごとの形と疑似ヘッダの揃い方（どれも形の誤り）。:pathの字・host・本文の長さ・UTF-8は、子のh2Finishが今の順で見る
+func h2Compose(a mut []byte, n int, out []byte, fs []int) (int, int) {
+    // 書く量の上限: 解いた名前と値の和 + 普通の欄ごとに4（": " と CRLF）+ リクエスト行・hostの行・空行の分
+    h2Grow(mut a, n + len(out) + len(fs) + 24)
+    mut method := -1
+    mut scheme := -1
+    mut auth := -1
+    mut path := -1
+    // 普通の欄を書き始めた位置（リクエスト行とhostの行の後。-1 = まだ）
+    mut lines := -1
+    mut meta := 0
+    mut w := n
+    mut nCookie := 0
+    mut i := 0
+    while i < len(fs) {
+        ns := fs[i]
+        nl := fs[i + 1]
+        vs := fs[i + 2]
+        vl := fs[i + 3]
+        if nl == 0 {
+            return n, 0 - h2Malformed
+        }
+        if out[ns] == ':' {
+            // 疑似ヘッダは普通の欄より前で、1本ずつ。知らない疑似ヘッダ・:statusは形の誤り
+            if lines >= 0 || !h2ValueOk(out, vs, vl) {
+                return n, 0 - h2Malformed
+            }
+            k := h2Pseudo(out, ns, nl)
+            if k == 0 {
+                return n, 0 - h2Malformed
+            }
+            if k == 1 {
+                if method >= 0 {
+                    return n, 0 - h2Malformed
+                }
+                method = i
+            } else if k == 2 {
+                if scheme >= 0 {
+                    return n, 0 - h2Malformed
+                }
+                scheme = i
+            } else if k == 3 {
+                if auth >= 0 {
+                    return n, 0 - h2Malformed
+                }
+                auth = i
+            } else {
+                if path >= 0 {
+                    return n, 0 - h2Malformed
+                }
+                path = i
+            }
+        } else {
+            if lines < 0 {
+                w1, m1 := h2ReqLineRef(mut a, n, out, fs, method, scheme, auth, path)
+                if m1 < 0 {
+                    return n, m1
+                }
+                w = w1
+                meta = m1
+                lines = w
+            }
+            if vl > 0 && (out[vs] == ' ' || out[vs] == '\t' || out[vs + vl - 1] == ' ' || out[vs + vl - 1] == '\t') {
+                return n, 0 - h2Malformed
+            }
+            if h2ConnName(out, ns, nl) {
+                return n, 0 - h2Malformed
+            }
+            // teは "trailers" だけ
+            if nl == 2 && out[ns] == 't' && out[ns + 1] == 'e' && !h2Is(out, vs, vl, "trailers") {
+                return n, 0 - h2Malformed
+            }
+            if nl == 6 && h2Is(out, ns, nl, "cookie") {
+                nCookie += 1
+            }
+            if auth >= 0 && h2Is(out, ns, nl, "host") {
+                // :authorityがあればhostの欄は落とす（値の形は見る）
+                if !h2ValueOk(out, vs, vl) {
+                    return n, 0 - h2Malformed
+                }
+            } else {
+                // 名前は小文字のtchar・値にNUL・CR・LFが無い（RFC 9113 8.2.1）。写しながら見る
+                mut j := 0
+                while j < nl {
+                    c := out[ns + j]
+                    if !tchar(c) || (c >= 'A' && c <= 'Z') {
+                        return n, 0 - h2Malformed
+                    }
+                    a[w + j] = c
+                    j += 1
+                }
+                w += nl
+                a[w] = ':'
+                a[w + 1] = ' '
+                w += 2
+                j = 0
+                while j < vl {
+                    c := out[vs + j]
+                    if c == 0 || c == '\r' || c == '\n' {
+                        return n, 0 - h2Malformed
+                    }
+                    a[w + j] = c
+                    j += 1
+                }
+                w += vl
+                a[w] = '\r'
+                a[w + 1] = '\n'
+                w += 2
+            }
+        }
+        i += 4
+    }
+    if lines < 0 {
+        w1, m1 := h2ReqLineRef(mut a, n, out, fs, method, scheme, auth, path)
+        if m1 < 0 {
+            return n, m1
+        }
+        w = w1
+        meta = m1
+        lines = w
+    }
+    if nCookie > 1 {
+        // 分かれたcookieは、最初の位置に「; 」で繋いだ1行にする（RFC 9113 8.2.3）。普通の欄を書き直す
+        w = h2CookiesRef(mut a, lines, out, fs, auth >= 0)
+    }
+    a[w] = '\r'
+    a[w + 1] = '\n'
+    return w + 2, meta
+}
+
+// リクエスト行と、:authorityがあればhostの行を a[n:] へ書く（疑似ヘッダの揃い方を見てから）。結果はh2Composeと同じ形
+func h2ReqLineRef(a mut []byte, n int, out []byte, fs []int, method int, scheme int, auth int, path int) (int, int) {
+    if method < 0 {
+        return n, 0 - h2Malformed
+    }
+    connect := h2Is(out, fs[method + 2], fs[method + 3], "CONNECT")
+    // CONNECTは :method と :authority だけ（:scheme・:pathは無い）。他は :scheme と空でない :path が要る
+    if connect {
+        if scheme >= 0 || path >= 0 || auth < 0 {
+            return n, 0 - h2Malformed
+        }
+        // :authorityを対象とhostの行の2回書く（h2Composeの見積もりは1回分）
+        h2Grow(mut a, len(a) + fs[auth + 3])
+    } else if scheme < 0 || path < 0 || fs[path + 3] == 0 {
+        return n, 0 - h2Malformed
+    }
+    mut w := h2Cp(mut a, n, out, fs[method + 2], fs[method + 3])
+    sp1 := w - n
+    a[w] = ' '
+    w += 1
+    t := if connect { auth } else { path }
+    w = h2Cp(mut a, w, out, fs[t + 2], fs[t + 3])
+    sp2 := w - n
+    w = h2Cp(mut a, w, bytes(" HTTP/2\r\nhost: "), 0, if auth >= 0 { 15 } else { 9 })
+    if auth >= 0 {
+        w = h2Cp(mut a, w, out, fs[auth + 2], fs[auth + 3])
+        a[w] = '\r'
+        a[w + 1] = '\n'
+        w += 2
+    }
+    return w, sp1 | sp2 << 32
+}
+
+// 普通の欄を a[w:] から書き直す（cookieは最初の位置に全部を「; 」で繋いだ1行・dropHost = hostの欄を落とす）。欄はh2Composeが検査済み
+func h2CookiesRef(a mut []byte, w0 int, out []byte, fs []int, dropHost bool) int {
+    mut w := w0
+    mut done := false
+    mut i := 0
+    while i < len(fs) {
+        ns := fs[i]
+        nl := fs[i + 1]
+        if out[ns] != ':' && !(dropHost && h2Is(out, ns, nl, "host")) {
+            if h2Is(out, ns, nl, "cookie") {
+                if !done {
+                    done = true
+                    w = h2Cp(mut a, w, bytes("cookie: "), 0, 8)
+                    mut first := true
+                    mut k := i
+                    while k < len(fs) {
+                        if h2Is(out, fs[k], fs[k + 1], "cookie") {
+                            if !first {
+                                a[w] = ';'
+                                a[w + 1] = ' '
+                                w += 2
+                            }
+                            first = false
+                            w = h2Cp(mut a, w, out, fs[k + 2], fs[k + 3])
+                        }
+                        k += 4
+                    }
+                    a[w] = '\r'
+                    a[w + 1] = '\n'
+                    w += 2
+                }
+            } else {
+                w = h2Cp(mut a, w, out, ns, nl)
+                a[w] = ':'
+                a[w + 1] = ' '
+                w = h2Cp(mut a, w + 2, out, fs[i + 2], fs[i + 3])
+                a[w] = '\r'
+                a[w + 1] = '\n'
+                w += 2
+            }
+        }
+        i += 4
+    }
+    return w
+}
+
+// aの長さをn以上にする（足りない分は0で伸ばす）
+func h2Grow(a mut []byte, n int) {
+    while len(a) < n {
+        a = append(a, byte(0))
+    }
+}
+
+// b[s:s+k] を a[w:] へ写す（aはh2Growで伸ばし済み）。書いた後の位置を返す
+func h2Cp(a mut []byte, w int, b []byte, s int, k int) int {
+    mut i := 0
+    while i < k {
+        a[w + i] = b[s + i]
+        i += 1
+    }
+    return w + k
+}
+
+// 疑似ヘッダの種類（1 = :method・2 = :scheme・3 = :authority・4 = :path・0 = 知らない）
+func h2Pseudo(b []byte, s int, n int) int {
+    return if h2Is(b, s, n, ":method") { 1 } else if h2Is(b, s, n, ":scheme") { 2 } else if h2Is(b, s, n, ":authority") { 3 } else if h2Is(b, s, n, ":path") { 4 } else { 0 }
+}
+
+// 名前は小文字のtcharだけ（大文字は形の誤り — RFC 9113 8.2.1）
+func h2NameOk(b []byte, s int, n int) bool {
+    mut i := 0
+    while i < n {
+        c := b[s + i]
+        if !tchar(c) || (c >= 'A' && c <= 'Z') {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+// 値にNUL・CR・LFが無く、前後が空白でない（RFC 9113 8.2.1）
+func h2ValueOk(b []byte, s int, n int) bool {
+    if n > 0 && (b[s] == ' ' || b[s] == '\t' || b[s + n - 1] == ' ' || b[s + n - 1] == '\t') {
+        return false
+    }
+    mut i := 0
+    while i < n {
+        c := b[s + i]
+        if c == 0 || c == '\r' || c == '\n' {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+// 接続に固有の欄（HTTP/2のリクエストでは形の誤り。teは別に見る）
+func h2ConnName(b []byte, s int, n int) bool {
+    return h2Is(b, s, n, "connection") || h2Is(b, s, n, "keep-alive") || h2Is(b, s, n, "proxy-connection") || h2Is(b, s, n, "transfer-encoding") || h2Is(b, s, n, "upgrade")
+}
+
+// ---- 黄金: 融合の経路（h2Fuse）と今までの経路（hpack.Decode → h2Compose）が、乱択のヘッダのブロックの列で同じ結果
+// （ブロックの壊れ・上限の超え・印・頭のテキスト）。表の同期を見るため、復号の状態は列の間で持ち越す（壊れたブロックの後は作り直す）。
+// 置き場は使い回し、受け入れた頭はときどき残して先端を進める。どの結果でも、先端より前のバイトは変わらず、
+// 前の書きかけ（断った・形の誤りのブロック）の痕が次の頭に混ざらない
+func TestH2FuseGolden() {
+    names := h2Split(h2gNames)
+    values := h2Split(h2gValues)
+    methods := h2Split(h2gMethods)
+    paths := h2Split(h2gPaths)
+    auths := h2Split(h2gAuths)
+    pseudo := h2Split(":method|:scheme|:path|:authority")
+    mut d1 := internal.hpack.Dec{}
+    internal.hpack.Init(mut d1)
+    mut d2 := internal.hpack.Dec{}
+    internal.hpack.Init(mut d2)
+    mut cs := h2C{buf: mut []byte{}, ab: mut []byte{}, pv: mut []byte{}, seg: mut []int{}, sid: mut []int{}, sst: mut []int{}, swin: mut []int{}, rwin: mut []int{}, blen: mut []int{}, sfa: mut []int{}, shd: mut []int{}, stl: mut []int{}, sby: mut []int{}, q: mut []int{}, qn: mut []int{}, rdy: mut []int{}, gone: -1}
+    h2Init(mut cs, 0, 0, 0)
+    mut seed := 11
+    mut ins := 0
+    mut nOk := 0
+    mut nBad := 0
+    mut nLarge := 0
+    mut nComp := 0
+    mut nCookie := 0
+    mut nKeep := 0
+    for t <- iter.Range(0, 20000) {
+        mut ns := mut [][]byte{}
+        mut vs := mut [][]byte{}
+        seed = h2Rnd(seed)
+        if seed % 100 < 85 {
+            mut have := mut []int{}
+            for k <- iter.Range(0, 4) {
+                seed = h2Rnd(seed)
+                if k == 0 || seed % 100 < (if k == 3 { 70 } else { 97 }) {
+                    have = append(have, k)
+                }
+            }
+            for k <- have {
+                seed = h2Rnd(seed)
+                ns = append(ns, pseudo[k])
+                vs = append(vs, if k == 0 { methods[seed % len(methods)] } else if k == 1 { bytes("http") } else if k == 2 { paths[seed % len(paths)] } else { auths[seed % len(auths)] })
+            }
+            seed = h2Rnd(seed)
+            nr := seed % 7
+            for k <- iter.Range(0, nr) {
+                seed = h2Rnd(seed)
+                if seed % 8 != 0 {
+                    nm := seed / 8 % 5
+                    seed = h2Rnd(seed)
+                    ns = append(ns, if nm <= 1 { bytes("cookie") } else if nm == 2 { bytes("host") } else if nm == 3 { bytes("accept") } else { bytes("user-agent") })
+                    vs = append(vs, if nm <= 1 { if seed % 2 == 0 { bytes("a=1") } else { bytes("b=2") } } else if nm == 2 { auths[seed % len(auths)] } else if nm == 3 { values[seed % len(values)] } else { bytes("h2load nghttp2/1.59.0") })
+                } else {
+                    ns = append(ns, names[seed / 4 % len(names)])
+                    seed = h2Rnd(seed)
+                    vs = append(vs, values[seed % len(values)])
+                }
+            }
+        } else {
+            seed = h2Rnd(seed)
+            nf := seed % 8
+            for k <- iter.Range(0, nf) {
+                seed = h2Rnd(seed)
+                ns = append(ns, names[seed % len(names)])
+                seed = h2Rnd(seed)
+                vs = append(vs, values[seed % len(values)])
+            }
+        }
+        // 欄ごとに表現を乱択する（静的表の添字・動的表の添字・表に足す字句・足さない字句・Huffman・表の大きさの更新）
+        mut blk := mut []byte{}
+        seed = h2Rnd(seed)
+        if seed % 100 < 3 {
+            // 大きさの更新: 小さくして戻す（項目は追い出される）
+            blk = append(blk, byte(0x20 | (seed / 100 % 31)))
+            blk = append(blk, byte(0x3f))
+            blk = append(blk, byte(0xe1))
+            blk = append(blk, byte(0x1f))
+            ins = 0
+        }
+        for i <- iter.Range(0, len(ns)) {
+            seed = h2Rnd(seed)
+            r := seed % 20
+            if r == 0 {
+                seed = h2Rnd(seed)
+                blk = append(blk, byte(0x80 | (1 + seed % 61)))
+            } else if r <= 3 && ins > 0 {
+                seed = h2Rnd(seed)
+                blk = append(blk, byte(0x80 | (62 + seed % (if ins < 6 { ins } else { 6 }))))
+            } else if r <= 7 {
+                blk = append(blk, byte(0x40))
+                internal.hpack.Str(mut blk, ns[i])
+                internal.hpack.Str(mut blk, vs[i])
+                ins += 1
+            } else if r <= 10 {
+                // Huffmanの値（名前は小文字・静的表の名前なら添字）。前置きが1バイトなら表に足す形に変える
+                mut f := mut []byte{}
+                internal.hpack.Field(mut f, ns[i], vs[i], true)
+                if r <= 8 && int(f[0]) < 15 {
+                    f[0] = byte(int(f[0]) | 0x40)
+                    ins += 1
+                }
+                for c <- f {
+                    blk = append(blk, c)
+                }
+            } else if r == 12 && ins > 0 {
+                // 名前が動的表の添字の字句（表に足す形・6ビットの前置き）。名前は表の項目のもの
+                seed = h2Rnd(seed)
+                ix := 62 + seed % (if ins < 6 { ins } else { 6 })
+                if ix < 63 {
+                    blk = append(blk, byte(0x40 | ix))
+                } else {
+                    blk = append(blk, byte(0x7f))
+                    blk = append(blk, byte(ix - 63))
+                }
+                internal.hpack.Str(mut blk, vs[i])
+                ins += 1
+            } else if r == 11 {
+                blk = append(blk, byte(0x10))
+                internal.hpack.Str(mut blk, ns[i])
+                internal.hpack.Str(mut blk, vs[i])
+            } else {
+                blk = append(blk, byte(0))
+                internal.hpack.Str(mut blk, ns[i])
+                internal.hpack.Str(mut blk, vs[i])
+            }
+        }
+        seed = h2Rnd(seed)
+        if seed % 100 < 2 {
+            // 壊れたブロック（表の外の添字）
+            blk = append(blk, byte(0xff))
+            blk = append(blk, byte(0x7f))
+        }
+        seed = h2Rnd(seed)
+        lim := if seed % 100 < 8 { 40 + seed / 100 % 300 } else { 1 << 20 }
+        bk := freeze(blk)
+        // 今までの経路
+        mut hout := mut []byte{}
+        mut fs := mut []int{}
+        st := internal.hpack.Decode(mut d1, bk, mut hout, mut fs, lim)
+        // 融合の経路（先端より前のバイトを控えて、変わらないことを見る）
+        a0 := cs.abn
+        mut pre := mut []byte{}
+        h2Cat(mut pre, mut cs.ab, 0, a0)
+        cs.mh = lim
+        w, meta := h2Fuse(mut cs, mut d2, bk, a0)
+        assert(h2SameMut(mut pre, mut cs.ab, a0))
+        assert((w < 0) == (st == internal.hpack.Bad))
+        if st == internal.hpack.Bad {
+            nComp += 1
+            d1 = internal.hpack.Dec{}
+            internal.hpack.Init(mut d1)
+            d2 = internal.hpack.Dec{}
+            internal.hpack.Init(mut d2)
+            ins = 0
+        } else {
+            assert(internal.hpack.Over(d2) == (st == internal.hpack.Large))
+            if st == internal.hpack.Large {
+                nLarge += 1
+            } else {
+                mut ref := mut []byte{}
+                ho := freeze(hout)
+                w1, m1 := h2Compose(mut ref, 0, ho, internal.hpack.Fields(d1, freeze(fs)))
+                assert(meta == m1)
+                if meta >= 0 {
+                    nOk += 1
+                    mut got := mut []byte{}
+                    h2Cat(mut got, mut cs.ab, a0, w)
+                    assert(w - a0 == w1 && h2SameMut(mut got, mut ref, w1))
+                    if indexIn(freeze(got), 0, len(got), ';') >= 0 {
+                        nCookie += 1
+                    }
+                    // ときどき受け入れて先端を進める（置き場が大きくなったら空に戻す）
+                    seed = h2Rnd(seed)
+                    if seed % 3 == 0 {
+                        cs.abn = if w > 4000 { 0 } else { w }
+                        nKeep += 1
+                    }
+                } else {
+                    nBad += 1
+                }
+            }
+        }
+    }
+    assert(nOk > 2000 && nBad > 3000 && nLarge > 300 && nComp > 100 && nCookie > 300 && nKeep > 600)
+}
+
+// a[0:n] と b[0:n] が等しい
+func h2SameMut(a mut []byte, b mut []byte, n int) bool {
+    if len(a) < n || len(b) < n {
+        return false
+    }
+    for i <- iter.Range(0, n) {
+        if a[i] != b[i] {
+            return false
+        }
+    }
+    return true
 }

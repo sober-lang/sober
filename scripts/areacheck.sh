@@ -5,7 +5,7 @@
 #   (1) 所有エリアの多重集合 = チャンクのスタックの領域の全部 ∪ ワーカーのエリアの全部（数 = チャンクの数 + W・重複なし・持ち主のないエリアなし）
 #   (2) チャンクの退避rspは持つエリアの中（自分の領域を持つときだけページ0も）
 #   (3) 切り替えの点で、止まるtaskの今のrspと再開するtaskの退避したrspは、持つエリアか自分のチャンクのページ0の中。rtが照合する（検査のビルド = ミュータント91。
-#       外ならrtが印字して終了コード103）。保存則の主の走行はこのビルドで回す
+#       外ならrtが印字して終了コード103）。同じビルドは、待ちのチェーンに積む点で「どのチェーンにも居ない」も照合する（netpoll.sober awOffCheck）。保存則の主の走行はこのビルドで回す
 #   シャロースリープ（受けでスリープする接続 — 交換せず退避も持たない: TCBのワード0は本体の戻り先）は退避rspの照合から外し、その数（shallow）を数える
 # 交換が起きていること（所有エリアが自分でないチャンク > 0）とarea_far = 0も。遠いパスの1行 = ミュータント60（全関数の枠 +512 B — 本体がページ0に入らず
 # 所有エリアの上の連続の形）で (1)(2) が保たれ交換0・area_far > 0。
@@ -16,9 +16,9 @@
 # ワーカーで混ざっても /holdはスリープする前のpathを返す・途中のリクエストを持って待つ接続はディープスリープする（parkDeepWin > 0 — splitの相）。
 # 毎回、ミュータント62（出口形を外す）・63 / 64（交換のtaskの側だけ / ワーカーの側だけ）・65（遠いパスでいつも所有エリアの頂上へ付け替える — ページ0の余白が空いて
 # スリープしている接続のスタックのページが1枚増える）・67（シャロースリープの記しを付けない — シャロースリープするチャンク0）・68（完了でレジスタを読み戻さない）・70（交換してシャロースリープしたのに
-# ワーカーのエリアの上のフラグを立てない）・71（本体がページ0にあるフラグを見ない — 遠いパスの本体もシャロースリープする）・72（ウェイクアップしたシャロースリープを期限のチェーンから外さない —
+# ワーカーのエリアの上のフラグを立てない）・71（本体がページ0にあるフラグを見ない — 遠いパスの本体もシャロースリープする）・138（72 = ウェイクアップしたシャロースリープを期限のチェーンから外さない + 積む点の照合 —
 # Serveの期限でスリープしたままウェイクアップされるパス）・74（ウェイクアップされた本体に誤りを返す — 完了の値が本体に届く証）・78（エリアの予約ページの中身を見ずにシャロースリープする）・
-# 79（中身の判定からフィールドr = 0〔途中のリクエストを持つ深度〕を抜く）・80（ウェイクアップした点で予約ページの深度を付け替えない）・81（予約ページから小さいスロットへ移した深度も予約ページの始まりで空を比べる — 大きい本文の後に毎回ディープスリープする）が落ち、73（ウェイクアップされたをいつも見直し〔2〕に —
+# 79（中身の判定からフィールドr = 0〔途中のリクエストを持つ深度〕を抜く）・153（80 = ウェイクアップした点で予約ページの深度を付け替えない + 着地の点の錨の照合）・81（予約ページから小さいスロットへ移した深度も予約ページの始まりで空を比べる — 大きい本文の後に毎回ディープスリープする）が落ち、73（ウェイクアップされたをいつも見直し〔2〕に —
 # 本体がもう一度rt.netwaitを呼ぶパス）が保存則と答えを保つことを確認する
 # 縮退の相（/inl）: 入場できない子をhandlerの上でその場で走らせ、子がJoin・ディープスリープ・自分のサーバへの接続の待ちをする。答えの値が正しく、(1)〜(3)が保たれる。
 # ミュータント90（縮退した子の間も親のフラグとAREA_NEARを残す。子の本体の入口がエリアの付け替えをする）と92（90 + (3)の照合）が落ちる。
@@ -32,7 +32,7 @@ S2=${STAGE2:-out/stage2/sober2}
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 SRC=testdata/areacheck/srv.sober
-MS="0 60 62 63 64 65 66 67 68 70 71 72 73 74 78 79 80 81 90 91 92"
+MS="0 60 62 63 64 65 66 67 68 70 71 73 74 78 79 81 90 91 92 138 153 178"
 for m in $MS; do
     (
         a=(); [ $m != 0 ] && a=(--rt-mutant=$m)
@@ -44,7 +44,18 @@ wait
 for m in $MS; do
     [ -e "$W/bfail$m" ] && { echo "areacheck: FAIL build m$m ($(head -c 200 "$W/b$m.log"))"; exit 1; }
 done
-run() { AC_SERVE_MS=4000 AC_HOLD_MS=1500 timeout 60 node scripts/areacheck.ts "$W/srv$1" "$W/syms$1" > "$W/r$1" 2>&1; tail -1 "$W/r$1"; }
+# 60秒の時間切れで切られた回は、検出でも答えでもない。最後に出た観測の行のフェーズの名前を添えて areacheck-timeout を返し、ゲートの記録にも1行残す。
+# 負荷の下で、ミュータントが検出のフェーズを通り抜けて時間切れになる形を観測するため。呼び手は検出の漏れとして数える
+run() {
+    AC_SERVE_MS=4000 AC_HOLD_MS=1500 timeout 60 node scripts/areacheck.ts "$W/srv$1" "$W/syms$1" > "$W/r$1" 2>&1
+    if [ $? = 124 ]; then
+        st=$(tail -1 "$W/r$1" | cut -d: -f1 | cut -c1-40)
+        echo "gatenoise: areacheck timeout m$1 after phase '$st'" >&2
+        echo "areacheck-timeout 60s after phase '$st'"
+    else
+        tail -1 "$W/r$1"
+    fi
+}
 fail=0
 r=$(run 91)
 sw=$(sed -n 's/^areacheck-ok swapped-max \([0-9]*\) shallow-max \([0-9]*\) area_far \([0-9]*\) parkswap \([0-9]*\) awin \([0-9]*\) deepwin \([0-9]*\)$/\1 \2 \3 \4 \5 \6/p' <<< "$r")
@@ -64,10 +75,22 @@ r60=$(run 60)
 if [[ "$r60" =~ ^areacheck-ok\ swapped-max\ 0\ shallow-max\ 0\ area_far\ [1-9] ]]; then :; else
     echo "areacheck: FAIL — the far path (mutant 60) broke conservation or still swapped: $r60"; fail=1
 fi
-for m in 62 63 64 68 70 72 74 78 79 80 81 90 92; do
+for m in 62 63 64 68 70 74 78 79 81 90 92; do
     rm=$(run $m)
     if [[ "$rm" == areacheck-bad* ]]; then echo "areacheck: m$m caught (${rm#areacheck-bad }" | cut -c1-160 | sed 's/$/…)/'; else echo "areacheck: FAIL — mutant $m was not caught ($rm)"; fail=1; fi
 done
+# ミュータント138 = 72（ウェイクアップしたシャロースリープを期限のチェーンから外さない）+ 積む点の照合（どのチェーンにも居ないtaskだけを積む）。
+# 72単独はServeの期限の走査まで表に出ず、答えの待ちの時間切れでしか捕まらない（負荷の下で外側のtimeoutに先を越される）。照合は次の待ちで積む点で決定的に鳴る
+r138=$(run 138)
+if [[ "$r138" == areacheck-bad*"[rt aw-check: "* ]]; then echo "areacheck: m138 caught by the chain check (${r138#areacheck-bad }" | cut -c1-160 | sed 's/$/…)/'; else echo "areacheck: FAIL — mutant 138 (72 + the chain check) was not caught by the chain check ($r138)"; fail=1; fi
+# ミュータント153 = 80（ウェイクアップした点で予約ページの深度を付け替えない）+ 着地の点の錨の照合。80単独は、エリアが他のtaskへ移った後の答えの上書きでしか表に出ない。
+# 照合は付け替え損ねた錨を着地の点で見る
+r153=$(run 153)
+if [[ "$r153" == areacheck-bad*"[rt aw-check: shallow-landed"* ]]; then echo "areacheck: m153 caught by the anchor check (${r153#areacheck-bad }" | cut -c1-160 | sed 's/$/…)/'; else echo "areacheck: FAIL — mutant 153 (80 + the anchor check) was not caught by the anchor check ($r153)"; fail=1; fi
+# ミュータント178 = 退避の経路が深度0の退避の対の2語目にも書く。TCBの語の重なりの照合は深度0の対を退避の列に数えない（遅延task化のTC_LAZYCが1語目を使う）ので、
+# その前提を破る変更を、止まっているtaskの語TC_SAVE・TC_SAVE + 1が0でないことで捕まえる
+r178=$(run 178)
+if [[ "$r178" == areacheck-bad*"depth-0 save pair"* ]]; then echo "areacheck: m178 caught by the depth-0 save pair check"; else echo "areacheck: FAIL — mutant 178 (a save writes the depth-0 pair) was not caught by the depth-0 save pair check ($r178)"; fail=1; fi
 # 遠いパスの題材: 署名が段1の前（ミュータント66）と一致・ミュータント65で違う
 # 相ごとの「常駐のページ」の型ごとのチャンクの数（スタックのページ — ページ0から下だけ。頭のページ〔チャンクの予約ページ・エリアの予約ページ〕はエリアの予約ページの段で変わるので見ない。スタックの深さは見ない: 受けの待ちは本体のrt.netwaitの点でスリープするのでエリアを使わない形〔read_fdの中でスリープする〕より浅く、
 # 各ワーカーが最後に走らせたtask〔そのスタックの上で次を待つ〕のワード0はシャロースリープの記しの戻り先のことがある）

@@ -375,13 +375,14 @@ type Overflow panic
 
 // ── 受け ──
 
-// net.Connの受け（sec.Opsのrecv）: 受けた切片bを持ち越しと合わせてrecordに切り、揃ったrecordを受けの表に通して平文を返す。
-// 切片の中の平文が1 recordなら開いた列のまま、2つ以上なら繋いだコピー。recordをまたぐ前半は格納場所の持ち越しの席へ写す。
+// net.Connの受け（sec.Opsのrecv）: 受けた切片bを持ち越しと合わせてrecordに切り、揃ったrecordを受けの表に通して、平文を呼び手の列outの先頭から
+// 順に書いた長さを返す（平文 = out[0, 返り値)。outは呼び手のregionの列で、recordを開く席の分だけ末尾を伸ばす — 呼び手へ返す写しが無い）。
+// recordをまたぐ前半は格納場所の持ち越しの席へ写す。
 // 受けの方向は格納場所から作り直し、seq（と、KeyUpdateの後は方向の全体）を書き戻す。fin = 相手のFIN（bは空 — 持ち越しが残っていればdecode_error）
-func recvNet(s internal.sec.Store, fd int, b []byte, fin bool) []byte {
+func recvNet(s internal.sec.Store, fd int, b []byte, fin bool, out mut []byte) int {
     fl := flags(s)
     if (fl & (bEof | bDead)) != 0 {
-        return []byte{}
+        return 0
     }
     pn0 := leaseOp(4, s.blk, fLeft, 0)
     if fin {
@@ -389,7 +390,7 @@ func recvNet(s internal.sec.Store, fd int, b []byte, fin bool) []byte {
             return dieNet(s, fd, internal.record.AlertDecode)
         }
         setFlags(s, fl | bEof)
-        return []byte{}
+        return 0
     }
     // 受けの方向は格納場所から作り直す（鍵の素材は格納場所の view のまま — 写すと受けの1回ごとの固定費になる）。アプリのデータの record は record の層だけで
     // 開き、それ以外（KeyUpdate・alert・handshake の断片）が来たときか、組み立て中の handshake のバイト列があるときだけ、その record から handshake の表
@@ -401,8 +402,7 @@ func recvNet(s internal.sec.Store, fd int, b []byte, fin bool) []byte {
     lim := internal.record.BodyMax(leaseOp(4, s.blk, fRd, 0))
     // 持ち越しの置き場（席があれば席・無ければhandshakeの残りの列 — 入らなくなったら席を確保して写す）はhelperが毎回引く（carryTo・pendAt・pendCopy・pendShift）
     mut pn := pn0
-    mut out := []byte{}
-    mut napp := 0
+    mut w := 0
     mut keyed := false
     mut at := 0
     mut go := true
@@ -471,16 +471,15 @@ func recvNet(s internal.sec.Store, fd int, b []byte, fin bool) []byte {
         mut fast := false
         if fl2 >= 0 && len(hv) == 0 && int(fb[fo]) != internal.record.CtCcs {
             rd0 := rd
-            ict, pt, e := internal.record.Open(mut rd, internal.record.At(fb, fo, fl2))
+            ict, n, e := internal.record.OpenInto(mut rd, internal.record.At(fb, fo, fl2), mut out, w)
             if e != nil {
                 return dieNet(s, fd, alertOf(e))
             }
             if ict == internal.record.CtApp {
-                out = if napp == 0 { pt } else { cat(out, pt) }
-                napp += 1
+                w += n
                 fast = true
             } else {
-                // アプリのデータでない record: 開く前の方向から handshake の表に渡し直す（このrecordを2回開く — KeyUpdate・alertの時だけ）
+                // アプリのデータでない record: 開く前の方向から handshake の表に渡し直す（このrecordを2回開く — KeyUpdate・alertの時だけ。out[w:] に書いた分は捨てる）
                 rd = rd0
             }
         }
@@ -498,8 +497,7 @@ func recvNet(s internal.sec.Store, fd int, b []byte, fin bool) []byte {
                 setFlags(s, flags(s) | bUpdate)
             }
             if len(o.app) > 0 {
-                out = if napp == 0 { o.app } else { cat(out, o.app) }
-                napp += 1
+                w = putAt(mut out, w, o.app)
             } else {
                 // 平文の無いrecord（KeyUpdate・handshakeの断片・閉じ）— 受けの方向の全体を書き戻す
                 keyed = true
@@ -529,7 +527,21 @@ func recvNet(s internal.sec.Store, fd int, b []byte, fin bool) []byte {
         _ = leaseOp(5, s.blk, fRd + 1, internal.record.Seq(rd))
     }
     _ = leaseOp(5, s.blk, fLeft, pn)
-    return out
+    return w
+}
+
+// out[w:] へ p を書いて（足りなければ末尾を伸ばして）、書き終えた位置を返す
+func putAt(out mut []byte, w int, p []byte) int {
+    mut i := 0
+    while i < len(p) {
+        if w + i < len(out) {
+            out[w + i] = p[i]
+        } else {
+            out = append(out, p[i])
+        }
+        i += 1
+    }
+    return w + len(p)
 }
 
 // 持ち越しの置き場のpn バイト目からchunk[at, at + m) を写す。置き場が足りなければ（handshakeの残りの列のとき）、席を確保して今の [0, pn) を写してから
@@ -622,10 +634,10 @@ func imin(a int, b int) int {
 }
 
 // fatalのalert descを送って閉じ、壊れたrecordの印を置く（codeが1回だけRecvBadで返す）。平文は無い
-func dieNet(s internal.sec.Store, fd int, desc int) []byte {
+func dieNet(s internal.sec.Store, fd int, desc int) int {
     die(s, fd, desc)
     setFlags(s, flags(s) | bBad)
-    return []byte{}
+    return 0
 }
 
 // net.Connの受けの結果（sec.Opsのcode）: 壊れたrecord（1回だけ）・相手の閉じ（close_notifyかFIN）・閉じた接続・続く

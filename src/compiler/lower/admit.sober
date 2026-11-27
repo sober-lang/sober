@@ -101,6 +101,18 @@ func buildPoolNew(st mut St) {
     setCur(mut st, bFull)
     ret(mut st, iconst(mut st, -1))
     setCur(mut st, bOk)
+    // 最初の節（i = 0）で1度: 返した小さいスロットに残す常駐（ワーカーごとにRES_CAPまで — task.sober smallPush）は、taskの計上の外にある。
+    // 根の計上に定数（ワーカー数 × RES_CAP）として入れる（プールの節の天井には数えない — 常駐はワーカーごとの量で、プールをまたいで共有される）。
+    // 小さいスロットはプールから入場するtaskだけが持つので、プールを作らないプログラムには残る常駐が無い。入口（mnInit）では足せない: 入口は本体より先に組むので、
+    // プールのrtが要るかがまだ決まっていない
+    bFirst := newBlock(mut st)
+    bRest := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, i, iconst(mut st, 0)), bFirst, -1, bRest, -1)
+    setCur(mut st, bFirst)
+    mnR := globaladdr(mut st, st.mnG)
+    atomicXadd(mut st, mnR, MN_LED, bin(mut st, BMul, load(mut st, mnR, MN_N), iconst(mut st, RES_CAP)))
+    br(mut st, bRest, -1)
+    setCur(mut st, bRest)
     slot := gepWord(mut st, pg, bin(mut st, BAdd, bin(mut st, BMul, i, iconst(mut st, POOL_W)), iconst(mut st, 1)))
     b := imin(mut st, imax(mut st, 0, iconst(mut st, 0)), iconst(mut st, LED_BMAX))
     store(mut st, slot, 0, bin(mut st, BSub, iconst(mut st, LED_BMAX), b))
@@ -166,7 +178,7 @@ func buildLedger(st mut St) {
     // -5 / -6 = 子の応答の溜め（mux.sober）の使っているチャンクの数・その最大（溜めを使わないプログラムは0）
     if st.muxG != -1 {
         mpl := globaladdr(mut st, st.muxG)
-        ledgerPick(mut st, bin(mut st, BSub, iconst(mut st, -5), k), []int{mpChunks(mut st, load(mut st, mpl, MP_USE)), mpChunks(mut st, load(mut st, mpl, MP_PEAK))})
+        ledgerPick(mut st, bin(mut st, BSub, iconst(mut st, -5), k), []int{mpChunks(mut st, mpUseLive(mut st)), mpChunks(mut st, load(mut st, mpl, MP_PEAK))})
     }
     // -10 / -11 / -12 = ログのwritten・dropped・maxPending（logsink.sober — ログを使わないプログラムは0）
     logLedger(mut st, k)
@@ -362,8 +374,48 @@ func admitIn(st mut St, code int, decl int, pool int, pw int) Adm {
     mut n0 := pool
     mut me := zero
     if pool < 0 {
-        me = itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
+        me = itop(mut st, waitSelf(mut st))
         n0 = bin(mut st, BMul, load(mut st, me, TC_CNODE), bin(mut st, BSub, one, bin(mut st, BAnd, bin(mut st, BSar, code, one), one)))
+    }
+    // 子の入場の打ち消し: 同じ節にこのワーカーの溜めた子の返し（WK_PDEBT — taskの数が1以上・バイトがe以上）があれば、そこからeを引いて入場とする
+    // （台帳の語は変わらない — 返した子の量を新しい子が引き継ぐ）。天井を越えている間は打ち消さない: 根とチェーンの節の語のあふれビットを読む（読むだけ）。
+    // ミュータント133 = あふれビットを見ない（天井を越えている間も子が入場し、縮退か待ちになるべき子がtaskになる）
+    if pool < 0 && st.poolOn && st.areaOn {
+        wkA := globaladdr(mut st, st.wkG)
+        debt := load(mut st, wkA, WK_PDEBT)
+        ok1 := bin(mut st, BAnd, bin(mut st, BAnd, cmp(mut st, CEq, load(mut st, wkA, WK_PNODE), n0), cmp(mut st, CNe, bin(mut st, BSar, debt, iconst(mut st, LED_TSHIFT)), zero)),
+            cmp(mut st, CGe, bin(mut st, BAnd, debt, iconst(mut st, LED_BMAX)), bin(mut st, BAnd, e, iconst(mut st, LED_BMAX))))
+        bChk := newBlock(mut st)
+        bNet := newBlock(mut st)
+        bSlow := newBlock(mut st)
+        condbr(mut st, ok1, bChk, -1, bSlow, -1)
+        setCur(mut st, bChk)
+        if ledMut(mut st, 133) {
+            br(mut st, bNet, -1)
+        } else {
+            ol := newBlock(mut st)
+            on := param(mut st, ol, TyI64)
+            ov := param(mut st, ol, TyI64)
+            ob := newBlock(mut st)
+            od := newBlock(mut st)
+            // 照合のbuildは根の語をあふれて見せる（打ち消しの点に来ないことを照合する — 137だけが来る）
+            ov0 := if ledChk(mut st) { iconst(mut st, LED_OVF) } else { bin(mut st, BAnd, load(mut st, mn, MN_LED), iconst(mut st, LED_OVF)) }
+            br(mut st, ol, list2(mut st, n0, ov0))
+            setCur(mut st, ol)
+            condbr(mut st, cmp(mut st, CEq, on, zero), od, -1, ob, -1)
+            setCur(mut st, ob)
+            onp := itop(mut st, on)
+            br(mut st, ol, list2(mut st, load(mut st, onp, SR_PNODE), bin(mut st, BOr, ov, bin(mut st, BAnd, load(mut st, onp, SR_LED), iconst(mut st, LED_OVF)))))
+            setCur(mut st, od)
+            condbr(mut st, cmp(mut st, CEq, ov, zero), bNet, -1, bSlow, -1)
+        }
+        setCur(mut st, bNet)
+        if ledChk(mut st) {
+            ledChkFail(mut st, iconst(mut st, 1), "led-check: a child's admission was netted while the ledger was over its ceiling\n")
+        }
+        store(mut st, wkA, WK_PDEBT, bin(mut st, BSub, debt, e))
+        br(mut st, bJ, list2(mut st, e, n0))
+        setCur(mut st, bSlow)
     }
     // 節の歩き: f = 縮退か待ちに決まった（節であふれた — give: でない子は足した分を戻さず残りの節と根にも足す: 縮退分の記帳〔language.md 11 節〕）・
     // c = あふれた節のどれかに spawn した task 自身が計上されている（wait でも待たない — 入れ子の spawn は縮退）・
@@ -476,6 +528,24 @@ func admitIn(st mut St, code int, decl int, pool int, pw int) Adm {
     br(mut st, bJ, list2(mut st, e, n0))
     if pool < 0 {
         setCur(mut st, bInl)
+        if st.poolOn && st.areaOn {
+            // 縮退か待ちに決める前に、自分のワーカーの溜め（台帳を多く見せている分）があれば、足した分を戻して溜めを反映し、1度だけ試し直す
+            // （反映の後は溜めが0なので2度目は来ない — 試しの間にこのワーカーで他のtaskは走らない）
+            wkR := globaladdr(mut st, st.wkG)
+            bRt := newBlock(mut st)
+            bRn := newBlock(mut st)
+            condbr(mut st, cmp(mut st, CNe, load(mut st, wkR, WK_PDEBT), zero), bRt, -1, bRn, -1)
+            setCur(mut st, bRt)
+            atomicXadd(mut st, mn, MN_LED, bin(mut st, BSub, zero, e))
+            ledUndo(mut st, n0, zero, e, one)
+            parkFlush(mut st)
+            if awFn(st.rtD3) != 0 {
+                _ = ledWakeG(mut st)
+            }
+            ceilWake(mut st)
+            br(mut st, bTry, -1)
+            setCur(mut st, bRn)
+        }
         if awFn(st.rtD3) != 0 {
             // wait の scope の直接の子（language.md 11 節「wait」）: 今の task が wait の中で、あふれた節（根を含む）のどれにも自分が計上されていなければ待つ。
             // 根であふれたときは「自分が根に計上されている」= 入場した task（TC_ADM ≠ 0）・「自分だけ」= 根の task の数が 1
@@ -573,7 +643,7 @@ func poolWait(st mut St, n int, nw int, pw int, g0 int, bTry BlkRef) {
     mn := globaladdr(mut st, st.mnG)
     zero := iconst(mut st, 0)
     one := iconst(mut st, 1)
-    me := itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
+    me := itop(mut st, waitSelf(mut st))
     alone := cmp(mut st, CEq, poolTasks(mut st, gepWord(mut st, itop(mut st, n), iconst(mut st, SR_LED)), nw), one)
     bNo := newBlock(mut st)
     bChk := newBlock(mut st)
@@ -824,9 +894,16 @@ func buildTaskInline(st mut St) {
     chh := if chF(mut st, CHF_DRAIN) != -1 { load(mut st, me, TC_CHS) } else { zero }
     lh := if st.rtLeaseDrain != -1 { load(mut st, me, TC_LEASE) } else { zero }
     // 子の死の印（rt.task_newが入場できずに残した、今のtaskの次のspawn 1回の印 — この子のもの）
+    // 子の間は今のtaskのTC_DIEに置く（子が終わりを兼ねる合図を積むとmuxDieClearがそこで消す — 返った点でTC_DIEを読み直し、親の値に戻す）
     dn := if st.dieOn { load(mut st, me, TC_DNEXT) } else { zero }
+    bo := if st.dieOn { load(mut st, me, TC_BLOB) } else { zero }
+    dp := if st.dieOn { load(mut st, me, TC_DIE) } else { zero }
     if st.dieOn {
         store(mut st, me, TC_DNEXT, zero)
+        store(mut st, me, TC_DIE, dn)
+        // 要求の塊の持ち主: 子の間だけ今のtask（親）のTC_BLOBに置き、返った点で返して親の値に戻す
+        store(mut st, me, TC_BLOB, load(mut st, me, TC_BNEXT))
+        store(mut st, me, TC_BNEXT, zero)
     }
     // 子は親のスタックの上で走る（今のtaskは親のまま）。親が接続のtaskなら、子の間はフラグ（bit 0）とAREA_NEARを消す: 子の本体の入口のprologueは
     // 素通りになり（エリアへ付け替えない。入口がページ0にある前提が成り立たない）、子のrt.netwaitは深くスリープする（浅い着地はワーカーのエリアの頂上で、
@@ -855,7 +932,10 @@ func buildTaskInline(st mut St) {
     }
     cellDiedIn(mut st, me)
     if st.dieOn {
-        muxDieMark(mut st, dn, r)
+        muxDieMark(mut st, load(mut st, me, TC_DIE), r)
+        store(mut st, me, TC_DIE, dp)
+        blobOwnEnd(mut st, me)
+        store(mut st, me, TC_BLOB, bo)
     }
     if st.rtLeaseDrain != -1 {
         call(mut st, st.rtLeaseDrain, list2(mut st, me, lh))
@@ -876,7 +956,7 @@ func buildTaskInline(st mut St) {
     dead := bin(mut st, BMul, r, bin(mut st, BSub, iconst(mut st, 1), cut))
     store(mut st, frame, FR_STATE, bin(mut st, BAdd, bin(mut st, BAdd, r, iconst(mut st, 1)), bin(mut st, BMul, cut, bin(mut st, BSub, iconst(mut st, 2), r))))
     rec := itop(mut st, load(mut st, frame, FR_SREC))
-    atomicXadd(mut st, rec, SR_DEAD, dead)
+    deadAdd(mut st, rec, dead)
     frameDrop(mut st, frame, rec, dead)
     store(mut st, me, TC_FRAME, f0)
     store(mut st, me, TC_KID, k0)
@@ -928,8 +1008,31 @@ func admitReturn(st mut St, tcb int) {
     }
     // 印ADM_PLAINはプールを使うプログラムだけが付ける
     a := if st.poolOn { bin(mut st, BAnd, a0, iconst(mut st, -1 - ADM_PLAIN)) } else { a0 }
-    atomicXadd(mut st, globaladdr(mut st, st.mnG), MN_LED, bin(mut st, BSub, iconst(mut st, 0), a))
     n0 := load(mut st, tcb, TC_NODE)
+    mut bEnd := BlkRef(-1)
+    if st.poolOn && st.areaOn {
+        // 普通のspawnの子の返しは、待ちの台帳の縮めと同じワーカーごとの未反映の量（WK_PDEBT）に溜める（台帳を本当の値より多く見せる側）。
+        // 溜めるのは: 節がWK_PNODEと同じ・待ち手がいない（溜めた返しは待ち手を起こさない）・溜めがPARK_Qに届かない。届かなければ溜めを反映してから今の返し。
+        // ミュータント130 = 待ち手がいても溜める（入場の待ちと天井の待ちが、古い台帳のまま起こされない）
+        wk := globaladdr(mut st, st.wkG)
+        nd := bin(mut st, BAdd, load(mut st, wk, WK_PDEBT), a)
+        okD := bin(mut st, BAnd, bin(mut st, BAnd, cmp(mut st, CNe, bin(mut st, BAnd, a0, iconst(mut st, ADM_PLAIN)), iconst(mut st, 0)), cmp(mut st, CEq, load(mut st, wk, WK_PNODE), n0)),
+            cmp(mut st, CLt, bin(mut st, BAnd, nd, iconst(mut st, LED_BMAX)), iconst(mut st, PARK_Q)))
+        ok := if ledMut(mut st, 130) { okD } else { bin(mut st, BAnd, okD, cmp(mut st, CEq, ledWaiters(mut st), iconst(mut st, 0))) }
+        bEnd = newBlock(mut st)
+        bD := newBlock(mut st)
+        bX := newBlock(mut st)
+        condbr(mut st, ok, bD, -1, bX, -1)
+        setCur(mut st, bD)
+        if ledChk(mut st) {
+            ledChkFail(mut st, ledWaiters(mut st), "led-check: a child's return was deferred while a waiter was registered\n")
+        }
+        store(mut st, wk, WK_PDEBT, nd)
+        br(mut st, bEnd, -1)
+        setCur(mut st, bX)
+        parkFlush(mut st)
+    }
+    atomicXadd(mut st, globaladdr(mut st, st.mnG), MN_LED, bin(mut st, BSub, iconst(mut st, 0), a))
     bU := newBlock(mut st)
     bU2 := newBlock(mut st)
     condbr(mut st, cmp(mut st, CNe, n0, iconst(mut st, 0)), bU, -1, bU2, -1)
@@ -941,6 +1044,50 @@ func admitReturn(st mut St, tcb int) {
         _ = ledWakeG(mut st)
     }
     ceilWake(mut st)
+    if bEnd != -1 {
+        br(mut st, bEnd, -1)
+        setCur(mut st, bEnd)
+    }
+}
+
+// 照合のbuild（ミュータント134〜137 — scripts/parkres.sh）: 134 = 子の返しの溜めの不変条件の照合だけ・135 / 136 / 137 = 130 / 132 / 133 + 照合。
+// 通常のbuildは照合を組まない（IRは不変）
+func ledChk(st mut St) bool {
+    return st.rtMut >= 134 && st.rtMut <= 137
+}
+
+// ミュータント m（130・132・133）か、その照合つきの版（135・136・137）か
+func ledMut(st mut St, m int) bool {
+    return st.rtMut == m || st.rtMut == (if m == 130 { 135 } else if m == 132 { 136 } else { 137 })
+}
+
+// 照合のbuildの破れ: c ≠ 0なら印字して終了コード103
+func ledChkFail(st mut St, c int, msg string) {
+    bF := newBlock(mut st)
+    bJ := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, c, iconst(mut st, 0)), bF, -1, bJ, -1)
+    setCur(mut st, bF)
+    toStderr(mut st, globaladdr(mut st, st.meta))
+    printLit(mut st, msg)
+    call(mut st, st.rtFlush, list0(mut st))
+    exit(mut st, 103)
+    setCur(mut st, bJ)
+}
+
+// 台帳の返しを待つ者がいるか（0 = いない）: 入場の待ちのチェーン・HTTP/2の接続の入場の空きの登録簿・天井の待ちの列の頭。どれも書かれるのがまれな語
+func ledWaiters(st mut St) int {
+    mn := globaladdr(mut st, st.mnG)
+    mut w := iconst(mut st, 0)
+    if awFn(st.rtD3) != 0 {
+        w = bin(mut st, BOr, w, load(mut st, mn, MN_AWAIT))
+    }
+    if st.muxUse {
+        w = bin(mut st, BOr, w, load(mut st, mn, MN_MROOM))
+    }
+    if st.rdlOn {
+        w = bin(mut st, BOr, w, load(mut st, mn, MN_CQH))
+    }
+    return w
 }
 
 // 終わる task tcb の死（dead = 1）を、入場した節（TC_NODE）が名前つきプールの節ならその死の数へ足す（名前つきプールを使うプログラムだけ —
@@ -1199,6 +1346,10 @@ func buildBorGive(st mut St) {
 // 天井を越えている間は新しい入場が止まるので、越える量は同時に起きている接続の数で抑えられる）。Ledger の used は「走っている接続の予約 +
 // 待っている接続の PARK_RES」になり、実際の常駐に近づく。ミュータント122: 縮めない（前の形 — scripts/parkres.sh が捕まえる）
 const PARK_RES = TASK_FIXED + 8192
+// 縮めは台帳へすぐ反映せず、ワーカーごとの未反映の量（WK_PDEBT）に溜める。溜めた縮めは台帳を本当の値より多く見せる側（入場が厳しくなる側）なので、
+// 台帳の値は常に「本当の値 + 未反映の量の和」以上になる。戻しは同じ節の未反映の量があればそこから引いて打ち消し、無ければすぐ台帳へ足す（溜めると入場が緩む側）。
+// 未反映の量がこの値に達したときと、節が変わるときと、ワーカーが眠る前に反映する。台帳の used のずれは節ごとに最大でワーカー数 × PARK_Q
+const PARK_Q = 1048576
 const ONW_DSHIFT = 16
 // TC_ONW のビット15: 台帳へ返し終えた task（admitReturn が立てる）。終わる task は返した後の最後の切り替えでも areaSwap を通るので、縮めない
 const ONW_GONE = 32768
@@ -1218,21 +1369,84 @@ func parkShrink(st mut St, t int) {
     bJ := newBlock(mut st)
     condbr(mut st, cmp(mut st, CNe, d, zero), bS, -1, bJ, -1)
     setCur(mut st, bS)
-    mn := globaladdr(mut st, st.mnG)
-    atomicXadd(mut st, mn, MN_LED, bin(mut st, BSub, zero, d))
+    wk := globaladdr(mut st, st.wkG)
     n0 := load(mut st, t, TC_NODE)
-    bU := newBlock(mut st)
-    bU2 := newBlock(mut st)
-    condbr(mut st, cmp(mut st, CNe, n0, zero), bU, -1, bU2, -1)
-    setCur(mut st, bU)
-    ledUndo(mut st, n0, zero, d, zero)
-    br(mut st, bU2, -1)
-    setCur(mut st, bU2)
+    bN := branchIf(mut st, cmp(mut st, CNe, load(mut st, wk, WK_PNODE), n0))
+    parkFlush(mut st)
+    store(mut st, wk, WK_PNODE, n0)
+    br(mut st, bN, -1)
+    setCur(mut st, bN)
+    debt := bin(mut st, BAdd, load(mut st, wk, WK_PDEBT), d)
+    store(mut st, wk, WK_PDEBT, debt)
+    bQ := branchIf(mut st, cmp(mut st, CGe, debt, iconst(mut st, PARK_Q)))
+    parkFlush(mut st)
+    br(mut st, bQ, -1)
+    setCur(mut st, bQ)
     store(mut st, t, TC_ADM, bin(mut st, BSub, a, d))
     store(mut st, t, TC_ONW, bin(mut st, BOr, onw, bin(mut st, BShl, d, iconst(mut st, ONW_DSHIFT))))
     // 入場を待つ task は起こさない（ここは rt.task_switch の途中 — 起こす処理を切り替えの中で呼ばない）。縮めた分は、次に台帳を返す点〔task の終わり〕の起こしで使われる
     br(mut st, bJ, -1)
     setCur(mut st, bJ)
+}
+
+// このワーカーの未反映の縮め（WK_PDEBT）を根と節のチェーン（WK_PNODE から親へ）から引いて0にする。Serve のプールの無いプログラムは何もしない（IR は不変）
+func parkFlush(st mut St) {
+    if !st.poolOn || !st.areaOn {
+        return
+    }
+    zero := iconst(mut st, 0)
+    wk := globaladdr(mut st, st.wkG)
+    debt := load(mut st, wk, WK_PDEBT)
+    bD := branchIf(mut st, cmp(mut st, CNe, debt, zero))
+    store(mut st, wk, WK_PDEBT, zero)
+    atomicXadd(mut st, globaladdr(mut st, st.mnG), MN_LED, bin(mut st, BSub, zero, debt))
+    // 節のチェーン: 溜めの taskの数のフィールドは子の返し（普通のspawn — プールの節にはtaskの数を足していない）の数なので、プールの節からはバイトだけを引く。
+    // ミュータント131 = プールの節からもtaskの数を引く（`conns:` の本数の数えが子の返しの分だけ減り、接続の本数の天井を越えて入る）
+    tf := bin(mut st, BShl, bin(mut st, BSar, debt, iconst(mut st, LED_TSHIFT)), iconst(mut st, LED_TSHIFT))
+    loop := newBlock(mut st)
+    n := param(mut st, loop, TyI64)
+    body := newBlock(mut st)
+    br(mut st, loop, list1(mut st, load(mut st, wk, WK_PNODE)))
+    setCur(mut st, loop)
+    condbr(mut st, cmp(mut st, CEq, n, zero), bD, -1, body, -1)
+    setCur(mut st, body)
+    np := itop(mut st, n)
+    en := if st.rtMut == 131 { debt } else { bin(mut st, BSub, debt, bin(mut st, BMul, tf, poolNodeBit(mut st, n))) }
+    atomicXadd(mut st, np, SR_LED, bin(mut st, BSub, zero, en))
+    br(mut st, loop, list1(mut st, load(mut st, np, SR_PNODE)))
+    setCur(mut st, bD)
+}
+
+// 照合のbuild: 眠る点で、溜めに子の返し（taskの数のフィールド）が残っていない（暇の点の反映が先に済んでいる）
+func ledChkSleep(st mut St) {
+    if !ledChk(mut st) || !st.poolOn || !st.areaOn {
+        return
+    }
+    ledChkFail(mut st, bin(mut st, BSar, load(mut st, globaladdr(mut st, st.wkG), WK_PDEBT), iconst(mut st, LED_TSHIFT)), "led-check: a worker went to sleep holding deferred child returns\n")
+}
+
+// ワーカーが暇になった点（rt.mn_nextの盗みの手前）: 溜めに子の返し（taskの数のフィールド）があれば反映し、返しの番号を進めて待ち手を起こす。
+// 子の返しを溜めている間は待ち手を起こさない（admitReturn）ので、溜めたワーカーが暇になる点で必ず知らせる。反映したら真（呼び手は列を見直す）
+func parkFlushIdle(st mut St) int {
+    zero := iconst(mut st, 0)
+    if !st.poolOn || !st.areaOn {
+        return zero
+    }
+    wk := globaladdr(mut st, st.wkG)
+    has := cmp(mut st, CNe, bin(mut st, BSar, load(mut st, wk, WK_PDEBT), iconst(mut st, LED_TSHIFT)), zero)
+    bJ := newBlock(mut st)
+    r := param(mut st, bJ, TyI64)
+    bF := newBlock(mut st)
+    condbr(mut st, has, bF, -1, bJ, list1(mut st, zero))
+    setCur(mut st, bF)
+    parkFlush(mut st)
+    if awFn(st.rtD3) != 0 {
+        _ = ledWakeG(mut st)
+    }
+    ceilWake(mut st)
+    br(mut st, bJ, list1(mut st, iconst(mut st, 1)))
+    setCur(mut st, bJ)
+    return r
 }
 
 // parkShrink で縮めた予約を、再開する task t に足し戻す（縮めていなければ何もしない — 熱い経路は TC_ONW の読みと比較1つ）
@@ -1249,6 +1463,18 @@ func parkRestore(st mut St, t int) {
     setCur(mut st, bR)
     store(mut st, t, TC_ONW, bin(mut st, BAnd, onw, iconst(mut st, (1 << ONW_DSHIFT) - 1)))
     store(mut st, t, TC_ADM, bin(mut st, BAdd, load(mut st, t, TC_ADM), d))
+    // 同じ節の未反映の量のバイトが d 以上あれば、そこから引いて打ち消す（台帳の値は変わらない）。比べるのはバイトのフィールドだけ: 溜めには子の返しの
+    // taskの数が入りうるので、語の整数で比べると、バイトが足りないのにtaskの数のフィールドから借りる
+    wk := globaladdr(mut st, st.wkG)
+    debt := load(mut st, wk, WK_PDEBT)
+    can := bin(mut st, BAnd, cmp(mut st, CEq, load(mut st, wk, WK_PNODE), load(mut st, t, TC_NODE)), cmp(mut st, CGe, bin(mut st, BAnd, debt, iconst(mut st, LED_BMAX)), d))
+    bA := newBlock(mut st)
+    bC := newBlock(mut st)
+    condbr(mut st, can, bC, -1, bA, -1)
+    setCur(mut st, bC)
+    store(mut st, wk, WK_PDEBT, bin(mut st, BSub, debt, d))
+    br(mut st, bJ, -1)
+    setCur(mut st, bA)
     atomicXadd(mut st, globaladdr(mut st, st.mnG), MN_LED, d)
     // 節のチェーン（TC_NODE から親へ）に d を足す（ledUndo の逆）
     loop := newBlock(mut st)

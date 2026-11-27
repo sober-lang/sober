@@ -1,0 +1,353 @@
+package lower
+
+// 遅延task化（language.md 11節「スケジューラ」— HTTP/2のストリームの子）: 配置のフラグの行き先-2のspawnは、子のtaskを作る代わりに、子を親のTCB（P）の上で
+// 子のチャンク（C）のスタックで走らせる。子が待つ・今のtaskの番地を外へ書く点（waitSelf）で、初めて子をtaskへ昇格させる（rt.task_promote）。
+// 待たずに返った子は、親の文脈へ直に戻る（実行待ちの列・切り替え・生きている子の数・出力の区間を通らない）。
+// - 昇格前の子の状態: Pの子のフィールド（lazySwapの欄）を子の値と入れ替え、Pの値はCの同じ欄に置く。昇格と返った点で入れ替えを戻すと、Cが子の状態を持つ
+// - Pの文脈（spawnの点）の控えはCの使わない欄: TC_DEST・TC_ANCHOR・TC_TRAP = spawnの点の値・TC_DEPTH = d0・TC_OWN = Pの自前の最深（ownP）・
+//   TC_WAKE = spawnの点の時刻・TC_LRUN = PのTC_WSP・TC_INEXT = Pから消したTC_ONWのビット
+// - スロット: spawnの点でPの(d0, ownP]（死んだ深度を含む）をCの退避の欄へ写して表から隠し、子はslot_newで取る（予約ページはWSP_NOWINで止める）。
+//   返った点で子のスロットを返して隠した分を戻し、昇格ではPの退避の欄へ移す（表の(d0, 今のown]はCのもの — I1）
+import "desugar"
+
+// P（親）の上で走っている昇格前の子のチャンク（0 = 無し）。深度0の退避の対は使わない（slotRangeは基底 + 1から）ので、その1語目に置く
+const TC_LAZYC = TC_SAVE
+// 予約ページの4つのフィールドのWSP_NOWINを全部立てた値（フィールドrはビット(3 − r) × 16から — winSh）
+const WSP_NOWIN4 = 4611756388245323776
+
+func needLazyRt(st mut St) {
+    st.rtTaskLazy = addFunc(mut st, int(strLit(mut st, "rt.task_lazy")), desugar.ListRef(list1(mut st, TyPtr)), -1)
+    st.rtTaskLazyRun = addFunc(mut st, int(strLit(mut st, "rt.task_lazy_run")), desugar.ListRef(list1(mut st, TyPtr)), -1)
+    st.rtTaskPromote = addFunc(mut st, int(strLit(mut st, "rt.task_promote")), desugar.ListRef(list0(mut st)), TyI64)
+}
+
+func buildLazyRt(st mut St) {
+    if st.rtTaskLazy == -1 {
+        return
+    }
+    buildTaskLazy(mut st)
+    buildTaskLazyRun(mut st)
+    buildTaskPromote(mut st)
+}
+
+// 登録に使う今のtaskの番地（int）: 昇格前の子が走っていれば（TC_LAZYC ≠ 0）昇格してからCを返す。待ちの登録・今のtaskの番地を外へ書く所は、
+// TK_CURを直に読まずにこれを通す（lowerの組み立て時の検査 taskWaitCall）
+func waitSelf(st mut St) int {
+    st.waitSelfFn = st.fn
+    me := load(mut st, globaladdr(mut st, st.taskG), TK_CUR)
+    if st.rtTaskPromote == -1 {
+        return me
+    }
+    bP := newBlock(mut st)
+    bJ := newBlock(mut st)
+    v := param(mut st, bJ, TyI64)
+    condbr(mut st, cmp(mut st, CNe, load(mut st, itop(mut st, me), TC_LAZYC), iconst(mut st, 0)), bP, -1, bJ, list1(mut st, me))
+    setCur(mut st, bP)
+    br(mut st, bJ, list1(mut st, call(mut st, st.rtTaskPromote, list0(mut st))))
+    setCur(mut st, bJ)
+    return v
+}
+
+// p・cの欄fを入れ替える
+func swapW(st mut St, p int, c int, f int) {
+    a := load(mut st, p, f)
+    store(mut st, p, f, load(mut st, c, f))
+    store(mut st, c, f, a)
+}
+
+// 昇格前の子の状態の欄（今のtaskの欄として子が読み書きするもの）をpとcで入れ替える。入らないもの: 切り替えの文脈・深度・スロット（別に扱う）・
+// 出力の区間（昇格でoutFork）・TC_WAKER・列のチェーン・
+// 待ちの登録の後に書く欄（TC_IORES・TC_SNP・TC_ORG・TC_RIDX・待ちのチェーン — 登録の前に昇格する）
+func lazySwap(st mut St, p int, c int) {
+    // 自前の深度の基底（子の間はd0 — 計上済みの上限の和〔wmCharged〕が子の深度だけを数える）
+    swapW(mut st, p, c, TC_BASE)
+    swapW(mut st, p, c, TC_FRAME)
+    swapW(mut st, p, c, TC_KID)
+    swapW(mut st, p, c, TC_KOFF)
+    swapW(mut st, p, c, TC_SCOPE)
+    swapW(mut st, p, c, TC_CUTOK)
+    swapW(mut st, p, c, TC_IDX)
+    swapW(mut st, p, c, TC_SITE)
+    swapW(mut st, p, c, TC_ADM)
+    swapW(mut st, p, c, TC_NODE)
+    swapW(mut st, p, c, TC_DECL)
+    swapW(mut st, p, c, TC_CNODE)
+    swapW(mut st, p, c, TC_WAIT)
+    swapW(mut st, p, c, TC_SLOTSZ)
+    swapW(mut st, p, c, TC_SNEG)
+    swapW(mut st, p, c, TC_FDS)
+    swapW(mut st, p, c, TC_CHS)
+    swapW(mut st, p, c, TC_DL)
+    swapW(mut st, p, c, TC_LEASE)
+    swapW(mut st, p, c, TC_NSLOT)
+    swapW(mut st, p, c, TC_RDL)
+    swapW(mut st, p, c, TC_RACK)
+    swapW(mut st, p, c, TC_BACKLOG)
+    swapW(mut st, p, c, TC_FUSE)
+    swapW(mut st, p, c, TC_DOM)
+    swapW(mut st, p, c, TC_HW)
+    swapW(mut st, p, c, TC_WBIG)
+    swapW(mut st, p, c, TC_CELL)
+    swapW(mut st, p, c, TC_BOR)
+    swapW(mut st, p, c, TC_DNEXT)
+    swapW(mut st, p, c, TC_DIE)
+    swapW(mut st, p, c, TC_BNEXT)
+    swapW(mut st, p, c, TC_BLOB)
+}
+
+// 入れ替えを戻し、Pの予約ページのフィールドとTC_ONWのビットを戻す（返った点・昇格の共通）
+func lazyUndo(st mut St, p int, c int) {
+    store(mut st, p, TC_LAZYC, iconst(mut st, 0))
+    lazySwap(mut st, p, c)
+    store(mut st, p, TC_WSP, load(mut st, c, TC_LRUN))
+    if st.areaOn {
+        store(mut st, p, TC_ONW, bin(mut st, BOr, load(mut st, p, TC_ONW), load(mut st, c, TC_INEXT)))
+        store(mut st, c, TC_INEXT, iconst(mut st, 0))
+    }
+}
+
+// rt.task_lazy(c)（spawnの点 — 配置のフラグの行き先-2）: 今のtask Pの上で子cを始める。子が返るか昇格して
+// Pが再開されると戻る。cはrt.task_newが入場して初期化し、spawnの点が子のフィールド（枠・子の関数・番号）を書いたチャンク
+func buildTaskLazy(st mut St) {
+    begin(mut st, st.rtTaskLazy)
+    c := 0
+    zero := iconst(mut st, 0)
+    tk := globaladdr(mut st, st.taskG)
+    p := itop(mut st, load(mut st, tk, TK_CUR))
+    wk := globaladdr(mut st, st.wkG)
+    pstatCall(mut st, st.rtPstatSpawn, list0(mut st))
+    frRec(mut st, FK_SPAWN, ptoi(mut st, c), ptoi(mut st, p))
+    mn := globaladdr(mut st, st.mnG)
+    bTid := newBlock(mut st)
+    bTid2 := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, load(mut st, mn, MN_TRACE), zero), bTid, -1, bTid2, -1)
+    setCur(mut st, bTid)
+    store(mut st, c, TC_ID, bin(mut st, BAdd, atomicXadd(mut st, mn, MN_TID, iconst(mut st, 1)), iconst(mut st, 1)))
+    call(mut st, st.rtMnTrace, list2(mut st, iconst(mut st, 1), load(mut st, c, TC_ID)))
+    br(mut st, bTid2, -1)
+    setCur(mut st, bTid2)
+    frRec(mut st, FK_RUN, ptoi(mut st, c), iconst(mut st, 1))
+    now := tscOp(mut st)
+    store(mut st, wk, WK_NOW, now)
+    store(mut st, c, TC_WAKE, now)
+    // Pの文脈の控え
+    meta := globaladdr(mut st, st.meta)
+    sg := globaladdr(mut st, st.slotsG)
+    store(mut st, c, TC_DEST, load(mut st, meta, W_DEST))
+    store(mut st, c, TC_ANCHOR, load(mut st, meta, W_ANCHOR))
+    store(mut st, c, TC_TRAP, load(mut st, globaladdr(mut st, st.trapG), TW_TOP))
+    d0 := load(mut st, c, TC_DEPTH)
+    // Pの(d0, ownP]を隠す（子はslot_newで取る — 死んだ深度のスロットが予約ページでも、子のregionと重ならない）
+    ownP := load(mut st, sg, SLOT_OWN)
+    store(mut st, c, TC_OWN, ownP)
+    // ミュータント176（予約ページの隠す経路）: Pの(d0, ownP]を隠さない
+    if st.rtMut != 176 {
+        slotRange(mut st, c, d0, ownP, true)
+        store(mut st, sg, SLOT_OWN, d0)
+    }
+    // 予約ページ: 全部のフィールドにWSP_NOWIN（子はPの予約ページを張らない。子の間の基底はd0なので、フィールドの添字はPの深度と対応しない）
+    w0 := load(mut st, p, TC_WSP)
+    store(mut st, c, TC_LRUN, w0)
+    if winArm(mut st) {
+        store(mut st, p, TC_WSP, bin(mut st, BOr, w0, iconst(mut st, WSP_NOWIN4)))
+    }
+    // 接続のtaskのフラグとAREA_NEARを消す（rt.task_inlineと同じ — 子の本体の入口はエリアへ付け替えない）
+    if st.areaOn {
+        ow := load(mut st, p, TC_ONW)
+        store(mut st, c, TC_INEXT, bin(mut st, BAnd, ow, iconst(mut st, 1 + AREA_NEAR)))
+        store(mut st, p, TC_ONW, bin(mut st, BAnd, ow, iconst(mut st, -1 - 1 - AREA_NEAR)))
+    }
+    // rt.task_newが書かない子の欄の初めの値
+    store(mut st, c, TC_SCOPE, zero)
+    store(mut st, c, TC_NSLOT, zero)
+    store(mut st, c, TC_RDL, zero)
+    store(mut st, c, TC_RACK, zero)
+    store(mut st, c, TC_FUSE, zero)
+    store(mut st, c, TC_DOM, zero)
+    store(mut st, c, TC_CELL, zero)
+    store(mut st, c, TC_DNEXT, zero)
+    store(mut st, c, TC_BNEXT, zero)
+    store(mut st, c, TC_SEG, zero)
+    if awFn(st.rtD3) == 0 {
+        store(mut st, c, TC_WAIT, zero)
+    }
+    lazySwap(mut st, p, c)
+    // 子の間は子のスロットの大きさ（子が取るのはd0より深い深度だけ — taskの切り替えと同じくmetaへ）
+    store(mut st, meta, W_SLOT_SIZE, load(mut st, p, TC_SLOTSZ))
+    store(mut st, p, TC_LAZYC, ptoi(mut st, c))
+    tstart(mut st, p, itop(mut st, load(mut st, c, TC_TOP)), funcaddr(mut st, st.rtTaskLazyRun), ptoi(mut st, c))
+    // Pへ戻った（子が返ったか、昇格した後でPが再開された）: 返った子のチャンクを返す（子のスタックの上では返さない）
+    z := load(mut st, wk, WK_ZOMBIE)
+    bZ := branchIf(mut st, cmp(mut st, CNe, z, zero))
+    store(mut st, wk, WK_ZOMBIE, zero)
+    call(mut st, st.rtTcbFree, list1(mut st, itop(mut st, z)))
+    br(mut st, bZ, -1)
+    setCur(mut st, bZ)
+    ret(mut st, -1)
+}
+
+// rt.task_lazy_run(c)（子のスタックの底）: 罠を張って子を呼ぶ。昇格した子（TK_CUR = c）はtaskの終わり（taskEndMn）へ。昇格していない子は、
+// 死んだ・打ち切りが立ったプログラム・fd / ストリーム / leaseが残っている（後始末が待ちうる）なら昇格してからtaskの終わりへ。
+// それ以外は入れ替えを戻し、cの上で終わりの後始末（生きている子の数・待ち手・出力の区間は通らない — handleは止まっている親だけが持つ）をして親へ戻る
+func buildTaskLazyRun(st mut St) {
+    begin(mut st, st.rtTaskLazyRun)
+    c := 0
+    zero := iconst(mut st, 0)
+    tk := globaladdr(mut st, st.taskG)
+    p := itop(mut st, load(mut st, tk, TK_CUR))
+    tg := globaladdr(mut st, st.trapG)
+    store(mut st, tg, TW_TOP, zero)
+    frame := itop(mut st, load(mut st, p, TC_FRAME))
+    r := trapCall(mut st, load(mut st, p, TC_KID), fieldPtr(mut st, frame, FR_RES))
+    bProm := newBlock(mut st)
+    bChk := newBlock(mut st)
+    bForce := newBlock(mut st)
+    bRet := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, load(mut st, tk, TK_CUR), ptoi(mut st, c)), bProm, -1, bChk, -1)
+    setCur(mut st, bChk)
+    gen := load(mut st, globaladdr(mut st, st.cutGenG), 0)
+    // ミュータント170（子の死の道）: 死んだ子を速いパスへ・172: fd / ストリーム / leaseの連なりが残る子を速いパスへ
+    rd := if st.rtMut == 170 { zero } else { r }
+    held := if st.rtMut == 172 { zero } else { bin(mut st, BOr, load(mut st, p, TC_FDS), bin(mut st, BOr, load(mut st, p, TC_CHS), load(mut st, p, TC_LEASE))) }
+    slow := bin(mut st, BOr, bin(mut st, BOr, rd, gen), held)
+    condbr(mut st, cmp(mut st, CNe, slow, zero), bForce, -1, bRet, -1)
+    setCur(mut st, bForce)
+    call(mut st, st.rtTaskPromote, list0(mut st))
+    br(mut st, bProm, -1)
+    setCur(mut st, bRet)
+    lazyUndo(mut st, p, c)
+    if st.domUse {
+        domDiedIn(mut st, c)
+    }
+    cellDiedIn(mut st, c)
+    muxDiedIn(mut st, c, zero)
+    frRec(mut st, FK_END, ptoi(mut st, c), zero)
+    store(mut st, frame, FR_CAUSE, bin(mut st, BOr, bin(mut st, BShl, load(mut st, tg, TW_SITE), iconst(mut st, 8)), load(mut st, tg, TW_CODE)))
+    store(mut st, frame, FR_STATE, iconst(mut st, 1))
+    frameDrop(mut st, frame, itop(mut st, load(mut st, frame, FR_SREC)), zero)
+    admitReturn(mut st, c)
+    pstatCall(mut st, st.rtPstatEnd, list1(mut st, c))
+    // 子のスロット(d0, own]を返し、隠したPの(d0, ownP]を戻す
+    _ = slotReleaseMn(mut st, c)
+    sg := globaladdr(mut st, st.slotsG)
+    meta := globaladdr(mut st, st.meta)
+    d0 := load(mut st, c, TC_DEPTH)
+    ownP := load(mut st, c, TC_OWN)
+    // ミュータント177（戻す経路）: 隠したPの(d0, ownP]を戻さない
+    if st.rtMut != 177 {
+        slotRange(mut st, c, d0, ownP, false)
+        store(mut st, sg, SLOT_OWN, ownP)
+    }
+    store(mut st, meta, W_SLOT_SIZE, load(mut st, p, TC_SLOTSZ))
+    regionSetDepth(mut st, d0)
+    store(mut st, meta, W_MAXD, d0)
+    store(mut st, meta, W_DEST, load(mut st, c, TC_DEST))
+    store(mut st, meta, W_ANCHOR, load(mut st, c, TC_ANCHOR))
+    store(mut st, tg, TW_TOP, load(mut st, c, TC_TRAP))
+    store(mut st, globaladdr(mut st, st.wkG), WK_ZOMBIE, ptoi(mut st, c))
+    tswitch(mut st, c, p)
+    ret(mut st, -1)
+    setCur(mut st, bProm)
+    taskEndMn(mut st, frame, r)
+}
+
+// rt.task_promote() → c（waitSelf・返った点の遅いパスから — 今のtask PのTC_LAZYC ≠ 0）: 子をtask cにして今のtaskにする。Pは切り替えずに
+// spawnの点の時刻で実行待ちの列の次に取る位置へ積む（深くスリープしたtaskと同じ形 — エリアを持って止まる）。cは子のスタックのまま続く
+func buildTaskPromote(st mut St) {
+    begin(mut st, st.rtTaskPromote)
+    zero := iconst(mut st, 0)
+    tk := globaladdr(mut st, st.taskG)
+    wk := globaladdr(mut st, st.wkG)
+    p := itop(mut st, load(mut st, tk, TK_CUR))
+    c := itop(mut st, load(mut st, p, TC_LAZYC))
+    lazyUndo(mut st, p, c)
+    // スロット: 隠したPの(d0, ownP]をPの退避へ・Pの(base, d0]を表から退避へ。表の(d0, 今のown]はcのもの（c.TC_BASE = d0）
+    d0 := load(mut st, c, TC_DEPTH)
+    ownP := load(mut st, c, TC_OWN)
+    loop := newBlock(mut st)
+    k := param(mut st, loop, TyI64)
+    body := newBlock(mut st)
+    done := newBlock(mut st)
+    // ミュータント174（移す経路 — I1の破れ）: 隠した分の移しを1深度ずらす
+    br(mut st, loop, list1(mut st, bin(mut st, BAdd, d0, iconst(mut st, if st.rtMut == 174 { 2 } else { 1 }))))
+    setCur(mut st, loop)
+    condbr(mut st, cmp(mut st, CLe, k, ownP), body, -1, done, -1)
+    setCur(mut st, body)
+    k2 := bin(mut st, BMul, k, iconst(mut st, 2))
+    sp := gepWord(mut st, p, k2)
+    sc := gepWord(mut st, c, k2)
+    store(mut st, sp, TC_SAVE, load(mut st, sc, TC_SAVE))
+    store(mut st, sp, TC_SAVE + 1, load(mut st, sc, TC_SAVE + 1))
+    br(mut st, loop, list1(mut st, bin(mut st, BAdd, k, iconst(mut st, 1))))
+    setCur(mut st, done)
+    slotRange(mut st, p, load(mut st, p, TC_BASE), d0, true)
+    store(mut st, p, TC_OWN, ownP)
+    // Pの文脈（spawnの点で止まっている — taskHandoverの退避と同じ欄）
+    store(mut st, p, TC_DEPTH, d0)
+    store(mut st, p, TC_DEST, load(mut st, c, TC_DEST))
+    store(mut st, p, TC_ANCHOR, load(mut st, c, TC_ANCHOR))
+    store(mut st, p, TC_TRAP, load(mut st, c, TC_TRAP))
+    store(mut st, c, TC_WAKER, ptoi(mut st, p))
+    store(mut st, c, TC_STARTED, iconst(mut st, 1))
+    store(mut st, c, TC_WORKER, load(mut st, wk, WK_ID))
+    // 出力の区間: 昇格までに書いたのは子だけ（Pの区間の末尾）。ここで子の区間を切り出す（spawnの点で切り出したのと同じ並び — O1）
+    mn := globaladdr(mut st, st.mnG)
+    bOf := newBlock(mut st)
+    bOf2 := newBlock(mut st)
+    // ミュータント175（O1の破れ — TestLazyOut）: 子の区間を切り出さない
+    noSeg := if st.rtMut == 175 { iconst(mut st, 1) } else { outNoSeg(mut st, p, c) }
+    condbr(mut st, noSeg, bOf2, -1, bOf, -1)
+    setCur(mut st, bOf)
+    spinLock(mut st, mn, MN_OLOCK)
+    outFork(mut st, p, c)
+    lockGive(mut st, mn, MN_OLOCK)
+    br(mut st, bOf2, -1)
+    setCur(mut st, bOf2)
+    store(mut st, c, TC_SEG, bin(mut st, BMul, load(mut st, c, TC_SEG), cmp(mut st, CEq, outNoSeg(mut st, p, c), zero)))
+    // 生きている子の数（昇格した子だけが数えられる — 昇格前に親がscopeの出口へ着くことは無い）
+    frame := itop(mut st, load(mut st, c, TC_FRAME))
+    // ミュータント171（検査の自己検査 — TestLazyScopeWait）: 足さない（scopeの出口が昇格した子を待たずに抜ける）
+    if st.rtMut != 171 {
+        atomicXadd(mut st, itop(mut st, load(mut st, frame, FR_SREC)), SR_LIVE, iconst(mut st, 2))
+    }
+    // Pはディープスリープと同じ形で止まる（接続のtaskならエリアを持って止まる — rt.task_switchの頭と同じ）
+    if st.areaOn {
+        parkShrink(mut st, p)
+        store(mut st, p, TC_ONW, bin(mut st, BAnd, load(mut st, p, TC_ONW), iconst(mut st, -1 - AREA_SARM - AREA_TRIM)))
+        areaSwap(mut st, p)
+    }
+    store(mut st, tk, TK_CUR, ptoi(mut st, c))
+    // Pはspawnの点の時刻で積む（LedgerのmaxWaitが子の走った時間を数える）
+    now0 := load(mut st, wk, WK_NOW)
+    store(mut st, wk, WK_NOW, load(mut st, c, TC_WAKE))
+    readyPushNext(mut st, tk, ptoi(mut st, p))
+    store(mut st, wk, WK_NOW, now0)
+    now := tscOp(mut st)
+    store(mut st, c, TC_WAKE, now)
+    store(mut st, c, TC_LRUN, now)
+    ret(mut st, ptoi(mut st, c))
+}
+
+// 組み立て時の検査: rt.task_wait / task_wait_kを呼ぶ関数は、同じ関数の中でwaitSelfを通して登録の番地を読む（昇格前の子が親の番地で待つと、
+// 親の文脈を上書きする — 新しい待ちの経路で昇格を忘れると、ここでコンパイラが止まる）
+func taskWaitCheck(st mut St) {
+    if st.waitSelfFn != st.fn {
+        println("lower: rt.task_wait is called without waitSelf in function #${int(st.fn)} (lazy.sober — read the registering task through waitSelf)")
+        panic(InvariantBroken{})
+    }
+}
+
+// ミュータント168だけ: waitSelfを通ったことにして、昇格せずに今のtaskの番地を返す
+func waitSelfRaw(st mut St) int {
+    st.waitSelfFn = st.fn
+    return load(mut st, globaladdr(mut st, st.taskG), TK_CUR)
+}
+
+// 照合のbuild（ミュータント167・168）: rt.task_wait / task_wait_kの入口で、今のtaskの上に昇格前の子が居れば印字して終了コード103
+// （登録の前の昇格を忘れた経路は、待つ所で必ず捕まる）
+func lazyChkWait(st mut St, me int) {
+    if st.rtTaskPromote == -1 || (st.rtMut != 167 && st.rtMut != 168) {
+        return
+    }
+    blobChkFail(mut st, cmp(mut st, CNe, load(mut st, me, TC_LAZYC), iconst(mut st, 0)), "lazycheck: a lazy child waited before promotion\n")
+}

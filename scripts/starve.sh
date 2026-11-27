@@ -8,9 +8,10 @@
 # 往復が0（客が走らなかった）はFAIL。客のtaskは未着手の子の列を通るので、1回以上往復した客がCLIENTS本に満たなければ赤
 # （飽和の間も未着手の子がN周に1回走る保証。language.md 28節「実行待ちの列の順」）。
 #   scripts/starve.sh            網（ROUNDS回。既定1）
-#   scripts/starve.sh --mutants  検出率の確認: 変異93（新しい側から取る）・98（新しい側から取り、1024周に1回だけ底から取る。待ちは有界だが
-#                                1周の定数倍で抑えられない）・29（溢れの列の順を崩す・環の容量8）・99（未着手の子の列をN周に1回取らない。
-#                                客が走り始めない）が赤になること。28（環の容量8で溢れのパスを毎回通す）は緑のまま
+#   scripts/starve.sh --mutants  検出率の確認: 変異29（溢れの列の順を崩す・環の容量8）が赤になること。28（環の容量8で溢れのパスを毎回通す）は緑のまま。
+#                                照合のビルド: 157（未着手の子の列と実行待ちの列の順の照合だけ — 緑のまま）・158（99 = 未着手の子の列をN周に1回取らない + 照合）・
+#                                159（93 = 新しい側から取る + 照合）・160（98 = 新しい側から取り、1024周に1回だけ底から取る + 照合）が、
+#                                1回の実行で照合に捕まり終了コード103（mn.sober bkGapTick・fifoCheck）
 set -uo pipefail
 cd "$(dirname "$0")/.."
 S2=${STAGE2:-out/stage2/sober2}
@@ -48,7 +49,16 @@ run() {
 }
 if [ "${1:-}" = "--mutants" ]; then
     fail=0
-    for m in 93 98 29 99; do
+    run bk157 --rt-mutant=157 || { echo "starve: the backlog check build (mutant 157) is red"; fail=1; }
+    for mk in 158:backlog 159:fifo 160:fifo; do
+        m=${mk%%:*}; k=${mk#*:}
+        if "$S2" build testdata/starve/starve.sober --emit=elf --passes --rt-mutant=$m -o "$W/m$m" > "$W/m$m.blog" 2>&1; then
+            SOBER_WORKERS=2 timeout 60 "$W/m$m" > /dev/null 2> "$W/m$m.err"; ec=$?
+            if [ $ec = 103 ] && grep -q "^$k-check: " "$W/m$m.err"; then echo "starve: mutant $m caught by the check ($(grep -m1 "^$k-check: " "$W/m$m.err"))"
+            else echo "starve: mutant $m not caught by the $k check (exit $ec)"; fail=1; fi
+        else echo "starve: FAIL build m$m"; fail=1; fi
+    done
+    for m in 29; do
         for r in $(seq ${ROUNDS:-3}); do
             run m$m-$r --rt-mutant=$m; ec=$?
             [ $ec = 1 ] || { echo "starve: mutant $m not detected (round $r)"; fail=1; }

@@ -210,10 +210,10 @@ function compHash1(rel: string, override?: Map<string, Buffer>): string {
 
 // place = 置き場所の表（@place <train|nightly>: — 札のないゲートは branch）・recheck = 2か所目で確かめる行（@recheck <場所>: <ゲート…|all> # 理由）・
 // regen = 取り直しの道具が書くパス（@regen: — scripts/carry.ts が列車の上で merge 以外に変えてよいパスとして読む）
-type Deps = { paths: Map<string, string[]>; nondet: Set<string>; always: Set<string>; local: Set<string>; optional: Set<string>;
+type Deps = { paths: Map<string, string[]>; nondet: Set<string>; always: Set<string>; local: Set<string>; optional: Set<string>; mutants: Set<string>;
     place: Map<string, string>; placeDup: string[]; recheck: { where: string; gates: string[]; why: string }[]; regen: string[]; lines: Set<string> };
 function loadDeps(): Deps {
-    const d: Deps = { paths: new Map(), nondet: new Set(), always: new Set(), local: new Set(), optional: new Set(), place: new Map(), placeDup: [], recheck: [], regen: [], lines: new Set() };
+    const d: Deps = { paths: new Map(), nondet: new Set(), always: new Set(), local: new Set(), optional: new Set(), mutants: new Set(), place: new Map(), placeDup: [], recheck: [], regen: [], lines: new Set() };
     for (const raw of fs.readFileSync(DEPS, "utf8").split("\n")) {
         const line = raw.replace(/#.*/, "").trim();
         if (!line) continue;
@@ -230,6 +230,7 @@ function loadDeps(): Deps {
         else if (k === "@always") v.forEach((g) => d.always.add(g));
         else if (k === "@local") v.forEach((g) => d.local.add(g));
         else if (k === "@lines") v.forEach((g) => d.lines.add(g));
+        else if (k === "@mutants") v.forEach((g) => d.mutants.add(g));
         // ?<パス> = 無くてもよい生成物（木によって有無が違う — out/bench の入力のデータなど）: 有れば中身、無ければ absent で鍵に入る。lint の存在の検査をしない
         else { v.filter((p) => p.startsWith("?")).forEach((p) => d.optional.add(p.slice(1))); d.paths.set(k, v.map((p) => p.replace(/^\?/, ""))); }
     }
@@ -785,6 +786,18 @@ function cmdPick(budget: number, hits: string[]) {
     }).filter((x) => x.secs <= budget).sort((a, b) => a.other - b.other || a.at - b.at || (a.g < b.g ? -1 : 1));
     if (c.length) console.log(c[0].g);
 }
+// ミュータントの回の抜き打ち: 選ばれたゲート（gates.shの --gate / --level の列）のうち @mutants の札のものから1本 — ミュータントの回（--mutants）を
+// 最も長く走らせていないもの（検証の日時 = verified.json の「mut:<ゲート>」）。SOBER_GATES_MUTSPOT=<ゲート> = 選ぶものを固定（その札が列にあるときだけ — 直しの検証用）
+function cmdPickMut(gates: string[]) {
+    const d = loadDeps();
+    let ver: Record<string, number> = {};
+    try { ver = JSON.parse(fs.readFileSync(verFile, "utf8")); } catch {}
+    const c = gates.filter((g) => d.mutants.has(g));
+    const fix = process.env.SOBER_GATES_MUTSPOT;
+    if (fix) { if (c.includes(fix)) console.log(fix); return; }
+    c.sort((a, b) => (ver[`mut:${a}`] ?? 0) - (ver[`mut:${b}`] ?? 0) || (a < b ? -1 : 1));
+    if (c.length) console.log(c[0]);
+}
 // 前回の記録の秒（gates.shのsummaryのwallの前回比 — 宣言なき軸のしきい値のタスク・report-1282）: ゲートごとに最新の記録の「秒 コミット」
 function cmdLast(gates: string[]) {
     for (const g of gates) {
@@ -833,6 +846,7 @@ switch (cmd) {
     case "mutate": cmdMutate(rest[0], rest[1]); saveHstat(); break;
     case "audit": cmdAudit(rest[0], rest.slice(1)); break;
     case "pick": cmdPick(Number(rest[0]), rest.slice(1)); break;
+    case "pickmut": cmdPickMut(rest); break;
     case "verified": cmdVerified(rest[0]); break;
     case "last": cmdLast(rest); break;
     case "keys": cmdKeys(rest); break;

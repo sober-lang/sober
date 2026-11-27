@@ -1,5 +1,5 @@
-@@full	2d1eab5ca3b80316	25971	951642
-@head	82b546dc54bf2d8a	0	441
+@@full	124cf65d9a79a0e2	32832	1155864
+@head	3c2d2d0d951374aa	0	474
 func TestH2BodyBig	9815f2acb9778216	117	3664
 func TestH2ChildDeath	5e758a31c99d5578	58	1893
 func TestH2Conns	3a8396f02a3e3dc6	8	330
@@ -7,6 +7,9 @@ func TestH2ConnsBudget	e126818837cbf44e	8	335
 func TestH2CtlFlood	7a98e858db8912d7	75	2377
 func TestH2EmptyFlood	0a35bfe6469bd0e4	57	1848
 func TestH2GzipHeadDelay	309e2102ae80a01d	138	4137
+func TestH2HeadReuse	7e9f968b394add29	301	9494
+func TestH2HostileConn	4459faef86a05589	360	11644
+func TestH2HostileStreams	29f7bcf6f81a287c	165	4988
 func TestH2Malformed	7d939f7604b090dc	228	7489
 func TestH2One	9f3cf2b2b8111eba	41	1343
 func TestH2Queue	c360752fce83ac9e	86	2899
@@ -24,6 +27,10 @@ func h2fRun2	49a78fc0e8cb16d4	82	2756
 func h2gClient	034886b12895db5f	151	5107
 func h2gRun	8e09a2403fc2908b	10	411
 func h2gRun2	63cf5a8ce92a5387	70	2353
+func h2hBlock	f589d2bc4ca052ed	50	1789
+func h2hPre	d148f71e2f1ba91e	33	1211
+func h2hPut	2f16db19dbe53ba0	150	5079
+func h2hRep	1071430f92fd29ce	23	883
 func h2nConn	20d82b03af42afa8	10	419
 func h2nPeers	8a0d5a0b4171f5ad	131	4232
 func h2nProbe	8a00cf6dad586db2	23	818
@@ -33,7 +40,7 @@ func h2qRoute	f62c242cfce9f83c	13	529
 func h2qRun2	b39766157ea0827c	96	3284
 func h2qServe	47833344d62d99ec	24	806
 func h2rReq	dca8f45117e20121	92	3211
-func h2sClient	a0e876b37cde5084	495	16299
+func h2sClient	c11d0c4bfa60a8c2	500	16468
 func h2sOf	4f4ab098022ad726	52	1698
 func h2sReq	d366ebe01d56bf60	123	4279
 func h2sRoute	f40bc63ea3e59434	159	5772
@@ -41,8 +48,10 @@ func h2sRun2	b4c46dbad5013d71	84	2849
 func h2sServe	37e96f91605c42cb	28	1011
 func h2tBlock	a6927990891f4c6e	63	2155
 func h2tClient	555fb3e125a63720	445	14749
+func h2tLong	572fd863c2ddf677	31	1090
+func h2tPut	30c6650cbb980abf	42	1595
 func h2tRequests	c6977519a9e6dfd5	148	5047
-func h2tRoute	06d8bbbfe7eb881b	95	3395
+func h2tRoute	31de25c407e7202e	163	5599
 func h2tRun	97285f40e88ebcdf	15	612
 func h2tRun2	697cf31528febc49	84	2849
 func h2tSeen	ca8d18756e20358a	28	1008

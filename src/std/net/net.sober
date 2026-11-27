@@ -499,7 +499,13 @@ func Recv(c Conn, k func([]byte)) error? {
             } else if len(b) == 0 && !pre {
                 0
             } else {
-                x := if tl { secOpen(c, b) } else { b }
+                x := if tl {
+                    // 平文は、この周のregionに置いた出口の列へ直に開く（返り値で受けると、開いた平文を呼び手のregionへ写すことになる）
+                    mut so := mut []byte{}
+                    sn := secOpen(c, b, mut so)
+                    sp := freeze(so)
+                    sp[0:sn]
+                } else { b }
                 if len(x) > 0 {
                     k(x)
                 }
@@ -527,10 +533,10 @@ func Recv(c Conn, k func([]byte)) error? {
     return nil
 }
 
-// TLSの受けの切片bを開いた平文（Recvの本体の外 — 平文の接続の展開に局所を増やさない）
-func secOpen(c Conn, b []byte) []byte {
+// TLSの受けの切片bを開いた平文をoutの先頭から書いた長さ（Recvの本体の外 — 平文の接続の展開に局所を増やさない）
+func secOpen(c Conn, b []byte, out mut []byte) int {
     s := c.sec[0]
-    return s.ops.recv(s.st, c.fd, b, false)
+    return s.ops.recv(s.st, c.fd, b, false, mut out)
 }
 
 // TLSの受けの1周の後: FIN（n = 0）ならrecordの途中で切れていないかを見る・平文をkへ渡し終えたら積んだ分を送る。
@@ -538,7 +544,8 @@ func secOpen(c Conn, b []byte) []byte {
 func secAfter(c Conn, n int) int {
     s := c.sec[0]
     if n == 0 {
-        _ = s.ops.recv(s.st, c.fd, []byte{}, true)
+        mut o := mut []byte{}
+        _ = s.ops.recv(s.st, c.fd, []byte{}, true, mut o)
     }
     r := s.ops.code(s.st)
     if r == internal.sec.RecvMore && n > 0 && s.ops.flush(s.st, c.fd, 1) < 0 {

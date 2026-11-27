@@ -111,7 +111,7 @@ func buildFdWait(st mut St) {
         return
     }
     wk := globaladdr(mut st, st.wkG)
-    frRecP(mut st, FK_PARK, 0, 1, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
+    frRecP(mut st, FK_PARK, 0, 1, waitSelf(mut st))
     // netのring（uring.soberのUR_NET）: POLL_ADDを積んで待つ（提出と完了の取り込みはスリープのenter — epollを作らない）
     rg := load(mut st, wk, WK_RING)
     bR0 := newBlock(mut st)
@@ -125,7 +125,7 @@ func buildFdWait(st mut St) {
     setCur(mut st, bEpw)
     rec := epRec(mut st, wk)
     rp := itop(mut st, rec)
-    me := load(mut st, globaladdr(mut st, st.taskG), TK_CUR)
+    me := waitSelf(mut st)
     tp := itop(mut st, me)
     if st.orphOn {
         // 孤児（親が死んだ scope の下）は待たない（orphan.sober）
@@ -403,7 +403,7 @@ func lsnWaitEp(st mut St, np int) int {
     zero := iconst(mut st, 0)
     wk := globaladdr(mut st, st.wkG)
     rec := epRec(mut st, wk)
-    me := load(mut st, globaladdr(mut st, st.taskG), TK_CUR)
+    me := waitSelf(mut st)
     tp := itop(mut st, me)
     bJ := newBlock(mut st)
     rv := param(mut st, bJ, TyI64)
@@ -466,14 +466,20 @@ func dlUnlink(st mut St, me int, dlv int) {
 // ringの期限のチェーンUR_DLQにme（期限dlv ≠ 0）を積み、最早の期限の下界UR_DLMINをdlvまで下げる
 func dlqPush(st mut St, rg int, me int, dlv int) {
     awPush(mut st, urAdd(mut st, rg, UR_DLQ * 8), me)
-    if st.rtMut != 51 {
+    if st.rtMut != 51 && st.rtMut != 146 {
         rp := itop(mut st, rg)
         store(mut st, rp, UR_DLMIN, imin(mut st, load(mut st, rp, UR_DLMIN), dlv))
+    }
+    if ioChk(mut st) {
+        chkFail(mut st, cmp(mut st, CGt, load(mut st, itop(mut st, rg), UR_DLMIN), dlv), "io-check: the earliest-deadline bound of the ring is above the deadline ", dlv, " just pushed\n")
     }
 }
 
 // 双方向の待ちのチェーン（TC_AWNEXT / TC_AWPREV — 期限の待ちのチェーンと入場の待ちのチェーン。taskは同時に1本のチェーンにしか居ない）: 頭のワードの番地headにtを積む
 func awPush(st mut St, head int, t int) {
+    if st.rtMut == 91 || st.rtMut == 92 || st.rtMut == 138 {
+        awOffCheck(mut st, t)
+    }
     tp := itop(mut st, t)
     old := load(mut st, itop(mut st, head), 0)
     store(mut st, tp, TC_AWNEXT, old)
@@ -483,6 +489,22 @@ func awPush(st mut St, head int, t int) {
     br(mut st, bO, -1)
     setCur(mut st, bO)
     store(mut st, itop(mut st, head), 0, t)
+}
+
+// 積む点の照合（検査のビルドだけ: ミュータント91・92・138。areacheck）: tはどのチェーンにも居ない（TC_AWPREV = 0）。居れば印字して終了コード103。
+// 起きたtaskをチェーンから外し損ねると、次の待ちで同じtaskを二重に積む（チェーンの重複か循環）。期限の走査が歩く前に、積む点で捕まえる
+func awOffCheck(st mut St, t int) {
+    pv := load(mut st, itop(mut st, t), TC_AWPREV)
+    bJ := branchIf(mut st, cmp(mut st, CNe, pv, iconst(mut st, 0)))
+    toStderr(mut st, globaladdr(mut st, st.meta))
+    printLit(mut st, "aw-check: task ")
+    call(mut st, st.rtPint, list1(mut st, t))
+    printLit(mut st, " pushed while still on a chain (prev ")
+    call(mut st, st.rtPint, list1(mut st, pv))
+    printLit(mut st, ")\n")
+    call(mut st, st.rtFlush, list0(mut st))
+    exit(mut st, 103)
+    setCur(mut st, bJ)
 }
 
 // tをチェーンから外す（TC_AWPREV = 0ならチェーンに居ない — 何もしない）。外したらTC_AWPREVを0に
@@ -503,21 +525,48 @@ func awUnlink(st mut St, t int) {
 func awCut(st mut St, pv int, t int) {
     tp := itop(mut st, t)
     nx := load(mut st, tp, TC_AWNEXT)
+    if ioChk(mut st) {
+        chkFail(mut st, cmp(mut st, CNe, load(mut st, itop(mut st, pv), 0), t), "io-check: the word before task ", t, " on a wait chain does not point at it\n")
+    }
     store(mut st, itop(mut st, pv), 0, nx)
-    if st.rtMut != 50 {
+    if st.rtMut != 50 && st.rtMut != 145 {
         bN := branchIf(mut st, cmp(mut st, CNe, nx, iconst(mut st, 0)))
         store(mut st, itop(mut st, nx), TC_AWPREV, pv)
         br(mut st, bN, -1)
         setCur(mut st, bN)
     }
+    if ioChk(mut st) {
+        z := iconst(mut st, 0)
+        bZ := branchIf(mut st, cmp(mut st, CNe, nx, z))
+        chkFail(mut st, cmp(mut st, CNe, load(mut st, itop(mut st, nx), TC_AWPREV), pv), "io-check: after cutting a task from a wait chain, the next task ", nx, " does not point back at the word before it\n")
+        br(mut st, bZ, -1)
+        setCur(mut st, bZ)
+    }
     store(mut st, tp, TC_AWPREV, iconst(mut st, 0))
+}
+
+// 待ちのチェーンと期限の下界の照合のビルド（ミュータント144 = これだけ・145 = 50 + これ・146 = 51 + これ・147 = 126 + これ・148 = 127 + これ。iouring）
+func ioChk(st mut St) bool {
+    return st.rtMut >= 144 && st.rtMut <= 148
+}
+
+// 検査のビルドの破れ: badが立てば「<msg>前半 a msg後半」を印字して終了コード103
+func chkFail(st mut St, bad int, m1 string, a int, m2 string) {
+    bJ := branchIf(mut st, bad)
+    toStderr(mut st, globaladdr(mut st, st.meta))
+    printLit(mut st, m1)
+    call(mut st, st.rtPint, list1(mut st, a))
+    printLit(mut st, m2)
+    call(mut st, st.rtFlush, list0(mut st))
+    exit(mut st, 103)
+    setCur(mut st, bJ)
 }
 
 // rt.fdwaitのnetのio_uringのパス（引数0 = fd・1 = 向き）: POLL_ADD（一度きり・user_data = TCB | UDT_POLL）を積んで待ち、完了の結果
 // （0 = readiness・-110 = 期限で取り消された・負のerrno）を返す。期限があればringの記録のチェーンUR_DLQに積む（期限の走査はuring_poll — urNetGate）
 func fdWaitRing(st mut St, rg int) {
     wk := globaladdr(mut st, st.wkG)
-    me := load(mut st, globaladdr(mut st, st.taskG), TK_CUR)
+    me := waitSelf(mut st)
     if st.orphOn {
         ov := orphEnter(mut st, me, OK_POLL)
         bOv := branchIf(mut st, cmp(mut st, CNe, ov, iconst(mut st, 0)))
@@ -548,7 +597,8 @@ func fdWaitRing(st mut St, rg int) {
 func sleepRing(st mut St, rg int, ms int, bFull BlkRef) {
     wk := globaladdr(mut st, st.wkG)
     zero := iconst(mut st, 0)
-    me := load(mut st, globaladdr(mut st, st.taskG), TK_CUR)
+    // ミュータント168（照合のbuild 167の自己検査 — TestLazyRegion）: 昇格せずに親の番地で待つ
+    me := if st.rtMut == 168 { waitSelfRaw(mut st) } else { waitSelf(mut st) }
     tp := itop(mut st, me)
     tgt0 := bin(mut st, BAdd, sleepClock(mut st), bin(mut st, BMul, ms, iconst(mut st, 1000000)))
     mut tgt := tgt0

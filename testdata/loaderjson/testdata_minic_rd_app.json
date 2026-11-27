@@ -1677,11 +1677,18 @@
           "has_try": false,
           "callees": [
             "bytesToString",
+            "len",
             "strings.IndexInvalid"
           ]
         }
       ],
-      "consts": []
+      "consts": [
+        {
+          "name": "ASCII_FAST_MAX",
+          "value": 256,
+          "dict": false
+        }
+      ]
     },
     {
       "path": "std/iter",

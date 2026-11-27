@@ -96,19 +96,22 @@ if [ $v6 = 0 ]; then
 fi
 # 時刻つきの送信バッファリング（Delayed — rt.netop 9のms）の検査一式の自己検査: ミュータント84（受けが満了を待たない）・87（格納場所の容量2で溢れた送りが待たずに出る）でビルドした
 # srvはDelayedの検査で落ちる・88（容量2 — 溢れてrt.sleepに倒す正しい形）は通る。examples/http_delayed_cut.soberは既定でゴールデン（.out）どおり、
-# ミュータント85（期限で切ったマークを見ない）・86（閉じが送らないマークを付けない）はW8・87はW1（ringのパスでない送りの待ち）でゴールデンから外れる
-for m in 84 87 88; do
+# ミュータント85（期限で切ったマークを見ない）・86（閉じが送らないマークを付けない）はW8・87はW1（ringのパスでない送りの待ち）でゴールデンから外れる。
+# 84と87のsrvの回は、Delayedの検査の時間の判定ではなく照合のビルドで捕まえる（150 = 88 + 照合・151 = 87 + 照合・152 = 84 + 照合。照合 = 溢れて待つ時刻つきの送りが
+# 頼んだ時間の半分も経たずに出ない・時刻つきの送りが満了待ちのまま、返すものを持って受けを返さない。破れればsrvがhttp-check:を印字してexit 103）。
+# 150はW1 / W8でDelayedの検査が通り照合も鳴らない・151 / 152はW8で照合が鳴る
+for m in 152 151 150; do
     "$S2" build testdata/httpcheck/srv.sober --emit=elf --passes --rt-mutant=$m -o "$W/srv.m$m" > "$W/build.m$m.log" 2>&1 || { echo "httpcheck: FAIL build srv mutant $m"; fail=1; continue; }
     for w in 1 8; do
-        env SOBER_WORKERS=$w DATASET_PATH=testdata/httpcheck/dataset.json "$W/srv.m$m" 0 > "$W/srvm.out" 2> /dev/null &
+        env SOBER_WORKERS=$w DATASET_PATH=testdata/httpcheck/dataset.json "$W/srv.m$m" 0 > "$W/srvm.out" 2> "$W/srvm.err" &
         SP=$!
         port=
         for i in $(seq 100); do port=$(sed -n 's/^ready \([0-9]*\)$/\1/p' "$W/srvm.out"); [ -n "$port" ] && break; sleep 0.05; done
         rc=0
         timeout 60 node --experimental-strip-types --no-warnings testdata/httpcheck/check.ts "$port" --delayed-only > "$W/m$m.$w.log" 2>&1 || rc=$?
         kill $SP 2>/dev/null; wait $SP 2>/dev/null; SP=
-        if [ $m = 88 ] && [ $rc != 0 ]; then echo "httpcheck: FAIL delayed with pool capacity 2 (mutant 88) W$w"; tail -5 "$W/m$m.$w.log"; fail=1; fi
-        if [ $m != 88 ] && [ $w = 8 ] && [ $rc = 0 ]; then echo "httpcheck: FAIL — mutant $m was not caught by the delayed check W$w"; fail=1; fi
+        if [ $m = 150 ] && { [ $rc != 0 ] || grep -q "^http-check: " "$W/srvm.err"; }; then echo "httpcheck: FAIL delayed with pool capacity 2 and the check (mutant 150) W$w: $(grep -m1 "^http-check: " "$W/srvm.err")"; tail -5 "$W/m$m.$w.log"; fail=1; fi
+        if [ $m != 150 ] && [ $w = 8 ] && ! grep -q "^http-check: " "$W/srvm.err"; then echo "httpcheck: FAIL — mutant $m was not caught by the timed-send check W$w (want http-check: and exit 103)"; fail=1; fi
     done
 done
 "$S2" build examples/http_delayed_cut.sober --emit=elf --passes -o "$W/cut" > /dev/null 2>&1 || { echo "httpcheck: FAIL build http_delayed_cut"; fail=1; }

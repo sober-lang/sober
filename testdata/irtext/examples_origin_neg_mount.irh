@@ -1,5 +1,5 @@
-@@full	823664cf3deea31f	19952	400063
-@globals	2d6462b6ae1f536b	114	2166
+@@full	816afbe0232c8997	20059	402084
+@globals	08d866a800eb2ad8	114	2184
 lambda~0a89c5b5	699a2f17e841295d	343	7211
 lambda~0dcf7fad	08b5e9bb36e44f42	804	16400
 lambda~0dcf7fad	08b5e9bb36e44f42	804	16400
@@ -22,7 +22,7 @@ rt.grow_try	9e10061b87b86cd0	48	869
 rt.map_grow	f7ce73b3814ab14a	122	2126
 rt.map_hash	d223d44571a67549	52	981
 rt.open	67339e3d76244a5f	35	608
-rt.panic	88c8dbfb116042a7	250	4604
+rt.panic	776af1ab91e01c19	266	4912
 rt.panic_mem	81af3d9454b47494	202	3821
 rt.print_char	bb60b2116b220a00	24	377
 rt.print_int	a3a50fa4912ac202	49	851
@@ -87,7 +87,7 @@ std/http/server.trimOWS	fb665a5cc2adfd67	75	1310
 std/http/server.year850	8960d0cf22d39b64	22	350
 std/http/server.yearOf	8ea76cb991250a48	15	290
 std/http/server.zeroQ	eb07227ec8a4d985	127	2038
-std/internal/utf8.Parse	9b89c32d45e77654	137	2713
+std/internal/utf8.Parse	d53c8e960efa44d9	227	4325
 std/io.Close	f2a4210f29b60944	12	196
 std/io.CloseRoot	86a7e22e2a32666b	12	200
 std/io.OpenRoot	e46edf90f7739e17	274	5302

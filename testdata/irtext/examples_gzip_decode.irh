@@ -1,5 +1,5 @@
-@@full	6124bf25aa10e32e	29425	593293
-@globals	b9bd6fc7acf48995	137	5790
+@@full	345f516112cec0f0	29532	595313
+@globals	99865ca374bbbf0c	137	5808
 main.label	47f47f06a325aea4	103	1909
 main.main	7c18a7c6a14c8688	638	14428
 rt.cat8	d7763d59e08dbc55	20	361
@@ -14,7 +14,7 @@ rt.grow_try	9e10061b87b86cd0	48	869
 rt.map_grow	f7ce73b3814ab14a	122	2126
 rt.map_hash	d223d44571a67549	52	981
 rt.matchlen	107a33c318858a86	21	341
-rt.panic	bbf2ff15314c957c	336	6227
+rt.panic	17902c63e1f37493	352	6536
 rt.panic_mem	81af3d9454b47494	202	3821
 rt.print_char	bb60b2116b220a00	24	377
 rt.print_int	a3a50fa4912ac202	49	851
@@ -115,7 +115,7 @@ std/internal/inflate.room	b87391fc7ef783e4	38	654
 std/internal/inflate.storedBlock	9d6a183194819552	278	5405
 std/internal/inflate.sym	82abcdfed1b414f6	233	4256
 std/internal/inflate.tables	904f0ca48ab62e1c	349	7003
-std/internal/utf8.Parse	c4d953dd43a97d6b	137	2713
+std/internal/utf8.Parse	437714473577566e	227	4325
 std/pool.Cap	0269769aed952a38	13	231
 std/pool.LoadRaw	1130af480ee3cf07	26	471
 std/pool.LoadRaw16	db60334dabdf042d	34	635

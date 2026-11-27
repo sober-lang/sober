@@ -17,6 +17,7 @@
 @std/crypto/aesgcm.SealInto
 @std/crypto/aesgcm.SealTo
 @std/crypto/aesgcm.OpenAt
+@std/crypto/aesgcm.OpenAtInto
 @std/crypto/aesgcm.newState
 @std/crypto/aesgcm.putEdge
 @std/crypto/chacha20.Block
@@ -35,6 +36,7 @@
 @std/crypto/chacha20poly1305.SealTo
 @std/crypto/chacha20poly1305.ctTail
 @std/crypto/chacha20poly1305.OpenAt
+@std/crypto/chacha20poly1305.OpenAtInto
 @std/crypto/chacha20poly1305.polyKey
 @std/crypto/hkdf.Extract
 @std/crypto/hkdf.Expand
@@ -89,7 +91,7 @@
 @std/internal/record.CbcIv
 @std/internal/record.NewDir12
 @std/internal/record.cat2
-@std/internal/record.open12
+@std/internal/record.open12Into
 @std/internal/record.seal12
 @std/internal/record.sealInto12
 @std/internal/sha1.Block
@@ -165,6 +167,7 @@
 @std/tls.pendShift
 @std/tls.hbufOf
 @std/tls.putHbuf
+@std/tls.putAt
 @std/tls.putNet
 @std/tls.sendNow
 @std/tls.flags
@@ -182,6 +185,8 @@
 @std/internal/record.sealOne
 @std/internal/record.nonceOf
 @std/internal/record.Open
+@std/internal/record.OpenInto
+@std/internal/record.room
 @std/internal/record.openBody
 @std/internal/record.strip
 @std/internal/record.stripTail

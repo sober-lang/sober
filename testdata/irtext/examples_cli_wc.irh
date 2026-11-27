@@ -1,5 +1,5 @@
-@@full	9a95047f831879e4	55751	1200918
-@globals	23b2db563c6cfbed	166	5438
+@@full	99213c64fc50ad00	55858	1202940
+@globals	fdcaaa095115ea00	166	5456
 main.count	b7665861b4354ce9	723	16234
 main.main	e8a3be80701a3076	5983	146861
 rt.cat8	d7763d59e08dbc55	20	361
@@ -15,7 +15,7 @@ rt.grow_try	9e10061b87b86cd0	48	869
 rt.jclean	97c066cd11b15bdb	28	431
 rt.map_grow	f7ce73b3814ab14a	122	2126
 rt.map_hash	d223d44571a67549	52	981
-rt.panic	be29eee1163c49f8	352	6536
+rt.panic	1d85f3a307fe2a2e	368	6845
 rt.panic_mem	81af3d9454b47494	202	3821
 rt.print_char	bb60b2116b220a00	24	377
 rt.print_int	a3a50fa4912ac202	49	851
@@ -126,7 +126,7 @@ std/convert.FormatInt	151aa2fbcfb409ff	68	1306
 std/convert.ParseInt	6cdc446e29950e36	547	10380
 std/convert.decWord	976a0481e914d2ba	119	2161
 std/convert.formatUint	03b275590cce180d	375	7383
-std/internal/utf8.Parse	2cb9ec538f784282	137	2714
+std/internal/utf8.Parse	1b210919d991d902	227	4326
 std/io.ReadFile	53506160026720da	192	3737
 std/io.WriteStderr	cf36eb967f92e117	144	2666
 std/io.WriteStdout	618e384319a4863a	144	2666

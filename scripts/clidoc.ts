@@ -75,6 +75,10 @@ const VACANT: Record<number, string> = {
     82: "使われなかった番号（並走の作業の予約 — 09b1259e4は84から足した）",
     83: "使われなかった番号（同上）",
     104: "使われなかった番号（並走の作業の予約 — c3dc9b9d0は105から足した）",
+    130: "使われなかった番号（案A'の変異は135〜137が照合つきで持つ — 分岐そのものはlowerに置かなかった）",
+    132: "使われなかった番号（同上）",
+    133: "使われなかった番号（同上）",
+    169: "計画したが実装しなかった番号（親を積む時刻を昇格の時刻にする変異。計測でしか見えない性質で、gatemutの対象外）",
 };
 const allow = new Set<number>(spec.commands.find((c: any) => c.name === "build").flags.find((f: any) => f.name === "rt-mutant").allow);
 const lowerFiles = walk("src/compiler/lower");

@@ -17,6 +17,10 @@ const SUBJ: Record<string, string> = {
   asyncdb: "GET /async-db?min=10&max=50&limit=20 HTTP/1.1\r\nHost: localhost\r\n\r\n",
   // json-comp の 40 件（gzipの符号器 — サーバは DATASET_PATH の表を読む）。scripts/profgen.sh の題材（bench/ratchet.txt には行が無いので reqinst.sh は回さない）
   jsoncomp: "GET /json/40?m=8 HTTP/1.1\r\nHost: localhost:8080\r\nAccept-Encoding: gzip, br\r\n\r\n",
+  // HttpArena の baseline の3本（GET・本文 2 B の Content-Length と chunked の POST）。scripts/profgen.sh の題材（keep-alive で1本ずつ送る — bench/ratchet.txt には行が無いので reqinst.sh は回さない）
+  bget: "GET /baseline11?a=13&b=42 HTTP/1.1\r\nHost: localhost:8080\r\n\r\n",
+  bpost: "POST /baseline11?a=13&b=42 HTTP/1.1\r\nHost: localhost:8080\r\nContent-Length: 2\r\n\r\n20",
+  bchunk: "POST /baseline11?a=13&b=42 HTTP/1.1\r\nHost: localhost:8080\r\nTransfer-Encoding: chunked\r\n\r\n2\r\n20\r\n0\r\n\r\n",
   // 8gbit の形（POST /echo・本文 10,240 B を TLS の port へ）— 本文が record をまたいで届くので、受けの持ち越し（std/tls の pendCopy）を通る。
   // tls* の題材は TLS で繋ぐ（reqinst.sh が証明書を渡して tls-ready の port を読む）
   tlsecho: "POST /echo HTTP/1.1\r\nHost: localhost:8081\r\nContent-Type: application/octet-stream\r\nContent-Length: 10240\r\n\r\n" + "echo-body:".repeat(1024),

@@ -9,6 +9,7 @@ import "std/internal/hpack"
 import "std/net"
 import "std/os"
 import "std/task"
+import "std/utf8"
 
 func h2tRoute(r Request) Response {
     if r.path == "/slow" {
@@ -29,7 +30,21 @@ func h2tRoute(r Request) Response {
         xs := []int{1}
         return Text("x${xs[len(bytes(r.path))]}")
     }
+    if r.path == "/hd" || r.path == "/echoh" {
+        // 頭のテキストが期待の形と同じなら "ok"（置き場の前の書きの痕が混ざっていない）
+        hb := utf8.Bytes(r.head)
+        want := if r.path == "/hd" { "GET /hd HTTP/2\r\nhost: localhost\r\n\r\n" } else { "POST /echoh HTTP/2\r\nhost: localhost\r\nx-long: ${h2tLong(300)}\r\n\r\n" }
+        return Text(if h2Is(hb, 0, len(hb), want) && h2Is(r.body, 0, len(r.body), if r.path == "/hd" { "" } else { "xyz" }) { "ok" } else { "bad" })
+    }
     return Text("hello ${r.path}")
+}
+
+func h2tLong(n int) string {
+    mut b := mut []byte{}
+    while len(b) < n {
+        b = append(b, byte(97 + len(b) % 26))
+    }
+    return bytesToString(freeze(b))
 }
 
 // 要求のヘッダのブロック
@@ -273,6 +288,64 @@ func TestH2Malformed() {
     assert(ok == 2)
 }
 
+// 置き場の使い回し: 本文を待つストリーム（1）の頭が置き場に残っている間に、形の誤りのブロック（3: 長い大文字の名前・5: 普通の欄の後の疑似ヘッダ）を
+// 置き場の先端へ書きかけて断る。後の要求（7）の頭と、1の頭と本文に、断った書きの痕が混ざらない
+func TestH2HeadReuse() {
+    mut out := mut []byte{}
+    for x <- bytes(internal.h2frame.Preface) {
+        out = append(out, x)
+    }
+    internal.h2frame.PutSettings(mut out, []int{}, []int{})
+    mut b1 := mut []byte{}
+    for x <- h2tBlock("POST", "/echoh") {
+        b1 = append(b1, x)
+    }
+    internal.hpack.Field(mut b1, bytes("x-long"), bytes(h2tLong(300)), false)
+    h2tPut(mut out, freeze(b1), 1, false)
+    mut b3 := mut []byte{}
+    for x <- h2tBlock("GET", "/x") {
+        b3 = append(b3, x)
+    }
+    b3 = append(b3, byte(0))
+    internal.hpack.Str(mut b3, bytes("Bad"))
+    internal.hpack.Str(mut b3, bytes(h2tLong(500)))
+    h2tPut(mut out, freeze(b3), 3, true)
+    mut b5 := mut []byte{}
+    for x <- h2tBlock("GET", "/y") {
+        b5 = append(b5, x)
+    }
+    internal.hpack.Field(mut b5, bytes("x-a"), bytes(h2tLong(200)), false)
+    internal.hpack.Field(mut b5, bytes(":path"), bytes("/z"), false)
+    h2tPut(mut out, freeze(b5), 5, true)
+    h2tPut(mut out, h2tBlock("GET", "/hd"), 7, true)
+    internal.h2frame.PutHead(mut out, 3, internal.h2frame.Data, internal.h2frame.EndStream, 1)
+    for x <- bytes("xyz") {
+        out = append(out, x)
+    }
+    r := h2tRun(freeze(out), 4)
+    assert(len(r) == 12)
+    mut ok := 0
+    mut i := 0
+    while i < 12 {
+        if (r[i] == 1 || r[i] == 7) && r[i + 1] == 200 && r[i + 2] == 2 {
+            ok += 1
+        }
+        if (r[i] == 3 || r[i] == 5) && r[i + 1] == 0 - internal.h2frame.ProtocolError {
+            ok += 1
+        }
+        i += 3
+    }
+    assert(ok == 4)
+}
+
+// HEADERSのフレーム（END_HEADERS・esならEND_STREAM）
+func h2tPut(out mut []byte, blk []byte, sid int, es bool) {
+    internal.h2frame.PutHead(mut out, len(blk), internal.h2frame.Headers, internal.h2frame.EndHeaders | (if es { internal.h2frame.EndStream } else { 0 }), sid)
+    for x <- blk {
+        out = append(out, x)
+    }
+}
+
 // ---- streamのレスポンス・gzip・Delayed・HEAD（5c）
 
 func h2sRoute(r Request) Response {
@@ -355,7 +428,7 @@ func h2sClient(port int, req []byte, want int) ([]int, error?) {
                     mut fs := mut []int{}
                     _ = internal.hpack.Decode(mut d, b[p:p + n], mut ho, mut fs, 65536)
                     hv := freeze(ho)
-                    fv := freeze(fs)
+                    fv := internal.hpack.Fields(d, freeze(fs))
                     st[k] = (int(hv[fv[2]]) - 48) * 100 + (int(hv[fv[2] + 1]) - 48) * 10 + int(hv[fv[2] + 2]) - 48
                     mut q := 0
                     while q < len(fv) {
@@ -951,4 +1024,147 @@ func h2nRun(big bool) int {
         task.Read(d, (g h2lGot) => g.v)
     })
     return if e == nil { v } else { 0 - 2 }
+}
+
+// ---- 悪意の形の拒否（頭のテキストを接続のtaskで書く形・フレームの本文から直に解く形の後も変わらない）
+
+// 前置きと空のSETTINGS
+func h2hPre() []byte {
+    mut out := mut []byte{}
+    for x <- bytes(internal.h2frame.Preface) {
+        out = append(out, x)
+    }
+    internal.h2frame.PutSettings(mut out, []int{}, []int{})
+    return freeze(out)
+}
+
+// ブロックblkを、HEADERS（END_STREAM）と、piece バイトずつのCONTINUATIONに分けて out へ積む（piece <= 0 なら1つのHEADERS）
+func h2hPut(out mut []byte, sid int, blk []byte, piece int) {
+    if piece <= 0 || len(blk) <= piece {
+        internal.h2frame.PutHead(mut out, len(blk), internal.h2frame.Headers, internal.h2frame.EndHeaders | internal.h2frame.EndStream, sid)
+        for x <- blk {
+            out = append(out, x)
+        }
+        return
+    }
+    mut at := 0
+    while at < len(blk) {
+        k := if len(blk) - at > piece { piece } else { len(blk) - at }
+        last := at + k == len(blk)
+        typ := if at == 0 { internal.h2frame.Headers } else { internal.h2frame.Continuation }
+        fl := (if at == 0 { internal.h2frame.EndStream } else { 0 }) | (if last { internal.h2frame.EndHeaders } else { 0 })
+        internal.h2frame.PutHead(mut out, k, typ, fl, sid)
+        mut i := at
+        while i < at + k {
+            out = append(out, blk[i])
+            i += 1
+        }
+        at += k
+    }
+}
+
+// 要求のブロックに、字句の欄（名前〔小文字にしない〕・値。表に足さない）を1つ足したもの
+func h2hBlock(path string, name string, value []byte) []byte {
+    mut blk := mut []byte{}
+    for x <- h2tBlock("GET", path) {
+        blk = append(blk, x)
+    }
+    blk = append(blk, byte(0))
+    internal.hpack.Str(mut blk, bytes(name))
+    internal.hpack.Str(mut blk, value)
+    return freeze(blk)
+}
+
+func h2hRep(c byte, n int) []byte {
+    mut b := mut []byte{}
+    while len(b) < n {
+        b = append(b, c)
+    }
+    return freeze(b)
+}
+
+// 断片に分けたブロック（ふつうの要求・形の誤り）・巨大な頭（1つのHEADERSで・CONTINUATIONで）を1本の接続で:
+// 断片の要求は200・形の誤りはRST_STREAM（PROTOCOL_ERROR）・巨大な頭は431で、接続は続き、最後の要求に応じる
+func TestH2HostileStreams() {
+    mut out := mut []byte{}
+    for x <- h2hPre() {
+        out = append(out, x)
+    }
+    h2hPut(mut out, 1, h2tBlock("GET", "/frag"), 3)
+    h2hPut(mut out, 3, h2hBlock("/x", "x-big", h2hRep(byte(97), 9000)), 0)
+    h2hPut(mut out, 5, h2hBlock("/x", "x-big", h2hRep(byte(98), 30000)), 1000)
+    h2hPut(mut out, 7, h2hBlock("/x", "Bad", bytes("1")), 2)
+    h2hPut(mut out, 9, h2tBlock("GET", "/ok"), 0)
+    r := h2tRun(freeze(out), 5)
+    assert(len(r) == 15)
+    assert(h2tStat(r, 1) == 200 && h2tStat(r, 3) == 431 && h2tStat(r, 5) == 431 && h2tStat(r, 7) == 0 - internal.h2frame.ProtocolError && h2tStat(r, 9) == 200)
+    mut i := 0
+    while i < 15 {
+        if r[i] == 1 {
+            assert(r[i + 2] == len(bytes("hello /frag")))
+        }
+        i += 3
+    }
+}
+
+// 不正なHuffman（EOSを含む文字列）はCOMPRESSION_ERROR・CONTINUATIONの洪水（長さ0の続き・際限なく続くブロック）はENHANCE_YOUR_CALMで、接続を閉じる
+func TestH2HostileConn() {
+    mut hb := mut []byte{}
+    for x <- h2tBlock("GET", "/a") {
+        hb = append(hb, x)
+    }
+    // 字句の名前 "x"・Huffmanの値4バイト（全部1のビット = EOSの符号を含む）
+    bad := []byte{byte(0), byte(1), byte(120), byte(0x84), byte(0xff), byte(0xff), byte(0xff), byte(0xff)}
+    for x <- bad {
+        hb = append(hb, x)
+    }
+    mut o1 := mut []byte{}
+    for x <- h2hPre() {
+        o1 = append(o1, x)
+    }
+    h2hPut(mut o1, 1, freeze(hb), 0)
+    r1 := h2fRun(freeze(o1))
+    assert(len(r1) == 3 && r1[1] == internal.h2frame.CompressionError && r1[2] == 0)
+    // 同じ不正な列をCONTINUATIONに分けても同じ
+    mut o1c := mut []byte{}
+    for x <- h2hPre() {
+        o1c = append(o1c, x)
+    }
+    h2hPut(mut o1c, 1, freeze(hb), 5)
+    r1c := h2fRun(freeze(o1c))
+    assert(len(r1c) == 3 && r1c[1] == internal.h2frame.CompressionError && r1c[2] == 0)
+    // 長さ0のCONTINUATIONが続く
+    blk := h2tBlock("GET", "/a")
+    mut o2 := mut []byte{}
+    for x <- h2hPre() {
+        o2 = append(o2, x)
+    }
+    internal.h2frame.PutHead(mut o2, len(blk), internal.h2frame.Headers, internal.h2frame.EndStream, 1)
+    for x <- blk {
+        o2 = append(o2, x)
+    }
+    internal.h2frame.PutHead(mut o2, 0, internal.h2frame.Continuation, 0, 1)
+    internal.h2frame.PutHead(mut o2, 0, internal.h2frame.Continuation, 0, 1)
+    r2 := h2fRun(freeze(o2))
+    assert(len(r2) == 3 && r2[1] == internal.h2frame.EnhanceYourCalm && r2[2] == 0)
+    // 中身のあるCONTINUATIONが上限（頭の上限の4倍 + 16384）を越えて続く
+    mut o3 := mut []byte{}
+    for x <- h2hPre() {
+        o3 = append(o3, x)
+    }
+    internal.h2frame.PutHead(mut o3, len(blk), internal.h2frame.Headers, internal.h2frame.EndStream, 1)
+    for x <- blk {
+        o3 = append(o3, x)
+    }
+    fill := h2hRep(byte(0x40), 16384)
+    mut k := 0
+    while k < 4 {
+        internal.h2frame.PutHead(mut o3, len(fill), internal.h2frame.Continuation, 0, 1)
+        for x <- fill {
+            o3 = append(o3, x)
+        }
+        k += 1
+    }
+    r3 := h2fRun(freeze(o3))
+    assert(len(r3) == 3 && r3[1] == internal.h2frame.EnhanceYourCalm && r3[2] == 0)
 }

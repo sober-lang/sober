@@ -75,6 +75,7 @@ doubles: testdata/cells testdata/cells.expect testdata/celldie testdata/cellneg 
 jsonsuite: scripts/oracles testdata/jsonfast testdata/jsonpkg testdata/jsontestsuite
 unittest: testdata/crypto testdata/pg testdata/stdtest testdata/tls testdata/wycheproof testdata/x509   # M2（report-1222）が名指し: Sober のプログラムが実行時に読む・import する入力（本文の抽出では見えない）
 x86enc: 
+r11lint:    # src/compiler/lower/x86.sober だけを読む（鍵の lower の成分）
 trapprobe: testdata/trapprobe
 seqpar: examples scripts/seqpar.list
 xpar: examples   # 題材 = examplesの大きい例4本（群が2つ以上になる大きさ）
@@ -114,7 +115,7 @@ h2spec: examples testdata/h2spec testdata/h2flood scripts/h2spec-fetch.sh   # h2
 iterregion: examples
 rflowmeter: bench/httparena   # ゴミ計つきのコンパイラで build する題材（std は stage2 の鍵に入る）
 fitcheck: bench examples src/stage1 testdata
-profcov: bench/httparena ~scripts/profgen.sh ~scripts/profgen.ts ~scripts/reqinst.ts ~testdata/httpcheck ~src/stage1   # main.prof（プロファイル）と main.sober（題材）。~ = 取り直しの手順として profgen.sh を名指すだけ（profgen.sh が読む reqinst.ts・testdata/httpcheck も同じ）・~src/stage1 = 冒頭で呼ぶ scripts/stage2.sh の言及
+profcov: bench/httparena bin/sober ~scripts/profgen.sh ~scripts/profgen.ts ~scripts/reqinst.ts ~testdata/httpcheck ~src/stage1   # main.prof（プロファイル）と main.sober（題材）。~ = 取り直しの手順として profgen.sh を名指すだけ（profgen.sh が読む reqinst.ts・testdata/httpcheck も同じ）・~src/stage1 = 冒頭で呼ぶ scripts/stage2.sh の言及
 numpert: bench examples src/stage1
 fnhash: 
 tyhash: 
@@ -162,6 +163,7 @@ gateenv: scripts   # lintはORDERの全部のゲートのスクリプトを読�
 @nondet: h2spec stages selfpar incrrace seqpar schedvec schedfuzz parbudget iouring httpcheck slowcheck acceptretry signprobe starve tschain fusecheck wincheck stackcheck areacheck pincheck oversub pid1stop logcheck
 @always: gatememo refs gateenv   # refsは .gitを読むのでM2の写し（.gitなし）で確かめられないので、毎回走らせる（29 s）。M1とlintは全部の宣言と本文を読む（数秒）ので、記録せず毎回走らせる
 @local: stages selfpar reqinst ringinst axes   # 実行時の命令数・RSS を bench/ratchet.txt の上限値と比べる — パスの長さで値が動くので、記録を木の間で共有しない（キーに木のルートを入れる）
+@mutants: fusecheck logcheck stackcheck starve wincheck   # ミュータントを --mutants の回でだけ走らせるゲート（既定の回の時間を抑える）。--memo の回ごとに1本を抜き打ちで --mutants つきで走らせる（gatememo.ts pickmut — 最も長く走らせていないもの）
 @lines: stages selfpar axes reqinst ringinst framestat   # 線（bench/ratchet.txt・scripts/framestat.list）と実測を比べる — 線の値とコメントは鍵に入らない（形だけ）。比較は gatelib.sh の ratchet_cmp で、実測を記録に残し、鍵が当たったら記録の実測をいまの線で判定し直す（gatememo.ts checkOne）
 
 # 置き場所の表（検証の増分化 — .pair設計 design-gateincr-2）: 保証ごとに確かめる場所を1か所に決める。場所はチェックレベル（gates.sh --level N — 数字が大きいほど網が細かい）と一対一:

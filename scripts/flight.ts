@@ -10,6 +10,8 @@
 import { readFileSync } from "node:fs";
 
 const KIND = ["?", "ACCEPT", "SPAWN", "RUN", "PARK", "WAKE", "SEND", "RECV", "CLOSE", "ENTER", "EPWAIT", "CLOCK", "END", "PANIC", "READY", "POST", "SIG"];
+// SIGの合図の種類（std/internal/muxの定数 — 8 = Whole: HEADERSと最後の本文を1つで・頭の長さはaの48ビット目から）
+const SIGK = ["?", "Resp", "End", "Room", "Head", "HeadEnd", "RespEnd", "Reject", "Whole"];
 const MAGIC = 6074307316579192659n;
 
 type Ev = { w: number; seq: number; kind: string; tsc: bigint; a: bigint; b: bigint; t: number };
@@ -87,7 +89,7 @@ function fmt(e: Ev): string {
         case "END": f = `tcb=${tcb(a)} trap=${b}`; break;
         case "PANIC": f = `site=${a} tcb=${tcb(b)}`; break;
         case "READY": f = `tcb=${tcb(a)} pending=${b}`; break;
-        case "SIG": f = `kind=${a & 255n} sid=${(a >> 8n) & 2147483647n} slot=${((a >> 40n) & 255n) - 1n} len=${b}`; break;
+        case "SIG": f = `kind=${SIGK[Number(a & 255n)] ?? a & 255n} sid=${(a >> 8n) & 2147483647n} slot=${((a >> 40n) & 255n) - 1n} len=${b}${(a >> 48n) > 0n ? ` head=${a >> 48n}` : ""}`; break;
         default: f = `a=${a} b=${b}`;
     }
     return `t=${Math.round(e.t)} w=${e.w} #${e.seq} ${e.kind} ${f}`;

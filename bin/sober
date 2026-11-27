@@ -81,7 +81,8 @@ cmd_build() {
     [ -n "$entry" ] || { echo "sober: 'build' requires a source file or a package directory" >&2; exit 1; }
     case "$entry" in *.ir) echo "sober: building an .ir file is stage1's (the comparison scripts call $STAGE1 build x.ir directly)" >&2; exit 1 ;; esac
     if [ -n "$emit" ]; then
-        exec "$S2" build "$entry" --emit="$emit" $epasses -o "$out"
+        # --profile も渡す: --emit=syms は最適化つきのELFの番地の表で、プロファイルは配置を変える（ll / ir では読んで形を検査するだけ）
+        exec "$S2" build "$entry" --emit="$emit" $epasses $prof -o "$out"
     fi
     tmpdir
     if [ "$via" = ll ]; then
